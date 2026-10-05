@@ -32,7 +32,7 @@ import type {
   BoardAttachImageOutcome, BoardAttachImageRequest, BoardCreateRequest,
   BoardDeleteCanvasRequest, BoardDeleteCanvasResult, BoardDeleteCardRequest,
   BoardFocusRequest, BoardFocusResult,
-  BoardListResult, BoardMutationResult,
+  BoardListResult, BoardMarkSeenRequest, BoardMutationResult,
   BoardPatchCardRequest, BoardPutCardRequest,
   BoardDecideTypeRequest, BoardReadOutcome, BoardReadRequest, BoardSetCategoriesRequest, BoardSetLayoutRequest,
   BoardSelectGenreRequest, BoardSetTypeBriefRequest,
@@ -164,6 +164,8 @@ export interface CanvasTabInjected
   putCard: (sessionId: SessionId, request: BoardPutCardRequest) => Promise<RemoteResult<BoardMutationResult>>
   /** Edit one card: text, its drawing, a status transition, or a question state. */
   patchCard: (sessionId: SessionId, request: BoardPatchCardRequest) => Promise<RemoteResult<BoardMutationResult>>
+  /** Clear the 「新」 mark: the given cards, or every unseen card. */
+  markSeen: (sessionId: SessionId, request: BoardMarkSeenRequest) => Promise<RemoteResult<BoardMutationResult>>
   /** Comment on one card. */
   addComment: (sessionId: SessionId, request: BoardAddCommentRequest) => Promise<RemoteResult<BoardMutationResult>>
   /** Archive a canvas from the switcher, or restore it (the reversible half). */

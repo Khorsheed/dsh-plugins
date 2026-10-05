@@ -11,6 +11,7 @@
     "src/genre.ts",
     "src/index.ts",
     "src/invariant.ts",
+    "src/remote.ts",
     "src/skill.ts",
     "src/store.ts",
     "src/tools.ts",

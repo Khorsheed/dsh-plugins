@@ -1,9 +1,8 @@
 /**
  * The extract import's five gates (proposal §5), each pinned on the
  * 《梦境监护者》seed with chapter 5 in the writing state: evidence grep, the
- * ledger whitelist, new_* always ghost cards, confidence splitting (high
- * lands automatically and retractably, medium/low becomes a ghost card or a
- * pending item), and plan verification with 计划落空 routed to a person.
+ * ledger whitelist, new_* land live (marked new), confidence splitting (high
+ * lands directly, medium/low becomes a pending item), and plan verification with 计划落空 routed to a person.
  */
 import { Context } from '@deepseek-ai/cordis'
 import type { Session } from '@deepseek-ai/dsh-session'
@@ -74,20 +73,21 @@ describe('novel_extract import — the five gates (proposal §5)', () => {
     expect(report.dropped).toContainEqual({ kind: 'mention', reason: 'id-not-in-ledger', ref: '#99' })
   })
 
-  it('gate 3: new characters and new foreshadows ALWAYS land as ghost cards, evidence-grepped first', async () => {
+  it('gate 3: new rules, characters and foreshadows land as live cards, evidence-grepped first', async () => {
     const { store, canvas } = seededStore()
     const report = await store.extractImport({ workId: DREAM.workId, n: 5, payload: PAYLOAD }, SESSION)
     const [foreshadow] = cardsWith(canvas, '摇篮曲是谁唱的')
     const [character] = cardsWith(canvas, '哼歌的女人')
-    expect(foreshadow).toMatchObject({ status: 'proposed', kind: 'cat_foreshadow', fields: { question: '摇篮曲是谁唱的', status: '已埋', plantedAt: 5 } })
+    expect(foreshadow).toMatchObject({ status: 'kept', kind: 'cat_foreshadow', fields: { question: '摇篮曲是谁唱的', status: '已埋', plantedAt: 5 } })
     expect(foreshadow?.comments[0]?.text).toContain('第5章新埋')
-    expect(character).toMatchObject({ status: 'proposed', kind: 'cat_character', fields: { name: '哼歌的女人', identity: '门后空间里的声音' } })
+    expect(character).toMatchObject({ status: 'kept', kind: 'cat_character', fields: { name: '哼歌的女人', identity: '门后空间里的声音' } })
     expect(character?.comments[0]?.text).toContain('第5章登场')
-    expect(report.proposedCards.map(card => card.role).sort()).toEqual(['character', 'foreshadow', 'world'])
-    // Ghosts never reach the brief's roster or the live ledger by themselves…
+    expect(report.newCards.map(card => card.role).sort()).toEqual(['character', 'foreshadow', 'world', 'world'])
+    // Live cards are canon at once: the roster has the character, the ledger the foreshadow…
     const entries = (await store.readEntries(DREAM.workId))!
-    expect(entries.characters.find(view => view.name === '哼歌的女人')?.cardStatus).toBe('proposed')
-    expect((await store.ledger({ workId: DREAM.workId })).active.some(view => view.question === '摇篮曲是谁唱的')).toBe(false)
+    expect(entries.characters.find(view => view.name === '哼歌的女人')?.cardStatus).toBe('kept')
+    expect((await store.ledger({ workId: DREAM.workId })).active.find(view => view.ref === '#21'))
+      .toMatchObject({ question: '摇篮曲是谁唱的', state: '已埋', plantedAt: 5, tension: 3 })
     // …and the sidecar numbered them (world, principle and foreshadow share one
     // number space: the two new rules took 19 and 20) and kept the tension.
     const annotations = entries.annotations
@@ -96,22 +96,20 @@ describe('novel_extract import — the five gates (proposal §5)', () => {
     expect(annotations.notes[foreshadow!.id]).toMatchObject({ tension: 3, extractedBy: 'llm', firstChapter: 5 })
   })
 
-  it('gate 4: high lands automatically (kept, 自动·可撤销), medium/low becomes a ghost or pends', async () => {
+  it('gate 4: every rule card carries its confidence; medium/low journal lines pend', async () => {
     const { store, canvas } = seededStore()
-    const report = await store.extractImport({ workId: DREAM.workId, n: 5, payload: PAYLOAD }, SESSION)
-    expect(report.autoImported).toBe(1)
-    const [auto] = cardsWith(canvas, '门后的敲击以三下为一组，像某种耐心的呼吸。')
-    expect(auto).toMatchObject({ status: 'kept', kind: 'cat_world' })
+    await store.extractImport({ workId: DREAM.workId, n: 5, payload: PAYLOAD }, SESSION)
+    const [high] = cardsWith(canvas, '门后的敲击以三下为一组，像某种耐心的呼吸。')
+    expect(high).toMatchObject({ status: 'kept', kind: 'cat_world' })
     const entries = (await store.readEntries(DREAM.workId))!
-    expect(entries.annotations.notes[auto!.id]).toMatchObject({ autoImported: true, confidence: 'high', extractedBy: 'llm', firstChapter: 5 })
-    // …and the automatic card retracts (撤销), while a user card refuses retract.
-    expect(await store.reviewCard({ workId: DREAM.workId, id: auto!.id, action: 'retract' }, SESSION)).toMatchObject({ ok: true })
-    expect(canvas.card(DREAM.workId, auto!.id)?.status).toBe('archived')
-    expect(await store.reviewCard({ workId: DREAM.workId, id: 'w1', action: 'retract' }, SESSION)).toMatchObject({ ok: false })
-    // The medium rule is a ghost card carrying its confidence and evidence.
+    expect(entries.annotations.notes[high!.id]).toMatchObject({ confidence: 'high', extractedBy: 'llm', firstChapter: 5 })
+    // A medium rule lands live too, its confidence and evidence on the card for the user's look.
     const [medium] = cardsWith(canvas, '门缝附近的蓝叶会亮得刺眼。')
-    expect(medium?.status).toBe('proposed')
+    expect(medium?.status).toBe('kept')
     expect(medium?.comments[0]?.text).toBe('置信度 medium · 第5章：「袖口的蓝叶在靠近门缝时亮得刺眼」')
+    // ✗ on a wrong one archives it.
+    expect(await store.archiveCard({ workId: DREAM.workId, id: medium!.id }, SESSION)).toMatchObject({ ok: true })
+    expect(canvas.card(DREAM.workId, medium!.id)?.status).toBe('archived')
     // A medium MENTION pends (榜上判不了的疑似提及进人审), and moves nothing yet.
     const pending = await store.listPending({ workId: DREAM.workId })
     expect(pending.some(item => item.kind === 'mention' && item.payload.foreshadowId === CARD.doorGap)).toBe(true)
@@ -186,12 +184,34 @@ describe('novel_extract import — the five gates (proposal §5)', () => {
     expect(after.some(item => item.id === mention.id)).toBe(false)
   })
 
-  it('accepting a ghost card from the import puts it into the brief material', async () => {
+  it('names world rules, refuses names the canvas already holds, and files a new character\'s experience on its own new card', async () => {
     const { store, canvas } = seededStore()
-    await store.extractImport({ workId: DREAM.workId, n: 5, payload: PAYLOAD }, SESSION)
-    const [foreshadow] = cardsWith(canvas, '摇篮曲是谁唱的')
-    expect(await store.reviewCard({ workId: DREAM.workId, id: '#21', action: 'accept' }, SESSION)).toMatchObject({ ok: true, cardId: foreshadow!.id })
-    const ledger = await store.ledger({ workId: DREAM.workId })
-    expect(ledger.active.find(view => view.ref === '#21')).toMatchObject({ question: '摇篮曲是谁唱的', state: '已埋', plantedAt: 5, tension: 3 })
+    const evidence = '门后传来一个女人的声音，哼着不成调的摇篮曲'
+    const report = await store.extractImport({ workId: DREAM.workId, n: 5, payload: {
+      memories: [
+        { kind: '世界', name: '门后的歌', world_kind: '地点', content: '门后有人在哼摇篮曲。', confidence: 'medium', evidence_in_text: evidence },
+        { kind: '世界', name: '门后的歌', content: '同一件事换个说法。', confidence: 'medium', evidence_in_text: evidence },
+        { kind: '世界', content: '摇篮曲不成调，像在模仿谁。', confidence: 'medium', evidence_in_text: evidence },
+      ],
+      new_characters: [
+        { name: '哼歌的女人', identity: '门后空间里的声音', evidence_in_text: evidence },
+        { name: '艾文', identity: '重复登场', evidence_in_text: evidence },
+      ],
+      experiences: [{ character_id: '哼歌的女人', entry: '在门后哼歌', confidence: 'high', evidence_in_text: evidence }],
+    } }, SESSION)
+    // A named rule keeps its name and kind; an unnamed one takes its first clause.
+    const [named] = cardsWith(canvas, '门后有人在哼摇篮曲。')
+    expect(named?.fields).toMatchObject({ name: '门后的歌', kind: '地点' })
+    expect(cardsWith(canvas, '摇篮曲不成调，像在模仿谁。')[0]?.fields?.['name']).toBe('摇篮曲不成调')
+    // The second 门后的歌 never becomes a card; 艾文 is simply not new (her experiences would still reach c2).
+    expect(cardsWith(canvas, '同一件事换个说法。')).toEqual([])
+    expect(canvas.boards.get(DREAM.workId)!.cards.filter(card => card.fields?.['name'] === '艾文')).toHaveLength(1)
+    expect(report.dropped.filter(drop => drop.reason === 'duplicate').map(drop => drop.ref)).toEqual(['门后的歌（本次已提过）'])
+    // The new character's experience lands on its new card instead of dropping out of the roster.
+    const [singer] = cardsWith(canvas, '哼歌的女人')
+    expect((await store.listExperiences({ workId: DREAM.workId, characterId: singer!.id })).map(entry => entry.entry)).toEqual(['在门后哼歌'])
+    expect(report.dropped.some(drop => drop.reason === 'character-not-in-roster')).toBe(false)
+    // Every new card carries its ref, so the model edits it instead of starting another.
+    expect(report.newCards.map(card => card.ref)).toEqual(['w19', 'w20', 'c3'])
   })
 })

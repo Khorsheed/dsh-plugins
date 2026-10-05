@@ -72,7 +72,11 @@ describe('the ./agent composition entry', () => {
     agentApply(ctx)
     ctx.provide('systemPrompt', prompts)
     ctx.provide('skills', { register: (skill: (typeof skills)[number]) => { skills.push(skill); return () => undefined } })
+    const scopeTools: string[] = []
+    ctx.provide('tools', { register: (def: ToolDefinition) => { scopeTools.push(def.name); return () => undefined } })
     await tick()
+    // novel_bind sits on the mounting scope (every session of it), never per session.
+    expect(scopeTools).toEqual(['novel_bind'])
     expect(early.live()).toEqual(['novel_read', 'novel_write', 'novel_extract'])
 
     // A new, unbound agent gets nothing — absent, not denied.
@@ -113,6 +117,8 @@ describe('the ./agent composition entry', () => {
     expect(skills[0]).toMatchObject({ name: 'novel', source: 'runtime', provider: '@khorsheed/dsh-canvas-novel' })
     // The skill carries the workflow, not any work content.
     expect(skills[0]!.content).toContain('三条铁律')
+    // Unbound sessions are steered to the binding chip, not to an improvised fallback.
+    expect(skills[0]!.content).toContain('绑定作品')
     expect(skills[0]!.content).not.toContain('梦境监护者')
     expect(skills[0]!.content).not.toContain('赵启明')
   })
@@ -142,13 +148,15 @@ describe('the pointer function section', () => {
     expect(bound).toContain('novel_read(brief)')
     expect(bound).toContain('novel skill')
     expect(bound).not.toContain('\n')
-    // Unbound (another session): '' — the no-injection state costs nothing.
-    expect(text({ agent: { sessionId: 's-2' } })).toBe('')
+    // Unbound, but this scope's session: one line pointing at novel_bind.
+    expect(text({ agent: { sessionId: 's-2' } })).toContain('novel_bind')
+    // A session this scope never composed: '' — costs nothing.
+    expect(text({ agent: { sessionId: 's-other' } })).toBe('')
     // No agent on the assemble context (a headless/odd assembly): ''.
     expect(text({})).toBe('')
     expect(text({ agent: {} })).toBe('')
     // A grant whose lookup threw (impossible in practice) still degrades to ''.
-    const broken = { titleOf: () => { throw new Error('boom') } }
+    const broken = { titleOf: () => { throw new Error('boom') }, tracks: () => true }
     expect(novelPointerText(broken)({ agent: { sessionId: 's-1' } })).toBe('')
   })
 

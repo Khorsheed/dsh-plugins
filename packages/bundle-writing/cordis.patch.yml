@@ -104,7 +104,7 @@
 
           # ── the canvas-novel grant ───────────────────────────────────────────
 
-          # novel 三工具（novel_read / novel_write / novel_extract）、绑定轻
+          # novel 工具（novel_bind；绑定后 novel_read / write / extract）、轻
           # 指引函数段与 novel skill 只授予本 preset 的会话；profile 根的同名行
           # 出厂即停用，两者绝不能同时生效（同名工具双注册）。服务核心
           # （canvasNovel）由 profile 根的 canvas-novel 行提供，本行沿 scope 父链

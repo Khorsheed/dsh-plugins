@@ -119,7 +119,7 @@ interface DiscardAsk {
 /** The canvas tab: the strip plus the row it is showing. */
 export function CanvasTab(props: CanvasTabProps): ReactNode {
   const {
-    t, listCanvases, createCanvas, readBoard, putCard, patchCard, addComment,
+    t, listCanvases, createCanvas, readBoard, putCard, patchCard, markSeen, addComment,
     archiveCanvas, deleteCanvas, deleteCard, setCategories: writeCategories, setLayout: writeLayout, openCanvas: showCanvas,
     openCardDetail, openCardDraft, openManuscript, openTypePage, openCategoriesPage, backToBoard, activateTab, closeTab, focusCanvas,
     talkAvailable, quoteToConversation, refreshBoards, suggestWideMode, images, useImageRev,
@@ -714,12 +714,28 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
     }
   }, [onBoard, openId, loadedId, view])
 
-  /** Open one card of the open canvas, named the same way the prompt names it. */
+  /**
+   * Clear the 「新」 mark: one card the user opened (quietly), or every card
+   * (「全部标为已看」, with a toast). A lost write leaves the mark, nothing else.
+   */
+  const seeCards = useCallback((canvasId: string, cardIds?: readonly string[]) => {
+    if (sessionId === undefined) return
+    void (async () => {
+      const value = await run(() => markSeen(sessionId, { canvasId, ...(cardIds === undefined ? {} : { cardIds }) }))
+      if (value === null || !value.ok) return
+      if (value.board.id === openIdRef.current) setOpenBoard({ board: value.board, version: value.version })
+      if (cardIds === undefined) showToast(t('toast.allSeen'))
+    })()
+  }, [sessionId, run, markSeen, showToast, t])
+
+  /** Open one card of the open canvas, named the same way the prompt names it; opening it is seeing it. */
   const openCard = useCallback((cardId: string) => {
     if (openId === null) return
     const card = boardRef.current?.board.cards.find(candidate => candidate.id === cardId)
     openCardDetail(openId, cardId, card === undefined ? cardId : cardNameOf(card))
-  }, [openId, openCardDetail])
+    const writable = !readonly && boardRef.current?.board.archivedAt == null
+    if (card?.unseen === true && writable) seeCards(openId, [cardId])
+  }, [openId, openCardDetail, readonly, seeCards])
 
   /* ----------------------------------------------------------------- genres */
 
@@ -764,7 +780,8 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
       backToBoard: () => { backToBoard(canvasId) },
       refresh: refreshBoards,
     }),
-  }), [renderSlot, selectionRev, openCardDetail, openManuscript, openPage, backToBoard, refreshBoards])
+    sessionId,
+  }), [renderSlot, selectionRev, openCardDetail, openManuscript, openPage, backToBoard, refreshBoards, sessionId])
 
   const openTitle = activeRow === undefined
     ? ''
@@ -777,6 +794,19 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
   const openCount = activeRow === undefined || openBoard === null
     ? null
     : summarizeBoard(openBoard.board).cardCount
+  // AGENT's new cards held at the front this visit: every card unseen when the
+  // canvas opened, plus any that land while it stays open. Seeing one keeps it
+  // in place, so neither the board nor the detail's ‹n/m› shifts under the
+  // reader; the next visit (another canvas and back, a reload) lets it settle.
+  const frontRef = useRef<{ canvasId: string; ids: ReadonlySet<string> } | null>(null)
+  const front = useMemo(() => {
+    if (openBoard === null) return undefined
+    const was = frontRef.current?.canvasId === openBoard.board.id ? frontRef.current.ids : new Set<string>()
+    const unseen = openBoard.board.cards.filter(card => card.unseen === true && !was.has(card.id))
+    const ids = unseen.length === 0 ? was : new Set([...was, ...unseen.map(card => card.id)])
+    frontRef.current = { canvasId: openBoard.board.id, ids }
+    return ids
+  }, [openBoard])
 
   return (
     <GenreSeatsContext.Provider value={seats}>
@@ -916,7 +946,7 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
             heading: activeRow.at.heading,
             siblings: openBoard === null || openBoard.board.id !== activeRow.canvasId
               ? []
-              : shownCardsOf(openBoard.board, filter).map(card => card.id),
+              : shownCardsOf(openBoard.board, filter, front).map(card => card.id),
             onBack: () => { leaveRow(activeRow.id, 'back') },
             onStep: openCard,
           }}
@@ -996,15 +1026,18 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
                 className={css.moreButton}
                 items={[
                   // 创作体裁 only where a genre is installed: without one the
-                  // menu is the one it always was.
-                  ...(genres.length === 0 ? [] : [{
-                    id: 'genre',
-                    label: t('genre.menu'),
-                    submenu: [{ id: 'genre:', label: t('genre.none') }, ...genres.map(genre => ({ id: `genre:${genre.id}`, label: genre.label }))]
+                  // menu is the one it always was. The choices sit inline under
+                  // a heading, not in a submenu: the host's submenu always opens
+                  // to the right, and this ⋯ hugs the window's right edge, so
+                  // it opened off-screen (2026-10-05).
+                  ...(genres.length === 0 ? [] : [
+                    { type: 'label' as const, id: 'genre', text: t('genre.menu') },
+                    ...[{ id: 'genre:', label: t('genre.none') }, ...genres.map(genre => ({ id: `genre:${genre.id}`, label: genre.label }))]
                       .map(item => item.id === `genre:${openBoard.board.genre?.id ?? ''}`
                         ? { ...item, icon: <IconCheckOutlineMedium size={13} /> }
                         : item),
-                  }, { type: 'separator' as const, id: 'genre-sep' }]),
+                    { type: 'separator' as const, id: 'genre-sep' },
+                  ]),
                   { id: 'archive', label: t('action.archiveCanvas'), icon: <IconArchiveOutlineMedium size={13} /> },
                   { id: 'delete', label: t('action.deleteCanvas'), icon: <IconTrashOutlineMedium size={13} />, danger: true },
                 ]}
@@ -1108,6 +1141,8 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
                 showArchived={showArchivedCards}
                 onToggleArchived={toggleShowArchived}
                 newCard={boardReadonly ? undefined : newCardSlot}
+                front={front}
+                onMarkAllSeen={boardReadonly ? undefined : () => { seeCards(openBoard.board.id) }}
               />
             )
           ) : (

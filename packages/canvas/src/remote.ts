@@ -25,7 +25,7 @@ import type {
   BoardBindRequest, BoardBindResult, BoardSelectGenreRequest, CanvasGenreSummary,
   BoardCreateRequest, BoardDecideTypeRequest, BoardFocusRequest, BoardFocusResult, BoardSetTypeBriefRequest,
   BoardImageBytesOutcome, BoardImageBytesRequest,
-  BoardListResult, BoardMutationResult, BoardPatchCardRequest,
+  BoardListResult, BoardMarkSeenRequest, BoardMutationResult, BoardPatchCardRequest,
   BoardPutCardRequest, BoardReadOutcome,
   BoardReadRequest, BoardSetCategoriesRequest, BoardSetLayoutRequest,
   CanvasArchiveRequest, CanvasArchiveResult, CanvasCreateRequest,
@@ -158,6 +158,17 @@ export class CanvasRemoteService extends TypertRemoteService<CanvasRemoteConfig>
   @Remote('patchCard')
   patchCard(agent: Agent, request: BoardPatchCardRequest): Promise<BoardMutationResult> {
     return this.board.patchCard(request, agent.session)
+  }
+
+  /**
+   * Clear the 「新」 mark: the given cards, or every unseen card.
+   * @param agent - the calling session's agent; its session fences the write.
+   * @param request - canvas id and, optionally, the card ids.
+   * @returns the fresh board and token, or the failure code.
+   */
+  @Remote('markSeen')
+  markSeen(agent: Agent, request: BoardMarkSeenRequest): Promise<BoardMutationResult> {
+    return this.board.markSeen(request, agent.session)
   }
 
   /**

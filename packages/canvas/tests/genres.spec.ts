@@ -112,6 +112,44 @@ describe('canvas genres', () => {
     expect((await board.listCanvases()).items[0]?.genre).toBe('novel')
   })
 
+  it('catches a canvas up with a newer genre on its next write, keeping what the user changed', async () => {
+    const { fs, board } = bench()
+    board.registerGenre(NOVEL)
+    const id = await plainCanvas(board)
+    const seeded = await board.selectGenre({ canvasId: id, genreId: 'novel' }, SESSION)
+    if (!seeded.ok) throw new Error(seeded.error)
+    // The user relabels the seeded field (as an adopted type change would); the genre then adds a title field before it.
+    const file = `${STATE}/${id}/canvas.json`
+    const raw = JSON.parse(await fs.readText(file)) as { categories: { role?: string; definition?: { fields: { label: string }[] } }[] }
+    raw.categories.find(row => row.role === 'foreshadow')!.definition!.fields[0]!.label = '谜面'
+    fs.seed(file, JSON.stringify(raw))
+    const stored = categoryOfRole(normalizeBoard(raw, id, '')!, 'foreshadow')!.definition!
+    board.registerGenre({
+      ...NOVEL,
+      version: 'novel@2',
+      categories: NOVEL.categories.map(seed => seed.definition === undefined ? seed : {
+        ...seed,
+        definition: {
+          ...seed.definition,
+          version: 2,
+          fields: [{ key: 'name', label: '名称', type: 'line', hint: '', required: true }, ...seed.definition.fields],
+          example: { name: '父亲', question: '父亲为什么不回家' },
+        },
+      }),
+    })
+    const character = categoryOfRole(seeded.board, 'character')!.id
+    const put = await board.putCard({ canvasId: id, kind: character, text: '甲' }, SESSION)
+    if (!put.ok) throw new Error(put.error)
+    expect(put.board.genre?.version).toBe('novel@2')
+    const upgraded = categoryOfRole(put.board, 'foreshadow')!.definition!
+    expect(upgraded.fields.map(field => [field.key, field.label])).toEqual([['name', '名称'], ['question', '谜面']])
+    expect(upgraded.version).toBe(stored.version + 1)
+    // Caught up: the next write leaves the type alone.
+    const again = await board.putCard({ canvasId: id, kind: character, text: '乙' }, SESSION)
+    if (!again.ok) throw new Error(again.error)
+    expect(categoryOfRole(again.board, 'foreshadow')!.definition).toEqual(upgraded)
+  })
+
   it('refuses an unregistered genre, and clearing keeps the categories', async () => {
     const { board } = bench()
     board.registerGenre(NOVEL)
@@ -122,6 +160,31 @@ describe('canvas genres', () => {
     if (!cleared.ok) throw new Error(cleared.error)
     expect(cleared.board.genre).toBeUndefined()
     expect(categoryOfRole(cleared.board, 'character')).toBeDefined()
+  })
+
+  it('steps the empty built-ins aside while a genre is on, and restores exactly those on clear', async () => {
+    const { board } = bench()
+    board.registerGenre(NOVEL)
+    const id = await plainCanvas(board)
+    const enabledBuiltins = (row: { categories: readonly { id: string; enabled: boolean }[] }) =>
+      row.categories.filter(category => category.enabled && ['fragment', 'question', 'grounding', 'reference', 'document'].includes(category.id)).map(category => category.id)
+    const before = await board.readBoard({ canvasId: id })
+    if (!before.ok) throw new Error(before.error)
+    // One built-in holds a card: it stays on.
+    const kept = await board.putCard({ canvasId: id, kind: 'fragment', text: '一个梦里的灯塔' }, SESSION)
+    if (!kept.ok) throw new Error(kept.error)
+    const novel = await board.selectGenre({ canvasId: id, genreId: 'novel' }, SESSION)
+    if (!novel.ok) throw new Error(novel.error)
+    expect(enabledBuiltins(novel.board)).toEqual(['fragment'])
+    expect(categoryOfRole(novel.board, 'character')?.enabled).toBe(true)
+    expect(novel.board.genre?.hid).toEqual(['question', 'grounding', 'reference', 'document'])
+    // Re-selecting keeps the record rather than re-deriving it from the now-hidden rows.
+    const again = await board.selectGenre({ canvasId: id, genreId: 'novel' }, SESSION)
+    if (!again.ok) throw new Error(again.error)
+    expect(again.board.genre?.hid).toEqual(['question', 'grounding', 'reference', 'document'])
+    const cleared = await board.selectGenre({ canvasId: id, genreId: null }, SESSION)
+    if (!cleared.ok) throw new Error(cleared.error)
+    expect(enabledBuiltins(cleared.board)).toEqual(enabledBuiltins(before.board))
   })
 
   it('reads a hand-broken genre field as no genre', () => {

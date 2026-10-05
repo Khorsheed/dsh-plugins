@@ -32,7 +32,7 @@ function tagOrigin<T extends object>(definition: T): T {
 }
 
 /** What the tools answer when the session is bound to no novel canvas (guidance, never a throw). */
-const NO_WORK_MESSAGE = '本会话还没有绑定「长篇小说」画布：请用户在会话头的画布 chip 里选一张体裁为「长篇小说」的画布，再进行读写。'
+const NO_WORK_MESSAGE = '本会话还没有绑定「长篇小说」画布：先 novel_bind 按对话说的作品绑定（不带参数列出作品），或请用户在会话头的「绑定作品」里选。'
 
 /** The extract gate's refusal, phase-aware (对账只发生在写作后、审过收章前). */
 function extractGateMessage(phase: string | undefined): string {
@@ -49,13 +49,9 @@ const ROLE_OF_NAME: Readonly<Record<string, EntryRole>> = { 人物: 'character',
 /** A role's display name. */
 const ROLE_NAMES: Readonly<Record<EntryRole, string>> = { character: '人物', world: '世界', principle: '原则', foreshadow: '伏笔' }
 
-/** The flags one card carries for the model (ghost / automatic import). */
-function cardFlags(entries: WorkEntries, cardId: string, status: string): string {
-  const flags = [
-    status === 'proposed' ? '待采纳' : '',
-    entries.annotations.notes[cardId]?.autoImported === true ? '自动·可撤销' : '',
-  ].filter(flag => flag !== '').join('·')
-  return flags === '' ? '' : `（${flags}）`
+/** The flag a card the canvas holds as a proposal carries for the model (it is not in the brief). */
+function cardFlags(status: string): string {
+  return status === 'proposed' ? '（画布提议·未确认）' : ''
 }
 
 /** One foreshadow's ledger state as one parenthesized run. */
@@ -70,21 +66,21 @@ function foreshadowFacts(view: ForeshadowView): string {
   ].filter(part => part !== '').join(' · ')
 }
 
-/** The visible cards of a work (kept + ghosts; archived ones are hidden), one line each. */
+/** The visible cards of a work (archived ones are hidden), one line each. */
 function cardLines(entries: WorkEntries, role: EntryRole | undefined): string[] {
   const lines: string[] = []
   const visible = (status: string): boolean => status !== 'archived'
   if (role === undefined || role === 'character') {
     for (const view of entries.characters.filter(view => visible(view.cardStatus))) {
-      lines.push(`- [${view.ref}] 人物 ${view.name}${view.identity === undefined ? '' : `（${view.identity}）`}${cardFlags(entries, view.cardId, view.cardStatus)}`)
+      lines.push(`- [${view.ref}] 人物 ${view.name}${view.identity === undefined ? '' : `（${view.identity}）`}${cardFlags(view.cardStatus)}`)
     }
   }
   for (const view of entries.rules.filter(view => visible(view.status) && (role === undefined || role === view.role))) {
-    lines.push(`- [${view.ref}] ${ROLE_NAMES[view.role]} ${view.text}${cardFlags(entries, view.cardId, view.status)}`)
+    lines.push(`- [${view.ref}] ${ROLE_NAMES[view.role]} ${view.text}${cardFlags(view.status)}`)
   }
   if (role === undefined || role === 'foreshadow') {
     for (const view of entries.foreshadows.filter(view => visible(view.cardStatus))) {
-      lines.push(`- [${view.ref}] 伏笔 ${view.question}（${foreshadowFacts(view)}）${cardFlags(entries, view.cardId, view.cardStatus)}`)
+      lines.push(`- [${view.ref}] 伏笔 ${view.question}（${foreshadowFacts(view)}）${cardFlags(view.cardStatus)}`)
     }
   }
   return lines
@@ -102,7 +98,10 @@ const PHASE_NAMES: Readonly<Record<string, string>> = {
 
 
 /** The refusal of one card write, in the model's words. */
-function cardErrorMessage(error: string | undefined, role: EntryRole): string {
+function cardErrorMessage(error: string | undefined, role: EntryRole, ref?: string): string {
+  if (error === 'duplicate') {
+    return `失败：画布上已经有同名的${ROLE_NAMES[role]}卡 [${ref}]。要补内容就用 novel_write(what=card, id=${ref}, fields=…) 改那张，不要另起一张。`
+  }
   if (error === 'missing') return `失败：找不到这张${ROLE_NAMES[role]}卡（novel_read(what=cards) 看 ref）。`
   if (error === 'invalid-name') return `失败：字段不全或不合法——新建${ROLE_NAMES[role]}卡至少要给主字段；改卡至少要给一个认识的字段。`
   return `失败：${error ?? 'io'}`
@@ -182,8 +181,8 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
         if (args.what === 'cards') {
           const role = args.role === undefined ? undefined : ROLE_OF_NAME[args.role]
           const lines = cardLines(entries, role)
-          if (lines.length === 0) return '还没有卡片：聊设定时 novel_write(what=card, role=…) 落幽灵卡，用户采纳后才进 brief。'
-          return [`卡片（${lines.length} 张，待采纳的不进 brief）：`, ...lines].join('\n')
+          if (lines.length === 0) return '还没有卡片：聊设定时 novel_write(what=card, role=…) 落卡，落下即进 brief。'
+          return [`卡片（${lines.length} 张）：`, ...lines].join('\n')
         }
         if (args.id === undefined) return '失败：what=card 要给 id（ref、卡 id 或人物名字）。'
         const handle = store.resolveCard(entries, args.id)
@@ -210,8 +209,8 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
       }
       if (args.what === 'pending') {
         const items = await store.listPending({ workId })
-        if (items.length === 0) return '待审队列为空（新卡片在画布上以幽灵卡待采纳，不在这里）。'
-        return [`待审队列（${items.length} 条，✓采纳/✗丢弃走 novel_write(what=review, target=pending, id, action)）：`, ...items.map(pendingLine)].join('\n')
+        if (items.length === 0) return '待审队列为空（新卡片直接落在画布上、带红点，不在这里）。'
+        return [`待审队列（${items.length} 条，✓采纳/✗丢弃走 novel_write(what=review, target=pending, id, action=accept|discard)）：`, ...items.map(pendingLine)].join('\n')
       }
       if (args.what === 'chapter') {
         if (args.chapter === undefined) return '失败：what=chapter 要给 chapter（章号）。'
@@ -228,26 +227,27 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
   const write = defineTool({
     name: 'novel_write',
     description:
-      'Write the bound novel canvas. card proposes a ghost card in a category (role=人物|世界|原则|伏笔, fields); '
+      'Write the bound novel canvas. card lands a new card live in a category (role=人物|世界|原则|伏笔, fields) — '
+      + 'in the brief at once, marked 新 on the board for the user; '
       + 'with id it patches that card. chapter creates (auto n=max+1) or re-plans; content writes the manuscript '
-      + 'first and refuses the registration when the fence refuses the write. review decides (target=card|pending, '
-      + 'action=accept|discard|archive|retract). Load the novel skill first.',
+      + 'first and refuses the registration when the fence refuses the write. review decides (target=pending with '
+      + 'action=accept|discard, or target=card with action=archive). Load the novel skill first.',
     parameters: {
       what: { type: 'string', enum: ['card', 'chapter', 'review'], required: true, description: 'What to write.' },
       role: { type: 'string', enum: ['人物', '世界', '原则', '伏笔'], description: 'card: the category.' },
       fields: {
         type: 'object', additionalProperties: true,
         description: 'card: 人物 {name, identity, want, lack, wound, appearance, voice, knows, unaware, secrets, relations}; '
-          + '世界 {rule}; 原则 {principle}; 伏笔 {question, status, plantedAt, answer}. Lists: one item per line.',
+          + '世界 {name, kind, rule} (name: the setting\'s title — a place, a faction, an item, a rule; kind: 地点|势力|道具|规则|历史|其他; rule: the setting itself); 原则 {principle}; 伏笔 {question, status, plantedAt, answer}. Lists: one item per line.',
       },
-      comment: { type: 'string', description: 'card (new): why you propose it — shown on the ghost card.' },
+      comment: { type: 'string', description: 'card (new): why you add it — shown as a comment on the card.' },
       id: { type: 'string', description: 'card: the ref to patch. review: card ref or pending id.' },
       title: { type: 'string', description: 'chapter: the title.' },
       content: { type: 'string', description: 'chapter: the manuscript body — written to the mounted workspace before registering.' },
       chapter: { type: 'number', description: 'chapter: n to re-plan (omit to create).' },
       plan: { type: 'object', additionalProperties: true, description: 'chapter: {pov, goal, foreshadowOps[{op, id|question}], characters[], hook}.' },
       target: { type: 'string', enum: ['card', 'pending'], description: 'review: a card on the board, or the pending queue.' },
-      action: { type: 'string', enum: ['accept', 'discard', 'archive', 'retract'], description: 'review: the decision.' },
+      action: { type: 'string', enum: ['accept', 'discard', 'archive'], description: 'review: accept|discard a pending item; archive a card.' },
     },
     output: {
       schema: { type: 'string' },
@@ -265,10 +265,10 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
           ...(args.id === undefined ? {} : { id: args.id }),
           ...(args.comment === undefined ? {} : { comment: args.comment }),
         }, resolved.session)
-        if (!outcome.ok) return cardErrorMessage(outcome.error, role)
+        if (!outcome.ok) return cardErrorMessage(outcome.error, role, outcome.ref)
         const ignored = outcome.ignored === undefined || outcome.ignored.length === 0 ? '' : `（忽略了不认识的字段：${outcome.ignored.join('、')}）`
         return args.id === undefined
-          ? `已落幽灵卡 [${outcome.ref}]（${ROLE_NAMES[role]}·待用户采纳）${ignored}。`
+          ? `已落卡 [${outcome.ref}]（${ROLE_NAMES[role]}·已进 brief，画布上带红点）${ignored}。`
           : `已更新 [${outcome.ref}]${ignored}。`
       }
       if (args.what === 'chapter') {
@@ -300,14 +300,15 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
       }
       if (args.what === 'review') {
         if (args.target === undefined || args.id === undefined || args.action === undefined) {
-          return '失败：what=review 要给 target（card|pending）、id 和 action（accept|discard|archive|retract）。'
+          return '失败：what=review 要给 target（card|pending）、id 和 action（待审项 accept|discard，卡片 archive）。'
         }
         if (args.target === 'card') {
-          const outcome = await store.reviewCard({ workId, id: args.id, action: args.action }, resolved.session)
-          if (!outcome.ok) return outcome.error === 'missing' ? `失败：没有卡片 ${args.id}。` : `失败：这张卡当前状态不接受 ${args.action}（${outcome.error ?? 'io'}）。`
-          const names: Readonly<Record<ReviewAction, string>> = { accept: '已采纳（进 brief）', discard: '已丢弃（归档）', archive: '已归档', retract: '已撤销自动入库（归档）' }
-          return `${names[args.action]}：${args.id}。`
+          if (args.action !== 'archive') return '失败：卡片只能 archive（归档）；要改内容用 novel_write(what=card, id=…, fields=…)。'
+          const outcome = await store.archiveCard({ workId, id: args.id }, resolved.session)
+          if (!outcome.ok) return outcome.error === 'missing' ? `失败：没有卡片 ${args.id}。` : `失败：这张卡已经归档了（${outcome.error ?? 'io'}）。`
+          return `已归档：${args.id}。`
         }
+        if (args.action === 'archive') return '失败：待审项只能 accept 或 discard。'
         const outcome = await store.decidePending({ workId, id: args.id, action: args.action === 'accept' ? 'accept' : 'discard' }, resolved.session)
         if (!outcome.ok) return outcome.error === 'missing' ? `失败：没有待审项 ${args.id}。` : `失败：${outcome.error ?? 'io'}`
         return args.action === 'accept' ? `已采纳并落库：${args.id}。` : `已丢弃：${args.id}。`
@@ -355,12 +356,11 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
         }
         return report.error === 'missing' ? `失败：没有第 ${args.chapter} 章。` : `失败：${report.error ?? 'io'}`
       }
-      const waiting = report.pending + report.proposedCards.length
       const lines = [
-        `计划命中 ✓×${report.verified} / 计划落空 ×${report.missed} / 自动入库 ×${report.autoImported} / 待你确认 ×${waiting}${report.dropped.length === 0 ? '' : ` / 丢弃 ×${report.dropped.length}`}`,
+        `计划命中 ✓×${report.verified} / 计划落空 ×${report.missed} / 新卡 ×${report.newCards.length} / 待你确认 ×${report.pending}${report.dropped.length === 0 ? '' : ` / 丢弃 ×${report.dropped.length}`}`,
       ]
-      if (report.proposedCards.length > 0) {
-        lines.push('画布上的新幽灵卡（用户采纳后进 brief）：', ...report.proposedCards.map(card => `- ${ROLE_NAMES[card.role]}「${card.text}」`))
+      if (report.newCards.length > 0) {
+        lines.push('画布上的新卡（已进 brief，画布上带红点；不对的让用户改或归档，要补内容按编号改这张，不要另起）：', ...report.newCards.map(card => `- [${card.ref ?? card.cardId}] ${ROLE_NAMES[card.role]}「${card.text}」`))
       }
       if (report.pendingItems.length > 0) {
         lines.push('待确认清单：', ...report.pendingItems.map(item => `- [${item.id}] ${item.reason}`))
@@ -369,7 +369,8 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
         lines.push('丢弃（防编造闸）：', ...report.dropped.map(drop => {
           const why = drop.reason === 'evidence-not-found' ? '原文引用在正文里 grep 不到'
             : drop.reason === 'id-not-in-ledger' ? '伏笔 id 不在活跃榜单'
-              : drop.reason === 'card-refused' ? '画布拒绝了这张卡' : '角色不在花名册'
+              : drop.reason === 'card-refused' ? '画布拒绝了这张卡'
+                : drop.reason === 'duplicate' ? '画布上已有同名卡' : '角色不在花名册'
           return `- ${drop.kind}「${drop.ref}」：${why}`
         }))
       }
@@ -380,11 +381,65 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
   return [tagOrigin(read), tagOrigin(write), tagOrigin(extract)]
 }
 
+/** The tool that binds a session to a work — present in every session the grant scope owns, bound or not. */
+export const NOVEL_BIND_TOOL = 'novel_bind'
+
+/**
+ * Build `novel_bind`: the model's own way to the binding the chip gives the
+ * user. No `work` lists the 长篇小说 canvases; a `work` binds the calling
+ * session to it, and the novel_* tools appear from the next step on (the
+ * host re-assembles the tool list per step). It is the one novel tool an
+ * unbound session holds, so the model can bind by the conversation's
+ * subject instead of asking the user to find the chip.
+ * @param store - the novel service the tool delegates to.
+ * @param granted - settles the calling agent's grant after a bind, so the
+ *   tools are registered before the reply says they are (the binding event's
+ *   own re-check is not awaited by anyone).
+ * @returns the tagged definition, registered once for the mounting scope.
+ */
+export function novelBindDefinition(store: NovelService, granted: (agent: Agent) => Promise<void>): ToolDefinition {
+  const listing = (works: readonly { title: string }[]): string =>
+    works.length === 0
+      ? '还没有体裁为「长篇小说」的画布：请用户在画布里新建一张，⋯ → 创作体裁选「长篇小说」。'
+      : `长篇小说作品：${works.map(work => `《${work.title}》`).join('、')}`
+  const bind = defineTool({
+    name: NOVEL_BIND_TOOL,
+    description:
+      'Bind this session to a novel work (a 长篇小说 canvas) so the novel_* tools appear. No work: list the works. '
+      + 'Bind when the conversation is about one of them; if it is unclear which, ask the user.',
+    parameters: {
+      work: { type: 'string', description: 'The work\'s title (or canvas id). Omit to list.' },
+    },
+    output: {
+      schema: { type: 'string' },
+      render: (_args, value) => [{ type: 'text', text: String(value) }],
+    },
+    execute: async (args: { work?: string }, exec: { agent?: Agent }): Promise<string> => {
+      const agent = exec.agent
+      const current = agent === undefined ? undefined : await store.boundWork(String(agent.session.id))
+      if (args.work === undefined || args.work.trim() === '') {
+        const works = await store.listWorks()
+        return [listing(works), current === undefined ? '本会话未绑定。' : `本会话已绑定《${current.title}》。`].join('\n')
+      }
+      if (agent === undefined) return '失败：这次调用没有会话，无法绑定。'
+      const bound = await store.bindWork(args.work, agent.session)
+      if (!bound.ok) {
+        if (bound.error === 'ambiguous') return `「${args.work}」对应多部作品，请问用户是哪一部：${bound.works.map(work => `《${work.title}》`).join('、')}`
+        if (bound.error === 'missing') return `没有叫「${args.work}」的长篇小说作品。${listing(bound.works)}`
+        return `失败：${bound.error}`
+      }
+      await granted(agent)
+      return `已绑定《${bound.work.title}》：novel_read / novel_write / novel_extract 从下一步起可用，先加载 novel skill。用户可在会话头的画布 chip 里改绑或解绑。`
+    },
+  })
+  return tagOrigin(bind)
+}
+
 /** One card in full, as `novel_read(what=card)` answers it. */
 async function cardDetail(store: NovelService, workId: string, entries: WorkEntries, cardId: string, role: EntryRole): Promise<string> {
   const note = entries.annotations.notes[cardId]
   const audit = note?.extractedBy === 'llm'
-    ? `来源：第${note.firstChapter ?? '?'}章对账（${note.confidence ?? '?'}${note.autoImported === true ? ' · 自动·可撤销' : ''}）${note.evidenceInText === undefined ? '' : `「${note.evidenceInText}」`}`
+    ? `来源：第${note.firstChapter ?? '?'}章对账（${note.confidence ?? '?'}）${note.evidenceInText === undefined ? '' : `「${note.evidenceInText}」`}`
     : undefined
   const join = (items: readonly string[]): string => items.length === 0 ? '—' : items.join('、')
   if (role === 'character') {
@@ -392,7 +447,7 @@ async function cardDetail(store: NovelService, workId: string, entries: WorkEntr
     const experiences = await store.listExperiences({ workId, characterId: cardId })
     const current = view.currentState
     return [
-      `[${view.ref}] ${view.name}${view.identity === undefined ? '' : `（${view.identity}）`}${cardFlags(entries, cardId, view.cardStatus)}`,
+      `[${view.ref}] ${view.name}${view.identity === undefined ? '' : `（${view.identity}）`}${cardFlags(view.cardStatus)}`,
       `内核：想要 ${view.want ?? '—'}；缺失 ${view.lack ?? '—'}；旧伤 ${view.wound ?? '—'}`,
       `外貌 ${view.appearance ?? '—'}；说话方式 ${view.voice ?? '—'}`,
       `知道的事：${join(view.knows)}`,
@@ -408,7 +463,7 @@ async function cardDetail(store: NovelService, workId: string, entries: WorkEntr
     const view = entries.foreshadows.find(candidate => candidate.cardId === cardId)!
     const mentions = await store.listMentions({ workId, foreshadowId: cardId })
     return [
-      `[${view.ref}] ${view.question}${cardFlags(entries, cardId, view.cardStatus)}`,
+      `[${view.ref}] ${view.question}${cardFlags(view.cardStatus)}`,
       `状态：${foreshadowFacts(view)}`,
       ...(view.answer === undefined ? [] : [`答案：${view.answer}`]),
       ...(mentions.length === 0 ? [] : ['轨迹：', ...mentions.map(mention => `- 第${mention.chapter}章 ${mention.kind}${mention.planned ? '（计划内）' : ''}${mention.note === undefined ? '' : ` ${mention.note}`}`)]),
@@ -417,7 +472,7 @@ async function cardDetail(store: NovelService, workId: string, entries: WorkEntr
   }
   const view = entries.rules.find(candidate => candidate.cardId === cardId)!
   return [
-    `[${view.ref}] ${ROLE_NAMES[view.role]}：${view.text}${cardFlags(entries, cardId, view.status)}`,
+    `[${view.ref}] ${ROLE_NAMES[view.role]}：${view.text}${cardFlags(view.status)}`,
     ...(audit === undefined ? [] : [audit]),
   ].join('\n')
 }

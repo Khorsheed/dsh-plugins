@@ -58,17 +58,50 @@ export class FakeCanvas implements CanvasBoardSlice {
     return this.bindings.get(sessionId)
   }
 
+  async listCanvases(): Promise<{ items: { id: string; title: string; archivedAt: string | null; genre?: string }[] }> {
+    return {
+      items: [...this.boards.values()].map(board => ({
+        id: board.id, title: board.title, archivedAt: null,
+        ...(board.genre === undefined ? {} : { genre: board.genre.id }),
+      })),
+    }
+  }
+
+  async bindSession(request: { readonly canvasId: string | null }, session: object): Promise<
+    { ok: true; canvasId: string | null } | { ok: false; error: string }
+  > {
+    const sessionId = String((session as { id: unknown }).id)
+    if (request.canvasId !== null) {
+      const board = this.boards.get(request.canvasId)
+      if (board === undefined) return { ok: false, error: 'missing' }
+      if (board.genre === undefined) return { ok: false, error: 'no-genre' }
+    }
+    this.bind(sessionId, request.canvasId)
+    return { ok: true, canvasId: request.canvasId }
+  }
+
   registerGenre(definition: NovelGenreDefinition): () => void {
     this.genres.push(definition)
     return () => { this.genres.splice(this.genres.indexOf(definition), 1) }
   }
 
-  async putCard(request: CardCreate): Promise<NovelBoardMutation> {
-    return this.create(request, 'kept', 'user')
-  }
-
-  async proposeCard(request: CardCreate & { readonly comment?: string }): Promise<NovelBoardMutation> {
-    return this.create(request, 'proposed', 'agent', request.comment)
+  async proposeCard(request: CardCreate & { readonly comment?: string; readonly live?: boolean }): Promise<NovelBoardMutation> {
+    const board = this.boards.get(request.canvasId)
+    if (board === undefined) return { ok: false, error: 'missing' }
+    if (!board.categories.some(category => category.id === request.kind)) return { ok: false, error: 'invalid-name' }
+    const card: NovelCardView = {
+      id: `c_${++this.seq}`,
+      kind: request.kind,
+      text: request.text,
+      status: request.live === true ? 'kept' : 'proposed',
+      ...(request.fields === undefined ? {} : { fields: request.fields }),
+      ...(request.source === undefined ? {} : { source: request.source }),
+      comments: request.comment === undefined ? [] : [{ author: 'agent', text: request.comment }],
+      createdBy: 'agent',
+    }
+    const next = { ...board, cards: [...board.cards, card] }
+    this.boards.set(board.id, next)
+    return { ok: true, board: next }
   }
 
   async patchCard(request: {
@@ -89,25 +122,6 @@ export class FakeCanvas implements CanvasBoardSlice {
       ...card,
       comments: [...card.comments, { author: request.author ?? 'agent', text: request.text }],
     }))
-  }
-
-  private create(request: CardCreate, status: NovelCardStatus, createdBy: 'user' | 'agent', comment?: string): NovelBoardMutation {
-    const board = this.boards.get(request.canvasId)
-    if (board === undefined) return { ok: false, error: 'missing' }
-    if (!board.categories.some(category => category.id === request.kind)) return { ok: false, error: 'invalid-name' }
-    const card: NovelCardView = {
-      id: `c_${++this.seq}`,
-      kind: request.kind,
-      text: request.text,
-      status,
-      ...(request.fields === undefined ? {} : { fields: request.fields }),
-      ...(request.source === undefined ? {} : { source: request.source }),
-      comments: comment === undefined ? [] : [{ author: 'agent', text: comment }],
-      createdBy,
-    }
-    const next = { ...board, cards: [...board.cards, card] }
-    this.boards.set(board.id, next)
-    return { ok: true, board: next }
   }
 
   private update(canvasId: string, cardId: string, change: (card: NovelCardView) => NovelCardView): NovelBoardMutation {

@@ -1,14 +1,14 @@
 /**
  * The three novel tools against the seeded store: the binding resolution
  * (guidance without a bound novel canvas, never a throw), the no-workspace
- * refusal, the ghost-card write, the review verb, and the extract two-phase with the
+ * refusal, the live card write, the review verb, and the extract two-phase with the
  * review gate held.
  */
 import { Context } from '@deepseek-ai/cordis'
 import type { Session } from '@deepseek-ai/dsh-session'
 import { describe, expect, it } from 'vitest'
 import { NovelService } from '../src/store.ts'
-import { novelToolDefinitions } from '../src/tools.ts'
+import { novelBindDefinition, novelToolDefinitions } from '../src/tools.ts'
 import { provideCanvas } from './fake-canvas.ts'
 import { FakeFs } from './fake-fs.ts'
 import { CARD, DREAM, seedDreamKeeper } from './seed-dream.ts'
@@ -39,6 +39,32 @@ async function call(tool: { execute: (args: never, exec: never) => Promise<unkno
   return typeof outcome === 'string' ? outcome : String(outcome)
 }
 
+describe('novel_bind', () => {
+  it('lists the works, binds by title (exact, then unique part), and refuses what it cannot resolve', async () => {
+    const { store, canvas, read } = await bench()
+    const granted: string[] = []
+    const bind = novelBindDefinition(store, async (agent) => { granted.push(String(agent.session.id)) })
+    canvas.addBoard({ id: 'canvas_plain0001', title: '杂记', genre: null })
+    canvas.addBoard({ id: 'canvas_novel0002', title: '梦境监护者外传' })
+    const listed = await call(bind, {})
+    expect(listed).toContain('《梦境监护者》')
+    expect(listed).not.toContain('杂记')
+    expect(listed).toContain('本会话未绑定')
+    // A part shared by two works is ambiguous: the model asks the user.
+    expect(await call(bind, { work: '梦境' })).toContain('对应多部作品')
+    expect(await call(bind, { work: '杂记' })).toContain('没有叫「杂记」')
+    // The exact title wins over the longer one containing it.
+    expect(await call(bind, { work: '《梦境监护者》' })).toContain('已绑定《梦境监护者》')
+    expect(canvas.bindings.get('s-tools')).toBe(DREAM.workId)
+    // The grant settles before the reply promises the tools; refusals never reach it.
+    expect(granted).toEqual(['s-tools'])
+    expect(await call(read, { what: 'brief' })).not.toContain('还没有绑定')
+    expect(await call(bind, {})).toContain('本会话已绑定《梦境监护者》')
+    expect(await call(bind, { work: '外传' })).toContain('已绑定《梦境监护者外传》')
+    expect(await call(bind, { work: '外传' }, false)).toContain('没有会话')
+  })
+})
+
 describe('the novel tools', () => {
   it('answers guidance (never a throw) when the session is bound to no novel canvas or no agent is there', async () => {
     const { read, write, extract, canvas } = await bench()
@@ -61,14 +87,15 @@ describe('the novel tools', () => {
     expect(await call(write, { what: 'chapter', chapter: 1, title: '第一章', content: '没地方放。' })).toContain('还没有挂工作区')
   })
 
-  it('novel_write(card) lands a ghost card that stays out of the brief until accepted', async () => {
+  it('novel_write(card) lands a live card, in the ledger at once; ✗ is archive, the only card review', async () => {
     const { canvas, write, read } = await bench({ bound: true })
     const answer = await call(write, { what: 'card', role: '伏笔', fields: { question: '梦主可能是赵启明的妹妹？', bogus: 1 } })
-    expect(answer).toContain('已落幽灵卡 [#19]（伏笔·待用户采纳）')
+    expect(answer).toContain('已落卡 [#19]（伏笔·已进 brief，画布上带红点）')
     expect(answer).toContain('忽略了不认识的字段：bogus')
-    const brief = await call(read, { what: 'brief', for: 'write' })
-    expect(brief).not.toContain('梦主可能是')
-    expect(await call(write, { what: 'review', target: 'card', id: '#19', action: 'accept' })).toContain('已采纳')
+    expect(await call(read, { what: 'ledger' })).toContain('[#19] 梦主可能是')
+    expect(await call(write, { what: 'review', target: 'card', id: '#19', action: 'accept' })).toContain('只能 archive')
+    expect(await call(write, { what: 'review', target: 'card', id: '#19', action: 'archive' })).toContain('已归档：#19')
+    expect(await call(read, { what: 'ledger' })).not.toContain('梦主可能是')
     // An edit by ref merges into the card in place.
     expect(await call(write, { what: 'card', role: '人物', id: 'c1', fields: { voice: '说话更短了' } })).toContain('已更新 [c1]')
     expect(canvas.card(DREAM.workId, CARD.zhao)?.fields?.voice).toBe('说话更短了')

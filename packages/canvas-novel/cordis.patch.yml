@@ -2,8 +2,9 @@
 # profile, so `dsh plugin --profile <name> add @khorsheed/dsh-canvas-novel`
 # reconciles it into the bundles layer. The first row is a bare mount — the
 # host half provides the `canvasNovel` service (the novel engine's state
-# under $DSH_HOME/state/novel). The genre has no browser half of its own:
-# its surfaces render inside the canvas.
+# under $DSH_HOME/state/novel) and the `novel` Remote. Its browser half
+# (dsh.client) contributes the pending strip and the ledger/chapter pages
+# to the canvas's genre seams; without the canvas it renders nothing.
 #
 # NOTE: a composition must mount this row id exactly once. Official images
 # mount no canvas-novel row, so plugin-adding this package is the install

@@ -38,7 +38,7 @@ import { rasterizeDrawing } from './raster.ts'
 import { canvasErrorOf } from './service.ts'
 import {
   CANVAS_FILE_NAME, CANVAS_STATE_DIR_NAME, computeKindCounts, defaultCategories, documentHeadingOf,
-  emptyStats, isBoardCardStatus, isCardCategoryId, isGenreId, isManuscriptId, isManuscriptStatus, isQuestionState, makeBoardId,
+  emptyStats, isBoardCardKind, isBoardCardStatus, isCardCategoryId, isGenreId, isManuscriptId, isManuscriptStatus, isQuestionState, makeBoardId,
   manuscriptFileName, MANUSCRIPT_DIR_NAME, MAX_BOARD_MANUSCRIPTS, MAX_MANUSCRIPT_TEXT_LENGTH,
   MAX_CARD_TEXT_LENGTH, MAX_COMMENT_TEXT_LENGTH, normalizeBoard, normalizeCanvasId, normalizeManuscriptSources,
   hasDrawings, normalizeCategories, normalizeDrawings, normalizeLanes, normalizeLinks, normalizePositions,
@@ -46,7 +46,7 @@ import {
   sanitizeCanvasTitle, summarizeBoard,
   type BoardAddCommentRequest, type BoardArchiveRequest,
   type BoardAttachImageOutcome, type BoardAttachImageRequest,
-  type BoardCard, type BoardCategory, type BoardCreateRequest, type BoardDecideTypeRequest,
+  type BoardCard, type BoardCardKind, type BoardCategory, type BoardCreateRequest, type BoardDecideTypeRequest,
   type BoardProposeTypeRequest, type BoardProposeTypeResult, type BoardSetTypeBriefRequest,
   type CanvasImageRef, type CanvasStroke,
   type BoardDeleteCanvasRequest, type BoardDeleteCanvasResult, type BoardDeleteCardRequest,
@@ -55,7 +55,7 @@ import {
   type CanvasGenreDefinition, type CanvasGenreSummary,
   type BoardImageBytesOutcome, type BoardImageBytesRequest,
   type BoardListResult, type BoardMutationResult,
-  type BoardPatchCardRequest, type BoardProposeCardRequest, type BoardPutCardRequest,
+  type BoardMarkSeenRequest, type BoardPatchCardRequest, type BoardProposeCardRequest, type BoardPutCardRequest,
   type BoardReadOutcome, type BoardReadRequest, type BoardSetCategoriesRequest,
   type BoardSetLayoutRequest,
   type BoardManuscript, type CanvasBoard, type CanvasError, type CanvasImageError, type CanvasSummary,
@@ -314,6 +314,7 @@ export class CanvasBoardService {
       if (current === 'missing') return { ok: false, error: 'missing' }
       if (current === 'corrupt') return { ok: false, error: 'io' }
       const now = new Date().toISOString()
+      this.catchUpGenre(current.board)
       const next = change(current.board, now)
       if (typeof next === 'string') return { ok: false, error: next }
       next.stats.kindCounts = computeKindCounts(next.cards)
@@ -508,11 +509,31 @@ export class CanvasBoardService {
           if (request.status === 'archived') board.stats.proposed.rejected += 1
         }
         card.status = request.status
+        if (request.status === 'archived') delete card.unseen
       }
       if (request.question !== undefined && card.kind === 'question' && card.question !== undefined) {
         card.question.state = request.question.state
       }
       card.updatedAt = now
+      return board
+    })
+  }
+
+  /**
+   * Clear the 「新」 mark the user has looked at: the given cards, or every
+   * unseen card on the canvas. A mark is a reading receipt, not an edit, so
+   * `updatedAt` stays; a write with nothing to clear is refused as `missing`
+   * rather than rewriting the file for nothing.
+   * @param request - canvas id and, optionally, the card ids.
+   * @param session - the session that owns the gesture; supplies the fence.
+   * @returns the fresh board and token, or the failure code.
+   */
+  async markSeen(request: BoardMarkSeenRequest, session: Session): Promise<BoardMutationResult> {
+    const only = request.cardIds === undefined ? undefined : new Set(request.cardIds)
+    return this.mutate(request.canvasId, session, board => {
+      const seen = board.cards.filter(card => card.unseen === true && (only === undefined || only.has(card.id)))
+      if (seen.length === 0) return 'missing'
+      for (const card of seen) delete card.unseen
       return board
     })
   }
@@ -680,7 +701,8 @@ export class CanvasBoardService {
 
   /**
    * The agent's card entrance (`canvas_write` op=card): proposed and awaiting
-   * the user's ✓/✗, createdBy agent. A question card starts OPEN even when
+   * the user's ✓/✗, createdBy agent — or, with `live`, kept at once and
+   * marked unseen (the board's 「新」) for a genre that skips the ghost. A question card starts OPEN even when
    * the proposal carries a rationale comment — exploring means work the user
    * has seen, not the proposal's arrival (the §4 rule applies to comments on
    * cards already on the board).
@@ -702,9 +724,10 @@ export class CanvasBoardService {
         id: makeBoardId('c', Date.now(), randomSuffix()),
         kind: request.kind,
         text,
-        status: 'proposed',
+        status: request.live === true ? 'kept' : 'proposed',
         comments: [],
         createdBy: 'agent',
+        ...(request.live === true ? { unseen: true as const } : {}),
         createdAt: now,
         updatedAt: now,
         ...(request.kind === 'question' ? { question: { state: 'open' as const } } : {}),
@@ -944,6 +967,36 @@ export class CanvasBoardService {
     }
   }
 
+  /**
+   * Catch a genre canvas up with a newer version of its genre, on the board's
+   * next write: each role category's card type gains the fields the genre's
+   * seed added since (by key, at the seed's position), and nothing the user
+   * changed is touched — their labels, hints, extra fields and values stay.
+   * The genre record then carries the new version. A canvas whose genre is
+   * not registered (the plugin is gone) is left exactly as it is.
+   * @param board - the board read for this write; changed in place.
+   */
+  private catchUpGenre(board: CanvasBoard): void {
+    const genre = board.genre === undefined ? undefined : this.genres.get(board.genre.id)
+    if (board.genre === undefined || genre === undefined || board.genre.version === genre.version) return
+    for (const seed of genre.categories) {
+      const category = board.categories.find(candidate => candidate.role === seed.role)
+      const fresh = seed.definition === undefined ? undefined : normalizeDefinition(seed.definition)
+      const stored = category?.definition
+      if (category === undefined || fresh === undefined || stored === undefined) continue
+      const kept = new Map(stored.fields.map(field => [field.key, field]))
+      if (fresh.fields.every(field => kept.has(field.key))) continue
+      const seeded = new Set(fresh.fields.map(field => field.key))
+      category.definition = {
+        ...stored,
+        version: stored.version + 1,
+        fields: [...fresh.fields.map(field => kept.get(field.key) ?? field), ...stored.fields.filter(field => !seeded.has(field.key))],
+        example: fresh.example,
+      }
+    }
+    board.genre = { ...board.genre, version: genre.version }
+  }
+
   /** One registered genre, by id. */
   genre(genreId: string): CanvasGenreDefinition | undefined {
     return this.genres.get(genreId)
@@ -965,8 +1018,12 @@ export class CanvasBoardService {
   /**
    * Select a genre for one canvas, or clear it. Selecting seeds every role
    * category the canvas does not have yet (matched by role, so a renamed
-   * category is still found); clearing keeps the categories and their cards
-   * and only unloads the genre — and unbinds the sessions bound to it.
+   * category is still found), and switches off the built-in categories that
+   * hold no card — a genre brings its own categories, and an empty 灵感/问题
+   * chip beside them is only noise (2026-10-05). A built-in that holds cards
+   * stays on. Clearing keeps the genre's categories and their cards, turns
+   * the built-ins it switched off back on, unloads the genre — and unbinds
+   * the sessions bound to it.
    * @param request - canvas id and the genre id, or null.
    * @param session - the session that owns the gesture; supplies the fence.
    * @returns the fresh board and token, or the failure code.
@@ -976,8 +1033,19 @@ export class CanvasBoardService {
     if (request.genreId !== null && genre === undefined) return { ok: false, error: 'missing' }
     const result = await this.mutate(request.canvasId, session, (board, now) => {
       if (genre === undefined) {
+        for (const category of board.categories) {
+          if (board.genre?.hid?.includes(category.id as BoardCardKind) === true) category.enabled = true
+        }
         delete board.genre
         return board
+      }
+      // Only the first selection steps the built-ins aside; switching genres
+      // keeps the record, so a later clear still restores them.
+      const hid = board.genre !== undefined ? board.genre.hid ?? [] : board.categories
+        .filter(category => isBoardCardKind(category.id) && category.enabled && !board.cards.some(card => card.kind === category.id))
+        .map(category => category.id as BoardCardKind)
+      for (const category of board.categories) {
+        if (hid.includes(category.id as BoardCardKind)) category.enabled = false
       }
       let last = board.categories.reduce((max, category) => Math.max(max, category.order), 0)
       for (const seed of genre.categories) {
@@ -994,7 +1062,7 @@ export class CanvasBoardService {
           role: seed.role,
         })
       }
-      board.genre = { id: genre.id, version: genre.version, selectedAt: now }
+      board.genre = { id: genre.id, version: genre.version, selectedAt: now, ...(hid.length === 0 ? {} : { hid }) }
       return board
     })
     if (!result.ok) return result

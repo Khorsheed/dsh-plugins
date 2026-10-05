@@ -1,6 +1,6 @@
 /**
- * The《梦境监护者》seed: one work with canon rules, a principle, a ghost
- * card, the three-chapter foreshadow ledger (plus one resolved with its
+ * The《梦境监护者》seed: one work with canon rules, a principle, a
+ * canvas-native proposed card (never in the brief), the three-chapter foreshadow ledger (plus one resolved with its
  * answer), two characters with their experience journal, five extracted
  * chapters with recaps and manuscripts, and the sixth chapter in planning
  * with its plan — the CP1 brief fixture (proposal §9's acceptance data:

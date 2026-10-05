@@ -19,7 +19,7 @@
  * @module @khorsheed/dsh-canvas/client
  */
 import { useRef, useState, type ReactNode } from 'react'
-import { IconArchiveOutlineMedium, IconCheckOutlineMedium, IconChevronDownOutlineMedium, IconChevronRightOutlineMedium, IconCloseOutlineMedium, IconCodeOutlineMedium, IconLinkOutlineMedium, IconListPenOutlineMedium, IconNewChatOutlineMedium, IconRefreshOutlineMedium, IconSparkleMedium, IconTrashOutlineMedium } from '../icons.tsx'
+import { IconArchiveOutlineMedium, IconCheckDoubleOutlineMedium, IconCheckOutlineMedium, IconChevronDownOutlineMedium, IconChevronRightOutlineMedium, IconCloseOutlineMedium, IconCodeOutlineMedium, IconLinkOutlineMedium, IconListPenOutlineMedium, IconNewChatOutlineMedium, IconRefreshOutlineMedium, IconSparkleMedium, IconTrashOutlineMedium } from '../icons.tsx'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import {
   documentHeadingOf, enabledCategories, isLongCardText,
@@ -97,6 +97,14 @@ export interface BoardViewProps {
   readonly onToggleArchived: () => void
   /** The new-card slot at the end of the grid; absent on a read-only board. */
   readonly newCard?: NewCardSlot | undefined
+  /**
+   * The cards held at the front of the grid this visit (AGENT's new ones, as
+   * they were when the canvas opened): seeing one keeps it in place, so the
+   * order never shifts under the reader.
+   */
+  readonly front?: ReadonlySet<string> | undefined
+  /** Clear every 「新」 mark of the canvas (the chip row's ✓✓); absent on a read-only board. */
+  readonly onMarkAllSeen?: (() => void) | undefined
 }
 
 /** One comment thread under a card (badge toggle + list + the user's form). */
@@ -279,6 +287,9 @@ function CardItem({ t, board, card, definition, nameOf, kindLabel, kindColor, re
           {selected && <IconCheckOutlineMedium size={11} />}
         </button>
       )}
+      {card.unseen === true && !proposed && (
+        <span className={css.unseenDot} role="img" title={t('card.unseen')} aria-label={t('card.unseen')} />
+      )}
       {proposed && (
         <span className={css.ghostFlag}>
           <IconSparkleMedium size={12} />
@@ -410,18 +421,35 @@ function CardItem({ t, board, card, definition, nameOf, kindLabel, kindColor, re
 /**
  * The cards the board shows under one filter, in the order it shows them:
  * the live (non-archived) cards, narrowed to one category unless the filter
- * is 全部. The detail's ‹n/m› steps through exactly this list, so stepping
- * past a card means the card that sat next to it on the board.
+ * is 全部, with the `front` cards (this visit's new ones) moved ahead in
+ * their board order. The detail's ‹n/m› steps through exactly this list, so
+ * stepping past a card means the card that sat next to it on the board.
  */
-export function shownCardsOf(board: CanvasBoard, filter: 'all' | CardCategoryId): readonly BoardCard[] {
+export function shownCardsOf(
+  board: CanvasBoard,
+  filter: 'all' | CardCategoryId,
+  front?: ReadonlySet<string>,
+): readonly BoardCard[] {
   const visible = board.cards.filter(card => card.status !== 'archived')
-  return filter === 'all' ? visible : visible.filter(card => card.kind === filter)
+  const shown = filter === 'all' ? visible : visible.filter(card => card.kind === filter)
+  if (front === undefined || front.size === 0) return shown
+  return [...shown.filter(card => front.has(card.id)), ...shown.filter(card => !front.has(card.id))]
+}
+
+/** A chip's count of AGENT's new cards: red, so it reads as "new" at a glance. */
+function UnseenBadge({ t, count }: { readonly t: TranslateNS<'canvas'>; readonly count: number }): ReactNode {
+  return (
+    <span className={css.unseenBadge} title={t('board.unseenCount', { count: String(count) })}>
+      +{count}
+    </span>
+  )
 }
 
 /** The board view. */
 export function BoardView({
   t, readonly, board, filter, onFilter, selection, onToggleSelect, onClearSelection, onOpenDetail,
   talkAvailable, onTalk, onWrite, onFollowUp, actions, showArchived, onToggleArchived, newCard,
+  front, onMarkAllSeen,
 }: BoardViewProps): ReactNode {
   /** The batch bar's 「改分类」 row is open (it replaces the action row). */
   const [refile, setRefile] = useState(false)
@@ -432,9 +460,14 @@ export function BoardView({
   const archived = board.cards.filter(card => card.status === 'archived')
   const labels = categoryLabelMap(board.categories, t)
   const counts = new Map<CardCategoryId, number>()
-  for (const card of visible) counts.set(card.kind, (counts.get(card.kind) ?? 0) + 1)
+  const unseen = new Map<CardCategoryId, number>()
+  for (const card of visible) {
+    counts.set(card.kind, (counts.get(card.kind) ?? 0) + 1)
+    if (card.unseen === true) unseen.set(card.kind, (unseen.get(card.kind) ?? 0) + 1)
+  }
+  const unseenTotal = [...unseen.values()].reduce((sum, n) => sum + n, 0)
   const chips = enabledCategories(board.categories)
-  const shown = shownCardsOf(board, filter)
+  const shown = shownCardsOf(board, filter, front)
   const draftKind: CardCategoryId = filter !== 'all' && chips.some(category => category.id === filter)
     ? filter
     : chips[0]?.id ?? 'fragment'
@@ -467,6 +500,7 @@ export function BoardView({
             onClick={() => { onFilter('all') }}
           >
             {t('board.filter.all')} <span className={css.chipCount}>{visible.length}</span>
+            {unseenTotal > 0 && <UnseenBadge t={t} count={unseenTotal} />}
           </button>
           {chips.map(category => {
             const KindIcon = kindIconOf(category.id)
@@ -483,12 +517,24 @@ export function BoardView({
                 {KindIcon !== undefined && <KindIcon size={12} />}
                 {labels.get(category.id) ?? category.id}{' '}
                 <span className={css.chipCount}>{counts.get(category.id) ?? 0}</span>
+                {(unseen.get(category.id) ?? 0) > 0 && <UnseenBadge t={t} count={unseen.get(category.id) ?? 0} />}
                 {(category.proposal !== undefined || category.draft === true) && (
                   <span className={css.chipPending} title={t('type.pending')} />
                 )}
               </button>
             )
           })}
+          {unseenTotal > 0 && onMarkAllSeen !== undefined && (
+            <button
+              type="button"
+              className={css.markSeen}
+              title={t('action.markAllSeen')}
+              aria-label={t('action.markAllSeen')}
+              onClick={onMarkAllSeen}
+            >
+              <IconCheckDoubleOutlineMedium size={14} />
+            </button>
+          )}
           {!readonly && (
             <button
               type="button"

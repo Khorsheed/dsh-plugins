@@ -1,6 +1,6 @@
 # bundle-writing（写作模式 preset）
 
-一句话：**装上它，canvas-novel 的 agent 能力（novel_read/write/extract 三工具、novel:pointer 轻指引、novel skill）只在「写作」preset 的会话里生效**；普通会话的工具列表和系统提示里完全没有小说工具的痕迹。
+一句话：**装上它，canvas-novel 的 agent 能力（novel_bind 与 novel_read/write/extract 工具、novel:pointer 轻指引、novel skill）只在「写作」preset 的会话里生效**；普通会话的工具列表和系统提示里完全没有小说工具的痕迹。
 
 本包是**声明式 preset bundle**（`dsh.bundle.kind: preset-declarations`，AGENTS.md 约定）：patch 只含一行 `@deepseek-ai/dsh-agent-preset`（loader id `preset-writing`），没有自己的运行时代码。
 
@@ -20,7 +20,7 @@ dsh plugin --profile <name> add @khorsheed/dsh-bundle-writing
 ```
 
 - **只装 canvas-novel**：得到小说引擎的 store，画布里多出「长篇小说」体裁；任何会话都没有 novel 工具。
-- **再装 bundle-writing**：出现「写作」preset；把会话切到它，三工具 + 轻指引 + skill 才存在。
+- **再装 bundle-writing**：出现「写作」preset；把会话切到它，novel 工具 + 轻指引 + skill 才存在（novel_bind 绑定作品后，读写对账三工具才出现）。
 
 缺席行为：只装 bundle-writing 不装 canvas-novel 时，preset 行的授予保持惰性（工具不存在、不炸）；装上 canvas-novel 即生效。宿主 0.1.7-rc.1 之前的行没有 `@deepseek-ai/dsh-agent-preset` 行类型，本包无法挂载（见 package.json `dsh.compat`）。
 

@@ -2,14 +2,14 @@
  * The store's core verbs on the《梦境监护者》seed and on a fresh work:
  * a work is a 长篇小说 canvas (served by the fake canvas), numbering rules
  * (n max+1, file from n, refs per numbering space), the session binding,
- * the review gate, the ghost-card review flow on the canvas cards, the
+ * the review gate, live agent cards and their archive verb, the
  * ledger, the JSONL journals, and the re-rooted fence (the canvas store's
  * pattern).
  */
 import { Context } from '@deepseek-ai/cordis'
 import type { Session } from '@deepseek-ai/dsh-session'
 import { describe, expect, it } from 'vitest'
-import { NovelService, resolveNovelStateRoot } from '../src/store.ts'
+import { manuscriptParagraphs, NovelService, resolveNovelStateRoot } from '../src/store.ts'
 import { chapterFileName, chapterNumberOfFile, effectiveChapterPhase } from '../src/types.ts'
 import { FakeCanvas, provideCanvas } from './fake-canvas.ts'
 import { FakeFs } from './fake-fs.ts'
@@ -120,32 +120,35 @@ describe('the novel store', () => {
     expect(effectiveChapterPhase({ ...again.chapter!, phase: 'reviewed' }, false)).toBe('fileMissing')
   })
 
-  it('runs the ghost-card review flow: a proposal stays out of the brief until ✓, ✗ archives', async () => {
+  it('lands an agent card live: in the brief at once, ✗ archives', async () => {
     const fs = new FakeFs()
     seedDreamKeeper(fs)
     const ctx = new Context()
     ctx.provide('fs', fs as never)
     const canvas = provideCanvas(ctx)
     const store = new NovelService(ctx, { stateRoot: DREAM.stateRoot })
-    const written = await store.writeCard({ workId: DREAM.workId, role: 'world', fields: { rule: '钟楼是两层梦的接缝。' } }, SESSION)
+    const written = await store.writeCard({ workId: DREAM.workId, role: 'world', fields: { name: '钟楼', kind: '地点', rule: '钟楼是两层梦的接缝。' } }, SESSION)
     // The entry space is shared by rules and foreshadows: #18 is the max, so the new rule draws w19.
     expect(written).toMatchObject({ ok: true, ref: 'w19' })
-    expect(canvas.card(DREAM.workId, written.cardId!)).toMatchObject({ status: 'proposed', createdBy: 'agent' })
-    // A ghost stays out of the brief's canon set…
-    const before = await store.gatherBrief({ workId: DREAM.workId })
-    expect(before.data?.canonRules.some(view => view.text.includes('接缝'))).toBe(false)
-    // …until ✓ keeps it.
-    expect((await store.reviewCard({ workId: DREAM.workId, id: 'w19', action: 'accept' }, SESSION)).ok).toBe(true)
+    expect(canvas.card(DREAM.workId, written.cardId!)).toMatchObject({ status: 'kept', createdBy: 'agent' })
+    // Live means canon: the brief carries it at once, no ✓ in between.
     const after = await store.gatherBrief({ workId: DREAM.workId })
     expect(after.data?.canonRules.some(view => view.text.includes('接缝'))).toBe(true)
-    // ✗ archives the seeded ghost; the card stays on the board, hidden.
-    expect((await store.reviewCard({ workId: DREAM.workId, id: 'w6', action: 'discard' }, SESSION)).ok).toBe(true)
+    // ✗ archives a card — the seeded canvas-native proposal too; it stays on the board, hidden.
+    expect((await store.archiveCard({ workId: DREAM.workId, id: 'w6' }, SESSION)).ok).toBe(true)
     expect(canvas.card(DREAM.workId, CARD.dreamLayers)?.status).toBe('archived')
-    // Accept/discard need a ghost; a kept card refuses them.
-    expect((await store.reviewCard({ workId: DREAM.workId, id: 'w1', action: 'accept' }, SESSION)).error).toBe('invalid-name')
-    // A proposal needs its role's main field; the next one draws max+1.
+    // A proposal needs every required field (a world card its name too); the next one draws max+1.
     expect((await store.writeCard({ workId: DREAM.workId, role: 'world', fields: {} }, SESSION)).error).toBe('invalid-name')
-    expect((await store.writeCard({ workId: DREAM.workId, role: 'world', fields: { rule: '又一条。' } }, SESSION)).ref).toBe('w20')
+    expect((await store.writeCard({ workId: DREAM.workId, role: 'world', fields: { rule: '又一条。' } }, SESSION)).error).toBe('invalid-name')
+    expect((await store.writeCard({ workId: DREAM.workId, role: 'world', fields: { name: '又一条', rule: '又一条。' } }, SESSION)).ref).toBe('w20')
+    // A name a live card already holds is refused, naming that card.
+    expect(await store.writeCard({ workId: DREAM.workId, role: 'world', fields: { name: '又一条', rule: '换个说法。' } }, SESSION))
+      .toMatchObject({ ok: false, error: 'duplicate', ref: 'w20' })
+    expect(await store.writeCard({ workId: DREAM.workId, role: 'character', fields: { name: '艾文' } }, SESSION))
+      .toMatchObject({ ok: false, error: 'duplicate', ref: 'c2' })
+    // The brief names a world card by its title.
+    const named = await store.gatherBrief({ workId: DREAM.workId })
+    expect(named.data?.canonRules.find(view => view.ref === 'w19')?.text).toBe('钟楼（地点）：钟楼是两层梦的接缝。')
   })
 
   it('reads the ledger off the seed (沉睡优先, health counts)', async () => {
@@ -166,7 +169,6 @@ describe('the novel store', () => {
     const workId = freshWork(canvas, '流水')
     const character = await store.writeCard({ workId, role: 'character', fields: { name: '甲' } }, SESSION)
     expect(character.ref).toBe('c1')
-    await store.reviewCard({ workId, id: 'c1', action: 'accept' }, SESSION)
     // A hand-corrupted line stays on disk but drops out of the view.
     fs.seed(`/dsh/state/novel/${workId}/experiences.jsonl`, '{"characterId":"c1","chapter":1,"entry":"好行","createdAt":"t"}\nnot-json\n')
     const before = await store.listExperiences({ workId })
@@ -250,6 +252,14 @@ describe('the novel store', () => {
     expect(refused).toEqual({ ok: false, error: 'no-workspace' })
   })
 
+  it('paragraphs a manuscript written one line per paragraph, and leaves a spaced one alone', () => {
+    expect(manuscriptParagraphs('第一段。\n第二段。\n')).toBe('第一段。\n\n第二段。\n')
+    expect(manuscriptParagraphs('\r\n  缩进的一段。\r\n“对白。”')).toBe('  缩进的一段。\n\n“对白。”\n')
+    const spaced = '第一段。\n\n第二段，\n续行。\n'
+    expect(manuscriptParagraphs(spaced)).toBe(spaced)
+    expect(manuscriptParagraphs('只有一段。')).toBe('只有一段。')
+  })
+
   it('the chapter file vocabulary round-trips (the invariant probe shares it)', () => {
     expect(chapterNumberOfFile(chapterFileName(60))).toBe(60)
     expect(chapterNumberOfFile('第6章.txt')).toBeUndefined()
@@ -272,12 +282,10 @@ describe('the novel store', () => {
     expect((await store.writeCard({ workId: DREAM.workId, role: 'foreshadow', id: 'w2', fields: { question: 'x' } }, SESSION)).ok).toBe(false)
     expect((await store.writeCard({ workId: DREAM.workId, role: 'world', id: 'w2', fields: { bogus: 'x' } }, SESSION)).error).toBe('invalid-name')
     // Archive retires the kept card; a second archive refuses.
-    expect((await store.reviewCard({ workId: DREAM.workId, id: 'w2', action: 'archive' }, SESSION)).ok).toBe(true)
+    expect((await store.archiveCard({ workId: DREAM.workId, id: 'w2' }, SESSION)).ok).toBe(true)
     const after = await store.gatherBrief({ workId: DREAM.workId })
     expect(after.data?.canonRules.some(view => view.cardId === CARD.leafCarrier)).toBe(false)
-    expect((await store.reviewCard({ workId: DREAM.workId, id: 'w2', action: 'archive' }, SESSION)).ok).toBe(false)
-    // Retract is for automatic imports only.
-    expect((await store.reviewCard({ workId: DREAM.workId, id: 'w1', action: 'retract' }, SESSION)).ok).toBe(false)
+    expect((await store.archiveCard({ workId: DREAM.workId, id: 'w2' }, SESSION)).ok).toBe(false)
   })
 
   it('confirmChapterPlan stamps the gate and is idempotent; a planless chapter refuses', async () => {

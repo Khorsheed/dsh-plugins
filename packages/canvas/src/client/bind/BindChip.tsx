@@ -40,6 +40,9 @@ function bindable(items: readonly CanvasSummary[]): CanvasSummary[] {
   return items.filter(row => row.genre !== undefined && row.archivedAt === null)
 }
 
+/** How often the chip re-reads a binding the model may have moved (the board poll's pace). */
+const BIND_POLL_MS = 4000
+
 export function CanvasBindChip(props: CanvasBindChipProps): ReactNode {
   const shown = useSyncExternalStore(props.subscribe, props.offered)
   return shown ? <BindMenu {...props} /> : null
@@ -60,6 +63,23 @@ function BindMenu({ t, boundCanvas, bindCanvas, listCanvases, openCanvas }: Canv
   // Read on mount (the label names the bound canvas) and again on every open:
   // a canvas may have gained a genre, or been deleted, since.
   useEffect(() => { void reload().catch(() => {}) }, [reload])
+
+  // The model binds too (a genre's bind tool), and nothing announces that to
+  // this surface — so while the page is in view, re-read the binding every
+  // few seconds, and the list once when it names a canvas the chip has not
+  // seen (a canvas created since).
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (document.visibilityState !== 'visible') return
+      void boundCanvas().then((current) => { if (current.ok) setBound(current.value) }).catch(() => {})
+    }, BIND_POLL_MS)
+    return () => { clearInterval(timer) }
+  }, [boundCanvas])
+  const unseen = bound !== null && !rows.some(row => row.id === bound)
+  useEffect(() => {
+    if (!unseen) return
+    void listCanvases().then((list) => { if (list.ok) setRows(bindable(list.value.items)) }).catch(() => {})
+  }, [unseen, listCanvases])
 
   const pick = async (canvasId: string | null): Promise<void> => {
     const result = await bindCanvas(canvasId)

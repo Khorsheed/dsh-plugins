@@ -2,7 +2,7 @@
 
 Turns dsh into a workbench for serialized long-form fiction. One work spans dozens of sessions and a hundred chapters, and the model has to do four things: remember the canon, know where the last chapter ended, never let a foreshadow die, and never write a character wrong. Full-text injection cannot do these; this package can.
 
-**A work is a canvas whose genre is 长篇小说**. The cards on that canvas are the single source of truth for the settings, organized in four categories: 人物 (characters), 世界 (world), 原则 (principles) and 伏笔 (foreshadows). This package registers the genre with the canvas and provides the work-memory engine: refs, reconciliation, the ledger and the briefs. It has no browser half of its own; its whole UI lives inside the canvas.
+**A work is a canvas whose genre is 长篇小说**. The cards on that canvas are the single source of truth for the settings, organized in four categories: 人物 (characters), 世界 (world), 原则 (principles) and 伏笔 (foreshadows). This package registers the genre with the canvas and provides the work-memory engine: refs, reconciliation, the ledger and the briefs. Its browser half only adds UI to the canvas's genre seams (the pending strip, the foreshadow ledger page, the chapter reader page) and opens no entry of its own.
 
 It replaces the retired `@khorsheed/dsh-story-bible`. Data under the old `$DSH_HOME/state/story/` is **not migrated**.
 
@@ -10,21 +10,22 @@ It replaces the retired `@khorsheed/dsh-story-bible`. Data under the old `$DSH_H
 
 - **Genre registration** (joined through deferred injection on `ctx.canvasBoard`; no canvas, no genre):
   - A canvas created as, or switched to, 长篇小说 is seeded with the four categories.
-  - Each category carries its card field definitions. For example, a character has name, identity, want, lack and wound; a foreshadow has question, status, planted-at and answer.
+  - Each category carries its card field definitions. For example, a character has name, identity, want, lack and wound; a world card has name, kind and setting; a foreshadow has question, status, planted-at and answer.
 - **Engine service `ctx.canvasNovel`**: the engine's own state lives in `$DSH_HOME/state/novel/<canvas id>/`, in five files:
 
   | File | Contents |
   |---|---|
-  | `annotations.json` | The cards' display refs and engine notes: tension, current state, confidence, the auto-import mark |
+  | `annotations.json` | The cards' display refs and engine notes: tension, current state, confidence |
   | `experiences.jsonl` | The character experience journal, keyed by character card id |
   | `mentions.jsonl` | The foreshadow mention journal, keyed by foreshadow card id |
   | `chapters.json` | The chapter index and plans |
   | `pending.json` | The pending review queue |
 
   The single source of truth for manuscripts is `<workspace>/<canvas title>/第{n}章.md` in the canvas's mounted workspace.
-- **Three model tools**, registered by the `./agent` composition entry and origin-tagged:
+- **Model tools**, registered by the `./agent` composition entry and origin-tagged:
+  - `novel_bind`: lists the long-novel works and binds the calling session to one by title; it sits on the grant scope, so unbound sessions have it too;
   - `novel_read`: the brief in three variants, cards, card, chapters, ledger, pending, chapter;
-  - `novel_write`: card proposes a ghost card or edits a card by ref, chapter numbers automatically, review accepts, discards, archives or retracts;
+  - `novel_write`: card lands a new card or edits a card by ref, chapter numbers automatically, review handles pending items (accept, discard), archives cards and retracts experiences;
   - `novel_extract`: prepare builds the material pack, import files the result through five validation gates.
 - **The `novel:pointer` function section** (order 9500): renders one line when the session is bound to a long-novel canvas, and an empty string otherwise, so small talk costs nothing.
 - **The `novel` skill**: an on-demand operating manual that carries no work content.
@@ -32,13 +33,14 @@ It replaces the retired `@khorsheed/dsh-story-bible`. Data under the old `$DSH_H
 ## Key design
 
 - **The session binding decides scope**: the canvas chip in the session header binds a session to a canvas.
-  - Only sessions bound to a long-novel canvas get the three tools; they are granted and revoked on the session's own scope.
+  - Only sessions bound to a long-novel canvas get the read/write/extract tools; they are granted and revoked on the session's own scope.
+  - There are two ways to bind: the model calls `novel_bind` from what the conversation is about (asking the user when it is unclear which work), or the user picks one in the chip. In an unbound session the pointer says only "novel_bind first".
   - Unbinding, or changing the canvas's genre, revokes them at once.
-  - In an unbound session the tools are absent, not denied.
+  - In an unbound session those three tools are absent, not denied.
 - **The cards are the single source of truth**:
-  - Every setting the model creates is a **ghost card** (the canvas's proposed status). It stays out of the brief until the user accepts it with ✓; ✗ discards it into the archive.
+  - Every setting the model creates **lands live**: it enters the brief and the ledger at once and can be named by ref. New cards carry a red dot and sit first on the canvas until opened or archived; each category chip shows a red +N of its new cards, and the ✓✓ next to the chips marks them all seen. Fix a wrong card in place, or archive it with ✗.
   - Cards are never deleted; an archived card stays on the canvas, hidden.
-  - An edit merges fields into the card in place instead of starting a new one.
+  - An edit merges fields into the card in place instead of starting a new one; a character or world name holds only one card, and a new card reusing it is refused.
 - **Refs**:
   - Characters use `c<n>`.
   - World and principle cards use `w<n>`, and foreshadows use `#<n>`. These three share one number space, so `w19` and `#19` never coexist.
@@ -49,8 +51,8 @@ It replaces the retired `@khorsheed/dsh-story-bible`. Data under the old `$DSH_H
   - All five reconciliation gates live in plugin code:
     1. an evidence search of the manuscript, against fabrication;
     2. the foreshadow whitelist;
-    3. new settings, foreshadows and characters always land as ghost cards;
-    4. high confidence imports automatically and can be retracted, while medium and low confidence go to the pending queue;
+    3. new settings, foreshadows and characters land live, marked new;
+    4. high confidence imports directly (experiences can be retracted), while medium and low confidence go to the pending queue;
     5. missed plans go to the pending queue on their own.
   - Delegating the grading to the host's native subagent is the main agent's job; the plugin itself never delegates.
 - **Briefs have token budgets**: about 2k for write, about 2.5k for plan, and extract scales with the manuscript. No variant injects every previous chapter or every foreshadow.
@@ -68,7 +70,7 @@ The patch mounts two rows:
 | Row | Contents | As shipped |
 |---|---|---|
 | `canvas-novel` | The core: genre plus engine | Available everywhere |
-| `canvas-novel-agent` | The three tools, the pointer and the skill | **Disabled** at the profile root |
+| `canvas-novel-agent` | The four tools, the pointer and the skill | **Disabled** at the profile root |
 
 The agent surface belongs to the writing scene, not to every session.
 
@@ -84,8 +86,8 @@ Enabling the root row by hand (removing `disabled: true`) makes it apply to ever
 
 ## Quick start
 
-1. Create a canvas with the 长篇小说 genre and mount a workspace on it. Bind the session to it with the canvas chip in the session header.
-2. Talk through the settings. The model files them as ghost cards, and you accept them with ✓ or discard them with ✗ on the canvas.
+1. Create a canvas with the 长篇小说 genre and mount a workspace on it. Talk about the work in a writing session and the model binds it with `novel_bind`; you can also bind by hand with the canvas chip in the session header.
+2. Talk through the settings. The model files them as live cards with a red dot on the canvas; glance over them, fix or archive (✗) the wrong ones, then click ✓✓ to mark them all seen.
 3. Plan. `novel_write(what=chapter, plan=…)` registers the plan; once confirmed, start writing.
    - The manuscript lands in the canvas workspace through the session's fence.
    - If it cannot land, the registration is refused, so an empty-slot chapter never appears.
@@ -93,7 +95,13 @@ Enabling the root row by hand (removing `disabled: true`) makes it apply to ever
    - Handle the pending items, then close the chapter with 「✓ 审过」.
    - The phase lamp runs: planning → writing → extracted → reviewed.
 
-**UI status**: card faces, card sections, the board strip and the session-header binding chip ride the canvas's genre seams. The chapter reader, the foreshadow ledger page and the pending strip have no UI yet; use the tools for that part for now.
+**UI inside the canvas**: card faces, card sections and the session-header binding chip ride the canvas's genre seams; this package's browser half adds a long-novel strip at the top of the board:
+
+- **Chapter chips**: one per chapter with its phase lamp; a click opens the chapter reader page. The page shows the phase lamp and the chapter plan at the top (with 「✓ 确认计划」), this chapter's pending items and the manuscript in the middle, and 「✓ 审过本章」 at the bottom. While the chapter is not extracted or still has pending items the button is disabled, and the bar says what is missing.
+- **Foreshadow ledger**: shows the active and overdue counts; a click opens the ledger page, which lists each foreshadow's status, tension, chapters asleep and its chapter-by-chapter mention track, drawing a planned-but-missed cell dashed.
+- **Pending N**: appears only while there is something to review and unfolds in place (accept / discard, or "got it" for a missed plan); the board refreshes after each answer.
+
+A read-only canvas (one not opened from a session) can be read but not acted on: no pending answers, no review.
 
 ## Compatibility
 

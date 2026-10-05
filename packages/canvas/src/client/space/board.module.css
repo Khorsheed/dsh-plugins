@@ -671,6 +671,51 @@
   align-self: flex-start;
 }
 
+/* AGENT's new card: a red dot on the card's top-left corner (the select box
+   owns the top-right one); it goes when the card is opened or archived. */
+.unseenDot {
+  position: absolute;
+  top: -4px;
+  left: -4px;
+  z-index: 2;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--dsw-alias-state-error-primary);
+  box-shadow: 0 0 0 2px var(--dsw-alias-bg-base);
+}
+
+/* A chip's "+N new": red text on a faint red pill, after the plain count. */
+.unseenBadge {
+  padding: 0 5px;
+  border-radius: 999px;
+  font: var(--dsw-font-xxxs-11);
+  font-variant-numeric: tabular-nums;
+  color: var(--dsw-alias-state-error-primary);
+  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 12%, transparent);
+}
+
+/* The chip row's ✓✓ (mark all seen): an icon button at the row's end. */
+.markSeen {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.markSeen:hover {
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+}
+
 .ghostActions {
   display: flex;
   gap: 6px;

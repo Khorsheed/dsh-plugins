@@ -9,7 +9,7 @@
  * it whose session is bound to a 长篇小说 canvas — and nowhere else.
  */
 import { Context } from '@deepseek-ai/cordis'
-import { createScope, scopeTarget } from '@deepseek-ai/dsh-scope'
+import { bindScopeParent, createScope, scopeTarget } from '@deepseek-ai/dsh-scope'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -90,14 +90,14 @@ describe('the preset-granted agent surface (composition level)', () => {
     }
 
     const granted = await root.systemPrompt.assemble({ scope: inKey, agent: { sessionId: 's-in' } as never })
-    expect(novelToolsOf(granted).sort()).toEqual(['novel_extract', 'novel_read', 'novel_write'])
+    expect(novelToolsOf(granted).sort()).toEqual(['novel_bind', 'novel_extract', 'novel_read', 'novel_write'])
     expect(granted.sections.find(section => section.name === 'novel:pointer')?.text).toContain('《梦境监护者》')
     expect(skills.registered.map(skill => skill.name)).toEqual(['novel'])
 
-    // The scope itself holds the pointer and the skill, but no tools: an unbound
-    // session there renders '' and sees no novel tool.
+    // The scope itself holds the pointer, the skill and novel_bind only: a
+    // session it never composed renders '' and sees just the way to bind.
     const unbound = await root.systemPrompt.assemble({ scope: key, agent: { sessionId: 's-none' } as never })
-    expect(novelToolsOf(unbound)).toEqual([])
+    expect(novelToolsOf(unbound)).toEqual(['novel_bind'])
     expect(unbound.sections.find(section => section.name === 'novel:pointer')?.text).toBe('')
 
     // An agent outside the scope never hears of the entry, bound or not.
@@ -109,6 +109,43 @@ describe('the preset-granted agent surface (composition level)', () => {
     canvas.bind('s-in', null)
     root.emit('canvas/binding-changed' as never, 's-in' as never, null as never)
     await new Promise(resolve => { setTimeout(resolve, 0) })
-    expect(novelToolsOf(await root.systemPrompt.assemble({ scope: inKey }))).toEqual([])
+    const after = await root.systemPrompt.assemble({ scope: inKey, agent: { sessionId: 's-in' } as never })
+    expect(novelToolsOf(after)).toEqual(['novel_bind'])
+    expect(after.sections.find(section => section.name === 'novel:pointer')?.text).toContain('novel_bind')
+  })
+
+  it('adopts an agent a preset switch moved into the scope, and drops it when it moves out', async () => {
+    const { root, canvas } = await bootRoot()
+    const writingKey = {}
+    const standardKey = {}
+    const writing = createScope(root, writingKey)
+    const standard = createScope(root, standardKey)
+    // The agent was composed under the standard preset: its agent/created
+    // never reached the writing scope.
+    const agentKey = {}
+    const agentScope = createScope(root, agentKey)
+    const parent = bindScopeParent(agentKey, standardKey)
+    disposers.push(async () => { await agentScope.dispose(); await writing.dispose(); await standard.dispose() })
+    const agent = { session: { id: 's-moved' }, ctx: agentScope.ctx }
+    root.provide('agents' as never, { list: () => [agent], get: (id: string) => id === 's-moved' ? agent : undefined } as never)
+    agentApply(writing.ctx)
+    canvas.bind('s-moved', DREAM.workId)
+    await new Promise(resolve => { setTimeout(resolve, 0) })
+    const before = await root.systemPrompt.assemble({ scope: agentKey, agent: { sessionId: 's-moved' } as never })
+    expect(novelToolsOf(before)).toEqual([])
+
+    // The host's select(): rebind the agent's scope parent in place, then announce.
+    parent.rebind(writingKey)
+    root.emit('agent-preset/selected' as never, 's-moved' as never, 'writing' as never)
+    await new Promise(resolve => { setTimeout(resolve, 0) })
+    const moved = await root.systemPrompt.assemble({ scope: agentKey, agent: { sessionId: 's-moved' } as never })
+    expect(novelToolsOf(moved).sort()).toEqual(['novel_bind', 'novel_extract', 'novel_read', 'novel_write'])
+
+    // Switched back out: the agent's own scope must not keep this plane's tools.
+    parent.rebind(standardKey)
+    root.emit('agent-preset/selected' as never, 's-moved' as never, 'standard' as never)
+    await new Promise(resolve => { setTimeout(resolve, 0) })
+    const left = await root.systemPrompt.assemble({ scope: agentKey, agent: { sessionId: 's-moved' } as never })
+    expect(novelToolsOf(left)).toEqual([])
   })
 })

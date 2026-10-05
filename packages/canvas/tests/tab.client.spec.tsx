@@ -847,7 +847,7 @@ describe('CanvasTab — genre seats (创作体裁)', () => {
     await screen.findByText('卡片 c_1')
     fireEvent.click(screen.getByRole('button', { name: '画布操作' }))
     await screen.findByRole('menuitem', { name: '删除画布…' })
-    expect(screen.queryByRole('menuitem', { name: '创作体裁' })).toBeNull()
+    expect(screen.queryByText('创作体裁')).toBeNull()
     expect(renderSlot).not.toHaveBeenCalled()
   })
 
@@ -857,7 +857,8 @@ describe('CanvasTab — genre seats (创作体裁)', () => {
     render(<CanvasTab {...props} listGenres={vi.fn(async () => ({ ok: true, value: [NOVEL_SUMMARY] })) as never} selectGenre={selectGenre as never} />)
     await screen.findByText('卡片 c_1')
     fireEvent.click(screen.getByRole('button', { name: '画布操作' }))
-    fireEvent.click(await screen.findByRole('menuitem', { name: '创作体裁' }))
+    // The choices sit inline under the heading — no submenu to open.
+    await screen.findByText('创作体裁')
     fireEvent.click(await screen.findByRole('menuitem', { name: '长篇小说' }))
     await waitFor(() => {
       expect(selectGenre).toHaveBeenCalledWith('s1', { canvasId: CANVAS_ID, genreId: 'novel' })
