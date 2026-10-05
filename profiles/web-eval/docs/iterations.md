@@ -421,7 +421,7 @@ T30c（2026-09-09 加）：效率表今天只有 token 与时长，工具调用�
 | T95 | 代码（2026-10-03 定，即派） | **添加题集弹窗能选目录**：「数据在哪」旁加「选择目录…」（输入框保留，仍可填文件 / 公开数据集名字或链接）；「新仓库放在 …」可用「更改…」另选，默认仍是 `datasetsHome` | T90、T94 | ✅ 合入 `e13b54b7`（+`20d95221` skill 措辞）；待用户 3185 走查——3185 用户走查：两处都能弹系统目录选择器、取消不清空原值；改过的仓库位置写进给 Agent 的请求，Agent 在那里建仓并能提申请；宿主没有选择器时按钮隐藏，手填照常 |
 | T96 | 代码（2026-10-04 定，即派） | **整理完到登记的衔接与评审页、添加弹窗的观感**：整理会话里直接能进「核对并登记」；评审页加载快且有像样的加载态；返回按钮像按钮；添加弹窗与其他弹窗同宽、仓库位置一行重排 | T90、T95 | ✅ 合入 `42f5d9d9`；待用户 3185 走查——3185 用户走查：整理完在会话里一步进评审；评审页打开无长时间白屏「正在核对…」；返回有图标按钮；添加弹窗宽度与「新建实验」等弹窗一致，仓库位置一行整齐 |
 | T97 | 代码（2026-10-05 定，即派） | **题集、实验室在左侧栏有全局入口**：评测模式首页只有聊天框，没法新建题集和实验；左侧栏加「题集」「实验室」两个入口（宿主 `sidebar.panellist` + `main` 全局面板，与「插件」「任务」同一机制），不进会话也能浏览、添加题集、新建实验 | T96 | ✅ 合入 `544caceb`；待用户 3185 走查——3185 用户走查：首页左侧栏点「题集」「实验室」直接打开各自页面；在那里「添加题集」「新建实验」各开一个新会话并带好请求；会话里的「题集」「实验室」页签照常可用 |
-| T98 | 代码（2026-10-06 定，即派） | **题集文件归类与题目详情措辞**：HumanEval 的 `prompt/prompt.py` 被标成「其他文件」，应是题干；「没有检查脚本」在 `verify/test.py` 存在时读来自相矛盾；可判性说明是未翻译的英文 | T97 | 3185 用户走查：HumanEval 题目树里 `prompt.py` 标「题干」，「题干」筛选能筛到；题目详情右侧措辞与文件对得上；中文界面不再出现英文说明 |
+| T98 | 代码（2026-10-06 定，即派；✅ `c4f14a0a`） | **题集文件归类与题目详情措辞**：HumanEval 的 `prompt/prompt.py` 被标成「其他文件」，应是题干；「没有检查脚本」在 `verify/test.py` 存在时读来自相矛盾；可判性说明是未翻译的英文 | T97 | 3185 用户走查：HumanEval 题目树里 `prompt.py` 标「题干」，「题干」筛选能筛到；题目详情右侧措辞与文件对得上；中文界面不再出现英文说明 |
 | T45 | 代码 + profile | eval 模式化（单实例多模式，见 proposals/active/2026-08-26-mode-switcher.md）：datasets / mission / eval 的工具行拆成不 provide 的伴生工具包进 eval preset；local-agent 家族 provider 名从 config 读，eval 用命名 provider 行承载 live / sandbox / 端点 pin；web-eval 从独立 profile 模板变成可装进主实例的场景包；I5 三个界面按自隐约定只在 eval 模式的会话显示 | T29 T31 T35–T38 mode-switcher M4' | |
 
 eval 模式化（2026-09-11 规划）：目标是日常实例里能开一个 eval 模式的会话看结果、起小 run，别的会话看不见 datasets / mission / eval 的工具与界面。三层边界先说死：模型可见的工具与 UI 按会话（preset 授予 + 自隐约定）；服务面、Remote 与斜杠命令永远实例级（`ctx.provide` 的包进不了 preset，提案实测）；provider 的实例级 pin 靠命名 provider 行共存（官方支持同产品多命名实例，家族今天名字写死在包里）。三笔改造：拆工具行成伴生包（提案 M4' 形态，lab 无工具不用拆）、命名 provider（T29 的 scope 与 T31 的 lock 已把 provider 配置收进条件哈希，隔离从必须变偏好）、场景包形态（patch 层的 pin 要么进 preset 要么进命名行）。**重的 pilot 仍在 ~/.dsh-lab 的独立实例跑**：就绪探测与判官委派在宿主上跑，danger-full-access 的委派不与日常会话共处，测量纯净性与爆炸半径两条理由与提案一致；两边共用同一套包。文案在 T29、T31、M4' 落地后写。
@@ -4649,6 +4649,19 @@ DSH_HARNESS=~/code/deepseek-harness-0.2.0。
 - 协调者补一笔 `20d95221`：SKILL 第 2 问改成「用请求里给的完整仓库路径」（原文写「请求点名 datasets home」）。
 - 协调者门禁：干净构建；datasets 307、eval 1259、test:scripts 298 全过；check:plugins / hygiene --all 0 finding。截图（1440 / 390、明暗、中英）看过：两个按钮在位，390 无横向滚动。
 - 记账不阻塞：英文下「Choose a folder…」换到输入框下方；390 宽英文时弹窗需内部滚动（T90 原有）。
+
+#### T98 合入（2026-10-06）
+
+- 合入 `c4f14a0a`。`slots.ts` 新增按角色+路径的归类 `slotOfRolePath`，放在路径规则之后、角色回落之前，宿主和浏览器共用：
+  - 选手可见：层名或登记布局目录名是 prompt / prompts / task，或文件名以 `prompt`、`problem_statement` 开头 → 题干。
+  - 只有判官可见：文件名以 canonical_solution / solution / answer / gold / patch 开头 → 参考答案（简报外的补充，原先 HumanEval、MMLU 的答案文件落成「评估标准」）。
+  - 两条规则各限本角色，grading 层的 `prompt_for_judge.md` 不算题干，发给选手的 `solution.py` 不算答案。
+  - 选手可见但没被点名的文件仍回落「其他文件」，不默认成题干：SWE-bench 的仓库快照、夹具和数据文件会淹没真正的题干。
+  - HumanEval、MMLU、SWE-bench Lite 三种布局各一条测试，夹具只是 (层, 路径) 对。
+- 措辞：verify 层有文件但没有探针时显示「有检查材料，但没接成可执行的探针：跑实验时不会自动判分」，悬停解释探针是什么；什么都没有时仍是「没有检查脚本」。
+- 本地化：`brief.ts` 的四种可判性说明（no-rubric / no-grading-layer / rubric-invalid / rubric-unreadable）带 code 和参数，客户端按语言翻译，未知 code 显示原文。
+- 仍是英文、列在 Note 里未改：rubric-invalid 里嵌的校验细节、validate 明细的 message、作答记录 `runs.notes`，以及 eval 客户端原样显示的各处说明（LabView、AnswerView、JudgingPage、DesignPage、Inspect）。后者归 eval 包，等走查时看哪些真让人困惑再派。
+- 协调者门禁：main 中途前进一次（canvas-novel），在新 main 上重做合并。干净构建；datasets 357、eval 1274 全过；check:plugins / hygiene --all 0 finding；test:scripts 只挂已知的 `generate-package-map.spec`。截图（题目详情明暗、题干筛选）看过，与描述一致。3185 已重装。
 
 #### T97 合入（2026-10-06）
 
