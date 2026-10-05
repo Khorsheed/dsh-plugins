@@ -39,11 +39,11 @@ import {
 } from './genre.ts'
 import {
   chapterFileName, cleanNumber, cleanText, deriveForeshadowState, effectiveChapterPhase, isOverdue, laterForeshadowState, linesOf, MENTION_TO_STATE,
-  normalizeAnnotations, normalizeChapter, normalizePendingItem, normalizePlan, normalizeWorkId, NOVEL_GENRE_ID,
+  normalizeAnnotations, normalizeChapter, normalizeHistoryEntry, PLOT_FIELDS, plotDiff, plotOf, normalizePendingItem, normalizePlan, normalizeWorkId, NOVEL_GENRE_ID,
   nextMilestoneOf, normalizeRelationEntry, OP_TO_MENTION, parseRef, PTS_PER_LEVEL, MAX_RELATION_DELTA, readRelationStage,
   refGroupOf, refOf, relationEventOf, relationMove, typeChangeOf, relationProgress, relationTypeOf, stageNameOf,
   type Annotations, type CardNote, type ChapterRecord, type ChapterRow, type ChapterTable, type CharacterView, type Confidence,
-  type CurrentState, type EffectiveChapterPhase, type EntryRole, type ExperienceEntry, type ExtractPayload,
+  type CurrentState, type EffectiveChapterPhase, type HistoryChange, type HistoryEntry, type HistorySource, type EntryRole, type ExperienceEntry, type ExtractPayload,
   type ForeshadowView, type ImportDrop, type ImportReport, type LedgerResult, type MentionEntry, type NovelError,
   type PendingItem, type PendingKind, type PendingPayload, type PendingTable, type RefGroup, type RelationEntry, type RelationEvent,
   type RelationType, type RelationView, type RuleView, type WorkMeta, type WriteChapterRequest,
@@ -58,6 +58,7 @@ export const WORK_FILES = {
   experiences: 'experiences.jsonl',
   mentions: 'mentions.jsonl',
   relations: 'relations.jsonl',
+  history: 'history.jsonl',
   chapters: 'chapters.json',
   pending: 'pending.json',
 } as const
@@ -257,6 +258,18 @@ export interface WorkEntries {
   readonly relations: readonly RelationView[]
   /** The newest chapter number — the sleeping baseline. */
   readonly currentChapter: number
+}
+
+/**
+ * One card a gesture wrote, for the change history: on whose behalf, which
+ * plot fields (all, when absent), at which chapter (the current one, when
+ * absent), on what words.
+ */
+export interface CardWrite {
+  readonly source: HistorySource
+  readonly fields?: readonly string[]
+  readonly chapter?: number
+  readonly evidence?: string
 }
 
 /** A resolved card: its id and role. */
@@ -580,15 +593,26 @@ export class NovelService {
   }
 
   /**
-   * Give every role card on the board a display ref, and merge engine notes
-   * in, in one guarded sidecar write. A card keeps the number it has unless
-   * another card in its numbering space holds it already (first in board
-   * order wins); a card without one draws max+1. Nothing is written when
-   * nothing changes, so reads may call this freely.
+   * Give every role card on the board a display ref, merge engine notes in,
+   * and log what moved on the plot fields — one guarded sidecar write. A card
+   * keeps the number it has unless another card in its numbering space holds
+   * it already (first in board order wins); a card without one draws max+1.
+   *
+   * The change history rides the same pass: each character, world and
+   * relation card's plot fields ({@link plotOf}) diff against the snapshot
+   * the sidecar kept; the moves in fields a `writes` entry names go to that
+   * write's source and chapter, every other move is the person's own canvas
+   * edit (你改的, at the current chapter). Character and world moves land in
+   * `history.jsonl`; a relation's own record is its journal, so the person's
+   * edit of its type or stage appends a `type` / `set` line there (the bar
+   * restarts) and our writes journal themselves. The first pass on a work
+   * only takes the snapshot. Nothing is written when nothing changes, so
+   * reads may call this freely.
    * @param workId - the canvas id.
    * @param session - the session that owns the gesture; supplies the fence.
    * @param board - the board as just returned by a card mutation, or undefined to read it.
    * @param notes - per-card note fields to merge (later fields win).
+   * @param writes - the cards this gesture wrote, and on whose behalf.
    * @returns the fresh sidecar, or the failure code.
    */
   async ensureRefs(
@@ -596,11 +620,16 @@ export class NovelService {
     session: Session,
     board?: NovelBoardView,
     notes: ReadonlyMap<string, CardNote> = new Map(),
+    writes: ReadonlyMap<string, CardWrite> = new Map(),
   ): Promise<{ readonly ok: boolean; readonly error?: NovelError; readonly annotations?: Annotations }> {
     const current = board ?? await this.readNovelBoard(workId)
     if (current === undefined) return { ok: false, error: 'missing' }
     const roleOf = rolesOn(current)
+    const currentChapter = (await this.readChapters(current.id)).reduce((max, chapter) => Math.max(max, chapter.n), 0)
+    let historyLines: HistoryEntry[] = []
+    let relationLines: Record<string, unknown>[] = []
     const apply = (data: Annotations): Annotations | undefined => {
+      const now = new Date().toISOString()
       const used: Record<RefGroup, Set<number>> = { character: new Set(), relation: new Set(), entry: new Set() }
       const refs: Record<string, number> = { ...data.refs }
       const waiting: { cardId: string; group: RefGroup }[] = []
@@ -624,7 +653,35 @@ export class NovelService {
         merged[cardId] = { ...merged[cardId], ...note }
         changed = true
       }
-      return changed ? { version: 1, refs, notes: merged } : undefined
+      historyLines = []
+      relationLines = []
+      for (const card of current.cards) {
+        const role = roleOf.get(card.id)
+        if (role === undefined || PLOT_FIELDS[role] === undefined) continue
+        const after = plotOf(role, card.fields, merged[card.id]?.currentState)
+        const before = merged[card.id]?.plot
+        if (before !== undefined && JSON.stringify(before) === JSON.stringify(after)) continue
+        merged[card.id] = { ...merged[card.id], plot: after }
+        changed = true
+        if (data.historySince === undefined) continue
+        const write = writes.get(card.id)
+        if (role === 'relation') {
+          if (write !== undefined) continue
+          relationLines.push(...relationEditLines(card.id, before, after, currentChapter))
+          continue
+        }
+        const line = (source: HistorySource, changes: HistoryChange[], at: CardWrite | undefined): HistoryEntry => ({
+          cardId: card.id, chapter: at?.chapter ?? currentChapter, source, kind: before === undefined ? 'create' : 'change', changes,
+          ...(at?.evidence === undefined ? {} : { evidence: at.evidence }), createdAt: now,
+        })
+        const changes = plotDiff(role, before ?? {}, after)
+        const ours = changes.filter(change => write !== undefined && (write.fields === undefined || write.fields.includes(change.field)))
+        const theirs = changes.filter(change => !ours.includes(change))
+        if (ours.length > 0) historyLines.push(line(write!.source, ours, write))
+        if (theirs.length > 0) historyLines.push(line('user', theirs, undefined))
+      }
+      if (data.historySince === undefined) changed = true
+      return changed ? { version: 1, refs, notes: merged, historySince: data.historySince ?? now } : undefined
     }
     const snapshot = await this.readAnnotations(current.id)
     if (apply(snapshot) === undefined) return { ok: true, annotations: snapshot }
@@ -633,7 +690,11 @@ export class NovelService {
       normalizeAnnotations, emptyAnnotations,
       data => apply(data) ?? data,
     )
-    return outcome.ok ? { ok: true, annotations: outcome.data } : { ok: false, error: outcome.error }
+    if (!outcome.ok) return { ok: false, error: outcome.error }
+    const logged = await this.appendJsonl(await this.fileTarget(current.id, WORK_FILES.history), session, historyLines as unknown as Record<string, unknown>[])
+    if (!logged.ok) return { ok: false, error: logged.error ?? 'io' }
+    const journaled = await this.appendJsonl(await this.fileTarget(current.id, WORK_FILES.relations), session, relationLines)
+    return journaled.ok ? { ok: true, annotations: outcome.data } : { ok: false, error: journaled.error ?? 'io' }
   }
 
   /**
@@ -710,7 +771,8 @@ export class NovelService {
       cardId = mutation.board.cards[mutation.board.cards.length - 1]!.id
     }
     if (!mutation.ok) return { ok: false, error: canvasErrorOf(mutation.error) }
-    const refs = await this.ensureRefs(entries.board.id, session, mutation.board)
+    const write: CardWrite = request.id === undefined ? { source: 'model' } : { source: 'model', fields: Object.keys(fields) }
+    const refs = await this.ensureRefs(entries.board.id, session, mutation.board, new Map(), new Map([[cardId, write]]))
     const n = refs.annotations?.refs[cardId]
     return { ok: true, cardId, ref: n === undefined ? cardId : refOf(request.role, n), ignored }
   }
@@ -801,7 +863,7 @@ export class NovelService {
       })])
       if (!appended.ok) return { ok: false, error: appended.error ?? 'io' }
     }
-    const refs = await this.ensureRefs(entries.board.id, session, mutation.board)
+    const refs = await this.ensureRefs(entries.board.id, session, mutation.board, new Map(), new Map([[cardId, { source: 'model' }]]))
     const n = refs.annotations?.refs[cardId]
     return { ok: true, cardId, ref: n === undefined ? cardId : refOf('relation', n), ignored }
   }
@@ -852,6 +914,14 @@ export class NovelService {
     if (id === undefined) return []
     const entries = await this.readJsonl(await this.fileTarget(id, WORK_FILES.relations), raw => normalizeRelationEntry(raw))
     return entries.filter(entry => request.relationId === undefined || entry.relationId === request.relationId)
+  }
+
+  /** The card change history (plot fields of characters and world cards), optionally one card's, oldest first. */
+  async listHistory(request: { readonly workId: string; readonly cardId?: string }): Promise<HistoryEntry[]> {
+    const id = normalizeWorkId(request.workId)
+    if (id === undefined) return []
+    const entries = await this.readJsonl(await this.fileTarget(id, WORK_FILES.history), raw => normalizeHistoryEntry(raw))
+    return entries.filter(entry => request.cardId === undefined || entry.cardId === request.cardId)
   }
 
   /* ------------------------------------------------------------- chapters */
@@ -1540,6 +1610,7 @@ export class NovelService {
 
     // The writes. Cards first (through the canvas), then the sidecar, the journals, the chapter, the queue.
     const notes = new Map<string, CardNote>()
+    const written = new Map<string, CardWrite>()
     const newCards: { cardId: string; role: EntryRole; text: string }[] = []
     let board = entries.board
     for (const write of cardWrites) {
@@ -1554,6 +1625,7 @@ export class NovelService {
       board = mutation.board
       const cardId = board.cards[board.cards.length - 1]!.id
       notes.set(cardId, write.note)
+      written.set(cardId, { source: 'model', chapter: chapter.n, ...(write.note.evidenceInText === undefined ? {} : { evidence: write.note.evidenceInText }) })
       if (write.role === 'character') {
         newCharacterIds.set(write.ref, cardId)
         roster.add(cardId)
@@ -1749,6 +1821,7 @@ export class NovelService {
       board = mutation.board
       const cardId = board.cards[board.cards.length - 1]!.id
       notes.set(cardId, { evidenceInText: evidence! })
+      written.set(cardId, { source: 'model', chapter: chapter.n })
       newCards.push({ cardId, role: 'relation', text: name })
       relationLines.push(stageLine({ relationId: cardId, chapter: chapter.n, event: 'start', stage, level: 1, evidence: evidence! }))
     }
@@ -1765,8 +1838,11 @@ export class NovelService {
       if (!mutation.ok) return { ok: false, error: canvasErrorOf(mutation.error), ...empty, dropped }
       board = mutation.board
     }
-    for (const [characterId, currentState] of stateUpdates) notes.set(characterId, { currentState })
-    const annotated = await this.ensureRefs(id, session, board, notes)
+    for (const [characterId, currentState] of stateUpdates) {
+      notes.set(characterId, { currentState })
+      if (!written.has(characterId)) written.set(characterId, { source: 'model', fields: ['now'], chapter: chapter.n })
+    }
+    const annotated = await this.ensureRefs(id, session, board, notes, written)
     if (!annotated.ok) return { ok: false, error: annotated.error ?? 'io', ...empty, dropped }
     const refs = annotated.annotations?.refs ?? {}
     const landed = newCards.map(card => refs[card.cardId] === undefined ? card : { ...card, ref: refOf(card.role, refs[card.cardId]!) })
@@ -1934,7 +2010,10 @@ export class NovelService {
       const card = (await this.readEntries(workId))?.board.cards.find(candidate => candidate.id === characterId)
       if (canvas === undefined || card === undefined) return 'missing'
       const mutation = await canvas.patchCard({ canvasId: workId, cardId: characterId, fields: learnFact(card.fields ?? {}, fact, chapter) }, session)
-      return mutation.ok ? undefined : canvasErrorOf(mutation.error)
+      if (!mutation.ok) return canvasErrorOf(mutation.error)
+      const adopted: CardWrite = { source: 'accept', fields: ['knows', 'unaware'], chapter, ...(item.evidenceInText === undefined ? {} : { evidence: item.evidenceInText }) }
+      const logged = await this.ensureRefs(workId, session, mutation.board, new Map(), new Map([[characterId, adopted]]))
+      return logged.ok ? undefined : logged.error ?? 'io'
     }
     if (item.kind === 'relation') {
       const canvas = this.canvas
@@ -1951,6 +2030,8 @@ export class NovelService {
       if (move === undefined) return 'invalid-name'
       const mutation = await canvas.patchCard({ canvasId: workId, cardId: relationId, fields: { ...card.fields, type: move.type, stage: move.stage } }, session)
       if (!mutation.ok) return canvasErrorOf(mutation.error)
+      const logged = await this.ensureRefs(workId, session, mutation.board, new Map(), new Map([[relationId, { source: 'accept', chapter }]]))
+      if (!logged.ok) return logged.error ?? 'io'
       const appended = await this.appendJsonl(await this.fileTarget(workId, WORK_FILES.relations), session, [stageLine({
         relationId, chapter, event, stage: move.stage,
         ...(move.level === undefined ? {} : { level: move.level }),
@@ -1988,6 +2069,24 @@ export function tailOf(body: string, max = 200): string | undefined {
 }
 
 /** One relation-journal stage line, stamped now. */
+/**
+ * The relation journal lines for the person's own edit of a relation card
+ * (the snapshot against the card now): a new card starts, a new type is a
+ * `type` move, any other stage a `set` — each restarts the bar.
+ */
+function relationEditLines(relationId: string, before: Readonly<Record<string, string>> | undefined, after: Readonly<Record<string, string>>, chapter: number): Record<string, unknown>[] {
+  const type = relationTypeOf(after['type'])
+  if (type === undefined || after['stage'] === undefined) return []
+  const read = readRelationStage(type, after['stage'])
+  if (read.level === undefined && read.rift === undefined) return []
+  const stage = read.rift ?? stageNameOf(type, read.level!)
+  const level = read.level === undefined ? {} : { level: read.level }
+  if (before === undefined) return [stageLine({ relationId, chapter, event: 'start', stage, ...level })]
+  const fromType = relationTypeOf(before['type'])
+  if (fromType !== undefined && fromType !== type) return [stageLine({ relationId, chapter, event: 'type', stage, ...level, fromType, toType: type })]
+  return before['stage'] === after['stage'] ? [] : [stageLine({ relationId, chapter, event: 'set', stage, ...level })]
+}
+
 function stageLine(line: {
   readonly relationId: string; readonly chapter: number; readonly event: RelationEvent; readonly stage: string
   readonly level?: number; readonly fromType?: RelationType; readonly toType?: RelationType; readonly evidence?: string

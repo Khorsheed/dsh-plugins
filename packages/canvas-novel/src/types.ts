@@ -120,6 +120,12 @@ export interface CardNote {
   readonly currentState?: CurrentState
   /** Foreshadows only: the user's star (主线重点 — planned first, never trimmed, flagged sooner). */
   readonly starred?: boolean
+  /**
+   * Characters, world cards and relations: the plot fields as the engine
+   * last saw them ({@link plotOf}) — what the next sync diffs the board
+   * against to write the card's change history.
+   */
+  readonly plot?: Readonly<Record<string, string>>
 }
 
 /**
@@ -131,6 +137,11 @@ export interface Annotations {
   readonly version: 1
   readonly refs: Record<string, number>
   readonly notes: Record<string, CardNote>
+  /**
+   * When the change history started (the first sync that snapshotted the
+   * board). Before it, every card's state is taken as given, never logged.
+   */
+  readonly historySince?: string
 }
 
 /** The ref numbering spaces: characters (`c<n>`), relations (`r<n>`) and every other entry (`w<n>` / `#<n>`). */
@@ -180,6 +191,13 @@ function normalizeNote(raw: unknown): CardNote | undefined {
       ...(concern === undefined ? {} : { concern }),
     }
   }
+  if (typeof record['plot'] === 'object' && record['plot'] !== null) {
+    const plot: Record<string, string> = {}
+    for (const [field, value] of Object.entries(record['plot'] as Record<string, unknown>)) {
+      if (typeof value === 'string') plot[field] = value
+    }
+    out.plot = plot
+  }
   return Object.keys(out).length === 0 ? undefined : out
 }
 
@@ -200,7 +218,122 @@ export function normalizeAnnotations(raw: unknown): Annotations | undefined {
     const clean = normalizeNote(note)
     if (clean !== undefined) notes[cardId] = clean
   }
-  return { version: 1, refs, notes }
+  const historySince = cleanText(record['historySince'], 40)
+  return { version: 1, refs, notes, ...(historySince === undefined ? {} : { historySince }) }
+}
+
+/* -------------------------------------------------------------- history */
+
+/**
+ * Who changed a card: 采纳 (the person adopted a pending finding), 模型整理
+ * (the model wrote it — a chat write or the import), 你改的 (the person
+ * edited the card on the canvas, or 此刻 on its page).
+ */
+export type HistorySource = 'accept' | 'model' | 'user'
+
+/** One field's move: a line added or removed (the list fields), or a value replaced. */
+export interface HistoryChange {
+  readonly field: string
+  readonly op: '+' | '−' | '→'
+  readonly value: string
+  /** `→` only: the value before. */
+  readonly from?: string
+}
+
+/** One line of `history.jsonl`: one card's plot fields moving in one write, at one chapter. */
+export interface HistoryEntry {
+  readonly cardId: string
+  readonly chapter: number
+  readonly source: HistorySource
+  /** create: the card's first state (its non-empty fields as `+`); change: a diff. */
+  readonly kind: 'create' | 'change'
+  readonly changes: readonly HistoryChange[]
+  /** The chapter's words that justified it (adopted and imported changes). */
+  readonly evidence?: string
+  readonly createdAt: string
+}
+
+/**
+ * The plot fields per role — what the story is about, not the card's
+ * bookkeeping (a name, a pair, a 现在 line the model rewrites every
+ * chapter). `now` is the character's 此刻, kept in the sidecar, not a field.
+ */
+export const PLOT_FIELDS: Readonly<Partial<Record<EntryRole, readonly string[]>>> = {
+  character: ['identity', 'want', 'lack', 'wound', 'appearance', 'voice', 'knows', 'unaware', 'secrets', 'now'],
+  world: ['kind', 'rule'],
+  relation: ['type', 'stage'],
+}
+
+/** The plot fields read line by line (一行一件): their history is lines added and removed. */
+const LIST_FIELDS = new Set(['knows', 'unaware', 'secrets'])
+
+/** 此刻 as one line: where · state · concern. */
+export function currentStateLine(state: CurrentState | undefined): string {
+  return [state?.where, state?.state, state?.concern].filter(part => part !== undefined && part !== '').join(' · ')
+}
+
+/**
+ * A card's plot fields as text, for the snapshot: list fields one line per
+ * item, the rest trimmed; empty fields absent.
+ */
+export function plotOf(role: EntryRole, fields: Readonly<Record<string, unknown>> | undefined, state?: CurrentState): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const field of PLOT_FIELDS[role] ?? []) {
+    const value = field === 'now' ? currentStateLine(state)
+      : LIST_FIELDS.has(field) ? linesOf(fields?.[field]).join('\n')
+        : typeof fields?.[field] === 'string' || typeof fields?.[field] === 'number' ? String(fields[field]).trim() : ''
+    if (value !== '') out[field] = value
+  }
+  return out
+}
+
+/** What moved between two snapshots of one card, in field order. */
+export function plotDiff(role: EntryRole, before: Readonly<Record<string, string>>, after: Readonly<Record<string, string>>): HistoryChange[] {
+  const changes: HistoryChange[] = []
+  for (const field of PLOT_FIELDS[role] ?? []) {
+    const was = before[field] ?? ''
+    const is = after[field] ?? ''
+    if (was === is) continue
+    if (LIST_FIELDS.has(field)) {
+      const wasLines = was === '' ? [] : was.split('\n')
+      const isLines = is === '' ? [] : is.split('\n')
+      for (const line of isLines) if (!wasLines.includes(line)) changes.push({ field, op: '+', value: line })
+      for (const line of wasLines) if (!isLines.includes(line)) changes.push({ field, op: '−', value: line })
+    } else if (was === '') {
+      changes.push({ field, op: '+', value: is })
+    } else if (is === '') {
+      changes.push({ field, op: '−', value: was })
+    } else {
+      changes.push({ field, op: '→', value: is, from: was })
+    }
+  }
+  return changes
+}
+
+const HISTORY_SOURCES = new Set<HistorySource>(['accept', 'model', 'user'])
+const HISTORY_OPS = new Set(['+', '−', '→'])
+
+/** Tolerant read of one `history.jsonl` line. */
+export function normalizeHistoryEntry(raw: unknown): HistoryEntry | undefined {
+  if (typeof raw !== 'object' || raw === null) return undefined
+  const record = raw as Record<string, unknown>
+  const cardId = cleanText(record['cardId'], 80)
+  const chapter = cleanNumber(record['chapter'])
+  const source = record['source'] as HistorySource
+  const kind = record['kind'] === 'create' ? 'create' : record['kind'] === 'change' ? 'change' : undefined
+  if (cardId === undefined || chapter === undefined || !HISTORY_SOURCES.has(source) || kind === undefined || !Array.isArray(record['changes'])) return undefined
+  const changes: HistoryChange[] = []
+  for (const item of record['changes'] as unknown[]) {
+    if (typeof item !== 'object' || item === null) continue
+    const change = item as Record<string, unknown>
+    const field = cleanText(change['field'], 40)
+    const value = typeof change['value'] === 'string' ? change['value'] : undefined
+    if (field === undefined || value === undefined || !HISTORY_OPS.has(String(change['op']))) continue
+    const from = typeof change['from'] === 'string' ? change['from'] : undefined
+    changes.push({ field, op: change['op'] as HistoryChange['op'], value, ...(from === undefined ? {} : { from }) })
+  }
+  const evidence = cleanText(record['evidence'], 60)
+  return { cardId, chapter, source, kind, changes, ...(evidence === undefined ? {} : { evidence }), createdAt: cleanText(record['createdAt'], 40) ?? '' }
 }
 
 /* ---------------------------------------------------------- experiences */

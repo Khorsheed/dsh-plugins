@@ -102,7 +102,7 @@ describe('novel_extract import — the five gates (proposal §5)', () => {
     const [high] = cardsWith(canvas, '门后的敲击以三下为一组，像某种耐心的呼吸。')
     expect(high).toMatchObject({ status: 'kept', kind: 'cat_world' })
     const entries = (await store.readEntries(DREAM.workId))!
-    expect(entries.annotations.notes[high!.id]).toEqual({ evidenceInText: '门缝后的敲击声变成了明确的三下' })
+    expect(entries.annotations.notes[high!.id]).toMatchObject({ evidenceInText: '门缝后的敲击声变成了明确的三下' })
     // Every rule lands live with its evidence on the card for the user's look (rules carry no confidence).
     const [medium] = cardsWith(canvas, '门缝附近的蓝叶会亮得刺眼。')
     expect(medium?.status).toBe('kept')
