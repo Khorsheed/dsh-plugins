@@ -1,16 +1,16 @@
 /**
- * The board strip of a 长篇小说 canvas: the work's chapters (each with its
- * phase lamp, a click opens the chapter page), the ledger's health with the
- * door to the ledger page, and — only while there is something to review —
- * the pending count, which unfolds the queue in place. A canvas of another
- * genre renders nothing.
+ * The board strip of a 长篇小说 canvas, one quiet line: the chapter to pick up
+ * at (a click opens its chapter page), the pending count — only while there is
+ * something to review, unfolding the queue in place — the ledger's health with
+ * its door, and the way into the book (目录 · 共 N 章, the 成稿 face). A canvas
+ * of another genre renders nothing.
  *
  * @module @khorsheed/dsh-canvas-novel/client
  */
 import { useState, type ReactNode } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
-import { NOVEL_GENRE_ID, type PendingView } from '../types.ts'
+import { NOVEL_GENRE_ID, type ChapterRow, type PendingView } from '../types.ts'
 import { CHAPTER_PAGE, LEDGER_PAGE, type NovelNavigate, type NovelRemote, type NovelSurfaceProps } from './contract.ts'
 import { errorKey, useNovelRead } from './use-novel.ts'
 import css from './novel.module.css'
@@ -30,36 +30,26 @@ function Strip({ canvasId, rev, navigate, sessionId, remote, t }: NovelSurfacePr
   if (api === undefined) return null
   const items = pending.state === 'ready' ? pending.value.items : []
   const rows = chapters.state === 'ready' ? chapters.value.chapters : []
+  const current = chapters.state === 'ready' ? currentChapter(rows, chapters.value.pending) : undefined
   const counts = ledger.state === 'ready' && ledger.value.ok ? ledger.value.counts : undefined
   return (
     <div className={css.strip}>
       <div className={css.stripRow}>
-        <span className={css.stripLabel}>{t('strip.label')}</span>
-        <div className={css.chips} aria-label={t('strip.chapters')}>
-          {rows.length === 0 && chapters.state === 'ready'
-            ? <span className={css.muted}>{t('strip.noChapters')}</span>
-            : rows.map(({ chapter, phase }) => (
-              <button
-                key={chapter.n}
-                type="button"
-                className={css.chapterChip}
-                title={`${chapter.title} · ${t(`phase.${phase}`)}`}
-                onClick={() => { navigate.openPage(CHAPTER_PAGE, chapterHeading(t, chapter.n, chapter.title), String(chapter.n)) }}
-              >
-                <span className={css.lamp} data-phase={phase} />
-                {t('strip.chapter', { n: chapter.n })}
-              </button>
-            ))}
-        </div>
-        <button
-          type="button"
-          className={css.stripLink}
-          onClick={() => { navigate.openPage(LEDGER_PAGE, t('ledger.heading')) }}
-        >
-          {t('strip.ledger')}
-          {counts !== undefined && <span className={css.muted}>{t('strip.ledgerCount', { active: counts.active })}</span>}
-          {counts !== undefined && counts.overdue > 0 && <span className={css.warn}>{t('strip.ledgerOverdue', { count: counts.overdue })}</span>}
-        </button>
+        {current === undefined
+          ? chapters.state === 'ready' && <span className={css.muted}>{t('strip.noChapters')}</span>
+          : (
+            <button
+              type="button"
+              className={css.stripCurrent}
+              title={t(`phase.${current.phase}`)}
+              onClick={() => {
+                navigate.openPage(CHAPTER_PAGE, chapterHeading(t, current.chapter.n, current.chapter.title), String(current.chapter.n))
+              }}
+            >
+              <span className={css.lamp} data-phase={current.phase} />
+              {chapterHeading(t, current.chapter.n, current.chapter.title)}
+            </button>
+          )}
         {items.length > 0 && (
           <button
             type="button"
@@ -72,12 +62,34 @@ function Strip({ canvasId, rev, navigate, sessionId, remote, t }: NovelSurfacePr
             <span className={css.caret} data-open={open}>▾</span>
           </button>
         )}
+        <button
+          type="button"
+          className={css.stripLink}
+          onClick={() => { navigate.openPage(LEDGER_PAGE, t('ledger.heading')) }}
+        >
+          {t('strip.ledger')}
+          {counts !== undefined && <span className={css.muted}>{t('strip.ledgerCount', { active: counts.active })}</span>}
+          {counts !== undefined && counts.overdue > 0 && <span className={css.warn}>{t('strip.ledgerOverdue', { count: counts.overdue })}</span>}
+        </button>
+        {rows.length > 0 && (
+          <button type="button" className={css.stripToc} onClick={navigate.openManuscripts}>
+            {t('strip.toc', { count: rows.length })}
+          </button>
+        )}
       </div>
       {open && items.length > 0 && (
         <PendingList canvasId={canvasId} items={items} navigate={navigate} sessionId={sessionId} remote={api} t={t} />
       )}
     </div>
   )
+}
+
+/**
+ * The chapter to pick up at: the earliest one with something to review, else
+ * the latest. Undefined for a work without chapters.
+ */
+export function currentChapter(rows: readonly ChapterRow[], pending: Readonly<Record<number, number>>): ChapterRow | undefined {
+  return rows.find(row => (pending[row.chapter.n] ?? 0) > 0) ?? rows.at(-1)
 }
 
 /** A chapter page's heading: `第3章 · 回声`. */

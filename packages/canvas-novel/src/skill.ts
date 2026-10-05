@@ -4,7 +4,7 @@
  * loaded on demand, carrying NO work content: chapter 6 and chapter 60 use
  * the same manual). The body follows the CP0 copy deck's §1, re-cut for the
  * canvas: settings live as cards; the agent's new cards land live, marked
- * new (a red dot) on the board, and the user edits or archives what is wrong.
+ * new (✦) on the board, and the user edits or archives what is wrong.
  * The `./agent` entry registers it beside the tools so it exists exactly
  * where they do.
  *
@@ -42,13 +42,13 @@ novel_bind(work=标题)，下一步工具即出现；拿不准是哪部就问用
 - 闲聊/讨论立意 → 正常聊，不调 novel 工具（最多 novel_read 查设定）。
 - 聊设定 → 识别可固化点，落卡（novel_write · card）。
 - 规划/写第N章 → 三环：规划 → 写作 →（用户审过）→ 对账。
-- 用户跳过规划直接喊写：可以写，但先一句话给出你默认的 plan（POV/目标/伏笔操作），
+- 用户跳过规划直接喊写：可以写，但先一句话给出你默认的 plan（梗概/走向/伏笔），
   用户不反对再动笔。
 
 ## 设定落卡
 - 「一句话能复述、且影响后续创作」的才落卡；讨论过程、语气感叹不落。
 - role 即画布分类：人物 / 世界 / 原则 / 伏笔。拿不准归哪类就先问一句。
-- 新卡落下即生效：立刻进 brief、伏笔立刻进台账可按 #编号 引用；画布上带红点，用户看过、改过或归档（✗）即消。
+- 新卡落下即生效：立刻进 brief、伏笔立刻进台账可按 #编号 引用；画布上带 ✦ 新卡标记，用户看过、改过或归档（✗）即消。
   所以落卡前想清楚，拿不准的先问一句再落。
 - 世界卡先起名再写设定：name 是这条设定的名字（一个地点、一件道具、一条规则），rule 是具体内容。
 - 一个名字只有一张卡：同名的人物/世界卡会被拒绝，补内容就改那张。
@@ -58,8 +58,12 @@ novel_bind(work=标题)，下一步工具即出现；拿不准是哪部就问用
 
 ## 规划
 - novel_read(brief, for=plan) → 产出 plan → novel_write · chapter(plan)。
-- plan 模板：POV / 目标(一句话) / 伏笔操作(引用台账 ref：推进#/暗示#/揭晓#；新埋给 question) /
-  出场角色(ref 或名字) / 章末钩子。
+- plan 结构（帮用户判断这章值不值得这么写，每项都写发生什么，不写归档位置）：
+  梗概(两三句) / 走向(按时间排的几拍：at 时间标签 + text，转折、落点标 mark) / 冲突 / 看点 /
+  伏笔(引用台账 ref：推进#/暗示#/揭晓#，新埋给 question；note 说清推进了什么、埋下的是什么) /
+  出场(cast：who + 本章在做什么；pov 标视角人物) / 章末钩子。
+- 登记后计划会显示在会话卡片和章节页上。回复只用两三句：这章怎么走、你最拿不准的一处；
+  不贴完整计划表，不列「要你定」的选项——用户不满意会在对话里说，你改完重新登记。
 - 用户确认前不开写。
 
 ## 写作
@@ -74,14 +78,14 @@ novel_bind(work=标题)，下一步工具即出现；拿不准是哪部就问用
 ## 对账（正文写完之后、审过收章之前）
 - novel_extract(prepare) → 把素材包作为一次性任务委派 subagent → 拿回 JSON
   → novel_extract(import)。
-- 汇报格式：计划命中 ✓×n / 计划落空 ×n / 新卡 ×n / 待你确认 ×n，
-  附待确认清单与新卡的一句话摘要（新卡已生效，提醒用户在画布上看一眼带红点的新卡）。
+- 汇报格式：计划命中 ✓×n / 计划落空 ×n / 新卡 ×n / 待你确认 ×n（走向没写到的那几拍只提一句，不进待审），
+  附待确认清单与新卡的一句话摘要（新卡已生效，提醒用户在画布上看一眼带 ✦ 的新卡）。
 
 ## 导入已写好的章节
 - 用户已有成稿时，按章节顺序逐章：登记 → 对账。章号自动取最大+1，所以先登记的就是第 1 章。
 - 稿子已在工作区 \`<画布标题>/第{n}章.md\`：novel_write(chapter, title=…) 只登记，不带 content。
 - 稿子贴在对话里：novel_write(chapter, title=…, content=原文)，原文一字不改地转交。
-- 每章只对账一次：用户确认正文是定稿再对账；整理出的人物/世界/伏笔直接落卡生效，画布上带红点等用户过目。
+- 每章只对账一次：用户确认正文是定稿再对账；整理出的人物/世界/伏笔直接落卡生效，画布上带 ✦ 等用户过目。
 
 ## 维护
 - 每 3–5 章主动 novel_read(ledger)：沉睡伏笔摆给用户，给建议（下章推/弃置/转设定）。

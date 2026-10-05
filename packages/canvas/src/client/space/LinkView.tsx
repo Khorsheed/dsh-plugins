@@ -88,8 +88,8 @@ export interface LinkViewProps {
   readonly talkAvailable: boolean
   /** Quote an explicit card set into the session's input (与 Agent 对谈 over a group). */
   readonly onTalk: (cardIds: readonly string[]) => void
-  /** The same, plus the writing instruction (开始写作). */
-  readonly onWrite: (cardIds: readonly string[]) => void
+  /** The same, plus the writing instruction (开始写作); absent where a genre owns the 成稿. */
+  readonly onWrite?: ((cardIds: readonly string[]) => void) | undefined
   /** One write per gesture (see {@link LayoutPatch}). */
   readonly onLayout: (patch: LayoutPatch) => void
   /** A note for the gestures whose result has no other visible home. */
@@ -781,7 +781,7 @@ export function LinkView({
               {t('link.talkGroup', { count: String(send.length) })}
             </button>
           )}
-          {talkAvailable && send.length > 0 && (
+          {talkAvailable && send.length > 0 && onWrite !== undefined && (
             <button type="button" className={css.barButton} onClick={() => { onWrite(send) }}>
               {t('talk.write')}
             </button>

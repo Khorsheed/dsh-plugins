@@ -278,10 +278,18 @@
 /* One row, scrolled sideways rather than wrapped: stage ⑤ lets a canvas add
    categories, so the strip's width is no longer bounded by the five defaults.
    Horizontal only — `.boardScroll` stays the board's single vertical scroller. */
+.chipRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
 .chips {
   display: flex;
+  flex: 1;
+  min-width: 0;
   gap: 6px;
-  margin-bottom: 12px;
   flex-wrap: nowrap;
   overflow-x: auto;
   align-items: center;
@@ -293,6 +301,7 @@
 }
 
 .chip {
+  position: relative;
   flex: none;
   display: inline-flex;
   align-items: center;
@@ -336,23 +345,6 @@
   width: 7px;
   height: 7px;
   border-radius: 50%;
-}
-
-/* The 管理分类 chip: dashed, so it reads as a tool and never as a sixth filter.
-   Sticky because the strip scrolls sideways now — a manage entry that can be
-   scrolled away is not an entry. The base fill every chip carries keeps the
-   row from showing through as it slides under. */
-.chipMgr {
-  border-style: dashed;
-  color: var(--dsw-alias-label-caption);
-  background: var(--dsw-alias-bg-base);
-  position: sticky;
-  right: 0;
-  z-index: 1;
-}
-
-.chipMgr:hover {
-  color: var(--dsw-alias-label-primary);
 }
 
 /* The batch bar's 「改分类」 row: the targets ride the filter chips' own shape,
@@ -647,7 +639,7 @@
     opacity: 1;
   }
 
-  .card .unseenDot {
+  .card .unseenMark {
     right: 34px;
   }
 
@@ -675,59 +667,93 @@
   align-self: flex-start;
 }
 
-/* AGENT's new card: an unread mark inside the top-right corner, aligned with
-   the kind line (a small dot in a soft halo, the way a mail list marks unread
-   mail). The select box owns that corner on hover, so the mark steps aside
+/* AGENT's new card: a small amber star inside the top-right corner, the way
+   a game marks a new item. Amber, not red: red stays for what needs an answer
+   (待审). The select box owns that corner on hover, so the mark steps aside
    there; it goes for good when the card is opened or archived. */
-.unseenDot {
+.unseenMark {
   position: absolute;
-  top: 15px;
-  right: 14px;
+  top: 12px;
+  right: 12px;
   z-index: 1;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--dsw-alias-state-error-primary);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--dsw-alias-state-error-primary) 16%, transparent);
+  display: flex;
+  color: var(--dsw-alias-state-warn-primary);
+  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--dsw-alias-state-warn-primary) 35%, transparent));
   pointer-events: none;
   transition: opacity 0.15s;
 }
 
-.card:hover .unseenDot,
-.card:focus-within .unseenDot,
-.card[data-selected="true"] .unseenDot {
+.unseenMark svg {
+  animation: unseenTwinkle 2.8s ease-in-out infinite;
+}
+
+@keyframes unseenTwinkle {
+  0%, 100% { transform: scale(1) rotate(0); }
+  50% { transform: scale(0.82) rotate(12deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .unseenMark svg {
+    animation: none;
+  }
+}
+
+.card:hover .unseenMark,
+.card:focus-within .unseenMark,
+.card[data-selected="true"] .unseenMark {
   opacity: 0;
 }
 
-/* A chip's "+N new": red text on a faint red pill, after the plain count. */
-.unseenBadge {
-  padding: 0 5px;
-  border-radius: 999px;
-  font: var(--dsw-font-xxxs-11);
-  font-variant-numeric: tabular-nums;
-  color: var(--dsw-alias-state-error-primary);
-  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 12%, transparent);
+/* A chip with new cards: the same amber, as a dot in its corner. */
+.unseenPip {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--dsw-alias-state-warn-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-state-warn-primary) 28%, transparent);
 }
 
-/* The chip row's ✓✓ (mark all seen): an icon button at the row's end. */
-.markSeen {
+/* The chip row's tools (✓✓, 管理分类): icon buttons pinned at the row's end. */
+.chipTools {
+  display: flex;
+  flex: none;
+  gap: 2px;
+}
+
+.toolIcon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 28px;
   height: 28px;
-  flex: none;
   padding: 0;
   border: none;
   border-radius: 6px;
   background: transparent;
-  color: var(--dsw-alias-label-secondary);
+  color: var(--dsw-alias-label-caption);
   cursor: pointer;
 }
 
-.markSeen:hover {
+.toolIcon:hover:not(:disabled) {
   background: var(--dsw-alias-bg-layer-2);
   color: var(--dsw-alias-label-primary);
+}
+
+.toolIcon[data-lit="true"] {
+  color: var(--dsw-alias-state-business-primary);
+}
+
+.toolIcon[data-lit="true"]:hover {
+  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 10%, transparent);
+  color: var(--dsw-alias-state-business-primary);
+}
+
+.toolIcon:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 .ghostActions {

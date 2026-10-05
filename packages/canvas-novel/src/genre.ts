@@ -44,6 +44,8 @@ export interface NovelGenreDefinition {
   readonly description: string
   readonly categories: readonly NovelCategorySeed[]
   readonly agentRow: string
+  /** The chapters are this canvas's 成稿: the canvas renders the genre's chapter book there. */
+  readonly ownsManuscripts: true
 }
 
 /** A card field value (the canvas `FieldValue` shape). */
@@ -113,7 +115,7 @@ export interface CanvasBoardSlice {
     readonly source?: NovelCardSource
     readonly comment?: string
     readonly fields?: Readonly<Record<string, NovelFieldValue>>
-    /** Kept at once and marked new (a red dot) on the board, instead of a proposal awaiting ✓. */
+    /** Kept at once and marked new (✦) on the board, instead of a proposal awaiting ✓. */
     readonly live?: boolean
   }, session: FenceSession): Promise<NovelBoardMutation>
   patchCard(request: {
@@ -157,6 +159,7 @@ export const NOVEL_GENRE: NovelGenreDefinition = {
   version: 'novel@2',
   description: '人物、世界、原则与伏笔做成卡片；章节正文是工作区里的 md 文件，写完一章对一次账。',
   agentRow: NOVEL_AGENT_ROW,
+  ownsManuscripts: true,
   categories: [
     {
       role: NOVEL_ROLES.character,

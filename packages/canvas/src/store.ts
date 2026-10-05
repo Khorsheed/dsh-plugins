@@ -1012,6 +1012,7 @@ export class CanvasBoardService {
       description: genre.description,
       roles: genre.categories.map(seed => ({ role: seed.role, label: seed.label })),
       ...(genre.agentRow === undefined ? {} : { agentRow: genre.agentRow }),
+      ...(genre.ownsManuscripts === true ? { ownsManuscripts: true } : {}),
     }))
   }
 

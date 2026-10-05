@@ -98,24 +98,38 @@ function foreshadowLinePlan(view: ForeshadowView): string {
   return `- [${view.ref}] ${view.question}${parts.length === 0 ? '' : `（${parts.join(' · ')}）`}`
 }
 
-/** One planned op as the plan line reads it: `推进 [#12 门缝里的东西]` / `新埋 [蓝色叶子指向谁]`. */
+/** One planned op as the plan line reads it: `推进 [#12 门缝里的东西]：多了一道划痕` / `新埋 [蓝色叶子指向谁]`. */
 function foreshadowOpText(op: ForeshadowOp, foreshadows: readonly ForeshadowView[]): string {
-  if (op.op === '新埋' || op.id === undefined) return `${op.op} [${op.question ?? op.id ?? ''}]`
-  const view = foreshadows.find(candidate => candidate.cardId === op.id || candidate.ref === op.id)
-  return view === undefined ? `${op.op} [${op.id}]` : `${op.op} [${view.ref} ${view.question}]`
+  const view = op.op === '新埋' || op.id === undefined
+    ? undefined
+    : foreshadows.find(candidate => candidate.cardId === op.id || candidate.ref === op.id)
+  const subject = view === undefined ? op.question ?? op.id ?? '' : `${view.ref} ${view.question}`
+  return `${op.op} [${subject}]${op.note === undefined ? '' : `：${op.note}`}`
 }
 
-/** The 本章计划 block (write variant, and the extract pack's 【本章计划】). */
+/** The 本章计划 block (write variant, and the extract pack's 【本章计划】, whose beat numbers the import reads back). */
 function planLines(target: ChapterRecord, foreshadows: readonly ForeshadowView[], roster: readonly CharacterView[]): string[] {
   const plan = target.plan
   if (plan === undefined) return ['（本章还没有计划——先 novel_write(chapter) 写 plan，用户确认前不开写。）']
-  const lines = [`POV：${plan.pov ?? '未定'}　目标：${plan.goal}`]
-  if (plan.foreshadowOps.length > 0) {
-    lines.push(`伏笔操作：${plan.foreshadowOps.map(op => foreshadowOpText(op, foreshadows)).join(' / ')}`)
+  const nameOf = (token: string): string => roster.find(view => view.cardId === token)?.name ?? token
+  const lines = [`梗概：${plan.summary}`]
+  if (plan.beats.length > 0) {
+    lines.push('走向：', ...plan.beats.map((beat, index) =>
+      `  ${index + 1}. ${beat.at === undefined ? '' : `${beat.at}｜`}${beat.text}${beat.mark === undefined ? '' : `（${beat.mark}）`}`))
   }
-  if (plan.characters.length > 0) {
-    const nameOf = (token: string): string => roster.find(view => view.cardId === token)?.name ?? token
-    lines.push(`出场角色：${plan.characters.map(nameOf).join('、')}`)
+  if (plan.conflict !== undefined) lines.push(`冲突：${plan.conflict}`)
+  if (plan.highlight !== undefined) lines.push(`看点：${plan.highlight}`)
+  if (plan.foreshadowOps.length > 0) {
+    lines.push('伏笔：', ...plan.foreshadowOps.map(op => `  - ${foreshadowOpText(op, foreshadows)}`))
+  }
+  if (plan.cast.length > 0 || plan.pov !== undefined) {
+    const pov = plan.pov === undefined ? undefined : nameOf(plan.pov)
+    const cast = plan.cast.map(member => {
+      const name = nameOf(member.who)
+      return `${name}${name === pov ? '（POV）' : ''}${member.role === undefined ? '' : `：${member.role}`}`
+    })
+    if (pov !== undefined && !cast.some(line => line.startsWith(`${pov}（POV）`))) cast.unshift(`${pov}（POV）`)
+    lines.push('出场：', ...cast.map(line => `  - ${line}`))
   }
   if (plan.hook !== undefined) lines.push(`章末钩子：${plan.hook}`)
   return lines
@@ -185,7 +199,7 @@ function renderWriteWithin(data: BriefData, limits: RenderLimits, budget: number
     '',
     '## 在场角色',
     ...(data.inScene.length === 0
-      ? ['（本章未登记出场角色——plan.characters 填角色 ref 或名字。）']
+      ? ['（本章未登记出场角色——plan.cast 的 who 填角色 ref 或名字。）']
       : data.inScene.flatMap(entry => [...characterBlock(entry, limits.expPerChar), '']).slice(0, -1)),
     '',
     '## 此前脉络（摘要）',
@@ -257,6 +271,7 @@ function renderPlanWithin(data: BriefData, limits: RenderLimits, budget: number,
 
 /** The extract pack's output schema (the subagent's strict JSON contract; the import gate reads these keys). */
 export const EXTRACT_OUTPUT_SCHEMA = `{
+  "beats_delivered": [{ "beat": 走向的序号（从 1 起）, "evidence_in_text": "≤50字原文" }],
   "memories": [{ "kind": "世界|原则", "name": "仅世界：这条设定叫什么（地点、势力、道具或规则的名字）", "world_kind": "仅世界：地点|势力|道具|规则|历史|其他", "content": "具体的设定或写作原则，能复述", "confidence": "high|medium|low", "evidence_in_text": "≤50字原文" }],
   "foreshadow_mentions": [{ "foreshadow_id": "#12", "kind": "planted|advanced|hinted|resolved", "answer": "仅 resolved 给", "note": "…", "confidence": "high|medium|low", "evidence_in_text": "≤50字原文" }],
   "new_foreshadows": [{ "question": "…", "tension": 1到5, "evidence_in_text": "≤50字原文" }],
@@ -289,7 +304,8 @@ export function renderExtractBrief(data: BriefData, body: string): string {
     '   本章新登场的角色写进 new_characters，他们的经历和现状照样写，character_id 填名字；',
     '   世界设定给 name（设定的名字）和具体内容，同一个设定只写一条；',
     '3. 拿不准一律 confidence=medium/low；',
-    '4. plan 列了但正文没动的操作，报 plan_missed，不掩饰；',
+    '4. 本章计划的走向逐条核对：正文写到了的那一拍写进 beats_delivered（带 evidence），没写到的不报；',
+    '   伏笔只按实际写到的报 foreshadow_mentions，计划列了却没写到的不要编；',
     '5. 角色经历每人 1-2 句：本章做了什么、状态怎么变；current_state 给',
     '   where/state/concern 三字段。',
     '',

@@ -38,7 +38,7 @@ It replaces the retired `@khorsheed/dsh-story-bible`. Data under the old `$DSH_H
   - Unbinding, or changing the canvas's genre, revokes them at once.
   - In an unbound session those three tools are absent, not denied.
 - **The cards are the single source of truth**:
-  - Every setting the model creates **lands live**: it enters the brief and the ledger at once and can be named by ref. New cards carry a red dot and sit first on the canvas until opened or archived; each category chip shows a red +N of its new cards, and the ✓✓ next to the chips marks them all seen. Fix a wrong card in place, or archive it with ✗.
+  - Every setting the model creates **lands live**: it enters the brief and the ledger at once and can be named by ref. New cards carry an amber ✦ mark and sit first on the canvas until opened or archived; a small dot on each category chip marks the categories with new cards, and the ✓✓ icon at the right of the chip row marks them all seen (red is kept for pending review). Fix a wrong card in place, or archive it with ✗.
   - Cards are never deleted; an archived card stays on the canvas, hidden.
   - An edit merges fields into the card in place instead of starting a new one; a character or world name holds only one card, and a new card reusing it is refused.
 - **Refs**:
@@ -87,17 +87,20 @@ Enabling the root row by hand (removing `disabled: true`) makes it apply to ever
 ## Quick start
 
 1. Create a canvas with the 长篇小说 genre and mount a workspace on it. Talk about the work in a writing session and the model binds it with `novel_bind`; you can also bind by hand with the canvas chip in the session header.
-2. Talk through the settings. The model files them as live cards with a red dot on the canvas; glance over them, fix or archive (✗) the wrong ones, then click ✓✓ to mark them all seen.
-3. Plan. `novel_write(what=chapter, plan=…)` registers the plan; once confirmed, start writing.
+2. Talk through the settings. The model files them as live cards with a ✦ new-card mark on the canvas; glance over them, fix or archive (✗) the wrong ones, then click ✓✓ to mark them all seen.
+3. Plan. `novel_write(what=chapter, plan=…)` registers the plan: summary, beats (a few steps with time labels, marked as turn or landing), conflict, highlight, foreshadow ops (advance / hint / plant / resolve, each saying what it moves), cast (with the POV) and the closing hook. A plan card appears in the conversation; 「查看并确认计划」 opens the chapter page to read it in full, and 「✓ 确认计划」 clears it for writing. To change it, just say so in the conversation.
    - The manuscript lands in the canvas workspace through the session's fence.
    - If it cannot land, the registration is refused, so an empty-slot chapter never appears.
 4. Reconcile once the chapter is written: run `novel_extract(prepare)`, delegate to a subagent, then run `novel_extract(import)`.
    - Handle the pending items, then close the chapter with 「✓ 审过」.
    - The phase lamp runs: planning → writing → extracted → reviewed.
 
-**UI inside the canvas**: card faces, card sections and the session-header binding chip ride the canvas's genre seams; this package's browser half adds a long-novel strip at the top of the board:
+**UI inside the canvas**: card faces, card sections and the session-header binding chip ride the canvas's genre seams; this package's browser half adds:
 
-- **Chapter chips**: one per chapter with its phase lamp; a click opens the chapter reader page. The page shows the phase lamp and the chapter plan at the top (with 「✓ 确认计划」), this chapter's pending items and the manuscript in the middle, and 「✓ 审过本章」 at the bottom. While the chapter is not extracted or still has pending items the button is disabled, and the bar says what is missing.
+- **A slim strip at the top of the board**: the current chapter (the earliest one with pending items, else the latest; a click opens its chapter page), Pending N, the foreshadow ledger, and 「目录 · 共 N 章 ›」.
+- **成稿 is the book**: a long-novel canvas's 成稿 face is a table of contents plus a reader. The contents open with a progress spine for the whole work (one tick per chapter, colored by phase, red where items are pending), 「从这里继续」, all / to-do / not-reviewed filters, and the chapters in folding groups of ten (groups with work in them, and the last one, start open). A chapter opens the reader in place.
+- **Chapter reader**: phase lamp, plan block, this chapter's pending items and the text, then 「✓ 审过本章」, a glimpse of the next chapter, and a pager (previous / contents / next) that stays in reach. The plan block is open with 「✓ 确认计划」 while planning; once there is text it folds to one line so the text leads; after extraction that line says how many beats and foreshadow ops the text carried, and each is marked ✓ / ✗ when unfolded (a missed op is also pending and blocks review; a missed beat is only a reminder). While the chapter is not extracted or still has pending items the review button is disabled, and the line beside it says what is missing.
+- **Plan card in the conversation**: after `novel_write` registers a chapter plan, the conversation shows the chapter, its summary and the counts of beats, foreshadow ops per kind and cast; while it waits for confirmation the button reads 「查看并确认计划」 and opens that chapter's page. Every other `novel_write` call shows as one line with the answer behind 「详情」. Without the canvas installed the card has no door.
 - **Foreshadow ledger**: shows the active and overdue counts; a click opens the ledger page, which lists each foreshadow's status, tension, chapters asleep and its chapter-by-chapter mention track, drawing a planned-but-missed cell dashed.
 - **Pending N**: appears only while there is something to review and unfolds in place (accept / discard, or "got it" for a missed plan); the board refreshes after each answer.
 
@@ -115,5 +118,6 @@ The machine-readable label is `dsh.compat` in package.json (minHost `0.2.0-rc.2`
 - State writes go through the ctx.fs fence, re-rooted at the plugin's own state directory; a read-only deployment still refuses them.
 - Chapter manuscripts land in the canvas workspace under the session's sandbox mode.
 - A headless profile has no browser, and the agent row works as usual.
+- The conversation plan card sits on the host's `tool.call.toolview` slot; without that slot `novel_write` keeps the generic tool row. Opening the chapter page relies on the canvas's `canvasNav` service; with a canvas version that lacks it, the card shows no door.
 
 中文：[README.md](README.md)

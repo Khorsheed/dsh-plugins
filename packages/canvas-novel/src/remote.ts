@@ -115,7 +115,7 @@ export class NovelRemoteService extends TypertRemoteService<NovelRemoteConfig> {
     const known = namesOf(entries)
     const names: Record<string, string> = {}
     const plan = read.chapter.plan
-    for (const id of [plan?.pov, ...(plan?.characters ?? []), ...(plan?.foreshadowOps ?? []).map(op => op.id)]) {
+    for (const id of [plan?.pov, ...(plan?.cast ?? []).map(member => member.who), ...(plan?.foreshadowOps ?? []).map(op => op.id)]) {
       const name = id === undefined ? undefined : known.get(id)
       if (id !== undefined && name !== undefined) names[id] = name
     }

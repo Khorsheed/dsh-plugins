@@ -125,14 +125,27 @@ export function seedDreamKeeper(fs: FakeFs, options: { ch5Phase?: 'extracted' | 
   fs.seed(join(dir, 'mentions.jsonl'), mentions.map(entry => JSON.stringify(entry)).join('\n') + '\n')
 
   const plan5 = {
-    pov: '赵启明', goal: '按半页守则找到门缝，决定是否推开',
-    foreshadowOps: [{ op: '推进', id: CARD.doorGap }, { op: '暗示', id: CARD.leafGlow }],
-    characters: [CARD.zhao, CARD.aiwen], hook: '门缝里飘出一片蓝色叶子',
+    summary: '赵启明按半页守则在档案室找到门缝，犹豫要不要推开；艾文劝他先等，叶子却先亮了。',
+    beats: [
+      { at: '深夜', text: '赵启明照守则数钟声，在档案室墙角找到门缝' },
+      { text: '艾文劝他先别推，说门后不回答问题', mark: '转折' },
+      { text: '门缝里飘出一片蓝色叶子，他决定推门', mark: '落点' },
+    ],
+    conflict: '赵启明想知道门后是什么，艾文想拖住他',
+    highlight: '守则的第一次应验',
+    foreshadowOps: [{ op: '推进', id: CARD.doorGap, note: '门缝第一次被找到' }, { op: '暗示', id: CARD.leafGlow, note: '叶子在门边发亮' }],
+    cast: [{ who: CARD.zhao, role: '找门、决定推门' }, { who: CARD.aiwen, role: '劝阻' }],
+    pov: CARD.zhao, hook: '门缝里飘出一片蓝色叶子',
   }
   const plan6 = {
-    pov: '赵启明', goal: '跟随艾文穿过门缝，确认门后空间的第一层',
-    foreshadowOps: [{ op: '推进', id: CARD.doorGap }, { op: '暗示', id: CARD.leafGlow }],
-    characters: [CARD.zhao, CARD.aiwen], hook: '门后传来妹妹的声音',
+    summary: '赵启明跟着艾文穿过门缝，看清门后空间的第一层。',
+    beats: [
+      { text: '两人穿过门缝，门后是倒置的档案室' },
+      { text: '门后传来妹妹的声音', mark: '落点' },
+    ],
+    foreshadowOps: [{ op: '推进', id: CARD.doorGap, note: '门后第一层' }, { op: '暗示', id: CARD.leafGlow }],
+    cast: [{ who: CARD.zhao }, { who: CARD.aiwen, role: '带路' }],
+    pov: CARD.zhao, hook: '门后传来妹妹的声音',
   }
   const chapters = [
     { n: 1, seq: 1, title: '入职', file: '第1章.md', phase: 'extracted', recap: '赵启明入职梦境监护所，领到《监护守则》。值夜第一晚，他听见墙内传来敲击，发现档案室的钟楼没有影子。', wordCount: 2800, sessionIds: ['s-seed'], createdAt: stamp(1), updatedAt: stamp(1) },

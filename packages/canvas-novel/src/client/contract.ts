@@ -20,13 +20,15 @@ import type {} from './locales.ts'
 export interface NovelNavigate {
   openCard: (cardId: string, heading: string) => void
   openPage: (page: string, heading: string, param?: string) => void
+  /** Back to the board on its 成稿 face (the book's contents). */
+  openManuscripts: () => void
   refresh: () => void
 }
 
 /** The canvas's owner share (structural). */
 export interface NovelOwnerProps {
   readonly canvasId: string
-  readonly board: { readonly id: string; readonly genre?: { readonly id: string } | undefined }
+  readonly board: { readonly id: string; readonly title?: string; readonly genre?: { readonly id: string } | undefined }
   readonly rev: number
   readonly navigate: NovelNavigate
   readonly sessionId?: SessionId | undefined

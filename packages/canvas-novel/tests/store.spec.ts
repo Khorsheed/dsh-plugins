@@ -87,9 +87,11 @@ describe('the novel store', () => {
     const listed = await store.listChapters({ workId })
     expect(listed.map(row => row.chapter.title)).toEqual(['第一章', '幕间', '第二章'])
     // Updating by n keeps the number and the file.
-    const replanned = await store.writeChapter({ workId, n: 2, title: '第二章·改', plan: { goal: '新目标' } }, SESSION)
+    const replanned = await store.writeChapter({ workId, n: 2, title: '第二章·改', plan: { summary: '新梗概' } }, SESSION)
     expect(replanned.chapter).toMatchObject({ n: 2, title: '第二章·改', file: '第2章.md' })
-    expect(replanned.chapter?.plan?.goal).toBe('新目标')
+    expect(replanned.chapter?.plan).toEqual({ summary: '新梗概', beats: [], foreshadowOps: [], cast: [] })
+    // A plan without its 梗概 is not a plan.
+    expect((await store.writeChapter({ workId, n: 2, title: '第二章', plan: { goal: '旧形状' } }, SESSION)).ok).toBe(false)
   })
 
   it('derives 写作中/文件丢失 from the manuscript fact, and 审过 closes only an extracted chapter', async () => {

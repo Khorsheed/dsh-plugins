@@ -35,8 +35,8 @@ describe('the three brief variants on the《梦境监护者》seed (CP1)', () =>
     expect(estimateTokens(text)).toBeLessThanOrEqual(BRIEF_BUDGETS.write)
     // The target is the planning chapter (第6章), the plan rides along.
     expect(text).toContain('写作约束 · 第6章 门后')
-    expect(text).toContain('POV：赵启明　目标：跟随艾文穿过门缝')
-    expect(text).toContain('推进 [#12 门缝里的东西] / 暗示 [#15 蓝色叶子为什么发光]')
+    expect(text).toContain('梗概：赵启明跟着艾文穿过门缝')
+    expect(text).toContain('  - 推进 [#12 门缝里的东西]：门后第一层')
     expect(text).toContain('章末钩子：门后传来妹妹的声音')
     // The ledger carries ids and the 势; the iron rule: topK, never the whole history.
     expect(text).toContain('[#12] 门缝里的东西（埋于第1章 · 最后活跃第3章 · 势4）')

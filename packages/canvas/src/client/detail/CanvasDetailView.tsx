@@ -63,7 +63,7 @@ import { useImageLightbox } from './image-lightbox.tsx'
 import { BlockEditor, type CardDrawings } from './BlockEditor.tsx'
 import { typedTitleOf } from '../../card-types.ts'
 import { FieldForm, FieldList, type RefCandidate } from '../type/fields.tsx'
-import { cardSectionsOf, useGenreSeats } from '../genre-seats.tsx'
+import { cardSectionsOf, manuscriptsOwned, useGenreSeats } from '../genre-seats.tsx'
 import css from './CanvasDetailView.module.css'
 
 /** What each paste arm reports about itself (the toast's whole copy). */
@@ -637,7 +637,8 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
         // by hand (the 2026-09-27 decision): the card stays as material, the
         // manuscript starts from its text and names it as its first source.
         // An HTML page is not markdown, so it cannot be turned.
-        ...(card.kind === 'document' ? [{
+        // A genre that owns the 成稿 keeps its text in its own surfaces.
+        ...(card.kind === 'document' && !manuscriptsOwned(seats, open.board) ? [{
           id: 'manuscript',
           label: t(turned !== undefined ? 'ms.openTurned' : format === 'html' ? 'ms.toManuscriptHtml' : 'ms.toManuscript'),
           icon: <IconListPenOutlineMedium size={14} />,

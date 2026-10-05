@@ -23,6 +23,8 @@ export interface CanvasNavigate {
   openPage: (page: string, heading: string, param?: string) => void
   /** Back to this canvas's board. */
   backToBoard: () => void
+  /** Back to this canvas's board, on its 成稿 face. */
+  openManuscripts: () => void
   /** Tell every canvas seat the board changed (after a genre's own mutation landed). */
   refresh: () => void
 }
@@ -39,6 +41,24 @@ export interface CanvasGenreOwnerProps {
    * surface is read-only (no session, or an archived canvas).
    */
   readonly sessionId?: SessionId | undefined
+}
+
+/**
+ * The canvas's navigation from outside the canvas tab (`ctx.canvasNav`): a
+ * genre's conversation card opens one of its pages without knowing how the
+ * tab is opened or where its rows live. A consumer probes it with
+ * `ctx.get('canvasNav')` and degrades without it.
+ */
+export interface CanvasNavService {
+  /** Open the canvas tab and put `canvasId`'s row on a genre page. */
+  openPage: (canvasId: string, page: string, heading: string, param?: string) => void
+}
+
+declare module '@deepseek-ai/cordis' {
+  interface Context {
+    /** The canvas's outside navigation, provided by @khorsheed/dsh-canvas's browser half. */
+    canvasNav: CanvasNavService
+  }
 }
 
 /** One card, as a face or a card-page section sees it. */
@@ -67,6 +87,11 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     'canvas.page': { kind: 'keyed'; scope: 'session'; owner: CanvasPageOwnerProps }
     /** A strip pinned under the board's toolbar (pending review, say). */
     'canvas.board.strip': { kind: 'list'; scope: 'session'; owner: CanvasGenreOwnerProps }
+    /**
+     * The 成稿 face, keyed by genre id: a genre that `ownsManuscripts` shows
+     * its own text here (the novel's chapters) instead of the manuscript list.
+     */
+    'canvas.board.manuscripts': { kind: 'keyed'; scope: 'session'; owner: CanvasGenreOwnerProps }
   }
 }
 
@@ -76,6 +101,7 @@ export const CANVAS_CHILD_SLOTS = {
   'canvas.card.section': { kind: 'list', scope: 'session' },
   'canvas.page': { kind: 'keyed', scope: 'session' },
   'canvas.board.strip': { kind: 'list', scope: 'session' },
+  'canvas.board.manuscripts': { kind: 'keyed', scope: 'session' },
 } as const
 
 /** The child slot keys. */

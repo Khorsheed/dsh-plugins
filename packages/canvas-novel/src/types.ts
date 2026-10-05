@@ -232,16 +232,53 @@ export interface ForeshadowOp {
   readonly id?: string
   /** 新埋 only: the question being planted. */
   readonly question?: string
+  /** What this op moves: the clue it adds, the step it advances, what the plant looks like on the page. */
+  readonly note?: string
 }
 
-/** The chapter plan (POV / 目标 / 伏笔操作 / 出场角色 / 章末钩子). */
+/** One step of the chapter's 走向: when it happens, what happens, and whether it turns or lands the chapter. */
+export interface PlanBeat {
+  /** The time label the reader orients by (`午后`, `第二天`). */
+  readonly at?: string
+  readonly text: string
+  readonly mark?: '转折' | '落点'
+}
+
+/** One character on stage: who (a character ref, id or name) and what they do in this chapter. */
+export interface PlanCast {
+  readonly who: string
+  readonly role?: string
+}
+
+/**
+ * The chapter plan: 梗概 / 走向 / 冲突 / 看点 / 伏笔 / 出场 / 章末钩子. It is
+ * the reader's decision aid, so every row says what happens, not where it is
+ * filed; the person changes it by talking, never by ticking items.
+ */
 export interface ChapterPlan {
-  readonly pov?: string
-  readonly goal: string
+  /** 梗概: the chapter in two or three sentences. */
+  readonly summary: string
+  /** 走向: the beats, in order. */
+  readonly beats: readonly PlanBeat[]
+  /** 冲突: what stands against whom. */
+  readonly conflict?: string
+  /** 看点: what the reader comes away with. */
+  readonly highlight?: string
   readonly foreshadowOps: readonly ForeshadowOp[]
-  /** Character ids or names (the roster resolves them at render time). */
-  readonly characters: readonly string[]
+  readonly cast: readonly PlanCast[]
+  /** The POV character (one of the cast). */
+  readonly pov?: string
   readonly hook?: string
+}
+
+/**
+ * What the extract import found of the plan in the manuscript, index for
+ * index: a beat or an op the text carried is true. A missed op is also a
+ * pending 计划落空 item; a missed beat is a reminder only.
+ */
+export interface PlanDelivery {
+  readonly beats: readonly boolean[]
+  readonly ops: readonly boolean[]
 }
 
 /** One row of `chapters.json`: n is the continuous number (max+1 on create), seq the sort key that allows inserts. */
@@ -255,6 +292,8 @@ export interface ChapterRecord {
   readonly plan?: ChapterPlan
   /** The user's ✓确认计划 timestamp (the plan gate's durable fact; absent = unconfirmed). */
   readonly planConfirmedAt?: string
+  /** How much of the plan the manuscript carried, written by the extract import. */
+  readonly delivery?: PlanDelivery
   /** 2-3 sentence summary, written by the extract import. */
   readonly recap?: string
   readonly wordCount?: number
@@ -303,33 +342,68 @@ export interface MentionEntry {
 }
 
 const FORESHADOW_OPS: readonly ForeshadowOp['op'][] = ['推进', '暗示', '新埋', '揭晓']
+const BEAT_MARKS: readonly NonNullable<PlanBeat['mark']>[] = ['转折', '落点']
 
-/** Tolerant read of one chapter plan; undefined when no goal is there to plan around. */
+/** The object rows of a list field; anything else is skipped. */
+function rowsOf(raw: unknown, max: number): Record<string, unknown>[] {
+  if (!Array.isArray(raw)) return []
+  return raw.filter((row): row is Record<string, unknown> => typeof row === 'object' && row !== null).slice(0, max)
+}
+
+/** Tolerant read of one chapter plan; undefined when no 梗概 is there to plan around. */
 export function normalizePlan(raw: unknown): ChapterPlan | undefined {
   if (typeof raw !== 'object' || raw === null) return undefined
   const record = raw as Record<string, unknown>
-  const goal = cleanText(record['goal'], 300)
-  if (goal === undefined) return undefined
+  const summary = cleanText(record['summary'], 400)
+  if (summary === undefined) return undefined
   const pov = cleanText(record['pov'], 80)
+  const conflict = cleanText(record['conflict'], 300)
+  const highlight = cleanText(record['highlight'], 300)
   const hook = cleanText(record['hook'], 300)
-  const foreshadowOps = (Array.isArray(record['foreshadowOps']) ? record['foreshadowOps'] : [])
-    .map((op): ForeshadowOp | undefined => {
-      if (typeof op !== 'object' || op === null) return undefined
-      const row = op as Record<string, unknown>
-      const verb = pick(row['op'], FORESHADOW_OPS)
-      if (verb === undefined) return undefined
-      const id = cleanText(row['id'], 40)
-      const question = cleanText(row['question'], 200)
-      return { op: verb, ...(id === undefined ? {} : { id }), ...(question === undefined ? {} : { question }) }
-    })
-    .filter((op): op is ForeshadowOp => op !== undefined)
+  const beats = rowsOf(record['beats'], 12).map((row): PlanBeat | undefined => {
+    const text = cleanText(row['text'], 200)
+    if (text === undefined) return undefined
+    const at = cleanText(row['at'], 20)
+    const mark = pick(row['mark'], BEAT_MARKS)
+    return { text, ...(at === undefined ? {} : { at }), ...(mark === undefined ? {} : { mark }) }
+  }).filter((beat): beat is PlanBeat => beat !== undefined)
+  const foreshadowOps = rowsOf(record['foreshadowOps'], 12).map((row): ForeshadowOp | undefined => {
+    const verb = pick(row['op'], FORESHADOW_OPS)
+    if (verb === undefined) return undefined
+    const id = cleanText(row['id'], 40)
+    const question = cleanText(row['question'], 200)
+    const note = cleanText(row['note'], 200)
+    return {
+      op: verb,
+      ...(id === undefined ? {} : { id }),
+      ...(question === undefined ? {} : { question }),
+      ...(note === undefined ? {} : { note }),
+    }
+  }).filter((op): op is ForeshadowOp => op !== undefined)
+  const cast = rowsOf(record['cast'], 12).map((row): PlanCast | undefined => {
+    const who = cleanText(row['who'], 80)
+    if (who === undefined) return undefined
+    const role = cleanText(row['role'], 120)
+    return { who, ...(role === undefined ? {} : { role }) }
+  }).filter((member): member is PlanCast => member !== undefined)
   return {
-    goal,
+    summary,
+    beats,
+    ...(conflict === undefined ? {} : { conflict }),
+    ...(highlight === undefined ? {} : { highlight }),
     foreshadowOps,
-    characters: cleanStringList(record['characters'], 12),
+    cast,
     ...(pov === undefined ? {} : { pov }),
     ...(hook === undefined ? {} : { hook }),
   }
+}
+
+/** Tolerant read of a plan delivery: two boolean lists, or nothing. */
+function normalizeDelivery(raw: unknown): PlanDelivery | undefined {
+  if (typeof raw !== 'object' || raw === null) return undefined
+  const record = raw as Record<string, unknown>
+  const flags = (value: unknown): boolean[] => Array.isArray(value) ? value.map(flag => flag === true) : []
+  return { beats: flags(record['beats']), ops: flags(record['ops']) }
 }
 
 /** Tolerant read of one chapter record; undefined when n/title/file cannot be trusted. */
@@ -345,6 +419,7 @@ export function normalizeChapter(raw: unknown): ChapterRecord | undefined {
   const recap = cleanText(record['recap'], 500)
   const wordCount = cleanNumber(record['wordCount'])
   const planConfirmedAt = cleanText(record['planConfirmedAt'], 40)
+  const delivery = normalizeDelivery(record['delivery'])
   return {
     n,
     seq: cleanNumber(record['seq']) ?? n,
@@ -353,6 +428,7 @@ export function normalizeChapter(raw: unknown): ChapterRecord | undefined {
     phase: record['phase'] === 'reviewed' || record['phase'] === 'extracted' ? record['phase'] : 'planning',
     ...(plan === undefined ? {} : { plan }),
     ...(planConfirmedAt === undefined ? {} : { planConfirmedAt }),
+    ...(delivery === undefined ? {} : { delivery }),
     ...(recap === undefined ? {} : { recap }),
     ...(wordCount === undefined ? {} : { wordCount }),
     sessionIds: cleanStringList(record['sessionIds'], 40),
@@ -614,8 +690,16 @@ export interface ExtractCurrentStateInput {
   readonly confidence?: string
 }
 
+/** The subagent's row for one plan beat the manuscript carried. */
+export interface ExtractBeatInput {
+  /** 1-based, as the pack numbers the 走向. */
+  readonly beat?: number
+  readonly evidence_in_text?: string
+}
+
 /** The subagent's strict JSON, as `novel_extract` import receives it (tolerant reads throughout). */
 export interface ExtractPayload {
+  readonly beats_delivered?: readonly ExtractBeatInput[]
   readonly memories?: readonly ExtractMemoryInput[]
   readonly foreshadow_mentions?: readonly ExtractMentionInput[]
   readonly new_foreshadows?: readonly ExtractNewForeshadowInput[]
@@ -639,10 +723,12 @@ export interface ImportReport {
   readonly error?: NovelError
   readonly verified: number
   readonly missed: number
+  /** Plan beats the manuscript carried, and the beats it did not (a reminder, never pending). */
+  readonly beats: { readonly delivered: number; readonly missed: number }
   readonly pending: number
   readonly dropped: readonly ImportDrop[]
   readonly pendingItems: readonly { readonly id: string; readonly kind: PendingKind; readonly reason: string }[]
-  /** The live cards this import landed (new rules, foreshadows, characters), marked new (a red dot) on the board. */
+  /** The live cards this import landed (new rules, foreshadows, characters), marked new (✦) on the board. */
   readonly newCards: readonly { readonly cardId: string; readonly role: EntryRole; readonly text: string; readonly ref?: string }[]
 }
 

@@ -1,13 +1,21 @@
 /**
- * The 长篇小说 genre's browser half: three surfaces that live inside the
+ * The 长篇小说 genre's browser half: four surfaces that live inside the
  * canvas, on the seats it declares for genres —
  *
- * - `canvas.board.strip`: the work's chapters, the ledger link and the
- *   pending queue (medium/low-confidence findings, missed plans);
+ * - `canvas.board.strip`: the chapter to pick up at, the pending queue
+ *   (medium/low-confidence findings, missed plans), the ledger link and the
+ *   way into the book;
+ * - `canvas.board.manuscripts`: the 成稿 face as the book — contents, then a
+ *   chapter-by-chapter reader;
  * - `canvas.page` `novel:ledger`: the foreshadow ledger with each
  *   foreshadow's chapter track;
- * - `canvas.page` `novel:chapter`: one chapter — phase lamp, plan, its own
- *   pending items, the text, and the person's 「✓ 审过」.
+ * - `canvas.page` `novel:chapter`: the same reader, opened at one chapter
+ *   (from the strip, or a chat card).
+ *
+ * Outside the canvas, the `novel_write` tool row in the conversation: a
+ * planned chapter shows as a card whose door opens that chapter page (through
+ * the canvas's `canvasNav` service, read lazily; without it the card has no
+ * door).
  *
  * It mounts the `novel` Remote through the official `ctx.remote.$mount`. The
  * seats are declared by the canvas tab's registration (its children table),
@@ -26,17 +34,22 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@khorsheed/dsh-canvas-novel/remote'
 import novelRemote from '@khorsheed/dsh-canvas-novel/remote'
 import { NOVEL_GENRE_ID } from '../types.ts'
-import { ChapterPage } from './ChapterPage.tsx'
+import { ChapterBook } from './ChapterBook.tsx'
+import { ChapterPage } from './ChapterReader.tsx'
 import { CHAPTER_PAGE, LEDGER_PAGE, type NovelFace, type NovelRemote } from './contract.ts'
 import { LedgerPage } from './LedgerPage.tsx'
 import { en, NS, zh } from './locales.ts'
 import { PendingStrip } from './PendingStrip.tsx'
+import { WriteToolRow, type WriteToolFace } from './WriteToolRow.tsx'
 
-export { ChapterPage } from './ChapterPage.tsx'
+export { ChapterBook } from './ChapterBook.tsx'
+export { ChapterPage, ChapterReader } from './ChapterReader.tsx'
 export { LedgerPage } from './LedgerPage.tsx'
 export { PendingList, PendingStrip } from './PendingStrip.tsx'
+export { WriteToolRow } from './WriteToolRow.tsx'
 export { CHAPTER_PAGE, LEDGER_PAGE } from './contract.ts'
 export type { NovelFace, NovelNavigate, NovelOwnerProps, NovelPageOwnerProps, NovelRemote } from './contract.ts'
+export type { WriteToolFace } from './WriteToolRow.tsx'
 
 /**
  * Required services: slots, the remote channel, the locale. `remote.novel` is
@@ -48,7 +61,7 @@ export const inject = ['slots', 'remote', 'locale']
 
 /**
  * Client plugin body: mount the Remote, register the dictionaries, then the
- * strip and the two pages.
+ * strip, the book, the two pages and the tool row.
  * @param ctx - client root context.
  */
 export async function apply(ctx: Context): Promise<() => Promise<void>> {
@@ -73,6 +86,12 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     locale: NS,
     inject: () => face,
   }, PendingStrip)), 'canvas-novel: board strip')
+  ctx.effect(() => seats.inject('canvas.board.manuscripts', () => seats.register({
+    name: 'canvas.board.manuscripts',
+    key: NOVEL_GENRE_ID,
+    locale: NS,
+    inject: () => face,
+  }, ChapterBook)), 'canvas-novel: book')
   for (const [key, page] of [[LEDGER_PAGE, LedgerPage], [CHAPTER_PAGE, ChapterPage]] as const) {
     ctx.effect(() => seats.inject('canvas.page', () => seats.register({
       name: 'canvas.page',
@@ -81,6 +100,21 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       inject: () => face,
     }, page)), `canvas-novel: page ${key}`)
   }
+
+  // The tool slot is declared by @deepseek-ai/dsh-client-ui-tool, outside this
+  // type graph too; without it the inject never fires and the call keeps the
+  // host's generic row.
+  const writeFace: WriteToolFace = {
+    ...face,
+    openPage: () => (ctx.get('canvasNav') as { openPage: ReturnType<WriteToolFace['openPage']> } | undefined)?.openPage,
+    chapterPage: CHAPTER_PAGE,
+  }
+  ctx.effect(() => seats.inject('tool.call.toolview', () => seats.register({
+    name: 'tool.call.toolview',
+    key: 'novel_write',
+    locale: NS,
+    inject: () => writeFace,
+  }, WriteToolRow)), 'canvas-novel: novel_write tool row')
 
   return async () => {
     await Promise.all(disposers.map(dispose => dispose()))
