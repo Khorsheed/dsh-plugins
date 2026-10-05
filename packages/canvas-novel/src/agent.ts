@@ -5,8 +5,9 @@
  * sessions MAY write novels; the session's canvas binding decides which
  * actually do: the three novel_* tools are registered on an agent's own
  * scope only while its session is bound to a 长篇小说 canvas, and are absent
- * — not denied, absent — everywhere else. The `novel` skill and the pointer
- * FUNCTION section register once for the mounting scope.
+ * — not denied, absent — everywhere else. `novel_bind` (the model's way to
+ * that binding), the `novel` skill and the pointer FUNCTION section register
+ * once for the mounting scope.
  *
  * The grant is re-evaluated on `agent/created` (scope-filtered: only the
  * agents composed under this entry's scope arrive), on
@@ -26,7 +27,7 @@ import { scopeChainOf, scopeOf } from '@deepseek-ai/dsh-scope'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import type { NovelService } from './store.ts'
 import { NOVEL_SKILL_CONTENT, NOVEL_SKILL_DESCRIPTION, NOVEL_SKILL_NAME } from './skill.ts'
-import { novelToolDefinitions } from './tools.ts'
+import { NOVEL_BIND_TOOL, novelBindDefinition, novelToolDefinitions } from './tools.ts'
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'canvas-novel-agent'
@@ -93,7 +94,12 @@ export class NovelToolGrant {
    */
   constructor(private readonly store: NovelService, private readonly definitions: readonly ToolDefinition[]) {}
 
-  /** The bound canvas title of a granted session (the pointer's only input). */
+  /** Whether a session's agent was composed under this grant's scope. */
+  tracks(sessionId: string): boolean {
+    return this.agents.has(sessionId)
+  }
+
+  /** The bound canvas title of a granted session (the pointer's input). */
   titleOf(sessionId: string): string | undefined {
     return this.titles.get(sessionId)
   }
@@ -159,19 +165,24 @@ export class NovelToolGrant {
 }
 
 /**
- * The pointer's text, evaluated per assembly. One line in a bound session, ''
- * elsewhere — the full brief never auto-injects, and the `novel` skill
- * carries the workflow.
- * @param grant - the per-session grant whose cached titles are the whole input.
+ * The pointer's text, evaluated per assembly. One line in a bound session;
+ * in an unbound session of this scope, one line saying how to bind (the
+ * model binds by the conversation's subject, 2026-10-05); '' elsewhere — the
+ * full brief never auto-injects, and the `novel` skill carries the workflow.
+ * @param grant - the per-session grant whose cached state is the whole input.
  * @returns the section text for this assembly.
  */
-export function novelPointerText(grant: Pick<NovelToolGrant, 'titleOf'>): (context: { agent?: { sessionId?: string } }) => string {
+export function novelPointerText(grant: Pick<NovelToolGrant, 'titleOf' | 'tracks'>): (context: { agent?: { sessionId?: string } }) => string {
   return (context) => {
     try {
       const sessionId = context.agent?.sessionId
       if (sessionId === undefined || sessionId === '') return ''
       const title = grant.titleOf(sessionId)
-      if (title === undefined) return ''
+      if (title === undefined) {
+        return grant.tracks(sessionId)
+          ? `本会话还没绑定长篇小说作品：对话涉及某部作品（写作/设定/章节）时，先 ${NOVEL_BIND_TOOL} 绑定——不带参数列出作品，拿不准是哪部就问用户。`
+          : ''
+      }
       return `本会话绑定长篇小说画布《${title}》：涉及写作/续写/设定/章节时，先 novel_read(brief)；novel skill 载有完整工作流。`
     } catch {
       // Degrade, never explode: a prompt assembly must not fail on a pointer.
@@ -216,6 +227,14 @@ export function apply(ctx: Context): void {
     for (const agent of agents?.list() ?? []) {
       if (ownsAgent(ctx, agent)) void grant.track(agent)
     }
+  })
+  // novel_bind lives on the mounting scope, not per session: it is how an
+  // unbound session gets bound. Deferred, for the canvas ./agent's reason.
+  ctx.inject(['tools'], (toolsCtx) => {
+    const tools = toolsCtx.get('tools') as ToolsSlice | undefined
+    if (tools === undefined) return
+    const definition = novelBindDefinition(store)
+    toolsCtx.effect(() => tools.register(definition), `canvas-novel-agent: ${NOVEL_BIND_TOOL} tool`)
   })
   ctx.inject(['systemPrompt'], (promptCtx) => {
     const sections = promptCtx.get('systemPrompt') as PromptSections | undefined

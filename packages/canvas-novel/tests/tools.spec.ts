@@ -8,7 +8,7 @@ import { Context } from '@deepseek-ai/cordis'
 import type { Session } from '@deepseek-ai/dsh-session'
 import { describe, expect, it } from 'vitest'
 import { NovelService } from '../src/store.ts'
-import { novelToolDefinitions } from '../src/tools.ts'
+import { novelBindDefinition, novelToolDefinitions } from '../src/tools.ts'
 import { provideCanvas } from './fake-canvas.ts'
 import { FakeFs } from './fake-fs.ts'
 import { CARD, DREAM, seedDreamKeeper } from './seed-dream.ts'
@@ -38,6 +38,29 @@ async function call(tool: { execute: (args: never, exec: never) => Promise<unkno
   const outcome = await tool.execute(args as never, exec(agent) as never)
   return typeof outcome === 'string' ? outcome : String(outcome)
 }
+
+describe('novel_bind', () => {
+  it('lists the works, binds by title (exact, then unique part), and refuses what it cannot resolve', async () => {
+    const { store, canvas, read } = await bench()
+    const bind = novelBindDefinition(store)
+    canvas.addBoard({ id: 'canvas_plain0001', title: '杂记', genre: null })
+    canvas.addBoard({ id: 'canvas_novel0002', title: '梦境监护者外传' })
+    const listed = await call(bind, {})
+    expect(listed).toContain('《梦境监护者》')
+    expect(listed).not.toContain('杂记')
+    expect(listed).toContain('本会话未绑定')
+    // A part shared by two works is ambiguous: the model asks the user.
+    expect(await call(bind, { work: '梦境' })).toContain('对应多部作品')
+    expect(await call(bind, { work: '杂记' })).toContain('没有叫「杂记」')
+    // The exact title wins over the longer one containing it.
+    expect(await call(bind, { work: '《梦境监护者》' })).toContain('已绑定《梦境监护者》')
+    expect(canvas.bindings.get('s-tools')).toBe(DREAM.workId)
+    expect(await call(read, { what: 'brief' })).not.toContain('还没有绑定')
+    expect(await call(bind, {})).toContain('本会话已绑定《梦境监护者》')
+    expect(await call(bind, { work: '外传' })).toContain('已绑定《梦境监护者外传》')
+    expect(await call(bind, { work: '外传' }, false)).toContain('没有会话')
+  })
+})
 
 describe('the novel tools', () => {
   it('answers guidance (never a throw) when the session is bound to no novel canvas or no agent is there', async () => {

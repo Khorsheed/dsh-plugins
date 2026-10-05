@@ -32,7 +32,7 @@ function tagOrigin<T extends object>(definition: T): T {
 }
 
 /** What the tools answer when the session is bound to no novel canvas (guidance, never a throw). */
-const NO_WORK_MESSAGE = '本会话还没有绑定「长篇小说」画布：请用户在会话头的画布 chip 里选一张体裁为「长篇小说」的画布，再进行读写。'
+const NO_WORK_MESSAGE = '本会话还没有绑定「长篇小说」画布：先 novel_bind 按对话说的作品绑定（不带参数列出作品），或请用户在会话头的「绑定作品」里选。'
 
 /** The extract gate's refusal, phase-aware (对账只发生在写作后、审过收章前). */
 function extractGateMessage(phase: string | undefined): string {
@@ -378,6 +378,56 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
   })
 
   return [tagOrigin(read), tagOrigin(write), tagOrigin(extract)]
+}
+
+/** The tool that binds a session to a work — present in every session the grant scope owns, bound or not. */
+export const NOVEL_BIND_TOOL = 'novel_bind'
+
+/**
+ * Build `novel_bind`: the model's own way to the binding the chip gives the
+ * user. No `work` lists the 长篇小说 canvases; a `work` binds the calling
+ * session to it, and the novel_* tools appear from the next step on (the
+ * host re-assembles the tool list per step). It is the one novel tool an
+ * unbound session holds, so the model can bind by the conversation's
+ * subject instead of asking the user to find the chip.
+ * @param store - the novel service the tool delegates to.
+ * @returns the tagged definition, registered once for the mounting scope.
+ */
+export function novelBindDefinition(store: NovelService): ToolDefinition {
+  const listing = (works: readonly { title: string }[]): string =>
+    works.length === 0
+      ? '还没有体裁为「长篇小说」的画布：请用户在画布里新建一张，⋯ → 创作体裁选「长篇小说」。'
+      : `长篇小说作品：${works.map(work => `《${work.title}》`).join('、')}`
+  const bind = defineTool({
+    name: NOVEL_BIND_TOOL,
+    description:
+      'Bind this session to a novel work (a 长篇小说 canvas) so the novel_* tools appear. No work: list the works. '
+      + 'Bind when the conversation is about one of them; if it is unclear which, ask the user.',
+    parameters: {
+      work: { type: 'string', description: 'The work\'s title (or canvas id). Omit to list.' },
+    },
+    output: {
+      schema: { type: 'string' },
+      render: (_args, value) => [{ type: 'text', text: String(value) }],
+    },
+    execute: async (args: { work?: string }, exec: { agent?: Agent }): Promise<string> => {
+      const session = exec.agent?.session
+      const current = session === undefined ? undefined : await store.boundWork(String(session.id))
+      if (args.work === undefined || args.work.trim() === '') {
+        const works = await store.listWorks()
+        return [listing(works), current === undefined ? '本会话未绑定。' : `本会话已绑定《${current.title}》。`].join('\n')
+      }
+      if (session === undefined) return '失败：这次调用没有会话，无法绑定。'
+      const bound = await store.bindWork(args.work, session)
+      if (!bound.ok) {
+        if (bound.error === 'ambiguous') return `「${args.work}」对应多部作品，请问用户是哪一部：${bound.works.map(work => `《${work.title}》`).join('、')}`
+        if (bound.error === 'missing') return `没有叫「${args.work}」的长篇小说作品。${listing(bound.works)}`
+        return `失败：${bound.error}`
+      }
+      return `已绑定《${bound.work.title}》：novel_read / novel_write / novel_extract 从下一步起可用，先加载 novel skill。用户可在会话头的画布 chip 里改绑或解绑。`
+    },
+  })
+  return tagOrigin(bind)
 }
 
 /** One card in full, as `novel_read(what=card)` answers it. */

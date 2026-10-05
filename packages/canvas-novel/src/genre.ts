@@ -99,6 +99,12 @@ type FenceSession = object
 export interface CanvasBoardSlice {
   readBoard(request: { readonly canvasId: string }): Promise<NovelBoardMutation>
   boundCanvasId(sessionId: string): Promise<string | undefined>
+  listCanvases(): Promise<{
+    readonly items: readonly { readonly id: string; readonly title: string; readonly archivedAt: string | null; readonly genre?: string }[]
+  }>
+  bindSession(request: { readonly canvasId: string | null }, session: FenceSession): Promise<
+    { readonly ok: true; readonly canvasId: string | null } | { readonly ok: false; readonly error: string }
+  >
   registerGenre(definition: NovelGenreDefinition): () => void
   putCard(request: {
     readonly canvasId: string

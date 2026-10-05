@@ -22,7 +22,8 @@ It replaces the retired `@khorsheed/dsh-story-bible`. Data under the old `$DSH_H
   | `pending.json` | The pending review queue |
 
   The single source of truth for manuscripts is `<workspace>/<canvas title>/第{n}章.md` in the canvas's mounted workspace.
-- **Three model tools**, registered by the `./agent` composition entry and origin-tagged:
+- **Model tools**, registered by the `./agent` composition entry and origin-tagged:
+  - `novel_bind`: lists the long-novel works and binds the calling session to one by title; it sits on the grant scope, so unbound sessions have it too;
   - `novel_read`: the brief in three variants, cards, card, chapters, ledger, pending, chapter;
   - `novel_write`: card proposes a ghost card or edits a card by ref, chapter numbers automatically, review accepts, discards, archives or retracts;
   - `novel_extract`: prepare builds the material pack, import files the result through five validation gates.
@@ -32,9 +33,10 @@ It replaces the retired `@khorsheed/dsh-story-bible`. Data under the old `$DSH_H
 ## Key design
 
 - **The session binding decides scope**: the canvas chip in the session header binds a session to a canvas.
-  - Only sessions bound to a long-novel canvas get the three tools; they are granted and revoked on the session's own scope.
+  - Only sessions bound to a long-novel canvas get the read/write/extract tools; they are granted and revoked on the session's own scope.
+  - There are two ways to bind: the model calls `novel_bind` from what the conversation is about (asking the user when it is unclear which work), or the user picks one in the chip. In an unbound session the pointer says only "novel_bind first".
   - Unbinding, or changing the canvas's genre, revokes them at once.
-  - In an unbound session the tools are absent, not denied.
+  - In an unbound session those three tools are absent, not denied.
 - **The cards are the single source of truth**:
   - Every setting the model creates is a **ghost card** (the canvas's proposed status). It stays out of the brief until the user accepts it with ✓; ✗ discards it into the archive.
   - Cards are never deleted; an archived card stays on the canvas, hidden.
@@ -68,7 +70,7 @@ The patch mounts two rows:
 | Row | Contents | As shipped |
 |---|---|---|
 | `canvas-novel` | The core: genre plus engine | Available everywhere |
-| `canvas-novel-agent` | The three tools, the pointer and the skill | **Disabled** at the profile root |
+| `canvas-novel-agent` | The four tools, the pointer and the skill | **Disabled** at the profile root |
 
 The agent surface belongs to the writing scene, not to every session.
 
@@ -84,7 +86,7 @@ Enabling the root row by hand (removing `disabled: true`) makes it apply to ever
 
 ## Quick start
 
-1. Create a canvas with the 长篇小说 genre and mount a workspace on it. Bind the session to it with the canvas chip in the session header.
+1. Create a canvas with the 长篇小说 genre and mount a workspace on it. Talk about the work in a writing session and the model binds it with `novel_bind`; you can also bind by hand with the canvas chip in the session header.
 2. Talk through the settings. The model files them as ghost cards, and you accept them with ✓ or discard them with ✗ on the canvas.
 3. Plan. `novel_write(what=chapter, plan=…)` registers the plan; once confirmed, start writing.
    - The manuscript lands in the canvas workspace through the session's fence.

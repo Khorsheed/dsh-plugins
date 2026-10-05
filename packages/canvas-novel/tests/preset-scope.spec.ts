@@ -90,14 +90,14 @@ describe('the preset-granted agent surface (composition level)', () => {
     }
 
     const granted = await root.systemPrompt.assemble({ scope: inKey, agent: { sessionId: 's-in' } as never })
-    expect(novelToolsOf(granted).sort()).toEqual(['novel_extract', 'novel_read', 'novel_write'])
+    expect(novelToolsOf(granted).sort()).toEqual(['novel_bind', 'novel_extract', 'novel_read', 'novel_write'])
     expect(granted.sections.find(section => section.name === 'novel:pointer')?.text).toContain('《梦境监护者》')
     expect(skills.registered.map(skill => skill.name)).toEqual(['novel'])
 
-    // The scope itself holds the pointer and the skill, but no tools: an unbound
-    // session there renders '' and sees no novel tool.
+    // The scope itself holds the pointer, the skill and novel_bind only: a
+    // session it never composed renders '' and sees just the way to bind.
     const unbound = await root.systemPrompt.assemble({ scope: key, agent: { sessionId: 's-none' } as never })
-    expect(novelToolsOf(unbound)).toEqual([])
+    expect(novelToolsOf(unbound)).toEqual(['novel_bind'])
     expect(unbound.sections.find(section => section.name === 'novel:pointer')?.text).toBe('')
 
     // An agent outside the scope never hears of the entry, bound or not.
@@ -109,6 +109,8 @@ describe('the preset-granted agent surface (composition level)', () => {
     canvas.bind('s-in', null)
     root.emit('canvas/binding-changed' as never, 's-in' as never, null as never)
     await new Promise(resolve => { setTimeout(resolve, 0) })
-    expect(novelToolsOf(await root.systemPrompt.assemble({ scope: inKey }))).toEqual([])
+    const after = await root.systemPrompt.assemble({ scope: inKey, agent: { sessionId: 's-in' } as never })
+    expect(novelToolsOf(after)).toEqual(['novel_bind'])
+    expect(after.sections.find(section => section.name === 'novel:pointer')?.text).toContain('novel_bind')
   })
 })

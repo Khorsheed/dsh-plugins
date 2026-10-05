@@ -442,6 +442,45 @@ export class NovelService {
     return canvasId === undefined ? undefined : this.readWorkMeta(canvasId)
   }
 
+  /**
+   * The works a session may bind to: the 长篇小说 canvases not archived.
+   * @returns id and title per work, in the canvas list's order.
+   */
+  async listWorks(): Promise<readonly { readonly id: string; readonly title: string }[]> {
+    const canvas = this.canvas
+    if (canvas === undefined) return []
+    const { items } = await canvas.listCanvases()
+    return items
+      .filter(item => item.genre === NOVEL_GENRE.id && item.archivedAt === null)
+      .map(item => ({ id: item.id, title: item.title }))
+  }
+
+  /**
+   * Bind the calling session to one work, named by canvas id or title (an
+   * exact title wins; otherwise a unique title containing the name). The
+   * model binds by the conversation's subject; the chip stays the user's
+   * own way to do the same.
+   * @param name - canvas id or (part of) the title.
+   * @param session - the session being bound.
+   * @returns the bound work, or the failure with the candidates to choose from.
+   */
+  async bindWork(name: string, session: Session): Promise<
+    | { readonly ok: true; readonly work: { readonly id: string; readonly title: string } }
+    | { readonly ok: false; readonly error: NovelError | 'ambiguous'; readonly works: readonly { readonly id: string; readonly title: string }[] }
+  > {
+    const canvas = this.canvas
+    const works = await this.listWorks()
+    const wanted = name.trim().replace(/^《(.*)》$/, '$1')
+    const exact = works.filter(work => work.id === wanted || work.title === wanted)
+    const matches = exact.length > 0 ? exact : works.filter(work => wanted !== '' && work.title.includes(wanted))
+    if (canvas === undefined || matches.length === 0) return { ok: false, error: 'missing', works }
+    if (matches.length > 1) return { ok: false, error: 'ambiguous', works: matches }
+    const work = matches[0]!
+    const bound = await canvas.bindSession({ canvasId: work.id }, session)
+    if (!bound.ok) return { ok: false, error: bound.error === 'missing' ? 'missing' : 'io', works }
+    return { ok: true, work }
+  }
+
   /* -------------------------------------------------------------- entries */
 
   /** Read the sidecar (missing/corrupt reads as empty — mutations re-check through mutateJson). */

@@ -20,7 +20,7 @@ dsh plugin --profile <name> add @khorsheed/dsh-bundle-writing
 ```
 
 - **canvas-novel alone**: the novel engine's store, and the canvas gains the 长篇小说 genre — zero agent tools in any session.
-- **plus bundle-writing**: the 写作 preset appears; switching a session to it is what brings the three tools, the pointer and the skill into existence.
+- **plus bundle-writing**: the 写作 preset appears; switching a session to it is what brings the novel tools, the pointer and the skill into existence (the read/write/extract tools appear once novel_bind binds a work).
 
 Absence behavior: installing bundle-writing WITHOUT canvas-novel leaves the grant inert (the tools simply never exist; nothing throws) — they appear once canvas-novel is installed. Hosts before 0.1.7-rc.1 have no `@deepseek-ai/dsh-agent-preset` row type and cannot mount this bundle at all (see package.json `dsh.compat`).
 

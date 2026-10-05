@@ -58,6 +58,28 @@ export class FakeCanvas implements CanvasBoardSlice {
     return this.bindings.get(sessionId)
   }
 
+  async listCanvases(): Promise<{ items: { id: string; title: string; archivedAt: string | null; genre?: string }[] }> {
+    return {
+      items: [...this.boards.values()].map(board => ({
+        id: board.id, title: board.title, archivedAt: null,
+        ...(board.genre === undefined ? {} : { genre: board.genre.id }),
+      })),
+    }
+  }
+
+  async bindSession(request: { readonly canvasId: string | null }, session: object): Promise<
+    { ok: true; canvasId: string | null } | { ok: false; error: string }
+  > {
+    const sessionId = String((session as { id: unknown }).id)
+    if (request.canvasId !== null) {
+      const board = this.boards.get(request.canvasId)
+      if (board === undefined) return { ok: false, error: 'missing' }
+      if (board.genre === undefined) return { ok: false, error: 'no-genre' }
+    }
+    this.bind(sessionId, request.canvasId)
+    return { ok: true, canvasId: request.canvasId }
+  }
+
   registerGenre(definition: NovelGenreDefinition): () => void {
     this.genres.push(definition)
     return () => { this.genres.splice(this.genres.indexOf(definition), 1) }
