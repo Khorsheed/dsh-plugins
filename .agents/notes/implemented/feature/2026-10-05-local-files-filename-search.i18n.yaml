@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-10-05-local-files-filename-search.md
-.agents/notes/implemented/feature/2026-10-05-local-files-filename-search.md: 6578c58422b7182d9229020f853e5c9f81b40a8b
-.agents/notes/implemented/feature/2026-10-05-local-files-filename-search.zh.md: 1b9ce6acec5cc3d3febff8dfdfc8206ac71db6c3
+.agents/notes/implemented/feature/2026-10-05-local-files-filename-search.md: 7812c1de0c9728099f5acae042836b528bdadce7
+.agents/notes/implemented/feature/2026-10-05-local-files-filename-search.zh.md: e0555c42af3cfc8c0117c1c615239e2dc24c78e2

@@ -211,8 +211,8 @@ describe('WorkspaceView filename search', () => {
       path: WORKSPACE,
       truncated: false,
       entries: [
-        { path: 'docs/guide', isDir: true },
-        { path: 'docs/guide/intro.md', isDir: false },
+        { path: 'docs/guide', isDir: true, nameMatch: false },
+        { path: 'docs/guide/intro.md', isDir: false, nameMatch: true },
       ],
     },
   }
@@ -259,5 +259,73 @@ describe('WorkspaceView filename search', () => {
     await act(async () => { await new Promise(resolve => { setTimeout(resolve, 300) }) })
     expect(screen.getByText('tree.searchNoMatch')).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'top.md' })).toBeNull()
+  })
+})
+
+describe('WorkspaceView search expansion', () => {
+  it('starts name-hit folders collapsed, name-hit files revealed, and rows toggle freely', async () => {
+    const { props } = makeProps({ byId: { [SESSION]: { cwd: WORKSPACE } } })
+    props.listDirectory = vi.fn().mockResolvedValue({ ok: true, value: { entries: [{ name: 'docs', isDir: true }] } })
+    props.searchFiles = vi.fn().mockResolvedValue({
+      ok: true,
+      value: {
+        path: WORKSPACE,
+        truncated: false,
+        entries: [
+          // A name-hit folder whose contents matched only through the path.
+          { path: 'docs/web-eval', isDir: true, nameMatch: true },
+          { path: 'docs/web-eval/restart.sh', isDir: false, nameMatch: false },
+          // A name-hit file buried under a plain ancestor chain.
+          { path: 'docs/deep/intro.md', isDir: false, nameMatch: true },
+        ],
+      },
+    }) as never
+    render(<WorkspaceView {...props} />)
+    await act(async () => {})
+    fireEvent.click(screen.getByTitle('tree.search'))
+    fireEvent.change(screen.getByPlaceholderText('tree.searchPlaceholder'), { target: { value: 'eval' } })
+    await act(async () => { await new Promise(resolve => { setTimeout(resolve, 300) }) })
+
+    // The ancestor chain is open; the name-hit folder starts collapsed; the
+    // name-hit file's chain starts open.
+    expect(screen.getByRole('button', { name: 'web-eval' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'restart.sh' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'intro.md' })).toBeTruthy()
+
+    // Rows toggle freely: open the hit folder, fold the revealed chain.
+    fireEvent.click(screen.getByRole('button', { name: 'web-eval' }))
+    expect(screen.getByRole('button', { name: 'restart.sh' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'deep' }))
+    expect(screen.queryByRole('button', { name: 'intro.md' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'deep' }))
+    expect(screen.getByRole('button', { name: 'intro.md' })).toBeTruthy()
+  })
+
+  it('re-seeds the expansion when a fresh hit set lands', async () => {
+    const { props } = makeProps({ byId: { [SESSION]: { cwd: WORKSPACE } } })
+    props.listDirectory = vi.fn().mockResolvedValue({ ok: true, value: { entries: [{ name: 'docs', isDir: true }] } })
+    const searchFiles = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        value: { path: WORKSPACE, truncated: false, entries: [{ path: 'docs/guide/intro.md', isDir: false, nameMatch: true }] },
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        value: { path: WORKSPACE, truncated: false, entries: [{ path: 'docs/web-eval', isDir: true, nameMatch: true }] },
+      })
+    props.searchFiles = searchFiles as never
+    render(<WorkspaceView {...props} />)
+    await act(async () => {})
+    fireEvent.click(screen.getByTitle('tree.search'))
+    fireEvent.change(screen.getByPlaceholderText('tree.searchPlaceholder'), { target: { value: 'intro' } })
+    await act(async () => { await new Promise(resolve => { setTimeout(resolve, 300) }) })
+    // Fold the revealed chain, then change the query: the fresh answer
+    // re-seeds instead of keeping the fold.
+    fireEvent.click(screen.getByRole('button', { name: 'guide' }))
+    expect(screen.queryByRole('button', { name: 'intro.md' })).toBeNull()
+    fireEvent.change(screen.getByPlaceholderText('tree.searchPlaceholder'), { target: { value: 'eval' } })
+    await act(async () => { await new Promise(resolve => { setTimeout(resolve, 300) }) })
+    expect(screen.getByRole('button', { name: 'web-eval' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'intro.md' })).toBeNull()
   })
 })

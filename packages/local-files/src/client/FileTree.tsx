@@ -9,7 +9,7 @@
  * children on demand (per-level local browsing) rather than from a static
  * trie.
  */
-import { useMemo, useState, type ReactNode } from 'react'
+import { useLayoutEffect, useMemo, useState, type ReactNode } from 'react'
 import { IconChevronDownOutlineMedium, IconChevronRightOutlineMedium, IconFolderCloseMedium, IconFolderOpenMedium, IconPanelLeftOutlineMedium, IconSearchOutlineMedium } from './icons.tsx'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import css from './FileTree.module.css'
@@ -27,6 +27,10 @@ export interface FileTreeItem {
   /** Whether this entry is a directory (the local-browser trie needs this to
    *  render an expandable dir even when its children are lazily loaded). */
   isDir?: boolean
+  /** Search mode: whether the entry's own basename matched the query (vs an
+   * ancestor's name pulling it in through the path match). Seeds the default
+   * expansion — see searchExpanded below. */
+  nameMatch?: boolean
 }
 
 /** One top-level group of the tree (a change segment, a commit, or the whole repo). */
@@ -151,8 +155,10 @@ export interface FileTreeProps {
   /** Search chrome: when onToggleSearch is given the header shows a search
    * toggle and, while open, an input row below the header. The parent owns the
    * query, runs the search, and hands the hits back through `groups` — in
-   * search mode (row open + non-empty query) every hit-path ancestor renders
-   * force-expanded, so a hit nested in folders is always visible. */
+   * search mode (row open + non-empty query) each fresh hit set seeds the
+   * default expansion: ancestors of name hits start open so a buried hit is
+   * visible, a folder that is itself a name hit starts collapsed, and every
+   * row stays freely toggleable from there. */
   searchOpen?: boolean
   onToggleSearch?: () => void
   searchQuery?: string
@@ -224,10 +230,11 @@ export function FileTree({ groups, selectedPath, onSelect, treeTitle, collapsed,
   const [lazy, setLazy] = useState<Record<string, readonly FileTreeItem[]>>({})
   // Directories whose children were requested but are still loading.
   const [lazyLoading, setLazyLoading] = useState<ReadonlySet<string>>(() => new Set())
-  // Search mode: the parent filtered the groups down to name hits. Hit-path
-  // ancestors render force-expanded and show ONLY their hit chain, so a hit
-  // nested in folders is always visible.
+  // Search mode: the parent filtered the groups down to the hits. Each fresh
+  // hit set SEEDS the default expansion (the useLayoutEffect below); from
+  // there every row toggles freely.
   const searchActive = searchOpen && searchQuery.trim() !== ''
+  const [searchExpanded, setSearchExpanded] = useState<ReadonlySet<string>>(() => new Set())
 
   const roots = useMemo(
     () => groups
@@ -242,6 +249,34 @@ export function FileTree({ groups, selectedPath, onSelect, treeTitle, collapsed,
   )
 
   const isDirNode = (node: FileNode): boolean => node.dir || node.children.length > 0
+
+  // Seed search-mode expansion from each fresh hit set (a new `roots` identity
+  // while searchActive). A dir starts open iff its subtree holds a name hit
+  // BELOW it: a file the query named is revealed through its ancestor chain,
+  // while a folder the query named starts collapsed — its contents are
+  // path-dragged-along hits, shown on demand. Layout effect so the seeded
+  // state paints with the results, never one frame collapsed.
+  useLayoutEffect(() => {
+    if (!searchActive) {
+      setSearchExpanded(new Set())
+      return
+    }
+    const seed = new Set<string>()
+    // Returns whether the subtree rooted at node contains a name hit
+    // (counting the node itself); seeds every dir with a hit BELOW it.
+    const walk = (node: FileNode): boolean => {
+      let descendantHit = false
+      for (const child of node.children) {
+        descendantHit = walk(child) || descendantHit
+      }
+      if (descendantHit && isDirNode(node)) seed.add(node.path)
+      return descendantHit || node.item?.nameMatch === true
+    }
+    for (const group of roots) {
+      for (const node of group.nodes) walk(node)
+    }
+    setSearchExpanded(seed)
+  }, [roots, searchActive])
 
   const childrenOf = (node: FileNode): FileNode[] => {
     // Search mode: a hit-path ancestor renders ONLY its hit chain — the lazy
@@ -304,12 +339,15 @@ export function FileTree({ groups, selectedPath, onSelect, treeTitle, collapsed,
   }
 
   const toggle = (path: string): void => {
-    setExpanded(previous => {
+    const apply = (previous: ReadonlySet<string>): Set<string> => {
       const next = new Set(previous)
       if (next.has(path)) next.delete(path)
       else next.add(path)
       return next
-    })
+    }
+    // Search-mode rows ride the seeded set; the normal tree keeps its own.
+    if (searchActive) setSearchExpanded(apply)
+    else setExpanded(apply)
   }
   const expandAll = (): void => {
     // Lazy mode: expanding a directory needs its children fetched, so walk the
@@ -332,19 +370,16 @@ export function FileTree({ groups, selectedPath, onSelect, treeTitle, collapsed,
 
   const renderNode = (node: FileNode, groupKey: string): ReactNode => {
     const isDir = isDirNode(node)
-    // Search mode: an ancestor on a hit chain stays open (collapsing it would
-    // hide the hit it exists to reveal); a matched dir WITHOUT hit children
-    // keeps the plain toggle + lazy-load behaviour.
-    const forcedOpen = searchActive && isDir && node.children.length > 0
-    const isOpen = forcedOpen || expanded.has(node.path)
+    const isOpen = searchActive ? searchExpanded.has(node.path) : expanded.has(node.path)
     const dirPath = node.dirPath
     if (isDir) {
       const kids = childrenOf(node)
       return (
         <div key={`${groupKey}/${node.path}`}>
           <button type="button" className={css.row} onClick={() => {
-            if (forcedOpen) return
-            if (!isOpen && loadChildren !== undefined) lazyChildren(node)
+            // A search-mode dir with hit children renders from the static
+            // trie — no fetch; a hit dir WITHOUT trie children lazy-loads.
+            if (!isOpen && loadChildren !== undefined && !(searchActive && node.children.length > 0)) lazyChildren(node)
             toggle(node.path)
           }}>
             <span className={css.chevron}>{isOpen ? <IconChevronDownOutlineMedium size={18} /> : <IconChevronRightOutlineMedium size={18} />}</span>

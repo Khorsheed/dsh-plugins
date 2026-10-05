@@ -125,9 +125,10 @@ describe('LocalFilesService filename search', () => {
     // The web-eval scenario: searching a folder's name must surface the files
     // INSIDE it, not just the folder row itself.
     const result = await service.searchLocalDirectory(dir, 'guide')
-    const byPath = new Map(result.entries.map(entry => [entry.path, entry.isDir]))
-    expect(byPath.get('docs/guide')).toBe(true)
-    expect(byPath.get('docs/guide/NOTES.txt')).toBe(false)
+    const byPath = new Map(result.entries.map(entry => [entry.path, entry]))
+    // The folder is the NAME hit; its contents matched only through the path.
+    expect(byPath.get('docs/guide')).toMatchObject({ isDir: true, nameMatch: true })
+    expect(byPath.get('docs/guide/NOTES.txt')).toMatchObject({ isDir: false, nameMatch: false })
     // A sibling outside the matched folder stays out.
     expect(byPath.has('docs/other.txt')).toBe(false)
   })
@@ -136,7 +137,7 @@ describe('LocalFilesService filename search', () => {
     const hidden = await service.searchLocalDirectory(dir, 'hidden-notes')
     expect(hidden.entries).toEqual([])
     const shown = await service.searchLocalDirectory(dir, 'hidden-notes', true)
-    expect(shown.entries).toEqual([{ path: '.hidden-notes', isDir: false }])
+    expect(shown.entries).toEqual([{ path: '.hidden-notes', isDir: false, nameMatch: true }])
   })
 
   it('never descends into node_modules or .git, even with hidden entries on', async () => {

@@ -133,6 +133,12 @@ export interface SearchLocalEntry {
   path: string
   /** Whether the hit is a directory. */
   isDir: boolean
+  /** Whether the entry's own BASENAME matched the query (vs an ancestor
+   * directory's name pulling it in through the path match). The tree uses
+   * this to seed expansion: ancestors of name hits open so the hit is
+   * visible; a folder that is itself a name hit stays collapsed — its
+   * contents dump is noise until asked for. */
+  nameMatch: boolean
 }
 
 /** Filename-search outcome. */
@@ -301,9 +307,11 @@ export class LocalFilesService {
         const rel = current.rel === '' ? name : `${current.rel}/${name}`
         // The query matches the root-relative PATH, not just the basename:
         // a folder-name hit must surface that folder's contents (typing
-        // "web-eval" is how you reach the files inside web-eval/).
+        // "web-eval" is how you reach the files inside web-eval/). nameMatch
+        // records whether the entry's OWN name hit, so the client can tell a
+        // genuine find from a path-dragged-along descendant.
         if (rel.toLowerCase().includes(needle)) {
-          entries.push({ path: rel, isDir })
+          entries.push({ path: rel, isDir, nameMatch: name.toLowerCase().includes(needle) })
           if (entries.length >= SEARCH_MAX_RESULTS) { truncated = true; break }
         }
         if (isDir && current.depth < SEARCH_MAX_DEPTH) {

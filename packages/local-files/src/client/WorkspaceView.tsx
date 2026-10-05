@@ -6,7 +6,7 @@
  * plain local filesystem paths. Per-session memory keeps each session on its
  * own last-browsed root.
  */
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
 
 import { IconFolderOpenOutlineMedium, IconProjectAddOutlineMedium, IconRefreshOutlineMedium, type IconProps } from './icons.tsx'
@@ -209,23 +209,26 @@ export function WorkspaceView({
         : currentParts.slice(0, index + 1).join('/'),
     }))
 
-  const groups: FileTreeGroup[] = searchActive
+  // Memoized: FileTree seeds search-mode expansion off the groups' identity,
+  // so an unmemoized array literal would re-seed (clobbering the user's
+  // folds) on every unrelated render.
+  const groups: FileTreeGroup[] = useMemo(() => searchActive
     ? [{
       key: 'search',
       title: '',
       count: searchResult?.entries.length ?? 0,
       // Hits arrive root-relative and pre-joined with '/' — the trie rebuilds
-      // the ancestor chain, which search mode then renders force-expanded.
+      // the ancestor chain, and nameMatch drives which rows start open.
       items: (searchResult?.entries ?? []).map(entry => entry.isDir
-        ? { path: entry.path, isDir: true }
-        : { path: entry.path, status: '' }),
+        ? { path: entry.path, isDir: true, nameMatch: entry.nameMatch }
+        : { path: entry.path, status: '', nameMatch: entry.nameMatch }),
     }]
     : [{
       key: 'local',
       title: '',
       count: listing?.entries.length ?? 0,
       items: toItems(listing, !hideHidden),
-    }]
+    }], [searchActive, searchResult, listing, hideHidden])
 
   // The tree highlights by its own relative path; the store keeps the selected
   // path absolute (needed to read the file). Strip the current root prefix so
