@@ -1478,6 +1478,30 @@ export class NovelService {
       })
     }
 
+    // 信息差: a planned gap the text closed (evidence-gated) waits for the person — adopting it rewrites 知道/不知道.
+    const gapsSeen = new Set<number>()
+    for (const raw of payload.info_gaps_closed ?? []) {
+      const index = cleanNumber(raw.gap)
+      const gap = index === undefined || !Number.isInteger(index) ? undefined : plan?.infoGaps?.[index - 1]
+      if (gap === undefined || gapsSeen.has(index!)) continue
+      const evidence = cleanText(raw.evidence_in_text, 60)
+      if (!evidenceInBody(body, evidence)) {
+        dropped.push({ kind: 'info-gap', reason: 'evidence-not-found', ref: String(index) })
+        continue
+      }
+      const characterId = asCharacter(gap.who)
+      if (characterId === undefined || !roster.has(characterId)) {
+        dropped.push({ kind: 'info-gap', reason: 'character-not-in-roster', ref: gap.who })
+        continue
+      }
+      gapsSeen.add(index!)
+      pend({
+        kind: 'info-gap', chapter: chapter.n, reason: `信息差：得知「${gap.fact}」`,
+        payload: { characterId, fact: gap.fact },
+        evidenceInText: evidence!,
+      })
+    }
+
     for (const [foreshadowId, mark] of touch) {
       const card = board.cards.find(candidate => candidate.id === foreshadowId)
       if (card === undefined) continue
@@ -1650,9 +1674,34 @@ export class NovelService {
       }])
       return appended.ok ? undefined : appended.error
     }
+    if (item.kind === 'info-gap') {
+      const canvas = this.canvas
+      const { characterId, fact } = item.payload
+      if (chapter === undefined || characterId === undefined || fact === undefined) return 'invalid-name'
+      const card = (await this.readEntries(workId))?.board.cards.find(candidate => candidate.id === characterId)
+      if (canvas === undefined || card === undefined) return 'missing'
+      const mutation = await canvas.patchCard({ canvasId: workId, cardId: characterId, fields: learnFact(card.fields ?? {}, fact, chapter) }, session)
+      return mutation.ok ? undefined : canvasErrorOf(mutation.error)
+    }
     // plan-missed: the person's answer is the resolution — nothing materializes.
     return undefined
   }
+}
+
+/**
+ * A character card's fields once they learn a fact in chapter n: the fact
+ * joins 知道 as `fact（第n章得知）`, and the 不知道 lines it answers (the
+ * same line, or one either contains) leave.
+ */
+export function learnFact(fields: Readonly<Record<string, NovelFieldValue>>, fact: string, chapter: number): Record<string, NovelFieldValue> {
+  const lines = (key: string): string[] => linesOf(fields[key])
+  const answered = (line: string): boolean => line === fact || line.includes(fact) || fact.includes(line)
+  const knows = [...lines('knows').filter(line => !line.startsWith(fact)), `${fact}（第${chapter}章得知）`]
+  const unaware = lines('unaware').filter(line => !answered(line))
+  const out: Record<string, NovelFieldValue> = { ...fields, knows: knows.join('\n') }
+  if (unaware.length > 0) out['unaware'] = unaware.join('\n')
+  else delete out['unaware']
+  return out
 }
 
 /** The last ~200 characters of a manuscript (the write brief's 上一章末段). */

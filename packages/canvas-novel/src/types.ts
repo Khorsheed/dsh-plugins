@@ -250,8 +250,16 @@ export interface PlanCast {
   readonly role?: string
 }
 
+/** 信息差: one character learns one fact in this chapter (what they did not know before). */
+export interface PlanInfoGap {
+  /** The character, by name. */
+  readonly who: string
+  /** What they learn, one line — matched against their 不知道 list on adoption. */
+  readonly fact: string
+}
+
 /**
- * The chapter plan: 梗概 / 走向 / 冲突 / 看点 / 伏笔 / 出场 / 章末钩子. It is
+ * The chapter plan: 梗概 / 走向 / 冲突 / 看点 / 伏笔 / 出场 / 信息差 / 章末钩子. It is
  * the reader's decision aid, so every row says what happens, not where it is
  * filed; the person changes it by talking, never by ticking items.
  */
@@ -266,6 +274,8 @@ export interface ChapterPlan {
   readonly highlight?: string
   readonly foreshadowOps: readonly ForeshadowOp[]
   readonly cast: readonly PlanCast[]
+  /** 信息差: who learns what this chapter (absent on plans that close none). */
+  readonly infoGaps?: readonly PlanInfoGap[]
   /** The POV character (one of the cast). */
   readonly pov?: string
   readonly hook?: string
@@ -389,6 +399,11 @@ export function normalizePlan(raw: unknown): ChapterPlan | undefined {
     const role = cleanText(row['role'], 120)
     return { who, ...(role === undefined ? {} : { role }) }
   }).filter((member): member is PlanCast => member !== undefined)
+  const infoGaps = rowsOf(record['infoGaps'], 8).map((row): PlanInfoGap | undefined => {
+    const who = cleanText(row['who'], 80)
+    const fact = cleanText(row['fact'], 200)
+    return who === undefined || fact === undefined ? undefined : { who, fact }
+  }).filter((gap): gap is PlanInfoGap => gap !== undefined)
   return {
     summary,
     beats,
@@ -396,6 +411,7 @@ export function normalizePlan(raw: unknown): ChapterPlan | undefined {
     ...(highlight === undefined ? {} : { highlight }),
     foreshadowOps,
     cast,
+    ...(infoGaps.length === 0 ? {} : { infoGaps }),
     ...(pov === undefined ? {} : { pov }),
     ...(hook === undefined ? {} : { hook }),
   }
@@ -555,9 +571,9 @@ export function laterForeshadowState(a: ForeshadowState, b: ForeshadowState): Fo
  * edited or archived there; the queue holds only the journal lines that wait for a
  * person.
  */
-export type PendingKind = 'mention' | 'experience' | 'plan-missed'
+export type PendingKind = 'mention' | 'experience' | 'plan-missed' | 'info-gap'
 
-const PENDING_KINDS: readonly PendingKind[] = ['mention', 'experience', 'plan-missed']
+const PENDING_KINDS: readonly PendingKind[] = ['mention', 'experience', 'plan-missed', 'info-gap']
 
 /**
  * A pending item's proposed record, flattened to JSON-safe scalars (the wire
@@ -571,8 +587,10 @@ export interface PendingPayload {
   readonly note?: string
   /** mention (resolved): the answer the text gave. */
   readonly answer?: string
-  /** experience: the character card id. */
+  /** experience / info-gap: the character card id. */
   readonly characterId?: string
+  /** info-gap: what the character learned. */
+  readonly fact?: string
   readonly entry?: string
   /** plan-missed: the planned op, and the foreshadow card id or 新埋 question. */
   readonly op?: string
@@ -608,7 +626,7 @@ function normalizePendingPayload(raw: unknown): PendingPayload {
   if (typeof raw !== 'object' || raw === null) return {}
   const record = raw as Record<string, unknown>
   const out: { -readonly [K in keyof PendingPayload]?: PendingPayload[K] } = {}
-  for (const key of ['foreshadowId', 'kind', 'note', 'answer', 'question', 'characterId', 'entry', 'op', 'id'] as const) {
+  for (const key of ['foreshadowId', 'kind', 'note', 'answer', 'question', 'characterId', 'fact', 'entry', 'op', 'id'] as const) {
     const value = cleanText(record[key], 500)
     if (value !== undefined) out[key] = value
   }
@@ -733,9 +751,17 @@ export interface ExtractBeatInput {
   readonly evidence_in_text?: string
 }
 
+/** The subagent's row for one planned 信息差 the manuscript closed. */
+export interface ExtractInfoGapInput {
+  /** 1-based, as the pack numbers the 信息差. */
+  readonly gap?: number
+  readonly evidence_in_text?: string
+}
+
 /** The subagent's strict JSON, as `novel_extract` import receives it (tolerant reads throughout). */
 export interface ExtractPayload {
   readonly beats_delivered?: readonly ExtractBeatInput[]
+  readonly info_gaps_closed?: readonly ExtractInfoGapInput[]
   readonly memories?: readonly ExtractMemoryInput[]
   readonly foreshadow_mentions?: readonly ExtractMentionInput[]
   readonly new_foreshadows?: readonly ExtractNewForeshadowInput[]

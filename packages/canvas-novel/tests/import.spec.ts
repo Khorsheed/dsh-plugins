@@ -135,6 +135,35 @@ describe('novel_extract import — the five gates (proposal §5)', () => {
     expect(ledger.active.find(view => view.cardId === CARD.leafGlow)?.lastActiveChapter).toBe(5)
   })
 
+  it('信息差: a planned gap the text closed pends; adopting it moves the fact from 不知道 to 知道', async () => {
+    const { store, fs, canvas } = seededStore()
+    const file = `${DREAM.stateRoot}/${DREAM.workId}/chapters.json`
+    const table = JSON.parse(fs.read(file)) as { chapters: { n: number; plan?: Record<string, unknown> }[] }
+    table.chapters.find(row => row.n === 5)!.plan!['infoGaps'] = [
+      { who: '赵启明', fact: '门缝里有什么' },
+      { who: CARD.aiwen, fact: '赵启明妹妹的下落' },
+      { who: '没这个人', fact: '随便什么' },
+    ]
+    fs.seed(file, `${JSON.stringify(table, null, 2)}\n`)
+    const report = await store.extractImport({ workId: DREAM.workId, n: 5, payload: { info_gaps_closed: [
+      { gap: 1, evidence_in_text: '门后传来一个女人的声音' },
+      { gap: 2, evidence_in_text: '正文里没有这句' },
+      { gap: 3, evidence_in_text: '门后传来一个女人的声音' },
+      { gap: 9, evidence_in_text: '门后传来一个女人的声音' },
+    ] } }, SESSION)
+    expect(report.dropped).toEqual([
+      { kind: 'info-gap', reason: 'evidence-not-found', ref: '2' },
+      { kind: 'info-gap', reason: 'character-not-in-roster', ref: '没这个人' },
+    ])
+    const gap = (await store.listPending({ workId: DREAM.workId })).find(item => item.kind === 'info-gap')!
+    expect(gap).toMatchObject({ chapter: 5, reason: '信息差：得知「门缝里有什么」', payload: { characterId: CARD.zhao, fact: '门缝里有什么' } })
+    expect(await store.decidePending({ workId: DREAM.workId, id: gap.id, action: 'accept' }, SESSION)).toEqual({ ok: true })
+    expect(canvas.card(DREAM.workId, CARD.zhao)?.fields).toMatchObject({
+      knows: '监护守则的全部条文\n二层梦的基本规则\n门缝里有什么（第5章得知）',
+      unaware: '蓝色叶子的来历\n艾文的真实身份',
+    })
+  })
+
   it('the reconciliation side effects land: phase, recap, word count, experience, current state', async () => {
     const { store } = seededStore()
     await store.extractImport({ workId: DREAM.workId, n: 5, payload: PAYLOAD }, SESSION)

@@ -253,7 +253,7 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
       plan: {
         type: 'object', additionalProperties: true,
         description: 'chapter: {summary (梗概, 2-3 sentences), beats[{at (time label), text, mark?: 转折|落点}], conflict, highlight (看点), '
-          + 'foreshadowOps[{op: 推进|暗示|新埋|揭晓, id (ref) | question (新埋), note (what it advances or plants)}], cast[{who (ref or name), role}], pov, hook}.',
+          + 'foreshadowOps[{op: 推进|暗示|新埋|揭晓, id (ref) | question (新埋), note (what it advances or plants)}], cast[{who (ref or name), role}], infoGaps[{who (ref or name), fact (what they learn this chapter — ideally a line of their 不知道)}], pov, hook}.',
       },
       target: { type: 'string', enum: ['card', 'pending'], description: 'review: a card on the board, or the pending queue.' },
       action: { type: 'string', enum: ['accept', 'discard', 'archive'], description: 'review: accept|discard a pending item; archive a card.' },

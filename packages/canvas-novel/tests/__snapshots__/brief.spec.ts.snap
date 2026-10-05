@@ -10,6 +10,7 @@ exports[`the three brief variants on the《梦境监护者》seed (CP1) > render
 3. confidence 只用在伏笔提及、角色经历与现状上：拿不准的给 medium/low；
    伏笔提及的 kind：hinted（暗示）= 读者能察觉、但剧情没动；advanced（推进）= 出现了新信息或新行动；
 4. 本章计划的走向逐条核对：正文写到了的那一拍写进 beats_delivered（带 evidence），没写到的不报；
+   信息差同样逐条核对：那个角色在正文里确实得知了那件事，才写进 info_gaps_closed；
    伏笔只按实际写到的报 foreshadow_mentions，计划列了却没写到的不要编；
 5. 角色经历每人 1-2 句：本章做了什么、状态怎么变；current_state 给
    where/state/concern 三字段。
@@ -55,6 +56,7 @@ exports[`the three brief variants on the《梦境监护者》seed (CP1) > render
 【输出 schema】
 {
   "beats_delivered": [{ "beat": 走向的序号（从 1 起）, "evidence_in_text": "≤50字原文" }],
+  "info_gaps_closed": [{ "gap": 信息差的序号（从 1 起）, "evidence_in_text": "≤50字原文" }],
   "memories": [{ "kind": "世界|原则", "name": "仅世界：这条设定叫什么（地点、势力、道具或规则的名字）", "world_kind": "仅世界：地点|势力|道具|规则|历史|其他", "content": "具体的设定或写作原则，能复述", "evidence_in_text": "≤50字原文" }],
   "foreshadow_mentions": [{ "foreshadow_id": "#12", "kind": "planted|advanced|hinted|resolved", "answer": "仅 resolved 给", "note": "…", "confidence": "high|medium|low", "evidence_in_text": "≤50字原文" }],
   "new_foreshadows": [{ "question": "…", "evidence_in_text": "≤50字原文" }],

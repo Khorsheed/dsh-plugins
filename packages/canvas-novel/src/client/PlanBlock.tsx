@@ -102,6 +102,21 @@ export function PlanBlock({ chapter, phase, names, canConfirm, busy, onConfirm, 
                 </dd>
               </>
             )}
+            {plan.infoGaps !== undefined && (
+              <>
+                <dt>{t('plan.infoGaps')}</dt>
+                <dd>
+                  <ul className={css.ops}>
+                    {plan.infoGaps.map((gap, index) => (
+                      <li key={index}>
+                        <span className={css.castName}>{named(gap.who)}</span>
+                        <span className={css.what}>{t('plan.learns', { fact: gap.fact })}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </dd>
+              </>
+            )}
             {plan.hook !== undefined && <><dt>{t('plan.hook')}</dt><dd>{plan.hook}</dd></>}
           </dl>
           {lead && (
