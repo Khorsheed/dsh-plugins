@@ -996,15 +996,18 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
                 className={css.moreButton}
                 items={[
                   // 创作体裁 only where a genre is installed: without one the
-                  // menu is the one it always was.
-                  ...(genres.length === 0 ? [] : [{
-                    id: 'genre',
-                    label: t('genre.menu'),
-                    submenu: [{ id: 'genre:', label: t('genre.none') }, ...genres.map(genre => ({ id: `genre:${genre.id}`, label: genre.label }))]
+                  // menu is the one it always was. The choices sit inline under
+                  // a heading, not in a submenu: the host's submenu always opens
+                  // to the right, and this ⋯ hugs the window's right edge, so
+                  // it opened off-screen (2026-10-05).
+                  ...(genres.length === 0 ? [] : [
+                    { type: 'label' as const, id: 'genre', text: t('genre.menu') },
+                    ...[{ id: 'genre:', label: t('genre.none') }, ...genres.map(genre => ({ id: `genre:${genre.id}`, label: genre.label }))]
                       .map(item => item.id === `genre:${openBoard.board.genre?.id ?? ''}`
                         ? { ...item, icon: <IconCheckOutlineMedium size={13} /> }
                         : item),
-                  }, { type: 'separator' as const, id: 'genre-sep' }]),
+                    { type: 'separator' as const, id: 'genre-sep' },
+                  ]),
                   { id: 'archive', label: t('action.archiveCanvas'), icon: <IconArchiveOutlineMedium size={13} /> },
                   { id: 'delete', label: t('action.deleteCanvas'), icon: <IconTrashOutlineMedium size={13} />, danger: true },
                 ]}
