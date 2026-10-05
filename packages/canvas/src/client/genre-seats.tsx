@@ -12,6 +12,7 @@
  * @module @khorsheed/dsh-canvas/client
  */
 import { createContext, useContext, type ReactNode } from 'react'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { BoardCard, CanvasBoard } from '../types.ts'
 import type { CanvasTabProps } from './contract.ts'
 import { genreKey, type CanvasGenreOwnerProps, type CanvasNavigate } from './slots.ts'
@@ -23,6 +24,8 @@ export interface GenreSeats {
   readonly rev: number
   /** The navigation face for one canvas. */
   readonly navigateFor: (canvasId: string) => CanvasNavigate
+  /** The tab's session (undefined: a read-only tab). */
+  readonly sessionId: SessionId | undefined
 }
 
 export const GenreSeatsContext = createContext<GenreSeats | null>(null)
@@ -34,7 +37,14 @@ export function useGenreSeats(): GenreSeats | null {
 
 /** The shared owner share of one canvas. */
 function ownerOf(seats: GenreSeats, board: CanvasBoard): CanvasGenreOwnerProps {
-  return { canvasId: board.id, board, rev: seats.rev, navigate: seats.navigateFor(board.id) }
+  return {
+    canvasId: board.id,
+    board,
+    rev: seats.rev,
+    navigate: seats.navigateFor(board.id),
+    // An archived canvas is read-only for its genre too.
+    sessionId: board.archivedAt === null ? seats.sessionId : undefined,
+  }
 }
 
 /**

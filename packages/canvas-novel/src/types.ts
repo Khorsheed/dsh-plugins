@@ -662,3 +662,81 @@ export interface ChapterRow {
   readonly chapter: ChapterRecord
   readonly phase: EffectiveChapterPhase
 }
+
+/* ------------------------------------------------------------------ wire */
+
+/** One canvas (= one work). */
+export interface NovelWorkRequest {
+  readonly canvasId: string
+}
+
+/** One chapter of a work. */
+export interface NovelChapterRequest extends NovelWorkRequest {
+  readonly n: number
+}
+
+/** The person's answer to one pending item. */
+export interface NovelDecideRequest extends NovelWorkRequest {
+  readonly id: string
+  readonly action: 'accept' | 'discard'
+}
+
+/** A pending item as the board's strip shows it: the queue row plus what it is about. */
+export interface PendingView extends PendingItem {
+  /** The card it concerns, as the reader knows it (`#5 时间兑换率？`, `艾文`); absent when the card is gone. */
+  readonly subject?: string
+  /** That card's id, so the strip can open it. */
+  readonly subjectCardId?: string
+}
+
+/** The pending strip's read. */
+export interface NovelPendingResult {
+  readonly ok: boolean
+  readonly error?: NovelError
+  readonly items: readonly PendingView[]
+}
+
+/** One touch on a foreshadow's chapter track. */
+export interface LedgerMark {
+  readonly chapter: number
+  readonly kind: MentionEntry['kind']
+  /** Listed by the chapter plan. */
+  readonly planned: boolean
+  /** Seen in the text by the extract import. */
+  readonly reconciled: boolean
+}
+
+/** The ledger page's read: the ledger plus every foreshadow's track, keyed by card id. */
+export interface NovelLedgerResult extends LedgerResult {
+  readonly marks: Readonly<Record<string, readonly LedgerMark[]>>
+}
+
+/** The chapter index as the pages read it: the rows plus each chapter's unresolved pending count. */
+export interface NovelChaptersResult {
+  readonly ok: boolean
+  readonly error?: NovelError
+  readonly chapters: readonly ChapterRow[]
+  /** Unresolved pending items per chapter number. */
+  readonly pending: Readonly<Record<number, number>>
+}
+
+/** One chapter as the reader page shows it. */
+export interface NovelChapterResult {
+  readonly ok: boolean
+  readonly error?: NovelError
+  readonly chapter?: ChapterRecord
+  readonly phase?: EffectiveChapterPhase
+  readonly body?: string
+  /** This chapter's unresolved pending items (the ✓ 审过 gate waits on them). */
+  readonly pending: number
+  /** Display names of the card ids the plan names (characters, foreshadows). */
+  readonly names: Readonly<Record<string, string>>
+  /** The manuscript's workspace-relative path (`<title>/第n章.md`). */
+  readonly file?: string
+}
+
+/** A gesture's receipt on the wire. */
+export interface NovelGestureResult {
+  readonly ok: boolean
+  readonly error?: NovelError
+}

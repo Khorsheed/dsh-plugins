@@ -2,7 +2,7 @@
 
 Turns dsh into a workbench for serialized long-form fiction. One work spans dozens of sessions and a hundred chapters, and the model has to do four things: remember the canon, know where the last chapter ended, never let a foreshadow die, and never write a character wrong. Full-text injection cannot do these; this package can.
 
-**A work is a canvas whose genre is 长篇小说**. The cards on that canvas are the single source of truth for the settings, organized in four categories: 人物 (characters), 世界 (world), 原则 (principles) and 伏笔 (foreshadows). This package registers the genre with the canvas and provides the work-memory engine: refs, reconciliation, the ledger and the briefs. It has no browser half of its own; its whole UI lives inside the canvas.
+**A work is a canvas whose genre is 长篇小说**. The cards on that canvas are the single source of truth for the settings, organized in four categories: 人物 (characters), 世界 (world), 原则 (principles) and 伏笔 (foreshadows). This package registers the genre with the canvas and provides the work-memory engine: refs, reconciliation, the ledger and the briefs. Its browser half only adds UI to the canvas's genre seams (the pending strip, the foreshadow ledger page, the chapter reader page) and opens no entry of its own.
 
 It replaces the retired `@khorsheed/dsh-story-bible`. Data under the old `$DSH_HOME/state/story/` is **not migrated**.
 
@@ -95,7 +95,13 @@ Enabling the root row by hand (removing `disabled: true`) makes it apply to ever
    - Handle the pending items, then close the chapter with 「✓ 审过」.
    - The phase lamp runs: planning → writing → extracted → reviewed.
 
-**UI status**: card faces, card sections, the board strip and the session-header binding chip ride the canvas's genre seams. The chapter reader, the foreshadow ledger page and the pending strip have no UI yet; use the tools for that part for now.
+**UI inside the canvas**: card faces, card sections and the session-header binding chip ride the canvas's genre seams; this package's browser half adds a long-novel strip at the top of the board:
+
+- **Chapter chips**: one per chapter with its phase lamp; a click opens the chapter reader page. The page shows the phase lamp and the chapter plan at the top (with 「✓ 确认计划」), this chapter's pending items and the manuscript in the middle, and 「✓ 审过本章」 at the bottom. While the chapter is not extracted or still has pending items the button is disabled, and the bar says what is missing.
+- **Foreshadow ledger**: shows the active and overdue counts; a click opens the ledger page, which lists each foreshadow's status, tension, chapters asleep and its chapter-by-chapter mention track, drawing a planned-but-missed cell dashed.
+- **Pending N**: appears only while there is something to review and unfolds in place (accept / discard, or "got it" for a missed plan); the board refreshes after each answer.
+
+A read-only canvas (one not opened from a session) can be read but not acted on: no pending answers, no review.
 
 ## Compatibility
 

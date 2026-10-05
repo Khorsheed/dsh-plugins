@@ -1,0 +1,26 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types",
+    "tsBuildInfoFile": "lib/tsconfig.client.tsbuildinfo",
+    "jsx": "react-jsx",
+    "lib": [
+      "ES2024",
+      "DOM",
+      "DOM.Iterable"
+    ]
+  },
+  "files": [
+    "src/css-modules.d.ts",
+    "src/genre.ts",
+    "src/types.ts",
+    "src/client/contract.ts",
+    "src/client/locales.ts",
+    "src/client/use-novel.ts",
+    "src/client/PendingStrip.tsx",
+    "src/client/LedgerPage.tsx",
+    "src/client/ChapterPage.tsx",
+    "src/client/index.ts"
+  ]
+}

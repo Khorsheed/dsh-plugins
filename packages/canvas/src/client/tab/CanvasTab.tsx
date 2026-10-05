@@ -780,7 +780,8 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
       backToBoard: () => { backToBoard(canvasId) },
       refresh: refreshBoards,
     }),
-  }), [renderSlot, selectionRev, openCardDetail, openManuscript, openPage, backToBoard, refreshBoards])
+    sessionId,
+  }), [renderSlot, selectionRev, openCardDetail, openManuscript, openPage, backToBoard, refreshBoards, sessionId])
 
   const openTitle = activeRow === undefined
     ? ''

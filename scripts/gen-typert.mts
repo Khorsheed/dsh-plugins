@@ -135,6 +135,11 @@ export const TYPERT_PACKAGES: readonly TypertPackage[] = [
     hostConfigs: ['tsconfig.host.json'],
   },
   {
+    dir: 'packages/canvas-novel',
+    name: '@khorsheed/dsh-canvas-novel',
+    hostConfigs: ['tsconfig.host.json'],
+  },
+  {
     dir: 'packages/sidechat',
     name: '@khorsheed/dsh-sidechat',
     hostConfigs: ['tsconfig.host.json'],

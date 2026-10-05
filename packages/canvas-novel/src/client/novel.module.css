@@ -1,0 +1,498 @@
+/* The 长篇小说 genre's surfaces inside the canvas: the board strip, the
+   ledger page, the chapter page. They sit in the canvas's own frame, so every
+   colour and size is a `--dsw-*` token — light and dark are the theme's. */
+
+/* ── Board strip ─────────────────────────────────────────────────────── */
+
+.strip {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 10px;
+  margin: 0 12px 8px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  font: var(--dsw-font-xxs-12);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.stripRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.stripLabel {
+  flex: none;
+  font: var(--dsw-font-xxs-strong-12);
+  color: var(--dsw-alias-label-primary);
+}
+
+.chips {
+  display: flex;
+  gap: 4px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.chapterChip,
+.stripLink,
+.pendingToggle,
+.subject {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  padding: 2px 7px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.chapterChip {
+  border-color: var(--dsw-alias-border-l1);
+  font-variant-numeric: tabular-nums;
+}
+
+.chapterChip:hover,
+.stripLink:hover,
+.subject:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.pendingToggle {
+  margin-left: auto;
+  background: var(--dsw-alias-state-warn-tertiary);
+  color: var(--dsw-alias-state-warn-label);
+}
+
+.caret {
+  display: inline-block;
+  transition: transform 120ms;
+}
+
+.caret[data-open="true"] {
+  transform: rotate(180deg);
+}
+
+/* A chapter's phase as a dot: hollow while planned, filled as it advances. */
+.lamp {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: 1.5px solid var(--dsw-alias-label-tertiary);
+  box-sizing: border-box;
+}
+
+.lamp[data-phase="writing"] {
+  border-color: var(--dsw-alias-brand-primary);
+}
+
+.lamp[data-phase="extracted"] {
+  border-color: var(--dsw-alias-brand-primary);
+  background: linear-gradient(90deg, var(--dsw-alias-brand-primary) 50%, transparent 50%);
+}
+
+.lamp[data-phase="reviewed"] {
+  border-color: var(--dsw-alias-state-business-primary);
+  background: var(--dsw-alias-state-business-primary);
+}
+
+.lamp[data-phase="fileMissing"] {
+  border-color: var(--dsw-alias-state-error-primary);
+}
+
+.muted {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.warn {
+  color: var(--dsw-alias-state-warn-primary);
+}
+
+.done {
+  color: var(--dsw-alias-state-business-primary);
+}
+
+/* ── Pending list ────────────────────────────────────────────────────── */
+
+.pendingList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pendingItem {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-base);
+  border: 1px solid var(--dsw-alias-border-l1);
+}
+
+.pendingHead {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.kindTag {
+  padding: 0 6px;
+  border-radius: 4px;
+  font: var(--dsw-font-xxxs-11);
+  line-height: 18px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.kindTag[data-kind="plan-missed"] {
+  background: var(--dsw-alias-state-warn-tertiary);
+  color: var(--dsw-alias-state-warn-label);
+}
+
+.confidence {
+  font: var(--dsw-font-xxxs-11);
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.confidence[data-confidence="low"] {
+  color: var(--dsw-alias-state-warn-primary);
+}
+
+.subject {
+  padding: 0 4px;
+  color: var(--dsw-alias-brand-primary);
+}
+
+.pendingReason {
+  font: var(--dsw-font-xs-13);
+  line-height: 1.6;
+  color: var(--dsw-alias-label-primary);
+}
+
+.evidence {
+  margin: 0;
+  padding: 2px 0 2px 10px;
+  border-left: 2px solid var(--dsw-alias-border-l2);
+  font-family: Georgia, 'Songti SC', 'Noto Serif SC', serif;
+  line-height: 1.7;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.pendingActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.button,
+.buttonPrimary {
+  padding: 3px 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-layer-1);
+  font: var(--dsw-font-xxs-12);
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+}
+
+.buttonPrimary {
+  border-color: transparent;
+  background: var(--dsw-alias-interactive-bg-active);
+  color: var(--dsw-alias-brand-primary);
+}
+
+.button:hover:not(:disabled),
+.buttonPrimary:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.button:disabled,
+.buttonPrimary:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+/* ── Pages (body under the canvas's crumb + title) ───────────────────── */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-top: 12px;
+  font: var(--dsw-font-xs-13);
+  color: var(--dsw-alias-label-primary);
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sectionHeading {
+  margin: 0;
+  font: var(--dsw-font-xxs-strong-12);
+  letter-spacing: 0.04em;
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* ── Ledger ─────────────────────────────────────────────────────────── */
+
+.health {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font: var(--dsw-font-xs-strong-13);
+  font-variant-numeric: tabular-nums;
+}
+
+.ledgerRow {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ledgerRow:hover {
+  border-color: var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.ledgerHead {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ref {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.question {
+  flex: 1 1 auto;
+  min-width: 0;
+  word-break: break-word;
+}
+
+.badge,
+.badgeWarn {
+  flex: none;
+  padding: 0 6px;
+  border-radius: 4px;
+  font: var(--dsw-font-xxxs-11);
+  line-height: 18px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.badgeWarn {
+  background: var(--dsw-alias-state-warn-tertiary);
+  color: var(--dsw-alias-state-warn-label);
+}
+
+.tension {
+  flex: none;
+  font-size: 9px;
+  letter-spacing: 1px;
+  color: var(--dsw-alias-brand-primary);
+}
+
+.tensionOff {
+  color: var(--dsw-alias-border-l2);
+}
+
+.ledgerMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  font: var(--dsw-font-xxs-12);
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.track {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+
+.trackCell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  background: var(--dsw-alias-bg-layer-2);
+  font: var(--dsw-font-xxxs-11);
+  line-height: 1;
+  color: var(--dsw-alias-label-primary-inverted);
+}
+
+.trackCell[data-kind="planted"] { background: var(--dsw-alias-brand-primary); }
+.trackCell[data-kind="advanced"] { background: var(--dsw-alias-state-business-primary); }
+.trackCell[data-kind="hinted"] {
+  background: var(--dsw-alias-state-warn-tertiary);
+  color: var(--dsw-alias-state-warn-label);
+}
+.trackCell[data-kind="resolved"] { background: var(--dsw-alias-label-secondary); }
+
+.trackCell[data-missed="true"] {
+  background: none;
+  border: 1px dashed var(--dsw-alias-label-tertiary);
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.trackEmpty,
+.legend {
+  font: var(--dsw-font-xxxs-11);
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* ── Chapter ────────────────────────────────────────────────────────── */
+
+.lampBar {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.lampStep {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1 1 0;
+  font: var(--dsw-font-xxxs-11);
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.lampSegment {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--dsw-alias-border-l1);
+}
+
+.lampStep[data-state="done"] .lampSegment { background: var(--dsw-alias-state-business-primary); }
+.lampStep[data-state="current"] { color: var(--dsw-alias-label-primary); }
+.lampStep[data-state="current"] .lampSegment { background: var(--dsw-alias-brand-primary); }
+.lampStep[data-warn="true"] .lampSegment { background: var(--dsw-alias-state-error-primary); }
+
+.lampPhase {
+  flex: none;
+  margin-left: 8px;
+  font: var(--dsw-font-xxs-strong-12);
+  color: var(--dsw-alias-brand-primary);
+}
+
+.lampPhase[data-phase="reviewed"] { color: var(--dsw-alias-state-business-primary); }
+.lampPhase[data-phase="fileMissing"] { color: var(--dsw-alias-state-error-primary); }
+
+.plan {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.planHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.planHead .button {
+  margin-left: auto;
+}
+
+.planGoal {
+  line-height: 1.6;
+}
+
+.planMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 14px;
+  font: var(--dsw-font-xxs-12);
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.planEmpty {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* The text is read, not scanned: a serif column at a reading measure. */
+.prose {
+  max-width: 36em;
+  font-family: Georgia, 'Songti SC', 'Noto Serif SC', serif;
+  font-size: 15px;
+  line-height: 1.95;
+}
+
+.prose p {
+  margin: 0 0 0.6em;
+  text-indent: 2em;
+}
+
+.proseHeading {
+  margin: 0.4em 0 0.6em;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  padding-top: 8px;
+  border-top: 1px solid var(--dsw-alias-border-l1);
+  font: var(--dsw-font-xxs-12);
+  font-variant-numeric: tabular-nums;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.path {
+  word-break: break-all;
+}
+
+/* The closing gesture stays in reach however long the chapter. */
+.reviewBar {
+  position: sticky;
+  bottom: -64px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 0;
+  border-top: 1px solid var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-bg-base);
+  font: var(--dsw-font-xxs-12);
+}

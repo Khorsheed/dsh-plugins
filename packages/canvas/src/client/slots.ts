@@ -10,6 +10,7 @@
  *
  * @module @khorsheed/dsh-canvas/client
  */
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { BoardCard, BoardCategory, CanvasBoard } from '../types.ts'
 
 /** Where a genre surface can send the reader, bound to the canvas it renders in. */
@@ -33,6 +34,11 @@ export interface CanvasGenreOwnerProps {
   /** The board freshness counter; a seat that reads its own data re-reads when it moves. */
   readonly rev: number
   readonly navigate: CanvasNavigate
+  /**
+   * The session a genre's own writes are fenced by; undefined where the
+   * surface is read-only (no session, or an archived canvas).
+   */
+  readonly sessionId?: SessionId | undefined
 }
 
 /** One card, as a face or a card-page section sees it. */
