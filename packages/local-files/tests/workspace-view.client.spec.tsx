@@ -12,7 +12,7 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import type { WorkspaceViewProps } from '../src/client/contract.ts'
 import { clearLocalRoot, localRootOf, rememberLocalRoot } from '../src/client/local-root.ts'
 import { createLocalFilesStore } from '../src/client/store-local.ts'
-import { WorkspaceView, parentNote } from '../src/client/WorkspaceView.tsx'
+import { WorkspaceView, crumbsOf } from '../src/client/WorkspaceView.tsx'
 
 const SESSION = 'sess-1'
 const WORKSPACE = '/work/repo'
@@ -331,11 +331,14 @@ describe('WorkspaceView search expansion', () => {
 })
 
 describe('WorkspaceView compact header (panel-responsive-spec P1)', () => {
-  it('shortens the parent note: home becomes ~, the top reads as nothing', () => {
-    expect(parentNote('/home/user/code/Writing')).toBe('~/code')
-    expect(parentNote('/home/user/Writing')).toBe('~')
-    expect(parentNote('/work/repo')).toBe('/work')
-    expect(parentNote('/work')).toBe('')
+  it('folds the home prefix into one navigable ~ segment only when asked', () => {
+    expect(crumbsOf('/home/user/code/Writing', true)).toEqual([
+      { label: '~', path: '/home/user' }, { label: 'code', path: '/home/user/code' }, { label: 'Writing', path: '/home/user/code/Writing' },
+    ])
+    expect(crumbsOf('/home/user', true)).toEqual([{ label: '~', path: '/home/user' }])
+    expect(crumbsOf('/home/user/code', false).map(crumb => crumb.label)).toEqual(['home', 'user', 'code'])
+    expect(crumbsOf('/work/repo', true).map(crumb => crumb.label)).toEqual(['work', 'repo'])
+    expect(crumbsOf('', true)).toEqual([])
   })
 
   it('merges the breadcrumb and tree headers into one row, and gives it up while a file is open', async () => {
@@ -345,21 +348,20 @@ describe('WorkspaceView compact header (panel-responsive-spec P1)', () => {
     props.readFile = vi.fn().mockResolvedValue({ ok: true, value: { path: `${WORKSPACE}/a.md`, kind: 'text', content: '# A' } })
     render(<WorkspaceView {...props} />)
     await act(async () => {})
-    // One header: folder name + parent note, search inline, no breadcrumb buttons, no tree title strip.
+    // One header: the trail is the title, search inline, no tree title strip, no up arrow.
     expect(screen.getByText('repo')).toBeTruthy()
-    expect(screen.getByText('/work')).toBeTruthy()
-    expect(screen.queryByRole('button', { name: 'work' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'local.goUp' })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'tree.search' }))
     expect(screen.getByRole('searchbox', { name: 'tree.searchPlaceholder' })).toBeTruthy()
-    // Up one folder is inline; the rest is behind ⋯.
-    fireEvent.click(screen.getByRole('button', { name: 'local.goUp' }))
+    // Every ancestor segment climbs straight to that folder.
+    fireEvent.click(screen.getByRole('button', { name: 'work' }))
     expect(instance.getSnapshot().root).toBe('/work')
     act(() => instance.actions.setRoot(WORKSPACE))
     await act(async () => {})
     fireEvent.click(screen.getByRole('button', { name: 'a.md' }))
     await act(async () => {})
     // The open file owns the only header row, back included.
-    expect(screen.queryByText('/work')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'work' })).toBeNull()
     expect(screen.getAllByRole('button', { name: 'detail.back' })).toHaveLength(1)
   })
 })
