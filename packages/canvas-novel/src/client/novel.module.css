@@ -170,7 +170,6 @@
   margin: 0;
   padding: 2px 0 2px 10px;
   border-left: 2px solid var(--dsw-alias-border-l2);
-  font-family: Georgia, 'Songti SC', 'Noto Serif SC', serif;
   line-height: 1.7;
   color: var(--dsw-alias-label-secondary);
 }
@@ -832,8 +831,8 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: Georgia, 'Songti SC', 'Noto Serif SC', serif;
-  font-size: 15px;
+  font-size: var(--dsh-panel-text-title, 14px);
+  font-weight: 600;
 }
 
 .resumeNote {
@@ -958,8 +957,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: Georgia, 'Songti SC', 'Noto Serif SC', serif;
-  font-size: 14px;
+  font-size: var(--dsh-panel-text-body, 13px);
 }
 
 .phaseTag {
@@ -1013,11 +1011,12 @@
 
 /* ── Reader ─────────────────────────────────────────────────────────── */
 
-/* Inside the book the reader scrolls itself; on a canvas page the page does. */
+/* Inside the book the reader scrolls itself; on a canvas page the page does.
+   The reader speaks the host's face: its sans, the panel's type tokens. */
 .reader {
   display: flex;
   flex-direction: column;
-  font: var(--dsw-font-xs-13);
+  font-size: var(--dsh-panel-text-body, 13px);
   color: var(--dsw-alias-label-primary);
 }
 
@@ -1038,7 +1037,7 @@
   border-bottom: 1px solid var(--dsw-alias-border-l1);
   background: color-mix(in srgb, var(--dsw-alias-bg-base) 92%, transparent);
   backdrop-filter: blur(6px);
-  font: var(--dsw-font-xxs-12);
+  font-size: var(--dsh-panel-text-meta, 12px);
   color: var(--dsw-alias-label-tertiary);
 }
 
@@ -1074,96 +1073,118 @@
 .chap {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 18px;
   width: 100%;
-  max-width: 34em;
+  max-width: 38em;
   box-sizing: border-box;
   margin: 0 auto;
-  padding: 28px 24px 8px;
+  padding: 32px 24px 8px;
 }
 
-.kicker {
-  text-align: center;
-  font: var(--dsw-font-xxs-12);
+/* 第 1 章 · 原稿 · 9175 字, then the title — left-set like the host's pages. */
+.chapHead {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.chapMeta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 0;
+  font-size: var(--dsh-panel-text-meta, 12px);
   color: var(--dsw-alias-label-tertiary);
-  letter-spacing: 0.12em;
+  font-variant-numeric: tabular-nums;
+}
+
+.chapMeta > * + *::before {
+  content: '·';
+  margin: 0 7px;
+  color: var(--dsw-alias-label-tertiary);
 }
 
 .chapTitle,
 .nextTitle {
   margin: 0;
-  text-align: center;
-  font-family: Georgia, 'Songti SC', 'Noto Serif SC', serif;
-  font-size: 22px;
-  font-weight: 600;
+  font-size: calc(var(--dsh-panel-text-title, 14px) + 10px);
+  font-weight: 650;
+  line-height: 1.3;
+  letter-spacing: 0.01em;
   text-wrap: balance;
 }
 
-.nextTitle { font-size: 19px; }
+.nextTitle { font-size: calc(var(--dsh-panel-text-title, 14px) + 4px); }
 
-/* 规划 — 写作 — 抽取 — 审过: dots joined by short rules. */
-.stepper {
+/* Where the chapter stands: 规划 — 写作 — 对账 — 审过 as four segments, then
+   the state and its one next step. Warn-tinted while the text is ahead of
+   memory, quiet once closed. */
+.progress {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-wrap: wrap;
-  gap: 6px 0;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.progress[data-tone="warn"] {
+  border-color: color-mix(in srgb, var(--dsw-alias-state-error-primary) 30%, transparent);
+  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 5%, var(--dsw-alias-bg-base));
+}
+
+.track {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.step {
-  display: inline-flex;
-  align-items: center;
+.trackStep {
+  display: flex;
+  flex-direction: column;
   gap: 6px;
-  font: var(--dsw-font-xxs-12);
+  font-size: var(--dsh-panel-text-meta, 12px);
   color: var(--dsw-alias-label-tertiary);
 }
 
-.step + .step::before {
+.trackStep::before {
   content: '';
-  width: 22px;
-  height: 1px;
-  margin: 0 8px;
+  height: 3px;
+  border-radius: 2px;
   background: var(--dsw-alias-border-l2);
 }
 
-.stepDot {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  box-sizing: border-box;
-  border-radius: 50%;
-  border: 1.5px solid var(--dsw-alias-border-l2);
-  font-size: 9px;
-  font-weight: 700;
-  line-height: 1;
-}
-
-.step[data-state="done"] { color: var(--dsw-alias-label-secondary); }
-.step[data-state="done"] + .step::before { background: var(--dsw-alias-state-business-primary); }
-.step[data-state="done"] .stepDot {
-  border-color: var(--dsw-alias-state-business-primary);
-  background: var(--dsw-alias-state-business-primary);
-  color: var(--dsw-alias-label-primary-inverted);
-}
-
-.step[data-state="current"] {
-  font: var(--dsw-font-xxs-strong-12);
+.trackStep[data-state="done"] { color: var(--dsw-alias-label-secondary); }
+.trackStep[data-state="done"]::before { background: var(--dsw-alias-state-business-primary); }
+.trackStep[data-state="current"] {
+  font-weight: 600;
   color: var(--dsw-alias-label-primary);
 }
-.step[data-state="current"] .stepDot {
-  border: 2px solid var(--dsw-alias-brand-primary);
-  box-shadow: inset 0 0 0 3px var(--dsw-alias-bg-base), inset 0 0 0 8px var(--dsw-alias-brand-primary);
+.trackStep[data-state="current"]::before { background: var(--dsw-alias-brand-primary); }
+.trackStep[data-warn="true"] { color: var(--dsw-alias-state-error-primary); }
+.trackStep[data-warn="true"]::before { background: var(--dsw-alias-state-error-primary); }
+
+.progressLine {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  margin: 0;
+  font-size: var(--dsh-panel-text-body, 13px);
+  line-height: 1.6;
+  color: var(--dsw-alias-label-secondary);
 }
-.step[data-warn="true"] { color: var(--dsw-alias-state-error-primary); }
-.step[data-warn="true"] .stepDot {
-  border-color: var(--dsw-alias-state-error-primary);
-  box-shadow: inset 0 0 0 3px var(--dsw-alias-bg-base), inset 0 0 0 8px var(--dsw-alias-state-error-primary);
+
+.progressLine strong {
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
 }
+
+.progress[data-tone="warn"] .progressLine strong { color: var(--dsw-alias-state-error-primary); }
+.progress[data-tone="done"] .progressLine strong { color: var(--dsw-alias-state-business-primary); }
 
 /* ── Plan ───────────────────────────────────────────────────────────── */
 
@@ -1226,13 +1247,20 @@
 }
 
 .byUserTag {
-  margin-left: 6px;
   padding: 0 6px;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 8px;
-  font: var(--dsw-font-xxxs-11);
+  font-size: var(--dsh-panel-text-meta, 11px);
+  line-height: 1.5;
   color: var(--dsw-alias-label-secondary);
-  vertical-align: 1px;
+}
+
+/* The chat card's 第 N 章 line. */
+.kicker {
+  text-align: center;
+  font: var(--dsw-font-xxs-12);
+  color: var(--dsw-alias-label-tertiary);
+  letter-spacing: 0.12em;
 }
 
 .planEmpty {
@@ -1243,8 +1271,7 @@
 
 .gist {
   margin: 0;
-  font-family: Georgia, 'Songti SC', 'Noto Serif SC', serif;
-  font-size: 15px;
+  font-size: calc(var(--dsh-panel-text-reading, 14px) + 1px);
   line-height: 1.8;
 }
 
@@ -1392,76 +1419,86 @@
 
 /* ── Text ───────────────────────────────────────────────────────────── */
 
-/* The text is read, not scanned: a serif column at a reading measure. */
+/* The text is read, not scanned: the host's sans one step up from the panel's
+   reading size, a generous leading, first-line indents. */
 .prose {
-  padding-top: 4px;
-  font-family: Georgia, 'Songti SC', 'Noto Serif SC', serif;
-  font-size: 16px;
-  line-height: 2;
-  letter-spacing: 0.02em;
+  font-size: calc(var(--dsh-panel-text-reading, 14px) + 2px);
+  line-height: 1.95;
+  letter-spacing: 0.01em;
   color: var(--dsw-alias-label-primary);
 }
 
 .prose p {
-  margin: 0 0 1em;
+  margin: 0 0 0.85em;
   text-indent: 2em;
 }
 
 .proseHeading {
-  margin: 0.6em 0 1em;
-  font-size: 17px;
-  font-weight: 600;
-  text-align: center;
-  letter-spacing: 0.1em;
+  margin: 1.4em 0 0.9em;
+  font-size: calc(var(--dsh-panel-text-reading, 14px) + 3px);
+  font-weight: 650;
+  letter-spacing: 0.02em;
 }
 
 .noBody {
   padding: 18px 0;
   text-align: center;
-  font: var(--dsw-font-xxs-12);
+  font-size: var(--dsh-panel-text-meta, 12px);
   color: var(--dsw-alias-label-tertiary);
 }
 
-/* 「— 本章完 —」, then the closing gesture or what it waits for. */
+/* A short rule, then the closing gesture once it can be made. */
 .end {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 12px;
-  padding: 10px 0 6px;
-  font: var(--dsw-font-xxs-12);
+  padding: 14px 0 6px;
+  font-size: var(--dsh-panel-text-meta, 12px);
   text-align: center;
 }
 
 .orn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   color: var(--dsw-alias-label-tertiary);
   letter-spacing: 0.2em;
-  font-variant-numeric: tabular-nums;
+}
+
+.orn::before,
+.orn::after {
+  content: '';
+  width: 32px;
+  height: 1px;
+  background: var(--dsw-alias-border-l2);
 }
 
 .path {
-  font: var(--dsw-font-xxxs-11);
+  font-size: var(--dsh-panel-text-meta, 11px);
   color: var(--dsw-alias-label-tertiary);
   word-break: break-all;
 }
 
 .reviewButton {
-  padding: 6px 16px;
-  border: none;
+  min-height: 34px;
+  padding: 6px 18px;
+  border: 1px solid var(--dsw-alias-state-business-primary);
   border-radius: 8px;
-  background: var(--dsw-alias-brand-primary);
-  font: var(--dsw-font-xs-strong-13);
-  color: var(--dsw-alias-label-primary-inverted);
+  background: none;
+  font: inherit;
+  font-size: var(--dsh-panel-text-body, 13px);
+  font-weight: 600;
+  color: var(--dsw-alias-state-business-primary);
   cursor: pointer;
 }
 
 .reviewButton:hover:not(:disabled) {
-  opacity: 0.88;
+  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 8%, transparent);
 }
 
 .reviewButton:disabled {
-  background: var(--dsw-alias-bg-layer-2);
-  color: var(--dsw-alias-label-tertiary);
+  opacity: 0.5;
   cursor: default;
 }
 
@@ -1472,7 +1509,8 @@
   padding: 5px 12px;
   border-radius: 999px;
   background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 12%, transparent);
-  font: var(--dsw-font-xs-strong-13);
+  font-size: var(--dsh-panel-text-body, 13px);
+  font-weight: 600;
   color: var(--dsw-alias-state-business-primary);
 }
 
@@ -1480,21 +1518,25 @@
 .next {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   width: 100%;
-  max-width: 34em;
+  max-width: 38em;
   box-sizing: border-box;
   margin: 18px auto 0;
   padding: 22px 24px 24px;
-  border-top: 1px dashed var(--dsw-alias-border-l2);
+  border-top: 1px solid var(--dsw-alias-border-l1);
+}
+
+.nextKicker {
+  font-size: var(--dsh-panel-text-meta, 12px);
+  color: var(--dsw-alias-label-tertiary);
 }
 
 .fade {
-  max-height: 96px;
+  max-height: 92px;
   overflow: hidden;
-  font-family: Georgia, 'Songti SC', 'Noto Serif SC', serif;
-  font-size: 15.5px;
-  line-height: 2;
+  font-size: calc(var(--dsh-panel-text-reading, 14px) + 1px);
+  line-height: 1.95;
   text-indent: 2em;
   color: var(--dsw-alias-label-secondary);
   /* panel-check: allow-color — mask alpha only, not a painted colour. */
@@ -1505,18 +1547,19 @@
 
 .nextEmpty {
   padding: 8px 0 4px;
-  text-align: center;
-  font: var(--dsw-font-xxs-12);
+  font-size: var(--dsh-panel-text-meta, 12px);
   color: var(--dsw-alias-label-tertiary);
 }
 
 .nextGo {
-  align-self: center;
+  align-self: flex-start;
+  margin-left: -10px;
   padding: 4px 10px;
   border: none;
   border-radius: 6px;
   background: none;
-  font: var(--dsw-font-xs-13);
+  font: inherit;
+  font-size: var(--dsh-panel-text-body, 13px);
   color: var(--dsw-alias-brand-primary);
   cursor: pointer;
 }
@@ -1550,7 +1593,8 @@
   border: none;
   border-radius: 6px;
   background: none;
-  font: var(--dsw-font-xs-13);
+  font: inherit;
+  font-size: var(--dsh-panel-text-body, 13px);
   color: var(--dsw-alias-label-primary);
   cursor: pointer;
 }
@@ -1564,8 +1608,17 @@
 }
 
 .pager .pagerMid {
-  font: var(--dsw-font-xxs-12);
+  font-size: var(--dsh-panel-text-meta, 12px);
   color: var(--dsw-alias-label-tertiary);
+}
+
+/* The reader on a phone: the 16px gutter, 44px gestures. After the base
+   rules above, which set the same properties at the same specificity. */
+@container dsh-panel (max-width: 560px) {
+  .chap { padding: 22px 16px 8px; gap: 16px; }
+  .next { padding-inline: 16px; }
+  .pager button,
+  .reviewButton { min-height: 44px; }
 }
 
 /* ── Card page section (canvas.card.section) ─────────────────────────── */

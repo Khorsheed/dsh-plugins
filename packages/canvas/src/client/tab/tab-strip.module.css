@@ -69,7 +69,9 @@
   border: none;
   background: transparent;
   padding: 8px 0 6px;
-  font: var(--dsw-font-xxs-12);
+  /* The panel's body size (raised on a phone), the strip's own 12px on desktop. */
+  font-family: inherit;
+  font-size: var(--dsh-panel-text-body, 12px);
   line-height: 1.4;
   color: var(--dsw-alias-label-tertiary);
   cursor: pointer;
@@ -142,4 +144,11 @@
   align-self: stretch;
   flex: none;
   padding-left: 8px;
+}
+
+/* Touch: a row is a 44px target, and its × a 32px one. */
+@media (pointer: coarse) {
+  .stripFrame { min-height: 44px; }
+  .label { min-height: 44px; padding-block: 0; }
+  .close { width: 32px; height: 32px; }
 }

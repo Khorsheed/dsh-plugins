@@ -1,10 +1,11 @@
 /**
- * The chapter reader: one chapter as a page of the book — the phase lamp
- * (规划 → 写作 → 抽取 → 审过), the plan block, this chapter's pending items
- * in place, the text as a reading column, the person's 「✓ 审过本章」 under
- * the text (offered only once the text is reconciled and its pending items
- * are handled; otherwise the line says what is missing), then a glimpse of
- * the next chapter and a pager that stays in reach.
+ * The chapter reader: one chapter as a page of the book — a head (number,
+ * title, and the progress block: 规划 → 写作 → 对账 → 审过 with the one next
+ * step spelled out), the plan block, this chapter's pending items in place,
+ * the text as a reading column, the person's 「✓ 审过本章」 under the text
+ * (there only once the text is reconciled and its pending items are handled —
+ * until then the progress block says what is missing), then a glimpse of the
+ * next chapter and a pager that stays in reach.
  *
  * It serves two hosts: the 成稿 face's book (behind the table of contents)
  * and the `novel:chapter` page a chat card or the strip opens.
@@ -24,7 +25,7 @@ const LAMP = ['lamp.plan', 'lamp.write', 'lamp.extract', 'lamp.review'] as const
 
 /** How far along the lamp a phase is (the lit step). */
 const LAMP_STEP: Readonly<Record<EffectiveChapterPhase, number>> = {
-  planning: 0, writing: 1, fileMissing: 1, stale: 2, extracted: 2, reviewed: 4,
+  planning: 0, writing: 1, fileMissing: 1, stale: 2, extracted: 3, reviewed: 4,
 }
 
 /** The `novel:chapter` page entry (param: the chapter number to start at). */
@@ -91,12 +92,15 @@ export function ChapterReader(props: NovelSurfaceProps & {
     body = (
       <>
         <div className={css.chap}>
-          <div className={css.kicker}>
-            {t('reader.kicker', { n })}
-            {chapter.byUser === true && <span className={css.byUserTag} title={t('chapter.byUserTitle')}>{t('chapter.byUser')}</span>}
-          </div>
-          <h2 className={css.chapTitle}>{bareTitle(n, chapter.title) || t('strip.chapter', { n })}</h2>
-          <Lamp phase={phase} t={t} />
+          <header className={css.chapHead}>
+            <div className={css.chapMeta}>
+              <span>{t('reader.kicker', { n })}</span>
+              {chapter.byUser === true && <span title={t('chapter.byUserTitle')}>{t('chapter.byUser')}</span>}
+              {chapter.wordCount !== undefined && <span>{t('chapter.words', { count: chapter.wordCount })}</span>}
+            </div>
+            <h2 className={css.chapTitle}>{bareTitle(n, chapter.title) || t('strip.chapter', { n })}</h2>
+          </header>
+          <Progress n={n} phase={phase} pending={items.length} writable={sessionId !== undefined} t={t} />
           <PlanBlock
             key={n}
             chapter={chapter}
@@ -115,24 +119,14 @@ export function ChapterReader(props: NovelSurfaceProps & {
           )}
           <Prose view={view} phase={phase} t={t} />
           <div className={css.end}>
-            <span className={css.orn}>
-              {chapter.wordCount === undefined ? t('reader.end') : t('reader.endWords', { count: chapter.wordCount })}
-            </span>
+            <span className={css.orn}>{t('reader.end')}</span>
             {failure !== null && <span className={css.warn}>{failure}</span>}
-            {phase === 'reviewed' ? (
-              <span className={css.reviewedMark}>✓ {t('chapter.reviewed')}</span>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  className={css.reviewButton}
-                  disabled={busy || sessionId === undefined || phase !== 'extracted' || items.length > 0}
-                  onClick={() => { void gesture('reviewChapter') }}
-                >
-                  {t('chapter.review')}
-                </button>
-                <span className={css.muted}>{gateText(phase, items.length, sessionId !== undefined, t)}</span>
-              </>
+            {phase === 'reviewed' && <span className={css.reviewedMark}>✓ {t('chapter.reviewed')}</span>}
+            {/* Only when it can be pressed: a greyed 审过 under the text read as a state the chapter was in. */}
+            {phase === 'extracted' && items.length === 0 && sessionId !== undefined && (
+              <button type="button" className={css.reviewButton} disabled={busy} onClick={() => { void gesture('reviewChapter') }}>
+                {t('chapter.review')}
+              </button>
             )}
             {view.file !== undefined && <span className={css.path}>{view.file}</span>}
           </div>
@@ -173,7 +167,7 @@ function NextChapter({ n, next, onGo, t }: {
   const opening = (next.body ?? '').split('\n').map(line => line.trim()).filter(line => line !== '' && !line.startsWith('#')).slice(0, 3)
   return (
     <div className={css.next}>
-      <div className={css.kicker}>{t('reader.nextKicker', { n: n + 1 })}</div>
+      <div className={css.nextKicker}>{t('reader.nextKicker', { n: n + 1 })}</div>
       <h2 className={css.nextTitle}>{bareTitle(n + 1, next.chapter.title) || t('strip.chapter', { n: n + 1 })}</h2>
       {opening.length === 0
         ? <div className={css.nextEmpty}>{t('reader.nextUnwritten')}</div>
@@ -183,29 +177,47 @@ function NextChapter({ n, next, onGo, t }: {
   )
 }
 
-/** Why ✓ 审过 is not offered yet ('' when it is). */
-function gateText(phase: EffectiveChapterPhase, pending: number, writable: boolean, t: TranslateNS<'novel'>): string {
+/** The one next step toward ✓ 审过, or that the chapter is closed. */
+function nextStep(n: number, phase: EffectiveChapterPhase, pending: number, writable: boolean, t: TranslateNS<'novel'>): string {
+  if (phase === 'reviewed') return t('chapter.gate.reviewed')
   if (!writable) return t('chapter.gate.readOnly')
   if (phase === 'planning') return t('chapter.gate.planning')
-  if (phase === 'writing') return t('chapter.gate.writing')
-  if (phase === 'stale') return t('chapter.gate.stale')
+  if (phase === 'writing') return t('chapter.gate.writing', { n })
+  if (phase === 'stale') return t('chapter.gate.stale', { n })
   if (phase === 'fileMissing') return t('chapter.gate.fileMissing')
   if (pending > 0) return t('chapter.gate.pending', { count: pending })
-  return ''
+  return t('chapter.gate.ready')
 }
 
-/** The phase as a compact stepper: ✓ for passed steps, a ring on the current one. */
-function Lamp({ phase, t }: { readonly phase: EffectiveChapterPhase; readonly t: TranslateNS<'novel'> }): ReactNode {
+/**
+ * Where the chapter stands: four segments (done, the current one, to come)
+ * and one line naming the state and the next step — the reader's only
+ * statement of it, so the top and the end of the page never disagree.
+ */
+function Progress({ n, phase, pending, writable, t }: {
+  readonly n: number
+  readonly phase: EffectiveChapterPhase
+  readonly pending: number
+  readonly writable: boolean
+  readonly t: TranslateNS<'novel'>
+}): ReactNode {
   const step = LAMP_STEP[phase]
+  const warn = phase === 'fileMissing' || phase === 'stale'
+  const tone = warn ? 'warn' : phase === 'reviewed' ? 'done' : undefined
   return (
-    <ol className={css.stepper} aria-label={t(`phase.${phase}`)}>
-      {LAMP.map((key, index) => (
-        <li key={key} className={css.step} data-state={index < step ? 'done' : index === step ? 'current' : 'todo'} data-warn={(phase === 'fileMissing' || phase === 'stale') && index === step ? 'true' : undefined}>
-          <span className={css.stepDot}>{index < step ? '✓' : ''}</span>
-          {t(key)}
-        </li>
-      ))}
-    </ol>
+    <section className={css.progress} data-tone={tone}>
+      <ol className={css.track} aria-label={t(`phase.${phase}`)}>
+        {LAMP.map((key, index) => (
+          <li key={key} className={css.trackStep} data-state={index < step ? 'done' : index === step ? 'current' : 'todo'} data-warn={warn && index === step ? 'true' : undefined}>
+            {t(key)}
+          </li>
+        ))}
+      </ol>
+      <p className={css.progressLine}>
+        <strong>{t(`phase.${phase}`)}</strong>
+        <span>{nextStep(n, phase, pending, writable, t)}</span>
+      </p>
+    </section>
   )
 }
 
