@@ -2,7 +2,7 @@
  * The shipped cordis.patch.yml's shape: the core row enabled and global
  * (the engine store), the agent row present but DISABLED at
  * the profile root — the agent surface is granted by a preset (the
- * bundle-writing recipe), never by installing the package alone.
+ * dsh-presets 写作模式 recipe), never by installing the package alone.
  */
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -32,7 +32,7 @@ describe('the shipped cordis.patch.yml (preset-granted agent surface)', () => {
 
   it('documents the two live-at-once failure (double registration) and the grant paths', () => {
     const comments = patch.split('\n').filter((line) => line.trimStart().startsWith('#')).join('\n')
-    expect(comments).toContain('@khorsheed/dsh-bundle-writing')
+    expect(comments).toContain('@khorsheed/dsh-presets')
     expect(comments).toContain('@khorsheed/dsh-canvas-novel/agent')
     expect(comments).toContain('ONLY when no preset grants')
   })

@@ -117,6 +117,9 @@ describe('cordis.patch.yml', () => {
     }
     expect(block).toContain('          - id: canvas-agent\n')
     expect(block).toContain("            name: '@khorsheed/dsh-canvas/agent'\n")
+    // The 长篇小说 tools ride the same preset (bundle-writing's 写作 folded in, 2026-10-06).
+    expect(block).toContain('          - id: canvas-novel-agent\n')
+    expect(block).toContain("            name: '@khorsheed/dsh-canvas-novel/agent'\n")
     // The diet removals (row ids, not prose): the goal rows went 2026-09-29;
     // plan-mode, the delegation/workflow group, fs-search, jobs, present and
     // agent-instructions went 2026-09-30.

@@ -68,7 +68,8 @@
       "@khorsheed/dsh-typesafe-tool",
       "@khorsheed/dsh-datasets",
       "@khorsheed/dsh-eval",
-      "@khorsheed/dsh-canvas"
+      "@khorsheed/dsh-canvas",
+      "@khorsheed/dsh-canvas-novel"
     ],
     "compat": {
       "minHost": "0.1.7-rc.1",

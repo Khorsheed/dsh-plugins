@@ -18,18 +18,16 @@
 # in every conversation's tool list (the tool-list pollution the preset
 # boundary exists to prevent). The ONLY supported grants:
 #
-#   - @khorsheed/dsh-bundle-writing (recommended): its `preset-writing`
-#     declaration mounts this very entry (`@khorsheed/dsh-canvas-novel/agent`)
-#     inside the writing preset's scope, so the pointer and the skill exist
-#     exactly for the sessions running that preset, and the tools for those
-#     of them bound (session-header chip) to a 长篇小说 canvas — and
-#     nowhere else. Installing bundle-writing alone is not enough (the
-#     preset row only declares composition); this package provides the
-#     service and the entry, bundle-writing provides the grant.
+#   - @khorsheed/dsh-presets (recommended): its `preset-dsh-writing` (写作
+#     模式) mounts this very entry (`@khorsheed/dsh-canvas-novel/agent`)
+#     next to `@khorsheed/dsh-canvas/agent`, so the pointer and the skill
+#     exist exactly for the sessions running that preset, and the tools for
+#     those of them bound (session-header chip) to a 长篇小说 canvas — and
+#     nowhere else. Installing the presets alone is not enough (the preset
+#     row only declares composition); this package provides the service and
+#     the entry, the preset provides the grant.
 #   - Another preset of your own: name `@khorsheed/dsh-canvas-novel/agent`
-#     in that preset's own agent.cordis.yml, exactly the way
-#     @khorsheed/dsh-presets' preset-dsh-writing grants
-#     `@khorsheed/dsh-canvas/agent`.
+#     in that preset's own agent.cordis.yml the same way.
 #
 # Enabling this root row by hand (removing `disabled: true`) restores the
 # every-session behavior — do that ONLY when no preset grants the entry:

@@ -46,6 +46,8 @@ export interface NovelGenreDefinition {
   readonly agentRow: string
   /** The chapters are this canvas's 成稿: the canvas renders the genre's chapter book there. */
   readonly ownsManuscripts: true
+  /** The agent writes cards with novel_write (live, ref'd, duplicate-checked); the canvas's own card write steps aside. */
+  readonly agentCardTool: string
 }
 
 /** A card field value (the canvas `FieldValue` shape). */
@@ -163,6 +165,7 @@ export const NOVEL_GENRE: NovelGenreDefinition = {
   description: '人物、世界、原则与伏笔做成卡片；章节正文是工作区里的 md 文件，写完一章对一次账。',
   agentRow: NOVEL_AGENT_ROW,
   ownsManuscripts: true,
+  agentCardTool: 'novel_write',
   categories: [
     {
       role: NOVEL_ROLES.character,

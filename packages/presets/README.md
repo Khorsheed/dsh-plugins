@@ -8,7 +8,7 @@
 
 - **无运行时代码、无客户端面**：`cordis.patch.yml` 的一个 `- insert:` 列表携带全部三行声明；`src/index.ts` 只导出 `PRESET_IDS` 常量，让包有可构建的 `lib/`（pack-dist 的硬性要求）。清单以 `dsh.bundle.kind: 'preset-declarations'` 声明这一形态——check:plugins 据此改钉 preset 行约定（行名只能是 `@deepseek-ai/dsh-agent-preset`、行 id 必须是 `preset-<id>`），取代自挂载包的「自有运行时行」身份三角。
 - **行由官方插件解释**：声明的激活、schema 校验、会话组合都归宿主的 `@deepseek-ai/dsh-agent-preset` / `-registry`（0.1.7-rc.1 起随官方 web-app bundle 发布，本包以 optional peer 声明）。
-- **社区工具行按名引用、部署层解析**：preset 组合里的 `@khorsheed/dsh-local-agent-kimi/tool`、`-local-agent-codex/tool`、`-local-agent-claude-code/tool`、`-worktrees/tool`、`-room/tool`、`-typesafe-tool`、`-datasets/tool`、`-eval/tool`、`-canvas/agent` 行只命名模块——与旧目录式 preset 一样，这些包须装进同一个 profile 才能解析；它们是清单 `dsh.references` 里的数据引用，**不是** npm 依赖边。引用了装不上的模块的 preset 会带着诊断留在名册上（官方机制），不会炸掉宿主。
+- **社区工具行按名引用、部署层解析**：preset 组合里的 `@khorsheed/dsh-local-agent-kimi/tool`、`-local-agent-codex/tool`、`-local-agent-claude-code/tool`、`-worktrees/tool`、`-room/tool`、`-typesafe-tool`、`-datasets/tool`、`-eval/tool`、`-canvas/agent`、`-canvas-novel/agent` 行只命名模块——与旧目录式 preset 一样，这些包须装进同一个 profile 才能解析；它们是清单 `dsh.references` 里的数据引用，**不是** npm 依赖边。引用了装不上的模块的 preset 会带着诊断留在名册上（官方机制），不会炸掉宿主。
 
 ## 三个 preset 的迁移来源
 
@@ -16,7 +16,7 @@
 | --- | --- | --- | --- |
 | `dev` | 开发模式 | 10 | 官方部分以 rc.1 `standard.patch.yml` 全文重基（0.1.5 复制件已漂移：`workflow-worker-thread` 改名 `workflow-ptc`、`tool-ralph` 上游默认停用、新增停用的 `tool-plugin-manager` 行），末尾逐字追加现行 dev 的六条社区工具行（3× local-agent 委派 + worktrees/room/typesafe）。 |
 | `dsh-eval` | 评测模式 | 0 | `profiles/web-eval/presets/eval` 逐行迁移：无 Shell/无工作流的只读+委派组合（冻结决策 12），官方包名对照 rc.1 名册**零改名**；附 `datasets-tool`（`tools: authoring`）与 `eval-tool`（`tools: all`）两条伴生行。 |
-| `dsh-writing` | 写作模式 | — | `profiles/web/presets/dsh-writing` 逐行迁移（唯一改名 `workflow-worker-thread` → `workflow-ptc`），附 `canvas/agent` 行。写作场景调优：2026-09-29 移除 goal 两行；2026-09-30 作家 persona 升级为完整双语写作契约（本文件持有的提示词段全部单一英文，宿主提示词本身的语言），同日参考官方 `minimal` 做工具精简——plan-mode、delegation/workflow 整组、fs-search、jobs、present、agent-instructions 移出，保留 shell（写作 skill 会调脚本，观察期）、fs 读写、Skills、compaction、ask-user、todo、web 与按会话授予的画布工具。 |
+| `dsh-writing` | 写作模式 | — | `profiles/web/presets/dsh-writing` 逐行迁移（唯一改名 `workflow-worker-thread` → `workflow-ptc`），附 `canvas/agent` 行。写作场景调优：2026-09-29 移除 goal 两行；2026-09-30 作家 persona 升级为完整双语写作契约（本文件持有的提示词段全部单一英文，宿主提示词本身的语言），同日参考官方 `minimal` 做工具精简——plan-mode、delegation/workflow 整组、fs-search、jobs、present、agent-instructions 移出，保留 shell（写作 skill 会调脚本，观察期）、fs 读写、Skills、compaction、ask-user、todo、web 与按会话授予的画布工具。2026-10-06 并入 `canvas-novel/agent` 行（原 bundle-writing 的「写作」preset，该包退役）：会话绑定长篇小说画布时才出现 `novel_*` 工具。 |
 
 展示字段（`name`/`description`/`order`）来自各旧 `preset.yml`，描述文字保持中文原文。
 
