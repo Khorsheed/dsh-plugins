@@ -16,7 +16,7 @@ import css from './novel.module.css'
 const OP_KEYS = { 推进: 'plan.op.advance', 暗示: 'plan.op.hint', 新埋: 'plan.op.plant', 揭晓: 'plan.op.resolve' } as const
 const MARK_KEYS = { 转折: 'plan.mark.turn', 落点: 'plan.mark.land' } as const
 
-/** The plan block; renders the empty line when the chapter has no plan. */
+/** The plan block; the empty line when the chapter has no plan, nothing for the person's own draft (its 原稿 tag says so). */
 export function PlanBlock({ chapter, phase, names, canConfirm, busy, onConfirm, t }: {
   readonly chapter: ChapterRecord
   readonly phase: EffectiveChapterPhase
@@ -30,7 +30,7 @@ export function PlanBlock({ chapter, phase, names, canConfirm, busy, onConfirm, 
   const lead = phase === 'planning'
   const [open, setOpen] = useState(lead)
   const plan = chapter.plan
-  if (chapter.byUser === true && plan === undefined) return <div className={css.planEmpty}>{t('chapter.byUserNoPlan')}</div>
+  if (chapter.byUser === true && plan === undefined) return null
   if (plan === undefined) return <div className={css.planEmpty}>{t('chapter.noPlan')}</div>
   const confirmed = chapter.planConfirmedAt !== undefined
   const delivery = chapter.delivery

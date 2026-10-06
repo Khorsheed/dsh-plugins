@@ -180,14 +180,21 @@ describe('ChapterPage', () => {
     const remote = fakeRemote({ items: [item('p1')], phase: 'extracted' })
     renderPage(remote)
     expect(await screen.findByText('还有 1 条待审，处理完才能审过')).toBeTruthy()
-    expect((screen.getByRole('button', { name: zh['chapter.review'] }) as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.queryByRole('button', { name: zh['chapter.review'] })).toBeNull()
     expect(screen.getByText('他推开门。')).toBeTruthy()
   })
 
   it('holds it before the chapter is reconciled', async () => {
     renderPage(fakeRemote({ items: [], phase: 'writing' }))
-    expect(await screen.findByText(zh['chapter.gate.writing'])).toBeTruthy()
-    expect((screen.getByRole('button', { name: zh['chapter.review'] }) as HTMLButtonElement).disabled).toBe(true)
+    expect(await screen.findByText(zh['chapter.gate.writing'].replace('{n}', '1'))).toBeTruthy()
+    expect(screen.queryByRole('button', { name: zh['chapter.review'] })).toBeNull()
+  })
+
+  it('a text changed since its 对账 says how to reconcile again, at the top only', async () => {
+    renderPage(fakeRemote({ items: [], phase: 'stale' }))
+    expect(await screen.findByText(zh['chapter.gate.stale'].replace('{n}', '1'))).toBeTruthy()
+    expect(screen.getByText(zh['phase.stale'])).toBeTruthy()
+    expect(screen.queryByRole('button', { name: zh['chapter.review'] })).toBeNull()
   })
 
   it('offers it once extracted and handled, and closes the chapter through the Remote', async () => {
@@ -209,7 +216,7 @@ describe('ChapterPage', () => {
   it('a read-only canvas never offers it', async () => {
     renderPage(fakeRemote({ items: [], phase: 'extracted' }), null)
     expect(await screen.findByText(zh['chapter.gate.readOnly'])).toBeTruthy()
-    expect((screen.getByRole('button', { name: zh['chapter.review'] }) as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.queryByRole('button', { name: zh['chapter.review'] })).toBeNull()
   })
 })
 
