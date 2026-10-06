@@ -68,6 +68,25 @@ describe('the story log', () => {
     expect(log.world[0]!.plot).toEqual({ rule: '监护者不能在梦里说出自己的真名——真名是锚，说出即被梦主锁定。' })
   })
 
+  it('falls back to the card\'s source chapter where a chapter extracted before the journals left none', async () => {
+    const { store, canvas } = seededStore()
+    const anchor = (cardId: string, n: number): void => {
+      const board = canvas.boards.get(DREAM.workId)!
+      canvas.boards.set(DREAM.workId, { ...board, cards: board.cards.map(card => card.id === cardId ? { ...card, source: { type: 'file', ref: `/home/user/梦境监护者/第${n}章.md`, title: `第${n}章` } } : card) })
+    }
+    anchor(CARD.zhao, 1)
+    anchor(CARD.leafGlow, 2)
+    anchor(CARD.doorGap, 2)
+    anchor(CARD.aiwen, 5)
+    const before = (await seededStore().store.storyLog({ workId: DREAM.workId })).characters.find(card => card.cardId === CARD.aiwen)!
+    const log = await store.storyLog({ workId: DREAM.workId })
+    expect(log.characters.find(card => card.cardId === CARD.zhao)!.appearances[0]).toEqual({ chapter: 1, pov: false, planned: false, experiences: [] })
+    expect(log.foreshadows.find(view => view.cardId === CARD.leafGlow)!.marks.filter(mark => mark.kind === 'planted')).toEqual([{ chapter: 2, kind: 'planted', planned: false }])
+    // A journal planting wins; an unsettled source chapter adds nothing.
+    expect(log.foreshadows.find(view => view.cardId === CARD.doorGap)!.marks.filter(mark => mark.kind === 'planted')).toEqual([{ chapter: 1, kind: 'planted', planned: false }])
+    expect(log.characters.find(card => card.cardId === CARD.aiwen)!.appearances).toEqual(before.appearances)
+  })
+
   it('shows a canvas edit the engine has not synced yet as 你改的 at the current chapter, without writing it', async () => {
     const { store, canvas } = seededStore()
     await store.ensureRefs(DREAM.workId, SESSION)
