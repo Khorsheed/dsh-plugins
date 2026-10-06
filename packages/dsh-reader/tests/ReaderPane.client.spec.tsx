@@ -3681,3 +3681,112 @@ const settleFrame = async (): Promise<void> => {
     delete (globalThis as unknown as { Translator?: unknown }).Translator
   })
 })
+
+describe('the compact panel (panel-responsive-spec P2)', () => {
+  /** A 390px panel: the kit's PanelRoot measures it and the pane goes compact. */
+  const narrow = (): void => {
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ width: 390 } as DOMRect)
+  }
+
+  it('folds the wall header into one row: name, unread count, search and add, the rest behind ⋯', async () => {
+    narrow()
+    const ui = bench({
+      sources: [rssSource('hn', { label: 'Hacker News' })],
+      payloads: { hn: feed('hn', [{ title: '第一条' }, { title: '第二条' }]) },
+    })
+    await ui.settle()
+    await screen.findByText('第一条')
+    expect(screen.getByText(`2 ${zh['foot.unread']}`)).toBeTruthy()
+    // The search row is folded until asked for.
+    expect(screen.queryByPlaceholderText(zh['search.placeholder'])).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: zh['search.placeholder'] }))
+    expect(screen.getByPlaceholderText(zh['search.placeholder'])).toBeTruthy()
+    // Add is inline; refresh, history and subscriptions are not.
+    expect(screen.getByRole('button', { name: zh['action.add'] })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: zh['action.refresh'] })).toBeNull()
+    expect(screen.queryByTitle(zh['action.manage'])).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: zh['action.more'] }))
+    fireEvent.click(await screen.findByText(zh['action.refresh']))
+    await waitFor(() => { expect(ui.mocks.refresh).toHaveBeenCalled() })
+    // The wide header's own buttons never render on a compact panel.
+    expect(screen.queryByTitle(zh['action.filter'])).toBeNull()
+  })
+
+  it('narrows the wall from the chip row, and a pressed chip clears again', async () => {
+    narrow()
+    const ui = bench({
+      sources: [rssSource('hn', { label: 'Hacker News' }), rssSource('saved', { kind: 'link', label: '保存的文章' })],
+      payloads: { hn: feed('hn', [{ title: '订阅里的一条' }]), saved: feed('saved', [{ title: '保存的一条' }]) },
+    })
+    await ui.settle()
+    await screen.findByText('订阅里的一条')
+    const chips = screen.getByRole('group', { name: zh['action.filter'] })
+    const chip = (label: string): HTMLElement => within(chips).getByText(label).closest('button') as HTMLElement
+    expect(chip(zh['filter.all']).getAttribute('aria-pressed')).toBe('true')
+    fireEvent.click(chip(zh['sources.kindRss']))
+    expect(chip(zh['sources.kindRss']).getAttribute('aria-pressed')).toBe('true')
+    expect(chip(zh['filter.all']).getAttribute('aria-pressed')).toBe('false')
+    fireEvent.click(chip(zh['sources.kindRss']))
+    expect(chip(zh['filter.all']).getAttribute('aria-pressed')).toBe('true')
+    fireEvent.click(chip(zh['chip.unread']))
+    expect(chip(zh['chip.unread']).getAttribute('aria-pressed')).toBe('true')
+    // 全部 clears every narrowing, the unread toggle included.
+    fireEvent.click(chip(zh['filter.all']))
+    expect(chip(zh['chip.unread']).getAttribute('aria-pressed')).toBe('false')
+    // 筛选… opens the same panel the wide header's funnel does.
+    fireEvent.click(chip(zh['chip.more']))
+    expect(await screen.findByText(zh['filter.bySource'])).toBeTruthy()
+  })
+
+  it('marks unread on the row itself once the source tile is gone', async () => {
+    narrow()
+    const ui = bench({
+      sources: [rssSource('hn')],
+      payloads: { hn: feed('hn', [{ title: '没读过的' }]) },
+    })
+    await ui.settle()
+    await screen.findByText('没读过的')
+    const dot = ui.container.querySelector('[class*="metaDot"]')
+    expect(dot).not.toBeNull()
+    expect(dot?.textContent).toBe('')
+  })
+
+  it('puts the detail on one header row: back, no repeated title, the ordinary actions behind ⋯', async () => {
+    narrow()
+    const ui = bench({
+      sources: [rssSource('hn')],
+      payloads: { hn: feed('hn', [{ title: '一篇长文', description: `<p>${'正文。'.repeat(40)}</p>` }]) },
+    })
+    await ui.settle()
+    fireEvent.click(await screen.findByText('一篇长文'))
+    expect(await screen.findByText(zh['detail.composerLabel'])).toBeTruthy()
+    // The bar carries no title: the article's heading below is the one place it reads.
+    expect(screen.getAllByText('一篇长文')).toHaveLength(1)
+    expect(screen.queryByRole('button', { name: zh['action.copyLink'] })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: zh['action.more'] }))
+    fireEvent.click(await screen.findByText(zh['action.openExternal']))
+    expect(ui.mocks.openExternal).toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: zh['action.back'] }))
+    expect(await screen.findByText('一篇长文')).toBeTruthy()
+  })
+})
+
+describe('several incomplete sources fold into one line', () => {
+  it('names how many, and lists them on request', async () => {
+    const half = (id: string): string => `<rss version="2.0"><channel><title>${id}</title>`
+      + `<item><title>${id} 完整的一条</title><link>https://example.com/${id}/a</link><description>正文</description></item>`
+      + `<item><title>${id} 被截断的</title><link>https://example.com/${id}/b</link><description>半`
+    const ui = bench({
+      sources: [rssSource('one', { label: '源一' }), rssSource('two', { label: '源二' })],
+      payloads: { one: half('one'), two: half('two') },
+      truncatedIds: ['one', 'two'],
+    })
+    await ui.settle()
+    expect(await screen.findByText(zh['state.incompleteCount'].replace('{count}', '2'))).toBeTruthy()
+    expect(screen.queryByText(zh['state.incompleteReason'], { exact: false })).toBeNull()
+    fireEvent.click(screen.getByText(zh['action.showList']))
+    expect(screen.getAllByText(zh['state.incompleteReason'], { exact: false })).toHaveLength(2)
+    fireEvent.click(screen.getByText(zh['action.foldList']))
+    expect(screen.queryByText(zh['state.incompleteReason'], { exact: false })).toBeNull()
+  })
+})

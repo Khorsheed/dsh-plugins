@@ -221,6 +221,10 @@ export const ALLOWED_EDGES: Readonly<Record<string, ReadonlyArray<string>>> = {
   // another (the pane's title bar and tab row); both are inlined into each
   // consuming plugin's bundle, so nothing is installed at runtime.
   'ui-content-preview': ['@khorsheed/dsh-client-ui-panel-kit'],
+  // dsh-reader → ui-panel-kit: the inspiration space's compact header, chip
+  // row and panel root (panel-responsive-spec P2) — the same inlined,
+  // zero-runtime source-plane edge as the file surfaces above.
+  'dsh-reader': ['@khorsheed/dsh-client-ui-panel-kit'],
   // room consumes the local-agent delegation facade as an OPTIONAL capability:
   // type-only imports, an optional peer dep, a runtime probe, and tested
   // degradation when the family is absent (the room works with the main agent

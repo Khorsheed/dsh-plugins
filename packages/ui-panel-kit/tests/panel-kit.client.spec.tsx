@@ -99,6 +99,12 @@ describe('PanelHeader', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Back' }))
     expect(back).toHaveBeenCalledOnce()
   })
+  it('places an extra control before the icons without spending the budget', () => {
+    const actions = ['one', 'two'].map(id => ({ id, label: id, icon: id, onSelect: () => {} }))
+    render(<PanelHeader title="a.md" moreLabel="More" compact extra={<button type="button">Globe</button>} actions={actions} />)
+    const names = screen.getAllByRole('button').map(button => button.getAttribute('aria-label') ?? button.textContent)
+    expect(names).toEqual(['Globe', 'one', 'two'])
+  })
 })
 
 describe('PanelHeader toggles and PanelRoot render prop', () => {
