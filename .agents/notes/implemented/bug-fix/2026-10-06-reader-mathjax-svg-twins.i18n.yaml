@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-10-06-reader-mathjax-svg-twins.md
+.agents/notes/implemented/bug-fix/2026-10-06-reader-mathjax-svg-twins.md: ef7d5b3310dd8c28eaab9623aea91cb47e31bb20
+.agents/notes/implemented/bug-fix/2026-10-06-reader-mathjax-svg-twins.zh.md: 7269ac98712360895ae563795e7e42207b4fd0f6

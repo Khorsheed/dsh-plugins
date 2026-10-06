@@ -666,6 +666,40 @@ describe('inline SVG figures survive (capture-rendered pages)', () => {
     expect(repairStoredSvg(plain)).toBe(plain)
   })
 
+  it('keeps the MathML copy of a MathJax formula and drops its glyph drawing', () => {
+    // Springer's MathJax 2 SVG shape: glyph references into a page-global
+    // table the extraction never carries, then the hidden assistive MathML.
+    const inline = '<span class="MathJax_SVG"><svg viewBox="0 0 10 10"><g><use xlink:href="#MJMATHI-49"/>'
+      + '<rect x="0" y="0" width="5" height="1"/></g></svg>'
+      + '<span class="MJX_Assistive_MathML" role="presentation" style="position:absolute;width:1px;overflow:hidden">'
+      + '<math><msub><mi>I</mi><mi>t</mi></msub></math></span></span>'
+    const block = '<div class="MathJax_SVG_Display"><svg viewBox="0 0 10 10"><use href="#MJMAIN-2C"/></svg>'
+      + '<span class="MJX_Assistive_MathML MJX_Assistive_MathML_Block"><math display="block">'
+      + '<mi>p</mi><mtext>\\# dreams</mtext></math></span></div>'
+    const page = '<html><body><article><p>' + 'prose '.repeat(60) + inline + '</p>' + block + '</article></body></html>'
+    const result = extractArticle(page, 'https://link.springer.com/article/x')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.html).not.toContain('<svg')
+    expect(result.html).not.toContain('overflow:hidden')
+    expect(result.html).toContain('<math><msub><mi>I</mi><mi>t</mi></msub></math>')
+    expect(result.html).toContain('<math display="block"><mi>p</mi><mtext># dreams</mtext></math>')
+    // An icon drawn from the page's own sprite is not a formula: it stays.
+    const icon = normalizeRichText('<p>x</p><svg viewBox="0 0 1 1"><use href="#icon-chevron"/></svg><span><math><mi>x</mi></math></span>')
+    expect(icon).toContain('<svg')
+  })
+
+  it('settles MathJax twins in a body cached before the fix', () => {
+    // The stored shape the Springer article was cached in: drawing kept, the
+    // assistive MathML clipped to 1px by its inlined wrapper style.
+    const stored = '<p>a <span><svg viewBox="0 0 10 10"><use href="#MJMATHI-49"></use></svg>'
+      + '<span style="height: 1px !important; overflow: hidden !important"><math><mi>I</mi></math></span></span> b</p>'
+      + '<svg viewBox="0 0 10 10"><use href="#MJMAIN-2C"></use></svg><math display="block"><mtext>\\# x</mtext></math>'
+    const repaired = repairStoredSvg(stored)
+    expect(repaired).toBe('<p>a <span><math><mi>I</mi></math></span> b</p><math display="block"><mtext># x</mtext></math>')
+    expect(repairStoredSvg(repaired)).toBe(repaired)
+  })
+
   it('applies the same subset through the feed-body path and keeps summaries clean', () => {
     const out = normalizeRichText('<p>x</p><svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" fill="#000"/></svg>')
     expect(out).toBe('<p>x</p><svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" fill="#000"></circle></svg>')

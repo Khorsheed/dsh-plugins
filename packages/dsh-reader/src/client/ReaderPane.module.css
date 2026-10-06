@@ -843,8 +843,12 @@
   font-size: 1.02em;
 }
 
+/* `display: block` alone turns <math> into a plain CSS box and its MathML
+   layout falls apart (a <math> with several children and no <mrow> scatters
+   them); `block math` keeps the MathML formatting context. */
 .article math[display="block"] {
   display: block;
+  display: block math;
   max-width: 100%;
   margin: 0 0 12px;
   padding: 6px 0;

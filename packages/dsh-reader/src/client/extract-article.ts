@@ -223,6 +223,8 @@ export function extractArticle(pageHtml: string, baseUrl: string): ExtractArticl
     node.remove()
   }
 
+  settleMathJaxTwins(doc.body)
+
   const scored = scoreCandidates(doc)
   if (scored === undefined) {
     return { ok: false, error: 'no text-bearing block found' }
@@ -873,7 +875,7 @@ export function repairStoredSvg(html: string): string {
   } catch {
     return html
   }
-  let changed = false
+  let changed = settleMathJaxTwins(doc.body)
   for (const svg of Array.from(doc.body.querySelectorAll('svg'))) {
     // Nested drawings ride their top-level figure's pass.
     if ((svg.parentElement?.closest('svg') ?? null) !== null) continue
@@ -891,6 +893,55 @@ export function repairStoredSvg(html: string): string {
     }
   }
   return changed ? doc.body.innerHTML : html
+}
+
+/**
+ * Keep MathJax's MathML copy of a formula and drop its glyph drawing.
+ *
+ * MathJax 2's SVG output renders each formula twice: an `<svg>` assembled
+ * from `<use href="#MJ…">` references into a page-global glyph table, then
+ * the same formula as MathML in a visually-hidden "assistive" span. The
+ * extraction never carries that glyph table, so the drawing degrades to its
+ * fraction bars — stray lines and blank gaps — while the hidden MathML is
+ * the one copy that can still render. The `<svg>` drops, the MathML takes its
+ * place out of its 1px clip wrapper, and the TeX escapes MathJax would have
+ * drawn as bare characters (`\#` → `#`) are undone in its text runs.
+ *
+ * Runs at extraction and again at display time over stored bodies, so it is
+ * idempotent: a settled body has no glyph-reference `<svg>` left to match.
+ *
+ * @param root - the subtree to settle in place.
+ * @returns true when anything changed.
+ */
+function settleMathJaxTwins(root: Element): boolean {
+  let changed = false
+  for (const svg of Array.from(root.querySelectorAll('svg'))) {
+    if (!drawsMathJaxGlyphs(svg)) continue
+    const twin = svg.nextElementSibling
+    if (twin === null) continue
+    let math: Element | null = null
+    if (twin.localName.toLowerCase() === 'math') {
+      math = twin
+    } else if (twin.children.length === 1 && twin.children[0]!.localName.toLowerCase() === 'math') {
+      math = twin.children[0]!
+      twin.replaceWith(math)
+    }
+    if (math === null) continue
+    svg.remove()
+    for (const text of Array.from(math.querySelectorAll('mtext'))) {
+      const value = text.textContent ?? ''
+      const unescaped = value.replace(/\\([#%&$_{}])/g, '$1')
+      if (unescaped !== value) text.textContent = unescaped
+    }
+    changed = true
+  }
+  return changed
+}
+
+/** Whether an `<svg>` is drawn from MathJax's page-global glyph table. */
+function drawsMathJaxGlyphs(svg: Element): boolean {
+  return Array.from(svg.querySelectorAll('use')).some(use =>
+    /^#MJ/.test(use.getAttribute('href') ?? use.getAttribute('xlink:href') ?? ''))
 }
 
 /** One SVG subtree → whitelisted markup (or empty). */
