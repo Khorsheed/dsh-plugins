@@ -117,10 +117,10 @@ T73 之前每个会话绑一个仓库（`$DSH_HOME/state/datasets/bindings/<sess
 | `datasets_snapshot` | | 固化跟踪分支当前的 commit，仓库演进中读稳定版本 |
 | `datasets_worktree_path` | 写物化缓存 | 整层只读视图路径（`git archive` 只取登记的层，按内容寻址） |
 | `datasets_put_item` | 写工作树 | 在登记的 `authoringCheckout` 里创建/更新 item 元数据与层文件；没登记写入检出即拒；`git commit` 留给人 |
-| `datasets_propose_registration` | 写申请 | 「题集整理」会话的最后一步：提交登记申请（附 mapping、各层可见性建议、样题），插件核对后等人在题集 tab 上确认；**从不写登记表**；`dryRun: true` 只跑检查（T90） |
+| `datasets_propose_registration` | 写申请 | 整理的最后一步（「让 Agent 整理」开的会话）：提交登记申请（附 mapping、各层可见性建议、样题），插件核对后等人在题集 tab 上确认；**从不写登记表**；`dryRun: true` 只跑检查（T90） |
 | `datasets_validate` | | 作者卫生 + 可判性校验：形状错误与判不动的 rubric fail loud；六类警告（混合敏感度未表态层 / item.json 敏感字段名 / 未覆盖文件掉进透传区 / 声明了 canary 但可见层文本文件没埋 / objective 判据无探针源 / rubric.md 引用悬空），警告不阻断。逐条见上面的[规则表](#validate-规则表) |
 
-**工具分组**：`tools` 配置决定注册哪一组工具——preset 挑不掉 profile 层已注册的工具，能决定的只有注册本身。四档是一条包含链：`read` = 六个读类动词（list / show / describe / read / snapshot / validate）；`authoring` = read + `put_item`（起草进工作树，提交仍然是人的）；`all`（缺省）= authoring + `worktree_path`（整层物化，会写物化缓存）；`none` = 一个模型工具都不注册。另有一档**不在这条链上**：`organize` = read + `datasets_propose_registration`，给「题集整理」会话用，并随档注册随包分发的 `dataset-authoring` skill（T90）——它不含 `put_item`，也不需要写入检出。系统提示词段只描述实际注册的工具，`none` 下连段都不贡献。服务、CLI、`/datasets` 与会话 tab 是人的面，任何档位都不动它们。**评测域建议 `authoring`**：规划期的 agent 要读题、要出题，但整层物化是编排器的动作，不该是 agent 能自己发起的一步。
+**工具分组**：`tools` 配置决定注册哪一组工具——preset 挑不掉 profile 层已注册的工具，能决定的只有注册本身。四档是一条包含链：`read` = 六个读类动词（list / show / describe / read / snapshot / validate）；`authoring` = read + `put_item`（起草进工作树，提交仍然是人的）；`all`（缺省）= authoring + `worktree_path`（整层物化，会写物化缓存）；`none` = 一个模型工具都不注册。另有一档**不在这条链上**：`organize` = authoring + `datasets_propose_registration`，并随档注册随包分发的 `dataset-authoring` skill（T90 时只有 read + 申请，给单独的「题集整理」预设用；T102 起题集整理并进评测模式，这一档就是评测模式的档，补上了 `put_item`）——它不含 `worktree_path`，`all` 也不含申请。`organize` 档的提示词段是一段合并的说明：先讲怎样用已登记的题集，再讲整理这一件要读目录的事。系统提示词段只描述实际注册的工具，`none` 下连段都不贡献。服务、CLI、`/datasets` 与会话 tab 是人的面，任何档位都不动它们。**评测域用 `organize`**（T102 前是 `authoring`）：评测 agent 要读题、要出题、要整理数据并提申请，但整层物化是编排器的动作，不该是 agent 能自己发起的一步。
 
 `worktree_path` 返回物化根下的只读目录 `<repoKey>/<sha>/<set>/<layers-key>/`（`repoKey` 是 common dir 的哈希，所以同一仓库的所有检出共享缓存）：`git archive <sha> -- <层路径>` 解包进暂存区、去写权限、原子 rename 落位。键完全决定内容，所以同键再调是缓存命中（`reused: true`），并发创建者各自暂存、先 rename 的赢。返回形状 `{path, commit, layers, reused}` 与旧的托管 worktree 相同。它替换了托管 worktree：`git worktree add` 要在仓库**共享的** `.git` 里登记并加锁，每次物化都在写别人正在干活的检出的共享状态；`git archive` 只读对象，不碰 index、HEAD、worktree 列表。
 
@@ -180,9 +180,9 @@ tab 的数据面是一个 Typert Remote 服务（`datasetsRemote`，线 namespac
 
 ## 添加题集与确认登记（T90）
 
-题集接入只有一条路：人说出数据在哪，Agent 整理成协议仓库并**提交登记申请**，人在题集 tab 上确认。首次使用和以后每次加题、改题都走这一条。四项既定决定：**A** 登记表只归人写，Agent 只能申请；**B** 整理在独立的「题集整理」会话里做（它会看到答案，不复用评测会话）；**C** 新仓库默认放在 `$DSH_HOME/datasets/<名称>`（配置键 `datasetsHome`），人指定位置时用指定的；**D** 界面只显示「版本 N · 更新时间」，路径、分支、提交号收进「高级」与 title。
+题集接入只有一条路：人说出数据在哪，Agent 整理成协议仓库并**提交登记申请**，人在题集 tab 上确认。首次使用和以后每次加题、改题都走这一条。四项既定决定：**A** 登记表只归人写，Agent 只能申请；**B** 整理在新开的会话里做（它会看到答案，不复用已有的评测会话；T102 起这个会话用评测模式，不再有单独的「题集整理」预设）；**C** 新仓库默认放在 `$DSH_HOME/datasets/<名称>`（配置键 `datasetsHome`），人指定位置时用指定的；**D** 界面只显示「版本 N · 更新时间」，路径、分支、提交号收进「高级」与 title。
 
-- **「添加题集」弹窗**（宽 `min(560px, 100%)`，与 eval 的「新建实验」一致）：三个字段——数据在哪 / 题集名称 / 想拿它测什么（可选）；主按钮「让 Agent 整理」新开一个「题集整理」会话（选 `authoringPreset` 指名的预设，默认 `dataset-authoring`；宿主没列出这个预设就留默认预设，请求里点名 skill），把请求写进对话框但**不发送**。宿主缺新建会话或写对话框的门时依次降级为剪贴板、再降级为页面上显示请求原文让人自己粘贴。弹窗底部一句告知题集用 git 管版本。原手动登记表单收在「高级」里。宿主的目录选择器可用时（与登记表单同一个探测：回环连接且宿主能打开路径），「数据在哪」旁有「选择目录…」（选中的路径写进输入框，仍可手改，取消不改原值），「新仓库位置」是一个只读字段（单行，过长时中间省略、题集自己的文件夹始终可见，悬停或复制得到完整路径），右侧「更改…」（选父目录，仓库 = 父目录/题集名称，选过后说明行末尾出现「恢复默认」链接；「选择目录…」与「更改…」同宽同列，在各自输入框右侧），选中的位置写进给 Agent 的请求；选择器不可用时按钮都不显示，路径照常显示（T95、T96）。
+- **「添加题集」弹窗**（宽 `min(560px, 100%)`，与 eval 的「新建实验」一致）：三个字段——数据在哪 / 题集名称 / 想拿它测什么（可选）；主按钮「让 Agent 整理」新开一个会话，标题「题集整理 · 名称」（预设：配置了 `authoringPreset` 就用它；没配置时（默认）由宿主侧按授予挑——部署默认预设授予了 datasets 工具行的 `organize` 档就用默认，否则用名册里第一个授予且未损坏的，web-eval 上是 `eval`、3080 上是 `dsh-eval`；哪个都没有就留默认预设，请求里点名 skill。T102），把请求写进对话框但**不发送**。宿主缺新建会话或写对话框的门时依次降级为剪贴板、再降级为页面上显示请求原文让人自己粘贴。弹窗底部一句告知题集用 git 管版本。原手动登记表单收在「高级」里。宿主的目录选择器可用时（与登记表单同一个探测：回环连接且宿主能打开路径），「数据在哪」旁有「选择目录…」（选中的路径写进输入框，仍可手改，取消不改原值），「新仓库位置」是一个只读字段（单行，过长时中间省略、题集自己的文件夹始终可见，悬停或复制得到完整路径），右侧「更改…」（选父目录，仓库 = 父目录/题集名称，选过后说明行末尾出现「恢复默认」链接；「选择目录…」与「更改…」同宽同列，在各自输入框右侧），选中的位置写进给 Agent 的请求；选择器不可用时按钮都不显示，路径照常显示（T95、T96）。
 - **skill**：`skills/dataset-authoring/SKILL.md` 随包分发（`files` 收 `skills/**/*.md`），由工具行的 `organize` 档经宿主 `skills` 注册表注册——只装 datasets、在自己的预设里给工具行写 `tools: organize` 就能用，不需要往 `$DSH_HOME/skills` 拷文件。内容从 `docs/dataset-authoring-protocol.md` 派生，二者冲突以协议为准。协议正文随包发：构建把 `docs/` 那一对拷成 skill 目录里的 `protocol.en.md` / `protocol.zh.md`（拷贝件不入库），skill 里写的是占位路径，加载时解析成安装后的绝对路径，Agent 用 `read` 直接读，不需要去找（T94）。skill 规定校验规则只从工具拿（`datasets_propose_registration` 的 `dryRun`、`datasets_validate`、包内 CLI 的 `validate --repo`），只读来源、目标、协议三处，不搜盘、不读插件源码或 lib、不读别的实例目录。
 - **申请**：`datasets_propose_registration` 只写申请（状态根下的提案库），附 `mapping`（原目录每个文件的去向、题集每个文件的来源）、各层可见性建议、样题。插件把 mapping 对照仓库的 git 对象与原目录逐项核对，跑协议的 validate；任何对不上都成为「问题」，有问题就不能确认。`dryRun: true` 跑同一套检查但不落提案。
 - **「等你确认登记」**：tab 顶部的提示条打开审阅页——来源、题数、校验、版本；「原目录 → 题集」左右对照（顶部汇总各类计数，删除数始终显示；不分层、选手可见的文件醒目标出）；逐条对照一题 / 随机抽看 3 题 / 完整清单；登记名；各层可见性开关（带 Agent 建议，至少留一层）；「高级」里是路径、分支、提交号。「退回给 Agent」把人的意见写进原整理会话的对话框；「确认登记」是申请变成登记的唯一路径。
@@ -195,7 +195,7 @@ tab 的数据面是一个 Typert Remote 服务（`datasetsRemote`，线 namespac
 宿主 0.2.0 的左侧栏有一列全局入口（插件管理、定时任务用的是同一套）。本包往里放一个「题集」：侧栏图标走 `sidebar.panellist`，点开后的中间面板走 `main`，两者 id 都是 `datasets`。面板里就是会话 tab 的同一个视图，列表、详情、审阅页、返回都一样。
 
 - **不依赖会话**：T97 起 datasets 的 Remote 一律不带会话参数，面板没有会话也能读全部数据。
-- **「添加题集」**：和 tab 里一样，新开一个「题集整理」会话，把请求写进它的输入框，不发送。新会话落在最近活跃的工作区，也就是宿主「新会话」选的那个。
+- **「添加题集」**：和 tab 里一样，新开一个整理会话（标题「题集整理 · 名称」，预设照上面的规则挑，T102 起是评测模式），把请求写进它的输入框，不发送。新会话落在最近活跃的工作区，也就是宿主「新会话」选的那个。
 - **不按会话自隐**：面板展示的是部署级的题库，跟某个会话的 preset 无关（docs/plugin-visibility.md）。哪个 profile 显示它，由安装层决定：profile 装了本包就有这个入口。
 - **两个槽都是可选的**：注册走 `slots.inject`。宿主没声明这两个槽时，入口和面板都不出现，也不报错。会话 tab 照旧。
 
@@ -206,6 +206,7 @@ tab 的数据面是一个 Typert Remote 服务（`datasetsRemote`，线 namespac
 - 金丝雀校验与可判性校验都在本插件内部完成（只读 git 对象），不依赖任何新的宿主能力；`tools` 分组随模型工具面搬到本包的工具行 `@khorsheed/dsh-datasets/tool`（`read` / `authoring` / `all` / `none`），本行不再有这个配置键。
 - 登记申请、对照核对与更新闸（T90）同样是插件内部的（提案库是状态根下的 JSON，核对只读 git 对象与原目录）。「让 Agent 整理」用宿主 0.2.0 的门：`sessions.create` / `rename`、`remote.agentPresets` 的 list / select、`uiWorkspace.openSession`、会话输入框的 `setDraft`；每一扇门都在调用时探测，缺哪扇就依次降级为剪贴板、再降级为页面上显示请求原文，不会报错。
 - 「核对并登记」轮尾卡片（T96）用宿主 0.2.0 的 `conversation.chat.turnTail` 列表槽与 `uiConversation.events` 会话定义，两者都在该槽声明后才读取；缺了就不出卡片，申请照常在提示条后面等。卡片的打开动作（T97）用 `ctx.layout.selectPanel('datasets')` 选中全局「题集」面板；没有 layout 服务、或面板没注册（选中时抛错），就退回本会话的题集 tab，并用一句话说去哪儿点。T96 的 tab 条 DOM 锚点已退役。
+- 「让 Agent 整理」挑预设（T102）：没配 `authoringPreset` 时由宿主侧经 ctx.get 读宿主 0.2.0 的 `agentPresets` 注册表（`list`、`readDocument`、`defaultId`），按 datasets 工具行的 `organize` 档挑；注册表或其中任何一个成员缺失时留默认预设，请求里照常点名 skill。
 - 全局「题集」面板（T97）用宿主 0.2.0 的 `main` 与 `sidebar.panellist` 两个槽，经 `slots.inject` 注册；宿主没有这两个槽时不出现，不报错。T97 起 Remote 的方法都不带会话参数，所以新版客户端不能和 T97 之前的服务端混用（反过来也一样）。两半来自同一个包，正常安装不会出现这种情况。审阅页的校验事实按提交号缓存在状态根的提案库下（插件内部）。
 - 题库登记与只读物化（T73）同样是插件内部的：登记是状态根下一个 JSON 文件，物化只用 `git archive` + `tar`，不需要新的宿主能力；原生目录选择器沿用已有的宿主探测，探不到就只留路径输入。
 - ⚠️ 降级：slash 依赖交互式 UI adapter（web/TUI profile）；headless profile 下 `/datasets` 不可用，CLI 不受影响（模型工具由工具行提供）。题集 tab 自隐：只有当当前会话的 preset 组合引用了 `@khorsheed/dsh-datasets/tool` 行时它才注册，判据取自官方 `pluginInventory` Remote，任何读不出的路径一律 fail-open（保持可见）。**「当前会话的 preset」沿父链取第一个**（I5·T60 · web-eval T39 · G13）：成员子会话自己没有 preset，单看它就失败开放，于是每个受判据管的 tab 都出现在选手的子会话里。工具行随本包一起安装（T88 评测家族折叠前它是独立伴生包 `@khorsheed/dsh-datasets-tool`，已退役）；行解析失败只让该 preset 组合报 broken，实例 boot 不受影响。会话 tab 是 web 端面——TUI 没有 tab 机制；headless profile 提供 Remote 数据面但没有浏览器消费方。

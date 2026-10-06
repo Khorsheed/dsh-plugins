@@ -90,7 +90,7 @@ beforeEach(() => {
     materializedRoot: join(state, 'materialized'),
     registryPath: join(state, 'registry.json'),
     bindingsRoot: join(state, 'bindings'),
-    organizing: { preset: 'dataset-authoring', datasetsHome: home },
+    organizing: { preset: '', datasetsHome: home },
   })
 })
 

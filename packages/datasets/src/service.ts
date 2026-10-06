@@ -481,7 +481,12 @@ export interface RemovalResult {
 
 /** What the 「让 Agent 整理」 gesture needs from the host side (T90). */
 export interface OrganizingSetup {
-  /** The agent preset a 「题集整理」 session selects ('' = none; the session keeps the default). */
+  /**
+   * The agent preset the organizing session selects. On the service: the
+   * configured id, '' = pick by grant (T102). On the wire (`organizingSetup`):
+   * the resolved id, '' = nothing grants organizing — the session keeps the
+   * default.
+   */
   preset: string
   /** Where new dataset repositories go (`$DSH_HOME/datasets`). */
   datasetsHome: string
@@ -723,7 +728,7 @@ export function createDatasetsService(options: DatasetsServiceOptions): Datasets
   const service: DatasetsService = {
     bindingsRoot: options.bindingsRoot,
     registry: openRegistry(options.registryPath),
-    organizing: options.organizing ?? { preset: 'dataset-authoring', datasetsHome: resolveDatasetsHome(undefined) },
+    organizing: options.organizing ?? { preset: '', datasetsHome: resolveDatasetsHome(undefined) },
     async planDelete(id) {
       const entry = service.registry.get(id)
       if (entry === undefined) throw notRegistered(id)

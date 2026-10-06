@@ -31,7 +31,12 @@ import { DatasetsRemoteService } from './remote.ts'
 export interface DatasetsPluginConfig {
   /** Materialized-layer root override ('' = the three-stage default). */
   materializedRoot?: string
-  /** T90: the agent preset a 「题集整理」 session selects ('' = keep the session default). */
+  /**
+   * The agent preset 「让 Agent 整理」 opens. '' (the default since T102) picks
+   * by grant: the preset whose composition mounts the datasets-tool row at
+   * the `organize` tier (the evaluation mode: `eval` / `dsh-eval`). An
+   * explicit id wins over the pick.
+   */
   authoringPreset?: string
   /** T90: where new dataset repositories go ('' = `$DSH_HOME/datasets`). */
   datasetsHome?: string
@@ -39,7 +44,7 @@ export interface DatasetsPluginConfig {
 
 export const Config: z = z.object({
   materializedRoot: z.string().default(''),
-  authoringPreset: z.string().default('dataset-authoring'),
+  authoringPreset: z.string().default(''),
   datasetsHome: z.string().default(''),
 })
 
@@ -76,7 +81,7 @@ export function apply(ctx: Context, config: DatasetsPluginConfig): void {
     bindingsRoot: join(resolveStateRoot(undefined), 'bindings'),
     registryPath: registryPathOf(resolveStateRoot(undefined)),
     organizing: {
-      preset: config.authoringPreset ?? 'dataset-authoring',
+      preset: config.authoringPreset ?? '',
       datasetsHome: resolveDatasetsHome(config.datasetsHome),
     },
   })

@@ -103,6 +103,26 @@ describe('datasets-tool row (@khorsheed/dsh-datasets/tool)', () => {
     expect(sections[0]?.text).not.toContain('datasets_worktree_path')
   })
 
+  it('grants authoring plus the proposal under `organize`, with ONE section for using and organizing (T102)', () => {
+    const { tools, sections } = mount({}, { tools: 'organize' })
+    expect(tools.map(tool => tool.name).sort())
+      .toEqual([...READ, 'datasets_put_item', 'datasets_propose_registration'].sort())
+    // One section, not the generic one beside an organizing one: the generic
+    // text forbids directory reads, which organizing needs on the original data.
+    expect(sections.map(section => section.name)).toEqual(['datasets:organize'])
+    const text = sections[0]?.text ?? ''
+    // Using a registered dataset: the T73 rules, unchanged in substance.
+    expect(text).toContain('`<id>/<set>`')
+    expect(text).toContain('never by a path')
+    expect(text).toContain('datasets_put_item')
+    // Organizing: the skill-first working method, ending at a proposal.
+    expect(text).toContain('Load the dataset-authoring skill first')
+    expect(text).toContain('never modify the original data')
+    expect(text).toContain('{dryRun: true}')
+    expect(text).toContain('only the person registers')
+    expect(text).not.toContain('datasets_worktree_path')
+  })
+
   it('grants neither tools nor a section under `none` — but the slash command still registers', () => {
     const { tools, sections, commands } = mount({}, { tools: 'none' })
     expect(tools).toEqual([])
