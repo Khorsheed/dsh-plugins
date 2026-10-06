@@ -92,6 +92,9 @@
    the face tabs: small segmented controls on a filled track, so they read as
    settings of the face, not as more faces or more filter chips. */
 .faceTools {
+  /* Never squeezed: overflow-x makes the row's min-height 0, and a full
+     board below would crush the controls to a sliver. */
+  flex: none;
   display: flex;
   align-items: center;
   gap: 12px;
