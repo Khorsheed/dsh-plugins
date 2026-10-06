@@ -22,7 +22,7 @@ export type ReaderKey =
   | 'filter.hideDupes' | 'dedupe.badge' | 'dedupe.title'
   | 'action.translate' | 'translate.view' | 'translate.onlyTranslation' | 'translate.bilingual'
   | 'translate.onlyOriginal' | 'translate.retry' | 'translate.tip' | 'translate.preparing'
-  | 'translate.working' | 'translate.local' | 'translate.failed' | 'translate.dismiss'
+  | 'translate.working' | 'translate.local' | 'translate.stored' | 'translate.failed' | 'translate.dismiss'
   | 'translate.nothing' | 'translate.failedAll' | 'translate.unsupported'
   | 'action.fetchBody' | 'detail.bodyStale' | 'action.more' | 'action.addTag'
   | 'tag.title' | 'tag.placeholder' | 'tag.hint' | 'tag.create' | 'tag.empty'
@@ -93,6 +93,7 @@ export const en = {
   'translate.preparing': 'Preparing the Chinese language pack',
   'translate.working': 'Translating',
   'translate.local': 'On-device · Chinese (Simplified)',
+  'translate.stored': 'Saved translation · Chinese (Simplified)',
   'translate.failed': 'Translation stopped: {reason}',
   'translate.failedAll': 'No batch came back — try again from the globe menu',
   'translate.nothing': 'Nothing in this body to translate',
@@ -290,6 +291,7 @@ export const zh = {
   'translate.preparing': '正在准备中文语言包',
   'translate.working': '翻译中',
   'translate.local': '浏览器本地 · 中文（简体）',
+  'translate.stored': '已保存的译文 · 中文（简体）',
   'translate.failed': '翻译中断：{reason}',
   'translate.failedAll': '各批次都没翻出来 —— 可从地球菜单里重试',
   'translate.nothing': '这段正文里没有可翻译的散文',

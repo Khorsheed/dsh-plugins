@@ -46,7 +46,7 @@ import { extractArticle } from './extract-article.ts'
 import { parseFeed, type ReaderEntry } from './parse-rss.ts'
 import { absoluteDate, clockOf, formatReaderRef, mergedDraft, provenanceOf, relativeWhen } from './quote.ts'
 import {
-  TARGET_CANDIDATES, buildArticle, createSession, detectSourceLanguage, detectTranslator, isTargetLanguage,
+  TARGET_CANDIDATES, applyRemembered, buildArticle, createSession, detectSourceLanguage, detectTranslator, isTargetLanguage,
   primeMemory, restoreArticle, runTranslation, segmentAt, segmentsOf, setPairHover, setView, toggleSegment,
   translateTexts, translationHash,
   type BuiltArticle, type SessionOutcome, type TranslateClasses, type TranslationAvailability,
@@ -780,6 +780,13 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   /** The page's Translator API, read once: no API means no button at all. */
   const translator = useMemo<TranslatorLike | null>(() => detectTranslator(), [])
   const [translateAvailability, setTranslateAvailability] = useState<TranslationAvailability | null>(null)
+  /**
+   * Without a Translator API (iOS, every non-Chromium browser): the pair of the
+   * host's stored translation of THIS body, when there is one — the globe then
+   * shows that translation and can make no new one. Null on a page that has the
+   * API, and on a body nothing was stored for.
+   */
+  const [storedPair, setStoredPair] = useState<string | null>(null)
   const [translatePhase, setTranslatePhase] = useState<'idle' | 'pack' | 'working' | 'ready' | 'failed'>('idle')
   const [translateView, setTranslateView] = useState<TranslationView>('trans')
   const [packProgress, setPackProgress] = useState<number | null>(null)
@@ -1331,14 +1338,14 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   }, [view, articleHtml, guessSource])
   /**
    * Whether the globe belongs on this article at all. Three ways it does not:
-   * the browser has no Translator API, the pair is unavailable on this device,
-   * or the body is already the target language. All three hide the control
-   * rather than offering one that cannot work — the pass's own degradation rule.
+   * the browser has no Translator API (and the host stored no translation of
+   * this body), the pair is unavailable on this device, or the body is already
+   * the target language. All three hide the control rather than offering one
+   * that cannot work — the pass's own degradation rule.
    */
-  const translationOffered = translator !== null
-    && translateAvailability !== null
-    && translateAvailability !== 'unavailable'
-    && translationSource !== TRANSLATION_TARGET
+  const translationOffered = translationSource !== TRANSLATION_TARGET && (translator === null
+    ? storedPair !== null
+    : translateAvailability !== null && translateAvailability !== 'unavailable')
 
   // Ask the browser about this pair once per opened article, in every target
   // spelling: the probe is async, and the control appears only once one of them
@@ -1389,7 +1396,30 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     setTranslateError(null)
     setTranslateMenu(false)
     setTranslateAvailability(null)
+    setStoredPair(null)
   }, [openEntryId, articleHtml])
+
+  // No Translator API: ask the host whether a translation of exactly this body
+  // is stored (made earlier in a browser that had one). Only the entry's own
+  // map counts — its bodyHash proves the pairing; the global sentence memory
+  // alone could cover a few stray sentences of an untranslated article.
+  useEffect(() => {
+    if (view !== 'detail' || translator !== null || openEntryId === null) return undefined
+    if (articleHtml === null || articleHtml.length === 0) return undefined
+    let cancelled = false
+    void (async () => {
+      try {
+        const answer = await props.getEntryTranslation(openEntryId)
+        const record = answer.ok ? answer.value.translation : undefined
+        if (cancelled || record === undefined) return
+        if (record.bodyHash !== translationHash(articleHtml) || Object.keys(record.segments).length === 0) return
+        setStoredPair(record.pair)
+      } catch {
+        // Unreadable is the same as absent: no globe.
+      }
+    })()
+    return () => { cancelled = true }
+  }, [view, translator, openEntryId, articleHtml, props])
 
   // Leaving the pane must not leave spans behind in a DOM React will reuse.
   useEffect(() => () => {
@@ -1483,6 +1513,50 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   }, [props])
 
   /**
+   * The globe on a page with no Translator API: paint the host's stored
+   * translation of this body and stop. Nothing is sent to a model; a sentence
+   * the store does not cover stays in its original.
+   *
+   * @param initialView - the view to show.
+   * @param pair - the stored record's own pair label.
+   */
+  const showStoredTranslation = useCallback(async (initialView: TranslationView, pair: string) => {
+    const container = articleRef.current
+    if (container === null || openEntryId === null || articleHtml === null) return
+    if (cancelRef.current !== null) cancelRef.current.cancelled = true
+    const previous = builtRef.current
+    if (previous !== null) restoreArticle(previous.root)
+    builtRef.current = null
+    const cancel = { cancelled: false }
+    cancelRef.current = cancel
+    setTranslateError(null)
+    setTranslateProgress(null)
+    const built = buildArticle(container, translateClasses)
+    if (built === null) { cancelRef.current = null; setStoredPair(null); return }
+    setTranslatePhase('working')
+    await warmMemory(pair, openEntryId, articleHtml, built)
+    if (cancel.cancelled) return
+    cancelRef.current = null
+    const result = applyRemembered(built, pair)
+    if (result.done === 0) {
+      // The record named this body but none of its sentences matched the
+      // segmentation here: nothing to show, so no globe either.
+      restoreArticle(built.root)
+      setTranslatePhase('idle')
+      setStoredPair(null)
+      return
+    }
+    builtRef.current = built
+    if (initialView !== 'orig') lastViewRef.current = initialView
+    setTranslateView(initialView)
+    setView(built, initialView, translateClasses)
+    setTranslatePhase('ready')
+    rememberTranslation(openEntryId, initialView, pair.split('→')[0] ?? translationSource)
+    // Only the LRU stamps move: a stored translation being read is a use.
+    persistTranslations(pair, [], result.recalled, { entryId: openEntryId, bodyHash: translationHash(articleHtml) })
+  }, [openEntryId, articleHtml, translateClasses, warmMemory, persistTranslations, translationSource])
+
+  /**
    * Get the article translated, reusing a session this page already built.
    *
    * The `Translator` API demands user activation for `create()`, so a session
@@ -1498,7 +1572,11 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   const startTranslation = useCallback(async (initialView: TranslationView, sourceOverride?: string) => {
     const api = translator
     const container = articleRef.current
-    if (api === null || container === null) return
+    if (container === null) return
+    if (api === null) {
+      if (storedPair !== null) await showStoredTranslation(initialView, storedPair)
+      return
+    }
     // One run at a time. A second start (the reader's retry, or the restore
     // re-applying a translation to a body that was just replaced) must not build
     // its own segmentation over the first one's: two overlapping runs would
@@ -1609,7 +1687,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     setTranslateProgress(null)
     // Re-paint once the first units exist, so the translated typography applies.
     setView(built, initialView, translateClasses)
-  }, [translator, translationSource, translateClasses, t, openEntryId, articleHtml, warmMemory, persistTranslations])
+  }, [translator, storedPair, showStoredTranslation, translationSource, translateClasses, t, openEntryId, articleHtml, warmMemory, persistTranslations])
 
   /** Apply one view to a finished translation. */
   const applyView = useCallback((next: TranslationView) => {
@@ -2522,10 +2600,11 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
     if (wanted === undefined) return
     const source = readSession().translationSource?.[openEntryId] ?? translationSource
     const sources = source === 'en' ? ['en'] : [source, 'en']
-    if (cachedTranslator(sources, TARGET_CANDIDATES) === undefined) return
+    // A stored translation needs no session (and no activation) to be shown.
+    if (translator === null ? storedPair === null : cachedTranslator(sources, TARGET_CANDIDATES) === undefined) return
     restoredTranslationRef.current = openEntryId
     void startTranslation(wanted, source)
-  }, [view, openEntryId, articleHtml, translatePhase, translationSource, startTranslation])
+  }, [view, openEntryId, articleHtml, translatePhase, translationSource, translator, storedPair, startTranslation])
 
   /** Submit the add form and report the host's verdict. */
   const submit = useCallback(async () => {
@@ -3395,9 +3474,10 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
           {/* The globe is a switch, not a verb: lit means this body is showing a
               translation, dark means it is showing the original — and the caret
               holds the view (translation only / side by side / original).
-              Everything is hidden when the browser has no Translator API, the
-              pair is unavailable, or the body is already Chinese: an offer that
-              cannot work is worse than no offer. */}
+              Everything is hidden when the browser has no Translator API (and
+              no stored translation of this body), the pair is unavailable, or
+              the body is already Chinese: an offer that cannot work is worse
+              than no offer. */}
           {translationOffered && (
             <span className={css.translateWrap}>
               <button
@@ -3420,7 +3500,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
               </button>
               {translateMenu && (
                 <div className={css.translateMenu} role="menu">
-                  <div className={css.translateMenuHead}>{t('translate.local')}</div>
+                  <div className={css.translateMenuHead}>{t(translator === null ? 'translate.stored' : 'translate.local')}</div>
                   {TRANSLATION_VIEWS.map(item => (
                     <button
                       key={item.view}
@@ -3434,7 +3514,9 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
                       <span className={css.translateMenuLabel}>{t(item.key)}</span>
                     </button>
                   ))}
-                  {(translatePhase === 'ready' || translatePhase === 'failed') && (
+                  {/* Retranslating needs the on-device model: a page viewing a
+                      stored translation has none to ask. */}
+                  {translator !== null && (translatePhase === 'ready' || translatePhase === 'failed') && (
                     <button
                       type="button"
                       role="menuitem"

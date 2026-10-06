@@ -3044,6 +3044,67 @@ describe('the translation memory survives a reload', () => {
     delete (globalThis as unknown as { Translator?: unknown }).Translator
   })
 
+  /** Open the article with no Translator API on the page (iOS, Safari, Firefox). */
+  const openWithoutApi = async (): Promise<void> => {
+    fireEvent.click((await screen.findAllByRole('button', { name: /An English article/ }))[0] as HTMLElement)
+    await screen.findByText(zh['action.quote'])
+  }
+
+  it('shows a stored translation on a page with no Translator API', async () => {
+    // The phone case: the article was translated on desktop, and the host's
+    // exact-fit map for this body is all the page needs to show it.
+    const ui = bench({
+      sources: [rssSource('hn')],
+      payloads: { hn: page() },
+      entryTranslation: { ok: true, value: { translation: entryRecord(translationHash(BODY)) } },
+    })
+    await ui.settle()
+    await openWithoutApi()
+    fireEvent.click(await screen.findByTitle(zh['action.translate']))
+    await waitFor(() => {
+      expect(ui.container.querySelector('[class*="article"]')?.textContent).toContain('译：First sentence here.')
+    })
+    // The views still switch; retranslating (which needs the model) is not offered.
+    fireEvent.click(ui.container.querySelector('[class*="translateCaret"]') as HTMLElement)
+    expect(screen.getByText(zh['translate.stored'])).toBeTruthy()
+    expect(screen.queryByText(zh['translate.retry'])).toBeNull()
+    fireEvent.click(await screen.findByText(zh['translate.onlyOriginal']))
+    await waitFor(() => {
+      expect(ui.container.querySelector('[class*="article"]')?.textContent).not.toContain('译：')
+    })
+    // Reading it moves the LRU stamps and learns nothing.
+    await waitFor(() => { expect(ui.mocks.rememberSentences).toHaveBeenCalledTimes(1) })
+    const call = ui.mocks.rememberSentences.mock.calls[0]?.[0] as { pair: string; entries: readonly unknown[]; recalled?: readonly unknown[] }
+    expect(call.pair).toBe(PAIR)
+    expect(call.entries).toHaveLength(0)
+    expect(call.recalled).toHaveLength(SENTENCES.length)
+  })
+
+  it('offers no globe without a Translator API when nothing is stored for this body', async () => {
+    const ui = bench({ sources: [rssSource('hn')], payloads: { hn: page() } })
+    await ui.settle()
+    await openWithoutApi()
+    await waitFor(() => { expect(ui.mocks.getEntryTranslation).toHaveBeenCalled() })
+    await ui.settle()
+    expect(screen.queryByTitle(zh['action.translate'])).toBeNull()
+  })
+
+  it('offers no globe without a Translator API when the stored map is for an older body', async () => {
+    // Even with every sentence in the global memory: only the entry's own map,
+    // keyed to THIS body, proves the article was translated.
+    const ui = bench({
+      sources: [rssSource('hn')],
+      payloads: { hn: page() },
+      entryTranslation: { ok: true, value: { translation: entryRecord('the-hash-of-some-older-body') } },
+      memorySlice: Object.fromEntries(SENTENCES.map(sentence => [translationHash(sentence), `译：${sentence}`])),
+    })
+    await ui.settle()
+    await openWithoutApi()
+    await waitFor(() => { expect(ui.mocks.getEntryTranslation).toHaveBeenCalled() })
+    await ui.settle()
+    expect(screen.queryByTitle(zh['action.translate'])).toBeNull()
+  })
+
   it('persists what a run learned in ONE batch — never per sentence', async () => {
     const translate = installCountingTranslator()
     const ui = bench({ sources: [rssSource('hn')], payloads: { hn: page() } })

@@ -7,7 +7,10 @@
  * `state.json`, and costs no tokens. That is also why this module has no
  * Remote verb and no host counterpart — its only dependency is a global the
  * page may or may not have, and {@link detectTranslator} is the whole
- * degradation story (no API → no button, not a broken one).
+ * degradation story (no API → no button, not a broken one). The one exception
+ * is a translation some OTHER browser already made: the host stores those, and
+ * a page without the API may still show them ({@link applyRemembered}) — it
+ * can view a stored translation, never make a new one.
  *
  * The unit of translation is a SENTENCE inside one text node — never a node,
  * never a paragraph. Two reasons the granularity matters:
@@ -952,6 +955,46 @@ export function segmentsOf(built: BuiltArticle): BuiltSegment[] {
   return built.blocks.flatMap(block => block.segments)
 }
 
+/** What the memory alone could paint onto a built article. */
+export interface RememberedResult {
+  readonly done: number
+  readonly total: number
+  /** Units the memory served (their LRU stamps should move). */
+  readonly recalled: readonly ReaderSentenceLearn[]
+  /** Units the memory did not know, in reading order. */
+  readonly pending: readonly BuiltSegment[]
+}
+
+/**
+ * Paint every segment the page's memory already knows, and nothing else.
+ *
+ * This is the first step of every run, and the WHOLE of one on a browser with
+ * no Translator API: there the host's stored translations (warmed into the
+ * memory first) are the only source, and a sentence they do not cover simply
+ * stays in its original.
+ *
+ * @param built - the segmented article.
+ * @param pair - the `<src>→<tgt>` label the memory is read under.
+ * @returns how many units were painted, out of how many, and the rest.
+ */
+export function applyRemembered(built: BuiltArticle, pair: string): RememberedResult {
+  const segments = segmentsOf(built)
+  let done = 0
+  const recalled: ReaderSentenceLearn[] = []
+  const pending: BuiltSegment[] = []
+  for (const segment of segments) {
+    const hit = remembered(pair, segment.original)
+    if (hit !== undefined) {
+      applyTranslation(built, segment, hit, pair)
+      recalled.push(learnOf(segment.original, hit))
+      done += 1
+    } else {
+      pending.push(segment)
+    }
+  }
+  return { done, total: segments.length, recalled, pending }
+}
+
 /**
  * Translate every segment of a built article, best effort.
  *
@@ -964,24 +1007,12 @@ export function segmentsOf(built: BuiltArticle): BuiltSegment[] {
  */
 export async function runTranslation(options: RunTranslationOptions): Promise<RunTranslationResult> {
   const { built, session, pair, cancelled, onProgress } = options
-  const segments = segmentsOf(built)
-  const total = segments.length
-  let done = 0
+  const memory = applyRemembered(built, pair)
+  const { total, recalled, pending } = memory
+  let done = memory.done
   let failed = 0
   const learned: ReaderSentenceLearn[] = []
-  const recalled: ReaderSentenceLearn[] = []
   const report = (): void => { onProgress?.(done, total) }
-  const pending: BuiltSegment[] = []
-  for (const segment of segments) {
-    const hit = remembered(pair, segment.original)
-    if (hit !== undefined) {
-      applyTranslation(built, segment, hit, pair)
-      recalled.push(learnOf(segment.original, hit))
-      done += 1
-    } else {
-      pending.push(segment)
-    }
-  }
   report()
   let batch: BuiltSegment[] = []
   let chars = 0
