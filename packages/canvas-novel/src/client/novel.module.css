@@ -614,7 +614,8 @@
 .logStep {
   display: grid;
   grid-template-columns: 52px 16px 1fr;
-  align-items: baseline;
+  align-items: start;
+  line-height: 20px;
   gap: 8px;
   padding: 6px 0;
   border-bottom: 1px solid var(--log-line);
@@ -622,12 +623,24 @@
 
 .logStep:last-child { border-bottom: 0; }
 .logStepChapter { font: var(--dsw-font-xxs-12); font-variant-numeric: tabular-nums; color: var(--dsw-alias-label-tertiary); }
-.logStepGlyph { align-self: center; color: var(--log-hue); }
+.logStepGlyph { display: flex; align-items: center; justify-content: center; height: 20px; color: var(--log-hue); }
 .logStepGlyph svg { display: block; overflow: visible; }
 .logStepText { display: grid; gap: 2px; min-width: 0; }
 .logStepText b { font-weight: 500; }
-.logPlanned { font-size: 11.5px; color: var(--dsw-alias-label-tertiary); }
-.logStepText > b + .logPlanned { margin-top: -2px; }
+
+.logTag {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 0 5px;
+  border: 1px solid color-mix(in oklab, var(--log-hue) 40%, transparent);
+  border-radius: 4px;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--log-hue);
+  vertical-align: 1px;
+}
+
+.logQuiet { color: var(--dsw-alias-label-tertiary); }
 .logNote { color: var(--dsw-alias-label-secondary); }
 
 .logLinks { display: flex; flex-wrap: wrap; gap: 6px 18px; }
@@ -721,13 +734,14 @@
 }
 
 .logCrumb button:hover { color: var(--dsw-alias-label-primary); }
-.logCrumb b { font-weight: 400; color: var(--dsw-alias-label-primary); }
 
 .logFrame[data-narrow='true'] .logBody { grid-template-columns: 1fr; }
 .logFrame[data-narrow='true'] .logSide { border-left: 0; }
 .logFrame[data-detail='true'] .logMain { display: none; }
 .logFrame[data-detail='true'] .logBody { height: auto; }
-.logFrame[data-narrow='true'] .logDetail { padding: 14px 20px 32px; }
+.logFrame[data-narrow='true'] .logDetail { max-width: 640px; padding: 14px 20px 32px; }
+/* The crumb already names the tab; a narrow detail drops the kicker. */
+.logFrame[data-detail='true'] .logKicker { display: none; }
 
 /* Phone: the bar wraps, the row heads keep just the name. */
 .logFrame[data-phone='true'] .logTabs { gap: 18px; padding-inline: 16px; }
@@ -1585,6 +1599,49 @@
 
 .kvRow { display: contents; }
 
+/* The section's values read at the canvas field table's scale, not the page's. */
+.cardSection .kv { gap: 6px 14px; font: var(--dsw-font-xs-13); }
+.cardSection .kv dt { padding-top: 0; }
+.cardSection .muted { font: var(--dsw-font-xxs-12); }
+
+/* A character's 在故事里: one head, then 此刻 / 出场 / 关系 split by rules. */
+.story { display: flex; flex-direction: column; gap: 12px; }
+.storyHead { display: flex; align-items: baseline; gap: 10px; }
+.storyHead h3 { flex: 1; margin: 0; font: var(--dsw-font-xs-strong-13); color: var(--dsw-alias-label-primary); }
+.storyPart { display: flex; flex-direction: column; gap: 6px; }
+.storyPartHead { display: flex; align-items: center; justify-content: space-between; gap: 8px; font: var(--dsw-font-xxs-12); color: var(--dsw-alias-label-secondary); }
+.storyRule { width: 100%; height: 1px; margin: 0; border: 0; background: var(--dsw-alias-border-l1); }
+
+.storyLink {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: var(--dsw-font-xxs-12);
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.storyLink:hover { color: var(--dsw-alias-brand-primary); }
+.storyUnset { font: var(--dsw-font-xs-13); color: var(--dsw-alias-label-tertiary); }
+.storyUnset b { font-weight: 500; color: var(--dsw-alias-label-secondary); }
+.storyHelp { font: var(--dsw-font-xxs-12); color: var(--dsw-alias-label-tertiary); }
+
+/* 第 1 章 ● 第 2 章 ○ — the story log's character mark, in its hue. */
+.storyStrip { display: flex; flex-wrap: wrap; gap: 6px 14px; font: var(--dsw-font-xs-13); color: var(--dsw-alias-label-primary); }
+.storyStrip > span { display: inline-flex; align-items: center; gap: 6px; }
+.storyStrip em { font: var(--dsw-font-xxs-12); font-style: normal; color: var(--dsw-alias-label-tertiary); }
+
+.storyDot {
+  --story-hue: color-mix(in oklab, #2a9bc2 78%, var(--dsw-alias-label-primary));
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--story-hue);
+}
+
+.storyDot[data-planned='true'] { background: transparent; box-shadow: inset 0 0 0 1.5px var(--story-hue); }
+
 .relationList {
   margin: 0;
   padding-left: 18px;
@@ -1640,6 +1697,7 @@
 .starToggle:disabled { opacity: 0.6; cursor: default; }
 
 .stateInput {
+  box-sizing: border-box;
   width: 100%;
   padding: 4px 8px;
   border: 1px solid var(--dsw-alias-border-l2);

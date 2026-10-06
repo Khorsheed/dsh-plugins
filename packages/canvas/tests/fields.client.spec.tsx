@@ -87,10 +87,30 @@ describe('FieldList', () => {
     expect(gone.disabled).toBe(true)
     expect(container.querySelector('details')?.textContent).toContain('低落')
   })
+
+  it('gathers the empty fields on one line, each opening the form at its input', () => {
+    const onFill = vi.fn()
+    const { container } = render(
+      <FieldList t={t} definition={PERSON} values={{ name: '林澈', role: '主角' }} nameOf={nameOf} onOpenRef={vi.fn()} titled onFill={onFill} />,
+    )
+    // The filled title field is the page's name already; the others read as rows.
+    expect([...container.querySelectorAll('dt')].map(dt => dt.textContent)).toEqual(['身份'])
+    expect(container.textContent).not.toContain('—')
+    expect(container.textContent).toContain(zh['field.unfilled'])
+    fireEvent.click(screen.getByRole('button', { name: '年龄' }))
+    expect(onFill).toHaveBeenCalledWith('age')
+  })
+
+  it('names the empty fields without buttons when nothing can be filled, and keeps an empty title field there', () => {
+    const { container } = render(<FieldList t={t} definition={PERSON} values={{}} nameOf={nameOf} onOpenRef={vi.fn()} titled />)
+    expect(container.querySelector('dl')).toBeNull()
+    expect(screen.queryByRole('button')).toBeNull()
+    expect(container.textContent).toContain('姓名')
+  })
 })
 
 describe('FieldForm', () => {
-  function mount(values: Record<string, unknown> | undefined) {
+  function mount(values: Record<string, unknown> | undefined, focus?: string) {
     const onSave = vi.fn()
     const onCancel = vi.fn()
     render(
@@ -100,6 +120,7 @@ describe('FieldForm', () => {
         values={values as never}
         candidates={CANDIDATES}
         selfId="c_self"
+        focus={focus}
         onSave={onSave}
         onCancel={onCancel}
       />,
@@ -108,6 +129,11 @@ describe('FieldForm', () => {
   }
   const field = (label: string): HTMLInputElement => screen.getByLabelText(new RegExp(label)) as HTMLInputElement
   const save = (): void => { fireEvent.click(screen.getByRole('button', { name: zh['field.save'] })) }
+
+  it('puts the caret in the field a 还没写 chip named', () => {
+    mount({ name: '林澈' }, 'age')
+    expect(document.activeElement).toBe(field('年龄'))
+  })
 
   it('stores tags split on any separator, numbers as numbers, and carries dropped values', () => {
     const { onSave } = mount({ name: '林澈', mood: '低落' })

@@ -906,8 +906,9 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
           <div className={css.notice}>{loadError ?? t('state.loading')}</div>
         )
       ) : activeRow.at.kind === 'page' ? (
-        // A genre's page (创作体裁): the canvas draws the crumb and the title,
-        // the genre's `canvas.page` entry draws the rest. A page whose genre is
+        // A genre's page (创作体裁): the canvas draws the crumb (which already
+        // names the page — a title line under it drew the name twice), the
+        // genre's `canvas.page` entry draws the rest. A page whose genre is
         // gone (cleared, or its plugin uninstalled) says so instead of a blank.
         openBoard !== null && openBoard.board.id === activeRow.canvasId ? (
           <div className={detailCss.root} key={`${activeRow.canvasId}#page:${activeRow.at.page}:${activeRow.at.param ?? ''}`}>
@@ -924,7 +925,6 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
                 here={activeRow.at.heading}
                 cardId={null}
               />
-              <div className={detailCss.title}>{activeRow.at.heading}</div>
             </div>
             {genrePageOf(seats, openBoard.board, activeRow.at.page, activeRow.at.param,
               <div className={css.notice}>{t('genre.pageMissing')}</div>)}

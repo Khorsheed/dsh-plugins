@@ -52,6 +52,8 @@ interface Step {
   readonly chapter: number
   readonly glyph: Glyph
   readonly word: string
+  /** The detail leads with the first note instead of the word (a character's 出场 says nothing a 第 N 章 row does not). */
+  readonly wordless?: boolean
   readonly planned: boolean
   /** Smaller words after the mark's word (`相识 → 合作`, the plan's line). */
   readonly notes: readonly string[]
@@ -179,7 +181,7 @@ function relationRow(view: StoryRelation, t: T): RelationRow {
 
 function characterRow(card: StoryCharacter, t: T): CharacterRow {
   const steps: Step[] = card.appearances.map(at => ({
-    chapter: at.chapter, glyph: 'appear', word: t('log.m.appear'), planned: at.planned,
+    chapter: at.chapter, glyph: 'appear', word: t('log.m.appear'), wordless: true, planned: at.planned,
     notes: [...at.role === undefined ? [] : [at.role], ...at.experiences], changes: [],
   }))
   return { id: card.cardId, ref: card.ref, text: card.name, meta: castCount(card, t), bad: false, steps, ...span(steps), card, shown: steps.filter(step => !step.planned).length }
@@ -402,14 +404,16 @@ function StoryLogRead(props: NovelSurfaceProps<NovelPageOwnerProps>): ReactNode 
 }
 
 function StoryLog(props: NovelSurfaceProps<NovelPageOwnerProps> & { readonly api: NovelRemote; readonly log: StoryLogResult }): ReactNode {
-  const { canvasId, api, log, navigate, sessionId, t } = props
+  const { canvasId, api, log, navigate, sessionId, param, t } = props
   const model = useMemo(() => storyModel(log, t), [log, t])
-  const [tab, setTab] = useState<Tab>('f')
+  // Opened on a card (the card page's 在故事日志中看): its tab, its row picked, its detail up front when narrow.
+  const opened = param === undefined ? undefined : TABS.find(item => model[item].some(row => row.id === param))
+  const [tab, setTab] = useState<Tab>(opened ?? 'f')
   const [filters, setFilters] = useState<Record<Tab, string>>({ f: 'open', c: 'all', r: 'all', w: 'all' })
   const [sorts, setSorts] = useState<Record<Tab, string>>({ f: 'plant', c: 'first', r: 'changed', w: 'appear' })
-  const [picks, setPicks] = useState<Partial<Record<Tab, string>>>({})
+  const [picks, setPicks] = useState<Partial<Record<Tab, string>>>(opened === undefined ? {} : { [opened]: param })
   const [key, setKey] = useState(false)
-  const [detail, setDetail] = useState(false)
+  const [detail, setDetail] = useState(opened !== undefined)
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState<string | null>(null)
   const [width, setWidth] = useState(0)
@@ -635,11 +639,7 @@ function StoryLog(props: NovelSurfaceProps<NovelPageOwnerProps> & { readonly api
       >
         {detailFace ? (
           <nav className={css.logCrumb}>
-            <button type="button" onClick={() => { setDetail(false) }}>{t('log.heading')}</button>
-            <span>/</span>
-            <button type="button" onClick={() => { setDetail(false) }}>{t(`log.tab.${tab}`)}</button>
-            <span>/</span>
-            <b>{picked.ref}</b>
+            <button type="button" onClick={() => { setDetail(false) }}>‹ {t(`log.tab.${tab}`)}</button>
           </nav>
         ) : <>
           {tabs}
@@ -699,7 +699,7 @@ function Detail({ tab, row, model, navigate, openChapter, star, busy, t }: {
   )
   const head = (chips: readonly ReactNode[], action?: ReactNode): ReactNode => (
     <div>
-      <div className={css.logKicker}><i />{`${t(`log.tab.${tab}`)} · ${row.ref}`}</div>
+      <div className={css.logKicker}><i />{tab === 'f' ? `${t(`log.tab.${tab}`)} · ${row.ref}` : t(`log.tab.${tab}`)}</div>
       <div className={css.logTitle}><h3>{row.text}</h3>{action}</div>
       {chips.length > 0 && <div className={css.logChips}>{chips}</div>}
     </div>
@@ -777,7 +777,7 @@ function Detail({ tab, row, model, navigate, openChapter, star, busy, t }: {
             ))}
           </div>
         ))}
-        {links(card.name)}
+        {links(card.name, row.steps.find(step => !step.planned)?.chapter)}
       </div>
     )
   }
@@ -798,23 +798,33 @@ function Detail({ tab, row, model, navigate, openChapter, star, busy, t }: {
   )
 }
 
-/** A row's steps: 第 N 章 | mark | word, 计划, then its notes, card changes and 原文. */
+/**
+ * A row's steps: 第 N 章 | mark | [计划] word, then its notes, card changes and
+ * 原文. A wordless step leads with its first note instead — or, written but
+ * with nothing gathered, says so quietly.
+ */
 function Track({ steps, t }: { readonly steps: readonly Step[]; readonly t: T }): ReactNode {
   return (
     <div className={css.logTrack}>
-      {steps.map((step, i) => (
-        <div key={i} className={css.logStep}>
-          <span className={css.logStepChapter}>{t('log.chapter', { n: step.chapter })}</span>
-          <span className={css.logStepGlyph}><Mark glyph={step.glyph} planned={step.planned} /></span>
-          <span className={css.logStepText}>
-            <b>{step.word}</b>
-            {step.planned && <span className={css.logPlanned}>{t('log.planned')}</span>}
-            {step.notes.map(note => <span key={note} className={css.logNote}>{note}</span>)}
+      {steps.map((step, i) => {
+        const [first, ...rest] = step.notes
+        const lead = step.wordless !== true ? <b>{step.word}</b>
+          : first !== undefined ? first
+            : step.planned ? step.word : <span className={css.logQuiet}>{t('log.c.noExperience')}</span>
+        const notes = step.wordless === true ? rest : step.notes
+        return (
+          <div key={i} className={css.logStep}>
+            <span className={css.logStepChapter}>{t('log.chapter', { n: step.chapter })}</span>
+            <span className={css.logStepGlyph}><Mark glyph={step.glyph} planned={step.planned} /></span>
+            <span className={css.logStepText}>
+              <span>{step.planned && <span className={css.logTag}>{t('log.planned')}</span>}{lead}</span>
+              {notes.map(note => <span key={note} className={css.logNote}>{note}</span>)}
             {step.evidence !== undefined && <span className={css.logNote}>{t('log.src.evidence', { text: step.evidence })}</span>}
-            {step.changes.map((entry, j) => <ChangeLines key={j} entry={entry} t={t} />)}
-          </span>
-        </div>
-      ))}
+              {step.changes.map((entry, j) => <ChangeLines key={j} entry={entry} t={t} />)}
+            </span>
+          </div>
+        )
+      })}
     </div>
   )
 }

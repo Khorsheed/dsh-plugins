@@ -442,7 +442,7 @@ describe('CanvasDetailView', () => {
     view.select('c_1')
     render(<CanvasDetailView {...props} />)
     await screen.findByText('卡片 c_1 的正文')
-    fireEvent.click(screen.getByRole('button', { name: /预览 第一章 雨夜/ }))
+    fireEvent.click(screen.getByRole('button', { name: /出自 第一章 雨夜/ }))
     expect(mocks.openFile).toHaveBeenCalledWith('s1', '/ws', '/ws/灵感画布/文章/第一章.md')
   })
 

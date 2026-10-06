@@ -4,8 +4,10 @@
  *
  * - a foreshadow: the user's ★ (主线重点), with a soft hint once more than
  *   {@link STAR_SOFT_LIMIT} carry one;
- * - a character: 此刻 (where / state / concern), refreshed by each 对账 and
- *   editable here, and the 关系 read off the relation cards naming them;
+ * - a character: one 在故事里 block — 此刻 (where / state / concern),
+ *   refreshed by each 对账 and editable here; 出场, the chapters the story
+ *   log has them in (hollow when only a plan does); and the 关系 read off the
+ *   relation cards naming them — with a way into the story log on their row;
  * - a relation: its type's four stages with the current one bold, and the
  *   bar toward the next (n/{@link PTS_PER_LEVEL}, 可以升了, or the rift).
  *
@@ -16,9 +18,9 @@
 import { useState, type ReactNode } from 'react'
 import {
   NOVEL_GENRE_ID, PTS_PER_LEVEL, RELATION_LADDERS, STAR_SOFT_LIMIT,
-  type CurrentState, type NovelCardResult, type RelationView,
+  type CurrentState, type NovelCardResult, type RelationView, type StoryAppearance,
 } from '../types.ts'
-import type { NovelCardOwnerProps, NovelRemote, NovelSurfaceProps } from './contract.ts'
+import { STORY_LOG_PAGE, type NovelCardOwnerProps, type NovelRemote, type NovelSurfaceProps } from './contract.ts'
 import { errorKey, useNovelRead } from './use-novel.ts'
 import css from './novel.module.css'
 
@@ -69,15 +71,15 @@ function CardSectionBody(props: NovelSurfaceProps<NovelCardOwnerProps>): ReactNo
         />
       )}
       {view.role === 'character' && (
-        <StateRow
-          state={view.currentState ?? {}}
+        <StoryBlock
+          view={view}
           busy={busy}
           readOnly={sessionId === undefined}
+          onOpenLog={() => { navigate.openPage(STORY_LOG_PAGE, t('log.heading'), card.id) }}
           onSave={state => gesture(r => r.setCurrentState(sessionId!, { canvasId, cardId: card.id, state }))}
           t={t}
         />
       )}
-      {view.role === 'character' && view.relations !== undefined && <RelationsRow lines={view.relations} t={t} />}
       {view.relation !== undefined && <LadderRow relation={view.relation} t={t} />}
       {failure !== null && <div className={css.warn}>{failure}</div>}
     </section>
@@ -110,12 +112,51 @@ function StarRow({ view, busy, readOnly, onToggle, t }: {
   )
 }
 
-function RelationsRow({ lines, t }: { readonly lines: readonly string[]; readonly t: NovelSurfaceProps['t'] }): ReactNode {
+/** A character's 在故事里: 此刻, 出场 and 关系 under one head, parts split by a rule. */
+function StoryBlock({ view, busy, readOnly, onOpenLog, onSave, t }: {
+  readonly view: NovelCardResult
+  readonly busy: boolean
+  readonly readOnly: boolean
+  readonly onOpenLog: () => void
+  readonly onSave: (state: CurrentState) => Promise<boolean>
+  readonly t: NovelSurfaceProps['t']
+}): ReactNode {
+  const lines = view.relations ?? []
   return (
-    <div className={css.cardSectionRow}>
-      <div className={css.cardSectionHead}><span className={css.planLabel}>{t('card.relations')}</span></div>
-      <ul className={css.relationList}>{lines.map(line => <li key={line}>{line}</li>)}</ul>
-      <span className={css.muted}>{t('card.relationsHelp')}</span>
+    <div className={css.story}>
+      <div className={css.storyHead}>
+        <h3>{t('card.story')}</h3>
+        <button type="button" className={css.storyLink} onClick={onOpenLog}>{t('card.inLog')}</button>
+      </div>
+      <StateRow state={view.currentState ?? {}} busy={busy} readOnly={readOnly} onSave={onSave} t={t} />
+      <hr className={css.storyRule} />
+      <div className={css.storyPart}>
+        <div className={css.storyPartHead}>{t('log.m.appear')}</div>
+        <AppearStrip appearances={view.appearances ?? []} t={t} />
+      </div>
+      <hr className={css.storyRule} />
+      <div className={css.storyPart}>
+        <div className={css.storyPartHead}>{t('card.relations')}</div>
+        {lines.length === 0
+          ? <div className={css.storyUnset}>{t('card.relationsNone')}</div>
+          : <ul className={css.relationList}>{lines.map(line => <li key={line}>{line}</li>)}</ul>}
+      </div>
+    </div>
+  )
+}
+
+/** 第 1 章 ● 第 2 章 ○ — the story log's marks; a planned one carries the plan's line for them. */
+function AppearStrip({ appearances, t }: { readonly appearances: readonly StoryAppearance[]; readonly t: NovelSurfaceProps['t'] }): ReactNode {
+  if (appearances.length === 0) return <div className={css.storyUnset}>{t('card.appearNone')}</div>
+  return (
+    <div className={css.storyStrip}>
+      {appearances.map(at => (
+        <span key={at.chapter}>
+          <i className={css.storyDot} data-planned={at.planned ? 'true' : undefined} aria-hidden="true" />
+          {t('log.chapter', { n: at.chapter })}
+          {at.planned && <em>{[t('log.planned'), ...at.role === undefined ? [] : [at.role]].join(' · ')}</em>}
+        </span>
+      ))}
     </div>
   )
 }
@@ -158,35 +199,38 @@ function StateRow({ state, busy, readOnly, onSave, t }: {
   const [draft, setDraft] = useState<CurrentState | null>(null)
   const label = (part: typeof STATE_PARTS[number]): string => t(`card.state.${part}`)
   if (draft === null) {
+    const set = STATE_PARTS.filter(part => state[part] !== undefined && state[part] !== '')
     return (
-      <div className={css.cardSectionRow}>
-        <div className={css.cardSectionHead}>
-          <span className={css.planLabel}>{t('card.now')}</span>
-          {!readOnly && <button type="button" className={css.button} onClick={() => { setDraft(state) }}>{t('card.edit')}</button>}
+      <div className={css.storyPart}>
+        <div className={css.storyPartHead}>
+          {t('card.now')}
+          {!readOnly && <button type="button" className={css.storyLink} onClick={() => { setDraft(state) }}>{t('card.edit')}</button>}
         </div>
-        <dl className={css.kv}>
-          {STATE_PARTS.map(part => (
-            <div key={part} className={css.kvRow}>
-              <dt>{label(part)}</dt>
-              <dd>{state[part] ?? <span className={css.muted}>{t('card.state.unset')}</span>}</dd>
-            </div>
-          ))}
-        </dl>
-        <span className={css.muted}>{t('card.nowHelp')}</span>
+        {set.length === 0
+          ? <div className={css.storyUnset}><b>{t('card.nowUnset')}</b>{t(readOnly ? 'card.nowUnsetHelpReadOnly' : 'card.nowUnsetHelp')}</div>
+          : <>
+            <dl className={css.kv}>
+              {set.map(part => (
+                <div key={part} className={css.kvRow}>
+                  <dt>{label(part)}</dt>
+                  <dd>{state[part]}</dd>
+                </div>
+              ))}
+            </dl>
+            <span className={css.storyHelp}>{t('card.nowHelp')}</span>
+          </>}
       </div>
     )
   }
   return (
     <form
-      className={css.cardSectionRow}
+      className={css.storyPart}
       onSubmit={(event) => {
         event.preventDefault()
         void onSave(draft).then(saved => { if (saved) setDraft(null) })
       }}
     >
-      <div className={css.cardSectionHead}>
-        <span className={css.planLabel}>{t('card.now')}</span>
-      </div>
+      <div className={css.storyPartHead}>{t('card.now')}</div>
       <dl className={css.kv}>
         {STATE_PARTS.map(part => (
           <div key={part} className={css.kvRow}>

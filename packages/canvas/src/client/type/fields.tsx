@@ -11,7 +11,7 @@
  *
  * @module @khorsheed/dsh-canvas/client
  */
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import {
@@ -143,20 +143,28 @@ export function FieldTable({ t, definition, labelOf }: {
 }
 
 /**
- * The card page's fields, read: every field of the definition (an empty one
- * shows a dash, so what is missing is visible), references as buttons that
- * open their card, then any value a revision dropped.
+ * The card page's fields, read: the filled fields as rows, references as
+ * buttons that open their card; the empty ones gathered on one 还没写 line
+ * (each opens the form at its input when `onFill` is given), so what is
+ * missing stays visible without a column of dashes; then any value a
+ * revision dropped. `titled` leaves out a filled title field the page
+ * already shows as its name.
  */
-export function FieldList({ t, definition, values, nameOf, onOpenRef }: {
+export function FieldList({ t, definition, values, nameOf, onOpenRef, titled = false, onFill }: {
   readonly t: T
   readonly definition: TypeDefinition
   readonly values: FieldValues | undefined
   readonly nameOf: CardNameOf
   readonly onOpenRef: (cardId: string, name: string) => void
+  readonly titled?: boolean
+  readonly onFill?: ((key: string) => void) | undefined
 }): ReactNode {
   const removed = removedFieldValues(definition, values)
+  const titleKey = titled ? titleFieldOf(definition)?.key : undefined
+  const rows = definition.fields.filter(field => filled(values?.[field.key]) && field.key !== titleKey)
+  const empties = definition.fields.filter(field => !filled(values?.[field.key]))
   const shown = (field: FieldDef | undefined, value: FieldValue | undefined): ReactNode => {
-    if (!filled(value)) return <span className={css.empty}>—</span>
+    if (!filled(value)) return null
     if (field?.type === 'ref' && Array.isArray(value)) {
       return (
         <span className={css.chips}>
@@ -184,14 +192,28 @@ export function FieldList({ t, definition, values, nameOf, onOpenRef }: {
   }
   return (
     <div className={css.list}>
-      <dl className={css.rows}>
-        {definition.fields.map(field => (
-          <div key={field.key} className={css.row}>
-            <dt title={field.hint}>{field.label}</dt>
-            <dd>{shown(field, values?.[field.key])}</dd>
-          </div>
-        ))}
-      </dl>
+      {rows.length > 0 && (
+        <dl className={css.rows}>
+          {rows.map(field => (
+            <div key={field.key} className={css.row}>
+              <dt title={field.hint}>{field.label}</dt>
+              <dd>{shown(field, values?.[field.key])}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+      {empties.length > 0 && (
+        <div className={css.empties}>
+          <span>{t('field.unfilled')}</span>
+          {empties.map(field => onFill === undefined
+            ? <span key={field.key} className={css.emptyChip} title={field.hint}>{field.label}</span>
+            : (
+              <button key={field.key} type="button" className={css.emptyChip} title={field.hint} onClick={() => { onFill(field.key) }}>
+                {field.label}
+              </button>
+            ))}
+        </div>
+      )}
       {removed.length > 0 && (
         <details className={css.removed}>
           <summary title={t('field.removedTip')}>{t('field.removed')} · {removed.length}</summary>
@@ -245,7 +267,7 @@ function valueOf(field: FieldDef, entry: string | readonly string[] | undefined)
  * definition no longer names ride along untouched, and a required field left
  * empty keeps the form open with the list of what is missing.
  */
-export function FieldForm({ t, definition, values, candidates, selfId, onSave, onCancel }: {
+export function FieldForm({ t, definition, values, candidates, selfId, focus, onSave, onCancel }: {
   readonly t: T
   readonly definition: TypeDefinition
   readonly values: FieldValues | undefined
@@ -253,11 +275,16 @@ export function FieldForm({ t, definition, values, candidates, selfId, onSave, o
   readonly candidates: readonly RefCandidate[]
   /** The card being edited: never its own reference. */
   readonly selfId: string | null
+  /** The field whose input takes the caret on open (a 还没写 chip's). */
+  readonly focus?: string | undefined
   readonly onSave: (values: Record<string, FieldValue>) => void
   readonly onCancel: () => void
 }): ReactNode {
   const [draft, setDraft] = useState<Draft>(() => draftOf(definition, values))
   const [missing, setMissing] = useState<readonly string[]>([])
+  useEffect(() => {
+    if (focus !== undefined) document.getElementById(`field-${focus}`)?.focus()
+  }, [])
   const set = (key: string, entry: string | readonly string[]): void => {
     setDraft(current => ({ ...current, [key]: entry }))
   }

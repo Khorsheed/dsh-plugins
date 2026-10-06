@@ -270,7 +270,9 @@ describe('PlanBlock', () => {
 describe('CardSection', () => {
   function renderCard(role: string, value: object) {
     const remote = { ...fakeRemote({ items: [] }), card: vi.fn(() => ok({ ok: true, role, ...value })) } as unknown as NovelRemote
-    render(<CardSection {...props(remote)} card={{ id: 'c_r' }} category={{ id: 'cat_relation', role }} />)
+    const p = props(remote)
+    render(<CardSection {...p} card={{ id: 'c_r' }} category={{ id: 'cat_relation', role }} />)
+    return p
   }
 
   it('a relation shows its type\'s four stages with the current one bold, and 可升 off a full bar', async () => {
@@ -294,6 +296,31 @@ describe('CardSection', () => {
   it('a character lists the 关系 read off the relation cards', async () => {
     renderCard('character', { currentState: {}, relations: ['艾文 · 同盟 · 合作 — 勉强信任'] })
     await screen.findByText('艾文 · 同盟 · 合作 — 勉强信任')
+  })
+
+  it('a character\'s 在故事里: one line for an unworked 此刻, the 出场 strip, and the way into the story log', async () => {
+    const p = renderCard('character', {
+      appearances: [
+        { chapter: 1, pov: false, planned: false, experiences: [] },
+        { chapter: 2, pov: false, planned: true, role: '章末小节', experiences: [] },
+      ],
+    })
+    await screen.findByText(zh['card.story'])
+    expect(screen.getByText(zh['card.nowUnset'])).toBeTruthy()
+    expect(screen.queryByText(zh['card.state.where'])).toBeNull()
+    expect(screen.getByText('第 1 章')).toBeTruthy()
+    expect(screen.getByText('计划 · 章末小节')).toBeTruthy()
+    expect(screen.getByText(zh['card.relationsNone'])).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: zh['card.inLog'] }))
+    expect(p.navigate.openPage).toHaveBeenCalledWith(STORY_LOG_PAGE, zh['log.heading'], 'c_r')
+  })
+
+  it('a worked 此刻 lists only the parts it has', async () => {
+    renderCard('character', { currentState: { where: '第七工作站' } })
+    await screen.findByText('第七工作站')
+    expect(screen.getByText(zh['card.state.where'])).toBeTruthy()
+    expect(screen.queryByText(zh['card.state.concern'])).toBeNull()
+    expect(screen.getByText(zh['card.appearNone'])).toBeTruthy()
   })
 })
 
@@ -450,6 +477,16 @@ describe('StoryLogPage', () => {
     expect(screen.getByText('明显加深')).toBeTruthy()
     expect(screen.getByText(/已加深到位/)).toBeTruthy()
     expect(screen.queryByText(/积分/)).toBeNull()
+  })
+
+  it('opens on a card it was given: its tab and row, the track led by what the chapter left them, 读第 N 章', async () => {
+    const p = page(storyLogRemote())
+    render(<StoryLogPage {...p} param="c1" />)
+    expect(await screen.findByRole('heading', { name: '赵启明' })).toBeTruthy()
+    expect(screen.getByText('发现半页守则')).toBeTruthy()
+    expect(screen.queryByText(zh['log.m.appear'], { selector: 'b' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /读第 3 章/ }))
+    expect(p.navigate.openPage).toHaveBeenCalledWith(CHAPTER_PAGE, expect.any(String), '3')
   })
 
   it('the 人物 tab shows where each value came from and the pair; 在画布中打开 opens the card', async () => {

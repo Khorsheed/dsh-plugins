@@ -30,7 +30,7 @@ import {
   type ClipboardEvent as ReactClipboardEvent, type ReactNode,
 } from 'react'
 import { Toast, type MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
-import { IconArchiveOutlineMedium, IconCheckOutlineMedium, IconCloseOutlineMedium, IconLinkOutlineMedium, IconListPenOutlineMedium, IconRefreshOutlineMedium, IconRightUpOutlineMedium, IconSparkleMedium, IconTrashOutlineMedium } from '../icons.tsx'
+import { IconArchiveOutlineMedium, IconCheckOutlineMedium, IconCloseOutlineMedium, IconListPenOutlineMedium, IconRefreshOutlineMedium, IconRightUpOutlineMedium, IconSparkleMedium, IconTrashOutlineMedium } from '../icons.tsx'
 import { MoreMenu } from '../more-menu.tsx'
 import { ConfirmDelete } from '../confirm-delete.tsx'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
@@ -228,6 +228,7 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
   const [askDelete, setAskDelete] = useState(false)
   /** The typed card's field form is open (card types, P1a). */
   const [editingFields, setEditingFields] = useState(false)
+  const [fillFocus, setFillFocus] = useState<string | undefined>(undefined)
   /** The chat seam's probe: null while probing, so entries never flash. */
   const toastSeqRef = useRef(0)
 
@@ -721,6 +722,24 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
           {!Number.isNaN(updated) && updated !== created && (
             <span>{t('detail.updated', { time: agoOf(updated, t) })}</span>
           )}
+          {card.source !== undefined && (card.source.type === 'url' ? (
+            <a className={css.source} href={card.source.ref} target="_blank" rel="noreferrer" title={card.source.ref}>
+              <span>{t('detail.origin', { name: card.source.title ?? card.source.ref })}</span>
+              <IconRightUpOutlineMedium size={10} />
+            </a>
+          ) : card.source.type === 'file' ? (
+            <button
+              type="button"
+              className={css.source}
+              title={card.source.ref}
+              onClick={() => { if (sessionId !== undefined) openFile(sessionId, workspaceRoot, card.source!.ref) }}
+            >
+              <span>{t('detail.origin', { name: card.source.title ?? basenameOf(card.source.ref) })}</span>
+              <IconRightUpOutlineMedium size={10} />
+            </button>
+          ) : (
+            <span className={css.sourceText}>{t('detail.origin', { name: card.source.title ?? card.source.ref })}</span>
+          ))}
           <span className={css.spacer} />
           {!proposed && !archived && !readonly && (
             <ModeSeg modes={html ? PAGE_MODES : FLOW_MODES} mode={view} onMode={setMode} t={t} />
@@ -776,6 +795,7 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
               values={card.fields}
               candidates={refCandidates}
               selfId={card.id}
+              focus={fillFocus}
               onSave={fields => {
                 setEditingFields(false)
                 void mutate(sid => patchCard(sid, {
@@ -792,9 +812,14 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
                 values={card.fields}
                 nameOf={nameOf}
                 onOpenRef={id => { crumbs?.onStep(id) }}
+                titled={crumbs !== undefined}
+                onFill={readonly || proposed || archived ? undefined : (key) => {
+                  setFillFocus(key)
+                  setEditingFields(true)
+                }}
               />
               {!readonly && !proposed && !archived && (
-                <button type="button" className={css.fieldsEdit} onClick={() => { setEditingFields(true) }}>
+                <button type="button" className={css.fieldsEdit} onClick={() => { setFillFocus(undefined); setEditingFields(true) }}>
                   <IconListPenOutlineMedium size={12} />
                   {t('field.edit')}
                 </button>
@@ -902,40 +927,15 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
             <span className={css.editHint}>{t('card.editHint')}</span>
           </div>
         </div>
+      ) : definition !== undefined && card.text.trim() === '' && !hasDrawings(card.drawings ?? {}) ? (
+        // A typed card whose fields are its whole content: no empty body, and
+        // no "write the text first" — the fields above are what it holds.
+        null
       ) : (
         <div className={css.body} data-mode="read">
           <div className={css.renderPane}>
             <CardFlow t={t} text={card.text} drawings={card.drawings} labels={markdownLabels} pathImages={pathImages} />
           </div>
-        </div>
-      )}
-
-      {card.source !== undefined && (
-        <div className={css.attachment}>
-          <span className={css.attachmentLabel}>{t('detail.attachment')}</span>
-          {card.source.type === 'url' ? (
-            <a
-              className={css.attachmentLink}
-              href={card.source.ref}
-              target="_blank"
-              rel="noreferrer"
-            >
-              <IconLinkOutlineMedium size={12} />
-              {card.source.title ?? card.source.ref}
-              <IconRightUpOutlineMedium size={11} />
-            </a>
-          ) : card.source.type === 'file' ? (
-            <button
-              type="button"
-              className={css.attachmentButton}
-              onClick={() => { if (sessionId !== undefined) openFile(sessionId, workspaceRoot, card.source!.ref) }}
-            >
-              <IconRightUpOutlineMedium size={12} />
-              {t('detail.openFile', { name: card.source.title ?? basenameOf(card.source.ref) })}
-            </button>
-          ) : (
-            <span className={css.comment}>{card.source.title ?? card.source.ref}</span>
-          )}
         </div>
       )}
 
