@@ -1,6 +1,6 @@
 # 发布状态
 
-> 由 `pnpm release:status` 生成(2026-10-01)，请勿手改。数据源：各包 package.json(version、dsh.compat)+ 本仓 `profiles/basic` + npm registry。
+> 由 `pnpm release:status` 生成(2026-10-06)，请勿手改。数据源：各包 package.json(version、dsh.compat)+ 本仓 `profiles/basic` + npm registry。
 
 | 包 | npm 已发布 | 仓内版本 | minHost | verifiedHost | basic 成员 |
 | --- | --- | --- | --- | --- | --- |
@@ -8,7 +8,9 @@
 | `@khorsheed/dsh-bundle-conversation-toolbox` | 0.1.2 | 0.1.2 | 0.1.5-rc.1 | 0.1.7-rc.2 |  |
 | `@khorsheed/dsh-bundle-eval` | 未发布 | 0.1.0 | 0.2.0-rc.2 | 0.2.0-rc.2 |  |
 | `@khorsheed/dsh-bundle-local-agent` | 0.2.0 | 0.2.0 | 0.1.5-rc.1 | 0.1.7-rc.2 |  |
+| `@khorsheed/dsh-bundle-writing` | 未发布 | 0.1.0 | 0.1.7-rc.1 | 0.2.0-rc.2 |  |
 | `@khorsheed/dsh-canvas` | 未发布 | 0.6.0 | 0.1.5-rc.1 | 0.1.5-rc.1 |  |
+| `@khorsheed/dsh-canvas-novel` | 未发布 | 0.1.0 | 0.2.0-rc.2 | 0.2.0-rc.2 |  |
 | `@khorsheed/dsh-capability-catalog` | 0.1.98 | 0.1.98 | 0.1.5-rc.1 | 0.1.7-rc.2 | ✓ |
 | `@khorsheed/dsh-capture` | 0.1.2 | 0.1.2 | 0.1.5-rc.1 | 0.1.5-rc.1 |  |
 | `@khorsheed/dsh-context-guard` | 0.2.4 | 0.2.4 | 0.1.2-rc.1 | 0.1.2-rc.1 | ✓ |
@@ -38,6 +40,7 @@
 | `@khorsheed/dsh-typesafe` | 0.1.2 | 0.1.2 | 0.1.5-rc.1 | 0.1.5-rc.1 |  |
 | `@khorsheed/dsh-typesafe-tool` | 0.1.2 | 0.1.2 | 0.1.5-rc.1 | 0.1.5-rc.1 |  |
 | `@khorsheed/dsh-client-ui-content-preview` | (private) | 0.1.1 | 0.1.5-rc.1 | 0.1.5-rc.1 |  |
+| `@khorsheed/dsh-client-ui-panel-kit` | (private) | 0.1.0 | 0.1.5-rc.1 | 0.2.0-rc.2 |  |
 | `@khorsheed/dsh-ui-shortcuts` | 0.2.4 | 0.2.4 | 0.1.2-rc.1 | 0.1.7-rc.2 | ✓ |
 | `@khorsheed/dsh-whalesong` | 0.2.4 | 0.2.4 | 0.1.2-rc.1 | 0.1.2-rc.1 | ✓ |
 | `@khorsheed/dsh-worktrees` | 0.3.1 | 0.3.1 | 0.1.5-rc.1 | 0.1.7-rc.2 |  |
