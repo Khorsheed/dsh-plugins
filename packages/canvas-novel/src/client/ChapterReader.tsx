@@ -24,7 +24,7 @@ const LAMP = ['lamp.plan', 'lamp.write', 'lamp.extract', 'lamp.review'] as const
 
 /** How far along the lamp a phase is (the lit step). */
 const LAMP_STEP: Readonly<Record<EffectiveChapterPhase, number>> = {
-  planning: 0, writing: 1, fileMissing: 1, extracted: 2, reviewed: 4,
+  planning: 0, writing: 1, fileMissing: 1, stale: 2, extracted: 2, reviewed: 4,
 }
 
 /** The `novel:chapter` page entry (param: the chapter number to start at). */
@@ -188,6 +188,7 @@ function gateText(phase: EffectiveChapterPhase, pending: number, writable: boole
   if (!writable) return t('chapter.gate.readOnly')
   if (phase === 'planning') return t('chapter.gate.planning')
   if (phase === 'writing') return t('chapter.gate.writing')
+  if (phase === 'stale') return t('chapter.gate.stale')
   if (phase === 'fileMissing') return t('chapter.gate.fileMissing')
   if (pending > 0) return t('chapter.gate.pending', { count: pending })
   return ''
@@ -199,7 +200,7 @@ function Lamp({ phase, t }: { readonly phase: EffectiveChapterPhase; readonly t:
   return (
     <ol className={css.stepper} aria-label={t(`phase.${phase}`)}>
       {LAMP.map((key, index) => (
-        <li key={key} className={css.step} data-state={index < step ? 'done' : index === step ? 'current' : 'todo'} data-warn={phase === 'fileMissing' && index === step ? 'true' : undefined}>
+        <li key={key} className={css.step} data-state={index < step ? 'done' : index === step ? 'current' : 'todo'} data-warn={(phase === 'fileMissing' || phase === 'stale') && index === step ? 'true' : undefined}>
           <span className={css.stepDot}>{index < step ? '✓' : ''}</span>
           {t(key)}
         </li>

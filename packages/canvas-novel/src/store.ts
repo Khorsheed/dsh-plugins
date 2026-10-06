@@ -38,7 +38,7 @@ import {
   type NovelFieldValue,
 } from './genre.ts'
 import {
-  chapterFileName, cleanNumber, cleanText, deriveForeshadowState, effectiveChapterPhase, isOverdue, laterForeshadowState, linesOf, MENTION_TO_STATE,
+  bodyFingerprint, chapterFileName, cleanNumber, cleanText, deriveForeshadowState, effectiveChapterPhase, isOverdue, laterForeshadowState, linesOf, MENTION_TO_STATE,
   normalizeAnnotations, normalizeChapter, normalizeHistoryEntry, PLOT_FIELDS, plotDiff, plotOf, normalizePendingItem, normalizePlan, normalizeWorkId, NOVEL_GENRE_ID,
   nextMilestoneOf, normalizeRelationEntry, OP_TO_MENTION, parseRef, PTS_PER_LEVEL, MAX_RELATION_DELTA, readRelationStage,
   refGroupOf, refOf, relationEventOf, relationMove, typeChangeOf, relationProgress, relationTypeOf, stageNameOf,
@@ -104,14 +104,48 @@ type DocumentRead<T> = { readonly data: T; readonly version: string } | 'missing
 /** One mutation's receipt. */
 type Mutation<T> = { readonly ok: true; readonly data: T; readonly created: boolean } | { readonly ok: false; readonly error: NovelError }
 
-/** A mention's evidence grep: exact substring first, then a whitespace-tolerant pass (line wraps are not fabrication). */
+/** A mention's evidence grep: exact substring first, then a whitespace-tolerant pass (line wraps are not fabrication). Quote marks around the whole quote are the model's, not the text's. */
 export function evidenceInBody(body: string, evidence: string | undefined): boolean {
   if (evidence === undefined) return false
-  const needle = evidence.trim()
+  const needle = evidence.trim().replace(/^[「『“"]+|[」』”"]+$/g, '').trim()
   if (needle.length === 0) return false
   if (body.includes(needle)) return true
   const squash = (text: string): string => text.replace(/\s+/g, ' ')
   return squash(body).includes(squash(needle))
+}
+
+/** The longest evidence quote the import reads; the material pack asks for ≤50 字, the slack absorbs counting drift. */
+const EVIDENCE_MAX = 60
+
+/**
+ * Why a quote failed the evidence grep, as specifically as the quote says:
+ * an ellipsis means two places were spliced into one (逐字原文 is one
+ * continuous stretch); an over-long quote was cut at the cap and the cut no
+ * longer matched; otherwise the words are not in the chapter.
+ * @param raw - the quote as the subagent sent it.
+ */
+export function evidenceMiss(raw: unknown): 'evidence-spliced' | 'evidence-too-long' | 'evidence-not-found' {
+  const text = typeof raw === 'string' ? raw.trim() : ''
+  if (/…|\.{3}|。。。/.test(text)) return 'evidence-spliced'
+  if (text.length > EVIDENCE_MAX) return 'evidence-too-long'
+  return 'evidence-not-found'
+}
+
+/** A card name with the model's bracketed asides removed (「透镜（已登记c6）」 names 透镜). */
+function bareName(name: string | undefined): string | undefined {
+  const bare = name?.replace(/[（(][^）)]*[）)]/g, '').trim()
+  return bare === undefined || bare === '' ? undefined : bare
+}
+
+/** Text compared for sameness: punctuation and whitespace are not content. */
+function squashText(text: string): string {
+  return text.replace(/[\s\p{P}]/gu, '')
+}
+
+/** Whether a chapter's body is one its memory has not read yet (写作中 or 待对账): the 对账 gate. */
+function reconcilable(chapter: ChapterRecord, body: string): boolean {
+  const phase = effectiveChapterPhase(chapter, bodyFingerprint(body))
+  return phase === 'writing' || phase === 'stale'
 }
 
 /** The field that carries each role's main text (the card's face line). */
@@ -178,7 +212,10 @@ export function namesake(entries: WorkEntries, role: EntryRole, name: string | u
   const views = role === 'character' ? entries.characters.map(view => ({ ...view, status: view.cardStatus }))
     : role === 'world' ? entries.rules.filter(view => view.role === 'world').map(view => ({ ...view, name: view.name ?? '' }))
       : []
-  const found = views.find(view => view.status !== 'archived' && view.name === name)
+  // An unnamed world card (one from before names) goes by its opening words.
+  const opens = (view: { readonly name?: string; readonly text?: string }): boolean =>
+    role === 'world' && view.name === '' && view.text !== undefined && squashText(name) !== '' && squashText(view.text).startsWith(squashText(name))
+  const found = views.find(view => view.status !== 'archived' && (view.name === name || opens(view)))
   return found === undefined ? undefined : { cardId: found.cardId, ref: found.ref }
 }
 
@@ -437,15 +474,29 @@ export class NovelService {
    * has no append verb, so append-only semantics ride the same guarded RMW
    * as the JSON documents — a lost race retries, never clobbers.
    * @param target - the resolved journal target.
+   * `replace` makes the same write a chapter-scoped replace: existing lines
+   * it matches are dropped first (a re-对账 replaces the chapter's previous
+   * findings; unreadable lines are kept as they are).
    * @param session - the session that owns the gesture; supplies the fence.
    * @param lines - the records to append (one JSON per line).
+   * @param replace - which existing records the new lines replace.
    */
   private async appendJsonl(
     target: FsTarget,
     session: Session,
     lines: readonly Record<string, unknown>[],
+    replace?: (record: Record<string, unknown>) => boolean,
   ): Promise<{ readonly ok: boolean; readonly error?: NovelError }> {
-    if (lines.length === 0) return { ok: true }
+    if (lines.length === 0 && replace === undefined) return { ok: true }
+    const kept = (text: string): string => replace === undefined ? text : text.split('\n').filter(line => {
+      if (line.trim() === '') return false
+      try {
+        const record = JSON.parse(line) as unknown
+        return typeof record !== 'object' || record === null || !replace(record as Record<string, unknown>)
+      } catch {
+        return true
+      }
+    }).map(line => `${line}\n`).join('')
     const policy = this.policyOf(session)
     const addition = lines.map(line => `${JSON.stringify(line)}\n`).join('')
     for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -454,12 +505,13 @@ export class NovelService {
       try {
         const info = await this.fs.stat(target)
         if (info !== undefined) {
-          existing = await this.fs.readText(target)
+          existing = kept(await this.fs.readText(target))
           version = info.version
         }
       } catch (error) {
         if (!(error instanceof FsError && error.code === 'FS_NOT_FOUND')) return { ok: false, error: novelErrorOf(error) }
       }
+      if (version === undefined && addition === '') return { ok: true }
       try {
         await this.fs.writeText(
           target, existing + addition,
@@ -921,16 +973,9 @@ export class NovelService {
     return typeof read === 'object' ? read.data.chapters : []
   }
 
-  /** Whether the manuscript file has content (the 写作中 derivation). */
-  private async hasBody(work: WorkMeta, chapter: ChapterRecord): Promise<boolean> {
-    const path = this.bodyPath(work, chapter)
-    if (path === undefined) return false
-    try {
-      const info = await this.fs.stat(await this.fs.resolve(path))
-      return info !== undefined && (info.size ?? 0) > 0
-    } catch {
-      return false
-    }
+  /** The manuscript's fingerprint, undefined when it is empty or gone (the 写作中 / 待对账 derivation). */
+  private async fingerprintOf(work: WorkMeta, chapter: ChapterRecord): Promise<string | undefined> {
+    return bodyFingerprint(await this.readChapterBody(work, chapter))
   }
 
   /** The chapter index, seq-ordered, with the effective phase derived per row. */
@@ -942,7 +987,7 @@ export class NovelService {
     const chapters = [...await this.readChapters(id)].sort((a, b) => a.seq - b.seq || a.n - b.n)
     const out: { chapter: ChapterRecord; phase: EffectiveChapterPhase }[] = []
     for (const chapter of chapters) {
-      out.push({ chapter, phase: effectiveChapterPhase(chapter, await this.hasBody(meta, chapter)) })
+      out.push({ chapter, phase: effectiveChapterPhase(chapter, await this.fingerprintOf(meta, chapter)) })
     }
     return out
   }
@@ -972,12 +1017,8 @@ export class NovelService {
     if (meta === undefined) return { ok: false, error: 'missing' }
     const chapter = (await this.readChapters(id)).find(candidate => candidate.n === request.n)
     if (chapter === undefined) return { ok: false, error: 'missing' }
-    return {
-      ok: true,
-      chapter,
-      phase: effectiveChapterPhase(chapter, await this.hasBody(meta, chapter)),
-      body: await this.readChapterBody(meta, chapter),
-    }
+    const body = await this.readChapterBody(meta, chapter)
+    return { ok: true, chapter, phase: effectiveChapterPhase(chapter, bodyFingerprint(body)), body }
   }
 
   /**
@@ -1040,6 +1081,13 @@ export class NovelService {
       ? manuscriptParagraphs(request.content.slice(0, 2_000_000))
       : undefined
     const byUser = request.byUser === true
+    // 用户原稿 never takes a plan: the plan is the model's proposal for a
+    // chapter it is about to write, and a draft the user wrote has nothing
+    // left to propose (the 对账 reads what the text did, not what was meant).
+    if (plan !== undefined) {
+      const row = request.n === undefined ? undefined : (await this.readChapters(workId)).find(candidate => candidate.n === request.n)
+      if (byUser || row?.byUser === true) return { ok: false, error: 'plan-on-draft' }
+    }
 
     // 计划门禁: the model writes a body only into a chapter whose plan the user
     // confirmed; the user's own text (用户原稿) needs no plan. Checked before
@@ -1295,8 +1343,10 @@ export class NovelService {
   }
 
   /**
-   * The 故事日志: every kept foreshadow, relation, character and world card
-   * laid out over the chapters, for the timeline page. A chapter's marks come
+   * The 故事日志: the kept foreshadow, relation, character and world cards
+   * that have entered the story, laid out over the chapters, for the timeline
+   * page. A card no chapter touches (not reconciled, not planned) is still
+   * an inspiration card and stays off the log. A chapter's marks come
    * from the journals once the 对账 has run; before that (planning / writing)
    * only its plan speaks, and those marks come back `planned`. A canvas edit
    * not yet synced into the history shows as 你改的 at the current chapter —
@@ -1347,12 +1397,12 @@ export class NovelService {
       const origin = originOf(view.cardId)
       if (origin !== undefined && !marks.some(mark => mark.kind === 'planted')) marks.push({ chapter: origin, kind: 'planted', planned: false })
       return { ...view, marks: marks.sort((a, b) => a.chapter - b.chapter) }
-    })
+    }).filter(view => view.marks.length > 0)
 
     const nameOf = (cardId: string): string => entries.characters.find(view => view.cardId === cardId)?.name ?? cardId
     const relations = entries.relations.filter(view => view.cardStatus === 'kept').map((view): StoryRelation => ({
       ...view, names: view.pair.map(nameOf), journal: journal.filter(entry => entry.relationId === view.cardId),
-    }))
+    })).filter(view => view.journal.length > 0 || originOf(view.cardId) !== undefined)
 
     const characters = entries.characters.filter(view => view.cardStatus === 'kept').map((view): StoryCharacter => {
       const plot = plotOf('character', cards.get(view.cardId)?.fields, view.currentState)
@@ -1375,9 +1425,11 @@ export class NovelService {
         appearances.sort((a, b) => a.chapter - b.chapter)
       }
       return { cardId: view.cardId, ref: view.ref, name: view.name, plot, history: historyOf(view.cardId, 'character', plot), appearances }
-    })
+    }).filter(view => view.appearances.length > 0)
 
-    const world = entries.rules.filter(view => view.role === 'world' && view.status === 'kept').map((view): StoryCard => {
+    // A world card is in the story once a reconciled chapter found it (or it came in from one).
+    const settled = new Set(rows.filter(row => !unsettled.includes(row)).flatMap(row => row.chapter.settings ?? []))
+    const world = entries.rules.filter(view => view.role === 'world' && view.status === 'kept' && (settled.has(view.cardId) || originOf(view.cardId) !== undefined)).map((view): StoryCard => {
       const plot = plotOf('world', cards.get(view.cardId)?.fields)
       return { cardId: view.cardId, ref: view.ref, name: view.name ?? leadClause(plot['rule']) ?? view.ref, plot, history: historyOf(view.cardId, 'world', plot) }
     })
@@ -1455,11 +1507,12 @@ export class NovelService {
   /**
    * The prepare half of 对账: the C-variant material pack (chapter body in
    * full, plan, the live-foreshadow whitelist, the roster, the output
-   * schema). The gate is the WRITING state (stored planning + a non-empty
-   * manuscript): nothing to reconcile without a body, already-extracted and
-   * reviewed chapters are refused (对账只发生在写作后、审过收章前 — 审过是人工
-   * 闸门，永远最后). Delegating the pack to the subagent is the main agent's
-   * job; the store never delegates.
+   * schema). The gate is a body the memory has not read: 写作中 (stored
+   * planning + a non-empty manuscript) or 待对账 (the body changed since its
+   * last 对账, 审过 included). Nothing to reconcile without a body; a chapter
+   * whose memory already matches its text is refused. A 用户原稿 goes out
+   * without a plan, whatever its row still carries. Delegating the pack to
+   * the subagent is the main agent's job; the store never delegates.
    * @param request - work id and chapter number.
    * @returns the pack text plus the whitelist (card ids), or the failure code.
    */
@@ -1475,12 +1528,14 @@ export class NovelService {
     const chapter = (await this.readChapters(meta.id)).find(candidate => candidate.n === request.n)
     if (chapter === undefined) return { ok: false, error: 'missing' }
     const body = await this.readChapterBody(meta, chapter)
-    if (chapter.phase !== 'planning' || body.trim() === '') return { ok: false, error: 'not-reviewed' }
+    if (!reconcilable(chapter, body)) return { ok: false, error: 'not-reviewed' }
     const gathered = await this.gatherBrief({ workId: meta.id, chapter: chapter.n })
     if (!gathered.ok || gathered.data === undefined) return { ok: false, error: gathered.error ?? 'io' }
+    const { plan: _plan, ...unplanned } = gathered.data.target
+    const data = chapter.byUser === true ? { ...gathered.data, target: unplanned } : gathered.data
     return {
       ok: true,
-      text: renderExtractBrief(gathered.data, body),
+      text: renderExtractBrief(data, body),
       foreshadowIds: [...gathered.data.activeForeshadows, ...gathered.data.unplantedForeshadows].map(view => view.cardId),
       characterIds: gathered.data.roster.map(view => view.cardId),
     }
@@ -1512,7 +1567,7 @@ export class NovelService {
     session: Session,
   ): Promise<ImportReport> {
     const empty = {
-      verified: 0, missed: 0, beats: { delivered: 0, missed: 0 }, pending: 0,
+      settled: false, linked: 0, verified: 0, missed: 0, beats: { delivered: 0, missed: 0 }, pending: 0,
       dropped: [] as ImportDrop[], pendingItems: [] as { id: string; kind: PendingKind; reason: string }[],
       newCards: [] as { cardId: string; role: EntryRole; text: string }[],
     }
@@ -1524,8 +1579,31 @@ export class NovelService {
     const chapter = (await this.readChapters(id)).find(candidate => candidate.n === request.n)
     if (chapter === undefined) return { ok: false, error: 'missing', ...empty }
     const body = await this.readChapterBody(meta, chapter)
-    if (chapter.phase !== 'planning' || body.trim() === '') return { ok: false, error: 'not-reviewed', ...empty }
+    if (!reconcilable(chapter, body)) return { ok: false, error: 'not-reviewed', ...empty }
     const { payload } = request
+
+    // The settle gate: when most quotes miss the text, the payload was not
+    // read off this chapter (spliced or paraphrased quotes) — nothing lands
+    // and the chapter stays open, so the corrected payload imports cleanly.
+    const quoted: [string, readonly { readonly evidence_in_text?: unknown }[] | undefined][] = [
+      ['memory', payload.memories], ['mention', payload.foreshadow_mentions], ['new-foreshadow', payload.new_foreshadows],
+      ['new-character', payload.new_characters], ['experience', payload.experiences], ['relation', payload.relation_points],
+      ['relation', payload.relation_milestones], ['relation', payload.relation_changes], ['new-relation', payload.new_relations],
+      ['beat', payload.beats_delivered], ['info-gap', payload.info_gaps_closed],
+    ]
+    const misses: ImportDrop[] = []
+    let quotes = 0
+    for (const [kind, items] of quoted) {
+      for (const raw of items ?? []) {
+        if (typeof raw !== 'object' || raw === null) continue
+        quotes += 1
+        if (evidenceInBody(body, cleanText(raw.evidence_in_text, EVIDENCE_MAX))) continue
+        const text = typeof raw.evidence_in_text === 'string' ? raw.evidence_in_text.trim() : ''
+        misses.push({ kind, reason: evidenceMiss(raw.evidence_in_text), ref: text.length > 24 ? `${text.slice(0, 24)}…` : text })
+      }
+    }
+    if (misses.length > 0 && misses.length * 2 > quotes) return { ...empty, ok: true, dropped: misses }
+
     const dropped: ImportDrop[] = []
     const report = { verified: 0, missed: 0, beats: { delivered: 0, missed: 0 }, pending: 0 }
     const toPending: { kind: PendingKind; confidence?: 'medium' | 'low'; chapter?: number; reason: string; evidenceInText?: string; payload: PendingPayload }[] = []
@@ -1552,6 +1630,8 @@ export class NovelService {
     const now = new Date().toISOString()
     const source: NovelCardSource = { type: 'file', ref: join(meta.workspace ?? '', meta.title, chapter.file), title: `第${chapter.n}章` }
 
+    // The world cards this chapter was found to use (linked existing ones, then the new ones it lands).
+    const settings: string[] = []
     // The card writes this import will make (gate 3), collected first and landed below.
     const cardWrites: { role: EntryRole; fields: Record<string, NovelFieldValue>; note: CardNote; comment: string; ref: string }[] = []
     // A name a live card or an earlier row of this payload already holds is a duplicate, never a second card.
@@ -1568,15 +1648,32 @@ export class NovelService {
     for (const raw of payload.memories ?? []) {
       const content = cleanText(raw.content)
       if (content === undefined) continue
-      const evidence = cleanText(raw.evidence_in_text, 60)
+      const evidence = cleanText(raw.evidence_in_text, EVIDENCE_MAX)
       if (!evidenceInBody(body, evidence)) {
-        dropped.push({ kind: 'memory', reason: 'evidence-not-found', ref: content.slice(0, 30) })
+        dropped.push({ kind: 'memory', reason: evidenceMiss(raw.evidence_in_text), ref: content.slice(0, 30) })
         continue
       }
       const role: EntryRole = cleanText(raw.kind, 10) === '原则' ? 'principle' : 'world'
       const fields: Record<string, NovelFieldValue> = { [MAIN_FIELD[role]]: content }
       if (role === 'world') {
-        const name = cleanText(raw.name, 80) ?? settingNameOf(content)
+        const name = bareName(cleanText(raw.name, 80)) ?? settingNameOf(content)
+        // A setting the board already has is this chapter USING it: linked to
+        // the chapter, and checked — a chapter that says otherwise waits for
+        // the person (the card is never rewritten by a 对账).
+        const existing = namesake(entries, role, name)
+        if (existing !== undefined) {
+          if (!settings.includes(existing.cardId)) settings.push(existing.cardId)
+          const card = entries.board.cards.find(candidate => candidate.id === existing.cardId)
+          const rule = squashText(card === undefined ? '' : mainTextOf(card, 'world'))
+          const said = squashText(content)
+          if (rule !== '' && !rule.includes(said) && !said.includes(rule)) {
+            pend({
+              kind: 'setting', chapter: chapter.n, reason: `设定对不上：${existing.ref}「${name}」——卡上写的和这章不一样，以哪个为准？`,
+              payload: { cardId: existing.cardId, content }, evidenceInText: evidence!,
+            })
+          }
+          continue
+        }
         const duplicate = duplicateOf(role, name)
         if (duplicate !== undefined) {
           dropped.push({ kind: 'memory', reason: 'duplicate', ref: `${name}（${duplicate}）` })
@@ -1608,9 +1705,9 @@ export class NovelService {
         dropped.push({ kind: 'mention', reason: 'id-not-in-ledger', ref: String(raw.foreshadow_id) })
         continue
       }
-      const evidence = cleanText(raw.evidence_in_text, 60)
+      const evidence = cleanText(raw.evidence_in_text, EVIDENCE_MAX)
       if (!evidenceInBody(body, evidence)) {
-        dropped.push({ kind: 'mention', reason: 'evidence-not-found', ref: foreshadowOf.get(foreshadowId)?.ref ?? foreshadowId })
+        dropped.push({ kind: 'mention', reason: evidenceMiss(raw.evidence_in_text), ref: foreshadowOf.get(foreshadowId)?.ref ?? foreshadowId })
         continue
       }
       const confidence = confidenceOf(raw.confidence)
@@ -1639,9 +1736,11 @@ export class NovelService {
     for (const raw of payload.new_foreshadows ?? []) {
       const question = cleanText(raw.question, 200)
       if (question === undefined) continue
-      const evidence = cleanText(raw.evidence_in_text, 60)
+      // A question the ledger already holds (a re-对账 finding its own earlier plant) is not new.
+      if (entries.foreshadows.some(view => view.cardStatus !== 'archived' && squashText(view.question) === squashText(question))) continue
+      const evidence = cleanText(raw.evidence_in_text, EVIDENCE_MAX)
       if (!evidenceInBody(body, evidence)) {
-        dropped.push({ kind: 'new-foreshadow', reason: 'evidence-not-found', ref: question.slice(0, 30) })
+        dropped.push({ kind: 'new-foreshadow', reason: evidenceMiss(raw.evidence_in_text), ref: question.slice(0, 30) })
         continue
       }
       newForeshadows += 1
@@ -1652,14 +1751,14 @@ export class NovelService {
       })
     }
     for (const raw of payload.new_characters ?? []) {
-      const name = cleanText(raw.name, 80)
+      const name = bareName(cleanText(raw.name, 80))
       if (name === undefined) continue
       // A character the board already has (from an earlier chapter, say) is not new: the
       // experiences below still reach it by name, and no second card is made.
       if (duplicateOf('character', name) !== undefined) continue
-      const evidence = cleanText(raw.evidence_in_text, 60)
+      const evidence = cleanText(raw.evidence_in_text, EVIDENCE_MAX)
       if (!evidenceInBody(body, evidence)) {
-        dropped.push({ kind: 'new-character', reason: 'evidence-not-found', ref: name })
+        dropped.push({ kind: 'new-character', reason: evidenceMiss(raw.evidence_in_text), ref: name })
         continue
       }
       const identity = cleanText(raw.identity, 200)
@@ -1699,9 +1798,9 @@ export class NovelService {
     for (const raw of payload.beats_delivered ?? []) {
       const beat = cleanNumber(raw.beat)
       if (beat === undefined || !Number.isInteger(beat) || beat < 1 || beat > (plan?.beats.length ?? 0)) continue
-      const evidence = cleanText(raw.evidence_in_text, 60)
+      const evidence = cleanText(raw.evidence_in_text, EVIDENCE_MAX)
       if (!evidenceInBody(body, evidence)) {
-        dropped.push({ kind: 'beat', reason: 'evidence-not-found', ref: String(beat) })
+        dropped.push({ kind: 'beat', reason: evidenceMiss(raw.evidence_in_text), ref: String(beat) })
         continue
       }
       beatsSeen.add(beat)
@@ -1732,6 +1831,7 @@ export class NovelService {
         newCharacterIds.set(write.ref, cardId)
         roster.add(cardId)
       }
+      if (write.role === 'world') settings.push(cardId)
       newCards.push({ cardId, role: write.role, text: String(write.fields['name'] ?? write.fields[MAIN_FIELD[write.role]]) })
     }
     // Experiences + current states: roster-checked, evidence-gated, high lands / medium-low pends.
@@ -1746,9 +1846,9 @@ export class NovelService {
         dropped.push({ kind: 'experience', reason: 'character-not-in-roster', ref: String(raw.character_id) })
         continue
       }
-      const evidence = cleanText(raw.evidence_in_text, 60)
+      const evidence = cleanText(raw.evidence_in_text, EVIDENCE_MAX)
       if (!evidenceInBody(body, evidence)) {
-        dropped.push({ kind: 'experience', reason: 'evidence-not-found', ref: String(raw.character_id) })
+        dropped.push({ kind: 'experience', reason: evidenceMiss(raw.evidence_in_text), ref: String(raw.character_id) })
         continue
       }
       const confidence = confidenceOf(raw.confidence)
@@ -1781,9 +1881,9 @@ export class NovelService {
       const index = cleanNumber(raw.gap)
       const gap = index === undefined || !Number.isInteger(index) ? undefined : plan?.infoGaps?.[index - 1]
       if (gap === undefined || gapsSeen.has(index!)) continue
-      const evidence = cleanText(raw.evidence_in_text, 60)
+      const evidence = cleanText(raw.evidence_in_text, EVIDENCE_MAX)
       if (!evidenceInBody(body, evidence)) {
-        dropped.push({ kind: 'info-gap', reason: 'evidence-not-found', ref: String(index) })
+        dropped.push({ kind: 'info-gap', reason: evidenceMiss(raw.evidence_in_text), ref: String(index) })
         continue
       }
       const characterId = asCharacter(gap.who)
@@ -1816,9 +1916,9 @@ export class NovelService {
       }
       const delta = Math.max(-MAX_RELATION_DELTA, Math.min(MAX_RELATION_DELTA, Math.round(Number(raw.delta))))
       if (!Number.isFinite(delta) || delta === 0 || scored.has(view.cardId)) continue
-      const evidence = cleanText(raw.evidence_in_text, 60)
+      const evidence = cleanText(raw.evidence_in_text, EVIDENCE_MAX)
       if (!evidenceInBody(body, evidence)) {
-        dropped.push({ kind: 'relation', reason: 'evidence-not-found', ref: view.ref })
+        dropped.push({ kind: 'relation', reason: evidenceMiss(raw.evidence_in_text), ref: view.ref })
         continue
       }
       scored.add(view.cardId)
@@ -1847,9 +1947,9 @@ export class NovelService {
         dropped.push({ kind: 'relation', reason: 'stage-mismatch', ref: view.ref })
         continue
       }
-      const evidence = cleanText(raw.evidence_in_text, 60)
+      const evidence = cleanText(raw.evidence_in_text, EVIDENCE_MAX)
       if (!evidenceInBody(body, evidence)) {
-        dropped.push({ kind: 'relation', reason: 'evidence-not-found', ref: view.ref })
+        dropped.push({ kind: 'relation', reason: evidenceMiss(raw.evidence_in_text), ref: view.ref })
         continue
       }
       pendRelation(view, 'up', `关系升级：${view.name} ${view.stage} → ${next.stage}`, evidence!)
@@ -1872,9 +1972,9 @@ export class NovelService {
         dropped.push({ kind: 'relation', reason: 'stage-mismatch', ref: view.ref })
         continue
       }
-      const evidence = cleanText(raw.evidence_in_text, 60)
+      const evidence = cleanText(raw.evidence_in_text, EVIDENCE_MAX)
       if (!evidenceInBody(body, evidence)) {
-        dropped.push({ kind: 'relation', reason: 'evidence-not-found', ref: view.ref })
+        dropped.push({ kind: 'relation', reason: evidenceMiss(raw.evidence_in_text), ref: view.ref })
         continue
       }
       if (event === 'crack' || event === 'break') riftAfter.set(view.cardId, event === 'crack' ? '裂痕' : '决裂')
@@ -1900,9 +2000,9 @@ export class NovelService {
         dropped.push({ kind: 'new-relation', reason: 'duplicate', ref: label })
         continue
       }
-      const evidence = cleanText(raw.evidence_in_text, 60)
+      const evidence = cleanText(raw.evidence_in_text, EVIDENCE_MAX)
       if (!evidenceInBody(body, evidence)) {
-        dropped.push({ kind: 'new-relation', reason: 'evidence-not-found', ref: label })
+        dropped.push({ kind: 'new-relation', reason: evidenceMiss(raw.evidence_in_text), ref: label })
         continue
       }
       pairsSeen.push([a, b])
@@ -1948,11 +2048,18 @@ export class NovelService {
     if (!annotated.ok) return { ok: false, error: annotated.error ?? 'io', ...empty, dropped }
     const refs = annotated.annotations?.refs ?? {}
     const landed = newCards.map(card => refs[card.cardId] === undefined ? card : { ...card, ref: refOf(card.role, refs[card.cardId]!) })
-    const appendedMentions = await this.appendJsonl(await this.fileTarget(id, WORK_FILES.mentions), session, journalLines)
+    // Chapter-scoped replace: a re-对账 supersedes everything the chapter's
+    // last one filed — its mentions, experiences, relation points and the
+    // items still waiting (decided items and the cards stay).
+    const thisChapter = (record: Record<string, unknown>): boolean => record['chapter'] === chapter.n
+    const appendedMentions = await this.appendJsonl(await this.fileTarget(id, WORK_FILES.mentions), session, journalLines, thisChapter)
     if (!appendedMentions.ok) return { ok: false, error: appendedMentions.error ?? 'io', ...empty, dropped }
-    const appendedExperiences = await this.appendJsonl(await this.fileTarget(id, WORK_FILES.experiences), session, experienceLines)
+    const appendedExperiences = await this.appendJsonl(await this.fileTarget(id, WORK_FILES.experiences), session, experienceLines, thisChapter)
     if (!appendedExperiences.ok) return { ok: false, error: appendedExperiences.error ?? 'io', ...empty, dropped }
-    const appendedRelations = await this.appendJsonl(await this.fileTarget(id, WORK_FILES.relations), session, relationLines)
+    const appendedRelations = await this.appendJsonl(
+      await this.fileTarget(id, WORK_FILES.relations), session, relationLines,
+      record => thisChapter(record) && record['kind'] === 'points',
+    )
     if (!appendedRelations.ok) return { ok: false, error: appendedRelations.error ?? 'io', ...empty, dropped }
     const recap = cleanText(payload.recap, 500)
     const chapterWritten = await this.mutateJson(
@@ -1963,10 +2070,20 @@ export class NovelService {
         const row = table.chapters.find(candidate => candidate.n === chapter.n)
         if (row === undefined) return 'missing'
         const mutable = row as { -readonly [K in keyof ChapterRecord]: ChapterRecord[K] }
+        // A reconciled chapter is 已抽取 again, 审过 included: the person re-reviews what changed.
         mutable.phase = 'extracted'
         if (plan !== undefined) mutable.delivery = { beats: beatsDelivered, ops: opsDelivered }
+        if (chapter.byUser === true) {
+          // A 用户原稿 carries no plan (one written before the refusal existed goes now).
+          delete mutable.plan
+          delete mutable.planConfirmedAt
+          delete mutable.delivery
+        }
         if (recap !== undefined) mutable.recap = recap
         mutable.wordCount = body.replace(/\s+/g, '').length
+        mutable.bodyHash = bodyFingerprint(body)!
+        if (settings.length > 0) mutable.settings = settings
+        else delete mutable.settings
         mutable.updatedAt = timestamp
         return table
       },
@@ -1975,16 +2092,20 @@ export class NovelService {
 
     // The pending queue lands last (its ids allocate max+1 inside the write).
     const pendingItems: { id: string; kind: PendingKind; reason: string }[] = []
-    if (toPending.length > 0) {
+    const waiting = (await this.readPendingItems(id)).some(item => item.status === 'pending' && item.chapter === chapter.n)
+    if (toPending.length > 0 || waiting) {
       const written = await this.mutateJson(
         await this.fileTarget(id, WORK_FILES.pending), session,
         raw => normalizePendingTable(raw),
         () => ({ version: 1 as const, items: [] }),
         (table, timestamp) => {
+          // The chapter's undecided items from its last 对账 are superseded (ids are never reused).
+          const superseded = table.items.filter(item => item.status === 'pending' && item.chapter === chapter.n)
           let next = table.items.reduce((max, row) => {
             const match = /^p(\d+)$/.exec(row.id)
             return match === null ? max : Math.max(max, Number(match[1]))
           }, 0) + 1
+          for (const item of superseded) table.items.splice(table.items.indexOf(item), 1)
           for (const item of toPending) {
             const idText = `p${next}`
             next += 1
@@ -2006,7 +2127,7 @@ export class NovelService {
       )
       if (!written.ok) return { ok: false, error: written.error, ...empty, dropped }
     }
-    return { ok: true, ...report, dropped, pendingItems, newCards: landed }
+    return { ok: true, settled: true, linked: settings.length - newCards.filter(card => card.role === 'world').length, ...report, dropped, pendingItems, newCards: landed }
   }
 
   /* -------------------------------------------------------------- pending */
@@ -2141,6 +2262,19 @@ export class NovelService {
         ...(item.evidenceInText === undefined ? {} : { evidence: item.evidenceInText }),
       })])
       return appended.ok ? undefined : appended.error
+    }
+    if (item.kind === 'setting') {
+      // The person sided with the chapter: the card's 设定 becomes what the text says.
+      const canvas = this.canvas
+      const { cardId, content } = item.payload
+      if (chapter === undefined || cardId === undefined || content === undefined) return 'invalid-name'
+      const card = (await this.readEntries(workId))?.board.cards.find(candidate => candidate.id === cardId)
+      if (canvas === undefined || card === undefined) return 'missing'
+      const mutation = await canvas.patchCard({ canvasId: workId, cardId, fields: { ...card.fields, rule: content } }, session)
+      if (!mutation.ok) return canvasErrorOf(mutation.error)
+      const adopted: CardWrite = { source: 'accept', fields: ['rule'], chapter, ...(item.evidenceInText === undefined ? {} : { evidence: item.evidenceInText }) }
+      const logged = await this.ensureRefs(workId, session, mutation.board, new Map(), new Map([[cardId, adopted]]))
+      return logged.ok ? undefined : logged.error ?? 'io'
     }
     // plan-missed: the person's answer is the resolution — nothing materializes.
     return undefined

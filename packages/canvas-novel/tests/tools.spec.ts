@@ -166,6 +166,19 @@ describe('the novel tools', () => {
     expect(report).toContain('计划命中 ✓×1')
     expect(report).toContain('计划落空 ×1')
     const again = await call(extract, { chapter: 5, phase: 'import', payload: {} })
-    expect(again).toContain('已对过账')
+    expect(again).toContain('不用再对')
+  })
+
+  it('novel_extract import that cannot be quoted says 未对完 with a reason per quote, and lists 待对账 chapters', async () => {
+    const { extract, read } = await bench({ bound: true, ch5Phase: 'planning' })
+    const report = await call(extract, {
+      chapter: 5,
+      phase: 'import',
+      payload: { experiences: [{ character_id: 'c1', entry: '推门', confidence: 'high', evidence_in_text: '赵启明想起妹妹……指尖碰到门缝的边缘' }] },
+    })
+    expect(report).toContain('未对完')
+    expect(report).toContain('省略号')
+    expect(report).not.toContain('计划命中')
+    expect(await call(read, { what: 'chapters' })).toContain('待对账：第5章')
   })
 })

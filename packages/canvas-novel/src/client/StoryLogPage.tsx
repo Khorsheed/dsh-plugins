@@ -596,7 +596,9 @@ function StoryLog(props: NovelSurfaceProps<NovelPageOwnerProps> & { readonly api
       <div className={css.logHd} data-lab="true">{t('log.chapters')}</div>
       {chapters.map((n) => {
         const chapter = log.chapters.find(row => row.n === n)
-        const sub = n === model.cur ? t('log.current') : model.planning.has(n) ? t('log.planned') : null
+        const sub = chapter === undefined || chapter.phase === 'fileMissing' ? null
+          : chapter.phase === 'stale' ? t('log.stale')
+            : model.planning.has(n) ? t('log.planned') : t('log.settled')
         const label = <>{n}{sub !== null && <small>{sub}</small>}</>
         return (
           <div key={n} className={css.logHd} data-col="true" data-current={n === model.cur ? 'true' : undefined}>

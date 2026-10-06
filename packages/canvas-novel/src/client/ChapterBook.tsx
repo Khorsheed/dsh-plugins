@@ -34,7 +34,7 @@ export function ChapterBook(props: NovelSurfaceProps): ReactNode {
 
 /** Whether a chapter needs the person: pending items, or extracted and waiting for ✓ 审过. */
 function needsPerson(row: ChapterRow, pending: Readonly<Record<number, number>>): boolean {
-  return (pending[row.chapter.n] ?? 0) > 0 || row.phase === 'extracted'
+  return (pending[row.chapter.n] ?? 0) > 0 || row.phase === 'extracted' || row.phase === 'stale'
 }
 
 function Contents({ canvasId, board, rev, remote, t, onRead }: NovelSurfaceProps & { readonly onRead: (n: number) => void }): ReactNode {
@@ -86,7 +86,7 @@ function Contents({ canvasId, board, rev, remote, t, onRead }: NovelSurfaceProps
           ))}
         </div>
         <div className={css.legend}>
-          {(['reviewed', 'extracted', 'todo', 'writing', 'planning'] as const).map(kind => (
+          {(['reviewed', 'extracted', 'stale', 'todo', 'writing', 'planning'] as const).map(kind => (
             <span key={kind} data-kind={kind}>{t(`toc.legend.${kind}`)}</span>
           ))}
         </div>

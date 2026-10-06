@@ -10,7 +10,7 @@ import { Context } from '@deepseek-ai/cordis'
 import type { Session } from '@deepseek-ai/dsh-session'
 import { describe, expect, it } from 'vitest'
 import { manuscriptParagraphs, NovelService, resolveNovelStateRoot, sleepCounter } from '../src/store.ts'
-import { chapterFileName, chapterNumberOfFile, deriveForeshadowState, effectiveChapterPhase, isOverdue, type ChapterRecord } from '../src/types.ts'
+import { bodyFingerprint, chapterFileName, chapterNumberOfFile, deriveForeshadowState, effectiveChapterPhase, isOverdue, type ChapterRecord } from '../src/types.ts'
 import { FakeCanvas, provideCanvas } from './fake-canvas.ts'
 import { FakeFs } from './fake-fs.ts'
 import { CARD, DREAM, seedDreamKeeper } from './seed-dream.ts'
@@ -126,9 +126,19 @@ describe('the novel store', () => {
     const again = await store.reviewChapter({ workId: DREAM.workId, n: 5 }, SESSION)
     expect(again.ok).toBe(true)
     // A chapter past planning whose manuscript file vanished reads 文件丢失.
-    expect(effectiveChapterPhase({ ...again.chapter!, phase: 'extracted' }, true)).toBe('extracted')
-    expect(effectiveChapterPhase({ ...again.chapter!, phase: 'extracted' }, false)).toBe('fileMissing')
-    expect(effectiveChapterPhase({ ...again.chapter!, phase: 'reviewed' }, false)).toBe('fileMissing')
+    const hash = again.chapter!.bodyHash
+    expect(effectiveChapterPhase({ ...again.chapter!, phase: 'extracted' }, hash)).toBe('extracted')
+    expect(effectiveChapterPhase({ ...again.chapter!, phase: 'extracted' }, undefined)).toBe('fileMissing')
+    expect(effectiveChapterPhase({ ...again.chapter!, phase: 'reviewed' }, undefined)).toBe('fileMissing')
+    // A body that changed since the last 对账 reads 待对账, 审过 included; a row with no fingerprint (pre-fingerprint) too.
+    expect(effectiveChapterPhase({ ...again.chapter!, phase: 'reviewed' }, bodyFingerprint('改过的正文'))).toBe('stale')
+    expect(effectiveChapterPhase({ ...again.chapter!, bodyHash: undefined }, hash)).toBe('stale')
+    // Whitespace alone is not a change.
+    expect(bodyFingerprint('他推开门。\n\n门后没有光。')).toBe(bodyFingerprint('他推开门。\n门后没有光。  '))
+    expect(bodyFingerprint('  \n')).toBeUndefined()
+    fs.seed(`${DREAM.workspace}/${DREAM.title}/第5章.md`, '第五章整章重写了。\n')
+    const edited = await store.listChapters({ workId: DREAM.workId })
+    expect(edited.find(row => row.chapter.n === 5)?.phase).toBe('stale')
   })
 
   it('lands an agent card live: in the brief at once, ✗ archives', async () => {
@@ -222,7 +232,7 @@ describe('the novel store', () => {
     const character = await store.writeCard({ workId, role: 'character', fields: { name: '甲' } }, SESSION)
     expect(character.ref).toBe('c1')
     // A hand-corrupted line stays on disk but drops out of the view.
-    fs.seed(`/dsh/state/novel/${workId}/experiences.jsonl`, '{"characterId":"c1","chapter":1,"entry":"好行","createdAt":"t"}\nnot-json\n')
+    fs.seed(`/dsh/state/novel/${workId}/experiences.jsonl`, '{"characterId":"c1","chapter":2,"entry":"好行","createdAt":"t"}\nnot-json\n')
     const before = await store.listExperiences({ workId })
     expect(before).toHaveLength(1)
     // …and an import's append keeps both the good line and the corrupt one.
@@ -240,6 +250,15 @@ describe('the novel store', () => {
     expect(raw.trim().split('\n')).toHaveLength(3)
     const after = await store.listExperiences({ workId })
     expect(after).toHaveLength(2)
+    // The text changes: the chapter reads 待对账, and the re-import replaces this chapter's lines (other chapters stay).
+    fs.seed(`${'/home/user/workspace'}/流水/第1章.md`, '改稿后，甲还是出场了。\n')
+    const again = await store.extractImport({ workId, n: 1, payload: {
+      experiences: [{ character_id: 'c1', entry: '甲改稿后出场', confidence: 'high', evidence_in_text: '甲还是出场了' }],
+    } }, SESSION)
+    expect(again.ok).toBe(true)
+    const replaced = await store.listExperiences({ workId })
+    expect(replaced.map(entry => [entry.chapter, entry.entry])).toEqual([[2, '好行'], [1, '甲改稿后出场']])
+    expect(fs.read(`/dsh/state/novel/${workId}/experiences.jsonl`)).toContain('not-json')
   })
 
   it('refuses to write what it cannot read (corrupt files never get clobbered)', async () => {

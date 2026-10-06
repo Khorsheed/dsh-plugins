@@ -24,7 +24,7 @@ import type { Session } from '@deepseek-ai/dsh-session'
 import { renderPlanBrief, renderWriteBrief } from './brief.ts'
 import { PHASE_NAMES, ROLE_NAMES, foreshadowFacts, relationFacts } from './genre-agent.ts'
 import type { NovelService } from './store.ts'
-import type { ChapterPlan, ExtractPayload, PendingItem, ReviewAction } from './types.ts'
+import type { ChapterPlan, ExtractPayload, ImportDrop, PendingItem, ReviewAction } from './types.ts'
 
 /** The community tool-origin tag (the catalog's documented no-import path). */
 function tagOrigin<T extends object>(definition: T): T {
@@ -41,10 +41,23 @@ const NO_WORK_MESSAGE = '本会话还没有绑定「长篇小说」画布：先 
 /** The extract gate's refusal, phase-aware (对账只发生在写作后、审过收章前). */
 function extractGateMessage(phase: string | undefined): string {
   if (phase === 'planning') return '这章还没有正文——没有什么可对账的。先写完，再对账。'
-  if (phase === 'extracted') return '这章已对过账（已抽取）。要重新对账，先告诉我为什么。'
-  if (phase === 'reviewed') return '这章已审过收章，不再对账。'
+  if (phase === 'extracted' || phase === 'reviewed') return '这章对过账，正文之后也没改过——记忆和正文一致，不用再对。正文改了会自动变成「待对账」。'
   if (phase === 'fileMissing') return '这章的正文文件丢了（登记在、文件不在）。先重新定位文件，再谈对账。'
-  return '对账只对「写作中」的章开放。'
+  return '对账只对「写作中」和「待对账」的章开放。'
+}
+
+/** Why the import dropped one item, in words the model can act on. */
+function dropReason(drop: ImportDrop): string {
+  switch (drop.reason) {
+    case 'evidence-spliced': return '引用里有省略号，把两处原文拼成了一条——只摘一段连续原文'
+    case 'evidence-too-long': return '引用超过 50 字，截断后对不上正文——摘一段 50 字以内的连续原文'
+    case 'evidence-not-found': return '这段引用正文里没有——要逐字照抄，不改字、不转述'
+    case 'id-not-in-ledger': return drop.kind === 'relation' ? '关系不在关系榜' : '伏笔 id 不在活跃榜单'
+    case 'card-refused': return '画布拒绝了这张卡'
+    case 'duplicate': return '画布上已有这张卡'
+    case 'stage-mismatch': return '这对关系现在的阶段走不了这一步（没到可升、不在裂痕里、或没经过裂痕就转对手）'
+    default: return '角色不在花名册'
+  }
 }
 
 /** One pending item as the model reads it (one line, evidence attached). */
@@ -110,19 +123,25 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
         if (args.for === 'plan') return renderPlanBrief(gathered.data)
         if (args.for === 'extract') {
           const chapter = gathered.data.target
-          if (chapter.phase !== 'planning') return extractGateMessage(chapter.phase)
           const prepared = await store.extractPrepare({ workId, n: chapter.n })
-          return prepared.ok ? prepared.text! : `失败：${prepared.error ?? 'io'}`
+          if (prepared.ok) return prepared.text!
+          if (prepared.error !== 'not-reviewed') return `失败：${prepared.error ?? 'io'}`
+          const read = await store.readChapter({ workId, n: chapter.n })
+          return extractGateMessage(read.ok ? read.phase : undefined)
         }
         return renderWriteBrief(gathered.data)
       }
       if (args.what === 'chapters') {
         const chapters = await store.listChapters({ workId })
         if (chapters.length === 0) return '还没有章节：novel_write(what=chapter, title=…[, plan=…]) 建第 1 章。'
+        const open = chapters.filter(row => row.phase === 'stale' || row.phase === 'writing')
         return [
           `章节（${chapters.length} 章，按 seq 排序）：`,
           ...chapters.map(({ chapter, phase }) =>
             `- 第${chapter.n}章 ${chapter.title}（${PHASE_NAMES[phase] ?? phase}）${chapter.recap ?? ''}`),
+          ...(open.length === 0 ? [] : [
+            `待对账：${open.map(row => `第${row.chapter.n}章`).join('、')}——记忆还没读过这些正文，规划或续写之前先逐章对账（novel_extract prepare → subagent → import）。`,
+          ]),
         ].join('\n')
       }
       if (args.what === 'ledger') {
@@ -219,6 +238,9 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
             return `失败：计划里的伏笔要写编号，这几条对不上伏笔卡：${(outcome.unknown ?? []).map(id => `「${id}」`).join('、')}。`
               + '推进/暗示/揭晓的 id 写台账里的编号（如 #12，novel_read 看伏笔台账）；还没有卡的新伏笔写 op=新埋 + question。'
           }
+          if (outcome.error === 'plan-on-draft') {
+            return `失败：第 ${args.chapter ?? '新'} 章是用户原稿，不登记计划——计划是你写之前的提案，用户自己写好的稿子直接对账（novel_extract）。`
+          }
           if (outcome.error === 'body-exists') {
             return `失败：第 ${args.chapter ?? '新'} 章的文件已经有正文（${outcome.existingLength ?? 0} 字），不会覆盖。`
               + '只登记已在工作区的稿子就不要带 content；确实要整章替换，先 novel_read(what=chapter) 读原文，改好后带 replace=true 重写全文。'
@@ -284,8 +306,16 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
         }
         return report.error === 'missing' ? `失败：没有第 ${args.chapter} 章。` : `失败：${report.error ?? 'io'}`
       }
+      if (!report.settled) {
+        return [
+          `未对完，修正引用后重新导入：${report.dropped.length} 条引用对不上第 ${args.chapter} 章正文，这次什么都没写，这章仍是「待对账」。`,
+          '引用必须是正文里一段连续的原文，逐字照抄、50 字以内；不能用省略号拼接两处，不能转述或补字。',
+          '把下面这些条目的 evidence_in_text 改对（交回同一个 subagent 修，不要自己手拼 JSON），再 novel_extract(import)：',
+          ...report.dropped.map(drop => `- ${drop.kind}「${drop.ref}」：${dropReason(drop)}`),
+        ].join('\n')
+      }
       const lines = [
-        `计划命中 ✓×${report.verified} / 计划落空 ×${report.missed}${report.beats.missed === 0 ? '' : ` / 走向没写到 ×${report.beats.missed}（只提醒，不进待审）`} / 新卡 ×${report.newCards.length} / 待你确认 ×${report.pending}${report.dropped.length === 0 ? '' : ` / 丢弃 ×${report.dropped.length}`}`,
+        `计划命中 ✓×${report.verified} / 计划落空 ×${report.missed}${report.beats.missed === 0 ? '' : ` / 走向没写到 ×${report.beats.missed}（只提醒，不进待审）`} / 新卡 ×${report.newCards.length}${report.linked === 0 ? '' : ` / 关联已有设定 ×${report.linked}`} / 待你确认 ×${report.pending}${report.dropped.length === 0 ? '' : ` / 丢弃 ×${report.dropped.length}`}`,
       ]
       if (report.newCards.length > 0) {
         lines.push('画布上的新卡（已进 brief，画布上带 ✦ 新卡标记；不对的让用户改或归档，要补内容用 canvas_write(op=card, cardId=编号) 改这张，不要另起）：', ...report.newCards.map(card => `- [${card.ref ?? card.cardId}] ${ROLE_NAMES[card.role]}「${card.text}」`))
@@ -294,14 +324,7 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
         lines.push('待确认清单：', ...report.pendingItems.map(item => `- [${item.id}] ${item.reason}`))
       }
       if (report.dropped.length > 0) {
-        lines.push('丢弃（防编造闸）：', ...report.dropped.map(drop => {
-          const why = drop.reason === 'evidence-not-found' ? '原文引用在正文里 grep 不到'
-            : drop.reason === 'id-not-in-ledger' ? (drop.kind === 'relation' ? '关系不在关系榜' : '伏笔 id 不在活跃榜单')
-              : drop.reason === 'card-refused' ? '画布拒绝了这张卡'
-                : drop.reason === 'duplicate' ? '画布上已有这张卡'
-                  : drop.reason === 'stage-mismatch' ? '这对关系现在的阶段走不了这一步（没到可升、不在裂痕里、或没经过裂痕就转对手）' : '角色不在花名册'
-          return `- ${drop.kind}「${drop.ref}」：${why}`
-        }))
+        lines.push('丢弃（防编造闸）：', ...report.dropped.map(drop => `- ${drop.kind}「${drop.ref}」：${dropReason(drop)}`))
       }
       return lines.join('\n')
     },
