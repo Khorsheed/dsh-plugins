@@ -1,0 +1,62 @@
+{
+  "name": "@khorsheed/dsh-client-ui-panel-kit",
+  "private": true,
+  "description": "Shared client-side panel kit for community sidebar panels: the --dsh-panel-* type tokens with desktop defaults, a container-query panel root, and the compact controls every panel shares (header with an overflow menu, underline tabs, filter chips, list rows). Consumed at the SOURCE plane — each plugin's tsdown client bundle inlines it — never mounted as a plugin row.",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "panel",
+    "responsive",
+    "client"
+  ],
+  "version": "0.1.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Khorsheed/dsh-plugins.git",
+    "directory": "packages/ui-panel-kit"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "src"
+  ],
+  "license": "MIT",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-client-ui-primitives": "^0.1.0-rc.6 || ^0.2.0-rc.1",
+    "react": "^18.2.0"
+  },
+  "devDependencies": {
+    "@deepseek-ai/dsh-client-ui-primitives": "^0.2.0-rc.1",
+    "@types/node": "^22.0.0",
+    "@types/react": "~18.3.1",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "typescript": "^5.9.0",
+    "vitest": "^3.0.0"
+  },
+  "dsh": {
+    "composition": {
+      "component": "source-plane-library"
+    },
+    "compat": {
+      "minHost": "0.1.5-rc.1",
+      "verifiedHost": "0.2.0-rc.2",
+      "notes": "A source-plane library, not a plugin: it registers no slot, service, locale or row, and owns no client bundle of its own. Consumers declare it as a workspace dependency and import `@khorsheed/dsh-client-ui-panel-kit/src/client/*` directly, so tsdown inlines the kit into each plugin's own `lib/client.js` — zero runtime coupling and nothing to install alongside them. Its official-host surface is one runtime import, ui-primitives' `Menu` (the header's overflow list, present since the 0.1.5-rc.1 line, the same import ui-content-preview carries); icons are inlined artwork. Type sizes are `--dsh-panel-*` custom properties always read with a desktop fallback, so a panel renders identically with or without `@khorsheed/dsh-mobile`, which only raises the values on touch screens. Spec: proposal panel-responsive-spec (2026-10-06)."
+    }
+  }
+}
