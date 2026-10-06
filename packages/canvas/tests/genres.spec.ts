@@ -210,6 +210,26 @@ describe('canvas genres', () => {
     expect(enabledBuiltins(cleared.board)).toEqual(enabledBuiltins(before.board))
   })
 
+  it('loads a genre at birth exactly as selecting it later would', async () => {
+    const { board, events } = bench()
+    board.registerGenre(NOVEL)
+    expect(await board.createCanvas({ title: '灯塔', genreId: 'thesis' }, SESSION)).toEqual({ ok: false, error: 'missing' })
+    const born = await board.createCanvas({ title: '灯塔', genreId: 'novel' }, SESSION)
+    if (!born.ok) throw new Error(born.error)
+    const later = await board.selectGenre({ canvasId: await plainCanvas(board), genreId: 'novel' }, SESSION)
+    if (!later.ok) throw new Error(later.error)
+    const shape = (row: typeof born.board) => ({
+      genre: { id: row.genre?.id, version: row.genre?.version, hid: row.genre?.hid },
+      categories: row.categories.map(category => [category.label, category.enabled, category.role]),
+    })
+    expect(shape(born.board)).toEqual(shape(later.board))
+    expect(events).toContainEqual(['canvas/genre-changed', born.board.id, 'novel'])
+    // Clearing restores every built-in the birth hid.
+    const cleared = await board.selectGenre({ canvasId: born.board.id, genreId: null }, SESSION)
+    if (!cleared.ok) throw new Error(cleared.error)
+    expect(cleared.board.categories.filter(category => category.role === undefined).every(category => category.enabled)).toBe(true)
+  })
+
   it('reads a hand-broken genre field as no genre', () => {
     const now = '2026-10-04T00:00:00.000Z'
     const base = { id: 'canvas_x', title: 't' }
