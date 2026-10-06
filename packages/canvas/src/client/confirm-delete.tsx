@@ -24,12 +24,16 @@ export type DeleteAsk =
  * @param props.ask - the pending delete, or null.
  * @param props.onCancel - keep it.
  * @param props.onConfirm - delete it (the caller closes the dialog).
+ * @param props.note - what the genre adds under the words (a card's chapters, say).
+ * @param props.onArchive - offered beside 删除 when archiving is the gentler way out.
  */
-export function ConfirmDelete({ t, ask, onCancel, onConfirm }: {
+export function ConfirmDelete({ t, ask, onCancel, onConfirm, note, onArchive }: {
   readonly t: TranslateNS<'canvas'>
   readonly ask: DeleteAsk | null
   readonly onCancel: () => void
   readonly onConfirm: (ask: DeleteAsk) => void
+  readonly note?: ReactNode
+  readonly onArchive?: (() => void) | undefined
 }): ReactNode {
   return (
     <Modal
@@ -47,6 +51,7 @@ export function ConfirmDelete({ t, ask, onCancel, onConfirm }: {
       footer={(
         <>
           <Button size="sm" onClick={onCancel}>{t('confirm.cancel')}</Button>
+          {onArchive !== undefined && <Button size="sm" onClick={onArchive}>{t('confirm.archiveInstead')}</Button>}
           <Button
             size="sm"
             variant="primary"
@@ -57,6 +62,8 @@ export function ConfirmDelete({ t, ask, onCancel, onConfirm }: {
           </Button>
         </>
       )}
-    />
+    >
+      {note === null || note === undefined ? null : <div className={css.note}>{note}</div>}
+    </Modal>
   )
 }

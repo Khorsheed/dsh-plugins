@@ -190,6 +190,12 @@
   opacity: 1;
 }
 
+@media (hover: none) {
+  .laneDel {
+    opacity: 1;
+  }
+}
+
 .laneDel:hover {
   border-color: color-mix(in srgb, var(--dsw-alias-state-error-primary) 45%, transparent);
   color: var(--dsw-alias-state-error-primary);
@@ -302,6 +308,7 @@
   left: -6px;
 }
 
+/* panel-check: allow-hover — touch links through the toolbar's 连线 mode (tap one card, then another), never a port drag. */
 .node:hover .port,
 .port:active {
   opacity: 1;
@@ -333,6 +340,12 @@
   display: inline-flex;
 }
 
+@media (hover: none) {
+  .nodeOpen {
+    display: inline-flex;
+  }
+}
+
 .nodeOpen:hover {
   background: var(--dsw-alias-interactive-bg-active);
   color: var(--dsw-alias-label-primary);
@@ -361,6 +374,7 @@
   border: 1px solid var(--dsw-alias-border-l1);
   border-radius: 8px;
   background: var(--dsw-alias-bg-layer-1);
+  /* panel-check: allow-color — shadow ink is black in both themes. */
   box-shadow: 0 1px 3px color-mix(in srgb, #000 8%, transparent);
 }
 
@@ -411,6 +425,7 @@
   border: 1px solid var(--dsw-alias-border-l1);
   border-radius: 10px;
   background: var(--dsw-alias-bg-layer-1);
+  /* panel-check: allow-color — shadow ink is black in both themes. */
   box-shadow: 0 4px 14px color-mix(in srgb, #000 12%, transparent);
   overflow-x: auto;
 }

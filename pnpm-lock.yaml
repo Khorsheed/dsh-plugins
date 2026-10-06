@@ -346,6 +346,9 @@ importers:
       '@deepseek-ai/dsh-util-workspace-path':
         specifier: 0.2.0-rc.2
         version: 0.2.0-rc.2(@deepseek-ai/cordis@4.0.4)
+      '@khorsheed/dsh-client-ui-panel-kit':
+        specifier: workspace:*
+        version: link:../ui-panel-kit
       '@types/node':
         specifier: ^22.0.0
         version: 22.20.4
@@ -419,6 +422,9 @@ importers:
       '@deepseek-ai/dsh-typert-protocol':
         specifier: 0.2.0-rc.2
         version: 0.2.0-rc.2(@deepseek-ai/cordis@4.0.4)
+      '@khorsheed/dsh-client-ui-panel-kit':
+        specifier: workspace:*
+        version: link:../ui-panel-kit
       '@types/node':
         specifier: ^22.0.0
         version: 22.20.4

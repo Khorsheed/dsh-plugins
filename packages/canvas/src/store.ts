@@ -1057,6 +1057,8 @@ export class CanvasBoardService {
       roles: genre.categories.map(seed => ({ role: seed.role, label: seed.label })),
       ...(genre.agentRow === undefined ? {} : { agentRow: genre.agentRow }),
       ...(genre.ownsManuscripts === true ? { ownsManuscripts: true } : {}),
+      // Faces ride the 成稿 ownership: a genre's own face sits beside its text.
+      ...(genre.ownsManuscripts === true && genre.faces !== undefined ? { faces: { view: genre.faces.view } } : {}),
     }))
   }
 

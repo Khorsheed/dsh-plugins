@@ -32,6 +32,7 @@
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type UIEvent } from 'react'
 import { Button, Modal, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
+import { PanelRoot, UnderlineTabs } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
 import {
   IconArchiveOutlineMedium, IconCheckOutlineMedium, IconFolderOpenOutlineMedium, IconTrashOutlineMedium,
 } from '../icons.tsx'
@@ -54,7 +55,11 @@ import { cardTabId, draftTabId } from '../space/selection.ts'
 import { CanvasDetailView } from '../detail/CanvasDetailView.tsx'
 import { DetailCrumbs } from '../detail/DetailCrumbs.tsx'
 import detailCss from '../detail/CanvasDetailView.module.css'
-import { boardManuscriptsOf, boardStripsOf, genrePageOf, GenreSeatsContext, manuscriptsOwned, type GenreSeats } from '../genre-seats.tsx'
+import {
+  boardGraphOf, boardManuscriptsOf, boardScopesOf, boardStripsOf, boardTabLabelOf, boardViewOf, cardDeleteNoteOf,
+  genrePageOf, GenreSeatsContext, manuscriptsOwned, type GenreSeats,
+} from '../genre-seats.tsx'
+import type { CanvasCardScope } from '../slots.ts'
 import { ManuscriptList, ManuscriptView } from '../manuscript/ManuscriptView.tsx'
 import { TypeView } from '../type/TypeView.tsx'
 import { CategoriesView } from '../type/CategoriesView.tsx'
@@ -89,8 +94,12 @@ function dirtyOf(draft: DraftContent | undefined): boolean {
   return draft !== undefined && (withoutDrawLines(draft.text).length > 0 || strokesOf(draft) > 0)
 }
 
-/** The faces of one board: 卡板, 连线, and 成稿. */
-type BoardFace = 'board' | 'link' | 'manuscripts'
+/**
+ * The faces of one board: 卡板, 连线, and 成稿 — plus, on a genre canvas with
+ * faces (`CanvasGenreDefinition.faces`), the genre's own view; there 连线 is
+ * the 卡板 face's second layout rather than a face of its own.
+ */
+type BoardFace = 'board' | 'link' | 'manuscripts' | 'view'
 
 /** One canvas's board view, as it was when the user last left it. */
 interface BoardViewMemory {
@@ -102,11 +111,18 @@ interface BoardViewMemory {
   /** The wire picked on the 连线 face. */
   readonly wire: BoardLink | null
   readonly zoom: number
+  /** The user picked a face this visit; until then a genre canvas opens where its work is. */
+  readonly faceChosen: boolean
+  /** The genre's manuscripts face reported nothing written yet (so it opens on 卡板). */
+  readonly empty: boolean
+  /** The genre scope chip pressed on 卡板 (已进入故事, say), if any. */
+  readonly scope: string | null
 }
 
 /** A canvas nobody has looked at yet: every card, the edit face, nothing picked. */
 const FRESH_VIEW: BoardViewMemory = {
   filter: 'all', picked: new Set(), face: 'board', showArchived: false, wire: null, zoom: 1,
+  faceChosen: false, empty: false, scope: null,
 }
 
 /** Leaving a draft that holds words: × closes the canvas row, ‹ goes back to its board. */
@@ -152,15 +168,42 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
   const [discardAsk, setDiscardAsk] = useState<DiscardAsk | null>(null)
   /** The delete question: the canvas or card waiting on an answer. */
   const [deleteAsk, setDeleteAsk] = useState<DeleteAsk | null>(null)
+  /** The genre's card scopes for the open canvas, as its `canvas.board.scopes` entry last reported them. */
+  const [scopes, setScopes] = useState<{ canvasId: string; rows: readonly CanvasCardScope[] } | null>(null)
 
   const toastSeqRef = useRef(0)
   const openIdRef = useRef(openId)
   openIdRef.current = openId
 
+  /* ----------------------------------------------------------------- genres */
+
+  /**
+   * The installed genres, read once: a genre registers when its plugin boots,
+   * which a reload picks up. Empty (none installed, or the host half too old to
+   * answer) hides the menu entry, so a deployment without a genre sees the ⋯
+   * menu it always had.
+   */
+  const [genres, setGenres] = useState<readonly CanvasGenreSummary[]>([])
+  useEffect(() => {
+    let live = true
+    void listGenres().then(result => {
+      if (live && result.ok) setGenres(result.value)
+    }, () => {})
+    return () => { live = false }
+  }, [listGenres])
+
   /* ----------------------------------------------------- per-canvas views */
 
   const view_ = (openId === null ? undefined : views[openId]) ?? FRESH_VIEW
-  const { filter, picked: selection_, face: view, showArchived: showArchivedCards, wire, zoom } = view_
+  const { filter, picked: selection_, face: storedFace, showArchived: showArchivedCards, wire, zoom, scope } = view_
+  /** The open canvas's genre faces, when its genre has them (they need the board and the genre list). */
+  const openGenre = openBoard !== null && openBoard.board.id === openId ? openBoard.board.genre : undefined
+  const openFaces = openGenre === undefined ? undefined : genres.find(genre => genre.id === openGenre.id)?.faces
+  // A genre canvas opens where its work is — 成稿 once something is written,
+  // 卡板 before — until the user picks; a plain canvas has no genre face.
+  const view: BoardFace = openFaces === undefined
+    ? (storedFace === 'view' ? 'board' : storedFace)
+    : view_.faceChosen ? storedFace : view_.empty ? 'board' : 'manuscripts'
   /** Change the open canvas's view memory, keeping what the patch leaves alone. */
   const patchView = useCallback((patch: (was: BoardViewMemory) => Partial<BoardViewMemory>) => {
     const id = openIdRef.current
@@ -176,7 +219,9 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
   ) => {
     patchView(was => ({ picked: typeof next === 'function' ? next(was.picked) : next }))
   }, [patchView])
-  const setView = useCallback((face: BoardFace) => { patchView(() => ({ face })) }, [patchView])
+  const setView = useCallback((face: BoardFace) => { patchView(() => ({ face, faceChosen: true })) }, [patchView])
+  const setScope = useCallback((next: string | null) => { patchView(() => ({ scope: next })) }, [patchView])
+  const markEmpty = useCallback(() => { patchView(was => (was.empty ? {} : { empty: true })) }, [patchView])
   const toggleShowArchived = useCallback(() => { patchView(was => ({ showArchived: !was.showArchived })) }, [patchView])
   const setWire = useCallback((next: BoardLink | null) => { patchView(() => ({ wire: next })) }, [patchView])
   const setZoom = useCallback((next: number) => { patchView(() => ({ zoom: next })) }, [patchView])
@@ -229,6 +274,20 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
       return null
     }
   }, [])
+
+  /** The scopes reporter's callback: kept stable, and quiet when nothing moved (it reports on every read). */
+  const reportScopes = useCallback((rows: readonly CanvasCardScope[]) => {
+    const canvasId = openIdRef.current
+    if (canvasId === null) return
+    setScopes(was => was !== null && was.canvasId === canvasId && JSON.stringify(was.rows) === JSON.stringify(rows)
+      ? was
+      : { canvasId, rows })
+  }, [])
+  const openScopes = scopes !== null && scopes.canvasId === openId ? scopes.rows : []
+  const scopeIds = useMemo(() => {
+    const row = scope === null ? undefined : openScopes.find(candidate => candidate.id === scope)
+    return row === undefined ? undefined : new Set(row.cardIds)
+  }, [scope, openScopes])
 
   /* ------------------------------------------------------------- the strip */
 
@@ -741,23 +800,6 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
     if (card?.unseen === true && writable) seeCards(openId, [cardId])
   }, [openId, openCardDetail, readonly, seeCards])
 
-  /* ----------------------------------------------------------------- genres */
-
-  /**
-   * The installed genres, read once: a genre registers when its plugin boots,
-   * which a reload picks up. Empty (none installed, or the host half too old to
-   * answer) hides the menu entry, so a deployment without a genre sees the ⋯
-   * menu it always had.
-   */
-  const [genres, setGenres] = useState<readonly CanvasGenreSummary[]>([])
-  useEffect(() => {
-    let live = true
-    void listGenres().then(result => {
-      if (live && result.ok) setGenres(result.value)
-    }, () => {})
-    return () => { live = false }
-  }, [listGenres])
-
   const pickGenre = useCallback(async (board: CanvasBoard, genreId: string | null) => {
     if (sessionId === undefined || (board.genre?.id ?? null) === genreId) return
     const result = await selectGenre(sessionId, { canvasId: board.id, genreId })
@@ -783,13 +825,14 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
       openPage: (page, heading, param) => { openPage(canvasId, page, heading, param) },
       backToBoard: () => { backToBoard(canvasId) },
       openManuscripts: () => {
-        setViews(all => ({ ...all, [canvasId]: { ...(all[canvasId] ?? FRESH_VIEW), face: 'manuscripts' } }))
+        setViews(all => ({ ...all, [canvasId]: { ...(all[canvasId] ?? FRESH_VIEW), face: 'manuscripts', faceChosen: true } }))
         backToBoard(canvasId)
       },
       refresh: refreshBoards,
     }),
     sessionId,
     ownsManuscripts: genreId => genres.some(genre => genre.id === genreId && genre.ownsManuscripts === true),
+    facesOf: genreId => genres.find(genre => genre.id === genreId)?.faces,
   }), [renderSlot, selectionRev, openCardDetail, openManuscript, openPage, backToBoard, refreshBoards, sessionId, genres])
 
   const openTitle = activeRow === undefined
@@ -817,8 +860,35 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
     return ids
   }, [openBoard])
 
+  /** The card a delete question is about, while the board it lives on is the open one. */
+  const askedCard = deleteAsk?.kind === 'card' && openBoard?.board.id === deleteAsk.canvasId
+    ? openBoard.board.cards.find(card => card.id === deleteAsk.cardId)
+    : undefined
+
+  /** The face tabs: the canvas's three, or a genre's 成稿 · 卡板 · view with the genre labelling them. */
+  const faceTabsOf = (board: CanvasBoard): { id: BoardFace; label: ReactNode }[] => {
+    if (openFaces !== undefined) {
+      const genreLabel = genres.find(genre => genre.id === board.genre?.id)?.label ?? ''
+      return [
+        { id: 'manuscripts', label: boardTabLabelOf(seats, board, 'manuscripts', t('view.manuscripts')) },
+        { id: 'board', label: boardTabLabelOf(seats, board, 'board', t('view.board')) },
+        { id: 'view', label: boardTabLabelOf(seats, board, openFaces.view, genreLabel) },
+      ]
+    }
+    const written = !manuscriptsOwned(seats, board) && board.manuscripts.length > 0
+    return [
+      { id: 'board', label: t('view.board') },
+      { id: 'link', label: t('view.link') },
+      {
+        id: 'manuscripts',
+        label: <>{t('view.manuscripts')}{written && <span className={css.viewCount}>{board.manuscripts.length}</span>}</>,
+      },
+    ]
+  }
+
   return (
     <GenreSeatsContext.Provider value={seats}>
+    <PanelRoot className={css.panel}>
     <div className={css.root} ref={rootRef} onScrollCapture={onScrollCapture} data-mobile-gesture-owner>
       <TabStrip
         t={t}
@@ -956,7 +1026,7 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
             heading: activeRow.at.heading,
             siblings: openBoard === null || openBoard.board.id !== activeRow.canvasId
               ? []
-              : shownCardsOf(openBoard.board, filter, front).map(card => card.id),
+              : shownCardsOf(openBoard.board, filter, front, scopeIds).map(card => card.id),
             onBack: () => { leaveRow(activeRow.id, 'back') },
             onStep: openCard,
           }}
@@ -989,39 +1059,29 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
             ))}
             <span className={css.spacer} />
             {/* The board's faces (stage ⑥): 卡板 is where a card gets edited,
-                连线 is where cards get grouped, 成稿 is what they were for. Both are the same board, so the
-                switch sits beside it and not inside either view. */}
+                连线 is where cards get grouped, 成稿 is what they were for. A
+                genre with faces reads 成稿 · 卡板 · its own view instead, with
+                连线 as 卡板's second layout. Underline tabs at every width: the
+                segmented control read as desktop chrome on a phone. */}
             {openBoard !== null && loadError === null && (
-              <span className={css.viewSwitch}>
-                <button
-                  type="button"
-                  className={css.viewButton}
-                  data-on={view === 'board' || undefined}
-                  aria-pressed={view === 'board'}
-                  onClick={() => { setView('board') }}
-                >
-                  {t('view.board')}
+              <UnderlineTabs<BoardFace>
+                className={css.faceTabs}
+                label={t('view.faces')}
+                tabs={faceTabsOf(openBoard.board)}
+                value={openFaces !== undefined && view === 'link' ? 'board' : view}
+                onChange={face => {
+                  if (face === 'board' && (view === 'board' || view === 'link')) return
+                  setView(face)
+                }}
+              />
+            )}
+            {openFaces !== undefined && (view === 'board' || view === 'link') && (
+              <span className={css.layoutToggle} role="group" aria-label={t('view.layout')}>
+                <button type="button" aria-pressed={view === 'board'} onClick={() => { setView('board') }}>
+                  {t('view.layoutGrid')}
                 </button>
-                <button
-                  type="button"
-                  className={css.viewButton}
-                  data-on={view === 'link' || undefined}
-                  aria-pressed={view === 'link'}
-                  onClick={() => { setView('link') }}
-                >
-                  {t('view.link')}
-                </button>
-                <button
-                  type="button"
-                  className={css.viewButton}
-                  data-on={view === 'manuscripts' || undefined}
-                  aria-pressed={view === 'manuscripts'}
-                  onClick={() => { setView('manuscripts') }}
-                >
-                  {t('view.manuscripts')}
-                  {!manuscriptsOwned(seats, openBoard.board) && openBoard.board.manuscripts.length > 0 && (
-                    <span className={css.viewCount}>{openBoard.board.manuscripts.length}</span>
-                  )}
+                <button type="button" aria-pressed={view === 'link'} onClick={() => { setView('link') }}>
+                  {t('view.layoutLink')}
                 </button>
               </span>
             )}
@@ -1083,17 +1143,20 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
           )}
 
           {openBoard !== null && loadError === null && boardStripsOf(seats, openBoard.board)}
+          {openBoard !== null && loadError === null && boardScopesOf(seats, openBoard.board, reportScopes)}
 
           {openBoard !== null && loadError === null ? (
-            view === 'manuscripts' ? (
+            view === 'view' ? (
+              boardViewOf(seats, openBoard.board, <div className={css.notice}>{t('genre.pageMissing')}</div>)
+            ) : view === 'manuscripts' ? (
               boardManuscriptsOf(seats, openBoard.board, (
                 <ManuscriptList
                   t={t}
                   board={openBoard.board}
                   onOpen={manuscript => { openManuscript(openBoard.board.id, manuscript.id, manuscript.title) }}
                 />
-              ))
-            ) : view === 'link' ? (
+              ), markEmpty)
+            ) : view === 'link' ? boardGraphOf(seats, openBoard.board, (
               <LinkView
                 t={t}
                 readonly={boardReadonly}
@@ -1127,7 +1190,7 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
                 onLayout={layout}
                 onToast={showToast}
               />
-            ) : (
+            )) : (
               <BoardView
                 t={t}
                 readonly={boardReadonly}
@@ -1154,6 +1217,10 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
                 onToggleArchived={toggleShowArchived}
                 newCard={boardReadonly ? undefined : newCardSlot}
                 front={front}
+                scopes={openScopes}
+                scope={scopeIds === undefined ? null : scope}
+                scopeIds={scopeIds}
+                onScope={setScope}
                 onMarkAllSeen={boardReadonly ? undefined : () => { seeCards(openBoard.board.id) }}
               />
             )
@@ -1192,6 +1259,11 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
         ask={deleteAsk}
         onCancel={() => { setDeleteAsk(null) }}
         onConfirm={confirmDelete}
+        note={askedCard === undefined || openBoard === null ? null : cardDeleteNoteOf(seats, openBoard.board, askedCard)}
+        onArchive={askedCard === undefined || askedCard.status === 'archived'
+          || !openScopes.some(row => row.archiveFirst === true && row.cardIds.includes(askedCard.id))
+          ? undefined
+          : () => { setDeleteAsk(null); actions.setCardStatus(askedCard.id, 'archived') }}
       />
       <Modal
         open={discardAsk !== null}
@@ -1218,6 +1290,7 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
         }
       />
     </div>
+    </PanelRoot>
     </GenreSeatsContext.Provider>
   )
 }

@@ -12,7 +12,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { useSyncExternalStore } from 'react'
+import { useEffect, useSyncExternalStore } from 'react'
 import type { CanvasTabProps } from '../src/client/contract.ts'
 import { CanvasImageSrcs } from '../src/client/images.ts'
 import { CanvasSelectionStore } from '../src/client/space/selection.ts'
@@ -905,7 +905,7 @@ describe('CanvasTab — genre seats (创作体裁)', () => {
       listGenres={vi.fn(async () => ({ ok: true, value: [{ ...NOVEL_SUMMARY, ownsManuscripts: true }] })) as never}
     />)
     await screen.findByText('卡片 c_1')
-    fireEvent.click(screen.getByRole('button', { name: zh['view.manuscripts'] }))
+    fireEvent.click(screen.getByRole('tab', { name: zh['view.manuscripts'] }))
     await screen.findByText('seat canvas.board.manuscripts novel')
     expect(screen.queryByText(zh['ms.empty'])).toBeNull()
     cleanup()
@@ -917,7 +917,7 @@ describe('CanvasTab — genre seats (创作体裁)', () => {
       listGenres={vi.fn(async () => ({ ok: true, value: [NOVEL_SUMMARY] })) as never}
     />)
     await screen.findByText('卡片 c_1')
-    fireEvent.click(screen.getByRole('button', { name: zh['view.manuscripts'] }))
+    fireEvent.click(screen.getByRole('tab', { name: zh['view.manuscripts'] }))
     await screen.findByText(zh['ms.empty'])
     expect(screen.queryByText('seat canvas.board.manuscripts novel')).toBeNull()
   })
@@ -931,6 +931,101 @@ describe('CanvasTab — genre seats (创作体裁)', () => {
     await screen.findByText('seat canvas.page novel:ledger')
     act(() => { store.openPageTab(CANVAS_ID, 'thesis:outline', '大纲') })
     await screen.findByText(zh['genre.pageMissing'])
+  })
+})
+
+describe('CanvasTab — a genre with faces (章节 · 设定 · 故事)', () => {
+  const FACES_SUMMARY = {
+    id: 'novel', label: '长篇小说', version: 'novel@1', description: '', roles: [], agentRow: '@khorsheed/dsh-canvas-novel/agent',
+    ownsManuscripts: true, faces: { view: 'story' },
+  }
+
+  /** Reports through an owner callback once mounted, the way a genre entry would. */
+  function Report({ run }: { readonly run: () => void }) {
+    useEffect(() => { run() }, [run])
+    return null
+  }
+
+  /** A genre that labels its faces, reports an empty book, and scopes c_1 as in use. */
+  function facesSlot(written: boolean) {
+    return vi.fn((key: string, owner: Record<string, unknown>, options?: { entryKey?: string; fallback?: unknown }) => {
+      if (key === 'canvas.board.tab') return `tab:${String(owner.face)}`
+      if (key === 'canvas.board.manuscripts') {
+        return written
+          ? <div>seat manuscripts</div>
+          : <Report run={owner.onEmpty as () => void} />
+      }
+      if (key === 'canvas.board.scopes') {
+        const onScopes = owner.onScopes as (rows: unknown[]) => void
+        return <Report run={() => { onScopes([{ id: 'story', label: '已进入故事', cardIds: ['c_1'], archiveFirst: true }]) }} />
+      }
+      if (key === 'canvas.card.deleteNote') return <div>{`note for ${(owner.card as { id: string }).id}`}</div>
+      if (key.startsWith('canvas.board.') || key === 'canvas.card.section') return <div>{`seat ${key} ${options?.entryKey ?? ''}`}</div>
+      return options?.fallback ?? null
+    })
+  }
+
+  function renderFaces(written: boolean) {
+    const novel = board(CANVAS_ID, [card('c_1'), card('c_2')], { genre: { id: 'novel', version: 'novel@1', selectedAt: NOW } })
+    const harness = makeHarness({ boards: [novel] })
+    render(<CanvasTab
+      {...harness.props}
+      renderSlot={facesSlot(written) as unknown as CanvasTabProps['renderSlot']}
+      listGenres={vi.fn(async () => ({ ok: true, value: [FACES_SUMMARY] })) as never}
+    />)
+    return harness
+  }
+
+  it('opens on 成稿 once something is written, and the genre labels all three faces', async () => {
+    renderFaces(true)
+    await screen.findByText('seat manuscripts')
+    expect(screen.getByRole('tab', { name: 'tab:manuscripts' }).getAttribute('aria-selected')).toBe('true')
+    expect(screen.getByRole('tab', { name: 'tab:board' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('tab', { name: 'tab:story' }))
+    await screen.findByText('seat canvas.board.view novel:story')
+    // 连线 is no longer a face of its own here.
+    expect(screen.queryByRole('tab', { name: '连线' })).toBeNull()
+  })
+
+  it('falls back to 卡板 while nothing is written, with 连线 as its second layout drawn by the genre', async () => {
+    renderFaces(false)
+    await screen.findByText('卡片 c_1')
+    expect(screen.getByRole('tab', { name: 'tab:board' }).getAttribute('aria-selected')).toBe('true')
+    fireEvent.click(screen.getByRole('button', { name: '连线' }))
+    await screen.findByText('seat canvas.board.graph novel')
+    // The 卡板 tab stays the selected face under either layout.
+    expect(screen.getByRole('tab', { name: 'tab:board' }).getAttribute('aria-selected')).toBe('true')
+  })
+
+  it('narrows the board to a scope chip, and lets it go on a second press', async () => {
+    renderFaces(false)
+    const chip = await screen.findByRole('button', { name: '已进入故事1' })
+    fireEvent.click(chip)
+    await waitFor(() => { expect(screen.queryByText('卡片 c_2')).toBeNull() })
+    expect(screen.getByText('卡片 c_1')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '已进入故事1' }))
+    await screen.findByText('卡片 c_2')
+  })
+
+  it('offers 归档 when deleting a card in use, with the genre\'s note, and none for an unused one', async () => {
+    const { mocks } = renderFaces(false)
+    await screen.findByRole('button', { name: '已进入故事1' })
+    fireEvent.click(screen.getAllByRole('button', { name: '更多' })[0]!)
+    fireEvent.click(await screen.findByRole('menuitem', { name: '删除' }))
+    let dialog = await screen.findByRole('dialog')
+    expect(dialog.textContent).toContain('note for c_1')
+    fireEvent.click(within(dialog).getByRole('button', { name: '归档' }))
+    await waitFor(() => {
+      expect(mocks.patchCard).toHaveBeenCalledWith('s1', { canvasId: CANVAS_ID, cardId: 'c_1', status: 'archived' })
+    })
+    expect(mocks.deleteCard).not.toHaveBeenCalled()
+
+    await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull() })
+    fireEvent.click(screen.getAllByRole('button', { name: '更多' })[0]!)
+    fireEvent.click(await screen.findByRole('menuitem', { name: '删除' }))
+    dialog = await screen.findByRole('dialog')
+    expect(dialog.textContent).toContain('note for c_2')
+    expect(within(dialog).queryByRole('button', { name: '归档' })).toBeNull()
   })
 })
 

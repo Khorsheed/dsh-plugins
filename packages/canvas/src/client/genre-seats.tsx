@@ -13,9 +13,9 @@
  */
 import { createContext, useContext, type ReactNode } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { BoardCard, CanvasBoard } from '../types.ts'
+import type { BoardCard, CanvasBoard, CanvasGenreFaces } from '../types.ts'
 import type { CanvasTabProps } from './contract.ts'
-import { genreKey, type CanvasGenreOwnerProps, type CanvasNavigate } from './slots.ts'
+import { genreKey, type CanvasCardScope, type CanvasGenreOwnerProps, type CanvasNavigate } from './slots.ts'
 
 /** What the canvas tab hands down. */
 export interface GenreSeats {
@@ -28,6 +28,8 @@ export interface GenreSeats {
   readonly sessionId: SessionId | undefined
   /** Whether a genre's own surfaces are the 成稿 (`CanvasGenreDefinition.ownsManuscripts`). */
   readonly ownsManuscripts: (genreId: string) => boolean
+  /** A genre's own top faces (`CanvasGenreDefinition.faces`), when it names them. */
+  readonly facesOf: (genreId: string) => CanvasGenreFaces | undefined
 }
 
 export const GenreSeatsContext = createContext<GenreSeats | null>(null)
@@ -88,9 +90,58 @@ export function manuscriptsOwned(seats: GenreSeats | null, board: CanvasBoard): 
 }
 
 /** The 成稿 face: the owning genre's entry, else `list` (the canvas's own manuscript list). */
-export function boardManuscriptsOf(seats: GenreSeats | null, board: CanvasBoard, list: ReactNode): ReactNode {
+export function boardManuscriptsOf(
+  seats: GenreSeats | null, board: CanvasBoard, list: ReactNode, onEmpty?: () => void,
+): ReactNode {
   if (!manuscriptsOwned(seats, board)) return list
-  return seats!.renderSlot('canvas.board.manuscripts', ownerOf(seats!, board), { entryKey: board.genre!.id, fallback: list })
+  return seats!.renderSlot('canvas.board.manuscripts', { ...ownerOf(seats!, board), onEmpty }, { entryKey: board.genre!.id, fallback: list })
+}
+
+/**
+ * The genre's own top faces on this canvas, or undefined: no genre, a genre
+ * without them, or one that does not own the 成稿 (faces ride that ownership).
+ */
+export function genreFacesOf(seats: GenreSeats | null, board: CanvasBoard): CanvasGenreFaces | undefined {
+  if (!manuscriptsOwned(seats, board)) return undefined
+  return seats!.facesOf(board.genre!.id)
+}
+
+/** A top-face label on a genre canvas with faces: the genre's entry, else `label`. */
+export function boardTabLabelOf(seats: GenreSeats | null, board: CanvasBoard, face: string, label: string): ReactNode {
+  if (genreFacesOf(seats, board) === undefined) return label
+  return seats!.renderSlot('canvas.board.tab', { ...ownerOf(seats!, board), face, label }, {
+    entryKey: genreKey(board.genre!.id, face),
+    fallback: label,
+  })
+}
+
+/** The genre's own face; `missing` stands in when no entry serves it. */
+export function boardViewOf(seats: GenreSeats | null, board: CanvasBoard, missing: ReactNode): ReactNode {
+  const faces = genreFacesOf(seats, board)
+  if (faces === undefined) return missing
+  return seats!.renderSlot('canvas.board.view', ownerOf(seats!, board), { entryKey: genreKey(board.genre!.id, faces.view), fallback: missing })
+}
+
+/** The genre's card-scope reader for the 卡板 face (nothing without a genre). */
+export function boardScopesOf(
+  seats: GenreSeats | null, board: CanvasBoard, onScopes: (scopes: readonly CanvasCardScope[]) => void,
+): ReactNode {
+  if (seats === null || board.genre === undefined) return null
+  return seats.renderSlot('canvas.board.scopes', { ...ownerOf(seats, board), onScopes }, { entryKey: board.genre.id, fallback: null })
+}
+
+/** The 连线 layout: the genre's graph on a canvas with faces, else `links` (the canvas's own). */
+export function boardGraphOf(seats: GenreSeats | null, board: CanvasBoard, links: ReactNode): ReactNode {
+  if (genreFacesOf(seats, board) === undefined) return links
+  return seats!.renderSlot('canvas.board.graph', ownerOf(seats!, board), { entryKey: board.genre!.id, fallback: links })
+}
+
+/** What the genre adds to one card's delete question (nothing without a genre). */
+export function cardDeleteNoteOf(seats: GenreSeats | null, board: CanvasBoard, card: BoardCard): ReactNode {
+  if (seats === null || board.genre === undefined) return null
+  const category = board.categories.find(row => row.id === card.kind)
+  if (category === undefined) return null
+  return seats.renderSlot('canvas.card.deleteNote', { ...ownerOf(seats, board), card, category }, { entryKey: board.genre.id, fallback: null })
 }
 
 /** A genre page; `missing` stands in when no entry serves the key (the genre was unloaded, say). */

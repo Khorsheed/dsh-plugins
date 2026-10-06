@@ -4,3 +4,10 @@
   --dsw-alias-button-primary-fill: var(--dsw-alias-state-error-primary);
   --dsw-alias-button-primary-hover: var(--dsw-alias-state-error-primary);
 }
+
+/* The genre's word on what the card is used for (its chapters, or none). */
+.note {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--dsw-alias-label-secondary);
+}
