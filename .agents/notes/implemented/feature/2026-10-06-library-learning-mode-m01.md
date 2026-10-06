@@ -1,0 +1,47 @@
+# Agent Note: the library + learning-mode family (M1) — storage, tools and the visibility criterion
+
+Status: implemented
+
+## Problem
+
+The proposal [`2026-10-06-library-learning-mode`](../../../proposals/active/2026-10-06-library-learning-mode.md) wants a study loop no existing package has: books organized into learning projects, a Duolingo-style roadmap per book, a vocab book whose cards the model maintains, and quizzes whose grading moves both. The repo needed to know: where does the state live, how do three model verbs cover a dozen conceivable ones, how does a photo of handwritten notes become a card with provenance, and which visibility criterion the library tab answers to.
+
+## Decision
+
+Two packages shipped, both installable alone.
+
+**`@khorsheed/dsh-library`** (packages/library) carries everything:
+
+- **Storage** (`src/store.ts`) is the mission store's discipline transplanted: `$DSH_HOME/state/dsh-library/` holds a version-guarded `state.json` index plus one directory per project (`project.json`, `books/<id>/{book.json, chapters/<n>.html}`, `roadmap.json`, append-only `vocab.jsonl` / `attempts.jsonl`, `quizzes/<id>.json`). Mutations funnel through a per-project hand-rolled lock (exclusive-create `.lock` with `{pid, at}`, stale reclaim) → read → temp-write → atomic rename; the ledgers are append-only, with ONE sanctioned exception: `rewriteVocab` swaps the vocab ledger whole (temp+rename under the same lock), because a mastery update rewrites an existing line. Plain `node:fs`, never `ctx.fs` (the reader lesson: the session sandbox refuses `$DSH_HOME/state`).
+- **The service** (`src/service.ts`) owns every rule: the roadmap state machine (only `locked → current → done`, checked against the stored roadmap unless `regenerate: true`; `current`/`done` requires all deps `done`; ranges must name the book's real chapters), the vocab merge (same term + chapterRef merges, mastery never resets on re-sighting), the **evidence gate** (a quiz question without a `ch:<n>` chapterRef naming a real chapter, or without a verbatim evidence passage, is refused with a teaching error; a passage the chapter does not literally contain is stored but returned in `warnings`), and the **assess cascade** (`putAttempt`: verdicts append to the ledger → probed cards move one Leitner box up on pass / reset to box 0 due tomorrow on fail (intervals 1/2/4/7/15 days) → the gated node's quizStats update → at `passRatio` (default 0.8) the node completes and its dependents unlock; the result names `unlocked` and `completed`).
+- **The model face is the `./tool` composition entry** (`src/tool.ts`), the evaluation-family fold pattern: `inject: ['library']` pends the row until the core provides (the 2026-09-27 boot-order lesson), tools/skills/systemPrompt join through deferred `ctx.inject`, `config.tools: all|none` gates the whole model face. Three tools — `library_read` (what ∈ projects/books/toc/chapter/roadmap/vocab/due/quiz/stats), `library_write` (project/book/roadmap/notes/quiz), `library_assess` — each tagged `setToolOrigin`-style via an INLINED `Symbol.for('dsh.tool.origin')` assignment, because importing the helper from capability-catalog would be an unsanctioned cross-package edge (the eval package does the same). The `library` skill ships as `skills/library/SKILL.md` in the package and loads from disk (the datasets pattern: frontmatter parsed at apply, `files` covers `skills/**/*.md`), carrying every what's payload shape and the ch:<n> convention.
+- **Photo provenance** stores a REFERENCE, never bytes: a photo-sourced card carries the host attachment's durable reference fields (`attachmentId` + mediaType/bytes/width/height), because `attachments.readImage` verifies against the whole reference — an `attachmentId` alone cannot read anything back. `readAttachmentBase64` is whitelisted to attachment ids a vocab entry of the naming project records, and degrades to error codes: `unavailable` (no attachments service), `not-found`, `ref-incomplete`.
+- **Ingestion is browser-side** (the host has no DOM parser): fflate unzips an EPUB, DOMParser reads container/OPF/spine/NCX|NAV, and a whitelist sanitizer (`src/client/sanitize.ts`) drops script/style/iframe, unwraps transparent containers, and reduces attributes to safe href/src. Failures are honest classes (`not-zip`/`not-epub`/`encrypted`/`no-spine`/`no-chapters`). Markdown splits on the shallowest heading level that names more than one thing. fflate is the family's one new dependency.
+- **The tab self-hides on the canvas double check** (`src/client/preset-visibility.ts`): profile root rows ∪ the current session's preset rows naming `@khorsheed/dsh-library/tool`, every unreadable path fail-open, registration via `RegistrationToggle`. The criterion constant names the package's OWN subpath, so — like canvas's `@khorsheed/dsh-canvas/agent` — the library package declares NO `dsh.references` entry (the checker's own ALLOWED_EDGES comment records why: a self-subpath constant needs none).
+
+**`@khorsheed/dsh-bundle-learning`** (packages/bundle-learning) is a `preset-declarations` bundle: one `preset-learning` row (id `learning`, name 学习模式, order 12) whose plugins are the official standard base dieted for the scene (fs / skills pair / ask-user / todo / web / compaction — no shell, goal, plan-mode, delegation, fs-search, jobs, present or agent-instructions) plus the `library-tool` row with `tools: all` and an English single-voice coach persona. `@khorsheed/dsh-library` rides in `dsh.references` (data, never an npm edge); its tests pin the row set, the quoting and the references the way bundle-writing's do.
+
+**Shared-layer touches** (mainline-authorized): `COMMUNITY_SERVICE_INJECTORS` gained `library: /^library$/`; `TYPERT_PACKAGES` gained the library entry; `docs/packages.md` regenerated.
+
+## Alternatives considered
+
+- **A `skills/` directory referenced by a preset row (the task's first sketch).** The real mechanism in the tree is different: canvas-novel inlines skill text in `src/skill.ts` and registers it into the skills registry from its agent entry, and datasets ships `skills/<name>/SKILL.md` as payload and loads it from disk at apply. The library follows datasets (a real SKILL.md file the tarball carries) rather than inventing a profile-side convention that does not exist.
+- **`dsh.references: ['@khorsheed/dsh-library']` on the library package for the visibility constant.** Dropped: the constant names the package's own subpath, and canvas — the precedent — declares nothing for its own `./agent`. The checker agrees (self-names are skipped). The bundle package carries the reference instead, which is where a cross-package name actually appears.
+- **Evidence substring-checked hard against the chapter.** The proposal's anti-hallucination intent is served by presence + chapter-existence as hard failures and verbatim-mismatch as a stored warning: a legitimately condensed quote is common enough that hard refusal would teach the model to pad quotes, not to quote truly.
+- **Chapter paging by semantic blocks.** Rejected as v0.1 scope: a 100KB char budget sliced at a closing-tag boundary is predictable and testable; semantic chunking can land when the 精读 tab does.
+
+## Consequences
+
+- **Gates**: full `pnpm run build` green; library 60 tests + bundle-learning 7 tests green; `check:plugins` clean with the two new packages in the scan; `test:scripts` green. The boot spec proves the wiring pure tests cannot see (ctx.provide + Remote mount; the tool row's deferred registrations; `tools: none` registering nothing; a missing core logging instead of throwing).
+- **Deferred (the proposal's own M2/M3 scope, visible in code as absences)**: the conversation.view 精读 tab and interactive quiz cards (quizzing is a conversation flow), URL ingestion via the reader/capture seam, PDF, iOS acceptance, datasets interop. `readAttachmentBase64` needs the full image reference on the entry — the skill teaches the model to copy it off the message's image block, and the proposal's P0-2 probe still owes real-route validation of that flow.
+- **Not deployed**: nothing here reached 3080 or npm; the versions are the packages' first lines (0.1.0).
+
+## Testing
+
+`packages/library/tests/`: store.spec.ts (index guard, atomic writes, append-only ledgers, locks), service.spec.ts (CRUD, paging, the state machine, the merge, the evidence gate, the cascade incl. box-0-due-tomorrow and unlock-on-pass), tool.spec.ts (the what enums teach, the gate fires through the tool, the skill loads), ingest-md.spec.ts (split levels, the renderer), ingest-epub.spec.ts (an in-test zipped minimal EPUB, the failure classes, the sanitizer), boot.spec.ts (real cordis Context boots).
+
+## Related
+
+- Proposal: [2026-10-06-library-learning-mode](../../../proposals/active/2026-10-06-library-learning-mode.md)
+- Visibility convention: [docs/plugin-visibility.md](../../../docs/plugin-visibility.md) (the canvas double check, fail-open)
+- The fold precedent: evaluation-family `./tool` entries (T88), canvas-novel's `./agent`.
