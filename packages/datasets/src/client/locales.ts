@@ -56,6 +56,8 @@ export type DatasetsKey =
   | 'registry.colItems'
   | 'registry.colVisible'
   | 'registry.colUsed'
+  | 'registry.colActions'
+  | 'registry.more'
   | 'registry.usedCount'
   | 'registry.usedCountUnpinned'
   | 'registry.usedUnpinned'
@@ -597,6 +599,8 @@ export const zh: Record<DatasetsKey, string> = {
   'registry.colItems': '题数',
   'registry.colVisible': 'agent 可见',
   'registry.colUsed': '用在哪些实验',
+  'registry.colActions': '操作',
+  'registry.more': '{id} 的更多操作',
   'registry.usedCount': '{count} 个实验 · 分布在 {versions} 个版本',
   'registry.usedCountUnpinned': '{count} 个实验',
   'registry.usedUnpinned': '未钉版本',
@@ -610,7 +614,7 @@ export const zh: Record<DatasetsKey, string> = {
   'layers.editTitle': '在登记表单里改 {set} 的 agent 可见层',
   'layers.unknownTitle': '{layers} 不在词表里，原样显示；这里不推断它是否含答案',
   'registry.problem': '这条登记现在读不出来',
-  'registry.problemFix': '点「编辑登记」换一个存在的跟踪分支，或移除这条登记',
+  'registry.problemFix': '在「操作」的 ⋯ 里点「编辑登记」换一个存在的跟踪分支，或删除这条登记',
   'registry.noSets': '{ref} 上没有题集（datasets/ 为空）',
   'registry.empty': '还没有题集',
   'registry.emptyHint': '本地数据、下载好的文件或公开数据集，都从这里交给 Agent 整理；整理好由你确认登记，实验室和 agent 就能直接用。',
@@ -1012,6 +1016,8 @@ export const en: Record<DatasetsKey, string> = {
   'registry.colItems': 'Items',
   'registry.colVisible': 'Agent sees',
   'registry.colUsed': 'Used by experiments',
+  'registry.colActions': 'Actions',
+  'registry.more': 'More actions for {id}',
   'registry.usedCount': '{count} experiments · across {versions} versions',
   'registry.usedCountUnpinned': '{count} experiments',
   'registry.usedUnpinned': 'no pinned version',
@@ -1025,7 +1031,7 @@ export const en: Record<DatasetsKey, string> = {
   'layers.editTitle': 'Change what the agent can read of {set} in the registration form',
   'layers.unknownTitle': '{layers} is not in the word table and is shown as is; this page does not guess whether it carries answers',
   'registry.problem': 'This registration cannot be read right now',
-  'registry.problemFix': 'Edit the registration to pick an existing tracked branch, or remove it',
+  'registry.problemFix': 'Open ⋯ under Actions: edit the registration to pick an existing tracked branch, or delete it',
   'registry.noSets': 'No datasets on {ref} (empty datasets/)',
   'registry.empty': 'No datasets yet',
   'registry.emptyHint': 'Local data, downloaded files or a public dataset: hand it to the Agent from here. Once you confirm the registration, the lab and agents can use it.',
