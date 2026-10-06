@@ -19,6 +19,7 @@ import type { Proposal, ProposalReview, ReviewFiles, ReviewHead, ReviewItem } fr
 import type { SkeletonResult } from './scaffold.ts'
 import {
   type DatasetScope, type DatasetsService, type OrganizingSetup,
+  type DeletePlan, type DiscardPlan, type RemovalResult,
   type ImportItemInput, type ItemBriefRequest,
   type ListDatasetsResult, type ListItemsResult, type ListRequest,
   type PreviewRepoRequest,
@@ -143,6 +144,29 @@ export class DatasetsRemoteService extends TypertRemoteService<DatasetsRemoteCon
   @Remote('unregister')
   unregister(request: { id: string }): boolean {
     return this.datasets.registry.remove(request.id)
+  }
+
+  /**
+   * T99 · the delete dialog's facts: the repository directory, whether its
+   * files can go (and why not), the state that goes with it, the sets. The
+   * path is derived on the host from the registration, never sent by the browser.
+   * @param request - the registration id.
+   * @returns the plan.
+   */
+  @Remote('deletePlan')
+  async deletePlan(request: { id: string }): Promise<DeletePlan> {
+    return await this.datasets.planDelete(request.id)
+  }
+
+  /**
+   * T99 · 「删除题集（连同文件）」: the plan is recomputed and every path rule
+   * checked again here; a repository whose files must stay refuses.
+   * @param request - the registration id.
+   * @returns what was deleted.
+   */
+  @Remote('deleteRegistration')
+  async deleteRegistration(request: { id: string }): Promise<RemovalResult> {
+    return await this.datasets.deleteRegistration(request.id)
   }
 
   /**
@@ -371,6 +395,28 @@ export class DatasetsRemoteService extends TypertRemoteService<DatasetsRemoteCon
   @Remote('returnProposal')
   returnProposal(request: { id: string; note: string }): Proposal {
     return this.datasets.proposals.giveBack(request.id, request.note)
+  }
+
+  /**
+   * T99 · the 「放弃」 dialog's facts: the organized repository directory and
+   * whether it goes with the record.
+   * @param request - the proposal id.
+   * @returns the plan.
+   */
+  @Remote('discardPlan')
+  async discardPlan(request: { id: string }): Promise<DiscardPlan> {
+    return await this.datasets.planDiscard(request.id)
+  }
+
+  /**
+   * T99 · 「放弃」: drop the proposal and (new, unregistered, inside the
+   * datasets home) its repository directory. The organizing session stays.
+   * @param request - the proposal id.
+   * @returns what was deleted.
+   */
+  @Remote('discardProposal')
+  async discardProposal(request: { id: string }): Promise<RemovalResult> {
+    return await this.datasets.discardProposal(request.id)
   }
 
   /**

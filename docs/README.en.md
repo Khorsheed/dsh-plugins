@@ -12,6 +12,7 @@ This directory is the repository's documentation layer, in four groups:
 | [ops.md](ops.md) | Deployment and operations: the three environments (link / tarball / npm), the self-serve `deploy:3080` flow, the ankh-guard restart gate, the stuck-deploy runbook |
 | [publishing.md](publishing.md) | npm publishing best practices: staged publishing, the first-publish device flow for new package names, the failure-modes table |
 | [plugin-visibility.md](plugin-visibility.md) | The plugin visibility convention: session-bound surfaces hide with the preset grant; cross-session surfaces are decided at the install layer |
+| [panel-design.md](panel-design.md) | The panel design convention (Chinese): one layout per panel adapting to its width for desktop and phone; ui-panel-kit components, type and color tokens, self-check and screenshots |
 | [tool-origin-guide.md](tool-origin-guide.md) | The model-tool origin tagging guide (`setToolOrigin`) |
 | [host-migration-playbook.md](host-migration-playbook.md) | The host-version migration playbook (adapting across host lines) |
 

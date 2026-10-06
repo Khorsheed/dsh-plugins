@@ -12,6 +12,7 @@
 | [ops.md](ops.md) | 部署与运维：三环境（link / tarball / npm)、`deploy:3080` 自助流程、ankh-guard 重启闸、部署卡住的处置手册 |
 | [publishing.md](publishing.md) | npm 发布最佳实践：staged publishing、新包首发的 device flow、失败对照表 |
 | [plugin-visibility.md](plugin-visibility.md) | 插件可见性规范：会话绑定面随 preset 自隐、跨会话面由安装层决定 |
+| [panel-design.md](panel-design.md) | 面板设计规范：一套界面按面板宽度自适应，桌面与手机两端可用；ui-panel-kit 组件、字号与颜色变量、自查与截图 |
 | [tool-origin-guide.md](tool-origin-guide.md) | 模型工具 origin 标注指南（`setToolOrigin`) |
 | [host-migration-playbook.md](host-migration-playbook.md) | 宿主版本迁移 playbook（跨宿主线的适配步骤） |
 

@@ -17,6 +17,13 @@ export type EvalKey =
   | 'list.error'
   | 'list.empty'
   | 'list.refresh'
+  | 'list.notice.experiments-unreadable'
+  | 'list.notice.experiments-unreadableHint'
+  | 'list.notice.plan-unreadable'
+  | 'list.notice.mission-missing'
+  | 'list.notice.mission-cannot-list'
+  | 'list.notice.mission-list-failed'
+  | 'list.notice.state-root-missing'
   | 'col.name'
   | 'col.snapshot'
   | 'col.conditions'
@@ -1215,6 +1222,13 @@ export const en: Record<EvalKey, string> = {
   'list.error': 'Failed to load the experiments',
   'list.empty': 'No experiment yet',
   'list.refresh': 'Refresh',
+  'list.notice.experiments-unreadable': '{count} experiment folder(s) cannot be read',
+  'list.notice.experiments-unreadableHint': 'Their meta.json is missing or damaged, so they are left out of the list:',
+  'list.notice.plan-unreadable': 'The plan.json of experiment {id} cannot be read: {detail}',
+  'list.notice.mission-missing': 'No mission service is mounted: run records live in its ledger, so only experiments not yet started are listed',
+  'list.notice.mission-cannot-list': 'The mounted mission service cannot list runs, so only drafts are listed — upgrade dsh-mission',
+  'list.notice.mission-list-failed': 'The run ledger could not be listed: {detail}',
+  'list.notice.state-root-missing': 'No eval state directory (DSH_HOME is unset): runs are listed, experiments are not',
   'col.name': 'Name',
   'col.snapshot': 'Dataset version',
   'col.conditions': 'Arms',
@@ -2406,6 +2420,13 @@ export const zh: Record<EvalKey, string> = {
   'list.error': '实验列表加载失败',
   'list.empty': '还没有实验',
   'list.refresh': '刷新',
+  'list.notice.experiments-unreadable': '有 {count} 个实验目录读不出来',
+  'list.notice.experiments-unreadableHint': '这些目录缺少 meta.json 或内容已损坏，没有列进实验列表：',
+  'list.notice.plan-unreadable': '实验 {id} 的 plan.json 读不出来：{detail}',
+  'list.notice.mission-missing': '没有挂载 mission 服务：运行记录存在它的账本里，所以只列出还没开跑的实验',
+  'list.notice.mission-cannot-list': '当前的 mission 服务列不出运行，只列出草稿——请升级 dsh-mission',
+  'list.notice.mission-list-failed': '运行账本列不出来：{detail}',
+  'list.notice.state-root-missing': '没有评测状态目录（DSH_HOME 未设置）：只列出运行，不列实验',
   'col.name': '名称',
   'col.snapshot': '题库版本',
   'col.conditions': '对比组数',

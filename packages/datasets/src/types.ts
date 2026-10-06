@@ -19,9 +19,10 @@ export type {
   ReviewChange, ReviewFiles, ReviewItem, ReviewItemFile, ReviewOutput, ReviewSet, ReviewSource, SourceFieldDisposition,
   SourceMapping,
 } from './proposal.ts'
+export type { KeepReason, RemovalPlan } from './removal.ts'
 export type { SkeletonResult } from './scaffold.ts'
 export type {
-  ImportItemInput, ItemBriefRequest, OrganizingSetup,
+  DeletePlan, DiscardPlan, ImportItemInput, ItemBriefRequest, OrganizingSetup, RemovalResult,
   ListDatasetsResult, ListItemsResult, ListRequest, PreviewRepoRequest,
   ReadPassthroughRequest, ReadQuery, ReadResult, ScaffoldDatasetInput, ScaffoldItemInput,
   ShowRequest, ShowResult, ValidateDatasetResult, ValidateError, ValidateRequest, ValidateResult,

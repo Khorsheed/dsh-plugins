@@ -30,6 +30,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { IconChevronDownOutlineMedium, IconChevronLeftOutlineMedium, IconClockOutlineMedium, IconCopyOutlineMedium, IconGlobeOutlineMedium, IconPlusOutlineMedium, IconRefreshOutlineMedium, IconRightUpOutlineMedium, IconSettingsOutlineMedium, IconTrashOutlineMedium } from './icons.tsx'
 import type { ReaderPaneProps } from './contract.ts'
+import { ChipRow, PanelHeader, PanelRoot, usePanelCompactContext, type Chip, type PanelAction } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
 import {
   kindQuery,
   linkEntryId,
@@ -134,6 +135,9 @@ function isCjk(html: string): boolean {
 /** The wall's tag panel box: the width it is clamped with, and the height
  *  placement estimates from the vocabulary (its real height is bounded by CSS). */
 const TAG_PANEL_WIDTH = 236
+/** The card menu's footprint, for keeping a menu opened at the screen's edge on screen. */
+const CARD_MENU_WIDTH = 168
+const CARD_MENU_HEIGHT = 120
 const TAG_PANEL_MAX_HEIGHT = 296
 
 /**
@@ -192,7 +196,7 @@ function TagSuggestions({ t, tags, applied, draft, onToggle, onCreate }: {
           <button
             key={tag.id}
             type="button"
-            className={css.tagRow}
+            className={css.tagOption}
             data-on={on || undefined}
             // Keep the field focused: the detail editor closes on blur, and a
             // mousedown that moves focus would dismiss the list mid-click.
@@ -586,8 +590,17 @@ function linkMetaOf(row: ReaderRow): { title: string; excerpt?: string } | undef
   return { title: row.entry.title, ...(row.entry.summary === undefined ? {} : { excerpt: row.entry.summary }) }
 }
 
-/** The reader tab body. */
+/**
+ * The reader tab body, inside the shared panel root: the `dsh-panel` size
+ * container its compact rules query, and the compact flag the wall's and the
+ * detail's headers read (panel-responsive-spec P2).
+ */
 export function ReaderPane(props: ReaderPaneProps): ReactNode {
+  return <PanelRoot className={css.panelRoot}><ReaderPaneBody {...props} /></PanelRoot>
+}
+
+/** The reader's pages: wall, detail, recent, manage. */
+function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
   const { sessionId, useStore, actions, t } = props
   const sources = useStore(s => s.sources)
   const parsed = useStore(s => s.parsed)
@@ -617,6 +630,8 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   const refreshing = useStore(s => s.refreshing)
   const tags = useStore(s => s.tags)
   const tagCounts = useStore(s => s.tagCounts)
+  /** A panel at or below the compact width (a phone, a narrow sidebar). */
+  const compact = usePanelCompactContext() === true
   const entryTagIds = useStore(s => s.entryTagIds)
   const cacheTtlHours = useStore(s => s.cacheTtlHours)
   const backfill = useStore(s => s.backfill)
@@ -746,6 +761,10 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   const [sideChatAvailable, setSideChatAvailable] = useState(false)
   const [timeOfDay, setTimeOfDay] = useState<string>('10:00')
   const [filterOpen, setFilterOpen] = useState(false)
+  /** Compact only: the search row is folded behind the header's search icon until asked for. */
+  const [searchOpen, setSearchOpen] = useState(false)
+  /** Several incomplete sources fold into one line until the reader asks for the list. */
+  const [noticeOpen, setNoticeOpen] = useState(false)
   /** The filter panel's page: its root, or the drilled-in source list. */
   const [filterPage, setFilterPage] = useState<'root' | 'source'>('root')
   /** The source page's own search box (the list grows without bound). */
@@ -800,6 +819,14 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   const rescuedImagesRef = useRef(new Map<string, string>())
   /** The detail view's scroller, which is where a reading position lives. */
   const detailRef = useRef<HTMLDivElement | null>(null)
+  /** The article's own heading, which the compact bar watches scroll away. */
+  const detailTitleRef = useRef<HTMLHeadingElement | null>(null)
+  /**
+   * Whether the article's heading has scrolled up out of the body. The compact
+   * bar starts empty (the heading sits right below it) and takes the title only
+   * then, so a reader deep in the text still sees what they are reading.
+   */
+  const [titleScrolledAway, setTitleScrolledAway] = useState(false)
   /** The live segmentation, or null while the article is untouched. */
   const builtRef = useRef<BuiltArticle | null>(null)
   /** The running translation's cancel flag. */
@@ -1276,6 +1303,23 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
   }, [allEntries, recent])
 
   const openEntry = openEntryId === null ? undefined : entryById(openEntryId)
+  // The compact bar's title (see `titleScrolledAway`): watch the article's
+  // heading leave the body through its top.
+  useEffect(() => {
+    setTitleScrolledAway(false)
+    const root = detailRef.current
+    const heading = detailTitleRef.current
+    // No observer (jsdom, an old engine) degrades to the bar staying empty.
+    if (!compact || view !== 'detail' || root === null || heading === null || typeof IntersectionObserver === 'undefined') return undefined
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry === undefined) return
+      // Away only when it left through the TOP: a heading below the fold (a
+      // restored reading position mid-render) is not "scrolled past".
+      setTitleScrolledAway(!entry.isIntersecting && entry.boundingClientRect.bottom <= (entry.rootBounds?.top ?? 0))
+    }, { root, threshold: 0 })
+    observer.observe(heading)
+    return () => { observer.disconnect() }
+  }, [compact, view, openEntryId, openEntry !== undefined])
   /** The source the strip is currently narrowing to, if any. */
   const activeSource = sources.find(source => query.trim() === sourceQuery(source.id))?.id ?? null
   /** The source KIND the search box is narrowing to, if any (`#rss` / `#link`). */
@@ -2959,6 +3003,274 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
 
   /* ------------------------------------------------------------------ render */
 
+  /** The wall's translation switch (the globe in the wide header, a ⋯ row in the compact one). */
+  const toggleWall = (): void => {
+    setSortOpen(false)
+    setFilterOpen(false)
+    if (wallOn) { setWallOn(false); return }
+    wallCancelRef.current = { cancelled: false }
+    setWallOn(true)
+    // Cards already on screen are queued by the observer effect; a
+    // wall that never scrolls still gets translated in one pass.
+    void runWallPass()
+  }
+
+  /**
+   * The wall's filter panel and sort menu. Built once and placed by whichever
+   * header is showing: the wide header hangs each under its own button; the
+   * compact header has no such buttons (sort lives in ⋯, the filter behind the
+   * chip row's 「筛选」), so both hang under the compact header's right edge.
+   */
+  const filterPanel: ReactNode = filterOpen && (
+    <div
+      className={css.filterPanel}
+      onKeyDown={event => { if (event.key === 'Escape') setFilterOpen(false) }}
+    >
+      {filterPage === 'source' ? (
+        <>
+          {/* The source page: the list that grows without bound, so it
+              gets the panel's height, its own scroll AND its own search
+              box. One level down keeps the root short no matter how many
+              subscriptions accumulate (the cascading picker). */}
+          <div className={css.filterPanelHead}>
+            <button
+              type="button"
+              className={css.filterBack}
+              title={t('action.back')}
+              onClick={() => { setFilterPage('root'); setSourceFilter('') }}
+            >
+              <IconChevronLeftOutlineMedium size={12} />
+            </button>
+            <span className={css.filterPanelTitle}>{t('filter.bySource')}</span>
+            <span className={css.filterCount}>{sources.length}</span>
+          </div>
+          {sources.length >= SOURCE_SEARCH_MIN && (
+            <div className={css.filterSearch}>
+              {glyph('search', 11)}
+              <input
+                autoFocus
+                value={sourceFilter}
+                placeholder={t('filter.searchSource')}
+                onChange={event => setSourceFilter(event.target.value)}
+              />
+              {sourceFilter.length > 0 && (
+                <button
+                  type="button"
+                  className={css.searchClear}
+                  title={t('action.clearSearch')}
+                  aria-label={t('action.clearSearch')}
+                  onClick={() => { setSourceFilter('') }}
+                >
+                  {glyph('close', 13)}
+                </button>
+              )}
+            </div>
+          )}
+          <div className={css.filterList}>
+            <button
+              type="button"
+              className={css.filterRow}
+              onClick={() => { actions.setQuery(''); setFilterOpen(false) }}
+            >
+              <span className={css.filterCheck}>{activeSource === null ? '✓' : ''}</span>
+              <span className={css.filterLabel}>{t('filter.all')}</span>
+              <span className={css.filterCount}>{allEntries.length}</span>
+            </button>
+            {matchingSources.map(source => {
+              const group = parsed[source.id]
+              const broken = group?.error !== undefined || group?.incomplete === true
+              return (
+                <button
+                  key={source.id}
+                  type="button"
+                  className={css.filterRow}
+                  title={source.url}
+                  onClick={() => { actions.setQuery(sourceQuery(source.id)); setFilterOpen(false) }}
+                >
+                  <span className={css.filterCheck}>{activeSource === source.id ? '✓' : ''}</span>
+                  <span className={css.filterLabel}>{source.label}</span>
+                  {broken
+                    ? <span className={css.chipBroken} title={t('state.incomplete')}>!</span>
+                    : <span className={css.filterCount}>{group?.entries.length ?? 0}</span>}
+                </button>
+              )
+            })}
+            {matchingSources.length === 0 && (
+              <div className={css.filterEmpty}>{t('filter.noSourceMatch')}</div>
+            )}
+          </div>
+        </>
+      ) : (
+        <>
+          <div className={css.filterSection}>{t('filter.readState')}</div>
+          <button type="button" className={css.filterRow} onClick={() => actions.toggleUnreadOnly()}>
+            <span className={css.filterCheck}>{unreadOnly ? '✓' : ''}</span>
+            <span className={css.filterLabel}>{t('filter.unreadOnly')}</span>
+          </button>
+          {/* The dedupe switch lives with the wall's other narrowing:
+              it decides what the wall shows, not how it looks. */}
+          <button type="button" className={css.filterRow} onClick={() => actions.toggleHideDupes()}>
+            <span className={css.filterCheck}>{hideDupes ? '✓' : ''}</span>
+            <span className={css.filterLabel}>{t('filter.hideDupes')}</span>
+          </button>
+          {/* The drill row carries the CURRENT value, so a narrowing
+              filter is never hidden one level down: the reader sees
+              "按来源 · OpenAI" without opening the list. */}
+          <button
+            type="button"
+            className={css.filterRow}
+            onClick={() => { setSourceFilter(''); setFilterPage('source') }}
+          >
+            <span className={css.filterLabel}>{t('filter.bySource')}</span>
+            <span className={css.filterValue}>{activeSourceLabel ?? t('filter.all')}</span>
+            <span className={css.filterChevron}>{glyph('chevron', 12)}</span>
+          </button>
+          {/* By KIND, next to by-source: a saved link and a feed entry
+              are two different things to look for, and "where is the
+              link I just added" is not answerable from a source list
+              once the wall has a few hundred cards. The value lands in
+              the search box like every other narrowing here, so it is
+              visible and clearable. */}
+          <div className={css.filterSection}>{t('filter.byKind')}</div>
+          <button
+            type="button"
+            className={css.filterRow}
+            onClick={() => { actions.setQuery(''); setFilterOpen(false) }}
+          >
+            <span className={css.filterCheck}>{query.trim() === '' ? '✓' : ''}</span>
+            <span className={css.filterLabel}>{t('filter.all')}</span>
+            <span className={css.filterCount}>{allEntries.length}</span>
+          </button>
+          {READER_SOURCE_KINDS.map(kind => (
+            <button
+              key={kind}
+              type="button"
+              className={css.filterRow}
+              onClick={() => { actions.setQuery(kindQuery(kind)); setFilterOpen(false) }}
+            >
+              <span className={css.filterCheck}>{activeKind === kind ? '✓' : ''}</span>
+              <span className={css.filterLabel}>{t(kind === 'link' ? 'sources.kindLink' : 'sources.kindRss')}</span>
+              <span className={css.filterCount}>{kindCounts[kind]}</span>
+            </button>
+          ))}
+          {tags.length > 0 && <div className={css.filterSection}>{t('filter.byTag')}</div>}
+          {tags.map(tag => (
+            <div key={tag.id} className={css.filterTagRow}>
+              <button
+                type="button"
+                className={css.filterRow}
+                onClick={() => { actions.setQuery(tagQuery(tag.id)); setFilterOpen(false) }}
+              >
+                <span className={css.filterCheck}>{query.trim() === tagQuery(tag.id) ? '✓' : ''}</span>
+                <span className={css.filterLabel}>{tag.name}</span>
+                <span className={css.filterCount}>{tagCounts[tag.id] ?? 0}</span>
+              </button>
+              {/* The vocabulary is the reader's own; a tag that can only
+                  be created is a one-way door. Deleting is quiet (the
+                  × sits at low contrast) but always visible: a control
+                  that appears only on hover is invisible on touch. */}
+              <button
+                type="button"
+                className={css.filterTagDelete}
+                title={t('filter.deleteTag')}
+                aria-label={`${t('filter.deleteTag')}: ${tag.name}`}
+                onClick={() => { void removeTag(tag.id) }}
+              >
+                ×
+              </button>
+            </div>
+          ))}
+        </>
+      )}
+    </div>
+  )
+  const sortMenu: ReactNode = sortOpen && (
+    <div className={css.menu}>
+      {(['newest', 'oldest', 'source'] as const).map(option => (
+        <button
+          key={option}
+          type="button"
+          onClick={() => { actions.setSort(option); setSortOpen(false) }}
+        >
+          <span>{t(`sort.${option}`)}</span>
+          {sort === option && <span className={css.check}>✓</span>}
+        </button>
+      ))}
+    </div>
+  )
+
+  /**
+   * The compact wall header (panel-responsive-spec P2): the pane's name with
+   * its unread count, search and add always visible, and everything else —
+   * refresh, sort, the wall's translation switch, history, subscriptions — in
+   * one ⋯ menu. Sort and filter have no buttons of their own here, so their
+   * popovers hang under the header's right edge.
+   */
+  const searchVisible = searchOpen || query !== ''
+  const compactActions: PanelAction[] = [
+    {
+      id: 'search', label: t('search.placeholder'), icon: glyph('search', 16), pinned: true, pressed: searchVisible,
+      onSelect: () => { if (searchVisible) { setSearchOpen(false); actions.setQuery('') } else setSearchOpen(true) },
+    },
+    { id: 'add', label: t('action.add'), icon: <IconPlusOutlineMedium size={16} />, pinned: true, onSelect: () => { setAddOpen(true); setVerdict(null) } },
+    { id: 'refresh', label: t('action.refresh'), icon: <IconRefreshOutlineMedium size={16} />, disabled: refreshing, onSelect: () => { void refreshAll() } },
+    {
+      id: 'sort', label: `${t('sort.title')} · ${t(`sort.${sort}`)}`, icon: glyph('sort', 16),
+      onSelect: () => { setFilterOpen(false); setSortOpen(open => !open) },
+    },
+    ...(wallTranslateOffered
+      ? [{ id: 'translate', label: t(wallOn ? 'translate.wallOff' : 'action.translate'), icon: <IconGlobeOutlineMedium size={16} />, onSelect: toggleWall }]
+      : []),
+    { id: 'recent', label: t('action.recent'), icon: <IconClockOutlineMedium size={16} />, onSelect: () => { actions.closeEntry(); actions.setView('recent') } },
+    { id: 'manage', label: t('action.manage'), icon: <IconSettingsOutlineMedium size={16} />, onSelect: () => { actions.closeEntry(); actions.setView('manage') } },
+  ]
+  const compactWallHeader = (
+    <div className={css.compactHead}>
+      <PanelHeader
+        title={t('tab.label')}
+        meta={`${countUnread(displayRows)} ${t('foot.unread')}`}
+        actions={compactActions}
+        moreLabel={t('action.more')}
+      />
+      <span className={css.compactPop}>{filterPanel}{sortMenu}</span>
+    </div>
+  )
+
+  /**
+   * The compact wall's filter chips: the narrowings a reader reaches for most
+   * — everything, unread, the two source kinds, the reader's own tags — one tap
+   * each, and 「筛选」 for the rest (one source, hiding duplicates) in the same
+   * panel the wide header opens. Every chip but 未读 sets the search query (the
+   * wall's one narrowing channel, `#source` / `@tag` included), so tapping a
+   * pressed chip clears it and 全部 clears everything.
+   */
+  const wallChips: Chip[] = [
+    { id: 'all', label: t('filter.all'), count: allEntries.length },
+    { id: 'unread', label: t('chip.unread') },
+    ...READER_SOURCE_KINDS.map(kind => ({ id: `kind:${kind}`, label: t(kind === 'link' ? 'sources.kindLink' : 'sources.kindRss'), count: kindCounts[kind] })),
+    ...tags.map(tag => ({ id: `tag:${tag.id}`, label: tag.name, count: tagCounts[tag.id] ?? 0 })),
+    { id: 'more', label: activeSource === null ? t('chip.more') : `${t('chip.more')} · ${activeSourceLabel ?? ''}` },
+  ]
+  const wallChipValue: string[] = [
+    ...(query.trim() === '' && !unreadOnly ? ['all'] : []),
+    ...(unreadOnly ? ['unread'] : []),
+    ...(activeKind === null ? [] : [`kind:${activeKind}`]),
+    ...tags.filter(tag => query.trim() === tagQuery(tag.id)).map(tag => `tag:${tag.id}`),
+    ...(activeSource === null ? [] : ['more']),
+  ]
+  const pickChip = (id: string): void => {
+    if (id === 'all') { actions.setQuery(''); if (unreadOnly) actions.toggleUnreadOnly(); return }
+    if (id === 'unread') { actions.toggleUnreadOnly(); return }
+    if (id === 'more') {
+      setSortOpen(false)
+      if (!filterOpen) { setFilterPage('root'); setSourceFilter('') }
+      setFilterOpen(!filterOpen)
+      return
+    }
+    const next = id.startsWith('kind:') ? kindQuery(id.slice('kind:'.length) as (typeof READER_SOURCE_KINDS)[number]) : tagQuery(id.slice('tag:'.length))
+    actions.setQuery(query.trim() === next ? '' : next)
+  }
+
   /**
    * The pane's header.
    *
@@ -3015,169 +3327,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
           >
             {glyph('funnel', 15)}
           </button>
-          {filterOpen && (
-            <div
-              className={css.filterPanel}
-              onKeyDown={event => { if (event.key === 'Escape') setFilterOpen(false) }}
-            >
-              {filterPage === 'source' ? (
-                <>
-                  {/* The source page: the list that grows without bound, so it
-                      gets the panel's height, its own scroll AND its own search
-                      box. One level down keeps the root short no matter how many
-                      subscriptions accumulate (the cascading picker). */}
-                  <div className={css.filterPanelHead}>
-                    <button
-                      type="button"
-                      className={css.filterBack}
-                      title={t('action.back')}
-                      onClick={() => { setFilterPage('root'); setSourceFilter('') }}
-                    >
-                      <IconChevronLeftOutlineMedium size={12} />
-                    </button>
-                    <span className={css.filterPanelTitle}>{t('filter.bySource')}</span>
-                    <span className={css.filterCount}>{sources.length}</span>
-                  </div>
-                  {sources.length >= SOURCE_SEARCH_MIN && (
-                    <div className={css.filterSearch}>
-                      {glyph('search', 11)}
-                      <input
-                        autoFocus
-                        value={sourceFilter}
-                        placeholder={t('filter.searchSource')}
-                        onChange={event => setSourceFilter(event.target.value)}
-                      />
-                      {sourceFilter.length > 0 && (
-                        <button
-                          type="button"
-                          className={css.searchClear}
-                          title={t('action.clearSearch')}
-                          aria-label={t('action.clearSearch')}
-                          onClick={() => { setSourceFilter('') }}
-                        >
-                          {glyph('close', 13)}
-                        </button>
-                      )}
-                    </div>
-                  )}
-                  <div className={css.filterList}>
-                    <button
-                      type="button"
-                      className={css.filterRow}
-                      onClick={() => { actions.setQuery(''); setFilterOpen(false) }}
-                    >
-                      <span className={css.filterCheck}>{activeSource === null ? '✓' : ''}</span>
-                      <span className={css.filterLabel}>{t('filter.all')}</span>
-                      <span className={css.filterCount}>{allEntries.length}</span>
-                    </button>
-                    {matchingSources.map(source => {
-                      const group = parsed[source.id]
-                      const broken = group?.error !== undefined || group?.incomplete === true
-                      return (
-                        <button
-                          key={source.id}
-                          type="button"
-                          className={css.filterRow}
-                          title={source.url}
-                          onClick={() => { actions.setQuery(sourceQuery(source.id)); setFilterOpen(false) }}
-                        >
-                          <span className={css.filterCheck}>{activeSource === source.id ? '✓' : ''}</span>
-                          <span className={css.filterLabel}>{source.label}</span>
-                          {broken
-                            ? <span className={css.chipBroken} title={t('state.incomplete')}>!</span>
-                            : <span className={css.filterCount}>{group?.entries.length ?? 0}</span>}
-                        </button>
-                      )
-                    })}
-                    {matchingSources.length === 0 && (
-                      <div className={css.filterEmpty}>{t('filter.noSourceMatch')}</div>
-                    )}
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className={css.filterSection}>{t('filter.readState')}</div>
-                  <button type="button" className={css.filterRow} onClick={() => actions.toggleUnreadOnly()}>
-                    <span className={css.filterCheck}>{unreadOnly ? '✓' : ''}</span>
-                    <span className={css.filterLabel}>{t('filter.unreadOnly')}</span>
-                  </button>
-                  {/* The dedupe switch lives with the wall's other narrowing:
-                      it decides what the wall shows, not how it looks. */}
-                  <button type="button" className={css.filterRow} onClick={() => actions.toggleHideDupes()}>
-                    <span className={css.filterCheck}>{hideDupes ? '✓' : ''}</span>
-                    <span className={css.filterLabel}>{t('filter.hideDupes')}</span>
-                  </button>
-                  {/* The drill row carries the CURRENT value, so a narrowing
-                      filter is never hidden one level down: the reader sees
-                      "按来源 · OpenAI" without opening the list. */}
-                  <button
-                    type="button"
-                    className={css.filterRow}
-                    onClick={() => { setSourceFilter(''); setFilterPage('source') }}
-                  >
-                    <span className={css.filterLabel}>{t('filter.bySource')}</span>
-                    <span className={css.filterValue}>{activeSourceLabel ?? t('filter.all')}</span>
-                    <span className={css.filterChevron}>{glyph('chevron', 12)}</span>
-                  </button>
-                  {/* By KIND, next to by-source: a saved link and a feed entry
-                      are two different things to look for, and "where is the
-                      link I just added" is not answerable from a source list
-                      once the wall has a few hundred cards. The value lands in
-                      the search box like every other narrowing here, so it is
-                      visible and clearable. */}
-                  <div className={css.filterSection}>{t('filter.byKind')}</div>
-                  <button
-                    type="button"
-                    className={css.filterRow}
-                    onClick={() => { actions.setQuery(''); setFilterOpen(false) }}
-                  >
-                    <span className={css.filterCheck}>{query.trim() === '' ? '✓' : ''}</span>
-                    <span className={css.filterLabel}>{t('filter.all')}</span>
-                    <span className={css.filterCount}>{allEntries.length}</span>
-                  </button>
-                  {READER_SOURCE_KINDS.map(kind => (
-                    <button
-                      key={kind}
-                      type="button"
-                      className={css.filterRow}
-                      onClick={() => { actions.setQuery(kindQuery(kind)); setFilterOpen(false) }}
-                    >
-                      <span className={css.filterCheck}>{activeKind === kind ? '✓' : ''}</span>
-                      <span className={css.filterLabel}>{t(kind === 'link' ? 'sources.kindLink' : 'sources.kindRss')}</span>
-                      <span className={css.filterCount}>{kindCounts[kind]}</span>
-                    </button>
-                  ))}
-                  {tags.length > 0 && <div className={css.filterSection}>{t('filter.byTag')}</div>}
-                  {tags.map(tag => (
-                    <div key={tag.id} className={css.filterTagRow}>
-                      <button
-                        type="button"
-                        className={css.filterRow}
-                        onClick={() => { actions.setQuery(tagQuery(tag.id)); setFilterOpen(false) }}
-                      >
-                        <span className={css.filterCheck}>{query.trim() === tagQuery(tag.id) ? '✓' : ''}</span>
-                        <span className={css.filterLabel}>{tag.name}</span>
-                        <span className={css.filterCount}>{tagCounts[tag.id] ?? 0}</span>
-                      </button>
-                      {/* The vocabulary is the reader's own; a tag that can only
-                          be created is a one-way door. Deleting is quiet (the
-                          × sits at low contrast) but always visible: a control
-                          that appears only on hover is invisible on touch. */}
-                      <button
-                        type="button"
-                        className={css.filterTagDelete}
-                        title={t('filter.deleteTag')}
-                        aria-label={`${t('filter.deleteTag')}: ${tag.name}`}
-                        onClick={() => { void removeTag(tag.id) }}
-                      >
-                        ×
-                      </button>
-                    </div>
-                  ))}
-                </>
-              )}
-            </div>
-          )}
+          {filterPanel}
         </span>
         <span className={css.toolWrap}>
           <button
@@ -3188,20 +3338,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
           >
             {glyph('sort', 15)}
           </button>
-          {sortOpen && (
-            <div className={css.menu}>
-              {(['newest', 'oldest', 'source'] as const).map(option => (
-                <button
-                  key={option}
-                  type="button"
-                  onClick={() => { actions.setSort(option); setSortOpen(false) }}
-                >
-                  <span>{t(`sort.${option}`)}</span>
-                  {sort === option && <span className={css.check}>✓</span>}
-                </button>
-              ))}
-            </div>
-          )}
+          {sortMenu}
         </span>
         {/* The wall's own translation switch. Separate from the detail view's on
             purpose: they are two different reading surfaces, each remembers its
@@ -3214,16 +3351,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
               className={`${css.tool}${wallOn ? ` ${css.toolOn}` : ''}`}
               title={t('action.translate')}
               aria-pressed={wallOn}
-              onClick={() => {
-                setSortOpen(false)
-                setFilterOpen(false)
-                if (wallOn) { setWallOn(false); return }
-                wallCancelRef.current = { cancelled: false }
-                setWallOn(true)
-                // Cards already on screen are queued by the observer effect; a
-                // wall that never scrolls still gets translated in one pass.
-                void runWallPass()
-              }}
+              onClick={toggleWall}
             >
               <IconGlobeOutlineMedium size={15} />
             </button>
@@ -3458,9 +3586,99 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
       : translateProgress !== null && translateProgress.total > 0
         ? Math.round((translateProgress.done / translateProgress.total) * 100)
         : 0
+    /*
+     * The globe is a switch, not a verb: lit means this body is showing a
+     * translation, dark means it is showing the original — and the caret holds
+     * the view (translation only / side by side / original). Everything is
+     * hidden when the browser has no Translator API (and no stored translation
+     * of this body), the pair is unavailable, or the body is already Chinese:
+     * an offer that cannot work is worse than no offer.
+     */
+    const detailTranslate: ReactNode = translationOffered && (
+      <span className={css.translateWrap}>
+        <button
+          type="button"
+          className={`${css.tool}${translatePhase === 'pack' || translatePhase === 'working' ? ` ${css.toolSpinning}` : ''}${translatePhase === 'ready' && translateView !== 'orig' ? ` ${css.toolOn}` : ''}`}
+          title={t('action.translate')}
+          aria-pressed={translatePhase === 'ready' && translateView !== 'orig'}
+          onClick={toggleGlobe}
+        >
+          <IconGlobeOutlineMedium size={15} />
+        </button>
+        <button
+          type="button"
+          className={css.translateCaret}
+          aria-expanded={translateMenu}
+          title={t('translate.view')}
+          onClick={() => { setTranslateMenu(open => !open) }}
+        >
+          <IconChevronDownOutlineMedium size={10} />
+        </button>
+        {translateMenu && (
+          <div className={css.translateMenu} role="menu">
+            <div className={css.translateMenuHead}>{t(translator === null ? 'translate.stored' : 'translate.local')}</div>
+            {TRANSLATION_VIEWS.map(item => (
+              <button
+                key={item.view}
+                type="button"
+                role="menuitemradio"
+                aria-checked={translateView === item.view}
+                className={css.translateMenuItem}
+                onClick={() => { pickView(item.view) }}
+              >
+                <span className={css.translateCheck}>{translateView === item.view ? '✓' : ''}</span>
+                <span className={css.translateMenuLabel}>{t(item.key)}</span>
+              </button>
+            ))}
+            {/* Retranslating needs the on-device model: a page viewing a
+                stored translation has none to ask. */}
+            {translator !== null && (translatePhase === 'ready' || translatePhase === 'failed') && (
+              <button
+                type="button"
+                role="menuitem"
+                className={css.translateMenuItem}
+                onClick={() => {
+                  setTranslateMenu(false)
+                  if (builtRef.current !== null) restoreArticle(builtRef.current.root)
+                  builtRef.current = null
+                  void startTranslation(lastViewRef.current)
+                }}
+              >
+                <span className={css.translateCheck} />
+                <span className={css.translateMenuLabel}>{t('translate.retry')}</span>
+              </button>
+            )}
+          </div>
+        )}
+      </span>
+    )
+    /** The detail's ordinary actions: inline in the wide bar, in ⋯ on a compact one. */
+    const detailActions: PanelAction[] = [
+      { id: 'copy', label: t('action.copyLink'), icon: <IconCopyOutlineMedium size={16} />, menuOnly: true, onSelect: () => { void copyLink() } },
+      {
+        id: 'open', label: t('action.openExternal'), icon: <IconRightUpOutlineMedium size={16} />, menuOnly: true,
+        onSelect: () => { if (openEntry.link !== undefined) props.openExternal(openEntry.link) },
+      },
+      ...(sourceSummary?.kind === 'link'
+        ? [{ id: 'remove', label: t('detail.removeLink'), icon: <IconTrashOutlineMedium size={16} />, menuOnly: true, danger: true, onSelect: () => { void removeLink(openEntry.sourceId) } }]
+        : []),
+    ]
     return (
       <div className={css.root}>
-        <div className={css.bar}>
+        {compact ? (
+          // No title at first: the article's own heading sits right below with
+          // its source and date in the kicker, so a title here would say it
+          // twice. Once that heading scrolls away, the bar takes the title.
+          <PanelHeader
+            className={css.compactBar}
+            title={titleScrolledAway ? <span className={css.compactBarTitle}>{openEntry.title}</span> : ''}
+            onBack={() => { actions.setView('list'); actions.closeEntry() }}
+            backLabel={t('action.back')}
+            extra={detailTranslate}
+            actions={detailActions}
+            moreLabel={t('action.more')}
+          />
+        ) : <div className={css.bar}>
           <button
             type="button"
             className={css.tool}
@@ -3471,71 +3689,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
           </button>
           <span className={css.barLabel}>{openEntry.title}</span>
           <span className={css.spacer} />
-          {/* The globe is a switch, not a verb: lit means this body is showing a
-              translation, dark means it is showing the original — and the caret
-              holds the view (translation only / side by side / original).
-              Everything is hidden when the browser has no Translator API (and
-              no stored translation of this body), the pair is unavailable, or
-              the body is already Chinese: an offer that cannot work is worse
-              than no offer. */}
-          {translationOffered && (
-            <span className={css.translateWrap}>
-              <button
-                type="button"
-                className={`${css.tool}${translatePhase === 'pack' || translatePhase === 'working' ? ` ${css.toolSpinning}` : ''}${translatePhase === 'ready' && translateView !== 'orig' ? ` ${css.toolOn}` : ''}`}
-                title={t('action.translate')}
-                aria-pressed={translatePhase === 'ready' && translateView !== 'orig'}
-                onClick={toggleGlobe}
-              >
-                <IconGlobeOutlineMedium size={15} />
-              </button>
-              <button
-                type="button"
-                className={css.translateCaret}
-                aria-expanded={translateMenu}
-                title={t('translate.view')}
-                onClick={() => { setTranslateMenu(open => !open) }}
-              >
-                <IconChevronDownOutlineMedium size={10} />
-              </button>
-              {translateMenu && (
-                <div className={css.translateMenu} role="menu">
-                  <div className={css.translateMenuHead}>{t(translator === null ? 'translate.stored' : 'translate.local')}</div>
-                  {TRANSLATION_VIEWS.map(item => (
-                    <button
-                      key={item.view}
-                      type="button"
-                      role="menuitemradio"
-                      aria-checked={translateView === item.view}
-                      className={css.translateMenuItem}
-                      onClick={() => { pickView(item.view) }}
-                    >
-                      <span className={css.translateCheck}>{translateView === item.view ? '✓' : ''}</span>
-                      <span className={css.translateMenuLabel}>{t(item.key)}</span>
-                    </button>
-                  ))}
-                  {/* Retranslating needs the on-device model: a page viewing a
-                      stored translation has none to ask. */}
-                  {translator !== null && (translatePhase === 'ready' || translatePhase === 'failed') && (
-                    <button
-                      type="button"
-                      role="menuitem"
-                      className={css.translateMenuItem}
-                      onClick={() => {
-                        setTranslateMenu(false)
-                        if (builtRef.current !== null) restoreArticle(builtRef.current.root)
-                        builtRef.current = null
-                        void startTranslation(lastViewRef.current)
-                      }}
-                    >
-                      <span className={css.translateCheck} />
-                      <span className={css.translateMenuLabel}>{t('translate.retry')}</span>
-                    </button>
-                  )}
-                </div>
-              )}
-            </span>
-          )}
+          {detailTranslate}
           <button type="button" className={css.tool} title={t('action.copyLink')} onClick={() => { void copyLink() }}>
             <IconCopyOutlineMedium size={15} />
           </button>
@@ -3560,7 +3714,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
               <IconTrashOutlineMedium size={15} />
             </button>
           )}
-        </div>
+        </div>}
 
         <div className={css.detailBody} ref={detailRef} onScroll={onDetailScroll}>
           <div className={css.kicker}>
@@ -3586,7 +3740,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
               </>
             )}
           </div>
-          <h1 className={css.detailTitle}>{openEntry.title}</h1>
+          <h1 ref={detailTitleRef} className={css.detailTitle}>{openEntry.title}</h1>
           {/* The entry's tags, and next to them the one gesture that belongs to
               the ENTRY rather than to its source: fetch the article again.
               Opening an article that was already fetched no longer costs a
@@ -4227,16 +4381,17 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
 
   return (
     <div className={css.root}>
-      {header(false)}
+      {compact ? compactWallHeader : header(false)}
 
       {/* The field owns its row and its full width. The wall's other controls
           live in the pane's header (the row with refresh), because a search
           field squeezed between three buttons is a field the reader cannot see
           what they typed in on a narrow sidebar. */}
-      <div className={css.tools}>
+      {(!compact || searchVisible) && <div className={css.tools}>
         <div className={css.search}>
           {glyph('search', 12)}
           <input
+            autoFocus={compact && searchOpen}
             value={query}
             placeholder={t('search.placeholder')}
             onChange={event => actions.setQuery(event.target.value)}
@@ -4263,7 +4418,11 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
             it under the button that opened it — the old panes were positioned at
             a magic `top: 62px` on the pane, a value shorter than the toolbar
             itself, so opening the filter panel covered the sort button. */}
-      </div>
+      </div>}
+
+      {compact && sources.length > 0 && (
+        <ChipRow className={css.chips} label={t('action.filter')} chips={wallChips} value={wallChipValue} onSelect={pickChip} />
+      )}
 
       {wallProgress !== null && (
         <div className={css.translateStatus}>
@@ -4304,7 +4463,14 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
           // "Why is this list short?" answered where the reader is looking,
           // once per affected source, with the way to the full text.
           <div className={css.notice}>
-            {brokenSources.map(source => (
+            {/* Several at once fold into one line: each row is a source, and a
+                stack of them pushed the wall below the fold on a phone. */}
+            {brokenSources.length > 1 && !noticeOpen ? (
+              <div className={css.noticeRow}>
+                <span className={css.noticeText}>{t('state.incompleteCount', { count: String(brokenSources.length) })}</span>
+                <button type="button" className={css.noticeLink} onClick={() => { setNoticeOpen(true) }}>{t('action.showList')}</button>
+              </div>
+            ) : brokenSources.map(source => (
               <div key={source.id} className={css.noticeRow}>
                 <span className={css.noticeText}>
                   {t('state.incomplete')} · {source.label}
@@ -4319,6 +4485,9 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
                 </button>
               </div>
             ))}
+            {brokenSources.length > 1 && noticeOpen && (
+              <button type="button" className={`${css.noticeLink} ${css.noticeFold}`} onClick={() => { setNoticeOpen(false) }}>{t('action.foldList')}</button>
+            )}
           </div>
         )}
         {!loading && sources.length > 0 && displayRows.length === 0 && (
@@ -4387,7 +4556,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
                   // entry's actions without a click-through into the article.
                   if (row.entry.link === undefined) return
                   event.preventDefault()
-                  setCardMenu({ entryId: row.entry.id, top: event.clientY, left: event.clientX })
+                  setCardMenu({ entryId: row.entry.id, top: Math.max(8, Math.min(event.clientY, window.innerHeight - CARD_MENU_HEIGHT - 8)), left: Math.max(8, Math.min(event.clientX, window.innerWidth - CARD_MENU_WIDTH - 8)) })
                 }}
               >
                 <span className={css.tileWrap}>
@@ -4395,6 +4564,8 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
                   {row.unread && <span className={css.unread} />}
                 </span>
                 <span className={css.meta}>
+                  {/* Compact rows drop the source tile, so unread moves to a dot here. */}
+                  {row.unread && <span className={css.metaDot} />}
                   <span className={css.source}>{row.sourceLabel}</span>
                   <span className={css.sep}>·</span>
                   <span className={css.when}>

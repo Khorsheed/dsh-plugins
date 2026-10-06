@@ -99,6 +99,7 @@ export interface RegistryListProps {
   /** Open the review of the version the update gate holds. */
   onReview: (repo: string) => void
   onEdit: (repo: string) => void
+  /** T99 · 「删除」: opens the confirmation that offers delete-with-files and remove-registration-only. */
   onRemove: (repo: string) => void
   t: DatasetsViewProps['t']
 }
@@ -193,8 +194,6 @@ function SetRow(props: {
  */
 export function RegistryList(props: RegistryListProps) {
   const { rows, experiments, itemCounts, onOpen, onAskAgent, onReview, onEdit, onRemove, t } = props
-  // Removal is a two-step gesture: the first click arms, the second removes.
-  const [armed, setArmed] = useState<string | null>(null)
   const columns = experiments === null ? 4 : 5
   return (
     <div className={css.listScroll}>
@@ -234,20 +233,7 @@ export function RegistryList(props: RegistryListProps) {
                   <span className={css.repoActions}>
                     <Button variant="outline" size="sm" onClick={() => { onAskAgent(entry.id) }}>{t('registry.askAgent')}</Button>
                     <Button variant="outline" size="sm" onClick={() => { onEdit(entry.id) }}>{t('registry.edit')}</Button>
-                    {armed === entry.id
-                      ? (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => {
-                            setArmed(null)
-                            onRemove(entry.id)
-                          }}
-                        >
-                          {t('registry.removeConfirm')}
-                        </Button>
-                      )
-                      : <Button size="sm" variant="ghost" onClick={() => { setArmed(entry.id) }}>{t('registry.remove')}</Button>}
+                    <Button size="sm" variant="ghost" onClick={() => { onRemove(entry.id) }}>{t('registry.remove')}</Button>
                   </span>
                 </div>
                 {problem !== undefined && (

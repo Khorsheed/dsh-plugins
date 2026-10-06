@@ -14,7 +14,7 @@
  */
 import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
 import type { ReaderEntryFetchState, ReaderRecentEntry, ReaderSourceSummary, ReaderTag } from '../types.ts'
-import { repairStoredSvg } from './extract-article.ts'
+import { repairStoredBody } from './extract-article.ts'
 import type { ReaderEntry } from './parse-rss.ts'
 
 /** Which slice of the list the pane shows. */
@@ -315,7 +315,7 @@ export function createReaderStore(): EngineStoreHandle<ReaderState, ReaderAction
       setArticle: (d, html, truncated, error) => {
         // Every body reaches the screen through here, so a cached one written
         // by an older extractor is brought up to the current SVG rules once.
-        d.articleHtml = repairStoredSvg(html)
+        d.articleHtml = repairStoredBody(html)
         d.articleTruncated = truncated
         d.articleError = error
       },

@@ -6,22 +6,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   OPEN_IN_APP_APPS_ROUTE, OPEN_IN_APP_OPEN_ROUTE, OpenInAppProbe,
-  browserOnHost, pickFileManager, pickIde,
+  pickFileManager, pickIde,
 } from '../src/client/open-in-app.ts'
 
 afterEach(() => { vi.unstubAllGlobals() })
-
-describe('browserOnHost', () => {
-  it('is true only for loopback hostnames, and for an unreadable location', () => {
-    for (const hostname of ['localhost', '127.0.0.1', '[::1]', '::1', 'LOCALHOST']) {
-      expect(browserOnHost({ location: { hostname } })).toBe(true)
-    }
-    expect(browserOnHost({ location: { hostname: 'bridge-spider.trycloudflare.com' } })).toBe(false)
-    expect(browserOnHost({ location: { hostname: '192.168.1.20' } })).toBe(false)
-    expect(browserOnHost({})).toBe(true)
-    expect(browserOnHost({ location: { hostname: '' } })).toBe(true)
-  })
-})
 
 describe('OpenInAppProbe off-host', () => {
   it('publishes no apps without probing when the page is not on the host', async () => {

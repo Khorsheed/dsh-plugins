@@ -776,3 +776,99 @@
   outline-offset: 1px;
   border-radius: 2px;
 }
+
+/* ── T99 · the 删除 / 放弃 confirmations ─────────────────────────────── */
+.removeDialog.removeDialog {
+  width: min(560px, 100%);
+}
+
+.removeBody {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--dsw-alias-label-primary);
+}
+
+.removeBody p {
+  margin: 0;
+}
+
+.removePath {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+}
+
+.removePath[data-tone='delete'] {
+  border-color: var(--dsw-alias-state-error-primary, var(--dsw-alias-border-l2));
+  background: var(--dsw-alias-interactive-bg-hover-danger);
+}
+
+.removePathLabel {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+}
+
+.removePathValue {
+  font-family: var(--ds-font-family-code, ui-monospace, monospace);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.removePath ul {
+  margin: 0;
+  padding-left: 18px;
+  overflow-wrap: anywhere;
+}
+
+.removeKeep {
+  color: var(--dsw-alias-label-primary);
+}
+
+.removeQuiet {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.removeExperiments ul,
+.removeChoices {
+  margin: 4px 0;
+  padding-left: 18px;
+}
+
+.removeChoices {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.removeChoices strong {
+  color: var(--dsw-alias-label-primary);
+  font-weight: 600;
+}
+
+.removeWarn {
+  color: var(--dsw-alias-state-error-primary);
+  font-weight: 600;
+}
+
+.removeError {
+  color: var(--dsw-alias-state-error-primary);
+  overflow-wrap: anywhere;
+}
+
+/* A destructive action: the outline button in the error ink. */
+.dangerButton.dangerButton {
+  border-color: var(--dsw-alias-state-error-primary);
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.dangerButton.dangerButton:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover-danger);
+}

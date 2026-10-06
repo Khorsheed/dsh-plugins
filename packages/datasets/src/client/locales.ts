@@ -13,7 +13,41 @@ export type DatasetsKey =
   | 'registry.importing'
   | 'registry.edit'
   | 'registry.remove'
-  | 'registry.removeConfirm'
+  | 'remove.titleDelete'
+  | 'remove.titleUnregister'
+  | 'remove.loading'
+  | 'remove.planFailed'
+  | 'remove.pathDelete'
+  | 'remove.pathKeep'
+  | 'remove.stateCount'
+  | 'remove.choiceDelete'
+  | 'remove.choiceUnregister'
+  | 'remove.unregisterNote'
+  | 'remove.keep.outside-home'
+  | 'remove.keep.symlink'
+  | 'remove.keep.not-repo-root'
+  | 'remove.keep.other-checkouts'
+  | 'remove.keep.missing'
+  | 'remove.keep.registered'
+  | 'remove.experiments'
+  | 'remove.experimentsMore'
+  | 'remove.experimentsNote'
+  | 'remove.experimentsNone'
+  | 'remove.irreversible'
+  | 'remove.cancel'
+  | 'remove.delete'
+  | 'remove.unregisterOnly'
+  | 'remove.unregister'
+  | 'remove.working'
+  | 'remove.close'
+  | 'discard.action'
+  | 'discard.actionTitle'
+  | 'discard.title'
+  | 'discard.planFailed'
+  | 'discard.pathDelete'
+  | 'discard.body'
+  | 'discard.confirmDelete'
+  | 'discard.confirm'
   | 'registry.tracking'
   | 'registry.authoring'
   | 'registry.noAuthoring'
@@ -519,8 +553,42 @@ export const zh: Record<DatasetsKey, string> = {
   'registry.import': '导入以前在会话里绑定的题库',
   'registry.importing': '正在导入…',
   'registry.edit': '编辑登记',
-  'registry.remove': '移除登记',
-  'registry.removeConfirm': '确认移除（只删登记，仓库不动）',
+  'registry.remove': '删除',
+  'remove.titleDelete': '删除「{id}」',
+  'remove.titleUnregister': '移除「{id}」的登记',
+  'remove.loading': '正在检查这个仓库…',
+  'remove.planFailed': '读不出这个仓库的情况（{message}）。仍可以只移除登记，文件留在原处。',
+  'remove.pathDelete': '将从磁盘删除这个目录',
+  'remove.pathKeep': '仓库位置',
+  'remove.stateCount': '本插件为它生成的 {count} 份只读副本也一并清理',
+  'remove.choiceDelete': '：撤掉登记，并把上面这个目录从磁盘删除。',
+  'remove.choiceUnregister': '：题集从列表里消失，文件留在原处，以后可以重新登记。',
+  'remove.unregisterNote': '移除登记后，题集从列表里消失，以后可以重新登记。',
+  'remove.keep.outside-home': '文件留在原处：这个仓库不在题集目录下，不是在这里建的，只移除登记。',
+  'remove.keep.symlink': '文件留在原处：这条路径经过符号链接，为安全起见不删除，只移除登记。',
+  'remove.keep.not-repo-root': '文件留在原处：这个目录和登记的仓库根目录对不上，不删除，只移除登记。',
+  'remove.keep.other-checkouts': '文件留在原处：这个仓库在别处还有 {count} 个工作副本，删了会让它们失效，只移除登记。',
+  'remove.keep.missing': '仓库目录已经不在磁盘上了，只需移除登记。',
+  'remove.keep.registered': '文件留在原处：这个仓库已经登记过，放弃只删掉这份待登记记录。',
+  'remove.experiments': '有 {count} 个实验用过它：',
+  'remove.experimentsMore': '还有 {count} 个',
+  'remove.experimentsNote': '这些实验的历史记录会保留，但删除后它们不能再运行。',
+  'remove.experimentsNone': '没有实验用过它。',
+  'remove.irreversible': '删除后无法撤销。',
+  'remove.cancel': '取消',
+  'remove.delete': '删除题集和文件',
+  'remove.unregisterOnly': '只移除登记，文件保留',
+  'remove.unregister': '移除登记',
+  'remove.working': '正在处理…',
+  'remove.close': '关闭',
+  'discard.action': '放弃',
+  'discard.actionTitle': '不要这份整理结果：删掉待登记记录和整理出的仓库',
+  'discard.title': '放弃「{name}」的整理结果',
+  'discard.planFailed': '读不出这份整理结果的情况（{message}）。仍可以放弃，只删掉待登记记录。',
+  'discard.pathDelete': '将从磁盘删除整理出的仓库',
+  'discard.body': '待登记记录会删掉，这条横幅不再出现。整理会话保留，可以回去接着聊。',
+  'discard.confirmDelete': '放弃并删除仓库',
+  'discard.confirm': '放弃',
   'registry.tracking': '跟踪 {ref}',
   'registry.authoring': '有写入检出',
   'registry.noAuthoring': '只读登记（没有写入检出）',
@@ -900,8 +968,42 @@ export const en: Record<DatasetsKey, string> = {
   'registry.import': 'Import datasets bound in earlier sessions',
   'registry.importing': 'Importing…',
   'registry.edit': 'Edit registration',
-  'registry.remove': 'Remove registration',
-  'registry.removeConfirm': 'Confirm removal (the repository is untouched)',
+  'registry.remove': 'Delete',
+  'remove.titleDelete': 'Delete 「{id}」',
+  'remove.titleUnregister': 'Remove the registration of 「{id}」',
+  'remove.loading': 'Checking this repository…',
+  'remove.planFailed': 'Could not read this repository ({message}). You can still remove the registration only; the files stay where they are.',
+  'remove.pathDelete': 'This directory will be deleted from disk',
+  'remove.pathKeep': 'Repository location',
+  'remove.stateCount': '{count} read-only copies this plugin made of it are cleared too',
+  'remove.choiceDelete': ': drop the registration and delete the directory above from disk.',
+  'remove.choiceUnregister': ': the set leaves the list, the files stay where they are, and you can register it again later.',
+  'remove.unregisterNote': 'Once the registration is removed the set leaves the list; you can register it again later.',
+  'remove.keep.outside-home': 'The files stay where they are: this repository is not inside the datasets directory and was not created here, so only the registration goes.',
+  'remove.keep.symlink': 'The files stay where they are: the path goes through a symbolic link, so for safety nothing is deleted and only the registration goes.',
+  'remove.keep.not-repo-root': 'The files stay where they are: this directory does not match the registered repository root, so nothing is deleted and only the registration goes.',
+  'remove.keep.other-checkouts': 'The files stay where they are: this repository has {count} other working copies elsewhere that deleting would break, so only the registration goes.',
+  'remove.keep.missing': 'The repository directory is no longer on disk; only the registration needs removing.',
+  'remove.keep.registered': 'The files stay where they are: this repository is registered already, so discarding removes only this pending record.',
+  'remove.experiments': '{count} experiments used it:',
+  'remove.experimentsMore': 'and {count} more',
+  'remove.experimentsNote': 'Their history is kept, but after the deletion they can no longer run.',
+  'remove.experimentsNone': 'No experiment has used it.',
+  'remove.irreversible': 'Deleting cannot be undone.',
+  'remove.cancel': 'Cancel',
+  'remove.delete': 'Delete the set and its files',
+  'remove.unregisterOnly': 'Remove the registration only, keep the files',
+  'remove.unregister': 'Remove registration',
+  'remove.working': 'Working…',
+  'remove.close': 'Close',
+  'discard.action': 'Discard',
+  'discard.actionTitle': 'Drop this organizing result: delete the pending record and the organized repository',
+  'discard.title': 'Discard the organizing result 「{name}」',
+  'discard.planFailed': 'Could not read this organizing result ({message}). You can still discard it; only the pending record is deleted.',
+  'discard.pathDelete': 'The organized repository will be deleted from disk',
+  'discard.body': 'The pending record is deleted and this banner goes away. The organizing session stays; you can go back and keep talking.',
+  'discard.confirmDelete': 'Discard and delete the repository',
+  'discard.confirm': 'Discard',
   'registry.tracking': 'tracking {ref}',
   'registry.authoring': 'has a checkout',
   'registry.noAuthoring': 'read-only registration (no authoring checkout)',

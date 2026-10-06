@@ -14,7 +14,7 @@
  *
  * @module @khorsheed/dsh-datasets
  */
-import { createReadStream, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
+import { createReadStream, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { open } from 'node:fs/promises'
 import { randomBytes } from 'node:crypto'
 import { basename, join } from 'node:path'
@@ -313,6 +313,8 @@ export interface ProposalStore {
   confirm(id: string, registryId: string, sets: Record<string, RegistrySet>): Promise<RegistryEntry>
   /** Send it back with a note for the organizing session. */
   giveBack(id: string, note: string): Proposal
+  /** T99 · drop a stored proposal record (the 「放弃」 gesture's record half). Returns false when absent. */
+  remove(id: string): boolean
   /** The review of a registration's pending version, without a proposal (the update gate held it). */
   reviewPending(entry: RegistryEntry): Promise<ProposalReview | undefined>
   /** Confirm a registration's pending version. */
@@ -1186,6 +1188,13 @@ export function openProposals(root: string, deps: ProposalDeps): ProposalStore {
       const next: Proposal = { ...proposal, status: 'returned', returnNote: note, updatedAt: new Date().toISOString() }
       write(next)
       return next
+    },
+
+    remove(id) {
+      const path = pathOf(id)
+      if (!existsSync(path)) return false
+      rmSync(path, { force: true })
+      return true
     },
 
     async reviewPending(entry) {

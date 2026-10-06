@@ -17,6 +17,7 @@
 - **`ChipRow`**——单一样式的筛选 chip：选中强调色浅底，未选描边；可选计数与色点；整行横向滚动，永远一行高。
 - **`ListRow`**——图标、主色标题、附注、右侧尾部；选中为强调色浅底；有 `onSelect` 时是按钮。
 - **`AdaptiveSplit`**——保留挂载的列表/详情布局（P1 从 ui-content-preview 迁入）：宽时并列，宽度 ≤ 560px 时详情打开即替换列表，返回回到原样的列表。详情自带标题栏时设 `backInDetail`，用 `useAdaptiveSplitBack()` 把返回画进自己的标题栏，窄屏少占一行。仓库根运行 `node packages/ui-panel-kit/examples/adaptive-split/serve.mjs` 可看真实组件配合模拟数据的独立预览。
+- **`browserOnHost()`**——页面是否在宿主电脑本机打开（地址为 localhost / 127.0.0.1 / ::1；读不到地址时按本机处理）。会在宿主上打开程序的操作（访达、IDE、原生目录对话框）在远程访问时应隐藏（2026-10-06 从 ui-content-preview 迁入）。
 
 `PanelHeader` 的操作可标 `pinned`（常显）、`menuOnly`（只进「…」，如完整路径这类信息行）、`pressed`（开关的按下态）；`PanelRoot` 的子节点可以是函数，拿到当前紧凑状态。
 

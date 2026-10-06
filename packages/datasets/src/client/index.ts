@@ -384,6 +384,8 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     register: (_sid: SessionId, input: RegisterInput) => remote.register(input),
     updateRegistration: (_sid: SessionId, input: UpdateInput) => remote.updateRegistration(input),
     unregister: (_sid: SessionId, id: string) => remote.unregister({ id }),
+    deletePlan: (_sid: SessionId, id: string) => remote.deletePlan({ id }),
+    deleteRegistration: (_sid: SessionId, id: string) => remote.deleteRegistration({ id }),
     importBindings: (_sid: SessionId) => remote.importBindings(),
     listDatasets: (_sid: SessionId, repo: string, dataset?: string) =>
       remote.list(dataset === undefined ? { repo } : { repo, dataset }),
@@ -404,6 +406,8 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     confirmProposal: (_sid: SessionId, id: string, registryId: string, sets: Record<string, { layers: string[] }>) =>
       remote.confirmProposal({ id, registryId, sets }),
     returnProposal: (_sid: SessionId, id: string, note: string) => remote.returnProposal({ id, note }),
+    discardPlan: (_sid: SessionId, id: string) => remote.discardPlan({ id }),
+    discardProposal: (_sid: SessionId, id: string) => remote.discardProposal({ id }),
     pendingReview: (_sid: SessionId, repo: string) => remote.pendingReview({ repo }),
     confirmPending: (_sid: SessionId, repo: string, commit: string, sets: Record<string, { layers: string[] }>) =>
       remote.confirmPending({ repo, commit, sets }),

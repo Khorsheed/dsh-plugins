@@ -166,12 +166,41 @@ export async function readExperiment(stateRoot: string, id: string): Promise<Exp
   return { id, dir, planPath: join(dir, 'plan.json'), meta: metaOf(parsed, id) }
 }
 
+/** One experiment directory whose meta cannot be read (T99). */
+export interface ExperimentProblem {
+  /** The directory name. */
+  id: string
+  /** Why it cannot be read, in the host's words. */
+  message: string
+}
+
+/**
+ * Whether a directory holds anything but (nested) empty directories. A
+ * symlink or any other entry counts as content and is never followed; an
+ * unreadable directory counts as content too — it is not provably empty.
+ */
+async function holdsContent(dir: string): Promise<boolean> {
+  let entries
+  try {
+    entries = await readdir(dir, { withFileTypes: true })
+  } catch {
+    return true
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory()) return true
+    if (await holdsContent(join(dir, entry.name))) return true
+  }
+  return false
+}
+
 /**
  * Every readable experiment, newest first. A directory whose meta cannot be
  * read is skipped and named in `problems` — one broken directory must not
- * empty the lab list.
+ * empty the lab list. A directory holding nothing but empty directories (a
+ * temp-cleaner's leftover, T99) is skipped silently: there is nothing in it
+ * to recover or to tell about.
  */
-export async function listExperimentRecords(stateRoot: string): Promise<{ records: ExperimentRecord[]; problems: string[] }> {
+export async function listExperimentRecords(stateRoot: string): Promise<{ records: ExperimentRecord[]; problems: ExperimentProblem[] }> {
   let names: string[]
   try {
     const entries = await readdir(experimentsRoot(stateRoot), { withFileTypes: true })
@@ -180,15 +209,17 @@ export async function listExperimentRecords(stateRoot: string): Promise<{ record
     return { records: [], problems: [] }
   }
   const records: ExperimentRecord[] = []
-  const problems: string[] = []
+  const problems: ExperimentProblem[] = []
   for (const name of names) {
     try {
       records.push(await readExperiment(stateRoot, name))
     } catch (error) {
-      problems.push(error instanceof Error ? error.message : String(error))
+      if (!await holdsContent(join(experimentsRoot(stateRoot), name))) continue
+      problems.push({ id: name, message: error instanceof Error ? error.message : String(error) })
     }
   }
   records.sort((a, b) => b.meta.createdAt.localeCompare(a.meta.createdAt) || a.id.localeCompare(b.id))
+  problems.sort((a, b) => a.id.localeCompare(b.id))
   return { records, problems }
 }
 
