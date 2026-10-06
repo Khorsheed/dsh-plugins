@@ -145,8 +145,8 @@ describe('the novel store', () => {
     // Live means canon: the brief carries it at once, no ✓ in between.
     const after = await store.gatherBrief({ workId: DREAM.workId })
     expect(after.data?.canonRules.some(view => view.text.includes('接缝'))).toBe(true)
-    // ✗ archives a card — the seeded canvas-native proposal too; it stays on the board, hidden.
-    expect((await store.archiveCard({ workId: DREAM.workId, id: 'w6' }, SESSION)).ok).toBe(true)
+    // ✗ archives a card through the canvas's own status (canvas_write op=archive) — the seeded proposal too; hidden, not deleted.
+    expect((await canvas.patchCard({ canvasId: DREAM.workId, cardId: CARD.dreamLayers, status: 'archived' }, SESSION)).ok).toBe(true)
     expect(canvas.card(DREAM.workId, CARD.dreamLayers)?.status).toBe('archived')
     // A proposal needs every required field (a world card its name too); the next one draws max+1.
     expect((await store.writeCard({ workId: DREAM.workId, role: 'world', fields: {} }, SESSION)).error).toBe('invalid-name')
@@ -358,11 +358,10 @@ describe('the novel store', () => {
     // A ref of another role, or an empty patch, refuses.
     expect((await store.writeCard({ workId: DREAM.workId, role: 'foreshadow', id: 'w2', fields: { question: 'x' } }, SESSION)).ok).toBe(false)
     expect((await store.writeCard({ workId: DREAM.workId, role: 'world', id: 'w2', fields: { bogus: 'x' } }, SESSION)).error).toBe('invalid-name')
-    // Archive retires the kept card; a second archive refuses.
-    expect((await store.archiveCard({ workId: DREAM.workId, id: 'w2' }, SESSION)).ok).toBe(true)
+    // Archive retires the kept card from the brief.
+    expect((await canvas.patchCard({ canvasId: DREAM.workId, cardId: CARD.leafCarrier, status: 'archived' }, SESSION)).ok).toBe(true)
     const after = await store.gatherBrief({ workId: DREAM.workId })
     expect(after.data?.canonRules.some(view => view.cardId === CARD.leafCarrier)).toBe(false)
-    expect((await store.archiveCard({ workId: DREAM.workId, id: 'w2' }, SESSION)).ok).toBe(false)
   })
 
   it('confirmChapterPlan stamps the gate and is idempotent; a planless chapter refuses', async () => {

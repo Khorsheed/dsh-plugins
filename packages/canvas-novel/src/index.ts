@@ -27,6 +27,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { NOVEL_GENRE, type CanvasBoardSlice } from './genre.ts'
 import { NovelRemoteService } from './remote.ts'
 import { NovelService, type NovelConfig } from './store.ts'
+import { novelGenreAgent } from './genre-agent.ts'
 
 export { NovelService, resolveNovelStateRoot, novelErrorOf, evidenceInBody, tailOf, cleanFields, entriesOf, MAIN_FIELD } from './store.ts'
 export type { NovelConfig, WorkEntries, CardHandle } from './store.ts'
@@ -59,10 +60,12 @@ export const inject = ['fs']
  * @param config - optional store config (state-root override).
  */
 export function apply(ctx: Context, config: NovelConfig = {}): void {
-  ctx.provide('canvasNovel', new NovelService(ctx, config))
+  const store = new NovelService(ctx, config)
+  ctx.provide('canvasNovel', store)
   ctx.plugin(NovelRemoteService, {})
   ctx.inject(['canvasBoard'], (canvasCtx) => {
     const canvas = canvasCtx.get('canvasBoard') as CanvasBoardSlice
-    canvasCtx.effect(() => canvas.registerGenre(NOVEL_GENRE), 'canvas-novel: the 长篇小说 genre')
+    const genre = { ...NOVEL_GENRE, agent: novelGenreAgent(store) }
+    canvasCtx.effect(() => canvas.registerGenre(genre), 'canvas-novel: the 长篇小说 genre')
   })
 }

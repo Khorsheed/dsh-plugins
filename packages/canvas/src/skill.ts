@@ -20,7 +20,7 @@ export const CANVAS_SKILL_DESCRIPTION =
 export const CANVAS_SKILL_CONTENT = `# canvas — working on the open canvas
 
 The canvas is the user's board of cards, grouped by category, plus the manuscripts written from them. All three
-tools act on the canvas open in the right sidebar's Canvas tab; with none open they say so — ask the user to open
+tools act on the canvas the session is bound to, else the one open in the right sidebar's Canvas tab; with none open they say so — ask the user to open
 one, never guess. Tool answers are in Chinese.
 
 ## Reading — canvas_read
@@ -30,6 +30,7 @@ one, never guess. Tool answers are in Chinese.
 - \`kind\`: that category's type — the user's brief (with sketches and pasted images attached when you can see
   images), the adopted field definition, any proposal awaiting the user, the revision log, a few sample cards —
   followed by its card list.
+- \`cardId\`: that card in full — fields, body, source, comments.
 - \`manuscriptId\`: the manuscript's full body, its current version, and the cards it used / left out.
 - Archived cards are counted, not listed, unless \`includeArchived\`. When a title is not enough, ask the user to
   quote the card.
@@ -39,8 +40,10 @@ one, never guess. Tool answers are in Chinese.
 - A card lands as **proposed**; only the user's ✓ keeps it (✗ archives it). Sources, questions, shared
   understandings, counter-examples and examples all go here — never paste card text into your reply as if it were
   on the board.
-- A genre canvas may write its cards with its own tool (a 长篇小说 canvas: \`novel_write\`); canvas_write op=card
-  refuses there and names that tool — use it.
+- On a genre canvas (a 长篇小说 work, say) the genre's own categories follow the genre's rules: their cards land at
+  once instead of as proposals, read and write with the genre's refs (\`c3\`, \`#12\`), a namesake is refused in
+  favour of patching the existing card, and \`cardId\` + \`fields\` patches one. The answer says what landed. Outside
+  those categories, and on every other canvas, you only propose — the user edits cards.
 - \`kind\` is a category id. Built-ins: \`fragment\` (inspiration), \`question\`, \`grounding\` (a shared understanding
   — propose only; it counts once the user restates it), \`reference\` (always with \`source\`), \`document\`. Canvases
   often carry renamed or user-made categories (ids like \`cat_…\`): when the user names a category, read the catalog
@@ -56,8 +59,14 @@ one, never guess. Tool answers are in Chinese.
 \`cardId\` + \`text\`. Name one hidden assumption or tension and end on one pointed question. Commenting on a question
 card moves it from open to exploring.
 
+## Archive — canvas_write op=archive
+
+\`cardId\`: archive a card that is wrong or no longer used (the user can bring it back from 已归档). Do it at the
+user's word, or for a card you just landed by mistake.
+
 ## Manuscripts — canvas_write op=manuscript
 
+- A genre that owns the canvas's 成稿 (a 长篇小说 work: its chapters) answers op=manuscript with its own flow.
 - Drafts go on the canvas as a manuscript (the user reads, edits and exports it there), not into the reply.
 - New: omit \`manuscriptId\`; \`text\` is the whole body in Markdown (the first heading becomes the title, or give
   \`title\`).

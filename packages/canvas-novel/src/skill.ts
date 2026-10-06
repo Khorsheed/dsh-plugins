@@ -3,8 +3,9 @@
  * descriptions defer to (the canvas skill precedent — one standing skill,
  * loaded on demand, carrying NO work content: chapter 6 and chapter 60 use
  * the same manual). The body follows the CP0 copy deck's §1, re-cut for the
- * canvas: settings live as cards; the agent's new cards land live, marked
- * new (✦) on the board, and the user edits or archives what is wrong.
+ * canvas: settings live as cards, written with canvas_write (the genre's
+ * hooks land them live, marked new (✦) on the board), and the user edits or
+ * archives what is wrong.
  * The `./agent` entry registers it beside the tools so it exists exactly
  * where they do.
  *
@@ -33,7 +34,7 @@ novel_bind(work=标题)，下一步工具即出现；拿不准是哪部就问用
    最稳的写法是 novel_write(chapter, content=…)：由插件经会话围栏落盘，
    落不进就拒绝登记，绝不会出现「登记了但没文件」。自己用宿主文件工具写时，
    路径必须是挂载工作区内登记的那个。
-   设定只经 novel_* 工具落到画布卡片上，绝不在对话里「口头记录」。
+   设定只经 canvas_write 落到画布卡片上，绝不在对话里「口头记录」。
 2. 不满意的正文不进对账：正文不满意就先改，别对账。审过是人工闸门，永远最后：
    写完 → 对账（novel_extract）→ 处理待审 → 用户「审过」收章。
 3. 置信度只属于对账：伏笔提及与角色经历拿不准的给 medium/low，交待审队列让用户定；写卡片字段时只写内容本身，绝不在字段里标「置信度」「推断」之类的括注；绝不替用户拍板。
@@ -60,20 +61,22 @@ novel_bind(work=标题)，下一步工具即出现；拿不准是哪部就问用
 - 兴奋分享 → 先当读者回应内容本身，再问要不要落卡。
 
 ## 意图路由
-- 闲聊/讨论立意 → 正常聊，不调 novel 工具（最多 novel_read 查设定）；用户想梳理整体
+- 闲聊/讨论立意 → 正常聊，不调 novel 工具（最多 canvas_read 查设定）；用户想梳理整体
   思路时，按「阶段与角色」的编辑角色做主线三栏。
-- 聊设定 → 识别可固化点，落卡（novel_write · card）。
+- 聊设定 → 识别可固化点，落卡（canvas_write op=card）。
 - 规划/写第N章 → 三环：规划 → 写作 →（用户审过）→ 对账。
 - 用户跳过规划直接喊写：先登记一份你默认的 plan（梗概/走向/伏笔），请用户点一下「确认计划」再动笔。
 
 ## 设定落卡
 - 「一句话能复述、且影响后续创作」的才落卡；讨论过程、语气感叹不落。
-- role 即画布分类：人物 / 世界 / 原则 / 伏笔 / 关系。拿不准归哪类就先问一句。
+- 落卡：canvas_write(op=card, kind=人物|世界|原则|伏笔|关系, fields={…})，kind 即画布分类。拿不准归哪类就先问一句。
+- 看卡：canvas_read 列出全部卡和编号（c3、#12、w5），带 kind 只看一类，带 cardId 读一张全文。
 - 新卡落下即生效：立刻进 brief、伏笔立刻进台账可按 #编号 引用；画布上带 ✦ 新卡标记，用户看过、改过或归档（✗）即消。
   所以落卡前想清楚，拿不准的先问一句再落。
 - 世界卡先起名再写设定：name 是这条设定的名字（一个地点、一件道具、一条规则），rule 是具体内容。
 - 一个名字只有一张卡：同名的人物/世界卡会被拒绝，补内容就改那张。
-- 改已有的卡：novel_write(card, id=ref, fields=…)，只给要改的字段。
+- 改已有的卡：canvas_write(op=card, cardId=编号, fields=…)，只给要改的字段。
+- 不再用的卡：canvas_write(op=archive, cardId=编号)，归档后隐藏、不删除；用户自己点 ✗ 也一样。
 - 落卡类工具结果不必在对话里逐条复述播报——画布自己会显示；只在需要用户决策时
   说话：plan 确认、待审处理、计划落空。
 

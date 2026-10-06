@@ -475,12 +475,50 @@ export interface CanvasGenreDefinition {
    */
   readonly ownsManuscripts?: boolean
   /**
-   * The tool the genre's agent writes cards with (`novel_write`). On the
-   * genre's canvases `canvas_write` op=card steps aside and names this tool:
-   * the genre lands its agent cards live, so a canvas-native proposal there
-   * would be a ghost the genre's ledger never reads.
+   * The genre's say in the canvas tools. On the genre's canvases `canvas_read`
+   * and `canvas_write` stay the one place the agent reads and writes cards,
+   * and hand the genre's own categories (those with a `role`) to these hooks:
+   * the genre knows its refs, duplicate rules and what lands live, so a card
+   * never has two tools that disagree about it.
    */
-  readonly agentCardTool?: string
+  readonly agent?: CanvasGenreAgent
+}
+
+/**
+ * The session a genre hook runs under (the host `Session`, which fences its
+ * writes). Structural here: this module is shared with the browser half, and
+ * the host session types do not belong in the client compilation.
+ */
+export type GenreHookSession = object
+
+/** One agent card write `canvas_write` hands a genre (the model's arguments, untouched). */
+export interface CanvasGenreCardWrite {
+  readonly canvasId: string
+  readonly kind?: string
+  /** The card to patch: an id or any handle the genre reads (`c3`, `#12`, a name). */
+  readonly cardId?: string
+  readonly fields?: Readonly<Record<string, unknown>>
+  readonly text?: string
+  readonly comment?: string
+}
+
+/**
+ * A genre's hooks into the canvas tools. Every answer is model-facing text;
+ * `undefined` means "not one of mine" and the canvas answers generically.
+ */
+export interface CanvasGenreAgent {
+  /** The genre's own cards as one line each (optionally one category's, by id). */
+  cardLines(request: { readonly canvasId: string; readonly kind?: string; readonly includeArchived: boolean }, session: GenreHookSession): Promise<readonly string[]>
+  /** One of the genre's cards in full, or undefined when the handle names none of them. */
+  cardDetail(request: { readonly canvasId: string; readonly cardId: string }, session: GenreHookSession): Promise<string | undefined>
+  /** Create or patch one of the genre's cards, or undefined when the kind / card is not the genre's. */
+  writeCard(request: CanvasGenreCardWrite, session: GenreHookSession): Promise<string | undefined>
+  /** A card id from any handle the genre reads, or undefined. */
+  resolveCard(request: { readonly canvasId: string; readonly token: string }, session: GenreHookSession): Promise<string | undefined>
+  /** The genre's 成稿 listing for `canvas_read` (with `ownsManuscripts`): the novel's chapters, in order. */
+  manuscripts?(request: { readonly canvasId: string }): Promise<string>
+  /** What `canvas_write` op=manuscript answers on the genre's canvases (with `ownsManuscripts`). */
+  readonly manuscriptGuide?: string
 }
 
 /** One registered genre as the browser lists it. */

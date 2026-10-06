@@ -24,8 +24,9 @@ It replaces the retired `@khorsheed/dsh-story-bible`. Data under the old `$DSH_H
   The single source of truth for manuscripts is `<workspace>/<canvas title>/第{n}章.md` in the canvas's mounted workspace.
 - **Model tools**, registered by the `./agent` composition entry and origin-tagged:
   - `novel_bind`: lists the long-novel works and binds the calling session to one by title; it sits on the grant scope, so unbound sessions have it too;
-  - `novel_read`: the brief in three variants, cards, card, chapters, ledger, pending, chapter;
-  - `novel_write`: card lands a new card or edits a card by ref, chapter numbers automatically, review handles pending items (accept, discard), archives cards and retracts experiences;
+  - `novel_read`: the brief in three variants, chapters, ledger, pending, chapter;
+  - `novel_write`: chapter numbers automatically, review handles pending items (accept, discard);
+  - cards have no tool of their own: on a novel canvas the canvas's `canvas_read` / `canvas_write` hand the five role categories to this package's genre hooks — `canvas_read` lists the cards with their refs (c3, #12, w5) and the chapters in order as the manuscripts, and reads one card in full with `cardId`; `canvas_write op=card` lands a new card (live, duplicate-checked), patches one by ref with `cardId`, and `op=archive` archives;
   - `novel_extract`: prepare builds the material pack, import files the result through five validation gates.
 - **The `novel:pointer` function section** (order 9500): renders one line when the session is bound to a long-novel canvas, and an empty string otherwise, so small talk costs nothing.
 - **The `novel` skill**: an on-demand operating manual (including the stage-and-role model: an editor sorting the main line at ideation, a partner executing the plan while drafting, a companion with the smallest next step when blocked) that carries no work content.

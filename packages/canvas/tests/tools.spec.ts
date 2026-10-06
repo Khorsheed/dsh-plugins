@@ -166,21 +166,57 @@ describe('the canvas tools on the open canvas', () => {
     expect((await readCurrent()).cards[0]?.question).toEqual({ state: 'exploring' })
   })
 
-  it('canvas_write op=card steps aside on a genre canvas whose genre writes its own cards', async () => {
+  it('canvas_write patches nothing on a plain canvas, archives by id, and canvas_read shows one card in full', async () => {
+    const { execute, readCurrent } = await harness()
+    await execute('canvas_write', { op: 'card', kind: 'fragment', text: '雨夜的钟声', comment: '开头的意象' })
+    const cardId = (await readCurrent()).cards[0]!.id
+    expect(await execute('canvas_write', { op: 'card', cardId, text: '改' })).toBe('失败：这张卡由用户来改；要补充就 op=comment 在这张卡上留言，或 op=card 另提一张。')
+    expect(await execute('canvas_read', { cardId })).toBe(`${cardId}　[灵感]　待确认　雨夜的钟声\n---\n雨夜的钟声\n---\n评论：\n- 你：开头的意象`)
+    expect(await execute('canvas_write', { op: 'archive', cardId })).toBe(`已归档：${cardId}（用户在画布的「已归档」里能找回）。`)
+    expect((await readCurrent()).cards[0]?.status).toBe('archived')
+    expect(await execute('canvas_write', { op: 'archive', cardId: 'c_nope' })).toBe('失败：没有卡片「c_nope」。')
+  })
+
+  it('hands a genre canvas\'s own categories to the genre\'s agent hooks, and keeps the rest generic', async () => {
     const { canvasId, execute, readCurrent, board } = await harness()
+    // A card from before the genre: its built-in category stays on (it holds a card), and stays generic.
+    await execute('canvas_write', { op: 'card', kind: 'fragment', text: '雨夜' })
+    const calls: unknown[] = []
     board.registerGenre({
-      id: 'novel', label: '长篇小说', version: 'novel@1', description: '', agentCardTool: 'novel_write',
+      id: 'novel', label: '长篇小说', version: 'novel@1', description: '', ownsManuscripts: true,
       categories: [{ role: 'character', label: '人物' }],
+      agent: {
+        cardLines: async request => { calls.push(['lines', request]); return ['- [c1] 人物 老周'] },
+        cardDetail: async request => request.cardId === 'c1' ? '[c1] 老周（钟表匠）' : undefined,
+        writeCard: async request => {
+          calls.push(['write', request])
+          return request.kind === '人物' || request.cardId === 'c1' ? '已落卡 [c2]' : undefined
+        },
+        resolveCard: async request => request.token === 'c1' ? (await readCurrent()).cards[0]?.id : undefined,
+        manuscripts: async () => '章节（1 章，按章号）：\n- 第1章 雨夜',
+        manuscriptGuide: '这块画布的成稿是章节：用 novel_write(what=chapter) 写。',
+      },
     })
     expect(await board.selectGenre({ canvasId, genreId: 'novel' }, FALLBACK)).toMatchObject({ ok: true })
-    const answer = await execute('canvas_write', { op: 'card', kind: 'fragment', text: '雨夜' }) as string
-    expect(answer).toBe('失败：这块画布是「长篇小说」体裁，卡片用 novel_write 写（直接落成正式卡），canvas_write 不在这里落卡。')
-    expect((await readCurrent()).cards).toHaveLength(0)
+    expect(await execute('canvas_write', { op: 'card', kind: '人物', fields: { name: '小满' } })).toBe('已落卡 [c2]')
+    expect(await execute('canvas_write', { op: 'card', cardId: 'c1', fields: { identity: '学徒' } })).toBe('已落卡 [c2]')
+    expect(calls).toContainEqual(['write', { canvasId, kind: '人物', fields: { name: '小满' } }])
+    // Not the genre's: the hook answers undefined and the card is proposed the generic way.
+    expect(await execute('canvas_write', { op: 'card', kind: 'fragment', text: '钟声' })).toMatch(/^完成：c_/)
+    const read = await execute('canvas_read', {}) as string
+    expect(read).toContain('长篇小说卡片（1 张）：\n- [c1] 人物 老周')
+    expect(read).toContain('卡片（2 张）：')
+    expect(read).toContain('章节（1 章，按章号）：\n- 第1章 雨夜')
+    expect(read).not.toContain('成稿：')
+    expect(await execute('canvas_read', { cardId: 'c1' })).toBe('[c1] 老周（钟表匠）')
+    expect(await execute('canvas_write', { op: 'manuscript', text: '# 第一章' })).toBe('这块画布的成稿是章节：用 novel_write(what=chapter) 写。')
+    expect(await execute('canvas_write', { op: 'archive', cardId: 'c1' })).toBe('已归档：c1（用户在画布的「已归档」里能找回）。')
+    expect((await readCurrent()).cards[0]?.status).toBe('archived')
   })
 
   it('answers the failure code instead of throwing on a bad card reference', async () => {
     const { execute } = await harness()
-    expect(await execute('canvas_write', { op: 'comment', cardId: 'c_nope', text: 'x' })).toBe('失败：missing')
+    expect(await execute('canvas_write', { op: 'comment', cardId: 'c_nope', text: 'x' })).toBe('失败：没有卡片「c_nope」。')
   })
 })
 
@@ -200,6 +236,8 @@ describe('the board read and custom categories', () => {
     expect(read).toContain('卡片（1 张，另有 1 张已归档未列出）：')
     expect(read).toMatch(/- c_\S+　\[人物\]　待确认　林默：退役刑警/)
     expect(await execute('canvas_read', { kind: 'fragment', includeArchived: true })).toMatch(/\[灵感\]　已归档　雨夜/)
+    // kind also takes the name the board shows.
+    expect(await execute('canvas_read', { kind: '人物' })).toMatch(/\[人物\]　待确认　林默/)
   })
 
   it('answers an unknown kind with the valid ids instead of a bare code', async () => {

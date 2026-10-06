@@ -9,6 +9,7 @@
     "src/agent.ts",
     "src/brief.ts",
     "src/genre.ts",
+    "src/genre-agent.ts",
     "src/index.ts",
     "src/invariant.ts",
     "src/remote.ts",

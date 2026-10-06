@@ -7,7 +7,7 @@
  * plan is read and confirmed. The card confirms nothing itself: the plan is
  * judged in full, on the page, not from a summary.
  *
- * Every other write (a card, a review) is one compact line with the answer
+ * Every other write (a review) is one compact line with the answer
  * behind 详情.
  *
  * @module @khorsheed/dsh-canvas-novel/client
