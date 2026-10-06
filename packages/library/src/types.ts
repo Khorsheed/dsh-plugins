@@ -124,6 +124,15 @@ export interface LibraryBook {
 /** The three node states; the only legal edges are locked→current→done. */
 export type RoadmapNodeState = 'locked' | 'current' | 'done'
 
+/**
+ * What kind of learning a node carries. `quiz` nodes gate on an assessed quiz
+ * at the pass ratio; `read` nodes (front matter, the whole-book map,
+ * appendices — the coach classifies at split time) carry no quiz gate: they
+ * complete by being read (the reader's 「读完」 gesture or the model's call),
+ * and never hold quizStats.
+ */
+export type RoadmapNodeKind = 'quiz' | 'read'
+
 /** A chapter span one node covers, 1-based and inclusive (`chapters/<from..to>.html`). */
 export interface LibraryChapterRange {
   readonly from: number
@@ -149,6 +158,9 @@ export interface RoadmapNode {
   readonly dependsOn: readonly string[]
   readonly chapterRanges: readonly LibraryChapterRange[]
   readonly state: RoadmapNodeState
+  /** `quiz` gates on an assessed quiz; `read` completes by being read. */
+  readonly kind: RoadmapNodeKind
+  /** Quiz nodes only — a read node must never carry one. */
   readonly quizStats?: LibraryQuizStats
 }
 
@@ -265,6 +277,46 @@ export interface LibraryAssessResult {
   /** The node this quiz gated, when it completed. */
   readonly completed?: string
 }
+
+/* --------------------------------------------------------------- events */
+
+/** The audit ledger's event types (`events.jsonl`, append-only). */
+export type LibraryEventType =
+  | 'book.ingested'
+  | 'roadmap.generated'
+  | 'roadmap.regenerated'
+  | 'notes.recorded'
+  | 'quiz.created'
+  | 'attempt.assessed'
+  | 'node.completed'
+  | 'node.unlocked'
+
+/** One event: a timestamp, a type, and a small typed summary per type. */
+export interface LibraryEvent {
+  readonly at: string
+  readonly type: LibraryEventType
+  /** The object the event is about (a book / quiz / node id), when one applies. */
+  readonly id?: string
+  /** Its display name (book title / node title), so a reader needs no join. */
+  readonly title?: string
+  /** Small numeric summaries (chapters / questions / added+merged / percent). */
+  readonly count?: number
+  readonly count2?: number
+  /** attempt.assessed: the sitting's ratio; node.completed: the passing ratio. */
+  readonly ratio?: number
+}
+
+/** The event vocabulary, for tests and for writers who must not invent types. */
+export const LIBRARY_EVENT_TYPES: readonly LibraryEventType[] = [
+  'book.ingested',
+  'roadmap.generated',
+  'roadmap.regenerated',
+  'notes.recorded',
+  'quiz.created',
+  'attempt.assessed',
+  'node.completed',
+  'node.unlocked',
+]
 
 /* ------------------------------------------------------------- id minting */
 

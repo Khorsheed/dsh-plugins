@@ -45,3 +45,15 @@ Status: implemented
 - 提案：[2026-10-06-library-learning-mode](../../../proposals/active/2026-10-06-library-learning-mode.md)
 - 可见性约定：[docs/plugin-visibility.md](../../../docs/plugin-visibility.md)（canvas 双查、fail-open）
 - 折叠先例：评测家族 `./tool` 入口（T88）、canvas-novel 的 `./agent`。
+
+## 评审 delta（2026-10-06）
+
+五条评审 delta 落在首版之上，同属 0.1.0：
+
+- **书架改为卡片网格。** 项目视图的书籍从列表行改成自适应卡阵（`repeat(auto-fill, minmax(148px, 1fr))`——宽栏三列、窄栏两列，不写死断点）：封面块、书名、作者、`章节 done/total` 进度（done 节点覆盖的章节数）；虚线「添加书籍」卡同格，指到同一个文件输入。
+- **书已解析但无路线图时给 CTA 而非空提示。** 书籍视图显示火花卡（「还没有学习路线…随时可重排」）+ 主按钮「生成学习路线」——与重新拆书同一个会话草稿手势，文案为首拆措辞。
+- **节点带 kind：quiz | read。** 拆书即分类：要学习者作答的内容进 quiz 节点（判题达标才完成）；导读、全书结构、前言、附录进 read 节点——绝不带 quizStats（store 归一会剔，service 拒写），读完即完成：当前 read 节点带「读完」按钮，经 `putRoadmap` 翻 current → done。状态机边不变；`putRoadmap` 现在级联解锁（done 节点的后继转 current)——read 翻转欠后继的解锁，与 assess 欠 quiz 完成的是同一笔。存量无 kind 的路线图读回即 quiz 节点。
+- **出题范围收窄到 quiz 类章节。** 有路线图时，`putQuiz` 拒收落在 read 节点章节（或无主章节）的题目，报文点明合法集合；`scope.node` 指向 read 节点同样拒收。没有路线图时仍是书级 evidence 闸（先有题后有路线的流程存在）。
+- **每个项目一本 append-only 审计账。** `events.jsonl`（与其余账本同锁同原子纪律）记录 book.ingested / roadmap.generated / roadmap.regenerated / notes.recorded / quiz.created / attempt.assessed / node.completed / node.unlocked，每条 `{ at, type, …摘要 }`，对象标题去规范化随行，读者免 join。`listEvents(projectId, limit?)` 倒序回答；书籍视图底部「动态」区渲染最近 20 条（图标 + 一句话 + 相对时间）。
+
+测试新增：read 节点免考流转与其级联解锁；出题范围拒收（read 章节、read scope、合法放行）；审计账的发射与倒序读取（含「读完」翻转的事件）。library 套件 66 测试全绿。

@@ -47,8 +47,8 @@ async function seedProject(): Promise<{ projectId: string; bookId: string }> {
 /** A minimal legal two-node roadmap (n1 current, n2 locked behind it). */
 function seedNodes(): RoadmapNode[] {
   return [
-    { id: 'n1', title: '概论', goals: ['说出神经系统的构成'], dependsOn: [], chapterRanges: [{ from: 1, to: 1 }], state: 'current' },
-    { id: 'n2', title: '突触传递', goals: ['解释递质释放'], dependsOn: ['n1'], chapterRanges: [{ from: 2, to: 2 }], state: 'locked' },
+    { id: 'n1', title: '概论', kind: 'quiz', goals: ['说出神经系统的构成'], dependsOn: [], chapterRanges: [{ from: 1, to: 1 }], state: 'current' },
+    { id: 'n2', title: '突触传递', kind: 'quiz', goals: ['解释递质释放'], dependsOn: ['n1'], chapterRanges: [{ from: 2, to: 2 }], state: 'locked' },
   ]
 }
 
@@ -145,8 +145,8 @@ describe('the roadmap state machine', () => {
       bookId,
       regenerate: true,
       nodes: [
-        { id: 'n1', title: '概论', goals: [], dependsOn: [], chapterRanges: [{ from: 1, to: 1 }], state: 'locked' },
-        { id: 'n2', title: '突触', goals: [], dependsOn: ['n1'], chapterRanges: [{ from: 2, to: 2 }], state: 'current' },
+        { id: 'n1', title: '概论', kind: 'quiz', goals: [], dependsOn: [], chapterRanges: [{ from: 1, to: 1 }], state: 'locked' },
+        { id: 'n2', title: '突触', kind: 'quiz', goals: [], dependsOn: ['n1'], chapterRanges: [{ from: 2, to: 2 }], state: 'current' },
       ],
     })
     expect(illegal.ok).toBe(false)
@@ -162,8 +162,8 @@ describe('the roadmap state machine', () => {
       projectId,
       bookId,
       nodes: [
-        { id: 'n1', title: 'A', goals: [], dependsOn: ['n2'], chapterRanges: [], state: 'locked' },
-        { id: 'n2', title: 'B', goals: [], dependsOn: [], chapterRanges: [], state: 'current' },
+        { id: 'n1', title: 'A', kind: 'quiz', goals: [], dependsOn: ['n2'], chapterRanges: [], state: 'locked' },
+        { id: 'n2', title: 'B', kind: 'quiz', goals: [], dependsOn: [], chapterRanges: [], state: 'current' },
       ],
     })
     expect(forward.ok).toBe(false)
@@ -172,7 +172,7 @@ describe('the roadmap state machine', () => {
     const outOfBook = await service.putRoadmap({
       projectId,
       bookId,
-      nodes: [{ id: 'n1', title: 'A', goals: [], dependsOn: [], chapterRanges: [{ from: 1, to: 9 }], state: 'current' }],
+      nodes: [{ id: 'n1', title: 'A', kind: 'quiz', goals: [], dependsOn: [], chapterRanges: [{ from: 1, to: 9 }], state: 'current' }],
     })
     expect(outOfBook.ok).toBe(false)
     if (!outOfBook.ok) expect(outOfBook.message).toContain('has 2 chapters')
@@ -236,7 +236,7 @@ describe('the roadmap state machine', () => {
       projectId,
       bookId,
       regenerate: true,
-      nodes: [{ id: 'm1', title: '整章重读', goals: [], dependsOn: [], chapterRanges: [{ from: 1, to: 2 }], state: 'current' }],
+      nodes: [{ id: 'm1', title: '整章重读', kind: 'quiz', goals: [], dependsOn: [], chapterRanges: [{ from: 1, to: 2 }], state: 'current' }],
     })
     expect(regenerated.ok).toBe(true)
     if (regenerated.ok) expect(regenerated.roadmap.nodes.map(node => node.id)).toEqual(['m1'])
@@ -578,5 +578,206 @@ describe('stats', () => {
     const stats = await service.stats()
     expect(stats).toMatchObject({ projects: 1, books: 1, vocab: 1, due: 1, quizzes: 0, attempts: 0 })
     expect(stats.boxHistogram['0']).toBe(1)
+  })
+})
+
+/* ------------------------------------------------------------------ kinds */
+
+describe('node kinds (read vs quiz)', () => {
+  /** A roadmap whose first node is a read node (the preface), gated by nothing. */
+  function mixedNodes(): RoadmapNode[] {
+    return [
+      { id: 'n0', title: '导读与全书结构', kind: 'read', goals: [], dependsOn: [], chapterRanges: [{ from: 1, to: 1 }], state: 'current' },
+      { id: 'n1', title: '突触传递', kind: 'quiz', goals: ['解释递质释放'], dependsOn: ['n0'], chapterRanges: [{ from: 2, to: 2 }], state: 'locked' },
+    ]
+  }
+
+  it('a read node carries no quizStats, and completes by being read (no quiz)', async () => {
+    const { projectId, bookId } = await seedProject()
+    const written = await service.putRoadmap({ projectId, bookId, nodes: mixedNodes() })
+    expect(written.ok).toBe(true)
+    if (!written.ok) return
+    expect(written.roadmap.nodes[0]?.quizStats).toBeUndefined()
+    expect(written.roadmap.nodes[1]?.quizStats).toEqual({ attempts: 0 })
+
+    // 读完: the read node flips current → done with no quiz, and its dependent
+    // unlocks in the same write (the cascade putRoadmap owes a single flip).
+    const flipped = await service.putRoadmap({
+      projectId,
+      bookId,
+      nodes: [
+        { ...mixedNodes()[0]!, state: 'done' as const },
+        { ...mixedNodes()[1]! },
+      ],
+    })
+    expect(flipped.ok).toBe(true)
+    if (!flipped.ok) return
+    expect(flipped.roadmap.nodes[0]?.state).toBe('done')
+    expect(flipped.roadmap.nodes[1]?.state).toBe('current')
+  })
+
+  it('refuses a read node carrying quizStats, and a node with no kind', async () => {
+    const { projectId, bookId } = await seedProject()
+    const withStats = await service.putRoadmap({
+      projectId,
+      bookId,
+      nodes: [{ id: 'n0', title: '导读', kind: 'read', goals: [], dependsOn: [], chapterRanges: [{ from: 1, to: 1 }], state: 'current', quizStats: { attempts: 0 } }],
+    })
+    expect(withStats.ok).toBe(false)
+    if (!withStats.ok) expect(withStats.message).toContain('quizStats')
+
+    const noKind = await service.putRoadmap({
+      projectId,
+      bookId,
+      nodes: [{ id: 'n0', title: '导读', goals: [], dependsOn: [], chapterRanges: [{ from: 1, to: 1 }], state: 'current' } as unknown as RoadmapNode],
+    })
+    expect(noKind.ok).toBe(false)
+    if (!noKind.ok) expect(noKind.message).toContain('kind')
+  })
+
+  it('a stored legacy roadmap without kinds reads back as quiz nodes', async () => {
+    const { projectId, bookId } = await seedProject()
+    // Write a roadmap the v0.1.0 way (no kind on the nodes) directly through
+    // the store, then read it back through the service.
+    await service.store.withProjectLock(projectId, () => {
+      service.store.writeRoadmap(projectId, {
+        bookId,
+        nodes: [{ id: 'n1', title: '概论', goals: [], dependsOn: [], chapterRanges: [{ from: 1, to: 1 }], state: 'current' } as unknown as RoadmapNode],
+        generatedAt: new Date().toISOString(),
+      })
+    })
+    const { roadmap } = await service.getRoadmap({ projectId })
+    expect(roadmap?.nodes[0]?.kind).toBe('quiz')
+  })
+})
+
+describe('the quiz scope narrows to quiz-kind chapters', () => {
+  it('refuses a question on a read node\'s chapter, and a scope naming a read node', async () => {
+    const { projectId, bookId } = await seedProject()
+    await service.putRoadmap({
+      projectId,
+      bookId,
+      nodes: [
+        { id: 'n0', title: '导读与全书结构', kind: 'read', goals: [], dependsOn: [], chapterRanges: [{ from: 1, to: 1 }], state: 'current' },
+        { id: 'n1', title: '突触传递', kind: 'quiz', goals: [], dependsOn: ['n0'], chapterRanges: [{ from: 2, to: 2 }], state: 'locked' },
+      ],
+    })
+    // A question on the read node's chapter is refused, teaching the legal set.
+    const readChapter = await service.putQuiz({
+      projectId,
+      quiz: {
+        scope: { bookId, nodeId: 'n1' },
+        questions: [{ id: 'q1', kind: 'free', prompt: '全书结构是什么？', chapterRef: 'ch:1', evidence: '神经系统由神经元与胶质细胞构成', answer: 'x' }],
+      },
+    })
+    expect(readChapter.ok).toBe(false)
+    if (!readChapter.ok) {
+      expect(readChapter.message).toContain('READ')
+      expect(readChapter.message).toContain('2')
+    }
+    // A scope naming the read node is refused outright.
+    const readScope = await service.putQuiz({
+      projectId,
+      quiz: {
+        scope: { bookId, nodeId: 'n0' },
+        questions: [{ id: 'q1', kind: 'free', prompt: 'p', chapterRef: 'ch:2', evidence: 'Ca²⁺ 内流触发囊泡与突触前膜融合', answer: 'x' }],
+      },
+    })
+    expect(readScope.ok).toBe(false)
+    if (!readScope.ok) expect(readScope.message).toContain('read node')
+    // The quiz node's own chapter passes.
+    const legal = await service.putQuiz({
+      projectId,
+      quiz: {
+        scope: { bookId, nodeId: 'n1' },
+        questions: [{ id: 'q1', kind: 'free', prompt: '触发递质释放的信号？', chapterRef: 'ch:2', evidence: 'Ca²⁺ 内流触发囊泡与突触前膜融合', answer: 'x' }],
+      },
+    })
+    expect(legal.ok).toBe(true)
+  })
+})
+
+/* ----------------------------------------------------------------- events */
+
+describe('the audit trail (events.jsonl)', () => {
+  it('records the milestones and reads them back newest-first', async () => {
+    const { projectId, bookId } = await seedProject()
+    await service.addVocabEntries({
+      projectId,
+      entries: [{ kind: 'vocab', term: 'synapse', note: '突触', chapterRef: 'ch:1' }],
+    })
+    await service.putRoadmap({
+      projectId,
+      bookId,
+      nodes: [{ id: 'n1', title: '概论', kind: 'quiz', goals: [], dependsOn: [], chapterRanges: [{ from: 1, to: 1 }], state: 'current' }],
+    })
+    // A regeneration is its own event type.
+    await service.putRoadmap({
+      projectId,
+      bookId,
+      regenerate: true,
+      nodes: [
+        { id: 'm1', title: '概论', kind: 'quiz', goals: [], dependsOn: [], chapterRanges: [{ from: 1, to: 1 }], state: 'current' },
+        { id: 'm2', title: '突触', kind: 'quiz', goals: [], dependsOn: ['m1'], chapterRanges: [{ from: 2, to: 2 }], state: 'locked' },
+      ],
+    })
+    const quiz = await service.putQuiz({
+      projectId,
+      quiz: {
+        scope: { bookId, nodeId: 'm1' },
+        questions: [{ id: 'q1', kind: 'free', prompt: '神经系统由什么构成？', chapterRef: 'ch:1', evidence: '神经系统由神经元与胶质细胞构成', answer: 'x' }],
+      },
+    })
+    if (!quiz.ok) throw new Error(quiz.message)
+    await service.putAttempt({
+      projectId,
+      quizId: quiz.quiz.id,
+      verdicts: [{ task: 'q1', criterion: 'c', pass: true, evidence: 'e', by: 'llm' }],
+    })
+
+    const { events } = await service.listEvents({ projectId })
+    const types = events.map(event => event.type)
+    // Newest first: the assess trilogy leads, the book's ingest tails.
+    expect(types[0]).toBe('node.unlocked')
+    expect(types).toContain('node.completed')
+    expect(types).toContain('attempt.assessed')
+    expect(types).toContain('quiz.created')
+    expect(types).toContain('roadmap.regenerated')
+    expect(types).toContain('roadmap.generated')
+    expect(types).toContain('notes.recorded')
+    expect(types[types.length - 1]).toBe('book.ingested')
+    // The summaries ride along: the book's chapter count, the sitting's ratio.
+    expect(events.find(event => event.type === 'book.ingested')).toMatchObject({ title: '认知神经科学', count: 2 })
+    expect(events.find(event => event.type === 'attempt.assessed')).toMatchObject({ ratio: 1 })
+    expect(events.find(event => event.type === 'node.unlocked')).toMatchObject({ id: 'm2', title: '突触' })
+
+    // The limit slices the newest end.
+    const limited = await service.listEvents({ projectId, limit: 2 })
+    expect(limited.events).toHaveLength(2)
+    expect(limited.events[0]?.type).toBe('node.unlocked')
+  })
+
+  it('a 读完 flip emits node.completed + node.unlocked', async () => {
+    const { projectId, bookId } = await seedProject()
+    await service.putRoadmap({
+      projectId,
+      bookId,
+      nodes: [
+        { id: 'n0', title: '导读', kind: 'read', goals: [], dependsOn: [], chapterRanges: [{ from: 1, to: 1 }], state: 'current' },
+        { id: 'n1', title: '突触', kind: 'quiz', goals: [], dependsOn: ['n0'], chapterRanges: [{ from: 2, to: 2 }], state: 'locked' },
+      ],
+    })
+    await service.putRoadmap({
+      projectId,
+      bookId,
+      nodes: [
+        { id: 'n0', title: '导读', kind: 'read', goals: [], dependsOn: [], chapterRanges: [{ from: 1, to: 1 }], state: 'done' },
+        { id: 'n1', title: '突触', kind: 'quiz', goals: [], dependsOn: ['n0'], chapterRanges: [{ from: 2, to: 2 }], state: 'locked' },
+      ],
+    })
+    const { events } = await service.listEvents({ projectId })
+    expect(events.map(event => event.type)).toContain('node.completed')
+    expect(events.map(event => event.type)).toContain('node.unlocked')
+    expect(events.find(event => event.type === 'node.unlocked')?.id).toBe('n1')
   })
 })

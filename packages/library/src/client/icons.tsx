@@ -100,6 +100,13 @@ export const IconTrashOutlineMedium = ({ size = 16, className }: IconProps) => (
   </svg>
 )
 
+/** A sparkle — the CTA card and quiz-created events. */
+export const IconSparkleOutlineMedium = ({ size = 16, className }: IconProps) => (
+  <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" strokeWidth={1.3}>
+    <path d="M8 2 9.5 6.5 14 8 9.5 9.5 8 14 6.5 9.5 2 8 6.5 6.5Z" stroke="currentColor" strokeLinejoin="round" />
+  </svg>
+)
+
 /** Spark cards — the vocab book. */
 export const IconCardsOutlineMedium = ({ size = 16, className }: IconProps) => (
   <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" strokeWidth={1.3}>

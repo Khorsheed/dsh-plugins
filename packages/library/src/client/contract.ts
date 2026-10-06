@@ -18,11 +18,13 @@ import type {} from '@khorsheed/dsh-library/remote'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {
   LibraryBook,
+  LibraryEvent,
   LibraryOutcome,
   LibraryProject,
   LibraryProjectSummary,
   LibraryRoadmap,
   LibraryVocabEntry,
+  RoadmapNode,
 } from '../types.ts'
 import type { createLibraryStore } from './store.ts'
 
@@ -69,6 +71,14 @@ export interface LibraryPaneInjected {
   getRoadmap: (projectId: string) => Promise<RemoteResult<{ roadmap?: LibraryRoadmap }>>
   /** The vocab book. */
   listVocab: (projectId: string) => Promise<RemoteResult<{ entries: LibraryVocabEntry[] }>>
+  /** The audit trail, newest first (the book view's 动态 section). */
+  listEvents: (projectId: string, limit?: number) => Promise<RemoteResult<{ events: LibraryEvent[] }>>
+  /** Flip nodes on the roadmap (the read node's 「读完」: current → done). */
+  putRoadmap: (request: {
+    projectId: string
+    bookId: string
+    nodes: readonly RoadmapNode[]
+  }) => Promise<RemoteResult<LibraryOutcome<{ roadmap: LibraryRoadmap }>>>
   /** The cards due for review, across every project (the wall's section). */
   dueVocab: () => Promise<RemoteResult<{ entries: (LibraryVocabEntry & { projectId: string })[] }>>
   /**

@@ -13,6 +13,7 @@ import type { LibraryService } from './service.ts'
 import type {
   LibraryAssessResult,
   LibraryBook,
+  LibraryEvent,
   LibraryOutcome,
   LibraryProject,
   LibraryProjectSummary,
@@ -112,6 +113,12 @@ export class LibraryRemoteService extends TypertRemoteService<LibraryRemoteConfi
   @Remote('getRoadmap')
   getRoadmap(request: { projectId: string }): Promise<{ roadmap?: LibraryRoadmap }> {
     return this.core.getRoadmap(request)
+  }
+
+  /** The audit trail, newest first (the 动态 section reads it this way). */
+  @Remote('listEvents')
+  listEvents(request: { projectId: string; limit?: number }): Promise<{ events: LibraryEvent[] }> {
+    return this.core.listEvents(request)
   }
 
   /** Write or regenerate the roadmap (state-machine edges checked). */

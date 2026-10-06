@@ -19,6 +19,9 @@
  *   climbs one Leitner box, wrong resets to box 0 due tomorrow), then update
  *   the gated node's quiz stats, and a node at or above its pass ratio
  *   completes and unlocks its dependents.
+ * - **The audit trail** (`events.jsonl`, append-only) records every
+ *   book/roadmap/notes/quiz/attempt/node milestone; the 动态 section reads
+ *   it newest-first.
  * - **Photo provenance** is a reference, never a copy: a vocab entry carries
  *   the host attachment's durable reference fields, and reading the bytes
  *   back is whitelisted to attachment ids a vocab entry actually records.
@@ -37,6 +40,7 @@ import {
   type LibraryAttempt,
   type LibraryBook,
   type LibraryErrorCode,
+  type LibraryEvent,
   type LibraryOutcome,
   type LibraryProject,
   type LibraryProjectSummary,
@@ -275,6 +279,13 @@ export class LibraryService {
           book,
           request.chapters.map((chapter, index) => ({ n: index + 1, html: chapter.html })),
         )
+        this.store.appendEvents(project.value.id, [{
+          at: new Date().toISOString(),
+          type: 'book.ingested',
+          id: book.id,
+          title: book.title,
+          count: toc.length,
+        }])
         return { ok: true as const, book }
       })
     } catch (error) {
@@ -345,12 +356,20 @@ export class LibraryService {
     return roadmap === undefined ? {} : { roadmap }
   }
 
+  /** The audit trail, NEWEST first (the 动态 section reads it this way). */
+  async listEvents(request: { projectId: string; limit?: number }): Promise<{ events: LibraryEvent[] }> {
+    const events = this.store.readEvents(request.projectId)
+    return { events: events.reverse().slice(0, request.limit ?? 20) }
+  }
+
   /**
-   * Write (or regenerate) the roadmap. Structural rules: unique ids, goals and
-   * chapter ranges that name the book's real chapters, dependsOn pointing
-   * backwards, and a state that only leads where its deps allow. Against an
-   * existing roadmap, per-node states move along the state machine's edges —
-   * unless `regenerate` re-splits the book from scratch.
+   * Write (or regenerate) the roadmap. Structural rules: unique ids, a kind
+   * (`quiz` gates on an assessed quiz, `read` completes by being read and
+   * never carries quizStats), goals and chapter ranges that name the book's
+   * real chapters, dependsOn pointing backwards, and a state that only leads
+   * where its deps allow. Against an existing roadmap, per-node states move
+   * along the state machine's edges — unless `regenerate` re-splits the book
+   * from scratch. Writes emit `roadmap.generated` / `roadmap.regenerated`.
    */
   async putRoadmap(request: {
     projectId: string
@@ -366,7 +385,7 @@ export class LibraryService {
       return refuse('not-found', `no book ${JSON.stringify(request.bookId)} in project ${JSON.stringify(project.value.name)} — a roadmap rides a book; library_read · books lists them, then name one`)
     }
     if (request.nodes.length === 0) {
-      return refuse('invalid', 'a roadmap needs at least one node — read the TOC (library_read · toc) and split the book into learning units; each node: { id, title, goals, chapterRanges, dependsOn, state }')
+      return refuse('invalid', 'a roadmap needs at least one node — read the TOC (library_read · toc) and split the book into learning units; each node: { id, title, kind: "quiz"|"read", goals, chapterRanges, dependsOn, state }')
     }
     const shapeError = validateRoadmapShape(request.nodes, book)
     if (shapeError !== undefined) return refuse('invalid', shapeError)
@@ -379,15 +398,50 @@ export class LibraryService {
       bookId: book.id,
       nodes: request.nodes.map(node => ({
         ...node,
-        quizStats: node.quizStats ?? { attempts: 0 },
+        ...(node.kind === 'read' ? {} : { quizStats: node.quizStats ?? { attempts: 0 } }),
       })),
       ...(request.passRatio === undefined ? {} : { passRatio: request.passRatio }),
       generatedAt: new Date().toISOString(),
     }
     try {
       return await this.store.withProjectLock(project.value.id, async () => {
-        this.store.writeRoadmap(project.value.id, roadmap)
-        return { ok: true as const, roadmap }
+        // Completion cascades: a node this write marks done may unlock its
+        // dependents (the read node's 「读完」 flip is the case — assess does
+        // the same for quiz completions). One pass suffices: the newly current
+        // nodes unlock nothing (current unlocks nobody; done does).
+        const unlocked: string[] = []
+        const doneIds = new Set(roadmap.nodes.filter(node => node.state === 'done').map(node => node.id))
+        const nodes = roadmap.nodes.map(node => {
+          if (node.state === 'locked' && node.dependsOn.every(dep => doneIds.has(dep))) {
+            unlocked.push(node.id)
+            return { ...node, state: 'current' as const }
+          }
+          return node
+        })
+        const finalRoadmap: LibraryRoadmap = unlocked.length > 0 ? { ...roadmap, nodes } : roadmap
+        this.store.writeRoadmap(project.value.id, finalRoadmap)
+        const priorById = new Map((existing?.nodes ?? []).map(node => [node.id, node]))
+        this.store.appendEvents(project.value.id, [
+          {
+            at: roadmap.generatedAt,
+            type: existing !== undefined && request.regenerate === true ? 'roadmap.regenerated' : 'roadmap.generated',
+            id: book.id,
+            title: book.title,
+            count: roadmap.nodes.length,
+          },
+          // A node this write moved to done is a completion too (the read
+          // node's 读完) — skip nodes that were already done.
+          ...roadmap.nodes
+            .filter(node => node.state === 'done' && priorById.get(node.id)?.state !== 'done')
+            .map(node => ({ at: roadmap.generatedAt, type: 'node.completed' as const, id: node.id, title: node.title })),
+          ...unlocked.map(nodeId => ({
+            at: roadmap.generatedAt,
+            type: 'node.unlocked' as const,
+            id: nodeId,
+            title: roadmap.nodes.find(node => node.id === nodeId)?.title ?? '',
+          })),
+        ])
+        return { ok: true as const, roadmap: finalRoadmap }
       })
     } catch (error) {
       return storeRefusal(error)
@@ -504,6 +558,12 @@ export class LibraryService {
         }
         const all = [...byKey.values()]
         this.store.rewriteVocab(project.value.id, all)
+        this.store.appendEvents(project.value.id, [{
+          at: now.toISOString(),
+          type: 'notes.recorded',
+          count: fresh.length,
+          count2: merged,
+        }])
         return { ok: true as const, added: fresh.length, merged, entries: mergedEntries }
       })
     } catch (error) {
@@ -559,10 +619,26 @@ export class LibraryService {
     if (request.quiz.questions.length === 0) {
       return refuse('invalid', 'a quiz needs at least one question — each: { id, kind: choice|fill|free, prompt, chapterRef: "ch:<n>", evidence, answer }')
     }
+    const roadmap = this.store.readRoadmap(project.value.id)
     if (request.quiz.scope.nodeId !== undefined) {
-      const roadmap = this.store.readRoadmap(project.value.id)
-      if (roadmap !== undefined && !roadmap.nodes.some(node => node.id === request.quiz.scope.nodeId)) {
+      const scopedNode = roadmap?.nodes.find(node => node.id === request.quiz.scope.nodeId)
+      if (roadmap !== undefined && scopedNode === undefined) {
         return refuse('not-found', `quiz scope names node ${JSON.stringify(request.quiz.scope.nodeId)}, which the roadmap does not hold — library_read · roadmap lists the nodes`)
+      }
+      if (scopedNode !== undefined && scopedNode.kind === 'read') {
+        return refuse('invalid', `node ${JSON.stringify(scopedNode.id)} (${JSON.stringify(scopedNode.title)}) is a read node — it has no quiz gate; quiz the quiz-kind nodes, or leave scope.node off for a vocab-only check`)
+      }
+    }
+    // The quiz-class chapter set: the union of every quiz-kind node's ranges.
+    // Read-node chapters (front matter, the map of the book) are reading, not
+    // testing — a question about them is refused with the legal set named.
+    const quizChapters = new Set<number>()
+    if (roadmap !== undefined) {
+      for (const node of roadmap.nodes) {
+        if (node.kind !== 'quiz') continue
+        for (const range of node.chapterRanges) {
+          for (let n = range.from; n <= range.to; n++) quizChapters.add(n)
+        }
       }
     }
     const seenIds = new Set<string>()
@@ -582,6 +658,19 @@ export class LibraryService {
       }
       if (book.toc.find(entry => entry.n === chapter) === undefined) {
         return refuse('evidence-gate', `${label} names chapter ${chapter}, but 《${book.title}》 has chapters 1..${book.toc.length} — point chapterRef at a real chapter`)
+      }
+      if (roadmap !== undefined && quizChapters.size > 0 && !quizChapters.has(chapter)) {
+        const readChapters = new Set<number>()
+        for (const node of roadmap.nodes) {
+          if (node.kind !== 'read') continue
+          for (const range of node.chapterRanges) {
+            for (let n = range.from; n <= range.to; n++) readChapters.add(n)
+          }
+        }
+        const why = readChapters.has(chapter)
+          ? `chapter ${chapter} is a READ node's chapter (泛读，不设测验)`
+          : `chapter ${chapter} belongs to no node`
+        return refuse('evidence-gate', `${label} is out of scope: ${why} — quiz only the quiz-kind nodes' chapters (${[...quizChapters].sort((a, b) => a - b).join(', ')}); library_read · roadmap lists the nodes`)
       }
       const evidence = normalizeFragment(question.evidence)
       if (evidence.length < 8) {
@@ -607,6 +696,12 @@ export class LibraryService {
     try {
       return await this.store.withProjectLock(project.value.id, async () => {
         this.store.writeQuiz(quiz, project.value.id)
+        this.store.appendEvents(project.value.id, [{
+          at: quiz.createdAt,
+          type: 'quiz.created',
+          id: quiz.id,
+          count: quiz.questions.length,
+        }])
         return { ok: true as const, quiz, warnings }
       })
     } catch (error) {
@@ -693,8 +788,9 @@ export class LibraryService {
         const unlocked: string[] = []
         let completed: string | undefined
         const roadmap = this.store.readRoadmap(project.value.id)
-        if (roadmap !== undefined && quiz.scope.nodeId !== undefined) {
-          const nodeId = quiz.scope.nodeId
+        const gatedNode = quiz.scope.nodeId === undefined ? undefined : roadmap?.nodes.find(node => node.id === quiz.scope.nodeId)
+        if (roadmap !== undefined && gatedNode !== undefined && gatedNode.kind === 'quiz') {
+          const nodeId = gatedNode.id
           const passRatio = roadmap.passRatio ?? DEFAULT_PASS_RATIO
           const nodes = roadmap.nodes.map(node => {
             if (node.id !== nodeId) return node
@@ -722,10 +818,19 @@ export class LibraryService {
               }
             }
           }
-          if (quiz.scope.nodeId !== undefined) {
-            this.store.writeRoadmap(project.value.id, { ...roadmap, nodes })
-          }
+          this.store.writeRoadmap(project.value.id, { ...roadmap, nodes })
         }
+        // The audit trail: the sitting, then what the sitting moved.
+        const at = now.toISOString()
+        const titleOf = (nodeId: string): Record<string, never> | { title: string } => {
+          const title = roadmap?.nodes.find(node => node.id === nodeId)?.title
+          return title === undefined ? {} : { title }
+        }
+        this.store.appendEvents(project.value.id, [
+          { at, type: 'attempt.assessed', id: quiz.id, ratio },
+          ...(completed === undefined ? [] : [{ at, type: 'node.completed' as const, id: completed, ...titleOf(completed), ratio }]),
+          ...unlocked.map(nodeId => ({ at, type: 'node.unlocked' as const, id: nodeId, ...titleOf(nodeId) })),
+        ])
         return {
           ok: true as const,
           attempt,
@@ -829,6 +934,12 @@ export function validateRoadmapShape(nodes: readonly RoadmapNode[], book: Librar
     if (node.id === '' || seen.has(node.id)) return `nodes[${index}] needs a unique id (n1, n2, … is plenty)`
     seen.add(node.id)
     if (node.title.trim() === '') return `nodes[${index}] (${node.id}) needs a title — what the learner masters here`
+    if (node.kind !== 'quiz' && node.kind !== 'read') {
+      return `nodes[${index}] (${node.id}) needs kind: "quiz" | "read" — quiz nodes gate on an assessed quiz; read nodes (front matter, the whole-book map, appendices) complete by being read`
+    }
+    if (node.kind === 'read' && node.quizStats !== undefined) {
+      return `nodes[${index}] (${node.id}) is a read node but carries quizStats — a read node has no quiz gate; drop the stats`
+    }
     for (const range of node.chapterRanges) {
       if (!Number.isInteger(range.from) || !Number.isInteger(range.to) || range.from < 1 || range.to < range.from) {
         return `nodes[${index}] (${node.id}) has a bad chapterRange [${String(range.from)}, ${String(range.to)}] — ranges are 1-based and inclusive: { from: 3, to: 5 }`

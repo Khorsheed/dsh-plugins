@@ -123,6 +123,8 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     getToc: (projectId, bookId) => remote.getToc({ projectId, bookId }),
     getRoadmap: projectId => remote.getRoadmap({ projectId }),
     listVocab: projectId => remote.listVocab({ projectId }),
+    listEvents: (projectId, limit) => remote.listEvents(limit === undefined ? { projectId } : { projectId, limit }),
+    putRoadmap: request => remote.putRoadmap(request),
     dueVocab: () => remote.dueVocab({}),
     primeConversation: text => {
       const input = inputFor(sessionId)

@@ -12,6 +12,7 @@
  *   vocab.jsonl                    # append-only
  *   quizzes/<quizId>.json
  *   attempts.jsonl                 # append-only
+ *   events.jsonl                   # append-only audit trail (book/roadmap/quiz/attempt/node)
  * ```
  *
  * The write discipline is the mission store's (the in-repo precedent for
@@ -39,10 +40,13 @@ import { dirname, join } from 'node:path'
 import {
   isLibraryId,
   libraryErrorMessage,
+  LIBRARY_EVENT_TYPES,
   LIBRARY_STATE_VERSION,
   STATE_ROOT_SEGMENT,
   type LibraryAttempt,
   type LibraryBook,
+  type LibraryEvent,
+  type LibraryEventType,
   type LibraryProject,
   type LibraryQuiz,
   type LibraryRoadmap,
@@ -262,9 +266,14 @@ export function normalizeRoadmap(value: unknown): LibraryRoadmap | undefined {
     const state = node.state === 'locked' || node.state === 'current' || node.state === 'done' ? node.state : undefined
     if (id === undefined || title === '' || state === undefined) return undefined
     const stats = (typeof node.quizStats === 'object' && node.quizStats !== null ? node.quizStats : undefined) as Record<string, unknown> | undefined
+    // The kind predates stored roadmaps: a node without one is a quiz node
+    // (v0.1.0 wrote only those), so the read-back defaults rather than
+    // dropping the roadmap.
+    const kind = node.kind === 'read' ? 'read' as const : 'quiz' as const
     nodes.push({
       id,
       title: title.slice(0, 300),
+      kind,
       goals: Array.isArray(node.goals) ? (node.goals as unknown[]).filter((g): g is string => typeof g === 'string').map(g => g.slice(0, 300)) : [],
       dependsOn: Array.isArray(node.dependsOn) ? (node.dependsOn as unknown[]).filter((d): d is string => typeof d === 'string') : [],
       chapterRanges: Array.isArray(node.chapterRanges)
@@ -275,7 +284,9 @@ export function normalizeRoadmap(value: unknown): LibraryRoadmap | undefined {
         })
         : [],
       state,
-      ...(stats === undefined ? {} : {
+      // A read node never holds a quiz ledger (the store normalizes it away,
+      // the service refuses to write one).
+      ...(stats === undefined || kind === 'read' ? {} : {
         quizStats: {
           attempts: typeof stats.attempts === 'number' ? stats.attempts : 0,
           ...(typeof stats.lastRatio === 'number' ? { lastRatio: stats.lastRatio } : {}),
@@ -399,6 +410,25 @@ export function normalizeAttempt(value: unknown): LibraryAttempt | undefined {
   }
 }
 
+/** One audit event (one events.jsonl line), when it parses. */
+export function normalizeEvent(value: unknown): LibraryEvent | undefined {
+  if (typeof value !== 'object' || value === null) return undefined
+  const record = value as Record<string, unknown>
+  const type = typeof record.type === 'string' && (LIBRARY_EVENT_TYPES as readonly string[]).includes(record.type)
+    ? record.type as LibraryEventType
+    : undefined
+  if (type === undefined) return undefined
+  return {
+    at: typeof record.at === 'string' ? record.at : new Date(0).toISOString(),
+    type,
+    ...(typeof record.id === 'string' && record.id !== '' ? { id: record.id } : {}),
+    ...(typeof record.title === 'string' && record.title !== '' ? { title: record.title.slice(0, 300) } : {}),
+    ...(typeof record.count === 'number' && Number.isFinite(record.count) ? { count: Math.floor(record.count) } : {}),
+    ...(typeof record.count2 === 'number' && Number.isFinite(record.count2) ? { count2: Math.floor(record.count2) } : {}),
+    ...(typeof record.ratio === 'number' && Number.isFinite(record.ratio) ? { ratio: record.ratio } : {}),
+  }
+}
+
 /* ----------------------------------------------------------------- store */
 
 /**
@@ -472,6 +502,10 @@ export class LibraryStore {
 
   private attemptsFile(projectId: string): string {
     return join(this.projectDir(projectId), 'attempts.jsonl')
+  }
+
+  private eventsFile(projectId: string): string {
+    return join(this.projectDir(projectId), 'events.jsonl')
   }
 
   private quizFile(projectId: string, quizId: string): string {
@@ -667,6 +701,11 @@ export class LibraryStore {
     return this.readJsonlFile(this.attemptsFile(projectId), normalizeAttempt)
   }
 
+  /** The audit ledger (the JSONL ledger, tolerant per line), oldest first. */
+  readEvents(projectId: string): LibraryEvent[] {
+    return this.readJsonlFile(this.eventsFile(projectId), normalizeEvent)
+  }
+
   /** One quiz; undefined when absent. */
   readQuiz(projectId: string, quizId: string): LibraryQuiz | undefined {
     return this.readJsonFile(this.quizFile(projectId, quizId), normalizeQuiz)
@@ -744,6 +783,11 @@ export class LibraryStore {
   /** Append one attempt (call inside `withProjectLock`). */
   appendAttempt(projectId: string, attempt: LibraryAttempt): void {
     this.appendJsonlFile(this.attemptsFile(projectId), [attempt])
+  }
+
+  /** Append audit events (call inside `withProjectLock`). */
+  appendEvents(projectId: string, events: readonly LibraryEvent[]): void {
+    this.appendJsonlFile(this.eventsFile(projectId), events)
   }
 
   /** Write one quiz (call inside `withProjectLock`). */

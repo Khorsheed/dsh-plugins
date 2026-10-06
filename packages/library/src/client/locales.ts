@@ -13,11 +13,16 @@ export type LibraryKey =
   | 'wall.title' | 'wall.meta' | 'wall.newProject' | 'wall.progress'
   | 'wall.dueSection' | 'wall.dueBadge' | 'wall.currentAt' | 'wall.cardMeta' | 'wall.cardDue'
   | 'project.booksSection' | 'project.drop' | 'project.dropHint' | 'project.ingesting' | 'project.tocSection'
-  | 'project.deleteTitle' | 'project.deleteConfirm' | 'project.back' | 'project.meta' | 'project.bookMeta'
-  | 'project.noBooks'
+  | 'project.deleteTitle' | 'project.deleteConfirm' | 'project.back' | 'project.meta'
   | 'book.roadmapSection' | 'book.regenerate' | 'book.regenerateTitle' | 'book.regenerateDone'
-  | 'book.noRoadmap' | 'book.nodeGoals' | 'book.nodeChapters' | 'book.unlockRule' | 'book.meta'
+  | 'book.nodeGoals' | 'book.nodeChapters' | 'book.unlockRule' | 'book.meta'
   | 'book.stateDone' | 'book.stateCurrent' | 'book.stateLocked' | 'book.score'
+  | 'book.addBook' | 'book.chaptersProgress' | 'book.parsed' | 'book.authorFallback'
+  | 'book.ctaNoRoadmap' | 'book.ctaGenerate' | 'book.readTag' | 'book.readDone' | 'book.readHint'
+  | 'events.title' | 'events.empty'
+  | 'event.bookIngested' | 'event.roadmapGenerated' | 'event.roadmapRegenerated' | 'event.notesRecorded'
+  | 'event.quizCreated' | 'event.attemptAssessed' | 'event.nodeCompleted' | 'event.nodeUnlocked'
+  | 'when.justNow' | 'when.minutes' | 'when.hours' | 'when.yesterday' | 'when.days'
   | 'vocab.title' | 'vocab.meta' | 'vocab.search' | 'vocab.box' | 'vocab.due' | 'vocab.photo'
   | 'vocab.keypoint' | 'vocab.empty'
   | 'ingest.failed' | 'ingest.notZip' | 'ingest.notEpub' | 'ingest.encrypted' | 'ingest.noSpine'
@@ -46,8 +51,6 @@ export const en = {
 
   'project.booksSection': 'Books · {count}',
   'project.meta': '{books} books · {vocab} cards',
-  'project.bookMeta': '{format} · {chapters} chapters',
-  'project.noBooks': 'No books yet — drop an EPUB or Markdown file above.',
   'project.drop': 'Drop an EPUB / Markdown file, or click to choose',
   'project.dropHint': 'PDF is not supported (structure extraction is unreliable)',
   'project.ingesting': 'Parsing {name}…',
@@ -59,8 +62,7 @@ export const en = {
   'book.roadmapSection': 'Learning path · {done}/{total}',
   'book.regenerate': 'Re-split',
   'book.regenerateTitle': 'Ask the coach to split the book again (the conversation does the splitting)',
-  'book.regenerateDone': 'The request is in the conversation draft — send it to re-split',
-  'book.noRoadmap': 'No roadmap yet — ask the coach in a learning-mode session to split this book.',
+  'book.regenerateDone': 'The request is in the conversation draft — send it and the coach splits',
   'book.nodeGoals': '{count} goals',
   'book.nodeChapters': 'Ch. {range}',
   'book.unlockRule': 'Quiz ≥ {percent}% to unlock',
@@ -69,6 +71,30 @@ export const en = {
   'book.stateLocked': 'locked',
   'book.score': '{score}',
   'book.meta': '{chapters} chapters · {nodes} nodes · {percent}%',
+  'book.addBook': 'Add a book',
+  'book.chaptersProgress': 'Chapters {done}/{total}',
+  'book.parsed': 'parsed',
+  'book.authorFallback': '',
+  'book.ctaNoRoadmap': '《{title}》 has no learning path yet — let the coach split the contents into a guided multi-node route; you can always re-split',
+  'book.ctaGenerate': 'Generate the learning path',
+  'book.readTag': 'skim',
+  'book.readDone': 'Mark as read',
+  'book.readHint': 'reading completes it — no quiz',
+  'events.title': 'Activity',
+  'events.empty': 'Nothing yet',
+  'event.bookIngested': '《{title}》 shelved · {count} chapters',
+  'event.roadmapGenerated': '《{title}》 split into {count} nodes',
+  'event.roadmapRegenerated': '《{title}》 re-split · {count} nodes',
+  'event.notesRecorded': '{count} cards logged',
+  'event.quizCreated': 'Quiz composed · {count} questions',
+  'event.attemptAssessed': 'Sitting graded · {ratio}%',
+  'event.nodeCompleted': '「{title}」completed',
+  'event.nodeUnlocked': '「{title}」unlocked',
+  'when.justNow': 'just now',
+  'when.minutes': '{count}m ago',
+  'when.hours': '{count}h ago',
+  'when.yesterday': 'yesterday',
+  'when.days': '{count}d ago',
 
   'vocab.title': 'Vocab · {project}',
   'vocab.meta': '{count} cards · {due} due',
@@ -119,8 +145,6 @@ export const zh = {
 
   'project.booksSection': '书籍 · {count}',
   'project.meta': '{books} 本书 · 词卡 {vocab}',
-  'project.bookMeta': '{format} · {chapters} 章',
-  'project.noBooks': '还没有书 —— 把 EPUB 或 Markdown 拖到上方。',
   'project.drop': '拖入 EPUB / Markdown，或点击选择文件',
   'project.dropHint': 'PDF 暂不支持（结构提取不可靠）',
   'project.ingesting': '正在解析 {name}…',
@@ -132,8 +156,7 @@ export const zh = {
   'book.roadmapSection': '学习路线 · {done}/{total}',
   'book.regenerate': '重新拆书',
   'book.regenerateTitle': '让教练在会话里重新拆这本书（拆书由模型完成）',
-  'book.regenerateDone': '请求已放进会话草稿 —— 发送即可重新拆书',
-  'book.noRoadmap': '还没有路线图 —— 在学习模式会话里让教练拆这本书。',
+  'book.regenerateDone': '请求已放进会话草稿 —— 发送后教练拆书',
   'book.nodeGoals': '{count} 个目标',
   'book.nodeChapters': '第 {range} 章',
   'book.unlockRule': '随堂测 ≥ {percent}% 解锁',
@@ -142,6 +165,30 @@ export const zh = {
   'book.stateLocked': '锁定',
   'book.score': '{score} 分',
   'book.meta': '{chapters} 章 · {nodes} 节点 · {percent}%',
+  'book.addBook': '添加书籍',
+  'book.chaptersProgress': '章节 {done}/{total}',
+  'book.parsed': '解析完成',
+  'book.authorFallback': '',
+  'book.ctaNoRoadmap': '《{title}》还没有学习路线 —— 让教练按目录拆成多节点精读路线，随时可重排',
+  'book.ctaGenerate': '生成学习路线',
+  'book.readTag': '泛读',
+  'book.readDone': '读完',
+  'book.readHint': '阅读即过，不设测验',
+  'events.title': '动态',
+  'events.empty': '还没有动态',
+  'event.bookIngested': '《{title}》上架 · {count} 章',
+  'event.roadmapGenerated': '《{title}》拆成 {count} 个节点',
+  'event.roadmapRegenerated': '《{title}》重新拆书 · {count} 个节点',
+  'event.notesRecorded': '录入 {count} 词条',
+  'event.quizCreated': '出卷 · {count} 题',
+  'event.attemptAssessed': '判题落账 · {ratio}%',
+  'event.nodeCompleted': '「{title}」完成',
+  'event.nodeUnlocked': '「{title}」解锁',
+  'when.justNow': '刚刚',
+  'when.minutes': '{count} 分钟前',
+  'when.hours': '{count} 小时前',
+  'when.yesterday': '昨天',
+  'when.days': '{count} 天前',
 
   'vocab.title': '词书 · {project}',
   'vocab.meta': '{count} 卡 · {due} 到期',

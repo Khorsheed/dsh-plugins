@@ -126,8 +126,8 @@ describe('library_assess', () => {
         project,
         book,
         nodes: [
-          { id: 'n1', title: '概论', goals: [], chapterRanges: [{ from: 1, to: 1 }], dependsOn: [], state: 'current' },
-          { id: 'n2', title: '突触', goals: [], chapterRanges: [{ from: 2, to: 2 }], dependsOn: ['n1'], state: 'locked' },
+          { id: 'n1', title: '概论', kind: 'quiz', goals: [], chapterRanges: [{ from: 1, to: 1 }], dependsOn: [], state: 'current' },
+          { id: 'n2', title: '突触', kind: 'quiz', goals: [], chapterRanges: [{ from: 2, to: 2 }], dependsOn: ['n1'], state: 'locked' },
         ],
       },
     })

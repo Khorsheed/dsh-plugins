@@ -45,3 +45,15 @@ Two packages shipped, both installable alone.
 - Proposal: [2026-10-06-library-learning-mode](../../../proposals/active/2026-10-06-library-learning-mode.md)
 - Visibility convention: [docs/plugin-visibility.md](../../../docs/plugin-visibility.md) (the canvas double check, fail-open)
 - The fold precedent: evaluation-family `./tool` entries (T88), canvas-novel's `./agent`.
+
+## Review deltas (2026-10-06)
+
+Five review deltas landed on the first cut, all in the same 0.1.0:
+
+- **The shelf is a card grid, not rows.** The project view's books render as an auto-fitting card grid (`repeat(auto-fill, minmax(148px, 1fr))` — three across in a wide pane, two in a narrow one, no hard breakpoint): cover block, title, author, and a `chapters done/total` line (chapters under done nodes), with the dashed add-book card in the same grid pointing at the same file input.
+- **A parsed book with no roadmap gets a CTA, not an empty notice.** The book view shows the sparkle card ("还没有学习路线…随时可重排") with a primary 生成学习路线 button — the same prime-the-conversation gesture as the re-split, with first-split wording.
+- **Nodes carry a kind: `quiz` | `read`.** Splitting classifies chapters: content the learner must answer for is a quiz node (gated by an assessed quiz); front matter, the whole-book map, prefaces and appendices are read nodes — they never carry quizStats (the store normalizes a stray one away, the service refuses to write it), and they complete by being read: the read node's current row carries a 「读完」 button that flips current → done through `putRoadmap`. The state machine's edges are unchanged, and `putRoadmap` now cascades unlocks (a done node's dependents become current) — the read flip owes its dependent the unlock that assess owes a quiz completion. Legacy stored roadmaps (no kind) read back as quiz nodes.
+- **Quizzing narrows to quiz-kind chapters.** With a roadmap in place, `putQuiz` refuses a question whose chapterRef lands on a read node's chapter (or no node's), naming the legal set; a `scope.node` naming a read node is refused. Without a roadmap the book-level evidence gate stands alone (quizzes predate roadmaps in some flows).
+- **Every project keeps an append-only audit trail.** `events.jsonl` (same lock + atomic discipline as the other ledgers) records `book.ingested` / `roadmap.generated` / `roadmap.regenerated` / `notes.recorded` / `quiz.created` / `attempt.assessed` / `node.completed` / `node.unlocked`, each `{ at, type, …summary }` with the object's title denormalized so a reader needs no join. `listEvents(projectId, limit?)` answers newest-first; the book view's 动态 section renders the latest 20 (icon + one-liner + relative time).
+
+Tests added: the read node's quiz-free completion and the cascade it triggers; the quiz-scope refusals (read chapter, read scope, legal pass); the trail's emission and its newest-first read (including the 读完 flip's events). Library suite is 66 tests green.

@@ -4,9 +4,9 @@
 
 ## 特性
 
-- **图书馆页**（右栏页面型 tab，kind `library`）：项目墙（双列卡 + 进度条 + 到期词卡区）→ 项目视图（书籍行 + EPUB/MD 拖放摄入 + 目录）→ 书籍视图（左轨时间线路线图 + 重新拆书按钮）→ 词书视图（词条 + 掌握度格点 + 到期标 + 出处）。
+- **图书馆页**（右栏页面型 tab，kind `library`）：项目墙（双列卡 + 进度条 + 到期词卡区）→ 项目视图（书架卡片网格：封面 + 作者 + 章节进度，同格虚线「添加书籍」；EPUB/MD 拖放摄入）→ 书籍视图（左轨时间线路线图——quiz 门槛节点与 read 泛读节点分列，泛读节点「读完」即过——+ 底部「动态」区）→ 词书视图（词条 + 掌握度格点 + 到期标 + 出处）。
 - **摄入在浏览器半**：EPUB 走 fflate 解 zip → DOMParser 读 OPF spine / NCX|NAV → 白名单消毒；Markdown 按标题层级切章。失败给诚实错误分类（不是 zip / 不是 EPUB / DRM / 无阅读顺序 / 没有可读章节）。PDF 不支持（渲染器不是结构提取器，reader D2 同结论）。
-- **模型工具面**（`./tool` 组合入口，preset 按会话授予）：`library_read`（projects/books/toc/chapter/roadmap/vocab/due/quiz/stats）、`library_write`（project/book/roadmap/notes/quiz——quiz 每题必须 `ch:<n>` chapterRef + 原文 evidence，缺失拒收并教正确格式）、`library_assess`（verdict 落账 → 词卡 Leitner 升降 → 节点 quizStats → 达标解锁下一节点）。随行 `library` skill 带逐 what 的 payload 形状与示例。
+- **模型工具面**（`./tool` 组合入口，preset 按会话授予）：`library_read`（projects/books/toc/chapter/roadmap/vocab/due/quiz/stats）、`library_write`（project/book/roadmap/notes/quiz——roadmap 拆书时给章节分类：正文进 quiz 节点、导读/前言/附录进 read 节点；quiz 每题必须 `ch:<n>` chapterRef + 原文 evidence 且落在 quiz 节点章节内，缺失拒收并教正确格式）、`library_assess`（verdict 落账 → 词卡 Leitner 升降 → 节点 quizStats → 达标解锁下一节点）。随行 `library` skill 带逐 what 的 payload 形状与示例。每个项目一本 append-only `events.jsonl` 审计账（上架/拆书/录入/出卷/判题/解锁）。
 - **自隐**：tab 类型按 canvas 双查判据注册（profile 根行 ∪ 当前会话 preset 行的 `@khorsheed/dsh-library/tool`），一切不可读路径 fail-open。
 
 ## 安装

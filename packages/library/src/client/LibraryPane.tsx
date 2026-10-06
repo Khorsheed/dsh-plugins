@@ -19,8 +19,9 @@
  * @module @khorsheed/dsh-library/client/LibraryPane
  */
 import { useCallback, useEffect, useMemo, useState, type DragEvent, type ReactNode } from 'react'
+import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import type { LibraryPaneProps } from './contract.ts'
-import type { RoadmapNode } from '../types.ts'
+import type { LibraryEvent, RoadmapNode } from '../types.ts'
 import { parseEpub } from './ingest-epub.ts'
 import { splitMarkdown } from './ingest-md.ts'
 import {
@@ -34,6 +35,7 @@ import {
   IconPlusOutlineMedium,
   IconRefreshOutlineMedium,
   IconSearchOutlineMedium,
+  IconSparkleOutlineMedium,
   IconTrashOutlineMedium,
   IconUploadOutlineMedium,
 } from './icons.tsx'
@@ -67,6 +69,48 @@ function chapterRangeOf(node: RoadmapNode): string {
   return from === to ? `${from}` : `${from}–${to}`
 }
 
+/** One event's icon (the 动态 section's left edge). */
+function eventIcon(type: LibraryEvent['type'], size = 12): ReactNode {
+  switch (type) {
+    case 'book.ingested': return <IconBookOutlineMedium size={size} />
+    case 'roadmap.generated':
+    case 'roadmap.regenerated': return <IconRefreshOutlineMedium size={size} />
+    case 'notes.recorded': return <IconCardsOutlineMedium size={size} />
+    case 'quiz.created': return <IconSparkleOutlineMedium size={size} />
+    case 'attempt.assessed': return <IconCheckOutlineMedium size={size} />
+    case 'node.completed': return <IconCheckOutlineMedium size={size} />
+    case 'node.unlocked': return <IconPlayOutlineMedium size={size} />
+  }
+}
+
+/** One event's one-liner, from its type and the summary fields it carries. */
+function eventText(event: LibraryEvent, t: TranslateNS<'library'>): string {
+  const percent = event.ratio === undefined ? undefined : Math.round(event.ratio * 100)
+  switch (event.type) {
+    case 'book.ingested': return t('event.bookIngested', { title: event.title ?? '', count: event.count ?? 0 })
+    case 'roadmap.generated': return t('event.roadmapGenerated', { title: event.title ?? '', count: event.count ?? 0 })
+    case 'roadmap.regenerated': return t('event.roadmapRegenerated', { title: event.title ?? '', count: event.count ?? 0 })
+    case 'notes.recorded': return t('event.notesRecorded', { count: event.count ?? 0 })
+    case 'quiz.created': return t('event.quizCreated', { count: event.count ?? 0 })
+    case 'attempt.assessed': return t('event.attemptAssessed', { ratio: percent ?? 0 })
+    case 'node.completed': return t('event.nodeCompleted', { title: event.title ?? '' })
+    case 'node.unlocked': return t('event.nodeUnlocked', { title: event.title ?? '' })
+  }
+}
+
+/** The relative-time readout for the feed's right edge. */
+function relativeWhen(at: string, now: number, t: TranslateNS<'library'>): string {
+  const seconds = Math.max(0, Math.floor((now - Date.parse(at)) / 1000))
+  if (seconds < 90) return t('when.justNow')
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return t('when.minutes', { count: minutes })
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return t('when.hours', { count: hours })
+  const days = Math.floor(hours / 24)
+  if (days <= 1) return t('when.yesterday')
+  return t('when.days', { count: days })
+}
+
 /** The library tab body. */
 export function LibraryPane(props: LibraryPaneProps): ReactNode {
   const { useStore, actions, t } = props
@@ -78,6 +122,7 @@ export function LibraryPane(props: LibraryPaneProps): ReactNode {
   const openBookId = useStore(s => s.openBookId)
   const vocab = useStore(s => s.vocab)
   const query = useStore(s => s.query)
+  const events = useStore(s => s.events)
   const ingest = useStore(s => s.ingest)
   const loading = useStore(s => s.loading)
   const error = useStore(s => s.error)
@@ -107,7 +152,8 @@ export function LibraryPane(props: LibraryPaneProps): ReactNode {
     }
     if ((view === 'project' || view === 'book') && openProjectId !== null) {
       actions.setLoading(true)
-      void props.getProject(openProjectId).then(result => {
+      const projectId = openProjectId
+      void Promise.all([props.getProject(projectId), props.listEvents(projectId, 20)]).then(([result, eventsResult]) => {
         if (cancelled) return
         if (!result.ok) { actions.setError(result.error.message); return }
         const outcome = result.value
@@ -119,6 +165,7 @@ export function LibraryPane(props: LibraryPaneProps): ReactNode {
           vocabCount: outcome.vocabCount,
           dueCount: outcome.dueCount,
         })
+        if (eventsResult.ok) actions.setEvents(eventsResult.value.events)
       })
       return () => { cancelled = true }
     }
@@ -132,7 +179,7 @@ export function LibraryPane(props: LibraryPaneProps): ReactNode {
       return () => { cancelled = true }
     }
     return undefined
-  }, [view, openProjectId, rev, actions, props.listProjects, props.dueVocab, props.getProject, props.listVocab])
+  }, [view, openProjectId, rev, actions, props.listProjects, props.dueVocab, props.getProject, props.listVocab, props.listEvents])
 
   /* ------------------------------------------------------------- gestures */
 
@@ -230,15 +277,33 @@ export function LibraryPane(props: LibraryPaneProps): ReactNode {
     void ingestFiles([...event.dataTransfer.files])
   }, [ingestFiles])
 
+  /**
+   * The roadmap request gesture (the CTA card's 生成学习路线 and the header's
+   * re-split share it): the pane never invents a split — it primes the
+   * session's conversation, and the coach does the reading and the splitting.
+   */
   const regenerate = useCallback(() => {
     if (detail === null || openBookId === null) return
     const book = detail.books.find(candidate => candidate.id === openBookId)
     if (book === undefined) return
-    const ok = props.primeConversation(
-      `请重新拆《${book.title}》生成学习路线图：先 library_read · toc 读目录，再 library_write · roadmap 落盘（已有旧路线图，需要 regenerate）。`,
-    )
+    const first = detail.roadmap?.bookId !== book.id
+    const ok = props.primeConversation(first
+      ? `请拆《${book.title}》生成学习路线图：先 library_read · toc 读目录，按内容把章节分类（正文进 quiz 门槛节点；导读/全书结构/前言/附录进 read 泛读节点），再 library_write · roadmap 落盘。`
+      : `请重新拆《${book.title}》生成学习路线图：先 library_read · toc 读目录，再 library_write · roadmap 落盘（已有旧路线图，需要 regenerate）。`)
     if (ok) setRegenerated(true)
   }, [detail, openBookId, props])
+
+  /** The read node's completion gesture: 「读完」 flips current → done. */
+  const markRead = useCallback((nodeId: string) => {
+    if (detail === null || openBookId === null || detail.roadmap === undefined) return
+    const roadmap = detail.roadmap
+    const nodes = roadmap.nodes.map(node => node.id === nodeId ? { ...node, state: 'done' as const } : node)
+    void props.putRoadmap({ projectId: detail.project.id, bookId: roadmap.bookId, nodes }).then(result => {
+      if (!result.ok) { actions.setError(result.error.message); return }
+      if (!result.value.ok) { actions.setError(result.value.message); return }
+      actions.refresh()
+    })
+  }, [detail, openBookId, props, actions])
 
   /* --------------------------------------------------------------- views */
 
@@ -401,17 +466,41 @@ export function LibraryPane(props: LibraryPaneProps): ReactNode {
           {ingest.state === 'failed' && <div className={css.error}>{ingest.reason}</div>}
           {ingest.state === 'done' && <div className={`${css.notice} ${css.noticeOk}`}>{t('ingest.done', { title: ingest.title, count: ingest.chapters })}</div>}
           <div className={css.section}>{t('project.booksSection', { count: detail.books.length })}</div>
-          <div className={css.rows}>
-            {detail.books.map(book => (
-              <button type="button" key={book.id} className={css.rowButton} onClick={() => actions.openBook(book.id)}>
-                <span className={css.thumb}><IconBookOutlineMedium size={12} /></span>
-                <span className={css.rowMain}>
-                  <span className={css.rowTitle}>{book.title}</span>
-                </span>
-                <span className={css.rowMeta}>{t('project.bookMeta', { format: book.format.toUpperCase(), chapters: book.toc.length })}</span>
-              </button>
-            ))}
-            {detail.books.length === 0 && <div className={css.row}>{t('project.noBooks')}</div>}
+          <div className={css.bgrid}>
+            {detail.books.map(book => {
+              // A book's read progress: chapters under done nodes of the
+              // project's roadmap (one roadmap per project, one active book).
+              const covered = detail.roadmap?.bookId === book.id
+                ? detail.roadmap.nodes
+                  .filter(node => node.state === 'done')
+                  .reduce((sum, node) => sum + node.chapterRanges.reduce((n, range) => n + range.to - range.from + 1, 0), 0)
+                : 0
+              return (
+                <button type="button" key={book.id} className={css.bcard} onClick={() => actions.openBook(book.id)}>
+                  <span className={css.bcover}><IconBookOutlineMedium size={20} /></span>
+                  <span className={css.btitle}>{book.title}</span>
+                  <span className={css.bauthor}>{book.author ?? ''}</span>
+                  <span className={css.bprogress}>
+                    {t('book.chaptersProgress', { done: Math.min(covered, book.toc.length), total: book.toc.length })}
+                    {' · '}<span className={css.bprogressDone}>{t('book.parsed')}</span>
+                  </span>
+                </button>
+              )
+            })}
+            <label className={`${css.bcard} ${css.bcardAdd}`}>
+              <input
+                type="file"
+                accept=".epub,.md,.markdown,.txt"
+                multiple
+                style={{ display: 'none' }}
+                onChange={event => {
+                  void ingestFiles([...event.target.files ?? []])
+                  event.target.value = ''
+                }}
+              />
+              <IconPlusOutlineMedium size={14} />
+              {t('book.addBook')}
+            </label>
           </div>
           {roadmapped !== undefined && (
             <>
@@ -465,7 +554,15 @@ export function LibraryPane(props: LibraryPaneProps): ReactNode {
         )}
         <div className={css.body}>
           {regenerated && <div className={`${css.notice} ${css.noticeOk}`}>{t('book.regenerateDone')}</div>}
-          {roadmap === undefined && <div className={css.notice}>{t('book.noRoadmap')}</div>}
+          {roadmap === undefined && (
+            <div className={css.ctaCard}>
+              <span className={css.ctaIcon}><IconSparkleOutlineMedium size={16} /></span>
+              <span className={css.ctaText}>{t('book.ctaNoRoadmap', { title: book.title })}</span>
+              <button type="button" className={`${css.button} ${css.buttonPrimary}`} onClick={regenerate}>
+                {t('book.ctaGenerate')}
+              </button>
+            </div>
+          )}
           {roadmap !== undefined && (
             <>
               <div className={css.section}>{t('book.roadmapSection', { done, total: roadmap.nodes.length })}</div>
@@ -476,28 +573,35 @@ export function LibraryPane(props: LibraryPaneProps): ReactNode {
                     className={`${css.node} ${node.state === 'done' ? css.nodeDone : node.state === 'current' ? css.nodeCurrent : css.nodeLocked}`}
                   >
                     <span className={css.nodeState}>
-                      {node.state === 'done'
-                        ? <IconCheckOutlineMedium size={11} />
-                        : node.state === 'current'
-                          ? <IconPlayOutlineMedium size={11} />
-                          : <IconLockOutlineMedium size={11} />}
+                      {node.kind === 'read'
+                        ? <IconBookOutlineMedium size={11} />
+                        : node.state === 'done'
+                          ? <IconCheckOutlineMedium size={11} />
+                          : node.state === 'current'
+                            ? <IconPlayOutlineMedium size={11} />
+                            : <IconLockOutlineMedium size={11} />}
                     </span>
                     <div className={css.nodeBody}>
                       <div className={css.nodeTitle}>
                         {node.title}
-                        {node.state === 'done' && node.quizStats?.bestRatio !== undefined && (
+                        {node.kind === 'read' && <span className={css.tag}>{t('book.readTag')}</span>}
+                        {node.kind === 'quiz' && node.state === 'done' && node.quizStats?.bestRatio !== undefined && (
                           <span className={`${css.tag} ${css.tagGreen}`}>{t('book.score', { score: Math.round(node.quizStats.bestRatio * 100) })}</span>
                         )}
-                        {node.state === 'done' && node.quizStats?.bestRatio === undefined && (
+                        {node.kind === 'quiz' && node.state === 'done' && node.quizStats?.bestRatio === undefined && (
                           <span className={`${css.tag} ${css.tagGreen}`}>{t('book.stateDone')}</span>
                         )}
                         {node.state === 'current' && <span className={`${css.tag} ${css.tagBlue}`}>{t('book.stateCurrent')}</span>}
-                        {node.state === 'locked' && <span className={css.tag}>{t('book.stateLocked')}</span>}
+                        {node.kind === 'quiz' && node.state === 'locked' && <span className={css.tag}>{t('book.stateLocked')}</span>}
+                        {node.kind === 'read' && node.state === 'current' && (
+                          <button type="button" className={css.readDone} onClick={() => markRead(node.id)}>{t('book.readDone')}</button>
+                        )}
                       </div>
                       <div className={css.nodeDetail}>
                         {node.chapterRanges.length > 0 ? `${t('book.nodeChapters', { range: chapterRangeOf(node) })} · ` : ''}
-                        {t('book.nodeGoals', { count: node.goals.length })}
-                        {node.state === 'locked' ? ` · ${t('book.unlockRule', { percent: Math.round((roadmap.passRatio ?? 0.8) * 100) })}` : ''}
+                        {node.kind === 'read'
+                          ? t('book.readHint')
+                          : `${t('book.nodeGoals', { count: node.goals.length })}${node.state === 'locked' ? ` · ${t('book.unlockRule', { percent: Math.round((roadmap.passRatio ?? 0.8) * 100) })}` : ''}`}
                       </div>
                     </div>
                   </div>
@@ -521,6 +625,19 @@ export function LibraryPane(props: LibraryPaneProps): ReactNode {
                 })}
               </div>
             </>
+          )}
+          <div className={css.section}>{t('events.title')}</div>
+          {events.length === 0 && <div className={css.notice}>{t('events.empty')}</div>}
+          {events.length > 0 && (
+            <div className={css.rows}>
+              {events.map((event, index) => (
+                <div key={`${event.at}:${index}`} className={css.eventRow}>
+                  <span className={css.eventIcon}>{eventIcon(event.type)}</span>
+                  <span className={css.eventText}>{eventText(event, t)}</span>
+                  <span className={css.eventWhen}>{relativeWhen(event.at, Date.now(), t)}</span>
+                </div>
+              ))}
+            </div>
           )}
         </div>
       </>

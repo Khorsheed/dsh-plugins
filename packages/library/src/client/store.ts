@@ -11,6 +11,7 @@
 import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
 import type {
   LibraryBook,
+  LibraryEvent,
   LibraryProject,
   LibraryProjectSummary,
   LibraryRoadmap,
@@ -48,6 +49,8 @@ export interface LibraryState {
   openProjectId: string | null
   /** The open project's detail. */
   detail: LibraryProjectDetail | null
+  /** The open project's audit trail, newest first (the book view's 动态 section). */
+  events: LibraryEvent[]
   /** The open book's id (the book view). */
   openBookId: string | null
   /** The vocab view's entries. */
@@ -69,6 +72,7 @@ export type LibraryActions = {
   setProjects: (draft: LibraryState, projects: LibraryProjectSummary[], due: (LibraryVocabEntry & { projectId: string })[]) => void
   setDetail: (draft: LibraryState, detail: LibraryProjectDetail | null) => void
   setVocab: (draft: LibraryState, entries: LibraryVocabEntry[]) => void
+  setEvents: (draft: LibraryState, events: LibraryEvent[]) => void
   openProject: (draft: LibraryState, projectId: string) => void
   openBook: (draft: LibraryState, bookId: string) => void
   openVocab: (draft: LibraryState, projectId: string) => void
@@ -87,6 +91,7 @@ const INITIAL: LibraryState = {
   due: [],
   openProjectId: null,
   detail: null,
+  events: [],
   openBookId: null,
   vocab: [],
   query: '',
@@ -120,6 +125,9 @@ export function createLibraryStore(): EngineStoreHandle<LibraryState, LibraryAct
         d.vocab = entries
         d.loading = false
         d.error = null
+      },
+      setEvents: (d, events) => {
+        d.events = events
       },
       openProject: (d, projectId) => {
         d.openProjectId = projectId

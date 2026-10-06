@@ -514,6 +514,163 @@
   border-color: var(--dsw-alias-state-success-primary);
 }
 
+/* ── the book shelf: an auto-fitting card grid (3 across in a wide pane, 2 in
+     a narrow one — auto-fill + minmax, never a hard breakpoint) ── */
+.bgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+  gap: 9px;
+}
+
+.bcard {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 12px;
+  padding: 10px;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+
+.bcard:hover {
+  border-color: var(--dsw-alias-border-l2);
+}
+
+.bcover {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-2);
+  border: 1px solid var(--dsw-alias-border-l1);
+  color: var(--dsw-alias-label-dimmed);
+}
+
+.btitle {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--dsw-alias-label-primary);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.bauthor {
+  font-size: 10px;
+  color: var(--dsw-alias-label-dimmed);
+  min-height: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bprogress {
+  font-size: 10px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.bprogressDone {
+  color: var(--dsw-alias-state-success-primary);
+}
+
+.bcardAdd {
+  border-style: dashed;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--dsw-alias-label-dimmed);
+  font-size: 11.5px;
+  min-height: 120px;
+}
+
+.bcardAdd:hover {
+  color: var(--dsw-alias-label-secondary);
+  border-color: var(--dsw-alias-border-l2);
+}
+
+/* ── the no-roadmap CTA card ── */
+.ctaCard {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--dsw-alias-interactive-bg-active, var(--dsw-alias-border-l2));
+  background: var(--dsw-alias-interactive-bg-active, var(--dsw-alias-bg-layer-1));
+  border-radius: 12px;
+  padding: 12px 14px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--dsw-alias-label-primary);
+}
+
+.ctaIcon {
+  flex: none;
+  color: var(--dsw-static-deepseek-400);
+}
+
+.ctaText {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ── the activity feed ── */
+.eventRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 4px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.eventRow:last-child {
+  border-bottom: none;
+}
+
+.eventIcon {
+  flex: none;
+  color: var(--dsw-alias-label-dimmed);
+  display: inline-flex;
+}
+
+.eventText {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.eventWhen {
+  flex: none;
+  font-size: 10px;
+  color: var(--dsw-alias-label-dimmed);
+}
+
+/* ── the read node's 「读完」 inline action ── */
+.readDone {
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 10.5px;
+  padding: 1px 8px;
+  margin-left: 4px;
+  cursor: pointer;
+}
+
+.readDone:hover {
+  border-color: var(--dsw-alias-state-success-primary);
+  color: var(--dsw-alias-state-success-primary);
+}
+
 /* ── the new-project form ── */
 .form {
   border: 1px solid var(--dsw-alias-border-l1);
