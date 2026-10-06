@@ -474,6 +474,13 @@ export interface CanvasGenreDefinition {
    * aside on its canvases, so a work never has two places its text lives.
    */
   readonly ownsManuscripts?: boolean
+  /**
+   * The tool the genre's agent writes cards with (`novel_write`). On the
+   * genre's canvases `canvas_write` op=card steps aside and names this tool:
+   * the genre lands its agent cards live, so a canvas-native proposal there
+   * would be a ghost the genre's ledger never reads.
+   */
+  readonly agentCardTool?: string
 }
 
 /** One registered genre as the browser lists it. */

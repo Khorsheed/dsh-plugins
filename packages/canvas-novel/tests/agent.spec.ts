@@ -149,6 +149,7 @@ describe('the pointer function section', () => {
     expect(bound).toContain('《梦境监护者》')
     expect(bound).toContain('novel_read(brief)')
     expect(bound).toContain('novel skill')
+    expect(bound).toContain('卡片用 novel_write 落')
     expect(bound).not.toContain('\n')
     // Unbound, but this scope's session: one line pointing at novel_bind.
     expect(text({ agent: { sessionId: 's-2' } })).toContain('novel_bind')

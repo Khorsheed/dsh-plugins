@@ -189,7 +189,7 @@ export function novelPointerText(grant: Pick<NovelToolGrant, 'titleOf' | 'tracks
           ? `本会话还没绑定长篇小说作品：对话涉及某部作品（立意/写作/设定/章节）时，先 ${NOVEL_BIND_TOOL} 绑定——不带参数列出作品，拿不准是哪部就问用户。`
           : ''
       }
-      return `本会话绑定长篇小说画布《${title}》：涉及立意/写作/续写/设定/章节时按 novel skill 的工作流走（构思期做主线梳理，动笔前先 novel_read(brief)）。`
+      return `本会话绑定长篇小说画布《${title}》：涉及立意/写作/续写/设定/章节时按 novel skill 的工作流走（构思期做主线梳理，动笔前先 novel_read(brief)）；设定、伏笔、人物以 novel_* 工具返回的为准，不凭对话记忆，卡片用 novel_write 落。`
     } catch {
       // Degrade, never explode: a prompt assembly must not fail on a pointer.
       return ''

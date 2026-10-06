@@ -1,6 +1,10 @@
 # 变更记录
 
-## 0.3.0（未发布）
+## 未发布
+
+- **写作模式并入长篇小说工具**：`preset-dsh-writing` 加 `canvas-novel-agent` 行（`@khorsheed/dsh-canvas-novel/agent`），原 `@khorsheed/dsh-bundle-writing` 的「写作」preset 退役。`novel_bind`、novel skill 与轻指引段随本 preset 授予；`novel_read` / `novel_write` / `novel_extract` 只在会话绑定长篇小说画布时出现，其余画布照旧只有画布工具。persona 的 Canvas 段加一句绑定小说画布时走 novel_write；`dsh.references` 加 `@khorsheed/dsh-canvas-novel`
+
+## 0.3.0
 
 - **dsh-eval preset 的两条评测工具行改指核心包的 `./tool` 组合入口**（评测家族折叠，T88）：`datasets-tool` / `eval-tool` 的 `name` 从已退役的 `@khorsheed/dsh-datasets-tool` / `@khorsheed/dsh-eval-tool` 改为 `@khorsheed/dsh-datasets/tool` / `@khorsheed/dsh-eval/tool`；行 id 与 config 不变，组合状态不受影响。`dsh.references` 同步换成 `@khorsheed/dsh-datasets` / `@khorsheed/dsh-eval`
 - **dev preset 的三条 local-agent 委派工具行改指各 provider 的 `./tool` 组合入口**（家族折叠）：`name` 从已退役的 `@khorsheed/dsh-local-agent-tool-subagent`（带 `provider`/`toolName` config）改为 `@khorsheed/dsh-local-agent-kimi/tool`、`-codex/tool`、`-claude-code/tool` 且不带 config（入口自带默认值）；行 id（`tool-subagent-kimi` 等）不变，组合状态不受影响。`dsh.references` 同步换成三个 provider 包

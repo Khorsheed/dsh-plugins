@@ -116,7 +116,7 @@ interface Bench {
 /** One board the main session has open, the two tools built over it, plus an execute helper. */
 async function harness(): Promise<Bench> {
   const fs = new FakeFs()
-  const ctx = { fs, get: () => undefined } as unknown as Context
+  const ctx = { fs, get: () => undefined, emit: () => {} } as unknown as Context
   const pad = new CanvasService(ctx)
   ;(ctx as { canvasStore?: CanvasService }).canvasStore = pad
   const board = new CanvasBoardService(ctx, { stateRoot: STATE })
@@ -164,6 +164,18 @@ describe('the canvas tools on the open canvas', () => {
     const cardId = (await readCurrent()).cards[0]!.id
     expect(await execute('canvas_write', { op: 'comment', cardId, text: '有数据吗？' })).toBe('完成')
     expect((await readCurrent()).cards[0]?.question).toEqual({ state: 'exploring' })
+  })
+
+  it('canvas_write op=card steps aside on a genre canvas whose genre writes its own cards', async () => {
+    const { canvasId, execute, readCurrent, board } = await harness()
+    board.registerGenre({
+      id: 'novel', label: '长篇小说', version: 'novel@1', description: '', agentCardTool: 'novel_write',
+      categories: [{ role: 'character', label: '人物' }],
+    })
+    expect(await board.selectGenre({ canvasId, genreId: 'novel' }, FALLBACK)).toMatchObject({ ok: true })
+    const answer = await execute('canvas_write', { op: 'card', kind: 'fragment', text: '雨夜' }) as string
+    expect(answer).toBe('失败：这块画布是「长篇小说」体裁，卡片用 novel_write 写（直接落成正式卡），canvas_write 不在这里落卡。')
+    expect((await readCurrent()).cards).toHaveLength(0)
   })
 
   it('answers the failure code instead of throwing on a bad card reference', async () => {

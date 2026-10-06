@@ -27,7 +27,7 @@ import {
 import { imageRefOf } from './image-token.ts'
 import {
   isBoardCardKind,
-  type BoardCard, type BoardCardSource, type BoardCategory, type CanvasBoard, type CanvasImageRef, type CardCategoryId,
+  type BoardCard, type BoardCardSource, type BoardCategory, type CanvasBoard, type CanvasGenreDefinition, type CanvasImageRef, type CardCategoryId,
 } from './types.ts'
 
 /** The community tool-origin tag (the catalog's documented no-import path). */
@@ -356,7 +356,19 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
 
   type Target = { canvasId: string; session: Session }
 
+  /** The registered genre of a canvas when it writes its agent cards with its own tool. */
+  const cardOwningGenre = async (canvasId: string): Promise<CanvasGenreDefinition | undefined> => {
+    const read = await board.readBoard({ canvasId })
+    if (!read.ok || read.board.genre === undefined) return undefined
+    const genre = board.genre(read.board.genre.id)
+    return genre?.agentCardTool === undefined ? undefined : genre
+  }
+
   const writeCard = async (args: WriteArgs, resolved: Target): Promise<string> => {
+    const genre = await cardOwningGenre(resolved.canvasId)
+    if (genre?.agentCardTool !== undefined) {
+      return `失败：这块画布是「${genre.label}」体裁，卡片用 ${genre.agentCardTool} 写（直接落成正式卡），canvas_write 不在这里落卡。`
+    }
     if (args.kind === undefined || args.kind.trim() === '') return '失败：op=card 要给 kind（分类 id，canvas_read 可查）。'
     const kind = args.kind
     const text = args.text ?? ''

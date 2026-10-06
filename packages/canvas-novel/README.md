@@ -78,10 +78,10 @@ agent 能力属于写作场景，不属于每个会话。
 **启用 agent 能力的唯一正确姿势是 preset 授予**：
 
 ```sh
-dsh plugin add @khorsheed/dsh-bundle-writing
+dsh plugin add @khorsheed/dsh-presets
 ```
 
-它的 `preset-writing` 在写作 preset 的作用域内挂载 `@khorsheed/dsh-canvas-novel/agent`。用自建 preset 也一样：在该 preset 的 `agent.cordis.yml` 里加一行 `name: "@khorsheed/dsh-canvas-novel/agent"`。
+它的「写作模式」（`preset-dsh-writing`）在自己的作用域内挂载 `@khorsheed/dsh-canvas-novel/agent`，和画布工具 `@khorsheed/dsh-canvas/agent` 并列：会话绑定长篇小说画布时才出现 `novel_*` 工具，其余画布照常只用画布工具。用自建 preset 也一样：在该 preset 的 `agent.cordis.yml` 里加一行 `name: "@khorsheed/dsh-canvas-novel/agent"`。
 
 手工打开根行（删掉 `disabled: true`）会让所有会话都生效。**只能在没有任何 preset 授予时这么做**：两处同时生效会重名注册，导致启动失败。
 

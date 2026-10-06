@@ -8,7 +8,6 @@
 | `@khorsheed/dsh-bundle-conversation-toolbox` | 0.1.2 | 0.1.2 | 0.1.5-rc.1 | 0.1.7-rc.2 |  |
 | `@khorsheed/dsh-bundle-eval` | 未发布 | 0.1.0 | 0.2.0-rc.2 | 0.2.0-rc.2 |  |
 | `@khorsheed/dsh-bundle-local-agent` | 0.2.0 | 0.2.0 | 0.1.5-rc.1 | 0.1.7-rc.2 |  |
-| `@khorsheed/dsh-bundle-writing` | 未发布 | 0.1.0 | 0.1.7-rc.1 | 0.2.0-rc.2 |  |
 | `@khorsheed/dsh-canvas` | 未发布 | 0.6.0 | 0.1.5-rc.1 | 0.1.5-rc.1 |  |
 | `@khorsheed/dsh-canvas-novel` | 未发布 | 0.1.0 | 0.2.0-rc.2 | 0.2.0-rc.2 |  |
 | `@khorsheed/dsh-capability-catalog` | 0.1.98 | 0.1.98 | 0.1.5-rc.1 | 0.1.7-rc.2 | ✓ |

@@ -39,6 +39,8 @@ one, never guess. Tool answers are in Chinese.
 - A card lands as **proposed**; only the user's ✓ keeps it (✗ archives it). Sources, questions, shared
   understandings, counter-examples and examples all go here — never paste card text into your reply as if it were
   on the board.
+- A genre canvas may write its cards with its own tool (a 长篇小说 canvas: \`novel_write\`); canvas_write op=card
+  refuses there and names that tool — use it.
 - \`kind\` is a category id. Built-ins: \`fragment\` (inspiration), \`question\`, \`grounding\` (a shared understanding
   — propose only; it counts once the user restates it), \`reference\` (always with \`source\`), \`document\`. Canvases
   often carry renamed or user-made categories (ids like \`cat_…\`): when the user names a category, read the catalog

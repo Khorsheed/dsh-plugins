@@ -64,4 +64,9 @@ export const RETIRED_PACKAGES: readonly RetiredPackage[] = [
     replacement: "@khorsheed/dsh-eval's ./tool composition entry (>= 0.2.0-rc.1; preset row id `eval-tool` is unchanged)",
     note: 'folded into the core package at the evaluation-family fold (T88, 2026-10-01); npm deprecation rides the next publish wave',
   },
+  {
+    name: '@khorsheed/dsh-bundle-writing',
+    replacement: "@khorsheed/dsh-presets' 写作模式 (`preset-dsh-writing`), which now mounts `@khorsheed/dsh-canvas-novel/agent`",
+    note: 'its 写作 preset folded into 写作模式 (2026-10-06): one writing preset, the novel tools gated by the session binding; never published to npm',
+  },
 ]
