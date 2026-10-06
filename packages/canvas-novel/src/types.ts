@@ -1108,7 +1108,7 @@ export function normalizePendingItem(raw: unknown): PendingItem | undefined {
 /* --------------------------------------------------------------- outcomes */
 
 /** The store's failure codes (the canvas vocabulary, plus the chapter gates'). */
-export type NovelError = 'invalid-name' | 'missing' | 'io' | 'stale' | 'denied' | 'not-reviewed' | 'not-extracted' | 'no-workspace' | 'duplicate' | 'plan-unconfirmed' | 'unknown-foreshadow'
+export type NovelError = 'invalid-name' | 'missing' | 'io' | 'stale' | 'denied' | 'not-reviewed' | 'not-extracted' | 'no-workspace' | 'duplicate' | 'plan-unconfirmed' | 'unknown-foreshadow' | 'body-exists'
 
 /* ---------------------------------------------- wire-boundary contracts */
 
@@ -1136,6 +1136,12 @@ export interface WriteChapterRequest {
    * confirmed (计划门禁, `plan-unconfirmed`).
    */
   readonly byUser?: boolean
+  /**
+   * Replace a chapter file that already holds a body. Without it `content`
+   * onto a non-empty file is refused (`body-exists`): registering a manuscript
+   * already in the workspace must never overwrite it.
+   */
+  readonly replace?: boolean
 }
 
 /** The subagent's world-rule row (strict JSON, tolerant reads): 世界 by default, 原则 for a writing principle. */

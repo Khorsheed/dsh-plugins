@@ -164,6 +164,11 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
       title: { type: 'string', description: 'chapter: the title.' },
       content: { type: 'string', description: 'chapter: the manuscript body — written to the mounted workspace before registering.' },
       chapter: { type: 'number', description: 'chapter: n to re-plan or to write the body of (omit to create).' },
+      replace: {
+        type: 'boolean',
+        description: 'chapter: true to replace a chapter file that already holds a body (read it first with novel_read). '
+          + 'Without it, content onto an existing body is refused.',
+      },
       byUser: {
         type: 'boolean',
         description: 'chapter: true when the text is the user\'s own manuscript (用户原稿 — imported or pasted): it needs no plan, '
@@ -193,6 +198,7 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
           ...(args.plan === undefined ? {} : { plan: args.plan }),
           ...(args.content === undefined ? {} : { content: args.content }),
           ...(args.byUser === true ? { byUser: true } : {}),
+          ...(args.replace === true ? { replace: true } : {}),
         }, resolved.session)
         if (!outcome.ok) {
           if (outcome.error === 'missing' && args.chapter !== undefined) {
@@ -212,6 +218,10 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
           if (outcome.error === 'unknown-foreshadow') {
             return `失败：计划里的伏笔要写编号，这几条对不上伏笔卡：${(outcome.unknown ?? []).map(id => `「${id}」`).join('、')}。`
               + '推进/暗示/揭晓的 id 写台账里的编号（如 #12，novel_read 看伏笔台账）；还没有卡的新伏笔写 op=新埋 + question。'
+          }
+          if (outcome.error === 'body-exists') {
+            return `失败：第 ${args.chapter ?? '新'} 章的文件已经有正文（${outcome.existingLength ?? 0} 字），不会覆盖。`
+              + '只登记已在工作区的稿子就不要带 content；确实要整章替换，先 novel_read(what=chapter) 读原文，改好后带 replace=true 重写全文。'
           }
           if (outcome.error === 'no-workspace') {
             return '失败：这张画布还没有挂工作区，章节正文无处可写。请用户先在画布里挂一个工作区（正文写到 <工作区>/<画布标题>/第N章.md）。'
@@ -362,6 +372,7 @@ interface WriteArgs {
   content?: string
   chapter?: number
   byUser?: boolean
+  replace?: boolean
   plan?: Record<string, unknown>
   action?: ReviewAction
 }
