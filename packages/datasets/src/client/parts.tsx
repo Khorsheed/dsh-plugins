@@ -9,7 +9,7 @@
  */
 
 import type { ReactNode } from 'react'
-import { IconChevronDownOutlineMedium, IconChevronRightOutlineMedium } from './icons.tsx'
+import { IconChevronDownOutlineMedium, IconChevronRightOutlineMedium, IconEditOutlineMedium } from './icons.tsx'
 import { exposureOfRole, type DatasetExposure, type DatasetRole, type DatasetSlot } from '../slots.ts'
 import type { DatasetsViewProps } from './contract.ts'
 import { layersPhrase, type Phrase } from './vocab.ts'
@@ -231,13 +231,28 @@ export function LayersWordView(props: { layers: readonly string[]; t: DatasetsVi
 /**
  * The 「改」 beside a read-only «agent 可见» word: it opens the registration's
  * edit form, the one writer of a set's layers.
- * @param props - the set's reference (for the title), the opener and the locale seat.
+ *
+ * T99 · a pencil icon button, not a word: in the list's table it stays out
+ * of sight until the pointer is over the row or keyboard focus enters it
+ * (`variant="row"`, CSS-only), and is always shown where nothing hovers
+ * (touch) or the table folds to the narrow layout. The detail page's bar
+ * keeps it always visible (`variant="bar"`). Its name rides on aria-label and
+ * the tooltip on title.
+ * @param props - the set's reference (for the title), the opener, where it sits and the locale seat.
  */
-export function LayersEdit(props: { set: string; onEdit: () => void; t: DatasetsViewProps['t'] }) {
-  const { set, onEdit, t } = props
+export function LayersEdit(props: { set: string; onEdit: () => void; variant?: 'row' | 'bar'; t: DatasetsViewProps['t'] }) {
+  const { set, onEdit, variant = 'row', t } = props
+  const title = t('layers.editTitle', { set })
   return (
-    <button type="button" className={css.layersEdit} title={t('layers.editTitle', { set })} onClick={onEdit}>
-      {t('layers.edit')}
+    <button
+      type="button"
+      className={css.layersEdit}
+      data-variant={variant}
+      title={title}
+      aria-label={title}
+      onClick={onEdit}
+    >
+      <IconEditOutlineMedium size={14} />
     </button>
   )
 }

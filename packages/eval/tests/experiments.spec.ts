@@ -9,7 +9,7 @@ import { createExperiment, type ExperimentRecord } from '../src/design/experimen
 import { EvalService } from '../src/service.ts'
 import { cleanupTmp, fakeRegistry, hostsWith, tmpTree, useDshHome, writeJson } from './helpers.ts'
 import { createHash } from 'node:crypto'
-import { readFileSync } from 'node:fs'
+import { mkdirSync, readFileSync } from 'node:fs'
 
 afterEach(cleanupTmp)
 
@@ -360,6 +360,7 @@ describe('listExperiments', () => {
     expect(row.validation?.ok).toBe(true)
     // No mission service mounted: the listing still answers and says why.
     expect(result.notes.some(note => note.includes('no mission service'))).toBe(true)
+    expect(result.notices?.map(notice => notice.code)).toEqual(['mission-missing'])
   })
 
   it('locked conditions still validate — the row stays 待批准', async () => {
@@ -511,6 +512,27 @@ describe('listExperiments', () => {
     const result = await listExperiments({ mission, stateRoot })
     expect(result.rows.map(row => row.id)).toEqual(['run-eval'])
     expect(result.notes.some(note => note.includes('broken-20260920-0000'))).toBe(true)
+    // T99 · one folded notice the browser words: a code, a count, the names.
+    expect(result.notices).toEqual([expect.objectContaining({
+      code: 'experiments-unreadable', params: { count: 1 }, items: ['broken-20260920-0000'],
+    })])
+  })
+
+  it('folds every unreadable directory into one notice and skips emptied ones (T99)', async () => {
+    const { stateRoot } = await experimentWithPlan()
+    const root = join(stateRoot, 'experiments')
+    for (const id of ['gone-a-20261001-0000', 'gone-b-20261001-0001']) mkdirSync(join(root, id, 'cells'), { recursive: true })
+    writeJson(join(root, 'bad-b-20260920-0000'), 'meta.json', { experimentId: 'nope' })
+    writeJson(join(root, 'bad-a-20260920-0001'), 'plan.json', {})
+    const result = await listExperiments({ mission: ledger([]), stateRoot })
+    expect(result.rows).toHaveLength(1)
+    expect(result.notices).toEqual([{
+      code: 'experiments-unreadable',
+      params: { count: 2 },
+      items: ['bad-a-20260920-0001', 'bad-b-20260920-0000'],
+      text: expect.stringMatching(/^2 experiment directories cannot be read: /),
+    }])
+    expect(result.notes).toEqual([result.notices![0]!.text])
   })
 
   it('a job that failed before runCreate marks its experiment refused and carries the detail', async () => {
@@ -545,6 +567,7 @@ describe('listExperiments', () => {
     const result = await listExperiments({ mission, now: 1_757_600_000_000 })
     expect(result.rows.map(row => [row.status, row.legacy])).toEqual([['running', true]])
     expect(result.notes.some(note => note.includes('no eval state root'))).toBe(true)
+    expect(result.notices?.map(notice => notice.code)).toEqual(['state-root-missing'])
   })
 
   it('a mission face that cannot list runs degrades to drafts with a note', async () => {
@@ -554,6 +577,7 @@ describe('listExperiments', () => {
     expect(result.rows).toHaveLength(1)
     expect(result.rows[0]!.runId).toBeNull()
     expect(result.notes.some(note => note.includes('cannot list runs'))).toBe(true)
+    expect(result.notices?.map(notice => notice.code)).toEqual(['mission-cannot-list'])
   })
 })
 

@@ -32,7 +32,7 @@ import { planQuestionOf } from './plan-question.ts'
 import { conditionFactors } from '../read.ts'
 import { expandHome, type PlanValidation } from '../contract/validate.ts'
 import type {
-  EvalExperimentDetail, EvalExperimentJob, EvalExperimentMeta, EvalExperimentRow, EvalExperimentsResult,
+  EvalExperimentDetail, EvalExperimentJob, EvalExperimentMeta, EvalExperimentRow, EvalExperimentsResult, EvalListNotice,
   EvalExperimentSnapshot, EvalExperimentStatus, EvalExperimentUnit, EvalItemRunRow, EvalItemRunsResult,
   EvalClosure, EvalReadinessLine, EvalExperimentBroken,
 } from '../types.ts'
@@ -183,16 +183,24 @@ export interface PlanFile {
  * yields a row — it is the experiment's own problem to show, not a reason to
  * drop it from the list.
  */
-export async function readPlans(stateRoot: string, notes: string[] = []): Promise<PlanFile[]> {
+export async function readPlans(stateRoot: string, notices: EvalListNotice[] = []): Promise<PlanFile[]> {
   const { records, problems } = await listExperimentRecords(stateRoot)
-  notes.push(...problems)
+  if (problems.length > 0) {
+    notices.push({
+      code: 'experiments-unreadable',
+      params: { count: problems.length },
+      text: `${problems.length} experiment ${problems.length === 1 ? 'directory' : 'directories'} cannot be read: ${problems.map(problem => problem.message).join('; ')}`,
+      items: problems.map(problem => problem.id),
+    })
+  }
   const plans: PlanFile[] = []
   for (const record of records) {
     let document: unknown
     try {
       document = JSON.parse(await readFile(record.planPath, 'utf8')) as unknown
     } catch (error) {
-      notes.push(`experiment ${record.id}: plan.json is unreadable (${error instanceof Error ? error.message : String(error)})`)
+      const detail = error instanceof Error ? error.message : String(error)
+      notices.push({ code: 'plan-unreadable', params: { id: record.id, detail }, text: `experiment ${record.id}: plan.json is unreadable (${detail})` })
       plans.push({ record, document: {}, sha: null })
       continue
     }
@@ -430,17 +438,18 @@ function runRow(
 }
 
 /** Every eval run the mission ledger holds: the ones whose meta carries `evalVersion`. */
-function evalRuns(mission: MissionRunListFace, notes: string[]): RunProjection[] {
+function evalRuns(mission: MissionRunListFace, notices: EvalListNotice[]): RunProjection[] {
   const list = mission.runList
   if (typeof list !== 'function') {
-    notes.push('the mounted mission service cannot list runs, so only drafts are listed — upgrade dsh-mission')
+    notices.push({ code: 'mission-cannot-list', params: {}, text: 'the mounted mission service cannot list runs, so only drafts are listed — upgrade dsh-mission' })
     return []
   }
   let ids: ReadonlyArray<{ id: string }>
   try {
     ids = list.call(mission)
   } catch (error) {
-    notes.push(`the mission ledger could not be listed (${error instanceof Error ? error.message : String(error)})`)
+    const detail = error instanceof Error ? error.message : String(error)
+    notices.push({ code: 'mission-list-failed', params: { detail }, text: `the mission ledger could not be listed (${detail})` })
     return []
   }
   const runs: RunProjection[] = []
@@ -547,14 +556,16 @@ export function pairRun(meta: Record<string, unknown>, plans: readonly PlanFile[
  * @returns rows newest-run-first, then unstarted experiments newest first.
  */
 export async function listExperiments(input: ExperimentsInput): Promise<EvalExperimentsResult> {
-  const notes: string[] = []
+  const notices: EvalListNotice[] = []
   const jobs = indexJobs(input.jobs ?? [])
-  const runs = input.mission === undefined ? [] : evalRuns(input.mission, notes)
+  const runs = input.mission === undefined ? [] : evalRuns(input.mission, notices)
   if (input.mission === undefined) {
-    notes.push('no mission service: run records live in the mission ledger, so only unstarted experiments are listed — mount the dsh-mission plugin')
+    notices.push({ code: 'mission-missing', params: {}, text: 'no mission service: run records live in the mission ledger, so only unstarted experiments are listed — mount the dsh-mission plugin' })
   }
-  const plans = input.stateRoot === undefined ? [] : await readPlans(input.stateRoot, notes)
-  if (input.stateRoot === undefined) notes.push('no eval state root (DSH_HOME is unset): experiments are not listed, runs are')
+  const plans = input.stateRoot === undefined ? [] : await readPlans(input.stateRoot, notices)
+  if (input.stateRoot === undefined) {
+    notices.push({ code: 'state-root-missing', params: {}, text: 'no eval state root (DSH_HOME is unset): experiments are not listed, runs are' })
+  }
 
   const now = input.now ?? Date.now()
   const started = new Set<string>()
@@ -571,7 +582,7 @@ export async function listExperiments(input: ExperimentsInput): Promise<EvalExpe
   }
 
   runRows.sort((a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0))
-  return { rows: [...runRows, ...draftRows], notes, session: input.session ?? null }
+  return { rows: [...runRows, ...draftRows], notes: notices.map(notice => notice.text), notices, session: input.session ?? null }
 }
 
 /** Project one readiness record structurally — the run wrote it, this only reads. */
@@ -726,7 +737,10 @@ export function runsForItem(
     return { datasetId, itemId, runs: [], notes }
   }
   const runs: EvalItemRunRow[] = []
-  for (const projection of evalRuns(mission, notes)) {
+  const notices: EvalListNotice[] = []
+  const projections = evalRuns(mission, notices)
+  notes.push(...notices.map(notice => notice.text))
+  for (const projection of projections) {
     if (stringOrNull(projection.meta['datasetId']) !== datasetId) continue
     const rows = projection.rows.filter(row => row.labels['task'] === itemId)
     if (rows.length === 0) continue

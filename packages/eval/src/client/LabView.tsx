@@ -36,7 +36,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button, writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { EvalClosureExit, EvalExperimentBroken, EvalExperimentRow, EvalPlanCheck } from '../types.ts'
+import type { EvalClosureExit, EvalExperimentBroken, EvalExperimentRow, EvalExperimentsResult, EvalListNotice, EvalPlanCheck } from '../types.ts'
 import type { LabViewProps } from './contract.ts'
 import type { EvalKey } from './locales.ts'
 import { DesignPage, planFileAnswer, type PlanFileAnswer, type PlanNumbersAnswer, type PlanNumbersDraft } from './DesignPage.tsx'
@@ -1176,7 +1176,7 @@ export function LabView(props: LabViewProps) {
             {!loading && error !== null && list === null && (
               <ErrorState what={t('list.error')} message={error} t={t} />
             )}
-            {(list?.notes ?? []).map(note => <div key={note} className={css.note}>{note}</div>)}
+            {list !== null && <ListNotices list={list} t={t} />}
             {list !== null && rows.length === 0 && (
               // The page's one empty seat (T87): centred, one action — the
               // dialog — and the sentence says the chat is just as good a door.
@@ -1612,6 +1612,52 @@ function BrokenReason(props: { broken: EvalExperimentBroken; t: LabViewProps['t'
         <pre className={css.errorRaw}>{broken.message}</pre>
       </details>
     </span>
+  )
+}
+
+/** The locale key of each lab-list notice code this build knows (T99). */
+const LIST_NOTICE_KEYS: Record<string, EvalKey> = {
+  'experiments-unreadable': 'list.notice.experiments-unreadable',
+  'plan-unreadable': 'list.notice.plan-unreadable',
+  'mission-missing': 'list.notice.mission-missing',
+  'mission-cannot-list': 'list.notice.mission-cannot-list',
+  'mission-list-failed': 'list.notice.mission-list-failed',
+  'state-root-missing': 'list.notice.state-root-missing',
+}
+
+/**
+ * The honest degrades above the lab list, in the viewer's language (T99, the
+ * T98 judge-note shape): the host ships a code plus parameters, the browser
+ * owns the sentence; a code this build does not know falls back to the host's
+ * text. Unreadable experiment directories fold into one line that opens to
+ * their names. An older host without `notices` shows its notes as they are.
+ */
+function ListNotices(props: { list: EvalExperimentsResult; t: LabViewProps['t'] }) {
+  const { list, t } = props
+  if (list.notices === undefined) {
+    return <>{list.notes.map(note => <div key={note} className={css.note}>{note}</div>)}</>
+  }
+  return (
+    <>
+      {list.notices.map((notice, index) => <ListNoticeLine key={`${notice.code}-${index}`} notice={notice} t={t} />)}
+    </>
+  )
+}
+
+function ListNoticeLine(props: { notice: EvalListNotice; t: LabViewProps['t'] }) {
+  const { notice, t } = props
+  const key = Object.prototype.hasOwnProperty.call(LIST_NOTICE_KEYS, notice.code) ? LIST_NOTICE_KEYS[notice.code] : undefined
+  const text = key === undefined ? notice.text : t(key, notice.params)
+  const items = notice.items ?? []
+  if (items.length === 0) return <div className={css.note} role="note">{text}</div>
+  return (
+    <details className={`${css.note} ${css.noteFold}`} role="note">
+      <summary className={css.errorSummary}>{text}</summary>
+      {notice.code === 'experiments-unreadable' && <div className={css.noteFoldHint}>{t('list.notice.experiments-unreadableHint')}</div>}
+      <ul className={css.noteFoldList}>
+        {items.map(item => <li key={item}>{item}</li>)}
+      </ul>
+    </details>
   )
 }
 

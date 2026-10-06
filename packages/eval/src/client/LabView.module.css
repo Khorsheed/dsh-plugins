@@ -472,6 +472,25 @@
   overflow-wrap: anywhere;
 }
 
+/* T99 · a notice that folds what it counts (the unreadable experiment
+   directories): one line closed, the names one per line open. */
+.noteFold[open] .errorSummary::before {
+  content: '▾ ';
+}
+
+.noteFoldHint {
+  margin-top: 4px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.noteFoldList {
+  margin: 2px 0 0;
+  padding-left: 18px;
+  font-family: var(--ds-font-family-code);
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
 /* The seven sub-page tabs of a detail, as the toolbar-toggle convention has
    them: borderless compact toggles whose selection is aria-pressed alone, so
    the semantics and the visuals cannot drift apart. */

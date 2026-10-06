@@ -66,6 +66,8 @@ export type DatasetsErrorCode =
   | 'REF_NOT_FOUND'
   /** A write verb reached a registration that names no authoring checkout. */
   | 'NO_AUTHORING_CHECKOUT'
+  /** T99: a repository whose files must stay (outside the datasets home, a symlink, not the repository root). */
+  | 'NOT_REMOVABLE'
 
 /** Domain error with a stable, greppable code. */
 export class DatasetsError extends Error {

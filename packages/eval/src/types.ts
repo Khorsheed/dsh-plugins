@@ -313,14 +313,40 @@ export interface EvalExperimentBroken {
   message: string
 }
 
+/**
+ * One honest degrade above the lab list, structured so the browser owns the
+ * sentence (T99, the T98 judge-note shape): a code plus parameters, and the
+ * host's English text for a code the browser does not know.
+ *
+ * Codes this host ships:
+ * - `experiments-unreadable` — `{count}`; `items` names the directories whose
+ *   meta cannot be read (directories holding nothing are skipped, not counted);
+ * - `plan-unreadable` — `{id, detail}`: an experiment's plan.json cannot be read;
+ * - `mission-missing` — no mission service: only unstarted experiments are listed;
+ * - `mission-cannot-list` — the mounted mission service has no run listing;
+ * - `mission-list-failed` — `{detail}`: the mission ledger listing threw;
+ * - `state-root-missing` — DSH_HOME is unset: experiments are not listed, runs are.
+ */
+export interface EvalListNotice {
+  code: string
+  params: Record<string, string | number>
+  /** The host's sentence (English), for a code the browser does not know and for text consumers. */
+  text: string
+  /** What the notice folds (the unreadable directory names). */
+  items?: string[]
+}
+
 /** The lab list answer. */
 export interface EvalExperimentsResult {
   rows: EvalExperimentRow[]
   /**
    * Honest degrades, one sentence each: an unreadable experiment, a mission
-   * service that cannot list runs. The list still answers.
+   * service that cannot list runs. The list still answers. The text of
+   * {@link notices}, kept for text consumers.
    */
   notes: string[]
+  /** The same degrades, structured for the browser's own language (T99). Absent from older hosts. */
+  notices?: EvalListNotice[]
   /**
    * The calling session's id, so the browser can split rows into 本会话发起
    * (`row.originSession === session`) and the rest. Null when the call came
