@@ -25,9 +25,13 @@ const BUNDLE_DIR = join(PROFILE, 'presets')
  * fold) repointed the two tool rows' `name` from the retired companion packages
  * to `@khorsheed/dsh-datasets/tool` / `@khorsheed/dsh-eval/tool` — row ids,
  * config and the registered tools are unchanged, so only module resolution
- * moved (plus the two comment lines naming the mission row).
+ * moved (plus the two comment lines naming the mission row). T100 changed
+ * COMMENT LINES ONLY (fbd218b8… before): the skills-section note no longer
+ * says eval-planning arrives through `$DSH_HOME/skills` — it registers from
+ * the eval-tool row now. The parsed composition is unchanged, which
+ * eval-preset-parity.spec.ts states directly (comments dropped).
  */
-const DIRECTORY_COMPOSITION_SHA = 'fbd218b890b65422edf221dc7e084458917b2928783076cd028b024772d9d81b'
+const DIRECTORY_COMPOSITION_SHA = '8c11e96aa7078118de1ddcce8dcda80ce2dee0e88dde0f37d0519399ba81fc1e'
 
 /**
  * The preset-eval row's `plugins:` block, de-indented back to the directory

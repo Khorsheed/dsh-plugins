@@ -117,7 +117,9 @@
 
           # The skill registry is host-plane and layered per scope: these rows register
           # into THIS preset's layer, and the merged catalog also carries whatever the
-          # profile registered globally. I5's `eval-planning` skill arrives this way.
+          # profile registered globally. The `eval-planning` skill is NOT one of those
+          # any more: since T100 it ships inside @khorsheed/dsh-eval and registers from
+          # the eval-tool row below, so only sessions of this preset list it.
           - id: skill-filesystem
             name: '@deepseek-ai/dsh-skill-filesystem'
 
