@@ -3751,7 +3751,7 @@ describe('the compact panel (panel-responsive-spec P2)', () => {
     expect(dot?.textContent).toBe('')
   })
 
-  it('puts the detail on one header row: back, title, the ordinary actions behind ⋯', async () => {
+  it('puts the detail on one header row: back, no repeated title, the ordinary actions behind ⋯', async () => {
     narrow()
     const ui = bench({
       sources: [rssSource('hn')],
@@ -3760,6 +3760,8 @@ describe('the compact panel (panel-responsive-spec P2)', () => {
     await ui.settle()
     fireEvent.click(await screen.findByText('一篇长文'))
     expect(await screen.findByText(zh['detail.composerLabel'])).toBeTruthy()
+    // The bar carries no title: the article's heading below is the one place it reads.
+    expect(screen.getAllByText('一篇长文')).toHaveLength(1)
     expect(screen.queryByRole('button', { name: zh['action.copyLink'] })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: zh['action.more'] }))
     fireEvent.click(await screen.findByText(zh['action.openExternal']))

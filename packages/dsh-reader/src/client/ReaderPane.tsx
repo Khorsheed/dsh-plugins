@@ -3638,9 +3638,12 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
     return (
       <div className={css.root}>
         {compact ? (
+          // No title here: the article's own heading sits right below with
+          // its source and date in the kicker, so any title in this bar —
+          // the article's or the source's — would say it twice.
           <PanelHeader
             className={css.compactBar}
-            title={openEntry.title}
+            title=""
             onBack={() => { actions.setView('list'); actions.closeEntry() }}
             backLabel={t('action.back')}
             extra={detailTranslate}

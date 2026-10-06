@@ -695,7 +695,9 @@
 }
 
 .article {
-  color: var(--dsw-alias-label-secondary);
+  /* Body text is what the page is for, so it takes the primary ink; the
+     secondary ink is kept for what comments on it (quotes, captions). */
+  color: var(--dsw-alias-label-primary);
 }
 
 /* Chinese and Latin need different leading and letter-spacing: Latin prose sits
@@ -759,6 +761,11 @@
   margin: 0 0 12px;
   padding: 2px 0 2px 11px;
   border-left: 3px solid var(--dsw-alias-border-l3);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.article figcaption {
+  color: var(--dsw-alias-label-secondary);
 }
 
 .article code {
