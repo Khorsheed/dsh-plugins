@@ -64,10 +64,18 @@ function mainSessionId(list: SessionListState): SessionId | undefined {
   return Object.values(view.byId).find(s => (s.retainedBy?.mainView ?? 0) > 0)?.id ?? view.current
 }
 
-/** The slice of ui-conversation's per-session input the re-split gesture uses (structural). */
+/** The slice of ui-conversation's per-session input the pane drives (structural). */
 interface ConversationInput {
   readonly state: { getSnapshot(): { draft: string } }
   setDraft(value: string): void
+  addAttachments?(ids: readonly unknown[]): boolean
+  submit?(mode?: 'queue'): void
+}
+
+/** The slice of ui-conversation's service that turns a picked file into a draft attachment (structural). */
+interface ConversationDrafts {
+  createDrafts?(sessionId: SessionId, files: readonly File[]): readonly { id: unknown }[]
+  releaseDraftAttachments?(drafts: readonly { id: unknown }[]): void
 }
 
 /**
@@ -132,6 +140,30 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     recentRecords: () => remote.recentRecords({ limit: 3 }),
     boundTarget: () => remote.boundTarget(sessionId),
     bindTarget: binding => remote.bindTarget(sessionId, { binding }),
+    sendMessage: text => {
+      const input = inputFor(sessionId)
+      if (input?.submit === undefined) return false
+      input.setDraft(text)
+      input.submit('queue')
+      return true
+    },
+    sendPhoto: (file, text) => {
+      const input = inputFor(sessionId)
+      const conversation = ctx.get('sessions')?.scope(sessionId)?.get('conversation') as ConversationDrafts | undefined
+      if (input?.submit === undefined || input.addAttachments === undefined || conversation?.createDrafts === undefined) return false
+      try {
+        const drafts = conversation.createDrafts(sessionId, [file])
+        input.setDraft(text)
+        if (!input.addAttachments(drafts.map(draft => draft.id))) {
+          conversation.releaseDraftAttachments?.(drafts)
+          return false
+        }
+        input.submit('queue')
+        return true
+      } catch {
+        return false
+      }
+    },
     primeConversation: text => {
       const input = inputFor(sessionId)
       if (input === undefined) return false

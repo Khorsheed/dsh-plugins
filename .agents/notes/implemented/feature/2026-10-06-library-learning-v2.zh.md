@@ -25,12 +25,15 @@ M1 的图书馆（[M1 note](2026-10-06-library-learning-mode-m01.zh.md)）假设
 
 浏览器半是一条路由栈（`client/store.ts`），覆盖 今日 → 项目 → 书 → 这一节 → 知识卡片 → 章节考 → 结算 → 复习，基于 `ui-panel-kit`（`PanelRoot`、`PanelHeader`、`UnderlineTabs`、`ChipRow`、`ListRow`），桌面侧栏与手机全屏共用一套界面（docs/panel-design.md；`pnpm check:panels` 无错误）。各视图经小 `useLoad` 钩子按 store 的 `rev` 读宿主。侧栏不替模型干活：加书、（重新）排路线、出题、判开放题都在 `bindTarget` 之后填进绑定会话的输入框（`primeConversation`）。选择与填空在侧栏判（`client/judge.ts`）；没有开放题的一次作答直接经 `putAttempt`（`by: 'self'`）落账，否则整次作答交给教练，保证一次作答一条记录。样例页（`examples/sidebar`，端口 8877，内存数据）用于截图自查。
 
+照片刻意经过会话（M2c）：这一节的「拍照记重点」选图或拍照后，以学习者本人的消息把照片连同记录请求发进会话（`sendPhoto`：结构探测 ui-conversation 的 `createDrafts` 与输入门面的 `addAttachments` / `submit`），聊天里看得到发了什么、教练怎么认的，学习者就地纠正。侧栏随后轮询直到新页落盘（最多两分钟）。每页把拿不准的标记列成一点即发的小块，并有「补一个漏掉的词」输入框，二者都同样以一条短消息发出（`sendMessage`）。否决了插件后台直调视觉模型：识别过程会从聊天里消失，还要自管模型路由。
+
 ## 真机试跑（2026-10-06，deepseek-flash，0.2.0-rc.2 上的一次性实例）
 
 - 学习会话里模型看到的正好是 ask_user_question、library_read / library_write / library_assess、web_search 与 web_fetch；`list_capabilities` 被屏蔽，三段根上的无关段已消失（系统提示 3.3k 字符）；`library:binding` 上下文每轮都在。
 - 加 PNS 第 6 版并起草路线一轮完成。模型写出的两种形状曾让存储丢数据，现已吸收：节点 goals 写成单个字符串（存为一项的列表）；把部分标题当目录行（只重复其 part 的行会被丢弃）。
 - 模型看到的图片 id 没有 `sha256:` 前缀、也没有 `bytes`，它抄的引用读不回照片。`src/image-refs.ts` 从已提交的 `session/event` 记住各会话的图片引用，记录页面时据此补全（给 id，或不给即用最近一张）。
 - 同一张页面照片跑两次：每次约三分之二的划线成卡，漏的词不同；本句义准确。侧栏因此需要「补一个漏掉的词」的入口。
+- 在真实浏览器里点侧栏拍照：照片与请求以学习者的消息出现在聊天里，教练认出这一页已记录过、没有重复写入。
 - 五题章节考一次出对两轴：三道考划过的卡、两道内容题，全部基于照片原句。
 - 挂在仍锁着的节点上的测验会落盘并给出提醒。
 

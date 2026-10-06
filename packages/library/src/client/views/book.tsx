@@ -5,14 +5,14 @@
  *
  * @module @khorsheed/dsh-library/client/views/book
  */
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { ListRow, PanelHeader, UnderlineTabs } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
 import type { LibraryBook, LibraryPage, LibraryRoadmap, RoadmapNode } from '../../types.ts'
 import type { LibraryNodeTab } from '../store.ts'
 import {
   IconCameraOutlineMedium, IconCheckOutlineMedium, IconLockOutlineMedium, IconRefreshOutlineMedium, IconSparkleOutlineMedium,
 } from '../icons.tsx'
-import { outcome, StateLine, useLoad, value, WeaknessBars, type ViewProps } from '../ui.tsx'
+import { outcome, shortGloss, StateLine, useLoad, value, WeaknessBars, type ViewProps } from '../ui.tsx'
 import css from '../LibraryPane.module.css'
 
 /** The zigzag column (0..2) a node at `index` sits in. */
@@ -218,7 +218,7 @@ export function NodeView({ p, projectId, bookId, nodeId, tab }: ViewProps & { pr
           <GuideTab p={p} projectId={projectId} bookId={bookId} node={node} book={book} onPrime={prime} />
         )}
         {node !== undefined && book !== undefined && tab === 'pages' && (
-          <PagesTab p={p} projectId={projectId} bookId={bookId} node={node} onPrime={() => { prime(t('prime.photo', { book: book.title, node: node.title })) }} />
+          <PagesTab p={p} projectId={projectId} bookId={bookId} bookTitle={book.title} node={node} onBind={() => { void p.bindTarget({ projectId, bookId }) }} />
         )}
         {node !== undefined && book !== undefined && tab === 'quiz' && (
           <QuizTab p={p} projectId={projectId} bookId={bookId} node={node} passRatio={loaded.data?.passRatio ?? 0.8} onPrime={() => { prime(t('prime.quiz', { book: book.title, node: node.title })) }} />
@@ -264,24 +264,72 @@ function GuideTab({ p, projectId, bookId, node, book, onPrime }: {
   )
 }
 
-function PagesTab({ p, projectId, bookId, node, onPrime }: {
-  p: ViewProps['p']; projectId: string; bookId: string; node: RoadmapNode; onPrime: () => void
+function PagesTab({ p, projectId, bookId, bookTitle, node, onBind }: {
+  p: ViewProps['p']; projectId: string; bookId: string; bookTitle: string; node: RoadmapNode; onBind: () => void
 }): ReactNode {
   const { t, useStore, actions } = p
   const rev = useStore(s => s.rev)
-  const pages = useLoad(() => value(p.listPages(projectId, bookId, node.id)), [projectId, bookId, node.id, rev])
-  const cards = useLoad(() => value(p.listCards({ projectId, nodeId: node.id, limit: 50 })), [projectId, node.id, rev])
+  const [notice, setNotice] = useState<string | undefined>()
+  // After a photo goes out, re-read every few seconds until the coach has
+  // recorded a new page (or two minutes pass) — the page lands here by itself.
+  const [watching, setWatching] = useState<{ since: number; pages: number } | undefined>()
+  const [tick, setTick] = useState(0)
+  useEffect(() => {
+    if (watching === undefined) return
+    const timer = setInterval(() => {
+      if (Date.now() - watching.since > 120_000) setWatching(undefined)
+      else setTick(value => value + 1)
+    }, 4000)
+    return () => { clearInterval(timer) }
+  }, [watching])
+  const pages = useLoad(() => value(p.listPages(projectId, bookId, node.id)), [projectId, bookId, node.id, rev, tick])
+  const cards = useLoad(() => value(p.listCards({ projectId, nodeId: node.id, limit: 50 })), [projectId, node.id, rev, tick])
+  const count = pages.data?.pages.length ?? 0
+  useEffect(() => {
+    if (watching !== undefined && count > watching.pages) {
+      setWatching(undefined)
+      setNotice(t('node.photoRecorded'))
+    }
+  }, [count, watching])
+
+  const send = (sent: boolean, ok: string): void => {
+    setNotice(sent ? ok : t('notice.noConversation'))
+  }
+
+  const onPick = (file: File | undefined): void => {
+    if (file === undefined) return
+    onBind()
+    const sent = p.sendPhoto(file, t('prime.photo', { book: bookTitle, node: node.title }))
+    if (sent) setWatching({ since: Date.now(), pages: count })
+    send(sent, t('node.photoSent'))
+  }
+
   return (
     <>
       <StateLine loaded={pages} t={t} />
+      {notice !== undefined && <div className={css.notice}>{notice}</div>}
       <div className={css.pages}>
         {(pages.data?.pages ?? []).map(page => <PageThumb key={page.id} p={p} projectId={projectId} page={page} />)}
-        <button type="button" className={css.pageAdd} onClick={onPrime}>
+        <label className={css.pageAdd}>
           <IconCameraOutlineMedium />
-          <span>{t('node.photo')}</span>
-        </button>
+          <span>{watching === undefined ? t('node.photo') : t('node.photoWaiting')}</span>
+          <input
+            className={css.fileInput}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            onChange={event => { onPick(event.target.files?.[0]); event.target.value = '' }}
+          />
+        </label>
       </div>
-      <div className={css.muted}>{t('node.photoHint')}</div>
+      {(pages.data?.pages ?? []).map(page => (
+        <PageFixes
+          key={page.id}
+          p={p}
+          page={page}
+          onSend={(text, ok) => { onBind(); send(p.sendMessage(text), ok) }}
+        />
+      ))}
       {(cards.data?.cards.length ?? 0) > 0 && (
         <section className={css.section}>
           <h3 className={css.sectionTitle}>{t('node.cardsHere', { count: String(cards.data!.total) })}</h3>
@@ -289,7 +337,7 @@ function PagesTab({ p, projectId, bookId, node, onPrime }: {
             <ListRow
               key={card.id}
               title={card.term}
-              meta={card.gloss}
+              meta={shortGloss(card.gloss)}
               trailing={<WeaknessBars weakness={card.weakness} label={t('cards.weakness', { level: String(card.weakness) })} />}
               onSelect={() => { actions.push({ view: 'cards', projectId, filter: 'all' }) }}
             />
@@ -297,6 +345,55 @@ function PagesTab({ p, projectId, bookId, node, onPrime }: {
         </section>
       )}
     </>
+  )
+}
+
+/**
+ * One page's corrections: the marks the coach was unsure of (tap to keep
+ * one) and a word it missed (type it). Both go out as the learner's own
+ * message, so the chat shows what was asked and the coach cards it in context.
+ */
+function PageFixes({ p, page, onSend }: { p: ViewProps['p']; page: LibraryPage; onSend: (text: string, ok: string) => void }): ReactNode {
+  const { t } = p
+  const [adding, setAdding] = useState(false)
+  const [word, setWord] = useState('')
+  const label = page.label ?? t('node.thisPage')
+  const uncertain = page.marks.filter(mark => mark.uncertain === true)
+  return (
+    <section className={css.fixes}>
+      <div className={css.fixesHead}>
+        <span className={css.muted}>{label}</span>
+        {!adding && <button type="button" className={css.textButton} onClick={() => { setAdding(true) }}>{t('node.addMissed')}</button>}
+      </div>
+      {uncertain.length > 0 && (
+        <div className={css.chips}>
+          <span className={css.muted}>{t('node.uncertain')}</span>
+          {uncertain.map(mark => (
+            <button
+              key={mark.text}
+              type="button"
+              className={css.chipButton}
+              onClick={() => { onSend(t('prime.keepMark', { page: label, word: mark.text }), t('node.fixSent')) }}
+            >{mark.text}</button>
+          ))}
+        </div>
+      )}
+      {adding && (
+        <form
+          className={css.row}
+          onSubmit={event => {
+            event.preventDefault()
+            if (word.trim() === '') return
+            onSend(t('prime.addMissed', { page: label, word: word.trim() }), t('node.fixSent'))
+            setWord('')
+            setAdding(false)
+          }}
+        >
+          <input className={css.input} autoFocus value={word} placeholder={t('node.addMissedPlaceholder')} onChange={event => { setWord(event.target.value) }} />
+          <button type="submit" className={css.secondary} disabled={word.trim() === ''}>{t('node.send')}</button>
+        </form>
+      )}
+    </section>
   )
 }
 

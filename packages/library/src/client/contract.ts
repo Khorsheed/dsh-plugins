@@ -73,6 +73,13 @@ export interface LibraryPaneInjected {
    * work; the pane drafts the ask). False when the session has no input.
    */
   primeConversation: (text: string) => boolean
+  /**
+   * Send a message in the session for the learner (it shows in the chat as
+   * theirs). False when the session has no input or is busy admitting.
+   */
+  sendMessage: (text: string) => boolean
+  /** Send a photo with a message in the session for the learner (the 拍照 gesture). */
+  sendPhoto: (file: File, text: string) => boolean
 }
 
 /** Full props of the library pane: the seat's session + store + locale + face. */

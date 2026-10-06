@@ -35,7 +35,7 @@ Details live in the package.json `dsh.compat.notes`: state is plain `node:fs` un
 ## Known limits
 
 - Out of scope: book file upload and parsing (EPUB / PDF), an in-conversation 「精读」tab, XP and streaks, project-level exams and cross-book linking.
-- In-sidebar photo recognition, the session-header bind chip and the record toast with undo are in development (proposal M2c–M3); photos are sent in the conversation for now.
+- The session-header bind chip and the record toast with undo are in development (proposal M3). The sidebar's photo button sends the photo as your message in the conversation, where the coach reads it.
 - A photo page needs the full attachment reference (attachmentId + mediaType + bytes + width + height — copied verbatim off the message's image block), else `ref-incomplete`.
 
 ## Development

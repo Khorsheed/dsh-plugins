@@ -106,6 +106,7 @@
   padding: 0 14px;
   border-radius: 8px;
   font: inherit;
+  white-space: nowrap;
   cursor: pointer;
 }
 
@@ -484,6 +485,56 @@
   font: inherit;
   font-size: var(--dsh-panel-text-meta, 12px);
   cursor: pointer;
+}
+
+/* 照片页的更正 */
+.fileInput {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.pageAdd {
+  position: relative;
+  overflow: hidden;
+}
+
+.row > .input {
+  flex: 1;
+}
+
+.fixes {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+.fixesHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.chipButton {
+  padding: 2px 9px;
+  border: 1px dashed var(--lib-warn);
+  border-radius: 10px;
+  background: var(--lib-warn-soft);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: var(--dsh-panel-text-meta, 12px);
+  cursor: pointer;
+}
+
+.chipButton:focus-visible,
+.pageAdd:focus-within {
+  outline: 2px solid var(--lib-accent);
+  outline-offset: 2px;
 }
 
 /* 知识卡片 */

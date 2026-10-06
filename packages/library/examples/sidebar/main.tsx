@@ -101,7 +101,7 @@ const face = {
   getRoadmap: (_project: string, bookId: string) => ok(roadmaps[bookId] ?? {}),
   adoptRoadmap: () => done({}), discardDraft: () => done({}), markNodeRead: () => done({ unlocked: [] }),
   listPages: () => ok({ pages: [
-    { id: 'pg_16', bookId: 'b_cam5', label: 'p.16', attachment: { attachmentId: 'a', mediaType: 'image/png', bytes: 1, width: 1, height: 1 }, text: '', marks: Array.from({ length: 15 }, (_, i) => ({ text: `m${i}` })), cardIds: [], at: iso(-3) },
+    { id: 'pg_16', bookId: 'b_cam5', label: 'p.16', attachment: { attachmentId: 'a', mediaType: 'image/png', bytes: 1, width: 1, height: 1 }, text: '', marks: [...Array.from({ length: 14 }, (_, i) => ({ text: `m${i}` })), { text: 'single-handed', uncertain: true }], cardIds: [], at: iso(-3) },
     { id: 'pg_17', bookId: 'b_cam5', label: 'p.17', attachment: { attachmentId: 'b', mediaType: 'image/png', bytes: 1, width: 1, height: 1 }, text: '', marks: Array.from({ length: 6 }, (_, i) => ({ text: `m${i}` })), cardIds: [], at: iso(-3) },
   ] }),
   readPagePhoto: () => ok({ ok: false, error: 'unavailable', message: 'preview' }),
@@ -127,6 +127,8 @@ const face = {
   ] }),
   boundTarget: () => ok(null), bindTarget: () => done({ binding: null }),
   primeConversation: () => true,
+  sendMessage: () => true,
+  sendPhoto: () => true,
 }
 
 const route = params.get('route')

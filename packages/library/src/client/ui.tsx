@@ -98,6 +98,12 @@ export function when(at: string, t: LibraryPaneProps['t']): string {
   return days === 1 ? t('when.yesterday') : t('when.days', { count: String(days) })
 }
 
+/** A gloss short enough for a one-line row: up to its first dash or semicolon, then capped. */
+export function shortGloss(gloss: string, max = 18): string {
+  const head = gloss.split(/\s*(?:——|—|;|；)\s*/)[0] ?? gloss
+  return head.length > max ? `${head.slice(0, max)}…` : head
+}
+
 /** Days from now until an ISO moment, at least 0. */
 export function daysUntil(at: string): number {
   return Math.max(0, Math.ceil((Date.parse(at) - Date.now()) / 86_400_000))
