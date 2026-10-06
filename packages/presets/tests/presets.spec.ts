@@ -20,7 +20,7 @@ function presetBlock(text: string, id: string): string {
 }
 
 describe('cordis.patch.yml', () => {
-  it('mounts exactly the three preset declarations, in PRESET_IDS order', () => {
+  it('mounts exactly the four preset declarations, in PRESET_IDS order', () => {
     expect(topLevelRowIds(patch)).toEqual(PRESET_IDS.map((id) => `preset-${id}`))
     for (const id of PRESET_IDS) {
       const block = presetBlock(patch, id)
@@ -44,6 +44,8 @@ describe('cordis.patch.yml', () => {
     expect(presetBlock(patch, 'dsh-eval')).toContain('        order: 0\n')
     expect(presetBlock(patch, 'dsh-writing')).toContain("        name: '写作模式'\n")
     expect(presetBlock(patch, 'dsh-writing')).not.toContain('        order:')
+    expect(presetBlock(patch, 'dataset-authoring')).toContain("        name: '题集整理'\n")
+    expect(presetBlock(patch, 'dataset-authoring')).toContain('        order: 11\n')
   })
 
   it('dev is rebased on the rc.1 standard preset (no 0.1.5 drift)', () => {
@@ -136,6 +138,48 @@ describe('cordis.patch.yml', () => {
     expect(block).toContain('canvas_write')
     expect(block).toContain('Load the canvas skill')
     expect(block).not.toContain('canvas_propose_card')
+  })
+
+  // T100: the evaluation line runs on 3080 beside dev and writing, so the
+  // evaluation surface must arrive ONLY through the presets that name it. Every
+  // piece of it rides a companion tool row: the eval tools, /eval and the
+  // eval-planning skill ride `@khorsheed/dsh-eval/tool`; the datasets tools,
+  // /datasets and (organize tier) the dataset-authoring skill ride
+  // `@khorsheed/dsh-datasets/tool`; the mission tools ride
+  // `@khorsheed/dsh-mission/tool`. No row, no tool, no skill, no tab.
+  describe('evaluation rows only where they belong (T100)', () => {
+    const EVAL_FAMILY_ROWS = ['@khorsheed/dsh-datasets/tool', '@khorsheed/dsh-eval/tool', '@khorsheed/dsh-mission/tool']
+    /** A preset's composition lines (comments dropped — provenance notes may name anything). */
+    const rows = (id: string): string =>
+      presetBlock(patch, id).split('\n').filter((line) => !line.trimStart().startsWith('#')).join('\n')
+
+    for (const id of ['dev', 'dsh-writing']) {
+      it(`${id} names no datasets / eval / mission row and no evaluation skill`, () => {
+        const block = rows(id)
+        for (const entry of EVAL_FAMILY_ROWS) expect(block).not.toContain(entry)
+        expect(block).not.toMatch(/- id: (datasets|eval|mission)-tool\n/)
+        expect(block).not.toContain('eval-planning')
+        expect(block).not.toContain('dataset-authoring')
+      })
+    }
+
+    it('dsh-eval names the datasets and eval rows (eval-planning rides the eval row)', () => {
+      const block = rows('dsh-eval')
+      expect(block).toContain("            name: '@khorsheed/dsh-datasets/tool'\n")
+      expect(block).toContain("            name: '@khorsheed/dsh-eval/tool'\n")
+      expect(block).toContain('          - id: skill-filesystem\n')
+      expect(block).toContain('          - id: tool-skill\n')
+    })
+
+    it('dataset-authoring names the datasets row at the organize tier, and no eval row', () => {
+      const block = rows('dataset-authoring')
+      expect(block).toMatch(/ {10}- id: datasets-tool\n {12}name: '@khorsheed\/dsh-datasets\/tool'\n {12}config:\n {14}tools: organize/)
+      expect(block).not.toContain('@khorsheed/dsh-eval/tool')
+      expect(block).not.toContain('@khorsheed/dsh-mission/tool')
+      // The skill the organize tier registers is loaded through tool-skill.
+      expect(block).toContain('          - id: tool-skill\n')
+      expect(block).toContain('Load the dataset-authoring skill')
+    })
   })
 
   it('references no community package outside dsh.references', () => {

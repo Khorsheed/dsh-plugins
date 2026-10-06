@@ -3,7 +3,7 @@
  * package's `./tool` composition entry for agent-preset compositions. The row
  * provides NO service (the preset-mount isolate-realm rule forbids service
  * rows); it registers the seven model tools into the host tools registry,
- * contributes their guidance section, and registers the `/eval` slash
+ * contributes their guidance section and the `eval-planning` skill, and registers the `/eval` slash
  * command into the preset's scope layer (preset-visibility rollout A3 — the
  * official `/goal` `/plan` `/compact` shape: only the sessions of a preset
  * naming this row see the command), all delegating to the global
@@ -25,6 +25,9 @@
  *
  * @module @khorsheed/dsh-eval/tool
  */
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 // Type-only: pulls this package's `Context.dshEval` service augmentation.
@@ -98,6 +101,60 @@ interface PromptSections {
   section(section: { name: string; order: number; text: string }): () => void
 }
 
+/** The narrow skill registry surface this row registers its skill into. */
+interface SkillRegistrySlice {
+  register(skill: {
+    name: string
+    description: string
+    content: string
+    source: string
+    provider?: string
+  }): () => void
+}
+
+/** The shipped skill, parsed from its SKILL.md frontmatter. */
+export interface SkillFile {
+  readonly name: string
+  readonly description: string
+  readonly content: string
+}
+
+/** This package's root (`src/` in the source plane, `lib/` once built — both one level down). */
+const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
+
+/**
+ * The shipped `eval-planning` skill's directory. T100 moved it here from the
+ * web-eval pack, whose install/update scripts used to copy it into the shared
+ * `$DSH_HOME/skills` — a directory every preset composing
+ * `dsh-skill-filesystem` scans, so the evaluation skill leaked into the dev
+ * and writing sessions of the same instance. Registered from THIS row, it
+ * reaches exactly the sessions whose preset names the row (the
+ * typesafe-tool / datasets-organize pattern).
+ */
+export const PLANNING_SKILL_DIR = join(PACKAGE_ROOT, 'skills', 'eval-planning')
+
+/**
+ * Load the shipped `eval-planning` skill (`skills/eval-planning/SKILL.md`,
+ * listed in package.json `files`). A missing or malformed file is a warning,
+ * never a boot failure.
+ * @returns the parsed skill, or undefined when it cannot be read.
+ */
+export function loadPlanningSkill(): SkillFile | undefined {
+  let raw: string
+  try {
+    raw = readFileSync(join(PLANNING_SKILL_DIR, 'SKILL.md'), 'utf8')
+  } catch {
+    return undefined
+  }
+  const match = /^---\n([\s\S]*?)\n---\n([\s\S]*)$/.exec(raw)
+  const frontmatter = match?.[1] ?? ''
+  const skillName = /^name:\s*(.+)$/m.exec(frontmatter)?.[1]?.trim()
+  const description = /^description:\s*(.+)$/m.exec(frontmatter)?.[1]?.trim()
+  const content = match?.[2]
+  if (skillName === undefined || description === undefined || content === undefined) return undefined
+  return { name: skillName, description, content }
+}
+
 /** Cross-call guidance, registered beside the tools it describes. */
 const EVAL_PROMPT = `The eval_* tools are five reads and two writes. An experiment is a deployment-level object: an id, a plan pinned to a dataset as {registry, set, commit}, and an analysis/ directory — it does not live in any dataset repository, and the dataset repository is read-only input you never write. eval_conditions lists the deployment's condition library (the subjects under test), each with its hash and readiness — a lock that exists and still matches, and which contract fields are still null; pass diff to compare two field by field. eval_plan_validate checks an experiment (by id) against the dataset commit it pins, and reports errors (the plan cannot run) and warnings (not resolved yet). eval_plan_draft is the first of the two that write: it drafts an experiment against dataset "<registration id>/<set>" — a new experiment directory holding the plan, plus any new condition in the library — validates what it wrote, and reads it back, in one call. Put the person's question into its question field verbatim (and their expectation, and what would count as answered, when they said so) — the conclusion card answers that sentence. Use it instead of hand-writing those files; a new condition is always a COPY of one that exists with named fields changed, because two conditions differing in ONE field are a single-factor pair and a declaration written from scratch differs in however many fields its author forgot. The draft pins a dataset commit. When the tracked branch's latest commit and the commits other experiments with the same conditions pin hold different items/ or schemas/, the draft is refused as "version is ambiguous" with the candidates listed: ask the person which one with ask_user_question and draft again with that commit; if they skip the question, stop — never pick one yourself. eval_analysis_write is the second write: ONE text file into an experiment's analysis/<path>, and nowhere else. That is where the analysis you write after reading a bundle belongs — the person reads it on the experiment's 结果对比 page — and it is why you do not need the write tool for it and must not ask for a sandbox escalation. Anything outside analysis/ is refused with the path and the allowed prefix quoted back, and nothing is written. eval_run_status projects one run: the run.meta digest and a row per cell with its state, bucket, and what the orchestrator last did to it, plus the run's status word — the same one the 实验室 list shows: draft 草稿, pending-approval 待批准, running 运行中, stalled 停滞 (nothing is driving unfinished cells and the ledger has not moved for over 10 minutes; stalledMinutes says how long — tell the person to 重跑 it from the lab, do not try to restart it), judging 评估中 (the judge's and the human's part is left), done 已完成, void 评估不成立, refused 被拒, cancelled 已取消 — and the human's closure exit if one was taken. Use those words when you tell the person where a run stands; do not invent a finer one. eval_cells goes cell by cell instead — bucket, stage and time in it, attempt, the unit's resource and environment fingerprint, checkpoint names, annotation counts per namespace, and the delegation's child session — filterable by bucket / task / condition; called with NO run_id it lists the experiments themselves (every run plus every unstarted experiment, with its id, snapshot, matrix size, factors, status and progress), which is how you find an experiment or run id in the first place. eval_experiment_get reads ONE experiment the way the 实验室 tab shows it — its list row, the newest run's digest and bucket counts, the analysis files already written, and an answer index: one entry per task × condition × rep ("P0 × high × #1") with the names of the files that attempt handed in. Read it before you write an analysis, and cite answers by that handle and those names — never ask the person for a path. Those seven are the whole eval surface of this session: it grants no mission tools, so do not look for mission_run_list / mission_run_status / mission_list / mission_get — the experiment list and the cells are both eval_cells, and the run digest is eval_run_status. DRAFTING IS NOT STARTING. Starting a run is a HUMAN act: the person approves the experiment in the 实验室 tab (实验设计 › 批准并启动) or runs /eval run <experimentId> in this session, and that session becomes the parent of every delegation — there is no run tool and you must not look for one. Logging each harness in and provisioning its condition are theirs too, and so is the final verdict. Your part is drafting, reading and writing the analysis: draft experiments with eval_plan_draft, write the analysis with eval_analysis_write, report the experiment id and the validate result back, and stop there; the orchestrator does the executing, and the write verbs (materialize, submit, transition, annotate, archive, export) are its service face, not yours.`
 
@@ -152,6 +209,26 @@ export function apply(ctx: Context, config: EvalToolConfig = {}): void {
   ctx.inject(['systemPrompt'], (promptCtx) => {
     const sections = promptCtx.get('systemPrompt') as PromptSections | undefined
     sections?.section({ name: 'tool:eval', order: 114, text: EVAL_PROMPT })
+  })
+  // The drafting skill teaches those tools (eval_plan_draft above all), so it
+  // rides with them too: granted sessions list it, every other preset's
+  // sessions never see it — and a `none` row, which grants no drafting verb,
+  // registers no skill about one.
+  ctx.inject(['skills'], (skillCtx) => {
+    const skills = skillCtx.get('skills') as SkillRegistrySlice | undefined
+    if (skills === undefined) return
+    const skill = loadPlanningSkill()
+    if (skill === undefined) {
+      ctx.logger.warn(`${PACKAGE_NAME}: the shipped eval-planning skill could not be read — not registered`)
+      return
+    }
+    skillCtx.effect(() => skills.register({
+      name: skill.name,
+      description: skill.description,
+      content: skill.content,
+      source: 'runtime',
+      provider: PACKAGE_NAME,
+    }), `${PACKAGE_NAME}: ${skill.name} skill`)
   })
 }
 

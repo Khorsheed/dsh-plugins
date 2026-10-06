@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- T100 评测线迁 3080：`eval-planning` 技能挪进 `@khorsheed/dsh-eval`（`packages/eval/skills/eval-planning/`），由 `eval-tool` 行注册，只进点名该行的预设的会话。`install.sh` / `update.sh` 不再往 `$DSH_HOME/skills` 拷技能（那个根对每个挂 `skill-filesystem` 的预设都扫，开发、写作会话也会看到评测技能）；成功跑完时处理旧副本——带 pack 签名（`name: eval-planning` + `iteration: I5`）的删掉，别的只提示。`presets/` 里 `preset-eval` 只改了一处技能注释（摘要随之更新，组合不变），并成为 dsh-presets `preset-dsh-eval` 的正本，两份由 `scripts/eval-preset-parity.spec.ts` 比对。
 - T88 评测家族整理：profile 不再直接依赖 datasets / mission / lab / eval 四个成员与三个伴生包，改依赖家族整合包 `@khorsheed/dsh-bundle-eval`（patch 逐字携带四个成员的行，205 行组合不变）。三个伴生包退役，工具行是核心包的 `./tool` 入口：`eval` 预设的 `datasets-tool` / `eval-tool` 两行 `name` 改为 `@khorsheed/dsh-datasets/tool` / `@khorsheed/dsh-eval/tool`，行 id 与 `tools:` 档位不变；任务 tab 的自隐判据随之改按 `@khorsheed/dsh-mission/tool` 判，评测会话照旧看不见它。`install.sh` 的 `UNPUBLISHED_DIRS` 去掉三个伴生包、加上 `bundle-eval`；组合统计变为 23 个 tarball / 19 个直接依赖 / dump 里 24 个去重名字。
 - 2026-09-30 家族折叠：local-agent 家族的委派工具从共享包 `@khorsheed/dsh-local-agent-tool-subagent`（已退役）收进各 provider 包的 `./tool` 组合入口，工具行不再挂 profile 根，由 agent 预设点名授予。本 pack 的 eval 预设不点名任何 `local-agent-*/tool` 行，三个委派工具因此对评测会话天然缺席——`cordis.patch.yml` 撤掉原先三行 `tools: none` 覆盖（冻结决策 12 第三个执行点换机制：从「profile 层关掉」变「预设不点名即缺席」）；`package.json` 与 `install.sh` 的 `UNPUBLISHED_DIRS` 同步去掉该包（tarball 27 → 26、profile 依赖 26 → 25、dump 里不同名 24 → 23）。provider 行照挂，编排器经 local-agent 门面驱动选手的路不变；`subagent_dsh` 仍是开关驱动的动态挂载，默认 OFF。
 - I0 规划版本：22 个成员的评测模式 profile（基础体验 12 + 本地 Agent 家族 6 + 评测机制 3 + 运维守护 1）。编排器 `@khorsheed/dsh-eval` 尚未存在，随 I2 加入成员清单。

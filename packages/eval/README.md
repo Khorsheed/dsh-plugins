@@ -322,7 +322,7 @@ Ask the person which version this experiment should pin with ask_user_question, 
 
 ## 模型工具（五读、一草、一份分析，七个）
 
-**核心行不注册任何模型工具**：下面这七个工具与 `tool:eval` 提示词段归本包的 `./tool` 组合入口（工具行 `@khorsheed/dsh-eval/tool`），由 agent preset 按会话授予。授予方式：在目标 preset 的 `agent.cordis.yml` 里加两行——`- id: eval-tool` 与 `  name: '@khorsheed/dsh-eval/tool'`（该行可带 `config: { tools: none }`）。下面的清单、配置与行为描述自此描述的是**工具行**的工具面；服务面与 CLI 仍归本包，而 `/eval` slash 的**注册**自 preset 可见性收口（A3）起也归工具行——落进 preset 的 scope 层，只有授予会话的补全列表可见（官方 `/goal` `/plan` 同款机制）；handler 与定义仍在本包 `src/slash.ts`，由工具行带它的 scoped ctx 调 `registerEvalSlash` 接入，handler 内另有 roster 兜底守卫（读不到一律放行）。
+**核心行不注册任何模型工具**：下面这七个工具、`tool:eval` 提示词段与 `eval-planning` 技能（`skills/eval-planning/SKILL.md`，随包分发，T100 前由 web-eval pack 拷进 `$DSH_HOME/skills`、因而漏进同一 home 的所有会话）归本包的 `./tool` 组合入口（工具行 `@khorsheed/dsh-eval/tool`），由 agent preset 按会话授予。授予方式：在目标 preset 的 `agent.cordis.yml` 里加两行——`- id: eval-tool` 与 `  name: '@khorsheed/dsh-eval/tool'`（该行可带 `config: { tools: none }`）。下面的清单、配置与行为描述自此描述的是**工具行**的工具面；服务面与 CLI 仍归本包，而 `/eval` slash 的**注册**自 preset 可见性收口（A3）起也归工具行——落进 preset 的 scope 层，只有授予会话的补全列表可见（官方 `/goal` `/plan` 同款机制）；handler 与定义仍在本包 `src/slash.ts`，由工具行带它的 scoped ctx 调 `registerEvalSlash` 接入，handler 内另有 roster 兜底守卫（读不到一律放行）。
 
 agent 在一次实验里只出现两次：规划期起草、分析期读结论。规划期要写的是一个实验（plan 与它引用的新条件）；分析期要写的只有一份初稿，落在那个实验的 `analysis/`。所以模型工具是**五个读、一个起草、一扇分析的门**，并且刻意没有起跑的那一个：能起 run 的 agent 就能起一次人没批准的 run，而起草与写初稿都起不动任何东西。
 

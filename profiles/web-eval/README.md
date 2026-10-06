@@ -313,7 +313,7 @@ CLI 与界面同语义：`dsh-eval conditions | plan validate | run | report`。
 
 评测实例要独立的 `$DSH_HOME`，不与开发实例共享会话与凭据（环境隔离是评测的基本要求，见 `docs/ops.md` 的环境拓扑）。I1 到 I2 在宿主上直跑四家 CLI，只需要 node、git 与各家 CLI；I3 起需要 docker，题集级镜像、本地包镜像、白名单代理与凭证卷的清单见 [docs/architecture.md](docs/architecture.md) 的「运行环境」一节。
 
-**两个脚本第一步都是机器级前置检查，在动任何文件之前**：`dsh` 在 PATH 上、`dsh --version` 能跑且不低于 0.2.0-rc.2、以及 `cordis.patch.yml` 里 pin 的 headless bundle 路径存在（它从该文件里读，不写死）。任一条不满足就打印缺什么并以退出码 2 退出，`$DSH_HOME` 一个字节都不动。技能目录在被整目录替换之前会备份到 `$DSH_HOME/skills/.web-eval-backup.<pid>`，失败时 trap 会告诉你它在哪；`update.sh` 同样备份它覆盖的文件。
+**两个脚本第一步都是机器级前置检查，在动任何文件之前**：`dsh` 在 PATH 上、`dsh --version` 能跑且不低于 0.2.0-rc.2、以及 `cordis.patch.yml` 里 pin 的 headless bundle 路径存在（它从该文件里读，不写死）。任一条不满足就打印缺什么并以退出码 2 退出，`$DSH_HOME` 一个字节都不动。`update.sh` 覆盖文件之前先备份，失败时 trap 会告诉你备份在哪。
 
 **宿主线：本 profile 只支持宿主 0.2.0 及以后（`dsh` ≥ 0.2.0-rc.2；用户 2026-10-01 定，T82）。** 0.2.0 的预设是声明式 `@deepseek-ai/dsh-agent-preset` 行、默认值走 `agent-preset-registry`，0.1.5 只认目录式预设，所以不做双线：宿主低于这条线时 `install.sh` 与 `update.sh` 都在动文件前退出（退出码 2），并给出能用的工具链（`PATH=~/.dsh-toolchains/rc-0.2.0-rc.2/node_modules/.bin:$PATH sh install.sh …`）。T82 用 rc-0.1.5-rc.1 工具链实跑过一次：退出码 2，home 为空。0.1.x 上的旧实例迁移见[把 0.1.5 实例切到 0.2.0](#把-015-实例切到-020)。
 
@@ -342,13 +342,13 @@ DSH_HOME=~/.dsh-eval sh dsh-web-eval/scripts/restart-into-web-eval.sh <端口>
 
 评测 pin 配置（冻结决策 2 到 4）属于装置而非个人偏好，**归 pack**：它们写在本 profile 的 `cordis.patch.yml` 里，`install.sh` 与 `update.sh` 都覆盖该文件——这是与 [dsh-dev](../dev/README.md) 唯一的 patch 层差异。留给用户层的后果是一次 update 之后实例可能静默换了沙箱档位或推理强度，而 run.meta 里记的还是旧值，报告的「受试对象一致」失去意义。个人偏好放 preset 层，不放这里。
 
-同理由**归 pack** 的还有 agent 预设与技能：预设是 profile 目录里的声明式 bundle `presets/`，随 profile 文件一起覆盖，`cordis.patch.yml` 把它钉成默认预设（[冻结决策 12 的执行点](#冻结决策-12-的执行点eval-预设)）；`skills/eval-planning/` 整目录覆盖到 `$DSH_HOME/skills/eval-planning`——那是 `dsh-skill-filesystem` 扫的 `user-dsh` 根，eval 预设里的 `skill-filesystem` 行把它带进评测会话的技能卡。技能也是装置：它教的是 `eval_plan_draft` 这一个起草动词，以及批准 / 登录 / provision / 终评都不是 agent 的——这条线歪了，草稿就会变成没人批的 run。技能落在 profile 目录**之外**（技能名册按 `$DSH_HOME` 而不是按 profile 组织），所以卸载 profile 的那条 `rm -rf` 不会带走它；预设 bundle 在 profile 目录里，随 profile 一起走——见[卸载](#更新切换装卸单个成员卸载)。
+同理由**归 pack** 的还有 agent 预设：预设是 profile 目录里的声明式 bundle `presets/`，随 profile 文件一起覆盖，`cordis.patch.yml` 把它钉成默认预设（[冻结决策 12 的执行点](#冻结决策-12-的执行点eval-预设)）。技能也是装置——`eval-planning` 教的是 `eval_plan_draft` 这一个起草动词，以及批准 / 登录 / provision / 终评都不是 agent 的，这条线歪了，草稿就会变成没人批的 run——但它**不归 pack**：T100 起它随 `@khorsheed/dsh-eval` 包分发，由该包的 `./tool` 行（eval 预设里的 `eval-tool`）注册，所以只有点名这一行的预设的会话看得到它。此前两个脚本把它整目录拷进 `$DSH_HOME/skills`，那是 `dsh-skill-filesystem` 对**每个**挂它的预设都扫的根，同一个 home 里的开发、写作会话也会看到评测技能。脚本现在不再往那里写；成功跑完时会处理旧副本：frontmatter 带 pack 签名（`name: eval-planning` 加 `iteration: I5`）的删掉，别的只提示不动。
 
 当前 pin（I2·T15 写入，I3·T27 补三行；M4'③ 起这几条的授予点在 pack 的 `eval` 预设的工具行上，I5·T46 起 `mission-tool` 那一行不再挂）：`datasets-tool: authoring`、`eval-tool: all`，加三个委派工具行 `tools: none`（工具按域开放）；四家 `live: false`（决策 2）；codex `sandbox`、claude `permissionMode: skip`、kimi `thinkingEffort: high`（决策 3 与 4）；claude `baseUrl`（决策 5——端点属于受试对象，不 pin 就退回宿主进程环境，换个终端重启即静默换上游；取值与 3080 生产 profile 同为官方端点，宿主环境里那个第三方地址走的是 API key 而 `delegationEnv` 会把 key 抹掉）。**claude 的 `proxyUrl` 自 I3·T22 起不 pin**：provider 会把它写进作用域 settings.json 的 env 块，而 T20c 之后容器轮挂的就是这个作用域目录，宿主地址在单元里当场 Connection refused；单元的出网由镜像烧进去的白名单代理给，谁要在宿主上直跑 claude，在自己的覆盖层里加回这一行，别加在 pack 里。**dsh 的 `headlessBundleDir` 与 `cliLaunch` 自 I3·T22 起 pin** 成宿主与单元里同时成立的路径——provider 写进作用域目录的是指向宿主安装的绝对符号链接，单元里悬空；这是机器级前置条件，备法见题库 env/README。**codex 的 `sandbox` 自 I3·T22 起是 `danger-full-access`**，与冻结决策 3 一致。宿主直跑阶段（I2）它取的是 `workspace-write`：那时没有容器边界，给满权限等于把评测的副作用放进真实 home，而这条不对称当时随每次 run 写进 methodology。容器路径落地后边界由单元提供——无外网、只有白名单代理、非 root、一格一单元用完即毁——满权限的作用域就是那个一次性单元，四家因此真正落在同一档上，methodology 不必再声明这条不对称。**这条 pin 与容器路径是一对**：谁要再在宿主上跑一次阶段一二，得先把它改回 `workspace-write` 并重新声明那条不对称，而不是带着满权限直跑宿主。
 
 ## 更新、切换、装卸单个成员、卸载
 
-切换是同端口交接；`update.sh` 覆盖成员清单、lockfile、**`cordis.patch.yml`、`presets/` 与 `skills/eval-planning/`**——评测 pin、agent 预设与技能都归 pack（见[安装](#安装)），这是与 [dsh-dev](../dev/README.md#更新) 的唯一差异；`dsh --profile web-eval plugin rm/add <pkg>` 装卸单个成员；`rm -rf "$DSH_HOME/profiles/web-eval"` 卸载整个 profile（预设 bundle 在里面，一起走）——pack 的技能不在这个目录下，要一并清掉再加 `rm -rf "$DSH_HOME/skills/eval-planning"`（留着无害：技能只是名册上多一条）。0.1.5 时代迁来的 home 若还有 `$DSH_HOME/.agent-presets/eval`，0.2.0 不读它，可一并删。I6 之前装的源码模式实例不要跑 `update.sh`——它会把成员清单覆盖回 npm 范围，未上架成员随即 404；用重跑 `install.sh --source` 代替。
+切换是同端口交接；`update.sh` 覆盖成员清单、lockfile、**`cordis.patch.yml` 与 `presets/`**——评测 pin 与 agent 预设都归 pack（见[安装](#安装)），这是与 [dsh-dev](../dev/README.md#更新) 的唯一差异；`dsh --profile web-eval plugin rm/add <pkg>` 装卸单个成员；`rm -rf "$DSH_HOME/profiles/web-eval"` 卸载整个 profile（预设 bundle 在里面，一起走）。0.1.5 时代迁来的 home 若还有 `$DSH_HOME/.agent-presets/eval`，0.2.0 不读它，可一并删。I6 之前装的源码模式实例不要跑 `update.sh`——它会把成员清单覆盖回 npm 范围，未上架成员随即 404；用重跑 `install.sh --source` 代替。
 
 ## 受试 dsh 的版本跟着实例走
 

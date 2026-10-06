@@ -289,8 +289,12 @@
             config:
               prefix: >-
                 You are the planning and analysis agent of a dsh evaluation instance, powered by the {{model}} model. Your working directory is {{cwd}}.
-                Execution belongs to the deterministic orchestrator: you read the dataset repository and finished run bundles, draft plan and condition files for a person to approve, and write analysis drafts.
+                Execution belongs to the deterministic orchestrator: you read registered datasets through the datasets_* tools and finished run bundles, draft experiments and conditions for a person to approve, and write analysis drafts.
                 You have no shell and no container controls — that is the apparatus, not a gap to work around. Ask the person to run what needs running.
+                Datasets are exactly what datasets_list returns as registered; never read, glob or grep a dataset repository's directory.
+                When eval_plan_draft says the dataset version is ambiguous, ask with ask_user_question; if the person skips that question, stop and do not draft. Items, reps and the judge have defaults — draft with them and say they can be changed on the 实验设计 page. Exception: a request from the 新建实验 form (「让 Agent 组织」) lists what the person already chose and asks to be walked through the rest — do not re-ask the settled choices, ask each open one with ask_user_question (one at a time, with a suggested default), then draft with eval_plan_draft and stop; never start.
+                A path is not a dataset: when the person gives one, check datasets_list, say the path is not registered in this deployment and point them to the 题集 tab; never map it onto a registered id by name.
+                Experiment drafts are written in this deployment, never into a dataset repository.
 
           - id: agent-instructions
             name: '@deepseek-ai/dsh-agent-instructions'
@@ -324,7 +328,9 @@
 
           # The skill registry is host-plane and layered per scope: these rows register
           # into THIS preset's layer, and the merged catalog also carries whatever the
-          # profile registered globally. I5's `eval-planning` skill arrives this way.
+          # profile registered globally. The `eval-planning` skill is NOT one of those
+          # any more: since T100 it ships inside @khorsheed/dsh-eval and registers from
+          # the eval-tool row below, so only sessions of this preset list it.
           - id: skill-filesystem
             name: '@deepseek-ai/dsh-skill-filesystem'
 
@@ -433,7 +439,7 @@
           - id: eval-tool
             name: '@khorsheed/dsh-eval/tool'
             config:
-              tools: all            # 本包只注册四个读工具，all 即四个读工具
+              tools: all            # 四读两写：写只有 eval_plan_draft（部署内实验目录）与 eval_analysis_write（analysis/ 内）
 
     # The `dsh-writing` agent preset: the writing workbench, mounted once per
     # process. Migrated from profiles/web/presets/dsh-writing (the 0.1.5
@@ -723,3 +729,104 @@
           # 提供，未装时本行降级为零注册。
           - id: canvas-novel-agent
             name: '@khorsheed/dsh-canvas-novel/agent'
+
+    # The `dataset-authoring` agent preset (题集整理), T100 2026-10-06: the
+    # organizing agent web-eval's own bundle ships since T90, mirrored here so a
+    # deployment running this bundle (3080) has the preset the datasets core's
+    # 「添加题集 › 让 Agent 整理」 door opens (its Config.authoringPreset defaults to
+    # `dataset-authoring`). Same composition as profiles/web-eval/presets'
+    # row — scripts/eval-preset-parity.spec.ts compares the two parsed
+    # `plugins:` arrays — except `order`: 11 lists it after 开发模式 here, where
+    # the evaluation instance lists it right after its default (1).
+    #
+    # It is a different agent from dsh-eval (decision B: organizing sees the
+    # answers, so it never reuses an evaluation session). It carries a shell —
+    # organizing runs git and conversion scripts; frozen decision 12 binds the
+    # planning-and-analysis agent above, not this one. The registry stays the
+    # person's to write (decision A): the datasets-tool `organize` tier adds only
+    # datasets_propose_registration and registers the shipped dataset-authoring
+    # skill. No eval-tool, no delegation.
+    - id: preset-dataset-authoring
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: dataset-authoring
+        name: '题集整理'
+        description: 把本地数据、下载的数据或公开数据集整理成协议格式的 git 仓库，并提交登记申请等人确认；会看到答案，不用于评测。
+        order: 11
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: >-
+                You are the dataset organizing agent of a dsh evaluation instance, powered by the {{model}} model. Your working directory is {{cwd}}.
+                Load the dataset-authoring skill before anything else and follow it: check git, look at the data, ask every key question in one go, never modify the original data, convert everything, give every file and field a disposition, commit per batch, dry-run until it passes, then file the proposal and stop.
+                You never register a dataset; the person confirms your proposal on the 题集 tab.
+
+          - id: agent-instructions
+            name: '@deepseek-ai/dsh-agent-instructions'
+            config:
+              maxBytes: 65536
+
+          - id: tool-bash
+            name: '@deepseek-ai/dsh-tool-bash'
+            disabled: !!js process.platform === 'win32'
+
+          - id: tool-pwsh
+            name: '@deepseek-ai/dsh-tool-pwsh'
+            disabled: !!js process.platform !== 'win32'
+
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+
+          - id: tool-fs-search
+            name: '@deepseek-ai/dsh-tool-fs-search'
+            config:
+              sampleOverCapGlobResults: false
+
+          - id: tool-jobs
+            name: '@deepseek-ai/dsh-tool-jobs'
+
+          - id: skill-filesystem
+            name: '@deepseek-ai/dsh-skill-filesystem'
+
+          - id: tool-skill
+            name: '@deepseek-ai/dsh-tool-skill'
+
+          - id: compaction
+            name: 'cordis:group'
+            group: true
+            isolate:
+              compaction: true
+              toolResultPruner: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+
+              - id: command-compact
+                name: '@deepseek-ai/dsh-command-compact'
+
+              - id: tool-result-pruner
+                name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+                config:
+                  thresholdChars: 8192
+                  headChars: 4096
+                  tailChars: 1024
+
+          - id: tool-ask-user
+            name: '@deepseek-ai/dsh-tool-ask-user'
+
+          - id: tool-todo
+            name: '@deepseek-ai/dsh-tool-todo'
+            config:
+              allowParallelInProgress: true
+
+          - id: tool-web
+            name: '@deepseek-ai/dsh-tool-web'
+            config:
+              fetch: true
+              searchTimeoutMs: 60000
+
+          - id: datasets-tool
+            name: '@khorsheed/dsh-datasets/tool'
+            config:
+              tools: organize       # 读类 + datasets_propose_registration（只写申请）；挂 dataset-authoring skill
