@@ -254,6 +254,10 @@ export const COMMUNITY_SERVICE_INJECTORS: Readonly<Record<string, RegExp>> = {
   datasets: /^datasets$/,
   dshEval: /^eval$/,
   mission: /^mission$/,
+  // library's `./tool` composition entry injects its own core service (the
+  // evaluation-family fold pattern): the preset's standing scope mounts before
+  // the profile's bundle rows provide `library`, so the row pends on the core.
+  library: /^library$/,
 }
 
 const MONOREPO_URL = 'git+https://github.com/Khorsheed/dsh-plugins.git'

@@ -155,6 +155,11 @@ export const TYPERT_PACKAGES: readonly TypertPackage[] = [
     hostConfigs: ['tsconfig.host.json'],
   },
   {
+    dir: 'packages/library',
+    name: '@khorsheed/dsh-library',
+    hostConfigs: ['tsconfig.host.json'],
+  },
+  {
     dir: 'packages/capture',
     name: '@khorsheed/dsh-capture',
     hostConfigs: ['tsconfig.host.json'],
