@@ -15,7 +15,7 @@
  */
 
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
-import { browserOnHost } from '@khorsheed/dsh-client-ui-content-preview/src/client/index.ts'
+import { browserOnHost } from '@khorsheed/dsh-client-ui-panel-kit/src/client/host.ts'
 
 /** GET route serving the probed application ids (official shared.ts). */
 export const OPEN_IN_APP_APPS_ROUTE = '/open-in-app/apps'

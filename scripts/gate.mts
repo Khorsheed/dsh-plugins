@@ -332,6 +332,7 @@ export function main(): void {
     { name: 'build scripts declared', run: () => sh('pnpm exec tsx scripts/check-build-scripts-declared.ts') },
     { name: 'repo hygiene (full tree)', run: () => sh('pnpm check:hygiene --all') },
     { name: 'plugin independence', run: () => sh('pnpm check:plugins') },
+    { name: 'panel responsive', run: () => sh('pnpm check:panels') },
     { name: 'profile composition', run: () => sh('pnpm check:profiles') },
     { name: 'release groups', run: () => sh('pnpm check:release-groups') },
     { name: 'package map', run: () => sh('pnpm check:packages') },

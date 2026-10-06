@@ -18,6 +18,7 @@
     "check:install-specs": "tsx scripts/check-install-spec-floors.ts",
     "sync:profile": "tsx scripts/sync-profile-mirror.mts",
     "check:plugins": "tsx scripts/check-plugin-independence.ts",
+    "check:panels": "tsx scripts/check-panels.ts",
     "check:profiles": "tsx scripts/check-profile-bundles.ts",
     "check:release-groups": "tsx scripts/check-release-groups.ts",
     "map:packages": "tsx scripts/generate-package-map.ts",

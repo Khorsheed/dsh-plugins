@@ -14,6 +14,7 @@
  */
 
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
+import { browserOnHost } from '@khorsheed/dsh-client-ui-panel-kit/src/client/host.ts'
 
 /** GET route serving the probed application ids (official shared.ts). */
 export const OPEN_IN_APP_APPS_ROUTE = '/open-in-app/apps'
@@ -82,28 +83,6 @@ export function pickIde(apps: readonly string[]): string | undefined {
 }
 
 type Fetch = (input: string | URL, init?: RequestInit) => Promise<Response>
-
-/** Loopback hostnames: the page is open on the host machine itself. */
-const LOOPBACK_HOSTS: readonly string[] = ['localhost', '127.0.0.1', '[::1]', '::1']
-
-/**
- * Whether this page is open on the host machine. Every open-in-app gesture
- * (and the native directory picker) launches a program ON THE HOST — Finder,
- * an IDE, a folder dialog. Reached through a tunnel from a phone or another
- * computer, the gesture fires on a machine nobody is sitting at and the
- * viewer sees nothing happen. The criterion is therefore "is the person at
- * the host", read from the page's own hostname, not screen size or touch: a
- * remote desktop browser is just as far from the host's Finder, and a narrow
- * window on the host itself is not. An unreadable location keeps the old
- * behavior (treated as on-host).
- * @param scope - the global to read `location` from (tests pass a stub).
- * @returns true unless the page's hostname is clearly not loopback.
- */
-export function browserOnHost(scope: unknown = globalThis): boolean {
-  const hostname = (scope as { location?: { hostname?: unknown } }).location?.hostname
-  if (typeof hostname !== 'string' || hostname === '') return true
-  return LOOPBACK_HOSTS.includes(hostname.toLowerCase())
-}
 
 /** Resolve the browser's Host base with the connection carrier's null-origin fallback. */
 function hostBase(): string {
