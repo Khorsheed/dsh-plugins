@@ -29,7 +29,7 @@
         <text x="50" y="55" text-anchor="middle" font-size="8" font-family="sans-serif"><tspan dx="1" dy="1">峰值</tspan></text>
         <rect x="90" y="5" width="8" height="8" style="fill: url(https://tracker.example.com/pixel.png)" stroke="#000"/>
         <animate attributeName="x" values="0;100"/>
-        <foreignObject><div>html junk</div></foreignObject>
+        <foreignObject x="2" y="2" width="40" height="10"><div onclick="steal()"><b>node label</b><script>alert(4)</script><iframe src="https://evil.example.com/f"></iframe></div></foreignObject>
         <script>alert(3)</script>
       </g>
       <desc>A line chart of the measured values.</desc>

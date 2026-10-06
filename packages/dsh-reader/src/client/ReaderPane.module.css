@@ -757,6 +757,16 @@
   margin: 0 0 5px;
 }
 
+/* An item that writes its own label ((a), 2.) — see settleListLabels — hides
+   the native marker; a paragraph opening an item sits on the marker's line. */
+.article li[data-labelled] {
+  list-style: none;
+}
+
+.article li > p:first-child {
+  margin-top: 0;
+}
+
 .article blockquote {
   margin: 0 0 12px;
   padding: 2px 0 2px 11px;
