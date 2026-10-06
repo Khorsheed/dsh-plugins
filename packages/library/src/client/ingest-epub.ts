@@ -13,7 +13,15 @@
  *
  * @module @khorsheed/dsh-library/client/ingest-epub
  */
-import { unzipSync } from 'fflate'
+// 'fflate/browser', not 'fflate': this module ships only in the browser client
+// bundle (and jsdom tests), and the bare specifier resolves to fflate's NODE
+// build there — tsdown pins platform: 'node' for a CJS-format bundle, so
+// fflate's `node` exports condition (esm/index.mjs, which probes
+// worker_threads through createRequire('/')) wins and leaks a
+// `require("module")` into the browser artifact (the 3471 acceptance boot
+// failed on exactly that). The `./browser` subpath pins the browser build,
+// which is pure JS and runs in node (the tests) unchanged.
+import { unzipSync } from 'fflate/browser'
 import { chapterHasText, sanitizeChapterHtml } from './sanitize.ts'
 
 /** One parsed chapter. */

@@ -119,3 +119,18 @@ describe('sanitizeChapterHtml', () => {
     expect(chapterHasText(sanitizeChapterHtml('<script>x()</script>'))).toBe(false)
   })
 })
+
+describe('the fflate import pin', () => {
+  it('imports the browser build — the bare specifier leaks node:module into the client bundle', async () => {
+    // tsdown pins platform: 'node' for a CJS-format bundle, so fflate's `node`
+    // exports condition (esm/index.mjs, with createRequire('/')) wins over the
+    // browser build and the client artifact gains a `require("module")` the
+    // host's module table cannot answer (3471 acceptance boot failure). The
+    // ingest is browser-only code, so it pins fflate's `./browser` subpath.
+    const { readFileSync } = await import('node:fs')
+    const { join } = await import('node:path')
+    const source = readFileSync(join(import.meta.dirname, '..', 'src', 'client', 'ingest-epub.ts'), 'utf8')
+    expect(source).toContain("from 'fflate/browser'")
+    expect(source).not.toMatch(/from 'fflate'/)
+  })
+})

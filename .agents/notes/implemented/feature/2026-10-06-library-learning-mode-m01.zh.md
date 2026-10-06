@@ -57,3 +57,7 @@ Status: implemented
 - **每个项目一本 append-only 审计账。** `events.jsonl`（与其余账本同锁同原子纪律）记录 book.ingested / roadmap.generated / roadmap.regenerated / notes.recorded / quiz.created / attempt.assessed / node.completed / node.unlocked，每条 `{ at, type, …摘要 }`，对象标题去规范化随行，读者免 join。`listEvents(projectId, limit?)` 倒序回答；书籍视图底部「动态」区渲染最近 20 条（图标 + 一句话 + 相对时间）。
 
 测试新增：read 节点免考流转与其级联解锁；出题范围拒收（read 章节、read scope、合法放行）；审计账的发射与倒序读取（含「读完」翻转的事件）。library 套件 66 测试全绿。
+
+## client bundle 漏 node:module 修复
+
+3471 验收实例（`~/.dsh-lab/profiles/library-test`,link: 安装）web boot 挂在 `require("module") missed the module table`。根因：**tsdown 对 CJS 格式的 bundle 强制 `platform: 'node'`**(tsdown build 里 `platform: cjsDts || format === "cjs" ? "node" : platform`)，而 client 包就是 CJS(loader 包装）。该平台下 fflate 的 `node` 出口条件胜出，打进去的是 `esm/index.mjs`(node 构建，用 `createRequire('/')` 探测 worker_threads）而非 `esm/browser.js`。修在消费处而非共享层：`ingest-epub.ts` 是浏览器专属代码，改为显式引 `fflate/browser`(fflate 自带 `./browser` 子路径；纯 JS,vitest 在 node 下同解——已回环验证）。仓里没有第二个包的依赖存在 node/browser 条件分叉，共享 `clientBundle` helper 不动；出现第二个消费者时，由 helper 给 client 配置透传 `resolve.conditionNames`。测试钉住该 import 写法，防未来改回裸写法。验证：`lib/client.js` 仅剩的裸 require 是 `react` / `react/jsx-runtime`（平台种子词）;12 个内建名加 `node:*` 形式全部 grep 为零。
