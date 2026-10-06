@@ -274,6 +274,7 @@ export const zh = {
   'error.invalid-name': '这一项已经处理过了',
   'error.duplicate': '重复了',
   'error.plan-unconfirmed': '计划还没确认，先确认计划再写正文',
+  'error.unknown-foreshadow': '计划里有伏笔对不上编号',
   'error.generic': '出错了：{message}',
   'state.loading': '读取中…',
 } as const
@@ -552,6 +553,7 @@ export const en: Record<keyof typeof zh, string> = {
   'error.invalid-name': 'This item was already handled',
   'error.duplicate': 'Duplicate',
   'error.plan-unconfirmed': 'Confirm the plan before writing the text',
+  'error.unknown-foreshadow': 'A planned foreshadow matches no card number',
   'error.generic': 'Something went wrong: {message}',
   'state.loading': 'Loading…',
 }

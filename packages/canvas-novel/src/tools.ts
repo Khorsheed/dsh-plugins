@@ -267,7 +267,7 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
       plan: {
         type: 'object', additionalProperties: true,
         description: 'chapter: {summary (梗概, 2-3 sentences), beats[{at (time label), text, mark?: 转折|落点}], conflict, highlight (看点), '
-          + 'foreshadowOps[{op: 推进|暗示|新埋|揭晓, id (ref) | question (新埋), note (what it advances or plants)}], cast[{who (ref or name), role}], infoGaps[{who (ref or name), fact (what they learn this chapter — ideally a line of their 不知道)}], pov, hook}.',
+          + 'foreshadowOps[{op: 推进|暗示|新埋|揭晓, id (the foreshadow\'s ref, e.g. #12 — never its question) | question (新埋 only), note (what it advances or plants)}], cast[{who (ref or name), role}], infoGaps[{who (ref or name), fact (what they learn this chapter — ideally a line of their 不知道)}], pov, hook}.',
       },
       target: { type: 'string', enum: ['card', 'pending'], description: 'review: a card on the board, or the pending queue.' },
       action: { type: 'string', enum: ['accept', 'discard', 'archive'], description: 'review: accept|discard a pending item; archive a card.' },
@@ -318,6 +318,10 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
             return args.chapter === undefined
               ? '失败：正文只能写进已确认计划的章节。先 novel_write(what=chapter, title, plan) 登记计划、等用户确认，再带 chapter=N 写正文；用户自己写好的稿子加 byUser=true 登记。'
               : `失败：第 ${args.chapter} 章的计划还没经用户确认（或刚改过计划），不写正文。请用户点会话卡片或章节页上的「确认计划」。`
+          }
+          if (outcome.error === 'unknown-foreshadow') {
+            return `失败：计划里的伏笔要写编号，这几条对不上伏笔卡：${(outcome.unknown ?? []).map(id => `「${id}」`).join('、')}。`
+              + '推进/暗示/揭晓的 id 写台账里的编号（如 #12，novel_read 看伏笔台账）；还没有卡的新伏笔写 op=新埋 + question。'
           }
           if (outcome.error === 'no-workspace') {
             return '失败：这张画布还没有挂工作区，章节正文无处可写。请用户先在画布里挂一个工作区（正文写到 <工作区>/<画布标题>/第N章.md）。'
