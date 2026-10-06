@@ -687,6 +687,10 @@ describe('one row per one-set repository, every action in 「操作」 (T101)', 
     // 「编辑登记」 and 「删除」 are behind the ⋯, not on the row.
     expect(screen.queryByText('registry.edit')).toBeNull()
     expect(screen.queryByText('registry.remove')).toBeNull()
+    // Once the narrow fold drops the header, the count reads 「12 题」: the
+    // cell carries the unit, not the column name 「题数」.
+    expect(row.querySelector('td[data-label]')?.getAttribute('data-label')).toBe('registry.itemsUnit')
+    expect(screen.getByRole('columnheader', { name: 'registry.colItems' })).toBeTruthy()
     // The 「操作」 cell is the row's last.
     expect(row.lastElementChild?.contains(within(row).getByRole('button', { name: 'registry.askAgent' }))).toBe(true)
     fireEvent.click(within(row).getByRole('button', { name: 'dataseek-eval' }))

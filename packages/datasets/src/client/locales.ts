@@ -54,6 +54,8 @@ export type DatasetsKey =
   | 'registry.colSet'
   | 'registry.colLatest'
   | 'registry.colItems'
+  /** T101 · the count's unit once the narrow fold drops the header: 「12 题」. */
+  | 'registry.itemsUnit'
   | 'registry.colVisible'
   | 'registry.colUsed'
   | 'registry.colActions'
@@ -597,6 +599,7 @@ export const zh: Record<DatasetsKey, string> = {
   'registry.colSet': '仓库 · 题集',
   'registry.colLatest': '最新版本',
   'registry.colItems': '题数',
+  'registry.itemsUnit': '题',
   'registry.colVisible': 'agent 可见',
   'registry.colUsed': '用在哪些实验',
   'registry.colActions': '操作',
@@ -1014,6 +1017,7 @@ export const en: Record<DatasetsKey, string> = {
   'registry.colSet': 'Repository · set',
   'registry.colLatest': 'Latest version',
   'registry.colItems': 'Items',
+  'registry.itemsUnit': 'items',
   'registry.colVisible': 'Agent sees',
   'registry.colUsed': 'Used by experiments',
   'registry.colActions': 'Actions',

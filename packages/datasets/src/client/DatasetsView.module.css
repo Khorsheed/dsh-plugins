@@ -112,7 +112,13 @@
   border-bottom: 0;
 }
 
+/* T101 · the title takes its whole width first (`flex-basis: auto`), so on a
+   narrow pane the two buttons wrap under it instead of squeezing it into
+   three lines; `keep-all` lets it break only at its spaces, never mid-word. */
 .bindingBar[data-page='list'] .bindingNone {
+  flex: 1 0 auto;
+  max-width: 100%;
+  word-break: keep-all;
   color: var(--dsw-alias-label-primary);
   font-size: 16px;
   font-weight: 600;
@@ -519,6 +525,13 @@
 
 /* «版本 N · 日期» stays one line: a date broken at its hyphen reads as two facts. */
 .latestCell {
+  white-space: nowrap;
+}
+
+/* T101 · 「尚未用于任何实验」 is one short fact: the column widens to hold it
+   on one line (the auto table layout takes the room from the name column).
+   Experiment names, when there are some, still wrap. */
+.usageNone {
   white-space: nowrap;
 }
 

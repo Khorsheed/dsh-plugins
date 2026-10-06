@@ -36,7 +36,11 @@ The cell holds 「交给 Agent 修改」 as an outline text button, plus a ⋯ t
 
 - **≤ 720px (container width):** 「最新版本」 is hidden. This is why the heading row gives that column its own empty cell rather than folding it into the heading's `colSpan`. A hidden cell inside a span would leave the heading row one column wider than the set rows, and that pushed the actions off the table's edge in a first attempt.
 - **≤ 560px:** the existing fold turns rows into wrapped blocks. The actions take a line of their own, and an empty set-row actions cell disappears. On the heading row, the actions stay on the heading's line under one shared rule. The cell is `flex: none` there, because the wide table's `width: 1%` would otherwise become its flex basis and squeeze the buttons out.
-- **All widths:** the version date no longer wraps mid-token.
+- **All widths:**
+  - The version date no longer wraps mid-token.
+  - The empty-state 「尚未用于任何实验」 stays on one line (`.usageNone`), and the auto table layout takes that room from the name column. Experiment names, when present, still wrap.
+- **Fold labels:** in the ≤560px fold, the item count's inline label is the unit (`registry.itemsUnit`), so it reads 「12 题」 rather than 「12 题数」. The wide table's header stays 「题数」.
+- **List-page title:** the title takes its whole width first (`flex: 1 0 auto`, `word-break: keep-all`). On a narrow pane, 添加题集 and the import button wrap under it instead of squeezing the title into three lines broken mid-word.
 
 ### Icon artwork
 

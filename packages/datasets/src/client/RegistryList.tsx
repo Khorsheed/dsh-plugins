@@ -119,7 +119,7 @@ function UsageCell(props: { usage: SetUsage; t: DatasetsViewProps['t'] }) {
   const { usage, t } = props
   const [open, setOpen] = useState(false)
   const count = usage.experiments.length
-  if (count === 0) return <span className={css.cellQuiet}>{t('list.experimentsNone')}</span>
+  if (count === 0) return <span className={`${css.cellQuiet} ${css.usageNone}`}>{t('list.experimentsNone')}</span>
   return (
     <div className={css.usage}>
       <button type="button" className={css.usageToggle} onClick={() => { setOpen(!open) }} aria-expanded={open}>
@@ -239,7 +239,7 @@ function SetFacts(props: {
           )
           : <div title={`${trackedRef}@${latest.commit}`}>{t('registry.version', { number: latest.version, date })}</div>}
       </td>
-      <td className={css.cellNumber} data-label={t('registry.colItems')}>{count ?? '—'}</td>
+      <td className={css.cellNumber} data-label={t('registry.itemsUnit')}>{count ?? '—'}</td>
       <td>
         <span className={css.layersCell}>
           <LayersWordView layers={set.layers} t={t} className={css.layersWord} />
