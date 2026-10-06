@@ -342,6 +342,11 @@ export interface CanvasDetailCrumbs {
   readonly onBack: () => void
   /** Show a neighbouring card in this same row. */
   readonly onStep: (cardId: string) => void
+  /**
+   * The cards a genre scope marks archive-first (a novel's cards some chapter
+   * uses): their delete question offers 归档 beside 删除.
+   */
+  readonly archiveFirst?: readonly string[] | undefined
 }
 
 /**

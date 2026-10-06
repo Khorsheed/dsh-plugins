@@ -36,16 +36,6 @@
   flex-shrink: 0;
 }
 
-/* Compact: the strip above already names the canvas, so the header drops the
-   name, the count and the attached folders and keeps one row — the face tabs
-   and the ⋯ (the five mobile complaints, item 1: the name twice, four rows
-   before the body). */
-@container dsh-panel (max-width: 560px) {
-  .topbar { padding: 0 8px 0 4px; }
-  .boardTitle, .boardCount, .attachChip, .spacer { display: none; }
-  .faceTabs { flex: 1; }
-}
-
 /* The board row's own header says which canvas it is and how full it is. The
    name is text now, not a pill: the strip above is where you move between
    canvases, so nothing here needs to advertise that it opens a menu. */
@@ -196,4 +186,15 @@
   margin-left: 4px;
   font-variant-numeric: tabular-nums;
   opacity: 0.7;
+}
+
+/* Compact: the strip above already names the canvas, so the header drops the
+   name, the count and the attached folders and keeps one row — the face tabs
+   and the ⋯ (the five mobile complaints, item 1: the name twice, four rows
+   before the body). Last in the file: the base rules above set
+   these elements' display, and a same-specificity rule after this would win. */
+@container dsh-panel (max-width: 560px) {
+  .topbar { padding: 0 8px 0 4px; }
+  .boardTitle, .boardCount, .attachChip, .spacer { display: none; }
+  .faceTabs { flex: 1; }
 }

@@ -28,7 +28,14 @@ export interface NovelNavigate {
 /** The canvas's owner share (structural). */
 export interface NovelOwnerProps {
   readonly canvasId: string
-  readonly board: { readonly id: string; readonly title?: string; readonly genre?: { readonly id: string } | undefined }
+  readonly board: {
+    readonly id: string
+    readonly title?: string
+    readonly genre?: { readonly id: string } | undefined
+    /** The board's cards and categories, as far as the 设定 scopes read them. */
+    readonly cards?: readonly { readonly id: string; readonly kind: string }[]
+    readonly categories?: readonly { readonly id: string; readonly role?: string | undefined }[]
+  }
   readonly rev: number
   readonly navigate: NovelNavigate
   readonly sessionId?: SessionId | undefined

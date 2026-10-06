@@ -1,111 +1,84 @@
-/* The 长篇小说 genre's surfaces inside the canvas: the board strip, the
-   book (contents and reader), the story log. They sit in the canvas's own
-   frame, so every colour and size is a `--dsw-*` token — light and dark are
-   the theme's. */
+/* The 长篇小说 genre's surfaces inside the canvas: the face labels, the
+   book (contents and reader), the story log, the 设定 graph and the delete
+   note. They sit in the canvas's own frame, so every colour and size is a
+   `--dsw-*` token — light and dark are the theme's. */
 
-/* ── Board strip ─────────────────────────────────────────────────────── */
+/* ── Faces ───────────────────────────────────────────────────────────── */
 
-.strip {
+/* What waits on the person, on the 章节 tab: chapters to reconcile + items. */
+.faceBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  margin-left: 5px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--dsw-alias-state-warn-tertiary);
+  font: var(--dsw-font-xxxs-11);
+  color: var(--dsw-alias-state-warn-label);
+  font-variant-numeric: tabular-nums;
+  vertical-align: 1px;
+}
+
+/* 设定 · 连线: the characters round a ring, the relation cards as lines. */
+.graph {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 6px 10px;
-  margin: 0 12px 8px;
-  border: 1px solid var(--dsw-alias-border-l1);
-  border-radius: 8px;
-  background: var(--dsw-alias-bg-layer-1);
+  align-items: center;
+  gap: 8px;
+  padding: 16px;
+  font: var(--dsw-font-xs-13);
+  color: var(--dsw-alias-label-primary);
+}
+
+.graphSvg {
+  width: 100%;
+  max-width: 720px;
+  height: auto;
+  overflow: visible;
+}
+
+.graphLine { cursor: pointer; }
+.graphLine line { stroke: var(--dsw-alias-label-tertiary); stroke-width: 1.5; }
+.graphLine .graphHit { stroke: transparent; stroke-width: 16; }
+.graphLine text { fill: var(--dsw-alias-label-secondary); font-size: 11px; paint-order: stroke; stroke: var(--dsw-alias-bg-base); stroke-width: 3px; }
+.graphLine[data-idle='true'] line:not(.graphHit) { stroke-dasharray: 4 4; }
+.graphLine:hover line:not(.graphHit),
+.graphLine:focus-visible line:not(.graphHit) { stroke: var(--dsw-alias-state-business-primary); }
+.graphLine:focus { outline: none; }
+
+.graphNode { cursor: pointer; }
+.graphNode rect { fill: var(--dsw-alias-bg-layer-1); stroke: var(--dsw-alias-border-l2); stroke-width: 1; }
+.graphNode text { fill: var(--dsw-alias-label-primary); font-size: 13px; }
+.graphNode[data-idle='true'] rect { stroke-dasharray: 3 3; }
+.graphNode[data-idle='true'] text { fill: var(--dsw-alias-label-secondary); }
+.graphNode:hover rect,
+.graphNode:focus-visible rect { stroke: var(--dsw-alias-state-business-primary); stroke-width: 1.5; }
+.graphNode:focus { outline: none; }
+
+.graphKey,
+.graphEmpty {
   font: var(--dsw-font-xxs-12);
+  color: var(--dsw-alias-label-tertiary);
+  text-align: center;
+}
+
+.graphEmpty { padding: 32px 0; }
+
+/* The delete question's note: which chapters use the card. */
+.deleteNote {
+  margin: 0;
+  font: var(--dsw-font-xs-13);
   color: var(--dsw-alias-label-secondary);
 }
 
-.stripRow {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
-
-.stripCurrent,
-.stripLink,
-.stripToc,
-.pendingToggle,
-.subject {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  flex: none;
-  padding: 2px 7px;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  background: none;
-  font: inherit;
-  color: inherit;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-/* The chapter to pick up at leads the line; the way into the book closes it. */
-.stripCurrent {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font: var(--dsw-font-xxs-strong-12);
-  color: var(--dsw-alias-label-primary);
-}
-
-.stripToc {
-  margin-left: auto;
-  font-variant-numeric: tabular-nums;
-}
-
-.stripCurrent:hover,
-.stripLink:hover,
-.stripToc:hover,
-.subject:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-primary);
-}
-
-.pendingToggle {
-  background: var(--dsw-alias-state-warn-tertiary);
-  color: var(--dsw-alias-state-warn-label);
-}
-
-.caret {
-  display: inline-block;
-  transition: transform 120ms;
-}
-
-.caret[data-open="true"] {
-  transform: rotate(180deg);
-}
-
-/* A chapter's phase as a dot: hollow while planned, filled as it advances. */
-.lamp {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  border: 1.5px solid var(--dsw-alias-label-tertiary);
-  box-sizing: border-box;
-}
-
-.lamp[data-phase="writing"] {
-  border-color: var(--dsw-alias-brand-primary);
-}
-
-.lamp[data-phase="extracted"] {
-  border-color: var(--dsw-alias-brand-primary);
-  background: linear-gradient(90deg, var(--dsw-alias-brand-primary) 50%, transparent 50%);
-}
-
-.lamp[data-phase="reviewed"] {
-  border-color: var(--dsw-alias-state-business-primary);
-  background: var(--dsw-alias-state-business-primary);
-}
-
-.lamp[data-phase="fileMissing"] {
-  border-color: var(--dsw-alias-state-error-primary);
-}
+.deleteNote p { margin: 0 0 6px; }
+.deleteNote ul { margin: 0; padding-left: 18px; color: var(--dsw-alias-label-primary); }
 
 .muted {
   color: var(--dsw-alias-label-tertiary);
@@ -171,9 +144,21 @@
 }
 
 .subject {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
   padding: 0 4px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  font: inherit;
   color: var(--dsw-alias-brand-primary);
+  cursor: pointer;
+  white-space: nowrap;
 }
+
+.subject:hover { background: var(--dsw-alias-interactive-bg-hover); }
 
 .pendingReason {
   font: var(--dsw-font-xs-13);
@@ -262,10 +247,15 @@
   --log-surface: var(--dsw-alias-bg-base);
   --log-sel: color-mix(in srgb, var(--dsw-alias-brand-primary) 7%, var(--log-surface));
   --log-red: var(--dsw-alias-state-error-primary);
+  /* panel-check: allow-color — a hue mixed toward label-primary, so it follows the theme. */
   --log-star: color-mix(in oklab, #d99a1e 85%, var(--dsw-alias-label-primary));
+  /* panel-check: allow-color — a hue mixed toward label-primary, so it follows the theme. */
   --log-hue-f: color-mix(in oklab, #d9822b 78%, var(--dsw-alias-label-primary));
+  /* panel-check: allow-color — a hue mixed toward label-primary, so it follows the theme. */
   --log-hue-c: color-mix(in oklab, #2a9bc2 78%, var(--dsw-alias-label-primary));
+  /* panel-check: allow-color — a hue mixed toward label-primary, so it follows the theme. */
   --log-hue-r: color-mix(in oklab, #b25ad9 78%, var(--dsw-alias-label-primary));
+  /* panel-check: allow-color — a hue mixed toward label-primary, so it follows the theme. */
   --log-hue-w: color-mix(in oklab, #4d6bfe 78%, var(--dsw-alias-label-primary));
   border: 1px solid var(--log-line);
   border-radius: 12px;
@@ -284,38 +274,8 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-/* The tabs: underline style, the selected one in its hue. */
-.logTabs {
-  display: flex;
-  gap: 22px;
-  padding: 6px 20px 0;
-  border-bottom: 1px solid var(--log-line);
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-
-.logTab {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: -1px;
-  padding: 8px 0 9px;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  background: none;
-  font: var(--dsw-font-xs-13);
-  color: var(--dsw-alias-label-secondary);
-  cursor: pointer;
-}
-
-.logTab:hover { color: var(--dsw-alias-label-primary); }
-.logTab[data-tab='f'] { --log-hue: var(--log-hue-f); }
-.logTab[data-tab='c'] { --log-hue: var(--log-hue-c); }
-.logTab[data-tab='r'] { --log-hue: var(--log-hue-r); }
-.logTab[data-tab='w'] { --log-hue: var(--log-hue-w); }
-.logTab[aria-selected='true'] { font-weight: 600; color: var(--dsw-alias-label-primary); border-bottom-color: var(--log-hue); }
-.logTab[aria-selected='true'] .logCount { font-weight: 400; }
+/* The tabs (the kit's underline tabs), inset to the table's edge. */
+.logTabs { padding-inline: 20px; }
 
 /* The bar: filters with their counts | sorts … 写到第 N 章 · 图例. */
 .logBar {
@@ -744,7 +704,7 @@
 .logFrame[data-detail='true'] .logKicker { display: none; }
 
 /* Phone: the bar wraps, the row heads keep just the name. */
-.logFrame[data-phone='true'] .logTabs { gap: 18px; padding-inline: 16px; }
+.logFrame[data-phone='true'] .logTabs { padding-inline: 16px; }
 .logFrame[data-phone='true'] .logBar { flex-wrap: wrap; row-gap: 8px; padding: 10px 16px 8px; }
 .logFrame[data-phone='true'] .logPills { order: 1; flex-basis: 100%; }
 .logFrame[data-phone='true'] .logSorts { order: 2; }
@@ -772,6 +732,8 @@
   flex-direction: column;
   gap: 16px;
   padding: 18px 20px 48px;
+  container-type: inline-size;
+  container-name: novel-book;
   font: var(--dsw-font-xs-13);
   color: var(--dsw-alias-label-primary);
 }
@@ -780,14 +742,6 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
-}
-
-.bookTitle {
-  margin: 0;
-  font-family: Georgia, 'Songti SC', 'Noto Serif SC', serif;
-  font-size: 19px;
-  font-weight: 600;
-  text-wrap: balance;
 }
 
 .bookStat {
@@ -857,21 +811,15 @@
   align-items: center;
   gap: 12px;
   padding: 12px 14px;
-  border: none;
+  border: 1px solid var(--dsw-alias-border-l1);
   border-radius: 10px;
   background: var(--dsw-alias-bg-layer-1);
-  font: inherit;
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
 }
-
-.resume:hover { background: var(--dsw-alias-interactive-bg-hover); }
 
 .resumeText {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
   min-width: 0;
 }
 
@@ -888,33 +836,55 @@
   font-size: 15px;
 }
 
-.resumeGo {
-  margin-left: auto;
-  color: var(--dsw-alias-brand-primary);
-}
-
-.filters {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.filters button {
-  height: 26px;
-  padding: 0 10px;
-  border: 1px solid var(--dsw-alias-border-l1);
-  border-radius: 13px;
-  background: none;
+.resumeNote {
   font: var(--dsw-font-xxs-12);
-  color: var(--dsw-alias-label-secondary);
+  color: var(--dsw-alias-state-warn-label);
+}
+
+/* The accent outline, never solid black (docs/panel-design.md 颜色). */
+.resumeGo {
+  flex: none;
+  margin-left: auto;
+  min-height: 32px;
+  padding: 0 14px;
+  border: 1px solid var(--dsw-alias-state-business-primary);
+  border-radius: 8px;
+  background: none;
+  font: var(--dsw-font-xs-strong-13);
+  color: var(--dsw-alias-state-business-primary);
+  cursor: pointer;
+}
+
+.resumeGo:hover { background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 8%, transparent); }
+
+/* The pending queue, folded under its count. */
+.queue {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.queueHead {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 14px;
+  background: var(--dsw-alias-state-warn-tertiary);
+  font: var(--dsw-font-xxs-strong-12);
+  color: var(--dsw-alias-state-warn-label);
   font-variant-numeric: tabular-nums;
   cursor: pointer;
 }
 
-.filters button[aria-pressed="true"] {
-  border-color: var(--dsw-alias-label-primary);
-  color: var(--dsw-alias-label-primary);
-}
+.queueHead .groupChev { width: auto; color: inherit; }
+.queueHead .groupChev[data-open='true'] { transform: rotate(90deg); }
+
+/* The kit's chip row pads itself for a bare panel; the book already has a gutter. */
+.book .filters { padding: 0; }
 
 .group {
   border-top: 1px solid var(--dsw-alias-border-l1);
@@ -1001,20 +971,44 @@
   white-space: nowrap;
 }
 
-.phaseTag[data-phase="reviewed"] {
+.phaseTag[data-state="done"] {
   background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 12%, transparent);
   color: var(--dsw-alias-state-business-primary);
 }
 
-.phaseTag[data-phase="extracted"] {
-  background: color-mix(in srgb, var(--dsw-alias-brand-primary) 12%, transparent);
-  color: var(--dsw-alias-brand-primary);
+.phaseTag[data-state="wait"] {
+  background: var(--dsw-alias-state-warn-tertiary);
+  color: var(--dsw-alias-state-warn-label);
 }
 
-.phaseTag[data-phase="fileMissing"],
+.phaseTag[data-state="plan"] {
+  background: none;
+  box-shadow: inset 0 0 0 1px var(--dsw-alias-border-l2);
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.phaseTag[data-state="missing"],
 .phaseTag[data-todo="true"] {
   background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 12%, transparent);
   color: var(--dsw-alias-state-error-primary);
+}
+
+/* A compact pane (phone width): a 16px gutter, the words column folds into
+   the title's line, and touch targets reach 44px. */
+@container novel-book (max-width: 560px) {
+  .resume { flex-wrap: wrap; padding: 12px; }
+  .resumeGo { min-height: 44px; flex-basis: 100%; margin-left: 0; }
+  .queueHead { min-height: 36px; }
+  .row { grid-template-columns: 44px minmax(0, 1fr) auto; min-height: 44px; padding-inline: 4px; }
+  .rowWords { display: none; }
+  .groupHead { min-height: 44px; }
+  .legend { display: none; }
+}
+
+/* The book's own gutter answers to the canvas's panel (its PanelRoot). */
+@container dsh-panel (max-width: 560px) {
+  .book { padding: 14px 16px 40px; }
+  .graph { padding: 12px 16px; }
 }
 
 /* ── Reader ─────────────────────────────────────────────────────────── */
@@ -1503,7 +1497,9 @@
   line-height: 2;
   text-indent: 2em;
   color: var(--dsw-alias-label-secondary);
+  /* panel-check: allow-color — mask alpha only, not a painted colour. */
   -webkit-mask-image: linear-gradient(to bottom, #000 30%, transparent);
+  /* panel-check: allow-color — mask alpha only, not a painted colour. */
   mask-image: linear-gradient(to bottom, #000 30%, transparent);
 }
 
@@ -1634,6 +1630,7 @@
 .storyStrip em { font: var(--dsw-font-xxs-12); font-style: normal; color: var(--dsw-alias-label-tertiary); }
 
 .storyDot {
+  /* panel-check: allow-color — a hue mixed toward label-primary, so it follows the theme. */
   --story-hue: color-mix(in oklab, #2a9bc2 78%, var(--dsw-alias-label-primary));
   flex: none;
   width: 8px;

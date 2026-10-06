@@ -1,5 +1,5 @@
 /**
- * The 故事日志 page: one tab per kind of card — 伏笔, 人物, 关系, 世界 — each a
+ * The 故事日志 (the 故事 face, and a page of its own): one tab per kind of card — 伏笔, 人物, 关系, 世界 — each a
  * table of its rows over the book's chapters, one mark per chapter in the
  * tab's colour (hollow when only a plan has it there):
  *
@@ -23,8 +23,9 @@ import {
   type HistoryChange, type HistoryEntry, type MentionEntry, type RelationEntry,
   type StoryCard, type StoryCharacter, type StoryForeshadow, type StoryLogResult, type StoryRelation,
 } from '../types.ts'
-import { CHAPTER_PAGE, type NovelNavigate, type NovelPageOwnerProps, type NovelRemote, type NovelSurfaceProps } from './contract.ts'
-import { chapterHeading } from './PendingStrip.tsx'
+import { UnderlineTabs } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
+import { CHAPTER_PAGE, STORY_LOG_PAGE, type NovelNavigate, type NovelPageOwnerProps, type NovelRemote, type NovelSurfaceProps } from './contract.ts'
+import { chapterHeading } from './PendingList.tsx'
 import { errorKey, useNovelRead } from './use-novel.ts'
 import css from './novel.module.css'
 
@@ -392,6 +393,12 @@ export function StoryLogPage(props: NovelSurfaceProps<NovelPageOwnerProps>): Rea
   return <StoryLogRead {...props} />
 }
 
+/** The 故事 face: the same log, as the canvas's third top face. */
+export function StoryView(props: NovelSurfaceProps): ReactNode {
+  if (props.board.genre?.id !== NOVEL_GENRE_ID) return null
+  return <StoryLogRead {...props} page={STORY_LOG_PAGE} />
+}
+
 function StoryLogRead(props: NovelSurfaceProps<NovelPageOwnerProps>): ReactNode {
   const { canvasId, rev, remote, t } = props
   const api = remote()
@@ -535,14 +542,13 @@ function StoryLog(props: NovelSurfaceProps<NovelPageOwnerProps> & { readonly api
   }
 
   const tabs = (
-    <div className={css.logTabs} role="tablist">
-      {TABS.map(item => (
-        <button key={item} type="button" role="tab" className={css.logTab} data-tab={item} aria-selected={item === tab} onClick={() => { switchTab(item) }}>
-          {t(`log.tab.${item}`)}
-          <span className={css.logCount}>{model[item].length}</span>
-        </button>
-      ))}
-    </div>
+    <UnderlineTabs
+      className={css.logTabs}
+      label={t('log.heading')}
+      value={tab}
+      onChange={switchTab}
+      tabs={TABS.map(item => ({ id: item, label: <>{t(`log.tab.${item}`)}<span className={css.logCount}>{model[item].length}</span></> }))}
+    />
   )
 
   const bar = (
@@ -597,7 +603,7 @@ function StoryLog(props: NovelSurfaceProps<NovelPageOwnerProps> & { readonly api
       {chapters.map((n) => {
         const chapter = log.chapters.find(row => row.n === n)
         const sub = chapter === undefined || chapter.phase === 'fileMissing' ? null
-          : chapter.phase === 'stale' ? t('log.stale')
+          : chapter.phase === 'stale' || chapter.phase === 'writing' ? t('log.stale')
             : model.planning.has(n) ? t('log.planned') : t('log.settled')
         const label = <>{n}{sub !== null && <small>{sub}</small>}</>
         return (

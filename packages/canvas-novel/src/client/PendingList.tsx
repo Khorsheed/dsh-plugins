@@ -1,88 +1,18 @@
 /**
- * The board strip of a 长篇小说 canvas, one quiet line: the chapter to pick up
- * at (a click opens its chapter page), the pending count — only while there is
- * something to review, unfolding the queue in place — the foreshadow health with
- * the story log's door, and the way into the book (目录 · 共 N 章, the 成稿
- * face). A canvas of another genre renders nothing.
+ * The pending queue (medium/low-confidence findings, missed plans, open
+ * questions), item by item with the person's two answers — folded under its
+ * count on the 章节 face — plus the two helpers the chapter surfaces share:
+ * the chapter to pick up at, and a chapter's heading.
  *
  * @module @khorsheed/dsh-canvas-novel/client
  */
 import { useState, type ReactNode } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
-import { NOVEL_GENRE_ID, type ChapterRow, type PendingView } from '../types.ts'
-import { CHAPTER_PAGE, STORY_LOG_PAGE, type NovelNavigate, type NovelRemote, type NovelSurfaceProps } from './contract.ts'
-import { errorKey, useNovelRead } from './use-novel.ts'
+import type { ChapterRow, PendingView } from '../types.ts'
+import type { NovelNavigate, NovelRemote } from './contract.ts'
+import { errorKey } from './use-novel.ts'
 import css from './novel.module.css'
-
-/** The strip entry. */
-export function PendingStrip(props: NovelSurfaceProps): ReactNode {
-  if (props.board.genre?.id !== NOVEL_GENRE_ID) return null
-  return <Strip {...props} />
-}
-
-function Strip({ canvasId, rev, navigate, sessionId, remote, t }: NovelSurfaceProps): ReactNode {
-  const api = remote()
-  const [open, setOpen] = useState(false)
-  const pending = useNovelRead(api, r => r.pending({ canvasId }), `pending:${canvasId}`, rev)
-  const chapters = useNovelRead(api, r => r.chapters({ canvasId }), `chapters:${canvasId}`, rev)
-  const ledger = useNovelRead(api, r => r.ledger({ canvasId }), `ledger:${canvasId}`, rev)
-  if (api === undefined) return null
-  const items = pending.state === 'ready' ? pending.value.items : []
-  const rows = chapters.state === 'ready' ? chapters.value.chapters : []
-  const current = chapters.state === 'ready' ? currentChapter(rows, chapters.value.pending) : undefined
-  const counts = ledger.state === 'ready' && ledger.value.ok ? ledger.value.counts : undefined
-  return (
-    <div className={css.strip}>
-      <div className={css.stripRow}>
-        {current === undefined
-          ? chapters.state === 'ready' && <span className={css.muted}>{t('strip.noChapters')}</span>
-          : (
-            <button
-              type="button"
-              className={css.stripCurrent}
-              title={t(`phase.${current.phase}`)}
-              onClick={() => {
-                navigate.openPage(CHAPTER_PAGE, chapterHeading(t, current.chapter.n, current.chapter.title), String(current.chapter.n))
-              }}
-            >
-              <span className={css.lamp} data-phase={current.phase} />
-              {chapterHeading(t, current.chapter.n, current.chapter.title)}
-            </button>
-          )}
-        {items.length > 0 && (
-          <button
-            type="button"
-            className={css.pendingToggle}
-            aria-expanded={open}
-            title={t(open ? 'strip.pendingClose' : 'strip.pendingOpen')}
-            onClick={() => { setOpen(value => !value) }}
-          >
-            {t('strip.pending', { count: items.length })}
-            <span className={css.caret} data-open={open}>▾</span>
-          </button>
-        )}
-        <button
-          type="button"
-          className={css.stripLink}
-          onClick={() => { navigate.openPage(STORY_LOG_PAGE, t('log.heading')) }}
-        >
-          {t('strip.storyLog')}
-          {counts !== undefined && <span className={css.muted}>{t('strip.ledgerCount', { active: counts.active })}</span>}
-          {counts !== undefined && counts.overdue > 0 && <span className={css.warn}>{t('strip.ledgerOverdue', { count: counts.overdue })}</span>}
-        </button>
-        {rows.length > 0 && (
-          <button type="button" className={css.stripToc} onClick={navigate.openManuscripts}>
-            {t('strip.toc', { count: rows.length })}
-          </button>
-        )}
-      </div>
-      {open && items.length > 0 && (
-        <PendingList canvasId={canvasId} items={items} navigate={navigate} sessionId={sessionId} remote={api} t={t} />
-      )}
-    </div>
-  )
-}
 
 /**
  * The chapter to pick up at: the earliest one with something to review, else

@@ -1029,6 +1029,7 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
               : shownCardsOf(openBoard.board, filter, front, scopeIds).map(card => card.id),
             onBack: () => { leaveRow(activeRow.id, 'back') },
             onStep: openCard,
+            archiveFirst: openScopes.filter(row => row.archiveFirst === true).flatMap(row => row.cardIds),
           }}
           create={activeRow.at.kind === 'draft' ? {
             kind: activeRow.at.catKind,
