@@ -84,6 +84,12 @@ export interface PanelHeaderProps {
   readonly backLabel?: string | undefined
   /** Ref to the back button (a split moving focus to it, say). */
   readonly backRef?: Ref<HTMLButtonElement> | undefined
+  /**
+   * A control that is not one icon — a toggle with its own caret and menu,
+   * say — placed before the icon actions. It is always visible and takes no
+   * slot from the budget, so keep it small (one compound control).
+   */
+  readonly extra?: ReactNode
   /** Priority-ordered icon actions. */
   readonly actions?: readonly PanelAction[] | undefined
   /** The ⋯ trigger's accessible name. */
@@ -94,7 +100,7 @@ export interface PanelHeaderProps {
 }
 
 /** A panel's one title row. */
-export function PanelHeader({ title, meta, onBack, backLabel, backRef, actions = [], moreLabel, compact, className }: PanelHeaderProps) {
+export function PanelHeader({ title, meta, onBack, backLabel, backRef, extra, actions = [], moreLabel, compact, className }: PanelHeaderProps) {
   const ref = useRef<HTMLDivElement>(null)
   const own = usePanelCompact(ref)
   const fromRoot = usePanelCompactContext()
@@ -109,6 +115,7 @@ export function PanelHeader({ title, meta, onBack, backLabel, backRef, actions =
       <strong>{title}</strong>
       {meta !== undefined && <span className={css.meta}>{meta}</span>}
     </div>
+    {extra}
     {inline.map(action => <button key={action.id} type="button" className={css.icon} aria-label={action.label} title={action.label}
       aria-pressed={action.pressed} disabled={action.disabled} onClick={action.onSelect}>{action.icon}</button>)}
     {overflow.length > 0 && <Menu

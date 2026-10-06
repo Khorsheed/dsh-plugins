@@ -25,6 +25,7 @@ export type ReaderKey =
   | 'translate.working' | 'translate.local' | 'translate.stored' | 'translate.failed' | 'translate.dismiss'
   | 'translate.nothing' | 'translate.failedAll' | 'translate.unsupported'
   | 'action.fetchBody' | 'detail.bodyStale' | 'action.more' | 'action.addTag'
+  | 'translate.wallOff' | 'chip.unread' | 'chip.more' | 'state.incompleteCount' | 'action.showList' | 'action.foldList'
   | 'tag.title' | 'tag.placeholder' | 'tag.hint' | 'tag.create' | 'tag.empty'
   | 'search.placeholder'
   | 'sort.title' | 'sort.newest' | 'sort.oldest' | 'sort.source'
@@ -82,6 +83,12 @@ export const en = {
   'action.filter': 'Filter',
   'action.fetchBody': 'Fetch the text',
   'action.more': 'More actions',
+  'translate.wallOff': 'Turn translation off',
+  'chip.unread': 'Unread',
+  'chip.more': 'Filter…',
+  'state.incompleteCount': '{count} sources incomplete',
+  'action.showList': 'Show',
+  'action.foldList': 'Hide',
   'action.addTag': 'Tags…',
   'action.translate': 'Translate',
   'translate.view': 'Translation view',
@@ -280,6 +287,12 @@ export const zh = {
   'action.filter': '筛选',
   'action.fetchBody': '抓取正文',
   'action.more': '更多操作',
+  'translate.wallOff': '关闭翻译',
+  'chip.unread': '未读',
+  'chip.more': '筛选…',
+  'state.incompleteCount': '{count} 个来源未完整',
+  'action.showList': '查看',
+  'action.foldList': '收起',
   'action.addTag': '打标签…',
   'action.translate': '翻译',
   'translate.view': '翻译视图',
