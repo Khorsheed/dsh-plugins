@@ -1,0 +1,143 @@
+# @khorsheed/dsh-bundle-learning bundle patch: the 学习 preset as ONE
+# declarative `@deepseek-ai/dsh-agent-preset` row (host 0.1.7-rc.1 line — the
+# row type does not exist on 0.1.5, see the package README's Compatibility).
+#
+# What the preset IS: a named scope. Sessions switched to it compose with the
+# persona below and this tool list; every other session sees none of it. The
+# preset grants the library's MODEL face by mounting the
+# `@khorsheed/dsh-library/tool` composition entry (the library package's own
+# patch mounts only its core row at the profile root — the service the tool
+# row delegates to). The `library` service core resolves up the scope parent
+# chain; with @khorsheed/dsh-library not installed the grant stays inert (the
+# tools simply never exist), nothing throws.
+#
+# The official base is a DIETED copy of the host's standard.patch.yml (the
+# writing-mode precedent): no shell (bash/pwsh), no goal, no plan-mode, no
+# delegation/workflow — a learning session reads, notes, and quizzes; it never
+# needs a shell. Kept: persona, fs (book source files), the skills registry
+# pair (the library skill rides them), ask-user, todo (study tasks), web
+# (looking things up), and the compaction group (long reading sessions fold
+# context).
+#
+# The display fields (name/description) are this bundle's own. `name:` values
+# are quoted (@ is YAML-reserved). The persona follows the community preset
+# convention: single-language English (the host prompt's own voice) — the
+# library skill it points at carries the mechanics, in the user's language.
+- insert:
+    - id: preset-learning
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: learning
+        name: '学习模式'
+        description: 按项目精读的学习模式：图书馆（书籍/路线图/词书/测验）与精读教练——只在选择此预设的会话里生效。
+        order: 12
+        plugins:
+          # ── identity ────────────────────────────────────────────────────────
+
+          # The preset's own persona, shadowing the deployment default for this
+          # agent. Light on purpose: the mechanics (payload shapes, the chapter
+          # convention, the evidence gate) are the library skill's, loaded on
+          # demand — the persona names the stance (a coach who reads WITH the
+          # learner) and the two facts that must hold every turn (the library
+          # tools are the memory; a judged quiz is ledgered, or it never
+          # happened).
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: |-
+                You are a close-reading coach. You read WITH the learner: open the chapter,
+                explain as you go, ask before moving on — a Socratic follow-up beats a
+                summary. The goal is not to finish the book; it is that the learner can
+                answer for it.
+
+                - The library is the memory: projects, books, the roadmap, the vocab book
+                  and quizzes live in the library_* tools, never in conversation memory.
+                  Log terms and key points as they come (a photo of handwritten notes is
+                  transcribed into entries with the photo as their source).
+                - Quizzes weigh the book AND the vocab book, low-mastery cards first; every
+                  question carries its chapter and a verbatim evidence passage.
+                - Grading is two steps: judge in the conversation, then library_assess —
+                  the assess is what moves mastery and unlocks the next node.
+                - Due cards come first: a session opens with what is due for review.
+
+                The library skill carries the mechanics; follow it.
+
+          # ── filesystem ──────────────────────────────────────────────────────
+
+          # Book source files live in the mounted workspace: reading them goes
+          # through the official fs tool.
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+
+          # ── skills ──────────────────────────────────────────────────────────
+
+          # The skill REGISTRY lives in the host composition, layered per scope:
+          # these rows register into THIS preset's layer. `skill-filesystem`
+          # contributes local-root discovery, `tool-skill` gives the catalog and
+          # the loader — the `library` skill (registered by the library-tool row
+          # below) is reached through them.
+          - id: skill-filesystem
+            name: '@deepseek-ai/dsh-skill-filesystem'
+
+          - id: tool-skill
+            name: '@deepseek-ai/dsh-tool-skill'
+
+          # ── ask the person ──────────────────────────────────────────────────
+
+          # Which book, which chapter, whether to quiz now — the coach asks.
+          - id: tool-ask-user
+            name: '@deepseek-ai/dsh-tool-ask-user'
+
+          # ── study tasks ─────────────────────────────────────────────────────
+
+          # A reading plan for the session is a todo list.
+          - id: tool-todo
+            name: '@deepseek-ai/dsh-tool-todo'
+            config:
+              allowParallelInProgress: true
+
+          # ── web ─────────────────────────────────────────────────────────────
+
+          # Looking up a term or a paper is part of studying.
+          - id: tool-web
+            name: '@deepseek-ai/dsh-tool-web'
+            config:
+              fetch: true
+              searchTimeoutMs: 60000
+
+          # ── compaction (the standard preset's proven shape) ─────────────────
+
+          # Long reading sessions fold context: `compaction-basic` reads
+          # `toolResultPrune` through `ctx.get`, so the pruner shares this
+          # realm; `tokenMeter` stays on the host plane.
+          - id: compaction
+            name: 'cordis:group'
+            group: true
+            isolate:
+              compaction: true
+              toolResultPruner: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+
+              - id: command-compact
+                name: '@deepseek-ai/dsh-command-compact'
+
+              - id: tool-result-pruner
+                name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+                config:
+                  thresholdChars: 8192
+                  headChars: 4096
+                  tailChars: 1024
+
+          # ── the library grant ────────────────────────────────────────────────
+
+          # library 三工具（library_read / library_write / library_assess）、
+          # 精读教练指引段与 library skill 只授予本 preset 的会话。服务核心
+          # （library）由 profile 根的 library 行提供，本行沿 scope 父链解析；
+          # library 未装时本行降级为 pending（注册表显示 waiting for library），
+          # 装上即生效。
+          - id: library-tool
+            name: '@khorsheed/dsh-library/tool'
+            config:
+              tools: all

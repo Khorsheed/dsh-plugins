@@ -1,0 +1,95 @@
+/**
+ * The bundle's declarative shape (the bundle-writing bundle.spec.ts idiom):
+ * ONE preset-declarations row named `@deepseek-ai/dsh-agent-preset` with the
+ * loader id `preset-learning`; the grant names library's `./tool` entry; every
+ * community name rides in dsh.references; the persona stays light (the
+ * mechanics are the library skill's).
+ */
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { describe, expect, it } from 'vitest'
+import { LEARNING_PRESET_ID } from '../src/index.ts'
+
+const patch = readFileSync(join(import.meta.dirname, '..', 'cordis.patch.yml'), 'utf8')
+
+/** Top-level loader rows of the patch (direct items of the `- insert:` list). */
+function topLevelRowIds(text: string): string[] {
+  return [...text.matchAll(/^    - id: (\S+)\s*$/gm)].map((m) => m[1]!)
+}
+
+describe('cordis.patch.yml', () => {
+  it('mounts exactly one preset declaration (preset-learning), and nothing else', () => {
+    expect(topLevelRowIds(patch)).toEqual([`preset-${LEARNING_PRESET_ID}`])
+    expect(patch).toContain("      name: '@deepseek-ai/dsh-agent-preset'\n")
+    expect(patch).toContain(`        id: ${LEARNING_PRESET_ID}\n`)
+    expect(patch).toContain("        name: '学习模式'\n")
+    expect(patch).toContain('        order: 12\n')
+  })
+
+  it('quotes every name: value (@ is YAML-reserved)', () => {
+    const unquoted = patch
+      .split('\n')
+      .filter((line) => !line.trimStart().startsWith('#'))
+      .filter((line) => /\bname:\s*/.test(line) && !/\bname:\s*['"]/.test(line))
+    expect(unquoted).toEqual([])
+  })
+
+  it('grants the library agent surface through the package subpath entry, tools: all', () => {
+    expect(patch).toContain('          - id: library-tool\n')
+    expect(patch).toContain("            name: '@khorsheed/dsh-library/tool'\n")
+    expect(patch).toContain('              tools: all\n')
+    // The inert-without-the-core rule is documented.
+    expect(patch).toContain('waiting for library')
+  })
+
+  it('keeps the learning tool list dieted: persona, fs, skills, ask-user, todo, web, compaction — and nothing shell-shaped', () => {
+    for (const kept of ['persona', 'tool-fs', 'skill-filesystem', 'tool-skill', 'tool-ask-user', 'tool-todo', 'tool-web', 'compaction-basic']) {
+      expect(patch).toContain(`- id: ${kept}\n`)
+    }
+    for (const gone of [
+      'tool-bash', 'tool-pwsh', 'tool-fs-search', 'tool-jobs', 'plan-mode', 'tool-subagent',
+      'tool-workflow', 'tool-goal', 'command-goal', 'tool-present', 'agent-instructions',
+    ]) {
+      expect(patch).not.toMatch(new RegExp(`- id: ${gone}\\n`))
+    }
+  })
+
+  it('the persona names the coach stance, the tools-as-memory rule and the assess discipline, in single-voice English', () => {
+    expect(patch).toContain('You are a close-reading coach.')
+    // Wrap-proof pins: the YAML block scalar re-wraps freely, so match on whitespace-flattened text.
+    const flat = patch.replace(/\s+/g, ' ')
+    expect(flat).toContain('a Socratic follow-up beats a summary')
+    expect(patch).toContain('the library_* tools, never in conversation memory')
+    expect(patch).toContain('library_assess')
+    expect(patch).toContain('Due cards come first')
+    expect(patch).toContain('The library skill carries the')
+    // Light by contract: the persona does not copy the skill's payload mechanics.
+    expect(patch).not.toContain('ch:<n>')
+    expect(patch).not.toContain('chapterRanges')
+  })
+
+  it('references every community package it names, and nothing more', () => {
+    const manifest = JSON.parse(readFileSync(join(import.meta.dirname, '..', 'package.json'), 'utf8')) as {
+      dsh: { references: string[] }
+    }
+    const named = new Set(
+      [...patch.matchAll(/^ {12}name: '(@khorsheed\/[a-z0-9-]+(?:\/[a-z0-9-]+)?)'/gm)]
+        .map((m) => m[1]!.split('/').slice(0, 2).join('/')),
+    )
+    expect(named.size).toBeGreaterThan(0)
+    for (const name of named) expect(manifest.dsh.references).toContain(name)
+    expect(manifest.dsh.references).toEqual(['@khorsheed/dsh-library'])
+  })
+
+  it('declares the preset-declarations kind and no runtime of its own', () => {
+    const manifest = JSON.parse(readFileSync(join(import.meta.dirname, '..', 'package.json'), 'utf8')) as {
+      dsh: { bundle: { kind: string }; client?: unknown }
+      dependencies?: Record<string, string>
+    }
+    expect(manifest.dsh.bundle.kind).toBe('preset-declarations')
+    expect(manifest.dsh.client).toBeUndefined()
+    // No npm edge onto library: the entry resolves from the installing
+    // profile's closure — installing this bundle alone must stay inert.
+    expect(Object.keys(manifest.dependencies ?? {})).not.toContain('@khorsheed/dsh-library')
+  })
+})
