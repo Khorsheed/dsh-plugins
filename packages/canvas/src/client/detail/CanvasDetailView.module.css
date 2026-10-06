@@ -437,52 +437,38 @@
   color: var(--dsw-alias-label-primary-inverted);
 }
 
-/* -------------------------------------------------------------- attachment */
+/* ------------------------------------------------------------------ source */
 
-.attachment {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  border: 1px solid var(--dsw-alias-border-l1);
-  border-radius: 8px;
-  padding: 9px 11px;
-}
-
-.attachmentLabel {
-  font: var(--dsw-font-xxxs-11);
-  color: var(--dsw-alias-label-caption);
-}
-
-.attachmentLink {
+/* The card's source rides the meta line: 出自 第1章 ↗. */
+.source {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font: var(--dsw-font-xxs-12);
-  color: var(--dsw-alias-state-business-primary);
-  text-decoration: none;
-  word-break: break-all;
-}
-
-.attachmentLink:hover {
-  text-decoration: underline;
-}
-
-.attachmentButton {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  align-self: flex-start;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 6px;
-  padding: 5px 10px;
-  background: transparent;
+  gap: 3px;
+  max-width: 24em;
+  padding: 0;
+  border: 0;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  background: none;
+  font: inherit;
   color: var(--dsw-alias-label-secondary);
-  font: var(--dsw-font-xxs-12);
+  text-decoration: none;
   cursor: pointer;
 }
 
-.attachmentButton:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
+.source span,
+.sourceText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sourceText {
+  max-width: 24em;
+}
+
+.source:hover {
+  border-bottom-color: currentColor;
   color: var(--dsw-alias-label-primary);
 }
 

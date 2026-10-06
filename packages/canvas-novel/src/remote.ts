@@ -142,7 +142,7 @@ export class NovelRemoteService extends TypertRemoteService<NovelRemoteConfig> {
     return result.ok ? { ok: true } : { ok: false, error: result.error ?? 'io' }
   }
 
-  /** One card's engine side: its role, the star (foreshadows), 此刻 and 关系 (characters), the bar (relations). */
+  /** One card's engine side: its role, the star (foreshadows), 此刻, 出场 and 关系 (characters), the bar (relations). */
   @Remote('card')
   async card(request: NovelCardRequest): Promise<NovelCardResult> {
     const entries = await this.core.readEntries(request.canvasId)
@@ -152,6 +152,9 @@ export class NovelRemoteService extends TypertRemoteService<NovelRemoteConfig> {
     const foreshadow = entries.foreshadows.find(view => view.cardId === request.cardId)
     const character = entries.characters.find(view => view.cardId === request.cardId)
     const relation = entries.relations.find(view => view.cardId === request.cardId)
+    // 出场 is the story log's read (plan cast, experience journal, source chapter); reuse it rather than fork it.
+    const appearances = character === undefined ? undefined
+      : (await this.core.storyLog({ workId: request.canvasId })).characters.find(row => row.cardId === request.cardId)?.appearances
     return {
       ok: true,
       role,
@@ -161,6 +164,7 @@ export class NovelRemoteService extends TypertRemoteService<NovelRemoteConfig> {
       }),
       ...(character?.currentState === undefined ? {} : { currentState: character.currentState }),
       ...(character === undefined || character.relations.length === 0 ? {} : { relations: character.relations }),
+      ...(appearances === undefined || appearances.length === 0 ? {} : { appearances }),
       ...(relation === undefined ? {} : { relation }),
     }
   }

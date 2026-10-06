@@ -1431,6 +1431,8 @@ export interface NovelCardResult {
   readonly currentState?: CurrentState
   /** Characters: the 关系 lines read off the relation cards naming them. */
   readonly relations?: readonly string[]
+  /** Characters: the chapters they are in, as the story log reads them. */
+  readonly appearances?: readonly StoryAppearance[]
   /** Relations: the card as the engine reads it (stage, level, bar). */
   readonly relation?: RelationView
 }
