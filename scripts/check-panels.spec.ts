@@ -1,11 +1,15 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import {
   PANEL_KIT,
+  countReport,
+  desktopFonts,
   fixedPositions,
   formatReport,
+  formatSummary,
+  jsonReport,
   hoverOnlyReveals,
   listClientPackages,
   literalColors,
@@ -14,6 +18,8 @@ import {
   smallTouchText,
   stripCssComments,
   tokensWithoutFallback,
+  totalsOf,
+  unmatchedContainers,
 } from './check-panels.ts'
 
 const roots: string[] = []
@@ -40,7 +46,9 @@ const goodTsx = "import { PanelRoot, PanelHeader } from '@khorsheed/dsh-client-u
 
 function rules(files: Record<string, string>, json: Record<string, unknown> = adoptedJson) {
   const { root, dir } = fixture(files, json)
-  return scanPanelPackage({ dir, json: { name: '@khorsheed/dsh-demo', ...json } }, root).findings
+  // `info` lines (e.g. container-match's "build first" on a fixture with no
+  // lib/) are never findings to fix; the container-match tests read them.
+  return scanPanelPackage({ dir, json: { name: '@khorsheed/dsh-demo', ...json } }, root).findings.filter((f) => f.severity !== 'info')
 }
 
 describe('structure rules', () => {
@@ -53,6 +61,13 @@ describe('structure rules', () => {
   it('panel-root and compact-layout fire when neither form is present', () => {
     const ids = rules({ 'View.tsx': 'export const View = () => null\n' }).map((f) => f.rule)
     expect(ids).toEqual(['panel-root', 'compact-layout'])
+  })
+
+  it('panel-root accepts the `container: <name> / inline-size` shorthand', () => {
+    const css = '.root { container: pane / inline-size; }\n@container pane (max-width: 560px) { .a { gap: 0; } }\n'
+    expect(rules({ 'View.tsx': 'export {}\n', 'view.module.css': css })).toEqual([])
+    const ids = rules({ 'View.tsx': 'export {}\n', 'view.module.css': '.root { container: pane; }\n@container pane (max-width: 560px) { .a { gap: 0 } }' }).map((f) => f.rule)
+    expect(ids).toEqual(['panel-root'])
   })
 
   it('a 480px container query is not the compact layout', () => {
@@ -135,6 +150,79 @@ describe('fixed-overlay', () => {
     expect(fixedPositions('.a { position: fixed; }\n.b { position: absolute; }')).toHaveLength(1)
     const findings = rules({ 'View.tsx': goodTsx, 'a.css': '.a { position: fixed; } /* panel-check: allow-fixed */\n\n.b { position:fixed }\n' })
     expect(findings.map((f) => [f.rule, f.where.split(':').pop()])).toEqual([['fixed-overlay', '3']])
+  })
+})
+
+describe('desktop-font', () => {
+  it('flags font / font-size reading a host desktop size token, unless allowed', () => {
+    const css = [
+      '.a { font: var(--dsw-font-xxs-12); }',
+      '.b { font-size: var(--dsw-font-xs-13-font-size, 13px); }',
+      '.c { font: var(--dsw-font-xxxs-11); } /* panel-check: allow-desktop-font */',
+      '.d { font-size: var(--dsh-panel-text-body, 13px); font-family: var(--dsw-font-family); }',
+    ].join('\n')
+    expect(desktopFonts(stripCssComments(css))).toHaveLength(3)
+    const findings = rules({ 'View.tsx': goodTsx, 'a.css': css })
+    expect(findings.map((f) => [f.rule, f.severity, f.where.split(':').pop()])).toEqual([['desktop-font', 'warn', '1'], ['desktop-font', 'warn', '2']])
+  })
+})
+
+describe('container-match (built output)', () => {
+  it('finds queried container names no declaration provides', () => {
+    expect(unmatchedContainers('.a{container:dsh-panel/inline-size}@container dsh-panel (max-width:560px){.b{gap:0}}')).toEqual([])
+    expect(unmatchedContainers('.a{container:Ab12_dsh-panel/inline-size}@container Cd34_dsh-panel (max-width:560px){.b{gap:0}}')).toEqual(['Cd34_dsh-panel'])
+    expect(unmatchedContainers('.a{container-name:pane;container-type:inline-size}@container pane (width<560px){}')).toEqual([])
+    expect(unmatchedContainers('@container (max-width:560px){.b{gap:0}}@container not (width>1px){}')).toEqual([])
+    expect(unmatchedContainers('const s={containerName:"pane"};const c=`@container pane (max-width:560px){}`')).toEqual([])
+  })
+
+  function built(bundle: string | null, bundleAge: 'fresh' | 'stale' = 'fresh') {
+    const { root, dir } = fixture({ 'View.tsx': goodTsx }, adoptedJson)
+    if (bundle !== null) {
+      mkdirSync(join(dir, 'lib'), { recursive: true })
+      writeFileSync(join(dir, 'lib', 'client.js'), bundle)
+      const at = bundleAge === 'stale' ? new Date(Date.now() - 3_600_000) : new Date(Date.now() + 3_600_000)
+      utimesSync(join(dir, 'lib', 'client.js'), at, at)
+    }
+    return scanPanelPackage({ dir, json: { name: '@khorsheed/dsh-demo', ...adoptedJson } }, root).findings.filter((f) => f.rule === 'container-match')
+  }
+
+  it('is an error on a fresh bundle whose query names never meet a declaration', () => {
+    const findings = built('.a{container:X_dsh-panel/inline-size}@container Y_dsh-panel (max-width:560px){}')
+    expect(findings.map((f) => [f.severity, f.detail.includes('Y_dsh-panel')])).toEqual([['error', true]])
+    expect(built('.a{container:dsh-panel/inline-size}@container dsh-panel (max-width:560px){}')).toEqual([])
+  })
+
+  it('is only an info with no bundle or a bundle older than the sources', () => {
+    expect(built(null).map((f) => f.severity)).toEqual(['info'])
+    expect(built('@container Y (max-width:560px){}', 'stale').map((f) => f.severity)).toEqual(['info'])
+  })
+
+  it('skips a not-yet-adopted package', () => {
+    const { root, dir } = fixture({ 'View.tsx': goodTsx })
+    expect(scanPanelPackage({ dir, json: { name: 'n' } }, root).findings.filter((f) => f.rule === 'container-match')).toEqual([])
+  })
+})
+
+describe('one count, every output', () => {
+  it('the per-package line, the summary and the JSON report the same numbers', () => {
+    const bad = { 'View.tsx': 'export const View = () => null\n', 'a.css': '.a { color: #123456; position: fixed; }' }
+    const a = fixture(bad, adoptedJson)
+    const n = fixture(bad)
+    const { reports, errors } = scanPanels([
+      { dir: a.dir, json: { name: '@khorsheed/dsh-a', ...adoptedJson } },
+      { dir: n.dir, json: { name: '@khorsheed/dsh-n' } },
+    ], a.root)
+    const totals = totalsOf(reports)
+    expect(totals).toEqual({ errors: 2, warnings: 2, hints: 4 })
+    expect(errors).toBe(totals.errors)
+    const text = formatReport(reports, false)
+    expect(text).toContain(`@khorsheed/dsh-a：已接入，${countReport(reports[0]!).errors} 个错误，${countReport(reports[0]!).warnings} 个提醒`)
+    expect(text).toContain('@khorsheed/dsh-n：未接入（4 条提示）')
+    expect(formatSummary(reports)).toContain('已接入包 2 个错误、2 个提醒；未接入包 4 条提示')
+    const json = jsonReport(reports) as { errors: number; warnings: number; hints: number; reports: { errors: number; warnings: number }[] }
+    expect([json.errors, json.warnings, json.hints]).toEqual([2, 2, 4])
+    expect(json.reports.map((r) => [r.errors, r.warnings])).toEqual([[2, 2], [2, 2]])
   })
 })
 

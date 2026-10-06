@@ -8,5 +8,10 @@
 .count { font-size:var(--dsh-panel-text-meta, 12px); color:var(--dsw-alias-label-tertiary); font-weight:400; }
 .chip[aria-pressed=true] .count { color:inherit; }
 @media (hover:hover) { .chip:hover:not([aria-pressed=true]) { background:var(--dsw-alias-interactive-bg-hover); } }
-@container dsh-panel (max-width: 560px) { .row { padding:8px 16px; } }
+/* With tools: the wrapper owns the side padding so the tools sit inside it,
+   and the chips scroll in the remaining width. */
+.withTools { display:flex; align-items:center; gap:8px; padding:0 12px; min-width:0; }
+.withTools > .row { flex:1; min-width:0; padding-left:0; padding-right:0; }
+.tools { display:flex; flex:none; align-items:center; gap:2px; }
+@container dsh-panel (max-width: 560px) { .row { padding:8px 16px; } .withTools { padding:0 16px; } }
 @media (pointer: coarse) { .chip { height:32px; padding:0 12px; } }

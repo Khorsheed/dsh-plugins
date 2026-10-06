@@ -346,6 +346,10 @@ export function main(): void {
   if (!skipPackages) {
     steps.push(
       { name: 'build', run: () => sh(`pnpm ${filter} --workspace-concurrency=2 --if-present run build`) },
+      // Again on the fresh bundles: container-match reads lib/client.js and
+      // skips a missing or stale one, so only the post-build pass proves the
+      // compact rules' container names meet their declaration (2026-10-06).
+      { name: 'panel containers (built output)', run: () => sh('pnpm check:panels') },
       { name: 'test', run: () => testStep(scope) },
       { name: 'pack bundles', run: () => sh(
         scope.dirs.length === 0

@@ -15,7 +15,9 @@
  *
  *   panel-root        error  the panel declares a width container: `PanelRoot`
  *                            (or the kit-based `ContentPane`, which carries
- *                            one) in TS, or `container-type: inline-size` in CSS
+ *                            one) in TS, or `container-type: inline-size` /
+ *                            the `container: <name> / inline-size` shorthand
+ *                            in CSS
  *   compact-layout    error  a compact layout exists: `PanelHeader` (or
  *                            `ContentPane`) in TS, or an
  *                            `@container … (max-width: 560px)` rule in CSS
@@ -24,6 +26,19 @@
  *   no-mobile-import  error  nothing imports `@khorsheed/dsh-mobile` and no
  *                            dependency field names it — plugins never depend
  *                            on the mobile package
+ *   container-match   error  in the BUILT `lib/client.js`, every container name
+ *                            an `@container <name>` query uses is declared
+ *                            (`container: <name>/…`, `container-name: <name>`)
+ *                            somewhere in that same bundle. Guards the
+ *                            2026-10-06 incident: the CSS Modules transform
+ *                            hashed container names per file, so a plugin's
+ *                            `@container dsh-panel` never met the container
+ *                            PanelRoot declares and every compact rule was
+ *                            dead in production while source-level checks and
+ *                            vite-served examples looked fine. A missing build
+ *                            — or one older than the package's sources or the
+ *                            shared build config — is an `info` (rebuild,
+ *                            then re-run), never a pass or a failure.
  *   literal-color     warn   CSS colour literals (#hex, rgb()/rgba()/hsl())
  *                            outside a `var(--x, literal)` fallback
  *   hover-only        warn   a `:hover` rule revealing something hidden
@@ -36,16 +51,29 @@
  *   fixed-overlay     warn   `position: fixed` — a panel overlay should be
  *                            positioned in the panel; fixed pushes it past the
  *                            phone shell's edge
+ *   desktop-font      warn   a `font` / `font-size` declaration reading a host
+ *                            desktop size token (`--dsw-font-xs-*`,
+ *                            `--dsw-font-xxs-*`, `--dsw-font-xxxs-*`) — those
+ *                            never grow on a phone; read `--dsh-panel-*`
+ *                            instead (2026-10-06: the canvas switch row was
+ *                            pinned at xxs-12 on the phone)
  *
  * A warn rule is silenced for one line by a `panel-check: allow-<what>`
  * comment on that line or the one above (`allow-color`, `allow-hover`,
- * `allow-small-text`, `allow-fixed`).
+ * `allow-small-text`, `allow-fixed`, `allow-desktop-font`).
  *
  * Usage:
  *   pnpm check:panels                              every dsh.client package
  *   pnpm check:panels --package packages/canvas    one package (repeatable),
  *                                                  every finding listed
  *   pnpm check:panels --json                       machine-readable report
+ *
+ * Counting: errors and warnings are counted ONCE per report
+ * ({@link countReport}); the per-package line, the summary line and the
+ * JSON all read those counts. Only an adopted package's errors are
+ * ENFORCED (the exit code and the summary's error total); a not-yet-adopted
+ * package's findings are hints, counted separately. `info` lines (e.g. "build
+ * first") are never counted.
  *
  * Exit code 0 = no error in an adopted package; 1 otherwise.
  * @module scripts/check-panels
@@ -62,10 +90,11 @@ const DOC = 'docs/panel-design.md'
 export type RuleId =
   | 'panel-root' | 'compact-layout' | 'token-fallback' | 'no-mobile-import'
   | 'literal-color' | 'hover-only' | 'small-touch-text' | 'fixed-overlay'
+  | 'container-match' | 'desktop-font'
 
 export interface PanelFinding {
   readonly rule: RuleId
-  readonly severity: 'error' | 'warn'
+  readonly severity: 'error' | 'warn' | 'info'
   /** Repo-relative path, with `:line` when the finding has one. */
   readonly where: string
   readonly detail: string
@@ -88,6 +117,8 @@ const HINTS: Record<RuleId, string> = {
   'hover-only': `触屏没有悬停：改成常显、放进「…」，或补 (hover: none) 的处理（${DOC}#触屏）`,
   'small-touch-text': `触屏下文字不小于 13px，用 --dsh-panel-text-meta（${DOC}#字号）`,
   'fixed-overlay': `弹层在面板内绝对定位；确需 fixed 就加 /* panel-check: allow-fixed */（${DOC}#弹层与溢出）`,
+  'desktop-font': `面板文字改读 var(--dsh-panel-text-…, 桌面默认值)，桌面字号变量在手机上不会放大；确需保留就加 /* panel-check: allow-desktop-font */（${DOC}#字号）`,
+  'container-match': `构建产物里容器名对不上：检查 build/tsdown.client.ts 的 cssModules 是否保持容器名全局，重新 build（${DOC}#自查）`,
 }
 
 const ALLOW: Partial<Record<RuleId, string>> = {
@@ -95,6 +126,7 @@ const ALLOW: Partial<Record<RuleId, string>> = {
   'hover-only': 'allow-hover',
   'small-touch-text': 'allow-small-text',
   'fixed-overlay': 'allow-fixed',
+  'desktop-font': 'allow-desktop-font',
 }
 
 /** Recursively list a directory's files with one of the extensions. */
@@ -232,6 +264,18 @@ export function smallTouchText(css: string): number[] {
   return out
 }
 
+/** Desktop size tokens read by a `font` / `font-size` declaration, as indexes. */
+export function desktopFonts(css: string): number[] {
+  const out: number[] = []
+  const decl = /\bfont(?:-size)?\s*:([^;{}]*)/g
+  let m: RegExpExecArray | null
+  while ((m = decl.exec(css)) !== null) {
+    const token = /var\(\s*--dsw-font-x{1,3}s-/.exec(m[1]!)
+    if (token) out.push(m.index + m[0].length - m[1]!.length + token.index)
+  }
+  return out
+}
+
 /** `position: fixed` declarations. */
 export function fixedPositions(css: string): number[] {
   const out: number[] = []
@@ -258,8 +302,8 @@ export function scanPanelPackage(pkg: Pkg, root: string): PackageReport {
   const tsFiles = filesUnder(client, ['.ts', '.tsx'])
   const findings: PanelFinding[] = []
   const rel = (p: string) => relative(root, p)
-  const add = (rule: RuleId, severity: 'error' | 'warn', where: string, detail: string) => {
-    findings.push({ rule, severity, where, detail: `${detail} — ${HINTS[rule]}` })
+  const add = (rule: RuleId, severity: 'error' | 'warn' | 'info', where: string, detail: string) => {
+    findings.push({ rule, severity, where, detail: severity === 'info' ? detail : `${detail} — ${HINTS[rule]}` })
   }
 
   const css = cssFiles.map((path) => ({ path, raw: readFileSync(path, 'utf8') }))
@@ -268,7 +312,7 @@ export function scanPanelPackage(pkg: Pkg, root: string): PackageReport {
 
   // Structure rules (package-level).
   const usesTs = (re: RegExp) => ts.some((f) => re.test(f.raw))
-  const hasRoot = usesTs(/\bPanelRoot\b|\bContentPane\b/) || strippedCss.some((f) => /container-type\s*:\s*inline-size/.test(f.text))
+  const hasRoot = usesTs(/\bPanelRoot\b|\bContentPane\b/) || strippedCss.some((f) => /container-type\s*:\s*inline-size|container\s*:[^;{}]*\/\s*inline-size/.test(f.text))
   if (!hasRoot) add('panel-root', 'error', rel(client), '面板根没有声明宽度容器')
   const hasCompact = usesTs(/\bPanelHeader\b|\bContentPane\b/) || strippedCss.some((f) => /@container[^{]*\(\s*max-width\s*:\s*560px\s*\)/.test(f.text))
   if (!hasCompact) add('compact-layout', 'error', rel(client), '没有紧凑排版（≤ 560px）')
@@ -300,8 +344,58 @@ export function scanPanelPackage(pkg: Pkg, root: string): PackageReport {
     report('hover-only', hoverOnlyReveals(f.text), '只有悬停才显示')
     report('small-touch-text', smallTouchText(f.text), '触屏/紧凑下文字小于 13px')
     report('fixed-overlay', fixedPositions(f.text), 'position: fixed')
+    report('desktop-font', desktopFonts(f.text), '直接用了桌面字号变量')
+  }
+  // container-match: the built bundle, only once the package adopted the kit
+  // (a not-yet-adopted package has no shared container to miss).
+  if (adopted) {
+    const bundle = join(pkg.dir, 'lib', 'client.js')
+    if (!existsSync(bundle)) {
+      add('container-match', 'info', rel(bundle), '还没有构建产物，跳过容器名核对（先 pnpm build 再跑）')
+    } else if (staleBundle(bundle, [...cssFiles, ...tsFiles, buildConfig(root)])) {
+      add('container-match', 'info', rel(bundle), '构建产物早于源码或共享构建配置，跳过容器名核对（先 pnpm build 再跑）')
+    } else {
+      for (const name of unmatchedContainers(readFileSync(bundle, 'utf8'))) {
+        add('container-match', 'error', rel(bundle), `查询了容器 ${name}，产物里没有任何声明`)
+      }
+    }
   }
   return { dir: rel(pkg.dir), name, adopted, findings }
+}
+
+/** The shared client build config whose change invalidates every bundle. */
+function buildConfig(root: string): string {
+  return join(root, 'build', 'tsdown.client.ts')
+}
+
+/** Whether the bundle predates any of the inputs (missing inputs are ignored). */
+function staleBundle(bundle: string, inputs: readonly string[]): boolean {
+  const built = statSync(bundle).mtimeMs
+  return inputs.some((p) => existsSync(p) && statSync(p).mtimeMs > built)
+}
+
+const CONTAINER_KEYWORDS = new Set(['not', 'and', 'or', 'style', 'scroll-state'])
+
+/**
+ * Container names a bundle queries but never declares. Queries:
+ * `@container <name> (…)`; declarations: `container: <name> / …` or
+ * `container-name: <name>` in CSS, or `containerName` / `container` in an
+ * inline style object. Unnamed queries (`@container (…)`) match the nearest
+ * container of any name and are not checked.
+ */
+export function unmatchedContainers(bundle: string): string[] {
+  const queried = new Set<string>()
+  for (const m of bundle.matchAll(/@container\s+([A-Za-z_-][\w-]*)/g)) {
+    if (!CONTAINER_KEYWORDS.has(m[1]!)) queried.add(m[1]!)
+  }
+  const declared = new Set<string>()
+  for (const m of bundle.matchAll(/container(?:-name)?\s*:\s*([A-Za-z_-][\w-]*(?:\s+[A-Za-z_-][\w-]*)*)/g)) {
+    for (const name of m[1]!.split(/\s+/)) declared.add(name)
+  }
+  for (const m of bundle.matchAll(/container(?:Name)?\s*:\s*['"`]([^'"`/]+)/g)) {
+    for (const name of m[1]!.trim().split(/\s+/)) declared.add(name)
+  }
+  return [...queried].filter((name) => !declared.has(name)).sort()
 }
 
 /** Every package under packagesRoot carrying `dsh.client`. */
@@ -313,11 +407,54 @@ export function listClientPackages(packagesRoot: string): Pkg[] {
     .filter((p) => typeof p.json.dsh === 'object' && p.json.dsh !== null && 'client' in (p.json.dsh as object))
 }
 
+/** One report's counts — the single source every output reads. */
+export interface ReportCounts {
+  readonly errors: number
+  readonly warnings: number
+  readonly infos: number
+}
+
+export function countReport(report: PackageReport): ReportCounts {
+  const of = (s: PanelFinding['severity']) => report.findings.filter((f) => f.severity === s).length
+  return { errors: of('error'), warnings: of('warn'), infos: of('info') }
+}
+
+/** Totals over a scan: enforced errors (adopted packages) and hints (the rest). */
+export interface ScanTotals {
+  /** Errors in adopted packages — the exit code. */
+  readonly errors: number
+  /** Warnings in adopted packages. */
+  readonly warnings: number
+  /** Error + warn findings in not-yet-adopted packages (hints only). */
+  readonly hints: number
+}
+
+export function totalsOf(reports: readonly PackageReport[]): ScanTotals {
+  let errors = 0, warnings = 0, hints = 0
+  for (const r of reports) {
+    const c = countReport(r)
+    if (r.adopted) { errors += c.errors; warnings += c.warnings } else hints += c.errors + c.warnings
+  }
+  return { errors, warnings, hints }
+}
+
 /** Scan a set of packages; errors only count for adopted ones. */
-export function scanPanels(pkgs: readonly Pkg[], root: string): { reports: PackageReport[]; errors: number } {
+export function scanPanels(pkgs: readonly Pkg[], root: string): { reports: PackageReport[]; errors: number; totals: ScanTotals } {
   const reports = pkgs.map((p) => scanPanelPackage(p, root))
-  const errors = reports.filter((r) => r.adopted).reduce((n, r) => n + r.findings.filter((f) => f.severity === 'error').length, 0)
-  return { reports, errors }
+  const totals = totalsOf(reports)
+  return { reports, errors: totals.errors, totals }
+}
+
+/** The summary line, from the same totals the exit code uses. */
+export function formatSummary(reports: readonly PackageReport[]): string {
+  const t = totalsOf(reports)
+  const adopted = reports.filter((r) => r.adopted).length
+  return `panels: 检查 ${reports.length} 个包（已接入 ${adopted} 个）：已接入包 ${t.errors} 个错误、${t.warnings} 个提醒；未接入包 ${t.hints} 条提示`
+}
+
+/** Machine-readable report: totals plus each report with its own counts. */
+export function jsonReport(reports: readonly PackageReport[]): object {
+  return { ...totalsOf(reports), reports: reports.map((r) => ({ ...r, ...countReport(r) })) }
 }
 
 /** Human report: adopted packages listed in full, others as one line unless `full`. */
@@ -326,12 +463,15 @@ export function formatReport(reports: readonly PackageReport[], full: boolean, w
   for (const r of reports) {
     const errors = r.findings.filter((f) => f.severity === 'error')
     const warns = r.findings.filter((f) => f.severity === 'warn')
+    const infos = r.findings.filter((f) => f.severity === 'info')
+    const c = countReport(r)
     if (!r.adopted && !full) {
-      out.push(`panels: ${r.name}：未接入（${r.findings.length} 条提示）`)
+      out.push(`panels: ${r.name}：未接入（${c.errors + c.warnings} 条提示）`)
       continue
     }
     const state = r.adopted ? '已接入' : '未接入（以下仅为提示，不影响退出码）'
-    out.push(`panels: ${r.name}：${state}，${errors.length} 个错误，${warns.length} 个提醒`)
+    out.push(`panels: ${r.name}：${state}，${c.errors} 个错误，${c.warnings} 个提醒`)
+    for (const f of infos) out.push(`  · [${f.rule}] ${f.where}：${f.detail}`)
     for (const f of errors) out.push(`  ✗ [${f.rule}] ${f.where}：${f.detail}`)
     const shown = full ? warns : warns.slice(0, warnPreview)
     for (const f of shown) out.push(`  ! [${f.rule}] ${f.where}：${f.detail}`)
@@ -354,11 +494,10 @@ function main(): void {
   })
   const { reports, errors } = scanPanels(pkgs, root)
   if (args.includes('--json')) {
-    process.stdout.write(`${JSON.stringify({ errors, reports }, null, 2)}\n`)
+    process.stdout.write(`${JSON.stringify(jsonReport(reports), null, 2)}\n`)
   } else {
     process.stdout.write(`${formatReport(reports, picked.length > 0)}\n`)
-    const adopted = reports.filter((r) => r.adopted).length
-    process.stdout.write(`panels: 检查 ${reports.length} 个包（已接入 ${adopted} 个），${errors} 个错误\n`)
+    process.stdout.write(`${formatSummary(reports)}\n`)
   }
   process.exit(errors > 0 ? 1 : 0)
 }

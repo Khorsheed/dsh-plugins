@@ -145,6 +145,47 @@ describe('UnderlineTabs', () => {
   })
 })
 
+describe('UnderlineTabs badge and trailing', () => {
+  it('renders a badge beside the label (outside the underlined label span), keeping the tab name', () => {
+    render(<UnderlineTabs label="faces" value="a" onChange={() => {}}
+      tabs={[{ id: 'a', label: '章节', badge: <b>2</b> }, { id: 'b', label: '设定', badge: null }]} />)
+    const tab = screen.getByRole('tab', { name: /章节\s*2/ })
+    const badge = screen.getByText('2')
+    const label = screen.getByText('章节')
+    expect(label.contains(badge)).toBe(false)
+    expect(tab.contains(badge)).toBe(true)
+    expect(screen.getByRole('tab', { name: '设定' }).children).toHaveLength(1)
+  })
+
+  it('puts trailing controls on the same row, outside the tablist', () => {
+    const { container } = render(<UnderlineTabs label="faces" value="a" onChange={() => {}} className="mine"
+      tabs={[{ id: 'a', label: 'A' }]} trailing={<button type="button">more</button>} />)
+    const row = container.firstElementChild as HTMLElement
+    const tablist = screen.getByRole('tablist')
+    const more = screen.getByRole('button', { name: 'more' })
+    expect(row.className).toContain('mine')
+    expect(row.contains(tablist) && row.contains(more)).toBe(true)
+    expect(tablist.contains(more)).toBe(false)
+    cleanup()
+    const plain = render(<UnderlineTabs label="faces" value="a" onChange={() => {}} className="mine" tabs={[{ id: 'a', label: 'A' }]} />)
+    expect(plain.container.firstElementChild?.getAttribute('role')).toBe('tablist')
+  })
+})
+
+describe('ChipRow tools', () => {
+  it('pins tools outside the scrolling chip group; without tools the row is the group itself', () => {
+    const { container } = render(<ChipRow label="filter" value="a" onSelect={() => {}} className="mine"
+      chips={[{ id: 'a', label: 'A' }]} tools={<button type="button">seen</button>} />)
+    const group = screen.getByRole('group', { name: 'filter' })
+    const tool = screen.getByRole('button', { name: 'seen' })
+    expect(group.contains(tool)).toBe(false)
+    expect((container.firstElementChild as HTMLElement).className).toContain('mine')
+    cleanup()
+    const plain = render(<ChipRow label="filter" value="a" onSelect={() => {}} chips={[{ id: 'a', label: 'A' }]} />)
+    expect(plain.container.firstElementChild?.getAttribute('role')).toBe('group')
+  })
+})
+
 describe('ChipRow', () => {
   it('reports the pressed chip and reflects single or multiple selection', () => {
     const onSelect = vi.fn()

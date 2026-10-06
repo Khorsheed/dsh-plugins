@@ -526,19 +526,18 @@ export function BoardView({
   return (
     <section className={css.main}>
       <div className={css.boardScroll} data-canvas-scroll="board">
-        <div className={css.chipRow}>
-          <ChipRow
-            className={css.chips}
-            label={t('board.filter.label')}
-            chips={chipRow}
-            value={[filter]}
-            onSelect={onFilter}
-          />
-          {/* The row's tools, outside the sideways scroll so they never slide
-              away: ✓✓ lights only while there is something new to mark, and
-              管理分类 is an icon beside it rather than one more chip. */}
-          {(onMarkAllSeen !== undefined || !readonly) && (
-            <div className={css.chipTools}>
+        {/* The row's tools ride the kit's tools slot, outside the sideways
+            scroll so they never slide away: ✓✓ lights only while there is
+            something new to mark, and 管理分类 is an icon beside it rather
+            than one more chip. */}
+        <ChipRow
+          className={css.chipRow}
+          label={t('board.filter.label')}
+          chips={chipRow}
+          value={[filter]}
+          onSelect={onFilter}
+          tools={(onMarkAllSeen !== undefined || !readonly) ? (
+            <>
               {onMarkAllSeen !== undefined && (
                 <button
                   type="button"
@@ -563,9 +562,9 @@ export function BoardView({
                   <IconSlidersOutline16 size={16} />
                 </button>
               )}
-            </div>
-          )}
-        </div>
+            </>
+          ) : undefined}
+        />
 
         {selection.size > 0 && (
           <div className={css.selBar} ref={selBarRef}>

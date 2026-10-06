@@ -278,22 +278,21 @@
 /* One row, scrolled sideways rather than wrapped: stage ⑤ lets a canvas add
    categories, so the strip's width is no longer bounded by the five defaults.
    Horizontal only — `.boardScroll` stays the board's single vertical scroller. */
-.chipRow {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+/* The board scroller already pads the page, so the kit row's own side
+   padding is dropped — scoped under .boardScroll so it outranks the kit's
+   compact-container padding whatever order the two stylesheets load in. */
+.boardScroll .chipRow {
+  padding: 0;
   margin-bottom: 12px;
 }
 
-.chipRow > .chips {
-  flex: 1;
-  min-width: 0;
+.boardScroll .chipRow > [role="group"] {
   padding: 0;
 }
 
 /* The chips themselves are the panel kit's (ChipRow); a new-card pip rides
    the chip's corner, so the chip is its anchor. */
-.chipRow > .chips > button {
+.chipRow > [role="group"] > button {
   position: relative;
 }
 
@@ -705,13 +704,7 @@
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-state-warn-primary) 28%, transparent);
 }
 
-/* The chip row's tools (✓✓, 管理分类): icon buttons pinned at the row's end. */
-.chipTools {
-  display: flex;
-  flex: none;
-  gap: 2px;
-}
-
+/* The chip row's tools (✓✓, 管理分类): icon buttons in the kit's tools slot. */
 .toolIcon {
   display: inline-flex;
   align-items: center;

@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/ui-panel-kit/README.en.md
-packages/ui-panel-kit/README.en.md: 86f94536bed6b3776315f1b986aff2814e5988d3
-packages/ui-panel-kit/README.md: 36a1afcd12f3c40f21f0feef6111533b3a97c28e
+packages/ui-panel-kit/README.en.md: e2c0126358adc39fd9ba2fb5080d35874e55aa6b
+packages/ui-panel-kit/README.md: edbc59c418739ee71d3df3b8408b0db364617084
