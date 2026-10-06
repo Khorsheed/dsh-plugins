@@ -166,6 +166,34 @@ describe('mobile session navigation', () => {
     expect(editor.value).toBe('unsent draft')
   })
 
+  it('closes an official drawer it did not ask for, keeping the one settings opened', () => {
+    const f = fixture(), navigation = new MobileNavigation()
+    navigation.set(f.navigation)
+    let snapshot = { active: true, drawer: false, supported: true, mode: 'mobile' }
+    const listeners = new Set<() => void>()
+    const setDrawer = (drawer: boolean) => act(() => { snapshot = { ...snapshot, drawer }; for (const l of listeners) l() })
+    const toggleSidebar = vi.fn()
+    const props = {
+      navigation, toggleSidebar,
+      presentation: { prepareNavigation: vi.fn(), getSnapshot: () => snapshot, subscribe: (l: () => void) => { listeners.add(l); return () => listeners.delete(l) } },
+      connection: { state: { getSnapshot: () => 'connected', subscribe: () => () => {} } },
+    } as unknown as MobileChromeInjected
+    HTMLDialogElement.prototype.showModal = function () { this.open = true }
+    HTMLDialogElement.prototype.close = function () { this.open = false }
+    render(<MobileChrome {...props} t={t}/>)
+    // The host expands its sidebar on its own (a reconnect restoring the desktop layout).
+    setDrawer(true)
+    expect(toggleSidebar).toHaveBeenCalledOnce()
+    setDrawer(false)
+    toggleSidebar.mockClear()
+    // Settings → workspaces asks for the drawer; that one stays.
+    fireEvent.click(screen.getAllByRole('button', { name: en.settings })[0]!)
+    fireEvent.click(screen.getByRole('button', { name: en.workspaces, hidden: true }))
+    expect(toggleSidebar).toHaveBeenCalledOnce()
+    setDrawer(true)
+    expect(toggleSidebar).toHaveBeenCalledOnce()
+  })
+
   it('routes library settings to the native sheet and keeps chat back/new separate', () => {
     const f = fixture(), navigation = new MobileNavigation(), postMessage = vi.fn(), startSession = vi.fn()
     navigation.set({ ...f.navigation, workspace: { ...f.navigation.workspace, startSession } })

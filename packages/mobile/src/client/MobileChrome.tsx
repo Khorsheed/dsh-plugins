@@ -60,10 +60,17 @@ export function MobileChrome({ presentation, toggleSidebar, connection, navigati
   const activated = useRef(false), dialog = useRef<HTMLDialogElement>(null)
   useEffect(() => {
     if (!state.active) { activated.current = false; setLibrary(false); return }
-    if (available && !activated.current) {
-      activated.current = true; setLibrary(true)
-      if (state.drawer) toggleSidebar()
-    }
+    if (available && !activated.current) { activated.current = true; setLibrary(true) }
+  }, [state.active, available])
+  // With the mobile library available, the official sidebar drawer opens only
+  // on request (settings → workspaces). Anything else that expands it — the
+  // host restoring its desktop layout after a reconnect, a fallback drawer
+  // left open while navigation was missing — is closed again, so the desktop
+  // sidebar and its shade never reappear over the mobile chrome or a panel.
+  const drawerWanted = useRef(false)
+  useEffect(() => {
+    if (!state.drawer) { drawerWanted.current = false; return }
+    if (state.active && available && !drawerWanted.current) toggleSidebar()
   }, [state.active, state.drawer, available, toggleSidebar])
   useEffect(() => { reportChrome(state.active); return () => reportChrome(false) }, [state.active])
   useEffect(() => {
@@ -134,7 +141,7 @@ export function MobileChrome({ presentation, toggleSidebar, connection, navigati
     <dialog ref={dialog} data-mobile-dialog onClose={() => setSettings(false)} aria-label={t('settings')}>
       <h2>{t('settings')}</h2>
       {available && <button data-mobile-option onClick={startSession}>{t('newSession')}</button>}
-      <button data-mobile-option onClick={() => { setSettings(false); setLibrary(false); if (!state.drawer) toggleSidebar() }}>{t('workspaces')}</button>
+      <button data-mobile-option onClick={() => { setSettings(false); setLibrary(false); if (!state.drawer) { drawerWanted.current = true; toggleSidebar() } }}>{t('workspaces')}</button>
       {hasNativeAction('settings') ? <button data-mobile-option onClick={() => { setSettings(false); requestNativeAction('settings') }}>{t('connectionSettings')}</button> : <><h3>{t('connection')}</h3><p>{window.location.host}</p><p>{t(wire ?? 'connecting')}</p><button onClick={() => connection.reconnect()}>{t('reconnect')}</button></>}
       <h3>{t('display')}</h3><div role="group" aria-label={t('display')}>
         {(['auto', 'mobile', 'desktop'] as const).map((mode: DisplayMode) => <button key={mode} aria-pressed={state.mode === mode} onClick={() => presentation.setMode(mode)}>{t(mode === 'auto' ? 'automatic' : mode)}</button>)}
