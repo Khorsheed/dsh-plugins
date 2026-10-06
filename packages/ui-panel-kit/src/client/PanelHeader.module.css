@@ -1,0 +1,17 @@
+/* Header metrics: a 44px row in a wide panel; a compact panel takes the
+   spec's 52px title bar and 16px leading gutter. Type sizes always read the
+   --dsh-panel-* tokens with their desktop fallback. */
+.header { display:flex; align-items:center; gap:0; min-height:44px; padding:0 4px 0 12px; box-sizing:border-box; color:var(--dsw-alias-label-primary); }
+.title { display:flex; align-items:baseline; gap:8px; flex:1; min-width:0; }
+.titleAfterBack { padding-left:2px; }
+.title strong { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:var(--dsh-panel-text-title, 14px); font-weight:600; line-height:1.4; }
+.meta { flex:none; white-space:nowrap; font-size:var(--dsh-panel-text-meta, 12px); color:var(--dsw-alias-label-secondary); }
+.icon { display:grid; place-items:center; flex:none; width:32px; height:32px; padding:0; border:0; border-radius:8px; background:transparent; color:var(--dsw-alias-label-secondary); cursor:pointer; }
+.icon:disabled { opacity:.4; cursor:default; }
+.icon:focus-visible { outline:2px solid var(--dsw-alias-state-business-primary); outline-offset:-2px; }
+.header > .icon:first-child { margin-right:2px; }
+@media (hover:hover) { .icon:hover:not(:disabled) { background:var(--dsw-alias-interactive-bg-hover); color:var(--dsw-alias-label-primary); } }
+
+.header[data-compact=true] { min-height:52px; padding-left:16px; }
+.header[data-compact=true] > .icon:first-child { margin-left:-12px; }
+@media (pointer: coarse) { .icon { width:40px; height:40px; border-radius:10px; } }

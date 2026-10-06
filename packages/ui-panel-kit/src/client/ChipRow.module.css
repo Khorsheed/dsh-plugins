@@ -1,0 +1,12 @@
+/* One chip style: outline at rest, accent tint when pressed. */
+.row { display:flex; gap:8px; padding:8px 12px; overflow-x:auto; scrollbar-width:none; overscroll-behavior-x:contain; }
+.row::-webkit-scrollbar { display:none; }
+.chip { display:inline-flex; align-items:center; gap:6px; flex:none; height:28px; padding:0 10px; border:1px solid var(--dsw-alias-border-l2); border-radius:999px; background:transparent; font:inherit; font-size:var(--dsh-panel-text-body, 13px); color:var(--dsw-alias-label-primary); cursor:pointer; white-space:nowrap; }
+.chip[aria-pressed=true] { border-color:transparent; background:color-mix(in srgb, var(--dsw-alias-state-business-primary) 12%, transparent); color:var(--dsw-alias-state-business-primary); font-weight:600; }
+.chip:focus-visible { outline:2px solid var(--dsw-alias-state-business-primary); outline-offset:1px; }
+.dot { width:8px; height:8px; flex:none; border-radius:50%; background:var(--chip-dot); }
+.count { font-size:var(--dsh-panel-text-meta, 12px); color:var(--dsw-alias-label-tertiary); font-weight:400; }
+.chip[aria-pressed=true] .count { color:inherit; }
+@media (hover:hover) { .chip:hover:not([aria-pressed=true]) { background:var(--dsw-alias-interactive-bg-hover); } }
+@container dsh-panel (max-width: 560px) { .row { padding:8px 16px; } }
+@media (pointer: coarse) { .chip { height:32px; padding:0 12px; } }

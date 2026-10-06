@@ -299,6 +299,10 @@ html[data-dsh-mobile] [data-slot="conversation.input.dock"] section > ul[aria-la
 
 /* One mobile reading scale; derived from host text size without writing its preference. */
 html[data-dsh-mobile] body { --mobile-text:max(17px,var(--dsh-content-font-size,14px)); --mobile-caption:max(14px,var(--dsh-content-font-size-secondary,13px)); }
+/* Touch values of the shared panel type tokens (ui-panel-kit reads them with
+   desktop fallbacks; this package never imports it). Title and reading follow
+   the mobile reading scale, so a larger host text size still wins. */
+html[data-dsh-mobile] body { --dsh-panel-text-title:var(--mobile-text); --dsh-panel-text-body:15px; --dsh-panel-text-meta:13px; --dsh-panel-text-reading:var(--mobile-text); --dsh-panel-reading-line-height:1.7; }
 html[data-dsh-mobile] :is([data-mobile-library],[data-mobile-dialog],[data-mobile-tools-dialog],[data-mobile-message-menu]) { font-size:var(--mobile-text); line-height:1.55; }
 html[data-dsh-mobile] :is([data-mobile-nav-title] strong,[data-mobile-session-copy] strong,[data-mobile-search] input,[data-composer-card] [contenteditable],[data-composer-seat] textarea,[data-mobile-member-chat] strong) { font-size:var(--mobile-text); line-height:1.55; }
 html[data-dsh-mobile] :is([data-mobile-workspace-group] strong,[data-mobile-tools-grid] button,[data-mobile-tools-permission],[data-mobile-dialog] h3,[data-mobile-grouping] button) { font-size:16px!important; }

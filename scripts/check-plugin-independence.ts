@@ -158,6 +158,10 @@ export const NO_OWN_PATCH: ReadonlyArray<string> = [
   // manifest metadata with this historical list; there is nothing for any
   // patch to mount on its behalf.
   'ui-content-preview',
+  // ui-panel-kit is the same shape: the source-plane panel kit (type tokens
+  // plus the shared compact controls), inlined into each consuming plugin's
+  // own client bundle (proposal panel-responsive-spec, 2026-10-06).
+  'ui-panel-kit',
 ]
 
 /**

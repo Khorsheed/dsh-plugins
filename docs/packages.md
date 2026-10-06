@@ -4,10 +4,10 @@
 
 ## 概览
 
-- 包总数:**39**
+- 包总数:**40**
 - 自挂载 bundle(`dsh.bundle.patch`):**36**
-- 组合组件(不自挂载,`dsh.composition.component`):**3** — `preset-composed-row` 1、`source-plane-library` 1、`sub-profile-patch` 1
-- 带浏览器半边(`dsh.client`):**28**
+- 组合组件(不自挂载,`dsh.composition.component`):**4** — `preset-composed-row` 1、`source-plane-library` 2、`sub-profile-patch` 1
+- 带浏览器半边(`dsh.client`):**29**
 - 整合 profile(默认安装单元):**3** — `basic`、`dev`、`web-eval`
 
 **安装单元是 profile,不是单包。** 单包安装是高级路径:自挂载包 `dsh plugin add <pkg>` 即可,
@@ -23,7 +23,7 @@
 | `@khorsheed/dsh-bundle-local-agent` | `packages/bundle-local-agent` | 0.2.0 | bundle | — | — | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-bundle-writing` | `packages/bundle-writing` | 0.1.0 | bundle | — | — | 0.1.7-rc.1 | — |
 | `@khorsheed/dsh-canvas` | `packages/canvas` | 0.6.0 | bundle | — | web | 0.1.5-rc.1 | — |
-| `@khorsheed/dsh-canvas-novel` | `packages/canvas-novel` | 0.1.0 | bundle | — | — | 0.2.0-rc.2 | — |
+| `@khorsheed/dsh-canvas-novel` | `packages/canvas-novel` | 0.1.0 | bundle | — | web | 0.2.0-rc.2 | — |
 | `@khorsheed/dsh-capability-catalog` | `packages/capability-catalog` | 0.1.98 | bundle | — | web | 0.1.5-rc.1 | basic, web-eval |
 | `@khorsheed/dsh-capture` | `packages/capture` | 0.1.2 | bundle | — | web | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-context-guard` | `packages/context-guard` | 0.2.4 | bundle | — | web | 0.1.2-rc.1 | basic, web-eval |
@@ -53,6 +53,7 @@
 | `@khorsheed/dsh-typesafe` | `packages/typesafe` | 0.1.2 | bundle | — | — | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-typesafe-tool` | `packages/typesafe-tool` | 0.1.2 | composition | preset-composed-row | — | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-client-ui-content-preview` | `packages/ui-content-preview` | 0.1.1 | composition | source-plane-library | — | 0.1.5-rc.1 | — |
+| `@khorsheed/dsh-client-ui-panel-kit` | `packages/ui-panel-kit` | 0.1.0 | composition | source-plane-library | — | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-ui-shortcuts` | `packages/ui-shortcuts` | 0.2.4 | bundle | — | web | 0.1.2-rc.1 | basic, web-eval |
 | `@khorsheed/dsh-whalesong` | `packages/whalesong` | 0.2.4 | bundle | — | web | 0.1.2-rc.1 | basic, web-eval |
 | `@khorsheed/dsh-worktrees` | `packages/worktrees` | 0.3.1 | bundle | — | web | 0.1.5-rc.1 | dev |
