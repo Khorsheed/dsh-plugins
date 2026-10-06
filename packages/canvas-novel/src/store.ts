@@ -25,7 +25,7 @@
  *
  * @module @khorsheed/dsh-canvas-novel
  */
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { FsError, FsVersion, type FsTarget } from '@deepseek-ai/dsh-fs'
 import type { SandboxExecutionPolicy } from '@deepseek-ai/dsh-sandbox'
@@ -1317,6 +1317,15 @@ export class NovelService {
       if (changes.length === 0) return own
       return [...own, { cardId, chapter: entries.currentChapter, source: 'user', kind: 'change', changes, createdAt: '' }]
     }
+    // A chapter extracted before the mention and experience journals existed
+    // left no entries there; the card's source chapter (the 第n章 anchor the
+    // extract stamps on every card it writes) still says where it came in.
+    const originOf = (cardId: string): number | undefined => {
+      const source = cards.get(cardId)?.source
+      if (source?.type !== 'file') return undefined
+      const row = rows.find(item => item.chapter.file === basename(source.ref))
+      return row === undefined || unsettled.includes(row) ? undefined : row.chapter.n
+    }
 
     const foreshadows = entries.foreshadows.filter(view => view.cardStatus === 'kept').map((view): StoryForeshadow => {
       const marks: StoryForeshadow['marks'][number][] = mentions
@@ -1329,6 +1338,8 @@ export class NovelService {
           marks.push({ chapter: row.chapter.n, kind: OP_TO_MENTION[op.op], planned: true, ...(op.note === undefined ? {} : { note: op.note }) })
         }
       }
+      const origin = originOf(view.cardId)
+      if (origin !== undefined && !marks.some(mark => mark.kind === 'planted')) marks.push({ chapter: origin, kind: 'planted', planned: false })
       return { ...view, marks: marks.sort((a, b) => a.chapter - b.chapter) }
     })
 
@@ -1351,6 +1362,11 @@ export class NovelService {
           chapter: row.chapter.n, pov, planned: unsettled.includes(row), experiences: lived,
           ...(cast?.role === undefined ? {} : { role: cast.role }),
         })
+      }
+      const origin = originOf(view.cardId)
+      if (origin !== undefined && !appearances.some(at => at.chapter === origin)) {
+        appearances.push({ chapter: origin, pov: false, planned: false, experiences: [] })
+        appearances.sort((a, b) => a.chapter - b.chapter)
       }
       return { cardId: view.cardId, ref: view.ref, name: view.name, plot, history: historyOf(view.cardId, 'character', plot), appearances }
     })
