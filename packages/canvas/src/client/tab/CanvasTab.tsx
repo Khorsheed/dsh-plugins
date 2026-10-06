@@ -288,6 +288,11 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
     const row = scope === null ? undefined : openScopes.find(candidate => candidate.id === scope)
     return row === undefined ? undefined : new Set(row.cardIds)
   }, [scope, openScopes])
+  /** The open board's live (unarchived) cards: the scope counts count these. */
+  const liveCardIds = useMemo(
+    () => new Set((openBoard?.board.cards ?? []).filter(card => card.status !== 'archived').map(card => card.id)),
+    [openBoard],
+  )
 
   /* ------------------------------------------------------------- the strip */
 
@@ -1062,8 +1067,9 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
             {/* The board's faces (stage ⑥): 卡板 is where a card gets edited,
                 连线 is where cards get grouped, 成稿 is what they were for. A
                 genre with faces reads 成稿 · 卡板 · its own view instead, with
-                连线 as 卡板's second layout. Underline tabs at every width: the
-                segmented control read as desktop chrome on a phone. */}
+                连线 as 卡板's second layout (in the face's own tools row below,
+                so it never reads as a fourth face). Underline tabs at every
+                width: the segmented control read as desktop chrome on a phone. */}
             {openBoard !== null && loadError === null && (
               <UnderlineTabs<BoardFace>
                 className={css.faceTabs}
@@ -1075,16 +1081,6 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
                   setView(face)
                 }}
               />
-            )}
-            {openFaces !== undefined && (view === 'board' || view === 'link') && (
-              <span className={css.layoutToggle} role="group" aria-label={t('view.layout')}>
-                <button type="button" aria-pressed={view === 'board'} onClick={() => { setView('board') }}>
-                  {t('view.layoutGrid')}
-                </button>
-                <button type="button" aria-pressed={view === 'link'} onClick={() => { setView('link') }}>
-                  {t('view.layoutLink')}
-                </button>
-              </span>
             )}
             {readonly && <span className={css.readonlyHint}>{t('space.readonly')}</span>}
             {/* The canvas's own ⋯: archive is the everyday way to put it away
@@ -1145,6 +1141,36 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
 
           {openBoard !== null && loadError === null && boardStripsOf(seats, openBoard.board)}
           {openBoard !== null && loadError === null && boardScopesOf(seats, openBoard.board, reportScopes)}
+
+          {/* A genre face's own tools, a level below the faces: which cards
+              (the genre's scopes) and how they lie (网格 / 连线), as small
+              segmented controls rather than more tabs or more chips. The
+              graph ignores the scope, so 连线 shows the layout alone. */}
+          {openBoard !== null && loadError === null && openFaces !== undefined && (view === 'board' || view === 'link') && (
+            <div className={css.faceTools}>
+              {view === 'board' && openScopes.length > 0 && (
+                <span className={css.segmented} role="group" aria-label={t('view.scope')}>
+                  {[{ id: null, label: t('board.filter.all'), count: liveCardIds.size }, ...openScopes.map(row => ({
+                    id: row.id as string | null,
+                    label: row.label,
+                    count: row.cardIds.filter(id => liveCardIds.has(id)).length,
+                  }))].map(option => (
+                    <button key={option.id ?? ''} type="button" aria-pressed={(scopeIds === undefined ? null : scope) === option.id} onClick={() => { setScope(option.id) }}>
+                      {option.label}<span className={css.segCount}>{option.count}</span>
+                    </button>
+                  ))}
+                </span>
+              )}
+              <span className={css.segmented} data-layout="true" role="group" aria-label={t('view.layout')}>
+                <button type="button" aria-pressed={view === 'board'} onClick={() => { setView('board') }}>
+                  {t('view.layoutGrid')}
+                </button>
+                <button type="button" aria-pressed={view === 'link'} onClick={() => { setView('link') }}>
+                  {t('view.layoutLink')}
+                </button>
+              </span>
+            </div>
+          )}
 
           {openBoard !== null && loadError === null ? (
             view === 'view' ? (
@@ -1218,10 +1244,7 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
                 onToggleArchived={toggleShowArchived}
                 newCard={boardReadonly ? undefined : newCardSlot}
                 front={front}
-                scopes={openScopes}
-                scope={scopeIds === undefined ? null : scope}
                 scopeIds={scopeIds}
-                onScope={setScope}
                 onMarkAllSeen={boardReadonly ? undefined : () => { seeCards(openBoard.board.id) }}
               />
             )

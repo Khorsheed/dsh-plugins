@@ -88,36 +88,68 @@
 
 /* A genre canvas's 卡板 layouts (网格 / 连线): two quiet words, the pressed
    one in the accent — a second, smaller axis than the face tabs. */
-.layoutToggle {
-  display: inline-flex;
+/* A genre face's own tools row (设定: 故事筛选 · 网格 / 连线), a level below
+   the face tabs: small segmented controls on a filled track, so they read as
+   settings of the face, not as more faces or more filter chips. */
+.faceTools {
+  display: flex;
   align-items: center;
-  gap: 2px;
-  flex: none;
+  gap: 12px;
+  padding: 12px 18px 0;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
 
-.layoutToggle button {
+.faceTools::-webkit-scrollbar { display: none; }
+
+.segmented {
+  display: inline-flex;
+  flex: none;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-3);
+}
+
+/* The layout control keeps the row's right end, scope or none. */
+.segmented[data-layout] { margin-left: auto; }
+
+.segmented button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   border: 0;
   border-radius: 6px;
-  padding: 2px 8px;
+  padding: 3px 10px;
   background: transparent;
-  color: var(--dsw-alias-label-tertiary);
+  color: var(--dsw-alias-label-secondary);
   font: var(--dsw-font-xxs-12);
   line-height: 1.5;
   white-space: nowrap;
   cursor: pointer;
 }
 
-.layoutToggle button[aria-pressed="true"] {
-  color: var(--dsw-alias-state-business-primary);
+.segmented button[aria-pressed="true"] {
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
   font-weight: 600;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 12%);
+}
+
+.segmented button:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 1px; }
+
+.segCount {
+  color: var(--dsw-alias-label-tertiary);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
 }
 
 @media (hover: hover) {
-  .layoutToggle button:hover:not([aria-pressed="true"]) { background: var(--dsw-alias-interactive-bg-hover); }
+  .segmented button:hover:not([aria-pressed="true"]) { color: var(--dsw-alias-label-primary); }
 }
 
 @media (pointer: coarse) {
-  .layoutToggle button { min-height: 32px; }
+  .segmented button { min-height: 32px; }
   .moreButton { width: 36px; height: 36px; }
 }
 
@@ -197,4 +229,5 @@
   .topbar { padding: 0 8px 0 4px; }
   .boardTitle, .boardCount, .attachChip, .spacer { display: none; }
   .faceTabs { flex: 1; }
+  .faceTools { padding: 10px 16px 0; }
 }

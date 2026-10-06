@@ -10,9 +10,9 @@ Status: implemented
 
 ## Decision
 
-- **三个视图，由体裁命名。** 带 `faces` 的体裁把画布的标签（`canvas.board.tab`，键 `novel:<face>`）改名为 章节 · 设定 · 故事，并加上自己的 `view` 视图（`canvas.board.view` 键 `novel:story` → 故事日志，伏笔 / 人物 / 关系 / 世界 下划线标签）。待办条删掉。章节标签上的角标 = 待对账章数 + 待审条数。有章节时默认进章节，否则进设定。
+- **三个视图，由体裁命名。** 没有体裁的画布叫「日常创作」（原「不用体裁」）。带 `faces` 的体裁把画布的标签（`canvas.board.tab`，键 `novel:<face>`）改名为 章节 · 设定 · 故事，并加上自己的 `view` 视图（`canvas.board.view` 键 `novel:story` → 故事日志，伏笔 / 人物 / 关系 / 世界 下划线标签）。待办条删掉。章节标签上的角标 = 待对账章数 + 待审条数。有章节时默认进章节，否则进设定。
 - **章节。** 「继续写」行（最早有待审的一章，没有就最后一章），按钮是强调色描边；待审队列收在一个警示色胶囊下面；目录带 已对账 / 待对账 / 计划 标签和 全部 / 待处理 / 未审过 筛选。
-- **设定。** 体裁通过 `canvas.board.scopes` 报告范围：已进入故事（被某个已对账章节用到的卡，`archiveFirst`）和 灵感（还没有章节用到的故事类卡）。连线布局渲染体裁的关系图（`canvas.board.graph`）：人物围成一圈，关系卡是连线，还没有章节写到这对关系时用虚线；SVG 不会放大超过自然尺寸。
+- **设定。** 体裁通过 `canvas.board.scopes` 报告范围：已进入故事（被某个已对账章节用到的卡，`archiveFirst`）和 灵感（还没有章节用到的故事类卡）。范围（连同「全部」）和 网格 / 连线 摆法是视图标签下方、该视图自己的工具行里的小号分段控件——比视图低一级，也和分类 chip 分开。连线布局渲染体裁的关系图（`canvas.board.graph`）：人物围成一圈，关系卡是连线，还没有章节写到这对关系时用虚线；SVG 不会放大超过自然尺寸。
 - **删除确认。** `canvas.card.deleteNote` 列出用到这张卡的章节，或说明灵感卡删了不影响任何一章；`archiveFirst` 的卡在「删除」旁多一个「归档」。卡板和卡片详情页的删除对话框都带上了（详情页读 `crumbs.archiveFirst`）。
 - **面板套件（P3）。** canvas 和 canvas-novel 接入 `PanelRoot` / `UnderlineTabs` / `ChipRow`；紧凑规则写在 `@container dsh-panel (max-width: 560px)` 下——头部只剩一行（视图 + ⋯），触控行 44px，「收下」改强调色描边。canvas-novel 的章节簿另有自己的 `novel-book` 内联尺寸容器，管面板宽度以下的布局。
 - **容器名不加哈希。** `build/tsdown.client.ts` 给 lightningcss 传 `cssModules.container: false`，容器名按面板规范的假设保持全局；类名照旧加哈希。
@@ -28,4 +28,4 @@ Status: implemented
 - 所有包的 `@container dsh-panel` 规则从此生效——main 上原本悄悄失效的紧凑布局（ui-panel-kit 组件、dsh-reader、local-files、ui-content-preview）下次构建起开始生效。这些包的负责人应重看一遍 390px 截图。
 - 包内自己的容器名（`canvas-tab`、`novel-book`、`trajectory-table`、`plugin-inventory` 等）现在也是全局的；查询找最近的同名祖先，只有两个包取了同名且互相嵌套才会撞。
 - canvas 的 `CanvasTab.module.css` 里顺序有讲究：紧凑块放在文件最后，因为前面的基础规则会给同一批选择器设 `display`。
-- 已知缺口：灵感范围只含故事类分类（不含原则，所以 全部 ≠ 已进入故事 + 灵感）；关系图不跟随范围筛选；范围 chip 和分类 chip 在同一行，中间没有分隔。
+- 已知缺口：灵感范围只含故事类分类（不含原则，所以 全部 ≠ 已进入故事 + 灵感）；关系图不跟随范围筛选（所以连线摆法下工具行只有摆法控件）。

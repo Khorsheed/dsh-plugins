@@ -28,7 +28,6 @@ import {
   type CanvasBoard, type CardCategoryId,
 } from '../../types.ts'
 import type {} from '../locales.ts'
-import type { CanvasCardScope } from '../slots.ts'
 import { categoryColorOf, categoryLabelMap, kindIconOf } from '../category-label.ts'
 import { basenameOf } from '../text.ts'
 import { FollowUp } from '../follow-up.tsx'
@@ -108,17 +107,9 @@ export interface BoardViewProps {
   readonly front?: ReadonlySet<string> | undefined
   /** Clear every 「新」 mark of the canvas (the chip row's ✓✓); absent on a read-only board. */
   readonly onMarkAllSeen?: (() => void) | undefined
-  /** The genre's card scopes (已进入故事 / 灵感, say), drawn as chips ahead of the categories. */
-  readonly scopes?: readonly CanvasCardScope[] | undefined
-  /** The pressed scope's id, or null. */
-  readonly scope?: string | null | undefined
-  /** The pressed scope's cards (what the grid and the counts narrow to). */
+  /** The pressed genre scope's cards (what the grid and the counts narrow to); the scope control is the tab's. */
   readonly scopeIds?: ReadonlySet<string> | undefined
-  readonly onScope?: ((scope: string | null) => void) | undefined
 }
-
-/** A scope chip's id in the one chip row (category ids never carry the prefix). */
-const SCOPE_CHIP = 'scope:'
 
 /** One comment thread under a card (badge toggle + list + the user's form). */
 function CommentThread({ t, card, readonly, talkAvailable, onComment, onFollowUp }: {
@@ -463,7 +454,7 @@ function UnseenPip({ t, count }: { readonly t: TranslateNS<'canvas'>; readonly c
 export function BoardView({
   t, readonly, board, filter, onFilter, selection, onToggleSelect, onClearSelection, onOpenDetail,
   talkAvailable, onTalk, onWrite, onFollowUp, actions, showArchived, onToggleArchived, newCard,
-  front, onMarkAllSeen, scopes = [], scope = null, scopeIds, onScope,
+  front, onMarkAllSeen, scopeIds,
 }: BoardViewProps): ReactNode {
   /** The batch bar's 「改分类」 row is open (it replaces the action row). */
   const [refile, setRefile] = useState(false)
@@ -483,15 +474,10 @@ export function BoardView({
   const unseenTotal = [...unseen.values()].reduce((sum, n) => sum + n, 0)
   const chips = enabledCategories(board.categories)
   const shown = shownCardsOf(board, filter, front, scopeIds)
-  const liveIds = new Set(visible.map(card => card.id))
   // One chip row in the panel kit's one style (the five mobile complaints,
-  // item 3): the genre's scopes first, as toggles, then 全部 and the categories.
+  // item 3): 全部 and the categories. A genre's scopes sit a level up, in the
+  // face's tools row, so the two filters never read as one list.
   const chipRow: Chip[] = [
-    ...scopes.map(row => ({
-      id: `${SCOPE_CHIP}${row.id}`,
-      label: row.label,
-      count: row.cardIds.filter(id => liveIds.has(id)).length,
-    })),
     {
       id: 'all',
       label: <>{t('board.filter.all')}{unseenTotal > 0 && <UnseenPip t={t} count={unseenTotal} />}</>,
@@ -545,15 +531,8 @@ export function BoardView({
             className={css.chips}
             label={t('board.filter.label')}
             chips={chipRow}
-            value={scope === null ? [filter] : [filter, `${SCOPE_CHIP}${scope}`]}
-            onSelect={id => {
-              if (!id.startsWith(SCOPE_CHIP)) {
-                onFilter(id)
-                return
-              }
-              const picked = id.slice(SCOPE_CHIP.length)
-              onScope?.(picked === scope ? null : picked)
-            }}
+            value={[filter]}
+            onSelect={onFilter}
           />
           {/* The row's tools, outside the sideways scroll so they never slide
               away: ✓✓ lights only while there is something new to mark, and
