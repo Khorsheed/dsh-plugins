@@ -193,7 +193,7 @@ function TagSuggestions({ t, tags, applied, draft, onToggle, onCreate }: {
           <button
             key={tag.id}
             type="button"
-            className={css.tagRow}
+            className={css.tagOption}
             data-on={on || undefined}
             // Keep the field focused: the detail editor closes on blur, and a
             // mousedown that moves focus would dismiss the list mid-click.

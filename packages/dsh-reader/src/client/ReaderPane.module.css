@@ -2056,9 +2056,10 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-/* One vocabulary row: the check column is fixed so every name starts on the same
+/* One vocabulary row in the tag picker (`.tagOption` — not the detail page's
+   `.tagRow`, whose padding and hover this used to leak). The check column is fixed so every name starts on the same
    edge whether or not it is applied. */
-.tagRow,
+.tagOption,
 .tagCreate {
   display: flex;
   align-items: center;
@@ -2075,12 +2076,12 @@
   cursor: pointer;
 }
 
-.tagRow:hover,
+.tagOption:hover,
 .tagCreate:hover {
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
-.tagRow[data-on] {
+.tagOption[data-on] {
   color: var(--dsw-alias-label-primary);
   font-weight: 600;
 }
