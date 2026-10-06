@@ -183,6 +183,13 @@
   opacity: 1;
 }
 
+/* No hover on touch: the remove button stays in sight. */
+@media (hover: none) {
+  .remove {
+    opacity: 1;
+  }
+}
+
 .draw {
   min-width: 0;
 }

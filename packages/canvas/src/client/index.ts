@@ -73,7 +73,8 @@ export type {
 export * from './paste-table.ts'
 export { CANVAS_CHILD_SLOTS, genreKey } from './slots.ts'
 export type {
-  CanvasCardOwnerProps, CanvasChildSlot, CanvasGenreOwnerProps, CanvasNavigate, CanvasNavService, CanvasPageOwnerProps,
+  CanvasCardOwnerProps, CanvasCardScope, CanvasChildSlot, CanvasGenreOwnerProps, CanvasManuscriptsOwnerProps, CanvasNavigate,
+  CanvasNavService, CanvasPageOwnerProps, CanvasScopesOwnerProps, CanvasTabLabelOwnerProps,
 } from './slots.ts'
 
 /**

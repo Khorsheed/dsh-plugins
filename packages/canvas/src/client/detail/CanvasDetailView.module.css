@@ -431,10 +431,11 @@
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
+/* The accent outline, never solid black (docs/panel-design.md 颜色). */
 .ghostActions .accept {
-  background: var(--dsw-alias-brand-primary);
-  border-color: transparent;
-  color: var(--dsw-alias-label-primary-inverted);
+  border-color: var(--dsw-alias-state-business-primary);
+  color: var(--dsw-alias-state-business-primary);
+  font-weight: 600;
 }
 
 /* ------------------------------------------------------------------ source */

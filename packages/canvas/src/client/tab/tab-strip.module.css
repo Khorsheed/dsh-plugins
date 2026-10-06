@@ -115,6 +115,13 @@
   display: inline-flex;
 }
 
+/* No hover on touch: every tab shows its ×. */
+@media (hover: none) {
+  .close {
+    display: inline-flex;
+  }
+}
+
 .close:hover {
   background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-primary);

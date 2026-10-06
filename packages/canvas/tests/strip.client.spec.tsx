@@ -360,7 +360,7 @@ function drawOneStroke(container: HTMLElement): void {
 
 /** The strip's rows, left to right, as the user reads them. */
 function stripLabels(): string[] {
-  return screen.getAllByRole('tab').map(node => node.textContent ?? '')
+  return within(screen.getByRole('tablist', { name: '画布' })).getAllByRole('tab').map(node => node.textContent ?? '')
 }
 
 /** Click a card on the board. */
@@ -436,7 +436,7 @@ describe('CanvasTab — the strip routes its rows', () => {
     // The order is the board's CURRENT one: filtered to 问题, the second card
     // is not on the way, and a card the filter hides has no stepper at all.
     backToBoard()
-    fireEvent.click(await screen.findByRole('button', { name: '问题 2' }))
+    fireEvent.click(await screen.findByRole('button', { name: '问题2' }))
     await clickCard('第三张的正文')
     await screen.findByText('2/2')
     fireEvent.click(screen.getByRole('button', { name: '上一张' }))
@@ -470,18 +470,18 @@ describe('CanvasTab — the strip routes its rows', () => {
     ])
     render(<CanvasTab {...props} />)
     await screen.findByText('甲的问题卡')
-    fireEvent.click(screen.getByRole('button', { name: '问题 1' }))
+    fireEvent.click(screen.getByRole('button', { name: '问题1' }))
     await clickCard('甲的问题卡')
     backToBoard()
-    expect((await screen.findByRole('button', { name: '问题 1' })).getAttribute('data-active')).toBe('true')
+    expect((await screen.findByRole('button', { name: '问题1' })).getAttribute('aria-pressed')).toBe('true')
     // Another canvas's board starts fresh…
     act(() => { store.openCanvas(OTHER_ID) })
     await screen.findByText('乙的正文')
-    expect(screen.getByRole('button', { name: '全部 1' }).getAttribute('data-active')).toBe('true')
+    expect(screen.getByRole('button', { name: '全部1' }).getAttribute('aria-pressed')).toBe('true')
     // …and coming back finds the filter this canvas was left with.
     act(() => { store.openCanvas(CANVAS_ID) })
     await screen.findByText('甲的问题卡')
-    expect(screen.getByRole('button', { name: '问题 1' }).getAttribute('data-active')).toBe('true')
+    expect(screen.getByRole('button', { name: '问题1' }).getAttribute('aria-pressed')).toBe('true')
   })
 
   it('re-files a card from its category tag', async () => {

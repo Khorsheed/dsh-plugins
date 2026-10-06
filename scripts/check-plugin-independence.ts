@@ -200,7 +200,9 @@ export const ALLOWED_EDGES: Readonly<Record<string, ReadonlyArray<string>>> = {
   // inline-html-render's SOURCE-plane helpers (buildCardSrcDoc/attachBridge),
   // bundled by tsdown — a compile-time edge with zero runtime coupling (the
   // renderer package need not be installed for canvas to work).
-  'canvas': ['@khorsheed/dsh-inline-html-render'],
+  // canvas also takes ui-panel-kit (panel-responsive-spec P3: the panel root,
+  // the face tabs and the chip row) — the same inlined, zero-runtime edge.
+  'canvas': ['@khorsheed/dsh-inline-html-render', '@khorsheed/dsh-client-ui-panel-kit'],
   // local-files / worktrees → ui-content-preview: the two file surfaces render
   // through ONE shared content pane (proposal preview-kernel). Same shape as
   // the canvas edge above — a compile-time SOURCE-plane import
@@ -225,6 +227,9 @@ export const ALLOWED_EDGES: Readonly<Record<string, ReadonlyArray<string>>> = {
   // row and panel root (panel-responsive-spec P2) — the same inlined,
   // zero-runtime source-plane edge as the file surfaces above.
   'dsh-reader': ['@khorsheed/dsh-client-ui-panel-kit'],
+  // canvas-novel → ui-panel-kit: the chapter book's compact header and the
+  // story view's tabs (panel-responsive-spec P3) — the same inlined edge.
+  'canvas-novel': ['@khorsheed/dsh-client-ui-panel-kit'],
   // room consumes the local-agent delegation facade as an OPTIONAL capability:
   // type-only imports, an optional peer dep, a runtime probe, and tested
   // degradation when the family is absent (the room works with the main agent

@@ -63,7 +63,7 @@ import { useImageLightbox } from './image-lightbox.tsx'
 import { BlockEditor, type CardDrawings } from './BlockEditor.tsx'
 import { typedTitleOf } from '../../card-types.ts'
 import { FieldForm, FieldList, type RefCandidate } from '../type/fields.tsx'
-import { cardSectionsOf, manuscriptsOwned, useGenreSeats } from '../genre-seats.tsx'
+import { cardDeleteNoteOf, cardSectionsOf, manuscriptsOwned, useGenreSeats } from '../genre-seats.tsx'
 import css from './CanvasDetailView.module.css'
 
 /** What each paste arm reports about itself (the toast's whole copy). */
@@ -602,6 +602,14 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
   const turned = open.board.manuscripts
     .filter(row => row.fromCardId === card.id)
     .reduce<BoardManuscript | undefined>((newest, row) => newest === undefined || row.updatedAt > newest.updatedAt ? row : newest, undefined)
+  /** Archive the card, with the undo the toast carries. */
+  const archiveCard = (): void => {
+    void mutate(sid => patchCard(sid, {
+      canvasId: open.board.id, cardId: card.id, status: 'archived',
+    }), 'toast.cardArchived', () => void mutate(sid => patchCard(sid, {
+      canvasId: open.board.id, cardId: card.id, status: 'kept',
+    }), 'toast.cardRestored'))
+  }
   const turnIntoManuscript = async (): Promise<void> => {
     if (turned !== undefined) {
       openManuscript(open.board.id, turned.id, turned.title)
@@ -657,11 +665,7 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
           return
         }
         if (id === 'manuscript') { void turnIntoManuscript(); return }
-        void mutate(sid => patchCard(sid, {
-          canvasId: open.board.id, cardId: card.id, status: 'archived',
-        }), 'toast.cardArchived', () => void mutate(sid => patchCard(sid, {
-          canvasId: open.board.id, cardId: card.id, status: 'kept',
-        }), 'toast.cardRestored'))
+        archiveCard()
       }}
     />
   ) : null
@@ -992,6 +996,10 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
       <ConfirmDelete
         t={t}
         ask={askDelete ? { kind: 'card', canvasId: open.board.id, cardId: card.id } : null}
+        note={askDelete ? cardDeleteNoteOf(seats, open.board, card) : null}
+        onArchive={archived || crumbs?.archiveFirst?.includes(card.id) !== true
+          ? undefined
+          : () => { setAskDelete(false); archiveCard() }}
         onCancel={() => { setAskDelete(false) }}
         onConfirm={() => {
           setAskDelete(false)

@@ -1,16 +1,20 @@
 /**
- * The 长篇小说 genre's browser half: four surfaces that live inside the
- * canvas, on the seats it declares for genres —
+ * The 长篇小说 genre's browser half: the surfaces that live inside the
+ * canvas, on the seats it declares for genres. The genre names its own top
+ * face (`faces.view: 'story'`), so the canvas reads 章节 · 设定 · 故事:
  *
- * - `canvas.board.strip`: the chapter to pick up at, the pending queue
- *   (medium/low-confidence findings, missed plans), the story-log link and the
- *   way into the book;
- * - `canvas.board.manuscripts`: the 成稿 face as the book — contents, then a
- *   chapter-by-chapter reader;
+ * - `canvas.board.tab` (`novel:manuscripts` / `novel:board` / `novel:story`):
+ *   the three labels, 章节 carrying what waits on the person;
+ * - `canvas.board.manuscripts`: 章节 — the book: 继续写, the pending queue,
+ *   the contents, then a chapter-by-chapter reader;
+ * - `canvas.board.view` `novel:story`: 故事 — the story log;
+ * - `canvas.board.scopes` / `canvas.board.graph`: 设定's 已进入故事 / 灵感
+ *   chips and its 连线 layout (characters and relation cards);
+ * - `canvas.card.deleteNote`: the chapters a card is in, on its delete question;
  * - `canvas.page` `novel:story-log`: the story log — foreshadows, relations,
  *   characters and world settings as rows over the chapter columns;
  * - `canvas.page` `novel:chapter`: the same reader, opened at one chapter
- *   (from the strip, or a chat card);
+ *   (from a chat card, or the story log's columns);
  * - `canvas.card.section`: on a foreshadow's page the user's ★, on a
  *   character's page 此刻 (editable).
  *
@@ -35,21 +39,22 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // Type-only: pulls the generated Remote API and ctx.remote merge.
 import type {} from '@khorsheed/dsh-canvas-novel/remote'
 import novelRemote from '@khorsheed/dsh-canvas-novel/remote'
-import { NOVEL_GENRE_ID } from '../types.ts'
+import { NOVEL_GENRE_ID, NOVEL_STORY_FACE } from '../types.ts'
 import { CardSection } from './CardSection.tsx'
 import { ChapterBook } from './ChapterBook.tsx'
 import { ChapterPage } from './ChapterReader.tsx'
 import { CHAPTER_PAGE, STORY_LOG_PAGE, type NovelFace, type NovelRemote } from './contract.ts'
 import { en, NS, zh } from './locales.ts'
-import { PendingStrip } from './PendingStrip.tsx'
-import { StoryLogPage } from './StoryLogPage.tsx'
+import { CardScopes, DeleteNote, FaceLabel, RelationGraph } from './NovelFaces.tsx'
+import { StoryLogPage, StoryView } from './StoryLogPage.tsx'
 import { WriteToolRow, type WriteToolFace } from './WriteToolRow.tsx'
 
 export { CardSection } from './CardSection.tsx'
 export { ChapterBook } from './ChapterBook.tsx'
 export { ChapterPage, ChapterReader } from './ChapterReader.tsx'
-export { PendingList, PendingStrip } from './PendingStrip.tsx'
-export { StoryLogPage } from './StoryLogPage.tsx'
+export { CardScopes, DeleteNote, FaceLabel, RelationGraph, storyUsage } from './NovelFaces.tsx'
+export { PendingList } from './PendingList.tsx'
+export { StoryLogPage, StoryView } from './StoryLogPage.tsx'
 export { WriteToolRow } from './WriteToolRow.tsx'
 export { CHAPTER_PAGE, STORY_LOG_PAGE } from './contract.ts'
 export type { NovelCardOwnerProps, NovelFace, NovelNavigate, NovelOwnerProps, NovelPageOwnerProps, NovelRemote } from './contract.ts'
@@ -65,7 +70,7 @@ export const inject = ['slots', 'remote', 'locale']
 
 /**
  * Client plugin body: mount the Remote, register the dictionaries, then the
- * strip, the book, the two pages and the tool row.
+ * faces, the book, the two pages and the tool row.
  * @param ctx - client root context.
  */
 export async function apply(ctx: Context): Promise<() => Promise<void>> {
@@ -84,12 +89,33 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     inject: (key: string, callback: () => () => void) => () => void
     register: (options: Record<string, unknown>, component: unknown) => () => void
   }
-  ctx.effect(() => seats.inject('canvas.board.strip', () => seats.register({
-    name: 'canvas.board.strip',
-    id: NOVEL_GENRE_ID,
+  const genreKey = (name: string): string => `${NOVEL_GENRE_ID}:${name}`
+  for (const name of ['manuscripts', 'board', NOVEL_STORY_FACE]) {
+    ctx.effect(() => seats.inject('canvas.board.tab', () => seats.register({
+      name: 'canvas.board.tab',
+      key: genreKey(name),
+      locale: NS,
+      inject: () => face,
+    }, FaceLabel)), `canvas-novel: face label ${name}`)
+  }
+  ctx.effect(() => seats.inject('canvas.board.view', () => seats.register({
+    name: 'canvas.board.view',
+    key: genreKey(NOVEL_STORY_FACE),
     locale: NS,
     inject: () => face,
-  }, PendingStrip)), 'canvas-novel: board strip')
+  }, StoryView)), 'canvas-novel: story face')
+  for (const [slot, component] of [
+    ['canvas.board.scopes', CardScopes],
+    ['canvas.board.graph', RelationGraph],
+    ['canvas.card.deleteNote', DeleteNote],
+  ] as const) {
+    ctx.effect(() => seats.inject(slot, () => seats.register({
+      name: slot,
+      key: NOVEL_GENRE_ID,
+      locale: NS,
+      inject: () => face,
+    }, component)), `canvas-novel: ${slot}`)
+  }
   ctx.effect(() => seats.inject('canvas.board.manuscripts', () => seats.register({
     name: 'canvas.board.manuscripts',
     key: NOVEL_GENRE_ID,

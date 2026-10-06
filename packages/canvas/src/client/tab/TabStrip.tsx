@@ -94,7 +94,7 @@ export function TabStrip({ t, rows, active, onSelect, onClose, tail }: TabStripP
 
   return (
     <div className={css.stripFrame}>
-      <div ref={stripRef} className={css.strip} role="tablist">
+      <div ref={stripRef} className={css.strip} role="tablist" aria-label={t('strip.canvases')}>
         {rows.map(row => (
           <span key={row.id} className={css.tab} data-active={row.id === active || undefined}>
             <button

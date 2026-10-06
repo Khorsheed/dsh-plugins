@@ -420,7 +420,7 @@ interface Face {
 /** Mount the tab, switch to the link face, and wait for the stage to hold `count` nodes. */
 async function openLinkFace(bench: Harness, count: number): Promise<Face> {
   const view = render(<CanvasTab {...bench.props} />)
-  fireEvent.click(await screen.findByRole('button', { name: '连线' }))
+  fireEvent.click(await screen.findByRole('tab', { name: '连线' }))
   await waitFor(() => {
     expect(nodesOf(view.container)).toHaveLength(count)
   })
@@ -438,15 +438,15 @@ describe('LinkView — the stage mounts from the board', () => {
       boards: [board(CANVAS_ID, [card('c_1'), card('c_2'), card('c_old', { status: 'archived', text: '归档掉的旧卡' })])],
     })
     const { container } = render(<CanvasTab {...bench.props} />)
-    await screen.findByRole('button', { name: '连线' })
-    expect(screen.getByRole('button', { name: '卡板' }).getAttribute('aria-pressed')).toBe('true')
-    expect(screen.getByRole('button', { name: '连线' }).getAttribute('aria-pressed')).toBe('false')
-    fireEvent.click(screen.getByRole('button', { name: '连线' }))
+    await screen.findByRole('tab', { name: '连线' })
+    expect(screen.getByRole('tab', { name: '卡板' }).getAttribute('aria-selected')).toBe('true')
+    expect(screen.getByRole('tab', { name: '连线' }).getAttribute('aria-selected')).toBe('false')
+    fireEvent.click(screen.getByRole('tab', { name: '连线' }))
     await waitFor(() => {
       expect(nodesOf(container).map(row => row.dataset.node)).toEqual(['c_1', 'c_2'])
     })
-    expect(screen.getByRole('button', { name: '卡板' }).getAttribute('aria-pressed')).toBe('false')
-    expect(screen.getByRole('button', { name: '连线' }).getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByRole('tab', { name: '卡板' }).getAttribute('aria-selected')).toBe('false')
+    expect(screen.getByRole('tab', { name: '连线' }).getAttribute('aria-selected')).toBe('true')
     expect(container.querySelector('[data-node="c_old"]')).toBeNull()
     expect(screen.queryByText('归档掉的旧卡')).toBeNull()
   })

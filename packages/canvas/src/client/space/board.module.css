@@ -285,21 +285,25 @@
   margin-bottom: 12px;
 }
 
-.chips {
-  display: flex;
+.chipRow > .chips {
   flex: 1;
   min-width: 0;
-  gap: 6px;
-  flex-wrap: nowrap;
-  overflow-x: auto;
+  padding: 0;
+}
+
+/* The chips themselves are the panel kit's (ChipRow); a new-card pip rides
+   the chip's corner, so the chip is its anchor. */
+.chipRow > .chips > button {
+  position: relative;
+}
+
+.chipLabel {
+  display: inline-flex;
   align-items: center;
-  scrollbar-width: none;
+  gap: 5px;
 }
 
-.chips::-webkit-scrollbar {
-  display: none;
-}
-
+/* The batch bar's 改分类 targets: plain chips, not a filter row. */
 .chip {
   position: relative;
   flex: none;
@@ -315,27 +319,10 @@
   cursor: pointer;
 }
 
-.chip:hover {
-  border-color: var(--dsw-alias-label-caption);
-}
-
-/* The one place hue is spent: the wash and the frame, never the label (blue
-   text on an 8% blue wash reads 3.84:1 at 12px in light). */
-.chip[data-active="true"] {
-  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 8%, transparent);
-  color: var(--dsw-alias-label-primary);
-  border-color: color-mix(in srgb, var(--dsw-alias-state-business-primary) 45%, transparent);
-  font-weight: 600;
-}
-
-.chipCount {
-  color: var(--dsw-alias-label-caption);
-}
-
-/* A category nothing is filed under yet stays reachable (filter, drop target);
-   only its 0 steps back — dimming the whole chip made the label unreadable. */
-.chip[data-empty="true"]:not([data-active="true"]) .chipCount {
-  opacity: 0.5;
+@media (hover: hover) {
+  .chip:hover {
+    border-color: var(--dsw-alias-label-caption);
+  }
 }
 
 /* The category's dot (chips, card tags, the category page): an ADDED cue —
@@ -464,12 +451,14 @@
   padding: 11px 12px;
   cursor: pointer;
   min-height: 84px;
+  /* panel-check: allow-color — shadow ink is black in both themes. */
   box-shadow: 0 1px 2px color-mix(in srgb, #000 6%, transparent);
   transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
 }
 
 .card:hover {
   border-color: var(--dsw-alias-label-caption);
+  /* panel-check: allow-color — shadow ink is black in both themes. */
   box-shadow: 0 2px 8px color-mix(in srgb, #000 8%, transparent);
 }
 
@@ -781,10 +770,11 @@
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
+/* The accent outline, never solid black (docs/panel-design.md 颜色). */
 .ghostActions .accept {
-  background: var(--dsw-alias-brand-primary);
-  border-color: transparent;
-  color: var(--dsw-alias-label-primary-inverted);
+  border-color: var(--dsw-alias-state-business-primary);
+  color: var(--dsw-alias-state-business-primary);
+  font-weight: 600;
 }
 
 /* Card text editing: the same three invariants as the pad editor —

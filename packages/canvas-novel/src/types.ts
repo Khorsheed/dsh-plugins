@@ -40,6 +40,9 @@ export interface WorkMeta {
 /** The novel genre's id on the canvas. */
 export const NOVEL_GENRE_ID = 'novel'
 
+/** The genre's own top face (故事, the story log), as `faces.view` names it. */
+export const NOVEL_STORY_FACE = 'story'
+
 /** A canvas id from untrusted input (the canvas's own id rule), or undefined. */
 export function normalizeWorkId(id: unknown): string | undefined {
   return typeof id === 'string' && /^canvas_[a-z0-9]{8,40}$/.test(id) ? id : undefined

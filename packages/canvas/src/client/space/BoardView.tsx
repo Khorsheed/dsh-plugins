@@ -21,6 +21,7 @@
 import { useRef, useState, type ReactNode } from 'react'
 import { IconArchiveOutlineMedium, IconCheckDoubleOutlineMedium, IconCheckOutlineMedium, IconChevronDownOutlineMedium, IconChevronRightOutlineMedium, IconCloseOutlineMedium, IconCodeOutlineMedium, IconLinkOutlineMedium, IconListPenOutlineMedium, IconNewChatOutlineMedium, IconRefreshOutlineMedium, IconSparkleMedium, IconTrashOutlineMedium } from '../icons.tsx'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
+import { ChipRow, type Chip } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
 import {
   documentHeadingOf, enabledCategories, isLongCardText,
   type BoardCard, type BoardCardStatus, type BoardCategory,
@@ -106,6 +107,8 @@ export interface BoardViewProps {
   readonly front?: ReadonlySet<string> | undefined
   /** Clear every 「新」 mark of the canvas (the chip row's ✓✓); absent on a read-only board. */
   readonly onMarkAllSeen?: (() => void) | undefined
+  /** The pressed genre scope's cards (what the grid and the counts narrow to); the scope control is the tab's. */
+  readonly scopeIds?: ReadonlySet<string> | undefined
 }
 
 /** One comment thread under a card (badge toggle + list + the user's form). */
@@ -426,14 +429,16 @@ function CardItem({ t, board, card, definition, nameOf, kindLabel, kindColor, re
  * the live (non-archived) cards, narrowed to one category unless the filter
  * is 全部, with the `front` cards (this visit's new ones) moved ahead in
  * their board order. The detail's ‹n/m› steps through exactly this list, so
- * stepping past a card means the card that sat next to it on the board.
+ * stepping past a card means the card that sat next to it on the board. A
+ * genre scope (`scopeIds`) narrows it further.
  */
 export function shownCardsOf(
   board: CanvasBoard,
   filter: 'all' | CardCategoryId,
   front?: ReadonlySet<string>,
+  scopeIds?: ReadonlySet<string>,
 ): readonly BoardCard[] {
-  const visible = board.cards.filter(card => card.status !== 'archived')
+  const visible = board.cards.filter(card => card.status !== 'archived' && (scopeIds === undefined || scopeIds.has(card.id)))
   const shown = filter === 'all' ? visible : visible.filter(card => card.kind === filter)
   if (front === undefined || front.size === 0) return shown
   return [...shown.filter(card => front.has(card.id)), ...shown.filter(card => !front.has(card.id))]
@@ -449,7 +454,7 @@ function UnseenPip({ t, count }: { readonly t: TranslateNS<'canvas'>; readonly c
 export function BoardView({
   t, readonly, board, filter, onFilter, selection, onToggleSelect, onClearSelection, onOpenDetail,
   talkAvailable, onTalk, onWrite, onFollowUp, actions, showArchived, onToggleArchived, newCard,
-  front, onMarkAllSeen,
+  front, onMarkAllSeen, scopeIds,
 }: BoardViewProps): ReactNode {
   /** The batch bar's 「改分类」 row is open (it replaces the action row). */
   const [refile, setRefile] = useState(false)
@@ -461,13 +466,42 @@ export function BoardView({
   const labels = categoryLabelMap(board.categories, t)
   const counts = new Map<CardCategoryId, number>()
   const unseen = new Map<CardCategoryId, number>()
-  for (const card of visible) {
+  const scoped = scopeIds === undefined ? visible : visible.filter(card => scopeIds.has(card.id))
+  for (const card of scoped) {
     counts.set(card.kind, (counts.get(card.kind) ?? 0) + 1)
     if (card.unseen === true) unseen.set(card.kind, (unseen.get(card.kind) ?? 0) + 1)
   }
   const unseenTotal = [...unseen.values()].reduce((sum, n) => sum + n, 0)
   const chips = enabledCategories(board.categories)
-  const shown = shownCardsOf(board, filter, front)
+  const shown = shownCardsOf(board, filter, front, scopeIds)
+  // One chip row in the panel kit's one style (the five mobile complaints,
+  // item 3): 全部 and the categories. A genre's scopes sit a level up, in the
+  // face's tools row, so the two filters never read as one list.
+  const chipRow: Chip[] = [
+    {
+      id: 'all',
+      label: <>{t('board.filter.all')}{unseenTotal > 0 && <UnseenPip t={t} count={unseenTotal} />}</>,
+      count: scoped.length,
+    },
+    ...chips.map(category => {
+      const KindIcon = kindIconOf(category.id)
+      return {
+        id: category.id,
+        color: categoryColorOf(board.categories, category.id),
+        count: counts.get(category.id) ?? 0,
+        label: (
+          <span className={css.chipLabel}>
+            {KindIcon !== undefined && <KindIcon size={12} />}
+            {labels.get(category.id) ?? category.id}
+            {(unseen.get(category.id) ?? 0) > 0 && <UnseenPip t={t} count={unseen.get(category.id) ?? 0} />}
+            {(category.proposal !== undefined || category.draft === true) && (
+              <span className={css.chipPending} title={t('type.pending')} />
+            )}
+          </span>
+        ),
+      }
+    }),
+  ]
   const draftKind: CardCategoryId = filter !== 'all' && chips.some(category => category.id === filter)
     ? filter
     : chips[0]?.id ?? 'fragment'
@@ -493,39 +527,13 @@ export function BoardView({
     <section className={css.main}>
       <div className={css.boardScroll} data-canvas-scroll="board">
         <div className={css.chipRow}>
-          <div className={css.chips}>
-            <button
-              type="button"
-              className={css.chip}
-              data-active={filter === 'all' || undefined}
-              onClick={() => { onFilter('all') }}
-            >
-              {t('board.filter.all')} <span className={css.chipCount}>{visible.length}</span>
-              {unseenTotal > 0 && <UnseenPip t={t} count={unseenTotal} />}
-            </button>
-            {chips.map(category => {
-              const KindIcon = kindIconOf(category.id)
-              return (
-                <button
-                  key={category.id}
-                  type="button"
-                  className={css.chip}
-                  data-active={filter === category.id || undefined}
-                  data-empty={(counts.get(category.id) ?? 0) === 0 || undefined}
-                  onClick={() => { onFilter(category.id) }}
-                >
-                  <span className={css.catDot} style={{ background: categoryColorOf(board.categories, category.id) }} />
-                  {KindIcon !== undefined && <KindIcon size={12} />}
-                  {labels.get(category.id) ?? category.id}{' '}
-                  <span className={css.chipCount}>{counts.get(category.id) ?? 0}</span>
-                  {(unseen.get(category.id) ?? 0) > 0 && <UnseenPip t={t} count={unseen.get(category.id) ?? 0} />}
-                  {(category.proposal !== undefined || category.draft === true) && (
-                    <span className={css.chipPending} title={t('type.pending')} />
-                  )}
-                </button>
-              )
-            })}
-          </div>
+          <ChipRow
+            className={css.chips}
+            label={t('board.filter.label')}
+            chips={chipRow}
+            value={[filter]}
+            onSelect={onFilter}
+          />
           {/* The row's tools, outside the sideways scroll so they never slide
               away: ✓✓ lights only while there is something new to mark, and
               管理分类 is an icon beside it rather than one more chip. */}

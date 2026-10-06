@@ -1,6 +1,11 @@
 /* The canvas tab's own chrome: the topbar, the switcher dropdown, and the
    drill back bar. Board/card styles live in board.module.css. */
 
+/* The panel kit's root (the `dsh-panel` width container) around the surface. */
+.panel {
+  height: 100%;
+}
+
 .root {
   container: canvas-tab / inline-size;
   position: relative;
@@ -29,13 +34,6 @@
   padding: 0 12px;
   border-bottom: 1px solid var(--dsw-alias-border-l1);
   flex-shrink: 0;
-}
-
-@container canvas-tab (max-width: 560px) {
-  .topbar { flex-wrap: wrap; padding: 8px 12px; }
-  .boardTitle { flex: 1 1 60%; }
-  .viewButton { min-height: 40px; }
-  .attachChip { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 }
 
 /* The board row's own header says which canvas it is and how full it is. The
@@ -79,39 +77,80 @@
   flex: 1;
 }
 
-/* The board's two faces. A segmented control, not two tabs: it switches what
-   the SAME board is for, and the selection crosses the switch. */
-.viewSwitch {
-  display: inline-flex;
-  align-items: center;
-  gap: 1px;
-  padding: 1px;
-  border: 1px solid var(--dsw-alias-border-l1);
-  border-radius: 7px;
-  background: var(--dsw-alias-bg-layer-1);
+/* The board's faces: underline tabs flush with the header's own rule, so the
+   accent bar sits on it. */
+.faceTabs {
+  align-self: stretch;
+  height: auto;
+  min-width: 0;
+  box-shadow: none;
 }
 
-.viewButton {
+/* A genre canvas's 卡板 layouts (网格 / 连线): two quiet words, the pressed
+   one in the accent — a second, smaller axis than the face tabs. */
+/* A genre face's own tools row (设定: 故事筛选 · 网格 / 连线), a level below
+   the face tabs: small segmented controls on a filled track, so they read as
+   settings of the face, not as more faces or more filter chips. */
+.faceTools {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 18px 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.faceTools::-webkit-scrollbar { display: none; }
+
+.segmented {
+  display: inline-flex;
+  flex: none;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-3);
+}
+
+/* The layout control keeps the row's right end, scope or none. */
+.segmented[data-layout] { margin-left: auto; }
+
+.segmented button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   border: 0;
   border-radius: 6px;
-  padding: 2px 9px;
+  padding: 3px 10px;
   background: transparent;
-  color: var(--dsw-alias-label-tertiary);
+  color: var(--dsw-alias-label-secondary);
   font: var(--dsw-font-xxs-12);
   line-height: 1.5;
   white-space: nowrap;
   cursor: pointer;
 }
 
-.viewButton:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-secondary);
+.segmented button[aria-pressed="true"] {
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 12%);
 }
 
-.viewButton[data-on] {
-  background: var(--dsw-alias-interactive-bg-active);
-  color: var(--dsw-alias-brand-primary);
-  font-weight: 500;
+.segmented button:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 1px; }
+
+.segCount {
+  color: var(--dsw-alias-label-tertiary);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (hover: hover) {
+  .segmented button:hover:not([aria-pressed="true"]) { color: var(--dsw-alias-label-primary); }
+}
+
+@media (pointer: coarse) {
+  .segmented button { min-height: 32px; }
+  .moreButton { width: 36px; height: 36px; }
 }
 
 .readonlyHint {
@@ -179,4 +218,16 @@
   margin-left: 4px;
   font-variant-numeric: tabular-nums;
   opacity: 0.7;
+}
+
+/* Compact: the strip above already names the canvas, so the header drops the
+   name, the count and the attached folders and keeps one row — the face tabs
+   and the ⋯ (the five mobile complaints, item 1: the name twice, four rows
+   before the body). Last in the file: the base rules above set
+   these elements' display, and a same-specificity rule after this would win. */
+@container dsh-panel (max-width: 560px) {
+  .topbar { padding: 0 8px 0 4px; }
+  .boardTitle, .boardCount, .attachChip, .spacer { display: none; }
+  .faceTabs { flex: 1; }
+  .faceTools { padding: 10px 16px 0; }
 }

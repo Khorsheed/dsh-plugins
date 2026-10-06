@@ -475,6 +475,15 @@ export interface CanvasGenreDefinition {
    */
   readonly ownsManuscripts?: boolean
   /**
+   * The genre's top faces (with `ownsManuscripts`). Without it a genre canvas
+   * keeps the canvas's 卡板 · 连线 · 成稿. With it the faces read 成稿 · 卡板 ·
+   * the genre's own face `view` (its `canvas.board.view` entry), 连线 becomes
+   * the 卡板 face's second layout, and the canvas opens on 成稿 — on 卡板 while
+   * the genre has written nothing. Each label is the genre's
+   * `canvas.board.tab` entry (the novel: 章节 · 设定 · 故事).
+   */
+  readonly faces?: CanvasGenreFaces
+  /**
    * The genre's say in the canvas tools. On the genre's canvases `canvas_read`
    * and `canvas_write` stay the one place the agent reads and writes cards,
    * and hand the genre's own categories (those with a `role`) to these hooks:
@@ -521,6 +530,12 @@ export interface CanvasGenreAgent {
   readonly manuscriptGuide?: string
 }
 
+/** The genre's own top face (`CanvasGenreDefinition.faces`). */
+export interface CanvasGenreFaces {
+  /** The face's key: `canvas.board.view` and `canvas.board.tab` are keyed `genreKey(genre, view)`. */
+  readonly view: string
+}
+
 /** One registered genre as the browser lists it. */
 export interface CanvasGenreSummary {
   readonly id: string
@@ -531,6 +546,7 @@ export interface CanvasGenreSummary {
   readonly roles: readonly { readonly role: string; readonly label: string }[]
   readonly agentRow?: string
   readonly ownsManuscripts?: boolean
+  readonly faces?: CanvasGenreFaces
 }
 
 /** The genre one canvas selected (absent on a canvas without one — the default). */
