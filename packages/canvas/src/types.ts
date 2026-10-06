@@ -1500,6 +1500,8 @@ export interface BoardListResult {
 export interface BoardCreateRequest {
   readonly title: string
   readonly attachedWorkspaces?: readonly string[]
+  /** Load this installed genre at birth, as selectGenre would (null/absent: plain canvas). */
+  readonly genreId?: string | null
 }
 
 /** Read one board with the freshness token a later mutation must present. */

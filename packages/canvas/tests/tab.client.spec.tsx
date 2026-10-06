@@ -322,8 +322,10 @@ describe('CanvasTab — list, switcher, board', () => {
     fireEvent.click(screen.getByRole('checkbox', { name: 'report' }))
     fireEvent.click(screen.getByRole('button', { name: '建立' }))
     await waitFor(() => {
-      expect(mocks.createCanvas).toHaveBeenCalledWith('s1', { title: '远程团队的书面沟通礼仪', attachedWorkspaces: ['/ws/report'] })
+      expect(mocks.createCanvas).toHaveBeenCalledWith('s1', { title: '远程团队的书面沟通礼仪', attachedWorkspaces: ['/ws/report'], genreId: null })
     })
+    // No genre installed: the form carries no genre pick.
+    expect(screen.queryByRole('radiogroup', { name: '体裁' })).toBeNull()
     // A created canvas is a NEW ROW and the showing one: the strip is where a
     // canvas appears now (its name is on the row and on the board header, so
     // the row is the only thing that identifies the event).
@@ -839,6 +841,20 @@ describe('CanvasTab — genre seats (创作体裁)', () => {
   const NOVEL_SUMMARY = {
     id: 'novel', label: '长篇小说', version: 'novel@1', description: '', roles: [], agentRow: '@khorsheed/dsh-canvas-novel/agent',
   }
+
+  it('picks a genre in the create form when one is installed', async () => {
+    const { mocks, props } = makeHarness()
+    render(<CanvasTab {...props} listGenres={vi.fn(async () => ({ ok: true, value: [NOVEL_SUMMARY] })) as never} />)
+    fireEvent.click(await screen.findByRole('button', { name: '打开或新建画布' }))
+    fireEvent.click(screen.getByRole('button', { name: /新画布/ }))
+    fireEvent.change(screen.getByPlaceholderText('这块画布思考什么主题？'), { target: { value: '灯塔' } })
+    expect(await screen.findByRole('radio', { name: '不用体裁' })).toHaveProperty('checked', true)
+    fireEvent.click(screen.getByRole('radio', { name: NOVEL_SUMMARY.label }))
+    fireEvent.click(screen.getByRole('button', { name: '建立' }))
+    await waitFor(() => {
+      expect(mocks.createCanvas).toHaveBeenCalledWith('s1', { title: '灯塔', attachedWorkspaces: [], genreId: NOVEL_SUMMARY.id })
+    })
+  })
 
   it('dispatches no seat on a canvas without a genre, and the ⋯ menu stays the one it was', async () => {
     const { props } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1')])] })

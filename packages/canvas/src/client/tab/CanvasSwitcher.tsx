@@ -1,7 +1,8 @@
 /**
  * The canvas switcher: the ＋ right after the last tab, and its dropdown.
  * One hierarchy, no redundant headers: a leading "+ 新画布" row that unfolds
- * the inline create form (topic input + attach multi-select + create/cancel),
+ * the inline create form (topic input + genre pick when one is installed +
+ * attach multi-select + create/cancel),
  * then the active rows (open on click, archive on hover) and the archived well
  * (collapsed, restore).
  *
@@ -26,7 +27,7 @@ import {
 } from 'react'
 import { IconArchiveOutlineMedium, IconChevronDownOutlineMedium, IconChevronRightOutlineMedium, IconPlusOutlineMedium, IconRefreshOutlineMedium } from '../icons.tsx'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
-import type { CanvasSummary } from '../../types.ts'
+import type { CanvasGenreSummary, CanvasSummary } from '../../types.ts'
 import type {} from '../locales.ts'
 import { agoOf } from '../text.ts'
 import { useDismiss } from '../use-dismiss.ts'
@@ -47,8 +48,10 @@ export interface CanvasSwitcherProps {
   readonly canvases: readonly CanvasSummary[] | null
   readonly openId: string | null
   readonly workspaces: readonly SwitcherWorkspace[]
+  /** Installed genres; empty hides the create form's genre pick. */
+  readonly genres: readonly CanvasGenreSummary[]
   readonly onOpen: (canvasId: string) => void
-  readonly onCreate: (title: string, attachedWorkspaces: readonly string[]) => Promise<boolean>
+  readonly onCreate: (title: string, attachedWorkspaces: readonly string[], genreId: string | null) => Promise<boolean>
   readonly onArchive: (row: CanvasSummary, archived: boolean) => Promise<void>
 }
 
@@ -63,12 +66,13 @@ function metaOf(row: CanvasSummary, t: TranslateNS<'canvas'>): string {
 
 /** The canvas switcher dropdown. */
 export function CanvasSwitcher({
-  t, readonly, canvases, openId, workspaces, onOpen, onCreate, onArchive,
+  t, readonly, canvases, openId, workspaces, genres, onOpen, onCreate, onArchive,
 }: CanvasSwitcherProps): ReactNode {
   const [open, setOpen] = useState(false)
   const [creating, setCreating] = useState(false)
   const [newTitle, setNewTitle] = useState('')
   const [attachPicks, setAttachPicks] = useState<ReadonlySet<string>>(new Set())
+  const [genrePick, setGenrePick] = useState<string | null>(null)
   const [showArchived, setShowArchived] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -104,18 +108,19 @@ export function CanvasSwitcher({
     }
     setBusy(true)
     try {
-      const okCreated = await onCreate(title, [...attachPicks])
+      const okCreated = await onCreate(title, [...attachPicks], genrePick)
       if (okCreated) {
         setCreating(false)
         setNewTitle('')
         setAttachPicks(new Set())
+        setGenrePick(null)
         setOpen(false)
         setError(null)
       }
     } finally {
       setBusy(false)
     }
-  }, [newTitle, attachPicks, onCreate, t])
+  }, [newTitle, attachPicks, genrePick, onCreate, t])
 
   return (
     <div className={css.switcher} ref={rootRef}>
@@ -150,6 +155,26 @@ export function CanvasSwitcher({
                     setCreating(false)
                   }}
                 />
+                {/* The genre at birth saves the ⋯ → 创作体裁 second step, and the
+                    genre's tools reach the session from the first message. */}
+                {genres.length > 0 && (
+                  <>
+                    <span className={css.formLabel}>{t('space.newGenre')}</span>
+                    <div className={css.attachList} role="radiogroup" aria-label={t('space.newGenre')}>
+                      {[null, ...genres].map(genre => (
+                        <label key={genre?.id ?? ''} className={css.attachItem} title={genre?.description}>
+                          <input
+                            type="radio"
+                            name="canvas-new-genre"
+                            checked={genrePick === (genre?.id ?? null)}
+                            onChange={() => { setGenrePick(genre?.id ?? null) }}
+                          />
+                          {genre?.label ?? t('genre.none')}
+                        </label>
+                      ))}
+                    </div>
+                  </>
+                )}
                 <span className={css.formLabel}>{t('space.newAttach')}</span>
                 {workspaces.length === 0 ? (
                   <span className={css.formNote}>{t('space.noWorkspace')}</span>
@@ -190,6 +215,7 @@ export function CanvasSwitcher({
                   setCreating(true)
                   setNewTitle('')
                   setAttachPicks(new Set())
+                  setGenrePick(null)
                   setError(null)
                 }}
               >

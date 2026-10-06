@@ -102,6 +102,22 @@ function seedMissingRoles(board: CanvasBoard, genre: CanvasGenreDefinition): voi
   }
 }
 
+/**
+ * Load a genre onto a board in place. Only the first selection steps the
+ * empty built-ins aside; switching genres keeps the record, so a later clear
+ * still restores them.
+ */
+function applyGenre(board: CanvasBoard, genre: CanvasGenreDefinition, now: string): void {
+  const hid = board.genre !== undefined ? board.genre.hid ?? [] : board.categories
+    .filter(category => isBoardCardKind(category.id) && category.enabled && !board.cards.some(card => card.kind === category.id))
+    .map(category => category.id as BoardCardKind)
+  for (const category of board.categories) {
+    if (hid.includes(category.id as BoardCardKind)) category.enabled = false
+  }
+  seedMissingRoles(board, genre)
+  board.genre = { id: genre.id, version: genre.version, selectedAt: now, ...(hid.length === 0 ? {} : { hid }) }
+}
+
 /** A category row's type half, as stored (the catalog verb carries it over untouched). */
 function typePartOf(category: BoardCategory): Partial<BoardCategory> {
   return {
@@ -394,13 +410,17 @@ export class CanvasBoardService {
   /**
    * Create one canvas. The title is sanitized; workspaces attach by their
    * absolute paths as given (the client offers the registered ones).
-   * @param request - topic title and optional attached workspace paths.
+   * @param request - topic title, optional attached workspace paths, and an
+   *   optional genre loaded at birth (the 选体裁 gesture, minus a second step).
    * @param session - the session that owns the gesture; supplies the fence.
-   * @returns the new board and its first freshness token, or the failure code.
+   * @returns the new board and its first freshness token, or the failure code
+   *   (`missing`: the genre is not installed).
    */
   async createCanvas(request: BoardCreateRequest, session: Session): Promise<BoardMutationResult> {
     const title = sanitizeCanvasTitle(request.title)
     if (title === undefined) return { ok: false, error: 'invalid-name' }
+    const genre = typeof request.genreId === 'string' ? this.genres.get(request.genreId) : undefined
+    if (genre === undefined && typeof request.genreId === 'string') return { ok: false, error: 'missing' }
     const now = new Date().toISOString()
     const board: CanvasBoard = {
       id: makeBoardId('canvas', Date.now(), randomSuffix()),
@@ -417,7 +437,10 @@ export class CanvasBoardService {
       createdAt: now,
       updatedAt: now,
     }
-    return this.writeNew(board, session)
+    if (genre !== undefined) applyGenre(board, genre, now)
+    const result = await this.writeNew(board, session)
+    if (result.ok && genre !== undefined) this.ctx.emit('canvas/genre-changed', result.board.id, genre.id)
+    return result
   }
 
   /**
@@ -1061,16 +1084,7 @@ export class CanvasBoardService {
         delete board.genre
         return board
       }
-      // Only the first selection steps the built-ins aside; switching genres
-      // keeps the record, so a later clear still restores them.
-      const hid = board.genre !== undefined ? board.genre.hid ?? [] : board.categories
-        .filter(category => isBoardCardKind(category.id) && category.enabled && !board.cards.some(card => card.kind === category.id))
-        .map(category => category.id as BoardCardKind)
-      for (const category of board.categories) {
-        if (hid.includes(category.id as BoardCardKind)) category.enabled = false
-      }
-      seedMissingRoles(board, genre)
-      board.genre = { id: genre.id, version: genre.version, selectedAt: now, ...(hid.length === 0 ? {} : { hid }) }
+      applyGenre(board, genre, now)
       return board
     })
     if (!result.ok) return result

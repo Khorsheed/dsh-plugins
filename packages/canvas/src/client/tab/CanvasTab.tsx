@@ -586,9 +586,13 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
 
   /* --------------------------------------------------------- canvas gestures */
 
-  const submitCreate = useCallback(async (title: string, attachedWorkspaces: readonly string[]): Promise<boolean> => {
+  const submitCreate = useCallback(async (
+    title: string,
+    attachedWorkspaces: readonly string[],
+    genreId: string | null,
+  ): Promise<boolean> => {
     if (sessionId === undefined) return false
-    const value = await run(() => createCanvas(sessionId, { title, attachedWorkspaces }))
+    const value = await run(() => createCanvas(sessionId, { title, attachedWorkspaces, genreId }))
     if (value === null) return false
     if (!value.ok) {
       showToast(errorText(value.error))
@@ -830,6 +834,7 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
             openId={openId}
             workspaces={workspaces}
             onOpen={showCanvas}
+            genres={genres}
             onCreate={submitCreate}
             onArchive={setCanvasArchived}
           />
