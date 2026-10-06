@@ -252,7 +252,11 @@ function clientConfig(id: string, entry: string): UserConfig {
         const { code, exports: cssExports } = transform({
           filename: fileId,
           code: source,
-          cssModules: { pattern: '[hash]_[local]' },
+          // Container names stay global: `@container dsh-panel (…)` in a
+          // plugin's stylesheet must match the container the panel kit's
+          // PanelRoot declares in ANOTHER module — hashed per file, the two
+          // names never met and every compact rule was dead (2026-10-06).
+          cssModules: { pattern: '[hash]_[local]', container: false },
           minify: true,
         })
         const classMap: Record<string, string> = {}
