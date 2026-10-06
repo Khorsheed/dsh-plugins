@@ -512,7 +512,7 @@ describe('StoryLogPage', () => {
   it('a chapter number opens that chapter\'s page; 图例 folds open with the hollow rule', async () => {
     const p = page(storyLogRemote())
     render(<StoryLogPage {...p} />)
-    fireEvent.click(await screen.findByRole('button', { name: '1' }))
+    fireEvent.click(await screen.findByRole('button', { name: /^1\D*已对账$/ }))
     expect(p.navigate.openPage).toHaveBeenCalledWith(CHAPTER_PAGE, chapterHeading(t, 1, '第1章'), '1')
     expect(screen.queryByText('空心 = 计划里，还没写到')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: '图例' }))

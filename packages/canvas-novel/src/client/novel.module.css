@@ -820,6 +820,7 @@
 
 .tick[data-phase="reviewed"] { background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 55%, transparent); }
 .tick[data-phase="extracted"] { background: var(--dsw-alias-brand-primary); }
+.tick[data-phase="stale"] { background: var(--dsw-alias-state-warn-primary); }
 .tick[data-phase="writing"],
 .tick[data-phase="fileMissing"] { background: color-mix(in srgb, var(--dsw-alias-brand-primary) 35%, transparent); }
 .tick[data-phase="planning"] { background: none; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--dsw-alias-brand-primary) 45%, transparent); }
@@ -846,6 +847,7 @@
 
 .legend [data-kind="reviewed"]::before { background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 55%, transparent); }
 .legend [data-kind="extracted"]::before { background: var(--dsw-alias-brand-primary); }
+.legend [data-kind="stale"]::before { background: var(--dsw-alias-state-warn-primary); }
 .legend [data-kind="todo"]::before { background: var(--dsw-alias-state-error-primary); }
 .legend [data-kind="writing"]::before { background: color-mix(in srgb, var(--dsw-alias-brand-primary) 35%, transparent); }
 .legend [data-kind="planning"]::before { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--dsw-alias-brand-primary) 45%, transparent); }

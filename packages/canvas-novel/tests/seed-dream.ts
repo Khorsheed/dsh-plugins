@@ -12,6 +12,7 @@
  */
 import { join } from 'node:path'
 import type { NovelCardView } from '../src/genre.ts'
+import { bodyFingerprint } from '../src/types.ts'
 import type { FakeFs } from './fake-fs.ts'
 
 /** The seeded work's coordinates (the work is the canvas `workId`; tests/fake-canvas.ts serves its board). */
@@ -161,12 +162,21 @@ export function seedDreamKeeper(fs: FakeFs, options: { ch5Phase?: 'extracted' | 
     cast: [{ who: CARD.zhao }, { who: CARD.aiwen, role: '带路' }],
     pov: CARD.zhao, hook: '门后传来妹妹的声音',
   }
+  const bodies: Readonly<Record<number, string>> = {
+    1: '赵启明入职那天，监护所的钟没有影子。\n\n（第 1 章正文略。）\n',
+    2: '艾文把蓝色叶子递过来的时候，什么都没解释。\n\n（第 2 章正文略。）\n',
+    3: '半页守则夹在《监护守则》的封皮里，像一句被撕掉的警告。\n\n（第 3 章正文略。）\n',
+    4: '二层梦的边缘没有路，只有一层叠一层的、别人的昨天。\n\n（第 4 章正文略。）\n',
+    5: `${CHAPTER_5_BODY}\n`,
+  }
+  // Seeded chapters were reconciled against exactly these bodies.
+  const read = (n: number): { bodyHash: string } => ({ bodyHash: bodyFingerprint(bodies[n])! })
   const chapters = [
-    { n: 1, seq: 1, title: '入职', file: '第1章.md', phase: 'extracted', recap: '赵启明入职梦境监护所，领到《监护守则》。值夜第一晚，他听见墙内传来敲击，发现档案室的钟楼没有影子。', wordCount: 2800, sessionIds: ['s-seed'], createdAt: stamp(1), updatedAt: stamp(1) },
-    { n: 2, seq: 2, title: '蓝叶', file: '第2章.md', phase: 'extracted', recap: '艾文出现，自称梦引者，递给赵启明一片蓝色叶子当「护身符」。夜里，叶子第一次发光。', wordCount: 3100, sessionIds: ['s-seed'], createdAt: stamp(1), updatedAt: stamp(2) },
-    { n: 3, seq: 3, title: '半页守则', file: '第3章.md', phase: 'extracted', recap: '赵启明在档案室发现前任监护者留下的半页守则，门缝后的敲击变成明确的三下。守则末尾写着：门后不回答问题。', wordCount: 3300, sessionIds: ['s-seed'], createdAt: stamp(2), updatedAt: stamp(3) },
-    { n: 4, seq: 4, title: '二层梦', file: '第4章.md', phase: 'extracted', recap: '赵启明独自进入二层梦差点迷失，被艾文救回。钟楼没有影子的谜底揭开：它立在两层梦之间。赵启明开始怀疑艾文不只是引者。', wordCount: 3600, sessionIds: ['s-seed'], createdAt: stamp(3), updatedAt: stamp(4) },
-    { n: 5, seq: 5, title: '门缝', file: '第5章.md', phase: options.ch5Phase ?? 'extracted', plan: plan5, recap: '赵启明按半页守则找到档案室的门缝。门后传来哼摇篮曲的女声。他决定推门，门缝里飘出一片蓝色的叶子。', wordCount: 3200, sessionIds: ['s-seed'], createdAt: stamp(4), updatedAt: stamp(5) },
+    { ...read(1), settings: [CARD.trueName], n: 1, seq: 1, title: '入职', file: '第1章.md', phase: 'extracted', recap: '赵启明入职梦境监护所，领到《监护守则》。值夜第一晚，他听见墙内传来敲击，发现档案室的钟楼没有影子。', wordCount: 2800, sessionIds: ['s-seed'], createdAt: stamp(1), updatedAt: stamp(1) },
+    { ...read(2), settings: [CARD.leafCarrier], n: 2, seq: 2, title: '蓝叶', file: '第2章.md', phase: 'extracted', recap: '艾文出现，自称梦引者，递给赵启明一片蓝色叶子当「护身符」。夜里，叶子第一次发光。', wordCount: 3100, sessionIds: ['s-seed'], createdAt: stamp(1), updatedAt: stamp(2) },
+    { ...read(3), n: 3, seq: 3, title: '半页守则', file: '第3章.md', phase: 'extracted', recap: '赵启明在档案室发现前任监护者留下的半页守则，门缝后的敲击变成明确的三下。守则末尾写着：门后不回答问题。', wordCount: 3300, sessionIds: ['s-seed'], createdAt: stamp(2), updatedAt: stamp(3) },
+    { ...read(4), n: 4, seq: 4, title: '二层梦', file: '第4章.md', phase: 'extracted', recap: '赵启明独自进入二层梦差点迷失，被艾文救回。钟楼没有影子的谜底揭开：它立在两层梦之间。赵启明开始怀疑艾文不只是引者。', wordCount: 3600, sessionIds: ['s-seed'], createdAt: stamp(3), updatedAt: stamp(4) },
+    { ...read(5), n: 5, seq: 5, title: '门缝', file: '第5章.md', phase: options.ch5Phase ?? 'extracted', plan: plan5, recap: '赵启明按半页守则找到档案室的门缝。门后传来哼摇篮曲的女声。他决定推门，门缝里飘出一片蓝色的叶子。', wordCount: 3200, sessionIds: ['s-seed'], createdAt: stamp(4), updatedAt: stamp(5) },
     { n: 6, seq: 6, title: '门后', file: '第6章.md', phase: 'planning', plan: plan6, sessionIds: ['s-seed'], createdAt: stamp(5), updatedAt: stamp(5) },
   ]
   fs.seed(join(dir, 'chapters.json'), `${JSON.stringify({ version: 1, chapters }, null, 2)}\n`)
@@ -174,9 +184,5 @@ export function seedDreamKeeper(fs: FakeFs, options: { ch5Phase?: 'extracted' | 
   fs.seed(join(dir, 'pending.json'), `${JSON.stringify({ version: 1, items: [] }, null, 2)}\n`)
 
   const bodyDir = join(DREAM.workspace, DREAM.title)
-  fs.seed(join(bodyDir, '第1章.md'), '赵启明入职那天，监护所的钟没有影子。\n\n（第 1 章正文略。）\n')
-  fs.seed(join(bodyDir, '第2章.md'), '艾文把蓝色叶子递过来的时候，什么都没解释。\n\n（第 2 章正文略。）\n')
-  fs.seed(join(bodyDir, '第3章.md'), '半页守则夹在《监护守则》的封皮里，像一句被撕掉的警告。\n\n（第 3 章正文略。）\n')
-  fs.seed(join(bodyDir, '第4章.md'), '二层梦的边缘没有路，只有一层叠一层的、别人的昨天。\n\n（第 4 章正文略。）\n')
-  fs.seed(join(bodyDir, '第5章.md'), `${CHAPTER_5_BODY}\n`)
+  for (const [n, body] of Object.entries(bodies)) fs.seed(join(bodyDir, `第${n}章.md`), body)
 }

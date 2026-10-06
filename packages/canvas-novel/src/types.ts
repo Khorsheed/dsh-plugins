@@ -357,8 +357,13 @@ export interface ExperienceEntry {
  */
 export type ChapterPhase = 'planning' | 'reviewed' | 'extracted'
 
-/** The phase the UI shows, given whether the manuscript has content. `fileMissing`: a chapter past planning whose manuscript file is gone (存量坏数据的温和迁移面). */
-export type EffectiveChapterPhase = 'planning' | 'writing' | 'extracted' | 'reviewed' | 'fileMissing'
+/**
+ * The phase the UI shows, given the manuscript as it is now. `fileMissing`: a
+ * chapter past planning whose manuscript file is gone (存量坏数据的温和迁移面).
+ * `stale` (待对账): a reconciled chapter whose body changed since — its
+ * memory no longer matches the text, so it reconciles again (审过 included).
+ */
+export type EffectiveChapterPhase = 'planning' | 'writing' | 'stale' | 'extracted' | 'reviewed' | 'fileMissing'
 
 /** One planned foreshadow operation (推进/暗示/新埋/揭晓), referencing the ledger by id, or a question for 新埋. */
 export interface ForeshadowOp {
@@ -447,6 +452,10 @@ export interface ChapterRecord {
   /** 2-3 sentence summary, written by the extract import. */
   readonly recap?: string
   readonly wordCount?: number
+  /** The fingerprint ({@link bodyFingerprint}) of the body the last 对账 read; a different body now reads 待对账. */
+  readonly bodyHash?: string
+  /** The world cards the last 对账 found in this chapter (new ones and existing ones it linked). */
+  readonly settings?: readonly string[]
   readonly sessionIds: readonly string[]
   readonly createdAt: string
   readonly updatedAt: string
@@ -469,12 +478,39 @@ export function chapterNumberOfFile(file: string): number | undefined {
   return match === null ? undefined : Number(match[1])
 }
 
-/** The stored phase plus the manuscript fact → the phase the UI shows (规划中→写作中→已抽取→已审过; 审过是人工闸门，永远最后). */
-export function effectiveChapterPhase(chapter: ChapterRecord, hasBody: boolean): EffectiveChapterPhase {
+/**
+ * A manuscript's fingerprint: whitespace is layout, not text, so re-flowing
+ * paragraphs never asks for a new 对账. FNV-1a over the squashed text, plus
+ * its length — a change detector, not a security hash.
+ * @param body - the manuscript.
+ * @returns the fingerprint, or undefined for an empty body.
+ */
+export function bodyFingerprint(body: string): string | undefined {
+  const text = body.replace(/\s+/g, '')
+  if (text === '') return undefined
+  let hash = 0x811c9dc5
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index)
+    hash = Math.imul(hash, 0x01000193) >>> 0
+  }
+  return `${text.length.toString(36)}-${hash.toString(36)}`
+}
+
+/**
+ * The stored phase plus the manuscript as it is now → the phase the UI shows
+ * (规划中→写作中→已抽取→已审过; 审过是人工闸门，永远最后). A reconciled chapter
+ * whose body no longer matches the fingerprint its 对账 stored reads 待对账
+ * (`stale`); a row reconciled before fingerprints existed has none and reads
+ * 待对账 too — nothing vouches that its memory matches the text.
+ * @param chapter - the stored row.
+ * @param fingerprint - the body's {@link bodyFingerprint}, undefined when the body is empty or gone.
+ */
+export function effectiveChapterPhase(chapter: ChapterRecord, fingerprint: string | undefined): EffectiveChapterPhase {
   // A chapter past planning whose manuscript is gone reads 文件丢失, not its
   // stored phase (the gentle migration for pre-F1-2 rows).
-  if (chapter.phase !== 'planning' && !hasBody) return 'fileMissing'
-  if (chapter.phase === 'planning' && hasBody) return 'writing'
+  if (chapter.phase !== 'planning' && fingerprint === undefined) return 'fileMissing'
+  if (chapter.phase === 'planning') return fingerprint === undefined ? 'planning' : 'writing'
+  if (chapter.bodyHash !== fingerprint) return 'stale'
   return chapter.phase
 }
 
@@ -574,6 +610,8 @@ export function normalizeChapter(raw: unknown): ChapterRecord | undefined {
   const wordCount = cleanNumber(record['wordCount'])
   const planConfirmedAt = cleanText(record['planConfirmedAt'], 40)
   const delivery = normalizeDelivery(record['delivery'])
+  const bodyHash = cleanText(record['bodyHash'], 40)
+  const settings = cleanStringList(record['settings'], 200)
   return {
     n,
     seq: cleanNumber(record['seq']) ?? n,
@@ -586,6 +624,8 @@ export function normalizeChapter(raw: unknown): ChapterRecord | undefined {
     ...(delivery === undefined ? {} : { delivery }),
     ...(recap === undefined ? {} : { recap }),
     ...(wordCount === undefined ? {} : { wordCount }),
+    ...(bodyHash === undefined ? {} : { bodyHash }),
+    ...(settings.length === 0 ? {} : { settings }),
     sessionIds: cleanStringList(record['sessionIds'], 40),
     createdAt: cleanText(record['createdAt'], 40) ?? now,
     updatedAt: cleanText(record['updatedAt'], 40) ?? now,
@@ -1011,9 +1051,9 @@ export function laterForeshadowState(a: ForeshadowState, b: ForeshadowState): Fo
  * person. A relation's level-up, rift, repair or new type is one too: the
  * text earned it, but the person decides the pair moved.
  */
-export type PendingKind = 'mention' | 'experience' | 'plan-missed' | 'info-gap' | 'relation'
+export type PendingKind = 'mention' | 'experience' | 'plan-missed' | 'info-gap' | 'relation' | 'setting'
 
-const PENDING_KINDS: readonly PendingKind[] = ['mention', 'experience', 'plan-missed', 'info-gap', 'relation']
+const PENDING_KINDS: readonly PendingKind[] = ['mention', 'experience', 'plan-missed', 'info-gap', 'relation', 'setting']
 
 /**
  * A pending item's proposed record, flattened to JSON-safe scalars (the wire
@@ -1041,6 +1081,9 @@ export interface PendingPayload {
   readonly event?: string
   readonly stage?: string
   readonly toType?: string
+  /** setting: the world card the chapter contradicts, and what the chapter says instead (adopting rewrites the card's 设定). */
+  readonly cardId?: string
+  readonly content?: string
 }
 
 /** One row of `pending.json` (the review queue's snapshot — a derived cache that can be rebuilt). */
@@ -1071,8 +1114,8 @@ function normalizePendingPayload(raw: unknown): PendingPayload {
   if (typeof raw !== 'object' || raw === null) return {}
   const record = raw as Record<string, unknown>
   const out: { -readonly [K in keyof PendingPayload]?: PendingPayload[K] } = {}
-  for (const key of ['foreshadowId', 'kind', 'note', 'answer', 'question', 'characterId', 'fact', 'entry', 'op', 'id', 'relationId', 'event', 'stage', 'toType'] as const) {
-    const value = cleanText(record[key], 500)
+  for (const key of ['foreshadowId', 'kind', 'note', 'answer', 'question', 'characterId', 'fact', 'entry', 'op', 'id', 'relationId', 'event', 'stage', 'toType', 'cardId', 'content'] as const) {
+    const value = cleanText(record[key], key === 'content' ? 2000 : 500)
     if (value !== undefined) out[key] = value
   }
   return out
@@ -1108,7 +1151,7 @@ export function normalizePendingItem(raw: unknown): PendingItem | undefined {
 /* --------------------------------------------------------------- outcomes */
 
 /** The store's failure codes (the canvas vocabulary, plus the chapter gates'). */
-export type NovelError = 'invalid-name' | 'missing' | 'io' | 'stale' | 'denied' | 'not-reviewed' | 'not-extracted' | 'no-workspace' | 'duplicate' | 'plan-unconfirmed' | 'unknown-foreshadow' | 'body-exists'
+export type NovelError = 'invalid-name' | 'missing' | 'io' | 'stale' | 'denied' | 'not-reviewed' | 'not-extracted' | 'no-workspace' | 'duplicate' | 'plan-unconfirmed' | 'unknown-foreshadow' | 'body-exists' | 'plan-on-draft'
 
 /* ---------------------------------------------- wire-boundary contracts */
 
@@ -1259,7 +1302,7 @@ export interface ExtractPayload {
 /** One dropped import item and why (the anti-fabrication log). */
 export interface ImportDrop {
   readonly kind: string
-  readonly reason: 'evidence-not-found' | 'id-not-in-ledger' | 'character-not-in-roster' | 'card-refused' | 'duplicate' | 'stage-mismatch'
+  readonly reason: 'evidence-not-found' | 'evidence-spliced' | 'evidence-too-long' | 'id-not-in-ledger' | 'character-not-in-roster' | 'card-refused' | 'duplicate' | 'stage-mismatch'
   readonly ref: string
 }
 
@@ -1267,6 +1310,14 @@ export interface ImportDrop {
 export interface ImportReport {
   readonly ok: boolean
   readonly error?: NovelError
+  /**
+   * Whether the 对账 landed. False when most quoted items failed the evidence
+   * gate: nothing is written and the chapter stays 待对账, so a corrected
+   * payload can import again (a failed import never locks the chapter).
+   */
+  readonly settled: boolean
+  /** Existing world cards this chapter was found to use (linked, not re-created). */
+  readonly linked: number
   readonly verified: number
   readonly missed: number
   /** Plan beats the manuscript carried, and the beats it did not (a reminder, never pending). */

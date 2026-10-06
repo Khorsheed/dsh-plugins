@@ -41,7 +41,7 @@ function namesOf(entries: WorkEntries | undefined): Map<string, string> {
 
 /** The card a pending item is about, when it names one. */
 function subjectOf(item: PendingItem): string | undefined {
-  return item.payload.foreshadowId ?? item.payload.characterId ?? item.payload.id
+  return item.payload.foreshadowId ?? item.payload.characterId ?? item.payload.cardId ?? item.payload.id
 }
 
 /** The wire namespace is `novel`: the browser calls `remote.novel.pending`. */

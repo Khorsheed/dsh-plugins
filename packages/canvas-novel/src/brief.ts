@@ -368,7 +368,7 @@ export function renderExtractBrief(data: BriefData, body: string): string {
   return [
     `你是长篇小说的记忆对账员。输入是第${data.target.n}章正文、本章计划、活跃伏笔榜、角色花名册、关系榜。`,
     '输出严格 JSON（schema 在最后）。规则：',
-    '1. 每条产出必须带 evidence：≤50 字原文引用，逐字摘自本章正文；',
+    '1. 每条产出必须带 evidence：≤50 字原文引用，逐字摘自本章正文的一段连续文字；不用省略号拼接两处，不改字、不转述；',
     '2. 伏笔/角色只按 id 引用榜单与名册中的对象；不认识的对象放 new_*，不硬靠；',
     '   本章新登场的角色写进 new_characters，他们的经历和现状照样写，character_id 填名字；',
     '   世界设定给 name（设定的名字）和具体内容，同一个设定只写一条；',
