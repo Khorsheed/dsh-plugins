@@ -24,7 +24,7 @@ import {
   extractArticle,
   normalizeInline,
   normalizeRichText,
-  repairStoredSvg,
+  repairStoredBody,
   resolveSvgVars,
 } from '../src/client/extract-article.ts'
 
@@ -610,8 +610,10 @@ describe('inline SVG figures survive (capture-rendered pages)', () => {
     expect(result.html).not.toContain('<script')
     expect(result.html).not.toContain('alert')
     expect(result.html).not.toContain('onload')
-    expect(result.html).not.toContain('foreignObject')
-    expect(result.html).not.toContain('html junk')
+    // A foreignObject keeps its label through the HTML whitelist, nothing else.
+    expect(result.html).toContain('<foreignObject x="2" y="2" width="40" height="10"><div><b>node label</b></div></foreignObject>')
+    expect(result.html).not.toContain('steal')
+    expect(result.html).not.toContain('<iframe')
     expect(result.html).not.toContain('<animate')
     // An external `use` href drops the element, and an external url() in a
     // style drops the attribute (the rect keeps its other attributes).
@@ -655,15 +657,15 @@ describe('inline SVG figures survive (capture-rendered pages)', () => {
       + '<line x1="0" x2="10" y1="5" y2="5" style="stroke:var(--viz-muted)"></line>'
       + '<text style="fill:var(--ink);stroke:var(--bg)">Frontier model</text></svg>'
       + '<svg id="eval-four-elements-mobile" viewBox="0 0 5 10"><text>narrow copy</text></svg></div></figure>'
-    const repaired = repairStoredSvg(stored)
+    const repaired = repairStoredBody(stored)
     expect(repaired).not.toContain('var(')
     expect(repaired).not.toContain('narrow copy')
     expect(repaired).toContain('style="stroke:currentColor"')
     expect(repaired).toContain('style="fill:currentColor;stroke:none"')
     // Idempotent, and a body with nothing to repair is the same string.
-    expect(repairStoredSvg(repaired)).toBe(repaired)
+    expect(repairStoredBody(repaired)).toBe(repaired)
     const plain = '<p>no figures <em>here</em></p>'
-    expect(repairStoredSvg(plain)).toBe(plain)
+    expect(repairStoredBody(plain)).toBe(plain)
   })
 
   it('keeps the MathML copy of a MathJax formula and drops its glyph drawing', () => {
@@ -695,9 +697,41 @@ describe('inline SVG figures survive (capture-rendered pages)', () => {
     const stored = '<p>a <span><svg viewBox="0 0 10 10"><use href="#MJMATHI-49"></use></svg>'
       + '<span style="height: 1px !important; overflow: hidden !important"><math><mi>I</mi></math></span></span> b</p>'
       + '<svg viewBox="0 0 10 10"><use href="#MJMAIN-2C"></use></svg><math display="block"><mtext>\\# x</mtext></math>'
-    const repaired = repairStoredSvg(stored)
+    const repaired = repairStoredBody(stored)
     expect(repaired).toBe('<p>a <span><math><mi>I</mi></math></span> b</p><math display="block"><mtext># x</mtext></math>')
-    expect(repairStoredSvg(repaired)).toBe(repaired)
+    expect(repairStoredBody(repaired)).toBe(repaired)
+  })
+
+  it('keeps an arXiv diagram\'s node labels and settles its list labels', () => {
+    // LaTeXML's shapes: a TikZ node label in a foreignObject (block paragraph
+    // spans, a bold class), and itemize/enumerate items that write their own tag.
+    const page = '<html><body><article><p>' + 'prose '.repeat(60) + '</p>'
+      + '<figure class="ltx_figure"><svg class="ltx_picture" viewBox="0 0 100 50"><g>'
+      + '<foreignObject width="80" height="30" overflow="visible" style="font-size:10pt;"><span class="ltx_foreignobject_container">'
+      + '<span class="ltx_p"><span class="ltx_text ltx_font_bold">Exact Triangle</span></span>'
+      + '<span class="ltx_p"><span class="ltx_text ltx_font_italic">here:</span> truly subcubic</span></span></foreignObject>'
+      + '</g></svg><figcaption>Figure 1</figcaption></figure>'
+      + '<ul class="ltx_itemize"><li class="ltx_item" style="list-style-type:none;"><span class="ltx_tag ltx_tag_item">•</span> '
+      + '<div class="ltx_para"><p class="ltx_p">3SUM: given n numbers.</p></div></li></ul>'
+      + '<ol class="ltx_enumerate"><li class="ltx_item"><span class="ltx_tag ltx_tag_item">(a)</span> '
+      + '<div class="ltx_para"><p class="ltx_p">First case.</p></div></li></ol>'
+      + '</article></body></html>'
+    const result = extractArticle(page, 'https://arxiv.org/html/2610.06783v1')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.html).toContain('<foreignObject width="80" height="30" style="font-size:10pt;" overflow="visible">')
+    expect(result.html).toContain('<div><strong>Exact Triangle</strong></div><div><em>here:</em> truly subcubic</div>')
+    expect(result.html).toMatch(/<ul><li>\s*<p>3SUM: given n numbers\.<\/p>\s*<\/li><\/ul>/)
+    expect(result.html).toMatch(/<ol><li data-labelled="">\s*<p>\(a\) First case\.<\/p>\s*<\/li><\/ol>/)
+    // An ordinary item with leading text is not a label.
+    expect(normalizeRichText('<ul><li>Note <p>x</p></li></ul>')).toContain('<li>Note <p>x</p></li>')
+  })
+
+  it('settles list labels in a body cached before the fix', () => {
+    const stored = '<ul><li>• \n <p>3SUM</p></li></ul><ol><li>(2) <p>Second</p></li><li><p>plain</p></li></ol>'
+    const repaired = repairStoredBody(stored)
+    expect(repaired).toBe('<ul><li><p>3SUM</p></li></ul><ol><li data-labelled=""><p>(2) Second</p></li><li><p>plain</p></li></ol>')
+    expect(repairStoredBody(repaired)).toBe(repaired)
   })
 
   it('applies the same subset through the feed-body path and keeps summaries clean', () => {

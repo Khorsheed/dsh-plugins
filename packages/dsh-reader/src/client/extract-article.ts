@@ -62,12 +62,13 @@ const DROP_TAGS = new Set([
   // svg is NOT here: capture-rendered pages carry their rescued figures as
   // inline SVG, which normalizeSvg() whitelists per element/attribute. The
   // strip's selector gains the canonical-case members separately (SVG names are
-  // case-sensitive in an HTML document).
-  'foreignobject',
+  // case-sensitive in an HTML document). `foreignObject` is not here either: its
+  // HTML is a figure's labels, and normalizeSvg() walks it through this file's
+  // own whitelist.
 ])
 
 /** The strip selector's exact-case members (SVG camelCase names in an HTML document). */
-const DROP_STRIP_EXTRA = ['foreignObject']
+const DROP_STRIP_EXTRA: readonly string[] = []
 
 /** Inline elements that survive an inline-only pass. */
 const INLINE_TAGS = new Set(['strong', 'em', 'b', 'i', 'u', 's', 'code', 'a', 'sub', 'sup', 'br'])
@@ -143,6 +144,9 @@ const KEPT_ATTRIBUTES: Readonly<Record<string, readonly string[]>> = {
   // fallback), `display` marks block math (the pane scrolls it horizontally).
   // Everything else — event handlers, `href` on <mi>, style hooks — is stripped.
   math: ['alttext', 'display'],
+  // Set by settleListLabels(): the item writes its own label, so the pane
+  // hides the list's native marker for it.
+  li: ['data-labelled'],
 }
 
 /**
@@ -224,6 +228,7 @@ export function extractArticle(pageHtml: string, baseUrl: string): ExtractArticl
   }
 
   settleMathJaxTwins(doc.body)
+  settleListLabels(doc.body)
 
   const scored = scoreCandidates(doc)
   if (scored === undefined) {
@@ -612,12 +617,15 @@ function normalizeNode(node: Node, baseUrl: string | undefined, inFigure = false
   if (tag === 'noscript') return noscriptImg(element, baseUrl)
   // Capture-rendered pages carry their rescued figures as inline SVG with
   // styles inlined onto the elements; the subset walker below keeps the chart
-  // and strips the injection-shaped members (script, foreignObject, SMIL).
-  if (tag === 'svg') return isResponsiveAlternate(element) ? '' : normalizeSvg(element)
+  // and strips the injection-shaped members (script, SMIL) and whitelists foreignObject labels.
+  if (tag === 'svg') return isResponsiveAlternate(element) ? '' : normalizeSvg(element, baseUrl)
   if (tag === 'br') return '<br>'
   if (tag === 'hr') return '<hr>'
 
-  const inner = normalizeChildren(element, baseUrl, inFigure || tag === 'figure')
+  const latexml = tag === 'span' ? latexmlSpan(element) : undefined
+  let inner = normalizeChildren(element, baseUrl, inFigure || tag === 'figure')
+  if (latexml?.bold === true && inner.trim().length > 0) inner = `<strong>${inner}</strong>`
+  if (latexml?.italic === true && inner.trim().length > 0) inner = `<em>${inner}</em>`
   // A figure's composite layout IS its content (a capture-rendered figure is a
   // diagram plus property cards built from styled containers), so inside one
   // the div/span boxes survive as elements with their allowlisted style —
@@ -626,8 +634,14 @@ function normalizeNode(node: Node, baseUrl: string | undefined, inFigure = false
     const style = figureStyle(element.getAttribute('style'))
     // A kept container with neither text nor style is a shell, not a layout.
     if (inner.trim().length === 0 && style === undefined) return ''
-    return `<${tag}${style === undefined ? '' : ` style="${escapeAttribute(style)}"`}>${inner}</${tag}>`
+    // A bare span is no layout either: it renders exactly as its content.
+    if (tag === 'span' && style === undefined && latexml?.paragraph !== true) return inner
+    // A LaTeXML paragraph span is a block in the page's stylesheet: kept as a
+    // span, a figure label's lines would run together.
+    const kept = latexml?.paragraph === true ? 'div' : tag
+    return `<${kept}${style === undefined ? '' : ` style="${escapeAttribute(style)}"`}>${inner}</${kept}>`
   }
+  if (latexml?.paragraph === true) return `\n${inner}\n`
   if (!KEEP_TAGS.has(tag)) {
     // Unwrapped block-ish containers leave a word boundary: capture's
     // serialization carries no inter-tag whitespace, and two sibling cards
@@ -648,6 +662,84 @@ function normalizeNode(node: Node, baseUrl: string | undefined, inFigure = false
     })
     .join('')
   return `<${tag}${attributes}>${inner}</${tag}>`
+}
+
+/**
+ * What a LaTeXML (arXiv HTML) span means through its classes alone.
+ *
+ * LaTeXML writes block paragraphs and font changes as classed spans and lets
+ * its stylesheet do the rest; the extraction carries no stylesheet, so the
+ * meaning is read here or lost.
+ */
+function latexmlSpan(element: Element): { readonly paragraph: boolean; readonly bold: boolean; readonly italic: boolean } | undefined {
+  const classes = element.getAttribute('class') ?? ''
+  if (!classes.includes('ltx_')) return undefined
+  return {
+    paragraph: /\bltx_p\b/.test(classes),
+    bold: /\bltx_font_bold\b/.test(classes),
+    italic: /\bltx_font_italic\b/.test(classes),
+  }
+}
+
+/** A list item label the list's native disc already draws. */
+const BULLET_LABEL = /^[•∙◦▪▫‣⁃·–—*-]$/
+
+/** An item label worth keeping: `1.`, `(2)`, `a)`, `(iv)`. */
+const ITEM_LABEL = /^(?:\(?\d{1,3}[.)]|\(\d{1,3}\)|\(?[a-z]{1,2}[.)]|\([a-z]{1,2}\)|\(?[ivxlc]{1,6}[.)]|\([ivxlc]{1,6}\))$/i
+
+/**
+ * Settle list items that write their own label in front of a block.
+ *
+ * LaTeXML (arXiv HTML) turns the native marker off and writes each label as a
+ * text tag before the item's paragraph: `<li><span>•</span> <div><p>…`. Without
+ * the page's stylesheet the native disc comes back next to the written one and
+ * the paragraph drops to the line below. A bare bullet is removed (the disc
+ * stands for it); a real label (`(a)`, `2.`) moves into the first paragraph and
+ * the item is marked `data-labelled` so the pane hides its native marker.
+ *
+ * Matched by structure, not class, so it settles stored bodies too: the label
+ * is the item's whole leading text, and a paragraph block follows it.
+ *
+ * @param root - the subtree to settle in place.
+ * @returns true when anything changed.
+ */
+function settleListLabels(root: Element): boolean {
+  let changed = false
+  for (const item of Array.from(root.querySelectorAll('li'))) {
+    const label = firstMeaningful(item.firstChild)
+    if (label === null) continue
+    if (label.nodeType === 1) {
+      const element = label as Element
+      if (element.localName.toLowerCase() !== 'span' || element.children.length > 0) continue
+    } else if (label.nodeType !== 3) {
+      continue
+    }
+    const block = firstMeaningful(label.nextSibling)
+    if (block === null || block.nodeType !== 1) continue
+    const blockTag = (block as Element).localName.toLowerCase()
+    if (blockTag !== 'p' && blockTag !== 'div') continue
+    const paragraph = blockTag === 'p' ? block as Element : (block as Element).querySelector('p')
+    if (paragraph === null) continue
+    const text = (label.textContent ?? '').trim()
+    if (BULLET_LABEL.test(text)) {
+      label.remove()
+    } else if (ITEM_LABEL.test(text)) {
+      label.remove()
+      paragraph.prepend(`${text} `)
+      item.setAttribute('data-labelled', '')
+    } else {
+      continue
+    }
+    changed = true
+  }
+  return changed
+}
+
+/** The node itself or the first following sibling that is not blank text. */
+function firstMeaningful(node: ChildNode | null): ChildNode | null {
+  let current = node
+  while (current !== null && current.nodeType === 3 && (current.textContent ?? '').trim().length === 0) current = current.nextSibling
+  return current
 }
 
 /**
@@ -708,9 +800,9 @@ function objectImg(element: Element, baseUrl: string | undefined): string {
  *   `use`/`symbol`), looked up case-insensitively and emitted in the canonical
  *   SVG casing — the HTML parser's foreign-content adjustment already gave us
  *   that casing, and the emitted string is re-parsed as HTML downstream;
- * - `<script>`, `<foreignObject>` (the HTML-injection vector inside SVG) and
- *   every SMIL element (`animate`, `set`, …) drop with their subtrees — a
- *   static figure needs none of them;
+ * - `<script>` and every SMIL element (`animate`, `set`, …) drop with their
+ *   subtrees — a static figure needs none of them; `<foreignObject>` keeps
+ *   only what the HTML whitelist keeps (diagram labels live there);
  * - attributes come from one whitelist (geometry, presentation, the inlined
  *   `style`, paint-server/clip refs, and `id` — `url(#…)` and `href="#…"` point
  *   at it), and any value containing `url(` must reference a same-document
@@ -734,7 +826,7 @@ const SVG_TAGS: ReadonlyMap<string, string> = new Map(
 )
 
 /** Subtree-dropped inside SVG: script-capable or animated. (`title` collides with the HTML drop.) */
-const SVG_DROP = new Set(['script', 'foreignobject', 'animate', 'animatemotion', 'animatetransform', 'set'])
+const SVG_DROP = new Set(['script', 'animate', 'animatemotion', 'animatetransform', 'set'])
 
 /** Attributes kept on SVG elements; everything else (event handlers included) is stripped. */
 const SVG_ATTRIBUTES: readonly string[] = [
@@ -755,6 +847,8 @@ const SVG_ATTRIBUTES: readonly string[] = [
   'patternContentUnits', 'spreadMethod', 'preserveAspectRatio', 'startOffset',
   'markerWidth', 'markerHeight', 'markerUnits', 'orient', 'refX', 'refY',
   'marker-start', 'marker-mid', 'marker-end',
+  // a foreignObject label box may spill past its nominal size (LaTeXML sets it)
+  'overflow',
 ]
 
 /** A kept value may only reference this same document: every `url(` must open a `#` fragment. */
@@ -855,20 +949,22 @@ function isResponsiveAlternate(element: Element): boolean {
 }
 
 /**
- * Bring a body stored by an older extractor up to the current SVG rules.
+ * Bring a body stored by an older extractor up to the current rules.
  *
- * Bodies are extracted once and cached, so the two SVG fixes above
- * (`resolveSvgVars`, `isResponsiveAlternate`) would otherwise reach only
+ * Bodies are extracted once and cached, so the fixes above that can be
+ * replayed on whitelisted markup (`resolveSvgVars`, `isResponsiveAlternate`,
+ * `settleMathJaxTwins`, `settleListLabels`) would otherwise reach only
  * articles fetched after they shipped — a cached claude.dev post kept drawing
- * its figure as bare dots until its TTL ran out. This replays both on
- * already-whitelisted markup at display time. A body with no `<svg>`, or one
- * the current extractor wrote, comes back as the same string.
+ * its figure as bare dots until its TTL ran out. This replays them at display
+ * time. A body with no `<svg>` or `<li>`, or one the current extractor wrote,
+ * comes back as the same string. (What the old extractor DROPPED — a
+ * foreignObject's labels — is not here to restore; that takes a refetch.)
  *
  * @param html - a stored (already whitelisted) article body.
- * @returns the body with no SVG custom-property reference and no narrow duplicate.
+ * @returns the body under the current rules.
  */
-export function repairStoredSvg(html: string): string {
-  if (!/<svg[\s>]/i.test(html) || typeof DOMParser === 'undefined') return html
+export function repairStoredBody(html: string): string {
+  if (!/<(?:svg|li)[\s>]/i.test(html) || typeof DOMParser === 'undefined') return html
   let doc: Document
   try {
     doc = new DOMParser().parseFromString(`<body>${html}</body>`, 'text/html')
@@ -876,6 +972,7 @@ export function repairStoredSvg(html: string): string {
     return html
   }
   let changed = settleMathJaxTwins(doc.body)
+  if (settleListLabels(doc.body)) changed = true
   for (const svg of Array.from(doc.body.querySelectorAll('svg'))) {
     // Nested drawings ride their top-level figure's pass.
     if ((svg.parentElement?.closest('svg') ?? null) !== null) continue
@@ -945,22 +1042,29 @@ function drawsMathJaxGlyphs(svg: Element): boolean {
 }
 
 /** One SVG subtree → whitelisted markup (or empty). */
-function normalizeSvg(element: Element): string {
+function normalizeSvg(element: Element, baseUrl: string | undefined): string {
   const name = element.localName.toLowerCase()
   if (SVG_DROP.has(name)) return ''
+  // A diagram's node labels (LaTeXML's TikZ output writes every one this way).
+  // The HTML inside walks the body's own whitelist — the same subset any
+  // article markup gets — so the injection vector it was dropped for is gone.
+  if (name === 'foreignobject') {
+    const inner = normalizeChildren(element, baseUrl, true)
+    return inner.trim().length === 0 ? '' : `<foreignObject${svgAttributes(element)}>${inner}</foreignObject>`
+  }
   const canonical = SVG_TAGS.get(name)
-  if (canonical === undefined) return normalizeSvgChildren(element)
+  if (canonical === undefined) return normalizeSvgChildren(element, baseUrl)
   if (canonical === 'use' || canonical === 'textPath') {
     // A fragment reference only: an external one drops the element outright.
     const href = (element.getAttribute('href') ?? element.getAttribute('xlink:href'))?.trim()
     if (href === undefined || !/^#\S+$/.test(href)) return ''
-    return `<${canonical} href="${escapeAttribute(href)}"${svgAttributes(element)}>${normalizeSvgChildren(element)}</${canonical}>`
+    return `<${canonical} href="${escapeAttribute(href)}"${svgAttributes(element)}>${normalizeSvgChildren(element, baseUrl)}</${canonical}>`
   }
-  return `<${canonical}${svgAttributes(element)}>${normalizeSvgChildren(element)}</${canonical}>`
+  return `<${canonical}${svgAttributes(element)}>${normalizeSvgChildren(element, baseUrl)}</${canonical}>`
 }
 
 /** Every child of an SVG node: text is escaped, elements walk the subset. */
-function normalizeSvgChildren(element: Element): string {
+function normalizeSvgChildren(element: Element, baseUrl: string | undefined): string {
   const parts: string[] = []
   for (const child of Array.from(element.childNodes)) {
     if (child.nodeType === 3 /* text */) {
@@ -968,7 +1072,7 @@ function normalizeSvgChildren(element: Element): string {
       continue
     }
     if (child.nodeType !== 1 /* element */) continue
-    parts.push(normalizeSvg(child as Element))
+    parts.push(normalizeSvg(child as Element, baseUrl))
   }
   return parts.join('')
 }
