@@ -10,11 +10,13 @@ import type { Context } from '@deepseek-ai/cordis'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { LibraryService } from '../src/service.ts'
 import { LIBRARY_TOOL_NAMES, libraryToolDefinitions } from '../src/tool-definition.ts'
+import { ImageRefCache } from '../src/image-refs.ts'
 import { Config, renderBindingContext } from '../src/tool.ts'
 
 let root: string
 let service: LibraryService
 let tools: ReturnType<typeof libraryToolDefinitions>
+let images: ImageRefCache
 
 const ctx = { get: () => undefined } as unknown as Context
 
@@ -24,7 +26,8 @@ const exec = { agent: { session: { id: 's_learn' } } }
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'dsh-library-tools-'))
   service = new LibraryService(ctx, { stateRoot: root })
-  tools = libraryToolDefinitions(service)
+  images = new ImageRefCache()
+  tools = libraryToolDefinitions(service, images)
 })
 
 afterEach(() => {
@@ -91,6 +94,17 @@ describe('binding defaults', () => {
     const { project } = await seed()
     const listed = (await call('library_read', { what: 'projects' })) as { binding: { projectId: string } | null }
     expect(listed.binding?.projectId).toBe(project)
+  })
+})
+
+describe('photo pages', () => {
+  it('records a page from the session\'s latest photo when the model names none', async () => {
+    await seed()
+    await expect(call('library_write', { what: 'page', page: { text: 'x', marks: [] } })).rejects.toThrow(/send the page photo/)
+    const ref = { attachmentId: 'sha256:abc', mediaType: 'image/jpeg', width: 10, height: 20, bytes: 99 }
+    images.observe('s_learn', { type: 'user/message', data: { content: [{ type: 'image', attachment: ref }] } })
+    const recorded = (await call('library_write', { what: 'page', page: { attachment: { attachmentId: 'abc', mediaType: 'image/jpeg' }, text: 'held at the inn', marks: [{ text: 'held', gloss: '举办' }] } })) as { page: { attachment: unknown } }
+    expect(recorded.page.attachment).toEqual(ref)
   })
 })
 

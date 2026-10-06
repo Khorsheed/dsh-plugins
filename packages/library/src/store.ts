@@ -310,7 +310,7 @@ export function normalizeRoadmap(value: unknown): LibraryRoadmap | undefined {
       id: nodeId,
       title,
       kind,
-      goals: strings(node.goals, 300),
+      goals: typeof node.goals === 'string' ? strings([node.goals], 300) : strings(node.goals, 300),
       dependsOn: Array.isArray(node.dependsOn) ? (node.dependsOn as unknown[]).filter((dep): dep is string => typeof dep === 'string') : [],
       chapterRanges: Array.isArray(node.chapterRanges)
         ? (node.chapterRanges as unknown[]).flatMap(range => {

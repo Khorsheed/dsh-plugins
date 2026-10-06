@@ -23,6 +23,7 @@ import z from '@deepseek-ai/schemastery'
 import type {} from './index.ts'
 import { libraryToolDefinitions } from './tool-definition.ts'
 import type { LibraryService } from './service.ts'
+import { ImageRefCache } from './image-refs.ts'
 
 const PACKAGE_NAME = '@khorsheed/dsh-library'
 
@@ -91,11 +92,11 @@ interface ToolMask {
  */
 export const LIBRARY_PROMPT = `The library is this session's memory: projects, books, each book's roadmap, the learner's knowledge cards (知识卡片) and quizzes live in library_read / library_write / library_assess — never in conversation memory.
 
-- Binding: the session header binds this session to a project or one of its books, and project / book default to it. Unbound and about to write: ask which (ask_user_question), then library_write · binding.
-- Adding a book: never ask for an upload. Search the web for the exact edition and its contents, confirm the edition with the learner when several exist, then library_write · book (cite the contents url) and draft a roadmap. The learner adopts the draft in the sidebar; you only write drafts.
+- Binding: the session header binds this session to a project or one of its books, and project / book default to it. Unbound and about to write: ask which (ask_user_question), then library_write · binding. When you add the book the learner is about to read, bind the session to that book.
+- Adding a book: never ask for an upload. Search the web for the exact edition and its contents (publisher, library-catalog or retailer pages — never a full-text copy), confirm the edition with the learner when several exist, then library_write · book (cite the contents url) and draft a roadmap. The learner adopts the draft in the sidebar; you only write drafts.
 - What to quiz, in order: the learner's own cards (marked in photos, asked about, missed before — library_read · cards, weakest first), then the chapter's topic. What it rests on, in order: a photographed page's text, a web quote with its url, domain knowledge (say so). When the book and your knowledge disagree, the book wins — mention the difference in the explanation. A material book (exam papers, novels) never takes a question about its content from memory.
 - Weak points: when the learner shows they are stuck — says they mix something up, asks the same point again, keeps probing one detail — record it right away (library_write · cards, source chat, weaken true) and say in one short line what you noted. Ordinary curiosity is not a weak point. Before explaining a point, check library_read · cards for it.
-- Photos: a page photo becomes library_write · page in one call — transcribe the printed text, list every mark (underline, margin note) with its sentence and in-context gloss, flag the ones you cannot read as uncertain. Copy the image block's reference verbatim. If you cannot see images on this route, say so.
+- Photos: a page photo becomes library_write · page in one call — transcribe the printed text, list every mark (underline, margin note) with its sentence and in-context gloss, flag the ones you cannot read as uncertain. The tool finds the photo itself: pass the image id, or omit it for the latest photo. If you cannot see images on this route, say so.
 - Grading is two steps: judge in the conversation, then library_assess with one verdict per question — a judged quiz that was never assessed never happened.
 - Every refusal says how to fix the call; follow it rather than guessing.`
 
@@ -143,8 +144,14 @@ export function apply(ctx: Context, config: LibraryToolConfig = {}): void {
   if ((config.tools ?? 'all') === 'none') return
   // Deferred injection, NOT an apply-time probe: `ctx.get('tools')` races the
   // tools registry's own mount order on the real composition tree.
+  // Photos: remember each session's image references as they are committed,
+  // so a recorded page carries the whole reference the model cannot see.
+  const images = new ImageRefCache()
+  ctx.on('session/event' as never, ((session: { id: unknown }, event: { type?: unknown; data?: unknown }) => {
+    images.observe(String(session.id), event)
+  }) as never)
   ctx.inject(['tools'], (toolsCtx) => {
-    for (const definition of libraryToolDefinitions(service)) {
+    for (const definition of libraryToolDefinitions(service, images)) {
       toolsCtx.effect(
         () => toolsCtx.tools.register(definePluginTool(definition)),
         `${PACKAGE_NAME}: ${definition.name} tool`,

@@ -119,6 +119,19 @@ describe('books and roadmaps', () => {
     expect(again.ok && again.roadmap.nodes.map(node => node.state)).toEqual(['done', 'current', 'locked'])
   })
 
+  it('keeps a goal written as a bare string and drops part-heading rows', async () => {
+    const { projectId } = await seed()
+    const book = await service.putBook({
+      projectId, title: 'PNS', bookKind: 'knowledge', tocSource: { by: 'model' },
+      toc: [{ title: 'Part II: Cells', part: 'Part II: Cells' }, { title: 'Ion Channels', part: 'Part II: Cells' }],
+    })
+    if (!book.ok) throw new Error(book.message)
+    expect(book.book.toc.map(row => row.title)).toEqual(['Ion Channels'])
+    const draft = await service.draftRoadmap({ projectId, bookId: book.book.id, nodes: [{ id: 'n1', title: 'a', kind: 'quiz', goals: '说清离子通道' }] })
+    expect(draft.ok && draft.draft.nodes[0]?.goals).toEqual(['说清离子通道'])
+    expect((await service.getRoadmap({ projectId, bookId: book.book.id })).draft?.nodes[0]?.goals).toEqual(['说清离子通道'])
+  })
+
   it('refuses ranges outside the contents and forward dependencies', async () => {
     const { projectId, bookId } = await seed()
     const outside = await service.draftRoadmap({ projectId, bookId, nodes: [{ id: 'n1', title: 'a', kind: 'quiz', chapterRanges: [{ from: 1, to: 9 }] }] })
@@ -247,6 +260,13 @@ describe('quizzes: the two axes', () => {
     expect(!noCards.ok && noCards.message).toMatch(/cardIds/)
     const noUrl = await service.putQuiz({ projectId, quiz: { scope: { bookId }, questions: [question({ evidence: { kind: 'web', quote: 'a long enough quote' } })] } })
     expect(!noUrl.ok && noUrl.message).toMatch(/url/)
+  })
+
+  it('warns when the scoped node is still locked', async () => {
+    const { projectId, bookId } = await seed()
+    await adopt(projectId, bookId)
+    const stored = await service.putQuiz({ projectId, quiz: { scope: { bookId, nodeId: 'n2' }, questions: [question()] } })
+    expect(stored.ok && stored.warnings[0]).toMatch(/still locked/)
   })
 
   it('refuses a read node as the quiz scope', async () => {

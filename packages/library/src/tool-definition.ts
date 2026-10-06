@@ -22,7 +22,6 @@ import { defineTool, type ToolDefinition } from '@deepseek-ai/dsh-tools'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type {
-  LibraryAttachmentRef,
   LibraryBinding,
   LibraryCardInput,
   LibraryCardKind,
@@ -34,6 +33,7 @@ import type {
   RoadmapNode,
 } from './types.ts'
 import type { LibraryService } from './service.ts'
+import { ImageRefCache } from './image-refs.ts'
 
 /** The names this module registers, in registration order. */
 export const LIBRARY_TOOL_NAMES: readonly string[] = ['library_read', 'library_write', 'library_assess']
@@ -67,9 +67,11 @@ function sessionIdOf(exec: Exec | undefined): string | undefined {
  * Build the three tools. Creating them is the package's `./tool` row, which
  * applies the origin tag; this module never registers.
  * @param service - the library service the adapters translate to.
+ * @param images - the session image references the tool row remembers (a
+ *   page's photo is resolved from them, never trusted to the model's copy).
  * @returns the three definitions, untagged and unregistered.
  */
-export function libraryToolDefinitions(service: LibraryService): ToolDefinition[] {
+export function libraryToolDefinitions(service: LibraryService, images: ImageRefCache = new ImageRefCache()): ToolDefinition[] {
   /** The session's binding, when it has one. */
   const bindingOf = (exec: Exec | undefined): LibraryBinding | undefined => {
     const sessionId = sessionIdOf(exec)
@@ -200,12 +202,13 @@ export function libraryToolDefinitions(service: LibraryService): ToolDefinition[
       'Validate and persist what you authored. Pass what plus the matching payload; project / book default to this session\'s binding. '
       + 'what="project": project { name, template: "language"|"subject"|"custom", templateNote?, goal? } — language: marks are words; subject: marks are concepts. '
       + 'what="book": book { title, author?, edition?, isbn?, bookKind: "knowledge"|"material", toc: [{ title, part? }], tocSource: { by: "web"|"model"|"photo", url? }, bookId? } — '
-      + 'register a book (no upload): search the web for the exact edition\'s contents and cite the url; "material" = exam papers, novels, anthologies '
+      + 'register a book (no upload): search the web for the exact edition\'s contents and cite the url — a publisher, library-catalog or retailer page, never a full-text copy; '
+      + 'toc has one row per chapter (or passage), never a row for a part heading — the part goes in part; "material" = exam papers, novels, anthologies '
       + '(specific text you cannot recall); bookId corrects an existing one. '
-      + 'what="roadmap": roadmap { nodes: [{ id, title, kind: "quiz"|"read", goals, chapterRanges: [{ from, to }], dependsOn }], passRatio?, note? } — '
+      + 'what="roadmap": roadmap { nodes: [{ id, title, kind: "quiz"|"read", goals: [..], chapterRanges: [{ from, to }], dependsOn }], passRatio?, note? } — '
       + 'writes a DRAFT the learner adopts in the sidebar (采用); ranges count contents rows; read nodes (how to use the book, front matter, appendices) complete by 读完, '
       + 'quiz nodes by a chapter quiz; note is the one-line pacing shown on the draft card. '
-      + 'what="page": page { attachment: { attachmentId, mediaType, bytes, width, height } (copied verbatim from the image block), label?, node?, text (the page\'s printed text), '
+      + 'what="page": page { attachment? (the image id; omit it for the latest photo in this conversation), label?, node?, text (the page\'s printed text), '
       + 'marks: [{ text, sentence?, handNote?, gloss?, uncertain? }] } — records a photographed page and cards every mark at once; gloss is the in-context meaning; '
       + 'uncertain marks are kept but not carded. '
       + 'what="cards": cards [{ kind: "word"|"concept", term, aliases?, gloss, userGloss?, context?: { sentence, node? }, source: { type: "chat"|"photo"|"quiz"|"manual", note? }, weaken?, mergeInto?, asNew? }] — '
@@ -272,15 +275,19 @@ export function libraryToolDefinitions(service: LibraryService): ToolDefinition[
         }
         case 'page': {
           const body = payload(args.page)
-          if (body === undefined || payload(body.attachment) === undefined || typeof body.text !== 'string' || !Array.isArray(body.marks)) {
-            throw new Error('what=page takes page: { attachment: { attachmentId, mediaType, bytes, width, height }, text, marks: [{ text, sentence?, handNote?, gloss?, uncertain? }], label?, node? }')
+          if (body === undefined || typeof body.text !== 'string' || !Array.isArray(body.marks)) {
+            throw new Error('what=page takes page: { attachment?: <the image id>, text, marks: [{ text, sentence?, handNote?, gloss?, uncertain? }], label?, node? }')
+          }
+          const attachment = images.resolve(sessionIdOf(exec), body.attachment)
+          if (attachment === undefined) {
+            throw new Error('no photo to record: this conversation has no image the library saw arrive (or the id names none) — ask the learner to send the page photo here, then record it')
           }
           return unwrap(await service.recordPage({
             projectId: projectOf(args.project, exec),
             bookId: bookOf(typeof args.book === 'string' ? args.book : body.book, exec),
             ...(typeof body.node === 'string' ? { nodeId: body.node } : {}),
             ...(typeof body.label === 'string' ? { label: body.label } : {}),
-            attachment: body.attachment as LibraryAttachmentRef,
+            attachment,
             text: body.text,
             marks: body.marks as LibraryMark[],
           })) as unknown as JsonValue

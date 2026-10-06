@@ -281,7 +281,9 @@ export class LibraryService {
     if (request.bookKind !== 'knowledge' && request.bookKind !== 'material') {
       return refuse('invalid', 'bookKind is knowledge | material — knowledge: a textbook or popular science (its content is domain knowledge); material: exam papers, novels, anthologies (specific text you cannot recall)')
     }
-    const toc = request.toc.filter(entry => entry.title.trim() !== '')
+    // One row per chapter: a row that only repeats its part's heading is the
+    // part, not a chapter (a live run stored nine of them among 64 chapters).
+    const toc = request.toc.filter(entry => entry.title.trim() !== '' && entry.title.trim() !== entry.part?.trim())
     if (toc.length === 0) {
       return refuse('invalid', 'a book needs its table of contents — search the web for the edition\'s contents (publisher page, library catalog), or ask the learner to photograph the contents page; each row: { title, part? }')
     }
@@ -368,7 +370,7 @@ export class LibraryService {
   async draftRoadmap(request: {
     projectId: string
     bookId: string
-    nodes: readonly { id: string; title: string; kind: RoadmapNode['kind']; goals?: readonly string[]; chapterRanges?: readonly { from: number; to: number }[]; dependsOn?: readonly string[] }[]
+    nodes: readonly { id: string; title: string; kind: RoadmapNode['kind']; goals?: readonly string[] | string; chapterRanges?: readonly { from: number; to: number }[]; dependsOn?: readonly string[] }[]
     passRatio?: number
     note?: string
   }): Promise<LibraryOutcome<{ draft: LibraryRoadmap }>> {
@@ -388,7 +390,8 @@ export class LibraryService {
       id: node.id,
       title: node.title,
       kind: node.kind,
-      goals: node.goals ?? [],
+      // A model writes one goal as a bare string as often as a list.
+      goals: typeof node.goals === 'string' ? [node.goals] : (node.goals ?? []).filter(goal => typeof goal === 'string'),
       chapterRanges: node.chapterRanges ?? [],
       dependsOn: node.dependsOn ?? [],
       state: 'locked',
@@ -910,16 +913,18 @@ export class LibraryService {
       return refuse('invalid', 'a quiz needs at least one question — each: { id, kind, prompt, options?, answer, explanation?, target: { kind, cardIds? }, evidence: { kind, pageId?, url?, quote? } }')
     }
     const nodeId = request.quiz.scope.nodeId
+    let lockedNote: string | undefined
     if (nodeId !== undefined) {
       const roadmap = this.store.readRoadmap(project.value.id, book.id)
       const node = roadmap?.nodes.find(candidate => candidate.id === nodeId)
       if (node === undefined) return refuse('not-found', `quiz scope names node ${JSON.stringify(nodeId)}, which this book's adopted path does not hold — library_read · roadmap lists the nodes`)
       if (node.kind === 'read') return refuse('invalid', `${node.title} is a read node — it has no quiz gate; quiz a quiz-kind node, or leave scope.node off for a free practice quiz`)
+      if (node.state === 'locked') lockedNote = `${node.title} is still locked — the learner can take this quiz, but passing it completes the node only once the nodes before it are done`
     }
     const liveCards = new Set(this.store.readCards(project.value.id).filter(live).map(card => card.id))
     const pages = new Map(this.store.readPages(project.value.id, book.id).map(page => [page.id, page]))
     const seenIds = new Set<string>()
-    const warnings: string[] = []
+    const warnings: string[] = lockedNote === undefined ? [] : [lockedNote]
     for (const [index, question] of request.quiz.questions.entries()) {
       const label = `questions[${index}]${question.id === '' ? '' : ` (${question.id})`}`
       if (question.id === '' || seenIds.has(question.id)) return refuse('evidence-gate', `${label} needs a unique id — q1, q2, … is plenty`)

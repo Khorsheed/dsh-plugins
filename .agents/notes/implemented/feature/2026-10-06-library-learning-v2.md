@@ -25,6 +25,15 @@ The M1 library ([M1 note](2026-10-06-library-learning-mode-m01.md)) assumed the 
 
 The browser half is one route stack (`client/store.ts`) over today → project → book → node → cards → quiz → result → review, built on `ui-panel-kit` (`PanelRoot`, `PanelHeader`, `UnderlineTabs`, `ChipRow`, `ListRow`) so one layout serves a desktop sidebar and a phone's full-screen panel (docs/panel-design.md; `pnpm check:panels` clean). Views read the host through a small `useLoad` hook keyed on the store's `rev`. The pane never does the model's work: adding a book, (re)planning, composing a quiz and judging open answers are drafted into the bound session's input (`primeConversation`) after `bindTarget`. Choice and fill-in answers are judged in the pane (`client/judge.ts`); a sitting without open answers is ledgered straight through `putAttempt` with `by: 'self'`, otherwise the whole sitting goes to the coach so it is one attempt. A sample page (`examples/sidebar`, port 8877, in-memory data) drives screenshots.
 
+## Live trial (2026-10-06, deepseek-flash, a throwaway instance on 0.2.0-rc.2)
+
+- The learning session's model sees exactly ask_user_question, library_read / library_write / library_assess, web_search and web_fetch; `list_capabilities` is masked and the three blanked root sections are gone (a 3.3k-character system prompt); the `library:binding` context line arrives each turn.
+- Adding PNS 6e and drafting a path took one turn. Two shapes the model wrote broke the store and are now absorbed: a node's goals as a bare string (kept as a one-item list), and part headings as contents rows (a row that only repeats its part is dropped).
+- The model sees an image block's id without its `sha256:` prefix and without `bytes`, so a page's photo reference it copies cannot be read back. `src/image-refs.ts` remembers each session's image references from committed `session/event`s and the page write resolves from them (the id, or nothing for the latest photo).
+- One page photo, two runs: about two thirds of the underlines carded each time, with different misses; in-context glosses were right. The sidebar therefore needs an add-a-missed-word path.
+- A five-question chapter quiz came out on the two axes first try: three marked-card questions and two content questions, all on photo evidence.
+- A quiz scoped to a still-locked node is stored with a warning.
+
 ## Alternatives considered
 
 - **Keep uploads as an optional path**: rejected by the user — it keeps the parsing problem alive for a minority path; a book the web cannot place is registered from a photo of its contents page instead.
