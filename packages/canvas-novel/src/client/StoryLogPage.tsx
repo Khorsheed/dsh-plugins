@@ -47,7 +47,7 @@ const HW_NARROW = 150
 const HW_WIDE_MAX = 480
 const HW_NARROW_MAX = 360
 const CW_ROOMY = 64
-/** The frame narrower than this opens the side panel as a drawer over the table. */
+/** The frame narrower than this shows one face at a time: the table, or a picked row's detail in its place. */
 const NARROW_BELOW = 860
 /** The relation lane's height; the four levels 12px apart from the bottom, the rifts below them. */
 const REL_LANE = 74
@@ -364,7 +364,7 @@ function StoryLog(props: NovelSurfaceProps<NovelPageOwnerProps> & { readonly api
   const [tab, setTab] = useState<Tab>('now')
   const [open, setOpen] = useState({ r: true, c: true, w: false })
   const [selection, setSelection] = useState<Selection | null>(null)
-  const [drawer, setDrawer] = useState(false)
+  const [detail, setDetail] = useState(false)
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState<string | null>(null)
   const [size, setSize] = useState({ frame: 0, matrix: 0 })
@@ -373,6 +373,8 @@ function StoryLog(props: NovelSurfaceProps<NovelPageOwnerProps> & { readonly api
   const matrixRef = useRef<HTMLDivElement>(null)
   const windowRef = useRef<HTMLElement>(null)
   const scrolled = useRef(false)
+  /** Where the table stood when a narrow pick swapped it for the detail; restored on the way back. */
+  const parked = useRef<{ top: number; left: number } | null>(null)
 
   useLayoutEffect(() => {
     const frame = frameRef.current
@@ -388,6 +390,7 @@ function StoryLog(props: NovelSurfaceProps<NovelPageOwnerProps> & { readonly api
 
   // An unmeasured frame (no layout yet) reads as wide.
   const narrow = size.frame > 0 && size.frame < NARROW_BELOW
+  const detailFace = narrow && detail
   const base = narrow ? HW_NARROW : HW_WIDE
   const room = size.matrix - base - 12
   // Every chapter fits at the detail width: no zoom, no minimap, and the spare width goes to the names first.
@@ -422,6 +425,17 @@ function StoryLog(props: NovelSurfaceProps<NovelPageOwnerProps> & { readonly api
     }
     syncWindow()
   })
+
+  // Back from the narrow detail (or widened out of it): the table where it was left.
+  useEffect(() => {
+    if (detailFace) return
+    const matrix = matrixRef.current
+    if (matrix !== null && parked.current !== null) {
+      matrix.scrollTop = parked.current.top
+      matrix.scrollLeft = parked.current.left
+    }
+    parked.current = null
+  }, [detailFace])
 
   // Grab the blank lanes to pan; a drag never counts as a click on a row.
   const drag = useRef<{ x: number; left: number; moved: boolean } | null>(null)
@@ -486,7 +500,12 @@ function StoryLog(props: NovelSurfaceProps<NovelPageOwnerProps> & { readonly api
   const pick = (next: Selection, mark: boolean): void => {
     if (drag.current?.moved === true) return
     setSelection(next)
-    setDrawer(true)
+    if (narrow) {
+      const matrix = matrixRef.current
+      parked.current = matrix === null ? null : { top: matrix.scrollTop, left: matrix.scrollLeft }
+      setDetail(true)
+      frameRef.current?.scrollIntoView?.({ block: 'nearest' })
+    }
     if (mark && next.kind !== 'f') setTab('log')
   }
 
@@ -644,9 +663,8 @@ function StoryLog(props: NovelSurfaceProps<NovelPageOwnerProps> & { readonly api
     return mark(`c${chapter}`, chapter, `${t('log.chapter', { n: chapter })} · ${where}${changed}`, <CastGlyph at={at} changes={changes} />, () => { pick({ kind: 'c', id: card.cardId, chapter }, true) })
   }))
   const castStatus = (card: StoryCharacter): string => {
-    const shown = card.appearances.filter(at => !at.planned).length
     const changed = card.history.filter(entry => entry.kind === 'change').length
-    return changed > 0 ? `${t('log.c.shown', { n: shown })} · ${t('log.c.changes', { n: changed })}` : t('log.c.shown', { n: shown })
+    return [castCount(card, t), ...changed > 0 ? [t('log.c.changes', { n: changed })] : []].join(' · ')
   }
 
   const worldChapters = (card: StoryCard): { chapter: number; first: boolean; entries: HistoryEntry[] }[] => {
@@ -762,16 +780,21 @@ function StoryLog(props: NovelSurfaceProps<NovelPageOwnerProps> & { readonly api
         ref={frameRef}
         className={css.logFrame}
         data-narrow={narrow ? 'true' : undefined}
+        data-detail={detailFace ? 'true' : undefined}
         style={{ '--log-hw': `${hw}px` } as CSSProperties}
       >
-        <div className={css.logToolbar}>
+        {detailFace ? (
+          <div className={css.logToolbar}>
+            <button type="button" className={css.logBack} onClick={() => { setDetail(false) }}>← {t('log.back')}</button>
+          </div>
+        ) : <div className={css.logToolbar}>
           {seg(filter, setFilter, [['open', t('log.filter.open')], ['star', t('log.filter.star')], ['all', t('log.filter.all')]])}
           {seg(sort, setSort, [['plant', t('log.sort.plant')], ['idle', t('log.sort.idle')]])}
           {!fits && seg(zoom, setZoom, [['detail', t('log.zoom.detail')], ['fit', t('log.zoom.fit')]])}
           <span className={css.logSpacer} />
           {failure !== null && <span className={css.warn}>{failure}</span>}
           {model.cur > 0 && <span className={css.muted}>{t('log.writtenTo', { n: model.cur })}</span>}
-        </div>
+        </div>}
         <div className={css.logBody}>
           <div className={css.logMain}>
             {!fits && <div
@@ -807,8 +830,7 @@ function StoryLog(props: NovelSurfaceProps<NovelPageOwnerProps> & { readonly api
               {grid}
             </div>
           </div>
-          {(!narrow || drawer) && <aside className={css.logSide}>
-            {narrow && <button type="button" className={css.logClose} onClick={() => { setDrawer(false) }}>{t('log.close')}</button>}
+          {(!narrow || detailFace) && <aside className={css.logSide}>
             <SidePanel
               model={model}
               selected={selected}
@@ -820,10 +842,18 @@ function StoryLog(props: NovelSurfaceProps<NovelPageOwnerProps> & { readonly api
             />
           </aside>}
         </div>
-        <Legend t={t} />
+        {!detailFace && <Legend t={t} />}
       </div>
     </div>
   )
+}
+
+/** 出场 counts the written chapters, 计划 the planned ones; a zero side is left out. */
+function castCount(card: StoryCharacter, t: T): string {
+  const shown = card.appearances.filter(at => !at.planned).length
+  const planned = card.appearances.length - shown
+  const parts = [...shown > 0 ? [t('log.c.shown', { n: shown })] : [], ...planned > 0 ? [t('log.c.plannedCount', { n: planned })] : []]
+  return parts.length === 0 ? t('log.c.absent') : parts.join(' · ')
 }
 
 /* ---------------------------------------------------------- side panel */
@@ -869,14 +899,15 @@ function SidePanel({ model, selected, tab, setTab, navigate, starButton, t }: {
   }
   if (selected.kind === 'c') {
     const card = model.log.characters.find(item => item.cardId === selected.id)!
-    const shown = card.appearances.filter(at => !at.planned)
+    const pov = card.appearances.filter(at => at.pov && !at.planned).length
     const changed = card.history.filter(entry => entry.kind === 'change').length
     return (
       <>
         <div className={css.logKicker}>{t('log.c.kicker')}</div>
         <h3 className={css.logTitle}>{card.name}</h3>
         <div className={css.logMeta}>
-          {t('log.c.meta', { shown: shown.length, pov: shown.filter(at => at.pov).length })}
+          {castCount(card, t)}
+          {pov > 0 && ` · ${t('log.c.povCount', { n: pov })}`}
           {changed > 0 && ` · ${t('log.c.metaChanged', { n: changed })}`}
         </div>
         {tabs(card.history.length)}
