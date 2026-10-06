@@ -39,6 +39,7 @@
     "src/client/RegisterForm.tsx",
     "src/client/preset-visibility.ts",
     "src/client/RegistryList.tsx",
+    "src/client/RemoveDialogs.tsx",
     "src/client/DatasetDetail.tsx",
     "src/client/AddDatasetDialog.tsx",
     "src/client/ReviewPage.tsx",

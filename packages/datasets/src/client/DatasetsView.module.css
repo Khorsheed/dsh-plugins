@@ -607,26 +607,60 @@
 
 .layersCell {
   display: inline-flex;
-  align-items: baseline;
-  gap: 6px;
+  align-items: center;
+  gap: 4px;
 }
 
+/* T99 · the 「改」 is a pencil icon button. In the list's rows it stays out of
+   sight until the pointer is over the row or keyboard focus enters it; still
+   in the layout (opacity, not display) so the row never reflows on hover. */
 .layersEdit {
+  display: inline-flex;
   flex: none;
-  padding: 0 4px;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
   border: none;
-  border-radius: 4px;
+  border-radius: 6px;
   background: none;
   color: var(--dsw-alias-label-secondary);
-  font: inherit;
-  font-size: 12px;
-  white-space: nowrap;
   cursor: pointer;
 }
 
 .layersEdit:hover {
   background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-primary);
+}
+
+.layersEdit:focus-visible {
+  outline: 2px solid var(--dsw-alias-border-focus, var(--dsw-alias-label-primary));
+  outline-offset: 1px;
+}
+
+.layersEdit[data-variant='row'] {
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.tableRow:hover .layersEdit[data-variant='row'],
+.tableRow:focus-within .layersEdit[data-variant='row'] {
+  opacity: 1;
+}
+
+/* Nothing hovers on a touch screen: the pencil is always there. */
+@media (hover: none) {
+  .layersEdit[data-variant='row'] {
+    opacity: 1;
+  }
+}
+
+/* The narrow (folded) table is the phone layout: always there too. */
+@container (max-width: 560px) {
+  .layersEdit[data-variant='row'] {
+    opacity: 1;
+  }
 }
 
 /* «用在哪些实验»: the count as a disclosure, the names folded under it. */

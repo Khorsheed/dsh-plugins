@@ -28,7 +28,7 @@
  * is marked loudly, because that is the thing an author can get wrong.
  */
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   DatasetOverviewRow, ListDatasetsResult, ListItemsResult, OrganizingSetup, RegisterInput, RegistryEntry, UpdateInput,
@@ -40,6 +40,7 @@ import { classifyError, ErrorState } from './ErrorState.tsx'
 import { Chip, EmptyState, LayersEdit, LayersWordView, ShelfIcon, shortCommit } from './parts.tsx'
 import { RegisterForm } from './RegisterForm.tsx'
 import { RegistryList } from './RegistryList.tsx'
+import { DeleteDialog, DiscardDialog } from './RemoveDialogs.tsx'
 import { ReviewPage } from './ReviewPage.tsx'
 import {
   buildAddRequest, buildReturnRequest, buildUpdateRequest, type AddDatasetFields, type OrganizeOutcome,
@@ -98,6 +99,7 @@ export function DatasetsView(props: DatasetsViewProps) {
   const {
     sessionId, useStore, actions, t,
     fetchRegistry, previewRepo, register, updateRegistration, unregister, importBindings,
+    deletePlan, deleteRegistration, discardPlan, discardProposal,
     listDatasets, readFile, readPassthroughFile,
     overview, itemBrief, validateDataset,
     organizingSetup, proposals: fetchProposals, proposalReview, proposalHead, reviewItem, reviewFiles,
@@ -141,6 +143,9 @@ export function DatasetsView(props: DatasetsViewProps) {
   const [registerOpen, setRegisterOpen] = useState<RegisterOpen>(null)
   const [importing, setImporting] = useState(false)
   const [addOpen, setAddOpen] = useState(false)
+  // T99 · the registration whose 「删除」 dialog is open, and the proposal whose 「放弃」 is.
+  const [deleting, setDeleting] = useState<string | null>(null)
+  const [discarding, setDiscarding] = useState<{ id: string; name: string } | null>(null)
   const [setup, setSetup] = useState<OrganizingSetup | null>(null)
   const [organized, setOrganized] = useState<OrganizeNotice | null>(null)
   const [done, setDone] = useState<string | null>(null)
@@ -298,9 +303,19 @@ export function DatasetsView(props: DatasetsViewProps) {
   const submitUpdate = (input: UpdateInput): void => {
     void updateRegistration(sessionId, input).then(settle)
   }
-  const removeRegistration = (id: string): void => {
-    void unregister(sessionId, id).then(settle)
+  // T99 · the dialogs' actions resolve to an error message (kept in the
+  // dialog) or null (done: the dialog closes and the list re-reads).
+  const finish = (result: { ok: true } | { ok: false; error: { message: string } }): string | null => {
+    if (!result.ok) return result.error.message
+    actions.setNotice(null)
+    actions.refresh()
+    return null
   }
+  const loadDeletePlan = useCallback((id: string) => deletePlan(sessionId, id), [deletePlan, sessionId])
+  const loadDiscardPlan = useCallback((id: string) => discardPlan(sessionId, id), [discardPlan, sessionId])
+  const removeRegistration = async (id: string): Promise<string | null> => finish(await unregister(sessionId, id))
+  const deleteWithFiles = async (id: string): Promise<string | null> => finish(await deleteRegistration(sessionId, id))
+  const discard = async (id: string): Promise<string | null> => finish(await discardProposal(sessionId, id))
   const runImport = (): void => {
     setImporting(true)
     void importBindings(sessionId).then((result) => {
@@ -484,7 +499,7 @@ export function DatasetsView(props: DatasetsViewProps) {
                   </span>
                   <span className={css.bindingScope}>
                     {t('registry.colVisible')} · <LayersWordView layers={openSet.layers} t={t} />
-                    <LayersEdit set={openSet.ref} onEdit={() => { editRegistration(openRow.entry.id) }} t={t} />
+                    <LayersEdit set={openSet.ref} onEdit={() => { editRegistration(openRow.entry.id) }} variant="bar" t={t} />
                   </span>
                 </span>
               </>
@@ -538,6 +553,14 @@ export function DatasetsView(props: DatasetsViewProps) {
                 </span>
                 <Button size="sm" variant="primary" onClick={() => { setDone(null); actions.openReview({ kind: 'proposal', id: proposal.id }) }}>
                   {proposal.kind === 'update' ? t('banner.reviewUpdate') : t('banner.review')}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  title={t('discard.actionTitle')}
+                  onClick={() => { setDiscarding({ id: proposal.id, name: proposal.registryId }) }}
+                >
+                  {t('discard.action')}
                 </Button>
               </div>
             ))}
@@ -653,7 +676,7 @@ export function DatasetsView(props: DatasetsViewProps) {
               onAskAgent={askAgent}
               onReview={(repo) => { setDone(null); actions.openReview({ kind: 'pending', repo }) }}
               onEdit={editRegistration}
-              onRemove={removeRegistration}
+              onRemove={(repo) => { setDeleting(repo) }}
               t={t}
             />
           )}
@@ -686,6 +709,24 @@ export function DatasetsView(props: DatasetsViewProps) {
           t={t}
         />
       )}
+      <DeleteDialog
+        id={deleting}
+        sets={registry?.find(row => row.entry.id === deleting)?.sets.map(set => set.set) ?? []}
+        experiments={experiments}
+        loadPlan={loadDeletePlan}
+        onDelete={deleteWithFiles}
+        onUnregister={removeRegistration}
+        onClose={() => { setDeleting(null) }}
+        t={t}
+      />
+      <DiscardDialog
+        id={discarding?.id ?? null}
+        name={discarding?.name ?? ''}
+        loadPlan={loadDiscardPlan}
+        onDiscard={discard}
+        onClose={() => { setDiscarding(null) }}
+        t={t}
+      />
       <AddDatasetDialog
         open={addOpen}
         datasetsHome={setup?.datasetsHome ?? ''}

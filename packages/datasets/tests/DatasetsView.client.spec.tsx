@@ -21,7 +21,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { useSyncExternalStore } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {
-  DatasetOverview, ImportBindingsResult, ItemBrief, ListDatasetsResult, ListItemsResult,
+  DatasetOverview, DeletePlan, DiscardPlan, ImportBindingsResult, ItemBrief, ListDatasetsResult, ListItemsResult,
   Proposal, ProposalReview, ReadResult, RegisterPreview, RegistryEntry, RegistryRow, ValidateResult,
 } from '../src/types.ts'
 import type { DatasetsViewProps, ItemRunsView } from '../src/client/contract.ts'
@@ -53,6 +53,10 @@ interface Harness {
   register: Mock
   updateRegistration: Mock
   unregister: Mock
+  deletePlan: Mock
+  deleteRegistration: Mock
+  discardPlan: Mock
+  discardProposal: Mock
   importBindings: Mock
   listDatasets: Mock
   readFile: Mock
@@ -268,6 +272,16 @@ const PREVIEW: RegisterPreview = {
   checkout: '/repo',
 }
 
+/** T99 · a registration inside the datasets home: its files may go. */
+const DELETE_PLAN: DeletePlan = {
+  id: 'dataseek-eval', path: '/home/user/.dsh/datasets/dataseek-eval', files: 'delete', state: ['/s/materialized/abc'], sets: ['bench'],
+}
+
+/** T99 · the organized repository of PROPOSAL, deletable. */
+const DISCARD_PLAN: DiscardPlan = {
+  id: 'p1', registryId: 'gsm8k', path: '/home/user/.dsh/datasets/gsm8k', files: 'delete', state: [],
+}
+
 const IMPORTED: ImportBindingsResult = {
   imported: [{ id: 'dataseek-eval', commonDir: '/work/dataseek-eval/.git', paths: ['/a', '/b'], sessions: 3, created: true }],
   dangling: [{ repoPath: '/tmp/old-scratch', sessions: 1, reason: 'the path no longer exists' }],
@@ -283,6 +297,10 @@ function makeHarness(rows: RegistryRow[] = [rowOf()]): Harness {
     register: vi.fn(async (_sid: string, input: unknown): Promise<Result<unknown>> => ({ ok: true, value: input })),
     updateRegistration: vi.fn(async (_sid: string, input: unknown): Promise<Result<unknown>> => ({ ok: true, value: input })),
     unregister: vi.fn(async (): Promise<Result<boolean>> => ({ ok: true, value: true })),
+    deletePlan: vi.fn(async (): Promise<Result<DeletePlan>> => ({ ok: true, value: DELETE_PLAN })),
+    deleteRegistration: vi.fn(async () => ({ ok: true, value: { path: DELETE_PLAN.path, deleted: true } })),
+    discardPlan: vi.fn(async (): Promise<Result<DiscardPlan>> => ({ ok: true, value: DISCARD_PLAN })),
+    discardProposal: vi.fn(async () => ({ ok: true, value: { path: DISCARD_PLAN.path, deleted: true } })),
     importBindings: vi.fn(async (): Promise<Result<ImportBindingsResult>> => ({ ok: true, value: IMPORTED })),
     listDatasets: vi.fn(async (): Promise<Result<ListDatasetsResult | ListItemsResult>> => ({ ok: true, value: ITEMS })),
     readFile: vi.fn(async (): Promise<Result<ReadResult>> => ({ ok: true, value: { content: '# Task\n\nbody\n', commit: 'a4f9c2e0000' } })),
@@ -342,6 +360,10 @@ function faceProps(h: Harness, canPick: boolean): Record<string, unknown> {
     register: h.register,
     updateRegistration: h.updateRegistration,
     unregister: h.unregister,
+    deletePlan: h.deletePlan,
+    deleteRegistration: h.deleteRegistration,
+    discardPlan: h.discardPlan,
+    discardProposal: h.discardProposal,
     importBindings: h.importBindings,
     listDatasets: h.listDatasets,
     readFile: h.readFile,
@@ -446,9 +468,14 @@ describe('the list page', () => {
   it('the read-only layer word carries a 「改」 that opens the registration\u2019s edit form', async () => {
     const h = makeHarness()
     renderView(h)
-    fireEvent.click(await screen.findByText('layers.edit'))
+    // T99 · a pencil icon button, named by its aria-label (the tooltip's text).
+    const pencil = await screen.findByRole('button', { name: /layers\.editTitle .*dataseek-eval\/bench/ })
+    expect(pencil.getAttribute('data-variant')).toBe('row')
+    expect(pencil.getAttribute('title')).toBe(pencil.getAttribute('aria-label'))
+    expect(pencil.querySelector('svg')).toBeTruthy()
+    expect(screen.queryByText('layers.edit')).toBeNull()
+    fireEvent.click(pencil)
     expect(await screen.findByText(/register\.titleEdit .*dataseek-eval/)).toBeTruthy()
-    expect(screen.getByTitle(/layers\.editTitle .*dataseek-eval\/bench/)).toBeTruthy()
   })
 
   it('no path is page text: the repository location rides on a title only', async () => {
@@ -539,14 +566,72 @@ describe('the list page', () => {
     expect(usage.versions).toBe(2)
   })
 
-  it('removal is two clicks and names the registration, not the path', async () => {
+  it('「删除」 opens one confirmation: the path, the experiments, both ways out, named by id', async () => {
+    const h = makeHarness()
+    h.datasetExperiments.mockResolvedValue([
+      { id: 'r1', name: 'pilot-a', status: 'done', datasetId: 'bench', experimentId: 'e1', registry: 'dataseek-eval', commit: TIP },
+      { id: 'r2', name: 'pilot-a', status: 'done', datasetId: 'bench', experimentId: 'e1', registry: 'dataseek-eval', commit: TIP },
+      { id: 'r3', name: 'other', status: 'done', datasetId: 'bench', experimentId: 'e2', registry: 'another', commit: TIP },
+    ])
+    renderView(h)
+    fireEvent.click(await screen.findByText('registry.remove'))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('remove.titleDelete {"id":"dataseek-eval"}')).toBeTruthy()
+    expect(await within(dialog).findByText(DELETE_PLAN.path)).toBeTruthy()
+    expect(h.deletePlan).toHaveBeenCalledWith('s1', 'dataseek-eval')
+    // One experiment (two runs fold), the other registration's run stays out.
+    expect(within(dialog).getByText('remove.experiments {"count":1}')).toBeTruthy()
+    expect(within(dialog).getByText('pilot-a')).toBeTruthy()
+    expect(within(dialog).queryByText('other')).toBeNull()
+    expect(within(dialog).getByText('remove.experimentsNote')).toBeTruthy()
+    expect(within(dialog).getByText('remove.irreversible')).toBeTruthy()
+    expect(within(dialog).getByText('remove.stateCount {"count":1}')).toBeTruthy()
+    // Both outcomes are there, separately.
+    expect(within(dialog).getByRole('button', { name: 'remove.unregisterOnly' })).toBeTruthy()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'remove.delete' }))
+    await waitFor(() => { expect(h.deleteRegistration).toHaveBeenCalledWith('s1', 'dataseek-eval') })
+    expect(h.unregister).not.toHaveBeenCalled()
+    await waitFor(() => { expect(h.instance.getSnapshot().refreshRev).toBe(1) })
+    await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull() })
+  })
+
+  it('「只移除登记」 in the same dialog keeps the files', async () => {
     const h = makeHarness()
     renderView(h)
     fireEvent.click(await screen.findByText('registry.remove'))
-    expect(h.unregister).not.toHaveBeenCalled()
-    fireEvent.click(screen.getByText('registry.removeConfirm'))
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.click(await within(dialog).findByRole('button', { name: 'remove.unregisterOnly' }))
     await waitFor(() => { expect(h.unregister).toHaveBeenCalledWith('s1', 'dataseek-eval') })
-    await waitFor(() => { expect(h.instance.getSnapshot().refreshRev).toBe(1) })
+    expect(h.deleteRegistration).not.toHaveBeenCalled()
+  })
+
+  it('a repository outside the datasets home offers the record-only removal alone: 文件留在原处', async () => {
+    const h = makeHarness()
+    h.deletePlan.mockResolvedValue({
+      ok: true, value: { id: 'dataseek-eval', path: '/work/dataseek-eval', files: 'keep', keepReason: 'outside-home', state: [], sets: ['bench'] },
+    })
+    renderView(h)
+    fireEvent.click(await screen.findByText('registry.remove'))
+    const dialog = await screen.findByRole('dialog')
+    expect(await within(dialog).findByText('remove.keep.outside-home')).toBeTruthy()
+    expect(within(dialog).getByText('remove.titleUnregister {"id":"dataseek-eval"}')).toBeTruthy()
+    expect(within(dialog).getByText('/work/dataseek-eval')).toBeTruthy()
+    expect(within(dialog).queryByRole('button', { name: 'remove.delete' })).toBeNull()
+    expect(within(dialog).queryByText('remove.irreversible')).toBeNull()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'remove.unregister' }))
+    await waitFor(() => { expect(h.unregister).toHaveBeenCalledWith('s1', 'dataseek-eval') })
+    expect(h.deleteRegistration).not.toHaveBeenCalled()
+  })
+
+  it('a refused delete keeps the dialog open with the host\u2019s reason', async () => {
+    const h = makeHarness()
+    h.deleteRegistration.mockResolvedValue({ ok: false, error: { code: 'NOT_REMOVABLE', message: 'cannot be deleted from disk' } })
+    renderView(h)
+    fireEvent.click(await screen.findByText('registry.remove'))
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.click(await within(dialog).findByRole('button', { name: 'remove.delete' }))
+    expect(await within(dialog).findByText('cannot be deleted from disk')).toBeTruthy()
+    expect(h.instance.getSnapshot().refreshRev).toBe(0)
   })
 })
 
@@ -950,7 +1035,10 @@ describe('the detail page', () => {
     renderView(h)
     fireEvent.click(await screen.findByText('bench'))
     expect(await screen.findByText('dataseek-eval/bench · i1-walk@a4f9c2e')).toBeTruthy()
-    fireEvent.click(screen.getByText('layers.edit'))
+    const pencil = screen.getByRole('button', { name: /layers\.editTitle/ })
+    // The detail page's bar keeps it always visible.
+    expect(pencil.getAttribute('data-variant')).toBe('bar')
+    fireEvent.click(pencil)
     expect(await screen.findByText(/register\.titleEdit .*dataseek-eval/)).toBeTruthy()
   })
 
@@ -1147,6 +1235,39 @@ describe('添加题集 picks directories (T95)', () => {
 })
 
 describe('等你确认登记 (T90)', () => {
+  it('「放弃」 on the banner: the organized repository and the record go, named by id', async () => {
+    const h = makeHarness()
+    h.proposals.mockResolvedValue({ ok: true, value: [PROPOSAL] })
+    renderView(h)
+    expect(await screen.findByText('banner.proposal {"name":"gsm8k"}')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'discard.action' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('discard.title {"name":"gsm8k"}')).toBeTruthy()
+    expect(await within(dialog).findByText(DISCARD_PLAN.path)).toBeTruthy()
+    expect(within(dialog).getByText('discard.body')).toBeTruthy()
+    expect(within(dialog).getByText('remove.irreversible')).toBeTruthy()
+    expect(h.discardPlan).toHaveBeenCalledWith('s1', 'p1')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'discard.confirmDelete' }))
+    await waitFor(() => { expect(h.discardProposal).toHaveBeenCalledWith('s1', 'p1') })
+    await waitFor(() => { expect(h.instance.getSnapshot().refreshRev).toBe(1) })
+    // The organizing session is not touched: nothing opens or drafts.
+    expect(h.startOrganizing).not.toHaveBeenCalled()
+    expect(h.draftInSession).not.toHaveBeenCalled()
+  })
+
+  it('「放弃」 of a repository the host keeps: only the record, the files stay', async () => {
+    const h = makeHarness()
+    h.proposals.mockResolvedValue({ ok: true, value: [PROPOSAL] })
+    h.discardPlan.mockResolvedValue({ ok: true, value: { ...DISCARD_PLAN, files: 'keep', keepReason: 'outside-home', path: '/work/gsm8k' } })
+    renderView(h)
+    fireEvent.click(await screen.findByRole('button', { name: 'discard.action' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(await within(dialog).findByText('remove.keep.outside-home')).toBeTruthy()
+    expect(within(dialog).queryByText('remove.irreversible')).toBeNull()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'discard.confirm' }))
+    await waitFor(() => { expect(h.discardProposal).toHaveBeenCalledWith('s1', 'p1') })
+  })
+
   it('a 「核对并登记」 request from the tool card opens that review directly, no list or banner (T96)', async () => {
     const h = makeHarness()
     h.proposals.mockResolvedValue({ ok: true, value: [PROPOSAL] })

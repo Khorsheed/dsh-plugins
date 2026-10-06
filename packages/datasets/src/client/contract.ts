@@ -10,7 +10,7 @@ import type {} from '@khorsheed/dsh-datasets/remote'
 // Type-only: pulls ui-conversation's SlotMap merge ('conversation.view').
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {
-  DatasetOverview, ImportBindingsResult, ItemBrief, ListDatasetsResult, ListItemsResult, OrganizingSetup,
+  DatasetOverview, DeletePlan, DiscardPlan, ImportBindingsResult, RemovalResult, ItemBrief, ListDatasetsResult, ListItemsResult, OrganizingSetup,
   Proposal, ProposalReview, ReadPassthroughRequest, ReadQuery, ReadResult, RegisterInput, RegisterPreview,
   RegistryEntry, RegistryRow, ReviewFiles, ReviewHead, ReviewItem, UpdateInput, ValidateResult,
 } from '../types.ts'
@@ -104,6 +104,10 @@ export interface DatasetsViewInjected {
   updateRegistration: (sessionId: SessionId, input: UpdateInput) => Promise<RemoteResult<RegistryEntry>>
   /** Remove a registration (the repository itself is untouched). */
   unregister: (sessionId: SessionId, id: string) => Promise<RemoteResult<boolean>>
+  /** T99 · the delete dialog's facts (the host derives the path from the registration). */
+  deletePlan: (sessionId: SessionId, id: string) => Promise<RemoteResult<DeletePlan>>
+  /** T99 · 「删除题集和文件」: the registration and its repository directory. */
+  deleteRegistration: (sessionId: SessionId, id: string) => Promise<RemoteResult<RemovalResult>>
   /** «从旧绑定登记»: fold the legacy session bindings into registrations. */
   importBindings: (sessionId: SessionId) => Promise<RemoteResult<ImportBindingsResult>>
   /** List one registration's datasets, or one dataset's items (one RPC). */
@@ -137,6 +141,10 @@ export interface DatasetsViewInjected {
   ) => Promise<RemoteResult<RegistryEntry>>
   /** 「退回给 Agent」: mark it returned (the proposal names its organizing session). */
   returnProposal: (sessionId: SessionId, id: string, note: string) => Promise<RemoteResult<Proposal>>
+  /** T99 · the 「放弃」 dialog's facts. */
+  discardPlan: (sessionId: SessionId, id: string) => Promise<RemoteResult<DiscardPlan>>
+  /** T99 · 「放弃」: the proposal record and (when the host allows) its organized repository. */
+  discardProposal: (sessionId: SessionId, id: string) => Promise<RemoteResult<RemovalResult>>
   /** A registration's version held by the update gate, or nothing when none waits. */
   pendingReview: (sessionId: SessionId, repo: string) => Promise<RemoteResult<ProposalReview | undefined | null>>
   /** Confirm a held version. */
