@@ -303,6 +303,7 @@
 .logSpacer { flex: 1; }
 
 .logBody {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 300px;
 }
@@ -818,9 +819,31 @@
 .logLegend svg { width: 13px; height: 13px; overflow: visible; }
 .logLegendSleep { width: 22px; height: 0; border-top: 2px dashed var(--log-red-line); }
 
+/* Narrow: the table takes the width; a picked row opens the side panel as a drawer over it. */
 .logFrame[data-narrow='true'] .logBody { grid-template-columns: 1fr; }
-.logFrame[data-narrow='true'] .logMain { border-right: 0; border-bottom: 1px solid var(--log-line); }
-.logFrame[data-narrow='true'] .logSide { contain: none; overflow: visible; }
+.logFrame[data-narrow='true'] .logMain { border-right: 0; }
+.logFrame[data-narrow='true'] .logSide {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 6;
+  width: min(340px, 100%);
+  border-left: 1px solid var(--log-line);
+  background: var(--log-surface);
+  box-shadow: -8px 0 24px color-mix(in srgb, var(--dsw-alias-label-primary) 10%, transparent);
+}
+
+.logClose {
+  justify-self: end;
+  padding: 2px 8px;
+  border: 1px solid var(--log-line);
+  border-radius: 6px;
+  background: none;
+  font: var(--dsw-font-xxs-12);
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
 .logFrame[data-narrow='true'] .logScrub { margin-left: 16px; }
 .logFrame[data-narrow='true'] .logScrubLabel,
 .logFrame[data-narrow='true'] .logRef { display: none; }
