@@ -28,6 +28,7 @@
     "src/materialize.ts",
     "src/registry.ts",
     "src/zones.ts",
-    "src/proposal.ts"
+    "src/proposal.ts",
+    "src/removal.ts"
   ]
 }

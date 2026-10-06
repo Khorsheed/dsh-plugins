@@ -30,6 +30,7 @@ import {
 import { layerPaths, materializePaths, type ManagedWorktree } from './materialize.ts'
 import { resolveDatasetsHome } from './defaults.ts'
 import { openProposals, type ProposalStore } from './proposal.ts'
+import { finishRemoval, planRepoRemoval, repositoryDirOf, stageRemoval, type RemovalPlan, type RemovalRoots } from './removal.ts'
 import { notRegistered, openRegistry, type LatestCommit, type RegistryEntry, type RepoRegistry } from './registry.ts'
 import { normalizeRepoPath } from './repo-path.ts'
 
@@ -369,6 +370,28 @@ export interface DatasetsService {
   readonly proposals: ProposalStore
   /** T90: the organizing session's preset and the new-repository home. */
   readonly organizing: OrganizingSetup
+  /**
+   * T99 · what deleting a registration would do: the repository directory,
+   * whether it goes or stays (and why), the plugin state that goes with it,
+   * and the registration's sets (the browser matches them against eval's
+   * experiment rows — this plugin does not read eval). Reads only.
+   */
+  planDelete(id: string): Promise<DeletePlan>
+  /**
+   * T99 · 「删除」: drop the registration AND its repository directory. The
+   * plan is recomputed here; a plan that keeps the files refuses
+   * (`NOT_REMOVABLE`) — removing only the record is `registry.remove`.
+   * Open proposals of the same repository go with it.
+   */
+  deleteRegistration(id: string): Promise<RemovalResult>
+  /** T99 · what discarding an organizing result would do. Reads only. */
+  planDiscard(id: string): Promise<DiscardPlan>
+  /**
+   * T99 · 「放弃」 an organizing result: drop the proposal record and, when
+   * the repository is new, unregistered and inside the datasets home, its
+   * directory too. The organizing session is not touched.
+   */
+  discardProposal(id: string): Promise<RemovalResult>
   /** Fail loud unless `repo` is inside a git work tree; resolves to the canonical toplevel. */
   assertRepository(repo: string): Promise<string>
   /**
@@ -428,6 +451,32 @@ export interface DatasetsServiceOptions {
   proposalsRoot?: string
   /** T90: the organizing session's preset and the default home of new dataset repositories. */
   organizing?: OrganizingSetup
+}
+
+/** T99 · a registration's delete plan. */
+export interface DeletePlan extends RemovalPlan {
+  /** The registration id. */
+  id: string
+  /** The registration's set ids at its latest commit (empty when it cannot be read). */
+  sets: string[]
+}
+
+/** T99 · a proposal's discard plan. */
+export interface DiscardPlan extends RemovalPlan {
+  /** The proposal id. */
+  id: string
+  /** The name the proposal would register as. */
+  registryId: string
+}
+
+/** T99 · what a delete or a discard did. */
+export interface RemovalResult {
+  /** The repository directory. */
+  path: string
+  /** True when the directory was deleted; false when the files stayed. */
+  deleted: boolean
+  /** Why the files stayed. */
+  keepReason?: RemovalPlan['keepReason']
 }
 
 /** What the 「让 Agent 整理」 gesture needs from the host side (T90). */
@@ -659,10 +708,80 @@ export function createDatasetsService(options: DatasetsServiceOptions): Datasets
   }
 
   let proposalStore: ProposalStore | undefined
+  /** T99 · where a repository may be deleted from, and the state that goes with it. */
+  const removalRoots = (): RemovalRoots => ({
+    datasetsHome: service.organizing.datasetsHome,
+    materializedRoot: options.materializedRoot,
+    stateRoot: dirname(options.registryPath),
+  })
+  /** A proposal's discard plan: a registered repository (or an update) only ever loses the record. */
+  const discardPlanOf = async (commonDir: string, kind: 'new' | 'update'): Promise<RemovalPlan> => {
+    const registered = kind === 'update' || service.registry.entries().some(entry => entry.commonDir === commonDir)
+    if (registered) return { path: repositoryDirOf(commonDir), files: 'keep', keepReason: 'registered', state: [] }
+    return await planRepoRemoval(commonDir, removalRoots())
+  }
   const service: DatasetsService = {
     bindingsRoot: options.bindingsRoot,
     registry: openRegistry(options.registryPath),
     organizing: options.organizing ?? { preset: 'dataset-authoring', datasetsHome: resolveDatasetsHome(undefined) },
+    async planDelete(id) {
+      const entry = service.registry.get(id)
+      if (entry === undefined) throw notRegistered(id)
+      let sets: string[] = []
+      try {
+        sets = (await service.registry.sets(entry)).map(view => view.set)
+      } catch {
+        // A registration whose branch is gone still deletes; it lists no sets.
+      }
+      return { ...(await planRepoRemoval(entry.commonDir, removalRoots())), id, sets }
+    },
+
+    async deleteRegistration(id) {
+      const entry = service.registry.get(id)
+      if (entry === undefined) throw notRegistered(id)
+      const plan = await planRepoRemoval(entry.commonDir, removalRoots())
+      if (plan.files !== 'delete') {
+        throw new DatasetsError(
+          `${JSON.stringify(id)} cannot be deleted from disk (${plan.keepReason ?? 'keep'}) — remove the registration only`,
+          'NOT_REMOVABLE',
+        )
+      }
+      const staged = stageRemoval(plan)
+      service.registry.remove(id)
+      for (const proposal of service.proposals.list()) {
+        if (proposal.commonDir === entry.commonDir && (proposal.status === 'pending' || proposal.status === 'returned')) {
+          service.proposals.remove(proposal.id)
+        }
+      }
+      finishRemoval(staged, plan)
+      return { path: plan.path, deleted: true }
+    },
+
+    async planDiscard(id) {
+      const proposal = service.proposals.get(id)
+      return { ...(await discardPlanOf(proposal.commonDir, proposal.kind)), id, registryId: proposal.registryId }
+    },
+
+    async discardProposal(id) {
+      const proposal = service.proposals.get(id)
+      if (proposal.status !== 'pending' && proposal.status !== 'returned') {
+        throw new DatasetsError(`proposal ${id} is ${proposal.status} — only an open proposal can be discarded`, 'SHAPE_INVALID')
+      }
+      const plan = await discardPlanOf(proposal.commonDir, proposal.kind)
+      const staged = plan.files === 'delete' ? stageRemoval(plan) : undefined
+      service.proposals.remove(id)
+      if (staged !== undefined) {
+        // The repository is gone: no other open proposal of it can be confirmed either.
+        for (const other of service.proposals.list()) {
+          if (other.commonDir === proposal.commonDir && (other.status === 'pending' || other.status === 'returned')) {
+            service.proposals.remove(other.id)
+          }
+        }
+        finishRemoval(staged, plan)
+      }
+      return { path: plan.path, deleted: staged !== undefined, ...(plan.keepReason !== undefined ? { keepReason: plan.keepReason } : {}) }
+    },
+
     get proposals(): ProposalStore {
       proposalStore ??= openProposals(options.proposalsRoot ?? join(dirname(options.registryPath), 'proposals'), {
         registry: service.registry,
