@@ -4,7 +4,7 @@ The library and learning engine: project-organized close reading. Books are regi
 
 ## Features
 
-- **The Library tab** (a page-type right-Sidebar tab, kind `library`). The v2 sidebar (today / project / a book's path / the node / cards / chapter quiz / review) is in development; this version shows an interim view of projects and book progress.
+- **The library sidebar** (a page-type right-Sidebar tab, kind `library`; one layout that adapts to its width, full screen on a phone): today (reviews due, keep reading, recently noted, projects) → project (books with their own progress, cards, review) → book (a roadmap draft to adopt or discard, or the S-shaped path) → node (guide / my notes / chapter quiz) → knowledge cards (filtered by source, searchable, mastered / delete) → chapter quiz (choice and fill judged on the spot, open answers handed to the coach) → result → review flashcards. What needs the model (adding a book, planning, composing a quiz, judging open answers) is drafted into the conversation input after the sidebar binds the session.
 - **Registered books**: title, edition, ISBN, kind (knowledge / material) and the contents with its source url. No file is ever parsed.
 - **Draft → adopt roadmaps**: the coach writes drafts, the learner's 采用 in the sidebar makes one the path; adoption keeps the progress of nodes whose ids survive. Nodes are quiz (a chapter quiz completes them) or read (「读完」 does).
 - **Photo pages**: one page photo records its printed text and every mark at once; certain marks become cards in one go, uncertain ones are listed apart. Photos are kept by attachment reference; reading one back is whitelisted to pages the project recorded.
@@ -35,7 +35,7 @@ Details live in the package.json `dsh.compat.notes`: state is plain `node:fs` un
 ## Known limits
 
 - Out of scope: book file upload and parsing (EPUB / PDF), an in-conversation 「精读」tab, XP and streaks, project-level exams and cross-book linking.
-- The v2 sidebar, in-sidebar photo recognition and the session-header bind chip are in development (proposal M2b–M3).
+- In-sidebar photo recognition, the session-header bind chip and the record toast with undo are in development (proposal M2c–M3); photos are sent in the conversation for now.
 - A photo page needs the full attachment reference (attachmentId + mediaType + bytes + width + height — copied verbatim off the message's image block), else `ref-incomplete`.
 
 ## Development

@@ -21,6 +21,12 @@
     "src/client/locales.ts",
     "src/client/preset-visibility.ts",
     "src/client/store.ts",
+    "src/client/judge.ts",
+    "src/client/ui.tsx",
+    "src/client/views/home.tsx",
+    "src/client/views/book.tsx",
+    "src/client/views/cards.tsx",
+    "src/client/views/quiz.tsx",
     "src/client/LibraryPane.tsx"
   ]
 }

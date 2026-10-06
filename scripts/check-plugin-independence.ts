@@ -225,6 +225,9 @@ export const ALLOWED_EDGES: Readonly<Record<string, ReadonlyArray<string>>> = {
   // row and panel root (panel-responsive-spec P2) — the same inlined,
   // zero-runtime source-plane edge as the file surfaces above.
   'dsh-reader': ['@khorsheed/dsh-client-ui-panel-kit'],
+  // library → ui-panel-kit: the learning sidebar's panel root, header, tabs,
+  // chip row and list rows — the same inlined, zero-runtime source-plane edge.
+  'library': ['@khorsheed/dsh-client-ui-panel-kit'],
   // room consumes the local-agent delegation facade as an OPTIONAL capability:
   // type-only imports, an optional peer dep, a runtime probe, and tested
   // degradation when the family is absent (the room works with the main agent

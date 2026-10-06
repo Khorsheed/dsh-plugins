@@ -21,7 +21,9 @@ The M1 library ([M1 note](2026-10-06-library-learning-mode-m01.md)) assumed the 
 
 `@khorsheed/dsh-bundle-learning` is dieted to persona, ask-user, web, compaction and the library row with `hideSections: [harness:source, app:web-surface, ui:deliverable-file-references]` and `denyTools: [list_capabilities]`; fs, skills and todo are dropped.
 
-The browser half is an interim project/progress list until the v2 sidebar lands (proposal M2b).
+## The sidebar
+
+The browser half is one route stack (`client/store.ts`) over today → project → book → node → cards → quiz → result → review, built on `ui-panel-kit` (`PanelRoot`, `PanelHeader`, `UnderlineTabs`, `ChipRow`, `ListRow`) so one layout serves a desktop sidebar and a phone's full-screen panel (docs/panel-design.md; `pnpm check:panels` clean). Views read the host through a small `useLoad` hook keyed on the store's `rev`. The pane never does the model's work: adding a book, (re)planning, composing a quiz and judging open answers are drafted into the bound session's input (`primeConversation`) after `bindTarget`. Choice and fill-in answers are judged in the pane (`client/judge.ts`); a sitting without open answers is ledgered straight through `putAttempt` with `by: 'self'`, otherwise the whole sitting goes to the coach so it is one attempt. A sample page (`examples/sidebar`, port 8877, in-memory data) drives screenshots.
 
 ## Alternatives considered
 
@@ -36,11 +38,11 @@ The browser half is an interim project/progress list until the v2 sidebar lands 
 - The model can no longer quote a book it was never shown; photo and web evidence are the only verbatim sources, and the material-book rule prevents memory-backed content questions.
 - Cards are one per thing per project, so a word met in two books carries both sentences — the review rotates them.
 - `restrict` and scoped blank sections are verified only against fakes here; whether the preset row's ctx is scoped enough for `tools.restrict` is checked on a live instance (proposal probe P1-8). A failure there is a logged no-op.
-- The sidebar shows less than M1 until M2b ships; nothing is deployed, so no user loses a view.
+- Photos still go through the conversation until the sidebar camera lands (M2c); the record toast and the header bind chip are M3.
 
 ## Testing
 
-`tests/store.spec.ts` (documents, drafts, tolerant ledgers, bindings, locks), `tests/service.spec.ts` (key folding, near/exact merge, pending + `mergeInto`/`asNew`, page carding, undo, review, both quiz axes, the material-book rule, the cascade with void and card-less misses, re-adoption keeping progress, binding summary), `tests/tool.spec.ts` (binding defaults and teaching errors, chat-card session refs, the rendered context), `tests/boot.spec.ts` (row wiring, quieting config, `tools: none`), and the bundle-learning patch spec.
+`tests/store.spec.ts` (documents, drafts, tolerant ledgers, bindings, locks), `tests/service.spec.ts` (key folding, near/exact merge, pending + `mergeInto`/`asNew`, page carding, undo, review, both quiz axes, the material-book rule, the cascade with void and card-less misses, re-adoption keeping progress, binding summary), `tests/tool.spec.ts` (binding defaults and teaching errors, chat-card session refs, the rendered context), `tests/boot.spec.ts` (row wiring, quieting config, `tools: none`), `tests/judge.spec.ts` (the pane's choice / fill judging), and the bundle-learning patch spec; the sidebar screens were checked at 390px in both themes and at desktop width on the sample page.
 
 ## Related
 

@@ -21,7 +21,9 @@ M1 的图书馆（[M1 note](2026-10-06-library-learning-mode-m01.zh.md)）假设
 
 `@khorsheed/dsh-bundle-learning` 精简为 persona、ask-user、web、compaction 与 library 行，配 `hideSections: [harness:source, app:web-surface, ui:deliverable-file-references]`、`denyTools: [list_capabilities]`；去掉 fs、skills、todo。
 
-浏览器半在 v2 侧栏落地前（提案 M2b）是过渡的项目 / 进度列表。
+## 侧栏
+
+浏览器半是一条路由栈（`client/store.ts`），覆盖 今日 → 项目 → 书 → 这一节 → 知识卡片 → 章节考 → 结算 → 复习，基于 `ui-panel-kit`（`PanelRoot`、`PanelHeader`、`UnderlineTabs`、`ChipRow`、`ListRow`），桌面侧栏与手机全屏共用一套界面（docs/panel-design.md；`pnpm check:panels` 无错误）。各视图经小 `useLoad` 钩子按 store 的 `rev` 读宿主。侧栏不替模型干活：加书、（重新）排路线、出题、判开放题都在 `bindTarget` 之后填进绑定会话的输入框（`primeConversation`）。选择与填空在侧栏判（`client/judge.ts`）；没有开放题的一次作答直接经 `putAttempt`（`by: 'self'`）落账，否则整次作答交给教练，保证一次作答一条记录。样例页（`examples/sidebar`，端口 8877，内存数据）用于截图自查。
 
 ## Alternatives considered
 
@@ -36,11 +38,11 @@ M1 的图书馆（[M1 note](2026-10-06-library-learning-mode-m01.zh.md)）假设
 - 模型不再能「引用」它没见过的书；逐字依据只剩照片与网页，材料型书规则挡住凭记忆的内容题。
 - 每个项目里一件事一张卡，在两本书里遇到的词带着两句语境，复习时轮换。
 - `restrict` 与 scope 内空段在这里只对假对象验证过；preset 行的 ctx 是否足以调用 `tools.restrict` 要在真实例上确认（提案探针 P1-8），失败时是记日志的空操作。
-- M2b 落地前侧栏比 M1 少；尚未部署，没有用户失去视图。
+- 侧栏拍照（M2c）落地前照片仍经会话发送；记录提示与会话头绑定芯片在 M3。
 
 ## Testing
 
-`tests/store.spec.ts`（文档、草稿、容错账本、绑定、锁）、`tests/service.spec.ts`（键折叠、精确 / 疑似合并、pending 与 `mergeInto`/`asNew`、照片成卡、撤销、复习、两轴、材料型书规则、含作废与无卡错题的级联、重新采用保留进度、绑定摘要）、`tests/tool.spec.ts`（绑定默认与教学式错误、聊天卡记会话、渲染的上下文）、`tests/boot.spec.ts`（行接线、静音配置、`tools: none`），以及 bundle-learning 的 patch 测试。
+`tests/store.spec.ts`（文档、草稿、容错账本、绑定、锁）、`tests/service.spec.ts`（键折叠、精确 / 疑似合并、pending 与 `mergeInto`/`asNew`、照片成卡、撤销、复习、两轴、材料型书规则、含作废与无卡错题的级联、重新采用保留进度、绑定摘要）、`tests/tool.spec.ts`（绑定默认与教学式错误、聊天卡记会话、渲染的上下文）、`tests/boot.spec.ts`（行接线、静音配置、`tools: none`）、`tests/judge.spec.ts`（侧栏的选择 / 填空判题），以及 bundle-learning 的 patch 测试；侧栏各屏在样例页上按 390px 深浅两色与桌面宽度截图自查过。
 
 ## Related
 

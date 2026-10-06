@@ -16,21 +16,61 @@ import type {
 import type {} from '@khorsheed/dsh-library/remote'
 // Type-only: pulls ui-session's GlobalStandardProps merge (`useSessions`).
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
-import type { LibraryProjectSummary } from '../types.ts'
+import type {
+  LibraryAssessResult,
+  LibraryBinding,
+  LibraryBook,
+  LibraryCard,
+  LibraryCardQuery,
+  LibraryEvent,
+  LibraryOutcome,
+  LibraryPage,
+  LibraryProject,
+  LibraryProjectSummary,
+  LibraryQuiz,
+  LibraryReviewRating,
+  LibraryRoadmap,
+  LibraryTemplate,
+  LibraryVerdict,
+} from '../types.ts'
 import type { createLibraryStore } from './store.ts'
 
 export type { RemoteResult }
 
+/** A Remote call's answer: the protocol envelope around a domain outcome. */
+type Answer<T> = Promise<RemoteResult<LibraryOutcome<T>>>
+
 /**
- * The business face every library surface receives from its registration.
- * M2a carries only the project list; the v2 sidebar (M2b) widens it.
+ * The business face every library surface receives from its registration:
+ * the wire verbs straight off the Remote, plus the two session gestures the
+ * pane cannot perform itself (priming the conversation, binding the session).
  */
 export interface LibraryPaneInjected {
-  /** Every project with its books' progress. */
   listProjects: () => Promise<RemoteResult<{ projects: LibraryProjectSummary[] }>>
+  getProject: (id: string) => Answer<{ project: LibraryProjectSummary; books: LibraryBook[] }>
+  createProject: (request: { name: string; template: LibraryTemplate; goal?: string }) => Answer<{ project: LibraryProject }>
+  getRoadmap: (projectId: string, bookId: string) => Promise<RemoteResult<{ roadmap?: LibraryRoadmap; draft?: LibraryRoadmap }>>
+  adoptRoadmap: (projectId: string, bookId: string) => Answer<{ roadmap: LibraryRoadmap }>
+  discardDraft: (projectId: string, bookId: string) => Answer<{ bookId: string }>
+  markNodeRead: (projectId: string, bookId: string, nodeId: string) => Answer<{ roadmap: LibraryRoadmap; unlocked: string[] }>
+  listPages: (projectId: string, bookId: string, nodeId?: string) => Promise<RemoteResult<{ pages: LibraryPage[] }>>
+  readPagePhoto: (projectId: string, pageId: string) => Answer<{ data: string; mediaType: string }>
+  listCards: (query: LibraryCardQuery) => Promise<RemoteResult<{ cards: LibraryCard[]; total: number }>>
+  dueCards: (projectId?: string) => Promise<RemoteResult<{ cards: (LibraryCard & { projectId: string })[] }>>
+  editCard: (projectId: string, cardId: string, patch: { status?: LibraryCard['status']; gloss?: string }) => Answer<{ card: LibraryCard }>
+  undoCards: (projectId: string, ids: readonly string[], at: string) => Answer<{ removed: number; reverted: number }>
+  reviewCard: (projectId: string, cardId: string, rating: LibraryReviewRating) => Answer<{ card: LibraryCard }>
+  listQuizzes: (projectId: string, bookId: string, nodeId?: string) => Promise<RemoteResult<{ quizzes: LibraryQuiz[] }>>
+  getQuiz: (projectId: string, quizId: string) => Answer<{ quiz: LibraryQuiz }>
+  putAttempt: (projectId: string, quizId: string, verdicts: readonly LibraryVerdict[]) => Answer<LibraryAssessResult>
+  recentRecords: () => Promise<RemoteResult<{ records: (LibraryEvent & { projectId: string; projectName: string })[] }>>
+  /** The session's binding, when it has one. */
+  boundTarget: () => Promise<RemoteResult<LibraryBinding | null>>
+  /** Bind the session (null unbinds). */
+  bindTarget: (binding: LibraryBinding | null) => Answer<{ binding: LibraryBinding | null }>
   /**
-   * Prime the session's conversation with a request. False when this session
-   * has no conversation surface.
+   * Prime the session's conversation with a request (the coach does the
+   * work; the pane drafts the ask). False when the session has no input.
    */
   primeConversation: (text: string) => boolean
 }

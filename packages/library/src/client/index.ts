@@ -1,7 +1,7 @@
 /**
  * The library's browser half: mount the Remote, register the dictionaries and
- * the right-Sidebar tab, and hand the pane the one gesture it cannot perform
- * for itself (priming the conversation for a roadmap re-split).
+ * the right-Sidebar tab, and hand the pane the gestures it cannot perform for
+ * itself (priming the conversation, binding the session).
  *
  * Failure policy is the repo's "degrade, don't explode": genuinely required
  * wiring (`slots`, `remote`, `locale`, `sidebarRightTabs`, `sessions`) is
@@ -113,6 +113,25 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   /** The injected business face, identical for whichever session mounts it. */
   const face = (sessionId: SessionId): LibraryPaneInjected => ({
     listProjects: () => remote.listProjects(),
+    getProject: id => remote.getProject({ id }),
+    createProject: request => remote.createProject(request),
+    getRoadmap: (projectId, bookId) => remote.getRoadmap({ projectId, bookId }),
+    adoptRoadmap: (projectId, bookId) => remote.adoptRoadmap({ projectId, bookId }),
+    discardDraft: (projectId, bookId) => remote.discardDraft({ projectId, bookId }),
+    markNodeRead: (projectId, bookId, nodeId) => remote.markNodeRead({ projectId, bookId, nodeId }),
+    listPages: (projectId, bookId, nodeId) => remote.listPages(nodeId === undefined ? { projectId, bookId } : { projectId, bookId, nodeId }),
+    readPagePhoto: (projectId, pageId) => remote.readPagePhoto({ projectId, pageId }),
+    listCards: query => remote.listCards(query),
+    dueCards: projectId => remote.dueCards(projectId === undefined ? {} : { projectId }),
+    editCard: (projectId, cardId, patch) => remote.editCard({ projectId, cardId, patch }),
+    undoCards: (projectId, ids, at) => remote.undoCards({ projectId, ids, at }),
+    reviewCard: (projectId, cardId, rating) => remote.reviewCard({ projectId, cardId, rating }),
+    listQuizzes: (projectId, bookId, nodeId) => remote.listQuizzes(nodeId === undefined ? { projectId, bookId } : { projectId, bookId, nodeId }),
+    getQuiz: (projectId, quizId) => remote.getQuiz({ projectId, quizId }),
+    putAttempt: (projectId, quizId, verdicts) => remote.putAttempt({ projectId, quizId, verdicts }),
+    recentRecords: () => remote.recentRecords({ limit: 3 }),
+    boundTarget: () => remote.boundTarget(sessionId),
+    bindTarget: binding => remote.bindTarget(sessionId, { binding }),
     primeConversation: text => {
       const input = inputFor(sessionId)
       if (input === undefined) return false
