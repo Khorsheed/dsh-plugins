@@ -65,26 +65,23 @@ function IconFolderReturnMedium({ size = 16, className }: IconProps) {
   )
 }
 
-/** Up-one-folder glyph: an arrow rising out of a corner (no official equivalent). */
-function IconFolderUpMedium({ size = 16, className }: IconProps) {
-  return (
-    <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <path d="M8 13V3.5M4.2 7.2 8 3.4l3.8 3.8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  )
-}
-
 /**
- * A folder's parent, shortened for a header note: the home prefix becomes
- * `~`, and the filesystem root reads as nothing at all.
- * @param path - an absolute directory path.
- * @returns e.g. `~/code` for `/home/user/code/Writing` (a macOS home under
- *   `/Users` too); '' at the top.
+ * The breadcrumb segments of a folder. With `home`, a macOS/Linux home prefix
+ * folds into one `~` segment that still navigates to the home folder — the
+ * compact header's trail, where `Users / name` would spend the row on noise.
+ * @param path - an absolute (or root-relative) directory path.
+ * @param home - fold the home prefix into `~`.
+ * @returns one `{ label, path }` per segment, the last being `path` itself.
  */
-export function parentNote(path: string): string {
-  const parent = dirnameOf(path)
-  if (parent === '' || parent === '/' || parent === path) return ''
-  return parent.replace(/^\/(?:Users|home)\/[^/]+(?=\/|$)/, '~')
+export function crumbsOf(path: string, home = false): { label: string; path: string }[] {
+  if (path === '') return []
+  const parts = path.split('/').filter(part => part !== '')
+  const crumbs = parts.map((part, index) => ({
+    label: part,
+    path: path.startsWith('/') ? `/${parts.slice(0, index + 1).join('/')}` : parts.slice(0, index + 1).join('/'),
+  }))
+  const homeMatch = home ? /^\/(?:Users|home)\/[^/]+(?=\/|$)/.exec(path) : null
+  return homeMatch ? [{ label: '~', path: homeMatch[0] }, ...crumbs.slice(2)] : crumbs
 }
 
 /** The workspace view tab. */
@@ -224,15 +221,6 @@ export function WorkspaceView({
   }
 
   const current = root ?? ''
-  const currentParts = current.split('/').filter(part => part !== '')
-  const crumbs: { label: string; path: string }[] = current === ''
-    ? []
-    : currentParts.map((part, index) => ({
-      label: part,
-      path: current.startsWith('/')
-        ? `/${currentParts.slice(0, index + 1).join('/')}`
-        : currentParts.slice(0, index + 1).join('/'),
-    }))
 
   // Memoized: FileTree seeds search-mode expansion off the groups' identity,
   // so an unmemoized array literal would re-seed (clobbering the user's
@@ -280,21 +268,27 @@ export function WorkspaceView({
     ...(canOpenFolder && root !== null ? [{ id: 'folder', label: t('local.openFolder'), icon: <IconFolderOpenOutlineMedium />, onSelect: () => { openFolder(root) } }] : []),
     { id: 'refresh', label: t('local.refreshFiles'), icon: <IconRefreshOutlineMedium />, onSelect: () => { if (root !== null) actions.refresh() } },
   ]
-  const parent = current === '' ? '' : dirnameOf(current)
-  // Compact: one header for the whole list — the folder's name with its parent
-  // as the note, search and up inline, everything else (the tree header's
-  // hidden-files toggle included) in ⋯. The breadcrumb's job, climbing, is the
-  // up action; the workspace actions keep their wide order.
+  // Compact: one header for the whole list — a tappable trail (home folded to
+  // `~`) climbs to any ancestor, search inline, everything else (the tree
+  // header's hidden-files toggle included) in ⋯; the workspace actions keep
+  // their wide order.
   const compactActions: PanelAction[] = [
     ...(root !== null && root !== '' ? [{ id: 'search', label: searchOpen ? t('tree.closeSearch') : t('tree.search'), icon: <IconSearchOutlineMedium />, pinned: true, pressed: searchOpen, onSelect: toggleSearch }] : []),
-    ...(parent !== '' && parent !== current ? [{ id: 'up', label: t('local.goUp'), icon: <IconFolderUpMedium />, onSelect: () => { navigate(parent) } }] : []),
     ...workspaceActions,
     { id: 'hidden', label: hideHidden ? t('local.showHiddenFiles') : t('local.hideHiddenFiles'), icon: <EyeGlyph open={!hideHidden} />, onSelect: () => { setHideHidden(value => !value) } },
   ]
-  const crumbTrail = (
-    <div className={css.crumbs} title={current}>
+  // A trail wider than the compact header scrolls; keep "where you are" (its
+  // end) in view whenever the folder changes.
+  const trailRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const trail = trailRef.current
+    if (trail) trail.scrollLeft = trail.scrollWidth
+  }, [current])
+  const crumbTrail = (compact: boolean) => {
+    const crumbs = crumbsOf(current, compact)
+    return <div ref={compact ? trailRef : undefined} className={compact ? `${css.crumbs} ${css.crumbsCompact}` : css.crumbs} title={current}>
       {crumbs.map((crumb, index) => (
-        <span key={`${crumb}/${index}`} className={css.crumbWrap}>
+        <span key={crumb.path} className={css.crumbWrap}>
           {index > 0 && <span className={css.crumbSep}>/</span>}
           {index === crumbs.length - 1 ? (
             // The current segment is where you ARE — a span, not a button:
@@ -309,7 +303,7 @@ export function WorkspaceView({
         </span>
       ))}
     </div>
-  )
+  }
 
   return (
     <PanelRoot className={css.view}>{compact => <>
@@ -319,13 +313,12 @@ export function WorkspaceView({
         ? !detailOpen && (
           <PanelHeader
             className={css.topbar}
-            title={current === '' ? t('local.noRoot') : basenameOf(current)}
-            {...(parentNote(current) === '' ? {} : { meta: parentNote(current) })}
+            title={current === '' ? t('local.noRoot') : crumbTrail(true)}
             actions={compactActions}
             moreLabel={t('action.more')}
           />
         )
-        : <PanelHeader className={css.topbar} title={crumbTrail} actions={workspaceActions} moreLabel={t('action.more')} />}
+        : <PanelHeader className={css.topbar} title={crumbTrail(false)} actions={workspaceActions} moreLabel={t('action.more')} />}
 
       <AdaptiveSplit backInDetail masterWidth={treeWidth} detailOpen={detailOpen} onBack={closeDetail} backLabel={t('detail.back')}
         master={<>

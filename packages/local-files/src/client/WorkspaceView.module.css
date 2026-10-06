@@ -36,6 +36,22 @@
   color: var(--dsw-alias-label-secondary);
 }
 
+/* Compact: the trail IS the title — body face at the panel sizes, ancestors in
+   the secondary color, the current folder bold at title size. It scrolls
+   sideways instead of clipping, so every ancestor stays tappable. */
+.crumbsCompact {
+  overflow-x: auto;
+  scrollbar-width: none;
+  font-family: inherit;
+  font-size: var(--dsh-panel-text-body, 13px);
+  -webkit-overflow-scrolling: touch;
+}
+.crumbsCompact::-webkit-scrollbar { display: none; }
+.crumbsCompact .crumbWrap { flex: none; }
+.crumbsCompact .crumb { max-width: none; padding: 10px 4px; color: var(--dsw-alias-label-secondary); }
+.crumbsCompact .crumbCur { padding: 10px 4px; font-size: var(--dsh-panel-text-title, 14px); font-weight: 600; }
+.crumbsCompact .crumbSep { padding: 0 1px; }
+
 .crumbWrap { display: inline-flex; align-items: center; min-width: 0; }
 .crumbSep { color: var(--dsw-alias-label-caption); flex: none; }
 .crumb {
