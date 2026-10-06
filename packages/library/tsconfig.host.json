@@ -9,6 +9,7 @@
     "src/index.ts",
     "src/invariant.ts",
     "src/remote.ts",
+    "src/cards.ts",
     "src/service.ts",
     "src/store.ts",
     "src/tool.ts",

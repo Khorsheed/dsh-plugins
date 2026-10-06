@@ -42,11 +42,12 @@ describe('cordis.patch.yml', () => {
     expect(patch).toContain('waiting for library')
   })
 
-  it('keeps the learning tool list dieted: persona, fs, skills, ask-user, todo, web, compaction — and nothing shell-shaped', () => {
-    for (const kept of ['persona', 'tool-fs', 'skill-filesystem', 'tool-skill', 'tool-ask-user', 'tool-todo', 'tool-web', 'compaction-basic']) {
+  it('keeps the learning tool list strict: persona, ask-user, web, compaction — no fs, skills, todo or shell', () => {
+    for (const kept of ['persona', 'tool-ask-user', 'tool-web', 'compaction-basic', 'library-tool']) {
       expect(patch).toContain(`- id: ${kept}\n`)
     }
     for (const gone of [
+      'tool-fs', 'skill-filesystem', 'tool-skill', 'tool-todo',
       'tool-bash', 'tool-pwsh', 'tool-fs-search', 'tool-jobs', 'plan-mode', 'tool-subagent',
       'tool-workflow', 'tool-goal', 'command-goal', 'tool-present', 'agent-instructions',
     ]) {
@@ -54,18 +55,23 @@ describe('cordis.patch.yml', () => {
     }
   })
 
-  it('the persona names the coach stance, the tools-as-memory rule and the assess discipline, in single-voice English', () => {
+  it('quiets the root sections and tool that do not apply to learning', () => {
+    for (const section of ['harness:source', 'app:web-surface', 'ui:deliverable-file-references']) {
+      expect(patch).toContain(`- '${section}'\n`)
+    }
+    expect(patch).toContain('- list_capabilities\n')
+  })
+
+  it('the persona names the coach stance, the tools-as-memory rule, the book-wins rule and the assess discipline', () => {
     expect(patch).toContain('You are a close-reading coach.')
-    // Wrap-proof pins: the YAML block scalar re-wraps freely, so match on whitespace-flattened text.
     const flat = patch.replace(/\s+/g, ' ')
     expect(flat).toContain('a Socratic follow-up beats a summary')
-    expect(patch).toContain('the library_* tools, never in conversation memory')
+    expect(flat).toContain('the library_* tools, never in conversation memory')
+    expect(flat).toContain('Never invent what a book says')
     expect(patch).toContain('library_assess')
-    expect(patch).toContain('Due cards come first')
-    expect(patch).toContain('The library skill carries the')
-    // Light by contract: the persona does not copy the skill's payload mechanics.
-    expect(patch).not.toContain('ch:<n>')
+    // Light by contract: the persona does not copy the tool payload mechanics.
     expect(patch).not.toContain('chapterRanges')
+    expect(patch).not.toContain('mergeInto')
   })
 
   it('references every community package it names, and nothing more', () => {

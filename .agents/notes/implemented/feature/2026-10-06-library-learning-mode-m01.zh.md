@@ -42,6 +42,7 @@ Status: implemented
 
 ## Related
 
+- 部分被 [library v2](2026-10-06-library-learning-v2.zh.md) 取代：上传、章节正文、词书、章节 evidence 闸与 `library` skill 已移除；存储、状态机、级联与可见性判据沿用。
 - 提案：[2026-10-06-library-learning-mode](../../../proposals/active/2026-10-06-library-learning-mode.md)
 - 可见性约定：[docs/plugin-visibility.md](../../../docs/plugin-visibility.md)（canvas 双查、fail-open）
 - 折叠先例：评测家族 `./tool` 入口（T88）、canvas-novel 的 `./agent`。

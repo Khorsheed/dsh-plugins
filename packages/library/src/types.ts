@@ -1,22 +1,26 @@
 /**
- * The library's domain vocabulary: projects, books, roadmaps, the vocab book,
- * quizzes and attempts. Everything here is plain serializable data — the store
- * (`store.ts`) persists exactly these shapes under
- * `$DSH_HOME/state/dsh-library/`, and the Remote face (`remote.ts`) and the
- * model tools (`tool-definition.ts`) both speak them.
+ * The library's domain vocabulary: projects, books, per-book roadmaps, photo
+ * pages, knowledge cards, quizzes, attempts and session bindings. Everything
+ * here is plain serializable data — the store (`store.ts`) persists exactly
+ * these shapes under `$DSH_HOME/state/dsh-library/`, and the Remote face
+ * (`remote.ts`) and the model tools (`tool-definition.ts`) both speak them.
  *
- * The shapes follow the proposal `2026-10-06-library-learning-mode`:
+ * The shapes follow the proposal `2026-10-06-library-learning-mode` (v2):
  *
- * - a ROADMAP is a Duolingo-style path of nodes whose state machine has three
- *   edges only (`locked → current → done`);
- * - a VOCAB entry is a flashcard (or a key point) whose `mastery` is a Leitner
- *   box (0–5) plus a `dueAt`, and whose `source` is a photo reference into the
- *   host's attachment store, a manual entry, or the model's own read;
- * - a QUIZ gates on evidence: every question carries the chapter it came from
- *   and the original-text fragment it is graded against;
- * - an ATTEMPT's verdicts reuse the eval family's `dataseek.verdict/1` shape
- *   (`{task, criterion, pass, ratio?, evidence, by}`), so a future datasets
- *   migration is a shape-preserving move.
+ * - a BOOK is registered, never uploaded: title, edition, kind and a table of
+ *   contents the coach verified on the web (or took from a photo);
+ * - a ROADMAP belongs to one book; the coach writes DRAFTS, the learner adopts
+ *   one, and the adopted path's state machine has three edges only
+ *   (`locked → current → done`);
+ * - a PAGE is one photographed page: its recognized text plus the marks the
+ *   learner made (underlines, margin notes);
+ * - a CARD (知识卡片) is the learner's own memory: a word or a concept met in a
+ *   photo, asked about in a chat, or missed in a quiz — one card per thing,
+ *   sources stacked, with a weakness score (0–3) beside its Leitner mastery;
+ * - a QUIZ question carries two axes: what it targets (marked / asked /
+ *   missed cards, or the chapter's topic) and what it rests on (a photo
+ *   quote, a web quote, or domain knowledge);
+ * - an ATTEMPT's verdicts reuse the eval family's `dataseek.verdict/1` shape.
  *
  * @module @khorsheed/dsh-library/types
  */
@@ -24,8 +28,11 @@
 /** The state-root directory name under `$DSH_HOME/state`. */
 export const STATE_ROOT_SEGMENT = 'dsh-library'
 
-/** The on-disk schema version of `state.json` and `project.json` documents. */
-export const LIBRARY_STATE_VERSION = 1
+/**
+ * The on-disk schema version of `state.json`. v1 (uploaded books, project
+ * roadmaps, the vocab book) was never deployed; a v1 root reads as empty.
+ */
+export const LIBRARY_STATE_VERSION = 2
 
 /** The Leitner intervals in days, indexed by box (box 5 reuses the last rung). */
 export const LEITNER_INTERVAL_DAYS: readonly number[] = [1, 2, 4, 7, 15]
@@ -33,15 +40,11 @@ export const LEITNER_INTERVAL_DAYS: readonly number[] = [1, 2, 4, 7, 15]
 /** The highest Leitner box. */
 export const MAX_BOX = 5
 
+/** The highest weakness score (three bars in the UI). */
+export const MAX_WEAKNESS = 3
+
 /** The default node pass threshold (a quiz ratio at or above it completes the node). */
 export const DEFAULT_PASS_RATIO = 0.8
-
-/**
- * The chapter-body paging budget, in characters: one `getChapterBody` page
- * never carries more than this. The page slices at a closing-tag boundary when
- * one exists inside the window, so a page never opens mid-tag.
- */
-export const CHAPTER_PAGE_BUDGET = 100 * 1024
 
 /** A refusal's code vocabulary — the values the client and the tools switch on. */
 export type LibraryErrorCode =
@@ -55,6 +58,7 @@ export type LibraryErrorCode =
   | 'state-machine'
   | 'unavailable'
   | 'ref-incomplete'
+  | 'unbound'
 
 /** A domain refusal (never a throw across the Remote wire). */
 export interface LibraryRefusal {
@@ -69,53 +73,84 @@ export type LibraryOutcome<T> = ({ readonly ok: true } & T) | LibraryRefusal
 
 /* ------------------------------------------------------------- projects */
 
+/**
+ * What a project's marks mean. `language`: an underline is a word or phrase,
+ * quizzed by meaning-in-context, paraphrase and spelling; `subject`: an
+ * underline is a concept, quizzed by explanation, contrast and application;
+ * `custom`: the learner said how (in `templateNote`).
+ */
+export type LibraryTemplate = 'language' | 'subject' | 'custom'
+
 /** One learning project (e.g. 「神经科学」). */
 export interface LibraryProject {
   readonly id: string
   readonly name: string
-  readonly domain?: string
+  readonly template: LibraryTemplate
+  /** The learner's own words for a custom template. */
+  readonly templateNote?: string
+  /** The learner's goal (「学术类 7 分，12 月 14 日」). */
+  readonly goal?: string
   readonly createdAt: string
 }
 
-/** The project wall's row: the project plus its cheap aggregates. */
-export interface LibraryProjectSummary extends LibraryProject {
-  /** Book ids, in shelving order. */
-  readonly books: readonly string[]
-  /** Vocab entries the project holds. */
-  readonly vocabCount: number
-  /** Vocab entries due for review right now. */
-  readonly dueCount: number
-  /** Roadmap progress, when a roadmap exists. */
+/** One book's row on the project page. */
+export interface LibraryBookProgress {
+  readonly id: string
+  readonly title: string
+  /** Adopted-roadmap progress; absent while the book has no adopted path. */
   readonly roadmap?: { readonly done: number; readonly total: number }
-  /** The current node's title and its book's, when one is in progress. */
-  readonly current?: { readonly bookTitle: string; readonly nodeTitle: string }
+  /** The first current node, when one is in progress. */
+  readonly current?: { readonly id: string; readonly title: string }
+  /** A draft is waiting for the learner's 采用. */
+  readonly hasDraft: boolean
+}
+
+/** The project list's row: the project plus its cheap aggregates. */
+export interface LibraryProjectSummary extends LibraryProject {
+  readonly books: readonly LibraryBookProgress[]
+  /** Live cards (not deleted). */
+  readonly cardCount: number
+  /** Live, unmastered cards due for review right now. */
+  readonly dueCount: number
 }
 
 /* ---------------------------------------------------------------- books */
 
-/** Where a book came from. The upload's ref is the original file name. */
-export interface LibraryBookSource {
-  readonly kind: 'upload' | 'url'
-  readonly ref: string
-}
+/**
+ * What a book's content IS. `knowledge` (textbooks, popular science): the
+ * content is domain knowledge, so the coach may quiz from what it knows.
+ * `material` (exam papers, novels, anthologies): the content is specific
+ * text the model cannot recall — quizzing the book's content needs a photo
+ * or a web quote.
+ */
+export type LibraryBookKind = 'knowledge' | 'material'
 
-/** One chapter's table-of-contents row (the body stays in `chapters/<n>.html`). */
+/** One table-of-contents row. */
 export interface LibraryTocEntry {
-  /** The 1-based chapter number — also its file name (`chapters/<n>.html`). */
+  /** 1-based position — what roadmap chapter ranges count. */
   readonly n: number
   readonly title: string
-  /** The stored body's length in characters (the reader's paging math). */
-  readonly chars: number
+  /** The part / test / unit it sits under, when the book groups chapters. */
+  readonly part?: string
 }
 
-/** A book's metadata (`books/<id>/book.json`); bodies are externalized. */
+/** Where the table of contents came from — shown on the roadmap draft card. */
+export interface LibraryTocSource {
+  readonly by: 'web' | 'model' | 'photo'
+  readonly url?: string
+  readonly verifiedAt?: string
+}
+
+/** A registered book (`books/<id>/book.json`). No body is ever stored. */
 export interface LibraryBook {
   readonly id: string
   readonly title: string
   readonly author?: string
-  readonly source: LibraryBookSource
-  readonly format: 'epub' | 'md'
+  readonly edition?: string
+  readonly isbn?: string
+  readonly bookKind: LibraryBookKind
   readonly toc: readonly LibraryTocEntry[]
+  readonly tocSource: LibraryTocSource
   readonly createdAt: string
 }
 
@@ -126,14 +161,12 @@ export type RoadmapNodeState = 'locked' | 'current' | 'done'
 
 /**
  * What kind of learning a node carries. `quiz` nodes gate on an assessed quiz
- * at the pass ratio; `read` nodes (front matter, the whole-book map,
- * appendices — the coach classifies at split time) carry no quiz gate: they
- * complete by being read (the reader's 「读完」 gesture or the model's call),
- * and never hold quizStats.
+ * at the pass ratio; `read` nodes (how-to-use-this-book, front matter,
+ * appendices) complete by being read — the learner's 「读完」.
  */
 export type RoadmapNodeKind = 'quiz' | 'read'
 
-/** A chapter span one node covers, 1-based and inclusive (`chapters/<from..to>.html`). */
+/** A table-of-contents span one node covers, 1-based and inclusive. */
 export interface LibraryChapterRange {
   readonly from: number
   readonly to: number
@@ -142,9 +175,7 @@ export interface LibraryChapterRange {
 /** A node's quiz ledger, updated by every assessed attempt that names it. */
 export interface LibraryQuizStats {
   readonly attempts: number
-  /** The newest attempt's pass ratio, when one exists. */
   readonly lastRatio?: number
-  /** The best ratio ever reached. */
   readonly bestRatio?: number
 }
 
@@ -158,77 +189,214 @@ export interface RoadmapNode {
   readonly dependsOn: readonly string[]
   readonly chapterRanges: readonly LibraryChapterRange[]
   readonly state: RoadmapNodeState
-  /** `quiz` gates on an assessed quiz; `read` completes by being read. */
   readonly kind: RoadmapNodeKind
-  /** Quiz nodes only — a read node must never carry one. */
+  /** Quiz nodes only — a read node never carries one. */
   readonly quizStats?: LibraryQuizStats
 }
 
-/** A book's roadmap (`roadmap.json`). */
+/** A book's roadmap — the adopted path (`roadmap.json`) or a draft (`roadmap.draft.json`). */
 export interface LibraryRoadmap {
   readonly bookId: string
+  readonly status: 'draft' | 'adopted'
   readonly nodes: readonly RoadmapNode[]
-  /** The pass threshold for this roadmap (default {@link DEFAULT_PASS_RATIO}). */
+  /** The pass threshold (default {@link DEFAULT_PASS_RATIO}). */
   readonly passRatio?: number
+  /** The coach's one-line pacing note on the draft card (「每周 3 章，约 4 周」). */
+  readonly note?: string
   readonly generatedAt: string
+  readonly adoptedAt?: string
 }
 
-/* ---------------------------------------------------------------- vocab */
+/* ---------------------------------------------------------------- pages */
 
-/** A photo source carries the host attachment's durable reference fields — the
- * photo is never copied (the attachment store is content-addressed), and the
- * full reference is what `attachments.readImage` verifies against. */
-export interface LibraryVocabSource {
-  readonly kind: 'photo' | 'manual' | 'model'
-  readonly attachmentId?: string
-  readonly mediaType?: string
-  readonly bytes?: number
-  readonly width?: number
-  readonly height?: number
+/**
+ * A host attachment's durable reference — the photo is never copied (the
+ * attachment store is content-addressed), and these fields are what
+ * `attachments.readImage` verifies against.
+ */
+export interface LibraryAttachmentRef {
+  readonly attachmentId: string
+  readonly mediaType: string
+  readonly bytes: number
+  readonly width: number
+  readonly height: number
 }
 
-/** One flashcard's mastery: the Leitner box, the next review moment, the streak. */
+/** One mark the learner made on a page. */
+export interface LibraryMark {
+  /** The underlined word / phrase / concept, as printed. */
+  readonly text: string
+  /** The sentence it sits in, as printed. */
+  readonly sentence?: string
+  /** The learner's handwritten gloss beside it, transcribed. */
+  readonly handNote?: string
+  /** The recognizer's in-context meaning (a word) or one-line explanation (a concept). */
+  readonly gloss?: string
+  /** The recognizer could not tell (a strike-through? a stray line?) — never auto-carded. */
+  readonly uncertain?: boolean
+}
+
+/** One photographed page (a `pages.jsonl` line under its book). */
+export interface LibraryPage {
+  readonly id: string
+  readonly bookId: string
+  readonly nodeId?: string
+  /** What the learner calls it (「p.16」). */
+  readonly label?: string
+  readonly attachment: LibraryAttachmentRef
+  /** The page's recognized printed text — a photo-evidence quote is checked against it. */
+  readonly text: string
+  readonly marks: readonly LibraryMark[]
+  /** The cards this page's marks became or merged into. */
+  readonly cardIds: readonly string[]
+  readonly at: string
+}
+
+/* ---------------------------------------------------------------- cards */
+
+/** A card is a word (language projects) or a concept (anything else). */
+export type LibraryCardKind = 'word' | 'concept'
+
+/** Where a card's evidence of weakness came from. */
+export type LibraryCardSourceType = 'photo' | 'chat' | 'quiz' | 'manual'
+
+/** One source stacked on a card. */
+export interface LibraryCardSource {
+  readonly type: LibraryCardSourceType
+  /** photo: the page id; quiz: the quiz id; chat: the session id when known. */
+  readonly ref?: string
+  /** What happened, in a few words (「说老是记混」「T/F/NG 第 9 题」). */
+  readonly note?: string
+  /** This source raised the weakness by one (an undo lowers it back). */
+  readonly weakened?: boolean
+  readonly at: string
+}
+
+/** One sentence the card was met in. */
+export interface LibraryCardContext {
+  readonly sentence: string
+  readonly bookId?: string
+  readonly pageId?: string
+  readonly nodeId?: string
+}
+
+/** One card's review mastery: the Leitner box, the next review moment, the streak. */
 export interface LibraryMastery {
-  /** 0–5; a wrong verdict resets to 0, a right one climbs by one (capped). */
   readonly box: number
-  /** ISO timestamp; `dueVocab` answers entries whose dueAt is not in the future. */
   readonly dueAt: string
-  /** Consecutive right verdicts. */
   readonly streak: number
 }
 
-/** One vocab-book entry (a `vocab.jsonl` line). */
-export interface LibraryVocabEntry {
+/** One knowledge card (知识卡片). */
+export interface LibraryCard {
   readonly id: string
-  readonly kind: 'vocab' | 'keypoint'
+  readonly kind: LibraryCardKind
   readonly term: string
-  /** The gloss / the point itself. */
-  readonly note: string
-  /** The sentence it was met in, when the source gave one. */
-  readonly context?: string
-  /** The chapter it belongs to (the skill's `ch:<n>` convention). */
-  readonly chapterRef: string
-  readonly source: LibraryVocabSource
+  /** Other spellings / names the same card answers to (instalments, 不应期). */
+  readonly aliases: readonly string[]
+  /** The meaning: the in-context sense for a word, a one-line explanation for a concept. */
+  readonly gloss: string
+  /** The learner's own handwritten gloss, kept apart from the model's. */
+  readonly userGloss?: string
+  readonly contexts: readonly LibraryCardContext[]
+  /** Hung on a book when it came from one; absent = project-level (「不挂书」). */
+  readonly bookId?: string
+  readonly sources: readonly LibraryCardSource[]
+  /** 0–3: how often the learner got stuck here (asked again, answered wrong). */
+  readonly weakness: number
   readonly mastery: LibraryMastery
+  readonly status: 'active' | 'mastered' | 'deleted'
   readonly createdAt: string
+  readonly updatedAt: string
 }
+
+/** One card to record — the shared input of `library_write · cards` and `page`. */
+export interface LibraryCardInput {
+  readonly kind: LibraryCardKind
+  readonly term: string
+  readonly aliases?: readonly string[]
+  readonly gloss: string
+  readonly userGloss?: string
+  readonly context?: { readonly sentence: string; readonly pageId?: string; readonly nodeId?: string }
+  readonly source: { readonly type: LibraryCardSourceType; readonly ref?: string; readonly note?: string }
+  /** Hang it on this book (defaults to the call's book, when one applies). */
+  readonly bookId?: string
+  /** The learner showed they are stuck: raise weakness by one. */
+  readonly weaken?: boolean
+  /** Decide a near-duplicate: merge into this existing card … */
+  readonly mergeInto?: string
+  /** … or keep it as a new card on purpose. */
+  readonly asNew?: boolean
+}
+
+/** A card the store did not write because it looks like an existing one. */
+export interface LibraryCardPending {
+  readonly index: number
+  readonly term: string
+  readonly candidates: readonly { readonly id: string; readonly term: string; readonly gloss: string }[]
+}
+
+/** What a card write did. */
+export interface LibraryCardWriteResult {
+  readonly added: readonly LibraryCard[]
+  readonly merged: readonly LibraryCard[]
+  /** Near-duplicates held back — resend each with mergeInto or asNew. */
+  readonly pending: readonly LibraryCardPending[]
+}
+
+/** The filters `listCards` (the sidebar and `library_read · cards`) understands. */
+export interface LibraryCardQuery {
+  readonly projectId: string
+  readonly query?: string
+  readonly bookId?: string
+  /** Cards met in this node (a context or a source page on it). */
+  readonly nodeId?: string
+  readonly kind?: LibraryCardKind
+  readonly source?: LibraryCardSourceType
+  readonly weakMin?: number
+  readonly due?: boolean
+  /** Include mastered cards (default: active only). */
+  readonly includeMastered?: boolean
+  readonly limit?: number
+  /** `weak` (default): weakness, then due date; `recent`: newest first; `due`: due date. */
+  readonly sort?: 'weak' | 'recent' | 'due'
+}
+
+/** A learner's self-rating on a review flashcard. */
+export type LibraryReviewRating = 'forgot' | 'fuzzy' | 'recalled'
 
 /* --------------------------------------------------------------- quizzes */
 
-/** One quiz question. `chapterRef` + `evidence` are the evidence gate's demand. */
+/** What a question aims at. */
+export interface LibraryQuestionTarget {
+  readonly kind: 'marked' | 'asked' | 'missed' | 'topic'
+  /** The cards it probes (required for marked / asked / missed). */
+  readonly cardIds?: readonly string[]
+}
+
+/** What a question rests on. */
+export interface LibraryQuestionEvidence {
+  readonly kind: 'photo' | 'web' | 'knowledge'
+  /** photo: the page whose text holds the quote. */
+  readonly pageId?: string
+  /** web: where the quote is from. */
+  readonly url?: string
+  /** photo / web: the passage, verbatim. */
+  readonly quote?: string
+}
+
+/** One quiz question. */
 export interface LibraryQuizQuestion {
   readonly id: string
-  /** `choice` carries options; `fill`/`free` are open answers. */
+  /** `choice` carries options; `fill` / `free` are open answers. */
   readonly kind: 'choice' | 'fill' | 'free'
   readonly prompt: string
   readonly options?: readonly string[]
-  /** The chapter this question tests (`ch:<n>`). */
-  readonly chapterRef: string
-  /** The original-text fragment the answer is graded against — never invented. */
-  readonly evidence: string
   readonly answer: string
-  /** Vocab entries this question probes (the assess cascade's targets). */
-  readonly vocabIds?: readonly string[]
+  /** Why the answer is right — shown after answering. */
+  readonly explanation?: string
+  readonly target: LibraryQuestionTarget
+  readonly evidence: LibraryQuestionEvidence
 }
 
 /** A stored quiz (`quizzes/<id>.json`). */
@@ -243,18 +411,20 @@ export interface LibraryQuiz {
   readonly createdAt: string
 }
 
-/** One graded answer, the eval family's `dataseek.verdict/1` shape. */
+/** One graded answer, the eval family's `dataseek.verdict/1` shape (+ the void flag). */
 export interface LibraryVerdict {
   /** The question id this verdict judges. */
   readonly task: string
-  /** What was judged, in one line. */
   readonly criterion: string
   readonly pass: boolean
-  /** A partial-credit ratio, when the grader gives one (defaults to pass ? 1 : 0). */
+  /** Partial credit (defaults to pass ? 1 : 0). */
   readonly ratio?: number
-  /** The evidence the judgment leaned on. */
   readonly evidence: string
   readonly by: 'llm' | 'self' | 'user'
+  /** The learner flagged the question as broken (「这题有问题」): it counts for nothing. */
+  readonly void?: boolean
+  /** A missed question with no target card: the card to create for it. */
+  readonly missedCard?: { readonly term: string; readonly gloss: string }
 }
 
 /** One graded sitting (`attempts.jsonl` line). */
@@ -262,56 +432,81 @@ export interface LibraryAttempt {
   readonly id: string
   readonly quizId: string
   readonly verdicts: readonly LibraryVerdict[]
-  /** passed verdicts / total (ratios averaged), the node's unlock input. */
+  /** Credit over the non-void verdicts — the node's unlock input. */
   readonly ratio: number
   readonly at: string
+}
+
+/** One card a sitting changed. */
+export interface LibraryCardUpdate {
+  readonly id: string
+  readonly term: string
+  readonly weakness: number
+  readonly mastery: LibraryMastery
+  readonly created?: boolean
 }
 
 /** What an assess call changed, reported back to the caller. */
 export interface LibraryAssessResult {
   readonly attempt: LibraryAttempt
-  /** Vocab entries whose mastery moved (id → new mastery). */
-  readonly vocabUpdates: readonly { readonly id: string; readonly mastery: LibraryMastery }[]
+  readonly cardUpdates: readonly LibraryCardUpdate[]
   /** Nodes that left `locked` because of this attempt. */
   readonly unlocked: readonly string[]
   /** The node this quiz gated, when it completed. */
   readonly completed?: string
+  readonly passRatio: number
+}
+
+/* ------------------------------------------------------------- bindings */
+
+/** Which project (and optionally which book) one session works on. */
+export interface LibraryBinding {
+  readonly projectId: string
+  readonly bookId?: string
 }
 
 /* --------------------------------------------------------------- events */
 
 /** The audit ledger's event types (`events.jsonl`, append-only). */
 export type LibraryEventType =
-  | 'book.ingested'
-  | 'roadmap.generated'
-  | 'roadmap.regenerated'
-  | 'notes.recorded'
+  | 'book.added'
+  | 'roadmap.drafted'
+  | 'roadmap.adopted'
+  | 'page.recorded'
+  | 'cards.recorded'
+  | 'card.edited'
   | 'quiz.created'
   | 'attempt.assessed'
   | 'node.completed'
   | 'node.unlocked'
 
-/** One event: a timestamp, a type, and a small typed summary per type. */
+/** One event: a timestamp, a type, and a small summary per type. */
 export interface LibraryEvent {
   readonly at: string
   readonly type: LibraryEventType
-  /** The object the event is about (a book / quiz / node id), when one applies. */
+  /** The object the event is about (a book / quiz / node / page id). */
   readonly id?: string
-  /** Its display name (book title / node title), so a reader needs no join. */
+  /** Its display name, so a reader needs no join (cards.recorded: the terms). */
   readonly title?: string
-  /** Small numeric summaries (chapters / questions / added+merged / percent). */
+  readonly bookId?: string
+  /** cards.recorded: where they came from (the 「教练最近记下」 filter). */
+  readonly source?: LibraryCardSourceType
+  /** cards.recorded: the card ids, so a toast can undo them. */
+  readonly ids?: readonly string[]
+  /** Small numeric summaries (nodes / questions / added / merged). */
   readonly count?: number
   readonly count2?: number
-  /** attempt.assessed: the sitting's ratio; node.completed: the passing ratio. */
   readonly ratio?: number
 }
 
 /** The event vocabulary, for tests and for writers who must not invent types. */
 export const LIBRARY_EVENT_TYPES: readonly LibraryEventType[] = [
-  'book.ingested',
-  'roadmap.generated',
-  'roadmap.regenerated',
-  'notes.recorded',
+  'book.added',
+  'roadmap.drafted',
+  'roadmap.adopted',
+  'page.recorded',
+  'cards.recorded',
+  'card.edited',
   'quiz.created',
   'attempt.assessed',
   'node.completed',
@@ -326,16 +521,6 @@ export const LIBRARY_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
 /** Whether an id is usable as a path segment. */
 export function isLibraryId(id: string): boolean {
   return LIBRARY_ID_PATTERN.test(id)
-}
-
-/**
- * The chapterRef convention the skill teaches: `ch:<n>` with the 1-based
- * chapter number (a section suffix is allowed: `ch:3.2`). The chapter number
- * it names, or undefined when the ref is off-convention.
- */
-export function chapterOfRef(ref: string): number | undefined {
-  const match = /^ch:(\d+)(?:\.\d+)*$/.exec(ref.trim())
-  return match === null ? undefined : Number(match[1])
 }
 
 /** A native fs failure's message, with its code, for the wire. */

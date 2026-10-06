@@ -18,11 +18,8 @@
     "src/client/definition.tsx",
     "src/client/icons.tsx",
     "src/client/index.ts",
-    "src/client/ingest-epub.ts",
-    "src/client/ingest-md.ts",
     "src/client/locales.ts",
     "src/client/preset-visibility.ts",
-    "src/client/sanitize.ts",
     "src/client/store.ts",
     "src/client/LibraryPane.tsx"
   ]

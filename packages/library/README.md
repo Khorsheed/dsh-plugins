@@ -1,13 +1,19 @@
 # @khorsheed/dsh-library
 
-图书馆与学习引擎：按项目组织的精读——书籍摄入（EPUB/Markdown）、每本书一条 locked→current→done 的学习路线图、带 Leitner 掌握度与照片出处的词书、过 evidence 闸的测验与判题解锁。
+图书馆与学习引擎：按项目组织的精读。书只登记不上传（模型联网核对版本与目录），每本书一条由教练起草、用户采用的学习路线；拍照记下的划线与页边批注、问答里暴露的薄弱点、考试答错的题，都沉淀为用户自己的「知识卡片」；章节考按「考什么 × 凭什么」两轴出题，判题落账后推进路线。
 
 ## 特性
 
-- **图书馆页**（右栏页面型 tab，kind `library`）：项目墙（双列卡 + 进度条 + 到期词卡区）→ 项目视图（书架卡片网格：封面 + 作者 + 章节进度，同格虚线「添加书籍」；EPUB/MD 拖放摄入）→ 书籍视图（左轨时间线路线图——quiz 门槛节点与 read 泛读节点分列，泛读节点「读完」即过——+ 底部「动态」区）→ 词书视图（词条 + 掌握度格点 + 到期标 + 出处）。
-- **摄入在浏览器半**：EPUB 走 fflate 解 zip → DOMParser 读 OPF spine / NCX|NAV → 白名单消毒；Markdown 按标题层级切章。失败给诚实错误分类（不是 zip / 不是 EPUB / DRM / 无阅读顺序 / 没有可读章节）。PDF 不支持（渲染器不是结构提取器，reader D2 同结论）。
-- **模型工具面**（`./tool` 组合入口，preset 按会话授予）：`library_read`（projects/books/toc/chapter/roadmap/vocab/due/quiz/stats）、`library_write`（project/book/roadmap/notes/quiz——roadmap 拆书时给章节分类：正文进 quiz 节点、导读/前言/附录进 read 节点；quiz 每题必须 `ch:<n>` chapterRef + 原文 evidence 且落在 quiz 节点章节内，缺失拒收并教正确格式）、`library_assess`（verdict 落账 → 词卡 Leitner 升降 → 节点 quizStats → 达标解锁下一节点）。随行 `library` skill 带逐 what 的 payload 形状与示例。每个项目一本 append-only `events.jsonl` 审计账（上架/拆书/录入/出卷/判题/解锁）。
-- **自隐**：tab 类型按 canvas 双查判据注册（profile 根行 ∪ 当前会话 preset 行的 `@khorsheed/dsh-library/tool`），一切不可读路径 fail-open。
+- **图书馆页**（右栏页面型 tab，kind `library`）。v2 侧栏（今日 / 项目 / 书的路线 / 这一节 / 知识卡片 / 章节考 / 复习）在开发中，当前版本是项目与书进度的过渡视图。
+- **书只登记**：书名、版本、ISBN、书型（知识型 / 材料型）与目录（附来源 url）。不解析任何文件。
+- **路线草稿 → 采用**：教练写草稿，用户在侧栏「采用」后才生效；采用时保留同 id 节点的进度。节点分 quiz（过章节考）与 read（「读完」即过）。
+- **照片页**：一页照片一次记录印刷文字与所有划线 / 批注，确定的标记一键成卡，拿不准的单列；照片只存附件引用，读回只允许本项目记录过的页。
+- **知识卡片**：写入路径查重——归一化键（大小写、全半角、标点、英文复数）完全相同自动合并，疑似重复退回候选由教练选 `mergeInto` / `asNew`；薄弱度 0–3 与复习间隔（Leitner）分开记；卡片可挂书或挂项目；记录可撤销。
+- **两轴出题**：考什么（我划的 / 我问过的 / 我答错的 / 本章主题）× 凭什么（照片原句 / 网上原文 + url / 领域知识）。材料型书不接受凭记忆出的内容题。
+- **判题级联**：作废题不计分；考对的卡升格并减薄弱度，答错的回到明天并加薄弱度，无卡的错题自动建卡；节点达标解锁后继。
+- **会话绑定**：会话可绑项目或项目下的某本书，工具的 project / book 参数默认取绑定；每轮注入一行绑定上下文（当前书、节点、最薄弱的卡）。
+- **模型工具面**（`./tool` 组合入口，preset 按会话授予）：`library_read`、`library_write`、`library_assess`，用法写在工具描述里，拒收信息自带正确用法。可选 `hideSections` / `denyTools` 在该 scope 里静音根上无关的提示段与工具。
+- **自隐**：tab 类型按 canvas 双查判据注册，一切不可读路径 fail-open。
 
 ## 安装
 
@@ -24,13 +30,13 @@ dsh plugin --profile <name> add @khorsheed/dsh-library
 | npm 发布线（0.2.0-rc.x） | 完整支持（`minHost: 0.1.7-rc.1`：右栏页面型 tab 与 Remote 面之外无宿主新 API；preset 授予需 0.1.7-rc.1 的 `@deepseek-ai/dsh-agent-preset` 行类型——那由 bundle 包声明） |
 | deepseek-harness master（0.2.0-rc.2 开发线） | 已验证（`verifiedHost: 0.2.0-rc.2`） |
 
-细节见 package.json 的 `dsh.compat.notes`：状态走 `$DSH_HOME/state/dsh-library` 的裸 `node:fs`（原子写 + 项目级锁 + append-only JSONL），不经 `ctx.fs`（会话沙箱会拒）；照片出处读回经探测的 `attachments` 服务，缺席报 `unavailable` 错误码；`readAttachmentBase64` 白名单只允许词书条目实际记录的 attachmentId。
+细节见 package.json 的 `dsh.compat.notes`：状态走 `$DSH_HOME/state/dsh-library` 的裸 `node:fs`（原子写 + 项目级锁 + append-only JSONL），不经 `ctx.fs`（会话沙箱会拒）；照片经探测的 `attachments` 服务保存与读回，缺席报 `unavailable` 错误码。
 
 ## 已知限制
 
-- v0.1 不做：会话内「精读」tab、交互式答题卡（出题/判题走会话消息流）、PDF、iOS 真机验收、datasets/mission 集成。
-- 章节正文分页 100KB 预算；一本书经一次 Remote 调用上架（章节已在浏览器解析好）。
-- 词书照片读回要求条目带完整 attachment 引用（attachmentId + mediaType + bytes + width + height——模型从消息的 image block 抄全），否则报 `ref-incomplete`。
+- 不做：书籍文件上传与解析（EPUB / PDF）、会话内「精读」tab、XP 与连续天数、项目级考试与跨书打通。
+- v2 侧栏、侧栏拍照识别、会话头绑定芯片尚在开发（见提案 M2b–M3）。
+- 照片页要求完整 attachment 引用（attachmentId + mediaType + bytes + width + height——从消息的 image block 原样抄），否则报 `ref-incomplete`。
 
 ## 开发
 

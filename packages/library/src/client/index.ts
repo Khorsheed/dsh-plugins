@@ -37,9 +37,6 @@ import {
 
 export { LibraryPane }
 export { LIBRARY_KIND, LIBRARY_TAB_ID } from './definition.tsx'
-export { parseEpub } from './ingest-epub.ts'
-export { splitMarkdown } from './ingest-md.ts'
-export { sanitizeChapterHtml } from './sanitize.ts'
 
 /**
  * Required services: the pane seat, the wire channel, the locale, the tab-type
@@ -116,16 +113,6 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   /** The injected business face, identical for whichever session mounts it. */
   const face = (sessionId: SessionId): LibraryPaneInjected => ({
     listProjects: () => remote.listProjects(),
-    getProject: id => remote.getProject({ id }),
-    createProject: (name, domain) => remote.createProject(domain === undefined ? { name } : { name, domain }),
-    deleteProject: id => remote.deleteProject({ id }),
-    storeBook: request => remote.storeBook(request),
-    getToc: (projectId, bookId) => remote.getToc({ projectId, bookId }),
-    getRoadmap: projectId => remote.getRoadmap({ projectId }),
-    listVocab: projectId => remote.listVocab({ projectId }),
-    listEvents: (projectId, limit) => remote.listEvents(limit === undefined ? { projectId } : { projectId, limit }),
-    putRoadmap: request => remote.putRoadmap(request),
-    dueVocab: () => remote.dueVocab({}),
     primeConversation: text => {
       const input = inputFor(sessionId)
       if (input === undefined) return false

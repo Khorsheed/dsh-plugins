@@ -1,13 +1,19 @@
 # @khorsheed/dsh-library
 
-The library and learning engine: project-organized deep reading — book ingestion (EPUB/Markdown), a locked→current→done roadmap per book, a vocab book with Leitner mastery and photo provenance, evidence-gated quizzes and verdict-led unlocking.
+The library and learning engine: project-organized close reading. Books are registered, never uploaded (the coach verifies the edition and its contents on the web); each book gets a roadmap the coach drafts and the learner adopts. Photographed underlines and margin notes, the weak points a conversation reveals, and the questions the learner misses all become the learner's own knowledge cards (知识卡片); chapter quizzes are composed on two axes (what they target × what they rest on), and graded verdicts move the roadmap forward.
 
 ## Features
 
-- **The Library tab** (a page-type right-Sidebar tab, kind `library`): the project wall (two-column cards with progress bars and a due-review section) → the project view (a self-fitting shelf grid — cover, author, chapter progress, a dashed add-book card — plus the EPUB/MD drop zone) → the book view (the roadmap as a left-rail timeline with quiz-gated nodes beside skim-only read nodes a 「读完」 gesture completes, and the activity feed at the bottom) → the vocab book (entries with mastery boxes, the due mark and provenance).
-- **Ingestion in the browser half**: EPUB is unzipped with fflate, read through DOMParser (OPF spine / NCX|NAV), and whitelist-sanitized; Markdown splits on its heading hierarchy. Failures are honest classes (not a zip / not an EPUB / DRM / no reading order / nothing readable). PDF is not supported (a renderer, not a structure extractor — the reader D2 conclusion).
-- **The model face** (the `./tool` composition entry, granted per session by presets): `library_read` (projects/books/toc/chapter/roadmap/vocab/due/quiz/stats), `library_write` (project/book/roadmap/notes/quiz — a split classifies chapters (content → quiz nodes, front matter/prefaces/appendices → read nodes); every quiz question must carry a `ch:<n>` chapterRef inside a quiz node's ranges plus verbatim evidence, refused with a teaching error otherwise), `library_assess` (verdicts ledger → Leitner box moves → node quiz stats → pass-ratio unlocks). The shipped `library` skill carries every what's payload shape with examples. Every project keeps an append-only `events.jsonl` audit trail (shelving / splits / notes / quizzes / gradings / unlocks).
-- **Self-hiding**: the tab type registers on the canvas double-check criterion (the profile's root rows ∪ the current session's preset rows naming `@khorsheed/dsh-library/tool`), fail-open on every unreadable path.
+- **The Library tab** (a page-type right-Sidebar tab, kind `library`). The v2 sidebar (today / project / a book's path / the node / cards / chapter quiz / review) is in development; this version shows an interim view of projects and book progress.
+- **Registered books**: title, edition, ISBN, kind (knowledge / material) and the contents with its source url. No file is ever parsed.
+- **Draft → adopt roadmaps**: the coach writes drafts, the learner's 采用 in the sidebar makes one the path; adoption keeps the progress of nodes whose ids survive. Nodes are quiz (a chapter quiz completes them) or read (「读完」 does).
+- **Photo pages**: one page photo records its printed text and every mark at once; certain marks become cards in one go, uncertain ones are listed apart. Photos are kept by attachment reference; reading one back is whitelisted to pages the project recorded.
+- **Knowledge cards** dedupe on the write path: an exact normalized key (case, width, punctuation, English plurals) merges; a near-duplicate is held back with candidates for the coach to `mergeInto` / `asNew`. Weakness (0–3) is kept apart from the review schedule (Leitner); a card hangs on a book or on the project; a recording can be undone.
+- **Two-axis quizzes**: target (marked / asked / missed / the chapter's topic) × evidence (a photo quote / a web quote with its url / domain knowledge). A material book takes no content question from memory.
+- **The assess cascade**: void questions count for nothing; a passed card climbs a box and eases its weakness, a missed one comes back tomorrow and grows weaker, a card-less miss becomes a card; a node at its pass ratio completes and unlocks what follows.
+- **Session binding**: a session binds to a project or one of its books, and the tools' project / book default to it; every turn carries one bound-context line (book, node, weakest cards).
+- **The model face** (the `./tool` composition entry, granted per session by presets): `library_read`, `library_write`, `library_assess`, documented in their own descriptions; every refusal teaches the correct call. Optional `hideSections` / `denyTools` quiet unrelated root prompt sections and tools in that scope.
+- **Self-hiding**: the tab type registers on the canvas double-check criterion, fail-open on every unreadable path.
 
 ## Install
 
@@ -24,13 +30,13 @@ This package alone: the Library tab and the data face work; the model tools do n
 | npm release line (0.2.0-rc.x) | Full support (`minHost: 0.1.7-rc.1`: beyond the page-type right-Sidebar tab and the Remote face, no host API newer than that; preset granting needs 0.1.7-rc.1's `@deepseek-ai/dsh-agent-preset` row type — declared by the bundle package) |
 | deepseek-harness master (the 0.2.0-rc.2 dev line) | Verified (`verifiedHost: 0.2.0-rc.2`) |
 
-Details live in the package.json `dsh.compat.notes`: state is plain `node:fs` under `$DSH_HOME/state/dsh-library` (atomic writes + a per-project lock + append-only JSONL), never `ctx.fs` (the session sandbox refuses it); photo readback goes through the probed `attachments` service and degrades to the `unavailable` error code; `readAttachmentBase64` is whitelisted to attachment ids a vocab entry actually records.
+Details live in the package.json `dsh.compat.notes`: state is plain `node:fs` under `$DSH_HOME/state/dsh-library` (atomic writes + a per-project lock + append-only JSONL), never `ctx.fs` (the session sandbox refuses it); photos are saved and read back through the probed `attachments` service, degrading to the `unavailable` error code.
 
 ## Known limits
 
-- Not in v0.1: an in-conversation 「精读」tab, interactive quiz cards (quizzing runs in the conversation flow), PDF, on-device iOS acceptance, datasets/mission integration.
-- Chapter bodies page under a 100KB budget; a book lands in one Remote call (its chapters are already parsed in the browser).
-- Photo readback requires the entry to carry the full attachment reference (attachmentId + mediaType + bytes + width + height — the model copies it off the message's image block), else `ref-incomplete`.
+- Out of scope: book file upload and parsing (EPUB / PDF), an in-conversation 「精读」tab, XP and streaks, project-level exams and cross-book linking.
+- The v2 sidebar, in-sidebar photo recognition and the session-header bind chip are in development (proposal M2b–M3).
+- A photo page needs the full attachment reference (attachmentId + mediaType + bytes + width + height — copied verbatim off the message's image block), else `ref-incomplete`.
 
 ## Development
 

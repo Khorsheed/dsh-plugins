@@ -1,23 +1,26 @@
 /**
- * The host-side state store: a version-guarded index (`state.json`) plus one
- * directory per project under `$DSH_HOME/state/dsh-library/`:
+ * The host-side state store: a version-guarded index (`state.json`), the
+ * session bindings (`bindings.json`), and one directory per project under
+ * `$DSH_HOME/state/dsh-library/`:
  *
  * ```
  * state.json                       # version-guarded index (project list)
+ * bindings.json                    # sessionId → { projectId, bookId? }
  * projects/<projectId>/
- *   project.json                   # { id, name, domain?, createdAt }
- *   books/<bookId>/book.json       # metadata + toc; bodies externalized …
- *   books/<bookId>/chapters/<n>.html
- *   roadmap.json
- *   vocab.jsonl                    # append-only
+ *   project.json                   # { id, name, template, goal?, createdAt }
+ *   books/<bookId>/book.json       # registered metadata + toc (no bodies)
+ *   books/<bookId>/roadmap.json    # the adopted path
+ *   books/<bookId>/roadmap.draft.json  # the coach's draft, until 采用
+ *   books/<bookId>/pages.jsonl     # photographed pages, append-only
+ *   cards.jsonl                    # knowledge cards (rewritten whole on update)
  *   quizzes/<quizId>.json
  *   attempts.jsonl                 # append-only
- *   events.jsonl                   # append-only audit trail (book/roadmap/quiz/attempt/node)
+ *   events.jsonl                   # append-only audit trail
  * ```
  *
  * The write discipline is the mission store's (the in-repo precedent for
  * shared JSON state): every mutation funnels through a per-scope lock → read →
- * modify → temp-write → atomic rename; the two JSONL ledgers are append-only
+ * modify → temp-write → atomic rename; the JSONL ledgers are append-only
  * (an `O_APPEND` write under the same lock); ids are path segments and pass
  * the safe-alphabet check before they join a path. The lock is hand-rolled
  * (exclusive-create of a `.lock` file carrying `{pid, at}`; a dead or ancient
@@ -42,15 +45,23 @@ import {
   libraryErrorMessage,
   LIBRARY_EVENT_TYPES,
   LIBRARY_STATE_VERSION,
+  MAX_BOX,
+  MAX_WEAKNESS,
   STATE_ROOT_SEGMENT,
+  type LibraryAttachmentRef,
   type LibraryAttempt,
+  type LibraryBinding,
   type LibraryBook,
+  type LibraryCard,
+  type LibraryCardSourceType,
   type LibraryEvent,
   type LibraryEventType,
+  type LibraryPage,
   type LibraryProject,
   type LibraryQuiz,
+  type LibraryQuizQuestion,
   type LibraryRoadmap,
-  type LibraryVocabEntry,
+  type RoadmapNode,
 } from './types.ts'
 
 /** A store failure that the service maps onto a refusal. */
@@ -168,6 +179,42 @@ export async function acquireLibraryLock(lockPath: string): Promise<LibraryLock>
   }
 }
 
+/* ------------------------------------------------- normalization helpers */
+
+type Rec = Record<string, unknown>
+
+function asRecord(value: unknown): Rec | undefined {
+  return typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Rec : undefined
+}
+
+/** A trimmed, length-capped string, or undefined when absent / empty. */
+function text(value: unknown, max: number): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const trimmed = value.trim()
+  return trimmed === '' ? undefined : trimmed.slice(0, max)
+}
+
+function id(value: unknown): string | undefined {
+  return typeof value === 'string' && isLibraryId(value) ? value : undefined
+}
+
+function finite(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+
+function stamp(value: unknown): string {
+  return typeof value === 'string' ? value : new Date(0).toISOString()
+}
+
+function strings(value: unknown, max: number): string[] {
+  return Array.isArray(value) ? value.flatMap(item => { const s = text(item, max); return s === undefined ? [] : [s] }) : []
+}
+
+/** Spread `{ [key]: value }` only when value is defined. */
+function opt<K extends string, V>(key: K, value: V | undefined): { [P in K]?: V } {
+  return (value === undefined ? {} : { [key]: value }) as { [P in K]?: V }
+}
+
 /* ------------------------------------------------------- the index shape */
 
 /** `state.json`: the version-guarded index of projects. */
@@ -181,11 +228,10 @@ export function emptyLibraryIndex(): LibraryIndexDoc {
   return { version: LIBRARY_STATE_VERSION, projects: [] }
 }
 
-/** Coerce a parsed value into an index, dropping unrecognizable rows. */
+/** Coerce a parsed value into an index; another schema version reads as empty. */
 export function normalizeLibraryIndex(value: unknown): LibraryIndexDoc {
-  if (typeof value !== 'object' || value === null) return emptyLibraryIndex()
-  const record = value as Record<string, unknown>
-  if (record.version !== LIBRARY_STATE_VERSION) return emptyLibraryIndex()
+  const record = asRecord(value)
+  if (record === undefined || record.version !== LIBRARY_STATE_VERSION) return emptyLibraryIndex()
   const projects = Array.isArray(record.projects) ? record.projects : []
   const seen = new Set<string>()
   return {
@@ -201,232 +247,304 @@ export function normalizeLibraryIndex(value: unknown): LibraryIndexDoc {
 
 /** One project, when it carries the fields that make it one. */
 export function normalizeProject(value: unknown): LibraryProject | undefined {
-  if (typeof value !== 'object' || value === null) return undefined
-  const record = value as Record<string, unknown>
-  const id = typeof record.id === 'string' && isLibraryId(record.id) ? record.id : undefined
-  const name = typeof record.name === 'string' ? record.name.trim() : ''
-  if (id === undefined || name === '') return undefined
+  const record = asRecord(value)
+  const projectId = id(record?.id)
+  const name = text(record?.name, 200)
+  if (record === undefined || projectId === undefined || name === undefined) return undefined
+  const template = record.template === 'language' || record.template === 'custom' ? record.template : 'subject'
   return {
-    id,
-    name: name.slice(0, 200),
-    ...(typeof record.domain === 'string' && record.domain.trim() !== ''
-      ? { domain: record.domain.trim().slice(0, 200) }
-      : {}),
-    createdAt: typeof record.createdAt === 'string' ? record.createdAt : new Date(0).toISOString(),
+    id: projectId,
+    name,
+    template,
+    ...opt('templateNote', text(record.templateNote, 500)),
+    ...opt('goal', text(record.goal, 500)),
+    createdAt: stamp(record.createdAt),
   }
 }
 
 /** One book's metadata, when it carries the fields that make it one. */
 export function normalizeBook(value: unknown): LibraryBook | undefined {
-  if (typeof value !== 'object' || value === null) return undefined
-  const record = value as Record<string, unknown>
-  const id = typeof record.id === 'string' && isLibraryId(record.id) ? record.id : undefined
-  const title = typeof record.title === 'string' ? record.title.trim() : ''
-  const format = record.format === 'epub' || record.format === 'md' ? record.format : undefined
-  if (id === undefined || title === '' || format === undefined) return undefined
-  const sourceRecord = (typeof record.source === 'object' && record.source !== null ? record.source : {}) as Record<string, unknown>
+  const record = asRecord(value)
+  const bookId = id(record?.id)
+  const title = text(record?.title, 300)
+  if (record === undefined || bookId === undefined || title === undefined) return undefined
+  const source = asRecord(record.tocSource) ?? {}
   const toc = Array.isArray(record.toc) ? record.toc : []
   return {
-    id,
-    title: title.slice(0, 300),
-    ...(typeof record.author === 'string' && record.author.trim() !== '' ? { author: record.author.trim().slice(0, 200) } : {}),
-    source: {
-      kind: sourceRecord.kind === 'url' ? 'url' : 'upload',
-      ref: typeof sourceRecord.ref === 'string' ? sourceRecord.ref.slice(0, 500) : '',
-    },
-    format,
-    toc: toc.flatMap(item => {
-      if (typeof item !== 'object' || item === null) return []
-      const entry = item as Record<string, unknown>
-      const n = typeof entry.n === 'number' && Number.isInteger(entry.n) && entry.n > 0 ? entry.n : undefined
-      const entryTitle = typeof entry.title === 'string' ? entry.title.trim() : ''
-      if (n === undefined) return []
-      return [{
-        n,
-        title: entryTitle.slice(0, 300),
-        chars: typeof entry.chars === 'number' && Number.isFinite(entry.chars) ? Math.max(0, Math.floor(entry.chars)) : 0,
-      }]
+    id: bookId,
+    title,
+    ...opt('author', text(record.author, 200)),
+    ...opt('edition', text(record.edition, 100)),
+    ...opt('isbn', text(record.isbn, 40)),
+    bookKind: record.bookKind === 'material' ? 'material' : 'knowledge',
+    toc: toc.flatMap((item, index) => {
+      const entry = asRecord(item)
+      const entryTitle = text(entry?.title, 300)
+      if (entryTitle === undefined) return []
+      return [{ n: index + 1, title: entryTitle, ...opt('part', text(entry?.part, 200)) }]
     }),
-    createdAt: typeof record.createdAt === 'string' ? record.createdAt : new Date(0).toISOString(),
+    tocSource: {
+      by: source.by === 'web' || source.by === 'photo' ? source.by : 'model',
+      ...opt('url', text(source.url, 1000)),
+      ...opt('verifiedAt', text(source.verifiedAt, 40)),
+    },
+    createdAt: stamp(record.createdAt),
   }
 }
 
-/** One roadmap, when it parses; node-level validation lives in the service. */
+/** One roadmap (adopted or draft), when it parses; rule checks live in the service. */
 export function normalizeRoadmap(value: unknown): LibraryRoadmap | undefined {
-  if (typeof value !== 'object' || value === null) return undefined
-  const record = value as Record<string, unknown>
-  const bookId = typeof record.bookId === 'string' && isLibraryId(record.bookId) ? record.bookId : undefined
-  if (bookId === undefined || !Array.isArray(record.nodes)) return undefined
-  const nodes: LibraryRoadmap['nodes'][number][] = []
+  const record = asRecord(value)
+  const bookId = id(record?.bookId)
+  if (record === undefined || bookId === undefined || !Array.isArray(record.nodes)) return undefined
+  const nodes: RoadmapNode[] = []
   for (const item of record.nodes as unknown[]) {
-    if (typeof item !== 'object' || item === null) return undefined
-    const node = item as Record<string, unknown>
-    const id = typeof node.id === 'string' && isLibraryId(node.id) ? node.id : undefined
-    const title = typeof node.title === 'string' ? node.title.trim() : ''
-    const state = node.state === 'locked' || node.state === 'current' || node.state === 'done' ? node.state : undefined
-    if (id === undefined || title === '' || state === undefined) return undefined
-    const stats = (typeof node.quizStats === 'object' && node.quizStats !== null ? node.quizStats : undefined) as Record<string, unknown> | undefined
-    // The kind predates stored roadmaps: a node without one is a quiz node
-    // (v0.1.0 wrote only those), so the read-back defaults rather than
-    // dropping the roadmap.
+    const node = asRecord(item)
+    const nodeId = id(node?.id)
+    const title = text(node?.title, 300)
+    const state = node?.state === 'locked' || node?.state === 'current' || node?.state === 'done' ? node.state : undefined
+    if (node === undefined || nodeId === undefined || title === undefined || state === undefined) return undefined
     const kind = node.kind === 'read' ? 'read' as const : 'quiz' as const
+    const stats = asRecord(node.quizStats)
     nodes.push({
-      id,
-      title: title.slice(0, 300),
+      id: nodeId,
+      title,
       kind,
-      goals: Array.isArray(node.goals) ? (node.goals as unknown[]).filter((g): g is string => typeof g === 'string').map(g => g.slice(0, 300)) : [],
-      dependsOn: Array.isArray(node.dependsOn) ? (node.dependsOn as unknown[]).filter((d): d is string => typeof d === 'string') : [],
+      goals: strings(node.goals, 300),
+      dependsOn: Array.isArray(node.dependsOn) ? (node.dependsOn as unknown[]).filter((dep): dep is string => typeof dep === 'string') : [],
       chapterRanges: Array.isArray(node.chapterRanges)
         ? (node.chapterRanges as unknown[]).flatMap(range => {
-          if (typeof range !== 'object' || range === null) return []
-          const r = range as Record<string, unknown>
-          return typeof r.from === 'number' && typeof r.to === 'number' ? [{ from: r.from, to: r.to }] : []
+          const r = asRecord(range)
+          const from = finite(r?.from)
+          const to = finite(r?.to)
+          return from === undefined || to === undefined ? [] : [{ from, to }]
         })
         : [],
       state,
-      // A read node never holds a quiz ledger (the store normalizes it away,
-      // the service refuses to write one).
       ...(stats === undefined || kind === 'read' ? {} : {
         quizStats: {
-          attempts: typeof stats.attempts === 'number' ? stats.attempts : 0,
-          ...(typeof stats.lastRatio === 'number' ? { lastRatio: stats.lastRatio } : {}),
-          ...(typeof stats.bestRatio === 'number' ? { bestRatio: stats.bestRatio } : {}),
+          attempts: finite(stats.attempts) ?? 0,
+          ...opt('lastRatio', finite(stats.lastRatio)),
+          ...opt('bestRatio', finite(stats.bestRatio)),
         },
       }),
     })
   }
+  const passRatio = finite(record.passRatio)
   return {
     bookId,
+    status: record.status === 'adopted' ? 'adopted' : 'draft',
     nodes,
-    ...(typeof record.passRatio === 'number' && record.passRatio > 0 && record.passRatio <= 1 ? { passRatio: record.passRatio } : {}),
-    generatedAt: typeof record.generatedAt === 'string' ? record.generatedAt : new Date(0).toISOString(),
+    ...(passRatio !== undefined && passRatio > 0 && passRatio <= 1 ? { passRatio } : {}),
+    ...opt('note', text(record.note, 300)),
+    generatedAt: stamp(record.generatedAt),
+    ...opt('adoptedAt', text(record.adoptedAt, 40)),
   }
 }
 
-/** One vocab entry (one vocab.jsonl line), when it parses. */
-export function normalizeVocabEntry(value: unknown): LibraryVocabEntry | undefined {
-  if (typeof value !== 'object' || value === null) return undefined
-  const record = value as Record<string, unknown>
-  const id = typeof record.id === 'string' && isLibraryId(record.id) ? record.id : undefined
-  const kind = record.kind === 'vocab' || record.kind === 'keypoint' ? record.kind : undefined
-  const term = typeof record.term === 'string' ? record.term.trim() : ''
-  const note = typeof record.note === 'string' ? record.note.trim() : ''
-  const chapterRef = typeof record.chapterRef === 'string' ? record.chapterRef.trim() : ''
-  if (id === undefined || kind === undefined || term === '' || note === '' || chapterRef === '') return undefined
-  const source = (typeof record.source === 'object' && record.source !== null ? record.source : {}) as Record<string, unknown>
-  const mastery = (typeof record.mastery === 'object' && record.mastery !== null ? record.mastery : {}) as Record<string, unknown>
-  const box = typeof mastery.box === 'number' && Number.isInteger(mastery.box) ? Math.min(Math.max(mastery.box, 0), 5) : 0
+/** An attachment reference, when every durable field is present. */
+export function normalizeAttachmentRef(value: unknown): LibraryAttachmentRef | undefined {
+  const record = asRecord(value)
+  const attachmentId = text(record?.attachmentId, 200)
+  const mediaType = text(record?.mediaType, 100)
+  const bytes = finite(record?.bytes)
+  const width = finite(record?.width)
+  const height = finite(record?.height)
+  if (attachmentId === undefined || mediaType === undefined || bytes === undefined || width === undefined || height === undefined) return undefined
+  return { attachmentId, mediaType, bytes, width, height }
+}
+
+/** One photographed page (one pages.jsonl line), when it parses. */
+export function normalizePage(value: unknown): LibraryPage | undefined {
+  const record = asRecord(value)
+  const pageId = id(record?.id)
+  const bookId = id(record?.bookId)
+  const attachment = normalizeAttachmentRef(record?.attachment)
+  if (record === undefined || pageId === undefined || bookId === undefined || attachment === undefined) return undefined
   return {
-    id,
-    kind,
-    term: term.slice(0, 300),
-    note: note.slice(0, 2000),
-    ...(typeof record.context === 'string' && record.context.trim() !== '' ? { context: record.context.slice(0, 2000) } : {}),
-    chapterRef: chapterRef.slice(0, 100),
-    source: {
-      kind: source.kind === 'photo' || source.kind === 'model' ? source.kind : 'manual',
-      ...(typeof source.attachmentId === 'string' && source.attachmentId !== '' ? { attachmentId: source.attachmentId } : {}),
-      ...(typeof source.mediaType === 'string' && source.mediaType !== '' ? { mediaType: source.mediaType } : {}),
-      ...(typeof source.bytes === 'number' && Number.isFinite(source.bytes) ? { bytes: source.bytes } : {}),
-      ...(typeof source.width === 'number' && Number.isFinite(source.width) ? { width: source.width } : {}),
-      ...(typeof source.height === 'number' && Number.isFinite(source.height) ? { height: source.height } : {}),
-    },
-    mastery: {
-      box,
-      dueAt: typeof mastery.dueAt === 'string' ? mastery.dueAt : new Date(0).toISOString(),
-      streak: typeof mastery.streak === 'number' && Number.isInteger(mastery.streak) ? Math.max(0, mastery.streak) : 0,
-    },
-    createdAt: typeof record.createdAt === 'string' ? record.createdAt : new Date(0).toISOString(),
+    id: pageId,
+    bookId,
+    ...opt('nodeId', id(record.nodeId)),
+    ...opt('label', text(record.label, 60)),
+    attachment,
+    text: typeof record.text === 'string' ? record.text.slice(0, 20_000) : '',
+    marks: Array.isArray(record.marks)
+      ? (record.marks as unknown[]).flatMap(item => {
+        const mark = asRecord(item)
+        const markText = text(mark?.text, 300)
+        if (mark === undefined || markText === undefined) return []
+        return [{
+          text: markText,
+          ...opt('sentence', text(mark.sentence, 1000)),
+          ...opt('handNote', text(mark.handNote, 300)),
+          ...opt('gloss', text(mark.gloss, 1000)),
+          ...(mark.uncertain === true ? { uncertain: true } : {}),
+        }]
+      })
+      : [],
+    cardIds: strings(record.cardIds, 100),
+    at: stamp(record.at),
   }
 }
 
-/** One quiz, when it parses; the evidence gate itself lives in the service. */
+const CARD_SOURCE_TYPES: readonly LibraryCardSourceType[] = ['photo', 'chat', 'quiz', 'manual']
+
+/** One knowledge card (one cards.jsonl line), when it parses. */
+export function normalizeCard(value: unknown): LibraryCard | undefined {
+  const record = asRecord(value)
+  const cardId = id(record?.id)
+  const term = text(record?.term, 300)
+  const gloss = text(record?.gloss, 2000)
+  if (record === undefined || cardId === undefined || term === undefined || gloss === undefined) return undefined
+  const mastery = asRecord(record.mastery) ?? {}
+  const box = finite(mastery.box)
+  const weakness = finite(record.weakness) ?? 0
+  return {
+    id: cardId,
+    kind: record.kind === 'word' ? 'word' : 'concept',
+    term,
+    aliases: strings(record.aliases, 300),
+    gloss,
+    ...opt('userGloss', text(record.userGloss, 1000)),
+    contexts: Array.isArray(record.contexts)
+      ? (record.contexts as unknown[]).flatMap(item => {
+        const context = asRecord(item)
+        const sentence = text(context?.sentence, 1000)
+        if (context === undefined || sentence === undefined) return []
+        return [{ sentence, ...opt('bookId', id(context.bookId)), ...opt('pageId', id(context.pageId)), ...opt('nodeId', id(context.nodeId)) }]
+      })
+      : [],
+    ...opt('bookId', id(record.bookId)),
+    sources: Array.isArray(record.sources)
+      ? (record.sources as unknown[]).flatMap(item => {
+        const source = asRecord(item)
+        const type = CARD_SOURCE_TYPES.find(candidate => candidate === source?.type)
+        if (source === undefined || type === undefined) return []
+        return [{
+          type,
+          ...opt('ref', text(source.ref, 200)),
+          ...opt('note', text(source.note, 300)),
+          ...(source.weakened === true ? { weakened: true } : {}),
+          at: stamp(source.at),
+        }]
+      })
+      : [],
+    weakness: Math.min(Math.max(Math.round(weakness), 0), MAX_WEAKNESS),
+    mastery: {
+      box: box === undefined ? 0 : Math.min(Math.max(Math.round(box), 0), MAX_BOX),
+      dueAt: stamp(mastery.dueAt),
+      streak: Math.max(0, Math.round(finite(mastery.streak) ?? 0)),
+    },
+    status: record.status === 'mastered' || record.status === 'deleted' ? record.status : 'active',
+    createdAt: stamp(record.createdAt),
+    updatedAt: stamp(record.updatedAt ?? record.createdAt),
+  }
+}
+
+/** One quiz, when it parses; the two-axis checks live in the service. */
 export function normalizeQuiz(value: unknown): LibraryQuiz | undefined {
-  if (typeof value !== 'object' || value === null) return undefined
-  const record = value as Record<string, unknown>
-  const id = typeof record.id === 'string' && isLibraryId(record.id) ? record.id : undefined
-  if (id === undefined || !Array.isArray(record.questions)) return undefined
-  const scope = (typeof record.scope === 'object' && record.scope !== null ? record.scope : undefined) as Record<string, unknown> | undefined
-  const bookId = typeof scope?.bookId === 'string' && isLibraryId(scope.bookId) ? scope.bookId : undefined
-  if (bookId === undefined) return undefined
-  const questions: LibraryQuiz['questions'][number][] = []
+  const record = asRecord(value)
+  const quizId = id(record?.id)
+  const scope = asRecord(record?.scope)
+  const bookId = id(scope?.bookId)
+  if (record === undefined || quizId === undefined || bookId === undefined || !Array.isArray(record.questions)) return undefined
+  const questions: LibraryQuizQuestion[] = []
   for (const item of record.questions as unknown[]) {
-    if (typeof item !== 'object' || item === null) return undefined
-    const q = item as Record<string, unknown>
-    const qid = typeof q.id === 'string' && q.id !== '' ? q.id : undefined
-    const kind = q.kind === 'choice' || q.kind === 'fill' || q.kind === 'free' ? q.kind : undefined
-    if (qid === undefined || kind === undefined || typeof q.prompt !== 'string') return undefined
+    const q = asRecord(item)
+    const qid = text(q?.id, 60)
+    const kind = q?.kind === 'choice' || q?.kind === 'fill' || q?.kind === 'free' ? q.kind : undefined
+    const target = asRecord(q?.target)
+    const evidence = asRecord(q?.evidence)
+    if (q === undefined || qid === undefined || kind === undefined || typeof q.prompt !== 'string' || target === undefined || evidence === undefined) {
+      return undefined
+    }
+    const targetKind = target.kind === 'marked' || target.kind === 'asked' || target.kind === 'missed' ? target.kind : 'topic'
+    const evidenceKind = evidence.kind === 'photo' || evidence.kind === 'web' ? evidence.kind : 'knowledge'
     questions.push({
       id: qid,
       kind,
       prompt: q.prompt,
       ...(Array.isArray(q.options) ? { options: (q.options as unknown[]).filter((o): o is string => typeof o === 'string') } : {}),
-      chapterRef: typeof q.chapterRef === 'string' ? q.chapterRef : '',
-      evidence: typeof q.evidence === 'string' ? q.evidence : '',
       answer: typeof q.answer === 'string' ? q.answer : '',
-      ...(Array.isArray(q.vocabIds) ? { vocabIds: (q.vocabIds as unknown[]).filter((v): v is string => typeof v === 'string') } : {}),
+      ...opt('explanation', text(q.explanation, 2000)),
+      target: { kind: targetKind, ...(Array.isArray(target.cardIds) ? { cardIds: strings(target.cardIds, 100) } : {}) },
+      evidence: {
+        kind: evidenceKind,
+        ...opt('pageId', id(evidence.pageId)),
+        ...opt('url', text(evidence.url, 1000)),
+        ...opt('quote', text(evidence.quote, 2000)),
+      },
     })
   }
   return {
-    id,
-    scope: {
-      bookId,
-      ...(scope !== undefined && typeof scope.nodeId === 'string' && isLibraryId(scope.nodeId) ? { nodeId: scope.nodeId } : {}),
-    },
+    id: quizId,
+    scope: { bookId, ...opt('nodeId', id(scope?.nodeId)) },
     questions,
-    createdAt: typeof record.createdAt === 'string' ? record.createdAt : new Date(0).toISOString(),
+    createdAt: stamp(record.createdAt),
   }
 }
 
 /** One attempt (one attempts.jsonl line), when it parses. */
 export function normalizeAttempt(value: unknown): LibraryAttempt | undefined {
-  if (typeof value !== 'object' || value === null) return undefined
-  const record = value as Record<string, unknown>
-  const id = typeof record.id === 'string' && isLibraryId(record.id) ? record.id : undefined
-  const quizId = typeof record.quizId === 'string' && isLibraryId(record.quizId) ? record.quizId : undefined
-  const ratio = typeof record.ratio === 'number' && Number.isFinite(record.ratio) ? record.ratio : undefined
-  if (id === undefined || quizId === undefined || ratio === undefined || !Array.isArray(record.verdicts)) return undefined
+  const record = asRecord(value)
+  const attemptId = id(record?.id)
+  const quizId = id(record?.quizId)
+  const ratio = finite(record?.ratio)
+  if (record === undefined || attemptId === undefined || quizId === undefined || ratio === undefined || !Array.isArray(record.verdicts)) return undefined
   const verdicts: LibraryAttempt['verdicts'][number][] = []
   for (const item of record.verdicts as unknown[]) {
-    if (typeof item !== 'object' || item === null) return undefined
-    const v = item as Record<string, unknown>
-    if (typeof v.task !== 'string' || typeof v.criterion !== 'string' || typeof v.pass !== 'boolean') return undefined
-    if (typeof v.evidence !== 'string') return undefined
+    const v = asRecord(item)
+    if (v === undefined || typeof v.task !== 'string' || typeof v.criterion !== 'string' || typeof v.pass !== 'boolean' || typeof v.evidence !== 'string') {
+      return undefined
+    }
     verdicts.push({
       task: v.task,
       criterion: v.criterion,
       pass: v.pass,
-      ...(typeof v.ratio === 'number' && Number.isFinite(v.ratio) ? { ratio: v.ratio } : {}),
+      ...opt('ratio', finite(v.ratio)),
       evidence: v.evidence,
       by: v.by === 'self' || v.by === 'user' ? v.by : 'llm',
+      ...(v.void === true ? { void: true } : {}),
     })
   }
-  return {
-    id,
-    quizId,
-    verdicts,
-    ratio,
-    at: typeof record.at === 'string' ? record.at : new Date(0).toISOString(),
-  }
+  return { id: attemptId, quizId, verdicts, ratio, at: stamp(record.at) }
 }
 
 /** One audit event (one events.jsonl line), when it parses. */
 export function normalizeEvent(value: unknown): LibraryEvent | undefined {
-  if (typeof value !== 'object' || value === null) return undefined
-  const record = value as Record<string, unknown>
-  const type = typeof record.type === 'string' && (LIBRARY_EVENT_TYPES as readonly string[]).includes(record.type)
+  const record = asRecord(value)
+  const type = typeof record?.type === 'string' && (LIBRARY_EVENT_TYPES as readonly string[]).includes(record.type)
     ? record.type as LibraryEventType
     : undefined
-  if (type === undefined) return undefined
+  if (record === undefined || type === undefined) return undefined
+  const count = finite(record.count)
+  const count2 = finite(record.count2)
   return {
-    at: typeof record.at === 'string' ? record.at : new Date(0).toISOString(),
+    at: stamp(record.at),
     type,
-    ...(typeof record.id === 'string' && record.id !== '' ? { id: record.id } : {}),
-    ...(typeof record.title === 'string' && record.title !== '' ? { title: record.title.slice(0, 300) } : {}),
-    ...(typeof record.count === 'number' && Number.isFinite(record.count) ? { count: Math.floor(record.count) } : {}),
-    ...(typeof record.count2 === 'number' && Number.isFinite(record.count2) ? { count2: Math.floor(record.count2) } : {}),
-    ...(typeof record.ratio === 'number' && Number.isFinite(record.ratio) ? { ratio: record.ratio } : {}),
+    ...opt('id', text(record.id, 200)),
+    ...opt('title', text(record.title, 300)),
+    ...opt('bookId', id(record.bookId)),
+    ...opt('source', CARD_SOURCE_TYPES.find(candidate => candidate === record.source)),
+    ...(Array.isArray(record.ids) ? { ids: strings(record.ids, 100) } : {}),
+    ...opt('count', count === undefined ? undefined : Math.floor(count)),
+    ...opt('count2', count2 === undefined ? undefined : Math.floor(count2)),
+    ...opt('ratio', finite(record.ratio)),
   }
+}
+
+/** The bindings map, dropping rows that do not parse. */
+export function normalizeBindings(value: unknown): Map<string, LibraryBinding> {
+  const out = new Map<string, LibraryBinding>()
+  const record = asRecord(value)
+  if (record === undefined) return out
+  for (const [sessionId, raw] of Object.entries(record)) {
+    const binding = asRecord(raw)
+    const projectId = id(binding?.projectId)
+    if (sessionId === '' || projectId === undefined) continue
+    out.set(sessionId, { projectId, ...opt('bookId', id(binding?.bookId)) })
+  }
+  return out
 }
 
 /* ----------------------------------------------------------------- store */
@@ -434,7 +552,8 @@ export function normalizeEvent(value: unknown): LibraryEvent | undefined {
 /**
  * The native-fs library store. Reads never lock (a read observes one committed
  * revision, never a partial one — writes are atomic renames); writes serialize
- * on a per-project lock (`projects/<id>.lock`), the index on its own.
+ * on a per-project lock (`projects/<id>.lock`), the index and the bindings on
+ * their own.
  */
 export class LibraryStore {
   private readonly stateRoot: string
@@ -478,6 +597,10 @@ export class LibraryStore {
     return join(this.stateRoot, 'state.json')
   }
 
+  private get bindingsFile(): string {
+    return join(this.stateRoot, 'bindings.json')
+  }
+
   private get projectsDir(): string {
     return join(this.stateRoot, 'projects')
   }
@@ -492,12 +615,13 @@ export class LibraryStore {
     return join(this.projectDir(projectId), 'project.json')
   }
 
-  private roadmapFile(projectId: string): string {
-    return join(this.projectDir(projectId), 'roadmap.json')
+  private bookDir(projectId: string, bookId: string): string {
+    assertLibraryId(bookId, 'book id')
+    return join(this.projectDir(projectId), 'books', bookId)
   }
 
-  private vocabFile(projectId: string): string {
-    return join(this.projectDir(projectId), 'vocab.jsonl')
+  private cardsFile(projectId: string): string {
+    return join(this.projectDir(projectId), 'cards.jsonl')
   }
 
   private attemptsFile(projectId: string): string {
@@ -511,16 +635,6 @@ export class LibraryStore {
   private quizFile(projectId: string, quizId: string): string {
     assertLibraryId(quizId, 'quiz id')
     return join(this.projectDir(projectId), 'quizzes', `${quizId}.json`)
-  }
-
-  private bookFile(projectId: string, bookId: string): string {
-    assertLibraryId(bookId, 'book id')
-    return join(this.projectDir(projectId), 'books', bookId, 'book.json')
-  }
-
-  private chapterFile(projectId: string, bookId: string, n: number): string {
-    assertLibraryId(bookId, 'book id')
-    return join(this.projectDir(projectId), 'books', bookId, 'chapters', `${n}.html`)
   }
 
   /** The per-project lock's path. */
@@ -543,9 +657,18 @@ export class LibraryStore {
 
   /** The index's own lock (project create/delete). */
   async withIndexLock<T>(fn: () => Promise<T> | T): Promise<T> {
+    return await this.withRootLock(this.indexFile, fn)
+  }
+
+  /** The bindings' own lock. */
+  async withBindingsLock<T>(fn: () => Promise<T> | T): Promise<T> {
+    return await this.withRootLock(this.bindingsFile, fn)
+  }
+
+  private async withRootLock<T>(file: string, fn: () => Promise<T> | T): Promise<T> {
     if (!this.available) throw new LibraryStoreError('library: no writable state root', 'unavailable')
     mkdirSync(this.stateRoot, { recursive: true })
-    const lock = await acquireLibraryLock(`${this.indexFile}.lock`)
+    const lock = await acquireLibraryLock(`${file}.lock`)
     try {
       return await fn()
     } finally {
@@ -563,16 +686,16 @@ export class LibraryStore {
    *   being silently clobbered).
    */
   private readJsonFile<T>(file: string, normalize: (value: unknown) => T | undefined): T | undefined {
-    let text: string
+    let raw: string
     try {
-      text = readFileSync(file, 'utf8')
+      raw = readFileSync(file, 'utf8')
     } catch (error) {
       if ((error as NodeJS.ErrnoException | null)?.code === 'ENOENT') return undefined
       throw new LibraryStoreError(`library: ${file} could not be read — ${libraryErrorMessage(error)}`, 'io')
     }
     let parsed: unknown
     try {
-      parsed = JSON.parse(text)
+      parsed = JSON.parse(raw)
     } catch {
       throw new LibraryStoreError(`library: ${file} does not parse — fix or remove it by hand`, 'corrupt')
     }
@@ -585,23 +708,15 @@ export class LibraryStore {
 
   /** Write one document atomically (temp file + rename). */
   private writeJsonFile(file: string, value: unknown): void {
-    mkdirSync(dirname(file), { recursive: true })
-    const temporary = `${file}.${process.pid}.tmp`
-    try {
-      writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`)
-      renameSync(temporary, file)
-    } catch (error) {
-      rmSync(temporary, { force: true })
-      throw new LibraryStoreError(`library: ${file} could not be written — ${libraryErrorMessage(error)}`, 'io')
-    }
+    this.writeTextFile(file, `${JSON.stringify(value, null, 2)}\n`)
   }
 
-  /** Write one chapter body atomically (the externalized big artifact). */
-  private writeTextFile(file: string, text: string): void {
+  /** Write one text file atomically. */
+  private writeTextFile(file: string, body: string): void {
     mkdirSync(dirname(file), { recursive: true })
     const temporary = `${file}.${process.pid}.tmp`
     try {
-      writeFileSync(temporary, text)
+      writeFileSync(temporary, body)
       renameSync(temporary, file)
     } catch (error) {
       rmSync(temporary, { force: true })
@@ -623,15 +738,15 @@ export class LibraryStore {
 
   /** Read one JSONL ledger tolerantly: unparseable lines drop, never fail the read. */
   private readJsonlFile<T>(file: string, normalize: (value: unknown) => T | undefined): T[] {
-    let text: string
+    let raw: string
     try {
-      text = readFileSync(file, 'utf8')
+      raw = readFileSync(file, 'utf8')
     } catch (error) {
       if ((error as NodeJS.ErrnoException | null)?.code === 'ENOENT') return []
       throw new LibraryStoreError(`library: ${file} could not be read — ${libraryErrorMessage(error)}`, 'io')
     }
     const out: T[] = []
-    for (const line of text.split('\n')) {
+    for (const line of raw.split('\n')) {
       const trimmed = line.trim()
       if (trimmed === '') continue
       try {
@@ -649,8 +764,17 @@ export class LibraryStore {
   /** The index; absent reads as empty, an unavailable root as empty. */
   readIndex(): LibraryIndexDoc {
     if (!this.available) return emptyLibraryIndex()
-    const doc = this.readJsonFile(this.indexFile, value => normalizeLibraryIndex(value))
-    return doc ?? emptyLibraryIndex()
+    return this.readJsonFile(this.indexFile, value => normalizeLibraryIndex(value)) ?? emptyLibraryIndex()
+  }
+
+  /** The session bindings; absent or unreadable reads as empty. */
+  readBindings(): Map<string, LibraryBinding> {
+    if (!this.available) return new Map()
+    try {
+      return normalizeBindings(JSON.parse(readFileSync(this.bindingsFile, 'utf8')))
+    } catch {
+      return new Map()
+    }
   }
 
   /** One project's record; undefined when absent. */
@@ -658,42 +782,38 @@ export class LibraryStore {
     return this.readJsonFile(this.projectFile(projectId), normalizeProject)
   }
 
-  /** One project's roadmap; undefined when none was written. */
-  readRoadmap(projectId: string): LibraryRoadmap | undefined {
-    return this.readJsonFile(this.roadmapFile(projectId), normalizeRoadmap)
-  }
-
   /** One book's metadata; undefined when absent. */
   readBook(projectId: string, bookId: string): LibraryBook | undefined {
-    return this.readJsonFile(this.bookFile(projectId, bookId), normalizeBook)
+    return this.readJsonFile(join(this.bookDir(projectId, bookId), 'book.json'), normalizeBook)
   }
 
-  /** Every book of one project, in shelving (directory-name) order. */
+  /** Every book of one project, oldest first. */
   listBooks(projectId: string): LibraryBook[] {
     const dir = join(this.projectDir(projectId), 'books')
     if (!existsSync(dir)) return []
     return readdirSync(dir, { withFileTypes: true })
-      .filter(entry => entry.isDirectory())
-      .map(entry => entry.name)
-      .sort()
-      .flatMap(bookId => {
-        const book = this.readBook(projectId, bookId)
+      .filter(entry => entry.isDirectory() && isLibraryId(entry.name))
+      .flatMap(entry => {
+        const book = this.readBook(projectId, entry.name)
         return book === undefined ? [] : [book]
       })
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
   }
 
-  /** A chapter's body; undefined when absent. */
-  readChapter(projectId: string, bookId: string, n: number): string | undefined {
-    try {
-      return readFileSync(this.chapterFile(projectId, bookId, n), 'utf8')
-    } catch {
-      return undefined
-    }
+  /** One book's adopted roadmap, or its draft. */
+  readRoadmap(projectId: string, bookId: string, which: 'adopted' | 'draft' = 'adopted'): LibraryRoadmap | undefined {
+    const file = which === 'adopted' ? 'roadmap.json' : 'roadmap.draft.json'
+    return this.readJsonFile(join(this.bookDir(projectId, bookId), file), normalizeRoadmap)
   }
 
-  /** The whole vocab book (the JSONL ledger, tolerant per line). */
-  readVocab(projectId: string): LibraryVocabEntry[] {
-    return this.readJsonlFile(this.vocabFile(projectId), normalizeVocabEntry)
+  /** One book's photographed pages, oldest first. */
+  readPages(projectId: string, bookId: string): LibraryPage[] {
+    return this.readJsonlFile(join(this.bookDir(projectId, bookId), 'pages.jsonl'), normalizePage)
+  }
+
+  /** Every knowledge card of one project (deleted ones included — callers filter). */
+  readCards(projectId: string): LibraryCard[] {
+    return this.readJsonlFile(this.cardsFile(projectId), normalizeCard)
   }
 
   /** Every attempt (the JSONL ledger, tolerant per line). */
@@ -701,7 +821,7 @@ export class LibraryStore {
     return this.readJsonlFile(this.attemptsFile(projectId), normalizeAttempt)
   }
 
-  /** The audit ledger (the JSONL ledger, tolerant per line), oldest first. */
+  /** The audit ledger, oldest first. */
   readEvents(projectId: string): LibraryEvent[] {
     return this.readJsonlFile(this.eventsFile(projectId), normalizeEvent)
   }
@@ -711,17 +831,17 @@ export class LibraryStore {
     return this.readJsonFile(this.quizFile(projectId, quizId), normalizeQuiz)
   }
 
-  /** Every quiz of one project, by id. */
+  /** Every quiz of one project, oldest first. */
   listQuizzes(projectId: string): LibraryQuiz[] {
     const dir = join(this.projectDir(projectId), 'quizzes')
     if (!existsSync(dir)) return []
     return readdirSync(dir)
-      .filter(name => name.endsWith('.json'))
-      .sort()
+      .filter(name => name.endsWith('.json') && isLibraryId(name.slice(0, -'.json'.length)))
       .flatMap(name => {
         const quiz = this.readQuiz(projectId, name.slice(0, -'.json'.length))
         return quiz === undefined ? [] : [quiz]
       })
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
   }
 
   /* --------------------------------------------------------------- writes */
@@ -731,53 +851,43 @@ export class LibraryStore {
     this.writeJsonFile(this.indexFile, doc)
   }
 
+  /** Write the bindings (call inside `withBindingsLock`). */
+  writeBindings(bindings: ReadonlyMap<string, LibraryBinding>): void {
+    this.writeJsonFile(this.bindingsFile, Object.fromEntries(bindings))
+  }
+
   /** Write one project's record (call inside `withProjectLock`). */
   writeProject(project: LibraryProject): void {
     this.writeJsonFile(this.projectFile(project.id), project)
   }
 
-  /**
-   * Write one book: its metadata and every chapter body. Chapter files are
-   * written first (a metadata row must never point at a missing body); a
-   * mid-write failure leaves whole older chapters beside a partial new set,
-   * which the next storeBook of the same id fully replaces.
-   */
-  writeBook(projectId: string, book: LibraryBook, chapters: readonly { readonly n: number; readonly html: string }[]): void {
-    for (const chapter of chapters) {
-      if (!Number.isInteger(chapter.n) || chapter.n <= 0) {
-        throw new LibraryStoreError(`library: chapter number ${String(chapter.n)} is not a positive integer`, 'io')
-      }
-      this.writeTextFile(this.chapterFile(projectId, book.id, chapter.n), chapter.html)
-    }
-    this.writeJsonFile(this.bookFile(projectId, book.id), book)
+  /** Write one book's metadata (call inside `withProjectLock`). */
+  writeBook(projectId: string, book: LibraryBook): void {
+    this.writeJsonFile(join(this.bookDir(projectId, book.id), 'book.json'), book)
   }
 
-  /** Write one project's roadmap (call inside `withProjectLock`). */
+  /** Write one book's adopted roadmap or its draft (call inside `withProjectLock`). */
   writeRoadmap(projectId: string, roadmap: LibraryRoadmap): void {
-    this.writeJsonFile(this.roadmapFile(projectId), roadmap)
+    const file = roadmap.status === 'adopted' ? 'roadmap.json' : 'roadmap.draft.json'
+    this.writeJsonFile(join(this.bookDir(projectId, roadmap.bookId), file), roadmap)
   }
 
-  /** Append vocab entries (call inside `withProjectLock`). */
-  appendVocab(projectId: string, entries: readonly LibraryVocabEntry[]): void {
-    this.appendJsonlFile(this.vocabFile(projectId), entries)
+  /** Drop one book's draft (adopted or discarded). */
+  removeDraft(projectId: string, bookId: string): void {
+    rmSync(join(this.bookDir(projectId, bookId), 'roadmap.draft.json'), { force: true })
+  }
+
+  /** Append one photographed page (call inside `withProjectLock`). */
+  appendPage(projectId: string, page: LibraryPage): void {
+    this.appendJsonlFile(join(this.bookDir(projectId, page.bookId), 'pages.jsonl'), [page])
   }
 
   /**
-   * Rewrite the vocab book whole — the ONE exception to append-only, because a
-   * mastery update is a rewrite of an existing line. The temp+rename keeps the
-   * swap atomic; the project lock serializes it against appends.
+   * Rewrite the cards whole — a merge or a mastery move rewrites an existing
+   * line. The temp+rename keeps the swap atomic; the project lock serializes it.
    */
-  rewriteVocab(projectId: string, entries: readonly LibraryVocabEntry[]): void {
-    const file = this.vocabFile(projectId)
-    mkdirSync(dirname(file), { recursive: true })
-    const temporary = `${file}.${process.pid}.tmp`
-    try {
-      writeFileSync(temporary, entries.map(entry => `${JSON.stringify(entry)}\n`).join(''))
-      renameSync(temporary, file)
-    } catch (error) {
-      rmSync(temporary, { force: true })
-      throw new LibraryStoreError(`library: ${file} could not be rewritten — ${libraryErrorMessage(error)}`, 'io')
-    }
+  writeCards(projectId: string, cards: readonly LibraryCard[]): void {
+    this.writeTextFile(this.cardsFile(projectId), cards.map(card => `${JSON.stringify(card)}\n`).join(''))
   }
 
   /** Append one attempt (call inside `withProjectLock`). */
@@ -791,11 +901,16 @@ export class LibraryStore {
   }
 
   /** Write one quiz (call inside `withProjectLock`). */
-  writeQuiz(quiz: LibraryQuiz, projectId: string): void {
+  writeQuiz(projectId: string, quiz: LibraryQuiz): void {
     this.writeJsonFile(this.quizFile(projectId, quiz.id), quiz)
   }
 
-  /** Remove one project's whole directory (books, ledgers, quizzes). */
+  /** Remove one book's directory (metadata, roadmaps, pages). */
+  removeBook(projectId: string, bookId: string): void {
+    rmSync(this.bookDir(projectId, bookId), { recursive: true, force: true })
+  }
+
+  /** Remove one project's whole directory. */
   removeProject(projectId: string): void {
     rmSync(this.projectDir(projectId), { recursive: true, force: true })
     rmSync(this.projectLock(projectId), { force: true })

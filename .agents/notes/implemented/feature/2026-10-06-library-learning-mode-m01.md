@@ -42,6 +42,7 @@ Two packages shipped, both installable alone.
 
 ## Related
 
+- Superseded in part by [library v2](2026-10-06-library-learning-v2.md): uploads, chapter bodies, the vocab book, the chapter evidence gate and the `library` skill are gone; the store, state machine, cascade and visibility criterion carry on.
 - Proposal: [2026-10-06-library-learning-mode](../../../proposals/active/2026-10-06-library-learning-mode.md)
 - Visibility convention: [docs/plugin-visibility.md](../../../docs/plugin-visibility.md) (the canvas double check, fail-open)
 - The fold precedent: evaluation-family `./tool` entries (T88), canvas-novel's `./agent`.

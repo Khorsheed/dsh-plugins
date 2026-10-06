@@ -1,25 +1,28 @@
 /**
- * The session-granted library tools AND the coach's prompt section — this
- * package's `./tool` composition entry for agent-preset compositions. The row
- * provides NO service (the preset-mount isolate-realm rule forbids service
- * rows); it registers the three model tools into the host tools registry,
- * contributes their guidance section, and ships the `library` skill into the
- * skills registry, all delegating to the global `ctx.library` service core
- * the core row provides at the profile root — the official tool-row shape
- * (the evaluation-family fold, T88). Granting is therefore per-session: a
- * preset names the row, its sessions get the tools, the section and the
- * skill; every other preset's sessions get none of them.
+ * The session-granted library tools AND the coach's prompt — this package's
+ * `./tool` composition entry for agent-preset compositions. The row provides
+ * NO service (the preset-mount isolate-realm rule forbids service rows); it
+ * registers the three model tools, their guidance section, and a per-turn
+ * context line naming the session's bound book and its weakest cards, all
+ * delegating to the global `ctx.library` service core the core row provides
+ * at the profile root — the official tool-row shape (the evaluation-family
+ * fold, T88). Granting is therefore per-session: a preset names the row, its
+ * sessions get all of it; every other preset's sessions get none.
+ *
+ * The row can also quiet its scope for a focused preset (the learning
+ * mode): `hideSections` blanks root prompt sections that do not apply there
+ * (a scoped section shadows a global one of the same name), and `denyTools`
+ * masks root-registered tools for the scope. Both are best-effort — a name
+ * the composition does not hold is skipped, never a boot failure.
  *
  * @module @khorsheed/dsh-library/tool
  */
-import { readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 // Type-only: pulls this package's `Context.library` service augmentation.
 import type {} from './index.ts'
 import { libraryToolDefinitions } from './tool-definition.ts'
+import type { LibraryService } from './service.ts'
 
 const PACKAGE_NAME = '@khorsheed/dsh-library'
 
@@ -40,15 +43,20 @@ const definePluginTool = <T extends object>(def: T): T =>
 export interface LibraryToolConfig {
   /**
    * Whether this row grants the library tools: `all` (the default) or `none`
-   * (no tools, no guidance section, no skill — a deployment where the model
-   * must not even read the library). The service core and the right-Sidebar
-   * tab are the core row's own faces and stay mounted either way.
+   * (no tools, no guidance, no context — a deployment where the model must not
+   * even read the library). The core row's faces stay mounted either way.
    */
   tools?: 'all' | 'none'
+  /** Root prompt sections to blank in this scope (e.g. `harness:source`). */
+  hideSections?: string[]
+  /** Root-registered tools to mask in this scope (e.g. `list_capabilities`). */
+  denyTools?: string[]
 }
 
 export const Config: z = z.object({
   tools: z.union([z.const('all'), z.const('none')]).default('all'),
+  hideSections: z.array(z.string()).default([]),
+  denyTools: z.array(z.string()).default([]),
 })
 
 /** Cordis plugin name used by loader diagnostics. */
@@ -61,97 +69,80 @@ export const name = 'library-tool'
  * provide the core, so a one-shot ctx.get probe at apply saw ABSENT there and
  * nothing re-ran the row (rc.1 boot order; 3080 production 2026-09-27). The
  * declared inject pends the row until the core provides, then the body
- * applies. The tools registry, the prompt assembly and the skills registry
- * still join through deferred injection so their mount order cannot strand
- * the registrations.
+ * applies. The tools registry and the prompt assembly still join through
+ * deferred injection so their mount order cannot strand the registrations.
  */
 export const inject = ['library']
 
-/** The narrow prompt-section registry surface this plugin opportunistically uses. */
-interface PromptSections {
+/** The narrow prompt registry surface this plugin uses. */
+interface PromptRegistry {
   section(section: { name: string; order: number; text: string }): () => void
+  context(context: { name: string; order: number; text: (context: { agent?: { session?: { id: unknown } } }) => string }): () => void
 }
 
-/** The narrow skill-registry slice this entry registers into (the canvas/datasets precedent). */
-interface SkillRegistrySlice {
-  register(skill: { name: string; description: string; content: string; source: string; provider?: string }): () => void
-}
-
-/** This package's root (`src/` in the source plane, `lib/` once built — both one level down). */
-const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
-
-/** The shipped skill's file (`skills/library/SKILL.md`, listed in package.json `files`). */
-export const LIBRARY_SKILL_FILE = join(PACKAGE_ROOT, 'skills', 'library', 'SKILL.md')
-
-/** The shipped skill, parsed from its SKILL.md frontmatter. */
-interface SkillFile {
-  readonly name: string
-  readonly description: string
-  readonly content: string
-}
-
-/**
- * Load the shipped `library` skill. A missing or malformed file is a warning,
- * never a boot failure (the datasets precedent).
- * @returns the parsed skill, or undefined when it cannot be read.
- */
-export function loadLibrarySkill(): SkillFile | undefined {
-  let raw: string
-  try {
-    raw = readFileSync(LIBRARY_SKILL_FILE, 'utf8')
-  } catch {
-    return undefined
-  }
-  const match = /^---\n([\s\S]*?)\n---\n([\s\S]*)$/.exec(raw)
-  const frontmatter = match?.[1] ?? ''
-  const skillName = /^name:\s*(.+)$/m.exec(frontmatter)?.[1]?.trim()
-  const description = /^description:\s*(.+)$/m.exec(frontmatter)?.[1]?.trim()
-  const content = match?.[2]
-  if (skillName === undefined || description === undefined || content === undefined) return undefined
-  return { name: skillName, description, content }
+/** The narrow tools-registry surface for masking root tools. */
+interface ToolMask {
+  restrict(filter: { deny: string[] }): () => void
 }
 
 /**
  * The coach's guidance, registered beside the tools it describes (order 114,
- * the eval line). The whole working contract — reading aloud, logging notes,
- * composing quizzes, grading — is here; the per-`what` payload shapes are the
- * skill's, loaded on demand.
+ * the eval line). Per-`what` payloads are in the tool descriptions.
  */
-const LIBRARY_PROMPT = `This session is a guided deep-reading session, and the library is its memory. The library_read / library_write / library_assess tools are its whole surface; the library skill carries every payload shape — load it before your first write.
+export const LIBRARY_PROMPT = `The library is this session's memory: projects, books, each book's roadmap, the learner's knowledge cards (知识卡片) and quizzes live in library_read / library_write / library_assess — never in conversation memory.
 
-The working contract:
+- Binding: the session header binds this session to a project or one of its books, and project / book default to it. Unbound and about to write: ask which (ask_user_question), then library_write · binding.
+- Adding a book: never ask for an upload. Search the web for the exact edition and its contents, confirm the edition with the learner when several exist, then library_write · book (cite the contents url) and draft a roadmap. The learner adopts the draft in the sidebar; you only write drafts.
+- What to quiz, in order: the learner's own cards (marked in photos, asked about, missed before — library_read · cards, weakest first), then the chapter's topic. What it rests on, in order: a photographed page's text, a web quote with its url, domain knowledge (say so). When the book and your knowledge disagree, the book wins — mention the difference in the explanation. A material book (exam papers, novels) never takes a question about its content from memory.
+- Weak points: when the learner shows they are stuck — says they mix something up, asks the same point again, keeps probing one detail — record it right away (library_write · cards, source chat, weaken true) and say in one short line what you noted. Ordinary curiosity is not a weak point. Before explaining a point, check library_read · cards for it.
+- Photos: a page photo becomes library_write · page in one call — transcribe the printed text, list every mark (underline, margin note) with its sentence and in-context gloss, flag the ones you cannot read as uncertain. Copy the image block's reference verbatim. If you cannot see images on this route, say so.
+- Grading is two steps: judge in the conversation, then library_assess with one verdict per question — a judged quiz that was never assessed never happened.
+- Every refusal says how to fix the call; follow it rather than guessing.`
 
-- Read with the person, not at them: open the current chapter (library_read · chapter, paged), explain as you go, and ask before moving on. A Socratic follow-up beats a summary.
-- Notes go to the vocab book as they happen (library_write · notes): one entry per term or key point, kind vocab | keypoint, chapterRef as ch:<n>. When the person sends a photo of handwritten notes, transcribe it into entries and record the photo as each entry's source — copy the image block's durable reference (attachmentId, mediaType, bytes, width, height) verbatim. When you cannot see images on this route, say so and ask for the notes as text instead.
-- Quizzes mix the book and the vocab book: lean on low-box and due cards (library_read · due), and gate every question on the evidence rule — chapterRef plus a verbatim passage. Only QUIZ-kind roadmap nodes are quizzable; a read node's chapter is refused. library_write · quiz refuses a question without them; read the refusal, it says how to fix the call.
-- A roadmap classifies chapters as it splits: what the learner must answer for is a quiz node; the preface, the whole-book map and appendices are read nodes — reading completes them (「读完」 or your call), no quiz gate.
-- Grading is two steps, always: judge each answer in the conversation against the question's answer and evidence, then library_assess with one verdict per question. The assess is what moves mastery and unlocks the next node — a judged quiz that was never assessed never happened.
-- Spaced repetition is the point: due cards come first in a session, and a card the person fails comes back tomorrow.
-- The library skill (library) has one full example per what; when a call fails, the error text teaches the correct shape — follow it rather than guessing.`
+/** The bound-context line's order: right after the sandbox / approval snapshots. */
+const CONTEXT_ORDER = 650
+
+/** How many weak cards the per-turn context names. */
+const CONTEXT_CARDS = 12
 
 /**
- * Plugin body: register the three tools, their guidance section and the
- * skill. The declared `library` inject pends the row until the core provides,
- * so mount order can no longer strand it; the in-body guard stays as the
- * defensive direct-call path.
+ * Render the per-turn context for one session: its binding and the weakest
+ * cards there. Kept short — it rides every turn.
+ */
+export function renderBindingContext(service: LibraryService, sessionId: string): string {
+  const summary = service.bindingSummary(sessionId, CONTEXT_CARDS)
+  if (summary.binding === undefined) return 'Library: this session is not bound to a project yet.'
+  if (summary.project === undefined) return 'Library: this session\'s bound project no longer exists — ask the learner which one to use.'
+  const { project, book, progress, weakCards } = summary
+  const lines = [
+    `Library: bound to project 「${project.name}」 (${project.id}, template ${project.template})`
+      + (book === undefined ? '.' : `, book 《${book.title}》${book.edition === undefined ? '' : ` ${book.edition}`} (${book.id}, ${book.bookKind}).`),
+  ]
+  if (progress?.current !== undefined) lines.push(`Current node: ${progress.current.title} (${progress.current.id}).`)
+  if (progress?.hasDraft === true) lines.push('A roadmap draft is waiting for the learner to adopt it in the sidebar.')
+  if (weakCards.length > 0) lines.push(`Weak cards: ${weakCards.map(card => `${card.term} [${card.weakness}]`).join('; ')}.`)
+  return lines.join('\n')
+}
+
+/**
+ * Plugin body: register the three tools, their guidance, and the per-turn
+ * bound context; quiet the scope when configured. The declared `library`
+ * inject pends the row until the core provides; the in-body guard stays as
+ * the defensive direct-call path.
  * @param ctx - Cordis context (the preset's agent-plane mount).
  * @param config - validated plugin config.
  */
 export function apply(ctx: Context, config: LibraryToolConfig = {}): void {
   const service = ctx.get('library')
   if (service === undefined) {
-    // Degrade, don't explode: the core plugin is not mounted in this profile,
-    // so there is nothing to delegate to.
     ctx.logger.info(`${PACKAGE_NAME}: the global library service is absent — the library tools are not registered`)
     return
   }
-  // `none` grants nothing at all: no tools, no section, no skill (guidance
-  // about an absent tool is a wrong instruction, not a harmless one).
+  // `none` grants nothing at all (guidance about an absent tool is a wrong
+  // instruction, not a harmless one).
   if ((config.tools ?? 'all') === 'none') return
   // Deferred injection, NOT an apply-time probe: `ctx.get('tools')` races the
-  // tools registry's own mount order on the real composition tree and loses,
-  // silently never registering the tools. `ctx.inject` fires when the registry
-  // appears and never fires in a composition without one.
+  // tools registry's own mount order on the real composition tree.
   ctx.inject(['tools'], (toolsCtx) => {
     for (const definition of libraryToolDefinitions(service)) {
       toolsCtx.effect(
@@ -159,28 +150,39 @@ export function apply(ctx: Context, config: LibraryToolConfig = {}): void {
         `${PACKAGE_NAME}: ${definition.name} tool`,
       )
     }
-  })
-  // The guidance describes those tools, so it rides with them — and through
-  // the same deferred door, for the same reason.
-  ctx.inject(['systemPrompt'], (promptCtx) => {
-    const sections = promptCtx.get('systemPrompt') as PromptSections | undefined
-    sections?.section({ name: 'tool:library', order: 114, text: LIBRARY_PROMPT })
-  })
-  ctx.inject(['skills'], (skillCtx) => {
-    const skills = skillCtx.get('skills') as SkillRegistrySlice | undefined
-    if (skills === undefined) return
-    const skill = loadLibrarySkill()
-    if (skill === undefined) {
-      ctx.logger.warn(`${PACKAGE_NAME}: the shipped library skill could not be read — not registered`)
-      return
+    for (const toolName of config.denyTools ?? []) {
+      try {
+        toolsCtx.effect(() => (toolsCtx.tools as unknown as ToolMask).restrict({ deny: [toolName] }), `${PACKAGE_NAME}: mask ${toolName}`)
+      } catch (error) {
+        ctx.logger.info(`${PACKAGE_NAME}: could not mask ${toolName} here — ${error instanceof Error ? error.message : String(error)}`)
+      }
     }
-    skillCtx.effect(() => skills.register({
-      name: skill.name,
-      description: skill.description,
-      content: skill.content,
-      source: 'runtime',
-      provider: PACKAGE_NAME,
-    }), `${PACKAGE_NAME}: ${skill.name} skill`)
+  })
+  ctx.inject(['systemPrompt'], (promptCtx) => {
+    const prompt = promptCtx.get('systemPrompt') as PromptRegistry | undefined
+    if (prompt === undefined) return
+    prompt.section({ name: 'tool:library', order: 114, text: LIBRARY_PROMPT })
+    for (const sectionName of config.hideSections ?? []) {
+      try {
+        prompt.section({ name: sectionName, order: 0, text: '' })
+      } catch (error) {
+        ctx.logger.info(`${PACKAGE_NAME}: could not blank ${sectionName} — ${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
+    // The callback is synchronous; the store's reads are too, and small.
+    prompt.context({
+      name: 'library:binding',
+      order: CONTEXT_ORDER,
+      text: (context) => {
+        const id = context.agent?.session?.id
+        if (id === undefined) return ''
+        try {
+          return renderBindingContext(service, String(id))
+        } catch {
+          return ''
+        }
+      },
+    })
   })
 }
 

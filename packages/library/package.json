@@ -1,6 +1,6 @@
 {
   "name": "@khorsheed/dsh-library",
-  "description": "Library and learning engine: project-organized deep reading with EPUB/Markdown ingestion, a locked/current/done roadmap per book, a Leitner vocab book with photo provenance, evidence-gated quizzes and verdict-led unlocking — a Typert Remote data face, a right-Sidebar page tab, and the ./tool composition entry (library_read / library_write / library_assess) for agent presets",
+  "description": "Library and learning engine: project-organized close reading of registered books (no upload) — a per-book roadmap the coach drafts and the learner adopts, photographed pages whose marks become knowledge cards, cards that dedupe and track weakness, two-axis quizzes (what they target × what they rest on) and verdict-led unlocking — a Typert Remote data face, a right-Sidebar page tab, and the ./tool composition entry (library_read / library_write / library_assess) for agent presets",
   "version": "0.1.0",
   "publishConfig": {
     "access": "public"
@@ -53,16 +53,15 @@
     "lib/typert.remote-client.d.ts",
     "lib/typert.remote-client.js",
     "cordis.patch.yml",
-    "locale/*.json",
-    "skills/**/*.md"
+    "locale/*.json"
   ],
   "license": "MIT",
   "dependencies": {
-    "fflate": "^0.8.3",
     "zod": "^4.4.3"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-agent": "^0.1.0-rc.6 || ^0.2.0-rc.1",
     "@deepseek-ai/dsh-api-remotes": "^0.1.0-rc.6 || ^0.2.0-rc.1",
     "@deepseek-ai/dsh-client-locale": "^0.1.0-rc.6 || ^0.2.0-rc.1",
     "@deepseek-ai/dsh-client-ui-primitives": "^0.1.0-rc.6 || ^0.2.0-rc.1",
@@ -77,6 +76,9 @@
     "react": "^18.2.0"
   },
   "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-agent": {
+      "optional": true
+    },
     "@deepseek-ai/dsh-api-remotes": {
       "optional": true
     },
@@ -113,6 +115,7 @@
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-agent": "^0.2.0-rc.1",
     "@deepseek-ai/dsh-api-remotes": "^0.2.0-rc.1",
     "@deepseek-ai/dsh-api-session-controller": "^0.2.0-rc.1",
     "@deepseek-ai/dsh-client-locale": "^0.2.0-rc.1",
@@ -170,7 +173,7 @@
     },
     "compat": {
       "minHost": "0.1.7-rc.1",
-      "notes": "A page-type right-Sidebar tab (minted kind `library`) over a Typert Remote data face, plus the `./tool` composition entry (library_read / library_write / library_assess, the library skill and the coaching prompt section) an agent preset names. State is plain `node:fs` under `$DSH_HOME/state/dsh-library` (atomic temp+rename, per-project lock, append-only JSONL ledgers) — never `ctx.fs`, the session-fenced sandbox (the reader precedent). The tab type self-hides on the preset-composition criterion (the canvas double check: root rows ∪ the current session's preset rows, `@khorsheed/dsh-library/tool`), fail-open on every unreadable path. Book ingestion parses in the BROWSER half (fflate + DOMParser, whitelist sanitize) and stores through the Remote; EPUB encryption / fixed-layout edge cases are refused with an honest error class. Photo provenance reads go through the probed `attachments` service: a vocab entry carries the image's durable reference fields, and `readAttachmentBase64` answers only for an attachmentId a vocab entry of the naming project actually records (the whitelist), degrading to error codes (`unavailable` / `not-found` / `ref-incomplete`) otherwise. PDF is not supported (a renderer, not a structure extractor — the reader D2 conclusion).",
+      "notes": "A page-type right-Sidebar tab (minted kind `library`) over a Typert Remote data face, plus the `./tool` composition entry (library_read / library_write / library_assess, the coaching prompt section and a per-turn bound-context line via systemPrompt.context) an agent preset names. Books are registered, never uploaded: the coach verifies the edition's contents on the web; nothing is parsed. State is plain `node:fs` under `$DSH_HOME/state/dsh-library` (atomic temp+rename, per-project lock, append-only JSONL ledgers) — never `ctx.fs`, the session-fenced sandbox (the reader precedent). Session bindings (project / book) are keyed by the calling agent's session id. The tab type self-hides on the preset-composition criterion (the canvas double check: root rows ∪ the current session's preset rows, `@khorsheed/dsh-library/tool`), fail-open on every unreadable path. Photos go through the probed `attachments` service (saveImage for sidebar uploads; readImage only for pages the project recorded), degrading to `unavailable` without it. The tool row's optional hideSections / denyTools quiet a focused preset's scope through scoped prompt sections and tools.restrict, skipping any name the composition does not hold.",
       "verifiedHost": "0.2.0-rc.2"
     }
   }

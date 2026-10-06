@@ -7,10 +7,6 @@
  * `ctx.provide('library')` leaves every Remote call throwing into a proxy,
  * and a `./tool` row whose deferred registrations never fire grants nothing —
  * both defects live exactly in the wiring pure tests cannot see.
- *
- * The contexts here are deliberately minimal: no `attachments`, and for the
- * tool row only the registries it injects into. Those are the composition
- * shapes that must survive.
  */
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -44,92 +40,92 @@ async function boot(): Promise<Context> {
   const ctx = new Context()
   contexts.push(ctx)
   apply(ctx, { stateRoot: stateRoot() })
-  // The Remote mount is a fiber waiting on `inject: ['library']`; settle the
-  // lifecycle before reading what it registered.
   await ctx.fiber.await()
   return ctx
+}
+
+/** Registries the tool row injects into, recording what it registers. */
+function registries(ctx: Context) {
+  const registered: { name: string }[] = []
+  const sections: { name: string; order: number; text: string }[] = []
+  const contextsSeen: { name: string; text: (context: unknown) => string }[] = []
+  const denied: string[][] = []
+  ctx.provide('tools', {
+    register: (definition: { name: string }) => { registered.push(definition); return () => {} },
+    restrict: (filter: { deny: string[] }) => { denied.push(filter.deny); return () => {} },
+  })
+  ctx.provide('systemPrompt', {
+    section: (section: { name: string; order: number; text: string }) => { sections.push(section); return () => {} },
+    context: (context: { name: string; text: (context: unknown) => string }) => { contextsSeen.push(context); return () => {} },
+  })
+  return { registered, sections, contexts: contextsSeen, denied }
 }
 
 describe('the core row', () => {
   it('boots with no optional capability and provides the working service', async () => {
     const ctx = await boot()
     const library = ctx.get('library') as LibraryService
-    expect(library).toBeDefined()
     expect(name).toBe('library')
-    // The Remote face mounted (the fiber settled past it).
     expect(ctx.get('libraryRemote')).toBeDefined()
-    // The service works end to end through the provided handle.
     const created = await library.createProject({ name: '神经科学' })
     expect(created.ok).toBe(true)
-    const stored = await library.storeBook({
+    const book = await library.putBook({
       projectId: created.ok ? created.project.id : '',
-      title: '认知神经科学',
-      source: { kind: 'upload', ref: 'cog.epub' },
-      format: 'epub',
-      chapters: [{ title: '概论', html: '<p>神经系统由神经元构成。</p>' }],
+      title: 'Principles of Neural Science',
+      bookKind: 'knowledge',
+      toc: [{ title: 'Ion Channels' }],
+      tocSource: { by: 'model' },
     })
-    expect(stored.ok).toBe(true)
-    const chapter = await library.getChapterBody({
-      projectId: created.ok ? created.project.id : '',
-      bookId: stored.ok ? stored.book.id : '',
-      chapter: 1,
-    })
-    expect(chapter.ok && chapter.html).toContain('神经元')
+    expect(book.ok).toBe(true)
+    // No attachment store: photos degrade to a refusal, never a throw.
+    const saved = await library.savePhoto({ data: '', mediaType: 'image/png' })
+    expect(!saved.ok && saved.error).toBe('unavailable')
   })
 })
 
 describe('the ./tool row', () => {
-  it('declares the core inject (the preset-mount ordering rule) and grants the three tagged tools + section + skill', async () => {
+  it('declares the core inject and grants the three tagged tools, the guidance and the bound context', async () => {
     expect(toolEntry.inject).toEqual(['library'])
     expect(toolEntry.name).toBe('library-tool')
-
-    const ctx = new Context()
-    contexts.push(ctx)
-    apply(ctx, { stateRoot: stateRoot() })
-    await ctx.fiber.await()
-
-    const registered: { name: string }[] = []
-    const sections: { name: string; order: number; text: string }[] = []
-    const skills: { name: string; provider?: string }[] = []
-    ctx.provide('tools', { register: (definition: { name: string }) => { registered.push(definition); return () => {} } })
-    ctx.provide('systemPrompt', { section: (section: { name: string; order: number; text: string }) => { sections.push(section); return () => {} } })
-    ctx.provide('skills', { register: (skill: { name: string; provider?: string }) => { skills.push(skill); return () => {} } })
-
+    const ctx = await boot()
+    const seen = registries(ctx)
     toolEntry.apply(ctx, {})
     await ctx.fiber.await()
-    // The deferred injections fire against the registries mounted above.
     await new Promise(resolve => setTimeout(resolve, 0))
 
-    expect(registered.map(definition => definition.name)).toEqual(['library_read', 'library_write', 'library_assess'])
-    for (const definition of registered) {
+    expect(seen.registered.map(definition => definition.name)).toEqual(['library_read', 'library_write', 'library_assess'])
+    for (const definition of seen.registered) {
       expect((definition as Record<symbol, unknown>)[TOOL_ORIGIN]).toEqual({ channel: 'plugin', owner: '@khorsheed/dsh-library' })
     }
-    expect(sections.map(section => section.name)).toEqual(['tool:library'])
-    expect(sections[0]?.order).toBe(114)
-    expect(sections[0]?.text).toContain('library_assess')
-    expect(skills.map(skill => skill.name)).toEqual(['library'])
-    expect(skills[0]?.provider).toBe('@khorsheed/dsh-library')
+    expect(seen.sections.map(section => section.name)).toEqual(['tool:library'])
+    expect(seen.sections[0]?.text).toContain('library_assess')
+    expect(seen.contexts.map(context => context.name)).toEqual(['library:binding'])
+    expect(seen.contexts[0]?.text({})).toBe('')
+    expect(seen.contexts[0]?.text({ agent: { session: { id: 's1' } } })).toMatch(/not bound/)
+  })
+
+  it('quiets its scope when configured: blank sections, masked tools', async () => {
+    const ctx = await boot()
+    const seen = registries(ctx)
+    toolEntry.apply(ctx, { hideSections: ['harness:source', 'app:web-surface'], denyTools: ['list_capabilities'] })
+    await ctx.fiber.await()
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(seen.sections.filter(section => section.text === '').map(section => section.name)).toEqual(['harness:source', 'app:web-surface'])
+    expect(seen.denied).toEqual([['list_capabilities']])
   })
 
   it('tools: none registers nothing at all', async () => {
-    const ctx = new Context()
-    contexts.push(ctx)
-    apply(ctx, { stateRoot: stateRoot() })
-    await ctx.fiber.await()
-    const registered: unknown[] = []
-    ctx.provide('tools', { register: (definition: unknown) => { registered.push(definition); return () => {} } })
-    ctx.provide('systemPrompt', { section: () => { registered.push('section'); return () => {} } })
-    ctx.provide('skills', { register: (skill: unknown) => { registered.push(skill); return () => {} } })
+    const ctx = await boot()
+    const seen = registries(ctx)
     toolEntry.apply(ctx, { tools: 'none' })
     await ctx.fiber.await()
     await new Promise(resolve => setTimeout(resolve, 0))
-    expect(registered).toEqual([])
+    expect([...seen.registered, ...seen.sections, ...seen.contexts]).toEqual([])
   })
 
   it('a missing core degrades to a log line, never a boot failure', async () => {
     const ctx = new Context()
     contexts.push(ctx)
-    // No `library` provided: the direct-call guard is the whole story.
     expect(() => toolEntry.apply(ctx, {})).not.toThrow()
     await ctx.fiber.await()
   })

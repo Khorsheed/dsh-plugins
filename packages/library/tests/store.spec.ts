@@ -1,9 +1,9 @@
 /**
- * The store's mechanics: the version-guarded index, per-project documents,
- * externalized chapter bodies, atomic writes, the append-only ledgers, and the
- * lock — all against a temp state root.
+ * The store's mechanics: the version-guarded index, per-project and per-book
+ * documents, drafts beside adopted roadmaps, the tolerant JSONL ledgers, the
+ * bindings, and the lock — all against a temp state root.
  */
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -13,10 +13,12 @@ import {
   emptyLibraryIndex,
   LibraryStore,
   LibraryStoreError,
+  normalizeBook,
+  normalizeCard,
   normalizeLibraryIndex,
   resolveLibraryStateRoot,
 } from '../src/store.ts'
-import type { LibraryBook, LibraryProject } from '../src/types.ts'
+import type { LibraryBook, LibraryCard, LibraryProject, LibraryRoadmap } from '../src/types.ts'
 
 let root: string
 let store: LibraryStore
@@ -30,18 +32,31 @@ afterEach(() => {
   rmSync(root, { recursive: true, force: true })
 })
 
-const project: LibraryProject = { id: 'p_one', name: '神经科学', createdAt: '2026-10-06T00:00:00.000Z' }
+const project: LibraryProject = { id: 'p_one', name: '神经科学', template: 'subject', createdAt: '2026-10-06T00:00:00.000Z' }
 
 const book: LibraryBook = {
   id: 'b_one',
-  title: '认知神经科学',
-  source: { kind: 'upload', ref: 'cog.epub' },
-  format: 'epub',
-  toc: [
-    { n: 1, title: '神经系统概论', chars: 12 },
-    { n: 2, title: '神经元与信号传导', chars: 18 },
-  ],
+  title: 'Principles of Neural Science',
+  edition: '6th',
+  bookKind: 'knowledge',
+  toc: [{ n: 1, title: 'The Brain and Behavior', part: 'I' }, { n: 2, title: 'Genes and Behavior', part: 'I' }],
+  tocSource: { by: 'web', url: 'https://neurology.mhmedical.com/book.aspx?bookID=3024' },
   createdAt: '2026-10-06T00:00:00.000Z',
+}
+
+const card: LibraryCard = {
+  id: 'c_one',
+  kind: 'concept',
+  term: '不应期',
+  aliases: [],
+  gloss: 'Na⁺ 通道失活期间不能再次发放',
+  contexts: [],
+  sources: [{ type: 'chat', at: '2026-10-06T00:00:00.000Z' }],
+  weakness: 1,
+  mastery: { box: 0, dueAt: '2026-10-06T00:00:00.000Z', streak: 0 },
+  status: 'active',
+  createdAt: '2026-10-06T00:00:00.000Z',
+  updatedAt: '2026-10-06T00:00:00.000Z',
 }
 
 describe('state root resolution', () => {
@@ -66,98 +81,92 @@ describe('the index (state.json)', () => {
   it('refuses a corrupt file rather than clobbering it', () => {
     writeFileSync(join(root, 'state.json'), '{ not json')
     expect(() => store.readIndex()).toThrowError(LibraryStoreError)
-    try {
-      store.readIndex()
-    } catch (error) {
-      expect((error as LibraryStoreError).kind).toBe('corrupt')
-    }
-    // The hand-edited file is still there.
     expect(readFileSync(join(root, 'state.json'), 'utf8')).toBe('{ not json')
   })
 
-  it('normalizes a version mismatch to empty (a newer file is not this build\'s)', () => {
-    expect(normalizeLibraryIndex({ version: 99, projects: [{ id: 'p_x', name: 'x' }] }).projects).toEqual([])
+  it('reads another schema version (the never-deployed v1) as empty', () => {
+    expect(normalizeLibraryIndex({ version: 1, projects: [{ id: 'p_x', name: 'x' }] }).projects).toEqual([])
   })
 })
 
-describe('project documents and externalized bodies', () => {
-  it('writes and reads a project, a book and its chapters', async () => {
-    await store.withIndexLock(() => {
-      store.writeProject(project)
-      store.writeIndex({ version: 1, projects: [project] })
-    })
+describe('documents', () => {
+  it('round-trips a project and a registered book (no bodies anywhere)', async () => {
     await store.withProjectLock(project.id, () => {
-      store.writeBook(project.id, book, [
-        { n: 1, html: '<p>概论正文</p>' },
-        { n: 2, html: '<p>信号传导正文</p>' },
-      ])
+      store.writeProject(project)
+      store.writeBook(project.id, book)
     })
     expect(store.readProject(project.id)).toEqual(project)
-    expect(store.readBook(project.id, book.id)).toEqual(book)
-    expect(store.readChapter(project.id, book.id, 2)).toBe('<p>信号传导正文</p>')
-    expect(store.listBooks(project.id).map(b => b.id)).toEqual([book.id])
-    // No temp file survives an atomic write.
-    expect(readdirSync(root, { recursive: true }).map(String).filter(name => name.includes('.tmp'))).toEqual([])
+    expect(store.listBooks(project.id)).toEqual([book])
   })
 
-  it('keeps writes atomic: the temp file is renamed, not written in place', async () => {
-    await store.withIndexLock(() => {
+  it('renumbers contents rows and defaults an unknown kind to knowledge', () => {
+    const normalized = normalizeBook({ ...book, bookKind: 'zine', toc: [{ title: 'b' }, { n: 9, title: 'c' }] })
+    expect(normalized?.bookKind).toBe('knowledge')
+    expect(normalized?.toc.map(row => row.n)).toEqual([1, 2])
+  })
+
+  it('keeps a draft beside the adopted path, and drops it on demand', async () => {
+    const adopted: LibraryRoadmap = {
+      bookId: book.id,
+      status: 'adopted',
+      nodes: [{ id: 'n1', title: '概论', kind: 'quiz', goals: [], dependsOn: [], chapterRanges: [{ from: 1, to: 1 }], state: 'current', quizStats: { attempts: 0 } }],
+      generatedAt: '2026-10-06T00:00:00.000Z',
+    }
+    await store.withProjectLock(project.id, () => {
       store.writeProject(project)
+      store.writeBook(project.id, book)
+      store.writeRoadmap(project.id, adopted)
+      store.writeRoadmap(project.id, { ...adopted, status: 'draft', note: '每周 3 章' })
     })
-    const file = join(root, 'projects', project.id, 'project.json')
-    expect(JSON.parse(readFileSync(file, 'utf8'))).toEqual(JSON.parse(JSON.stringify(project)))
-    // A torn temp file from a dead writer does not shadow the committed one.
-    writeFileSync(`${file}.99999.tmp`, '{ torn')
-    expect(store.readProject(project.id)).toEqual(project)
+    expect(store.readRoadmap(project.id, book.id)?.status).toBe('adopted')
+    expect(store.readRoadmap(project.id, book.id, 'draft')?.note).toBe('每周 3 章')
+    store.removeDraft(project.id, book.id)
+    expect(store.readRoadmap(project.id, book.id, 'draft')).toBeUndefined()
+    expect(store.readRoadmap(project.id, book.id)).toBeDefined()
   })
 })
 
-describe('the append-only ledgers', () => {
-  it('appends vocab lines without rewriting, tolerantly skipping torn lines', async () => {
-    await store.withProjectLock(project.id, async () => {
-      store.appendVocab(project.id, [{
-        id: 'v_one',
-        kind: 'vocab',
-        term: 'synapse',
-        note: '突触',
-        chapterRef: 'ch:3',
-        source: { kind: 'photo', attachmentId: 'sha256:abc' },
-        mastery: { box: 0, dueAt: '2026-10-06T00:00:00.000Z', streak: 0 },
-        createdAt: '2026-10-06T00:00:00.000Z',
-      }])
-      store.appendVocab(project.id, [{
-        id: 'v_two',
-        kind: 'keypoint',
-        term: '重点',
-        note: 'Ca²⁺ 触发释放',
-        chapterRef: 'ch:3',
-        source: { kind: 'model' },
-        mastery: { box: 1, dueAt: '2026-10-07T00:00:00.000Z', streak: 1 },
-        createdAt: '2026-10-06T00:00:00.000Z',
-      }])
+describe('the ledgers', () => {
+  it('reads cards tolerantly: a torn line is skipped, a bad one dropped', async () => {
+    await store.withProjectLock(project.id, () => {
+      store.writeProject(project)
+      store.writeCards(project.id, [card])
     })
-    const file = join(root, 'projects', project.id, 'vocab.jsonl')
-    // Two appends, two lines — the file is a log, not a document.
-    expect(readFileSync(file, 'utf8').trim().split('\n')).toHaveLength(2)
-    // A torn line (a crash mid-append) is skipped, never fails the read.
-    writeFileSync(file, readFileSync(file, 'utf8') + '{ torn\n')
-    const entries = store.readVocab(project.id)
-    expect(entries.map(entry => entry.id)).toEqual(['v_one', 'v_two'])
-    expect(entries[0]?.source.attachmentId).toBe('sha256:abc')
+    const file = join(root, 'projects', project.id, 'cards.jsonl')
+    writeFileSync(file, `${readFileSync(file, 'utf8')}{"id":"c_torn","ter\n${JSON.stringify({ id: 'c_bad' })}\n`)
+    expect(store.readCards(project.id).map(entry => entry.id)).toEqual(['c_one'])
   })
 
-  it('rewrites vocab atomically (mastery updates), replacing the whole ledger', async () => {
-    await store.withProjectLock(project.id, async () => {
-      store.appendVocab(project.id, [{
-        id: 'v_one', kind: 'vocab', term: 'a', note: 'A', chapterRef: 'ch:1',
-        source: { kind: 'manual' }, mastery: { box: 0, dueAt: 'x', streak: 0 }, createdAt: 'x',
-      } as never])
-      store.rewriteVocab(project.id, [{
-        id: 'v_one', kind: 'vocab', term: 'a', note: 'A', chapterRef: 'ch:1',
-        source: { kind: 'manual' }, mastery: { box: 1, dueAt: 'y', streak: 1 }, createdAt: 'x',
-      } as never])
+  it('clamps weakness and box into range', () => {
+    const normalized = normalizeCard({ ...card, weakness: 9, mastery: { box: -2, dueAt: card.mastery.dueAt, streak: 1 } })
+    expect(normalized?.weakness).toBe(3)
+    expect(normalized?.mastery.box).toBe(0)
+  })
+
+  it('appends pages under their book', async () => {
+    await store.withProjectLock(project.id, () => {
+      store.writeProject(project)
+      store.writeBook(project.id, book)
+      store.appendPage(project.id, {
+        id: 'pg_one',
+        bookId: book.id,
+        attachment: { attachmentId: 'att', mediaType: 'image/jpeg', bytes: 10, width: 4, height: 3 },
+        text: 'page',
+        marks: [{ text: 'held', uncertain: true }],
+        cardIds: [],
+        at: '2026-10-06T00:00:00.000Z',
+      })
     })
-    expect(store.readVocab(project.id)[0]?.mastery.box).toBe(1)
+    expect(store.readPages(project.id, book.id)[0]?.marks[0]).toEqual({ text: 'held', uncertain: true })
+  })
+
+  it('round-trips bindings and drops rows that do not parse', async () => {
+    await store.withBindingsLock(() => {
+      store.writeBindings(new Map([['s1', { projectId: project.id, bookId: book.id }]]))
+    })
+    expect(store.readBindings().get('s1')).toEqual({ projectId: project.id, bookId: book.id })
+    writeFileSync(join(root, 'bindings.json'), JSON.stringify({ s2: { projectId: '../x' }, s3: { projectId: 'p_ok' } }))
+    expect([...store.readBindings().keys()]).toEqual(['s3'])
   })
 })
 
@@ -182,7 +191,6 @@ describe('ids and locks', () => {
         order.push('b:out')
       }),
     ])
-    // The second critical section never interleaves the first.
     expect(order).toEqual(['a:in', 'a:out', 'b:in', 'b:out'])
   })
 

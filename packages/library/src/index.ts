@@ -5,11 +5,11 @@
  * The host half owns the two things the browser cannot do: persisting state
  * next to the deployment (`$DSH_HOME/state/dsh-library`, plain `node:fs` — the
  * reader precedent; `ctx.fs` is the session-fenced sandbox and refuses it) and
- * reading the attachment store back for vocab photo provenance. The browser
- * half owns parsing (EPUB/Markdown ingestion) and rendering.
+ * the attachment store (saving sidebar photos, reading page photos back). The
+ * browser half renders.
  *
  * The model face (library_read / library_write / library_assess, the coach
- * prompt section, the `library` skill) is deliberately NOT here: it is the
+ * prompt section, the per-turn bound context) is deliberately NOT here: it is the
  * `./tool` composition entry (`src/tool.ts`), which an agent preset names —
  * the evaluation-family fold pattern.
  *
@@ -19,7 +19,8 @@ import type { Context } from '@deepseek-ai/cordis'
 import { LibraryService } from './service.ts'
 import { LibraryRemoteService } from './remote.ts'
 
-export { LibraryService, chapterPlainText, leitnerDueAt, validateRoadmapEdges, validateRoadmapShape } from './service.ts'
+export { LibraryService, leitnerDueAt, unlockReady, validateRoadmapShape } from './service.ts'
+export { cardKey, cardKeys, cardMatchesQuery, exactMatch, keySimilarity, nearMatches, NEAR_DUPLICATE } from './cards.ts'
 export { LibraryRemoteService } from './remote.ts'
 export type { LibraryRemoteConfig } from './remote.ts'
 export {
@@ -29,13 +30,17 @@ export {
   LibraryStore,
   LibraryStoreError,
   mintLibraryId,
+  normalizeAttachmentRef,
   normalizeAttempt,
+  normalizeBindings,
   normalizeBook,
+  normalizeCard,
+  normalizeEvent,
+  normalizePage,
   normalizeLibraryIndex,
   normalizeProject,
   normalizeQuiz,
   normalizeRoadmap,
-  normalizeVocabEntry,
   resolveLibraryStateRoot,
 } from './store.ts'
 export * from './types.ts'

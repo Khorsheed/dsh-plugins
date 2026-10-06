@@ -2,36 +2,43 @@
  * The model-tool face of the library — three verbs, and the `what` enums that
  * keep them three.
  *
- * The design (proposal 2026-10-06-library-learning-mode) collapsed a dozen
- * per-resource verbs into three: `library_read` answers everything read-only,
- * `library_write` validates and persists model-authored content (the evidence
- * gate lives here), and `library_assess` is the one cascading write. The tools
- * stay dumb: content is always generated on the model side — splitting a book
- * is read-the-TOC then propose-a-roadmap, quizzing is read-then-compose, and
- * grading is the model's judgment handed to `library_assess` to ledger. The
- * per-`what` payload contracts live in the `library` skill, not in these
- * descriptions; every validation failure teaches the correct shape back.
+ * `library_read` answers everything read-only, `library_write` validates and
+ * persists what the coach authored (the card dedupe and the two-axis quiz
+ * checks live behind it), and `library_assess` is the one cascading write.
+ * Content is always generated on the model side; the tools are mechanical.
+ * There is no skill to load: each `what`'s payload shape is in the parameter
+ * descriptions, and every refusal teaches the correct call back.
  *
- * Every tool is a thin adapter over {@link LibraryService} — the service is
- * the body, the adapters only translate (the eval precedent). This module
- * BUILDS the definitions and registers nothing; creating them is the
- * package's `./tool` row (`src/tool.ts`), which applies the origin tag.
+ * `project` / `book` default to the session's binding (the header chip), so a
+ * bound session rarely names them.
+ *
+ * Every tool is a thin adapter over {@link LibraryService}. This module BUILDS
+ * the definitions and registers nothing; the package's `./tool` row
+ * (`src/tool.ts`) tags and registers them.
  *
  * @module @khorsheed/dsh-library/tool-definition
  */
 import { defineTool, type ToolDefinition } from '@deepseek-ai/dsh-tools'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
-import type { LibraryOutcome, LibraryVerdict } from './types.ts'
+import type {
+  LibraryAttachmentRef,
+  LibraryBinding,
+  LibraryCardInput,
+  LibraryCardKind,
+  LibraryCardSourceType,
+  LibraryMark,
+  LibraryOutcome,
+  LibraryQuizQuestion,
+  LibraryVerdict,
+  RoadmapNode,
+} from './types.ts'
 import type { LibraryService } from './service.ts'
 
 /** The names this module registers, in registration order. */
 export const LIBRARY_TOOL_NAMES: readonly string[] = ['library_read', 'library_write', 'library_assess']
 
-/**
- * JSON pass-through output — what the render emits IS what the model reads
- * (the eval precedent): every field these tools return is one the caller
- * asked for.
- */
+/** JSON pass-through output — what the render emits IS what the model reads. */
 function jsonOutput() {
   return {
     schema: { type: 'json' } as const,
@@ -39,27 +46,21 @@ function jsonOutput() {
   }
 }
 
-/**
- * Unwrap a service outcome: the domain value, or a thrown Error whose message
- * IS the service's teaching text (tool errors surface to the model verbatim,
- * so the refusal is the lesson).
- */
+/** Unwrap a service outcome: the domain value, or a thrown Error whose message IS the lesson. */
 function unwrap<T>(outcome: LibraryOutcome<T>): T {
   if (outcome.ok) return outcome
   throw new Error(outcome.message)
 }
 
-/** The `what` values `library_read` accepts. */
-const READ_WHATS = ['projects', 'books', 'toc', 'chapter', 'roadmap', 'vocab', 'due', 'quiz', 'stats'] as const
-/** The `what` values `library_write` accepts. */
-const WRITE_WHATS = ['project', 'book', 'roadmap', 'notes', 'quiz'] as const
+const READ_WHATS = ['projects', 'books', 'toc', 'roadmap', 'pages', 'cards', 'quiz', 'stats'] as const
+const WRITE_WHATS = ['project', 'book', 'roadmap', 'page', 'cards', 'quiz', 'binding'] as const
 
-/** One argument's non-empty string, or a thrown lesson. */
-function needString(value: string | undefined, name: string, hint: string): string {
-  if (value === undefined || value.trim() === '') {
-    throw new Error(`${name} is required here — ${hint}`)
-  }
-  return value.trim()
+type Exec = { agent?: Agent }
+
+/** The calling session's id, when the call came from a session. */
+function sessionIdOf(exec: Exec | undefined): string | undefined {
+  const id = exec?.agent?.session?.id
+  return id === undefined ? undefined : String(id)
 }
 
 /**
@@ -69,93 +70,126 @@ function needString(value: string | undefined, name: string, hint: string): stri
  * @returns the three definitions, untagged and unregistered.
  */
 export function libraryToolDefinitions(service: LibraryService): ToolDefinition[] {
+  /** The session's binding, when it has one. */
+  const bindingOf = (exec: Exec | undefined): LibraryBinding | undefined => {
+    const sessionId = sessionIdOf(exec)
+    return sessionId === undefined ? undefined : service.getBinding(sessionId)
+  }
+
+  /** The project: the argument, else the binding, else a lesson. */
+  const projectOf = (value: unknown, exec: Exec | undefined): string => {
+    if (typeof value === 'string' && value.trim() !== '') return value.trim()
+    const bound = bindingOf(exec)?.projectId
+    if (bound !== undefined) return bound
+    throw new Error('no project: this session is not bound to one — library_read · projects lists them; ask the learner which one (ask_user_question), then library_write · binding { project, book? }')
+  }
+
+  /** The book: the argument, else the binding's book, else a lesson. */
+  const bookOf = (value: unknown, exec: Exec | undefined): string => {
+    if (typeof value === 'string' && value.trim() !== '') return value.trim()
+    const bound = bindingOf(exec)?.bookId
+    if (bound !== undefined) return bound
+    throw new Error('no book: name it (library_read · books lists the project\'s), or bind this session to a book with library_write · binding')
+  }
+
+  const optBook = (value: unknown, exec: Exec | undefined): string | undefined =>
+    typeof value === 'string' && value.trim() !== '' ? value.trim() : bindingOf(exec)?.bookId
+
   const definitions: ToolDefinition[] = []
 
   definitions.push(defineTool({
     name: 'library_read',
     description:
-      'Read the library: every project (what: "projects" — the wall, with book/vocab/due tallies and roadmap '
-      + 'progress); one project\'s books ("books", needs project); a book\'s table of contents ("toc", needs '
-      + 'project + book); one chapter\'s body, paged under a 100KB budget ("chapter", needs project + book + '
-      + 'chapter, then page with offset — the answer\'s nextOffset is the next page\'s offset); the project\'s '
-      + 'roadmap ("roadmap", needs project); the vocab book ("vocab", needs project; kind: "vocab"|"keypoint" '
-      + 'narrows it); the flashcards due for review, lowest mastery first ("due" — project optional, without it '
-      + 'every project\'s); quizzes ("quiz", needs project; with quiz: one quiz whole, without: the project\'s '
-      + 'list); or the whole library\'s tally ("stats"). Read-only: nothing here writes, unlocks, or moves a '
-      + 'card. The per-what payload contracts and the ch:<n> chapter convention are in the library skill — load '
-      + 'it before your first write.',
+      'Read the learner\'s library (read-only). what: '
+      + '"projects" — every project with its books\' progress and card tallies, plus this session\'s binding; '
+      + '"books" — a project\'s books with their tables of contents; '
+      + '"toc" — one book (title, edition, kind, contents rows numbered n); '
+      + '"roadmap" — one book\'s adopted path and any pending draft; '
+      + '"pages" — one book\'s photographed pages (printed text + the learner\'s marks), node narrows; '
+      + '"cards" — the knowledge cards: query searches term, aliases, gloss and sentences; filters book, node, kind (word|concept), '
+      + 'source (photo|chat|quiz|manual), weakMin (0-3), due; sorted weakest first — check here before teaching a point, '
+      + 'to know where the learner got stuck before; '
+      + '"quiz" — one quiz whole (quiz id), or the list; '
+      + '"stats" — the whole library\'s tally. project and book default to this session\'s binding.',
     parameters: {
-      what: {
-        type: 'string',
-        required: true,
-        description: `What to read: ${READ_WHATS.join(' | ')}.`,
-      },
-      project: { type: 'string', description: 'The project id (library_read · projects lists them).' },
-      book: { type: 'string', description: 'The book id (books / toc / chapter).' },
-      chapter: { type: 'integer', description: 'The 1-based chapter number (chapter).' },
-      quiz: { type: 'string', description: 'The quiz id (quiz; omit for the project\'s list).' },
-      kind: { type: 'string', description: 'vocab | keypoint (vocab; omit for both).' },
-      offset: { type: 'integer', description: 'The chapter page\'s start offset (chapter; 0 first).' },
-      limit: { type: 'integer', description: 'How many due cards to return (due; default 100).' },
+      what: { type: 'string', required: true, description: `What to read: ${READ_WHATS.join(' | ')}.` },
+      project: { type: 'string', description: 'Project id (defaults to the binding).' },
+      book: { type: 'string', description: 'Book id (defaults to the binding\'s book).' },
+      node: { type: 'string', description: 'Roadmap node id (pages / cards).' },
+      quiz: { type: 'string', description: 'Quiz id (quiz; omit for the list).' },
+      query: { type: 'string', description: 'Free-text card search (cards).' },
+      kind: { type: 'string', description: 'word | concept (cards).' },
+      source: { type: 'string', description: 'photo | chat | quiz | manual (cards).' },
+      weakMin: { type: 'integer', description: 'Only cards at least this weak, 0-3 (cards).' },
+      due: { type: 'boolean', description: 'Only cards due for review (cards).' },
+      limit: { type: 'integer', description: 'How many cards (default 30).' },
     },
     output: jsonOutput(),
     isConcurrencySafe: () => true,
-    async execute(args) {
+    async execute(args, exec) {
       switch (args.what) {
-        case 'projects':
-          return (await service.listProjects()) as unknown as JsonValue
+        case 'projects': {
+          const listed = await service.listProjects()
+          return { ...listed, binding: bindingOf(exec) ?? null } as unknown as JsonValue
+        }
         case 'books': {
-          const project = needString(args.project, 'project', 'library_read · projects lists the ids')
-          const detail = unwrap(await service.getProject({ id: project }))
-          return { books: detail.books } as unknown as JsonValue
+          const detail = unwrap(await service.getProject({ id: projectOf(args.project, exec) }))
+          return { project: detail.project, books: detail.books } as unknown as JsonValue
         }
-        case 'toc': {
-          const project = needString(args.project, 'project', 'library_read · projects lists the ids')
-          const book = needString(args.book, 'book', 'library_read · books lists the project\'s book ids')
-          const result = unwrap(await service.getToc({ projectId: project, bookId: book }))
-          return result.book as unknown as JsonValue
-        }
-        case 'chapter': {
-          const project = needString(args.project, 'project', 'library_read · projects lists the ids')
-          const book = needString(args.book, 'book', 'library_read · books lists the project\'s book ids')
-          if (args.chapter === undefined) throw new Error('chapter is required here — the 1-based chapter number; library_read · toc lists them with titles')
-          return (unwrap(await service.getChapterBody({
-            projectId: project,
-            bookId: book,
-            chapter: args.chapter,
-            ...(args.offset === undefined ? {} : { offset: args.offset }),
-          }))) as unknown as JsonValue
-        }
-        case 'roadmap': {
-          const project = needString(args.project, 'project', 'library_read · projects lists the ids')
-          return (await service.getRoadmap({ projectId: project })) as unknown as JsonValue
-        }
-        case 'vocab': {
-          const project = needString(args.project, 'project', 'library_read · projects lists the ids')
-          return (await service.listVocab({
-            projectId: project,
-            ...(args.kind === 'vocab' || args.kind === 'keypoint' ? { kind: args.kind } : {}),
+        case 'toc':
+          return unwrap(await service.getBook({ projectId: projectOf(args.project, exec), bookId: bookOf(args.book, exec) })).book as unknown as JsonValue
+        case 'roadmap':
+          return (await service.getRoadmap({ projectId: projectOf(args.project, exec), bookId: bookOf(args.book, exec) })) as unknown as JsonValue
+        case 'pages':
+          return (await service.listPages({
+            projectId: projectOf(args.project, exec),
+            bookId: bookOf(args.book, exec),
+            ...(args.node === undefined ? {} : { nodeId: args.node }),
           })) as unknown as JsonValue
+        case 'cards': {
+          const book = typeof args.book === 'string' && args.book.trim() !== '' ? args.book.trim() : undefined
+          const result = await service.listCards({
+            projectId: projectOf(args.project, exec),
+            ...(book === undefined ? {} : { bookId: book }),
+            ...(args.node === undefined ? {} : { nodeId: args.node }),
+            ...(args.query === undefined ? {} : { query: args.query }),
+            ...(args.kind === 'word' || args.kind === 'concept' ? { kind: args.kind as LibraryCardKind } : {}),
+            ...(['photo', 'chat', 'quiz', 'manual'].includes(args.source ?? '') ? { source: args.source as LibraryCardSourceType } : {}),
+            ...(args.weakMin === undefined ? {} : { weakMin: args.weakMin }),
+            ...(args.due === true ? { due: true } : {}),
+            limit: args.limit ?? 30,
+          })
+          // The model needs the card, not its whole ledger: sources compress to counts.
+          return {
+            total: result.total,
+            cards: result.cards.map(card => ({
+              id: card.id,
+              kind: card.kind,
+              term: card.term,
+              ...(card.aliases.length === 0 ? {} : { aliases: card.aliases }),
+              gloss: card.gloss,
+              ...(card.userGloss === undefined ? {} : { userGloss: card.userGloss }),
+              ...(card.bookId === undefined ? {} : { book: card.bookId }),
+              contexts: card.contexts.slice(0, 2).map(context => context.sentence),
+              weakness: card.weakness,
+              box: card.mastery.box,
+              dueAt: card.mastery.dueAt,
+              sources: card.sources.map(source => source.note === undefined ? source.type : `${source.type}: ${source.note}`).slice(-4),
+            })),
+          } as unknown as JsonValue
         }
-        case 'due':
-          return (await service.dueVocab({
-            ...(args.project === undefined || args.project.trim() === '' ? {} : { projectId: args.project.trim() }),
-            ...(args.limit === undefined ? {} : { limit: args.limit }),
-          })) as unknown as JsonValue
         case 'quiz': {
-          const project = needString(args.project, 'project', 'library_read · projects lists the ids')
+          const project = projectOf(args.project, exec)
           if (args.quiz === undefined || args.quiz.trim() === '') {
-            return (await service.listQuizzes({ projectId: project })) as unknown as JsonValue
+            const book = optBook(args.book, exec)
+            return (await service.listQuizzes({ projectId: project, ...(book === undefined ? {} : { bookId: book }) })) as unknown as JsonValue
           }
-          return (unwrap(await service.getQuiz({ projectId: project, quizId: args.quiz.trim() }))).quiz as unknown as JsonValue
+          return unwrap(await service.getQuiz({ projectId: project, quizId: args.quiz.trim() })).quiz as unknown as JsonValue
         }
         case 'stats':
           return (await service.stats()) as unknown as JsonValue
         default:
-          throw new Error(
-            `what must be one of ${READ_WHATS.join(' | ')} — got ${JSON.stringify(args.what)}. `
-            + 'projects/books/toc/chapter/roadmap/vocab/due/quiz/stats; the library skill has one example per what.',
-          )
+          throw new Error(`what must be one of ${READ_WHATS.join(' | ')} — got ${JSON.stringify(args.what)}`)
       }
     },
   }))
@@ -163,153 +197,140 @@ export function libraryToolDefinitions(service: LibraryService): ToolDefinition[
   definitions.push(defineTool({
     name: 'library_write',
     description:
-      'Validate and persist what you authored for the library. what: "project" creates a learning project '
-      + '({ project: { name, domain? } }); "book" stores an already-parsed book ({ book: { project, title, '
-      + 'author?, format: "epub"|"md", chapters: [{ title, html }…] } }) — files are ingested on the 图书馆 tab '
-      + '(EPUB parsing lives in the browser), this verb is for content YOU already hold; "roadmap" writes a '
-      + 'book\'s learning path ({ roadmap: { project, book, nodes: [{ id, title, kind: "quiz"|"read", goals, chapterRanges: '
-      + '[{ from, to }], dependsOn, state }], passRatio?, regenerate? } }) — classify chapters as you split: '
-      + 'content the learner must ANSWER for goes to quiz nodes (a quiz at the pass ratio completes them); '
-      + 'front matter, the whole-book map, prefaces and appendices go to read nodes (reading completes them — '
-      + 'no quiz gate, never quizStats). The state machine has only the '
-      + 'edges locked → current → done, and re-splitting an existing roadmap needs regenerate: true; "notes" '
-      + 'logs vocab-book entries ({ notes: { project, entries: [{ kind: "vocab"|"keypoint", term, note, '
-      + 'context?, chapterRef: "ch:<n>", source? }] } }) — for a photo source copy the image block\'s durable '
-      + 'reference (attachmentId, mediaType, bytes, width, height) verbatim; "quiz" stores a quiz '
-      + '({ quiz: { project, scope: { book, node? }, questions: [{ id, kind, prompt, options?, chapterRef, '
-      + 'evidence, answer, vocabIds? }] } }) behind the EVIDENCE GATE: every question names a real chapter as '
-      + 'ch:<n> and quotes the original passage it grades against — and the chapter must be one a QUIZ-kind '
-      + 'roadmap node covers (a read node\'s chapter is refused: it is reading, not testing). A question '
-      + 'without chapterRef + evidence is refused, and the refusal says how to fix it. Content is yours, checking '
-      + 'is mechanical: read the '
-      + 'book/vocab first (library_read), then write. The library skill carries one full example per what.',
+      'Validate and persist what you authored. Pass what plus the matching payload; project / book default to this session\'s binding. '
+      + 'what="project": project { name, template: "language"|"subject"|"custom", templateNote?, goal? } — language: marks are words; subject: marks are concepts. '
+      + 'what="book": book { title, author?, edition?, isbn?, bookKind: "knowledge"|"material", toc: [{ title, part? }], tocSource: { by: "web"|"model"|"photo", url? }, bookId? } — '
+      + 'register a book (no upload): search the web for the exact edition\'s contents and cite the url; "material" = exam papers, novels, anthologies '
+      + '(specific text you cannot recall); bookId corrects an existing one. '
+      + 'what="roadmap": roadmap { nodes: [{ id, title, kind: "quiz"|"read", goals, chapterRanges: [{ from, to }], dependsOn }], passRatio?, note? } — '
+      + 'writes a DRAFT the learner adopts in the sidebar (采用); ranges count contents rows; read nodes (how to use the book, front matter, appendices) complete by 读完, '
+      + 'quiz nodes by a chapter quiz; note is the one-line pacing shown on the draft card. '
+      + 'what="page": page { attachment: { attachmentId, mediaType, bytes, width, height } (copied verbatim from the image block), label?, node?, text (the page\'s printed text), '
+      + 'marks: [{ text, sentence?, handNote?, gloss?, uncertain? }] } — records a photographed page and cards every mark at once; gloss is the in-context meaning; '
+      + 'uncertain marks are kept but not carded. '
+      + 'what="cards": cards [{ kind: "word"|"concept", term, aliases?, gloss, userGloss?, context?: { sentence, node? }, source: { type: "chat"|"photo"|"quiz"|"manual", note? }, weaken?, mergeInto?, asNew? }] — '
+      + 'record a weak point when the learner is stuck (says they mix it up, asks the same point again, keeps probing): source chat, weaken true, and tell them in your reply what you noted. '
+      + 'A near-duplicate comes back in pending with candidates: resend it with mergeInto: <id> or asNew: true. '
+      + 'what="quiz": quiz { node?, questions: [{ id, kind: "choice"|"fill"|"free", prompt, options?, answer, explanation?, target: { kind: "marked"|"asked"|"missed"|"topic", cardIds? }, '
+      + 'evidence: { kind: "photo"|"web"|"knowledge", pageId?, url?, quote? } }] } — target the learner\'s own cards first; photo evidence quotes a recorded page, web evidence cites url + quote; '
+      + 'a material book never takes a knowledge-backed question about its content. '
+      + 'what="binding": binding { project, book? } (or null) — bind this session.',
     parameters: {
-      what: {
-        type: 'string',
-        required: true,
-        description: `What to write: ${WRITE_WHATS.join(' | ')}.`,
-      },
-      project: {
-        type: 'object',
-        description: 'what=project: { name, domain? }.',
-        additionalProperties: true,
-      },
-      book: {
-        type: 'object',
-        description: 'what=book: { project, title, author?, format, chapters: [{ title, html }…], replaceId? }.',
-        additionalProperties: true,
-      },
-      roadmap: {
-        type: 'object',
-        description: 'what=roadmap: { project, book, nodes, passRatio?, regenerate? }.',
-        additionalProperties: true,
-      },
-      notes: {
-        type: 'object',
-        description: 'what=notes: { project, entries: […] }.',
-        additionalProperties: true,
-      },
-      quiz: {
-        type: 'object',
-        description: 'what=quiz: { project, scope: { book, node? }, questions: […] }.',
-        additionalProperties: true,
-      },
+      what: { type: 'string', required: true, description: `What to write: ${WRITE_WHATS.join(' | ')}.` },
+      project: { type: 'json', description: 'what=project: the new project payload; otherwise the project id (defaults to the binding).' },
+      book: { type: 'json', description: 'what=book: the book payload; otherwise the book id (defaults to the binding\'s book).' },
+      roadmap: { type: 'object', description: 'what=roadmap: { nodes, passRatio?, note? }.', additionalProperties: true },
+      page: { type: 'object', description: 'what=page: { attachment, label?, node?, text, marks }.', additionalProperties: true },
+      cards: { type: 'array', description: 'what=cards: the cards to record.', items: { type: 'object', additionalProperties: true } },
+      quiz: { type: 'object', description: 'what=quiz: { node?, questions }.', additionalProperties: true },
+      binding: { type: 'json', description: 'what=binding: { project, book? } or null.' },
     },
     output: jsonOutput(),
-    // Writes serialize on the store's locks; declaring the tool unsafe keeps a
-    // batch of model writes from interleaving into a confusing order.
+    // Writes serialize on the store's locks; one at a time keeps their order legible.
     isConcurrencySafe: () => false,
-    async execute(args) {
+    async execute(args, exec) {
+      const payload = (value: unknown): Record<string, unknown> | undefined =>
+        typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : undefined
       switch (args.what) {
         case 'project': {
-          const payload = args.project as { name?: string; domain?: string } | undefined
-          if (payload === undefined || typeof payload.name !== 'string') {
-            throw new Error('what=project takes { project: { name, domain? } } — name is what the learner calls the subject (「神经科学」)')
+          const body = payload(args.project)
+          if (body === undefined || typeof body.name !== 'string') {
+            throw new Error('what=project takes project: { name, template: "language"|"subject"|"custom", goal? }')
           }
-          return (unwrap(await service.createProject({
-            name: payload.name,
-            ...(payload.domain === undefined ? {} : { domain: payload.domain }),
-          }))) as unknown as JsonValue
+          return unwrap(await service.createProject(body as { name: string })) as unknown as JsonValue
         }
         case 'book': {
-          const payload = args.book as {
-            project?: string
-            title?: string
-            author?: string
-            format?: 'epub' | 'md'
-            chapters?: { title: string; html: string }[]
-            replaceId?: string
-          } | undefined
-          if (payload === undefined || typeof payload.project !== 'string' || typeof payload.title !== 'string' || !Array.isArray(payload.chapters)) {
-            throw new Error('what=book takes { book: { project, title, format: "epub"|"md", chapters: [{ title, html }…] } } — chapters are the split you made; an empty chapters array stores nothing')
+          const body = payload(args.book)
+          if (body === undefined || typeof body.title !== 'string' || !Array.isArray(body.toc)) {
+            throw new Error('what=book takes book: { title, edition?, bookKind: "knowledge"|"material", toc: [{ title, part? }], tocSource: { by, url? } }')
           }
-          return (unwrap(await service.storeBook({
-            projectId: payload.project,
-            title: payload.title,
-            ...(payload.author === undefined ? {} : { author: payload.author }),
-            source: { kind: 'upload', ref: payload.title },
-            format: payload.format ?? 'md',
-            chapters: payload.chapters,
-            ...(payload.replaceId === undefined ? {} : { replaceId: payload.replaceId }),
-          }))) as unknown as JsonValue
+          const toc = (body.toc as unknown[]).map(row => typeof row === 'string' ? { title: row } : row as { title: string; part?: string })
+          return unwrap(await service.putBook({
+            projectId: projectOf(args.project, exec),
+            ...(typeof body.bookId === 'string' ? { bookId: body.bookId } : {}),
+            title: body.title,
+            ...(typeof body.author === 'string' ? { author: body.author } : {}),
+            ...(typeof body.edition === 'string' ? { edition: body.edition } : {}),
+            ...(typeof body.isbn === 'string' ? { isbn: body.isbn } : {}),
+            bookKind: body.bookKind as 'knowledge' | 'material',
+            toc,
+            tocSource: (payload(body.tocSource) ?? { by: 'model' }) as { by: 'web' | 'model' | 'photo'; url?: string },
+          })) as unknown as JsonValue
         }
         case 'roadmap': {
-          const payload = args.roadmap as {
-            project?: string
-            book?: string
-            nodes?: never[]
-            passRatio?: number
-            regenerate?: boolean
-          } | undefined
-          if (payload === undefined || typeof payload.project !== 'string' || typeof payload.book !== 'string' || !Array.isArray(payload.nodes)) {
-            throw new Error('what=roadmap takes { roadmap: { project, book, nodes: [{ id, title, goals, chapterRanges: [{ from, to }], dependsOn, state }] } } — read the TOC first, then split the book')
+          const body = payload(args.roadmap)
+          if (body === undefined || !Array.isArray(body.nodes)) {
+            throw new Error('what=roadmap takes roadmap: { nodes: [{ id, title, kind: "quiz"|"read", goals, chapterRanges: [{ from, to }], dependsOn }], note? } — read the toc first')
           }
-          return (unwrap(await service.putRoadmap({
-            projectId: payload.project,
-            bookId: payload.book,
-            nodes: payload.nodes,
-            ...(payload.passRatio === undefined ? {} : { passRatio: payload.passRatio }),
-            ...(payload.regenerate === undefined ? {} : { regenerate: payload.regenerate }),
-          }))) as unknown as JsonValue
+          return unwrap(await service.draftRoadmap({
+            projectId: projectOf(args.project, exec),
+            bookId: bookOf(typeof args.book === 'string' ? args.book : body.book, exec),
+            nodes: body.nodes as RoadmapNode[],
+            ...(typeof body.passRatio === 'number' ? { passRatio: body.passRatio } : {}),
+            ...(typeof body.note === 'string' ? { note: body.note } : {}),
+          })) as unknown as JsonValue
         }
-        case 'notes': {
-          const payload = args.notes as { project?: string; entries?: never[] } | undefined
-          if (payload === undefined || typeof payload.project !== 'string' || !Array.isArray(payload.entries)) {
-            throw new Error('what=notes takes { notes: { project, entries: [{ kind: "vocab"|"keypoint", term, note, context?, chapterRef: "ch:<n>", source? }] } } — one entry per term or key point')
+        case 'page': {
+          const body = payload(args.page)
+          if (body === undefined || payload(body.attachment) === undefined || typeof body.text !== 'string' || !Array.isArray(body.marks)) {
+            throw new Error('what=page takes page: { attachment: { attachmentId, mediaType, bytes, width, height }, text, marks: [{ text, sentence?, handNote?, gloss?, uncertain? }], label?, node? }')
           }
-          return (unwrap(await service.addVocabEntries({
-            projectId: payload.project,
-            entries: payload.entries,
-          }))) as unknown as JsonValue
+          return unwrap(await service.recordPage({
+            projectId: projectOf(args.project, exec),
+            bookId: bookOf(typeof args.book === 'string' ? args.book : body.book, exec),
+            ...(typeof body.node === 'string' ? { nodeId: body.node } : {}),
+            ...(typeof body.label === 'string' ? { label: body.label } : {}),
+            attachment: body.attachment as LibraryAttachmentRef,
+            text: body.text,
+            marks: body.marks as LibraryMark[],
+          })) as unknown as JsonValue
+        }
+        case 'cards': {
+          if (!Array.isArray(args.cards)) {
+            throw new Error('what=cards takes cards: [{ kind: "word"|"concept", term, gloss, context?, source: { type: "chat", note? }, weaken? }]')
+          }
+          const sessionId = sessionIdOf(exec)
+          const cards = (args.cards as Record<string, unknown>[]).map(card => {
+            const source = payload(card.source) ?? { type: 'chat' }
+            const context = payload(card.context)
+            return {
+              ...card,
+              source: { ...source, ...(source.type === 'chat' && source.ref === undefined && sessionId !== undefined ? { ref: sessionId } : {}) },
+              ...(context === undefined ? {} : { context: { sentence: String(context.sentence ?? ''), ...(typeof context.node === 'string' ? { nodeId: context.node } : {}) } }),
+            } as unknown as LibraryCardInput
+          })
+          const book = optBook(args.book, exec)
+          return unwrap(await service.writeCards({
+            projectId: projectOf(args.project, exec),
+            ...(book === undefined ? {} : { bookId: book }),
+            cards,
+          })) as unknown as JsonValue
         }
         case 'quiz': {
-          const payload = args.quiz as {
-            project?: string
-            scope?: { bookId?: string; nodeId?: string }
-            questions?: never[]
-          } | undefined
-          if (payload === undefined || typeof payload.project !== 'string' || payload.scope === undefined || !Array.isArray(payload.questions)) {
-            throw new Error('what=quiz takes { quiz: { project, scope: { book, node? }, questions: [{ id, kind: "choice"|"fill"|"free", prompt, options?, chapterRef: "ch:<n>", evidence, answer, vocabIds? }] } } — every question quotes its original passage as evidence')
+          const body = payload(args.quiz)
+          if (body === undefined || !Array.isArray(body.questions)) {
+            throw new Error('what=quiz takes quiz: { node?, questions: [{ id, kind, prompt, options?, answer, explanation?, target: { kind, cardIds? }, evidence: { kind, pageId?, url?, quote? } }] }')
           }
-          const scope = payload.scope as { book?: string; bookId?: string; node?: string; nodeId?: string }
-          const bookId = scope.bookId ?? scope.book
-          const nodeId = scope.nodeId ?? scope.node
-          if (typeof bookId !== 'string') {
-            throw new Error('quiz.scope needs book — the book id the quiz tests (library_read · books lists them)')
-          }
-          return (unwrap(await service.putQuiz({
-            projectId: payload.project,
+          const node = typeof body.node === 'string' ? body.node : undefined
+          return unwrap(await service.putQuiz({
+            projectId: projectOf(args.project, exec),
             quiz: {
-              scope: { bookId, ...(nodeId === undefined ? {} : { nodeId }) },
-              questions: payload.questions,
+              scope: { bookId: bookOf(typeof args.book === 'string' ? args.book : body.book, exec), ...(node === undefined ? {} : { nodeId: node }) },
+              questions: body.questions as LibraryQuizQuestion[],
             },
-          }))) as unknown as JsonValue
+          })) as unknown as JsonValue
+        }
+        case 'binding': {
+          const sessionId = sessionIdOf(exec)
+          if (sessionId === undefined) throw new Error('binding needs a session — this call came from none')
+          const body = payload(args.binding)
+          const binding = body === undefined || typeof body.project !== 'string'
+            ? null
+            : { projectId: body.project, ...(typeof body.book === 'string' ? { bookId: body.book } : {}) }
+          return unwrap(await service.setBinding(sessionId, binding)) as unknown as JsonValue
         }
         default:
-          throw new Error(
-            `what must be one of ${WRITE_WHATS.join(' | ')} — got ${JSON.stringify(args.what)}. `
-            + 'project/book/roadmap/notes/quiz; the library skill has one full example per what.',
-          )
+          throw new Error(`what must be one of ${WRITE_WHATS.join(' | ')} — got ${JSON.stringify(args.what)}`)
       }
     },
   }))
@@ -317,46 +338,48 @@ export function libraryToolDefinitions(service: LibraryService): ToolDefinition[
   definitions.push(defineTool({
     name: 'library_assess',
     description:
-      'Ledger a graded sitting — the ONLY cascading write. You judge the answers in the conversation first '
-      + '(against each question\'s answer and evidence); this call records your verdicts and the engine does the '
-      + 'rest: the attempt lands in the append-only ledger, every probed vocab entry\'s Leitner box moves (a pass '
-      + 'climbs one box, a fail resets to box 0 due tomorrow), the gated roadmap node\'s quiz stats update, and '
-      + 'a node whose attempt reaches its pass ratio (default 0.8) completes and unlocks its dependents — the '
-      + 'answer names them. verdicts: one per question, the dataseek.verdict/1 shape: { task: <the question id>, '
-      + 'criterion: <what you judged, one line>, pass: true|false, ratio?: <partial credit 0..1>, evidence: '
-      + '<the passage you graded against>, by: "llm"|"self"|"user" }. Never assess a quiz you have not read '
-      + '(library_read · quiz), and never invent a question id — the refusal lists the real ones.',
+      'Ledger a graded sitting — the ONLY cascading write. Judge the answers in the conversation first (against each question\'s answer and evidence), '
+      + 'then record one verdict per question: { task: <question id>, criterion: <what you judged>, pass, ratio?: <partial credit 0..1>, evidence: <what it rests on>, '
+      + 'by: "llm"|"self"|"user", void?: true when the learner flagged the question as broken, missedCard?: { term, gloss } for a missed question that targets no card }. '
+      + 'The engine moves every probed card (a pass climbs a review box and eases weakness; a miss resets it to tomorrow and adds weakness), creates a card for a '
+      + 'card-less miss, updates the gated node, and completes it at the pass ratio (default 0.8), unlocking what follows — report what moved and what unlocked.',
     parameters: {
-      project: { type: 'string', required: true, description: 'The project id.' },
-      quiz: { type: 'string', required: true, description: 'The quiz id (library_write · quiz returned it).' },
+      project: { type: 'string', description: 'Project id (defaults to the binding).' },
+      quiz: { type: 'string', required: true, description: 'The quiz id library_write · quiz returned.' },
       verdicts: {
         type: 'array',
         required: true,
-        description: 'One dataseek.verdict/1 verdict per question: { task, criterion, pass, ratio?, evidence, by }.',
+        description: 'One verdict per question.',
         items: {
           type: 'object',
           additionalProperties: false,
           properties: {
-            task: { type: 'string', description: 'The question id this verdict judges.' },
+            task: { type: 'string', description: 'The question id.' },
             criterion: { type: 'string', description: 'What was judged, in one line.' },
             pass: { type: 'boolean', description: 'Whether the answer passes.' },
-            ratio: { type: 'number', description: 'Partial credit 0..1 (defaults to pass ? 1 : 0).' },
-            evidence: { type: 'string', description: 'The passage the judgment leaned on.' },
-            by: { type: 'string', enum: ['llm', 'self', 'user'], description: 'Who graded: the model, a self-check, or the person.' },
+            ratio: { type: 'number', description: 'Partial credit 0..1.' },
+            evidence: { type: 'string', description: 'What the judgment rests on.' },
+            by: { type: 'string', enum: ['llm', 'self', 'user'], description: 'Who graded.' },
+            void: { type: 'boolean', description: 'The learner flagged the question as broken: it counts for nothing.' },
+            missedCard: {
+              type: 'object',
+              additionalProperties: false,
+              description: 'For a missed question with no target card: the card to create.',
+              properties: { term: { type: 'string' }, gloss: { type: 'string' } },
+            },
           },
         },
       },
     },
     output: jsonOutput(),
     isConcurrencySafe: () => false,
-    async execute(args) {
-      const project = needString(args.project, 'project', 'library_read · projects lists the ids')
-      const quiz = needString(args.quiz, 'quiz', 'the id library_write · quiz returned')
-      return (unwrap(await service.putAttempt({
-        projectId: project,
-        quizId: quiz,
+    async execute(args, exec) {
+      if (args.quiz.trim() === '') throw new Error('quiz is the id library_write · quiz returned')
+      return unwrap(await service.putAttempt({
+        projectId: projectOf(args.project, exec),
+        quizId: args.quiz.trim(),
         verdicts: [...args.verdicts] as LibraryVerdict[],
-      }))) as unknown as JsonValue
+      })) as unknown as JsonValue
     },
   }))
 

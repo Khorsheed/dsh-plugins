@@ -1,8 +1,7 @@
 /**
  * The three model tools over a real service: the `what` enums validate and
- * teach, refusals surface as thrown text the model reads, and the origin tag
- * is applied by the row (here asserted off the definitions' builder + the
- * row's tagging idiom).
+ * teach, project / book default to the calling session's binding, refusals
+ * surface as thrown text, and the per-turn bound context renders.
  */
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -11,13 +10,16 @@ import type { Context } from '@deepseek-ai/cordis'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { LibraryService } from '../src/service.ts'
 import { LIBRARY_TOOL_NAMES, libraryToolDefinitions } from '../src/tool-definition.ts'
-import { Config, loadLibrarySkill } from '../src/tool.ts'
+import { Config, renderBindingContext } from '../src/tool.ts'
 
 let root: string
 let service: LibraryService
 let tools: ReturnType<typeof libraryToolDefinitions>
 
 const ctx = { get: () => undefined } as unknown as Context
+
+/** A calling session, as the registry hands it to execute. */
+const exec = { agent: { session: { id: 's_learn' } } }
 
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'dsh-library-tools-'))
@@ -29,31 +31,29 @@ afterEach(() => {
   rmSync(root, { recursive: true, force: true })
 })
 
-/** Call one tool by name with raw args (as the model would). */
-async function call(name: string, args: Record<string, unknown>): Promise<unknown> {
+/** Call one tool by name with raw args, from the session. */
+async function call(name: string, args: Record<string, unknown>, from: unknown = exec): Promise<unknown> {
   const tool = tools.find(candidate => candidate.name === name)
   if (tool === undefined) throw new Error(`no tool ${name}`)
-  // The registry validates before execute; the tests call execute directly, so
-  // the args reach it as-is (the teaching errors are the contract under test).
-  return tool.execute(args as never, {} as never)
+  return tool.execute(args as never, from as never)
 }
 
-/** Seed: one project + one book. */
+/** Seed: a project, a registered book, the session bound to it. */
 async function seed(): Promise<{ project: string; book: string }> {
-  const created = (await call('library_write', { what: 'project', project: { name: '神经科学' } })) as { ok: true; project: { id: string } }
-  const stored = (await call('library_write', {
+  const created = (await call('library_write', { what: 'project', project: { name: '神经科学', template: 'subject' } })) as { project: { id: string } }
+  const book = (await call('library_write', {
     what: 'book',
+    project: created.project.id,
     book: {
-      project: created.project.id,
-      title: '认知神经科学',
-      format: 'md',
-      chapters: [
-        { title: '概论', html: '<p>神经系统由神经元与胶质细胞构成。</p>' },
-        { title: '突触', html: '<p>Ca²⁺ 内流触发囊泡与突触前膜融合。</p>' },
-      ],
+      title: 'Principles of Neural Science',
+      edition: '6th',
+      bookKind: 'knowledge',
+      toc: ['Ion Channels', { title: 'The Action Potential' }],
+      tocSource: { by: 'web', url: 'https://neurology.mhmedical.com/book.aspx?bookID=3024' },
     },
-  })) as { ok: true; book: { id: string } }
-  return { project: created.project.id, book: stored.book.id }
+  })) as { book: { id: string } }
+  await call('library_write', { what: 'binding', binding: { project: created.project.id, book: book.book.id } })
+  return { project: created.project.id, book: book.book.id }
 }
 
 describe('the tool set', () => {
@@ -62,117 +62,61 @@ describe('the tool set', () => {
     expect(LIBRARY_TOOL_NAMES).toEqual(['library_read', 'library_write', 'library_assess'])
   })
 
-  it('the Config schema defaults tools to all and accepts none', () => {
-    // Schemastery schemas are callable: Config(value) validates + defaults.
-    expect(Config({})).toEqual({ tools: 'all' })
-    expect(Config({ tools: 'none' })).toEqual({ tools: 'none' })
+  it('the Config schema defaults to all tools and a quiet-nothing scope', () => {
+    expect(Config({})).toEqual({ tools: 'all', hideSections: [], denyTools: [] })
+    expect(Config({ tools: 'none' }).tools).toBe('none')
   })
 })
 
-describe('library_read', () => {
-  it('rejects an unknown what with the valid list in the message', async () => {
-    await expect(call('library_read', { what: 'everything' })).rejects.toThrow(/projects.*books.*toc.*chapter.*roadmap.*vocab.*due.*quiz.*stats/)
+describe('binding defaults', () => {
+  it('an unbound session is taught to ask and bind', async () => {
+    await expect(call('library_read', { what: 'roadmap' })).rejects.toThrow(/library_write · binding/)
   })
 
-  it('reads the project wall and a chapter page', async () => {
+  it('a bound session reads and writes without naming project or book', async () => {
+    await seed()
+    const toc = (await call('library_read', { what: 'toc' })) as { toc: { n: number; title: string }[] }
+    expect(toc.toc.map(row => row.n)).toEqual([1, 2])
+    const draft = (await call('library_write', { what: 'roadmap', roadmap: { nodes: [{ id: 'n1', title: '离子通道', kind: 'quiz', chapterRanges: [{ from: 1, to: 1 }] }] } })) as { draft: { status: string } }
+    expect(draft.draft.status).toBe('draft')
+    const recorded = (await call('library_write', { what: 'cards', cards: [{ kind: 'concept', term: '不应期', gloss: 'Na⁺ 失活', source: { type: 'chat', note: '说老是记混' }, weaken: true }] })) as { added: { bookId?: string; sources: { ref?: string }[] }[] }
+    expect(recorded.added[0]?.bookId).toBeDefined()
+    // A chat card remembers the session it came from.
+    expect(recorded.added[0]?.sources[0]?.ref).toBe('s_learn')
+    const read = (await call('library_read', { what: 'cards', query: '不应期' })) as { cards: { term: string; weakness: number; sources: string[] }[] }
+    expect(read.cards[0]).toMatchObject({ term: '不应期', weakness: 1, sources: ['chat: 说老是记混'] })
+  })
+
+  it('the projects read reports this session\'s binding', async () => {
     const { project } = await seed()
-    const wall = (await call('library_read', { what: 'projects' })) as { projects: { id: string; name: string }[] }
-    expect(wall.projects[0]?.name).toBe('神经科学')
-    const chapter = (await call('library_read', { what: 'chapter', project, book: (await service.listProjects()).projects[0]!.books[0]!, chapter: 2 })) as { title: string; html: string }
-    expect(chapter.title).toBe('突触')
-    expect(chapter.html).toContain('Ca²⁺')
-  })
-
-  it('teaches the missing project argument', async () => {
-    await expect(call('library_read', { what: 'roadmap' })).rejects.toThrow(/project is required.*library_read · projects/)
+    const listed = (await call('library_read', { what: 'projects' })) as { binding: { projectId: string } | null }
+    expect(listed.binding?.projectId).toBe(project)
   })
 })
 
-describe('library_write', () => {
-  it('rejects an unknown what with the valid list in the message', async () => {
-    await expect(call('library_write', { what: 'settings' })).rejects.toThrow(/project.*book.*roadmap.*notes.*quiz/)
+describe('teaching errors', () => {
+  it('rejects an unknown what with the valid list', async () => {
+    await expect(call('library_read', { what: 'everything' })).rejects.toThrow(/projects \| books \| toc \| roadmap \| pages \| cards \| quiz \| stats/)
+    await expect(call('library_write', { what: 'notes' })).rejects.toThrow(/project \| book \| roadmap \| page \| cards \| quiz \| binding/)
   })
 
-  it('writes notes and reads them back (vocab)', async () => {
-    const { project } = await seed()
-    const written = (await call('library_write', {
-      what: 'notes',
-      notes: { project, entries: [{ kind: 'vocab', term: 'synapse', note: '突触', chapterRef: 'ch:2' }] },
-    })) as { ok: true; added: number }
-    expect(written.added).toBe(1)
-    const vocab = (await call('library_read', { what: 'vocab', project })) as { entries: { term: string }[] }
-    expect(vocab.entries.map(entry => entry.term)).toEqual(['synapse'])
-  })
-
-  it('the evidence gate fires through the tool, with the lesson as the error text', async () => {
-    const { project, book } = await seed()
-    await expect(call('library_write', {
-      what: 'quiz',
-      quiz: {
-        project,
-        scope: { book },
-        questions: [{ id: 'q1', kind: 'free', prompt: '递质如何释放？', chapterRef: '', evidence: '', answer: 'x' }],
-      },
-    })).rejects.toThrow(/ch:<n>/)
+  it('surfaces the service refusal verbatim', async () => {
+    await seed()
+    await expect(call('library_write', { what: 'quiz', quiz: { questions: [{ id: 'q1', kind: 'free', prompt: 'p', answer: 'a', target: { kind: 'asked' }, evidence: { kind: 'knowledge' } }] } }))
+      .rejects.toThrow(/cardIds/)
   })
 })
 
-describe('library_assess', () => {
-  it('ledgers a sitting and unlocks the next node at the pass ratio', async () => {
+describe('the bound context', () => {
+  it('names the bound book, its current node and the weak cards', async () => {
     const { project, book } = await seed()
-    await call('library_write', {
-      what: 'roadmap',
-      roadmap: {
-        project,
-        book,
-        nodes: [
-          { id: 'n1', title: '概论', kind: 'quiz', goals: [], chapterRanges: [{ from: 1, to: 1 }], dependsOn: [], state: 'current' },
-          { id: 'n2', title: '突触', kind: 'quiz', goals: [], chapterRanges: [{ from: 2, to: 2 }], dependsOn: ['n1'], state: 'locked' },
-        ],
-      },
-    })
-    const quiz = (await call('library_write', {
-      what: 'quiz',
-      quiz: {
-        project,
-        scope: { book, node: 'n1' },
-        questions: [{ id: 'q1', kind: 'free', prompt: '神经系统由什么构成？', chapterRef: 'ch:1', evidence: '神经系统由神经元与胶质细胞构成', answer: '神经元与胶质细胞' }],
-      },
-    })) as { ok: true; quiz: { id: string } }
-    const assessed = (await call('library_assess', {
-      project,
-      quiz: quiz.quiz.id,
-      verdicts: [{ task: 'q1', criterion: '构成说全了', pass: true, evidence: '神经系统由神经元与胶质细胞构成', by: 'llm' }],
-    })) as { ok: true; unlocked: string[]; completed?: string }
-    expect(assessed.completed).toBe('n1')
-    expect(assessed.unlocked).toEqual(['n2'])
-  })
-
-  it('rejects a verdict naming no question of the quiz, listing the real ones', async () => {
-    const { project, book } = await seed()
-    const quiz = (await call('library_write', {
-      what: 'quiz',
-      quiz: {
-        project,
-        scope: { book },
-        questions: [{ id: 'q1', kind: 'free', prompt: 'p', chapterRef: 'ch:1', evidence: '神经系统由神经元与胶质细胞构成', answer: 'x' }],
-      },
-    })) as { ok: true; quiz: { id: string } }
-    await expect(call('library_assess', {
-      project,
-      quiz: quiz.quiz.id,
-      verdicts: [{ task: 'qq', criterion: 'c', pass: true, evidence: 'e', by: 'llm' }],
-    })).rejects.toThrow(/q1/)
-  })
-})
-
-describe('the shipped skill', () => {
-  it('loads from skills/library/SKILL.md with frontmatter intact', () => {
-    const skill = loadLibrarySkill()
-    expect(skill).toBeDefined()
-    expect(skill?.name).toBe('library')
-    expect(skill?.description).toContain('library_read')
-    expect(skill?.content).toContain('chapterRef is `ch:<n>`')
-    expect(skill?.content).toContain('library_assess')
+    await service.draftRoadmap({ projectId: project, bookId: book, nodes: [{ id: 'n1', title: '离子通道', kind: 'quiz' }] })
+    await service.adoptRoadmap({ projectId: project, bookId: book })
+    await service.writeCards({ projectId: project, bookId: book, cards: [{ kind: 'concept', term: '不应期', gloss: 'g', source: { type: 'chat' } }] })
+    const text = renderBindingContext(service, 's_learn')
+    expect(text).toContain('Principles of Neural Science')
+    expect(text).toContain('Current node: 离子通道')
+    expect(text).toContain('不应期 [1]')
+    expect(renderBindingContext(service, 's_other')).toMatch(/not bound/)
   })
 })
