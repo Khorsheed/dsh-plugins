@@ -277,6 +277,7 @@ export const zh = {
   'error.duplicate': '重复了',
   'error.plan-unconfirmed': '计划还没确认，先确认计划再写正文',
   'error.unknown-foreshadow': '计划里有伏笔对不上编号',
+  'error.body-exists': '这一章已经有正文，没有覆盖',
   'error.generic': '出错了：{message}',
   'state.loading': '读取中…',
 } as const
@@ -558,6 +559,7 @@ export const en: Record<keyof typeof zh, string> = {
   'error.duplicate': 'Duplicate',
   'error.plan-unconfirmed': 'Confirm the plan before writing the text',
   'error.unknown-foreshadow': 'A planned foreshadow matches no card number',
+  'error.body-exists': 'This chapter already has a body; nothing was overwritten',
   'error.generic': 'Something went wrong: {message}',
   'state.loading': 'Loading…',
 }

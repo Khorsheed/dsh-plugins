@@ -326,7 +326,22 @@ describe('the novel store', () => {
     const own = await store.writeChapter({ workId, title: '第二章', byUser: true, content: '我自己写的。' }, SESSION)
     expect(own.ok).toBe(true)
     expect(own.chapter).toMatchObject({ n: 2, byUser: true })
-    expect((await store.writeChapter({ workId, n: 2, title: '第二章', content: '我又改了一稿。' }, SESSION)).ok).toBe(true)
+    expect((await store.writeChapter({ workId, n: 2, title: '第二章', content: '我又改了一稿。', replace: true }, SESSION)).ok).toBe(true)
+  })
+
+  it('never overwrites an existing body without replace — a registration that passes content onto it is refused', async () => {
+    const { store, fs, canvas } = confiningStore()
+    const workId = freshWork(canvas, '原稿')
+    fs.seed('/home/user/workspace/原稿/第1章.md', '序章。\n\n第一幕。\n')
+    // The model registering the user's file with a summary as content: refused, file and table untouched.
+    const refused = await store.writeChapter({ workId, title: '第一章', byUser: true, content: '（内容见工作区 原稿/第1章.md）' }, SESSION)
+    expect(refused).toEqual({ ok: false, error: 'body-exists', existingLength: 9 })
+    expect(fs.read('/home/user/workspace/原稿/第1章.md')).toBe('序章。\n\n第一幕。\n')
+    expect(await store.listChapters({ workId })).toHaveLength(0)
+    // Registering without content keeps the file; an explicit replace rewrites it.
+    expect((await store.writeChapter({ workId, title: '第一章', byUser: true }, SESSION)).ok).toBe(true)
+    expect((await store.writeChapter({ workId, n: 1, title: '第一章', content: '整章重写。', replace: true }, SESSION)).ok).toBe(true)
+    expect(fs.read('/home/user/workspace/原稿/第1章.md')).toBe('整章重写。')
   })
 
   it('paragraphs a manuscript written one line per paragraph, and leaves a spaced one alone', () => {

@@ -992,8 +992,10 @@ export class NovelService {
    * resolved mode with the boundary re-rooted at the work's mounted workspace
    * (the canvas exportManuscript fence) — and only then does the chapter
    * register. A denied/failed write refuses the registration: a chapter never
-   * registers onto an empty slot again. An existing file is rewritten under
-   * the version from the stat just taken; a missing parent directory is
+   * registers onto an empty slot again. A file that already holds a body is
+   * refused (`body-exists`) unless `replace` is set — a registration must
+   * never overwrite the manuscript it registers; with `replace` it is
+   * rewritten under the version from the stat just taken; a missing parent directory is
    * created by the fs layer. The plan-only path (no content) registers as
    * planning without touching the workspace.
    * @param request - the chapter data.
@@ -1003,7 +1005,7 @@ export class NovelService {
   async writeChapter(
     request: WriteChapterRequest,
     session: Session,
-  ): Promise<{ readonly ok: boolean; readonly error?: NovelError; readonly chapter?: ChapterRecord; readonly unknown?: readonly string[] }> {
+  ): Promise<{ readonly ok: boolean; readonly error?: NovelError; readonly chapter?: ChapterRecord; readonly unknown?: readonly string[]; readonly existingLength?: number }> {
     const workId = normalizeWorkId(request.workId)
     const title = cleanText(request.title, 200)
     if (workId === undefined || title === undefined) return { ok: false, error: 'invalid-name' }
@@ -1068,6 +1070,15 @@ export class NovelService {
         version = (await this.fs.stat(target))?.version
       } catch {
         version = undefined
+      }
+      if (version !== undefined && request.replace !== true) {
+        let existing = ''
+        try {
+          existing = await this.fs.readText(target)
+        } catch {
+          existing = ''
+        }
+        if (existing.trim().length > 0) return { ok: false, error: 'body-exists', existingLength: existing.trim().length }
       }
       try {
         await this.fs.writeText(
