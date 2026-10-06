@@ -44,8 +44,9 @@ export function usePanelCompactContext(): boolean | undefined {
   return useContext(PanelCompactContext)
 }
 
-export interface PanelRootProps extends HTMLAttributes<HTMLDivElement> {
-  readonly children?: ReactNode
+export interface PanelRootProps extends Omit<HTMLAttributes<HTMLDivElement>, 'children'> {
+  /** The panel body; a function receives the compact state (the root's own component cannot read the context it provides). */
+  readonly children?: ReactNode | ((compact: boolean) => ReactNode)
 }
 
 /**
@@ -57,6 +58,6 @@ export function PanelRoot({ children, className, ...rest }: PanelRootProps) {
   const ref = useRef<HTMLDivElement>(null)
   const compact = usePanelCompact(ref)
   return <div {...rest} ref={ref} className={className ? `${css.root} ${className}` : css.root} data-panel-compact={compact ? 'true' : 'false'}>
-    <PanelCompactContext.Provider value={compact}>{children}</PanelCompactContext.Provider>
+    <PanelCompactContext.Provider value={compact}>{typeof children === 'function' ? children(compact) : children}</PanelCompactContext.Provider>
   </div>
 }

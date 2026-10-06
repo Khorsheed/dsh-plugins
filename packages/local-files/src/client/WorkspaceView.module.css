@@ -1,8 +1,8 @@
 /* The file-list view: a full-height two-pane layout (top bar over a
-   left file tree + right detail preview), filling the sidebar pane. */
+   left file tree + right detail preview), filling the sidebar pane. The
+   panel kit's PanelRoot supplies the `dsh-panel` size container. */
 
 .view {
-  container: file-workspace / inline-size;
   display: flex;
   flex-direction: column;
   width: 100%;
@@ -12,22 +12,20 @@
   background: var(--dsw-alias-bg-base);
 }
 
-/* The top bar paints no surface of its own: it sits on the pane's base
-   background like the worktrees tab's header (`bg-layer-1` here read as a
-   lighter band across the dark theme and broke the pane into two slabs). The
-   rule below the breadcrumb is the only separation — same as worktrees. */
+/* The top bar (the kit's PanelHeader) paints no surface of its own: it sits
+   on the pane's base background like the worktrees tab's header (`bg-layer-1`
+   here read as a lighter band across the dark theme and broke the pane into
+   two slabs). The rule below it is the only separation — same as worktrees.
+   Wide, its title is the breadcrumb; compact, the folder name with its parent
+   as the note. */
 .topbar {
-  display: flex;
   flex: none;
-  align-items: center;
-  gap: 10px;
-  min-height: 40px;
-  padding: 6px 12px;
   border-bottom: 1px solid var(--dsw-alias-border-l2);
 }
 
 .crumbs {
   display: flex;
+  font-weight: 400;
   align-items: center;
   flex: 1;
   min-width: 0;
@@ -67,22 +65,6 @@
   font-weight: 500;
 }
 
-.actions { display: flex; flex: none; gap: 2px; }
-.action {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border: 0;
-  border-radius: 7px;
-  background: transparent;
-  color: var(--dsw-alias-label-secondary);
-  cursor: pointer;
-}
-.action > svg { width: 18px; height: 18px; }
-.action:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
-
 .treeResize {
   position: relative;
   flex: none;
@@ -117,10 +99,4 @@
   color: var(--dsw-alias-label-tertiary);
   font-size: 12px;
   text-align: center;
-}
-
-@container file-workspace (max-width: 560px) {
-  .topbar { gap:6px; padding:4px 12px; }
-  .actions { gap:0; }
-  .action { padding:0; height:40px; }
 }

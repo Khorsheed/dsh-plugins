@@ -25,8 +25,9 @@ import type { ChangedFile, FileDiffRequest, WorktreeInfo } from '../types.ts'
 import type { WorktreesTabProps } from './contract.ts'
 import type { WorktreesTabParams } from './definition.tsx'
 import {
-  AdaptiveSplit, ContentPane, dirnameOf, pickFileManager, pickIde,
+  ContentPane, dirnameOf, pickFileManager, pickIde,
 } from '@khorsheed/dsh-client-ui-content-preview/src/client/index.ts'
+import { AdaptiveSplit, PanelRoot } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
 import type { PreviewChrome } from '@khorsheed/dsh-client-ui-content-preview/src/client/index.ts'
 import { CommitDetails } from './CommitDetails.tsx'
 import { CommitList } from './CommitList.tsx'
@@ -402,7 +403,9 @@ export function WorktreesTab({
   const modeLabel = mode === 'worktree' ? t('mode.worktree') : mode === 'commits' ? t('mode.commits') : t('mode.repo')
 
   return (
-    <div className={css.tabRoot} role="region" aria-label={modeLabel}>
+    // PanelRoot: the panel-wide size container, so the content pane reads the
+    // whole tab's width (not its detail column's) when choosing compact chrome.
+    <PanelRoot className={css.tabRoot} role="region" aria-label={modeLabel}>
       <div className={css.header}>
         <div className={css.summary}>
           <div className={css.branchRow}>
@@ -587,6 +590,6 @@ export function WorktreesTab({
           )}
         </div>}
       />
-    </div>
+    </PanelRoot>
   )
 }

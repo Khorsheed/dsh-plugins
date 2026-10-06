@@ -72,12 +72,14 @@ export type FilePreviewKey =
   | 'action.openFolder'
   | 'action.openIDE'
   | 'action.reload'
+  | 'action.more'
   | 'detail.content'
   | 'detail.deleted'
   | 'detail.diff'
   | 'detail.noSelection'
   | 'detail.preview'
   | 'detail.source'
+  | 'detail.views'
   | 'local.binary'
   | 'local.noSelection'
   | 'local.tooLarge'
@@ -167,12 +169,14 @@ export const zh: Record<FilePreviewKey, string> = {
   'action.openFolder': '打开目录',
   'action.openIDE': '在 IDE 中打开',
   'action.reload': '重新加载',
+  'action.more': '更多',
   'detail.content': '内容',
   'detail.deleted': '文件已删除',
   'detail.diff': '改动',
   'detail.noSelection': '选择一个文件查看详情',
   'detail.preview': '预览',
   'detail.source': '源码',
+  'detail.views': '视图',
   'local.binary': '二进制文件，无法预览文本',
   'local.noSelection': '选择一个文件预览内容',
   'local.tooLarge': '文件过大，未载入预览',
@@ -256,12 +260,14 @@ export const en: Record<FilePreviewKey, string> = {
   'action.openFolder': 'Open folder',
   'action.openIDE': 'Open in IDE',
   'action.reload': 'Reload',
+  'action.more': 'More',
   'detail.content': 'Content',
   'detail.deleted': 'File deleted',
   'detail.diff': 'Changes',
   'detail.noSelection': 'Select a file to view',
   'detail.preview': 'Preview',
   'detail.source': 'Source',
+  'detail.views': 'Views',
   'local.binary': 'Binary file — text preview unavailable',
   'local.noSelection': 'Select a file to preview',
   'local.tooLarge': 'File too large — not loaded into preview',

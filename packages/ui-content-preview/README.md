@@ -19,13 +19,13 @@
 - **HTML 分级沙箱**——源码 / 渲染 / 脚本三态切换：Tier0 `sandbox=""` + 内嵌 meta CSP（默认；带脚本的页面在静态档下显示提示条）；Tier1 `sandbox="allow-scripts"` 且**永不同开** `allow-same-origin`，显式确认后才运行；CSP 钉死网络与导航，大文档用 `content-visibility` 延迟渲染，超大或带脚本文档有停滞看门狗提示，渲染可全屏。
 - **能力桥**——Tier1 脚本唯一的对外通道：`window.dshBridge` 的 `openLink`（仅 https、noopener）/ `copy`（上限 1 MB）/ `download`（仅 data: URL）白名单；父页逐条校验消息来源、函数名与参数形状，异常一律回错误应答，绝不在宿主里抛。
 - **渲染态内容搜索**——命中用 CSS Custom Highlight API 画在渲染后的文档上，不拆渲染态、不动 React 的 DOM；命中只在源码语法（`**`、围栏、折叠的 JSON 节点）里时如实降级回原始命中行视图；引擎不支持该 API 同样降级，绝不白屏。计数不设上限（绘制上限 2000 条），按钮与 banner 等 chrome 文本不计入命中。
-- **面板 chrome**——返回、basename + 语言 chip、重新加载当前文件（调用方注入 `onReload` 才渲染，排在复制路径之前；进行中禁用并旋转图标）、复制路径、打开文件夹、在 IDE 中打开（按宿主 open-in-app 探测结果逐项显隐，多个 IDE 时渲染成分裂按钮）；滚动位置按 (session, path) 记忆；结构化渲染统一带格式 banner；diff/内容 视图切换由调用方以 render prop 接入。
+- **面板 chrome**——标题栏用 ui-panel-kit 的 `PanelHeader`：返回、basename + 语言 chip、重新加载当前文件（调用方注入 `onReload` 才渲染，排在复制路径之前；进行中禁用并旋转图标）、复制路径、打开文件夹、在 IDE 中打开（按宿主 open-in-app 探测结果逐项显隐，多个 IDE 时每个 IDE 是「…」菜单里的一行）；改动/内容、预览/源码、HTML 档位合成一行下划线标签；面板宽度 ≤ 560px 时正文前只占两行（标题栏 + 标签），路径、复制、在应用中打开收进「…」，内容搜索收成图标，结构化文档去掉格式 banner 外框；滚动位置按 (session, path) 记忆；结构化渲染统一带格式 banner；diff/内容 视图切换由调用方以 render prop 接入。
 
 **故意不做**：文件树、数据面（Remote / store / 根目录选择）、diff 与提交对比的实现（调用方以 render prop 传入）、tab 注册与可见性——那些是各插件自己的数据面与身份。
 
 ## 使用
 
-`AdaptiveSplit` 提供可选的列表/详情布局：按容器宽度在窄屏逐层导航与宽屏并列间切换，两侧保留挂载。local-files 已接入；其他消费方需显式接入，内容渲染逻辑不变。可在仓库根运行 `node packages/ui-content-preview/examples/adaptive-split/serve.mjs` 查看真实组件配合模拟数据的独立预览。
+列表/详情布局 `AdaptiveSplit` 已迁到 `@khorsheed/dsh-client-ui-panel-kit`（面板层，不是预览渲染）。ContentPane 在 `backInDetail` 的窄分栏里把返回画进自己的标题栏。
 
 ```ts
 import { ContentPane, buildSrcDoc, attachBridge, structuredPreview, useRenderedSearch } from '@khorsheed/dsh-client-ui-content-preview/src/client/index.ts'

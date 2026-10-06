@@ -6,16 +6,17 @@
  * plain local filesystem paths. Per-session memory keeps each session on its
  * own last-browsed root.
  */
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
 
-import { IconFolderOpenOutlineMedium, IconProjectAddOutlineMedium, IconRefreshOutlineMedium, type IconProps } from './icons.tsx'
+import { IconFolderOpenOutlineMedium, IconProjectAddOutlineMedium, IconRefreshOutlineMedium, IconSearchOutlineMedium, type IconProps } from './icons.tsx'
 import type { ListLocalDirectoryResult, SearchLocalDirectoryResult } from '../types.ts'
 import {
-  AdaptiveSplit, ContentPane, basenameOf, dirnameOf, pickFileManager, pickIde,
+  ContentPane, basenameOf, dirnameOf, pickFileManager, pickIde,
 } from '@khorsheed/dsh-client-ui-content-preview/src/client/index.ts'
+import { AdaptiveSplit, PanelHeader, PanelRoot, type PanelAction } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
 import type { WorkspaceViewProps } from './contract.ts'
-import { FileTree, type FileTreeGroup, type FileTreeItem } from './FileTree.tsx'
+import { EyeGlyph, FileTree, type FileTreeGroup, type FileTreeItem } from './FileTree.tsx'
 import { localRootOf, rememberLocalRoot } from './local-root.ts'
 import { previewTranslator, structuredLabels, toPreviewRead } from './preview.ts'
 import css from './WorkspaceView.module.css'
@@ -64,6 +65,28 @@ function IconFolderReturnMedium({ size = 16, className }: IconProps) {
   )
 }
 
+/** Up-one-folder glyph: an arrow rising out of a corner (no official equivalent). */
+function IconFolderUpMedium({ size = 16, className }: IconProps) {
+  return (
+    <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M8 13V3.5M4.2 7.2 8 3.4l3.8 3.8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+/**
+ * A folder's parent, shortened for a header note: the home prefix becomes
+ * `~`, and the filesystem root reads as nothing at all.
+ * @param path - an absolute directory path.
+ * @returns e.g. `~/code` for `/home/user/code/Writing` (a macOS home under
+ *   `/Users` too); '' at the top.
+ */
+export function parentNote(path: string): string {
+  const parent = dirnameOf(path)
+  if (parent === '' || parent === '/' || parent === path) return ''
+  return parent.replace(/^\/(?:Users|home)\/[^/]+(?=\/|$)/, '~')
+}
+
 /** The workspace view tab. */
 export function WorkspaceView({
   sessionId, useStore, useSessions, actions, t,
@@ -92,6 +115,8 @@ export function WorkspaceView({
   const [treeWidth, setTreeWidth] = useState(300)
   const [detailOpen, setDetailOpen] = useState(false)
   useEffect(() => { setDetailOpen(false) }, [sessionId, root])
+  // Stable: the split memoizes its back context on this identity.
+  const closeDetail = useCallback(() => { setDetailOpen(false) }, [])
 
   // Filename search: the view owns the query and the last answer; the tree
   // renders the chrome. A root/session switch drops any in-flight search.
@@ -241,47 +266,68 @@ export function WorkspaceView({
         ? selectedPath.slice(root.length + 1)
         : selectedPath
 
-  return (
-    <div className={css.view}>
-      <div className={css.topbar}>
-        <div className={css.crumbs} title={current}>
-          {crumbs.map((crumb, index) => (
-            <span key={`${crumb}/${index}`} className={css.crumbWrap}>
-              {index > 0 && <span className={css.crumbSep}>/</span>}
-              {index === crumbs.length - 1 ? (
-                // The current segment is where you ARE — a span, not a button:
-                // no hover/focus state may paint a pill behind it; the current
-                // position reads through weight and color only.
-                <span className={css.crumbCur}>{crumb.label}</span>
-              ) : (
-                <button type="button" className={css.crumb} onClick={() => { navigate(crumb.path) }}>
-                  {crumb.label}
-                </button>
-              )}
-            </span>
-          ))}
-        </div>
-        <div className={css.actions}>
-          <button type="button" className={css.action} title={t('local.chooseWorkspace')} onClick={() => { void pickWorkspace().then(path => { if (path !== null) navigate(path) }) }}>
-            <IconProjectAddOutlineMedium />
-          </button>
-          {workspaceRoot !== undefined && workspaceRoot !== '' && root !== null && root !== workspaceRoot && (
-            <button type="button" className={css.action} title={t('local.backToWorkspace')} onClick={() => { navigate(workspaceRoot) }}>
-              <IconFolderReturnMedium />
+  const canReturn = workspaceRoot !== undefined && workspaceRoot !== '' && root !== null && root !== workspaceRoot
+  const chooseWorkspace = (): void => { void pickWorkspace().then(path => { if (path !== null) navigate(path) }) }
+  const toggleSearch = (): void => {
+    setSearchOpen(value => !value)
+    setSearchQuery('')
+    setSearchResult(null)
+  }
+  // The workspace gestures, shared by both header shapes.
+  const workspaceActions: PanelAction[] = [
+    { id: 'choose', label: t('local.chooseWorkspace'), icon: <IconProjectAddOutlineMedium />, onSelect: chooseWorkspace },
+    ...(canReturn ? [{ id: 'return', label: t('local.backToWorkspace'), icon: <IconFolderReturnMedium />, onSelect: () => { navigate(workspaceRoot) } }] : []),
+    ...(canOpenFolder && root !== null ? [{ id: 'folder', label: t('local.openFolder'), icon: <IconFolderOpenOutlineMedium />, onSelect: () => { openFolder(root) } }] : []),
+    { id: 'refresh', label: t('local.refreshFiles'), icon: <IconRefreshOutlineMedium />, onSelect: () => { if (root !== null) actions.refresh() } },
+  ]
+  const parent = current === '' ? '' : dirnameOf(current)
+  // Compact: one header for the whole list — the folder's name with its parent
+  // as the note, search and up inline, everything else (the tree header's
+  // hidden-files toggle included) in ⋯. The breadcrumb's job, climbing, is the
+  // up action; the workspace actions keep their wide order.
+  const compactActions: PanelAction[] = [
+    ...(root !== null && root !== '' ? [{ id: 'search', label: searchOpen ? t('tree.closeSearch') : t('tree.search'), icon: <IconSearchOutlineMedium />, pinned: true, pressed: searchOpen, onSelect: toggleSearch }] : []),
+    ...(parent !== '' && parent !== current ? [{ id: 'up', label: t('local.goUp'), icon: <IconFolderUpMedium />, onSelect: () => { navigate(parent) } }] : []),
+    ...workspaceActions,
+    { id: 'hidden', label: hideHidden ? t('local.showHiddenFiles') : t('local.hideHiddenFiles'), icon: <EyeGlyph open={!hideHidden} />, onSelect: () => { setHideHidden(value => !value) } },
+  ]
+  const crumbTrail = (
+    <div className={css.crumbs} title={current}>
+      {crumbs.map((crumb, index) => (
+        <span key={`${crumb}/${index}`} className={css.crumbWrap}>
+          {index > 0 && <span className={css.crumbSep}>/</span>}
+          {index === crumbs.length - 1 ? (
+            // The current segment is where you ARE — a span, not a button:
+            // no hover/focus state may paint a pill behind it; the current
+            // position reads through weight and color only.
+            <span className={css.crumbCur}>{crumb.label}</span>
+          ) : (
+            <button type="button" className={css.crumb} onClick={() => { navigate(crumb.path) }}>
+              {crumb.label}
             </button>
           )}
-          {canOpenFolder && root !== null && (
-            <button type="button" className={css.action} title={t('local.openFolder')} onClick={() => { openFolder(root) }}>
-              <IconFolderOpenOutlineMedium />
-            </button>
-          )}
-          <button type="button" className={css.action} title={t('local.refreshFiles')} onClick={() => { if (root !== null) actions.refresh() }}>
-            <IconRefreshOutlineMedium />
-          </button>
-        </div>
-      </div>
+        </span>
+      ))}
+    </div>
+  )
 
-      <AdaptiveSplit masterWidth={treeWidth} detailOpen={detailOpen} onBack={() => { setDetailOpen(false) }} backLabel={t('detail.back')}
+  return (
+    <PanelRoot className={css.view}>{compact => <>
+      {compact
+        // A compact panel showing a file spends no row on the list's header:
+        // the preview's own title bar carries the back control.
+        ? !detailOpen && (
+          <PanelHeader
+            className={css.topbar}
+            title={current === '' ? t('local.noRoot') : basenameOf(current)}
+            {...(parentNote(current) === '' ? {} : { meta: parentNote(current) })}
+            actions={compactActions}
+            moreLabel={t('action.more')}
+          />
+        )
+        : <PanelHeader className={css.topbar} title={crumbTrail} actions={workspaceActions} moreLabel={t('action.more')} />}
+
+      <AdaptiveSplit backInDetail masterWidth={treeWidth} detailOpen={detailOpen} onBack={closeDetail} backLabel={t('detail.back')}
         master={<>
           {root === null || root === '' ? (
             <div className={css.empty}>{t('tree.noWorkspace')}</div>
@@ -300,12 +346,9 @@ export function WorkspaceView({
               showHidden={!hideHidden}
               onToggleHidden={() => { setHideHidden(value => !value) }}
               iconActions
+              headerless={compact}
               searchOpen={searchOpen}
-              onToggleSearch={() => {
-                setSearchOpen(value => !value)
-                setSearchQuery('')
-                setSearchResult(null)
-              }}
+              onToggleSearch={toggleSearch}
               searchQuery={searchQuery}
               onSearchQuery={setSearchQuery}
               searching={searchActive && searchResult === null}
@@ -353,6 +396,6 @@ export function WorkspaceView({
           />
         }
       />
-    </div>
+    </>}</PanelRoot>
   )
 }

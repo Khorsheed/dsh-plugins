@@ -123,17 +123,17 @@ describe('ContentPane preview controls (the union of both surfaces)', () => {
     expect(screen.getByRole('heading', { name: 'Title' })).toBeTruthy()
     expect(screen.getByText('markdown')).toBeTruthy()
     // The toggle `local-files` never had: switch to the source form.
-    fireEvent.click(screen.getByRole('button', { name: 'detail.source' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'detail.source' }))
     expect(screen.queryByRole('heading', { name: 'Title' })).toBeNull()
     expect(document.querySelector('pre')?.textContent).toContain('alpha hit line')
-    fireEvent.click(screen.getByRole('button', { name: 'detail.preview' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'detail.preview' }))
     expect(screen.getByRole('heading', { name: 'Title' })).toBeTruthy()
   })
 
   it('offers no preview toggle for a plain code file', () => {
     mount({ kind: 'text', path: '/work/main.ts', content: 'const x = 1\n' })
-    expect(screen.queryByRole('button', { name: 'detail.preview' })).toBeNull()
-    expect(screen.queryByRole('button', { name: 'detail.source' })).toBeNull()
+    expect(screen.queryByRole('tab', { name: 'detail.preview' })).toBeNull()
+    expect(screen.queryByRole('tab', { name: 'detail.source' })).toBeNull()
   })
 
   it('keeps the HTML tiers: static default, script tier only when the host says scripted', () => {
@@ -144,9 +144,9 @@ describe('ContentPane preview controls (the union of both surfaces)', () => {
     const frame = screen.getByTitle('preview.htmlRender') as HTMLIFrameElement
     expect(frame.getAttribute('sandbox')).toBe('')
     expect(frame.getAttribute('srcdoc')).toContain('preview.staticHint')
-    expect(screen.getByRole('button', { name: 'preview.htmlScript' })).toBeTruthy()
+    expect(screen.getByRole('tab', { name: 'preview.htmlScript' })).toBeTruthy()
     // Tier1 is behind an explicit confirmation, never a silent switch.
-    fireEvent.click(screen.getByRole('button', { name: 'preview.htmlScript' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'preview.htmlScript' }))
     expect(screen.getByText('preview.scriptConfirm')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'preview.scriptRun' }))
     expect(frame.getAttribute('sandbox')).toBe('allow-scripts')
@@ -154,8 +154,8 @@ describe('ContentPane preview controls (the union of both surfaces)', () => {
 
   it('hides the script tier for a page with no scripts', () => {
     mount({ kind: 'text', path: '/work/plain.html', content: '<html><body>hi</body></html>' })
-    expect(screen.queryByRole('button', { name: 'preview.htmlScript' })).toBeNull()
-    expect(screen.getByRole('button', { name: 'preview.htmlSource' })).toBeTruthy()
+    expect(screen.queryByRole('tab', { name: 'preview.htmlScript' })).toBeNull()
+    expect(screen.getByRole('tab', { name: 'preview.htmlSource' })).toBeTruthy()
   })
 })
 
@@ -178,10 +178,10 @@ describe('ContentPane chrome and non-text reads', () => {
       chrome: { openIDE: () => {}, ideChoices: [{ id: 'zed', label: 'Zed' }] },
     })
     expect(screen.getByRole('button', { name: 'action.openIDE' })).toBeTruthy()
-    expect(screen.queryByRole('button', { name: 'action.chooseIDE' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'action.more' })).toBeNull()
   })
 
-  it('offers a split IDE control once several IDEs resolved', () => {
+  it('lists every resolved IDE in the ⋯ menu once several resolved', () => {
     const onIdeChoice = vi.fn()
     mount({ kind: 'text', path: '/work/a.ts', content: 'x\n' }, {
       chrome: {
@@ -190,12 +190,12 @@ describe('ContentPane chrome and non-text reads', () => {
         onIdeChoice,
       },
     })
-    const caret = screen.getByRole('button', { name: 'action.chooseIDE' })
-    expect(caret).toBeTruthy()
-    // The caret opens the app menu; picking a row routes through the caller
-    // (which owns the remembered choice and the host route).
-    fireEvent.click(caret)
-    fireEvent.click(screen.getByText('VS Code'))
+    // The default IDE stays one click away; each resolved IDE is a menu row,
+    // and picking one routes through the caller (which owns the remembered
+    // choice and the host route).
+    expect(screen.getByRole('button', { name: 'action.openIDE' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'action.more' }))
+    fireEvent.click(screen.getByText('action.openIDE · VS Code'))
     expect(onIdeChoice).toHaveBeenCalledWith('vscode')
   })
 
@@ -215,7 +215,7 @@ describe('ContentPane chrome and non-text reads', () => {
     // path + every "what am I looking at" control; search row = search only.
     mount({ kind: 'text', path: '/work/README.md', content: MARKDOWN })
     const row = screen.getByTitle('/work/README.md').parentElement
-    expect(row?.contains(screen.getByRole('button', { name: 'detail.source' }))).toBe(true)
+    expect(row?.contains(screen.getByRole('tab', { name: 'detail.source' }))).toBe(true)
     expect(row?.contains(screen.getByRole('searchbox'))).toBe(false)
   })
 
@@ -281,5 +281,46 @@ describe('ContentPane reload gesture', () => {
     fireEvent.click(button)
     expect(onReload).toHaveBeenCalledTimes(2)
     await act(async () => {})
+  })
+})
+
+describe('ContentPane compact chrome (panel-responsive-spec P1)', () => {
+  /** Lay every element out at a phone width, so the pane measures as compact. */
+  beforeEach(() => {
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ width: 390, height: 800, top: 0, left: 0, right: 390, bottom: 800, x: 0, y: 0, toJSON: () => ({}) } as DOMRect)
+  })
+  afterEach(() => { vi.restoreAllMocks() })
+
+  it('spends two rows before the body: title bar and tabs, the search row folded behind an icon', () => {
+    mount({ kind: 'text', path: '/work/README.md', content: MARKDOWN }, { displayPath: '/work/README.md', onCopyPath: () => Promise.resolve(true) })
+    expect(document.querySelector('[data-compact=true]')).toBeTruthy()
+    expect(screen.getByRole('tab', { name: 'detail.preview' })).toBeTruthy()
+    // No path row and no search row until asked for.
+    expect(screen.queryByTitle('/work/README.md')).toBeNull()
+    expect(screen.queryByRole('searchbox')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'search.placeholder' }))
+    search('alpha')
+    expect(screen.getByText('search.hit')).toBeTruthy()
+    // Escape clears the query first, then closes the row.
+    fireEvent.keyDown(screen.getByRole('searchbox'), { key: 'Escape' })
+    expect((screen.getByRole('searchbox') as HTMLInputElement).value).toBe('')
+    fireEvent.keyDown(screen.getByRole('searchbox'), { key: 'Escape' })
+    expect(screen.queryByRole('searchbox')).toBeNull()
+  })
+
+  it('keeps search and reload inline and folds the path and copy into the ⋯ menu', () => {
+    mount({ kind: 'text', path: '/work/a.md', content: '# A\n' }, {
+      displayPath: '/work/a.md',
+      onReload: () => Promise.resolve(),
+      onCopyPath: () => Promise.resolve(true),
+      chrome: { openFolder: () => {} },
+    })
+    expect(screen.getByRole('button', { name: 'search.placeholder' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'action.reload' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'action.copyPath' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'action.more' }))
+    expect(screen.getByText('/work/a.md')).toBeTruthy()
+    expect(screen.getByText('action.copyPath')).toBeTruthy()
+    expect(screen.getByText('action.openFolder')).toBeTruthy()
   })
 })

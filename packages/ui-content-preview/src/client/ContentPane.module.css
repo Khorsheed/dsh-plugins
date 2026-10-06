@@ -1,13 +1,12 @@
-/* The shared content pane. Chrome: a two-line title bar (back control |
-   filename + language chip | view + preview/source controls | host-open
-   gestures, then the relative path), an optional content-search row for text
-   reads, and the content body. Every chrome row sits on the one --pane-inset
-   line, and the back control hangs inside that inset so the basename and the
-   path share a left edge instead of the title starting one control further
-   right. Spacing rules here are the pane's own — the markdown rhythm itself
-   belongs to the official sheet, so this file overrides only the
+/* The shared content pane. Chrome: the panel kit's title bar (back, basename
+   + language chip, icon actions with a ⋯ overflow), a second row with the
+   path and the face/form tabs, an optional content-search row for text reads,
+   and the content body. Every chrome row sits on the one --pane-inset line.
+   Spacing rules here are the pane's own — the markdown rhythm itself belongs
+   to the official sheet, so this file overrides only the
    --dsw-font-markdown-* scale tokens (in .structuredBody) and never a
-   per-element margin. */
+   per-element margin. Compact panes (data-compact, panel-responsive-spec P1)
+   take the spec's 16px gutter, two chrome rows, and a frameless document. */
 
 .root {
   container-type: inline-size;
@@ -27,74 +26,26 @@
 
 .titleBar {
   flex: none;
-  padding: 8px var(--pane-inset) 0;
+  padding: 4px 0 0;
   border-bottom: 1px solid var(--dsw-alias-border-l2);
 }
 
-/* Nested in an already-24px-padded container: drop the title bar's own
-   horizontal padding so the path line stays on the parent's inset. */
+/* Nested in an already-24px-padded container: the rows drop their own
+   horizontal inset so the path line stays on the parent's. */
 .headerEmbedded {
   padding: 8px 0 0;
 }
 
-.titleRow {
-  display: flex;
-  align-items: center;
-  gap: var(--title-gap);
-  min-height: 28px;
-}
-
-/* The back control lives IN the pane's left inset instead of in front of the
-   basename. Left in the flow it pushed the title a full control-plus-gap
-   (24 + 8) right of the path line below it, so the two rows read as
-   misaligned; pulled out by exactly that much the basename starts on the path
-   row's edge — the search row's and the body's too — with the chevron's own
-   centering inside its 24px button supplying the visible breathing room. The
-   row gap is cancelled on the button's right only, so the basename-to-actions
-   gap is untouched. Embedded panes keep the plain flow row: there the inset
-   belongs to the parent chrome, and a negative margin would push the button
-   out of it. */
-.titleBar:not(.headerEmbedded) .back {
-  margin-left: calc(-1 * var(--pane-inset));
-  margin-right: calc(-1 * var(--title-gap));
-}
-
-.back {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--dsw-alias-label-tertiary);
-  cursor: pointer;
-}
-
-.back:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-primary);
-}
-
-.title {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--dsw-alias-label-primary);
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+.headerEmbedded .pathRow {
+  padding-left: 0;
+  padding-right: 0;
 }
 
 .langTag {
   flex: none;
+  margin-left: 6px;
+  vertical-align: 1px;
+  font-weight: 400;
   padding: 1px 6px;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 4px;
@@ -106,95 +57,13 @@
   text-transform: uppercase;
 }
 
-.titleActions {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  flex: none;
-}
-
-/* The path row's trailing controls. The face switch (改动/内容) and the form
-   switch (预览/源码) answer two INDEPENDENT questions, so they must read as two
-   groups. This class was referenced in the JSX but never defined here, which
-   left the span unstyled: its inline-flex children then laid out in an inline
-   formatting context — no gap between the two groups, and baseline alignment
-   between boxes of different heights — so four buttons read as one accidental
-   cluster. */
-.viewControls {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  gap: 8px;
-}
-
-/* Preview/source segmented control for the content view. */
-.seg {
-  display: inline-flex;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 6px;
-  overflow: hidden;
-}
-
-.segButton {
-  height: 24px;
-  padding: 0 10px;
-  border: 0;
-  background: transparent;
-  font-size: 12px;
-  color: var(--dsw-alias-label-secondary);
-  cursor: pointer;
-}
-
-.segButton:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
-}
-
-.segActive {
-  background: var(--dsw-alias-bg-layer-2);
-  color: var(--dsw-alias-label-primary);
-  font-weight: 500;
-}
-
-/* Diff/content toggle (the git-change view). */
-.toggle {
-  display: inline-flex;
-  gap: 2px;
-}
-
-/* The face switch keeps the .segButton metrics (24px tall, 0 10px) so the two
-   groups in the row share one rhythm instead of sitting at 22 vs 24px. */
-.viewButton {
-  height: 24px;
-  padding: 0 10px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  font-size: 12px;
-  color: var(--dsw-alias-label-secondary);
-  cursor: pointer;
-}
-
-.viewButton:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
-}
-
-.viewButton:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-.viewActive {
-  background: var(--dsw-alias-bg-layer-2);
-  color: var(--dsw-alias-label-primary);
-}
-
 /* The relative path line (second row of the title bar). */
 .pathRow {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 3px 0 0;
-  padding-bottom: 9px;
+  margin: 0;
+  padding: 0 var(--pane-inset) 6px;
 }
 
 /* The path takes the room; the view controls stay put when it is long. */
@@ -226,38 +95,6 @@
   color: var(--dsw-alias-label-tertiary);
   font-size: 13px;
   text-align: center;
-}
-
-/* The IDE split control: the open button and its caret share one hover pill. */
-.split {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-}
-
-.action {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: 4px;
-  height: 28px;
-  padding: 0 8px;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--dsw-alias-label-secondary);
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.action:hover:not(:disabled) {
-  background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-primary);
-}
-
-.action:disabled {
-  opacity: 0.4;
-  cursor: default;
 }
 
 /* Reload in flight: the icon spins until the caller's promise settles (the
@@ -420,10 +257,12 @@
   /* The official markdown typography is chat-sized (16px body, 24px h1) and
      reads large inside a preview pane. Scale it down to a preview scale (14px
      body), scoped to this pane's body so the chat is untouched. The tokens
-     mirror the theme's markdown font shorthand set. */
-  --dsw-font-markdown-base: 400 14px/24px var(--dsw-font-family);
-  --dsw-font-markdown-base-strong: 600 14px/24px var(--dsw-font-family);
-  --dsw-font-markdown-base-italic: italic 400 14px/24px var(--dsw-font-family);
+     mirror the theme's markdown font shorthand set; the body size and line
+     height read the shared panel reading tokens, so a touch screen running
+     the mobile package reads at its larger size. */
+  --dsw-font-markdown-base: 400 var(--dsh-panel-text-reading, 14px)/var(--dsh-panel-reading-line-height, 1.65) var(--dsw-font-family);
+  --dsw-font-markdown-base-strong: 600 var(--dsh-panel-text-reading, 14px)/var(--dsh-panel-reading-line-height, 1.65) var(--dsw-font-family);
+  --dsw-font-markdown-base-italic: italic 400 var(--dsh-panel-text-reading, 14px)/var(--dsh-panel-reading-line-height, 1.65) var(--dsw-font-family);
   --dsw-font-markdown-h1: 600 21px/30px var(--dsw-font-family);
   --dsw-font-markdown-h2: 600 19px/28px var(--dsw-font-family);
   --dsw-font-markdown-h3: 600 17px/26px var(--dsw-font-family);
@@ -487,39 +326,6 @@
   border-radius: 8px;
 }
 
-/* HTML source ⇄ render ⇄ script toggle: a small segmented control at the
-   right of the content-search row, offered only for .html/.htm files. */
-.htmlToggle {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: 2px;
-  padding: 2px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 8px;
-  background: var(--dsw-alias-bg-base);
-}
-
-.htmlToggleBtn {
-  padding: 2px 8px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  font-size: 12px;
-  line-height: 18px;
-  color: var(--dsw-alias-label-secondary);
-  cursor: pointer;
-}
-
-.htmlToggleBtn:hover {
-  color: var(--dsw-alias-label-primary);
-}
-
-.htmlToggleActive {
-  background: var(--dsw-alias-interactive-bg-active);
-  color: var(--dsw-alias-label-primary);
-}
-
 /* The sandboxed render iframe: fill the scroll area. A light canvas — an HTML
    document assumes a white ground. */
 .htmlRender {
@@ -548,30 +354,87 @@
   color: var(--dsw-alias-label-secondary, #9fd4f0);
 }
 
-@container content-pane (max-width: 560px) {
-  .titleBar { --pane-inset:14px; }
-  .titleRow, .pathRow { flex-wrap:wrap; }
-  .pathLine { flex-basis:100%; }
-  .viewControls { flex-wrap:wrap; max-width:100%; }
-  .action, .stepButton, .back { min-width:40px; min-height:40px; }
-  /* Compact icon group: keep the vertical touch target without charging
-     every 14px glyph a 40px cell plus a separate 6px gap. */
-  .titleActions { gap:0; padding:0 2px; border-radius:10px; background:var(--dsw-alias-bg-layer-1); }
-  .titleActions:empty { display:none; }
-  .titleActions .action { min-width:32px; padding:0 6px; justify-content:center; }
-  .scriptConfirm { flex-wrap:wrap; }
-  .contentSearchInput { font-size:16px; }
+/* The title bar's own metrics: the kit header on the pane's inset, the back
+   control (when present) hanging inside that inset so the basename keeps the
+   path row's left edge. */
+.paneHeader {
+  min-height: 36px;
+  padding: 0 calc(var(--pane-inset) - 8px) 0 var(--pane-inset);
 }
 
-/* The text switches' 40px bump is a TOUCH affordance, not a narrow-layout
-   one: the container query fires on any narrow pane, so a desktop sidebar
-   dragged narrow was blowing the compact 24px segmented control up to a tall
-   40px box around its 12px labels. Gate it on a coarse pointer so phones
-   keep the touch target while a narrow desktop pane keeps the wide layout's
-   metrics. */
+.paneHeader[data-back=true] {
+  padding-left: max(4px, calc(var(--pane-inset) - 32px));
+}
+
+.headerEmbedded .paneHeader {
+  padding: 0;
+}
+
+/* The face/form tabs sit at the path row's end on a wide pane: the title
+   bar's own rule is the separator there, so the tab row drops its line. */
+.pathRow .viewTabs {
+  flex: none;
+  height: 28px;
+  box-shadow: none;
+}
+
+/* Compact pane: two chrome rows and a frameless document. */
+.root[data-compact=true] {
+  --pane-inset: 16px;
+}
+
+.root[data-compact=true] .titleBar {
+  padding-top: 0;
+}
+
+.root[data-compact=true] .paneHeader {
+  padding-right: 4px;
+}
+
+/* The kit header pulls a compact back control 12px into its 16px gutter;
+   restate the gutter here so the wide rule above cannot shrink it away. */
+.root[data-compact=true] .paneHeader[data-back=true] {
+  padding-left: 16px;
+}
+
+.root[data-compact=true] .viewTabs {
+  padding: 0 calc(var(--pane-inset) - 8px);
+  box-shadow: none;
+}
+
+.root[data-compact=true] .structured {
+  margin: 4px 0 12px;
+  overflow: visible;
+  background: transparent;
+  border-radius: 0;
+}
+
+.root[data-compact=true] .structuredBanner {
+  display: none;
+}
+
+.root[data-compact=true] .structuredBody {
+  padding: 0;
+}
+
+.root[data-compact=true] .contentSearchInput {
+  font-size: 16px;
+  height: 36px;
+}
+
+.root[data-compact=true] .stepButton {
+  min-width: 40px;
+  min-height: 40px;
+}
+
+/* Touch screens read headings one step down from the chat-sized scale, set
+   against the larger touch reading size (spec §1: 22 / 19 / 17). */
 @media (pointer: coarse) {
-  @container content-pane (max-width: 560px) {
-    .segButton, .viewButton { min-height:40px; }
+  .root[data-compact=true] .structuredBody {
+    --dsw-font-markdown-h1: 600 22px/1.4 var(--dsw-font-family);
+    --dsw-font-markdown-h2: 600 19px/1.45 var(--dsw-font-family);
+    --dsw-font-markdown-h3: 600 17px/1.5 var(--dsw-font-family);
+    --dsw-font-markdown-h4: 600 var(--dsh-panel-text-reading, 14px)/var(--dsh-panel-reading-line-height, 1.65) var(--dsw-font-family);
   }
 }
 

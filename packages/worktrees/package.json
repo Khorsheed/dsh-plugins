@@ -119,6 +119,7 @@
     "@deepseek-ai/dsh-typert-protocol": "^0.2.0-rc.1",
     "@deepseek-ai/schemastery": "^3.18.1",
     "@khorsheed/dsh-client-ui-content-preview": "workspace:*",
+    "@khorsheed/dsh-client-ui-panel-kit": "workspace:*",
     "@testing-library/react": "^16.1.0",
     "@types/node": "^22.0.0",
     "@types/react": "~18.3.1",

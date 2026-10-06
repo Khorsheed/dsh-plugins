@@ -2,17 +2,22 @@
  * The shared content pane: one implementation of "show me this file" behind
  * every community file surface.
  *
- * Layout — a two-line title bar (back control, basename with a language chip,
- * then the view/preview/source controls, the caller's reload gesture and the
- * host-open gestures, with the
- * relative path on its own line), an optional content-search row for text reads
- * (query, hit counter, stepper, the source/render control, and the HTML tier
- * control), then the body: HTML through the tiered sandbox, markdown / JSON /
- * CSV rendered through the official primitives inside shared block chrome,
+ * Layout — the panel kit's title bar (back, basename, then priority-ordered
+ * icon actions whose overflow folds into one ⋯ menu), a second row with the
+ * path and one underline tab row for every face/form switch (change face,
+ * rendered/source, HTML tiers), an optional content-search row for text reads,
+ * then the body: HTML through the tiered sandbox, markdown / JSON / CSV
+ * rendered through the official primitives inside shared block chrome,
  * everything else as a highlighted code block, and images / binary / missing /
- * too-large / error through their designed placeholders. The back control hangs
- * inside the pane's left inset rather than in front of the basename, so the
- * basename and the path line below it share one left edge.
+ * too-large / error through their designed placeholders.
+ *
+ * Compact panes (the enclosing panel, or this pane, at or below 560px —
+ * panel-responsive-spec P1) spend two rows before the body: the title bar
+ * (search, reload inline; path, copy, open-in-app in ⋯) and the tab row. The
+ * search row opens from its header icon, and rendered documents drop their
+ * format-banner frame so the text takes the full width. Inside a narrow
+ * `AdaptiveSplit` with `backInDetail`, the split's back control is drawn in
+ * this title bar instead of as a row of its own.
  *
  * Decisions this pane froze (see proposal preview-kernel §能力清单):
  *
@@ -29,8 +34,9 @@
  * @module @khorsheed/dsh-client-ui-content-preview
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
-import { CodeBlock, MarkdownText, Menu } from '@deepseek-ai/dsh-client-ui-primitives'
-import { IconCheckOutlineMedium, IconChevronDownOutlineMedium, IconChevronLeftOutlineMedium, IconCodeOutlineMedium, IconCopyOutlineMedium, IconFolderOpenOutlineMedium, IconRefreshOutlineMedium } from './icons.tsx'
+import { CodeBlock, MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
+import { PanelHeader, UnderlineTabs, useAdaptiveSplitBack, usePanelCompact, usePanelCompactContext, type PanelAction } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
+import { IconCheckOutlineMedium, IconCodeOutlineMedium, IconCopyOutlineMedium, IconFolderOpenOutlineMedium, IconRefreshOutlineMedium, IconSearchOutlineMedium } from './icons.tsx'
 import type { ContentPaneProps, PreviewTranslator, PreviewRead, PreviewView } from './contract.ts'
 import { basenameOf, dirnameOf, isHtmlPath, isMarkdown, languageFor } from './language.ts'
 import { hasStructuredPreview, structuredPreview } from './structured.tsx'
@@ -262,8 +268,8 @@ export function ContentPane(props: ContentPaneProps): ReactNode {
   // In-flight state of the caller's reload gesture (the button owns it: the
   // caller's promise settling is the only "done" signal that exists).
   const [reloading, setReloading] = useState(false)
-  // The IDE split control's menu (only rendered when more than one IDE resolved).
-  const [ideOpen, setIdeOpen] = useState(false)
+  // Compact panes fold the content-search row behind a header icon.
+  const [searchOpen, setSearchOpen] = useState(false)
   const [contentQuery, setContentQuery] = useState('')
   const [activeMatch, setActiveMatch] = useState(0)
   const activeLineRef = useRef<HTMLSpanElement | null>(null)
@@ -279,6 +285,13 @@ export function ContentPane(props: ContentPaneProps): ReactNode {
   const diffScrollRef = useRef<HTMLDivElement | null>(null)
   const [slow, setSlow] = useState(false)
   const slowTimer = useRef<number | null>(null)
+  // Layout density follows the enclosing panel when there is one (a split's
+  // detail column can be narrow inside a wide panel without being a phone),
+  // else this pane's own width.
+  const rootRef = useRef<HTMLDivElement | null>(null)
+  const ownCompact = usePanelCompact(rootRef)
+  const compact = usePanelCompactContext() ?? ownCompact
+  const splitBack = useAdaptiveSplitBack()
 
   const memKey = scrollKey(sessionId ?? '', path)
   const diffMemKey = `${memKey}\u0000diff`
@@ -420,203 +433,139 @@ export function ContentPane(props: ContentPaneProps): ReactNode {
   const splitIde = chrome?.openIDE !== undefined && ideChoices.length > 1 && chrome.onIdeChoice !== undefined
   const diffActive = diffFace && onViewChange !== undefined
 
+  const searchable = !diffActive && content !== null
+  // Compact panes fold the search row behind a header icon; a live query keeps
+  // it open so a hit counter never disappears under the user.
+  const searchVisible = searchable && (!compact || searchOpen || contentQuery !== '')
+  const back = onBack ?? splitBack?.onBack
+  const backLabel = onBack === undefined && splitBack !== undefined ? splitBack.backLabel : t('detail.back')
+  const location = displayPath ?? path
+
+  // Header actions in priority order: the search toggle (compact only — wide
+  // panes keep the row open), reload, then the host-open gestures. A compact
+  // pane also lists the full path as the menu's first row, since its path line
+  // is folded away.
+  const headerActions: PanelAction[] = []
+  if (compact && searchable) {
+    headerActions.push({
+      id: 'search', label: t('search.placeholder'), icon: <IconSearchOutlineMedium size={16} />, pinned: true, pressed: searchVisible,
+      onSelect: () => {
+        if (searchVisible) { setSearchOpen(false); setContentQuery(''); setActiveMatch(0) } else setSearchOpen(true)
+      },
+    })
+  }
+  if (onReload !== undefined) {
+    headerActions.push({
+      id: 'reload', label: t('action.reload'), disabled: reloading, onSelect: doReload,
+      icon: <IconRefreshOutlineMedium size={16} className={reloading ? css.actionSpinning : undefined} />,
+    })
+  }
+  if (compact) {
+    headerActions.push({ id: 'path', label: location, icon: <IconFolderOpenOutlineMedium size={16} />, menuOnly: true, disabled: true, onSelect: () => {} })
+  }
+  if (onCopyPath !== undefined) {
+    headerActions.push({
+      id: 'copy', label: copiedPath ? t('action.copied') : t('action.copyPath'), onSelect: doCopyPath,
+      icon: copiedPath ? <IconCheckOutlineMedium size={16} /> : <IconCopyOutlineMedium size={16} />,
+    })
+  }
+  if (chrome?.openFolder !== undefined) {
+    headerActions.push({ id: 'folder', label: t('action.openFolder'), icon: <IconFolderOpenOutlineMedium size={16} />, onSelect: chrome.openFolder })
+  }
+  if (chrome?.openIDE !== undefined) {
+    headerActions.push({ id: 'ide', label: t('action.openIDE'), icon: <IconCodeOutlineMedium size={16} />, onSelect: chrome.openIDE })
+    // Each resolved IDE is its own menu row (the wide pane's old split caret).
+    if (splitIde) {
+      for (const choice of ideChoices) {
+        headerActions.push({
+          id: `ide:${choice.id}`, label: `${t('action.openIDE')} · ${choice.label}`, icon: <IconCodeOutlineMedium size={16} />,
+          menuOnly: true, onSelect: () => { chrome.onIdeChoice?.(choice.id) },
+        })
+      }
+    }
+  }
+  if (!diffActive && html && content !== null && htmlMode !== 'source') {
+    headerActions.push({
+      id: 'fullscreen', label: fullscreen ? t('preview.exitFullscreen') : t('preview.fullscreen'), icon: <IconCodeOutlineMedium size={16} />,
+      menuOnly: compact,
+      onSelect: () => {
+        const frame = htmlFrameRef.current
+        if (frame === null) return
+        if (document.fullscreenElement != null) { void document.exitFullscreen?.() }
+        else if (typeof frame.requestFullscreen === 'function') { void frame.requestFullscreen() }
+      },
+    })
+  }
+
+  // One tab row for every face/form switch the read offers: the change face,
+  // then the content forms (rendered/source for markdown-like reads, the HTML
+  // tiers, or a plain "content" face beside the diff).
+  type ViewTab = 'diff' | 'content' | 'preview' | 'source' | 'html:source' | 'html:render' | 'html:script'
+  const viewTabs: { id: ViewTab; label: string }[] = []
+  if (showDiffToggle) viewTabs.push({ id: 'diff', label: t('detail.diff') })
+  if (content !== null && !html && (isMarkdown(path) || hasStructuredPreview(path))) {
+    viewTabs.push({ id: 'preview', label: t('detail.preview') }, { id: 'source', label: t('detail.source') })
+  } else if (content !== null && html) {
+    viewTabs.push({ id: 'html:source', label: t('preview.htmlSource') }, { id: 'html:render', label: t('preview.htmlRender') })
+    if (htmlScripted) viewTabs.push({ id: 'html:script', label: t('preview.htmlScript') })
+  } else if (showDiffToggle) {
+    viewTabs.push({ id: 'content', label: t('detail.content') })
+  }
+  const viewValue: ViewTab = diffActive ? 'diff'
+    : viewTabs.some(tab => tab.id === 'preview') ? (sourceMode ? 'source' : 'preview')
+      : html ? `html:${htmlMode}` as ViewTab
+        : 'content'
+  const selectView = (id: ViewTab): void => {
+    if (id === 'diff') { onViewChange?.('diff'); return }
+    if (diffActive) onViewChange?.('content')
+    if (id === 'preview' || id === 'source') setSourceMode(id === 'source')
+    else if (id === 'html:source') { setHtmlMode('source'); setScriptConfirm(false) }
+    else if (id === 'html:render') { setHtmlMode('render'); setScriptConfirm(false) }
+    // Tier1 never runs without a gesture: the tab arms the confirm bar.
+    else if (id === 'html:script' && htmlMode !== 'script') setScriptConfirm(true)
+  }
+  const tabs = viewTabs.length > 1
+    ? <UnderlineTabs tabs={viewTabs} value={viewValue} onChange={selectView} label={t('detail.views')} className={css.viewTabs} />
+    : null
+
   return (
-    <div className={css.root}>
+    <div ref={rootRef} className={css.root} data-compact={compact ? 'true' : 'false'}>
       <div className={`${css.titleBar} ${embedded ? css.headerEmbedded : ''}`}>
-        <div className={css.titleRow}>
-          {onBack !== undefined && (
-            <button
-              type="button"
-              className={css.back}
-              title={t('detail.back')}
-              aria-label={t('detail.back')}
-              onClick={onBack}
-            >
-              <IconChevronLeftOutlineMedium />
-            </button>
+        <PanelHeader
+          className={css.paneHeader}
+          compact={compact}
+          title={<>{basename}{!compact && lang !== undefined && <span className={css.langTag}>{isMarkdown(path) ? 'MD' : lang}</span>}</>}
+          onBack={back}
+          backLabel={backLabel}
+          backRef={onBack === undefined ? splitBack?.backRef : undefined}
+          actions={headerActions}
+          moreLabel={t('action.more')}
+        />
+        {compact
+          ? tabs
+          : (
+            <div className={css.pathRow}>
+              <div className={css.pathLine} title={location}>{displayPath ?? dirname}</div>
+              {tabs}
+            </div>
           )}
-          <span className={css.title} title={basename}>
-            {basename}
-            {lang !== undefined && <span className={css.langTag}>{isMarkdown(path) ? 'MD' : lang}</span>}
-          </span>
-          <span className={css.titleActions}>
-            {onReload !== undefined && (
-              <button
-                type="button"
-                className={css.action}
-                title={t('action.reload')}
-                aria-label={t('action.reload')}
-                disabled={reloading}
-                onClick={doReload}
-              >
-                <IconRefreshOutlineMedium size={14} className={reloading ? css.actionSpinning : undefined} />
-              </button>
-            )}
-            {onCopyPath !== undefined && (
-              <button
-                type="button"
-                className={css.action}
-                title={copiedPath ? t('action.copied') : t('action.copyPath')}
-                aria-label={copiedPath ? t('action.copied') : t('action.copyPath')}
-                onClick={doCopyPath}
-              >
-                {copiedPath ? <IconCheckOutlineMedium size={14} /> : <IconCopyOutlineMedium size={14} />}
-              </button>
-            )}
-            {chrome?.openFolder !== undefined && (
-              <button
-                type="button"
-                className={css.action}
-                title={t('action.openFolder')}
-                aria-label={t('action.openFolder')}
-                onClick={chrome.openFolder}
-              >
-                <IconFolderOpenOutlineMedium size={14} />
-              </button>
-            )}
-            {splitIde
-              ? (
-                <span className={css.split}>
-                  <button
-                    type="button"
-                    className={css.action}
-                    title={t('action.openIDE')}
-                    aria-label={t('action.openIDE')}
-                    onClick={chrome.openIDE}
-                  >
-                    <IconCodeOutlineMedium size={14} />
-                  </button>
-                  <Menu
-                    open={ideOpen}
-                    align="end"
-                    anchor={(
-                      <button
-                        type="button"
-                        className={css.action}
-                        title={t('action.chooseIDE')}
-                        aria-label={t('action.chooseIDE')}
-                        aria-expanded={ideOpen}
-                        onClick={() => { setIdeOpen(value => !value) }}
-                      >
-                        <IconChevronDownOutlineMedium />
-                      </button>
-                    )}
-                    items={ideChoices.map(choice => ({ id: choice.id, label: choice.label }))}
-                    onSelect={(id) => { setIdeOpen(false); chrome.onIdeChoice?.(id) }}
-                    onClose={() => { setIdeOpen(false) }}
-                  />
-                </span>
-              )
-              : chrome?.openIDE !== undefined && (
-                <button
-                  type="button"
-                  className={css.action}
-                  title={t('action.openIDE')}
-                  aria-label={t('action.openIDE')}
-                  onClick={chrome.openIDE}
-                >
-                  <IconCodeOutlineMedium size={14} />
-                </button>
-              )}
-          </span>
-        </div>
-        <div className={css.pathRow}>
-          <div className={css.pathLine} title={displayPath ?? path}>{displayPath ?? dirname}</div>
-          <span className={css.viewControls}>
-            {showDiffToggle && (
-              <span className={css.toggle}>
-                <button
-                  type="button"
-                  className={`${css.viewButton} ${diffActive ? css.viewActive : ''}`}
-                  onClick={() => { onViewChange('diff') }}
-                >
-                  {t('detail.diff')}
-                </button>
-                <button
-                  type="button"
-                  className={`${css.viewButton} ${!diffActive ? css.viewActive : ''}`}
-                  onClick={() => { onViewChange('content') }}
-                >
-                  {t('detail.content')}
-                </button>
-              </span>
-            )}
-            {!diffActive && content !== null && !html && (isMarkdown(path) || hasStructuredPreview(path)) && (
-              <span className={css.seg}>
-                <button
-                  type="button"
-                  className={`${css.segButton} ${!sourceMode ? css.segActive : ''}`}
-                  onClick={() => { setSourceMode(false) }}
-                >
-                  {t('detail.preview')}
-                </button>
-                <button
-                  type="button"
-                  className={`${css.segButton} ${sourceMode ? css.segActive : ''}`}
-                  onClick={() => { setSourceMode(true) }}
-                >
-                  {t('detail.source')}
-                </button>
-              </span>
-            )}
-            {!diffActive && html && content !== null && (
-              <div className={css.htmlToggle} role="group" aria-label={t('preview.htmlToggle')}>
-                <button
-                  type="button"
-                  className={htmlMode === 'source' ? `${css.htmlToggleBtn} ${css.htmlToggleActive}` : css.htmlToggleBtn}
-                  onClick={() => { setHtmlMode('source') }}
-                >
-                  {t('preview.htmlSource')}
-                </button>
-                <button
-                  type="button"
-                  className={htmlMode === 'render' ? `${css.htmlToggleBtn} ${css.htmlToggleActive}` : css.htmlToggleBtn}
-                  onClick={() => { setHtmlMode('render'); setScriptConfirm(false) }}
-                >
-                  {t('preview.htmlRender')}
-                </button>
-                {htmlScripted && (
-                  <button
-                    type="button"
-                    className={htmlMode === 'script' ? `${css.htmlToggleBtn} ${css.htmlToggleActive}` : css.htmlToggleBtn}
-                    onClick={() => {
-                      if (htmlMode === 'script') { setHtmlMode('render'); setScriptConfirm(false) }
-                      else setScriptConfirm(true)
-                    }}
-                  >
-                    {t(htmlMode === 'script' ? 'preview.htmlScriptStop' : 'preview.htmlScript')}
-                  </button>
-                )}
-                {(htmlMode === 'render' || htmlMode === 'script') && (
-                  <button
-                    type="button"
-                    className={css.htmlToggleBtn}
-                    aria-label={fullscreen ? t('preview.exitFullscreen') : t('preview.fullscreen')}
-                    onClick={() => {
-                      const frame = htmlFrameRef.current
-                      if (frame === null) return
-                      if (document.fullscreenElement != null) { void document.exitFullscreen?.() }
-                      else if (typeof frame.requestFullscreen === 'function') { void frame.requestFullscreen() }
-                    }}
-                  >
-                    <IconCodeOutlineMedium size={14} />
-                  </button>
-                )}
-              </div>
-            )}
-          </span>
-        </div>
       </div>
-      {!diffActive && content !== null && (
+      {searchVisible && (
         <div className={css.contentSearch}>
           <input
             type="search"
             className={css.contentSearchInput}
             placeholder={t('search.placeholder')}
             value={contentQuery}
+            autoFocus={compact}
             onChange={(event) => {
               setContentQuery(event.target.value)
               setActiveMatch(0)
+            }}
+            onKeyDown={(event) => {
+              if (event.key !== 'Escape' || !compact) return
+              if (contentQuery === '') setSearchOpen(false)
+              else { setContentQuery(''); setActiveMatch(0) }
             }}
             aria-label={t('search.placeholder')}
           />

@@ -152,6 +152,10 @@ export interface FileTreeProps {
   /** When true, the header's expand/collapse-all is an icon button (the
    * local-files browser header, which keeps the title short). */
   iconActions?: boolean
+  /** Drop the header strip (title + actions): the caller's own panel header
+   * already carries them (the compact local-files browser). The search row
+   * still opens below, driven by `searchOpen`. */
+  headerless?: boolean
   /** Search chrome: when onToggleSearch is given the header shows a search
    * toggle and, while open, an input row below the header. The parent owns the
    * query, runs the search, and hands the hits back through `groups` — in
@@ -185,7 +189,7 @@ function FileGlyph(): ReactNode {
 
 /** The show-hidden eye toggle: an open (filled) eye when hidden files are
  * shown; a closed lid with downward lashes when hidden files are hidden. */
-function EyeGlyph({ open }: { open: boolean }): ReactNode {
+export function EyeGlyph({ open }: { open: boolean }): ReactNode {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
       {open ? (
@@ -224,7 +228,7 @@ export function relativeTime(seconds: number, now = Date.now()): string {
 }
 
 /** The file tree. */
-export function FileTree({ groups, selectedPath, onSelect, treeTitle, collapsed, onToggleCollapse, loadChildren, rootPath = '', showHidden = false, onToggleHidden, iconActions = false, searchOpen = false, onToggleSearch, searchQuery = '', onSearchQuery, searching = false, searchTruncated = false, t }: FileTreeProps): ReactNode {
+export function FileTree({ groups, selectedPath, onSelect, treeTitle, collapsed, onToggleCollapse, loadChildren, rootPath = '', showHidden = false, onToggleHidden, iconActions = false, headerless = false, searchOpen = false, onToggleSearch, searchQuery = '', onSearchQuery, searching = false, searchTruncated = false, t }: FileTreeProps): ReactNode {
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set())
   // Lazy sub-directory children, keyed by the directory's resolved path.
   const [lazy, setLazy] = useState<Record<string, readonly FileTreeItem[]>>({})
@@ -427,7 +431,7 @@ export function FileTree({ groups, selectedPath, onSelect, treeTitle, collapsed,
 
   return (
     <div className={css.tree}>
-      <div className={css.treeHeader}>
+      {!headerless && <div className={css.treeHeader}>
         <span className={css.treeTitle}>{treeTitle ?? t('tree.changedFilesTitle')}</span>
         <span className={css.treeActions}>
           {onToggleSearch !== undefined && (
@@ -486,7 +490,7 @@ export function FileTree({ groups, selectedPath, onSelect, treeTitle, collapsed,
             </button>
           )}
         </span>
-      </div>
+      </div>}
       {searchOpen && (
         <div className={css.searchRow}>
           <input

@@ -164,7 +164,7 @@
   border-radius: 7px;
   background: transparent;
   color: var(--dsw-alias-label-secondary);
-  font-size: 13px;
+  font-size: var(--dsh-panel-text-body, 13px);
   text-align: left;
   cursor: pointer;
 }
@@ -200,6 +200,8 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-weight: 400;
+  /* Names are the content: the primary tone, like the folder names (spec §1). */
+  color: var(--dsw-alias-label-primary);
 }
 
 /* File rows shift toward the primary tone on hover/selection. */
@@ -269,4 +271,17 @@
   padding: 16px 12px;
   color: var(--dsw-alias-label-tertiary);
   font-size: 13px;
+}
+
+/* Compact list (panel-responsive-spec P1): the spec's 16px gutter and the
+   selection on the accent tint instead of the neutral fill. */
+@container dsh-panel (max-width: 560px) {
+  .tree { padding: 4px 8px; }
+  .selected,
+  .selected:hover { background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 10%, transparent); }
+}
+
+/* Touch rows: a 44px target (spec §3), on any width. */
+@media (pointer: coarse) {
+  .row { height: 44px; }
 }
