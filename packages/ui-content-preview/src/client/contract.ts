@@ -47,7 +47,7 @@ export type PreviewRead =
 export type PreviewKey =
   | 'action.copyPath'
   | 'action.copied'
-  | 'action.openFolder'
+  | 'action.showInFolder'
   | 'action.openIDE'
   | 'action.chooseIDE'
   | 'action.reload'
@@ -88,7 +88,7 @@ export type PreviewKey =
 export const PREVIEW_KEYS: readonly PreviewKey[] = [
   'action.copyPath',
   'action.copied',
-  'action.openFolder',
+  'action.showInFolder',
   'action.openIDE',
   'action.chooseIDE',
   'action.reload',

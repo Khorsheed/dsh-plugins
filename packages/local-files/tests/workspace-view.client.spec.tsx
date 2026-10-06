@@ -341,6 +341,23 @@ describe('WorkspaceView compact header (panel-responsive-spec P1)', () => {
     expect(crumbsOf('', true)).toEqual([])
   })
 
+  it('off-host, drops the host-only gestures and keeps search, refresh and hidden files inline with no ⋯', async () => {
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ width: 390 } as DOMRect)
+    vi.stubGlobal('location', { hostname: 'bridge-spider.trycloudflare.com', origin: 'https://bridge-spider.trycloudflare.com' })
+    try {
+      const { props } = makeProps({ byId: { [SESSION]: { cwd: WORKSPACE } } })
+      props.useOpenInApps = ((sel: (s: readonly string[] | null) => unknown) => sel(['finder'])) as never
+      props.listDirectory = vi.fn().mockResolvedValue({ ok: true, value: { entries: [{ name: 'a.md', isDir: false }] } })
+      render(<WorkspaceView {...props} />)
+      await act(async () => {})
+      expect(screen.getByRole('button', { name: 'tree.search' })).toBeTruthy()
+      expect(screen.getByRole('button', { name: 'local.refreshFiles' })).toBeTruthy()
+      expect(screen.getByRole('button', { name: 'local.showHiddenFiles' })).toBeTruthy()
+      expect(screen.queryByRole('button', { name: 'local.chooseWorkspace' })).toBeNull()
+      expect(screen.queryByRole('button', { name: 'action.more' })).toBeNull()
+    } finally { vi.unstubAllGlobals() }
+  })
+
   it('merges the breadcrumb and tree headers into one row, and gives it up while a file is open', async () => {
     vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ width: 390 } as DOMRect)
     const { props, instance } = makeProps({ byId: { [SESSION]: { cwd: WORKSPACE } } })

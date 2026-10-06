@@ -15,6 +15,7 @@
  */
 
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
+import { browserOnHost } from '@khorsheed/dsh-client-ui-content-preview/src/client/index.ts'
 
 /** GET route serving the probed application ids (official shared.ts). */
 export const OPEN_IN_APP_APPS_ROUTE = '/open-in-app/apps'
@@ -158,6 +159,9 @@ export class OpenInAppProbe {
 
   private async run(): Promise<void> {
     let apps: readonly string[] = []
+    // Off-host the gestures would launch on a machine the viewer is not at
+    // (see browserOnHost): publish "no apps", the existing hidden degrade.
+    if (!browserOnHost()) { this.apps.set(apps); return }
     try {
       const response = await this.fetcher(new URL(OPEN_IN_APP_APPS_ROUTE, hostBase()), {
         headers: { accept: 'application/json' },

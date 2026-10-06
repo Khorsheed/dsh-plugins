@@ -16,7 +16,7 @@
 - **仓库提交记录档**——本检出的提交历史（`git log HEAD`，最近 200 条：短 sha + subject + 相对时间 + 分支/tag 装饰），分支并入 base 后依然有用；选中提交内联展开其提交文件树（带真实增删行数与提交正文），点文件看该提交的 diff 与当时内容。
 - **仓库文件档**——`git ls-files` 的全量跟踪文件树，点文件看内容；图片直接内联预览。
 - **详情面板「重新加载」手势**——重读当前文件的当前视图（diff 走 diff Remote，内容/图片走 read Remote）；重读期间旧内容保持显示、按钮禁用并旋转，失败保留旧内容并报进既有错误槽。钉死在某一提交的文件内容不可变，不提供此手势。
-- **git 动作行**——刷新 / 复制分支名 / 在文件夹中显示（每页一次的官方 open-in-app 探测确认宿主有文件管理器时才显示）。
+- **git 动作行**——刷新 / 复制分支名 / 打开此文件夹（每页一次的官方 open-in-app 探测确认宿主有文件管理器、且页面在宿主本机打开时才显示）。
 - **「切换到此工作树」指引**——切换器指向别的 worktree 后，可一键向会话追加一条不唤醒 agent 的上下文通知（生产者归属 kind `worktrees`），agent 在下一个自然轮次就知道用新 workdir 干活——零额外模型调用。
 - **按 preset 自隐**——徽标与右栏 tab 类型默认读官方 `pluginInventory` 组合判据：当前会话的 preset 组合授予了本包的 `@khorsheed/dsh-worktrees/tool` 工具行才显示；组合数据读不到一律保持显示（fail-open）。tab 类型是注册级自隐（guide 枚举注册表，隐藏即注销；已打开的 tab 按会话存储，未授予会话的布局里本就没有它）。
 - 树默认只展开第一层，随时「展开全部 / 收起全部」；所有文件列表一次拿全（客户端 trie），仅单文件 diff 按需拉取。文件预览与「文件列表」插件共用同一个内容面板 `@khorsheed/dsh-client-ui-content-preview`。
@@ -79,7 +79,7 @@ preset 组合里引用 `@khorsheed/dsh-worktrees/tool` 的会话获得模型可�
 
 **架构。** Host 半部分是服务核心 `WorktreesService`（`ctx.provide('worktrees')`）加 `WorktreesRemoteService` Typert Remote（cordis key `worktreesRemote`，wire 命名空间 `worktrees`，浏览器调 `remote.worktrees.*`）。服务无状态——worktree 注册表就是 `git worktree list` 本身；Remote 是薄适配层，从调用方 agent 解析会话工作目录（会话的 active-worktree override 优先，回落 `header.cwd`）后委托给服务核心，零逻辑复制。所有 git 命令都在解析出的仓库 toplevel 内执行，客户端给的路径一律先过 `assertSafePath`（拒绝绝对路径与 `..`）再参与 diff/读取——表面永远逃不出会话仓库。Remote 另带一组 git 无关的本地文件方法（`listLocalDirectory` / `readLocalFile` / `readLocalImage`）：绝对路径、同样过校验、不绑定会话，任何会话或全局框架都可调用。
 
-**客户端。** 经官方 `ctx.remote.$mount` 自挂载生成的 Remote contribution，无需改动任何核心包；组合里去掉本插件即移除它添加的所有表面。徽标注册进 `conversation.session.header.utilities`（order -20，最左）；右栏 tab 走官方两段式注册——类型进 `ctx.sidebarRightTabs`（套注册级显隐开关），body 进 keyed `sidebar.right.pane.tab` 槽位。「在文件夹中显示」用 ui-content-preview 的 `OpenInAppProbe`（apply 时每页一次探测，结果经 snapshot store 供各表面订阅）；预览内核同样是 ui-content-preview 的 `ContentPane`。host→client 失效通知借用官方 `api/remotes` 白名单转发的两个事件（`api-session/status` 轮次边界、`api-session/activity` 用户消息）；`$on` 能力是探测出来的，老宿主没有它时徽标靠其余触发器照常工作。
+**客户端。** 经官方 `ctx.remote.$mount` 自挂载生成的 Remote contribution，无需改动任何核心包；组合里去掉本插件即移除它添加的所有表面。徽标注册进 `conversation.session.header.utilities`（order -20，最左）；右栏 tab 走官方两段式注册——类型进 `ctx.sidebarRightTabs`（套注册级显隐开关），body 进 keyed `sidebar.right.pane.tab` 槽位。「打开此文件夹」用 ui-content-preview 的 `OpenInAppProbe`（apply 时每页一次探测，结果经 snapshot store 供各表面订阅）；预览内核同样是 ui-content-preview 的 `ContentPane`。host→client 失效通知借用官方 `api/remotes` 白名单转发的两个事件（`api-session/status` 轮次边界、`api-session/activity` 用户消息）；`$on` 能力是探测出来的，老宿主没有它时徽标靠其余触发器照常工作。
 
 **指引 agent。** `directAgent` 把一条 durable `user/message`（`surfaceOp: 'append'`）追加进会话而不唤醒它：生产者归属 source kind `worktrees`、`form: 'notice'` 一行形态，transcript 立即渲染为上下文注入行，并在下一个模型边界折进上下文。读侧 `isWorktreesSource` 三种形态都认：新 kind、V3→V4 迁移形态 `plugin:@khorsheed/dsh-worktrees`、以及 0.1.5 宿主原位提供的 V3 包装（`kind: 'plugin'` + `plugin` 字段）。
 

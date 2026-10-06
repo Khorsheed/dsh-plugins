@@ -10,7 +10,9 @@
  * stays visible (it still counts against the limit, so pin sparingly); a
  * `menuOnly` action never takes an inline slot (an informational row such as
  * the full path, or a rarely used gesture). When everything fits, there is no
- * ⋯ at all: a menu holding one row is a detour.
+ * ⋯ at all — and a ⋯ that would hold exactly one ordinary action is skipped
+ * too, that action taking the trigger's own slot: a menu holding one row is a
+ * detour costing the same width as the icon itself.
  *
  * @module @khorsheed/dsh-client-ui-panel-kit/client
  */
@@ -54,7 +56,9 @@ export interface PanelAction {
  * Split actions into inline and overflow. `menuOnly` actions always overflow.
  * Of the rest, pinned actions go first, then the others in their given order;
  * everything fits when the count is within the limit, otherwise the first
- * `limit` stay inline.
+ * `limit` stay inline. A lone overflowing ordinary action (no `menuOnly`
+ * rows, inline still within the limit) is shown inline instead: it takes the
+ * slot the ⋯ trigger would have taken.
  * @param actions - priority-ordered actions.
  * @param limit - inline icon budget.
  * @returns the inline and overflow lists, each in display order.
@@ -65,6 +69,7 @@ export function splitActions(actions: readonly PanelAction[], limit: number): { 
   if (candidates.length <= limit && menuOnly.length === 0) return { inline: [...actions], overflow: [] }
   const ordered = [...candidates.filter(a => a.pinned), ...candidates.filter(a => !a.pinned)]
   const keep = new Set(ordered.slice(0, Math.max(limit, candidates.filter(a => a.pinned).length)))
+  if (menuOnly.length === 0 && keep.size <= limit && candidates.length === keep.size + 1) return { inline: [...actions], overflow: [] }
   return { inline: candidates.filter(a => keep.has(a)), overflow: actions.filter(a => !keep.has(a)) }
 }
 

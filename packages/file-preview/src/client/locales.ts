@@ -69,7 +69,7 @@ export type FilePreviewKey =
   | 'action.copy'
   | 'action.copied'
   | 'action.copyPath'
-  | 'action.openFolder'
+  | 'action.showInFolder'
   | 'action.openIDE'
   | 'action.reload'
   | 'action.more'
@@ -166,7 +166,7 @@ export const zh: Record<FilePreviewKey, string> = {
   'action.copy': '复制',
   'action.copied': '已复制',
   'action.copyPath': '复制路径',
-  'action.openFolder': '打开目录',
+  'action.showInFolder': '打开所在文件夹',
   'action.openIDE': '在 IDE 中打开',
   'action.reload': '重新加载',
   'action.more': '更多',
@@ -257,7 +257,7 @@ export const en: Record<FilePreviewKey, string> = {
   'action.copy': 'Copy',
   'action.copied': 'Copied',
   'action.copyPath': 'Copy path',
-  'action.openFolder': 'Open folder',
+  'action.showInFolder': 'Show in folder',
   'action.openIDE': 'Open in IDE',
   'action.reload': 'Reload',
   'action.more': 'More',
