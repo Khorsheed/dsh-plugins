@@ -112,7 +112,13 @@
   border-bottom: 0;
 }
 
+/* T101 · the title takes its whole width first (`flex-basis: auto`), so on a
+   narrow pane the two buttons wrap under it instead of squeezing it into
+   three lines; `keep-all` lets it break only at its spaces, never mid-word. */
 .bindingBar[data-page='list'] .bindingNone {
+  flex: 1 0 auto;
+  max-width: 100%;
+  word-break: keep-all;
   color: var(--dsw-alias-label-primary);
   font-size: 16px;
   font-weight: 600;
@@ -517,16 +523,62 @@
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
-/* A narrow pane (phone width) cannot hold the set row's five columns: each
-   row becomes a wrapping block — the set on its own line, the facts after.
-   The header goes (its words would label nothing), so the item count takes
-   its column name inline. */
+/* «版本 N · 日期» stays one line: a date broken at its hyphen reads as two facts. */
+.latestCell {
+  white-space: nowrap;
+}
+
+/* T101 · 「尚未用于任何实验」 is one short fact: the column widens to hold it
+   on one line (the auto table layout takes the room from the name column).
+   Experiment names, when there are some, still wrap. */
+.usageNone {
+  white-space: nowrap;
+}
+
+/* T101 · a pane narrower than the reading column (a sidebar-width split) lets
+   «最新版本» go first: the version is one click away on the detail page, while
+   the name, the count, what the agent reads, the usage and 「操作」 stay. */
+@container (max-width: 720px) {
+  .table .latestCell {
+    display: none;
+  }
+}
+
+/* A narrow pane (phone width) cannot hold the set row's columns: each
+   row becomes a wrapping block — the set on its own line, the facts after,
+   the row's actions last. The header goes (its words would label nothing),
+   so the item count takes its column name inline. */
 @container (max-width: 560px) {
   .table,
-  .table tbody,
-  .repoRow,
-  .repoRow > td {
+  .table tbody {
     display: block;
+  }
+
+  /* A several-set repository's heading keeps its actions on its own line's
+     right, as the wide table does. */
+  .repoRow {
+    display: flex;
+    align-items: center;
+    border-bottom: 1px solid var(--dsw-alias-border-l2);
+  }
+
+  /* One rule under the whole heading line, not one per cell at two heights. */
+  .table .repoRow > td {
+    padding-top: 8px;
+    padding-bottom: 4px;
+    border-bottom: none;
+  }
+
+  .table .repoCell {
+    flex: 1;
+    min-width: 0;
+  }
+
+  /* The wide table's `width: 1%` would become this cell's flex basis and
+     squeeze the buttons out of the row. */
+  .table .repoRow > .actionsCell {
+    flex: none;
+    width: auto;
   }
 
   .table thead {
@@ -555,8 +607,18 @@
   }
 
   .tableRow > td:first-child,
-  .tableRow > td:last-child {
+  .tableRow > .usageCell,
+  .tableRow > .actionsCell {
     flex-basis: 100%;
+  }
+
+  /* A set row's 「操作」 is empty (the actions are the registration's). */
+  .tableRow > .actionsCell:empty {
+    display: none;
+  }
+
+  .tableRow > .actionsCell {
+    text-align: left;
   }
 
   .table .setCell {
@@ -717,10 +779,66 @@
   font-weight: 600;
 }
 
-.repoActions {
+/* T101 · 「操作」: the last column, right-aligned, as wide as its contents —
+   one word button and a ⋯, so its width does not move between rows. */
+.table .actionsHead {
+  text-align: right;
+}
+
+.table .actionsCell {
+  width: 1%;
+  white-space: nowrap;
+  text-align: right;
+}
+
+/* On a group row the cell sits on the heading's line, not on the rule. */
+.repoRow > .actionsCell {
+  padding: 16px 10px 0;
+}
+
+.repoGroup:first-of-type .repoRow > .actionsCell {
+  padding-top: 8px;
+}
+
+.rowActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.moreTrigger {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.moreTrigger:hover,
+.moreTrigger[aria-expanded='true'] {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.moreTrigger:focus-visible {
+  outline: 2px solid var(--dsw-alias-border-focus, var(--dsw-alias-label-primary));
+  outline-offset: 1px;
+}
+
+/* A one-set repository's row: the repository's name (which opens the set)
+   and any 「新版本待确认」 chip on one line, no indent. */
+.nameLine {
   display: flex;
-  gap: 6px;
-  margin-left: auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 8px;
 }
 
 .repoProblem {

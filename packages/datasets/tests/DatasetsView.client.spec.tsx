@@ -399,10 +399,19 @@ async function openRegisterForm(): Promise<void> {
   fireEvent.click(await screen.findByText('add.advanced'))
 }
 
+/**
+ * T101 · pick one of a registration's 「操作」 rows behind its ⋯ — 「编辑登记」
+ * and 「删除」 sit in the host's Menu, not on the row.
+ */
+async function pickRowAction(label: string, repo = 'dataseek-eval'): Promise<void> {
+  fireEvent.click(await screen.findByRole('button', { name: `registry.more {"id":"${repo}"}` }))
+  fireEvent.click(await screen.findByRole('menuitem', { name: label }))
+}
+
 /** Open the detail page of the only set, and its only item. */
 async function openItem(h: Harness): Promise<void> {
   renderView(h)
-  fireEvent.click(await screen.findByText('bench'))
+  fireEvent.click(await screen.findByTitle('dataseek-eval/bench'))
   fireEvent.click(await screen.findByText('R1'))
 }
 
@@ -574,7 +583,7 @@ describe('the list page', () => {
       { id: 'r3', name: 'other', status: 'done', datasetId: 'bench', experimentId: 'e2', registry: 'another', commit: TIP },
     ])
     renderView(h)
-    fireEvent.click(await screen.findByText('registry.remove'))
+    await pickRowAction('registry.remove')
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getByText('remove.titleDelete {"id":"dataseek-eval"}')).toBeTruthy()
     expect(await within(dialog).findByText(DELETE_PLAN.path)).toBeTruthy()
@@ -598,7 +607,7 @@ describe('the list page', () => {
   it('「只移除登记」 in the same dialog keeps the files', async () => {
     const h = makeHarness()
     renderView(h)
-    fireEvent.click(await screen.findByText('registry.remove'))
+    await pickRowAction('registry.remove')
     const dialog = await screen.findByRole('dialog')
     fireEvent.click(await within(dialog).findByRole('button', { name: 'remove.unregisterOnly' }))
     await waitFor(() => { expect(h.unregister).toHaveBeenCalledWith('s1', 'dataseek-eval') })
@@ -611,7 +620,7 @@ describe('the list page', () => {
       ok: true, value: { id: 'dataseek-eval', path: '/work/dataseek-eval', files: 'keep', keepReason: 'outside-home', state: [], sets: ['bench'] },
     })
     renderView(h)
-    fireEvent.click(await screen.findByText('registry.remove'))
+    await pickRowAction('registry.remove')
     const dialog = await screen.findByRole('dialog')
     expect(await within(dialog).findByText('remove.keep.outside-home')).toBeTruthy()
     expect(within(dialog).getByText('remove.titleUnregister {"id":"dataseek-eval"}')).toBeTruthy()
@@ -627,11 +636,142 @@ describe('the list page', () => {
     const h = makeHarness()
     h.deleteRegistration.mockResolvedValue({ ok: false, error: { code: 'NOT_REMOVABLE', message: 'cannot be deleted from disk' } })
     renderView(h)
-    fireEvent.click(await screen.findByText('registry.remove'))
+    await pickRowAction('registry.remove')
     const dialog = await screen.findByRole('dialog')
     fireEvent.click(await within(dialog).findByRole('button', { name: 'remove.delete' }))
     expect(await within(dialog).findByText('cannot be deleted from disk')).toBeTruthy()
     expect(h.instance.getSnapshot().refreshRev).toBe(0)
+  })
+})
+
+describe('one row per one-set repository, every action in 「操作」 (T101)', () => {
+  const MULTI: RegistryEntry = {
+    ...ENTRY,
+    id: 'multi',
+    commonDir: '/work/multi/.git',
+    authoringCheckout: '/work/multi',
+    sets: { alpha: { layers: ['visible'] }, beta: { layers: ['visible'] } },
+  }
+
+  /** A registration with two sets: one whose name only recases its id, one that says more. */
+  function multiRow(): RegistryRow {
+    const set = (id: string, title: string) => ({
+      ref: `multi/${id}`, set: id, title, layers: ['visible'],
+      declaredLayers: ['visible'], nonModelFacingLayers: [],
+    })
+    return { entry: MULTI, latest: { commit: TIP, date: '2026-09-21T10:00:00+08:00' }, sets: [set('alpha', 'ALPHA'), set('beta', 'Beta tasks')] }
+  }
+
+  /** The body rows of one registration, found by its name. */
+  function groupOf(name: string): HTMLElement {
+    const body = screen.getAllByRole('rowgroup').find(group => group.tagName === 'TBODY' && within(group).queryAllByText(name).length > 0)
+    if (body === undefined) throw new Error(`no group for ${name}`)
+    return body
+  }
+
+  it('a one-set repository is ONE row: its name opens the set, the set id and display name ride quietly under it', async () => {
+    const h = makeHarness()
+    renderView(h)
+    expect(await screen.findByRole('columnheader', { name: 'registry.colActions' })).toBeTruthy()
+    const group = groupOf('dataseek-eval')
+    const rows = within(group).getAllByRole('row')
+    expect(rows).toHaveLength(1)
+    const row = rows[0]!
+    // The name, the facts and the actions share the one row.
+    expect(within(row).getByRole('button', { name: 'dataseek-eval' })).toBeTruthy()
+    expect(within(row).getByText('bench')).toBeTruthy()
+    expect(within(row).getByText('Bench set')).toBeTruthy()
+    expect(within(row).getByText('layers.faceOnly')).toBeTruthy()
+    expect(within(row).getByRole('button', { name: 'registry.askAgent' })).toBeTruthy()
+    expect(within(row).getByRole('button', { name: 'registry.more {"id":"dataseek-eval"}' })).toBeTruthy()
+    // 「编辑登记」 and 「删除」 are behind the ⋯, not on the row.
+    expect(screen.queryByText('registry.edit')).toBeNull()
+    expect(screen.queryByText('registry.remove')).toBeNull()
+    // Once the narrow fold drops the header, the count reads 「12 题」: the
+    // cell carries the unit, not the column name 「题数」.
+    expect(row.querySelector('td[data-label]')?.getAttribute('data-label')).toBe('registry.itemsUnit')
+    expect(screen.getByRole('columnheader', { name: 'registry.colItems' })).toBeTruthy()
+    // The 「操作」 cell is the row's last.
+    expect(row.lastElementChild?.contains(within(row).getByRole('button', { name: 'registry.askAgent' }))).toBe(true)
+    fireEvent.click(within(row).getByRole('button', { name: 'dataseek-eval' }))
+    expect(await screen.findByText('dataseek-eval/bench · i1-walk@a4f9c2e')).toBeTruthy()
+  })
+
+  it('a set named like its repository, with a display name that only recases it, adds no quiet line', async () => {
+    const entry: RegistryEntry = { ...ENTRY, id: 'gsm8k', commonDir: '/work/gsm8k/.git', sets: { gsm8k: { layers: ['visible'] } } }
+    const row: RegistryRow = {
+      entry,
+      latest: { commit: TIP, date: '2026-09-21T10:00:00+08:00' },
+      sets: [{ ref: 'gsm8k/gsm8k', set: 'gsm8k', title: 'GSM8K', layers: ['visible'], declaredLayers: ['visible'], nonModelFacingLayers: [] }],
+    }
+    renderView(makeHarness([row]))
+    const button = await screen.findByRole('button', { name: 'gsm8k' })
+    const cell = button.closest('td')!
+    expect(cell.textContent).toBe('gsm8k')
+    expect(screen.queryByText('GSM8K')).toBeNull()
+  })
+
+  it('a several-set repository keeps its group row with the actions; its set rows leave 「操作」 empty', async () => {
+    const h = makeHarness([rowOf(), multiRow()])
+    h.datasetExperiments.mockResolvedValue([])
+    renderView(h)
+    expect(await screen.findByText('alpha')).toBeTruthy()
+    const group = groupOf('multi')
+    const rows = within(group).getAllByRole('row')
+    expect(rows).toHaveLength(3)
+    const [head, alpha, beta] = rows as [HTMLElement, HTMLElement, HTMLElement]
+    expect(within(head).getByText('multi')).toBeTruthy()
+    expect(within(head).getByRole('button', { name: 'registry.askAgent' })).toBeTruthy()
+    expect(within(head).getByRole('button', { name: 'registry.more {"id":"multi"}' })).toBeTruthy()
+    // Every row has the same number of cells as the header, the heading spanning the data columns.
+    const columns = screen.getAllByRole('columnheader').length
+    expect(columns).toBe(6)
+    for (const row of [alpha, beta]) {
+      expect(row.children).toHaveLength(columns)
+      expect(row.lastElementChild?.textContent).toBe('')
+      expect(within(row).queryByRole('button', { name: /registry\.(askAgent|more)/ })).toBeNull()
+    }
+    // The heading spans every data column but 「最新版本」, which keeps a cell of
+    // its own so hiding that column at ≤720px leaves no ghost column behind.
+    expect(head.firstElementChild?.getAttribute('colspan')).toBe(String(columns - 2))
+    const latestCells = Number(head.firstElementChild?.getAttribute('colspan')) + head.children.length - 1
+    expect(latestCells).toBe(columns)
+    // 「ALPHA」 only recases 「alpha」: no grey repeat. 「Beta tasks」 says more.
+    expect(within(alpha).queryByText('ALPHA')).toBeNull()
+    expect(within(beta).getByText('Beta tasks')).toBeTruthy()
+  })
+
+  it('the ⋯ rows map one-to-one onto the old callbacks, for the registration they sit on', async () => {
+    const h = makeHarness([rowOf(), multiRow()])
+    h.previewRepo.mockResolvedValue({ ok: true, value: { ...PREVIEW, commonDir: MULTI.commonDir, registeredAs: 'multi', defaultRef: 'i1-walk' } })
+    renderView(h)
+    fireEvent.click(await screen.findByRole('button', { name: 'registry.more {"id":"multi"}' }))
+    const items = await screen.findAllByRole('menuitem')
+    expect(items.map(item => item.textContent)).toEqual(['registry.edit', 'registry.remove'])
+    fireEvent.click(screen.getByRole('menuitem', { name: 'registry.edit' }))
+    expect(await screen.findByText(/register\.titleEdit .*"multi"/)).toBeTruthy()
+    cleanup()
+
+    const removing = makeHarness([rowOf(), multiRow()])
+    renderView(removing)
+    await pickRowAction('registry.remove', 'multi')
+    await waitFor(() => { expect(removing.deletePlan).toHaveBeenCalledWith('s1', 'multi') })
+    expect(await within(await screen.findByRole('dialog')).findByText('remove.titleDelete {"id":"multi"}')).toBeTruthy()
+    cleanup()
+
+    const asking = makeHarness([rowOf(), multiRow()])
+    renderView(asking)
+    expect(await screen.findByText('alpha')).toBeTruthy()
+    fireEvent.click(within(groupOf('multi')).getByRole('button', { name: 'registry.askAgent' }))
+    await waitFor(() => { expect(asking.startOrganizing).toHaveBeenCalledTimes(1) })
+    expect(asking.startOrganizing.mock.calls[0]![2]).toContain('organize.updateRequest {"name":"multi"}')
+  })
+
+  it('a broken registration keeps its 「操作」 so it can still be edited or deleted', async () => {
+    const broken: RegistryRow = { entry: { ...ENTRY, trackedRef: 'gone' }, sets: [], problem: 'tracked branch "gone" does not exist' }
+    renderView(makeHarness([broken]))
+    expect(await screen.findByText('registry.problem')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'registry.more {"id":"dataseek-eval"}' })).toBeTruthy()
   })
 })
 
@@ -723,7 +863,7 @@ describe('the register form', () => {
       value: { ...PREVIEW, commonDir: ENTRY.commonDir, registeredAs: 'dataseek-eval', defaultRef: 'i1-walk', sets: [PREVIEW.sets[0]!] },
     })
     renderView(h)
-    fireEvent.click(await screen.findByText('registry.edit'))
+    await pickRowAction('registry.edit')
     expect(await screen.findByText(/register\.titleEdit .*dataseek-eval/)).toBeTruthy()
     expect(await screen.findByText(/register\.preview\.ok/)).toBeTruthy()
     fireEvent.click(screen.getByText('register.save'))
@@ -1025,7 +1165,7 @@ describe('the detail page', () => {
   it('the heading names the reference, the tracked branch\'s tip and the readable layers', async () => {
     const h = makeHarness()
     renderView(h)
-    fireEvent.click(await screen.findByText('bench'))
+    fireEvent.click(await screen.findByTitle('dataseek-eval/bench'))
     expect(await screen.findByText('dataseek-eval/bench · i1-walk@a4f9c2e')).toBeTruthy()
     expect(h.overview).toHaveBeenCalledWith('s1', 'dataseek-eval')
   })
@@ -1033,7 +1173,7 @@ describe('the detail page', () => {
   it('the heading\u2019s layer word opens the same edit form', async () => {
     const h = makeHarness()
     renderView(h)
-    fireEvent.click(await screen.findByText('bench'))
+    fireEvent.click(await screen.findByTitle('dataseek-eval/bench'))
     expect(await screen.findByText('dataseek-eval/bench · i1-walk@a4f9c2e')).toBeTruthy()
     const pencil = screen.getByRole('button', { name: /layers\.editTitle/ })
     // The detail page's bar keeps it always visible.
@@ -1045,7 +1185,7 @@ describe('the detail page', () => {
   it('going back returns to the list', async () => {
     const h = makeHarness()
     renderView(h)
-    fireEvent.click(await screen.findByText('bench'))
+    fireEvent.click(await screen.findByTitle('dataseek-eval/bench'))
     expect(await screen.findByText('detail.itemsLabel')).toBeTruthy()
     fireEvent.click(screen.getByText('detail.back'))
     expect(await screen.findByText('registry.add')).toBeTruthy()
@@ -1057,7 +1197,7 @@ describe('the detail page tools', () => {
   it('validate reports what it found, error codes included', async () => {
     const h = makeHarness()
     renderView(h)
-    fireEvent.click(await screen.findByText('bench'))
+    fireEvent.click(await screen.findByTitle('dataseek-eval/bench'))
     fireEvent.click(await screen.findByText('detail.validate'))
     await waitFor(() => { expect(h.validateDataset).toHaveBeenCalledWith('s1', 'dataseek-eval', 'bench') })
     expect(await screen.findByText(/detail\.validateFound .*"errors":1/)).toBeTruthy()
