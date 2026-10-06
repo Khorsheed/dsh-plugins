@@ -65,6 +65,8 @@ describe('the story log', () => {
     ])
     expect(zhao.plot['now']).toBe('档案室门外走廊 · 刚经历二层梦脱险，心跳未平 · 妹妹的下落')
     expect(log.world.map(card => card.cardId)).toEqual([CARD.trueName, CARD.leafCarrier])
+    // Unnamed world cards read by their setting's opening clause.
+    expect(log.world.map(card => card.name)).toEqual(['监护者不能在梦里说出自己的真名', '蓝色叶子是梦主意识碎片的载体'])
     expect(log.world[0]!.plot).toEqual({ rule: '监护者不能在梦里说出自己的真名——真名是锚，说出即被梦主锁定。' })
   })
 

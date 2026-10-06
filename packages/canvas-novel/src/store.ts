@@ -139,6 +139,16 @@ function fieldText(card: NovelCardView, key: string, max = 2000): string | undef
 }
 
 /** A card's main text: its role's main field, else the card's free text. */
+/**
+ * The opening clause of a setting, standing in for the name of a world card
+ * written before names were required (「异界森林：树木……」 reads 异界森林).
+ * @param text - the setting text.
+ */
+function leadClause(text: string | undefined): string | undefined {
+  const clause = text?.split(/[：:，,。；;\n]|——/)[0]?.trim()
+  return clause === undefined || clause === '' ? undefined : clause.length > 18 ? `${clause.slice(0, 18)}…` : clause
+}
+
 function mainTextOf(card: NovelCardView, role: EntryRole): string {
   return fieldText(card, MAIN_FIELD[role]) ?? cleanText(card.text) ?? ''
 }
@@ -1380,7 +1390,7 @@ export class NovelService {
 
     const world = entries.rules.filter(view => view.role === 'world' && view.status === 'kept').map((view): StoryCard => {
       const plot = plotOf('world', cards.get(view.cardId)?.fields)
-      return { cardId: view.cardId, ref: view.ref, name: view.name ?? view.ref, plot, history: historyOf(view.cardId, 'world', plot) }
+      return { cardId: view.cardId, ref: view.ref, name: view.name ?? leadClause(plot['rule']) ?? view.ref, plot, history: historyOf(view.cardId, 'world', plot) }
     })
 
     return {

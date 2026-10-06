@@ -41,7 +41,8 @@ This batch is eleven commits on `feat/canvas-novel`.
   - A hand edit of a relation card's type or stage is not history: it appends a `set` or `type` event to the relation journal and resets progress.
 - **Story log page** (139a887c):
   - A new Remote, `storyLog`, merges the foreshadow mention journal, the plan marks of chapters not yet reconciled, the relation journal, character appearances (plan cast, POV, experiences), `history.jsonl`, and canvas edits the engine has not synced yet. That last part is read-only and never written.
-  - The page follows the prototype `proposals/prototypes/canvas-novel-ledger-timeline.html`: chapters run across, with four bands down (foreshadows, relations, characters, world); filter, sort and zoom; a draggable minimap and drag-to-pan. The side panel has two tabs, Now and Changes.
+  - After the user tried the first version, the page was rebuilt to the v3 prototype (`proposals/prototypes/canvas-novel-story-log-v3.html`, not committed): one tab per kind (foreshadows, characters, relations, world), each with its own hue, filter pills with counts, and its own sorts. The table has rows down and chapters across, with sticky row heads and the current chapter column tinted. Each cell carries one mark, the heaviest of the chapter (settled beats planned), and planned marks are hollow. The legend is folded away behind a toggle. A single side detail replaces the Now/Changes tabs. Below 860px the table and the detail show one at a time, with a crumb back. The minimap and zoom are gone.
+  - The relation wording no longer shows 积分 or 建卡: a points entry reads 加深 / 疏远 (明显 when |delta| ≥ 2), a level-up reads 「prev → stage」, a repair reads 回到「stage」, and a type change reads 转为〈type〉.
   - `LedgerPage.tsx`, the `ledger.*` strings and the ledger styles are deleted. The `ledger` Remote stays: the pending strip's counts and `novel_read ledger` still use it.
 - **Relation evaluation criteria** (1f181b6c): `packages/canvas-novel/docs/relation-criteria.md`, paired zh/en.
   - The score bands are now one constant, `RELATION_POINT_SCALE`, and the reconciliation prompt lists an anchor example for each band.
@@ -69,8 +70,9 @@ Decisions made overnight without the user, for review in the morning:
 10. **The old hand-written 关系 field on character cards is no longer read**: the text stays on the card, with no migration and no notice.
 11. **The page key moved from `novel:ledger` to `novel:story-log`**: a canvas still on the old ledger page shows the canvas fallback 「这一页属于没有安装的体裁」; going back to the board and clicking 「故事日志」 fixes it. The fallback text is misleading here, but I added no alias for the old key, to avoid leaving zombie code.
 12. **What "planned" means**: plan operations of chapters not yet reconciled (planning or writing) are drawn hollow. After reconciliation the mention journal rules; a missed plan goes to review, with no dashed cell.
-13. **World cards created before the baseline have no marks in the world band**: only changes after the snapshot are recorded.
+13. **World cards created before the baseline have no marks on the world tab**: only changes after the snapshot are recorded. The detail says so. Falling back to the card's source chapter, as characters already do, is a possible follow-up.
 14. **The prototype's 「牵涉」 chips on foreshadows (linking them to characters) are not built**: they need new data; waiting for your call.
 15. **A relation row's starting level**: when the journal's first entry is not a stage event (an old card with points first, say), the start is taken from the card's current level.
 16. **"One score per pair per chapter" lives only in the prompt**: code does not enforce it. Several scores for one pair in one chapter add up one by one, each capped at ±2.
 17. **The duplicate cards on the 3195 trial instance**: untouched, left for you to clean up.
+18. **World cards without a name read by their setting's opening clause**: the text up to the first `：，。；` or `——`, capped at 18 characters (「异界森林：树木……」 reads 异界森林). These cards were written before names were required, and they used to show their ref (w1).
