@@ -53,6 +53,8 @@ html[data-dsh-mobile] [data-slot="conversation.input.right"] { max-width: 100%; 
 [data-mobile-toolbar] small { color: var(--dsw-alias-label-tertiary, #778195); font-size: 11px; display: block; text-align: center; }
 [data-mobile-toolbar] svg { display: block; }
 [data-mobile-shade] { position: absolute; inset: var(--mobile-bar) 0 0 min(88vw, 360px); border: 0; background: #15244330; pointer-events: auto; }
+/* The overlay layer rises above an open panel; the drawer's shade must not. */
+html[data-mobile-panel-open] [data-mobile-shade] { display: none; }
 [data-mobile-dialog] {
   color: var(--dsw-alias-label-primary, #152443); background: var(--dsw-alias-bg-base, white);
   border: 1px solid var(--dsw-alias-border-l3, #e6eaf2); border-radius: 28px;
