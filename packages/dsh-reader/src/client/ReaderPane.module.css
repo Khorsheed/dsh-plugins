@@ -622,6 +622,14 @@
      gutters here were what made the body look shifted right of its own title. */
   padding: 0 var(--reader-gutter) 22px;
   overflow-y: auto;
+  /* The body only ever scrolls down. A wide element (an arXiv equation table,
+     a fixed-size figure) scrolls inside its own box — the rules on `.article`
+     below keep every one of them within the column — and this line is the
+     backstop: anything that still pokes out is clipped instead of turning the
+     whole page into a sideways pan whose left edge cuts the text (the phone
+     report of 2026-10-06, a 3SUM/APSP arXiv paper: the body measured 767px wide
+     in a 388px column). */
+  overflow-x: hidden;
 }
 
 .kicker {
@@ -727,6 +735,34 @@
   margin: 0 0 12px;
 }
 
+/* A bare URL or an unbroken identifier wraps instead of widening the column.
+   Not table cells: a table scrolls inside its own box, and `anywhere` there
+   would let a narrow cell (an equation number) break letter by letter. */
+.article :is(p, li, blockquote, figcaption) {
+  overflow-wrap: anywhere;
+}
+
+/* Boxes a source page sized for its own width (arXiv's `<div style="width:
+   345pt; height: 340.7pt">` around a drawing; embeds): capped to the column,
+   and the fixed height released so a scaled-down drawing leaves no gap. */
+.article :is(div, figure, iframe, video, canvas, object, embed)[style*="width"] {
+  max-width: 100%;
+  height: auto !important;
+}
+
+.article :is(figure, iframe, video, canvas, object, embed) {
+  max-width: 100%;
+}
+
+.article figure {
+  margin: 0 0 12px;
+  overflow-x: auto;
+}
+
+.article video {
+  height: auto;
+}
+
 .article h1,
 .article h2 {
   margin: 24px 0 9px;
@@ -822,7 +858,13 @@
 }
 
 .article table {
-  width: 100%;
+  /* A table is a block that scrolls sideways on its own (arXiv sets every
+     numbered equation as a table, often wider than a phone column); a narrow
+     table sizes to its content. */
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  overflow-x: auto;
   margin: 0 0 12px;
   border-collapse: collapse;
   font-size: 12.5px;
@@ -841,6 +883,12 @@
    contract `pre` already keeps. */
 .article math {
   font-size: 1.02em;
+  /* A long inline formula is an atomic box: it scrolls inside itself rather
+     than pushing the paragraph past the column. */
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  vertical-align: middle;
 }
 
 /* `display: block` alone turns <math> into a plain CSS box and its MathML
@@ -1134,13 +1182,20 @@
 /* Transparent overlay (the wall stays readable behind it) + centered card.
    Same idiom as the members tab's invite dialog: Esc and overlay-click close,
    hierarchy comes from weight and spacing, and the card carries the
-   separation because the overlay does not dim. */
+   separation because the overlay does not dim.
+   The overlay covers the PANE (`.root` is its positioned box), not the
+   window: a fixed overlay measured the viewport while the pane can sit in a
+   host frame that does not (the phone's panel shell), which put the card off
+   the right edge, and under the tab strip once the keyboard shrank the visual
+   viewport. The pane's own height already follows that viewport. */
 .overlay {
-  position: fixed;
+  position: absolute;
   inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 16px;
+  box-sizing: border-box;
   background: transparent;
   z-index: 100;
   text-align: left;
@@ -1150,10 +1205,12 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
+  box-sizing: border-box;
   width: 520px;
-  max-width: calc(100vw - 48px);
-  max-height: calc(100vh - 96px);
+  max-width: 100%;
+  max-height: 100%;
   overflow-y: auto;
+  overflow-wrap: anywhere;
   padding: 20px 22px;
   border: 1px solid var(--dsw-alias-border-l1, rgba(127, 127, 127, 0.16));
   border-radius: 18px;
@@ -1176,6 +1233,7 @@
 }
 
 .dialog input {
+  min-width: 0;
   padding: 9px 11px;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 9px;
@@ -1192,6 +1250,7 @@
 
 .dialogActions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
@@ -2474,6 +2533,22 @@
   border-bottom: 1px solid var(--dsw-alias-border-l2);
 }
 
+/* The compact bar's title, mounted only once the article's heading has
+   scrolled away (see `titleScrolledAway`) — mounted rather than faded from
+   transparent, because the header's own ellipsis would still paint over an
+   invisible title. The bar keeps its height either way, so nothing shifts. */
+.compactBarTitle {
+  animation: compactBarTitleIn 0.18s ease;
+}
+
+@keyframes compactBarTitleIn {
+  from { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .compactBarTitle { animation: none; }
+}
+
 .chips {
   flex: none;
 }
@@ -2644,3 +2719,18 @@
     font-size: var(--dsh-panel-text-meta, 10.5px);
   }
 }
+
+/* Compact pane (a phone, a narrow sidebar): the add card sits at the top of
+   the pane rather than its middle, so the keyboard that its input raises
+   leaves the title, the field and both buttons in view; inputs at 16px keep
+   iOS from zooming the page on focus. */
+@container dsh-panel (max-width: 560px) {
+  .overlay {
+    align-items: flex-start;
+  }
+
+  .dialog input {
+    font-size: 16px;
+  }
+}
+

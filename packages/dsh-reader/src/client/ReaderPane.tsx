@@ -135,6 +135,9 @@ function isCjk(html: string): boolean {
 /** The wall's tag panel box: the width it is clamped with, and the height
  *  placement estimates from the vocabulary (its real height is bounded by CSS). */
 const TAG_PANEL_WIDTH = 236
+/** The card menu's footprint, for keeping a menu opened at the screen's edge on screen. */
+const CARD_MENU_WIDTH = 168
+const CARD_MENU_HEIGHT = 120
 const TAG_PANEL_MAX_HEIGHT = 296
 
 /**
@@ -816,6 +819,14 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
   const rescuedImagesRef = useRef(new Map<string, string>())
   /** The detail view's scroller, which is where a reading position lives. */
   const detailRef = useRef<HTMLDivElement | null>(null)
+  /** The article's own heading, which the compact bar watches scroll away. */
+  const detailTitleRef = useRef<HTMLHeadingElement | null>(null)
+  /**
+   * Whether the article's heading has scrolled up out of the body. The compact
+   * bar starts empty (the heading sits right below it) and takes the title only
+   * then, so a reader deep in the text still sees what they are reading.
+   */
+  const [titleScrolledAway, setTitleScrolledAway] = useState(false)
   /** The live segmentation, or null while the article is untouched. */
   const builtRef = useRef<BuiltArticle | null>(null)
   /** The running translation's cancel flag. */
@@ -1292,6 +1303,23 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
   }, [allEntries, recent])
 
   const openEntry = openEntryId === null ? undefined : entryById(openEntryId)
+  // The compact bar's title (see `titleScrolledAway`): watch the article's
+  // heading leave the body through its top.
+  useEffect(() => {
+    setTitleScrolledAway(false)
+    const root = detailRef.current
+    const heading = detailTitleRef.current
+    // No observer (jsdom, an old engine) degrades to the bar staying empty.
+    if (!compact || view !== 'detail' || root === null || heading === null || typeof IntersectionObserver === 'undefined') return undefined
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry === undefined) return
+      // Away only when it left through the TOP: a heading below the fold (a
+      // restored reading position mid-render) is not "scrolled past".
+      setTitleScrolledAway(!entry.isIntersecting && entry.boundingClientRect.bottom <= (entry.rootBounds?.top ?? 0))
+    }, { root, threshold: 0 })
+    observer.observe(heading)
+    return () => { observer.disconnect() }
+  }, [compact, view, openEntryId, openEntry !== undefined])
   /** The source the strip is currently narrowing to, if any. */
   const activeSource = sources.find(source => query.trim() === sourceQuery(source.id))?.id ?? null
   /** The source KIND the search box is narrowing to, if any (`#rss` / `#link`). */
@@ -3638,12 +3666,12 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
     return (
       <div className={css.root}>
         {compact ? (
-          // No title here: the article's own heading sits right below with
-          // its source and date in the kicker, so any title in this bar —
-          // the article's or the source's — would say it twice.
+          // No title at first: the article's own heading sits right below with
+          // its source and date in the kicker, so a title here would say it
+          // twice. Once that heading scrolls away, the bar takes the title.
           <PanelHeader
             className={css.compactBar}
-            title=""
+            title={titleScrolledAway ? <span className={css.compactBarTitle}>{openEntry.title}</span> : ''}
             onBack={() => { actions.setView('list'); actions.closeEntry() }}
             backLabel={t('action.back')}
             extra={detailTranslate}
@@ -3712,7 +3740,7 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
               </>
             )}
           </div>
-          <h1 className={css.detailTitle}>{openEntry.title}</h1>
+          <h1 ref={detailTitleRef} className={css.detailTitle}>{openEntry.title}</h1>
           {/* The entry's tags, and next to them the one gesture that belongs to
               the ENTRY rather than to its source: fetch the article again.
               Opening an article that was already fetched no longer costs a
@@ -4528,7 +4556,7 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
                   // entry's actions without a click-through into the article.
                   if (row.entry.link === undefined) return
                   event.preventDefault()
-                  setCardMenu({ entryId: row.entry.id, top: event.clientY, left: event.clientX })
+                  setCardMenu({ entryId: row.entry.id, top: Math.max(8, Math.min(event.clientY, window.innerHeight - CARD_MENU_HEIGHT - 8)), left: Math.max(8, Math.min(event.clientX, window.innerWidth - CARD_MENU_WIDTH - 8)) })
                 }}
               >
                 <span className={css.tileWrap}>
