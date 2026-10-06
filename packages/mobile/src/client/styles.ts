@@ -457,7 +457,8 @@ html[data-dsh-mobile] [data-mobile-picker=preset] [data-mobile-picker-divider] {
 [data-mobile-header-actions] { display:flex; flex:none; gap:4px; }
 html[data-dsh-mobile] [data-mobile-toolbar] [data-mobile-header-actions] button { box-shadow:none; background:transparent; }
 /* Panel chrome has its own compact metric; a chat connection banner must not
-   stretch the tabs. Active tabs join the content surface along the bottom. */
+   stretch the tabs. Tabs are flat labels; the active one carries an accent
+   underline spanning its label and its close button. */
 html[data-dsh-mobile] { --mobile-panel-bar:52px; --mobile-panel-offset:52px; }
 html[data-dsh-mobile]:has([data-mobile-connection-status]) { --mobile-panel-offset:92px; }
 html[data-dsh-mobile][data-mobile-panel-open] [data-mobile-connection-status] { top:var(--mobile-panel-bar); }
@@ -466,14 +467,15 @@ html[data-dsh-mobile][data-mobile-panel-open] [data-mobile-connection-status] { 
 [data-mobile-panel-navigation] > button { color:var(--dsw-alias-label-secondary); }
 [data-mobile-panel-navigation] button:disabled { opacity:.35; }
 [data-mobile-panel-navigation] button:focus-visible { outline:2px solid var(--mobile-accent); outline-offset:-3px; }
-[data-mobile-panel-tabs] { display:flex; align-self:stretch; align-items:flex-end; flex:1; min-width:0; gap:3px; overflow-x:auto; overscroll-behavior-x:contain; scrollbar-width:none; touch-action:pan-x; }
+[data-mobile-panel-tabs] { display:flex; align-self:stretch; align-items:stretch; flex:1; min-width:0; gap:2px; overflow-x:auto; overscroll-behavior-x:contain; scrollbar-width:none; touch-action:pan-x; }
 [data-mobile-panel-tabs]::-webkit-scrollbar { display:none; }
-[data-mobile-panel-tab] { display:flex; flex:none; align-items:center; height:40px; max-width:220px; margin-bottom:1px; border:1px solid transparent; border-bottom:0; border-radius:12px 12px 0 0; color:var(--dsw-alias-label-secondary); }
-[data-mobile-panel-tab][data-active=true] { height:44px; margin-bottom:0; border-color:var(--dsw-alias-border-l2); background:var(--dsw-alias-bg-base); color:var(--dsw-alias-label-primary); box-shadow:inset 0 2px color-mix(in srgb,var(--mobile-accent) 65%,transparent); }
-[data-mobile-panel-navigation] [role=tab] { flex:0 1 auto; min-width:0; width:auto; height:100%; padding:0 12px; font:inherit; font-size:14px; line-height:20px; border-radius:11px 11px 0 0; }
+[data-mobile-panel-tab] { position:relative; display:flex; flex:none; align-items:center; max-width:220px; color:var(--dsw-alias-label-secondary); }
+[data-mobile-panel-tab][data-active=true] { color:var(--dsw-alias-label-primary); }
+[data-mobile-panel-tab][data-active=true]::after { content:""; position:absolute; left:12px; right:5px; bottom:0; height:2.5px; border-radius:2px; background:var(--mobile-accent); pointer-events:none; }
+[data-mobile-panel-navigation] [role=tab] { flex:0 1 auto; min-width:0; width:auto; height:100%; padding:0 12px; font:inherit; font-size:15px; line-height:20px; border-radius:8px; }
 [data-mobile-panel-navigation] [role=tab] span { display:block; max-width:160px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-[data-mobile-panel-navigation] [role=tab][aria-selected=true] { font-weight:600; padding-right:4px; }
-[data-mobile-panel-navigation] [data-mobile-panel-tab-close] { width:32px; height:42px; border-radius:8px; color:var(--dsw-alias-label-tertiary); }
+[data-mobile-panel-navigation] [role=tab][aria-selected=true] { font-weight:600; padding-right:0; }
+[data-mobile-panel-navigation] [data-mobile-panel-tab-close] { width:24px; height:100%; border-radius:8px; color:var(--dsw-alias-label-tertiary); }
 @media (hover:hover) { [data-mobile-panel-navigation] button:hover:not(:disabled) { background:var(--dsw-alias-interactive-bg-hover); } }
 [data-mobile-panel-error] { position:absolute; inset:100% 8px auto; padding:6px 10px; font-size:13px; background:var(--mobile-face); border:1px solid var(--mobile-edge); border-radius:8px; }
 html[data-mobile-panel-open] [data-mobile-toolbar] { visibility:hidden; }
