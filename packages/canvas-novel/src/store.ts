@@ -1015,7 +1015,7 @@ export class NovelService {
   async writeChapter(
     request: WriteChapterRequest,
     session: Session,
-  ): Promise<{ readonly ok: boolean; readonly error?: NovelError; readonly chapter?: ChapterRecord }> {
+  ): Promise<{ readonly ok: boolean; readonly error?: NovelError; readonly chapter?: ChapterRecord; readonly unknown?: readonly string[] }> {
     const workId = normalizeWorkId(request.workId)
     const title = cleanText(request.title, 200)
     if (workId === undefined || title === undefined) return { ok: false, error: 'invalid-name' }
@@ -1031,6 +1031,13 @@ export class NovelService {
           const handle = this.resolveCard(entries, token, role)
           return handle?.role === role ? handle.cardId : token
         }
+        // A plan names an existing foreshadow by its number: a question written
+        // where the id goes resolves to no card, and the story log, the brief and
+        // the reconciliation would all lose the op — refused so the model retries.
+        const unknown = rawPlan.foreshadowOps
+          .filter(op => op.op !== '新埋' && (op.id === undefined || this.resolveCard(entries, op.id, 'foreshadow')?.role !== 'foreshadow'))
+          .map(op => op.id ?? op.question ?? op.op)
+        if (unknown.length > 0) return { ok: false, error: 'unknown-foreshadow', unknown }
         plan = {
           ...rawPlan,
           foreshadowOps: rawPlan.foreshadowOps.map(op => op.id === undefined ? op : { ...op, id: toCard(op.id, 'foreshadow') }),

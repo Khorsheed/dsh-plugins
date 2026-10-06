@@ -120,6 +120,16 @@ describe('the novel tools', () => {
     const replanned = await call(write, { what: 'chapter', chapter: 7, title: '回响·改', plan: { summary: '退回门缝' } })
     expect(replanned).toContain('第 7 章')
     expect(await call(write, { what: 'chapter', chapter: 7, title: '回响', plan: { goal: '旧形状' } })).toContain('至少要有 summary')
+    // A question where the number goes is refused, naming it; 新埋 needs no number.
+    const unnumbered = await call(write, {
+      what: 'chapter', chapter: 7, title: '回响',
+      plan: { summary: '退回门缝', foreshadowOps: [{ op: '推进', id: '门缝里的东西', note: '多一道划痕' }, { op: '新埋', question: '哼歌的女人是谁' }] },
+    })
+    expect(unnumbered).toContain('对不上伏笔卡：「门缝里的东西」。')
+    expect(await call(write, {
+      what: 'chapter', chapter: 7, title: '回响',
+      plan: { summary: '退回门缝', foreshadowOps: [{ op: '推进', id: '#12', note: '多一道划痕' }, { op: '新埋', question: '哼歌的女人是谁' }] },
+    })).toContain('伏笔 2 条')
     expect(await call(write, { what: 'chapter', title: '尾声' })).toContain(`已建第 8 章《尾声》（画布 ${DREAM.workId} · 规划中 · 第8章.md）。`)
     const missing = await call(write, { what: 'chapter', chapter: 42, title: '不存在' })
     expect(missing).toContain('没有第 42 章')
