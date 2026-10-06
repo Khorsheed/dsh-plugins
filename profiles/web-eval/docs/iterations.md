@@ -423,7 +423,7 @@ T30c（2026-09-09 加）：效率表今天只有 token 与时长，工具调用�
 | T97 | 代码（2026-10-05 定，即派） | **题集、实验室在左侧栏有全局入口**：评测模式首页只有聊天框，没法新建题集和实验；左侧栏加「题集」「实验室」两个入口（宿主 `sidebar.panellist` + `main` 全局面板，与「插件」「任务」同一机制），不进会话也能浏览、添加题集、新建实验 | T96 | ✅ 合入 `544caceb`；待用户 3185 走查——3185 用户走查：首页左侧栏点「题集」「实验室」直接打开各自页面；在那里「添加题集」「新建实验」各开一个新会话并带好请求；会话里的「题集」「实验室」页签照常可用 |
 | T98 | 代码（2026-10-06 定，即派；✅ `c4f14a0a`） | **题集文件归类与题目详情措辞**：HumanEval 的 `prompt/prompt.py` 被标成「其他文件」，应是题干；「没有检查脚本」在 `verify/test.py` 存在时读来自相矛盾；可判性说明是未翻译的英文 | T97 | 3185 用户走查：HumanEval 题目树里 `prompt.py` 标「题干」，「题干」筛选能筛到；题目详情右侧措辞与文件对得上；中文界面不再出现英文说明 |
 | T99 | 代码（2026-10-06 定，即派；✅ `859c99be`） | **题集能删、整理结果能放弃，实验列表不被坏目录顶出英文报错**：现在只有「移除登记」（只撤登记，仓库留在磁盘）；Agent 整理好未登记的没法放弃；3185 的实验目录被 /tmp 清理成空目录后，实验室顶上挂四行英文 `no experiment … in this deployment` | T98 | 3185 用户走查：删除一个题集后列表、磁盘都没了，被实验用过的会先列出实验名再确认；MMLU 那条待登记能放弃；实验室遇到坏目录时不再顶英文报错 |
-| T100 | 代码 + 部署（2026-10-06 定，T99 合入后派；已派） | **评测线迁到 3080**：用户定以后在 3080 改和走查，3185 停用；3080 缺题集整理预设、`eval-planning` skill 和条件，skill 要改成随插件走、只在挂了插件的模式里出现 | T99 | 用户在 3080 走查 T96–T99；开发 / 写作模式的工具列表、系统提示词、skill 目录里没有任何评测项；之后停 3185 |
+| T100 | 代码 + 部署（2026-10-06 定，T99 合入后派；✅ `019e7f80`，已上 3080） | **评测线迁到 3080**：用户定以后在 3080 改和走查，3185 停用；3080 缺题集整理预设、`eval-planning` skill 和条件，skill 要改成随插件走、只在挂了插件的模式里出现 | T99 | 用户在 3080 走查 T96–T99；开发 / 写作模式的工具列表、系统提示词、skill 目录里没有任何评测项；之后停 3185 |
 | T101 | 代码（2026-10-06 定，即派） | **题集表：单题集仓库并成一行，行操作收进「操作」列**：现在每个仓库都是「仓库行 + 题集行」两行，绝大多数仓库只有一个题集，读来像重复；仓库行右端浮着的「交给 Agent 修改 / 编辑登记 / 删除」压在「用在哪些实验」列上方，对不齐 | T99 | 用户在 3080 走查：单题集仓库只占一行；多题集仓库仍是仓库行 + 题集行；所有行操作都在最右「操作」列里对齐，不再压到别的列 |
 | T45 | 代码 + profile | eval 模式化（单实例多模式，见 proposals/active/2026-08-26-mode-switcher.md）：datasets / mission / eval 的工具行拆成不 provide 的伴生工具包进 eval preset；local-agent 家族 provider 名从 config 读，eval 用命名 provider 行承载 live / sandbox / 端点 pin；web-eval 从独立 profile 模板变成可装进主实例的场景包；I5 三个界面按自隐约定只在 eval 模式的会话显示 | T29 T31 T35–T38 mode-switcher M4' | |
 
@@ -4739,6 +4739,21 @@ DSH_HARNESS=~/code/deepseek-harness-0.2.0。
 - 协调者补一笔 `20d95221`：SKILL 第 2 问改成「用请求里给的完整仓库路径」（原文写「请求点名 datasets home」）。
 - 协调者门禁：干净构建；datasets 307、eval 1259、test:scripts 298 全过；check:plugins / hygiene --all 0 finding。截图（1440 / 390、明暗、中英）看过：两个按钮在位，390 无横向滚动。
 - 记账不阻塞：英文下「Choose a folder…」换到输入框下方；390 宽英文时弹窗需内部滚动（T90 原有）。
+
+#### T100 合入（2026-10-06）
+
+- **合入** `019e7f80`（分支 `feat/t100-eval-on-3080`，3 个提交，Note `.agents/notes/implemented/architecture/2026-10-06-eval-line-on-3080.md`）。
+- **做了什么**：
+  - `eval-planning` 搬进 `packages/eval/skills/`，由 eval 的 `./tool` 入口注册，只在挂了 eval-tool 行的模式出现；安装 / 更新脚本不再往 `$DSH_HOME/skills` 拷，旧拷贝带包签名的删、不带的只提示。
+  - 两份评测预设对齐成一份组合：正本是 web-eval 的 `preset-eval`，dsh-presets 的 `preset-dsh-eval` 同步内容、保留 id；`scripts/eval-preset-parity.spec.ts` 防漂移。
+  - `preset-dataset-authoring` 镜像进 dsh-presets（order 11），datasets 默认的整理预设 id 在 3080 不改配置就能用。
+- **协调者门禁**：干净构建；eval 1282、presets 12、datasets 377 全过；check:plugins / hygiene --all 0 finding；test:scripts 318 过。截图 7 张看过（开发 / 写作模式输 `/eval`、`/dataset` 无候选，评测模式出 `/eval` + eval-planning，题集整理出 `/datasets` + dataset-authoring）。
+- **3080 部署**：`pnpm deploy:3080 --package packages/datasets --package packages/eval --package packages/presets`，preflight PASS、canary PASS。上线后只读核对：profile 里的 dsh-eval 带 `skills/eval-planning`，dsh-presets 带 dataset-authoring，`~/.dsh-official/skills` 没有评测 skill。
+- **没做、待定**：
+  - local-agent-dsh / bundle-local-agent 在 3080 仍是 10-01 构建，早于 T91 / T94 的 provision 修复；跑 dsh 条件前要一起部署。
+  - dsh 条件（`dsh-lean/full-0.2.0-rc.2`）要把题库 i1-walk 的 `@dataseek-eval/preset-eval-{lean,full}` 装进 3080 profile，会多两个 chip，待用户拍板；眼下只试题集、不跑分，不急。
+  - 3080 profile 里残留已退役的 `dsh-{datasets,eval,mission}-tool` 依赖和 overrides，无害，另定。
+- **下一步**：用户在 3080 走查 T96–T100（题集要在 3080 重新整理 / 登记），之后停 3185。
 
 #### T99 合入（2026-10-06）
 
