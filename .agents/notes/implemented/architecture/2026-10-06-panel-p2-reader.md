@@ -28,4 +28,10 @@ On a phone the inspiration space showed the desktop sidebar layout at full width
 
 - Wide layouts are unchanged apart from the folded incomplete-source notice and the reading sizes now reading the token (identical values without the mobile package).
 - On a compact panel the wall translation switch is in ⋯; the view caret (translation only / side by side) exists only on the wide header.
-- Known, pre-existing: the detail tag row and the tag picker's rows share the class name `tagRow`, so the detail tag row inherits the picker's 8px side padding (visible at every width). Left for a separate fix.
+- The pre-existing `tagRow` class clash (the detail tag row inheriting the picker's 8px padding) was fixed right after: the picker rows are now `.tagOption`.
+- Phone follow-up (the user's 17:56/17:58 reports):
+  - The detail body only scrolls down (`overflow-x: hidden`). On an arXiv 3SUM/APSP paper it measured 767px wide in a 388px column — equation tables, long inline MathML and a `width: 345pt` figure box pushed it — so the page panned sideways and cut the text's left edge. Tables are now blocks that scroll inside themselves, `math` scrolls inside itself, inline-sized boxes are capped with their fixed height released, and prose wraps bare URLs (`overflow-wrap: anywhere`, not on table cells, where it broke equation numbers letter by letter). Applies at every width.
+  - The compact detail bar starts empty and mounts the article title (fading in, motion-reduced respected) once an IntersectionObserver sees the heading leave through the top; no observer means the bar stays empty. Mounted rather than faded from transparent, because the header's ellipsis would still paint over an invisible title.
+  - The add dialog's overlay covers the pane (`position: absolute` in `.root`) instead of the window: a fixed overlay put the card off the right edge in the phone shell and under the tab strip once the keyboard shrank the viewport. The card is capped to the pane, its buttons wrap, and on a compact pane it sits at the top with a 16px input (no iOS focus zoom).
+  - The card context menu is clamped to the window like the tag panel already was.
+  - `examples/compact` gained an arXiv-style entry (wide equation table, long inline formula, fixed-size figure, bare URL) and an optional `?body=<url>` to replay a locally copied cached body.

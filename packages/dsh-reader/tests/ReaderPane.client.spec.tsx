@@ -18,7 +18,7 @@
  * buttons reach the browser) and the incomplete-body note (the fetch cap
  * truncates silently, so the reader must be told the text stops early).
  */
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useSyncExternalStore } from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { ReaderPaneProps } from '../src/client/contract.ts'
@@ -3768,6 +3768,70 @@ describe('the compact panel (panel-responsive-spec P2)', () => {
     expect(ui.mocks.openExternal).toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: zh['action.back'] }))
     expect(await screen.findByText('一篇长文')).toBeTruthy()
+  })
+})
+
+describe('the compact detail bar takes the title once the heading scrolls away', () => {
+  /** The observers the pane creates, so a test can play the browser's part. */
+  const observers: { callback: IntersectionObserverCallback; targets: Element[] }[] = []
+  beforeEach(() => {
+    observers.length = 0
+    vi.stubGlobal('IntersectionObserver', class {
+      private readonly record: { callback: IntersectionObserverCallback; targets: Element[] }
+      constructor(callback: IntersectionObserverCallback) {
+        this.record = { callback, targets: [] }
+        observers.push(this.record)
+      }
+      observe(target: Element): void { this.record.targets.push(target) }
+      unobserve(): void {}
+      disconnect(): void { this.record.targets.length = 0 }
+      takeRecords(): IntersectionObserverEntry[] { return [] }
+    })
+  })
+  afterEach(() => { vi.unstubAllGlobals() })
+
+  /** Report the heading's position to whoever watches it. */
+  const report = (heading: Element, isIntersecting: boolean, bottom: number): void => {
+    const watcher = observers.find(record => record.targets.includes(heading))
+    expect(watcher).toBeDefined()
+    act(() => {
+      watcher?.callback([{ target: heading, isIntersecting, boundingClientRect: { bottom } as DOMRect, rootBounds: { top: 0 } as DOMRect } as unknown as IntersectionObserverEntry], {} as IntersectionObserver)
+    })
+  }
+
+  it('shows it only after the heading left through the top, and drops it on the way back', async () => {
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ width: 390 } as DOMRect)
+    const ui = bench({
+      sources: [rssSource('hn')],
+      payloads: { hn: feed('hn', [{ title: '一篇长文', description: `<p>${'正文。'.repeat(40)}</p>` }]) },
+    })
+    await ui.settle()
+    fireEvent.click(await screen.findByText('一篇长文'))
+    expect(await screen.findByText(zh['detail.composerLabel'])).toBeTruthy()
+    const heading = screen.getByRole('heading', { level: 1, name: '一篇长文' })
+    expect(screen.getAllByText('一篇长文')).toHaveLength(1)
+    // Below the fold (a restored position mid-render) is not "scrolled past".
+    report(heading, false, 900)
+    expect(screen.getAllByText('一篇长文')).toHaveLength(1)
+    report(heading, false, -12)
+    expect(screen.getAllByText('一篇长文')).toHaveLength(2)
+    report(heading, true, 40)
+    expect(screen.getAllByText('一篇长文')).toHaveLength(1)
+  })
+})
+
+describe('the card menu stays on screen', () => {
+  it('opens inside the window even when summoned at its corner', async () => {
+    const ui = bench({
+      sources: [rssSource('hn')],
+      payloads: { hn: feed('hn', [{ title: '边上的一条' }]) },
+    })
+    await ui.settle()
+    const card = (await screen.findByText('边上的一条')).closest('[tabindex]') as HTMLElement
+    fireEvent.contextMenu(card, { clientX: window.innerWidth - 2, clientY: window.innerHeight - 2 })
+    const menu = await screen.findByRole('menu')
+    expect(Number.parseFloat(menu.style.left)).toBeLessThanOrEqual(window.innerWidth - 168 - 8)
+    expect(Number.parseFloat(menu.style.top)).toBeLessThanOrEqual(window.innerHeight - 120 - 8)
   })
 })
 
