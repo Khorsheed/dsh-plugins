@@ -207,12 +207,20 @@ export const ALLOWED_EDGES: Readonly<Record<string, ReadonlyArray<string>>> = {
   // (`.../src/client/*`) that tsdown inlines into each plugin's own client
   // bundle, so the kernel needs no runtime install and the two plugins stay
   // independently installable and uninstallable.
-  'local-files': ['@khorsheed/dsh-client-ui-content-preview'],
-  'worktrees': ['@khorsheed/dsh-client-ui-content-preview'],
+  // Both (and file-preview below) also take ui-panel-kit, the source-plane
+  // panel kit (panel-responsive-spec P1: AdaptiveSplit, PanelRoot, and the
+  // content pane's PanelHeader/UnderlineTabs) — the same inlined, zero-runtime
+  // edge.
+  'local-files': ['@khorsheed/dsh-client-ui-content-preview', '@khorsheed/dsh-client-ui-panel-kit'],
+  'worktrees': ['@khorsheed/dsh-client-ui-content-preview', '@khorsheed/dsh-client-ui-panel-kit'],
   // file-preview → ui-content-preview: same source-plane kernel edge (the
   // ui-file-preview client half folded into the file-preview package at
   // 0.4.0, bringing its kernel import along).
-  'file-preview': ['@khorsheed/dsh-client-ui-content-preview'],
+  'file-preview': ['@khorsheed/dsh-client-ui-content-preview', '@khorsheed/dsh-client-ui-panel-kit'],
+  // ui-content-preview → ui-panel-kit: one source-plane library reading
+  // another (the pane's title bar and tab row); both are inlined into each
+  // consuming plugin's bundle, so nothing is installed at runtime.
+  'ui-content-preview': ['@khorsheed/dsh-client-ui-panel-kit'],
   // room consumes the local-agent delegation facade as an OPTIONAL capability:
   // type-only imports, an optional peer dep, a runtime probe, and tested
   // degradation when the family is absent (the room works with the main agent

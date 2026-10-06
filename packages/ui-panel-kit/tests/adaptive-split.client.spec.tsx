@@ -2,7 +2,8 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { useState } from 'react'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { AdaptiveSplit } from '../src/client/AdaptiveSplit.tsx'
+import { AdaptiveSplit, useAdaptiveSplitBack } from '../src/client/AdaptiveSplit.tsx'
+import { PanelHeader } from '../src/client/PanelHeader.tsx'
 
 let resize: (width: number) => void
 const disconnect = vi.fn()
@@ -59,3 +60,33 @@ it('keeps both surfaces available when ResizeObserver is unavailable', () => {
   expect(screen.getByRole('button', { name: 'README.md' })).toBeTruthy()
   expect(screen.getByRole('textbox', { name: 'Draft' })).toBeTruthy()
 })
+
+/** A detail with its own title bar, drawing the split's back control there. */
+function OwnHeaderDetail() {
+  const back = useAdaptiveSplitBack()
+  return <><PanelHeader title="README.md" moreLabel="More" onBack={back?.onBack} backLabel={back?.backLabel} backRef={back?.backRef} />
+    <textarea aria-label="Draft" defaultValue="" /></>
+}
+
+function OwnHeaderFixture() {
+  const [open, setOpen] = useState(false)
+  return <AdaptiveSplit backInDetail detailOpen={open} onBack={() => setOpen(false)} backLabel="Files"
+    master={<button onClick={() => setOpen(true)}>README.md</button>}
+    detail={<OwnHeaderDetail />}/>
+}
+
+it('lets a backInDetail detail draw the one back control, narrow only, and focuses it on open', () => {
+  render(<OwnHeaderFixture />)
+  resize(560)
+  fireEvent.click(screen.getByRole('button', { name: 'README.md' }))
+  // Exactly one back control, and it is the detail's own header button.
+  const backs = screen.getAllByRole('button', { name: 'Files' })
+  expect(backs).toHaveLength(1)
+  expect(document.activeElement).toBe(backs[0])
+  fireEvent.click(backs[0]!)
+  expect(screen.getByRole('button', { name: 'README.md' })).toBeTruthy()
+  // Wide: no back control at all.
+  resize(800)
+  expect(screen.queryByRole('button', { name: 'Files' })).toBeNull()
+})
+

@@ -42,6 +42,15 @@ describe('splitActions', () => {
   })
 })
 
+describe('splitActions menu-only rows', () => {
+  it('never inlines a menu-only action, even with room to spare', () => {
+    const list = actions(2, { 1: { menuOnly: true } })
+    const { inline, overflow } = splitActions(list, 4)
+    expect(inline.map(a => a.id)).toEqual(['a0'])
+    expect(overflow.map(a => a.id)).toEqual(['a1'])
+  })
+})
+
 describe('PanelHeader', () => {
   it('shows the compact budget inside a narrow PanelRoot and the wide budget once it widens', () => {
     const list = actions(6)
@@ -78,6 +87,18 @@ describe('PanelHeader', () => {
     rerender(<PanelHeader title="a.md" moreLabel="More" onBack={back} backLabel="Back" />)
     fireEvent.click(screen.getByRole('button', { name: 'Back' }))
     expect(back).toHaveBeenCalledOnce()
+  })
+})
+
+describe('PanelHeader toggles and PanelRoot render prop', () => {
+  it('marks a pressed toggle and hands the compact state to a render-prop child', () => {
+    render(<PanelRoot>{compact => <><span>{compact ? 'compact' : 'wide'}</span>
+      <PanelHeader title="Files" moreLabel="More" actions={actions(1, { 0: { pressed: true } })} /></>}</PanelRoot>)
+    resize(390)
+    expect(screen.getByText('compact')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Action 0' }).getAttribute('aria-pressed')).toBe('true')
+    resize(800)
+    expect(screen.getByText('wide')).toBeTruthy()
   })
 })
 

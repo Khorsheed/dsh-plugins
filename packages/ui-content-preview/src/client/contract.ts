@@ -51,12 +51,14 @@ export type PreviewKey =
   | 'action.openIDE'
   | 'action.chooseIDE'
   | 'action.reload'
+  | 'action.more'
   | 'detail.noSelection'
   | 'detail.back'
   | 'detail.diff'
   | 'detail.content'
   | 'detail.preview'
   | 'detail.source'
+  | 'detail.views'
   | 'detail.deleted'
   | 'search.placeholder'
   | 'search.noMatch'
@@ -90,12 +92,14 @@ export const PREVIEW_KEYS: readonly PreviewKey[] = [
   'action.openIDE',
   'action.chooseIDE',
   'action.reload',
+  'action.more',
   'detail.noSelection',
   'detail.back',
   'detail.diff',
   'detail.content',
   'detail.preview',
   'detail.source',
+  'detail.views',
   'detail.deleted',
   'search.placeholder',
   'search.noMatch',

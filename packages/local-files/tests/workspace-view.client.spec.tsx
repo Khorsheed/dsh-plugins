@@ -12,7 +12,7 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import type { WorkspaceViewProps } from '../src/client/contract.ts'
 import { clearLocalRoot, localRootOf, rememberLocalRoot } from '../src/client/local-root.ts'
 import { createLocalFilesStore } from '../src/client/store-local.ts'
-import { WorkspaceView } from '../src/client/WorkspaceView.tsx'
+import { WorkspaceView, parentNote } from '../src/client/WorkspaceView.tsx'
 
 const SESSION = 'sess-1'
 const WORKSPACE = '/work/repo'
@@ -329,3 +329,38 @@ describe('WorkspaceView search expansion', () => {
     expect(screen.queryByRole('button', { name: 'intro.md' })).toBeNull()
   })
 })
+
+describe('WorkspaceView compact header (panel-responsive-spec P1)', () => {
+  it('shortens the parent note: home becomes ~, the top reads as nothing', () => {
+    expect(parentNote('/home/user/code/Writing')).toBe('~/code')
+    expect(parentNote('/home/user/Writing')).toBe('~')
+    expect(parentNote('/work/repo')).toBe('/work')
+    expect(parentNote('/work')).toBe('')
+  })
+
+  it('merges the breadcrumb and tree headers into one row, and gives it up while a file is open', async () => {
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ width: 390 } as DOMRect)
+    const { props, instance } = makeProps({ byId: { [SESSION]: { cwd: WORKSPACE } } })
+    props.listDirectory = vi.fn().mockResolvedValue({ ok: true, value: { entries: [{ name: 'a.md', isDir: false }] } })
+    props.readFile = vi.fn().mockResolvedValue({ ok: true, value: { path: `${WORKSPACE}/a.md`, kind: 'text', content: '# A' } })
+    render(<WorkspaceView {...props} />)
+    await act(async () => {})
+    // One header: folder name + parent note, search inline, no breadcrumb buttons, no tree title strip.
+    expect(screen.getByText('repo')).toBeTruthy()
+    expect(screen.getByText('/work')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'work' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'tree.search' }))
+    expect(screen.getByRole('searchbox', { name: 'tree.searchPlaceholder' })).toBeTruthy()
+    // Up one folder is inline; the rest is behind ⋯.
+    fireEvent.click(screen.getByRole('button', { name: 'local.goUp' }))
+    expect(instance.getSnapshot().root).toBe('/work')
+    act(() => instance.actions.setRoot(WORKSPACE))
+    await act(async () => {})
+    fireEvent.click(screen.getByRole('button', { name: 'a.md' }))
+    await act(async () => {})
+    // The open file owns the only header row, back included.
+    expect(screen.queryByText('/work')).toBeNull()
+    expect(screen.getAllByRole('button', { name: 'detail.back' })).toHaveLength(1)
+  })
+})
+

@@ -16,6 +16,9 @@ The shared base for community plugin panels: a set of type tokens with desktop d
 - **`UnderlineTabs`** — underline segmented switching in the same treatment as the mobile panel tabs (bold active label, 2.5px accent rule), with arrow / Home / End roving focus that skips disabled tabs.
 - **`ChipRow`** — filter chips in one style: accent tint when pressed, outline at rest; optional count and colour dot; the row scrolls sideways and is always one row tall.
 - **`ListRow`** — icon, primary-coloured title, meta, trailing element; selection is an accent tint; a button when `onSelect` is given.
+- **`AdaptiveSplit`** — a retained master/detail layout (moved in from ui-content-preview at P1): side by side when wide; at 560px or less an open detail replaces the master, and back returns to the master as it was. A detail with its own title bar sets `backInDetail` and draws the back control there via `useAdaptiveSplitBack()`, saving a row on narrow screens. From the repository root, `node packages/ui-panel-kit/examples/adaptive-split/serve.mjs` serves a standalone preview of the real component with mock data.
+
+`PanelHeader` actions can be `pinned` (always inline), `menuOnly` (⋯ only — an informational row such as the full path) or `pressed` (a toggle's on state); `PanelRoot` accepts a function child that receives the compact state.
 
 Colours come only from the host's `--dsw-alias-*` properties, so both themes follow automatically; on touch (`pointer: coarse`) rows are at least 44px and icon buttons 40×40.
 

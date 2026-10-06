@@ -159,9 +159,9 @@ describe('FilePreviewTab', () => {
     await act(async () => {})
     fireEvent.click(screen.getByText('agent.ts'))
     await act(async () => {})
-    fireEvent.click(screen.getByRole('button', { name: 'detail.diff' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'detail.diff' }))
     expect(screen.getByText(/history\.step\.count/)).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'detail.content' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'detail.content' }))
     expect(document.body.textContent).toContain('const a = 1')
   })
 
@@ -171,7 +171,7 @@ describe('FilePreviewTab', () => {
     // guide.md has no diffs: the toggle is absent, content shows directly.
     fireEvent.click(screen.getByText('guide.md'))
     await act(async () => {})
-    expect(screen.queryByRole('button', { name: 'detail.diff' })).toBeNull()
+    expect(screen.queryByRole('tab', { name: 'detail.diff' })).toBeNull()
     expect(screen.getByLabelText('detail.back')).toBeTruthy()
   })
 
@@ -211,14 +211,14 @@ describe('FilePreviewTab', () => {
     expect(screen.queryByLabelText('action.openIDE')).toBeNull()
   })
 
-  it('the IDE split button lists every probed IDE and re-chooses on select', async () => {
+  it('the ⋯ menu lists every probed IDE and re-chooses on select', async () => {
     const openInIde = vi.fn()
     renderTab({ openInIde, apps: ['finder', 'cursor', 'vscode'] })
     await act(async () => {})
     fireEvent.click(screen.getByText('agent.ts'))
     await act(async () => {})
-    fireEvent.click(screen.getByLabelText('action.chooseIDE'))
-    fireEvent.click(screen.getByText('Visual Studio Code'))
+    fireEvent.click(screen.getByLabelText('action.more'))
+    fireEvent.click(screen.getByText('action.openIDE · Visual Studio Code'))
     expect(openInIde).toHaveBeenCalledWith('src/agent.ts', 'vscode')
     // The choice sticks: the main button now launches vscode.
     fireEvent.click(screen.getByLabelText('action.openIDE'))
