@@ -1112,8 +1112,8 @@ export type NovelError = 'invalid-name' | 'missing' | 'io' | 'stale' | 'denied' 
 
 /* ---------------------------------------------- wire-boundary contracts */
 
-/** The review verb's actions: a pending item is accepted or discarded, a card is archived. */
-export type ReviewAction = 'accept' | 'discard' | 'archive'
+/** The review verb's actions: a pending item is accepted or discarded (a card archives through canvas_write). */
+export type ReviewAction = 'accept' | 'discard'
 
 /** A chapter create (no n) or plan/title update (n present). */
 export interface WriteChapterRequest {

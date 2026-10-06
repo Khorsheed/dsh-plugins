@@ -1,7 +1,7 @@
 /**
  * The three novel tools against the seeded store: the binding resolution
  * (guidance without a bound novel canvas, never a throw), the no-workspace
- * refusal, the live card write, the review verb, and the extract two-phase with the
+ * refusal, the review verb, and the extract two-phase with the
  * review gate held.
  */
 import { Context } from '@deepseek-ai/cordis'
@@ -69,7 +69,7 @@ describe('the novel tools', () => {
   it('answers guidance (never a throw) when the session is bound to no novel canvas or no agent is there', async () => {
     const { read, write, extract, canvas } = await bench()
     expect(await call(read, { what: 'brief' })).toContain('还没有绑定「长篇小说」画布')
-    expect(await call(write, { what: 'card', role: '世界', fields: { rule: 'x' } })).toContain('还没有绑定「长篇小说」画布')
+    expect(await call(write, { what: 'review', id: 'p1', action: 'accept' })).toContain('还没有绑定「长篇小说」画布')
     expect(await call(extract, { chapter: 5, phase: 'prepare' })).toContain('还没有绑定「长篇小说」画布')
     expect(await call(read, { what: 'brief' }, false)).toContain('还没有绑定「长篇小说」画布')
     // A binding to a canvas whose genre is not 长篇小说 is no work either.
@@ -93,20 +93,12 @@ describe('the novel tools', () => {
     expect(await call(write, { what: 'chapter', title: '新的一章', byUser: true, content: '我自己写的。' })).toContain('已建第')
   })
 
-  it('novel_write(card) lands a live card, in the ledger at once; ✗ is archive, the only card review', async () => {
-    const { canvas, write, read } = await bench({ bound: true })
-    const answer = await call(write, { what: 'card', role: '伏笔', fields: { question: '梦主可能是赵启明的妹妹？', bogus: 1 } })
-    expect(answer).toContain('已落卡 [#19]（伏笔·已进 brief，画布上带 ✦ 新卡标记）')
-    expect(answer).toContain('忽略了不认识的字段：bogus')
-    expect(await call(read, { what: 'ledger' })).toContain('[#19] 梦主可能是')
-    expect(await call(write, { what: 'review', target: 'card', id: '#19', action: 'accept' })).toContain('只能 archive')
-    expect(await call(write, { what: 'review', target: 'card', id: '#19', action: 'archive' })).toContain('已归档：#19')
-    expect(await call(read, { what: 'ledger' })).not.toContain('梦主可能是')
-    // An edit by ref merges into the card in place.
-    expect(await call(write, { what: 'card', role: '人物', id: 'c1', fields: { voice: '说话更短了' } })).toContain('已更新 [c1]')
-    expect(canvas.card(DREAM.workId, CARD.zhao)?.fields?.voice).toBe('说话更短了')
-    expect(canvas.card(DREAM.workId, CARD.zhao)?.fields?.name).toBe('赵启明')
-    expect(await call(write, { what: 'card', fields: { rule: 'x' } })).toContain('要给 role')
+  it('novel_read / novel_write carry no cards (canvas_read / canvas_write do); review is the pending queue only', async () => {
+    const { write, read } = await bench({ bound: true })
+    await expect(call(read, { what: 'cards' })).rejects.toThrow('must be one of')
+    await expect(call(write, { what: 'card', role: '人物', fields: { name: 'x' } })).rejects.toThrow('must be one of')
+    await expect(call(write, { what: 'review', id: 'p1', action: 'archive' })).rejects.toThrow('must be one of')
+    expect(await call(write, { what: 'review', id: 'p1' })).toContain('要给 id（待审项）和 action')
   })
 
   it('novel_write(chapter) numbers max+1 and stores the plan; re-planning keeps the number', async () => {
@@ -145,8 +137,6 @@ describe('the novel tools', () => {
     expect(ledger).toContain('伏笔健康度：活跃 3 / 超期⚠ 1 / 已揭 1 / 弃置 0')
     const body = await call(read, { what: 'chapter', chapter: 5 })
     expect(body).toContain('门缝里飘出一片蓝色的叶子')
-    const character = await call(read, { what: 'card', id: '赵启明' })
-    expect(character).toContain('秘密：他在梦里见过走失的妹妹')
     const pending = await call(read, { what: 'pending' })
     expect(pending).toContain('待审队列为空')
   })

@@ -1,10 +1,14 @@
 /**
  * The canvas's main-session tools, registered by the `./agent` composition
  * entry: one read (`canvas_read`), one write (`canvas_write`: card, comment,
- * manuscript) and the type proposal (`canvas_propose_type`). They act on the
- * canvas the session's right-Sidebar tab has open. Three used to be seven
- * (2026-09-30): the long catalog crowded the writing preset's model, so the
- * details moved to the on-demand `canvas` skill (skill.ts).
+ * archive, manuscript) and the type proposal (`canvas_propose_type`). They act
+ * on the canvas the session's right-Sidebar tab has open. Three used to be
+ * seven (2026-09-30): the long catalog crowded the writing preset's model, so
+ * the details moved to the on-demand `canvas` skill (skill.ts).
+ *
+ * On a genre canvas they stay the one card tool: the genre's own categories
+ * go through its `agent` hooks (refs, duplicate checks, cards that land live),
+ * the rest of the board the generic way (2026-10-06).
  *
  * The definitions are origin-tagged the way the community convention
  * documents: the tag is the `Symbol.for('dsh.tool.origin')`-keyed property
@@ -27,7 +31,8 @@ import {
 import { imageRefOf } from './image-token.ts'
 import {
   isBoardCardKind,
-  type BoardCard, type BoardCardSource, type BoardCategory, type CanvasBoard, type CanvasGenreDefinition, type CanvasImageRef, type CardCategoryId,
+  type BoardCard, type BoardCardSource, type BoardCategory, type CanvasBoard, type CanvasGenreAgent, type CanvasGenreDefinition, type CanvasImageRef,
+  type CardCategoryId,
 } from './types.ts'
 
 /** The community tool-origin tag (the catalog's documented no-import path). */
@@ -122,16 +127,18 @@ function renderCatalog(board: CanvasBoard): string {
   return lines.join('\n')
 }
 
-/** One line per card, optionally one category's; archived cards are counted, not listed, unless asked for. */
-function renderCards(board: CanvasBoard, options: { kind?: string; includeArchived: boolean }): string {
+/**
+ * One line per card, optionally one category's; archived cards are counted,
+ * not listed, unless asked for. `skip` leaves out the categories a genre lists
+ * itself.
+ */
+function renderCards(board: CanvasBoard, options: { kind?: string; includeArchived: boolean; skip?: ReadonlySet<string> }): string {
   const names = new Map(board.categories.map(category => [category.id, categoryNameOf(category)]))
   const definitions = new Map(board.categories.map(category => [category.id, category.definition]))
-  const cards = board.cards.filter(card =>
-    (options.includeArchived || card.status !== 'archived')
-    && (options.kind === undefined || card.kind === options.kind))
-  const archived = options.includeArchived
-    ? 0
-    : board.cards.filter(card => card.status === 'archived' && (options.kind === undefined || card.kind === options.kind)).length
+  const listed = (card: BoardCard): boolean =>
+    (options.kind === undefined || card.kind === options.kind) && options.skip?.has(card.kind) !== true
+  const cards = board.cards.filter(card => listed(card) && (options.includeArchived || card.status !== 'archived'))
+  const archived = options.includeArchived ? 0 : board.cards.filter(card => listed(card) && card.status === 'archived').length
   const lines = [`卡片（${cards.length} 张${archived > 0 ? `，另有 ${archived} 张已归档未列出` : ''}）：`]
   for (const card of cards.slice(0, MAX_BOARD_READ_CARDS)) {
     const title = cardNameOf(card, definitions.get(card.kind)) || '（无文字）'
@@ -139,6 +146,34 @@ function renderCards(board: CanvasBoard, options: { kind?: string; includeArchiv
   }
   if (cards.length > MAX_BOARD_READ_CARDS) lines.push(`……还有 ${cards.length - MAX_BOARD_READ_CARDS} 张未列出（用 kind 缩小范围）。`)
   return lines.join('\n')
+}
+
+/** One card in full, the generic way: kind, status, fields, body, source, comments. */
+function renderCard(board: CanvasBoard, cardId: string): string {
+  const card = board.cards.find(candidate => candidate.id === cardId)
+  if (card === undefined) return `失败：这块画布没有卡片「${cardId}」。canvas_read 不带参数看全部卡片。`
+  const category = board.categories.find(candidate => candidate.id === card.kind)
+  const definitions = new Map(board.categories.map(row => [row.id, row.definition]))
+  const nameOf = (id: string): string => {
+    const target = board.cards.find(candidate => candidate.id === id)
+    return target === undefined ? id : cardNameOf(target, definitions.get(target.kind)) || id
+  }
+  const lines = [`${card.id}　[${category === undefined ? card.kind : categoryNameOf(category)}]　${STATUS_NAMES[card.status] ?? card.status}　${cardNameOf(card, category?.definition) || '（无文字）'}`]
+  for (const [key, value] of Object.entries(card.fields ?? {})) {
+    const label = category?.definition?.fields.find(field => field.key === key)?.label ?? key
+    lines.push(`${label}：${fieldValueText(value, nameOf)}`)
+  }
+  if (card.text.trim() !== '') lines.push('---', card.text.trim(), '---')
+  if (card.source !== undefined) lines.push(`来源：${card.source.title ?? card.source.ref}（${card.source.ref}）`)
+  if (card.comments.length > 0) {
+    lines.push('评论：', ...card.comments.map(comment => `- ${comment.author === 'agent' ? '你' : '用户'}：${comment.text}`))
+  }
+  return lines.join('\n')
+}
+
+/** The categories a genre seeded (they carry a role): the genre's agent hooks own their cards. */
+function genreKinds(board: CanvasBoard): Set<string> {
+  return new Set(board.categories.filter(category => category.role !== undefined).map(category => category.id))
 }
 
 /** What the main-session tools answer when there is no canvas to act on. */
@@ -153,6 +188,8 @@ const NO_CANVAS_MESSAGE = '没有打开的画布：请先在右栏「画布详�
  * @returns the tagged definitions for the profile-root tools registry.
  */
 export function canvasMainSessionToolDefinitions(board: CanvasBoardService): ToolDefinition[] {
+  type Target = { canvasId: string; session: Session }
+
   /** Resolve the call's target: the bound canvas, else the focused one, plus the fencing session. */
   const target = async (exec: { agent?: Agent }): Promise<{ canvasId: string; session: Session } | { message: string }> => {
     const session = exec.agent?.session
@@ -160,6 +197,47 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
     const canvasId = await board.targetCanvasId(session)
     if (canvasId === undefined) return { message: NO_CANVAS_MESSAGE }
     return { canvasId, session }
+  }
+
+  /** The canvas's genre when it hooks into the tools (a registered genre with `agent`). */
+  const agentOf = (read: CanvasBoard): { genre: CanvasGenreDefinition; agent: CanvasGenreAgent } | undefined => {
+    const genre = read.genre === undefined ? undefined : board.genre(read.genre.id)
+    return genre?.agent === undefined ? undefined : { genre, agent: genre.agent }
+  }
+
+  /** A card id from the model's handle: the genre reads its own refs (`c3`, `#12`), anything else is taken as the id. */
+  const resolveCardId = async (resolved: Target, token: string): Promise<string> => {
+    const read = await board.readBoard({ canvasId: resolved.canvasId })
+    const hooked = read.ok ? agentOf(read.board) : undefined
+    const cardId = hooked === undefined ? undefined : await hooked.agent.resolveCard({ canvasId: resolved.canvasId, token }, resolved.session)
+    return cardId ?? token
+  }
+
+  /** The card listing: a genre lists its own categories its way, the rest of the board lists generically. */
+  const listCards = async (read: CanvasBoard, kind: string | undefined, includeArchived: boolean, session: Session): Promise<string> => {
+    const hooked = agentOf(read)
+    if (hooked === undefined) return renderCards(read, { ...(kind === undefined ? {} : { kind }), includeArchived })
+    const owned = genreKinds(read)
+    const parts: string[] = []
+    if (kind === undefined || owned.has(kind)) {
+      const lines = await hooked.agent.cardLines({ canvasId: read.id, ...(kind === undefined ? {} : { kind }), includeArchived }, session)
+      parts.push(lines.length === 0 ? `${hooked.genre.label}卡片：（还没有）` : [`${hooked.genre.label}卡片（${lines.length} 张）：`, ...lines].join('\n'))
+    }
+    const others = read.cards.some(card => !owned.has(card.kind) && (kind === undefined || card.kind === kind))
+    if (others) parts.push(renderCards(read, { ...(kind === undefined ? {} : { kind }), includeArchived, skip: owned }))
+    return parts.join('\n')
+  }
+
+  /** The 成稿 listing: a genre that owns them lists its own (the novel's chapters, in order). */
+  const listManuscripts = async (read: CanvasBoard): Promise<string> => {
+    const hooked = agentOf(read)
+    if (hooked?.genre.ownsManuscripts === true && hooked.agent.manuscripts !== undefined) {
+      return hooked.agent.manuscripts({ canvasId: read.id })
+    }
+    return read.manuscripts.length === 0
+      ? '成稿：（还没有）'
+      : ['成稿：', ...read.manuscripts.map(manuscript =>
+        `- ${manuscript.id}　${manuscript.title}　v${manuscript.version}　${manuscript.status === 'final' ? '定稿' : '写作中'}`)].join('\n')
   }
 
   /** One category's type as the model reads it: brief (with its pictures), definition, proposal, history, samples. */
@@ -231,9 +309,11 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
     name: 'canvas_read',
     description:
       'Read the open canvas. No arguments: categories, cards and manuscripts. '
-      + 'kind: that category\'s type (brief, fields, samples) and its cards. manuscriptId: that manuscript\'s full text and version.',
+      + 'kind: that category\'s type (brief, fields, samples) and its cards. cardId: that card in full. '
+      + 'manuscriptId: that manuscript\'s full text and version.',
     parameters: {
-      kind: { type: 'string', description: 'Category id.' },
+      kind: { type: 'string', description: 'Category id (or its name as the board shows it).' },
+      cardId: { type: 'string', description: 'Card id (or the genre\'s ref, e.g. c3 / #12).' },
       manuscriptId: { type: 'string', description: 'Manuscript id (ms_…).' },
       includeArchived: { type: 'boolean', description: 'Also list archived cards.' },
     },
@@ -269,7 +349,7 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
     },
     isConcurrencySafe: () => true,
     execute: async (
-      args: { kind?: string; manuscriptId?: string; includeArchived?: boolean },
+      args: { kind?: string; cardId?: string; manuscriptId?: string; includeArchived?: boolean },
       exec: { agent?: Agent; signal?: AbortSignal },
     ): Promise<{ text: string; images: CanvasImageRef[] }> => {
       const resolved = await target(exec)
@@ -280,30 +360,36 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
       if (args.manuscriptId !== undefined) {
         return { text: await renderManuscript(resolved.canvasId, current.cards, args.manuscriptId), images: [] }
       }
+      if (args.cardId !== undefined) {
+        const hooked = agentOf(current)
+        const detail = hooked === undefined ? undefined : await hooked.agent.cardDetail({ canvasId: current.id, cardId: args.cardId }, resolved.session)
+        return { text: detail ?? renderCard(current, args.cardId), images: [] }
+      }
       const includeArchived = args.includeArchived === true
       if (args.kind !== undefined) {
+        // The id, else the name the board shows (a genre's skill says kind=人物).
         const category = current.categories.find(candidate => candidate.id === args.kind)
+          ?? current.categories.find(candidate => categoryNameOf(candidate) === args.kind)
         if (category === undefined) {
           return { text: `失败：这块画布没有 id 为「${args.kind}」的分类。可用的：${current.categories.map(row => `${row.id}（${categoryNameOf(row)}）`).join('、')}。`, images: [] }
         }
         const type = await renderType(current, category, exec)
-        return { text: `${type.text}\n\n${renderCards(current, { kind: category.id, includeArchived })}`, images: type.images }
+        return { text: `${type.text}\n\n${await listCards(current, category.id, includeArchived, resolved.session)}`, images: type.images }
       }
-      const manuscripts = current.manuscripts.length === 0
-        ? '成稿：（还没有）'
-        : ['成稿：', ...current.manuscripts.map(manuscript =>
-          `- ${manuscript.id}　${manuscript.title}　v${manuscript.version}　${manuscript.status === 'final' ? '定稿' : '写作中'}`)].join('\n')
-      return { text: [renderCatalog(current), renderCards(current, { includeArchived }), manuscripts].join('\n'), images: [] }
+      const cards = await listCards(current, undefined, includeArchived, resolved.session)
+      return { text: [renderCatalog(current), cards, await listManuscripts(current)].join('\n'), images: [] }
     },
   })
 
   const write = defineTool({
     name: 'canvas_write',
     description:
-      'Write to the open canvas. op=card proposes a card (the user keeps or rejects it); op=comment comments on cardId; '
-      + 'op=manuscript creates a manuscript, or revises manuscriptId from baseVersion. Load the canvas skill first.',
+      'Write to the open canvas. op=card proposes a card (the user keeps or rejects it; on a genre canvas such as 长篇小说 '
+      + 'its cards land at once), and with cardId patches that genre card\'s fields; op=comment comments on cardId; '
+      + 'op=archive archives cardId; op=manuscript creates a manuscript, or revises manuscriptId from baseVersion. '
+      + 'Load the canvas skill first.',
     parameters: {
-      op: { type: 'string', enum: ['card', 'comment', 'manuscript'], required: true, description: 'What to write.' },
+      op: { type: 'string', enum: ['card', 'comment', 'archive', 'manuscript'], required: true, description: 'What to write.' },
       text: { type: 'string', description: 'Card text, comment text, or the whole manuscript (Markdown).' },
       kind: {
         type: 'string',
@@ -326,7 +412,7 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
         description: 'card: where it comes from.',
       },
       comment: { type: 'string', description: 'card: why, attached as your comment.' },
-      cardId: { type: 'string', description: 'comment: the card.' },
+      cardId: { type: 'string', description: 'card: the genre card to patch; comment/archive: the card. An id or the genre\'s ref (c3, #12).' },
       manuscriptId: { type: 'string', description: 'manuscript: id to revise.' },
       baseVersion: { type: 'number', description: 'manuscript: version the revision starts from.' },
       title: { type: 'string', description: 'manuscript: title.' },
@@ -348,34 +434,34 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
       const resolved = await target(exec)
       if ('message' in resolved) return resolved.message
       if (args.op === 'comment') return writeComment(args, resolved)
+      if (args.op === 'archive') return archiveCard(args, resolved)
       if (args.op === 'manuscript') return writeManuscript(args, resolved)
       if (args.op === 'card') return writeCard(args, resolved)
-      return '失败：op 只能是 card、comment 或 manuscript。'
+      return '失败：op 只能是 card、comment、archive 或 manuscript。'
     },
   })
 
-  type Target = { canvasId: string; session: Session }
-
-  /** The registered genre of a canvas when it writes its agent cards with its own tool. */
-  const cardOwningGenre = async (canvasId: string): Promise<CanvasGenreDefinition | undefined> => {
-    const read = await board.readBoard({ canvasId })
-    if (!read.ok || read.board.genre === undefined) return undefined
-    const genre = board.genre(read.board.genre.id)
-    return genre?.agentCardTool === undefined ? undefined : genre
-  }
-
   const writeCard = async (args: WriteArgs, resolved: Target): Promise<string> => {
-    const genre = await cardOwningGenre(resolved.canvasId)
-    if (genre?.agentCardTool !== undefined) {
-      return `失败：这块画布是「${genre.label}」体裁，卡片用 ${genre.agentCardTool} 写（直接落成正式卡），canvas_write 不在这里落卡。`
+    const read = await board.readBoard({ canvasId: resolved.canvasId })
+    if (!read.ok) return renderOutcome({ ok: false, error: read.error })
+    const hooked = agentOf(read.board)
+    if (hooked !== undefined) {
+      const answer = await hooked.agent.writeCard({
+        canvasId: resolved.canvasId,
+        ...(args.kind === undefined ? {} : { kind: args.kind }),
+        ...(args.cardId === undefined ? {} : { cardId: args.cardId }),
+        ...(args.fields === undefined ? {} : { fields: args.fields }),
+        ...(args.text === undefined ? {} : { text: args.text }),
+        ...(args.comment === undefined ? {} : { comment: args.comment }),
+      }, resolved.session)
+      if (answer !== undefined) return answer
     }
+    if (args.cardId !== undefined) return '失败：这张卡由用户来改；要补充就 op=comment 在这张卡上留言，或 op=card 另提一张。'
     if (args.kind === undefined || args.kind.trim() === '') return '失败：op=card 要给 kind（分类 id，canvas_read 可查）。'
     const kind = args.kind
     const text = args.text ?? ''
     let fields: Record<string, FieldValue> | undefined
     if (args.fields !== undefined && Object.keys(args.fields).length > 0) {
-      const read = await board.readBoard({ canvasId: resolved.canvasId })
-      if (!read.ok) return renderOutcome({ ok: false, error: read.error })
       const category = read.board.categories.find(candidate => candidate.id === kind)
       if (category?.definition === undefined) {
         return `失败：分类「${category === undefined ? kind : categoryNameOf(category)}」没有字段定义，不能填 fields——把内容写进 text。`
@@ -394,15 +480,12 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
       ...(args.comment === undefined ? {} : { comment: args.comment }),
     }, resolved.session)
     if (!outcome.ok && outcome.error === 'invalid-name') {
-      const read = await board.readBoard({ canvasId: resolved.canvasId })
-      if (read.ok) {
-        const category = read.board.categories.find(candidate => candidate.id === kind)
-        const why = category === undefined
-          ? `这块画布没有 id 为「${kind}」的分类`
-          : `分类「${categoryNameOf(category)}」已停用`
-        return `失败：${why}。可用的 kind：${enabledKinds(read.board)}。`
-          + (isBoardCardKind(kind) || category !== undefined ? '' : '用户说的是分类名的话，从这里挑对应的 id。')
-      }
+      const category = read.board.categories.find(candidate => candidate.id === kind)
+      const why = category === undefined
+        ? `这块画布没有 id 为「${kind}」的分类`
+        : `分类「${categoryNameOf(category)}」已停用`
+      return `失败：${why}。可用的 kind：${enabledKinds(read.board)}。`
+        + (isBoardCardKind(kind) || category !== undefined ? '' : '用户说的是分类名的话，从这里挑对应的 id。')
     }
     if (!outcome.ok) return renderOutcome({ ok: false, error: outcome.error })
     const card = outcome.board.cards[outcome.board.cards.length - 1]
@@ -412,12 +495,26 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
   const writeComment = async (args: WriteArgs, resolved: Target): Promise<string> => {
     if (args.cardId === undefined || (args.text ?? '').trim() === '') return '失败：op=comment 要给 cardId 和 text。'
     const outcome = await board.addComment({
-      canvasId: resolved.canvasId, cardId: args.cardId, text: args.text ?? '', author: 'agent',
+      canvasId: resolved.canvasId, cardId: await resolveCardId(resolved, args.cardId), text: args.text ?? '', author: 'agent',
     }, resolved.session)
+    if (!outcome.ok && outcome.error === 'missing') return `失败：没有卡片「${args.cardId}」。`
     return renderOutcome({ ok: outcome.ok, ...(outcome.ok ? {} : { error: outcome.error }) })
   }
 
+  const archiveCard = async (args: WriteArgs, resolved: Target): Promise<string> => {
+    if (args.cardId === undefined) return '失败：op=archive 要给 cardId。'
+    const outcome = await board.patchCard({
+      canvasId: resolved.canvasId, cardId: await resolveCardId(resolved, args.cardId), status: 'archived',
+    }, resolved.session)
+    if (!outcome.ok && outcome.error === 'missing') return `失败：没有卡片「${args.cardId}」。`
+    if (!outcome.ok) return renderOutcome({ ok: false, error: outcome.error })
+    return `已归档：${args.cardId}（用户在画布的「已归档」里能找回）。`
+  }
+
   const writeManuscript = async (args: WriteArgs, resolved: Target): Promise<string> => {
+    const read = await board.readBoard({ canvasId: resolved.canvasId })
+    const hooked = read.ok ? agentOf(read.board) : undefined
+    if (hooked?.genre.ownsManuscripts === true && hooked.agent.manuscriptGuide !== undefined) return hooked.agent.manuscriptGuide
     if ((args.text ?? '').trim() === '') return '失败：op=manuscript 要把整篇正文放在 text。'
     const outcome = await board.writeManuscript({
       canvasId: resolved.canvasId,

@@ -46,8 +46,28 @@ export interface NovelGenreDefinition {
   readonly agentRow: string
   /** The chapters are this canvas's 成稿: the canvas renders the genre's chapter book there. */
   readonly ownsManuscripts: true
-  /** The agent writes cards with novel_write (live, ref'd, duplicate-checked); the canvas's own card write steps aside. */
-  readonly agentCardTool: string
+  /** canvas_read / canvas_write hand the role categories and the chapters to the engine. */
+  readonly agent?: NovelGenreAgent
+}
+
+/** One card write handed over by canvas_write (the canvas `CanvasGenreCardWrite` shape). */
+export interface NovelCardWrite {
+  readonly canvasId: string
+  readonly kind?: string
+  readonly cardId?: string
+  readonly fields?: Readonly<Record<string, unknown>>
+  readonly text?: string
+  readonly comment?: string
+}
+
+/** The genre's hooks into the canvas tools (the canvas `CanvasGenreAgent` shape); undefined = not the genre's, generic handling. */
+export interface NovelGenreAgent {
+  cardLines(request: { readonly canvasId: string; readonly kind?: string; readonly includeArchived: boolean }, session: FenceSession): Promise<readonly string[]>
+  cardDetail(request: { readonly canvasId: string; readonly cardId: string }, session: FenceSession): Promise<string | undefined>
+  writeCard(request: NovelCardWrite, session: FenceSession): Promise<string | undefined>
+  resolveCard(request: { readonly canvasId: string; readonly token: string }, session: FenceSession): Promise<string | undefined>
+  manuscripts(request: { readonly canvasId: string }): Promise<string>
+  readonly manuscriptGuide: string
 }
 
 /** A card field value (the canvas `FieldValue` shape). */
@@ -165,7 +185,6 @@ export const NOVEL_GENRE: NovelGenreDefinition = {
   description: '人物、世界、原则与伏笔做成卡片；章节正文是工作区里的 md 文件，写完一章对一次账。',
   agentRow: NOVEL_AGENT_ROW,
   ownsManuscripts: true,
-  agentCardTool: 'novel_write',
   categories: [
     {
       role: NOVEL_ROLES.character,

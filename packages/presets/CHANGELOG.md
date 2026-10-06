@@ -2,7 +2,7 @@
 
 ## 未发布
 
-- **写作模式并入长篇小说工具**：`preset-dsh-writing` 加 `canvas-novel-agent` 行（`@khorsheed/dsh-canvas-novel/agent`），原 `@khorsheed/dsh-bundle-writing` 的「写作」preset 退役。`novel_bind`、novel skill 与轻指引段随本 preset 授予；`novel_read` / `novel_write` / `novel_extract` 只在会话绑定长篇小说画布时出现，其余画布照旧只有画布工具。persona 的 Canvas 段加一句绑定小说画布时走 novel_write；`dsh.references` 加 `@khorsheed/dsh-canvas-novel`
+- **写作模式并入长篇小说工具**：`preset-dsh-writing` 加 `canvas-novel-agent` 行（`@khorsheed/dsh-canvas-novel/agent`），原 `@khorsheed/dsh-bundle-writing` 的「写作」preset 退役。`novel_bind`、novel skill 与轻指引段随本 preset 授予；`novel_read` / `novel_write` / `novel_extract` 只在会话绑定长篇小说画布时出现，其余画布照旧只有画布工具。persona 的 Canvas 段加一句：小说画布上的卡照旧走 canvas_write、直接落成正式卡，绑定后另有 novel_* 管章节、台账与待审；`dsh.references` 加 `@khorsheed/dsh-canvas-novel`
 
 ## 0.3.0
 

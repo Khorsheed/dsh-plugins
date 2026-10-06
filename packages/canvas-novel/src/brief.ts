@@ -212,7 +212,7 @@ function relationBlockPlan(relations: readonly RelationView[]): string[] {
     '',
     '## 关系（阶段与进度）',
     ...shown.map(relationLinePlan),
-    ...(ordered.length > shown.length ? [`（另有 ${ordered.length - shown.length} 对关系未列入，novel_read(cards, role=关系) 可取。）`] : []),
+    ...(ordered.length > shown.length ? [`（另有 ${ordered.length - shown.length} 对关系未列入，canvas_read(kind=关系) 可取。）`] : []),
     ...(relations.some(view => view.ready) ? ['标「可升」的关系攒够了分：可以考虑在这一章或接下来几章安排一场关键戏，让括号里那件事在正文里发生。'] : []),
     '一章最多让一对关系升一级，别让关系一下子跳级。',
   ]

@@ -108,7 +108,7 @@ describe('novel_extract import — the five gates (proposal §5)', () => {
     expect(medium?.status).toBe('kept')
     expect(medium?.comments[0]?.text).toBe('第5章：「袖口的蓝叶在靠近门缝时亮得刺眼」')
     // ✗ on a wrong one archives it.
-    expect(await store.archiveCard({ workId: DREAM.workId, id: medium!.id }, SESSION)).toMatchObject({ ok: true })
+    expect(await canvas.patchCard({ canvasId: DREAM.workId, cardId: medium!.id, status: 'archived' }, SESSION)).toMatchObject({ ok: true })
     expect(canvas.card(DREAM.workId, medium!.id)?.status).toBe('archived')
     // A medium MENTION pends (榜上判不了的疑似提及进人审), and moves nothing yet.
     const pending = await store.listPending({ workId: DREAM.workId })

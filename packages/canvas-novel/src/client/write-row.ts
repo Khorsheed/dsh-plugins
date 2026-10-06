@@ -7,7 +7,7 @@
  * A chapter answer (`tools.ts`) names the chapter and the canvas:
  * `已登记第 7 章《回响》（画布 canvas_x）plan：走向 4 拍 / 伏笔 2 条 / 出场 3 人。…`
  * or, without a plan, `已建第 7 章《回响》（画布 canvas_x · 规划中 · …）。`.
- * Every other answer (a card write, a review) is a plain line.
+ * Every other answer (a review) is a plain line.
  *
  * @module @khorsheed/dsh-canvas-novel/client
  */

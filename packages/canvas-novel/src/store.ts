@@ -879,28 +879,6 @@ export class NovelService {
     return { ok: true, cardId, ref: n === undefined ? cardId : refOf('relation', n), ignored }
   }
 
-  /**
-   * The ✗ on one card: archive it through the canvas's own status. Archived
-   * cards stay on the board, hidden — nothing is deleted.
-   * @param request - work id, card handle.
-   * @param session - the session that owns the gesture; supplies the fence.
-   * @returns the receipt, or the failure code.
-   */
-  async archiveCard(
-    request: { readonly workId: string; readonly id: string },
-    session: Session,
-  ): Promise<{ readonly ok: boolean; readonly error?: NovelError; readonly cardId?: string }> {
-    const canvas = this.canvas
-    const entries = await this.readEntries(request.workId)
-    if (canvas === undefined || entries === undefined) return { ok: false, error: 'missing' }
-    const handle = this.resolveCard(entries, request.id)
-    const card = handle === undefined ? undefined : entries.board.cards.find(candidate => candidate.id === handle.cardId)
-    if (card === undefined) return { ok: false, error: 'missing' }
-    if (card.status === 'archived') return { ok: false, error: 'invalid-name' }
-    const mutation = await canvas.patchCard({ canvasId: entries.board.id, cardId: card.id, status: 'archived' }, session)
-    return mutation.ok ? { ok: true, cardId: card.id } : { ok: false, error: canvasErrorOf(mutation.error) }
-  }
-
   /* ---------------------------------------------------------- experiences */
 
   /** List the experience journal (optionally one character's), oldest first. */

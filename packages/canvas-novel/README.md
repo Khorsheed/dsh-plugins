@@ -24,8 +24,9 @@
   正文的唯一正本是画布挂载工作区里的 `<工作区>/<画布标题>/第{n}章.md`。
 - **模型工具**由 `./agent` 组合入口注册，并打 origin 标：
   - `novel_bind`：列出长篇小说作品，按标题把当前会话绑到其中一部；挂在授予作用域上，没绑定的会话也有；
-  - `novel_read`：brief 三个变体、cards、card、chapters、ledger、pending、chapter；
-  - `novel_write`：card 落新卡或按编号改卡，chapter 自动编号，review 处理待审（采纳、丢弃）、归档卡片、撤销经历；
+  - `novel_read`：brief 三个变体、chapters、ledger、pending、chapter；
+  - `novel_write`：chapter 自动编号，review 处理待审（采纳、丢弃）；
+  - 卡片不另设工具：画布的 `canvas_read` / `canvas_write` 在小说画布上把五个角色分类交给本包的体裁钩子——`canvas_read` 列出卡片和编号（c3、#12、w5）、成稿一栏就是按顺序的章节列表，带 `cardId` 读全文；`canvas_write op=card` 落新卡（直接生效、查重名），带 `cardId` 按编号改卡，`op=archive` 归档；
   - `novel_extract`：prepare 产出素材包，import 过五道校验闸后落库。
 - **轻指引函数段 `novel:pointer`**（order 9500）：会话绑定了长篇小说画布时渲染一行指引，否则渲染空串，闲聊零成本。
 - **`novel` skill**：一份按需加载的操作手册（含「阶段与角色」：构思期当编辑做主线梳理，写作期当伙伴执行 plan，卡文时当同伴给最小下一步），不含任何作品内容。
