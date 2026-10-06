@@ -86,7 +86,23 @@ describe('reading experiments back', () => {
 
     const { records, problems } = await listExperimentRecords(stateRoot)
     expect(records.map(record => record.id)).toEqual([newer.id, older.id])
-    expect(problems).toEqual(['experiment broken-20260921-0000: meta.json is not valid JSON'])
+    expect(problems).toEqual([{ id: 'broken-20260921-0000', message: 'experiment broken-20260921-0000: meta.json is not valid JSON' }])
+  })
+
+  it('skips a directory holding only empty directories silently, names one with content (T99)', async () => {
+    const { stateRoot } = useDshHome()
+    const kept = await createExperiment(stateRoot, { name: 'kept', dataset: DATASET, plan: '{}' })
+    const root = experimentsRoot(stateRoot)
+    // A temp-cleaner's leftover: the tree survives, every file is gone.
+    mkdirSync(join(root, 'emptied-20261001-0000', 'cells', 'a'), { recursive: true })
+    mkdirSync(join(root, 'bare-20261001-0001'))
+    // Content but no meta: the person may want it back, so it is named.
+    mkdirSync(join(root, 'lost-meta-20261001-0002'))
+    writeFileSync(join(root, 'lost-meta-20261001-0002', 'plan.json'), '{}')
+
+    const { records, problems } = await listExperimentRecords(stateRoot)
+    expect(records.map(record => record.id)).toEqual([kept.id])
+    expect(problems).toEqual([{ id: 'lost-meta-20261001-0002', message: 'no experiment "lost-meta-20261001-0002" in this deployment' }])
   })
 
   it('an absent experiments root lists nothing rather than failing', async () => {

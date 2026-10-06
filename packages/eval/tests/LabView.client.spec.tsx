@@ -277,6 +277,51 @@ describe('LabView list', () => {
     expect(screen.getByText('list.empty')).toBeTruthy()
   })
 
+  it('folds unreadable experiment directories into one localized line that opens to their names (T99)', async () => {
+    const h = makeHarness({
+      list: {
+        ...LIST,
+        notes: ['2 experiment directories cannot be read: no experiment "a" in this deployment; …'],
+        notices: [{
+          code: 'experiments-unreadable',
+          params: { count: 2 },
+          text: '2 experiment directories cannot be read: no experiment "a" in this deployment; …',
+          items: ['broken-a-20261001-0000', 'broken-b-20261001-0001'],
+        }],
+      },
+    })
+    renderView(h)
+    await screen.findByText('harness-comparison')
+    const summary = screen.getByText(/^list\.notice\.experiments-unreadable \{/)
+    expect(summary.textContent).toContain('"count":2')
+    // The host's English never reaches the page when the code is known.
+    expect(screen.queryByText(/in this deployment/)).toBeNull()
+    const fold = summary.closest('details')!
+    expect(fold.open).toBe(false)
+    expect(within(fold).getByText('broken-a-20261001-0000')).toBeTruthy()
+    expect(within(fold).getByText('list.notice.experiments-unreadableHint')).toBeTruthy()
+    fireEvent.click(summary)
+    expect(fold.open).toBe(true)
+  })
+
+  it('words every known notice by code, and falls back to the host text for an unknown one (T99)', async () => {
+    const h = makeHarness({
+      list: {
+        ...LIST,
+        rows: [],
+        notes: ['no mission service: …', 'something newer'],
+        notices: [
+          { code: 'mission-missing', params: {}, text: 'no mission service: …' },
+          { code: 'from-a-newer-host', params: { x: 1 }, text: 'something newer' },
+        ],
+      },
+    })
+    renderView(h)
+    expect(await screen.findByText('list.notice.mission-missing {}')).toBeTruthy()
+    expect(screen.getByText('something newer')).toBeTruthy()
+    expect(screen.queryByText('no mission service: …')).toBeNull()
+  })
+
   it('新建实验 opens the draft form and reads what the repository holds', async () => {
     const h = makeHarness()
     renderView(h)
