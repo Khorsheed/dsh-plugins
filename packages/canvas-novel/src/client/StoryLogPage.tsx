@@ -644,9 +644,8 @@ function StoryLog(props: NovelSurfaceProps<NovelPageOwnerProps> & { readonly api
     return mark(`c${chapter}`, chapter, `${t('log.chapter', { n: chapter })} · ${where}${changed}`, <CastGlyph at={at} changes={changes} />, () => { pick({ kind: 'c', id: card.cardId, chapter }, true) })
   }))
   const castStatus = (card: StoryCharacter): string => {
-    const shown = card.appearances.filter(at => !at.planned).length
     const changed = card.history.filter(entry => entry.kind === 'change').length
-    return changed > 0 ? `${t('log.c.shown', { n: shown })} · ${t('log.c.changes', { n: changed })}` : t('log.c.shown', { n: shown })
+    return [castCount(card, t), ...changed > 0 ? [t('log.c.changes', { n: changed })] : []].join(' · ')
   }
 
   const worldChapters = (card: StoryCard): { chapter: number; first: boolean; entries: HistoryEntry[] }[] => {
@@ -826,6 +825,14 @@ function StoryLog(props: NovelSurfaceProps<NovelPageOwnerProps> & { readonly api
   )
 }
 
+/** 出场 counts the written chapters, 计划 the planned ones; a zero side is left out. */
+function castCount(card: StoryCharacter, t: T): string {
+  const shown = card.appearances.filter(at => !at.planned).length
+  const planned = card.appearances.length - shown
+  const parts = [...shown > 0 ? [t('log.c.shown', { n: shown })] : [], ...planned > 0 ? [t('log.c.plannedCount', { n: planned })] : []]
+  return parts.length === 0 ? t('log.c.absent') : parts.join(' · ')
+}
+
 /* ---------------------------------------------------------- side panel */
 
 function SidePanel({ model, selected, tab, setTab, navigate, starButton, t }: {
@@ -869,14 +876,15 @@ function SidePanel({ model, selected, tab, setTab, navigate, starButton, t }: {
   }
   if (selected.kind === 'c') {
     const card = model.log.characters.find(item => item.cardId === selected.id)!
-    const shown = card.appearances.filter(at => !at.planned)
+    const pov = card.appearances.filter(at => at.pov && !at.planned).length
     const changed = card.history.filter(entry => entry.kind === 'change').length
     return (
       <>
         <div className={css.logKicker}>{t('log.c.kicker')}</div>
         <h3 className={css.logTitle}>{card.name}</h3>
         <div className={css.logMeta}>
-          {t('log.c.meta', { shown: shown.length, pov: shown.filter(at => at.pov).length })}
+          {castCount(card, t)}
+          {pov > 0 && ` · ${t('log.c.povCount', { n: pov })}`}
           {changed > 0 && ` · ${t('log.c.metaChanged', { n: changed })}`}
         </div>
         {tabs(card.history.length)}
