@@ -503,8 +503,10 @@ export function bodyFingerprint(body: string): string | undefined {
  * The stored phase plus the manuscript as it is now → the phase the UI shows
  * (规划中→写作中→已抽取→已审过; 审过是人工闸门，永远最后). A reconciled chapter
  * whose body no longer matches the fingerprint its 对账 stored reads 待对账
- * (`stale`); a row reconciled before fingerprints existed has none and reads
- * 待对账 too — nothing vouches that its memory matches the text.
+ * (`stale`). A row reconciled before fingerprints existed has none: it keeps
+ * its phase while the body still has the character count that 对账 recorded
+ * (the fingerprint's length half), and reads 待对账 once the count moves or
+ * when no count was recorded — nothing else vouches for its memory.
  * @param chapter - the stored row.
  * @param fingerprint - the body's {@link bodyFingerprint}, undefined when the body is empty or gone.
  */
@@ -513,6 +515,10 @@ export function effectiveChapterPhase(chapter: ChapterRecord, fingerprint: strin
   // stored phase (the gentle migration for pre-F1-2 rows).
   if (chapter.phase !== 'planning' && fingerprint === undefined) return 'fileMissing'
   if (chapter.phase === 'planning') return fingerprint === undefined ? 'planning' : 'writing'
+  if (chapter.bodyHash === undefined) {
+    const length = fingerprint?.slice(0, fingerprint.indexOf('-'))
+    return chapter.wordCount !== undefined && length === chapter.wordCount.toString(36) ? chapter.phase : 'stale'
+  }
   if (chapter.bodyHash !== fingerprint) return 'stale'
   return chapter.phase
 }

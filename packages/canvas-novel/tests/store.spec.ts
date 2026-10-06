@@ -130,9 +130,13 @@ describe('the novel store', () => {
     expect(effectiveChapterPhase({ ...again.chapter!, phase: 'extracted' }, hash)).toBe('extracted')
     expect(effectiveChapterPhase({ ...again.chapter!, phase: 'extracted' }, undefined)).toBe('fileMissing')
     expect(effectiveChapterPhase({ ...again.chapter!, phase: 'reviewed' }, undefined)).toBe('fileMissing')
-    // A body that changed since the last 对账 reads 待对账, 审过 included; a row with no fingerprint (pre-fingerprint) too.
+    // A body that changed since the last 对账 reads 待对账, 审过 included.
     expect(effectiveChapterPhase({ ...again.chapter!, phase: 'reviewed' }, bodyFingerprint('改过的正文'))).toBe('stale')
-    expect(effectiveChapterPhase({ ...again.chapter!, bodyHash: undefined }, hash)).toBe('stale')
+    // A pre-fingerprint row keeps its phase while the body keeps the count its 对账 recorded.
+    const legacy = { ...again.chapter!, bodyHash: undefined }
+    expect(effectiveChapterPhase({ ...legacy, wordCount: '他推开门。'.length }, bodyFingerprint('他推开门。'))).toBe('reviewed')
+    expect(effectiveChapterPhase({ ...legacy, wordCount: '他推开门。'.length }, bodyFingerprint('他推开了门。'))).toBe('stale')
+    expect(effectiveChapterPhase({ ...legacy, wordCount: undefined }, hash)).toBe('stale')
     // Whitespace alone is not a change.
     expect(bodyFingerprint('他推开门。\n\n门后没有光。')).toBe(bodyFingerprint('他推开门。\n门后没有光。  '))
     expect(bodyFingerprint('  \n')).toBeUndefined()
