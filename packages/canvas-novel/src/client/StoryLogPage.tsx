@@ -43,7 +43,11 @@ const FIT_BELOW = 20
 /** The row head's width: wide frame, narrow frame. */
 const HW_WIDE = 236
 const HW_NARROW = 150
-/** The frame narrower than this stacks the side panel under the table. */
+/** A short book leaves the lanes room to spare: the row heads grow to these, then the columns to {@link CW_ROOMY}. */
+const HW_WIDE_MAX = 480
+const HW_NARROW_MAX = 360
+const CW_ROOMY = 64
+/** The frame narrower than this opens the side panel as a drawer over the table. */
 const NARROW_BELOW = 860
 /** The relation lane's height; the four levels 12px apart from the bottom, the rifts below them. */
 const REL_LANE = 74
@@ -360,6 +364,7 @@ function StoryLog(props: NovelSurfaceProps<NovelPageOwnerProps> & { readonly api
   const [tab, setTab] = useState<Tab>('now')
   const [open, setOpen] = useState({ r: true, c: true, w: false })
   const [selection, setSelection] = useState<Selection | null>(null)
+  const [drawer, setDrawer] = useState(false)
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState<string | null>(null)
   const [size, setSize] = useState({ frame: 0, matrix: 0 })
@@ -375,16 +380,22 @@ function StoryLog(props: NovelSurfaceProps<NovelPageOwnerProps> & { readonly api
     const observer = new ResizeObserver(() => {
       setSize({ frame: frame.clientWidth, matrix: matrixRef.current?.clientWidth ?? 0 })
     })
+    // The table's own width moves too when the side panel leaves the row (narrow) or comes back.
     observer.observe(frame)
+    if (matrixRef.current !== null) observer.observe(matrixRef.current)
     return () => { observer.disconnect() }
   }, [])
 
   // An unmeasured frame (no layout yet) reads as wide.
   const narrow = size.frame > 0 && size.frame < NARROW_BELOW
-  const hw = narrow ? HW_NARROW : HW_WIDE
-  const cw = zoom === 'fit' && size.matrix > 0
-    ? Math.max(MIN_CW, Math.min(CW_DETAIL, Math.floor((size.matrix - hw - 12) / model.last)))
-    : CW_DETAIL
+  const base = narrow ? HW_NARROW : HW_WIDE
+  const room = size.matrix - base - 12
+  // Every chapter fits at the detail width: no zoom, no minimap, and the spare width goes to the names first.
+  const fits = size.matrix > 0 && room >= model.last * CW_DETAIL
+  const hw = fits ? base + Math.min(room - model.last * CW_DETAIL, (narrow ? HW_NARROW_MAX : HW_WIDE_MAX) - base) : base
+  const cw = fits ? Math.min(CW_ROOMY, Math.floor((size.matrix - hw - 12) / model.last))
+    : zoom === 'fit' && size.matrix > 0 ? Math.max(MIN_CW, Math.floor(room / model.last))
+      : CW_DETAIL
   const fit = cw < FIT_BELOW
   const X = (n: number): number => (n - 1) * cw + cw / 2
   const laneWidth = model.last * cw + 6
@@ -475,6 +486,7 @@ function StoryLog(props: NovelSurfaceProps<NovelPageOwnerProps> & { readonly api
   const pick = (next: Selection, mark: boolean): void => {
     if (drag.current?.moved === true) return
     setSelection(next)
+    setDrawer(true)
     if (mark && next.kind !== 'f') setTab('log')
   }
 
@@ -755,14 +767,14 @@ function StoryLog(props: NovelSurfaceProps<NovelPageOwnerProps> & { readonly api
         <div className={css.logToolbar}>
           {seg(filter, setFilter, [['open', t('log.filter.open')], ['star', t('log.filter.star')], ['all', t('log.filter.all')]])}
           {seg(sort, setSort, [['plant', t('log.sort.plant')], ['idle', t('log.sort.idle')]])}
-          {seg(zoom, setZoom, [['detail', t('log.zoom.detail')], ['fit', t('log.zoom.fit')]])}
+          {!fits && seg(zoom, setZoom, [['detail', t('log.zoom.detail')], ['fit', t('log.zoom.fit')]])}
           <span className={css.logSpacer} />
           {failure !== null && <span className={css.warn}>{failure}</span>}
           {model.cur > 0 && <span className={css.muted}>{t('log.writtenTo', { n: model.cur })}</span>}
         </div>
         <div className={css.logBody}>
           <div className={css.logMain}>
-            <div
+            {!fits && <div
               className={css.logScrub}
               onPointerDown={(event) => {
                 scrubbing.current = true
@@ -781,7 +793,7 @@ function StoryLog(props: NovelSurfaceProps<NovelPageOwnerProps> & { readonly api
                 })}
               </svg>
               <i ref={windowRef} className={css.logScrubWindow} />
-            </div>
+            </div>}
             <div
               ref={matrixRef}
               className={css.logMatrix}
@@ -795,7 +807,8 @@ function StoryLog(props: NovelSurfaceProps<NovelPageOwnerProps> & { readonly api
               {grid}
             </div>
           </div>
-          <aside className={css.logSide}>
+          {(!narrow || drawer) && <aside className={css.logSide}>
+            {narrow && <button type="button" className={css.logClose} onClick={() => { setDrawer(false) }}>{t('log.close')}</button>}
             <SidePanel
               model={model}
               selected={selected}
@@ -805,7 +818,7 @@ function StoryLog(props: NovelSurfaceProps<NovelPageOwnerProps> & { readonly api
               starButton={starButton}
               t={t}
             />
-          </aside>
+          </aside>}
         </div>
         <Legend t={t} />
       </div>
