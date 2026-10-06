@@ -55,21 +55,27 @@ MIN_HOST_TOOLCHAIN="~/.dsh-toolchains/rc-0.2.0-rc.2"
 # pin. The 0.1.5-era branch that replaced $DSH_HOME/.agent-presets/eval whole
 # was removed with the directory version (T82).
 
-# The pack's SKILLS, by skill name; each is a directory under skills/ holding
-# `SKILL.md`. They do NOT live under the profile directory:
-# `dsh-skill-filesystem` scans `$DSH_HOME/skills` (its `user-dsh` root), so the
-# roster is per-HOME, and the eval preset's own `skill-filesystem` row is what
-# surfaces them in an evaluation session's skill catalog.
-#
-# Replaced WHOLE on install and on update, for the same reason the eval preset is:
-# `eval-planning` teaches the one drafting verb (eval_plan_draft) and where the
-# line between drafting and starting is — apparatus, not preference. A locally
-# authored skill of the same name is overwritten; author your own under a
-# different name.
-#
-# Because they sit outside $DSH_HOME/profiles/web-eval, uninstalling the
-# profile does NOT remove them — the README says so beside the `rm -rf`.
-SKILL_IDS="eval-planning"
+# The pack ships NO skills any more (T100). `eval-planning` moved into
+# @khorsheed/dsh-eval and is registered by its `./tool` row — the row the eval
+# preset names — so only evaluation sessions list it. The scripts used to copy
+# it into `$DSH_HOME/skills`, the root `dsh-skill-filesystem` scans for EVERY
+# preset that composes it, which put the evaluation skill into the dev and
+# writing sessions of the same home. A copy those scripts left behind is
+# retired after a successful run (retire_legacy_skill below): removed when its
+# frontmatter carries the pack's signature (`name: eval-planning` plus
+# `iteration: I5` — the scripts always replaced that directory whole, so it was
+# never the person's), reported and left alone otherwise.
+LEGACY_SKILL_DIR="$DSH_HOME/skills/eval-planning"
+retire_legacy_skill() {
+  [ -f "$LEGACY_SKILL_DIR/SKILL.md" ] || return 0
+  _fm=$(sed -n '1,12p' "$LEGACY_SKILL_DIR/SKILL.md")
+  if printf '%s\n' "$_fm" | grep -qx 'name: eval-planning' && printf '%s\n' "$_fm" | grep -qx '  iteration: I5'; then
+    rm -rf "$LEGACY_SKILL_DIR"
+    echo "dsh-web-eval: removed the old pack copy of the eval-planning skill from $DSH_HOME/skills — @khorsheed/dsh-eval now ships it to evaluation sessions only"
+  else
+    echo "dsh-web-eval: note — $LEGACY_SKILL_DIR is not the pack's copy, so it was left alone. It shows in every session that scans $DSH_HOME/skills and duplicates the eval-planning skill @khorsheed/dsh-eval registers; rename or remove it."
+  fi
+}
 
 # Members source mode packs from the checkout — "no usable release on npm".
 # Two reasons a member lands here, and docs/release-status.md is the authority
@@ -296,32 +302,11 @@ if [ -d "$DEST" ]; then
 fi
 
 mkdir -p "$DEST"
-# The skills are replaced WHOLE (they are apparatus, not preference), so the
-# previous copy is kept beside them until the install succeeds: a failure
-# halfway through must not be the moment a person discovers their skill
-# directory is gone.
-SKILL_BACKUP="$DSH_HOME/skills/.web-eval-backup.$$"
-trap 'echo "dsh-web-eval: install failed — $DEST is half-installed; remove it before re-running" >&2
-  if [ -d "$SKILL_BACKUP" ]; then
-    echo "  the skill(s) were replaced; the previous copy is at $SKILL_BACKUP" >&2
-    echo "  restore with: rm -rf $DSH_HOME/skills/<id> && mv $SKILL_BACKUP/<id> $DSH_HOME/skills/" >&2
-  fi' 0
+trap 'echo "dsh-web-eval: install failed — $DEST is half-installed; remove it before re-running" >&2' 0
 for f in $PROFILE_FILES; do
   if [ -e "$SRC/$f" ]; then rm -rf "$DEST/$f"; cp -R "$SRC/$f" "$DEST/$f"; fi
 done
 
-SKILL_ROOT="$DSH_HOME/skills"
-for id in $SKILL_IDS; do
-  [ -f "$SRC/skills/$id/SKILL.md" ] || { echo "dsh-web-eval: skills/$id/SKILL.md missing from the clone" >&2; exit 1; }
-  mkdir -p "$SKILL_ROOT"
-  if [ -d "$SKILL_ROOT/$id" ]; then
-    mkdir -p "$SKILL_BACKUP"
-    cp -R "$SKILL_ROOT/$id" "$SKILL_BACKUP/$id"
-  fi
-  rm -rf "$SKILL_ROOT/$id"
-  cp -R "$SRC/skills/$id" "$SKILL_ROOT/$id"
-  echo "dsh-web-eval: installed skill \"$id\" into $SKILL_ROOT/$id"
-done
 
 if [ -n "$SOURCE" ]; then
   TARBALLS="$DEST/tarballs"
@@ -477,7 +462,7 @@ ROWS=$(printf '%s\n' "$DUMP" | grep -c '^- id: ' || true)
 # overwritten.
 DEFAULT_PRESET=$(printf '%s\n' "$DUMP" | awk '/^- id: agent-preset-registry$/{f=1;next} f&&/^- id: /{f=0} f&&/^[[:space:]]+default:/{print $2; exit}')
 trap - 0
-if [ -d "$SKILL_BACKUP" ]; then rm -rf "$SKILL_BACKUP"; fi
+retire_legacy_skill
 echo "dsh-web-eval: installed into $DEST — $MEMBERS @khorsheed members, $ROWS patch rows composed"
 if [ "$DEFAULT_PRESET" = "eval" ]; then
   echo "dsh-web-eval: default agent preset: eval (pinned by cordis.patch.yml; a default chosen in 设置 → Agent 预设 overrides it for new sessions)"

@@ -116,7 +116,7 @@
 | 预设自带 | read · write · edit · glob · grep · job_* · subagent · subagent_fork · web_search · skill · goal · todo · ask_user | 写 plan / condition / 分析初稿全靠 write |
 | 不在表上 | bash · pwsh · workflow · ralph · plan_mode · subagent_<harness> · 任何 lab 工具 · mission-tool | 决策 12 与 R6 |
 
-`eval_plan_draft` 已落地（I5·T34）：把「写文件 + validate」并成一个动作，`eval-planning` skill 教 agent 走这条路，技能随 pack 装到 `$DSH_HOME/skills`。
+`eval_plan_draft` 已落地（I5·T34）：把「写文件 + validate」并成一个动作，`eval-planning` skill 教 agent 走这条路，技能随 `@khorsheed/dsh-eval` 包分发、由 `eval-tool` 行注册（T100 前随 pack 装到 `$DSH_HOME/skills`）。
 
 ## 七、八步流程与面
 

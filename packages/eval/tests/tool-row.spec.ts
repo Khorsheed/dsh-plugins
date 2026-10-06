@@ -4,8 +4,11 @@
  * the `none` grant, the `/eval` slash registration (preset-visibility
  * rollout A3 — registered at every tier, delegated to the core's handler),
  * and the silent degrade when the core service is absent. */
+import { execFileSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { apply, type EvalToolConfig } from '../src/tool.ts'
+import { apply, loadPlanningSkill, PLANNING_SKILL_DIR, type EvalToolConfig } from '../src/tool.ts'
 
 const ORIGIN = Symbol.for('dsh.tool.origin')
 const EVAL_TOOLS = [
@@ -145,4 +148,82 @@ describe('eval-tool row (@khorsheed/dsh-eval/tool)', () => {
     expect(infos).toHaveLength(1)
     expect(infos[0]).toContain('eval service is absent')
   })
+})
+
+interface RegisteredSkill {
+  name: string
+  description: string
+  content: string
+  source: string
+  provider?: string
+}
+
+/** Mount the row against a ctx whose deferred `skills` door opens on a recording registry. */
+function mountWithSkills(service: unknown, config?: EvalToolConfig): RegisteredSkill[] {
+  const skills: RegisteredSkill[] = []
+  const child = (): Record<string, unknown> => ({
+    tools: { register: () => () => {} },
+    commands: { register: () => () => {} },
+    effect: (fn: () => unknown) => { fn(); return () => {} },
+    get: (name: string) => (name === 'skills'
+      ? { register: (skill: RegisteredSkill) => { skills.push(skill); return () => {} } }
+      : undefined),
+  })
+  const ctx = {
+    get: (name: string) => (name === 'dshEval' ? service : undefined),
+    logger: { info: () => {}, warn: () => {} },
+    inject: (_names: readonly string[], cb: (ctx: never) => void) => { cb(child() as never) },
+  }
+  if (config === undefined) apply(ctx as never)
+  else apply(ctx as never, config)
+  return skills
+}
+
+describe('eval-planning skill — ships with the package, granted by this row (T100)', () => {
+  it('registers the eval-planning skill from the package, tagged with this package as provider', () => {
+    const skills = mountWithSkills({})
+    expect(skills.map(skill => skill.name)).toEqual(['eval-planning'])
+    expect(skills[0]?.provider).toBe('@khorsheed/dsh-eval')
+    expect(skills[0]?.source).toBe('runtime')
+    expect(skills[0]?.description).toContain('Draft an evaluation experiment')
+    // The frontmatter is the registry's metadata, never part of the body.
+    expect(skills[0]?.content).not.toMatch(/^---/)
+    expect(skills[0]?.content).toContain('# Drafting an evaluation')
+  })
+
+  it('registers no skill under `none` (no drafting verb, no skill about one) and none without the core', () => {
+    expect(mountWithSkills({}, { tools: 'none' })).toEqual([])
+    expect(mountWithSkills(undefined)).toEqual([])
+  })
+
+  it('the skill keeps teaching the drafting verb and leaves the starting verbs the human\'s', () => {
+    const body = loadPlanningSkill()?.content ?? ''
+    for (const line of [
+      'eval_plan_draft',
+      'You draft. They decide.',
+      '/eval conditions provision',
+      '批准并启动',
+      "Do not write an experiment's plan or a library condition",
+      'Pick datasets only from `datasets_list`',
+      'If the person skips the version question, stop.',
+      'Ask only when nobody named the factor',
+      '这个路径在本部署没有登记',
+      'onto a registered id because the names look alike',
+      // T87: the 新建实验 form's request is walked one open choice at a time.
+      '## When the form hands it over',
+      'Never re-ask what the request says is settled.',
+      'Ask the open choices one at a time',
+    ]) expect(body).toContain(line)
+  })
+
+  it('the publish file list ships the skill', () => {
+    const out = execFileSync('npm', ['pack', '--dry-run', '--json', '--ignore-scripts'], {
+      cwd: join(import.meta.dirname, '..'),
+      encoding: 'utf8',
+      env: { ...process.env, npm_config_loglevel: 'silent' },
+    })
+    const [report] = JSON.parse(out) as Array<{ files: Array<{ path: string }> }>
+    expect(report!.files.map(file => file.path)).toContain('skills/eval-planning/SKILL.md')
+    expect(readFileSync(join(PLANNING_SKILL_DIR, 'SKILL.md'), 'utf8')).toMatch(/^---\nname: eval-planning\n/)
+  }, 60_000)
 })

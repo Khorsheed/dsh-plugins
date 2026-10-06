@@ -2,8 +2,8 @@
  * The web-eval profile scripts' preflight: it must run BEFORE anything is
  * written.
  *
- * Both scripts replace things whole — the profile template and (since I5·T34)
- * the skill directories under `$DSH_HOME/skills`; until T82 also the agent
+ * Both scripts replace things whole — the profile template; from I5·T34 until
+ * T100 also the skill directories under `$DSH_HOME/skills`; until T82 also the agent
  * preset directory under `$DSH_HOME/.agent-presets` — and both used to reach
  * their first `dsh` call only after doing so (install.sh also after building
  * and packing every member). On a machine missing its preconditions that meant
@@ -13,12 +13,13 @@
  * the scripts never write there at all, so the marker doubles as proof of it.
  * Since T82 the preflight also refuses a host below 0.2.0-rc.2.
  *
- * The second describe is not about preflight at all: it pins what the pack
- * SHIPS, because a skill that teaches the drafting verb is only apparatus if
- * the installer actually carries it to the root `dsh-skill-filesystem` scans.
+ * The last describe is not about preflight at all: it pins that the pack
+ * ships NOTHING into the shared `$DSH_HOME/skills` root any more (T100 — the
+ * eval-planning skill rides the eval package's tool row), and that a copy an
+ * earlier install left there is retired.
  */
 import { execFileSync } from 'node:child_process'
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -142,66 +143,51 @@ describe('web-eval update.sh preflight', () => {
 })
 
 describe('what the web-eval pack ships outside the profile directory', () => {
-  const SKILL_ROOT = join(PROFILE, 'skills')
+  // T100: nothing. The eval-planning skill ships inside @khorsheed/dsh-eval and
+  // is registered by its `./tool` row (pinned in packages/eval/tests/tool-row.spec.ts),
+  // so only sessions whose preset names that row list it. The scripts used to
+  // copy it into `$DSH_HOME/skills` — the root dsh-skill-filesystem scans for
+  // EVERY preset composing it, dev and writing included.
 
-  it('both scripts install every skills/ directory the pack holds, and into the root the provider scans', () => {
-    const shipped = readdirSync(SKILL_ROOT, { withFileTypes: true })
-      .filter(entry => entry.isDirectory())
-      .map(entry => entry.name)
-      .sort()
-    expect(shipped).toEqual(['eval-planning'])
-
+  it('neither script copies a skill into the shared skills root, and the pack holds no skills/ directory', () => {
+    expect(existsSync(join(PROFILE, 'skills'))).toBe(false)
     for (const script of ['install.sh', 'update.sh']) {
       const text = readFileSync(join(PROFILE, 'scripts', script), 'utf8')
-      const declared = /^SKILL_IDS="([^"]*)"$/m.exec(text)?.[1]?.split(/\s+/).filter(Boolean).sort()
-      // A skill in the clone that no script lists simply never arrives — the
-      // same failure mode PROFILE_FILES' whitelist has, and the reason both
-      // lists are pinned rather than globbed.
-      expect(declared, `${script} SKILL_IDS`).toEqual(shipped)
-      // `$DSH_HOME/skills` is dsh-skill-filesystem's `user-dsh` root. Anywhere
-      // else and the skill is on disk and in nobody's catalog.
-      expect(text).toContain('SKILL_ROOT="$DSH_HOME/skills"')
+      expect(text, script).not.toMatch(/^SKILL_IDS=/m)
+      expect(text, script).not.toMatch(/cp -R[^\n]*skills/)
+      // The retirement runs only after the run succeeded (after `trap - 0`).
+      const body = text.slice(text.indexOf('trap - 0'))
+      expect(body, script).toMatch(/^retire_legacy_skill$/m)
     }
   })
 
-  it('every shipped skill has the frontmatter the provider requires', () => {
-    for (const name of readdirSync(SKILL_ROOT, { withFileTypes: true }).filter(entry => entry.isDirectory())) {
-      // Directory bundles resolve as `<name>/SKILL.md` and nothing else is
-      // discovered — a nested one is silently invisible.
-      const body = readFileSync(join(SKILL_ROOT, name.name, 'SKILL.md'), 'utf8')
-      const frontmatter = /^---\n([\s\S]*?)\n---\n/.exec(body)?.[1]
-      expect(frontmatter, `${name.name}: no frontmatter`).toBeTruthy()
-      // `name` must be kebab-case and match the directory; `description` is
-      // required. A rejected spelling drops the WHOLE skill with a warning, so
-      // the model catalog cannot tell it from one that was never written.
-      expect(frontmatter).toMatch(new RegExp(`^name: ${name.name}$`, 'm'))
-      expect(name.name).toMatch(/^[a-z0-9]+(-[a-z0-9]+)*$/)
-      expect(frontmatter).toMatch(/^description: \S/m)
-    }
-  })
+  /** Run a script's `retire_legacy_skill` against a home holding `skills/eval-planning/SKILL.md`. */
+  function retire(script: string, skillBody: string): { kept: boolean; out: string } {
+    const text = readFileSync(join(PROFILE, 'scripts', script), 'utf8')
+    const start = text.indexOf('LEGACY_SKILL_DIR=')
+    const end = text.indexOf('\n}\n', start) + 3
+    const home = mkdtempSync(join(tmpdir(), 'web-eval-legacy-skill-'))
+    const dir = join(home, 'skills', 'eval-planning')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'SKILL.md'), skillBody, 'utf8')
+    const out = execFileSync('sh', ['-c', `${text.slice(start, end)}\nretire_legacy_skill`], {
+      env: { ...process.env, DSH_HOME: home },
+      encoding: 'utf8',
+    })
+    return { kept: existsSync(join(dir, 'SKILL.md')), out }
+  }
 
-  it('the eval-planning skill teaches the drafting verb and keeps the starting verbs the human\'s', () => {
-    const body = readFileSync(join(SKILL_ROOT, 'eval-planning/SKILL.md'), 'utf8')
-    expect(body).toContain('eval_plan_draft')
-    // R1, in the words the agent reads: drafting is not starting, and a
-    // condition is always a copy.
-    expect(body).toContain('You draft. They decide.')
-    expect(body).toContain('/eval conditions provision')
-    expect(body).toContain('批准并启动')
-    expect(body).toContain('Do not write an experiment\'s plan or a library condition')
-    // T73: datasets come only from the registry, and a skipped version
-    // question ends the turn without a draft.
-    expect(body).toContain('Pick datasets only from `datasets_list`')
-    expect(body).toContain('If the person skips the version question, stop.')
-    // T73 pilot: items, reps and the judge are defaults, never a question to
-    // stop on; a path is never mapped onto a registered id.
-    expect(body).toContain('Ask only when nobody named the factor')
-    expect(body).toContain('这个路径在本部署没有登记')
-    expect(body).toContain('onto a registered id because the names look alike')
-    // T87: the 新建实验 form's 「让 Agent 组织」 request is walked through one
-    // open choice at a time, and still ends in a draft, never a start.
-    expect(body).toContain('## When the form hands it over')
-    expect(body).toContain('Never re-ask what the request says is settled.')
-    expect(body).toContain('Ask the open choices one at a time')
-  })
+  const PACK_COPY = '---\nname: eval-planning\ndescription: Draft an evaluation experiment.\nmetadata:\n  version: 1.0.0\n  iteration: I5\n---\n\n# Drafting an evaluation\n'
+  const OWN_COPY = '---\nname: eval-planning\ndescription: my own notes\n---\n\nmine\n'
+
+  for (const script of ['install.sh', 'update.sh']) {
+    it(`${script} removes a copy carrying the pack's signature, and leaves anyone else's alone`, () => {
+      const pack = retire(script, PACK_COPY)
+      expect(pack.kept).toBe(false)
+      expect(pack.out).toContain('removed the old pack copy')
+      const own = retire(script, OWN_COPY)
+      expect(own.kept).toBe(true)
+      expect(own.out).toContain('is not the pack\'s copy, so it was left alone')
+    })
+  }
 })
