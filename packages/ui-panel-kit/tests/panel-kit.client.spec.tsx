@@ -40,6 +40,17 @@ describe('splitActions', () => {
     expect(inline.map(a => a.id)).toEqual(['a0', 'a4'])
     expect(overflow.map(a => a.id)).toEqual(['a1', 'a2', 'a3'])
   })
+  it('puts a lone overflowing action in the ⋯ slot instead of opening a one-row menu', () => {
+    const { inline, overflow } = splitActions(actions(3), 2)
+    expect(inline.map(a => a.id)).toEqual(['a0', 'a1', 'a2'])
+    expect(overflow).toEqual([])
+  })
+  it('still folds a lone extra row when pins already exceed the budget', () => {
+    const list = actions(4, { 0: { pinned: true }, 1: { pinned: true }, 2: { pinned: true } })
+    const { inline, overflow } = splitActions(list, 2)
+    expect(inline.map(a => a.id)).toEqual(['a0', 'a1', 'a2'])
+    expect(overflow.map(a => a.id)).toEqual(['a3'])
+  })
 })
 
 describe('splitActions menu-only rows', () => {

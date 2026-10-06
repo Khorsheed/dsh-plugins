@@ -3,11 +3,36 @@
  * non-ok / network failure / malformed payloads), the app pickers behind the
  * two external-open gestures, and the launch POST.
  */
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   OPEN_IN_APP_APPS_ROUTE, OPEN_IN_APP_OPEN_ROUTE, OpenInAppProbe,
-  pickFileManager, pickIde,
+  browserOnHost, pickFileManager, pickIde,
 } from '../src/client/open-in-app.ts'
+
+afterEach(() => { vi.unstubAllGlobals() })
+
+describe('browserOnHost', () => {
+  it('is true only for loopback hostnames, and for an unreadable location', () => {
+    for (const hostname of ['localhost', '127.0.0.1', '[::1]', '::1', 'LOCALHOST']) {
+      expect(browserOnHost({ location: { hostname } })).toBe(true)
+    }
+    expect(browserOnHost({ location: { hostname: 'bridge-spider.trycloudflare.com' } })).toBe(false)
+    expect(browserOnHost({ location: { hostname: '192.168.1.20' } })).toBe(false)
+    expect(browserOnHost({})).toBe(true)
+    expect(browserOnHost({ location: { hostname: '' } })).toBe(true)
+  })
+})
+
+describe('OpenInAppProbe off-host', () => {
+  it('publishes no apps without probing when the page is not on the host', async () => {
+    vi.stubGlobal('location', { hostname: 'bridge-spider.trycloudflare.com', origin: 'https://bridge-spider.trycloudflare.com' })
+    const calls: string[] = []
+    const probe = new OpenInAppProbe((input) => { calls.push(String(input)); return Promise.resolve(fakeResponse(true, { apps: ['finder', 'vscode'] })) })
+    await probe.load()
+    expect(probe.apps.getSnapshot()).toEqual([])
+    expect(calls).toEqual([])
+  })
+})
 
 /** A minimal Response stand-in for the probe's fetch carrier. */
 function fakeResponse(ok: boolean, payload?: unknown): Response {

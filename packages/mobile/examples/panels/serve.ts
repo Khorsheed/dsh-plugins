@@ -15,7 +15,13 @@ const server = await createServer({
     { find: 'preview-host-panel', replacement: join(process.env.DSH_HARNESS ?? join(homedir(), 'code/deepseek-harness'), 'packages/client/ui-sidebar-right/src/client/shell/SidebarRight.module.css') },
     ...Object.entries(config.resolve.alias).map(([find, replacement]) => ({ find, replacement })),
   ] }, plugins: config.plugins,
-  server: { host: '127.0.0.1', port: 8875, strictPort: true, fs: { allow: [fileURLToPath(new URL('../../../../', import.meta.url)), process.env.DSH_HARNESS ?? join(homedir(), 'code/deepseek-harness')] } },
+  server: {
+    host: '127.0.0.1', port: 8875, strictPort: true,
+    // Off-host check (fixture only): PANELS_ALLOWED_HOSTS=phone.remote.test plus a
+    // browser resolver rule mapping that name to 127.0.0.1 renders the panels
+    // as a phone through a tunnel sees them (host-launching gestures hidden).
+    ...(process.env.PANELS_ALLOWED_HOSTS ? { allowedHosts: process.env.PANELS_ALLOWED_HOSTS.split(',') } : {}),
+    fs: { allow: [fileURLToPath(new URL('../../../../', import.meta.url)), process.env.DSH_HARNESS ?? join(homedir(), 'code/deepseek-harness')] } },
 })
 await server.listen()
 server.printUrls()

@@ -12,7 +12,7 @@ import { writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
 import { IconFolderOpenOutlineMedium, IconProjectAddOutlineMedium, IconRefreshOutlineMedium, IconSearchOutlineMedium, type IconProps } from './icons.tsx'
 import type { ListLocalDirectoryResult, SearchLocalDirectoryResult } from '../types.ts'
 import {
-  ContentPane, basenameOf, dirnameOf, pickFileManager, pickIde,
+  ContentPane, basenameOf, browserOnHost, dirnameOf, pickFileManager, pickIde,
 } from '@khorsheed/dsh-client-ui-content-preview/src/client/index.ts'
 import { AdaptiveSplit, PanelHeader, PanelRoot, type PanelAction } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
 import type { WorkspaceViewProps } from './contract.ts'
@@ -104,8 +104,13 @@ export function WorkspaceView({
   // gestures hide until their catalog id resolved (and on hosts without
   // open-in-app, forever).
   const openInApps = useOpenInApps(apps => apps)
-  const canOpenFolder = openInApps !== null && pickFileManager(openInApps) !== undefined
-  const canOpenIDE = openInApps !== null && pickIde(openInApps) !== undefined
+  // Off-host (a phone through the tunnel, say) every host-launching gesture
+  // would fire on a machine the viewer is not at: the open-in-app probe
+  // already publishes no apps there, and the native directory picker would
+  // open its dialog on the host's screen — gate all of them here as well.
+  const onHost = browserOnHost()
+  const canOpenFolder = onHost && openInApps !== null && pickFileManager(openInApps) !== undefined
+  const canOpenIDE = onHost && openInApps !== null && pickIde(openInApps) !== undefined
 
   // Whether hidden (dot-prefixed) entries are shown; default hides them.
   const [hideHidden, setHideHidden] = useState(true)
@@ -263,7 +268,7 @@ export function WorkspaceView({
   }
   // The workspace gestures, shared by both header shapes.
   const workspaceActions: PanelAction[] = [
-    { id: 'choose', label: t('local.chooseWorkspace'), icon: <IconProjectAddOutlineMedium />, onSelect: chooseWorkspace },
+    ...(onHost ? [{ id: 'choose', label: t('local.chooseWorkspace'), icon: <IconProjectAddOutlineMedium />, onSelect: chooseWorkspace }] : []),
     ...(canReturn ? [{ id: 'return', label: t('local.backToWorkspace'), icon: <IconFolderReturnMedium />, onSelect: () => { navigate(workspaceRoot) } }] : []),
     ...(canOpenFolder && root !== null ? [{ id: 'folder', label: t('local.openFolder'), icon: <IconFolderOpenOutlineMedium />, onSelect: () => { openFolder(root) } }] : []),
     { id: 'refresh', label: t('local.refreshFiles'), icon: <IconRefreshOutlineMedium />, onSelect: () => { if (root !== null) actions.refresh() } },
@@ -271,11 +276,14 @@ export function WorkspaceView({
   // Compact: one header for the whole list — a tappable trail (home folded to
   // `~`) climbs to any ancestor, search inline, everything else (the tree
   // header's hidden-files toggle included) in ⋯; the workspace actions keep
-  // their wide order.
+  // their wide order. Off-host the host-only gestures are gone, leaving
+  // search, refresh and the hidden-files toggle: all three are pinned so no ⋯
+  // holds them (an occasional "back to workspace" is the only menu row left).
+  const hiddenToggle: PanelAction = { id: 'hidden', label: hideHidden ? t('local.showHiddenFiles') : t('local.hideHiddenFiles'), icon: <EyeGlyph open={!hideHidden} />, onSelect: () => { setHideHidden(value => !value) } }
   const compactActions: PanelAction[] = [
     ...(root !== null && root !== '' ? [{ id: 'search', label: searchOpen ? t('tree.closeSearch') : t('tree.search'), icon: <IconSearchOutlineMedium />, pinned: true, pressed: searchOpen, onSelect: toggleSearch }] : []),
-    ...workspaceActions,
-    { id: 'hidden', label: hideHidden ? t('local.showHiddenFiles') : t('local.hideHiddenFiles'), icon: <EyeGlyph open={!hideHidden} />, onSelect: () => { setHideHidden(value => !value) } },
+    ...(onHost ? workspaceActions : workspaceActions.map(action => action.id === 'refresh' ? { ...action, pinned: true } : action)),
+    onHost ? hiddenToggle : { ...hiddenToggle, pinned: true },
   ]
   // A trail wider than the compact header scrolls; keep "where you are" (its
   // end) in view whenever the folder changes.

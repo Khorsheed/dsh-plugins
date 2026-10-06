@@ -169,7 +169,7 @@ describe('ContentPane chrome and non-text reads', () => {
     })
     expect(screen.getByRole('button', { name: 'action.copyPath' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'action.openIDE' })).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'action.openFolder' }))
+    fireEvent.click(screen.getByRole('button', { name: 'action.showInFolder' }))
     expect(openFolder).toHaveBeenCalledTimes(1)
   })
 
@@ -308,7 +308,7 @@ describe('ContentPane compact chrome (panel-responsive-spec P1)', () => {
     expect(screen.queryByRole('searchbox')).toBeNull()
   })
 
-  it('keeps search and reload inline and folds the path and copy into the ⋯ menu', () => {
+  it('keeps search and reload inline and folds copy and the host gestures into the ⋯ menu, with no path row', () => {
     mount({ kind: 'text', path: '/work/a.md', content: '# A\n' }, {
       displayPath: '/work/a.md',
       onReload: () => Promise.resolve(),
@@ -319,8 +319,22 @@ describe('ContentPane compact chrome (panel-responsive-spec P1)', () => {
     expect(screen.getByRole('button', { name: 'action.reload' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'action.copyPath' })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'action.more' }))
-    expect(screen.getByText('/work/a.md')).toBeTruthy()
+    expect(screen.queryByText('/work/a.md')).toBeNull()
     expect(screen.getByText('action.copyPath')).toBeTruthy()
-    expect(screen.getByText('action.openFolder')).toBeTruthy()
+    expect(screen.getByText('action.showInFolder')).toBeTruthy()
+  })
+
+  it('puts a lone remaining action inline instead of a one-row ⋯ (the off-host header)', () => {
+    // Off-host the open-in-app probe publishes no apps, so the caller passes no
+    // host gestures: search, reload and copy path all fit without a menu.
+    mount({ kind: 'text', path: '/work/a.md', content: '# A\n' }, {
+      displayPath: '/work/a.md',
+      onReload: () => Promise.resolve(),
+      onCopyPath: () => Promise.resolve(true),
+    })
+    expect(screen.getByRole('button', { name: 'search.placeholder' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'action.reload' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'action.copyPath' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'action.more' })).toBeNull()
   })
 })

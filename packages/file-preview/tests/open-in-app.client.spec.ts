@@ -27,6 +27,17 @@ describe('OpenInAppProbe', () => {
     expect(probe.apps.getSnapshot()).toEqual(['finder', 'cursor'])
   })
 
+  it('publishes no apps without probing when the page is not on the host', async () => {
+    vi.stubGlobal('location', { hostname: 'bridge-spider.trycloudflare.com', origin: 'https://bridge-spider.trycloudflare.com' })
+    try {
+      const fetcher = vi.fn(async () => new Response(JSON.stringify({ apps: ['finder', 'cursor'] })))
+      const probe = new OpenInAppProbe(fetcher)
+      await probe.load()
+      expect(probe.apps.getSnapshot()).toEqual([])
+      expect(fetcher).not.toHaveBeenCalled()
+    } finally { vi.unstubAllGlobals() }
+  })
+
   it('publishes an empty list when the host has no route or the read fails', async () => {
     const notFound = new OpenInAppProbe(vi.fn(async () => new Response('nope', { status: 404 })))
     await notFound.load()

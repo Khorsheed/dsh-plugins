@@ -195,7 +195,7 @@ describe('FilePreviewTab', () => {
     await act(async () => {})
     fireEvent.click(screen.getByLabelText('action.copyPath'))
     expect(copyPath).toHaveBeenCalledWith('src/agent.ts')
-    fireEvent.click(screen.getByLabelText('action.openFolder'))
+    fireEvent.click(screen.getByLabelText('action.showInFolder'))
     expect(revealFolder).toHaveBeenCalledWith('src/agent.ts')
     fireEvent.click(screen.getByLabelText('action.openIDE'))
     expect(openInIde).toHaveBeenCalledWith('src/agent.ts', 'cursor')
@@ -207,7 +207,7 @@ describe('FilePreviewTab', () => {
     fireEvent.click(screen.getByText('agent.ts'))
     await act(async () => {})
     expect(screen.getByLabelText('action.copyPath')).toBeTruthy()
-    expect(screen.queryByLabelText('action.openFolder')).toBeNull()
+    expect(screen.queryByLabelText('action.showInFolder')).toBeNull()
     expect(screen.queryByLabelText('action.openIDE')).toBeNull()
   })
 

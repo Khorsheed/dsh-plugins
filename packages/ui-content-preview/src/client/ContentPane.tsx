@@ -442,9 +442,10 @@ export function ContentPane(props: ContentPaneProps): ReactNode {
   const location = displayPath ?? path
 
   // Header actions in priority order: the search toggle (compact only — wide
-  // panes keep the row open), reload, then the host-open gestures. A compact
-  // pane also lists the full path as the menu's first row, since its path line
-  // is folded away.
+  // panes keep the row open), reload, copy path, then the host-open gestures
+  // (absent off-host: the open-in-app probe publishes no apps there). The
+  // full path is no menu row: the title names the file, the list's trail
+  // names where it is, and copy path hands over the rest.
   const headerActions: PanelAction[] = []
   if (compact && searchable) {
     headerActions.push({
@@ -460,9 +461,6 @@ export function ContentPane(props: ContentPaneProps): ReactNode {
       icon: <IconRefreshOutlineMedium size={16} className={reloading ? css.actionSpinning : undefined} />,
     })
   }
-  if (compact) {
-    headerActions.push({ id: 'path', label: location, icon: <IconFolderOpenOutlineMedium size={16} />, menuOnly: true, disabled: true, onSelect: () => {} })
-  }
   if (onCopyPath !== undefined) {
     headerActions.push({
       id: 'copy', label: copiedPath ? t('action.copied') : t('action.copyPath'), onSelect: doCopyPath,
@@ -470,7 +468,7 @@ export function ContentPane(props: ContentPaneProps): ReactNode {
     })
   }
   if (chrome?.openFolder !== undefined) {
-    headerActions.push({ id: 'folder', label: t('action.openFolder'), icon: <IconFolderOpenOutlineMedium size={16} />, onSelect: chrome.openFolder })
+    headerActions.push({ id: 'folder', label: t('action.showInFolder'), icon: <IconFolderOpenOutlineMedium size={16} />, onSelect: chrome.openFolder })
   }
   if (chrome?.openIDE !== undefined) {
     headerActions.push({ id: 'ide', label: t('action.openIDE'), icon: <IconCodeOutlineMedium size={16} />, onSelect: chrome.openIDE })
