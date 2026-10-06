@@ -12,9 +12,9 @@ import { writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
 import { IconFolderOpenOutlineMedium, IconProjectAddOutlineMedium, IconRefreshOutlineMedium, IconSearchOutlineMedium, type IconProps } from './icons.tsx'
 import type { ListLocalDirectoryResult, SearchLocalDirectoryResult } from '../types.ts'
 import {
-  ContentPane, basenameOf, browserOnHost, dirnameOf, pickFileManager, pickIde,
+  ContentPane, basenameOf, dirnameOf, pickFileManager, pickIde,
 } from '@khorsheed/dsh-client-ui-content-preview/src/client/index.ts'
-import { AdaptiveSplit, PanelHeader, PanelRoot, type PanelAction } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
+import { AdaptiveSplit, PanelHeader, PanelRoot, browserOnHost, type PanelAction } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
 import type { WorkspaceViewProps } from './contract.ts'
 import { EyeGlyph, FileTree, type FileTreeGroup, type FileTreeItem } from './FileTree.tsx'
 import { localRootOf, rememberLocalRoot } from './local-root.ts'
