@@ -20,7 +20,7 @@ function presetBlock(text: string, id: string): string {
 }
 
 describe('cordis.patch.yml', () => {
-  it('mounts exactly the four preset declarations, in PRESET_IDS order', () => {
+  it('mounts exactly the three preset declarations (T102: no dataset-authoring), in PRESET_IDS order', () => {
     expect(topLevelRowIds(patch)).toEqual(PRESET_IDS.map((id) => `preset-${id}`))
     for (const id of PRESET_IDS) {
       const block = presetBlock(patch, id)
@@ -44,8 +44,9 @@ describe('cordis.patch.yml', () => {
     expect(presetBlock(patch, 'dsh-eval')).toContain('        order: 0\n')
     expect(presetBlock(patch, 'dsh-writing')).toContain("        name: '写作模式'\n")
     expect(presetBlock(patch, 'dsh-writing')).not.toContain('        order:')
-    expect(presetBlock(patch, 'dataset-authoring')).toContain("        name: '题集整理'\n")
-    expect(presetBlock(patch, 'dataset-authoring')).toContain('        order: 11\n')
+    // T102: 题集整理 folded into 评测模式 — no row, no id, not even in a comment-free line.
+    expect(topLevelRowIds(patch)).not.toContain('preset-dataset-authoring')
+    expect(patch).not.toMatch(/^ {8}id: dataset-authoring$/m)
   })
 
   it('dev is rebased on the rc.1 standard preset (no 0.1.5 drift)', () => {
@@ -89,14 +90,14 @@ describe('cordis.patch.yml', () => {
     expect(dev).not.toContain('eval-tool')
   })
 
-  it('dsh-eval keeps its 0.1.5 composition (shell-less) with the two companion tool rows', () => {
+  it('dsh-eval: a shell for organizing (T102), no workflow engine, no plan mode, the two companion tool rows', () => {
     const block = presetBlock(patch, 'dsh-eval')
-    expect(block).not.toContain('tool-bash')
-    expect(block).not.toContain('tool-workflow')
-    expect(block).not.toContain('plan-mode')
+    expect(block).toMatch(/ {10}- id: tool-bash\n {12}name: '@deepseek-ai\/dsh-tool-bash'\n {12}disabled: !!js process\.platform === 'win32'\n/)
+    expect(block).toMatch(/ {10}- id: tool-pwsh\n {12}name: '@deepseek-ai\/dsh-tool-pwsh'\n {12}disabled: !!js process\.platform !== 'win32'\n/)
+    expect(block).not.toMatch(/- id: (tool-workflow|workflow-ptc|tool-ralph|plan-mode)\n/)
     expect(block).toContain('          - id: datasets-tool\n')
     expect(block).toContain("            name: '@khorsheed/dsh-datasets/tool'\n")
-    expect(block).toContain('            tools: authoring')
+    expect(block).toContain('            tools: organize')
     expect(block).toContain('          - id: eval-tool\n')
     expect(block).toContain("            name: '@khorsheed/dsh-eval/tool'\n")
     expect(block).toContain('            tools: all')
@@ -163,22 +164,16 @@ describe('cordis.patch.yml', () => {
       })
     }
 
-    it('dsh-eval names the datasets and eval rows (eval-planning rides the eval row)', () => {
+    it('dsh-eval carries both evaluation skills: eval-planning (eval row) and dataset-authoring (datasets row, organize tier) — T102', () => {
       const block = rows('dsh-eval')
-      expect(block).toContain("            name: '@khorsheed/dsh-datasets/tool'\n")
-      expect(block).toContain("            name: '@khorsheed/dsh-eval/tool'\n")
+      expect(block).toMatch(/ {10}- id: datasets-tool\n {12}name: '@khorsheed\/dsh-datasets\/tool'\n {12}config:\n {14}tools: organize/)
+      expect(block).toMatch(/ {10}- id: eval-tool\n {12}name: '@khorsheed\/dsh-eval\/tool'\n {12}config:\n {14}tools: all/)
+      expect(block).not.toContain('@khorsheed/dsh-mission/tool')
+      // Both skills load through tool-skill; the persona sends organizing to the skill first.
       expect(block).toContain('          - id: skill-filesystem\n')
       expect(block).toContain('          - id: tool-skill\n')
-    })
-
-    it('dataset-authoring names the datasets row at the organize tier, and no eval row', () => {
-      const block = rows('dataset-authoring')
-      expect(block).toMatch(/ {10}- id: datasets-tool\n {12}name: '@khorsheed\/dsh-datasets\/tool'\n {12}config:\n {14}tools: organize/)
-      expect(block).not.toContain('@khorsheed/dsh-eval/tool')
-      expect(block).not.toContain('@khorsheed/dsh-mission/tool')
-      // The skill the organize tier registers is loaded through tool-skill.
-      expect(block).toContain('          - id: tool-skill\n')
       expect(block).toContain('Load the dataset-authoring skill')
+      expect(block).toContain('Execution belongs to the deterministic orchestrator')
     })
   })
 

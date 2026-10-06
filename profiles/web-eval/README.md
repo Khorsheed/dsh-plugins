@@ -145,13 +145,13 @@ agent 只在规划期与分析期出现，需要的是读与起草；执行期�
 
 | 插件 | agent 工具（eval 域） | 编排器服务面 | 人 |
 |---|---|---|---|
-| datasets | tier `authoring`：六个读类动词（`list` `show` `describe` `read` `snapshot` `validate`）+ `put_item`；只按登记 `<登记 id>/<set>` 取题，不碰仓库目录 | 按钉住的 commit 物化（`worktreePath`）、read（显式层） | 题集 tab 登记、validate |
+| datasets | tier `organize`（T102 前是 `authoring`）：六个读类动词（`list` `show` `describe` `read` `snapshot` `validate`）+ `put_item` + 只写申请的 `datasets_propose_registration`，并注册 `dataset-authoring` skill；用已登记的题集时只按 `<登记 id>/<set>` 取题，不碰已登记仓库的目录；整理数据时读数据目录 | 按钉住的 commit 物化（`worktreePath`）、read（显式层） | 题集 tab 登记、validate |
 | mission | **eval 预设不挂**（I5·T46）；账本与释放闸仍由 mission 提供 | 全部写方法 | export、retry、human-final |
 | lab | 不开 | 全部 | status、release |
 | eval | 四读 `eval_conditions` `eval_plan_validate` `eval_run_status` `eval_cells` + 两写 `eval_plan_draft`（部署内实验目录）`eval_analysis_write`（只写 `analysis/`）；不开 run | 内核 | 批准、run、report |
 | 委派工具（`subagent_codex` / `subagent_claude_code` / `subagent_kimi` / `subagent_dsh`） | 不开——家族折叠后工具是各 provider 的 `./tool` 组合入口，按预设点名授予，eval 预设不点名即缺席；第四家 `subagent_dsh` 由控制器在开关 ON 时动态挂载，默认 OFF | 经 local-agent 门面委派选手 | `/codex login`、`/kimi status` 等 provider 动词 |
 
-**M4'③ 起这三个机制插件把核心行与工具行分开**：profile 根只挂核心行（服务 / CLI / slash / 标签页），模型工具行与工具提示词段落归工具行（T88 起是各核心包的 `./tool` 组合入口，此前是三个独立伴生包），所以上表的按域 tier 由 pack 的 `eval` 预设的工具行授予——`datasets-tool: authoring`、`eval-tool: all`（见[冻结决策 12 的执行点](#冻结决策-12-的执行点eval-预设)）——不再是 profile 根的 `tools` 配置；同 profile 里走别的预设的会话这两套工具一个都拿不到，服务 / CLI / slash 仍全局，任务 / 数据集两个标签页另按同一组合判据自隐（判据读不到时 fail-open）。**`mission-tool` 曾是第三行（`tools: read`），I5·T46 摘掉**：界面规格的 R6 定了「评测模式下 mission 这个词不出现」，逐格细节改由 `eval_cells` 从 eval 自己的投影读（数据仍经结构面算 mission 的账本，但算在服务端）；同一条自隐规则的另一半随之生效——任务 tab 判的就是预设里有没有这一行，所以它一走，评测会话的任务 tab 自己就不见了。包照装，谁要在自己的覆盖层预设里加回这一行（`name: '@khorsheed/dsh-mission/tool'`）都还在。工具行随核心包安装，核心包随整合包 `@khorsheed/dsh-bundle-eval` 安装：`package.json` 只依赖整合包，源码模式的 `UNPUBLISHED_DIRS` 负责从检出构建四个成员与整合包并打成 tarball（`autoInstallPeers: false`，peer 不会被自动装上）。
+**M4'③ 起这三个机制插件把核心行与工具行分开**：profile 根只挂核心行（服务 / CLI / slash / 标签页），模型工具行与工具提示词段落归工具行（T88 起是各核心包的 `./tool` 组合入口，此前是三个独立伴生包），所以上表的按域 tier 由 pack 的 `eval` 预设的工具行授予——`datasets-tool: organize`（T102 前是 `authoring`）、`eval-tool: all`（见[冻结决策 12 的执行点](#冻结决策-12-的执行点eval-预设)）——不再是 profile 根的 `tools` 配置；同 profile 里走别的预设的会话这两套工具一个都拿不到，服务 / CLI / slash 仍全局，任务 / 数据集两个标签页另按同一组合判据自隐（判据读不到时 fail-open）。**`mission-tool` 曾是第三行（`tools: read`），I5·T46 摘掉**：界面规格的 R6 定了「评测模式下 mission 这个词不出现」，逐格细节改由 `eval_cells` 从 eval 自己的投影读（数据仍经结构面算 mission 的账本，但算在服务端）；同一条自隐规则的另一半随之生效——任务 tab 判的就是预设里有没有这一行，所以它一走，评测会话的任务 tab 自己就不见了。包照装，谁要在自己的覆盖层预设里加回这一行（`name: '@khorsheed/dsh-mission/tool'`）都还在。工具行随核心包安装，核心包随整合包 `@khorsheed/dsh-bundle-eval` 安装：`package.json` 只依赖整合包，源码模式的 `UNPUBLISHED_DIRS` 负责从检出构建四个成员与整合包并打成 tarball（`autoInstallPeers: false`，peer 不会被自动装上）。
 
 能力全貌、自然语言到实现的逐步轨迹与生成文件清单见 [docs/architecture.md](docs/architecture.md)。
 
@@ -159,14 +159,20 @@ agent 只在规划期与分析期出现，需要的是读与起草；执行期�
 
 「工具按域开放」限的是 profile 根上注册的那批工具；另一半由**预设**限。评测实例的 agent 走 pack 自带的 `eval` 预设（`presets/` 里的声明式 bundle，一行 `preset-eval`），它的组成表是随发行版的 `standard` 减去两类行：
 
-- **能执行宿主命令的**：`tool-bash` / `tool-pwsh`；`tool-workflow` 与它依赖的 `workflow-ptc`——workflow 脚本是**模型写的 JavaScript**，在 Node worker 线程里当作 async 函数体执行，够得着 `node:child_process`，全程没有 shell；`tool-ralph` 驱动同一个引擎，一起去掉。
+- **工作流引擎**：`tool-workflow` 与它依赖的 `workflow-ptc`——workflow 脚本是**模型写的 JavaScript**，在 Node worker 线程里当作 async 函数体执行；`tool-ralph` 驱动同一个引擎，一起去掉。规划、分析、整理都用不着脚本化的多步 agent。（T102 前这一类叫「能执行宿主命令的」，连 `tool-bash` / `tool-pwsh` 一起去掉。）
 - **词汇与本线冲突的**：`plan-mode`。它的提示词规划的是**实现**并明令不要写文件，而这个 agent 的产出恰恰是写到盘上、由人批准的 `dataseek.plan/1`。一个会话里两个「plan」是混淆，不是能力缺口。
 
-留下的是读、起草，以及委派给**跑在同一个预设上**的 agent：进程内子 agent 继承父 agent 的预设（宿主的 `subagent-in-process-driver/tests/preset-inheritance.spec.ts` 就是这条的证明），所以委派递不出这个预设本身没有的 shell。docker 从来不在这张表上——`lab` 一个模型可见工具都不注册，容器动作全在编排器的服务面。
+**T102（2026-10-06）起评测模式带 shell，决策 12 随之改写。** 题集整理并进评测模式（原第二行 `preset-dataset-authoring`「题集整理」删除）：整理要跑 git 和转换脚本，所以 `eval` 预设挂 `tool-bash` / `tool-pwsh`（按平台二选一）、`tool-web` 开 fetch，datasets 工具行取 `tools: organize`（读 + `put_item` + 只写申请的 `datasets_propose_registration`，并注册随包分发的 `dataset-authoring` skill）；`eval-planning` 照旧随 eval 工具行注册，两个 skill 在评测会话里都能用。persona 是一份：评测口径不变，整理的工作方式（先读 skill、不改原始数据、dryRun 通过再提申请）接在后面。
 
-**预设归 pack**，理由与 `cordis.patch.yml` 同（见[安装](#安装)）。本 profile 只跑宿主 0.2.0 及以后（T82），0.2.0 的预设是 `@deepseek-ai/dsh-agent-preset` 的声明式行，不再扫预设目录：pack 自带一个声明式 bundle（`presets/`，包名 `@khorsheed/dsh-web-eval-preset`，`dsh.bundle.kind: 'preset-declarations'`，profile 以 `file:presets` 依赖它），`cordis.patch.yml` 把 `agent-preset-registry` 的 `default` 钉成 `eval`。组成表与 0.1.5 时代的目录版 `presets/eval/agent.cordis.yml` 逐字节相同（T82 迁移时按 sha256 核过；`scripts/web-eval-preset-bundle.spec.ts` 钉住这个摘要——改组成就是换装置，要有意改摘要并开新 run）。个人偏好另起一个预设 id，别改这个。
+- **docker socket 仍只归编排器**：`lab` 一个模型可见工具都不注册，容器动作全在编排器的服务面。但这一点**不再由预设保证**——带 shell 的 agent 在宿主上能敲 docker 命令，也能改 `state/eval`、`state/mission` 下的文件。
+- **防护观察后再定**：现在不加命令拦截一类的防护。协调者翻评测会话记录看两件事：有没有出现 docker 命令；有没有对 `state/eval` 或 `state/mission` 的写操作。有了再定怎么防。
+- **T90 决定 B 的理由作废**：「整理看得到答案，所以评测 Agent 不能是它」不成立——选手能看到什么由题集分层和编排器强制，与布置评测的 Agent 无关。整理仍在新开的会话里做，只是这个会话用评测模式。登记表仍只归人写（决定 A）。
 
-同一个 bundle 的第二行是 `preset-dataset-authoring`（「题集整理」，T90）：题集 tab 的「添加题集 → 让 Agent 整理」新开会话时选它。它**挂 shell**（整理要跑 git 和转换脚本），配 datasets 工具行的 `tools: organize`（读 + 只写申请的 `datasets_propose_registration`，并注册随包分发的 `dataset-authoring` skill），不挂 eval 工具、不挂委派。冻结决策 12 约束的是评测（规划与分析）Agent：评测会话不继承这个预设，`preset-eval` 一块不动、摘要照旧；整理 Agent 能跑宿主命令这一点是有意的取舍，登记仍只归人写。
+委派给**跑在同一个预设上**的 agent：进程内子 agent 继承父 agent 的预设（宿主的 `subagent-in-process-driver/tests/preset-inheritance.spec.ts` 就是这条的证明），所以子 agent 拿到的正好是这个预设的工具，shell 也在内。
+
+**预设归 pack**，理由与 `cordis.patch.yml` 同（见[安装](#安装)）。本 profile 只跑宿主 0.2.0 及以后（T82），0.2.0 的预设是 `@deepseek-ai/dsh-agent-preset` 的声明式行，不再扫预设目录：pack 自带一个声明式 bundle（`presets/`，包名 `@khorsheed/dsh-web-eval-preset`，`dsh.bundle.kind: 'preset-declarations'`，profile 以 `file:presets` 依赖它），`cordis.patch.yml` 把 `agent-preset-registry` 的 `default` 钉成 `eval`。T82 迁移时组成表与 0.1.5 时代的目录版 `presets/eval/agent.cordis.yml` 逐字节相同（按 sha256 核过）；T102 有意改了组成。`scripts/web-eval-preset-bundle.spec.ts` 钉住这一块的摘要——改组成就是换装置，要有意改摘要并开新 run。3080 跑的 dsh-presets 包里的 `preset-dsh-eval` 是它的镜像，`scripts/eval-preset-parity.spec.ts` 钉住两份一致。个人偏好另起一个预设 id，别改这个。
+
+「添加题集 › 让 Agent 整理」开的就是评测会话：没配 `authoringPreset` 时，datasets 按「授予了 datasets 工具行的 `organize` 档」挑预设（本 profile 上是 `eval`，3080 上是 `dsh-eval`），配置里写了 id 就用写的。
 
 **怎样确认实例正在用它**，三层，从便宜到贵——组成层、文件层、会话层：
 
@@ -175,9 +181,11 @@ agent 只在规划期与分析期出现，需要的是读与起草；执行期�
 dsh --profile web-eval --dump-config | grep -A3 'id: agent-preset-registry'   # → default: eval
 dsh --profile web-eval --dump-config | grep -n 'id: preset-eval'
 
-# 文件层：去掉注释后，组成里没有任何执行类行
+# 文件层：去掉注释后，组成里没有工作流引擎、没有 plan-mode、没有容器行
 P="$DSH_HOME/profiles/web-eval/presets/cordis.patch.yml"
-grep -vE '^\s*#' "$P" | grep -nE 'tool-bash|tool-pwsh|tool-workflow|tool-ralph|docker'   # → 无输出
+grep -vE '^\s*#' "$P" | grep -nE 'tool-workflow|workflow-ptc|tool-ralph|plan-mode|docker'   # → 无输出
+# T102 起有 shell：tool-bash / tool-pwsh 两行（按平台二选一启用），datasets 工具行是 organize 档
+grep -vE '^\s*#' "$P" | grep -nE 'tool-bash|tool-pwsh|tools: organize'                   # → 三行
 
 # 组成层：eval 预设不点名任何委派工具行（家族折叠后工具按预设授予，不点名即缺席）
 grep -vE '^\s*#' "$P" | grep -nE 'local-agent-(kimi|codex|claude-code)/tool'              # → 无输出
@@ -185,9 +193,9 @@ grep -vE '^\s*#' "$P" | grep -nE 'local-agent-(kimi|codex|claude-code)/tool'    
 
 0.1.5 时代迁过来的 home 里若还留着 `$DSH_HOME/.agent-presets/eval`，0.2.0 不读它；`install.sh` 只提示可删，不替你删。
 
-会话层要看界面：「设置 → Agent 预设」的「自定义」组里应有**评测模式**并标「新任务默认」（T82 在 0.2.0-rc.2 临时实例上实拍过）；新开一个会话，「设置 → 工具与技能」的工具卡里没有 `bash`，也没有任何容器工具，也没有任何 `subagent_<harness>`——一个默认会话看到的是 **35 个工具**（T21 时是 39，T27 关掉三个委派工具后是 36，I5·T46 摘掉 mission 的四个读工具、补上 `eval_cells` 后按增删算是 33；2026-09-17 3171 装到 `2c4476f8` 后实数 35 = 内建 21 + 插件 14：datasets 7、eval 5（含 T34 的 `eval_plan_draft`）、`subagent_dsh`、`list_capabilities`；没有 `mission_*`），进程内的 `subagent` 与 `subagent_fork` 仍在。会话头记录了创建时用的预设，中途改过预设的会话在日志里留有 `agent-preset/selected`。
+会话层要看界面：「设置 → Agent 预设」的「自定义」组里应有**评测模式**并标「新任务默认」（T82 在 0.2.0-rc.2 临时实例上实拍过）；新开一个会话，「设置 → 工具与技能」的工具卡里没有任何容器工具，也没有任何 `subagent_<harness>`；T102 起有 `bash`、`datasets_propose_registration` 和 `web_fetch`，技能里有 `eval-planning` 与 `dataset-authoring`。T102 之前一个默认会话看到的是 **35 个工具**（T21 时是 39，T27 关掉三个委派工具后是 36，I5·T46 摘掉 mission 的四个读工具、补上 `eval_cells` 后按增删算是 33；2026-09-17 3171 装到 `2c4476f8` 后实数 35 = 内建 21 + 插件 14：datasets 7、eval 5（含 T34 的 `eval_plan_draft`）、`subagent_dsh`、`list_capabilities`；没有 `mission_*`），进程内的 `subagent` 与 `subagent_fork` 仍在。会话头记录了创建时用的预设，中途改过预设的会话在日志里留有 `agent-preset/selected`。
 
-**这条钉的是默认值，不是可达集。** 随发行版的 标准 / PTC / 极简 / cordis 四个内置预设仍在名册上：0.2.0 起它们是 `@deepseek-ai/dsh-web-app` bundle 里的 preset 行，profile 层删不掉它们。人在界面里给一个空白会话改选「标准模式」就拿回了 Bash。决策 12 针对的是 **agent 误操作**——agent 没有切换自身预设的工具，切换是人的动作。
+**这条钉的是默认值，不是可达集。** 随发行版的 标准 / PTC / 极简 / cordis 四个内置预设仍在名册上：0.2.0 起它们是 `@deepseek-ai/dsh-web-app` bundle 里的 preset 行，profile 层删不掉它们。人在界面里给一个空白会话改选别的预设，就拿到另一套工具（比如标准模式的工作流引擎）。决策 12 针对的是 **agent 误操作**——agent 没有切换自身预设的工具，切换是人的动作。
 
 **这个预设够不到的执行类工具，已经不存在于 profile 根**（2026-09-30 家族折叠）：四家选手的委派工具 `subagent_codex` / `subagent_claude_code` / `subagent_kimi` 不再是 provider bundle patch 插在 profile 根的行，而是各 provider 包自己的 `./tool` 组合入口，只有点名它的 agent 预设才授予——本 pack 的 eval 预设不点名，所以这三个工具对评测会话天然缺席，patch 层连覆盖行都不用写。provider 行照挂：编排器经 local-agent 门面委派选手，`/codex login` 这类动词也照常。（折叠前的路径是 T27 给 `@khorsheed/dsh-local-agent-tool-subagent` 加 `tools: all | none` 开关、patch 把三行设成 `none`；取舍见 [eval 预设的 Agent Note](../../.agents/notes/implemented/process/2026-09-08-web-eval-agent-preset.zh.md)，该包已随折叠退役。）
 
@@ -287,7 +295,7 @@ CLI 与界面同语义：`dsh-eval conditions | plan validate | run | report`。
 9. **判官显式 pin 模型；每格由谁判进报告；自评格标出。** 判前去指纹，每位判官双采样报一致性，可以列多位判官组成面板。判官与选手同模型**不再拒绝**——要评的就是全部模型时评委必然与某个选手重合，公开榜单的做法是多评委加披露而不是排除——改为每条判定带判官（条件 id 与模型），报告逐格列出由谁判，同模型的格标「自评」，一致性一节在同判官 κ 之外多一行跨判官一致性。（2026-09-10 放宽；原文「判官不得是选手之一」见 I4·T31 的 Agent Note。）
 10. **跨家效率用标价成本或活跃秒数；token 只在同模型内比。**
 11. **运行顺序随机交错并记录种子。**
-12. **销毁路径唯一。** 评测实例的 agent preset 不挂 Bash 与 docker；只有编排器持有 docker socket。执行点见[同名小节](#冻结决策-12-的执行点eval-预设)。
+12. **销毁路径唯一。** 只有编排器持有 docker socket。T102（2026-10-06）改写：评测实例的 agent preset 带 shell（题集整理并入评测模式），这一条不再由预设保证；防护等观察评测会话记录（有没有 docker 命令、有没有写 `state/eval` / `state/mission`）后再定。原文是「评测实例的 agent preset 不挂 Bash 与 docker」。执行点见[同名小节](#冻结决策-12-的执行点eval-预设)。
 
 ## 迭代计划
 
@@ -344,7 +352,7 @@ DSH_HOME=~/.dsh-eval sh dsh-web-eval/scripts/restart-into-web-eval.sh <端口>
 
 同理由**归 pack** 的还有 agent 预设：预设是 profile 目录里的声明式 bundle `presets/`，随 profile 文件一起覆盖，`cordis.patch.yml` 把它钉成默认预设（[冻结决策 12 的执行点](#冻结决策-12-的执行点eval-预设)）。技能也是装置——`eval-planning` 教的是 `eval_plan_draft` 这一个起草动词，以及批准 / 登录 / provision / 终评都不是 agent 的，这条线歪了，草稿就会变成没人批的 run——但它**不归 pack**：T100 起它随 `@khorsheed/dsh-eval` 包分发，由该包的 `./tool` 行（eval 预设里的 `eval-tool`）注册，所以只有点名这一行的预设的会话看得到它。此前两个脚本把它整目录拷进 `$DSH_HOME/skills`，那是 `dsh-skill-filesystem` 对**每个**挂它的预设都扫的根，同一个 home 里的开发、写作会话也会看到评测技能。脚本现在不再往那里写；成功跑完时会处理旧副本：frontmatter 带 pack 签名（`name: eval-planning` 加 `iteration: I5`）的删掉，别的只提示不动。
 
-当前 pin（I2·T15 写入，I3·T27 补三行；M4'③ 起这几条的授予点在 pack 的 `eval` 预设的工具行上，I5·T46 起 `mission-tool` 那一行不再挂）：`datasets-tool: authoring`、`eval-tool: all`，加三个委派工具行 `tools: none`（工具按域开放）；四家 `live: false`（决策 2）；codex `sandbox`、claude `permissionMode: skip`、kimi `thinkingEffort: high`（决策 3 与 4）；claude `baseUrl`（决策 5——端点属于受试对象，不 pin 就退回宿主进程环境，换个终端重启即静默换上游；取值与 3080 生产 profile 同为官方端点，宿主环境里那个第三方地址走的是 API key 而 `delegationEnv` 会把 key 抹掉）。**claude 的 `proxyUrl` 自 I3·T22 起不 pin**：provider 会把它写进作用域 settings.json 的 env 块，而 T20c 之后容器轮挂的就是这个作用域目录，宿主地址在单元里当场 Connection refused；单元的出网由镜像烧进去的白名单代理给，谁要在宿主上直跑 claude，在自己的覆盖层里加回这一行，别加在 pack 里。**dsh 的 `headlessBundleDir` 与 `cliLaunch` 自 I3·T22 起 pin** 成宿主与单元里同时成立的路径——provider 写进作用域目录的是指向宿主安装的绝对符号链接，单元里悬空；这是机器级前置条件，备法见题库 env/README。**codex 的 `sandbox` 自 I3·T22 起是 `danger-full-access`**，与冻结决策 3 一致。宿主直跑阶段（I2）它取的是 `workspace-write`：那时没有容器边界，给满权限等于把评测的副作用放进真实 home，而这条不对称当时随每次 run 写进 methodology。容器路径落地后边界由单元提供——无外网、只有白名单代理、非 root、一格一单元用完即毁——满权限的作用域就是那个一次性单元，四家因此真正落在同一档上，methodology 不必再声明这条不对称。**这条 pin 与容器路径是一对**：谁要再在宿主上跑一次阶段一二，得先把它改回 `workspace-write` 并重新声明那条不对称，而不是带着满权限直跑宿主。
+当前 pin（I2·T15 写入，I3·T27 补三行；M4'③ 起这几条的授予点在 pack 的 `eval` 预设的工具行上，I5·T46 起 `mission-tool` 那一行不再挂，T102 起 datasets 是 organize 档）：`datasets-tool: organize`、`eval-tool: all`，加三个委派工具行 `tools: none`（工具按域开放）；四家 `live: false`（决策 2）；codex `sandbox`、claude `permissionMode: skip`、kimi `thinkingEffort: high`（决策 3 与 4）；claude `baseUrl`（决策 5——端点属于受试对象，不 pin 就退回宿主进程环境，换个终端重启即静默换上游；取值与 3080 生产 profile 同为官方端点，宿主环境里那个第三方地址走的是 API key 而 `delegationEnv` 会把 key 抹掉）。**claude 的 `proxyUrl` 自 I3·T22 起不 pin**：provider 会把它写进作用域 settings.json 的 env 块，而 T20c 之后容器轮挂的就是这个作用域目录，宿主地址在单元里当场 Connection refused；单元的出网由镜像烧进去的白名单代理给，谁要在宿主上直跑 claude，在自己的覆盖层里加回这一行，别加在 pack 里。**dsh 的 `headlessBundleDir` 与 `cliLaunch` 自 I3·T22 起 pin** 成宿主与单元里同时成立的路径——provider 写进作用域目录的是指向宿主安装的绝对符号链接，单元里悬空；这是机器级前置条件，备法见题库 env/README。**codex 的 `sandbox` 自 I3·T22 起是 `danger-full-access`**，与冻结决策 3 一致。宿主直跑阶段（I2）它取的是 `workspace-write`：那时没有容器边界，给满权限等于把评测的副作用放进真实 home，而这条不对称当时随每次 run 写进 methodology。容器路径落地后边界由单元提供——无外网、只有白名单代理、非 root、一格一单元用完即毁——满权限的作用域就是那个一次性单元，四家因此真正落在同一档上，methodology 不必再声明这条不对称。**这条 pin 与容器路径是一对**：谁要再在宿主上跑一次阶段一二，得先把它改回 `workspace-write` 并重新声明那条不对称，而不是带着满权限直跑宿主。
 
 ## 更新、切换、装卸单个成员、卸载
 
