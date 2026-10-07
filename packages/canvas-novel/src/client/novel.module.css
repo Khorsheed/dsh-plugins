@@ -12,7 +12,6 @@
   justify-content: center;
   min-width: 16px;
   height: 16px;
-  margin-left: 5px;
   padding: 0 4px;
   border-radius: 8px;
   background: var(--dsw-alias-state-warn-tertiary);

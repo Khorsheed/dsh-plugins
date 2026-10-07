@@ -20,7 +20,7 @@ import { ChapterBook } from '../src/client/ChapterBook.tsx'
 import { ChapterPage } from '../src/client/ChapterReader.tsx'
 import { CHAPTER_PAGE, STORY_LOG_PAGE, type NovelRemote, type NovelSurfaceProps } from '../src/client/contract.ts'
 import { zh } from '../src/client/locales.ts'
-import { CardScopes, DeleteNote, FaceLabel, RelationGraph, storyUsage } from '../src/client/NovelFaces.tsx'
+import { CardScopes, ChaptersBadge, DeleteNote, FaceLabel, RelationGraph, storyUsage } from '../src/client/NovelFaces.tsx'
 import { chapterHeading } from '../src/client/PendingList.tsx'
 import { StoryLogPage } from '../src/client/StoryLogPage.tsx'
 import { WriteToolRow } from '../src/client/WriteToolRow.tsx'
@@ -547,13 +547,19 @@ describe('the three faces', () => {
     expect(usage.has('c2')).toBe(false)
   })
 
-  it('章节 carries what waits (chapters to reconcile + items); another genre keeps the canvas label', async () => {
+  it('章节 labels the face and its badge counts what waits (chapters to reconcile + items); another genre keeps the canvas label', async () => {
     render(<FaceLabel {...props(remote())} face="manuscripts" label="成稿" />)
-    expect(await screen.findByText('2')).toBeTruthy()
     expect(screen.getByText(zh['face.chapters'])).toBeTruthy()
+    cleanup()
+    // The count is the tab's badge, not part of the label (outside the underline).
+    render(<ChaptersBadge {...props(remote())} />)
+    expect(await screen.findByText('2')).toBeTruthy()
     cleanup()
     render(<FaceLabel {...props(remote(), null)} face="manuscripts" label="成稿" />)
     expect(screen.getByText('成稿')).toBeTruthy()
+    cleanup()
+    const { container } = render(<ChaptersBadge {...props(remote(), null)} />)
+    expect(container.textContent).toBe('')
   })
 
   it('设定 scopes: 已进入故事 archives first; 灵感 is the unused story cards, principles left out', async () => {

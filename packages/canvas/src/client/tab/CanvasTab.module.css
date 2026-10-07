@@ -77,16 +77,20 @@
   flex: 1;
 }
 
-/* The board's faces: underline tabs flush with the header's own rule, so the
-   accent bar sits on it and the ⋯ shares the row — ONE rule under the header,
-   not the kit's own plus ours. Scoped under .topbar: at equal specificity the
-   kit's `.tabs` (bundled after this sheet) won, and the tabs kept their 36px
-   and their own line above the header's (2026-10-06 review). */
+/* The board's faces: the kit's tabs-plus-trailing bar (the ⋯ in its trailing
+   seat) flush with the header's own rule, so the accent bar sits on it — ONE
+   rule under the header, not the kit's own plus ours. The class lands on the
+   bar; its tablist drops its fixed height to fill the header. Scoped under
+   .topbar: at equal specificity the kit's sheet (bundled after this one) won
+   (2026-10-06 review). */
 .topbar > .faceTabs {
   align-self: stretch;
-  height: auto;
   min-width: 0;
   box-shadow: none;
+}
+
+.topbar > .faceTabs > [role="tablist"] {
+  height: auto;
 }
 
 /* A genre face's own tools row (设定: 故事筛选 · 网格 / 连线), a level below
@@ -217,9 +221,8 @@
   color: var(--dsw-alias-label-primary);
 }
 
-/* The 成稿 face's count: how many manuscripts the board has grown. */
+/* The 成稿 face's badge: how many manuscripts the board has grown. */
 .viewCount {
-  margin-left: 4px;
   font-variant-numeric: tabular-nums;
   opacity: 0.7;
 }

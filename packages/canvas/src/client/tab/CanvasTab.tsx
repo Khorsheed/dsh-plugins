@@ -32,7 +32,7 @@
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type UIEvent } from 'react'
 import { Button, Modal, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
-import { PanelRoot, UnderlineTabs } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
+import { PanelRoot, UnderlineTabs, type UnderlineTab } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
 import {
   IconArchiveOutlineMedium, IconCheckOutlineMedium, IconFolderOpenOutlineMedium, IconTrashOutlineMedium,
 } from '../icons.tsx'
@@ -56,7 +56,7 @@ import { CanvasDetailView } from '../detail/CanvasDetailView.tsx'
 import { DetailCrumbs } from '../detail/DetailCrumbs.tsx'
 import detailCss from '../detail/CanvasDetailView.module.css'
 import {
-  boardGraphOf, boardManuscriptsOf, boardScopesOf, boardStripsOf, boardTabLabelOf, boardViewOf, cardDeleteNoteOf,
+  boardGraphOf, boardManuscriptsOf, boardScopesOf, boardStripsOf, boardTabBadgeOf, boardTabLabelOf, boardViewOf, cardDeleteNoteOf,
   genrePageOf, GenreSeatsContext, manuscriptsOwned, type GenreSeats,
 } from '../genre-seats.tsx'
 import type { CanvasCardScope } from '../slots.ts'
@@ -871,13 +871,18 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
     : undefined
 
   /** The face tabs: the canvas's three, or a genre's 成稿 · 卡板 · view with the genre labelling them. */
-  const faceTabsOf = (board: CanvasBoard): { id: BoardFace; label: ReactNode }[] => {
+  const faceTabsOf = (board: CanvasBoard): UnderlineTab<BoardFace>[] => {
     if (openFaces !== undefined) {
       const genreLabel = genres.find(genre => genre.id === board.genre?.id)?.label ?? ''
+      const face = (id: BoardFace, key: string, label: string): UnderlineTab<BoardFace> => ({
+        id,
+        label: boardTabLabelOf(seats, board, key, label),
+        badge: boardTabBadgeOf(seats, board, key, label),
+      })
       return [
-        { id: 'manuscripts', label: boardTabLabelOf(seats, board, 'manuscripts', t('view.manuscripts')) },
-        { id: 'board', label: boardTabLabelOf(seats, board, 'board', t('view.board')) },
-        { id: 'view', label: boardTabLabelOf(seats, board, openFaces.view, genreLabel) },
+        face('manuscripts', 'manuscripts', t('view.manuscripts')),
+        face('board', 'board', t('view.board')),
+        face('view', openFaces.view, genreLabel),
       ]
     }
     const written = !manuscriptsOwned(seats, board) && board.manuscripts.length > 0
@@ -886,7 +891,8 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
       { id: 'link', label: t('view.link') },
       {
         id: 'manuscripts',
-        label: <>{t('view.manuscripts')}{written && <span className={css.viewCount}>{board.manuscripts.length}</span>}</>,
+        label: t('view.manuscripts'),
+        badge: written ? <span className={css.viewCount}>{board.manuscripts.length}</span> : undefined,
       },
     ]
   }
@@ -1070,7 +1076,7 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
                 连线 as 卡板's second layout (in the face's own tools row below,
                 so it never reads as a fourth face). Underline tabs at every
                 width: the segmented control read as desktop chrome on a phone. */}
-            {openBoard !== null && loadError === null && (
+            {openBoard !== null && loadError === null ? (
               <UnderlineTabs<BoardFace>
                 className={css.faceTabs}
                 label={t('view.faces')}
@@ -1080,42 +1086,50 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
                   if (face === 'board' && (view === 'board' || view === 'link')) return
                   setView(face)
                 }}
+                // The hint and the ⋯ ride the tabs' own row (the kit's trailing
+                // seat), so the row keeps ONE bottom rule and the ⋯ sits on the
+                // tabs' baseline — set beside the tablist they drew a second
+                // divider and sat low (2026-10-06 phone review).
+                trailing={(
+                  <>
+                    {readonly && <span className={css.readonlyHint}>{t('space.readonly')}</span>}
+                    {/* The canvas's own ⋯: archive is the everyday way to put it away
+                        (with 撤销); delete is the one door with no way back, so it is
+                        last, marked, and behind a confirmation. An archived canvas
+                        carries both of its gestures on its banner instead. */}
+                    {!boardReadonly && (
+                      <MoreMenu
+                        label={t('canvas.more')}
+                        className={css.moreButton}
+                        items={[
+                          // 创作体裁 only where a genre is installed: without one the
+                          // menu is the one it always was. The choices sit inline under
+                          // a heading, not in a submenu: the host's submenu always opens
+                          // to the right, and this ⋯ hugs the window's right edge, so
+                          // it opened off-screen (2026-10-05).
+                          ...(genres.length === 0 ? [] : [
+                            { type: 'label' as const, id: 'genre', text: t('genre.menu') },
+                            ...[{ id: 'genre:', label: t('genre.none') }, ...genres.map(genre => ({ id: `genre:${genre.id}`, label: genre.label }))]
+                              .map(item => item.id === `genre:${openBoard.board.genre?.id ?? ''}`
+                                ? { ...item, icon: <IconCheckOutlineMedium size={13} /> }
+                                : item),
+                            { type: 'separator' as const, id: 'genre-sep' },
+                          ]),
+                          { id: 'archive', label: t('action.archiveCanvas'), icon: <IconArchiveOutlineMedium size={13} /> },
+                          { id: 'delete', label: t('action.deleteCanvas'), icon: <IconTrashOutlineMedium size={13} />, danger: true },
+                        ]}
+                        onSelect={id => {
+                          const row = summarizeBoard(openBoard.board)
+                          if (id.startsWith('genre:')) void pickGenre(openBoard.board, id === 'genre:' ? null : id.slice('genre:'.length))
+                          else if (id === 'archive') void setCanvasArchived(row, true)
+                          else if (id === 'delete') setDeleteAsk({ kind: 'canvas', canvasId: row.id, title: row.title })
+                        }}
+                      />
+                    )}
+                  </>
+                )}
               />
-            )}
-            {readonly && <span className={css.readonlyHint}>{t('space.readonly')}</span>}
-            {/* The canvas's own ⋯: archive is the everyday way to put it away
-                (with 撤销); delete is the one door with no way back, so it is
-                last, marked, and behind a confirmation. An archived canvas
-                carries both of its gestures on its banner instead. */}
-            {!boardReadonly && openBoard !== null && loadError === null && (
-              <MoreMenu
-                label={t('canvas.more')}
-                className={css.moreButton}
-                items={[
-                  // 创作体裁 only where a genre is installed: without one the
-                  // menu is the one it always was. The choices sit inline under
-                  // a heading, not in a submenu: the host's submenu always opens
-                  // to the right, and this ⋯ hugs the window's right edge, so
-                  // it opened off-screen (2026-10-05).
-                  ...(genres.length === 0 ? [] : [
-                    { type: 'label' as const, id: 'genre', text: t('genre.menu') },
-                    ...[{ id: 'genre:', label: t('genre.none') }, ...genres.map(genre => ({ id: `genre:${genre.id}`, label: genre.label }))]
-                      .map(item => item.id === `genre:${openBoard.board.genre?.id ?? ''}`
-                        ? { ...item, icon: <IconCheckOutlineMedium size={13} /> }
-                        : item),
-                    { type: 'separator' as const, id: 'genre-sep' },
-                  ]),
-                  { id: 'archive', label: t('action.archiveCanvas'), icon: <IconArchiveOutlineMedium size={13} /> },
-                  { id: 'delete', label: t('action.deleteCanvas'), icon: <IconTrashOutlineMedium size={13} />, danger: true },
-                ]}
-                onSelect={id => {
-                  const row = summarizeBoard(openBoard.board)
-                  if (id.startsWith('genre:')) void pickGenre(openBoard.board, id === 'genre:' ? null : id.slice('genre:'.length))
-                  else if (id === 'archive') void setCanvasArchived(row, true)
-                  else if (id === 'delete') setDeleteAsk({ kind: 'canvas', canvasId: row.id, title: row.title })
-                }}
-              />
-            )}
+            ) : readonly && <span className={css.readonlyHint}>{t('space.readonly')}</span>}
           </header>
           {archivedRow !== null && (
             <div className={css.archivedBanner} role="status">
