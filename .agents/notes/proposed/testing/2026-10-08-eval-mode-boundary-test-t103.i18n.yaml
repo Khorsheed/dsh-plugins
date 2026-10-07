@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/proposed/testing/2026-10-08-eval-mode-boundary-test-t103.md
+.agents/notes/proposed/testing/2026-10-08-eval-mode-boundary-test-t103.md: 92295fec2259f01fddb694e9ea78fbfd53099fee
+.agents/notes/proposed/testing/2026-10-08-eval-mode-boundary-test-t103.zh.md: a011140992dae15fc6692585442979dc2e585af7
