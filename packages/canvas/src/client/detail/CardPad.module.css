@@ -39,7 +39,7 @@
   border-radius: 5px;
   padding: 3px 9px;
   background: transparent;
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-tertiary);
   cursor: pointer;
 }
@@ -69,7 +69,7 @@
 }
 
 .hint {
-  font: var(--dsw-font-xxxs-11);
+  font: var(--dsh-panel-text-meta, 11px)/1.5 var(--dsw-font-family);
   line-height: 1.6;
   color: var(--dsw-alias-label-caption);
 }

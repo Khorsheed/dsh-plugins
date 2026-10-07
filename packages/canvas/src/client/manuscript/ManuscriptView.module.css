@@ -8,7 +8,7 @@
    step larger than a card body. */
 .prose {
   max-width: 44em;
-  font: var(--dsw-font-s-14);
+  font: var(--dsh-panel-text-title, 14px)/1.5 var(--dsw-font-family);
   line-height: 1.85;
 }
 
@@ -78,7 +78,7 @@
   flex-wrap: wrap;
   padding: 8px 10px;
   border-radius: 8px;
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   line-height: 1.6;
   color: var(--dsw-alias-label-secondary);
   background: var(--dsw-alias-bg-layer-1);
@@ -122,7 +122,7 @@
 .ledgerLabel {
   flex: none;
   width: 6.5em;
-  font: var(--dsw-font-xxxs-11);
+  font: var(--dsh-panel-text-meta, 11px)/1.5 var(--dsw-font-family);
   letter-spacing: 0.02em;
   color: var(--dsw-alias-label-caption);
 }
@@ -141,7 +141,7 @@
   border: 1px solid var(--dsw-alias-border-l1);
   border-radius: 999px;
   background: var(--dsw-alias-bg-layer-1);
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -165,7 +165,7 @@
 }
 
 .none {
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-caption);
 }
 
@@ -202,7 +202,7 @@
 }
 
 .rowTitle {
-  font: var(--dsw-font-xs-13);
+  font: var(--dsh-panel-text-body, 13px)/1.5 var(--dsw-font-family);
   font-weight: 600;
   color: var(--dsw-alias-label-primary);
   overflow: hidden;
@@ -216,14 +216,14 @@
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
-  font: var(--dsw-font-xxxs-11);
+  font: var(--dsh-panel-text-meta, 11px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-caption);
 }
 
 .empty {
   max-width: 30em;
   margin: 48px auto 0;
-  font: var(--dsw-font-xs-13);
+  font: var(--dsh-panel-text-body, 13px)/1.5 var(--dsw-font-family);
   line-height: 1.8;
   color: var(--dsw-alias-label-tertiary);
   text-align: center;
