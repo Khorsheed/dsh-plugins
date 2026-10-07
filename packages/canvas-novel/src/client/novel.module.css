@@ -12,11 +12,10 @@
   justify-content: center;
   min-width: 16px;
   height: 16px;
-  margin-left: 5px;
   padding: 0 4px;
   border-radius: 8px;
   background: var(--dsw-alias-state-warn-tertiary);
-  font: var(--dsw-font-xxxs-11);
+  font: var(--dsh-panel-text-meta, 11px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-state-warn-label);
   font-variant-numeric: tabular-nums;
   vertical-align: 1px;
@@ -32,7 +31,7 @@
   align-items: center;
   gap: 8px;
   padding: 16px;
-  font: var(--dsw-font-xs-13);
+  font: var(--dsh-panel-text-body, 13px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-primary);
 }
 
@@ -63,7 +62,7 @@
 
 .graphKey,
 .graphEmpty {
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-tertiary);
   text-align: center;
 }
@@ -73,7 +72,7 @@
 /* The delete question's note: which chapters use the card. */
 .deleteNote {
   margin: 0;
-  font: var(--dsw-font-xs-13);
+  font: var(--dsh-panel-text-body, 13px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-secondary);
 }
 
@@ -123,7 +122,7 @@
 .kindTag {
   padding: 0 6px;
   border-radius: 4px;
-  font: var(--dsw-font-xxxs-11);
+  font: var(--dsh-panel-text-meta, 11px)/1.5 var(--dsw-font-family);
   line-height: 18px;
   background: var(--dsw-alias-bg-layer-2);
   color: var(--dsw-alias-label-secondary);
@@ -135,7 +134,7 @@
 }
 
 .confidence {
-  font: var(--dsw-font-xxxs-11);
+  font: var(--dsh-panel-text-meta, 11px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-tertiary);
 }
 
@@ -161,7 +160,7 @@
 .subject:hover { background: var(--dsw-alias-interactive-bg-hover); }
 
 .pendingReason {
-  font: var(--dsw-font-xs-13);
+  font: var(--dsh-panel-text-body, 13px)/1.5 var(--dsw-font-family);
   line-height: 1.6;
   color: var(--dsw-alias-label-primary);
 }
@@ -186,7 +185,7 @@
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 6px;
   background: var(--dsw-alias-bg-layer-1);
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-primary);
   cursor: pointer;
 }
@@ -215,7 +214,7 @@
   flex-direction: column;
   gap: 14px;
   padding-top: 12px;
-  font: var(--dsw-font-xs-13);
+  font: var(--dsh-panel-text-body, 13px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-primary);
 }
 
@@ -227,7 +226,7 @@
 
 .sectionHeading {
   margin: 0;
-  font: var(--dsw-font-xxs-strong-12);
+  font: 500 var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   letter-spacing: 0.04em;
   color: var(--dsw-alias-label-secondary);
 }
@@ -282,7 +281,7 @@
   align-items: center;
   gap: 8px;
   padding: 12px 20px 10px;
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
 }
 
 .logPills {
@@ -302,7 +301,7 @@
   border: 1px solid var(--log-rule);
   border-radius: 999px;
   background: var(--log-surface);
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-secondary);
   cursor: pointer;
 }
@@ -321,7 +320,7 @@
   padding: 0;
   border: 0;
   background: none;
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-tertiary);
   cursor: pointer;
 }
@@ -341,7 +340,7 @@
   padding: 0;
   border: 0;
   background: none;
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-tertiary);
   cursor: pointer;
 }
@@ -368,7 +367,7 @@
   padding: 8px 12px;
   border-radius: 6px;
   background: var(--log-fill);
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-secondary);
 }
 
@@ -423,7 +422,7 @@
   min-height: 40px;
   border-bottom: 1px solid var(--log-line);
   background: var(--log-surface);
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-tertiary);
 }
 
@@ -519,7 +518,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-tertiary);
 }
 
@@ -581,7 +580,7 @@
 }
 
 .logStep:last-child { border-bottom: 0; }
-.logStepChapter { font: var(--dsw-font-xxs-12); font-variant-numeric: tabular-nums; color: var(--dsw-alias-label-tertiary); }
+.logStepChapter { font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family); font-variant-numeric: tabular-nums; color: var(--dsw-alias-label-tertiary); }
 .logStepGlyph { display: flex; align-items: center; justify-content: center; height: 20px; color: var(--log-hue); }
 .logStepGlyph svg { display: block; overflow: visible; }
 .logStepText { display: grid; gap: 2px; min-width: 0; }
@@ -651,7 +650,7 @@
   grid-template-columns: 60px 1fr;
   gap: 8px;
   padding: 3px 0;
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-tertiary);
 }
 
@@ -668,7 +667,7 @@
 .logCard dd span { display: block; }
 .logCard dd small { margin-left: 4px; font-size: 11px; color: var(--dsw-alias-label-tertiary); }
 
-.logChanges { display: grid; gap: 2px; font: var(--dsw-font-xxs-12); }
+.logChanges { display: grid; gap: 2px; font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family); }
 .logChanges del { color: var(--dsw-alias-label-tertiary); }
 .logField { margin-right: 6px; color: var(--dsw-alias-label-tertiary); }
 .logSource { font-size: 11px; color: var(--dsw-alias-label-tertiary); }
@@ -679,7 +678,7 @@
   align-items: center;
   gap: 6px;
   padding: 12px 20px;
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-tertiary);
 }
 
@@ -733,7 +732,7 @@
   padding: 18px 20px 48px;
   container-type: inline-size;
   container-name: novel-book;
-  font: var(--dsw-font-xs-13);
+  font: var(--dsh-panel-text-body, 13px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-primary);
 }
 
@@ -744,7 +743,7 @@
 }
 
 .bookStat {
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-tertiary);
   font-variant-numeric: tabular-nums;
 }
@@ -784,7 +783,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 4px 14px;
-  font: var(--dsw-font-xxxs-11);
+  font: var(--dsh-panel-text-meta, 11px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-tertiary);
 }
 
@@ -823,7 +822,7 @@
 }
 
 .resumeText small {
-  font: var(--dsw-font-xxxs-11);
+  font: var(--dsh-panel-text-meta, 11px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-tertiary);
 }
 
@@ -836,7 +835,7 @@
 }
 
 .resumeNote {
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-state-warn-label);
 }
 
@@ -849,7 +848,7 @@
   border: 1px solid var(--dsw-alias-state-business-primary);
   border-radius: 8px;
   background: none;
-  font: var(--dsw-font-xs-strong-13);
+  font: 500 var(--dsh-panel-text-body, 13px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-state-business-primary);
   cursor: pointer;
 }
@@ -873,7 +872,7 @@
   border: none;
   border-radius: 14px;
   background: var(--dsw-alias-state-warn-tertiary);
-  font: var(--dsw-font-xxs-strong-12);
+  font: 500 var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-state-warn-label);
   font-variant-numeric: tabular-nums;
   cursor: pointer;
@@ -911,11 +910,11 @@
 
 .group[data-open="true"] .groupChev { transform: rotate(90deg); }
 
-.groupTitle { font: var(--dsw-font-xs-strong-13); }
+.groupTitle { font: 500 var(--dsh-panel-text-body, 13px)/1.5 var(--dsw-font-family); }
 
 .groupSum {
   margin-left: auto;
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-tertiary);
   font-variant-numeric: tabular-nums;
 }
@@ -946,7 +945,7 @@
 
 .rowNo,
 .rowWords {
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-tertiary);
   font-variant-numeric: tabular-nums;
 }
@@ -964,7 +963,7 @@
   padding: 1px 8px;
   border-radius: 10px;
   background: var(--dsw-alias-bg-layer-2);
-  font: var(--dsw-font-xxxs-11);
+  font: var(--dsh-panel-text-meta, 11px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-secondary);
   white-space: nowrap;
 }
@@ -1216,7 +1215,7 @@
 
 .planLabel {
   flex: none;
-  font: var(--dsw-font-xs-strong-13);
+  font: 500 var(--dsh-panel-text-body, 13px)/1.5 var(--dsw-font-family);
 }
 
 .planSum {
@@ -1224,7 +1223,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-tertiary);
   font-variant-numeric: tabular-nums;
 }
@@ -1247,6 +1246,7 @@
 }
 
 .byUserTag {
+  margin-inline-start: 6px;
   padding: 0 6px;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 8px;
@@ -1258,14 +1258,14 @@
 /* The chat card's 第 N 章 line. */
 .kicker {
   text-align: center;
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-tertiary);
   letter-spacing: 0.12em;
 }
 
 .planEmpty {
   text-align: center;
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-tertiary);
 }
 
@@ -1284,7 +1284,7 @@
 
 .kv dt {
   padding-top: 1px;
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-tertiary);
 }
 
@@ -1318,7 +1318,7 @@
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  font: var(--dsw-font-xxxs-11);
+  font: var(--dsh-panel-text-meta, 11px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-tertiary);
 }
 
@@ -1340,7 +1340,7 @@
 .opTag {
   padding: 0 6px;
   border-radius: 4px;
-  font: var(--dsw-font-xxxs-11);
+  font: var(--dsh-panel-text-meta, 11px)/1.5 var(--dsw-font-family);
   white-space: nowrap;
 }
 
@@ -1365,7 +1365,7 @@
 .opRef { color: var(--dsw-alias-label-primary); }
 
 .what {
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-secondary);
 }
 
@@ -1384,7 +1384,7 @@
 .res {
   flex: none;
   margin-left: auto;
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   white-space: nowrap;
 }
 
@@ -1398,7 +1398,7 @@
   gap: 10px;
   padding-top: 10px;
   border-top: 1px solid var(--dsw-alias-border-l1);
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
 }
 
 .confirm {
@@ -1408,7 +1408,7 @@
   border: none;
   border-radius: 8px;
   background: var(--dsw-alias-brand-primary);
-  font: var(--dsw-font-xs-strong-13);
+  font: 500 var(--dsh-panel-text-body, 13px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-primary-inverted);
   cursor: pointer;
 }
@@ -1651,36 +1651,36 @@
 .kvRow { display: contents; }
 
 /* The section's values read at the canvas field table's scale, not the page's. */
-.cardSection .kv { gap: 6px 14px; font: var(--dsw-font-xs-13); }
+.cardSection .kv { gap: 6px 14px; font: var(--dsh-panel-text-body, 13px)/1.5 var(--dsw-font-family); }
 .cardSection .kv dt { padding-top: 0; }
-.cardSection .muted { font: var(--dsw-font-xxs-12); }
+.cardSection .muted { font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family); }
 
 /* A character's 在故事里: one head, then 此刻 / 出场 / 关系 split by rules. */
 .story { display: flex; flex-direction: column; gap: 12px; }
 .storyHead { display: flex; align-items: baseline; gap: 10px; }
-.storyHead h3 { flex: 1; margin: 0; font: var(--dsw-font-xs-strong-13); color: var(--dsw-alias-label-primary); }
+.storyHead h3 { flex: 1; margin: 0; font: 500 var(--dsh-panel-text-body, 13px)/1.5 var(--dsw-font-family); color: var(--dsw-alias-label-primary); }
 .storyPart { display: flex; flex-direction: column; gap: 6px; }
-.storyPartHead { display: flex; align-items: center; justify-content: space-between; gap: 8px; font: var(--dsw-font-xxs-12); color: var(--dsw-alias-label-secondary); }
+.storyPartHead { display: flex; align-items: center; justify-content: space-between; gap: 8px; font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family); color: var(--dsw-alias-label-secondary); }
 .storyRule { width: 100%; height: 1px; margin: 0; border: 0; background: var(--dsw-alias-border-l1); }
 
 .storyLink {
   padding: 0;
   border: 0;
   background: none;
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-secondary);
   cursor: pointer;
 }
 
 .storyLink:hover { color: var(--dsw-alias-brand-primary); }
-.storyUnset { font: var(--dsw-font-xs-13); color: var(--dsw-alias-label-tertiary); }
+.storyUnset { font: var(--dsh-panel-text-body, 13px)/1.5 var(--dsw-font-family); color: var(--dsw-alias-label-tertiary); }
 .storyUnset b { font-weight: 500; color: var(--dsw-alias-label-secondary); }
-.storyHelp { font: var(--dsw-font-xxs-12); color: var(--dsw-alias-label-tertiary); }
+.storyHelp { font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family); color: var(--dsw-alias-label-tertiary); }
 
 /* 第 1 章 ● 第 2 章 ○ — the story log's character mark, in its hue. */
-.storyStrip { display: flex; flex-wrap: wrap; gap: 6px 14px; font: var(--dsw-font-xs-13); color: var(--dsw-alias-label-primary); }
+.storyStrip { display: flex; flex-wrap: wrap; gap: 6px 14px; font: var(--dsh-panel-text-body, 13px)/1.5 var(--dsw-font-family); color: var(--dsw-alias-label-primary); }
 .storyStrip > span { display: inline-flex; align-items: center; gap: 6px; }
-.storyStrip em { font: var(--dsw-font-xxs-12); font-style: normal; color: var(--dsw-alias-label-tertiary); }
+.storyStrip em { font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family); font-style: normal; color: var(--dsw-alias-label-tertiary); }
 
 .storyDot {
   /* panel-check: allow-color — a hue mixed toward label-primary, so it follows the theme. */
@@ -1697,19 +1697,19 @@
 .relationList {
   margin: 0;
   padding-left: 18px;
-  font: var(--dsw-font-xs-13);
+  font: var(--dsh-panel-text-body, 13px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-primary);
 }
 
 .ladderReady {
-  font: var(--dsw-font-xxs-strong-12);
+  font: 500 var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-brand-primary);
 }
 
 .ladder {
   width: 100%;
   border-collapse: collapse;
-  font: var(--dsw-font-xs-13);
+  font: var(--dsh-panel-text-body, 13px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-secondary);
 }
 
@@ -1735,7 +1735,7 @@
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 14px;
   background: transparent;
-  font: var(--dsw-font-xs-13);
+  font: var(--dsh-panel-text-body, 13px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-secondary);
   cursor: pointer;
 }

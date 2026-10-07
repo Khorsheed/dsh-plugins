@@ -53,7 +53,7 @@
   border-radius: 6px;
   background: transparent;
   color: var(--dsw-alias-label-secondary);
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   cursor: pointer;
   transition: background-color 120ms ease, color 120ms ease;
 }
@@ -116,7 +116,7 @@
   border-radius: 4px;
   background: var(--dsw-alias-brand-primary);
   color: var(--dsw-alias-bg-base);
-  font: var(--dsw-font-xxxs-11);
+  font: var(--dsh-panel-text-meta, 11px)/1.5 var(--dsw-font-family);
 }
 
 .text {
@@ -129,7 +129,7 @@
   box-sizing: border-box;
   border: none;
   padding: 0;
-  font: var(--dsw-font-s-14);
+  font: var(--dsh-panel-text-title, 14px)/1.5 var(--dsw-font-family);
   line-height: 1.8;
   background: transparent;
   color: var(--dsw-alias-label-primary);
@@ -205,7 +205,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   text-align: right;
-  font: var(--dsw-font-xxxs-11);
+  font: var(--dsh-panel-text-meta, 11px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-caption);
 }
 

@@ -4,7 +4,8 @@
  * face (`faces.view: 'story'`), so the canvas reads 章节 · 设定 · 故事:
  *
  * - `canvas.board.tab` (`novel:manuscripts` / `novel:board` / `novel:story`):
- *   the three labels, 章节 carrying what waits on the person;
+ *   the three labels; `canvas.board.tab.badge` `novel:manuscripts`: 章节's
+ *   badge, what waits on the person;
  * - `canvas.board.manuscripts`: 章节 — the book: 继续写, the pending queue,
  *   the contents, then a chapter-by-chapter reader;
  * - `canvas.board.view` `novel:story`: 故事 — the story log;
@@ -45,14 +46,14 @@ import { ChapterBook } from './ChapterBook.tsx'
 import { ChapterPage } from './ChapterReader.tsx'
 import { CHAPTER_PAGE, STORY_LOG_PAGE, type NovelFace, type NovelRemote } from './contract.ts'
 import { en, NS, zh } from './locales.ts'
-import { CardScopes, DeleteNote, FaceLabel, RelationGraph } from './NovelFaces.tsx'
+import { ChaptersBadge, CardScopes, DeleteNote, FaceLabel, RelationGraph } from './NovelFaces.tsx'
 import { StoryLogPage, StoryView } from './StoryLogPage.tsx'
 import { WriteToolRow, type WriteToolFace } from './WriteToolRow.tsx'
 
 export { CardSection } from './CardSection.tsx'
 export { ChapterBook } from './ChapterBook.tsx'
 export { ChapterPage, ChapterReader } from './ChapterReader.tsx'
-export { CardScopes, DeleteNote, FaceLabel, RelationGraph, storyUsage } from './NovelFaces.tsx'
+export { ChaptersBadge, CardScopes, DeleteNote, FaceLabel, RelationGraph, storyUsage } from './NovelFaces.tsx'
 export { PendingList } from './PendingList.tsx'
 export { StoryLogPage, StoryView } from './StoryLogPage.tsx'
 export { WriteToolRow } from './WriteToolRow.tsx'
@@ -98,6 +99,12 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       inject: () => face,
     }, FaceLabel)), `canvas-novel: face label ${name}`)
   }
+  ctx.effect(() => seats.inject('canvas.board.tab.badge', () => seats.register({
+    name: 'canvas.board.tab.badge',
+    key: genreKey('manuscripts'),
+    locale: NS,
+    inject: () => face,
+  }, ChaptersBadge)), 'canvas-novel: chapters badge')
   ctx.effect(() => seats.inject('canvas.board.view', () => seats.register({
     name: 'canvas.board.view',
     key: genreKey(NOVEL_STORY_FACE),

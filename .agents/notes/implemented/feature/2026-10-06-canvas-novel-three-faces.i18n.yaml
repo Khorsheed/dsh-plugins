@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-10-06-canvas-novel-three-faces.md
-.agents/notes/implemented/feature/2026-10-06-canvas-novel-three-faces.md: df4bc5d8166038d631d416e1ce76645b00d142cb
-.agents/notes/implemented/feature/2026-10-06-canvas-novel-three-faces.zh.md: f965d512c05527457ce3ea111e735efe28098cd4
+.agents/notes/implemented/feature/2026-10-06-canvas-novel-three-faces.md: 8351e493c5e07ba0e240f328c35bb4a233daa99c
+.agents/notes/implemented/feature/2026-10-06-canvas-novel-three-faces.zh.md: c5ceff65f7d64330573f8de5b8d353b88b0885e7

@@ -2,8 +2,8 @@
  * The 长篇小说 canvas's three top faces — 章节 · 设定 · 故事 — and what the
  * canvas asks of the genre around them:
  *
- * - the face labels, 章节 carrying what waits on the person (chapters to
- *   reconcile plus pending items);
+ * - the face labels, and 章节's badge: what waits on the person (chapters
+ *   to reconcile plus pending items);
  * - the 设定 face's scopes: 已进入故事 (a card some reconciled chapter uses)
  *   and 灵感 (a story card none does yet);
  * - its 连线 layout: the characters as nodes, the relation cards as lines,
@@ -54,27 +54,28 @@ export function storyUsage(log: StoryLogResult): ReadonlyMap<string, readonly nu
 
 /* ------------------------------------------------------------ the tabs */
 
-/** One top-face label: 章节 (with what waits), 设定, 故事. */
+/** One top-face label: 章节, 设定, 故事. */
 export function FaceLabel(props: NovelSurfaceProps & { readonly face: string; readonly label: string }): ReactNode {
   if (props.board.genre?.id !== NOVEL_GENRE_ID) return props.label
-  if (props.face === 'manuscripts') return <ChaptersLabel {...props} />
+  if (props.face === 'manuscripts') return props.t('face.chapters')
   if (props.face === 'board') return props.t('face.settings')
   return props.t('face.story')
 }
 
-function ChaptersLabel({ canvasId, rev, remote, t }: NovelSurfaceProps): ReactNode {
+/** 章节's badge: what waits on the person (chapters to reconcile plus pending items); nothing at zero. */
+export function ChaptersBadge(props: NovelSurfaceProps): ReactNode {
+  if (props.board.genre?.id !== NOVEL_GENRE_ID) return null
+  return <Waiting {...props} />
+}
+
+function Waiting({ canvasId, rev, remote, t }: NovelSurfaceProps): ReactNode {
   const api = remote()
   const chapters = useNovelRead(api, r => r.chapters({ canvasId }), `chapters:${canvasId}`, rev)
   const pending = useNovelRead(api, r => r.pending({ canvasId }), `pending:${canvasId}`, rev)
   const stale = chapters.state === 'ready' ? chapters.value.chapters.filter(row => awaitsReconcile(row.phase)).length : 0
   const items = pending.state === 'ready' ? pending.value.items.length : 0
   const count = stale + items
-  return (
-    <>
-      {t('face.chapters')}
-      {count > 0 && <span className={css.faceBadge} title={t('face.waiting', { stale, items })}>{count}</span>}
-    </>
-  )
+  return count > 0 ? <span className={css.faceBadge} title={t('face.waiting', { stale, items })}>{count}</span> : null
 }
 
 /* ---------------------------------------------------------- the scopes */

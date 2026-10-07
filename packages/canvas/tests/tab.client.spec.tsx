@@ -950,6 +950,7 @@ describe('CanvasTab — a genre with faces (章节 · 设定 · 故事)', () => 
   function facesSlot(written: boolean) {
     return vi.fn((key: string, owner: Record<string, unknown>, options?: { entryKey?: string; fallback?: unknown }) => {
       if (key === 'canvas.board.tab') return `tab:${String(owner.face)}`
+      if (key === 'canvas.board.tab.badge') return owner.face === 'manuscripts' ? <b data-testid="face-badge">3</b> : null
       if (key === 'canvas.board.manuscripts') {
         return written
           ? <div>seat manuscripts</div>
@@ -979,7 +980,10 @@ describe('CanvasTab — a genre with faces (章节 · 设定 · 故事)', () => 
   it('opens on 成稿 once something is written, and the genre labels all three faces', async () => {
     renderFaces(true)
     await screen.findByText('seat manuscripts')
-    expect(screen.getByRole('tab', { name: 'tab:manuscripts' }).getAttribute('aria-selected')).toBe('true')
+    const chapters = screen.getByRole('tab', { name: /^tab:manuscripts\s*3$/ })
+    expect(chapters.getAttribute('aria-selected')).toBe('true')
+    // The genre's count is the tab's badge: beside the label, not inside it (under the underline).
+    expect(screen.getByText('tab:manuscripts').contains(screen.getByTestId('face-badge'))).toBe(false)
     expect(screen.getByRole('tab', { name: 'tab:board' })).toBeTruthy()
     fireEvent.click(screen.getByRole('tab', { name: 'tab:story' }))
     await screen.findByText('seat canvas.board.view novel:story')

@@ -120,7 +120,7 @@
   border-radius: 6px;
   padding: 0 8px;
   background: var(--dsw-alias-bg-layer-1);
-  font: var(--dsw-font-xxs-strong-12);
+  font: 500 var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   line-height: 20px;
 }
 
@@ -227,7 +227,7 @@
   border-radius: 8px;
   background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-primary);
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   line-height: 1.45;
   cursor: grab;
   user-select: none;
@@ -254,7 +254,7 @@
 }
 
 .nodeKind {
-  font: var(--dsw-font-xxxs-11);
+  font: var(--dsh-panel-text-meta, 11px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-tertiary);
   white-space: nowrap;
   overflow: hidden;
@@ -380,7 +380,7 @@
 
 .dockInfo {
   padding-right: 6px;
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   line-height: 1.5;
   color: var(--dsw-alias-label-tertiary);
   font-variant-numeric: tabular-nums;
@@ -398,7 +398,7 @@
   padding: 0 8px;
   background: transparent;
   color: var(--dsw-alias-label-secondary);
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   cursor: pointer;
   white-space: nowrap;
 }
@@ -432,7 +432,7 @@
 
 .barInfo {
   padding: 0 8px 0 6px;
-  font: var(--dsw-font-xxs-strong-12);
+  font: 500 var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   line-height: 1.5;
   color: var(--dsw-alias-label-primary);
   font-variant-numeric: tabular-nums;
@@ -449,7 +449,7 @@
   border-radius: 7px;
   padding: 0 10px;
   background: transparent;
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   cursor: pointer;
   white-space: nowrap;
 }

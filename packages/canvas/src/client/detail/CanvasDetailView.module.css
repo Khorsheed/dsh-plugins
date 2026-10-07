@@ -17,7 +17,7 @@
 
 .notice {
   padding: 32px 8px;
-  font: var(--dsw-font-xs-13);
+  font: var(--dsh-panel-text-body, 13px)/1.5 var(--dsw-font-family);
   line-height: 1.8;
   color: var(--dsw-alias-label-tertiary);
   text-align: center;
@@ -37,7 +37,7 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font: var(--dsw-font-xxxs-11);
+  font: var(--dsh-panel-text-meta, 11px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-tertiary);
   align-self: flex-start;
 }
@@ -94,7 +94,7 @@
   flex: 1;
   min-width: 0;
   padding-left: 2px;
-  font: var(--dsw-font-xs-13);
+  font: var(--dsh-panel-text-body, 13px)/1.5 var(--dsw-font-family);
 }
 
 .crumbCanvas {
@@ -130,7 +130,7 @@
   min-width: 0;
   overflow: hidden;
   color: var(--dsw-alias-label-primary);
-  font: var(--dsw-font-xs-strong-13);
+  font: 500 var(--dsh-panel-text-body, 13px)/1.5 var(--dsw-font-family);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -150,7 +150,7 @@
 .stepCount {
   min-width: 34px;
   color: var(--dsw-alias-label-tertiary);
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   font-variant-numeric: tabular-nums;
   text-align: center;
 }
@@ -198,7 +198,7 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font: var(--dsw-font-xxxs-11);
+  font: var(--dsh-panel-text-meta, 11px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-state-business-primary);
   letter-spacing: 0.2px;
   align-self: flex-start;
@@ -213,7 +213,7 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font: var(--dsw-font-xxxs-11);
+  font: var(--dsh-panel-text-meta, 11px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-tertiary);
   border: 1px solid var(--dsw-alias-border-l1);
   border-radius: 999px;
@@ -222,7 +222,7 @@
 }
 
 .title {
-  font: var(--dsw-font-s-strong-14);
+  font: 500 var(--dsh-panel-text-title, 14px)/1.5 var(--dsw-font-family);
   line-height: 1.5;
   color: var(--dsw-alias-label-primary);
   word-break: break-word;
@@ -233,7 +233,7 @@
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
-  font: var(--dsw-font-xxxs-11);
+  font: var(--dsh-panel-text-meta, 11px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-caption);
 }
 
@@ -252,7 +252,7 @@
   border-radius: 6px;
   background: transparent;
   color: var(--dsw-alias-label-secondary);
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   cursor: pointer;
 }
 
@@ -265,7 +265,7 @@
   display: flex;
   align-items: center;
   gap: 5px;
-  font: var(--dsw-font-xxxs-11);
+  font: var(--dsh-panel-text-meta, 11px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-tertiary);
 }
 
@@ -299,7 +299,7 @@
 .seg button {
   border: none;
   background: transparent;
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   padding: 3px 10px;
   border-radius: 5px;
   color: var(--dsw-alias-label-tertiary);
@@ -313,7 +313,7 @@
 
 .body {
   position: relative;
-  font: var(--dsw-font-xs-13);
+  font: var(--dsh-panel-text-body, 13px)/1.5 var(--dsw-font-family);
   line-height: 1.75;
   color: var(--dsw-alias-label-primary);
   /* `.root` is a column flex container with a definite height, so a flex item
@@ -367,7 +367,7 @@
   border: none;
   background: none;
   padding: 0;
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-state-business-primary);
   cursor: pointer;
 }
@@ -384,7 +384,7 @@
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 8px;
   padding: 10px 12px;
-  font: var(--dsw-font-xs-13);
+  font: var(--dsh-panel-text-body, 13px)/1.5 var(--dsw-font-family);
   line-height: 1.75;
   background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-primary);
@@ -398,7 +398,7 @@
 }
 
 .editHint {
-  font: var(--dsw-font-xxxs-11);
+  font: var(--dsh-panel-text-meta, 11px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-caption);
 }
 
@@ -419,7 +419,7 @@
   justify-content: center;
   gap: 4px;
   border-radius: 6px;
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   padding: 5px 0;
   border: 1px solid var(--dsw-alias-border-l2);
   background: transparent;
@@ -484,12 +484,12 @@
 }
 
 .threadTitle {
-  font: var(--dsw-font-xxxs-11);
+  font: var(--dsh-panel-text-meta, 11px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-tertiary);
 }
 
 .comment {
-  font: var(--dsw-font-xs-13);
+  font: var(--dsh-panel-text-body, 13px)/1.5 var(--dsw-font-family);
   line-height: 1.65;
   color: var(--dsw-alias-label-secondary);
 }
@@ -518,7 +518,7 @@
   border-radius: 8px;
   background: var(--dsw-alias-bg-layer-3);
   box-shadow: var(--dsw-elevation-prominent);
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-state-error-primary);
   cursor: pointer;
 }
@@ -536,7 +536,7 @@
 .formatTag {
   display: inline-flex;
   align-items: center;
-  font: var(--dsw-font-xxxs-11);
+  font: var(--dsh-panel-text-meta, 11px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-tertiary);
   border: 1px solid var(--dsw-alias-border-l1);
   border-radius: 999px;
@@ -580,7 +580,7 @@
   border: 1px solid transparent;
   border-radius: 6px;
   background: transparent;
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-tertiary);
   cursor: pointer;
 }

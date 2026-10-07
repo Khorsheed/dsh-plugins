@@ -12,7 +12,7 @@
 }
 
 .faceTitle {
-  font: var(--dsw-font-xs-strong-13);
+  font: 500 var(--dsh-panel-text-body, 13px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-primary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -30,7 +30,7 @@
   display: grid;
   grid-template-columns: minmax(3em, max-content) 1fr;
   gap: 8px;
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   line-height: 1.5;
 }
 
@@ -51,7 +51,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 2px 0;
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-secondary);
 }
 
@@ -60,7 +60,7 @@
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
   overflow: hidden;
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   line-height: 1.6;
   color: var(--dsw-alias-label-secondary);
   overflow-wrap: anywhere;
@@ -81,7 +81,7 @@
 .table {
   width: 100%;
   border-collapse: collapse;
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   line-height: 1.6;
 }
 
@@ -114,7 +114,7 @@
   margin-left: 6px;
   padding: 0 4px;
   border-radius: 4px;
-  font: var(--dsw-font-xxxs-11);
+  font: var(--dsh-panel-text-meta, 11px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-caption);
   background: var(--dsw-alias-bg-layer-1);
 }
@@ -151,7 +151,7 @@
   display: grid;
   grid-template-columns: minmax(4em, 7em) 1fr;
   gap: 12px;
-  font: var(--dsw-font-xs-13);
+  font: var(--dsh-panel-text-body, 13px)/1.5 var(--dsw-font-family);
   line-height: 1.6;
 }
 
@@ -173,7 +173,7 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-tertiary);
 }
 
@@ -182,7 +182,7 @@
   border: 1px dashed var(--dsw-alias-border-l2);
   border-radius: 6px;
   background: none;
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   line-height: 1.6;
   color: var(--dsw-alias-label-secondary);
 }
@@ -209,7 +209,7 @@ button.emptyChip:hover {
 .tag {
   padding: 0 6px;
   border-radius: 4px;
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-secondary);
   background: var(--dsw-alias-bg-layer-1);
 }
@@ -222,7 +222,7 @@ button.emptyChip:hover {
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 4px;
   background: none;
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   line-height: 1.6;
   color: var(--dsw-alias-brand-primary);
 }
@@ -242,7 +242,7 @@ button.refChip:disabled {
 
 .removed summary {
   cursor: pointer;
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-tertiary);
 }
 
@@ -263,7 +263,7 @@ button.refChip:disabled {
   grid-template-columns: minmax(4em, 7em) 1fr;
   gap: 12px;
   align-items: baseline;
-  font: var(--dsw-font-xs-13);
+  font: var(--dsh-panel-text-body, 13px)/1.5 var(--dsw-font-family);
 }
 
 .formRow label {
@@ -282,7 +282,7 @@ button.refChip:disabled {
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 6px;
   background: var(--dsw-alias-bg-base);
-  font: var(--dsw-font-xs-13);
+  font: var(--dsh-panel-text-body, 13px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-primary);
   resize: vertical;
 }
@@ -317,7 +317,7 @@ button.refChip:disabled {
   border: 1px dashed var(--dsw-alias-border-l2);
   border-radius: 4px;
   background: none;
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-secondary);
 }
 
@@ -329,7 +329,7 @@ button.refChip:disabled {
 }
 
 .missing {
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-state-error-primary);
 }
 

@@ -133,9 +133,15 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     'canvas.board.manuscripts': { kind: 'keyed'; scope: 'session'; owner: CanvasManuscriptsOwnerProps }
     /**
      * A top-face label on a genre with `faces`, keyed `genreKey(genre, face)`:
-     * the label and whatever count belongs beside it. Missing: the plain label.
+     * the label. Missing: the plain label.
      */
     'canvas.board.tab': { kind: 'keyed'; scope: 'session'; owner: CanvasTabLabelOwnerProps }
+    /**
+     * The count beside a top-face label, keyed like `canvas.board.tab` (the
+     * novel's 章节: what waits on the person). The face tabs render it as the
+     * tab's badge, outside the label's underline. Missing: no badge.
+     */
+    'canvas.board.tab.badge': { kind: 'keyed'; scope: 'session'; owner: CanvasTabLabelOwnerProps }
     /** The genre's own top face (with `faces`), keyed `genreKey(genre, faces.view)`. */
     'canvas.board.view': { kind: 'keyed'; scope: 'session'; owner: CanvasGenreOwnerProps }
     /** The card scopes of the 卡板 face, keyed by genre id (see `CanvasScopesOwnerProps`). */
@@ -162,6 +168,7 @@ export const CANVAS_CHILD_SLOTS = {
   'canvas.board.strip': { kind: 'list', scope: 'session' },
   'canvas.board.manuscripts': { kind: 'keyed', scope: 'session' },
   'canvas.board.tab': { kind: 'keyed', scope: 'session' },
+  'canvas.board.tab.badge': { kind: 'keyed', scope: 'session' },
   'canvas.board.view': { kind: 'keyed', scope: 'session' },
   'canvas.board.scopes': { kind: 'keyed', scope: 'session' },
   'canvas.board.graph': { kind: 'keyed', scope: 'session' },

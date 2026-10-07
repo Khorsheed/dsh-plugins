@@ -14,7 +14,7 @@
   margin: 1px 8px;
   padding: 8px 10px;
   border-radius: 7px;
-  font: var(--dsw-font-xs-13);
+  font: var(--dsh-panel-text-body, 13px)/1.5 var(--dsw-font-family);
   line-height: 1.45;
   color: var(--dsw-alias-label-tertiary);
   cursor: pointer;
@@ -39,7 +39,7 @@
 
 .canvasRowMeta {
   display: block;
-  font: var(--dsw-font-xxxs-11);
+  font: var(--dsh-panel-text-meta, 11px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-caption);
   margin-top: 2px;
 }
@@ -71,7 +71,7 @@
 
 .empty {
   padding: 18px 14px;
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   line-height: 1.7;
   color: var(--dsw-alias-label-tertiary);
 }
@@ -86,7 +86,7 @@
   border: none;
   border-radius: 7px;
   background: transparent;
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-tertiary);
   cursor: pointer;
   text-align: left;
@@ -110,7 +110,7 @@
 }
 
 .formLabel {
-  font: var(--dsw-font-xxxs-11);
+  font: var(--dsh-panel-text-meta, 11px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-tertiary);
 }
 
@@ -120,7 +120,7 @@
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 6px;
   padding: 6px 8px;
-  font: var(--dsw-font-xs-13);
+  font: var(--dsh-panel-text-body, 13px)/1.5 var(--dsw-font-family);
   background: transparent;
   color: var(--dsw-alias-label-primary);
   outline: none;
@@ -142,7 +142,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-secondary);
   cursor: pointer;
 }
@@ -159,7 +159,7 @@
   border: none;
   border-radius: 6px;
   padding: 5px 12px;
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   background: var(--dsw-alias-button-primary-fill);
   color: var(--dsw-alias-label-primary-foreground);
   cursor: pointer;
@@ -181,7 +181,7 @@
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 6px;
   padding: 4px 10px;
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   background: transparent;
   color: var(--dsw-alias-label-secondary);
   cursor: pointer;
@@ -192,7 +192,7 @@
 }
 
 .formNote {
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   line-height: 1.6;
   color: var(--dsw-alias-label-tertiary);
 }
@@ -244,7 +244,7 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font: var(--dsw-font-xxxs-11);
+  font: var(--dsh-panel-text-meta, 11px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-tertiary);
   border: 1px solid var(--dsw-alias-border-l1);
   border-radius: 999px;
@@ -312,7 +312,7 @@
   border: 1px solid var(--dsw-alias-border-l2);
   background: var(--dsw-alias-bg-base);
   border-radius: 999px;
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   padding: 4px 11px;
   color: var(--dsw-alias-label-secondary);
   cursor: pointer;
@@ -352,7 +352,7 @@
   border-radius: 8px;
   padding: 7px 10px;
   margin-bottom: 12px;
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-secondary);
 }
 
@@ -366,7 +366,7 @@
   border: 1px solid var(--dsw-alias-border-l1);
   background: transparent;
   border-radius: 999px;
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   padding: 4px 11px;
   color: var(--dsw-alias-label-secondary);
   white-space: nowrap;
@@ -382,7 +382,7 @@
   border: none;
   background: var(--dsw-alias-state-business-primary);
   border-radius: 999px;
-  font: var(--dsw-font-xxs-strong-12);
+  font: 500 var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   padding: 4px 11px;
   color: var(--dsw-alias-label-primary-inverted);
   white-space: nowrap;
@@ -402,7 +402,7 @@
   border: none;
   background: none;
   padding: 0;
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-state-business-primary);
   cursor: pointer;
 }
@@ -505,7 +505,7 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font: var(--dsw-font-xxxs-11);
+  font: var(--dsh-panel-text-meta, 11px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-tertiary);
   align-self: flex-start;
 }
@@ -522,7 +522,7 @@
 }
 
 .cardText {
-  font: var(--dsw-font-xs-13);
+  font: var(--dsh-panel-text-body, 13px)/1.5 var(--dsw-font-family);
   line-height: 1.65;
   color: var(--dsw-alias-label-primary);
   white-space: pre-wrap;
@@ -536,7 +536,7 @@
 
 /* The document card's derived heading (never the raw `#` opener). */
 .docTitle {
-  font: var(--dsw-font-xs-strong-13);
+  font: 500 var(--dsh-panel-text-body, 13px)/1.5 var(--dsw-font-family);
   line-height: 1.5;
   color: var(--dsw-alias-label-primary);
   word-break: break-word;
@@ -559,7 +559,7 @@
 }
 
 .cardWords {
-  font: var(--dsw-font-xxxs-11);
+  font: var(--dsh-panel-text-meta, 11px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-caption);
 }
 
@@ -574,7 +574,7 @@
 }
 
 .cardSrc {
-  font: var(--dsw-font-xxxs-11);
+  font: var(--dsh-panel-text-meta, 11px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-caption);
   display: flex;
   align-items: center;
@@ -586,7 +586,7 @@
   display: flex;
   align-items: center;
   gap: 5px;
-  font: var(--dsw-font-xxxs-11);
+  font: var(--dsh-panel-text-meta, 11px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-tertiary);
 }
 
@@ -649,7 +649,7 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font: var(--dsw-font-xxxs-11);
+  font: var(--dsh-panel-text-meta, 11px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-state-business-primary);
   letter-spacing: 0.2px;
   align-self: flex-start;
@@ -751,7 +751,7 @@
   justify-content: center;
   gap: 4px;
   border-radius: 6px;
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   padding: 5px 0;
   border: 1px solid var(--dsw-alias-border-l2);
   background: transparent;
@@ -779,7 +779,7 @@
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 6px;
   padding: 7px 8px;
-  font: var(--dsw-font-xs-13);
+  font: var(--dsh-panel-text-body, 13px)/1.5 var(--dsw-font-family);
   line-height: 1.65;
   background: var(--dsw-alias-bg-base);
   color: var(--dsw-alias-label-primary);
@@ -793,7 +793,7 @@
 }
 
 .editHint {
-  font: var(--dsw-font-xxxs-11);
+  font: var(--dsh-panel-text-meta, 11px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-caption);
 }
 
@@ -801,7 +801,7 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font: var(--dsw-font-xxxs-11);
+  font: var(--dsh-panel-text-meta, 11px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-tertiary);
   background: none;
   border: 1px solid var(--dsw-alias-border-l1);
@@ -817,7 +817,7 @@
 .commentThread {
   border-left: 2px solid var(--dsw-alias-border-l2);
   padding: 6px 0 2px 10px;
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-secondary);
   line-height: 1.6;
   display: flex;
@@ -840,7 +840,7 @@
 
 .notice {
   padding: 32px 20px;
-  font: var(--dsw-font-xs-13);
+  font: var(--dsh-panel-text-body, 13px)/1.5 var(--dsw-font-family);
   line-height: 1.8;
   color: var(--dsw-alias-label-tertiary);
 }
@@ -856,7 +856,7 @@
   border-radius: 8px;
   background: var(--dsw-alias-bg-layer-3);
   box-shadow: var(--dsw-elevation-prominent);
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-state-error-primary);
   cursor: pointer;
 }
@@ -902,7 +902,7 @@
   border-bottom: 1px solid var(--dsw-alias-border-l1);
   border-radius: 0;
   background: transparent;
-  font: var(--dsw-font-xs-13);
+  font: var(--dsh-panel-text-body, 13px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-secondary);
   cursor: pointer;
   text-align: left;
@@ -920,7 +920,7 @@
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-secondary);
 }
 
@@ -960,11 +960,11 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font: var(--dsw-font-xs-strong-13);
+  font: 500 var(--dsh-panel-text-body, 13px)/1.5 var(--dsw-font-family);
 }
 
 .newTileHint {
-  font: var(--dsw-font-xxxs-11);
+  font: var(--dsh-panel-text-meta, 11px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-caption);
   text-align: center;
 }

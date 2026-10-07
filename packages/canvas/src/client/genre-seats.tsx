@@ -115,6 +115,15 @@ export function boardTabLabelOf(seats: GenreSeats | null, board: CanvasBoard, fa
   })
 }
 
+/** The count beside a top-face label (the tab's badge), or undefined: no genre faces. */
+export function boardTabBadgeOf(seats: GenreSeats | null, board: CanvasBoard, face: string, label: string): ReactNode {
+  if (genreFacesOf(seats, board) === undefined) return undefined
+  return seats!.renderSlot('canvas.board.tab.badge', { ...ownerOf(seats!, board), face, label }, {
+    entryKey: genreKey(board.genre!.id, face),
+    fallback: null,
+  })
+}
+
 /** The genre's own face; `missing` stands in when no entry serves it. */
 export function boardViewOf(seats: GenreSeats | null, board: CanvasBoard, missing: ReactNode): ReactNode {
   const faces = genreFacesOf(seats, board)

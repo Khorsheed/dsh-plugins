@@ -19,7 +19,7 @@
 
 .notice {
   padding: 32px 20px;
-  font: var(--dsw-font-xs-13);
+  font: var(--dsh-panel-text-body, 13px)/1.5 var(--dsw-font-family);
   line-height: 1.8;
   color: var(--dsw-alias-label-tertiary);
 }
@@ -44,7 +44,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font: var(--dsw-font-xs-13);
+  font: var(--dsh-panel-text-body, 13px)/1.5 var(--dsw-font-family);
   font-weight: 600;
   line-height: 1.4;
   color: var(--dsw-alias-label-primary);
@@ -52,7 +52,7 @@
 
 .boardCount {
   flex: none;
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-caption);
 }
 
@@ -60,7 +60,7 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font: var(--dsw-font-xxxs-11);
+  font: var(--dsh-panel-text-meta, 11px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-tertiary);
   border: 1px solid var(--dsw-alias-border-l1);
   border-radius: 999px;
@@ -77,16 +77,20 @@
   flex: 1;
 }
 
-/* The board's faces: underline tabs flush with the header's own rule, so the
-   accent bar sits on it and the ⋯ shares the row — ONE rule under the header,
-   not the kit's own plus ours. Scoped under .topbar: at equal specificity the
-   kit's `.tabs` (bundled after this sheet) won, and the tabs kept their 36px
-   and their own line above the header's (2026-10-06 review). */
+/* The board's faces: the kit's tabs-plus-trailing bar (the ⋯ in its trailing
+   seat) flush with the header's own rule, so the accent bar sits on it — ONE
+   rule under the header, not the kit's own plus ours. The class lands on the
+   bar; its tablist drops its fixed height to fill the header. Scoped under
+   .topbar: at equal specificity the kit's sheet (bundled after this one) won
+   (2026-10-06 review). */
 .topbar > .faceTabs {
   align-self: stretch;
-  height: auto;
   min-width: 0;
   box-shadow: none;
+}
+
+.topbar > .faceTabs > [role="tablist"] {
+  height: auto;
 }
 
 /* A genre face's own tools row (设定: 故事筛选 · 网格 / 连线), a level below
@@ -127,7 +131,7 @@
   padding: 3px 10px;
   background: transparent;
   color: var(--dsw-alias-label-secondary);
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   line-height: 1.5;
   white-space: nowrap;
   cursor: pointer;
@@ -158,7 +162,7 @@
 }
 
 .readonlyHint {
-  font: var(--dsw-font-xxxs-11);
+  font: var(--dsh-panel-text-meta, 11px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-caption);
   white-space: nowrap;
 }
@@ -176,7 +180,7 @@
   border-radius: 8px;
   background: var(--dsw-alias-bg-layer-3);
   box-shadow: var(--dsw-elevation-prominent);
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-state-error-primary);
   cursor: pointer;
 }
@@ -191,7 +195,7 @@
   padding: 8px 12px;
   border-bottom: 1px solid var(--dsw-alias-border-l1);
   background: var(--dsw-alias-bg-layer-1);
-  font: var(--dsw-font-xxs-12);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-label-secondary);
 }
 
@@ -217,9 +221,8 @@
   color: var(--dsw-alias-label-primary);
 }
 
-/* The 成稿 face's count: how many manuscripts the board has grown. */
+/* The 成稿 face's badge: how many manuscripts the board has grown. */
 .viewCount {
-  margin-left: 4px;
   font-variant-numeric: tabular-nums;
   opacity: 0.7;
 }
