@@ -2,6 +2,7 @@
 
 ## 未发布
 
+- **题集整理并进评测模式（T102）**：删除 `preset-dataset-authoring`（题集整理）行，`PRESET_IDS` 回到三个；`preset-dsh-eval` 照 web-eval `preset-eval` 的新组成改：加 `tool-bash` / `tool-pwsh`（整理要跑 git 与转换脚本）、`tool-web` 开 fetch、`datasets-tool` 从 `authoring` 换成 `organize`（读 + put_item + 只写申请，挂 `dataset-authoring` 技能），persona 合并评测口径与整理的工作方式，描述同步。用过「题集整理」的旧会话在续接时找不到预设，见 T102 的 Agent Note
 - **评测线迁 3080（T100）**：`preset-dsh-eval` 的 persona 同步成 web-eval `preset-eval` 的现行版本（只认 `datasets_list` 登记的题集、版本歧义问人且跳过即停、「新建实验」表单的逐项询问、路径不是题集、草稿不写进题库），`eval-tool` 行注释改成「四读两写」；此后 web-eval 那份是组合正本，两份由 `scripts/eval-preset-parity.spec.ts` 比对。新增第四行 `preset-dataset-authoring`（`id: dataset-authoring`，题集整理，order 11），照 web-eval bundle 的同名行镜像：挂 shell、`datasets-tool` 取 `tools: organize`、不挂 eval 工具，datasets 核心的 `authoringPreset` 默认值在跑本包的部署上从此有对象。`PRESET_IDS` 加 `dataset-authoring`；测试新增「开发、写作预设不点名 datasets / eval / mission 工具行，不提评测技能」
 - **写作模式并入长篇小说工具**：`preset-dsh-writing` 加 `canvas-novel-agent` 行（`@khorsheed/dsh-canvas-novel/agent`），原 `@khorsheed/dsh-bundle-writing` 的「写作」preset 退役。`novel_bind`、novel skill 与轻指引段随本 preset 授予；`novel_read` / `novel_write` / `novel_extract` 只在会话绑定长篇小说画布时出现，其余画布照旧只有画布工具。persona 的 Canvas 段加一句：小说画布上的卡照旧走 canvas_write、直接落成正式卡，绑定后另有 novel_* 管章节、台账与待审；`dsh.references` 加 `@khorsheed/dsh-canvas-novel`
 

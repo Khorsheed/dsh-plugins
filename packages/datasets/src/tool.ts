@@ -58,8 +58,10 @@ export interface DatasetsToolConfig {
    * Which group of model tools this row grants: `read` (the six read verbs),
    * `authoring` (read plus `datasets_put_item` — the drafting domain an eval
    * agent wants), `all` (authoring plus `datasets_worktree_path`; the
-   * default), `organize` (read plus `datasets_propose_registration`, and the
-   * shipped `dataset-authoring` skill — the 「题集整理」 session's tier, T90),
+   * default), `organize` (authoring plus `datasets_propose_registration`, and
+   * the shipped `dataset-authoring` skill — introduced for the 「题集整理」
+   * preset at T90, the evaluation mode's tier since T102 folded organizing
+   * into it),
    * or `none` (no model tools and no guidance section). The
    * service, the CLI, and the session tab are the core's own faces; the
    * `/datasets` slash command is THIS row's and registers at every tier —
@@ -149,17 +151,33 @@ export function loadAuthoringSkill(): SkillFile | undefined {
   return { name: skillName, description, content: resolveSkillPaths(content) }
 }
 
-/** The 「题集整理」 session's guidance (the `organize` tier). */
+/**
+ * The `organize` tier's guidance — since T102 the evaluation mode's one
+ * datasets section. It states both jobs the session now does and where each
+ * may read: USING a registered dataset goes through the tools by `<id>/<set>`
+ * (the generic `datasets:tools` rule, unchanged), and ORGANIZING data into a
+ * new dataset is the one job that reads directories — the original data, the
+ * target repository and the shipped protocol, nothing else. One section, not
+ * the generic one plus an organizing one: two sections, one forbidding
+ * directory reads and one requiring them, is the contradiction the T102 brief
+ * asked not to ship.
+ */
 const ORGANIZE_GUIDANCE =
-  'This session organizes a dataset into a git repository for the person and files a registration proposal. '
-  + 'Load the dataset-authoring skill first and follow it step by step: check git, look at the data, ask every '
-  + 'key question in one go, never modify the original data, convert the whole dataset (no sampling), give every '
-  + 'file and field a disposition, commit per batch, and check with datasets_propose_registration {dryRun: true} '
-  + 'until it passes. Validation rules come from those checks, and the protocol ships with the skill at the '
-  + 'paths it names: read only the original directory, the target repository, and that protocol — never search '
-  + 'the disk, read any plugin\'s source or lib, or read another dsh instance\'s directories. '
-  + 'Then file the proposal with datasets_propose_registration and stop: only the person '
-  + 'registers, on the Datasets tab. Registered datasets are read through the datasets_* tools as `<id>/<set>`.'
+  'Registered datasets are used through the datasets_* tools only: find them with datasets_list and address each '
+  + 'as `<id>/<set>` — never by a path, and never read, glob or grep a registered dataset\'s directory yourself. '
+  + 'When a name matches several registered datasets, let the person choose with ask_user_question. Layers a '
+  + 'registration does not grant are invisible to you; never try to reach them through other means. Pin a commit '
+  + 'with datasets_snapshot before a read series; draft items into a registered dataset with datasets_put_item and '
+  + 'leave its `git commit` to the person.\n'
+  + 'Organizing — turning data into a dataset repository, changing one the person hands you with its checkout, or '
+  + 'reworking a proposal they returned — is the one job that reads directories. Load the dataset-authoring skill first and follow it step by step: check git, look at the '
+  + 'data, ask every key question in one go, never modify the original data, convert the whole dataset (no '
+  + 'sampling), give every file and field a disposition, commit per batch, and check with '
+  + 'datasets_propose_registration {dryRun: true} until it passes. Validation rules come from those checks, and the '
+  + 'protocol ships with the skill at the paths it names: read only the original directory, the target repository, '
+  + 'and that protocol — never search the disk, read any plugin\'s source or lib, or read another dsh instance\'s '
+  + 'directories. Then file the proposal with datasets_propose_registration and stop: only the person registers, '
+  + 'on the Datasets tab.'
 
 /** The narrow prompt-section registry surface this plugin opportunistically uses. */
 interface PromptSections {
@@ -216,10 +234,12 @@ export function apply(ctx: Context, config: DatasetsToolConfig = {}): void {
   // the same deferred door, for the same reason. The section names only the
   // verbs this group actually granted.
   if (config.tools === 'organize') {
-    // The organizing tier: its own guidance (the generic one forbids reading
-    // directories, which is exactly this session's job on the ORIGINAL data)
-    // and the shipped skill — both only here, so the evaluation tiers'
-    // prompts and skill lists stay byte-identical.
+    // The organizing tier (the evaluation mode's since T102): one guidance
+    // section covering both using registered datasets and organizing new
+    // ones (the generic section alone forbids reading directories, which is
+    // exactly the organizing job on the ORIGINAL data), and the shipped skill.
+    // Both only here, so the read / authoring / all tiers' prompts and skill
+    // lists stay byte-identical.
     ctx.inject(['systemPrompt'], (promptCtx) => {
       const sections = promptCtx.get('systemPrompt') as PromptSections | undefined
       sections?.section({ name: 'datasets:organize', order: 150, text: ORGANIZE_GUIDANCE })

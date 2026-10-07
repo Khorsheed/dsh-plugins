@@ -309,7 +309,7 @@ function makeHarness(rows: RegistryRow[] = [rowOf()]): Harness {
     overview: vi.fn(async (): Promise<Result<DatasetOverview>> => ({ ok: true, value: OVERVIEW })),
     itemBrief: vi.fn(async (): Promise<Result<ItemBrief>> => ({ ok: true, value: BRIEF })),
     validateDataset: vi.fn(async (): Promise<Result<ValidateResult>> => ({ ok: true, value: VALIDATED })),
-    organizingSetup: vi.fn(async () => ({ ok: true, value: { preset: 'dataset-authoring', datasetsHome: '/home/user/.dsh/datasets' } })),
+    organizingSetup: vi.fn(async () => ({ ok: true, value: { preset: 'eval', datasetsHome: '/home/user/.dsh/datasets' } })),
     proposals: vi.fn(async (): Promise<Result<Proposal[]>> => ({ ok: true, value: [] })),
     proposalReview: vi.fn(async (): Promise<Result<ProposalReview>> => ({ ok: true, value: REVIEW })),
     reviewItem: vi.fn(async (_sid: string, _id: string, set: string, item: string) => ({
@@ -1227,7 +1227,7 @@ describe('添加题集 (T90)', () => {
     const [sid, title, text, preset] = h.startOrganizing.mock.calls[0]!
     expect(sid).toBe('s1')
     expect(title).toBe('organize.sessionTitle {"name":"gsm8k"}')
-    expect(preset).toBe('dataset-authoring')
+    expect(preset).toBe('eval')
     expect(text).toContain('~/Downloads/gsm8k')
     expect(text).toContain('math reasoning')
     expect(text).toContain('/home/user/.dsh/datasets/gsm8k')

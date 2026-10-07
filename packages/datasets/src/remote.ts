@@ -11,6 +11,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { DatasetsError } from './dataset.ts'
+import { resolveOrganizingPreset, type PresetRegistrySlice } from './organizing-preset.ts'
 import type {
   ImportBindingsResult, RegisterInput, RegisterPreview, RegistryEntry, RegistryRow, RepoSelector, UpdateInput,
 } from './registry.ts'
@@ -311,13 +312,21 @@ export class DatasetsRemoteService extends TypertRemoteService<DatasetsRemoteCon
   // ── T90: the organizing hand-off ─────────────────────────────────────────
 
   /**
-   * What 「让 Agent 整理」 needs: the 「题集整理」 preset and where new
-   * repositories go by default (decision C).
+   * What 「让 Agent 整理」 needs: the preset the organizing session opens on
+   * and where new repositories go by default (decision C). A configured
+   * `authoringPreset` wins; otherwise (T102) the preset is the one whose
+   * composition grants the datasets-tool `organize` tier — the evaluation
+   * mode, whatever this deployment calls it — read from the host's preset
+   * registry per call (probed, never injected: a host without the registry
+   * answers '' and the session keeps its default).
    * @returns the organizing setup.
    */
   @Remote('organizingSetup')
-  organizingSetup(): OrganizingSetup {
-    return this.datasets.organizing
+  async organizingSetup(): Promise<OrganizingSetup> {
+    const { organizing } = this.datasets
+    if (organizing.preset !== '') return organizing
+    const registry = (this.ctx.get.bind(this.ctx) as (name: string) => unknown)('agentPresets') as PresetRegistrySlice | undefined
+    return { ...organizing, preset: await resolveOrganizingPreset(registry) }
   }
 
   /**

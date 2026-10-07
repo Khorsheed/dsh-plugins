@@ -19,6 +19,7 @@ Status: implemented
 
 - **A——登记表只归人写。** 整理 Agent 的工具档（`src/tool-definition.ts` 里的 `organize`）是读工具加上唯一一个写工具 `datasets_propose_registration`。它把申请写到 datasets 状态目录下，从不碰 `registry.json`。登记只经由 `confirmProposal` / `confirmPending`（`src/remote.ts` 里的 Remote 方法）发生，由题集 tab 在人按下「确认登记」/「确认新版本」时调用。
 - **B——整理是单独的会话。** 整理 Agent 会读到答案，所以它永远不是评测 Agent。「添加题集」弹窗（`src/client/AddDatasetDialog.tsx`）提供「让 Agent 整理」。这个操作用 `dataset-authoring` 预设（`Config.authoringPreset`）新开一个会话，把请求写进输入框但不发送。web-eval 的 presets 包在 `profiles/web-eval/presets/cordis.patch.yml` 里以 `preset-dataset-authoring` 一行提供这个预设。评测会话永远不继承它。
+  - *T102（2026-10-06）起作废。* 上面的理由不成立：选手能看到什么由题集分层和编排器强制，与布置评测的 Agent 无关。题集整理并进评测模式，`dataset-authoring` 预设删除，「让 Agent 整理」新开的会话用授予了 datasets 工具行 `organize` 档的预设。仍是新开一个会话，只是不再用单独的预设。见 [T102 的 Agent Note](2026-10-06-t102-organizing-in-eval-mode.zh.md)。
 - **C——新仓库默认放在 `$DSH_HOME/datasets/<名字>`**（`src/defaults.ts`；兜底 `~/.dsh/datasets`）。弹窗显示具体路径，开始之前不用先选位置。宿主的目录选择器可用时，弹窗的「更改…」可以为这一次请求另选父目录（[T95](2026-10-03-t95-add-dataset-directory-picker.zh.md)）。
 - **D——人看到的是「版本 N · 更新时间」。** N 是所登记 commit 的提交数。commit 哈希、跟踪的 ref 和仓库路径放在评审页和详情页的「高级」里。
 
@@ -73,11 +74,13 @@ Status: implemented
 
 `dataset-authoring` 预设挂了 shell（`tool-bash` / `tool-pwsh`）、`tool-fs` 和 `tool-jobs`，因为整理要跑 git 和转换脚本。冻结决策 12 约束的是**评测** Agent（规划与分析）。`preset-eval` 一块字节不变，`scripts/web-eval-preset-bundle.spec.ts` 对它的钉住仍然成立。
 
+*T102（2026-10-06）起作废：* 评测预设自己带 shell，冻结决策 12 改写——docker socket 仍只归编排器，但不再靠预设保证；防护看会话记录后再定。
+
 ## 考虑过的其他方案
 
 **让整理 Agent 直接登记。** 少一步。代价是失去唯一一个让人在选手读到分层之前先看到选手会读哪些层的环节。刚读过答案的 Agent 不该做这个决定，所以 Agent 提申请、人确认（决定 A）。
 
-**在评测会话里整理。** 不用新预设。但评测会话从此读过答案，可能把答案带进规划。这破坏了所有比较赖以成立的隔离（决定 B）。
+**在评测会话里整理。** 不用新预设。但评测会话从此读过答案，可能把答案带进规划。这破坏了所有比较赖以成立的隔离（决定 B）。*T102（2026-10-06）最终采用了这个方案：* 选手隔离由题集分层和编排器保证，不靠规划 Agent 的上下文。
 
 **照 Agent 写的对应关系直接展示。** 更简单。但评审就只和 Agent 一样诚实：一句幻觉出来的「6 条记录全部转换」和真的看起来一模一样。对照 git 对象和原目录核验之后，对照才成了证据。
 

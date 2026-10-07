@@ -1,14 +1,14 @@
 /**
- * The two copies of the evaluation-side agent presets stay one composition
+ * The two copies of the evaluation agent preset stay one composition
  * (T100, 2026-10-06).
  *
  * The evaluation line used to run only on its own instance, whose profile-local
- * bundle (profiles/web-eval/presets) declares `eval` (评测模式) and
- * `dataset-authoring` (题集整理). Moving the line to 3080 means the published
- * @khorsheed/dsh-presets bundle 3080 runs must carry the same agents:
- * `dsh-eval` there is the same composition under the id 3080's sessions
- * already use, and `dataset-authoring` is mirrored under its own id (the id the
- * datasets core's authoringPreset default opens).
+ * bundle (profiles/web-eval/presets) declares `eval` (评测模式). Moving the line
+ * to 3080 means the published @khorsheed/dsh-presets bundle 3080 runs must
+ * carry the same agent: `dsh-eval` there is the same composition under the id
+ * 3080's sessions already use. T100 also mirrored `dataset-authoring`
+ * (题集整理); T102 folded organizing into the evaluation mode and removed that
+ * row on both sides, so one pair is left.
  *
  * The web-eval copy is the canonical one — its `plugins:` block is apparatus,
  * sha-pinned in web-eval-preset-bundle.spec.ts — and this spec makes drift a
@@ -60,24 +60,27 @@ function field(lines: string[], key: string): string | undefined {
 }
 
 describe('eval presets: web-eval bundle (canonical) and dsh-presets (3080) carry one composition', () => {
-  for (const [webRow, presetsRow] of [
-    ['preset-eval', 'preset-dsh-eval'],
-    ['preset-dataset-authoring', 'preset-dataset-authoring'],
-  ] as const) {
-    it(`${presetsRow} composes exactly what ${webRow} does`, () => {
-      const web = rowLines(WEB_EVAL, webRow)
-      const ours = rowLines(PRESETS, presetsRow)
-      expect(composition(ours)).toEqual(composition(web))
-      expect(field(ours, 'name')).toBe(field(web, 'name'))
-      expect(field(ours, 'description')).toBe(field(web, 'description'))
-    })
-  }
+  it('preset-dsh-eval composes exactly what preset-eval does', () => {
+    const web = rowLines(WEB_EVAL, 'preset-eval')
+    const ours = rowLines(PRESETS, 'preset-dsh-eval')
+    expect(composition(ours)).toEqual(composition(web))
+    expect(field(ours, 'name')).toBe(field(web, 'name'))
+    expect(field(ours, 'description')).toBe(field(web, 'description'))
+  })
+
+  it('neither side declares the retired 题集整理 preset (T102)', () => {
+    for (const patch of [WEB_EVAL, PRESETS]) {
+      expect(patch).not.toContain('    - id: preset-dataset-authoring')
+      expect(patch).not.toMatch(/^ {8}id: dataset-authoring$/m)
+    }
+  })
 
   it('the normalizer sees the rows that matter (guards against comparing two empty lists)', () => {
     const evalRows = composition(rowLines(PRESETS, 'preset-dsh-eval')).join('\n')
     expect(evalRows).toContain("- id: eval-tool\n            name: @khorsheed/dsh-eval/tool")
-    expect(evalRows).toContain('Datasets are exactly what datasets_list returns as registered')
-    const authoringRows = composition(rowLines(PRESETS, 'preset-dataset-authoring')).join('\n')
-    expect(authoringRows).toContain('              tools: organize')
+    expect(evalRows).toContain('Registered datasets are exactly what datasets_list returns')
+    expect(evalRows).toContain('Load the dataset-authoring skill')
+    expect(evalRows).toContain("- id: tool-bash\n            name: @deepseek-ai/dsh-tool-bash")
+    expect(evalRows).toContain('              tools: organize')
   })
 })

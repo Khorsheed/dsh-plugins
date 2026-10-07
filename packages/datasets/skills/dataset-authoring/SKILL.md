@@ -1,6 +1,6 @@
 ---
 name: dataset-authoring
-description: Turn a person's dataset (a local directory, a public benchmark, or data already in the protocol layout) into a versioned git repository in the Dataset Authoring Protocol layout, then file a registration proposal for the person to confirm on the Datasets tab. Load at the start of every 「题集整理」 session and whenever you are asked to add, convert, or update a dataset. Covers the git check, the one round of questions, the never-touch-the-original rule, whole-dataset conversion, per-file and per-field dispositions, batch commits, the dry-run check, and conversion references for SWE-bench, Terminal-Bench, and jsonl QA.
+description: Turn a person's dataset (a local directory, a public benchmark, or data already in the protocol layout) into a versioned git repository in the Dataset Authoring Protocol layout, then file a registration proposal for the person to confirm on the Datasets tab. Load at the start of every organizing session (the 「题集整理 · name」 sessions the Datasets page opens) and whenever you are asked to add, convert, or update a dataset. Covers the git check, the one round of questions, the never-touch-the-original rule, whole-dataset conversion, per-file and per-field dispositions, batch commits, the dry-run check, and conversion references for SWE-bench, Terminal-Bench, and jsonl QA.
 ---
 
 # Dataset authoring

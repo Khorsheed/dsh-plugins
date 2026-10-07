@@ -2,7 +2,7 @@
  * T90 · the 添加题集 dialog: three fields and one action.
  *
  * 数据在哪 (required) / 题集名称 (required) / 想拿它测什么 (optional), then
- * 「让 Agent 整理」: the caller opens a NEW 「题集整理」 session and writes the
+ * 「让 Agent 整理」: the caller opens a NEW organizing session (titled 「题集整理 · name」, on the evaluation mode since T102) and writes the
  * request into its chat box — never sends it (decision B: organizing never
  * runs in the session the person is working in). The footer says why git is
  * involved in one sentence a person who does not know git can read.

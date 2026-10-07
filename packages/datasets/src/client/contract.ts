@@ -123,7 +123,7 @@ export interface DatasetsViewInjected {
   /** Validate one dataset (the detail page's button). */
   validateDataset: (sessionId: SessionId, repo: string, dataset: string) => Promise<RemoteResult<ValidateResult>>
   // ── T90: the organizing hand-off and the registration review ──────────
-  /** The 题集整理 preset and the datasets home (decision C). */
+  /** The organizing preset (picked by grant on the host side, T102) and the datasets home (decision C). */
   organizingSetup: (sessionId: SessionId) => Promise<RemoteResult<OrganizingSetup>>
   /** Proposals waiting for a person (the 「等你确认登记」 banner). */
   proposals: (sessionId: SessionId) => Promise<RemoteResult<Proposal[]>>

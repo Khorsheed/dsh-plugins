@@ -75,8 +75,9 @@ describe('the datasets core faces', () => {
     // registration in the companion row the core mounts unconditionally.
     expect(inject).toEqual([])
     // T90 added the organizing setup (the preset the 「让 Agent 整理」 session
-    // selects and the new-repository home) — still no tool-group key.
-    expect(new Config({} as never)).toEqual({ materializedRoot: '', authoringPreset: 'dataset-authoring', datasetsHome: '' })
+    // selects and the new-repository home) — still no tool-group key. T102: the
+    // preset defaults to '' (picked by grant on the host side).
+    expect(new Config({} as never)).toEqual({ materializedRoot: '', authoringPreset: '', datasetsHome: '' })
   })
 })
 
@@ -91,11 +92,15 @@ describe('the tool groups the companion grants', () => {
     expect(datasetToolDefinitions({} as never, { group: 'none' })).toEqual([])
   })
 
-  it('organize (T90) is the read verbs plus the registration proposal, and never writes items', () => {
+  it('organize (T90, widened at T102) is authoring plus the registration proposal — the evaluation mode drafts items and files proposals', () => {
     expect(datasetToolDefinitions({} as never, { group: 'organize' }).map(d => d.name).sort())
-      .toEqual([...READ, 'datasets_propose_registration'].sort())
+      .toEqual([...READ, 'datasets_put_item', 'datasets_propose_registration'].sort())
+    for (const tool of toolsOfGroup('authoring')) expect(toolsOfGroup('organize')).toContain(tool)
+    // The default tier never grants the registry's write path (decision A
+    // keeps registration the person's; the proposal is opt-in per preset).
     expect(toolsOfGroup('all')).not.toContain('datasets_propose_registration')
-    expect(toolsOfGroup('organize')).not.toContain('datasets_put_item')
+    // Whole-layer materialization stays a service-plane matter for the eval mode.
+    expect(toolsOfGroup('organize')).not.toContain('datasets_worktree_path')
   })
 
   it('every group is a subset chain: none ⊂ read ⊂ authoring ⊂ all', () => {

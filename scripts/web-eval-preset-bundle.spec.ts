@@ -1,9 +1,12 @@
 /**
  * dsh-web-eval's profile-local preset bundle (T82, host 0.2.0 and later).
  *
- * The `eval` agent preset is frozen decision 12's execution point — the
- * evaluation instance's agent carries no shell and no container controls — so
- * its composition is apparatus. T82 moved it from the 0.1.5-era directory form
+ * The `eval` agent preset is frozen decision 12's execution point, so its
+ * composition is apparatus. T82 required the evaluation agent to carry no
+ * shell; T102 (2026-10-06) folded dataset organizing into this preset and
+ * rewrote the decision: the agent carries a shell, the docker socket still
+ * belongs to the orchestrator alone, and that is no longer guaranteed by the
+ * preset — a guard is decided after observing session logs. T82 moved it from the 0.1.5-era directory form
  * (`presets/eval/{agent.cordis.yml,preset.yml}`, copied into
  * `$DSH_HOME/.agent-presets/eval`) into a declarative bundle row, with the
  * requirement that the content stay byte-for-byte the directory version's.
@@ -30,14 +33,23 @@ const BUNDLE_DIR = join(PROFILE, 'presets')
  * says eval-planning arrives through `$DSH_HOME/skills` — it registers from
  * the eval-tool row now. The parsed composition is unchanged, which
  * eval-preset-parity.spec.ts states directly (comments dropped).
+ *
+ * T102 changed the COMPOSITION on purpose (8c11e96a… before): `tool-bash` /
+ * `tool-pwsh` rows, `tool-web` with `fetch: true`, `datasets-tool` at the
+ * `organize` tier (put_item plus the proposal-only
+ * datasets_propose_registration, and the dataset-authoring skill), the merged
+ * persona, and the comments that describe them. The 题集整理 row that followed
+ * this one is gone, so the block now runs to the end of the file. A new
+ * apparatus means a new run: results before and after this digest are not
+ * comparable runs of one apparatus.
  */
-const DIRECTORY_COMPOSITION_SHA = '8c11e96aa7078118de1ddcce8dcda80ce2dee0e88dde0f37d0519399ba81fc1e'
+const DIRECTORY_COMPOSITION_SHA = '8f9267710150a11121845b71ad7aa8e0bffa2d23f4291dc0b2a8785d70daf111'
 
 /**
  * The preset-eval row's `plugins:` block, de-indented back to the directory
  * file it came from. It ends where the next top-level row (or its leading
- * comment) begins — T90 appended `preset-dataset-authoring` after it, and the
- * blank separator line keeps the bytes identical to the end-of-file slice.
+ * comment) begins, or at the end of the file — T90 appended
+ * `preset-dataset-authoring` after it and T102 removed it again.
  */
 function pluginsBlock(patch: string, row = 'preset-eval'): string {
   const lines = patch.split('\n')
@@ -71,12 +83,12 @@ describe('web-eval preset bundle', () => {
     expect(profile.dsh.profile.bundles).toContain(manifest.name)
   })
 
-  it('mounts two top-level rows: preset-eval (id eval, the directory version\'s display fields) and preset-dataset-authoring', () => {
+  it('mounts one top-level row: preset-eval (id eval) — the 题集整理 row folded into it (T102)', () => {
     const topRows = patch.split('\n').filter(line => /^ {4}- id: /.test(line))
-    expect(topRows).toEqual(['    - id: preset-eval', '    - id: preset-dataset-authoring'])
+    expect(topRows).toEqual(['    - id: preset-eval'])
     expect(patch).toContain("      name: '@deepseek-ai/dsh-agent-preset'\n      config:\n        id: eval\n")
     expect(patch).toContain('        name: 评测模式\n')
-    expect(patch).toContain('        description: 评测实例的规划与分析 Agent：读题库、起草 plan 与 condition、读 bundle 写分析初稿；不挂 Bash，不挂容器控制。\n')
+    expect(patch).toContain('        description: 评测实例的 Agent：读题库、起草 plan 与 condition、读 bundle 写分析初稿，也把数据整理成题集并提交登记申请；运行与容器归编排器，登记归人。\n')
     expect(patch).toContain('        order: 0\n')
   })
 
@@ -85,23 +97,26 @@ describe('web-eval preset bundle', () => {
     expect(sha).toBe(DIRECTORY_COMPOSITION_SHA)
   })
 
-  it('carries no row that can run a host command (frozen decision 12)', () => {
-    const names = [...pluginsBlock(patch).matchAll(/^\s*name: '([^']+)'/gm)].map(m => m[1])
-    for (const forbidden of ['@deepseek-ai/dsh-tool-bash', '@deepseek-ai/dsh-tool-pwsh', '@deepseek-ai/dsh-tool-workflow', '@deepseek-ai/dsh-workflow-ptc', '@deepseek-ai/dsh-tool-ralph', '@deepseek-ai/dsh-plan-mode']) {
-      expect(names).not.toContain(forbidden)
-    }
-    expect(names).toContain('@khorsheed/dsh-datasets/tool')
-    expect(names).toContain('@khorsheed/dsh-eval/tool')
-  })
-
-  it('gives the 题集整理 session its own preset: the organize tier, a shell, no eval tools (T90, decision B)', () => {
-    const block = pluginsBlock(patch, 'preset-dataset-authoring')
-    expect(patch).toContain("      name: '@deepseek-ai/dsh-agent-preset'\n      config:\n        id: dataset-authoring\n")
+  it('frozen decision 12 as T102 rewrote it: a shell, but no workflow engine, no ralph, no plan mode', () => {
+    const block = pluginsBlock(patch)
     const names = [...block.matchAll(/^\s*name: '([^']+)'/gm)].map(m => m[1])
     expect(names).toContain('@deepseek-ai/dsh-tool-bash')
-    expect(names).toContain('@deepseek-ai/dsh-tool-skill')
-    expect(names).not.toContain('@khorsheed/dsh-eval/tool')
+    expect(names).toContain('@deepseek-ai/dsh-tool-pwsh')
+    for (const forbidden of ['@deepseek-ai/dsh-tool-workflow', '@deepseek-ai/dsh-workflow-ptc', '@deepseek-ai/dsh-tool-ralph', '@deepseek-ai/dsh-plan-mode']) {
+      expect(names).not.toContain(forbidden)
+    }
+    // No container tool: `lab` registers none, and no row names it.
+    expect(block).not.toMatch(/^\s*name: '[^']*(lab|docker)[^']*'/m)
+  })
+
+  it('one evaluation mode with both jobs: the organize tier, the eval tools, both skills\' doors (T102)', () => {
+    const block = pluginsBlock(patch)
     expect(block).toMatch(/name: '@khorsheed\/dsh-datasets\/tool'\n {2}config:\n {4}tools: organize\b/)
+    expect(block).toMatch(/name: '@khorsheed\/dsh-eval\/tool'\n {2}config:\n {4}tools: all\b/)
+    expect(block).toContain("- id: tool-skill\n  name: '@deepseek-ai/dsh-tool-skill'")
+    expect(block).toContain('Load the dataset-authoring skill before anything else')
+    expect(block).toContain('Execution belongs to the deterministic orchestrator')
+    expect(patch).not.toMatch(/^ {8}id: dataset-authoring$/m)
   })
 
   it('is the deployment default through the profile pin layer', () => {

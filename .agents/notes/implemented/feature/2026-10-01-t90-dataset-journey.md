@@ -19,6 +19,7 @@ The journey has two actors: an organizing agent that converts, and a person who 
 
 - **A — only a person writes the registry.** The organizing agent's tool tier (`organize` in `src/tool-definition.ts`) holds the read verbs plus exactly one write, `datasets_propose_registration`. That verb files a proposal under the datasets state directory and never touches `registry.json`. Registration happens only through `confirmProposal` / `confirmPending` (Remote verbs in `src/remote.ts`), which the 题集 tab calls when a person presses 确认登记 / 确认新版本.
 - **B — organizing is a separate session.** The organizing agent reads answers, so it is never the evaluation agent. The 添加题集 dialog (`src/client/AddDatasetDialog.tsx`) offers 让 Agent 整理. That action opens a new session with the `dataset-authoring` preset (`Config.authoringPreset`) and drafts the request in the composer without sending it. The web-eval presets package ships that preset as row `preset-dataset-authoring` in `profiles/web-eval/presets/cordis.patch.yml`. Evaluation sessions never inherit it.
+  - *Superseded by T102 (2026-10-06).* The reason above is void: what a contestant can see is enforced by the dataset's layers and by the orchestrator, not by the agent that sets up the evaluation. Organizing folded into the evaluation mode, the `dataset-authoring` preset was removed, and «让 Agent 整理» opens a new session on the preset that grants the datasets tool row's `organize` tier. It is still a new session; it no longer runs a separate preset. See the [T102 Agent Note](2026-10-06-t102-organizing-in-eval-mode.md).
 - **C — new repositories default to `$DSH_HOME/datasets/<name>`** (`src/defaults.ts`; fallback `~/.dsh/datasets`). The dialog shows the concrete path, so nobody has to choose one before starting. Where the host's directory chooser is reachable, the dialog's 更改… picks another parent for this one request ([T95](2026-10-03-t95-add-dataset-directory-picker.md)).
 - **D — people see 「版本 N · 更新时间」.** N is the commit count of the registered commit. Commit hashes, the tracked ref and the repository path sit under 高级 on the review page and the detail page.
 
@@ -73,11 +74,13 @@ The conversion procedure lives in `packages/datasets/skills/dataset-authoring/SK
 
 The `dataset-authoring` preset mounts shell (`tool-bash` / `tool-pwsh`), `tool-fs` and `tool-jobs`, because organizing runs git and conversion scripts. Frozen decision 12 restricts the **evaluation** agents (planning and analysis). The `preset-eval` block is byte-identical, and its pin in `scripts/web-eval-preset-bundle.spec.ts` still holds.
 
+*Superseded by T102 (2026-10-06):* the evaluation preset now carries the shell itself, and frozen decision 12 was rewritten — the docker socket still belongs to the orchestrator alone, but the preset no longer guarantees it; guards are decided after observing session logs.
+
 ## Alternatives considered
 
 **Let the organizing agent register directly.** This is one step shorter. It loses the only point where a person sees which layers contestants will read before they read them. An agent that has just read the answers is the wrong party to decide that, so the agent proposes and a person confirms (decision A).
 
-**Organize inside the evaluation session.** No new preset would be needed. But the evaluation session would then have read the answers and could carry them into planning. That violates the isolation every comparison depends on (decision B).
+**Organize inside the evaluation session.** No new preset would be needed. But the evaluation session would then have read the answers and could carry them into planning. That violates the isolation every comparison depends on (decision B). *T102 (2026-10-06) took this alternative after all:* contestant isolation is enforced by dataset layers and the orchestrator, not by the planning agent's context.
 
 **Render the agent's mapping as written.** This is simpler. But the review would then only be as honest as the agent: a hallucinated "all 6 records converted" would read exactly like a real one. Checking the mapping against git objects and the original directory turns the comparison into evidence.
 

@@ -1,6 +1,6 @@
 /**
- * The model-tool face of the dataset service: the eight `datasets_*` adapters,
- * grouped by what they may do (read / authoring / all).
+ * The model-tool face of the dataset service: the nine `datasets_*` adapters,
+ * grouped by what they may do (read / authoring / all / organize).
  *
  * This module BUILDS the definitions and registers nothing (internal — off
  * the exports map). Creating the tools is the package's `./tool` row
@@ -24,11 +24,16 @@ import type { DatasetScope, DatasetsService } from './service.ts'
  * - `read` — the read verbs (list / show / describe / read / snapshot / validate);
  * - `authoring` — read plus `datasets_put_item` (drafting items into the working tree);
  * - `all` — authoring plus `datasets_worktree_path` (whole-layer materialization). The default;
- * - `organize` — read plus `datasets_propose_registration` (T90): the 「题集整理」
- *   session's group. It converts with ordinary shell/file tools and files ONE
- *   registration proposal; it never writes the registry and needs no
- *   authoring checkout. Kept apart from `authoring`/`all` so the frozen
- *   evaluation preset (which mounts `authoring`) does not change;
+ * - `organize` — authoring plus `datasets_propose_registration`: the evaluation
+ *   mode's group since T102 (organizing folded into 评测模式). The session
+ *   drafts items into a registered dataset's checkout AND converts new data
+ *   with ordinary shell/file tools, then files ONE registration proposal; it
+ *   never writes the registry (decision A — only the person registers). T90
+ *   introduced it as read plus the proposal, for the separate 「题集整理」
+ *   preset; T102 widened it to include `datasets_put_item` rather than add a
+ *   sixth group, so 「授予了整理档」 (the 「让 Agent 整理」 door's criterion)
+ *   stays one name. `all` still does NOT carry the proposal: the default
+ *   tier of a row mounted without config never grants a registry write path;
  * - `none` — no model tools at all. The service, the CLI, `/datasets` and the
  *   session tab are unaffected by every setting: they are the human's faces.
  */
@@ -45,13 +50,13 @@ const AUTHORING_TOOLS = [...READ_TOOLS, 'datasets_put_item'] as const
 /** `all` adds whole-layer materialization (it extracts a read-only cache directory). */
 const ALL_TOOLS = [...AUTHORING_TOOLS, 'datasets_worktree_path'] as const
 
-/** `organize` adds the registration proposal (T90) to the read verbs. */
-const ORGANIZE_TOOLS = [...READ_TOOLS, 'datasets_propose_registration'] as const
+/** `organize` adds the registration proposal (T90) to authoring (T102). */
+const ORGANIZE_TOOLS = [...AUTHORING_TOOLS, 'datasets_propose_registration'] as const
 
 /**
  * The tools one group grants.
  * @param group - the configured group.
- * @returns the admitted tool names (a subset of the eight, in registration order).
+ * @returns the admitted tool names (a subset of the nine, in registration order).
  */
 export function toolsOfGroup(group: DatasetsToolGroup): readonly string[] {
   switch (group) {

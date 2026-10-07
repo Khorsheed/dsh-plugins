@@ -32,8 +32,8 @@ DEST="$DSH_HOME/profiles/web-eval"
 # template files HERE.
 #
 # `presets` is a DIRECTORY: the profile-local declarative preset bundle
-# (@khorsheed/dsh-web-eval-preset: `preset-eval` and, since T90,
-# `preset-dataset-authoring`), which package.json
+# (@khorsheed/dsh-web-eval-preset: `preset-eval`; T90's
+# `preset-dataset-authoring` folded into it at T102), which package.json
 # depends on as `file:presets`. It is copied with the profile so that relative
 # spec resolves inside $DEST, and it is replaced whole (rm first — `cp -R dir
 # existing-dir` would nest it as presets/presets).

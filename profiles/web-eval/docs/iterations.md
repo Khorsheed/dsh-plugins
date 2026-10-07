@@ -100,7 +100,7 @@
 | 目录、脚本、README、CHANGELOG | profile | ✅ | I0 | |
 | 评测 pin 进 pack 自带 patch 层还是用户层 | profile | ⬜ | I1 决定 | |
 | 安装路径：未发布成员 tarball + overrides（G5、G6） | profile | ✅ | I1 · T5 | `install.sh --source <checkout>`；npm 模式字节不变 |
-| eval preset：不挂 Bash 与 docker | profile | ⬜ | I3 | 冻结决策 12，容器出现时才有意义 |
+| eval preset：不挂工作流引擎与 docker（T102 起带 shell） | profile | ⬜ | I3 · T102 | 冻结决策 12（T102 改写）：题集整理并进评测模式，评测模式带 shell；docker socket 仍只归编排器，但不再靠预设保证，防护看评测会话记录后再定 |
 | 独立 `$DSH_HOME` 的评测实例 | 运维 | ✅ | — | `docs/ops.md` 已有规程 |
 | 镜像仓 + agent 照 README 安装验证 | 分发 | ⬜ | I6 | |
 | 题库：P0 / F2 / F3 三层内容 | 数据 | ✅ | — | 私有仓库 |
@@ -122,7 +122,7 @@
 | 白名单代理 | 运维 | ⬜ | I3 · T16 | 只放行模型端点 |
 | 各家凭证可写卷 | 运维 | ⬜ | I3 · T16 | claude 续期回写是硬要求 |
 | 资源限制进复合指纹 | lab | ⬜ | I3 · T18 | |
-| docker socket 只归编排器 | profile | ⬜ | I3 · T21 | 冻结决策 12 |
+| docker socket 只归编排器 | profile | ⬜ | I3 · T21 · T102 | 冻结决策 12；T102 起评测模式带 shell，这一条不再由预设保证，观察点：会话里有没有 docker 命令、有没有写 `state/eval` / `state/mission` |
 | 归档排除清单与先归档后释放 | lab + eval | ⬜ | I3 · T20 | |
 
 ## 二、逐迭代
@@ -883,6 +883,8 @@ run-all 在三格真实样本上跑完无异常；至少一条判据在三格之
 
 ## 背景
 冻结决策 12：销毁路径唯一——只有编排器持有 docker socket，评测实例的 agent preset 不挂 Bash 与 docker。I2 在宿主直跑，agent 用的还是 dev 域的默认预设。I3 编排器接 docker 之前，这个 preset 必须先存在并被 profile 装上，否则任何一次 agent 误操作都能绕过 lab 的 release 闸。
+
+（T102 注：2026-10-06 起决策 12 改写——评测模式带 shell，docker socket 仍只归编排器但不再靠预设保证，防护观察后再定。本节是 T21 当时的背景，原样保留。）
 
 ## 先读
 profiles/web-eval/README.md「工具按域开放」「冻结决策」「安装」；profiles/dev/README.md 里 agent 预设一节（自建预设在 $DSH_HOME/.agent-presets/）；dsh 宿主关于 agent preset 的文档（哪些字段能挑工具、能否禁掉 Bash 与 code-runtime 的执行类工具）；profiles/web-eval/scripts/install.sh 与 update.sh 的 PROFILE_FILES / UPDATE_FILES 机制。
