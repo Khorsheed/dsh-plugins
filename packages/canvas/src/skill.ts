@@ -69,7 +69,9 @@ rather than asking the user to click. Tool answers are in Chinese.
 - \`source\`: \`{ type: url | file | paste, ref, title? }\` — ref is the url, an absolute path, or a note on the paste.
 - If a call's \`kind\` or \`fields\` does not arrive (the answer says nothing usable came through), write the card in
   \`text\` alone: first line \`分类：世界\` (the category's name or id), then one \`字段名：值\` line per field, then the body.
-  Never resend the same arguments — change the form.
+  To change an existing card that way, open the text with \`编号：w7\` (its ref) and write only the fields that change;
+  comments and archives take the same \`编号\` line when \`cardId\` does not arrive. Never resend the same arguments —
+  change the form.
 - \`comment\`: one line on why, attached to the card as your comment.
 
 ## Comments — canvas_write op=comment

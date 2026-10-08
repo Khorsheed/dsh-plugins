@@ -22,6 +22,11 @@ The schema the host sent was correct (checked in the session's request header). 
   - a `title` names a new card whose name field is empty.
   
   Lines are consumed only when they match a field of the category's definition, so prose with colons on an untyped card is left alone.
+- **Patches, comments and archives name their card the same way.** In the same session, editing w7 then failed: `cardId` did not arrive either. The model tried `title: "w7"`, a `编号：w7` line, and a full rewrite. The rewrite was refused as a namesake, with advice to use `cardId`, which is exactly what could not arrive. Now:
+  - a `编号：w7` line (also `卡片` / `cardId` / `id` / `ref`) names the card to patch, and the other lines fill only the fields that change, read against that card's category;
+  - a `title` that resolves to an existing card does the same;
+  - `op=comment` and `op=archive` take the same line;
+  - the namesake refusal in canvas-novel names the 编号 form.
 - **`kind` reaches a genre hook as the model wrote it.** This honors the hook contract ("the model's arguments, untouched"). The canvas's own path uses the resolved category id, so a category name now works there too.
 - **An empty card call gets an answer that changes the next call.** Instead of a bare 「要给 kind」, it names the text-only form and says the arguments probably did not arrive. The kind error lists the valid categories and the same hint, and the genre hook's 「按字段写」 error points at the text-line form.
 - **The `canvas` skill** says: when `kind`/`fields` do not arrive, switch to the text form, and never resend the same arguments.
@@ -38,4 +43,4 @@ The schema the host sent was correct (checked in the session's request header). 
 
 - On providers like this, a card lands from `op` + `text` alone, and the second call after a failure has a form that works.
 - `novel_write`'s nested `plan`/`sheet`/`volumes` have no such fallback yet. On a provider that drops objects, chapter plans would fail the same way. If that shows up, it needs a text form too (or a schema-level union, if the host grows one).
-- Tests: `tests/tools.spec.ts` covers parsing the category and fields from text, the title as the name, prose on an untyped card, and the empty-call answer followed by a text-only card landing.
+- Tests: `tests/tools.spec.ts` covers parsing the category and fields from text, the title as the name, prose on an untyped card, the empty-call answer followed by a text-only card landing, and a patch or comment routed by a 编号 line or a title.

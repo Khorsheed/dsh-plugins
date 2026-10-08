@@ -99,7 +99,8 @@ function cardLines(entries: WorkEntries, role: EntryRole | undefined, includeArc
 /** The refusal of one card write, in the model's words. */
 function cardErrorMessage(error: string | undefined, role: EntryRole, ref?: string): string {
   if (error === 'duplicate') {
-    return `失败：画布上已经有同名的${ROLE_NAMES[role]}卡 [${ref}]。要补内容就用 canvas_write(op=card, cardId=${ref}, fields=…) 改那张，不要另起一张。`
+    return `失败：画布上已经有同名的${ROLE_NAMES[role]}卡 [${ref}]。要补内容就改那张，不要另起一张：canvas_write(op=card, cardId=${ref}, fields=…)；`
+      + `cardId 到不了的话，在 text 第一行写「编号：${ref}」，后面每行「字段名：值」只写要改的字段。`
   }
   if (error === 'missing') return `失败：找不到这张${ROLE_NAMES[role]}卡（canvas_read 看编号）。`
   if (error === 'invalid-name') return `失败：字段不全或不合法——新建${ROLE_NAMES[role]}卡至少要给主字段；改卡至少要给一个认识的字段。`
