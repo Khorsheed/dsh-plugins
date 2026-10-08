@@ -22,7 +22,7 @@ This batch is eleven commits on `feat/canvas-novel`.
   - Removed 「势」, the confidence notes inside card fields, `reconciled` / `autoImported` / `extractedBy` / `firstChapter` / `word_count` and `retractExperience`; code now counts words from the text.
   - The user's star now marks a foreshadow's importance, stored as the sidecar's `starred`. Sleep thresholds: 4 chapters for starred, 6 for the rest, both through `isOverdue`.
   - Sleep counts the reconciled chapters after the foreshadow in reading order; chapters being planned or written do not count.
-- **Foreshadow state derives from mentions** (13872844): 推进中 and 已揭晓 come from the mention journal; only 已放弃 and 未埋 are still set by hand.
+- **Foreshadow state derives from mentions** (13872844): 推进中 and 已揭晓 come from the mention journal; only 已放弃 and 未埋 are still set by hand. Since 2026-10-08, 已埋 also needs evidence: a 埋于 chapter or a planted mention. A card with neither reads 未埋, whatever its status field says. The model's card writes may only set 未埋 or 已放弃, and a new foreshadow it lands starts 未埋. Before this, cards set up in discussion landed as 已埋 before any text existed, so the ledger counted them as sleeping and the planner rushed them into chapter 1.
 - **Plan gate** (46704dd3): text goes only into chapters whose plan is confirmed. Replanning clears the confirmation, so the user confirms again. The user's own manuscript needs no plan, and reconciliation does not check it against one.
 - **Stars and injection** (d8697bd1, dcfabda4):
   - Starred foreshadows lead the plan brief and are never cut by the budget.

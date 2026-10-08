@@ -8,6 +8,8 @@
  *   badge, what waits on the person;
  * - `canvas.board.manuscripts`: 章节 — the book: 继续写, the pending queue,
  *   the contents, then a chapter-by-chapter reader;
+ * - `canvas.board.view` `novel:plan`: 规划 — the one-page outline, the volume
+ *   roadmap and the core suspenses (the genre's lead face);
  * - `canvas.board.view` `novel:story`: 故事 — the story log;
  * - `canvas.board.scopes` / `canvas.board.graph`: 设定's 已进入故事 / 灵感
  *   chips and its 连线 layout (characters and relation cards);
@@ -40,13 +42,14 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // Type-only: pulls the generated Remote API and ctx.remote merge.
 import type {} from '@khorsheed/dsh-canvas-novel/remote'
 import novelRemote from '@khorsheed/dsh-canvas-novel/remote'
-import { NOVEL_GENRE_ID, NOVEL_STORY_FACE } from '../types.ts'
+import { NOVEL_GENRE_ID, NOVEL_PLAN_FACE, NOVEL_STORY_FACE } from '../types.ts'
 import { CardSection } from './CardSection.tsx'
 import { ChapterBook } from './ChapterBook.tsx'
 import { ChapterPage } from './ChapterReader.tsx'
 import { CHAPTER_PAGE, STORY_LOG_PAGE, type NovelFace, type NovelRemote } from './contract.ts'
 import { en, NS, zh } from './locales.ts'
 import { ChaptersBadge, CardScopes, DeleteNote, FaceLabel, RelationGraph } from './NovelFaces.tsx'
+import { PlanView } from './PlanView.tsx'
 import { StoryLogPage, StoryView } from './StoryLogPage.tsx'
 import { WriteToolRow, type WriteToolFace } from './WriteToolRow.tsx'
 
@@ -55,6 +58,7 @@ export { ChapterBook } from './ChapterBook.tsx'
 export { ChapterPage, ChapterReader } from './ChapterReader.tsx'
 export { ChaptersBadge, CardScopes, DeleteNote, FaceLabel, RelationGraph, storyUsage } from './NovelFaces.tsx'
 export { PendingList } from './PendingList.tsx'
+export { PlanView } from './PlanView.tsx'
 export { StoryLogPage, StoryView } from './StoryLogPage.tsx'
 export { WriteToolRow } from './WriteToolRow.tsx'
 export { CHAPTER_PAGE, STORY_LOG_PAGE } from './contract.ts'
@@ -91,7 +95,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     register: (options: Record<string, unknown>, component: unknown) => () => void
   }
   const genreKey = (name: string): string => `${NOVEL_GENRE_ID}:${name}`
-  for (const name of ['manuscripts', 'board', NOVEL_STORY_FACE]) {
+  for (const name of [NOVEL_PLAN_FACE, 'manuscripts', 'board', NOVEL_STORY_FACE]) {
     ctx.effect(() => seats.inject('canvas.board.tab', () => seats.register({
       name: 'canvas.board.tab',
       key: genreKey(name),
@@ -111,6 +115,12 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     locale: NS,
     inject: () => face,
   }, StoryView)), 'canvas-novel: story face')
+  ctx.effect(() => seats.inject('canvas.board.view', () => seats.register({
+    name: 'canvas.board.view',
+    key: genreKey(NOVEL_PLAN_FACE),
+    locale: NS,
+    inject: () => face,
+  }, PlanView)), 'canvas-novel: plan face')
   for (const [slot, component] of [
     ['canvas.board.scopes', CardScopes],
     ['canvas.board.graph', RelationGraph],

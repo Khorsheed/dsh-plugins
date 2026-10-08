@@ -34,8 +34,11 @@ describe('the novel genre hooks', () => {
     const landed = await agent.writeCard({ canvasId, kind: '伏笔', fields: { question: '梦主可能是赵启明的妹妹？', bogus: 1 } }, SESSION)
     expect(landed).toContain('已落卡 [#19]（伏笔·已进 brief，画布上带 ✦ 新卡标记）')
     expect(landed).toContain('忽略了不认识的字段：bogus')
+    // A question set up in talk is not in the text yet: 待埋, not on the active ledger.
     const ledger = await store.ledger({ workId: canvasId })
-    expect(ledger.active.some(view => view.ref === '#19')).toBe(true)
+    expect(ledger.active.some(view => view.ref === '#19')).toBe(false)
+    const brief = await store.gatherBrief({ workId: canvasId })
+    expect(brief.data?.unplantedForeshadows.some(view => view.ref === '#19')).toBe(true)
     // The ref resolves to the card id canvas_write op=archive patches.
     const cardId = await agent.resolveCard({ canvasId, token: '#19' }, SESSION)
     expect(cardId).toBeDefined()

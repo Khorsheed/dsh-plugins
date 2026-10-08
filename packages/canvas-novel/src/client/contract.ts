@@ -12,7 +12,8 @@ import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type {
   NovelCardRequest, NovelCardResult, NovelChapterRequest, NovelChapterResult, NovelChaptersResult, NovelDecideRequest,
-  LedgerResult, NovelGestureResult, NovelPendingResult, NovelStarRequest, NovelStateRequest, NovelWorkRequest, StoryLogResult,
+  LedgerResult, NovelGestureResult, NovelOutlineDecideRequest, NovelOutlineResult, NovelPendingResult, NovelStarRequest, NovelStateRequest,
+  NovelWorkRequest, StoryLogResult,
 } from '../types.ts'
 import type {} from './locales.ts'
 
@@ -66,6 +67,8 @@ export interface NovelRemote {
   card: (request: NovelCardRequest) => Promise<RemoteResult<NovelCardResult>>
   starForeshadow: (sessionId: SessionId, request: NovelStarRequest) => Promise<RemoteResult<NovelGestureResult>>
   setCurrentState: (sessionId: SessionId, request: NovelStateRequest) => Promise<RemoteResult<NovelGestureResult>>
+  outline: (request: NovelWorkRequest) => Promise<RemoteResult<NovelOutlineResult>>
+  decideOutline: (sessionId: SessionId, request: NovelOutlineDecideRequest) => Promise<RemoteResult<NovelGestureResult>>
 }
 
 /** What every surface is injected with. */

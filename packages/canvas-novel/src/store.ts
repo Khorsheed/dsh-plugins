@@ -48,6 +48,8 @@ import {
   type PendingItem, type PendingKind, type PendingPayload, type PendingTable, type RefGroup, type RelationEntry, type RelationEvent,
   type RelationType, type RelationView, type RuleView, type StoryAppearance, type StoryCard, type StoryCharacter, type StoryForeshadow,
   type StoryLogResult, type StoryRelation, type WorkMeta, type WriteChapterRequest,
+  emptyOutline, normalizeOutline, normalizeSheet, normalizeSketches, normalizeVolumes, parseReveal, parseVolumeToken,
+  type OutlineDoc, type OutlineProposal, type OutlineSheet, type OutlineVolume,
 } from './types.ts'
 
 /** The state directory name under `$DSH_HOME/state`. */
@@ -62,6 +64,7 @@ export const WORK_FILES = {
   history: 'history.jsonl',
   chapters: 'chapters.json',
   pending: 'pending.json',
+  outline: 'outline.json',
 } as const
 
 /**
@@ -811,6 +814,19 @@ export class NovelService {
     if (canvas === undefined || entries === undefined) return { ok: false, error: 'missing' }
     const { fields, ignored } = cleanFields(request.role, request.fields)
     if (request.role === 'relation') return this.writeRelation(entries, request, fields, ignored, session)
+    if (request.role === 'foreshadow') {
+      // Whether a question is in the text is the 对账's call, never the
+      // model's: it may only set one up (未埋) or drop it (已放弃).
+      if (fields['status'] !== undefined && fields['status'] !== '未埋' && fields['status'] !== '已放弃') {
+        delete fields['status']
+        ignored.push('status')
+      }
+      if (fields['plantedAt'] !== undefined) {
+        delete fields['plantedAt']
+        ignored.push('plantedAt')
+      }
+      if (request.id === undefined && fields['status'] === undefined) fields['status'] = '未埋'
+    }
     let mutation: NovelBoardMutation
     let cardId: string
     if (request.id !== undefined) {
@@ -1141,6 +1157,16 @@ export class NovelService {
       }
     }
 
+    // The volume a chapter files under: the one asked for, else (on create)
+    // the previous chapter's, else the outline's first. A work without an
+    // outline files chapters under nothing, exactly as before.
+    const outline = await this.readOutline(workId)
+    let volumeId: string | undefined
+    if (request.volume !== undefined && request.volume.trim() !== '') {
+      volumeId = parseVolumeToken(request.volume, outline.volumes)
+      if (volumeId === undefined) return { ok: false, error: 'unknown-volume' }
+    }
+
     let chapter: ChapterRecord | undefined
     const outcome = await this.mutateJson(
       await this.fileTarget(workId, WORK_FILES.chapters), session,
@@ -1160,6 +1186,7 @@ export class NovelService {
             delete mutable.planConfirmedAt
           }
           if (byUser) mutable.byUser = true
+          if (volumeId !== undefined) mutable.volume = volumeId
           mutable.updatedAt = now
           const sessionId = String(session.id)
           if (!row.sessionIds.includes(sessionId)) (mutable.sessionIds as string[]).push(sessionId)
@@ -1167,12 +1194,15 @@ export class NovelService {
           return table
         }
         const n = table.chapters.reduce((max, row) => Math.max(max, row.n), 0) + 1
+        const previous = [...table.chapters].sort((a, b) => b.seq - a.seq || b.n - a.n)[0]
+        const volume = volumeId ?? previous?.volume ?? outline.volumes[0]?.id
         const created: ChapterRecord = {
           n,
           seq: request.seq ?? n,
           title,
           file: chapterFileName(n),
           phase: 'planning',
+          ...(volume === undefined ? {} : { volume }),
           sessionIds: [String(session.id)],
           createdAt: now,
           updatedAt: now,
@@ -1186,6 +1216,116 @@ export class NovelService {
     )
     if (!outcome.ok || chapter === undefined) return { ok: false, error: outcome.ok ? 'io' : outcome.error }
     return { ok: true, chapter }
+  }
+
+  /* -------------------------------------------------------------- outline */
+
+  /** The work's outline (an empty one before anything was proposed; a corrupt file reads empty and is never rewritten). */
+  async readOutline(workId: string): Promise<OutlineDoc> {
+    const id = normalizeWorkId(workId)
+    if (id === undefined) return emptyOutline()
+    const read = await this.readJson(await this.fileTarget(id, WORK_FILES.outline), raw => normalizeOutline(raw))
+    return typeof read === 'object' ? read.data : emptyOutline()
+  }
+
+  /**
+   * The model's outline proposal: sheet fields merge over the pending
+   * proposal (absent ones keep), a volume list replaces the proposed one
+   * (volumes matched to the adopted ones by title keep their ids, so the
+   * chapters filed under them stay put), sketches merge by chapter number.
+   * Nothing counts until the user adopts it ({@link decideOutline}). The
+   * protagonist must be a character card (its ref, name or id).
+   * @param request - work id and the parts proposed.
+   * @param session - the session that owns the gesture; supplies the fence.
+   * @returns the fresh outline, or the failure code.
+   */
+  async proposeOutline(
+    request: { readonly workId: string; readonly sheet?: unknown; readonly volumes?: unknown; readonly sketches?: unknown; readonly rationale?: unknown },
+    session: Session,
+  ): Promise<{ readonly ok: boolean; readonly error?: NovelError; readonly outline?: OutlineDoc }> {
+    const workId = normalizeWorkId(request.workId)
+    if (workId === undefined) return { ok: false, error: 'invalid-name' }
+    let sheet: OutlineSheet = normalizeSheet(request.sheet)
+    if (sheet.protagonist !== undefined) {
+      const entries = await this.readEntries(workId)
+      const handle = entries === undefined ? undefined : this.resolveCard(entries, sheet.protagonist, 'character')
+      if (handle?.role !== 'character') return { ok: false, error: 'unknown-protagonist' }
+      sheet = { ...sheet, protagonist: handle.cardId }
+    }
+    const volumes = Array.isArray(request.volumes) ? normalizeVolumes(request.volumes) : undefined
+    const sketches = normalizeSketches(request.sketches)
+    const rationale = cleanText(request.rationale, 500)
+    if (Object.keys(sheet).length === 0 && volumes === undefined && sketches.length === 0) return { ok: false, error: 'invalid-name' }
+    let outline: OutlineDoc | undefined
+    const outcome = await this.mutateJson(
+      await this.fileTarget(workId, WORK_FILES.outline), session,
+      raw => normalizeOutline(raw),
+      () => emptyOutline(),
+      (doc, now) => {
+        const was = doc.proposal
+        const ided = volumes === undefined ? undefined : assignVolumeIds(volumes, doc.volumes)
+        const mergedSketches = new Map((was?.sketches ?? []).map(row => [row.n, row.line]))
+        for (const row of sketches) mergedSketches.set(row.n, row.line)
+        const mergedSheet = { ...was?.sheet, ...sheet, ...(sheet.length === undefined ? {} : { length: { ...was?.sheet?.length, ...sheet.length } }) }
+        const proposal: OutlineProposal = {
+          ...(Object.keys(mergedSheet).length === 0 ? {} : { sheet: mergedSheet }),
+          ...(ided ?? was?.volumes) === undefined ? {} : { volumes: ided ?? was!.volumes! },
+          ...(mergedSketches.size === 0 ? {} : { sketches: [...mergedSketches].sort((a, b) => a[0] - b[0]).map(([n, line]) => ({ n, line })) }),
+          ...((rationale ?? was?.rationale) === undefined ? {} : { rationale: rationale ?? was!.rationale! }),
+          at: now,
+        }
+        outline = { ...doc, proposal }
+        return outline
+      },
+    )
+    if (!outcome.ok || outline === undefined) return { ok: false, error: outcome.ok ? 'io' : outcome.error }
+    return { ok: true, outline }
+  }
+
+  /**
+   * The user's decision on the pending outline proposal: adopting folds it
+   * into the outline (one revision, one history row naming what moved);
+   * discarding drops it.
+   * @param request - work id and the action.
+   * @param session - the session that owns the gesture; supplies the fence.
+   * @returns the fresh outline, or the failure code (`no-proposal`: nothing pending).
+   */
+  async decideOutline(
+    request: { readonly workId: string; readonly action: 'accept' | 'discard' },
+    session: Session,
+  ): Promise<{ readonly ok: boolean; readonly error?: NovelError; readonly outline?: OutlineDoc }> {
+    const workId = normalizeWorkId(request.workId)
+    if (workId === undefined) return { ok: false, error: 'invalid-name' }
+    let outline: OutlineDoc | undefined
+    const outcome = await this.mutateJson(
+      await this.fileTarget(workId, WORK_FILES.outline), session,
+      raw => normalizeOutline(raw),
+      undefined,
+      (doc, now) => {
+        const proposal = doc.proposal
+        if (proposal === undefined) return 'no-proposal'
+        const { proposal: _dropped, ...rest } = doc
+        if (request.action === 'discard') {
+          outline = rest
+          return outline
+        }
+        const sketches = new Map(doc.sketches.map(row => [row.n, row.line]))
+        for (const row of proposal.sketches ?? []) sketches.set(row.n, row.line)
+        const length = proposal.sheet?.length === undefined ? doc.sheet.length : { ...doc.sheet.length, ...proposal.sheet.length }
+        const revision = doc.revision + 1
+        outline = {
+          ...rest,
+          sheet: { ...doc.sheet, ...proposal.sheet, ...(length === undefined ? {} : { length }) },
+          volumes: proposal.volumes ?? doc.volumes,
+          sketches: [...sketches].sort((a, b) => a[0] - b[0]).map(([n, line]) => ({ n, line })),
+          revision,
+          history: [...doc.history, { revision, at: now, summary: outlineChangeSummary(proposal) }].slice(-100),
+        }
+        return outline
+      },
+    )
+    if (!outcome.ok || outline === undefined) return { ok: false, error: outcome.ok ? 'io' : outcome.error }
+    return { ok: true, outline }
   }
 
   /**
@@ -1498,6 +1638,8 @@ export class NovelService {
           : relations.filter(view => view.pair.length === 2 && view.pair.every(id => inScene.some(character => character.cardId === id))),
         previousRecaps: previous.filter(candidate => candidate.recap !== undefined),
         ...(previousTail === undefined ? {} : { previousTail }),
+        outline: await this.readOutline(meta.id),
+        chapters,
       },
     }
   }
@@ -2413,7 +2555,11 @@ export function entriesOf(
   const slept = sleepCounter(chapters)
   const lastActive = new Map<string, number>()
   const kindsOf = new Map<string, MentionEntry['kind'][]>()
+  const touchedIn = new Map<string, Set<number>>()
   for (const mention of mentions) {
+    const touched = touchedIn.get(mention.foreshadowId) ?? new Set<number>()
+    touched.add(mention.chapter)
+    touchedIn.set(mention.foreshadowId, touched)
     lastActive.set(mention.foreshadowId, Math.max(lastActive.get(mention.foreshadowId) ?? 0, mention.chapter))
     const kinds = kindsOf.get(mention.foreshadowId)
     if (kinds === undefined) kindsOf.set(mention.foreshadowId, [mention.kind])
@@ -2443,6 +2589,8 @@ export function entriesOf(
       const answer = fieldText(card, 'answer', 500)
       const base = active ?? plantedAt
       const starred = note?.starred === true
+      const reveal = parseReveal(card.fields?.['reveal'])
+      const touched = [...(touchedIn.get(card.id) ?? [])].sort((a, b) => a - b)
       foreshadows.push({
         cardId: card.id,
         ref,
@@ -2454,9 +2602,11 @@ export function entriesOf(
         starred,
         ...(active === undefined ? {} : { lastActiveChapter: active }),
         ...(base === undefined ? {} : { slept: slept(base) }),
+        ...(reveal === undefined ? {} : { reveal }),
+        ...(touched.length === 0 ? {} : { mentionChapters: touched }),
       })
     } else {
-      const optional = (key: 'identity' | 'want' | 'lack' | 'wound' | 'appearance' | 'voice') => {
+      const optional = (key: 'identity' | 'want' | 'lack' | 'wound' | 'ambition' | 'values' | 'appearance' | 'voice') => {
         const value = fieldText(card, key, 500)
         return value === undefined ? {} : { [key]: value }
       }
@@ -2468,6 +2618,8 @@ export function entriesOf(
         ...optional('want'),
         ...optional('lack'),
         ...optional('wound'),
+        ...optional('ambition'),
+        ...optional('values'),
         ...optional('appearance'),
         ...optional('voice'),
         knows: linesOf(card.fields?.['knows']),
@@ -2566,3 +2718,37 @@ function normalizeMention(raw: unknown): MentionEntry | undefined {
 }
 
 export default NovelService
+
+
+/** The sheet fields' names, for a revision's summary line. */
+const SHEET_FIELD_NAMES: Readonly<Record<string, string>> = {
+  logline: '一句话主线', conflict: '核心冲突', protagonist: '主角', arc: '成长弧线', theme: '主题', tone: '类型与基调', ending: '结局方向', length: '篇幅',
+}
+
+/** One adopted proposal as a history line: which parts moved. */
+export function outlineChangeSummary(proposal: OutlineProposal): string {
+  const parts = [
+    ...Object.keys(proposal.sheet ?? {}).map(key => SHEET_FIELD_NAMES[key] ?? key),
+    ...(proposal.volumes === undefined ? [] : [`分卷（${proposal.volumes.length} 卷）`]),
+    ...(proposal.sketches === undefined ? [] : [`细化第 ${proposal.sketches.map(row => row.n).join('、')} 章`]),
+  ]
+  return parts.length === 0 ? '（无改动）' : `改了${parts.join('、')}`
+}
+
+/**
+ * Give a proposed volume list stable ids: a volume whose title matches an
+ * adopted one keeps that id (or one given explicitly and known), the rest
+ * take fresh ids after the highest in use.
+ */
+export function assignVolumeIds(proposed: readonly OutlineVolume[], adopted: readonly OutlineVolume[]): OutlineVolume[] {
+  const known = new Set(adopted.map(volume => volume.id))
+  let next = [...adopted, ...proposed].reduce((max, volume) => Math.max(max, Number(volume.id.slice(1)) || 0), 0)
+  const used = new Set<string>()
+  return proposed.map((volume) => {
+    const byTitle = adopted.find(candidate => candidate.title === volume.title && !used.has(candidate.id))
+    let id = volume.id !== '' && known.has(volume.id) && !used.has(volume.id) ? volume.id : byTitle?.id
+    if (id === undefined) id = `v${++next}`
+    used.add(id)
+    return { ...volume, id }
+  })
+}

@@ -22,6 +22,7 @@
     "src/client/NovelFaces.tsx",
     "src/client/StoryLogPage.tsx",
     "src/client/PlanBlock.tsx",
+    "src/client/PlanView.tsx",
     "src/client/ChapterReader.tsx",
     "src/client/ChapterBook.tsx",
     "src/client/CardSection.tsx",

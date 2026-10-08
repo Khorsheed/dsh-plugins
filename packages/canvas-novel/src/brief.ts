@@ -17,9 +17,11 @@
  *
  * @module @khorsheed/dsh-canvas-novel
  */
+export { capacityOf, targetWordsOf, WORDS_PER_BEAT } from './types.ts'
 import {
-  isOverdue, nextMilestoneOf, RELATION_POINT_SCALE, relationStanding,
-  type ChapterRecord, type CharacterView, type ExperienceEntry, type ForeshadowOp, type ForeshadowView, type RelationView, type RuleView,
+  capacityOf, coreSuspenseNudge, isOverdue, targetWordsOf, WORDS_PER_BEAT, nextMilestoneOf, RELATION_POINT_SCALE, relationStanding, revealText, revealVolume, volumeNumeral, volumePosition,
+  type ChapterPlan, type ChapterRecord, type CharacterView, type ExperienceEntry, type ForeshadowOp, type ForeshadowView, type OutlineDoc,
+  type RelationView, type RuleView,
 } from './types.ts'
 
 /** Everything one brief renders (assembled by the store's `gatherBrief`; kept cards only). */
@@ -53,6 +55,98 @@ export interface BriefData {
   readonly previousRecaps: readonly ChapterRecord[]
   /** The previous chapter's last ~200 characters (write variant only). */
   readonly previousTail?: string
+  /** The adopted outline (规划), when the work has one. */
+  readonly outline?: OutlineDoc
+  /** The whole chapter index, seq-ordered (where the book stands against its volumes). */
+  readonly chapters?: readonly ChapterRecord[]
+}
+
+/* ------------------------------------------------------------- budget (字数) */
+
+
+/** The budget line a plan brief leads with. */
+export function budgetLine(words: number): string {
+  const room = capacityOf(words)
+  const beats = room.beats[0] === room.beats[1] ? `${room.beats[0]}` : `${room.beats[0]}–${room.beats[1]}`
+  return `目标字数 ${words}：每拍约 ${WORDS_PER_BEAT.low}–${WORDS_PER_BEAT.high} 字，走向 ${beats} 拍，伏笔操作至多 ${room.ops} 条，出场以不超过 ${room.cast} 人为宜。装不下就删或拆章，别压缩每一拍。`
+}
+
+/**
+ * What a registered plan overshoots: beats, ops or cast past the chapter's
+ * room, and reveals of a core suspense before its volume. Reminders only —
+ * the user confirms or not.
+ * @param plan - the registered plan.
+ * @param words - the chapter's 目标字数 (undefined: no budget to check).
+ * @param foreshadows - every foreshadow (the reveal timings).
+ * @param volumeIndex - the chapter's volume (1-based), when the outline has volumes.
+ * @param volumeCount - how many volumes the outline plans.
+ */
+export function planOvershoots(
+  plan: ChapterPlan,
+  words: number | undefined,
+  foreshadows: readonly ForeshadowView[],
+  volumeIndex: number | undefined,
+  volumeCount: number,
+): string[] {
+  const notes: string[] = []
+  if (words !== undefined) {
+    const room = capacityOf(words)
+    if (plan.beats.length > room.beats[1]) notes.push(`走向 ${plan.beats.length} 拍，按 ${words} 字建议至多 ${room.beats[1]} 拍——删掉或挪到下一章`)
+    if (plan.foreshadowOps.length > room.ops) notes.push(`伏笔操作 ${plan.foreshadowOps.length} 条，一章至多 ${room.ops} 条为宜`)
+    if (plan.cast.length > room.cast) notes.push(`出场 ${plan.cast.length} 人，${words} 字里写不开`)
+  }
+  if (volumeIndex !== undefined) {
+    for (const op of plan.foreshadowOps) {
+      if (op.op !== '揭晓' || op.id === undefined) continue
+      const view = foreshadows.find(candidate => candidate.cardId === op.id || candidate.ref === op.id)
+      const due = revealVolume(view?.reveal, volumeCount)
+      if (view !== undefined && due !== undefined && due > volumeIndex) {
+        notes.push(`揭晓 ${view.ref} 提前了：它定在卷${volumeNumeral(due)}揭晓，这章在卷${volumeNumeral(volumeIndex)}`)
+      }
+    }
+  }
+  return notes
+}
+
+/* ------------------------------------------------------------- outline block */
+
+/** The protagonist's card lines for a brief (name first, then the fields that steer every choice). */
+function protagonistLines(outline: OutlineDoc, roster: readonly CharacterView[]): string[] {
+  const id = outline.sheet.protagonist
+  const hero = id === undefined ? undefined : roster.find(view => view.cardId === id)
+  if (hero === undefined) return []
+  const parts = [
+    hero.want === undefined ? '' : `目标：${hero.want}`,
+    hero.ambition === undefined ? '' : `抱负：${hero.ambition}`,
+    hero.values === undefined ? '' : `价值观：${hero.values}`,
+    hero.lack === undefined ? '' : `缺失：${hero.lack}`,
+  ].filter(part => part !== '')
+  return [`主角：${hero.name}${identityOf(hero)}${parts.length === 0 ? '' : `——${parts.join('；')}`}`]
+}
+
+/** The outline block a plan brief opens with: the sheet's spine, the protagonist, where the book stands, the near sketches. */
+function outlineBlock(data: BriefData): string[] {
+  const outline = data.outline
+  if (outline === undefined || outline.revision === 0) return []
+  const sheet = outline.sheet
+  const lines = ['## 一页纸']
+  if (sheet.logline !== undefined) lines.push(`一句话主线：${sheet.logline}`)
+  if (sheet.conflict !== undefined) lines.push(`核心冲突：${sheet.conflict}`)
+  lines.push(...protagonistLines(outline, data.roster))
+  if (sheet.arc !== undefined) lines.push(`成长弧线：${sheet.arc}`)
+  if (sheet.ending !== undefined) lines.push(`结局方向：${sheet.ending}`)
+  const position = volumePosition(outline.volumes, data.chapters ?? [], data.target)
+  if (position !== undefined) {
+    const volume = position.volume
+    lines.push('', `## 本卷：卷${volumeNumeral(position.index)} · ${volume.title}（已写 ${position.written}${volume.chapters === undefined ? '' : ` / 约 ${volume.chapters}`} 章）`)
+    if (volume.goal !== undefined) lines.push(`要完成：${volume.goal}`)
+    if (volume.landing !== undefined) lines.push(`卷末落点：${volume.landing}`)
+    const next = outline.volumes[position.index]
+    if (next !== undefined) lines.push(`下一卷：${next.title}${next.goal === undefined ? '' : `——${next.goal}`}`)
+  }
+  const near = outline.sketches.filter(row => row.n >= data.target.n && row.n <= data.target.n + 2)
+  if (near.length > 0) lines.push('', '## 已细化的近处', ...near.map(row => `- 第${row.n}章：${row.line}`))
+  return [...lines, '']
 }
 
 /** The variant budgets, in estimated tokens (proposal §4.2). */
@@ -92,12 +186,27 @@ function foreshadowLineWrite(view: ForeshadowView): string {
   return `- [${view.ref}] ${view.starred ? '★ ' : ''}${view.question}${parts.length === 0 ? '' : `（${parts.join(' · ')}）`}`
 }
 
-/** The plan-variant ledger line: `- [#12] ★ 门缝里的东西（埋于第1章 · 已 4 章未动 ⚠）` — ★ is the user's star. */
-function foreshadowLinePlan(view: ForeshadowView): string {
+/**
+ * The plan-variant ledger line: `- [#12] ★ 门缝里的东西（埋于第1章 · 已 4 章未动 ⚠）` — ★ is the user's star.
+ * A core suspense shows its reveal volume instead of a sleep count.
+ */
+function foreshadowLinePlan(view: ForeshadowView, data?: BriefData): string {
   const slept = view.slept
-  const sleeping = slept === undefined ? '' : slept <= 0 ? '最近一章刚动过' : `已 ${slept} 章未动${isOverdue(view) ? ' ⚠' : ''}`
+  const core = data?.outline === undefined ? undefined : coreSuspenseNudge(view, data.outline.volumes, data.chapters ?? [])
+  // In its reveal volume the planner needs the answer to build toward it; before that it never sees it.
+  const position = data?.outline === undefined ? undefined : volumePosition(data.outline.volumes, data.chapters ?? [], data.target)
+  const due = data?.outline === undefined ? undefined : revealVolume(view.reveal, data.outline.volumes.length)
+  const answer = core !== undefined && view.answer !== undefined && due !== undefined && position !== undefined && position.index >= due
+    ? `；谜底：${view.answer}`
+    : ''
+  const sleeping = core !== undefined
+    ? `${core.text}${answer}${core.nudge ? ' ⚠' : ''}`
+    : view.reveal !== undefined && view.reveal.kind !== 'chapter'
+      ? `定在${revealText(view.reveal)}揭晓`
+      : slept === undefined ? '' : slept <= 0 ? '最近一章刚动过' : `已 ${slept} 章未动${isOverdue(view) ? ' ⚠' : ''}`
   const parts = [
     view.plantedAt === undefined ? '' : `埋于第${view.plantedAt}章`,
+    view.reveal?.kind === 'chapter' ? '本章内回收' : '',
     sleeping,
   ].filter(part => part !== '')
   return `- [${view.ref}] ${view.starred ? '★ ' : ''}${view.question}${parts.length === 0 ? '' : `（${parts.join(' · ')}）`}`
@@ -109,7 +218,9 @@ function foreshadowOpText(op: ForeshadowOp, foreshadows: readonly ForeshadowView
     ? undefined
     : foreshadows.find(candidate => candidate.cardId === op.id || candidate.ref === op.id)
   const subject = view === undefined ? op.question ?? op.id ?? '' : `${view.ref} ${view.question}`
-  return `${op.op} [${subject}]${op.note === undefined ? '' : `：${op.note}`}`
+  // The answer reaches the brief only in the chapter that reveals it.
+  const answer = op.op === '揭晓' && view?.answer !== undefined ? `（谜底：${view.answer}）` : ''
+  return `${op.op} [${subject}]${op.note === undefined ? '' : `：${op.note}`}${answer}`
 }
 
 /** The 本章计划 block (write variant, and the extract pack's 【本章计划】, whose beat numbers the import reads back). */
@@ -245,8 +356,10 @@ export function renderWriteBrief(data: BriefData): string {
 function renderWriteWithin(data: BriefData, limits: RenderLimits, budget: number, lastResort = false): string | undefined {
   const foreshadows = keptForeshadows(data.activeForeshadows, limits.foreshadowTopK)
   const recaps = data.previousRecaps.slice(-limits.recapMax)
+  const words = targetWordsOf(data.target, data.outline)
   const lines = [
     `# 《${data.workTitle}》写作约束 · 第${data.target.n}章 ${data.target.title}`,
+    ...(words === undefined ? [] : ['', `目标字数：约 ${words} 字（上下两成以内）。`]),
     '',
     '## 硬约束（违反即返工）',
     ...(data.canonRules.length === 0 ? ['（还没有固化约束。）'] : data.canonRules.map(rule => `- [${rule.ref}] ${rule.text}`)),
@@ -299,9 +412,12 @@ export function renderPlanBrief(data: BriefData): string {
 function renderPlanWithin(data: BriefData, limits: RenderLimits, budget: number, lastResort = false): string | undefined {
   const foreshadows = keptForeshadows(data.activeForeshadows, limits.foreshadowTopK)
   const recaps = data.previousRecaps.slice(-limits.recapMax)
+  const words = targetWordsOf(data.target, data.outline)
   const lines = [
     `# 《${data.workTitle}》第${data.target.n}章规划参考`,
     '',
+    ...(words === undefined ? [] : ['## 篇幅', budgetLine(words), '']),
+    ...outlineBlock(data),
     '## 硬约束',
     ...(data.canonRules.length === 0 ? ['（还没有固化约束。）'] : data.canonRules.map(rule => `- [${rule.ref}] ${rule.text}`)),
     '',
@@ -309,12 +425,13 @@ function renderPlanWithin(data: BriefData, limits: RenderLimits, budget: number,
     ...(foreshadows.length === 0 && data.resolvedForeshadows.length === 0
       ? ['（台账为空。）']
       : [
-          ...foreshadows.map(foreshadowLinePlan),
+          ...foreshadows.map(view => foreshadowLinePlan(view, data)),
           ...data.resolvedForeshadows.map(view => `- [已揭 ${view.ref}] ${view.question} → ${view.answer ?? '（未登记答案）'}`),
         ]),
   ]
   if (data.unplantedForeshadows.length > 0) {
-    lines.push('', '## 待埋（立了还没写进正文的悬念）', ...data.unplantedForeshadows.map(view => `- [${view.ref}] ${view.question}`))
+    lines.push('', '## 待埋（立了还没写进正文的悬念；不必这章就埋，定在后面几卷揭晓的先只暗示）', ...data.unplantedForeshadows.map(view =>
+      `- [${view.ref}] ${view.question}${view.reveal === undefined ? '' : `（${revealText(view.reveal)}揭晓）`}`))
   }
   lines.push(
     '',
@@ -370,6 +487,7 @@ export function renderExtractBrief(data: BriefData, body: string): string {
     '输出严格 JSON（schema 在最后）。规则：',
     '1. 每条产出必须带 evidence：≤50 字原文引用，逐字摘自本章正文的一段连续文字；不用省略号拼接两处，不改字、不转述；',
     '2. 伏笔/角色只按 id 引用榜单与名册中的对象；不认识的对象放 new_*，不硬靠；',
+    '   new_foreshadows 只收读者会一直惦记、后文必须回收的问题（一章至多 2 条），一闪而过的好奇不算；',
     '   本章新登场的角色写进 new_characters，他们的经历和现状照样写，character_id 填名字；',
     '   世界设定给 name（设定的名字）和具体内容，同一个设定只写一条；',
     '3. confidence 只用在伏笔提及、角色经历与现状上：拿不准的给 medium/low；',
@@ -406,4 +524,74 @@ export function renderExtractBrief(data: BriefData, body: string): string {
     '【输出 schema】',
     EXTRACT_OUTPUT_SCHEMA,
   ].join('\n')
+}
+
+/* ---------------------------------------------------------- outline read */
+
+/**
+ * The outline as `novel_read(what=outline)` answers it: the adopted sheet
+ * (the protagonist's fields read off their card), the volumes with the
+ * chapters filed under each, the near sketches, the core suspenses with
+ * their pacing line, and the proposal waiting on the user.
+ * @param outline - the work's outline.
+ * @param roster - the kept characters.
+ * @param chapters - the chapter index.
+ * @param foreshadows - the kept foreshadows.
+ */
+export function renderOutlineRead(
+  outline: OutlineDoc,
+  roster: readonly CharacterView[],
+  chapters: readonly ChapterRecord[],
+  foreshadows: readonly ForeshadowView[],
+): string {
+  const sheet = outline.sheet
+  const lines: string[] = []
+  if (outline.revision === 0) {
+    lines.push('还没有采用过的大纲。先和用户聊清楚一句话主线、核心冲突、主角、结局方向和篇幅，再用 novel_write(what=outline, sheet=…, volumes=…) 提议，用户在「规划」页采用后生效。')
+  } else {
+    lines.push(`# 一页纸（v${outline.revision}）`)
+    const row = (label: string, value: string | undefined): void => { if (value !== undefined) lines.push(`${label}：${value}`) }
+    row('一句话主线', sheet.logline)
+    row('核心冲突', sheet.conflict)
+    lines.push(...protagonistLines(outline, roster))
+    row('成长弧线', sheet.arc)
+    row('主题', sheet.theme)
+    row('类型与基调', sheet.tone)
+    row('结局方向', sheet.ending)
+    const length = sheet.length
+    if (length !== undefined) {
+      lines.push(`篇幅：${[
+        length.words === undefined ? '' : `目标 ${length.words} 字`,
+        length.volumes === undefined ? '' : `${length.volumes} 卷`,
+        length.chapters === undefined ? '' : `约 ${length.chapters} 章`,
+        length.perChapter === undefined ? '' : `单章 ${length.perChapter} 字`,
+      ].filter(part => part !== '').join(' · ')}`)
+    }
+    if (outline.volumes.length > 0) {
+      lines.push('', '# 分卷')
+      outline.volumes.forEach((volume, index) => {
+        const filed = chapters.filter(chapter => (chapter.volume ?? outline.volumes[0]?.id) === volume.id).map(chapter => chapter.n)
+        lines.push(`- 卷${volumeNumeral(index + 1)} ${volume.title}（${volume.id}${volume.chapters === undefined ? '' : ` · 约 ${volume.chapters} 章`}${filed.length === 0 ? '' : ` · 已有第 ${filed[0]}–${filed[filed.length - 1]} 章`}）`
+          + `${volume.goal === undefined ? '' : `：${volume.goal}`}${volume.landing === undefined ? '' : `；卷末落点：${volume.landing}`}`)
+      })
+    }
+    const ahead = outline.sketches.filter(sketch => !chapters.some(chapter => chapter.n === sketch.n))
+    if (ahead.length > 0) lines.push('', '# 已细化、还没建的章', ...ahead.map(sketch => `- 第${sketch.n}章：${sketch.line}`))
+  }
+  const cores = foreshadows
+    .map(view => ({ view, line: coreSuspenseNudge(view, outline.volumes, chapters) }))
+    .filter((row): row is { view: ForeshadowView; line: { text: string; nudge: boolean } } => row.line !== undefined)
+  if (cores.length > 0) {
+    lines.push('', '# 核心悬念', ...cores.map(({ view, line }) =>
+      `- [${view.ref}] ${view.question}（${line.text}${line.nudge ? ' ⚠' : ''}；已碰过 ${view.mentionChapters?.length ?? 0} 次）`))
+  }
+  const proposal = outline.proposal
+  if (proposal !== undefined) {
+    lines.push('', '# 等用户采用的提议', `提议于 ${proposal.at}：${[
+      ...Object.keys(proposal.sheet ?? {}),
+      ...(proposal.volumes === undefined ? [] : [`分卷 ${proposal.volumes.length} 卷`]),
+      ...(proposal.sketches === undefined ? [] : [`细化第 ${proposal.sketches.map(row => row.n).join('、')} 章`]),
+    ].join('、')}。再次提议会合并进这一版。`)
+  }
+  return lines.join('\n')
 }

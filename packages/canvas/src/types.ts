@@ -530,10 +530,15 @@ export interface CanvasGenreAgent {
   readonly manuscriptGuide?: string
 }
 
-/** The genre's own top face (`CanvasGenreDefinition.faces`). */
+/** The genre's own top faces (`CanvasGenreDefinition.faces`). */
 export interface CanvasGenreFaces {
   /** The face's key: `canvas.board.view` and `canvas.board.tab` are keyed `genreKey(genre, view)`. */
   readonly view: string
+  /**
+   * A second face read FIRST, before 成稿 (the novel's 规划), keyed the same
+   * way. A fresh canvas of the genre opens on it while nothing is written.
+   */
+  readonly lead?: string
 }
 
 /** One registered genre as the browser lists it. */

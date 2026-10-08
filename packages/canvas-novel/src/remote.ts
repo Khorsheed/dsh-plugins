@@ -15,10 +15,11 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { NovelService, WorkEntries } from './store.ts'
-import type {
-  LedgerResult, NovelCardRequest, NovelCardResult, NovelChapterRequest, NovelChapterResult, NovelChaptersResult,
-  NovelDecideRequest, NovelGestureResult, NovelPendingResult, NovelStarRequest, NovelStateRequest,
-  NovelWorkRequest, PendingItem, PendingView, StoryLogResult,
+import {
+  coreSuspenseNudge, revealText, revealVolume, targetWordsOf,
+  type CharacterView, type LedgerResult, type NovelCardRequest, type NovelCardResult, type NovelChapterRequest, type NovelChapterResult, type NovelChaptersResult,
+  type NovelDecideRequest, type NovelGestureResult, type NovelOutlineDecideRequest, type NovelOutlineResult, type NovelPendingResult, type NovelStarRequest, type NovelStateRequest,
+  type NovelWorkRequest, type OutlineCore, type OutlineHero, type PendingItem, type PendingView, type StoryLogResult,
 } from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -105,11 +106,13 @@ export class NovelRemoteService extends TypertRemoteService<NovelRemoteConfig> {
   async chapter(request: NovelChapterRequest): Promise<NovelChapterResult> {
     const read = await this.core.readChapter({ workId: request.canvasId, n: request.n })
     if (!read.ok || read.chapter === undefined) return { ok: false, error: read.error ?? 'missing', pending: 0, names: {} }
-    const [entries, items, meta] = await Promise.all([
+    const [entries, items, meta, outline] = await Promise.all([
       this.core.readEntries(request.canvasId),
       this.core.listPending({ workId: request.canvasId }),
       this.core.readWorkMeta(request.canvasId),
+      this.core.readOutline(request.canvasId),
     ])
+    const targetWords = targetWordsOf(read.chapter, outline)
     const known = namesOf(entries)
     const names: Record<string, string> = {}
     const plan = read.chapter.plan
@@ -125,6 +128,7 @@ export class NovelRemoteService extends TypertRemoteService<NovelRemoteConfig> {
       pending: items.filter(item => item.chapter === request.n).length,
       names,
       ...(meta === undefined ? {} : { file: `${meta.title}/${read.chapter.file}` }),
+      ...(targetWords === undefined ? {} : { targetWords }),
     }
   }
 
@@ -132,6 +136,65 @@ export class NovelRemoteService extends TypertRemoteService<NovelRemoteConfig> {
   @Remote('reviewChapter')
   async reviewChapter(agent: Agent, request: NovelChapterRequest): Promise<NovelGestureResult> {
     const result = await this.core.reviewChapter({ workId: request.canvasId, n: request.n }, agent.session)
+    return result.ok ? { ok: true } : { ok: false, error: result.error ?? 'io' }
+  }
+
+  /**
+   * The 规划 page: the outline, the protagonist read off their card, the
+   * chapter index (for the volumes' chapter rows), and the core suspenses
+   * (foreshadows set to reveal in a volume) with what the text did to each.
+   */
+  @Remote('outline')
+  async outline(request: NovelWorkRequest): Promise<NovelOutlineResult> {
+    const [outline, entries, rows] = await Promise.all([
+      this.core.readOutline(request.canvasId),
+      this.core.readEntries(request.canvasId),
+      this.core.listChapters({ workId: request.canvasId }),
+    ])
+    if (entries === undefined) return { ok: false, error: 'missing', outline, chapters: [], cores: [] }
+    const chapters = rows.map(row => row.chapter)
+    const heroOf = (id: string | undefined): OutlineHero | undefined => {
+      const view: CharacterView | undefined = id === undefined ? undefined : entries.characters.find(row => row.cardId === id)
+      if (view === undefined) return undefined
+      const { cardId, ref, name, identity, want, ambition, values, lack, wound } = view
+      return {
+        cardId, ref, name,
+        ...(identity === undefined ? {} : { identity }), ...(want === undefined ? {} : { want }),
+        ...(ambition === undefined ? {} : { ambition }), ...(values === undefined ? {} : { values }),
+        ...(lack === undefined ? {} : { lack }), ...(wound === undefined ? {} : { wound }),
+      }
+    }
+    const mentions = await this.core.listMentions({ workId: request.canvasId })
+    const cores: OutlineCore[] = []
+    for (const view of entries.foreshadows) {
+      if (view.cardStatus !== 'kept' || view.reveal === undefined || view.reveal.kind === 'chapter') continue
+      const pace = coreSuspenseNudge(view, outline.volumes, chapters)
+      const due = revealVolume(view.reveal, outline.volumes.length)
+      cores.push({
+        cardId: view.cardId, ref: view.ref, question: view.question, state: view.state, starred: view.starred,
+        reveal: revealText(view.reveal),
+        ...(due === undefined ? {} : { revealVolume: due }),
+        touches: mentions.filter(entry => entry.foreshadowId === view.cardId)
+          .sort((a, b) => a.chapter - b.chapter)
+          .map(entry => ({ chapter: entry.chapter, kind: entry.kind, ...(entry.note === undefined ? {} : { note: entry.note }) })),
+        line: pace?.text ?? (view.state === '已揭晓' ? '已揭晓' : ''),
+        nudge: pace?.nudge ?? false,
+      })
+    }
+    const hero = heroOf(outline.sheet.protagonist)
+    const proposed = outline.proposal?.sheet?.protagonist
+    const proposedHero = proposed === undefined || proposed === outline.sheet.protagonist ? undefined : heroOf(proposed)
+    return {
+      ok: true, outline, chapters: rows, cores,
+      ...(hero === undefined ? {} : { hero }),
+      ...(proposedHero === undefined ? {} : { proposedHero }),
+    }
+  }
+
+  /** The person's 采用 / 不采用 on the outline proposal. */
+  @Remote('decideOutline')
+  async decideOutline(agent: Agent, request: NovelOutlineDecideRequest): Promise<NovelGestureResult> {
+    const result = await this.core.decideOutline({ workId: request.canvasId, action: request.action }, agent.session)
     return result.ok ? { ok: true } : { ok: false, error: result.error ?? 'io' }
   }
 

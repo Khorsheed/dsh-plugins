@@ -10,7 +10,7 @@ It replaces the retired `@khorsheed/dsh-story-bible`. Data under the old `$DSH_H
 
 - **Genre registration** (joined through deferred injection on `ctx.canvasBoard`; no canvas, no genre):
   - A canvas created as, or switched to, 长篇小说 is seeded with the four categories.
-  - Each category carries its card field definitions. For example, a character has name, identity, want, lack and wound; a world card has name, kind and setting; a foreshadow has question, status, planted-at and answer.
+  - Each category carries its card field definitions. For example, a character has name, identity, want, lack, wound, ambition and values; a world card has name, kind and setting; a foreshadow has question, status, planted-at, reveal timing and answer.
 - **Engine service `ctx.canvasNovel`**: the engine's own state lives in `$DSH_HOME/state/novel/<canvas id>/`, in five files:
 
   | File | Contents |
@@ -20,12 +20,13 @@ It replaces the retired `@khorsheed/dsh-story-bible`. Data under the old `$DSH_H
   | `mentions.jsonl` | The foreshadow mention journal, keyed by foreshadow card id |
   | `chapters.json` | The chapter index and plans |
   | `pending.json` | The pending review queue |
+  | `outline.json` | The outline: the one page, the volumes, one-line sketches of the near chapters, the proposal awaiting adoption, the revision log |
 
   The single source of truth for manuscripts is `<workspace>/<canvas title>/第{n}章.md` in the canvas's mounted workspace.
 - **Model tools**, registered by the `./agent` composition entry and origin-tagged:
   - `novel_bind`: lists the long-novel works and binds the calling session to one by title; it sits on the grant scope, so unbound sessions have it too;
-  - `novel_read`: the brief in three variants, chapters, ledger, pending, chapter;
-  - `novel_write`: chapter numbers automatically, review handles pending items (accept, discard);
+  - `novel_read`: the brief in three variants, outline (the outline and the core suspenses), chapters, ledger, pending, chapter;
+  - `novel_write`: chapter numbers automatically (with volume to start a new volume), outline proposes outline changes (they take effect once you adopt them on the 规划 face), review handles pending items (accept, discard);
   - cards have no tool of their own: on a novel canvas the canvas's `canvas_read` / `canvas_write` hand the five role categories to this package's genre hooks — `canvas_read` lists the cards with their refs (c3, #12, w5) and the chapters in order as the manuscripts, and reads one card in full with `cardId`; `canvas_write op=card` lands a new card (live, duplicate-checked), patches one by ref with `cardId`, and `op=archive` archives;
   - `novel_extract`: prepare builds the material pack, import files the result through five validation gates.
 - **The `novel:pointer` function section** (order 9500): renders one line when the session is bound to a long-novel canvas, and an empty string otherwise, so small talk costs nothing.
@@ -89,16 +90,18 @@ Enabling the root row by hand (removing `disabled: true`) makes it apply to ever
 ## Quick start
 
 1. Create a canvas with the 长篇小说 genre and mount a workspace on it. Talk about the work in a writing session and the model binds it with `novel_bind`; you can also bind by hand with the canvas chip in the session header.
-2. Talk through the settings. The model files them as live cards with a ✦ new-card mark on the canvas; glance over them, fix or archive (✗) the wrong ones, then click ✓✓ to mark them all seen.
-3. Plan. `novel_write(what=chapter, plan=…)` registers the plan: summary, beats (a few steps with time labels, marked as turn or landing), conflict, highlight, foreshadow ops (advance / hint / plant / resolve, each saying what it moves), cast (with the POV) and the closing hook. A plan card appears in the conversation; 「查看并确认计划」 opens the chapter page to read it in full, and 「✓ 确认计划」 clears it for writing. To change it, just say so in the conversation.
+2. Settle the outline. Talk through the logline, core conflict, protagonist, ending and length (how many volumes, about how many chapters, characters per chapter) with the model; it drafts the one page and the volumes with `novel_write(what=outline)`, and you click 「采用」 on the 规划 face. The volumes stop at volume level: about how many chapters each, what it achieves, where it lands; a chapter gets detailed as you near it. The protagonist is a character card, with name, identity, goal, ambition and values on the card.
+3. Talk through the settings. The model files them as live cards with a ✦ new-card mark on the canvas; glance over them, fix or archive (✗) the wrong ones, then click ✓✓ to mark them all seen.
+4. Plan. `novel_write(what=chapter, plan=…)` registers the plan: target length (defaults to the one page's per-chapter length; the number of beats is estimated from it), summary, beats (a few steps with time labels, marked as turn or landing), conflict, highlight, foreshadow ops (advance / hint / plant / resolve, each saying what it moves), cast (with the POV) and the closing hook. A plan card appears in the conversation; 「查看并确认计划」 opens the chapter page to read it in full, and 「✓ 确认计划」 clears it for writing. To change it, just say so in the conversation.
    - The manuscript lands in the canvas workspace through the session's fence.
    - If it cannot land, the registration is refused, so an empty-slot chapter never appears.
-4. Reconcile once the chapter is written: run `novel_extract(prepare)`, delegate to a subagent, then run `novel_extract(import)`.
+5. Reconcile once the chapter is written: run `novel_extract(prepare)`, delegate to a subagent, then run `novel_extract(import)`.
    - Handle the pending items, then close the chapter with 「✓ 审过」.
    - The phase lamp runs: planning → writing → extracted → reviewed.
 
 **UI inside the canvas**: card faces, card sections and the session-header binding chip ride the canvas's genre seams; this package's browser half adds:
 
+- **规划 (the first face)**: on top, the newest chapter, its volume and how much of the book is done; below, the one page (the protagonist block reads their character card; the name opens the card), the agent's proposal (a dashed block with 「采用 / 不采用」), a roadmap that stops at volumes (each volume's written chapters, the one or two sketched ahead, 「约 N 章，写到附近再细化」, the landing, the foreshadows it reveals), and the core suspenses: foreshadows set to reveal in a volume, with the clues the text has laid (recorded by reconciliation) and a pacing line. A core suspense is never flagged for chapters asleep: before its volume it may be hinted but not revealed; only a volume nearly done without touching it, or a reveal volume reached with too few touches, earns a soft reminder.
 - **A slim strip at the top of the board**: the current chapter (the earliest one with pending items, else the latest; a click opens its chapter page), Pending N, the story log, and 「目录 · 共 N 章 ›」.
 - **成稿 is the book**: a long-novel canvas's 成稿 face is a table of contents plus a reader. The contents open with a progress spine for the whole work (one tick per chapter, colored by phase, red where items are pending), 「从这里继续」, all / to-do / not-reviewed filters, and the chapters in folding groups of ten (groups with work in them, and the last one, start open). A chapter opens the reader in place.
 - **Chapter reader**: phase lamp, plan block, this chapter's pending items and the text, then 「✓ 审过本章」, a glimpse of the next chapter, and a pager (previous / contents / next) that stays in reach. The plan block is open with 「✓ 确认计划」 while planning; once there is text it folds to one line so the text leads; after extraction that line says how many beats and foreshadow ops the text carried, and each is marked ✓ / ✗ when unfolded (a missed op is also pending and blocks review; a missed beat is only a reminder). While the chapter is not extracted or still has pending items the review button is disabled, and the line beside it says what is missing.

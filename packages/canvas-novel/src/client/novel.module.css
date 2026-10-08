@@ -1263,6 +1263,23 @@
   letter-spacing: 0.12em;
 }
 
+.budget {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-2);
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
+}
+
+.budgetSay { color: var(--dsw-alias-label-tertiary); }
+
+.budget[data-over] { background: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 12%, transparent); }
+
+.budget[data-over] .budgetSay { color: var(--dsw-alias-state-warn-label); }
+
 .planEmpty {
   text-align: center;
   font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
