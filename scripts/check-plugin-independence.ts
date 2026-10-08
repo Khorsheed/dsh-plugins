@@ -230,6 +230,9 @@ export const ALLOWED_EDGES: Readonly<Record<string, ReadonlyArray<string>>> = {
   // canvas-novel → ui-panel-kit: the chapter book's compact header and the
   // story view's tabs (panel-responsive-spec P3) — the same inlined edge.
   'canvas-novel': ['@khorsheed/dsh-client-ui-panel-kit'],
+  // library → ui-panel-kit: the learning sidebar's panel root, header, tabs,
+  // chip row and list rows — the same inlined, zero-runtime source-plane edge.
+  'library': ['@khorsheed/dsh-client-ui-panel-kit'],
   // room consumes the local-agent delegation facade as an OPTIONAL capability:
   // type-only imports, an optional peer dep, a runtime probe, and tested
   // degradation when the family is absent (the room works with the main agent
@@ -259,6 +262,10 @@ export const COMMUNITY_SERVICE_INJECTORS: Readonly<Record<string, RegExp>> = {
   datasets: /^datasets$/,
   dshEval: /^eval$/,
   mission: /^mission$/,
+  // library's `./tool` composition entry injects its own core service (the
+  // evaluation-family fold pattern): the preset's standing scope mounts before
+  // the profile's bundle rows provide `library`, so the row pends on the core.
+  library: /^library$/,
 }
 
 const MONOREPO_URL = 'git+https://github.com/Khorsheed/dsh-plugins.git'

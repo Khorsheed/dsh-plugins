@@ -4,10 +4,10 @@
 
 ## 概览
 
-- 包总数:**39**
-- 自挂载 bundle(`dsh.bundle.patch`):**35**
+- 包总数:**41**
+- 自挂载 bundle(`dsh.bundle.patch`):**37**
 - 组合组件(不自挂载,`dsh.composition.component`):**4** — `preset-composed-row` 1、`source-plane-library` 2、`sub-profile-patch` 1
-- 带浏览器半边(`dsh.client`):**29**
+- 带浏览器半边(`dsh.client`):**30**
 - 整合 profile(默认安装单元):**3** — `basic`、`dev`、`web-eval`
 
 **安装单元是 profile,不是单包。** 单包安装是高级路径:自挂载包 `dsh plugin add <pkg>` 即可,
@@ -20,6 +20,7 @@
 | `@khorsheed/dsh-ankh-guard` | `packages/ankh-guard` | 0.4.2 | bundle | — | web | 0.1.5-rc.1 | basic, dev, web-eval |
 | `@khorsheed/dsh-bundle-conversation-toolbox` | `packages/bundle-conversation-toolbox` | 0.1.2 | bundle | — | — | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-bundle-eval` | `packages/bundle-eval` | 0.1.0 | bundle | — | — | 0.2.0-rc.2 | web-eval |
+| `@khorsheed/dsh-bundle-learning` | `packages/bundle-learning` | 0.1.0 | bundle | — | — | 0.1.7-rc.1 | — |
 | `@khorsheed/dsh-bundle-local-agent` | `packages/bundle-local-agent` | 0.2.0 | bundle | — | — | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-canvas` | `packages/canvas` | 0.6.0 | bundle | — | web | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-canvas-novel` | `packages/canvas-novel` | 0.1.0 | bundle | — | web | 0.2.0-rc.2 | — |
@@ -32,6 +33,7 @@
 | `@khorsheed/dsh-file-preview` | `packages/file-preview` | 0.4.1 | bundle | — | web | 0.1.5-rc.1 | basic, web-eval |
 | `@khorsheed/dsh-inline-html-render` | `packages/inline-html-render` | 0.1.15 | bundle | — | web | 0.1.2-rc.1 | basic, web-eval |
 | `@khorsheed/dsh-lab` | `packages/lab` | 0.2.0-rc.1 | bundle | — | — | 0.2.0-rc.2 | — |
+| `@khorsheed/dsh-library` | `packages/library` | 0.1.0 | bundle | — | web | 0.1.7-rc.1 | — |
 | `@khorsheed/dsh-local-agent` | `packages/local-agent` | 0.2.0-rc.1 | bundle | — | web | 0.1.5-rc.1 | dev, web-eval |
 | `@khorsheed/dsh-local-agent-claude-code` | `packages/local-agent-claude-code` | 0.2.0-rc.1 | bundle | — | web | 0.1.5-rc.1 | dev, web-eval |
 | `@khorsheed/dsh-local-agent-codex` | `packages/local-agent-codex` | 0.2.0-rc.1 | bundle | — | web | 0.1.5-rc.1 | dev, web-eval |

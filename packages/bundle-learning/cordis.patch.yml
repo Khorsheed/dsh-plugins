@@ -1,0 +1,127 @@
+# @khorsheed/dsh-bundle-learning bundle patch: the 学习 preset as ONE
+# declarative `@deepseek-ai/dsh-agent-preset` row (host 0.1.7-rc.1 line — the
+# row type does not exist on 0.1.5, see the package README's Compatibility).
+#
+# What the preset IS: a named scope. Sessions switched to it compose with the
+# persona below and this tool list; every other session sees none of it. The
+# preset grants the library's MODEL face by mounting the
+# `@khorsheed/dsh-library/tool` composition entry (the library package's own
+# patch mounts only its core row at the profile root — the service the tool
+# row delegates to). The `library` service core resolves up the scope parent
+# chain; with @khorsheed/dsh-library not installed the grant stays inert (the
+# tools simply never exist), nothing throws.
+#
+# The official base is a STRICT diet of the host's standard.patch.yml: a
+# learning session keeps only what its loop needs — the library tools, web
+# search/fetch (verifying a book's edition and contents, quoting the web), the
+# ask-user card (which book, which edition) and compaction (long sessions).
+# Dropped on purpose: fs (no book files exist — books are registered, not
+# uploaded — and fs tools invite the model to read the workspace or the
+# library's own state), skills (the library's usage lives in its tool
+# descriptions; the skill registry would surface unrelated local skills),
+# todo (the roadmap IS the study plan), and everything shell-, plan- or
+# delegation-shaped. The library-tool row additionally quiets the scope:
+# root prompt sections about the host's source tree, the web surface and
+# deliverable links are blanked, and the root `list_capabilities` tool is
+# masked — none of them applies to a learning session.
+#
+# The display fields (name/description) are this bundle's own. `name:` values
+# are quoted (@ is YAML-reserved). The persona follows the community preset
+# convention: single-language English (the host prompt's own voice) — the
+# library row's guidance section carries the mechanics.
+- insert:
+    - id: preset-learning
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: learning
+        name: '学习模式'
+        description: 按项目精读的学习模式：图书馆（书籍/路线图/词书/测验）与精读教练——只在选择此预设的会话里生效。
+        order: 12
+        plugins:
+          # ── identity ────────────────────────────────────────────────────────
+
+          # The preset's own persona, shadowing the deployment default for this
+          # agent. Light on purpose: the mechanics (payload shapes, the chapter
+          # convention, the evidence gate) are the library skill's, loaded on
+          # demand — the persona names the stance (a coach who reads WITH the
+          # learner) and the two facts that must hold every turn (the library
+          # tools are the memory; a judged quiz is ledgered, or it never
+          # happened).
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: |-
+                You are a close-reading coach. You read WITH the learner, not for them:
+                explain as you go and ask before moving on — a Socratic follow-up beats a
+                summary. The goal is not to finish the book; it is that the learner can
+                answer for it.
+
+                - Reply in the learner's language.
+                - The library is the memory: books, roadmaps, the learner's knowledge cards
+                  and quizzes live in the library_* tools, never in conversation memory.
+                - Never invent what a book says. The book and the learner's photos win over
+                  what you remember; when you teach from domain knowledge, say so.
+                - The learner's own weak points come first — in what you explain, what you
+                  ask, and what you quiz.
+                - Grading is two steps: judge in the conversation, then library_assess —
+                  the assess is what moves the cards and unlocks the next node.
+
+          # ── ask the person ──────────────────────────────────────────────────
+
+          # Which project, which book, which edition — the coach asks with a card.
+          - id: tool-ask-user
+            name: '@deepseek-ai/dsh-tool-ask-user'
+
+          # ── web ─────────────────────────────────────────────────────────────
+
+          # Verifying a book's edition and contents, and quoting a web copy of a
+          # passage, are part of the learning loop.
+          - id: tool-web
+            name: '@deepseek-ai/dsh-tool-web'
+            config:
+              fetch: true
+              searchTimeoutMs: 60000
+
+          # ── compaction (the standard preset's proven shape) ─────────────────
+
+          # Long sessions fold context: `compaction-basic` reads
+          # `toolResultPrune` through `ctx.get`, so the pruner shares this
+          # realm; `tokenMeter` stays on the host plane.
+          - id: compaction
+            name: 'cordis:group'
+            group: true
+            isolate:
+              compaction: true
+              toolResultPruner: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+
+              - id: command-compact
+                name: '@deepseek-ai/dsh-command-compact'
+
+              - id: tool-result-pruner
+                name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+                config:
+                  thresholdChars: 8192
+                  headChars: 4096
+                  tailChars: 1024
+
+          # ── the library grant ────────────────────────────────────────────────
+
+          # library 三工具（library_read / library_write / library_assess）、
+          # 教练指引段与每轮的绑定上下文只授予本 preset 的会话。服务核心
+          # （library）由 profile 根的 library 行提供，本行沿 scope 父链解析；
+          # library 未装时本行降级为 pending（注册表显示 waiting for library），
+          # 装上即生效。hideSections / denyTools 把根上与学习无关的段落和工具
+          # 在本 scope 里静音（名字不存在时跳过，不炸）。
+          - id: library-tool
+            name: '@khorsheed/dsh-library/tool'
+            config:
+              tools: all
+              hideSections:
+                - 'harness:source'
+                - 'app:web-surface'
+                - 'ui:deliverable-file-references'
+              denyTools:
+                - list_capabilities

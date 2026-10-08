@@ -1,0 +1,34 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types",
+    "tsBuildInfoFile": "lib/tsconfig.client.tsbuildinfo",
+    "jsx": "react-jsx",
+    "lib": [
+      "ES2024",
+      "DOM",
+      "DOM.Iterable"
+    ]
+  },
+  "files": [
+    "src/css-modules.d.ts",
+    "src/types.ts",
+    "src/client/contract.ts",
+    "src/client/definition.tsx",
+    "src/client/icons.tsx",
+    "src/client/index.ts",
+    "src/client/locales.ts",
+    "src/client/preset-visibility.ts",
+    "src/client/store.ts",
+    "src/client/judge.ts",
+    "src/client/look.tsx",
+    "src/client/ui.tsx",
+    "src/client/views/home.tsx",
+    "src/client/views/book.tsx",
+    "src/client/views/cards.tsx",
+    "src/client/views/quiz.tsx",
+    "src/client/bind/BindChip.tsx",
+    "src/client/LibraryPane.tsx"
+  ]
+}

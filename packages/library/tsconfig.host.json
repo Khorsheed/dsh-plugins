@@ -1,0 +1,20 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types",
+    "tsBuildInfoFile": "lib/tsconfig.host.tsbuildinfo"
+  },
+  "files": [
+    "src/index.ts",
+    "src/image-refs.ts",
+    "src/invariant.ts",
+    "src/remote.ts",
+    "src/cards.ts",
+    "src/service.ts",
+    "src/store.ts",
+    "src/tool.ts",
+    "src/tool-definition.ts",
+    "src/types.ts"
+  ]
+}
