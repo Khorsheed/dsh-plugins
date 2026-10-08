@@ -831,11 +831,16 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
           }
           genreId = genre.id
         }
-        const created = await board.createCanvas({ title: wanted, genreId }, session)
+        // The session's own workspace comes along: a novel's chapters and a
+        // manuscript's export need one, and a canvas made here had none (the
+        // first chapter then had nowhere to land, 2026-10-09).
+        const cwd = session.header?.cwd
+        const created = await board.createCanvas({ title: wanted, genreId, ...(cwd === undefined ? {} : { attachedWorkspaces: [cwd] }) }, session)
         if (!created.ok) return renderOutcome({ ok: false, error: created.error })
         const switched = await switchTo(created.board.id, session)
         if (!switched.ok) return renderOutcome({ ok: false, error: switched.error })
-        return `完成：已新建画布《${created.board.title}》（${created.board.id}）并切过去。${switched.note}接下来用 canvas_write 落卡。`
+        const where = cwd === undefined ? '' : `挂上了工作区 ${cwd}。`
+        return `完成：已新建画布《${created.board.title}》（${created.board.id}）并切过去。${switched.note}${where}接下来用 canvas_write 落卡。`
       }
 
       const byId = items.find(item => item.id === wanted)

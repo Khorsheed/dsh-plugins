@@ -12,7 +12,7 @@ The canvas tools (`canvas_read`, `canvas_write`, `canvas_propose_type`) act on "
 
 - **No arguments** lists every canvas (id, title, card count, genre, archived), marks the session's current target and names the genres a new canvas can take.
 - **`canvas`** (title or id) switches the session to that canvas. A live canvas wins over an archived one with the same name. Two matching titles get a question back instead of a guess. An archived canvas is refused because it is read-only.
-- **`create`** (+ optional **`genre`**, id or label) creates a canvas and switches to it. If a live canvas already has the same title, the tool switches to that one instead of creating a copy, and says how to get a second one deliberately. It uses the store's existing `createCanvas`, so no new write path is added and no workspace is attached (the same default as the UI create form).
+- **`create`** (+ optional **`genre`**, id or label) creates a canvas and switches to it. If a live canvas already has the same title, the tool switches to that one instead of creating a copy, and says how to get a second one deliberately. It uses the store's existing `createCanvas`. It attaches the session's own workspace (`session.header.cwd`). The first version attached none, like the UI create form's default, but a novel made that way had nowhere to put its first chapter (2026-10-09).
 
 "Switch" means whatever makes the other tools target that canvas:
 
@@ -24,6 +24,8 @@ The model gets one answer for no target in place of "ask the user to open one": 
 The sidebar follows the switch. A keyed `tool.call.toolview` row for `canvas_open` (`src/client/open/`, built like the `canvas_propose_type` row) reads the canvas id from the call's own answer and offers 打开 →. **It opens the canvas automatically only when it watched the call go from running to settled.** A row that mounts already settled (a reload, scrolling back through history) only offers the button, so an old switch never pulls the sidebar away from what is open now. When the tab reads a board that is not yet in its canvas list, it adds that canvas to the top of the list so the strip can name the new canvas.
 
 canvas-novel's `novel_bind` empty listing and its skill now point at `canvas_open(create=书名, genre=长篇小说)`, keeping the manual steps as the fallback where `canvas_open` is not mounted. This mention is text only, so it adds no package edge.
+
+Workspaces can be attached after creation. Before this, a canvas took its workspaces at birth only: the create form's ticks, nothing afterwards, so a canvas made without one could never get one. The store's `setWorkspace` (Remote `setWorkspace`) attaches or detaches one absolute path, and the canvas ⋯ menu lists the registered workspaces inline under 「工作区」, ticked when attached. A path no longer registered still shows, so it can be taken off. canvas-novel uses the same verb (an optional slice method) when a chapter body arrives for a work with no workspace: it attaches the session's own and says so in the answer.
 
 The same change pins the board's filter row: the category chips and the selection bar move out of `.boardScroll` into a non-scrolling `.boardHead` (`src/client/space/BoardView.tsx`). The category can then be switched from anywhere in a long grid. The genre face tools (scope / 网格·连线) already sat outside the scroller.
 

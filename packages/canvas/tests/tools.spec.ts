@@ -368,7 +368,7 @@ describe('canvas_open: list, switch to, or create the session\'s canvas', () => 
     const { items } = await board.listCanvases()
     expect(items).toHaveLength(1)
     expect(items[0]!.title).toBe('雨夜')
-    expect(answer).toBe(`完成：已新建画布《雨夜》（${items[0]!.id}）并切过去。接下来用 canvas_write 落卡。`)
+    expect(answer).toBe(`完成：已新建画布《雨夜》（${items[0]!.id}）并切过去。挂上了工作区 ${WS}。接下来用 canvas_write 落卡。`)
     expect(board.focusedCanvasId(FALLBACK)).toBe(items[0]!.id)
     expect(await write({ op: 'card', kind: 'fragment', text: '雨声' })).toMatch(/^完成：c_/)
     expect(await open({})).toContain(`- ${items[0]!.id}　《雨夜》　1 张卡　← 本会话当前`)
@@ -378,9 +378,15 @@ describe('canvas_open: list, switch to, or create the session\'s canvas', () => 
     const { board, open } = bench()
     const first = await board.createCanvas({ title: '雨夜' }, FALLBACK)
     if (!first.ok) throw new Error('expected a created canvas')
-    expect(await open({ create: '雨夜' })).toContain(`已切到画布《雨夜》（${first.board.id}）——已有同名画布，没有新建`)
     expect((await board.listCanvases()).items).toHaveLength(1)
+    expect(await open({ create: '雨夜' })).toContain(`已切到画布《雨夜》（${first.board.id}）——已有同名画布，没有新建`)
     expect(board.focusedCanvasId(FALLBACK)).toBe(first.board.id)
+    // A canvas made here takes the session's workspace along.
+    expect(await open({ create: '晴天' })).toContain(`挂上了工作区 ${WS}`)
+    const sunny = (await board.listCanvases()).items.find(item => item.title === '晴天')!
+    const read = await board.readBoard({ canvasId: sunny.id })
+    expect(read.ok && read.board.attachedWorkspaces).toEqual([WS])
+    expect((await board.listCanvases()).items.filter(item => item.title === '雨夜')).toHaveLength(1)
   })
 
   it('switches by title or id, asks when two fit, and refuses an archived canvas', async () => {

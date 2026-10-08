@@ -19,7 +19,7 @@ import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { CanvasService } from './service.ts'
 import type { CanvasBoardService } from './store.ts'
 import type {
-  BoardAddCommentRequest, BoardArchiveRequest,
+  BoardAddCommentRequest, BoardArchiveRequest, BoardWorkspaceRequest,
   BoardDeleteCanvasRequest, BoardDeleteCanvasResult, BoardDeleteCardRequest,
   BoardAttachImageOutcome, BoardAttachImageRequest,
   BoardBindRequest, BoardBindResult, BoardSelectGenreRequest, CanvasGenreSummary,
@@ -188,6 +188,11 @@ export class CanvasRemoteService extends TypertRemoteService<CanvasRemoteConfig>
    * @param request - canvas id and the target archived state.
    * @returns the fresh board and token, or the failure code.
    */
+  @Remote('setWorkspace')
+  setWorkspace(agent: Agent, request: BoardWorkspaceRequest): Promise<BoardMutationResult> {
+    return this.board.setWorkspace(request, agent.session)
+  }
+
   @Remote('archiveCanvas')
   archiveCanvas(agent: Agent, request: BoardArchiveRequest): Promise<BoardMutationResult> {
     return this.board.archiveCanvas(request, agent.session)

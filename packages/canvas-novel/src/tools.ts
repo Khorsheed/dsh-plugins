@@ -288,20 +288,23 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
             return `失败：大纲里没有「${args.volume ?? ''}」这一卷。novel_read(what=outline) 看分卷；要新开一卷先用 novel_write(what=outline, volumes=…) 提议。`
           }
           if (outcome.error === 'no-workspace') {
-            return '失败：这张画布还没有挂工作区，章节正文无处可写。请用户先在画布里挂一个工作区（正文写到 <工作区>/<画布标题>/第N章.md）。'
+            return '失败：这张画布还没有挂工作区，章节正文无处可写。请用户在画布右上角 ⋯ 的「工作区」里勾选一个（正文写到 <工作区>/<画布标题>/第N章.md）。'
           }
           return `失败：${outcome.error ?? 'io'}`
         }
         const chapter = outcome.chapter!
         const plan = chapter.plan as ChapterPlan | undefined
-        if (plan === undefined) return `已建第 ${chapter.n} 章《${chapter.title}》（画布 ${workId} · 规划中 · ${chapter.file}）。`
+        const attached = outcome.attachedWorkspace === undefined
+          ? ''
+          : `画布原本没挂工作区，已挂上会话所在的 ${outcome.attachedWorkspace}（用户可在画布 ⋯ 的「工作区」里改）。\n`
+        if (plan === undefined) return `${attached}已建第 ${chapter.n} 章《${chapter.title}》（画布 ${workId} · 规划中 · ${chapter.file}）。`
         const [outline, entries, chapters] = await Promise.all([
           store.readOutline(workId), store.readEntries(workId), store.listChapters({ workId }),
         ])
         const words = targetWordsOf(chapter, outline)
         const position = volumePosition(outline.volumes, chapters.map(row => row.chapter), chapter)
         const overshoots = planOvershoots(plan, words, entries?.foreshadows ?? [], position?.index, outline.volumes.length)
-        return `已登记第 ${chapter.n} 章《${chapter.title}》（画布 ${workId}${position === undefined ? '' : ` · 卷${volumeNumeral(position.index)}`}）plan：`
+        return `${attached}已登记第 ${chapter.n} 章《${chapter.title}》（画布 ${workId}${position === undefined ? '' : ` · 卷${volumeNumeral(position.index)}`}）plan：`
           + `${words === undefined ? '' : `目标 ${words} 字 / `}走向 ${plan.beats.length} 拍 / 伏笔 ${plan.foreshadowOps.length} 条 / 出场 ${plan.cast.length} 人。`
           + (overshoots.length === 0 ? '' : `\n提醒（只提醒，不拦）：${overshoots.join('；')}。在回复里跟用户说一句，按他的意思改或保留。`)
           + '\n完整计划已在右栏打开的章节页上（会话里的计划卡也能点进去），用户在章节页点「✓ 确认计划」。回复只用两三句说这章怎么走、最想让用户拍板的是什么，不要再贴一遍计划表。用户确认后开写。'

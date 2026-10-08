@@ -183,6 +183,7 @@ function makeHarness(options: {
       target?.comments.push({ id: `m_${request.text.length}`, author: 'user', text: request.text, createdAt: NOW })
       return mutationFor(request.canvasId)
     }),
+    setWorkspace: vi.fn(async (): Promise<Result<BoardMutationResult>> => ({ ok: true, value: { ok: false, error: 'missing' } })),
     archiveCanvas: vi.fn(async (sid: string, request: { canvasId: string; archived: boolean }): Promise<Result<BoardMutationResult>> => {
       const current = boards.get(request.canvasId)
       if (current !== undefined) current.archivedAt = request.archived ? NOW : null
@@ -880,6 +881,19 @@ describe('CanvasTab — genre seats (创作体裁)', () => {
       expect(selectGenre).toHaveBeenCalledWith('s1', { canvasId: CANVAS_ID, genreId: 'novel' })
     })
     expect(mocks.readBoard).toHaveBeenCalled()
+  })
+
+  it('attaches a registered workspace from the ⋯ menu, ticking the attached ones', async () => {
+    const { props } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1')])], workspaces: [{ workspaceId: 'w1', title: 'Writing', path: '/home/user/Writing' }] })
+    const setWorkspace = vi.fn(async () => ({ ok: true, value: { ok: true, board: board(), version: '2' } }))
+    render(<CanvasTab {...props} setWorkspace={setWorkspace as never} />)
+    await screen.findByText('卡片 c_1')
+    fireEvent.click(screen.getByRole('button', { name: '画布操作' }))
+    await screen.findByText(zh['workspace.menu'])
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Writing' }))
+    await waitFor(() => {
+      expect(setWorkspace).toHaveBeenCalledWith('s1', { canvasId: CANVAS_ID, workspace: '/home/user/Writing', attached: true })
+    })
   })
 
   it('hands a role card its face and the board its strip on a canvas with a genre', async () => {

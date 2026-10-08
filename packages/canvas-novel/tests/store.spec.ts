@@ -331,6 +331,18 @@ describe('the novel store', () => {
     expect(refused).toEqual({ ok: false, error: 'no-workspace' })
   })
 
+  it('a body for a work without a workspace attaches the session\'s own, then lands there', async () => {
+    const { store, canvas, fs } = confiningStore()
+    canvas.addBoard({ id: 'canvas_bare00002', title: '幻梦境' })
+    const writer = { id: 's-1', header: { cwd: '/home/user/writing' } } as unknown as Session
+    expect((await store.writeChapter({ workId: 'canvas_bare00002', title: '第一章', plan: { summary: '入梦。' } }, writer)).ok).toBe(true)
+    expect((await store.confirmChapterPlan({ workId: 'canvas_bare00002', n: 1 }, writer)).ok).toBe(true)
+    const written = await store.writeChapter({ workId: 'canvas_bare00002', n: 1, title: '第一章', content: '他推开门。' }, writer)
+    expect(written).toMatchObject({ ok: true, attachedWorkspace: '/home/user/writing' })
+    expect(canvas.boards.get('canvas_bare00002')?.attachedWorkspaces).toEqual(['/home/user/writing'])
+    expect(await fs.readText('/home/user/writing/幻梦境/第1章.md')).toContain('他推开门。')
+  })
+
   it('计划门禁: a body lands only in a confirmed plan; a re-plan needs a fresh confirmation; 用户原稿 skips the gate', async () => {
     const { store, fs, canvas } = confiningStore()
     const workId = freshWork(canvas, '门禁')

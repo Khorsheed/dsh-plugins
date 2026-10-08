@@ -152,6 +152,11 @@ export interface CanvasBoardSlice {
     readonly status?: NovelCardStatus
     readonly fields?: Readonly<Record<string, NovelFieldValue>>
   }, session: FenceSession): Promise<NovelBoardMutation>
+  /**
+   * Attach a workspace (optional: a canvas from before 2026-10-09 lacks it,
+   * and the engine then reports `no-workspace` as it always did).
+   */
+  setWorkspace?(request: { readonly canvasId: string; readonly workspace: string; readonly attached: boolean }, session: FenceSession): Promise<NovelBoardMutation>
   addComment(request: {
     readonly canvasId: string
     readonly cardId: string
