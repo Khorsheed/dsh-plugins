@@ -268,25 +268,32 @@
    light theme but INVERTS in the dark one (layer-1 is the lighter there, so
    the cards sank into holes), and it stopped at the content's height. The
    cards carry their own edge instead. */
+/* The board's fixed head: the filter row and the selection bar, outside the
+   scroller so they stay reachable however far down the grid the user is. */
+.boardHead {
+  flex: none;
+  padding: 14px 18px 0;
+}
+
 .boardScroll {
   flex: 1;
   overflow-y: auto;
   min-height: 0;
-  padding: 14px 18px 40px;
+  padding: 0 18px 40px;
 }
 
 /* One row, scrolled sideways rather than wrapped: stage ⑤ lets a canvas add
    categories, so the strip's width is no longer bounded by the five defaults.
-   Horizontal only — `.boardScroll` stays the board's single vertical scroller. */
-/* The board scroller already pads the page, so the kit row's own side
-   padding is dropped — scoped under .boardScroll so it outranks the kit's
+   Horizontal only — `.boardScroll` below it stays the board's single vertical scroller. */
+/* The board head already pads the page, so the kit row's own side
+   padding is dropped — scoped under .boardHead so it outranks the kit's
    compact-container padding whatever order the two stylesheets load in. */
-.boardScroll .chipRow {
+.boardHead .chipRow {
   padding: 0;
   margin-bottom: 12px;
 }
 
-.boardScroll .chipRow > [role="group"] {
+.boardHead .chipRow > [role="group"] {
   padding: 0;
 }
 

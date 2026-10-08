@@ -12,6 +12,8 @@
  * The one editor left on the board is the comment box under a card, which
  * follows the pad's invariants through CardTextarea (uncontrolled text, IME
  * composition as a hard stop, `.boardScroll` as the one scroll container).
+ * The filter chips and the selection bar sit above that scroller in
+ * `.boardHead`, so they never scroll away with the cards (2026-10-08).
  *
  * Kind is told by icon + words first; each category also carries a colour dot,
  * an added cue that never names a kind on its own.
@@ -525,7 +527,10 @@ export function BoardView({
 
   return (
     <section className={css.main}>
-      <div className={css.boardScroll} data-canvas-scroll="board">
+      {/* The filter row and the selection bar stay put above the scroller, so
+          the category can change (or the picked cards be acted on) from
+          anywhere down the grid. */}
+      <div className={css.boardHead}>
         {/* The row's tools ride the kit's tools slot, outside the sideways
             scroll so they never slide away: ✓✓ lights only while there is
             something new to mark, and 管理分类 is an icon beside it rather
@@ -626,7 +631,9 @@ export function BoardView({
             </button>
           </div>
         )}
+      </div>
 
+      <div className={css.boardScroll} data-canvas-scroll="board">
         {/* A board or filter that can take a card says so in the ＋ tile alone
             (one empty style to keep); the notice is for the ones that cannot. */}
         {shown.length === 0 && !(newCard !== undefined && chips.length > 0) && (
