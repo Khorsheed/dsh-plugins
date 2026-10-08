@@ -182,10 +182,29 @@ function genreKinds(board: CanvasBoard): Set<string> {
 /** The keys a text line may name the category by (`分类：世界`). */
 const KIND_KEYS = new Set(['分类', '类别', 'kind', 'category'])
 
+/** The keys a text line may name the card to patch by (`编号：w7`). */
+const CARD_ID_KEYS = new Set(['编号', '卡片', '卡号', 'cardid', 'card', 'id', 'ref'])
+
 /** One `键：值` line (full- or half-width colon), or undefined. */
 function keyValueOf(line: string): { key: string; value: string } | undefined {
   const match = /^\s*[-*•]?\s*([^：:\n]{1,16}?)\s*[：:]\s*(.+?)\s*$/.exec(line)
   return match === null ? undefined : { key: match[1]!.trim(), value: match[2]!.trim() }
+}
+
+/**
+ * The card a text-only write patches: its `编号：w7` line, and the text
+ * without it. Read before the rest of the text, because which card is
+ * patched decides which category's fields the other lines fill.
+ */
+export function cardIdLineOf(text: string | undefined): { token?: string; text: string } {
+  const lines = (text ?? '').split('\n')
+  const index = lines.findIndex((line) => {
+    const pair = keyValueOf(line)
+    return pair !== undefined && CARD_ID_KEYS.has(pair.key.toLowerCase())
+  })
+  if (index === -1) return { text: text ?? '' }
+  const token = keyValueOf(lines[index]!)!.value
+  return { token, text: [...lines.slice(0, index), ...lines.slice(index + 1)].join('\n') }
 }
 
 /** A category by id or by the name the board shows. */
@@ -547,12 +566,24 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
   const writeCard = async (raw: WriteArgs, resolved: Target): Promise<string> => {
     const read = await board.readBoard({ canvasId: resolved.canvasId })
     if (!read.ok) return renderOutcome({ ok: false, error: read.error })
-    const patchId = raw.cardId === undefined ? undefined : await resolveCardId(resolved, raw.cardId)
-    const whole = cardArgsOf({ ...raw, ...(patchId === undefined ? {} : { cardId: patchId }) }, read.board)
-    if (raw.cardId === undefined && whole.kind === undefined && whole.text === '' && whole.fields === undefined) return EMPTY_CARD_MESSAGE
+    // Which card is patched: cardId, else a 编号 line in text, else a title
+    // that names an existing card (a provider that drops cardId leaves only
+    // these — the K3 session wrote 编号：w7 and title=w7).
+    const idLine = cardIdLineOf(raw.text)
+    let token = raw.cardId ?? idLine.token
+    if (token === undefined && raw.title !== undefined && raw.title.trim() !== '') {
+      const named = await resolveCardId(resolved, raw.title.trim())
+      if (read.board.cards.some(card => card.id === named)) token = raw.title.trim()
+    }
+    const patchId = token === undefined ? undefined : await resolveCardId(resolved, token)
+    const source = { ...raw, text: idLine.text, ...(patchId === undefined ? {} : { cardId: patchId }) }
+    if (token !== undefined && raw.cardId === undefined) delete (source as { title?: string }).title
+    const whole = cardArgsOf(source, read.board)
+    if (token === undefined && whole.kind === undefined && whole.text === '' && whole.fields === undefined) return EMPTY_CARD_MESSAGE
     const { fields: _arrived, ...others } = raw
     const args: Omit<WriteArgs, 'fields'> & { fields?: Record<string, unknown> } = {
       ...others,
+      ...(token === undefined ? {} : { cardId: token }),
       ...(raw.text === undefined && whole.text === '' ? {} : { text: whole.text }),
       ...(whole.kind === undefined ? {} : { kind: whole.kind }),
       ...(whole.fields === undefined ? {} : { fields: whole.fields }),
@@ -607,8 +638,16 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
     return renderOutcome({ ok: true, cardId: card?.id })
   }
 
-  const writeComment = async (args: WriteArgs, resolved: Target): Promise<string> => {
-    if (args.cardId === undefined || (args.text ?? '').trim() === '') return '失败：op=comment 要给 cardId 和 text。'
+  /** A comment or archive call's card: cardId, else a 编号 line opening the text (the text-only form). */
+  const withCardFromText = (args: WriteArgs): WriteArgs => {
+    if (args.cardId !== undefined) return args
+    const line = cardIdLineOf(args.text)
+    return line.token === undefined ? args : { ...args, cardId: line.token, text: line.text.trim() }
+  }
+
+  const writeComment = async (arrived: WriteArgs, resolved: Target): Promise<string> => {
+    const args = withCardFromText(arrived)
+    if (args.cardId === undefined || (args.text ?? '').trim() === '') return '失败：op=comment 要给 cardId 和 text（cardId 到不了就在 text 第一行写「编号：…」）。'
     const outcome = await board.addComment({
       canvasId: resolved.canvasId, cardId: await resolveCardId(resolved, args.cardId), text: args.text ?? '', author: 'agent',
     }, resolved.session)
@@ -616,8 +655,9 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
     return renderOutcome({ ok: outcome.ok, ...(outcome.ok ? {} : { error: outcome.error }) })
   }
 
-  const archiveCard = async (args: WriteArgs, resolved: Target): Promise<string> => {
-    if (args.cardId === undefined) return '失败：op=archive 要给 cardId。'
+  const archiveCard = async (arrived: WriteArgs, resolved: Target): Promise<string> => {
+    const args = withCardFromText(arrived)
+    if (args.cardId === undefined) return '失败：op=archive 要给 cardId（cardId 到不了就在 text 写「编号：…」）。'
     const outcome = await board.patchCard({
       canvasId: resolved.canvasId, cardId: await resolveCardId(resolved, args.cardId), status: 'archived',
     }, resolved.session)

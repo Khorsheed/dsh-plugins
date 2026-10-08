@@ -13,7 +13,7 @@ import type { Session } from '@deepseek-ai/dsh-session'
 import { describe, expect, it } from 'vitest'
 import { CanvasService } from '../src/service.ts'
 import { CanvasBoardService } from '../src/store.ts'
-import { canvasMainSessionToolDefinitions, cardArgsOf } from '../src/tools.ts'
+import { canvasMainSessionToolDefinitions, cardArgsOf, cardIdLineOf } from '../src/tools.ts'
 import type { CanvasBoard } from '../src/types.ts'
 
 type Entry = { kind: 'dir' } | { kind: 'file'; content: string; version: number }
@@ -201,6 +201,11 @@ describe('the canvas tools on the open canvas', () => {
     expect(await execute('canvas_write', { op: 'card', kind: '人物', fields: { name: '小满' } })).toBe('已落卡 [c2]')
     expect(await execute('canvas_write', { op: 'card', cardId: 'c1', fields: { identity: '学徒' } })).toBe('已落卡 [c2]')
     expect(calls).toContainEqual(['write', { canvasId, kind: '人物', fields: { name: '小满' } }])
+    // cardId lost on the way: the 编号 line, or a title naming an existing card, still patches that card.
+    expect(await execute('canvas_write', { op: 'card', text: '编号：c1\n身份：学徒' })).toBe('已落卡 [c2]')
+    expect(calls).toContainEqual(['write', { canvasId, cardId: 'c1', text: '身份：学徒' }])
+    expect(await execute('canvas_write', { op: 'card', title: 'c1', text: '身份：师傅' })).toBe('已落卡 [c2]')
+    expect(calls).toContainEqual(['write', { canvasId, cardId: 'c1', text: '身份：师傅' }])
     // Not the genre's: the hook answers undefined and the card is proposed the generic way.
     expect(await execute('canvas_write', { op: 'card', kind: 'fragment', text: '钟声' })).toMatch(/^完成：c_/)
     const read = await execute('canvas_read', {}) as string
@@ -454,5 +459,20 @@ describe('card writes that arrive with only flat strings', () => {
     expect(answer).toContain('分类：世界')
     // The text-only form lands a card.
     expect(String(await execute('canvas_write', { op: 'card', text: '分类：灵感\n门后有人在哼歌' }))).toMatch(/^完成：c_/)
+  })
+})
+
+describe('the 编号 line', () => {
+  it('names the card to patch and leaves the rest of the text', () => {
+    expect(cardIdLineOf('分类：世界\n编号：w7\n设定：自保')).toEqual({ token: 'w7', text: '分类：世界\n设定：自保' })
+    expect(cardIdLineOf('设定：自保')).toEqual({ text: '设定：自保' })
+  })
+
+  it('lets a comment find its card from the text', async () => {
+    const { execute, readCurrent } = await harness()
+    await execute('canvas_write', { op: 'card', kind: 'question', text: '门后是谁？' })
+    const cardId = (await readCurrent()).cards[0]!.id
+    expect(await execute('canvas_write', { op: 'comment', text: `编号：${cardId}\n这里隐含一个假设。` })).toBe('完成')
+    expect((await readCurrent()).cards[0]!.comments[0]).toMatchObject({ author: 'agent', text: '这里隐含一个假设。' })
   })
 })
