@@ -56,7 +56,7 @@ import { CanvasDetailView } from '../detail/CanvasDetailView.tsx'
 import { DetailCrumbs } from '../detail/DetailCrumbs.tsx'
 import detailCss from '../detail/CanvasDetailView.module.css'
 import {
-  boardGraphOf, boardManuscriptsOf, boardScopesOf, boardStripsOf, boardTabBadgeOf, boardTabLabelOf, boardViewOf, cardDeleteNoteOf,
+  boardGraphOf, boardManuscriptsOf, boardScopesOf, boardStripsOf, boardTabBadgeOf, boardTabLabelOf, boardLeadOf, boardViewOf, cardDeleteNoteOf,
   genrePageOf, GenreSeatsContext, manuscriptsOwned, type GenreSeats,
 } from '../genre-seats.tsx'
 import type { CanvasCardScope } from '../slots.ts'
@@ -99,7 +99,7 @@ function dirtyOf(draft: DraftContent | undefined): boolean {
  * faces (`CanvasGenreDefinition.faces`), the genre's own view; there 连线 is
  * the 卡板 face's second layout rather than a face of its own.
  */
-type BoardFace = 'board' | 'link' | 'manuscripts' | 'view'
+type BoardFace = 'board' | 'link' | 'manuscripts' | 'view' | 'lead'
 
 /** One canvas's board view, as it was when the user last left it. */
 interface BoardViewMemory {
@@ -200,10 +200,13 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
   const openGenre = openBoard !== null && openBoard.board.id === openId ? openBoard.board.genre : undefined
   const openFaces = openGenre === undefined ? undefined : genres.find(genre => genre.id === openGenre.id)?.faces
   // A genre canvas opens where its work is — 成稿 once something is written,
-  // 卡板 before — until the user picks; a plain canvas has no genre face.
+  // before that its lead face (规划) or else 卡板 — until the user picks; a
+  // plain canvas has no genre face.
   const view: BoardFace = openFaces === undefined
-    ? (storedFace === 'view' ? 'board' : storedFace)
-    : view_.faceChosen ? storedFace : view_.empty ? 'board' : 'manuscripts'
+    ? (storedFace === 'view' || storedFace === 'lead' ? 'board' : storedFace)
+    : view_.faceChosen
+      ? (storedFace === 'lead' && openFaces.lead === undefined ? 'board' : storedFace)
+      : view_.empty ? (openFaces.lead === undefined ? 'board' : 'lead') : 'manuscripts'
   /** Change the open canvas's view memory, keeping what the patch leaves alone. */
   const patchView = useCallback((patch: (was: BoardViewMemory) => Partial<BoardViewMemory>) => {
     const id = openIdRef.current
@@ -884,6 +887,7 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
         badge: boardTabBadgeOf(seats, board, key, label),
       })
       return [
+        ...(openFaces.lead === undefined ? [] : [face('lead', openFaces.lead, genreLabel)]),
         face('manuscripts', 'manuscripts', t('view.manuscripts')),
         face('board', 'board', t('view.board')),
         face('view', openFaces.view, genreLabel),
@@ -1193,6 +1197,8 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
           {openBoard !== null && loadError === null ? (
             view === 'view' ? (
               boardViewOf(seats, openBoard.board, <div className={css.notice}>{t('genre.pageMissing')}</div>)
+            ) : view === 'lead' ? (
+              boardLeadOf(seats, openBoard.board, <div className={css.notice}>{t('genre.pageMissing')}</div>)
             ) : view === 'manuscripts' ? (
               boardManuscriptsOf(seats, openBoard.board, (
                 <ManuscriptList

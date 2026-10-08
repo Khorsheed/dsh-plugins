@@ -1035,6 +1035,40 @@ describe('CanvasTab — a genre with faces (章节 · 设定 · 故事)', () => 
   })
 })
 
+describe('CanvasTab — a genre with a lead face (规划 · 章节 · 设定 · 故事)', () => {
+  const LEAD_SUMMARY = {
+    id: 'novel', label: '长篇小说', version: 'novel@1', description: '', roles: [], agentRow: '@khorsheed/dsh-canvas-novel/agent',
+    ownsManuscripts: true, faces: { view: 'story', lead: 'plan' },
+  }
+
+  function Empty({ onEmpty }: { readonly onEmpty: () => void }) {
+    useEffect(() => { onEmpty() }, [onEmpty])
+    return null
+  }
+
+  it('puts the lead face first and opens on it while nothing is written', async () => {
+    const novel = board(CANVAS_ID, [card('c_1')], { genre: { id: 'novel', version: 'novel@1', selectedAt: NOW } })
+    const harness = makeHarness({ boards: [novel] })
+    const slot = vi.fn((key: string, owner: Record<string, unknown>, options?: { entryKey?: string; fallback?: unknown }) => {
+      if (key === 'canvas.board.tab') return `tab:${String(owner.face)}`
+      if (key === 'canvas.board.manuscripts') return <Empty onEmpty={owner.onEmpty as () => void} />
+      if (key === 'canvas.board.view') return <div>{`seat view ${options?.entryKey ?? ''}`}</div>
+      return options?.fallback ?? null
+    })
+    render(<CanvasTab
+      {...harness.props}
+      renderSlot={slot as unknown as CanvasTabProps['renderSlot']}
+      listGenres={vi.fn(async () => ({ ok: true, value: [LEAD_SUMMARY] })) as never}
+    />)
+    await screen.findByText('seat view novel:plan')
+    const tabs = screen.getAllByRole('tab').map(tab => tab.textContent).filter(text => text?.startsWith('tab:'))
+    expect(tabs).toEqual(['tab:plan', 'tab:manuscripts', 'tab:board', 'tab:story'])
+    expect(screen.getByRole('tab', { name: 'tab:plan' }).getAttribute('aria-selected')).toBe('true')
+    fireEvent.click(screen.getByRole('tab', { name: 'tab:story' }))
+    await screen.findByText('seat view novel:story')
+  })
+})
+
 describe('CanvasSelectionStore — the genre page row', () => {
   it('brings a page place back after a reload, parameter and all', () => {
     sessionStorage.clear()
