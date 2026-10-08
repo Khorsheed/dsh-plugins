@@ -114,3 +114,9 @@ export const IconCardsOutlineMedium = ({ size = 16, className }: IconProps) => (
     <path d="M11.6 4.4V3.6C11.6 2.85 11.05 2.3 10.3 2.3H3.6C2.85 2.3 2.3 2.85 2.3 3.6V10.3C2.3 11.05 2.85 11.6 3.6 11.6H4.4" stroke="currentColor" />
   </svg>
 )
+
+export const IconChevronDownOutlineMedium = ({ size = 12, className }: IconProps) => (
+  <svg width={size} height={size} viewBox="0 0 16 16" fill="none" className={className} aria-hidden="true">
+    <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+)

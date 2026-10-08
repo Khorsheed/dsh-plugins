@@ -35,7 +35,9 @@ dsh plugin --profile <name> add @khorsheed/dsh-library
 ## 已知限制
 
 - 不做：书籍文件上传与解析（EPUB / PDF）、会话内「精读」tab、XP 与连续天数、项目级考试与跨书打通。
-- 会话头绑定芯片、记录提示与撤销尚在开发（见提案 M3）。拍照由侧栏代你在会话里发一条带图消息，识别由会话里的教练完成。
+- 拍照由侧栏代你在会话里发一条带图消息，识别由会话里的教练完成。
+- 会话头部芯片显示并切换本会话绑定的项目或书；教练记下薄弱点时侧栏弹出「已记下」并可撤销。
+- 样式与复习玩法的打磨在后续一轮（提案 M4）。
 - 照片页要求完整 attachment 引用（attachmentId + mediaType + bytes + width + height——从消息的 image block 原样抄），否则报 `ref-incomplete`。
 
 ## 开发

@@ -197,6 +197,19 @@ export const zh = {
   'prime.addMissed': '{page} 上我还划了「{word}」，你漏记了，请补成知识卡片（按这一页的原句给本句义）。',
   'prime.grade': '我在侧栏做完了章节考（quiz {quiz}），请判题并用 library_assess 落账：\n{answers}',
 
+  'bind.unbound': '绑定书',
+  'bind.bound': '学习 · {title}',
+  'bind.aria': '这次对话学的项目或书',
+  'bind.heading': '这次对话学哪本书',
+  'bind.wholeProject': '{project}（整个项目）',
+  'bind.empty': '还没有学习项目：在右栏图书馆里新建',
+  'bind.unbind': '解除绑定',
+  'bind.failed': '绑定没成功，再试一次',
+
+  'toast.recorded': '已记下：{terms}',
+  'toast.undo': '撤销',
+  'toast.undone': '已撤销',
+
   'when.justNow': '刚刚',
   'when.minutes': '{count} 分钟前',
   'when.hours': '{count} 小时前',
@@ -394,6 +407,19 @@ export const en: Record<LibraryKey, string> = {
   'prime.keepMark': '“{word}” on {page} is one I marked — please add it as a card (meaning from that page’s sentence).',
   'prime.addMissed': 'I also marked “{word}” on {page} and it was missed — please add it as a card (meaning from that page’s sentence).',
   'prime.grade': 'I finished the chapter quiz (quiz {quiz}) in the sidebar — please grade it and record it with library_assess:\n{answers}',
+
+  'bind.unbound': 'Bind a book',
+  'bind.bound': 'Studying · {title}',
+  'bind.aria': 'The project or book this conversation studies',
+  'bind.heading': 'Which book this conversation studies',
+  'bind.wholeProject': '{project} (whole project)',
+  'bind.empty': 'No learning project yet — create one in the library tab',
+  'bind.unbind': 'Unbind',
+  'bind.failed': 'Binding failed — try again',
+
+  'toast.recorded': 'Noted: {terms}',
+  'toast.undo': 'Undo',
+  'toast.undone': 'Undone',
 
   'when.justNow': 'just now',
   'when.minutes': '{count}m ago',

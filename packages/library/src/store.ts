@@ -526,6 +526,7 @@ export function normalizeEvent(value: unknown): LibraryEvent | undefined {
     ...opt('title', text(record.title, 300)),
     ...opt('bookId', id(record.bookId)),
     ...opt('source', CARD_SOURCE_TYPES.find(candidate => candidate === record.source)),
+    ...opt('session', text(record.session, 200)),
     ...(Array.isArray(record.ids) ? { ids: strings(record.ids, 100) } : {}),
     ...opt('count', count === undefined ? undefined : Math.floor(count)),
     ...opt('count2', count2 === undefined ? undefined : Math.floor(count2)),

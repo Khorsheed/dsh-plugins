@@ -29,6 +29,7 @@ import libraryRemote from '@khorsheed/dsh-library/remote'
 import type { LibraryPaneInjected } from './contract.ts'
 import { LIBRARY_TAB_ID, libraryDefinition } from './definition.tsx'
 import { LibraryPane } from './LibraryPane.tsx'
+import { LibraryBindChip, type LibraryBindInjected } from './bind/BindChip.tsx'
 import { createLibraryStore } from './store.ts'
 import { en, NS, zh } from './locales.ts'
 import {
@@ -203,6 +204,30 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     store: createLibraryStore,
     inject: face,
   }, LibraryPane)), 'library: sidebar tab body')
+
+  // The session header's library chip: shown only in sessions that hold the
+  // library tools (the strict half of the criterion). The header seat is
+  // declared by ui-conversation, which this package does not depend on —
+  // without it the inject never fires.
+  const headerSlots = ctx.slots as unknown as {
+    inject: (key: string, callback: () => () => void) => () => void
+    register: (options: Record<string, unknown>, component: unknown) => () => void
+  }
+  const bindFace = (sessionId: SessionId): LibraryBindInjected => ({
+    offered: () => tabVisibility.grants(sessionId),
+    subscribe: listener => tabVisibility.subscribe(listener),
+    boundTarget: () => remote.boundTarget(sessionId),
+    bindTarget: binding => remote.bindTarget(sessionId, { binding }),
+    listProjects: () => remote.listProjects(),
+  })
+  ctx.effect(() => headerSlots.inject('conversation.session.header.actions', () => headerSlots.register({
+    name: 'conversation.session.header.actions',
+    id: 'library-bind',
+    // After room's invite (30) and canvas's work chip (40).
+    order: 50,
+    locale: NS,
+    inject: bindFace,
+  }, LibraryBindChip)), 'library: session binding chip')
 
   return async () => {
     for (const dispose of disposers.reverse()) await dispose()

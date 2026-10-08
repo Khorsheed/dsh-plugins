@@ -491,6 +491,8 @@ export interface LibraryEvent {
   readonly bookId?: string
   /** cards.recorded: where they came from (the 「教练最近记下」 filter). */
   readonly source?: LibraryCardSourceType
+  /** cards.recorded from a chat: the session that noted them (its sidebar toasts them). */
+  readonly session?: string
   /** cards.recorded: the card ids, so a toast can undo them. */
   readonly ids?: readonly string[]
   /** Small numeric summaries (nodes / questions / added / merged). */

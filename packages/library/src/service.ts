@@ -700,6 +700,7 @@ export class LibraryService {
         title: touched.map(card => card.term).join('、').slice(0, 300),
         ids: touched.map(card => card.id),
         ...(sourceType === undefined ? {} : { source: sourceType }),
+        ...(sourceType === 'chat' && inputs[0]?.source.ref !== undefined ? { session: inputs[0].source.ref } : {}),
         ...(defaultBookId === undefined ? {} : { bookId: defaultBookId }),
         count: added.length,
         count2: merged.length,

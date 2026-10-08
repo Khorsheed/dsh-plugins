@@ -116,6 +116,20 @@ export class LibraryTabVisibility {
     return group.rows.some(row => row.moduleName === LIBRARY_TOOL_ROW_MODULE && row.enabled !== false)
   }
 
+  /**
+   * The binding chip's stricter question: does THIS session hold the library
+   * tools? Unlike the tab (fail-open), an unanswered inventory or an unknown
+   * preset answers no — a chip in every session's header is noise, and the
+   * tab stays reachable either way.
+   */
+  grants(sessionId: SessionId | undefined): boolean {
+    if (this.composition === null || sessionId === undefined) return false
+    if (this.composition.entries?.some(row => row.moduleName === LIBRARY_TOOL_ROW_MODULE && row.enabled === true) === true) return true
+    const preset = presetOf(this.ctx.sessions.list.getSnapshot().byId[sessionId])
+    const group = preset === undefined ? undefined : this.composition.agentPresets?.find(candidate => candidate.id === preset)
+    return group?.rows.some(row => row.moduleName === LIBRARY_TOOL_ROW_MODULE && row.enabled !== false) === true
+  }
+
   /** Subscribe to criterion-input changes (session switches, the inventory answer). */
   subscribe(listener: () => void): () => void {
     this.listeners.add(listener)

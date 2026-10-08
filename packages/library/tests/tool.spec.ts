@@ -86,6 +86,8 @@ describe('binding defaults', () => {
     expect(recorded.added[0]?.bookId).toBeDefined()
     // A chat card remembers the session it came from.
     expect(recorded.added[0]?.sources[0]?.ref).toBe('s_learn')
+    const records = await service.recentRecords({})
+    expect(records.records[0]?.session).toBe('s_learn')
     const read = (await call('library_read', { what: 'cards', query: '不应期' })) as { cards: { term: string; weakness: number; sources: string[] }[] }
     expect(read.cards[0]).toMatchObject({ term: '不应期', weakness: 1, sources: ['chat: 说老是记混'] })
   })

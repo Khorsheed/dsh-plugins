@@ -18,8 +18,9 @@
  *
  * @module @khorsheed/dsh-library/client/LibraryPane
  */
-import type { ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { PanelRoot } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
+import type { LibraryEvent } from '../types.ts'
 import type { LibraryPaneProps } from './contract.ts'
 import { BookView, NodeView } from './views/book.tsx'
 import { CardsView } from './views/cards.tsx'
@@ -45,6 +46,70 @@ export function LibraryPane(props: LibraryPaneProps): ReactNode {
           case 'review': return <ReviewView p={props} {...(route.projectId === undefined ? {} : { projectId: route.projectId })} />
         }
       })()}
+      <RecordToast p={props} />
     </PanelRoot>
+  )
+}
+
+/** How often the toast looks for new notes from this session. */
+const TOAST_POLL_MS = 5000
+/** How long a toast stays up. */
+const TOAST_MS = 10_000
+
+/**
+ * 「已记下」: when the coach notes a weak point from THIS session, say so in
+ * the sidebar with an undo — the chat line says it too, this is where the
+ * undo lives. Only notes made after the pane opened are toasted.
+ */
+function RecordToast({ p }: { p: LibraryPaneProps }): ReactNode {
+  const { t, actions } = p
+  const since = useRef(new Date().toISOString())
+  const seen = useRef(new Set<string>())
+  const [record, setRecord] = useState<(LibraryEvent & { projectId: string }) | undefined>()
+  const [undone, setUndone] = useState(false)
+
+  useEffect(() => {
+    const poll = (): void => {
+      if (document.visibilityState !== 'visible') return
+      void p.recentRecords().then(result => {
+        if (!result.ok) return
+        const fresh = result.value.records.find(entry =>
+          entry.session === String(p.sessionId) && entry.at > since.current && !seen.current.has(entry.at))
+        if (fresh === undefined) return
+        seen.current.add(fresh.at)
+        setUndone(false)
+        setRecord(fresh)
+        actions.refresh()
+      }, () => {})
+    }
+    const timer = setInterval(poll, TOAST_POLL_MS)
+    return () => { clearInterval(timer) }
+  }, [p.sessionId])
+
+  useEffect(() => {
+    if (record === undefined) return
+    const timer = setTimeout(() => { setRecord(undefined) }, undone ? 2000 : TOAST_MS)
+    return () => { clearTimeout(timer) }
+  }, [record, undone])
+
+  if (record === undefined) return null
+  return (
+    <div className={css.toast} role="status">
+      <span className={css.toastText}>{undone ? t('toast.undone') : t('toast.recorded', { terms: record.title ?? '' })}</span>
+      {!undone && (
+        <button
+          type="button"
+          className={css.toastAction}
+          onClick={() => {
+            void p.undoCards(record.projectId, record.ids ?? [], record.at).then(result => {
+              if (result.ok && result.value.ok) {
+                setUndone(true)
+                actions.refresh()
+              }
+            })
+          }}
+        >{t('toast.undo')}</button>
+      )}
+    </div>
   )
 }
