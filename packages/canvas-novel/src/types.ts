@@ -43,6 +43,9 @@ export const NOVEL_GENRE_ID = 'novel'
 /** The genre's own top face (故事, the story log), as `faces.view` names it. */
 export const NOVEL_STORY_FACE = 'story'
 
+/** The genre's lead face (规划: the one-page outline and the volume roadmap), as `faces.lead` names it. */
+export const NOVEL_PLAN_FACE = 'plan'
+
 /** A canvas id from untrusted input (the canvas's own id rule), or undefined. */
 export function normalizeWorkId(id: unknown): string | undefined {
   return typeof id === 'string' && /^canvas_[a-z0-9]{8,40}$/.test(id) ? id : undefined
@@ -99,9 +102,78 @@ export const SLEEP_THRESHOLD = { starred: 4, normal: 6 } as const
 /** Starred foreshadows past this count get a soft hint (星标太多就不算重点了). */
 export const STAR_SOFT_LIMIT = 5
 
-/** Whether a foreshadow has slept past its threshold. */
-export function isOverdue(view: { readonly starred?: boolean; readonly slept?: number }): boolean {
-  return (view.slept ?? 0) >= (view.starred === true ? SLEEP_THRESHOLD.starred : SLEEP_THRESHOLD.normal)
+/** Chapters a 本章内 hook may go untouched before the ledger flags it. */
+export const CHAPTER_HOOK_THRESHOLD = 2
+
+/**
+ * Whether a foreshadow has slept past its threshold. A core suspense (one
+ * set to reveal in a later volume) is never overdue by chapter count: its
+ * pacing is the volume nudge's ({@link coreSuspenseNudge}); a 本章内 hook is
+ * flagged as soon as the next chapter passes it by.
+ */
+export function isOverdue(view: { readonly starred?: boolean; readonly slept?: number; readonly reveal?: RevealTiming }): boolean {
+  if (view.reveal !== undefined && view.reveal.kind !== 'chapter') return false
+  const threshold = view.reveal?.kind === 'chapter'
+    ? CHAPTER_HOOK_THRESHOLD
+    : view.starred === true ? SLEEP_THRESHOLD.starred : SLEEP_THRESHOLD.normal
+  return (view.slept ?? 0) >= threshold
+}
+
+/* --------------------------------------------------------------- reveal timing */
+
+/**
+ * When a foreshadow is meant to pay off: within its chapter (a hook), in a
+ * given volume (1-based), or at the very end (the last volume). Read off the
+ * card's free-text 揭晓时机 field, so the user types it the way they say it.
+ */
+export type RevealTiming =
+  | { readonly kind: 'chapter' }
+  | { readonly kind: 'volume'; readonly index: number }
+  | { readonly kind: 'final' }
+
+const CN_DIGITS: Readonly<Record<string, number>> = { 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10 }
+
+/** A small Chinese or Arabic numeral (一…九十九, 1…99), or undefined. */
+function smallNumber(text: string): number | undefined {
+  if (/^\d{1,2}$/.test(text)) return Number(text)
+  if (!/^[一二两三四五六七八九十]{1,3}$/.test(text)) return undefined
+  if (text === '十') return 10
+  const ten = text.indexOf('十')
+  if (ten === -1) return text.length === 1 ? CN_DIGITS[text] : undefined
+  const tens = ten === 0 ? 1 : CN_DIGITS[text[0]!] ?? 0
+  const ones = ten === text.length - 1 ? 0 : CN_DIGITS[text[ten + 1]!] ?? 0
+  return tens * 10 + ones
+}
+
+/** Parse a 揭晓时机 field: 本章内 / 卷三 / 第3卷 / 终局 (anything else reads as unset). */
+export function parseReveal(raw: unknown): RevealTiming | undefined {
+  if (typeof raw !== 'string') return undefined
+  const text = raw.replace(/\s+/g, '')
+  if (text === '') return undefined
+  if (/本章|当章/.test(text)) return { kind: 'chapter' }
+  if (/终局|结局|全书末|最后一卷/.test(text)) return { kind: 'final' }
+  const match = /(?:第)?([一二两三四五六七八九十\d]{1,3})卷|卷([一二两三四五六七八九十\d]{1,3})/.exec(text)
+  const index = match === null ? undefined : smallNumber(match[1] ?? match[2] ?? '')
+  return index === undefined || index < 1 ? undefined : { kind: 'volume', index }
+}
+
+/** The Chinese numeral for a volume index (1 → 一), for model- and user-facing text. */
+export function volumeNumeral(index: number): string {
+  const digits = ['', '一', '二', '三', '四', '五', '六', '七', '八', '九']
+  if (index < 10) return digits[index] ?? String(index)
+  if (index < 100) return `${index >= 20 ? digits[Math.floor(index / 10)] : ''}十${digits[index % 10]}`
+  return String(index)
+}
+
+/** The volume a reveal timing lands in, given how many volumes the outline plans (final → the last). */
+export function revealVolume(reveal: RevealTiming | undefined, volumeCount: number): number | undefined {
+  if (reveal === undefined || reveal.kind === 'chapter') return undefined
+  return reveal.kind === 'final' ? (volumeCount > 0 ? volumeCount : undefined) : reveal.index
+}
+
+/** A reveal timing as text: 本章内 / 卷三 / 终局. */
+export function revealText(reveal: RevealTiming): string {
+  return reveal.kind === 'chapter' ? '本章内' : reveal.kind === 'final' ? '终局' : `卷${volumeNumeral(reveal.index)}`
 }
 
 /** A character's where-and-now (当前态), refreshed by each 对账. */
@@ -422,6 +494,8 @@ export interface ChapterPlan {
   /** The POV character (one of the cast). */
   readonly pov?: string
   readonly hook?: string
+  /** 目标字数: how long the chapter is meant to run — what the plan's contents are budgeted against. */
+  readonly words?: number
 }
 
 /**
@@ -442,6 +516,8 @@ export interface ChapterRecord {
   /** Store-generated file name, `第{n}章.md` — free-form names are never stored. */
   readonly file: string
   readonly phase: ChapterPhase
+  /** The outline volume this chapter belongs to (its id), set when it is created or re-planned into one. */
+  readonly volume?: string
   readonly plan?: ChapterPlan
   /** The user's ✓确认计划 timestamp (the plan gate's durable fact; absent = unconfirmed). */
   readonly planConfirmedAt?: string
@@ -553,6 +629,8 @@ export function normalizePlan(raw: unknown): ChapterPlan | undefined {
   const conflict = cleanText(record['conflict'], 300)
   const highlight = cleanText(record['highlight'], 300)
   const hook = cleanText(record['hook'], 300)
+  const wordsRaw = cleanNumber(typeof record['words'] === 'string' ? Number(record['words']) : record['words'])
+  const words = wordsRaw === undefined || wordsRaw < 200 ? undefined : Math.min(Math.round(wordsRaw), 50_000)
   const beats = rowsOf(record['beats'], 12).map((row): PlanBeat | undefined => {
     const text = cleanText(row['text'], 200)
     if (text === undefined) return undefined
@@ -604,6 +682,7 @@ export function normalizePlan(raw: unknown): ChapterPlan | undefined {
     ...(infoGaps.length === 0 ? {} : { infoGaps }),
     ...(pov === undefined ? {} : { pov }),
     ...(hook === undefined ? {} : { hook }),
+    ...(words === undefined ? {} : { words }),
   }
 }
 
@@ -631,12 +710,14 @@ export function normalizeChapter(raw: unknown): ChapterRecord | undefined {
   const delivery = normalizeDelivery(record['delivery'])
   const bodyHash = cleanText(record['bodyHash'], 40)
   const settings = cleanStringList(record['settings'], 200)
+  const volume = cleanText(record['volume'], 40)
   return {
     n,
     seq: cleanNumber(record['seq']) ?? n,
     title,
     file,
     phase: record['phase'] === 'reviewed' || record['phase'] === 'extracted' ? record['phase'] : 'planning',
+    ...(volume === undefined ? {} : { volume }),
     ...(plan === undefined ? {} : { plan }),
     ...(planConfirmedAt === undefined ? {} : { planConfirmedAt }),
     ...(record['byUser'] === true ? { byUser: true as const } : {}),
@@ -692,6 +773,10 @@ export interface ForeshadowView {
    */
   readonly slept?: number
   readonly cardStatus: NovelCardStatus
+  /** When it is meant to pay off (the card's 揭晓时机), when set. */
+  readonly reveal?: RevealTiming
+  /** Every chapter a reconciled mention touched it in, ascending (its 已放线索). */
+  readonly mentionChapters?: readonly number[]
 }
 
 /** A character card, its multiline fields split into lines, plus the sidecar's 当前态. */
@@ -704,6 +789,10 @@ export interface CharacterView {
   readonly want?: string
   readonly lack?: string
   readonly wound?: string
+  /** 抱负: the life they reach for beyond this story's goal. */
+  readonly ambition?: string
+  /** 价值观: what they will and will not do. */
+  readonly values?: string
   readonly appearance?: string
   readonly voice?: string
   readonly knows: readonly string[]
@@ -1172,7 +1261,7 @@ export function normalizePendingItem(raw: unknown): PendingItem | undefined {
 /* --------------------------------------------------------------- outcomes */
 
 /** The store's failure codes (the canvas vocabulary, plus the chapter gates'). */
-export type NovelError = 'invalid-name' | 'missing' | 'io' | 'stale' | 'denied' | 'not-reviewed' | 'not-extracted' | 'no-workspace' | 'duplicate' | 'plan-unconfirmed' | 'unknown-foreshadow' | 'body-exists' | 'plan-on-draft'
+export type NovelError = 'invalid-name' | 'missing' | 'io' | 'stale' | 'denied' | 'not-reviewed' | 'not-extracted' | 'no-workspace' | 'duplicate' | 'plan-unconfirmed' | 'unknown-foreshadow' | 'body-exists' | 'plan-on-draft' | 'unknown-protagonist' | 'unknown-volume' | 'no-proposal'
 
 /* ---------------------------------------------- wire-boundary contracts */
 
@@ -1185,6 +1274,8 @@ export interface WriteChapterRequest {
   readonly n?: number
   readonly title: string
   readonly plan?: unknown
+  /** The outline volume to file the chapter under: its id, title, or number (卷二 / 2). Omitted: the previous chapter's. */
+  readonly volume?: string
   /** Insert position (defaults to n — 插章 gives an explicit seq, proposal §2). */
   readonly seq?: number
   /**
@@ -1484,6 +1575,8 @@ export interface NovelChapterResult {
   readonly names: Readonly<Record<string, string>>
   /** The manuscript's workspace-relative path (`<title>/第n章.md`). */
   readonly file?: string
+  /** The chapter's 目标字数: its plan's, else the outline's per-chapter default. */
+  readonly targetWords?: number
 }
 
 /** A gesture's receipt on the wire. */
@@ -1523,4 +1616,336 @@ export interface NovelStarRequest extends NovelCardRequest {
 /** The person's edit of a character's 此刻 (the whole state; empty parts clear). */
 export interface NovelStateRequest extends NovelCardRequest {
   readonly state: CurrentState
+}
+
+/* --------------------------------------------------------------- outline (规划) */
+
+/** 篇幅: how long the book is meant to run — every number an estimate the user can move. */
+export interface OutlineLength {
+  /** Target total characters. */
+  readonly words?: number
+  readonly volumes?: number
+  readonly chapters?: number
+  /** The default 目标字数 of one chapter's plan. */
+  readonly perChapter?: number
+}
+
+/** The one-page outline (一页纸). The protagonist's own fields live on their character card. */
+export interface OutlineSheet {
+  /** 一句话主线: who, wants what, what stands in the way, at what cost. */
+  readonly logline?: string
+  /** 核心冲突: the protagonist's want against the force that blocks it. */
+  readonly conflict?: string
+  /** The protagonist's character card id (name, identity, goal, ambition, values … are that card's). */
+  readonly protagonist?: string
+  /** 成长弧线: who they are at the start → who they become. */
+  readonly arc?: string
+  readonly theme?: string
+  /** 类型与基调. */
+  readonly tone?: string
+  /** 结局方向. */
+  readonly ending?: string
+  readonly length?: OutlineLength
+}
+
+/** One volume (卷) of the roadmap: only as fine as an outline can know — about how many chapters, what it achieves, where it lands. */
+export interface OutlineVolume {
+  /** Stable id (`v1`, `v2` …): chapters point at it, so a rename moves nothing. */
+  readonly id: string
+  readonly title: string
+  /** About how many chapters (an estimate). */
+  readonly chapters?: number
+  /** 这卷要完成什么. */
+  readonly goal?: string
+  /** 卷末落点. */
+  readonly landing?: string
+}
+
+/** A near chapter's one line, sketched ahead of its plan (规划某章时顺手提议的下一两章). */
+export interface ChapterSketch {
+  readonly n: number
+  readonly line: string
+}
+
+/** What the model proposes for the outline; nothing in it counts until the user adopts it. */
+export interface OutlineProposal {
+  /** The sheet fields it changes (absent ones keep). */
+  readonly sheet?: OutlineSheet
+  /** The whole volume list, when it proposes one. */
+  readonly volumes?: readonly OutlineVolume[]
+  /** Sketches it adds or replaces, by chapter number. */
+  readonly sketches?: readonly ChapterSketch[]
+  readonly rationale?: string
+  readonly at: string
+}
+
+/** One adopted revision of the outline. */
+export interface OutlineRevision {
+  readonly revision: number
+  readonly at: string
+  readonly summary: string
+}
+
+/** `outline.json`: the adopted outline, the one pending proposal, and its history. */
+export interface OutlineDoc {
+  readonly version: 1
+  readonly sheet: OutlineSheet
+  readonly volumes: readonly OutlineVolume[]
+  readonly sketches: readonly ChapterSketch[]
+  /** 0 until the user adopts a first version. */
+  readonly revision: number
+  readonly proposal?: OutlineProposal
+  readonly history: readonly OutlineRevision[]
+}
+
+/** The empty outline a work starts with. */
+export function emptyOutline(): OutlineDoc {
+  return { version: 1, sheet: {}, volumes: [], sketches: [], revision: 0, history: [] }
+}
+
+/** A bounded positive integer from a number or numeric string, or undefined. */
+function countOf(raw: unknown, max: number): number | undefined {
+  const value = cleanNumber(typeof raw === 'string' ? Number(raw.replace(/[,，\s万]/g, '')) * (/万/.test(raw) ? 10_000 : 1) : raw)
+  return value === undefined || value <= 0 ? undefined : Math.min(Math.round(value), max)
+}
+
+/** Tolerant read of 篇幅. */
+export function normalizeLength(raw: unknown): OutlineLength | undefined {
+  if (typeof raw !== 'object' || raw === null) return undefined
+  const record = raw as Record<string, unknown>
+  const words = countOf(record['words'], 50_000_000)
+  const volumes = countOf(record['volumes'], 99)
+  const chapters = countOf(record['chapters'], 9_999)
+  const perChapter = countOf(record['perChapter'], 50_000)
+  const length = {
+    ...(words === undefined ? {} : { words }),
+    ...(volumes === undefined ? {} : { volumes }),
+    ...(chapters === undefined ? {} : { chapters }),
+    ...(perChapter === undefined ? {} : { perChapter }),
+  }
+  return Object.keys(length).length === 0 ? undefined : length
+}
+
+/** Tolerant read of the sheet (unknown keys and empty values dropped). */
+export function normalizeSheet(raw: unknown): OutlineSheet {
+  if (typeof raw !== 'object' || raw === null) return {}
+  const record = raw as Record<string, unknown>
+  const text = (key: string, max: number): Record<string, string> => {
+    const value = cleanText(record[key], max)
+    return value === undefined ? {} : { [key]: value }
+  }
+  const length = normalizeLength(record['length'])
+  return {
+    ...text('logline', 400), ...text('conflict', 300), ...text('protagonist', 80), ...text('arc', 300),
+    ...text('theme', 300), ...text('tone', 300), ...text('ending', 400),
+    ...(length === undefined ? {} : { length }),
+  }
+}
+
+/** Tolerant read of a volume list (rows without a title dropped; ids kept when well-formed). */
+export function normalizeVolumes(raw: unknown): OutlineVolume[] {
+  return rowsOf(raw, 40).map((row): OutlineVolume | undefined => {
+    const title = cleanText(row['title'], 60)
+    if (title === undefined) return undefined
+    const id = typeof row['id'] === 'string' && /^v\d{1,3}$/.test(row['id']) ? row['id'] : ''
+    const chapters = countOf(row['chapters'], 999)
+    const goal = cleanText(row['goal'], 300)
+    const landing = cleanText(row['landing'], 300)
+    return {
+      id, title,
+      ...(chapters === undefined ? {} : { chapters }),
+      ...(goal === undefined ? {} : { goal }),
+      ...(landing === undefined ? {} : { landing }),
+    }
+  }).filter((volume): volume is OutlineVolume => volume !== undefined)
+}
+
+/** Tolerant read of sketches (one per chapter number, the last one wins). */
+export function normalizeSketches(raw: unknown): ChapterSketch[] {
+  const byN = new Map<number, string>()
+  for (const row of rowsOf(raw, 40)) {
+    const n = countOf(row['n'], 9_999)
+    const line = cleanText(row['line'], 200)
+    if (n !== undefined && line !== undefined) byN.set(n, line)
+  }
+  return [...byN].sort((a, b) => a[0] - b[0]).map(([n, line]) => ({ n, line }))
+}
+
+/** Tolerant read of `outline.json`; a foreign shape reads as undefined (never rewritten from a read). */
+export function normalizeOutline(raw: unknown): OutlineDoc | undefined {
+  if (typeof raw !== 'object' || raw === null) return undefined
+  const record = raw as Record<string, unknown>
+  if (record['version'] !== 1) return undefined
+  const volumes = normalizeVolumes(record['volumes']).map((volume, index) => volume.id === '' ? { ...volume, id: `v${index + 1}` } : volume)
+  let proposal: OutlineProposal | undefined
+  const rawProposal = record['proposal']
+  if (typeof rawProposal === 'object' && rawProposal !== null) {
+    const p = rawProposal as Record<string, unknown>
+    const sheet = normalizeSheet(p['sheet'])
+    const proposedVolumes = Array.isArray(p['volumes']) ? normalizeVolumes(p['volumes']) : undefined
+    const sketches = normalizeSketches(p['sketches'])
+    const rationale = cleanText(p['rationale'], 500)
+    if (Object.keys(sheet).length > 0 || proposedVolumes !== undefined || sketches.length > 0) {
+      proposal = {
+        ...(Object.keys(sheet).length === 0 ? {} : { sheet }),
+        ...(proposedVolumes === undefined ? {} : { volumes: proposedVolumes }),
+        ...(sketches.length === 0 ? {} : { sketches }),
+        ...(rationale === undefined ? {} : { rationale }),
+        at: cleanText(p['at'], 40) ?? new Date().toISOString(),
+      }
+    }
+  }
+  const history = rowsOf(record['history'], 200).map((row): OutlineRevision | undefined => {
+    const revision = countOf(row['revision'], 100_000)
+    const at = cleanText(row['at'], 40)
+    const summary = cleanText(row['summary'], 200)
+    return revision === undefined || at === undefined || summary === undefined ? undefined : { revision, at, summary }
+  }).filter((row): row is OutlineRevision => row !== undefined)
+  return {
+    version: 1,
+    sheet: normalizeSheet(record['sheet']),
+    volumes,
+    sketches: normalizeSketches(record['sketches']),
+    revision: countOf(record['revision'], 100_000) ?? 0,
+    ...(proposal === undefined ? {} : { proposal }),
+    history,
+  }
+}
+
+/**
+ * Where the book stands against its outline: the volume the newest chapter
+ * belongs to (1-based), and how many chapters that volume already holds.
+ * Chapters without a volume belong to the first one.
+ */
+export function volumePosition(
+  volumes: readonly OutlineVolume[],
+  chapters: readonly ChapterRecord[],
+  at?: ChapterRecord,
+): { readonly index: number; readonly volume: OutlineVolume; readonly written: number } | undefined {
+  if (volumes.length === 0) return undefined
+  const ordered = [...chapters].sort((a, b) => a.seq - b.seq || a.n - b.n)
+  const target = at ?? ordered[ordered.length - 1]
+  const volumeOf = (chapter: ChapterRecord): number => {
+    const index = volumes.findIndex(volume => volume.id === chapter.volume)
+    return index === -1 ? 0 : index
+  }
+  const index = target === undefined ? 0 : volumeOf(target)
+  const written = ordered.filter(chapter => volumeOf(chapter) === index && chapter.phase !== 'planning').length
+  return { index: index + 1, volume: volumes[index]!, written }
+}
+
+/**
+ * The pacing line for one core suspense (a foreshadow set to reveal in a
+ * volume) at the current volume, or undefined when it has no volume to
+ * reveal in. Never a count of chapters asleep: it may be hinted any time,
+ * revealed only in its volume, and is nudged softly near a volume's end it
+ * has not been touched in, or when its reveal volume arrives under-seeded.
+ * @param view - the foreshadow.
+ * @param volumes - the outline's volumes.
+ * @param chapters - the chapter index.
+ */
+export function coreSuspenseNudge(
+  view: ForeshadowView,
+  volumes: readonly OutlineVolume[],
+  chapters: readonly ChapterRecord[],
+): { readonly text: string; readonly nudge: boolean } | undefined {
+  const reveal = revealVolume(view.reveal, volumes.length)
+  if (reveal === undefined || view.state === '已揭晓' || view.state === '已放弃') return undefined
+  const position = volumePosition(volumes, chapters)
+  if (position === undefined) return { text: `定在卷${volumeNumeral(reveal)}揭晓`, nudge: false }
+  const here = position.index
+  const touches = view.mentionChapters ?? []
+  if (here < reveal) {
+    const inVolume = chapters.filter(chapter => (volumes.findIndex(volume => volume.id === chapter.volume) + 1 || 1) === here).map(chapter => chapter.n)
+    const touchedHere = touches.some(n => inVolume.includes(n))
+    const nearEnd = position.volume.chapters !== undefined && position.written >= position.volume.chapters - 2
+    const base = `定在卷${volumeNumeral(reveal)}揭晓，现在卷${volumeNumeral(here)}：可以暗示，不能揭`
+    return nearEnd && !touchedHere
+      ? { text: `${base}；本卷快写完了还没碰过它，可以考虑暗示一次`, nudge: true }
+      : { text: base, nudge: false }
+  }
+  if (here === reveal) {
+    return touches.length < 2
+      ? { text: `本卷揭晓；揭晓前只碰过 ${touches.length} 次，再暗示一两次读者回头看才对得上`, nudge: true }
+      : { text: `本卷揭晓（之前碰过 ${touches.length} 次）`, nudge: false }
+  }
+  return { text: `原定卷${volumeNumeral(reveal)}揭晓，已经过了——揭晓它，或把揭晓时机改晚`, nudge: true }
+}
+
+/** A volume named by its id (v2), title, or number (卷二 / 第2卷 / 2), or undefined. */
+export function parseVolumeToken(token: string, volumes: readonly OutlineVolume[]): string | undefined {
+  const text = token.trim()
+  const byId = volumes.find(volume => volume.id === text)
+  if (byId !== undefined) return byId.id
+  const byTitle = volumes.find(volume => volume.title === text || text.endsWith(volume.title) || volume.title.endsWith(text))
+  if (byTitle !== undefined) return byTitle.id
+  const parsed = parseReveal(/卷/.test(text) ? text : `卷${text}`)
+  const index = parsed?.kind === 'volume' ? parsed.index : undefined
+  return index === undefined ? undefined : volumes[index - 1]?.id
+}
+
+/* ------------------------------------------------------------ outline (wire) */
+
+/** The protagonist as the 规划 page shows them: their card's steering fields. */
+export interface OutlineHero {
+  readonly cardId: string
+  readonly ref: string
+  readonly name: string
+  readonly identity?: string
+  readonly want?: string
+  readonly ambition?: string
+  readonly values?: string
+  readonly lack?: string
+  readonly wound?: string
+}
+
+/** One core suspense on the 规划 page: the question, when it pays off, what the text has done to it, and its pacing line. */
+export interface OutlineCore {
+  readonly cardId: string
+  readonly ref: string
+  readonly question: string
+  readonly state: ForeshadowState
+  readonly starred: boolean
+  /** 卷三 / 终局. */
+  readonly reveal: string
+  /** The reveal volume (1-based), when the outline has that many. */
+  readonly revealVolume?: number
+  /** Every reconciled touch, oldest first (已放的线索). */
+  readonly touches: readonly { readonly chapter: number; readonly kind: MentionEntry['kind']; readonly note?: string }[]
+  readonly line: string
+  readonly nudge: boolean
+}
+
+/** The 规划 page's read. */
+export interface NovelOutlineResult {
+  readonly ok: boolean
+  readonly error?: NovelError
+  readonly outline: OutlineDoc
+  /** The adopted protagonist, and the proposed one when the proposal changes it. */
+  readonly hero?: OutlineHero
+  readonly proposedHero?: OutlineHero
+  readonly chapters: readonly ChapterRow[]
+  readonly cores: readonly OutlineCore[]
+}
+
+/** The person's decision on the outline proposal. */
+export interface NovelOutlineDecideRequest extends NovelWorkRequest {
+  readonly action: 'accept' | 'discard'
+}
+
+/* ------------------------------------------------------------- budget (字数) */
+
+/** Characters one 走向 beat takes, low and high (the plan's budget arithmetic). */
+export const WORDS_PER_BEAT = { low: 750, high: 1000 } as const
+
+/** The 目标字数 a chapter plans against: its own, else the outline's per-chapter default. */
+export function targetWordsOf(chapter: ChapterRecord, outline: OutlineDoc | undefined): number | undefined {
+  return chapter.plan?.words ?? outline?.sheet.length?.perChapter
+}
+
+/** How much one chapter of `words` holds: beats (low–high), foreshadow ops, cast. */
+export function capacityOf(words: number): { readonly beats: readonly [number, number]; readonly ops: number; readonly cast: number } {
+  const high = Math.max(2, Math.round(words / WORDS_PER_BEAT.low))
+  const low = Math.max(1, Math.min(high, Math.round(words / WORDS_PER_BEAT.high)))
+  return { beats: [low, high], ops: words <= 4000 ? 2 : 3, cast: words <= 4000 ? 4 : 6 }
 }

@@ -106,6 +106,7 @@ export function ChapterReader(props: NovelSurfaceProps & {
             chapter={chapter}
             phase={phase}
             names={view.names}
+            {...(view.targetWords === undefined ? {} : { words: view.targetWords })}
             canConfirm={sessionId !== undefined && phase === 'planning'}
             busy={busy}
             onConfirm={() => { void gesture('confirmPlan') }}

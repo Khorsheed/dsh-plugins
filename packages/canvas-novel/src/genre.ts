@@ -10,7 +10,7 @@
  *
  * @module @khorsheed/dsh-canvas-novel
  */
-import { NOVEL_GENRE_ID, NOVEL_STORY_FACE, RELATION_TYPES } from './types.ts'
+import { NOVEL_GENRE_ID, NOVEL_PLAN_FACE, NOVEL_STORY_FACE, RELATION_TYPES } from './types.ts'
 
 /** One field of a seeded category's card type (the canvas `FieldDef` shape). */
 interface GenreField {
@@ -47,10 +47,11 @@ export interface NovelGenreDefinition {
   /** The chapters are this canvas's 成稿: the canvas renders the genre's chapter book there. */
   readonly ownsManuscripts: true
   /**
-   * The top faces read 章节 · 设定 · 故事: the book, the cards, and the story
-   * log as the genre's own face (keyed `novel:story`).
+   * The top faces read 规划 · 章节 · 设定 · 故事: the outline as the lead
+   * face (keyed `novel:plan`), the book, the cards, and the story log as the
+   * genre's own face (keyed `novel:story`).
    */
-  readonly faces: { readonly view: string }
+  readonly faces: { readonly view: string; readonly lead: string }
   /** canvas_read / canvas_write hand the role categories and the chapters to the engine. */
   readonly agent?: NovelGenreAgent
 }
@@ -186,17 +187,17 @@ export const WORLD_KINDS: readonly string[] = ['地点', '势力', '道具', '�
 export const NOVEL_GENRE: NovelGenreDefinition = {
   id: NOVEL_GENRE_ID,
   label: '长篇小说',
-  version: 'novel@3',
+  version: 'novel@4',
   description: '人物、世界、原则与伏笔做成卡片；章节正文是工作区里的 md 文件，写完一章对一次账。',
   agentRow: NOVEL_AGENT_ROW,
   ownsManuscripts: true,
-  faces: { view: NOVEL_STORY_FACE },
+  faces: { view: NOVEL_STORY_FACE, lead: NOVEL_PLAN_FACE },
   categories: [
     {
       role: NOVEL_ROLES.character,
       label: '人物',
       definition: {
-        version: 2,
+        version: 3,
         layout: 'profile',
         fields: [
           { key: 'name', label: '名字', type: 'line', hint: '书里怎么称呼他', required: true, face: true },
@@ -204,6 +205,8 @@ export const NOVEL_GENRE: NovelGenreDefinition = {
           { key: 'want', label: '想要', type: 'line', hint: '他在追什么' },
           { key: 'lack', label: '缺失', type: 'line', hint: '他自己没看见的缺口' },
           { key: 'wound', label: '旧伤', type: 'line', hint: '让他成为现在这样的那件事' },
+          { key: 'ambition', label: '抱负', type: 'line', hint: '这个故事之外，他想过成什么样的一生' },
+          { key: 'values', label: '价值观', type: 'line', hint: '他坚持什么、绝不做什么' },
           { key: 'appearance', label: '外貌', type: 'text', hint: '读者第一眼看到的' },
           { key: 'voice', label: '说话方式', type: 'text', hint: '口头禅、语速、用词' },
           { key: 'knows', label: '知道的事', type: 'text', hint: '他已经知道、写他时可以用的事，一行一件' },
@@ -243,12 +246,13 @@ export const NOVEL_GENRE: NovelGenreDefinition = {
       role: NOVEL_ROLES.foreshadow,
       label: '伏笔',
       definition: {
-        version: 1,
+        version: 2,
         layout: 'entry',
         fields: [
           { key: 'question', label: '悬念', type: 'line', hint: '读者心里的那个问题', required: true, face: true },
           { key: 'status', label: '状态', type: 'select', options: ['未埋', '已埋', '推进中', '已揭晓', '已放弃'], hint: '整理章节时按正文自动更新；不再用这条伏笔时手动选「已放弃」', face: true },
           { key: 'plantedAt', label: '埋于第几章', type: 'number', hint: '第一次出现的章号' },
+          { key: 'reveal', label: '揭晓时机', type: 'line', hint: '本章内，或在哪一卷揭晓：卷二、卷三、终局' },
           { key: 'answer', label: '答案', type: 'text', hint: '揭晓时写下谜底' },
         ],
         example: { question: '父亲为什么不回家', status: '已埋', plantedAt: 1 },

@@ -17,7 +17,7 @@
  * @module @khorsheed/dsh-canvas-novel/client
  */
 import { useEffect, type ReactNode } from 'react'
-import { NOVEL_GENRE_ID, type EffectiveChapterPhase, type StoryLogResult } from '../types.ts'
+import { NOVEL_GENRE_ID, NOVEL_PLAN_FACE, type EffectiveChapterPhase, type StoryLogResult } from '../types.ts'
 import type { NovelCardOwnerProps, NovelSurfaceProps } from './contract.ts'
 import { chapterHeading } from './PendingList.tsx'
 import { errorKey, useNovelRead } from './use-novel.ts'
@@ -59,6 +59,7 @@ export function FaceLabel(props: NovelSurfaceProps & { readonly face: string; re
   if (props.board.genre?.id !== NOVEL_GENRE_ID) return props.label
   if (props.face === 'manuscripts') return props.t('face.chapters')
   if (props.face === 'board') return props.t('face.settings')
+  if (props.face === NOVEL_PLAN_FACE) return props.t('face.plan')
   return props.t('face.story')
 }
 

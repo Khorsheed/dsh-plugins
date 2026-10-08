@@ -10,16 +10,18 @@
  */
 import { useState, type ReactNode } from 'react'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
-import type { ChapterRecord, EffectiveChapterPhase, ForeshadowOp, PlanBeat } from '../types.ts'
+import { capacityOf, type ChapterRecord, type EffectiveChapterPhase, type ForeshadowOp, type PlanBeat } from '../types.ts'
 import css from './novel.module.css'
 
 const OP_KEYS = { 推进: 'plan.op.advance', 暗示: 'plan.op.hint', 新埋: 'plan.op.plant', 揭晓: 'plan.op.resolve' } as const
 const MARK_KEYS = { 转折: 'plan.mark.turn', 落点: 'plan.mark.land' } as const
 
 /** The plan block; the empty line when the chapter has no plan, nothing for the person's own draft (its 原稿 tag says so). */
-export function PlanBlock({ chapter, phase, names, canConfirm, busy, onConfirm, t }: {
+export function PlanBlock({ chapter, phase, names, words, canConfirm, busy, onConfirm, t }: {
   readonly chapter: ChapterRecord
   readonly phase: EffectiveChapterPhase
+  /** The chapter's 目标字数 (its plan's, else the outline's per-chapter default). */
+  readonly words?: number
   /** Display names of the card ids the plan uses. */
   readonly names: Readonly<Record<string, string>>
   readonly canConfirm: boolean
@@ -56,6 +58,7 @@ export function PlanBlock({ chapter, phase, names, canConfirm, busy, onConfirm, 
       </button>
       {open && (
         <div className={css.planBody}>
+          {words !== undefined && <Budget words={words} beats={plan.beats.length} actual={chapter.wordCount} t={t} />}
           <p className={css.gist}>{plan.summary}</p>
           <dl className={css.kv}>
             {plan.beats.length > 0 && (
@@ -173,5 +176,30 @@ function OpRow({ op, named, hit, t }: {
       </span>
       {hit !== undefined && <span className={css.res} data-hit={hit}>{t(hit ? 'plan.hit' : 'plan.opMiss')}</span>}
     </li>
+  )
+}
+
+/**
+ * The plan's word budget: the target, how many beats it holds, and — once
+ * the text is reconciled — the actual count beside it. Over the room it reads
+ * as a reminder, never a gate.
+ */
+function Budget({ words, beats, actual, t }: {
+  readonly words: number
+  readonly beats: number
+  readonly actual: number | undefined
+  readonly t: TranslateNS<'novel'>
+}): ReactNode {
+  const room = capacityOf(words)
+  const over = beats > room.beats[1]
+  return (
+    <div className={css.budget} data-over={over || undefined}>
+      <span>{actual === undefined
+        ? t('plan.words', { words: words.toLocaleString() })
+        : t('plan.actual', { words: words.toLocaleString(), actual: actual.toLocaleString() })}</span>
+      <span className={css.budgetSay}>{over
+        ? t('plan.over', { beats, words: words.toLocaleString(), high: room.beats[1] })
+        : t('plan.room', { low: room.beats[0], high: room.beats[1] })}</span>
+    </div>
   )
 }

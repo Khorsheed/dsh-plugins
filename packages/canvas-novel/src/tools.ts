@@ -21,10 +21,10 @@
 import { defineTool, type ToolDefinition } from '@deepseek-ai/dsh-tools'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { Session } from '@deepseek-ai/dsh-session'
-import { renderPlanBrief, renderWriteBrief } from './brief.ts'
+import { planOvershoots, renderOutlineRead, renderPlanBrief, renderWriteBrief, targetWordsOf } from './brief.ts'
 import { PHASE_NAMES, ROLE_NAMES, foreshadowFacts, relationFacts } from './genre-agent.ts'
 import type { NovelService } from './store.ts'
-import type { ChapterPlan, ExtractPayload, ImportDrop, PendingItem, ReviewAction } from './types.ts'
+import { volumeNumeral, volumePosition, type ChapterPlan, type ExtractPayload, type ImportDrop, type PendingItem, type ReviewAction } from './types.ts'
 
 /** The community tool-origin tag (the catalog's documented no-import path). */
 function tagOrigin<T extends object>(definition: T): T {
@@ -89,11 +89,12 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
     name: 'novel_read',
     description:
       'Read the bound novel canvas. what=brief renders a material pack (for=write/plan/extract); '
+      + 'outline reads the one-page outline, volumes and core suspenses; '
       + 'chapters/ledger/pending/chapter read the work (cards: canvas_read). Load the novel skill for the workflow.',
     parameters: {
       what: {
         type: 'string',
-        enum: ['brief', 'chapters', 'ledger', 'pending', 'chapter'],
+        enum: ['brief', 'outline', 'chapters', 'ledger', 'pending', 'chapter'],
         required: true,
         description: 'What to read.',
       },
@@ -131,6 +132,17 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
         }
         return renderWriteBrief(gathered.data)
       }
+      if (args.what === 'outline') {
+        const [outline, entries, chapters] = await Promise.all([
+          store.readOutline(workId), store.readEntries(workId), store.listChapters({ workId }),
+        ])
+        return renderOutlineRead(
+          outline,
+          entries?.characters.filter(view => view.cardStatus === 'kept') ?? [],
+          chapters.map(row => row.chapter),
+          entries?.foreshadows.filter(view => view.cardStatus === 'kept') ?? [],
+        )
+      }
       if (args.what === 'chapters') {
         const chapters = await store.listChapters({ workId })
         if (chapters.length === 0) return '还没有章节：novel_write(what=chapter, title=…[, plan=…]) 建第 1 章。'
@@ -167,7 +179,7 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
           ? `第 ${args.chapter} 章《${outcome.chapter!.title}》（${PHASE_NAMES[outcome.phase!] ?? outcome.phase}）：正文为空。`
           : `第 ${args.chapter} 章《${outcome.chapter!.title}》（${PHASE_NAMES[outcome.phase!] ?? outcome.phase}）：\n\n${outcome.body}`
       }
-      return '失败：what 只能是 brief/chapters/ledger/pending/chapter；卡片用 canvas_read。'
+      return '失败：what 只能是 brief/outline/chapters/ledger/pending/chapter；卡片用 canvas_read。'
     },
   })
 
@@ -175,10 +187,11 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
     name: 'novel_write',
     description:
       'Write the bound novel canvas. chapter creates (auto n=max+1) or re-plans; content writes the manuscript '
-      + 'first and refuses the registration when the fence refuses the write. review decides a pending item '
+      + 'first and refuses the registration when the fence refuses the write. outline proposes outline changes '
+      + '(the user adopts them on the 规划 page). review decides a pending item '
       + '(action=accept|discard). Cards: canvas_write. Load the novel skill first.',
     parameters: {
-      what: { type: 'string', enum: ['chapter', 'review'], required: true, description: 'What to write.' },
+      what: { type: 'string', enum: ['chapter', 'outline', 'review'], required: true, description: 'What to write.' },
       id: { type: 'string', description: 'review: the pending item id.' },
       title: { type: 'string', description: 'chapter: the title.' },
       content: { type: 'string', description: 'chapter: the manuscript body — written to the mounted workspace before registering.' },
@@ -195,10 +208,25 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
       },
       plan: {
         type: 'object', additionalProperties: true,
-        description: 'chapter: {summary (梗概, 2-3 sentences), beats[{at (time label), text, mark?: 转折|落点}], conflict, highlight (看点), '
+        description: 'chapter: {words (目标字数, default the outline\'s per-chapter length), summary (梗概, 2-3 sentences), beats[{at (time label), text, mark?: 转折|落点}], conflict, highlight (看点), '
           + 'foreshadowOps[{op: 推进|暗示|新埋|揭晓, id (the foreshadow\'s ref, e.g. #12 — never its question) | question (新埋 only), note (what it advances or plants)}], cast[{who (ref or name), role}], infoGaps[{who (ref or name), fact (what they learn this chapter — ideally a line of their 不知道)}], pov, hook}.',
       },
       action: { type: 'string', enum: ['accept', 'discard'], description: 'review: accept or discard the pending item.' },
+      volume: { type: 'string', description: 'chapter: the volume to file it under (id, title or 卷二); omit to stay in the previous chapter\'s.' },
+      sheet: {
+        type: 'object', additionalProperties: true,
+        description: 'outline: the one-page fields to change — logline, conflict (核心冲突), protagonist (a character card ref or name), '
+          + 'arc (成长弧线: start → end), theme, tone, ending, length {words, volumes, chapters, perChapter}.',
+      },
+      volumes: {
+        type: 'array', items: { type: 'object', additionalProperties: true },
+        description: 'outline: the whole volume list [{title, chapters (about how many), goal, landing (卷末落点)}] — volumes only, never every chapter.',
+      },
+      sketches: {
+        type: 'array', items: { type: 'object', additionalProperties: true },
+        description: 'outline: one-line sketches of the next one or two chapters [{n, line}].',
+      },
+      rationale: { type: 'string', description: 'outline: why, in a sentence.' },
     },
     output: {
       schema: { type: 'string' },
@@ -218,6 +246,7 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
           ...(args.content === undefined ? {} : { content: args.content }),
           ...(args.byUser === true ? { byUser: true } : {}),
           ...(args.replace === true ? { replace: true } : {}),
+          ...(args.volume === undefined ? {} : { volume: args.volume }),
         }, resolved.session)
         if (!outcome.ok) {
           if (outcome.error === 'missing' && args.chapter !== undefined) {
@@ -245,6 +274,9 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
             return `失败：第 ${args.chapter ?? '新'} 章的文件已经有正文（${outcome.existingLength ?? 0} 字），不会覆盖。`
               + '只登记已在工作区的稿子就不要带 content；确实要整章替换，先 novel_read(what=chapter) 读原文，改好后带 replace=true 重写全文。'
           }
+          if (outcome.error === 'unknown-volume') {
+            return `失败：大纲里没有「${args.volume ?? ''}」这一卷。novel_read(what=outline) 看分卷；要新开一卷先用 novel_write(what=outline, volumes=…) 提议。`
+          }
           if (outcome.error === 'no-workspace') {
             return '失败：这张画布还没有挂工作区，章节正文无处可写。请用户先在画布里挂一个工作区（正文写到 <工作区>/<画布标题>/第N章.md）。'
           }
@@ -252,10 +284,35 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
         }
         const chapter = outcome.chapter!
         const plan = chapter.plan as ChapterPlan | undefined
-        return plan === undefined
-          ? `已建第 ${chapter.n} 章《${chapter.title}》（画布 ${workId} · 规划中 · ${chapter.file}）。`
-          : `已登记第 ${chapter.n} 章《${chapter.title}》（画布 ${workId}）plan：走向 ${plan.beats.length} 拍 / 伏笔 ${plan.foreshadowOps.length} 条 / 出场 ${plan.cast.length} 人。`
-            + '完整计划已在会话卡片和章节页上，回复只用两三句说这章怎么走、最想让用户拍板的是什么，不要再贴一遍计划表。用户确认后开写。'
+        if (plan === undefined) return `已建第 ${chapter.n} 章《${chapter.title}》（画布 ${workId} · 规划中 · ${chapter.file}）。`
+        const [outline, entries, chapters] = await Promise.all([
+          store.readOutline(workId), store.readEntries(workId), store.listChapters({ workId }),
+        ])
+        const words = targetWordsOf(chapter, outline)
+        const position = volumePosition(outline.volumes, chapters.map(row => row.chapter), chapter)
+        const overshoots = planOvershoots(plan, words, entries?.foreshadows ?? [], position?.index, outline.volumes.length)
+        return `已登记第 ${chapter.n} 章《${chapter.title}》（画布 ${workId}${position === undefined ? '' : ` · 卷${volumeNumeral(position.index)}`}）plan：`
+          + `${words === undefined ? '' : `目标 ${words} 字 / `}走向 ${plan.beats.length} 拍 / 伏笔 ${plan.foreshadowOps.length} 条 / 出场 ${plan.cast.length} 人。`
+          + (overshoots.length === 0 ? '' : `\n提醒（只提醒，不拦）：${overshoots.join('；')}。在回复里跟用户说一句，按他的意思改或保留。`)
+          + '\n完整计划已在会话卡片和章节页上，回复只用两三句说这章怎么走、最想让用户拍板的是什么，不要再贴一遍计划表。用户确认后开写。'
+      }
+      if (args.what === 'outline') {
+        const outcome = await store.proposeOutline({
+          workId,
+          ...(args.sheet === undefined ? {} : { sheet: args.sheet }),
+          ...(args.volumes === undefined ? {} : { volumes: args.volumes }),
+          ...(args.sketches === undefined ? {} : { sketches: args.sketches }),
+          ...(args.rationale === undefined ? {} : { rationale: args.rationale }),
+        }, resolved.session)
+        if (!outcome.ok) {
+          if (outcome.error === 'unknown-protagonist') {
+            return '失败：主角要是一张人物卡（写它的编号如 c1，或名字）。还没有就先用 canvas_write 落一张人物卡（名字、身份、想要、抱负、价值观……），再提大纲。'
+          }
+          if (outcome.error === 'invalid-name') return '失败：sheet、volumes、sketches 至少给一样（novel skill 里有字段说明）。'
+          return `失败：${outcome.error ?? 'io'}`
+        }
+        return `已提交大纲提议（画布 ${workId}），在「规划」页等用户采用；采用前不生效，再提会合并进这一版。`
+          + '回复里用两三句说改了什么、为什么，不要贴整份大纲。'
       }
       if (args.what === 'review') {
         if (args.id === undefined || args.action === undefined) return '失败：what=review 要给 id（待审项）和 action（accept|discard）。'
@@ -263,7 +320,7 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
         if (!outcome.ok) return outcome.error === 'missing' ? `失败：没有待审项 ${args.id}。` : `失败：${outcome.error ?? 'io'}`
         return args.action === 'accept' ? `已采纳并落库：${args.id}。` : `已丢弃：${args.id}。`
       }
-      return '失败：what 只能是 chapter/review；卡片用 canvas_write。'
+      return '失败：what 只能是 chapter/outline/review；卡片用 canvas_write。'
     },
   })
 
@@ -399,4 +456,9 @@ interface WriteArgs {
   replace?: boolean
   plan?: Record<string, unknown>
   action?: ReviewAction
+  volume?: string
+  sheet?: Record<string, unknown>
+  volumes?: unknown[]
+  sketches?: unknown[]
+  rationale?: string
 }
