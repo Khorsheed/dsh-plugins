@@ -7,12 +7,19 @@
  * plan is read and confirmed. The card confirms nothing itself: the plan is
  * judged in full, on the page, not from a summary.
  *
+ * A plan registered while the row is on screen (it saw the call running)
+ * opens that chapter page in the right sidebar by itself, once: when the
+ * turn ends the host folds its tool calls under 「已调用工具」, card and all,
+ * and the person read 「点一下确认计划」 with no button in sight (2026-10-08).
+ * The page's ✓ 确认计划 stays put whatever the conversation folds. A row
+ * mounted already settled is history and only offers its door.
+ *
  * Every other write (a review) is one compact line with the answer
  * behind 详情.
  *
  * @module @khorsheed/dsh-canvas-novel/client
  */
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import type { ForeshadowOp } from '../types.ts'
 import type { NovelFace } from './contract.ts'
@@ -43,7 +50,9 @@ export interface WriteToolRowProps extends WriteToolFace {
 /** Render one `novel_write` call. */
 export function WriteToolRow(props: WriteToolRowProps): ReactNode {
   const row = writeRowModel(props.block, props.phase)
-  if (row.state === 'chapter') return <PlanCard {...props} chapter={row.chapter!} />
+  const sawRunning = useRef(false)
+  if (row.state === 'running') sawRunning.current = true
+  if (row.state === 'chapter') return <PlanCard {...props} chapter={row.chapter!} live={sawRunning.current} />
   return <Line state={row.state} text={row.text} t={props.t} />
 }
 
@@ -68,7 +77,11 @@ function Line({ state, text, t }: { readonly state: 'running' | 'failed' | 'line
   )
 }
 
-function PlanCard({ chapter, remote, openPage, chapterPage, t }: WriteToolRowProps & { readonly chapter: WriteRowChapter }): ReactNode {
+function PlanCard({ chapter, live: watched, remote, openPage, chapterPage, t }: WriteToolRowProps & {
+  readonly chapter: WriteRowChapter
+  /** The row saw this call run: a plan that lands awaiting confirmation opens its page. */
+  readonly live: boolean
+}): ReactNode {
   const { canvasId, n } = chapter
   const [tick, setTick] = useState(0)
   const read = useNovelRead(remote(), r => r.chapter({ canvasId, n }), `chapter:${canvasId}:${n}`, tick)
@@ -83,6 +96,12 @@ function PlanCard({ chapter, remote, openPage, chapterPage, t }: WriteToolRowPro
   }, [awaiting])
   const title = live?.title ?? chapter.title
   const open = openPage()
+  const followed = useRef(false)
+  useEffect(() => {
+    if (!watched || followed.current || !awaiting || open === undefined) return
+    followed.current = true
+    open(canvasId, chapterPage, chapterHeading(t, n, title), String(n))
+  }, [watched, awaiting, open, canvasId, chapterPage, n, title, t])
   // The live plan wins; the answer's counts stand in until it is read (or when it cannot be).
   const facts: string[] = plan !== undefined
     ? [
