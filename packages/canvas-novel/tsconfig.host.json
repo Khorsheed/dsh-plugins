@@ -16,6 +16,7 @@
     "src/skill.ts",
     "src/store.ts",
     "src/tools.ts",
+    "src/text-forms.ts",
     "src/types.ts"
   ]
 }

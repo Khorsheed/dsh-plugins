@@ -41,7 +41,7 @@ import {
   bodyFingerprint, chapterFileName, cleanNumber, cleanText, deriveForeshadowState, effectiveChapterPhase, isOverdue, laterForeshadowState, linesOf, MENTION_TO_STATE,
   normalizeAnnotations, normalizeChapter, normalizeHistoryEntry, PLOT_FIELDS, plotDiff, plotOf, normalizePendingItem, normalizePlan, normalizeWorkId, NOVEL_GENRE_ID,
   nextMilestoneOf, normalizeRelationEntry, OP_TO_MENTION, parseRef, PTS_PER_LEVEL, MAX_RELATION_DELTA, readRelationStage,
-  refGroupOf, refOf, relationEventOf, relationMove, typeChangeOf, relationProgress, relationTypeOf, stageNameOf,
+  refGroupOf, refOf, relationEventOf, relationMove, typeChangeOf, relationProgress, relationTypeOf, stageNameOf, RELATION_TYPES,
   type Annotations, type CardNote, type ChapterRecord, type ChapterRow, type ChapterTable, type CharacterView, type Confidence,
   type CurrentState, type EffectiveChapterPhase, type HistoryChange, type HistoryEntry, type HistorySource, type EntryRole, type ExperienceEntry, type ExtractPayload,
   type ForeshadowView, type ImportDrop, type ImportReport, type LedgerResult, type MentionEntry, type NovelError,
@@ -277,7 +277,7 @@ export function cleanFields(role: EntryRole, raw: unknown): { readonly fields: R
     }
     if (def.type === 'ref') {
       // Card handles (ids, refs or names), resolved by the caller against the work's cards.
-      const tokens = (Array.isArray(value) ? value : [value])
+      const tokens = (Array.isArray(value) ? value : refTokensOf(value))
         .map(token => cleanText(typeof token === 'number' ? String(token) : token, 80))
         .filter((token): token is string => token !== undefined)
       if (tokens.length === 0) ignored.push(key)
@@ -787,6 +787,7 @@ export class NovelService {
     }
     if (roleHint === undefined || roleHint === 'character') {
       const character = entries.characters.find(view => view.name === text)
+        ?? entries.characters.find(view => bareName(view.name) !== undefined && bareName(view.name) === bareName(text))
       if (character !== undefined) return { cardId: character.cardId, role: 'character' }
     }
     return undefined
@@ -808,7 +809,7 @@ export class NovelService {
   async writeCard(
     request: { readonly workId: string; readonly role: EntryRole; readonly id?: string; readonly fields: unknown; readonly comment?: string },
     session: Session,
-  ): Promise<{ readonly ok: boolean; readonly error?: NovelError; readonly cardId?: string; readonly ref?: string; readonly ignored?: readonly string[] }> {
+  ): Promise<{ readonly ok: boolean; readonly error?: NovelError; readonly cardId?: string; readonly ref?: string; readonly ignored?: readonly string[]; readonly problem?: string }> {
     const canvas = this.canvas
     const entries = await this.readEntries(request.workId)
     if (canvas === undefined || entries === undefined) return { ok: false, error: 'missing' }
@@ -838,7 +839,10 @@ export class NovelService {
       mutation = await canvas.patchCard({ canvasId: entries.board.id, cardId, fields: { ...card.fields, ...fields } }, session)
     } else {
       const category = categoryOf(entries.board, request.role)
-      if (category === undefined || !hasRequiredFields(request.role, fields)) return { ok: false, error: 'invalid-name', ignored }
+      if (category === undefined || !hasRequiredFields(request.role, fields)) {
+        const required = NOVEL_GENRE.categories.find(row => row.role === request.role)?.definition?.fields.filter(field => field.required === true).map(field => `「${field.label}」`) ?? []
+        return { ok: false, error: 'invalid-name', ignored, problem: `新建要有${required.join('、') || '主字段'}。` }
+      }
       const existing = namesake(entries, request.role, typeof fields['name'] === 'string' ? fields['name'] : undefined)
       if (existing !== undefined) return { ok: false, error: 'duplicate', cardId: existing.cardId, ref: existing.ref, ignored }
       const comment = cleanText(request.comment, 500)
@@ -872,7 +876,7 @@ export class NovelService {
     fields: Record<string, NovelFieldValue>,
     ignored: string[],
     session: Session,
-  ): Promise<{ readonly ok: boolean; readonly error?: NovelError; readonly cardId?: string; readonly ref?: string; readonly ignored?: readonly string[] }> {
+  ): Promise<{ readonly ok: boolean; readonly error?: NovelError; readonly cardId?: string; readonly ref?: string; readonly ignored?: readonly string[]; readonly problem?: string }> {
     const canvas = this.canvas!
     const handle = request.id === undefined ? undefined : this.resolveCard(entries, request.id, 'relation')
     if (request.id !== undefined && handle?.role !== 'relation') return { ok: false, error: 'missing' }
@@ -882,14 +886,26 @@ export class NovelService {
     const living = entries.characters.filter(view => view.cardStatus !== 'archived')
     const givenName = typeof fields['name'] === 'string' ? fields['name'] : undefined
     let pair: readonly string[]
+    let unknown: string[] = []
     if (Array.isArray(fields['pair'])) {
-      const ids = fields['pair'].map(token => this.resolveCard(entries, token, 'character'))
-      pair = ids.every(id => id?.role === 'character') ? [...new Set(ids.map(id => id!.cardId))] : []
+      const tokens = fields['pair'].map(String)
+      const ids = tokens.map(token => this.resolveCard(entries, token, 'character'))
+      unknown = tokens.filter((_, index) => ids[index]?.role !== 'character')
+      pair = unknown.length === 0 ? [...new Set(ids.map(id => id!.cardId))] : []
     } else {
       pair = before !== undefined && before.pair.length === 2 ? before.pair : pairFromName(living, givenName ?? before?.name)
     }
     const type = relationTypeOf(fields['type']) ?? before?.type
-    if (pair.length !== 2 || type === undefined) return { ok: false, error: 'invalid-name', ignored }
+    if (pair.length !== 2) {
+      const roster = living.map(view => `${view.ref} ${view.name}`).join('、')
+      return {
+        ok: false, error: 'invalid-name', ignored,
+        problem: `双方要正好两张人物卡${unknown.length === 0 ? '' : `（认不出：${unknown.join('、')}）`}：写两个人的编号或名字，用逗号隔开，如「双方：c1，c2」。现有人物：${roster || '（还没有人物卡）'}。`,
+      }
+    }
+    if (type === undefined) {
+      return { ok: false, error: 'invalid-name', ignored, problem: `类型要从 ${RELATION_TYPES.join(' / ')} 里选一个${fields['type'] === undefined ? '' : `（收到的是「${String(fields['type'])}」）`}。` }
+    }
     const twin = entries.relations.find(view => view.cardId !== before?.cardId && view.cardStatus !== 'archived' && samePair(view.pair, pair))
     if (twin !== undefined) return { ok: false, error: 'duplicate', cardId: twin.cardId, ref: twin.ref, ignored }
 
@@ -924,7 +940,7 @@ export class NovelService {
       mutation = await canvas.patchCard({ canvasId: entries.board.id, cardId, fields: next }, session)
     } else {
       const category = categoryOf(entries.board, 'relation')
-      if (category === undefined) return { ok: false, error: 'invalid-name', ignored }
+      if (category === undefined) return { ok: false, error: 'invalid-name', ignored, problem: '这块画布没有「关系」分类。' }
       const comment = cleanText(request.comment, 500)
       mutation = await canvas.proposeCard({
         canvasId: entries.board.id, kind: category, text: '', fields: next, live: true,
@@ -2485,7 +2501,7 @@ function samePair(a: readonly string[], b: readonly string[]): boolean {
 export function pairFromName(characters: readonly Pick<CharacterView, 'cardId' | 'name'>[], name: string | undefined): string[] {
   if (name === undefined) return []
   const ids = name.split(/\s*[×xX＆&/／、]\s*/)
-    .map(half => characters.find(view => view.name === half.trim())?.cardId)
+    .map(half => (characters.find(view => view.name === half.trim()) ?? characters.find(view => bareName(view.name) !== undefined && bareName(view.name) === bareName(half)))?.cardId)
     .filter((id): id is string => id !== undefined)
   return [...new Set(ids)]
 }
@@ -2751,4 +2767,23 @@ export function assignVolumeIds(proposed: readonly OutlineVolume[], adopted: rea
     used.add(id)
     return { ...volume, id }
   })
+}
+
+/**
+ * A ref field's handles from one string: a JSON array, or names and refs
+ * separated by commas, 、, slashes, × or spaces (the text-only card form
+ * writes 「双方：c1，c2」).
+ */
+export function refTokensOf(value: unknown): unknown[] {
+  if (typeof value !== 'string') return [value]
+  const text = value.trim()
+  if (text.startsWith('[')) {
+    try {
+      const parsed: unknown = JSON.parse(text)
+      if (Array.isArray(parsed)) return parsed
+    } catch {
+      // not JSON: split it below
+    }
+  }
+  return text.split(/\s*[,，、;；/／&＆×]\s*|\s+/).filter(part => part !== '')
 }

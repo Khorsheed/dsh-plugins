@@ -97,7 +97,8 @@ function cardLines(entries: WorkEntries, role: EntryRole | undefined, includeArc
 }
 
 /** The refusal of one card write, in the model's words. */
-function cardErrorMessage(error: string | undefined, role: EntryRole, ref?: string): string {
+function cardErrorMessage(error: string | undefined, role: EntryRole, ref?: string, problem?: string): string {
+  if (problem !== undefined) return `失败：${problem}`
   if (error === 'duplicate') {
     return `失败：画布上已经有同名的${ROLE_NAMES[role]}卡 [${ref}]。要补内容就改那张，不要另起一张：canvas_write(op=card, cardId=${ref}, fields=…)；`
       + `cardId 到不了的话，在 text 第一行写「编号：${ref}」，后面每行「字段名：值」只写要改的字段。`
@@ -162,14 +163,16 @@ export function novelGenreAgent(store: NovelService): NovelGenreAgent {
         ...(id === undefined ? {} : { id }),
         ...(request.comment === undefined ? {} : { comment: request.comment }),
       }, session as Session)
-      if (!outcome.ok) return cardErrorMessage(outcome.error, role, outcome.ref)
+      if (!outcome.ok) return cardErrorMessage(outcome.error, role, outcome.ref, outcome.problem)
       // A foreshadow's status and 埋于 are the 对账's to set (store.writeCard
       // drops them), which is not the same as a key nobody knows.
       const ledgerOwned = role === 'foreshadow' ? ['status', 'plantedAt'] : []
-      const unknown = (outcome.ignored ?? []).filter(key => !ledgerOwned.includes(key))
+      const badStage = role === 'relation' && (outcome.ignored ?? []).includes('stage')
+      const unknown = (outcome.ignored ?? []).filter(key => !ledgerOwned.includes(key) && !(badStage && key === 'stage'))
       const owned = (outcome.ignored ?? []).filter(key => ledgerOwned.includes(key))
       const ignored = (unknown.length === 0 ? '' : `（忽略了不认识的字段：${unknown.join('、')}）`)
         + (owned.length === 0 ? '' : '（伏笔的状态和埋于第几章由对账按正文更新，没有用你填的值；新伏笔一律从「未埋」开始，不想要了可以填「已放弃」）')
+        + (badStage ? '（阶段没认出来，按该类型的第一级记；各类型的阶段名见 novel 技能「关系卡」）' : '')
       return id === undefined
         ? `已落卡 [${outcome.ref}]（${ROLE_NAMES[role]}·已进 brief，画布上带 ✦ 新卡标记）${ignored}。`
         : `已更新 [${outcome.ref}]${ignored}。`

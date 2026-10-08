@@ -21,6 +21,7 @@
 import { defineTool, type ToolDefinition } from '@deepseek-ai/dsh-tools'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { Session } from '@deepseek-ai/dsh-session'
+import { isPlanText, outlineFromText, planFromText } from './text-forms.ts'
 import { planOvershoots, renderOutlineRead, renderPlanBrief, renderWriteBrief, targetWordsOf } from './brief.ts'
 import { PHASE_NAMES, ROLE_NAMES, foreshadowFacts, relationFacts } from './genre-agent.ts'
 import type { NovelService } from './store.ts'
@@ -194,7 +195,11 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
       what: { type: 'string', enum: ['chapter', 'outline', 'review'], required: true, description: 'What to write.' },
       id: { type: 'string', description: 'review: the pending item id.' },
       title: { type: 'string', description: 'chapter: the title.' },
-      content: { type: 'string', description: 'chapter: the manuscript body — written to the mounted workspace before registering.' },
+      content: {
+        type: 'string',
+        description: 'chapter: the manuscript body — written to the mounted workspace before registering; a content opening on 「梗概：」 is the plan in text form instead. '
+          + 'outline: the outline in text form (「键：值」 lines) when sheet/volumes do not arrive.',
+      },
       chapter: { type: 'number', description: 'chapter: n to re-plan or to write the body of (omit to create).' },
       replace: {
         type: 'boolean',
@@ -232,10 +237,11 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
       schema: { type: 'string' },
       render: (_args, value) => [{ type: 'text', text: String(value) }],
     },
-    execute: async (args: WriteArgs, exec: { agent?: Agent }): Promise<string> => {
+    execute: async (arrived: WriteArgs, exec: { agent?: Agent }): Promise<string> => {
       const resolved = await target(exec)
       if ('message' in resolved) return resolved.message
       const { workId } = resolved
+      const args = withTextForms(arrived)
       if (args.what === 'chapter') {
         if ((args.title ?? '').trim() === '') return '失败：what=chapter 要给 title。'
         const outcome = await store.writeChapter({
@@ -308,7 +314,11 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
           if (outcome.error === 'unknown-protagonist') {
             return '失败：主角要是一张人物卡（写它的编号如 c1，或名字）。还没有就先用 canvas_write 落一张人物卡（名字、身份、想要、抱负、价值观……），再提大纲。'
           }
-          if (outcome.error === 'invalid-name') return '失败：sheet、volumes、sketches 至少给一样（novel skill 里有字段说明）。'
+          if (outcome.error === 'invalid-name') {
+            return '失败：sheet、volumes、sketches 都没收到。如果你填了却没到达（当前模型/供应商会丢嵌套参数），改用纯文本：'
+              + 'content 里每行一个「键：值」——一句话主线、核心冲突、主角（人物卡编号或名字）、成长弧线、主题、类型与基调、结局方向、'
+              + '篇幅（如「30万字 / 3卷 / 约100章 / 单章3000字」），每卷一行「卷一：标题｜约12章｜要完成：…｜卷末：…」，理由：…。'
+          }
           return `失败：${outcome.error ?? 'io'}`
         }
         return `已提交大纲提议（画布 ${workId}），在「规划」页等用户采用；采用前不生效，再提会合并进这一版。`
@@ -461,4 +471,30 @@ interface WriteArgs {
   volumes?: unknown[]
   sketches?: unknown[]
   rationale?: string
+}
+
+/**
+ * A call's nested arguments recovered from `content` when they did not
+ * arrive (text-forms.ts): an outline written as lines, or a chapter plan
+ * written as lines — the latter is a plan, never a manuscript body.
+ */
+function withTextForms(args: WriteArgs): WriteArgs {
+  const content = args.content
+  if (content === undefined || content.trim() === '') return args
+  if (args.what === 'outline' && args.sheet === undefined && args.volumes === undefined && args.sketches === undefined) {
+    const { content: _text, ...rest } = args
+    const parsed = outlineFromText(content)
+    return {
+      ...rest,
+      ...(parsed.sheet === undefined ? {} : { sheet: parsed.sheet }),
+      ...(parsed.volumes === undefined ? {} : { volumes: parsed.volumes }),
+      ...(parsed.sketches === undefined ? {} : { sketches: parsed.sketches }),
+      ...(parsed.rationale === undefined || args.rationale !== undefined ? {} : { rationale: parsed.rationale }),
+    }
+  }
+  if (args.what === 'chapter' && args.plan === undefined && isPlanText(content)) {
+    const { content: _text, ...rest } = args
+    return { ...rest, plan: planFromText(content) }
+  }
+  return args
 }
