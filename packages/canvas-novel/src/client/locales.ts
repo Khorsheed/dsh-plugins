@@ -236,6 +236,11 @@ export const zh = {
   'reader.last': '已是最新一章',
 
   'face.plan': '规划',
+  'card.outline': '大纲提议',
+  'card.outlineAwaiting': '等你采用',
+  'card.outlineSettled': '已处理',
+  'card.outlineAdopt': '去规划页采用',
+  'card.outlineView': '查看规划',
   'outline.progress': '写到第 {n} 章',
   'outline.progressNone': '还没开写',
   'outline.inVolume': '卷{vol}「{title}」{written} / 约 {est} 章',
@@ -604,6 +609,11 @@ export const en: Record<keyof typeof zh, string> = {
   'reader.last': 'This is the latest chapter',
 
   'face.plan': 'Plan',
+  'card.outline': 'Outline proposal',
+  'card.outlineAwaiting': 'Waiting for you',
+  'card.outlineSettled': 'Settled',
+  'card.outlineAdopt': 'Adopt on the 规划 page',
+  'card.outlineView': 'Open 规划',
   'outline.progress': 'Up to chapter {n}',
   'outline.progressNone': 'Not started',
   'outline.inVolume': 'Vol. {vol} “{title}” {written} / ~{est} chapters',

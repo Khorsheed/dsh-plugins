@@ -376,6 +376,24 @@ describe('novel_write tool row', () => {
     expect(writeRowModel(settled('已归档：#3。')).state).toBe('line')
   })
 
+  it('reads an outline proposal, and a chapter answer with a note before it', () => {
+    expect(writeRowModel(settled(`已提交大纲提议（画布 ${CANVAS_ID}x），在「规划」页等用户采用。`))).toMatchObject({ state: 'outline', canvasId: `${CANVAS_ID}x` })
+    expect(writeRowModel(settled(`画布原本没挂工作区，已挂上会话所在的 /home/user/w。\n${PLANNED}`)).chapter).toMatchObject({ n: 1, title: '门' })
+  })
+
+  it('an outline proposal it watched land opens 规划 once; its door says whether it still waits', async () => {
+    const outline = { version: 1, sheet: {}, volumes: [], sketches: [], revision: 1, history: [], proposal: { rationale: '先把主线立住', at: NOW } }
+    const remote = { outline: vi.fn(() => ok({ ok: true, outline, chapters: [], cores: [] })) } as unknown as NovelRemote
+    const openPage = vi.fn()
+    const answer = settled(`已提交大纲提议（画布 ${CANVAS_ID}x），在「规划」页等用户采用。`)
+    const { rerender } = render(<WriteToolRow block={{}} phase="preparing" remote={() => remote} openPage={() => openPage} chapterPage={CHAPTER_PAGE} planPage="novel:plan" t={t} />)
+    rerender(<WriteToolRow block={answer} remote={() => remote} openPage={() => openPage} chapterPage={CHAPTER_PAGE} planPage="novel:plan" t={t} />)
+    await waitFor(() => { expect(openPage).toHaveBeenCalledWith(`${CANVAS_ID}x`, 'novel:plan', '规划') })
+    expect(screen.getByText('先把主线立住')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: `${zh['card.outlineAdopt']} →` }))
+    expect(openPage).toHaveBeenCalledTimes(2)
+  })
+
   it('a planned chapter is a card whose door opens the chapter page', async () => {
     const remote = fakeRemote({ items: [], rows: [{ chapter: chapter(1, '门', { phase: 'planning', plan: PLAN }), phase: 'planning' }] })
     const openPage = vi.fn()
