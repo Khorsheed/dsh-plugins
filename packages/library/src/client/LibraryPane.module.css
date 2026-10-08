@@ -23,6 +23,11 @@
   position: relative;
 }
 
+/* The host sets no global border-box; every size below assumes it. */
+.root *,
+.root *::before,
+.root *::after { box-sizing: border-box; }
+
 /* 「已记下」: positioned against the panel, never the window (panel spec). */
 .toast {
   position: absolute;
@@ -544,8 +549,8 @@
   align-items: center;
   justify-content: center;
   border-radius: 10px;
-  background: var(--pc, var(--lib-accent));
-  color: white; /* panel-check: allow-color — strokes on the project hue */
+  background: var(--pc-soft, var(--lib-accent-soft));
+  color: var(--pc, var(--lib-accent));
 }
 
 .glyph svg,
@@ -569,7 +574,7 @@
   width: 40px;
   height: 40px;
   border-radius: 50%;
-  background: conic-gradient(var(--pc, var(--lib-accent)) 0 var(--pct), var(--dsw-alias-bg-layer-2) 0);
+  background: conic-gradient(var(--pc, var(--lib-accent)) 0 var(--pct), var(--dsw-alias-border-l1) 0);
 }
 
 .ring span {
@@ -597,21 +602,16 @@
   gap: 10px;
   min-width: 0;
   padding: 12px;
-  border: 1px solid color-mix(in srgb, var(--pc) 22%, transparent);
-  border-top: 4px solid var(--pc);
+  border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 12px;
-  background: var(--pc-soft);
+  background: var(--dsw-alias-bg-base);
   color: inherit;
   font: inherit;
   text-align: left;
   cursor: pointer;
-  transition: transform 120ms ease, box-shadow 120ms ease;
 }
 
-.projectCard:hover {
-  box-shadow: 0 4px 14px color-mix(in srgb, var(--pc) 18%, transparent);
-  transform: translateY(-1px);
-}
+.projectCard:hover { background: var(--dsw-alias-interactive-bg-hover); }
 
 .projectGoal {
   display: -webkit-box;
@@ -636,25 +636,6 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
-/* Its books, as spines standing side by side. */
-.spines {
-  display: inline-flex;
-  flex: none;
-  align-items: flex-end;
-  gap: 2px;
-  min-height: 22px;
-}
-
-.spine {
-  width: 7px;
-  height: 22px;
-  border-radius: 1px 1px 0 0;
-  background: var(--pc);
-}
-
-.spine[data-shade='1'] { height: 18px; background: color-mix(in srgb, var(--pc) 70%, black); }
-.spine[data-shade='2'] { height: 20px; background: color-mix(in srgb, var(--pc) 65%, white); }
 
 .projectAdd {
   display: flex;
@@ -698,7 +679,6 @@
   gap: 8px;
   padding: 12px;
   border-bottom: 1px solid var(--dsw-alias-border-l2);
-  background: var(--pc-soft);
 }
 
 .bandStats {
@@ -821,7 +801,7 @@
  * under each row however many books it holds.
  */
 .shelf {
-  --plank: color-mix(in srgb, var(--pc, var(--lib-accent)) 30%, var(--dsw-alias-label-tertiary));
+  --plank: var(--dsw-alias-border-l3);
   display: grid;
   grid-template-columns: repeat(auto-fill, 96px);
   grid-auto-rows: 184px;
@@ -834,12 +814,14 @@
       var(--plank) 136px 144px,
       color-mix(in srgb, var(--plank) 35%, transparent) 144px 147px,
       transparent 147px 184px),
-    color-mix(in srgb, var(--pc, var(--lib-accent)) 5%, transparent);
+    var(--dsw-alias-bg-layer-1);
 }
 
 .shelfBook {
   display: grid;
+  grid-template-columns: 96px;
   grid-template-rows: 136px 8px auto;
+  width: 96px;
   min-width: 0;
   padding: 0;
   border: none;

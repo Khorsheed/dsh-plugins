@@ -141,7 +141,7 @@ function progressOf(project: LibraryProjectSummary): number {
   return total === 0 ? 0 : Math.round((done / total) * 100)
 }
 
-/** A project card on 今日: its hue, glyph, name, goal, progress, its books' spines, when it was last used. */
+/** A project card on 今日: its glyph, name, goal, progress, counts, when it was last used. */
 function ProjectCard({ p, project }: ViewProps & { project: LibraryProjectSummary }): ReactNode {
   const { t, actions } = p
   return (
@@ -156,9 +156,6 @@ function ProjectCard({ p, project }: ViewProps & { project: LibraryProjectSummar
       </span>
       {project.goal !== undefined && <span className={css.projectGoal}>{project.goal}</span>}
       <span className={css.projectFoot}>
-        <span className={css.spines} aria-hidden="true">
-          {project.books.slice(0, 6).map((book, index) => <span key={book.id} className={css.spine} data-shade={String(index % 3)} />)}
-        </span>
         <span className={css.muted}>{t('project.cardMeta', { books: String(project.books.length), cards: String(project.cardCount), due: String(project.dueCount) })}</span>
       </span>
     </button>
