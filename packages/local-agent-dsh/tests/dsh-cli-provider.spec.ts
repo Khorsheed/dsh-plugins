@@ -153,7 +153,7 @@ describe('dsh-cli-provider fresh run', () => {
     expect(sessionId).toMatch(/^[0-9a-f-]{36}$/)
     // Both the credential-shaped key and the DSH_* fact ride the explicit env
     // layer (the scrub would otherwise drop them).
-    expect(capture.env).toEqual({ DSH_HOME: homeDir, DEEPSEEK_API_KEY: 'sk-test' })
+    expect(capture.env).toMatchObject({ DSH_HOME: homeDir, DEEPSEEK_API_KEY: 'sk-test', DSH_LOCAL_AGENT_MODEL_CONFIG: JSON.stringify({ deepseek: { apiKeyEnv: 'DEEPSEEK_API_KEY' } }) })
     expect(capture.cwd).toBe('/tmp')
     expect(argv).toContain('--profile')
     expect(argv).toContain('headless-local-agent-dsh')
@@ -291,7 +291,7 @@ describe('dsh-cli-provider fresh run', () => {
   it('fails loud before spawning when the credential is unconfigured', async () => {
     const { ctx, capture } = mount({ key: undefined })
     const provider = new DshCliProvider(ctx, {})
-    await expect(provider.start(request() as never)).rejects.toThrow('DEEPSEEK_API_KEY is not configured')
+    await expect(provider.start(request() as never)).rejects.toThrow('credential DEEPSEEK_API_KEY is unavailable')
     expect(capture.argv).toBeUndefined()
   })
 
@@ -363,7 +363,7 @@ describe('dsh-cli-provider resume run', () => {
     expect(argv).toContain('--resume')
     expect(argv[argv.indexOf('--resume') + 1]).toBe('child-1')
     expect(argv[argv.length - 1]).toBe('继续')
-    expect(capture.env).toEqual({ DSH_HOME: homeDir, DEEPSEEK_API_KEY: 'sk-test' })
+    expect(capture.env).toMatchObject({ DSH_HOME: homeDir, DEEPSEEK_API_KEY: 'sk-test', DSH_LOCAL_AGENT_MODEL_CONFIG: JSON.stringify({ deepseek: { apiKeyEnv: 'DEEPSEEK_API_KEY' } }) })
     expect(locks.acquired).toEqual(['child-1'])
     await run.result
     await vi.waitFor(() => {

@@ -20,6 +20,18 @@ function makeBundleDir(patch: string): string {
 }
 
 describe('dsh sub-profile provisioning', () => {
+  it('adds only environment expressions for local model inheritance, never concrete credentials or routes', () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-model-profile-'))
+    const bundleDir = makeBundleDir('- id: runner\n')
+    const profile = provisionDshSubProfile(home, { headlessBundleDir: bundleDir, inheritModelConfiguration: true })
+    const patch = readFileSync(join(profile, 'cordis.patch.yml'), 'utf8')
+    expect(patch).toContain('providers: !!js JSON.parse(process.env.DSH_LOCAL_AGENT_MODEL_CONFIG')
+    expect(patch).toContain('- id: llm-deepseek')
+    expect(patch).not.toContain('DSH_LOCAL_AGENT_MODEL_API_KEY')
+    provisionDshSubProfile(home, { headlessBundleDir: bundleDir })
+    expect(readFileSync(join(profile, 'cordis.patch.yml'), 'utf8')).toBe('- id: runner\n')
+  })
+
   it('writes the manifest, the headless patch as the user layer, and a symlink resolving the headless bundle', () => {
     const home = mkdtempSync(join(tmpdir(), 'dsh-provision-'))
     const bundleDir = makeBundleDir('- id: local-agent-dsh-headless-runner\n')

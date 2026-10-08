@@ -4,7 +4,7 @@
  * namespace (default off); while ON, the controller registers the `dsh`
  * harness into the core registry (scoped home under the shared homes root,
  * `$DSH_HOME`), the `dsh-cli` delegation provider (sub-dsh headless runs with
- * the parent's resolved DeepSeek key), and the family delegation tool for it.
+ * the parent's selected API-key model route), and the family delegation tool for it.
  * While OFF — the default — nothing model-visible mounts, so the instance
  * keeps exactly the current behavior (official in-process subagent tools) and
  * the model never sees two overlapping delegation tools at once.
@@ -28,8 +28,6 @@ import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
-import { credentialRef } from '@deepseek-ai/dsh-credentials'
-import type { ResolvedCredential } from '@deepseek-ai/dsh-credentials'
 import type {} from '@deepseek-ai/dsh-settings'
 import { settingsFace, vol } from '@khorsheed/dsh-local-agent'
 import type { LocalAgentHarness } from '@khorsheed/dsh-local-agent'
@@ -39,6 +37,7 @@ import { CONTAINER_NODE_OPTIONS, DshCliProvider, dshCliVersion } from './dsh-cli
 import { DEFAULT_LIVE_IDLE_MS } from './live-driver.ts'
 import { LiveDriverSwitch } from './live-switch.ts'
 import { DshModelCatalog, type DshModelDirectoryFace } from './model-catalog.ts'
+import { canInheritModelProvider, localModelLaunch } from './model-launch.ts'
 import { DshModelBroker } from './model-broker.ts'
 import { listDshSessions } from './records.ts'
 import { DEFAULT_SUB_PROFILE_NAME, provisionDshScope } from './provision.ts'
@@ -153,7 +152,7 @@ function volatilize<S extends { volatile?: unknown }>(field: S): S {
 
 export const Config: z = z.object({
   profileName: z.string().default(DEFAULT_SUB_PROFILE_NAME),
-  apiKeyRef: z.string().default('DEEPSEEK_API_KEY'),
+  apiKeyRef: z.string(),
   cliLaunch: z.array(z.string()),
   headlessBundleDir: z.string(),
   unitHeadlessBundleDir: z.string(),
@@ -221,11 +220,6 @@ const dshSubagentTool = {
   },
 }
 
-/** Resolve the sub-dsh credential or report unconfigured. */
-async function resolveApiKey(ctx: Context, config: LocalAgentDshConfig): Promise<ResolvedCredential | undefined> {
-  return ctx.credentials.resolve(credentialRef(config.apiKeyRef ?? 'DEEPSEEK_API_KEY'))
-}
-
 /**
  * Mount the toggle controller: register the settings namespace, then mirror
  * its value into harness/provider/tool registrations, live.
@@ -287,6 +281,7 @@ export function apply(ctx: Context, config: LocalAgentDshConfig): void {
     const modelCatalog = new DshModelCatalog({
       llm: () => ctx.get('llm') as DshModelDirectoryFace | undefined,
       defaultModel: hostDefaultModel,
+      canInheritProvider: provider => canInheritModelProvider(ctx, provider),
     })
     void modelCatalog.read()
     ctx.on('llm/adapters-updated', () => { modelCatalog.invalidate() })
@@ -368,7 +363,8 @@ export function apply(ctx: Context, config: LocalAgentDshConfig): void {
       },
       isAuthenticated: async () => {
         try {
-          return (await resolveApiKey(ctx, config)) !== undefined
+          await localModelLaunch(ctx, config, resolveModel() ?? hostDefaultModel())
+          return true
         } catch {
           return false
         }

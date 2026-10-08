@@ -49,8 +49,8 @@ import {
   dshLaunchArgv,
   dshTextTask,
   registerMemberRun,
-  resolveApiKey,
 } from './dsh-cli-provider.ts'
+import { localModelLaunch, type LocalModelLaunch } from './model-launch.ts'
 import { DEFAULT_SUB_PROFILE_NAME, provisionDshScope } from './provision.ts'
 import { mirrorDshLiveEvent, mirrorDshSession, type DshLiveMirrorGranularity } from './session-mirror.ts'
 
@@ -149,6 +149,7 @@ class LiveRuntime {
    * spawned with no model flag at all. A round whose start model differs
    * retires the runtime instead of silently running the old one.
    */
+  modelLaunchFingerprint: string | undefined
   configurationKey: string | undefined
   boundModel: string | undefined
   private reclaimed = false
@@ -454,7 +455,7 @@ export class DshLiveDriver {
    * The member's live runtime, spawning it (once per member at a time) when
    * absent or dead. `signal` abandons the spawn on cancellation.
    */
-  private async ensureRuntime(spec: DshLiveRoundSpec, apiKey: string, signal: AbortSignal): Promise<LiveRuntime> {
+  private async ensureRuntime(spec: DshLiveRoundSpec, launch: LocalModelLaunch, signal: AbortSignal): Promise<LiveRuntime> {
     const key = spec.sessionId
     const startModel = spec.startModel?.trim()
     const existing = this.runtimes.get(key)
@@ -463,7 +464,8 @@ export class DshLiveDriver {
       // to a different one: retire so the respawn binds the asked-for model
       // (the sub-dsh session resumes from disk — only the process is
       // replaced).
-      if ((spec.configuration !== undefined && existing.configurationKey !== JSON.stringify(spec.configuration))
+      if (existing.modelLaunchFingerprint !== launch.fingerprint
+        || (spec.configuration !== undefined && existing.configurationKey !== JSON.stringify(spec.configuration))
         || (spec.configuration === undefined && existing.configurationKey !== undefined)
         || (startModel !== undefined && startModel !== '' && existing.boundModel !== startModel)) {
         await this.reclaim(key)
@@ -476,7 +478,7 @@ export class DshLiveDriver {
     }
     const pending = this.ensuring.get(key)
     if (pending !== undefined) return pending
-    const spawn = this.spawnRuntime(spec, apiKey, signal)
+    const spawn = this.spawnRuntime(spec, launch, signal)
       .finally(() => { this.ensuring.delete(key) })
     this.ensuring.set(key, spawn)
     return spawn
@@ -490,7 +492,7 @@ export class DshLiveDriver {
    * cancellation mid-spawn reclaims the half-started runtime and throws the
    * abort instead, without touching the breaker.
    */
-  private async spawnRuntime(spec: DshLiveRoundSpec, apiKey: string, signal: AbortSignal): Promise<LiveRuntime> {
+  private async spawnRuntime(spec: DshLiveRoundSpec, launch: LocalModelLaunch, signal: AbortSignal): Promise<LiveRuntime> {
     const key = spec.sessionId
     if (this.disposed) {
       throw new LiveChannelUnavailableError('the live driver is disposed')
@@ -525,7 +527,7 @@ export class DshLiveDriver {
       // and the DSH_* facts survive the shared scrub only here.
       env: delegationEnv({
         DSH_HOME: spec.homeDir,
-        DEEPSEEK_API_KEY: apiKey,
+        ...launch.env,
         // Same tsx tsconfig carry-over as the exec path (see startDshCliRun).
         ...process.env.TSX_TSCONFIG_PATH === undefined
           ? {}
@@ -545,6 +547,7 @@ export class DshLiveDriver {
     // A blank resolution binds no model at all — record exactly what the argv
     // carries so a later start-model comparison never retires needlessly.
     runtime.boundModel = model === undefined || model === '' ? undefined : model
+    runtime.modelLaunchFingerprint = launch.fingerprint
     runtime.configurationKey = spec.configuration === undefined ? undefined : JSON.stringify(spec.configuration)
     runtime.onDead = () => {
       // Delete only OUR registration: a crash-then-respawn can interleave so
@@ -611,9 +614,9 @@ export class DshLiveDriver {
     signal.throwIfAborted()
     if (this.draining || this.disabled) throw new LiveChannelUnavailableError('the live driver is unavailable for preparation')
     try {
-      provisionDshScope(spec.homeDir, this.config)
-      const apiKey = await resolveApiKey(this.ctx, this.config)
-      const runtime = await this.ensureRuntime(spec, apiKey, signal)
+      provisionDshScope(spec.homeDir, { ...this.config, inheritModelConfiguration: true })
+      const launch = await localModelLaunch(this.ctx, this.config, spec.configuration?.model ?? spec.startModel ?? this.config.modelFor?.(spec.sessionId))
+      const runtime = await this.ensureRuntime(spec, launch, signal)
       await runtime.request('session/prepare', { sessionId: spec.sessionId, resume: spec.resume !== undefined })
       signal.throwIfAborted()
       this.armIdleTimer(spec.sessionId)
@@ -763,6 +766,7 @@ export class DshLiveDriver {
       }
     }
 
+    let nativeFailure: { message: string; code: string } | undefined
     let resolveIdle!: (outcome: { reason: LiveTurnReason | null }) => void
     const idle = new Promise<{ reason: LiveTurnReason | null }>((resolve) => { resolveIdle = resolve })
 
@@ -791,11 +795,11 @@ export class DshLiveDriver {
     }
 
     // Provisioning is idempotent; re-running heals a drifted sub-profile.
-    provisionDshScope(spec.homeDir, this.config)
-    const apiKey = await resolveApiKey(this.ctx, this.config)
+    provisionDshScope(spec.homeDir, { ...this.config, inheritModelConfiguration: true })
+    const launch = await localModelLaunch(this.ctx, this.config, spec.configuration?.model ?? spec.startModel ?? this.config.modelFor?.(spec.sessionId))
 
     const accepted: Promise<void> = (async () => {
-      const rt = await this.ensureRuntime(spec, apiKey, request.signal)
+      const rt = await this.ensureRuntime(spec, launch, request.signal)
       runtime = rt
       if (runAbort.signal.aborted) {
         // Cancelled while the runtime came up and no turn exists sub-side: the
@@ -841,6 +845,7 @@ export class DshLiveDriver {
         return { output: collectOutput(), stopReason: 'aborted' as const }
       }
       if (reason?.kind === 'error') {
+        nativeFailure = { message: reason.error.message, code: reason.error.code }
         throw new Error(`subagent-dsh live: the turn failed: ${reason.error.message}`)
       }
       if (reason?.kind !== 'completed') {
@@ -893,7 +898,7 @@ export class DshLiveDriver {
         } else {
           childSession.append('turn/end', {
             turn,
-            reason: { kind: 'error', error: { message: 'the live round did not complete', code: 'UNKNOWN' } },
+            reason: { kind: 'error', error: nativeFailure ?? { message: 'the live round did not complete', code: 'UNKNOWN' } },
           })
         }
       }

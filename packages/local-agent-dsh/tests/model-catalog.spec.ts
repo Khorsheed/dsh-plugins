@@ -33,6 +33,18 @@ describe('DSH public adapter directory', () => {
     catalog.dispose()
   })
 
+  it('omits non-transferable routes and does not retain an unsupported default', async () => {
+    const catalog = new DshModelCatalog({ defaultModel: () => 'oauth/model', canInheritProvider: p => p === 'api-key', llm: () => ({
+      listProviders: () => [{ id: 'oauth' }, { id: 'api-key' }],
+      listModels: async provider => [{ provider, id: 'model' }],
+    }) })
+    const result = await catalog.refresh()
+    expect(result.entries.map(e => e.value)).toEqual(['api-key/model'])
+    expect(result.defaultModel).toBeUndefined()
+    expect(result.complete).toBe(false)
+    catalog.dispose()
+  })
+
   it('degrades when the public model surface is absent', async () => {
     const catalog = new DshModelCatalog({ defaultModel: () => undefined, llm: () => undefined })
     expect(await catalog.refresh()).toMatchObject({ status: 'unsupported', complete: false })

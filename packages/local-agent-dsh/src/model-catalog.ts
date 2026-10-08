@@ -15,6 +15,7 @@ export class DshModelCatalog {
     llm: () => DshModelDirectoryFace | undefined
     defaultModel: () => string | undefined
     timeoutMs?: number
+    canInheritProvider?: (provider: string) => boolean
   }) {
     this.cache = new ModelDirectoryCache({ load: async (_key, signal) => {
       const controller = new AbortController()
@@ -49,7 +50,8 @@ export class DshModelCatalog {
     if (llm === undefined || typeof llm.listProviders !== 'function' || typeof llm.listModels !== 'function') {
       return { entries: [], complete: false, customInput: true, unsupported: true, reason: 'The host exposes no adapter model directory' }
     }
-    const providers = llm.listProviders()
+    const allProviders = llm.listProviders()
+    const providers = allProviders.filter(provider => this.deps.canInheritProvider?.(provider.id) ?? true)
     const groups = await Promise.allSettled(providers.map(async provider => Promise.all((await llm.listModels(provider.id)).map(async model => {
       let resolved: LlmResolvedModelInfo | undefined
       try { resolved = await llm.resolveModelInfo?.(provider.id, model.id, signal) } catch { /* Unknown capabilities stay unknown. */ }
@@ -68,10 +70,14 @@ export class DshModelCatalog {
     if (failed > 0 && failed === groups.length) throw new Error('DSH adapters could not list models')
     const entries = groups.flatMap(group => group.status === 'fulfilled' ? group.value : [])
     const defaultModel = this.deps.defaultModel()
+    const omitted = allProviders.length - providers.length
     return {
-      entries, complete: failed === 0, customInput: true,
-      ...defaultModel === undefined ? {} : { defaultModel },
-      ...failed === 0 ? {} : { reason: `${failed} adapter model list(s) unavailable` },
+      entries, complete: failed === 0 && providers.length === allProviders.length, customInput: true,
+      ...defaultModel === undefined || !entries.some(entry => entry.value === defaultModel) ? {} : { defaultModel },
+      ...(failed === 0 && omitted === 0) ? {} : { reason: [
+        ...(failed === 0 ? [] : [`${failed} adapter model list(s) unavailable`]),
+        ...(omitted === 0 ? [] : [`${omitted} provider(s) do not support local API-key inheritance`]),
+      ].join('; ') },
     }
   }
 }

@@ -115,6 +115,8 @@ const APPROVAL_FOR: Readonly<Record<DshSubProfilePermissions, 'ask' | 'never'>> 
 
 /** Config the provisioning step reads. */
 export interface DshSubProfileConfig {
+  /** Local launches only: read a per-process model snapshot from the private launch environment. */
+  inheritModelConfiguration?: boolean
   /** Sub-dsh profile name under the scoped home. */
   profileName?: string
   /**
@@ -454,7 +456,10 @@ function provisionOneSubProfile(
     join(profileDir, PROFILE_PATCH_FILENAME),
     readFileSync(join(patchSourceDir, HEADLESS_PATCH_FILENAME), 'utf8')
       + presetRegistryLayer(config.preset)
-      + permissionBoundaryLayer(config.permissions),
+      + permissionBoundaryLayer(config.permissions)
+      + (config.inheritModelConfiguration ? '\n# Selected local model; values and credentials stay in the launch environment.\n'
+        + '- id: llm-pi-ai\n  config:\n    providers: !!js JSON.parse(process.env.DSH_LOCAL_AGENT_MODEL_CONFIG || "{}").piAi?.providers ?? {}\n'
+        + '- id: llm-deepseek\n  config: !!js JSON.parse(process.env.DSH_LOCAL_AGENT_MODEL_CONFIG || "{}").deepseek ?? {}\n' : ''),
   )
   const bundleLink = join(profileDir, 'node_modules', '@khorsheed', 'dsh-local-agent-dsh-headless')
   mkdirSync(dirname(bundleLink), { recursive: true })

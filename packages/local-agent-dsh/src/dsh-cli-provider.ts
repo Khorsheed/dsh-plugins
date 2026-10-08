@@ -11,6 +11,7 @@
  * @module @khorsheed/dsh-local-agent-dsh/dsh-cli-provider
  */
 
+import { localModelLaunch } from './model-launch.ts'
 import { randomUUID } from 'node:crypto'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
@@ -644,10 +645,11 @@ export async function startDshCliRun(
   // directory the unit actually reads. A containerized caller names the
   // unit's own profile through `profileName` (the image's in-box `headless`)
   // and its own entry through `cliLaunch`.
-  if (spec.exec === undefined) provisionDshScope(spec.homeDir, config)
+  if (spec.exec === undefined) provisionDshScope(spec.homeDir, { ...config, inheritModelConfiguration: true })
   // Resolve the sub-dsh credential BEFORE spawning: the key travels in the
   // explicit env layer, which is the only way past the shared env scrub.
-  const apiKey = await resolveApiKey(ctx, config)
+  const modelEnv = spec.exec === undefined ? (await localModelLaunch(ctx, config, spec.model)).env
+    : { DEEPSEEK_API_KEY: await resolveApiKey(ctx, config) }
   const turn = spec.resume?.turn ?? 1
   // The turn opens at the real spawn moment so the timing projection
   // measures actual CLI runtime.
@@ -672,7 +674,7 @@ export async function startDshCliRun(
   // sessions into the parent instance's store.
   const env = delegationEnv({
     DSH_HOME: spec.homeDir,
-    DEEPSEEK_API_KEY: apiKey,
+    ...modelEnv,
     // The launch replicates the parent's tsx ESM hook (dshLaunchArgv), so
     // the hook's tsconfig path is a hard launch dependency: without it tsx
     // compiles the harness source with default options and the child dies

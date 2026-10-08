@@ -258,6 +258,7 @@ function mount(options: {
    * fire — the redundant full-list append that violates the real
    * coordinator's contiguous-seq contract.
    */
+  credential?: () => string
   strictPersistence?: boolean
 } = {}): Mount {
   const homeDir = mkdtempSync(join(tmpdir(), 'dsh-live-driver-'))
@@ -291,7 +292,7 @@ function mount(options: {
       return handle
     },
   })
-  ctx.provide('credentials', { resolve: async () => ({ value: 'sk-test', source: 'env' }) })
+  ctx.provide('credentials', { resolve: async () => ({ value: options.credential?.() ?? 'sk-test', source: 'env' }) })
   ctx.provide('sessions', {
     create: (id: string) => Session.create(SessionId(id)),
     // strictPersistence: any session reads as live, like the production
@@ -403,7 +404,7 @@ describe('dsh live driver rounds', () => {
     const spawn = m.spawns[0]!
     expect(spawn.spec.argv.slice(-3)).toEqual(['--profile', 'headless-local-agent-dsh', '--serve'])
     expect(spawn.spec.stdio).toEqual({ stdin: 'pipe', stdout: 'pipe', stderr: 'pipe' })
-    expect(spawn.spec.env).toEqual({ DSH_HOME: m.homeDir, DEEPSEEK_API_KEY: 'sk-test' })
+    expect(spawn.spec.env).toMatchObject({ DSH_HOME: m.homeDir, DEEPSEEK_API_KEY: 'sk-test', DSH_LOCAL_AGENT_MODEL_CONFIG: JSON.stringify({ deepseek: { apiKeyEnv: 'DEEPSEEK_API_KEY' } }) })
     expect(spawn.fake!.requests.map(r => r.method)).toEqual(['initialize', 'turn/start'])
     expect(spawn.fake!.requests[1]?.params).toMatchObject({ sessionId: 'child-live-1', text: '建个文件', resume: false })
     // Push mirror: the exchange landed in the child session event-by-event.
@@ -566,7 +567,7 @@ describe('dsh live driver rounds', () => {
     }))
     const run = await m.driver.startRound(request() as never, roundSpec(m, child))
     expect((await run.result).stopReason).toBe('error')
-    expect(child.snapshotEvents().find(e => e.type === 'turn/end')?.data).toMatchObject({ reason: { kind: 'error' } })
+    expect(child.snapshotEvents().filter(e => e.type === 'turn/end').at(-1)?.data).toMatchObject({ reason: { kind: 'error', error: { code: 'SERVER', message: 'provider down' } } })
     await m.driver.disposeAll()
   })
 
@@ -1052,6 +1053,29 @@ describe('dsh-cli-provider live resolver', () => {
 })
 
 describe('dsh live driver member-aware model', () => {
+  it('reuses an unchanged route, then replaces the process after credentials rotate while resuming the same member', async () => {
+    let key = 'first-key'
+    const m = mount({ credential: () => key })
+    m.ctx.provide('settings', { describe: () => [{ ns: 'llm-pi-ai', value: { providers: { 'kimi-coding': { apiKeyEnv: 'KIMI_KEY' } } } }] })
+    const child = Session.create(SessionId('child-key-rotation'))
+    const script = { turn: (params: Record<string, unknown>) => ({ events: answerEvents(Number(params.turn), 'hello', 'answer') }) }
+    m.queueChild(new FakeServeChild(script))
+    m.queueChild(new FakeServeChild(script))
+    for (const turn of [1, 2, 3]) {
+      if (turn === 3) key = 'second-key'
+      const run = await m.driver.startRound(request() as never, {
+        ...roundSpec(m, child, turn === 1 ? {} : { resume: { turn } }), startModel: 'kimi-coding/k3',
+      })
+      expect((await run.result).stopReason).toBe('completed')
+      await run.dispose()
+      expect(m.spawns).toHaveLength(turn === 3 ? 2 : 1)
+    }
+    expect(m.spawns[0]!.spec.env?.DSH_LOCAL_AGENT_MODEL_API_KEY).toBe('first-key')
+    expect(m.spawns[1]!.spec.env?.DSH_LOCAL_AGENT_MODEL_API_KEY).toBe('second-key')
+    expect(m.spawns[1]!.fake!.requests.find(r => r.method === 'turn/start')?.params).toMatchObject({ sessionId: String(child.id), resume: true })
+    await m.driver.disposeAll()
+  })
+
   /** The value following `--model` on the spawned argv, or undefined when absent. */
   function modelFlag(argv: readonly string[]): string | undefined {
     const at = argv.indexOf('--model')
@@ -1081,16 +1105,16 @@ describe('dsh live driver member-aware model', () => {
   })
 
   it('a round start model binds the spawn argv, outranking the spawn resolver', async () => {
-    const m = mount({ config: { modelFor: () => 'config/model' } })
+    const m = mount({ config: { modelFor: () => 'deepseek-official/config-model' } })
     const child = Session.create(SessionId('child-dsh-start-model'))
     m.queueChild(new FakeServeChild({ turn: () => ({ events: answerEvents(1, '建个文件', '完成') }) }))
     const run = await m.driver.startRound(request() as never, {
       ...roundSpec(m, child),
-      startModel: 'delegation/model',
+      startModel: 'deepseek-official/delegation-model',
     })
     await run.result
-    expect(modelFlag(m.spawns[0]!.spec.argv)).toBe('delegation/model')
-    expect(m.driver.boundModelOf(String(child.id))).toBe('delegation/model')
+    expect(modelFlag(m.spawns[0]!.spec.argv)).toBe('deepseek-official/delegation-model')
+    expect(m.driver.boundModelOf(String(child.id))).toBe('deepseek-official/delegation-model')
     await run.dispose()
   })
 

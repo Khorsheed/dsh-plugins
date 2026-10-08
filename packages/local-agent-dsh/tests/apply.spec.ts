@@ -98,6 +98,13 @@ function mount(
 }
 
 describe('local-agent-dsh toggle controller', () => {
+  it('reports authentication for the selected Kimi route without a DeepSeek credential', async () => {
+    const m = mount({ enabled: true, model: 'kimi-coding/k3' })
+    Object.assign(m.ctx.settings, { describe: () => [{ ns: 'llm-pi-ai', value: { providers: { 'kimi-coding': { apiKeyEnv: 'KIMI_KEY' } } } }] })
+    Object.assign(m.ctx.credentials, { resolve: async (ref: string) => ref === 'KIMI_KEY' ? { value: 'test-kimi' } : undefined })
+    expect(await m.registered[0]!.isAuthenticated?.('ignored-home')).toBe(true)
+  })
+
   it('registers nothing while the DeepSeek toggle is off (default)', () => {
     const { registered, providers, mountedTools } = mount()
     expect(registered).toHaveLength(0)
