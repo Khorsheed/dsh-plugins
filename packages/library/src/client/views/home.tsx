@@ -9,7 +9,7 @@ import { useState, type ReactNode } from 'react'
 import { ChipRow, ListRow, PanelHeader } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
 import { LIBRARY_COLORS, LIBRARY_ICONS, type LibraryColor, type LibraryIcon, type LibraryProjectSummary, type LibraryTemplate } from '../../types.ts'
 import { colorOf, Cover, GlyphStrokes, iconOf, ProjectGlyph, Ring } from '../look.tsx'
-import { IconCardsOutlineMedium, IconPlusOutlineMedium, IconRefreshOutlineMedium, IconSparkleOutlineMedium } from '../icons.tsx'
+import { IconCardsOutlineMedium, IconPenOutlineMedium, IconPlusOutlineMedium, IconRefreshOutlineMedium, IconSparkleOutlineMedium } from '../icons.tsx'
 import { outcome, StateLine, useLoad, value, when, type ViewProps } from '../ui.tsx'
 import css from '../LibraryPane.module.css'
 
@@ -162,13 +162,79 @@ function ProjectCard({ p, project }: ViewProps & { project: LibraryProjectSummar
   )
 }
 
+/** Editing a project in place: name, goal, template, color, icon — saved together. */
+function ProjectEditor({ p, project, onDone }: ViewProps & { project: LibraryProjectSummary; onDone: () => void }): ReactNode {
+  const { t, actions } = p
+  const [name, setName] = useState(project.name)
+  const [goal, setGoal] = useState(project.goal ?? '')
+  const [template, setTemplate] = useState<LibraryTemplate>(project.template)
+  const [color, setColor] = useState<LibraryColor>(colorOf(project))
+  const [icon, setIcon] = useState<LibraryIcon>(iconOf(project))
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | undefined>()
+
+  const save = async (): Promise<void> => {
+    setBusy(true)
+    setError(undefined)
+    try {
+      await outcome(p.updateProject(project.id, { name: name.trim(), goal: goal.trim(), template, color, icon }))
+      actions.refresh()
+      onDone()
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : String(failure))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <form className={css.editor} data-color={color} onSubmit={event => { event.preventDefault(); void save() }}>
+      <span className={css.projectTop}>
+        <ProjectGlyph icon={icon} />
+        <span className={css.projectText}><span className={css.projectName}>{t('project.edit')}</span></span>
+      </span>
+      <label className={css.field}>
+        <span className={css.fieldLabel}>{t('project.name')}</span>
+        <input className={css.input} value={name} onChange={event => { setName(event.target.value) }} />
+      </label>
+      <label className={css.field}>
+        <span className={css.fieldLabel}>{t('project.goal')}</span>
+        <textarea className={css.input} rows={2} value={goal} onChange={event => { setGoal(event.target.value) }} />
+      </label>
+      <div className={css.field}>
+        <span className={css.fieldLabel}>{t('project.template')}</span>
+        <ChipRow label={t('project.template')} chips={TEMPLATES.map(id => ({ id, label: t(`template.${id}`) }))} value={template} onSelect={setTemplate} />
+        {template !== project.template && <span className={css.muted}>{t('project.templateChange')}</span>}
+      </div>
+      <div className={css.field}>
+        <span className={css.fieldLabel}>{t('project.style')}</span>
+        <span className={css.swatches}>
+          {LIBRARY_COLORS.map(entry => (
+            <button key={entry} type="button" className={css.swatch} data-color={entry} aria-label={entry} aria-pressed={color === entry} onClick={() => { setColor(entry) }} />
+          ))}
+        </span>
+        <span className={css.swatches}>
+          {LIBRARY_ICONS.map(entry => (
+            <button key={entry} type="button" className={css.iconPick} aria-label={entry} aria-pressed={icon === entry} onClick={() => { setIcon(entry) }}><GlyphStrokes icon={entry} /></button>
+          ))}
+        </span>
+      </div>
+      {error !== undefined && <div className={css.error}>{error}</div>}
+      <div className={css.actions}>
+        <button type="button" className={css.secondary} onClick={onDone}>{t('action.cancel')}</button>
+        <button type="submit" className={css.primary} disabled={busy || name.trim() === ''}>{t('action.save')}</button>
+      </div>
+    </form>
+  )
+}
+
 /** One project: its colored header, its shelf, its cards and reviews. */
 export function ProjectView({ p, projectId }: ViewProps & { projectId: string }): ReactNode {
   const { t, actions, useStore } = p
   const rev = useStore(s => s.rev)
   const loaded = useLoad(() => outcome(p.getProject(projectId)), [projectId, rev])
   const [notice, setNotice] = useState<string | undefined>()
-  const [styling, setStyling] = useState(false)
+  const [editing, setEditing] = useState(false)
   const project = loaded.data?.project
   const books = loaded.data?.books ?? []
 
@@ -176,9 +242,6 @@ export function ProjectView({ p, projectId }: ViewProps & { projectId: string })
     if (project === undefined) return
     void p.bindTarget({ projectId })
     setNotice(p.primeConversation(t('prime.addBook', { project: project.name })) ? t('notice.primed') : t('notice.noConversation'))
-  }
-  const restyle = (patch: { color?: LibraryColor; icon?: LibraryIcon }): void => {
-    void outcome(p.updateProject(projectId, patch)).then(() => { actions.refresh() }, (failure: unknown) => { setNotice(String(failure)) })
   }
 
   return (
@@ -190,12 +253,15 @@ export function ProjectView({ p, projectId }: ViewProps & { projectId: string })
         actions={[
           { id: 'add', label: t('book.add'), icon: <IconPlusOutlineMedium />, onSelect: askToAddBook },
           { id: 'cards', label: t('cards.title'), icon: <IconCardsOutlineMedium />, onSelect: () => { actions.push({ view: 'cards', projectId, filter: 'all' }) } },
-          { id: 'style', label: t('project.style'), icon: <IconSparkleOutlineMedium />, menuOnly: true, onSelect: () => { setStyling(!styling) } },
+          { id: 'edit', label: t('project.edit'), icon: <IconPenOutlineMedium />, menuOnly: true, onSelect: () => { setEditing(true) } },
           { id: 'bind', label: t('action.bindProject'), icon: <IconSparkleOutlineMedium />, menuOnly: true, onSelect: () => { void p.bindTarget({ projectId }).then(() => { setNotice(t('notice.bound')) }) } },
         ]}
         moreLabel={t('action.more')}
       />
-      {project !== undefined && (
+      {project !== undefined && editing && (
+        <ProjectEditor p={p} project={project} onDone={() => { setEditing(false) }} />
+      )}
+      {project !== undefined && !editing && (
         <section className={css.band} data-color={colorOf(project)}>
           <span className={css.projectTop}>
             <ProjectGlyph icon={iconOf(project)} />
@@ -209,20 +275,6 @@ export function ProjectView({ p, projectId }: ViewProps & { projectId: string })
             <button type="button" className={css.bandStat} onClick={() => { actions.push({ view: 'cards', projectId, filter: 'all' }) }}><b>{project.cardCount}</b>{t('cards.title')}</button>
             <button type="button" className={css.bandStat} disabled={project.dueCount === 0} onClick={() => { actions.push({ view: 'review', projectId }) }}><b>{project.dueCount}</b>{t('review.due')}</button>
           </span>
-          {styling && (
-            <span className={css.picker}>
-              <span className={css.swatches}>
-                {LIBRARY_COLORS.map(color => (
-                  <button key={color} type="button" className={css.swatch} data-color={color} aria-label={color} aria-pressed={colorOf(project) === color} onClick={() => { restyle({ color }) }} />
-                ))}
-              </span>
-              <span className={css.swatches}>
-                {LIBRARY_ICONS.map(icon => (
-                  <button key={icon} type="button" className={css.iconPick} aria-label={icon} aria-pressed={iconOf(project) === icon} onClick={() => { restyle({ icon }) }}><GlyphStrokes icon={icon} /></button>
-                ))}
-              </span>
-            </span>
-          )}
         </section>
       )}
       <div className={css.body}>

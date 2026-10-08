@@ -28,6 +28,7 @@ import type {
   LibraryCardSourceType,
   LibraryMark,
   LibraryOutcome,
+  LibraryTemplate,
   LibraryQuizQuestion,
   LibraryVerdict,
   RoadmapNode,
@@ -201,6 +202,7 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
     description:
       'Validate and persist what you authored. Pass what plus the matching payload; project / book default to this session\'s binding. '
       + 'what="project": project { name, template: "language"|"subject"|"custom", templateNote?, goal? } — language: marks are words; subject: marks are concepts. '
+      + 'With project { id, name?, goal?, template? } it edits that project instead (the learner renamed or refocused it; goal "" clears it). '
       + 'what="book": book { title, short (a 2-4 character cover abbreviation, e.g. 剑5 / PNS), author?, edition?, isbn?, bookKind: "knowledge"|"material", toc: [{ title, part? }], tocSource: { by: "web"|"model"|"photo", url? }, '
       + 'extras?: [{ title, note?, where?, when: "before"|"reference" }] (how to use the book, the answer key, transcripts, appendices — they are NOT roadmap nodes), bookId? } — '
       + 'register a book (no upload): search the web for the exact edition\'s contents and cite the url — a publisher, library-catalog or retailer page, never a full-text copy; '
@@ -239,6 +241,16 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
       switch (args.what) {
         case 'project': {
           const body = payload(args.project)
+          if (body !== undefined && typeof body.id === 'string') {
+            const { id, name, goal, template } = body
+            const patch = {
+              ...(typeof name === 'string' ? { name } : {}),
+              ...(typeof goal === 'string' ? { goal } : {}),
+              ...(typeof template === 'string' ? { template: template as LibraryTemplate } : {}),
+            }
+            if (Object.keys(patch).length === 0) throw new Error('editing a project takes project: { id, name?, goal?, template? }')
+            return unwrap(await service.updateProject({ id, patch })) as unknown as JsonValue
+          }
           if (body === undefined || typeof body.name !== 'string') {
             throw new Error('what=project takes project: { name, template: "language"|"subject"|"custom", goal? }')
           }

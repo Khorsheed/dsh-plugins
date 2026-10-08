@@ -44,6 +44,7 @@ import {
   type LibraryBookKind,
   type LibraryBookProgress,
   type LibraryColor,
+  type LibraryProjectPatch,
   type LibraryIcon,
   type LibraryCardQuery,
   type LibraryCard,
@@ -255,21 +256,27 @@ export class LibraryService {
   }
 
   /** Change a project's look or goal (the sidebar's 「样式」). */
-  async updateProject(request: { id: string; patch: { color?: LibraryColor; icon?: LibraryIcon; goal?: string; name?: string } }): Promise<LibraryOutcome<{ project: LibraryProject }>> {
+  async updateProject(request: { id: string; patch: LibraryProjectPatch }): Promise<LibraryOutcome<{ project: LibraryProject }>> {
     const patch = request.patch
     if (patch.color !== undefined && !(LIBRARY_COLORS as readonly string[]).includes(patch.color)) return refuse('invalid', `color is one of ${LIBRARY_COLORS.join(' | ')}`)
     if (patch.icon !== undefined && !(LIBRARY_ICONS as readonly string[]).includes(patch.icon)) return refuse('invalid', `icon is one of ${LIBRARY_ICONS.join(' | ')}`)
     if (patch.name !== undefined && patch.name.trim() === '') return refuse('invalid', 'a project keeps a name')
+    if (patch.template !== undefined && !['language', 'subject', 'custom'].includes(patch.template)) {
+      return refuse('invalid', 'template is language | subject | custom — language: marks are words; subject: marks are concepts')
+    }
     try {
       const outcome = await this.store.withIndexLock(async () => {
         const index = this.store.readIndex()
         const project = index.projects.find(candidate => candidate.id === request.id)
         if (project === undefined) return refuse('not-found', `no project ${JSON.stringify(request.id)}`)
+        const { goal: _goal, ...rest } = project
+        const goal = patch.goal === undefined ? project.goal : patch.goal.trim()
         const next: LibraryProject = {
-          ...project,
+          ...rest,
+          ...(goal === undefined || goal === '' ? {} : { goal }),
           ...(patch.color === undefined ? {} : { color: patch.color }),
           ...(patch.icon === undefined ? {} : { icon: patch.icon }),
-          ...(patch.goal === undefined ? {} : { goal: patch.goal.trim() }),
+          ...(patch.template === undefined ? {} : { template: patch.template }),
           ...(patch.name === undefined ? {} : { name: patch.name.trim() }),
         }
         this.store.writeProject(next)

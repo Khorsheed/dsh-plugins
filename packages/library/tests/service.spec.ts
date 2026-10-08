@@ -98,6 +98,17 @@ describe('projects', () => {
     expect(updated.ok && [updated.project.color, updated.project.icon]).toEqual(['moss', 'pen'])
     expect((await service.updateProject({ id: created.project.id, patch: { color: 'neon' as never } })).ok).toBe(false)
   })
+
+  it('can be renamed and refocused, and an empty goal clears it', async () => {
+    const created = await service.createProject({ name: '神经科学', template: 'subject', goal: '读完 PNS 第 II 部分' })
+    if (!created.ok) throw new Error(created.message)
+    const renamed = await service.updateProject({ id: created.project.id, patch: { name: ' 神经科学 × 人工智能 ', goal: '读懂神经网络的生物学来源', template: 'custom' } })
+    expect(renamed.ok && [renamed.project.name, renamed.project.goal, renamed.project.template]).toEqual(['神经科学 × 人工智能', '读懂神经网络的生物学来源', 'custom'])
+    const cleared = await service.updateProject({ id: created.project.id, patch: { goal: '' } })
+    expect(cleared.ok && 'goal' in cleared.project).toBe(false)
+    expect((await service.updateProject({ id: created.project.id, patch: { name: '  ' } })).ok).toBe(false)
+    expect((await service.listProjects()).projects.map(project => project.name)).toContain('神经科学 × 人工智能')
+  })
 })
 
 describe('the project list', () => {

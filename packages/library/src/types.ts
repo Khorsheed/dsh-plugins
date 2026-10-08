@@ -81,6 +81,15 @@ export type LibraryOutcome<T> = ({ readonly ok: true } & T) | LibraryRefusal
  */
 export type LibraryTemplate = 'language' | 'subject' | 'custom'
 
+/** What editing a project may change; an empty goal clears it. */
+export interface LibraryProjectPatch {
+  readonly name?: string
+  readonly goal?: string
+  readonly template?: LibraryTemplate
+  readonly color?: LibraryColor
+  readonly icon?: LibraryIcon
+}
+
 /** The preset project colors (the sidebar maps each to a light and a dark tone). */
 export const LIBRARY_COLORS = ['ember', 'amber', 'moss', 'teal', 'sky', 'indigo', 'plum', 'rose'] as const
 export type LibraryColor = typeof LIBRARY_COLORS[number]

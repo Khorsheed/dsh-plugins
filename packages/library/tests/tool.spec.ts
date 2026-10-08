@@ -71,6 +71,18 @@ describe('the tool set', () => {
   })
 })
 
+describe('editing a project', () => {
+  it('library_write · project with an id renames it instead of creating one', async () => {
+    const { project } = await seed()
+    const edited = (await call('library_write', { what: 'project', project: { id: project, name: '神经科学 × 人工智能', goal: '' } })) as { project: { name: string; goal?: string } }
+    expect(edited.project.name).toBe('神经科学 × 人工智能')
+    expect(edited.project.goal).toBeUndefined()
+    const listed = (await call('library_read', { what: 'projects' })) as { projects: unknown[] }
+    expect(listed.projects).toHaveLength(1)
+    await expect(call('library_write', { what: 'project', project: { id: project } })).rejects.toThrow(/name\?, goal\?/)
+  })
+})
+
 describe('binding defaults', () => {
   it('an unbound session is taught to ask and bind', async () => {
     await expect(call('library_read', { what: 'roadmap' })).rejects.toThrow(/library_write · binding/)

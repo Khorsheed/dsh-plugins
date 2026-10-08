@@ -17,6 +17,8 @@ export const zh = {
   'state.error': '出错了：{reason}',
 
   'action.back': '返回',
+  'action.save': '保存',
+  'action.cancel': '取消',
   'action.more': '更多',
   'action.refresh': '刷新',
   'action.askCoach': '问教练',
@@ -220,6 +222,8 @@ export const zh = {
 
   'project.cardMeta': '{books} 本书 · {cards} 张卡 · 今天 {due} 张到期',
   'project.style': '颜色与图标',
+  'project.edit': '编辑项目',
+  'project.templateChange': '只影响以后记的卡：语言学习按单词记，学科知识按概念记；已有的卡不变',
   'project.shelf': '书架 · {count}',
   'book.shelfMeta': '{done}/{total} 关',
   'book.extrasTitle': '开始前 / 附录',
@@ -278,6 +282,8 @@ export const en: Record<LibraryKey, string> = {
   'state.error': 'Something went wrong: {reason}',
 
   'action.back': 'Back',
+  'action.save': 'Save',
+  'action.cancel': 'Cancel',
   'action.more': 'More',
   'action.refresh': 'Refresh',
   'action.askCoach': 'Ask the coach',
@@ -481,6 +487,8 @@ export const en: Record<LibraryKey, string> = {
 
   'project.cardMeta': '{books} books · {cards} cards · {due} due today',
   'project.style': 'Color and icon',
+  'project.edit': 'Edit project',
+  'project.templateChange': 'Affects only cards noted from now on (language: words; subject: concepts); existing cards stay as they are',
   'project.shelf': 'Shelf · {count}',
   'book.shelfMeta': '{done}/{total} levels',
   'book.extrasTitle': 'Before you start / Appendix',

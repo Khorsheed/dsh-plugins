@@ -24,6 +24,7 @@ import type {
   LibraryCardWriteResult,
   LibraryColor,
   LibraryIcon,
+  LibraryProjectPatch,
   LibraryEvent,
   LibraryEventType,
   LibraryMark,
@@ -82,7 +83,7 @@ export class LibraryRemoteService extends TypertRemoteService<LibraryRemoteConfi
 
   /** Change a project's look, goal or name. */
   @Remote('updateProject')
-  updateProject(request: { id: string; patch: { color?: LibraryColor; icon?: LibraryIcon; goal?: string; name?: string } }): Promise<LibraryOutcome<{ project: LibraryProject }>> {
+  updateProject(request: { id: string; patch: LibraryProjectPatch }): Promise<LibraryOutcome<{ project: LibraryProject }>> {
     return this.core.updateProject(request)
   }
 
