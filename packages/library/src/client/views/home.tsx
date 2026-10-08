@@ -184,7 +184,7 @@ export function ProjectView({ p, projectId }: ViewProps & { projectId: string })
   return (
     <>
       <PanelHeader
-        title=""
+        title={project?.name ?? ''}
         onBack={() => { actions.pop() }}
         backLabel={t('action.back')}
         actions={[
@@ -200,8 +200,8 @@ export function ProjectView({ p, projectId }: ViewProps & { projectId: string })
           <span className={css.projectTop}>
             <ProjectGlyph icon={iconOf(project)} />
             <span className={css.projectText}>
-              <span className={css.projectName}>{project.name}</span>
-              <span className={css.muted}>{project.goal ?? t(`template.${project.template}`)}</span>
+              {project.goal !== undefined && <span className={css.bandGoal}>{project.goal}</span>}
+              <span className={css.muted}>{t(`template.${project.template}`)} · {when(project.lastActiveAt, t)}</span>
             </span>
             <Ring percent={progressOf(project)} />
           </span>
@@ -245,9 +245,8 @@ export function ProjectView({ p, projectId }: ViewProps & { projectId: string })
                   </button>
                 )
               })}
-              <button type="button" className={css.shelfBook} onClick={askToAddBook}>
+              <button type="button" className={css.shelfBook} aria-label={t('book.add')} title={t('book.add')} onClick={askToAddBook}>
                 <span className={css.shelfAdd}>＋</span>
-                <span className={css.shelfLabel}><span className={css.shelfTitle}>{t('book.add')}</span></span>
               </button>
             </div>
           </section>

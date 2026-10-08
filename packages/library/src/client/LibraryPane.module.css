@@ -681,6 +681,10 @@
   border-bottom: 1px solid var(--dsw-alias-border-l2);
 }
 
+.bandGoal {
+  line-height: 1.5;
+}
+
 .bandStats {
   display: flex;
   gap: 16px;
@@ -768,7 +772,6 @@
 }
 
 .coverShort {
-  font-family: 'Iowan Old Style', Palatino, Georgia, 'Songti SC', serif;
   font-size: 20px;
   font-weight: 700;
   line-height: 1;
