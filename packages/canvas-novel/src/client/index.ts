@@ -11,8 +11,10 @@
  * - `canvas.board.view` `novel:plan`: 规划 — the one-page outline, the volume
  *   roadmap and the core suspenses (the genre's lead face);
  * - `canvas.board.view` `novel:story`: 故事 — the story log;
- * - `canvas.board.scopes` / `canvas.board.graph`: 设定's 已进入故事 / 灵感
- *   chips and its 连线 layout (characters and relation cards);
+ * - `canvas.board.scopes`: 设定's 已进入故事 / 灵感 chips. Its 连线
+ *   layout is the canvas's own (free lanes and links; the genre's relation
+ *   ring was retired 2026-10-08 — it listed only characters a chapter had
+ *   reached, so a work in planning showed none);
  * - `canvas.card.deleteNote`: the chapters a card is in, on its delete question;
  * - `canvas.page` `novel:story-log`: the story log — foreshadows, relations,
  *   characters and world settings as rows over the chapter columns;
@@ -48,7 +50,7 @@ import { ChapterBook } from './ChapterBook.tsx'
 import { ChapterPage } from './ChapterReader.tsx'
 import { CHAPTER_PAGE, STORY_LOG_PAGE, type NovelFace, type NovelRemote } from './contract.ts'
 import { en, NS, zh } from './locales.ts'
-import { ChaptersBadge, CardScopes, DeleteNote, FaceLabel, RelationGraph } from './NovelFaces.tsx'
+import { ChaptersBadge, CardScopes, DeleteNote, FaceLabel } from './NovelFaces.tsx'
 import { PlanView } from './PlanView.tsx'
 import { StoryLogPage, StoryView } from './StoryLogPage.tsx'
 import { WriteToolRow, type WriteToolFace } from './WriteToolRow.tsx'
@@ -56,7 +58,7 @@ import { WriteToolRow, type WriteToolFace } from './WriteToolRow.tsx'
 export { CardSection } from './CardSection.tsx'
 export { ChapterBook } from './ChapterBook.tsx'
 export { ChapterPage, ChapterReader } from './ChapterReader.tsx'
-export { ChaptersBadge, CardScopes, DeleteNote, FaceLabel, RelationGraph, storyUsage } from './NovelFaces.tsx'
+export { ChaptersBadge, CardScopes, DeleteNote, FaceLabel, storyUsage } from './NovelFaces.tsx'
 export { PendingList } from './PendingList.tsx'
 export { PlanView } from './PlanView.tsx'
 export { StoryLogPage, StoryView } from './StoryLogPage.tsx'
@@ -123,7 +125,6 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   }, PlanView)), 'canvas-novel: plan face')
   for (const [slot, component] of [
     ['canvas.board.scopes', CardScopes],
-    ['canvas.board.graph', RelationGraph],
     ['canvas.card.deleteNote', DeleteNote],
   ] as const) {
     ctx.effect(() => seats.inject(slot, () => seats.register({
