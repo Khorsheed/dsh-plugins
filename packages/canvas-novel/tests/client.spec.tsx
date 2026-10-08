@@ -387,6 +387,24 @@ describe('novel_write tool row', () => {
     expect(openPage).toHaveBeenCalledWith(CANVAS_ID, CHAPTER_PAGE, '第1章 · 门', '1')
   })
 
+  it('a plan it watched land opens the chapter page once, so the confirm survives the turn folding away', async () => {
+    const remote = fakeRemote({ items: [], rows: [{ chapter: chapter(1, '门', { phase: 'planning', plan: PLAN }), phase: 'planning' }] })
+    const openPage = vi.fn()
+    const { rerender } = render(<WriteToolRow block={{}} phase="preparing" remote={() => remote} openPage={() => openPage} chapterPage={CHAPTER_PAGE} t={t} />)
+    rerender(<WriteToolRow block={settled(PLANNED)} remote={() => remote} openPage={() => openPage} chapterPage={CHAPTER_PAGE} t={t} />)
+    await waitFor(() => { expect(openPage).toHaveBeenCalledWith(CANVAS_ID, CHAPTER_PAGE, '第1章 · 门', '1') })
+    rerender(<WriteToolRow block={settled(PLANNED)} remote={() => remote} openPage={() => openPage} chapterPage={CHAPTER_PAGE} t={t} />)
+    expect(openPage).toHaveBeenCalledTimes(1)
+  })
+
+  it('a plan in history only offers its door', async () => {
+    const remote = fakeRemote({ items: [], rows: [{ chapter: chapter(1, '门', { phase: 'planning', plan: PLAN }), phase: 'planning' }] })
+    const openPage = vi.fn()
+    render(<WriteToolRow block={settled(PLANNED)} remote={() => remote} openPage={() => openPage} chapterPage={CHAPTER_PAGE} t={t} />)
+    await screen.findByText(PLAN.summary)
+    expect(openPage).not.toHaveBeenCalled()
+  })
+
   it('without the canvas the card keeps its answer counts and offers no door', () => {
     render(<WriteToolRow block={settled(PLANNED)} remote={() => undefined} openPage={() => undefined} chapterPage={CHAPTER_PAGE} t={t} />)
     expect(screen.getByText('走向 2 拍')).toBeTruthy()

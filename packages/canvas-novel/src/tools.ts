@@ -244,10 +244,14 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
       const args = withTextForms(arrived)
       if (args.what === 'chapter') {
         if ((args.title ?? '').trim() === '') return '失败：what=chapter 要给 title。'
+        // Asking to plan 「第 N 章」 when N is simply the next one is a create, not a miss.
+        const existing = args.chapter === undefined ? [] : await store.listChapters({ workId })
+        const next = existing.reduce((max, row) => Math.max(max, row.chapter.n), 0) + 1
+        const creates = args.chapter !== undefined && args.chapter === next && !existing.some(row => row.chapter.n === args.chapter)
         const outcome = await store.writeChapter({
           workId,
           title: args.title!,
-          ...(args.chapter === undefined ? {} : { n: args.chapter }),
+          ...(args.chapter === undefined || creates ? {} : { n: args.chapter }),
           ...(args.plan === undefined ? {} : { plan: args.plan }),
           ...(args.content === undefined ? {} : { content: args.content }),
           ...(args.byUser === true ? { byUser: true } : {}),
@@ -300,7 +304,7 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
         return `已登记第 ${chapter.n} 章《${chapter.title}》（画布 ${workId}${position === undefined ? '' : ` · 卷${volumeNumeral(position.index)}`}）plan：`
           + `${words === undefined ? '' : `目标 ${words} 字 / `}走向 ${plan.beats.length} 拍 / 伏笔 ${plan.foreshadowOps.length} 条 / 出场 ${plan.cast.length} 人。`
           + (overshoots.length === 0 ? '' : `\n提醒（只提醒，不拦）：${overshoots.join('；')}。在回复里跟用户说一句，按他的意思改或保留。`)
-          + '\n完整计划已在会话卡片和章节页上，回复只用两三句说这章怎么走、最想让用户拍板的是什么，不要再贴一遍计划表。用户确认后开写。'
+          + '\n完整计划已在右栏打开的章节页上（会话里的计划卡也能点进去），用户在章节页点「✓ 确认计划」。回复只用两三句说这章怎么走、最想让用户拍板的是什么，不要再贴一遍计划表。用户确认后开写。'
       }
       if (args.what === 'outline') {
         const outcome = await store.proposeOutline({

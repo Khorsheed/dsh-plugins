@@ -99,7 +99,9 @@ describe('text forms', () => {
     const proposal = (await store.readOutline(DREAM.workId)).proposal!
     expect(proposal.sheet?.length).toEqual({ words: 300_000, volumes: 3, chapters: 100, perChapter: 3000 })
     expect(proposal.volumes?.map(volume => volume.title)).toEqual(['梦醒', '废域'])
-    const answer = await write({ what: 'chapter', title: '入梦', content: PLAN.replace('#5', 'c_doorGap') })
+    // 「第 N 章」 for the next N is a create, not a miss.
+    const next = (await store.listChapters({ workId: DREAM.workId })).length + 1
+    const answer = await write({ what: 'chapter', title: '入梦', chapter: next, content: PLAN.replace('#5', 'c_doorGap') })
     expect(answer).toContain('走向 3 拍')
     // The plan text is a plan, never a manuscript body.
     const chapters = await store.listChapters({ workId: DREAM.workId })
