@@ -27,6 +27,11 @@ The schema the host sent was correct (checked in the session's request header). 
   - a `title` that resolves to an existing card does the same;
   - `op=comment` and `op=archive` take the same line;
   - the namesake refusal in canvas-novel names the 编号 form.
+- **The novel's nested arguments have text forms too** (`packages/canvas-novel/src/text-forms.ts`). Later in the same session, `novel_write` arrived as `{"what":"outline"}` six times over. `content` is the one free-text argument that arrives, so:
+  - an outline can be written there as `键：值` lines: 一句话主线, 核心冲突, 主角, 成长弧线, 主题, 类型与基调, 结局方向, 篇幅 on one line, one 「卷一：标题｜约N章｜要完成：…｜卷末：…」 line per volume, 「第N章：…」 sketches, and 理由;
+  - a chapter call whose `content` opens on 「梗概：」 is a plan, never a manuscript body: 走向 / 伏笔 / 出场 / 信息差 are a key line followed by `- …` items.
+  The empty-outline answer names this form.
+- **Relation cards from one string.** A text-form 双方 arrives as one string. `refTokensOf` splits it on commas, 、, slashes, × or spaces, and also reads a JSON-array string. A character matches by name past its asides (「江眠」 finds 「江眠（提议名，可换）」, through the store's `bareName`), and so does a stage (「死党（好友以上）」). The write's failure now names the problem: how many of 双方 were recognized plus the roster, the seven types, an unrecognized stage, and the required fields of a new card. It used to be one 「字段不全或不合法」 for everything, and the model cycled through ten shapes of `pair`.
 - **`kind` reaches a genre hook as the model wrote it.** This honors the hook contract ("the model's arguments, untouched"). The canvas's own path uses the resolved category id, so a category name now works there too.
 - **An empty card call gets an answer that changes the next call.** Instead of a bare 「要给 kind」, it names the text-only form and says the arguments probably did not arrive. The kind error lists the valid categories and the same hint, and the genre hook's 「按字段写」 error points at the text-line form.
 - **The `canvas` skill** says: when `kind`/`fields` do not arrive, switch to the text form, and never resend the same arguments.
@@ -42,5 +47,5 @@ The schema the host sent was correct (checked in the session's request header). 
 ## Consequences
 
 - On providers like this, a card lands from `op` + `text` alone, and the second call after a failure has a form that works.
-- `novel_write`'s nested `plan`/`sheet`/`volumes` have no such fallback yet. On a provider that drops objects, chapter plans would fail the same way. If that shows up, it needs a text form too (or a schema-level union, if the host grows one).
-- Tests: `tests/tools.spec.ts` covers parsing the category and fields from text, the title as the name, prose on an untyped card, the empty-call answer followed by a text-only card landing, and a patch or comment routed by a 编号 line or a title.
+- `novel_write`'s `volumes`/`sketches` lists and the plan's lists ride the text forms; a model that cannot write either form still cannot plan.
+- Tests: `tests/tools.spec.ts` covers parsing the category and fields from text, the title as the name, prose on an untyped card, the empty-call answer followed by a text-only card landing, and a patch or comment routed by a 编号 line or a title; `canvas-novel/tests/text-forms.spec.ts` covers the outline and plan text forms through `novel_write` and relation 双方 from one string.

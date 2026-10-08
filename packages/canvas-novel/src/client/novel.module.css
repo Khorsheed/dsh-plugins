@@ -1,5 +1,5 @@
 /* The 长篇小说 genre's surfaces inside the canvas: the face labels, the
-   book (contents and reader), the story log, the 设定 graph and the delete
+   book (contents and reader), the story log and the delete
    note. They sit in the canvas's own frame, so every colour and size is a
    `--dsw-*` token — light and dark are the theme's. */
 
@@ -20,54 +20,6 @@
   font-variant-numeric: tabular-nums;
   vertical-align: 1px;
 }
-
-/* 设定 · 连线: the characters round a ring, the relation cards as lines. */
-.graph {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  padding: 16px;
-  font: var(--dsh-panel-text-body, 13px)/1.5 var(--dsw-font-family);
-  color: var(--dsw-alias-label-primary);
-}
-
-.graphSvg {
-  width: 100%;
-  max-width: 720px;
-  height: auto;
-  overflow: visible;
-}
-
-.graphLine { cursor: pointer; }
-.graphLine line { stroke: var(--dsw-alias-label-tertiary); stroke-width: 1.5; }
-.graphLine .graphHit { stroke: transparent; stroke-width: 16; }
-.graphLine text { fill: var(--dsw-alias-label-secondary); font-size: 11px; paint-order: stroke; stroke: var(--dsw-alias-bg-base); stroke-width: 3px; }
-.graphLine[data-idle='true'] line:not(.graphHit) { stroke-dasharray: 4 4; }
-.graphLine:hover line:not(.graphHit),
-.graphLine:focus-visible line:not(.graphHit) { stroke: var(--dsw-alias-state-business-primary); }
-.graphLine:focus { outline: none; }
-
-.graphNode { cursor: pointer; }
-.graphNode rect { fill: var(--dsw-alias-bg-layer-1); stroke: var(--dsw-alias-border-l2); stroke-width: 1; }
-.graphNode text { fill: var(--dsw-alias-label-primary); font-size: 13px; }
-.graphNode[data-idle='true'] rect { stroke-dasharray: 3 3; }
-.graphNode[data-idle='true'] text { fill: var(--dsw-alias-label-secondary); }
-.graphNode:hover rect,
-.graphNode:focus-visible rect { stroke: var(--dsw-alias-state-business-primary); stroke-width: 1.5; }
-.graphNode:focus { outline: none; }
-
-.graphKey,
-.graphEmpty {
-  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
-  color: var(--dsw-alias-label-tertiary);
-  text-align: center;
-}
-
-.graphEmpty { padding: 32px 0; }
 
 /* The delete question's note: which chapters use the card. */
 .deleteNote {
@@ -1005,7 +957,6 @@
 /* The book's own gutter answers to the canvas's panel (its PanelRoot). */
 @container dsh-panel (max-width: 560px) {
   .book { padding: 14px 16px 40px; }
-  .graph { padding: 12px 16px; }
 }
 
 /* ── Reader ─────────────────────────────────────────────────────────── */

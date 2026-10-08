@@ -20,7 +20,7 @@ import { ChapterBook } from '../src/client/ChapterBook.tsx'
 import { ChapterPage } from '../src/client/ChapterReader.tsx'
 import { CHAPTER_PAGE, STORY_LOG_PAGE, type NovelRemote, type NovelSurfaceProps } from '../src/client/contract.ts'
 import { zh } from '../src/client/locales.ts'
-import { CardScopes, ChaptersBadge, DeleteNote, FaceLabel, RelationGraph, storyUsage } from '../src/client/NovelFaces.tsx'
+import { CardScopes, ChaptersBadge, DeleteNote, FaceLabel, storyUsage } from '../src/client/NovelFaces.tsx'
 import { chapterHeading } from '../src/client/PendingList.tsx'
 import { StoryLogPage } from '../src/client/StoryLogPage.tsx'
 import { WriteToolRow } from '../src/client/WriteToolRow.tsx'
@@ -576,18 +576,6 @@ describe('the three faces', () => {
       { id: 'story', label: zh['scope.story'], cardIds: ['f12'], archiveFirst: true },
       { id: 'idea', label: zh['scope.idea'], cardIds: ['c2'] },
     ])
-  })
-
-  it('连线: a node per character, a line per relation card, dashed while unused; both open their card', async () => {
-    const p = props(remote())
-    render(<RelationGraph {...p} />)
-    const line = await screen.findByRole('button', { name: '赵启明 × 艾文 · 同盟 · 合作' })
-    expect(line.dataset['idle']).toBeUndefined()
-    expect(screen.getByRole('button', { name: '艾文' }).dataset['idle']).toBe('true')
-    fireEvent.click(line)
-    expect(p.navigate.openCard).toHaveBeenCalledWith('r1', '赵启明 × 艾文')
-    fireEvent.keyDown(screen.getByRole('button', { name: '赵启明' }), { key: 'Enter' })
-    expect(p.navigate.openCard).toHaveBeenCalledWith('c1', '赵启明')
   })
 
   it('the delete note lists the chapters using a card, says an idea goes for good, and skips principles', async () => {

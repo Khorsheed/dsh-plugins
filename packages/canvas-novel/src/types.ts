@@ -897,7 +897,7 @@ export function relationTypeOf(raw: unknown): RelationType | undefined {
  * 裂痕/决裂, nothing when it is neither.
  */
 export function readRelationStage(type: RelationType, raw: unknown): { readonly level?: number; readonly rift?: RelationRift } {
-  const text = typeof raw === 'number' ? String(raw) : typeof raw === 'string' ? raw.trim() : ''
+  const text = typeof raw === 'number' ? String(raw) : typeof raw === 'string' ? raw.replace(/[（(][^）)]*[）)]/g, '').trim() : ''
   const rift = RELATION_RIFTS.find(candidate => candidate === text)
   if (rift !== undefined) return { rift }
   const index = RELATION_LADDERS[type].findIndex(step => step.stage === text)

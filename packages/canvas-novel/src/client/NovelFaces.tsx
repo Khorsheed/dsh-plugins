@@ -6,8 +6,6 @@
  *   to reconcile plus pending items);
  * - the 设定 face's scopes: 已进入故事 (a card some reconciled chapter uses)
  *   and 灵感 (a story card none does yet);
- * - its 连线 layout: the characters as nodes, the relation cards as lines,
- *   dashed while no chapter has the pair;
  * - the delete question's note: the chapters that use the card, or that an
  *   idea card affects no chapter.
  *
@@ -20,7 +18,7 @@ import { useEffect, type ReactNode } from 'react'
 import { NOVEL_GENRE_ID, NOVEL_PLAN_FACE, type EffectiveChapterPhase, type StoryLogResult } from '../types.ts'
 import type { NovelCardOwnerProps, NovelSurfaceProps } from './contract.ts'
 import { chapterHeading } from './PendingList.tsx'
-import { errorKey, useNovelRead } from './use-novel.ts'
+import { useNovelRead } from './use-novel.ts'
 import css from './novel.module.css'
 
 /** The card roles the story log follows (a principle card is never "in the story"). */
@@ -99,92 +97,6 @@ export function CardScopes(props: NovelSurfaceProps & {
     ])
   }, [log, board, onScopes, t])
   return null
-}
-
-/* ----------------------------------------------------------- the graph */
-
-const NODE_W = 88
-const NODE_H = 32
-
-/**
- * The 连线 layout: the characters round a ring, each relation card a line
- * between its pair with the card's 现状 on it; a pair no chapter has yet is
- * dashed, a character no chapter has yet too. A node or a line opens its card.
- */
-export function RelationGraph(props: NovelSurfaceProps): ReactNode {
-  if (props.board.genre?.id !== NOVEL_GENRE_ID) return null
-  return <Graph {...props} />
-}
-
-function Graph({ canvasId, rev, navigate, remote, t }: NovelSurfaceProps): ReactNode {
-  const read = useNovelRead(remote(), r => r.storyLog({ canvasId }), `story-log:${canvasId}`, rev)
-  if (read.state === 'loading') return <div className={css.graph}><div className={css.muted}>{t('state.loading')}</div></div>
-  if (read.state === 'error') return <div className={css.graph}><div className={css.warn}>{t('error.generic', { message: read.message })}</div></div>
-  if (!read.value.ok) return <div className={css.graph}><div className={css.warn}>{t(errorKey(read.value.error))}</div></div>
-  const log = read.value
-  const usage = storyUsage(log)
-  const people = log.characters
-  if (people.length === 0) return <div className={css.graph}><div className={css.graphEmpty}>{t('graph.empty')}</div></div>
-  // A ring sized so neighbouring nodes keep a node's width between them.
-  const radius = Math.max(110, (people.length * (NODE_W + 24)) / (2 * Math.PI))
-  const width = 2 * radius + NODE_W + 40
-  const height = 2 * radius + NODE_H + 60
-  const at = new Map(people.map((card, index) => {
-    const angle = -Math.PI / 2 + (index * 2 * Math.PI) / people.length
-    return [card.cardId, { x: width / 2 + radius * Math.cos(angle), y: height / 2 + radius * Math.sin(angle) }] as const
-  }))
-  const lines = log.relations.flatMap((view) => {
-    const a = at.get(view.pair[0] ?? '')
-    const b = at.get(view.pair[1] ?? '')
-    return a === undefined || b === undefined ? [] : [{ view, a, b, used: usage.has(view.cardId) }]
-  })
-  return (
-    <div className={css.graph} data-canvas-scroll="novel-graph">
-      {/* Natural size at most: a small ring scaled to the panel's width reads as oversized type. */}
-      <svg className={css.graphSvg} style={{ maxWidth: width }} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={t('graph.label')}>
-        {lines.map(({ view, a, b, used }) => (
-          <g
-            key={view.cardId}
-            className={css.graphLine}
-            data-idle={used ? undefined : 'true'}
-            role="button"
-            tabIndex={0}
-            aria-label={`${view.names.join(' × ')} · ${view.type} · ${view.stage}`}
-            onClick={() => { navigate.openCard(view.cardId, view.name) }}
-            onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') navigate.openCard(view.cardId, view.name) }}
-          >
-            {/* A wide transparent twin so a finger finds the line. */}
-            <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} className={css.graphHit} />
-            <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} />
-            <text x={(a.x + b.x) / 2} y={(a.y + b.y) / 2 - 6} textAnchor="middle">{clip(view.now ?? view.stage, 10)}</text>
-          </g>
-        ))}
-        {people.map((card) => {
-          const point = at.get(card.cardId)!
-          return (
-            <g
-              key={card.cardId}
-              className={css.graphNode}
-              data-idle={usage.has(card.cardId) ? undefined : 'true'}
-              role="button"
-              tabIndex={0}
-              aria-label={card.name}
-              onClick={() => { navigate.openCard(card.cardId, card.name) }}
-              onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') navigate.openCard(card.cardId, card.name) }}
-            >
-              <rect x={point.x - NODE_W / 2} y={point.y - NODE_H / 2} width={NODE_W} height={NODE_H} rx={8} />
-              <text x={point.x} y={point.y + 5} textAnchor="middle">{clip(card.name, 6)}</text>
-            </g>
-          )
-        })}
-      </svg>
-      <div className={css.graphKey}>{t('graph.key')}</div>
-    </div>
-  )
-}
-
-function clip(text: string, max: number): string {
-  return [...text].length > max ? `${[...text].slice(0, max).join('')}…` : text
 }
 
 /* ------------------------------------------------------ the delete note */
