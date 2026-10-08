@@ -421,6 +421,13 @@ export const zh = {
   'toolview.running': '正在提交类型提议…',
   'toolview.failed': '类型提议没有提交成功',
   'toolview.open': '去类型页看看 →',
+  'openrow.kind': '画布',
+  'openrow.running': '正在打开画布…',
+  'openrow.failed': '没有打开画布',
+  'openrow.listed': '查看了画布列表',
+  'openrow.created': '新建了《{title}》',
+  'openrow.switched': '切到了《{title}》',
+  'openrow.open': '打开 →',
 }
 
 /** English dictionary (same key set). */
@@ -844,6 +851,13 @@ export const en: Record<keyof typeof zh, string> = {
   'toolview.running': 'Submitting the type proposal…',
   'toolview.failed': 'The type proposal did not go through',
   'toolview.open': 'Open the type page →',
+  'openrow.kind': 'Canvas',
+  'openrow.running': 'Opening a canvas…',
+  'openrow.failed': 'No canvas was opened',
+  'openrow.listed': 'Looked through the canvases',
+  'openrow.created': 'Created “{title}”',
+  'openrow.switched': 'Switched to “{title}”',
+  'openrow.open': 'Open →',
 }
 
 /** The dictionary namespace this view binds. */

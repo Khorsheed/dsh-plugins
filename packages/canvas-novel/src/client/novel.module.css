@@ -1369,9 +1369,20 @@
   color: var(--dsw-alias-label-secondary);
 }
 
+/* A name never pushes its row past the card: it takes at most 40% and wraps,
+   and the description beside it keeps the rest (2026-10-08 — a long who
+   overflowed the card and squeezed its role to a one-character column). */
 .castName {
-  flex: none;
+  flex: 0 1 auto;
   min-width: 52px;
+  max-width: 40%;
+  overflow-wrap: anywhere;
+}
+
+.ops li > .what {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .pov {

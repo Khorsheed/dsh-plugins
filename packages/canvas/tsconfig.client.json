@@ -50,6 +50,8 @@
     "src/client/type/CategoriesView.tsx",
     "src/client/type/ProposeTypeRow.tsx",
     "src/client/type/propose-row.ts",
+    "src/client/open/OpenCanvasRow.tsx",
+    "src/client/open/open-row.ts",
     "src/client/detail/DetailCrumbs.tsx",
     "src/client/detail/DrawFigure.tsx",
     "src/client/detail/image-lightbox.tsx",

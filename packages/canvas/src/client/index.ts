@@ -53,6 +53,7 @@ import {
 } from './preset-visibility.ts'
 import { CanvasSelectionStore } from './space/selection.ts'
 import { ProposeTypeRow, type ProposeTypeRowFace } from './type/ProposeTypeRow.tsx'
+import { OpenCanvasRow, type OpenCanvasRowFace } from './open/OpenCanvasRow.tsx'
 import { CanvasTab } from './tab/CanvasTab.tsx'
 import { CanvasTabTitle } from './tab/CanvasTabTitle.tsx'
 import { CANVAS_CHILD_SLOTS, type CanvasNavService } from './slots.ts'
@@ -390,6 +391,26 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     locale: NS,
     inject: () => proposeFace,
   }, ProposeTypeRow)), 'canvas: propose-type tool row')
+
+  // The canvas_open row: a switch the agent just made opens that canvas in the
+  // tab (the row decides when — only a call it saw running), and every row
+  // keeps an 打开 → door to it.
+  const openFace: OpenCanvasRowFace = {
+    openCanvas: (canvasId) => {
+      try {
+        ctx.sidebarRight.openTab(CANVAS_KIND)
+      } catch (error) {
+        ctx.logger.warn('canvas: openTab failed (tab type not registered?)', error)
+      }
+      selection.openCanvas(canvasId)
+    },
+  }
+  ctx.effect(() => toolSlots.inject('tool.call.toolview', () => toolSlots.register({
+    name: 'tool.call.toolview',
+    key: 'canvas_open',
+    locale: NS,
+    inject: () => openFace,
+  }, OpenCanvasRow)), 'canvas: open-canvas tool row')
 
   // The binding chip (创作体裁) in the session header: which canvas this
   // writing session works on. Offered only where a genre is installed and the
