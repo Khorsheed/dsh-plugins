@@ -574,9 +574,19 @@ export function normalizePlan(raw: unknown): ChapterPlan | undefined {
     }
   }).filter((op): op is ForeshadowOp => op !== undefined)
   const cast = rowsOf(record['cast'], 12).map((row): PlanCast | undefined => {
-    const who = cleanText(row['who'], 80)
-    if (who === undefined) return undefined
-    const role = cleanText(row['role'], 120)
+    const rawWho = cleanText(row['who'], 200)
+    if (rawWho === undefined) return undefined
+    let role = cleanText(row['role'], 120)
+    let who = rawWho
+    // A model that packs the description into who (`做梦者（身份逐步揭示…）`)
+    // and leaves role empty: the name is the part before the bracket, the
+    // bracket is what they do here.
+    const packed = role === undefined ? /^([^（(]{1,40})[（(](.+)[）)]$/.exec(rawWho) : null
+    if (packed !== null) {
+      who = packed[1]!.trim()
+      role = cleanText(packed[2], 120)
+    }
+    who = who.slice(0, 80)
     return { who, ...(role === undefined ? {} : { role }) }
   }).filter((member): member is PlanCast => member !== undefined)
   const infoGaps = rowsOf(record['infoGaps'], 8).map((row): PlanInfoGap | undefined => {
