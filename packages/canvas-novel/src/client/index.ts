@@ -48,7 +48,7 @@ import { NOVEL_GENRE_ID, NOVEL_PLAN_FACE, NOVEL_STORY_FACE } from '../types.ts'
 import { CardSection } from './CardSection.tsx'
 import { ChapterBook } from './ChapterBook.tsx'
 import { ChapterPage } from './ChapterReader.tsx'
-import { CHAPTER_PAGE, STORY_LOG_PAGE, type NovelFace, type NovelRemote } from './contract.ts'
+import { CHAPTER_PAGE, PLAN_PAGE, STORY_LOG_PAGE, type NovelFace, type NovelRemote } from './contract.ts'
 import { en, NS, zh } from './locales.ts'
 import { ChaptersBadge, CardScopes, DeleteNote, FaceLabel } from './NovelFaces.tsx'
 import { PlanView } from './PlanView.tsx'
@@ -63,7 +63,7 @@ export { PendingList } from './PendingList.tsx'
 export { PlanView } from './PlanView.tsx'
 export { StoryLogPage, StoryView } from './StoryLogPage.tsx'
 export { WriteToolRow } from './WriteToolRow.tsx'
-export { CHAPTER_PAGE, STORY_LOG_PAGE } from './contract.ts'
+export { CHAPTER_PAGE, PLAN_PAGE, STORY_LOG_PAGE } from './contract.ts'
 export type { NovelCardOwnerProps, NovelFace, NovelNavigate, NovelOwnerProps, NovelPageOwnerProps, NovelRemote } from './contract.ts'
 export type { WriteToolFace } from './WriteToolRow.tsx'
 
@@ -146,7 +146,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     locale: NS,
     inject: () => face,
   }, CardSection)), 'canvas-novel: card section')
-  for (const [key, page] of [[STORY_LOG_PAGE, StoryLogPage], [CHAPTER_PAGE, ChapterPage]] as const) {
+  for (const [key, page] of [[STORY_LOG_PAGE, StoryLogPage], [CHAPTER_PAGE, ChapterPage], [PLAN_PAGE, PlanView]] as const) {
     ctx.effect(() => seats.inject('canvas.page', () => seats.register({
       name: 'canvas.page',
       key,
@@ -162,6 +162,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     ...face,
     openPage: () => (ctx.get('canvasNav') as { openPage: ReturnType<WriteToolFace['openPage']> } | undefined)?.openPage,
     chapterPage: CHAPTER_PAGE,
+    planPage: PLAN_PAGE,
   }
   ctx.effect(() => seats.inject('tool.call.toolview', () => seats.register({
     name: 'tool.call.toolview',

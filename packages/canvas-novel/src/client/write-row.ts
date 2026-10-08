@@ -7,7 +7,9 @@
  * A chapter answer (`tools.ts`) names the chapter and the canvas:
  * `已登记第 7 章《回响》（画布 canvas_x）plan：走向 4 拍 / 伏笔 2 条 / 出场 3 人。…`
  * or, without a plan, `已建第 7 章《回响》（画布 canvas_x · 规划中 · …）。`.
- * Every other answer (a review) is a plain line.
+ * An outline proposal names its canvas: `已提交大纲提议（画布 canvas_x），…`.
+ * Every other answer (a review) is a plain line. A note may come first (the
+ * workspace a body attached), so the chapter line is looked for on any line.
  *
  * @module @khorsheed/dsh-canvas-novel/client
  */
@@ -36,14 +38,17 @@ export interface WriteRowChapter {
 
 /** What the row shows. */
 export interface WriteRowModel {
-  /** `running` — no answer yet; `failed` — an error answer; `line` — a plain answer; `chapter` — a chapter answer. */
-  readonly state: 'running' | 'failed' | 'line' | 'chapter'
+  /** `running` — no answer yet; `failed` — an error answer; `line` — a plain answer; `chapter` — a chapter answer; `outline` — an outline proposal. */
+  readonly state: 'running' | 'failed' | 'line' | 'chapter' | 'outline'
   readonly chapter: WriteRowChapter | null
+  /** The canvas an outline proposal went to (`outline` only). */
+  readonly canvasId?: string
   /** The answer's text. */
   readonly text: string
 }
 
-const CHAPTER = /^已(登记|建)第 (\d+) 章《(.*?)》（画布 ([^\s）·]+)/
+const CHAPTER = /^已(登记|建)第 (\d+) 章《(.*?)》（画布 ([^\s）·]+)/m
+const OUTLINE = /^已提交大纲提议（画布 (canvas_[a-z0-9]+)）/m
 const COUNTS = /走向 (\d+) 拍 \/ 伏笔 (\d+) 条 \/ 出场 (\d+) 人/
 
 /**
@@ -59,6 +64,8 @@ export function writeRowModel(block: NovelToolBlock | null | undefined, phase?: 
     .join('')
     .trim()
   if (block?.isError === true || text.startsWith('失败：')) return { state: 'failed', chapter: null, text }
+  const outline = OUTLINE.exec(text)
+  if (outline !== null) return { state: 'outline', chapter: null, canvasId: outline[1]!, text }
   const match = CHAPTER.exec(text)
   if (match === null) return { state: 'line', chapter: null, text }
   const counts = match[1] === '登记' ? COUNTS.exec(text) : null

@@ -84,5 +84,7 @@ export type NovelSurfaceProps<O extends NovelOwnerProps = NovelOwnerProps> = O &
 
 /** The story-log page's key under the canvas's `genreKey`. */
 export const STORY_LOG_PAGE = 'novel:story-log'
+/** The 规划 page's key: the lead face opened as a page (a conversation card's door). */
+export const PLAN_PAGE = 'novel:plan'
 /** The chapter page's key (param: the chapter number). */
 export const CHAPTER_PAGE = 'novel:chapter'

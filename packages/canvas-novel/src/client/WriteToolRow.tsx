@@ -38,6 +38,8 @@ export interface WriteToolFace extends NovelFace {
   readonly openPage: () => ((canvasId: string, page: string, heading: string, param?: string) => void) | undefined
   /** The chapter page's key. */
   readonly chapterPage: string
+  /** The 规划 page's key (an outline proposal's door). */
+  readonly planPage: string
 }
 
 /** The props the keyed tool slot composes for this row. */
@@ -53,6 +55,7 @@ export function WriteToolRow(props: WriteToolRowProps): ReactNode {
   const sawRunning = useRef(false)
   if (row.state === 'running') sawRunning.current = true
   if (row.state === 'chapter') return <PlanCard {...props} chapter={row.chapter!} live={sawRunning.current} />
+  if (row.state === 'outline') return <OutlineCard {...props} canvasId={row.canvasId!} live={sawRunning.current} />
   return <Line state={row.state} text={row.text} t={props.t} />
 }
 
@@ -137,6 +140,52 @@ function PlanCard({ chapter, live: watched, remote, openPage, chapterPage, t }: 
           onClick={() => { open(canvasId, chapterPage, chapterHeading(t, n, title), String(n)) }}
         >
           {t(awaiting ? 'card.confirm' : 'card.view')} →
+        </button>
+      )}
+    </div>
+  )
+}
+
+/**
+ * An outline proposal: it waits on the 规划 page for the person's 采用, so the
+ * card says whether it still waits and opens that page. Like a plan, one it
+ * watched land opens the page by itself — the turn folds the card away.
+ */
+function OutlineCard({ canvasId, live: watched, remote, openPage, planPage, t }: WriteToolRowProps & {
+  readonly canvasId: string
+  readonly live: boolean
+}): ReactNode {
+  const [tick, setTick] = useState(0)
+  const read = useNovelRead(remote(), r => r.outline({ canvasId }), `outline:${canvasId}`, tick)
+  const outline = read.state === 'ready' && read.value.ok ? read.value.outline : undefined
+  const awaiting = outline?.proposal !== undefined
+  useEffect(() => {
+    if (!awaiting) return
+    const timer = setInterval(() => { setTick(value => value + 1) }, AWAIT_POLL_MS)
+    return () => { clearInterval(timer) }
+  }, [awaiting])
+  const open = openPage()
+  const followed = useRef(false)
+  useEffect(() => {
+    if (!watched || followed.current || !awaiting || open === undefined) return
+    followed.current = true
+    open(canvasId, planPage, t('face.plan'))
+  }, [watched, awaiting, open, canvasId, planPage, t])
+  return (
+    <div className={css.card} data-tool="novel_write" data-state={awaiting ? 'awaiting' : 'plain'}>
+      <div className={css.head}>
+        <span className={css.kicker}>{t('card.outline')}</span>
+        {outline !== undefined && <span className={css.status} data-confirmed={!awaiting || undefined}>{t(awaiting ? 'card.outlineAwaiting' : 'card.outlineSettled')}</span>}
+      </div>
+      {outline?.proposal?.rationale !== undefined && <p className={css.gist}>{outline.proposal.rationale}</p>}
+      {open !== undefined && (
+        <button
+          type="button"
+          className={css.go}
+          data-primary={awaiting || undefined}
+          onClick={() => { open(canvasId, planPage, t('face.plan')) }}
+        >
+          {t(awaiting ? 'card.outlineAdopt' : 'card.outlineView')} →
         </button>
       )}
     </div>
