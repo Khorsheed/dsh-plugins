@@ -1,6 +1,6 @@
 /**
- * The `canvas` skill: the mechanics the three canvas tools' descriptions
- * leave out (2026-09-30 slimming) — card kinds, fields, the type grammar and
+ * The `canvas` skill: the mechanics the canvas tools' descriptions
+ * leave out (2026-09-30 slimming) — choosing or creating a canvas, card kinds, fields, the type grammar and
  * the manuscript revision protocol. The `./agent` entry registers it beside
  * the tools, so it exists exactly where they do; the model loads it on demand
  * instead of carrying it in every writing turn's tool catalog.
@@ -13,15 +13,30 @@ export const CANVAS_SKILL_NAME = 'canvas'
 
 /** The one catalog line the model sees before loading it. */
 export const CANVAS_SKILL_DESCRIPTION =
-  'How to use the canvas tools (canvas_read, canvas_write, canvas_propose_type): card kinds and fields, comments, '
-  + 'manuscripts and their revision protocol, and the category type grammar. Load before writing to the canvas.'
+  'How to use the canvas tools (canvas_open, canvas_read, canvas_write, canvas_propose_type): choosing or creating '
+  + 'a canvas, card kinds and fields, comments, manuscripts and their revision protocol, and the category type grammar. '
+  + 'Load before writing to the canvas.'
 
 /** The skill body. */
 export const CANVAS_SKILL_CONTENT = `# canvas — working on the open canvas
 
-The canvas is the user's board of cards, grouped by category, plus the manuscripts written from them. All three
-tools act on the canvas the session is bound to, else the one open in the right sidebar's Canvas tab; with none open they say so — ask the user to open
-one, never guess. Tool answers are in Chinese.
+The canvas is the user's board of cards, grouped by category, plus the manuscripts written from them. canvas_read,
+canvas_write and canvas_propose_type act on this session's canvas: the one it is bound to, else the one open in the
+right sidebar's Canvas tab, else the one canvas_open last chose. With none they say so — pick one with canvas_open
+rather than asking the user to click. Tool answers are in Chinese.
+
+## Choosing the canvas — canvas_open
+
+- No arguments: every canvas (id, title, card count, genre, archived), the session's current one marked, and the
+  genres a new canvas can take.
+- \`canvas\`: switch to that canvas by title or id. Do it when the conversation is plainly about another canvas
+  than the current one; if two titles fit, ask which.
+- \`create\` (+ optional \`genre\`, e.g. 长篇小说): make a new canvas and switch to it. Create only when the user
+  asked for one or agreed to it ("put this on a canvas") — never on your own. Prefer an existing canvas on the same
+  topic: list first. A live canvas with the same title is switched to instead of duplicated. A genre canvas binds
+  the session, so the genre's own tools appear from the next step (load its skill).
+- The user's right sidebar follows the switch. Then land the discussion with canvas_write: a few small cards, not
+  one big one.
 
 ## Reading — canvas_read
 

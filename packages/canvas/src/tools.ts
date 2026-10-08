@@ -1,10 +1,13 @@
 /**
  * The canvas's main-session tools, registered by the `./agent` composition
  * entry: one read (`canvas_read`), one write (`canvas_write`: card, comment,
- * archive, manuscript) and the type proposal (`canvas_propose_type`). They act
+ * archive, manuscript), the type proposal (`canvas_propose_type`) and the door
+ * (`canvas_open`: list, switch to, or create a canvas). The first three act
  * on the canvas the session's right-Sidebar tab has open. Three used to be
  * seven (2026-09-30): the long catalog crowded the writing preset's model, so
- * the details moved to the on-demand `canvas` skill (skill.ts).
+ * the details moved to the on-demand `canvas` skill (skill.ts). The door came
+ * back as a fourth (2026-10-08): a discussion that ended in "put it on a
+ * canvas" otherwise stopped until the user made one by hand.
  *
  * On a genre canvas they stay the one card tool: the genre's own categories
  * go through its `agent` hooks (refs, duplicate checks, cards that land live),
@@ -176,8 +179,20 @@ function genreKinds(board: CanvasBoard): Set<string> {
   return new Set(board.categories.filter(category => category.role !== undefined).map(category => category.id))
 }
 
-/** What the main-session tools answer when there is no canvas to act on. */
-const NO_CANVAS_MESSAGE = '没有打开的画布：请先在右栏「画布详情」tab 打开一块画布，再让我改它。'
+/**
+ * What the main-session tools answer when there is no canvas to act on: the
+ * model finds or makes one itself through `canvas_open` instead of stopping
+ * on the user.
+ */
+const NO_CANVAS_MESSAGE = '本会话还没有目标画布：先用 canvas_open() 列出已有画布并切过去；没有合适的，在用户同意后用 canvas_open(create=标题) 新建。'
+
+/** Most canvases one `canvas_open` listing shows. */
+const MAX_OPEN_LIST = 50
+
+/** A title as the model may quote it: 《》 stripped, whitespace folded. */
+function plainTitle(raw: string): string {
+  return raw.trim().replace(/^《(.*)》$/, '$1').replace(/\s+/g, ' ').trim()
+}
 
 /**
  * Build the canvas tools for the MAIN session (M3's second entrance): the
@@ -585,7 +600,122 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
     },
   })
 
-  return [tagOrigin(read), tagOrigin(write), tagOrigin(proposeType)]
+  /** The canvas list as the model reads it, with this session's current target marked. */
+  const renderCanvasList = async (session: Session | undefined): Promise<string> => {
+    const { items } = await board.listCanvases()
+    const current = session === undefined ? undefined : await board.targetCanvasId(session)
+    const genres = new Map(board.listGenres().map(genre => [genre.id, genre.label]))
+    const lines = items.length === 0 ? ['还没有画布。'] : [`画布（${items.length} 块，最近活动在前）：`]
+    for (const item of items.slice(0, MAX_OPEN_LIST)) {
+      const tags = [
+        `${item.cardCount} 张卡`,
+        ...(item.genre === undefined ? [] : [`体裁：${genres.get(item.genre) ?? item.genre}`]),
+        ...(item.archivedAt === null ? [] : ['已归档']),
+        ...(item.id === current ? ['← 本会话当前'] : []),
+      ]
+      lines.push(`- ${item.id}　《${item.title}》　${tags.join('　')}`)
+    }
+    if (items.length > MAX_OPEN_LIST) lines.push(`……还有 ${items.length - MAX_OPEN_LIST} 块未列出。`)
+    if (current === undefined) lines.push('本会话还没有目标画布。')
+    if (genres.size > 0) lines.push(`新建时可选体裁：${[...genres].map(([id, label]) => `${id}（${label}）`).join('、')}`)
+    return lines.join('\n')
+  }
+
+  /**
+   * Make one canvas this session's target. A genre canvas binds (binding is
+   * how a genre's own tools reach the session); a plain one takes the focus —
+   * and since a binding outranks the focus, a session bound elsewhere is
+   * unbound first, or the switch would not take.
+   */
+  const switchTo = async (canvasId: string, session: Session): Promise<{ ok: true; note: string } | { ok: false; error: string }> => {
+    const loaded = await board.readBoard({ canvasId })
+    if (!loaded.ok) return { ok: false, error: loaded.error }
+    if (loaded.board.genre !== undefined) {
+      const bound = await board.bindSession({ canvasId }, session)
+      if (!bound.ok) return { ok: false, error: bound.error }
+      await board.focusCanvas({ canvasId }, session)
+      return { ok: true, note: `已绑定（体裁：${board.genre(loaded.board.genre.id)?.label ?? loaded.board.genre.id}）。` }
+    }
+    const previous = await board.boundCanvasId(String(session.id))
+    let note = ''
+    if (previous !== undefined && previous !== canvasId) {
+      const unbound = await board.bindSession({ canvasId: null }, session)
+      if (!unbound.ok) return { ok: false, error: unbound.error }
+      const was = await board.readBoard({ canvasId: previous })
+      note = `已解除与《${was.ok ? was.board.title : previous}》的绑定。`
+    }
+    const focused = await board.focusCanvas({ canvasId }, session)
+    if (!focused.ok) return { ok: false, error: focused.error }
+    return { ok: true, note }
+  }
+
+  const open = defineTool({
+    name: 'canvas_open',
+    description:
+      'Choose this session\'s canvas. No arguments: list the canvases. canvas: switch to that one (title or id). '
+      + 'create: make a new canvas with that title (genre: optional, e.g. 长篇小说) and switch to it — only when the '
+      + 'user wants one. The other canvas_* tools then act on it, and the user\'s right sidebar follows.',
+    parameters: {
+      canvas: { type: 'string', description: 'Canvas title or id to switch to.' },
+      create: { type: 'string', description: 'Title of a new canvas.' },
+      genre: { type: 'string', description: 'create: genre id or name; omit for a plain canvas.' },
+    },
+    output: {
+      schema: { type: 'string' },
+      render: (_args, value) => [{ type: 'text', text: String(value) }],
+    },
+    execute: async (args: { canvas?: string; create?: string; genre?: string }, exec: { agent?: Agent }): Promise<string> => {
+      const session = exec.agent?.session
+      const wanted = plainTitle(args.create ?? args.canvas ?? '')
+      if (wanted === '') return renderCanvasList(session)
+      if (session === undefined) return '失败：这次调用没有会话，切不了画布。'
+      const { items } = await board.listCanvases()
+      const live = items.filter(item => item.archivedAt === null)
+
+      if (args.create !== undefined && plainTitle(args.create) !== '') {
+        // A namesake is the canvas the user meant far more often than a twin:
+        // switch to it, and say how to get a second one on purpose.
+        const namesake = live.find(item => item.title === wanted)
+        if (namesake !== undefined) {
+          const switched = await switchTo(namesake.id, session)
+          if (!switched.ok) return renderOutcome({ ok: false, error: switched.error })
+          return `完成：已切到画布《${namesake.title}》（${namesake.id}）——已有同名画布，没有新建；确要另建一块就换个标题。${switched.note}`
+        }
+        let genreId: string | null = null
+        if (args.genre !== undefined && args.genre.trim() !== '') {
+          const name = args.genre.trim()
+          const genres = board.listGenres()
+          const genre = genres.find(row => row.id === name) ?? genres.find(row => row.label === name)
+          if (genre === undefined) {
+            return `失败：没有体裁「${name}」。${genres.length === 0 ? '这里没有安装任何体裁，不带 genre 建普通画布。' : `可选：${genres.map(row => `${row.id}（${row.label}）`).join('、')}。`}`
+          }
+          genreId = genre.id
+        }
+        const created = await board.createCanvas({ title: wanted, genreId }, session)
+        if (!created.ok) return renderOutcome({ ok: false, error: created.error })
+        const switched = await switchTo(created.board.id, session)
+        if (!switched.ok) return renderOutcome({ ok: false, error: switched.error })
+        return `完成：已新建画布《${created.board.title}》（${created.board.id}）并切过去。${switched.note}接下来用 canvas_write 落卡。`
+      }
+
+      const byId = items.find(item => item.id === wanted)
+      const exact = byId === undefined ? items.filter(item => item.title === wanted) : [byId]
+      const matches = exact.length > 0 ? exact : items.filter(item => item.title.includes(wanted))
+      // A live canvas outranks an archived namesake.
+      const pool = matches.some(item => item.archivedAt === null) ? matches.filter(item => item.archivedAt === null) : matches
+      if (pool.length === 0) return `失败：没有叫「${wanted}」的画布。\n${await renderCanvasList(session)}`
+      if (pool.length > 1) {
+        return `「${wanted}」对应多块画布，请问用户是哪一块（或用 id）：${pool.map(item => `${item.id}《${item.title}》`).join('、')}`
+      }
+      const target = pool[0]!
+      if (target.archivedAt !== null) return `失败：《${target.title}》已归档（只读）。请用户先在画布里恢复它，或另建一块。`
+      const switched = await switchTo(target.id, session)
+      if (!switched.ok) return renderOutcome({ ok: false, error: switched.error })
+      return `完成：已切到画布《${target.title}》（${target.id}）。${switched.note}`
+    },
+  })
+
+  return [tagOrigin(read), tagOrigin(write), tagOrigin(proposeType), tagOrigin(open)]
 }
 
 /** `canvas_write`'s arguments; which ones matter depends on `op`. */

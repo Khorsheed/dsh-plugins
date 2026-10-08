@@ -352,7 +352,8 @@ export const NOVEL_BIND_TOOL = 'novel_bind'
 export function novelBindDefinition(store: NovelService, granted: (agent: Agent) => Promise<void>): ToolDefinition {
   const listing = (works: readonly { title: string }[]): string =>
     works.length === 0
-      ? '还没有体裁为「长篇小说」的画布：请用户在画布里新建一张，⋯ → 创作体裁选「长篇小说」。'
+      ? '还没有体裁为「长篇小说」的画布。用户同意后用 canvas_open(create=书名, genre=长篇小说) 新建，新建即绑定；'
+        + '没有 canvas_open 这个工具时，请用户在画布里新建一张，⋯ → 创作体裁选「长篇小说」。'
       : `长篇小说作品：${works.map(work => `《${work.title}》`).join('、')}`
   const bind = defineTool({
     name: NOVEL_BIND_TOOL,

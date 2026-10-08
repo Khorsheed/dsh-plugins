@@ -104,7 +104,7 @@ const WS = '/ws'
 const STATE = '/state'
 const FALLBACK = { id: 's-main', header: { cwd: WS } } as unknown as Session
 
-type ToolName = 'canvas_read' | 'canvas_write' | 'canvas_propose_type'
+type ToolName = 'canvas_read' | 'canvas_write' | 'canvas_propose_type' | 'canvas_open'
 
 interface Bench {
   canvasId: string
@@ -289,7 +289,7 @@ describe('the main-session canvas tools (M3 second entrance)', () => {
     const board = new CanvasBoardService(ctx, { stateRoot: STATE })
     const tools = canvasMainSessionToolDefinitions(board)
     expect(tools.map(def => def.name)).toEqual([
-      'canvas_read', 'canvas_write', 'canvas_propose_type',
+      'canvas_read', 'canvas_write', 'canvas_propose_type', 'canvas_open',
     ])
     for (const def of tools) {
       expect((def as unknown as Record<PropertyKey, unknown>)[Symbol.for('dsh.tool.origin')]).toEqual({
@@ -298,11 +298,11 @@ describe('the main-session canvas tools (M3 second entrance)', () => {
     }
     const agent = { session: FALLBACK } as unknown as Agent
     expect(await tools[0]!.execute({}, { agent } as never))
-      .toEqual({ text: '没有打开的画布：请先在右栏「画布详情」tab 打开一块画布，再让我改它。', images: [] })
+      .toEqual({ text: '本会话还没有目标画布：先用 canvas_open() 列出已有画布并切过去；没有合适的，在用户同意后用 canvas_open(create=标题) 新建。', images: [] })
     expect(await tools[1]!.execute({ op: 'card', kind: 'fragment', text: 'x' }, { agent } as never))
-      .toBe('没有打开的画布：请先在右栏「画布详情」tab 打开一块画布，再让我改它。')
+      .toBe('本会话还没有目标画布：先用 canvas_open() 列出已有画布并切过去；没有合适的，在用户同意后用 canvas_open(create=标题) 新建。')
     expect(await tools[2]!.execute({ label: '人物', definition: {}, rationale: '' }, { agent } as never))
-      .toBe('没有打开的画布：请先在右栏「画布详情」tab 打开一块画布，再让我改它。')
+      .toBe('本会话还没有目标画布：先用 canvas_open() 列出已有画布并切过去；没有合适的，在用户同意后用 canvas_open(create=标题) 新建。')
     // And nothing was written.
     expect(await board.listCanvases()).toEqual({ items: [] })
   })
@@ -338,6 +338,77 @@ describe('the main-session canvas tools (M3 second entrance)', () => {
     const board = new CanvasBoardService(ctx, { stateRoot: STATE })
     const tools = canvasMainSessionToolDefinitions(board)
     expect(await tools[1]!.execute({ op: 'card', kind: 'fragment', text: 'x' }, {} as never))
-      .toBe('没有打开的画布：请先在右栏「画布详情」tab 打开一块画布，再让我改它。')
+      .toBe('本会话还没有目标画布：先用 canvas_open() 列出已有画布并切过去；没有合适的，在用户同意后用 canvas_open(create=标题) 新建。')
+  })
+})
+
+describe('canvas_open: list, switch to, or create the session\'s canvas', () => {
+  /** A board service with no canvas focused, the tools over it, and one main session. */
+  function bench(): { board: CanvasBoardService; open: (args: Record<string, unknown>) => Promise<string>; write: (args: Record<string, unknown>) => Promise<string> } {
+    const fs = new FakeFs()
+    const ctx = { fs, get: () => undefined, emit: () => {} } as unknown as Context
+    ;(ctx as { canvasStore?: CanvasService }).canvasStore = new CanvasService(ctx)
+    const board = new CanvasBoardService(ctx, { stateRoot: STATE })
+    const tools = canvasMainSessionToolDefinitions(board)
+    const agent = { session: FALLBACK } as unknown as Agent
+    const run = (name: string) => async (args: Record<string, unknown>): Promise<string> =>
+      String(await tools.find(def => def.name === name)!.execute(args, { agent } as never))
+    return { board, open: run('canvas_open'), write: run('canvas_write') }
+  }
+
+  it('creates a canvas, makes it the session\'s target, and the write tools land on it', async () => {
+    const { board, open, write } = bench()
+    expect(await open({})).toContain('还没有画布。')
+    const answer = await open({ create: '《雨夜》' })
+    const { items } = await board.listCanvases()
+    expect(items).toHaveLength(1)
+    expect(items[0]!.title).toBe('雨夜')
+    expect(answer).toBe(`完成：已新建画布《雨夜》（${items[0]!.id}）并切过去。接下来用 canvas_write 落卡。`)
+    expect(board.focusedCanvasId(FALLBACK)).toBe(items[0]!.id)
+    expect(await write({ op: 'card', kind: 'fragment', text: '雨声' })).toMatch(/^完成：c_/)
+    expect(await open({})).toContain(`- ${items[0]!.id}　《雨夜》　1 张卡　← 本会话当前`)
+  })
+
+  it('switches to a live namesake instead of creating a twin', async () => {
+    const { board, open } = bench()
+    const first = await board.createCanvas({ title: '雨夜' }, FALLBACK)
+    if (!first.ok) throw new Error('expected a created canvas')
+    expect(await open({ create: '雨夜' })).toContain(`已切到画布《雨夜》（${first.board.id}）——已有同名画布，没有新建`)
+    expect((await board.listCanvases()).items).toHaveLength(1)
+    expect(board.focusedCanvasId(FALLBACK)).toBe(first.board.id)
+  })
+
+  it('switches by title or id, asks when two fit, and refuses an archived canvas', async () => {
+    const { board, open } = bench()
+    const a = await board.createCanvas({ title: '雨夜·上' }, FALLBACK)
+    const b = await board.createCanvas({ title: '雨夜·下' }, FALLBACK)
+    const old = await board.createCanvas({ title: '旧稿' }, FALLBACK)
+    if (!a.ok || !b.ok || !old.ok) throw new Error('expected created canvases')
+    expect(await open({ canvas: '雨夜' })).toContain('对应多块画布')
+    expect(await open({ canvas: '雨夜·下' })).toBe(`完成：已切到画布《雨夜·下》（${b.board.id}）。`)
+    expect(board.focusedCanvasId(FALLBACK)).toBe(b.board.id)
+    expect(await open({ canvas: a.board.id })).toContain('已切到画布《雨夜·上》')
+    await board.archiveCanvas({ canvasId: old.board.id, archived: true }, FALLBACK)
+    expect(await open({ canvas: '旧稿' })).toContain('已归档（只读）')
+    expect(await open({ canvas: '没有这块' })).toContain('失败：没有叫「没有这块」的画布。')
+  })
+
+  it('creates a genre canvas bound to the session, and a plain switch unbinds it', async () => {
+    const { board, open } = bench()
+    board.registerGenre({
+      id: 'novel', label: '长篇小说', version: 'novel@1', description: '',
+      categories: [{ role: 'character', label: '人物' }],
+    })
+    expect(await open({ create: '雾港', genre: '武侠' })).toContain('失败：没有体裁「武侠」。可选：novel（长篇小说）。')
+    const answer = await open({ create: '雾港', genre: '长篇小说' })
+    expect(answer).toContain('已绑定（体裁：长篇小说）')
+    const novel = (await board.listCanvases()).items.find(item => item.title === '雾港')!
+    expect(novel.genre).toBe('novel')
+    expect(await board.boundCanvasId(String(FALLBACK.id))).toBe(novel.id)
+    const plain = await board.createCanvas({ title: '杂记' }, FALLBACK)
+    if (!plain.ok) throw new Error('expected a created canvas')
+    expect(await open({ canvas: '杂记' })).toBe(`完成：已切到画布《杂记》（${plain.board.id}）。已解除与《雾港》的绑定。`)
+    expect(await board.boundCanvasId(String(FALLBACK.id))).toBeUndefined()
+    expect(await board.targetCanvasId(FALLBACK)).toBe(plain.board.id)
   })
 })

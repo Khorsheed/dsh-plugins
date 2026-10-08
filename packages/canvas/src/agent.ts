@@ -53,7 +53,7 @@ interface SkillRegistrySlice {
  * every turn should not carry it (2026-09-30 slimming).
  */
 const CANVAS_TOOLS_GUIDANCE =
-  'The canvas_* tools act on the canvas open in the right-sidebar tab (with none open, ask the user to open one); load the canvas skill before writing to it.'
+  'The canvas_* tools act on this session\'s canvas (the one open in the right-sidebar tab, or the one canvas_open chose); load the canvas skill before writing to it.'
 
 /**
  * Composition entry body: register the canvas tools, their guidance section

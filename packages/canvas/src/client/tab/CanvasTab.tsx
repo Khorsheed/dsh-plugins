@@ -469,10 +469,14 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
       setOpenBoard(current => current !== null && current.board.id === value.board.id && current.version === value.version
         ? current
         : { board: value.board, version: value.version })
+      // A canvas the list has not seen (the agent just made it through
+      // canvas_open) joins it at the top, so the strip can name it.
       const row = summarizeBoard(value.board)
       setCanvases(current => current === null
         ? current
-        : current.map(canvas => canvas.id === row.id ? row : canvas))
+        : current.some(canvas => canvas.id === row.id)
+          ? current.map(canvas => canvas.id === row.id ? row : canvas)
+          : [row, ...current])
     })()
     return () => { cancelled = true }
   }, [openId, selectionRev, readBoard, run, errorText])
