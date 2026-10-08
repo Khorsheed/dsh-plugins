@@ -92,6 +92,16 @@ describe('binding defaults', () => {
     expect(read.cards[0]).toMatchObject({ term: '不应期', weakness: 1, sources: ['chat: 说老是记混'] })
   })
 
+  it('binds from top-level project / book, and unbinds only on an explicit null', async () => {
+    const { project, book } = await seed()
+    await call('library_write', { what: 'binding', project, book })
+    expect(service.getBinding('s_learn')).toEqual({ projectId: project, bookId: book })
+    await expect(call('library_write', { what: 'binding' })).rejects.toThrow(/needs the project/)
+    expect(service.getBinding('s_learn')).toEqual({ projectId: project, bookId: book })
+    await call('library_write', { what: 'binding', binding: null })
+    expect(service.getBinding('s_learn')).toBeUndefined()
+  })
+
   it('the projects read reports this session\'s binding', async () => {
     const { project } = await seed()
     const listed = (await call('library_read', { what: 'projects' })) as { binding: { projectId: string } | null }

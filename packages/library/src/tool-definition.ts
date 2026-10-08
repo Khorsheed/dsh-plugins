@@ -219,7 +219,7 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
       + 'what="quiz": quiz { node?, focus?: "mine"|"book"|"mixed" (the learner\'s choice of source — mine: only their own cards, book: only the chapter\'s content), questions: [{ id, kind: "choice"|"fill"|"free", prompt, options?, answer, explanation?, target: { kind: "marked"|"asked"|"missed"|"topic", cardIds? }, '
       + 'evidence: { kind: "photo"|"web"|"knowledge", pageId?, url?, quote? } }] } — target the learner\'s own cards first; photo evidence quotes a recorded page, web evidence cites url + quote; '
       + 'a material book never takes a knowledge-backed question about its content. '
-      + 'what="binding": binding { project, book? } (or null) — bind this session.',
+      + 'what="binding": binding { project, book? } — bind this session; binding: null unbinds.',
     parameters: {
       what: { type: 'string', required: true, description: `What to write: ${WRITE_WHATS.join(' | ')}.` },
       project: { type: 'json', description: 'what=project: the new project payload; otherwise the project id (defaults to the binding).' },
@@ -335,11 +335,17 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
         case 'binding': {
           const sessionId = sessionIdOf(exec)
           if (sessionId === undefined) throw new Error('binding needs a session — this call came from none')
-          const body = payload(args.binding)
-          const binding = body === undefined || typeof body.project !== 'string'
-            ? null
-            : { projectId: body.project, ...(typeof body.book === 'string' ? { bookId: body.book } : {}) }
-          return unwrap(await service.setBinding(sessionId, binding)) as unknown as JsonValue
+          // Only an explicit null unbinds. A model as often names the target at
+          // the top level as inside binding (live trial) — both bind.
+          if (args.binding === null) return unwrap(await service.setBinding(sessionId, null)) as unknown as JsonValue
+          const body = payload(args.binding) ?? {}
+          const pick = (...values: unknown[]): string | undefined => values.find((value): value is string => typeof value === 'string' && value.trim() !== '')?.trim()
+          const projectId = pick(body.project, body.projectId, args.project)
+          const bookId = pick(body.book, body.bookId, args.book)
+          if (projectId === undefined) {
+            throw new Error('binding needs the project: binding { project, book? } (library_read · projects lists them); pass binding: null to unbind')
+          }
+          return unwrap(await service.setBinding(sessionId, { projectId, ...(bookId === undefined ? {} : { bookId }) })) as unknown as JsonValue
         }
         default:
           throw new Error(`what must be one of ${WRITE_WHATS.join(' | ')} — got ${JSON.stringify(args.what)}`)
