@@ -22,9 +22,6 @@ export function TodayView({ p }: ViewProps): ReactNode {
   const records = useLoad(() => value(p.recentRecords()), [rev])
   const list = projects.data?.projects ?? []
   const dueCards = due.data?.cards ?? []
-  const reading = list.flatMap(project => project.books
-    .filter(book => book.current !== undefined || book.hasDraft)
-    .map(book => ({ project, book })))
 
   return (
     <>
@@ -54,20 +51,13 @@ export function TodayView({ p }: ViewProps): ReactNode {
             <button type="button" className={css.primary} onClick={() => { actions.push({ view: 'review' }) }}>{t('today.startReview')}</button>
           </section>
         )}
-        {reading.length > 0 && (
+        {list.length > 0 && (
           <section className={css.section}>
-            <h3 className={css.sectionTitle}>{t('today.reading')}</h3>
-            {reading.map(({ project, book }) => (
-              <ListRow
-                key={book.id}
-                icon={<span data-color={colorOf(project)}><Cover book={book} size="badge" /></span>}
-                title={book.title}
-                meta={book.hasDraft
-                  ? t('book.draftWaiting')
-                  : t('today.readingMeta', { project: project.name, node: book.current?.title ?? '' })}
-                onSelect={() => { actions.push({ view: 'book', projectId: project.id, bookId: book.id }) }}
-              />
-            ))}
+            <h3 className={css.sectionTitle}>{t('today.projects')}</h3>
+            <div className={css.projectGrid}>
+              {list.map(project => <ProjectCard key={project.id} p={p} project={project} />)}
+              <button type="button" className={css.projectAdd} onClick={() => { actions.push({ view: 'newProject' }) }}>＋ {t('project.new')}</button>
+            </div>
           </section>
         )}
         {(records.data?.records.length ?? 0) > 0 && (
@@ -82,14 +72,6 @@ export function TodayView({ p }: ViewProps): ReactNode {
                 onSelect={() => { actions.push({ view: 'cards', projectId: record.projectId, filter: record.source === 'quiz' ? 'quiz' : 'chat' }) }}
               />
             ))}
-          </section>
-        )}
-        {list.length > 0 && (
-          <section className={css.section}>
-            <h3 className={css.sectionTitle}>{t('today.projects')}</h3>
-            <div className={css.projectCards}>
-              {list.map(project => <ProjectCard key={project.id} p={p} project={project} />)}
-            </div>
           </section>
         )}
       </div>
@@ -159,7 +141,7 @@ function progressOf(project: LibraryProjectSummary): number {
   return total === 0 ? 0 : Math.round((done / total) * 100)
 }
 
-/** A project on 今日: its color, glyph, goal, progress ring, mini covers. */
+/** A project card on 今日: its hue, glyph, name, goal, progress, its books' spines, when it was last used. */
 function ProjectCard({ p, project }: ViewProps & { project: LibraryProjectSummary }): ReactNode {
   const { t, actions } = p
   return (
@@ -168,12 +150,15 @@ function ProjectCard({ p, project }: ViewProps & { project: LibraryProjectSummar
         <ProjectGlyph icon={iconOf(project)} />
         <span className={css.projectText}>
           <span className={css.projectName}>{project.name}</span>
-          <span className={css.muted}>{project.goal ?? t(`template.${project.template}`)}</span>
+          <span className={css.muted}>{t(`template.${project.template}`)} · {when(project.lastActiveAt, t)}</span>
         </span>
         <Ring percent={progressOf(project)} />
       </span>
-      <span className={css.row}>
-        <span className={css.minis}>{project.books.slice(0, 4).map((book, index) => <Cover key={book.id} book={book} shade={index} size="mini" />)}</span>
+      {project.goal !== undefined && <span className={css.projectGoal}>{project.goal}</span>}
+      <span className={css.projectFoot}>
+        <span className={css.spines} aria-hidden="true">
+          {project.books.slice(0, 6).map((book, index) => <span key={book.id} className={css.spine} data-shade={String(index % 3)} />)}
+        </span>
         <span className={css.muted}>{t('project.cardMeta', { books: String(project.books.length), cards: String(project.cardCount), due: String(project.dueCount) })}</span>
       </span>
     </button>
@@ -254,15 +239,19 @@ export function ProjectView({ p, projectId }: ViewProps & { projectId: string })
                 const book = books.find(candidate => candidate.id === row.id)
                 const percent = row.roadmap === undefined || row.roadmap.total === 0 ? 0 : Math.round((row.roadmap.done / row.roadmap.total) * 100)
                 return (
-                  <button key={row.id} type="button" className={css.shelfBook} onClick={() => { actions.push({ view: 'book', projectId, bookId: row.id }) }}>
+                  <button key={row.id} type="button" className={css.shelfBook} title={row.title} onClick={() => { actions.push({ view: 'book', projectId, bookId: row.id }) }}>
                     <Cover book={book ?? row} shade={index} kindLabel={book === undefined ? undefined : t(`bookKind.${book.bookKind}`)} />
-                    <span className={css.shelfTitle}>{row.title}</span>
-                    <span className={css.shelfMeta}>{row.hasDraft ? t('book.draftWaiting') : row.roadmap === undefined ? t('book.noRoadmap') : t('book.shelfMeta', { done: String(row.roadmap.done), total: String(row.roadmap.total) })}</span>
-                    <span className={css.miniBar} aria-hidden="true"><i style={{ width: `${percent}%` }} /></span>
+                    <span className={css.shelfLabel}>
+                      <span className={css.shelfTitle}>{row.title}</span>
+                      <span className={css.shelfMeta}>{row.hasDraft ? t('book.draftWaiting') : row.roadmap === undefined ? t('book.noRoadmap') : `${t('book.shelfMeta', { done: String(row.roadmap.done), total: String(row.roadmap.total) })} · ${percent}%`}</span>
+                    </span>
                   </button>
                 )
               })}
-              <button type="button" className={css.shelfAdd} onClick={askToAddBook}>＋ {t('book.add')}</button>
+              <button type="button" className={css.shelfBook} onClick={askToAddBook}>
+                <span className={css.shelfAdd}>＋</span>
+                <span className={css.shelfLabel}><span className={css.shelfTitle}>{t('book.add')}</span></span>
+              </button>
             </div>
           </section>
         )}

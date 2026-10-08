@@ -32,8 +32,6 @@ export const zh = {
   'today.emptyBody': '按领域建一个项目（神经科学、雅思…），再往里加书。',
   'today.dueLine': '张卡片到期 · 约 {minutes} 分钟',
   'today.startReview': '开始复习',
-  'today.reading': '接着读',
-  'today.readingMeta': '{project} · {node}',
   'today.recorded': '教练最近记下',
   'today.projects': '项目',
 
@@ -295,8 +293,6 @@ export const en: Record<LibraryKey, string> = {
   'today.emptyBody': 'Create one per subject (neuroscience, IELTS…), then add books to it.',
   'today.dueLine': 'cards due · about {minutes} min',
   'today.startReview': 'Start review',
-  'today.reading': 'Keep reading',
-  'today.readingMeta': '{project} · {node}',
   'today.recorded': 'Recently noted by the coach',
   'today.projects': 'Projects',
 

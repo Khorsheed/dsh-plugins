@@ -100,6 +100,19 @@ describe('projects', () => {
   })
 })
 
+describe('the project list', () => {
+  it('puts the most recently used project first', async () => {
+    const first = await service.createProject({ name: '神经科学' })
+    await new Promise(resolve => setTimeout(resolve, 5))
+    const second = await service.createProject({ name: '雅思' })
+    if (!first.ok || !second.ok) throw new Error('create')
+    expect((await service.listProjects()).projects.map(project => project.name)).toEqual(['雅思', '神经科学'])
+    await new Promise(resolve => setTimeout(resolve, 5))
+    await service.writeCards({ projectId: first.project.id, cards: [{ kind: 'concept', term: '不应期', gloss: 'g', source: { type: 'chat' } }] })
+    expect((await service.listProjects()).projects.map(project => project.name)).toEqual(['神经科学', '雅思'])
+  })
+})
+
 describe('books and roadmaps', () => {
   it('registers a book with its contents and refuses one without', async () => {
     const { projectId } = await seed()

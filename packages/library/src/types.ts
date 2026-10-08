@@ -129,6 +129,8 @@ export interface LibraryProjectSummary extends LibraryProject {
   readonly cardCount: number
   /** Live, unmastered cards due for review right now. */
   readonly dueCount: number
+  /** When anything last happened in the project (its newest event, else its creation) — the list sorts by it. */
+  readonly lastActiveAt: string
 }
 
 /* ---------------------------------------------------------------- books */

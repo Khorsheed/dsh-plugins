@@ -191,12 +191,16 @@ export class LibraryService {
       books: this.store.listBooks(project.id).map(book => this.bookProgress(project.id, book)),
       cardCount: cards.length,
       dueCount: cards.filter(card => card.status === 'active' && card.mastery.dueAt <= now).length,
+      lastActiveAt: this.store.readEvents(project.id).at(-1)?.at ?? project.createdAt,
     }
   }
 
   /** Every project with its books' progress and card tallies. */
   async listProjects(): Promise<{ projects: LibraryProjectSummary[] }> {
-    return { projects: this.store.readIndex().projects.map(project => this.summarize(project)) }
+    // Most recently used first: the list is where the learner picks up again.
+    const projects = this.store.readIndex().projects.map(project => this.summarize(project))
+    projects.sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt))
+    return { projects }
   }
 
   /** One project's summary plus its books' metadata. */

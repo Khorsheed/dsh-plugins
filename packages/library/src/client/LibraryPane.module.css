@@ -287,21 +287,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-.miniBar {
-  display: block;
-  width: 48px;
-  height: 4px;
-  overflow: hidden;
-  border-radius: 2px;
-  background: var(--dsw-alias-bg-layer-2);
-}
-
-.miniBar i {
-  display: block;
-  height: 100%;
-  background: var(--lib-ok);
-}
-
 /* 新建项目 */
 .field {
   display: flex;
@@ -600,21 +585,87 @@
   font-variant-numeric: tabular-nums;
 }
 
-.projectCards {
+.projectGrid {
   display: grid;
-  gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
 }
 
 .projectCard {
-  display: grid;
-  gap: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
   padding: 12px;
-  border: none;
+  border: 1px solid color-mix(in srgb, var(--pc) 22%, transparent);
+  border-top: 4px solid var(--pc);
   border-radius: 12px;
   background: var(--pc-soft);
   color: inherit;
   font: inherit;
   text-align: left;
+  cursor: pointer;
+  transition: transform 120ms ease, box-shadow 120ms ease;
+}
+
+.projectCard:hover {
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--pc) 18%, transparent);
+  transform: translateY(-1px);
+}
+
+.projectGoal {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--dsw-alias-label-secondary);
+  font-size: var(--dsh-panel-text-meta, 12px);
+  line-height: 1.5;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.projectFoot {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  margin-top: auto;
+  min-width: 0;
+}
+
+.projectFoot .muted {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Its books, as spines standing side by side. */
+.spines {
+  display: inline-flex;
+  flex: none;
+  align-items: flex-end;
+  gap: 2px;
+  min-height: 22px;
+}
+
+.spine {
+  width: 7px;
+  height: 22px;
+  border-radius: 1px 1px 0 0;
+  background: var(--pc);
+}
+
+.spine[data-shade='1'] { height: 18px; background: color-mix(in srgb, var(--pc) 70%, black); }
+.spine[data-shade='2'] { height: 20px; background: color-mix(in srgb, var(--pc) 65%, white); }
+
+.projectAdd {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 56px;
+  border: 1px dashed var(--dsw-alias-border-l3);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
   cursor: pointer;
 }
 
@@ -640,12 +691,6 @@
   font-weight: 650;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.minis {
-  display: inline-flex;
-  flex: none;
-  gap: 4px;
 }
 
 .band {
@@ -730,9 +775,17 @@
 .cover[data-shade='1'] { background: linear-gradient(160deg, color-mix(in srgb, var(--pc) 80%, black), color-mix(in srgb, var(--pc) 45%, black)); }
 .cover[data-shade='2'] { background: linear-gradient(160deg, color-mix(in srgb, var(--pc) 75%, white), color-mix(in srgb, var(--pc) 70%, black)); }
 
-.cover[data-size='shelf'] { aspect-ratio: 3 / 4; width: 100%; padding: 10px 8px 8px 13px; }
+.cover[data-size='shelf'] { width: 96px; height: 128px; padding: 10px 8px 8px 13px; }
+.cover[data-size='shelf'][data-shade='1'] { height: 120px; }
+.cover[data-size='shelf'][data-shade='2'] { height: 124px; }
 .cover[data-size='mini'] { width: 18px; height: 24px; }
 .cover[data-size='badge'] { flex: none; width: 30px; height: 40px; padding: 4px 3px 3px 7px; }
+
+.coverHead {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
 
 .coverShort {
   font-family: 'Iowan Old Style', Palatino, Georgia, 'Songti SC', serif;
@@ -754,26 +807,39 @@
 }
 
 .coverKind {
-  position: absolute;
-  top: 6px;
-  right: 5px;
+  align-self: flex-start;
+  margin-top: 6px;
   padding: 0 5px;
   border-radius: 6px;
   background: color-mix(in srgb, white 24%, transparent);
   font-size: 10px; /* panel-check: allow-small-text — a cover's corner tag */
 }
 
+/*
+ * The shelf: books of a fixed size standing on planks that run the full width.
+ * Every row is the same height, so one repeating background draws a plank
+ * under each row however many books it holds.
+ */
 .shelf {
+  --plank: color-mix(in srgb, var(--pc, var(--lib-accent)) 30%, var(--dsw-alias-label-tertiary));
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px 10px;
+  grid-template-columns: repeat(auto-fill, 96px);
+  grid-auto-rows: 184px;
+  gap: 0 14px;
+  padding: 0 10px;
+  border-radius: 10px;
+  background:
+    repeating-linear-gradient(to bottom,
+      transparent 0 136px,
+      var(--plank) 136px 144px,
+      color-mix(in srgb, var(--plank) 35%, transparent) 144px 147px,
+      transparent 147px 184px),
+    color-mix(in srgb, var(--pc, var(--lib-accent)) 5%, transparent);
 }
 
-.shelfBook,
-.shelfAdd {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+.shelfBook {
+  display: grid;
+  grid-template-rows: 136px 8px auto;
   min-width: 0;
   padding: 0;
   border: none;
@@ -784,19 +850,39 @@
   cursor: pointer;
 }
 
+.shelfBook > .cover {
+  align-self: end;
+  box-shadow: inset 5px 0 0 color-mix(in srgb, black 22%, transparent), 2px 0 3px color-mix(in srgb, black 18%, transparent);
+  transition: transform 120ms ease;
+}
+
+.shelfBook:hover > .cover { transform: translateY(-4px); }
+
+.shelfLabel {
+  display: flex;
+  flex-direction: column;
+  grid-row: 3;
+  min-width: 0;
+  padding-top: 6px;
+}
+
 .shelfAdd {
-  aspect-ratio: 3 / 4;
+  display: flex;
+  align-self: end;
   align-items: center;
   justify-content: center;
+  width: 96px;
+  height: 120px;
   border: 1px dashed var(--dsw-alias-border-l3);
-  border-radius: 7px;
+  border-radius: 3px 7px 7px 3px;
   color: var(--dsw-alias-label-secondary);
-  font-size: var(--dsh-panel-text-meta, 12px);
+  font-size: 20px;
 }
 
 .shelfTitle {
   overflow: hidden;
   font-size: var(--dsh-panel-text-meta, 12px);
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -809,9 +895,6 @@
   white-space: nowrap;
 }
 
-.shelfBook .miniBar { width: 100%; }
-.shelfBook .miniBar i,
-.projectCard .miniBar i { background: var(--pc); }
 
 .bookHead {
   display: flex;

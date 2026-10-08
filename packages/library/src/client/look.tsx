@@ -74,8 +74,12 @@ export function Cover({ book, shade = 0, size = 'shelf', kindLabel }: {
 }): ReactNode {
   return (
     <span className={css.cover} data-size={size} data-shade={String(shade % 3)} aria-hidden={size !== 'shelf'}>
-      {size === 'shelf' && kindLabel !== undefined && <span className={css.coverKind}>{kindLabel}</span>}
-      {size !== 'mini' && <span className={css.coverShort}>{shortOf(book)}</span>}
+      {size !== 'mini' && (
+        <span className={css.coverHead}>
+          <span className={css.coverShort}>{shortOf(book)}</span>
+          {size === 'shelf' && kindLabel !== undefined && <span className={css.coverKind}>{kindLabel}</span>}
+        </span>
+      )}
       {size === 'shelf' && <span className={css.coverTitle}>{book.edition === undefined ? book.title : `${book.title} · ${book.edition}`}</span>}
     </span>
   )

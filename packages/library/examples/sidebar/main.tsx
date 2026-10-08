@@ -85,12 +85,12 @@ const quiz: LibraryQuiz = { id: 'q_1', scope: { bookId: 'b_cam5', nodeId: 't1p2'
   { id: 'q3', kind: 'free', prompt: '用自己的话解释：为什么 Johnson 觉得不需要学院（academy）？', answer: '他认为自己一个人就能完成词典', target: { kind: 'topic' }, evidence: { kind: 'web', url: 'https://example.org', quote: 'Johnson decided he did not need an academy to settle arguments about language' } },
 ] }
 const projects = [
-  { id: 'p_ielts', name: '雅思', template: 'language', color: 'ember', icon: 'globe', goal: '学术类 7 分，12 月 14 日', createdAt: iso(-10), cardCount: 4, dueCount: 3,
+  { id: 'p_ielts', name: '雅思', template: 'language', color: 'ember', icon: 'globe', goal: '学术类 7 分，12 月 14 日', createdAt: iso(-10), lastActiveAt: iso(0), cardCount: 4, dueCount: 3,
     books: [
       { id: 'b_cam5', title: '剑桥雅思 5', short: '剑5', roadmap: { done: 2, total: 6 }, current: { id: 't1p2', title: 'T1 · P2 Nature or Nurture?' }, hasDraft: false },
       { id: 'b_avu', title: 'Academic Vocabulary in Use', hasDraft: false },
     ] },
-  { id: 'p_neuro', name: '神经科学', template: 'subject', createdAt: iso(-20), cardCount: 1, dueCount: 1,
+  { id: 'p_neuro', name: '神经科学', template: 'subject', createdAt: iso(-20), lastActiveAt: iso(-2), cardCount: 1, dueCount: 1,
     books: [{ id: 'b_pns', title: 'Principles of Neural Science', hasDraft: true }] },
 ]
 const bookOf: Record<string, LibraryBook[]> = { p_ielts: [cam5, avu], p_neuro: [pns] }
