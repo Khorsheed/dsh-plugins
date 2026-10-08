@@ -44,6 +44,10 @@ describe('the novel store', () => {
     expect(deriveForeshadowState('已埋', 1, ['hinted'])).toBe('推进中')
     expect(deriveForeshadowState('已埋', 1, ['resolved', 'advanced'])).toBe('已揭晓')
     expect(deriveForeshadowState('已放弃', 1, ['resolved'])).toBe('已放弃')
+    // No 埋于 and no mention: not in the text yet, whatever the field says.
+    expect(deriveForeshadowState('已埋', undefined, [])).toBe('未埋')
+    expect(deriveForeshadowState(undefined, undefined, [])).toBe('未埋')
+    expect(deriveForeshadowState('已埋', undefined, ['planted'])).toBe('已埋')
   })
 
   it('resolves the state root the datasets/canvas way (explicit → $DSH_HOME/state/novel → cwd)', () => {
@@ -441,6 +445,25 @@ describe('the novel store', () => {
     await store.writeCard({ workId: DREAM.workId, role: 'foreshadow', id: '#15', fields: { status: '已放弃' } }, SESSION)
     const ledger = await store.ledger({ workId: DREAM.workId })
     expect(ledger.counts).toEqual({ active: 2, overdue: 1, resolved: 1, abandoned: 1 })
+  })
+
+  it('lands a model\'s new foreshadow as 未埋: status and 埋于 are the 对账\'s to set', async () => {
+    const fs = new FakeFs()
+    seedDreamKeeper(fs)
+    const ctx = new Context()
+    ctx.provide('fs', fs as never)
+    provideCanvas(ctx)
+    const store = new NovelService(ctx, { stateRoot: DREAM.stateRoot })
+    const landed = await store.writeCard({
+      workId: DREAM.workId, role: 'foreshadow', fields: { question: '废域居民是谁', status: '已埋', plantedAt: 1 },
+    }, SESSION)
+    expect(landed.ok).toBe(true)
+    expect(landed.ignored).toEqual(['status', 'plantedAt'])
+    const brief = await store.gatherBrief({ workId: DREAM.workId })
+    expect(brief.data?.unplantedForeshadows.find(view => view.question === '废域居民是谁')).toMatchObject({ state: '未埋' })
+    // Dropping it stays the model's (and the user's) call.
+    const dropped = await store.writeCard({ workId: DREAM.workId, role: 'foreshadow', id: landed.ref!, fields: { status: '已放弃' } }, SESSION)
+    expect(dropped).toMatchObject({ ok: true, ignored: [] })
   })
 
   it('lists the mention journal for the dot strip, and lands a sure experience plainly', async () => {

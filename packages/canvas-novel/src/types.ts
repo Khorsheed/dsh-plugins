@@ -1041,16 +1041,18 @@ const STATE_RANK: Readonly<Record<Exclude<ForeshadowState, '已放弃'>, number>
  * A foreshadow's state, derived from what the text did to it (the mention
  * journal): 揭晓 → 已揭晓, 推进/暗示 → 推进中, 埋下 → 已埋. 已放弃 is the
  * one state the user sets by hand on the card. Without any mention, a 埋于
- * chapter means 已埋; otherwise the card's own 未埋 holds (a question set up
- * but not written yet), and anything else reads 已埋 — a card on the board
- * is a planted question. A hand-typed 推进中/已揭晓 never stands alone.
+ * chapter means 已埋, and nothing else does: a card set up in discussion is a
+ * question NOT YET in the text, whatever its status field says (2026-10-08 —
+ * cards landed as 已埋 before a word was written, so the ledger counted them
+ * asleep and the planner rushed them into chapter 1). A hand-typed
+ * 已埋/推进中/已揭晓 never stands alone.
  * @param field - the card's status field.
  * @param plantedAt - the card's 埋于 chapter.
  * @param kinds - the kinds of every reconciled mention of the card.
  */
 export function deriveForeshadowState(field: unknown, plantedAt: number | undefined, kinds: Iterable<MentionEntry['kind']>): ForeshadowState {
   if (field === '已放弃') return '已放弃'
-  let state: ForeshadowState = plantedAt === undefined && field === '未埋' ? '未埋' : '已埋'
+  let state: ForeshadowState = plantedAt === undefined ? '未埋' : '已埋'
   for (const kind of kinds) state = laterForeshadowState(state, MENTION_TO_STATE[kind])
   return state
 }

@@ -162,7 +162,13 @@ export function novelGenreAgent(store: NovelService): NovelGenreAgent {
         ...(request.comment === undefined ? {} : { comment: request.comment }),
       }, session as Session)
       if (!outcome.ok) return cardErrorMessage(outcome.error, role, outcome.ref)
-      const ignored = outcome.ignored === undefined || outcome.ignored.length === 0 ? '' : `（忽略了不认识的字段：${outcome.ignored.join('、')}）`
+      // A foreshadow's status and 埋于 are the 对账's to set (store.writeCard
+      // drops them), which is not the same as a key nobody knows.
+      const ledgerOwned = role === 'foreshadow' ? ['status', 'plantedAt'] : []
+      const unknown = (outcome.ignored ?? []).filter(key => !ledgerOwned.includes(key))
+      const owned = (outcome.ignored ?? []).filter(key => ledgerOwned.includes(key))
+      const ignored = (unknown.length === 0 ? '' : `（忽略了不认识的字段：${unknown.join('、')}）`)
+        + (owned.length === 0 ? '' : '（伏笔的状态和埋于第几章由对账按正文更新，没有用你填的值；新伏笔一律从「未埋」开始，不想要了可以填「已放弃」）')
       return id === undefined
         ? `已落卡 [${outcome.ref}]（${ROLE_NAMES[role]}·已进 brief，画布上带 ✦ 新卡标记）${ignored}。`
         : `已更新 [${outcome.ref}]${ignored}。`

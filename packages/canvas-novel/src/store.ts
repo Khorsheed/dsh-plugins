@@ -811,6 +811,19 @@ export class NovelService {
     if (canvas === undefined || entries === undefined) return { ok: false, error: 'missing' }
     const { fields, ignored } = cleanFields(request.role, request.fields)
     if (request.role === 'relation') return this.writeRelation(entries, request, fields, ignored, session)
+    if (request.role === 'foreshadow') {
+      // Whether a question is in the text is the 对账's call, never the
+      // model's: it may only set one up (未埋) or drop it (已放弃).
+      if (fields['status'] !== undefined && fields['status'] !== '未埋' && fields['status'] !== '已放弃') {
+        delete fields['status']
+        ignored.push('status')
+      }
+      if (fields['plantedAt'] !== undefined) {
+        delete fields['plantedAt']
+        ignored.push('plantedAt')
+      }
+      if (request.id === undefined && fields['status'] === undefined) fields['status'] = '未埋'
+    }
     let mutation: NovelBoardMutation
     let cardId: string
     if (request.id !== undefined) {
