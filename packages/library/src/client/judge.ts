@@ -28,3 +28,86 @@ export function fillMatches(input: string, answer: string): boolean {
   const given = norm(input)
   return given !== '' && answer.split(/[/|]/).some(alternative => norm(alternative) === given)
 }
+
+/* ---------------------------------------------------------------- review */
+
+/** How a due card is asked. */
+export type ReviewMode = 'cloze' | 'choice' | 'spell' | 'explain'
+
+/** The slice of a card the review needs. */
+export interface ReviewCardLike {
+  readonly id: string
+  readonly kind: 'word' | 'concept'
+  readonly term: string
+  readonly aliases: readonly string[]
+  readonly gloss: string
+  readonly contexts: readonly { readonly sentence: string }[]
+  readonly mastery: { readonly box: number; readonly streak: number }
+}
+
+/** The sentence with the term blanked, or undefined when the sentence does not hold it. */
+export function clozeOf(sentence: string, term: string, aliases: readonly string[] = []): { before: string; after: string; answer: string } | undefined {
+  const lower = sentence.toLowerCase()
+  for (const candidate of [term, ...aliases].filter(word => word.trim() !== '').sort((a, b) => b.length - a.length)) {
+    const at = lower.indexOf(candidate.toLowerCase())
+    if (at < 0) continue
+    // Take the whole word the match sits in (instalment → instalments).
+    let end = at + candidate.length
+    while (end < sentence.length && /[A-Za-z'-]/.test(sentence[end]!)) end += 1
+    return { before: sentence.slice(0, at), after: sentence.slice(end), answer: sentence.slice(at, end) }
+  }
+  return undefined
+}
+
+/**
+ * Pick how to ask a card: a concept is explained; a word the learner already
+ * knows well (box 3+) is spelled; otherwise a word met in a sentence is a
+ * cloze or a meaning choice, alternating by its streak (the choice needs three
+ * other glosses for distractors).
+ */
+export function pickMode(card: ReviewCardLike, otherGlosses: number): ReviewMode {
+  if (card.kind === 'concept') return 'explain'
+  if (card.mastery.box >= 3) return 'spell'
+  const hasCloze = card.contexts.some(context => clozeOf(context.sentence, card.term, card.aliases) !== undefined)
+  const canChoose = otherGlosses >= 3
+  if (hasCloze && (!canChoose || card.mastery.streak % 2 === 0)) return 'cloze'
+  if (canChoose) return 'choice'
+  return hasCloze ? 'cloze' : 'spell'
+}
+
+/** Fold the British / American spellings that should never decide an answer. */
+function foldSpelling(word: string): string {
+  return word.normalize('NFKC').toLowerCase().trim()
+    .replace(/[^a-z]/g, '')
+    .replace(/our\b/g, 'or')
+    .replace(/(?<=[a-z]{3})is(e|ed|es|ing|ation)$/g, 'iz$1')
+    .replace(/(?<=[a-z]{2})re$/g, 'er')
+    .replace(/ll(?=[a-z])/g, 'l')
+    .replace(/(?<=[aeiou])ll(ed|ing)$/g, 'l$1')
+}
+
+/** Whether a typed word is the term (case, width, a UK/US spelling and a plural apart). */
+export function spellMatches(input: string, answers: readonly string[]): boolean {
+  const given = foldSpelling(input)
+  if (given === '') return false
+  return answers.some(answer => {
+    const want = foldSpelling(answer)
+    return want === given || want === given.replace(/e?s$/, '') || want.replace(/e?s$/, '') === given
+  })
+}
+
+/** Per-letter marks for a spelling attempt: true where the letter matches the target at that position. */
+export function letterMarks(input: string, target: string): boolean[] {
+  return [...input].map((char, index) => target[index]?.toLowerCase() === char.toLowerCase())
+}
+
+/** Three distractors from other cards' glosses, shuffled with the answer; `random` is injectable for tests. */
+export function choiceOptions(answer: string, others: readonly string[], random: () => number = Math.random): { options: string[]; correct: number } {
+  const pool = [...new Set(others.filter(other => other !== answer))]
+  const picked: string[] = []
+  while (picked.length < 3 && pool.length > 0) picked.push(pool.splice(Math.floor(random() * pool.length), 1)[0]!)
+  const options = [...picked]
+  const correct = Math.floor(random() * (options.length + 1))
+  options.splice(correct, 0, answer)
+  return { options, correct }
+}

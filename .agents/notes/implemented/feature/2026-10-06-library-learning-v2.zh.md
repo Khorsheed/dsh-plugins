@@ -29,6 +29,13 @@ M1 的图书馆（[M1 note](2026-10-06-library-learning-mode-m01.zh.md)）假设
 
 会话头部有一枚图书馆芯片（M3，`client/bind/BindChip.tsx`，槽 `conversation.session.header.actions`，order 50，排在 canvas 的 40 之后）：显示「学习 · 书或项目」，菜单列出每个项目及其书，可解除绑定。只在会话持有 library 工具时出现——`LibraryTabVisibility.grants`，判据的严格一半（清单未答复即为否，不同于 fail-open 的 tab）——并每隔几秒重读绑定，因为教练也会绑定。聊天来源的 `cards.recorded` 事件带上记录它的 `session`；侧栏轮询最近记录，为本会话新记下的条目弹出「已记下：…　撤销」，撤销以事件里的 ids 与时间调用 `undoCards`。
 
+## 样子与复习（M4）
+
+- **项目身份**：项目有预设 `color`（8 种）与 `icon`（12 个），按模板给默认（语言学习：ember / 地球，学科知识：indigo / 大脑），`updateProject` 可改。侧栏在某个表面上设 `data-color`，其下都读 `--pc`：今日卡（图标、目标、进度环、迷你封面）、项目页彩色标题区（含选择器）、书架、书页与路线。八种色是两种主题都清楚的中间调字面量（`panel-check: allow-color`）。
+- **封面**：自动生成、从不上传：项目色按书架位置加深或提亮，书的 `short`（教练登记时给，否则从书名推导），书型角标。
+- **路线上放什么**（用户 2026-10-08）：quiz 节点是关卡，只依赖关卡（`validateRoadmapShape` 拒收依赖读物节点的关卡）；read 节点是可选旁站，采用后即开放，画在前一个关卡旁的小圆点；怎么用这本书、答案、听力原文、附录是书的 `extras`，显示在「开始前 / 附录」条里，不是节点。路线在关卡之间画连线（走到的为实线，往后为虚点线），过关的关卡挂最好成绩。
+- **复习改作答**：`pickMode`（`client/judge.ts`）让概念卡写一句再对照答案（自评，或交给教练判）；掌握较好（box 3+）的词考拼写；其余词在自己的原句里挖空，或在学习者其他词的释义中选本句义（按连对次数交替）。一次答对：recalled；靠提示答对：fuzzy；答错：forgot。英美拼写与复数不影响判定（`spellMatches`）。一轮显示连对，结束给小结（升一格 / 保持 / 明天再来、最长连对），可再练错题且不改复习时间。翻卡模式保留。不发分、不算 XP、不显示本周统计（没有复习记录可算）。
+
 ## 真机试跑（2026-10-06，deepseek-flash，0.2.0-rc.2 上的一次性实例）
 
 - 学习会话里模型看到的正好是 ask_user_question、library_read / library_write / library_assess、web_search 与 web_fetch；`list_capabilities` 被屏蔽，三段根上的无关段已消失（系统提示 3.3k 字符）；`library:binding` 上下文每轮都在。

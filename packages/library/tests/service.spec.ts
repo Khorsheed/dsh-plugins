@@ -89,6 +89,17 @@ describe('cards.ts', () => {
   })
 })
 
+describe('projects', () => {
+  it('takes its look from the template, and changes it on request', async () => {
+    const created = await service.createProject({ name: '雅思', template: 'language' })
+    if (!created.ok) throw new Error(created.message)
+    expect([created.project.color, created.project.icon]).toEqual(['ember', 'globe'])
+    const updated = await service.updateProject({ id: created.project.id, patch: { color: 'moss', icon: 'pen' } })
+    expect(updated.ok && [updated.project.color, updated.project.icon]).toEqual(['moss', 'pen'])
+    expect((await service.updateProject({ id: created.project.id, patch: { color: 'neon' as never } })).ok).toBe(false)
+  })
+})
+
 describe('books and roadmaps', () => {
   it('registers a book with its contents and refuses one without', async () => {
     const { projectId } = await seed()
@@ -111,12 +122,24 @@ describe('books and roadmaps', () => {
 
   it('re-adopting keeps the progress of surviving nodes', async () => {
     const { projectId, bookId } = await seed()
-    await service.draftRoadmap({ projectId, bookId, nodes: [{ id: 'r1', title: '怎么用这本书', kind: 'read' }, { id: 'n1', title: 'a', kind: 'quiz', dependsOn: ['r1'] }] })
+    await service.draftRoadmap({ projectId, bookId, nodes: [{ id: 'r1', title: '导论', kind: 'read' }, { id: 'n1', title: 'a', kind: 'quiz' }] })
     await service.adoptRoadmap({ projectId, bookId })
     await service.markNodeRead({ projectId, bookId, nodeId: 'r1' })
-    await service.draftRoadmap({ projectId, bookId, nodes: [{ id: 'r1', title: '怎么用这本书', kind: 'read' }, { id: 'n1', title: 'a', kind: 'quiz', dependsOn: ['r1'] }, { id: 'n2', title: 'b', kind: 'quiz', dependsOn: ['n1'] }] })
+    await service.draftRoadmap({ projectId, bookId, nodes: [{ id: 'r1', title: '导论', kind: 'read' }, { id: 'n1', title: 'a', kind: 'quiz' }, { id: 'n2', title: 'b', kind: 'quiz', dependsOn: ['n1'] }, { id: 'r2', title: '概述', kind: 'read', dependsOn: ['n2'] }] })
     const again = await service.adoptRoadmap({ projectId, bookId })
-    expect(again.ok && again.roadmap.nodes.map(node => node.state)).toEqual(['done', 'current', 'locked'])
+    // A read node is a side stop: open at once, whatever it follows.
+    expect(again.ok && again.roadmap.nodes.map(node => node.state)).toEqual(['done', 'current', 'locked', 'current'])
+  })
+
+  it('never lets a read node gate a level, and keeps extras and the cover abbreviation', async () => {
+    const { projectId, bookId } = await seed()
+    const gated = await service.draftRoadmap({ projectId, bookId, nodes: [{ id: 'r1', title: '怎么用这本书', kind: 'read' }, { id: 'n1', title: 'a', kind: 'quiz', dependsOn: ['r1'] }] })
+    expect(!gated.ok && gated.message).toMatch(/never gates a level/)
+    const book = await service.putBook({
+      projectId, bookId, title: 'Principles of Neural Science', short: 'PNS', bookKind: 'knowledge', tocSource: { by: 'model' },
+      toc: [{ title: 'Ion Channels' }], extras: [{ title: '怎么用这本书', note: '考试结构与评分', when: 'before' }, { title: 'Answer key', where: 'p.152', when: 'reference' }],
+    })
+    expect(book.ok && [book.book.short, book.book.extras?.map(extra => extra.when)]).toEqual(['PNS', ['before', 'reference']])
   })
 
   it('keeps a goal written as a bare string and drops part-heading rows', async () => {

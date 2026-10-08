@@ -8,6 +8,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { ChipRow, ListRow, PanelHeader, UnderlineTabs } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
 import type { LibraryBook, LibraryPage, LibraryQuizFocus, LibraryRoadmap, RoadmapNode } from '../../types.ts'
+import { colorOf, Cover } from '../look.tsx'
 import type { LibraryNodeTab } from '../store.ts'
 import {
   IconCameraOutlineMedium, IconCheckOutlineMedium, IconLockOutlineMedium, IconRefreshOutlineMedium, IconSparkleOutlineMedium,
@@ -32,7 +33,7 @@ export function BookView({ p, projectId, bookId }: ViewProps & { projectId: stri
   const rev = useStore(s => s.rev)
   const loaded = useLoad(async () => {
     const [detail, roadmaps] = await Promise.all([outcome(p.getProject(projectId)), value(p.getRoadmap(projectId, bookId))])
-    return { book: detail.books.find(candidate => candidate.id === bookId), ...roadmaps }
+    return { book: detail.books.find(candidate => candidate.id === bookId), project: detail.project, shade: Math.max(0, detail.books.findIndex(candidate => candidate.id === bookId)), ...roadmaps }
   }, [projectId, bookId, rev])
   const [notice, setNotice] = useState<string | undefined>()
   const [busy, setBusy] = useState(false)
@@ -69,9 +70,21 @@ export function BookView({ p, projectId, bookId }: ViewProps & { projectId: stri
         ]}
         moreLabel={t('action.more')}
       />
-      <div className={css.body}>
+      <div className={css.body} data-color={loaded.data?.project === undefined ? undefined : colorOf(loaded.data.project)}>
         <StateLine loaded={loaded} t={t} />
         {notice !== undefined && <div className={css.notice}>{notice}</div>}
+        {book !== undefined && (
+          <section className={css.bookHead}>
+            <Cover book={book} shade={loaded.data?.shade ?? 0} size="badge" />
+            <span className={css.projectText}>
+              <span className={css.projectName}>{book.title}</span>
+              <span className={css.muted}>
+                {[book.edition, t(`bookKind.${book.bookKind}`), loaded.data?.roadmap === undefined ? undefined : t('book.shelfMeta', { done: String(loaded.data.roadmap.nodes.filter(node => node.kind === 'quiz' && node.state === 'done').length), total: String(loaded.data.roadmap.nodes.filter(node => node.kind === 'quiz').length) })].filter(Boolean).join(' · ')}
+              </span>
+            </span>
+          </section>
+        )}
+        {book?.extras !== undefined && book.extras.length > 0 && <Extras p={p} book={book} />}
         {book !== undefined && loaded.data?.draft !== undefined && (
           <DraftCard
             p={p}
@@ -139,29 +152,93 @@ function DraftCard({ p, book, draft, replaces, busy, onAdopt, onDiscard }: {
   )
 }
 
-/** The adopted path: an S-shaped trail, three columns wide. */
+/** The 「开始前 / 附录」 strip: what the book holds that is not a stop on the path. */
+function Extras({ p, book }: { p: ViewProps['p']; book: LibraryBook }): ReactNode {
+  const { t } = p
+  const [open, setOpen] = useState(false)
+  const extras = book.extras ?? []
+  const before = extras.filter(extra => extra.when === 'before')
+  return (
+    <section className={css.extras}>
+      <button type="button" className={css.extrasHead} aria-expanded={open} onClick={() => { setOpen(!open) }}>
+        <span>{before.length > 0 ? t('book.extrasBefore', { first: before[0]!.title }) : t('book.extrasTitle')}</span>
+        <span className={css.muted}>{t('book.extrasCount', { count: String(extras.length) })}{open ? ' ▴' : ' ▾'}</span>
+      </button>
+      {open && (
+        <ul className={css.extrasList}>
+          {extras.map(extra => (
+            <li key={extra.title}>
+              <span className={css.kind} data-kind={extra.when === 'before' ? 'quiz' : 'read'}>{t(extra.when === 'before' ? 'book.extraBefore' : 'book.extraReference')}</span>
+              <span className={css.extraText}>
+                <b>{extra.title}</b>
+                {(extra.note !== undefined || extra.where !== undefined) && <span className={css.muted}>{[extra.where, extra.note].filter(Boolean).join(' · ')}</span>}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  )
+}
+
+/** Path geometry: rows are 84px tall; levels zigzag over three columns. */
+const ROW = 84
+const COLUMNS = [1 / 6, 1 / 2, 5 / 6]
+
+/**
+ * The adopted path: levels (quiz nodes) on an S-shaped trail joined by
+ * connectors — solid up to the furthest reached level, dotted beyond — and
+ * side stops (read nodes) as small dots beside the level they follow.
+ */
 function Path({ p, roadmap, onOpen }: { p: ViewProps['p']; roadmap: LibraryRoadmap; onOpen: (node: RoadmapNode) => void }): ReactNode {
   const { t } = p
-  const done = roadmap.nodes.filter(node => node.state === 'done').length
+  const levels = roadmap.nodes.filter(node => node.kind === 'quiz')
+  // Each side stop hangs beside the level before it (or the first one).
+  const sides = new Map<string, RoadmapNode[]>()
+  let anchor = levels[0]?.id
+  for (const node of roadmap.nodes) {
+    if (node.kind === 'quiz') { anchor = node.id; continue }
+    if (anchor === undefined) continue
+    sides.set(anchor, [...(sides.get(anchor) ?? []), node])
+  }
+  const width = 340
+  const x = (index: number): number => (COLUMNS[column(index)] ?? 0.5) * width
+  const y = (index: number): number => index * ROW + 30
+  const done = levels.filter(node => node.state === 'done').length
   return (
     <section className={css.section}>
-      <h3 className={css.sectionTitle}>{t('book.pathTitle', { done: String(done), total: String(roadmap.nodes.length) })}</h3>
-      <div className={css.path}>
-        {roadmap.nodes.map((node, index) => (
-          <div key={node.id} className={css.pathRow}>
-            <button
-              type="button"
-              className={css.pathNode}
-              style={{ gridColumn: column(index) + 1 }}
-              onClick={() => { onOpen(node) }}
-            >
-              <span className={css.disc} data-state={node.state} data-kind={node.kind}>
-                {node.state === 'done'
-                  ? <IconCheckOutlineMedium />
-                  : node.state === 'locked' ? <IconLockOutlineMedium /> : index + 1}
+      <h3 className={css.sectionTitle}>{t('book.pathTitle', { done: String(done), total: String(levels.length) })}</h3>
+      <div className={css.path} style={{ height: Math.max(levels.length, 1) * ROW + 48 }}>
+        <svg className={css.pathLine} viewBox={`0 0 ${width} ${Math.max(levels.length, 1) * ROW + 10}`} aria-hidden="true">
+          {levels.slice(1).map((node, index) => {
+            const from = index
+            const to = index + 1
+            const reached = node.state !== 'locked'
+            const midY = (y(from) + y(to)) / 2
+            return (
+              <path
+                key={node.id}
+                d={`M${x(from)} ${y(from)} C ${x(from)} ${midY}, ${x(to)} ${midY}, ${x(to)} ${y(to)}`}
+                className={reached ? css.lineReached : css.lineAhead}
+              />
+            )
+          })}
+        </svg>
+        {levels.map((node, index) => (
+          <div key={node.id} className={css.pathSlot} style={{ left: `${(COLUMNS[column(index)] ?? 0.5) * 100}%`, top: y(index) }}>
+            <button type="button" className={css.pathNode} onClick={() => { onOpen(node) }}>
+              <span className={css.disc} data-state={node.state} data-kind="quiz">
+                {node.state === 'done' ? <IconCheckOutlineMedium /> : node.state === 'locked' ? <IconLockOutlineMedium /> : index + 1}
               </span>
               <span className={css.pathLabel} data-state={node.state}>{node.title}</span>
+              {node.state === 'done' && node.quizStats?.bestRatio !== undefined && <span className={css.best}>{Math.round(node.quizStats.bestRatio * 100)}%</span>}
             </button>
+            {(sides.get(node.id) ?? []).map(side => (
+              <button key={side.id} type="button" className={css.sideStop} data-side={column(index) === 2 ? 'left' : 'right'} data-state={side.state} onClick={() => { onOpen(side) }}>
+                <span className={css.sideDot} aria-hidden="true" />
+                <span>{side.title}</span>
+              </button>
+            ))}
           </div>
         ))}
       </div>

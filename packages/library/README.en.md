@@ -37,7 +37,8 @@ Details live in the package.json `dsh.compat.notes`: state is plain `node:fs` un
 - Out of scope: book file upload and parsing (EPUB / PDF), an in-conversation 「精读」tab, XP and streaks, project-level exams and cross-book linking.
 - The sidebar's photo button sends the photo as your message in the conversation, where the coach reads it.
 - The session-header chip shows and switches the project or book this session is bound to; when the coach notes a weak point the sidebar toasts it with an undo.
-- Styling and review game modes come in a later round (proposal M4).
+- Projects have a color and an icon, books a generated cover; the path holds only levels, with overview chapters as optional side stops and how-to-use pages, answer keys and appendices in the book's before-you-start / appendix strip.
+- Review is answering: fill the sentence, pick the meaning here, spell, explain a concept; a round ends with a summary and a practice round for the missed; the flashcard mode stays.
 - A photo page needs the full attachment reference (attachmentId + mediaType + bytes + width + height — copied verbatim off the message's image block), else `ref-incomplete`.
 
 ## Development

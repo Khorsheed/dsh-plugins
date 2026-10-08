@@ -32,3 +32,42 @@ describe('fillMatches', () => {
     expect(fillMatches('', 'x')).toBe(false)
   })
 })
+
+import { choiceOptions, clozeOf, letterMarks, pickMode, spellMatches } from '../src/client/judge.ts'
+
+const word = (box: number, streak = 0, sentence = 'He was to be paid in instalments.') => ({
+  id: 'c', kind: 'word' as const, term: 'instalment', aliases: [], gloss: '分期付款',
+  contexts: [{ sentence }], mastery: { box, streak },
+})
+
+describe('review modes', () => {
+  it('explains concepts, spells known words, alternates cloze and choice', () => {
+    expect(pickMode({ ...word(0), kind: 'concept' }, 5)).toBe('explain')
+    expect(pickMode(word(3), 5)).toBe('spell')
+    expect(pickMode(word(1, 0), 5)).toBe('cloze')
+    expect(pickMode(word(1, 1), 5)).toBe('choice')
+    expect(pickMode(word(1, 1), 1)).toBe('cloze')
+    expect(pickMode(word(0, 0, 'no match here'), 1)).toBe('spell')
+  })
+
+  it('blanks the whole inflected word', () => {
+    expect(clozeOf('He was to be paid in instalments.', 'instalment')).toEqual({ before: 'He was to be paid in ', after: '.', answer: 'instalments' })
+    expect(clozeOf('nothing', 'held')).toBeUndefined()
+  })
+
+  it('accepts UK / US spellings and plurals, nothing else', () => {
+    expect(spellMatches('installments', ['instalments'])).toBe(true)
+    expect(spellMatches('Colour', ['color'])).toBe(true)
+    expect(spellMatches('organize', ['organise'])).toBe(true)
+    expect(spellMatches('instalment', ['instalments'])).toBe(true)
+    expect(spellMatches('instrument', ['instalments'])).toBe(false)
+  })
+
+  it('marks letters and builds four options with the answer among them', () => {
+    expect(letterMarks('instal', 'instalments')).toEqual([true, true, true, true, true, true])
+    expect(letterMarks('insx', 'inst')).toEqual([true, true, true, false])
+    const { options, correct } = choiceOptions('举行', ['阁楼', '分期付款', '全盛期', '限定'], () => 0)
+    expect(options).toHaveLength(4)
+    expect(options[correct]).toBe('举行')
+  })
+})

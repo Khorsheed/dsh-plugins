@@ -7,8 +7,9 @@
  */
 import { useState, type ReactNode } from 'react'
 import { ChipRow, ListRow, PanelHeader } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
-import type { LibraryTemplate } from '../../types.ts'
-import { IconBookOutlineMedium, IconCardsOutlineMedium, IconPlusOutlineMedium, IconRefreshOutlineMedium, IconSparkleOutlineMedium } from '../icons.tsx'
+import { LIBRARY_COLORS, LIBRARY_ICONS, type LibraryColor, type LibraryIcon, type LibraryProjectSummary, type LibraryTemplate } from '../../types.ts'
+import { colorOf, Cover, GlyphStrokes, iconOf, ProjectGlyph, Ring } from '../look.tsx'
+import { IconCardsOutlineMedium, IconPlusOutlineMedium, IconRefreshOutlineMedium, IconSparkleOutlineMedium } from '../icons.tsx'
 import { outcome, StateLine, useLoad, value, when, type ViewProps } from '../ui.tsx'
 import css from '../LibraryPane.module.css'
 
@@ -59,7 +60,7 @@ export function TodayView({ p }: ViewProps): ReactNode {
             {reading.map(({ project, book }) => (
               <ListRow
                 key={book.id}
-                icon={<IconBookOutlineMedium />}
+                icon={<span data-color={colorOf(project)}><Cover book={book} size="badge" /></span>}
                 title={book.title}
                 meta={book.hasDraft
                   ? t('book.draftWaiting')
@@ -86,19 +87,9 @@ export function TodayView({ p }: ViewProps): ReactNode {
         {list.length > 0 && (
           <section className={css.section}>
             <h3 className={css.sectionTitle}>{t('today.projects')}</h3>
-            {list.map(project => (
-              <ListRow
-                key={project.id}
-                title={project.name}
-                meta={t('project.meta', {
-                  template: t(`template.${project.template}`),
-                  books: String(project.books.length),
-                  cards: String(project.cardCount),
-                })}
-                trailing={project.dueCount > 0 ? <span className={css.badge}>{project.dueCount}</span> : undefined}
-                onSelect={() => { actions.push({ view: 'project', projectId: project.id }) }}
-              />
-            ))}
+            <div className={css.projectCards}>
+              {list.map(project => <ProjectCard key={project.id} p={p} project={project} />)}
+            </div>
           </section>
         )}
       </div>
@@ -161,85 +152,119 @@ export function NewProjectView({ p }: ViewProps): ReactNode {
   )
 }
 
-/** One project: its books, cards and reviews. */
+/** Overall progress of a project: done nodes over all nodes of its adopted paths. */
+function progressOf(project: LibraryProjectSummary): number {
+  const total = project.books.reduce((sum, book) => sum + (book.roadmap?.total ?? 0), 0)
+  const done = project.books.reduce((sum, book) => sum + (book.roadmap?.done ?? 0), 0)
+  return total === 0 ? 0 : Math.round((done / total) * 100)
+}
+
+/** A project on 今日: its color, glyph, goal, progress ring, mini covers. */
+function ProjectCard({ p, project }: ViewProps & { project: LibraryProjectSummary }): ReactNode {
+  const { t, actions } = p
+  return (
+    <button type="button" className={css.projectCard} data-color={colorOf(project)} onClick={() => { actions.push({ view: 'project', projectId: project.id }) }}>
+      <span className={css.projectTop}>
+        <ProjectGlyph icon={iconOf(project)} />
+        <span className={css.projectText}>
+          <span className={css.projectName}>{project.name}</span>
+          <span className={css.muted}>{project.goal ?? t(`template.${project.template}`)}</span>
+        </span>
+        <Ring percent={progressOf(project)} />
+      </span>
+      <span className={css.row}>
+        <span className={css.minis}>{project.books.slice(0, 4).map((book, index) => <Cover key={book.id} book={book} shade={index} size="mini" />)}</span>
+        <span className={css.muted}>{t('project.cardMeta', { books: String(project.books.length), cards: String(project.cardCount), due: String(project.dueCount) })}</span>
+      </span>
+    </button>
+  )
+}
+
+/** One project: its colored header, its shelf, its cards and reviews. */
 export function ProjectView({ p, projectId }: ViewProps & { projectId: string }): ReactNode {
   const { t, actions, useStore } = p
   const rev = useStore(s => s.rev)
   const loaded = useLoad(() => outcome(p.getProject(projectId)), [projectId, rev])
   const [notice, setNotice] = useState<string | undefined>()
+  const [styling, setStyling] = useState(false)
   const project = loaded.data?.project
+  const books = loaded.data?.books ?? []
 
   const askToAddBook = (): void => {
     if (project === undefined) return
     void p.bindTarget({ projectId })
     setNotice(p.primeConversation(t('prime.addBook', { project: project.name })) ? t('notice.primed') : t('notice.noConversation'))
   }
+  const restyle = (patch: { color?: LibraryColor; icon?: LibraryIcon }): void => {
+    void outcome(p.updateProject(projectId, patch)).then(() => { actions.refresh() }, (failure: unknown) => { setNotice(String(failure)) })
+  }
 
   return (
     <>
       <PanelHeader
-        title={project?.name ?? ''}
-        meta={project === undefined ? undefined : t(`template.${project.template}`)}
+        title=""
         onBack={() => { actions.pop() }}
         backLabel={t('action.back')}
         actions={[
           { id: 'add', label: t('book.add'), icon: <IconPlusOutlineMedium />, onSelect: askToAddBook },
           { id: 'cards', label: t('cards.title'), icon: <IconCardsOutlineMedium />, onSelect: () => { actions.push({ view: 'cards', projectId, filter: 'all' }) } },
+          { id: 'style', label: t('project.style'), icon: <IconSparkleOutlineMedium />, menuOnly: true, onSelect: () => { setStyling(!styling) } },
           { id: 'bind', label: t('action.bindProject'), icon: <IconSparkleOutlineMedium />, menuOnly: true, onSelect: () => { void p.bindTarget({ projectId }).then(() => { setNotice(t('notice.bound')) }) } },
         ]}
         moreLabel={t('action.more')}
       />
+      {project !== undefined && (
+        <section className={css.band} data-color={colorOf(project)}>
+          <span className={css.projectTop}>
+            <ProjectGlyph icon={iconOf(project)} />
+            <span className={css.projectText}>
+              <span className={css.projectName}>{project.name}</span>
+              <span className={css.muted}>{project.goal ?? t(`template.${project.template}`)}</span>
+            </span>
+            <Ring percent={progressOf(project)} />
+          </span>
+          <span className={css.bandStats}>
+            <button type="button" className={css.bandStat} onClick={() => { actions.push({ view: 'cards', projectId, filter: 'all' }) }}><b>{project.cardCount}</b>{t('cards.title')}</button>
+            <button type="button" className={css.bandStat} disabled={project.dueCount === 0} onClick={() => { actions.push({ view: 'review', projectId }) }}><b>{project.dueCount}</b>{t('review.due')}</button>
+          </span>
+          {styling && (
+            <span className={css.picker}>
+              <span className={css.swatches}>
+                {LIBRARY_COLORS.map(color => (
+                  <button key={color} type="button" className={css.swatch} data-color={color} aria-label={color} aria-pressed={colorOf(project) === color} onClick={() => { restyle({ color }) }} />
+                ))}
+              </span>
+              <span className={css.swatches}>
+                {LIBRARY_ICONS.map(icon => (
+                  <button key={icon} type="button" className={css.iconPick} aria-label={icon} aria-pressed={iconOf(project) === icon} onClick={() => { restyle({ icon }) }}><GlyphStrokes icon={icon} /></button>
+                ))}
+              </span>
+            </span>
+          )}
+        </section>
+      )}
       <div className={css.body}>
         <StateLine loaded={loaded} t={t} />
         {notice !== undefined && <div className={css.notice}>{notice}</div>}
         {project !== undefined && (
-          <>
-            <div className={css.stats}>
-              <button type="button" className={css.stat} onClick={() => { actions.push({ view: 'cards', projectId, filter: 'all' }) }}>
-                <span className={css.statValue}>{project.cardCount}</span>
-                <span className={css.muted}>{t('cards.title')}</span>
-              </button>
-              <button type="button" className={css.stat} disabled={project.dueCount === 0} onClick={() => { actions.push({ view: 'review', projectId }) }}>
-                <span className={css.statValue}>{project.dueCount}</span>
-                <span className={css.muted}>{t('review.due')}</span>
-              </button>
-            </div>
-            {project.goal !== undefined && <div className={css.muted}>{t('project.goalLine', { goal: project.goal })}</div>}
-            <section className={css.section}>
-              <h3 className={css.sectionTitle}>{t('project.books', { count: String(project.books.length) })}</h3>
-              {project.books.length === 0 && (
-                <div className={css.empty}>
-                  <div className={css.muted}>{t('project.noBooks')}</div>
-                  <button type="button" className={css.primary} onClick={askToAddBook}>{t('book.add')}</button>
-                </div>
-              )}
-              {project.books.map(book => {
-                const meta = book.hasDraft
-                  ? t('book.draftWaiting')
-                  : book.roadmap === undefined
-                    ? t('book.noRoadmap')
-                    : t('book.progressMeta', {
-                      done: String(book.roadmap.done),
-                      total: String(book.roadmap.total),
-                      next: book.current?.title ?? t('book.finished'),
-                    })
+          <section className={css.section} data-color={colorOf(project)}>
+            <h3 className={css.sectionTitle}>{t('project.shelf', { count: String(project.books.length) })}</h3>
+            <div className={css.shelf}>
+              {project.books.map((row, index) => {
+                const book = books.find(candidate => candidate.id === row.id)
+                const percent = row.roadmap === undefined || row.roadmap.total === 0 ? 0 : Math.round((row.roadmap.done / row.roadmap.total) * 100)
                 return (
-                  <ListRow
-                    key={book.id}
-                    icon={<IconBookOutlineMedium />}
-                    title={book.title}
-                    meta={meta}
-                    trailing={book.roadmap === undefined ? undefined : (
-                      <span className={css.miniBar} aria-hidden="true">
-                        <i style={{ width: `${book.roadmap.total === 0 ? 0 : Math.round((book.roadmap.done / book.roadmap.total) * 100)}%` }} />
-                      </span>
-                    )}
-                    onSelect={() => { actions.push({ view: 'book', projectId, bookId: book.id }) }}
-                  />
+                  <button key={row.id} type="button" className={css.shelfBook} onClick={() => { actions.push({ view: 'book', projectId, bookId: row.id }) }}>
+                    <Cover book={book ?? row} shade={index} kindLabel={book === undefined ? undefined : t(`bookKind.${book.bookKind}`)} />
+                    <span className={css.shelfTitle}>{row.title}</span>
+                    <span className={css.shelfMeta}>{row.hasDraft ? t('book.draftWaiting') : row.roadmap === undefined ? t('book.noRoadmap') : t('book.shelfMeta', { done: String(row.roadmap.done), total: String(row.roadmap.total) })}</span>
+                    <span className={css.miniBar} aria-hidden="true"><i style={{ width: `${percent}%` }} /></span>
+                  </button>
                 )
               })}
-            </section>
-          </>
+              <button type="button" className={css.shelfAdd} onClick={askToAddBook}>＋ {t('book.add')}</button>
+            </div>
+          </section>
         )}
       </div>
     </>

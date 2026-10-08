@@ -44,6 +44,8 @@ import {
   isLibraryId,
   libraryErrorMessage,
   LIBRARY_EVENT_TYPES,
+  LIBRARY_COLORS,
+  LIBRARY_ICONS,
   LIBRARY_STATE_VERSION,
   MAX_BOX,
   MAX_WEAKNESS,
@@ -256,6 +258,8 @@ export function normalizeProject(value: unknown): LibraryProject | undefined {
     id: projectId,
     name,
     template,
+    ...opt('color', LIBRARY_COLORS.find(color => color === record.color)),
+    ...opt('icon', LIBRARY_ICONS.find(icon => icon === record.icon)),
     ...opt('templateNote', text(record.templateNote, 500)),
     ...opt('goal', text(record.goal, 500)),
     createdAt: stamp(record.createdAt),
@@ -273,6 +277,20 @@ export function normalizeBook(value: unknown): LibraryBook | undefined {
   return {
     id: bookId,
     title,
+    ...opt('short', text(record.short, 8)),
+    ...(Array.isArray(record.extras) ? {
+      extras: (record.extras as unknown[]).flatMap(item => {
+        const extra = asRecord(item)
+        const extraTitle = text(extra?.title, 200)
+        if (extra === undefined || extraTitle === undefined) return []
+        return [{
+          title: extraTitle,
+          ...opt('note', text(extra.note, 300)),
+          ...opt('where', text(extra.where, 60)),
+          when: extra.when === 'reference' ? 'reference' as const : 'before' as const,
+        }]
+      }),
+    } : {}),
     ...opt('author', text(record.author, 200)),
     ...opt('edition', text(record.edition, 100)),
     ...opt('isbn', text(record.isbn, 40)),

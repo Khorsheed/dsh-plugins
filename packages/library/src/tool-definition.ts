@@ -201,13 +201,15 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
     description:
       'Validate and persist what you authored. Pass what plus the matching payload; project / book default to this session\'s binding. '
       + 'what="project": project { name, template: "language"|"subject"|"custom", templateNote?, goal? } — language: marks are words; subject: marks are concepts. '
-      + 'what="book": book { title, author?, edition?, isbn?, bookKind: "knowledge"|"material", toc: [{ title, part? }], tocSource: { by: "web"|"model"|"photo", url? }, bookId? } — '
+      + 'what="book": book { title, short (a 2-4 character cover abbreviation, e.g. 剑5 / PNS), author?, edition?, isbn?, bookKind: "knowledge"|"material", toc: [{ title, part? }], tocSource: { by: "web"|"model"|"photo", url? }, '
+      + 'extras?: [{ title, note?, where?, when: "before"|"reference" }] (how to use the book, the answer key, transcripts, appendices — they are NOT roadmap nodes), bookId? } — '
       + 'register a book (no upload): search the web for the exact edition\'s contents and cite the url — a publisher, library-catalog or retailer page, never a full-text copy; '
       + 'toc has one row per chapter (or passage), never a row for a part heading — the part goes in part; "material" = exam papers, novels, anthologies '
       + '(specific text you cannot recall); bookId corrects an existing one. '
       + 'what="roadmap": roadmap { nodes: [{ id, title, kind: "quiz"|"read", goals: [..], chapterRanges: [{ from, to }], dependsOn }], passRatio?, note? } — '
-      + 'writes a DRAFT the learner adopts in the sidebar (采用); ranges count contents rows; read nodes (how to use the book, front matter, appendices) complete by 读完, '
-      + 'quiz nodes by a chapter quiz; note is the one-line pacing shown on the draft card. '
+      + 'writes a DRAFT the learner adopts in the sidebar (采用); ranges count contents rows. Quiz nodes are the levels (a chapter quiz completes them) and depend only on quiz nodes; '
+      + 'read nodes are optional side stops for an overview chapter worth reading but not testing (读完 completes them, they never gate). How-to-use pages, answer keys, transcripts '
+      + 'and appendices are book extras, not nodes. note is the one-line pacing shown on the draft card. '
       + 'what="page": page { attachment? (the image id; omit it for the latest photo in this conversation), label?, node?, text (the page\'s printed text), '
       + 'marks: [{ text, sentence?, handNote?, gloss?, uncertain? }] } — records a photographed page and cards every mark at once; gloss is the in-context meaning; '
       + 'uncertain marks are kept but not carded. '
@@ -256,6 +258,8 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
             ...(typeof body.edition === 'string' ? { edition: body.edition } : {}),
             ...(typeof body.isbn === 'string' ? { isbn: body.isbn } : {}),
             bookKind: body.bookKind as 'knowledge' | 'material',
+            ...(typeof body.short === 'string' ? { short: body.short } : {}),
+            ...(Array.isArray(body.extras) ? { extras: body.extras as { title: string; note?: string; where?: string; when?: 'before' | 'reference' }[] } : {}),
             toc,
             tocSource: (payload(body.tocSource) ?? { by: 'model' }) as { by: 'web' | 'model' | 'photo'; url?: string },
           })) as unknown as JsonValue

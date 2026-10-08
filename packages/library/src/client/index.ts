@@ -124,6 +124,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     listProjects: () => remote.listProjects(),
     getProject: id => remote.getProject({ id }),
     createProject: request => remote.createProject(request),
+    updateProject: (projectId, patch) => remote.updateProject({ id: projectId, patch }),
     getRoadmap: (projectId, bookId) => remote.getRoadmap({ projectId, bookId }),
     adoptRoadmap: (projectId, bookId) => remote.adoptRoadmap({ projectId, bookId }),
     discardDraft: (projectId, bookId) => remote.discardDraft({ projectId, bookId }),

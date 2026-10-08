@@ -81,11 +81,28 @@ export type LibraryOutcome<T> = ({ readonly ok: true } & T) | LibraryRefusal
  */
 export type LibraryTemplate = 'language' | 'subject' | 'custom'
 
+/** The preset project colors (the sidebar maps each to a light and a dark tone). */
+export const LIBRARY_COLORS = ['ember', 'amber', 'moss', 'teal', 'sky', 'indigo', 'plum', 'rose'] as const
+export type LibraryColor = typeof LIBRARY_COLORS[number]
+
+/** The preset project icons. */
+export const LIBRARY_ICONS = ['globe', 'brain', 'book', 'flask', 'atom', 'leaf', 'pen', 'music', 'scale', 'chart', 'code', 'compass'] as const
+export type LibraryIcon = typeof LIBRARY_ICONS[number]
+
+/** A template's default look, until the learner picks another. */
+export const TEMPLATE_LOOK: Readonly<Record<LibraryTemplate, { color: LibraryColor; icon: LibraryIcon }>> = {
+  language: { color: 'ember', icon: 'globe' },
+  subject: { color: 'indigo', icon: 'brain' },
+  custom: { color: 'teal', icon: 'compass' },
+}
+
 /** One learning project (e.g. 「神经科学」). */
 export interface LibraryProject {
   readonly id: string
   readonly name: string
   readonly template: LibraryTemplate
+  readonly color?: LibraryColor
+  readonly icon?: LibraryIcon
   /** The learner's own words for a custom template. */
   readonly templateNote?: string
   /** The learner's goal (「学术类 7 分，12 月 14 日」). */
@@ -141,10 +158,27 @@ export interface LibraryTocSource {
   readonly verifiedAt?: string
 }
 
+/**
+ * Something in the book worth knowing but not worth a stop on the path —
+ * how to use the book, the answer key, transcripts, appendices. Shown in the
+ * book page's 「开始前 / 附录」 strip.
+ */
+export interface LibraryBookExtra {
+  readonly title: string
+  /** One line from the coach: what it is for. */
+  readonly note?: string
+  /** Where it is in the book (「p.152」). */
+  readonly where?: string
+  readonly when: 'before' | 'reference'
+}
+
 /** A registered book (`books/<id>/book.json`). No body is ever stored. */
 export interface LibraryBook {
   readonly id: string
   readonly title: string
+  /** The cover's abbreviation (「剑5」「PNS」); derived from the title when absent. */
+  readonly short?: string
+  readonly extras?: readonly LibraryBookExtra[]
   readonly author?: string
   readonly edition?: string
   readonly isbn?: string
@@ -160,9 +194,11 @@ export interface LibraryBook {
 export type RoadmapNodeState = 'locked' | 'current' | 'done'
 
 /**
- * What kind of learning a node carries. `quiz` nodes gate on an assessed quiz
- * at the pass ratio; `read` nodes (how-to-use-this-book, front matter,
- * appendices) complete by being read — the learner's 「读完」.
+ * What kind of learning a node carries. `quiz` nodes are the path's levels:
+ * they gate on an assessed quiz at the pass ratio. `read` nodes are side
+ * stops (an overview chapter worth reading, not testing): always open,
+ * complete by 「读完」, and never a dependency of a level. How-to-use pages,
+ * answer keys and appendices are not nodes at all — they are book extras.
  */
 export type RoadmapNodeKind = 'quiz' | 'read'
 

@@ -22,6 +22,8 @@ import type {
   LibraryBook,
   LibraryCard,
   LibraryCardQuery,
+  LibraryColor,
+  LibraryIcon,
   LibraryEvent,
   LibraryOutcome,
   LibraryPage,
@@ -49,6 +51,7 @@ export interface LibraryPaneInjected {
   listProjects: () => Promise<RemoteResult<{ projects: LibraryProjectSummary[] }>>
   getProject: (id: string) => Answer<{ project: LibraryProjectSummary; books: LibraryBook[] }>
   createProject: (request: { name: string; template: LibraryTemplate; goal?: string }) => Answer<{ project: LibraryProject }>
+  updateProject: (projectId: string, patch: { color?: LibraryColor; icon?: LibraryIcon }) => Answer<{ project: LibraryProject }>
   getRoadmap: (projectId: string, bookId: string) => Promise<RemoteResult<{ roadmap?: LibraryRoadmap; draft?: LibraryRoadmap }>>
   adoptRoadmap: (projectId: string, bookId: string) => Answer<{ roadmap: LibraryRoadmap }>
   discardDraft: (projectId: string, bookId: string) => Answer<{ bookId: string }>

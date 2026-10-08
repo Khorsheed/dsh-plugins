@@ -29,6 +29,9 @@
 import type { Context } from '@deepseek-ai/cordis'
 import {
   DEFAULT_PASS_RATIO,
+  LIBRARY_COLORS,
+  LIBRARY_ICONS,
+  TEMPLATE_LOOK,
   LEITNER_INTERVAL_DAYS,
   libraryErrorMessage,
   MAX_BOX,
@@ -40,6 +43,8 @@ import {
   type LibraryBook,
   type LibraryBookKind,
   type LibraryBookProgress,
+  type LibraryColor,
+  type LibraryIcon,
   type LibraryCardQuery,
   type LibraryCard,
   type LibraryCardInput,
@@ -207,6 +212,8 @@ export class LibraryService {
     template?: LibraryTemplate
     templateNote?: string
     goal?: string
+    color?: LibraryColor
+    icon?: LibraryIcon
   }): Promise<LibraryOutcome<{ project: LibraryProject }>> {
     const name = request.name.trim()
     if (name === '') {
@@ -221,10 +228,13 @@ export class LibraryService {
         if (index.projects.some(project => project.name === name)) {
           return refuse('exists', `a project named ${JSON.stringify(name)} already exists — open it (library_read · projects) instead of creating a twin`)
         }
+        const template = request.template ?? 'subject'
         const project: LibraryProject = {
           id: mintLibraryId('p'),
           name,
-          template: request.template ?? 'subject',
+          template,
+          color: request.color !== undefined && (LIBRARY_COLORS as readonly string[]).includes(request.color) ? request.color : TEMPLATE_LOOK[template].color,
+          icon: request.icon !== undefined && (LIBRARY_ICONS as readonly string[]).includes(request.icon) ? request.icon : TEMPLATE_LOOK[template].icon,
           ...(request.templateNote === undefined || request.templateNote.trim() === '' ? {} : { templateNote: request.templateNote.trim() }),
           ...(request.goal === undefined || request.goal.trim() === '' ? {} : { goal: request.goal.trim() }),
           createdAt: new Date().toISOString(),
@@ -234,6 +244,35 @@ export class LibraryService {
         return { ok: true as const, project }
       })
       if (outcome.ok) this.changed(outcome.project.id)
+      return outcome
+    } catch (error) {
+      return storeRefusal(error)
+    }
+  }
+
+  /** Change a project's look or goal (the sidebar's 「样式」). */
+  async updateProject(request: { id: string; patch: { color?: LibraryColor; icon?: LibraryIcon; goal?: string; name?: string } }): Promise<LibraryOutcome<{ project: LibraryProject }>> {
+    const patch = request.patch
+    if (patch.color !== undefined && !(LIBRARY_COLORS as readonly string[]).includes(patch.color)) return refuse('invalid', `color is one of ${LIBRARY_COLORS.join(' | ')}`)
+    if (patch.icon !== undefined && !(LIBRARY_ICONS as readonly string[]).includes(patch.icon)) return refuse('invalid', `icon is one of ${LIBRARY_ICONS.join(' | ')}`)
+    if (patch.name !== undefined && patch.name.trim() === '') return refuse('invalid', 'a project keeps a name')
+    try {
+      const outcome = await this.store.withIndexLock(async () => {
+        const index = this.store.readIndex()
+        const project = index.projects.find(candidate => candidate.id === request.id)
+        if (project === undefined) return refuse('not-found', `no project ${JSON.stringify(request.id)}`)
+        const next: LibraryProject = {
+          ...project,
+          ...(patch.color === undefined ? {} : { color: patch.color }),
+          ...(patch.icon === undefined ? {} : { icon: patch.icon }),
+          ...(patch.goal === undefined ? {} : { goal: patch.goal.trim() }),
+          ...(patch.name === undefined ? {} : { name: patch.name.trim() }),
+        }
+        this.store.writeProject(next)
+        this.store.writeIndex({ ...index, projects: index.projects.map(candidate => candidate.id === next.id ? next : candidate) })
+        return { ok: true as const, project: next }
+      })
+      if (outcome.ok) this.changed(request.id)
       return outcome
     } catch (error) {
       return storeRefusal(error)
@@ -276,6 +315,8 @@ export class LibraryService {
     bookKind: LibraryBookKind
     toc: readonly { title: string; part?: string }[]
     tocSource: LibraryTocSource
+    short?: string
+    extras?: readonly { title: string; note?: string; where?: string; when?: 'before' | 'reference' }[]
   }): Promise<LibraryOutcome<{ book: LibraryBook }>> {
     const title = request.title.trim()
     if (title === '') return refuse('invalid', 'a book needs its title — and the edition, when the book has several')
@@ -308,6 +349,17 @@ export class LibraryService {
       const book: LibraryBook = {
         id: existing?.id ?? mintLibraryId('b'),
         title,
+        ...(request.short === undefined || request.short.trim() === '' ? (existing?.short === undefined ? {} : { short: existing.short }) : { short: request.short.trim().slice(0, 8) }),
+        ...(request.extras === undefined
+          ? (existing?.extras === undefined ? {} : { extras: existing.extras })
+          : {
+            extras: request.extras.filter(extra => typeof extra.title === 'string' && extra.title.trim() !== '').map(extra => ({
+              title: extra.title.trim(),
+              ...(extra.note === undefined || extra.note.trim() === '' ? {} : { note: extra.note.trim() }),
+              ...(extra.where === undefined || extra.where.trim() === '' ? {} : { where: extra.where.trim() }),
+              when: extra.when === 'reference' ? 'reference' as const : 'before' as const,
+            })),
+          }),
         ...(request.author === undefined || request.author.trim() === '' ? {} : { author: request.author.trim() }),
         ...(request.edition === undefined || request.edition.trim() === '' ? {} : { edition: request.edition.trim() }),
         ...(request.isbn === undefined || request.isbn.trim() === '' ? {} : { isbn: request.isbn.trim() }),
@@ -430,7 +482,7 @@ export class LibraryService {
       for (const node of draft.nodes) {
         const kept = prior.get(node.id)
         const doneIds = new Set(nodes.filter(candidate => candidate.state === 'done').map(candidate => candidate.id))
-        const ready = node.dependsOn.every(dep => doneIds.has(dep))
+        const ready = node.kind === 'read' || node.dependsOn.every(dep => doneIds.has(dep))
         const state: RoadmapNode['state'] = kept?.state === 'done' && ready ? 'done' : ready ? 'current' : 'locked'
         nodes.push({
           ...node,
@@ -1321,6 +1373,9 @@ export function validateRoadmapShape(nodes: readonly RoadmapNode[], book: Librar
     for (const dep of node.dependsOn) {
       const depIndex = nodes.findIndex(candidate => candidate.id === dep)
       if (depIndex === -1) return `nodes[${index}] (${node.id}) depends on ${JSON.stringify(dep)}, which the roadmap does not declare`
+      if (node.kind === 'quiz' && nodes[depIndex]?.kind === 'read') {
+        return `nodes[${index}] (${node.id}) depends on read node ${JSON.stringify(dep)} — a read node is a side stop and never gates a level; depend on the previous quiz node instead. How-to-use pages, answer keys, transcripts and appendices are not nodes at all: put them in the book's extras`
+      }
       if (depIndex >= index) return `nodes[${index}] (${node.id}) depends on ${JSON.stringify(dep)}, which comes AFTER it — list a node after everything it depends on`
     }
   }
