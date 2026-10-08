@@ -28,7 +28,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 // Type-only: pulls ui-layout's ILayout (the wide-mode suggestion's face).
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {
-  BoardAddCommentRequest, BoardArchiveRequest,
+  BoardAddCommentRequest, BoardArchiveRequest, BoardWorkspaceRequest,
   BoardAttachImageOutcome, BoardAttachImageRequest, BoardCreateRequest,
   BoardDeleteCanvasRequest, BoardDeleteCanvasResult, BoardDeleteCardRequest,
   BoardFocusRequest, BoardFocusResult,
@@ -170,6 +170,7 @@ export interface CanvasTabInjected
   addComment: (sessionId: SessionId, request: BoardAddCommentRequest) => Promise<RemoteResult<BoardMutationResult>>
   /** Archive a canvas from the switcher, or restore it (the reversible half). */
   archiveCanvas: (sessionId: SessionId, request: BoardArchiveRequest) => Promise<RemoteResult<BoardMutationResult>>
+  setWorkspace: (sessionId: SessionId, request: BoardWorkspaceRequest) => Promise<RemoteResult<BoardMutationResult>>
   /** Delete one canvas for good; a landed delete also drops its strip rows. */
   deleteCanvas: (sessionId: SessionId, request: BoardDeleteCanvasRequest) => Promise<RemoteResult<BoardDeleteCanvasResult>>
   /** Delete one card for good (and its lines); a landed delete drops its strip row. */

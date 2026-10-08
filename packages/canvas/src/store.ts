@@ -49,7 +49,7 @@ import {
   type BoardCard, type BoardCardKind, type BoardCategory, type BoardCreateRequest, type BoardDecideTypeRequest,
   type BoardProposeTypeRequest, type BoardProposeTypeResult, type BoardSetTypeBriefRequest,
   type CanvasImageRef, type CanvasStroke,
-  type BoardDeleteCanvasRequest, type BoardDeleteCanvasResult, type BoardDeleteCardRequest,
+  type BoardDeleteCanvasRequest, type BoardDeleteCanvasResult, type BoardDeleteCardRequest, type BoardWorkspaceRequest,
   type BoardFocusRequest, type BoardFocusResult,
   type BoardBindRequest, type BoardBindResult, type BoardSelectGenreRequest,
   type CanvasGenreDefinition, type CanvasGenreSummary,
@@ -614,6 +614,26 @@ export class CanvasBoardService {
   async archiveCanvas(request: BoardArchiveRequest, session: Session): Promise<BoardMutationResult> {
     return this.mutate(request.canvasId, session, (board, now) => {
       board.archivedAt = request.archived ? (board.archivedAt ?? now) : null
+      return board
+    })
+  }
+
+  /**
+   * Attach a workspace to a canvas, or take one off. A canvas used to take
+   * its workspaces at birth only, so one made without (an agent's
+   * canvas_open, the create form left unticked) could never get one — and a
+   * novel's chapters have nowhere else to go (2026-10-09). Attaching twice or
+   * removing one that is not there changes nothing.
+   * @param request - canvas id, the absolute workspace path, attach or detach.
+   * @param session - the session that owns the gesture; supplies the fence.
+   * @returns the fresh board and token, or the failure code.
+   */
+  async setWorkspace(request: BoardWorkspaceRequest, session: Session): Promise<BoardMutationResult> {
+    const workspace = typeof request.workspace === 'string' ? request.workspace.trim() : ''
+    if (!workspace.startsWith('/') && !/^[A-Za-z]:[\\/]/.test(workspace)) return { ok: false, error: 'invalid-name' }
+    return this.mutate(request.canvasId, session, (board) => {
+      const others = board.attachedWorkspaces.filter(path => path !== workspace)
+      board.attachedWorkspaces = request.attached ? [...others, workspace] : others
       return board
     })
   }

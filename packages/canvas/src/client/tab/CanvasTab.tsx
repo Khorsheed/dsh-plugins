@@ -136,7 +136,7 @@ interface DiscardAsk {
 export function CanvasTab(props: CanvasTabProps): ReactNode {
   const {
     t, listCanvases, createCanvas, readBoard, putCard, patchCard, markSeen, addComment,
-    archiveCanvas, deleteCanvas, deleteCard, setCategories: writeCategories, setLayout: writeLayout, openCanvas: showCanvas,
+    archiveCanvas, setWorkspace, deleteCanvas, deleteCard, setCategories: writeCategories, setLayout: writeLayout, openCanvas: showCanvas,
     openCardDetail, openCardDraft, openManuscript, openTypePage, openCategoriesPage, backToBoard, activateTab, closeTab, focusCanvas,
     talkAvailable, quoteToConversation, refreshBoards, suggestWideMode, images, useImageRev,
     useSelection, renderSlot, listGenres, selectGenre, openPage,
@@ -688,6 +688,17 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
     )
   }, [sessionId, archiveCanvas, mutate])
 
+  /** Attach a workspace to the open canvas, or take it off (the ⋯ menu's 工作区 rows). */
+  const toggleWorkspace = useCallback(async (board: CanvasBoard, path: string) => {
+    if (sessionId === undefined) return
+    const attached = !board.attachedWorkspaces.includes(path)
+    await mutate(
+      () => setWorkspace(sessionId, { canvasId: board.id, workspace: path, attached }),
+      attached ? 'toast.workspaceAttached' : 'toast.workspaceDetached',
+      { name: basenameOf(path) },
+    )
+  }, [sessionId, setWorkspace, mutate])
+
   /**
    * The confirmed delete. A card delete is an ordinary board mutation (the
    * fresh board comes back); a canvas delete leaves no board, so the page
@@ -1123,12 +1134,32 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
                                 : item),
                             { type: 'separator' as const, id: 'genre-sep' },
                           ]),
+                          // 工作区: where this canvas writes (a novel's chapters, a
+                          // manuscript's export). Inline like 创作体裁, ticked when attached;
+                          // a path no longer registered still shows, so it can be taken off.
+                          ...(() => {
+                            const attached = openBoard.board.attachedWorkspaces
+                            const rows = [
+                              ...workspaces.map(workspace => ({ path: workspace.path, label: workspace.title })),
+                              ...attached.filter(path => !workspaces.some(workspace => workspace.path === path)).map(path => ({ path, label: basenameOf(path) })),
+                            ]
+                            return rows.length === 0 ? [] : [
+                              { type: 'label' as const, id: 'ws', text: t('workspace.menu') },
+                              ...rows.map(row => ({
+                                id: `ws:${row.path}`,
+                                label: row.label,
+                                ...(attached.includes(row.path) ? { icon: <IconCheckOutlineMedium size={13} /> } : {}),
+                              })),
+                              { type: 'separator' as const, id: 'ws-sep' },
+                            ]
+                          })(),
                           { id: 'archive', label: t('action.archiveCanvas'), icon: <IconArchiveOutlineMedium size={13} /> },
                           { id: 'delete', label: t('action.deleteCanvas'), icon: <IconTrashOutlineMedium size={13} />, danger: true },
                         ]}
                         onSelect={id => {
                           const row = summarizeBoard(openBoard.board)
                           if (id.startsWith('genre:')) void pickGenre(openBoard.board, id === 'genre:' ? null : id.slice('genre:'.length))
+                          else if (id.startsWith('ws:')) void toggleWorkspace(openBoard.board, id.slice('ws:'.length))
                           else if (id === 'archive') void setCanvasArchived(row, true)
                           else if (id === 'delete') setDeleteAsk({ kind: 'canvas', canvasId: row.id, title: row.title })
                         }}

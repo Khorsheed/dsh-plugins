@@ -218,6 +218,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     markSeen: async (sessionId, request) => touchOnSuccess(await requireRemote().markSeen(sessionId, request)),
     addComment: async (sessionId, request) => touchOnSuccess(await requireRemote().addComment(sessionId, request)),
     archiveCanvas: async (sessionId, request) => touchOnSuccess(await requireRemote().archiveCanvas(sessionId, request)),
+    setWorkspace: async (sessionId, request) => touchOnSuccess(await requireRemote().setWorkspace(sessionId, request)),
     // A delete reaches the strip too: a row naming a canvas that no longer
     // exists, or standing on a deleted card, would open onto 「找不到」.
     deleteCanvas: async (sessionId, request) => {

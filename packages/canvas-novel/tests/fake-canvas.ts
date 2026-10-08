@@ -54,6 +54,15 @@ export class FakeCanvas implements CanvasBoardSlice {
     return board === undefined ? { ok: false, error: 'missing' } : { ok: true, board }
   }
 
+  async setWorkspace(request: { readonly canvasId: string; readonly workspace: string; readonly attached: boolean }): Promise<NovelBoardMutation> {
+    const board = this.boards.get(request.canvasId)
+    if (board === undefined) return { ok: false, error: 'missing' }
+    const others = board.attachedWorkspaces.filter(path => path !== request.workspace)
+    const next = { ...board, attachedWorkspaces: request.attached ? [...others, request.workspace] : others }
+    this.boards.set(board.id, next)
+    return { ok: true, board: next }
+  }
+
   async boundCanvasId(sessionId: string): Promise<string | undefined> {
     return this.bindings.get(sessionId)
   }

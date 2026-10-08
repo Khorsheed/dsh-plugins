@@ -1525,6 +1525,14 @@ export interface BoardCreateRequest {
   readonly genreId?: string | null
 }
 
+/** Attach a workspace to a canvas, or take one off. */
+export interface BoardWorkspaceRequest {
+  readonly canvasId: string
+  /** An absolute path (the client offers the registered workspaces). */
+  readonly workspace: string
+  readonly attached: boolean
+}
+
 /** Read one board with the freshness token a later mutation must present. */
 export interface BoardReadRequest {
   readonly canvasId: string

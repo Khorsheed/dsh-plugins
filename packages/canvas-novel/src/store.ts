@@ -1078,7 +1078,7 @@ export class NovelService {
   async writeChapter(
     request: WriteChapterRequest,
     session: Session,
-  ): Promise<{ readonly ok: boolean; readonly error?: NovelError; readonly chapter?: ChapterRecord; readonly unknown?: readonly string[]; readonly existingLength?: number }> {
+  ): Promise<{ readonly ok: boolean; readonly error?: NovelError; readonly chapter?: ChapterRecord; readonly unknown?: readonly string[]; readonly existingLength?: number; readonly attachedWorkspace?: string }> {
     const workId = normalizeWorkId(request.workId)
     const title = cleanText(request.title, 200)
     if (workId === undefined || title === undefined) return { ok: false, error: 'invalid-name' }
@@ -1124,7 +1124,22 @@ export class NovelService {
     // 计划门禁: the model writes a body only into a chapter whose plan the user
     // confirmed; the user's own text (用户原稿) needs no plan. Checked before
     // the body lands, so a refused write leaves the workspace untouched.
-    const workspace = meta.workspace
+    let workspace = meta.workspace
+    // A work with no workspace takes the session's own when the body arrives:
+    // the person asked for the chapter, and the canvas had nowhere to put it
+    // (a canvas the agent made, before canvas_open attached one; 2026-10-09).
+    let attachedWorkspace: string | undefined
+    if (content !== undefined && workspace === undefined) {
+      const cwd = session.header?.cwd
+      const attach = this.canvas?.setWorkspace
+      if (cwd !== undefined && attach !== undefined) {
+        const attached = await attach.call(this.canvas, { canvasId: meta.id, workspace: cwd, attached: true }, session)
+        if (attached.ok) {
+          workspace = cwd
+          attachedWorkspace = cwd
+        }
+      }
+    }
     if (content !== undefined && workspace === undefined) return { ok: false, error: 'no-workspace' }
     if (content !== undefined && !byUser) {
       const row = request.n === undefined ? undefined : (await this.readChapters(workId)).find(candidate => candidate.n === request.n)
@@ -1231,7 +1246,7 @@ export class NovelService {
       },
     )
     if (!outcome.ok || chapter === undefined) return { ok: false, error: outcome.ok ? 'io' : outcome.error }
-    return { ok: true, chapter }
+    return { ok: true, chapter, ...(attachedWorkspace === undefined ? {} : { attachedWorkspace }) }
   }
 
   /* -------------------------------------------------------------- outline */
