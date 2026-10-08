@@ -179,6 +179,91 @@ function genreKinds(board: CanvasBoard): Set<string> {
   return new Set(board.categories.filter(category => category.role !== undefined).map(category => category.id))
 }
 
+/** The keys a text line may name the category by (`分类：世界`). */
+const KIND_KEYS = new Set(['分类', '类别', 'kind', 'category'])
+
+/** One `键：值` line (full- or half-width colon), or undefined. */
+function keyValueOf(line: string): { key: string; value: string } | undefined {
+  const match = /^\s*[-*•]?\s*([^：:\n]{1,16}?)\s*[：:]\s*(.+?)\s*$/.exec(line)
+  return match === null ? undefined : { key: match[1]!.trim(), value: match[2]!.trim() }
+}
+
+/** A category by id or by the name the board shows. */
+function categoryByToken(board: CanvasBoard, token: string | undefined): BoardCategory | undefined {
+  const text = token?.trim()
+  if (text === undefined || text === '') return undefined
+  return board.categories.find(category => category.id === text) ?? board.categories.find(category => categoryNameOf(category) === text)
+}
+
+/**
+ * One card write's arguments, made whole from whatever arrived. Some model
+ * and provider pairs deliver only the flat strings of a call — nested
+ * objects (`fields`) and even `kind` go missing on the way (Kimi K3 on the
+ * coding endpoint, 2026-10-08: `{"op":"card","text":"","title":""}` a dozen
+ * times over while the model's reasoning held the full card). So a card can
+ * also be written in `text` alone: a `分类：世界` line names the category,
+ * `字段名：值` lines fill its typed fields (matched by label or key), and the
+ * remaining lines are the body, and a `title` names a new card when its
+ * name field is empty. `kind` stays
+ * as the model wrote it (a genre hook reads its own names); `categoryId` is
+ * the category it names on this board, for the canvas's own path.
+ * @param args - the call's card arguments, as they arrived.
+ * @param board - the target board (its categories and their definitions).
+ */
+export function cardArgsOf(
+  args: { kind?: string; fields?: unknown; text?: string; title?: string; cardId?: string },
+  board: CanvasBoard,
+): { kind?: string; categoryId?: string; fields?: Record<string, unknown>; text: string } {
+  let fields = typeof args.fields === 'object' && args.fields !== null && !Array.isArray(args.fields)
+    ? { ...(args.fields as Record<string, unknown>) }
+    : undefined
+  let kind = args.kind === undefined || args.kind.trim() === '' ? undefined : args.kind.trim()
+  const rest: string[] = []
+  // The category first: an explicit kind, else a 分类 line, else the patched card's.
+  for (const line of (args.text ?? '').split('\n')) {
+    const pair = keyValueOf(line)
+    if (pair !== undefined && KIND_KEYS.has(pair.key.toLowerCase())) {
+      kind ??= pair.value
+      continue
+    }
+    rest.push(line)
+  }
+  const patched = args.cardId === undefined ? undefined : board.cards.find(card => card.id === args.cardId)
+  const category = categoryByToken(board, kind) ?? (patched === undefined ? undefined : board.categories.find(row => row.id === patched.kind))
+  const definition = category?.definition
+  let body = rest
+  if (definition !== undefined && (fields === undefined || Object.keys(fields).length === 0)) {
+    const found: Record<string, unknown> = {}
+    body = []
+    for (const line of rest) {
+      const pair = keyValueOf(line)
+      const field = pair === undefined ? undefined : definition.fields.find(row => row.label === pair.key || row.key === pair.key)
+      if (pair === undefined || field === undefined) {
+        body.push(line)
+        continue
+      }
+      found[field.key] = field.type === 'number' && /^-?\d+(\.\d+)?$/.test(pair.value) ? Number(pair.value) : pair.value
+    }
+    if (Object.keys(found).length > 0) fields = found
+  }
+  const title = args.title?.trim()
+  const nameField = definition?.fields.find(row => row.required === true && row.type === 'line')
+  if (title !== undefined && title !== '' && nameField !== undefined && patched === undefined && fields?.[nameField.key] === undefined) {
+    fields = { ...fields, [nameField.key]: title }
+  }
+  return {
+    ...(kind === undefined ? {} : { kind }),
+    ...(category === undefined ? {} : { categoryId: category.id }),
+    ...(fields === undefined || Object.keys(fields).length === 0 ? {} : { fields }),
+    text: body.join('\n').trim(),
+  }
+}
+
+/** The answer to a card write that arrived with nothing to file: it names the text-only form, so the next call need not repeat itself. */
+const EMPTY_CARD_MESSAGE = '失败：这次 op=card 没收到可用的内容（kind、fields、text 都是空的）。如果你填了却没到达，'
+  + '多半是当前模型/供应商把嵌套参数丢了——改用纯文本写法：text 第一行写「分类：世界」（分类名或 id），'
+  + '之后每行一个「字段名：值」（如「名称：醒界」「类型：地点」「设定：……」），正文另起一行。一张卡一次调用。'
+
 /**
  * What the main-session tools answer when there is no canvas to act on: the
  * model finds or makes one itself through `canvas_open` instead of stopping
@@ -405,7 +490,7 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
       + 'Load the canvas skill first.',
     parameters: {
       op: { type: 'string', enum: ['card', 'comment', 'archive', 'manuscript'], required: true, description: 'What to write.' },
-      text: { type: 'string', description: 'Card text, comment text, or the whole manuscript (Markdown).' },
+      text: { type: 'string', description: 'Card text, comment text, or the whole manuscript (Markdown). A card may also be written in text alone: a 分类：… line, then 字段名：值 lines, then the body.' },
       kind: {
         type: 'string',
         // Open on purpose: this definition is registered once at boot, before
@@ -415,7 +500,10 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
         // board, and a miss answers with that board's valid ids.
         description: 'card: category id.',
       },
-      fields: { type: 'object', additionalProperties: true, description: 'card: field values by key.' },
+      fields: {
+        type: 'object', additionalProperties: true,
+        description: 'card: field values by key. If nested arguments fail to arrive, write them as 字段名：值 lines in text instead.',
+      },
       source: {
         type: 'object',
         properties: {
@@ -456,9 +544,19 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
     },
   })
 
-  const writeCard = async (args: WriteArgs, resolved: Target): Promise<string> => {
+  const writeCard = async (raw: WriteArgs, resolved: Target): Promise<string> => {
     const read = await board.readBoard({ canvasId: resolved.canvasId })
     if (!read.ok) return renderOutcome({ ok: false, error: read.error })
+    const patchId = raw.cardId === undefined ? undefined : await resolveCardId(resolved, raw.cardId)
+    const whole = cardArgsOf({ ...raw, ...(patchId === undefined ? {} : { cardId: patchId }) }, read.board)
+    if (raw.cardId === undefined && whole.kind === undefined && whole.text === '' && whole.fields === undefined) return EMPTY_CARD_MESSAGE
+    const { fields: _arrived, ...others } = raw
+    const args: Omit<WriteArgs, 'fields'> & { fields?: Record<string, unknown> } = {
+      ...others,
+      ...(raw.text === undefined && whole.text === '' ? {} : { text: whole.text }),
+      ...(whole.kind === undefined ? {} : { kind: whole.kind }),
+      ...(whole.fields === undefined ? {} : { fields: whole.fields }),
+    }
     const hooked = agentOf(read.board)
     if (hooked !== undefined) {
       const answer = await hooked.agent.writeCard({
@@ -472,8 +570,10 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
       if (answer !== undefined) return answer
     }
     if (args.cardId !== undefined) return '失败：这张卡由用户来改；要补充就 op=comment 在这张卡上留言，或 op=card 另提一张。'
-    if (args.kind === undefined || args.kind.trim() === '') return '失败：op=card 要给 kind（分类 id，canvas_read 可查）。'
-    const kind = args.kind
+    if (args.kind === undefined || args.kind.trim() === '') {
+      return `失败：op=card 要给 kind（分类 id 或名称，canvas_read 可查）。参数没到达的话，在 text 第一行写「分类：…」。可用的：${enabledKinds(read.board)}。`
+    }
+    const kind = whole.categoryId ?? args.kind
     const text = args.text ?? ''
     let fields: Record<string, FieldValue> | undefined
     if (args.fields !== undefined && Object.keys(args.fields).length > 0) {

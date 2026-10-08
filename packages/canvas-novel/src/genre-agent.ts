@@ -154,7 +154,7 @@ export function novelGenreAgent(store: NovelService): NovelGenreAgent {
         if (role === undefined) return undefined
       }
       if (request.fields === undefined || Object.keys(request.fields).length === 0) {
-        return `失败：${ROLE_NAMES[role]}卡按字段写，放在 fields 里（字段见 canvas_read 带 kind）。`
+        return `失败：${ROLE_NAMES[role]}卡按字段写，放在 fields 里（字段见 canvas_read 带 kind）；fields 到不了的话，在 text 里每行写一个「字段名：值」。`
       }
       const outcome = await store.writeCard({
         workId: request.canvasId, role, fields: request.fields,

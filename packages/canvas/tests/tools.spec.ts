@@ -13,7 +13,7 @@ import type { Session } from '@deepseek-ai/dsh-session'
 import { describe, expect, it } from 'vitest'
 import { CanvasService } from '../src/service.ts'
 import { CanvasBoardService } from '../src/store.ts'
-import { canvasMainSessionToolDefinitions } from '../src/tools.ts'
+import { canvasMainSessionToolDefinitions, cardArgsOf } from '../src/tools.ts'
 import type { CanvasBoard } from '../src/types.ts'
 
 type Entry = { kind: 'dir' } | { kind: 'file'; content: string; version: number }
@@ -410,5 +410,49 @@ describe('canvas_open: list, switch to, or create the session\'s canvas', () => 
     expect(await open({ canvas: '杂记' })).toBe(`完成：已切到画布《杂记》（${plain.board.id}）。已解除与《雾港》的绑定。`)
     expect(await board.boundCanvasId(String(FALLBACK.id))).toBeUndefined()
     expect(await board.targetCanvasId(FALLBACK)).toBe(plain.board.id)
+  })
+})
+
+describe('card writes that arrive with only flat strings', () => {
+  /** A board with a typed 世界 category and a plain one. */
+  function typedBoard(): CanvasBoard {
+    return {
+      id: 'canvas_t000000001', title: 't', attachedWorkspaces: [], chat: { sessionId: null },
+      categories: [
+        { id: 'fragment', label: '', enabled: true, order: 10 },
+        {
+          id: 'cat_world', label: '世界', enabled: true, order: 20,
+          definition: {
+            version: 1, layout: 'entry', example: {},
+            fields: [
+              { key: 'name', label: '名称', type: 'line', hint: '', required: true },
+              { key: 'kind', label: '类型', type: 'select', options: ['地点', '规则'], hint: '' },
+              { key: 'rule', label: '设定', type: 'text', hint: '' },
+            ],
+          },
+        },
+      ],
+      cards: [], links: [], lanes: [], manuscripts: [],
+    } as unknown as CanvasBoard
+  }
+
+  it('reads the category and the fields off text lines', () => {
+    expect(cardArgsOf({ text: '分类：世界\n名称：醒界\n类型：地点\n设定：高维居民的家园。\n他们自称现实。' }, typedBoard())).toEqual({
+      kind: '世界', categoryId: 'cat_world', fields: { name: '醒界', kind: '地点', rule: '高维居民的家园。' }, text: '他们自称现实。',
+    })
+  })
+
+  it('takes a title as the name, and keeps prose with colons on an untyped card', () => {
+    expect(cardArgsOf({ kind: 'cat_world', title: '梦田', text: '设定：做梦者的沙盒' }, typedBoard()).fields).toEqual({ name: '梦田', rule: '做梦者的沙盒' })
+    expect(cardArgsOf({ kind: 'fragment', text: '时间：午夜，门开了' }, typedBoard())).toEqual({ kind: 'fragment', categoryId: 'fragment', text: '时间：午夜，门开了' })
+  })
+
+  it('answers an empty card call with the text-only form instead of a bare kind error', async () => {
+    const { execute } = await harness()
+    const answer = String(await execute('canvas_write', { op: 'card', text: '', title: '' }))
+    expect(answer).toContain('没收到可用的内容')
+    expect(answer).toContain('分类：世界')
+    // The text-only form lands a card.
+    expect(String(await execute('canvas_write', { op: 'card', text: '分类：灵感\n门后有人在哼歌' }))).toMatch(/^完成：c_/)
   })
 })
