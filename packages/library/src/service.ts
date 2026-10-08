@@ -56,6 +56,7 @@ import {
   type LibraryProject,
   type LibraryProjectSummary,
   type LibraryQuiz,
+  type LibraryQuizFocus,
   type LibraryQuizQuestion,
   type LibraryRefusal,
   type LibraryReviewRating,
@@ -902,13 +903,16 @@ export class LibraryService {
    */
   async putQuiz(request: {
     projectId: string
-    quiz: { scope: { bookId: string; nodeId?: string }; questions: readonly LibraryQuizQuestion[] }
+    quiz: { scope: { bookId: string; nodeId?: string }; focus?: LibraryQuizFocus; questions: readonly LibraryQuizQuestion[] }
   }): Promise<LibraryOutcome<{ quiz: LibraryQuiz; warnings: string[] }>> {
     const project = this.readProjectOrRefusal(request.projectId)
     if ('error' in project) return project
     const book = this.store.readBook(project.value.id, request.quiz.scope.bookId)
     if (book === undefined) {
       return refuse('not-found', `quiz scope names book ${JSON.stringify(request.quiz.scope.bookId)}, which project ${JSON.stringify(project.value.name)} does not hold — library_read · books lists them`)
+    }
+    if (request.quiz.focus !== undefined && !['mine', 'book', 'mixed'].includes(request.quiz.focus)) {
+      return refuse('invalid', 'quiz.focus is mine | book | mixed — mine: only the learner\'s own cards; book: only the chapter\'s content')
     }
     if (request.quiz.questions.length === 0) {
       return refuse('invalid', 'a quiz needs at least one question — each: { id, kind, prompt, options?, answer, explanation?, target: { kind, cardIds? }, evidence: { kind, pageId?, url?, quote? } }')
@@ -941,6 +945,13 @@ export class LibraryService {
       if (target === undefined || !['marked', 'asked', 'missed', 'topic'].includes(target.kind)) {
         return refuse('evidence-gate', `${label} needs target: { kind: marked|asked|missed|topic, cardIds? } — what the question aims at: the learner's marked cards, the points they asked about, the ones they missed before, or the chapter's topic`)
       }
+      const focus = request.quiz.focus
+      if (focus === 'mine' && target.kind === 'topic') {
+        return refuse('evidence-gate', `${label} tests the chapter's topic, but the learner asked for their OWN points only (focus: mine) — every question must target their cards (marked / asked / missed, with cardIds from library_read · cards). If this node has too few cards, write fewer questions and tell the learner; never pad with book content`)
+      }
+      if (focus === 'book' && target.kind !== 'topic') {
+        return refuse('evidence-gate', `${label} targets the learner's cards, but they asked for the book's content only (focus: book) — target: { kind: "topic" } for every question`)
+      }
       if (target.kind !== 'topic') {
         if (target.cardIds === undefined || target.cardIds.length === 0) {
           return refuse('evidence-gate', `${label} targets ${target.kind} cards but names none — target.cardIds lists the cards it probes (library_read · cards finds them)`)
@@ -971,6 +982,7 @@ export class LibraryService {
       const quiz: LibraryQuiz = {
         id: mintLibraryId('q'),
         scope: { bookId: book.id, ...(nodeId === undefined ? {} : { nodeId }) },
+        ...(request.quiz.focus === undefined ? {} : { focus: request.quiz.focus }),
         questions: request.quiz.questions,
         createdAt: new Date().toISOString(),
       }

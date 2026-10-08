@@ -39,6 +39,7 @@ The session header carries a library chip (M3, `client/bind/BindChip.tsx`, slot 
 - The sidebar's photo button, driven in a real browser: the photo and request appeared in the chat as the learner's message, and the coach recognized the page as one already recorded and did not duplicate it.
 - A five-question chapter quiz came out on the two axes first try: three marked-card questions and two content questions, all on photo evidence.
 - A quiz scoped to a still-locked node is stored with a warning.
+- The learner picks what a chapter quiz may draw on (user, 2026-10-08: 「只考我自己画的重点」): `quiz.focus` mine / book / mixed, chosen in the node's 章节考 tab (default mine) and carried in the request. The library holds the quiz to it — under mine a topic question is refused, under book a card question is — so the coach cannot pad with book content. Live: four questions, all on marked cards, `focus: mine` stored. Separating 重点 from 难点 by the learner's marks was dropped: nobody can know which symbols a learner uses.
 
 ## Alternatives considered
 

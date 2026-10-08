@@ -479,6 +479,7 @@ export function normalizeQuiz(value: unknown): LibraryQuiz | undefined {
   return {
     id: quizId,
     scope: { bookId, ...opt('nodeId', id(scope?.nodeId)) },
+    ...(record.focus === 'mine' || record.focus === 'book' || record.focus === 'mixed' ? { focus: record.focus } : {}),
     questions,
     createdAt: stamp(record.createdAt),
   }

@@ -399,6 +399,13 @@ export interface LibraryQuizQuestion {
   readonly evidence: LibraryQuestionEvidence
 }
 
+/**
+ * Where a quiz's questions may come from, as the learner chose it: `mine` —
+ * only the learner's own cards (marked, asked, missed); `book` — only the
+ * chapter's content; `mixed` — both.
+ */
+export type LibraryQuizFocus = 'mine' | 'book' | 'mixed'
+
 /** A stored quiz (`quizzes/<id>.json`). */
 export interface LibraryQuiz {
   readonly id: string
@@ -407,6 +414,8 @@ export interface LibraryQuiz {
     /** The roadmap node this quiz gates, when it is a node quiz. */
     readonly nodeId?: string
   }
+  /** The learner's chosen source (absent on quizzes stored before the choice existed = mixed). */
+  readonly focus?: LibraryQuizFocus
   readonly questions: readonly LibraryQuizQuestion[]
   readonly createdAt: string
 }

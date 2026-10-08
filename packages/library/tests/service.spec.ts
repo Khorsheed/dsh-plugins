@@ -269,6 +269,18 @@ describe('quizzes: the two axes', () => {
     expect(stored.ok && stored.warnings[0]).toMatch(/still locked/)
   })
 
+  it('holds a quiz to the learner\'s chosen source', async () => {
+    const { projectId, bookId } = await seed()
+    const mine = await service.putQuiz({ projectId, quiz: { scope: { bookId }, focus: 'mine', questions: [question()] } })
+    expect(!mine.ok && mine.message).toMatch(/OWN points only/)
+    const written = await service.writeCards({ projectId, bookId, cards: [{ kind: 'concept', term: '不应期', gloss: 'g', source: { type: 'photo' } }] })
+    if (!written.ok) throw new Error(written.message)
+    const ok = await service.putQuiz({ projectId, quiz: { scope: { bookId }, focus: 'mine', questions: [question({ target: { kind: 'marked', cardIds: [written.added[0]!.id] } })] } })
+    expect(ok.ok && ok.quiz.focus).toBe('mine')
+    const book = await service.putQuiz({ projectId, quiz: { scope: { bookId }, focus: 'book', questions: [question({ target: { kind: 'marked', cardIds: [written.added[0]!.id] } })] } })
+    expect(!book.ok && book.message).toMatch(/book's content only/)
+  })
+
   it('refuses a read node as the quiz scope', async () => {
     const { projectId, bookId } = await seed()
     await service.draftRoadmap({ projectId, bookId, nodes: [{ id: 'r1', title: '导读', kind: 'read' }] })

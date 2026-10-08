@@ -6,8 +6,8 @@
  * @module @khorsheed/dsh-library/client/views/book
  */
 import { useEffect, useState, type ReactNode } from 'react'
-import { ListRow, PanelHeader, UnderlineTabs } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
-import type { LibraryBook, LibraryPage, LibraryRoadmap, RoadmapNode } from '../../types.ts'
+import { ChipRow, ListRow, PanelHeader, UnderlineTabs } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
+import type { LibraryBook, LibraryPage, LibraryQuizFocus, LibraryRoadmap, RoadmapNode } from '../../types.ts'
 import type { LibraryNodeTab } from '../store.ts'
 import {
   IconCameraOutlineMedium, IconCheckOutlineMedium, IconLockOutlineMedium, IconRefreshOutlineMedium, IconSparkleOutlineMedium,
@@ -221,7 +221,7 @@ export function NodeView({ p, projectId, bookId, nodeId, tab }: ViewProps & { pr
           <PagesTab p={p} projectId={projectId} bookId={bookId} bookTitle={book.title} node={node} onBind={() => { void p.bindTarget({ projectId, bookId }) }} />
         )}
         {node !== undefined && book !== undefined && tab === 'quiz' && (
-          <QuizTab p={p} projectId={projectId} bookId={bookId} node={node} passRatio={loaded.data?.passRatio ?? 0.8} onPrime={() => { prime(t('prime.quiz', { book: book.title, node: node.title })) }} />
+          <QuizTab p={p} projectId={projectId} bookId={bookId} node={node} passRatio={loaded.data?.passRatio ?? 0.8} onPrime={focus => { prime(t(`prime.quiz.${focus}`, { book: book.title, node: node.title })) }} />
         )}
       </div>
     </>
@@ -412,13 +412,30 @@ function PageThumb({ p, projectId, page }: { p: ViewProps['p']; projectId: strin
 }
 
 function QuizTab({ p, projectId, bookId, node, passRatio, onPrime }: {
-  p: ViewProps['p']; projectId: string; bookId: string; node: RoadmapNode; passRatio: number; onPrime: () => void
+  p: ViewProps['p']; projectId: string; bookId: string; node: RoadmapNode; passRatio: number; onPrime: (focus: LibraryQuizFocus) => void
 }): ReactNode {
   const { t, actions, useStore } = p
   const rev = useStore(s => s.rev)
-  const quizzes = useLoad(() => value(p.listQuizzes(projectId, bookId, node.id)), [projectId, bookId, node.id, rev])
-  const weak = useLoad(() => value(p.listCards({ projectId, bookId, weakMin: 1, limit: 5 })), [projectId, bookId, rev])
+  const [focus, setFocus] = useState<LibraryQuizFocus>('mine')
+  // After asking, re-read until the coach has stored the new quiz (two minutes at most).
+  const [watching, setWatching] = useState<{ since: number; count: number } | undefined>()
+  const [tick, setTick] = useState(0)
+  useEffect(() => {
+    if (watching === undefined) return
+    const timer = setInterval(() => {
+      if (Date.now() - watching.since > 120_000) setWatching(undefined)
+      else setTick(current => current + 1)
+    }, 4000)
+    return () => { clearInterval(timer) }
+  }, [watching])
+  const quizzes = useLoad(() => value(p.listQuizzes(projectId, bookId, node.id)), [projectId, bookId, node.id, rev, tick])
+  const quizCount = quizzes.data?.quizzes.length ?? 0
+  useEffect(() => {
+    if (watching !== undefined && quizCount > watching.count) setWatching(undefined)
+  }, [quizCount, watching])
+  const mine = useLoad(() => value(p.listCards({ projectId, nodeId: node.id, limit: 5 })), [projectId, node.id, rev])
   const stats = node.quizStats
+  const mineCount = mine.data?.total ?? 0
   return (
     <>
       {node.state === 'locked' && <div className={css.notice}>{t('node.locked')}</div>}
@@ -431,20 +448,33 @@ function QuizTab({ p, projectId, bookId, node, passRatio, onPrime }: {
         <ListRow
           key={quiz.id}
           title={t('node.quizRow', { count: String(quiz.questions.length) })}
-          meta={sourceMix(quiz.questions.map(question => question.evidence.kind), t)}
+          meta={[t(`focus.${quiz.focus ?? 'mixed'}`), sourceMix(quiz.questions.map(question => question.evidence.kind), t)].join(' · ')}
           trailing={<span className={css.linkText}>{t('quiz.start')}</span>}
           onSelect={() => { actions.push({ view: 'quiz', projectId, bookId, quizId: quiz.id }) }}
         />
       ))}
-      {(weak.data?.cards.length ?? 0) > 0 && (
-        <div className={css.muted}>{t('node.weakFirst', { terms: weak.data!.cards.map(card => card.term).join('、') })}</div>
-      )}
+      <section className={css.section}>
+        <h3 className={css.sectionTitle}>{t('node.focusTitle')}</h3>
+        <ChipRow
+          label={t('node.focusTitle')}
+          chips={FOCUSES.map(id => ({ id, label: t(`focus.${id}`), ...(id === 'mine' ? { count: mineCount } : {}) }))}
+          value={focus}
+          onSelect={setFocus}
+        />
+        <div className={css.muted}>
+          {focus === 'mine'
+            ? mineCount === 0 ? t('node.focusMineEmpty') : t('node.focusMineHint', { terms: (mine.data?.cards ?? []).map(card => card.term).join('、') })
+            : t(`node.focusHint.${focus}`)}
+        </div>
+      </section>
       <div className={css.actions}>
-        <button type="button" className={(quizzes.data?.quizzes.length ?? 0) === 0 ? css.primary : css.secondary} onClick={onPrime}>{t('node.askQuiz')}</button>
+        <button type="button" className={(quizzes.data?.quizzes.length ?? 0) === 0 ? css.primary : css.secondary} onClick={() => { onPrime(focus); setWatching({ since: Date.now(), count: quizCount }) }}>{watching === undefined ? t('node.askQuiz') : t('node.quizWaiting')}</button>
       </div>
     </>
   )
 }
+
+const FOCUSES: readonly LibraryQuizFocus[] = ['mine', 'book', 'mixed']
 
 /** 「照片 3 · 领域知识 7」 for a quiz row. */
 function sourceMix(kinds: readonly string[], t: ViewProps['p']['t']): string {

@@ -214,7 +214,7 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
       + 'what="cards": cards [{ kind: "word"|"concept", term, aliases?, gloss, userGloss?, context?: { sentence, node? }, source: { type: "chat"|"photo"|"quiz"|"manual", note? }, weaken?, mergeInto?, asNew? }] — '
       + 'record a weak point when the learner is stuck (says they mix it up, asks the same point again, keeps probing): source chat, weaken true, and tell them in your reply what you noted. '
       + 'A near-duplicate comes back in pending with candidates: resend it with mergeInto: <id> or asNew: true. '
-      + 'what="quiz": quiz { node?, questions: [{ id, kind: "choice"|"fill"|"free", prompt, options?, answer, explanation?, target: { kind: "marked"|"asked"|"missed"|"topic", cardIds? }, '
+      + 'what="quiz": quiz { node?, focus?: "mine"|"book"|"mixed" (the learner\'s choice of source — mine: only their own cards, book: only the chapter\'s content), questions: [{ id, kind: "choice"|"fill"|"free", prompt, options?, answer, explanation?, target: { kind: "marked"|"asked"|"missed"|"topic", cardIds? }, '
       + 'evidence: { kind: "photo"|"web"|"knowledge", pageId?, url?, quote? } }] } — target the learner\'s own cards first; photo evidence quotes a recorded page, web evidence cites url + quote; '
       + 'a material book never takes a knowledge-backed question about its content. '
       + 'what="binding": binding { project, book? } (or null) — bind this session.',
@@ -322,6 +322,7 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
           return unwrap(await service.putQuiz({
             projectId: projectOf(args.project, exec),
             quiz: {
+              ...(body.focus === 'mine' || body.focus === 'book' || body.focus === 'mixed' ? { focus: body.focus } : {}),
               scope: { bookId: bookOf(typeof args.book === 'string' ? args.book : body.book, exec), ...(node === undefined ? {} : { nodeId: node }) },
               questions: body.questions as LibraryQuizQuestion[],
             },
