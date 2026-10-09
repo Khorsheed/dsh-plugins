@@ -42,7 +42,7 @@ import {
   normalizeAnnotations, normalizeChapter, normalizeHistoryEntry, PLOT_FIELDS, plotDiff, plotOf, normalizePendingItem, normalizePlan, normalizeWorkId, NOVEL_GENRE_ID,
   nextMilestoneOf, normalizeRelationEntry, OP_TO_MENTION, parseRef, PTS_PER_LEVEL, MAX_RELATION_DELTA, readRelationStage,
   refGroupOf, refOf, relationEventOf, relationMove, typeChangeOf, relationProgress, relationTypeOf, stageNameOf, RELATION_TYPES,
-  type Annotations, type CardNote, type ChapterRecord, type ChapterRow, type ChapterTable, type CharacterView, type Confidence,
+  type Annotations, type CardNote, type ChapterPlan, type ChapterRecord, type ChapterRow, type ChapterTable, type CharacterView, type Confidence,
   type CurrentState, type EffectiveChapterPhase, type HistoryChange, type HistoryEntry, type HistorySource, type EntryRole, type ExperienceEntry, type ExtractPayload,
   type ForeshadowView, type ImportDrop, type ImportReport, type LedgerResult, type MentionEntry, type NovelError,
   type PendingItem, type PendingKind, type PendingPayload, type PendingTable, type RefGroup, type RelationEntry, type RelationEvent,
@@ -1088,26 +1088,9 @@ export class NovelService {
     if (request.plan !== undefined && rawPlan === undefined) return { ok: false, error: 'invalid-name' }
     let plan = rawPlan
     if (rawPlan !== undefined) {
-      const entries = await this.readEntries(workId)
-      if (entries !== undefined) {
-        const toCard = (token: string, role: EntryRole): string => {
-          const handle = this.resolveCard(entries, token, role)
-          return handle?.role === role ? handle.cardId : token
-        }
-        // A plan names an existing foreshadow by its number: a question written
-        // where the id goes resolves to no card, and the story log, the brief and
-        // the reconciliation would all lose the op — refused so the model retries.
-        const unknown = rawPlan.foreshadowOps
-          .filter(op => op.op !== '新埋' && (op.id === undefined || this.resolveCard(entries, op.id, 'foreshadow')?.role !== 'foreshadow'))
-          .map(op => op.id ?? op.question ?? op.op)
-        if (unknown.length > 0) return { ok: false, error: 'unknown-foreshadow', unknown }
-        plan = {
-          ...rawPlan,
-          foreshadowOps: rawPlan.foreshadowOps.map(op => op.id === undefined ? op : { ...op, id: toCard(op.id, 'foreshadow') }),
-          cast: rawPlan.cast.map(member => ({ ...member, who: toCard(member.who, 'character') })),
-          ...(rawPlan.pov === undefined ? {} : { pov: toCard(rawPlan.pov, 'character') }),
-        }
-      }
+      const resolved = await this.resolvePlan(workId, rawPlan)
+      if ('unknown' in resolved) return { ok: false, error: 'unknown-foreshadow', unknown: resolved.unknown }
+      plan = resolved.plan
     }
     const content = typeof request.content === 'string' && request.content.trim().length > 0
       ? manuscriptParagraphs(request.content.slice(0, 2_000_000))
@@ -1357,6 +1340,77 @@ export class NovelService {
     )
     if (!outcome.ok || outline === undefined) return { ok: false, error: outcome.ok ? 'io' : outcome.error }
     return { ok: true, outline }
+  }
+
+  /**
+   * A plan's handles stored as card ids where they resolve (a ref or a name
+   * the board does not know is kept as written). A plan names an existing
+   * foreshadow by its number: a question written where the id goes resolves
+   * to no card, and the story log, the brief and the reconciliation would all
+   * lose the op — so it is refused, naming the handles.
+   */
+  private async resolvePlan(workId: string, rawPlan: ChapterPlan): Promise<{ readonly plan: ChapterPlan } | { readonly unknown: readonly string[] }> {
+    const entries = await this.readEntries(workId)
+    if (entries === undefined) return { plan: rawPlan }
+    const toCard = (token: string, role: EntryRole): string => {
+      const handle = this.resolveCard(entries, token, role)
+      return handle?.role === role ? handle.cardId : token
+    }
+    const unknown = rawPlan.foreshadowOps
+      .filter(op => op.op !== '新埋' && (op.id === undefined || this.resolveCard(entries, op.id, 'foreshadow')?.role !== 'foreshadow'))
+      .map(op => op.id ?? op.question ?? op.op)
+    if (unknown.length > 0) return { unknown }
+    return {
+      plan: {
+        ...rawPlan,
+        foreshadowOps: rawPlan.foreshadowOps.map(op => op.id === undefined ? op : { ...op, id: toCard(op.id, 'foreshadow') }),
+        cast: rawPlan.cast.map(member => ({ ...member, who: toCard(member.who, 'character') })),
+        ...(rawPlan.pov === undefined ? {} : { pov: toCard(rawPlan.pov, 'character') }),
+      },
+    }
+  }
+
+  /**
+   * The person's own edit of a chapter plan, saved and confirmed in one
+   * gesture (the chapter page's 保存并确认, 2026-10-09). The edit IS the
+   * confirmation: the person wrote this version. Only a chapter still in
+   * planning takes one — once text exists the plan is what the text was
+   * checked against — and a 用户原稿 never has a plan.
+   * @param request - work id, chapter number, the raw plan (the text form, parsed by the caller).
+   * @param session - the session that owns the gesture; supplies the fence.
+   * @returns the fresh record, or the failure code (`unknown` names foreshadow handles that resolve to no card).
+   */
+  async editPlan(
+    request: { readonly workId: string; readonly n: number; readonly plan: unknown },
+    session: Session,
+  ): Promise<{ readonly ok: boolean; readonly error?: NovelError; readonly chapter?: ChapterRecord; readonly unknown?: readonly string[] }> {
+    const workId = normalizeWorkId(request.workId)
+    if (workId === undefined) return { ok: false, error: 'invalid-name' }
+    const rawPlan = normalizePlan(request.plan)
+    if (rawPlan === undefined) return { ok: false, error: 'invalid-name' }
+    const resolved = await this.resolvePlan(workId, rawPlan)
+    if ('unknown' in resolved) return { ok: false, error: 'unknown-foreshadow', unknown: resolved.unknown }
+    let chapter: ChapterRecord | undefined
+    const outcome = await this.mutateJson(
+      await this.fileTarget(workId, WORK_FILES.chapters), session,
+      raw => normalizeChapterTable(raw),
+      undefined,
+      (table, now) => {
+        const row = table.chapters.find(candidate => candidate.n === request.n)
+        if (row === undefined) return 'missing'
+        if (row.byUser === true) return 'plan-on-draft'
+        if (row.phase !== 'planning') return 'not-extracted'
+        const mutable = row as { -readonly [K in keyof ChapterRecord]: ChapterRecord[K] }
+        mutable.plan = resolved.plan
+        mutable.planConfirmedAt = now
+        delete mutable.delivery
+        mutable.updatedAt = now
+        chapter = { ...row }
+        return table
+      },
+    )
+    if (!outcome.ok || chapter === undefined) return { ok: false, error: outcome.ok ? 'io' : outcome.error }
+    return { ok: true, chapter }
   }
 
   /**

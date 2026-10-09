@@ -192,7 +192,7 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
       + '(the user adopts them on the 规划 page). review decides a pending item '
       + '(action=accept|discard). Cards: canvas_write. Load the novel skill first.',
     parameters: {
-      what: { type: 'string', enum: ['chapter', 'outline', 'review'], required: true, description: 'What to write.' },
+      what: { type: 'string', enum: ['chapter', 'confirm', 'outline', 'review'], required: true, description: 'What to write. confirm: record the user\'s confirmation of a chapter plan (chapter=N) — only when their latest message says so.' },
       id: { type: 'string', description: 'review: the pending item id.' },
       title: { type: 'string', description: 'chapter: the title.' },
       content: {
@@ -271,7 +271,7 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
           if (outcome.error === 'plan-unconfirmed') {
             return args.chapter === undefined
               ? '失败：正文只能写进已确认计划的章节。先 novel_write(what=chapter, title, plan) 登记计划、等用户确认，再带 chapter=N 写正文；用户自己写好的稿子加 byUser=true 登记。'
-              : `失败：第 ${args.chapter} 章的计划还没经用户确认（或刚改过计划），不写正文。请用户点会话卡片或章节页上的「确认计划」。`
+              : `失败：第 ${args.chapter} 章的计划还没经用户确认（或刚改过计划），不写正文。用户在对话里已经明确同意这版计划的话，先 novel_write(what=confirm, chapter=${args.chapter}) 登记确认再写；没有就请用户确认（对话里说一声，或点章节页的「确认计划」）。`
           }
           if (outcome.error === 'unknown-foreshadow') {
             return `失败：计划里的伏笔要写编号，这几条对不上伏笔卡：${(outcome.unknown ?? []).map(id => `「${id}」`).join('、')}。`
@@ -307,7 +307,18 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
         return `${attached}已登记第 ${chapter.n} 章《${chapter.title}》（画布 ${workId}${position === undefined ? '' : ` · 卷${volumeNumeral(position.index)}`}）plan：`
           + `${words === undefined ? '' : `目标 ${words} 字 / `}走向 ${plan.beats.length} 拍 / 伏笔 ${plan.foreshadowOps.length} 条 / 出场 ${plan.cast.length} 人。`
           + (overshoots.length === 0 ? '' : `\n提醒（只提醒，不拦）：${overshoots.join('；')}。在回复里跟用户说一句，按他的意思改或保留。`)
-          + '\n完整计划已在右栏打开的章节页上（会话里的计划卡也能点进去），用户在章节页点「✓ 确认计划」。回复只用两三句说这章怎么走、最想让用户拍板的是什么，不要再贴一遍计划表。用户确认后开写。'
+          + '\n完整计划已在右栏打开的章节页上。回复只用两三句说这章怎么走、最想让用户拍板的是什么，不要再贴一遍计划表。'
+          + `用户在对话里同意后，先 novel_write(what=confirm, chapter=${chapter.n}) 再开写；他也可能直接在章节页点了确认。`
+      }
+      if (args.what === 'confirm') {
+        if (args.chapter === undefined) return '失败：what=confirm 要给 chapter（章号）。'
+        const outcome = await store.confirmChapterPlan({ workId, n: args.chapter }, resolved.session)
+        if (!outcome.ok) {
+          if (outcome.error === 'missing') return `失败：没有第 ${args.chapter} 章。`
+          if (outcome.error === 'invalid-name') return `失败：第 ${args.chapter} 章还没有计划，先 novel_write(what=chapter, plan=…) 登记。`
+          return `失败：${outcome.error ?? 'io'}`
+        }
+        return `已确认第 ${args.chapter} 章的计划（按用户在对话里的同意），可以写正文了：先 novel_read(brief, for=write, chapter=${args.chapter})。`
       }
       if (args.what === 'outline') {
         const outcome = await store.proposeOutline({

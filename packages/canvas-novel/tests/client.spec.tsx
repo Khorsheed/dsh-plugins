@@ -22,6 +22,7 @@ import { CHAPTER_PAGE, STORY_LOG_PAGE, type NovelRemote, type NovelSurfaceProps 
 import { zh } from '../src/client/locales.ts'
 import { CardScopes, ChaptersBadge, DeleteNote, FaceLabel, storyUsage } from '../src/client/NovelFaces.tsx'
 import { chapterHeading } from '../src/client/PendingList.tsx'
+import { PlanBlock } from '../src/client/PlanBlock.tsx'
 import { StoryLogPage } from '../src/client/StoryLogPage.tsx'
 import { WriteToolRow } from '../src/client/WriteToolRow.tsx'
 import { writeRowModel } from '../src/client/write-row.ts'
@@ -360,6 +361,14 @@ describe('ChapterBook', () => {
   it('an empty work says how chapters arrive', async () => {
     render(<ChapterBook {...props(fakeRemote({ items: [], rows: [] }))} />)
     expect(await screen.findByText(zh['toc.empty'])).toBeTruthy()
+  })
+})
+
+describe('PlanBlock on a written chapter re-planned', () => {
+  it('leads with the plan and offers the confirm while it waits, whatever the phase', () => {
+    const waiting = chapter(2, '光', { plan: PLAN })
+    render(<PlanBlock chapter={waiting} phase="writing" names={{}} canConfirm busy={false} onConfirm={() => {}} t={t} />)
+    expect(screen.getByRole('button', { name: zh['chapter.confirmPlan'] })).toBeTruthy()
   })
 })
 
