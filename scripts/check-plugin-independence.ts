@@ -233,6 +233,9 @@ export const ALLOWED_EDGES: Readonly<Record<string, ReadonlyArray<string>>> = {
   // library → ui-panel-kit: the learning sidebar's panel root, header, tabs,
   // chip row and list rows — the same inlined, zero-runtime source-plane edge.
   'library': ['@khorsheed/dsh-client-ui-panel-kit'],
+  // game → ui-panel-kit: the game tab's panel root, header, tabs and rows
+  // (panel-design convention for every new panel).
+  'game': ['@khorsheed/dsh-client-ui-panel-kit'],
   // room consumes the local-agent delegation facade as an OPTIONAL capability:
   // type-only imports, an optional peer dep, a runtime probe, and tested
   // degradation when the family is absent (the room works with the main agent

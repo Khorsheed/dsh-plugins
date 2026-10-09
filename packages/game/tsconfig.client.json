@@ -1,0 +1,27 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types",
+    "tsBuildInfoFile": "lib/tsconfig.client.tsbuildinfo",
+    "jsx": "react-jsx",
+    "lib": [
+      "ES2024",
+      "DOM",
+      "DOM.Iterable"
+    ]
+  },
+  "files": [
+    "src/css-modules.d.ts",
+    "src/types.ts",
+    "src/vfs.ts",
+    "src/client/contract.ts",
+    "src/client/definition.tsx",
+    "src/client/GameTab.tsx",
+    "src/client/index.ts",
+    "src/client/locales.ts",
+    "src/client/markdown.tsx",
+    "src/client/PlayFrame.tsx",
+    "src/client/preset-visibility.ts"
+  ]
+}
