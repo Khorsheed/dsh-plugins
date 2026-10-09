@@ -118,7 +118,7 @@ describe('child-log lane', () => {
       toolExecMs: 18,
       totalMs: 1791483625202 - 1791483620262,
     })
-    expect(first?.responseSummary).toBe('tool:read:第1章.md')
+    expect(first?.responseSummary).toEqual({ kind: 'tool', name: 'read', hint: '第1章.md' })
     // One-shot honesty: no system prompt, no tools, no header config in the log.
     expect(first?.segments.system).toEqual([])
     expect(first?.segments.tools).toEqual([])
@@ -135,7 +135,7 @@ describe('child-log lane', () => {
     expect(second?.segments.history.map(item => item.category)).toEqual(['user'])
     expect(second?.segments.added.map(item => item.category)).toEqual(['assistant', 'tool-result'])
     expect(second?.segments.added[0]?.durationMs).toBe(1791483625202 - 1791483620262)
-    expect(second?.responseSummary).toBe('直接回答')
+    expect(second?.responseSummary).toEqual({ kind: 'text' })
 
     // Request 3: the synthetic failed attempt.
     const third = await service.getRequest(rootId, r3?.seq ?? -1)

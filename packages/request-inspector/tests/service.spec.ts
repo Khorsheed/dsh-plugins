@@ -101,7 +101,7 @@ describe('llm/stream lane', () => {
 
     const overview = await service.getTurn(String(session.id), 1)
     const row = overview?.scopes[0]?.requests[0]
-    expect(row).toMatchObject({ status: 'ok', responseSummary: '直接回答' })
+    expect(row).toMatchObject({ status: 'ok', responseSummary: { kind: 'text' } })
 
     const detail = await service.getRequest(String(session.id), row?.seq ?? -1)
     expect(detail?.segments.system[0]?.full).toBe('你是助手')

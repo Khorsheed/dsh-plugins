@@ -19,6 +19,7 @@ Status: implemented
 - **`session/event` 承载关联**:`turn/start|end` 开闭 turn,`user/message` 提供 query 预览,`assistant/message` 提供 `closingMessageId` 与历史行的生成耗时回填,`tool/call → tool/result` 按 callId 配对出工具执行时长(归属到响应里发出该调用的请求),`subagent/catalog` 开子代理 scope 并按序绑定待定的委派调用。
 - **子代理日志通道**:`ctx.get('sessionPersistence')` 结构探测后 `open(childId, 'read')` 增量读取(游标续读),把事件折叠成请求——每个带 usage 的 `assistant/message` 是一次成功请求,`assistant/attempt` 是一次失败请求。一次性子代理日志**没有** `request/header` 与 system 消息,这些字段保持诚实的空态(config `{}`、system/tools 空数组),不编造。同一 scope 两条通道互斥:live 通道先进则日志通道退出,反之亦然(`live`/`logFilled` 标志)。
 - **purpose 请求进入伪 turn 桶**:带 `purpose`(compaction / session-title)的辅助调用即使发生在 turn 中途也不是会话步骤,按 purpose 聚合到会话级伪 turn;无 purpose 又无开 turn 的散调用进 `ad-hoc` 桶。
+- **响应锚点是结构化数据**:`responseSummary` 为 `{kind:'tool', name, hint?, more?} | {kind:'text'} | {kind:'none'}`——宿主不产出任何展示文案,「直接回答」这类文案由面板按 locale 字典渲染,工具态按设计稿渲染为 `name:hint`。scope 携带会话内按创建顺序的 1 基序号 `scopeSeq`,委派 chip 的 `#N` 锚点因此不再依赖首个请求的 seq(0 请求的失败运行也有锚点)。
 - **历史/新增按同 scope 前一请求做最长公共前缀 diff**:有 id 用 id,无 id 用内容哈希;压缩改写后的前缀整体判为新增——这正是模型眼里变化的部分。
 - **淘汰以 turn 为粒度**:`maxTurnsPerSession`(默认 20)与 `maxRequestsTotal`(默认 200)都只淘汰已关闭的 turn;含在途流的 turn 跳过,因此上限在流未收口时是软上限。
 

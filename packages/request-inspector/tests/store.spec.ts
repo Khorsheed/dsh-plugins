@@ -117,7 +117,7 @@ describe('turn correlation', () => {
       toolExecMs: 46,
       totalMs: 385,
     })
-    expect(full?.responseSummary).toBe('tool:read:a.md')
+    expect(full?.responseSummary).toEqual({ kind: 'tool', name: 'read', hint: 'a.md' })
     expect(full?.usage).toEqual({ inputTokens: 100, outputTokens: 20, cacheReadTokens: 500 })
     // The second request splits history (sys, u1) from added (a1, t1).
     const second = store.getRequest('s1', r2.seq)
@@ -263,10 +263,12 @@ describe('subagent scopes', () => {
     const child = overview?.scopes.find(scope => scope.kind === 'subagent')
     expect(child).toMatchObject({
       scopeId: 'child-1',
+      scopeSeq: 2,
       status: 'failed',
       label: 'dsh: 第一章对账 JSON 提取',
       requests: [],
     })
+    expect(overview?.scopes.find(scope => scope.kind === 'main')?.scopeSeq).toBe(1)
     expect(overview?.turn.failedScopeCount).toBe(1)
     // The delegation’s own exec time still attributes to the issuing request:
     // tool/call → tool/result spans the catalog write in between.
@@ -291,9 +293,31 @@ describe('subagent scopes', () => {
     const child = overview?.scopes.find(scope => scope.kind === 'subagent')
     expect(child).toMatchObject({
       scopeId: 'call:call_sub',
+      scopeSeq: 2,
       status: 'failed',
       label: '连通性测试',
       requests: [],
     })
+  })
+
+  it('numbers scopes per session in creation order, across turns and buckets', () => {
+    const at = clock()
+    const store = new InspectorStore({}, { now: at.now })
+    store.turnStart('s1', 1, at.tick(1))
+    runRequest(store, snap('s1', [msg('u1', '一')]), at) // main scope → 1
+    store.subagentCatalog('s1', 'child-1', '子任务', at.tick(1)) // → 2
+    store.turnEnd('s1', { kind: 'completed' }, at.tick(1))
+    // An aux request outside any turn: the pseudo-bucket's main scope → 3.
+    runRequest(store, snap('s1', [msg('', '起标题')], { purpose: 'session-title' }), at)
+    store.turnStart('s1', 2, at.tick(1))
+    runRequest(store, snap('s1', [msg('u2', '二')]), at) // turn 2 main scope → 4
+    store.turnEnd('s1', { kind: 'completed' }, at.tick(1))
+
+    const turn1 = store.getTurn('s1', 1)
+    expect(turn1?.scopes.map(scope => [scope.scopeId, scope.scopeSeq])).toEqual([['main', 1], ['child-1', 2]])
+    const bucket = store.getTurn('s1', 2)
+    expect(bucket?.scopes[0]?.scopeSeq).toBe(3)
+    const turn2 = store.getTurn('s1', 3)
+    expect(turn2?.scopes[0]?.scopeSeq).toBe(4)
   })
 })

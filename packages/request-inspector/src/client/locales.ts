@@ -36,6 +36,7 @@ export const zh = {
   'req.cacheHit': '缓存命中 {tokens} tok（{pct}%）',
   'req.streaming': '流式中',
   'req.failed': '失败',
+  'resp.directAnswer': '直接回答',
 
   'detail.anchor': '本次响应',
   'detail.config': 'config',
@@ -129,6 +130,7 @@ export const en: Record<keyof typeof zh, string> = {
   'req.cacheHit': 'cache hit {tokens} tok ({pct}%)',
   'req.streaming': 'streaming',
   'req.failed': 'failed',
+  'resp.directAnswer': 'Direct answer',
 
   'detail.anchor': 'Response',
   'detail.config': 'config',

@@ -11,7 +11,7 @@ import type { ReactNode } from 'react'
 import type {
   AgentScopeOverview, CapturedRequest, RequestListItem, SegmentCategory,
 } from '../types.ts'
-import { aggregateCategories, cachePct, fmt, fmtDur, fmtK, inputTotal } from './aggregate.ts'
+import { aggregateCategories, cachePct, fmt, fmtDur, fmtK, inputTotal, summaryText } from './aggregate.ts'
 import type { InspectorTabProps } from './contract.ts'
 import { SegmentBlocks, categoryLabelKey } from './SegmentBlocks.tsx'
 import css from './TokenView.module.css'
@@ -36,7 +36,7 @@ function RequestCard({ request, selected, onSelect, t }: {
       aria-pressed={selected}
       onClick={() => { onSelect(request.seq) }}
     >
-      <span className={css.reqName}>#{request.seq} · {request.responseSummary || '—'}</span>
+      <span className={css.reqName}>#{request.seq} · {summaryText(request.responseSummary, t('resp.directAnswer'))}</span>
       <span className={css.reqIo}>
         {usage === undefined
           ? (request.status === 'streaming' ? t('req.streaming') : t('req.failed'))
@@ -113,7 +113,7 @@ export function TokenView({ scope, selectedSeq, request, filterCat, onSelect, on
                 </span>
               </div>
               <div className={css.anchor}>
-                {t('detail.anchor')} → <b className={css.mono}>{request.responseSummary || '—'}</b>
+                {t('detail.anchor')} → <b className={css.mono}>{summaryText(request.responseSummary, t('resp.directAnswer'))}</b>
                 {usage !== undefined && ` · ${t('req.output')} ${fmt(usage.outputTokens)} tok`}
                 {request.timing.totalMs !== undefined && ` · ${fmtDur(request.timing.totalMs)}`}
                 <span className={css.anchorSep}>|</span>

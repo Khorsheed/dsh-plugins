@@ -112,6 +112,21 @@ export interface RequestConfig {
   maxTokens?: number
 }
 
+/**
+ * 明细头锚点：本请求的响应干了什么，结构化承载（面板负责本地化与拼装）。
+ * 来自响应流的 tool-call / text blocks。
+ */
+export type ResponseSummary =
+  /**
+   * 响应以工具调用收尾：`name` 为首个调用的工具名，`hint` 为其参数摘要
+   *（what → 文件 basename → for → description），`more` 为其余调用的个数。
+   */
+  | { kind: 'tool'; name: string; hint?: string; more?: number }
+  /** 直接回答（有可见文本、无工具调用）。 */
+  | { kind: 'text' }
+  /** 空响应（无文本也无工具调用——失败/中断的响应落这里）。 */
+  | { kind: 'none' }
+
 /** One model call, fully captured. */
 export interface CapturedRequest {
   /** Collector-assigned process-wide monotonic sequence (the panel's `#784`). */
@@ -126,10 +141,10 @@ export interface CapturedRequest {
   usage?: RequestUsage
   timing: RequestTiming
   /**
-   * 明细头锚点：本请求的响应干了什么 —— `tool:hint`（如 `novel_read:chapter`）
-   * 或「直接回答」。来自响应流的 tool-call blocks / text blocks。
+   * 明细头锚点：本请求的响应干了什么（结构化；面板本地化渲染为
+   * `name:hint` / 「直接回答」 / —）。
    */
-  responseSummary: string
+  responseSummary: ResponseSummary
   segments: {
     /** systemPrompt 组装原文；source 为 assemble section 名。 */
     system: SegmentItem[]
@@ -145,6 +160,11 @@ export interface CapturedRequest {
 export interface AgentScopeSummary {
   /** 'main' or the subagent childId. */
   scopeId: string
+  /**
+   * Per-session 1-based ordinal in scope-creation order — the delegation chip's
+   * `#N` anchor. Unlike a request seq it exists even for a 0-request failed run.
+   */
+  scopeSeq: number
   kind: 'main' | 'subagent'
   /** Delegation label from `subagent/catalog` (e.g. 第一章对账 JSON 提取). */
   label?: string
@@ -186,6 +206,8 @@ export interface TurnOverview {
 /** Scope with light request rows (the left request list). */
 export interface AgentScopeOverview {
   scopeId: string
+  /** Per-session 1-based ordinal in scope-creation order (the chip's `#N`). */
+  scopeSeq: number
   kind: 'main' | 'subagent'
   label?: string
   status: 'running' | 'ok' | 'failed'
@@ -201,7 +223,7 @@ export interface RequestListItem {
   seq: number
   scopeId: string
   status: 'streaming' | 'ok' | 'failed'
-  responseSummary: string
+  responseSummary: ResponseSummary
   startedAt: number
   usage?: RequestUsage
   totalMs?: number

@@ -17,7 +17,7 @@
  *
  * @module @khorsheed/dsh-request-inspector/child-log
  */
-import type { RequestConfig, RequestUsage } from './types.ts'
+import type { RequestConfig, RequestUsage, ResponseSummary } from './types.ts'
 import type { BlockSpan, StoredRequest } from './store.ts'
 import { splitRequest, type ScopeFingerprint } from './segmenter.ts'
 import { fromLogMessage, previewLine, type CapturedMessage } from './messages.ts'
@@ -298,27 +298,35 @@ function spansFromMessage(
   return spans
 }
 
-/** The response hint from a committed message's blocks. */
-function summarizeMessage(message: CapturedMessage): string {
+/** The response hint from a committed message's blocks (structured 明细头锚点). */
+function summarizeMessage(message: CapturedMessage): ResponseSummary {
   const calls = message.content.filter(block => block.type === 'tool-call' && block.name !== undefined)
   if (calls.length > 0) {
     const first = calls[0] as CapturedMessage['content'][number]
     const hint = hintFromArgs(first.arguments)
-    const suffix = calls.length > 1 ? ` +${calls.length - 1}` : ''
-    return `tool:${first.name}${hint === undefined ? '' : `:${hint}`}${suffix}`
+    return {
+      kind: 'tool',
+      name: first.name as string,
+      ...hint === undefined ? {} : { hint },
+      ...calls.length > 1 ? { more: calls.length - 1 } : {},
+    }
   }
   const hasText = message.content.some(block => block.type === 'text' && (block.text ?? '').trim().length > 0)
-  return hasText ? '直接回答' : ''
+  return hasText ? { kind: 'text' } : { kind: 'none' }
 }
 
-/** The response hint when only stream spans survived (an attempt). */
-function summarizeBlocks(blocks: readonly BlockSpan[]): string {
+/** The response summary when only stream spans survived (an attempt). */
+function summarizeBlocks(blocks: readonly BlockSpan[]): ResponseSummary {
   const calls = blocks.filter(block => block.kind === 'tool-call' && block.toolName !== undefined)
-  if (calls.length === 0) return blocks.some(block => block.kind === 'text') ? '直接回答' : ''
+  if (calls.length === 0) return blocks.some(block => block.kind === 'text') ? { kind: 'text' } : { kind: 'none' }
   const first = calls[0] as BlockSpan
   const hint = hintFromArgs(first.args)
-  const suffix = calls.length > 1 ? ` +${calls.length - 1}` : ''
-  return `tool:${first.toolName}${hint === undefined ? '' : `:${hint}`}${suffix}`
+  return {
+    kind: 'tool',
+    name: first.toolName as string,
+    ...hint === undefined ? {} : { hint },
+    ...calls.length > 1 ? { more: calls.length - 1 } : {},
+  }
 }
 
 /** The one-line argument hint — the reference reconstruction's key order. */

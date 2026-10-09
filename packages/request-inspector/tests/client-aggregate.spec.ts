@@ -7,7 +7,7 @@
 import { describe, expect, it } from 'vitest'
 import type { CapturedRequest, TimingLane, TurnListItem } from '../src/types.ts'
 import {
-  aggregateCategories, cachePct, fmtDur, fmtK, fmtSpan, inputTotal, latestTurnSeq, resolveTurnSeq, summarizeLanes,
+  aggregateCategories, cachePct, fmtDur, fmtK, fmtSpan, inputTotal, latestTurnSeq, resolveTurnSeq, summarizeLanes, summaryText,
 } from '../src/client/aggregate.ts'
 
 const turn = (over: Partial<TurnListItem>): TurnListItem => ({
@@ -56,7 +56,7 @@ const requestFixture = (): CapturedRequest => ({
   config: { provider: 'deepseek', model: 'deepseek-chat', maxTokens: 131_072 },
   usage: { inputTokens: 2_000, outputTokens: 300, cacheReadTokens: 8_000 },
   timing: { totalMs: 4_200 },
-  responseSummary: 'tool:fs:read',
+  responseSummary: { kind: 'tool', name: 'read', hint: 'a.ts' },
   segments: {
     system: [
       { index: 0, category: 'system', source: 'identity', preview: 'p', full: 'a'.repeat(100), chars: 100, freshness: 'history' },
@@ -168,5 +168,16 @@ describe('formatting', () => {
     expect(fmtDur(4_200)).toBe('4s')
     expect(fmtSpan(4_200)).toBe('4.2s')
     expect(fmtSpan(65_000)).toBe('1m5s')
+  })
+})
+
+describe('summaryText', () => {
+  it('renders the tool case as name:hint, the text case localized, none as a dash', () => {
+    expect(summaryText({ kind: 'tool', name: 'read', hint: 'a.ts' }, '直接回答')).toBe('read:a.ts')
+    expect(summaryText({ kind: 'tool', name: 'read' }, '直接回答')).toBe('read')
+    expect(summaryText({ kind: 'tool', name: 'read', hint: 'a.ts', more: 2 }, '直接回答')).toBe('read:a.ts +2')
+    expect(summaryText({ kind: 'text' }, '直接回答')).toBe('直接回答')
+    expect(summaryText({ kind: 'text' }, 'Direct answer')).toBe('Direct answer')
+    expect(summaryText({ kind: 'none' }, '直接回答')).toBe('—')
   })
 })

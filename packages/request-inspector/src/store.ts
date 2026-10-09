@@ -30,6 +30,7 @@ import type {
   RequestListItem,
   RequestTiming,
   RequestUsage,
+  ResponseSummary,
   TimingLane,
   ToolTiming,
   TurnListItem,
@@ -83,7 +84,7 @@ export interface StoredRequest {
   error?: string
   config: RequestConfig
   usage?: RequestUsage
-  responseSummary: string
+  responseSummary: ResponseSummary
   segments: CapturedRequest['segments']
   totalChars: number
   firstChunkAt?: number
@@ -108,6 +109,8 @@ interface PendingCall {
 /** One scope row's internal record (exported via {@link TurnRecord}). */
 export interface ScopeRecord {
   scopeId: string
+  /** Per-session 1-based ordinal in scope-creation order (the chip's `#N`). */
+  scopeSeq: number
   kind: 'main' | 'subagent'
   label?: string
   status: 'running' | 'ok' | 'failed'
@@ -151,6 +154,8 @@ interface SessionRecord {
   /** purpose → its pseudo-turn. */
   buckets: Map<string, TurnRecord>
   nextTurnSeq: number
+  /** The next scope's per-session ordinal (creation order, 1-based). */
+  nextScopeSeq: number
   /** Pending tool/call rows by callId (exec starts + delegation binding). */
   pendingCalls: Map<string, PendingCall>
   /** messageId → producing request's generation ms (assistant row durations). */
@@ -229,6 +234,7 @@ export class InspectorStore {
         openTurn: undefined,
         buckets: new Map(),
         nextTurnSeq: 1,
+        nextScopeSeq: 1,
         pendingCalls: new Map(),
         messageDurations: new Map(),
       }
@@ -251,11 +257,12 @@ export class InspectorStore {
     return turn
   }
 
-  private mainScope(turn: TurnRecord, at: number): ScopeRecord {
+  private mainScope(session: SessionRecord, turn: TurnRecord, at: number): ScopeRecord {
     let scope = turn.scopes.get('main')
     if (scope === undefined) {
       scope = {
         scopeId: 'main',
+        scopeSeq: session.nextScopeSeq,
         kind: 'main',
         status: 'running',
         config: {},
@@ -264,6 +271,7 @@ export class InspectorStore {
         live: false,
         logFilled: false,
       }
+      session.nextScopeSeq += 1
       turn.scopes.set('main', scope)
     }
     return scope
@@ -312,7 +320,7 @@ export class InspectorStore {
     }
 
     const scope = scopeId === 'main'
-      ? this.mainScope(turn, startedAt)
+      ? this.mainScope(session, turn, startedAt)
       : turn.scopes.get(scopeId)
     if (scope === undefined) return undefined
 
@@ -338,7 +346,7 @@ export class InspectorStore {
       startedAt,
       status: 'streaming',
       config: snapshot.config,
-      responseSummary: '',
+      responseSummary: { kind: 'none' },
       segments: {
         system: segments.system,
         tools: segments.tools,
@@ -596,6 +604,7 @@ export class InspectorStore {
     if (turn === undefined) return undefined
     const scope: ScopeRecord = {
       scopeId,
+      scopeSeq: session.nextScopeSeq,
       kind: 'subagent',
       ...label === undefined ? {} : { label },
       status: 'running',
@@ -606,6 +615,7 @@ export class InspectorStore {
       logFilled: false,
       ...callId === undefined ? {} : { callId },
     }
+    session.nextScopeSeq += 1
     turn.scopes.set(scopeId, scope)
     return scope
   }
@@ -670,6 +680,7 @@ export class InspectorStore {
     const item = this.turnItem(sessionId, turn)
     const scopes: AgentScopeOverview[] = [...turn.scopes.values()].map(scope => ({
       scopeId: scope.scopeId,
+      scopeSeq: scope.scopeSeq,
       kind: scope.kind,
       ...scope.label === undefined ? {} : { label: scope.label },
       status: scope.status,
@@ -920,18 +931,21 @@ function requestLanes(request: StoredRequest): TimingLane[] {
   return lanes
 }
 
-/** `tool:hint`（如 `novel_read:chapter`）或「直接回答」— the 明细头锚点, from the response blocks. */
-function summarizeResponse(request: StoredRequest): string {
+/** 明细头锚点（结构化）：响应流里的工具调用 → `{kind:'tool', name, hint?, more?}`；纯文本 → `{kind:'text'}`；空响应 → `{kind:'none'}`。 */
+function summarizeResponse(request: StoredRequest): ResponseSummary {
   const calls = request.blocks.filter(block => block.kind === 'tool-call' && block.toolName !== undefined)
   if (calls.length > 0) {
     const first = calls[0] as BlockSpan
     const hint = toolHint(first.args)
-    const name = first.toolName as string
-    const suffix = calls.length > 1 ? ` +${calls.length - 1}` : ''
-    return `tool:${name}${hint === undefined ? '' : `:${hint}`}${suffix}`
+    return {
+      kind: 'tool',
+      name: first.toolName as string,
+      ...hint === undefined ? {} : { hint },
+      ...calls.length > 1 ? { more: calls.length - 1 } : {},
+    }
   }
   const hasText = request.blocks.some(block => block.kind === 'text')
-  return hasText ? '直接回答' : ''
+  return hasText ? { kind: 'text' } : { kind: 'none' }
 }
 
 /**

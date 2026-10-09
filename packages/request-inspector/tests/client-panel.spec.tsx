@@ -45,7 +45,7 @@ const REQ101: CapturedRequest = {
   config: { provider: 'deepseek', model: 'deepseek-chat', maxTokens: 131_072 },
   usage: { inputTokens: 2_000, outputTokens: 100, cacheReadTokens: 8_000 },
   timing: { waitMs: 400, reasoningMs: 1_000, textMs: 800, totalMs: 4_200 },
-  responseSummary: 'tool:fs:read',
+  responseSummary: { kind: 'tool', name: 'read', hint: 'a.ts' },
   segments: {
     system: [
       { index: 0, category: 'system', source: 'identity', preview: '你是…', full: '你是 Kimi，一个助手。', chars: 12, freshness: 'history' },
@@ -74,7 +74,7 @@ const REQ102: CapturedRequest = {
   startedAt: 8_000,
   usage: { inputTokens: 500, outputTokens: 200, cacheReadTokens: 9_500 },
   timing: { waitMs: 300, textMs: 1_500, totalMs: 2_000 },
-  responseSummary: '直接回答',
+  responseSummary: { kind: 'text' },
   segments: { ...REQ101.segments },
 }
 
@@ -86,12 +86,13 @@ const REQ201: CapturedRequest = {
   startedAt: 5_000,
   usage: { inputTokens: 100, outputTokens: 20 },
   timing: { waitMs: 100, textMs: 200, totalMs: 400 },
-  responseSummary: '直接回答',
+  responseSummary: { kind: 'text' },
   segments: { system: [], tools: [], history: [], added: REQ101.segments.added },
 }
 
 const scope = (over: Partial<AgentScopeOverview>): AgentScopeOverview => ({
   scopeId: 'main',
+  scopeSeq: 1,
   kind: 'main',
   status: 'ok',
   config: { provider: 'deepseek', model: 'deepseek-chat', maxTokens: 131_072 },
@@ -107,18 +108,18 @@ const OVERVIEW2: TurnOverview = {
     scope({
       scopeId: 'main',
       requests: [
-        { seq: 101, scopeId: 'main', status: 'ok', responseSummary: 'tool:fs:read', startedAt: 3_100, usage: REQ101.usage, totalMs: 4_200, totalChars: 126 },
-        { seq: 102, scopeId: 'main', status: 'ok', responseSummary: '直接回答', startedAt: 8_000, usage: REQ102.usage, totalMs: 2_000, totalChars: 130 },
+        { seq: 101, scopeId: 'main', status: 'ok', responseSummary: { kind: 'tool', name: 'read', hint: 'a.ts' }, startedAt: 3_100, usage: REQ101.usage, totalMs: 4_200, totalChars: 126 },
+        { seq: 102, scopeId: 'main', status: 'ok', responseSummary: { kind: 'text' }, startedAt: 8_000, usage: REQ102.usage, totalMs: 2_000, totalChars: 130 },
       ],
     }),
     scope({
-      scopeId: 'child-1', kind: 'subagent', label: '提取 JSON', startedAt: 5_000, endedAt: 5_400,
+      scopeId: 'child-1', scopeSeq: 2, kind: 'subagent', label: '提取 JSON', startedAt: 5_000, endedAt: 5_400,
       requests: [
-        { seq: 201, scopeId: 'child-1', status: 'ok', responseSummary: '直接回答', startedAt: 5_000, usage: REQ201.usage, totalMs: 400, totalChars: 76 },
+        { seq: 201, scopeId: 'child-1', status: 'ok', responseSummary: { kind: 'text' }, startedAt: 5_000, usage: REQ201.usage, totalMs: 400, totalChars: 76 },
       ],
     }),
     scope({
-      scopeId: 'child-2', kind: 'subagent', label: '失败的提取', status: 'failed',
+      scopeId: 'child-2', scopeSeq: 3, kind: 'subagent', label: '失败的提取', status: 'failed',
       error: 'provider timeout', startedAt: 6_000, endedAt: 7_500, requests: [],
     }),
   ],
@@ -128,7 +129,7 @@ const OVERVIEW1: TurnOverview = {
   turn: TURNS[0] as TurnListItem,
   scopes: [scope({
     requests: [
-      { seq: 11, scopeId: 'main', status: 'ok', responseSummary: '直接回答', startedAt: 1_100, usage: REQ101.usage, totalMs: 900, totalChars: 126 },
+      { seq: 11, scopeId: 'main', status: 'ok', responseSummary: { kind: 'text' }, startedAt: 1_100, usage: REQ101.usage, totalMs: 900, totalChars: 126 },
     ],
   })],
 }
@@ -206,18 +207,19 @@ afterEach(() => {
 describe('InspectorPanel · token tab', () => {
   it('mounts at the latest turn: query line, scope chips, request cards, the selected request detail', async () => {
     bench()
-    await waitFor(() => expect(screen.getByText('#101 · tool:fs:read')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('#101 · read:a.ts')).toBeTruthy())
     // The query line and the turn switcher default to turn 2 (the latest).
     expect(screen.getByText('第二条 query')).toBeTruthy()
     expect((screen.getByRole('combobox', { name: zh['turn.switch'] }) as HTMLSelectElement).value).toBe('2')
-    // Scope chips: 主对话 + one per delegation run (never merged).
+    // Scope chips: 主对话 + one per delegation run (never merged), anchored by
+    // the per-session scope ordinal — the failed 0-request run gets its #N too.
     expect(screen.getByRole('button', { name: /主对话 · 2 请求/ })).toBeTruthy()
-    expect(screen.getByRole('button', { name: /#201 提取 JSON/ })).toBeTruthy()
-    expect(screen.getByRole('button', { name: /失败的提取/ })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /#2 提取 JSON/ })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /#3 失败的提取/ })).toBeTruthy()
     // The detail anchor + the four blocks.
     await waitFor(() => expect(screen.getByText(/本次响应/)).toBeTruthy())
     // The anchor names the response; the selected card's title repeats it.
-    expect(screen.getAllByText(/tool:fs:read/).length).toBeGreaterThanOrEqual(2)
+    expect(screen.getAllByText(/read:a\.ts/).length).toBeGreaterThanOrEqual(2)
     expect(screen.getByText(zh['seg.system'])).toBeTruthy()
     expect(screen.getByText(zh['seg.tools'])).toBeTruthy()
     expect(screen.getByText(zh['seg.history'])).toBeTruthy()
@@ -226,7 +228,7 @@ describe('InspectorPanel · token tab', () => {
 
   it('keeps history collapsed and added open; rows expand to verbatim text', async () => {
     bench()
-    await waitFor(() => expect(screen.getByText('#101 · tool:fs:read')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('#101 · read:a.ts')).toBeTruthy())
     // Added is open by default: the tool-result row is visible; history is collapsed.
     expect(screen.getByText('文件内容')).toBeTruthy()
     expect(screen.queryByText('历史用户输入')).toBeNull()
@@ -239,7 +241,7 @@ describe('InspectorPanel · token tab', () => {
 
   it('unfolds an assistant row into reasoning / text / tool_call sections', async () => {
     bench()
-    await waitFor(() => expect(screen.getByText('#101 · tool:fs:read')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('#101 · read:a.ts')).toBeTruthy())
     openDetails('→ read')
     await waitFor(() => expect(screen.getByText('先想一下')).toBeTruthy())
     expect(screen.getByText('reasoning')).toBeTruthy()
@@ -249,7 +251,7 @@ describe('InspectorPanel · token tab', () => {
 
   it('expands 工具定义 to the compact grid of tool cells', async () => {
     bench()
-    await waitFor(() => expect(screen.getByText('#101 · tool:fs:read')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('#101 · read:a.ts')).toBeTruthy())
     // The tools block is collapsed: 'write' appears only in a tool cell.
     expect(screen.queryByText('write')).toBeNull()
     openDetails(zh['seg.tools'])
@@ -259,7 +261,7 @@ describe('InspectorPanel · token tab', () => {
 
   it('filters the detail rows by a legend category and clears back', async () => {
     bench()
-    await waitFor(() => expect(screen.getByText('#101 · tool:fs:read')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('#101 · read:a.ts')).toBeTruthy())
     openDetails(zh['seg.history'])
     await waitFor(() => expect(screen.getByText('历史用户输入')).toBeTruthy())
     // Click the 用户消息 legend entry → only user rows stay in history/added.
@@ -274,7 +276,7 @@ describe('InspectorPanel · token tab', () => {
 
   it('switches the selected request from the card list', async () => {
     bench()
-    await waitFor(() => expect(screen.getByText('#101 · tool:fs:read')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('#101 · read:a.ts')).toBeTruthy())
     fireEvent.click(screen.getByRole('button', { name: /#102 · 直接回答/ }))
     await waitFor(() => expect(screen.getByText(/请求 #102 · 组成分类/)).toBeTruthy())
   })
@@ -308,8 +310,8 @@ describe('InspectorPanel · scope chips', () => {
 
   it('switches to a delegation run and renders its (honestly empty) system/tools', async () => {
     bench()
-    await waitFor(() => expect(screen.getByRole('button', { name: /#201 提取 JSON/ })).toBeTruthy())
-    fireEvent.click(screen.getByRole('button', { name: /#201 提取 JSON/ }))
+    await waitFor(() => expect(screen.getByRole('button', { name: /#2 提取 JSON/ })).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: /#2 提取 JSON/ }))
     await waitFor(() => expect(screen.getByText('#201 · 直接回答')).toBeTruthy())
     // The child-lane scope has no captured system/tools: the blocks render the empty states.
     openDetails(zh['seg.system'])
@@ -322,7 +324,7 @@ describe('InspectorPanel · scope chips', () => {
 describe('InspectorPanel · timing tab', () => {
   it('renders the whole-turn buckets, the per-tool breakdown and the call rows', async () => {
     const { container } = bench()
-    await waitFor(() => expect(screen.getByText('#101 · tool:fs:read')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('#101 · read:a.ts')).toBeTruthy())
     fireEvent.click(screen.getByRole('button', { name: zh['view.time'] }))
     await waitFor(() => expect(screen.getByText(zh['time.byTool'])).toBeTruthy())
     expect(screen.getByText(zh['time.total'])).toBeTruthy()
@@ -344,8 +346,8 @@ describe('InspectorPanel · timing tab', () => {
 
   it('filters the timing view to the selected delegation run', async () => {
     const { container } = bench()
-    await waitFor(() => expect(screen.getByText('#101 · tool:fs:read')).toBeTruthy())
-    fireEvent.click(screen.getByRole('button', { name: /#201 提取 JSON/ }))
+    await waitFor(() => expect(screen.getByText('#101 · read:a.ts')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: /#2 提取 JSON/ }))
     fireEvent.click(screen.getByRole('button', { name: zh['view.time'] }))
     await waitFor(() => expect(screen.getByText(zh['time.totalScope'])).toBeTruthy())
     // Only the run's own call row remains.
@@ -358,7 +360,7 @@ describe('InspectorPanel · timing tab', () => {
 describe('InspectorPanel · raw view and the wire-body seat', () => {
   it('serializes the selected request as 原始 JSON; wire body stays disabled with its hint', async () => {
     bench()
-    await waitFor(() => expect(screen.getByText('#101 · tool:fs:read')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('#101 · read:a.ts')).toBeTruthy())
     const wire = screen.getByRole('button', { name: /wire body/ }) as HTMLButtonElement
     expect(wire.disabled).toBe(true)
     expect(wire.title).toBe(zh['view.wireHint'])

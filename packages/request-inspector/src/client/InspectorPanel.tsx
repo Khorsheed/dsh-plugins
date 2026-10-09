@@ -56,13 +56,12 @@ function FailureCard({ scope, t }: { readonly scope: AgentScopeOverview; readonl
   )
 }
 
-/** One delegation run's chip label: ▸ #firstSeq label ✓/✗ (never merged, never grouped). */
+/** One delegation run's chip label: ▸ #scopeSeq label ✓/✗ (never merged, never grouped). */
 function scopeChipLabel(scope: AgentScopeOverview): ReactNode {
-  const firstSeq = scope.requests[0]?.seq
   const label = scope.label ?? scope.scopeId
   return (
     <>
-      ▸ {firstSeq === undefined ? '' : `#${firstSeq} `}{label}
+      ▸ {`#${scope.scopeSeq} `}{label}
       {scope.status === 'ok' && <span className={css.okMark}> ✓</span>}
       {scope.status === 'failed' && <span className={css.failMark}> ✗</span>}
     </>
@@ -254,7 +253,7 @@ export function InspectorPanel({
   const scopeTag = effectiveScope === undefined || effectiveScope.kind === 'main'
     ? t('scope.tagMain', { count: String(scopeRequests.length) })
     : t('scope.tagSub', {
-      label: `${effectiveScope.requests[0] === undefined ? '' : `#${effectiveScope.requests[0].seq} `}${effectiveScope.label ?? effectiveScope.scopeId}`,
+      label: `#${effectiveScope.scopeSeq} ${effectiveScope.label ?? effectiveScope.scopeId}`,
     })
 
   let body: ReactNode

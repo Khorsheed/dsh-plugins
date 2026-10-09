@@ -6,8 +6,24 @@
  * @module @khorsheed/dsh-request-inspector/client/aggregate
  */
 import type {
-  CapturedRequest, RequestUsage, SegmentCategory, TimingLane, TurnListItem,
+  CapturedRequest, RequestUsage, ResponseSummary, SegmentCategory, TimingLane, TurnListItem,
 } from '../types.ts'
+
+/**
+ * Render one {@link ResponseSummary} for the card title / anchor header:
+ * the tool case is `name:hint`（多个调用追加 ` +N`）, the text case is the
+ * caller's localized 直接回答, an empty response is the plain dash.
+ */
+export function summaryText(summary: ResponseSummary, directAnswer: string): string {
+  switch (summary.kind) {
+    case 'tool':
+      return `${summary.name}${summary.hint === undefined ? '' : `:${summary.hint}`}${summary.more === undefined ? '' : ` +${summary.more}`}`
+    case 'text':
+      return directAnswer
+    case 'none':
+      return '—'
+  }
+}
 
 /**
  * Resolve an assistant message id to its turn: the turn whose

@@ -12,7 +12,7 @@
 import type { ReactNode } from 'react'
 import type { AgentScopeOverview, RequestConfig, RequestListItem, TurnTiming } from '../types.ts'
 import {
-  TIMING_KINDS, fmt, fmtClock, fmtSpan, summarizeLanes, type TimingKind,
+  TIMING_KINDS, fmt, fmtClock, fmtSpan, summarizeLanes, summaryText, type TimingKind,
 } from './aggregate.ts'
 import type { InspectorTabProps } from './contract.ts'
 import css from './TimingView.module.css'
@@ -158,7 +158,7 @@ export function TimingView({ timing, scopes, filterScopeId, filterIsSubagent, co
             <span className={css.cr1}>
               <span className={css.cn}>#{row.requestSeq}</span>
               <span className={css.ct}>{fmtClock(row.startedAt)}</span>
-              <span className={css.cs}>{info?.responseSummary ?? ''}</span>
+              <span className={css.cs}>{info === undefined ? '' : summaryText(info.responseSummary, t('resp.directAnswer'))}</span>
               <span className={css.cm}>
                 {t('time.callMeta', {
                   tokens: fmt(info?.usage?.outputTokens ?? 0),
