@@ -177,6 +177,49 @@ export function InspectorPanel({
   const scopeRequests = effectiveScope?.requests ?? []
   const selectedItem = scopeRequests.find(candidate => candidate.seq === selectedSeq) ?? scopeRequests[0]
   const selectedRequestSeq = selectedItem?.seq ?? null
+  const selectedIndex = selectedRequestSeq === null
+    ? -1
+    : scopeRequests.findIndex(candidate => candidate.seq === selectedRequestSeq)
+
+  // The 新增 provenance label's N: the previous request in the SAME scope.
+  // Scopes are continuous across turns, so the scope's first request of a turn
+  // looks back to the previous REAL turn's last request in that scope — a lazy
+  // fetch, only while the selection needs it.
+  const previousRealTurnSeq = ((): number | undefined => {
+    if (turns === null || turnSeq === null) return undefined
+    const index = turns.findIndex(candidate => candidate.turnSeq === turnSeq)
+    for (let i = index - 1; i >= 0; i -= 1) {
+      const candidate = turns[i]
+      if (candidate !== undefined && candidate.hostTurn !== undefined) return candidate.turnSeq
+    }
+    return undefined
+  })()
+  const needsPreviousTurn = selectedIndex === 0 && previousRealTurnSeq !== undefined
+  const [previousTurn, setPreviousTurn] = useState<TurnOverview | null>(null)
+  useEffect(() => {
+    if (!needsPreviousTurn || previousRealTurnSeq === undefined) {
+      if (previousTurn !== null) setPreviousTurn(null)
+      return
+    }
+    let cancelled = false
+    const seq = previousRealTurnSeq
+    void getTurn(sessionId, seq).then(result => {
+      if (cancelled || tab.signal.aborted) return
+      if (result.ok) setPreviousTurn(result.value ?? null)
+    }).catch(() => { /* the provenance label simply stays absent */ })
+    return () => { cancelled = true }
+    // previousTurn is the effect's own sink — depending on it would refetch in a loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, needsPreviousTurn, previousRealTurnSeq, getTurn, tab.signal])
+
+  const previousResponseSeq = ((): number | null => {
+    if (selectedIndex > 0) return scopeRequests[selectedIndex - 1]?.seq ?? null
+    if (selectedIndex === 0 && effectiveScope !== undefined && previousTurn !== null) {
+      const previousScope = previousTurn.scopes.find(candidate => candidate.scopeId === effectiveScope.scopeId)
+      return previousScope?.requests.at(-1)?.seq ?? null
+    }
+    return null
+  })()
 
   // The selected request's full capture (cached per turn).
   useEffect(() => {
@@ -325,6 +368,7 @@ export function InspectorPanel({
           selectedSeq={selectedRequestSeq}
           request={request}
           filterCat={filterCat}
+          previousResponseSeq={previousResponseSeq}
           onSelect={seq => { setSelectedSeq(seq) }}
           onToggleFilter={category => { setFilterCat(previous => previous === category ? null : category) }}
           t={t}

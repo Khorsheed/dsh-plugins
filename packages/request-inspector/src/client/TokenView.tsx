@@ -1,9 +1,10 @@
 /**
  * The Token 分布 tab: the request list on the left (one card per model call —
  * `#seq · responseSummary`, 输入/输出 tok · 耗时, 缓存命中 + the mini bar) and
- * the selected request's composition on the right (anchor row, category
- * stacked bar + legend filter, the four-segment detail). The list collapses
- * to a horizontal strip when the panel narrows (one layout, container query).
+ * the selected request's composition on the right (config line, category
+ * stacked bar + legend filter, the 输入 four-segment detail, then the 输出
+ * section with the request's own response). The list collapses to a
+ * horizontal strip when the panel narrows (one layout, container query).
  *
  * @module @khorsheed/dsh-request-inspector/client
  */
@@ -13,7 +14,7 @@ import type {
 } from '../types.ts'
 import { aggregateCategories, cachePct, fmt, fmtDur, fmtK, inputTotal, summaryText } from './aggregate.ts'
 import type { InspectorTabProps } from './contract.ts'
-import { SegmentBlocks, categoryLabelKey } from './SegmentBlocks.tsx'
+import { OutputBlock, SegmentBlocks, categoryLabelKey } from './SegmentBlocks.tsx'
 import css from './TokenView.module.css'
 
 /** The panel's translate face. */
@@ -54,7 +55,7 @@ function RequestCard({ request, selected, onSelect, t }: {
   )
 }
 
-/** The detail's anchor line: 本次响应 → … · 输出 N tok · Ns ｜ config · provider/model · maxTokens. */
+/** The detail header's config line: config · provider/model · maxTokens. */
 function anchorConfigText(request: CapturedRequest, t: T): string {
   const parts: string[] = []
   const route = [request.config.provider, request.config.model].filter(part => part !== undefined && part.length > 0).join('/')
@@ -72,13 +73,15 @@ export interface TokenViewProps {
   readonly request: CapturedRequest | null
   /** The legend's category filter. */
   readonly filterCat: SegmentCategory | null
+  /** The previous request's seq in this scope (the 新增 provenance label); null when none exists. */
+  readonly previousResponseSeq: number | null
   readonly onSelect: (seq: number) => void
   readonly onToggleFilter: (category: SegmentCategory) => void
   readonly t: T
 }
 
 /** The token tab body. */
-export function TokenView({ scope, selectedSeq, request, filterCat, onSelect, onToggleFilter, t }: TokenViewProps): ReactNode {
+export function TokenView({ scope, selectedSeq, request, filterCat, previousResponseSeq, onSelect, onToggleFilter, t }: TokenViewProps): ReactNode {
   const selectedItem = scope.requests.find(candidate => candidate.seq === selectedSeq) ?? scope.requests[0]
   const cats = request === null ? [] : aggregateCategories(request)
   const shownChars = cats.reduce((n, cat) => n + cat.chars, 0)
@@ -113,10 +116,6 @@ export function TokenView({ scope, selectedSeq, request, filterCat, onSelect, on
                 </span>
               </div>
               <div className={css.anchor}>
-                {t('detail.anchor')} → <b className={css.mono}>{summaryText(request.responseSummary, t('resp.directAnswer'))}</b>
-                {usage !== undefined && ` · ${t('req.output')} ${fmt(usage.outputTokens)} tok`}
-                {request.timing.totalMs !== undefined && ` · ${fmtDur(request.timing.totalMs)}`}
-                <span className={css.anchorSep}>|</span>
                 {t('detail.config')} · <span className={css.mono}>{anchorConfigText(request, t)}</span>
               </div>
               <div className={css.catbar} role="presentation">
@@ -157,7 +156,8 @@ export function TokenView({ scope, selectedSeq, request, filterCat, onSelect, on
               </span>
               <span className={css.mono}>{t('chain.chars', { count: fmt(shownChars) })}</span>
             </div>
-            <SegmentBlocks request={request} filterCat={filterCat} t={t} />
+            <SegmentBlocks request={request} filterCat={filterCat} previousResponseSeq={previousResponseSeq} t={t} />
+            <OutputBlock request={request} t={t} />
           </>
         )}
       </div>
