@@ -35,6 +35,27 @@ await ctx.sideChat.openWith({
 - **单向边**：消费方探测 `ctx.get('sideChat')`，在自己的 manifest `dsh.references` 登记服务名；side-chat 永不提及消费方。消费方缺席=它自己降级；side-chat 独立装卸。
 - **回合级新鲜度**：`openWith` 重复调用同一 contextKey **更新** systemPrompt 段（agent 作用域的 prompt section 在每次组装时重读记录，绝非创建时快照），同名工具在 live agent 上热替换，**绝不重建会话**。
 
+## 工作区接入接缝（服务端消费）
+
+把本包挂到**隔离 Context + 独立 stateRoot** 上是受支持的消费方式：挂载方在自己的 Context 上以本包的 `apply` + `config.stateRoot` 起一份独立实例——业务状态全部按实例绑定（`contexts.json` 落在实例自己的 state root 下），读取动词（`getState` / `listContexts` / `surfaceHints`）不需要任何会话。包的 inject 是 `agents` 与 `sessions`，挂载侧的 Context 必须提供；`fs` 缺席时状态退化为纯内存（不阻塞任何手势）。
+
+```ts
+import { apply } from '@khorsheed/dsh-sidechat'
+
+apply(isolatedCtx, {
+  stateRoot: '/path/to/instance-state/sidechat',
+  agentRoute: { provider: '…', model: '…' }, // 可选：显式执行路由
+  cwd: '/path/to/workdir',                   // 可选：显式 cwd 锚点
+})
+```
+
+挂载侧的义务与语义：
+
+- **执行落点由 Context 的 `agents` 服务决定**：侧边 agent 一律经 `ctx.agents.create/resume` 落地——`agents` 是谁，agent 就在哪里执行。模型路由解析链：**显式 `agentRoute` > 调用会话折叠请求头 > 探测的 `agentDefaultModel` 部署默认**；cwd 链：**显式 `cwd` > 来源会话 > 调用会话**。未配置时两条链都落到部署默认——所以「挂上了」不等于「隔离了」：挂载是否正确必须**以观察为准**（核对实际创建出的侧边会话的 route 与 cwd），不能靠假设。
+- **调用 agent 可选**：`ctx.sideChat.send(undefined, …)` 是无会话服务端调用方的形态——写入围栏按部署默认模式、不带 session id，路由/cwd 走显式配置或部署默认。无调用方且解析不到任何路由时 `send` 诚实拒绝 `agent-unavailable`，绝不创建一个「聋」agent；有调用方的旧行为不变（无路由照旧创建，turn 错误经 `lastError` 浮现）。`quoteMessage` 仍要求强制 calling（它引用的就是调用会话里的消息）。
+- **dispose 终态 + 同根重建**：`disposeAgents()` 幂等且终态——之后每个公开动词（含读取）都以带码的包名错误 `SideChatDisposedError`（`code: 'disposed'`）拒绝；与 dispose 竞态的 in-flight 创建/恢复在落地时被当即 dispose——句柄不泄漏，调用方收到同一个 disposed 错误。同根重建合法：同一 `stateRoot` 上新建服务实例照常工作（死掉的只是旧实例）。
+- **本地行为零变化**：不配新键、照常传 calling 时，语义与之前逐字节一致。
+
 ## Remote（`remote.sidechat`）
 
 | 动词 | 说明 |
