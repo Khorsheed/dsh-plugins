@@ -27,6 +27,7 @@
     "src/client/ChapterBook.tsx",
     "src/client/CardSection.tsx",
     "src/client/write-row.ts",
+    "src/client/novel-turn.ts",
     "src/client/WriteToolRow.tsx",
     "src/client/index.ts"
   ]

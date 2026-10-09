@@ -145,3 +145,11 @@
   background: var(--dsw-alias-brand-primary);
   color: var(--dsw-alias-label-primary-inverted);
 }
+
+/* The Turn tail's stack of cards, beneath the closing prose. */
+.tail {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
