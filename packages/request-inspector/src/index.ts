@@ -1,8 +1,11 @@
 /**
  * Request-inspector plugin, host half: provides the capture service core and
- * mounts its Remote face. All capture rides read-only waterfall/event
- * listeners (`llm/stream`, `system-prompt/assemble`, `session/event`) — the
- * plugin observes requests, it never rewrites them.
+ * mounts its Remote face. All capture rides read-only listeners — the
+ * `llm/stream` waterfall tee, `system-prompt/assemble` section attribution,
+ * `session/event` turn/tool correlation — plus a lazy child-log lane through
+ * `sessionPersistence` for fresh-process subagent runs. The plugin observes
+ * requests; it never rewrites them, and a capture failure never touches the
+ * model path.
  *
  * @module @khorsheed/dsh-request-inspector
  */
@@ -22,9 +25,9 @@ export const name = 'request-inspector'
 /**
  * Plugin body: provide the service core, then mount the Remote data face.
  *
- * No `static inject`: the capture listeners probe their seams at apply time
- * and degrade to an empty panel when a seam is absent, so the row boots in
- * any composition.
+ * No `static inject`: every seam the capture touches is an event name or a
+ * probed service, so a composition missing one (no persistence backend, a host
+ * without these events) simply yields an empty panel instead of a failed boot.
  *
  * @param ctx - owning Cordis context.
  * @param config - optional plugin config.

@@ -41,7 +41,11 @@ export type SegmentCategory =
 
 /** One message row inside a request's four-segment breakdown. */
 export interface SegmentItem {
-  /** Position in the wire message stream (0-based across the whole request). */
+  /**
+   * Position in the wire message stream (0-based across the whole request).
+   * `-1` marks the one-shot system slot (`GenerateOptions.system`), which sits
+   * ahead of the message array rather than inside it.
+   */
   index: number
   category: SegmentCategory
   /** 角色/来源标签：model、runtime-context、skill-catalog、section 名等。 */
@@ -50,7 +54,11 @@ export interface SegmentItem {
   toolCalls?: string[]
   /** Single-line preview (whitespace-collapsed). */
   preview: string
-  /** Verbatim full text — the panel's expand affordance shows exactly this. */
+  /**
+   * Verbatim full text — the panel's expand affordance shows exactly this.
+   * Assistant rows carry a JSON string `{reasoning?, text?, calls?}` (calls
+   * keep the raw argument JSON); every other role is its plain text.
+   */
   full: string
   /** Exact character count of `full`. */
   chars: number

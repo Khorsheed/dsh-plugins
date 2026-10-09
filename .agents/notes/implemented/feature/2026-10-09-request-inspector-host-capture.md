@@ -1,0 +1,38 @@
+# Agent Note: request-inspector host capture — three in-process lanes + the child-log lane
+
+Status: implemented
+
+## Problem
+
+The request-inspector panel answers "what exactly went to the model in each call of this turn": system section attribution, tool definitions, the history/added split, six-bucket timing, and subagent runs' requests. The host's only full-fidelity observation point is the `llm/stream` waterfall, but three facts make "attach a listener" insufficient:
+
+- **`subagent_dsh` one-shot children run in a fresh child process** (packages/subagent/subagent-dsh-sdk/src/run.ts); the parent's waterfall never sees their requests, so they must be reconstructed from the child's on-disk session log.
+- **LOOP-built requests arrive deep-frozen** (`markAgentLoopRequest`); any write from the capture side throws. Capture must be purely read-only, and a capture bug must never break the model path.
+- **System-prompt section attribution has no direct carrier**: the waterfall's `GenerateOptions.messages[0]` holds only the rendered prompt text; the section boundaries live in the `system-prompt/assemble` waterfall, and neither side carries the other's identity.
+
+## Decision
+
+Four lanes feed one in-memory ring store (`InspectorStore`, session → turn → agent scope → request):
+
+- **The `llm/stream` tee**: the listener returns a tee generator that re-yields every chunk unchanged (never mutating the frozen options) while recording block-start/end timing, usage, and tool-call identity. Any capture-side throw is contained: a setup failure degrades to the bare `next()` stream, and a mid-stream failure only drops further observations.
+- **Read-only `system-prompt/assemble` listening**: record the post-`next()` assembly (sections + variables), interpolate it with the host's own render rules, and **content-match** it against the request's system messages — an exact match splits the row into named sections, a miss keeps one unattributed row. Attribution is presentation, never worth faking.
+- **`session/event` carries correlation**: `turn/start|end` bracket turns, `user/message` gives the query preview, `assistant/message` gives `closingMessageId` and backfills history rows' generation time, `tool/call → tool/result` pairs by callId into tool-exec timing (attributed to the request whose response issued the call), and `subagent/catalog` opens the child scope and binds it to the pending delegation call in order.
+- **The child-log lane**: probe `ctx.get('sessionPersistence')` structurally, `open(childId, 'read')`, and fold events incrementally (a cursor resumes at the consumed offset) — every `assistant/message` with usage is a completed request, every `assistant/attempt` a failed one. One-shot child logs carry **no** `request/header` and no system message, so those fields stay honest empty states (config `{}`, empty system/tools arrays) rather than fabrications. The two lanes are mutually exclusive per scope: whichever fills first (`live` vs `logFilled`) owns the scope.
+- **Purpose requests go to a pseudo-turn bucket**: aux calls carrying `purpose` (compaction / session-title) are not conversation steps even mid-turn; they accumulate in a per-session pseudo-turn keyed by purpose, and purpose-less requests with no open turn land in an `ad-hoc` bucket.
+- **History/added is a longest-common-prefix diff** against the scope's previous request — durable message ids where present, content hashes otherwise; a compaction-rewritten prefix reads as all-new, which is exactly what changed from the model's seat.
+- **Eviction is turn-granular**: `maxTurnsPerSession` (20) and `maxRequestsTotal` (200) both evict only closed turns; a turn holding a live stream is skipped, so the caps are soft while streams are open.
+
+Timing model: per request, the six buckets (wait = dispatch→first chunk; reasoning/toolArgs/text = block sums; toolExec = tool/call→result; total = dispatch→settle). The turn view partitions each request's [startedAt, settledAt] into strictly ordered lanes (wait + per-block + gaps and the settle tail as `other`), inserts tool-exec lanes at their real times, and aggregates per tool with argsMs taken from that call's tool-call block generation time.
+
+## Alternatives considered
+
+- **Decode `session.v4.jsonl.zstd` directly (porting the zstd frame scan)**: the reference script extract-novel.mjs does this. But the persistence root layout, the format-version chain, and torn-tail recovery are `sessionPersistence` internals; reading files directly copies a private protocol that drifts. The cost: the read path refuses a whole log containing an unknown non-`ignorable` event type — the scope then keeps zero requests with one warn.
+- **Resolving the session from the assemble scope key**: `carrierKeyOf` reaches the agent instance and `.id`, but the key choice is agent-loop's private selection; content matching stays decoupled from scope internals, and a false match on identical prompts is harmless (identical text means identical attribution).
+- **Ignoring `assistant/attempt` events (the reference's choice)**: rejected — failed/retried calls are exactly what the panel must surface, and the finish chunk's failure carries the error text.
+
+## Consequences
+
+- Scope discipline: a known child session's events and requests fill only the parent session's scope; no separate child-session view is built (opening the child session directly shows an empty panel in M1 — a declared boundary).
+- Child logs are read at panel query time (listTurns/getTurn/getRequest refresh incrementally first); there is no background polling. `SessionPersistenceNotFoundError` is transient (the child process has not materialized yet); any other read failure marks that child durably broken and stops retrying.
+- `scripts/check-plugin-independence.ts` gained `'request-inspector': ['@khorsheed/dsh-client-ui-panel-kit']` in `ALLOWED_EDGES`: the scaffold already declared that devDep (the panel kit, used by the client milestone), and the checker's own comment names this list as the registry for the pattern.
+- Two pre-existing gate failures are unrelated to this change and stay with their milestones: `check-panels` (the M0 client has no PanelRoot yet) and `generate-package-map` (docs/packages.md does not list the new package yet).

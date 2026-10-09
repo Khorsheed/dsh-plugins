@@ -6,10 +6,14 @@
     "tsBuildInfoFile": "lib/tsconfig.host.tsbuildinfo"
   },
   "files": [
+    "src/child-log.ts",
     "src/index.ts",
     "src/invariant.ts",
+    "src/messages.ts",
     "src/remote.ts",
+    "src/segmenter.ts",
     "src/service.ts",
+    "src/store.ts",
     "src/types.ts"
   ]
 }
