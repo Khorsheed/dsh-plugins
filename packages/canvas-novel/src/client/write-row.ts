@@ -7,7 +7,8 @@
  * A chapter answer (`tools.ts`) names the chapter and the canvas:
  * `已登记第 7 章《回响》（画布 canvas_x）plan：走向 4 拍 / 伏笔 2 条 / 出场 3 人。…`
  * or, without a plan, `已建第 7 章《回响》（画布 canvas_x · 规划中 · …）。`.
- * An outline proposal names its canvas: `已提交大纲提议（画布 canvas_x），…`.
+ * An outline proposal names its canvas: `已提交大纲提议（画布 canvas_x），…`; a
+ * settled `novel_extract` import its chapter: `第 7 章已对账（画布 canvas_x）。`.
  * Every other answer (a review) is a plain line. A note may come first (the
  * workspace a body attached), so the chapter line is looked for on any line.
  *
@@ -38,11 +39,13 @@ export interface WriteRowChapter {
 
 /** What the row shows. */
 export interface WriteRowModel {
-  /** `running` — no answer yet; `failed` — an error answer; `line` — a plain answer; `chapter` — a chapter answer; `outline` — an outline proposal. */
-  readonly state: 'running' | 'failed' | 'line' | 'chapter' | 'outline'
+  /** `running` — no answer yet; `failed` — an error answer; `line` — a plain answer; `chapter` — a chapter answer; `outline` — an outline proposal; `extracted` — a settled `novel_extract` import. */
+  readonly state: 'running' | 'failed' | 'line' | 'chapter' | 'outline' | 'extracted'
   readonly chapter: WriteRowChapter | null
   /** The canvas an outline proposal went to (`outline` only). */
   readonly canvasId?: string
+  /** The new cards a settled import landed (`extracted` only). */
+  readonly newCards?: number
   /** The answer's text. */
   readonly text: string
 }
@@ -50,6 +53,8 @@ export interface WriteRowModel {
 const CHAPTER = /^已(登记|建)第 (\d+) 章《(.*?)》（画布 ([^\s）·]+)/m
 const OUTLINE = /^已提交大纲提议（画布 (canvas_[a-z0-9]+)）/m
 const COUNTS = /走向 (\d+) 拍 \/ 伏笔 (\d+) 条 \/ 出场 (\d+) 人/
+const EXTRACTED = /^第 (\d+) 章已对账（画布 ([^\s）·]+)）/m
+const NEW_CARDS = /新卡 ×(\d+)/
 
 /**
  * Read one block.
@@ -64,6 +69,15 @@ export function writeRowModel(block: NovelToolBlock | null | undefined, phase?: 
     .join('')
     .trim()
   if (block?.isError === true || text.startsWith('失败：')) return { state: 'failed', chapter: null, text }
+  const extracted = EXTRACTED.exec(text)
+  if (extracted !== null) {
+    return {
+      state: 'extracted',
+      chapter: { canvasId: extracted[2]!, n: Number(extracted[1]), title: '', counts: null },
+      newCards: Number(NEW_CARDS.exec(text)?.[1] ?? 0),
+      text,
+    }
+  }
   const outline = OUTLINE.exec(text)
   if (outline !== null) return { state: 'outline', chapter: null, canvasId: outline[1]!, text }
   const match = CHAPTER.exec(text)

@@ -1,5 +1,6 @@
 /**
- * The chapter plans and outline proposals a Turn registered, published
+ * The chapter plans and outline proposals a Turn registered, and the
+ * chapters it reconciled (a settled `novel_extract` import), published
  * against that Turn so their cards render in the Turn tail, beneath the
  * closing prose.
  *
@@ -25,13 +26,15 @@ import { writeRowModel, type NovelToolBlock, type WriteRowModel } from './write-
 
 /** The tool whose settled results the tail shows. */
 export const WRITE_TOOL = 'novel_write'
+/** The 对账 tool: its settled import shows as a 已对账 card. */
+export const EXTRACT_TOOL = 'novel_extract'
 
 /** The Turn-data key this package publishes. */
 export const NOVEL_TURN_KEY = 'canvas-novel-asks'
 
-/** One thing a Turn asked the person to decide: a chapter plan or an outline proposal. */
+/** One thing a Turn asked the person to decide: a chapter plan, an outline proposal, or a reconciled chapter to review. */
 export interface NovelTurnAsk {
-  /** Dedup key: `chapter:<canvas>:<n>` or `outline:<canvas>`. */
+  /** Dedup key: `chapter:<canvas>:<n>`, `outline:<canvas>` or `extract:<canvas>:<n>`. */
   readonly key: string
   readonly seq?: number
   readonly row: WriteRowModel
@@ -74,11 +77,14 @@ function turnOf(event: EventLike): number | null {
   return typeof turn === 'number' ? turn : null
 }
 
-/** The ask one settled `novel_write` result names, or undefined (a review, a failure). */
+/** The ask one settled `novel_write` / `novel_extract` result names, or undefined (a review, a prepare, a failure). */
 export function askOf(block: NovelToolBlock, seq?: number): NovelTurnAsk | undefined {
   const row = writeRowModel(block)
   if (row.state === 'chapter' && row.chapter !== null) {
     return { key: `chapter:${row.chapter.canvasId}:${row.chapter.n}`, ...(seq === undefined ? {} : { seq }), row }
+  }
+  if (row.state === 'extracted' && row.chapter !== null) {
+    return { key: `extract:${row.chapter.canvasId}:${row.chapter.n}`, ...(seq === undefined ? {} : { seq }), row }
   }
   if (row.state === 'outline' && row.canvasId !== undefined) {
     return { key: `outline:${row.canvasId}`, ...(seq === undefined ? {} : { seq }), row }
@@ -108,7 +114,7 @@ export const novelTurnDefinition = {
     const data = record(event.data)
     if (data === null) return context.state
     if (event.type === 'tool/call') {
-      if (data['name'] !== WRITE_TOOL) return context.state
+      if (data['name'] !== WRITE_TOOL && data['name'] !== EXTRACT_TOOL) return context.state
       return { ...context.state, calls: new Set([...context.state.calls, String(data['callId'])]) }
     }
     if (event.type !== 'tool/result') return context.state

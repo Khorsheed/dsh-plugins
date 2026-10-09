@@ -42,7 +42,7 @@ import {
   normalizeAnnotations, normalizeChapter, normalizeHistoryEntry, PLOT_FIELDS, plotDiff, plotOf, normalizePendingItem, normalizePlan, normalizeWorkId, NOVEL_GENRE_ID,
   nextMilestoneOf, normalizeRelationEntry, OP_TO_MENTION, parseRef, PTS_PER_LEVEL, MAX_RELATION_DELTA, readRelationStage,
   refGroupOf, refOf, relationEventOf, relationMove, typeChangeOf, relationProgress, relationTypeOf, stageNameOf, RELATION_TYPES,
-  type Annotations, type CardNote, type ChapterPlan, type ChapterRecord, type ChapterRow, type ChapterTable, type CharacterView, type Confidence,
+  isOptionalPending, type Annotations, type CardNote, type ChapterPlan, type ChapterRecord, type ChapterRow, type ChapterTable, type CharacterView, type Confidence,
   type CurrentState, type EffectiveChapterPhase, type HistoryChange, type HistoryEntry, type HistorySource, type EntryRole, type ExperienceEntry, type ExtractPayload,
   type ForeshadowView, type ImportDrop, type ImportReport, type LedgerResult, type MentionEntry, type NovelError,
   type PendingItem, type PendingKind, type PendingPayload, type PendingTable, type RefGroup, type RelationEntry, type RelationEvent,
@@ -51,6 +51,7 @@ import {
   emptyOutline, normalizeOutline, normalizeSheet, normalizeSketches, normalizeVolumes, parseReveal, parseVolumeToken,
   type OutlineDoc, type OutlineProposal, type OutlineSheet, type OutlineVolume,
 } from './types.ts'
+import { changedPlanFields, type PlanField } from './text-forms.ts'
 
 /** The state directory name under `$DSH_HOME/state`. */
 export const NOVEL_STATE_DIR_NAME = 'novel'
@@ -1373,9 +1374,9 @@ export class NovelService {
   /**
    * The person's own edit of a chapter plan, saved and confirmed in one
    * gesture (the chapter page's 保存并确认, 2026-10-09). The edit IS the
-   * confirmation: the person wrote this version. Only a chapter still in
-   * planning takes one — once text exists the plan is what the text was
-   * checked against — and a 用户原稿 never has a plan.
+   * confirmation: the person wrote this version. Only a plan not yet written
+   * against takes one (a chapter in planning, or a re-plan still awaiting
+   * the person) — a 用户原稿 never has a plan.
    * @param request - work id, chapter number, the raw plan (the text form, parsed by the caller).
    * @param session - the session that owns the gesture; supplies the fence.
    * @returns the fresh record, or the failure code (`unknown` names foreshadow handles that resolve to no card).
@@ -1383,7 +1384,7 @@ export class NovelService {
   async editPlan(
     request: { readonly workId: string; readonly n: number; readonly plan: unknown },
     session: Session,
-  ): Promise<{ readonly ok: boolean; readonly error?: NovelError; readonly chapter?: ChapterRecord; readonly unknown?: readonly string[] }> {
+  ): Promise<{ readonly ok: boolean; readonly error?: NovelError; readonly chapter?: ChapterRecord; readonly unknown?: readonly string[]; readonly changed?: readonly PlanField[] }> {
     const workId = normalizeWorkId(request.workId)
     if (workId === undefined) return { ok: false, error: 'invalid-name' }
     const rawPlan = normalizePlan(request.plan)
@@ -1391,6 +1392,7 @@ export class NovelService {
     const resolved = await this.resolvePlan(workId, rawPlan)
     if ('unknown' in resolved) return { ok: false, error: 'unknown-foreshadow', unknown: resolved.unknown }
     let chapter: ChapterRecord | undefined
+    let previous: ChapterPlan | undefined
     const outcome = await this.mutateJson(
       await this.fileTarget(workId, WORK_FILES.chapters), session,
       raw => normalizeChapterTable(raw),
@@ -1399,7 +1401,10 @@ export class NovelService {
         const row = table.chapters.find(candidate => candidate.n === request.n)
         if (row === undefined) return 'missing'
         if (row.byUser === true) return 'plan-on-draft'
-        if (row.phase !== 'planning') return 'not-extracted'
+        // A plan the text was already checked against stays; a re-plan that
+        // still waits on the person (a rewrite) is theirs to edit.
+        if (row.phase !== 'planning' && row.planConfirmedAt !== undefined) return 'not-extracted'
+        previous = row.plan
         const mutable = row as { -readonly [K in keyof ChapterRecord]: ChapterRecord[K] }
         mutable.plan = resolved.plan
         mutable.planConfirmedAt = now
@@ -1410,7 +1415,7 @@ export class NovelService {
       },
     )
     if (!outcome.ok || chapter === undefined) return { ok: false, error: outcome.ok ? 'io' : outcome.error }
-    return { ok: true, chapter }
+    return { ok: true, chapter, changed: changedPlanFields(previous, resolved.plan) }
   }
 
   /**
@@ -1446,6 +1451,25 @@ export class NovelService {
       },
     )
     if (!outcome.ok || chapter === undefined) return { ok: false, error: outcome.ok ? 'io' : outcome.error }
+    // A suspected mention outside the plan is optional (it never holds the
+    // gate): left unhandled at 审过, it reads as no mention at all.
+    const items = await this.readPendingItems(workId)
+    if (items.some(item => isOptionalPending(item) && item.chapter === request.n && item.status === 'pending')) {
+      await this.mutateJson(
+        await this.fileTarget(workId, WORK_FILES.pending), session,
+        raw => normalizePendingTable(raw),
+        undefined,
+        (table, now) => {
+          for (const row of table.items) {
+            if (!isOptionalPending(row) || row.chapter !== request.n || row.status !== 'pending') continue
+            const mutable = row as { -readonly [K in keyof PendingItem]: PendingItem[K] }
+            mutable.status = 'discarded'
+            mutable.resolvedAt = now
+          }
+          return table
+        },
+      )
+    }
     return { ok: true, chapter }
   }
 
@@ -1940,7 +1964,10 @@ export class NovelService {
       const confidence = confidenceOf(raw.confidence)
       const note = cleanText(raw.note, 200)
       const answer = cleanText(raw.answer, 500)
-      if (confidence === 'high') {
+      // A mention of a foreshadow the confirmed plan moved records whatever
+      // the confidence: the person already agreed to it in the plan, and a
+      // second ask in 待审 was the same question twice (2026-10-09).
+      if (confidence === 'high' || plannedIds.has(foreshadowId)) {
         recordedMentions.push({ id: foreshadowId, kind: mentionKind })
         touch.set(foreshadowId, { kind: mentionKind, ...(answer === undefined ? {} : { answer }) })
         journalLines.push({

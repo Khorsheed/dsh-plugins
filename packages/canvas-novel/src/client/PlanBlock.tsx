@@ -1,6 +1,8 @@
 /**
  * One chapter's plan as the reader meets it. It changes role with the
- * chapter: while planning it is the lead (open, with 「✓ 确认计划」); once
+ * chapter: while planning it is the lead (open, with 「✓ 确认计划」 and
+ * 「编辑计划」 — the plan as its text lines, saved and confirmed at once,
+ * after which the conversation input is prefilled with what changed); once
  * there is text it folds to one line so the text leads; after extraction that
  * line says how much of the plan the text carried, and each beat and
  * foreshadow op is marked ✓ or ✗ (a missed op is also in 待审; a missed beat
@@ -17,7 +19,7 @@ const OP_KEYS = { 推进: 'plan.op.advance', 暗示: 'plan.op.hint', 新埋: 'pl
 const MARK_KEYS = { 转折: 'plan.mark.turn', 落点: 'plan.mark.land' } as const
 
 /** The plan block; the empty line when the chapter has no plan, nothing for the person's own draft (its 原稿 tag says so). */
-export function PlanBlock({ chapter, phase, names, words, canConfirm, busy, onConfirm, t }: {
+export function PlanBlock({ chapter, phase, names, words, canConfirm, busy, onConfirm, planText, onSave, t }: {
   readonly chapter: ChapterRecord
   readonly phase: EffectiveChapterPhase
   /** The chapter's 目标字数 (its plan's, else the outline's per-chapter default). */
@@ -27,6 +29,10 @@ export function PlanBlock({ chapter, phase, names, words, canConfirm, busy, onCo
   readonly canConfirm: boolean
   readonly busy: boolean
   readonly onConfirm: () => void
+  /** The plan as editable lines; with `onSave`, the plan can be edited in place while it leads. */
+  readonly planText?: string
+  /** Save the edited lines (saving confirms); resolves to an error line, or null when saved. */
+  readonly onSave?: (text: string) => Promise<string | null>
   readonly t: TranslateNS<'novel'>
 }): ReactNode {
   // A plan waiting on the person leads whatever the phase: a chapter re-planned
@@ -35,10 +41,13 @@ export function PlanBlock({ chapter, phase, names, words, canConfirm, busy, onCo
   const awaiting = chapter.plan !== undefined && chapter.planConfirmedAt === undefined && chapter.byUser !== true
   const lead = phase === 'planning' || awaiting
   const [open, setOpen] = useState(lead)
+  const [draft, setDraft] = useState<string | null>(null)
+  const [editError, setEditError] = useState<string | null>(null)
   const plan = chapter.plan
   if (chapter.byUser === true && plan === undefined) return null
   if (plan === undefined) return <div className={css.planEmpty}>{t('chapter.noPlan')}</div>
   const confirmed = chapter.planConfirmedAt !== undefined
+  const editable = canConfirm && planText !== undefined && onSave !== undefined
   const delivery = chapter.delivery
   const named = (id: string): string => names[id] ?? id
   const opsMissed = delivery === undefined ? 0 : delivery.ops.filter(hit => !hit).length
@@ -60,7 +69,34 @@ export function PlanBlock({ chapter, phase, names, words, canConfirm, busy, onCo
         </span>
         <span className={css.planChev}>›</span>
       </button>
-      {open && (
+      {open && draft !== null && (
+        <div className={css.planBody}>
+          <textarea
+            className={css.planEditor}
+            value={draft}
+            aria-label={t('plan.edit')}
+            onChange={event => { setDraft(event.target.value) }}
+          />
+          <div className={css.planActs}>
+            <button
+              type="button"
+              className={css.confirm}
+              disabled={busy || draft.trim() === ''}
+              onClick={() => {
+                void onSave?.(draft).then(failure => {
+                  setEditError(failure)
+                  if (failure === null) setDraft(null)
+                })
+              }}
+            >{t('plan.saveConfirm')}</button>
+            <button type="button" className={css.planEditBtn} disabled={busy} onClick={() => { setDraft(null); setEditError(null) }}>{t('plan.cancel')}</button>
+            {editError !== null
+              ? <span className={css.warn}>{editError}</span>
+              : <span className={css.muted}>{t('plan.editHint')}</span>}
+          </div>
+        </div>
+      )}
+      {open && draft === null && (
         <div className={css.planBody}>
           {words !== undefined && <Budget words={words} beats={plan.beats.length} actual={chapter.wordCount} t={t} />}
           <p className={css.gist}>{plan.summary}</p>
@@ -129,11 +165,21 @@ export function PlanBlock({ chapter, phase, names, words, canConfirm, busy, onCo
           {lead && (
             <div className={css.planActs}>
               {confirmed
-                ? <span className={css.done}>{t('plan.readyToWrite')}</span>
+                ? (
+                  <>
+                    <span className={css.done}>{t('plan.readyToWrite')}</span>
+                    {editable && (
+                      <button type="button" className={css.planEditBtn} disabled={busy} onClick={() => { setDraft(planText!) }}>{t('plan.edit')}</button>
+                    )}
+                  </>
+                )
                 : (
                   <>
                     {canConfirm && (
                       <button type="button" className={css.confirm} disabled={busy} onClick={onConfirm}>{t('chapter.confirmPlan')}</button>
+                    )}
+                    {editable && (
+                      <button type="button" className={css.planEditBtn} disabled={busy} onClick={() => { setDraft(planText!) }}>{t('plan.edit')}</button>
                     )}
                     <span className={css.muted}>{t('plan.confirmHint')}</span>
                   </>

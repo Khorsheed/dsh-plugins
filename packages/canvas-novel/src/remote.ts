@@ -15,10 +15,11 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { NovelService, WorkEntries } from './store.ts'
+import { planFromText, planToText } from './text-forms.ts'
 import {
   coreSuspenseNudge, revealText, revealVolume, targetWordsOf,
   type CharacterView, type LedgerResult, type NovelCardRequest, type NovelCardResult, type NovelChapterRequest, type NovelChapterResult, type NovelChaptersResult,
-  type NovelDecideRequest, type NovelGestureResult, type NovelOutlineDecideRequest, type NovelOutlineResult, type NovelPendingResult, type NovelStarRequest, type NovelStateRequest,
+  type NovelDecideRequest, type NovelGestureResult, type NovelOutlineDecideRequest, type NovelOutlineResult, type NovelPendingResult, type NovelPlanEditRequest, type NovelPlanEditResult, type NovelStarRequest, type NovelStateRequest,
   type NovelWorkRequest, type OutlineCore, type OutlineHero, type PendingItem, type PendingView, type StoryLogResult,
 } from './types.ts'
 
@@ -120,9 +121,13 @@ export class NovelRemoteService extends TypertRemoteService<NovelRemoteConfig> {
       const name = id === undefined ? undefined : known.get(id)
       if (id !== undefined && name !== undefined) names[id] = name
     }
+    // The edit box writes cards the way a person does: a foreshadow by its
+    // ref (its label opens with it), a character by name.
+    const handleOf = (id: string): string => entries?.foreshadows.find(view => view.cardId === id)?.ref ?? known.get(id) ?? id
     return {
       ok: true,
       chapter: read.chapter,
+      ...(plan === undefined ? {} : { planText: planToText(plan, handleOf) }),
       ...(read.phase === undefined ? {} : { phase: read.phase }),
       body: read.body ?? '',
       pending: items.filter(item => item.chapter === request.n).length,
@@ -203,6 +208,14 @@ export class NovelRemoteService extends TypertRemoteService<NovelRemoteConfig> {
   async confirmPlan(agent: Agent, request: NovelChapterRequest): Promise<NovelGestureResult> {
     const result = await this.core.confirmChapterPlan({ workId: request.canvasId, n: request.n }, agent.session)
     return result.ok ? { ok: true } : { ok: false, error: result.error ?? 'io' }
+  }
+
+  /** The person's own edit of a plan (the page's edit box), saved and confirmed at once. */
+  @Remote('editPlan')
+  async editPlan(agent: Agent, request: NovelPlanEditRequest): Promise<NovelPlanEditResult> {
+    const result = await this.core.editPlan({ workId: request.canvasId, n: request.n, plan: planFromText(request.text) }, agent.session)
+    if (!result.ok) return { ok: false, error: result.error ?? 'io', ...(result.unknown === undefined ? {} : { unknown: result.unknown }) }
+    return { ok: true, changed: result.changed ?? [] }
   }
 
   /** One card's engine side: its role, the star (foreshadows), 此刻, 出场 and 关系 (characters), the bar (relations). */

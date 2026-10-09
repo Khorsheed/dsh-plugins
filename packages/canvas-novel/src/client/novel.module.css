@@ -1396,6 +1396,38 @@
 
 .done { color: var(--dsw-alias-state-business-primary); }
 
+.planEditBtn {
+  flex: none;
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 8px;
+  background: transparent;
+  font: var(--dsh-panel-text-body, 13px)/1.5 var(--dsw-font-family);
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+}
+
+.planEditBtn:disabled { opacity: 0.6; cursor: default; }
+
+/* The edit box: the plan as the lines the model writes, monospace-free so
+   Chinese reads naturally, tall enough to hold a whole plan. */
+.planEditor {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 320px;
+  padding: 10px 12px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-l1, transparent);
+  font: var(--dsh-panel-text-body, 13px)/1.7 var(--dsw-font-family);
+  color: var(--dsw-alias-label-primary);
+  resize: vertical;
+}
+
+.planEditor:focus { outline: none; border-color: var(--dsw-alias-brand-primary); }
+
 /* ── Text ───────────────────────────────────────────────────────────── */
 
 /* The text is read, not scanned: the host's sans one step up from the panel's

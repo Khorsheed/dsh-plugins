@@ -400,6 +400,9 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
         ].join('\n')
       }
       const lines = [
+        // The first line names the chapter and the canvas: the conversation's
+        // 已对账 card reads them off the answer (client/write-row.ts).
+        `第 ${args.chapter} 章已对账（画布 ${resolved.workId}）。`,
         `计划命中 ✓×${report.verified} / 计划落空 ×${report.missed}${report.beats.missed === 0 ? '' : ` / 走向没写到 ×${report.beats.missed}（只提醒，不进待审）`} / 新卡 ×${report.newCards.length}${report.linked === 0 ? '' : ` / 关联已有设定 ×${report.linked}`} / 待你确认 ×${report.pending}${report.dropped.length === 0 ? '' : ` / 丢弃 ×${report.dropped.length}`}`,
       ]
       if (report.newCards.length > 0) {

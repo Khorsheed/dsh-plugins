@@ -7,7 +7,7 @@ import { Context } from '@deepseek-ai/cordis'
 import type { Session } from '@deepseek-ai/dsh-session'
 import { describe, expect, it } from 'vitest'
 import { NovelService, refTokensOf } from '../src/store.ts'
-import { isPlanText, outlineFromText, planFromText } from '../src/text-forms.ts'
+import { changedPlanFields, isPlanText, outlineFromText, planFromText, planToText } from '../src/text-forms.ts'
 import { novelToolDefinitions } from '../src/tools.ts'
 import { normalizePlan } from '../src/types.ts'
 import { provideCanvas } from './fake-canvas.ts'
@@ -145,6 +145,28 @@ describe('confirming and editing a plan', () => {
     expect(edited.ok).toBe(true)
     expect(edited.chapter?.plan?.summary).toBe('改过的梗概。')
     expect(edited.chapter?.planConfirmedAt).toBeDefined()
+    expect(edited.changed).toEqual(expect.arrayContaining(['summary', 'beats', 'foreshadowOps', 'cast', 'hook']))
     expect((await store.editPlan({ workId: DREAM.workId, n, plan: planFromText('梗概：x\n伏笔：推进 #99：y') }, SESSION)).error).toBe('unknown-foreshadow')
+  })
+
+  it('writes a plan back as the lines it reads, cards by ref and name', () => {
+    const plan = normalizePlan(planFromText(PLAN))!
+    const text = planToText(plan, id => id === '#5' ? '#5' : id)
+    expect(text).toContain('- 入夜｜按上一章摸到的办法入梦')
+    expect(text).toContain('- 相遇｜神灵叫出他的名字（转折）')
+    expect(text).toContain('- 推进 #5：叶子发光')
+    expect(text).toContain('- 新埋：另一个做梦者是谁')
+    expect(text).toContain('- 赵启明（视角）：慌但好奇')
+    expect(normalizePlan(planFromText(text))).toEqual(plan)
+    expect(changedPlanFields(plan, normalizePlan(planFromText(text.replace('叶子在白天', '叶子在夜里')))!)).toEqual(['hook'])
+  })
+
+  it('takes an edit of a re-plan still waiting on the person, never of a plan the text was checked against', async () => {
+    const { store, write } = await bench()
+    await write({ what: 'chapter', title: '入梦', content: PLAN.replace('#5', 'c_doorGap') })
+    const n = (await store.listChapters({ workId: DREAM.workId })).at(-1)!.chapter.n
+    await store.confirmChapterPlan({ workId: DREAM.workId, n }, SESSION)
+    // Confirmed and still in planning (no text yet): the person may still edit.
+    expect((await store.editPlan({ workId: DREAM.workId, n, plan: planFromText('梗概：再改。') }, SESSION)).ok).toBe(true)
   })
 })

@@ -9,6 +9,7 @@
  *
  * @module @khorsheed/dsh-canvas-novel
  */
+import type { ChapterPlan } from './types.ts'
 
 /** One `键：值` line (full- or half-width colon), or undefined. */
 function keyValueOf(line: string): { key: string; value: string } | undefined {
@@ -197,4 +198,60 @@ export function planFromText(text: string): Record<string, unknown> {
   }
   if (lists['infoGaps'] !== undefined) plan['infoGaps'] = lists['infoGaps'].map(gapOf).filter(gap => gap !== undefined)
   return plan
+}
+
+/** One line of a plan field: newlines folded, so a value never spills into the next key. */
+function oneLine(value: string): string {
+  return value.replace(/\s*\n+\s*/g, ' ').trim()
+}
+
+/**
+ * A chapter plan as the lines {@link planFromText} reads back — the chapter
+ * page's edit box (2026-10-09). Card ids become what a person writes: a
+ * foreshadow its ref (`#2`), a character its name.
+ * @param plan - the stored plan.
+ * @param handleOf - a card id's handle (ref for foreshadows, name for characters); the id when unknown.
+ * @returns the plan as `键：值` lines and `- …` items.
+ */
+export function planToText(plan: ChapterPlan, handleOf: (id: string) => string): string {
+  const lines: string[] = [`梗概：${oneLine(plan.summary)}`]
+  if (plan.words !== undefined) lines.push(`目标字数：${plan.words}`)
+  if (plan.beats.length > 0) {
+    lines.push('走向：')
+    for (const beat of plan.beats) {
+      lines.push(`- ${beat.at === undefined ? '' : `${oneLine(beat.at)}｜`}${oneLine(beat.text)}${beat.mark === undefined ? '' : `（${beat.mark}）`}`)
+    }
+  }
+  if (plan.conflict !== undefined) lines.push(`冲突：${oneLine(plan.conflict)}`)
+  if (plan.highlight !== undefined) lines.push(`看点：${oneLine(plan.highlight)}`)
+  if (plan.foreshadowOps.length > 0) {
+    lines.push('伏笔：')
+    for (const op of plan.foreshadowOps) {
+      if (op.op === '新埋') lines.push(`- 新埋：${oneLine(op.question ?? op.note ?? '')}`)
+      else lines.push(`- ${op.op}${op.id === undefined ? '' : ` ${handleOf(op.id)}`}${op.note === undefined ? '' : `：${oneLine(op.note)}`}`)
+    }
+  }
+  if (plan.cast.length > 0) {
+    lines.push('出场：')
+    for (const member of plan.cast) {
+      lines.push(`- ${handleOf(member.who)}${member.who === plan.pov ? '（视角）' : ''}${member.role === undefined ? '' : `：${oneLine(member.role)}`}`)
+    }
+  } else if (plan.pov !== undefined) {
+    lines.push(`视角：${handleOf(plan.pov)}`)
+  }
+  if (plan.infoGaps !== undefined && plan.infoGaps.length > 0) {
+    lines.push('信息差：')
+    for (const gap of plan.infoGaps) lines.push(`- ${handleOf(gap.who)} 得知：${oneLine(gap.fact)}`)
+  }
+  if (plan.hook !== undefined) lines.push(`章末钩子：${oneLine(plan.hook)}`)
+  return lines.join('\n')
+}
+
+/** The plan fields, in the order the page shows them (the keys an edit summary names). */
+export const PLAN_FIELDS = ['summary', 'words', 'beats', 'conflict', 'highlight', 'foreshadowOps', 'cast', 'pov', 'infoGaps', 'hook'] as const
+export type PlanField = typeof PLAN_FIELDS[number]
+
+/** Which fields an edit changed. */
+export function changedPlanFields(before: ChapterPlan | undefined, after: ChapterPlan): PlanField[] {
+  return PLAN_FIELDS.filter(field => JSON.stringify(before?.[field] ?? null) !== JSON.stringify(after[field] ?? null))
 }
