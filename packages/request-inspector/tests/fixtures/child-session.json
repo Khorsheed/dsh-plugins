@@ -1,0 +1,2713 @@
+[
+ {
+  "type": "permission/preset",
+  "seq": 0,
+  "time": 1791483619056,
+  "data": {
+   "preset": "danger-full-access"
+  }
+ },
+ {
+  "type": "sandbox/mode",
+  "seq": 1,
+  "time": 1791483619057,
+  "data": {
+   "mode": "danger-full-access"
+  }
+ },
+ {
+  "type": "approval/policy",
+  "seq": 2,
+  "time": 1791483619057,
+  "data": {
+   "policy": "never"
+  }
+ },
+ {
+  "type": "subagent/descriptor",
+  "seq": 3,
+  "time": 1791483619060,
+  "data": {
+   "version": 3,
+   "mode": "one-shot",
+   "provider": "dsh-cli",
+   "label": "dsh: 第一章对账 JSON 提取"
+  }
+ },
+ {
+  "type": "turn/start",
+  "seq": 4,
+  "time": 1791483620216,
+  "data": {
+   "turn": 1
+  }
+ },
+ {
+  "type": "step/start",
+  "seq": 5,
+  "time": 1791483620262,
+  "data": {
+   "turn": 1,
+   "step": 1
+  }
+ },
+ {
+  "type": "user/message",
+  "seq": 6,
+  "time": 1791483620264,
+  "data": {
+   "content": [
+    {
+     "type": "text",
+     "text": "你是长篇小说的记忆对账员。先用 read 工具读取正文文件 /home/user/work/幻梦境/第1章.md（约 3400 字），全部读完再开始。\n\n输入：该正文、下方本章计划、活跃伏笔榜、角色花名册、关系榜。\n输出：严格 JSON（schema 在最后），不要输出任何 JSON 以外的文…"
+    }
+   ],
+   "source": {
+    "kind": "user"
+   },
+   "role": "user",
+   "id": "16bfb4ef-300e-47b6-86d1-7eec58457acd"
+  },
+  "surfaceOp": "append"
+ },
+ {
+  "type": "session/title",
+  "seq": 7,
+  "time": 1791483620265,
+  "data": {
+   "title": "你是长篇小说的记忆对账员。",
+   "messageSeqs": [
+    6
+   ],
+   "source": {
+    "kind": "fallback"
+   }
+  }
+ },
+ {
+  "type": "local-agent/stream",
+  "seq": 8,
+  "time": 1791483625118,
+  "data": {
+   "id": "1:1:3a53aac0-a99f-4b86-b94c-eae5d7db6eb8:1:0",
+   "turn": 1,
+   "step": 1,
+   "kind": "think",
+   "text": "正在读取正文文件，准备按要求生成 JSON。",
+   "receivedAt": 1791483625067,
+   "sessionId": "3a53aac0-a99f-4b86-b94c-eae5d7db6eb8",
+   "opening": true,
+   "append": false
+  }
+ },
+ {
+  "type": "assistant/message",
+  "seq": 9,
+  "time": 1791483625202,
+  "data": {
+   "turn": 1,
+   "step": 1,
+   "message": {
+    "role": "assistant",
+    "content": [
+     {
+      "type": "reasoning",
+      "text": "正在读取正文文件，准备按要求生成 JSON。"
+     },
+     {
+      "type": "tool-call",
+      "id": "tool_j1TThGZnBlVy1Y0JIjJ4rrjy",
+      "name": "read",
+      "arguments": "{\"file_path\":\"/home/user/work/幻梦境/第1章.md\"}"
+     }
+    ],
+    "source": {
+     "kind": "model",
+     "provider": "kimi-coding",
+     "model": "k3",
+     "replayState": {
+      "response": {
+       "kind": "pi-ai",
+       "version": 2,
+       "api": "anthropic-messages",
+       "provider": "kimi-coding",
+       "model": "k3",
+       "responseId": "msg_p94sfRtmiHABZ8qeQEYtcoSb",
+       "stopReason": "toolUse"
+      },
+      "blocks": [
+       {
+        "type": "reasoning",
+        "thinkingSignature": "8uhf4UuVlzh08n2V3v23om/GE7ejW+pVP6RSr9h58uNKyBT2DCtd/MJB8DOt3dUoKl7l531orTOAMC/nFoC6CL85ajkRzHpkGqn1oYK9kjoaX1Fz5Qrxgvtqsyym2mCdAAaZYgW/OSw/PAO1XejhekW3kx3nEWpyqCiVN2+QKGjbDTiF7gIl7X4IKLTIu4Sh+WYNUwhmoBIK9/v57wmJ+P/Cf8S6a1nQr4yOESTWjdj+BEpLMxVcQwIkB7oZ8bdcfyBfL5McCVjrI+/IBkCJr1ZIo/Va3sJnyDfLuSZOvlztNbY6LJ9z+SJKt64/cGU+nD6mAuSDGPYlbjd23wtVGQUHqPEySEB1Fnky1gD+aV40e1zIW+eeQyW8dspLfUgX2nDCWEgFbX+rW5GVHPdUrHAg/x7yU2dKuTvncmFIBt3Sn25IbcLU5B/TgCl1/jo8Ct/MkMChSPQSu1ukIU8DbW8B7XfHPs8/nGcqy2N7n5UDqH1XQaq6edpQsuWHnM4u5cgnsLVWDYHivGPeFHyOdNvSdL49EJ93mDJSpgQ8Lj2kvNNBefj3BGk1PPP/rfpROusYM5Z0SXIirn01uQ4GlwaMCgsdhtjfwNgGjXBHiWXr1xaXYhYOC1P/iAkVcqHvV0pvTmLKfld+w416QQ+dgPmxtyrPFhi8n0de2lK96dMOiYdLkhM8sTvLshkQ21v8hLdJ+nOH21IwZfKHIOdQVrbkdWLTlokM6p/o5t4fgYCl/P1F+XPDqI9nzbJZ2bZddqMVnJNGLQpj1gQLD7qzK5fXtynWKZyNvPdKX7qwutCj5TZU7AE5pFRoC9+OAGeic83osGZqi/WBi7320o+6Iny0LFFZgcHFqR51x6bmDsYA0kH4Sc5oLjvlo1Iv9MuY1uRTcD5s5RZPFPZMcxwBkS5SicFRg15RkTGUXZHcYe9DIiBxAyr7y/r9hcFRVByBmfE2M3Ddk0SmXsTIz+/elLbieFNTirW9NpF2s5hs2fU02s/wRpbPQGIiJijwmhB6OiMsKFLQXcGTPYw1PGiNGK1Y80poRLcsIGjOxXH89NVvV4haiFo3iD6YXOtApSUuM35qSkAmG6Cr2JTmHbR7ddGpV3VB/VLe+pQMuh0ACeWXhKkZUHRtja461gDrrP5IsWCmZ3XC4NTxzk1uhat7iUDJonpFWALXZzoUimTSM5XVsxj1gSm3UutJRoxwKk1dNSSw+CswuRMcZ+y4y8iQ2NYjBfR9X/PlThcRRna05Z1KPgwEJWXQEoioDRYJYgVK7q/FKvOZPE3lVGXce2TmqntUlvFDgt3gfqSwAEgWUCW2Y0B6GsaC/tU0eDtLrj00nRGBlHUE796uQHNEPyJEAh3hMErl9pDvgSzprvVNoc8+VJENTsjdsAEFsfSATQBzzDVrHyEXK9blE691qBOPJ3S0VNVGloGukUJewNdQzEZfvfAeabVDEgGMi+u5yeUau/YRd/V6xiHKbaVuDKBiHlryTHeP9klOWp+p+g"
+       },
+       {
+        "type": "tool-call"
+       }
+      ]
+     }
+    },
+    "id": "a451a79e-70eb-4b0f-98d1-0cab283e7668"
+   },
+   "usage": {
+    "inputTokens": 1488,
+    "outputTokens": 86,
+    "totalTokens": 6694,
+    "cacheReadTokens": 5120
+   },
+   "stream": [
+    {
+     "type": "chunk",
+     "time": 1791483625066,
+     "chunk": {
+      "type": "block-start",
+      "index": 0,
+      "blockType": "reasoning"
+     }
+    },
+    {
+     "type": "reasoning-chunks",
+     "time0": 1791483625067,
+     "index": 0,
+     "dt": [
+      1,
+      1,
+      1,
+      1,
+      0,
+      1,
+      0,
+      1,
+      1,
+      2
+     ],
+     "texts": [
+      "正在",
+      "读取",
+      "正文",
+      "文件",
+      "，",
+      "准备",
+      "按",
+      "要求",
+      "生成",
+      " JSON",
+      "。"
+     ]
+    },
+    {
+     "type": "chunk",
+     "time": 1791483625076,
+     "chunk": {
+      "type": "block-end",
+      "index": 0,
+      "block": {
+       "type": "reasoning",
+       "text": "正在读取正文文件，准备按要求生成 JSON。"
+      }
+     }
+    },
+    {
+     "type": "chunk",
+     "time": 1791483625076,
+     "chunk": {
+      "type": "block-start",
+      "index": 1,
+      "blockType": "tool-call"
+     }
+    },
+    {
+     "type": "tool-call-chunks",
+     "time0": 1791483625077,
+     "index": 1,
+     "dt": [],
+     "id": "tool_j1TThGZnBlVy1Y0JIjJ4rrjy",
+     "name": "read",
+     "args": [
+      "{\"file_path\":\"/home/user/work/幻梦境/第1章.md\"}"
+     ]
+    },
+    {
+     "type": "chunk",
+     "time": 1791483625183,
+     "chunk": {
+      "type": "block-end",
+      "index": 1,
+      "block": {
+       "type": "tool-call",
+       "id": "tool_j1TThGZnBlVy1Y0JIjJ4rrjy",
+       "name": "read",
+       "arguments": "{\"file_path\":\"/home/user/work/幻梦境/第1章.md\"}"
+      }
+     }
+    },
+    {
+     "type": "chunk",
+     "time": 1791483625200,
+     "chunk": {
+      "type": "usage",
+      "usage": {
+       "inputTokens": 1488,
+       "outputTokens": 86,
+       "totalTokens": 6694,
+       "cacheReadTokens": 5120
+      }
+     }
+    },
+    {
+     "type": "chunk",
+     "time": 1791483625200,
+     "chunk": {
+      "type": "finish",
+      "reason": {
+       "kind": "tool-calls"
+      },
+      "replayState": {
+       "response": {
+        "kind": "pi-ai",
+        "version": 2,
+        "api": "anthropic-messages",
+        "provider": "kimi-coding",
+        "model": "k3",
+        "responseId": "msg_p94sfRtmiHABZ8qeQEYtcoSb",
+        "stopReason": "toolUse"
+       },
+       "blocks": [
+        {
+         "type": "reasoning",
+         "thinkingSignature": "8uhf4UuVlzh08n2V3v23om/GE7ejW+pVP6RSr9h58uNKyBT2DCtd/MJB8DOt3dUoKl7l531orTOAMC/nFoC6CL85ajkRzHpkGqn1oYK9kjoaX1Fz5Qrxgvtqsyym2mCdAAaZYgW/OSw/PAO1XejhekW3kx3nEWpyqCiVN2+QKGjbDTiF7gIl7X4IKLTIu4Sh+WYNUwhmoBIK9/v57wmJ+P/Cf8S6a1nQr4yOESTWjdj+BEpLMxVcQwIkB7oZ8bdcfyBfL5McCVjrI+/IBkCJr1ZIo/Va3sJnyDfLuSZOvlztNbY6LJ9z+SJKt64/cGU+nD6mAuSDGPYlbjd23wtVGQUHqPEySEB1Fnky1gD+aV40e1zIW+eeQyW8dspLfUgX2nDCWEgFbX+rW5GVHPdUrHAg/x7yU2dKuTvncmFIBt3Sn25IbcLU5B/TgCl1/jo8Ct/MkMChSPQSu1ukIU8DbW8B7XfHPs8/nGcqy2N7n5UDqH1XQaq6edpQsuWHnM4u5cgnsLVWDYHivGPeFHyOdNvSdL49EJ93mDJSpgQ8Lj2kvNNBefj3BGk1PPP/rfpROusYM5Z0SXIirn01uQ4GlwaMCgsdhtjfwNgGjXBHiWXr1xaXYhYOC1P/iAkVcqHvV0pvTmLKfld+w416QQ+dgPmxtyrPFhi8n0de2lK96dMOiYdLkhM8sTvLshkQ21v8hLdJ+nOH21IwZfKHIOdQVrbkdWLTlokM6p/o5t4fgYCl/P1F+XPDqI9nzbJZ2bZddqMVnJNGLQpj1gQLD7qzK5fXtynWKZyNvPdKX7qwutCj5TZU7AE5pFRoC9+OAGeic83osGZqi/WBi7320o+6Iny0LFFZgcHFqR51x6bmDsYA0kH4Sc5oLjvlo1Iv9MuY1uRTcD5s5RZPFPZMcxwBkS5SicFRg15RkTGUXZHcYe9DIiBxAyr7y/r9hcFRVByBmfE2M3Ddk0SmXsTIz+/elLbieFNTirW9NpF2s5hs2fU02s/wRpbPQGIiJijwmhB6OiMsKFLQXcGTPYw1PGiNGK1Y80poRLcsIGjOxXH89NVvV4haiFo3iD6YXOtApSUuM35qSkAmG6Cr2JTmHbR7ddGpV3VB/VLe+pQMuh0ACeWXhKkZUHRtja461gDrrP5IsWCmZ3XC4NTxzk1uhat7iUDJonpFWALXZzoUimTSM5XVsxj1gSm3UutJRoxwKk1dNSSw+CswuRMcZ+y4y8iQ2NYjBfR9X/PlThcRRna05Z1KPgwEJWXQEoioDRYJYgVK7q/FKvOZPE3lVGXce2TmqntUlvFDgt3gfqSwAEgWUCW2Y0B6GsaC/tU0eDtLrj00nRGBlHUE796uQHNEPyJEAh3hMErl9pDvgSzprvVNoc8+VJENTsjdsAEFsfSATQBzzDVrHyEXK9blE691qBOPJ3S0VNVGloGukUJewNdQzEZfvfAeabVDEgGMi+u5yeUau/YRd/V6xiHKbaVuDKBiHlryTHeP9klOWp+p+g"
+        },
+        {
+         "type": "tool-call"
+        }
+       ]
+      }
+     }
+    }
+   ]
+  },
+  "surfaceOp": "append"
+ },
+ {
+  "type": "tool/call",
+  "seq": 11,
+  "time": 1791483625203,
+  "data": {
+   "turn": 1,
+   "step": 1,
+   "callId": "tool_j1TThGZnBlVy1Y0JIjJ4rrjy",
+   "name": "read",
+   "arguments": "{\"file_path\":\"/home/user/work/幻梦境/第1章.md\"}"
+  }
+ },
+ {
+  "type": "tool/result",
+  "seq": 12,
+  "time": 1791483625221,
+  "data": {
+   "turn": 1,
+   "step": 1,
+   "message": {
+    "role": "tool",
+    "source": {
+     "kind": "tool",
+     "callId": "tool_j1TThGZnBlVy1Y0JIjJ4rrjy"
+    },
+    "toolCallId": "tool_j1TThGZnBlVy1Y0JIjJ4rrjy",
+    "content": [
+     {
+      "type": "text",
+      "text": "<path>/home/user/work/幻梦境/第1章.md</path>\n<type>file</type>\n<content>\n1: 数学老师在黑板上写第三道大题的时候，江眠已经把课本的页边画满了。\n2: …"
+     }
+    ],
+    "isError": false,
+    "id": "7f027d14-9fe5-4683-b731-d9a0a32a4e21"
+   },
+   "meta": {
+    "path": "/home/user/work/幻梦境/第1章.md",
+    "offset": 1,
+    "lines": [
+     {
+      "number": 1,
+      "text": "数学老师在黑板上写第三道大题的时候，江眠已经把课本的页边画满了。"
+     },
+     {
+      "number": 2,
+      "text": ""
+     },
+     {
+      "number": 3,
+      "text": "他画的是一条龙。不是课本插图里那种呆板的龙，是他自己编的那种——翅膀上有七根骨刺，第四根断了一半，断口处长出新的、更细的刺。他给这条龙设定过完整的来历，写在自己那个世界设定集的本子上：它是某个王国的最后一头坐骑，王国没了，它还在原地盘旋，因为没有人告诉它可以不用飞了。"
+     },
+     {
+      "number": 4,
+      "text": ""
+     },
+     {
+      "number": 5,
+      "text": "\"江眠。\""
+     },
+     {
+      "number": 6,
+      "text": ""
+     },
+     {
+      "number": 7,
+      "text": "他手一抖，笔尖在龙的尾巴上划出一道长线。"
+     },
+     {
+      "number": 8,
+      "text": ""
+     },
+     {
+      "number": 9,
+      "text": "\"上来讲讲，这道题你打算怎么解？\""
+     },
+     {
+      "number": 10,
+      "text": ""
+     },
+     {
+      "number": 11,
+      "text": "全班回过头。江眠站起来，看着黑板上那串函数，沉默了三秒钟。他其实会，上周许岩抄他作业的时候还抱怨过他步骤写得太省，但此刻那串数字在他眼里就是一堆灰色的符号，跟他课本页边上那条龙比起来，灰得没有一点血色。"
+     },
+     {
+      "number": 12,
+      "text": ""
+     },
+     {
+      "number": 13,
+      "text": "\"不会。\"他说。"
+     },
+     {
+      "number": 14,
+      "text": ""
+     },
+     {
+      "number": 15,
+      "text": "\"不会你还画得挺投入。\"老师把粉笔头扔进盒子里，\"下课把课本拿来我看看，看看你这一个学期画了多少页。\""
+     },
+     {
+      "number": 16,
+      "text": ""
+     },
+     {
+      "number": 17,
+      "text": "教室里响起压低的笑声。江眠坐下，脸上有点热，但不多。他低头看那道被划坏的龙尾，想着待会儿怎么把那条线改成一道疤——龙身上有疤很合理，王国都没了，哪能没有疤。"
+     },
+     {
+      "number": 18,
+      "text": ""
+     },
+     {
+      "number": 19,
+      "text": "一张折成方块的纸条从左边推过来，碰了碰他的手肘。"
+     },
+     {
+      "number": 20,
+      "text": ""
+     },
+     {
+      "number": 21,
+      "text": "他展开。林小满的字，又小又密，像印刷的："
+     },
+     {
+      "number": 22,
+      "text": ""
+     },
+     {
+      "number": 23,
+      "text": "\"这学期第四次。上次你说'再有下次我把笔吃了'。对吧？\""
+     },
+     {
+      "number": 24,
+      "text": ""
+     },
+     {
+      "number": 25,
+      "text": "江眠侧头看她。林小满坐得笔直，眼睛看着黑板，好像那张纸条跟她毫无关系，只有嘴角有一点点压不住的弧度。她的笔记本摊在桌上，边角上密密麻麻记的不是数学，是各种日期和琐事——江眠瞥见一行：\"十月十二，许岩又说梦话，喊了'稳住我们能赢'。\""
+     },
+     {
+      "number": 26,
+      "text": ""
+     },
+     {
+      "number": 27,
+      "text": "他在纸条背面写：\"笔是许岩的，你问他。\"推回去。"
+     },
+     {
+      "number": 28,
+      "text": ""
+     },
+     {
+      "number": 29,
+      "text": "林小满看完，面无表情地把纸条夹进笔记本，然后在那行\"许岩说梦话\"下面补了一行新的。江眠不用看也知道写的是什么。"
+     },
+     {
+      "number": 30,
+      "text": ""
+     },
+     {
+      "number": 31,
+      "text": "下课铃响的时候，老师把江眠的课本收走了，临走前翻了两页，停下来，多看了两眼那条断了骨刺的龙。"
+     },
+     {
+      "number": 32,
+      "text": ""
+     },
+     {
+      "number": 33,
+      "text": "\"画得是真不错。\"老师说，语气很复杂，\"你要是能把这心思分一半给函数……\""
+     },
+     {
+      "number": 34,
+      "text": ""
+     },
+     {
+      "number": 35,
+      "text": "\"那我就只能画出半条龙了。\"江眠说。"
+     },
+     {
+      "number": 36,
+      "text": ""
+     },
+     {
+      "number": 37,
+      "text": "老师看了他一眼，没接话，拿着课本走了。许岩从后排蹿过来，一巴掌拍在江眠肩上：\"半条龙，哈哈哈哈，你完了，这话明天就能传遍全年级。\""
+     },
+     {
+      "number": 38,
+      "text": ""
+     },
+     {
+      "number": 39,
+      "text": "\"传遍就传遍。\"江眠把笔帽咬开，\"反正说得也没错。\""
+     },
+     {
+      "number": 40,
+      "text": ""
+     },
+     {
+      "number": 41,
+      "text": "放学之后他们没直接回家。这是惯例——先去周舟家的诊所后面绕一圈，周舟她妈总会留点东西给他们，今天是卤鹌鹑蛋，装在一次性的塑料饭盒里，还温着。"
+     },
+     {
+      "number": 42,
+      "text": ""
+     },
+     {
+      "number": 43,
+      "text": "\"阿姨，我们就拿四个。\"周舟说。"
+     },
+     {
+      "number": 44,
+      "text": ""
+     },
+     {
+      "number": 45,
+      "text": "\"拿六个，一人一个半。\"她妈头也不抬地写病历，\"江眠多吃点，你看你瘦的。\""
+     },
+     {
+      "number": 46,
+      "text": ""
+     },
+     {
+      "number": 47,
+      "text": "\"她看谁都瘦。\"周舟小声说，把饭盒塞给江眠，\"上回她说许岩瘦。\""
+     },
+     {
+      "number": 48,
+      "text": ""
+     },
+     {
+      "number": 49,
+      "text": "许岩正往嘴里塞第三个鹌鹑蛋，含混不清地说：\"我这是精壮。\""
+     },
+     {
+      "number": 50,
+      "text": ""
+     },
+     {
+      "number": 51,
+      "text": "四个人在便利店门口的长椅上分完鹌鹑蛋，许岩就开始摩拳擦掌：\"今晚排位，必须排位，我们距离钻石就差——\""
+     },
+     {
+      "number": 52,
+      "text": ""
+     },
+     {
+      "number": 53,
+      "text": "\"差一百二十分。\"江眠说。"
+     },
+     {
+      "number": 54,
+      "text": ""
+     },
+     {
+      "number": 55,
+      "text": "\"对！就差一百二十分！\"许岩搂住他的脖子，\"眠哥，江神，你今晚只要拿出你上周那个状态，我们十一点之前就能——\""
+     },
+     {
+      "number": 56,
+      "text": ""
+     },
+     {
+      "number": 57,
+      "text": "\"我上周那个状态是因为对面打野不会玩。\""
+     },
+     {
+      "number": 58,
+      "text": ""
+     },
+     {
+      "number": 59,
+      "text": "\"那你今天也让对面打野不会玩啊！\""
+     },
+     {
+      "number": 60,
+      "text": ""
+     },
+     {
+      "number": 61,
+      "text": "林小满坐在长椅另一头，翻她的笔记本，头也不抬：\"他上周三也说'就差一点'，上上周六也说。对吧？\""
+     },
+     {
+      "number": 62,
+      "text": ""
+     },
+     {
+      "number": 63,
+      "text": "\"小满你这个本子是专门用来打击我们的吗？\"许岩凑过去想看，被她用手肘顶开。"
+     },
+     {
+      "number": 64,
+      "text": ""
+     },
+     {
+      "number": 65,
+      "text": "\"是记录。\"她把本子合上，\"事实不会因为你不高兴就改变。\""
+     },
+     {
+      "number": 66,
+      "text": ""
+     },
+     {
+      "number": 67,
+      "text": "那天晚上他们还是排了。在许岩家，四台手机，周舟玩辅助，死了就给大家削苹果。江眠玩打野，手比脑子快，一波团战他绕后切了三个，许岩在语音里喊得整栋楼都听得见。赢了，又赢了，第三局也赢了。十二点差一刻，段位真的上了钻石，许岩举着手机在房间里转圈，说要截图打印出来贴在床头。"
+     },
+     {
+      "number": 68,
+      "text": ""
+     },
+     {
+      "number": 69,
+      "text": "江眠靠在椅子上，看着屏幕里那个\"段位晋升\"的金色动画。动画做得挺好看的，金色的翅膀展开，碎成光点。他等自己心里那点高兴冒出来，等了一会儿，没等到。"
+     },
+     {
+      "number": 70,
+      "text": ""
+     },
+     {
+      "number": 71,
+      "text": "赢了也就这样。这个念头他不是第一次有了。最近半年，什么都是这样：漫画画完一页，也就这样；考试考得不错，也就这样；连许岩讲的最好笑的笑话，他笑完了，也就这样。好像所有事情都隔着一层玻璃，看得见，摸得着，就是传不到他这儿来。"
+     },
+     {
+      "number": 72,
+      "text": ""
+     },
+     {
+      "number": 73,
+      "text": "\"眠哥你发什么呆？\"许岩凑过来，\"上钻石了！你倒是激动一下啊！\""
+     },
+     {
+      "number": 74,
+      "text": ""
+     },
+     {
+      "number": 75,
+      "text": "\"激动。\"江眠面无表情地说。"
+     },
+     {
+      "number": 76,
+      "text": ""
+     },
+     {
+      "number": 77,
+      "text": "\"你太敷衍了！\""
+     },
+     {
+      "number": 78,
+      "text": ""
+     },
+     {
+      "number": 79,
+      "text": "周舟把削好的苹果递给他一瓣，笑着打圆场：\"他就这样，上次他漫画拿了区里的奖，也是这样，领完奖回来问我晚上吃什么。\""
+     },
+     {
+      "number": 80,
+      "text": ""
+     },
+     {
+      "number": 81,
+      "text": "\"因为那本来就不是什么大奖。\"江眠咬了口苹果，\"参与奖，人手一个。\""
+     },
+     {
+      "number": 82,
+      "text": ""
+     },
+     {
+      "number": 83,
+      "text": "\"那也是个奖啊。\"周舟说。"
+     },
+     {
+      "number": 84,
+      "text": ""
+     },
+     {
+      "number": 85,
+      "text": "林小满收拾好自己的东西，站在门口换鞋，忽然说了一句：\"他不是不高兴，他是没感觉。这两样不一样。对吧？\""
+     },
+     {
+      "number": 86,
+      "text": ""
+     },
+     {
+      "number": 87,
+      "text": "房间里安静了一秒。许岩看看她，又看看江眠。"
+     },
+     {
+      "number": 88,
+      "text": ""
+     },
+     {
+      "number": 89,
+      "text": "\"走了。\"林小满拉开门，\"明天早读，别迟到。\""
+     },
+     {
+      "number": 90,
+      "text": ""
+     },
+     {
+      "number": 91,
+      "text": "江眠回到家已经快一点。他冲了个澡，坐到书桌前，把台灯拧亮。草稿本摊开着，他答应过自己这周要把第四话的分镜画完——他的漫画讲的是一个住在灯塔里的男孩，每天晚上把掉进海里的星星捞起来，擦亮，再挂回天上去。画了三话，没有任何平台要他，他就发在自己的账号上，三十七个粉丝，其中一个是许岩的小号。"
+     },
+     {
+      "number": 92,
+      "text": ""
+     },
+     {
+      "number": 93,
+      "text": "他画了一会儿分镜。男孩的侧脸，海的弧度，星星落水时溅起来的光。画着画着他困了，笔尖在纸上点出一个个小墨点。他想，就睡十分钟。"
+     },
+     {
+      "number": 94,
+      "text": ""
+     },
+     {
+      "number": 95,
+      "text": "台灯还亮着。他趴在桌上睡着了。"
+     },
+     {
+      "number": 96,
+      "text": ""
+     },
+     {
+      "number": 97,
+      "text": "然后他站在一条走廊里。"
+     },
+     {
+      "number": 98,
+      "text": ""
+     },
+     {
+      "number": 99,
+      "text": "他知道这是梦，因为走廊没有灯，却不黑。墙壁是温润的灰白色，高得看不见顶，往上延伸进一片柔光里。走廊很静，静得能听见自己的呼吸，但不压抑，像图书馆闭馆前最后十分钟的那种静。"
+     },
+     {
+      "number": 100,
+      "text": ""
+     },
+     {
+      "number": 101,
+      "text": "走廊尽头有一扇门。"
+     },
+     {
+      "number": 102,
+      "text": ""
+     },
+     {
+      "number": 103,
+      "text": "不是普通的门。它太大了，门板是某种深色的木头，上面没有花纹，却让人觉得上面有读不完的东西。门关着，但没有关严，留着一道缝。"
+     },
+     {
+      "number": 104,
+      "text": ""
+     },
+     {
+      "number": 105,
+      "text": "风从门缝里吹出来。"
+     },
+     {
+      "number": 106,
+      "text": ""
+     },
+     {
+      "number": 107,
+      "text": "那是江眠这辈子——包括醒着的时候——感受过的最真实的风。它有温度，有一点潮湿，带着某种花的味道，还有一种他说不上来的、属于\"别的地方\"的气息。风里裹着声音：远远的歌声，调子很旧，像什么人哄孩子睡觉时唱的；还有马蹄声，或者是什么更大的动物的脚步声，一下，一下，震得地面发麻；还有人声，市集一样的人声，吵吵嚷嚷，热气腾腾。"
+     },
+     {
+      "number": 108,
+      "text": ""
+     },
+     {
+      "number": 109,
+      "text": "他走到门前，凑近那道缝。"
+     },
+     {
+      "number": 110,
+      "text": ""
+     },
+     {
+      "number": 111,
+      "text": "他看见了一角天空。那天空是黄昏的颜色，但天上挂着的东西不对——太大，太近，像一颗沉在橘色海水里的星球。天空下面是一座城，或者一片原野，他看不清全貌，只看见光，一层一层的、活的、会呼吸的光。"
+     },
+     {
+      "number": 112,
+      "text": ""
+     },
+     {
+      "number": 113,
+      "text": "他把脸贴得更近，想看得再多一点——"
+     },
+     {
+      "number": 114,
+      "text": ""
+     },
+     {
+      "number": 115,
+      "text": "他醒了。"
+     },
+     {
+      "number": 116,
+      "text": ""
+     },
+     {
+      "number": 117,
+      "text": "台灯还亮着，胳膊压麻了，半边脸印着袖口的褶子。窗外天蒙蒙亮，手机显示五点四十。他做了个梦，他想，一个特别清楚的梦，清楚得他现在还能闻到那股带花香的风。"
+     },
+     {
+      "number": 118,
+      "text": ""
+     },
+     {
+      "number": 119,
+      "text": "然后他看见了摊在桌上的草稿本。"
+     },
+     {
+      "number": 120,
+      "text": ""
+     },
+     {
+      "number": 121,
+      "text": "他睡前画到一半的分镜被翻过去了，现在摊开的是新的一页。页面上是一幅完整的素描：一条走廊尽头的门，门缝里透出光，光的后面是一角黄昏的天空，天空里挂着一颗沉在橘色海水里的、巨大而安静的星球。"
+     },
+     {
+      "number": 122,
+      "text": ""
+     },
+     {
+      "number": 123,
+      "text": "画得比他好。透视、光影、那颗星球沉在天空里的质感，全都比他好，好得不像话。笔却就是他的笔——桌上那支铅笔的笔尖磨秃了一大截，他右手食指的指侧全是黑黑的铅笔灰，蹭得像刚从煤堆里拿出来。"
+     },
+     {
+      "number": 124,
+      "text": ""
+     },
+     {
+      "number": 125,
+      "text": "江眠坐在那儿，看着那幅画，看了很久。"
+     },
+     {
+      "number": 126,
+      "text": ""
+     },
+     {
+      "number": 127,
+      "text": "走廊，门，门缝里的风，风里的歌声。全都对得上。除了一个问题——"
+     },
+     {
+      "number": 128,
+      "text": ""
+     },
+     {
+      "number": 129,
+      "text": "他不记得自己画过。"
+     }
+    ],
+    "totalLines": 129,
+    "lang": "md"
+   }
+  },
+  "sourceEventSeqs": [
+   11
+  ],
+  "surfaceOp": "append"
+ },
+ {
+  "type": "step/end",
+  "seq": 13,
+  "time": 1791483625223,
+  "data": {
+   "turn": 1,
+   "step": 1
+  }
+ },
+ {
+  "type": "step/start",
+  "seq": 14,
+  "time": 1791483625238,
+  "data": {
+   "turn": 1,
+   "step": 2
+  }
+ },
+ {
+  "type": "assistant/message",
+  "seq": 21,
+  "time": 1791483688639,
+  "data": {
+   "turn": 1,
+   "step": 2,
+   "message": {
+    "role": "assistant",
+    "content": [
+     {
+      "type": "reasoning",
+      "text": "将“给角色完整来历”列为本章原则，并指出主角首次进入幻梦境的暗示及对应证据。记录两条预示，列出四位角色经历与c1当前状态。记录 c1 清晨惊醒并质疑素描来源、麻木感；c2 许岩家聚会后兴奋追分；c3 …"
+     },
+     {
+      "type": "text",
+      "text": "```json\n{\n  \"beats_delivered\": [\n    { \"beat\": 1, \"evidence_in_text\": \"江眠已经把课本的页边画满了\" },\n    { \"beat…"
+     }
+    ],
+    "source": {
+     "kind": "model",
+     "provider": "kimi-coding",
+     "model": "k3",
+     "replayState": {
+      "response": {
+       "kind": "pi-ai",
+       "version": 2,
+       "api": "anthropic-messages",
+       "provider": "kimi-coding",
+       "model": "k3",
+       "responseId": "msg_ItIZGP25ggBaXa1arOz6t4ES",
+       "stopReason": "stop"
+      },
+      "blocks": [
+       {
+        "type": "reasoning",
+        "thinkingSignature": "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"
+       },
+       {
+        "type": "text"
+       }
+      ]
+     }
+    },
+    "id": "a1a59b87-7fe3-47ee-8649-df0dcc6c4f23"
+   },
+   "usage": {
+    "inputTokens": 2619,
+    "outputTokens": 2774,
+    "totalTokens": 11793,
+    "cacheReadTokens": 6400
+   },
+   "stream": [
+    {
+     "type": "chunk",
+     "time": 1791483640307,
+     "chunk": {
+      "type": "block-start",
+      "index": 0,
+      "blockType": "reasoning"
+     }
+    },
+    {
+     "type": "reasoning-chunks",
+     "time0": 1791483640309,
+     "index": 0,
+     "dt": [
+      0,
+      0,
+      1,
+      0,
+      1,
+      0,
+      0,
+      1,
+      1,
+      0,
+      0,
+      0,
+      1,
+      1,
+      0,
+      0,
+      0,
+      0,
+      21946,
+      2,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      1,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      4,
+      0,
+      0,
+      0,
+      2,
+      1,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      47,
+      1,
+      0,
+      0,
+      0,
+      0,
+      7,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0
+     ],
+     "texts": [
+      "将",
+      "“",
+      "给",
+      "角色",
+      "完整",
+      "来",
+      "历",
+      "”",
+      "列",
+      "为",
+      "本",
+      "章",
+      "原则",
+      "，并",
+      "指出",
+      "主",
+      "角",
+      "首次",
+      "进入",
+      "幻",
+      "梦",
+      "境",
+      "的",
+      "暗",
+      "示",
+      "及",
+      "对应",
+      "证",
+      "据",
+      "。",
+      "记录",
+      "两",
+      "条",
+      "预",
+      "示",
+      "，",
+      "列",
+      "出",
+      "四",
+      "位",
+      "角色",
+      "经历",
+      "与",
+      "c",
+      "1",
+      "当前",
+      "状态",
+      "。",
+      "记录",
+      " ",
+      "c",
+      "1",
+      " ",
+      "清",
+      "晨",
+      "惊",
+      "醒",
+      "并",
+      "质",
+      "疑",
+      "素",
+      "描",
+      "来源",
+      "、",
+      "麻",
+      "木",
+      "感",
+      "；",
+      "c",
+      "2",
+      " ",
+      "许",
+      "岩",
+      "家",
+      "聚",
+      "会",
+      "后",
+      "兴",
+      "奋",
+      "追",
+      "分",
+      "；",
+      "c",
+      "3",
+      " ",
+      "回",
+      "家",
+      "路",
+      "上",
+      "冷",
+      "静",
+      "关注",
+      "江",
+      "眠",
+      "；",
+      "c",
+      "4",
+      " ",
+      "在",
+      "许",
+      "岩",
+      "家",
+      "维护",
+      "小",
+      "团",
+      "体",
+      "氛",
+      "围",
+      "；",
+      "建立",
+      " ",
+      "c",
+      "1",
+      "‑",
+      "c",
+      "2",
+      "、",
+      "c",
+      "1",
+      "‑",
+      "c",
+      "3",
+      "、",
+      "c",
+      "1",
+      "‑",
+      "c",
+      "4",
+      " ",
+      "友情",
+      "关系",
+      "；",
+      "准备",
+      " ",
+      "2",
+      "‑",
+      "3",
+      " ",
+      "句",
+      "章节",
+      "摘要",
+      "；",
+      "补",
+      "充",
+      "两",
+      "条",
+      "世界",
+      "记",
+      "忆",
+      "与",
+      "相",
+      "应",
+      "证",
+      "据",
+      "。",
+      "I",
+      "’m",
+      " sorry",
+      ",",
+      " but",
+      " I",
+      " can",
+      "’t",
+      " access",
+      " the",
+      " file",
+      " at",
+      " ",
+      "/",
+      "Users",
+      "/",
+      "zh",
+      "uy",
+      "udan",
+      "/code",
+      "/W",
+      "riting",
+      "/",
+      "幻",
+      "梦",
+      "境",
+      "/",
+      "第",
+      "1",
+      "章",
+      ".md",
+      ".",
+      " Could",
+      " you",
+      " paste",
+      " the",
+      " chapter",
+      " text",
+      " or",
+      " share",
+      " the",
+      " key",
+      " excerpts",
+      " here",
+      "?"
+     ]
+    },
+    {
+     "type": "chunk",
+     "time": 1791483662411,
+     "chunk": {
+      "type": "block-end",
+      "index": 0,
+      "block": {
+       "type": "reasoning",
+       "text": "将“给角色完整来历”列为本章原则，并指出主角首次进入幻梦境的暗示及对应证据。记录两条预示，列出四位角色经历与c1当前状态。记录 c1 清晨惊醒并质疑素描来源、麻木感；c2 许岩家聚会后兴奋追分；c3 …"
+      }
+     }
+    },
+    {
+     "type": "chunk",
+     "time": 1791483662411,
+     "chunk": {
+      "type": "block-start",
+      "index": 1,
+      "blockType": "text"
+     }
+    },
+    {
+     "type": "text-chunks",
+     "time0": 1791483662411,
+     "index": 1,
+     "dt": [
+      0,
+      73,
+      1,
+      1,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      7,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      1,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      9920,
+      0,
+      1,
+      1,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      7,
+      1,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      50,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      1,
+      0,
+      1,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      3,
+      0,
+      0,
+      1,
+      0,
+      0,
+      1,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      9737,
+      2,
+      2,
+      1,
+      0,
+      0,
+      0,
+      0,
+      2,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      65,
+      1,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      6210,
+      1,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      54,
+      1,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      1,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0
+     ],
+     "texts": [
+      "```",
+      "json\n{\n ",
+      " \"beats_delivered",
+      "\": [\n    {",
+      " \"beat\": ",
+      "1, \"ev",
+      "idence_in_text\":",
+      " \"江眠已经把",
+      "课本的页边",
+      "画满了\" },\n",
+      "    { \"beat",
+      "\": 1",
+      ", \"evidence",
+      "_in_text\": \"",
+      "一张折成方",
+      "块的纸条从左边",
+      "推过来，碰",
+      "了碰他的手肘",
+      "\" },\n    {",
+      " \"beat\": ",
+      "2, \"ev",
+      "idence_in_text\":",
+      " \"先去周舟",
+      "家的诊所后面绕",
+      "一圈，周舟",
+      "她妈总会留",
+      "点东西给他们\" },\n",
+      "    { \"beat",
+      "\": 2,",
+      " \"evidence_in",
+      "_text\": \"他",
+      "等自己心里那点高兴",
+      "冒出来，等",
+      "了一会儿，没等到",
+      "\" },\n    {",
+      " \"beat\": ",
+      "3",
+      ", \"ev",
+      "idence_in_text\":",
+      " \"走廊尽头有一",
+      "扇门\"",
+      " },\n    { \"",
+      "beat\": 3",
+      ", \"ev",
+      "idence_in_text\":",
+      " \"风里裹着声音",
+      "：远远的歌声，",
+      "调子很旧",
+      "，",
+      "像什么人哄孩子",
+      "睡觉时唱的\" },\n",
+      "    { \"beat",
+      "\": 4,",
+      " \"evidence_in",
+      "_text\": \"他不",
+      "记得自己画过",
+      "\" }\n  ],\n",
+      "  \"info_g",
+      "aps_closed\": [],\n",
+      "  \"memories",
+      "\": [\n    {",
+      " \"kind\": \"",
+      "世界\", \"name",
+      "\": \"梦境走廊",
+      "与门",
+      "\", \"world_kind",
+      "\": \"地点\",",
+      " \"content\": \"",
+      "梦中",
+      "一条",
+      "无",
+      "灯却不",
+      "黑",
+      "、高不见",
+      "顶的灰白走廊",
+      "，尽头有一",
+      "扇过大的",
+      "深色木门，关",
+      "着但没",
+      "关严，门",
+      "缝透出风",
+      "、歌声、马蹄",
+      "与人",
+      "声。\",",
+      " \"ev",
+      "idence_in_text\":",
+      " \"墙壁",
+      "是温润的灰白色",
+      "，高得看不见",
+      "顶，往上延伸",
+      "进一片柔光",
+      "里\" },\n   ",
+      " { \"kind\":",
+      " \"世界\", \"",
+      "name\": \"门",
+      "后的世界\", \"",
+      "world_kind\": \"",
+      "地点\", \"content",
+      "\": \"门",
+      "缝后露",
+      "出一角黄昏天空",
+      "，挂着",
+      "一颗太大",
+      "太近、像沉",
+      "在橘色海水",
+      "里的星球；",
+      "下方有城或",
+      "原野，有一层",
+      "一层",
+      "活的、会呼吸",
+      "的光。\", \"ev",
+      "idence_in_text\":",
+      " \"那天空是",
+      "黄昏的颜色，但",
+      "天上挂着的东西不对",
+      "——太大，太近",
+      "\" },\n    {",
+      " \"kind\": \"",
+      "世界\", \"name",
+      "\": \"周舟",
+      "家的诊所\", \"",
+      "world_kind\": \"",
+      "地点\", \"content",
+      "\": \"四人",
+      "放学",
+      "后的惯例去处",
+      "，周舟妈妈",
+      "总会",
+      "留吃的",
+      "给他们，今天是",
+      "卤鹌鹑蛋。\",",
+      " \"evidence_in",
+      "_text\": \"今天是",
+      "卤鹌鹑蛋，装",
+      "在一次性的塑料饭盒",
+      "里，还",
+      "温着\" },\n",
+      "    { \"kind",
+      "\": \"世界\",",
+      " \"name\": \"",
+      "江眠的漫画",
+      "《灯塔男孩",
+      "》\", \"world",
+      "_kind\": \"其他",
+      "\", \"content\":",
+      " \"江眠自",
+      "编的",
+      "连载漫画：",
+      "住",
+      "灯塔的男孩",
+      "每晚捞起",
+      "掉进海里的星星",
+      "擦亮挂",
+      "回天上。画",
+      "了三话，无",
+      "平台签约，发",
+      "在个人账号，",
+      "仅",
+      "37",
+      "个粉丝。\",",
+      " \"evidence_in",
+      "_text\": \"三十",
+      "七个粉丝，其中",
+      "一个是许岩的小",
+      "号\" },\n   ",
+      " { \"kind\":",
+      " \"世界\", \"",
+      "name\": \"世界",
+      "设定集本子\",",
+      " \"world_kind\":",
+      " \"道具\", \"",
+      "content\": \"江",
+      "眠专门",
+      "记录自创",
+      "设定的本子",
+      "，他为",
+      "课本",
+      "上",
+      "画的",
+      "断",
+      "刺",
+      "龙写过",
+      "完整",
+      "来历：",
+      "亡国",
+      "坐骑",
+      "，",
+      "原地",
+      "盘旋。\",",
+      " \"evidence_in",
+      "_text\": \"写",
+      "在自己那个世界设定",
+      "集的本子上\"",
+      " },\n    { \"",
+      "kind\": \"原则",
+      "\", \"name\":",
+      " \"给笔下意象",
+      "完整的",
+      "来历与",
+      "内在逻辑\", \"",
+      "content",
+      "\": \"江",
+      "眠的创作",
+      "习惯：哪怕是",
+      "涂鸦",
+      "也要",
+      "设定",
+      "完整来历（",
+      "断",
+      "刺",
+      "龙",
+      "是",
+      "王国",
+      "最后一头坐骑），",
+      "细节",
+      "损伤",
+      "也要",
+      "符合",
+      "逻辑",
+      "（把",
+      "划",
+      "坏的线",
+      "改成疤，",
+      "因为王国没了哪能",
+      "没有",
+      "疤）。\",",
+      " \"ev",
+      "idence_in_text\":",
+      " \"龙身上有疤",
+      "很合理，王国",
+      "都没了，哪能没有",
+      "疤\" }\n ",
+      " ],\n  \"fore",
+      "shadow_mentions\":",
+      " [\n    { \"",
+      "foreshadow_id\":",
+      " \"#8\",",
+      " \"kind\": \"",
+      "hinted\", \"",
+      "note\": \"江",
+      "眠清晰",
+      "梦见走廊与",
+      "门（",
+      "幻",
+      "梦境的",
+      "入口意象），梦境",
+      "真实得",
+      "醒来后",
+      "还能",
+      "闻到花香的风",
+      "，读者",
+      "会",
+      "追问",
+      "这是否是第一次",
+      "接触",
+      "幻梦境。\",",
+      " \"confidence\": \"",
+      "medium\", \"ev",
+      "idence_in_text\":",
+      " \"一个",
+      "特别清楚的梦，",
+      "清楚得他现在还能",
+      "闻到那股带花香",
+      "的风\" }\n ",
+      " ],\n  \"new",
+      "_foreshadows\":",
+      " [\n    { \"",
+      "question\": \"那",
+      "幅比",
+      "江眠水平",
+      "高",
+      "得多",
+      "、用",
+      "他自己的",
+      "笔画",
+      "出的",
+      "门后风景",
+      "素描，究竟",
+      "是谁画的？\",",
+      " \"ev",
+      "idence_in_text\":",
+      " \"他不记得自己",
+      "画过\" },\n",
+      "    { \"question",
+      "\": \"门",
+      "后的",
+      "世界是什么？江",
+      "眠若",
+      "再",
+      "入",
+      "梦，能否",
+      "推开那扇门走进去",
+      "？\", \"evidence",
+      "_in_text\": \"",
+      "他把脸贴得更",
+      "近，想看得",
+      "再多一点——\"",
+      " }\n  ],\n ",
+      " \"new_characters",
+      "\": [],\n  \"",
+      "experiences\": [\n",
+      "    { \"character",
+      "_id\": \"",
+      "c1\", \"",
+      "entry\": \"上午",
+      "课上",
+      "画龙被抓",
+      "包",
+      "、课本被收",
+      "走；晚上带队",
+      "打上",
+      "钻石却",
+      "毫无喜悦",
+      "；深夜",
+      "画",
+      "分镜时",
+      "睡着",
+      "梦见",
+      "门",
+      "后的",
+      "世界，清晨",
+      "发现草稿本上多",
+      "了一幅",
+      "自己不",
+      "记得画过的素描",
+      "。\", \"confidence",
+      "\": \"high\",",
+      " \"evidence_in",
+      "_text\": \"他",
+      "睡前画到",
+      "一半的分镜被",
+      "翻过去了，现在",
+      "摊开的是新的一页",
+      "\" },\n    {",
+      " \"character_id\":",
+      " \"c2\",",
+      " \"entry\": \"",
+      "放学拉江眠",
+      "组队排位冲",
+      "钻石，夜里",
+      "如愿",
+      "晋级，",
+      "兴奋得",
+      "举着手机转",
+      "圈说要截图贴",
+      "床头。\",",
+      " \"confidence\": \"",
+      "high\", \"ev",
+      "idence_in_text\":",
+      " \"许岩举着",
+      "手机在房间里转",
+      "圈，说要截图",
+      "打印出来贴在床头",
+      "\" },\n    {",
+      " \"character_id\":",
+      " \"c3\",",
+      " \"entry\": \"",
+      "课上递纸条揶揄江眠这是",
+      "本学期第四次被抓；",
+      "夜里",
+      "临走",
+      "点破江眠",
+      "不是不高兴而是",
+      "没感觉。\",",
+      " \"confidence\": \"",
+      "high\", \"ev",
+      "idence_in_text\":",
+      " \"他不是不高兴，",
+      "他是没感觉。",
+      "这两样不一样\"",
+      " },\n    { \"",
+      "character_id\": \"",
+      "c4\", \"",
+      "entry\": \"带",
+      "三人",
+      "去家里",
+      "诊所拿",
+      "鹌鹑蛋",
+      "，排位",
+      "时玩辅助、",
+      "死了",
+      "就",
+      "削苹果，并用",
+      "领奖",
+      "旧",
+      "事的",
+      "玩笑替",
+      "江眠打",
+      "圆场。\", \"",
+      "confidence\": \"high",
+      "\", \"evidence",
+      "_in_text\": \"",
+      "周舟玩辅助",
+      "，死了就给大家",
+      "削苹果\" }\n",
+      "  ],\n  \"",
+      "current_states\": [\n",
+      "    { \"character",
+      "_id\": \"c",
+      "1\", \"where",
+      "\": \"家中书桌",
+      "前\", \"state",
+      "\": \"清晨",
+      "五点四十惊醒，",
+      "盯着草稿本上陌生的",
+      "门",
+      "后风景",
+      "素描看了",
+      "很久；",
+      "对现实生活持续",
+      "麻木，觉得",
+      "什么都",
+      "隔着一层玻璃。\",",
+      " \"concern\":",
+      " \"这幅",
+      "自己不",
+      "记得画过、",
+      "水平",
+      "远超",
+      "自己的画从何而来",
+      "。\",",
+      " \"confidence\": \"",
+      "high\" },\n   ",
+      " { \"character",
+      "_id\": \"c",
+      "2\", \"where",
+      "\": \"许岩",
+      "家",
+      "（聚会散场",
+      "前后）\", \"",
+      "state\": \"为",
+      "段位上",
+      "钻石极度",
+      "兴奋，对江",
+      "眠的敷衍",
+      "毫无",
+      "所",
+      "觉。\", \"conc",
+      "ern\": \"排位",
+      "上分、下周",
+      "继续冲段",
+      "。\", \"confidence\":",
+      " \"high\" },\n",
+      "    { \"character",
+      "_id\": \"c",
+      "3\", \"where",
+      "\": \"离开",
+      "许岩家回家",
+      "\", \"state",
+      "\": \"冷静如",
+      "常，走",
+      "前一语",
+      "道",
+      "破江眠的",
+      "麻木。\",",
+      " \"concern\":",
+      " \"察觉",
+      "江眠的状态",
+      "不是",
+      "不高兴而是",
+      "没有",
+      "感觉。\",",
+      " \"confidence\": \"",
+      "high\" },\n   ",
+      " { \"character",
+      "_id\": \"c",
+      "4\", \"where",
+      "\": \"许",
+      "岩家\", \"",
+      "state\": \"削",
+      "苹果打",
+      "圆场，维持",
+      "小团体气氛。\",",
+      " \"concern\":",
+      " \"照顾",
+      "江眠的情绪",
+      "、避免",
+      "场面",
+      "冷掉",
+      "。\", \"confidence\":",
+      " \"high\" }\n",
+      "  ],\n  \"",
+      "relation_points\": [],\n",
+      "  \"relation_m",
+      "ilestones\": [],\n",
+      "  \"relation_changes",
+      "\": [],\n  \"",
+      "new_relations\":",
+      " [\n    { \"",
+      "a\": \"c",
+      "1\", \"b",
+      "\": \"c2",
+      "\", \"type",
+      "\": \"友情\",",
+      " \"now\": \"",
+      "死党兼",
+      "游戏队友，许",
+      "岩拉江",
+      "眠排位",
+      "冲段",
+      "，依赖",
+      "他的",
+      "carry，却",
+      "看不懂",
+      "他的冷淡",
+      "。\", \"ev",
+      "idence_in_text\":",
+      " \"许岩搂",
+      "住他的脖子，",
+      "\\\"眠哥，",
+      "江神\\\"\"",
+      " },\n    { \"",
+      "a\": \"c",
+      "1\", \"b",
+      "\": \"c3",
+      "\", \"type\":",
+      " \"友情\", \"",
+      "now\": \"邻",
+      "座传",
+      "纸条互",
+      "损，林",
+      "小满用",
+      "笔记本",
+      "记录一切",
+      "，",
+      "也是最",
+      "看穿",
+      "江眠麻木",
+      "的人。\", \"ev",
+      "idence_in_text\":",
+      " \"一张",
+      "折成方块的",
+      "纸条从左边推",
+      "过来，碰了",
+      "碰他的手肘\"",
+      " },\n    { \"",
+      "a\": \"c",
+      "1\", \"b",
+      "\": \"c4",
+      "\", \"type\":",
+      " \"友情\", \"",
+      "now\": \"周",
+      "舟习惯性",
+      "照顾江",
+      "眠，给他",
+      "留",
+      "吃的",
+      "、削",
+      "苹果、",
+      "在他",
+      "被",
+      "调侃时打",
+      "圆场。\", \"",
+      "evidence_in_text",
+      "\": \"周舟",
+      "把削",
+      "好的苹果递给他",
+      "一瓣，笑着",
+      "打圆场\"",
+      " }\n  ],\n ",
+      " \"recap\":",
+      " \"高",
+      "二的江眠课堂",
+      "画龙被抓、夜里",
+      "带队打上",
+      "钻石，却对",
+      "一切都",
+      "提不起劲，",
+      "只觉得",
+      "现实隔着",
+      "一层玻璃。深夜",
+      "他梦见",
+      "走廊尽头一扇透出",
+      "另一个",
+      "世界",
+      "声",
+      "息",
+      "的门，惊醒",
+      "后发现",
+      "草稿本上多了一幅",
+      "他自己",
+      "不记得",
+      "画过",
+      "、水平远超",
+      "他的",
+      "门后风景素描",
+      "。\"\n}\n```"
+     ]
+    },
+    {
+     "type": "chunk",
+     "time": 1791483688619,
+     "chunk": {
+      "type": "block-end",
+      "index": 1,
+      "block": {
+       "type": "text",
+       "text": "```json\n{\n  \"beats_delivered\": [\n    { \"beat\": 1, \"evidence_in_text\": \"江眠已经把课本的页边画满了\" },\n    { \"beat…"
+      }
+     }
+    },
+    {
+     "type": "chunk",
+     "time": 1791483688621,
+     "chunk": {
+      "type": "usage",
+      "usage": {
+       "inputTokens": 2619,
+       "outputTokens": 2774,
+       "totalTokens": 11793,
+       "cacheReadTokens": 6400
+      }
+     }
+    },
+    {
+     "type": "chunk",
+     "time": 1791483688621,
+     "chunk": {
+      "type": "finish",
+      "reason": {
+       "kind": "stop"
+      },
+      "replayState": {
+       "response": {
+        "kind": "pi-ai",
+        "version": 2,
+        "api": "anthropic-messages",
+        "provider": "kimi-coding",
+        "model": "k3",
+        "responseId": "msg_ItIZGP25ggBaXa1arOz6t4ES",
+        "stopReason": "stop"
+       },
+       "blocks": [
+        {
+         "type": "reasoning",
+         "thinkingSignature": "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"
+        },
+        {
+         "type": "text"
+        }
+       ]
+      }
+     }
+    }
+   ]
+  },
+  "surfaceOp": "append"
+ },
+ {
+  "type": "step/end",
+  "seq": 24,
+  "time": 1791483688649,
+  "data": {
+   "turn": 1,
+   "step": 2
+  }
+ },
+ {
+  "type": "turn/end",
+  "seq": 25,
+  "time": 1791483688655,
+  "data": {
+   "turn": 1,
+   "reason": {
+    "kind": "completed"
+   }
+  }
+ },
+ {
+  "type": "turn/start",
+  "seq": 26,
+  "time": 1791483688665,
+  "data": {
+   "turn": 2
+  }
+ },
+ {
+  "type": "step/start",
+  "seq": 27,
+  "time": 1791483688670,
+  "data": {
+   "turn": 2,
+   "step": 1
+  }
+ },
+ {
+  "type": "assistant/attempt",
+  "seq": 28,
+  "time": 1791483688785,
+  "data": {
+   "turn": 2,
+   "step": 1,
+   "stream": [
+    {
+     "type": "chunk",
+     "time": 1791483688705,
+     "chunk": {
+      "type": "block-start",
+      "index": 0,
+      "blockType": "text"
+     }
+    },
+    {
+     "type": "text-chunks",
+     "time0": 1791483688706,
+     "index": 0,
+     "dt": [
+      5
+     ],
+     "texts": [
+      "正在写",
+      "一半"
+     ]
+    },
+    {
+     "type": "chunk",
+     "time": 1791483688785,
+     "chunk": {
+      "type": "finish",
+      "reason": {
+       "kind": "error",
+       "failure": {
+        "message": "provider rate limit",
+        "code": "RATE_LIMIT",
+        "status": 429
+       }
+      }
+     }
+    }
+   ]
+  }
+ },
+ {
+  "type": "step/end",
+  "seq": 29,
+  "time": 1791483688786,
+  "data": {
+   "turn": 2,
+   "step": 1
+  }
+ },
+ {
+  "type": "turn/end",
+  "seq": 30,
+  "time": 1791483688790,
+  "data": {
+   "turn": 2,
+   "reason": {
+    "kind": "error",
+    "error": {
+     "message": "provider rate limit",
+     "code": "RATE_LIMIT"
+    }
+   }
+  }
+ }
+]

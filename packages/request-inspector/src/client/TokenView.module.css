@@ -1,0 +1,274 @@
+/* The Token 分布 tab: request cards left, the selected request's composition
+   right. Category colors ride the --ri-cat-* palette from the panel root. */
+
+.md {
+  display: flex;
+  gap: 14px;
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+
+.reqList {
+  width: 176px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+  min-height: 0;
+  padding-right: 2px;
+}
+
+.reqItem,
+.reqItemSel {
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  padding: 8px 10px 7px;
+  cursor: pointer;
+  background: var(--dsw-alias-bg-layer-1);
+  font-family: inherit;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  color: var(--dsw-alias-label-primary);
+}
+
+.reqItemSel {
+  border-color: var(--dsw-alias-state-business-primary);
+  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 8%, transparent);
+  box-shadow: inset 2.5px 0 0 var(--dsw-alias-state-business-primary);
+}
+
+.reqName {
+  font-size: var(--dsh-panel-text-meta, 12px);
+  font-weight: 700;
+  color: var(--dsw-alias-label-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reqItemSel .reqName {
+  color: var(--dsw-alias-state-business-primary);
+}
+
+.reqIo {
+  font-family: var(--dsw-font-family-mono, ui-monospace, monospace);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--dsh-panel-text-meta, 12px);
+  color: var(--dsw-alias-label-primary);
+  margin-top: 3px;
+}
+
+.reqSub {
+  font-size: var(--dsh-panel-text-meta, 12px);
+  color: var(--dsw-alias-label-tertiary);
+  margin-top: 1px;
+}
+
+.cacheBar {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--dsw-alias-bg-layer-3);
+  margin-top: 6px;
+  overflow: hidden;
+}
+
+.cacheFill {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--dsw-alias-state-success-primary);
+}
+
+.cacheBar[data-low="true"] .cacheFill {
+  background: var(--dsw-alias-state-warn-primary);
+}
+
+.reqDetail {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  min-height: 0;
+  padding-right: 4px;
+  padding-bottom: 12px;
+}
+
+.stateNote {
+  font-size: var(--dsh-panel-text-meta, 12px);
+  color: var(--dsw-alias-label-tertiary);
+  padding: 8px 4px;
+}
+
+.catbarWrap {
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  padding: 11px 12px 9px;
+  margin-bottom: 10px;
+}
+
+.catbarTitle {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: var(--dsh-panel-text-meta, 12px);
+  color: var(--dsw-alias-label-secondary);
+  margin-bottom: 8px;
+}
+
+.mono {
+  font-family: var(--dsw-font-family-mono, ui-monospace, monospace);
+  font-variant-numeric: tabular-nums;
+  color: var(--dsw-alias-label-primary);
+}
+
+.anchor {
+  font-size: var(--dsh-panel-text-meta, 12px);
+  color: var(--dsw-alias-label-secondary);
+  margin: -3px 0 8px;
+  overflow-wrap: anywhere;
+}
+
+.anchorSep {
+  color: var(--dsw-alias-border-l1);
+  margin: 0 8px;
+}
+
+.catbar {
+  display: flex;
+  height: 12px;
+  border-radius: 6px;
+  overflow: hidden;
+  gap: 1px;
+}
+
+.catbar > div {
+  min-width: 2px;
+}
+
+.catbar > [data-cat="system"] { background: var(--ri-cat-system); }
+.catbar > [data-cat="tool-definition"] { background: var(--ri-cat-tool-definition); }
+.catbar > [data-cat="user"] { background: var(--ri-cat-user); }
+.catbar > [data-cat="assistant"] { background: var(--ri-cat-assistant); }
+.catbar > [data-cat="tool-result"] { background: var(--ri-cat-tool-result); }
+.catbar > [data-cat="skill-injection"] { background: var(--ri-cat-skill-injection); }
+.catbar > [data-cat="runtime-snapshot"] { background: var(--ri-cat-runtime-snapshot); }
+.catbar > [data-cat="reminder-injection"] { background: var(--ri-cat-reminder-injection); }
+.catbar > [data-cat="plugin-injection"] { background: var(--ri-cat-plugin-injection); }
+.catbar > [data-cat="tool-change"] { background: var(--ri-cat-tool-change); }
+
+.legend {
+  margin-top: 8px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px 14px;
+}
+
+.legendItem,
+.legendItemOff {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: inherit;
+  font-size: var(--dsh-panel-text-meta, 12px);
+  color: var(--dsw-alias-label-secondary);
+  padding: 3px 4px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  min-width: 0;
+}
+
+.legendItemOff {
+  opacity: 0.35;
+}
+
+/* hover-only: pure tint on an always-visible control */
+.legendItem:hover,
+.legendItemOff:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 3px;
+  flex: none;
+  background: var(--dsw-alias-label-tertiary);
+}
+
+.dot[data-cat="system"] { background: var(--ri-cat-system); }
+.dot[data-cat="tool-definition"] { background: var(--ri-cat-tool-definition); }
+.dot[data-cat="user"] { background: var(--ri-cat-user); }
+.dot[data-cat="assistant"] { background: var(--ri-cat-assistant); }
+.dot[data-cat="tool-result"] { background: var(--ri-cat-tool-result); }
+.dot[data-cat="skill-injection"] { background: var(--ri-cat-skill-injection); }
+.dot[data-cat="runtime-snapshot"] { background: var(--ri-cat-runtime-snapshot); }
+.dot[data-cat="reminder-injection"] { background: var(--ri-cat-reminder-injection); }
+.dot[data-cat="plugin-injection"] { background: var(--ri-cat-plugin-injection); }
+.dot[data-cat="tool-change"] { background: var(--ri-cat-tool-change); }
+
+.legendName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.legend .mono {
+  font-size: var(--dsh-panel-text-meta, 12px);
+}
+
+.chainTitle {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  font-size: var(--dsh-panel-text-meta, 12px);
+  color: var(--dsw-alias-label-secondary);
+  margin: 4px 0 8px;
+}
+
+.chainTitle .mono {
+  white-space: nowrap;
+  flex: none;
+}
+
+.filterClear {
+  border: none;
+  background: transparent;
+  color: var(--dsw-alias-state-business-primary);
+  cursor: pointer;
+  font-size: var(--dsh-panel-text-meta, 12px);
+  padding: 0 2px;
+}
+
+@container dsh-panel (max-width: 560px) {
+  .md {
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .reqList {
+    width: auto;
+    flex: none;
+    flex-direction: row;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-bottom: 4px;
+  }
+
+  .reqItem,
+  .reqItemSel {
+    min-width: 150px;
+    flex: none;
+  }
+
+  .legend {
+    grid-template-columns: 1fr;
+  }
+}
