@@ -8,7 +8,7 @@
  * disabled wire-body seat, and the empty states).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type {
   AgentScopeOverview, BackfillInfo, CapturedRequest, ListTurnsResult, TurnListItem, TurnOverview, TurnTiming,
 } from '../src/types.ts'
@@ -46,6 +46,11 @@ const REQ101: CapturedRequest = {
   usage: { inputTokens: 2_000, outputTokens: 100, cacheReadTokens: 8_000 },
   timing: { waitMs: 400, reasoningMs: 1_000, textMs: 800, totalMs: 4_200 },
   responseSummary: { kind: 'tool', name: 'read', hint: 'a.ts' },
+  response: {
+    reasoning: '本轮先把第二章结尾读进来，确认接续位置。',
+    text: '好的，先读第二章结尾。',
+    toolCalls: [{ name: 'read', arguments: '{"path":"a.ts"}' }],
+  },
   segments: {
     system: [
       { index: 0, category: 'system', source: 'identity', preview: '你是…', full: '你是 Kimi，一个助手。', chars: 12, freshness: 'history' },
@@ -158,6 +163,10 @@ interface BenchOptions {
   readonly listError?: boolean | undefined
   readonly params?: RequestInspectorTabParams | undefined
   readonly revision?: number | undefined
+  /** Per-test getTurn override (replaces the turnSeq 1/2 routing). */
+  readonly overview?: ((turnSeq: number) => TurnOverview | undefined) | undefined
+  /** Per-test getRequest override (merged over the fixture routing). */
+  readonly requests?: Record<number, CapturedRequest> | undefined
 }
 
 function bench(opts: BenchOptions = {}) {
@@ -167,11 +176,13 @@ function bench(opts: BenchOptions = {}) {
       : { ok: true, value: { turns: opts.turns ?? TURNS, backfill: opts.backfill ?? { state: 'complete' } } }),
     getTurn: vi.fn(async (_sessionId: string, turnSeq: number): Promise<Result<TurnOverview | undefined>> => ({
       ok: true,
-      value: turnSeq === 2 ? OVERVIEW2 : turnSeq === 1 ? OVERVIEW1 : undefined,
+      value: opts.overview !== undefined
+        ? opts.overview(turnSeq)
+        : turnSeq === 2 ? OVERVIEW2 : turnSeq === 1 ? OVERVIEW1 : undefined,
     })),
     getRequest: vi.fn(async (_sessionId: string, seq: number): Promise<Result<CapturedRequest | undefined>> => ({
       ok: true,
-      value: seq === 101 ? REQ101 : seq === 102 ? REQ102 : seq === 201 ? REQ201 : undefined,
+      value: opts.requests?.[seq] ?? (seq === 101 ? REQ101 : seq === 102 ? REQ102 : seq === 201 ? REQ201 : undefined),
     })),
     getTurnTiming: vi.fn(async (): Promise<Result<TurnTiming | undefined>> => ({ ok: true, value: TIMING2 })),
   }
@@ -246,11 +257,14 @@ describe('InspectorPanel · token tab', () => {
   it('unfolds an assistant row into reasoning / text / tool_call sections', async () => {
     bench()
     await waitFor(() => expect(screen.getByText('#101 · read:a.ts')).toBeTruthy())
+    const row = screen.getByText('→ read').closest('details')
+    if (row === null) throw new Error('assistant row not found')
     openDetails('→ read')
-    await waitFor(() => expect(screen.getByText('先想一下')).toBeTruthy())
-    expect(screen.getByText('reasoning')).toBeTruthy()
-    expect(screen.getByText('读一下文件')).toBeTruthy()
-    expect(screen.getByText('tool_call · read')).toBeTruthy()
+    // The 输出 block renders its own reasoning/text/tool_call labels — scope to the row.
+    await waitFor(() => expect(within(row).getByText('先想一下')).toBeTruthy())
+    expect(within(row).getByText('reasoning')).toBeTruthy()
+    expect(within(row).getByText('读一下文件')).toBeTruthy()
+    expect(within(row).getByText('tool_call · read')).toBeTruthy()
   })
 
   it('expands 工具定义 to the compact grid of tool cells', async () => {
@@ -500,5 +514,88 @@ describe('InspectorPanel · scroll-sync + 最新', () => {
     fireEvent.click(screen.getByRole('button', { name: zh['turn.latest'] }))
     await waitFor(() => expect(screen.getByText('第二条 query')).toBeTruthy())
     expect(scrollTo).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('InspectorPanel · 输出 section', () => {
+  /** A one-scope, one-request turn-2 overview routing to the given capture. */
+  function singleBench(detail: CapturedRequest) {
+    const item = {
+      seq: detail.seq, scopeId: 'main', status: detail.status, responseSummary: detail.responseSummary,
+      startedAt: detail.startedAt,
+      ...(detail.usage === undefined ? {} : { usage: detail.usage }),
+      ...(detail.timing.totalMs === undefined ? {} : { totalMs: detail.timing.totalMs }),
+      totalChars: 100,
+    }
+    const overview: TurnOverview = { turn: TURNS[1] as TurnListItem, scopes: [scope({ requests: [item] })] }
+    return bench({ overview: seq => (seq === 2 ? overview : undefined), requests: { [detail.seq]: detail } })
+  }
+
+  it('renders the response verbatim — reasoning, text, and one row per tool call — expanded by default', async () => {
+    bench()
+    await waitFor(() => expect(screen.getByText('#101 · read:a.ts')).toBeTruthy())
+    const out = screen.getByText(zh['out.title']).closest('details')
+    if (out === null) throw new Error('输出 block not found')
+    expect(out.hasAttribute('open')).toBe(true)
+    // The header merges the old anchor line; config stays up in the detail header.
+    expect(out.textContent).toContain('本次响应')
+    expect(out.textContent).toContain('read:a.ts')
+    expect(out.textContent).toContain('输出 100 tok')
+    expect(out.textContent).toContain('4s')
+    expect(within(out).getByText('本轮先把第二章结尾读进来，确认接续位置。')).toBeTruthy()
+    expect(within(out).getByText('好的，先读第二章结尾。')).toBeTruthy()
+    expect(within(out).getByText('tool_call · read')).toBeTruthy()
+    expect(within(out).getByText(/"path": "a\.ts"/)).toBeTruthy()
+  })
+
+  it('shows 进行中 while the response is still streaming', async () => {
+    const { usage: _usage, response: _response, ...rest } = REQ101
+    singleBench({ ...rest, seq: 109, status: 'streaming' })
+    await waitFor(() => expect(screen.getByText(zh['out.streaming'])).toBeTruthy())
+  })
+
+  it('shows the error text when the call failed before any block', async () => {
+    const { response: _response, ...rest } = REQ101
+    singleBench({ ...rest, seq: 110, status: 'failed', error: 'provider timeout' })
+    await waitFor(() => expect(screen.getByText('provider timeout')).toBeTruthy())
+    // Nothing fabricated in place of the absent response.
+    expect(screen.queryByText('本轮先把第二章结尾读进来，确认接续位置。')).toBeNull()
+  })
+
+  it('renders the inert header with no body when an ok call has no captured response', async () => {
+    const { response: _response, ...rest } = REQ101
+    singleBench({ ...rest, seq: 111, status: 'ok' })
+    await waitFor(() => expect(screen.getByText(zh['out.title'])).toBeTruthy())
+    const block = screen.getByText(zh['out.title']).closest('div')
+    if (block === null) throw new Error('输出 header not found')
+    expect(block.textContent).toContain('输出 100 tok')
+    // Inert: not a <details>, nothing expanded, nothing invented.
+    expect(screen.getByText(zh['out.title']).closest('details')).toBeNull()
+    expect(screen.queryByText('本轮先把第二章结尾读进来，确认接续位置。')).toBeNull()
+  })
+})
+
+describe('InspectorPanel · 新增 provenance label', () => {
+  it('labels the added assistant rows with the previous request in the same scope (within a turn)', async () => {
+    bench()
+    await waitFor(() => expect(screen.getByText('#101 · read:a.ts')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: /#102 · 直接回答/ }))
+    await waitFor(() => expect(screen.getByText('← #101 的响应')).toBeTruthy())
+  })
+
+  it('resolves the previous request across turns for a turn’s first request in the scope', async () => {
+    bench()
+    // Default: turn 2, first main request #101 → previous = turn 1’s last main request (#11).
+    await waitFor(() => expect(screen.getByText('← #11 的响应')).toBeTruthy())
+  })
+
+  it('labels nothing for the first request ever in a scope', async () => {
+    bench()
+    await waitFor(() => expect(screen.getByText('#101 · read:a.ts')).toBeTruthy())
+    // Turn 1's only main request (#11): no previous turn exists.
+    fireEvent.click(screen.getByRole('button', { name: zh['turn.switch'] }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /turn 1/ }))
+    await waitFor(() => expect(screen.getByText('#11 · 直接回答')).toBeTruthy())
+    expect(screen.queryByText(/← #\d+ 的响应/)).toBeNull()
   })
 })

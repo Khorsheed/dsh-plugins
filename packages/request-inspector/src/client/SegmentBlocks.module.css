@@ -21,6 +21,10 @@
   min-width: 0;
 }
 
+.summaryStatic {
+  cursor: default;
+}
+
 .summary::-webkit-details-marker {
   display: none;
 }
@@ -143,6 +147,14 @@
   font-size: var(--dsh-panel-text-meta, 12px);
   color: var(--dsw-alias-label-tertiary);
   padding: 4px;
+}
+
+.errorNote {
+  font-size: var(--dsh-panel-text-meta, 12px);
+  color: var(--dsw-alias-state-error-primary);
+  font-family: var(--dsw-font-family-mono, ui-monospace, monospace);
+  padding: 4px;
+  overflow-wrap: anywhere;
 }
 
 .histChip {
