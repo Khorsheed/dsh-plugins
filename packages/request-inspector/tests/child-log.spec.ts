@@ -144,11 +144,16 @@ describe('child-log lane', () => {
     expect(second?.segments.added[0]?.durationMs).toBe(1791483625202 - 1791483620262)
     expect(second?.responseSummary).toEqual({ kind: 'text' })
 
-    // Request 3: the synthetic failed attempt.
+    // Request 3: the synthetic failed attempt — its torn stream's partial text survives.
     const third = await service.getRequest(rootId, r3?.seq ?? -1)
     expect(third?.status).toBe('failed')
     expect(third?.error).toBe('provider rate limit')
     expect(third?.usage).toBeUndefined()
+    expect(third?.response).toEqual({ text: '正在写一半', toolCalls: [] })
+    // The settled responses carry their own content too (输出 section data).
+    expect(first?.response?.toolCalls).toEqual([
+      { name: 'read', arguments: '{"file_path":"/home/user/work/幻梦境/第1章.md"}' },
+    ])
     service.dispose()
   })
 

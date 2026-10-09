@@ -6,6 +6,9 @@
  * fidelity markers expose live vs log-reconstructed, the eviction counter
  * separates collected-then-dropped from never-seen where the store can know
  * it, and every seq-bearing payload carries the instance generation.
+ * Response-content pins: a request's own response rides getRequest only, and
+ * a filtered-out scope's response (live or log-reconstructed) appears in no
+ * verb's output — its log response records are never even read.
  */
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
@@ -59,6 +62,8 @@ interface Script {
   callId?: string
   name?: string
   args?: string
+  /** When set, a trailing text block (index 2) carries this marker, delta-accumulated. */
+  responseText?: string
 }
 
 /** One request through begin → chunks → settle against the fake clock (same timeline as store.spec). */
@@ -82,6 +87,11 @@ function runRequest(
   } else {
     store.observeChunk(request, { type: 'block-start', index: 1, blockType: 'text' }, at.tick(20))
     store.observeChunk(request, { type: 'block-end', index: 1, block: { type: 'text' } }, at.tick(200))
+  }
+  if (script.responseText !== undefined) {
+    store.observeChunk(request, { type: 'block-start', index: 2, blockType: 'text' }, at.tick(2))
+    store.observeChunk(request, { type: 'text-delta', index: 2, text: script.responseText }, at.tick(2))
+    store.observeChunk(request, { type: 'block-end', index: 2, block: { type: 'text' } }, at.tick(2))
   }
   store.observeChunk(request, { type: 'usage', usage: { inputTokens: 100, outputTokens: 20 } }, at.tick(5))
   store.observeChunk(request, { type: 'finish', reason: { kind: script.kind === 'tool' ? 'tool-calls' : 'stop' } }, at.tick(5))
@@ -115,8 +125,10 @@ function logTurnFixture(hostTurn: number, startedAt: number): LogTurn {
  * The two-scope fixture: turn 1 with a live main scope (one request, one
  * `subagent_dsh` exec span) and a live in-process child scope `child-1`
  * (one request, one `write` exec span). Both requests carry 100/20 usage.
+ * `childResponseText` gives the child's request a marked text response
+ * (delta-accumulated, the live lane's partial-visibility path).
  */
-function twoScopeStore(): { store: InspectorStore; mainSeq: number; childSeq: number } {
+function twoScopeStore(childResponseText?: string): { store: InspectorStore; mainSeq: number; childSeq: number } {
   const at = clock()
   const store = new InspectorStore({}, { now: at.now, generation: 'gen-fixture' })
   store.turnStart('s1', 1, at.tick(1))
@@ -134,6 +146,7 @@ function twoScopeStore(): { store: InspectorStore; mainSeq: number; childSeq: nu
     callId: 'call_c1',
     name: 'write',
     args: '{}',
+    ...childResponseText === undefined ? {} : { responseText: childResponseText },
   })
   store.toolCall('child-1', 'call_c1', 'write', '{}', at.tick(10))
   store.toolResult('child-1', 'call_c1', false, 'ok', at.tick(30))
@@ -237,6 +250,36 @@ describe('scoped reads (the caller-supplied allow-list)', () => {
     expect(store.listTurns('unknown-session', nobody).authorizedScopes).toBeUndefined()
     expect(store.getTurn('s1', 99, nobody)).toBeUndefined()
     expect(store.getTurnTiming('s1', 99, nobody)).toBeUndefined()
+  })
+})
+
+describe('response content under the filter', () => {
+  const MARKER = 'child-secret-response-63a1'
+
+  it('a filtered-out scope’s response content appears in none of the four verbs', () => {
+    const { store, mainSeq, childSeq } = twoScopeStore(MARKER)
+
+    // Capture works: unfiltered, the child's own response rides getRequest.
+    const captured = store.getRequest('s1', childSeq)
+    expect(captured !== undefined && !('refused' in captured) && captured.response?.text).toBe(MARKER)
+
+    // Surface inventory: response content lives ONLY on CapturedRequest —
+    // even unfiltered, the list/overview/timing envelopes never carry it.
+    expect(JSON.stringify(store.listTurns('s1'))).not.toContain(MARKER)
+    expect(JSON.stringify(store.getTurn('s1', 1))).not.toContain(MARKER)
+    expect(JSON.stringify(store.getTurnTiming('s1', 1))).not.toContain(MARKER)
+
+    // Filtered: no verb's output carries the marker anywhere.
+    const refused = store.getRequest('s1', childSeq, MAIN_ONLY)
+    expect(refused).toEqual({ refused: 'no-authorized-content', generation: 'gen-fixture' })
+    expect(JSON.stringify(refused)).not.toContain(MARKER)
+    expect(JSON.stringify(store.listTurns('s1', MAIN_ONLY))).not.toContain(MARKER)
+    expect(JSON.stringify(store.getTurn('s1', 1, MAIN_ONLY))).not.toContain(MARKER)
+    expect(JSON.stringify(store.getTurnTiming('s1', 1, MAIN_ONLY))).not.toContain(MARKER)
+    // The authorized scope's own response still flows (and carries no marker).
+    const mainPayload = store.getRequest('s1', mainSeq, MAIN_ONLY)
+    expect(JSON.stringify(mainPayload)).toContain('subagent_dsh')
+    expect(JSON.stringify(mainPayload)).not.toContain(MARKER)
   })
 })
 
@@ -403,6 +446,57 @@ describe('the child-log gate', () => {
     // Unfiltered: both child logs read.
     await service.getTurn(rootId, 1)
     expect(reader.opens.filter(id => id === 'child-b')).toEqual(['child-b'])
+    service.dispose()
+  })
+
+  it('an excluded child scope’s log response records are never read', async () => {
+    const LOG_MARKER = 'child-b-log-response-92f7'
+    // Child-b's log carries a response the parent never saw live; child-a's
+    // does not — the marker can only arrive by opening child-b's log.
+    const childBRows = structuredClone(childFixtureRows)
+    const tail = childBRows[childBRows.length - 1]?.time ?? 0
+    childBRows.push({
+      type: 'assistant/message',
+      seq: 31,
+      time: tail + 300,
+      data: {
+        turn: 2,
+        step: 1,
+        message: {
+          id: 'am-marker',
+          role: 'assistant',
+          source: { kind: 'model', provider: 'deepseek', model: 'deepseek-chat' },
+          content: [{ type: 'text', text: LOG_MARKER }],
+        },
+        usage: { inputTokens: 5, outputTokens: 2 },
+        stream: [],
+      },
+    })
+    const reader = new GateReader({
+      'child-a': structuredClone(childFixtureRows),
+      'child-b': childBRows,
+    })
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    const service = new InspectorService(ctx, {}, { persistence: reader, generation: 'gen-fixture' })
+    const rootId = delegateTwo(service)
+
+    const filtered = await service.getTurn(rootId, 1, { scopes: ['main', 'child-a'] })
+    expect(reader.opens.filter(id => id === 'child-b')).toEqual([])
+    expect(JSON.stringify(filtered)).not.toContain(LOG_MARKER)
+    expect(JSON.stringify(await service.listTurns(rootId, { scopes: ['main', 'child-a'] }))).not.toContain(LOG_MARKER)
+    expect(JSON.stringify(await service.getTurnTiming(rootId, 1, { scopes: ['main', 'child-a'] }))).not.toContain(LOG_MARKER)
+
+    // Non-vacuous: unfiltered, the same marker is reachable — via getRequest only.
+    const full = await service.getTurn(rootId, 1)
+    expect(reader.opens.filter(id => id === 'child-b')).toEqual(['child-b'])
+    const childB = full?.scopes.find(scope => scope.scopeId === 'child-b')
+    expect(JSON.stringify(full)).not.toContain(LOG_MARKER)
+    const marked = await service.getRequest(rootId, childB?.requests[3]?.seq ?? -1)
+    expect(marked !== undefined && !('refused' in marked) && marked.response?.text).toBe(LOG_MARKER)
+    // And the filter still holds after the content is in memory.
+    const refused = await service.getRequest(rootId, childB?.requests[3]?.seq ?? -1, { scopes: ['main', 'child-a'] })
+    expect(refused).toEqual({ refused: 'no-authorized-content', generation: 'gen-fixture' })
     service.dispose()
   })
 })

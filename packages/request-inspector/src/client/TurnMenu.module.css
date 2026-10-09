@@ -1,0 +1,51 @@
+/* The turn switcher: trigger button + the menu rows' two-line layout.
+   The dropdown card itself is the host Menu's (portaled, themed). */
+
+.trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: inherit;
+  font-size: var(--dsh-panel-text-meta, 12px);
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-layer-2);
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  padding: 2px 6px;
+  cursor: pointer;
+  min-width: 0;
+}
+
+/* hover-only: pure tint on an always-visible control */
+.trigger:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.triggerLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.row {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  max-width: 320px;
+}
+
+.rowTitle {
+  color: var(--dsw-alias-label-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rowMeta {
+  font-size: var(--dsh-panel-text-meta, 12px);
+  color: var(--dsw-alias-label-tertiary);
+  font-family: var(--dsw-font-family-mono, ui-monospace, monospace);
+  font-variant-numeric: tabular-nums;
+}

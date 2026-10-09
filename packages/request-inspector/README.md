@@ -7,11 +7,11 @@
 - **turn 动作行图标**：每个已完成 turn 的动作行（复制/点赞/分享/用量所在行）多一个图标，点击打开右栏并定位到**这个 turn** 的明细（经 `conversation.chat.assistant-actions` 槽，owner prop `messageId` 匹配 turn 的收尾 assistant 消息，失配兜底最新 turn）。
 - **会话头部 utilities 图标**：打开右栏并定位到最新 turn。
 
-两处都落在同一个右栏 tab（`request-inspector`）；面板内有 turn 切换器，可换看本会话任意已采集的 turn。
+两处都落在同一个右栏 tab（`request-inspector`）；面板内的 turn 切换器（菜单式，带每轮的请求数与 token 合计）可换看本会话任意已采集的 turn，切换时会话视图同步滚动到该 turn（DOM 锚点 `[data-chat-turn]`，未挂载则落到最近的后续 turn，找不到就静默不动）；旁边的「定位到最新」一键回到最新 turn 并把会话滚到底。
 
 ## 两个视角
 
-- **Token 分布**：左侧请求列表（`#序号 · 响应摘要`、输入/输出 tok、耗时、实测缓存命中+迷你条），右侧选中请求——明细头锚点行（本次响应 → 工具 · 输出 · 耗时 ｜ config · provider/model · maxTokens，**config 在 scope/请求级**，子 agent 模型可能与主对话不同）、类别堆叠条与图例（点击筛选明细）、**四段式明细**：system（按 `system-prompt/assemble` 的 section 名归因）/ tools 定义（两列网格）/ 历史上下文（默认折叠）/ 本次新增（默认展开，含上一响应及其工具返回）。每行可展开逐字原文。
+- **Token 分布**：左侧请求列表（`#序号 · 响应摘要`、输入/输出 tok、耗时、实测缓存命中+迷你条），右侧选中请求——明细头 config 行（config · provider/model · maxTokens，**config 在 scope/请求级**，子 agent 模型可能与主对话不同）、类别堆叠条与图例（点击筛选明细）、**输入四段式**：system（按 `system-prompt/assemble` 的 section 名归因）/ tools 定义（两列网格）/ 历史上下文（默认折叠）/ 本次新增（默认展开，含上一响应及其工具返回，响应行带来源标签「← #N 的响应」），其后的**输出**段是本请求自己的响应原文（reasoning / text / 逐条工具调用；头部即本次响应摘要 · 输出 tok · 耗时；流式中显示「进行中」，block 前失败显示 error，未捕获不编造）。每行可展开逐字原文。
 - **耗时分布**：整轮视角六类切割（模型等待/模型思考/工具参数/模型输出/工具执行/其他开销）+ 严格按序时间轴 + 按工具拆分 + 逐次调用行（点击跳回 Token 分布的对应请求）。
 
 主/子 agent 导航：每次委派运行独立一个 chip（`▸ #序号 标签 ✓/✗`），不合并且不按描述分组；失败的委派（0 次模型调用）有独立状态页——空本身就是诊断信息。
@@ -46,8 +46,8 @@ const { turns, backfill, generation, authorizedScopes } =
 ```
 
 - **scope 集合必须由可信调用方计算**：`scopes` 是过滤器，不是授权来源——绝不能把浏览器递上来的集合原样转发，必须由服务端从成员资格等授权事实推导。插件不推导、不校验来源；缺省（不传或没有 `scopes` 键）就是今天的本地语义。
-- **被排除的 scope 什么都不贡献**：请求行、scope 计数、失败计数、token 合计、计时 lane 与工具名全部只在授权子集上聚合；scope 标识就是 `AgentScopeOverview.scopeId`（主对话恒为 `'main'`，子 scope 用 childId）。turn 行本身（query 预览、起止时间）是会话级元数据，仍然列出。
-- **未授权子 scope 的日志连打开都不打开**：过滤发生在懒加载子日志读取之前——为一次未授权查询打开那份日志这件事本身不会发生。
+- **被排除的 scope 什么都不贡献**：请求行、scope 计数、失败计数、token 合计、计时 lane 与工具名全部只在授权子集上聚合；scope 标识就是 `AgentScopeOverview.scopeId`（主对话恒为 `'main'`，子 scope 用 childId）。turn 行本身（query 预览、起止时间）是会话级元数据，仍然列出。响应原文（`CapturedResponse`）只挂在 `getRequest` 的 `CapturedRequest.response` 上——另外三个动词的面（含未过滤时）都不携带它，过滤之外没有第二条泄漏路径。
+- **未授权子 scope 的日志连打开都不打开**：过滤发生在懒加载子日志读取之前——为一次未授权查询打开那份日志这件事本身不会发生（其中的响应记录自然也不会被读）。
 - **零授权是显式结果**：带 filter 时结果带 `authorizedScopes`（实际存在且获授权的 scope 列表）；空数组 = 「查询解析为零授权内容」，与字段缺席（未过滤）、`undefined`（未知会话/turn/seq）三分。`getRequest` 命中被排除 scope 时返回 `{ refused: 'no-authorized-content' }`（拒绝确认地址存在，不带任何内容），未知 seq 仍是 `undefined`。
 - **保真度元数据复用既有水位线**：turn 行与 scope 行带 `origin`（`'live'` 实采 / `'log-reconstructed'` 日志重建；尚无内容的 scope 不带此字段）；`BackfillInfo` 不动；`listTurns` 新增 `evictedTurnCount`——「采集过又被保留上限逐出」与「从没见过」在会话记录存活时可区分；**盲区**：最后一个 turn 被逐出时会话槽整体释放，整会话逐出与从没见过不可区分。
 - **地址语义**：`(sessionId, turnSeq)` 只是 turn 级地址；真实 turn 用宿主 turn 号（跨重启稳定），负数 turnSeq 的 purpose 伪 turn 不是持久地址。请求 `seq` 是进程内单调计数、重启归零——跨调用持有 seq 的一方必须同时持有结果上的 `generation`（实例纪元，挂载时生成），`generation` 一变即作废所有旧 seq，旧 seq 绝不静默命中新请求。

@@ -14,6 +14,8 @@ export const zh = {
 
   'turn.label': 'turn {seq}',
   'turn.switch': '切换 turn',
+  'turn.rowMeta': '{count} 请求 · 输入 {input} · 输出 {output}',
+  'turn.latest': '定位到最新 turn',
   'query.prefix': 'query：',
 
   'scope.main': '主对话 · {count} 请求',
@@ -46,7 +48,10 @@ export const zh = {
 
   'cat.title': '请求 #{seq} · 组成分类（点类别筛选明细）',
   'cat.rows': '{count} 段',
-  'chain.title': '组成明细 · 四段式（{count} 条消息严格按序，历史折叠）',
+  'chain.title': '输入（{count} 条消息严格按序，历史折叠）',
+  'out.title': '输出',
+  'out.streaming': '进行中…',
+  'row.prevResponse': '← #{seq} 的响应',
   'chain.filtered': '已筛选「{category}」',
   'chain.chars': '{count} 字符',
 
@@ -110,6 +115,8 @@ export const en: Record<keyof typeof zh, string> = {
 
   'turn.label': 'turn {seq}',
   'turn.switch': 'Switch turn',
+  'turn.rowMeta': '{count} requests · in {input} · out {output}',
+  'turn.latest': 'Jump to the latest turn',
   'query.prefix': 'query: ',
 
   'scope.main': 'Main · {count} requests',
@@ -142,7 +149,10 @@ export const en: Record<keyof typeof zh, string> = {
 
   'cat.title': 'Request #{seq} · composition (click a category to filter)',
   'cat.rows': '{count} rows',
-  'chain.title': 'Breakdown · four segments ({count} messages in wire order, history collapsed)',
+  'chain.title': 'Input ({count} messages in wire order, history collapsed)',
+  'out.title': 'Output',
+  'out.streaming': 'In progress…',
+  'row.prevResponse': '← response of #{seq}',
   'chain.filtered': 'filtered: {category}',
   'chain.chars': '{count} chars',
 

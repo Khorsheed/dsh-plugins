@@ -27,7 +27,8 @@ request-inspector 采集核心（见[宿主采集 Agent Note](../feature/2026-10
 ## Consequences
 
 - 四个动词签名各加一个可选尾参；生成的 typert 面（`lib/typert.remote-client.d.ts`）随之重生，旧调用方（不带 filter）看到的是不变的形状加增量可选字段。
-- 对既有测试可见的形状变化：没有——86 个既有测试原样通过（每个新字段都是增量可选，断言都用 `toMatchObject` 或逐字段检查）。十个新合同测试钉死：过滤语义、零授权可区分性、子日志门、保真度标记、逐出可区分性、generation 纪元。
+- 对既有测试可见的形状变化：没有——每个新字段都是增量可选，断言都用 `toMatchObject` 或逐字段检查。十二个合同测试钉死：过滤语义、零授权可区分性、子日志门、保真度标记、逐出可区分性、generation 纪元、响应原文不泄漏。
 - 过滤调用方只能得知其授权集合内的 scope 存在性；拒绝路径每次只确认一个 seq 的地址存在——已文档化为刻意取舍。
 - 即使 `'main'` 被过滤掉，主会话日志回溯仍会读会话自身的日志：这次读取是会话级发现（子 scope 常常只能经它发现），其内容在 wire 上过滤。只有 scope 级读取（子日志）被 filter 把门。
 - 整会话逐出仍与从没见过不可区分（槽随最后一个 turn 释放）；README 与 `evictedTurnCount` 的 TSDoc 都写明这个盲区。
+- 已与响应原文采集（`CapturedRequest.response`、`CapturedResponse`）对账：面审计确认响应原文只挂在 `CapturedRequest` 上——`TurnListItem`、`AgentScopeOverview`、`RequestListItem` 与计时 lane/tools 都不携带——因此 `getRequest` 的门（payload 或 `ScopedRefusal`）覆盖它们，子日志门覆盖其日志响应记录（同一条 open/read 路径，被排除的 scope 直接跳过）。联合体对加宽的 `CapturedRequest` 照常通过类型检查；合同测试用标记串扫描四个动词的输出钉死。

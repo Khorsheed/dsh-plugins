@@ -137,6 +137,12 @@ describe('backfill (no live content)', () => {
     expect(second?.segments.added[0]?.durationMs).toBe(1791454743148 - 1791454729260)
     expect(second?.usage?.cacheReadTokens).toBe(6144)
     expect(second?.responseSummary).toEqual({ kind: 'text' })
+    // The turn-final blind spot: the second (closing) request's own response
+    // appears in no later request's 新增 — it only exists as `response`.
+    expect(second?.response?.text).toContain('这个设定我很愿意接')
+    expect(second?.response?.reasoning).toContain('准备以专业编辑身份')
+    // The first request answered with a tool call: the response carries it verbatim.
+    expect(first?.response?.toolCalls).toEqual([{ name: 'skill', arguments: '{"name":"novel"}' }])
     service.dispose()
   })
 
