@@ -15,9 +15,10 @@
  * @module @khorsheed/dsh-canvas-novel/client
  */
 import { useEffect, type ReactNode } from 'react'
-import { NOVEL_GENRE_ID, NOVEL_PLAN_FACE, type EffectiveChapterPhase, type StoryLogResult } from '../types.ts'
+import { NOVEL_GENRE_ID, NOVEL_PLAN_FACE, type EffectiveChapterPhase, type RecentNote, type StoryLogResult } from '../types.ts'
 import type { NovelCardOwnerProps, NovelSurfaceProps } from './contract.ts'
 import { chapterHeading } from './PendingList.tsx'
+import { fieldLabel, MENTION_KEY } from './StoryLogPage.tsx'
 import { useNovelRead } from './use-novel.ts'
 import css from './novel.module.css'
 
@@ -61,7 +62,7 @@ export function FaceLabel(props: NovelSurfaceProps & { readonly face: string; re
   return props.t('face.story')
 }
 
-/** 章节's badge: what waits on the person (chapters to reconcile plus pending items); nothing at zero. */
+/** 章节's badge: the chapters whose text waits for a 对账; nothing at zero. */
 export function ChaptersBadge(props: NovelSurfaceProps): ReactNode {
   if (props.board.genre?.id !== NOVEL_GENRE_ID) return null
   return <Waiting {...props} />
@@ -70,32 +71,74 @@ export function ChaptersBadge(props: NovelSurfaceProps): ReactNode {
 function Waiting({ canvasId, rev, remote, t }: NovelSurfaceProps): ReactNode {
   const api = remote()
   const chapters = useNovelRead(api, r => r.chapters({ canvasId }), `chapters:${canvasId}`, rev)
-  const pending = useNovelRead(api, r => r.pending({ canvasId }), `pending:${canvasId}`, rev)
+  // Nothing waits on the person any more (2026-10-09): only a text the memory has not caught up with.
   const stale = chapters.state === 'ready' ? chapters.value.chapters.filter(row => awaitsReconcile(row.phase)).length : 0
-  const items = pending.state === 'ready' ? pending.value.items.length : 0
-  const count = stale + items
-  return count > 0 ? <span className={css.faceBadge} title={t('face.waiting', { stale, items })}>{count}</span> : null
+  return stale > 0 ? <span className={css.faceBadge} title={t('face.waiting', { stale })}>{stale}</span> : null
 }
 
 /* ---------------------------------------------------------- the scopes */
 
-/** The 设定 face's scope reader: reports 已进入故事 / 灵感 and renders nothing. */
+/** One scope of the 设定 face, as the canvas draws it (`CanvasCardScope`, structurally). */
+interface CardScope {
+  readonly id: string
+  readonly label: string
+  readonly cardIds: readonly string[]
+  readonly archiveFirst?: boolean
+  readonly notes?: Readonly<Record<string, { readonly label: string; readonly text?: string }>>
+}
+
+/** The 最近更新 scope's id (the 已对账 card opens the 设定 face on it). */
+export const RECENT_SCOPE = 'recent'
+
+/** One card's line under 最近更新: what the newest 对账 did to it (its first two kinds of change), and the words. */
+export function recentNoteOf(notes: readonly RecentNote[], role: string | undefined, t: NovelSurfaceProps['t']): { label: string; text?: string } {
+  const labelOf = (item: RecentNote): string => {
+    if (item.kind === 'create') return t(role === 'foreshadow' ? 'recent.planted' : 'recent.created')
+    if (item.kind === 'field') return fieldLabel(t, item.field ?? '')
+    if (item.kind === 'mention' && item.mention !== undefined) return t(MENTION_KEY[item.mention])
+    if (item.kind === 'experience') return t('recent.experience')
+    if (item.kind === 'points') return t('recent.points', { delta: (item.delta ?? 0) > 0 ? `+${item.delta}` : String(item.delta ?? 0) })
+    return t('recent.stage')
+  }
+  const labels = [...new Set(notes.map(labelOf))]
+  const text = notes.find(item => item.text !== undefined && item.text !== '')?.text
+  return { label: labels.slice(0, 2).join(' · '), ...(text === undefined ? {} : { text }) }
+}
+
+/** The 设定 face's scope reader: reports 已进入故事 / 灵感 / 最近更新 and renders nothing. */
 export function CardScopes(props: NovelSurfaceProps & {
-  readonly onScopes: (scopes: readonly { id: string; label: string; cardIds: readonly string[]; archiveFirst?: boolean }[]) => void
+  readonly onScopes: (scopes: readonly CardScope[]) => void
 }): ReactNode {
   const { canvasId, board, rev, remote, onScopes, t } = props
   const read = useNovelRead(remote(), r => r.storyLog({ canvasId }), `story-log:${canvasId}`, rev)
+  const recent = useNovelRead(remote(), r => r.recentUpdates({ canvasId }), `recent:${canvasId}`, rev)
   const log = read.state === 'ready' && read.value.ok ? read.value : undefined
+  const latest = recent.state === 'ready' && recent.value.ok ? recent.value : undefined
   useEffect(() => {
     if (log === undefined || board.genre?.id !== NOVEL_GENRE_ID) return
     const usage = storyUsage(log)
     const storyCategories = new Set((board.categories ?? []).filter(row => row.role !== undefined && STORY_ROLES.has(row.role)).map(row => row.id))
+    const roleOf = new Map((board.categories ?? []).map(row => [row.id, row.role]))
     const cards = board.cards ?? []
-    onScopes([
+    const scopes: CardScope[] = [
       { id: 'story', label: t('scope.story'), cardIds: cards.filter(card => usage.has(card.id)).map(card => card.id), archiveFirst: true },
       { id: 'idea', label: t('scope.idea'), cardIds: cards.filter(card => !usage.has(card.id) && storyCategories.has(card.kind)).map(card => card.id) },
-    ])
-  }, [log, board, onScopes, t])
+    ]
+    // 最近更新: only the newest 对账 — looked at and left alone is accepted (2026-10-09).
+    if (latest?.chapter !== undefined) {
+      const touched = cards.filter(card => latest.cards[card.id] !== undefined)
+      if (touched.length > 0) {
+        scopes.push({
+          id: RECENT_SCOPE,
+          label: t('scope.recent', { n: latest.chapter }),
+          cardIds: touched.map(card => card.id),
+          archiveFirst: true,
+          notes: Object.fromEntries(touched.map(card => [card.id, recentNoteOf(latest.cards[card.id]!, roleOf.get(card.kind), t)])),
+        })
+      }
+    }
+    onScopes(scopes)
+  }, [log, latest, board, onScopes, t])
   return null
 }
 

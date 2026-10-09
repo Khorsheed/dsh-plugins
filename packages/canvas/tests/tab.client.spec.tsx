@@ -972,7 +972,12 @@ describe('CanvasTab — a genre with faces (章节 · 设定 · 故事)', () => 
       }
       if (key === 'canvas.board.scopes') {
         const onScopes = owner.onScopes as (rows: unknown[]) => void
-        return <Report run={() => { onScopes([{ id: 'story', label: '已进入故事', cardIds: ['c_1'], archiveFirst: true }]) }} />
+        return <Report run={() => {
+          onScopes([
+            { id: 'story', label: '已进入故事', cardIds: ['c_1'], archiveFirst: true },
+            { id: 'recent', label: '最近更新', cardIds: ['c_2'], notes: { c_2: { label: '新建', text: '门后传来一个女人的声音' } } },
+          ])
+        }} />
       }
       if (key === 'canvas.card.deleteNote') return <div>{`note for ${(owner.card as { id: string }).id}`}</div>
       if (key.startsWith('canvas.board.') || key === 'canvas.card.section') return <div>{`seat ${key} ${options?.entryKey ?? ''}`}</div>
@@ -1025,6 +1030,31 @@ describe('CanvasTab — a genre with faces (章节 · 设定 · 故事)', () => 
     expect(within(screen.getByRole('group', { name: '筛选卡片' })).queryByRole('button', { name: /已进入故事/ })).toBeNull()
     fireEvent.click(within(scopes).getByRole('button', { name: /^全部/ }))
     await screen.findByText('卡片 c_2')
+  })
+
+  it('a scope\'s line sits under each card it names, only while that scope is pressed', async () => {
+    renderFaces(false)
+    const scopes = await screen.findByRole('group', { name: '故事筛选' })
+    expect(screen.queryByText('门后传来一个女人的声音')).toBeNull()
+    fireEvent.click(within(scopes).getByRole('button', { name: '最近更新1' }))
+    await waitFor(() => { expect(screen.queryByText('卡片 c_1')).toBeNull() })
+    expect(screen.getByText('新建')).toBeTruthy()
+    expect(screen.getByText('门后传来一个女人的声音')).toBeTruthy()
+  })
+
+  it('an ask from outside the tab shows one face with one scope pressed (the 已对账 card\'s door)', async () => {
+    const novel = board(CANVAS_ID, [card('c_1'), card('c_2')], { genre: { id: 'novel', version: 'novel@1', selectedAt: NOW } })
+    const harness = makeHarness({ boards: [novel] })
+    render(<CanvasTab
+      {...harness.props}
+      renderSlot={facesSlot(true) as unknown as CanvasTabProps['renderSlot']}
+      listGenres={vi.fn(async () => ({ ok: true, value: [FACES_SUMMARY] })) as never}
+    />)
+    await screen.findByText('seat manuscripts')
+    act(() => { harness.store.openBoardFace(CANVAS_ID, 'board', 'recent') })
+    await screen.findByText('门后传来一个女人的声音')
+    expect(screen.getByRole('tab', { name: 'tab:board' }).getAttribute('aria-selected')).toBe('true')
+    expect(screen.queryByText('卡片 c_1')).toBeNull()
   })
 
   it('offers 归档 when deleting a card in use, with the genre\'s note, and none for an unused one', async () => {

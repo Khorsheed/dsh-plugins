@@ -96,7 +96,7 @@ describe('relation cards in the engine', () => {
     expect((await store.listRelationJournal({ workId: DREAM.workId, relationId: fresh.cardId! })).map(entry => entry.kind === 'stage' && entry.event)).toEqual(['start'])
   })
 
-  it('import: points land in the journal clamped to ±2; a milestone for a 可升 pair pends as a level-up; adopting it moves the card and empties the bar', async () => {
+  it('import: points land in the journal clamped to ±2; a milestone for a 可升 pair levels it up at once; the card moves and the bar empties', async () => {
     const { store, canvas } = seededStore()
     const report = await store.extractImport({
       workId: DREAM.workId, n: 5, payload: {
@@ -107,12 +107,12 @@ describe('relation cards in the engine', () => {
     }, SESSION)
     expect(report.ok).toBe(true)
     const journal = await store.listRelationJournal({ workId: DREAM.workId, relationId: CARD.zhaoAiwen })
-    expect(journal.at(-1)).toMatchObject({ kind: 'points', chapter: 5, delta: 2 })
+    expect(journal.filter(entry => entry.chapter === 5 && entry.kind === 'points')).toMatchObject([{ kind: 'points', chapter: 5, delta: 2 }])
 
-    const pending = (await store.listPending({ workId: DREAM.workId })).filter(item => item.kind === 'relation')
-    expect(pending).toHaveLength(1)
-    expect(pending[0]!.reason).toContain('合作 → 托底')
-    expect(await store.decidePending({ workId: DREAM.workId, id: pending[0]!.id, action: 'accept' }, SESSION)).toEqual({ ok: true })
+    // The level-up is applied by the 对账 itself and named in the answer; nothing waits.
+    expect(await store.listPending({ workId: DREAM.workId })).toEqual([])
+    expect(report.applied).toHaveLength(1)
+    expect(report.applied[0]!.line).toContain('合作 → 托底')
     expect(canvas.card(DREAM.workId, CARD.zhaoAiwen)?.fields?.['stage']).toBe('托底')
     const [after] = (await store.ledger({ workId: DREAM.workId })).relations
     expect(after).toMatchObject({ level: 3, progress: 0, ready: false })

@@ -51,7 +51,7 @@ import { ChapterPage } from './ChapterReader.tsx'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { CHAPTER_PAGE, PLAN_PAGE, STORY_LOG_PAGE, type NovelFace, type NovelRemote } from './contract.ts'
 import { en, NS, zh } from './locales.ts'
-import { ChaptersBadge, CardScopes, DeleteNote, FaceLabel } from './NovelFaces.tsx'
+import { ChaptersBadge, CardScopes, DeleteNote, FaceLabel, RECENT_SCOPE } from './NovelFaces.tsx'
 import { PlanView } from './PlanView.tsx'
 import { StoryLogPage, StoryView } from './StoryLogPage.tsx'
 import { novelTurnDefinition } from './novel-turn.ts'
@@ -189,6 +189,8 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     openPage: () => (ctx.get('canvasNav') as { openPage: ReturnType<WriteToolFace['openPage']> } | undefined)?.openPage,
     chapterPage: CHAPTER_PAGE,
     planPage: PLAN_PAGE,
+    openFace: () => (ctx.get('canvasNav') as { openFace?: ReturnType<WriteToolFace['openFace']> } | undefined)?.openFace,
+    recentScope: RECENT_SCOPE,
   }
   ctx.effect(() => seats.inject('tool.call.toolview', () => seats.register({
     name: 'tool.call.toolview',

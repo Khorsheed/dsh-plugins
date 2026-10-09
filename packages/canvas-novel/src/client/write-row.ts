@@ -39,22 +39,34 @@ export interface WriteRowChapter {
 
 /** What the row shows. */
 export interface WriteRowModel {
-  /** `running` — no answer yet; `failed` — an error answer; `line` — a plain answer; `chapter` — a chapter answer; `outline` — an outline proposal; `extracted` — a settled `novel_extract` import. */
-  readonly state: 'running' | 'failed' | 'line' | 'chapter' | 'outline' | 'extracted'
+  /**
+   * `running` — no answer yet; `failed` — an error answer; `line` — a plain
+   * answer; `chapter` — a chapter plan (or a bare chapter) registered; `body` —
+   * a chapter's text written; `outline` — an outline proposal; `extracted` — a
+   * settled `novel_extract` import.
+   */
+  readonly state: 'running' | 'failed' | 'line' | 'chapter' | 'body' | 'outline' | 'extracted'
   readonly chapter: WriteRowChapter | null
   /** The canvas an outline proposal went to (`outline` only). */
   readonly canvasId?: string
   /** The new cards a settled import landed (`extracted` only). */
   readonly newCards?: number
+  /** The existing cards a settled import changed (`extracted` only). */
+  readonly updated?: number
+  /** The text's length (`body` only, when the answer gave it). */
+  readonly words?: number
   /** The answer's text. */
   readonly text: string
 }
 
 const CHAPTER = /^已(登记|建)第 (\d+) 章《(.*?)》（画布 ([^\s）·]+)/m
 const OUTLINE = /^已提交大纲提议（画布 (canvas_[a-z0-9]+)）/m
-const COUNTS = /走向 (\d+) 拍 \/ 伏笔 (\d+) 条 \/ 出场 (\d+) 人/
+// 走向…拍 is how answers before 2026-10-09 counted beats.
+const COUNTS = /(?:走向|情节) (\d+) (?:拍|段) \/ 伏笔 (\d+) 条 \/ 出场 (\d+) 人/
+const BODY = /^已写入第 (\d+) 章《(.*?)》正文（画布 ([^\s）·]+)(?: · (\d+) 字)?）/m
 const EXTRACTED = /^第 (\d+) 章已对账（画布 ([^\s）·]+)）/m
 const NEW_CARDS = /新卡 ×(\d+)/
+const UPDATED = /改了已有卡 ×(\d+)/
 
 /**
  * Read one block.
@@ -75,6 +87,16 @@ export function writeRowModel(block: NovelToolBlock | null | undefined, phase?: 
       state: 'extracted',
       chapter: { canvasId: extracted[2]!, n: Number(extracted[1]), title: '', counts: null },
       newCards: Number(NEW_CARDS.exec(text)?.[1] ?? 0),
+      updated: Number(UPDATED.exec(text)?.[1] ?? 0),
+      text,
+    }
+  }
+  const body = BODY.exec(text)
+  if (body !== null) {
+    return {
+      state: 'body',
+      chapter: { canvasId: body[3]!, n: Number(body[1]), title: body[2]!, counts: null },
+      ...(body[4] === undefined ? {} : { words: Number(body[4]) }),
       text,
     }
   }

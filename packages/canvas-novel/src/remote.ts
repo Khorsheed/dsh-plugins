@@ -19,7 +19,7 @@ import { planFromText, planToText } from './text-forms.ts'
 import {
   coreSuspenseNudge, revealText, revealVolume, targetWordsOf,
   type CharacterView, type LedgerResult, type NovelCardRequest, type NovelCardResult, type NovelChapterRequest, type NovelChapterResult, type NovelChaptersResult,
-  type NovelDecideRequest, type NovelGestureResult, type NovelOutlineDecideRequest, type NovelOutlineResult, type NovelPendingResult, type NovelPlanEditRequest, type NovelPlanEditResult, type NovelStarRequest, type NovelStateRequest,
+  type NovelDecideRequest, type NovelGestureResult, type NovelOutlineDecideRequest, type NovelOutlineResult, type NovelPendingResult, type NovelPlanEditRequest, type NovelRecentResult, type NovelPlanEditResult, type NovelStarRequest, type NovelStateRequest,
   type NovelWorkRequest, type OutlineCore, type OutlineHero, type PendingItem, type PendingView, type StoryLogResult,
 } from './types.ts'
 
@@ -208,6 +208,12 @@ export class NovelRemoteService extends TypertRemoteService<NovelRemoteConfig> {
   async confirmPlan(agent: Agent, request: NovelChapterRequest): Promise<NovelGestureResult> {
     const result = await this.core.confirmChapterPlan({ workId: request.canvasId, n: request.n }, agent.session)
     return result.ok ? { ok: true } : { ok: false, error: result.error ?? 'io' }
+  }
+
+  /** What the newest 对账 did, card by card (the 设定 face's 最近更新). */
+  @Remote('recentUpdates')
+  async recentUpdates(request: NovelWorkRequest): Promise<NovelRecentResult> {
+    return this.core.recentUpdates({ workId: request.canvasId })
   }
 
   /** The person's own edit of a plan (the page's edit box), saved and confirmed at once. */

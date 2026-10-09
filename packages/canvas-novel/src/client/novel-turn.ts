@@ -34,7 +34,7 @@ export const NOVEL_TURN_KEY = 'canvas-novel-asks'
 
 /** One thing a Turn asked the person to decide: a chapter plan, an outline proposal, or a reconciled chapter to review. */
 export interface NovelTurnAsk {
-  /** Dedup key: `chapter:<canvas>:<n>`, `outline:<canvas>` or `extract:<canvas>:<n>`. */
+  /** Dedup key: `chapter:<canvas>:<n>`, `body:<canvas>:<n>`, `outline:<canvas>` or `extract:<canvas>:<n>`. */
   readonly key: string
   readonly seq?: number
   readonly row: WriteRowModel
@@ -82,6 +82,9 @@ export function askOf(block: NovelToolBlock, seq?: number): NovelTurnAsk | undef
   const row = writeRowModel(block)
   if (row.state === 'chapter' && row.chapter !== null) {
     return { key: `chapter:${row.chapter.canvasId}:${row.chapter.n}`, ...(seq === undefined ? {} : { seq }), row }
+  }
+  if (row.state === 'body' && row.chapter !== null) {
+    return { key: `body:${row.chapter.canvasId}:${row.chapter.n}`, ...(seq === undefined ? {} : { seq }), row }
   }
   if (row.state === 'extracted' && row.chapter !== null) {
     return { key: `extract:${row.chapter.canvasId}:${row.chapter.n}`, ...(seq === undefined ? {} : { seq }), row }
