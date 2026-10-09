@@ -18,7 +18,8 @@ let service: LibraryService
 let tools: ReturnType<typeof libraryToolDefinitions>
 let images: ImageRefCache
 
-const ctx = { get: () => undefined } as unknown as Context
+/** A ctx with no attachments service; `effect` is a no-op here (the real-Context teardown wiring is pinned in capabilities-dispose.spec.ts). */
+const ctx = { get: () => undefined, effect: () => () => {} } as unknown as Context
 
 /** A calling session, as the registry hands it to execute. */
 const exec = { agent: { session: { id: 's_learn' } } }

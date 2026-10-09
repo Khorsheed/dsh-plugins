@@ -15,6 +15,27 @@ The library and learning engine: project-organized close reading. Books are regi
 - **The model face** (the `./tool` composition entry, granted per session by presets): `library_read`, `library_write`, `library_assess`, documented in their own descriptions; every refusal teaches the correct call. Optional `hideSections` / `denyTools` quiet unrelated root prompt sections and tools in that scope.
 - **Self-hiding**: the tab type registers on the canvas double-check criterion, fail-open on every unreadable path.
 
+## The workspace integration seam (server-side consumption)
+
+Mounting this package on an **isolated Context with its own stateRoot** is a supported consumption form: the mounting side starts an independent instance with this package's `apply` + `config.stateRoot` on its own Context — state is bound per instance (`<stateRoot>/state.json`, `bindings.json`, `projects/<project id>/`); no service-core verb needs a session (a binding is keyed BY a session id — data, not a prerequisite).
+
+```ts
+import { apply } from '@khorsheed/dsh-library'
+
+apply(isolatedCtx, {
+  stateRoot: '/path/to/instance-state/library',
+})
+```
+
+The mounting side's obligations and the semantics:
+
+- **The `capabilities` verb is the display contract**: `remote.library.capabilities()` (host-side `service.capabilities()`) answers `{ protocolVersion: 1, hasStorage, storageUnavailableReason?, hasAttachments }` — storage writability with its reason (the store probe's own message) and the attachment probe's verdict at call time. Read-only display: enforcement stays at the write gates (`storage-unavailable` / `unavailable` refusals) exactly as before; the shape only grows, new fields always optional (the reader's evolution rule).
+- **Attachments are probed per call**: the image routes (`savePhoto` / `readPagePhoto`) re-run `ctx.get('attachments')` on every call; mounted on a Context without an attachment store, those two routes degrade to an `unavailable` refusal — never a throw, everything else unchanged.
+- **The state root is a deployment-local path**: the store is plain `node:fs` (atomic writes + per-project locks + append-only JSONL), deliberately never `ctx.fs` (the session-fenced sandbox). To keep state inside some synced / shared directory, point `stateRoot` at that path itself — the instance neither knows nor participates in any sync mechanism.
+- **File locks genuinely coordinate across instances**: instances coexisting (or succeeding one another) on the same `stateRoot` serialize on `projects/<id>.lock`, `state.json.lock` and `bindings.json.lock` — one instance's write waits out the other's lock and lands after the release, never writes through.
+- **Terminal dispose + same-root rebuild**: `dispose()` is idempotent and terminal, and fires automatically when the borrowed Context is torn down (wired through `ctx.effect` at construction) — afterwards every public verb, reads included, refuses with the coded package-named `LibraryDisposedError` (`code: 'disposed'`). A write racing disposal refuses coded before the lock is ever taken (the disk side was already safe: lock / temp write / atomic rename). Rebuilding over the same state root is legal: a new service instance on it works as usual, and everything the old instance wrote is there.
+- **Local behavior unchanged**: apart from these additive surfaces, every semantic is byte-identical to before.
+
 ## Install
 
 ```sh

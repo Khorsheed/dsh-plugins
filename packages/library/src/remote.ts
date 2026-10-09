@@ -18,6 +18,7 @@ import type {
   LibraryAttachmentRef,
   LibraryBinding,
   LibraryBook,
+  LibraryCapabilities,
   LibraryCard,
   LibraryCardInput,
   LibraryCardQuery,
@@ -59,6 +60,14 @@ export class LibraryRemoteService extends TypertRemoteService<LibraryRemoteConfi
   /** The service core this face delegates to. */
   private get core(): LibraryService {
     return this.ctx.library
+  }
+
+  /* -------------------------------------------------------- capabilities */
+
+  /** What this composition can do: storage and attachments, with the reason — the display contract. */
+  @Remote('capabilities')
+  capabilities(): Promise<LibraryCapabilities> {
+    return this.core.capabilities()
   }
 
   /* ------------------------------------------------------------ projects */

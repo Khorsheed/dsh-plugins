@@ -7,7 +7,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
 
 /** The identity the package publishes under (the manifest's `name`). */
-const PACKAGE_NAME = '@khorsheed/dsh-library'
+export const PACKAGE_NAME = '@khorsheed/dsh-library'
 
 /** Cordis companion plugin name. */
 export const name = 'library-invariant'

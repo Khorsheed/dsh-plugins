@@ -71,6 +71,26 @@ export interface LibraryRefusal {
 /** The outcome every mutating verb answers. */
 export type LibraryOutcome<T> = ({ readonly ok: true } & T) | LibraryRefusal
 
+/* --------------------------------------------------------- capabilities */
+
+/**
+ * Capability handshake: what a client may rely on in this composition. A
+ * read-only DISPLAY contract — enforcement stays at the write gates
+ * (`storage-unavailable` / `unavailable` refusals), exactly as before. The
+ * shape evolves additively only: new fields are always optional, so a
+ * consumer written against protocolVersion 1 keeps working (the reader's
+ * ReaderCapabilities rule).
+ */
+export interface LibraryCapabilities {
+  readonly protocolVersion: 1
+  /** Whether the state root accepts writes; when false every write refuses `storage-unavailable`. */
+  readonly hasStorage: boolean
+  /** Why persistence is unavailable, when it is (the store's probe message). */
+  readonly storageUnavailableReason?: string
+  /** Whether an attachment store is mounted on the Context; when false the image routes refuse `unavailable`. */
+  readonly hasAttachments: boolean
+}
+
 /* ------------------------------------------------------------- projects */
 
 /**
