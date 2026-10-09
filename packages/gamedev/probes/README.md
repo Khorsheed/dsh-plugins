@@ -10,4 +10,4 @@ Pre-implementation probes for `proposals/active/2026-10-09-gamedev-mode.md` §8.
 | `p0-2-headless.mjs` | P0-2: capture's `CaptureBrowserManager`, scripted playtest, determinism, error capture |
 | `probe-plugin/`, `fake-llm.mjs`, `p0-345-drive.mjs`, `p0-3-render.mjs` | P0-3/4/5 on a throwaway instance: `agent/pre-step` attach, `agent/turn-stopping` + `steer` with a cap of 2, `turn/end` logging; fake OpenAI-compatible model logs what the model received |
 
-Run P0-1/P0-2 with `PUPPETEER_CORE=<path to puppeteer-core.js>`, `CAPTURE_LIB=<packages/capture/lib/index.js>`, `CHROME=<chrome executable>`.
+Generate the fixture images first with `node gen-png.mjs` (images are gitignored). Run P0-1/P0-2 with `PUPPETEER_CORE=<path to puppeteer-core.js>`, `CAPTURE_LIB=<packages/capture/lib/index.js>`, `CHROME=<chrome executable>`.
