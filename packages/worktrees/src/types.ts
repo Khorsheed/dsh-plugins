@@ -9,11 +9,19 @@
 
 export type { ChangedFile, LogRow } from './git.ts'
 export type {
+  ControlledSwitchConflict, ControlledSwitchInvalidRequest, ControlledSwitchNoWorktree,
+  ControlledSwitchNotARepo, ControlledSwitchPersistenceFailed, ControlledSwitchReceipt,
+  ControlledSwitchRequest, ControlledSwitchSwitched, WorktreeBinding, WorktreeSwitchedEvent,
+} from './bindings.ts'
+export {
+  resolveWorktreesStateRoot, WORKTREES_BINDINGS_FILE_NAME, WORKTREES_STATE_DIR_NAME, WORKTREES_SWITCHED_EVENT,
+} from './bindings.ts'
+export type {
   BadgeConfig, ChangesResult, CommitFilesResult, CommitInfo, FileDiffRequest, FileDiffResult,
   ListLocalDirectoryRequest, ListLocalDirectoryResult, LocalFileEntry,
   LocalImageResult, ReadFileAtCommitRequest, ReadFileRequest, ReadFileResult,
   ReadLocalFileRequest, ReadLocalFileResult, ReadLocalImageRequest, ReadRepoImageRequest,
-  SessionSummary, WorktreeInfo, WorktreesService,
+  SessionSummary, WorktreeInfo, WorktreesService, WorktreesServiceOptions,
 } from './service.ts'
 
 /**

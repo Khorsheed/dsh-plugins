@@ -1,12 +1,19 @@
 /**
  * The worktrees Remote service: the badge and changes drawer's data face. A
  * thin adapter over the same `ctx.worktrees` service core — no logic is
- * copied here. Every method takes the calling `agent` as its first
- * parameter, resolves the session workspace (`header.cwd`) from it, and
- * delegates to the service core, so the Remote path is exactly as strong as
- * the tool path. The cordis service key is `worktreesRemote` (`worktrees` is
- * the core service); the WIRE namespace is `worktrees`, so the browser calls
- * `remote.worktrees.*`.
+ * copied here. The AGENT-BOUND half takes the calling `agent` as its first
+ * parameter, resolves the session workspace (`header.cwd`, or the session's
+ * active-worktree override) from it, and delegates to the service core, so
+ * the Remote path is exactly as strong as the tool path. The AGENT-FREE half
+ * (the `*At` query verbs, `worktreeBinding`, `switchWorktreeControlled`)
+ * takes explicit plain-JSON arguments — an absolute repository anchor, a
+ * plain-string session id — so a trusted server-side caller can query and
+ * re-bind workspaces WITHOUT the host's unified agent lookup (which may
+ * resume offline sessions). Like the local-files verbs, the agent-free half
+ * accepts any absolute path: authorization and jailing are the trusted
+ * caller's job, never this surface's. The cordis service key is
+ * `worktreesRemote` (`worktrees` is the core service); the WIRE namespace is
+ * `worktrees`, so the browser calls `remote.worktrees.*`.
  *
  * @module @khorsheed/dsh-worktrees
  */
@@ -14,12 +21,13 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { boundContextSummary, createUserMessage, type ContextFormed } from '@deepseek-ai/dsh-llm'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
-import type {
-  BadgeConfig, ChangesResult, CommitFilesResult, FileDiffRequest, FileDiffResult,
-  ListLocalDirectoryRequest, ListLocalDirectoryResult, LocalImageResult,
-  ReadFileAtCommitRequest, ReadFileRequest, ReadFileResult,
-  ReadLocalFileRequest, ReadLocalFileResult, ReadLocalImageRequest, ReadRepoImageRequest,
-  SessionSummary, WorktreeInfo, WorktreesService,
+import type { ControlledSwitchReceipt, ControlledSwitchRequest, WorktreeBinding } from './bindings.ts'
+import {
+  assertSafeLocalPath, type BadgeConfig, type ChangesResult, type CommitFilesResult, type FileDiffRequest,
+  type FileDiffResult, type ListLocalDirectoryRequest, type ListLocalDirectoryResult, type LocalImageResult,
+  type ReadFileAtCommitRequest, type ReadFileRequest, type ReadFileResult,
+  type ReadLocalFileRequest, type ReadLocalFileResult, type ReadLocalImageRequest, type ReadRepoImageRequest,
+  type SessionSummary, type WorktreeInfo, type WorktreesService,
 } from './service.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -95,8 +103,10 @@ export class WorktreesRemoteService extends TypertRemoteService<WorktreesRemoteC
 
   /** The calling session's workspace; '' when the session has none. Prefers
    * the session's active-worktree override (set by the model-facing tool) and
-   * falls back to the session's static `header.cwd`. */
-  private cwd(agent: Agent): string {
+   * falls back to the session's static `header.cwd`. Awaits the bindings load
+   * first, so a persisted override survives a host restart for this path too. */
+  private async cwd(agent: Agent): Promise<string> {
+    await this.worktrees.bindingsReady()
     return this.worktrees.activeWorktreeOf(agent.id) ?? (agent.session.header.cwd ?? '')
   }
 
@@ -113,32 +123,32 @@ export class WorktreesRemoteService extends TypertRemoteService<WorktreesRemoteC
 
   /** The badge + drawer summary for the calling session's worktree. */
   @Remote('summary')
-  summary(agent: Agent): Promise<SessionSummary> {
-    return this.worktrees.summary(this.cwd(agent))
+  async summary(agent: Agent): Promise<SessionSummary> {
+    return this.worktrees.summary(await this.cwd(agent))
   }
 
   /** Both change segments for the drawer's file tree. */
   @Remote('changes')
-  changes(agent: Agent): Promise<ChangesResult> {
-    return this.worktrees.changes(this.cwd(agent))
+  async changes(agent: Agent): Promise<ChangesResult> {
+    return this.worktrees.changes(await this.cwd(agent))
   }
 
   /** The repository's committed (tracked) file list. */
   @Remote('repoFiles')
-  repoFiles(agent: Agent): Promise<string[]> {
-    return this.worktrees.repoFiles(this.cwd(agent))
+  async repoFiles(agent: Agent): Promise<string[]> {
+    return this.worktrees.repoFiles(await this.cwd(agent))
   }
 
   /** All worktrees of the session's repository (the switcher dropdown). */
   @Remote('listWorktrees')
-  listWorktrees(agent: Agent): Promise<WorktreeInfo[]> {
-    return this.worktrees.listWorktrees(this.cwd(agent))
+  async listWorktrees(agent: Agent): Promise<WorktreeInfo[]> {
+    return this.worktrees.listWorktrees(await this.cwd(agent))
   }
 
   /** Point the session's active worktree at another worktree. */
   @Remote('switchWorktree')
-  switchWorktree(agent: Agent, request: { path: string }): Promise<WorktreeInfo> {
-    return this.worktrees.switchWorktree(agent.id, this.cwd(agent), request.path)
+  async switchWorktree(agent: Agent, request: { path: string }): Promise<WorktreeInfo> {
+    return this.worktrees.switchWorktree(agent.id, await this.cwd(agent), request.path)
   }
 
   /**
@@ -170,32 +180,32 @@ export class WorktreesRemoteService extends TypertRemoteService<WorktreesRemoteC
 
   /** The branch's own commit log (`base..HEAD`). */
   @Remote('commitLog')
-  commitLog(agent: Agent): Promise<import('./service.ts').CommitInfo[]> {
-    return this.worktrees.commitLog(this.cwd(agent))
+  async commitLog(agent: Agent): Promise<import('./service.ts').CommitInfo[]> {
+    return this.worktrees.commitLog(await this.cwd(agent))
   }
 
   /** One commit's changed files. */
   @Remote('commitFiles')
-  commitFiles(agent: Agent, request: { sha: string }): Promise<CommitFilesResult> {
-    return this.worktrees.commitFiles(this.cwd(agent), request.sha)
+  async commitFiles(agent: Agent, request: { sha: string }): Promise<CommitFilesResult> {
+    return this.worktrees.commitFiles(await this.cwd(agent), request.sha)
   }
 
   /** One file's unified diff in one segment (commit segment carries the sha). */
   @Remote('fileDiff')
-  fileDiff(agent: Agent, request: FileDiffRequest): Promise<FileDiffResult> {
-    return this.worktrees.fileDiff(this.cwd(agent), request.path, request.segment, request.commit)
+  async fileDiff(agent: Agent, request: FileDiffRequest): Promise<FileDiffResult> {
+    return this.worktrees.fileDiff(await this.cwd(agent), request.path, request.segment, request.commit)
   }
 
   /** One file's current content. */
   @Remote('readFile')
-  readFile(agent: Agent, request: ReadFileRequest): Promise<ReadFileResult> {
-    return this.worktrees.readFile(this.cwd(agent), request.path)
+  async readFile(agent: Agent, request: ReadFileRequest): Promise<ReadFileResult> {
+    return this.worktrees.readFile(await this.cwd(agent), request.path)
   }
 
   /** One file's content at one commit (the commits mode's content view). */
   @Remote('readFileAtCommit')
-  readFileAtCommit(agent: Agent, request: ReadFileAtCommitRequest): Promise<ReadFileResult> {
-    return this.worktrees.readFileAtCommit(this.cwd(agent), request.path, request.commit)
+  async readFileAtCommit(agent: Agent, request: ReadFileAtCommitRequest): Promise<ReadFileResult> {
+    return this.worktrees.readFileAtCommit(await this.cwd(agent), request.path, request.commit)
   }
 
   /** List one local directory — the git-agnostic browser's directory plane.
@@ -218,8 +228,8 @@ export class WorktreesRemoteService extends TypertRemoteService<WorktreesRemoteC
   /** Read a repo-relative file as an inline image (the repo browser's data
    * plane; resolves the session's repository, like the other git data face). */
   @Remote('readRepoImage')
-  readRepoImage(agent: Agent, request: ReadRepoImageRequest): Promise<LocalImageResult> {
-    return this.worktrees.readRepoImage(this.cwd(agent), request.path)
+  async readRepoImage(agent: Agent, request: ReadRepoImageRequest): Promise<LocalImageResult> {
+    return this.worktrees.readRepoImage(await this.cwd(agent), request.path)
   }
 
   /** Read one local file as an inline image — the git-agnostic browser's image
@@ -228,5 +238,112 @@ export class WorktreesRemoteService extends TypertRemoteService<WorktreesRemoteC
   @Remote('readLocalImage')
   readLocalImage(request: ReadLocalImageRequest): Promise<LocalImageResult> {
     return this.worktrees.readLocalImage(request.path)
+  }
+
+  /* ------------------------------------------------------------------ *
+   * The AGENT-FREE half: every verb takes an explicit absolute repository
+   * anchor (`at` — any path inside the target repository/worktree; the
+   * toplevel is resolved host-side) or a plain-string session id, so a
+   * trusted server-side caller never triggers the host's unified agent
+   * lookup (which may RESUME offline sessions). Like the local-files
+   * verbs above, any absolute path is accepted — authorization/jailing
+   * is the trusted caller's job; the surface only rejects non-absolute
+   * or traversal-shaped anchors. Return shapes are exactly the
+   * agent-bound twins', by delegation to the same service core.
+   * ------------------------------------------------------------------ */
+
+  /** The anchor validation shared by the agent-free verbs. */
+  private static anchor(at: string): string {
+    return assertSafeLocalPath(at)
+  }
+
+  /** Agent-free twin of {@link summary}: the badge/drawer summary for the repository at `at`. */
+  @Remote('summaryAt')
+  async summaryAt(request: { at: string }): Promise<SessionSummary> {
+    return this.worktrees.summary(WorktreesRemoteService.anchor(request.at))
+  }
+
+  /** Agent-free twin of {@link changes}: both change segments for the repository at `at`. */
+  @Remote('changesAt')
+  async changesAt(request: { at: string }): Promise<ChangesResult> {
+    return this.worktrees.changes(WorktreesRemoteService.anchor(request.at))
+  }
+
+  /** Agent-free twin of {@link repoFiles}: the committed file list of the repository at `at`. */
+  @Remote('repoFilesAt')
+  async repoFilesAt(request: { at: string }): Promise<string[]> {
+    return this.worktrees.repoFiles(WorktreesRemoteService.anchor(request.at))
+  }
+
+  /** Agent-free twin of {@link listWorktrees}: all worktrees of the repository at `at`. */
+  @Remote('listWorktreesAt')
+  async listWorktreesAt(request: { at: string }): Promise<WorktreeInfo[]> {
+    return this.worktrees.listWorktrees(WorktreesRemoteService.anchor(request.at))
+  }
+
+  /** Agent-free twin of {@link commitLog}: the commit log of the checkout at `at`. */
+  @Remote('commitLogAt')
+  async commitLogAt(request: { at: string }): Promise<import('./service.ts').CommitInfo[]> {
+    return this.worktrees.commitLog(WorktreesRemoteService.anchor(request.at))
+  }
+
+  /** Agent-free twin of {@link commitFiles}: one commit's changed files in the repository at `at`. */
+  @Remote('commitFilesAt')
+  async commitFilesAt(request: { at: string, sha: string }): Promise<CommitFilesResult> {
+    return this.worktrees.commitFiles(WorktreesRemoteService.anchor(request.at), request.sha)
+  }
+
+  /** Agent-free twin of {@link fileDiff}: one file's unified diff in the repository at `at`. */
+  @Remote('fileDiffAt')
+  async fileDiffAt(request: FileDiffRequest & { at: string }): Promise<FileDiffResult> {
+    return this.worktrees.fileDiff(WorktreesRemoteService.anchor(request.at), request.path, request.segment, request.commit)
+  }
+
+  /**
+   * Agent-free twin of {@link readFile} AND {@link readFileAtCommit} in one
+   * verb: `commit` present reads the file at that commit, absent reads the
+   * working-tree content — same return shape, same errors, one anchor.
+   */
+  @Remote('readFileAt')
+  async readFileAt(request: { at: string, path: string, commit?: string }): Promise<ReadFileResult> {
+    const anchor = WorktreesRemoteService.anchor(request.at)
+    return request.commit === undefined || request.commit === ''
+      ? this.worktrees.readFile(anchor, request.path)
+      : this.worktrees.readFileAtCommit(anchor, request.path, request.commit)
+  }
+
+  /** Agent-free twin of {@link readRepoImage}: a repo-relative file as an inline image from the repository at `at`. */
+  @Remote('readRepoImageAt')
+  async readRepoImageAt(request: { at: string, path: string }): Promise<LocalImageResult> {
+    return this.worktrees.readRepoImage(WorktreesRemoteService.anchor(request.at), request.path)
+  }
+
+  /**
+   * The current worktree binding of one session: the recorded override, or
+   * `{ kind: 'none' }` when no override exists (the session then follows its
+   * own static cwd — usually the main checkout, but that fallback is the
+   * session's fact; this surface never performs the agent lookup that could
+   * read it). Today the badge can only INFER this from `summary`.
+   */
+  @Remote('worktreeBinding')
+  worktreeBinding(sessionId: string): Promise<WorktreeBinding> {
+    return this.worktrees.bindingOf(sessionId)
+  }
+
+  /**
+   * The controlled switch: bind one session to one worktree and get a typed
+   * receipt — `switched` (the WorktreeInfo + the effective binding) |
+   * `conflict` (`expected` mismatched; carries the ACTUAL current binding) |
+   * `not-a-repo` | `no-worktree` | `invalid-request` | `persistence-failed`.
+   * With `expected` present the switch is a compare-and-swap, never a silent
+   * last-write-wins; the CAS state is single-process (the in-process map plus
+   * its write-through file, no cross-process locking). A `switched` receipt
+   * is returned only AFTER the binding was persisted (when persistence is
+   * on); its `persisted: false` marks a memory-only deployment. The legacy
+   * agent-bound {@link switchWorktree} stays for the native UI.
+   */
+  @Remote('switchWorktreeControlled')
+  switchWorktreeControlled(sessionId: string, request: ControlledSwitchRequest): Promise<ControlledSwitchReceipt> {
+    return this.worktrees.controlledSwitch(sessionId, request)
   }
 }

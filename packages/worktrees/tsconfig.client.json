@@ -13,6 +13,7 @@
   },
   "files": [
     "src/css-modules.d.ts",
+    "src/bindings.ts",
     "src/git.ts",
     "src/service.ts",
     "src/types.ts",

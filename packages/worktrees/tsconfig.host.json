@@ -6,6 +6,7 @@
     "tsBuildInfoFile": "lib/tsconfig.host.tsbuildinfo"
   },
   "files": [
+    "src/bindings.ts",
     "src/git.ts",
     "src/index.ts",
     "src/invariant.ts",
