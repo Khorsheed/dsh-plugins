@@ -301,6 +301,25 @@ The cordis service name is `dshEval`, deliberately NOT `eval`: the loader evalua
 | `experimentArtifact({experimentId, path})` | Read one file inside an experiment's directory: that directory only (lexical bounds check, then realpath), text only inlined, over 256 KB cut with a note saying so |
 | `humanFinal(runId, ticket, verdicts, sessionId)` | Record one cell's final verdicts in the `human-final` namespace — **the only write entry that namespace has anywhere in this family**. The ticket resolves back to a cell host-side; the write forwards mission's `annotate`, appending and never rewriting; the annotation's `by` is `tab:<sessionId>` (never a `tool:` prefix) and the verdict document's `by` is `judge-bench`. Every verdict needs evidence; a blank one is refused. **There is no model tool behind it and there will not be one** (UI spec R1) |
 
+## The instance-mounting seam
+
+Mounting this package on an **isolated Context with its own stateRoot** is a supported consumption form: the mounting side starts an independent instance on its own Context with this package's `apply` + `config.stateRoot`, or directly with `new EvalService(hosts, { stateRoot })` — eval's own state tree binds to the instance: the experiment directories, the condition library, and every run's cell directories (`<stateRoot>/experiments/`, `conditions/`, `cells|readiness|judge|probes/<runId>/`), no longer derived from `$DSH_HOME/state/eval`. Two instances with two roots see two disjoint sets of experiments, conditions and cells; no global mutable state is introduced.
+
+```ts
+import { apply } from '@khorsheed/dsh-eval'
+
+apply(isolatedCtx, {
+  stateRoot: '/path/to/instance-state/eval',
+})
+```
+
+The mounting side's obligations and the semantics:
+
+- **One config field, byte-identical when unset**: an instance without `stateRoot` behaves byte-identically to before — everything still derives from DSH_HOME, and an unset DSH_HOME still throws 「set DSH_HOME」. The root is canonicalized at construction (absolute, `~` expanded, realpathed as far up as the tree exists), so the boundary check compares real locations, not path strings.
+- **runStart's stateRoot is boundary-checked**: with an instance root configured, a run's cell root defaults to the instance root itself, and an explicit path on `runStart` / `runExperimentStart` (and on `run` / `runExperiment`, plus the Remote `runStart`'s new `stateRoot` option) must resolve UNDER it — a `..` escape and a symlink laid inside the root both get the coded refusal `STATEROOT_OUTSIDE_INSTANCE` (`EvalRunRefused`), before anything registers. Without an instance root the option passes through unchecked, exactly as before.
+- **dispose touches only its own runs**: `dispose()` is idempotent and terminal, and fires with the borrowed Context's teardown (the `ctx.effect` wiring in `apply`). What it cancels is the not-yet-settled run jobs THIS instance started — through the same lever `job_kill` pulls: the job's cancel hook → the run's AbortSignal → no further cell starts, and the cells the cancel caught finalize as `interrupted` through the normal path and land on disk — never a kill -9; a parent session the run opened for itself is still released in its settle path. It does NOT cover jobs other instances started — the unowned-by-design registration semantics is unchanged, and dispose never widens into a registry sweep; settled jobs need nothing. **There is never a resume**: a stopped run is re-run, which was already the design and does not change with this seam; an interrupted cell on disk stays `interrupted`. Afterwards every public verb (reads included) refuses with the coded, package-named `EvalDisposedError` (`code: 'disposed'`); a start racing dispose refuses with the same code and registers nothing (a parent session opened mid-race is released). Rebuilding on the same root is legal: a new service instance over the same stateRoot works normally, and the old instance's data is all there.
+- **What stays deployment-global**: a condition's scoped home (the credential directory) is answered by the localAgent facade's `homeDir(harness, scope)`, outside eval's state root — it does not follow the instance root; the mission ledger and the registered dataset repositories likewise. The instance root binds only eval's own state tree.
+
 ## The report (`report`)
 
 Input: a mission export bundle (manifest.json, run.json, missions/<id>/attempt-N/{meta,annotations,artifacts}, dataset/<layer>/). Output: three files.

@@ -139,7 +139,11 @@ export interface CapturedResponse {
 
 /** One model call, fully captured. */
 export interface CapturedRequest {
-  /** Collector-assigned process-wide monotonic sequence (the panel's `#784`). */
+  /**
+   * Collector-assigned process-wide monotonic sequence (the panel's `#784`).
+   * Process-local and ephemeral — the counter resets on restart, so a seq
+   * only selects within the answering instance's `generation`.
+   */
   seq: number
   scopeId: string
   sessionId: string
@@ -150,6 +154,8 @@ export interface CapturedRequest {
   config: RequestConfig
   usage?: RequestUsage
   timing: RequestTiming
+  /** The answering instance's epoch — see {@link ListTurnsResult.generation}. */
+  generation?: string
   /**
    * 明细头锚点：本请求的响应干了什么（结构化；面板本地化渲染为
    * `name:hint` / 「直接回答」 / —）。
@@ -192,13 +198,26 @@ export interface AgentScopeSummary {
   endedAt?: number
 }
 
+/** Where one captured unit's content came from — the fidelity marker. */
+export type CaptureOrigin =
+  /** The in-process stream tee (full fidelity, system-section attribution). */
+  | 'live'
+  /**
+   * Rebuilt from the on-disk session log (a one-shot child log carries no
+   * system prompt / tool definitions; the system segment keeps no section names).
+   */
+  | 'log-reconstructed'
+
 /** `listTurns` row — deliberately light (no segments, no request payloads). */
 export interface TurnListItem {
   sessionId: string
   /**
    * The panel-facing address. Real turns key on the host's own turn number
-   * (stable across live capture and log backfill); purpose pseudo-turns
-   * (compaction / session-title buckets) take negative addresses.
+   * (stable across live capture and log backfill, and durable across process
+   * restarts); purpose pseudo-turns (compaction / session-title buckets) take
+   * negative addresses that are NOT durable — they re-derive from the
+   * session's bucket counter on every mount. Address semantics:
+   * `(sessionId, turnSeq)` names a TURN, never a request.
    */
   turnSeq: number
   /** The host's turn number on real turns; absent marks a purpose pseudo-turn. */
@@ -212,6 +231,12 @@ export interface TurnListItem {
   failedScopeCount: number
   totalInputTokens: number
   totalOutputTokens: number
+  /**
+   * Fidelity marker: `live` once any in-process capture landed on the turn
+   * (the log lane never merges into such a turn), `log-reconstructed` when
+   * the whole turn was rebuilt from the session log.
+   */
+  origin?: CaptureOrigin
   /**
    * The turn-tail assistant message id — the `conversation.chat.assistant-actions`
    * owner prop, so the message-row icon can map itself back to this turn.
@@ -236,16 +261,78 @@ export interface BackfillInfo {
   reason?: string
 }
 
+/**
+ * The scope allow-list of one read, computed by the CALLER from its own
+ * authorization facts — the plugin treats it as an opaque filter and never
+ * derives one itself. Absent (or no `scopes` key) is the unfiltered local
+ * semantics.
+ *
+ * Scope identifiers are the ones `AgentScopeOverview.scopeId` exposes: the
+ * main conversation scope's id is the stable string `'main'`; child scopes
+ * key on the subagent childId (`call:<callId>` when the run never reached
+ * the catalog). A scope outside the list contributes nothing to the answer:
+ * no request rows, no scope counts, no lanes or tool names, no token sums —
+ * and its child log is never opened on the query's behalf.
+ */
+export interface ScopeFilter {
+  readonly scopes?: readonly string[]
+}
+
+/**
+ * The refusal half of a single-object scoped read: the address resolved to
+ * captured content, but the query's {@link ScopeFilter} excluded the scope
+ * holding it. Distinct from `undefined` (no such address) so a filtering
+ * caller never renders one as the other — the refusal confirms the address
+ * exists and carries nothing of the excluded scope.
+ */
+export interface ScopedRefusal {
+  readonly refused: 'no-authorized-content'
+  /** The answering instance's epoch — same restart-invalidation role as on the result envelopes. */
+  readonly generation?: string
+}
+
 /** `listTurns` payload: the turn rows plus the session's backfill watermark. */
 export interface ListTurnsResult {
   turns: TurnListItem[]
   backfill: BackfillInfo
+  /**
+   * The answering instance's epoch (a mount-time id). Request `seq` values
+   * are process-local and reset on restart: a caller holding seqs across
+   * calls tags them with the generation of the result that yielded them and
+   * treats a changed generation as invalidating every held seq — an old seq
+   * must never silently resolve to a different request.
+   */
+  generation?: string
+  /**
+   * Turns this session collected and later evicted under the retention caps
+   * — the "collected then dropped" signal next to the backfill watermark,
+   * present only when non-zero. Blind spot: a session whose last turn
+   * evicts frees its whole slot, so fully-evicted reads exactly like
+   * never-seen (the store cannot tell the two apart).
+   */
+  evictedTurnCount?: number
+  /**
+   * Present exactly when the query carried a {@link ScopeFilter}: the
+   * authorized scopes that exist in the session. An empty array is the
+   * explicit zero-authorized-content signal — distinct from the field's
+   * absence (unfiltered) and from unknown-session emptiness.
+   */
+  authorizedScopes?: readonly string[]
 }
 
 /** `getTurn` payload: scopes with request headers but without segments. */
 export interface TurnOverview {
   turn: TurnListItem
   scopes: AgentScopeOverview[]
+  /** The answering instance's epoch — see {@link ListTurnsResult.generation}. */
+  generation?: string
+  /**
+   * Present exactly when the query carried a {@link ScopeFilter}: this
+   * turn's authorized scopes. An empty array means the turn exists but the
+   * filter excluded every scope on it (the turn row's own fields are
+   * session-level metadata and still answer).
+   */
+  authorizedScopes?: readonly string[]
 }
 
 /** Scope with light request rows (the left request list). */
@@ -260,6 +347,12 @@ export interface AgentScopeOverview {
   config: RequestConfig
   startedAt: number
   endedAt?: number
+  /**
+   * Fidelity marker: where this scope's captured content came from (the two
+   * lanes are mutually exclusive per scope — whichever fills first owns it).
+   * Absent while the scope holds no captured content yet.
+   */
+  origin?: CaptureOrigin
   requests: RequestListItem[]
 }
 
@@ -293,6 +386,15 @@ export interface TurnTiming {
   lanes: TimingLane[]
   /** Per-tool aggregation for the 按工具拆分 section. */
   tools: ToolTiming[]
+  /** The answering instance's epoch — see {@link ListTurnsResult.generation}. */
+  generation?: string
+  /**
+   * Present exactly when the query carried a {@link ScopeFilter}: this
+   * turn's authorized scopes. An empty array means the turn exists but the
+   * filter excluded every scope on it — buckets, lanes, and tools then
+   * aggregate over nothing (the session-level `totalMs` still answers).
+   */
+  authorizedScopes?: readonly string[]
 }
 
 /** One entry on the timing timeline. */

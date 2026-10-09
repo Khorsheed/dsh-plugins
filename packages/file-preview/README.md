@@ -51,6 +51,28 @@ dsh plugin --profile web remove @khorsheed/dsh-file-preview
 
 `maxReadBytes` 限制单次 `read`（超限返回 `too-large`），`maxFiles` 限制 `list` 折叠结果——均为正整数，默认 512 KiB 与 500——`captureBashWrites`（默认 `true`）开关 bash 写入采集器。
 
+## 工作区接入接缝（0.4.1+，服务端消费）
+
+`createFilePreviewReadSurface`（包根导出）是给**不持有 Agent 的服务端调用方**的只读消费面。Remote 面动词的 `agent` 查找会经宿主统一 Agent 解析——那会唤醒离线会话——而已持有授权会话来源的调用方不该为一次读取惊动它。工厂吃进一份**外部授权的来源**，返回与 Remote 面同形的 `{ list, turnFiles, read }`：
+
+```ts
+import { createFilePreviewReadSurface } from '@khorsheed/dsh-file-preview'
+
+const surface = createFilePreviewReadSurface({
+  events: () => readSessionEvents(sessionId), // 会话事件（升序 seq），每次调用重读
+  cwd: sessionCwd,                            // 路径锚点（会话头里的 cwd）
+  fs: scopedFs,                               // 与 ctx.fs 同形的 fs 面
+  imageUrl: path => issueAddress(path),       // 可选：图片地址签发器
+})
+```
+
+- **授权完全在调用方**：来源能读到什么（哪个会话的事件、哪个锚点、哪张 fs 面）由调用方按自己的授权事实决定——接入面自身不做任何准入检查，也从不构造、解析或唤醒会话运行时对象（`tests/read-surface.spec.ts` 把这条钉死在源码上：模块里没有任何 session-runtime 查找调用）。
+- **同一份核心，同一份答案**：Remote 动词与接入面跑同一组核心函数（`src/read-surface.ts`）——清单折叠、按回合折叠、bash 写入合入（同一采集管线从同一份事件重建）、存在性探测——所以同一会话两条路的答案逐字节一致，契约测试逐字钉死。各项上限（`maxReadBytes` / `htmlMaxReadBytes` / `maxFiles` / `captureBashWrites`）与服务配置同名同默认。
+- **图片走签发器**：注入 `imageUrl` 时，图片 `read` 结果把签发的地址放进既有的 `url` 字段（客户端照常渲染 `read.url`，消费方零 UI 改动即可发出受控地址；签发器对某个路径返回 `undefined` 时仅该次读取降级）；`readImageBytes(path)` 是最小授权字节读（同锚点、同围栏、同 `maxReadBytes` 上限，返回字节与 MIME），供消费方经自己的鉴权通道发字节。不注入签发器时，图片读取与 headless 现状完全一致地降级为 `kind: 'binary'`，绝不指向遗留的 `/file-preview-image/...` 路由。
+- **路径围栏与 Remote 路径同一条**：同样的 `resolve` 加同一个锚点——`..` 逃逸、symlink 行为、`missing` / `too-large` / `error` 分类逐字一致。
+- **生命周期**：除从注入读取器派生的水印缓存（按回合折叠、bash 捕获，按日志水位失效）外纯无状态；缓存随实例作用域，`dispose()` 即弃（面仍可用，下次调用重新派生），无定时器、无后台工作。
+- **本地行为零变化**：Remote 面与遗留图片路由逐字节不动；不消费此接缝的部署不受任何影响。
+
 ## Compatibility
 
 | Host 行 | 结论 |

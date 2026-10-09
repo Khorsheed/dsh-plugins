@@ -1,8 +1,11 @@
 /**
  * The worktrees service core. `ctx.worktrees` exposes this; the Remote
  * service is a thin adapter that resolves the calling session's cwd and
- * delegates here — no logic is copied. Every query is a git read; the
- * service stays stateless (the registry is `git worktree list` itself).
+ * delegates here — no logic is copied. Every query is a git read; the git
+ * side stays stateless (the worktree registry is `git worktree list`
+ * itself). The one piece of held state is the per-session active-worktree
+ * binding map, which writes through to a small JSON store when a state root
+ * is configured (see `./bindings.ts`) and is otherwise memory-only.
  *
  * Scope rule: all commands run inside the resolved repository toplevel, and
  * every client-supplied path is validated as a repo-relative path before any
@@ -12,6 +15,10 @@
  */
 import { readFile, readdir, realpath, stat } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, sep } from 'node:path'
+import {
+  isWorktreeBinding, WorktreeBindingStore, type ControlledSwitchReceipt, type ControlledSwitchRequest,
+  type WorktreeBinding, type WorktreeSwitchedEvent,
+} from './bindings.ts'
 import {
   entryAt, git, gitAllowFailure, mergeCounts, parseLogWithFiles, parseNameStatus, parsePorcelain, parseWorktreeList,
   repoToplevel, type ChangedFile, type LogRow,
@@ -299,35 +306,145 @@ export function assertSafeLocalPath(path: string): string {
 }
 
 /**
- * The worktrees service. One instance per plugin mount; holds only the
- * configured base ref (no mutable state).
+ * Service-core construction options beyond the base ref.
+ */
+export interface WorktreesServiceOptions {
+  /**
+   * The already-resolved state root for binding persistence (see
+   * `resolveWorktreesStateRoot` in `./bindings.ts`). `undefined` runs the
+   * service MEMORY-ONLY — the legacy zero-config behavior, and the mode every
+   * controlled-switch receipt reports through `persisted: false`.
+   */
+  stateRoot?: string | undefined
+  /**
+   * Hook fired on every successful binding SET (the legacy switch/create and
+   * the controlled switch alike). The plugin's apply wires it to
+   * `ctx.emit('worktrees/switched', …)`; a bare-constructed service simply
+   * has no listeners.
+   */
+  onSwitched?: ((event: WorktreeSwitchedEvent) => void) | undefined
+}
+
+/**
+ * The worktrees service. One instance per plugin mount; holds the configured
+ * base ref, the per-session binding map, and (when a state root is
+ * configured) the bindings store that map writes through to.
  */
 export class WorktreesService {
+  private readonly store: WorktreeBindingStore | undefined
+  private readonly onSwitched: ((event: WorktreeSwitchedEvent) => void) | undefined
+  private readonly ready: Promise<void>
+
   /**
    * @param baseRef - branch the committed segment is measured against
    *   (defaults to `main` at the plugin config).
+   * @param options - binding persistence and the switched-event hook.
    */
-  constructor(private readonly baseRef: string) {}
+  constructor(private readonly baseRef: string, options: WorktreesServiceOptions = {}) {
+    this.onSwitched = options.onSwitched
+    this.store = options.stateRoot === undefined ? undefined : new WorktreeBindingStore(options.stateRoot)
+    // Load on mount: every binding-reading/mutating path awaits this promise,
+    // so a persisted override is never missed and never raced by an early
+    // switch. A failed load (corrupt/unreadable file) resolves quietly — the
+    // store's availability verdict carries the degrade.
+    this.ready = this.store === undefined
+      ? Promise.resolve()
+      : this.store.load().then(({ bindings }) => {
+        for (const [sessionId, path] of bindings) this.activeWorktrees.set(sessionId, path)
+      })
+  }
 
   /**
    * Per-session active worktree override: session id → worktree path. When a
    * session has an override the Remote data face points the badge/drawer at
-   * that worktree instead of the session's static `header.cwd`. In-memory only
-   * for v1 (a session must re-switch after a host restart).
+   * that worktree instead of the session's static `header.cwd`. The map is
+   * the single-process CAS state; when a state root is configured every
+   * mutation writes through to the bindings file (loaded back on mount), and
+   * without one the map is the whole story (the pre-persistence behavior).
    */
   private readonly activeWorktrees = new Map<string, string>()
 
-  /** The session's active worktree override, or undefined when unset. */
+  /** Settles once the persisted bindings (when any) have been loaded into memory. */
+  bindingsReady(): Promise<void> {
+    return this.ready
+  }
+
+  /**
+   * The session's active worktree override, or undefined when unset. This is
+   * the raw in-memory view — callers that must see PERSISTED bindings await
+   * {@link bindingsReady} first (the Remote's cwd resolution does).
+   */
   activeWorktreeOf(sessionId: string): string | undefined {
     return this.activeWorktrees.get(sessionId)
   }
 
-  /** Set the session's active worktree override. */
+  /**
+   * The session's current binding as the agent-free surface reports it: the
+   * recorded override, or `none` when no override exists (the session then
+   * follows its own static cwd — usually the main checkout, but that fallback
+   * is the session's fact, not this surface's).
+   * @param sessionId - the session whose binding is queried.
+   * @returns the current binding.
+   */
+  async bindingOf(sessionId: string): Promise<WorktreeBinding> {
+    await this.ready
+    const path = this.activeWorktrees.get(sessionId)
+    return path === undefined ? { kind: 'none' } : { kind: 'override', path }
+  }
+
+  /**
+   * Whether persistence is on and usable: a state root was configured AND the
+   * bindings file loaded cleanly (a corrupt file degrades the deployment to
+   * memory-only rather than being clobbered).
+   */
+  get persistenceAvailable(): boolean {
+    return this.store?.available ?? false
+  }
+
+  /**
+   * Write a prospective map through to the bindings file. No-op when the
+   * service runs memory-only; otherwise the write MUST succeed before the
+   * in-memory map is mutated, so memory and the file never diverge silently.
+   * @param bindings - the map as it would look after the mutation.
+   * @throws when persistence is on but the write fails.
+   */
+  private async persistBindings(bindings: ReadonlyMap<string, string>): Promise<void> {
+    if (this.store === undefined || !this.store.available) return
+    await this.store.persist(bindings)
+  }
+
+  /** Persist-then-set one session's override; fires the switched hook only after both. */
+  private async setBinding(sessionId: string, path: string): Promise<void> {
+    const next = new Map(this.activeWorktrees)
+    next.set(sessionId, path)
+    await this.persistBindings(next)
+    this.activeWorktrees.set(sessionId, path)
+    this.onSwitched?.({ sessionId, path })
+  }
+
+  /** Persist-then-clear one session's override (no switched hook — nothing is bound TO). */
+  private async clearBinding(sessionId: string): Promise<void> {
+    if (!this.activeWorktrees.has(sessionId)) return
+    const next = new Map(this.activeWorktrees)
+    next.delete(sessionId)
+    await this.persistBindings(next)
+    this.activeWorktrees.delete(sessionId)
+  }
+
+  /**
+   * Set the session's active worktree override — the RAW in-memory write,
+   * with no persistence and no event. Internal mutation paths use
+   * {@link setBinding}; this stays public for tests and for callers that
+   * deliberately manage memory-only state.
+   */
   setActiveWorktree(sessionId: string, path: string): void {
     this.activeWorktrees.set(sessionId, path)
   }
 
-  /** Clear the session's active worktree override (falls back to header.cwd). */
+  /**
+   * Clear the session's active worktree override (falls back to header.cwd) —
+   * the RAW in-memory write; see {@link setActiveWorktree}.
+   */
   clearActiveWorktree(sessionId: string): void {
     this.activeWorktrees.delete(sessionId)
   }
@@ -785,23 +902,99 @@ export class WorktreesService {
 
   /**
    * Point the session's badge/drawer at another worktree — the `switch` action.
+   * The override writes through to the bindings file when persistence is on;
+   * a failed write aborts the switch with a thrown error (never a fake
+   * success), and a memory-only deployment behaves exactly as it always has.
    * @param sessionId - the calling session.
    * @param cwd - session working directory (the base repo).
    * @param path - the target worktree path.
    * @returns the target worktree's info.
-   * @throws when `path` is not a worktree of the repository.
+   * @throws when `path` is not a worktree of the repository, or when the
+   *   binding could not be persisted.
    */
   async switchWorktree(sessionId: string, cwd: string, path: string): Promise<WorktreeInfo> {
+    await this.ready
     const repo = await this.repoOf(cwd)
     if (repo === null) throw new Error('worktrees: not a git repository')
     const entries = parseWorktreeList(await git(repo, ['worktree', 'list', '--porcelain']))
     const entry = entryAt(entries, await this.canonicalPath(path))
     if (entry === undefined) throw new Error(`worktrees: no worktree at ${path}`)
-    this.setActiveWorktree(sessionId, entry.path)
+    await this.setBinding(sessionId, entry.path)
     const infos = await this.worktreeInfos(repo)
     const info = infos.find(candidate => WorktreesService.normPath(candidate.path) === WorktreesService.normPath(entry.path))
     if (info === undefined) throw new Error(`worktrees: no worktree at ${path}`)
     return info
+  }
+
+  /**
+   * The controlled switch: bind one session to one worktree with a typed
+   * receipt instead of a throw taxonomy, and an optional compare-and-swap on
+   * the caller's believed current binding. Agent-free — the session id is a
+   * plain string and the repository is resolved from the TARGET path, so no
+   * agent lookup (and no chance of resuming an offline session) is involved.
+   *
+   * Outcome order: `invalid-request` (malformed input, nothing consulted) →
+   * `conflict` (`expected` present and mismatched; the receipt carries the
+   * ACTUAL binding) → `not-a-repo` / `no-worktree` → persistence (a failed
+   * write-through is `persistence-failed` and leaves memory untouched) →
+   * `switched`. With `expected` absent the switch is last-write-wins within
+   * this single process — CAS state is the in-process map plus its
+   * write-through file; there is NO cross-process locking, so two hosts
+   * sharing one state root can clobber each other's file.
+   * @param sessionId - the session to bind (any non-empty string; the trusted
+   *   caller owns its namespace).
+   * @param request - the target worktree path and the believed current binding.
+   * @returns the typed receipt; every expected failure is data, never a throw.
+   */
+  async controlledSwitch(sessionId: string, request: ControlledSwitchRequest): Promise<ControlledSwitchReceipt> {
+    if (typeof sessionId !== 'string' || sessionId === '') {
+      return { kind: 'invalid-request', reason: 'sessionId must be a non-empty string' }
+    }
+    const path = request?.path
+    if (typeof path !== 'string' || path === '' || !isAbsolute(path)) {
+      return { kind: 'invalid-request', reason: 'path must be a non-empty absolute path' }
+    }
+    if (request.expected !== undefined && !isWorktreeBinding(request.expected)) {
+      return { kind: 'invalid-request', reason: "expected must be { kind: 'none' } or { kind: 'override', path }" }
+    }
+
+    await this.ready
+
+    if (request.expected !== undefined) {
+      const current = this.activeWorktrees.get(sessionId)
+      const actual: WorktreeBinding = current === undefined ? { kind: 'none' } : { kind: 'override', path: current }
+      const matches = request.expected.kind === 'none'
+        ? actual.kind === 'none'
+        : actual.kind === 'override' && WorktreesService.normPath(actual.path) === WorktreesService.normPath(request.expected.path)
+      if (!matches) return { kind: 'conflict', sessionId, expected: request.expected, actual }
+    }
+
+    const repo = await this.repoOf(path)
+    if (repo === null) return { kind: 'not-a-repo', path }
+    const entries = parseWorktreeList(await git(repo, ['worktree', 'list', '--porcelain']))
+    const entry = entryAt(entries, await this.canonicalPath(path))
+    if (entry === undefined) return { kind: 'no-worktree', path, repo }
+    const infos = await this.worktreeInfos(repo)
+    const info = infos.find(candidate => WorktreesService.normPath(candidate.path) === WorktreesService.normPath(entry.path))
+    if (info === undefined) return { kind: 'no-worktree', path, repo }
+
+    try {
+      await this.setBinding(sessionId, entry.path)
+    } catch (error) {
+      return {
+        kind: 'persistence-failed',
+        sessionId,
+        path: entry.path,
+        message: error instanceof Error ? error.message : String(error),
+      }
+    }
+    return {
+      kind: 'switched',
+      sessionId,
+      worktree: info,
+      binding: { kind: 'override', path: entry.path },
+      persisted: this.persistenceAvailable,
+    }
   }
 
   /**
@@ -814,6 +1007,7 @@ export class WorktreesService {
    * @returns the new worktree's info.
    */
   async createWorktree(sessionId: string, cwd: string, path: string, branch: string | undefined): Promise<WorktreeInfo> {
+    await this.ready
     const repo = await this.repoOf(cwd)
     if (repo === null) throw new Error('worktrees: not a git repository')
     const entries = parseWorktreeList(await git(repo, ['worktree', 'list', '--porcelain']))
@@ -826,7 +1020,7 @@ export class WorktreesService {
     }
     // After the add the directory exists, so canonicalPath resolves it fully.
     const created = await this.canonicalPath(path)
-    this.setActiveWorktree(sessionId, created)
+    await this.setBinding(sessionId, created)
     const infos = await this.worktreeInfos(repo)
     const info = infos.find(candidate => WorktreesService.normPath(candidate.path) === WorktreesService.normPath(created))
     if (info === undefined) throw new Error(`worktrees: could not resolve worktree at ${path}`)
@@ -846,6 +1040,7 @@ export class WorktreesService {
    */
   async removeWorktree(sessionId: string, cwd: string, path: string, confirm: boolean): Promise<{ switchedTo: string }> {
     if (confirm !== true) throw new Error('worktrees: confirm must be true to remove a worktree')
+    await this.ready
     const repo = await this.repoOf(cwd)
     if (repo === null) throw new Error('worktrees: not a git repository')
     const entries = parseWorktreeList(await git(repo, ['worktree', 'list', '--porcelain']))
@@ -859,7 +1054,7 @@ export class WorktreesService {
     if (dirty > 0) throw new Error(`worktrees: worktree at ${path} has ${dirty} uncommitted change(s)`)
     await git(repo, ['worktree', 'remove', entry.path])
     if (WorktreesService.normPath(this.activeWorktrees.get(sessionId) ?? '') === WorktreesService.normPath(entry.path)) {
-      this.clearActiveWorktree(sessionId)
+      await this.clearBinding(sessionId)
     }
     return { switchedTo: repo }
   }

@@ -26,6 +26,7 @@
 import type {
   AgentScopeOverview,
   BackfillInfo,
+  CaptureOrigin,
   CapturedRequest,
   CapturedResponse,
   ListTurnsResult,
@@ -34,6 +35,8 @@ import type {
   RequestTiming,
   RequestUsage,
   ResponseSummary,
+  ScopeFilter,
+  ScopedRefusal,
   TimingLane,
   ToolTiming,
   TurnListItem,
@@ -199,6 +202,8 @@ interface SessionRecord {
   messageDurations: Map<string, number>
   /** The latest settled purpose-less request — the assistant/message pairing heuristic. */
   lastSettledMain?: StoredRequest
+  /** Turns evicted under the retention caps (the "collected then dropped" signal). */
+  evictedTurns: number
 }
 
 /** Snapshot one request needs at dispatch — the normalized GenerateOptions face. */
@@ -216,6 +221,24 @@ export interface StoreDeps {
   now?: () => number
   /** Turn-eviction notice (the log lane closes its per-child handles here). */
   onTurnEvicted?: (sessionId: string, turn: TurnRecord) => void
+  /** The instance epoch stamped on query results (restart invalidation); a mount-time id by default. */
+  generation?: string
+}
+
+/**
+ * Whether one scope passes a read's allow-list: unfiltered when the filter
+ * carries no `scopes`, otherwise membership. Shared by the store's query
+ * methods and the service's child-log gate.
+ */
+export function scopeAuthorized(scopeId: string, filter?: ScopeFilter): boolean {
+  return filter?.scopes === undefined || filter.scopes.includes(scopeId)
+}
+
+/** The scope's fidelity marker for the wire; absent while it holds no captured content. */
+function scopeOrigin(scope: ScopeRecord): CaptureOrigin | undefined {
+  if (scope.logFilled) return 'log-reconstructed'
+  if (scope.live || scope.requests.length > 0) return 'live'
+  return undefined
 }
 
 /** The in-memory capture store. All mutation enters through the `note*`/`observe*` methods. */
@@ -232,6 +255,8 @@ export class InspectorStore {
   private readonly maxTurnsPerSession: number
   private readonly maxBackfillRequestsPerSession: number
   private readonly maxStoredCharsTotal: number
+  /** The instance epoch stamped on every query result (restart invalidation). */
+  private readonly generation: string
   private seqCounter = 0
   /** Stored segment text characters across all sessions (the memory driver). */
   private totalChars = 0
@@ -242,6 +267,7 @@ export class InspectorStore {
     this.maxStoredCharsTotal = config.maxStoredCharsTotal ?? DEFAULT_MAX_STORED_CHARS_TOTAL
     this.now = deps.now ?? Date.now
     this.onTurnEvicted = deps.onTurnEvicted
+    this.generation = deps.generation ?? `${this.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
   }
 
   /** The shared assembly ring (service feeds it from the assemble waterfall). */
@@ -280,6 +306,7 @@ export class InspectorStore {
         backfilledRequests: 0,
         pendingCalls: new Map(),
         messageDurations: new Map(),
+        evictedTurns: 0,
       }
       this.sessions.set(id, record)
     }
@@ -904,8 +931,13 @@ export class InspectorStore {
 
   // ---------- queries ----------
 
-  /** Light turn list of one session plus its backfill watermark (sorted newest last). */
-  listTurns(sessionId: string): ListTurnsResult {
+  /**
+   * Light turn list of one session plus its backfill watermark (sorted newest
+   * last). A {@link ScopeFilter} restricts every aggregate to the authorized
+   * scopes; the turn rows themselves (query preview, timestamps) are
+   * session-level metadata and stay listed.
+   */
+  listTurns(sessionId: string, filter?: ScopeFilter): ListTurnsResult {
     const session = this.sessions.get(sessionId)
     const backfill: BackfillInfo = session === undefined
       ? { state: 'none' }
@@ -913,21 +945,39 @@ export class InspectorStore {
         state: session.backfillState,
         ...session.backfillReason === undefined ? {} : { reason: session.backfillReason },
       }
-    if (session === undefined) return { turns: [], backfill }
+    if (session === undefined) return { turns: [], backfill, generation: this.generation }
     return {
       turns: [...session.turns]
         .sort((a, b) => a.startedAt - b.startedAt || a.turnSeq - b.turnSeq)
-        .map(turn => this.turnItem(sessionId, turn)),
+        .map(turn => this.turnItem(sessionId, turn, filter)),
       backfill,
+      generation: this.generation,
+      ...session.evictedTurns === 0 ? {} : { evictedTurnCount: session.evictedTurns },
+      ...filter?.scopes === undefined ? {} : { authorizedScopes: this.authorizedScopes(session, filter) },
     }
   }
 
-  private turnItem(sessionId: string, turn: TurnRecord): TurnListItem {
+  /** The session's existing scopes that pass the filter (turn order, then creation order). */
+  private authorizedScopes(session: SessionRecord, filter: ScopeFilter): readonly string[] {
+    const allowed = new Set(filter.scopes)
+    const out: string[] = []
+    for (const turn of [...session.turns].sort((a, b) => a.startedAt - b.startedAt || a.turnSeq - b.turnSeq)) {
+      for (const scope of turn.scopes.values()) {
+        if (allowed.has(scope.scopeId) && !out.includes(scope.scopeId)) out.push(scope.scopeId)
+      }
+    }
+    return out
+  }
+
+  private turnItem(sessionId: string, turn: TurnRecord, filter?: ScopeFilter): TurnListItem {
     let requestCount = 0
+    let scopeCount = 0
     let failedScopeCount = 0
     let totalInputTokens = 0
     let totalOutputTokens = 0
     for (const scope of turn.scopes.values()) {
+      if (!scopeAuthorized(scope.scopeId, filter)) continue
+      scopeCount += 1
       requestCount += scope.requests.length
       if (scope.status === 'failed') failedScopeCount += 1
       for (const request of scope.requests) {
@@ -943,52 +993,72 @@ export class InspectorStore {
       startedAt: turn.startedAt,
       ...turn.endedAt === undefined ? {} : { endedAt: turn.endedAt },
       requestCount,
-      scopeCount: turn.scopes.size,
+      scopeCount,
       failedScopeCount,
       totalInputTokens,
       totalOutputTokens,
+      origin: turn.liveContent ? 'live' : 'log-reconstructed',
       ...turn.closingMessageId === undefined ? {} : { closingMessageId: turn.closingMessageId },
     }
   }
 
   /** One turn's scope/request overview, without segments. */
-  getTurn(sessionId: string, turnSeq: number): TurnOverview | undefined {
+  getTurn(sessionId: string, turnSeq: number, filter?: ScopeFilter): TurnOverview | undefined {
     const session = this.sessions.get(sessionId)
     const turn = session?.turns.find(candidate => candidate.turnSeq === turnSeq)
     if (session === undefined || turn === undefined) return undefined
-    const item = this.turnItem(sessionId, turn)
-    const scopes: AgentScopeOverview[] = [...turn.scopes.values()].map(scope => ({
-      scopeId: scope.scopeId,
-      scopeSeq: scope.scopeSeq,
-      kind: scope.kind,
-      ...scope.label === undefined ? {} : { label: scope.label },
-      status: scope.status,
-      ...scope.error === undefined ? {} : { error: scope.error },
-      config: scope.config,
-      startedAt: scope.startedAt,
-      ...scope.endedAt === undefined ? {} : { endedAt: scope.endedAt },
-      requests: scope.requests.map((request): RequestListItem => ({
-        seq: request.seq,
-        scopeId: request.scopeId,
-        status: request.status,
-        responseSummary: request.responseSummary,
-        startedAt: request.startedAt,
-        ...request.usage === undefined ? {} : { usage: request.usage },
-        ...request.settledAt === undefined ? {} : { totalMs: request.settledAt - request.startedAt },
-        totalChars: request.totalChars,
-      })),
-    }))
-    return { turn: item, scopes }
+    const item = this.turnItem(sessionId, turn, filter)
+    const scopes: AgentScopeOverview[] = [...turn.scopes.values()]
+      .filter(scope => scopeAuthorized(scope.scopeId, filter))
+      .map(scope => {
+        const origin = scopeOrigin(scope)
+        return {
+          scopeId: scope.scopeId,
+          scopeSeq: scope.scopeSeq,
+          kind: scope.kind,
+          ...scope.label === undefined ? {} : { label: scope.label },
+          status: scope.status,
+          ...scope.error === undefined ? {} : { error: scope.error },
+          config: scope.config,
+          startedAt: scope.startedAt,
+          ...scope.endedAt === undefined ? {} : { endedAt: scope.endedAt },
+          ...origin === undefined ? {} : { origin },
+          requests: scope.requests.map((request): RequestListItem => ({
+            seq: request.seq,
+            scopeId: request.scopeId,
+            status: request.status,
+            responseSummary: request.responseSummary,
+            startedAt: request.startedAt,
+            ...request.usage === undefined ? {} : { usage: request.usage },
+            ...request.settledAt === undefined ? {} : { totalMs: request.settledAt - request.startedAt },
+            totalChars: request.totalChars,
+          })),
+        }
+      })
+    return {
+      turn: item,
+      scopes,
+      generation: this.generation,
+      ...filter?.scopes === undefined ? {} : { authorizedScopes: scopes.map(scope => scope.scopeId) },
+    }
   }
 
-  /** One request's full four-segment breakdown. */
-  getRequest(sessionId: string, seq: number): CapturedRequest | undefined {
+  /**
+   * One request's full four-segment breakdown. A request whose scope the
+   * filter excludes answers with a {@link ScopedRefusal} — distinguishable
+   * from `undefined` (no such seq on this instance).
+   */
+  getRequest(sessionId: string, seq: number, filter?: ScopeFilter): CapturedRequest | ScopedRefusal | undefined {
     const session = this.sessions.get(sessionId)
     if (session === undefined) return undefined
     for (const turn of session.turns) {
       for (const scope of turn.scopes.values()) {
         const request = scope.requests.find(candidate => candidate.seq === seq)
-        if (request !== undefined) return this.requestView(request)
+        if (request === undefined) continue
+        if (!scopeAuthorized(scope.scopeId, filter)) {
+          return { refused: 'no-authorized-content', generation: this.generation }
+        }
+        return this.requestView(request)
       }
     }
     return undefined
@@ -1006,20 +1076,22 @@ export class InspectorStore {
       config: request.config,
       ...request.usage === undefined ? {} : { usage: request.usage },
       timing: requestTiming(request),
+      generation: this.generation,
       responseSummary: request.responseSummary,
       ...request.response === undefined ? {} : { response: request.response },
       segments: request.segments,
     }
   }
 
-  /** One turn's whole-turn timing aggregation. */
-  getTurnTiming(sessionId: string, turnSeq: number): TurnTiming | undefined {
+  /** One turn's whole-turn timing aggregation, filtered to the authorized scopes. */
+  getTurnTiming(sessionId: string, turnSeq: number, filter?: ScopeFilter): TurnTiming | undefined {
     const session = this.sessions.get(sessionId)
     const turn = session?.turns.find(candidate => candidate.turnSeq === turnSeq)
     if (session === undefined || turn === undefined) return undefined
     const lanes: TimingLane[] = []
     const tools = new Map<string, ToolTiming>()
     for (const scope of turn.scopes.values()) {
+      if (!scopeAuthorized(scope.scopeId, filter)) continue
       for (const request of scope.requests) {
         lanes.push(...requestLanes(request))
         for (const exec of request.execs) {
@@ -1061,6 +1133,12 @@ export class InspectorStore {
       },
       lanes,
       tools: [...tools.values()].sort((a, b) => b.totalMs - a.totalMs),
+      generation: this.generation,
+      ...filter?.scopes === undefined ? {} : {
+        authorizedScopes: [...turn.scopes.values()]
+          .filter(scope => scopeAuthorized(scope.scopeId, filter))
+          .map(scope => scope.scopeId),
+      },
     }
   }
 
@@ -1083,6 +1161,7 @@ export class InspectorStore {
 
   private evictTurn(session: SessionRecord, turn: TurnRecord): void {
     session.turns = session.turns.filter(candidate => candidate !== turn)
+    session.evictedTurns += 1
     for (const [purpose, bucket] of session.buckets) {
       if (bucket === turn) session.buckets.delete(purpose)
     }

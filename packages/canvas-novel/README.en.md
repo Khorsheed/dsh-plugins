@@ -60,6 +60,26 @@ It replaces the retired `@khorsheed/dsh-story-bible`. Data under the old `$DSH_H
   - Delegating the grading to the host's native subagent is the main agent's job; the plugin itself never delegates.
 - **Briefs have token budgets**: about 2k for write, about 2.5k for plan, and extract scales with the manuscript. No variant injects every previous chapter or every foreshadow.
 
+## The workspace integration seam (server-side consumption)
+
+Mounting this package on an **isolated Context with its own stateRoot** is a supported consumption form: the mounting side starts an independent instance with this package's `apply` + `config.stateRoot` on its own Context — the engine's state is bound per instance (`<stateRoot>/<canvas id>/`), and the read verbs (`readWorkMeta` / `listWorks` / `readEntries` …) need no session. The canvas service is probed per call (`canvasBoardOf`): provide `canvasBoard` on the SAME Context for a zero-code binding; without it there are no works, every verb answers `missing`, and nothing throws.
+
+```ts
+import { apply } from '@khorsheed/dsh-canvas-novel'
+
+apply(isolatedCtx, {
+  stateRoot: '/path/to/instance-state/novel',
+})
+```
+
+The mounting side's obligations and the semantics:
+
+- **The mounting Context MUST provide `fs` at construction**: the package injects `['fs']` (eager injection) — cordis never mounts the row in a composition without one, and a direct `new NovelService(ctx)` on a Context without fs fails at construction with a package-named error, not later at the first write.
+- **The write verbs' session is optional; the fence never is**: every write verb takes `session: Session | undefined`. With a session the behavior is byte-identical to before (the session resolves the MODE and lends its id; the writable boundary re-roots at the plugin state root). Without one (a server-side caller with no conversation) the DEPLOYMENT DEFAULT mode resolves and no id is lent — a read-only deployment still answers `denied`. A policy home that cannot resolve session-less at all refuses the write coded `denied`, never silently allows. A chapter manuscript still lands in the canvas workspace FIRST (the boundary re-rooted at the work's workspace), and the registration is refused when it cannot land; session-less, the work must bring its own workspace (there is no session cwd to borrow).
+- **`bindWork` still requires a session**: what it binds IS the session — a session-less caller has nothing to bind.
+- **Terminal dispose + same-root rebuild**: `dispose()` is idempotent and terminal, and fires automatically when the borrowed Context is torn down — afterwards every public verb, reads included, refuses with the coded package-named `NovelDisposedError` (`code: 'disposed'`). A write racing disposal either completed before the write boundary or refuses at it — it never reaches the disk a rebuilt instance now owns. Rebuilding over the same state root is legal: a new service instance on it works as usual (only the old instance is dead).
+- **Local behavior unchanged**: with a session passed as before, the semantics are byte-identical.
+
 ## Install
 
 ```sh

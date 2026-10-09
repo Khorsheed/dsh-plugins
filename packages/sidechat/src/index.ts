@@ -19,7 +19,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { SideChatRemoteService } from './remote.ts'
 import { SideChatService, type SideChatConfig } from './service.ts'
 
-export { SideChatService } from './service.ts'
+export { SideChatService, SideChatDisposedError } from './service.ts'
 export type { SideChatConfig } from './service.ts'
 export { SideChatStore, resolveSideChatStateRoot, SideChatStoreError } from './store.ts'
 export { SideChatRemoteService } from './remote.ts'
@@ -48,7 +48,7 @@ export const inject = ['agents', 'sessions']
 /**
  * Plugin body: provide the service core, then mount the Remote data face.
  * @param ctx - owning Cordis Context.
- * @param config - optional state-root and agent-preset overrides.
+ * @param config - optional state-root, agent-preset, route and cwd overrides.
  */
 export function apply(ctx: Context, config: SideChatConfig = {}): void {
   const service = new SideChatService(ctx, config)

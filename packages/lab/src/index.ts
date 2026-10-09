@@ -34,11 +34,19 @@ export interface LabConfig {
    * the daemon's labels remain the registry of record.
    */
   stateDir?: string
+  /**
+   * Instance scope for the per-instance mounting seam: when set, units this
+   * instance acquires carry the `dsh-lab.scope` label and the instance adopts,
+   * counts, and touches only its own scope. `''` (the default) is the legacy
+   * full view — every managed unit on the daemon.
+   */
+  scope?: string
 }
 
 export const Config: z = z.object({
   maxConcurrentUnits: z.natural().min(1).default(DEFAULT_MAX_CONCURRENT_UNITS),
   stateDir: z.string().default(''),
+  scope: z.string().default(''),
 })
 
 declare module '@deepseek-ai/cordis' {
@@ -63,6 +71,7 @@ export function apply(ctx: Context, config: LabConfig): void {
     providers: { docker: new DockerProvider(subprocessExec(ctx)) },
     maxConcurrentUnits: config.maxConcurrentUnits ?? DEFAULT_MAX_CONCURRENT_UNITS,
     stateDir: resolveStateDir(config.stateDir),
+    ...(config.scope !== undefined && config.scope !== '' ? { scope: config.scope } : {}),
     getMission: () => (ctx.get as (service: string) => unknown).call(ctx, 'mission') as MissionFace | undefined,
     warn: (message) => {
       ctx.logger(name).warn(message)
@@ -108,7 +117,7 @@ function subprocessExec(ctx: Context): Exec {
   }
 }
 
-export { COMPONENTS_LABEL, DockerProvider } from './docker.ts'
+export { COMPONENTS_LABEL, DockerProvider, SCOPE_LABEL } from './docker.ts'
 export type { DockerProviderOptions } from './docker.ts'
 export {
   canonicalJson, componentsFor, FINGERPRINT_SCHEME, hashComponents, isComposite,

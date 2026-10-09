@@ -56,6 +56,13 @@ export interface EvalRunRequest {
   maxCells?: number
   /** Start even when a condition failed the readiness probe (its cells record as skipped). */
   ignoreReadiness?: boolean
+  /**
+   * The run's per-cell root ON THE INSTANCE. With no instance-bound state root
+   * it passes through to `RunOptions.stateRoot` unchanged; an instance mounted
+   * with its own state root defaults to that root and refuses a value that
+   * resolves outside it (`STATEROOT_OUTSIDE_INSTANCE`).
+   */
+  stateRoot?: string
 }
 
 /** One background run's lifecycle state — the JOB, not the cell ledger. */

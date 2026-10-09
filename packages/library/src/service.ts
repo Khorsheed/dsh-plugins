@@ -46,6 +46,7 @@ import {
   type LibraryColor,
   type LibraryProjectPatch,
   type LibraryIcon,
+  type LibraryCapabilities,
   type LibraryCardQuery,
   type LibraryCard,
   type LibraryCardInput,
@@ -73,12 +74,27 @@ import {
   type RoadmapNode,
 } from './types.ts'
 import { cardKey, cardKeys, cardMatchesQuery, exactMatch, nearMatches } from './cards.ts'
+import { PACKAGE_NAME } from './invariant.ts'
 import { LibraryStore, LibraryStoreError, mintLibraryId } from './store.ts'
 
 /** The attachment store's faces, mirrored structurally (probed, never injected). */
 interface AttachmentsSlice {
   readImage(ref: LibraryAttachmentRef): Promise<{ data: Uint8Array; ref: { mediaType: string } }>
   saveImage?(input: { data: Uint8Array; mediaType: string }): Promise<LibraryAttachmentRef>
+}
+
+/**
+ * Thrown by every public verb after {@link LibraryService.dispose} ran (an
+ * explicit teardown, or the borrowed Context's own disposal): a coded,
+ * package-named refusal, never a silent operation on a dead Context. The
+ * disposed instance stays dead — a rebuild over the same state root is a NEW
+ * service instance's business (the canvas-novel/sidechat precedent).
+ */
+export class LibraryDisposedError extends Error {
+  constructor(message: string, readonly code: 'disposed') {
+    super(message)
+    this.name = 'LibraryDisposedError'
+  }
 }
 
 /** A refusal in one line. */
@@ -121,23 +137,71 @@ function live(card: LibraryCard): boolean {
 /**
  * The library's service core. Constructing it never throws and never touches
  * the disk: the store probes writability lazily, so a read-only deployment
- * boots and answers `storage-unavailable` on writes.
+ * boots and answers `storage-unavailable` on writes. Disposal follows the
+ * borrowed Context: an instance mounted dynamically (per state root, say)
+ * dies with its mounting Context, and a dead instance refuses every verb
+ * coded, reads included.
  */
 export class LibraryService {
   /** The store; public for the package's own tests and diagnostics. */
   readonly store: LibraryStore
   /** Listeners told after every project mutation (the tab's live refresh, the context cache). */
   private readonly listeners = new Set<(projectId: string) => void>()
+  /** Set by {@link dispose} (explicit, or the borrowed Context's teardown); every public verb refuses afterwards. */
+  private disposed = false
 
   constructor(
     private readonly ctx: Context,
     config: { stateRoot?: string } = {},
   ) {
     this.store = new LibraryStore(config)
+    // The borrowed Context's disposal IS this instance's disposal: an
+    // instance mounted per state root dies with its mounting Context instead
+    // of answering verbs off a dead scope.
+    ctx.effect(() => () => { this.dispose() }, 'library: dispose on context teardown')
+  }
+
+  /**
+   * Refuse one public verb after disposal: the instance is dead and nothing
+   * it could still answer is meant to be consumed — reads included, so a
+   * mounting side never keeps consuming a stale instance indefinitely.
+   */
+  private assertAlive(verb: string): void {
+    if (this.disposed) throw new LibraryDisposedError(`${PACKAGE_NAME}: ${verb} after dispose`, 'disposed')
+  }
+
+  /**
+   * Tear the instance down (also wired to the borrowed Context's disposal at
+   * construction). Idempotent and TERMINAL: the listener set is dropped and
+   * afterwards every public verb refuses with {@link LibraryDisposedError};
+   * a write that already passed the write boundary may complete (the store's
+   * lock/temp-write/atomic-rename keeps the disk side safe), one reaching it
+   * after disposal refuses before lock acquisition. A rebuild over the same
+   * state root is a NEW instance's business.
+   */
+  dispose(): void {
+    this.disposed = true
+    this.listeners.clear()
+  }
+
+  /**
+   * What a client may rely on in this composition: storage availability with
+   * its reason, and the attachment probe's verdict at call time. A read-only
+   * display contract — enforcement stays at the write gates, unchanged.
+   */
+  async capabilities(): Promise<LibraryCapabilities> {
+    this.assertAlive('capabilities')
+    return {
+      protocolVersion: 1,
+      hasStorage: this.store.available,
+      ...(this.store.unavailableReason === undefined ? {} : { storageUnavailableReason: this.store.unavailableReason }),
+      hasAttachments: (this.ctx.get('attachments') as AttachmentsSlice | undefined) !== undefined,
+    }
   }
 
   /** Subscribe to project mutations; returns the unsubscribe. */
   onChange(listener: (projectId: string) => void): () => void {
+    this.assertAlive('onChange')
     this.listeners.add(listener)
     return () => { this.listeners.delete(listener) }
   }
@@ -154,6 +218,11 @@ export class LibraryService {
 
   /** Run a project mutation under its lock, then notify. */
   private async mutate<T>(projectId: string, fn: () => Promise<LibraryOutcome<T>> | LibraryOutcome<T>): Promise<LibraryOutcome<T>> {
+    // The write boundary: a disposal that landed since the entry guard dies
+    // here, BEFORE the lock is taken — never queuing onto a lock a rebuilt
+    // instance on the same root now owns (kept outside the try, so the coded
+    // refusal propagates as itself rather than folding into a store refusal).
+    this.assertAlive('mutate')
     try {
       const outcome = await this.store.withProjectLock(projectId, fn)
       if (outcome.ok) this.changed(projectId)
@@ -198,6 +267,7 @@ export class LibraryService {
 
   /** Every project with its books' progress and card tallies. */
   async listProjects(): Promise<{ projects: LibraryProjectSummary[] }> {
+    this.assertAlive('listProjects')
     // Most recently used first: the list is where the learner picks up again.
     const projects = this.store.readIndex().projects.map(project => this.summarize(project))
     projects.sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt))
@@ -206,6 +276,7 @@ export class LibraryService {
 
   /** One project's summary plus its books' metadata. */
   async getProject(request: { id: string }): Promise<LibraryOutcome<{ project: LibraryProjectSummary; books: LibraryBook[] }>> {
+    this.assertAlive('getProject')
     const project = this.readProjectOrRefusal(request.id)
     if ('error' in project) return project
     return { ok: true, project: this.summarize(project.value), books: this.store.listBooks(project.value.id) }
@@ -220,6 +291,7 @@ export class LibraryService {
     color?: LibraryColor
     icon?: LibraryIcon
   }): Promise<LibraryOutcome<{ project: LibraryProject }>> {
+    this.assertAlive('createProject')
     const name = request.name.trim()
     if (name === '') {
       return refuse('invalid', 'a project needs a name — what the learner calls the subject (「神经科学」「雅思」)')
@@ -257,6 +329,7 @@ export class LibraryService {
 
   /** Change a project's look or goal (the sidebar's 「样式」). */
   async updateProject(request: { id: string; patch: LibraryProjectPatch }): Promise<LibraryOutcome<{ project: LibraryProject }>> {
+    this.assertAlive('updateProject')
     const patch = request.patch
     if (patch.color !== undefined && !(LIBRARY_COLORS as readonly string[]).includes(patch.color)) return refuse('invalid', `color is one of ${LIBRARY_COLORS.join(' | ')}`)
     if (patch.icon !== undefined && !(LIBRARY_ICONS as readonly string[]).includes(patch.icon)) return refuse('invalid', `icon is one of ${LIBRARY_ICONS.join(' | ')}`)
@@ -292,6 +365,7 @@ export class LibraryService {
 
   /** Delete a project and everything it holds. */
   async deleteProject(request: { id: string }): Promise<LibraryOutcome<{ id: string }>> {
+    this.assertAlive('deleteProject')
     try {
       const outcome = await this.store.withIndexLock(async () => {
         const index = this.store.readIndex()
@@ -329,6 +403,7 @@ export class LibraryService {
     short?: string
     extras?: readonly { title: string; note?: string; where?: string; when?: 'before' | 'reference' }[]
   }): Promise<LibraryOutcome<{ book: LibraryBook }>> {
+    this.assertAlive('putBook')
     const title = request.title.trim()
     if (title === '') return refuse('invalid', 'a book needs its title — and the edition, when the book has several')
     if (request.bookKind !== 'knowledge' && request.bookKind !== 'material') {
@@ -391,6 +466,7 @@ export class LibraryService {
 
   /** Remove a book: its metadata, roadmaps and pages (cards stay, unhung). */
   async deleteBook(request: { projectId: string; bookId: string }): Promise<LibraryOutcome<{ id: string }>> {
+    this.assertAlive('deleteBook')
     const project = this.readProjectOrRefusal(request.projectId)
     if ('error' in project) return project
     return await this.mutate(project.value.id, () => {
@@ -412,6 +488,7 @@ export class LibraryService {
 
   /** One book with its table of contents. */
   async getBook(request: { projectId: string; bookId: string }): Promise<LibraryOutcome<{ book: LibraryBook }>> {
+    this.assertAlive('getBook')
     const book = this.store.readBook(request.projectId, request.bookId)
     if (book === undefined) return refuse('not-found', `no book ${JSON.stringify(request.bookId)} — library_read · books lists the project's`)
     return { ok: true, book }
@@ -421,6 +498,7 @@ export class LibraryService {
 
   /** One book's adopted roadmap and its pending draft. */
   async getRoadmap(request: { projectId: string; bookId: string }): Promise<{ roadmap?: LibraryRoadmap; draft?: LibraryRoadmap }> {
+    this.assertAlive('getRoadmap')
     const roadmap = this.store.readRoadmap(request.projectId, request.bookId)
     const draft = this.store.readRoadmap(request.projectId, request.bookId, 'draft')
     return { ...(roadmap === undefined ? {} : { roadmap }), ...(draft === undefined ? {} : { draft }) }
@@ -438,6 +516,7 @@ export class LibraryService {
     passRatio?: number
     note?: string
   }): Promise<LibraryOutcome<{ draft: LibraryRoadmap }>> {
+    this.assertAlive('draftRoadmap')
     const project = this.readProjectOrRefusal(request.projectId)
     if ('error' in project) return project
     const book = this.store.readBook(project.value.id, request.bookId)
@@ -483,6 +562,7 @@ export class LibraryService {
    * its state and quiz stats, so re-planning never erases progress.
    */
   async adoptRoadmap(request: { projectId: string; bookId: string }): Promise<LibraryOutcome<{ roadmap: LibraryRoadmap }>> {
+    this.assertAlive('adoptRoadmap')
     const project = this.readProjectOrRefusal(request.projectId)
     if ('error' in project) return project
     return await this.mutate(project.value.id, () => {
@@ -513,6 +593,7 @@ export class LibraryService {
 
   /** Drop a book's draft without adopting it. */
   async discardDraft(request: { projectId: string; bookId: string }): Promise<LibraryOutcome<{ bookId: string }>> {
+    this.assertAlive('discardDraft')
     const project = this.readProjectOrRefusal(request.projectId)
     if ('error' in project) return project
     return await this.mutate(project.value.id, () => {
@@ -523,6 +604,7 @@ export class LibraryService {
 
   /** 「读完」: a current read node completes and unlocks what it gates. */
   async markNodeRead(request: { projectId: string; bookId: string; nodeId: string }): Promise<LibraryOutcome<{ roadmap: LibraryRoadmap; unlocked: string[] }>> {
+    this.assertAlive('markNodeRead')
     const project = this.readProjectOrRefusal(request.projectId)
     if ('error' in project) return project
     return await this.mutate(project.value.id, () => {
@@ -561,6 +643,7 @@ export class LibraryService {
     text: string
     marks: readonly LibraryMark[]
   }): Promise<LibraryOutcome<{ page: LibraryPage; cards: LibraryCardWriteResult; uncertain: string[] }>> {
+    this.assertAlive('recordPage')
     const project = this.readProjectOrRefusal(request.projectId)
     if ('error' in project) return project
     const book = this.store.readBook(project.value.id, request.bookId)
@@ -612,6 +695,7 @@ export class LibraryService {
 
   /** One book's pages, optionally one node's. */
   async listPages(request: { projectId: string; bookId: string; nodeId?: string }): Promise<{ pages: LibraryPage[] }> {
+    this.assertAlive('listPages')
     const pages = this.store.readPages(request.projectId, request.bookId)
     return { pages: request.nodeId === undefined ? pages : pages.filter(page => page.nodeId === request.nodeId) }
   }
@@ -630,6 +714,7 @@ export class LibraryService {
    * project recorded, so the Remote never reads an arbitrary attachment.
    */
   async readPagePhoto(request: { projectId: string; pageId: string }): Promise<LibraryOutcome<{ data: string; mediaType: string }>> {
+    this.assertAlive('readPagePhoto')
     const page = this.findPage(request.projectId, request.pageId)
     if (page === undefined) return refuse('not-found', `no page ${JSON.stringify(request.pageId)} in this project`)
     const attachments = this.ctx.get('attachments') as AttachmentsSlice | undefined
@@ -644,6 +729,7 @@ export class LibraryService {
 
   /** Save a browser-uploaded photo into the host attachment store (the sidebar's 拍照). */
   async savePhoto(request: { data: string; mediaType: string }): Promise<LibraryOutcome<{ attachment: LibraryAttachmentRef }>> {
+    this.assertAlive('savePhoto')
     const attachments = this.ctx.get('attachments') as AttachmentsSlice | undefined
     if (attachments?.saveImage === undefined) return refuse('unavailable', 'this deployment mounts no attachment store — photos cannot be saved here')
     try {
@@ -782,6 +868,7 @@ export class LibraryService {
     bookId?: string
     cards: readonly LibraryCardInput[]
   }): Promise<LibraryOutcome<LibraryCardWriteResult>> {
+    this.assertAlive('writeCards')
     const project = this.readProjectOrRefusal(request.projectId)
     if ('error' in project) return project
     if (request.cards.length === 0) {
@@ -813,6 +900,7 @@ export class LibraryService {
 
   /** Cards, filtered and sorted (the sidebar list, the coach's search). */
   async listCards(request: LibraryCardQuery): Promise<{ cards: LibraryCard[]; total: number }> {
+    this.assertAlive('listCards')
     const now = new Date().toISOString()
     let cards = this.store.readCards(request.projectId).filter(live)
     if (request.includeMastered !== true) cards = cards.filter(card => card.status === 'active')
@@ -834,6 +922,7 @@ export class LibraryService {
 
   /** The cards due for review across projects (or one), weakest first. */
   async dueCards(request: { projectId?: string; limit?: number }): Promise<{ cards: (LibraryCard & { projectId: string })[] }> {
+    this.assertAlive('dueCards')
     const now = new Date().toISOString()
     const projectIds = request.projectId !== undefined ? [request.projectId] : this.store.readIndex().projects.map(project => project.id)
     const due: (LibraryCard & { projectId: string })[] = []
@@ -852,6 +941,7 @@ export class LibraryService {
     cardId: string
     patch: { term?: string; gloss?: string; userGloss?: string; aliases?: readonly string[]; status?: LibraryCard['status']; bookId?: string | null }
   }): Promise<LibraryOutcome<{ card: LibraryCard }>> {
+    this.assertAlive('editCard')
     const project = this.readProjectOrRefusal(request.projectId)
     if ('error' in project) return project
     return await this.mutate(project.value.id, () => {
@@ -883,6 +973,7 @@ export class LibraryService {
    * it merged into lose the source it stacked (and the weakness it added).
    */
   async undoCards(request: { projectId: string; ids: readonly string[]; at: string }): Promise<LibraryOutcome<{ removed: number; reverted: number }>> {
+    this.assertAlive('undoCards')
     const project = this.readProjectOrRefusal(request.projectId)
     if ('error' in project) return project
     return await this.mutate(project.value.id, () => {
@@ -916,6 +1007,7 @@ export class LibraryService {
    * Reviews never unlock nodes and never touch weakness.
    */
   async reviewCard(request: { projectId: string; cardId: string; rating: LibraryReviewRating }): Promise<LibraryOutcome<{ card: LibraryCard }>> {
+    this.assertAlive('reviewCard')
     if (!['forgot', 'fuzzy', 'recalled'].includes(request.rating)) return refuse('invalid', 'rating is forgot | fuzzy | recalled')
     const project = this.readProjectOrRefusal(request.projectId)
     if ('error' in project) return project
@@ -943,6 +1035,7 @@ export class LibraryService {
 
   /** A project's quizzes, optionally one book's / node's. */
   async listQuizzes(request: { projectId: string; bookId?: string; nodeId?: string }): Promise<{ quizzes: LibraryQuiz[] }> {
+    this.assertAlive('listQuizzes')
     return {
       quizzes: this.store.listQuizzes(request.projectId).filter(quiz =>
         (request.bookId === undefined || quiz.scope.bookId === request.bookId)
@@ -952,6 +1045,7 @@ export class LibraryService {
 
   /** One quiz, whole. */
   async getQuiz(request: { projectId: string; quizId: string }): Promise<LibraryOutcome<{ quiz: LibraryQuiz }>> {
+    this.assertAlive('getQuiz')
     const quiz = this.store.readQuiz(request.projectId, request.quizId)
     if (quiz === undefined) return refuse('not-found', `no quiz ${JSON.stringify(request.quizId)} — library_read · quiz without an id lists the project's`)
     return { ok: true, quiz }
@@ -968,6 +1062,7 @@ export class LibraryService {
     projectId: string
     quiz: { scope: { bookId: string; nodeId?: string }; focus?: LibraryQuizFocus; questions: readonly LibraryQuizQuestion[] }
   }): Promise<LibraryOutcome<{ quiz: LibraryQuiz; warnings: string[] }>> {
+    this.assertAlive('putQuiz')
     const project = this.readProjectOrRefusal(request.projectId)
     if ('error' in project) return project
     const book = this.store.readBook(project.value.id, request.quiz.scope.bookId)
@@ -1070,6 +1165,7 @@ export class LibraryService {
     quizId: string
     verdicts: readonly LibraryVerdict[]
   }): Promise<LibraryOutcome<LibraryAssessResult>> {
+    this.assertAlive('putAttempt')
     const project = this.readProjectOrRefusal(request.projectId)
     if ('error' in project) return project
     const quiz = this.store.readQuiz(project.value.id, request.quizId)
@@ -1217,11 +1313,13 @@ export class LibraryService {
 
   /** The project / book a session works on, when it is bound. */
   getBinding(sessionId: string): LibraryBinding | undefined {
+    this.assertAlive('getBinding')
     return this.store.readBindings().get(sessionId)
   }
 
   /** Bind a session (null unbinds). The project and book must exist. */
   async setBinding(sessionId: string, binding: LibraryBinding | null): Promise<LibraryOutcome<{ binding: LibraryBinding | null }>> {
+    this.assertAlive('setBinding')
     if (sessionId === '') return refuse('invalid', 'no session to bind')
     if (binding !== null) {
       const project = this.readProjectOrRefusal(binding.projectId)
@@ -1256,6 +1354,7 @@ export class LibraryService {
     progress?: LibraryBookProgress
     weakCards: LibraryCard[]
   } {
+    this.assertAlive('bindingSummary')
     const binding = this.getBinding(sessionId)
     if (binding === undefined) return { weakCards: [] }
     let project: LibraryProject | undefined
@@ -1282,6 +1381,7 @@ export class LibraryService {
 
   /** One project's audit trail, newest first, optionally some types only. */
   async listEvents(request: { projectId: string; limit?: number; types?: readonly LibraryEventType[] }): Promise<{ events: LibraryEvent[] }> {
+    this.assertAlive('listEvents')
     const types = request.types === undefined ? undefined : new Set(request.types)
     const events = this.store.readEvents(request.projectId).filter(event => types === undefined || types.has(event.type))
     return { events: events.reverse().slice(0, request.limit ?? 20) }
@@ -1289,6 +1389,7 @@ export class LibraryService {
 
   /** 「教练最近记下」: card recordings from chats and quizzes, across projects, newest first. */
   async recentRecords(request: { limit?: number }): Promise<{ records: (LibraryEvent & { projectId: string; projectName: string })[] }> {
+    this.assertAlive('recentRecords')
     const records: (LibraryEvent & { projectId: string; projectName: string })[] = []
     for (const project of this.store.readIndex().projects) {
       for (const event of this.store.readEvents(project.id)) {
@@ -1305,6 +1406,7 @@ export class LibraryService {
 
   /** The whole-library tally. */
   async stats(): Promise<{ projects: number; books: number; cards: number; due: number; quizzes: number; attempts: number }> {
+    this.assertAlive('stats')
     const now = new Date().toISOString()
     let books = 0
     let cards = 0

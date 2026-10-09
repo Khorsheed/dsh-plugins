@@ -53,7 +53,7 @@ dsh plugin --profile web add @khorsheed/dsh-lab         # 本插件
 
 包声明了 `dsh.bundle`，add 会把它的 `cordis.patch.yml` 行（裸 `lab` 挂载）reconcile 进 profile 的 bundles 层——无需手改 cordis.yml。一个组合里 `lab` 行 id 只能挂载一次；往可能已挂载该 id 的组合里添加前，先 `dsh --profile web --dump-config | grep lab` 检查。从源码：克隆 monorepo，包在 `packages/lab`（`pnpm install && pnpm run build`）。
 
-配置（均可选）：`maxConcurrentUnits`——持有单元上限（默认 4）；`stateDir`——指纹镜像目录（默认 `$DSH_HOME/lab`，否则 `<cwd>/.dsh-lab-state`）。
+配置（均可选）：`maxConcurrentUnits`——持有单元上限（默认 4）；`stateDir`——指纹镜像目录（默认 `$DSH_HOME/lab`，否则 `<cwd>/.dsh-lab-state`）；`scope`——实例作用域（默认空 = 无作用域的运维全视图，见[「工作区接入接缝」](#工作区接入接缝按实例作用域)）。
 
 要求：宿主机可达 docker CLI；镜像需自带 `sleep` 与 `sh`（保活命令与记 pid 的 wrapper 依赖它们）。
 
@@ -96,6 +96,29 @@ ctx.lab.fingerprintOf(components)             // 纯函数：同一套哈希规�
 `fingerprintOf` 是 `acquire` 用的那个哈希函数本身，只是暴露出来：调用方偶尔需要问「另一组分量会哈希成什么」。评测编排器就是这个用例——比较格子要的是「与计划声明的环境相同」，而不是「与那个单元相同」，两者恰好差着每个条件自带的那几项（它自己的凭证挂载、它自己的 env 变量）。它拿单元的分量、减掉这几项、问剩下的哈希是多少。把这步算术放在这里而不是在调用方复刻规范化，是为了让仓库里只有一套哈希规则——复刻出来的第二套会在下一次加分量时漂移。纯函数：不碰单元、不碰 provider、不碰 daemon。
 
 mission 集成是探测式的结构化接口（`setRefs` / `addArtifact` / `addCheckpoint` / `annotate` / `isReleasable`），不是 import：`@khorsheed/dsh-mission` 缺席时，登记类写入 warn 跳过，`release` 降级为 `force` + 告警。acquire 时登记的 mission 绑定骑在容器标签上，宿主重启后仍在——gate 照样保护 reconcile 回来的单元。
+
+## 工作区接入接缝（按实例作用域）
+
+把多份 `LabService` 挂在**同一个 docker daemon** 上是受支持的消费方式：每份实例各带一个 `scope`（`LabService` 构造选项；经插件入口挂载时是配置项 `scope`，默认空 = 不启用）。作用域是纯实例属性——不进 `AcquireSpec`、不进指纹分量，只在 acquire 时作为资源标签 `dsh-lab.scope=<scope>` 骑上容器，与单元 id、指纹、mission 绑定走同一条「daemon 即注册表」的路。
+
+```ts
+const service = new LabService({
+  providers: { docker: new DockerProvider(exec) },
+  maxConcurrentUnits: 4,
+  scope: 'instance-a',                // 缺省 / '' = 无作用域（既有行为）
+  getMission: () => undefined,
+  warn: (message) => console.warn(message),
+})
+```
+
+挂载侧的义务与语义：
+
+- **acquire 打标签**：带 scope 的实例获取的每个容器都多一条 `dsh-lab.scope=<scope>` 标签；不带的实例一条都不多打——argv 与此前逐字节一致。`SCOPE_LABEL` 常量从包根导出，运维脚本可以按它过滤。
+- **reconcile 只领养本作用域**：带 scope 的实例重建注册表时，只领养标签值等于自身 scope 的单元。**既有部署里没有这条标签的单元同样不被领养**——这是钉死的决定：带 scope 的实例把无标签单元一律视为界外，绝不静默领养一个它随后可能 release 的单元。要接管那些单元，用无作用域实例。
+- **上限只数本作用域**：`maxConcurrentUnits` 只数本实例注册表里的单元；daemon 上别的实例占着多少容器，不消耗本实例的预算。
+- **跨作用域 fail closed**：带 scope 的实例对界外单元的 release / verify / populate / collect / archive / checkpoint 一律拒绝，且拒绝与「unknown unit」可区分——错误点名该单元属于哪个 scope、或它没打标签。`status` 只列本作用域；按 id 查界外单元得到同一句拒绝。
+- **无作用域 = 既有行为 = 运维全视图**：不设 scope 的实例与此前逐字节一致——领养 daemon 上全部 `dsh-lab.managed=true` 单元（带 scope 标签的在内），也能对其中任何一个执行动词。所以**无作用域实例该由部署运维方持有**（跨作用域的总览与回收归它）；按实例挂载的消费方一律显式给 scope。`dsh-lab` CLI 构造时不带 scope，行为不变。
+- **不新增 dispose 语义**：容器刻意活得过进程与宿主重启——以同一 scope 新建一份实例，首次 reconcile 即按标签重新领养该作用域幸存的单元（标签是注册表，宿主侧的指纹镜像无权威）。销毁仍只有 `release` 一条路，mission 闸与 force 规则一字未动；卸载一份实例不顺手收走它的容器，因为同 scope 的下一份实例还要接着用。
 
 ## CLI
 

@@ -14,7 +14,11 @@
  *
  * Mutations serialize through one in-process queue; every state write rides
  * the store's re-rooted fence (the session that carried the gesture stamps
- * the policy when there is one).
+ * the policy when there is one). A send may carry NO calling session (a
+ * host-side consumer without a conversation): the fence then resolves the
+ * deployment default mode and the route/cwd fall to the explicit config or
+ * the deployment defaults. Disposal is terminal — every public verb refuses
+ * with a coded error afterwards.
  *
  * @module @khorsheed/dsh-sidechat
  */
@@ -83,6 +87,33 @@ export interface SideChatConfig {
   readonly stateRoot?: string
   /** Agent preset every side-chat agent composes (defaults to the deployment default preset). */
   readonly agentPreset?: string
+  /**
+   * Explicit execution route every new side-chat agent uses. A usable
+   * provider/model pair WINS over the whole inheritance chain (the calling
+   * session's folded request header, then the probed `agentDefaultModel`
+   * deployment default); unset — or a pair that cannot route — leaves the
+   * chain byte-identical.
+   */
+  readonly agentRoute?: AgentOptions
+  /**
+   * Explicit cwd anchor every new side-chat session runs at. A non-empty
+   * value WINS over cwd inheritance (the source conversation's cwd, then the
+   * calling session's); unset keeps the inheritance chain.
+   */
+  readonly cwd?: string
+}
+
+/**
+ * Thrown by every public verb after {@link SideChatService.disposeAgents}
+ * ran (plugin unload): a coded, package-named refusal, never a bare throw.
+ * The disposed instance stays dead — a rebuild over the same state root is a
+ * NEW service instance's business.
+ */
+export class SideChatDisposedError extends Error {
+  constructor(message: string, readonly code: 'disposed') {
+    super(message)
+    this.name = 'SideChatDisposedError'
+  }
 }
 
 /** One context's in-memory runtime: the durable record plus the process-local pieces. */
@@ -128,10 +159,12 @@ export class SideChatService {
   private loaded = false
   private queue: Promise<unknown> = Promise.resolve()
   private warnedMemoryOnly = false
+  /** Set by {@link disposeAgents} (plugin unload); every public verb refuses afterwards. */
+  private disposed = false
 
   /**
    * @param ctx - host context (`agents`/`sessions` are the plugin's declared injects).
-   * @param config - optional state-root and agent-preset overrides.
+   * @param config - optional state-root, agent-preset, route and cwd overrides.
    */
   constructor(private readonly ctx: Context, private readonly config: SideChatConfig = {}) {
     this.store = new SideChatStore(ctx, config)
@@ -218,6 +251,15 @@ export class SideChatService {
     return run
   }
 
+  /**
+   * Refuse one public verb after disposal (the reader's disposed-flag
+   * precedent, hardened into a coded package error): the instance is dead
+   * and nothing it could still answer is meant to be consumed.
+   */
+  private assertAlive(verb: string): void {
+    if (this.disposed) throw new SideChatDisposedError(`sidechat: ${verb} after dispose`, 'disposed')
+  }
+
   /* ------------------------------------------------------------- records */
 
   /**
@@ -286,6 +328,13 @@ export class SideChatService {
     }
   }
 
+  /** The cwd one new side session runs at: the explicit config anchor when set, else the inheritance chain ({@link inheritCwd}). */
+  private cwdOf(contextKey: string, calling: Agent | undefined): string | undefined {
+    const anchor = this.config.cwd
+    if (anchor !== undefined && anchor !== '') return anchor
+    return this.inheritCwd(contextKey, calling)
+  }
+
   /** The cwd one new side session inherits: the source conversation's when the contextKey names a live session, else the calling session's. */
   private inheritCwd(contextKey: string, calling: Agent | undefined): string | undefined {
     const source = this.ctx.sessions.get(SessionId(contextKey))
@@ -295,12 +344,14 @@ export class SideChatService {
   }
 
   /**
-   * The model route one new side session inherits. Without it the loop's
+   * The model route one new side session runs with. Without it the loop's
    * `prepareRequest` throws `agent has no provider/model` BEFORE the user
    * message reaches the journal — the turn dies silently and the sent
    * message "disappears" (the 3080 bug; the durable inbox still claims it
    * next turn, so no data repair is needed once the route exists). The
-   * chain: the CALLING session's own folded request header first (the user
+   * chain: the explicit config route first (a mounting side that must pin
+   * WHERE side agents execute sets it; a pair that cannot route reads as
+   * unset), then the CALLING session's own folded request header (the user
    * talks to the same model in the side chat as in the conversation), then
    * the deployment default via the probed `agentDefaultModel` service
    * (probe-with-degrade, never an inject), else nothing — and the turn
@@ -309,6 +360,11 @@ export class SideChatService {
    * @returns the agentOptions to pass create/resume, or undefined.
    */
   private agentOptionsOf(calling: Agent | undefined): AgentOptions | undefined {
+    const route = this.config.agentRoute
+    if (route !== undefined && route.provider !== undefined && route.provider !== ''
+      && route.model !== undefined && route.model !== '') {
+      return { ...route }
+    }
     const config = calling?.session.requestHeader?.()?.config
     if (config !== undefined && config.provider !== '' && config.model !== '') {
       return {
@@ -353,6 +409,13 @@ export class SideChatService {
     // agent world with no logged header yet, so the seed route comes from
     // these options alone.
     const agentOptions = this.agentOptionsOf(calling)
+    // A send with NO calling agent must resolve a route up front: with no
+    // user-facing session an unrouted turn's error is invisible, so refuse
+    // honestly (send maps this onto `agent-unavailable`) instead of creating
+    // a deaf agent.
+    if (calling === undefined && agentOptions === undefined) {
+      throw new Error('sidechat: no execution route resolves without a calling session (set the explicit config route or mount agentDefaultModel)')
+    }
     const setupFor = (composition: SideAgentComposition): AgentSetup =>
       async (agentCtx, agent) => {
         if (composition.setup !== undefined) await composition.setup(agentCtx, agent)
@@ -368,9 +431,11 @@ export class SideChatService {
           ...agentOptions === undefined ? {} : { agentOptions },
           setup: setupFor(composition),
         })
+        await this.refuseLateHandle(handle)
         this.handles.set(runtime.record.contextKey, handle)
         return handle.agent
       } catch (error) {
+        if (error instanceof SideChatDisposedError) throw error
         this.ctx.logger.warn(`sidechat: resuming "${runtime.record.contextKey}" failed, starting a fresh session: ${error instanceof Error ? error.message : String(error)}`)
       }
     }
@@ -382,7 +447,7 @@ export class SideChatService {
       ?? runtime.record.agentPreset
       ?? this.config.agentPreset
     const composition = await composeSideAgent(this.ctx, presetId)
-    const cwd = this.inheritCwd(runtime.record.contextKey, calling)
+    const cwd = this.cwdOf(runtime.record.contextKey, calling)
     const handle = await this.ctx.agents.create({
       sessionId: SessionId(randomUUID()),
       meta: {
@@ -392,6 +457,7 @@ export class SideChatService {
       ...agentOptions === undefined ? {} : { agentOptions },
       setup: setupFor(composition),
     })
+    await this.refuseLateHandle(handle)
     this.handles.set(runtime.record.contextKey, handle)
     runtime.record = {
       ...runtime.record,
@@ -401,6 +467,19 @@ export class SideChatService {
     }
     await this.persist(calling?.session)
     return handle.agent
+  }
+
+  /**
+   * Close the spawn/dispose race: a handle that comes back AFTER disposal
+   * ran is disposed on the spot (never leaked into the owned set) and the
+   * caller is refused with the coded error (no resurrected usability).
+   * Without the race this is a no-op.
+   * @param handle - the just-created/resumed ownership handle.
+   */
+  private async refuseLateHandle(handle: { dispose(): Promise<void> }): Promise<void> {
+    if (!this.disposed) return
+    await handle.dispose().catch(() => undefined)
+    throw new SideChatDisposedError('sidechat: the agent arrived after dispose and was disposed at once', 'disposed')
   }
 
   /* ------------------------------------------------------------- the seam */
@@ -415,6 +494,7 @@ export class SideChatService {
    * @param input - context identity, display label, and the optional prompt/tools/refs contributions.
    */
   async openWith(input: SideChatOpenInput): Promise<void> {
+    this.assertAlive('openWith')
     if (input.contextKey === '') throw new TypeError('sidechat: contextKey must not be empty')
     return this.mutate(async () => {
       await this.ensureLoaded()
@@ -450,6 +530,7 @@ export class SideChatService {
    * @returns the state, or `not-found` when the context has no record yet.
    */
   async getState(contextKey: string): Promise<SideChatStateOutcome> {
+    this.assertAlive('getState')
     return this.mutate(async () => {
       await this.ensureLoaded()
       const runtime = this.contexts.get(contextKey)
@@ -495,6 +576,7 @@ export class SideChatService {
    * @returns contextKey → openWith revision pairs.
    */
   async surfaceHints(): Promise<SideChatSurfaceHints> {
+    this.assertAlive('surfaceHints')
     return this.mutate(async () => {
       await this.ensureLoaded()
       return {
@@ -514,6 +596,7 @@ export class SideChatService {
    * @returns the summaries with the live status overlay.
    */
   async listContexts(): Promise<SideChatListResult> {
+    this.assertAlive('listContexts')
     return this.mutate(async () => {
       await this.ensureLoaded()
       const items: SideChatContextSummary[] = []
@@ -557,13 +640,18 @@ export class SideChatService {
    * Send one user message into one context: pending refs (plus any one-shot
    * refs) fold into the message and clear, the context's agent spins up
    * lazily, and the turn starts as a producer-sourced followup. The CALLING
-   * agent's session only donates the fence and the cwd inheritance — the
-   * message never touches it.
-   * @param calling - the calling session's agent (the wire's agent-first convention).
+   * agent's session — when the gesture carries one — only donates the fence
+   * and the cwd inheritance; the message never touches it. Without one the
+   * write fences at the deployment default mode and the route/cwd resolve
+   * from the explicit config or the deployment defaults (a calling-less send
+   * with NO resolvable route refuses `agent-unavailable` rather than
+   * creating a deaf agent).
+   * @param calling - the calling session's agent, when the gesture carries one (the wire's agent-first convention).
    * @param request - contextKey, text, optional label and one-shot refs.
    * @returns the fresh state (already `running`), or the refusal.
    */
-  async send(calling: Agent, request: SideChatSendRequest): Promise<SideChatSendOutcome> {
+  async send(calling: Agent | undefined, request: SideChatSendRequest): Promise<SideChatSendOutcome> {
+    this.assertAlive('send')
     const text = request.text.trim()
     if (text === '') return { ok: false, error: 'empty' }
     return this.mutate(async () => {
@@ -574,8 +662,9 @@ export class SideChatService {
       try {
         agent = await this.ensureAgent(runtime, calling)
         runtime.record = { ...runtime.record, refs: [], updatedAt: new Date().toISOString() }
-        await this.persist(calling.session)
+        await this.persist(calling?.session)
       } catch (error) {
+        if (error instanceof SideChatDisposedError) throw error
         if (error instanceof FsError) return { ok: false, error: 'io' }
         this.ctx.logger.warn(`sidechat: no agent for "${request.contextKey}": ${error instanceof Error ? error.message : String(error)}`)
         return { ok: false, error: 'agent-unavailable' }
@@ -598,6 +687,7 @@ export class SideChatService {
    * @returns the bound contextKey and the pending-ref count, or the refusal.
    */
   async quoteMessage(calling: Agent, request: SideChatQuoteRequest): Promise<SideChatQuoteOutcome> {
+    this.assertAlive('quoteMessage')
     return this.mutate(async () => {
       await this.ensureLoaded()
       let text: string | undefined
@@ -622,8 +712,15 @@ export class SideChatService {
     })
   }
 
-  /** Tear down every owned agent handle (plugin unload); the sessions stay persisted. */
+  /**
+   * Tear down every owned agent handle (plugin unload); the sessions stay
+   * persisted. Idempotent and TERMINAL: afterwards every public verb refuses
+   * with {@link SideChatDisposedError}, and a create/resume still in flight
+   * is disposed on arrival rather than leaked into the owned set. A rebuild
+   * over the same state root is a NEW service instance's business.
+   */
   async disposeAgents(): Promise<void> {
+    this.disposed = true
     for (const handle of this.handles.values()) {
       await handle.dispose().catch(() => undefined)
     }

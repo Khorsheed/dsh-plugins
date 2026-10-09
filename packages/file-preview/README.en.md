@@ -51,6 +51,28 @@ dsh plugin --profile web remove @khorsheed/dsh-file-preview
 
 `maxReadBytes` caps a single `read` (larger files answer `too-large`), `maxFiles` caps the `list` fold — both positive integers, defaults 512 KiB and 500 — and `captureBashWrites` (default `true`) toggles the bash-write collector.
 
+## Workspace admission seam (0.4.1+, server-side consumption)
+
+`createFilePreviewReadSurface` (a package-root export) is the read-only consumption surface for **server-side callers that hold no Agent**. The Remote verbs resolve their `agent` parameter through the host's unified Agent lookup — which can wake an offline session — and a caller already holding an authorized session source should not disturb one for a read. The factory takes an **externally-authorized source** and returns `{ list, turnFiles, read }` in the same shapes as the Remote face:
+
+```ts
+import { createFilePreviewReadSurface } from '@khorsheed/dsh-file-preview'
+
+const surface = createFilePreviewReadSurface({
+  events: () => readSessionEvents(sessionId), // session events (ascending seq), re-read per call
+  cwd: sessionCwd,                            // the path anchor (the session header's cwd)
+  fs: scopedFs,                               // an fs face of the same shape as ctx.fs
+  imageUrl: path => issueAddress(path),       // optional: the image-address issuer
+})
+```
+
+- **Authorization lives entirely with the caller**: what the source reaches (which session's events, which anchor, which fs face) is decided from the caller's own authorization facts — the surface performs no admission check of its own and never constructs, resolves, or wakes a session runtime object (`tests/read-surface.spec.ts` pins this on the source: the module contains no session-runtime lookup call).
+- **One core, one answer**: the Remote verbs and the surface run the same core functions (`src/read-surface.ts`) — the list fold, the per-turn fold, the bash-write merge (rebuilt from the same events through the same collector pipeline), and the existence probe — so for the same session both paths answer byte-identically, pinned verbatim by the contract tests. The caps (`maxReadBytes` / `htmlMaxReadBytes` / `maxFiles` / `captureBashWrites`) share the service config's names and defaults.
+- **Images go through the issuer**: with `imageUrl` injected, an image `read` result carries the issued address in the existing `url` field (the client renders `read.url` unchanged, so the consuming side hands out controlled addresses with zero UI change; an issuer returning `undefined` for a path degrades that one read); `readImageBytes(path)` is a minimal authorized byte read (same anchor, same containment, same `maxReadBytes` cap, returning bytes and MIME) for a caller serving bytes through its own authenticated channel. With no issuer, image reads degrade to `kind: 'binary'` exactly as headless does today and never point at the legacy `/file-preview-image/...` route.
+- **The same path containment as the Remote path**: the same `resolve` with the same anchor — `..` escapes, symlink behavior, and the `missing` / `too-large` / `error` taxonomy are identical verbatim.
+- **Lifecycle**: pure and stateless apart from watermark-keyed caches derived from the injected reader (the per-turn fold and the bash captures, invalidated by the log watermark); the caches are scoped to the returned instance and dropped by `dispose()` (the surface stays usable — the next call re-derives); no timers, no background work.
+- **Local behavior is untouched**: the Remote face and the legacy image route stay byte-identical; a deployment that never consumes this seam is unaffected.
+
 ## Compatibility
 
 | Host line | Verdict |

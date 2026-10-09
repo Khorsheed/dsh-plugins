@@ -7,8 +7,10 @@
  * convention): `send` and `quoteMessage` write plugin state fenced by the
  * caller's own session (the store re-roots that session's mode at the plugin
  * state dir), and `send` also inherits the caller's cwd for a fresh side
- * session. The READS take no agent — a cold context answers from a
- * persistence inspection, and no read ever resumes an agent.
+ * session. The calling-less send form exists only host-side, on
+ * `ctx.sideChat` — the wire's agent lookup parameter cannot be optional
+ * (the typert boundary rule). The READS take no agent — a cold context
+ * answers from a persistence inspection, and no read ever resumes an agent.
  *
  * @module @khorsheed/dsh-sidechat
  */
@@ -69,6 +71,9 @@ export class SideChatRemoteService extends TypertRemoteService<SideChatRemoteCon
 
   /**
    * Send one user message into one context (pending refs fold in and clear).
+   * The calling-less form is host-side only (`ctx.sideChat.send`) — the
+   * wire's agent lookup parameter cannot be optional (the typert boundary
+   * rule).
    * @param agent - the calling session's agent; its session fences the state write and donates the cwd.
    * @param request - contextKey, text, optional label and one-shot refs.
    * @returns the fresh state (already `running`), or the refusal.

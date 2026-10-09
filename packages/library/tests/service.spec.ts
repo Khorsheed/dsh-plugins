@@ -16,8 +16,8 @@ import type { LibraryQuizQuestion, LibraryTemplate } from '../src/types.ts'
 let root: string
 let service: LibraryService
 
-/** A ctx with no attachments service (the probe path reads as absent). */
-const ctx = { get: () => undefined } as unknown as Context
+/** A ctx with no attachments service (the probe path reads as absent); `effect` is a no-op here (teardown wiring is pinned against a real Context in capabilities-dispose.spec.ts). */
+const ctx = { get: () => undefined, effect: () => () => {} } as unknown as Context
 
 const photo = { attachmentId: 'att_p16', mediaType: 'image/jpeg', bytes: 1000, width: 1200, height: 1600 }
 

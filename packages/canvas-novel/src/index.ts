@@ -29,7 +29,7 @@ import { NovelRemoteService } from './remote.ts'
 import { NovelService, type NovelConfig } from './store.ts'
 import { novelGenreAgent } from './genre-agent.ts'
 
-export { NovelService, resolveNovelStateRoot, novelErrorOf, evidenceInBody, tailOf, cleanFields, entriesOf, MAIN_FIELD } from './store.ts'
+export { NovelService, NovelDisposedError, resolveNovelStateRoot, novelErrorOf, evidenceInBody, tailOf, cleanFields, entriesOf, MAIN_FIELD } from './store.ts'
 export type { NovelConfig, WorkEntries, CardHandle } from './store.ts'
 export { novelToolDefinitions } from './tools.ts'
 export { NovelRemoteService } from './remote.ts'

@@ -35,6 +35,27 @@ await ctx.sideChat.openWith({
 - **One-way edge**: a consumer probes `ctx.get('sideChat')` and declares the service name in its own manifest's `dsh.references`; side-chat never mentions a consumer. A consumer's absence is its own degrade; side-chat installs and uninstalls alone.
 - **Per-turn freshness**: re-calling `openWith` with the same contextKey UPDATES the systemPrompt segment (an agent-scoped prompt section re-reads the record at every assembly — never a create-time snapshot), same-named tools hot-swap on the live agent, and the session is NEVER recreated.
 
+## Workspace admission seam (server-side consumption)
+
+Mounting this package on an **isolated Context with its own stateRoot** is a supported consumption form: the mounting side starts an independent instance through this package's `apply` plus `config.stateRoot` — all business state is instance-bound (`contexts.json` lands under the instance's own state root), and the read verbs (`getState` / `listContexts` / `surfaceHints`) need no session. The package's injects are `agents` and `sessions`, which the mounting Context must provide; without `fs` the state degrades to memory-only (never blocking a gesture).
+
+```ts
+import { apply } from '@khorsheed/dsh-sidechat'
+
+apply(isolatedCtx, {
+  stateRoot: '/path/to/instance-state/sidechat',
+  agentRoute: { provider: '…', model: '…' }, // optional: the explicit execution route
+  cwd: '/path/to/workdir',                   // optional: the explicit cwd anchor
+})
+```
+
+The mounting side's obligations and the semantics:
+
+- **Where side agents execute is decided by the Context's `agents` service**: every side agent lands through `ctx.agents.create/resume` — whichever `agents` the Context provides is where the agent runs. The model-route resolution chain: **explicit `agentRoute` > the calling session's folded request header > the probed `agentDefaultModel` deployment default**; the cwd chain: **explicit `cwd` > the source session > the calling session**. Unconfigured, both chains fall to deployment defaults — so "mounted" does not mean "isolated": a correct mount must be **verified by observation** (check the route and cwd of the side sessions actually created), never assumed.
+- **The calling agent is optional**: `ctx.sideChat.send(undefined, …)` is the shape for a server-side caller without a session — the write fences at the deployment default mode with no session id, and the route/cwd resolve from the explicit config or the deployment defaults. With no caller and no resolvable route, `send` honestly refuses `agent-unavailable` rather than creating a deaf agent; the old behavior with a caller is unchanged (an unresolved route still creates, and the turn error surfaces through `lastError`). `quoteMessage` keeps its mandatory calling (it quotes a message OF the calling session).
+- **Terminal dispose + same-root rebuild**: `disposeAgents()` is idempotent and terminal — afterwards every public verb (reads included) refuses with the coded, package-named `SideChatDisposedError` (`code: 'disposed'`); a create/resume still in flight when disposal lands is disposed on arrival — no handle leaks, and its caller gets the same disposed error. Rebuilding on the same root is legal: a new service instance over the same `stateRoot` works as usual (only the old instance stays dead).
+- **Local behavior unchanged**: with the new keys unset and a calling agent passed as today, semantics are byte-identical to before.
+
 ## Remote (`remote.sidechat`)
 
 | Verb | What it does |

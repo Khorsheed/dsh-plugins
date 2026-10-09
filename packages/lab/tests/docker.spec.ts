@@ -368,6 +368,50 @@ describe('DockerProvider.acquire', () => {
   })
 })
 
+describe('DockerProvider scope label (the per-instance mounting seam)', () => {
+  it('stamps the acquiring instance’s scope as a label', async () => {
+    const { exec, calls } = fakeExec(() => undefined)
+    await makeProvider(exec).acquire('abc123', { image: 'app:latest' }, RESOLVED, 'alpha')
+    expect((calls[0] ?? []).join(' ')).toContain('dsh-lab.scope=alpha')
+  })
+
+  it('stamps nothing extra for an unscoped instance — the argv is unchanged', async () => {
+    const { exec, calls } = fakeExec(() => undefined)
+    await makeProvider(exec).acquire('abc123', { image: 'app:latest' }, RESOLVED)
+    expect((calls[0] ?? []).join(' ')).not.toContain('dsh-lab.scope')
+  })
+
+  it('round-trips the label through the daemon: what run stamps, inspect hands back, listManaged surfaces', async () => {
+    let stamped: Record<string, string> = {}
+    const { exec } = fakeExec((argv) => {
+      if (argv[0] === 'run') {
+        stamped = {}
+        for (let index = 0; index < argv.length - 1; index += 1) {
+          if (argv[index] === '--label') {
+            const [key, ...rest] = (argv[index + 1] ?? '').split('=')
+            stamped[key ?? ''] = rest.join('=')
+          }
+        }
+        return undefined
+      }
+      if (argv[0] === 'ps') return { exitCode: 0, stdout: 'dsh-lab-abc123\n', stderr: '' }
+      if (argv[0] === 'inspect') {
+        return {
+          exitCode: 0,
+          stdout: JSON.stringify([{ Name: '/dsh-lab-abc123', Config: { Labels: stamped }, State: { Running: true } }]),
+          stderr: '',
+        }
+      }
+      return undefined
+    })
+    const provider = makeProvider(exec)
+    await provider.acquire('abc123', { image: 'app:latest' }, RESOLVED, 'alpha')
+    const [managed] = await provider.listManaged()
+    expect(managed?.labels['dsh-lab.scope']).toBe('alpha')
+    expect(managed?.labels['dsh-lab.unit']).toBe('abc123')
+  })
+})
+
 describe('DockerProvider.populate / collect', () => {
   it('populates through the pidfile-wrapped exec, then docker cp into the unit, then stamps the activity baseline', async () => {
     const { exec, calls } = fakeExec(() => undefined)
