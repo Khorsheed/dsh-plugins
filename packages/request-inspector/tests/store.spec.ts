@@ -87,7 +87,7 @@ describe('turn correlation', () => {
       { id: 'a1', role: 'assistant', sourceKind: 'model', content: [{ type: 'tool-call', id: 'call_1', name: 'read', arguments: '{}' }] },
       { id: 't1', role: 'tool', sourceKind: 'tool', toolCallId: 'call_1', content: [{ type: 'text', text: '文件内容' }] },
     ]), at)
-    store.turnEnd('s1', { kind: 'completed' }, at.tick(10))
+    store.turnEnd('s1', 1, { kind: 'completed' }, at.tick(10))
 
     const turns = store.listTurns('s1')
     expect(turns).toHaveLength(1)
@@ -137,7 +137,10 @@ describe('turn correlation', () => {
     expect(turns).toHaveLength(1)
     expect(turns[0]?.query).toBe('session-title')
     expect(turns[0]?.requestCount).toBe(2)
-    const overview = store.getTurn('s1', 1)
+    // A purpose bucket has no host turn: negative address, no hostTurn marker.
+    expect(turns[0]?.hostTurn).toBeUndefined()
+    expect(turns[0]?.turnSeq).toBeLessThan(0)
+    const overview = store.getTurn('s1', turns[0]?.turnSeq ?? 0)
     expect(overview?.scopes[0]?.scopeId).toBe('main')
     const detail = store.getRequest('s1', overview?.scopes[0]?.requests[0]?.seq ?? -1)
     expect(detail?.purpose).toBe('session-title')
@@ -154,7 +157,7 @@ describe('turn correlation', () => {
     const store = new InspectorStore({}, { now: at.now })
     store.turnStart('s1', 1, at.tick(1))
     runRequest(store, snap('s1', [msg('u1', '跑')]), at)
-    store.turnEnd('s1', { kind: 'error', error: { message: 'provider down' } }, at.tick(5))
+    store.turnEnd('s1', 1, { kind: 'error', error: { message: 'provider down' } }, at.tick(5))
     const overview = store.getTurn('s1', 1)
     expect(overview?.scopes[0]?.status).toBe('failed')
     expect(overview?.scopes[0]?.error).toBe('provider down')
@@ -171,7 +174,7 @@ describe('turn timing aggregation', () => {
     store.toolCall('s1', 'call_1', 'read', '{}', at.tick(10))
     store.toolResult('s1', 'call_1', false, 'ok', at.tick(46))
     runRequest(store, snap('s1', [msg('u1', '跑')]), at)
-    store.turnEnd('s1', { kind: 'completed' }, at.tick(10))
+    store.turnEnd('s1', 1, { kind: 'completed' }, at.tick(10))
 
     const timing = store.getTurnTiming('s1', 1)
     expect(timing).toBeDefined()
@@ -200,7 +203,7 @@ describe('eviction', () => {
     for (let turn = 1; turn <= 3; turn += 1) {
       store.turnStart('s1', turn, at.tick(1))
       runRequest(store, snap('s1', [msg(`u${turn}`, `问题${turn}`)]), at)
-      store.turnEnd('s1', { kind: 'completed' }, at.tick(1))
+      store.turnEnd('s1', turn, { kind: 'completed' }, at.tick(1))
     }
     const turns = store.listTurns('s1')
     expect(turns.map(item => item.turnSeq)).toEqual([2, 3])
@@ -211,14 +214,14 @@ describe('eviction', () => {
     const store = new InspectorStore({ maxRequestsTotal: 3 }, { now: at.now })
     store.turnStart('s1', 1, at.tick(1))
     runRequest(store, snap('s1', [msg('u1', 'a')]), at)
-    store.turnEnd('s1', { kind: 'completed' }, at.tick(1))
+    store.turnEnd('s1', 1, { kind: 'completed' }, at.tick(1))
     store.turnStart('s2', 1, at.tick(1))
     runRequest(store, snap('s2', [msg('u1', 'b')]), at)
     runRequest(store, snap('s2', [msg('u1', 'b')]), at)
-    store.turnEnd('s2', { kind: 'completed' }, at.tick(1))
+    store.turnEnd('s2', 1, { kind: 'completed' }, at.tick(1))
     store.turnStart('s1', 2, at.tick(1))
     runRequest(store, snap('s1', [msg('u2', 'c')]), at)
-    store.turnEnd('s1', { kind: 'completed' }, at.tick(1))
+    store.turnEnd('s1', 2, { kind: 'completed' }, at.tick(1))
     // 4 requests over the cap of 3: s1’s first turn (the global oldest) is gone.
     expect(store.listTurns('s1').map(item => item.turnSeq)).toEqual([2])
     expect(store.listTurns('s2').map(item => item.turnSeq)).toEqual([1])
@@ -235,10 +238,10 @@ describe('eviction', () => {
     // The cap is soft while a stream is open: turn 1 survives.
     expect(store.listTurns('s1').map(item => item.turnSeq)).toEqual([1])
     if (live !== undefined) store.settleRequest(live, at.tick(5))
-    store.turnEnd('s1', { kind: 'completed' }, at.tick(1))
+    store.turnEnd('s1', 1, { kind: 'completed' }, at.tick(1))
     store.turnStart('s1', 2, at.tick(1))
     runRequest(store, snap('s1', [msg('u2', 'b')]), at)
-    store.turnEnd('s1', { kind: 'completed' }, at.tick(1))
+    store.turnEnd('s1', 2, { kind: 'completed' }, at.tick(1))
     expect(store.listTurns('s1').map(item => item.turnSeq)).toEqual([2])
   })
 })
@@ -257,7 +260,7 @@ describe('subagent scopes', () => {
     store.toolCall('s1', 'call_sub', 'subagent_dsh', '{"description":"第一章对账 JSON 提取"}', at.tick(10))
     store.subagentCatalog('s1', 'child-1', 'dsh: 第一章对账 JSON 提取', at.tick(50))
     store.toolResult('s1', 'call_sub', true, 'Error: subagent run failed', at.tick(1300))
-    store.turnEnd('s1', { kind: 'completed' }, at.tick(10))
+    store.turnEnd('s1', 1, { kind: 'completed' }, at.tick(10))
 
     const overview = store.getTurn('s1', 1)
     const child = overview?.scopes.find(scope => scope.kind === 'subagent')
@@ -287,7 +290,7 @@ describe('subagent scopes', () => {
     })
     store.toolCall('s1', 'call_sub', 'subagent_dsh', '{"description":"连通性测试"}', at.tick(10))
     store.toolResult('s1', 'call_sub', true, 'Error: spawn failed', at.tick(100))
-    store.turnEnd('s1', { kind: 'completed' }, at.tick(10))
+    store.turnEnd('s1', 1, { kind: 'completed' }, at.tick(10))
 
     const overview = store.getTurn('s1', 1)
     const child = overview?.scopes.find(scope => scope.kind === 'subagent')
@@ -306,18 +309,19 @@ describe('subagent scopes', () => {
     store.turnStart('s1', 1, at.tick(1))
     runRequest(store, snap('s1', [msg('u1', '一')]), at) // main scope → 1
     store.subagentCatalog('s1', 'child-1', '子任务', at.tick(1)) // → 2
-    store.turnEnd('s1', { kind: 'completed' }, at.tick(1))
+    store.turnEnd('s1', 1, { kind: 'completed' }, at.tick(1))
     // An aux request outside any turn: the pseudo-bucket's main scope → 3.
     runRequest(store, snap('s1', [msg('', '起标题')], { purpose: 'session-title' }), at)
     store.turnStart('s1', 2, at.tick(1))
     runRequest(store, snap('s1', [msg('u2', '二')]), at) // turn 2 main scope → 4
-    store.turnEnd('s1', { kind: 'completed' }, at.tick(1))
+    store.turnEnd('s1', 2, { kind: 'completed' }, at.tick(1))
 
     const turn1 = store.getTurn('s1', 1)
     expect(turn1?.scopes.map(scope => [scope.scopeId, scope.scopeSeq])).toEqual([['main', 1], ['child-1', 2]])
-    const bucket = store.getTurn('s1', 2)
+    const bucketItem = store.listTurns('s1').find(item => item.hostTurn === undefined)
+    const bucket = store.getTurn('s1', bucketItem?.turnSeq ?? 0)
     expect(bucket?.scopes[0]?.scopeSeq).toBe(3)
-    const turn2 = store.getTurn('s1', 3)
+    const turn2 = store.getTurn('s1', 2)
     expect(turn2?.scopes[0]?.scopeSeq).toBe(4)
   })
 })

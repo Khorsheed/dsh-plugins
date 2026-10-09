@@ -18,8 +18,9 @@ Status: implemented
 - **`system-prompt/assemble` 只读旁听**:记录 `next()` 之后的 assembly(sections + variables),按宿主的渲染规则自行插值后与请求里的 system 消息做**内容比对**——精确命中才拆成 section 行,不中则保留单行不归因。归因是展示层增强,绝不伪造。
 - **`session/event` 承载关联**:`turn/start|end` 开闭 turn,`user/message` 提供 query 预览,`assistant/message` 提供 `closingMessageId` 与历史行的生成耗时回填,`tool/call → tool/result` 按 callId 配对出工具执行时长(归属到响应里发出该调用的请求),`subagent/catalog` 开子代理 scope 并按序绑定待定的委派调用。
 - **子代理日志通道**:`ctx.get('sessionPersistence')` 结构探测后 `open(childId, 'read')` 增量读取(游标续读),把事件折叠成请求——每个带 usage 的 `assistant/message` 是一次成功请求,`assistant/attempt` 是一次失败请求。一次性子代理日志**没有** `request/header` 与 system 消息,这些字段保持诚实的空态(config `{}`、system/tools 空数组),不编造。同一 scope 两条通道互斥:live 通道先进则日志通道退出,反之亦然(`live`/`logFilled` 标志)。
-- **purpose 请求进入伪 turn 桶**:带 `purpose`(compaction / session-title)的辅助调用即使发生在 turn 中途也不是会话步骤,按 purpose 聚合到会话级伪 turn;无 purpose 又无开 turn 的散调用进 `ad-hoc` 桶。
+- **purpose 请求进入伪 turn 桶**:带 `purpose`(compaction / session-title)的辅助调用即使发生在 turn 中途也不是会话步骤,按 purpose 聚合到会话级伪 turn;无 purpose 又无开 turn 的散调用进 `ad-hoc` 桶(挂载时正在进行的 turn 在 `turn/end` 时把桶里的实采请求收编进该 turn 的记录)。
 - **响应锚点是结构化数据**:`responseSummary` 为 `{kind:'tool', name, hint?, more?} | {kind:'text'} | {kind:'none'}`——宿主不产出任何展示文案,「直接回答」这类文案由面板按 locale 字典渲染,工具态按设计稿渲染为 `name:hint`。scope 携带会话内按创建顺序的 1 基序号 `scopeSeq`,委派 chip 的 `#N` 锚点因此不再依赖首个请求的 seq(0 请求的失败运行也有锚点)。
+- **历史回溯与实采共用宿主 turn 号**:`turn/start` 的 `turn` 载荷就是稳定序号(每会话稠密递增,跨重启由 turnBoundary 投影续号),实采 turn 的 `turnSeq` 直接键在它上面,日志重建的 turn 同键——两车道天然不重复。伪 turn 桶占用负数地址段(-1、-2…),永不与宿主号冲突。重叠规则:带任何实采请求的 turn 整轮以实采为准(日志行不并入);回填按 `maxTurnsPerSession` 预算从新到旧填,实采 turn 占满预算则不回填,回填自身从不触发实采 turn 的淘汰。每个会话只回溯一次(读失败按子车道同一纪律:未落盘=瞬时重试,其余=sticky broken)。
 - **历史/新增按同 scope 前一请求做最长公共前缀 diff**:有 id 用 id,无 id 用内容哈希;压缩改写后的前缀整体判为新增——这正是模型眼里变化的部分。
 - **淘汰以 turn 为粒度**:`maxTurnsPerSession`(默认 20)与 `maxRequestsTotal`(默认 200)都只淘汰已关闭的 turn;含在途流的 turn 跳过,因此上限在流未收口时是软上限。
 
@@ -33,7 +34,7 @@ Status: implemented
 
 ## Consequences
 
-- 范围纪律:已知子代理会话的事件与请求只进父会话的 scope,不另建子会话视图(M1 直接打开子会话时面板为空,这是已声明的边界)。
+- 范围纪律:已知子代理会话的实时事件与请求只进父会话的 scope;直接打开子会话时,面板经回溯车道展示其自身日志的重建视图(one-shot 子会话无 system/tools 的诚实空态)。
 - 读子代理日志发生在面板查询时(listTurns/getTurn/getRequest 先增量刷新),无后台轮询;`SessionPersistenceNotFoundError` 视为瞬时(子进程尚未落盘),其余读失败对该子代理永久标记 broken,不再重试。
 - `scripts/check-plugin-independence.ts` 的 `ALLOWED_EDGES` 增加了 `'request-inspector': ['@khorsheed/dsh-client-ui-panel-kit']`:脚手架已声明该 devDep(面板套件,client 里程碑使用),这是检查器自身注释指定的登记处。
 - 两个既有门禁红灯与本改动无关,留给各自里程碑:`check-panels`(M0 client 尚无 PanelRoot)与 `generate-package-map`(docs/packages.md 未含新包)。

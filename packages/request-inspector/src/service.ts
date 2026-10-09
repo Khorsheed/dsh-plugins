@@ -12,10 +12,11 @@
  *    assistant message ids, tool exec pairing, and `subagent/catalog` scope
  *    correlation.
  *
- * The fourth input is the **child-log lane**: `subagent_dsh` one-shot children
- * run in a fresh process the parent's waterfall never sees, so their scopes
- * fill from the child's on-disk log through the `sessionPersistence` service,
- * refreshed lazily on panel queries.
+ * The fourth input is the **log lane** (`sessionPersistence`, lazy): child
+ * scopes of fresh-process `subagent_dsh` runs fill from the child's on-disk
+ * log (the parent's waterfall never sees those requests), and a session's
+ * pre-mount turns reconstruct from its own log — once per session at first
+ * query, budgeted behind the live turns (the history backfill).
  *
  * Capture is observation, never interception: any capture-internal failure is
  * logged and the model path forwards untouched (the tee degrades to a bare
@@ -35,10 +36,11 @@ import {
   foldLogRows,
   isSessionLogReader,
   openCursor,
-  type ChildLogCursor,
+  reconstructSession,
+  type SessionLogCursor,
   type SessionLogHandle,
   type SessionLogReader,
-} from './child-log.ts'
+} from './log-lane.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -69,7 +71,7 @@ export class InspectorService {
   private readonly disposers: (() => void)[]
   /** childId → open read handle (persistent: reads are offset-incremental). */
   private readonly handles = new Map<string, SessionLogHandle>()
-  private readonly cursors = new Map<string, ChildLogCursor>()
+  private readonly cursors = new Map<string, SessionLogCursor>()
   /** In-flight refresh per childId — concurrent panel queries share one read. */
   private readonly refreshing = new Map<string, Promise<void>>()
   private readonly now: () => number
@@ -184,7 +186,7 @@ export class InspectorService {
         this.store.turnStart(sessionId, event.data.turn, at)
         return
       case 'turn/end':
-        this.store.turnEnd(sessionId, event.data.reason, at)
+        this.store.turnEnd(sessionId, event.data.turn, event.data.reason, at)
         return
       case 'user/message': {
         const message = fromRequestMessage(event.data)
@@ -313,28 +315,74 @@ export class InspectorService {
     }
   }
 
+  // ---------- lane 5: main-session history backfill ----------
+
+  /**
+   * Reconstruct the session's pre-mount history from its own log, once per
+   * session (the store's watermark holds). The read is one full pass at first
+   * query; the store keeps the newest turns that fit the budget behind the
+   * live ones. A not-yet-materialized log is transient (retry next query); any
+   * other read failure marks the session broken and stops hammering it.
+   */
+  private async backfillMainSession(sessionId: string): Promise<void> {
+    const reader = this.reader()
+    if (reader === undefined) return
+    if (this.store.backfillState(sessionId) !== 'none') return
+    const jobKey = `main:${sessionId}`
+    const pending = this.refreshing.get(jobKey)
+    if (pending !== undefined) return pending
+    const job = this.doBackfillMainSession(sessionId, reader)
+      .finally(() => {
+        this.refreshing.delete(jobKey)
+      })
+    this.refreshing.set(jobKey, job)
+    return job
+  }
+
+  private async doBackfillMainSession(sessionId: string, reader: SessionLogReader): Promise<void> {
+    try {
+      const handle = await reader.open(sessionId, 'read')
+      try {
+        const { events } = await handle.read(0)
+        this.store.insertLogTurns(sessionId, reconstructSession(events))
+      } finally {
+        void handle.close().catch(() => undefined)
+      }
+    } catch (error) {
+      if (error instanceof Error && error.name === 'SessionPersistenceNotFoundError') return
+      this.store.markBackfillBroken(sessionId)
+      this.logWarn(
+        `request-inspector: session "${sessionId}" log unreadable, history backfill skipped (${error instanceof Error ? error.message : String(error)})`,
+      )
+    }
+  }
+
   // ---------- queries (the Remote face delegates here) ----------
 
   /** Light turn list of one session, newest last. */
   async listTurns(sessionId: string): Promise<TurnListItem[]> {
+    await this.backfillMainSession(sessionId)
     await this.refreshChildren(sessionId)
     return this.store.listTurns(sessionId)
   }
 
   /** One turn's scope/request overview, without segments. */
   async getTurn(sessionId: string, turnSeq: number): Promise<TurnOverview | undefined> {
+    await this.backfillMainSession(sessionId)
     await this.refreshChildren(sessionId)
     return this.store.getTurn(sessionId, turnSeq)
   }
 
   /** One request's full four-segment breakdown. */
   async getRequest(sessionId: string, seq: number): Promise<CapturedRequest | undefined> {
+    await this.backfillMainSession(sessionId)
     await this.refreshChildren(sessionId)
     return this.store.getRequest(sessionId, seq)
   }
 
   /** One turn's whole-turn timing aggregation. */
   async getTurnTiming(sessionId: string, turnSeq: number): Promise<TurnTiming | undefined> {
+    await this.backfillMainSession(sessionId)
     await this.refreshChildren(sessionId)
     return this.store.getTurnTiming(sessionId, turnSeq)
   }

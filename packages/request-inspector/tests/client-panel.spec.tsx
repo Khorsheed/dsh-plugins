@@ -25,12 +25,12 @@ const t = ((key: keyof typeof zh, params?: Record<string, string>): string =>
 
 const TURNS: TurnListItem[] = [
   {
-    sessionId: 's1', turnSeq: 1, query: '第一条 query', startedAt: 1_000, endedAt: 2_000,
+    sessionId: 's1', turnSeq: 1, hostTurn: 1, query: '第一条 query', startedAt: 1_000, endedAt: 2_000,
     requestCount: 1, scopeCount: 1, failedScopeCount: 0,
     totalInputTokens: 1_000, totalOutputTokens: 50, closingMessageId: 'm-1',
   },
   {
-    sessionId: 's1', turnSeq: 2, query: '第二条 query', startedAt: 3_000, endedAt: 9_000,
+    sessionId: 's1', turnSeq: 2, hostTurn: 2, query: '第二条 query', startedAt: 3_000, endedAt: 9_000,
     requestCount: 3, scopeCount: 3, failedScopeCount: 1,
     totalInputTokens: 5_000, totalOutputTokens: 300, closingMessageId: 'm-2',
   },
