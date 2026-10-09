@@ -2,7 +2,7 @@
 
 [English](README.en.md) | 中文
 
-社区三个 agent preset 的声明式 bundle：`dev`（开发模式）、`dsh-eval`（评测模式）、`dsh-writing`（写作模式），各为宿主 0.1.7-rc.1 preset 机制里的一行 `@deepseek-ai/dsh-agent-preset` 声明（loader 行 id 约定 `preset-<id>`）。本包是 0.1.5 时代三个目录式 preset（`$DSH_HOME/.agent-presets/<id>/`）的迁移——rc.1 不再读取该目录，preset 改由 bundle patch 声明。
+社区四个 agent preset 的声明式 bundle：`dev`（开发模式）、`dsh-eval`（评测模式）、`dsh-writing`（写作模式）、`dsh-gamedev`（游戏开发模式），各为宿主 0.1.7-rc.1 preset 机制里的一行 `@deepseek-ai/dsh-agent-preset` 声明（loader 行 id 约定 `preset-<id>`）。本包是 0.1.5 时代三个目录式 preset（`$DSH_HOME/.agent-presets/<id>/`）的迁移——rc.1 不再读取该目录，preset 改由 bundle patch 声明。
 
 ## 形态：纯声明包
 
@@ -17,6 +17,7 @@
 | `dev` | 开发模式 | 10 | 官方部分以 rc.1 `standard.patch.yml` 全文重基（0.1.5 复制件已漂移：`workflow-worker-thread` 改名 `workflow-ptc`、`tool-ralph` 上游默认停用、新增停用的 `tool-plugin-manager` 行），末尾逐字追加现行 dev 的六条社区工具行（3× local-agent 委派 + worktrees/room/typesafe）。 |
 | `dsh-eval` | 评测模式 | 0 | `profiles/web-eval/presets/eval` 逐行迁移，官方包名对照 rc.1 名册**零改名**；附 `datasets-tool` 与 `eval-tool`（`tools: all`）两条伴生行；`eval-planning` 技能随 `eval-tool` 行注册（T100）。T100 起组合以 web-eval 的 `preset-eval` 为正本，`scripts/eval-preset-parity.spec.ts` 比对两份解析后的 `plugins:`，任一边漂移即红。T102 把题集整理并进来：挂 shell（整理要跑 git 与转换脚本）、`tool-web` 开 fetch、`datasets-tool` 取 `tools: organize`（读 + `put_item` + 只写申请的 `datasets_propose_registration`，并注册 `dataset-authoring` 技能），persona 合并评测口径与整理的工作方式；仍不挂工作流引擎与 plan-mode。冻结决策 12 随之改写：docker socket 仍只归编排器，但不再靠预设保证。 |
 | `dsh-writing` | 写作模式 | — | `profiles/web/presets/dsh-writing` 逐行迁移（唯一改名 `workflow-worker-thread` → `workflow-ptc`），附 `canvas/agent` 行。写作场景调优：2026-09-29 移除 goal 两行；2026-09-30 作家 persona 升级为完整双语写作契约（本文件持有的提示词段全部单一英文，宿主提示词本身的语言），同日参考官方 `minimal` 做工具精简——plan-mode、delegation/workflow 整组、fs-search、jobs、present、agent-instructions 移出，保留 shell（写作 skill 会调脚本，观察期）、fs 读写、Skills、compaction、ask-user、todo、web 与按会话授予的画布工具。2026-10-06 并入 `canvas-novel/agent` 行（原 bundle-writing 的「写作」preset，该包退役）：会话绑定长篇小说画布时才出现 `novel_*` 工具。 |
+| `dsh-gamedev` | 游戏开发模式 | — | 2026-10-09 新增：游戏开发者兼策划导师的 persona（一个 agent，不另设策划 agent），工具与写作模式同一份精简（shell、fs 读写、Skills、compaction、ask-user、todo、web），外加 `game/agent` 行（`game_open` / `game_read`、`gamedev` 与 `game-design` 两个技能）。没有测试工具：测试脚本随代码一起写，每轮结束由插件自动检查。 |
 
 展示字段（`name`/`description`/`order`）来自各旧 `preset.yml`，描述文字保持中文原文；`dsh-eval` 的描述 T100 起跟随 web-eval 那份（比对测试连 `name`/`description` 一起钉）。
 
