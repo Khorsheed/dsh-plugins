@@ -203,6 +203,29 @@ export interface TurnListItem {
   closingMessageId?: string
 }
 
+/**
+ * The history-backfill watermark of one session, surfaced so the panel can
+ * tell "genuinely nothing captured" from "log unreadable" from "older turns
+ * dropped by the memory budget".
+ */
+export interface BackfillInfo {
+  /**
+   * `none` — never read (no durable log yet, or no persistence backend);
+   * `partial` — some turns reconstructed, older ones dropped by budget (the
+   * read retries on later queries as room frees); `complete` — every turn in
+   * the log is represented; `broken` — the log refused to decode.
+   */
+  state: 'none' | 'partial' | 'complete' | 'broken'
+  /** The decode failure summary when `state` is `broken`. */
+  reason?: string
+}
+
+/** `listTurns` payload: the turn rows plus the session's backfill watermark. */
+export interface ListTurnsResult {
+  turns: TurnListItem[]
+  backfill: BackfillInfo
+}
+
 /** `getTurn` payload: scopes with request headers but without segments. */
 export interface TurnOverview {
   turn: TurnListItem

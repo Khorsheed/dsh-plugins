@@ -20,7 +20,8 @@ Status: implemented
 - **子代理日志通道**:`ctx.get('sessionPersistence')` 结构探测后 `open(childId, 'read')` 增量读取(游标续读),把事件折叠成请求——每个带 usage 的 `assistant/message` 是一次成功请求,`assistant/attempt` 是一次失败请求。一次性子代理日志**没有** `request/header` 与 system 消息,这些字段保持诚实的空态(config `{}`、system/tools 空数组),不编造。同一 scope 两条通道互斥:live 通道先进则日志通道退出,反之亦然(`live`/`logFilled` 标志)。
 - **purpose 请求进入伪 turn 桶**:带 `purpose`(compaction / session-title)的辅助调用即使发生在 turn 中途也不是会话步骤,按 purpose 聚合到会话级伪 turn;无 purpose 又无开 turn 的散调用进 `ad-hoc` 桶(挂载时正在进行的 turn 在 `turn/end` 时把桶里的实采请求收编进该 turn 的记录)。
 - **响应锚点是结构化数据**:`responseSummary` 为 `{kind:'tool', name, hint?, more?} | {kind:'text'} | {kind:'none'}`——宿主不产出任何展示文案,「直接回答」这类文案由面板按 locale 字典渲染,工具态按设计稿渲染为 `name:hint`。scope 携带会话内按创建顺序的 1 基序号 `scopeSeq`,委派 chip 的 `#N` 锚点因此不再依赖首个请求的 seq(0 请求的失败运行也有锚点)。
-- **历史回溯与实采共用宿主 turn 号**:`turn/start` 的 `turn` 载荷就是稳定序号(每会话稠密递增,跨重启由 turnBoundary 投影续号),实采 turn 的 `turnSeq` 直接键在它上面,日志重建的 turn 同键——两车道天然不重复。伪 turn 桶占用负数地址段(-1、-2…),永不与宿主号冲突。重叠规则:带任何实采请求的 turn 整轮以实采为准(日志行不并入);回填按 `maxTurnsPerSession` 预算从新到旧填,实采 turn 占满预算则不回填,回填自身从不触发实采 turn 的淘汰。每个会话只回溯一次(读失败按子车道同一纪律:未落盘=瞬时重试,其余=sticky broken)。
+- **历史回溯与实采共用宿主 turn 号**:`turn/start` 的 `turn` 载荷就是稳定序号(每会话稠密递增,跨重启由 turnBoundary 投影续号),实采 turn 的 `turnSeq` 直接键在它上面,日志重建的 turn 同键——两车道天然不重复。伪 turn 桶占用负数地址段(-1、-2…),永不与宿主号冲突。重叠规则:带任何实采请求的 turn 整轮以实采为准(日志行不并入);回填从新到旧填,单个超大 turn 只跳过不中止。每个会话的回溯读在水位为 partial 时可重试(读只是一次 zstd 解码),complete 后不再重读。
+- **预算模型**:内存大头是明细全文(~200KB/请求),不是行数。留存 = 每会话 30 个 turn 的窗口(淘汰顺序:最旧的回溯 turn 先于实采 turn)+ 每会话 500 次回溯请求 + 全局 150M 字符的明细文本预算(超压时跨会话淘汰最旧的回溯 turn,实采永不让位)。水位对客户端诚实:`listTurns` 返回 `{turns, backfill:{state, reason?}}`,state 为 none/partial/complete/broken——「确实没有」「日志不可读」「预算截断(可再补)」三种空态分开。
 - **历史/新增按同 scope 前一请求做最长公共前缀 diff**:有 id 用 id,无 id 用内容哈希;压缩改写后的前缀整体判为新增——这正是模型眼里变化的部分。
 - **淘汰以 turn 为粒度**:`maxTurnsPerSession`(默认 20)与 `maxRequestsTotal`(默认 200)都只淘汰已关闭的 turn;含在途流的 turn 跳过,因此上限在流未收口时是软上限。
 

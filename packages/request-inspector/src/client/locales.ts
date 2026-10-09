@@ -22,6 +22,8 @@ export const zh = {
 
   'state.loading': '加载中…',
   'state.noTurns': '本会话还没有捕获到请求',
+  'state.logBroken': '会话日志不可读：{reason}',
+  'hint.backfillTruncated': '更早的 turn 受内存预算限制未载入',
   'state.emptyScope': '这个范围还没有模型请求',
   'state.turnMissing': '该 turn 的捕获已不在缓冲区（旧 turn 会被淘汰）',
   'state.hostMissing': '宿主未安装请求明细的宿主半边',
@@ -116,6 +118,8 @@ export const en: Record<keyof typeof zh, string> = {
 
   'state.loading': 'Loading…',
   'state.noTurns': 'No requests captured for this session yet',
+  'state.logBroken': 'Session log unreadable: {reason}',
+  'hint.backfillTruncated': 'Older turns not loaded (memory budget)',
   'state.emptyScope': 'No model requests in this scope yet',
   'state.turnMissing': 'This turn’s capture has left the buffer (old turns are evicted)',
   'state.hostMissing': 'The host half of request-inspector is not installed',

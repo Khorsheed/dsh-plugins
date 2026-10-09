@@ -25,7 +25,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 // Type-only: pulls this plugin's LocaleNamespaceMap merge.
 import type {} from './locales.ts'
 import type {
-  CapturedRequest, TurnListItem, TurnOverview, TurnTiming,
+  CapturedRequest, ListTurnsResult, TurnOverview, TurnTiming,
 } from '../types.ts'
 
 /** The requestInspector Remote namespace (as mounted by this plugin). */
@@ -33,8 +33,8 @@ export type InspectorRemote = TypertRemoteNamespaceMap['requestInspector']
 
 /** Business face injected into the right-Sidebar tab body. */
 export interface InspectorTabInjected {
-  /** Light turn list of one session, newest last. */
-  listTurns: (sessionId: SessionId) => Promise<RemoteResult<TurnListItem[]>>
+  /** Light turn list of one session plus its backfill watermark, newest last. */
+  listTurns: (sessionId: SessionId) => Promise<RemoteResult<ListTurnsResult>>
   /** One turn's scope/request overview — the left column, no segments. */
   getTurn: (sessionId: SessionId, turnSeq: number) => Promise<RemoteResult<TurnOverview | undefined>>
   /** One request's full four-segment breakdown — the right column. */

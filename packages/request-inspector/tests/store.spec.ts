@@ -6,6 +6,7 @@
 import { describe, expect, it } from 'vitest'
 import { InspectorStore, type RequestSnapshot } from '../src/store.ts'
 import type { CapturedMessage } from '../src/messages.ts'
+import type { LogTurn } from '../src/log-lane.ts'
 
 /** A mutable fake clock. */
 function clock(start = 1_000_000): { now: () => number; tick: (ms: number) => number } {
@@ -89,7 +90,7 @@ describe('turn correlation', () => {
     ]), at)
     store.turnEnd('s1', 1, { kind: 'completed' }, at.tick(10))
 
-    const turns = store.listTurns('s1')
+    const turns = store.listTurns('s1').turns
     expect(turns).toHaveLength(1)
     expect(turns[0]).toMatchObject({
       sessionId: 's1',
@@ -133,7 +134,7 @@ describe('turn correlation', () => {
     runRequest(store, aux, at)
     runRequest(store, aux, at)
 
-    const turns = store.listTurns('s1')
+    const turns = store.listTurns('s1').turns
     expect(turns).toHaveLength(1)
     expect(turns[0]?.query).toBe('session-title')
     expect(turns[0]?.requestCount).toBe(2)
@@ -148,7 +149,7 @@ describe('turn correlation', () => {
 
     // A purpose-less request with no open turn lands in the ad-hoc bucket.
     runRequest(store, snap('s1', [msg('', '散调用')]), at)
-    const all = store.listTurns('s1')
+    const all = store.listTurns('s1').turns
     expect(all.map(item => item.query)).toEqual(['session-title', 'ad-hoc'])
   })
 
@@ -161,7 +162,7 @@ describe('turn correlation', () => {
     const overview = store.getTurn('s1', 1)
     expect(overview?.scopes[0]?.status).toBe('failed')
     expect(overview?.scopes[0]?.error).toBe('provider down')
-    expect(store.listTurns('s1')[0]?.failedScopeCount).toBe(1)
+    expect(store.listTurns('s1').turns[0]?.failedScopeCount).toBe(1)
   })
 })
 
@@ -205,27 +206,30 @@ describe('eviction', () => {
       runRequest(store, snap('s1', [msg(`u${turn}`, `问题${turn}`)]), at)
       store.turnEnd('s1', turn, { kind: 'completed' }, at.tick(1))
     }
-    const turns = store.listTurns('s1')
+    const turns = store.listTurns('s1').turns
     expect(turns.map(item => item.turnSeq)).toEqual([2, 3])
   })
 
-  it('evicts the globally oldest turn past maxRequestsTotal, across sessions', () => {
+  it('char pressure evicts the oldest backfilled turn across sessions; live turns never yield', () => {
     const at = clock()
-    const store = new InspectorStore({ maxRequestsTotal: 3 }, { now: at.now })
+    // Live requests here are ~230 chars; the backfilled turns are exactly 3000
+    // each. Budget 6400: live(1) + T1 + T2 fits (≈6231); live(2) overruns.
+    const store = new InspectorStore({ maxStoredCharsTotal: 6_400 }, { now: at.now })
     store.turnStart('s1', 1, at.tick(1))
-    runRequest(store, snap('s1', [msg('u1', 'a')]), at)
+    runRequest(store, snap('s1', [msg('u1', '活'.repeat(200))]), at)
     store.turnEnd('s1', 1, { kind: 'completed' }, at.tick(1))
-    store.turnStart('s2', 1, at.tick(1))
-    runRequest(store, snap('s2', [msg('u1', 'b')]), at)
-    runRequest(store, snap('s2', [msg('u1', 'b')]), at)
-    store.turnEnd('s2', 1, { kind: 'completed' }, at.tick(1))
+    store.insertLogTurns('s2', [
+      logTurnFixture(1, at.tick(1), 2, 1_500),
+      logTurnFixture(2, at.tick(1), 2, 1_500),
+    ])
+    expect(store.listTurns('s2').turns.map(item => item.turnSeq)).toEqual([1, 2])
+    // A second live turn on s1 pushes the store over the char budget: the
+    // oldest backfilled turn (s2's T1) evicts; every live turn stays.
     store.turnStart('s1', 2, at.tick(1))
-    runRequest(store, snap('s1', [msg('u2', 'c')]), at)
+    runRequest(store, snap('s1', [msg('u2', '活'.repeat(200))]), at)
     store.turnEnd('s1', 2, { kind: 'completed' }, at.tick(1))
-    // 4 requests over the cap of 3: s1’s first turn (the global oldest) is gone.
-    expect(store.listTurns('s1').map(item => item.turnSeq)).toEqual([2])
-    expect(store.listTurns('s2').map(item => item.turnSeq)).toEqual([1])
-    expect(store.getTurn('s1', 1)).toBeUndefined()
+    expect(store.listTurns('s1').turns.map(item => item.turnSeq)).toEqual([1, 2])
+    expect(store.listTurns('s2').turns.map(item => item.turnSeq)).toEqual([2])
   })
 
   it('never evicts a turn whose stream is still open', () => {
@@ -236,13 +240,13 @@ describe('eviction', () => {
     expect(live?.status).toBe('streaming')
     store.turnStart('s1', 2, at.tick(1)) // defensive: ignored while 1 is open
     // The cap is soft while a stream is open: turn 1 survives.
-    expect(store.listTurns('s1').map(item => item.turnSeq)).toEqual([1])
+    expect(store.listTurns('s1').turns.map(item => item.turnSeq)).toEqual([1])
     if (live !== undefined) store.settleRequest(live, at.tick(5))
     store.turnEnd('s1', 1, { kind: 'completed' }, at.tick(1))
     store.turnStart('s1', 2, at.tick(1))
     runRequest(store, snap('s1', [msg('u2', 'b')]), at)
     store.turnEnd('s1', 2, { kind: 'completed' }, at.tick(1))
-    expect(store.listTurns('s1').map(item => item.turnSeq)).toEqual([2])
+    expect(store.listTurns('s1').turns.map(item => item.turnSeq)).toEqual([2])
   })
 })
 
@@ -318,10 +322,88 @@ describe('subagent scopes', () => {
 
     const turn1 = store.getTurn('s1', 1)
     expect(turn1?.scopes.map(scope => [scope.scopeId, scope.scopeSeq])).toEqual([['main', 1], ['child-1', 2]])
-    const bucketItem = store.listTurns('s1').find(item => item.hostTurn === undefined)
+    const bucketItem = store.listTurns('s1').turns.find(item => item.hostTurn === undefined)
     const bucket = store.getTurn('s1', bucketItem?.turnSeq ?? 0)
     expect(bucket?.scopes[0]?.scopeSeq).toBe(3)
     const turn2 = store.getTurn('s1', 2)
     expect(turn2?.scopes[0]?.scopeSeq).toBe(4)
+  })
+})
+
+/** One reconstructed turn fixture: `requests` rows of `chars` segment chars each. */
+function logTurnFixture(hostTurn: number, startedAt: number, requests: number, chars: number): LogTurn {
+  return {
+    hostTurn,
+    query: `重建 ${hostTurn}`,
+    startedAt,
+    endedAt: startedAt + 10,
+    requests: Array.from({ length: requests }, (_, index) => ({
+      startedAt,
+      status: 'ok' as const,
+      config: {},
+      responseSummary: { kind: 'none' as const },
+      segments: { system: [], tools: [], history: [], added: [] },
+      totalChars: chars,
+      blocks: [],
+      execs: [],
+      fingerprint: { messageKeys: [`h${hostTurn}:${index}`], toolNames: [] },
+    })),
+    delegations: [],
+  }
+}
+
+describe('backfill budgets and the watermark', () => {
+  it('skips one oversized turn without aborting the older ones', () => {
+    const at = clock()
+    const store = new InspectorStore({ maxBackfillRequestsPerSession: 3 }, { now: at.now })
+    const inserted = store.insertLogTurns('s1', [
+      logTurnFixture(1, at.tick(1), 1, 100),
+      logTurnFixture(2, at.tick(1), 5, 100), // oversized: 5 > the cap
+      logTurnFixture(3, at.tick(1), 2, 100),
+    ])
+    expect(inserted).toBe(2)
+    expect(store.listTurns('s1').turns.map(item => item.turnSeq)).toEqual([1, 3])
+    // The drop keeps the watermark retryable (not 'complete').
+    expect(store.listTurns('s1').backfill.state).toBe('partial')
+  })
+
+  it('marks complete only when every candidate fit', () => {
+    const at = clock()
+    const store = new InspectorStore({}, { now: at.now })
+    store.insertLogTurns('s1', [logTurnFixture(1, at.tick(1), 1, 100), logTurnFixture(2, at.tick(1), 1, 100)])
+    expect(store.listTurns('s1').backfill.state).toBe('complete')
+    // A fresh live-only session never read a log: state stays 'none'.
+    store.turnStart('s2', 1, at.tick(1))
+    expect(store.listTurns('s2').backfill.state).toBe('none')
+  })
+
+  it('refills after eviction freed room (retry while partial)', () => {
+    const at = clock()
+    // Per-session request cap 2: attempt 1 keeps T4+T3, drops T2+T1.
+    const store = new InspectorStore(
+      { maxBackfillRequestsPerSession: 2, maxStoredCharsTotal: 250 },
+      { now: at.now },
+    )
+    const logTurns = [
+      logTurnFixture(1, at.tick(1), 1, 100),
+      logTurnFixture(2, at.tick(1), 1, 50),
+      logTurnFixture(3, at.tick(1), 1, 100),
+      logTurnFixture(4, at.tick(1), 1, 100),
+    ]
+    expect(store.insertLogTurns('s1', logTurns)).toBe(2)
+    expect(store.listTurns('s1').turns.map(item => item.turnSeq)).toEqual([3, 4])
+    expect(store.listTurns('s1').backfill.state).toBe('partial')
+    // A live insert elsewhere drives the store over the char budget: the
+    // oldest backfilled turn (T3) evicts, freeing s1's request room.
+    store.turnStart('s2', 1, at.tick(1))
+    runRequest(store, snap('s2', [msg('u1', '压'.repeat(60))]), at)
+    store.turnEnd('s2', 1, { kind: 'completed' }, at.tick(1))
+    expect(store.listTurns('s1').turns.map(item => item.turnSeq)).toEqual([4])
+    expect(store.listTurns('s2').turns.map(item => item.turnSeq)).toEqual([1])
+    // The next attempt (the service re-reads while partial) fills the smaller
+    // dropped turn T2 into the freed room; T3/T1 stay dropped on chars.
+    expect(store.insertLogTurns('s1', logTurns)).toBe(1)
+    expect(store.listTurns('s1').turns.map(item => item.turnSeq)).toEqual([2, 4])
+    expect(store.listTurns('s1').backfill.state).toBe('partial')
   })
 })

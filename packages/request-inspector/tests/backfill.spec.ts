@@ -103,7 +103,7 @@ describe('backfill (no live content)', () => {
     const { ctx, service } = await mount(reader)
     ctx.sessions.create(FIXTURE_SESSION as SessionId)
 
-    const turns = await service.listTurns(FIXTURE_SESSION)
+    const { turns } = await service.listTurns(FIXTURE_SESSION)
     expect(turns.map(turn => turn.turnSeq)).toEqual([1, 2, 3, 4])
     expect(turns.every(turn => turn.hostTurn === turn.turnSeq)).toBe(true)
     expect(turns[0]?.requestCount).toBe(2)
@@ -183,7 +183,7 @@ describe('merge with the live lane', () => {
     // The live lane captures turn 5 BEFORE the first panel query.
     await liveTurn(ctx, FIXTURE_SESSION, 5, '现场的问题')
 
-    const turns = await service.listTurns(FIXTURE_SESSION)
+    const { turns } = await service.listTurns(FIXTURE_SESSION)
     expect(turns.map(turn => turn.turnSeq)).toEqual([1, 2, 3, 4, 5])
     // Turn 5 is the live capture: its request came through the waterfall.
     const overview = await service.getTurn(FIXTURE_SESSION, 5)
@@ -194,7 +194,7 @@ describe('merge with the live lane', () => {
     expect(detail?.segments.added[0]?.full).toBe('现场的问题')
     expect(detail?.config).toEqual({ provider: 'deepseek', model: 'deepseek-chat' })
     // …and the log's own turn-1..4 content stays reconstructed, once each.
-    const again = await service.listTurns(FIXTURE_SESSION)
+    const { turns: again } = await service.listTurns(FIXTURE_SESSION)
     expect(again.map(turn => turn.turnSeq)).toEqual([1, 2, 3, 4, 5])
     service.dispose()
   })
@@ -207,6 +207,7 @@ describe('merge with the live lane', () => {
     const second = await service.listTurns(FIXTURE_SESSION)
     expect(reader.opens.filter(id => id === FIXTURE_SESSION)).toHaveLength(1)
     expect(second).toEqual(first)
+    expect(first.backfill.state).toBe('complete')
     service.dispose()
   })
 })
@@ -218,7 +219,7 @@ describe('budget discipline', () => {
     ctx.sessions.create(FIXTURE_SESSION as SessionId)
     await liveTurn(ctx, FIXTURE_SESSION, 5, '现场的问题')
 
-    const turns = await service.listTurns(FIXTURE_SESSION)
+    const { turns } = await service.listTurns(FIXTURE_SESSION)
     // 3-slot budget, 1 live turn → only the newest two historical turns (4, 3).
     expect(turns.map(turn => turn.turnSeq)).toEqual([3, 4, 5])
     service.dispose()
@@ -231,7 +232,7 @@ describe('budget discipline', () => {
     await liveTurn(ctx, FIXTURE_SESSION, 5, '现场一')
     await liveTurn(ctx, FIXTURE_SESSION, 6, '现场二')
 
-    const turns = await service.listTurns(FIXTURE_SESSION)
+    const { turns } = await service.listTurns(FIXTURE_SESSION)
     expect(turns.map(turn => turn.turnSeq)).toEqual([5, 6])
     expect(turns.every(turn => turn.hostTurn !== undefined)).toBe(true)
     service.dispose()

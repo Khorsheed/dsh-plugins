@@ -19,7 +19,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { ChipRow, PanelRoot } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
 import type {
-  AgentScopeOverview, CapturedRequest, SegmentCategory, TurnListItem, TurnOverview, TurnTiming,
+  AgentScopeOverview, BackfillInfo, CapturedRequest, SegmentCategory, TurnListItem, TurnOverview, TurnTiming,
 } from '../types.ts'
 import { fmtSpan, latestTurnSeq } from './aggregate.ts'
 import type { InspectorTabProps } from './contract.ts'
@@ -75,6 +75,7 @@ export function InspectorPanel({
 }: InspectorTabProps): ReactNode {
   const { tab } = useTabInfo()
   const [turns, setTurns] = useState<readonly TurnListItem[] | null>(null)
+  const [backfill, setBackfill] = useState<BackfillInfo | null>(null)
   const [turnSeq, setTurnSeq] = useState<number | null>(null)
   const [overview, setOverview] = useState<TurnOverview | null>(null)
   const [timing, setTiming] = useState<TurnTiming | null>(null)
@@ -117,10 +118,11 @@ export function InspectorPanel({
         setTurns([])
         return
       }
-      setTurns(result.value)
-      setTurnSeq(previous => previous !== null && result.value.some(turn => turn.turnSeq === previous)
+      setTurns(result.value.turns)
+      setBackfill(result.value.backfill)
+      setTurnSeq(previous => previous !== null && result.value.turns.some(turn => turn.turnSeq === previous)
         ? previous
-        : latestTurnSeq(result.value) ?? null)
+        : latestTurnSeq(result.value.turns) ?? null)
     }).catch((cause: unknown) => {
       if (!cancelled) setError(cause instanceof Error ? cause.message : String(cause))
     })
@@ -263,7 +265,10 @@ export function InspectorPanel({
     // A failed verb (listTurns or getTurn) outranks the empty states.
     body = <div className={css.stateNote} role="alert">{t('state.error', { message: error })}</div>
   } else if (turns.length === 0) {
-    body = <div className={css.stateNote} role="status">{t('state.noTurns')}</div>
+    body = backfill?.state === 'broken'
+      // The log exists but refused to decode: a note, not an error page.
+      ? <div className={css.stateNote} role="status">{t('state.logBroken', { reason: backfill.reason ?? '' })}</div>
+      : <div className={css.stateNote} role="status">{t('state.noTurns')}</div>
   } else if (turnMissing) {
     body = <div className={css.stateNote} role="status">{t('state.turnMissing')}</div>
   } else if (overview === null) {
@@ -375,6 +380,9 @@ export function InspectorPanel({
           onChange={id => { setViewTab(id === 'raw' ? 'raw' : 'structured') }}
         />
         <span className={css.footNote}>{t('foot.note')}</span>
+        {backfill?.state === 'partial' && (
+          <span className={css.footNote}>{t('hint.backfillTruncated')}</span>
+        )}
       </div>
     </PanelRoot>
   )

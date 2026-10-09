@@ -95,7 +95,7 @@ describe('llm/stream lane', () => {
     }, { surfaceOp: 'append' })
     session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
 
-    const turns = await service.listTurns(String(session.id))
+    const { turns } = await service.listTurns(String(session.id))
     expect(turns).toHaveLength(1)
     expect(turns[0]).toMatchObject({ query: '把第一章跑完', requestCount: 1, totalInputTokens: 10 })
 
@@ -145,7 +145,7 @@ describe('llm/stream lane', () => {
     const stream = ctx.waterfall({}, 'llm/stream', frozenOptions(session, 'sys'), () => fakeStream()) as AsyncIterable<StreamChunk>
     for await (const chunk of stream) chunks.push(chunk)
     expect(chunks).toHaveLength(5)
-    expect(await service.listTurns(String(session.id))).toEqual([])
+    expect((await service.listTurns(String(session.id))).turns).toEqual([])
     expect(warnings.some(message => message.includes('store broken'))).toBe(true)
     service.dispose()
   })
@@ -193,7 +193,7 @@ describe('scope admission (the dsh-scope rule this design leans on)', () => {
     for await (const _chunk of stream) { /* drain */ }
     session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
 
-    const turns = await service.listTurns(String(session.id))
+    const { turns } = await service.listTurns(String(session.id))
     const overview = await service.getTurn(String(session.id), turns[0]?.turnSeq ?? -1)
     const detail = await service.getRequest(String(session.id), overview?.scopes[0]?.requests[0]?.seq ?? -1)
     expect(detail?.segments.system.map(item => item.source)).toEqual(['harness:identity', 'deployment:persona-prefix'])
@@ -207,7 +207,7 @@ describe('scope admission (the dsh-scope rule this design leans on)', () => {
     const session = scope.ctx.sessions.create()
     session.append('turn/start', { turn: 1 })
     session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
-    const turns = await service.listTurns(String(session.id))
+    const { turns } = await service.listTurns(String(session.id))
     expect(turns).toHaveLength(1)
     service.dispose()
   })

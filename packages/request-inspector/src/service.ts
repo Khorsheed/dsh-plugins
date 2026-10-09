@@ -28,7 +28,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type { PromptAssembly } from '@deepseek-ai/dsh-system-prompt'
-import type { CapturedRequest, TurnListItem, TurnOverview, TurnTiming } from './types.ts'
+import type { CapturedRequest, ListTurnsResult, TurnOverview, TurnTiming } from './types.ts'
 import { InspectorStore, type EvictedTurn, type RequestSnapshot, type StoredRequest, type StoreConfig } from './store.ts'
 import { recordAssembly } from './segmenter.ts'
 import { fromRequestMessage, serializeMessage, previewLine } from './messages.ts'
@@ -51,10 +51,12 @@ declare module '@deepseek-ai/cordis' {
 
 /** Plugin config: capture retention knobs. */
 export interface InspectorConfig {
-  /** Turns retained per session (oldest evicted first). Default 20. */
+  /** Turns retained per session (oldest evicted first, backfilled before live). Default 30. */
   maxTurnsPerSession?: number
-  /** Total retained requests across all sessions. Default 200. */
-  maxRequestsTotal?: number
+  /** Log-reconstructed requests retained per session. Default 500. */
+  maxBackfillRequestsPerSession?: number
+  /** Global budget of stored segment text characters. Default 150M (~150MB). */
+  maxStoredCharsTotal?: number
 }
 
 /** Test seams: the clock, the persistence probe, and the warning sink. */
@@ -88,7 +90,8 @@ export class InspectorService {
     this.persistenceOverride = deps.persistence
     const storeConfig: StoreConfig = {
       ...config.maxTurnsPerSession === undefined ? {} : { maxTurnsPerSession: config.maxTurnsPerSession },
-      ...config.maxRequestsTotal === undefined ? {} : { maxRequestsTotal: config.maxRequestsTotal },
+      ...config.maxBackfillRequestsPerSession === undefined ? {} : { maxBackfillRequestsPerSession: config.maxBackfillRequestsPerSession },
+      ...config.maxStoredCharsTotal === undefined ? {} : { maxStoredCharsTotal: config.maxStoredCharsTotal },
     }
     this.store = new InspectorStore(storeConfig, {
       now: this.now,
@@ -327,7 +330,10 @@ export class InspectorService {
   private async backfillMainSession(sessionId: string): Promise<void> {
     const reader = this.reader()
     if (reader === undefined) return
-    if (this.store.backfillState(sessionId) !== 'none') return
+    // Retryable until complete: a partial fill re-reads on later queries
+    // (eviction may have freed room); the read is one zstd decode.
+    const state = this.store.backfillState(sessionId)
+    if (state === 'complete' || state === 'broken') return
     const jobKey = `main:${sessionId}`
     const pending = this.refreshing.get(jobKey)
     if (pending !== undefined) return pending
@@ -350,17 +356,16 @@ export class InspectorService {
       }
     } catch (error) {
       if (error instanceof Error && error.name === 'SessionPersistenceNotFoundError') return
-      this.store.markBackfillBroken(sessionId)
-      this.logWarn(
-        `request-inspector: session "${sessionId}" log unreadable, history backfill skipped (${error instanceof Error ? error.message : String(error)})`,
-      )
+      const reason = error instanceof Error ? error.message : String(error)
+      this.store.markBackfillBroken(sessionId, reason)
+      this.logWarn(`request-inspector: session "${sessionId}" log unreadable, history backfill skipped (${reason})`)
     }
   }
 
   // ---------- queries (the Remote face delegates here) ----------
 
-  /** Light turn list of one session, newest last. */
-  async listTurns(sessionId: string): Promise<TurnListItem[]> {
+  /** Light turn list of one session plus its backfill watermark. */
+  async listTurns(sessionId: string): Promise<ListTurnsResult> {
     await this.backfillMainSession(sessionId)
     await this.refreshChildren(sessionId)
     return this.store.listTurns(sessionId)

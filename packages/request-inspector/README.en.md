@@ -33,7 +33,7 @@ Three read-only host seams (requests are never rewritten):
 
 **Subagent coverage**: `subagent_dsh` one-shots run in a fresh child process (SDK spawn) that the parent's waterfall cannot see — those runs are reconstructed from the **child session log on disk** (messages/usage/timing are complete; a one-shot's system prompt and tool definitions never land in the log and are shown as honest empty states, never faked). In-process subagent providers are captured at the same fidelity as the main conversation.
 
-Data lives in an in-memory ring buffer only (latest 20 turns per session / 200 requests total, configurable); nothing is written to the session log or disk.
+Data lives in memory only (configurable), never written to the session log or disk: the latest 30 turns per session; history backfill additionally capped at 500 reconstructed requests per session; and all sessions' segment text shares one global character budget (default ~150MB — the verbatim segment text is the real memory driver). Under pressure the oldest *backfilled* turns evict first; live captures never yield to backfill pressure. Budget-dropped older turns are flagged in the footer and refill automatically once room frees.
 
 ## Compatibility
 
@@ -48,5 +48,6 @@ Data lives in an in-memory ring buffer only (latest 20 turns per session / 200 r
 - **No live refresh during streaming**: the panel is pull-based (fetch on open / turn switch); a running turn's view freezes at fetch time.
 - **Child-log lane honest gaps**: a one-shot sub-run's system prompt and tool definitions are unavailable (not logged); segment-level history/added diffing is only meaningful within one sub-run.
 - **No section attribution for backfilled system segments**: a log-reconstructed turn's system prompt renders as one block (the log keeps no `system-prompt/assemble` section names); aux requests (compaction / session-title) never land in the request log and do not appear historically.
+- **Budget truncation is labeled**: when the memory budget can't hold older turns the backfill truncates newest-first-kept and the footer shows "Older turns not loaded (memory budget)"; a later query refills automatically once room frees. A log that refuses to decode (e.g. unknown event types) shows a "Session log unreadable" note with the reason instead of looking empty.
 - **Opening a child session directly** (navigating into a catalog'd child session id) shows its own log-reconstructed view (a one-shot has no system/tools); the same content lives under the parent session's scope.
 - No manual refresh action yet (follow-up); the wire-body view awaits the host 0.1.2+ capability hookup.
