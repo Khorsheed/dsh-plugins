@@ -25,6 +25,25 @@ const files: Record<string, BundleFile> = {
 }
 
 describe.skipIf(chrome === undefined)('headless checks', () => {
+  it('gives the game its params, elements and the sprite helper', async () => {
+    const result = await checker.run({
+      ...files,
+      'game.json': { type: 'application/json', text: JSON.stringify({ id: 'g', params: [{ key: 'speed', min: 0, max: 200, value: 120 }] }) },
+      'elements/a.json': { type: 'application/json', text: JSON.stringify({ id: 'fog', name: '雾', type: '敌人', look: { palette: ['#ff0000'], states: { idle: ['00', '00'] } } }) },
+    }, {
+      'tests/runtime.test.js': `test('runtime', () => {
+        assert.equal(window.dshParams.speed, 120)
+        assert.equal(window.dshElements.fog.name, '雾')
+        assert.equal(dshLookSize('fog').w, 2)
+        const c = document.createElement('canvas'); c.width = 4; c.height = 4
+        assert(dshDraw(c.getContext('2d'), 'fog', 'idle', 0, 0, 2), 'draws')
+        assert.equal(c.getContext('2d').getImageData(1, 1, 1, 1).data[0], 255)
+      })`,
+    })
+    expect(result.failures).toEqual([])
+    expect(result.passed).toBe(1)
+  }, 60_000)
+
   it('passes a working build and runs its tests', async () => {
     const result = await checker.run(files, {
       'tests/move.test.js': `test('按右 3 秒走 180', () => { game.input('ArrowRight', true); step(180); assert.near(game.state().x, 180, 1) })`,

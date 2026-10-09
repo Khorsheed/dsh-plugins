@@ -11,11 +11,13 @@ export const MANIFEST_FILE = 'game.json'
 /** The plugin's own directory inside a project (snapshots, check results, logs). */
 export const STATE_DIR = '.game'
 
-/** One art style the gate accepts: a stable id, its label and a one-line look. */
+/** One art style the gate accepts: a stable id, its label, a one-line look and its palette. */
 export interface ArtStyle {
   readonly id: string
   readonly label: string
   readonly look: string
+  /** The style's palette: element looks and the pixel editor draw from it. */
+  readonly palette: readonly string[]
 }
 
 /**
@@ -24,12 +26,31 @@ export interface ArtStyle {
  * canvas/HTML game can render faithfully; `custom:<text>` covers the rest.
  */
 export const ART_STYLES: readonly ArtStyle[] = [
-  { id: 'pixel', label: '像素', look: '16×16 / 32×32 像素块，有限调色板，整数倍放大不糊' },
-  { id: 'flat', label: '扁平矢量', look: '纯色几何形，圆角，少量阴影，配色明快' },
-  { id: 'line', label: '手绘线稿', look: '黑色描线 + 淡彩填充，线条略抖' },
-  { id: 'neon', label: '霓虹几何', look: '深色底，发光的线框与粒子' },
-  { id: 'paper', label: '剪纸拼贴', look: '纸张纹理色块，轻微投影，层叠感' },
-  { id: 'mono', label: '极简单色', look: '一种主色加黑白，靠形状和留白区分' },
+  {
+    id: 'pixel', label: '像素', look: '16×16 / 32×32 像素块，有限调色板，整数倍放大不糊',
+    palette: ['#1a1c2c', '#5d275d', '#b13e53', '#ef7d57', '#ffcd75', '#a7f070', '#38b764', '#257179',
+      '#29366f', '#3b5dc9', '#41a6f6', '#73eff7', '#f4f4f4', '#94b0c2', '#566c86', '#333c57'],
+  },
+  {
+    id: 'flat', label: '扁平矢量', look: '纯色几何形，圆角，少量阴影，配色明快',
+    palette: ['#264653', '#2a9d8f', '#8ab17d', '#e9c46a', '#f4a261', '#e76f51', '#fefae0', '#3d405b'],
+  },
+  {
+    id: 'line', label: '手绘线稿', look: '黑色描线 + 淡彩填充，线条略抖',
+    palette: ['#222222', '#f7f3e8', '#f2c6c2', '#c9e4de', '#c6def1', '#faedcb', '#dbcdf0', '#8a8a8a'],
+  },
+  {
+    id: 'neon', label: '霓虹几何', look: '深色底，发光的线框与粒子',
+    palette: ['#0d0221', '#261447', '#ff3864', '#2de2e6', '#f6019d', '#fdf500', '#7b2cbf', '#ffffff'],
+  },
+  {
+    id: 'paper', label: '剪纸拼贴', look: '纸张纹理色块，轻微投影，层叠感',
+    palette: ['#f2e8cf', '#e0c9a6', '#bc4749', '#6a994e', '#386641', '#a7c957', '#3d348b', '#5c4033'],
+  },
+  {
+    id: 'mono', label: '极简单色', look: '一种主色加黑白，靠形状和留白区分',
+    palette: ['#111111', '#f5f5f5', '#e63946', '#9a9a9a', '#5a5a5a', '#d0d0d0'],
+  },
 ]
 
 /** The project manifest (`game.json`). Everything but id/title is the agent's to fill over time. */
@@ -47,8 +68,36 @@ export interface GameManifest {
   readonly pillars: readonly string[]
   /** Passing candidates deploy into the play area without a click (default on, decision D6). */
   readonly autoConfirm: boolean
+  /** The tunable numbers the 试玩 drawer shows; `value` is the finalized default. */
+  readonly params: readonly GameParam[]
+  /** The palette element looks draw from (the style's, unless the agent set its own). */
+  readonly palette: readonly string[]
   readonly createdAt: string
 }
+
+/** One tunable number (`game.json` `params[]`); the game reads it from `window.dshParams[key]` every frame. */
+export interface GameParam {
+  readonly key: string
+  readonly label: string
+  readonly min: number
+  readonly max: number
+  readonly step: number
+  readonly value: number
+  readonly unit?: string
+}
+
+/**
+ * An element's appearance (`look` in an element file): pixel rows per
+ * state. Each row is a string; `.` is transparent, `0-9a-z` index the
+ * look's own `palette` (base 36).
+ */
+export interface ElementLook {
+  readonly palette: readonly string[]
+  readonly states: Readonly<Record<string, readonly string[]>>
+}
+
+/** The characters a look row may use, in palette-index order. */
+export const LOOK_CHARS = '0123456789abcdefghijklmnopqrstuvwxyz'
 
 /** One design-doc chapter. `generated` chapters are written by the plugin, never by hand. */
 export interface ChapterSpec {
@@ -80,16 +129,39 @@ export interface ChapterView {
   readonly status: ChapterStatus
   readonly text: string
   readonly generated: boolean
+  /** Last-modified time (ms) of the chapter's source, 0 when unknown. */
+  readonly mtime: number
 }
 
 /** One element file (`elements/*.json`) after validation. */
 export interface ElementView {
   readonly file: string
+  /** Position inside the file when it holds an array, else -1. */
+  readonly index: number
   readonly id: string
   readonly type: string
   readonly name: string
-  /** Every other top-level scalar, for the numbers table. */
+  /** Every other top-level scalar, for the numbers table and the field editor. */
   readonly stats: Readonly<Record<string, string | number | boolean>>
+  readonly look: ElementLook | null
+}
+
+/** One appearance proposal set from `game_propose`: up to 3 variants, the user picks one. */
+export interface LookProposal {
+  readonly elementId: string
+  readonly at: string
+  readonly request: string
+  readonly variants: readonly { readonly label: string; readonly note: string; readonly look: ElementLook }[]
+  /** Index the user picked, once picked. */
+  readonly picked?: number
+}
+
+/** One net change the user made in the panel since the last send; attached to the next turn. */
+export interface PendingChange {
+  /** Stable key so repeated edits of one thing collapse into one entry (`param:speed`, `look:fog`, `design:core-loop`). */
+  readonly key: string
+  /** Short label for the dock and the model (`参数 移动速度 1.4→1.8`). */
+  readonly text: string
 }
 
 /** One check failure, already worded for the model and the panel. */
@@ -120,8 +192,31 @@ export interface VersionRecord {
   readonly version: number
   readonly at: string
   readonly fingerprint: string
-  /** One line the agent's turn left, when known. */
+  /** One line about what changed (the turn's last words, or the plugin's own note). */
   readonly note?: string
+}
+
+/** A version's place in the history. */
+export type VersionStatus = 'current' | 'candidate' | 'rejected' | 'past'
+
+/** One row of the 版本 view. */
+export interface VersionRow extends VersionRecord {
+  readonly status: VersionStatus
+  /** Test cases that passed when this version was checked. */
+  readonly passed?: number
+}
+
+/** Files that differ between two versions. */
+export interface VersionDiff {
+  readonly added: readonly string[]
+  readonly removed: readonly string[]
+  readonly changed: readonly string[]
+}
+
+/** One playtest-log line. */
+export interface LogEntry {
+  readonly at: string
+  readonly text: string
 }
 
 /** A project row in the deployment-level registry. */
@@ -148,6 +243,16 @@ export interface ProjectView {
   readonly candidate: VersionRecord | null
   readonly lastCheck: CheckRecord | null
   readonly hasEntry: boolean
+  /** The user's slider values that differ from the finalized defaults. */
+  readonly paramOverrides: Readonly<Record<string, number>>
+  /** Changes waiting to ride the next send. */
+  readonly pending: readonly PendingChange[]
+  /** Open (unpicked) and recent appearance proposals, newest first. */
+  readonly proposals: readonly LookProposal[]
+  readonly versions: readonly VersionRow[]
+  readonly log: readonly LogEntry[]
+  /** Set while a style change waits for its candidate (decision: a restyle always goes through a candidate). */
+  readonly restyleTo?: string
 }
 
 /** What the tab needs to render a session: its bound project (if any) plus the list to pick from. */

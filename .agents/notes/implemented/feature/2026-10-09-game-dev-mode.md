@@ -1,4 +1,4 @@
-# Agent Note: Game-development mode (dsh-game M1)
+# Agent Note: Game-development mode (dsh-game)
 
 Status: implemented
 
@@ -22,7 +22,15 @@ The user wants to build small games with the agent: the conversation settles the
   A failure is `agent.steer`ed back into the same turn as a `dsh-game`-sourced snapshot message. The cap is 2 per turn; the third failure records `gaveUp`, and that fingerprint is not re-run. A pass snapshots a new version, which becomes current when `autoConfirm` is on (the default) and a candidate otherwise.
 - **Shared loader.** The play area and the headless checks use one loader (`src/vfs.ts`). It runs in a `sandbox="allow-scripts"` srcdoc iframe fed by postMessage, and is kept as strings so bundler renaming cannot break it. The bridge stands in for `localStorage`; the panel keeps the saves per project in the browser.
 - **Chrome.** The browser is the machine's installed Chrome (`chromePath`, then `CHROME_PATH`, then common install paths). `puppeteer-core` is loaded by dynamic import and kept in the dist through `dsh.runtimeDependencies`. With no Chrome found, only the data checks run, and the record says why the browser part was skipped.
-- **Panel.** The panel kit holds four views: 试玩, 策划 (fixed chapters, pillars first; 元素与数值 and 试玩记录 are generated), 元素 and 检查. Tab visibility uses the canvas dual check on the `@khorsheed/dsh-game/agent` row.
+- **Panel — the workbench.** Built on the panel kit; four views. Tab visibility uses the canvas dual check on the `@khorsheed/dsh-game/agent` row.
+  - 试玩: the screen with its status strip (version, errors, pick, restart), the candidate bar (try / 退回 / 确认上线) and the parameter drawer.
+  - 元素: a card grid, the pixel look editor, field editing, and the A/B/C proposals.
+  - 策划: the one-pager and the pillars pinned on top, chapters expanding in place and editable, numbers charts generated from the elements.
+  - 版本: the check layers with the headless screenshot, the timeline with rollback and diff, single-file export, the log. An art-style gallery serves both the home state and restyling.
+- **Runtime contract the panel edits through.** The loader puts `game.json` `params` on `window.dshParams` and every element on `window.dshElements` before the game starts. Panel edits are pushed in by postMessage (`params`, `element`), so a game that reads them every frame changes live. The loader also provides `dshDraw`/`dshLookSize` for the pixel-row `look` format; `dshGame.pick(x, y)` enables 点选.
+- **User layer and auto-attach.** `.game/user.json` holds slider trial values (定稿 writes them into `game.json`), the pending changes, and a restyle request. Element edits land in the working file and in the live version's snapshot at once. On `agent/pre-step` the pending list rides the first non-empty batch as one `dsh-game` message (`op: 'attached'`) and is cleared. The list shows beforehand in a `conversation.input.dock` entry, removable item by item.
+- **Look proposals.** `game_propose` stores up to 3 normalized variants (`.game/proposals.json`); the user's pick applies the look and becomes a pending change. A restyle request forces the next passing version to be a candidate.
+- **Conversation rows.** A `uiConversation.events` Definition projects `dsh-game` messages into the `dsh-game-message` chat node kind, rendered by a keyed `conversation.chat.node` row: red 检查未通过 n/2 with the findings, grey 已附上 with the items. The official `context` node stays hidden, so nothing renders twice.
 
 ## Alternatives considered
 
@@ -38,6 +46,13 @@ The user wants to build small games with the agent: the conversation settles the
 
 ## Consequences
 
+- The workbench was walked on a second temp instance:
+  - Sliders changed the running game and filled the will-attach dock.
+  - Pick identified the keeper.
+  - The fog wraith's look request produced 3 variants; picking B replaced the look in the game, and the next send attached it.
+  - The design, versions and style gallery rendered in both wide and compact widths.
+- The two conversation rows land inside the host's step-process groups (`TURN_PROCESS_INDEPENDENT_KINDS` is a module constant, not extensible). After a turn ends they are visible only after expanding the turn and the step group. A host change is the way out; until then the dock and the 版本 view carry the same facts.
+
 - Validated on a temp 0.2.0-rc.2 instance with a scripted model. One message created the project and wrote six files. The check failed in real Chrome (the keeper was too slow for the test), was steered back, and the agent read and fixed `rules.js`; the recheck passed and v1 played in the tab. A second turn deployed v2. A deliberately wrong test steered twice, then stopped with `gaveUp`, while the play area stayed on v2.
 - The steered findings are context messages, which the 0.2.0 chat view hides. The user sees them only in the 检查 tab until the custom chat row (proposal option B, probe P1-8) lands in M2.
-- Element and design editing in the panel, auto-attach of user edits (`agent/pre-step`), style variants and sharing are later milestones.
+- Still out: SVG/vector looks in the editor, image-generation styles, itch.io publishing, leaderboards and multiplayer (server-side, a separate proposal).

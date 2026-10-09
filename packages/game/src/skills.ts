@@ -35,7 +35,7 @@ export const GAMEDEV_SKILL: GameSkill = {
 - 目录：
   - \`game.json\` 清单（插件写的；改 pitch/支柱/元素类型可以直接编辑，保持合法 JSON）
   - \`index.html\` 入口，\`src/\` 代码（ES module，相对路径 import），\`assets/\` 图片音频
-  - \`elements/*.json\` 元素：每个文件一个对象或对象数组，必须有 \`id\`、\`name\`、\`type\`（type 取 game.json 的 elementTypes 之一）。数值放顶层字段（hp、speed、cost……），面板会自动汇成「元素与数值」表。代码运行时用 \`fetch('elements/xxx.json')\` 读。
+  - \`elements/*.json\` 元素：每个文件一个对象或对象数组，必须有 \`id\`、\`name\`、\`type\`（type 取 game.json 的 elementTypes 之一）。数值放顶层字段（hp、speed、cost……），面板会自动汇成「元素与数值」表；外观放 \`look\`（见下）。
   - \`design/*.md\` 策划文档（见 game-design 技能）
   - \`tests/*.test.js\` 测试脚本
   - \`.game/\` 插件自己的状态，别动
@@ -47,6 +47,15 @@ export const GAMEDEV_SKILL: GameSkill = {
 - 没有文生图：画面全部用代码画（canvas 绘制、像素数组、SVG）。严格按 game.json 的 artStyle 画：
 ${STYLE_LINES}
 
+## 参数、元素与外观（面板能直接调的部分）
+- **参数**：值得边玩边调的数（速度、间隔、伤害、难度系数）声明在 game.json 的 \`params\`：
+  \`[{ "key": "speed", "label": "移动速度", "min": 20, "max": 120, "step": 1, "value": 60, "unit": "px/s" }]\`。
+  代码**每帧**从 \`window.dshParams.speed\` 读，不要缓存到变量里——用户在右栏拖滑块时值会被直接改掉。参数控制在 3–8 个。
+- **元素**：运行时从 \`window.dshElements[id]\` 读（加载器已把 elements/*.json 全部放进去），同样每帧读，用户在面板改了外观或数值会热替换。
+- **外观 look**：\`{ "palette": ["#1a1c2c", "#ffcd75", …], "states": { "idle": ["..00..", ".0110.", …], "move": [...] } }\`。每行一个字符串，\`.\` 透明，\`0-9a-z\` 是 palette 下标；同一状态各行等宽，常用 16×16。颜色优先取 game.json 的 \`palette\`（来自美术风格）。画的时候用 \`dshDraw(ctx2d, 元素id或look, 状态名, x, y, 放大倍数)\`，尺寸用 \`dshLookSize(元素id)\`。主角、敌人、道具都尽量给 look，用户才能在面板里改样子。
+- 用户要你改某个元素的样子时，用 **game_propose** 一次给 3 个方案（看得出差别：轮廓、配色、细节各不同），让用户在右栏挑；挑中的会自动替换进游戏，你别再自己写 look。
+- 美术风格要换时（右栏会附上「换风格」请求）：重画所有 look，更新 game.json 的 \`artStyle\` 与 \`palette\`；那个版本会作为候选等用户确认。
+
 ## window.dshGame 约定（必须）
 入口加载完后在 window 上挂：
 \`\`\`js
@@ -55,6 +64,7 @@ window.dshGame = {
   step(dt) {},                 // 推进 dt 秒的游戏逻辑（不依赖真实时间），测试靠它
   input(key, down) {},         // 模拟按键，key 用 KeyboardEvent.key（'ArrowRight'、' '、'z'）
   state() { return {...} },    // 返回可序列化的关键状态（玩家位置、分数、关卡……）
+  pick(x, y) { return id },    // 可选但建议：画布坐标上是哪个元素，返回元素 id 或 null（右栏「点选」用）
 }
 \`\`\`
 游戏主循环用 requestAnimationFrame 调同一个 step，键盘事件转给同一个 input，这样测试和真玩走的是同一套逻辑。用 \`window.__GAMEDEV_TEST__\` 判断是否在检查里（可跳过开场动画）。
@@ -71,6 +81,9 @@ test('按住右键 3 秒能走出起点', () => {
 })
 \`\`\`
 每个文件在一次全新加载上运行。测玩法规则（移动、碰撞、得分、胜负、存档），别测像素。
+
+## 用户在面板里的改动
+用户在右栏拖的参数、改的元素外观/字段、直接改的策划文字、退回或回滚的版本，会在下一次发送时作为「自上一轮以来，用户在右栏游戏面板里改了：…」附在消息后面。这些已经生效：把它们当作用户的决定，必要时把参数定进代码逻辑或策划文档，别改回去。
 
 ## 每轮结束时
 你结束这一轮时插件自动检查改过的项目：game.json 与元素文件校验 → 加载并跑 2 秒冒烟（报错、ready、画面不能全空）→ 跑 tests/。

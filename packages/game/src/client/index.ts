@@ -17,7 +17,11 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type {} from '@khorsheed/dsh-game/remote'
 import gameRemote from '@khorsheed/dsh-game/remote'
-import type { GameTabInjected } from './contract.ts'
+import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
+import { GAME_CHAT_KIND, GameChatRow, gameMessageDefinition } from './chat-node.tsx'
+import type { GameApi, GameTabInjected } from './contract.ts'
+import { GameDock } from './GameDock.tsx'
 import { GAME_KIND, GAME_TAB_ID, gameDefinition } from './definition.tsx'
 import { GameTab } from './GameTab.tsx'
 import { en, NS, zh } from './locales.ts'
@@ -61,12 +65,13 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   } | undefined
 
   const listeners = new Set<(sessionId: string) => void>()
+  const emit = (sessionId: string): void => { for (const listener of listeners) listener(sessionId) }
   const carrier = ctx.remote as {
     $on?: (event: 'api-session/status' | 'api-session/activity', listener: (sessionId: string) => void) => () => void
   }
   if (typeof carrier.$on === 'function') {
     for (const forwarded of ['api-session/status', 'api-session/activity'] as const) {
-      const off = carrier.$on(forwarded, (sessionId: string) => { for (const listener of listeners) listener(sessionId) })
+      const off = carrier.$on(forwarded, (sessionId: string) => { emit(sessionId) })
       disposers.push(async () => { off() })
     }
   }
@@ -82,23 +87,86 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     return () => { unsubscribe(); toggle.setReady(false) }
   }, 'game: tab type visibility')
 
+  const api: GameApi = {
+    state: sid => remote.state(sid),
+    bind: (sid, projectId) => remote.bind(sid, { projectId }),
+    bundle: (projectId, which) => remote.bundle({ projectId, which }),
+    versionBundle: (projectId, version) => remote.versionBundle({ projectId, version }),
+    confirm: (sid, projectId) => remote.confirm(sid, { projectId }),
+    reject: (sid, projectId, reason) => remote.reject(sid, { projectId, reason }),
+    rollback: (sid, projectId, version) => remote.rollback(sid, { projectId, version }),
+    diff: (projectId, from, to) => remote.diff({ projectId, from, to }),
+    checkShot: projectId => remote.checkShot({ projectId }),
+    setAutoConfirm: (sid, projectId, on) => remote.setAutoConfirm(sid, { projectId, on }),
+    logPlay: (sid, entry) => remote.logPlay(sid, entry),
+    setParam: (sid, projectId, key, value) => remote.setParam(sid, { projectId, key, value }),
+    finalizeParams: (sid, projectId) => remote.finalizeParams(sid, { projectId }),
+    resetParams: (sid, projectId) => remote.resetParams(sid, { projectId }),
+    editElement: (sid, projectId, elementId, patch) => remote.editElement(sid, { projectId, elementId, ...patch }),
+    pickProposal: (sid, projectId, elementId, at, index) => remote.pickProposal(sid, { projectId, elementId, at, index }),
+    writeChapter: (sid, projectId, chapterId, text) => remote.writeChapter(sid, { projectId, chapterId, text }),
+    requestRestyle: (sid, projectId, styleId) => remote.requestRestyle(sid, { projectId, styleId }),
+    dropPending: (sid, projectId, key) => remote.dropPending(sid, { projectId, key }),
+  }
+
+  /** The session's composer, structurally (the quote/canvas precedent; a composition may have none). */
+  interface ConversationInput {
+    readonly state: { getSnapshot(): { draft: string } }
+    setDraft(value: string): void
+    focus?: () => void
+  }
+  const inputFor = (sessionId: SessionId): ConversationInput | undefined => {
+    try {
+      const scope = (ctx.get('sessions') as { scope?: (id: SessionId) => { get(name: string): unknown } } | undefined)?.scope?.(sessionId)
+      const input = (scope?.get('conversation') as { input?: { for(actx: unknown): unknown } } | undefined)?.input?.for(scope)
+      const face = input as Partial<ConversationInput> | undefined
+      return typeof face?.setDraft === 'function' && typeof face.state?.getSnapshot === 'function' ? face as ConversationInput : undefined
+    } catch {
+      return undefined
+    }
+  }
+  const face: GameTabInjected = {
+    api,
+    insertDraft: (sessionId, text) => {
+      const input = inputFor(sessionId)
+      if (input === undefined) return false
+      const kept = input.state.getSnapshot().draft.replace(/\s+$/, '')
+      input.setDraft(kept.length === 0 ? text : `${kept}\n\n${text}`)
+      if (typeof input.focus === 'function') input.focus()
+      return true
+    },
+    subscribeSessionEvents: (listener) => {
+      listeners.add(listener)
+      return () => { listeners.delete(listener) }
+    },
+    touch: sessionId => { emit(sessionId) },
+  }
+
   ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
     name: 'sidebar.right.pane.tab',
     key: GAME_TAB_ID,
     locale: NS,
-    inject: (): GameTabInjected => ({
-      fetchState: (sid: SessionId) => remote.state(sid),
-      bind: (sid: SessionId, projectId: string | null) => remote.bind(sid, { projectId }),
-      fetchBundle: (projectId: string, which: 'current' | 'candidate') => remote.bundle({ projectId, which }),
-      confirm: (sid: SessionId, projectId: string) => remote.confirm(sid, { projectId }),
-      setAutoConfirm: (sid: SessionId, projectId: string, on: boolean) => remote.setAutoConfirm(sid, { projectId, on }),
-      logPlay: (sid: SessionId, entry) => remote.logPlay(sid, entry),
-      subscribeSessionEvents: (listener) => {
-        listeners.add(listener)
-        return () => { listeners.delete(listener) }
-      },
-    }),
+    inject: (): GameTabInjected => face,
   }, GameTab)), 'game: tab body')
+
+  // 将附上: the dock above the composer (only renders for a bound session with pending changes).
+  ctx.effect(() => ctx.slots.inject('conversation.input.dock', () => ctx.slots.register({
+    name: 'conversation.input.dock',
+    id: 'dsh-game-pending',
+    order: 45,
+    locale: NS,
+    inject: (): GameTabInjected => face,
+  }, GameDock)), 'game: pending dock')
+
+  // The conversation rows for dsh-game messages (check findings, attached changes).
+  ctx.inject(['uiConversation'], (lctx) => {
+    lctx.effect(() => lctx.uiConversation.events.register(gameMessageDefinition), 'game: chat projection')
+  })
+  ctx.effect(() => ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
+    name: 'conversation.chat.node',
+    key: GAME_CHAT_KIND,
+    locale: NS,
+  }, GameChatRow)), 'game: chat row')
 
   return async () => {
     await Promise.all(disposers.map(dispose => dispose()))

@@ -12,16 +12,29 @@
  * @module @khorsheed/dsh-game
  */
 import type { Context } from '@deepseek-ai/cordis'
-import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { Agent, PreStepDecision } from '@deepseek-ai/dsh-agent'
 import { createUserMessage, type ContextFormed } from '@deepseek-ai/dsh-llm'
 import type { GameService } from './store.ts'
 import type { CheckRecord } from './types.ts'
 
+/** What a dsh-game message is, for the chat row (the text is for the model). */
+export type GameMessageOp =
+  | { readonly op: 'check-failed'; readonly attempt: number; readonly cap: number; readonly failures: readonly { where: string; message: string }[] }
+  | { readonly op: 'attached'; readonly items: readonly string[] }
+
 declare module '@deepseek-ai/dsh-llm' {
   interface MessageSourceMap {
     /** A message the game plugin put into the conversation (check findings, attached changes). */
-    'dsh-game': { kind: 'dsh-game'; plugin: '@khorsheed/dsh-game' } & ContextFormed
+    'dsh-game': { kind: 'dsh-game'; plugin: '@khorsheed/dsh-game' } & ContextFormed & Partial<GameMessageOp>
   }
+}
+
+/** Build a dsh-game user message. */
+export function gameMessage(text: string, section: string, op: GameMessageOp) {
+  return createUserMessage({
+    content: [{ type: 'text', text }],
+    source: { kind: 'dsh-game', plugin: '@khorsheed/dsh-game', form: 'snapshot', sections: [{ name: section, text }], ...op },
+  })
 }
 
 /** Automatic fix rounds per turn (decision: at most 2). */
@@ -67,11 +80,27 @@ export function registerTurnHooks(ctx: Context, store: GameService): void {
     if (attempt >= FIX_CAP) return
     steered.set(key, attempt + 1)
     const text = failureText(outcome.record, attempt + 1)
-    agent.steer(createUserMessage({
-      content: [{ type: 'text', text }],
-      source: { kind: 'dsh-game', plugin: '@khorsheed/dsh-game', form: 'snapshot', sections: [{ name: 'checks', text }] },
+    agent.steer(gameMessage(text, 'checks', {
+      op: 'check-failed', attempt: attempt + 1, cap: FIX_CAP,
+      failures: outcome.record.failures.slice(0, 8).map(f => ({ where: f.where, message: f.message.slice(0, 300) })),
     }))
   })
+
+  // Auto-attach (decision D3): the user's panel edits since the last send ride
+  // the first step of the next batch, after the user's own message.
+  ctx.on('agent/pre-step', async ({ agent, signal }, next): Promise<PreStepDecision> => {
+    const decision = await next()
+    if (decision.kind === 'reject' || signal.aborted || decision.messages.length === 0) return decision
+    let text: string | undefined
+    try {
+      text = await store.takePending(agent.session.id)
+    } catch (error) {
+      ctx.logger.warn('game: could not read pending panel changes', error)
+    }
+    if (text === undefined) return decision
+    const items = text.split('\n').filter(line => line.startsWith('- ')).map(line => line.slice(2))
+    return { ...decision, messages: [...decision.messages, gameMessage(text, 'changes', { op: 'attached', items })] }
+  }, { prepend: true })
 
   // The turn is over whatever its reason: drop its steer count.
   ctx.on('session/event', (session, raw) => {

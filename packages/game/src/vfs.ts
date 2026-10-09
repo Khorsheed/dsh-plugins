@@ -35,18 +35,60 @@ const BRIDGE = `(function(){
   addEventListener('unhandledrejection', function(e){ report('rejection', e.reason && e.reason.message || e.reason) });
   if (!console.__gd) { var ce = console.error; console.error = function(){ report('console', [].join.call(arguments, ' ')); return ce.apply(console, arguments) }; console.__gd = 1 }
   var saves = window.__gdSaves || (window.__gdSaves = {});
-  var store = {
-    getItem: function(k){ k = String(k); return Object.prototype.hasOwnProperty.call(saves, k) ? saves[k] : null },
-    setItem: function(k, v){ saves[String(k)] = String(v); post({ gamedev: 'save', saves: saves }) },
-    removeItem: function(k){ delete saves[String(k)]; post({ gamedev: 'save', saves: saves }) },
-    clear: function(){ for (var k in saves) delete saves[k]; post({ gamedev: 'save', saves: saves }) },
-    key: function(i){ return Object.keys(saves)[i] || null },
-    get length(){ return Object.keys(saves).length }
+  var nativeOk = false;
+  try { nativeOk = !!window.localStorage && (window.localStorage.getItem('__gd'), true) } catch (e) {}
+  if (!nativeOk) {
+    var store = {
+      getItem: function(k){ k = String(k); return Object.prototype.hasOwnProperty.call(saves, k) ? saves[k] : null },
+      setItem: function(k, v){ saves[String(k)] = String(v); post({ gamedev: 'save', saves: saves }) },
+      removeItem: function(k){ delete saves[String(k)]; post({ gamedev: 'save', saves: saves }) },
+      clear: function(){ for (var k in saves) delete saves[k]; post({ gamedev: 'save', saves: saves }) },
+      key: function(i){ return Object.keys(saves)[i] || null },
+      get length(){ return Object.keys(saves).length }
+    };
+    try { Object.defineProperty(window, 'localStorage', { configurable: true, get: function(){ return store } }) } catch (e) {}
+  }
+  var CH = '0123456789abcdefghijklmnopqrstuvwxyz';
+  window.dshParams = window.dshParams || {};
+  window.dshElements = window.dshElements || {};
+  window.dshDraw = function(g, look, state, x, y, scale){
+    if (typeof look === 'string') { var el = window.dshElements[look]; look = el && el.look }
+    if (!look || !look.states || !look.palette) return false;
+    var names = Object.keys(look.states), rows = look.states[state] || look.states[names[0]];
+    if (!rows) return false;
+    scale = scale || 1;
+    for (var r = 0; r < rows.length; r++) for (var c = 0; c < rows[r].length; c++) {
+      var col = look.palette[CH.indexOf(rows[r].charAt(c))];
+      if (!col) continue;
+      g.fillStyle = col; g.fillRect(Math.round(x + c * scale), Math.round(y + r * scale), Math.ceil(scale), Math.ceil(scale));
+    }
+    return true;
   };
-  try { Object.defineProperty(window, 'localStorage', { configurable: true, get: function(){ return store } }) } catch (e) {}
+  window.dshLookSize = function(look){
+    if (typeof look === 'string') { var el = window.dshElements[look]; look = el && el.look }
+    var rows = look && look.states && look.states[Object.keys(look.states)[0]];
+    return rows ? { w: rows[0].length, h: rows.length } : { w: 0, h: 0 };
+  };
   addEventListener('message', function(e){
     var d = e.data || {}, g = window.dshGame;
     if (d.gamedev === 'inspect') post({ gamedev: 'inspect', ready: !!(g && g.ready), state: g && g.state ? g.state() : null, errors: errors });
+    if (d.gamedev === 'params' && d.values) {
+      for (var k in d.values) window.dshParams[k] = Number(d.values[k]);
+      dispatchEvent(new CustomEvent('dshparams', { detail: window.dshParams }));
+    }
+    if (d.gamedev === 'element' && d.element && d.element.id) {
+      window.dshElements[d.element.id] = d.element;
+      dispatchEvent(new CustomEvent('dshelements', { detail: d.element }));
+    }
+    if (d.gamedev === 'pick') {
+      var cv = document.querySelector('canvas'), id = null, cx = 0, cy = 0;
+      if (cv) {
+        var rect = cv.getBoundingClientRect(), px = d.x * innerWidth, py = d.y * innerHeight;
+        cx = (px - rect.left) * cv.width / rect.width; cy = (py - rect.top) * cv.height / rect.height;
+        if (g && typeof g.pick === 'function' && cx >= 0 && cy >= 0 && cx <= cv.width && cy <= cv.height) { try { id = g.pick(cx, cy) || null } catch (err) { report('error', 'pick: ' + err.message) } }
+      }
+      post({ gamedev: 'picked', id: id, supported: !!(g && typeof g.pick === 'function'), x: d.x, y: d.y });
+    }
   });
 })();`
 
@@ -103,6 +145,14 @@ const LOADER = `window.__boot = function (files) {
     Object.defineProperty(pair[0], pair[1], { configurable: true, enumerable: d.enumerable, get: function () { return d.get.call(this) }, set: function (v) { d.set.call(this, rel(v) || v) } });
   });
   if (!files['index.html']) { document.body.textContent = '这个版本没有 index.html'; return }
+  try {
+    var manifest = files['game.json'] ? JSON.parse(text('game.json')) : {};
+    (manifest.params || []).forEach(function (p) { if (p && p.key && !(p.key in window.dshParams)) window.dshParams[p.key] = Number(p.value) });
+  } catch (e) {}
+  Object.keys(files).forEach(function (p) {
+    if (p.indexOf('elements/') !== 0 || !/\.json$/.test(p)) return;
+    try { var raw = JSON.parse(text(p)); (Array.isArray(raw) ? raw : [raw]).forEach(function (el) { if (el && el.id) window.dshElements[el.id] = el }) } catch (e) {}
+  });
   var doc = new DOMParser().parseFromString(text('index.html'), 'text/html');
   doc.querySelectorAll('[src]').forEach(function (el) { var u = rel(el.getAttribute('src')); if (u) el.setAttribute('src', u) });
   doc.querySelectorAll('link[href]').forEach(function (el) { var u = rel(el.getAttribute('href')); if (u) el.setAttribute('href', u) });
@@ -120,6 +170,7 @@ else { var once = false; addEventListener('message', function (e) {
   if (once || !d || d.gamedev !== 'files') return;
   once = true;
   if (d.saves && typeof d.saves === 'object') { var s = window.__gdSaves || (window.__gdSaves = {}); for (var k in d.saves) s[k] = String(d.saves[k]) }
+  if (d.params && typeof d.params === 'object') { window.dshParams = window.dshParams || {}; for (var pk in d.params) window.dshParams[pk] = Number(d.params[pk]) }
   window.__boot(d.files);
 }); }`
 
@@ -146,3 +197,14 @@ export type FrameMessage =
   | { readonly gamedev: 'error'; readonly kind: string; readonly msg: string }
   | { readonly gamedev: 'save'; readonly saves: Readonly<Record<string, string>> }
   | { readonly gamedev: 'inspect'; readonly ready: boolean; readonly state: unknown; readonly errors: readonly { kind: string; msg: string }[] }
+  | { readonly gamedev: 'picked'; readonly id: string | null; readonly supported: boolean; readonly x: number; readonly y: number }
+
+/**
+ * A single self-contained HTML file for a build (decision: sharing starts as
+ * a file export). The same shell, with the files embedded; opened from disk
+ * it has a real origin, so the game's own localStorage works natively.
+ */
+export function exportHtml(title: string, files: Readonly<Record<string, unknown>>): string {
+  const embedded = `<title>${title.replace(/[<&]/g, '')}</title><script>window.__VFS_FILES__=${scriptSafe(JSON.stringify(files))}</script>`
+  return shellHtml(embedded)
+}

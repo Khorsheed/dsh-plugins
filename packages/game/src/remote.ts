@@ -9,7 +9,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { Context } from '@deepseek-ai/cordis'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { GameService } from './store.ts'
-import type { GameResult, PlayBundle, SessionGameState } from './types.ts'
+import type { GameResult, PlayBundle, SessionGameState, VersionDiff } from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -71,5 +71,94 @@ export class GameRemoteService extends TypertRemoteService<GameRemoteConfig> {
   @Remote('logPlay')
   logPlay(agent: Agent, request: { projectId: string; version: number; seconds: number; errors: string[] }): Promise<GameResult> {
     return this.store.logPlay(request.projectId, request, agent.session)
+  }
+
+  /** Drop one pending change (the dock's ×). */
+  @Remote('dropPending')
+  dropPending(agent: Agent, request: { projectId: string; key: string }): Promise<GameResult> {
+    return this.store.dropPending(request.projectId, request.key, agent.session)
+  }
+
+  /** Set one slider value (user layer). */
+  @Remote('setParam')
+  setParam(agent: Agent, request: { projectId: string; key: string; value: number }): Promise<GameResult> {
+    return this.store.setParam(request.projectId, request.key, request.value, agent.session)
+  }
+
+  /** 定稿: write slider values into game.json. */
+  @Remote('finalizeParams')
+  finalizeParams(agent: Agent, request: { projectId: string }): Promise<GameResult> {
+    return this.store.finalizeParams(request.projectId, agent.session)
+  }
+
+  /** 还原: drop the slider overrides. */
+  @Remote('resetParams')
+  resetParams(agent: Agent, request: { projectId: string }): Promise<GameResult> {
+    return this.store.resetParams(request.projectId, agent.session)
+  }
+
+  /** Edit one element's look (JSON text) and/or scalar fields (JSON text of an object). */
+  @Remote('editElement')
+  async editElement(agent: Agent, request: { projectId: string; elementId: string; look?: string; fields?: string }): Promise<GameResult<{ readonly ok: true; readonly elementJson: string }>> {
+    let look: unknown
+    let fields: Record<string, string | number | boolean | null> | undefined
+    try {
+      if (request.look !== undefined) look = JSON.parse(request.look)
+      if (request.fields !== undefined) fields = JSON.parse(request.fields) as Record<string, string | number | boolean | null>
+    } catch {
+      return { ok: false, error: 'invalid' }
+    }
+    const result = await this.store.editElement(request.projectId, request.elementId, {
+      ...(look === undefined ? {} : { look }), ...(fields === undefined ? {} : { fields }),
+    }, agent.session)
+    return result.ok ? { ok: true, elementJson: JSON.stringify(result.element) } : result
+  }
+
+  /** Pick one appearance variant. */
+  @Remote('pickProposal')
+  pickProposal(agent: Agent, request: { projectId: string; elementId: string; at: string; index: number }): Promise<GameResult> {
+    return this.store.pickProposal(request.projectId, request.elementId, request.at, request.index, agent.session)
+  }
+
+  /** Write a design chapter. */
+  @Remote('writeChapter')
+  writeChapter(agent: Agent, request: { projectId: string; chapterId: string; text: string }): Promise<GameResult> {
+    return this.store.writeChapter(request.projectId, request.chapterId, request.text, agent.session)
+  }
+
+  /** Mark a pending restyle (the next passing version becomes a candidate). */
+  @Remote('requestRestyle')
+  requestRestyle(agent: Agent, request: { projectId: string; styleId: string }): Promise<GameResult> {
+    return this.store.requestRestyle(request.projectId, request.styleId, agent.session)
+  }
+
+  /** Throw the candidate away. */
+  @Remote('reject')
+  reject(agent: Agent, request: { projectId: string; reason: string }): Promise<GameResult> {
+    return this.store.reject(request.projectId, request.reason, agent.session)
+  }
+
+  /** Put an older version into the play area. */
+  @Remote('rollback')
+  rollback(agent: Agent, request: { projectId: string; version: number }): Promise<GameResult> {
+    return this.store.rollback(request.projectId, request.version, agent.session)
+  }
+
+  /** Files that differ between two versions. */
+  @Remote('diff')
+  diff(request: { projectId: string; from: number; to: number }): Promise<GameResult<{ readonly ok: true; readonly diff: VersionDiff }>> {
+    return this.store.diff(request.projectId, request.from, request.to)
+  }
+
+  /** The last check's screenshot. */
+  @Remote('checkShot')
+  checkShot(request: { projectId: string }): Promise<GameResult<{ readonly ok: true; readonly webp: string }>> {
+    return this.store.checkShot(request.projectId)
+  }
+
+  /** A specific version's files (rollback preview, export). */
+  @Remote('versionBundle')
+  versionBundle(request: { projectId: string; version: number }): Promise<GameResult<{ readonly ok: true; readonly bundle: PlayBundle }>> {
+    return this.store.versionBundle(request.projectId, request.version)
   }
 }

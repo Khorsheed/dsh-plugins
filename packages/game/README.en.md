@@ -11,7 +11,13 @@ You do not need game-design experience — the agent writes the code and acts as
 - **Game-development mode**: the `dsh-gamedev` (游戏开发模式) preset in `@khorsheed/dsh-presets` — a developer + design-mentor persona, two tools (`game_open`, `game_read`) and two skills (`gamedev` for the mechanics, `game-design` for mentoring).
 - **Projects live in the workspace**: a project is one folder in the session's workspace (`game.json`, `index.html`, `src/`, `assets/`, `elements/`, `design/`, `tests/`); the plugin's version snapshots, check results and playtest log sit in the project's own `.game/`, so the folder moves as one. `$DSH_HOME/state/game/` holds only the project registry and session bindings.
 - **A light gate**: a project needs a title, a one-sentence pitch, element types and the art style the user chose; the tool answers with whatever is missing so the agent asks instead of inventing it.
-- **The Game tab**: Play (a sandboxed iframe; saves stay in your browser), Design (fixed chapters, pillars pinned first, status empty/draft/final; "elements & numbers" and "playtest log" are generated), Elements (one table per type) and Checks (the last verdict and its findings).
+- **The Game tab, a game-design workbench**:
+  - Play: the game screen with a status strip (live/candidate version, error count, pick, restart), the candidate bar (try / reject / confirm), and the parameter drawer — the params the game declares in `game.json` become sliders that change the running game at once, marked amber when they differ, with Finalize (write into game.json) and Reset; Pick tells which element is under a click and quotes it into the chat.
+  - Elements: a card grid filtered by type (pixel-look thumbnail + key numbers), multi-select to hand to the agent; one element opens a look editor (pen / recolor from the art-style palette, states), field editing, and "ask the agent for a new look" — the agent offers 3 variants with `game_propose`, shown side by side, and picking one applies it.
+  - Design: the one-pager (pitch, element kinds, style) and the pillars pinned on top, chapters that expand in place and can be edited directly, an Updated mark and a progress bar; "elements & numbers" is generated with comparison bars, the playtest log is written automatically.
+  - Versions: the last check (three layers, findings, the headless screenshot), the version timeline (live / candidate / rejected / past, switch back, file diff against live), single-file `.html` export to share, the playtest log.
+  - Art-style gallery: one little scene drawn in six styles; without a project a pick goes into the composer, mid-project a restyle redraws everything and always lands as a candidate.
+- **Panel changes ride the next send**: moved sliders, edited looks/fields/chapters, rejected or switched-back versions show above the composer as "Will attach N" (each removable) and reach the agent as one message after yours.
 - **Checks every turn**: `game.json` and element files are validated → the build loads in headless Chrome for a 2-second smoke run (errors, `window.dshGame.ready`, a canvas that is not one flat color) → `tests/*.test.js` run. A failure is steered back into the same turn, at most twice; a pass becomes a new version that deploys at once while auto-confirm is on (the default), or waits for your "Confirm" when it is off.
 
 ## Install
@@ -40,13 +46,15 @@ The package's `cordis.patch.yml` inserts two rows: `game` (service core, Remote,
 - 2D only (native canvas plus an HTML UI layer); the sandbox CSP blocks every outside request, so all code and assets live in the project.
 - The host has no image generation: everything is drawn in code, and the art styles offered are the ones code draws well.
 - No sharing with other players yet (single-file export and itch.io are later milestones; leaderboards and multiplayer need a server and come after that).
-- Elements and the design doc are read-only in the panel: ask the agent for changes in the conversation.
+- The plugin's two conversation rows ("checks failed n/2", "attached") are folded by the host into the turn's step groups: once a turn ends, expand "Done in …" and the step group to see them (the host's list of standalone node kinds is not open to plugins). The same information shows above the composer and under Versions.
+- Element looks use the pixel-row format (`look`); SVG/vector looks are not editable in the panel yet.
 
 ## How it works
 
 - The play area and the headless checks share one loader (`src/vfs.ts`): a `sandbox="allow-scripts"` opaque-origin iframe receives the project's files, mints blob URLs in its own origin, rewrites relative imports and CSS `url()`, takes over `fetch` and image/audio `src`, then writes `index.html` over itself; `localStorage` is a bridged stand-in whose writes are posted back for the panel to keep in the browser.
 - The checks hang on `agent/turn-stopping` (fires only on a normal finish, so a user's stop is never overridden) and touch only sessions bound to a project whose `index.html` exists and whose build fingerprint changed. A failure goes back into the same turn through `agent.steer`, at most twice per turn; a third failure is recorded as "stopped auto-fixing".
-- A version is a build snapshot under `.game/versions/<n>/` (the newest 5 are kept); `current.json` names the one in the play area.
+- A version is a build snapshot under `.game/versions/<n>/` (the newest 10 are kept); `current.json` names the one in the play area, `versions.json` keeps the history (rejected included).
+- The user layer lives in `.game/user.json` (slider trial values, changes waiting to attach, a restyle request); look proposals in `.game/proposals.json`. The loader puts params and elements on `window.dshParams` / `window.dshElements` before the game starts, panel edits are pushed in by postMessage, so a game that reads them every frame changes live; `dshDraw` draws pixel looks and `dshGame.pick(x, y)` enables picking.
 
 ## Development
 

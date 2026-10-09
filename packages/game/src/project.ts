@@ -5,8 +5,8 @@
  * @module @khorsheed/dsh-game
  */
 import {
-  ART_STYLES, MANIFEST_FILE, STATE_DIR,
-  type ChapterStatus, type CheckFailure, type ElementView, type GameManifest,
+  ART_STYLES, LOOK_CHARS, MANIFEST_FILE, STATE_DIR,
+  type ChapterStatus, type CheckFailure, type ElementLook, type ElementView, type GameManifest, type GameParam,
 } from './types.ts'
 
 /** What `game_open create` must carry before a project exists (the light gate, decision D2). */
@@ -85,8 +85,67 @@ export function gate(request: CreateRequest): GateVerdict {
       artStyle: artStyle!,
       pillars: listOf(request.pillars).slice(0, 5),
       autoConfirm: true,
+      params: [],
+      palette: stylePalette(artStyle!),
     },
   }
+}
+
+/** A style's palette; custom styles start from the pixel palette (the agent may set its own in game.json). */
+export function stylePalette(styleId: string): string[] {
+  return [...(ART_STYLES.find(style => style.id === styleId) ?? ART_STYLES[0]!).palette]
+}
+
+const HEX = /^#[0-9a-f]{6}$/i
+
+/** Parse `game.json` `params[]`, dropping malformed rows and clamping each value into its range. */
+export function parseParams(raw: unknown): GameParam[] {
+  if (!Array.isArray(raw)) return []
+  const out: GameParam[] = []
+  for (const row of raw) {
+    if (row === null || typeof row !== 'object') continue
+    const r = row as Record<string, unknown>
+    const key = typeof r.key === 'string' ? r.key.trim() : ''
+    const min = Number(r.min), max = Number(r.max)
+    if (key === '' || !Number.isFinite(min) || !Number.isFinite(max) || max <= min || out.some(p => p.key === key)) continue
+    const step = Number(r.step) > 0 ? Number(r.step) : (max - min) / 100
+    const value = Number.isFinite(Number(r.value)) ? Math.min(max, Math.max(min, Number(r.value))) : min
+    out.push({
+      key, label: typeof r.label === 'string' && r.label.trim() !== '' ? r.label.trim() : key, min, max, step, value,
+      ...(typeof r.unit === 'string' && r.unit !== '' ? { unit: r.unit } : {}),
+    })
+  }
+  return out.slice(0, 24)
+}
+
+/**
+ * Normalize an element's `look`: a palette of `#rrggbb` colors and pixel
+ * rows per state, every row padded/cut to the widest row, characters outside
+ * the palette turned transparent. Anything unusable is null.
+ */
+export function normalizeLook(raw: unknown): ElementLook | null {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const r = raw as Record<string, unknown>
+  const palette = Array.isArray(r.palette) ? r.palette.filter((c): c is string => typeof c === 'string' && HEX.test(c)).slice(0, LOOK_CHARS.length) : []
+  if (palette.length === 0 || r.states === null || typeof r.states !== 'object') return null
+  const states: Record<string, string[]> = {}
+  for (const [name, rowsRaw] of Object.entries(r.states as Record<string, unknown>).slice(0, 8)) {
+    if (!Array.isArray(rowsRaw)) continue
+    const rows = rowsRaw.filter((row): row is string => typeof row === 'string').slice(0, 64)
+    if (rows.length === 0) continue
+    const width = Math.min(64, Math.max(...rows.map(row => row.length)))
+    states[name] = rows.map(row => [...row.padEnd(width, '.').slice(0, width)].map(ch => {
+      const index = LOOK_CHARS.indexOf(ch.toLowerCase())
+      return index >= 0 && index < palette.length ? ch.toLowerCase() : '.'
+    }).join(''))
+  }
+  return Object.keys(states).length === 0 ? null : { palette, states }
+}
+
+/** The look's grid size (first state). */
+export function lookSize(look: ElementLook): { w: number; h: number } {
+  const rows = Object.values(look.states)[0] ?? []
+  return { w: rows[0]?.length ?? 0, h: rows.length }
 }
 
 /**
@@ -118,6 +177,10 @@ export function parseManifest(text: string): { ok: true; manifest: GameManifest 
       artStyle: str(r.artStyle),
       pillars: listOf(Array.isArray(r.pillars) ? r.pillars.filter((x): x is string => typeof x === 'string') : str(r.pillars)),
       autoConfirm: r.autoConfirm !== false,
+      params: parseParams(r.params),
+      palette: Array.isArray(r.palette) && r.palette.some(c => typeof c === 'string' && HEX.test(c))
+        ? r.palette.filter((c): c is string => typeof c === 'string' && HEX.test(c))
+        : stylePalette(str(r.artStyle)),
       createdAt: str(r.createdAt),
     },
   }
@@ -154,7 +217,7 @@ export function pillarsChapter(manifest: Pick<GameManifest, 'title' | 'pitch' | 
 function scalarStats(r: Record<string, unknown>): Record<string, string | number | boolean> {
   const out: Record<string, string | number | boolean> = {}
   for (const [key, value] of Object.entries(r)) {
-    if (key === 'id' || key === 'type' || key === 'name') continue
+    if (key === 'id' || key === 'type' || key === 'name' || key === 'look') continue
     if (typeof value === 'number' || typeof value === 'boolean' || (typeof value === 'string' && value.length <= 40)) out[key] = value
   }
   return out
@@ -205,7 +268,10 @@ export function validateElements(
         if (earlier !== undefined) failures.push({ where: at, message: `id「${id}」和 ${earlier} 重复` })
         else seen.set(id, at)
       }
-      if (id !== '' && name !== '' && type !== '') elements.push({ file, id, type, name, stats: scalarStats(r) })
+      if (r.look !== undefined && normalizeLook(r.look) === null) failures.push({ where: at, message: 'look 不可用：需要 palette（#rrggbb 数组）和 states（状态名 → 像素行数组）' })
+      if (id !== '' && name !== '' && type !== '') {
+        elements.push({ file, index: Array.isArray(raw) ? index : -1, id, type, name, stats: scalarStats(r), look: normalizeLook(r.look) })
+      }
     })
   }
   return { elements, failures }
@@ -275,4 +341,34 @@ export function isTextFile(path: string): boolean {
 export function slugOf(title: string): string {
   const slug = title.normalize('NFKD').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40)
   return slug === '' ? 'game' : slug
+}
+
+/**
+ * Apply a patch to one element inside its file's text (an object, or one
+ * entry of an array), keeping every other key. `undefined` values delete.
+ * @returns the new file text, or undefined when the element is not there.
+ */
+export function patchElementText(text: string, elementId: string, patch: Readonly<Record<string, unknown>>): string | undefined {
+  let raw: unknown
+  try {
+    raw = JSON.parse(text)
+  } catch {
+    return undefined
+  }
+  const items = Array.isArray(raw) ? raw : [raw]
+  const target = items.find(item => item !== null && typeof item === 'object' && (item as Record<string, unknown>).id === elementId) as Record<string, unknown> | undefined
+  if (target === undefined) return undefined
+  for (const [key, value] of Object.entries(patch)) {
+    if (key === 'id') continue
+    if (value === undefined) delete target[key]
+    else target[key] = value
+  }
+  return `${JSON.stringify(raw, null, 2)}\n`
+}
+
+/** A look as model-facing text: palette, then each state's rows. */
+export function lookText(look: ElementLook): string {
+  const lines = [`palette: ${look.palette.map((c, i) => `${LOOK_CHARS[i]}=${c}`).join(' ')}`]
+  for (const [state, rows] of Object.entries(look.states)) lines.push(`${state}:`, ...rows.map(row => `  ${row}`))
+  return lines.join('\n')
 }

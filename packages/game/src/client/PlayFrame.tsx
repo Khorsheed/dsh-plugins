@@ -1,13 +1,13 @@
 /**
- * The play area: the deployed version in a `sandbox="allow-scripts"` iframe
- * (an opaque origin — no cookies, no host storage, no network by the frame's
- * own CSP), fed by postMessage through the shared loader. Saves live in this
- * browser's localStorage per project; the frame sees them as its own
- * `localStorage`. When a play session ends (version change, restart, the tab
- * closing) its length and errors go to the playtest log.
+ * The play frame: one version in a `sandbox="allow-scripts"` iframe (an
+ * opaque origin — no cookies, no host storage, no network by the frame's own
+ * CSP), fed by postMessage through the shared loader. Saves live in this
+ * browser's localStorage per project; slider values and element edits are
+ * pushed in live; the pick overlay asks the game what is under a click.
+ * When a play session ends (version change, restart, unmount) its length and
+ * errors go to the playtest log.
  */
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
+import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import type { BundleFile } from '../types.ts'
 import { shellHtml, type FrameMessage } from '../vfs.ts'
 import css from './GameTab.module.css'
@@ -33,6 +33,15 @@ function writeSaves(projectId: string, saves: Readonly<Record<string, string>>):
   }
 }
 
+/** Forget a project's saves (重开存档). */
+export function clearSaves(projectId: string): void {
+  try {
+    localStorage.removeItem(savesKey(projectId))
+  } catch {
+    // Nothing to clear.
+  }
+}
+
 /** Play-session report handed to the playtest log. */
 export interface PlayReport {
   readonly version: number
@@ -45,31 +54,48 @@ export interface PlayFrameProps {
   readonly projectId: string
   readonly version: number
   readonly files: Readonly<Record<string, BundleFile>>
-  readonly t: TranslateNS<'game'>
+  /** Restart counter: bump to reload the frame. */
+  readonly run: number
+  /** Live slider values (key → value), pushed on every change. */
+  readonly params: Readonly<Record<string, number>>
+  /** The last edited element, pushed in when it changes. */
+  readonly element: Record<string, unknown> | null
+  readonly picking: boolean
+  readonly onPicked: (id: string | null, supported: boolean) => void
+  readonly onErrors: (errors: readonly string[]) => void
   readonly onReport: (report: PlayReport) => void
+  readonly label: string
 }
 
-/** The sandboxed play frame plus its small toolbar. */
-export function PlayFrame({ projectId, version, files, t, onReport }: PlayFrameProps): ReactNode {
+/** The sandboxed frame with a pick overlay. */
+export function PlayFrame({ projectId, version, files, run, params, element, picking, onPicked, onErrors, onReport, label }: PlayFrameProps): ReactNode {
   const frame = useRef<HTMLIFrameElement>(null)
-  const [run, setRun] = useState(0)
-  const [errors, setErrors] = useState<string[]>([])
   const shell = useMemo(() => shellHtml(), [])
   const report = useRef(onReport)
   report.current = onReport
+  const errorsCb = useRef(onErrors)
+  errorsCb.current = onErrors
+  const pickedCb = useRef(onPicked)
+  pickedCb.current = onPicked
+  const paramsRef = useRef(params)
+  paramsRef.current = params
+  const [booted, setBooted] = useState(false)
 
   useEffect(() => {
     const started = Date.now()
     const seen: string[] = []
-    setErrors([])
+    errorsCb.current([])
+    setBooted(false)
     const onMessage = (event: MessageEvent): void => {
       if (event.source !== frame.current?.contentWindow) return
       const data = event.data as FrameMessage | undefined
       if (data?.gamedev === 'error') {
-        seen.push(`${data.msg}`)
-        setErrors(list => (list.length >= 20 ? list : [...list, data.msg]))
+        if (seen.length < 50) seen.push(data.msg)
+        errorsCb.current([...seen])
       } else if (data?.gamedev === 'save') {
         writeSaves(projectId, data.saves)
+      } else if (data?.gamedev === 'picked') {
+        pickedCb.current(data.id, data.supported)
       }
     }
     window.addEventListener('message', onMessage)
@@ -80,26 +106,32 @@ export function PlayFrame({ projectId, version, files, t, onReport }: PlayFrameP
     }
   }, [projectId, version, run])
 
+  const post = (message: unknown): void => { frame.current?.contentWindow?.postMessage(message, '*') }
+
+  useEffect(() => { if (booted) post({ gamedev: 'params', values: params }) }, [params, booted])
+  useEffect(() => { if (booted && element !== null) post({ gamedev: 'element', element }) }, [element, booted])
+
   const boot = (): void => {
-    frame.current?.contentWindow?.postMessage({ gamedev: 'files', files, saves: readSaves(projectId) }, '*')
+    if (booted) return
+    post({ gamedev: 'files', files, saves: readSaves(projectId), params: paramsRef.current })
+    setBooted(true)
   }
 
-  return <div className={css.play}>
-    <div className={css.stage}>
-      <iframe
-        key={`${version}:${run}`}
-        ref={frame}
-        className={css.frame}
-        title={`v${version}`}
-        sandbox="allow-scripts"
-        srcDoc={shell}
-        onLoad={boot}
-      />
-    </div>
-    <div className={css.playBar}>
-      <button type="button" className={css.button} onClick={() => { setRun(n => n + 1) }}>{t('play.restart')}</button>
-      <span className={css.hint}>{t('play.focus')}</span>
-      {errors.length > 0 && <span className={css.errorText} title={errors.join('\n')}>{t('play.errors', { count: errors.length })}</span>}
-    </div>
+  const pick = (event: MouseEvent<HTMLDivElement>): void => {
+    const rect = event.currentTarget.getBoundingClientRect()
+    post({ gamedev: 'pick', x: (event.clientX - rect.left) / rect.width, y: (event.clientY - rect.top) / rect.height })
+  }
+
+  return <div className={css.stageInner} data-picking={picking ? 'true' : 'false'}>
+    <iframe
+      key={`${version}:${run}`}
+      ref={frame}
+      className={css.frame}
+      title={label}
+      sandbox="allow-scripts"
+      srcDoc={shell}
+      onLoad={boot}
+    />
+    {picking && <div className={css.pickLayer} onClick={pick} role="presentation" />}
   </div>
 }

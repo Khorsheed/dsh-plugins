@@ -1,4 +1,4 @@
-# Agent Note: Game-development mode (dsh-game M1)
+# Agent Note: Game-development mode (dsh-game)
 
 Status: implemented
 
@@ -22,7 +22,15 @@ Status: implemented
   失败用 `agent.steer` 以 `dsh-game` 来源的 snapshot 消息送回同一轮。每轮上限 2 次，第 3 次失败记 `gaveUp`，同一指纹不再重跑。通过就生成新版本：`autoConfirm` 开着（默认）直接成为当前版本，关着则成为候选。
 - **共用加载器。** 试玩区与无头检查用同一个加载器（`src/vfs.ts`）。它跑在 `sandbox="allow-scripts"` 的 srcdoc iframe 里，靠 postMessage 喂文件，全部以字符串保存，打包器改名破坏不了它。桥接替身代管 `localStorage`，面板按项目把存档存在浏览器里。
 - **Chrome。** 浏览器用本机装的 Chrome（依次是 `chromePath`、`CHROME_PATH`、常见安装路径）。`puppeteer-core` 动态 import，并通过 `dsh.runtimeDependencies` 留在发布包里。找不到 Chrome 时只跑数据校验，记录里写明浏览器部分为何跳过。
-- **面板。** 面板 kit 下四个视图：试玩、策划（固定章节，支柱置顶；元素与数值、试玩记录自动生成）、元素、检查。tab 显隐用画布的双重判据，判 `@khorsheed/dsh-game/agent` 行。
+- **面板——策划操作台。** 基于面板 kit，四个视图。tab 显隐用画布的双重判据，判 `@khorsheed/dsh-game/agent` 行。
+  - 试玩：游戏画面带状态条（版本、报错、点选、重开），候选条（先试玩 / 退回 / 确认上线），参数抽屉。
+  - 元素：卡片网格、像素外观编辑器、字段编辑、A/B/C 方案。
+  - 策划：一页纸与支柱置顶，章节就地展开、可直接改，元素数值自动成表画对比条。
+  - 版本：三层检查结论与无头截图、时间线（切回、对比）、单文件导出、试玩记录。首页与换风格共用一个美术风格画廊。
+- **面板改动依赖的运行时约定。** 加载器在游戏启动前把 `game.json` 的 `params` 放进 `window.dshParams`、所有元素放进 `window.dshElements`；面板改动经 postMessage（`params`、`element`）热替换，游戏每帧读就即时生效。加载器另提供 `dshDraw`/`dshLookSize` 画像素行格式的 `look`；`dshGame.pick(x, y)` 支持点选。
+- **用户层与自动附上。** `.game/user.json` 存滑块试玩值（定稿写进 `game.json`）、待附上改动、换风格请求。元素编辑同时写进工作文件和线上版本快照，所以立刻生效。`agent/pre-step` 把待附上列表作为一条 `dsh-game` 消息（`op: 'attached'`）跟在第一个非空批次后面，随后清空；发送前在 `conversation.input.dock` 里可见，可逐项去掉。
+- **外观方案。** `game_propose` 存最多 3 个规范化方案（`.game/proposals.json`）；用户挑中即替换外观并记为待附上改动。换风格请求会让下一个通过的版本强制成为候选。
+- **对话行。** `uiConversation.events` 的 Definition 把 `dsh-game` 消息投影成 `dsh-game-message` 聊天节点，由带 key 的 `conversation.chat.node` 行渲染：红色「检查未通过 n/2」带问题，灰色「已附上」带条目。官方 `context` 节点仍隐藏，不会重复显示。
 
 ## Alternatives considered
 
@@ -38,6 +46,13 @@ Status: implemented
 
 ## Consequences
 
+- 在第二台临时实例上走查过操作台：
+  - 拖滑块即时改变游戏，并进入「将附上」。
+  - 点选认出守夜人。
+  - 改雾灵外观的请求产出 3 个方案；挑 B 后游戏里随即替换，下一次发送时附上。
+  - 策划、版本、风格画廊在宽、窄两种宽度下都正常。
+- 两种对话行会被宿主收进步骤分组（`TURN_PROCESS_INDEPENDENT_KINDS` 是模块常量，不可扩展）。轮次结束后要展开轮次和步骤分组才看得到；要根治得改宿主，在那之前「将附上」和「版本」页承载同样的信息。
+
 - 在 0.2.0-rc.2 临时实例上用脚本化模型验证过。一条消息建了项目、写了 6 个文件。检查在真 Chrome 里失败（守夜人太慢，没过测试），结果送回同一轮，agent 读了并改好 `rules.js`；重检通过，v1 在右栏能玩。第二轮部署了 v2。故意写错的测试送回两次后停下，记为 `gaveUp`，试玩区留在 v2。
 - 送回的检查结果是上下文消息，0.2.0 聊天视图不显示。在 M2 的自定义聊天行（提案方案 B，探针 P1-8）落地之前，用户只能在「检查」页看到。
-- 面板内编辑元素和策划、用户改动自动附上（`agent/pre-step`）、风格变体、分享，都是后续里程碑。
+- 尚未做：编辑器里的 SVG/矢量外观、文生图风格、itch.io 发布、排行榜与联机（需服务器，另立提案）。
