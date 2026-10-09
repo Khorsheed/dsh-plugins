@@ -35,6 +35,25 @@
 
 数据只进内存（可配置），不写会话日志、不落盘：每会话最近 30 个 turn；历史回溯另占每会话 500 次请求的上限；全部会话的明细文本合计受一个全局字符预算约束（默认约 150MB——明细全文才是内存大头）。预算挤压时最旧的**回溯** turn 先淘汰，实采内容永不被回溯压力挤掉；被预算裁掉的旧 turn 会在页脚标注，空间释放后的下一次查询自动补齐。
 
+## 工作区接入接缝（服务端消费）
+
+四个 Remote 动词（`listTurns` / `getTurn` / `getRequest` / `getTurnTiming`）都接受一个可选的 `filter: { scopes?: readonly string[] }` 尾参——这是给**可信服务端调用方**的授权过滤接缝：调用方（如把工作区成员 RPC 代理进来的协作插件）从自己的授权事实推出允许访问的 scope 集合，插件把它当不透明白名单逐查询套用。
+
+```ts
+// 只授权主对话与 child-a 两个 scope 的一次读取
+const { turns, backfill, generation, authorizedScopes } =
+  await remote.requestInspector.listTurns(sessionId, { scopes: ['main', 'child-a'] })
+```
+
+- **scope 集合必须由可信调用方计算**：`scopes` 是过滤器，不是授权来源——绝不能把浏览器递上来的集合原样转发，必须由服务端从成员资格等授权事实推导。插件不推导、不校验来源；缺省（不传或没有 `scopes` 键）就是今天的本地语义。
+- **被排除的 scope 什么都不贡献**：请求行、scope 计数、失败计数、token 合计、计时 lane 与工具名全部只在授权子集上聚合；scope 标识就是 `AgentScopeOverview.scopeId`（主对话恒为 `'main'`，子 scope 用 childId）。turn 行本身（query 预览、起止时间）是会话级元数据，仍然列出。
+- **未授权子 scope 的日志连打开都不打开**：过滤发生在懒加载子日志读取之前——为一次未授权查询打开那份日志这件事本身不会发生。
+- **零授权是显式结果**：带 filter 时结果带 `authorizedScopes`（实际存在且获授权的 scope 列表）；空数组 = 「查询解析为零授权内容」，与字段缺席（未过滤）、`undefined`（未知会话/turn/seq）三分。`getRequest` 命中被排除 scope 时返回 `{ refused: 'no-authorized-content' }`（拒绝确认地址存在，不带任何内容），未知 seq 仍是 `undefined`。
+- **保真度元数据复用既有水位线**：turn 行与 scope 行带 `origin`（`'live'` 实采 / `'log-reconstructed'` 日志重建；尚无内容的 scope 不带此字段）；`BackfillInfo` 不动；`listTurns` 新增 `evictedTurnCount`——「采集过又被保留上限逐出」与「从没见过」在会话记录存活时可区分；**盲区**：最后一个 turn 被逐出时会话槽整体释放，整会话逐出与从没见过不可区分。
+- **地址语义**：`(sessionId, turnSeq)` 只是 turn 级地址；真实 turn 用宿主 turn 号（跨重启稳定），负数 turnSeq 的 purpose 伪 turn 不是持久地址。请求 `seq` 是进程内单调计数、重启归零——跨调用持有 seq 的一方必须同时持有结果上的 `generation`（实例纪元，挂载时生成），`generation` 一变即作废所有旧 seq，旧 seq 绝不静默命中新请求。
+- **保留上限不变**：每会话 30 turn / 500 条回溯请求、全局约 150MB 字符预算照常；过滤只发生在读取路径，不影响采集与保留。
+- **本地行为零变化**：不带 `filter` 的调用逐字节保持今天的语义；面板不消费新字段（服务端消费方自行渲染各自状态）。
+
 ## Compatibility
 
 - npm 发布线（`@deepseek-ai/dsh@0.1.7-rc.1`）：✅ 完整——右栏页型 tab 自 0.1.5 起存在（`minHost` 钉在 0.1.5-rc.1），turn 动作行槽 `conversation.chat.assistant-actions` 自 0.1.7-rc.1 起存在；0.1.5–0.1.6 宿主上动作行图标静默缺席，只剩会话头部入口（所有注册走 `ctx.slots.inject`，缺席位不炸 boot）。

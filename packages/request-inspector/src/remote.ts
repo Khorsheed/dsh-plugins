@@ -13,7 +13,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { InspectorService } from './service.ts'
-import type { CapturedRequest, ListTurnsResult, TurnOverview, TurnTiming } from './types.ts'
+import type { CapturedRequest, ListTurnsResult, ScopeFilter, ScopedRefusal, TurnOverview, TurnTiming } from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -39,26 +39,26 @@ export class RequestInspectorRemoteService extends TypertRemoteService<RequestIn
 
   /** Light turn list of one session plus its backfill watermark, newest last. */
   @Remote('listTurns')
-  listTurns(sessionId: string): Promise<ListTurnsResult> {
-    return this.core.listTurns(sessionId)
+  listTurns(sessionId: string, filter?: ScopeFilter): Promise<ListTurnsResult> {
+    return this.core.listTurns(sessionId, filter)
   }
 
   /** One turn's scope/request overview — the left column, no segments. */
   @Remote('getTurn')
-  getTurn(sessionId: string, turnSeq: number): Promise<TurnOverview | undefined> {
-    return this.core.getTurn(sessionId, turnSeq)
+  getTurn(sessionId: string, turnSeq: number, filter?: ScopeFilter): Promise<TurnOverview | undefined> {
+    return this.core.getTurn(sessionId, turnSeq, filter)
   }
 
   /** One request's full four-segment breakdown — the right column. */
   @Remote('getRequest')
-  getRequest(sessionId: string, seq: number): Promise<CapturedRequest | undefined> {
-    return this.core.getRequest(sessionId, seq)
+  getRequest(sessionId: string, seq: number, filter?: ScopeFilter): Promise<CapturedRequest | ScopedRefusal | undefined> {
+    return this.core.getRequest(sessionId, seq, filter)
   }
 
   /** One turn's whole-turn timing aggregation — the 耗时分布 tab. */
   @Remote('getTurnTiming')
-  getTurnTiming(sessionId: string, turnSeq: number): Promise<TurnTiming | undefined> {
-    return this.core.getTurnTiming(sessionId, turnSeq)
+  getTurnTiming(sessionId: string, turnSeq: number, filter?: ScopeFilter): Promise<TurnTiming | undefined> {
+    return this.core.getTurnTiming(sessionId, turnSeq, filter)
   }
 }
 

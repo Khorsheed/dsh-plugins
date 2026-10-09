@@ -25,7 +25,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 // Type-only: pulls this plugin's LocaleNamespaceMap merge.
 import type {} from './locales.ts'
 import type {
-  CapturedRequest, ListTurnsResult, TurnOverview, TurnTiming,
+  CapturedRequest, ListTurnsResult, ScopedRefusal, TurnOverview, TurnTiming,
 } from '../types.ts'
 
 /** The requestInspector Remote namespace (as mounted by this plugin). */
@@ -37,8 +37,12 @@ export interface InspectorTabInjected {
   listTurns: (sessionId: SessionId) => Promise<RemoteResult<ListTurnsResult>>
   /** One turn's scope/request overview — the left column, no segments. */
   getTurn: (sessionId: SessionId, turnSeq: number) => Promise<RemoteResult<TurnOverview | undefined>>
-  /** One request's full four-segment breakdown — the right column. */
-  getRequest: (sessionId: SessionId, seq: number) => Promise<RemoteResult<CapturedRequest | undefined>>
+  /**
+   * One request's full four-segment breakdown — the right column. The
+   * {@link ScopedRefusal} half only answers a query that carried a scope
+   * filter; the panel never sends one and narrows it away at the call site.
+   */
+  getRequest: (sessionId: SessionId, seq: number) => Promise<RemoteResult<CapturedRequest | ScopedRefusal | undefined>>
   /** One turn's whole-turn timing aggregation — the 耗时分布 tab. */
   getTurnTiming: (sessionId: SessionId, turnSeq: number) => Promise<RemoteResult<TurnTiming | undefined>>
 }

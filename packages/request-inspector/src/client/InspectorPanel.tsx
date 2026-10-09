@@ -185,7 +185,9 @@ export function InspectorPanel({
     const seq = selectedRequestSeq
     void getRequest(sessionId, seq).then(result => {
       if (cancelled || tab.signal.aborted) return
-      if (result.ok && result.value !== undefined) {
+      // The panel never sends a scope filter, so a refusal cannot arrive;
+      // the narrow is for the wire type only.
+      if (result.ok && result.value !== undefined && !('refused' in result.value)) {
         detailCache.current.set(seq, result.value)
         setRequest(result.value)
       } else if (!result.ok) {

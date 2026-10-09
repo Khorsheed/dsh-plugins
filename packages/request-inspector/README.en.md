@@ -35,6 +35,25 @@ Three read-only host seams (requests are never rewritten):
 
 Data lives in memory only (configurable), never written to the session log or disk: the latest 30 turns per session; history backfill additionally capped at 500 reconstructed requests per session; and all sessions' segment text shares one global character budget (default ~150MB — the verbatim segment text is the real memory driver). Under pressure the oldest *backfilled* turns evict first; live captures never yield to backfill pressure. Budget-dropped older turns are flagged in the footer and refill automatically once room frees.
 
+## Workspace admission seam (server-side consumption)
+
+All four Remote verbs (`listTurns` / `getTurn` / `getRequest` / `getTurnTiming`) accept an optional trailing `filter: { scopes?: readonly string[] }` — an authorization filter for **trusted server-side callers**: the caller (e.g. a collaboration plugin proxying workspace-member RPC) derives the allowed scope set from its own authorization facts, and the plugin applies it as an opaque allow-list per query.
+
+```ts
+// One read authorized for the main conversation and child-a only
+const { turns, backfill, generation, authorizedScopes } =
+  await remote.requestInspector.listTurns(sessionId, { scopes: ['main', 'child-a'] })
+```
+
+- **The scope set is computed by the trusted caller**: `scopes` is a filter, not an authorization source — never forward a browser-supplied set verbatim; the server derives it from authorization facts such as membership. The plugin neither derives nor validates it; absent (or no `scopes` key) is today's local semantics.
+- **An excluded scope contributes nothing**: request rows, scope/failure counts, token sums, timing lanes, and tool names all aggregate over the authorized subset only; scope identifiers are the ones `AgentScopeOverview.scopeId` exposes (the main conversation is the stable `'main'`, child scopes key on the childId). Turn rows themselves (query preview, timestamps) are session-level metadata and stay listed.
+- **An unauthorized child scope's log is never opened on its behalf**: filtering happens ahead of the lazy child-log reads — for an unauthorized query the open itself never happens.
+- **Zero-authorized is explicit**: with a filter, results carry `authorizedScopes` (the authorized scopes that exist); an empty array means the query resolved to zero authorized content — three-way distinct from the field's absence (unfiltered) and from `undefined` (unknown session/turn/seq). `getRequest` answers `{ refused: 'no-authorized-content' }` when the address exists inside an excluded scope (the refusal confirms existence and carries no content); an unknown seq stays `undefined`.
+- **Fidelity metadata reuses the existing watermark**: turn rows and scope rows carry `origin` (`'live'` / `'log-reconstructed'`; a scope holding no content yet omits it); `BackfillInfo` is unchanged; `listTurns` adds `evictedTurnCount` — "collected then evicted under the retention caps" is distinguishable from "never seen" while the session record lives; **blind spot**: evicting the last turn frees the whole session slot, so fully-evicted reads exactly like never-seen.
+- **Address semantics**: `(sessionId, turnSeq)` is a TURN-level address only; real turns key on the host turn number (stable across restarts) while negative pseudo-turnSeqs are not durable addresses. A request `seq` is a process-local monotonic counter that resets on restart — a caller holding seqs across calls must also hold the result's `generation` (the instance epoch, minted at mount); a changed generation invalidates every held seq, so an old seq never silently resolves to a new request.
+- **Retention is unchanged**: 30 turns / 500 backfilled requests per session and the global ~150MB character budget apply as before; filtering is read-path only and affects neither capture nor retention.
+- **Local behavior unchanged**: calls without `filter` keep today's semantics byte for byte; the panel does not consume the new fields (server-side consumers render their own states).
+
 ## Compatibility
 
 - npm release line (`@deepseek-ai/dsh@0.1.7-rc.1`): ✅ full — the page-type right-sidebar tab exists since 0.1.5 (hence `minHost` 0.1.5-rc.1) and the `conversation.chat.assistant-actions` seat since 0.1.7-rc.1; on 0.1.5–0.1.6 hosts the action-row icon is silently absent and the session-header entry remains (all registrations ride `ctx.slots.inject`; a missing seat never breaks boot).

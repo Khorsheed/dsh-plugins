@@ -28,8 +28,8 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type { PromptAssembly } from '@deepseek-ai/dsh-system-prompt'
-import type { CapturedRequest, ListTurnsResult, TurnOverview, TurnTiming } from './types.ts'
-import { InspectorStore, type EvictedTurn, type RequestSnapshot, type StoredRequest, type StoreConfig } from './store.ts'
+import type { CapturedRequest, ListTurnsResult, ScopeFilter, ScopedRefusal, TurnOverview, TurnTiming } from './types.ts'
+import { InspectorStore, scopeAuthorized, type EvictedTurn, type RequestSnapshot, type StoredRequest, type StoreConfig } from './store.ts'
 import { recordAssembly } from './segmenter.ts'
 import { fromRequestMessage, serializeMessage, previewLine } from './messages.ts'
 import {
@@ -65,6 +65,8 @@ export interface InspectorDeps {
   /** Overrides the `sessionPersistence` probe (tests inject the fixture here). */
   persistence?: SessionLogReader
   logger?: { warn(message: string): void }
+  /** Overrides the instance epoch stamped on query results (restart invalidation tests). */
+  generation?: string
 }
 
 /** The capture store's query face (Remote delegates here). */
@@ -96,6 +98,7 @@ export class InspectorService {
     this.store = new InspectorStore(storeConfig, {
       now: this.now,
       onTurnEvicted: (_sessionId, turn) => this.dropEvictedChildState(turn),
+      ...deps.generation === undefined ? {} : { generation: deps.generation },
     })
     this.disposers = [
       ctx.on('llm/stream', (options, next) => this.onStream(options, next)),
@@ -248,12 +251,18 @@ export class InspectorService {
     }
   }
 
-  /** Refresh every log-sourced child scope of one session (query-time, incremental). */
-  private async refreshChildren(rootSessionId: string): Promise<void> {
+  /**
+   * Refresh the log-sourced child scopes of one session (query-time,
+   * incremental). A scope the query's {@link ScopeFilter} excludes is skipped
+   * outright — its log is not opened on an unauthorized query's behalf.
+   */
+  private async refreshChildren(rootSessionId: string, filter?: ScopeFilter): Promise<void> {
     const reader = this.reader()
     if (reader === undefined) return
     const scopes = this.store.childScopes(rootSessionId)
-    await Promise.all(scopes.map(scope => this.refreshChild(rootSessionId, scope.scopeId, reader, scope.live)))
+    await Promise.all(scopes.map(scope => scopeAuthorized(scope.scopeId, filter)
+      ? this.refreshChild(rootSessionId, scope.scopeId, reader, scope.live)
+      : Promise.resolve()))
   }
 
   private refreshChild(
@@ -364,32 +373,36 @@ export class InspectorService {
 
   // ---------- queries (the Remote face delegates here) ----------
 
-  /** Light turn list of one session plus its backfill watermark. */
-  async listTurns(sessionId: string): Promise<ListTurnsResult> {
+  /**
+   * Light turn list of one session plus its backfill watermark. The optional
+   * {@link ScopeFilter} restricts rows and aggregates to the authorized
+   * scopes; absent is the unfiltered local semantics.
+   */
+  async listTurns(sessionId: string, filter?: ScopeFilter): Promise<ListTurnsResult> {
     await this.backfillMainSession(sessionId)
-    await this.refreshChildren(sessionId)
-    return this.store.listTurns(sessionId)
+    await this.refreshChildren(sessionId, filter)
+    return this.store.listTurns(sessionId, filter)
   }
 
   /** One turn's scope/request overview, without segments. */
-  async getTurn(sessionId: string, turnSeq: number): Promise<TurnOverview | undefined> {
+  async getTurn(sessionId: string, turnSeq: number, filter?: ScopeFilter): Promise<TurnOverview | undefined> {
     await this.backfillMainSession(sessionId)
-    await this.refreshChildren(sessionId)
-    return this.store.getTurn(sessionId, turnSeq)
+    await this.refreshChildren(sessionId, filter)
+    return this.store.getTurn(sessionId, turnSeq, filter)
   }
 
-  /** One request's full four-segment breakdown. */
-  async getRequest(sessionId: string, seq: number): Promise<CapturedRequest | undefined> {
+  /** One request's full four-segment breakdown (a {@link ScopedRefusal} when the filter excludes its scope). */
+  async getRequest(sessionId: string, seq: number, filter?: ScopeFilter): Promise<CapturedRequest | ScopedRefusal | undefined> {
     await this.backfillMainSession(sessionId)
-    await this.refreshChildren(sessionId)
-    return this.store.getRequest(sessionId, seq)
+    await this.refreshChildren(sessionId, filter)
+    return this.store.getRequest(sessionId, seq, filter)
   }
 
   /** One turn's whole-turn timing aggregation. */
-  async getTurnTiming(sessionId: string, turnSeq: number): Promise<TurnTiming | undefined> {
+  async getTurnTiming(sessionId: string, turnSeq: number, filter?: ScopeFilter): Promise<TurnTiming | undefined> {
     await this.backfillMainSession(sessionId)
-    await this.refreshChildren(sessionId)
-    return this.store.getTurnTiming(sessionId, turnSeq)
+    await this.refreshChildren(sessionId, filter)
+    return this.store.getTurnTiming(sessionId, turnSeq, filter)
   }
 
   /** Release every session buffer, listener, and open child-log handle (plugin dispose). */
