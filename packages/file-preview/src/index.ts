@@ -10,10 +10,16 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import z from '@deepseek-ai/schemastery'
 import { BashWriteCollector } from './bash-writes.ts'
-import { foldFilePreview, foldFilePreviewByTurn, type TurnFilesByTurn } from './fold.ts'
+import { foldFilePreviewByTurn, type TurnFilesByTurn } from './fold.ts'
 import { openExternalNative, macAppName } from './open-external.ts'
+import {
+  IMAGE_MIME, eventsWatermark, isImagePath, listFilePreview, readErrorMessage, readFilePreview, turnFilesFilePreview,
+} from './read-surface.ts'
 import { revealNativePath } from './reveal.ts'
-import type { FilePreviewConfig, FilePreviewEntry, FilePreviewList, FilePreviewOpenExternal, FilePreviewRead, FilePreviewReveal, FilePreviewTurnFile, FilePreviewTurnMap } from './types.ts'
+import type { FilePreviewConfig, FilePreviewList, FilePreviewOpenExternal, FilePreviewRead, FilePreviewReveal, FilePreviewTurnMap } from './types.ts'
+
+export { createFilePreviewReadSurface } from './read-surface.ts'
+export type { FilePreviewImageBytes, FilePreviewReadFs, FilePreviewReadSource, FilePreviewReadSurface } from './read-surface.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -26,81 +32,6 @@ declare module '@deepseek-ai/cordis' {
  * the web face is an optional additive host, absent in headless compositions. */
 interface ImageRouteHost {
   register(route: { kind: 'prefix'; path: string; handler: (req: IncomingMessage, res: ServerResponse) => void | Promise<void> }): () => void
-}
-
-/** Extensions treated as binary without reading (their text decode is meaningless). */
-const BINARY_EXTENSIONS: ReadonlySet<string> = new Set([
-  '.pdf', '.zip', '.gz', '.tar', '.7z', '.zstd', '.br',
-  '.woff', '.woff2', '.ttf', '.otf', '.eot',
-  '.wasm', '.node', '.dylib', '.so', '.dll', '.exe', '.kext',
-  '.class', '.jar', '.pyc', '.sqlite', '.db',
-  '.DS_Store', '.a', '.o',
-])
-
-/** Image extensions served to the browser through the image route. */
-const IMAGE_EXTENSIONS: ReadonlySet<string> = new Set([
-  '.png', '.jpg', '.jpeg', '.gif', '.webp', '.avif', '.bmp', '.ico', '.svg',
-])
-
-/** MIME type per image extension for the image route's Content-Type header. */
-const IMAGE_MIME: Readonly<Record<string, string>> = {
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.gif': 'image/gif',
-  '.webp': 'image/webp',
-  '.avif': 'image/avif',
-  '.bmp': 'image/bmp',
-  '.ico': 'image/x-icon',
-  '.svg': 'image/svg+xml',
-}
-
-/** NUL bytes in decoded text mark a file as binary despite a successful decode. */
-function hasNulByte(content: string): boolean {
-  return content.slice(0, 4096).includes('\u0000')
-}
-
-/** Shared non-fatal UTF-8 decoder for the bounded byte-window read: invalid
- * sequences become U+FFFD (a cut multi-byte character at the window edge
- * included) instead of failing the read. */
-const utf8Decoder = new TextDecoder()
-
-/** Detect a binary file from its display path extension. */
-function isBinaryPath(path: string): boolean {
-  const dot = path.lastIndexOf('.')
-  return dot >= 0 && BINARY_EXTENSIONS.has(path.slice(dot).toLowerCase())
-}
-
-/** Detect an image from its display path extension. */
-function isImagePath(path: string): boolean {
-  const dot = path.lastIndexOf('.')
-  return dot >= 0 && IMAGE_EXTENSIONS.has(path.slice(dot).toLowerCase())
-}
-
-/** HTML extensions served through the sandboxed render channel. */
-const HTML_EXTENSIONS: ReadonlySet<string> = new Set(['.html', '.htm'])
-
-/** Detect an HTML document from its display path extension. */
-function isHtmlPath(path: string): boolean {
-  const dot = path.lastIndexOf('.')
-  return dot >= 0 && HTML_EXTENSIONS.has(path.slice(dot).toLowerCase())
-}
-
-/** Best-effort scripted-HTML detection: any `<script>` tag, inline event
- *  handler (`on*="…"`), or `javascript:` URL marks the document as scripted.
- *  Only a hint for default-mode selection and warning — never a trust
- *  decision; the sandbox and the Tier1 CSP are the real boundary. The scan
- *  runs on the read content as delivered (a truncated read may miss markers
- *  in the tail; acceptable for a hint). */
-function isScriptedHtml(content: string): boolean {
-  return /<\s*script[\s>]/i.test(content)
-    || /\son[a-z]+\s*=/i.test(content)
-    || /javascript:/i.test(content)
-}
-
-/** Stable error text for a failed read, without leaking backend internals. */
-function readErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
 }
 
 /**
@@ -275,34 +206,6 @@ export class FilePreviewService extends TypertRemoteService {
     res.end(Buffer.from(bytes))
   }
 
-  /** Resolve the session's recorded display paths against its cwd and keep only
-   *  those that currently exist as a regular file. The products surfaces fold
-   *  the session log (which is history, not disk state): a path the log wrote
-   *  may have been cleaned up since (a temp script the turn deleted), and such
-   *  a path is not a product to list. Existence is checked fresh on every call
-   *  (never cached), so a deletion that lands after a fold is visible on the
-   *  next fetch. Unresolvable/unstat-able paths are treated as absent.
-   * @param agent - owning live agent; its session cwd anchors relative paths.
-   * @param paths - the display paths to probe.
-   * @returns the subset that resolves to an existing regular file.
-   */
-  private async retainExisting(agent: Agent, paths: readonly string[]): Promise<ReadonlySet<string>> {
-    if (paths.length === 0) return new Set()
-    const cwd = agent.session.header.cwd
-    const existing = new Set<string>()
-    for (const path of paths) {
-      if (existing.has(path)) continue
-      try {
-        const target = await this.fs.resolve(path, cwd === undefined ? {} : { cwd })
-        const info = await this.fs.stat(target)
-        if (info?.type === 'file') existing.add(path)
-      } catch {
-        // Unresolvable or stat failed: the path is not present to list.
-      }
-    }
-    return existing
-  }
-
   /**
    * List the files one session wrote or edited: the log fold plus any
    * bash-written files the collector verified (the S2 seam), merged so a
@@ -314,24 +217,13 @@ export class FilePreviewService extends TypertRemoteService {
    */
   @Remote('list')
   async list(agent: Agent): Promise<FilePreviewList> {
-    const folded = foldFilePreview(agent.session.snapshotEvents(), this.resolved.maxFiles)
-    const captured = this.collector?.captured(agent.session.id)
-    let entries: readonly FilePreviewEntry[] = folded.entries
-    if (captured !== undefined && captured.size > 0) {
-      const seen = new Set(entries.map(entry => entry.path))
-      const extra: FilePreviewEntry[] = []
-      for (const [path, write] of captured) {
-        if (seen.has(path) || entries.length + extra.length >= this.resolved.maxFiles) continue
-        extra.push({ path, op: 'write', seq: write.seq, turn: write.turn, step: write.step, diffs: [] })
-      }
-      entries = [...entries, ...extra]
-    }
-    const existing = await this.retainExisting(agent, entries.map(entry => entry.path))
-    return {
-      entries: entries.filter(entry => existing.has(entry.path)),
-      asOfSeq: folded.asOfSeq,
-      truncated: folded.truncated || entries.length >= this.resolved.maxFiles,
-    }
+    return listFilePreview(
+      // The header read stays lazy-tolerant: the pre-core code only touched
+      // the cwd inside the existence probe, which an empty fold never reached.
+      { fs: this.fs, cwd: agent.session.header?.cwd, maxFiles: this.resolved.maxFiles },
+      agent.session.snapshotEvents(),
+      this.collector?.captured(agent.session.id),
+    )
   }
 
   /**
@@ -353,7 +245,7 @@ export class FilePreviewService extends TypertRemoteService {
   async turnFiles(agent: Agent): Promise<FilePreviewTurnMap> {
     const session = agent.session
     const events = session.snapshotEvents()
-    const asOfSeq = events.length === 0 ? -1 : events[events.length - 1]!.seq
+    const asOfSeq = eventsWatermark(events)
     const cached = this.turnCache.get(session.id)
     let byTurn: TurnFilesByTurn
     if (cached === undefined || cached.asOfSeq !== asOfSeq) {
@@ -362,35 +254,12 @@ export class FilePreviewService extends TypertRemoteService {
     } else {
       byTurn = cached.byTurn
     }
-    const captured = this.collector?.captured(session.id)
-    const turns: { turn: number; files: readonly FilePreviewTurnFile[] }[] = []
-    // One pass over the turn keys in ascending order (turn numbers are small).
-    const turnNumbers = new Set<number>(byTurn.keys())
-    if (captured !== undefined) {
-      for (const write of captured.values()) turnNumbers.add(write.turn)
-    }
-    for (const turn of [...turnNumbers].sort((a, b) => a - b)) {
-      const files: FilePreviewTurnFile[] = []
-      const map = byTurn.get(turn)
-      if (map !== undefined) files.push(...map.values())
-      if (captured !== undefined) {
-        for (const [path, write] of captured) {
-          if (write.turn !== turn || files.some(file => file.path === path)) continue
-          files.push({ path, seq: write.seq, step: write.step })
-        }
-      }
-      if (files.length === 0) continue
-      turns.push({ turn, files: files.sort((a, b) => a.seq - b.seq) })
-    }
-    // Filter the assembled groups to paths that still exist on disk (fresh per
-    // call — the fold cache is by log watermark, existence moves independently).
-    const existing = await this.retainExisting(agent, turns.flatMap(group => group.files.map(file => file.path)))
-    return {
-      turns: turns
-        .map(group => ({ turn: group.turn, files: group.files.filter(file => existing.has(file.path)) }))
-        .filter(group => group.files.length > 0),
+    return turnFilesFilePreview(
+      { fs: this.fs, cwd: session.header?.cwd, maxFiles: this.resolved.maxFiles },
       asOfSeq,
-    }
+      byTurn,
+      this.collector?.captured(session.id),
+    )
   }
 
   /**
@@ -407,69 +276,22 @@ export class FilePreviewService extends TypertRemoteService {
    */
   @Remote('read')
   async read(agent: Agent, path: string, signal: AbortSignal): Promise<FilePreviewRead> {
-    if (typeof path !== 'string' || path.length === 0) {
-      return { path, kind: 'error', message: 'file preview requires a non-empty path' }
-    }
-    const cwd = agent.session.header.cwd
-    let target
-    try {
-      target = await this.fs.resolve(path, cwd === undefined ? { signal } : { cwd, signal })
-    } catch (error) {
-      return { path, kind: 'error', message: readErrorMessage(error) }
-    }
-    let info
-    try {
-      info = await this.fs.stat(target, signal)
-    } catch (error) {
-      return { path, kind: 'error', message: readErrorMessage(error) }
-    }
-    if (info === undefined || info.type !== 'file') {
-      return { path, kind: 'missing' }
-    }
-    // HTML gets its own, wider render-channel cap; every other text read
-    // keeps `maxReadBytes`. Images keep the base cap (their route serves
-    // bytes, not the render channel).
-    const html = isHtmlPath(path)
-    const cap = html ? this.resolved.htmlMaxReadBytes : this.resolved.maxReadBytes
-    if (info.size !== undefined && info.size > cap) {
-      return { path, kind: 'too-large', size: info.size }
-    }
-    if (isImagePath(path)) {
-      if (this.imageRoute) {
-        const encoded = encodeURIComponent(path)
-        return {
-          path,
-          kind: 'image',
-          url: `${FilePreviewService.IMAGE_ROUTE}/${agent.session.id}/${encoded}`,
-          ...(info.size === undefined ? {} : { size: info.size }),
-        }
-      }
-      // No web face to serve bytes: an image is binary, never decoded as text.
-      return { path, kind: 'binary', ...(info.size === undefined ? {} : { size: info.size }) }
-    }
-    if (isBinaryPath(path)) {
-      return { path, kind: 'binary', ...(info.size === undefined ? {} : { size: info.size }) }
-    }
-    try {
-      // Bounded by the window, not the file: at most cap + 1 bytes are
-      // transferred (the extra byte decides `truncated`), never the whole file.
-      const bytes = await this.fs.readByteRange(target, { offset: 0, length: cap + 1 }, signal)
-      const truncated = bytes.length > cap
-      const content = utf8Decoder.decode(truncated ? bytes.subarray(0, cap) : bytes)
-      if (hasNulByte(content)) {
-        return { path, kind: 'binary', ...(info.size === undefined ? {} : { size: info.size }) }
-      }
-      return {
-        path,
-        kind: 'text',
-        content,
-        truncated,
-        ...(html && isScriptedHtml(content) ? { htmlScripted: true } : {}),
-        ...(info.size === undefined ? {} : { size: info.size }),
-      }
-    } catch (error) {
-      return { path, kind: 'error', message: readErrorMessage(error) }
-    }
+    const session = agent.session
+    return readFilePreview(
+      {
+        fs: this.fs,
+        cwd: session.header.cwd,
+        maxReadBytes: this.resolved.maxReadBytes,
+        htmlMaxReadBytes: this.resolved.htmlMaxReadBytes,
+        // The web face's image route is the local deployment's issuer; a
+        // headless composition has none and image reads answer `binary`.
+        imageUrl: this.imageRoute
+          ? (display: string) => `${FilePreviewService.IMAGE_ROUTE}/${session.id}/${encodeURIComponent(display)}`
+          : undefined,
+      },
+      path,
+      signal,
+    )
   }
 
   /**
