@@ -33,7 +33,7 @@ import {
   patchElementText, pillarsChapter, resolveArtStyle, serializeManifest, slugOf, validateElements, type CreateRequest,
 } from './project.ts'
 import {
-  CHAPTERS, MANIFEST_FILE, STATE_DIR,
+  CHAPTERS, MANIFEST_FILE, PANEL_CHANGES_MARK, STATE_DIR,
   type BundleFile, type ChapterView, type CheckFailure, type CheckRecord, type ElementLook, type GameManifest, type GameResult,
   type LogEntry, type LookProposal, type PendingChange, type PlayBundle, type ProjectCard, type ProjectRow, type ProjectView,
   type SessionGameState, type VersionDiff, type VersionRecord, type VersionRow,
@@ -715,21 +715,25 @@ export class GameService {
   }
 
   /**
-   * Take the session's pending changes for the next model step, clearing
-   * them (the agent/pre-step attach).
-   * @returns the attach text, or undefined when there is nothing.
+   * The user sent a message carrying the panel's change list (it starts
+   * with {@link PANEL_CHANGES_MARK}): drop exactly the changes it lists.
+   * Changes made after the list was written stay pending.
+   * @param sessionId - the sending session.
+   * @param text - the user message's text.
+   * @returns how many changes were cleared.
    */
-  async takePending(sessionId: string): Promise<string | undefined> {
+  async clearSent(sessionId: string, text: string): Promise<number> {
+    if (!text.includes(PANEL_CHANGES_MARK)) return 0
     const row = await this.boundProject(sessionId)
-    if (row === undefined) return undefined
+    if (row === undefined) return 0
     const user = await this.userLayer(row.root)
-    if (user.pending.length === 0) return undefined
-    const text = ['自上一轮以来，用户在右栏游戏面板里改了：', ...user.pending.map(p => `- ${p.text}`),
-      '这些改动已经生效（参数是试玩时的临时值，定稿后才写进 game.json）。回答时把它们算进去。'].join('\n')
-    user.pending = []
+    const kept = user.pending.filter(p => !text.includes(p.text))
+    const cleared = user.pending.length - kept.length
+    if (cleared === 0) return 0
+    user.pending = kept
     await this.saveUserLayer(row.root, user)
     this.notify(row.id)
-    return text
+    return cleared
   }
 
   /** The manifest of a project, or undefined. */

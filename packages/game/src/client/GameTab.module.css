@@ -367,7 +367,14 @@ button.strip { cursor: pointer; }
 
 /* composer dock */
 .dock { display: flex; flex-direction: column; gap: 4px; box-sizing: border-box; width: calc(100% - 32px); max-width: 760px; margin: 0 auto 6px; padding: 6px 10px; border-radius: 10px; border: 1px dashed color-mix(in srgb, var(--dsw-alias-brand-primary) 45%, var(--dsw-alias-border-l2)); background: color-mix(in srgb, var(--dsw-alias-brand-primary) 5%, var(--dsw-alias-bg-base)); }
-.dockHead { display: flex; align-items: center; gap: 8px; width: 100%; border: 0; background: none; font: inherit; font-size: 12px; color: var(--dsw-alias-label-secondary); cursor: pointer; text-align: left; padding: 0; min-height: 24px; }
+.dockHead { display: flex; align-items: center; gap: 8px; width: 100%; }
+.dockToggle { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; border: 0; background: none; font: inherit; font-size: 12px; color: var(--dsw-alias-label-secondary); cursor: pointer; text-align: left; padding: 0; min-height: 28px; }
+.dockToggle:focus-visible, .dockSend:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 1px; }
+.dockSend {
+  flex: none; font: inherit; font-size: 12px; font-weight: 500; padding: 3px 12px; min-height: 26px; border-radius: 7px; cursor: pointer;
+  border: 1px solid var(--dsw-alias-brand-primary); background: var(--dsw-alias-brand-primary); color: var(--dsw-alias-label-primary-inverted);
+}
+.dockSend:disabled { background: none; color: var(--dsw-alias-label-tertiary); border-color: var(--dsw-alias-border-l2); cursor: default; }
 .dockTag { font-weight: 600; color: var(--dsw-alias-brand-primary); }
 .dockCount { white-space: nowrap; }
 .dockSummary { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--dsw-alias-label-tertiary); }

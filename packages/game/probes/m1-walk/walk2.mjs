@@ -147,4 +147,16 @@ if (phase === 'h') {
   await wait(2500)
   log('now', await p.evaluate(() => document.querySelector('[class*=titleSwitch]')?.textContent))
 }
+if (phase === 'i') {
+  await openTab('我想做个小游戏')
+  log('slider', await sliderSet(1, 1.4)); await wait(1500)
+  await shot('x-dock')
+  log('expand', await p.evaluate(() => { const el = [...document.querySelectorAll('button')].find(b => b.getAttribute('aria-expanded') !== null && (b.textContent || '').startsWith('面板改动')); el?.click(); return !!el })); await wait(600)
+  log('write', await click('写进对话')); await wait(1200)
+  await shot('x-written')
+  await p.keyboard.type('耗油这样节奏刚好，后面关卡按这个调。'); await wait(400)
+  await shot('x-draft')
+  log('send', await click('发送消息')); await wait(6000)
+  await shot('x-sent')
+}
 await b.close()

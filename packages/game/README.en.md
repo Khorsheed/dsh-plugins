@@ -18,7 +18,7 @@ You do not need game-design experience — the agent writes the code and acts as
   - Versions: the last check (three layers, findings, the headless screenshot), the version timeline (live / candidate / rejected / past, switch back, file diff against live), single-file `.html` export to share, the playtest log.
   - Project switching: the title is the switcher ("name ▾"), opening project cards — the last check's screen, live version, style, element count, last change and the pitch, with the session's own project marked; the first card is "New project", which writes an opener into the composer (creation goes through the light gate with the agent).
   - Art-style gallery: one little scene drawn in six styles; without a project a pick goes into the composer, mid-project a restyle redraws everything and always lands as a candidate.
-- **Panel changes ride the next send**: moved sliders, edited looks/fields/chapters, rejected or switched-back versions show above the composer as "Will attach N" (each removable) and reach the agent as one message after yours.
+- **You decide when the agent hears about panel changes**: moved sliders, edited looks/fields/chapters, rejected or switched-back versions apply at once and collect under "Panel changes" above the composer (each removable); "Write into chat" puts the list into the composer, you add your intent and send, and the list clears once sent. Nothing is slipped into your messages. Unsent changes also show in the agent's `game_read`, so it does not revert them.
 - **Checks every turn**: `game.json` and element files are validated → the build loads in headless Chrome for a 2-second smoke run (errors, `window.dshGame.ready`, a canvas that is not one flat color) → `tests/*.test.js` run. A failure is steered back into the same turn, at most twice; a pass becomes a new version that deploys at once while auto-confirm is on (the default), or waits for your "Confirm" when it is off.
 
 ## Install
@@ -47,7 +47,7 @@ The package's `cordis.patch.yml` inserts two rows: `game` (service core, Remote,
 - 2D only (native canvas plus an HTML UI layer); the sandbox CSP blocks every outside request, so all code and assets live in the project.
 - The host has no image generation: everything is drawn in code, and the art styles offered are the ones code draws well.
 - No sharing with other players yet (single-file export and itch.io are later milestones; leaderboards and multiplayer need a server and come after that).
-- The plugin's two conversation rows ("checks failed n/2", "attached") are folded by the host into the turn's step groups: once a turn ends, expand "Done in …" and the step group to see them (the host's list of standalone node kinds is not open to plugins). The same information shows above the composer and under Versions.
+- The plugin's conversation row ("checks failed n/2") is folded by the host into the turn's step groups: once a turn ends, expand "Done in …" and the step group to see them (the host's list of standalone node kinds is not open to plugins). The same information shows above the composer and under Versions.
 - Element looks use the pixel-row format (`look`); SVG/vector looks are not editable in the panel yet.
 
 ## How it works
@@ -55,7 +55,7 @@ The package's `cordis.patch.yml` inserts two rows: `game` (service core, Remote,
 - The play area and the headless checks share one loader (`src/vfs.ts`): a `sandbox="allow-scripts"` opaque-origin iframe receives the project's files, mints blob URLs in its own origin, rewrites relative imports and CSS `url()`, takes over `fetch` and image/audio `src`, then writes `index.html` over itself; `localStorage` is a bridged stand-in whose writes are posted back for the panel to keep in the browser.
 - The checks hang on `agent/turn-stopping` (fires only on a normal finish, so a user's stop is never overridden) and touch only sessions bound to a project whose `index.html` exists and whose build fingerprint changed. A failure goes back into the same turn through `agent.steer`, at most twice per turn; a third failure is recorded as "stopped auto-fixing".
 - A version is a build snapshot under `.game/versions/<n>/` (the newest 10 are kept); `current.json` names the one in the play area, `versions.json` keeps the history (rejected included).
-- The user layer lives in `.game/user.json` (slider trial values, changes waiting to attach, a restyle request); look proposals in `.game/proposals.json`. The loader puts params and elements on `window.dshParams` / `window.dshElements` before the game starts, panel edits are pushed in by postMessage, so a game that reads them every frame changes live; `dshDraw` draws pixel looks and `dshGame.pick(x, y)` enables picking.
+- The user layer lives in `.game/user.json` (slider trial values, changes not yet told to the agent, a restyle request); when a message starting with "【面板改动】" reaches the model (`agent/pre-step`), the changes it lists are cleared; look proposals in `.game/proposals.json`. The loader puts params and elements on `window.dshParams` / `window.dshElements` before the game starts, panel edits are pushed in by postMessage, so a game that reads them every frame changes live; `dshDraw` draws pixel looks and `dshGame.pick(x, y)` enables picking.
 
 ## Development
 

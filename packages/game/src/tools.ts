@@ -46,6 +46,9 @@ export function renderProject(view: ProjectView): string {
   const byType = new Map<string, number>()
   for (const e of view.elements) byType.set(e.type, (byType.get(e.type) ?? 0) + 1)
   lines.push(`元素：${view.elements.length === 0 ? '还没有' : [...byType].map(([t, n]) => `${t} ${n}`).join('、')}${view.elements.length === 0 ? '' : `（${view.elements.map(e => `${e.name}=${e.id}${e.look === null ? '' : '·有外观'}`).join('、')}）`}`)
+  if (view.pending.length > 0) {
+    lines.push(`用户在面板里改了、还没发给你的（已经生效，别改回去）：${view.pending.map(p => p.text).join('；')}`)
+  }
   const open = view.proposals.filter(p => p.picked === undefined)
   if (open.length > 0) lines.push(`等用户挑选的外观方案：${open.map(p => `${p.elementId}（${p.variants.length} 个）`).join('、')}`)
   for (const f of view.elementErrors.slice(0, 5)) lines.push(`  ✗ ${f.where}：${f.message}`)

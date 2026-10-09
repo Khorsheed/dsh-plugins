@@ -15,7 +15,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { Agent, PreStepDecision } from '@deepseek-ai/dsh-agent'
 import { createUserMessage, type ContextFormed } from '@deepseek-ai/dsh-llm'
 import type { GameService } from './store.ts'
-import type { CheckRecord } from './types.ts'
+import { PANEL_CHANGES_MARK, type CheckRecord } from './types.ts'
 
 /** What a dsh-game message is, for the chat row (the text is for the model). */
 export type GameMessageOp =
@@ -86,20 +86,22 @@ export function registerTurnHooks(ctx: Context, store: GameService): void {
     }))
   })
 
-  // Auto-attach (decision D3): the user's panel edits since the last send ride
-  // the first step of the next batch, after the user's own message.
+  // Panel changes are sent explicitly (2026-10-10, replacing the automatic
+  // attach): the dock writes them into the composer and the user sends. When
+  // such a message enters a step, the changes it lists stop being pending.
+  // The batch itself is never touched.
   ctx.on('agent/pre-step', async ({ agent, signal }, next): Promise<PreStepDecision> => {
     const decision = await next()
     if (decision.kind === 'reject' || signal.aborted || decision.messages.length === 0) return decision
-    let text: string | undefined
-    try {
-      text = await store.takePending(agent.session.id)
-    } catch (error) {
-      ctx.logger.warn('game: could not read pending panel changes', error)
+    const text = decision.messages
+      .map(m => m.content.map(block => (block.type === 'text' ? block.text : '')).join('\n'))
+      .join('\n')
+    if (text.includes(PANEL_CHANGES_MARK)) {
+      await store.clearSent(agent.session.id, text).catch((error: unknown) => {
+        ctx.logger.warn('game: could not clear sent panel changes', error)
+      })
     }
-    if (text === undefined) return decision
-    const items = text.split('\n').filter(line => line.startsWith('- ')).map(line => line.slice(2))
-    return { ...decision, messages: [...decision.messages, gameMessage(text, 'changes', { op: 'attached', items })] }
+    return decision
   }, { prepend: true })
 
   // The turn is over whatever its reason: drop its steer count.

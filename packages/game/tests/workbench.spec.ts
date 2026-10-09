@@ -55,7 +55,7 @@ describe('pure helpers', () => {
 })
 
 describe('the user layer', () => {
-  it('keeps slider values as overrides, finalizes them into game.json, and attaches net changes once', async () => {
+  it('keeps slider values as overrides, finalizes them into game.json, and clears only what a sent message lists', async () => {
     const p = await project()
     expect(await store.setParam(p.id, 'speed', 55, session)).toEqual({ ok: true })
     let view = await store.view(p.id)
@@ -68,9 +68,12 @@ describe('the user layer', () => {
     view = await store.view(p.id)
     expect(view?.manifest?.params[0]?.value).toBe(70)
     expect(view?.paramOverrides).toEqual({})
-    const attached = await store.takePending('s1')
-    expect(attached).toContain('定稿参数：移动速度 40→70')
-    expect(await store.takePending('s1')).toBeUndefined()
+    const listed = (await store.view(p.id))!.pending
+    expect(listed.map(x => x.text)).toEqual(['定稿参数：移动速度 40→70（已写进 game.json）'])
+    expect(await store.clearSent('s1', `随便说说 ${listed[0]!.text}`)).toBe(0)
+    await store.writeChapter(p.id, 'core-loop', '# 循环', session)
+    expect(await store.clearSent('s1', `【面板改动】我改了：\n- ${listed[0]!.text}\n`)).toBe(1)
+    expect((await store.view(p.id))?.pending.map(x => x.key)).toEqual(['design:core-loop'])
   })
 
   it('edits an element in the working file and in the live version, and records it', async () => {

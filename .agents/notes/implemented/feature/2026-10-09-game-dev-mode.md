@@ -28,11 +28,13 @@ The user wants to build small games with the agent: the conversation settles the
   - 策划: the one-pager and the pillars pinned on top, chapters expanding in place and editable, numbers charts generated from the elements.
   - 版本: the check layers with the headless screenshot, the timeline with rollback and diff, single-file export, the log. An art-style gallery serves both the home state and restyling.
 - **Runtime contract the panel edits through.** The loader puts `game.json` `params` on `window.dshParams` and every element on `window.dshElements` before the game starts. Panel edits are pushed in by postMessage (`params`, `element`), so a game that reads them every frame changes live. The loader also provides `dshDraw`/`dshLookSize` for the pixel-row `look` format; `dshGame.pick(x, y)` enables 点选.
-- **User layer and auto-attach.** `.game/user.json` holds slider trial values (定稿 writes them into `game.json`), the pending changes, and a restyle request. Element edits land in the working file and in the live version's snapshot at once. On `agent/pre-step` the pending list rides the first non-empty batch as one `dsh-game` message (`op: 'attached'`) and is cleared. The list shows beforehand in a `conversation.input.dock` entry, removable item by item.
+- **User layer, sent explicitly.** `.game/user.json` holds slider trial values (定稿 writes them into `game.json`), the changes not yet told to the agent, and a restyle request. Element edits land in the working file and in the live version's snapshot at once. The changes collect in a `conversation.input.dock` entry (面板改动), removable item by item. 「写进对话」 writes them into the composer as a message starting with `【面板改动】`; the user adds intent and sends. On `agent/pre-step`, a batch carrying that mark clears exactly the changes it lists; the batch itself is never modified. Unsent changes appear in `game_read`'s overview, so the agent does not revert them.
 - **Look proposals.** `game_propose` stores up to 3 normalized variants (`.game/proposals.json`); the user's pick applies the look and becomes a pending change. A restyle request forces the next passing version to be a candidate.
 - **Conversation rows.** A `uiConversation.events` Definition projects `dsh-game` messages into the `dsh-game-message` chat node kind, rendered by a keyed `conversation.chat.node` row: red 检查未通过 n/2 with the findings, grey 已附上 with the items. The official `context` node stays hidden, so nothing renders twice.
 
 ## Alternatives considered
+
+**Attaching panel changes to the next send automatically.** Shipped first (proposal decision D3) and replaced on 2026-10-10 at the user's request. Every slider nudge rode whatever the user said next, even when the message had nothing to do with it, which was too fragmented. Telling the agent is now the user's explicit act. The cost is that the agent may not hear about a change; `game_read` listing the unsent ones covers the "do not revert it" case.
 
 **A `game_write` / `game_check` tool.** Rejected (user decision). Different game types do not share one test method, and a check tool invites the model to skip it. Tests written with the code and run by the plugin at turn end cannot be forgotten.
 
@@ -47,11 +49,11 @@ The user wants to build small games with the agent: the conversation settles the
 ## Consequences
 
 - The workbench was walked on a second temp instance:
-  - Sliders changed the running game and filled the will-attach dock.
+  - Sliders changed the running game and filled the panel-changes dock; 写进对话 + send cleared it.
   - Pick identified the keeper.
-  - The fog wraith's look request produced 3 variants; picking B replaced the look in the game, and the next send attached it.
+  - The fog wraith's look request produced 3 variants; picking B replaced the look in the game.
   - The design, versions and style gallery rendered in both wide and compact widths.
-- The two conversation rows land inside the host's step-process groups (`TURN_PROCESS_INDEPENDENT_KINDS` is a module constant, not extensible). After a turn ends they are visible only after expanding the turn and the step group. A host change is the way out; until then the dock and the 版本 view carry the same facts.
+- The conversation row lands inside the host's step-process groups (`TURN_PROCESS_INDEPENDENT_KINDS` is a module constant, not extensible). After a turn ends they are visible only after expanding the turn and the step group. A host change is the way out; until then the dock and the 版本 view carry the same facts.
 
 - Validated on a temp 0.2.0-rc.2 instance with a scripted model. One message created the project and wrote six files. The check failed in real Chrome (the keeper was too slow for the test), was steered back, and the agent read and fixed `rules.js`; the recheck passed and v1 played in the tab. A second turn deployed v2. A deliberately wrong test steered twice, then stopped with `gaveUp`, while the play area stayed on v2.
 - The steered findings are context messages, which the 0.2.0 chat view hides. The user sees them only in the 检查 tab until the custom chat row (proposal option B, probe P1-8) lands in M2.

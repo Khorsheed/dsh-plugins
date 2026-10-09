@@ -10,10 +10,10 @@ function harness(outcome: (attempt: number) => TurnCheckOutcome) {
   const handlers: Record<string, (...args: never[]) => unknown> = {}
   const ctx = { on: (name: string, fn: (...args: never[]) => unknown) => { handlers[name] = fn }, logger: { warn: () => {} } } as unknown as Context
   const attempts: number[] = []
-  let pending: string | undefined = '自上一轮以来，用户在右栏游戏面板里改了：\n- 参数 速度 1→2\n这些改动已经生效。'
+  const cleared: string[] = []
   const store = {
     checkTurn: async (_s: unknown, attempt: number) => { attempts.push(attempt); return outcome(attempt) },
-    takePending: async () => { const p = pending; pending = undefined; return p },
+    clearSent: async (_s: string, text: string) => { cleared.push(text); return 1 },
   } as unknown as GameService
   registerTurnHooks(ctx, store)
   const steers: string[] = []
@@ -23,7 +23,7 @@ function harness(outcome: (attempt: number) => TurnCheckOutcome) {
   const end = (turn: number) => (handlers['session/event'] as unknown as (s: unknown, e: unknown) => void)({ id: 's1' }, { type: 'turn/end', data: { turn } })
   const preStep = (messages: unknown[], aborted = false) => (handlers['agent/pre-step'] as unknown as (p: unknown, next: () => Promise<unknown>) => Promise<{ kind: string; messages: { source: Record<string, unknown> }[] }>)(
     { agent, signal: { aborted } }, async () => ({ kind: 'enter', messages }))
-  return { stop, end, steers, attempts, preStep }
+  return { stop, end, steers, attempts, preStep, cleared }
 }
 
 describe('the end-of-turn loop', () => {
@@ -49,13 +49,14 @@ describe('the end-of-turn loop', () => {
     expect(h.attempts).toEqual([0])
   })
 
-  it('attaches pending panel changes once, after the batch, with the items in the source', async () => {
+  it('never adds to the batch; a sent panel-changes message clears what it lists', async () => {
     const h = harness(() => ({ kind: 'skip' }))
-    expect((await h.preStep([])).messages).toEqual([])
-    const first = await h.preStep([{ user: true }])
-    expect(first.messages).toHaveLength(2)
-    expect(first.messages[1]!.source).toMatchObject({ kind: 'dsh-game', op: 'attached', items: ['参数 速度 1→2'] })
-    expect((await h.preStep([{ user: true }])).messages).toHaveLength(1)
+    const plain = [{ content: [{ type: 'text', text: '雾怪是不是太快了？' }] }]
+    expect((await h.preStep(plain)).messages).toEqual(plain)
+    expect(h.cleared).toEqual([])
+    const sent = [{ content: [{ type: 'text', text: '【面板改动】我在右栏面板里改了这些：\n- 参数 速度 1→2\n\n手感好多了' }] }]
+    expect((await h.preStep(sent)).messages).toEqual(sent)
+    expect(h.cleared).toHaveLength(1)
   })
 
   it('words findings for the model', () => {

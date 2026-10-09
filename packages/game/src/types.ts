@@ -156,7 +156,14 @@ export interface LookProposal {
   readonly picked?: number
 }
 
-/** One net change the user made in the panel since the last send; attached to the next turn. */
+/**
+ * The opening of the message the panel writes into the composer for its
+ * changes (「写进对话」). The pre-step hook recognizes a sent message by it and
+ * clears exactly the changes the message lists.
+ */
+export const PANEL_CHANGES_MARK = '【面板改动】'
+
+/** One net change the user made in the panel and has not yet sent to the agent. */
 export interface PendingChange {
   /** Stable key so repeated edits of one thing collapse into one entry (`param:speed`, `look:fog`, `design:core-loop`). */
   readonly key: string
