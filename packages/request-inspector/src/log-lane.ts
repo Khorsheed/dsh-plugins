@@ -25,7 +25,8 @@
  * @module @khorsheed/dsh-request-inspector/log-lane
  */
 import type { RequestConfig, RequestUsage, ResponseSummary } from './types.ts'
-import type { BlockSpan, StoredRequest } from './store.ts'
+import type { CapturedResponse } from './types.ts'
+import { responseFromSpans, type BlockSpan, type StoredRequest } from './store.ts'
 import { splitRequest, type ScopeFingerprint } from './segmenter.ts'
 import { fromLogMessage, previewLine, serializeMessage, type CapturedMessage } from './messages.ts'
 
@@ -448,6 +449,11 @@ function buildRequest(
   const blocks = message !== undefined
     ? spansFromMessage(message, streamFacts, startedAt)
     : streamFacts.blocks
+  // The response's own content: the committed message is authoritative; an
+  // attempt (failed) keeps whatever its stream delivered.
+  const response = message !== undefined
+    ? responseFromMessage(message)
+    : responseFromSpans(streamFacts.blocks)
 
   const finish = streamFacts.finish
   const error = failed
@@ -461,6 +467,7 @@ function buildRequest(
     config: cursor.config ?? {},
     ...usage === undefined ? {} : { usage },
     responseSummary: message !== undefined ? summarizeMessage(message) : summarizeBlocks(streamFacts.blocks),
+    ...response === undefined ? {} : { response },
     segments: {
       system: segments.system,
       tools: segments.tools,
@@ -505,6 +512,27 @@ function spansFromMessage(
     return [{ kind: 'text', index: 0, start: facts.firstChunkAt ?? fallbackStart }]
   }
   return spans
+}
+
+/** The response's own content from a committed assistant message (authoritative). */
+function responseFromMessage(message: CapturedMessage): CapturedResponse | undefined {
+  const reasoning = message.content
+    .filter(block => block.type === 'reasoning')
+    .map(block => block.text ?? '')
+    .join('')
+  const text = message.content
+    .filter(block => block.type === 'text')
+    .map(block => block.text ?? '')
+    .join('')
+  const toolCalls = message.content
+    .filter(block => block.type === 'tool-call' && block.name !== undefined)
+    .map(block => ({ name: block.name as string, arguments: block.arguments ?? '' }))
+  if (reasoning === '' && text === '' && toolCalls.length === 0) return undefined
+  return {
+    ...reasoning === '' ? {} : { reasoning },
+    ...text === '' ? {} : { text },
+    toolCalls,
+  }
 }
 
 /** The response hint from a committed message's blocks (structured 明细头锚点). */
@@ -601,6 +629,8 @@ function readStream(records: readonly unknown[]): StreamFacts {
           if (span !== undefined) {
             span.end = time
             const block = chunk['block'] as Record<string, unknown> | undefined
+            // The assembled block is authoritative over the accumulated runs.
+            if (typeof block?.['text'] === 'string') span.text = block['text']
             if (block?.['type'] === 'tool-call') {
               if (typeof block['id'] === 'string') span.callId = block['id']
               if (typeof block['name'] === 'string') span.toolName = block['name']
@@ -623,8 +653,18 @@ function readStream(records: readonly unknown[]): StreamFacts {
           break
       }
     } else {
-      // Packed delta runs: their time0 is the run's first chunk's time.
+      // Packed delta runs: their time0 is the run's first chunk's time. Their
+      // fragments accumulate onto the open span so a torn stream keeps the
+      // partial response (the attempt path reads it).
       note(record['time0'])
+      const span = blocks.find(block => block.index === record['index'] && block.end === undefined)
+      if (span !== undefined) {
+        if (Array.isArray(record['texts'])) {
+          span.text = (span.text ?? '') + record['texts'].join('')
+        } else if (Array.isArray(record['args'])) {
+          span.args = (span.args ?? '') + record['args'].join('')
+        }
+      }
     }
   }
   return {
