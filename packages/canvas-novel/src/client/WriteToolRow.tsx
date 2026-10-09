@@ -25,6 +25,7 @@ import type { ForeshadowOp } from '../types.ts'
 import type { NovelFace } from './contract.ts'
 import { chapterHeading } from './PendingList.tsx'
 import { useNovelRead } from './use-novel.ts'
+import { asksInTurn, type NovelTurnOwner } from './novel-turn.ts'
 import { writeRowModel, type NovelToolBlock, type WriteRowChapter } from './write-row.ts'
 import css from './WriteToolRow.module.css'
 
@@ -80,7 +81,7 @@ function Line({ state, text, t }: { readonly state: 'running' | 'failed' | 'line
   )
 }
 
-function PlanCard({ chapter, live: watched, remote, openPage, chapterPage, t }: WriteToolRowProps & {
+export function PlanCard({ chapter, live: watched, remote, openPage, chapterPage, t }: Omit<WriteToolRowProps, 'block' | 'phase'> & {
   readonly chapter: WriteRowChapter
   /** The row saw this call run: a plan that lands awaiting confirmation opens its page. */
   readonly live: boolean
@@ -151,7 +152,7 @@ function PlanCard({ chapter, live: watched, remote, openPage, chapterPage, t }: 
  * card says whether it still waits and opens that page. Like a plan, one it
  * watched land opens the page by itself — the turn folds the card away.
  */
-function OutlineCard({ canvasId, live: watched, remote, openPage, planPage, t }: WriteToolRowProps & {
+export function OutlineCard({ canvasId, live: watched, remote, openPage, planPage, t }: Omit<WriteToolRowProps, 'block' | 'phase'> & {
   readonly canvasId: string
   readonly live: boolean
 }): ReactNode {
@@ -197,4 +198,25 @@ function opCounts(ops: readonly ForeshadowOp[]): Array<[ForeshadowOp['op'], numb
   const counts = new Map<ForeshadowOp['op'], number>()
   for (const op of ops) counts.set(op.op, (counts.get(op.op) ?? 0) + 1)
   return [...counts]
+}
+
+/** The props the Turn-tail entry composes (ui-chat's owner props plus this package's face). */
+export type NovelTurnTailProps = WriteToolFace & NovelTurnOwner & { readonly t: TranslateNS<'novel'> }
+
+/**
+ * The Turn-tail entry: the plans and outline proposals the Turn registered,
+ * as their cards (live state, one door each), beneath the closing prose where
+ * the folded tool rows cannot hide them. Never opens anything by itself — the
+ * tool row already did, once, when it watched the call land.
+ */
+export function NovelTurnTail(props: NovelTurnTailProps): ReactNode {
+  const asks = asksInTurn(props)
+  if (asks.length === 0) return null
+  return (
+    <div className={css.tail}>
+      {asks.map(ask => ask.row.state === 'outline'
+        ? <OutlineCard key={ask.key} {...props} canvasId={ask.row.canvasId!} live={false} />
+        : <PlanCard key={ask.key} {...props} chapter={ask.row.chapter!} live={false} />)}
+    </div>
+  )
 }

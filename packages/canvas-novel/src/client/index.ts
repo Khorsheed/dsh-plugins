@@ -53,7 +53,8 @@ import { en, NS, zh } from './locales.ts'
 import { ChaptersBadge, CardScopes, DeleteNote, FaceLabel } from './NovelFaces.tsx'
 import { PlanView } from './PlanView.tsx'
 import { StoryLogPage, StoryView } from './StoryLogPage.tsx'
-import { WriteToolRow, type WriteToolFace } from './WriteToolRow.tsx'
+import { novelTurnDefinition } from './novel-turn.ts'
+import { NovelTurnTail, WriteToolRow, type WriteToolFace } from './WriteToolRow.tsx'
 
 export { CardSection } from './CardSection.tsx'
 export { ChapterBook } from './ChapterBook.tsx'
@@ -170,6 +171,31 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     locale: NS,
     inject: () => writeFace,
   }, WriteToolRow)), 'canvas-novel: novel_write tool row')
+
+  // The same cards in the Turn tail, beneath the closing prose: a finished
+  // Turn folds its tool rows, card and all, exactly when the reply says
+  // 「点一下确认计划」 (the datasets T96 route). ui-chat declares the slot and
+  // composes ui-conversation, so `uiConversation` is read only once it can
+  // exist; without either nothing registers and the tool row stays the door.
+  ctx.effect(() => seats.inject('conversation.chat.turnTail', () => {
+    const conversation = (ctx.get.bind(ctx) as (name: string) => unknown)('uiConversation') as {
+      events?: { register?: (definition: unknown) => () => void }
+    } | undefined
+    const register = conversation?.events?.register
+    if (register === undefined) return () => undefined
+    const disposeDefinition = register.call(conversation?.events, novelTurnDefinition)
+    const disposeEntry = seats.register({
+      name: 'conversation.chat.turnTail',
+      id: '@khorsheed/dsh-canvas-novel/asks',
+      order: 40,
+      locale: NS,
+      inject: () => writeFace,
+    }, NovelTurnTail)
+    return () => {
+      disposeEntry()
+      disposeDefinition()
+    }
+  }), 'canvas-novel: turn-tail cards')
 
   return async () => {
     await Promise.all(disposers.map(dispose => dispose()))
