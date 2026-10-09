@@ -125,3 +125,26 @@ describe('relation cards from one string', () => {
     expect(typeless.problem).toContain('类型要从 爱情 / 亲情 / 友情')
   })
 })
+
+describe('confirming and editing a plan', () => {
+  it('confirms through novel_write(what=confirm), and the body then lands', async () => {
+    const { store, write } = await bench()
+    const answer = await write({ what: 'chapter', title: '入梦', content: PLAN.replace('#5', 'c_doorGap') })
+    expect(answer).toContain('novel_write(what=confirm')
+    const n = (await store.listChapters({ workId: DREAM.workId })).at(-1)!.chapter.n
+    expect(await write({ what: 'chapter', chapter: n, title: '入梦', content: '他推开门。' })).toContain(`novel_write(what=confirm, chapter=${n})`)
+    expect(await write({ what: 'confirm', chapter: n })).toContain(`已确认第 ${n} 章的计划`)
+    expect(await write({ what: 'confirm', chapter: 99 })).toBe('失败：没有第 99 章。')
+  })
+
+  it('saves the person\'s edit as the plan and confirms it in one gesture', async () => {
+    const { store, write } = await bench()
+    await write({ what: 'chapter', title: '入梦', content: PLAN.replace('#5', 'c_doorGap') })
+    const n = (await store.listChapters({ workId: DREAM.workId })).at(-1)!.chapter.n
+    const edited = await store.editPlan({ workId: DREAM.workId, n, plan: planFromText('梗概：改过的梗概。\n走向：\n- 一拍') }, SESSION)
+    expect(edited.ok).toBe(true)
+    expect(edited.chapter?.plan?.summary).toBe('改过的梗概。')
+    expect(edited.chapter?.planConfirmedAt).toBeDefined()
+    expect((await store.editPlan({ workId: DREAM.workId, n, plan: planFromText('梗概：x\n伏笔：推进 #99：y') }, SESSION)).error).toBe('unknown-foreshadow')
+  })
+})

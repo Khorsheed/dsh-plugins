@@ -29,7 +29,11 @@ export function PlanBlock({ chapter, phase, names, words, canConfirm, busy, onCo
   readonly onConfirm: () => void
   readonly t: TranslateNS<'novel'>
 }): ReactNode {
-  const lead = phase === 'planning'
+  // A plan waiting on the person leads whatever the phase: a chapter re-planned
+  // after its text was written reads 写作中, and its folded plan used to hide
+  // the only ✓ 确认计划 while the gate refused the body (2026-10-09).
+  const awaiting = chapter.plan !== undefined && chapter.planConfirmedAt === undefined && chapter.byUser !== true
+  const lead = phase === 'planning' || awaiting
   const [open, setOpen] = useState(lead)
   const plan = chapter.plan
   if (chapter.byUser === true && plan === undefined) return null
