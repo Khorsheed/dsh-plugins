@@ -179,8 +179,14 @@ export interface AgentScopeSummary {
 /** `listTurns` row — deliberately light (no segments, no request payloads). */
 export interface TurnListItem {
   sessionId: string
-  /** 1-based per session, from the capture's own turn counter. */
+  /**
+   * The panel-facing address. Real turns key on the host's own turn number
+   * (stable across live capture and log backfill); purpose pseudo-turns
+   * (compaction / session-title buckets) take negative addresses.
+   */
   turnSeq: number
+  /** The host's turn number on real turns; absent marks a purpose pseudo-turn. */
+  hostTurn?: number
   /** 用户 query 预览（单行截断）。 */
   query: string
   startedAt: number

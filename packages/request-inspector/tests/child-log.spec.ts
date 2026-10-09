@@ -12,7 +12,7 @@ import SessionStore from '@deepseek-ai/dsh-session'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import { createToolResultMessage, type ToolCallId } from '@deepseek-ai/dsh-llm'
 import { InspectorService } from '../src/service.ts'
-import type { SessionLogHandle, SessionLogReader, SessionLogRow } from '../src/child-log.ts'
+import type { SessionLogHandle, SessionLogReader, SessionLogRow } from '../src/log-lane.ts'
 
 // The subagent package owns this event; the test declares the merge so
 // Session.append accepts it (the production code reads it structurally).
@@ -38,11 +38,18 @@ class FixtureReader implements SessionLogReader {
   constructor(
     readonly rows: SessionLogRow[],
     private readonly failure?: Error,
+    /** When set, only this id has a log; anything else reads as not-yet-materialized. */
+    private readonly serveId?: string,
   ) {}
 
   async open(id: string, _access: 'read'): Promise<SessionLogHandle> {
     this.opens.push(id)
     if (this.failure !== undefined) throw this.failure
+    if (this.serveId !== undefined && id !== this.serveId) {
+      const notFound = new Error(`session "${id}" not found`)
+      notFound.name = 'SessionPersistenceNotFoundError'
+      throw notFound
+    }
     return {
       read: (offset = 0) => Promise.resolve({ events: this.rows.slice(offset) }),
       close: () => Promise.resolve(),
@@ -96,7 +103,7 @@ function delegate(service: InspectorService, childId: string, failed: boolean): 
 
 describe('child-log lane', () => {
   it('reconstructs the child’s requests from the fixture log', async () => {
-    const reader = new FixtureReader(structuredClone(fixtureRows))
+    const reader = new FixtureReader(structuredClone(fixtureRows), undefined, 'child-fixture')
     const { service } = await mount(reader)
     const rootId = delegate(service, 'child-fixture', false)
 
@@ -104,7 +111,7 @@ describe('child-log lane', () => {
     const child = overview?.scopes.find(scope => scope.kind === 'subagent')
     expect(child).toMatchObject({ scopeId: 'child-fixture', status: 'ok', label: 'dsh: 第一章对账 JSON 提取' })
     expect(child?.requests).toHaveLength(3)
-    expect(reader.opens).toEqual(['child-fixture'])
+    expect(reader.opens.filter(id => id === 'child-fixture')).toEqual(['child-fixture'])
 
     const [r1, r2, r3] = child?.requests ?? []
     // Request 1: step/start → first chunk → reasoning → tool args → exec.
@@ -147,7 +154,7 @@ describe('child-log lane', () => {
 
   it('is incremental across refreshes (no duplicate requests)', async () => {
     const rows = structuredClone(fixtureRows)
-    const reader = new FixtureReader(rows)
+    const reader = new FixtureReader(rows, undefined, 'child-inc')
     const { service } = await mount(reader)
     const rootId = delegate(service, 'child-inc', false)
 
@@ -186,7 +193,7 @@ describe('child-log lane', () => {
   it('keeps the failed delegation at zero requests when the child log never materialized', async () => {
     const notFound = new Error('session not found')
     notFound.name = 'SessionPersistenceNotFoundError'
-    const reader = new FixtureReader([], notFound)
+    const reader = new FixtureReader([], notFound, 'child-missing')
     const { service } = await mount(reader)
     const rootId = delegate(service, 'child-missing', true)
 
@@ -201,7 +208,7 @@ describe('child-log lane', () => {
 
   it('stops hammering a durably unreadable log and keeps the empty state', async () => {
     const warnings: string[] = []
-    const reader = new FixtureReader([], new Error('unknown event type "future/event"'))
+    const reader = new FixtureReader([], new Error('unknown event type "future/event"'), 'child-broken')
     const { service } = await mount(reader, warnings)
     const rootId = delegate(service, 'child-broken', false)
 

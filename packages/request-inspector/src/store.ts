@@ -39,6 +39,7 @@ import type {
 } from './types.ts'
 import { splitRequest, type CapturedToolSchema, type ScopeFingerprint, type AssemblyRecord } from './segmenter.ts'
 import type { CapturedMessage } from './messages.ts'
+import type { LogTurn } from './log-lane.ts'
 
 /** Retention knobs (InspectorConfig in the service mirrors these). */
 export interface StoreConfig {
@@ -131,11 +132,20 @@ export interface ScopeRecord {
 
 /** One turn row's internal record (exported for the eviction hook's signature). */
 export interface TurnRecord {
+  /**
+   * The panel-facing address. Real turns key on the host's own turn number
+   * (the `turn/start` payload — a stable per-session ordinal shared with the
+   * log lane, so live-captured and log-reconstructed turns can never
+   * duplicate); purpose pseudo-turns take negative addresses from the
+   * session's bucket counter.
+   */
   turnSeq: number
   /** The host's own turn number; absent on purpose pseudo-turns. */
   hostTurn?: number
   /** Purpose key on pseudo-turns (`compaction`, `session-title`, …). */
   purpose?: string
+  /** True once any live (in-process) request or bracket landed here — backfill never merges into such a turn. */
+  liveContent: boolean
   query: string
   startedAt: number
   endedAt?: number
@@ -153,9 +163,12 @@ interface SessionRecord {
   openTurn: TurnRecord | undefined
   /** purpose → its pseudo-turn. */
   buckets: Map<string, TurnRecord>
-  nextTurnSeq: number
+  /** The next bucket address (negative, descending — never collides with host turn numbers). */
+  nextBucketSeq: number
   /** The next scope's per-session ordinal (creation order, 1-based). */
   nextScopeSeq: number
+  /** Backfill watermark: 'none' until the first read, 'broken' stops retries. */
+  backfillState: 'none' | 'complete' | 'broken'
   /** Pending tool/call rows by callId (exec starts + delegation binding). */
   pendingCalls: Map<string, PendingCall>
   /** messageId → producing request's generation ms (assistant row durations). */
@@ -233,8 +246,9 @@ export class InspectorStore {
         turns: [],
         openTurn: undefined,
         buckets: new Map(),
-        nextTurnSeq: 1,
+        nextBucketSeq: -1,
         nextScopeSeq: 1,
+        backfillState: 'none',
         pendingCalls: new Map(),
         messageDurations: new Map(),
       }
@@ -243,16 +257,15 @@ export class InspectorStore {
     return record
   }
 
-  /** Allocate the next capture-wide turn number for one session. */
-  private mintTurn(session: SessionRecord, at: number, init: Partial<TurnRecord>): TurnRecord {
+  /** Allocate one turn row; the caller sets the address (`turnSeq`) in `init`. */
+  private mintTurn(session: SessionRecord, at: number, init: Partial<TurnRecord> & Pick<TurnRecord, 'turnSeq'>): TurnRecord {
     const turn: TurnRecord = {
-      turnSeq: session.nextTurnSeq,
+      liveContent: false,
       query: '',
       startedAt: at,
       scopes: new Map(),
       ...init,
     }
-    session.nextTurnSeq += 1
     session.turns.push(turn)
     return turn
   }
@@ -305,11 +318,17 @@ export class InspectorStore {
       // Aux requests (`compaction`, `session-title`, …) are not conversation
       // steps even when one fires mid-turn: they accumulate in the per-session
       // pseudo-turn keyed by purpose. A purpose-less request with no open turn
-      // lands in the same kind of bucket under 'ad-hoc'.
+      // lands in the same kind of bucket under 'ad-hoc' (and a turn/end that
+      // later closes a pre-mount turn drains it — see turnEnd).
       const purpose = snapshot.purpose ?? 'ad-hoc'
       let bucket = session.buckets.get(purpose)
       if (bucket === undefined) {
-        bucket = this.mintTurn(session, startedAt, { purpose, query: purpose })
+        bucket = this.mintTurn(session, startedAt, {
+          purpose,
+          query: purpose,
+          turnSeq: session.nextBucketSeq,
+        })
+        session.nextBucketSeq -= 1
         session.buckets.set(purpose, bucket)
       }
       turn = bucket
@@ -360,6 +379,7 @@ export class InspectorStore {
     }
     this.seqCounter += 1
     scope.requests.push(request)
+    turn.liveContent = true
     this.totalRequests += 1
     if (scope.config.provider === undefined && snapshot.config.provider !== undefined) {
       scope.config = snapshot.config
@@ -478,15 +498,47 @@ export class InspectorStore {
     if (this.isChild(sessionId)) return
     const session = this.session(sessionId)
     if (session.openTurn !== undefined) return
-    session.openTurn = this.mintTurn(session, at, { hostTurn })
+    // The host turn number is the canonical address: a turn the log lane
+    // already reconstructed reopens here rather than duplicating (defensive —
+    // host numbers never repeat within one process).
+    const existing = session.turns.find(turn => turn.hostTurn === hostTurn && turn.purpose === undefined)
+    if (existing !== undefined) {
+      session.openTurn = existing
+      return
+    }
+    session.openTurn = this.mintTurn(session, at, { hostTurn, turnSeq: hostTurn, liveContent: true })
   }
 
   /** turn/end: close the open turn, resolve its main scope, sweep abandoned streams. */
-  turnEnd(sessionId: string, reason: { kind: string; error?: { message: string } }, at: number): void {
+  turnEnd(sessionId: string, hostTurn: number, reason: { kind: string; error?: { message: string } }, at: number): void {
     if (this.isChild(sessionId)) return
     const session = this.sessions.get(sessionId)
-    const turn = session?.openTurn
-    if (session === undefined || turn === undefined) return
+    if (session === undefined) return
+    let turn = session.openTurn
+    if (turn === undefined) {
+      // The plugin mounted mid-turn: the open bracket predates the capture, so
+      // the turn's live requests drifted into the ad-hoc bucket. Drain them
+      // into a record for this host turn — the overlap rule (any live request
+      // ⇒ fully live, the log lane never merges in) then holds for it.
+      const bucket = session.buckets.get('ad-hoc')
+      const drifted = bucket?.scopes.get('main')?.requests.filter(request => request.purpose === undefined) ?? []
+      if (drifted.length === 0) return
+      turn = this.mintTurn(session, at, { hostTurn, turnSeq: hostTurn, liveContent: true })
+      const main = this.mainScope(session, turn, drifted[0]?.startedAt ?? at)
+      for (const request of drifted) {
+        request.turnSeq = turn.turnSeq
+        main.requests.push(request)
+      }
+      const bucketScope = bucket?.scopes.get('main')
+      if (bucket !== undefined && bucketScope !== undefined) {
+        bucketScope.requests = bucketScope.requests.filter(request => !drifted.includes(request))
+        if (bucketScope.requests.length === 0) {
+          bucket.scopes.delete('main')
+          session.buckets.delete('ad-hoc')
+          session.turns = session.turns.filter(candidate => candidate !== bucket)
+        }
+      }
+    }
     turn.endedAt = at
     session.openTurn = undefined
     const main = turn.scopes.get('main')
@@ -635,13 +687,147 @@ export class InspectorStore {
     return out
   }
 
+  // ---------- history backfill ----------
+
+  /** The session's backfill watermark ('none' until the first successful read). */
+  backfillState(sessionId: string): 'none' | 'complete' | 'broken' {
+    return this.sessions.get(sessionId)?.backfillState ?? 'none'
+  }
+
+  /** A durably unreadable log stops the backfill from retrying it on every query. */
+  markBackfillBroken(sessionId: string): void {
+    this.session(sessionId).backfillState = 'broken'
+  }
+
+  /**
+   * Insert log-reconstructed turns (the pre-mount history), newest-first within
+   * budget: live-content turns win the budget outright, and a host turn with
+   * any record is never merged into (the overlap rule). Scope ordinals are
+   * renumbered afterwards so the chips' `#N` stay chronological across the
+   * live/backfill boundary (scopeSeq is a display anchor, not an address).
+   *
+   * The insert is budget-bounded by construction — it never triggers eviction
+   * of a live turn.
+   *
+   * @returns the number of turns actually inserted.
+   */
+  insertLogTurns(sessionId: string, logTurns: readonly LogTurn[]): number {
+    const session = this.session(sessionId)
+    if (session.backfillState === 'complete') return 0
+    session.backfillState = 'complete'
+    const liveCount = session.turns.filter(turn => turn.liveContent).length
+    const turnBudget = Math.max(0, this.maxTurnsPerSession - liveCount)
+    let requestRoom = Math.max(0, this.maxRequestsTotal - this.totalRequests)
+    const candidates = logTurns.filter(logTurn =>
+      !session.turns.some(turn => turn.purpose === undefined && turn.hostTurn === logTurn.hostTurn))
+    const selected: LogTurn[] = []
+    for (let i = candidates.length - 1; i >= 0 && selected.length < turnBudget; i -= 1) {
+      const candidate = candidates[i] as LogTurn
+      if (candidate.requests.length > requestRoom) break
+      requestRoom -= candidate.requests.length
+      selected.unshift(candidate)
+    }
+    for (const logTurn of selected) this.insertLogTurn(session, logTurn)
+    this.renumberScopes(session)
+    return selected.length
+  }
+
+  /** One reconstructed turn → one TurnRecord (main scope + delegation stubs). */
+  private insertLogTurn(session: SessionRecord, logTurn: LogTurn): void {
+    const turn = this.mintTurn(session, logTurn.startedAt, {
+      hostTurn: logTurn.hostTurn,
+      turnSeq: logTurn.hostTurn,
+      query: logTurn.query,
+    })
+    if (logTurn.closingMessageId !== undefined) turn.closingMessageId = logTurn.closingMessageId
+    const lastSettled = logTurn.requests.reduce<number | undefined>(
+      (latest, request) => request.settledAt !== undefined && (latest === undefined || request.settledAt > latest)
+        ? request.settledAt
+        : latest,
+      undefined,
+    )
+    // A turn the log never closed (a crash) reads as failed/interrupted, and
+    // still gets an end time so eviction treats it as closed.
+    turn.endedAt = logTurn.endedAt ?? lastSettled ?? logTurn.startedAt
+    const mainStatus: ScopeRecord['status'] =
+      logTurn.endReasonKind === 'completed' || logTurn.endReasonKind === 'max-tokens' ? 'ok' : 'failed'
+    const main: ScopeRecord = {
+      scopeId: 'main',
+      scopeSeq: 0, // renumbered after the insert
+      kind: 'main',
+      status: mainStatus,
+      // The scope's config line comes from its first request's header.
+      config: logTurn.requests[0]?.config ?? {},
+      requests: [],
+      startedAt: logTurn.startedAt,
+      endedAt: turn.endedAt,
+      live: false,
+      logFilled: true,
+    }
+    if (mainStatus === 'failed') {
+      main.error = logTurn.endReasonKind === undefined
+        ? 'interrupted (no turn/end in the log)'
+        : (logTurn.endError ?? logTurn.endReasonKind)
+    }
+    turn.scopes.set('main', main)
+    for (const built of logTurn.requests) {
+      const request: StoredRequest = {
+        ...built,
+        seq: this.seqCounter,
+        sessionId: session.id,
+        scopeId: 'main',
+        turnSeq: turn.turnSeq,
+      }
+      this.seqCounter += 1
+      main.requests.push(request)
+      this.totalRequests += 1
+    }
+    for (const delegation of logTurn.delegations) {
+      const scopeId = delegation.childId ?? `call:${delegation.callId}`
+      if (delegation.childId !== undefined) this.childToParent.set(delegation.childId, session.id)
+      const label = delegation.catalogLabel ?? delegation.label
+      const scope: ScopeRecord = {
+        scopeId,
+        scopeSeq: 0,
+        kind: 'subagent',
+        ...label === undefined ? {} : { label },
+        status: delegation.isError === true || delegation.resultAt === undefined ? 'failed' : 'ok',
+        ...delegation.isError === true && delegation.errorPreview !== undefined
+          ? { error: delegation.errorPreview }
+          : delegation.resultAt === undefined ? { error: 'no tool/result in the log' } : {},
+        config: {},
+        requests: [],
+        startedAt: delegation.at,
+        ...delegation.resultAt === undefined ? {} : { endedAt: delegation.resultAt },
+        live: false,
+        logFilled: false,
+        callId: delegation.callId,
+      }
+      turn.scopes.set(scopeId, scope)
+    }
+  }
+
+  /** Renumber one session's scope ordinals chronologically (turn order, then creation order). */
+  private renumberScopes(session: SessionRecord): void {
+    let next = 1
+    const ordered = [...session.turns].sort((a, b) => a.startedAt - b.startedAt || a.turnSeq - b.turnSeq)
+    for (const turn of ordered) {
+      for (const scope of turn.scopes.values()) {
+        scope.scopeSeq = next
+        next += 1
+      }
+    }
+  }
+
   // ---------- queries ----------
 
-  /** Light turn list of one session, newest last. */
+  /** Light turn list of one session, newest last (sorted by start time, then address). */
   listTurns(sessionId: string): TurnListItem[] {
     const session = this.sessions.get(sessionId)
     if (session === undefined) return []
-    return session.turns.map(turn => this.turnItem(sessionId, turn))
+    return [...session.turns]
+      .sort((a, b) => a.startedAt - b.startedAt || a.turnSeq - b.turnSeq)
+      .map(turn => this.turnItem(sessionId, turn))
   }
 
   private turnItem(sessionId: string, turn: TurnRecord): TurnListItem {
@@ -660,6 +846,7 @@ export class InspectorStore {
     return {
       sessionId,
       turnSeq: turn.turnSeq,
+      ...turn.hostTurn === undefined ? {} : { hostTurn: turn.hostTurn },
       query: turn.query,
       startedAt: turn.startedAt,
       ...turn.endedAt === undefined ? {} : { endedAt: turn.endedAt },

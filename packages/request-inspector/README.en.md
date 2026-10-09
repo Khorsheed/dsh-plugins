@@ -29,6 +29,8 @@ Three read-only host seams (requests are never rewritten):
 - `system-prompt/assemble` waterfall: system-section attribution.
 - `session/event`: turn boundaries, `subagent/catalog` (subagent correlation), tool/call・tool/result (tool execution time), assistant/message (usage and the turn's closing message id).
 
+**History backfill**: a panel query first reconstructs the session's pre-mount turns from its own durable log — `request/header` supplies the config and full tool definitions, `system/message` the system prompt text, assistant messages the responses and usage (incl. measured cache reads), tool/call・tool/result the tool execution timing. Both lanes share the host's own turn numbers and never duplicate; a turn with any live-captured request stays wholly live (no log rows merge in). Backfill fills newest-first within the retention budget, live turns winning the budget, and runs once per session. The log lane's one fidelity delta: the log keeps no system-prompt section names, so a reconstructed system segment renders as a single block (section attribution is the live lane's upgrade).
+
 **Subagent coverage**: `subagent_dsh` one-shots run in a fresh child process (SDK spawn) that the parent's waterfall cannot see — those runs are reconstructed from the **child session log on disk** (messages/usage/timing are complete; a one-shot's system prompt and tool definitions never land in the log and are shown as honest empty states, never faked). In-process subagent providers are captured at the same fidelity as the main conversation.
 
 Data lives in an in-memory ring buffer only (latest 20 turns per session / 200 requests total, configurable); nothing is written to the session log or disk.
@@ -39,12 +41,12 @@ Data lives in an in-memory ring buffer only (latest 20 turns per session / 200 r
 - Source line (deepseek-harness master): ✅ (verifiedHost: 0.2.0-rc.1).
 - **The wire-body view is a 0.1.2+ probed enhancement**: byte-level request bodies need `deepseekLlmApiExtensions.prepare` (deepseek adapter only); when unavailable the bottom view is greyed out and everything else is unaffected.
 - **Web-facing plugin**: a headless profile has no browser consumer; the host half still captures and serves the Remote.
-- **Probed degradation**: without `sessionPersistence` the child-log lane is off (main-conversation capture unaffected); any missing capture seam silently degrades to an emptier panel, never a boot failure.
+- **Probed degradation**: without `sessionPersistence` the log lane is off — both the child-scope detail and the history backfill (live main-conversation capture is unaffected); any missing capture seam silently degrades to an emptier panel, never a boot failure.
 
 ## Known Limitations
 
 - **No live refresh during streaming**: the panel is pull-based (fetch on open / turn switch); a running turn's view freezes at fetch time.
 - **Child-log lane honest gaps**: a one-shot sub-run's system prompt and tool definitions are unavailable (not logged); segment-level history/added diffing is only meaningful within one sub-run.
-- **Opening a child session directly** (navigating into a catalog'd child session id) shows an empty panel — its events fill the parent session's scope.
-- **Capture starts at mount time**: requests from before the plugin mounted are not backfilled (the log lane serves subagents only).
+- **No section attribution for backfilled system segments**: a log-reconstructed turn's system prompt renders as one block (the log keeps no `system-prompt/assemble` section names); aux requests (compaction / session-title) never land in the request log and do not appear historically.
+- **Opening a child session directly** (navigating into a catalog'd child session id) shows its own log-reconstructed view (a one-shot has no system/tools); the same content lives under the parent session's scope.
 - No manual refresh action yet (follow-up); the wire-body view awaits the host 0.1.2+ capability hookup.

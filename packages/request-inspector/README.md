@@ -29,6 +29,8 @@
 - `system-prompt/assemble` waterfall：system 段来源归因。
 - `session/event`：turn 边界、`subagent/catalog`（子 agent 关联）、tool/call・tool/result（工具执行耗时）、assistant/message（usage 与 turn 收尾消息 id）。
 
+**历史回溯（backfill）**：面板的拉取查询会先顺会话自身落盘日志重建挂载前的 turn——`request/header` 给 config 与完整工具定义、`system/message` 给 system 原文、assistant/message 给响应与 usage（含缓存实测）、tool/call・tool/result 给工具执行耗时。与实采共用同一套宿主 turn 号，绝不重复；带任何实采请求的 turn 整轮以实采为准、不并入日志行。回溯按预算从新到旧回填（live turn 优先占预算），一次到位。日志车道唯一的保真差异：system 段在日志里没有 section 名，渲染为一整块（section 归因是实采车道独有）。
+
 **子 agent 覆盖**：`subagent_dsh` one-shot 是独立子进程（SDK spawn），父进程瀑布看不到它的请求——这类运行从**子会话落盘日志**重建（消息/usage/耗时齐全；one-shot 的 system 原文与工具定义不落日志，面板显示诚实空态，不伪造）。进程内 subagent provider 的请求与主对话同保真度。
 
 数据只进内存 ring buffer（每会话最近 20 turn / 全局 200 请求，可配置），不写会话日志、不落盘。
@@ -39,12 +41,12 @@
 - 源码线（deepseek-harness master）：✅（verifiedHost: 0.2.0-rc.1）。
 - **wire body 视图是 0.1.2+ 探测增强**：字节级请求体依赖 `deepseekLlmApiExtensions.prepare`（且仅 deepseek adapter），探测不到时底部该视图灰显，主功能不受影响。
 - **web 面插件**：headless profile 没有浏览器消费者，宿主半边照常采集并提供 Remote。
-- **能力探测降级**：`sessionPersistence` 缺席时子 agent 日志车道关闭（主对话采集不受影响）；`llm/stream`/`system-prompt/assemble`/`session/event` 任一缺席静默降级为更空的面板，不影响启动。
+- **能力探测降级**：`sessionPersistence` 缺席时日志车道整体关闭（子 agent 明细与历史回溯都关闭，主对话实采不受影响）；`llm/stream`/`system-prompt/assemble`/`session/event` 任一缺席静默降级为更空的面板，不影响启动。
 
 ## Known Limitations
 
 - **正在流式进行的 turn 不实时刷新**：面板是拉取式（打开/切 turn 时取数），进行中的 turn 视图停在拉取时刻。
 - **子 agent 日志车道的诚实空态**：one-shot 子运行的 system 原文与工具定义不可见（不落日志），segment 级历史/新增切分只在同一子运行内有意义。
-- **直接打开一个子 agent 会话**（catalog'd child session id 进入）面板为空——它的事件填在父会话的 scope 里。
-- **采集从插件挂载时刻开始**：挂载前的历史请求不回溯（日志车道只服务子 agent）。
+- **日志回溯的 system 段无 section 归因**：重建自日志的 turn，system 提示词渲染为一整块（无 `system-prompt/assemble` 的 section 名）；aux 请求（compaction / session-title）不落请求日志，不出现在历史 turn 里。
+- **直接打开一个子 agent 会话**（catalog'd child session id 进入）看到的是它自己日志的重建视图（one-shot 没有 system/tools），父会话里的同内容在对应 scope 下。
 - 面板无主动刷新按钮（留作后续）；wire body 视图待宿主 0.1.2+ 能力接入。

@@ -21,7 +21,7 @@ export const zh = {
   'scope.tagSub': '子 agent · {label}',
 
   'state.loading': '加载中…',
-  'state.noTurns': '本会话还没有捕获到请求——捕获从插件安装后开始',
+  'state.noTurns': '本会话还没有捕获到请求',
   'state.emptyScope': '这个范围还没有模型请求',
   'state.turnMissing': '该 turn 的捕获已不在缓冲区（旧 turn 会被淘汰）',
   'state.hostMissing': '宿主未安装请求明细的宿主半边',
@@ -115,7 +115,7 @@ export const en: Record<keyof typeof zh, string> = {
   'scope.tagSub': 'subagent · {label}',
 
   'state.loading': 'Loading…',
-  'state.noTurns': 'No requests captured for this session yet — capture starts when the plugin is installed',
+  'state.noTurns': 'No requests captured for this session yet',
   'state.emptyScope': 'No model requests in this scope yet',
   'state.turnMissing': 'This turn’s capture has left the buffer (old turns are evicted)',
   'state.hostMissing': 'The host half of request-inspector is not installed',

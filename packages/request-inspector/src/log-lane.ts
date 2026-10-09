@@ -1,26 +1,33 @@
 /**
- * The log lane: reconstructs a fresh-process subagent child's requests from its
- * on-disk session log. A `subagent_dsh` one-shot child runs in a NEW process —
- * the parent's `llm/stream` never sees its requests — so the scope's detail
- * comes from the child's `session.v4.jsonl.zstd`, read through the host's
- * `sessionPersistence` service (which owns the root layout, the zstd framing,
- * and the format-version chain).
+ * The log lane: reconstructs requests from an on-disk session log, read through
+ * the host's `sessionPersistence` service (which owns the root layout, the
+ * zstd framing, and the format-version chain). Two drivers share one fold:
  *
- * Honesty contract (one-shot logs lack two things by design): no
+ * - **Child scopes** — a `subagent_dsh` one-shot child runs in a NEW process,
+ *   so the parent's `llm/stream` never sees its requests; the scope fills from
+ *   the child's own log, incrementally (the cursor resumes at the consumed
+ *   offset across panel queries).
+ * - **Main-session backfill** — the panel otherwise shows only turns captured
+ *   live since mount; the session's own log reconstructs the pre-mount history
+ *   at log fidelity ({@link reconstructSession}), once per session.
+ *
+ * Honesty contract (one-shot child logs lack two things by design): no
  * `request/header` events means `config` stays `{}` until a header says
- * otherwise, and the child's system prompt never lands in the log, so the
- * system segment stays empty. The lane never invents either.
+ * otherwise, and a missing system prompt never lands in the log, so the system
+ * segment stays empty. Main-session logs carry both (`request/header` →
+ * config + tools; `system/message` → the rendered prompt as ONE block — the
+ * assemble-section attribution is the live lane's upgrade, the log keeps no
+ * section names). The lane never invents either.
  *
- * Reconstruction is incremental: the cursor folds new events only, and each
- * `assistant/message` (a settled, usage-carrying response) or
+ * Each `assistant/message` (a settled, usage-carrying response) or
  * `assistant/attempt` (a settled failure) completes one request row.
  *
- * @module @khorsheed/dsh-request-inspector/child-log
+ * @module @khorsheed/dsh-request-inspector/log-lane
  */
 import type { RequestConfig, RequestUsage, ResponseSummary } from './types.ts'
 import type { BlockSpan, StoredRequest } from './store.ts'
 import { splitRequest, type ScopeFingerprint } from './segmenter.ts'
-import { fromLogMessage, previewLine, type CapturedMessage } from './messages.ts'
+import { fromLogMessage, previewLine, serializeMessage, type CapturedMessage } from './messages.ts'
 
 /** The structural minimum of one decoded session-log row (untrusted JSON). */
 export interface SessionLogRow {
@@ -54,8 +61,24 @@ interface FoldedMessage {
   message: CapturedMessage
 }
 
-/** Incremental per-child fold state; survives across refreshes. */
-export interface ChildLogCursor {
+/** One delegation call correlated across tool/call → subagent/catalog → tool/result. */
+export interface LogDelegation {
+  /** The host turn that ran the delegation, when the log scopes it. */
+  hostTurn?: number
+  callId: string
+  name: string
+  at: number
+  /** The call arguments' description (the subagent_dsh convention). */
+  label?: string
+  childId?: string
+  catalogLabel?: string
+  resultAt?: number
+  isError?: boolean
+  errorPreview?: string
+}
+
+/** Incremental per-log fold state; survives across refreshes (child lane) or one shot (backfill). */
+export interface SessionLogCursor {
   /** Events consumed so far (the next read's offset). */
   consumed: number
   /** Model-visible messages folded so far, in log order. */
@@ -78,6 +101,12 @@ export interface ChildLogCursor {
   previous: ScopeFingerprint | undefined
   /** Requests built so far (kept for late tool-exec closes). */
   requests: BuiltLogRequest[]
+  /** The currently open host turn's number (turn/start … turn/end). */
+  turnHost: number | undefined
+  /** Whether the current turn already contributed its query preview. */
+  turnQuerySeen: boolean
+  /** Delegation calls awaiting their catalog/result. */
+  pendingDelegations: Map<string, LogDelegation>
   /** Set once a read failed this cursor; the lane stops hammering a bad log. */
   broken: string | undefined
 }
@@ -85,8 +114,22 @@ export interface ChildLogCursor {
 /** A request row built from the log, before the store assigns its sequence. */
 export type BuiltLogRequest = Omit<StoredRequest, 'seq' | 'sessionId' | 'scopeId' | 'turnSeq'>
 
-/** A fresh cursor for one child scope. */
-export function openCursor(): ChildLogCursor {
+/** Optional fold hooks beyond the request rows (the backfill driver uses them all). */
+export interface FoldSink {
+  turnStart?(hostTurn: number, at: number | undefined): void
+  turnEnd?(hostTurn: number, reason: { kind: string; error?: { message?: string } }, at: number | undefined): void
+  /** The turn's first human user message (the turn list's query preview). */
+  queryText?(hostTurn: number | undefined, text: string, at: number | undefined): void
+  /** Each committed assistant message id; the last one of a turn is its closing message. */
+  closingMessage?(hostTurn: number | undefined, messageId: string): void
+  /** One completed request, tagged with its host turn when the log scopes it. */
+  request?(hostTurn: number | undefined, request: BuiltLogRequest): void
+  /** One delegation run, emitted when its tool/result lands (or at fold flush). */
+  delegation?(delegation: LogDelegation): void
+}
+
+/** A fresh cursor for one log. */
+export function openCursor(): SessionLogCursor {
   return {
     consumed: 0,
     messages: [],
@@ -99,22 +142,45 @@ export function openCursor(): ChildLogCursor {
     messageDurations: new Map(),
     previous: undefined,
     requests: [],
+    turnHost: undefined,
+    turnQuerySeen: false,
+    pendingDelegations: new Map(),
     broken: undefined,
   }
 }
 
 /**
- * Fold new log rows into the cursor, returning the requests completed by THIS
- * batch. The caller appends them to the scope (the store assigns seqs) and
- * then applies {@link closeToolExecs} pairing — tool exec spans can open and
- * close in later batches, so pairing data lives on the cursor.
+ * Fold new log rows into the cursor. Returns the requests completed by THIS
+ * batch (the child-scope driver's whole output); the sink receives those plus
+ * the turn/delegation structure (the backfill driver). Tool exec spans can
+ * open and close in later batches, so pairing data lives on the cursor.
  */
-export function foldLogRows(cursor: ChildLogCursor, rows: readonly SessionLogRow[]): BuiltLogRequest[] {
+export function foldLogRows(
+  cursor: SessionLogCursor,
+  rows: readonly SessionLogRow[],
+  sink: FoldSink = {},
+): BuiltLogRequest[] {
   const built: BuiltLogRequest[] = []
   for (const row of rows) {
     cursor.consumed += 1
     const data = (typeof row.data === 'object' && row.data !== null ? row.data : {}) as Record<string, unknown>
     switch (row.type) {
+      case 'turn/start': {
+        const hostTurn = typeof data['turn'] === 'number' ? data['turn'] : undefined
+        cursor.turnHost = hostTurn
+        cursor.turnQuerySeen = false
+        if (hostTurn !== undefined) sink.turnStart?.(hostTurn, row.time)
+        break
+      }
+      case 'turn/end': {
+        const hostTurn = typeof data['turn'] === 'number' ? data['turn'] : cursor.turnHost
+        const reason = typeof data['reason'] === 'object' && data['reason'] !== null
+          ? data['reason'] as { kind: string; error?: { message?: string } }
+          : { kind: 'unknown' }
+        if (hostTurn !== undefined) sink.turnEnd?.(hostTurn, reason, row.time)
+        cursor.turnHost = undefined
+        break
+      }
       case 'step/start':
         cursor.stepStartAt = row.time
         break
@@ -147,18 +213,29 @@ export function foldLogRows(cursor: ChildLogCursor, rows: readonly SessionLogRow
       }
       case 'user/message': {
         const message = fromLogMessage(data)
-        if (message !== undefined) cursor.messages.push({ seq: row.seq ?? cursor.consumed, message })
+        if (message !== undefined) {
+          cursor.messages.push({ seq: row.seq ?? cursor.consumed, message })
+          if (!cursor.turnQuerySeen && message.sourceKind === 'user') {
+            cursor.turnQuerySeen = true
+            sink.queryText?.(cursor.turnHost, collapseQuery(serializeMessage(message)), row.time)
+          }
+        }
         break
       }
       case 'assistant/message': {
         const request = buildRequest(cursor, row, data, false)
         built.push(request)
         cursor.requests.push(request)
+        const hostTurn = typeof data['turn'] === 'number' ? data['turn'] : cursor.turnHost
+        sink.request?.(hostTurn, request)
         const message = fromLogMessage(data['message'])
         if (message !== undefined) {
           cursor.messages.push({ seq: row.seq ?? cursor.consumed, message })
-          if (message.id !== undefined && request.settledAt !== undefined) {
-            cursor.messageDurations.set(message.id, request.settledAt - request.startedAt)
+          if (message.id !== undefined) {
+            if (request.settledAt !== undefined) {
+              cursor.messageDurations.set(message.id, request.settledAt - request.startedAt)
+            }
+            sink.closingMessage?.(hostTurn, message.id)
           }
           for (const block of message.content) {
             if (block.type === 'tool-call' && block.id !== undefined) {
@@ -172,6 +249,7 @@ export function foldLogRows(cursor: ChildLogCursor, rows: readonly SessionLogRow
         const request = buildRequest(cursor, row, data, true)
         built.push(request)
         cursor.requests.push(request)
+        sink.request?.(typeof data['turn'] === 'number' ? data['turn'] : cursor.turnHost, request)
         break
       }
       case 'tool/call': {
@@ -183,6 +261,30 @@ export function foldLogRows(cursor: ChildLogCursor, rows: readonly SessionLogRow
           const owner = cursor.callOwners.get(callId)
           if (owner !== undefined && name !== undefined) {
             owner.execs.push({ callId, name, start: row.time ?? owner.settledAt ?? owner.startedAt })
+          }
+          if (name !== undefined && isDelegationTool(name)) {
+            const delegation: LogDelegation = {
+              ...typeof data['turn'] === 'number' ? { hostTurn: data['turn'] } : {},
+              callId,
+              name,
+              at: row.time ?? 0,
+              ...delegationLabel(typeof data['arguments'] === 'string' ? data['arguments'] : ''),
+            }
+            cursor.pendingDelegations.set(callId, delegation)
+          }
+        }
+        break
+      }
+      case 'subagent/catalog': {
+        const childId = typeof data['childId'] === 'string' ? data['childId'] : undefined
+        if (childId !== undefined && childId.length > 0) {
+          // FIFO bind: the catalog belongs to the oldest unbound delegation call.
+          for (const pending of cursor.pendingDelegations.values()) {
+            if (pending.childId === undefined) {
+              pending.childId = childId
+              if (typeof data['label'] === 'string' && data['label'].length > 0) pending.catalogLabel = data['label']
+              break
+            }
           }
         }
         break
@@ -199,6 +301,16 @@ export function foldLogRows(cursor: ChildLogCursor, rows: readonly SessionLogRow
             if (row.time !== undefined) span.end = row.time
             span.isError = message?.isError === true
           }
+          const delegation = cursor.pendingDelegations.get(callId)
+          if (delegation !== undefined) {
+            cursor.pendingDelegations.delete(callId)
+            if (row.time !== undefined) delegation.resultAt = row.time
+            delegation.isError = message?.isError === true
+            if (delegation.isError && message !== undefined) {
+              delegation.errorPreview = previewLine(serializeMessage(message))
+            }
+            sink.delegation?.(delegation)
+          }
         }
         break
       }
@@ -211,9 +323,106 @@ export function foldLogRows(cursor: ChildLogCursor, rows: readonly SessionLogRow
   return built
 }
 
+/**
+ * One-shot reconstruction of a whole session log into turns (the main-session
+ * backfill). Requests group by their host turn number (step-scoped events
+ * carry it; a torn bracket falls back to the fold's open-turn state). Turns
+ * never closed by a turn/end (a crash) come out with `endReasonKind` unset.
+ */
+export function reconstructSession(rows: readonly SessionLogRow[]): LogTurn[] {
+  const cursor = openCursor()
+  const turns: LogTurn[] = []
+  const byHostTurn = new Map<number, LogTurn>()
+  const turnFor = (hostTurn: number | undefined, at: number | undefined): LogTurn | undefined => {
+    if (hostTurn === undefined) return undefined
+    let turn = byHostTurn.get(hostTurn)
+    if (turn === undefined) {
+      turn = {
+        hostTurn,
+        query: '',
+        ...at === undefined ? { startedAt: 0 } : { startedAt: at },
+        requests: [],
+        delegations: [],
+      }
+      byHostTurn.set(hostTurn, turn)
+      turns.push(turn)
+    } else if (turn.startedAt === 0 && at !== undefined) {
+      turn.startedAt = at
+    }
+    return turn
+  }
+  foldLogRows(cursor, rows, {
+    turnStart: (hostTurn, at) => void turnFor(hostTurn, at),
+    turnEnd: (hostTurn, reason, at) => {
+      const turn = turnFor(hostTurn, at)
+      if (turn === undefined) return
+      if (at !== undefined) turn.endedAt = at
+      turn.endReasonKind = reason.kind
+      if (reason.kind === 'error' && reason.error?.message !== undefined) turn.endError = reason.error.message
+    },
+    queryText: (hostTurn, text, at) => {
+      const turn = turnFor(hostTurn, at)
+      if (turn !== undefined && turn.query === '') turn.query = text
+    },
+    closingMessage: (hostTurn, messageId) => {
+      const turn = turnFor(hostTurn, undefined)
+      if (turn !== undefined) turn.closingMessageId = messageId
+    },
+    request: (hostTurn, request) => {
+      turnFor(hostTurn, request.startedAt)?.requests.push(request)
+    },
+    delegation: (delegation) => {
+      turnFor(delegation.hostTurn, delegation.at)?.delegations.push(delegation)
+    },
+  })
+  // A delegation whose result never landed (a crashed turn) still surfaces.
+  for (const pending of cursor.pendingDelegations.values()) {
+    turnFor(pending.hostTurn, pending.at)?.delegations.push(pending)
+  }
+  return turns
+}
+
+/** One reconstructed turn (the store turns this into a TurnRecord). */
+export interface LogTurn {
+  hostTurn: number
+  query: string
+  startedAt: number
+  endedAt?: number
+  closingMessageId?: string
+  /** The turn/end reason kind; absent when the log never closed the turn. */
+  endReasonKind?: string
+  endError?: string
+  requests: BuiltLogRequest[]
+  delegations: LogDelegation[]
+}
+
+/** The delegation tool family whose calls pair with `subagent/catalog` events. */
+function isDelegationTool(name: string): boolean {
+  return /^subagent[_-]/.test(name)
+}
+
+/** The delegation label out of the call arguments (`description` is the subagent_dsh convention). */
+function delegationLabel(args: string): { label?: string } {
+  try {
+    const parsed: unknown = JSON.parse(args)
+    if (typeof parsed === 'object' && parsed !== null) {
+      const description = (parsed as { description?: unknown }).description
+      if (typeof description === 'string' && description.length > 0) return { label: description }
+    }
+  } catch {
+    // Unparseable model arguments simply carry no label.
+  }
+  return {}
+}
+
+/** The turn-list query preview: one collapsed line, capped. */
+function collapseQuery(text: string): string {
+  return text.replace(/\s+/g, ' ').trim().slice(0, 120)
+}
+
 /** One settled request out of its assistant event: stream timing, usage, and the segment split. */
 function buildRequest(
-  cursor: ChildLogCursor,
+  cursor: SessionLogCursor,
   row: SessionLogRow,
   data: Record<string, unknown>,
   failed: boolean,

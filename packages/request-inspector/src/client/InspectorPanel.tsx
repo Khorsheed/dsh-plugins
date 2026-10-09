@@ -342,7 +342,9 @@ export function InspectorPanel({
             >
               {[...(turns ?? [])].reverse().map(candidate => (
                 <option key={candidate.turnSeq} value={candidate.turnSeq}>
-                  {t('turn.label', { seq: String(candidate.turnSeq) })} · {candidate.query}
+                  {candidate.hostTurn === undefined
+                    ? candidate.query
+                    : `${t('turn.label', { seq: String(candidate.hostTurn) })} · ${candidate.query}`}
                 </option>
               ))}
             </select>
