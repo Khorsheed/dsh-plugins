@@ -7,7 +7,7 @@
  * timing tab's buckets/timeline/call-row click-through, the raw view, the
  * disabled wire-body seat, and the empty states).
  */
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type {
   AgentScopeOverview, BackfillInfo, CapturedRequest, ListTurnsResult, TurnListItem, TurnOverview, TurnTiming,
@@ -211,7 +211,10 @@ describe('InspectorPanel · token tab', () => {
     await waitFor(() => expect(screen.getByText('#101 · read:a.ts')).toBeTruthy())
     // The query line and the turn switcher default to turn 2 (the latest).
     expect(screen.getByText('第二条 query')).toBeTruthy()
-    expect((screen.getByRole('combobox', { name: zh['turn.switch'] }) as HTMLSelectElement).value).toBe('2')
+    const trigger = screen.getByRole('button', { name: zh['turn.switch'] })
+    expect(trigger.getAttribute('aria-haspopup')).toBe('menu')
+    expect(trigger.textContent).toContain('turn 2')
+    expect(trigger.textContent).toContain('第二条 query')
     // Scope chips: 主对话 + one per delegation run (never merged), anchored by
     // the per-session scope ordinal — the failed 0-request run gets its #N too.
     expect(screen.getByRole('button', { name: /主对话 · 2 请求/ })).toBeTruthy()
@@ -284,18 +287,27 @@ describe('InspectorPanel · token tab', () => {
 })
 
 describe('InspectorPanel · turn switcher / navigation params', () => {
-  it('switches turns from the select', async () => {
+  it('switches turns from the menu', async () => {
     bench()
     await waitFor(() => expect(screen.getByText('第二条 query')).toBeTruthy())
-    fireEvent.change(screen.getByRole('combobox', { name: zh['turn.switch'] }), { target: { value: '1' } })
+    fireEvent.click(screen.getByRole('button', { name: zh['turn.switch'] }))
+    // Newest first; rows carry the request count and token totals.
+    const items = screen.getAllByRole('menuitem')
+    expect(items[0]?.textContent).toContain('turn 2')
+    expect(items[1]?.textContent).toContain('turn 1')
+    expect(items[1]?.textContent).toContain('1 请求')
+    expect(items[1]?.textContent).toContain('输入 1.0k')
+    expect(items[1]?.textContent).toContain('输出 50')
+    fireEvent.click(items[1] as HTMLElement)
     await waitFor(() => expect(screen.getByText('#11 · 直接回答')).toBeTruthy())
     expect(screen.getByText('第一条 query')).toBeTruthy()
+    expect(screen.getByRole('button', { name: zh['turn.switch'] }).textContent).toContain('turn 1')
   })
 
   it('applies navigation params on the first revision (the turn action entry)', async () => {
     bench({ params: { turnSeq: 1 }, revision: 1 })
     await waitFor(() => expect(screen.getByText('#11 · 直接回答')).toBeTruthy())
-    expect((screen.getByRole('combobox', { name: zh['turn.switch'] }) as HTMLSelectElement).value).toBe('1')
+    expect(screen.getByRole('button', { name: zh['turn.switch'] }).textContent).toContain('turn 1')
   })
 })
 
@@ -403,5 +415,90 @@ describe('InspectorPanel · empty and error states', () => {
     }
     bench({ turns: [...TURNS, evicted], params: { turnSeq: 3 }, revision: 1 })
     await waitFor(() => expect(screen.getByText(zh['state.turnMissing'])).toBeTruthy())
+  })
+})
+
+describe('InspectorPanel · scroll-sync + 最新', () => {
+  const scrollIntoView = vi.fn()
+  const scrollTo = vi.fn()
+  let port: HTMLElement | null = null
+
+  beforeEach(() => {
+    scrollIntoView.mockClear()
+    scrollTo.mockClear()
+    // jsdom implements neither primitive.
+    Object.defineProperty(Element.prototype, 'scrollIntoView', { value: scrollIntoView, configurable: true })
+    Object.defineProperty(Element.prototype, 'scrollTo', { value: scrollTo, configurable: true })
+  })
+
+  afterEach(() => {
+    port?.remove()
+    port = null
+  })
+
+  /** Append a fake conversation scrollport with the given host turns. */
+  function mountConversation(turns: number[]): void {
+    port = document.createElement('div')
+    port.setAttribute('data-conversation-scroll', '')
+    for (const n of turns) {
+      const row = document.createElement('div')
+      row.setAttribute('data-chat-turn', String(n))
+      port.appendChild(row)
+    }
+    document.body.appendChild(port)
+  }
+
+  it('switching turns scrolls the conversation to that turn anchor', async () => {
+    mountConversation([1, 2])
+    bench()
+    await waitFor(() => expect(screen.getByText('第二条 query')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: zh['turn.switch'] }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /turn 1/ }))
+    await waitFor(() => expect(screen.getByText('第一条 query')).toBeTruthy())
+    expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' })
+    expect(scrollIntoView.mock.instances[0]).toBe(port?.querySelector('[data-chat-turn="1"]'))
+  })
+
+  it('opening from the action row scroll-syncs to the navigated turn', async () => {
+    mountConversation([1, 2])
+    bench({ params: { turnSeq: 1 }, revision: 1 })
+    await waitFor(() => expect(screen.getByText('#11 · 直接回答')).toBeTruthy())
+    expect(scrollIntoView.mock.instances[0]).toBe(port?.querySelector('[data-chat-turn="1"]'))
+  })
+
+  it('no conversation mounted → silent no-op, the panel still switches', async () => {
+    bench()
+    await waitFor(() => expect(screen.getByText('第二条 query')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: zh['turn.switch'] }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /turn 1/ }))
+    await waitFor(() => expect(screen.getByText('第一条 query')).toBeTruthy())
+    expect(scrollIntoView).not.toHaveBeenCalled()
+  })
+
+  it('the 最新 button hides at the latest turn and, from an older turn, jumps and bottoms out', async () => {
+    mountConversation([1, 2])
+    bench()
+    await waitFor(() => expect(screen.getByText('第二条 query')).toBeTruthy())
+    expect(screen.queryByRole('button', { name: zh['turn.latest'] })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: zh['turn.switch'] }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /turn 1/ }))
+    await waitFor(() => expect(screen.getByRole('button', { name: zh['turn.latest'] })).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: zh['turn.latest'] }))
+    await waitFor(() => expect(screen.getByText('第二条 query')).toBeTruthy())
+    expect(scrollTo).toHaveBeenCalledTimes(1)
+  })
+
+  it('the 最新 button targets the latest REAL turn, skipping a trailing pseudo-turn', async () => {
+    mountConversation([1, 2])
+    const pseudo: TurnListItem = {
+      sessionId: 's1', turnSeq: -1, query: 'compaction', startedAt: 10_000,
+      requestCount: 1, scopeCount: 1, failedScopeCount: 0, totalInputTokens: 10, totalOutputTokens: 5,
+    }
+    bench({ turns: [...TURNS, pseudo] })
+    // The default selection is the pseudo-turn (last in the list) — the button shows.
+    await waitFor(() => expect(screen.getByRole('button', { name: zh['turn.latest'] })).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: zh['turn.latest'] }))
+    await waitFor(() => expect(screen.getByText('第二条 query')).toBeTruthy())
+    expect(scrollTo).toHaveBeenCalledTimes(1)
   })
 })

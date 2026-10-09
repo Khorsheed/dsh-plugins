@@ -7,7 +7,7 @@ Aggregates every model call by turn and shows its full composition — which sec
 - **Turn action-row icon**: every completed turn's action row (copy/like/share/usage) gains an icon that opens the right sidebar at **that turn's** detail (via the `conversation.chat.assistant-actions` seat; the owner `messageId` is matched against the turn's closing assistant message, falling back to the latest turn).
 - **Session-header utility icon**: opens the sidebar at the latest turn.
 
-Both land on the same right-sidebar tab (`request-inspector`); a turn switcher inside the panel reaches every captured turn of the session.
+Both land on the same right-sidebar tab (`request-inspector`); the panel's turn switcher (a menu with each turn's request count and token totals) reaches every captured turn of the session, and switching turns scrolls the conversation to that turn (the `[data-chat-turn]` DOM anchor, falling back to the nearest later mounted turn, silent when nothing is mounted); the 「定位到最新」 (latest) button beside it jumps back to the latest turn and bottoms the conversation out.
 
 ## The two views
 

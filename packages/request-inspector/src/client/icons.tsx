@@ -26,3 +26,18 @@ export const IconRequestInspectorOutlineMedium = ({ size = 16, className }: Icon
     <circle cx="11.2" cy="11.2" r="1.7" fill="currentColor" stroke="none" />
   </svg>
 )
+
+/** The turn switcher's affordance chevron. */
+export const IconChevronDownOutlineMedium = ({ size = 14, className }: IconProps) => (
+  <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" strokeWidth={1.3}>
+    <path d="M4 6L7.29289 9.29289C7.68342 9.68342 8.31658 9.68342 8.70711 9.29289L12 6" stroke="currentColor" />
+  </svg>
+)
+
+/** The 定位到最新 turn glyph: an arrow landing on the bottom line. */
+export const IconArrowDownToLineMedium = ({ size = 16, className }: IconProps) => (
+  <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" strokeWidth={1.3}>
+    <path d="M8 2.5V10.5M8 10.5L4.5 7M8 10.5L11.5 7" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M3 13.5H13" stroke="currentColor" strokeLinecap="round" />
+  </svg>
+)

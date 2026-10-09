@@ -18,16 +18,20 @@
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { ChipRow, PanelRoot } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
+import { Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   AgentScopeOverview, BackfillInfo, CapturedRequest, SegmentCategory, TurnListItem, TurnOverview, TurnTiming,
 } from '../types.ts'
 import { fmtSpan, latestTurnSeq } from './aggregate.ts'
 import type { InspectorTabProps } from './contract.ts'
 import type { RequestInspectorTabParams } from './definition.tsx'
+import { IconArrowDownToLineMedium } from './icons.tsx'
 import { RawView } from './RawView.tsx'
+import { scrollConversationToBottom, scrollConversationToTurn } from './scroll-sync.ts'
 import { SegCtl } from './SegCtl.tsx'
 import { TimingView } from './TimingView.tsx'
 import { TokenView } from './TokenView.tsx'
+import { TurnMenu } from './TurnMenu.tsx'
 import css from './InspectorPanel.module.css'
 
 /** The panel's translate face. */
@@ -91,7 +95,8 @@ export function InspectorPanel({
   const detailCache = useRef(new Map<number, CapturedRequest>())
 
   // Navigation params apply once per revision (a repeat open re-navigates the
-  // one tab): the turn action's { turnSeq } selects that turn.
+  // one tab): the turn action's { turnSeq } selects that turn and scroll-syncs
+  // the conversation to it.
   const revision = tab.navigation.revision
   const navTurnSeq = (tab.navigation.params as RequestInspectorTabParams | undefined)?.turnSeq
   const lastNavRevision = useRef(0)
@@ -105,6 +110,9 @@ export function InspectorPanel({
     setFilterCat(null)
     setMainTab('token')
     setViewTab('structured')
+    // Real turns key on the host's turn number, so a positive seq scrolls even
+    // before the turn list resolves; pseudo-turns (negative) never scroll.
+    if (navTurnSeq > 0) scrollConversationToTurn(navTurnSeq)
   }, [revision, navTurnSeq])
 
   // The session's turn list, on mount (pull-based: refetch = reopen).
@@ -214,13 +222,36 @@ export function InspectorPanel({
 
   const turn = turns?.find(candidate => candidate.turnSeq === turnSeq)
 
-  const onSelectTurn = (next: number): void => {
-    if (next === turnSeq) return
+  /** The shared per-turn selection reset (no scrolling — the caller picks the anchor). */
+  const selectTurnState = (next: number): void => {
     setTurnSeq(next)
     setScopeId('main')
     setSelectedSeq(null)
     setFilterCat(null)
     setOverview(null)
+  }
+
+  /** Scroll the conversation to one selected turn (real turns only; pseudo-turns never scroll). */
+  const syncScrollToTurn = (seq: number): void => {
+    const target = turns?.find(candidate => candidate.turnSeq === seq)
+    // Real turns key on the host's turn number (M5), so a positive seq is the
+    // anchor even before the list resolves (the navigation-params path).
+    const hostTurn = target?.hostTurn ?? (seq > 0 ? seq : undefined)
+    if (hostTurn !== undefined) scrollConversationToTurn(hostTurn)
+  }
+
+  const onSelectTurn = (next: number): void => {
+    if (next === turnSeq) return
+    selectTurnState(next)
+    syncScrollToTurn(next)
+  }
+
+  /** The latest REAL turn — the 最新 button's target (pseudo-turns have no conversation anchor). */
+  const latestRealTurn = (turns ?? []).filter(candidate => candidate.hostTurn !== undefined).at(-1)
+  const onLatest = (): void => {
+    if (latestRealTurn === undefined) return
+    if (turnSeq !== latestRealTurn.turnSeq) selectTurnState(latestRealTurn.turnSeq)
+    scrollConversationToBottom()
   }
 
   const onSelectScope = (next: string): void => {
@@ -339,20 +370,19 @@ export function InspectorPanel({
           <div className={css.query}>
             {t('query.prefix')}<b>{turn.query}</b>
             <span className={css.querySep}>·</span>
-            <select
-              className={css.turnSelect}
-              aria-label={t('turn.switch')}
-              value={turnSeq ?? ''}
-              onChange={event => { onSelectTurn(Number(event.target.value)) }}
-            >
-              {[...(turns ?? [])].reverse().map(candidate => (
-                <option key={candidate.turnSeq} value={candidate.turnSeq}>
-                  {candidate.hostTurn === undefined
-                    ? candidate.query
-                    : `${t('turn.label', { seq: String(candidate.hostTurn) })} · ${candidate.query}`}
-                </option>
-              ))}
-            </select>
+            <TurnMenu turns={turns ?? []} turnSeq={turnSeq} onSelect={onSelectTurn} t={t} />
+            {latestRealTurn !== undefined && turnSeq !== latestRealTurn.turnSeq && (
+              <Tooltip label={t('turn.latest')} side="bottom">
+                <button
+                  type="button"
+                  className={css.latestButton}
+                  aria-label={t('turn.latest')}
+                  onClick={onLatest}
+                >
+                  <IconArrowDownToLineMedium />
+                </button>
+              </Tooltip>
+            )}
             <span className={css.querySep}>·</span>
             <span className={css.scopeTag}>{scopeTag}</span>
           </div>

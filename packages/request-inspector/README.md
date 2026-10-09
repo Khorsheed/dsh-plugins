@@ -7,7 +7,7 @@
 - **turn 动作行图标**：每个已完成 turn 的动作行（复制/点赞/分享/用量所在行）多一个图标，点击打开右栏并定位到**这个 turn** 的明细（经 `conversation.chat.assistant-actions` 槽，owner prop `messageId` 匹配 turn 的收尾 assistant 消息，失配兜底最新 turn）。
 - **会话头部 utilities 图标**：打开右栏并定位到最新 turn。
 
-两处都落在同一个右栏 tab（`request-inspector`）；面板内有 turn 切换器，可换看本会话任意已采集的 turn。
+两处都落在同一个右栏 tab（`request-inspector`）；面板内的 turn 切换器（菜单式，带每轮的请求数与 token 合计）可换看本会话任意已采集的 turn，切换时会话视图同步滚动到该 turn（DOM 锚点 `[data-chat-turn]`，未挂载则落到最近的后续 turn，找不到就静默不动）；旁边的「定位到最新」一键回到最新 turn 并把会话滚到底。
 
 ## 两个视角
 
