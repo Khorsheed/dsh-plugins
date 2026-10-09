@@ -12,7 +12,7 @@ import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type {
   NovelCardRequest, NovelCardResult, NovelChapterRequest, NovelChapterResult, NovelChaptersResult, NovelDecideRequest,
-  LedgerResult, NovelGestureResult, NovelOutlineDecideRequest, NovelOutlineResult, NovelPendingResult, NovelStarRequest, NovelStateRequest,
+  LedgerResult, NovelGestureResult, NovelOutlineDecideRequest, NovelOutlineResult, NovelPendingResult, NovelPlanEditRequest, NovelPlanEditResult, NovelStarRequest, NovelStateRequest,
   NovelWorkRequest, StoryLogResult,
 } from '../types.ts'
 import type {} from './locales.ts'
@@ -64,6 +64,7 @@ export interface NovelRemote {
   decidePending: (sessionId: SessionId, request: NovelDecideRequest) => Promise<RemoteResult<NovelGestureResult>>
   reviewChapter: (sessionId: SessionId, request: NovelChapterRequest) => Promise<RemoteResult<NovelGestureResult>>
   confirmPlan: (sessionId: SessionId, request: NovelChapterRequest) => Promise<RemoteResult<NovelGestureResult>>
+  editPlan: (sessionId: SessionId, request: NovelPlanEditRequest) => Promise<RemoteResult<NovelPlanEditResult>>
   card: (request: NovelCardRequest) => Promise<RemoteResult<NovelCardResult>>
   starForeshadow: (sessionId: SessionId, request: NovelStarRequest) => Promise<RemoteResult<NovelGestureResult>>
   setCurrentState: (sessionId: SessionId, request: NovelStateRequest) => Promise<RemoteResult<NovelGestureResult>>
@@ -75,6 +76,12 @@ export interface NovelRemote {
 export interface NovelFace {
   /** The mounted Remote, or undefined when the host half is not composed. */
   readonly remote: () => NovelRemote | undefined
+  /**
+   * Put a line into the session's conversation input without sending it
+   * (appended to a draft already there), and hand it the keyboard. False
+   * when the composition has no conversation input.
+   */
+  readonly draftToConversation?: (sessionId: SessionId, text: string) => boolean
 }
 
 /** Props of a strip/page entry: the owner share, the face, the copy. */

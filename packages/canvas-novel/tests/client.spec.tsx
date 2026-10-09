@@ -178,11 +178,17 @@ describe('ChapterPage', () => {
   }
 
   it('holds ✓ 审过 while this chapter still has pending items', async () => {
-    const remote = fakeRemote({ items: [item('p1')], phase: 'extracted' })
+    const remote = fakeRemote({ items: [item('p1', { kind: 'experience', payload: { characterId: 'c_a', entry: '推门' } })], phase: 'extracted' })
     renderPage(remote)
     expect(await screen.findByText('还有 1 条待审，处理完才能审过')).toBeTruthy()
     expect(screen.queryByRole('button', { name: zh['chapter.review'] })).toBeNull()
     expect(screen.getByText('他推开门。')).toBeTruthy()
+  })
+
+  it('a suspected mention outside the plan is optional: it never holds ✓ 审过', async () => {
+    renderPage(fakeRemote({ items: [item('p1')], phase: 'extracted' }))
+    expect(await screen.findByText(zh['chapter.gate.optional'].replace('{count}', '1'))).toBeTruthy()
+    expect(await screen.findByRole('button', { name: zh['chapter.review'] })).toBeTruthy()
   })
 
   it('holds it before the chapter is reconciled', async () => {
@@ -369,6 +375,28 @@ describe('PlanBlock on a written chapter re-planned', () => {
     const waiting = chapter(2, '光', { plan: PLAN })
     render(<PlanBlock chapter={waiting} phase="writing" names={{}} canConfirm busy={false} onConfirm={() => {}} t={t} />)
     expect(screen.getByRole('button', { name: zh['chapter.confirmPlan'] })).toBeTruthy()
+  })
+
+  it('edits the plan as its lines, and saving hands the text over', async () => {
+    const waiting = chapter(2, '光', { plan: PLAN })
+    const onSave = vi.fn(async () => null)
+    render(<PlanBlock chapter={waiting} phase="planning" names={{}} canConfirm busy={false} onConfirm={() => {}} planText={'梗概：原来的'} onSave={onSave} t={t} />)
+    fireEvent.click(screen.getByRole('button', { name: zh['plan.edit'] }))
+    const box = screen.getByRole('textbox', { name: zh['plan.edit'] }) as HTMLTextAreaElement
+    expect(box.value).toBe('梗概：原来的')
+    fireEvent.change(box, { target: { value: '梗概：改了' } })
+    fireEvent.click(screen.getByRole('button', { name: zh['plan.saveConfirm'] }))
+    expect(onSave).toHaveBeenCalledWith('梗概：改了')
+    await waitFor(() => { expect(screen.queryByRole('textbox')).toBeNull() })
+  })
+
+  it('keeps the edit box open with the reason when saving fails', async () => {
+    const waiting = chapter(2, '光', { plan: PLAN })
+    render(<PlanBlock chapter={waiting} phase="planning" names={{}} canConfirm busy={false} onConfirm={() => {}} planText={'梗概：x'} onSave={async () => '对不上'} t={t} />)
+    fireEvent.click(screen.getByRole('button', { name: zh['plan.edit'] }))
+    fireEvent.click(screen.getByRole('button', { name: zh['plan.saveConfirm'] }))
+    expect(await screen.findByText('对不上')).toBeTruthy()
+    expect(screen.getByRole('textbox')).toBeTruthy()
   })
 })
 

@@ -1213,6 +1213,15 @@ export interface PendingItem {
   readonly resolvedAt?: string
 }
 
+/**
+ * Whether a pending item may be left unhandled: a suspected mention (only
+ * mentions outside the confirmed plan pend). It never holds ✓ 审过, and 审过
+ * discards what is left of it — unhandled reads as not mentioned.
+ */
+export function isOptionalPending(item: Pick<PendingItem, 'kind'>): boolean {
+  return item.kind === 'mention'
+}
+
 /** `pending.json` as one document. */
 export interface PendingTable {
   readonly version: 1
@@ -1577,6 +1586,21 @@ export interface NovelChapterResult {
   readonly file?: string
   /** The chapter's 目标字数: its plan's, else the outline's per-chapter default. */
   readonly targetWords?: number
+  /** The plan as editable lines (cards by ref and name), what the page's edit box starts from. */
+  readonly planText?: string
+}
+
+/** The person's own edit of a chapter plan: the lines of the page's edit box. */
+export interface NovelPlanEditRequest extends NovelChapterRequest {
+  readonly text: string
+}
+
+/** The edit's receipt: which plan fields moved (`summary`, `beats`, …), or the handles that resolve to no card. */
+export interface NovelPlanEditResult {
+  readonly ok: boolean
+  readonly error?: NovelError
+  readonly changed?: readonly string[]
+  readonly unknown?: readonly string[]
 }
 
 /** A gesture's receipt on the wire. */

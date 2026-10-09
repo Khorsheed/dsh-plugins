@@ -21,7 +21,7 @@
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
-import type { ForeshadowOp } from '../types.ts'
+import { isOptionalPending, type ForeshadowOp } from '../types.ts'
 import type { NovelFace } from './contract.ts'
 import { chapterHeading } from './PendingList.tsx'
 import { useNovelRead } from './use-novel.ts'
@@ -57,7 +57,7 @@ export function WriteToolRow(props: WriteToolRowProps): ReactNode {
   if (row.state === 'running') sawRunning.current = true
   if (row.state === 'chapter') return <PlanCard {...props} chapter={row.chapter!} live={sawRunning.current} />
   if (row.state === 'outline') return <OutlineCard {...props} canvasId={row.canvasId!} live={sawRunning.current} />
-  return <Line state={row.state} text={row.text} t={props.t} />
+  return <Line state={row.state === 'extracted' ? 'line' : row.state} text={row.text} t={props.t} />
 }
 
 function Line({ state, text, t }: { readonly state: 'running' | 'failed' | 'line'; readonly text: string; readonly t: TranslateNS<'novel'> }): ReactNode {
@@ -193,6 +193,76 @@ export function OutlineCard({ canvasId, live: watched, remote, openPage, planPag
   )
 }
 
+/**
+ * A chapter the Turn reconciled: what the text carried of the plan (走向 x/y ·
+ * 伏笔 a/b), the new cards, and what is left for the person — the items that
+ * hold 审过, the optional suspected mentions — read live, with one door to
+ * the chapter page where they are handled and the chapter is closed.
+ */
+export function ExtractCard({ chapter, newCards, remote, openPage, chapterPage, t }: Omit<WriteToolRowProps, 'block' | 'phase'> & {
+  readonly chapter: WriteRowChapter
+  readonly newCards: number
+}): ReactNode {
+  const { canvasId, n } = chapter
+  const api = remote()
+  const [tick, setTick] = useState(0)
+  const read = useNovelRead(api, r => r.chapter({ canvasId, n }), `chapter:${canvasId}:${n}`, tick)
+  const pending = useNovelRead(api, r => r.pending({ canvasId }), `pending:${canvasId}`, tick)
+  const view = read.state === 'ready' && read.value.ok ? read.value : undefined
+  const live = view?.chapter
+  const items = pending.state === 'ready' ? pending.value.items.filter(item => item.chapter === n) : []
+  const blocking = items.filter(item => !isOptionalPending(item)).length
+  const optional = items.length - blocking
+  const reviewed = view?.phase === 'reviewed'
+  // Until it is closed, the person handles and reviews on the page: re-read on the same beat as a waiting plan.
+  const settled = view === undefined || reviewed
+  useEffect(() => {
+    if (settled) return
+    const timer = setInterval(() => { setTick(value => value + 1) }, AWAIT_POLL_MS)
+    return () => { clearInterval(timer) }
+  }, [settled])
+  const plan = live?.plan
+  const delivery = live?.delivery
+  const facts: string[] = [
+    ...(plan !== undefined && delivery !== undefined
+      ? [t('plan.delivery', {
+          beats: delivery.beats.filter(Boolean).length, beatsTotal: plan.beats.length,
+          ops: delivery.ops.filter(Boolean).length, opsTotal: plan.foreshadowOps.length,
+        })]
+      : []),
+    ...(newCards > 0 ? [t('card.newCards', { count: newCards })] : []),
+    ...(blocking > 0 ? [t('card.pending', { count: blocking })] : []),
+    ...(optional > 0 ? [t('card.optional', { count: optional })] : []),
+  ]
+  const title = live?.title ?? ''
+  const open = openPage()
+  const status = reviewed ? 'card.reviewed' : blocking > 0 ? 'card.toHandle' : 'card.reviewReady'
+  return (
+    <div className={css.card} data-tool="novel_extract" data-state={reviewed ? 'confirmed' : 'awaiting'}>
+      <div className={css.head}>
+        <span className={css.kicker}>{t('card.extracted', { n })}</span>
+        {view !== undefined && <span className={css.status} data-confirmed={reviewed || undefined}>{t(status)}</span>}
+      </div>
+      {title !== '' && <div className={css.title}>{title}</div>}
+      {facts.length > 0 && (
+        <div className={css.facts}>
+          {facts.map(fact => <span key={fact}>{fact}</span>)}
+        </div>
+      )}
+      {open !== undefined && (
+        <button
+          type="button"
+          className={css.go}
+          data-primary={!reviewed || undefined}
+          onClick={() => { open(canvasId, chapterPage, chapterHeading(t, n, title), String(n)) }}
+        >
+          {t(reviewed ? 'card.view' : blocking > 0 ? 'card.handle' : 'card.review')} →
+        </button>
+      )}
+    </div>
+  )
+}
+
 /** Foreshadow ops counted per kind, in the order the plan first uses them. */
 function opCounts(ops: readonly ForeshadowOp[]): Array<[ForeshadowOp['op'], number]> {
   const counts = new Map<ForeshadowOp['op'], number>()
@@ -204,7 +274,8 @@ function opCounts(ops: readonly ForeshadowOp[]): Array<[ForeshadowOp['op'], numb
 export type NovelTurnTailProps = WriteToolFace & NovelTurnOwner & { readonly t: TranslateNS<'novel'> }
 
 /**
- * The Turn-tail entry: the plans and outline proposals the Turn registered,
+ * The Turn-tail entry: the plans and outline proposals the Turn registered
+ * and the chapters it reconciled,
  * as their cards (live state, one door each), beneath the closing prose where
  * the folded tool rows cannot hide them. Never opens anything by itself — the
  * tool row already did, once, when it watched the call land.
@@ -216,7 +287,9 @@ export function NovelTurnTail(props: NovelTurnTailProps): ReactNode {
     <div className={css.tail}>
       {asks.map(ask => ask.row.state === 'outline'
         ? <OutlineCard key={ask.key} {...props} canvasId={ask.row.canvasId!} live={false} />
-        : <PlanCard key={ask.key} {...props} chapter={ask.row.chapter!} live={false} />)}
+        : ask.row.state === 'extracted'
+          ? <ExtractCard key={ask.key} {...props} chapter={ask.row.chapter!} newCards={ask.row.newCards ?? 0} />
+          : <PlanCard key={ask.key} {...props} chapter={ask.row.chapter!} live={false} />)}
     </div>
   )
 }

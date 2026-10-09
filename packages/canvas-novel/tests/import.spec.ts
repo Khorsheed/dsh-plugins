@@ -35,7 +35,9 @@ const PAYLOAD: ExtractPayload = {
   foreshadow_mentions: [
     { foreshadow_id: '#15', kind: 'hinted', confidence: 'high', evidence_in_text: '袖口的蓝叶在靠近门缝时亮得刺眼' },
     { foreshadow_id: '#99', kind: 'advanced', confidence: 'high', evidence_in_text: '袖口的蓝叶在靠近门缝时亮得刺眼' },
-    { foreshadow_id: '#12', kind: 'advanced', confidence: 'medium', evidence_in_text: '指尖碰到门缝的边缘' },
+    // #18 is outside chapter 5's plan: a medium mention of it pends. (A
+    // planned one records whatever the confidence — see gate 5.)
+    { foreshadow_id: '#18', kind: 'hinted', confidence: 'medium', evidence_in_text: '指尖碰到门缝的边缘' },
   ],
   new_foreshadows: [
     { question: '摇篮曲是谁唱的', evidence_in_text: '门后传来一个女人的声音，哼着不成调的摇篮曲' },
@@ -110,10 +112,10 @@ describe('novel_extract import — the five gates (proposal §5)', () => {
     // ✗ on a wrong one archives it.
     expect(await canvas.patchCard({ canvasId: DREAM.workId, cardId: medium!.id, status: 'archived' }, SESSION)).toMatchObject({ ok: true })
     expect(canvas.card(DREAM.workId, medium!.id)?.status).toBe('archived')
-    // A medium MENTION pends (榜上判不了的疑似提及进人审), and moves nothing yet.
+    // A medium MENTION outside the plan pends (榜上判不了的疑似提及进人审), and moves nothing yet.
     const pending = await store.listPending({ workId: DREAM.workId })
-    expect(pending.some(item => item.kind === 'mention' && item.payload.foreshadowId === CARD.doorGap)).toBe(true)
-    expect((await store.listMentions({ workId: DREAM.workId, foreshadowId: CARD.doorGap })).map(entry => entry.chapter)).toEqual([1, 3])
+    expect(pending.some(item => item.kind === 'mention' && item.payload.foreshadowId === CARD.formerKeeper)).toBe(true)
+    expect(await store.listMentions({ workId: DREAM.workId, foreshadowId: CARD.formerKeeper })).toEqual([])
   })
 
   it('gate 5: plan ops verify against recorded mentions; a missed plan pends as 计划落空, journal lines carry the planned flag', async () => {
@@ -133,6 +135,32 @@ describe('novel_extract import — the five gates (proposal §5)', () => {
     expect(canvas.card(DREAM.workId, CARD.leafGlow)?.fields).toMatchObject({ question: '蓝色叶子为什么发光', status: '推进中', plantedAt: 2 })
     const ledger = await store.ledger({ workId: DREAM.workId })
     expect(ledger.active.find(view => view.cardId === CARD.leafGlow)?.lastActiveChapter).toBe(5)
+  })
+
+  it('a planned op\'s mention records whatever the confidence: the confirmed plan already asked', async () => {
+    const { store, fs } = seededStore()
+    const report = await store.extractImport({ workId: DREAM.workId, n: 5, payload: {
+      ...PAYLOAD,
+      foreshadow_mentions: [{ foreshadow_id: '#12', kind: 'advanced', confidence: 'low', evidence_in_text: '指尖碰到门缝的边缘' }],
+    } }, SESSION)
+    expect(report.verified).toBe(1)
+    const pending = await store.listPending({ workId: DREAM.workId })
+    expect(pending.some(item => item.kind === 'mention')).toBe(false)
+    const mentions = fs.read(`${DREAM.stateRoot}/${DREAM.workId}/mentions.jsonl`).trim().split('\n').map(line => JSON.parse(line) as Record<string, unknown>)
+    expect(mentions.find(line => line['chapter'] === 5 && line['foreshadowId'] === CARD.doorGap)).toMatchObject({ kind: 'advanced', planned: true })
+  })
+
+  it('审过 leaves no suspected mention behind: unhandled reads as not mentioned', async () => {
+    const { store } = seededStore()
+    await store.extractImport({ workId: DREAM.workId, n: 5, payload: PAYLOAD }, SESSION)
+    const before = await store.listPending({ workId: DREAM.workId })
+    expect(before.some(item => item.kind === 'mention' && item.chapter === 5)).toBe(true)
+    expect((await store.reviewChapter({ workId: DREAM.workId, n: 5 }, SESSION)).ok).toBe(true)
+    const after = await store.listPending({ workId: DREAM.workId })
+    expect(after.some(item => item.kind === 'mention' && item.chapter === 5)).toBe(false)
+    // …the questions that hold the gate stay.
+    expect(after.some(item => item.kind === 'plan-missed' && item.chapter === 5)).toBe(true)
+    expect(await store.listMentions({ workId: DREAM.workId, foreshadowId: CARD.formerKeeper })).toEqual([])
   })
 
   it('信息差: a planned gap the text closed pends; adopting it moves the fact from 不知道 to 知道', async () => {
@@ -206,8 +234,8 @@ describe('novel_extract import — the five gates (proposal §5)', () => {
     const pending = await store.listPending({ workId: DREAM.workId })
     const mention = pending.find(item => item.kind === 'mention')!
     expect(await store.decidePending({ workId: DREAM.workId, id: mention.id, action: 'accept' }, SESSION)).toEqual({ ok: true })
-    expect((await store.listMentions({ workId: DREAM.workId, foreshadowId: CARD.doorGap })).map(entry => entry.chapter)).toEqual([1, 3, 5])
-    expect(canvas.card(DREAM.workId, CARD.doorGap)?.fields?.['status']).toBe('推进中')
+    expect((await store.listMentions({ workId: DREAM.workId, foreshadowId: CARD.formerKeeper })).map(entry => entry.chapter)).toEqual([5])
+    expect(canvas.card(DREAM.workId, CARD.formerKeeper)?.fields?.['status']).toBe('推进中')
     // …and the item settles instead of lingering.
     const after = await store.listPending({ workId: DREAM.workId })
     expect(after.some(item => item.id === mention.id)).toBe(false)

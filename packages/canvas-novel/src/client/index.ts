@@ -48,6 +48,7 @@ import { NOVEL_GENRE_ID, NOVEL_PLAN_FACE, NOVEL_STORY_FACE } from '../types.ts'
 import { CardSection } from './CardSection.tsx'
 import { ChapterBook } from './ChapterBook.tsx'
 import { ChapterPage } from './ChapterReader.tsx'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { CHAPTER_PAGE, PLAN_PAGE, STORY_LOG_PAGE, type NovelFace, type NovelRemote } from './contract.ts'
 import { en, NS, zh } from './locales.ts'
 import { ChaptersBadge, CardScopes, DeleteNote, FaceLabel } from './NovelFaces.tsx'
@@ -91,7 +92,31 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   }
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'canvas-novel: dictionaries')
 
-  const face: NovelFace = { remote: () => ctx.get('remote.novel') as NovelRemote | undefined }
+  /**
+   * The session's conversation input, reached structurally the way the
+   * canvas's quote gestures reach it (ui-conversation's per-session facade,
+   * never imported: a composition may omit it, and `sessions` is read
+   * lazily for the same reason).
+   */
+  const draftToConversation = (sessionId: SessionId, text: string): boolean => {
+    try {
+      const scope = (ctx.get.bind(ctx) as (name: string) => unknown)('sessions') as { scope(id: SessionId): { get(name: string): unknown } } | undefined
+      const session = scope?.scope(sessionId)
+      const input = (session?.get('conversation') as { input?: { for(actx: unknown): unknown } } | undefined)?.input?.for(session) as {
+        state?: { getSnapshot(): { draft: string } }
+        setDraft?: (value: string) => void
+        focus?: () => void
+      } | undefined
+      if (typeof input?.setDraft !== 'function' || typeof input.state?.getSnapshot !== 'function') return false
+      const draft = input.state.getSnapshot().draft.trimEnd()
+      input.setDraft(draft === '' ? text : `${draft}\n\n${text}`)
+      if (typeof input.focus === 'function') input.focus()
+      return true
+    } catch {
+      return false
+    }
+  }
+  const face: NovelFace = { remote: () => ctx.get('remote.novel') as NovelRemote | undefined, draftToConversation }
   // The seats are declared by @khorsheed/dsh-canvas, outside this type graph.
   const seats = ctx.slots as unknown as {
     inject: (key: string, callback: () => () => void) => () => void

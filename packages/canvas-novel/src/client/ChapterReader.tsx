@@ -4,6 +4,7 @@
  * step spelled out), the plan block, this chapter's pending items in place,
  * the text as a reading column, the person's 「✓ 审过本章」 under the text
  * (there only once the text is reconciled and its pending items are handled —
+ * a suspected mention outside the plan is optional and never holds it —
  * until then the progress block says what is missing), then a glimpse of the
  * next chapter and a pager that stays in reach.
  *
@@ -14,12 +15,16 @@
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
-import { NOVEL_GENRE_ID, type EffectiveChapterPhase, type NovelChapterResult } from '../types.ts'
+import { NOVEL_GENRE_ID, isOptionalPending, type EffectiveChapterPhase, type NovelChapterResult } from '../types.ts'
 import type { NovelPageOwnerProps, NovelSurfaceProps } from './contract.ts'
 import { PendingList } from './PendingList.tsx'
 import { PlanBlock } from './PlanBlock.tsx'
 import { errorKey, useNovelRead } from './use-novel.ts'
 import css from './novel.module.css'
+
+/** The plan fields an edit receipt may name (text-forms.ts's PLAN_FIELDS, host-side). */
+const PLAN_FIELD_KEYS = ['summary', 'words', 'beats', 'conflict', 'highlight', 'foreshadowOps', 'cast', 'pov', 'infoGaps', 'hook'] as const
+type PlanField = typeof PLAN_FIELD_KEYS[number]
 
 const LAMP = ['lamp.plan', 'lamp.write', 'lamp.extract', 'lamp.review'] as const
 
@@ -66,6 +71,8 @@ export function ChapterReader(props: NovelSurfaceProps & {
   if (api === undefined) return null
   const total = chapters.state === 'ready' ? chapters.value.chapters.length : 0
   const items = pending.state === 'ready' ? pending.value.items.filter(item => item.chapter === n) : []
+  // Suspected mentions outside the plan are optional: they never hold 审过.
+  const blocking = items.filter(item => !isOptionalPending(item)).length
 
   const gesture = async (call: 'reviewChapter' | 'confirmPlan'): Promise<void> => {
     if (sessionId === undefined) return
@@ -76,6 +83,34 @@ export function ChapterReader(props: NovelSurfaceProps & {
       if (!result.ok) setFailure(t('error.generic', { message: result.error.message }))
       else if (!result.value.ok) setFailure(t(errorKey(result.value.error)))
       navigate.refresh()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /**
+   * The person's own edit: saved and confirmed at once, then one line in the
+   * conversation input (never sent) tells the model the plan moved and which
+   * parts — the model reads the stored plan when it writes.
+   */
+  const savePlan = async (chapterN: number, text: string): Promise<string | null> => {
+    if (sessionId === undefined) return t('chapter.gate.readOnly')
+    setBusy(true)
+    try {
+      const result = await api.editPlan(sessionId, { canvasId, n: chapterN, text })
+      if (!result.ok) return t('error.generic', { message: result.error.message })
+      const value = result.value
+      if (!value.ok) {
+        return value.unknown !== undefined && value.unknown.length > 0
+          ? t('plan.unknown', { list: value.unknown.join('、') })
+          : t(errorKey(value.error))
+      }
+      const fields = (value.changed ?? []).filter((field): field is PlanField => (PLAN_FIELD_KEYS as readonly string[]).includes(field))
+      props.draftToConversation?.(sessionId, fields.length === 0
+        ? t('plan.draftSame', { n: chapterN })
+        : t('plan.draft', { n: chapterN, fields: fields.map(field => t(`plan.field.${field}`)).join('、') }))
+      navigate.refresh()
+      return null
     } finally {
       setBusy(false)
     }
@@ -100,7 +135,7 @@ export function ChapterReader(props: NovelSurfaceProps & {
             </div>
             <h2 className={css.chapTitle}>{bareTitle(n, chapter.title) || t('strip.chapter', { n })}</h2>
           </header>
-          <Progress n={n} phase={phase} pending={items.length} writable={sessionId !== undefined} t={t} />
+          <Progress n={n} phase={phase} pending={blocking} optional={items.length - blocking} writable={sessionId !== undefined} t={t} />
           <PlanBlock
             key={n}
             chapter={chapter}
@@ -110,6 +145,7 @@ export function ChapterReader(props: NovelSurfaceProps & {
             canConfirm={sessionId !== undefined && chapter.byUser !== true}
             busy={busy}
             onConfirm={() => { void gesture('confirmPlan') }}
+            {...(view.planText === undefined ? {} : { planText: view.planText, onSave: (text: string) => savePlan(chapter.n, text) })}
             t={t}
           />
           {items.length > 0 && (
@@ -124,7 +160,7 @@ export function ChapterReader(props: NovelSurfaceProps & {
             {failure !== null && <span className={css.warn}>{failure}</span>}
             {phase === 'reviewed' && <span className={css.reviewedMark}>✓ {t('chapter.reviewed')}</span>}
             {/* Only when it can be pressed: a greyed 审过 under the text read as a state the chapter was in. */}
-            {phase === 'extracted' && items.length === 0 && sessionId !== undefined && (
+            {phase === 'extracted' && blocking === 0 && sessionId !== undefined && (
               <button type="button" className={css.reviewButton} disabled={busy} onClick={() => { void gesture('reviewChapter') }}>
                 {t('chapter.review')}
               </button>
@@ -179,7 +215,7 @@ function NextChapter({ n, next, onGo, t }: {
 }
 
 /** The one next step toward ✓ 审过, or that the chapter is closed. */
-function nextStep(n: number, phase: EffectiveChapterPhase, pending: number, writable: boolean, t: TranslateNS<'novel'>): string {
+function nextStep(n: number, phase: EffectiveChapterPhase, pending: number, optional: number, writable: boolean, t: TranslateNS<'novel'>): string {
   if (phase === 'reviewed') return t('chapter.gate.reviewed')
   if (!writable) return t('chapter.gate.readOnly')
   if (phase === 'planning') return t('chapter.gate.planning')
@@ -187,6 +223,7 @@ function nextStep(n: number, phase: EffectiveChapterPhase, pending: number, writ
   if (phase === 'stale') return t('chapter.gate.stale', { n })
   if (phase === 'fileMissing') return t('chapter.gate.fileMissing')
   if (pending > 0) return t('chapter.gate.pending', { count: pending })
+  if (optional > 0) return t('chapter.gate.optional', { count: optional })
   return t('chapter.gate.ready')
 }
 
@@ -195,10 +232,13 @@ function nextStep(n: number, phase: EffectiveChapterPhase, pending: number, writ
  * and one line naming the state and the next step — the reader's only
  * statement of it, so the top and the end of the page never disagree.
  */
-function Progress({ n, phase, pending, writable, t }: {
+function Progress({ n, phase, pending, optional, writable, t }: {
   readonly n: number
   readonly phase: EffectiveChapterPhase
+  /** Items that hold 审过. */
   readonly pending: number
+  /** Suspected mentions that may be left (审过 reads them as not mentioned). */
+  readonly optional: number
   readonly writable: boolean
   readonly t: TranslateNS<'novel'>
 }): ReactNode {
@@ -216,7 +256,7 @@ function Progress({ n, phase, pending, writable, t }: {
       </ol>
       <p className={css.progressLine}>
         <strong>{t(`phase.${phase}`)}</strong>
-        <span>{nextStep(n, phase, pending, writable, t)}</span>
+        <span>{nextStep(n, phase, pending, optional, writable, t)}</span>
       </p>
     </section>
   )

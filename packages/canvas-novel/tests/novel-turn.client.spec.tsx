@@ -5,7 +5,7 @@
  * closing prose where the folded tool rows cannot hide them.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import type { NovelRemote, NovelSurfaceProps } from '../src/client/contract.ts'
 import { zh } from '../src/client/locales.ts'
 import { asksInTurn, novelTurnDefinition, NOVEL_TURN_KEY } from '../src/client/novel-turn.ts'
@@ -68,6 +68,36 @@ describe('novel turn asks', () => {
     expect(screen.getByText('光')).toBeTruthy()
     expect(screen.getByText('走向 4 拍')).toBeTruthy()
     expect(openPage).not.toHaveBeenCalled()
+  })
+
+  it('a reconciled chapter shows what the text carried and what is left, with one door to the page', async () => {
+    const data = fold([
+      call('p', 'novel_extract', 10),
+      result('p', '你是长篇小说的记忆对账员。输入是第3章正文', 11),
+      call('i', 'novel_extract', 12),
+      result('i', `第 3 章已对账（画布 ${CANVAS}）。\n计划命中 ✓×1 / 计划落空 ×1 / 新卡 ×2 / 待你确认 ×2`, 13),
+    ])
+    expect(data.value.asks.map(ask => ask.key)).toEqual([`extract:${CANVAS}:3`])
+    const plan = { summary: '', beats: [{ text: 'a' }, { text: 'b' }], foreshadowOps: [{ op: '推进', id: 'f1' }, { op: '暗示', id: 'f2' }], cast: [] }
+    const remote = {
+      chapter: vi.fn(async () => ({ ok: true, value: { ok: true, phase: 'extracted', pending: 2, names: {}, chapter: {
+        n: 3, seq: 3, title: '回声', file: '第3章.md', phase: 'extracted', sessionIds: [], createdAt: '', updatedAt: '',
+        plan, delivery: { beats: [true, true], ops: [true, false] },
+      } } })),
+      pending: vi.fn(async () => ({ ok: true, value: { items: [
+        { id: 'p1', kind: 'plan-missed', chapter: 3, reason: '计划落空', payload: {}, status: 'pending', createdAt: '' },
+        { id: 'p2', kind: 'mention', confidence: 'medium', chapter: 3, reason: '疑似提及', payload: {}, status: 'pending', createdAt: '' },
+      ] } })),
+    } as unknown as NovelRemote
+    const openPage = vi.fn()
+    render(<NovelTurnTail turn={{ data: { get: () => data.value }, end: { seq: 20 } }} remote={() => remote} openPage={() => openPage} chapterPage="novel:chapter" planPage="novel:plan" t={t} />)
+    expect(screen.getByText('第 3 章已对账')).toBeTruthy()
+    expect(await screen.findByText('走向 2/2 · 伏笔 1/2')).toBeTruthy()
+    expect(screen.getByText('新卡 2')).toBeTruthy()
+    expect(screen.getByText('待审 1')).toBeTruthy()
+    expect(screen.getByText('疑似提及 1（可不处理）')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: `${zh['card.handle']} →` }))
+    expect(openPage).toHaveBeenCalledWith(CANVAS, 'novel:chapter', expect.any(String), '3')
   })
 
   it('renders nothing for a Turn that asked nothing', () => {
