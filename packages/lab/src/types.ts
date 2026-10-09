@@ -476,9 +476,12 @@ export interface UnitProvider {
    * @param id - unit id assigned by the service.
    * @param spec - acquire specification.
    * @param fingerprint - resolved fingerprint and components (both ride the resource labels).
+   * @param scope - the acquiring instance's scope, stamped as a resource label
+   *   when set (a scoped service later adopts only units carrying its own
+   *   value); absent for an unscoped instance, which stamps nothing extra.
    * @returns the provider-side resource handle.
    */
-  acquire(id: string, spec: AcquireSpec, fingerprint: EnvironmentFingerprint): Promise<string>
+  acquire(id: string, spec: AcquireSpec, fingerprint: EnvironmentFingerprint, scope?: string): Promise<string>
   /**
    * Copy a host directory into the unit.
    * @param resource - provider resource handle.
