@@ -228,6 +228,20 @@ export interface ProjectRow {
   readonly updatedAt: string
 }
 
+/** One project as the switcher shows it. */
+export interface ProjectCard {
+  readonly id: string
+  readonly title: string
+  readonly root: string
+  readonly updatedAt: string
+  readonly pitch: string
+  readonly artStyle: string
+  readonly version: number | null
+  readonly elements: number
+  /** The last check's screenshot (webp, base64), when there is one. */
+  readonly thumb?: string
+}
+
 /** The panel's view of one project. */
 export interface ProjectView {
   readonly id: string

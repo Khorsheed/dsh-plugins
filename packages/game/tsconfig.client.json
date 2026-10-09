@@ -29,6 +29,7 @@
     "src/client/markdown.tsx",
     "src/client/PlayFrame.tsx",
     "src/client/PlayView.tsx",
+    "src/client/ProjectSwitcher.tsx",
     "src/client/preset-visibility.ts",
     "src/client/style-samples.ts",
     "src/client/StyleGallery.tsx",

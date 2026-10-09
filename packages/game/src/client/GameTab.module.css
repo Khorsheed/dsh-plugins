@@ -65,6 +65,46 @@
 .switch input:checked + .switchTrack span { transform: translateX(12px); }
 .switch input:focus-visible + .switchTrack { outline: 2px solid var(--g-accent); outline-offset: 2px; }
 
+/* project switcher */
+.titleSwitch {
+  display: inline-flex; align-items: center; gap: 4px; padding: 2px 4px 2px 0; border: 0; border-radius: 6px;
+  background: none; font: inherit; font-weight: 600; color: inherit; cursor: pointer; min-height: 28px;
+}
+.titleSwitch { flex: none; }
+/* The kit's title <strong> may shrink to nothing next to the meta chips; the project name should win. */
+.root strong:has(> .titleSwitch) { flex-shrink: 0; }
+.headMeta { min-width: 0; overflow: hidden; flex-wrap: nowrap; }
+.titleSwitch span:first-child { max-width: 12em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.titleSwitch:focus-visible { outline: 2px solid var(--g-accent); }
+.titleCaret { color: var(--dsw-alias-label-tertiary); font-size: var(--dsh-panel-text-meta, 12px); }
+.projectGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+.projectCard, .newCard {
+  display: flex; flex-direction: column; gap: 0; padding: 0; overflow: hidden; border-radius: 12px; border: 1px solid var(--g-line);
+  background: var(--g-card); font: inherit; color: inherit; text-align: left; cursor: pointer;
+}
+.projectCard[aria-current='true'] { border-color: var(--g-accent); box-shadow: 0 0 0 1px var(--g-accent); }
+.projectCard[data-loading='true'] { padding: 16px; cursor: default; }
+.projectCard:focus-visible, .newCard:focus-visible { outline: 2px solid var(--g-accent); outline-offset: 1px; }
+.projectThumb { position: relative; display: grid; place-items: center; aspect-ratio: 16 / 9; background: var(--g-screen); overflow: hidden; }
+.projectThumb img { width: 100%; height: 100%; object-fit: cover; image-rendering: pixelated; }
+.projectInitial { font-size: 32px; font-weight: 700; color: var(--g-screen-dim); }
+.projectHere {
+  position: absolute; top: 8px; left: 8px; padding: 1px 8px; border-radius: 10px; font-size: var(--dsh-panel-text-meta, 12px);
+  background: var(--g-accent); color: var(--dsw-alias-label-primary-inverted); font-weight: 600;
+}
+.projectBody { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px 12px; min-width: 0; }
+.projectTitle { font-size: var(--dsh-panel-text-title, 14px); }
+.projectChips { display: flex; gap: 4px; flex-wrap: wrap; }
+.projectPitch {
+  font-size: var(--dsh-panel-text-meta, 12px); color: var(--dsw-alias-label-secondary); line-height: 1.5;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.newCard {
+  align-items: center; justify-content: center; gap: 6px; padding: 18px 16px; min-height: 160px; text-align: center;
+  border-style: dashed; border-color: color-mix(in srgb, var(--g-accent) 45%, var(--g-line)); background: var(--g-soft);
+}
+.newPlus { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; background: var(--g-accent); color: var(--dsw-alias-label-primary-inverted); font-size: 18px; }
+
 /* home */
 .hero {
   display: flex; flex-direction: column; gap: 10px; padding: 16px; border-radius: 12px;

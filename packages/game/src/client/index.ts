@@ -89,6 +89,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
 
   const api: GameApi = {
     state: sid => remote.state(sid),
+    projectCards: () => remote.projectCards(),
     bind: (sid, projectId) => remote.bind(sid, { projectId }),
     bundle: (projectId, which) => remote.bundle({ projectId, which }),
     versionBundle: (projectId, version) => remote.versionBundle({ projectId, version }),

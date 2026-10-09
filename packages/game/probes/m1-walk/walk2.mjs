@@ -127,4 +127,24 @@ if (phase === 'f') {
   log('open fog', await clickHas('雾灵')); await wait(1500)
   await shot('w-narrow-element')
 }
+if (phase === 'g') {
+  await openTab('我想做个小游戏')
+  await shot('s-header')
+  log('title switch', await p.evaluate(() => { const el = [...document.querySelectorAll('button')].find(b => b.textContent.trim().startsWith('灯塔守夜人') && b.textContent.includes('▾')); el?.click(); return !!el })); await wait(2000)
+  await shot('s-switcher')
+  log('pick other', await p.evaluate(() => { const el = [...document.querySelectorAll('button')].find(b => (b.textContent || '').includes('雾港快递')); el?.click(); return !!el })); await wait(3000)
+  await shot('s-switched')
+  log('new', await p.evaluate(() => { const el = [...document.querySelectorAll('button')].find(b => b.textContent.trim().startsWith('雾港快递') && b.textContent.includes('▾')); el?.click(); return !!el })); await wait(1500)
+  log('new card', await p.evaluate(() => { const el = [...document.querySelectorAll('button')].find(b => (b.textContent || '').startsWith('＋新建项目')); el?.click(); return !!el })); await wait(1500)
+  await shot('s-new')
+  log('back to lighthouse', await p.evaluate(() => { const el = [...document.querySelectorAll('button')].find(b => (b.textContent || '').includes('灯塔守夜人') && (b.textContent || '').includes('v1')); el?.click(); return !!el })); await wait(1500)
+}
+if (phase === 'h') {
+  await openTab('我想做个小游戏')
+  log('title', await p.evaluate(() => { const el = document.querySelector('[class*=titleSwitch]'); el?.click(); return el?.textContent }))
+  await wait(2000)
+  log('pick lighthouse', await p.evaluate(() => { const el = [...document.querySelectorAll('button')].find(b => (b.textContent || '').includes('灯塔守夜人') && (b.textContent || '').includes('像素')); el?.click(); return !!el }))
+  await wait(2500)
+  log('now', await p.evaluate(() => document.querySelector('[class*=titleSwitch]')?.textContent))
+}
 await b.close()

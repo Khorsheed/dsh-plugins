@@ -9,7 +9,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { Context } from '@deepseek-ai/cordis'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { GameService } from './store.ts'
-import type { GameResult, PlayBundle, SessionGameState, VersionDiff } from './types.ts'
+import type { GameResult, PlayBundle, ProjectCard, SessionGameState, VersionDiff } from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -41,6 +41,12 @@ export class GameRemoteService extends TypertRemoteService<GameRemoteConfig> {
   @Remote('state')
   state(agent: Agent): Promise<SessionGameState> {
     return this.store.sessionState(agent.session.id)
+  }
+
+  /** Every project as a switcher card. */
+  @Remote('projectCards')
+  projectCards(): Promise<ProjectCard[]> {
+    return this.store.projectCards()
   }
 
   /** Bind the session to a project, or unbind with `projectId: null`. */

@@ -35,7 +35,7 @@ import {
 import {
   CHAPTERS, MANIFEST_FILE, STATE_DIR,
   type BundleFile, type ChapterView, type CheckFailure, type CheckRecord, type ElementLook, type GameManifest, type GameResult,
-  type LogEntry, type LookProposal, type PendingChange, type PlayBundle, type ProjectRow, type ProjectView,
+  type LogEntry, type LookProposal, type PendingChange, type PlayBundle, type ProjectCard, type ProjectRow, type ProjectView,
   type SessionGameState, type VersionDiff, type VersionRecord, type VersionRow,
 } from './types.ts'
 
@@ -280,6 +280,24 @@ export class GameService {
   async listProjects(): Promise<ProjectRow[]> {
     const { projects } = await this.readRegistry()
     return [...projects].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+  }
+
+  /** Every project as a switcher card (manifest summary, live version, last screenshot), most recent first. */
+  async projectCards(): Promise<ProjectCard[]> {
+    const cards: ProjectCard[] = []
+    for (const row of await this.listProjects()) {
+      const manifest = await this.manifestOf(row.root)
+      const current = await readJson<VersionRecord>(join(row.root, STATE_DIR, 'current.json'))
+      const elementFiles = await walk(join(row.root, 'elements'), p => p.endsWith('.json'))
+      const { elements } = validateElements(Object.fromEntries(elementFiles.map(f => [`elements/${f.path}`, f.data.toString('utf8')])), [])
+      const thumb = await readFile(join(row.root, STATE_DIR, 'last-check.webp')).catch(() => undefined)
+      cards.push({
+        id: row.id, title: manifest?.title ?? row.title, root: row.root, updatedAt: row.updatedAt,
+        pitch: manifest?.pitch ?? '', artStyle: manifest?.artStyle ?? '', version: current?.version ?? null, elements: elements.length,
+        ...(thumb === undefined || thumb.length > 400_000 ? {} : { thumb: thumb.toString('base64') }),
+      })
+    }
+    return cards
   }
 
   /** The project a session is bound to, if any. */

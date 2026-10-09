@@ -12,7 +12,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 // Type-only: pulls ui-conversation's SlotMap merge ('conversation.input.dock').
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from './locales.ts'
-import type { GameResult, PlayBundle, SessionGameState, VersionDiff } from '../types.ts'
+import type { GameResult, PlayBundle, ProjectCard, SessionGameState, VersionDiff } from '../types.ts'
 
 type R<T> = Promise<RemoteResult<T>>
 type Ok<T extends object = object> = GameResult<{ readonly ok: true } & T>
@@ -20,6 +20,7 @@ type Ok<T extends object = object> = GameResult<{ readonly ok: true } & T>
 /** Every call the panel makes, already bound to the Remote. */
 export interface GameApi {
   state: (sid: SessionId) => R<SessionGameState>
+  projectCards: () => R<ProjectCard[]>
   bind: (sid: SessionId, projectId: string | null) => R<Ok>
   bundle: (projectId: string, which: 'current' | 'candidate') => R<Ok<{ readonly bundle: PlayBundle }>>
   versionBundle: (projectId: string, version: number) => R<Ok<{ readonly bundle: PlayBundle }>>

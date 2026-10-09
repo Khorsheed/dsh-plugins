@@ -8,7 +8,7 @@
  */
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import {
-  ListRow, PanelHeader, PanelRoot, UnderlineTabs, type PanelAction,
+  PanelHeader, PanelRoot, UnderlineTabs, type PanelAction,
 } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
 import { artStyleLabel } from '../project.ts'
 import type { ProjectView, SessionGameState } from '../types.ts'
@@ -17,6 +17,7 @@ import type { GameTabProps, ViewProps } from './contract.ts'
 import { DesignView } from './DesignView.tsx'
 import { ElementsView } from './ElementsView.tsx'
 import { PlayView } from './PlayView.tsx'
+import { ProjectSwitcher } from './ProjectSwitcher.tsx'
 import { StyleGallery } from './StyleGallery.tsx'
 import { VersionsView } from './VersionsView.tsx'
 import css from './GameTab.module.css'
@@ -26,6 +27,7 @@ type View = 'play' | 'elements' | 'design' | 'versions'
 const RefreshIcon = <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.6-3.7M13 3v2.6h-2.6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" /></svg>
 const SwitchIcon = <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 5h9l-2-2M13 11H4l2 2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" /></svg>
 const PaletteIcon = <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 2.5a5.5 5.5 0 1 0 0 11c.8 0 1.2-.6 1-1.3-.3-.8.2-1.7 1.1-1.7h1.2a2.2 2.2 0 0 0 2.2-2.2C13.5 5 11 2.5 8 2.5Z" stroke="currentColor" strokeWidth="1.2" /><circle cx="5.5" cy="7" r=".9" fill="currentColor" /><circle cx="8" cy="5" r=".9" fill="currentColor" /><circle cx="10.6" cy="6.3" r=".9" fill="currentColor" /></svg>
+const PlusIcon = <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 3v10M3 8h10" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" /></svg>
 const ExportIcon = <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 2.5v7M5 6.5l3 3 3-3M3 11v2.5h10V11" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" /></svg>
 
 /** The game tab body. */
@@ -62,7 +64,17 @@ export function GameTab(props: GameTabProps): ReactNode {
   const viewProps: ViewProps = { t, sessionId, api, refresh, toast, insertDraft: text => insertDraft(sessionId, text) }
   const project = state?.bound ?? null
   const choose = (projectId: string | null): void => {
-    void api.bind(sessionId, projectId).then(() => { setPicking(false); refresh() })
+    if (projectId !== null && projectId === project?.id) { setPicking(false); return }
+    void api.bind(sessionId, projectId).then(() => {
+      setPicking(false)
+      setView('play')
+      setOpenElement(null)
+      if (projectId !== null) toast(t('toast.switched'))
+      refresh()
+    })
+  }
+  const startNew = (): void => {
+    if (insertDraft(sessionId, project === null ? t('draft.start') : t('draft.newProject'))) toast(t('toast.newDrafted'))
   }
   const foot = toastText !== null && <div className={css.toast} role="status">{toastText}</div>
 
@@ -70,9 +82,11 @@ export function GameTab(props: GameTabProps): ReactNode {
     return <PanelRoot className={css.root}><div className={css.emptyCard}>{error === null ? t('loading') : t('error', { error })}</div></PanelRoot>
   }
 
+  // A project's own state left over from before a switch is not this project's.
   if (project === null || picking) {
     return <PanelRoot className={css.root}>
       <PanelHeader title={project === null ? t('home.title') : t('pick.title')} moreLabel={t('more')}
+        meta={project !== null ? t('pick.current', { title: project.title }) : undefined}
         {...(picking ? { onBack: () => { setPicking(false) }, backLabel: t('common.back') } : {})}
         actions={[{ id: 'refresh', label: t('refresh'), icon: RefreshIcon, onSelect: refresh }]} />
       <div className={css.scroll}>
@@ -84,17 +98,17 @@ export function GameTab(props: GameTabProps): ReactNode {
             <li><strong>{t('home.step2')}</strong><span>{t('home.step2d')}</span></li>
             <li><strong>{t('home.step3')}</strong><span>{t('home.step3d')}</span></li>
           </ol>
-          <button type="button" className={css.primary} onClick={() => { if (insertDraft(sessionId, t('draft.start'))) toast(t('toast.drafted')) }}>{t('home.start')}</button>
+          <button type="button" className={css.primary} onClick={startNew}>{t('home.start')}</button>
         </section>}
         {project === null && <section className={css.block}>
           <h4 className={css.blockTitle}>{t('style.galleryTitle')}</h4>
           <p className={css.metaLine}>{t('style.galleryHint')}</p>
           <StyleGallery t={t} onPick={(_id, label) => { if (insertDraft(sessionId, t('draft.pickStyle', { label }))) toast(t('toast.drafted')) }} />
         </section>}
-        {state.projects.length > 0 && <section className={css.block}>
-          <h4 className={css.blockTitle}>{t('pick.existing')}</h4>
-          {state.projects.map(p => <ListRow key={p.id} title={p.title} meta={p.root} selected={p.id === project?.id} onSelect={() => { choose(p.id) }} />)}
-          {project !== null && <ListRow title={t('pick.unbind')} onSelect={() => { choose(null) }} />}
+        {(picking || state.projects.length > 0) && <section className={css.block}>
+          <h4 className={css.blockTitle}>{picking ? t('pick.all', { count: state.projects.length }) : t('pick.existing')}</h4>
+          <ProjectSwitcher {...viewProps} currentId={project?.id ?? null} rev={rev} onChoose={choose} onNew={startNew} />
+          {project !== null && <button type="button" className={css.link} onClick={() => { choose(null) }}>{t('pick.unbind')}</button>}
         </section>}
       </div>
       {foot}
@@ -142,13 +156,16 @@ function ProjectWorkbench(p: ViewProps & {
     { id: 'style', label: t('style.change'), icon: PaletteIcon, onSelect: () => { setStyling(!styling) }, pressed: styling },
     { id: 'export', label: t('versions.exportCurrent'), icon: ExportIcon, onSelect: exportCurrent, menuOnly: true },
     { id: 'switch', label: t('switch'), icon: SwitchIcon, onSelect: p.onPickProject, menuOnly: true },
+    { id: 'new', label: t('switcher.new'), icon: PlusIcon, onSelect: () => { if (insertDraft(t('draft.newProject'))) toast(t('toast.newDrafted')) }, menuOnly: true },
   ]
   const failing = project.lastCheck !== null && !project.lastCheck.ok
   const openProposals = project.proposals.filter(x => x.picked === undefined).length
 
   return <PanelRoot className={css.root}>
     <PanelHeader
-      title={project.title}
+      title={<button type="button" className={css.titleSwitch} onClick={p.onPickProject} title={t('switch')} aria-haspopup="dialog">
+        <span>{project.title}</span><span className={css.titleCaret} aria-hidden="true">▾</span>
+      </button>}
       meta={<span className={css.headMeta}>
         {style !== undefined && <span className={css.headChip}>{artStyleLabel(style)}</span>}
         <span className={css.headChip} data-tone={project.current === null ? 'muted' : 'ok'}>
