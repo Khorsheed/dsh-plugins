@@ -26,6 +26,9 @@
 #                       comparison): plan-mode, delegation/workflow, fs-search,
 #                       jobs, present, agent-instructions removed; shell, fs,
 #                       skills, compaction, ask-user, todo, web, canvas stay.
+#   preset-dsh-gamedev  游戏开发模式  new 2026-10-09: game developer + design
+#                       mentor persona, the writing diet's tool rows, and the
+#                       @khorsheed/dsh-game/agent row (tools + skills).
 #   preset-dsh-video    剪辑模式  2026-10-06 (video studio M1); standalone since
 #                       2026-10-12: an editing-partner persona + the editing flow's
 #                       own tool set (fs to locate recordings, skill loader,
@@ -780,6 +783,116 @@
           - id: canvas-novel-agent
             name: '@khorsheed/dsh-canvas-novel/agent'
 
+    # standing scope (same rules as above). 游戏开发模式 (2026-10-09, proposal
+    # 2026-10-09-gamedev-mode): a game developer who is also the user's design
+    # mentor — one agent, persona + the game skills, no separate designer agent.
+    # Tool diet follows dsh-writing (shell, fs, skills, compaction, ask-user,
+    # todo, web) plus the game-agent row; there is no test tool: the agent
+    # writes test scripts beside the code and the plugin runs them at the end
+    # of every turn.
+    - id: preset-dsh-gamedev
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: dsh-gamedev
+        name: '游戏开发模式'
+        description: 和 agent 一起做小游戏：对话里定玩法与细节，右栏「游戏」看分章节策划、试玩每轮通过检查的最新版本；含文件读写、Skills 与按会话授予的游戏工具。
+        plugins:
+          # ── identity ────────────────────────────────────────────────────────────────
+
+          # The persona carries the stance (developer + design mentor for a
+          # non-designer) and the turn contract; the mechanics live in the
+          # gamedev / game-design skills the game-agent row registers.
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              suffix: Your working directory is {{cwd}}.
+              prefix: |-
+                You are a game developer and game-design mentor powered by the {{model}} model. You build small 2D web games together with the user, who usually has never worked as a game designer. Answer in the user's language.
+
+                ## How you work with the user
+
+                - The conversation decides what the game is; the right-sidebar game tab shows the chaptered design doc and plays the latest version that passed the end-of-turn checks.
+                - Lead with concrete options. When something is open (the pitch, a mechanic, an element's look or numbers), give two or three specific choices with one-line reasons, ask at most two questions at a time, and let the user decide. Never invent the user's decisions.
+                - Get to something playable early: once the pitch, element types and art style are settled and the core loop is sketched, build the smallest version that can be played, then iterate from what the user feels while playing.
+                - Change one or two things per round, say what changed, and record decisions in the matching design chapter.
+
+                ## Turn contract
+
+                - Use game_open to pick or create the session's project (it enforces the light gate) and game_read to see its state. Write project files with the ordinary file tools.
+                - Write test scripts together with the code (tests/*.test.js, rules in the gamedev skill). Do not try to run or deploy the game yourself: when your turn ends, the plugin checks the project and, if a check fails, sends you the findings so you can fix them in the same turn.
+                - Load the game-design skill before shaping the game with the user, and the gamedev skill before writing game code.
+
+          # ── shell ───────────────────────────────────────────────────────────────────
+
+          - id: tool-bash
+            name: '@deepseek-ai/dsh-tool-bash'
+            disabled: !!js process.platform === 'win32'
+
+          - id: tool-pwsh
+            name: '@deepseek-ai/dsh-tool-pwsh'
+            disabled: !!js process.platform !== 'win32'
+
+          # ── filesystem ──────────────────────────────────────────────────────────────
+
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+
+          # ── skills ──────────────────────────────────────────────────────────────────
+
+          - id: skill-filesystem
+            name: '@deepseek-ai/dsh-skill-filesystem'
+
+          - id: tool-skill
+            name: '@deepseek-ai/dsh-tool-skill'
+
+          # ── compaction (same realm rules as dsh-writing) ───────────────────────────
+
+          - id: compaction
+            name: 'cordis:group'
+            group: true
+            isolate:
+              compaction: true
+              toolResultPruner: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+
+              - id: command-compact
+                name: '@deepseek-ai/dsh-command-compact'
+
+              - id: tool-result-pruner
+                name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+                config:
+                  thresholdChars: 8192
+                  headChars: 4096
+                  tailChars: 1024
+
+          # ── remaining model-facing rows ─────────────────────────────────────────────
+
+          - id: tool-ask-user
+            name: '@deepseek-ai/dsh-tool-ask-user'
+
+          - id: tool-todo
+            name: '@deepseek-ai/dsh-tool-todo'
+            config:
+              allowParallelInProgress: true
+
+          - id: tool-web
+            name: '@deepseek-ai/dsh-tool-web'
+            config:
+              fetch: true
+              searchTimeoutMs: 60000
+
+          # ── game ────────────────────────────────────────────────────────────────────
+
+          # game_open / game_read, the mode's guidance section and the gamedev /
+          # game-design skills, granted to this preset's sessions only; the
+          # profile-root row of the same entry ships disabled, and the two are
+          # never live at once. The service core (gameStore) and the end-of-turn
+          # checks come from the profile-root game row; without the package this
+          # row degrades to zero registrations.
+          - id: game-agent
+            name: '@khorsheed/dsh-game/agent'
     - id: preset-dsh-video
       name: '@deepseek-ai/dsh-agent-preset'
       config:

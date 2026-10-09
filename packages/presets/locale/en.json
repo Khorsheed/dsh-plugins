@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Agent Presets",
-    "description": "Declare the dev, dsh-eval, and dsh-writing agent presets."
+    "description": "Declare the dev, dsh-eval, dsh-writing, dsh-gamedev, and dsh-video agent presets."
   }
 }
