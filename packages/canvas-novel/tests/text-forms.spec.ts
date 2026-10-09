@@ -102,7 +102,7 @@ describe('text forms', () => {
     // 「第 N 章」 for the next N is a create, not a miss.
     const next = (await store.listChapters({ workId: DREAM.workId })).length + 1
     const answer = await write({ what: 'chapter', title: '入梦', chapter: next, content: PLAN.replace('#5', 'c_doorGap') })
-    expect(answer).toContain('走向 3 拍')
+    expect(answer).toContain('情节 3 段')
     // The plan text is a plan, never a manuscript body.
     const chapters = await store.listChapters({ workId: DREAM.workId })
     expect(chapters.at(-1)?.phase).toBe('planning')

@@ -116,6 +116,17 @@
   color: var(--dsw-alias-label-secondary);
 }
 
+.opening {
+  margin: 0;
+  padding-left: 10px;
+  border-left: 2px solid var(--dsw-alias-border-l1);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  color: var(--dsw-alias-label-secondary);
+}
+
 .facts {
   display: flex;
   flex-wrap: wrap;

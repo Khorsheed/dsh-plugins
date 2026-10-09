@@ -61,47 +61,66 @@ describe('novel turn asks', () => {
       turn={{ data: { get: () => data.value }, end: { seq: 20 } }}
       remote={() => remote}
       openPage={() => openPage}
+      openFace={() => undefined}
       chapterPage="novel:chapter"
       planPage="novel:plan"
+      recentScope="recent"
       t={t}
     />)
     expect(screen.getByText('光')).toBeTruthy()
-    expect(screen.getByText('走向 4 拍')).toBeTruthy()
+    expect(screen.getByText('情节 4 段')).toBeTruthy()
     expect(openPage).not.toHaveBeenCalled()
   })
 
-  it('a reconciled chapter shows what the text carried and what is left, with one door to the page', async () => {
+  it('a written text gets its own card: length, first lines, 读正文', async () => {
+    const data = fold([
+      call('a', 'novel_write', 10),
+      result('a', `已写入第 3 章《温老师》正文（画布 ${CANVAS} · 3120 字）。\n正文在右栏章节页能读。`, 11),
+    ])
+    expect(data.value.asks.map(ask => ask.key)).toEqual([`body:${CANVAS}:3`])
+    const remote = {
+      chapter: vi.fn(async () => ({ ok: true, value: { ok: true, phase: 'writing', pending: 0, names: {}, targetWords: 3000, body: '# 第3章\n闹钟响的时候，江眠先看手机。\n录像停在四点十一分。', chapter: {
+        n: 3, seq: 3, title: '温老师', file: '第3章.md', phase: 'planning', sessionIds: [], createdAt: '', updatedAt: '',
+      } } })),
+    } as unknown as NovelRemote
+    const openPage = vi.fn()
+    render(<NovelTurnTail turn={{ data: { get: () => data.value }, end: { seq: 20 } }} remote={() => remote} openPage={() => openPage} openFace={() => undefined} chapterPage="novel:chapter" planPage="novel:plan" recentScope="recent" t={t} />)
+    expect(screen.getByText('第 3 章 · 正文')).toBeTruthy()
+    expect(await screen.findByText('闹钟响的时候，江眠先看手机。录像停在四点十一分。')).toBeTruthy()
+    expect(screen.getByText(zh['card.bodyWritten'])).toBeTruthy()
+    expect(screen.getByText('目标 3,000 字')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: `${zh['card.read']} →` }))
+    expect(openPage).toHaveBeenCalledWith(CANVAS, 'novel:chapter', expect.any(String), '3')
+  })
+
+  it('a reconciled chapter says what landed and opens 设定 · 最近更新', async () => {
     const data = fold([
       call('p', 'novel_extract', 10),
       result('p', '你是长篇小说的记忆对账员。输入是第3章正文', 11),
       call('i', 'novel_extract', 12),
-      result('i', `第 3 章已对账（画布 ${CANVAS}）。\n计划命中 ✓×1 / 计划落空 ×1 / 新卡 ×2 / 待你确认 ×2`, 13),
+      result('i', `第 3 章已对账（画布 ${CANVAS}）。\n计划命中 ✓×1 / 计划落空 ×1 / 新卡 ×2 / 改了已有卡 ×1`, 13),
     ])
     expect(data.value.asks.map(ask => ask.key)).toEqual([`extract:${CANVAS}:3`])
     const plan = { summary: '', beats: [{ text: 'a' }, { text: 'b' }], foreshadowOps: [{ op: '推进', id: 'f1' }, { op: '暗示', id: 'f2' }], cast: [] }
     const remote = {
-      chapter: vi.fn(async () => ({ ok: true, value: { ok: true, phase: 'extracted', pending: 2, names: {}, chapter: {
+      chapter: vi.fn(async () => ({ ok: true, value: { ok: true, phase: 'extracted', pending: 0, names: {}, chapter: {
         n: 3, seq: 3, title: '回声', file: '第3章.md', phase: 'extracted', sessionIds: [], createdAt: '', updatedAt: '',
         plan, delivery: { beats: [true, true], ops: [true, false] },
       } } })),
-      pending: vi.fn(async () => ({ ok: true, value: { items: [
-        { id: 'p1', kind: 'plan-missed', chapter: 3, reason: '计划落空', payload: {}, status: 'pending', createdAt: '' },
-        { id: 'p2', kind: 'mention', confidence: 'medium', chapter: 3, reason: '疑似提及', payload: {}, status: 'pending', createdAt: '' },
-      ] } })),
     } as unknown as NovelRemote
-    const openPage = vi.fn()
-    render(<NovelTurnTail turn={{ data: { get: () => data.value }, end: { seq: 20 } }} remote={() => remote} openPage={() => openPage} chapterPage="novel:chapter" planPage="novel:plan" t={t} />)
+    const openFace = vi.fn()
+    render(<NovelTurnTail turn={{ data: { get: () => data.value }, end: { seq: 20 } }} remote={() => remote} openPage={() => vi.fn()} openFace={() => openFace} chapterPage="novel:chapter" planPage="novel:plan" recentScope="recent" t={t} />)
     expect(screen.getByText('第 3 章已对账')).toBeTruthy()
-    expect(await screen.findByText('走向 2/2 · 伏笔 1/2')).toBeTruthy()
-    expect(screen.getByText('新卡 2')).toBeTruthy()
-    expect(screen.getByText('待审 1')).toBeTruthy()
-    expect(screen.getByText('疑似提及 1（可不处理）')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: `${zh['card.handle']} →` }))
-    expect(openPage).toHaveBeenCalledWith(CANVAS, 'novel:chapter', expect.any(String), '3')
+    expect(screen.getByText(zh['card.written'])).toBeTruthy()
+    expect(await screen.findByText('情节 2/2 · 伏笔 1/2')).toBeTruthy()
+    expect(screen.getByText('新建 2')).toBeTruthy()
+    expect(screen.getByText('改了已有卡 1')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: `${zh['card.recent']} →` }))
+    expect(openFace).toHaveBeenCalledWith(CANVAS, 'board', 'recent')
   })
 
   it('renders nothing for a Turn that asked nothing', () => {
-    const { container } = render(<NovelTurnTail turn={{ data: { get: () => undefined } }} remote={() => undefined} openPage={() => undefined} chapterPage="novel:chapter" planPage="novel:plan" t={t} />)
+    const { container } = render(<NovelTurnTail turn={{ data: { get: () => undefined } }} remote={() => undefined} openPage={() => undefined} openFace={() => undefined} chapterPage="novel:chapter" planPage="novel:plan" recentScope="recent" t={t} />)
     expect(container.innerHTML).toBe('')
   })
 })

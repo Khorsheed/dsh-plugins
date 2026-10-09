@@ -45,6 +45,7 @@ import { useDismiss } from '../use-dismiss.ts'
 import { IconSlidersOutline16, IconSparkFill16 } from '../icons-local.tsx'
 import { MoreMenu } from '../more-menu.tsx'
 import { cardFaceOf, useGenreSeats } from '../genre-seats.tsx'
+import type { CanvasCardNote } from '../slots.ts'
 import css from './board.module.css'
 
 /** The mutations the board can ask for (the page wires them to the Remote). */
@@ -111,6 +112,8 @@ export interface BoardViewProps {
   readonly onMarkAllSeen?: (() => void) | undefined
   /** The pressed genre scope's cards (what the grid and the counts narrow to); the scope control is the tab's. */
   readonly scopeIds?: ReadonlySet<string> | undefined
+  /** The pressed scope's line under each card it names (the novel's 最近更新). */
+  readonly scopeNotes?: Readonly<Record<string, CanvasCardNote>> | undefined
 }
 
 /** One comment thread under a card (badge toggle + list + the user's form). */
@@ -243,8 +246,10 @@ function CardSummary({ t, card, definition, nameOf }: {
 }
 
 /** One board card: kept, ghost (proposed), or archived-in-the-well. */
-function CardItem({ t, board, card, definition, nameOf, kindLabel, kindColor, readonly, selected, archivedWell, talkAvailable, onToggleSelect, onOpenDetail, onFollowUp, actions }: {
+function CardItem({ t, board, card, definition, nameOf, kindLabel, kindColor, readonly, selected, archivedWell, talkAvailable, onToggleSelect, onOpenDetail, onFollowUp, actions, note }: {
   readonly t: TranslateNS<'canvas'>
+  /** The pressed scope's line for this card, under its face. */
+  readonly note?: CanvasCardNote | undefined
   /** The card's canvas (a genre may draw the face of its role categories). */
   readonly board: CanvasBoard
   readonly card: BoardCard
@@ -312,6 +317,13 @@ function CardItem({ t, board, card, definition, nameOf, kindLabel, kindColor, re
       </span>
 
       {cardFaceOf(seats, board, card, <CardSummary t={t} card={card} definition={definition} nameOf={nameOf} />)}
+
+      {note !== undefined && (
+        <div className={css.scopeNote}>
+          <b>{note.label}</b>
+          {note.text !== undefined && <span>{note.text}</span>}
+        </div>
+      )}
 
       {card.source !== undefined && (
         <div className={css.cardSrc}>
@@ -456,7 +468,7 @@ function UnseenPip({ t, count }: { readonly t: TranslateNS<'canvas'>; readonly c
 export function BoardView({
   t, readonly, board, filter, onFilter, selection, onToggleSelect, onClearSelection, onOpenDetail,
   talkAvailable, onTalk, onWrite, onFollowUp, actions, showArchived, onToggleArchived, newCard,
-  front, onMarkAllSeen, scopeIds,
+  front, onMarkAllSeen, scopeIds, scopeNotes,
 }: BoardViewProps): ReactNode {
   /** The batch bar's 「改分类」 row is open (it replaces the action row). */
   const [refile, setRefile] = useState(false)
@@ -668,6 +680,7 @@ export function BoardView({
                 onOpenDetail={() => { onOpenDetail(card.id) }}
                 onFollowUp={commentText => { onFollowUp(card.id, commentText) }}
                 actions={actions}
+                note={scopeNotes?.[card.id]}
               />
             ))}
             {newCard !== undefined && chips.length > 0 && (

@@ -39,7 +39,7 @@ function tagOrigin<T extends object>(definition: T): T {
 /** What the tools answer when the session is bound to no novel canvas (guidance, never a throw). */
 const NO_WORK_MESSAGE = '本会话还没有绑定「长篇小说」画布：先 novel_bind 按对话说的作品绑定（不带参数列出作品），或请用户在会话头的「绑定作品」里选。'
 
-/** The extract gate's refusal, phase-aware (对账只发生在写作后、审过收章前). */
+/** The extract gate's refusal, phase-aware (对账只发生在写作后). */
 function extractGateMessage(phase: string | undefined): string {
   if (phase === 'planning') return '这章还没有正文——没有什么可对账的。先写完，再对账。'
   if (phase === 'extracted' || phase === 'reviewed') return '这章对过账，正文之后也没改过——记忆和正文一致，不用再对。正文改了会自动变成「待对账」。'
@@ -57,6 +57,7 @@ function dropReason(drop: ImportDrop): string {
     case 'card-refused': return '画布拒绝了这张卡'
     case 'duplicate': return '画布上已有这张卡'
     case 'stage-mismatch': return '这对关系现在的阶段走不了这一步（没到可升、不在裂痕里、或没经过裂痕就转对手）'
+    case 'apply-failed': return '写进卡片时失败了（卡可能已被改动或归档）'
     default: return '角色不在花名册'
   }
 }
@@ -297,6 +298,14 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
         const attached = outcome.attachedWorkspace === undefined
           ? ''
           : `画布原本没挂工作区，已挂上会话所在的 ${outcome.attachedWorkspace}（用户可在画布 ⋯ 的「工作区」里改）。\n`
+        // A body landed (written, pasted, or the person's own file registered):
+        // its own answer, so the conversation shows a 正文 card, not the plan again.
+        const body = args.content !== undefined && args.content.trim() !== '' ? args.content : undefined
+        if (body !== undefined || args.byUser === true) {
+          const count = body === undefined ? chapter.wordCount : body.replace(/\s+/g, '').length
+          return `${attached}已写入第 ${chapter.n} 章《${chapter.title}》正文（画布 ${workId}${count === undefined ? '' : ` · ${count} 字`}）。`
+            + '\n正文在右栏章节页能读。回复里汇报三行（字数 / 动用了哪几条伏笔操作 / 有没有偏离计划），然后接着对账这一章，不用等用户点头。'
+        }
         if (plan === undefined) return `${attached}已建第 ${chapter.n} 章《${chapter.title}》（画布 ${workId} · 规划中 · ${chapter.file}）。`
         const [outline, entries, chapters] = await Promise.all([
           store.readOutline(workId), store.readEntries(workId), store.listChapters({ workId }),
@@ -305,7 +314,7 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
         const position = volumePosition(outline.volumes, chapters.map(row => row.chapter), chapter)
         const overshoots = planOvershoots(plan, words, entries?.foreshadows ?? [], position?.index, outline.volumes.length)
         return `${attached}已登记第 ${chapter.n} 章《${chapter.title}》（画布 ${workId}${position === undefined ? '' : ` · 卷${volumeNumeral(position.index)}`}）plan：`
-          + `${words === undefined ? '' : `目标 ${words} 字 / `}走向 ${plan.beats.length} 拍 / 伏笔 ${plan.foreshadowOps.length} 条 / 出场 ${plan.cast.length} 人。`
+          + `${words === undefined ? '' : `目标 ${words} 字 / `}情节 ${plan.beats.length} 段 / 伏笔 ${plan.foreshadowOps.length} 条 / 出场 ${plan.cast.length} 人。`
           + (overshoots.length === 0 ? '' : `\n提醒（只提醒，不拦）：${overshoots.join('；')}。在回复里跟用户说一句，按他的意思改或保留。`)
           + '\n完整计划已在右栏打开的章节页上。回复只用两三句说这章怎么走、最想让用户拍板的是什么，不要再贴一遍计划表。'
           + `用户在对话里同意后，先 novel_write(what=confirm, chapter=${chapter.n}) 再开写；他也可能直接在章节页点了确认。`
@@ -403,13 +412,17 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
         // The first line names the chapter and the canvas: the conversation's
         // 已对账 card reads them off the answer (client/write-row.ts).
         `第 ${args.chapter} 章已对账（画布 ${resolved.workId}）。`,
-        `计划命中 ✓×${report.verified} / 计划落空 ×${report.missed}${report.beats.missed === 0 ? '' : ` / 走向没写到 ×${report.beats.missed}（只提醒，不进待审）`} / 新卡 ×${report.newCards.length}${report.linked === 0 ? '' : ` / 关联已有设定 ×${report.linked}`} / 待你确认 ×${report.pending}${report.dropped.length === 0 ? '' : ` / 丢弃 ×${report.dropped.length}`}`,
+        `计划命中 ✓×${report.verified} / 计划落空 ×${report.missed}${report.beats.missed === 0 ? '' : ` / 情节没写到 ×${report.beats.missed}`} / 新卡 ×${report.newCards.length}${report.linked === 0 ? '' : ` / 用到已有设定 ×${report.linked}`} / 改了已有卡 ×${report.applied.length}${report.dropped.length === 0 ? '' : ` / 丢弃 ×${report.dropped.length}`}`,
+        '全部已写进画布，不用用户审核；用户在「设定 · 最近更新」里能看到这章新建和改过的卡，觉得不对会直接改卡或回复你。',
       ]
       if (report.newCards.length > 0) {
-        lines.push('画布上的新卡（已进 brief，画布上带 ✦ 新卡标记；不对的让用户改或归档，要补内容用 canvas_write(op=card, cardId=编号) 改这张，不要另起）：', ...report.newCards.map(card => `- [${card.ref ?? card.cardId}] ${ROLE_NAMES[card.role]}「${card.text}」`))
+        lines.push('新卡（不对的让用户改或归档；要补内容用 canvas_write(op=card, cardId=编号) 改这张，不要另起）：', ...report.newCards.map(card => `- [${card.ref ?? card.cardId}] ${ROLE_NAMES[card.role]}「${card.text}」`))
       }
-      if (report.pendingItems.length > 0) {
-        lines.push('待确认清单：', ...report.pendingItems.map(item => `- [${item.id}] ${item.reason}`))
+      if (report.applied.length > 0) {
+        lines.push('改了已有的卡（回复里逐条告诉用户，尤其「补进设定」——正文和原设定说法不一样，用户可能想改正文或改卡）：', ...report.applied.map(item => `- ${item.line}`))
+      }
+      if (report.planMisses.length > 0) {
+        lines.push(`计划里没写到（只提醒，回复里提一句）：${report.planMisses.join('、')}`)
       }
       if (report.dropped.length > 0) {
         lines.push('丢弃（防编造闸）：', ...report.dropped.map(drop => `- ${drop.kind}「${drop.ref}」：${dropReason(drop)}`))

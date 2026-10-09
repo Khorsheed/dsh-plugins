@@ -29,7 +29,7 @@ export const ROLE_NAMES: Readonly<Record<EntryRole, string>> = { character: '人
 
 /** The chapter phase's display name. */
 export const PHASE_NAMES: Readonly<Record<string, string>> = {
-  planning: '规划中', writing: '写作中', stale: '待对账（正文改过）', extracted: '已抽取', reviewed: '已审过', fileMissing: '文件丢失',
+  planning: '规划中', writing: '写作中', stale: '待对账（正文改过）', extracted: '已对账', reviewed: '已对账', fileMissing: '文件丢失',
 }
 
 /** What op=manuscript answers on a novel canvas: the chapters are its 成稿. */

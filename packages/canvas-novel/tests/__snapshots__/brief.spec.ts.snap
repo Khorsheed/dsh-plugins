@@ -8,7 +8,7 @@ exports[`the three brief variants on the《梦境监护者》seed (CP1) > render
    new_foreshadows 只收读者会一直惦记、后文必须回收的问题（一章至多 2 条），一闪而过的好奇不算；
    本章新登场的角色写进 new_characters，他们的经历和现状照样写，character_id 填名字；
    世界设定给 name（设定的名字）和具体内容，同一个设定只写一条；
-3. confidence 只用在伏笔提及、角色经历与现状上：拿不准的给 medium/low；
+3. confidence 只用在伏笔提及、角色经历与现状上：有原文依据但拿不准的给 medium（照样记下），基本是猜的给 low（不记）；
    伏笔提及的 kind：hinted（暗示）= 读者能察觉、但剧情没动；advanced（推进）= 出现了新信息或新行动；
 4. 本章计划的走向逐条核对：正文写到了的那一拍写进 beats_delivered（带 evidence），没写到的不报；
    信息差同样逐条核对：那个角色在正文里确实得知了那件事，才写进 info_gaps_closed；
