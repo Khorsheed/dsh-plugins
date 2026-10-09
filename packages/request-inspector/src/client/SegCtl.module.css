@@ -1,0 +1,55 @@
+/* The segmented switch (the reference design's segCtl): a grey pill track,
+   the selected segment a raised card. */
+
+.root,
+.mini {
+  display: flex;
+  background: var(--dsw-alias-bg-layer-3);
+  border-radius: 8px;
+  padding: 2px;
+}
+
+.root button,
+.mini button {
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: var(--dsh-panel-text-meta, 12px);
+  color: var(--dsw-alias-label-secondary);
+  padding: 5px 11px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.mini button {
+  padding: 4px 12px;
+}
+
+.root button.on,
+.mini button.on {
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font-weight: 600;
+}
+
+.root button.dim,
+.mini button.dim {
+  color: var(--dsw-alias-label-tertiary);
+  cursor: default;
+}
+
+.root button:disabled,
+.mini button:disabled {
+  cursor: not-allowed;
+}
+
+.tag {
+  font-size: var(--dsh-panel-text-meta, 12px);
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-tertiary);
+  border-radius: 4px;
+  padding: 1px 4px;
+}

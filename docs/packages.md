@@ -4,10 +4,10 @@
 
 ## 概览
 
-- 包总数:**41**
-- 自挂载 bundle(`dsh.bundle.patch`):**37**
+- 包总数:**42**
+- 自挂载 bundle(`dsh.bundle.patch`):**38**
 - 组合组件(不自挂载,`dsh.composition.component`):**4** — `preset-composed-row` 1、`source-plane-library` 2、`sub-profile-patch` 1
-- 带浏览器半边(`dsh.client`):**30**
+- 带浏览器半边(`dsh.client`):**31**
 - 整合 profile(默认安装单元):**3** — `basic`、`dev`、`web-eval`
 
 **安装单元是 profile,不是单包。** 单包安装是高级路径:自挂载包 `dsh plugin add <pkg>` 即可,
@@ -47,6 +47,7 @@
 | `@khorsheed/dsh-mobile` | `packages/mobile` | 0.1.3 | bundle | — | web | 0.1.5-rc.1 | basic |
 | `@khorsheed/dsh-presets` | `packages/presets` | 0.3.0 | bundle | — | — | 0.1.7-rc.1 | — |
 | `@khorsheed/dsh-quote` | `packages/quote` | 0.1.2 | bundle | — | web | 0.1.5-rc.1 | basic |
+| `@khorsheed/dsh-request-inspector` | `packages/request-inspector` | 0.1.0 | bundle | — | web | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-room` | `packages/room` | 0.2.1 | bundle | — | web | 0.1.5-rc.1 | dev |
 | `@khorsheed/dsh-client-session-title-edit` | `packages/session-title-edit` | 0.2.5 | bundle | — | web | 0.1.2-rc.1 | basic, web-eval |
 | `@khorsheed/dsh-sidechat` | `packages/sidechat` | 0.2.3 | bundle | — | web | 0.1.5-rc.1 | — |
