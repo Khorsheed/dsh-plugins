@@ -27,6 +27,7 @@ import type {
   AgentScopeOverview,
   BackfillInfo,
   CapturedRequest,
+  CapturedResponse,
   ListTurnsResult,
   RequestConfig,
   RequestListItem,
@@ -71,6 +72,12 @@ export interface BlockSpan {
   callId?: string
   toolName?: string
   args?: string
+  /**
+   * text/reasoning content: delta-accumulated while streaming, overwritten by
+   * the authoritative assembled block at block-end. This is what makes a
+   * cancelled mid-block response partially visible.
+   */
+  text?: string
 }
 
 /** One tool execution interval attributed to the request that issued the call. */
@@ -97,6 +104,10 @@ export interface StoredRequest {
   responseSummary: ResponseSummary
   segments: CapturedRequest['segments']
   totalChars: number
+  /** The response's own char weight (counted in the store budget, not in 请求体 totalChars). */
+  responseChars?: number
+  /** The request's own response, set at settle (see CapturedRequest.response). */
+  response?: CapturedResponse
   firstChunkAt?: number
   settledAt?: number
   finishKind?: string
@@ -428,6 +439,7 @@ export class InspectorStore {
     found.scope.requests.push(request)
     found.scope.previous = built.fingerprint
     this.totalChars += request.totalChars
+    this.attachResponse(request, built.response)
     this.enforceCaps()
     return request
   }
@@ -445,7 +457,9 @@ export class InspectorStore {
     type: string
     index?: number
     blockType?: string
-    block?: { type: string; id?: string; name?: string; arguments?: string }
+    text?: string
+    argumentsDelta?: string
+    block?: { type: string; id?: string; name?: string; arguments?: string; text?: string }
     usage?: RequestUsage
     reason?: { kind: string; failure?: { message: string } }
   }, at: number): void {
@@ -460,10 +474,26 @@ export class InspectorStore {
         })
         return
       }
+      case 'text-delta':
+      case 'reasoning-delta': {
+        // Delta-accumulate so a cancelled mid-block response stays partially visible.
+        const span = request.blocks.find(block => block.index === chunk.index && block.end === undefined)
+        if (span === undefined || chunk.text === undefined) return
+        span.text = (span.text ?? '') + chunk.text
+        return
+      }
+      case 'tool-call-delta': {
+        const span = request.blocks.find(block => block.index === chunk.index && block.end === undefined)
+        if (span === undefined || chunk.argumentsDelta === undefined) return
+        span.args = (span.args ?? '') + chunk.argumentsDelta
+        return
+      }
       case 'block-end': {
         const span = request.blocks.find(block => block.index === chunk.index && block.end === undefined)
         if (span === undefined) return
         span.end = at
+        // The assembled block is authoritative over the accumulated deltas.
+        if (chunk.block?.text !== undefined) span.text = chunk.block.text
         if (chunk.block?.type === 'tool-call') {
           if (chunk.block.name !== undefined) span.toolName = chunk.block.name
           if (chunk.block.id !== undefined) {
@@ -505,10 +535,22 @@ export class InspectorStore {
       request.status = 'ok'
     }
     request.responseSummary = summarizeResponse(request)
+    this.attachResponse(request, responseFromSpans(request.blocks))
     const session = this.sessions.get(request.sessionId)
     if (session !== undefined && request.purpose === undefined) {
       session.lastSettledMain = request
     }
+  }
+
+  /** Set the request's response and count its chars into the store budget. */
+  private attachResponse(request: StoredRequest, response: CapturedResponse | undefined): void {
+    if (response === undefined) return
+    request.response = response
+    const chars = (response.reasoning?.length ?? 0)
+      + (response.text?.length ?? 0)
+      + response.toolCalls.reduce((n, call) => n + call.name.length + call.arguments.length, 0)
+    request.responseChars = chars
+    this.totalChars += chars
   }
 
   /** turn/start on a root session (child sessions route their events to the parent instead). */
@@ -821,6 +863,7 @@ export class InspectorStore {
       main.requests.push(request)
       this.totalChars += request.totalChars
       session.backfilledRequests += 1
+      this.attachResponse(request, built.response)
     }
     for (const delegation of logTurn.delegations) {
       const scopeId = delegation.childId ?? `call:${delegation.callId}`
@@ -964,6 +1007,7 @@ export class InspectorStore {
       ...request.usage === undefined ? {} : { usage: request.usage },
       timing: requestTiming(request),
       responseSummary: request.responseSummary,
+      ...request.response === undefined ? {} : { response: request.response },
       segments: request.segments,
     }
   }
@@ -1051,7 +1095,7 @@ export class InspectorStore {
             this.callNames.delete(block.callId)
           }
         }
-        this.totalChars -= request.totalChars
+        this.totalChars -= request.totalChars + (request.responseChars ?? 0)
       }
       // The per-session backfill cap tracks reconstructed main-scope rows.
       if (!turn.liveContent && scope.kind === 'main') session.backfilledRequests -= scope.requests.length
@@ -1173,6 +1217,26 @@ function requestLanes(request: StoredRequest): TimingLane[] {
   }
   if (request.settledAt > cursor) push('other', cursor, request.settledAt)
   return lanes
+}
+
+/**
+ * Assemble a request's own response from its recorded block spans: the
+ * authoritative block-end content, falling back to delta-accumulated text for
+ * blocks a cancelled stream never closed. `undefined` when nothing was
+ * produced (a failure before any block — the `error` field covers that).
+ */
+export function responseFromSpans(blocks: readonly BlockSpan[]): CapturedResponse | undefined {
+  const reasoning = blocks.filter(block => block.kind === 'reasoning').map(block => block.text ?? '').join('')
+  const text = blocks.filter(block => block.kind === 'text').map(block => block.text ?? '').join('')
+  const toolCalls = blocks
+    .filter(block => block.kind === 'tool-call' && block.toolName !== undefined)
+    .map(block => ({ name: block.toolName as string, arguments: block.args ?? '' }))
+  if (reasoning === '' && text === '' && toolCalls.length === 0) return undefined
+  return {
+    ...reasoning === '' ? {} : { reasoning },
+    ...text === '' ? {} : { text },
+    toolCalls,
+  }
 }
 
 /** 明细头锚点（结构化）：响应流里的工具调用 → `{kind:'tool', name, hint?, more?}`；纯文本 → `{kind:'text'}`；空响应 → `{kind:'none'}`。 */

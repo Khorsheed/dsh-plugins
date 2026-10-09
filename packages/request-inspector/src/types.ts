@@ -127,6 +127,16 @@ export type ResponseSummary =
   /** 空响应（无文本也无工具调用——失败/中断的响应落这里）。 */
   | { kind: 'none' }
 
+/** The request's own response, verbatim content blocks. */
+export interface CapturedResponse {
+  /** Assembled reasoning text, when the model produced any. */
+  reasoning?: string
+  /** Assembled visible text, when any. */
+  text?: string
+  /** Tool calls issued: name + raw arguments string. */
+  toolCalls: { name: string; arguments: string }[]
+}
+
 /** One model call, fully captured. */
 export interface CapturedRequest {
   /** Collector-assigned process-wide monotonic sequence (the panel's `#784`). */
@@ -145,6 +155,12 @@ export interface CapturedRequest {
    * `name:hint` / 「直接回答」 / —）。
    */
   responseSummary: ResponseSummary
+  /**
+   * 本请求自己的响应原文（输出段）：streaming 中缺席；在任何 block 之前
+   * 就失败的调用也缺席（error 字段承担失败展示）。一个 turn 的最后一次
+   * 请求的响应只在这里可见（下一请求的 新增上下文 看不到它）。
+   */
+  response?: CapturedResponse
   segments: {
     /** systemPrompt 组装原文；source 为 assemble section 名。 */
     system: SegmentItem[]
