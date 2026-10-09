@@ -24,10 +24,12 @@
     "src/client/locales.ts",
     "src/client/preset-visibility.ts",
     "src/client/RawView.tsx",
+    "src/client/scroll-sync.ts",
     "src/client/SegCtl.tsx",
     "src/client/SegmentBlocks.tsx",
     "src/client/TimingView.tsx",
     "src/client/TokenView.tsx",
-    "src/client/TurnAction.tsx"
+    "src/client/TurnAction.tsx",
+    "src/client/TurnMenu.tsx"
   ]
 }

@@ -14,6 +14,8 @@ export const zh = {
 
   'turn.label': 'turn {seq}',
   'turn.switch': '切换 turn',
+  'turn.rowMeta': '{count} 请求 · 输入 {input} · 输出 {output}',
+  'turn.latest': '定位到最新 turn',
   'query.prefix': 'query：',
 
   'scope.main': '主对话 · {count} 请求',
@@ -110,6 +112,8 @@ export const en: Record<keyof typeof zh, string> = {
 
   'turn.label': 'turn {seq}',
   'turn.switch': 'Switch turn',
+  'turn.rowMeta': '{count} requests · in {input} · out {output}',
+  'turn.latest': 'Jump to the latest turn',
   'query.prefix': 'query: ',
 
   'scope.main': 'Main · {count} requests',

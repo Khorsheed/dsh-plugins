@@ -64,17 +64,24 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-.turnSelect {
-  font-family: inherit;
-  font-size: var(--dsh-panel-text-meta, 12px);
-  color: var(--dsw-alias-label-primary);
-  background: var(--dsw-alias-bg-layer-2);
-  border: 1px solid var(--dsw-alias-border-l2);
+.latestButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
   border-radius: 6px;
-  padding: 2px 4px;
-  max-width: 220px;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  padding: 0;
+  flex: none;
+}
+
+.latestButton:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
 }
 
 .scopeTag {
@@ -207,10 +214,6 @@
 
   .query {
     flex-wrap: wrap;
-  }
-
-  .turnSelect {
-    max-width: 100%;
   }
 
   .foot {

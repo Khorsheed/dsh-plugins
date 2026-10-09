@@ -53,8 +53,12 @@ export { TimingView } from './TimingView.tsx'
 export { SegmentBlocks } from './SegmentBlocks.tsx'
 export { RawView } from './RawView.tsx'
 export { SegCtl } from './SegCtl.tsx'
+export { TurnMenu, turnTitle } from './TurnMenu.tsx'
 export { TurnInspectAction } from './TurnAction.tsx'
 export { HeaderInspectUtility } from './HeaderUtility.tsx'
+export {
+  scrollConversationToTurn, scrollConversationToBottom, preferredScrollBehavior,
+} from './scroll-sync.ts'
 export { REQUEST_INSPECTOR_KIND, REQUEST_INSPECTOR_TAB_ID, requestInspectorDefinition } from './definition.tsx'
 export type { RequestInspectorTabParams } from './definition.tsx'
 export {
