@@ -122,7 +122,7 @@ export type NovelBoardMutation =
   | { readonly ok: true; readonly board: NovelBoardView }
   | { readonly ok: false; readonly error: string }
 
-/** The fencing session a mutation runs under (the canvas takes the host `Session`). */
+/** The fencing session a mutation runs under (the canvas takes the host `Session`); `undefined` means the caller carries none and the canvas's own default resolution applies. */
 type FenceSession = object
 
 /** The slice of `ctx.canvasBoard` the engine uses. */
@@ -145,13 +145,13 @@ export interface CanvasBoardSlice {
     readonly fields?: Readonly<Record<string, NovelFieldValue>>
     /** Kept at once and marked new (✦) on the board, instead of a proposal awaiting ✓. */
     readonly live?: boolean
-  }, session: FenceSession): Promise<NovelBoardMutation>
+  }, session: FenceSession | undefined): Promise<NovelBoardMutation>
   patchCard(request: {
     readonly canvasId: string
     readonly cardId: string
     readonly status?: NovelCardStatus
     readonly fields?: Readonly<Record<string, NovelFieldValue>>
-  }, session: FenceSession): Promise<NovelBoardMutation>
+  }, session: FenceSession | undefined): Promise<NovelBoardMutation>
   /**
    * Attach a workspace (optional: a canvas from before 2026-10-09 lacks it,
    * and the engine then reports `no-workspace` as it always did).

@@ -7,7 +7,8 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
 import { chapterFileName, chapterNumberOfFile, normalizeAnnotations, parseRef, refOf } from './types.ts'
 
-const PACKAGE_NAME = '@khorsheed/dsh-canvas-novel'
+/** The package's npm name (the identity triangle's third leg). */
+export const PACKAGE_NAME = '@khorsheed/dsh-canvas-novel'
 
 /** Cordis companion plugin name. */
 export const name = 'canvas-novel-invariant'
