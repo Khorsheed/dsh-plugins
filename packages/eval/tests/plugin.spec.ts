@@ -13,6 +13,8 @@ interface ProvideSpy {
   inject?: (deps: string[], callback: (ctx: unknown) => void) => void
   /** The Remote face mounts through the plugin seam; this fake records nothing. */
   plugin?: (plugin: unknown) => void
+  /** apply wires dispose-on-teardown through ctx.effect; the fake only needs to accept it. */
+  effect?: (fn: () => unknown, label?: string) => void
 }
 
 describe('the plugin surface', () => {
@@ -33,6 +35,8 @@ describe('the plugin surface', () => {
       inject: () => {},
       // The Remote face mounts through the plugin seam (nothing to record here).
       plugin: () => {},
+      // The dispose-on-teardown wiring: accepted, never fired.
+      effect: () => {},
     }
     entry.apply(ctx as never)
     const service = ctx.provided.get('dshEval')

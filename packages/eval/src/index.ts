@@ -48,15 +48,36 @@ declare module '@deepseek-ai/cordis' {
 }
 
 /**
+ * The optional plugin config. Unset everywhere keeps the legacy
+ * DSH_HOME-derived behavior byte-identical.
+ */
+export interface EvalConfig {
+  /**
+   * An instance-bound eval state root: experiments, the condition library and
+   * the per-run cell directories live under it instead of
+   * `$DSH_HOME/state/eval`, and a Remote `runStart` stateRoot must resolve
+   * under it. Nothing global is mutated — two instances mounted with two
+   * roots see disjoint state.
+   */
+  readonly stateRoot?: string
+}
+
+/**
  * Mount the eval service, its Remote face, and the run-job controller. The
  * `/eval` slash command and the model tools are deliberately NOT registered
  * here: both moved to the `./tool` composition row `@khorsheed/dsh-eval/tool`, which an
  * agent preset composes per session.
  * @param ctx - plugin context.
+ * @param config - optional instance binding; every field is additive and the
+ *   row boots without it.
  */
-export function apply(ctx: Context): void {
-  const service = new EvalService(ctx)
+export function apply(ctx: Context, config: EvalConfig = {}): void {
+  const service = new EvalService(ctx, config)
   ctx.provide('dshEval', service)
+  // The borrowed Context's teardown IS this instance's disposal: the run jobs
+  // it started are cancelled through their own AbortSignal, and every public
+  // verb refuses coded afterwards.
+  ctx.effect(() => () => { service.dispose() }, 'eval: dispose on context teardown')
   // The Typert Remote face (wire namespace `dshEval`): start / watch / stop a
   // run from outside a browser — the CI door. It mounts through the plugin
   // seam like every other Remote, so a composition without the Typert
@@ -75,7 +96,7 @@ export function apply(ctx: Context): void {
   })
 }
 
-export { EvalService, EvalContractError } from './service.ts'
+export { EvalService, EvalContractError, EvalDisposedError } from './service.ts'
 export { EvalRunRefused } from './service.ts'
 export { EvalFinalizeRefused, finalizeRun, skipCategoryOf, FINALIZE_FROM_STATE } from './run/finalize.ts'
 export type { FinalizeOptions, FinalizeReport, FinalizeCellOutcome, FinalizeSkipCategory } from './run/finalize.ts'

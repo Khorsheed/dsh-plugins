@@ -6,7 +6,8 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
 
-const PACKAGE_NAME = '@khorsheed/dsh-eval'
+/** The package's own name — the identity triangle's third leg, and the prefix of its coded errors. */
+export const PACKAGE_NAME = '@khorsheed/dsh-eval'
 
 /** Cordis companion plugin name. */
 export const name = 'eval-invariant'

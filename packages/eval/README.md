@@ -301,6 +301,25 @@ Ask the person which version this experiment should pin with ask_user_question, 
 | `experimentArtifact({experimentId, path})` | 读一个实验目录里的一个文件：只在这个实验目录里（字面判越界 + realpath 再判），只内联文本，超 256 KB 截断并说明 |
 | `humanFinal(runId, ticket, verdicts, sessionId)` | 把一格的终评记进 `human-final` ns——**这个 ns 在整个家族里唯一的写入口**。ticket 在服务端反解回格子；转发 mission 的 `annotate`，只追加不改写；注解的 `by` 记 `tab:<sessionId>`（不是 `tool:` 前缀），verdict 文档的 `by` 记 `judge-bench`。每条判定必须带证据，空的拒绝。**没有对应的模型工具，将来也不会有**（界面规格 R1） |
 
+## 工作区接入接缝（按实例挂载）
+
+把本包挂到**隔离 Context + 独立 stateRoot** 上是受支持的消费方式：挂载方在自己的 Context 上以本包的 `apply` + `config.stateRoot` 起一份独立实例，或直接 `new EvalService(hosts, { stateRoot })`——eval 自己的状态树全部按实例绑定：实验目录、条件库、每次 run 的格子目录（`<stateRoot>/experiments/`、`conditions/`、`cells|readiness|judge|probes/<runId>/`），不再从 `$DSH_HOME/state/eval` 派生。两个实例配两个根，看到的就是两份互不相交的实验、条件与格子；不引入任何全局可变状态。
+
+```ts
+import { apply } from '@khorsheed/dsh-eval'
+
+apply(isolatedCtx, {
+  stateRoot: '/path/to/instance-state/eval',
+})
+```
+
+挂载侧的义务与语义：
+
+- **配置只此一项，缺省逐字节不变**：不配 `stateRoot` 的实例与之前逐字节一致——一切照旧从 DSH_HOME 派生，DSH_HOME 未设照旧抛「set DSH_HOME」。构造时根被规范化（绝对化、`~` 展开、沿已存在的目录树 realpath），所以边界比较比的是真实位置而不是路径字符串。
+- **runStart 的 stateRoot 收边界约束**：配了实例根之后，run 的格子根缺省就是实例根本身；`runStart` 与 `runExperimentStart`（以及 `run` / `runExperiment` 和 Remote `runStart` 新增的 `stateRoot` 选项）显式给出的路径必须解析在实例根**之内**——`..` 段越界与根内指向外面的软链都以带码拒绝 `STATEROOT_OUTSIDE_INSTANCE`（`EvalRunRefused`）挡下，且拒绝发生在任何注册之前。没配实例根时该选项照旧原样透传，不加任何检查。
+- **dispose 只动自己的 run**：`dispose()` 幂等且终态，并随借入 Context 的销毁自动触发（`apply` 里的 `ctx.effect` 接线）。它取消的是**本实例起过的、还没 settle 的** run job——走的就是 `job_kill` 那一条：job 的 cancel 钩子 → run 的 AbortSignal → 停开新格、被抓住的格按 `interrupted` 走完正常收尾落盘，绝不是 kill -9；run 自己开的父会话仍在 settle 路径里归还。**不覆盖**别的实例起过的 job——unowned-by-design 的注册语义不变，dispose 不扩大成注册表清扫；已 settle 的 job 无需处理。**永远没有 resume**：停掉的 run 只能重跑，这是既有设计，不随本接缝改变；盘上的中断格保持 `interrupted`。dispose 之后每个公开动词（含读取）以带码的包名错误 `EvalDisposedError`（`code: 'disposed'`）拒绝；与 dispose 竞态的 start 拒绝同一个码、什么都不注册（竞态中已开的父会话照常归还）。同根重建合法：同一 stateRoot 上新建服务实例照常工作，旧实例写入的数据都在。
+- **部署级的东西仍是部署级**：条件的 scoped home（凭证目录）由 localAgent 门面的 `homeDir(harness, scope)` 回答，在 eval 的状态根之外，不随实例根走；mission 账本与题集登记仓库同理——实例根绑定的只是 eval 自己的状态树。
+
 ## 报告（report）
 
 输入是 mission export 的 bundle（manifest.json、run.json、missions/<id>/attempt-N/{meta,annotations,artifacts}、dataset/<layer>/），输出三份文件：
