@@ -25,7 +25,9 @@
  */
 import type {
   AgentScopeOverview,
+  BackfillInfo,
   CapturedRequest,
+  ListTurnsResult,
   RequestConfig,
   RequestListItem,
   RequestTiming,
@@ -43,14 +45,21 @@ import type { LogTurn } from './log-lane.ts'
 
 /** Retention knobs (InspectorConfig in the service mirrors these). */
 export interface StoreConfig {
-  /** Turns retained per session (oldest closed first). Default 20. */
+  /** Turns retained per session (oldest closed first, backfilled before live). Default 30. */
   maxTurnsPerSession?: number
-  /** Total retained requests across all sessions. Default 200. */
-  maxRequestsTotal?: number
+  /** Log-reconstructed main-scope requests retained per session. Default 500. */
+  maxBackfillRequestsPerSession?: number
+  /**
+   * Global budget of stored segment text characters across all sessions — the
+   * real memory driver is the segments' `full` text (~200KB per request), not
+   * the row count. Default 150M chars (~150MB).
+   */
+  maxStoredCharsTotal?: number
 }
 
-const DEFAULT_MAX_TURNS_PER_SESSION = 20
-const DEFAULT_MAX_REQUESTS_TOTAL = 200
+const DEFAULT_MAX_TURNS_PER_SESSION = 30
+const DEFAULT_MAX_BACKFILL_REQUESTS_PER_SESSION = 500
+const DEFAULT_MAX_STORED_CHARS_TOTAL = 150_000_000
 
 /** One streamed content block's open/closed time span. */
 export interface BlockSpan {
@@ -167,8 +176,12 @@ interface SessionRecord {
   nextBucketSeq: number
   /** The next scope's per-session ordinal (creation order, 1-based). */
   nextScopeSeq: number
-  /** Backfill watermark: 'none' until the first read, 'broken' stops retries. */
-  backfillState: 'none' | 'complete' | 'broken'
+  /** Backfill watermark: retryable until 'complete', 'broken' stops retries. */
+  backfillState: 'none' | 'partial' | 'complete' | 'broken'
+  /** The decode failure summary while broken. */
+  backfillReason: string | undefined
+  /** Log-reconstructed main-scope requests currently held (per-session cap accounting). */
+  backfilledRequests: number
   /** Pending tool/call rows by callId (exec starts + delegation binding). */
   pendingCalls: Map<string, PendingCall>
   /** messageId → producing request's generation ms (assistant row durations). */
@@ -206,13 +219,16 @@ export class InspectorStore {
   private readonly now: () => number
   private readonly onTurnEvicted: ((sessionId: string, turn: TurnRecord) => void) | undefined
   private readonly maxTurnsPerSession: number
-  private readonly maxRequestsTotal: number
+  private readonly maxBackfillRequestsPerSession: number
+  private readonly maxStoredCharsTotal: number
   private seqCounter = 0
-  private totalRequests = 0
+  /** Stored segment text characters across all sessions (the memory driver). */
+  private totalChars = 0
 
   constructor(config: StoreConfig = {}, deps: StoreDeps = {}) {
     this.maxTurnsPerSession = config.maxTurnsPerSession ?? DEFAULT_MAX_TURNS_PER_SESSION
-    this.maxRequestsTotal = config.maxRequestsTotal ?? DEFAULT_MAX_REQUESTS_TOTAL
+    this.maxBackfillRequestsPerSession = config.maxBackfillRequestsPerSession ?? DEFAULT_MAX_BACKFILL_REQUESTS_PER_SESSION
+    this.maxStoredCharsTotal = config.maxStoredCharsTotal ?? DEFAULT_MAX_STORED_CHARS_TOTAL
     this.now = deps.now ?? Date.now
     this.onTurnEvicted = deps.onTurnEvicted
   }
@@ -249,6 +265,8 @@ export class InspectorStore {
         nextBucketSeq: -1,
         nextScopeSeq: 1,
         backfillState: 'none',
+        backfillReason: undefined,
+        backfilledRequests: 0,
         pendingCalls: new Map(),
         messageDurations: new Map(),
       }
@@ -380,7 +398,7 @@ export class InspectorStore {
     this.seqCounter += 1
     scope.requests.push(request)
     turn.liveContent = true
-    this.totalRequests += 1
+    this.totalChars += request.totalChars
     if (scope.config.provider === undefined && snapshot.config.provider !== undefined) {
       scope.config = snapshot.config
     }
@@ -409,7 +427,7 @@ export class InspectorStore {
     this.seqCounter += 1
     found.scope.requests.push(request)
     found.scope.previous = built.fingerprint
-    this.totalRequests += 1
+    this.totalChars += request.totalChars
     this.enforceCaps()
     return request
   }
@@ -689,47 +707,68 @@ export class InspectorStore {
 
   // ---------- history backfill ----------
 
-  /** The session's backfill watermark ('none' until the first successful read). */
-  backfillState(sessionId: string): 'none' | 'complete' | 'broken' {
+  /** The session's backfill watermark (retryable until 'complete'). */
+  backfillState(sessionId: string): BackfillInfo['state'] {
     return this.sessions.get(sessionId)?.backfillState ?? 'none'
   }
 
   /** A durably unreadable log stops the backfill from retrying it on every query. */
-  markBackfillBroken(sessionId: string): void {
-    this.session(sessionId).backfillState = 'broken'
+  markBackfillBroken(sessionId: string, reason: string): void {
+    const session = this.session(sessionId)
+    session.backfillState = 'broken'
+    session.backfillReason = reason
   }
 
   /**
    * Insert log-reconstructed turns (the pre-mount history), newest-first within
-   * budget: live-content turns win the budget outright, and a host turn with
-   * any record is never merged into (the overlap rule). Scope ordinals are
-   * renumbered afterwards so the chips' `#N` stay chronological across the
-   * live/backfill boundary (scopeSeq is a display anchor, not an address).
+   * budget: live-content turns win the budget outright, a host turn with any
+   * record is never merged into (the overlap rule), and one oversized turn is
+   * SKIPPED without aborting the older ones. Scope ordinals are renumbered
+   * afterwards so the chips' `#N` stay chronological across the live/backfill
+   * boundary (scopeSeq is a display anchor, not an address).
    *
-   * The insert is budget-bounded by construction — it never triggers eviction
-   * of a live turn.
+   * The watermark is honest: 'complete' only when every candidate fit; a
+   * budget-dropped candidate keeps the state 'partial', and the service
+   * re-reads the log on later queries (eviction may have freed room). The
+   * insert itself never evicts a live turn: char pressure evicts the oldest
+   * BACKFILLED turns first.
    *
    * @returns the number of turns actually inserted.
    */
   insertLogTurns(sessionId: string, logTurns: readonly LogTurn[]): number {
     const session = this.session(sessionId)
-    if (session.backfillState === 'complete') return 0
-    session.backfillState = 'complete'
+    if (session.backfillState === 'complete' || session.backfillState === 'broken') return 0
     const liveCount = session.turns.filter(turn => turn.liveContent).length
-    const turnBudget = Math.max(0, this.maxTurnsPerSession - liveCount)
-    let requestRoom = Math.max(0, this.maxRequestsTotal - this.totalRequests)
     const candidates = logTurns.filter(logTurn =>
       !session.turns.some(turn => turn.purpose === undefined && turn.hostTurn === logTurn.hostTurn))
-    const selected: LogTurn[] = []
-    for (let i = candidates.length - 1; i >= 0 && selected.length < turnBudget; i -= 1) {
+    let dropped = 0
+    let inserted = 0
+    // Newest-first; every constraint skips (never aborts the older candidates).
+    for (let i = candidates.length - 1; i >= 0; i -= 1) {
       const candidate = candidates[i] as LogTurn
-      if (candidate.requests.length > requestRoom) break
-      requestRoom -= candidate.requests.length
-      selected.unshift(candidate)
+      const candidateChars = candidate.requests.reduce((n, request) => n + request.totalChars, 0)
+      // Backfilled turns share the per-session window behind live content.
+      if (session.turns.filter(turn => !turn.liveContent).length >= this.maxTurnsPerSession - liveCount) {
+        dropped += 1
+        continue
+      }
+      if (candidate.requests.length > this.maxBackfillRequestsPerSession - session.backfilledRequests) {
+        dropped += 1
+        continue
+      }
+      // Char room must be FREE: a candidate never displaces a present turn
+      // (it's older than anything already inserted, by the fill order). Live
+      // pressure evicts backfilled turns through enforceCaps instead.
+      if (this.totalChars + candidateChars > this.maxStoredCharsTotal) {
+        dropped += 1
+        continue
+      }
+      this.insertLogTurn(session, candidate)
+      inserted += 1
     }
-    for (const logTurn of selected) this.insertLogTurn(session, logTurn)
-    this.renumberScopes(session)
-    return selected.length
+    session.backfillState = dropped > 0 ? 'partial' : 'complete'
+    if (inserted > 0) this.renumberScopes(session)
+    return inserted
   }
 
   /** One reconstructed turn → one TurnRecord (main scope + delegation stubs). */
@@ -780,7 +819,8 @@ export class InspectorStore {
       }
       this.seqCounter += 1
       main.requests.push(request)
-      this.totalRequests += 1
+      this.totalChars += request.totalChars
+      session.backfilledRequests += 1
     }
     for (const delegation of logTurn.delegations) {
       const scopeId = delegation.childId ?? `call:${delegation.callId}`
@@ -821,13 +861,22 @@ export class InspectorStore {
 
   // ---------- queries ----------
 
-  /** Light turn list of one session, newest last (sorted by start time, then address). */
-  listTurns(sessionId: string): TurnListItem[] {
+  /** Light turn list of one session plus its backfill watermark (sorted newest last). */
+  listTurns(sessionId: string): ListTurnsResult {
     const session = this.sessions.get(sessionId)
-    if (session === undefined) return []
-    return [...session.turns]
-      .sort((a, b) => a.startedAt - b.startedAt || a.turnSeq - b.turnSeq)
-      .map(turn => this.turnItem(sessionId, turn))
+    const backfill: BackfillInfo = session === undefined
+      ? { state: 'none' }
+      : {
+        state: session.backfillState,
+        ...session.backfillReason === undefined ? {} : { reason: session.backfillReason },
+      }
+    if (session === undefined) return { turns: [], backfill }
+    return {
+      turns: [...session.turns]
+        .sort((a, b) => a.startedAt - b.startedAt || a.turnSeq - b.turnSeq)
+        .map(turn => this.turnItem(sessionId, turn)),
+      backfill,
+    }
   }
 
   private turnItem(sessionId: string, turn: TurnRecord): TurnListItem {
@@ -983,7 +1032,7 @@ export class InspectorStore {
     this.childToParent.clear()
     this.callOwners.clear()
     this.callNames.clear()
-    this.totalRequests = 0
+    this.totalChars = 0
   }
 
   // ---------- eviction ----------
@@ -1002,8 +1051,10 @@ export class InspectorStore {
             this.callNames.delete(block.callId)
           }
         }
-        this.totalRequests -= 1
+        this.totalChars -= request.totalChars
       }
+      // The per-session backfill cap tracks reconstructed main-scope rows.
+      if (!turn.liveContent && scope.kind === 'main') session.backfilledRequests -= scope.requests.length
     }
     // Pending delegation bindings are time-bracketed by their turn.
     const end = turn.endedAt ?? this.now()
@@ -1028,26 +1079,32 @@ export class InspectorStore {
     return false
   }
 
+  /** The globally oldest closed backfilled turn (char-pressure eviction order). */
+  private oldestBackfilledTurn(): { session: SessionRecord; turn: TurnRecord } | undefined {
+    let victim: { session: SessionRecord; turn: TurnRecord } | undefined
+    for (const session of this.sessions.values()) {
+      for (const turn of session.turns) {
+        if (turn.liveContent || this.turnIsLive(turn)) continue
+        if (victim === undefined || turn.startedAt < victim.turn.startedAt) victim = { session, turn }
+      }
+    }
+    return victim
+  }
+
   private enforceCaps(): void {
     for (const session of this.sessions.values()) {
       while (session.turns.length > this.maxTurnsPerSession) {
-        const victim = session.turns.find(turn => !this.turnIsLive(turn))
+        // Backfilled (non-live) history ages out before any live-captured turn.
+        const victim = session.turns.find(turn => !this.turnIsLive(turn) && !turn.liveContent)
+          ?? session.turns.find(turn => !this.turnIsLive(turn))
         if (victim === undefined) return
         this.evictTurn(session, victim)
       }
     }
-    while (this.totalRequests > this.maxRequestsTotal) {
-      let victim: { session: SessionRecord; turn: TurnRecord } | undefined
-      for (const session of this.sessions.values()) {
-        for (const turn of session.turns) {
-          if (this.turnIsLive(turn)) continue
-          if (victim === undefined
-            || turn.startedAt < victim.turn.startedAt
-            || (turn.startedAt === victim.turn.startedAt && turn.turnSeq < victim.turn.turnSeq)) {
-            victim = { session, turn }
-          }
-        }
-      }
+    // The global char budget bounds stored segment text across sessions:
+    // oldest backfilled turns evict first; live content never yields to it.
+    while (this.totalChars > this.maxStoredCharsTotal) {
+      const victim = this.oldestBackfilledTurn()
       if (victim === undefined) return
       this.evictTurn(victim.session, victim.turn)
     }

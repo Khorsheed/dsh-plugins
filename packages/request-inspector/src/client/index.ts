@@ -36,7 +36,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 // and the right-Sidebar SlotMap seats ('sidebar.right.pane.tab').
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import { resolveTurnSeq } from './aggregate.ts'
-import type { TurnListItem } from '../types.ts'
+import type { ListTurnsResult } from '../types.ts'
 import type { InspectorRemote, InspectorTabInjected } from './contract.ts'
 import { REQUEST_INSPECTOR_KIND, REQUEST_INSPECTOR_TAB_ID, requestInspectorDefinition } from './definition.tsx'
 import { HeaderInspectUtility } from './HeaderUtility.tsx'
@@ -133,8 +133,8 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   const openForMessage = async (sessionId: SessionId, messageId?: string): Promise<void> => {
     let turnSeq: number | undefined
     try {
-      const result: RemoteResult<TurnListItem[]> = await remote().listTurns(sessionId)
-      if (result.ok) turnSeq = resolveTurnSeq(result.value, messageId)
+      const result: RemoteResult<ListTurnsResult> = await remote().listTurns(sessionId)
+      if (result.ok) turnSeq = resolveTurnSeq(result.value.turns, messageId)
     } catch {
       // A dead namespace still opens the tab (its own error state reports it).
     }

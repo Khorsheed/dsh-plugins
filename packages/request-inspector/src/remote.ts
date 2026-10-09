@@ -13,7 +13,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { InspectorService } from './service.ts'
-import type { CapturedRequest, TurnListItem, TurnOverview, TurnTiming } from './types.ts'
+import type { CapturedRequest, ListTurnsResult, TurnOverview, TurnTiming } from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -37,9 +37,9 @@ export class RequestInspectorRemoteService extends TypertRemoteService<RequestIn
     return this.ctx.requestInspector
   }
 
-  /** Light turn list of one session, newest last. */
+  /** Light turn list of one session plus its backfill watermark, newest last. */
   @Remote('listTurns')
-  listTurns(sessionId: string): Promise<TurnListItem[]> {
+  listTurns(sessionId: string): Promise<ListTurnsResult> {
     return this.core.listTurns(sessionId)
   }
 

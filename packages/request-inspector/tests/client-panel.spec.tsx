@@ -10,7 +10,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type {
-  AgentScopeOverview, CapturedRequest, TurnListItem, TurnOverview, TurnTiming,
+  AgentScopeOverview, BackfillInfo, CapturedRequest, ListTurnsResult, TurnListItem, TurnOverview, TurnTiming,
 } from '../src/types.ts'
 import type { InspectorTabProps } from '../src/client/contract.ts'
 import type { RequestInspectorTabParams } from '../src/client/definition.tsx'
@@ -154,6 +154,7 @@ const TIMING2: TurnTiming = {
 
 interface BenchOptions {
   readonly turns?: TurnListItem[] | undefined
+  readonly backfill?: BackfillInfo | undefined
   readonly listError?: boolean | undefined
   readonly params?: RequestInspectorTabParams | undefined
   readonly revision?: number | undefined
@@ -161,9 +162,9 @@ interface BenchOptions {
 
 function bench(opts: BenchOptions = {}) {
   const mocks = {
-    listTurns: vi.fn(async (): Promise<Result<TurnListItem[]>> => opts.listError === true
+    listTurns: vi.fn(async (): Promise<Result<ListTurnsResult>> => opts.listError === true
       ? { ok: false, error: { code: 'x', message: 'boom' } }
-      : { ok: true, value: opts.turns ?? TURNS }),
+      : { ok: true, value: { turns: opts.turns ?? TURNS, backfill: opts.backfill ?? { state: 'complete' } } }),
     getTurn: vi.fn(async (_sessionId: string, turnSeq: number): Promise<Result<TurnOverview | undefined>> => ({
       ok: true,
       value: turnSeq === 2 ? OVERVIEW2 : turnSeq === 1 ? OVERVIEW1 : undefined,
@@ -374,6 +375,19 @@ describe('InspectorPanel · empty and error states', () => {
   it('reports a session without captured turns', async () => {
     bench({ turns: [] })
     await waitFor(() => expect(screen.getByText(zh['state.noTurns'])).toBeTruthy())
+  })
+
+  it('distinguishes an unreadable log from a genuinely empty session', async () => {
+    bench({ turns: [], backfill: { state: 'broken', reason: 'unknown event type "future/event"' } })
+    await waitFor(() => expect(screen.getByText(/日志不可读/)).toBeTruthy())
+    expect(screen.getByText(/future\/event/)).toBeTruthy()
+    expect(screen.queryByText(zh['state.noTurns'])).toBeNull()
+  })
+
+  it('notes a budget-truncated history in the footer', async () => {
+    bench({ backfill: { state: 'partial' } })
+    await waitFor(() => expect(screen.getByText('#101 · read:a.ts')).toBeTruthy())
+    expect(screen.getByText(zh['hint.backfillTruncated'])).toBeTruthy()
   })
 
   it('reports a listTurns failure', async () => {
