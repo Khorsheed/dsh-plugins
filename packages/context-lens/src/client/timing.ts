@@ -3,7 +3,7 @@ import type { AgentScopeOverview, TimingLane, TurnTiming } from '../types.ts'
 /** Partition one agent's elapsed time. Concurrent spans share their overlap, never double-count it. */
 export function scopeTiming(timing: TurnTiming, scope: AgentScopeOverview) {
   const lanes = timing.lanes.filter(
-    (l) => l.scopeId === scope.scopeId && l.durationMs > 0,
+    (l) => l.scopeId === scope.scopeId && l.durationMs >= 0,
   )
   const start =
     scope.kind === 'main'

@@ -117,6 +117,11 @@ describe('elapsed-time accounting', () => {
     const childTurn = { ...fullTurn, lanes: [{ ...lane('text', 200, 600), scopeId: 'child' }] }
     expect(scopeTiming(childTurn, child)).toMatchObject({ total: 600, gaps: 0 })
   })
+  it('counts explicit failures even when execution rounds to zero milliseconds', () => {
+    const data = scopeTiming(timing([{ ...lane('tool-exec', 100, 0, 'read'), isError: true }]), scope)
+    expect(data.tools[0]).toMatchObject({ calls: 1, errors: 1, exec: 0 })
+    expect(data.gaps).toBe(1000)
+  })
   it('formats consistent tenths across minute boundaries', () => {
     expect(fmtSpan(89700)).toBe('1m 29.7s')
     expect(fmtSpan(119990)).toBe('2m 0.0s')

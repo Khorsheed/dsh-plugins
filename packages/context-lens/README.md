@@ -37,7 +37,7 @@
 
 ## 工作区接入接缝（服务端消费）
 
-四个 Remote 动词（`listTurns` / `getTurn` / `getRequest` / `getTurnTiming`）都接受一个可选的 `filter: { scopes?: readonly string[] }` 尾参——这是给**可信服务端调用方**的授权过滤接缝：调用方（如把工作区成员 RPC 代理进来的协作插件）从自己的授权事实推出允许访问的 scope 集合，插件把它当不透明白名单逐查询套用。
+五个 Remote 动词（`listTurns` / `getTurn` / `getRequest` / `getTurnTiming` / `getSessionTrend`）都接受一个可选的 `filter: { scopes?: readonly string[] }` 尾参——这是给**可信服务端调用方**的授权过滤接缝：调用方（如把工作区成员 RPC 代理进来的协作插件）从自己的授权事实推出允许访问的 scope 集合，插件把它当不透明白名单逐查询套用。
 
 ```ts
 // 只授权主对话与 child-a 两个 scope 的一次读取

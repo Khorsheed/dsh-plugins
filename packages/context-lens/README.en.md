@@ -37,7 +37,7 @@ Data lives in memory only (configurable), never written to the session log or di
 
 ## Workspace admission seam (server-side consumption)
 
-All four Remote verbs (`listTurns` / `getTurn` / `getRequest` / `getTurnTiming`) accept an optional trailing `filter: { scopes?: readonly string[] }` — an authorization filter for **trusted server-side callers**: the caller (e.g. a collaboration plugin proxying workspace-member RPC) derives the allowed scope set from its own authorization facts, and the plugin applies it as an opaque allow-list per query.
+All five Remote verbs (`listTurns` / `getTurn` / `getRequest` / `getTurnTiming` / `getSessionTrend`) accept an optional trailing `filter: { scopes?: readonly string[] }` — an authorization filter for **trusted server-side callers**: the caller (e.g. a collaboration plugin proxying workspace-member RPC) derives the allowed scope set from its own authorization facts, and the plugin applies it as an opaque allow-list per query.
 
 ```ts
 // One read authorized for the main conversation and child-a only

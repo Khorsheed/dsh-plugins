@@ -44,7 +44,7 @@ export function TimingView({
   const keys = ['calls', 'errors', 'think', 'args', 'exec', 'total'] as const
   const nonKeys = ['wait', 'text', 'direct', 'slack'] as const
   const totalTools = rows.reduce((n, r) => n + r.total, 0)
-  const start = Math.min(...scopes.map((s) => s.startedAt))
+  const start = timing.startedAt ?? Math.min(...scopes.map((s) => s.startedAt))
   const end = Math.max(
     start + timing.totalMs,
     ...timing.lanes.map((l) => l.startedAt + l.durationMs),
