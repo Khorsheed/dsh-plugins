@@ -6,7 +6,7 @@
  * @module @khorsheed/dsh-context-lens/client/aggregate
  */
 import type {
-  CapturedRequest, RequestUsage, ResponseSummary, SegmentCategory, TimingLane, TurnListItem,
+  CapturedRequest, RequestUsage, ResponseSummary, SegmentCategory, SegmentItem, TimingLane, TurnListItem,
 } from '../types.ts'
 
 /**
@@ -213,4 +213,20 @@ export function fmtSpan(ms: number): string {
   return ms >= 60000
     ? `${Math.floor(Math.round(ms / 100) / 600)}m ${(Math.round(ms / 100) % 600 / 10).toFixed(1)}s`
     : `${(ms / 1000).toFixed(1)}s`
+}
+
+/** A composition filter never changes the request totals or exchange. */
+export type CompositionFilter = SegmentCategory | '__dup' | null
+
+/** Exact full-text matches, excluding the first occurrence from excess size. */
+export function duplicateStats(items: readonly SegmentItem[]) {
+  const counts = new Map<string, number>()
+  let extraChars = 0
+  for (const item of items) {
+    if (item.full.length < 40) continue
+    const count = counts.get(item.full) ?? 0
+    if (count > 0) extraChars += item.chars
+    counts.set(item.full, count + 1)
+  }
+  return { counts, extraChars }
 }

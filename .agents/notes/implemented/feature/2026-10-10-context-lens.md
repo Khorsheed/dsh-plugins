@@ -12,7 +12,11 @@ The package, directory, bundle row and sidebar kind are renamed to `context-lens
 
 The retained visual style uses bordered metric cells, mono numbers and the prototype's timing palette. A turn stepper and latest button synchronize the conversation scroll. A horizontally scrollable, draggable session map shows input/cache data for each retained request; `getSessionTrend(sessionId, filter)` returns only request headers and inherits scope filtering, retention and generation metadata.
 
-Request detail is ordered as measured cache usage, this exchange (new input beside captured output), then context composition. Full-text duplicates of at least 40 characters can be filtered. Message rows expose explicit tool errors and the originating session-event turn where known. Long output and reasoning are collapsed and remain scroll-bounded when opened; argument values expand independently.
+Request detail is ordered as measured cache usage, this exchange (new input beside captured output), then context composition. Full-text duplicates of at least 40 characters can be filtered. Message rows expose explicit tool errors and the originating session-event turn where known. Long output and reasoning show bounded previews and remain scroll-bounded when opened; argument values expand independently.
+
+The request list uses compact two-line rows: action/cache percentage, then input → output and duration. Four metric cells separate values, units and supporting facts. The request header's `{ }` toggle replaces only the lower detail with JSON; the request list and metrics stay available. The bottom toolbar and its unsupported wire-body placeholder are removed; measurement semantics move to the composition info tooltip and partial-backfill status sits by turn navigation.
+
+Composition is one bordered stack: category bar, compact percentage legend, then system/tools/history/added layers with proportional bars and original counts. Category and duplicate filters are exclusive and affect detail rows only. Selecting a filter opens matching layers; repeated rows keep wire order and show ×N. Exact full-text matches of at least 40 characters count only excess copies after the first, including duplicates crossing layers. Default added rows remain expanded. Exchange cards show previews immediately; reasoning and argument values expand independently without stretching the panel horizontally.
 
 Prefix comparison uses exact retained segment content in the same scope, including across turns. Appending messages preserves the prefix; replacement/removal or tool-schema changes remain visible. Prefix differences describe assembly facts, not a claim about the provider's cache invalidation cause. Without a retained predecessor the comparison is unavailable.
 
@@ -28,6 +32,8 @@ Timing cards and both tables describe one selected agent. All agents stay visibl
 
 **Guessing errors from tool prose.** Error totals consume the host flag; Canvas fixes its own declared failures through the host's thrown-error path instead.
 
+**Keeping the footer or filtering a copied request object.** The footer contradicted the approved prototype; rewriting segments for filtering also changed denominators and hid original group sizes. A request-local toggle and row-only filter preserve both navigation and measurement meaning.
+
 ## Consequences
 
 The new installation identity requires migration before production replacement. Old saved sidebar kinds may show the host's unavailable fallback. Capture is still pull-based and bounded by the existing retention budget; uncaptured or evicted data is not invented. A prefix preview is short, while the full request remains expandable.
@@ -37,3 +43,5 @@ Regression coverage pins overlap accounting, the two-table identity, source turn
 Acceptance initially passed all build/test stages on main baseline `84399e6a` but failed the final pack gate: full `gen-typert` incorporated game’s `MessageSourceMap` augmentation into Canvas diagnostic declarations, which the family-edge scan misread as a dependency. Mainline fixed the scanner in `43c56cb9` (see [the fix note](../bug-fix/2026-10-10-pack-dist-typert-face-exemption.md)). After incorporating that fix, `pnpm gate` passed all 16 steps in 464 seconds: whole-repo build/test and all 39 bundle tarballs, including 137 Context Lens tests, 620 Canvas tests and 327 script tests. The merge blocker is resolved; cold-install verification remains CI-only.
 
 Production migration uses the explicit `deploy:3080 --replace OLD=NEW` flow ([decision](../process/2026-10-10-deploy-package-replacement.md)); never mount both identities. The rollout result is recorded separately after canary verification.
+
+The prototype-alignment regression pass covers excess-copy arithmetic, equal previews with different full text, exclusive filters, unchanged totals/exchange, and JSON navigation. The reproducible `packages/context-lens/examples/workbench/` preview uses synthetic data and actual components; 800px and 390px light/dark checks confirm no horizontal overflow.

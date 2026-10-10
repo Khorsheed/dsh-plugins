@@ -1,397 +1,182 @@
-/**
- * The token tab's request detail: the four input segments (系统提示词 / 工具定义 /
- * 历史上下文 / 新增上下文) as isomorphic collapsible blocks, then the 输出 block
- * — this request's own response (the `response` capture), default expanded.
- * Every message row shares one format — 序号 · 类型 · 来源 · [工具 chip] · 预览 ·
- * 耗时 · 字符数 — and expands to the verbatim `full` text (assistant rows unfold
- * their `{reasoning, text, calls}` JSON into labeled sections; system rows expand
- * to raw text only). The tools block expands to the compact two-column grid.
- * Assistant rows in the 新增 block carry the「← #N 的响应」provenance label (they
- * enter the input only by being a previous response).
- *
- * Native `<details>` is driven through controlled state (summary's click is
- * pre-empted): jsdom never fires the toggle gesture, and a re-render must
- * never snap a user's fold back.
- *
- * @module @khorsheed/dsh-context-lens/client
- */
-import { useState, type ReactNode } from 'react'
+/** Compact composition rows and immediately readable exchange cards. */
+import { useEffect, useState } from 'react'
 import type { CapturedRequest, SegmentCategory, SegmentItem, ToolDefItem } from '../types.ts'
-import { fmt, fmtDur, summaryText } from './aggregate.ts'
+import { duplicateStats, fmt, fmtK, fmtSpan, type CompositionFilter } from './aggregate.ts'
 import type { InspectorTabProps } from './contract.ts'
 import css from './SegmentBlocks.module.css'
-
-/** The panel's translate face. */
 type T = InspectorTabProps['t']
 
-/** The locale key of one category's label. */
-export function categoryLabelKey(category: SegmentCategory): `cat.${SegmentCategory}` {
-  return `cat.${category}`
-}
+export function categoryLabelKey(category: SegmentCategory): `cat.${SegmentCategory}` { return `cat.${category}` }
 
-/** One expandable row's chrome: summary line + lazily rendered body. */
-function ExpandRow({ summary, body, defaultOpen = false, className }: {
-  readonly summary: ReactNode
-  readonly body: () => ReactNode
-  readonly defaultOpen?: boolean | undefined
-  readonly className?: string | undefined
-}) {
-  const [open, setOpen] = useState(defaultOpen)
-  return (
-    <details className={className ?? css.seg} open={open}>
-      <summary
-        className={css.summary}
-        onClick={event => {
-          // jsdom never performs the native toggle; the state is the truth.
-          event.preventDefault()
-          setOpen(value => !value)
-        }}
-      >
-        {summary}
-      </summary>
-      {open && <div className={css.segBody}>{body()}</div>}
-    </details>
-  )
-}
-
-/** The index cell: padded wire position; `—` for the one-shot system slot (-1). */
-function IndexCell({ index }: { readonly index: number }) {
-  return <span className={css.idx}>{index < 0 ? '—' : String(index).padStart(3, '0')}</span>
-}
-
-/** The verbatim body of an assistant row: the `{reasoning?, text?, calls?}` JSON unfolded into labeled sections. */
-interface AssistantPayload {
-  readonly reasoning?: string
-  readonly text?: string
-  readonly calls?: readonly { id: string; name: string; arguments: string }[]
-}
-
-/** One assistant row's unfolded body: reasoning / text / tool_call sections. */
-function AssistantFull({ full }: { readonly full: string }) {
-  let parsed: AssistantPayload | null = null
+interface AssistantPayload { reasoning?: string; text?: string; calls?: { name: string; arguments: string }[] }
+function parseAssistant(full: string): AssistantPayload | null {
   try {
     const value: unknown = JSON.parse(full)
-    if (typeof value === 'object' && value !== null) parsed = value as AssistantPayload
-  } catch {
-    parsed = null
-  }
-  if (parsed === null) return <pre className={css.pre}>{full}</pre>
-  return (
-    <>
-      {parsed.reasoning !== undefined && parsed.reasoning.length > 0 && (
-        <>
-          <div className={css.fullLabel}>reasoning</div>
-          <pre className={css.pre}>{parsed.reasoning}</pre>
-        </>
-      )}
-      {parsed.text !== undefined && parsed.text.length > 0 && (
-        <>
-          <div className={css.fullLabel}>text</div>
-          <pre className={css.pre}>{parsed.text}</pre>
-        </>
-      )}
-      {(parsed.calls ?? []).map((call, index) => {
-        let args = call.arguments
-        try {
-          args = JSON.stringify(JSON.parse(call.arguments), null, 1)
-        } catch { /* keep the raw argument JSON */ }
-        return (
-          <div key={`${call.id}-${index}`}>
-            <div className={css.fullLabel}>tool_call · {call.name}</div>
-            <pre className={css.pre}>{args}</pre>
-          </div>
-        )
-      })}
-      {parsed.reasoning === undefined && parsed.text === undefined && (parsed.calls ?? []).length === 0 && (
-        <pre className={css.pre}>{full}</pre>
-      )}
-    </>
-  )
+    if (value && typeof value === 'object' && !Array.isArray(value)) return value as AssistantPayload
+  } catch { /* Plain assistant text is also valid. */ }
+  return null
 }
-
-/** A row's verbatim body, shaped by role: assistant unfolds, everything else is raw. */
 function ItemFull({ item }: { readonly item: SegmentItem }) {
-  if (item.category === 'assistant') return <AssistantFull full={item.full} />
-  return <pre className={css.pre}>{item.full}</pre>
+  const a = item.category === 'assistant' ? parseAssistant(item.full) : null
+  if (!a || (!a.reasoning && !a.text && !a.calls?.length)) return <pre className={css.pre}>{item.full}</pre>
+  return <>
+    {a.reasoning && <><div className={css.fullLabel}>reasoning</div><pre className={css.pre}>{a.reasoning}</pre></>}
+    {a.text && <><div className={css.fullLabel}>text</div><pre className={css.pre}>{a.text}</pre></>}
+    {a.calls?.map((c, i) => <div key={i}><div className={css.fullLabel}>tool_call · {c.name}</div><pre className={css.pre}>{c.arguments}</pre></div>)}
+  </>
 }
 
-/** One message row (序号 · 类型 · 来源 · [工具chip] · 预览 · 耗时 · 字符数). */
-export function SegmentItemRow({ item, fromOverride, t }: {
-  readonly item: SegmentItem
-  /** Replaces the 来源 slot (the added block's previous-response provenance label). */
-  readonly fromOverride?: string | undefined
-  readonly t: T
+/** Wire-order row, with verbatim expansion independent of its layer. */
+export function SegmentItemRow({ item, fromOverride, repeats = 0, highlight = false, t }: {
+  readonly item: SegmentItem; readonly fromOverride?: string | undefined
+  readonly repeats?: number; readonly highlight?: boolean; readonly t: T
 }) {
-  const from = fromOverride ?? item.source
-  return (
-    <ExpandRow
-      summary={(
-        <>
-          <IndexCell index={item.index} />
-          <span className={css.dot} data-cat={item.category} />
-          <span className={css.sn}>{t(categoryLabelKey(item.category))}</span>
-          {from.length > 0 && <span className={css.from}>{from}</span>}
-          {(item.toolCalls ?? []).map(name => <span key={name} className={css.toolchip}>{name}</span>)}
-          {item.isError && <span className={css.errorNote}>{t('lens.errors')}</span>}
-          {item.sourceTurn !== undefined && <span className={css.from}>{t('lens.sourceTurn', { turn: String(item.sourceTurn) })}</span>}
-          <span className={css.pv}>{item.preview}</span>
-          {item.durationMs !== undefined && <span className={css.stime}>{fmtDur(item.durationMs)}</span>}
-          <span className={css.st}>{item.chars > 0 ? fmt(item.chars) : '—'}</span>
-        </>
-      )}
-      body={() => <ItemFull item={item} />}
-    />
-  )
+  const [open, setOpen] = useState(false)
+  return <details className={css.item} open={open} data-highlight={highlight}>
+    <summary className={css.row} title={item.preview} onClick={e => { e.preventDefault(); setOpen(v => !v) }}>
+      <span className={css.idx}>{item.index < 0 ? '—' : String(item.index).padStart(3, '0')}</span>
+      <i className={css.dot} data-cat={item.category} /><span className={css.type}>{t(categoryLabelKey(item.category))}</span>
+      <span className={css.preview}>{item.preview}</span>
+      <span>{repeats > 1 && <span className={css.badge}>×{repeats}</span>}{item.isError && <span className={css.errorNote}>{t('lens.errors')}</span>}</span>
+      <span className={css.number}>{fmt(item.chars)}</span>
+    </summary>
+    {open && <div className={css.full}>
+      <div className={css.fullLabel}>{fromOverride ?? item.source}{item.sourceTurn === undefined ? '' : ` · ${t('lens.sourceTurn', { turn: String(item.sourceTurn) })}`}{item.durationMs === undefined ? '' : ` · ${fmtSpan(item.durationMs)}`}</div>
+      <ItemFull item={item} />
+    </div>}
+  </details>
 }
-
-/** One tool definition's cell in the two-column grid. */
-function ToolCell({ tool }: { readonly tool: ToolDefItem }) {
+function ToolCell({ tool, t }: { readonly tool: ToolDefItem; readonly t: T }) {
   const [open, setOpen] = useState(false)
   let definition: string
-  try {
-    definition = JSON.stringify({ name: tool.name, description: tool.description, parameters: JSON.parse(tool.parameters) as unknown }, null, 1)
-  } catch {
-    definition = `${tool.name}\n\n${tool.description}\n\n${tool.parameters}`
-  }
-  return (
-    <details className={css.toolCell} open={open}>
-      <summary
-        className={css.toolSummary}
-        onClick={event => {
-          event.preventDefault()
-          setOpen(value => !value)
-        }}
-      >
-        <span className={css.toolName}>{tool.name}</span>
-        <span className={css.tc}>{fmt(tool.chars)}</span>
-      </summary>
-      {open && <pre className={css.pre}>{definition}</pre>}
-    </details>
-  )
+  try { definition = JSON.stringify({ name: tool.name, description: tool.description, parameters: JSON.parse(tool.parameters) as unknown }, null, 1) }
+  catch { definition = `${tool.name}\n${tool.description}\n${tool.parameters}` }
+  return <details className={css.toolCell} open={open}>
+    <summary onClick={e => { e.preventDefault(); setOpen(v => !v) }}><span>{tool.name}</span>{tool.added && <span className={css.badge}>{t('lens.layerAdded')}</span>}<span className={css.number}>{fmt(tool.chars)}</span></summary>
+    {open && <pre className={css.pre}>{definition}</pre>}
+  </details>
 }
-
-/** A block header's aggregate row (the design's segment summary line). */
-function BlockSummary({ index, name, from, preview, chars, dot }: {
-  readonly index: string
-  readonly name: string
-  readonly from: string
-  readonly preview?: ReactNode
-  readonly chars: number
-  /** The header dot: a category color, or the block markers (grey history / accent added). */
-  readonly dot?: SegmentCategory | 'muted' | 'accent' | undefined
-}) {
-  const dotProps = dot === undefined ? {}
-    : dot === 'muted' || dot === 'accent' ? { 'data-dot': dot } : { 'data-cat': dot }
-  return (
-    <>
-      <span className={css.idx}>{index}</span>
-      <span className={css.dot} {...dotProps} />
-      <span className={css.sn}>{name}</span>
-      <span className={css.from}>{from}</span>
-      <span className={css.pv}>{preview}</span>
-      <span className={css.st}>{chars > 0 ? fmt(chars) : '—'}</span>
-    </>
-  )
-}
-
-/** The history block's top-3 category chips (the collapsed summary's content hints). */
-function HistoryChips({ items, t }: { readonly items: readonly SegmentItem[]; readonly t: T }) {
-  const byCategory = new Map<SegmentCategory, number>()
-  for (const item of items) byCategory.set(item.category, (byCategory.get(item.category) ?? 0) + item.chars)
-  const top = [...byCategory.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3)
-  return (
-    <>
-      {top.map(([category, chars], index) => (
-        <span key={category} className={css.histChip}>
-          {index > 0 && <span className={css.histSep}>·</span>}
-          <span className={css.dot} data-cat={category} />
-          {t(categoryLabelKey(category))} {fmt(chars)}
-        </span>
-      ))}
-    </>
-  )
-}
-
 export interface SegmentBlocksProps {
   readonly request: CapturedRequest
-  /** The legend's category filter; applies to the history/added rows. */
-  readonly filterCat: SegmentCategory | null
-  /**
-   * The previous request's seq in the same scope (the 新增 block's assistant
-   * rows are its response); null when this is the scope's first request ever.
-   */
+  readonly filterCat: CompositionFilter
   readonly previousResponseSeq: number | null
   readonly t: T
 }
 
-/** The four input blocks, in wire order: system, tools, history (collapsed), added (open). */
-export function SegmentBlocks({ request, filterCat, previousResponseSeq, t }: SegmentBlocksProps) {
+/** Filtering changes rows only: group counts, bars and sizes keep their full-request meaning. */
+export function SegmentBlocks({ request, filterCat, t }: SegmentBlocksProps) {
   const { system, tools, history, added } = request.segments
-  const systemChars = system.reduce((n, item) => n + item.chars, 0)
-  const toolsChars = tools.reduce((n, tool) => n + tool.chars, 0)
-  const historyChars = history.reduce((n, item) => n + item.chars, 0)
-  const addedChars = added.reduce((n, item) => n + item.chars, 0)
-  const historyRows = filterCat === null ? history : history.filter(item => item.category === filterCat)
-  const addedRows = filterCat === null ? added : added.filter(item => item.category === filterCat)
-  // An assistant row in 新增 arrived as a previous request's response — label it so.
-  const addedFrom = (item: SegmentItem): string | undefined =>
-    item.category === 'assistant' && previousResponseSeq !== null
-      ? t('row.prevResponse', { seq: String(previousResponseSeq) })
-      : undefined
-  return (
-    <>
-      <ExpandRow
-        summary={(
-          <BlockSummary
-            index={system.length > 0 && system[0] !== undefined && system[0].index >= 0 ? String(system[0].index).padStart(3, '0') : '—'}
-            name={t('seg.system')}
-            from={t('seg.systemFrom', { count: String(system.length) })}
-            chars={systemChars}
-            dot="system"
-          />
-        )}
-        body={() => system.length === 0
-          ? <div className={css.emptyNote}>{t('seg.systemEmpty')}</div>
-          : system.map((item, row) => <SegmentItemRow key={`${item.index}-${row}`} item={item} t={t} />)}
-      />
-      <ExpandRow
-        summary={(
-          <BlockSummary
-            index="—"
-            name={t('seg.tools')}
-            from={t('seg.toolsFrom', { count: String(tools.length) })}
-            preview={tools.map(tool => tool.name).join(', ')}
-            chars={toolsChars}
-            dot="tool-definition"
-          />
-        )}
-        body={() => tools.length === 0
-          ? <div className={css.emptyNote}>{t('seg.toolsEmpty')}</div>
-          : (
-            <div className={css.toolGrid}>
-              {tools.map(tool => <ToolCell key={tool.name} tool={tool} />)}
-            </div>
-          )}
-      />
-      <ExpandRow
-        summary={(
-          <BlockSummary
-            index="···"
-            name={t('seg.history')}
-            from={t('seg.historyFrom', { count: String(history.length) })}
-            preview={<HistoryChips items={history} t={t} />}
-            chars={historyChars}
-            dot="muted"
-          />
-        )}
-        body={() => historyRows.length === 0
-          ? <div className={css.emptyNote}>{t('seg.empty')}</div>
-          : historyRows.map((item, row) => <SegmentItemRow key={`${item.index}-${row}`} item={item} t={t} />)}
-      />
-      <ExpandRow
-        summary={(
-          <BlockSummary
-            index="···"
-            name={t('seg.added')}
-            from={t('seg.addedFrom', { count: String(added.length) })}
-            chars={addedChars}
-            dot="accent"
-          />
-        )}
-        body={() => addedRows.length === 0
-          ? <div className={css.emptyNote}>{t('seg.empty')}</div>
-          : addedRows.map((item, row) => <SegmentItemRow key={`${item.index}-${row}`} item={item} fromOverride={addedFrom(item)} t={t} />)}
-      />
-    </>
-  )
-}
-
-/** The 输出 block's body: the response verbatim, or the honest absence note. */
-function outputBody(request: CapturedRequest, t: T): ReactNode {
-  const response = request.response
-  if (response === undefined) {
-    if (request.status === 'streaming') return <div className={css.emptyNote}>{t('out.streaming')}</div>
-    if (request.status === 'failed' && request.error !== undefined) {
-      return <div className={css.errorNote}>{request.error}</div>
+  const [openLayers, setOpenLayers] = useState(new Set(['added']))
+  const duplicates = duplicateStats([...system, ...history, ...added])
+  const matches = (x: SegmentItem) => filterCat === null || (filterCat === '__dup' ? (duplicates.counts.get(x.full) ?? 0) > 1 : x.category === filterCat)
+  useEffect(() => {
+    if (filterCat === null) return
+    setOpenLayers(previous => {
+      const next = new Set(previous)
+      next.add('history')
+      for (const id of ['system', 'added'] as const) if (request.segments[id].some(x => filterCat === '__dup' ? (duplicates.counts.get(x.full) ?? 0) > 1 : x.category === filterCat)) next.add(id)
+      if (filterCat === 'tool-definition') next.add('tools')
+      return next
+    })
+  }, [filterCat, request])
+  const layers = [
+    { id: 'system', items: system, count: system.length, chars: system.reduce((n, x) => n + x.chars, 0), unit: 'cat.rows' as const },
+    { id: 'tools', items: [], count: tools.length, chars: tools.reduce((n, x) => n + x.chars, 0), unit: 'seg.toolsFrom' as const },
+    { id: 'history', items: history, count: history.length, chars: history.reduce((n, x) => n + x.chars, 0), unit: 'lens.messages' as const },
+    { id: 'added', items: added, count: added.length, chars: added.reduce((n, x) => n + x.chars, 0), unit: 'lens.messages' as const },
+  ]
+  const total = layers.reduce((n, l) => n + l.chars, 0)
+  const seen = new Set<string>()
+  return <>{layers.map(layer => {
+    const open = openLayers.has(layer.id)
+    const mix = new Map<string, number>()
+    if (layer.id === 'tools') mix.set('tool-definition', layer.chars)
+    else for (const x of layer.items) mix.set(x.category, (mix.get(x.category) ?? 0) + x.chars)
+    const rows = layer.items.filter(matches)
+    let extra = 0
+    for (const item of layer.items) {
+      if (item.full.length < 40) continue
+      if (seen.has(item.full)) extra += item.chars
+      seen.add(item.full)
     }
-    // An ok call without a captured response shows nothing — never fabricate.
-    return null
-  }
-  const reasoning = response.reasoning !== undefined && response.reasoning.length > 0 ? response.reasoning : undefined
-  const text = response.text !== undefined && response.text.length > 0 ? response.text : undefined
-  if (reasoning === undefined && text === undefined && response.toolCalls.length === 0) return null
-  return (
-    <>
-      {reasoning !== undefined && (
-        <>
-          <div className={css.fullLabel}>reasoning</div>
-          <Clamped text={reasoning} t={t} compact />
-        </>
-      )}
-      {text !== undefined && (
-        <>
-          <div className={css.fullLabel}>text</div>
-          <Clamped text={text} t={t} />
-        </>
-      )}
-      {response.toolCalls.map((call, index) => {
-        return (
-          <div key={`${call.name}-${index}`}>
-            <div className={css.fullLabel}>tool_call · {call.name}</div>
-            <Arguments raw={call.arguments} t={t} />
-          </div>
-        )
-      })}
-    </>
-  )
+    const names = { system: 'lens.layerSystem', tools: 'lens.layerTools', history: 'lens.layerHistory', added: 'lens.layerAdded' } as const
+    return <details key={layer.id} className={css.layer} open={open}>
+      <summary className={css.layerHead} onClick={e => { e.preventDefault(); setOpenLayers(previous => { const next = new Set(previous); next.has(layer.id) ? next.delete(layer.id) : next.add(layer.id); return next }) }}>
+        <span className={css.caret}>{open ? '▾' : '▸'}</span>
+        <span className={css.layerName}>{t(names[layer.id as keyof typeof names])}<small>{t(layer.unit, { count: String(layer.count) })}</small></span>
+        <span className={css.mix}><span className={css.mini} style={{ width: `${total ? Math.max(3, layer.chars / total * 100) : 0}%` }}>{[...mix].sort((a,b) => b[1]-a[1]).map(([category,n]) => <i key={category} data-cat={category} style={{ flex: `${n} 1 0` }} />)}</span>
+          {extra > 0 && <span className={css.badge}>{t('lens.repeatedChars', { count: fmtK(extra) })}</span>}
+          {layer.id === 'tools' && tools.some(x => x.added) && <span className={css.badge}>{t('lens.newTools', { count: String(tools.filter(x => x.added).length) })}</span>}
+        </span>
+        <span className={css.number}>{fmt(layer.chars)}</span>
+      </summary>
+      {open && <div className={css.rows}>
+        {layer.id === 'tools' ? ((filterCat === null || filterCat === 'tool-definition') && tools.length > 0 ? <div className={css.toolGrid}>{tools.map(tool => <ToolCell key={tool.name} tool={tool} t={t} />)}</div> : <div className={css.emptyNote}>{t(filterCat ? 'lens.noMatch' : 'seg.toolsEmpty')}</div>)
+          : rows.length ? rows.map((item, i) => <SegmentItemRow key={`${item.index}-${i}`} item={item} repeats={duplicates.counts.get(item.full) ?? 0} highlight={filterCat === '__dup'} t={t} />)
+          : <div className={css.emptyNote}>{t(filterCat ? 'lens.noMatch' : layer.id === 'system' ? 'seg.systemEmpty' : 'seg.empty')}</div>}
+      </div>}
+    </details>
+  })}</>
 }
 
-/**
- * The 输出 section: this request's own response, first-class. The header merges
- * the old anchor line (本次响应 → summary · 输出 N tok · Ns); the config stays
- * up in the detail header. Default expanded; a response-less call (streaming,
- * failed before any block, or simply not captured) shows the honest state,
- * never a fabrication.
- */
-export function OutputBlock({ request, t }: { readonly request: CapturedRequest; readonly t: T }) {
-  const response = request.response
-  const chars = response === undefined
-    ? 0
-    : (response.reasoning?.length ?? 0) + (response.text?.length ?? 0)
-      + response.toolCalls.reduce((n, call) => n + call.name.length + call.arguments.length, 0)
-  const from = [
-    `${t('detail.anchor')} → ${summaryText(request.responseSummary, t('resp.directAnswer'))}`,
-    ...(request.usage === undefined ? [] : [`${t('req.output')} ${fmt(request.usage.outputTokens)} tok`]),
-    ...(request.timing.totalMs === undefined ? [] : [fmtDur(request.timing.totalMs)]),
-  ].join(' · ')
-  const body = outputBody(request, t)
-  const summaryRow = (
-    <BlockSummary index="···" name={t('out.title')} from={from} chars={chars} dot="assistant" />
-  )
-  if (body === null) {
-    // Nothing to expand: the header alone, inert (an empty affordance would lie).
-    return <div className={css.seg}><div className={`${css.summary} ${css.summaryStatic}`}>{summaryRow}</div></div>
-  }
-  return <ExpandRow defaultOpen summary={summaryRow} body={() => body} />
-}
-
-/** Long output remains bounded after expansion, so composition stays reachable. */
-function Clamped({ text, t, compact = false }: { readonly text: string; readonly t: T; readonly compact?: boolean }) {
+function Clamped({ text, t }: { readonly text: string; readonly t: T }) {
   const [open, setOpen] = useState(false)
-  const long = text.length > (compact ? 80 : 300)
-  return <><pre className={css.clamp} data-open={open} data-long={long} data-compact={compact}>{text}</pre>{long && <button className={css.more} type="button" onClick={() => setOpen(v => !v)}>{open ? t('lens.collapse') : t('lens.expand', { count: fmt(text.length) })}</button>}</>
+  const long = text.length > 300
+  return <><pre className={css.clamp} data-open={open} data-long={long}>{text}</pre>{long && <button className={css.more} type="button" onClick={() => setOpen(v => !v)}>{open ? t('lens.collapse') : t('lens.expand', { count: fmt(text.length) })}</button>}</>
+}
+function ArgumentValue({ name, value }: { readonly name: string; readonly value: string }) {
+  const [open, setOpen] = useState(false)
+  return <><span className={css.argKey}>{name}</span><button type="button" className={css.argValue} aria-label={name} aria-expanded={open} title={value} onClick={() => setOpen(v => !v)}>{value}</button></>
 }
 function Arguments({ raw, t }: { readonly raw: string; readonly t: T }) {
   let obj: unknown
   try { obj = JSON.parse(raw) } catch { return <Clamped text={raw} t={t} /> }
   if (!obj || typeof obj !== 'object') return <Clamped text={raw} t={t} />
-  return <div className={css.args}>{Object.entries(obj).map(([k,v]) => <details key={k}><summary>{k}<span>{typeof v === 'string' ? v : JSON.stringify(v)}</span></summary><Clamped text={typeof v === 'string' ? v : JSON.stringify(v)} t={t} compact /></details>)}</div>
+  return <div className={css.args}>{Object.entries(obj).map(([k,v]) => <ArgumentValue key={k} name={k} value={typeof v === 'string' ? v : JSON.stringify(v)} />)}</div>
 }
-/** New inputs and this request's own output share a single exchange row. */
+function Reasoning({ text, ms, t }: { readonly text: string; readonly ms: number | undefined; readonly t: T }) {
+  const [open, setOpen] = useState(false)
+  return <div className={css.think}>
+    <button type="button" aria-expanded={open} onClick={() => setOpen(v => !v)}><b>{t('lens.reasoning')}</b> · {ms === undefined ? '—' : fmtSpan(ms)} · {t('chain.chars', { count: fmt(text.length) })}</button>
+    <div className={css.thinkText} data-open={open}>{text}</div>
+  </div>
+}
+/** The output body is visible, including reasoning and arguments, without opening a wrapper. */
+export function OutputBlock({ request, t }: { readonly request: CapturedRequest; readonly t: T }) {
+  const response = request.response
+  return <div className={css.output}>
+    {request.status === 'failed' && request.error && <div className={css.errorNote}>{request.error}</div>}
+    {response === undefined ? <div className={css.emptyNote}>{t(request.status === 'streaming' ? 'out.streaming' : 'lens.noResponse')}</div> : <>
+      {response.reasoning && <Reasoning text={response.reasoning} ms={request.timing.reasoningMs} t={t} />}
+      {response.text && <Clamped text={response.text} t={t} />}
+      {response.toolCalls.map((c,i) => <div className={css.call} key={i}>
+        <div className={css.callHead}><span>{t('lens.calls')}</span><b>{c.name}</b><span className={css.number}>{fmt(c.arguments.length)}</span></div><Arguments raw={c.arguments} t={t} />
+      </div>)}
+    </>}
+  </div>
+}
+function InputCard({ item, from, repeats, t }: { readonly item: SegmentItem; readonly from: string; readonly repeats: number; readonly t: T }) {
+  const [open, setOpen] = useState(false)
+  const a = item.category === 'assistant' ? parseAssistant(item.full) : null
+  const body = a ? [a.text, ...(a.calls ?? []).map(c => `→ ${c.name}`)].filter(Boolean).join('\n') || item.preview : item.full || item.preview
+  return <div className={css.message} data-error={item.isError}>
+    <button type="button" className={css.messageHead} aria-expanded={open} onClick={() => setOpen(v => !v)}>
+      <i className={css.dot} data-cat={item.category} /><b>{t(categoryLabelKey(item.category))}</b><span className={css.source} title={from}>{from}</span>{repeats > 1 && <span className={css.badge}>×{repeats}</span>}<span className={css.number}>{fmt(item.chars)}</span>
+    </button>
+    {item.isError && <div className={css.errorNote}>{t('lens.errors')}</div>}
+    {open ? <div className={css.messageFull}><div className={css.fullLabel}>{item.sourceTurn === undefined ? '' : t('lens.sourceTurn', { turn: String(item.sourceTurn) })}</div><ItemFull item={item} /></div> : <div className={css.messageBody} onClick={() => setOpen(true)}>{body}</div>}
+  </div>
+}
 export function Exchange({ request, previousResponseSeq, t }: { readonly request: CapturedRequest; readonly previousResponseSeq: number | null; readonly t: T }) {
-  return <section><h3 className={css.exchangeTitle}>{t('lens.exchange')}</h3><div className={css.exchange}>
-    <div><div className={css.fullLabel}>{t('seg.added')} · {request.segments.added.length}</div>
-      {request.segments.added.map((item,i) => <SegmentItemRow key={i} item={item} t={t} fromOverride={item.category === 'assistant' && previousResponseSeq !== null ? t('row.prevResponse', {seq:String(previousResponseSeq)}) : undefined} />)}
-    </div><div><OutputBlock request={request} t={t} /></div>
-  </div></section>
+  const duplicates = duplicateStats([...request.segments.system, ...request.segments.history, ...request.segments.added])
+  return <section aria-label={t('lens.exchange')}>
+    <h3 className={css.exchangeTitle}>{t('lens.exchange')}</h3>
+    <div className={css.exchange}>
+      <div className={css.column}><div className={css.columnLabel}>{t('lens.newInput')} · {request.segments.added.length}</div>
+        {request.segments.added.map((item,i) => <InputCard key={i} item={item} repeats={duplicates.counts.get(item.full) ?? 0} t={t} from={item.category === 'assistant' && previousResponseSeq !== null ? t('row.prevResponse', { seq:String(previousResponseSeq) }) : item.source} />)}
+      </div>
+      <div className={css.arrow} aria-hidden="true">→</div>
+      <div className={css.column} role="region" aria-label={t('out.title')}><div className={css.columnLabel}><span>{t('out.title')}</span><span>{request.usage ? fmt(request.usage.outputTokens) : '—'} tok</span></div><OutputBlock request={request} t={t} /></div>
+    </div>
+  </section>
 }

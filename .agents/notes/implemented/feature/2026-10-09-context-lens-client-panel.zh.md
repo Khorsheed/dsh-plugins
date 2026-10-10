@@ -33,4 +33,4 @@ M1 的宿主采集（见[宿主采集 note](2026-10-09-context-lens-host-capture
 
 ## Testing
 
-`tests/client-panel.spec.tsx`（16 个）用组合 props 假件驱动 tab body：挂载 → listTurns → getTurn → getRequest、turn 切换器、导航参数、scope chips（失败运行页、子会话老实的空 system/tools）、图例筛选、行展开（逐字 + assistant 展开 + 工具网格）、耗时 tab（分桶、按工具、调用行点击跳回、scope 筛选）、raw 视图、灰显的 wire body 席位与空/错误态。`tests/client-aggregate.spec.ts` 钉住纯函数层（turn 解析、类别聚合、带间隙并入与 scope 筛选的 lane 归约、格式化）。`tests/client-actions.spec.tsx` 覆盖两个入口；`tests/client-preset-visibility.spec.ts` 覆盖判据的两条授予路径、全部 fail-open 路径与 toggle。截图自查在样例页上跑过（390px 深浅两色 + 800px，正文无横向溢出）。
+`tests/client-panel.spec.tsx`用组合 props 假件驱动 tab body：挂载 → listTurns → getTurn → getRequest、turn 切换器、导航参数、scope chips（失败运行页、子会话老实的空 system/tools）、图例筛选、行展开（逐字 + assistant 展开 + 工具网格）、耗时 tab（分桶、按工具、调用行点击跳回、scope 筛选）、请求内 JSON 切换与空/错误态。`tests/client-aggregate.spec.ts` 钉住纯函数层（turn 解析、类别聚合、带间隙并入与 scope 筛选的 lane 归约、格式化）。`tests/client-actions.spec.tsx` 覆盖两个入口；`tests/client-preset-visibility.spec.ts` 覆盖判据的两条授予路径、全部 fail-open 路径与 toggle。截图自查在样例页上跑过（390px 深浅两色 + 800px，正文无横向溢出）。

@@ -11,14 +11,14 @@ Both land on the same right-sidebar tab (`context-lens`); the panel's turn switc
 
 ## The two views
 
-- **Requests**: the turn stepper and draggable session trend select a request. Detail shows measured cache hits/misses and exact prefix differences, new input beside captured output, then system/tools/history/added composition. Expand verbatim text or filter exact duplicates of at least 40 characters. Long output remains bounded after expansion.
+- **Requests**: the turn stepper and draggable session trend select a request. Detail shows measured cache hits/misses and exact prefix differences, new input beside captured output, then system/tools/history/added composition. Expand verbatim text or filter exact duplicates of at least 40 characters. Duplicate character totals count excess copies only; category/duplicate filtering preserves group totals and the exchange. Input previews, reasoning and tool arguments are visible immediately, with bounded expansion. The top-right `{ }` button replaces the detail with JSON while keeping the request list and metrics; there is no footer toolbar.
 - **Timing**: four cards show total, model, tool execution and gaps for the selected agent. Separate agent lanes link to requests. The sortable tool table covers calls/errors/reasoning/arguments/execution; the non-tool table expands to individual requests and cache rates. Both tables sum to elapsed time; concurrent intervals share their overlap and are labeled. Internal slack and inter-request gaps remain separate.
 
 Each delegation has its own chip. Parent totals exclude child model spans already included in delegation execution; a failed run without requests remains visible.
 
 ## Measurement honesty
 
-- Segment sizes are **exact character counts** (the host exposes no per-segment tokenizer); request token totals are **real provider usage** (including measured `cacheReadTokens`). The panel footer states this split.
+- Segment sizes are **exact character counts** (the host exposes no per-segment tokenizer); request token totals are **real provider usage** (including measured `cacheReadTokens`). The composition info tooltip states this split.
 - History vs added is a message-level diff between adjacent requests in the same scope (durable id first, content hash otherwise).
 
 ## How it works
@@ -33,7 +33,7 @@ Three read-only host seams (requests are never rewritten):
 
 **Subagent coverage**: `subagent_dsh` one-shots run in a fresh child process (SDK spawn) that the parent's waterfall cannot see — those runs are reconstructed from the **child session log on disk** (messages/usage/timing are complete; a one-shot's system prompt and tool definitions never land in the log and are shown as honest empty states, never faked). In-process subagent providers are captured at the same fidelity as the main conversation.
 
-Data lives in memory only (configurable), never written to the session log or disk: the latest 30 turns per session; history backfill additionally capped at 500 reconstructed requests per session; and all sessions' segment text shares one global character budget (default ~150MB — the verbatim segment text is the real memory driver). Under pressure the oldest *backfilled* turns evict first; live captures never yield to backfill pressure. Budget-dropped older turns are flagged in the footer and refill automatically once room frees.
+Data lives in memory only (configurable), never written to the session log or disk: the latest 30 turns per session; history backfill additionally capped at 500 reconstructed requests per session; and all sessions' segment text shares one global character budget (default ~150MB — the verbatim segment text is the real memory driver). Under pressure the oldest *backfilled* turns evict first; live captures never yield to backfill pressure. Budget-dropped older turns are flagged beside turn navigation and refill automatically once room frees.
 
 ## Workspace admission seam (server-side consumption)
 
@@ -58,7 +58,7 @@ const { turns, backfill, generation, authorizedScopes } =
 
 - npm release line (`@deepseek-ai/dsh@0.1.7-rc.1`): ✅ full — the page-type right-sidebar tab exists since 0.1.5 (hence `minHost` 0.1.5-rc.1) and the `conversation.chat.assistant-actions` seat since 0.1.7-rc.1; on 0.1.5–0.1.6 hosts the action-row icon is silently absent and the session-header entry remains (all registrations ride `ctx.slots.inject`; a missing seat never breaks boot).
 - Source line (deepseek-harness master): ✅ (verifiedHost: 0.2.0-rc.1).
-- **The wire-body view is a 0.1.2+ probed enhancement**: byte-level request bodies need `deepseekLlmApiExtensions.prepare` (deepseek adapter only); when unavailable the bottom view is greyed out and everything else is unaffected.
+- **JSON is the captured assembly**, not adapter-projected wire bytes; the unsupported wire-body placeholder is removed.
 - **Web-facing plugin**: a headless profile has no browser consumer; the host half still captures and serves the Remote.
 - **Probed degradation**: without `sessionPersistence` the log lane is off — both the child-scope detail and the history backfill (live main-conversation capture is unaffected); any missing capture seam silently degrades to an emptier panel, never a boot failure.
 
@@ -67,10 +67,14 @@ const { turns, backfill, generation, authorizedScopes } =
 - **No live refresh during streaming**: the panel is pull-based (fetch on open / turn switch); a running turn's view freezes at fetch time.
 - **Child-log lane honest gaps**: a one-shot sub-run's system prompt and tool definitions are unavailable (not logged); segment-level history/added diffing is only meaningful within one sub-run.
 - **No section attribution for backfilled system segments**: a log-reconstructed turn's system prompt renders as one block (the log keeps no `system-prompt/assemble` section names); aux requests (compaction / session-title) never land in the request log and do not appear historically.
-- **Budget truncation is labeled**: when the memory budget can't hold older turns the backfill truncates newest-first-kept and the footer shows "Older turns not loaded (memory budget)"; a later query refills automatically once room frees. A log that refuses to decode (e.g. unknown event types) shows a "Session log unreadable" note with the reason instead of looking empty.
+- **Budget truncation is labeled**: when the memory budget can't hold older turns the backfill truncates newest-first-kept and the turn navigation area shows "Older turns not loaded (memory budget)"; a later query refills automatically once room frees. A log that refuses to decode (e.g. unknown event types) shows a "Session log unreadable" note with the reason instead of looking empty.
 - **Opening a child session directly** (navigating into a catalog'd child session id) shows its own log-reconstructed view (a one-shot has no system/tools); the same content lives under the parent session's scope.
-- No manual refresh action yet (follow-up); the wire-body view awaits the host 0.1.2+ capability hookup.
+- No manual refresh action yet (follow-up); adapter-projected wire-body capture is not implemented.
 
 ## Rename migration
 
 Replace the old request-inspector dependency and bundle row with `@khorsheed/dsh-context-lens`; do not mount both. The `requestInspector` service/Remote namespace remains stable. Reopen old saved sidebar tabs through the new entry. Deployment migration must use the profile owner's supported flow.
+
+## Visual verification
+
+`pnpm exec tsx packages/context-lens/examples/workbench/serve.mts` opens the actual components with synthetic fixtures at port 4177. The controls exercise light/dark themes and a 390px panel; no session data or production connection is used.

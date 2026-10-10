@@ -5,7 +5,7 @@
  * turn, navigation-params turn selection, scope chips incl. the failed-run
  * page, the token tab's cards + four-segment detail + legend filter, the
  * timing tab's buckets/timeline/call-row click-through, the raw view, the
- * disabled wire-body seat, and the empty states).
+ * request-local JSON toggle, and the empty states).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -195,7 +195,7 @@ function bench(opts: BenchOptions = {}) {
     })),
     getRequest: vi.fn(async (_sessionId: string, seq: number): Promise<Result<CapturedRequest | undefined>> => ({
       ok: true,
-      value: opts.requests?.[seq] ?? (seq === 101 ? REQ101 : seq === 102 ? REQ102 : seq === 201 ? REQ201 : undefined),
+      value: opts.requests?.[seq] ?? (seq === 101 ? REQ101 : seq === 102 ? REQ102 : seq === 201 ? REQ201 : seq === 11 ? { ...REQ101, seq: 11, responseSummary: { kind: 'text' } } : undefined),
     })),
     getTurnTiming: vi.fn(async (): Promise<Result<TurnTiming | undefined>> => ({ ok: true, value: TIMING2 })),
   }
@@ -245,13 +245,13 @@ describe('InspectorPanel · token tab', () => {
     expect(screen.getByRole('button', { name: /#2 提取 JSON/ })).toBeTruthy()
     expect(screen.getByRole('button', { name: /#3 失败的提取/ })).toBeTruthy()
     // The detail anchor + the four blocks.
-    await waitFor(() => expect(screen.getByText(/本次响应/)).toBeTruthy())
+    expect(screen.getByRole('region', { name: zh['lens.exchange'] })).toBeTruthy()
     // The anchor names the response; the selected card's title repeats it.
-    expect(screen.getAllByText(/read:a\.ts/).length).toBeGreaterThanOrEqual(2)
-    expect(screen.getByText(zh['seg.system'])).toBeTruthy()
-    expect(screen.getByText(zh['seg.tools'])).toBeTruthy()
-    expect(screen.getByText(zh['seg.history'])).toBeTruthy()
-    expect(screen.getAllByText(new RegExp(zh['seg.added'])).length).toBeGreaterThan(0)
+    expect(screen.getByRole('button', { name: '#101 · read:a.ts' })).toBeTruthy()
+    expect(screen.getByText(zh['lens.layerSystem'])).toBeTruthy()
+    expect(screen.getByText(zh['lens.layerTools'])).toBeTruthy()
+    expect(screen.getByText(zh['lens.layerHistory'])).toBeTruthy()
+    expect(screen.getAllByText(new RegExp(zh['lens.layerAdded'])).length).toBeGreaterThan(0)
   })
 
   it('keeps history collapsed and added open; rows expand to verbatim text', async () => {
@@ -261,7 +261,7 @@ describe('InspectorPanel · token tab', () => {
     await waitFor(() => expect(screen.getByText('文件内容')).toBeTruthy())
     expect(screen.queryByText('历史用户输入')).toBeNull()
     // Expand 历史上下文 → the user row appears; expanding it shows the full text.
-    openDetails(zh['seg.history'])
+    openDetails(zh['lens.layerHistory'])
     await waitFor(() => expect(screen.getByText('历史用户输入')).toBeTruthy())
     openDetails('历史用户输入')
     await waitFor(() => expect(screen.getByText('历史用户输入全文')).toBeTruthy())
@@ -285,7 +285,7 @@ describe('InspectorPanel · token tab', () => {
     await waitFor(() => expect(screen.getByText('#101 · read:a.ts')).toBeTruthy())
     // The tools block is collapsed: 'write' appears only in a tool cell.
     expect(screen.queryByText('write')).toBeNull()
-    openDetails(zh['seg.tools'])
+    openDetails(zh['lens.layerTools'])
     await waitFor(() => expect(screen.getByText('write')).toBeTruthy())
     expect(screen.getAllByText('read').length).toBeGreaterThanOrEqual(2)
   })
@@ -293,16 +293,16 @@ describe('InspectorPanel · token tab', () => {
   it('filters the detail rows by a legend category and clears back', async () => {
     bench()
     await waitFor(() => expect(screen.getByText('#101 · read:a.ts')).toBeTruthy())
-    openDetails(zh['seg.history'])
+    openDetails(zh['lens.layerHistory'])
     await waitFor(() => expect(screen.getByText('历史用户输入')).toBeTruthy())
     // Click the 用户消息 legend entry → only user rows stay in history/added.
     fireEvent.click(screen.getByRole('button', { name: new RegExp(zh['cat.user']) }))
-    await waitFor(() => expect(screen.getByText(/已筛选/)).toBeTruthy())
+    expect(screen.getByRole('button', { name: new RegExp(zh['cat.user']) }).getAttribute('aria-pressed')).toBe('true')
     // Exchange is independent of the composition filter.
-    await waitFor(() => expect(screen.getByText('文件内容')).toBeTruthy())
+    expect(within(screen.getByRole('region', { name: zh['lens.exchange'] })).getByText('文件内容全文')).toBeTruthy()
     expect(screen.getByText('历史用户输入')).toBeTruthy()
-    // The ✕ clears the filter.
-    fireEvent.click(screen.getByRole('button', { name: '✕' }))
+    // Clicking the same legend entry clears the filter.
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(zh['cat.user']) }))
     await waitFor(() => expect(screen.getByText('文件内容')).toBeTruthy())
   })
 
@@ -355,9 +355,9 @@ describe('InspectorPanel · scope chips', () => {
     fireEvent.click(screen.getByRole('button', { name: /#2 提取 JSON/ }))
     await waitFor(() => expect(screen.getByText('#201 · 直接回答')).toBeTruthy())
     // The child-lane scope has no captured system/tools: the blocks render the empty states.
-    openDetails(zh['seg.system'])
+    openDetails(zh['lens.layerSystem'])
     await waitFor(() => expect(screen.getByText(zh['seg.systemEmpty'])).toBeTruthy())
-    openDetails(zh['seg.tools'])
+    openDetails(zh['lens.layerTools'])
     await waitFor(() => expect(screen.getByText(zh['seg.toolsEmpty'])).toBeTruthy())
   })
 })
@@ -396,16 +396,23 @@ describe('InspectorPanel · timing tab', () => {
   })
 })
 
-describe('InspectorPanel · raw view and the wire-body seat', () => {
-  it('serializes the selected request as 原始 JSON; wire body stays disabled with its hint', async () => {
+describe('InspectorPanel · request-local JSON view', () => {
+  it('keeps navigation and metrics while JSON replaces only the request sections, with no footer', async () => {
     bench()
-    await waitFor(() => expect(screen.getByText('#101 · read:a.ts')).toBeTruthy())
-    const wire = screen.getByRole('button', { name: /wire body/ }) as HTMLButtonElement
-    expect(wire.disabled).toBe(true)
-    expect(wire.title).toBe(zh['view.wireHint'])
+    await screen.findByText('#101 · read:a.ts')
+    expect(screen.queryByRole('button', { name: /wire body/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: zh['view.structured'] })).toBeNull()
+    const toggle = screen.getByRole('button', { name: zh['view.raw'] })
+    fireEvent.click(toggle)
+    expect(screen.getByText(/"seq": 101/)).toBeTruthy()
+    expect(toggle.getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByRole('navigation', { name: zh['view.token'] })).toBeTruthy()
+    expect(screen.getByText('196 字符')).toBeTruthy()
+    expect(screen.queryByRole('region', { name: zh['lens.exchange'] })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '#102 · 直接回答' }))
+    await screen.findByText(/"seq": 102/)
     fireEvent.click(screen.getByRole('button', { name: zh['view.raw'] }))
-    await waitFor(() => expect(screen.getByText(/"seq": 101/)).toBeTruthy())
-    expect(screen.getByText(/CapturedRequest/)).toBeTruthy()
+    expect(screen.getByRole('region', { name: zh['lens.exchange'] })).toBeTruthy()
   })
 })
 
@@ -422,7 +429,7 @@ describe('InspectorPanel · empty and error states', () => {
     expect(screen.queryByText(zh['state.noTurns'])).toBeNull()
   })
 
-  it('notes a budget-truncated history in the footer', async () => {
+  it('notes a budget-truncated history beside turn navigation', async () => {
     bench({ backfill: { state: 'partial' } })
     await waitFor(() => expect(screen.getByText('#101 · read:a.ts')).toBeTruthy())
     expect(screen.getByText(zh['hint.backfillTruncated'])).toBeTruthy()
@@ -567,19 +574,17 @@ describe('InspectorPanel · 输出 section', () => {
   it('renders the response verbatim — reasoning, text, and one row per tool call — expanded by default', async () => {
     bench()
     await waitFor(() => expect(screen.getByText('#101 · read:a.ts')).toBeTruthy())
-    const out = screen.getByText(zh['out.title']).closest('details')
-    if (out === null) throw new Error('输出 block not found')
-    expect(out.hasAttribute('open')).toBe(true)
-    // The header merges the old anchor line; config stays up in the detail header.
-    expect(out.textContent).toContain('本次响应')
-    expect(out.textContent).toContain('read:a.ts')
-    expect(out.textContent).toContain('输出 100 tok')
-    expect(out.textContent).toContain('4.2s')
+    const out = screen.getByRole('region', { name: zh['out.title'] })
+    expect(within(out).getByText('100 tok')).toBeTruthy()
     expect(within(out).getByText('本轮先把第二章结尾读进来，确认接续位置。')).toBeTruthy()
     expect(within(out).getByText('好的，先读第二章结尾。')).toBeTruthy()
-    expect(within(out).getByText('tool_call · read')).toBeTruthy()
-    fireEvent.click(within(out).getByText('path'))
-    expect(within(out).getByText('a.ts', { selector: 'pre' })).toBeTruthy()
+    expect(within(out).getByText('read')).toBeTruthy()
+    const value = within(out).getByRole('button', { name: 'path' })
+    expect(value.textContent).toBe('a.ts')
+    fireEvent.click(value)
+    expect(value.getAttribute('aria-expanded')).toBe('true')
+    fireEvent.click(value)
+    expect(value.getAttribute('aria-expanded')).toBe('false')
   })
 
   it('shows 进行中 while the response is still streaming', async () => {
@@ -602,7 +607,8 @@ describe('InspectorPanel · 输出 section', () => {
     await waitFor(() => expect(screen.getByText(zh['out.title'])).toBeTruthy())
     const block = screen.getByText(zh['out.title']).closest('div')
     if (block === null) throw new Error('输出 header not found')
-    expect(block.textContent).toContain('输出 100 tok')
+    expect(block.textContent).toContain('100 tok')
+    expect(screen.getByText(zh['lens.noResponse'])).toBeTruthy()
     // Inert: not a <details>, nothing expanded, nothing invented.
     expect(screen.getByText(zh['out.title']).closest('details')).toBeNull()
     expect(screen.queryByText('本轮先把第二章结尾读进来，确认接续位置。')).toBeNull()
@@ -641,5 +647,38 @@ describe('Context Lens session trend', () => {
     fireEvent.click(bar)
     await waitFor(() => expect(screen.getByText('#201 · 直接回答', { selector: 'b' })).toBeTruthy())
     expect(screen.getByRole('button', { name: /#2 提取 JSON/ }).getAttribute('aria-pressed')).toBe('true')
+  })
+})
+
+
+describe('Context Lens composition filters', () => {
+  it('counts only excess copies, exposes every duplicate, and leaves totals and exchange unchanged', async () => {
+    const full = 'identical repeated tool failure message, longer than forty characters'
+    const repeated = (index: number) => ({ index, category: 'tool-result' as const, source: 'read', full, preview: 'repeated failure', chars: full.length, freshness: 'history' as const })
+    const history = [repeated(4), { ...repeated(5), full: full + 'different tail', preview: 'same prefix, different tail', chars: full.length + 14 }, repeated(6), repeated(7)]
+    const detail = { ...REQ101, segments: { ...REQ101.segments, history } }
+    bench({ requests: { 101: detail } })
+    await screen.findByText('#101 · read:a.ts')
+    const composition = screen.getByRole('region', { name: zh['lens.composition'] })
+    const duplicate = within(composition).getByRole('button', { name: /只看重复/ })
+    expect(duplicate.textContent).toContain(String(full.length * 2))
+    const layer = within(composition).getByText(zh['lens.layerHistory']).closest('summary')!
+    const original = layer.textContent?.slice(1)
+    fireEvent.click(duplicate)
+    expect(layer.parentElement?.hasAttribute('open')).toBe(true)
+    expect(layer.textContent?.slice(1)).toBe(original)
+    expect(within(composition).getAllByText('repeated failure')).toHaveLength(3)
+    expect(within(composition).getAllByText('×3')).toHaveLength(3)
+    expect(within(composition).queryByText('same prefix, different tail')).toBeNull()
+    expect(within(screen.getByRole('region', { name: zh['lens.exchange'] })).getByText('文件内容全文')).toBeTruthy()
+    // Category and duplicates are one exclusive filter, not two hidden constraints.
+    fireEvent.click(within(composition).getByRole('button', { name: /工具结果/ }))
+    expect(duplicate.getAttribute('aria-pressed')).toBe('false')
+    expect(within(composition).getByText('same prefix, different tail')).toBeTruthy()
+    fireEvent.click(duplicate)
+    fireEvent.click(screen.getByRole('button', { name: '#102 · 直接回答' }))
+    await screen.findByText('#102 · 直接回答', { selector: 'b' })
+    expect(screen.queryByRole('button', { name: /只看重复/ })).toBeNull()
+    expect(screen.getByText('文件内容')).toBeTruthy()
   })
 })

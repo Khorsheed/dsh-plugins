@@ -1,9 +1,7 @@
 /* The 原始 JSON view. */
 
 .scroll {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
+  min-width: 0;
 }
 
 .hint {
