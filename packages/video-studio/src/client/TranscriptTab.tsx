@@ -20,6 +20,7 @@ type Act = (fn: () => Promise<RemoteResult<ProjectView>>) => Promise<void>
 
 type Filter = 'all' | 'pending' | 'user' | 'agent' | 'hits'
 type Mode = 'edited' | 'original'
+type View = 'final' | 'source'
 const PAGE = 60
 const EPS = 1e-3
 
@@ -66,7 +67,10 @@ interface Selection {
 export function TranscriptTab({ p, v, act }: { p: VideoPaneProps; v: ProjectView; act: Act }): ReactNode {
   const { t } = p
   const project = v.project
+  const [view, setView] = useState<View>('final')
   const [filter, setFilter] = useState<Filter>('all')
+  const [undo, setUndo] = useState<{ start: number; end: number; text: string } | null>(null)
+  const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [limit, setLimit] = useState(PAGE)
   const [mode, setMode] = useState<Mode>('edited')
   const [playing, setPlaying] = useState(false)
@@ -89,7 +93,7 @@ export function TranscriptTab({ p, v, act }: { p: VideoPaneProps; v: ProjectView
   const appliedCuts = useMemo(() => edits.filter((e) => e.state === 'applied' && (e.kind === 'cut' || e.kind === 'shorten')), [edits])
   const speakers = useMemo(() => new Map(project.speakers.map((s) => [s.id, s])), [project.speakers])
   const groups = useMemo(() => project.groups.filter((g) => proposed.some((e) => e.group === g.id)), [project.groups, proposed])
-  const hits = useMemo(() => (finding ? findOccurrences(project.transcript, edits, query) : []), [finding, project.transcript, edits, query])
+  const hits = useMemo(() => (finding ? findOccurrences(project.transcript, edits, query, { includeRemoved: view === 'source' }) : []), [finding, project.transcript, edits, query, view])
 
   // ── player ──
   const player = useMemo(() => new TranscriptPlayer(
@@ -134,6 +138,7 @@ export function TranscriptTab({ p, v, act }: { p: VideoPaneProps; v: ProjectView
       : filter === 'pending' ? touches(s, proposed)
         : filter === 'hits' ? hits.some((h) => h.segmentId === s.id)
           : touches(s, cutsBy(filter)))
+    .filter((s) => view === 'source' || s.tokens.some((tk) => !isRemoved(tk.start, tk.end, removed)))
   const activeIndex = segs.findIndex((s) => now >= s.start && now < s.end)
   const activeId = activeIndex >= 0 ? segs[activeIndex]!.id : null
 
@@ -193,6 +198,20 @@ export function TranscriptTab({ p, v, act }: { p: VideoPaneProps; v: ProjectView
     window.getSelection()?.removeAllRanges()
   }
 
+  /** Cut from the clean view: the text vanishes, so offer a way back. */
+  const cutWithUndo = (start: number, end: number, text: string) => {
+    void act(() => p.setCut({ projectId: project.id, start, end, cut: true }))
+    if (undoTimer.current) clearTimeout(undoTimer.current)
+    setUndo({ start, end, text })
+    undoTimer.current = setTimeout(() => setUndo(null), 6000)
+  }
+  const undoCut = () => {
+    if (!undo) return
+    if (undoTimer.current) clearTimeout(undoTimer.current)
+    void act(() => p.setCut({ projectId: project.id, start: undo.start, end: undo.end, cut: false }))
+    setUndo(null)
+  }
+
   if (!project.transcript.length) return <div className={css.empty}>{t('transcript.empty')}</div>
 
   const userCount = project.transcript.filter((s) => touches(s, cutsBy('user'))).length
@@ -204,6 +223,10 @@ export function TranscriptTab({ p, v, act }: { p: VideoPaneProps; v: ProjectView
   return (
     <>
       <div className={css.actions}>
+        <span className={css.seg}>
+          <button type="button" data-on={view === 'final'} onClick={() => setView('final')}>{t('transcript.viewFinal')}</button>
+          <button type="button" data-on={view === 'source'} onClick={() => setView('source')}>{t('transcript.viewSource')}</button>
+        </span>
         <span className={css.stats}>{t('transcript.stats', { duration: formatClock(v.durationSec), output: formatClock(v.outputSec) })}</span>
         <button type="button" className={css.btn} aria-pressed={finding} onClick={() => { setFinding((f) => !f); if (finding && filter === 'hits') setFilter('all') }}>{t('find.toggle')}</button>
         <button type="button" className={css.btn} onClick={() => void act(() => p.scan(project.id))}>{t('transcript.scan')}</button>
@@ -239,6 +262,7 @@ export function TranscriptTab({ p, v, act }: { p: VideoPaneProps; v: ProjectView
         )
       })}
 
+      {view === 'source' && (
       <ChipRow
         label={t('tabs.transcript')}
         value={filter}
@@ -251,19 +275,22 @@ export function TranscriptTab({ p, v, act }: { p: VideoPaneProps; v: ProjectView
           ...(finding && query.trim() ? [{ id: 'hits' as const, label: t('transcript.filterHits'), count: new Set(hits.map((h) => h.segmentId)).size }] : []),
         ]}
       />
+      )}
+      {view === 'source' && (
       <div className={css.legend}>
         <span><i className={css.swUser} />{t('legend.user')}</span>
         <span><i className={css.swAgent} />{t('legend.agent')}</span>
         <span><i className={css.swProp} />{t('legend.proposed')}</span>
         <span className={css.muted}>{t('transcript.hint')}</span>
       </div>
+      )}
 
       <div ref={listRef} className={css.list} onMouseUp={readSelection}>
         {segs.slice(0, limit).map((seg) => (
-          <Paragraph key={seg.id} t={t} project={project} seg={seg} sp={speakers.get(seg.speakerId)} removed={removed} appliedCuts={appliedCuts}
+          <Paragraph key={seg.id} t={t} view={view} project={project} seg={seg} sp={speakers.get(seg.speakerId)} removed={removed} appliedCuts={appliedCuts}
             proposed={proposed} hits={hits} now={now} active={seg.id === activeId} playing={playing} edits={edits}
             onCut={(start, end, cut) => void act(() => p.setCut({ projectId: project.id, start, end, cut }))}
-            onPlay={() => playFrom(seg.start)}
+            onPlay={(at) => playFrom(at)}
             onReassign={(speakerId) => void act(() => p.reassignSegment({ projectId: project.id, segmentId: seg.id, speakerId }))} />
         ))}
         {segs.length > limit && <div ref={sentinel} className={css.muted}>{t('state.loading')}</div>}
@@ -273,7 +300,7 @@ export function TranscriptTab({ p, v, act }: { p: VideoPaneProps; v: ProjectView
               <>
                 <button type="button" className={css.bubbleBtn} title={t('player.fromHere')} onClick={() => { playFrom(sel.start); clearSel() }}>▶</button>
                 <span className={css.bubbleSep} />
-                <button type="button" className={css.bubbleDanger} onClick={() => { void act(() => p.setCut({ projectId: project.id, start: sel.start, end: sel.end, cut: true })); clearSel() }}>{t('select.cut')}</button>
+                <button type="button" className={css.bubbleDanger} onClick={() => { if (view === 'final') cutWithUndo(sel.start, sel.end, sel.text); else void act(() => p.setCut({ projectId: project.id, start: sel.start, end: sel.end, cut: true })); clearSel() }}>{t('select.cut')}</button>
                 {removed.some((r) => r.start < sel.end && r.end > sel.start) && (
                   <button type="button" className={css.bubbleBtn} onClick={() => { void act(() => p.setCut({ projectId: project.id, start: sel.start, end: sel.end, cut: false })); clearSel() }}>{t('select.restore')}</button>
                 )}
@@ -292,6 +319,13 @@ export function TranscriptTab({ p, v, act }: { p: VideoPaneProps; v: ProjectView
           </div>
         )}
       </div>
+
+      {undo && (
+        <div className={css.undoBar}>
+          <span className={css.muted}>{t('undo.cut', { sec: (undo.end - undo.start).toFixed(1) })}「{undo.text.length > 12 ? `${undo.text.slice(0, 12)}…` : undo.text}」</span>
+          <button type="button" className={css.btn} onClick={undoCut}>{t('action.undo')}</button>
+        </div>
+      )}
 
       <div className={css.playerBar}>
         <button type="button" className={css.playBtn} aria-label={playing ? t('action.stop') : t('action.play')} onClick={toggle}>{playing ? '❚❚' : '▶'}</button>
@@ -313,13 +347,15 @@ export function TranscriptTab({ p, v, act }: { p: VideoPaneProps; v: ProjectView
   )
 }
 
-function Paragraph({ t, project, seg, sp, removed, appliedCuts, proposed, hits, now, active, playing, edits, onCut, onPlay, onReassign }: {
-  t: T; project: Project; seg: Segment; sp: Speaker | undefined; removed: Range[]; appliedCuts: Edit[]; proposed: Edit[]
+function Paragraph({ t, view, project, seg, sp, removed, appliedCuts, proposed, hits, now, active, playing, edits, onCut, onPlay, onReassign }: {
+  t: T; view: View; project: Project; seg: Segment; sp: Speaker | undefined; removed: Range[]; appliedCuts: Edit[]; proposed: Edit[]
   hits: { start: number; end: number }[]; now: number; active: boolean; playing: boolean; edits: Edit[]
-  onCut: (start: number, end: number, cut: boolean) => void; onPlay: () => void; onReassign: (speakerId: string) => void
+  onCut: (start: number, end: number, cut: boolean) => void; onPlay: (at: number) => void; onReassign: (speakerId: string) => void
 }): ReactNode {
   const [menu, setMenu] = useState(false)
-  const tokens = useMemo(() => displayTokens(seg, edits), [seg, edits])
+  const allTokens = useMemo(() => displayTokens(seg, edits), [seg, edits])
+  // the clean view renders the episode as it ships: applied cuts are gone
+  const tokens = useMemo(() => (view === 'final' ? allTokens.filter((tok) => !isRemoved(tok.start, tok.end, removed)) : allTokens), [view, allTokens, removed])
   const phrases = useMemo(() => phrasesOf(tokens), [tokens])
   const cutBy = (tok: Token): Edit | undefined => appliedCuts.find((e) => e.start <= tok.start + EPS && e.end >= tok.end - EPS && tok.end - tok.start > EPS)
   const inProposal = (tok: Token) => proposed.find((x) => x.kind === 'cut' && x.start <= tok.start + EPS && x.end >= tok.end - EPS && tok.end - tok.start > EPS)
@@ -331,17 +367,18 @@ function Paragraph({ t, project, seg, sp, removed, appliedCuts, proposed, hits, 
     if (prev) {
       const gap = ph.start - prev.end
       const shorten = edits.find((x) => x.kind === 'shorten' && x.state !== 'rejected' && x.start <= prev.end + EPS && x.end >= ph.start - EPS)
-      if (gap >= 1 || shorten) pieces.push(<span key={`g${i}`} className={css.pause} data-proposed={shorten?.state === 'proposed'}>{t('transcript.pause', { sec: gap.toFixed(1) })}{shorten ? ` → ${(shorten.value ?? 0).toFixed(1)}` : ''}</span>)
+      if (view === 'source' && (gap >= 1 || shorten)) pieces.push(<span key={`g${i}`} className={css.pause} data-proposed={shorten?.state === 'proposed'}>{t('transcript.pause', { sec: gap.toFixed(1) })}{shorten ? ` → ${(shorten.value ?? 0).toFixed(1)}` : ''}</span>)
     }
     const whole = isRemoved(ph.start, ph.end, removed)
     pieces.push(
       <span key={i} className={css.phrase} role="button" tabIndex={0}
         onClick={() => {
-          // a drag-selection is handled by the selection bar, not as a click
+          // a drag-selection is handled by the selection bubble, not as a click
           if (window.getSelection()?.isCollapsed === false) return
-          onCut(ph.start, ph.end, !whole)
+          if (view === 'final') onPlay(ph.start)
+          else onCut(ph.start, ph.end, !whole)
         }}
-        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onCut(ph.start, ph.end, !whole) } }}>
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (view === 'final') onPlay(ph.start); else onCut(ph.start, ph.end, !whole) } }}>
         {ph.tokens.map((tok, k) => {
           const cut = cutBy(tok)
           const prop = inProposal(tok)
@@ -357,14 +394,14 @@ function Paragraph({ t, project, seg, sp, removed, appliedCuts, proposed, hits, 
     )
   })
   const lastEnd = seg.tokens[seg.tokens.length - 1]?.end ?? seg.end
-  const tail = edits.find((x) => x.kind === 'shorten' && x.state !== 'rejected' && Math.abs(x.start - lastEnd) < 0.05)
+  const tail = view === 'source' ? edits.find((x) => x.kind === 'shorten' && x.state !== 'rejected' && Math.abs(x.start - lastEnd) < 0.05) : undefined
   if (tail) pieces.push(<span key="tail" className={css.pause} data-proposed={tail.state === 'proposed'}>{t('transcript.pause', { sec: (tail.end - tail.start).toFixed(1) })} → {(tail.value ?? 0).toFixed(1)}</span>)
   return (
     <div className={css.para} data-seg={seg.id} data-active={active || undefined} data-playing={(active && playing) || undefined}>
       <div className={css.who}>
         <button type="button" className={`${css.whoName} ${css[`sp_${sp?.color ?? 's1'}`] ?? ''}`} onClick={() => setMenu((m) => !m)} aria-expanded={menu} title={t('transcript.reassign')}>{speakerLabel(t, project, sp)}</button>
         <span className={css.whoMeta}>
-          <button type="button" className={css.timeBtn} onClick={onPlay} title={t('player.fromHere')}>{formatClock(seg.start)} ▶</button>
+          <button type="button" className={css.timeBtn} onClick={() => onPlay(seg.start)} title={t('player.fromHere')}>{formatClock(view === 'final' ? toOutputTime(seg.start, removed) : seg.start)} ▶</button>
         </span>
         {menu && (
           <select id={`vs-reassign-${seg.id}`} className={css.select} value={seg.speakerId} aria-label={t('transcript.reassign')}

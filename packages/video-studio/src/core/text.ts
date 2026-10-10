@@ -1,3 +1,4 @@
+import { isRemoved, removedRanges } from './timeline.ts'
 import type { Edit, Segment, Token } from './types.ts'
 
 const EPS = 1e-3
@@ -38,9 +39,12 @@ export interface Occurrence {
  * (Chinese is one token per character) is found; punctuation inside the
  * needle must match literally.
  */
-export function findOccurrences(transcript: readonly Segment[], edits: readonly Edit[], needle: string): Occurrence[] {
+export function findOccurrences(transcript: readonly Segment[], edits: readonly Edit[], needle: string, opts: { includeRemoved?: boolean } = {}): Occurrence[] {
   const q = needle.trim()
   if (!q) return []
+  // by default a search covers the episode as it will ship: text inside
+  // applied cuts is gone, and replacing it would be invisible
+  const removed = opts.includeRemoved ? [] : removedRanges(transcript.reduce((m, s) => Math.max(m, s.end), 0), edits)
   const out: Occurrence[] = []
   for (const seg of transcript) {
     const toks = displayTokens(seg, edits)
@@ -55,7 +59,7 @@ export function findOccurrences(transcript: readonly Segment[], edits: readonly 
     for (let at = lower.indexOf(ql); at >= 0; at = lower.indexOf(ql, at + ql.length)) {
       const a = toks[owner[at]!]!
       const b = toks[owner[at + ql.length - 1]!]!
-      out.push({ segmentId: seg.id, start: a.start, end: b.end, text: text.slice(at, at + ql.length) })
+      if (!isRemoved(a.start, b.end, removed)) out.push({ segmentId: seg.id, start: a.start, end: b.end, text: text.slice(at, at + ql.length) })
     }
   }
   return out

@@ -151,6 +151,15 @@ describe('text corrections', () => {
     expect(findOccurrences([seg], fixes, '门阀')).toHaveLength(0)
     expect(findOccurrences([seg], [], '  ')).toEqual([])
   })
+
+  it('findOccurrences skips text inside applied cuts unless asked not to', async () => {
+    const { findOccurrences } = await import('../src/core/text.ts')
+    const cuts = [edit({ start: 0, end: 0.38 })] // 门阀 is cut away
+    expect(findOccurrences([seg], cuts, '门阀')).toEqual([])
+    expect(findOccurrences([seg], cuts, '门阀', { includeRemoved: true })).toHaveLength(1)
+    // a proposed cut does not hide the text
+    expect(findOccurrences([seg], [{ ...cuts[0], state: 'proposed' }], '门阀')).toHaveLength(1)
+  })
 })
 
 describe('align', () => {

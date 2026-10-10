@@ -261,6 +261,22 @@
 .findRow > .inlineInput { flex: 1; min-width: 140px; width: auto; }
 .check { display: inline-flex; gap: 5px; align-items: center; font-size: var(--dsh-panel-text-meta, 12px); color: var(--dsw-alias-label-secondary); white-space: nowrap; }
 .check input { margin: 0; accent-color: var(--vs-accent); }
+.undoBar {
+  position: sticky;
+  bottom: 54px;
+  z-index: 2;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  align-self: center;
+  width: fit-content;
+  margin: 0 auto;
+  padding: 6px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-layer-1);
+  box-shadow: 0 6px 20px color-mix(in srgb, var(--dsw-alias-label-primary) 14%, transparent);
+}
 .playerBar {
   position: sticky;
   bottom: 0;
