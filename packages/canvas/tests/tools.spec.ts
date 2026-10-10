@@ -1,3 +1,4 @@
+import { CanvasToolError } from '../src/tools.ts'
 /**
  * The two main-session canvas tools: both definitions carry the community
  * origin tag (the `Symbol.for('dsh.tool.origin')` property, the documented
@@ -129,7 +130,9 @@ async function harness(): Promise<Bench> {
   const execute = async (name: ToolName, args: Record<string, unknown>): Promise<unknown> => {
     const tool = tools.find(def => def.name === name)
     if (tool === undefined) throw new Error(`no tool ${name}`)
-    const answer = await tool.execute(args, { agent } as never)
+    let answer: unknown
+    try { answer = await tool.execute(args, { agent } as never) }
+    catch (error) { if (error instanceof CanvasToolError) return error.message; throw error }
     // canvas_read answers { text, images }; these specs only read its text.
     return typeof answer === 'object' && answer !== null && 'text' in answer ? (answer as { text: string }).text : answer
   }
@@ -142,6 +145,15 @@ async function harness(): Promise<Bench> {
 }
 
 describe('the canvas tools on the open canvas', () => {
+  it('declared failures reject for the host isError path, without scanning successful content', async () => {
+    const { board } = await harness()
+    const tools = canvasMainSessionToolDefinitions(board)
+    const write = tools.find(t => t.name === 'canvas_write')!
+    await expect(write.execute({ op: 'archive', cardId: 'absent' }, { agent: { session: FALLBACK } } as never)).rejects.toBeInstanceOf(CanvasToolError)
+    const read = tools.find(t => t.name === 'canvas_read')!
+    await expect(read.execute({}, {} as never)).resolves.toMatchObject({ text: expect.stringContaining('canvas_open') })
+  })
+
   it('canvas_write op=card lands a proposed agent card with its source and rationale', async () => {
     const { execute, readCurrent } = await harness()
     const answer = await execute('canvas_write', {
@@ -400,8 +412,8 @@ describe('canvas_open: list, switch to, or create the session\'s canvas', () => 
     expect(board.focusedCanvasId(FALLBACK)).toBe(b.board.id)
     expect(await open({ canvas: a.board.id })).toContain('已切到画布《雨夜·上》')
     await board.archiveCanvas({ canvasId: old.board.id, archived: true }, FALLBACK)
-    expect(await open({ canvas: '旧稿' })).toContain('已归档（只读）')
-    expect(await open({ canvas: '没有这块' })).toContain('失败：没有叫「没有这块」的画布。')
+    await expect(open({ canvas: '旧稿' })).rejects.toThrow('已归档（只读）')
+    await expect(open({ canvas: '没有这块' })).rejects.toThrow('失败：没有叫「没有这块」的画布。')
   })
 
   it('creates a genre canvas bound to the session, and a plain switch unbinds it', async () => {
@@ -410,7 +422,7 @@ describe('canvas_open: list, switch to, or create the session\'s canvas', () => 
       id: 'novel', label: '长篇小说', version: 'novel@1', description: '',
       categories: [{ role: 'character', label: '人物' }],
     })
-    expect(await open({ create: '雾港', genre: '武侠' })).toContain('失败：没有体裁「武侠」。可选：novel（长篇小说）。')
+    await expect(open({ create: '雾港', genre: '武侠' })).rejects.toThrow('失败：没有体裁「武侠」。可选：novel（长篇小说）。')
     const answer = await open({ create: '雾港', genre: '长篇小说' })
     expect(answer).toContain('已绑定（体裁：长篇小说）')
     const novel = (await board.listCanvases()).items.find(item => item.title === '雾港')!

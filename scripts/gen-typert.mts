@@ -170,8 +170,8 @@ export const TYPERT_PACKAGES: readonly TypertPackage[] = [
     hostConfigs: ['tsconfig.host.json'],
   },
   {
-    dir: 'packages/request-inspector',
-    name: '@khorsheed/dsh-request-inspector',
+    dir: 'packages/context-lens',
+    name: '@khorsheed/dsh-context-lens',
     hostConfigs: ['tsconfig.host.json'],
   },
 ]

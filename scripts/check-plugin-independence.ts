@@ -233,10 +233,10 @@ export const ALLOWED_EDGES: Readonly<Record<string, ReadonlyArray<string>>> = {
   // library → ui-panel-kit: the learning sidebar's panel root, header, tabs,
   // chip row and list rows — the same inlined, zero-runtime source-plane edge.
   'library': ['@khorsheed/dsh-client-ui-panel-kit'],
-  // request-inspector → ui-panel-kit: the request panel's root, header, tabs,
+  // context-lens → ui-panel-kit: the request panel's root, header, tabs,
   // chip row and request rows (the panel lands with the client milestone) —
   // the same inlined, zero-runtime source-plane edge.
-  'request-inspector': ['@khorsheed/dsh-client-ui-panel-kit'],
+  'context-lens': ['@khorsheed/dsh-client-ui-panel-kit'],
   // game → ui-panel-kit: the game tab's panel root, header, tabs and rows
   // (panel-design convention for every new panel).
   'game': ['@khorsheed/dsh-client-ui-panel-kit'],
