@@ -92,7 +92,7 @@ export function ElementsView(props: ElementsViewProps): ReactNode {
 type Tool = 'pen' | 'recolor'
 
 /** One element, open. */
-function ElementDetail({ t, sessionId, api, project, element, onBack, insertDraft, toast, refresh, onLiveElement, types }: ElementsViewProps & {
+function ElementDetail({ t, sessionId, api, project, element, onBack, insertDraft, toast, refresh, onLiveElement, types, changed }: ElementsViewProps & {
   element: ElementView
   onBack: () => void
   types: readonly string[]
@@ -118,6 +118,7 @@ function ElementDetail({ t, sessionId, api, project, element, onBack, insertDraf
         if (failureOf(result) !== undefined) { setSaving('failed'); return }
         setSaving('saved')
         if (result.ok && result.value.ok) onLiveElement(JSON.parse(result.value.elementJson) as Record<string, unknown>)
+        changed(`look:${element.id}`, t('nudge.look', { name: element.name }))
         refresh()
       })
     }, 450)
@@ -136,7 +137,7 @@ function ElementDetail({ t, sessionId, api, project, element, onBack, insertDraf
     if (element.stats[key] === value) return
     void api.editElement(sessionId, project.id, element.id, { fields: JSON.stringify({ [key]: value }) }).then(result => {
       if (result.ok && result.value.ok) onLiveElement(JSON.parse(result.value.elementJson) as Record<string, unknown>)
-      toast(t('toast.fieldSaved', { key }))
+      changed(`fields:${element.id}`, t('nudge.fields', { name: element.name }))
       refresh()
     })
   }
@@ -211,7 +212,7 @@ function ElementDetail({ t, sessionId, api, project, element, onBack, insertDraf
             <span className={css.metaLine}>{v.note}</span>
             <button type="button" className={css.primary} onClick={() => {
               void api.pickProposal(sessionId, project.id, element.id, openProposal.at, i).then(r => {
-                if (failureOf(r) === undefined) toast(t('toast.picked', { label: v.label }))
+                if (failureOf(r) === undefined) changed(`look:${element.id}`, t('nudge.picked', { name: element.name, label: v.label }))
                 refresh()
               })
             }}>{t('look.pickThis')}</button>

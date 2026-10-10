@@ -27,6 +27,16 @@ function decide(messages) {
   for (let i = messages.length - 1; i >= 0 && messages[i].role === 'user'; i--) tail.unshift(textOf(messages[i]))
   const lastText = tail.length > 0 ? tail.join('\n') : textOf(last)
   const wroteIndex = messages.some(m => (m.tool_calls || []).some(c => (c.function?.arguments || '').includes('index.html')))
+  if (last.role === 'user' && lastText.includes('加一个敌人')) return { tools: [['read', { file_path: root + '/elements/units.json' }]] }
+  if (last.role === 'tool' && callNames[0] === 'read' && args0.includes('units.json') && all.includes('加一个敌人') && !all.includes('"reef"')) {
+    const units = JSON.parse(ELEMENTS)
+    units.push({ id: 'reef', name: '暗礁', type: '敌人', damage: 2, look: { palette: ['#333c57', '#566c86', '#94b0c2'], states: { idle: ['..0000..', '.011110.', '01122110', '00000000'] } } })
+    return { tools: [
+      ['write', { file_path: root + '/elements/units.json', content: JSON.stringify(units, null, 2) }],
+      ['write', { file_path: root + '/design/levels.md', content: '# 关卡与节奏\n\n- 第 1 夜：只有灯油和雾灵。\n- 第 2 夜起：海面出现暗礁，碰到扣 2 灯油。\n' }],
+    ] }
+  }
+  if (last.role === 'tool' && callNames[0] === 'write' && args0.includes('reef')) return { text: '加了新敌人「暗礁」（碰到扣 2 灯油），并把第 2 夜起出现暗礁写进了「关卡与节奏」。' }
   if (last.role === 'user' && lastText.includes('游戏检查未通过')) return { tools: [['read', { file_path: root + '/game.json' }]] }
   if (last.role === 'tool' && callNames[0] === 'read' && all.includes('游戏检查未通过') && !all.includes('"value": 60')) return { tools: [['write', { file_path: root + '/game.json', content: manifest(id, 60) }]] }
   if (last.role === 'tool' && callNames[0] === 'write' && args0.includes('\\"value\\": 60')) return { text: '修好了：守夜人的默认移动速度从 40 调到 60 px/s，3 秒能走出 180px。现在右栏「试玩」里能玩第一版了——←/→ 走动接灯油；下面的参数可以边玩边拖。' }

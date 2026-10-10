@@ -20,7 +20,8 @@ import gameRemote from '@khorsheed/dsh-game/remote'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 import { GAME_CHAT_KIND, GameChatRow, gameMessageDefinition } from './chat-node.tsx'
-import type { GameApi, GameTabInjected } from './contract.ts'
+import type { GameApi, GameTabInjected, NavTarget } from './contract.ts'
+import { gameTurnDefinition, GameTurnCard } from './TurnCard.tsx'
 import { GameDock } from './GameDock.tsx'
 import { GAME_KIND, GAME_TAB_ID, gameDefinition } from './definition.tsx'
 import { GameTab } from './GameTab.tsx'
@@ -43,7 +44,7 @@ function mainSessionId(list: SessionListState): SessionId | undefined {
 }
 
 /** `remote.game` is mounted here and read back through ctx.get (never injected — that would deadlock the loader). */
-export const inject = ['slots', 'remote', 'locale', 'sessions', 'sidebarRightTabs']
+export const inject = ['slots', 'remote', 'locale', 'sessions', 'sidebarRight', 'sidebarRightTabs']
 
 /**
  * Client plugin body.
@@ -90,6 +91,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   const api: GameApi = {
     state: sid => remote.state(sid),
     projectCards: () => remote.projectCards(),
+    turnReport: (sid, turn) => remote.turnReport(sid, { turn }),
     bind: (sid, projectId) => remote.bind(sid, { projectId }),
     bundle: (projectId, which) => remote.bundle({ projectId, which }),
     versionBundle: (projectId, version) => remote.versionBundle({ projectId, version }),
@@ -126,7 +128,27 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       return undefined
     }
   }
+  const navListeners = new Set<(target: NavTarget) => void>()
+  let parkedNav: NavTarget | null = null
   const face: GameTabInjected = {
+    openAt: (target) => {
+      parkedNav = target
+      try {
+        ctx.sidebarRight.openTab(GAME_KIND)
+      } catch (error) {
+        ctx.logger.warn('game: openTab failed (tab type not registered?)', error)
+      }
+      for (const listener of navListeners) listener(target)
+    },
+    subscribeNav: (listener) => {
+      navListeners.add(listener)
+      return () => { navListeners.delete(listener) }
+    },
+    takeNav: () => {
+      const target = parkedNav
+      parkedNav = null
+      return target
+    },
     api,
     insertDraft: (sessionId, text) => {
       const input = inputFor(sessionId)
@@ -158,6 +180,35 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     locale: NS,
     inject: (): GameTabInjected => face,
   }, GameDock)), 'game: pending dock')
+
+  // The turn card: what each agent turn changed in the game, beneath the
+  // turn's closing prose (outside the fold), with jumps into the tab. The
+  // canvas-novel turn-tail precedent.
+  // The seat's owner props are typed by ui-chat; this card reads them
+  // structurally (the canvas-novel precedent), so it registers structurally.
+  const seats = ctx.slots as unknown as {
+    inject: (key: string, callback: () => () => void) => () => void
+    register: (options: Record<string, unknown>, component: unknown) => () => void
+  }
+  ctx.effect(() => seats.inject('conversation.chat.turnTail', () => {
+    const conversation = (ctx.get.bind(ctx) as (name: string) => unknown)('uiConversation') as {
+      events?: { register?: (definition: unknown) => () => void }
+    } | undefined
+    const register = conversation?.events?.register
+    if (register === undefined) return () => undefined
+    const disposeDefinition = register.call(conversation?.events, gameTurnDefinition)
+    const disposeEntry = seats.register({
+      name: 'conversation.chat.turnTail',
+      id: '@khorsheed/dsh-game/turn',
+      order: 45,
+      locale: NS,
+      inject: (): GameTabInjected => face,
+    }, GameTurnCard)
+    return () => {
+      disposeEntry()
+      disposeDefinition()
+    }
+  }), 'game: turn-tail card')
 
   // The conversation rows for dsh-game messages (check findings, attached changes).
   ctx.inject(['uiConversation'], (lctx) => {

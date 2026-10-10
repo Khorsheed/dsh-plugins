@@ -159,4 +159,28 @@ if (phase === 'i') {
   log('send', await click('发送消息')); await wait(6000)
   await shot('x-sent')
 }
+if (phase === 'j') {
+  await openTab('我想做个小游戏')
+  await shot('y-poster')
+  log('start', await p.evaluate(() => { const el = document.querySelector('[class*=poster]'); el?.click(); return !!el })); await wait(2500)
+  await shot('y-playing')
+  log('slider', await sliderSet(2, 1.5)); await wait(1200)
+  log('tell', await click('告诉 agent')); await wait(1000)
+  await shot('y-tell')
+  await p.evaluate(() => { const ed = document.querySelector('[contenteditable=true]'); if (ed) { ed.focus(); document.execCommand('selectAll'); document.execCommand('delete') } })
+  log('design', await click('策划')); await wait(1200)
+  log('open loop', await clickHas('核心循环')); await wait(800)
+  log('edit', await click('直接改')); await wait(600)
+  await p.evaluate(() => { const ta = document.querySelector('textarea'); const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set; set.call(ta, ta.value + '\n- 新增：每夜开始前有 3 秒准备时间。'); ta.dispatchEvent(new Event('input', { bubbles: true })) })
+  log('save', await click('保存')); await wait(1500)
+  await shot('y-nudge')
+}
+if (phase === 'k') {
+  await openTab('我想做个小游戏')
+  log('rows', await p.evaluate(() => [...document.querySelectorAll('[class*=card] [class*=row]')].map(r => r.textContent).slice(0, 8)))
+  await p.evaluate(() => { const el = [...document.querySelectorAll('section')].find(s => (s.getAttribute('aria-label') || '').startsWith('本轮改动')); el?.scrollIntoView({ block: 'center' }) }); await wait(500)
+  await shot('y-turncard')
+  log('jump', await p.evaluate(() => { const card = [...document.querySelectorAll('section')].find(s => (s.getAttribute('aria-label') || '').startsWith('本轮改动')); const row = [...(card?.querySelectorAll('li') ?? [])].find(li => li.textContent.includes('暗礁')); row?.querySelector('button')?.click(); return !!row })); await wait(2000)
+  await shot('y-jumped')
+}
 await b.close()

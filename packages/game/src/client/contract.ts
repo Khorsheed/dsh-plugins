@@ -12,7 +12,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 // Type-only: pulls ui-conversation's SlotMap merge ('conversation.input.dock').
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from './locales.ts'
-import type { GameResult, PlayBundle, ProjectCard, SessionGameState, VersionDiff } from '../types.ts'
+import type { GameResult, PlayBundle, ProjectCard, SessionGameState, TurnReport, VersionDiff } from '../types.ts'
 
 type R<T> = Promise<RemoteResult<T>>
 type Ok<T extends object = object> = GameResult<{ readonly ok: true } & T>
@@ -21,6 +21,7 @@ type Ok<T extends object = object> = GameResult<{ readonly ok: true } & T>
 export interface GameApi {
   state: (sid: SessionId) => R<SessionGameState>
   projectCards: () => R<ProjectCard[]>
+  turnReport: (sid: SessionId, turn: number) => R<TurnReport | null>
   bind: (sid: SessionId, projectId: string | null) => R<Ok>
   bundle: (projectId: string, which: 'current' | 'candidate') => R<Ok<{ readonly bundle: PlayBundle }>>
   versionBundle: (projectId: string, version: number) => R<Ok<{ readonly bundle: PlayBundle }>>
@@ -41,8 +42,21 @@ export interface GameApi {
   dropPending: (sid: SessionId, projectId: string, key: string) => R<Ok>
 }
 
+/** Where a jump into the game tab lands. */
+export interface NavTarget {
+  readonly view: 'play' | 'elements' | 'design' | 'versions'
+  readonly elementId?: string
+  readonly chapterId?: string
+}
+
 /** What the tab body and the dock get from the plugin. */
 export interface GameTabInjected {
+  /** Open the game tab at a place (the turn card's 查看). */
+  openAt: (target: NavTarget) => void
+  /** The tab body follows jumps; returns the unsubscribe. */
+  subscribeNav: (listener: (target: NavTarget) => void) => () => void
+  /** A jump made before the tab body mounted, taken once. */
+  takeNav: () => NavTarget | null
   api: GameApi
   /** Put text into the session's composer draft (appended; never sent). False when there is no composer. */
   insertDraft: (sessionId: SessionId, text: string) => boolean
@@ -74,6 +88,8 @@ export interface ViewProps {
   readonly refresh: () => void
   /** Show a short confirmation line at the panel's foot. */
   readonly toast: (text: string) => void
+  /** A change landed that the agent may want to hear about: offer to send it (pending key + a short title). */
+  readonly changed: (key: string, title: string) => void
 }
 
 /** A Remote call's game-level failure code, or undefined on success. */

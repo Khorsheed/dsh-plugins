@@ -60,9 +60,10 @@ describe('the user layer', () => {
     expect(await store.setParam(p.id, 'speed', 55, session)).toEqual({ ok: true })
     let view = await store.view(p.id)
     expect(view?.paramOverrides).toEqual({ speed: 55 })
-    expect(view?.pending.map(x => x.text)).toEqual(['参数 移动速度 40→55（试玩值，未定稿）'])
+    // A slider is a trial: nothing waits to be sent until the user finalizes or says so.
+    expect(view?.pending).toEqual([])
     await store.setParam(p.id, 'speed', 40, session)
-    expect((await store.view(p.id))?.pending).toEqual([])
+    expect((await store.view(p.id))?.paramOverrides).toEqual({})
     await store.setParam(p.id, 'speed', 70, session)
     await store.finalizeParams(p.id, session)
     view = await store.view(p.id)
@@ -131,5 +132,38 @@ describe('the user layer', () => {
     expect(await readFile(join(p.root, 'design/core-loop.md'), 'utf8')).toBe('# 核心循环\n躲雾\n')
     expect(await store.writeChapter(p.id, 'elements', 'x', session)).toEqual({ ok: false, error: 'invalid' })
     expect((await store.view(p.id))?.pending.map(x => x.key)).toEqual(['design:core-loop'])
+  })
+})
+
+describe('turn reports', () => {
+  it('records what a turn changed: version, check, elements, chapters, params, code', async () => {
+    const p = await project()
+    const base = await store.turnBaseline('s1')
+    expect(base).toBeDefined()
+    expect(await store.recordTurn('s1', 1, base!)).toBeUndefined()
+
+    const manifest = JSON.parse(await readFile(join(p.root, 'game.json'), 'utf8')) as { params: { value: number }[] }
+    manifest.params[0]!.value = 60
+    await put(join(p.root, 'game.json'), JSON.stringify(manifest))
+    await put(join(p.root, 'elements/units.json'), JSON.stringify([
+      { id: 'fog', name: '雾怪', type: '敌人', speed: 9, look: { palette: ['#ffffff'], states: { idle: ['0'] } } },
+      { id: 'oil', name: '灯油', type: '角色' },
+    ]))
+    await put(join(p.root, 'design/mechanics.md'), '# 机制')
+    await put(join(p.root, 'src/main.js'), 'x')
+    await store.checkTurn(session, 0, 2)
+    const report = await store.recordTurn('s1', 2, base!)
+    expect(report).toMatchObject({
+      turn: 2, version: { kind: 'deployed', version: 1 }, check: { ok: true, fixes: 0 },
+      chapters: [{ id: 'mechanics', title: '机制与规则' }],
+      params: [{ key: 'speed', label: '移动速度', from: 40, to: 60 }],
+    })
+    expect(report!.elements).toEqual([
+      { id: 'fog', name: '雾怪', what: 'look', fields: ['speed'] },
+      { id: 'oil', name: '灯油', what: 'new' },
+    ])
+    expect(report!.code).toEqual(['src/main.js'])
+    expect(await store.turnReport('s1', 2)).toMatchObject({ turn: 2 })
+    expect(await store.turnReport('s1', 3)).toBeNull()
   })
 })

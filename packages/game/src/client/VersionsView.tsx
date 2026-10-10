@@ -33,7 +33,7 @@ function download(name: string, text: string): void {
 }
 
 /** The versions view. */
-export function VersionsView({ t, sessionId, api, project, refresh, toast }: VersionsViewProps): ReactNode {
+export function VersionsView({ t, sessionId, api, project, refresh, toast, changed }: VersionsViewProps): ReactNode {
   const check = project.lastCheck
   const [shot, setShot] = useState<string | null>(null)
   const [diffFor, setDiffFor] = useState<number | null>(null)
@@ -107,7 +107,7 @@ export function VersionsView({ t, sessionId, api, project, refresh, toast }: Ver
             {v.note !== undefined && <span className={css.metaLine}>{v.note}</span>}
             <div className={css.tlActions}>
               {v.status !== 'current' && v.status !== 'candidate' && <button type="button" className={css.link} onClick={() => {
-                void api.rollback(sessionId, project.id, v.version).then(r => { if (failureOf(r) === undefined) toast(t('toast.rolledBack', { version: v.version })); refresh() })
+                void api.rollback(sessionId, project.id, v.version).then(r => { if (failureOf(r) === undefined) changed('rollback', t('toast.rolledBack', { version: v.version })); refresh() })
               }}>{t('versions.rollback')}</button>}
               {current !== undefined && v.version !== current && <button type="button" className={css.link} aria-pressed={diffFor === v.version}
                 onClick={() => { setDiffFor(d => (d === v.version ? null : v.version)) }}>{t('versions.compare', { version: current })}</button>}

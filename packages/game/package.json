@@ -64,6 +64,7 @@
     "@deepseek-ai/dsh-client-locale": "^0.1.0-rc.6 || ^0.2.0-rc.1",
     "@deepseek-ai/dsh-client-ui-chat": "^0.1.0-rc.6 || ^0.2.0-rc.1",
     "@deepseek-ai/dsh-client-ui-conversation": "^0.1.0-rc.6 || ^0.2.0-rc.1",
+    "@deepseek-ai/dsh-client-ui-primitives": "^0.1.0-rc.6 || ^0.2.0-rc.1",
     "@deepseek-ai/dsh-client-ui-sidebar-right": "^0.1.7-rc.1 || ^0.2.0-rc.1",
     "@deepseek-ai/dsh-client-ui-slots": "^0.1.0-rc.6 || ^0.2.0-rc.1",
     "@deepseek-ai/dsh-fs": "^0.1.0-rc.6 || ^0.2.0-rc.1",
@@ -84,6 +85,9 @@
       "optional": true
     },
     "@deepseek-ai/dsh-client-ui-conversation": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-ui-primitives": {
       "optional": true
     },
     "@deepseek-ai/dsh-client-ui-sidebar-right": {
@@ -111,6 +115,7 @@
     "@deepseek-ai/dsh-client-store": "^0.2.0-rc.1",
     "@deepseek-ai/dsh-client-ui-chat": "^0.2.0-rc.1",
     "@deepseek-ai/dsh-client-ui-conversation": "^0.2.0-rc.1",
+    "@deepseek-ai/dsh-client-ui-primitives": "^0.2.0-rc.1",
     "@deepseek-ai/dsh-client-ui-renderer": "^0.2.0-rc.1",
     "@deepseek-ai/dsh-client-ui-session": "^0.2.0-rc.1",
     "@deepseek-ai/dsh-client-ui-sidebar-right": "^0.2.0-rc.1",
@@ -156,6 +161,7 @@
         "@deepseek-ai/dsh-client-locale",
         "@deepseek-ai/dsh-client-ui-chat",
         "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-primitives",
         "@deepseek-ai/dsh-client-ui-session",
         "@deepseek-ai/dsh-client-ui-sidebar-right"
       ],
@@ -166,7 +172,7 @@
     ],
     "compat": {
       "minHost": "0.2.0-rc.1",
-      "notes": "The game tab is a page-type right-Sidebar tab (sidebar.right.pane.tab + sidebarRightTabs). The play area is a sandbox=\"allow-scripts\" iframe (opaque origin) fed by postMessage; the host serves no HTTP route. The end-of-turn loop rides agent/turn-stopping + agent.steer (0.2.0 line); on a host without that hook the checks never run and nothing deploys. The headless checks drive the machine's installed Chrome through puppeteer-core (config chromePath / CHROME_PATH); without Chrome only the data checks run and the browser part reports itself skipped. Check findings steered into the turn are dsh-game-sourced messages (panel changes are sent by the user from the composer; agent/pre-step only clears the changes a sent message lists); the plugin projects them into its own conversation.chat.node kind (uiConversation.events Definition, the message-tools pattern) because the 0.2.0 chat view hides context nodes — the host folds that kind into the turn's step groups (its standalone-kind list is not extensible). The \"panel changes\" dock rides conversation.input.dock; element references go into the composer draft through the session input's setDraft (the quote precedent).",
+      "notes": "The game tab is a page-type right-Sidebar tab (sidebar.right.pane.tab + sidebarRightTabs). The play area is a sandbox=\"allow-scripts\" iframe (opaque origin) fed by postMessage; the host serves no HTTP route. The end-of-turn loop rides agent/turn-stopping + agent.steer (0.2.0 line); on a host without that hook the checks never run and nothing deploys. The headless checks drive the machine's installed Chrome through puppeteer-core (config chromePath / CHROME_PATH); without Chrome only the data checks run and the browser part reports itself skipped. Check findings steered into the turn are dsh-game-sourced messages (panel changes are sent by the user from the composer; agent/pre-step only clears the changes a sent message lists); the plugin projects them into its own conversation.chat.node kind (uiConversation.events Definition, the message-tools pattern) because the 0.2.0 chat view hides context nodes — the host folds that kind into the turn's step groups (its standalone-kind list is not extensible). The \"panel changes\" dock rides conversation.input.dock; element references go into the composer draft through the session input's setDraft (the quote precedent). A per-turn change card rides ui-chat's conversation.chat.turnTail seat with a uiConversation.events Definition tracking turn/start and turn/end (the canvas-novel precedent); without that seat the card never registers. Header switch and tags use @deepseek-ai/dsh-client-ui-primitives (Switch, Tag).",
       "verifiedHost": "0.2.0-rc.2"
     }
   }

@@ -35,7 +35,7 @@ import {
 import {
   CHAPTERS, MANIFEST_FILE, PANEL_CHANGES_MARK, STATE_DIR,
   type BundleFile, type ChapterView, type CheckFailure, type CheckRecord, type ElementLook, type GameManifest, type GameResult,
-  type LogEntry, type LookProposal, type PendingChange, type PlayBundle, type ProjectCard, type ProjectRow, type ProjectView,
+  type LogEntry, type LookProposal, type PendingChange, type PlayBundle, type ProjectCard, type ProjectRow, type ProjectView, type TurnReport,
   type SessionGameState, type VersionDiff, type VersionRecord, type VersionRow,
 } from './types.ts'
 
@@ -186,6 +186,17 @@ function num(value: number): string {
   return String(Math.round(value * 1000) / 1000)
 }
 
+/** A project's state when a turn started, for the turn report. */
+export interface TurnBaseline {
+  readonly at: number
+  readonly projectId: string
+  readonly files: ReadonlyMap<string, string>
+  readonly elements: ReadonlyMap<string, { name: string; json: string; look: string; fields: Record<string, string> }>
+  readonly params: Readonly<Record<string, number>>
+  readonly current: number | undefined
+  readonly candidate: number | undefined
+}
+
 /** The writer the store creates the first files with (specs swap in plain node). */
 export type FenceWriter = (path: string, content: string, session: Session) => Promise<void>
 
@@ -280,6 +291,98 @@ export class GameService {
   async listProjects(): Promise<ProjectRow[]> {
     const { projects } = await this.readRegistry()
     return [...projects].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+  }
+
+  /** Element files parsed per id, for turn diffs. */
+  private async elementIndex(root: string): Promise<Map<string, { name: string; json: string; look: string; fields: Record<string, string> }>> {
+    const out = new Map<string, { name: string; json: string; look: string; fields: Record<string, string> }>()
+    for (const f of await walk(join(root, 'elements'), p => p.endsWith('.json'))) {
+      let raw: unknown
+      try { raw = JSON.parse(f.data.toString('utf8')) } catch { continue }
+      for (const item of Array.isArray(raw) ? raw : [raw]) {
+        if (item === null || typeof item !== 'object') continue
+        const r = item as Record<string, unknown>
+        if (typeof r.id !== 'string') continue
+        const fields: Record<string, string> = {}
+        for (const [k, v] of Object.entries(r)) if (k !== 'look' && k !== 'id') fields[k] = JSON.stringify(v)
+        out.set(r.id, { name: typeof r.name === 'string' ? r.name : r.id, json: JSON.stringify(r), look: JSON.stringify(r.look ?? null), fields })
+      }
+    }
+    return out
+  }
+
+  /** Snapshot the bound project when a turn starts (undefined when unbound). */
+  async turnBaseline(sessionId: string): Promise<TurnBaseline | undefined> {
+    const row = await this.boundProject(sessionId)
+    if (row === undefined) return undefined
+    const files = new Map((await walk(row.root, () => true)).map(f => [f.path, createHash('sha1').update(f.data).digest('hex')]))
+    const manifest = await this.manifestOf(row.root)
+    return {
+      at: Date.now(), projectId: row.id, files, elements: await this.elementIndex(row.root),
+      params: Object.fromEntries((manifest?.params ?? []).map(p => [p.key, p.value])),
+      current: (await readJson<VersionRecord>(join(row.root, STATE_DIR, 'current.json')))?.version,
+      candidate: (await readJson<VersionRecord>(join(row.root, STATE_DIR, 'candidate.json')))?.version,
+    }
+  }
+
+  private turnsPath(sessionId: string): string {
+    return join(this.stateRoot, 'turns', `${sessionId.replace(/[^\w.-]/g, '_')}.json`)
+  }
+
+  /**
+   * Compare the project with its turn-start snapshot and store what the turn
+   * changed. Nothing is stored for a turn that changed nothing.
+   */
+  async recordTurn(sessionId: string, turn: number, base: TurnBaseline): Promise<TurnReport | undefined> {
+    const row = await this.row(base.projectId)
+    if (row === undefined) return undefined
+    const now = new Map((await walk(row.root, () => true)).map(f => [f.path, createHash('sha1').update(f.data).digest('hex')]))
+    const changed = [...now.keys()].filter(p => base.files.get(p) !== now.get(p))
+    const removed = [...base.files.keys()].filter(p => !now.has(p))
+    const elementsNow = await this.elementIndex(row.root)
+    const elements: TurnReport['elements'][number][] = []
+    for (const [id, e] of elementsNow) {
+      const before = base.elements.get(id)
+      if (before === undefined) { elements.push({ id, name: e.name, what: 'new' }); continue }
+      if (before.json === e.json) continue
+      const fields = [...new Set([...Object.keys(e.fields), ...Object.keys(before.fields)])].filter(k => e.fields[k] !== before.fields[k])
+      if (before.look !== e.look) elements.push({ id, name: e.name, what: 'look', ...(fields.length > 0 ? { fields } : {}) })
+      else elements.push({ id, name: e.name, what: 'fields', fields })
+    }
+    for (const [id, e] of base.elements) if (!elementsNow.has(id)) elements.push({ id, name: e.name, what: 'removed' })
+    const manifest = await this.manifestOf(row.root)
+    const params = (manifest?.params ?? []).filter(p => base.params[p.key] !== p.value)
+      .map(p => ({ key: p.key, label: p.label, to: p.value, ...(base.params[p.key] === undefined ? {} : { from: base.params[p.key]! }) }))
+    const chapters = CHAPTERS.filter(c => c.generated !== true && [...changed, ...removed].includes(c.file)).map(c => ({ id: c.id, title: c.title }))
+    const code = [...changed, ...removed].filter(p => isBuildFile(p) && !p.startsWith('elements/') && p !== MANIFEST_FILE)
+    const tests = changed.filter(p => p.startsWith('tests/'))
+    const current = (await readJson<VersionRecord>(join(row.root, STATE_DIR, 'current.json')))?.version
+    const candidate = (await readJson<VersionRecord>(join(row.root, STATE_DIR, 'candidate.json')))?.version
+    const version = candidate !== undefined && candidate !== base.candidate ? { kind: 'candidate' as const, version: candidate }
+      : current !== undefined && current !== base.current ? { kind: 'deployed' as const, version: current } : null
+    const last = await readJson<CheckRecord>(join(row.root, STATE_DIR, 'checks.json'))
+    const check = last !== undefined && new Date(last.at).getTime() >= base.at
+      ? { ok: last.ok, fixes: last.attempt, gaveUp: last.gaveUp === true, passed: last.passed, failures: last.failures.length }
+      : null
+    if (elements.length + params.length + chapters.length + code.length + tests.length === 0 && version === null && check === null) return undefined
+    const report: TurnReport = {
+      turn, projectId: row.id, title: manifest?.title ?? row.title, at: new Date().toISOString(),
+      version, check, elements, chapters, params, code: code.slice(0, 20), tests,
+    }
+    const path = this.turnsPath(sessionId)
+    const all = (await readJson<Record<string, TurnReport>>(path)) ?? {}
+    all[String(turn)] = report
+    const keys = Object.keys(all).map(Number).sort((a, b) => b - a)
+    for (const k of keys.slice(200)) delete all[String(k)]
+    await writeAtomic(path, `${JSON.stringify(all)}\n`)
+    this.notify(row.id)
+    return report
+  }
+
+  /** A stored turn report. */
+  async turnReport(sessionId: string, turn: number): Promise<TurnReport | null> {
+    const all = await readJson<Record<string, TurnReport>>(this.turnsPath(sessionId))
+    return all?.[String(turn)] ?? null
   }
 
   /** Every project as a switcher card (manifest summary, live version, last screenshot), most recent first. */
@@ -687,7 +790,8 @@ export class GameService {
     const raw = await readJson<Partial<UserLayer>>(join(root, STATE_DIR, 'user.json'))
     return {
       params: raw?.params !== null && typeof raw?.params === 'object' ? { ...raw.params } : {},
-      pending: Array.isArray(raw?.pending) ? raw.pending.filter(p => typeof p?.key === 'string' && typeof p.text === 'string') : [],
+      // `param:` entries came from the retired slider auto-pending (a slider is a trial now).
+      pending: Array.isArray(raw?.pending) ? raw.pending.filter(p => typeof p?.key === 'string' && typeof p.text === 'string' && !p.key.startsWith('param:')) : [],
       ...(typeof raw?.restyleTo === 'string' ? { restyleTo: raw.restyleTo } : {}),
     }
   }
@@ -755,8 +859,8 @@ export class GameService {
     const user = await this.userLayer(row.root)
     if (clamped === param.value) delete user.params[key]
     else user.params[key] = clamped
-    user.pending = user.pending.filter(p => p.key !== `param:${key}`)
-    if (clamped !== param.value) user.pending.push({ key: `param:${key}`, text: `参数 ${param.label} ${num(param.value)}→${num(clamped)}（试玩值，未定稿）` })
+    // A slider is a trial (2026-10-10): it changes the running game only. The
+    // agent hears about it when the user says so (告诉 agent) or finalizes.
     await this.saveUserLayer(row.root, user)
     this.notify(projectId)
     return { ok: true }

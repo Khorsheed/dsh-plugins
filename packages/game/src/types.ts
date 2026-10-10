@@ -235,6 +235,24 @@ export interface ProjectRow {
   readonly updatedAt: string
 }
 
+/** What one agent turn changed in the bound project (the turn-tail card). */
+export interface TurnReport {
+  readonly turn: number
+  readonly projectId: string
+  readonly title: string
+  readonly at: string
+  /** A version that became live (or a candidate) during the turn. */
+  readonly version: { readonly kind: 'deployed' | 'candidate'; readonly version: number } | null
+  /** The turn's end-of-turn check, when one ran. */
+  readonly check: { readonly ok: boolean; readonly fixes: number; readonly gaveUp: boolean; readonly passed: number; readonly failures: number } | null
+  readonly elements: readonly { readonly id: string; readonly name: string; readonly what: 'new' | 'removed' | 'look' | 'fields'; readonly fields?: readonly string[] }[]
+  readonly chapters: readonly { readonly id: string; readonly title: string }[]
+  readonly params: readonly { readonly key: string; readonly label: string; readonly from?: number; readonly to: number }[]
+  /** Other changed source files (code, assets, index.html). */
+  readonly code: readonly string[]
+  readonly tests: readonly string[]
+}
+
 /** One project as the switcher shows it. */
 export interface ProjectCard {
   readonly id: string

@@ -14,7 +14,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent, PreStepDecision } from '@deepseek-ai/dsh-agent'
 import { createUserMessage, type ContextFormed } from '@deepseek-ai/dsh-llm'
-import type { GameService } from './store.ts'
+import type { GameService, TurnBaseline } from './store.ts'
 import { PANEL_CHANGES_MARK, type CheckRecord } from './types.ts'
 
 /** What a dsh-game message is, for the chat row (the text is for the model). */
@@ -104,12 +104,26 @@ export function registerTurnHooks(ctx: Context, store: GameService): void {
     return decision
   }, { prepend: true })
 
-  // The turn is over whatever its reason: drop its steer count.
+  // Turn reports: snapshot the bound project when a turn starts, record what
+  // it changed when the turn ends (whatever its reason), for the turn-tail card.
+  const baselines = new Map<string, Promise<TurnBaseline | undefined>>()
   ctx.on('session/event', (session, raw) => {
     const event = raw as unknown as { type?: string; turn?: number; data?: { turn?: number } }
+    const turn = event?.data?.turn ?? event?.turn
+    if (event?.type === 'turn/start' && turn !== undefined) {
+      baselines.set(`${session.id}:${turn}`, store.turnBaseline(session.id).catch(() => undefined))
+      return
+    }
     if (event?.type !== 'turn/end') return
-    const turn = event.data?.turn ?? event.turn
-    if (turn !== undefined) steered.delete(`${session.id}:${turn}`)
-    else for (const key of steered.keys()) if (key.startsWith(`${session.id}:`)) steered.delete(key)
+    if (turn !== undefined) {
+      steered.delete(`${session.id}:${turn}`)
+      const key = `${session.id}:${turn}`
+      const base = baselines.get(key)
+      baselines.delete(key)
+      if (base !== undefined) {
+        void base.then(b => (b === undefined ? undefined : store.recordTurn(session.id, turn, b)))
+          .catch((error: unknown) => { ctx.logger.warn('game: could not record the turn report', error) })
+      }
+    } else for (const key of steered.keys()) if (key.startsWith(`${session.id}:`)) steered.delete(key)
   })
 }

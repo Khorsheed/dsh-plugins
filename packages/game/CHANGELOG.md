@@ -2,6 +2,12 @@
 
 ## 0.1.0 (unreleased)
 
+- Turn card in the conversation's turn tail (outside the fold): what the turn changed, with jumps into the tab; host-side turn baselines diffed at turn/end.
+- Sliders are trials only (no pending change); "Tell the agent" writes the trial values into the composer.
+- After a change the panel asks whether to tell the agent (write into chat / not this one / later / stop asking).
+- Play is opt-in: a poster and a Play button, Stop while running.
+- Host look: the host's Switch and Tag primitives, Button-styled actions, neutral chips.
+
 - Panel changes are no longer attached to the next send automatically: they collect in the "Panel changes" dock, "Write into chat" puts the list into the composer, and a sent message carrying it clears what it lists (`agent/pre-step` no longer touches the batch). Unsent changes show in `game_read`.
 - Project switcher: the title opens project cards (screenshot, version, style, elements, last change, pitch) led by a New project card.
 

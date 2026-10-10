@@ -17,6 +17,9 @@ import css from './GameTab.module.css'
 export interface DesignViewProps extends ViewProps {
   readonly project: ProjectView
   readonly onStyle: () => void
+  /** The chapter a jump asked to open. */
+  readonly openChapter?: string | null
+  readonly onOpenChapter?: (id: string | null) => void
 }
 
 const STATUS_KEY = { todo: 'design.todo', draft: 'design.draft', done: 'design.done' } as const
@@ -44,7 +47,8 @@ function writeSeen(projectId: string, seen: Record<string, number>): void {
 export function DesignView(props: DesignViewProps): ReactNode {
   const { t, project, onStyle } = props
   const manifest = project.manifest
-  const [open, setOpen] = useState<string | null>(null)
+  const [open, setOpen] = useState<string | null>(props.openChapter ?? null)
+  useEffect(() => { if (props.openChapter != null) setOpen(props.openChapter) }, [props.openChapter])
   const [seen, setSeen] = useState<Record<string, number>>(() => readSeen(project.id))
   useEffect(() => { setSeen(readSeen(project.id)) }, [project.id])
   const toggle = (chapter: ChapterView): void => {
@@ -109,7 +113,8 @@ export function DesignView(props: DesignViewProps): ReactNode {
 }
 
 /** One chapter's body: read, or edit in place. */
-function ChapterBody({ t, sessionId, api, project, chapter, refresh, toast }: DesignViewProps & { chapter: ChapterView }): ReactNode {
+function ChapterBody(props: DesignViewProps & { chapter: ChapterView }): ReactNode {
+  const { t, sessionId, api, project, chapter, refresh } = props
   const [editing, setEditing] = useState(false)
   const [text, setText] = useState(chapter.text)
   useEffect(() => { if (!editing) setText(chapter.text) }, [chapter.text, editing])
@@ -122,7 +127,11 @@ function ChapterBody({ t, sessionId, api, project, chapter, refresh, toast }: De
         <button type="button" className={css.ghost} onClick={() => { setEditing(false); setText(chapter.text) }}>{t('common.cancel')}</button>
         <button type="button" className={css.primary} onClick={() => {
           void api.writeChapter(sessionId, project.id, chapter.id, text).then(r => {
-            if (failureOf(r) === undefined) { toast(t('toast.chapterSaved', { title: chapter.title })); setEditing(false); refresh() }
+            if (failureOf(r) === undefined) {
+              setEditing(false)
+              props.changed(`design:${chapter.id}`, t('nudge.chapter', { title: chapter.title }))
+              refresh()
+            }
           })
         }}>{t('common.save')}</button>
       </div>

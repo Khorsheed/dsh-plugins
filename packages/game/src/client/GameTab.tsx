@@ -10,10 +10,12 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   PanelHeader, PanelRoot, UnderlineTabs, type PanelAction,
 } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
+import { Switch, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
 import { artStyleLabel } from '../project.ts'
+import { PANEL_CHANGES_MARK } from '../types.ts'
 import type { ProjectView, SessionGameState } from '../types.ts'
 import { exportHtml } from '../vfs.ts'
-import type { GameTabProps, ViewProps } from './contract.ts'
+import type { GameTabProps, NavTarget, ViewProps } from './contract.ts'
 import { DesignView } from './DesignView.tsx'
 import { ElementsView } from './ElementsView.tsx'
 import { PlayView } from './PlayView.tsx'
@@ -24,15 +26,33 @@ import css from './GameTab.module.css'
 
 type View = 'play' | 'elements' | 'design' | 'versions'
 
+/** Per-viewer: offer to tell the agent after a change (default on). */
+const ASK_KEY = 'dsh-game:ask-send'
+function readAsk(): boolean {
+  try {
+    return localStorage.getItem(ASK_KEY) !== 'off'
+  } catch {
+    return true
+  }
+}
+function writeAsk(on: boolean): void {
+  try {
+    localStorage.setItem(ASK_KEY, on ? 'on' : 'off')
+  } catch {
+    // Per-viewer convenience only.
+  }
+}
+
 const RefreshIcon = <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.6-3.7M13 3v2.6h-2.6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" /></svg>
 const SwitchIcon = <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 5h9l-2-2M13 11H4l2 2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" /></svg>
 const PaletteIcon = <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 2.5a5.5 5.5 0 1 0 0 11c.8 0 1.2-.6 1-1.3-.3-.8.2-1.7 1.1-1.7h1.2a2.2 2.2 0 0 0 2.2-2.2C13.5 5 11 2.5 8 2.5Z" stroke="currentColor" strokeWidth="1.2" /><circle cx="5.5" cy="7" r=".9" fill="currentColor" /><circle cx="8" cy="5" r=".9" fill="currentColor" /><circle cx="10.6" cy="6.3" r=".9" fill="currentColor" /></svg>
 const PlusIcon = <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 3v10M3 8h10" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" /></svg>
+const AskIcon = <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 4.5h10v6H7l-3 2.5v-2.5H3z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" /></svg>
 const ExportIcon = <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 2.5v7M5 6.5l3 3 3-3M3 11v2.5h10V11" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" /></svg>
 
 /** The game tab body. */
 export function GameTab(props: GameTabProps): ReactNode {
-  const { sessionId, t, api, insertDraft, subscribeSessionEvents, touch } = props
+  const { sessionId, t, api, insertDraft, subscribeSessionEvents, touch, subscribeNav, takeNav } = props
   const [state, setState] = useState<SessionGameState | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [rev, setRev] = useState(0)
@@ -42,6 +62,9 @@ export function GameTab(props: GameTabProps): ReactNode {
   const [openElement, setOpenElement] = useState<string | null>(null)
   const [liveElement, setLiveElement] = useState<Record<string, unknown> | null>(null)
   const [toastText, setToastText] = useState<string | null>(null)
+  const [openChapter, setOpenChapter] = useState<string | null>(null)
+  const [nudge, setNudge] = useState<{ key: string; title: string } | null>(null)
+  const [ask, setAsk] = useState(readAsk)
   const toastTimer = useRef<ReturnType<typeof setTimeout>>()
 
   const refresh = useCallback(() => { touch(sessionId) }, [touch, sessionId])
@@ -52,6 +75,20 @@ export function GameTab(props: GameTabProps): ReactNode {
   }, [])
 
   useEffect(() => subscribeSessionEvents(id => { if (id === sessionId) setRev(n => n + 1) }), [subscribeSessionEvents, sessionId])
+  // Jumps from the turn card: follow them, including one made before this tab mounted.
+  useEffect(() => {
+    const go = (target: NavTarget): void => {
+      setPicking(false)
+      setStyling(false)
+      setView(target.view)
+      setOpenElement(target.elementId ?? null)
+      setOpenChapter(target.chapterId ?? null)
+      setRev(n => n + 1)
+    }
+    const parked = takeNav()
+    if (parked !== null) go(parked)
+    return subscribeNav(go)
+  }, [subscribeNav, takeNav])
   useEffect(() => {
     let live = true
     void api.state(sessionId).then(result => {
@@ -61,7 +98,10 @@ export function GameTab(props: GameTabProps): ReactNode {
     return () => { live = false }
   }, [api, sessionId, rev])
 
-  const viewProps: ViewProps = { t, sessionId, api, refresh, toast, insertDraft: text => insertDraft(sessionId, text) }
+  const viewProps: ViewProps = {
+    t, sessionId, api, refresh, toast, insertDraft: text => insertDraft(sessionId, text),
+    changed: (key, title) => { if (ask) setNudge({ key, title }) },
+  }
   const project = state?.bound ?? null
   const choose = (projectId: string | null): void => {
     if (projectId !== null && projectId === project?.id) { setPicking(false); return }
@@ -115,7 +155,26 @@ export function GameTab(props: GameTabProps): ReactNode {
     </PanelRoot>
   }
 
-  return <ProjectWorkbench {...viewProps} project={project} view={view} setView={v => { setView(v); if (v !== 'elements') setOpenElement(null) }}
+  const nudgeItem = nudge === null ? undefined : project.pending.find(x => x.key === nudge.key)
+  const nudgeBar = nudge !== null && nudgeItem !== undefined && <div className={css.nudge} role="status">
+    <span className={css.nudgeText}><strong>{nudge.title}</strong>{t('nudge.ask')}</span>
+    <span className={css.nudgeActions}>
+      <button type="button" className={css.primary} onClick={() => {
+        if (insertDraft(sessionId, [`${PANEL_CHANGES_MARK}${t('dock.draftLead')}`, `- ${nudgeItem.text}`, '', ''].join('\n'))) toast(t('nudge.written'))
+        setNudge(null)
+      }}>{t('nudge.write')}</button>
+      <button type="button" className={css.ghost} onClick={() => {
+        void api.dropPending(sessionId, project.id, nudge.key).then(refresh)
+        setNudge(null)
+      }}>{t('nudge.skip')}</button>
+      <button type="button" className={css.link} onClick={() => { setNudge(null) }}>{t('nudge.later')}</button>
+    </span>
+    <button type="button" className={css.nudgeOff} onClick={() => { writeAsk(false); setAsk(false); setNudge(null); toast(t('nudge.offToast')) }}>{t('nudge.off')}</button>
+  </div>
+
+  return <ProjectWorkbench {...viewProps} project={project} view={view} setView={v => { setView(v); if (v !== 'elements') setOpenElement(null); if (v !== 'design') setOpenChapter(null) }}
+    nudgeBar={nudgeBar} openChapter={openChapter} setOpenChapter={setOpenChapter}
+    ask={ask} toggleAsk={() => { writeAsk(!ask); setAsk(!ask); toast(ask ? t('nudge.offToast') : t('nudge.onToast')) }}
     styling={styling} setStyling={setStyling} openElement={openElement} setOpenElement={setOpenElement}
     liveElement={liveElement} setLiveElement={setLiveElement} onPickProject={() => { setPicking(true) }} foot={foot} />
 }
@@ -133,6 +192,11 @@ function ProjectWorkbench(p: ViewProps & {
   setLiveElement: (el: Record<string, unknown>) => void
   onPickProject: () => void
   foot: ReactNode
+  nudgeBar: ReactNode
+  openChapter: string | null
+  setOpenChapter: (id: string | null) => void
+  ask: boolean
+  toggleAsk: () => void
 }): ReactNode {
   const { t, sessionId, api, project, view, setView, styling, setStyling, refresh, toast, insertDraft } = p
   const autoConfirm = project.manifest?.autoConfirm ?? true
@@ -156,6 +220,7 @@ function ProjectWorkbench(p: ViewProps & {
     { id: 'style', label: t('style.change'), icon: PaletteIcon, onSelect: () => { setStyling(!styling) }, pressed: styling },
     { id: 'export', label: t('versions.exportCurrent'), icon: ExportIcon, onSelect: exportCurrent, menuOnly: true },
     { id: 'switch', label: t('switch'), icon: SwitchIcon, onSelect: p.onPickProject, menuOnly: true },
+    { id: 'ask', label: p.ask ? t('nudge.menuOn') : t('nudge.menuOff'), icon: AskIcon, onSelect: p.toggleAsk, menuOnly: true, pressed: p.ask },
     { id: 'new', label: t('switcher.new'), icon: PlusIcon, onSelect: () => { if (insertDraft(t('draft.newProject'))) toast(t('toast.newDrafted')) }, menuOnly: true },
   ]
   const failing = project.lastCheck !== null && !project.lastCheck.ok
@@ -167,18 +232,15 @@ function ProjectWorkbench(p: ViewProps & {
         <span>{project.title}</span><span className={css.titleCaret} aria-hidden="true">▾</span>
       </button>}
       meta={<span className={css.headMeta}>
-        {style !== undefined && <span className={css.headChip}>{artStyleLabel(style)}</span>}
-        <span className={css.headChip} data-tone={project.current === null ? 'muted' : 'ok'}>
-          {project.current === null ? t('meta.noVersion') : t('meta.version', { version: project.current.version })}
-        </span>
-        {project.pending.length > 0 && <span className={css.headChip} data-tone="info" title={project.pending.map(x => x.text).join('\n')}>{t('meta.pending', { count: project.pending.length })}</span>}
+        {style !== undefined && <Tag tone="quiet">{artStyleLabel(style)}</Tag>}
+        <Tag tone="quiet">{project.current === null ? t('meta.noVersion') : t('meta.version', { version: project.current.version })}</Tag>
+        {project.pending.length > 0 && <Tag tone="outline">{t('meta.pending', { count: project.pending.length })}</Tag>}
       </span>}
-      extra={<label className={css.switch} title={autoConfirm ? t('autoConfirm.onHint') : t('autoConfirm.offHint')}>
-        <input type="checkbox" role="switch" checked={autoConfirm}
-          onChange={() => { void api.setAutoConfirm(sessionId, project.id, !autoConfirm).then(() => { toast(autoConfirm ? t('toast.autoOff') : t('toast.autoOn')); refresh() }) }} />
-        <span className={css.switchTrack} aria-hidden="true"><span /></span>
+      extra={<span className={css.switch} title={autoConfirm ? t('autoConfirm.onHint') : t('autoConfirm.offHint')}>
+        <Switch checked={autoConfirm} label={t('autoConfirm.label')}
+          onChange={next => { void api.setAutoConfirm(sessionId, project.id, next).then(() => { toast(next ? t('toast.autoOn') : t('toast.autoOff')); refresh() }) }} />
         <span className={css.switchLabel}>{t('autoConfirm.label')}</span>
-      </label>}
+      </span>}
       actions={actions}
       moreLabel={t('more')}
     />
@@ -209,10 +271,11 @@ function ProjectWorkbench(p: ViewProps & {
         })
       }} />
     </div>}
+    {p.nudgeBar}
     {view === 'play' && <PlayView {...p} liveElement={p.liveElement}
       onOpenElement={id => { p.setOpenElement(id); setView('elements') }} onOpenVersions={() => { setView('versions') }} />}
     {view === 'elements' && <ElementsView {...p} openId={p.openElement} onOpen={p.setOpenElement} onLiveElement={p.setLiveElement} />}
-    {view === 'design' && <DesignView {...p} onStyle={() => { setStyling(true) }} />}
+    {view === 'design' && <DesignView {...p} openChapter={p.openChapter} onOpenChapter={p.setOpenChapter} onStyle={() => { setStyling(true) }} />}
     {view === 'versions' && <VersionsView {...p} />}
     {p.foot}
   </PanelRoot>
