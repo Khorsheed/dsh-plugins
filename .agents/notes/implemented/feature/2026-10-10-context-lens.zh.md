@@ -34,6 +34,6 @@ Status: implemented
 
 回归覆盖并发对账、两表加总、来源轮次、稳定消息 ID 下的内容变化、作用域过滤的走势读取、Remote 参数数、导航与输出展开。实际组件使用合成数据在桌面和 390px 下做视觉自检。
 
-在同步 main 基线 `84399e6a` 后验收：全仓 build/test 阶段全部通过，其中 Context Lens 137 项、Canvas 620 项、脚本测试 325 项。最后的全仓打包门禁受阻：全量 `gen-typert` 把 game 的 `MessageSourceMap` 增补（`packages/game/src/hooks.ts`）带入 Canvas `lib/typert.host.js` 的诊断声明，字面量 `@khorsheed/dsh-game` 被 `verifyTarball` 判作未声明家族边。以 `pnpm gate` 复现，失败点为第 16 步打包 Canvas。应由 game/共享构建 owner 处理全量生成的元数据串入或相应校验语义，不应给 Canvas 添加虚假的运行时依赖。按包 scoped 生成、构建 Canvas 与 Context Lens 后，`pack-all-dist --only canvas,context-lens` 的两个 tarball 校验均通过。全量门禁绿前，本分支不合入 main。
+首次在 main 基线 `84399e6a` 验收时，全仓 build/test 通过，但最后的打包门禁失败：全量 `gen-typert` 把 game 的 `MessageSourceMap` 增补带入 Canvas 诊断声明，被家族边扫描误判为依赖。mainline 已在 `43c56cb9` 修复扫描器（见[修复记录](../bug-fix/2026-10-10-pack-dist-typert-face-exemption.zh.md)）。同步该修复后，`pnpm gate` 以 464 秒通过全部 16 步：全仓构建、测试及 39 个 bundle tarball 验证，其中 Context Lens 137 项、Canvas 620 项、脚本测试 327 项。合并阻塞已解除；冷安装验证仍由 CI 执行。
 
 生产迁移也待处理：`deploy:3080` 有添加/更新路径，没有改名替换选项。支持的流程需在启动 Context Lens 前替换旧依赖、bundle 名单与 override pin；不要手改共享 profile 或同时挂载两个身份。本次未部署、重启、发布 npm 或推送远端。
