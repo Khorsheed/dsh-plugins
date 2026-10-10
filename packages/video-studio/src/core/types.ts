@@ -27,6 +27,8 @@ export interface Settings {
   speakerPauseThreshold: Record<string, number>
   /** Tokens treated as fillers. */
   fillers: string[]
+  /** Transcription corrections applied to every new transcript (wrong → right). */
+  replacements: Record<string, string>
   /** Shownotes template; {title} {summary} {chapters} placeholders. */
   shownotes: string
 }
@@ -104,7 +106,7 @@ export interface Segment {
   tokens: Token[]
 }
 
-export type EditKind = 'cut' | 'shorten' | 'gain'
+export type EditKind = 'cut' | 'shorten' | 'gain' | 'text'
 export type EditState = 'proposed' | 'applied' | 'rejected'
 
 export interface Edit {
@@ -112,6 +114,10 @@ export interface Edit {
   kind: EditKind
   start: number
   end: number
+  /** text: the corrected text shown in place of the tokens in [start, end] (subtitles and transcript only, never audio). */
+  text?: string | undefined
+  /** text: what the tokens said before the correction. */
+  from?: string | undefined
   /** shorten: kept length (s); gain: dB. */
   value?: number | undefined
   /** gain only: apply to this speaker's segments within the range. */
@@ -175,7 +181,7 @@ export interface JobPayload {
 }
 
 /** A settings value as it crosses the wire. */
-export type SettingValue = number | string | string[] | Record<string, number>
+export type SettingValue = number | string | string[] | Record<string, number> | Record<string, string>
 
 export type JobKind = 'probe' | 'align' | 'proxy' | 'transcribe' | 'export'
 export type JobState = 'queued' | 'running' | 'done' | 'failed'

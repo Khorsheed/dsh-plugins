@@ -18,6 +18,7 @@ import type {
   BindRequest, ClipRequest, CreateProjectRequest, CreateShowRequest, CutRequest, DecideRequest, ExportRequest,
   GlobalPatchRequest, ImportRequest, JobRef, ProjectRef, ProjectSettingRequest, SegmentReassignRequest, SessionRef,
   ShowSettingRequest, SpeakerMergeRequest, SpeakerRenameRequest, VoiceprintDeleteRequest,
+  AudioChunk, AudioChunkRequest, KeywordCutRequest, ReplaceRequest, TextFixRequest,
 } from './types.ts'
 import type { Job } from './core/types.ts'
 
@@ -117,6 +118,30 @@ export class VideoStudioRemoteService extends TypertRemoteService<VideoStudioRem
   async scan(request: ProjectRef): Promise<ProjectView> {
     await this.svc.scan(request.projectId, 'user')
     return this.svc.view(request.projectId)
+  }
+
+  @Remote('fixText')
+  async fixText(request: TextFixRequest): Promise<ProjectView> {
+    await this.svc.fixText(request.projectId, request.start, request.end, request.text, 'user')
+    return this.svc.view(request.projectId)
+  }
+
+  @Remote('replaceAll')
+  async replaceAll(request: ReplaceRequest): Promise<ProjectView> {
+    await this.svc.replaceAll(request.projectId, request.from, request.to, 'user', request.remember)
+    return this.svc.view(request.projectId)
+  }
+
+  @Remote('cutMatches')
+  async cutMatches(request: KeywordCutRequest): Promise<ProjectView> {
+    await this.svc.cutMatches(request.projectId, request.needle, 'user')
+    return this.svc.view(request.projectId)
+  }
+
+  /** Raw PCM of the reference recording for the panel player. */
+  @Remote('audioChunk')
+  audioChunk(request: AudioChunkRequest): Promise<AudioChunk> {
+    return this.svc.audioChunk(request.projectId, request.start, request.duration)
   }
 
   @Remote('renameSpeaker')

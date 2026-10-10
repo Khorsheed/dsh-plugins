@@ -10,6 +10,7 @@ A group sitting around one recorder makes one mixed recording. After import the 
 
 - **Speakers in one mixed recording**: local speaker diarization (pyannote segmentation + CAM++ embeddings) finds the voices. Members stored in the show are recognised automatically; for a new voice, press ▶ to hear a sample and name it, and the name is saved to the show for next time. Wrong splits can be merged, and any segment can be reassigned.
 - **Cut by deleting words**: speaker-coloured paragraphs; click a phrase to cut, click again to restore. Cuts are kept in the original recording's time, so nothing is re-encoded before export.
+- **Listen while you cut**: the transcript tab's player plays the edit as it will sound or the original take, highlighting and following the current paragraph and word. Your cuts and the model's are struck through differently and can be filtered by origin. Misheard words can be corrected by selecting them or with replace-all (optionally saved to the show for future episodes) — text and subtitles only, never the audio.
 - **Proposals, not silent edits**: the model's filler/pause/repeat scan and structural suggestions arrive as dashed proposal groups that take effect only on ✓. Your own panel edits are handed to the model as events, so its next turn does not overwrite them.
 - **Pauses are shortened, not cut**: long pauses default to 0.6 s, with per-speaker thresholds (a slow talker gets a higher one).
 - **Automatic video alignment**: phone footage is aligned to the recording by its sound; no clap needed.

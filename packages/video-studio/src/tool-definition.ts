@@ -155,11 +155,12 @@ export function defineVideoTools(svc: VideoStudioService) {
     name: 'video_propose_edit',
     description:
       'Propose edits as ONE group the user accepts or rejects (✓/✗ in the panel or in conversation), or decide a group on the user\'s word. '
+      + '`fix_text`: transcription corrections the user can confirm (wrong word → right word, text only). `cut_keyword`: cut every occurrence of a word. '
       + '`propose`: edits over the ORIGINAL recording\'s time — cut (remove a range from everyone: in a mixed recording you cannot remove one voice) '
       + 'or shorten (keep `value` seconds of a pause). `apply` / `reject`: only when the user explicitly said so in conversation. '
       + '`rename_speaker` / `merge_speakers` / `reassign`: speaker fixes the user asked for.',
     parameters: {
-      action: { type: 'string', required: true, enum: ['propose', 'apply', 'reject', 'rename_speaker', 'merge_speakers', 'reassign'], description: 'What to do.' },
+      action: { type: 'string', required: true, enum: ['propose', 'fix_text', 'cut_keyword', 'apply', 'reject', 'rename_speaker', 'merge_speakers', 'reassign'], description: 'What to do.' },
       projectId: { type: 'string', description: 'Defaults to the project bound to this session.' },
       title: { type: 'string', description: 'propose: one line naming the group (e.g. 「删掉外卖吐槽 21:40–27:55」).' },
       edits: {
@@ -167,6 +168,12 @@ export function defineVideoTools(svc: VideoStudioService) {
         items: { type: 'object', additionalProperties: true },
         description: 'propose: [{kind: "cut"|"shorten", start, end (seconds, original recording), value? (shorten: seconds kept), reason?}].',
       },
+      fixes: {
+        type: 'array',
+        items: { type: 'object', additionalProperties: true },
+        description: 'fix_text: transcription corrections [{from, to}] (e.g. {from: "门法", to: "门阀"}); each becomes one proposal group over every occurrence. Text only — subtitles and transcript, never the audio.',
+      },
+      keyword: { type: 'string', description: 'cut_keyword: propose cutting every occurrence of this word or phrase.' },
       groupId: { type: 'string', description: 'apply / reject: the proposal group.' },
       speakerId: { type: 'string', description: 'rename_speaker / reassign: the speaker; merge_speakers: the one merged AWAY.' },
       intoId: { type: 'string', description: 'merge_speakers: the speaker that remains.' },
@@ -174,7 +181,7 @@ export function defineVideoTools(svc: VideoStudioService) {
       name: { type: 'string', description: 'rename_speaker: the person\'s name (saved as a voiceprint in the show).' },
     },
     output: text,
-    async execute(args: { action: string; projectId?: string; title?: string; edits?: Array<{ kind?: string; start?: number; end?: number; value?: number; reason?: string }>; groupId?: string; speakerId?: string; intoId?: string; segmentId?: string; name?: string }, exec: ExecLike): Promise<string> {
+    async execute(args: { action: string; projectId?: string; title?: string; edits?: Array<{ kind?: string; start?: number; end?: number; value?: number; reason?: string }>; fixes?: Array<{ from?: string; to?: string }>; keyword?: string; groupId?: string; speakerId?: string; intoId?: string; segmentId?: string; name?: string }, exec: ExecLike): Promise<string> {
       try {
         const id = await resolveProject(svc, exec, args.projectId)
         switch (args.action) {
@@ -185,6 +192,20 @@ export function defineVideoTools(svc: VideoStudioService) {
             if (!edits.length) return 'propose 需要至少一条 {kind: cut|shorten, start, end}'
             const r = await svc.propose(id, args.title ?? '', edits)
             return `已提议 ${r.groupId}「${args.title ?? '剪辑提议'}」（${edits.length} 处），等用户确认。`
+          }
+          case 'fix_text': {
+            const lines: string[] = []
+            for (const f of args.fixes ?? []) {
+              if (!f.from || f.to === undefined) continue
+              const r = await svc.replaceAll(id, f.from, f.to, 'agent', false)
+              lines.push(r.groupId ? `${r.groupId}「${f.from}」→「${f.to}」${r.count} 处` : `「${f.from}」没有出现`)
+            }
+            return lines.length ? `已提议改字（等用户确认）：${lines.join('；')}` : 'fix_text 需要 fixes: [{from, to}]'
+          }
+          case 'cut_keyword': {
+            if (!args.keyword) return 'cut_keyword 需要 keyword'
+            const r = await svc.cutMatches(id, args.keyword, 'agent')
+            return r.groupId ? `已提议 ${r.groupId}：剪掉所有「${args.keyword}」${r.count} 处，等用户确认。` : `「${args.keyword}」没有出现。`
           }
           case 'apply':
           case 'reject': {

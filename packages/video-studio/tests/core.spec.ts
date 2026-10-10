@@ -126,6 +126,33 @@ describe('subtitles', () => {
   })
 })
 
+describe('text corrections', () => {
+  const seg: Segment = { id: 's', speakerId: 'a', start: 0, end: 4, tokens: tokens('门阀和坚顾', 0) }
+
+  it('displayTokens swaps corrected ranges and leaves the rest', async () => {
+    const { displayTokens } = await import('../src/core/text.ts')
+    expect(displayTokens(seg, []).map((t) => t.text).join('')).toBe('门阀和坚顾')
+    const fixes = [edit({ kind: 'text', start: 0, end: 0.38, text: '门法', from: '门阀' })]
+    expect(displayTokens(seg, fixes).map((t) => t.text).join('')).toBe('门法和坚顾')
+    // proposed or rejected corrections never touch the display
+    expect(displayTokens(seg, [{ ...fixes[0], state: 'proposed' }]).map((t) => t.text).join('')).toBe('门阀和坚顾')
+    expect(displayTokens(seg, [{ ...fixes[0], state: 'rejected' }]).map((t) => t.text).join('')).toBe('门阀和坚顾')
+  })
+
+  it('findOccurrences matches across token boundaries, case-insensitively', async () => {
+    const { findOccurrences } = await import('../src/core/text.ts')
+    const seg2: Segment = { id: 's2', speakerId: 'a', start: 5, end: 9, tokens: tokens('又说门阀了', 5) }
+    const hits = findOccurrences([seg, seg2], [], '门阀')
+    expect(hits.map((h) => [h.segmentId, h.start])).toEqual([['s', 0], ['s2', 5.4]])
+    expect(hits[0]!.end).toBeCloseTo(0.38, 6)
+    // matches the corrected text, and an empty needle finds nothing
+    const fixes = [edit({ kind: 'text', start: 0, end: 0.38, text: '门法', from: '门阀' })]
+    expect(findOccurrences([seg], fixes, '门法')).toHaveLength(1)
+    expect(findOccurrences([seg], fixes, '门阀')).toHaveLength(0)
+    expect(findOccurrences([seg], [], '  ')).toEqual([])
+  })
+})
+
 describe('align', () => {
   it('recovers a known offset between two envelopes', () => {
     const rate = 8000

@@ -10,6 +10,7 @@
     "src/core/scan.ts",
     "src/core/settings.ts",
     "src/core/subtitles.ts",
+    "src/core/text.ts",
     "src/core/timeline.ts",
     "src/core/types.ts",
     "src/media/export.ts",

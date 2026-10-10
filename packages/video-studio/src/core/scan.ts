@@ -32,7 +32,7 @@ export function scanTranscript(
   existing: readonly Edit[] = [],
 ): ScanResult {
   const names = new Map(speakers.map((s) => [s.id, s.name]))
-  const taken = existing.filter((e) => e.state !== 'rejected')
+  const taken = existing.filter((e) => e.state !== 'rejected' && (e.kind === 'cut' || e.kind === 'shorten'))
   const covered = (s: number, t: number) => taken.some((e) => e.start <= s + 1e-3 && e.end >= t - 1e-3)
   const edits: ScanResult['edits'] = []
   const counts = { fillers: 0, pauses: 0, repeats: 0 }

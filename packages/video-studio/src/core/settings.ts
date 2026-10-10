@@ -11,6 +11,7 @@ export const DEFAULT_SETTINGS: Settings = {
   pauseThreshold: 1.2,
   speakerPauseThreshold: {},
   fillers: ['嗯', '啊', '呃', '额', '那个', '就是说', '然后呢'],
+  replacements: {},
   shownotes: '{title}\n\n{summary}\n\n{chapters}',
 }
 

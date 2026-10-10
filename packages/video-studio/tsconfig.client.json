@@ -17,6 +17,7 @@
     "src/core/scan.ts",
     "src/core/settings.ts",
     "src/core/subtitles.ts",
+    "src/core/text.ts",
     "src/core/timeline.ts",
     "src/core/types.ts",
     "src/media/export.ts",
@@ -32,6 +33,8 @@
     "src/client/index.ts",
     "src/client/locales.ts",
     "src/client/store.ts",
-    "src/client/VideoPane.tsx"
+    "src/client/VideoPane.tsx",
+    "src/client/TranscriptTab.tsx",
+    "src/client/player.ts"
   ]
 }

@@ -1,5 +1,6 @@
 import { isRemoved, toOutputTime, type Range } from './timeline.ts'
-import type { Segment, Speaker, SubtitleStyle } from './types.ts'
+import { displayTokens } from './text.ts'
+import type { Edit, Segment, Speaker, SubtitleStyle } from './types.ts'
 
 export interface Cue {
   start: number
@@ -16,7 +17,7 @@ const BREAK_GAP = 0.6
  * punctuation, long gaps, or MAX_CHARS. Punctuation at a line end is dropped
  * (subtitle convention), inner punctuation kept.
  */
-export function buildCues(transcript: readonly Segment[], speakers: readonly Speaker[], removed: readonly Range[]): Cue[] {
+export function buildCues(transcript: readonly Segment[], speakers: readonly Speaker[], removed: readonly Range[], edits: readonly Edit[] = []): Cue[] {
   const names = new Map(speakers.map((s) => [s.id, s.name || '']))
   const cues: Cue[] = []
   for (const seg of transcript) {
@@ -27,7 +28,7 @@ export function buildCues(transcript: readonly Segment[], speakers: readonly Spe
       if (text) cues.push({ start: toOutputTime(cur.start, removed), end: toOutputTime(cur.end, removed), text, speaker: names.get(seg.speakerId) ?? '' })
       cur = null
     }
-    for (const tok of seg.tokens) {
+    for (const tok of displayTokens(seg, edits)) {
       if (isRemoved(tok.start, tok.end, removed)) continue
       const punct = /^[\p{P}]+$/u.test(tok.text)
       if (cur && !punct && tok.start - cur.end > BREAK_GAP) flush()
@@ -91,11 +92,11 @@ export function toAss(cues: readonly Cue[], style: SubtitleStyle, width = 1920, 
   return [...head, ...lines, ''].join('\n')
 }
 
-export function toPlainText(transcript: readonly Segment[], speakers: readonly Speaker[], removed: readonly Range[]): string {
+export function toPlainText(transcript: readonly Segment[], speakers: readonly Speaker[], removed: readonly Range[], edits: readonly Edit[] = []): string {
   const names = new Map(speakers.map((s) => [s.id, s.name || '未命名']))
   const out: string[] = []
   for (const seg of transcript) {
-    const text = seg.tokens
+    const text = displayTokens(seg, edits)
       .filter((t) => !isRemoved(t.start, t.end, removed))
       .map((t) => t.text)
       .join('')

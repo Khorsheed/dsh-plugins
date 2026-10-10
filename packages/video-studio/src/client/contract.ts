@@ -15,6 +15,7 @@ import type {
   ClipRequest, CreateProjectRequest, CutRequest, DecideRequest, ExportRequest, GlobalConfig, GlobalPatchRequest, ImportRequest,
   Job, ModelStatus, Overview, ProjectSettingRequest, ProjectView, SegmentReassignRequest, Show, ShowSettingRequest,
   SpeakerMergeRequest, SpeakerRenameRequest, VoiceprintDeleteRequest,
+  AudioChunk, AudioChunkRequest, KeywordCutRequest, ReplaceRequest, TextFixRequest,
 } from '../types.ts'
 import type { createVideoStudioStore } from './store.ts'
 
@@ -39,6 +40,10 @@ export interface VideoPaneInjected {
   renameSpeaker: (request: SpeakerRenameRequest) => R<ProjectView>
   mergeSpeakers: (request: SpeakerMergeRequest) => R<ProjectView>
   reassignSegment: (request: SegmentReassignRequest) => R<ProjectView>
+  fixText: (request: TextFixRequest) => R<ProjectView>
+  replaceAll: (request: ReplaceRequest) => R<ProjectView>
+  cutMatches: (request: KeywordCutRequest) => R<ProjectView>
+  audioChunk: (request: AudioChunkRequest) => R<AudioChunk>
   projectSetting: (request: ProjectSettingRequest) => R<ProjectView>
   setGlobal: (request: GlobalPatchRequest) => R<GlobalConfig>
   clip: (request: ClipRequest) => R<string>

@@ -107,3 +107,33 @@ export interface BindRequest extends SessionRef, ProjectRef {}
 export interface JobRef {
   jobId: string
 }
+
+export interface TextFixRequest extends ProjectRef {
+  start: number
+  end: number
+  text: string
+}
+
+export interface ReplaceRequest extends ProjectRef {
+  from: string
+  to: string
+  /** Also store the rule in the show for later transcripts. */
+  remember: boolean
+}
+
+export interface KeywordCutRequest extends ProjectRef {
+  needle: string
+}
+
+export interface AudioChunkRequest extends ProjectRef {
+  start: number
+  duration: number
+}
+
+/** Raw 16-bit little-endian mono PCM, base64. */
+export interface AudioChunk {
+  sampleRate: number
+  start: number
+  samples: string
+  ended: boolean
+}

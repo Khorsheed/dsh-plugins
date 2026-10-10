@@ -6,13 +6,14 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ChipRow, PanelHeader, PanelRoot, UnderlineTabs, type PanelAction } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
-import { formatClock, isRemoved, removedRanges, type Range } from '../core/timeline.ts'
+import { formatClock } from '../core/timeline.ts'
 import type {
-  Edit, EffectiveSetting, GlobalConfig, SettingValue, Job, ModelStatus, Overview, Project, ProjectView, Segment, SettingKey, Show, Speaker, Token,
+  EffectiveSetting, GlobalConfig, SettingValue, Job, ModelStatus, Overview, Project, ProjectView, SettingKey, Show, Speaker,
 } from '../types.ts'
 import type { RemoteResult, VideoPaneProps } from './contract.ts'
 import type { VideoStudioKey } from './locales.ts'
 import type { VideoTab } from './store.ts'
+import { TranscriptTab } from './TranscriptTab.tsx'
 import css from './VideoPane.module.css'
 
 type T = VideoPaneProps['t']
@@ -281,7 +282,7 @@ function ProjectScreen({ p, projectId }: { p: VideoPaneProps; projectId: string 
         {view.error && <div className={css.error}>{t('state.error', { reason: view.error })}</div>}
         {!v && !view.error && <div className={css.muted}>{t('state.loading')}</div>}
         {v && tab === 'sources' && <SourcesTab p={p} v={v} o={ov.data} act={act} report={report} player={player} reload={view.reload} />}
-        {v && tab === 'transcript' && <TranscriptTab p={p} v={v} act={act} player={player} />}
+        {v && tab === 'transcript' && <TranscriptTab p={p} v={v} act={act} />}
         {v && tab === 'export' && <ExportTab p={p} v={v} o={ov.data} report={report} reload={view.reload} />}
         {v && tab === 'settings' && <SettingsTab p={p} v={v} o={ov.data} act={act} report={report} reloadOverview={ov.reload} />}
       </div>
@@ -418,147 +419,6 @@ function JobList({ t, jobs, onCancel, onRetry }: { t: T; jobs: Job[]; onCancel: 
         </div>
       ))}
     </>
-  )
-}
-
-// ───────────────────────── 文稿 ─────────────────────────
-
-type Filter = 'all' | 'pending' | 'cut'
-const PAGE = 60
-
-interface Phrase {
-  tokens: Token[]
-  start: number
-  end: number
-}
-
-function phrasesOf(tokens: readonly Token[]): Phrase[] {
-  const out: Phrase[] = []
-  let cur: Token[] = []
-  const flush = () => {
-    const first = cur[0]
-    const last = cur[cur.length - 1]
-    if (first && last) out.push({ tokens: cur, start: first.start, end: last.end })
-    cur = []
-  }
-  for (const tok of tokens) {
-    cur.push(tok)
-    if (/[，。？！、,.?!；;]/u.test(tok.text)) flush()
-  }
-  flush()
-  return out
-}
-
-function TranscriptTab({ p, v, act, player }: { p: VideoPaneProps; v: ProjectView; act: Act; player: Player }): ReactNode {
-  const { t } = p
-  const project = v.project
-  const [filter, setFilter] = useState<Filter>('all')
-  const [limit, setLimit] = useState(PAGE)
-  const removed = useMemo(() => removedRanges(v.durationSec, project.edits), [v.durationSec, project.edits])
-  const proposed = useMemo(() => project.edits.filter((e) => e.state === 'proposed'), [project.edits])
-  const speakers = useMemo(() => new Map(project.speakers.map((s) => [s.id, s])), [project.speakers])
-  const groups = useMemo(() => project.groups.filter((g) => proposed.some((e) => e.group === g.id)), [project.groups, proposed])
-
-  if (!project.transcript.length) return <div className={css.empty}>{t('transcript.empty')}</div>
-
-  const touches = (seg: Segment, list: readonly { start: number; end: number }[]) => list.some((r) => r.start < seg.end && r.end > seg.start)
-  const segs = project.transcript.filter((s) => filter === 'all' || (filter === 'pending' ? touches(s, proposed) : touches(s, removed)))
-  const pendingCount = project.transcript.filter((s) => touches(s, proposed)).length
-  const cutCount = project.transcript.filter((s) => touches(s, removed)).length
-
-  return (
-    <>
-      <div className={css.actions}>
-        <span className={css.stats}>{t('transcript.stats', { duration: formatClock(v.durationSec), output: formatClock(v.outputSec) })}</span>
-        <button type="button" className={css.btn} onClick={() => void act(() => p.scan(project.id))}>{t('transcript.scan')}</button>
-      </div>
-      {groups.map((g) => {
-        const items = proposed.filter((e) => e.group === g.id)
-        const saved = items.reduce((a, e) => a + (e.kind === 'shorten' ? Math.max(0, e.end - e.start - (e.value ?? 0)) : e.kind === 'cut' ? e.end - e.start : 0), 0)
-        return (
-          <div key={g.id} className={css.prop}>
-            <div className={css.propHead}>{g.title}</div>
-            <div className={css.actions}>
-              <span className={css.muted}>{t('proposal.items', { count: String(items.length), saved: formatClock(saved) })}</span>
-              <button type="button" className={css.btn} onClick={() => void act(() => p.decide({ projectId: project.id, groupId: g.id, state: 'rejected' }))}>✗ {t('action.reject')}</button>
-              <button type="button" className={css.primary} onClick={() => void act(() => p.decide({ projectId: project.id, groupId: g.id, state: 'applied' }))}>✓ {t('action.accept')}</button>
-            </div>
-          </div>
-        )
-      })}
-      <ChipRow
-        label={t('tabs.transcript')}
-        value={filter}
-        onSelect={(id: Filter) => { setFilter(id); setLimit(PAGE) }}
-        chips={[
-          { id: 'all', label: t('transcript.filterAll') },
-          { id: 'pending', label: t('transcript.filterPending'), count: pendingCount },
-          { id: 'cut', label: t('transcript.filterCut'), count: cutCount },
-        ]}
-      />
-      <div className={css.muted}>{t('transcript.hint')}</div>
-      {segs.slice(0, limit).map((seg) => (
-        <Paragraph key={seg.id} p={p} project={project} seg={seg} sp={speakers.get(seg.speakerId)} removed={removed} proposed={proposed} act={act} player={player} />
-      ))}
-      {segs.length > limit && <button type="button" className={css.btn} onClick={() => setLimit((n) => n + PAGE)}>{t('transcript.more', { count: String(Math.min(PAGE, segs.length - limit)) })}</button>}
-    </>
-  )
-}
-
-function Paragraph({ p, project, seg, sp, removed, proposed, act, player }: { p: VideoPaneProps; project: Project; seg: Segment; sp: Speaker | undefined; removed: Range[]; proposed: Edit[]; act: Act; player: Player }): ReactNode {
-  const { t } = p
-  const [menu, setMenu] = useState(false)
-  const phrases = useMemo(() => phrasesOf(seg.tokens), [seg.tokens])
-  // only proposed CUTS mark words; a proposed shorten covers a gap, drawn as a pause chip
-  const inProposal = (s: number, e: number) => proposed.some((x) => x.kind === 'cut' && x.start <= s + 1e-3 && x.end >= e - 1e-3 && e - s > 1e-3)
-  const key = `seg:${seg.id}`
-  const pieces: ReactNode[] = []
-  phrases.forEach((ph, i) => {
-    const prev = phrases[i - 1]
-    if (prev) {
-      const gap = ph.start - prev.end
-      const shorten = project.edits.find((x) => x.kind === 'shorten' && x.state !== 'rejected' && x.start <= prev.end + 1e-3 && x.end >= ph.start - 1e-3)
-      if (gap >= 1 || shorten) {
-        pieces.push(<span key={`g${i}`} className={css.pause} data-proposed={shorten?.state === 'proposed'}>{t('transcript.pause', { sec: gap.toFixed(1) })}{shorten ? ` → ${(shorten.value ?? 0).toFixed(1)}` : ''}</span>)
-      }
-    }
-    const cut = isRemoved(ph.start, ph.end, removed)
-    pieces.push(
-      <span key={i} className={css.phrase} data-cut={cut} role="button" tabIndex={0}
-        onClick={() => void act(() => p.setCut({ projectId: project.id, start: ph.start, end: ph.end, cut: !cut }))}
-        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); void act(() => p.setCut({ projectId: project.id, start: ph.start, end: ph.end, cut: !cut })) } }}>
-        {ph.tokens.map((tok, k) => {
-          const tCut = !cut && isRemoved(tok.start, tok.end, removed)
-          const tProp = inProposal(tok.start, tok.end)
-          return <span key={k} className={css.tok} data-cut={tCut} data-proposed={tProp}>{tok.text}</span>
-        })}
-      </span>,
-    )
-  })
-  // the gap after this paragraph, when a shorten edit (proposed or applied) covers it
-  const lastEnd = seg.tokens[seg.tokens.length - 1]?.end ?? seg.end
-  const tail = project.edits.find((x) => x.kind === 'shorten' && x.state !== 'rejected' && Math.abs(x.start - lastEnd) < 0.05)
-  if (tail) {
-    pieces.push(<span key="tail" className={css.pause} data-proposed={tail.state === 'proposed'}>{t('transcript.pause', { sec: (tail.end - tail.start).toFixed(1) })} → {(tail.value ?? 0).toFixed(1)}</span>)
-  }
-  return (
-    <div className={css.para}>
-      <div className={css.who}>
-        <button type="button" className={`${css.whoName} ${speakerClass(sp)}`} onClick={() => setMenu((m) => !m)} aria-expanded={menu} title={t('transcript.reassign')}>{speakerLabel(t, project, sp)}</button>
-        <span className={css.whoMeta}>
-        <small>{formatClock(seg.start)}</small>
-        <button type="button" className={css.iconBtn} aria-label={t('action.play')} aria-pressed={player.playing === key}
-          onClick={() => player.play(key, () => value(p.clip({ projectId: project.id, start: seg.start, end: seg.end })))}>{player.playing === key ? '■' : '▶'}</button>
-        </span>
-        {menu && (
-          <select id={`vs-reassign-${seg.id}`} className={css.select} value={seg.speakerId} aria-label={t('transcript.reassign')}
-            onChange={(e) => { setMenu(false); void act(() => p.reassignSegment({ projectId: project.id, segmentId: seg.id, speakerId: e.target.value })) }}>
-            {project.speakers.map((x) => <option key={x.id} value={x.id}>{speakerLabel(t, project, x)}</option>)}
-          </select>
-        )}
-      </div>
-      <div className={css.line}>{pieces}</div>
-    </div>
   )
 }
 

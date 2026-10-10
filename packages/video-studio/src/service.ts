@@ -4,13 +4,14 @@
  * perform. Both faces call the same methods; a panel-originated mutation also
  * appends a PanelEvent so the model learns about it on its next read.
  */
-import { mkdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, open, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, extname, join } from 'node:path'
 import { alignEnvelopes, envelope } from './core/align.ts'
 import { scanTranscript } from './core/scan.ts'
 import { DEFAULT_SETTINGS, effectiveSettings, resetProjectSetting, saveAsShowDefault, setProjectSetting, type EffectiveSetting } from './core/settings.ts'
 import { buildCues, toAss, toPlainText, toSrt } from './core/subtitles.ts'
+import { displayTokens, findOccurrences } from './core/text.ts'
 import { formatClock, keptRanges, outputDuration, removedRanges, toOutputTime } from './core/timeline.ts'
 import { SCHEMA_VERSION, type Edit, type Job, type JobKind, type JobPayload, type Project, type SettingKey, type Settings, type Show, type Source, type Speaker } from './core/types.ts'
 import { audioGraph, exportAudio, exportVideo, hasFilter, renderClip, snapToFrames, videoGraph, windowOf } from './media/export.ts'
@@ -18,6 +19,7 @@ import { MediaError, decodeMono, findBinaries, findBinary, probe, run, versionSc
 import { ModelManager, speechModelPaths, type ModelStatus } from './media/models.ts'
 import { runSpeech } from './media/speech.ts'
 import { Store, newId, resolveStateRoot, type GlobalConfig } from './store.ts'
+import type { AudioChunk } from './types.ts'
 
 export const SPEAKER_COLORS = ['s1', 's2', 's3', 's4', 's5', 's6', 's7', 's8'] as const
 
@@ -477,7 +479,7 @@ export class VideoStudioService {
       // restore: reject every applied cut/shorten overlapping the range
       let n = 0
       for (const e of p.edits) {
-        if (e.state === 'applied' && e.kind !== 'gain' && e.start < end && e.end > start) {
+        if (e.state === 'applied' && (e.kind === 'cut' || e.kind === 'shorten') && e.start < end && e.end > start) {
           e.state = 'rejected'
           n++
         }
@@ -534,6 +536,99 @@ export class VideoStudioService {
     })
   }
 
+  /** Correct the text of a token range (subtitles/transcript only). User edits apply at once. */
+  async fixText(projectId: string, start: number, end: number, text: string, origin: Origin): Promise<Project> {
+    return this.mutate(projectId, origin, (p) => {
+      const from = originalText(p, start, end)
+      if (!from) throw new Error('这个区间里没有文字')
+      // a new correction replaces any older one over the same tokens
+      for (const e of p.edits) if (e.kind === 'text' && e.state !== 'rejected' && e.start < end && e.end > start) e.state = 'rejected'
+      const group = newId('g')
+      p.edits.push({ id: newId('e'), kind: 'text', start, end, text, from, origin, state: origin === 'user' ? 'applied' : 'proposed', group })
+      return `改字：「${from}」→「${text}」`
+    })
+  }
+
+  /**
+   * Replace every occurrence of `from` with `to`. The user's replace applies at
+   * once; the model's lands as one proposal group. `remember` also stores the
+   * rule in the show so every later transcript gets it.
+   */
+  async replaceAll(projectId: string, from: string, to: string, origin: Origin, remember: boolean): Promise<{ project: Project; count: number; groupId: string | null }> {
+    let count = 0
+    let groupId: string | null = null
+    const project = await this.mutate(projectId, origin, async (p) => {
+      const hits = findOccurrences(p.transcript, p.edits, from)
+      count = hits.length
+      if (remember && p.showId && from.trim()) {
+        await this.store.locked(`show:${p.showId}`, async () => {
+          const show = await this.mustShow(p.showId!)
+          show.settings = { ...show.settings, replacements: { ...show.settings.replacements, [from.trim()]: to } }
+          await this.store.saveShow(show)
+        })
+        p.settings = { ...p.settings, replacements: { ...p.settings.replacements, [from.trim()]: to } }
+      }
+      if (!hits.length) return remember ? `替换规则「${from}」→「${to}」存进节目` : undefined
+      groupId = newId('g')
+      p.groups.push({ id: groupId, title: `改字：「${from}」→「${to}」（${hits.length} 处）`, createdAt: new Date().toISOString() })
+      for (const h of hits) {
+        for (const e of p.edits) if (e.kind === 'text' && e.state !== 'rejected' && e.start < h.end && e.end > h.start) e.state = 'rejected'
+        p.edits.push({ id: newId('e'), kind: 'text', start: h.start, end: h.end, text: to, from: h.text, origin, state: origin === 'user' ? 'applied' : 'proposed', group: groupId })
+      }
+      return `全部替换「${from}」→「${to}」，${hits.length} 处`
+    })
+    return { project, count, groupId }
+  }
+
+  /** Cut every occurrence of a keyword: applied at once for the user, a proposal for the model. */
+  async cutMatches(projectId: string, needle: string, origin: Origin): Promise<{ project: Project; count: number; groupId: string | null }> {
+    let count = 0
+    let groupId: string | null = null
+    const project = await this.mutate(projectId, origin, (p) => {
+      const hits = findOccurrences(p.transcript, p.edits, needle)
+      count = hits.length
+      if (!hits.length) return
+      groupId = newId('g')
+      p.groups.push({ id: groupId, title: `剪掉所有「${needle}」（${hits.length} 处）`, createdAt: new Date().toISOString() })
+      for (const h of hits) p.edits.push({ id: newId('e'), kind: 'cut', start: h.start, end: h.end, origin, state: origin === 'user' ? 'applied' : 'proposed', group: groupId!, reason: `关键词「${needle}」` })
+      return `剪掉所有「${needle}」，${hits.length} 处`
+    })
+    return { project, count, groupId }
+  }
+
+  /**
+   * Raw 16-bit mono PCM of the reference recording for the panel player:
+   * read straight out of the cached 16 kHz WAV (made once by ffmpeg), so
+   * consecutive chunks join sample-exactly.
+   */
+  async audioChunk(projectId: string, start: number, duration: number): Promise<AudioChunk> {
+    const p = await this.mustProject(projectId)
+    const ref = p.sources.find((s) => s.id === p.referenceId)
+    if (!ref) throw new Error('还没有录音')
+    const wav = join(this.store.cacheDir(projectId), 'asr.wav')
+    let size = 0
+    try {
+      size = (await stat(wav)).size
+    } catch {
+      const { ffmpeg } = await this.requireTools()
+      await mkdir(this.store.cacheDir(projectId), { recursive: true })
+      await writeAsrWav(ffmpeg, ref.path, wav)
+      size = (await stat(wav)).size
+    }
+    const rate = 16000
+    const header = 44
+    const from = header + Math.max(0, Math.floor(start * rate)) * 2
+    const len = Math.max(0, Math.min(Math.floor(Math.min(duration, 60) * rate) * 2, size - from))
+    const fh = await open(wav, 'r')
+    try {
+      const buf = Buffer.alloc(len)
+      if (len) await fh.read(buf, 0, len, from)
+      return { sampleRate: rate, start: Math.max(0, Math.floor(start * rate)) / rate, samples: buf.toString('base64'), ended: from + len >= size }
+    } finally {
+      await fh.close()
+    }
+  }
+
   // ───────────────────────── reading for the model ─────────────────────────
 
   /** A compact text view for the model, plus panel events since its last read. */
@@ -564,7 +659,7 @@ export class VideoStudioService {
       const proposed = p.edits.filter((e) => e.state === 'proposed')
       for (const s of segs) {
         let text = ''
-        for (const t of s.tokens) {
+        for (const t of displayTokens(s, p.edits)) {
           const cut = removed.some((r) => r.start <= t.start && r.end >= t.end)
           const prop = proposed.some((e) => e.start <= t.start + 1e-3 && e.end >= t.end - 1e-3)
           text += cut ? `[${t.text}]` : prop ? `{${t.text}}` : t.text
@@ -790,6 +885,7 @@ export class VideoStudioService {
         tokens: seg.tokens.map((t) => ({ text: t.text, start: t.start, end: t.end, kind: 'word' as const })),
       }))
       q.status = 'editing'
+      applyReplacements(q, 'user')
     })
     // matched voices: bump episode counts
     if (show) {
@@ -805,7 +901,7 @@ export class VideoStudioService {
         await this.store.saveShow(s)
       })
     }
-    await rm(wav, { force: true })
+    // the 16 kHz WAV stays as the panel player's audio proxy (cache, disposable)
   }
 
   async exportDirFor(p: Project): Promise<string> {
@@ -828,7 +924,7 @@ export class VideoStudioService {
     const removed = removedRanges(ref.durationSec, p.edits)
     const outSec = outputDuration(ref.durationSec, p.edits)
     const base = p.name.replace(/[\\/:*?"<>|]/g, '_')
-    const cues = buildCues(p.transcript, p.speakers, removed)
+    const cues = buildCues(p.transcript, p.speakers, removed, p.edits)
     const outputs: string[] = []
     const steps = kinds.length
     let step = 0
@@ -844,7 +940,7 @@ export class VideoStudioService {
         outputs.push(path)
       } else if (kind === 'text') {
         const path = join(dir, `${base}.txt`)
-        await writeFile(path, toPlainText(p.transcript, p.speakers, removed), 'utf8')
+        await writeFile(path, toPlainText(p.transcript, p.speakers, removed, p.edits), 'utf8')
         outputs.push(path)
       } else if (kind === 'audio') {
         const inputs = [ref.path]
@@ -920,6 +1016,28 @@ export class VideoStudioService {
 export function videoSourceOf(p: Project): Source | undefined {
   const ref = p.sources.find((s) => s.id === p.referenceId)
   return p.sources.find((s) => s.role === 'video' && s.hasVideo && s.id !== p.referenceId) ?? (ref?.hasVideo ? ref : undefined)
+}
+
+/** The original (uncorrected) words between two reference times. */
+function originalText(p: Project, start: number, end: number): string {
+  let out = ''
+  for (const seg of p.transcript) {
+    if (seg.end < start || seg.start > end) continue
+    for (const t of seg.tokens) if (t.start >= start - 1e-3 && t.end <= end + 1e-3) out += t.text
+  }
+  return out
+}
+
+/** Apply the project's replacement table to a fresh transcript as applied text edits. */
+function applyReplacements(p: Project, origin: Origin): void {
+  for (const [from, to] of Object.entries(p.settings.replacements ?? {})) {
+    if (!from.trim()) continue
+    const hits = findOccurrences(p.transcript, p.edits, from)
+    if (!hits.length) continue
+    const group = newId('g')
+    p.groups.push({ id: group, title: `节目替换规则「${from}」→「${to}」（${hits.length} 处）`, createdAt: new Date().toISOString() })
+    for (const h of hits) p.edits.push({ id: newId('e'), kind: 'text', start: h.start, end: h.end, text: to, from: h.text, origin, state: 'applied', group })
+  }
 }
 
 export function referenceDuration(p: Project): number {
