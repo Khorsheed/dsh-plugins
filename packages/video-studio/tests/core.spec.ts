@@ -147,3 +147,47 @@ describe('align', () => {
     expect(res.confidence).toBeGreaterThan(0.5)
   })
 })
+
+describe('speaker consolidation', () => {
+  it('trims overlaps and drops contained turns', async () => {
+    const { mergeTurns } = await import('../src/media/speech-worker-core.ts')
+    expect(mergeTurns([
+      { cluster: 0, start: 0, end: 5 },
+      { cluster: 1, start: 4, end: 8 },
+      { cluster: 2, start: 5, end: 6 },
+      { cluster: 1, start: 8.2, end: 9 },
+    ])).toEqual([
+      { cluster: 0, start: 0, end: 5 },
+      { cluster: 1, start: 5, end: 9 },
+    ])
+  })
+
+  it('merges same-voice clusters and folds fragments into the nearest voice', async () => {
+    const { consolidate } = await import('../src/media/speech-worker-core.ts')
+    const voice = (x: number, y: number) => new Float32Array([x, y])
+    // clusters 0 and 1 are the same person, 2 is another, 3 is a 2 s fragment of 2
+    const vec: Record<number, Float32Array> = { 0: voice(1, 0), 1: voice(0.98, 0.1), 2: voice(0, 1), 3: voice(0.1, 0.9) }
+    const turns = [
+      { cluster: 0, start: 0, end: 20 },
+      { cluster: 2, start: 21, end: 40 },
+      { cluster: 1, start: 41, end: 60 },
+      { cluster: 3, start: 61, end: 63 },
+    ]
+    const embed = (list: typeof turns, c: number) => (list.some((t) => t.cluster === c) ? vec[c]! : null)
+    const out = consolidate(turns, embed)
+    expect(new Set(out.map((t) => t.cluster))).toEqual(new Set([0, 2]))
+    expect(out.find((t) => t.start === 61)?.cluster).toBe(2)
+  })
+})
+
+describe('export graph helpers', () => {
+  it('snaps ranges to the frame grid and builds a balanced select sum', async () => {
+    const { balancedSum, snapToFrames } = await import('../src/media/export.ts')
+    expect(balancedSum(['a', 'b', 'c'])).toBe('(a+(b+c))')
+    expect(balancedSum([])).toBe('0')
+    const snapped = snapToFrames([{ start: 1.01, end: 2.02 }, { start: 3, end: 3.01 }], -0.42, 100)
+    expect(snapped).toHaveLength(1)
+    expect(snapped[0]!.start * 30).toBeCloseTo(Math.round(snapped[0]!.start * 30), 9)
+    expect((snapped[0]!.end - snapped[0]!.start) * 30).toBeCloseTo(Math.round((snapped[0]!.end - snapped[0]!.start) * 30), 9)
+  })
+})

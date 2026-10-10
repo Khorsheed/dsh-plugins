@@ -10,16 +10,30 @@
  */
 import { createRequire } from 'node:module'
 import { cosine, decodeEmbedding, encodeEmbedding, type SpeechJob, type WorkerMessage, type WorkerSegment, type WorkerSpeaker, type WorkerToken } from './speech-protocol.ts'
+import { attachPunctuation, consolidate, mergeTurns, type Turn } from './speech-worker-core.ts'
 
 const require = createRequire(import.meta.url)
 
 const SAMPLE_RATE = 16000
 const MAX_CHUNK_SEC = 25
-const MERGE_GAP_SEC = 0.5
 const EMBED_MAX_SEC = 60
 
+let lastProgress = ''
+
+/** Progress is throttled to whole percents: an hour of audio otherwise floods the IPC queue. */
 function send(msg: WorkerMessage): void {
+  if (msg.type === 'progress') {
+    const key = `${msg.stage}:${Math.floor(msg.progress * 100)}`
+    if (key === lastProgress) return
+    lastProgress = key
+  }
   process.send?.(msg)
+}
+
+/** The final message can be megabytes: exit only once IPC has flushed it. */
+function finish(msg: WorkerMessage): void {
+  if (!process.send) process.exit(msg.type === 'done' ? 0 : 1)
+  process.send(msg, () => process.disconnect())
 }
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- sherpa-onnx-node ships JS + JSDoc only */
@@ -59,36 +73,6 @@ function chunksOf(samples: Float32Array, start: number, end: number): [number, n
   return out
 }
 
-/** Re-insert punctuation from the punctuated string into the token list. */
-export function attachPunctuation(tokens: WorkerToken[], punctuated: string): WorkerToken[] {
-  const out: WorkerToken[] = []
-  let ti = 0
-  let consumed = '' // characters of tokens[ti] matched so far
-  for (const ch of punctuated) {
-    if (ti < tokens.length) {
-      const tokText = tokens[ti]!.text
-      const want = tokText.slice(consumed.length)
-      const head = want[0]
-      if (head !== undefined && ch.toLowerCase() === head.toLowerCase()) {
-        consumed += head
-        if (consumed.length >= tokText.length) {
-          out.push(tokens[ti]!)
-          ti += 1
-          consumed = ''
-        }
-        continue
-      }
-    }
-    const prev = out[out.length - 1]
-    if (/[\p{P}]/u.test(ch) && prev) {
-      out.push({ text: ch, start: prev.end, end: prev.end })
-    }
-    // anything else (spaces, case-folded mismatches) is dropped
-  }
-  while (ti < tokens.length) out.push(tokens[ti++]!)
-  return out
-}
-
 function cleanToken(t: string): string {
   // paraformer/sense-voice BPE pieces mark word starts with ▁ or @@ suffixes
   return t.replace(/▁/g, ' ').replace(/@@$/, '').replace(/^<\|.*\|>$/, '')
@@ -104,7 +88,7 @@ async function main(job: SpeechJob): Promise<void> {
   const diar = new sherpa.OfflineSpeakerDiarization({
     segmentation: { pyannote: { model: job.models.segmentation }, numThreads: job.numThreads },
     embedding: { model: job.models.embedding, numThreads: job.numThreads },
-    clustering: { numClusters: job.numSpeakers, threshold: 0.5 },
+    clustering: { numClusters: job.numSpeakers, threshold: job.clusterThreshold ?? 0.9 },
     minDurationOn: 0.3,
     minDurationOff: 0.5,
   })
@@ -112,13 +96,24 @@ async function main(job: SpeechJob): Promise<void> {
   const raw = (diar.process(samples) as { start: number; end: number; speaker: number }[]).sort((a, b) => a.start - b.start)
   send({ type: 'progress', stage: 'diarize', progress: 1 })
 
-  // merge consecutive turns of the same speaker
-  const turns: { cluster: number; start: number; end: number }[] = []
-  for (const r of raw) {
-    const last = turns[turns.length - 1]
-    if (last && last.cluster === r.speaker && r.start - last.end <= MERGE_GAP_SEC) last.end = Math.max(last.end, r.end)
-    else turns.push({ cluster: r.speaker, start: r.start, end: r.end })
+  const extractor = new sherpa.SpeakerEmbeddingExtractor({ model: job.models.embedding, numThreads: job.numThreads })
+  /** One embedding over up to EMBED_MAX_SEC of a cluster's longest turns. */
+  const embedOf = (list: Turn[], cluster: number): Float32Array | null => {
+    const longest = list.filter((t) => t.cluster === cluster).sort((x, y) => y.end - y.start - (x.end - x.start))
+    const stream = extractor.createStream()
+    let fed = 0
+    for (const t of longest) {
+      if (fed >= EMBED_MAX_SEC) break
+      const len = Math.min(t.end - t.start, EMBED_MAX_SEC - fed)
+      stream.acceptWaveform({ samples: samples.subarray(Math.floor(t.start * SAMPLE_RATE), Math.floor((t.start + len) * SAMPLE_RATE)), sampleRate: SAMPLE_RATE })
+      fed += len
+    }
+    stream.inputFinished()
+    return extractor.isReady(stream) ? (extractor.compute(stream, false) as Float32Array) : null
   }
+
+  let turns = mergeTurns(raw.map((r) => ({ cluster: r.speaker, start: r.start, end: r.end })))
+  turns = consolidate(turns, embedOf)
 
   const modelConfig: Record<string, unknown> = { tokens: job.models.asr.tokens, numThreads: job.numThreads, provider: 'cpu', debug: 0 }
   if (job.models.asr.kind === 'paraformer') modelConfig.paraformer = { model: job.models.asr.model }
@@ -163,27 +158,15 @@ async function main(job: SpeechJob): Promise<void> {
     segments.push({ cluster: turn.cluster, start: turn.start, end: turn.end, tokens: final })
   }
 
-  // one embedding per cluster over up to EMBED_MAX_SEC of its longest turns
+  // one embedding per (consolidated) cluster for voiceprint matching
   send({ type: 'progress', stage: 'embed', progress: 0 })
-  const extractor = new sherpa.SpeakerEmbeddingExtractor({ model: job.models.embedding, numThreads: job.numThreads })
   const known = job.voices.map((v) => ({ ...v, vec: decodeEmbedding(v.embedding) }))
   const clusters = [...new Set(turns.map((t) => t.cluster))]
   const speakers: WorkerSpeaker[] = []
   for (const cluster of clusters) {
-    const mine = turns.filter((t) => t.cluster === cluster)
-    const speechSec = mine.reduce((a, t) => a + (t.end - t.start), 0)
-    const longest = [...mine].sort((x, y) => y.end - y.start - (x.end - x.start))
-    const stream = extractor.createStream()
-    let fed = 0
-    for (const t of longest) {
-      if (fed >= EMBED_MAX_SEC) break
-      const len = Math.min(t.end - t.start, EMBED_MAX_SEC - fed)
-      stream.acceptWaveform({ samples: samples.subarray(Math.floor(t.start * SAMPLE_RATE), Math.floor((t.start + len) * SAMPLE_RATE)), sampleRate: SAMPLE_RATE })
-      fed += len
-    }
-    stream.inputFinished()
-    if (!extractor.isReady(stream)) continue
-    const vec = extractor.compute(stream, false) as Float32Array
+    const speechSec = turns.filter((t) => t.cluster === cluster).reduce((a, t) => a + (t.end - t.start), 0)
+    const vec = embedOf(turns, cluster)
+    if (!vec) continue
     let match: { id: string; score: number } | undefined
     for (const v of known) {
       const score = cosine(vec, v.vec)
@@ -202,11 +185,9 @@ async function main(job: SpeechJob): Promise<void> {
     } else delete s.match
   }
   send({ type: 'progress', stage: 'embed', progress: 1 })
-  send({ type: 'done', segments, speakers })
+  finish({ type: 'done', segments, speakers })
 }
 
 process.once('message', (job: SpeechJob) => {
-  main(job)
-    .catch((error: unknown) => send({ type: 'error', message: error instanceof Error ? error.message : String(error) }))
-    .finally(() => setTimeout(() => process.exit(0), 50))
+  main(job).catch((error: unknown) => finish({ type: 'error', message: error instanceof Error ? error.message : String(error) }))
 })

@@ -321,7 +321,7 @@ function SourcesTab({ p, v, o, act, report, player, reload }: { p: VideoPaneProp
         <div key={s.id} className={css.asset}>
           <span className={css.dot} data-role={s.role} />
           <span className={css.rowMain}>
-            <b>{s.id === project.referenceId ? t('sources.reference') : s.role === 'video' ? t('sources.video') : t('sources.recording')}</b>
+            <b>{s.id === project.referenceId ? (s.hasVideo ? t('sources.referenceVideo') : t('sources.reference')) : s.role === 'video' ? t('sources.video') : t('sources.recording')}</b>
             <small title={s.path}>{basename(s.path)}</small>
           </span>
           <span className={css.meta}>{formatClock(s.durationSec)}{s.width ? ` · ${s.height}p` : ''}</span>
@@ -567,7 +567,7 @@ function Paragraph({ p, project, seg, sp, removed, proposed, act, player }: { p:
 function ExportTab({ p, v, o, report, reload }: { p: VideoPaneProps; v: ProjectView; o: Overview | undefined; report: (e: unknown) => void; reload: () => void }): ReactNode {
   const { t } = p
   const project = v.project
-  const hasVideo = project.sources.some((s) => s.role === 'video' && s.hasVideo)
+  const hasVideo = project.sources.some((s) => s.hasVideo)
   const [kinds, setKinds] = useState<Record<'audio' | 'video' | 'subtitles' | 'text', boolean>>({ audio: true, video: hasVideo, subtitles: true, text: false })
   const chosen = (Object.keys(kinds) as Array<keyof typeof kinds>).filter((k) => kinds[k] && (k !== 'video' || hasVideo))
   const rows: Array<{ k: keyof typeof kinds; title: string; spec: string; disabled?: boolean }> = [

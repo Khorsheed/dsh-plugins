@@ -27,6 +27,8 @@ export interface SpeechJob {
   voices: KnownVoice[]
   /** -1 = let clustering decide. */
   numSpeakers: number
+  /** Clustering distance threshold; larger = fewer speakers. */
+  clusterThreshold?: number | undefined
   /** Cosine similarity at or above which a cluster is the stored voice. */
   matchThreshold: number
   numThreads: number

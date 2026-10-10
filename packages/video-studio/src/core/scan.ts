@@ -11,6 +11,8 @@ export interface ScanResult {
 /** Single-character fillers are always fillers; longer ones only next to a pause or a comma. */
 const EDGE_GAP = 0.25
 const REPEAT_MIN = 2
+/** A repeat shorter than this many characters is conversational (继续继续, 对对), not a stumble. */
+const REPEAT_MIN_CHARS = 3
 const REPEAT_MAX = 6
 
 function isPunct(text: string): boolean {
@@ -79,9 +81,11 @@ export function scanTranscript(
       for (let n = REPEAT_MAX; n >= REPEAT_MIN; n--) {
         if (i + 2 * n > toks.length) continue
         const a = joined(toks, i, n)
-        if (a.length < REPEAT_MIN || a !== joined(toks, i + n, n)) continue
+        if (a.length < REPEAT_MIN_CHARS || a !== joined(toks, i + n, n)) continue
         let j = i + n
         while (j + 2 * n <= toks.length && joined(toks, j, n) === joined(toks, j + n, n)) j += n
+        // an utterance that is nothing but the repetition is an exclamation, keep it
+        if (toks.length - (j + n - i) <= 1) break
         push({ kind: 'cut', start: toks[i]!.start, end: toks[j]!.start, origin: 'agent', state: 'proposed', reason: `说重复了「${a}」` }, 'repeats')
         i = j + n - 1
         break

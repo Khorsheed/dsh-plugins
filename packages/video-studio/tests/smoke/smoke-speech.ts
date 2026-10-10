@@ -8,7 +8,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { runSpeech } from '../../src/media/speech.ts'
 
-const [wav, kind = 'paraformer', n = '-1'] = process.argv.slice(2)
+const [wav, kind = 'paraformer', n = '-1', th = '0.5'] = process.argv.slice(2)
 if (!wav) throw new Error('usage: smoke-speech.ts <wav> [paraformer|senseVoice]')
 const M = join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'state', 'video-studio', 'models')
 const asr = kind === 'senseVoice'
@@ -25,6 +25,7 @@ const res = await runSpeech({
   },
   voices: [],
   numSpeakers: Number(n),
+  clusterThreshold: Number(th),
   matchThreshold: 0.6,
   numThreads: 4,
 }, (stage, p) => process.stderr.write(`\r${stage} ${(p * 100).toFixed(0)}%   `))

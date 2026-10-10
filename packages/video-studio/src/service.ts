@@ -6,15 +6,15 @@
  */
 import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { basename, extname, join } from 'node:path'
+import { basename, dirname, extname, join } from 'node:path'
 import { alignEnvelopes, envelope } from './core/align.ts'
 import { scanTranscript } from './core/scan.ts'
 import { DEFAULT_SETTINGS, effectiveSettings, resetProjectSetting, saveAsShowDefault, setProjectSetting, type EffectiveSetting } from './core/settings.ts'
 import { buildCues, toAss, toPlainText, toSrt } from './core/subtitles.ts'
 import { formatClock, keptRanges, outputDuration, removedRanges, toOutputTime } from './core/timeline.ts'
 import { SCHEMA_VERSION, type Edit, type Job, type JobKind, type JobPayload, type Project, type SettingKey, type Settings, type Show, type Source, type Speaker } from './core/types.ts'
-import { audioGraph, exportAudio, exportVideo, hasFilter, renderClip, videoGraph, windowOf } from './media/export.ts'
-import { decodeMono, findBinary, probe, writeAsrWav } from './media/ffmpeg.ts'
+import { audioGraph, exportAudio, exportVideo, hasFilter, renderClip, snapToFrames, videoGraph, windowOf } from './media/export.ts'
+import { MediaError, decodeMono, findBinaries, findBinary, probe, run, versionScore, writeAsrWav } from './media/ffmpeg.ts'
 import { ModelManager, speechModelPaths, type ModelStatus } from './media/models.ts'
 import { runSpeech } from './media/speech.ts'
 import { Store, newId, resolveStateRoot, type GlobalConfig } from './store.ts'
@@ -99,9 +99,30 @@ export class VideoStudioService {
   async toolchain(refresh: boolean = false): Promise<Toolchain> {
     if (this.toolchainCache && !refresh) return this.toolchainCache
     const g = await this.store.global()
-    const ffmpeg = await findBinary('ffmpeg', g.ffmpegPath || undefined)
-    const ffprobe = await findBinary('ffprobe', g.ffprobePath || undefined)
-    const burnSubtitles = ffmpeg ? await hasFilter(ffmpeg, 'subtitles') : false
+    // an explicit path wins; otherwise prefer an ffmpeg that can burn
+    // subtitles, then the newest (PATH order alone picked anaconda's 4.2 over
+    // Homebrew's 9.0 on the dev machine)
+    let ffmpeg: string | null = null
+    let burnSubtitles = false
+    if (g.ffmpegPath) {
+      ffmpeg = await findBinary('ffmpeg', g.ffmpegPath)
+      burnSubtitles = ffmpeg ? await hasFilter(ffmpeg, 'subtitles') : false
+    } else {
+      let best = -1
+      for (const bin of await findBinaries('ffmpeg')) {
+        const banner = await run(bin, ['-hide_banner', '-version']).then((r) => r.stdout.toString('utf8'), () => '')
+        const subs = await hasFilter(bin, 'subtitles')
+        const score = (subs ? 1e6 : 0) + versionScore(banner)
+        if (score > best) {
+          best = score
+          ffmpeg = bin
+          burnSubtitles = subs
+        }
+      }
+    }
+    // ffprobe from the same install when there is one
+    const sibling = ffmpeg ? join(dirname(ffmpeg), 'ffprobe') : undefined
+    const ffprobe = await findBinary('ffprobe', g.ffprobePath || sibling)
     this.toolchainCache = { ffmpeg, ffprobe, burnSubtitles }
     return this.toolchainCache
   }
@@ -322,6 +343,7 @@ export class VideoStudioService {
   async importSources(projectId: string, paths: string[], origin: Origin): Promise<Project> {
     const { ffprobe } = await this.requireTools()
     const probed: Source[] = []
+    const audioLength = new Map<string, number>()
     for (const raw of paths) {
       const path = expandHome(raw.trim())
       if (!path) continue
@@ -331,11 +353,14 @@ export class VideoStudioService {
       if (!info.hasAudio && !info.hasVideo) throw new Error(`${basename(path)} 里没有音频或视频`)
       const ext = extname(path).toLowerCase()
       const role: Source['role'] = info.hasVideo && (VIDEO_EXT.has(ext) || !AUDIO_EXT.has(ext)) ? 'video' : 'recording'
+      const id = newId('src')
+      if (info.audioDurationSec) audioLength.set(id, Math.min(info.durationSec || Infinity, info.audioDurationSec))
       probed.push({
-        id: newId('src'),
+        id,
         path,
         role,
-        durationSec: info.durationSec,
+        // the edit timeline is the SOUND's timeline: a recording's length is its audio stream's
+        durationSec: role === 'recording' && info.audioDurationSec ? Math.min(info.durationSec || Infinity, info.audioDurationSec) : info.durationSec,
         hasAudio: info.hasAudio,
         hasVideo: info.hasVideo,
         offsetSec: 0,
@@ -351,7 +376,10 @@ export class VideoStudioService {
         const ref = p.sources.find((s) => s.role === 'recording') ?? p.sources.find((s) => s.hasAudio)
         if (ref) {
           p.referenceId = ref.id
-          if (ref.role === 'video' && !p.sources.some((s) => s.role === 'recording')) ref.role = 'recording'
+          if (ref.role === 'video' && !p.sources.some((s) => s.role === 'recording')) {
+            ref.role = 'recording'
+            ref.durationSec = audioLength.get(ref.id) ?? ref.durationSec
+          }
         }
       }
       if (p.status === 'new') p.status = 'processing'
@@ -649,7 +677,7 @@ export class VideoStudioService {
         } catch (error) {
           if (job.state === 'running') {
             job.state = 'failed'
-            job.error = error instanceof Error ? error.message : String(error)
+            job.error = error instanceof Error ? error.message + (error instanceof MediaError && error.detail ? `（${error.detail.slice(-300)}）` : '') : String(error)
             this.logger.warn(`video-studio: job ${job.kind} failed`, job.error)
           }
         } finally {
@@ -833,12 +861,12 @@ export class VideoStudioService {
         }
         const path = join(dir, `${base}.mp3`)
         await exportAudio(
-          { ffmpeg, inputs, scriptPath: join(cache, 'audio.filter'), graph: audioGraph(kept, opts), maps: [], codecArgs: ['-c:a', 'libmp3lame', '-b:a', '128k', '-id3v2_version', '3', '-metadata', `title=${p.name}`], output: path, expectedSec: outSec, onProgress: stepProgress, signal },
+          { ffmpeg, inputs, scriptPath: join(cache, 'audio.filter'), graph: audioGraph(kept, { ...opts, source: ref }), maps: [], codecArgs: ['-c:a', 'libmp3lame', '-b:a', '128k', '-id3v2_version', '3', '-metadata', `title=${p.name}`], output: path, expectedSec: outSec, onProgress: stepProgress, signal },
           p.settings.audioLoudness,
         )
         outputs.push(path)
       } else if (kind === 'video') {
-        const video = p.sources.find((s) => s.role === 'video' && s.hasVideo)
+        const video = videoSourceOf(p)
         if (!video) throw new Error('这个工程没有视频素材')
         let assPath: string | undefined
         if (burnSubtitles && cues.length) {
@@ -857,7 +885,7 @@ export class VideoStudioService {
           codec.push('-c:s', 'mov_text', '-metadata:s:s:0', 'language=chi')
         }
         await exportVideo(
-          { ffmpeg, inputs, scriptPath: join(cache, 'video.filter'), graph: videoGraph(kept, video.offsetSec, video.durationSec, { w: 1920, h: 1080 }, assPath), maps, codecArgs: codec, output: path, expectedSec: outSec, onProgress: stepProgress, signal },
+          { ffmpeg, inputs, scriptPath: join(cache, 'video.filter'), graph: videoGraph(snapToFrames(kept, video.id === ref.id ? 0 : video.offsetSec, video.durationSec), video.id === ref.id ? 0 : video.offsetSec, { w: 1920, h: 1080 }, assPath, ref), maps, codecArgs: codec, output: path, expectedSec: outSec, onProgress: stepProgress, signal },
           p.settings.videoLoudness,
         )
         outputs.push(path)
@@ -875,7 +903,7 @@ export class VideoStudioService {
     await this.requireTools()
     const p = await this.mustProject(projectId)
     if (!p.referenceId) throw new Error('还没有录音，先导入素材')
-    if (kinds.includes('video') && !p.sources.some((s) => s.role === 'video' && s.hasVideo)) throw new Error('这个工程没有视频素材')
+    if (kinds.includes('video') && !videoSourceOf(p)) throw new Error('这个工程没有视频素材')
     const order: ExportKind[] = ['subtitles', 'text', 'audio', 'video']
     const sorted = order.filter((k) => kinds.includes(k))
     return this.enqueue(projectId, 'export', `导出 ${sorted.map((k) => ({ audio: '音频', video: '视频', subtitles: '字幕', text: '文稿' })[k]).join(' + ')}`, { kinds: sorted })
@@ -886,6 +914,12 @@ export class VideoStudioService {
     const p = await this.mustProject(projectId)
     return toOutputTime(t, removedRanges(referenceDuration(p), p.edits))
   }
+}
+
+/** The picture for a video export: a separate video source, else the reference itself when it carries video. */
+export function videoSourceOf(p: Project): Source | undefined {
+  const ref = p.sources.find((s) => s.id === p.referenceId)
+  return p.sources.find((s) => s.role === 'video' && s.hasVideo && s.id !== p.referenceId) ?? (ref?.hasVideo ? ref : undefined)
 }
 
 export function referenceDuration(p: Project): number {

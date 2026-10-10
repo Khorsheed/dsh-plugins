@@ -9,6 +9,30 @@ import { delimiter, join } from 'node:path'
  */
 const EXTRA_DIRS = ['/opt/homebrew/bin', '/usr/local/bin', '/usr/bin']
 
+/** Every executable candidate, configured path first, without duplicates. */
+export async function findBinaries(name: string, configured?: string): Promise<string[]> {
+  const candidates: string[] = []
+  if (configured) candidates.push(configured)
+  for (const dir of (process.env.PATH ?? '').split(delimiter).filter(Boolean)) candidates.push(join(dir, name))
+  for (const dir of EXTRA_DIRS) candidates.push(join(dir, name))
+  const out: string[] = []
+  for (const c of [...new Set(candidates)]) {
+    try {
+      await access(c, constants.X_OK)
+      out.push(c)
+    } catch {
+      /* next */
+    }
+  }
+  return out
+}
+
+/** Parse `ffmpeg version 9.0.2 …` into a comparable number (0 when unknown). */
+export function versionScore(banner: string): number {
+  const m = /version\s+n?(\d+)\.(\d+)(?:\.(\d+))?/.exec(banner)
+  return m ? Number(m[1]) * 10000 + Number(m[2]) * 100 + Number(m[3] ?? 0) : 0
+}
+
 export async function findBinary(name: string, configured?: string): Promise<string | null> {
   const candidates: string[] = []
   if (configured) candidates.push(configured)
@@ -77,6 +101,8 @@ async function must(bin: string, args: readonly string[], opts?: RunOptions): Pr
 
 export interface ProbeInfo {
   durationSec: number
+  /** The audio stream's own length; containers often run past it (a phone MP4 by ~1 s). */
+  audioDurationSec?: number | undefined
   hasAudio: boolean
   hasVideo: boolean
   sampleRate?: number | undefined
@@ -103,6 +129,7 @@ export async function probe(ffprobe: string, path: string): Promise<ProbeInfo> {
   }
   return {
     durationSec: Number.isFinite(duration) ? duration : 0,
+    audioDurationSec: audio?.duration && Number.isFinite(Number(audio.duration)) ? Number(audio.duration) : undefined,
     hasAudio: !!audio,
     hasVideo: !!video,
     sampleRate: audio?.sample_rate ? Number(audio.sample_rate) : undefined,
