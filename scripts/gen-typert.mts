@@ -120,6 +120,11 @@ export const TYPERT_PACKAGES: readonly TypertPackage[] = [
     hostConfigs: ['tsconfig.host.json'],
   },
   {
+    dir: 'packages/video-studio',
+    name: '@khorsheed/dsh-video-studio',
+    hostConfigs: ['tsconfig.host.json'],
+  },
+  {
     dir: 'packages/capability-catalog',
     name: '@khorsheed/dsh-capability-catalog',
     hostConfigs: ['tsconfig.host.json'],

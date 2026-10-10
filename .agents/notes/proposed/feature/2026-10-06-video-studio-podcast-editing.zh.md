@@ -67,9 +67,9 @@ interface Project {
 | 语气词、停顿、重复扫描 | 在 token 和间隙上跑规则：设置里的语气词表、每人停顿阈值、相邻重复 n-gram | 产出一个提议组 |
 | 响度 | ffmpeg `loudnorm`，两遍 | 播客 −16 LUFS，视频 −14 |
 | 降噪 | 轻/中：ffmpeg `afftdn`；强：DeepFilterNet3 的 `deep-filter` 程序（模型 8.5 MB） | M2。用 `afftdn` 是因为 `arnndn` 要 ffmpeg ≥ 4.3 |
-| 导出 | 按保留区间生成 ffmpeg 滤镜图（`atrim`/`trim` + `concat`），字幕用生成的 ASS 文件经 `subtitles=` 烧录 | MP3（带 ID3 章节）、MP4、SRT、TXT |
+| 导出 | 按保留区间生成 ffmpeg 滤镜图（`atrim`/`trim` + `concat`），字幕用生成的 ASS 文件经 `subtitles=` 烧录；没有 libass 的 ffmpeg 改为可开关的 mov_text 字幕轨 | MP3（带 ID3 章节）、MP4、SRT、TXT |
 
-**模型在第一次使用时下载**到 `$DSH_HOME/state/video-studio/models/`，来源是钉死版本的 sherpa-onnx GitHub release 资源，带 sha256 校验：Paraformer int8 约 237 MB，CAM++ 约 28 MB，分段模型约 6 MB。全局设置里逐个列出大小和状态。离线或还没下载完时，只是转写不可用，面板其余部分照常工作。
+**模型在第一次使用时下载**到 `$DSH_HOME/state/video-studio/models/`，来源是钉死版本的 sherpa-onnx GitHub release 资源，带 sha256 校验：Paraformer 中文 int8（2023-09-14 导出版，压缩包约 234 MB）、CT-Transformer 标点 int8 约 65 MB（Paraformer 自己不出标点）、pyannote 分段约 7 MB、CAM++ 约 28 MB；GitHub 不发布校验和，完整性靠压缩包的精确字节数和解压后必须存在的文件。全局设置里逐个列出大小和状态。离线或还没下载完时，只是转写不可用，面板其余部分照常工作。
 
 **ffmpeg 靠查找，不打包。** 宿主在 PATH 上或全局设置指定的路径找 `ffmpeg` 和 `ffprobe`。缺任何一个，导入和导出就显示设计好的「请安装 ffmpeg」状态，插件照常启动。
 

@@ -67,9 +67,9 @@ interface Project {
 | Filler, pause, repeat scan | rules over tokens and gaps: filler list from settings, per-speaker pause thresholds, adjacent duplicate n-grams | output is a proposal group |
 | Loudness | ffmpeg `loudnorm`, two passes | −16 LUFS podcast, −14 video |
 | Denoise | light/medium: ffmpeg `afftdn`. Strong: DeepFilterNet3 `deep-filter` binary (8.5 MB model) | M2. `afftdn` because `arnndn` needs ffmpeg ≥ 4.3 |
-| Export | ffmpeg filtergraph built from the kept ranges (`atrim`/`trim` + `concat`), subtitles burned with `subtitles=` from a generated ASS file | MP3 with ID3 chapters, MP4, SRT, TXT |
+| Export | ffmpeg filtergraph built from the kept ranges (`atrim`/`trim` + `concat`), subtitles burned with `subtitles=` from a generated ASS file; an ffmpeg without libass gets a switchable mov_text track instead | MP3 with ID3 chapters, MP4, SRT, TXT |
 
-**Models download on first use** into `$DSH_HOME/state/video-studio/models/` from the pinned sherpa-onnx GitHub release assets, with a sha256 check: Paraformer int8 ≈ 237 MB, CAM++ ≈ 28 MB, segmentation ≈ 6 MB. Global settings list each one with its size and state. While offline, or before the download finishes, transcription is unavailable but the rest of the panel still works.
+**Models download on first use** into `$DSH_HOME/state/video-studio/models/` from the pinned sherpa-onnx GitHub release assets, with a sha256 check: Paraformer zh int8 (2023-09-14 export, archive ≈ 234 MB), CT-Transformer punctuation int8 ≈ 65 MB (Paraformer emits no punctuation), pyannote segmentation ≈ 7 MB, CAM++ ≈ 28 MB; GitHub publishes no checksums, so integrity is the archive's exact byte size plus the file each archive must leave behind. Global settings list each one with its size and state. While offline, or before the download finishes, transcription is unavailable but the rest of the panel still works.
 
 **ffmpeg is found, not bundled.** The host looks for `ffmpeg` and `ffprobe` on PATH, or at a path set in global settings. If either is missing, import and export show a designed "install ffmpeg" state and the plugin still boots.
 

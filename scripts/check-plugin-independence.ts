@@ -237,6 +237,9 @@ export const ALLOWED_EDGES: Readonly<Record<string, ReadonlyArray<string>>> = {
   // chip row and request rows (the panel lands with the client milestone) —
   // the same inlined, zero-runtime source-plane edge.
   'request-inspector': ['@khorsheed/dsh-client-ui-panel-kit'],
+  // video-studio → ui-panel-kit: the 剪辑 panel's root, header, tabs and chip
+  // rows — the same inlined, zero-runtime source-plane edge.
+  'video-studio': ['@khorsheed/dsh-client-ui-panel-kit'],
   // room consumes the local-agent delegation facade as an OPTIONAL capability:
   // type-only imports, an optional peer dep, a runtime probe, and tested
   // degradation when the family is absent (the room works with the main agent
@@ -270,6 +273,8 @@ export const COMMUNITY_SERVICE_INJECTORS: Readonly<Record<string, RegExp>> = {
   // evaluation-family fold pattern): the preset's standing scope mounts before
   // the profile's bundle rows provide `library`, so the row pends on the core.
   library: /^library$/,
+  // video-studio's `./tool` entry injects its own core service (same pattern).
+  videoStudio: /^video-studio$/,
 }
 
 const MONOREPO_URL = 'git+https://github.com/Khorsheed/dsh-plugins.git'

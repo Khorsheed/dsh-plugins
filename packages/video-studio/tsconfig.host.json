@@ -1,0 +1,31 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types",
+    "tsBuildInfoFile": "lib/tsconfig.host.tsbuildinfo"
+  },
+  "files": [
+    "src/core/align.ts",
+    "src/core/scan.ts",
+    "src/core/settings.ts",
+    "src/core/subtitles.ts",
+    "src/core/timeline.ts",
+    "src/core/types.ts",
+    "src/media/export.ts",
+    "src/media/ffmpeg.ts",
+    "src/media/models.ts",
+    "src/media/speech.ts",
+    "src/media/speech-protocol.ts",
+    "src/media/speech-worker.ts",
+    "src/index.ts",
+    "src/invariant.ts",
+    "src/remote.ts",
+    "src/service.ts",
+    "src/skill.ts",
+    "src/store.ts",
+    "src/tool.ts",
+    "src/tool-definition.ts",
+    "src/types.ts"
+  ]
+}

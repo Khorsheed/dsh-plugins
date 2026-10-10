@@ -4,10 +4,10 @@
 
 ## 概览
 
-- 包总数:**42**
-- 自挂载 bundle(`dsh.bundle.patch`):**38**
+- 包总数:**43**
+- 自挂载 bundle(`dsh.bundle.patch`):**39**
 - 组合组件(不自挂载,`dsh.composition.component`):**4** — `preset-composed-row` 1、`source-plane-library` 2、`sub-profile-patch` 1
-- 带浏览器半边(`dsh.client`):**31**
+- 带浏览器半边(`dsh.client`):**32**
 - 整合 profile(默认安装单元):**3** — `basic`、`dev`、`web-eval`
 
 **安装单元是 profile,不是单包。** 单包安装是高级路径:自挂载包 `dsh plugin add <pkg>` 即可,
@@ -57,6 +57,7 @@
 | `@khorsheed/dsh-client-ui-content-preview` | `packages/ui-content-preview` | 0.1.1 | composition | source-plane-library | — | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-client-ui-panel-kit` | `packages/ui-panel-kit` | 0.1.0 | composition | source-plane-library | — | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-ui-shortcuts` | `packages/ui-shortcuts` | 0.2.4 | bundle | — | web | 0.1.2-rc.1 | basic, web-eval |
+| `@khorsheed/dsh-video-studio` | `packages/video-studio` | 0.1.0 | bundle | — | web | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-whalesong` | `packages/whalesong` | 0.2.4 | bundle | — | web | 0.1.2-rc.1 | basic, web-eval |
 | `@khorsheed/dsh-worktrees` | `packages/worktrees` | 0.3.1 | bundle | — | web | 0.1.5-rc.1 | dev |
 

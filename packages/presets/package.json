@@ -69,7 +69,8 @@
       "@khorsheed/dsh-datasets",
       "@khorsheed/dsh-eval",
       "@khorsheed/dsh-canvas",
-      "@khorsheed/dsh-canvas-novel"
+      "@khorsheed/dsh-canvas-novel",
+      "@khorsheed/dsh-video-studio"
     ],
     "compat": {
       "minHost": "0.1.7-rc.1",

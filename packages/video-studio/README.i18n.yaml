@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/video-studio/README.en.md
+packages/video-studio/README.en.md: 3fd377526a1e6f5592387517f965c01d95c63472
+packages/video-studio/README.md: 5f11de609b37cfe5d92b7d067c372068706317f4

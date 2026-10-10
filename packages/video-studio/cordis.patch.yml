@@ -1,0 +1,17 @@
+# video-studio bundle patch: inserts the plugin row into the composing profile,
+# so `dsh plugin --profile <name> add @khorsheed/dsh-video-studio` reconciles
+# it into the bundles layer. The row is a bare mount: the host half provides
+# the `videoStudio` service (project store, media jobs) and mounts its Remote
+# face; the browser half (the 剪辑 right-sidebar tab) is discovered through the
+# package.json `dsh.client` block.
+#
+# NOTE: a composition must mount this row id exactly once.
+#
+# The model-facing video_* TOOLS are not part of this row: they ship as the
+# package's `./tool` composition entry (row id `video-studio-tool`, module
+# `@khorsheed/dsh-video-studio/tool`), granted per session by the dsh-video
+# preset (剪辑模式) in @khorsheed/dsh-presets — never mounted at the profile
+# root (the worktrees `./tool` pattern).
+- insert:
+    - id: video-studio
+      name: "@khorsheed/dsh-video-studio"

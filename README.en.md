@@ -38,6 +38,7 @@ Each package's full feature list, configuration, and screenshots live in its own
 | --- | --- | --- | --- | --- |
 | [`file-preview`](packages/file-preview) | The session "**Artifacts**" tab plus its host service in one package: the products tab, per-turn change cards, the detail-view preview drawer, and the read-only file-preview Remote service (two rows merged into one since 0.4.0) | `@khorsheed/dsh-file-preview` | ≥ 0.1.5-rc.1 | basic |
 | [`local-files`](packages/local-files) | A **local file browser** in the right sidebar: lazy file tree plus structured HTML/Markdown/JSON/CSV/image previews | `@khorsheed/dsh-local-files` | ≥ 0.1.5-rc.1 | basic |
+| [`video-studio`](packages/video-studio) | A **podcast and conversation editor** in the right sidebar: speakers found in one mixed recording, voiceprints per show, cut by deleting words, export audio/video/subtitles; pairs with the editing-mode preset | `@khorsheed/dsh-video-studio` | ≥ 0.1.5-rc.1 | — |
 
 ### Tasks and ambience
 
