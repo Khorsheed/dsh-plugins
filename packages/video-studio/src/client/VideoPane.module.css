@@ -35,6 +35,9 @@
   gap: 10px;
 }
 
+/* children keep their height; the body scrolls instead of squeezing them */
+.body > * { flex: none; }
+
 .sect {
   font-size: var(--dsh-panel-text-meta, 12px);
   color: var(--dsw-alias-label-tertiary);
@@ -46,7 +49,8 @@
 .muted { color: var(--dsw-alias-label-tertiary); font-size: var(--dsh-panel-text-meta, 12px); }
 .empty { color: var(--dsw-alias-label-secondary); padding: 16px 4px; line-height: 1.6; }
 .meta { color: var(--dsw-alias-label-secondary); font-size: var(--dsh-panel-text-meta, 12px); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.stats { color: var(--dsw-alias-label-secondary); font-size: var(--dsh-panel-text-meta, 12px); font-variant-numeric: tabular-nums; flex: 1; }
+.stats { color: var(--dsw-alias-label-secondary); font-size: var(--dsh-panel-text-meta, 12px); font-variant-numeric: tabular-nums; }
+.actions > .stats { flex: 1; }
 .when { color: var(--dsw-alias-label-tertiary); font-size: var(--dsh-panel-text-meta, 12px); font-variant-numeric: tabular-nums; }
 
 .error,
@@ -88,9 +92,9 @@
 
 .iconBtn {
   font: inherit;
-  font-size: 11px;
-  width: 22px;
-  height: 22px;
+  font-size: 9px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
   border: 1px solid var(--dsw-alias-border-l2);
   background: var(--dsw-alias-bg-layer-1);
@@ -205,10 +209,11 @@
 /* transcript */
 .prop { border: 1px dashed var(--vs-prop); background: var(--vs-prop-soft); border-radius: 10px; padding: 9px 11px; display: flex; flex-direction: column; gap: 6px; }
 .propHead { font-weight: 600; color: var(--dsw-alias-label-primary); }
-.para { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 10px; }
-.who { display: flex; flex-direction: column; gap: 3px; align-items: flex-start; }
+.para { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 10px; padding: 4px 0; }
+.who { display: flex; flex-direction: column; gap: 2px; align-items: flex-start; padding-top: 4px; }
+.whoMeta { display: flex; gap: 6px; align-items: center; }
 .who small { font-family: ui-monospace, Menlo, monospace; font-size: 10.5px; color: var(--dsw-alias-label-tertiary); }
-.whoName { font: inherit; font-size: var(--dsh-panel-text-meta, 12px); font-weight: 600; border: 0; padding: 0; cursor: pointer; background: none !important; text-align: left; max-width: 64px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.whoName { font: inherit; font-size: var(--dsh-panel-text-meta, 12px); font-weight: 600; border: 0; padding: 0; cursor: pointer; background: none !important; text-align: left; max-width: 72px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .line { line-height: 2; font-size: var(--dsh-panel-text-reading, 14px); min-width: 0; overflow-wrap: anywhere; }
 .phrase { cursor: pointer; border-radius: 3px; }
 .phrase:hover,

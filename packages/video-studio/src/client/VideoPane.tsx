@@ -93,6 +93,12 @@ function basename(path: string): string {
   return path.split(/[\\/]/).pop() ?? path
 }
 
+/** A speaker's display name: their name, or 「说话人 N」 by position. */
+function speakerLabel(t: T, project: Project, sp: Speaker | undefined): string {
+  if (!sp) return '?'
+  return sp.name || t('speakers.unnamed', { n: String(project.speakers.indexOf(sp) + 1) })
+}
+
 function speakerClass(sp: Speaker | undefined): string {
   return css[`sp_${sp?.color ?? 's1'}`] ?? ''
 }
@@ -363,12 +369,12 @@ function SpeakerRow({ p, v, sp, act, player }: { p: VideoPaneProps; v: ProjectVi
   }, [project.transcript, sp.id])
   const key = `sp:${sp.id}`
   return (
-    <div className={css.speaker} data-new={!sp.name}>
+    <div className={css.speaker} data-new={!sp.name && !sp.voiceprintId}>
       <span className={`${css.dot} ${speakerClass(sp)}`} />
       <span className={css.rowMain}>
-        <input id={`vs-speaker-${sp.id}`} className={css.inlineInput} value={name} placeholder={t('speakers.namePlaceholder')}
+        <input id={`vs-speaker-${sp.id}`} className={css.inlineInput} value={name} placeholder={`${speakerLabel(t, project, sp)} · ${t('speakers.namePlaceholder')}`}
           onChange={(e) => setName(e.target.value)} onBlur={commit} onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }} />
-        <small>{sp.matchScore ? t('speakers.matched', { score: String(Math.round(sp.matchScore * 100)) }) : project.showId ? t('speakers.new') : t('speakers.noShow')}</small>
+        <small>{sp.matchScore ? t('speakers.matched', { score: String(Math.round(sp.matchScore * 100)) }) : sp.voiceprintId ? t('speakers.saved') : project.showId ? t('speakers.new') : t('speakers.noShow')}</small>
       </span>
       <span className={css.meta}>{formatClock(sp.speechSec)}</span>
       {sample && (
@@ -381,7 +387,7 @@ function SpeakerRow({ p, v, sp, act, player }: { p: VideoPaneProps; v: ProjectVi
         <select id={`vs-merge-${sp.id}`} className={css.select} value="" aria-label={t('speakers.mergeInto')}
           onChange={(e) => { if (e.target.value) void act(() => p.mergeSpeakers({ projectId: project.id, fromId: sp.id, intoId: e.target.value })) }}>
           <option value="">{t('speakers.mergeInto')}</option>
-          {project.speakers.filter((x) => x.id !== sp.id).map((x) => <option key={x.id} value={x.id}>{x.name || x.id.slice(-4)}</option>)}
+          {project.speakers.filter((x) => x.id !== sp.id).map((x) => <option key={x.id} value={x.id}>{speakerLabel(t, project, x)}</option>)}
         </select>
       )}
     </div>
@@ -503,16 +509,17 @@ function Paragraph({ p, project, seg, sp, removed, proposed, act, player }: { p:
   const { t } = p
   const [menu, setMenu] = useState(false)
   const phrases = useMemo(() => phrasesOf(seg.tokens), [seg.tokens])
-  const inProposal = (s: number, e: number) => proposed.some((x) => x.start <= s + 1e-3 && x.end >= e - 1e-3)
+  // only proposed CUTS mark words; a proposed shorten covers a gap, drawn as a pause chip
+  const inProposal = (s: number, e: number) => proposed.some((x) => x.kind === 'cut' && x.start <= s + 1e-3 && x.end >= e - 1e-3 && e - s > 1e-3)
   const key = `seg:${seg.id}`
   const pieces: ReactNode[] = []
   phrases.forEach((ph, i) => {
     const prev = phrases[i - 1]
     if (prev) {
       const gap = ph.start - prev.end
-      const shorten = proposed.find((x) => x.kind === 'shorten' && x.start <= prev.end + 1e-3 && x.end >= ph.start - 1e-3)
+      const shorten = project.edits.find((x) => x.kind === 'shorten' && x.state !== 'rejected' && x.start <= prev.end + 1e-3 && x.end >= ph.start - 1e-3)
       if (gap >= 1 || shorten) {
-        pieces.push(<span key={`g${i}`} className={css.pause} data-proposed={!!shorten}>{t('transcript.pause', { sec: gap.toFixed(1) })}</span>)
+        pieces.push(<span key={`g${i}`} className={css.pause} data-proposed={shorten?.state === 'proposed'}>{t('transcript.pause', { sec: gap.toFixed(1) })}{shorten ? ` → ${(shorten.value ?? 0).toFixed(1)}` : ''}</span>)
       }
     }
     const cut = isRemoved(ph.start, ph.end, removed)
@@ -528,17 +535,25 @@ function Paragraph({ p, project, seg, sp, removed, proposed, act, player }: { p:
       </span>,
     )
   })
+  // the gap after this paragraph, when a shorten edit (proposed or applied) covers it
+  const lastEnd = seg.tokens[seg.tokens.length - 1]?.end ?? seg.end
+  const tail = project.edits.find((x) => x.kind === 'shorten' && x.state !== 'rejected' && Math.abs(x.start - lastEnd) < 0.05)
+  if (tail) {
+    pieces.push(<span key="tail" className={css.pause} data-proposed={tail.state === 'proposed'}>{t('transcript.pause', { sec: (tail.end - tail.start).toFixed(1) })} → {(tail.value ?? 0).toFixed(1)}</span>)
+  }
   return (
     <div className={css.para}>
       <div className={css.who}>
-        <button type="button" className={`${css.whoName} ${speakerClass(sp)}`} onClick={() => setMenu((m) => !m)} aria-expanded={menu}>{sp?.name || '?'}</button>
+        <button type="button" className={`${css.whoName} ${speakerClass(sp)}`} onClick={() => setMenu((m) => !m)} aria-expanded={menu} title={t('transcript.reassign')}>{speakerLabel(t, project, sp)}</button>
+        <span className={css.whoMeta}>
         <small>{formatClock(seg.start)}</small>
         <button type="button" className={css.iconBtn} aria-label={t('action.play')} aria-pressed={player.playing === key}
           onClick={() => player.play(key, () => value(p.clip({ projectId: project.id, start: seg.start, end: seg.end })))}>{player.playing === key ? '■' : '▶'}</button>
+        </span>
         {menu && (
           <select id={`vs-reassign-${seg.id}`} className={css.select} value={seg.speakerId} aria-label={t('transcript.reassign')}
             onChange={(e) => { setMenu(false); void act(() => p.reassignSegment({ projectId: project.id, segmentId: seg.id, speakerId: e.target.value })) }}>
-            {project.speakers.map((x) => <option key={x.id} value={x.id}>{x.name || x.id.slice(-4)}</option>)}
+            {project.speakers.map((x) => <option key={x.id} value={x.id}>{speakerLabel(t, project, x)}</option>)}
           </select>
         )}
       </div>
