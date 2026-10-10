@@ -77,6 +77,7 @@ export function TranscriptTab({ p, v, act }: { p: VideoPaneProps; v: ProjectView
   const [replacement, setReplacement] = useState('')
   const [remember, setRemember] = useState(true)
   const [sel, setSel] = useState<Selection | null>(null)
+  const [selPos, setSelPos] = useState<{ x: number; y: number; below: boolean } | null>(null)
   const [fixDraft, setFixDraft] = useState<string | null>(null)
   const listRef = useRef<HTMLDivElement | null>(null)
   const sentinel = useRef<HTMLDivElement | null>(null)
@@ -161,7 +162,11 @@ export function TranscriptTab({ p, v, act }: { p: VideoPaneProps; v: ProjectView
   const readSelection = () => {
     const s = window.getSelection()
     const root = listRef.current
-    if (!s || s.isCollapsed || !root) return
+    if (!s || !root) return
+    if (s.isCollapsed) {
+      clearSel()
+      return
+    }
     let start = Infinity
     let end = -Infinity
     let text = ''
@@ -174,10 +179,16 @@ export function TranscriptTab({ p, v, act }: { p: VideoPaneProps; v: ProjectView
     if (Number.isFinite(start) && end > start) {
       setSel({ start, end, text })
       setFixDraft(null)
+      const r = s.getRangeAt(0).getBoundingClientRect()
+      const lr = root.getBoundingClientRect()
+      const x = Math.min(Math.max(r.left + r.width / 2 - lr.left, 110), lr.width - 110)
+      const y = (r.top < 130 ? r.bottom + 8 : r.top - 10) - lr.top
+      setSelPos({ x, y, below: r.top < 130 })
     }
   }
   const clearSel = () => {
     setSel(null)
+    setSelPos(null)
     setFixDraft(null)
     window.getSelection()?.removeAllRanges()
   }
@@ -256,29 +267,31 @@ export function TranscriptTab({ p, v, act }: { p: VideoPaneProps; v: ProjectView
             onReassign={(speakerId) => void act(() => p.reassignSegment({ projectId: project.id, segmentId: seg.id, speakerId }))} />
         ))}
         {segs.length > limit && <div ref={sentinel} className={css.muted}>{t('state.loading')}</div>}
+        {sel && selPos && (
+          <div className={css.bubble} style={{ left: selPos.x, top: selPos.y }} data-below={selPos.below || undefined}>
+            {fixDraft === null ? (
+              <>
+                <button type="button" className={css.bubbleBtn} title={t('player.fromHere')} onClick={() => { playFrom(sel.start); clearSel() }}>▶</button>
+                <span className={css.bubbleSep} />
+                <button type="button" className={css.bubbleDanger} onClick={() => { void act(() => p.setCut({ projectId: project.id, start: sel.start, end: sel.end, cut: true })); clearSel() }}>{t('select.cut')}</button>
+                {removed.some((r) => r.start < sel.end && r.end > sel.start) && (
+                  <button type="button" className={css.bubbleBtn} onClick={() => { void act(() => p.setCut({ projectId: project.id, start: sel.start, end: sel.end, cut: false })); clearSel() }}>{t('select.restore')}</button>
+                )}
+                <button type="button" className={css.bubbleBtn} onClick={() => setFixDraft(sel.text)}>{t('select.fix')}</button>
+                <button type="button" className={css.bubbleBtn} onClick={() => { const q = sel.text; clearSel(); setFinding(true); setQuery(q) }}>{t('select.findSame')}</button>
+                <span className={css.bubbleSep} />
+                <button type="button" className={css.bubbleBtn} aria-label={t('action.cancel')} onClick={clearSel}>×</button>
+              </>
+            ) : (
+              <form className={css.bubbleFix} onSubmit={(e) => { e.preventDefault(); void act(() => p.fixText({ projectId: project.id, start: sel.start, end: sel.end, text: fixDraft })); clearSel() }}>
+                <input id="vs-fix" className={css.inlineInput} value={fixDraft} onChange={(e) => setFixDraft(e.target.value)} autoFocus />
+                <button type="submit" className={css.primary}>{t('action.save')}</button>
+                <button type="button" className={css.bubbleBtn} onClick={() => setFixDraft(null)}>{t('action.cancel')}</button>
+              </form>
+            )}
+          </div>
+        )}
       </div>
-
-      {sel && (
-        <div className={css.selBar}>
-          {fixDraft === null ? (
-            <>
-              <span className={css.selText}>「{sel.text}」</span>
-              <button type="button" className={css.danger} onClick={() => { void act(() => p.setCut({ projectId: project.id, start: sel.start, end: sel.end, cut: true })); clearSel() }}>{t('select.cut')}</button>
-              <button type="button" className={css.btn} onClick={() => { void act(() => p.setCut({ projectId: project.id, start: sel.start, end: sel.end, cut: false })); clearSel() }}>{t('select.restore')}</button>
-              <button type="button" className={css.btn} onClick={() => setFixDraft(sel.text)}>{t('select.fix')}</button>
-              <button type="button" className={css.btn} onClick={() => { playFrom(sel.start) }}>▶</button>
-              <button type="button" className={css.iconBtn} aria-label={t('action.cancel')} onClick={clearSel}>×</button>
-            </>
-          ) : (
-            <form className={css.selFix} onSubmit={(e) => { e.preventDefault(); void act(() => p.fixText({ projectId: project.id, start: sel.start, end: sel.end, text: fixDraft })); clearSel() }}>
-              <input id="vs-fix" className={css.inlineInput} value={fixDraft} onChange={(e) => setFixDraft(e.target.value)} autoFocus />
-              <button type="submit" className={css.primary}>{t('action.save')}</button>
-              <button type="button" className={css.btn} onClick={() => setFixDraft(null)}>{t('action.cancel')}</button>
-              <span className={css.muted}>{t('select.fixHint')}</span>
-            </form>
-          )}
-        </div>
-      )}
 
       <div className={css.playerBar}>
         <button type="button" className={css.playBtn} aria-label={playing ? t('action.stop') : t('action.play')} onClick={toggle}>{playing ? '❚❚' : '▶'}</button>

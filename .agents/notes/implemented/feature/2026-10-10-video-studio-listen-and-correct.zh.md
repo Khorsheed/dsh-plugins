@@ -10,9 +10,9 @@ M1 的文稿 tab（见 [video-studio proposal](../../proposed/feature/2026-10-06
 
 **文稿就是试听器。** 文稿 tab 底部一条吸底播放条，两种方式放参考录音——剪后（保留区间无缝拼接，每个剪口 12 ms 淡入淡出）和原声（原样）——播放中可切换，进度条在成片时间与原始时间之间双向换算。音频由宿主从工程缓存的 16 kHz ASR WAV 里直接读原始 PCM（`videoStudio.audioChunk`，base64 PCM16，每次 ≤60 秒），浏览器端用 Web Audio 无缝调度（`src/client/player.ts`）。因此 **转写完成后不再删除该 WAV**——它留在工程缓存目录当播放器的音频代理，可随时由 ffmpeg 重建。正在播放的段落和词高亮（`data-playing` / `data-now`），视图滚动跟随（有「跟随」开关），翻页自动化：IntersectionObserver 哨兵替代手动「再显示」按钮，跟随模式会向前翻页，播放永远不会跑过渲染。
 
-**剪切带来源。** 已采纳的剪切按 `edit.origin` 渲染：用户剪的单删除线，模型剪的紫色双删除线，配图例和过滤 chips（全部 / 待决 / 我剪的 / 模型剪的 / 匹配）。悬停模型剪切能看到理由（语气词、长停顿、重复）。`scanTranscript` 只把 `cut`/`shorten` 计入已覆盖，改字不再压制重新扫描。
+**剪切带来源。** 已采纳的剪切按 `edit.origin` 渲染：用户剪的单删除线，模型剪的紫色双删除线，配图例和过滤 chips（全部 / 待确认 / 我剪的 / 模型剪的 / 匹配）。悬停模型剪切能看到理由（语气词、长停顿、重复）。`scanTranscript` 只把 `cut`/`shorten` 计入已覆盖，改字不再压制重新扫描。
 
-**改字是一等编辑类型。** `EditKind` 新增 `'text'`：落在词区间上，带 `text`（改后）和 `from`（原文）。`displayTokens()`（`src/core/text.ts`）把改后的区间换进显示文稿、SRT/ASS 字幕、TXT 导出和模型的 `video_read` 视图——音频与剪切时间一律不动。三条产生路径：面板里拖选几个字 → 改字（立即生效）；查找栏的全部替换，勾选「存进节目」会把规则写进节目新增的 `Settings.replacements` 表，之后每期转写完成时自动应用为已采纳改字；以及模型——`video_propose_edit` 新增 `fix_text`（[{from, to}] → 每处命中合成一个提议组）和 `cut_keyword` 动作——模型的改字和剪切一样停在 `proposed`，等用户 ✓。
+**改字是一等编辑类型。** `EditKind` 新增 `'text'`：落在词区间上，带 `text`（改后）和 `from`（原文）。`displayTokens()`（`src/core/text.ts`）把改后的区间换进显示文稿、SRT/ASS 字幕、TXT 导出和模型的 `video_read` 视图——音频与剪切时间一律不动。三条产生路径：面板里拖选几个字，选区上方弹出浮动工具条（▶ 从这里播放 / 剪掉 / 选区覆盖已剪时的恢复 / 改字 / 找同款 → 打开并预填查找栏）——改字立即生效；查找栏的全部替换，勾选「存进节目」会把规则写进节目新增的 `Settings.replacements` 表，之后每期转写完成时自动应用为已采纳改字；以及模型——`video_propose_edit` 新增 `fix_text`（[{from, to}] → 每处命中合成一个提议组）和 `cut_keyword` 动作——模型的改字和剪切一样停在 `proposed`，等用户 ✓。
 
 ## Alternatives considered
 
@@ -30,4 +30,4 @@ M1 的文稿 tab（见 [video-studio proposal](../../proposed/feature/2026-10-06
 
 ## Testing
 
-`tests/core.spec.ts` 覆盖 `displayTokens`（仅已采纳生效、按时间区间换词）和 `findOccurrences`（中文跨 token 匹配、大小写归一、改后文本可见、空串）。在 3197 临时实例上用真实的 19 分钟录音做了实机验收：两种模式持续 1× 播放、词级跟随高亮、滚动自动加载、来源过滤、查找（门阀 → 10 处）、全部替换并存进节目（坚顾→坚固，在 `shows/<id>.json` 里核实，文稿里标出 原文：坚顾），以及工具链路端到端（`fix_text` → 提议组 → ✓ → SRT 字幕带改后文字）。
+`tests/core.spec.ts` 覆盖 `displayTokens`（仅已采纳生效、按时间区间换词）和 `findOccurrences`（中文跨 token 匹配、大小写归一、改后文本可见、空串）。在 3197 临时实例上用真实的 19 分钟录音做了实机验收：两种模式持续 1× 播放、词级跟随高亮、滚动自动加载、来源过滤、查找（门阀 → 10 处）、全部替换并存进节目（坚顾→坚固，在 `shows/<id>.json` 里核实，文稿里标出 原文：坚顾），以及工具链路端到端（`fix_text` → 提议组 → ✓ → SRT 字幕带改后文字）；同一轮里实测了选区气泡、找同款 → 查找栏接力，和改名后的过滤器。

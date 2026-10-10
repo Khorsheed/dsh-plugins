@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-10-10-video-studio-listen-and-correct.md
-.agents/notes/implemented/feature/2026-10-10-video-studio-listen-and-correct.md: 6604616d3cfd40e7d43717d6c1e1de69f4261bc8
-.agents/notes/implemented/feature/2026-10-10-video-studio-listen-and-correct.zh.md: 56a8e763b94d9fa3f6d6fd088ea303c6eeb73aea
+.agents/notes/implemented/feature/2026-10-10-video-studio-listen-and-correct.md: 6a7677dcf2c7e5a9441a1e208af0fa391d550087
+.agents/notes/implemented/feature/2026-10-10-video-studio-listen-and-correct.zh.md: 793bddafdaa63a65e607cb870b235802e3407372

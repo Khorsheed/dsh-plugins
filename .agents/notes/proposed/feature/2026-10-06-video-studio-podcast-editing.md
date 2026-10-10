@@ -96,8 +96,7 @@ Voiceprints never leave the machine (user decision). The library and the default
 | `video_project` | list shows and projects; create a project (from a show template); open one for this session |
 | `video_import` | add host-path sources; starts the probe, align, proxy and diarize/ASR jobs |
 | `video_read` | read the project: sources, speakers, transcript window, edits, events since last read, output duration |
-| `video_scan` | run the filler, pause and repeat scan with the current thresholds and return a proposal group |
-| `video_propose_edit` | propose cuts, shortenings or gains, or speaker renames and merges, as one group |
+| `video_propose_edit` | all edit proposals as one group: `scan` (the rule-based filler/pause/repeat pass), `propose` (cuts, shortenings, gains), `fix_text` (transcription corrections), `cut_keyword`, plus speaker renames/merges/reassigns and `apply`/`reject` on the user's word |
 | `video_render` | queue exports (audio, video, subtitles and text) and report their progress |
 
 The session-to-project binding lives in the host store, keyed by session id. The tools read it, and the panel follows the active session's project when the panel opens.

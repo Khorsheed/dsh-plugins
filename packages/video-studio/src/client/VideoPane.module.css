@@ -209,7 +209,7 @@
 /* transcript */
 .prop { border: 1px dashed var(--vs-prop); background: var(--vs-prop-soft); border-radius: 10px; padding: 9px 11px; display: flex; flex-direction: column; gap: 6px; }
 .propHead { font-weight: 600; color: var(--dsw-alias-label-primary); }
-.list { display: flex; flex-direction: column; gap: 10px; }
+.list { position: relative; display: flex; flex-direction: column; gap: 10px; }
 .para { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 10px; padding: 4px 6px; margin: 0 -6px; border-radius: 8px; scroll-margin: 80px; }
 .para[data-active] { background: var(--dsw-alias-interactive-bg-hover); }
 .para[data-playing] { box-shadow: inset 3px 0 0 var(--vs-accent); }
@@ -223,14 +223,14 @@
 .phrase { cursor: pointer; border-radius: 3px; }
 .phrase:hover,
 .phrase:focus-visible { background: var(--dsw-alias-interactive-bg-hover); outline: none; }
-.tok[data-cut='user'] { color: var(--dsw-alias-label-tertiary); text-decoration: line-through; text-decoration-color: var(--vs-cut); text-decoration-thickness: 1.5px; }
-.tok[data-cut='agent'] { color: var(--dsw-alias-label-tertiary); text-decoration: line-through; text-decoration-style: double; text-decoration-color: var(--vs-prop); }
+.tok[data-cut='user'] { color: var(--dsw-alias-label-tertiary); opacity: .72; text-decoration: line-through; text-decoration-color: var(--vs-cut); text-decoration-thickness: 1px; }
+.tok[data-cut='agent'] { color: var(--dsw-alias-label-tertiary); opacity: .72; text-decoration: line-through; text-decoration-style: double; text-decoration-color: var(--vs-prop); }
 .tok[data-hit] { background: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 28%, transparent); border-radius: 2px; }
 .tok[data-now] { background: var(--vs-accent-soft); color: var(--vs-accent); border-radius: 2px; }
 .tok[data-fixed] { border-bottom: 1.5px solid var(--vs-ok); }
 .tok[data-proposed='true'] { outline: 1.5px dashed var(--vs-prop); outline-offset: 1px; border-radius: 2px; background: var(--vs-prop-soft); }
-.pause { font-family: ui-monospace, Menlo, monospace; font-size: 10.5px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 4px; padding: 0 4px; margin: 0 3px; color: var(--dsw-alias-label-tertiary); white-space: nowrap; }
-.pause[data-proposed='true'] { border: 1.5px dashed var(--vs-prop); color: var(--vs-prop); }
+.pause { font-family: ui-monospace, Menlo, monospace; font-size: 10px; font-variant-numeric: tabular-nums; border: 0; background: var(--dsw-alias-bg-layer-2); border-radius: 999px; padding: 1px 7px; margin: 0 4px; color: var(--dsw-alias-label-tertiary); white-space: nowrap; }
+.pause[data-proposed='true'] { background: var(--vs-prop-soft); box-shadow: inset 0 0 0 1.5px var(--vs-prop); color: var(--vs-prop); }
 
 /* export */
 .exp { cursor: pointer; }
@@ -250,7 +250,7 @@
 .ask { flex-basis: 100%; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; font-size: var(--dsh-panel-text-meta, 12px); color: var(--vs-cut); }
 .ask span { flex: 1; min-width: 160px; }
 
-.legend { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; font-size: var(--dsh-panel-text-meta, 12px); color: var(--dsw-alias-label-secondary); }
+.legend { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; font-size: var(--dsh-panel-text-meta, 12px); color: var(--dsw-alias-label-tertiary); }
 .legend span { display: inline-flex; gap: 5px; align-items: center; }
 .swUser, .swAgent, .swProp { display: inline-block; width: 16px; height: 0; border-top: 2px solid var(--vs-cut); }
 .swAgent { border-top: 3px double var(--vs-prop); }
@@ -261,9 +261,9 @@
 .findRow > .inlineInput { flex: 1; min-width: 140px; width: auto; }
 .check { display: inline-flex; gap: 5px; align-items: center; font-size: var(--dsh-panel-text-meta, 12px); color: var(--dsw-alias-label-secondary); white-space: nowrap; }
 .check input { margin: 0; accent-color: var(--vs-accent); }
-.selBar,
 .playerBar {
   position: sticky;
+  bottom: 0;
   z-index: 2;
   display: flex;
   gap: 8px;
@@ -275,11 +275,27 @@
   background: var(--dsw-alias-bg-layer-1);
   box-shadow: 0 4px 16px color-mix(in srgb, var(--dsw-alias-label-primary) 10%, transparent);
 }
-.selBar { bottom: 58px; border-color: var(--vs-accent); }
-.playerBar { bottom: 0; }
-.selText { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
-.selFix { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; flex: 1; }
-.selFix > .inlineInput { flex: 1; min-width: 120px; width: auto; }
+.bubble {
+  position: absolute;
+  z-index: 3;
+  transform: translate(-50%, -100%);
+  display: flex;
+  gap: 2px;
+  align-items: center;
+  padding: 4px;
+  border: 1px solid var(--vs-accent);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-1);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--dsw-alias-label-primary) 16%, transparent);
+}
+.bubble[data-below] { transform: translate(-50%, 0); }
+.bubbleBtn { border: 0; background: none; font: inherit; font-size: 12px; padding: 4px 8px; border-radius: 6px; color: var(--dsw-alias-label-primary); cursor: pointer; white-space: nowrap; }
+.bubbleBtn:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.bubbleDanger { border: 0; background: none; font: inherit; font-size: 12px; padding: 4px 8px; border-radius: 6px; color: var(--vs-cut); cursor: pointer; white-space: nowrap; }
+.bubbleDanger:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.bubbleSep { width: 1px; height: 14px; background: var(--dsw-alias-border-l2); margin: 0 2px; flex: none; }
+.bubbleFix { display: flex; gap: 6px; align-items: center; }
+.bubbleFix > .inlineInput { min-width: 160px; width: auto; }
 .playBtn { width: 30px; height: 30px; border-radius: 50%; border: 0; background: var(--vs-accent); color: var(--dsw-alias-label-primary-inverted); cursor: pointer; font-size: 11px; flex: none; }
 .scrub { flex: 1; min-width: 100px; accent-color: var(--vs-accent); }
 .time { font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; color: var(--dsw-alias-label-secondary); font-variant-numeric: tabular-nums; white-space: nowrap; }

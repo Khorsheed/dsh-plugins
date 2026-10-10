@@ -130,37 +130,17 @@ export function defineVideoTools(svc: VideoStudioService) {
     },
   })
 
-  const scan = defineTool({
-    name: 'video_scan',
-    description:
-      'Rough-cut scan: fillers (嗯/啊/那个…), long pauses (per-speaker thresholds from the settings; pauses are SHORTENED to pauseKeep, not cut) '
-      + 'and repeated phrases. The result is one proposal group shown dashed in the panel for the user to ✓/✗ — never applied by itself.',
-    parameters: {
-      projectId: { type: 'string', description: 'Defaults to the project bound to this session.' },
-    },
-    output: text,
-    async execute(args: { projectId?: string }, exec: ExecLike): Promise<string> {
-      try {
-        const id = await resolveProject(svc, exec, args.projectId)
-        const r = await svc.scan(id, 'agent')
-        if (!r.groupId) return '没有新的可清理项。'
-        return `已提议 ${r.groupId}：语气词 ${r.counts.fillers}、长停顿 ${r.counts.pauses}、重复 ${r.counts.repeats}，全部采纳约缩短 ${formatClock(r.savedSec)}。请让用户在面板或会话里确认。`
-      } catch (e) {
-        return fail('video_scan', e)
-      }
-    },
-  })
-
   const propose = defineTool({
     name: 'video_propose_edit',
     description:
       'Propose edits as ONE group the user accepts or rejects (✓/✗ in the panel or in conversation), or decide a group on the user\'s word. '
+      + '`scan`: the rule-based rough cut — fillers, long pauses (SHORTENED to pauseKeep, not cut), repeated phrases — as one proposal group. '
       + '`fix_text`: transcription corrections the user can confirm (wrong word → right word, text only). `cut_keyword`: cut every occurrence of a word. '
       + '`propose`: edits over the ORIGINAL recording\'s time — cut (remove a range from everyone: in a mixed recording you cannot remove one voice) '
       + 'or shorten (keep `value` seconds of a pause). `apply` / `reject`: only when the user explicitly said so in conversation. '
       + '`rename_speaker` / `merge_speakers` / `reassign`: speaker fixes the user asked for.',
     parameters: {
-      action: { type: 'string', required: true, enum: ['propose', 'fix_text', 'cut_keyword', 'apply', 'reject', 'rename_speaker', 'merge_speakers', 'reassign'], description: 'What to do.' },
+      action: { type: 'string', required: true, enum: ['scan', 'propose', 'fix_text', 'cut_keyword', 'apply', 'reject', 'rename_speaker', 'merge_speakers', 'reassign'], description: 'What to do.' },
       projectId: { type: 'string', description: 'Defaults to the project bound to this session.' },
       title: { type: 'string', description: 'propose: one line naming the group (e.g. 「删掉外卖吐槽 21:40–27:55」).' },
       edits: {
@@ -185,6 +165,11 @@ export function defineVideoTools(svc: VideoStudioService) {
       try {
         const id = await resolveProject(svc, exec, args.projectId)
         switch (args.action) {
+          case 'scan': {
+            const r = await svc.scan(id, 'agent')
+            if (!r.groupId) return '没有新的可清理项。'
+            return `已提议 ${r.groupId}：语气词 ${r.counts.fillers}、长停顿 ${r.counts.pauses}、重复 ${r.counts.repeats}，全部采纳约缩短 ${formatClock(r.savedSec)}。请让用户在面板或会话里确认。`
+          }
           case 'propose': {
             const edits = (args.edits ?? [])
               .filter((e) => (e.kind === 'cut' || e.kind === 'shorten') && typeof e.start === 'number' && typeof e.end === 'number')
@@ -259,5 +244,5 @@ export function defineVideoTools(svc: VideoStudioService) {
     },
   })
 
-  return [project, importTool, read, scan, propose, render]
+  return [project, importTool, read, propose, render]
 }
