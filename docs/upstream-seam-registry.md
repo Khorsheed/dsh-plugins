@@ -168,12 +168,12 @@
 
 ### S20. 会话视图无公开滚动 API（插件无法把对话滚动到指定 turn）
 
-- **需求**：request-inspector 面板切换 turn 时，会话视图同步滚动到该 turn（面板是「看这一轮发了什么」的入口，两边指到同一轮才算联动）；「定位到最新 turn」需要滚到底。
+- **需求**：context-lens 面板切换 turn 时，会话视图同步滚动到该 turn（面板是「看这一轮发了什么」的入口，两边指到同一轮才算联动）；「定位到最新 turn」需要滚到底。
 - **现状**：滚动能力（`scrollToTurn` / `scrollToTurnAtOrAfter` / `scrollToBottom`）是 ui-chat `ChatView` 的内部实现（`packages/client/ui-chat/src/client/chat/use-chat-viewport.ts`），没有 slot、没有 cordis 服务、没有 Remote 动词暴露给插件。
-- **现状绕行**：DOM 锚点 + 兜底（AGENTS.md 许可的最后手段）。turn 行自带稳定属性 `[data-chat-turn="<hostTurn>"]`（ChatNodeSeat/ChatGroupSeat；`use-chat-viewport.ts:260` 的官方兜底用同一选择器），会话滚动容器是 `[data-conversation-scroll]`（ui-conversation `ConversationContent.tsx:197`）。request-inspector 客户端在切 turn / 从动作行图标带参打开时按 `data-chat-turn` 精确匹配滚动，未挂载（虚拟列表翻页）时落到 DOM 序上最近一个 ≥N 的可见 turn 行（与官方 `scrollToTurnAtOrAfter` 同语义），「最新」按钮优先 `scrollport.scrollTo(scrollHeight)`、否则滚最大的 turn 行；全程 `prefers-reduced-motion` 降级为 instant，找不到锚点即静默 no-op。见 `packages/request-inspector/src/client/scroll-sync.ts`。
+- **现状绕行**：DOM 锚点 + 兜底（AGENTS.md 许可的最后手段）。turn 行自带稳定属性 `[data-chat-turn="<hostTurn>"]`（ChatNodeSeat/ChatGroupSeat；`use-chat-viewport.ts:260` 的官方兜底用同一选择器），会话滚动容器是 `[data-conversation-scroll]`（ui-conversation `ConversationContent.tsx:197`）。context-lens 客户端在切 turn / 从动作行图标带参打开时按 `data-chat-turn` 精确匹配滚动，未挂载（虚拟列表翻页）时落到 DOM 序上最近一个 ≥N 的可见 turn 行（与官方 `scrollToTurnAtOrAfter` 同语义），「最新」按钮优先 `scrollport.scrollTo(scrollHeight)`、否则滚最大的 turn 行；全程 `prefers-reduced-motion` 降级为 instant，找不到锚点即静默 no-op。见 `packages/context-lens/src/client/scroll-sync.ts`。
 - **建议的官方改动**：在会话级 client kit（ui-session 或 ui-conversation 的服务面）暴露 `scrollToTurn(turn)` / `scrollToBottom()`——官方实现就在 `use-chat-viewport.ts`，提为服务即可；插件不再读 DOM。
 - **退役条件**：官方服务落地后，删 `scroll-sync.ts`，面板改调官方服务；核对锚点属性（`data-chat-turn` / `data-conversation-scroll`）是否在官方重构中改名。
-- **状态**：绕行中（@khorsheed/dsh-request-inspector）。
+- **状态**：绕行中（@khorsheed/dsh-context-lens）。
 
 
 - 新增条目：发现"官方不支持 → 绕行"即登记，先登记者在提案总表更新计数。
