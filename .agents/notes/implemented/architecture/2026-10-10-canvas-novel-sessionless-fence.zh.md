@@ -14,7 +14,8 @@ Status: implemented
 - **画布卡动词前传可选会话**（`src/genre.ts` 切片）：`proposeCard`/`patchCard` 接受 `FenceSession | undefined`——引擎照传它拿到的会话，画布自己的围栏仍是画布包的事（真实服务的 `resolve({ session: undefined })` 走的就是同一条部署默认路径）。`canvasBoardOf` 探测保持逐调用探测，永不变成 import 或依赖。
 - **dispose 守卫**：`NovelDisposedError`（带码 `'disposed'`、经 `invariant.ts` 新导出的 `PACKAGE_NAME` 带包名，并从包根导出）；`dispose()` 幂等且终态，并经构造器里的 `ctx.effect` 随借入 Context 的销毁自动触发。`assertAlive` 立在每个公开动词上（含读取），挂载方不会无限期消费陈旧实例；写边界——`mutateJson`/`appendJsonl`/`writeChapter` 正文写里、每次 fs 写之前的 `assertAlive`，刻意放在把 fs 错误映射成码的 try 之外——关掉 in-flight 竞态：一次写要么已在边界前完成、要么在边界处带码拒绝，绝不落到重建实例接管的磁盘上。同根重建保持合法（死掉的只是旧实例）。
 - **急切 fs 变诚实**：`static inject = ['fs']` 本就意味着 cordis 不会在没有文件系统的组合里挂载本行，但在无 fs 的 Context 上直接 `new NovelService(ctx)` 过去冒出的是属性访问 TypeError（cordis 4 上 `ctx.fs` 返回 undefined）。现在构造时立即抛出指明契约的带包名错误。
-- **测试**（`tests/sessionless.spec.ts`，新增 14 个）：手写镜像策略服务（保留为可读的成员清单）钉住默认重定界、不借 id 的形态、只读下两层拒绝（fs 拒绝登记 vs 服务层在任何 fs 写之前拒绝正文）、无法解析时的带码拒绝（零 fs 写）、会话传入侧不变行为，以及急切 fs 构造。真实链路套件（真实 `SessionProjectionRegistry` 喂真实 `SandboxPolicyService`、跑在真实 cordis Context 上，canvas 工作区 spec 的先例）端到端钉住无会话解析——部署默认模式、重定界边界、从无 session id——以及只读拒绝：宿主发布若改变无会话解析，先红的是本套件而不是消费方。dispose 测试钉住每个公开动词带码拒绝、幂等、随 Context 销毁、in-flight 写在边界处拒绝且不留痕迹，以及同根重建。
+- **无 agent 的原生手势适配器**（`src/gestures.ts`，同一交付的后续）：Remote 面的七个手势动词（`decidePending`、`reviewChapter`、`decideOutline`、`confirmPlan`、`editPlan`、`starForeshadow`、`setCurrentState`）抽取为以 `(core, session | undefined)` 参数化的共享核心；Remote 动词变成它们的薄包装，导出的工厂 `createNovelGestureAdapter(core, session?)` 以普通调用给出同一组动词，请求/回执就是 Remote 自己的线上类型——按构造对等，文本计划解析规则仍只在 `planFromText` 一处。适配器从不触碰 Agent、宿主查找或 `agents` 服务；Remote 的八个读取动词保持为核心投影之上的浏览器塑形（调用方手里已有 core）。这是补全这条接缝的消费入口：挂载方驱动原生手势，无需伪造 Agent、无需复制解析规则、无需 import `./src/*`（发布包只发 `lib/`）。
+- **测试**（`tests/sessionless.spec.ts` 14 个；`tests/gesture-adapter.spec.ts` 5 个）：手写镜像策略服务（保留为可读的成员清单）钉住默认重定界、不借 id 的形态、只读下两层拒绝（fs 拒绝登记 vs 服务层在任何 fs 写之前拒绝正文）、无法解析时的带码拒绝（零 fs 写）、会话传入侧不变行为，以及急切 fs 构造。真实链路套件（真实 `SessionProjectionRegistry` 喂真实 `SandboxPolicyService`、跑在真实 cordis Context 上，canvas 工作区 spec 的先例）端到端钉住无会话解析——部署默认模式、重定界边界、从无 session id——以及只读拒绝：宿主发布若改变无会话解析，先红的是本套件而不是消费方。dispose 测试钉住每个公开动词带码拒绝、幂等、随 Context 销毁、in-flight 写在边界处拒绝且不留痕迹，以及同根重建。适配器套件钉住 Remote↔适配器在《梦境监护者》fixture 上的回执对等（含 `changed` 清单、错误码与 unknown 引用清单）、适配器之下的无会话围栏、`agents` 毒药绊线（含构造），以及 dispose 后的 core 在两个面上同样带码拒绝。
 
 ## Alternatives considered
 
@@ -26,7 +27,7 @@ Status: implemented
 
 ## Consequences
 
-- `NovelService` 的写动词接受 `Session | undefined`；`NovelDisposedError` 与 `dispose()` 是新的公开面；`PACKAGE_NAME` 从 `invariant.ts` 导出；体裁切片的 `proposeCard`/`patchCard` 接受可选 fencing 会话。Remote 与工具面不变，162 个既有测试全部原样通过（总计 176，新增 14）。
+- `NovelService` 的写动词接受 `Session | undefined`；`NovelDisposedError` 与 `dispose()` 是公开面；`createNovelGestureAdapter` 与 `NovelGestureAdapter` 类型从包根导出；`PACKAGE_NAME` 从 `invariant.ts` 导出；体裁切片的 `proposeCard`/`patchCard` 接受可选 fencing 会话。Remote 的线上面不变——生成的 typert 面逐字节一致，其手势动词如今是共享核心的薄包装——全部既有测试原样通过（总计 184：无会话围栏 14、手势适配器 5）。
 - 无会话写入严格程度恰等于部署默认的要求（通常是最严的适用模式）；省略会话永远不能跳过围栏——最坏结果是带码 `denied`，绝不静默放行。
 - 挂载方拥有实例生命周期：dispose 随借入 Context（或显式 `dispose()`），in-flight 写要么在写边界前完成、要么在边界处拒绝，同根重建是新实例的事。
 - 传会话的本地行为逐字节不变；客户端 UI 与 `novel_*` 工具授予未动。

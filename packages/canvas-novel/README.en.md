@@ -80,6 +80,16 @@ The mounting side's obligations and the semantics:
 - **Terminal dispose + same-root rebuild**: `dispose()` is idempotent and terminal, and fires automatically when the borrowed Context is torn down — afterwards every public verb, reads included, refuses with the coded package-named `NovelDisposedError` (`code: 'disposed'`). A write racing disposal either completed before the write boundary or refuses at it — it never reaches the disk a rebuilt instance now owns. Rebuilding over the same state root is legal: a new service instance on it works as usual (only the old instance is dead).
 - **Local behavior unchanged**: with a session passed as before, the semantics are byte-identical.
 
+**The agent-free native-gesture adapter**: the Remote face's (`remote.novel.*`) gesture verbs take the calling `agent` first — the wire's lookup convention — and a server-side caller has none and must not fake one. `createNovelGestureAdapter(core, session?)` (exported from the package root) offers the seven gesture verbs — `decidePending`, `reviewChapter`, `decideOutline`, `confirmPlan`, `editPlan`, `starForeshadow`, `setCurrentState` — as plain function calls, with the Remote's own wire types as requests and receipts. The Remote verbs and the adapter run the SAME shared cores (`src/gestures.ts`), so the two faces answer byte-identically by construction — including `editPlan`'s text-plan parsing (the parsing rules live in `planFromText` alone), the `changed` receipts and the unknown-handle lists. With `session` omitted, the session-less fence above applies; a disposed core refuses every verb with the coded `NovelDisposedError`. The adapter never touches an Agent, the host lookup, or the `agents` service. The eight read verbs (`pending`, `ledger`, `storyLog`, …) are browser-surface shaping over core projections; a server-side caller reads the core it already holds (`readEntries`, `listChapters`, `readOutline`, …) directly, and the adapter does not duplicate them. Note `./src/*` is not a consumption entry — the published package ships only `lib/`; always import from the package root.
+
+```ts
+import { apply, createNovelGestureAdapter } from '@khorsheed/dsh-canvas-novel'
+
+apply(isolatedCtx, { stateRoot: '/path/to/instance-state/novel' })
+const gestures = createNovelGestureAdapter(isolatedCtx.canvasNovel) // session optional
+await gestures.editPlan({ canvasId: work, n: 6, text: '梗概：…\n情节：\n- …' })
+```
+
 ## Install
 
 ```sh

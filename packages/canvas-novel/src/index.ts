@@ -31,6 +31,8 @@ import { novelGenreAgent } from './genre-agent.ts'
 
 export { NovelService, NovelDisposedError, resolveNovelStateRoot, novelErrorOf, evidenceInBody, tailOf, cleanFields, entriesOf, MAIN_FIELD } from './store.ts'
 export type { NovelConfig, WorkEntries, CardHandle } from './store.ts'
+export { createNovelGestureAdapter } from './gestures.ts'
+export type { NovelGestureAdapter } from './gestures.ts'
 export { novelToolDefinitions } from './tools.ts'
 export { NovelRemoteService } from './remote.ts'
 export type { NovelRemoteConfig } from './remote.ts'

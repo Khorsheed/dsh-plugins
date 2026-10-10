@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-10-10-canvas-novel-sessionless-fence.md
-.agents/notes/implemented/architecture/2026-10-10-canvas-novel-sessionless-fence.md: 1a6f925bfddf958a80068f5637b2bf15bade5d71
-.agents/notes/implemented/architecture/2026-10-10-canvas-novel-sessionless-fence.zh.md: 28b68851bf342452e0edd976c3d4422b8e57174b
+.agents/notes/implemented/architecture/2026-10-10-canvas-novel-sessionless-fence.md: a96c56f8a4db3a376fe0463a757303ca8c27e3ab
+.agents/notes/implemented/architecture/2026-10-10-canvas-novel-sessionless-fence.zh.md: af32ee97ce4f23bfbe031446fc843f953e48a172
