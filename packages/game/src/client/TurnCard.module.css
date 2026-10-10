@@ -1,0 +1,23 @@
+/* The turn card beneath an agent turn: a quiet bordered card in the host's chat language. Colors only through --dsw-alias-*. */
+.card {
+  margin: 8px 0 4px; border: 0.5px solid var(--dsw-alias-border-l2); border-radius: var(--dsw-radius-md, 10px);
+  background: var(--dsw-alias-bg-layer-1); overflow: hidden; font-size: 13px;
+}
+.head { display: flex; align-items: center; gap: 8px; padding: 9px 12px; border-bottom: 0.5px solid var(--dsw-alias-border-l1); }
+.head strong { font-weight: 600; color: var(--dsw-alias-label-primary); }
+.badge { color: var(--dsw-alias-brand-primary); font-size: 11px; }
+.spacer { flex: 1; }
+.open, .go {
+  font: inherit; font-size: 12px; border: 0; background: none; color: var(--dsw-alias-label-secondary); cursor: pointer;
+  padding: 2px 8px; min-height: 24px; border-radius: var(--dsw-radius-sm, 6px);
+}
+.open:focus-visible, .go:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 1px; }
+.list { margin: 0; padding: 4px 0; list-style: none; }
+.row { --tone: var(--dsw-alias-label-tertiary); display: flex; align-items: center; gap: 10px; padding: 5px 12px; min-height: 30px; }
+.row[data-tone='ok'] { --tone: var(--dsw-alias-state-success-primary); }
+.row[data-tone='warn'] { --tone: var(--dsw-alias-state-warn-primary); }
+.row[data-tone='error'] { --tone: var(--dsw-alias-state-error-primary); }
+.icon { width: 18px; flex: none; text-align: center; color: var(--tone); font-size: 12px; font-family: ui-monospace, monospace; }
+.text { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; gap: 2px 8px; color: var(--dsw-alias-label-primary); }
+.meta { color: var(--dsw-alias-label-tertiary); font-size: 12px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.go { color: var(--dsw-alias-brand-primary); flex: none; }

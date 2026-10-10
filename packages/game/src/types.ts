@@ -1,0 +1,335 @@
+/**
+ * Wire and storage shapes shared by the host half, the Remote face and the
+ * browser half. Pure types and constants — no node imports, so the client
+ * type program includes this file as-is.
+ * @module @khorsheed/dsh-game/types
+ */
+
+/** The project manifest's file name, at the project root. */
+export const MANIFEST_FILE = 'game.json'
+
+/** The plugin's own directory inside a project (snapshots, check results, logs). */
+export const STATE_DIR = '.game'
+
+/** One art style the gate accepts: a stable id, its label, a one-line look and its palette. */
+export interface ArtStyle {
+  readonly id: string
+  readonly label: string
+  readonly look: string
+  /** The style's palette: element looks and the pixel editor draw from it. */
+  readonly palette: readonly string[]
+}
+
+/**
+ * The example styles the user picks from (decision D10). Without image
+ * generation the game draws everything in code, so each style is one a
+ * canvas/HTML game can render faithfully; `custom:<text>` covers the rest.
+ */
+export const ART_STYLES: readonly ArtStyle[] = [
+  {
+    id: 'pixel', label: '像素', look: '16×16 / 32×32 像素块，有限调色板，整数倍放大不糊',
+    palette: ['#1a1c2c', '#5d275d', '#b13e53', '#ef7d57', '#ffcd75', '#a7f070', '#38b764', '#257179',
+      '#29366f', '#3b5dc9', '#41a6f6', '#73eff7', '#f4f4f4', '#94b0c2', '#566c86', '#333c57'],
+  },
+  {
+    id: 'flat', label: '扁平矢量', look: '纯色几何形，圆角，少量阴影，配色明快',
+    palette: ['#264653', '#2a9d8f', '#8ab17d', '#e9c46a', '#f4a261', '#e76f51', '#fefae0', '#3d405b'],
+  },
+  {
+    id: 'line', label: '手绘线稿', look: '黑色描线 + 淡彩填充，线条略抖',
+    palette: ['#222222', '#f7f3e8', '#f2c6c2', '#c9e4de', '#c6def1', '#faedcb', '#dbcdf0', '#8a8a8a'],
+  },
+  {
+    id: 'neon', label: '霓虹几何', look: '深色底，发光的线框与粒子',
+    palette: ['#0d0221', '#261447', '#ff3864', '#2de2e6', '#f6019d', '#fdf500', '#7b2cbf', '#ffffff'],
+  },
+  {
+    id: 'paper', label: '剪纸拼贴', look: '纸张纹理色块，轻微投影，层叠感',
+    palette: ['#f2e8cf', '#e0c9a6', '#bc4749', '#6a994e', '#386641', '#a7c957', '#3d348b', '#5c4033'],
+  },
+  {
+    id: 'mono', label: '极简单色', look: '一种主色加黑白，靠形状和留白区分',
+    palette: ['#111111', '#f5f5f5', '#e63946', '#9a9a9a', '#5a5a5a', '#d0d0d0'],
+  },
+]
+
+/** The project manifest (`game.json`). Everything but id/title is the agent's to fill over time. */
+export interface GameManifest {
+  readonly schema: 1
+  readonly id: string
+  readonly title: string
+  /** The one-pager's core: what the player does and why it is fun, in a sentence or two. */
+  readonly pitch: string
+  /** Element categories the game has (角色 / 敌人 / 道具 …); element files declare one of these. */
+  readonly elementTypes: readonly string[]
+  /** An {@link ART_STYLES} id, or `custom:<description>`. */
+  readonly artStyle: string
+  /** Design pillars, pinned at the top of the design doc. */
+  readonly pillars: readonly string[]
+  /** Passing candidates deploy into the play area without a click (default on, decision D6). */
+  readonly autoConfirm: boolean
+  /** The tunable numbers the 试玩 drawer shows; `value` is the finalized default. */
+  readonly params: readonly GameParam[]
+  /** The palette element looks draw from (the style's, unless the agent set its own). */
+  readonly palette: readonly string[]
+  readonly createdAt: string
+}
+
+/** One tunable number (`game.json` `params[]`); the game reads it from `window.dshParams[key]` every frame. */
+export interface GameParam {
+  readonly key: string
+  readonly label: string
+  readonly min: number
+  readonly max: number
+  readonly step: number
+  readonly value: number
+  readonly unit?: string
+}
+
+/**
+ * An element's appearance (`look` in an element file): pixel rows per
+ * state. Each row is a string; `.` is transparent, `0-9a-z` index the
+ * look's own `palette` (base 36).
+ */
+export interface ElementLook {
+  readonly palette: readonly string[]
+  readonly states: Readonly<Record<string, readonly string[]>>
+}
+
+/** The characters a look row may use, in palette-index order. */
+export const LOOK_CHARS = '0123456789abcdefghijklmnopqrstuvwxyz'
+
+/** One design-doc chapter. `generated` chapters are written by the plugin, never by hand. */
+export interface ChapterSpec {
+  readonly id: string
+  readonly title: string
+  readonly file: string
+  readonly generated?: boolean
+}
+
+/** The chaptered design doc (decision D12): fixed chapters, pillars pinned first. */
+export const CHAPTERS: readonly ChapterSpec[] = [
+  { id: 'pillars', title: '支柱说明', file: 'design/pillars.md' },
+  { id: 'core-loop', title: '核心循环', file: 'design/core-loop.md' },
+  { id: 'mechanics', title: '机制与规则', file: 'design/mechanics.md' },
+  { id: 'elements', title: '元素与数值', file: 'design/elements.md', generated: true },
+  { id: 'levels', title: '关卡与节奏', file: 'design/levels.md' },
+  { id: 'art-audio', title: '美术与音效', file: 'design/art-audio.md' },
+  { id: 'playtest', title: '试玩记录', file: 'design/playtest.md', generated: true },
+]
+
+/** A chapter's state: nothing yet, being written, or marked final with a `状态：定稿` line. */
+export type ChapterStatus = 'todo' | 'draft' | 'done'
+
+/** One chapter as the panel shows it. */
+export interface ChapterView {
+  readonly id: string
+  readonly title: string
+  readonly file: string
+  readonly status: ChapterStatus
+  readonly text: string
+  readonly generated: boolean
+  /** Last-modified time (ms) of the chapter's source, 0 when unknown. */
+  readonly mtime: number
+}
+
+/** One element file (`elements/*.json`) after validation. */
+export interface ElementView {
+  readonly file: string
+  /** Position inside the file when it holds an array, else -1. */
+  readonly index: number
+  readonly id: string
+  readonly type: string
+  readonly name: string
+  /** Every other top-level scalar, for the numbers table and the field editor. */
+  readonly stats: Readonly<Record<string, string | number | boolean>>
+  readonly look: ElementLook | null
+}
+
+/** One appearance proposal set from `game_propose`: up to 3 variants, the user picks one. */
+export interface LookProposal {
+  readonly elementId: string
+  readonly at: string
+  readonly request: string
+  readonly variants: readonly { readonly label: string; readonly note: string; readonly look: ElementLook }[]
+  /** Index the user picked, once picked. */
+  readonly picked?: number
+}
+
+/**
+ * The opening of the message the panel writes into the composer for its
+ * changes (「写进对话」). The pre-step hook recognizes a sent message by it and
+ * clears exactly the changes the message lists.
+ */
+export const PANEL_CHANGES_MARK = '【面板改动】'
+
+/** One net change the user made in the panel and has not yet sent to the agent. */
+export interface PendingChange {
+  /** Stable key so repeated edits of one thing collapse into one entry (`param:speed`, `look:fog`, `design:core-loop`). */
+  readonly key: string
+  /** Short label for the dock and the model (`参数 移动速度 1.4→1.8`). */
+  readonly text: string
+}
+
+/** One check failure, already worded for the model and the panel. */
+export interface CheckFailure {
+  /** `smoke`, `data`, or the test file's project-relative path. */
+  readonly where: string
+  readonly message: string
+}
+
+/** One check run's result, persisted at `.game/checks.json`. */
+export interface CheckRecord {
+  readonly fingerprint: string
+  readonly at: string
+  readonly ok: boolean
+  readonly failures: readonly CheckFailure[]
+  /** Test cases that ran and passed. */
+  readonly passed: number
+  /** Why the browser part did not run (no Chrome found, say); the data part still did. */
+  readonly skipped?: string
+  /** The automatic fix round this run belongs to (1-based), 0 when not steered. */
+  readonly attempt: number
+  /** Set when the fix cap was hit and the plugin stopped steering. */
+  readonly gaveUp?: boolean
+}
+
+/** A deployed (or candidate) version. */
+export interface VersionRecord {
+  readonly version: number
+  readonly at: string
+  readonly fingerprint: string
+  /** One line about what changed (the turn's last words, or the plugin's own note). */
+  readonly note?: string
+}
+
+/** A version's place in the history. */
+export type VersionStatus = 'current' | 'candidate' | 'rejected' | 'past'
+
+/** One row of the 版本 view. */
+export interface VersionRow extends VersionRecord {
+  readonly status: VersionStatus
+  /** Test cases that passed when this version was checked. */
+  readonly passed?: number
+}
+
+/** Files that differ between two versions. */
+export interface VersionDiff {
+  readonly added: readonly string[]
+  readonly removed: readonly string[]
+  readonly changed: readonly string[]
+}
+
+/** One playtest-log line. */
+export interface LogEntry {
+  readonly at: string
+  readonly text: string
+}
+
+/** A project row in the deployment-level registry. */
+export interface ProjectRow {
+  readonly id: string
+  readonly title: string
+  readonly root: string
+  readonly createdAt: string
+  readonly updatedAt: string
+}
+
+/** What one agent turn changed in the bound project (the turn-tail card). */
+export interface TurnReport {
+  readonly turn: number
+  readonly projectId: string
+  readonly title: string
+  readonly at: string
+  /** A version that became live (or a candidate) during the turn. */
+  readonly version: { readonly kind: 'deployed' | 'candidate'; readonly version: number } | null
+  /** The turn's end-of-turn check, when one ran. */
+  readonly check: { readonly ok: boolean; readonly fixes: number; readonly gaveUp: boolean; readonly passed: number; readonly failures: number } | null
+  readonly elements: readonly { readonly id: string; readonly name: string; readonly what: 'new' | 'removed' | 'look' | 'fields'; readonly fields?: readonly string[] }[]
+  readonly chapters: readonly { readonly id: string; readonly title: string }[]
+  readonly params: readonly { readonly key: string; readonly label: string; readonly from?: number; readonly to: number }[]
+  /** Other changed source files (code, assets, index.html). */
+  readonly code: readonly string[]
+  readonly tests: readonly string[]
+}
+
+/** One project as the switcher shows it. */
+export interface ProjectCard {
+  readonly id: string
+  readonly title: string
+  readonly root: string
+  readonly updatedAt: string
+  readonly pitch: string
+  readonly artStyle: string
+  readonly version: number | null
+  readonly elements: number
+  /** The last check's screenshot (webp, base64), when there is one. */
+  readonly thumb?: string
+}
+
+/** The panel's view of one project. */
+export interface ProjectView {
+  readonly id: string
+  readonly title: string
+  readonly root: string
+  readonly manifest: GameManifest | null
+  /** Why the manifest could not be read, when it could not. */
+  readonly manifestError?: string
+  readonly chapters: readonly ChapterView[]
+  readonly elements: readonly ElementView[]
+  readonly elementErrors: readonly CheckFailure[]
+  readonly current: VersionRecord | null
+  readonly candidate: VersionRecord | null
+  readonly lastCheck: CheckRecord | null
+  readonly hasEntry: boolean
+  /** The user's slider values that differ from the finalized defaults. */
+  readonly paramOverrides: Readonly<Record<string, number>>
+  /** Changes waiting to ride the next send. */
+  readonly pending: readonly PendingChange[]
+  /** Open (unpicked) and recent appearance proposals, newest first. */
+  readonly proposals: readonly LookProposal[]
+  readonly versions: readonly VersionRow[]
+  readonly log: readonly LogEntry[]
+  /** Set while a style change waits for its candidate (decision: a restyle always goes through a candidate). */
+  readonly restyleTo?: string
+}
+
+/** What the tab needs to render a session: its bound project (if any) plus the list to pick from. */
+export interface SessionGameState {
+  readonly bound: ProjectView | null
+  readonly projects: readonly ProjectRow[]
+}
+
+/** One file of a playable bundle: text as-is, binary as base64. */
+export type BundleFile =
+  | { readonly type: string; readonly text: string }
+  | { readonly type: string; readonly b64: string }
+
+/** A deployed version's files, ready for the sandbox loader. */
+export interface PlayBundle {
+  readonly projectId: string
+  readonly version: number
+  readonly files: Readonly<Record<string, BundleFile>>
+}
+
+/** Failure codes the Remote face answers with. */
+export type GameError = 'not-found' | 'unbound' | 'denied' | 'invalid' | 'no-version' | 'io'
+
+/** A Remote call's failure. */
+export interface GameFailure {
+  readonly ok: false
+  readonly error: GameError
+}
+
+/** A Remote mutation's answer: `T` (which carries `ok: true`) or a failure. */
+export type GameResult<T extends { readonly ok: true } = { readonly ok: true }> = T | GameFailure
+
+/** Minimal mirror of the official pluginInventory snapshot (entries + preset groups). */
+export interface GamePluginInventorySnapshot {
+  readonly entries?: readonly { readonly moduleName: string; readonly enabled?: boolean }[]
+  readonly agentPresets?: readonly {
+    readonly id: string
+    readonly broken?: string
+    readonly rows: readonly { readonly moduleName: string; readonly enabled?: boolean }[]
+  }[]
+}

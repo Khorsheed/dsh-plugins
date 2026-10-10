@@ -20,7 +20,7 @@ function presetBlock(text: string, id: string): string {
 }
 
 describe('cordis.patch.yml', () => {
-  it('mounts exactly the three preset declarations (T102: no dataset-authoring), in PRESET_IDS order', () => {
+  it('mounts exactly the four preset declarations (T102: no dataset-authoring), in PRESET_IDS order', () => {
     expect(topLevelRowIds(patch)).toEqual(PRESET_IDS.map((id) => `preset-${id}`))
     for (const id of PRESET_IDS) {
       const block = presetBlock(patch, id)
@@ -141,6 +141,24 @@ describe('cordis.patch.yml', () => {
     expect(block).not.toContain('canvas_propose_card')
   })
 
+  it('dsh-gamedev: developer + design-mentor persona, the writing diet, and the game agent row', () => {
+    const block = presetBlock(patch, 'dsh-gamedev')
+    expect(block).toContain("        name: '游戏开发模式'\n")
+    expect(block).toContain('game-design mentor')
+    for (const kept of [
+      'tool-bash', 'tool-fs', 'skill-filesystem', 'tool-skill',
+      'compaction-basic', 'tool-ask-user', 'tool-todo', 'tool-web',
+    ]) {
+      expect(block).toContain(`- id: ${kept}\n`)
+    }
+    expect(block).toContain('          - id: game-agent\n')
+    expect(block).toContain("            name: '@khorsheed/dsh-game/agent'\n")
+    expect(block).not.toContain('canvas-agent')
+    for (const gone of ['plan-mode', 'delegation', 'tool-subagent', 'workflow-ptc', 'tool-goal']) {
+      expect(block).not.toMatch(new RegExp(`- id: ${gone}\\n`))
+    }
+  })
+
   // T100: the evaluation line runs on 3080 beside dev and writing, so the
   // evaluation surface must arrive ONLY through the presets that name it. Every
   // piece of it rides a companion tool row: the eval tools, /eval and the
@@ -154,7 +172,7 @@ describe('cordis.patch.yml', () => {
     const rows = (id: string): string =>
       presetBlock(patch, id).split('\n').filter((line) => !line.trimStart().startsWith('#')).join('\n')
 
-    for (const id of ['dev', 'dsh-writing']) {
+    for (const id of ['dev', 'dsh-writing', 'dsh-gamedev']) {
       it(`${id} names no datasets / eval / mission row and no evaluation skill`, () => {
         const block = rows(id)
         for (const entry of EVAL_FAMILY_ROWS) expect(block).not.toContain(entry)

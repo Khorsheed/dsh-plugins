@@ -1,0 +1,2 @@
+body { margin: 0; background: #0e1320 url("assets/tile.png") repeat; color: #e8edf7; font: 12px sans-serif }
+#hud { position: absolute; left: 4px; top: 4px; display: flex; gap: 4px; align-items: center }

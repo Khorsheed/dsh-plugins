@@ -237,6 +237,9 @@ export const ALLOWED_EDGES: Readonly<Record<string, ReadonlyArray<string>>> = {
   // chip row and request rows (the panel lands with the client milestone) —
   // the same inlined, zero-runtime source-plane edge.
   'context-lens': ['@khorsheed/dsh-client-ui-panel-kit'],
+  // game → ui-panel-kit: the game tab's panel root, header, tabs and rows
+  // (panel-design convention for every new panel).
+  'game': ['@khorsheed/dsh-client-ui-panel-kit'],
   // room consumes the local-agent delegation facade as an OPTIONAL capability:
   // type-only imports, an optional peer dep, a runtime probe, and tested
   // degradation when the family is absent (the room works with the main agent
