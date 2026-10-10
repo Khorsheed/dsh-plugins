@@ -118,6 +118,9 @@ export type { ReadinessRecord, ReadinessSubject, ReadinessInput, ReadinessUnit }
 export { capabilityRefusal } from './run/readiness.ts'
 export { awaitObservedModel, DEFAULT_READBACK_WAIT_MS } from './run/readback.ts'
 export { EvalReadRefused } from './read.ts'
+/** The target-side evidence producer: the ScopedHomeEvidenceFace's answers, computed where the scoped home lives. */
+export { produceScopedHomeEvidence } from './evidence.ts'
+export type { ProducedScopedHomeEvidence } from './evidence.ts'
 /** The narrow write into one experiment's analysis/ (the analysis draft's door; I5·T39 · G16, T73). */
 export { ANALYSIS_WRITE_PREFIX, EvalWriteRefused, resolveAnalysisWrite, writeAnalysisFile } from './design/analysis-write.ts'
 export type { AnalysisWriteResult, AnalysisWriteTarget } from './design/analysis-write.ts'
