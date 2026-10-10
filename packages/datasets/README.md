@@ -104,6 +104,36 @@ T73 之前每个会话绑一个仓库（`$DSH_HOME/state/datasets/bindings/<sess
 
 从旧绑定迁移是一键的：tab 的「从旧绑定登记」（CLI `import-bindings`）把指向同一仓库的多条绑定合成一条登记，指向已不存在路径的绑定标红跳过；绑定文件本身逐字节不动，重复执行不会重复登记。
 
+## 工作区接入接缝（按实例挂载）
+
+除了 `apply` 的部署缺省挂载，本包还支持另一种消费方式：挂载方在**自己的隔离 Context** 上、用**自己的一套根**直接构造服务实例。包根公开导出消费入口（全部复用既有名字，行为一字不改）：
+
+- **`createDatasetsService(options)`** —— 服务工厂。`options: DatasetsServiceOptions` 收四个根：`registryPath`（登记 JSON 文件）、`bindingsRoot`（旧会话绑定目录，只有一键迁移读它）、`materializedRoot`（物化缓存根）、`proposalsRoot`（登记提案库，缺省取登记文件旁的 `proposals/`），外加可选的 `organizing: OrganizingSetup`（「让 Agent 整理」的预设与新仓库的缺省位置）。
+- **`DatasetsService` / `DatasetScope`** —— 服务面与查询 scope 的类型：每个动词的第一个参数是 scope（`{ repo, ref?, datasets?, layers?, operator? }`）。
+- **`DatasetsRemoteService`** —— 原生 Remote 面（线 namespace `datasets`）。构造函数就是挂载入口：在同一个 Context 上 `ctx.provide('datasets', service)` 之后 `ctx.plugin(DatasetsRemoteService, {})`，同一个服务内核就挂成了 Typert Remote；`DatasetsRemoteConfig` 是它的配置类型（自 T73 起是空对象）。
+
+```ts
+import { createDatasetsService, DatasetsRemoteService, type DatasetsServiceOptions } from '@khorsheed/dsh-datasets'
+
+const options: DatasetsServiceOptions = {
+  registryPath: '/home/user/instance-a/state/registry.json',
+  bindingsRoot: '/home/user/instance-a/state/bindings',
+  materializedRoot: '/home/user/instance-a/state/materialized',
+  proposalsRoot: '/home/user/instance-a/state/proposals',
+}
+const service = createDatasetsService(options)
+ctx.provide('datasets', service)
+ctx.plugin(DatasetsRemoteService, {})
+```
+
+语义与边界：
+
+- **两个实例、两套根，互不相通**：登记、读取、写入检出、物化缓存与提案库全部按实例绑定，不引入任何全局可变状态（`tests/instance-exports.spec.ts` 钉住）。
+- **服务不需要 Agent**：读取是纯 git 对象读取，写入只进登记的 `authoringCheckout`，没有模型执行，也没有后台进程；登记是每个根下一个 JSON 文件。
+- **Remote 没有任何一个动词带 Agent**：全部动词（登记读写、浏览、骨架与导入、提案与更新闸）的参数都是普通请求对象（登记 id + 数据集/题目/路径/commit），没有哪个收 agent 参数，也没有哪个做 agent 实例查找。唯一的宿主探测是 `organizingSetup` 经 `ctx.get` 读 `agentPresets` 的**注册表切片**（`list` / `readDocument` / `defaultId`，T102）——读的是预设文档，不是 agent 实例；读不到（或读到坏的）就降级为 `preset: ''`，会话保留默认预设，绝不抛错。
+- **`apply` 的部署缺省路径不变**：不走工厂的挂载一切照旧——登记文件在 `$DSH_HOME/state/datasets/registry.json`，`resolveStateRoot` / `resolveMaterializedRoot` / `resolveDatasetsHome` 的解析一字不动。工厂是隔离实例的消费入口，不是本地默认路径的新配置口。
+- **两个实例不得共享同一个 `authoringCheckout`**：它是写动词唯一会写的工作树；两个实例把写落进同一棵工作树，就是两个写入者在上面赛跑（插件从不提交，提交与合并仍是人的动作）。每个实例登记各自的检出。
+
 ## 模型工具
 
 **核心行不注册任何模型工具**：下面这九个工具与 `datasets:tools` 提示词段归本包的 `./tool` 组合入口（工具行 `@khorsheed/dsh-datasets/tool`），由 agent preset 按会话授予。授予方式：在目标 preset 的 `agent.cordis.yml` 里加两行——`- id: datasets-tool` 与 `  name: '@khorsheed/dsh-datasets/tool'`（该行可带 `config: { tools: authoring }`）。下面的清单、分组与行为描述自此描述的是**工具行**的工具面；服务、CLI、`/datasets` 与会话 tab 仍归本包。

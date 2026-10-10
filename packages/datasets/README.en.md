@@ -104,6 +104,36 @@ Before T73 each session bound one repository (`$DSH_HOME/state/datasets/bindings
 
 Migrating from bindings is one click: the tab's «从旧绑定登记» (import from bindings; CLI `import-bindings`) folds every binding that points at one repository into one registration and marks bindings whose path no longer exists in red and skips them; the binding files stay byte-identical, and running it again never registers twice.
 
+## The instance-mounting seam
+
+Besides `apply`'s deployment-default mount, this package supports a second consumption form: the mounting side builds a service instance directly on **its own isolated Context** over **its own set of roots**. The package root publicly exports the consumption entries (all existing names, behavior unchanged):
+
+- **`createDatasetsService(options)`** — the service factory. `options: DatasetsServiceOptions` takes the four roots: `registryPath` (the registry JSON file), `bindingsRoot` (the legacy session-binding directory, read only by the one-click import), `materializedRoot` (the materialization cache root), and `proposalsRoot` (the registration proposal store, defaulting to `proposals/` next to the registry file) — plus the optional `organizing: OrganizingSetup` (the preset the organizing session opens on and the default home of new dataset repositories).
+- **`DatasetsService` / `DatasetScope`** — the service face and the query-scope types: every verb's first argument is a scope (`{ repo, ref?, datasets?, layers?, operator? }`).
+- **`DatasetsRemoteService`** — the native Remote face (wire namespace `datasets`). Its constructor is the mounting entry: on the same Context, `ctx.provide('datasets', service)` then `ctx.plugin(DatasetsRemoteService, {})` mounts the same service core as a Typert Remote; `DatasetsRemoteConfig` is its config type (an empty object since T73).
+
+```ts
+import { createDatasetsService, DatasetsRemoteService, type DatasetsServiceOptions } from '@khorsheed/dsh-datasets'
+
+const options: DatasetsServiceOptions = {
+  registryPath: '/home/user/instance-a/state/registry.json',
+  bindingsRoot: '/home/user/instance-a/state/bindings',
+  materializedRoot: '/home/user/instance-a/state/materialized',
+  proposalsRoot: '/home/user/instance-a/state/proposals',
+}
+const service = createDatasetsService(options)
+ctx.provide('datasets', service)
+ctx.plugin(DatasetsRemoteService, {})
+```
+
+The semantics and the boundaries:
+
+- **Two instances, two sets of roots, nothing shared**: the registry, reads, the authoring checkout, the materialization cache and the proposal store all bind to the instance; no global mutable state is introduced (pinned by `tests/instance-exports.spec.ts`).
+- **The service needs no Agent**: reads are pure git-object reads, writes go only into a registration's `authoringCheckout`, and there is no model execution and no background process; the registry is one JSON file per root.
+- **No Remote verb takes an Agent**: every verb (the registry reads and writes, browsing, the skeleton and import gestures, the proposals and the update gate) takes a plain request object (a registration id plus dataset/item/path/commit) — none takes an agent parameter, and none performs an agent-instance lookup. The single host probe is `organizingSetup` reading the `agentPresets` **registry slice** (`list` / `readDocument` / `defaultId`, T102) through `ctx.get` — it reads preset documents, not agent instances; when the slice is missing (or broken) the verb degrades to `preset: ''` — the session keeps its default preset — and never throws.
+- **`apply`'s deployment-default path is unchanged**: a mount that does not go through the factory behaves exactly as before — the registry file lives at `$DSH_HOME/state/datasets/registry.json`, and `resolveStateRoot` / `resolveMaterializedRoot` / `resolveDatasetsHome` resolution is byte-identical. The factory is the consumption entry for isolated instances, not a new configuration door for the local default path.
+- **Two instances must not share one `authoringCheckout`**: it is the only working tree the write verbs touch; two instances writing into the same working tree is two writers racing it (the plugin never commits — committing and merging stay the human's). Each instance registers its own checkout.
+
 ## Model tools
 
 **The core row registers no model tool**: the nine tools below and the `datasets:tools` prompt section belong to this package's `./tool` composition entry (the tool row `@khorsheed/dsh-datasets/tool`), granted per session by an agent preset. To grant it, add `- id: datasets-tool` / `  name: '@khorsheed/dsh-datasets/tool'` to the target preset's `agent.cordis.yml` (that row may carry `config: { tools: authoring }`). The inventory, groups, and behavior prose below describe the **tool row's** tool face from here on; the service, CLI, `/datasets`, and the session tab still belong to this package.
