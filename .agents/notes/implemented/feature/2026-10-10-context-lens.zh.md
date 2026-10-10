@@ -36,4 +36,4 @@ Status: implemented
 
 首次在 main 基线 `84399e6a` 验收时，全仓 build/test 通过，但最后的打包门禁失败：全量 `gen-typert` 把 game 的 `MessageSourceMap` 增补带入 Canvas 诊断声明，被家族边扫描误判为依赖。mainline 已在 `43c56cb9` 修复扫描器（见[修复记录](../bug-fix/2026-10-10-pack-dist-typert-face-exemption.zh.md)）。同步该修复后，`pnpm gate` 以 464 秒通过全部 16 步：全仓构建、测试及 39 个 bundle tarball 验证，其中 Context Lens 137 项、Canvas 620 项、脚本测试 327 项。合并阻塞已解除；冷安装验证仍由 CI 执行。
 
-生产迁移也待处理：`deploy:3080` 有添加/更新路径，没有改名替换选项。支持的流程需在启动 Context Lens 前替换旧依赖、bundle 名单与 override pin；不要手改共享 profile 或同时挂载两个身份。本次未部署、重启、发布 npm 或推送远端。
+生产迁移使用显式 `deploy:3080 --replace OLD=NEW` 流程（[决策](../process/2026-10-10-deploy-package-replacement.zh.md)），禁止两个身份同挂。上线结果在 canary 验证后另行记录。
