@@ -28,14 +28,15 @@ const f = (n: number) => n.toFixed(3)
 /**
  * Audio filtergraph: every kept range of input 0 trimmed and faded, then
  * concatenated, optionally framed by intro (input 1) and outro (next input).
- * Output label [body].
+ * A `bed` input loops under the whole episode at a low fixed level, ducked by
+ * the voice (sidechaincompress, voice as the key). Output label [body].
  */
 export interface AudioFormat {
   sampleRate?: number | undefined
   channels?: number | undefined
 }
 
-export function audioGraph(kept: readonly Range[], opts: { intro?: number; outro?: number; source?: AudioFormat } = {}): string {
+export function audioGraph(kept: readonly Range[], opts: { intro?: number; outro?: number; bed?: { input: number; duration: number }; source?: AudioFormat } = {}): string {
   // Segments keep the source's own format: resampling each one separately
   // loses a few ms at every splice (143 cuts came out 1.0 s short). The music
   // is converted TO the source format so concat accepts it, and the body is
@@ -57,7 +58,15 @@ export function audioGraph(kept: readonly Range[], opts: { intro?: number; outro
     lines.push(`[${opts.outro}:a]aresample=${rate},aformat=sample_rates=${rate}:channel_layouts=${layout}[outro]`)
     parts.push('[outro]')
   }
-  lines.push(`${parts.join('')}concat=n=${parts.length}:v=0:a=1,aresample=48000,aformat=sample_rates=48000:channel_layouts=stereo[body]`)
+  const tail = opts.bed ? '[cat]' : '[body]'
+  lines.push(`${parts.join('')}concat=n=${parts.length}:v=0:a=1,aresample=48000,aformat=sample_rates=48000:channel_layouts=stereo${tail}`)
+  if (opts.bed) {
+    // bed ducked by the voice: the voice is the sidechain key, the bed is compressed under it
+    lines.push(`[${opts.bed.input}:a]aresample=48000,aformat=sample_rates=48000:channel_layouts=stereo,atrim=duration=${f(Math.max(0.1, opts.bed.duration))},volume=0.16[bedvol]`)
+    lines.push(`[cat]asplit=2[bodyA][bodyKey]`)
+    lines.push(`[bedvol][bodyKey]sidechaincompress=threshold=0.02:ratio=6:attack=25:release=500[bedduck]`)
+    lines.push(`[bodyA][bedduck]amix=inputs=2:normalize=0[body]`)
+  }
   return lines.join(';\n')
 }
 
@@ -97,19 +106,21 @@ export function snapToFrames(kept: readonly Range[], videoOffset: number, videoD
  * rounding accumulates); the audio is trimmed on the very same boundaries
  * shifted into reference time. Output labels [v] [body].
  */
-export function videoGraph(frames: readonly Range[], videoOffset: number, size: { w: number; h: number }, subtitles?: string, source?: AudioFormat): string {
+export function videoGraph(frames: readonly Range[], videoOffset: number, size: { w: number; h: number }, subtitles?: string, source?: AudioFormat, bed?: { input: number; duration: number }): string {
   const lines: string[] = []
   const half = 1 / (2 * FPS)
   const expr = balancedSum(frames.map((r) => `gte(t,${f(r.start - half)})*lt(t,${f(r.end - half)})`))
   const subs = subtitles ? `,subtitles=filename='${subtitles.replace(/\\/g, '/').replace(/'/g, "\\'").replace(/:/g, '\\:')}'` : ''
   lines.push(`[1:v]fps=${FPS},select='${expr}',setpts=N/${FPS}/TB,scale=${size.w}:${size.h}:force_original_aspect_ratio=decrease,pad=${size.w}:${size.h}:(ow-iw)/2:(oh-ih)/2,setsar=1${subs}[v]`)
-  lines.push(audioGraph(frames.map((r) => ({ start: r.start + videoOffset, end: r.end + videoOffset })), source ? { source } : {}))
+  lines.push(audioGraph(frames.map((r) => ({ start: r.start + videoOffset, end: r.end + videoOffset })), { ...(source ? { source } : {}), ...(bed ? { bed } : {}) }))
   return lines.join(';\n')
 }
 
 export interface RunExportOptions {
   ffmpeg: string
   inputs: string[]
+  /** Inputs that loop forever (the bed music is usually shorter than the episode). */
+  loopInputs?: number[]
   /** Path for the filter script (graphs can be thousands of lines). */
   scriptPath: string
   graph: string
@@ -125,7 +136,10 @@ export interface RunExportOptions {
 async function runGraph(o: RunExportOptions, extraFilter: string, outArgs: string[], label = 'body'): Promise<string> {
   await writeFile(o.scriptPath, `${o.graph};\n[${label}]${extraFilter}[out]`, 'utf8')
   const args = ['-nostdin', '-y', '-v', 'info', '-stats']
-  for (const i of o.inputs) args.push('-i', i)
+  o.inputs.forEach((i, n) => {
+    if (o.loopInputs?.includes(n)) args.push('-stream_loop', '-1')
+    args.push('-i', i)
+  })
   args.push(await scriptFlag(o.ffmpeg), o.scriptPath, '-map', '[out]', ...o.maps, ...outArgs)
   const res = await runChecked(o.ffmpeg, args, {
     signal: o.signal,
@@ -150,7 +164,10 @@ export async function exportAudio(o: RunExportOptions, target: number): Promise<
 export async function exportVideo(o: RunExportOptions, target: number): Promise<void> {
   await writeFile(o.scriptPath, `${o.graph};\n[body]${loudnormFilter(target).replace(':print_format=json', '')},aresample=48000[aout]`, 'utf8')
   const args = ['-nostdin', '-y', '-v', 'info', '-stats']
-  for (const i of o.inputs) args.push('-i', i)
+  o.inputs.forEach((i, n) => {
+    if (o.loopInputs?.includes(n)) args.push('-stream_loop', '-1')
+    args.push('-i', i)
+  })
   args.push(await scriptFlag(o.ffmpeg), o.scriptPath, '-map', '[v]', '-map', '[aout]', ...o.maps, ...o.codecArgs, o.output)
   await runChecked(o.ffmpeg, args, {
     signal: o.signal,

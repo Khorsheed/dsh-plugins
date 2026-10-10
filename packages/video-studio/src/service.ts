@@ -4,7 +4,8 @@
  * perform. Both faces call the same methods; a panel-originated mutation also
  * appends a PanelEvent so the model learns about it on its next read.
  */
-import { mkdir, open, stat, writeFile } from 'node:fs/promises'
+import { mkdir, open, rm, stat, writeFile } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, extname, join } from 'node:path'
 import { alignEnvelopes, envelope } from './core/align.ts'
@@ -94,6 +95,28 @@ export class VideoStudioService {
   dispose(): void {
     this.disposed = true
     for (const a of this.aborts.values()) a.abort()
+  }
+
+  /**
+   * Delete project caches `cleanupDays` after the last successful export.
+   * project.json (transcript, edits) is kept; the cache holds only
+   * rebuildables — the ASR/proxy WAV, peaks, embeddings, filter scripts.
+   * Best-effort, runs once at boot.
+   */
+  async sweepCaches(now = Date.now()): Promise<number> {
+    await this.loadJobs()
+    const g = await this.store.global()
+    if (!g.cleanupDays || g.cleanupDays <= 0) return 0
+    const cutoff = now - g.cleanupDays * 86_400_000
+    let swept = 0
+    for (const proj of await this.store.listProjects()) {
+      const lastExport = Math.max(0, ...this.jobs.filter((j) => j.projectId === proj.id && j.kind === 'export' && j.state === 'done').map((j) => Date.parse(j.updatedAt)))
+      if (!lastExport || lastExport > cutoff) continue
+      await rm(this.store.cacheDir(proj.id), { recursive: true, force: true })
+      swept++
+    }
+    if (swept) this.logger.info(`[video-studio] 清理了 ${swept} 个已导出工程的缓存`)
+    return swept
   }
 
   // ───────────────────────── toolchain ─────────────────────────
@@ -912,7 +935,7 @@ export class VideoStudioService {
   }
 
   private async runExport(projectId: string, kinds: ExportKind[], progress: (v: number) => void, signal: AbortSignal): Promise<string[]> {
-    const { ffmpeg, burnSubtitles } = await this.requireTools()
+    const { ffmpeg, ffprobe, burnSubtitles } = await this.requireTools()
     const p = await this.mustProject(projectId)
     const ref = p.sources.find((s) => s.id === p.referenceId)
     if (!ref) throw new Error('还没有录音')
@@ -946,18 +969,27 @@ export class VideoStudioService {
         const inputs = [ref.path]
         const intro = lib(p.settings.introMusic)
         const outro = lib(p.settings.outroMusic)
-        const opts: { intro?: number; outro?: number } = {}
+        const opts: { intro?: number; outro?: number; bed?: { input: number; duration: number } } = {}
+        let musicSec = 0
         if (intro) {
           inputs.push(intro)
           opts.intro = inputs.length - 1
+          musicSec += (await probe(ffprobe, intro)).durationSec
         }
         if (outro) {
           inputs.push(outro)
           opts.outro = inputs.length - 1
+          musicSec += (await probe(ffprobe, outro)).durationSec
         }
+        const bed = p.settings.bedMusic ? lib(p.settings.bedMusic) : ''
+        if (bed && existsSync(bed)) {
+          inputs.push(bed)
+          opts.bed = { input: inputs.length - 1, duration: outSec + musicSec }
+        }
+        const loops = opts.bed ? [opts.bed.input] : []
         const path = join(dir, `${base}.mp3`)
         await exportAudio(
-          { ffmpeg, inputs, scriptPath: join(cache, 'audio.filter'), graph: audioGraph(kept, { ...opts, source: ref }), maps: [], codecArgs: ['-c:a', 'libmp3lame', '-b:a', '128k', '-id3v2_version', '3', '-metadata', `title=${p.name}`], output: path, expectedSec: outSec, onProgress: stepProgress, signal },
+          { ffmpeg, inputs, scriptPath: join(cache, 'audio.filter'), graph: audioGraph(kept, { ...opts, source: ref }), loopInputs: loops, maps: [], codecArgs: ['-c:a', 'libmp3lame', '-b:a', '128k', '-id3v2_version', '3', '-metadata', `title=${p.name}`], output: path, expectedSec: outSec + musicSec, onProgress: stepProgress, signal },
           p.settings.audioLoudness,
         )
         outputs.push(path)
@@ -971,6 +1003,9 @@ export class VideoStudioService {
         }
         const path = join(dir, `${base}.mp4`)
         const inputs = [ref.path, video.path]
+        const bed = p.settings.bedMusic ? lib(p.settings.bedMusic) : ''
+        const bedOpt = bed && existsSync(bed) ? { input: inputs.length, duration: outSec } : undefined
+        if (bedOpt) inputs.push(bed)
         const maps: string[] = []
         const codec = ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '160k', '-movflags', '+faststart']
         if (!assPath && cues.length) {
@@ -981,7 +1016,7 @@ export class VideoStudioService {
           codec.push('-c:s', 'mov_text', '-metadata:s:s:0', 'language=chi')
         }
         await exportVideo(
-          { ffmpeg, inputs, scriptPath: join(cache, 'video.filter'), graph: videoGraph(snapToFrames(kept, video.id === ref.id ? 0 : video.offsetSec, video.durationSec), video.id === ref.id ? 0 : video.offsetSec, { w: 1920, h: 1080 }, assPath, ref), maps, codecArgs: codec, output: path, expectedSec: outSec, onProgress: stepProgress, signal },
+          { ffmpeg, inputs, scriptPath: join(cache, 'video.filter'), graph: videoGraph(snapToFrames(kept, video.id === ref.id ? 0 : video.offsetSec, video.durationSec), video.id === ref.id ? 0 : video.offsetSec, { w: 1920, h: 1080 }, assPath, ref, bedOpt), loopInputs: bedOpt ? [bedOpt.input] : [], maps, codecArgs: codec, output: path, expectedSec: outSec, onProgress: stepProgress, signal },
           p.settings.videoLoudness,
         )
         outputs.push(path)

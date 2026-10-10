@@ -31,5 +31,6 @@ export function apply(ctx: Context, config: VideoStudioConfig = {}): void {
   const service = new VideoStudioService(config.stateDir, ctx.logger as unknown as Console)
   ctx.provide('videoStudio', service)
   ctx.effect(() => () => service.dispose(), 'video-studio: jobs')
+  void service.sweepCaches().catch(() => {})
   ctx.plugin(VideoStudioRemoteService, {})
 }

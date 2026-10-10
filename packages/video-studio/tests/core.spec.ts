@@ -216,6 +216,50 @@ describe('speaker consolidation', () => {
   })
 })
 
+describe('bed music and cache sweep', () => {
+  it('audioGraph ducks a bed under the body, and stays plain without one', async () => {
+    const { audioGraph } = await import('../src/media/export.ts')
+    const g = audioGraph([{ start: 0, end: 10 }], { bed: { input: 2, duration: 12 } })
+    expect(g).toContain('[2:a]')
+    expect(g).toContain('sidechaincompress')
+    expect(g).toContain('amix=inputs=2:normalize=0[body]')
+    const plain = audioGraph([{ start: 0, end: 10 }])
+    expect(plain).not.toContain('sidechaincompress')
+    expect(plain).toContain('[body]')
+  })
+
+  it('sweeps only caches of projects exported longer than cleanupDays ago', async () => {
+    const { mkdtempSync, mkdirSync, writeFileSync, existsSync } = await import('node:fs')
+    const { tmpdir } = await import('node:os')
+    const { join } = await import('node:path')
+    const { VideoStudioService } = await import('../src/service.ts')
+    const root = mkdtempSync(join(tmpdir(), 'vs-sweep-'))
+    const svc = new VideoStudioService(root)
+    const now = Date.now()
+    const proj = (id: string): import('../src/core/types.ts').Project => ({
+      id, name: id, showId: null, createdAt: new Date(now - 90 * 86400e3).toISOString(), status: 'editing',
+      referenceId: null, sources: [], speakers: [], transcript: [], edits: [], groups: [], chapters: [], events: [],
+      settings: { ...DEFAULT_SETTINGS }, overrides: [],
+    })
+    const job = (projectId: string, daysAgo: number) => ({
+      id: `j_${projectId}`, projectId, kind: 'export' as const, state: 'done' as const, progress: 1, label: 'x',
+      createdAt: new Date(now - daysAgo * 86400e3).toISOString(), updatedAt: new Date(now - daysAgo * 86400e3).toISOString(),
+    })
+    await svc.store.saveProject(proj('old'))
+    await svc.store.saveProject(proj('fresh'))
+    await svc.store.saveProject(proj('never'))
+    for (const id of ['old', 'fresh', 'never']) {
+      mkdirSync(svc.store.cacheDir(id), { recursive: true })
+      writeFileSync(join(svc.store.cacheDir(id), 'asr.wav'), 'x')
+    }
+    writeFileSync(join(root, 'jobs.json'), JSON.stringify([job('old', 40), job('fresh', 3)]))
+    expect(await svc.sweepCaches(now)).toBe(1)
+    expect(existsSync(svc.store.cacheDir('old'))).toBe(false)
+    expect(existsSync(svc.store.cacheDir('fresh'))).toBe(true)
+    expect(existsSync(svc.store.cacheDir('never'))).toBe(true)
+  })
+})
+
 describe('export graph helpers', () => {
   it('snaps ranges to the frame grid and builds a balanced select sum', async () => {
     const { balancedSum, snapToFrames } = await import('../src/media/export.ts')
