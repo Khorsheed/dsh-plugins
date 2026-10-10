@@ -191,4 +191,8 @@ if (phase === 'l') {
   log('edit', await click('编辑')); await wait(800)
   await shot('z-edit')
 }
+if (phase === 'm') {
+  await openTab('我想做个小游戏')
+  await shot(process.env.NAME || 'h-wide')
+}
 await b.close()

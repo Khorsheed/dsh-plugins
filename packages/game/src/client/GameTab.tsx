@@ -47,7 +47,6 @@ const RefreshIcon = <svg width="16" height="16" viewBox="0 0 16 16" fill="none" 
 const SwitchIcon = <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 5h9l-2-2M13 11H4l2 2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" /></svg>
 const PaletteIcon = <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 2.5a5.5 5.5 0 1 0 0 11c.8 0 1.2-.6 1-1.3-.3-.8.2-1.7 1.1-1.7h1.2a2.2 2.2 0 0 0 2.2-2.2C13.5 5 11 2.5 8 2.5Z" stroke="currentColor" strokeWidth="1.2" /><circle cx="5.5" cy="7" r=".9" fill="currentColor" /><circle cx="8" cy="5" r=".9" fill="currentColor" /><circle cx="10.6" cy="6.3" r=".9" fill="currentColor" /></svg>
 const PlusIcon = <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 3v10M3 8h10" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" /></svg>
-const AskIcon = <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 4.5h10v6H7l-3 2.5v-2.5H3z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" /></svg>
 const ExportIcon = <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 2.5v7M5 6.5l3 3 3-3M3 11v2.5h10V11" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" /></svg>
 
 /** The game tab body. */
@@ -220,7 +219,6 @@ function ProjectWorkbench(p: ViewProps & {
     { id: 'style', label: t('style.change'), icon: PaletteIcon, onSelect: () => { setStyling(!styling) }, pressed: styling },
     { id: 'export', label: t('versions.exportCurrent'), icon: ExportIcon, onSelect: exportCurrent, menuOnly: true },
     { id: 'switch', label: t('switch'), icon: SwitchIcon, onSelect: p.onPickProject, menuOnly: true },
-    { id: 'ask', label: p.ask ? t('nudge.menuOn') : t('nudge.menuOff'), icon: AskIcon, onSelect: p.toggleAsk, menuOnly: true, pressed: p.ask },
     { id: 'new', label: t('switcher.new'), icon: PlusIcon, onSelect: () => { if (insertDraft(t('draft.newProject'))) toast(t('toast.newDrafted')) }, menuOnly: true },
   ]
   const failing = project.lastCheck !== null && !project.lastCheck.ok
@@ -236,10 +234,16 @@ function ProjectWorkbench(p: ViewProps & {
         <Tag tone="quiet">{project.current === null ? t('meta.noVersion') : t('meta.version', { version: project.current.version })}</Tag>
         {project.pending.length > 0 && <Tag tone="outline">{t('meta.pending', { count: project.pending.length })}</Tag>}
       </span>}
-      extra={<span className={css.switch} title={autoConfirm ? t('autoConfirm.onHint') : t('autoConfirm.offHint')}>
-        <Switch checked={autoConfirm} label={t('autoConfirm.label')}
-          onChange={next => { void api.setAutoConfirm(sessionId, project.id, next).then(() => { toast(next ? t('toast.autoOn') : t('toast.autoOff')); refresh() }) }} />
-        <span className={css.switchLabel}>{t('autoConfirm.label')}</span>
+      extra={<span className={css.switches}>
+        <span className={css.switch} title={autoConfirm ? t('autoConfirm.onHint') : t('autoConfirm.offHint')}>
+          <Switch checked={autoConfirm} label={t('autoConfirm.label')}
+            onChange={next => { void api.setAutoConfirm(sessionId, project.id, next).then(() => { toast(next ? t('toast.autoOn') : t('toast.autoOff')); refresh() }) }} />
+          <span className={css.switchLabel}>{t('autoConfirm.label')}</span>
+        </span>
+        <span className={css.switch} title={t('nudge.switchHint')}>
+          <Switch checked={p.ask} label={t('nudge.switch')} onChange={() => { p.toggleAsk() }} />
+          <span className={css.switchLabel}>{t('nudge.switch')}</span>
+        </span>
       </span>}
       actions={actions}
       moreLabel={t('more')}

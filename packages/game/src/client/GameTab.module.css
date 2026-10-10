@@ -58,6 +58,7 @@
 }
 .headChip[data-tone='ok'] { color: var(--g-ok); background: color-mix(in srgb, var(--g-ok) 12%, transparent); }
 .headChip[data-tone='info'] { color: var(--g-accent); background: color-mix(in srgb, var(--g-accent) 12%, transparent); }
+.switches { display: inline-flex; align-items: center; gap: 12px; }
 .switch { display: inline-flex; align-items: center; gap: 6px; font-size: var(--dsh-panel-text-meta, 12px); color: var(--dsw-alias-label-secondary); white-space: nowrap; }
 
 /* project switcher */
