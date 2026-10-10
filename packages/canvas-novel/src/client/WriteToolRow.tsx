@@ -24,6 +24,7 @@ import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import type { ForeshadowOp } from '../types.ts'
 import type { NovelFace } from './contract.ts'
 import { chapterHeading } from './PendingList.tsx'
+import { PLAN_FOCUS } from './ChapterReader.tsx'
 import { useNovelRead } from './use-novel.ts'
 import { asksInTurn, type NovelTurnOwner } from './novel-turn.ts'
 import { writeRowModel, type NovelToolBlock, type WriteRowChapter } from './write-row.ts'
@@ -109,7 +110,7 @@ export function PlanCard({ chapter, live: watched, remote, openPage, chapterPage
   useEffect(() => {
     if (!watched || followed.current || !awaiting || open === undefined) return
     followed.current = true
-    open(canvasId, chapterPage, chapterHeading(t, n, title), String(n))
+    open(canvasId, chapterPage, chapterHeading(t, n, title), `${n}${PLAN_FOCUS}`)
   }, [watched, awaiting, open, canvasId, chapterPage, n, title, t])
   // The live plan wins; the answer's counts stand in until it is read (or when it cannot be).
   const facts: string[] = plan !== undefined
@@ -143,7 +144,7 @@ export function PlanCard({ chapter, live: watched, remote, openPage, chapterPage
           type="button"
           className={css.go}
           data-primary={awaiting || undefined}
-          onClick={() => { open(canvasId, chapterPage, chapterHeading(t, n, title), String(n)) }}
+          onClick={() => { open(canvasId, chapterPage, chapterHeading(t, n, title), `${n}${PLAN_FOCUS}`) }}
         >
           {t(awaiting ? 'card.confirm' : 'card.view')} →
         </button>
