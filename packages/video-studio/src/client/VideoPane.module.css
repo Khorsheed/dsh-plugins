@@ -250,6 +250,8 @@
 .ask { flex-basis: 100%; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; font-size: var(--dsh-panel-text-meta, 12px); color: var(--vs-cut); }
 .ask span { flex: 1; min-width: 160px; }
 
+.seam { display: flex; align-items: center; gap: 10px; color: var(--dsw-alias-label-tertiary); font-size: var(--dsh-panel-text-meta, 12px); margin: 6px 0; }
+.seam::before, .seam::after { content: ''; flex: 1; border-top: 1px dashed var(--dsw-alias-border-l2); }
 .legend { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; font-size: var(--dsh-panel-text-meta, 12px); color: var(--dsw-alias-label-tertiary); }
 .legend span { display: inline-flex; gap: 5px; align-items: center; }
 .swUser, .swAgent, .swProp { display: inline-block; width: 16px; height: 0; border-top: 2px solid var(--vs-cut); }

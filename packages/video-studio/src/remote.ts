@@ -98,7 +98,7 @@ export class VideoStudioRemoteService extends TypertRemoteService<VideoStudioRem
 
   @Remote('importSources')
   async importSources(request: ImportRequest): Promise<ProjectView> {
-    await this.svc.importSources(request.projectId, request.paths, 'user')
+    await this.svc.importSources(request.projectId, request.paths, 'user', request.continuous ?? false)
     return this.svc.view(request.projectId)
   }
 

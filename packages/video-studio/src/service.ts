@@ -9,13 +9,14 @@ import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, extname, join } from 'node:path'
 import { alignEnvelopes, envelope } from './core/align.ts'
+import { mapFramesToVideo, partsDuration, referencePartsOf } from './core/parts.ts'
 import { scanTranscript } from './core/scan.ts'
 import { DEFAULT_SETTINGS, effectiveSettings, resetProjectSetting, saveAsShowDefault, setProjectSetting, type EffectiveSetting } from './core/settings.ts'
 import { buildCues, toAss, toPlainText, toSrt } from './core/subtitles.ts'
 import { displayTokens, findOccurrences } from './core/text.ts'
 import { formatClock, keptRanges, outputDuration, removedRanges, toOutputTime } from './core/timeline.ts'
 import { SCHEMA_VERSION, type Edit, type Job, type JobKind, type JobPayload, type Project, type SettingKey, type Settings, type Show, type Source, type Speaker } from './core/types.ts'
-import { audioGraph, exportAudio, exportVideo, hasFilter, renderClip, snapToFrames, videoGraph, windowOf } from './media/export.ts'
+import { audioGraph, exportAudio, exportVideo, hasFilter, renderClip, videoGraph, windowOf } from './media/export.ts'
 import { MediaError, decodeMono, findBinaries, findBinary, probe, run, versionScore, writeAsrWav } from './media/ffmpeg.ts'
 import { ModelManager, speechModelPaths, type ModelStatus } from './media/models.ts'
 import { runSpeech } from './media/speech.ts'
@@ -103,7 +104,7 @@ export class VideoStudioService {
    * rebuildables — the ASR/proxy WAV, peaks, embeddings, filter scripts.
    * Best-effort, runs once at boot.
    */
-  async sweepCaches(now = Date.now()): Promise<number> {
+  async sweepCaches(now: number = Date.now()): Promise<number> {
     await this.loadJobs()
     const g = await this.store.global()
     if (!g.cleanupDays || g.cleanupDays <= 0) return 0
@@ -365,7 +366,7 @@ export class VideoStudioService {
 
   // ───────────────────────── import ─────────────────────────
 
-  async importSources(projectId: string, paths: string[], origin: Origin): Promise<Project> {
+  async importSources(projectId: string, paths: string[], origin: Origin, continuous: boolean = false): Promise<Project> {
     const { ffprobe } = await this.requireTools()
     const probed: Source[] = []
     const audioLength = new Map<string, number>()
@@ -397,6 +398,20 @@ export class VideoStudioService {
     }
     const p = await this.mutate(projectId, origin, (p) => {
       for (const s of probed) if (!p.sources.some((x) => x.path === s.path)) p.sources.push(s)
+      // 连续录制: the recordings of this batch are legs of one session, butt-joined in path order
+      const legs = continuous ? probed.filter((x) => x.role === 'recording').map((x) => p.sources.find((y) => y.path === x.path) ?? x) : []
+      if (legs.length) {
+        if (p.transcript.length) throw new Error('已有文稿，拼接顺序不能再改了——先清空重来或新建工程')
+        const parts = p.referenceParts ?? (p.referenceId ? [{ sourceId: p.referenceId, startSec: 0 }] : [])
+        let at = parts.length ? parts[parts.length - 1]!.startSec + (p.sources.find((x) => x.id === parts[parts.length - 1]!.sourceId)?.durationSec ?? 0) : 0
+        for (const leg of legs) {
+          if (parts.some((x) => x.sourceId === leg.id)) continue
+          parts.push({ sourceId: leg.id, startSec: at })
+          at += leg.durationSec
+        }
+        if (parts.length) p.referenceParts = parts
+        if (parts[0]) p.referenceId = parts[0].sourceId
+      }
       if (!p.referenceId) {
         const ref = p.sources.find((s) => s.role === 'recording') ?? p.sources.find((s) => s.hasAudio)
         if (ref) {
@@ -626,8 +641,8 @@ export class VideoStudioService {
    */
   async audioChunk(projectId: string, start: number, duration: number): Promise<AudioChunk> {
     const p = await this.mustProject(projectId)
-    const ref = p.sources.find((s) => s.id === p.referenceId)
-    if (!ref) throw new Error('还没有录音')
+    const parts = referencePartsOf(p)
+    if (!parts.length) throw new Error('还没有录音')
     const wav = join(this.store.cacheDir(projectId), 'asr.wav')
     let size = 0
     try {
@@ -635,7 +650,7 @@ export class VideoStudioService {
     } catch {
       const { ffmpeg } = await this.requireTools()
       await mkdir(this.store.cacheDir(projectId), { recursive: true })
-      await writeAsrWav(ffmpeg, ref.path, wav)
+      await writeAsrWav(ffmpeg, parts.map((x) => x.source.path), wav)
       size = (await stat(wav)).size
     }
     const rate = 16000
@@ -664,6 +679,7 @@ export class VideoStudioService {
     lines.push(`工程「${p.name}」(${p.id}) 节目：${view.show?.name ?? '无'} 状态：${p.status}`)
     lines.push(`原始 ${formatClock(view.durationSec)} → 成片 ${formatClock(view.outputSec)}`)
     lines.push(`素材：${p.sources.map((s) => `${basename(s.path)}[${s.role}${s.id === p.referenceId ? ',参考' : ''}${s.offsetSec ? `,偏移${s.offsetSec.toFixed(2)}s` : ''}]`).join('；') || '无'}`)
+    if (p.referenceParts && p.referenceParts.length > 1) lines.push(`参考录音是 ${p.referenceParts.length} 段连续录制拼接而成，编辑时间都在拼接轴上。`)
     lines.push(`说话人：${p.speakers.map((s) => `${s.id}=${s.name || '未命名'}(${formatClock(s.speechSec)}${s.matchScore ? `,声纹${Math.round(s.matchScore * 100)}%` : ''})`).join('；') || '无'}`)
     const pending = p.groups.filter((g) => p.edits.some((e) => e.group === g.id && e.state === 'proposed'))
     if (pending.length) lines.push(`待决提议：${pending.map((g) => `${g.id}「${g.title}」`).join('；')}`)
@@ -706,9 +722,10 @@ export class VideoStudioService {
     const ref = p.sources.find((s) => s.id === p.referenceId)
     if (!ref) throw new Error('还没有录音')
     const to = Math.min(end, start + 30)
-    const kept = raw ? [{ start, end: to }] : windowOf(keptRanges(ref.durationSec, p.edits), start, to)
+    const parts = referencePartsOf(p)
+    const kept = raw ? [{ start, end: to }] : windowOf(keptRanges(referenceDuration(p), p.edits), start, to)
     await mkdir(this.store.cacheDir(p.id), { recursive: true })
-    const buf = await renderClip(ffmpeg, ref.path, kept, join(this.store.cacheDir(p.id), 'clip.filter'))
+    const buf = await renderClip(ffmpeg, parts.map((x) => x.source.path), kept, join(this.store.cacheDir(p.id), 'clip.filter'))
     return `data:audio/mpeg;base64,${buf.toString('base64')}`
   }
 
@@ -826,22 +843,37 @@ export class VideoStudioService {
   private async runAlign(projectId: string, progress: (v: number) => void, signal: AbortSignal): Promise<void> {
     const { ffmpeg } = await this.requireTools()
     const p = await this.mustProject(projectId)
-    const ref = p.sources.find((s) => s.id === p.referenceId)
-    if (!ref) return
+    const parts = referencePartsOf(p)
+    if (!parts.length) return
     const rate = 8000
-    const span = Math.min(180, ref.durationSec)
-    const a = envelope(await decodeMono(ffmpeg, ref.path, rate, 0, span, signal), rate)
-    progress(0.3)
-    const others = p.sources.filter((s) => s.id !== ref.id && s.hasAudio && s.role === 'video')
-    const offsets = new Map<string, number>()
-    for (const [i, s] of others.entries()) {
-      const b = envelope(await decodeMono(ffmpeg, s.path, rate, 0, Math.min(180 + 30, s.durationSec), signal), rate)
-      const res = alignEnvelopes(a, b, 100, 30)
-      offsets.set(s.id, res.offsetSec)
-      progress(0.3 + (0.7 * (i + 1)) / others.length)
+    const videos = p.sources.filter((s) => s.hasAudio && s.role === 'video' && !parts.some((pt) => pt.source.id === s.id))
+    if (!videos.length) return
+    // every leg aligns to the video on its own: the recorder paused between
+    // legs, so the wall-clock gap is not on the joint axis
+    const legEnv = new Map<string, ReturnType<typeof envelope>>()
+    let done = 0
+    const total = parts.length * videos.length
+    const offsets = new Map<string, Record<string, number>>()
+    for (const part of parts) {
+      const span = Math.min(180, part.source.durationSec)
+      const a = envelope(await decodeMono(ffmpeg, part.source.path, rate, 0, span, signal), rate)
+      legEnv.set(part.source.id, a)
+      for (const v of videos) {
+        const b = envelope(await decodeMono(ffmpeg, v.path, rate, 0, Math.min(180 + 30, v.durationSec), signal), rate)
+        const res = alignEnvelopes(a, b, 100, 30)
+        ;(offsets.get(v.id) ?? offsets.set(v.id, {}).get(v.id)!)[part.source.id] = Math.round(res.offsetSec * 1000) / 1000
+        done++
+        progress(0.1 + (0.9 * done) / total)
+      }
     }
     await this.mutate(projectId, 'agent', (q) => {
-      for (const s of q.sources) if (offsets.has(s.id)) s.offsetSec = Math.round(offsets.get(s.id)! * 1000) / 1000
+      for (const v of q.sources) {
+        const per = offsets.get(v.id)
+        if (!per) continue
+        v.partOffsets = per
+        const first = parts[0] ? per[parts[0].source.id] : undefined
+        if (first !== undefined) v.offsetSec = first
+      }
     })
   }
 
@@ -856,12 +888,13 @@ export class VideoStudioService {
       }
     }
     const p = await this.mustProject(projectId)
-    const ref = p.sources.find((s) => s.id === p.referenceId)
-    if (!ref) throw new Error('还没有录音')
+    const parts = referencePartsOf(p)
+    if (!parts.length) throw new Error('还没有录音')
     const cache = this.store.cacheDir(projectId)
     await mkdir(cache, { recursive: true })
     const wav = join(cache, 'asr.wav')
-    await writeAsrWav(ffmpeg, ref.path, wav, (sec) => progress(0.05 * Math.min(1, sec / Math.max(1, ref.durationSec))), signal)
+    const total = partsDuration(parts)
+    await writeAsrWav(ffmpeg, parts.map((x) => x.source.path), wav, (sec) => progress(0.05 * Math.min(1, sec / Math.max(1, total))), signal)
     const g = await this.store.global()
     const show = p.showId ? await this.store.getShow(p.showId) : null
     const voices = []
@@ -943,9 +976,10 @@ export class VideoStudioService {
     await mkdir(dir, { recursive: true })
     const cache = this.store.cacheDir(projectId)
     await mkdir(cache, { recursive: true })
-    const kept = keptRanges(ref.durationSec, p.edits)
-    const removed = removedRanges(ref.durationSec, p.edits)
-    const outSec = outputDuration(ref.durationSec, p.edits)
+    const refDur = referenceDuration(p)
+    const kept = keptRanges(refDur, p.edits)
+    const removed = removedRanges(refDur, p.edits)
+    const outSec = outputDuration(refDur, p.edits)
     const base = p.name.replace(/[\\/:*?"<>|]/g, '_')
     const cues = buildCues(p.transcript, p.speakers, removed, p.edits)
     const outputs: string[] = []
@@ -966,7 +1000,8 @@ export class VideoStudioService {
         await writeFile(path, toPlainText(p.transcript, p.speakers, removed, p.edits), 'utf8')
         outputs.push(path)
       } else if (kind === 'audio') {
-        const inputs = [ref.path]
+        const parts = referencePartsOf(p)
+        const inputs = parts.map((x) => x.source.path)
         const intro = lib(p.settings.introMusic)
         const outro = lib(p.settings.outroMusic)
         const opts: { intro?: number; outro?: number; bed?: { input: number; duration: number } } = {}
@@ -989,7 +1024,7 @@ export class VideoStudioService {
         const loops = opts.bed ? [opts.bed.input] : []
         const path = join(dir, `${base}.mp3`)
         await exportAudio(
-          { ffmpeg, inputs, scriptPath: join(cache, 'audio.filter'), graph: audioGraph(kept, { ...opts, source: ref }), loopInputs: loops, maps: [], codecArgs: ['-c:a', 'libmp3lame', '-b:a', '128k', '-id3v2_version', '3', '-metadata', `title=${p.name}`], output: path, expectedSec: outSec + musicSec, onProgress: stepProgress, signal },
+          { ffmpeg, inputs, scriptPath: join(cache, 'audio.filter'), graph: audioGraph(kept, { ...opts, source: parts[0]?.source ?? ref, refInputs: parts.length }), loopInputs: loops, maps: [], codecArgs: ['-c:a', 'libmp3lame', '-b:a', '128k', '-id3v2_version', '3', '-metadata', `title=${p.name}`], output: path, expectedSec: outSec + musicSec, onProgress: stepProgress, signal },
           p.settings.audioLoudness,
         )
         outputs.push(path)
@@ -1002,7 +1037,8 @@ export class VideoStudioService {
           await writeFile(assPath, toAss(cues, p.settings.subtitleStyle), 'utf8')
         }
         const path = join(dir, `${base}.mp4`)
-        const inputs = [ref.path, video.path]
+        const parts = referencePartsOf(p)
+        const inputs = [...parts.map((x) => x.source.path), video.path]
         const bed = p.settings.bedMusic ? lib(p.settings.bedMusic) : ''
         const bedOpt = bed && existsSync(bed) ? { input: inputs.length, duration: outSec } : undefined
         if (bedOpt) inputs.push(bed)
@@ -1016,7 +1052,7 @@ export class VideoStudioService {
           codec.push('-c:s', 'mov_text', '-metadata:s:s:0', 'language=chi')
         }
         await exportVideo(
-          { ffmpeg, inputs, scriptPath: join(cache, 'video.filter'), graph: videoGraph(snapToFrames(kept, video.id === ref.id ? 0 : video.offsetSec, video.durationSec), video.id === ref.id ? 0 : video.offsetSec, { w: 1920, h: 1080 }, assPath, ref, bedOpt), loopInputs: bedOpt ? [bedOpt.input] : [], maps, codecArgs: codec, output: path, expectedSec: outSec, onProgress: stepProgress, signal },
+          { ffmpeg, inputs, scriptPath: join(cache, 'video.filter'), graph: videoGraph(mapFramesToVideo(kept, parts, video), { w: 1920, h: 1080 }, assPath, parts[0]?.source ?? ref, bedOpt, parts.length), loopInputs: bedOpt ? [bedOpt.input] : [], maps, codecArgs: codec, output: path, expectedSec: outSec, onProgress: stepProgress, signal },
           p.settings.videoLoudness,
         )
         outputs.push(path)
@@ -1076,7 +1112,7 @@ function applyReplacements(p: Project, origin: Origin): void {
 }
 
 export function referenceDuration(p: Project): number {
-  return p.sources.find((s) => s.id === p.referenceId)?.durationSec ?? 0
+  return partsDuration(referencePartsOf(p))
 }
 
 function summarize(p: Project): ProjectSummary {

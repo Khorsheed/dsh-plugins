@@ -90,17 +90,20 @@ export function defineVideoTools(svc: VideoStudioService) {
     name: 'video_import',
     description:
       'Add media files to the project by absolute host path (files stay where they are). The first audio file becomes the reference recording; '
-      + 'video files are aligned to it by their sound. Starts speaker separation + transcription in the background (minutes for an hour of audio; '
-      + 'speech models download on first use). Check progress with video_read.',
+      + 'video files are aligned to it by their sound. `continuous`: the recordings in this batch are legs of ONE session (the recorder was paused '
+      + 'and resumed) — they are butt-joined in path order into one reference, and each leg is aligned to the video separately. '
+      + 'Starts speaker separation + transcription in the background (minutes for an hour of audio; speech models download on first use). '
+      + 'Check progress with video_read.',
     parameters: {
-      paths: { type: 'array', required: true, items: { type: 'string' }, description: 'Absolute paths (~ allowed).' },
+      paths: { type: 'array', required: true, items: { type: 'string' }, description: 'Absolute paths (~ allowed). With continuous: legs in recording order.' },
+      continuous: { type: 'boolean', description: 'The recordings are legs of one continuous session, joined in path order. Only before transcription.' },
       projectId: { type: 'string', description: 'Defaults to the project bound to this session.' },
     },
     output: text,
-    async execute(args: { paths: string[]; projectId?: string }, exec: ExecLike): Promise<string> {
+    async execute(args: { paths: string[]; projectId?: string; continuous?: boolean }, exec: ExecLike): Promise<string> {
       try {
         const id = await resolveProject(svc, exec, args.projectId)
-        const p = await svc.importSources(id, args.paths ?? [], 'agent')
+        const p = await svc.importSources(id, args.paths ?? [], 'agent', args.continuous ?? false)
         return `已导入：${p.sources.map((s) => `${basename(s.path)}（${s.role}，${formatClock(s.durationSec)}）`).join('；')}。分人与转写已排队。`
       } catch (e) {
         return fail('video_import', e)

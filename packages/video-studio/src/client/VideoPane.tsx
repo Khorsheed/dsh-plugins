@@ -304,14 +304,17 @@ function SourcesTab({ p, v, o, act, report, player, reload }: { p: VideoPaneProp
   const { t } = p
   const project = v.project
   const [paths, setPaths] = useState('')
+  const [continuous, setContinuous] = useState(false)
   const [busy, setBusy] = useState(false)
+  const partIndex = new Map((project.referenceParts ?? []).map((pt, i) => [pt.sourceId, i + 1]))
   const doImport = async () => {
     const list = paths.split('\n').map((s) => s.trim()).filter(Boolean)
     if (!list.length) return
     setBusy(true)
-    await act(() => p.importSources({ projectId: project.id, paths: list }))
+    await act(() => p.importSources({ projectId: project.id, paths: list, continuous }))
     setBusy(false)
     setPaths('')
+    setContinuous(false)
   }
   return (
     <>
@@ -322,7 +325,8 @@ function SourcesTab({ p, v, o, act, report, player, reload }: { p: VideoPaneProp
         <div key={s.id} className={css.asset}>
           <span className={css.dot} data-role={s.role} />
           <span className={css.rowMain}>
-            <b>{s.id === project.referenceId ? (s.hasVideo ? t('sources.referenceVideo') : t('sources.reference')) : s.role === 'video' ? t('sources.video') : t('sources.recording')}</b>
+            <b>{s.id === project.referenceId && !partIndex.size ? (s.hasVideo ? t('sources.referenceVideo') : t('sources.reference')) : s.role === 'video' ? t('sources.video') : t('sources.recording')}</b>
+            {partIndex.has(s.id) && <span className={css.tag}>{t('sources.part', { n: String(partIndex.get(s.id)) })}</span>}
             <small title={s.path}>{basename(s.path)}</small>
           </span>
           <span className={css.meta}>{formatClock(s.durationSec)}{s.width ? ` · ${s.height}p` : ''}</span>
@@ -333,6 +337,10 @@ function SourcesTab({ p, v, o, act, report, player, reload }: { p: VideoPaneProp
         <textarea id="vs-import-paths" className={css.textarea} rows={2} value={paths} placeholder={t('sources.importPlaceholder')} onChange={(e) => setPaths(e.target.value)} />
       </label>
       <div className={css.actions}>
+        <label className={css.check} title={project.transcript.length ? t('sources.continuousLocked') : undefined}>
+          <input type="checkbox" checked={continuous} disabled={project.transcript.length > 0} onChange={(e) => setContinuous(e.target.checked)} />
+          {t('sources.continuous')}
+        </label>
         <span className={css.muted}>{t('sources.importHint')}</span>
         <button type="button" className={css.primary} disabled={busy || !paths.trim()} onClick={() => void doImport()}>{t('sources.import')}</button>
       </div>

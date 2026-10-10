@@ -57,6 +57,13 @@ export interface Show {
 
 export type SourceRole = 'recording' | 'video' | 'music' | 'sfx'
 
+/** One leg of a continuous recording that was paused and resumed. */
+export interface ReferencePart {
+  sourceId: string
+  /** Where this leg starts on the joint reference axis (seconds). */
+  startSec: number
+}
+
 export interface Source {
   id: string
   /** Absolute host path; files stay where they are. */
@@ -65,8 +72,10 @@ export interface Source {
   durationSec: number
   hasAudio: boolean
   hasVideo: boolean
-  /** Seconds to add to this source's time to get reference time (video alignment). */
+  /** Seconds to add to this source's time to get reference time (video alignment, single-part reference). */
   offsetSec: number
+  /** Video with a multi-part reference: part sourceId → seconds to add to that part's local time. */
+  partOffsets?: Record<string, number> | undefined
   width?: number | undefined
   height?: number | undefined
   sampleRate?: number | undefined
@@ -163,6 +172,8 @@ export interface Project {
   overrides: SettingKey[]
   /** The source whose timeline every edit lives on. */
   referenceId: string | null
+  /** Set when the reference is several legs of one continuous recording, in order. */
+  referenceParts?: ReferencePart[] | undefined
   sources: Source[]
   speakers: Speaker[]
   transcript: Segment[]

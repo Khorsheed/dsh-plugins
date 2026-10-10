@@ -30,6 +30,8 @@ export interface CreateShowRequest {
 
 export interface ImportRequest extends ProjectRef {
   paths: string[]
+  /** The recordings in this batch are legs of one continuous session (pause → resume), butt-joined in path order. */
+  continuous?: boolean
 }
 
 export interface CutRequest extends ProjectRef {

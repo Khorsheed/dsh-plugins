@@ -1,4 +1,5 @@
 import { writeFile } from 'node:fs/promises'
+import type { FrameMap } from '../core/parts.ts'
 import type { Range } from '../core/timeline.ts'
 import { loudnormFilter, parseLoudnorm, parseProgressTime, run, runChecked, versionScore, type LoudnessMeasure } from './ffmpeg.ts'
 
@@ -36,7 +37,7 @@ export interface AudioFormat {
   channels?: number | undefined
 }
 
-export function audioGraph(kept: readonly Range[], opts: { intro?: number; outro?: number; bed?: { input: number; duration: number }; source?: AudioFormat } = {}): string {
+export function audioGraph(kept: readonly Range[], opts: { intro?: number; outro?: number; bed?: { input: number; duration: number }; source?: AudioFormat; refInputs?: number } = {}): string {
   // Segments keep the source's own format: resampling each one separately
   // loses a few ms at every splice (143 cuts came out 1.0 s short). The music
   // is converted TO the source format so concat accepts it, and the body is
@@ -44,10 +45,24 @@ export function audioGraph(kept: readonly Range[], opts: { intro?: number; outro
   const rate = opts.source?.sampleRate ?? 48000
   const layout = (opts.source?.channels ?? 2) === 1 ? 'mono' : 'stereo'
   const lines: string[] = []
+  // a multi-leg reference: the leading inputs are the legs, butt-joined first
+  const legs = opts.refInputs ?? 1
+  let refLabel = '0:a'
+  if (legs > 1) {
+    for (let n = 0; n < legs; n++) lines.push(`[${n}:a]aresample=${rate},aformat=sample_rates=${rate}:channel_layouts=${layout}[p${n}]`)
+    lines.push(`${Array.from({ length: legs }, (_, n) => `[p${n}]`).join('')}concat=n=${legs}:v=0:a=1[ref]`)
+    refLabel = 'ref'
+  }
+  // the implicit split ffmpeg inserts for a reused label drops later legs of a
+  // concat — split the joined reference explicitly when several ranges consume it
+  if (legs > 1 && kept.length > 1) {
+    lines.push(`[ref]asplit=${kept.length}${kept.map((_, i) => `[r${i}]`).join('')}`)
+  }
   kept.forEach((r, i) => {
+    const src = legs > 1 && kept.length > 1 ? `r${i}` : refLabel
     const len = r.end - r.start
     const fade = Math.min(FADE, len / 4)
-    lines.push(`[0:a]atrim=start=${f(r.start)}:end=${f(r.end)},asetpts=PTS-STARTPTS,afade=t=in:d=${f(fade)},afade=t=out:st=${f(len - fade)}:d=${f(fade)}[a${i}]`)
+    lines.push(`[${src}]atrim=start=${f(r.start)}:end=${f(r.end)},asetpts=PTS-STARTPTS,afade=t=in:d=${f(fade)},afade=t=out:st=${f(len - fade)}:d=${f(fade)}[a${i}]`)
   })
   const parts = kept.map((_, i) => `[a${i}]`)
   if (opts.intro !== undefined) {
@@ -84,35 +99,20 @@ export function balancedSum(terms: readonly string[]): string {
 }
 
 /**
- * Kept ranges snapped to the output frame grid (in VIDEO time), so a range's
- * audio and picture have exactly the same length. Without the snap every
- * splice rounds the picture up to a whole frame: 143 cuts on a variable-
- * frame-rate phone recording drifted the picture 0.77 s past the audio.
- */
-export function snapToFrames(kept: readonly Range[], videoOffset: number, videoDuration: number, fps = FPS): Range[] {
-  const out: Range[] = []
-  for (const r of kept) {
-    const vs = Math.max(0, Math.round((r.start - videoOffset) * fps) / fps)
-    const ve = Math.min(Math.floor(videoDuration * fps) / fps, Math.round((r.end - videoOffset) * fps) / fps)
-    if (ve - vs >= 1 / fps) out.push({ start: vs, end: ve })
-  }
-  return out
-}
-
-/**
  * Video+audio filtergraph: input 0 is the recording (audio), input 1 the
  * video; `frames` are snapToFrames output (video time). The picture is made
  * constant-rate first and frames are SELECTED on the grid (a count, so no
  * rounding accumulates); the audio is trimmed on the very same boundaries
  * shifted into reference time. Output labels [v] [body].
  */
-export function videoGraph(frames: readonly Range[], videoOffset: number, size: { w: number; h: number }, subtitles?: string, source?: AudioFormat, bed?: { input: number; duration: number }): string {
+export function videoGraph(frames: readonly FrameMap[], size: { w: number; h: number }, subtitles: string | undefined, source: AudioFormat | undefined, bed: { input: number; duration: number } | undefined, refInputs = 1): string {
   const lines: string[] = []
   const half = 1 / (2 * FPS)
-  const expr = balancedSum(frames.map((r) => `gte(t,${f(r.start - half)})*lt(t,${f(r.end - half)})`))
+  const expr = balancedSum(frames.map((r) => `gte(t,${f(r.video.start - half)})*lt(t,${f(r.video.end - half)})`))
   const subs = subtitles ? `,subtitles=filename='${subtitles.replace(/\\/g, '/').replace(/'/g, "\\'").replace(/:/g, '\\:')}'` : ''
-  lines.push(`[1:v]fps=${FPS},select='${expr}',setpts=N/${FPS}/TB,scale=${size.w}:${size.h}:force_original_aspect_ratio=decrease,pad=${size.w}:${size.h}:(ow-iw)/2:(oh-ih)/2,setsar=1${subs}[v]`)
-  lines.push(audioGraph(frames.map((r) => ({ start: r.start + videoOffset, end: r.end + videoOffset })), { ...(source ? { source } : {}), ...(bed ? { bed } : {}) }))
+  // the video input sits after the reference legs
+  lines.push(`[${refInputs}:v]fps=${FPS},select='${expr}',setpts=N/${FPS}/TB,scale=${size.w}:${size.h}:force_original_aspect_ratio=decrease,pad=${size.w}:${size.h}:(ow-iw)/2:(oh-ih)/2,setsar=1${subs}[v]`)
+  lines.push(audioGraph(frames.map((r) => r.ref), { ...(source ? { source } : {}), ...(bed ? { bed } : {}), refInputs }))
   return lines.join(';\n')
 }
 
@@ -179,10 +179,13 @@ export async function exportVideo(o: RunExportOptions, target: number): Promise<
 }
 
 /** Short MP3 preview of a reference-time window with cuts applied (for ▶ in the panel). */
-export async function renderClip(ffmpeg: string, input: string, kept: readonly Range[], scriptPath: string): Promise<Buffer> {
+export async function renderClip(ffmpeg: string, inputs: string[], kept: readonly Range[], scriptPath: string): Promise<Buffer> {
   if (!kept.length) return Buffer.alloc(0)
-  await writeFile(scriptPath, `${audioGraph(kept)};\n[body]anull[out]`, 'utf8')
-  const res = await runChecked(ffmpeg, ['-nostdin', '-v', 'error', '-i', input, await scriptFlag(ffmpeg), scriptPath, '-map', '[out]', '-ac', '1', '-c:a', 'libmp3lame', '-b:a', '64k', '-f', 'mp3', 'pipe:1'])
+  await writeFile(scriptPath, `${audioGraph(kept, { refInputs: inputs.length })};\n[body]anull[out]`, 'utf8')
+  const args = ['-nostdin', '-v', 'error']
+  for (const i of inputs) args.push('-i', i)
+  args.push(await scriptFlag(ffmpeg), scriptPath, '-map', '[out]', '-ac', '1', '-c:a', 'libmp3lame', '-b:a', '64k', '-f', 'mp3', 'pipe:1')
+  const res = await runChecked(ffmpeg, args)
   return res.stdout
 }
 

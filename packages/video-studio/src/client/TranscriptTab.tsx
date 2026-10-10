@@ -5,7 +5,7 @@
  * words to cut or correct them, find a keyword to cut or replace every hit.
  * Model cuts and the user's cuts are drawn differently.
  */
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ChipRow } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
 import { displayTokens, findOccurrences } from '../core/text.ts'
 import { formatClock, isRemoved, keptRanges, removedRanges, toOutputTime, toReferenceTime, type Range } from '../core/timeline.ts'
@@ -92,6 +92,8 @@ export function TranscriptTab({ p, v, act }: { p: VideoPaneProps; v: ProjectView
   const proposed = useMemo(() => edits.filter((e) => e.state === 'proposed'), [edits])
   const appliedCuts = useMemo(() => edits.filter((e) => e.state === 'applied' && (e.kind === 'cut' || e.kind === 'shorten')), [edits])
   const speakers = useMemo(() => new Map(project.speakers.map((s) => [s.id, s])), [project.speakers])
+  // legs of a continuous recording: joint-axis times where a new leg starts
+  const seams = useMemo(() => (project.referenceParts ?? []).slice(1).map((pt) => pt.startSec), [project.referenceParts])
   const groups = useMemo(() => project.groups.filter((g) => proposed.some((e) => e.group === g.id)), [project.groups, proposed])
   const hits = useMemo(() => (finding ? findOccurrences(project.transcript, edits, query, { includeRemoved: view === 'source' }) : []), [finding, project.transcript, edits, query, view])
 
@@ -286,13 +288,20 @@ export function TranscriptTab({ p, v, act }: { p: VideoPaneProps; v: ProjectView
       )}
 
       <div ref={listRef} className={css.list} onMouseUp={readSelection}>
-        {segs.slice(0, limit).map((seg) => (
-          <Paragraph key={seg.id} t={t} view={view} project={project} seg={seg} sp={speakers.get(seg.speakerId)} removed={removed} appliedCuts={appliedCuts}
-            proposed={proposed} hits={hits} now={now} active={seg.id === activeId} playing={playing} edits={edits}
-            onCut={(start, end, cut) => void act(() => p.setCut({ projectId: project.id, start, end, cut }))}
-            onPlay={(at) => playFrom(at)}
-            onReassign={(speakerId) => void act(() => p.reassignSegment({ projectId: project.id, segmentId: seg.id, speakerId }))} />
-        ))}
+        {segs.slice(0, limit).map((seg, i, arr) => {
+          const prev = arr[i - 1]
+          const seam = seams.find((t) => t < seg.end + EPS && (!prev || prev.end <= t + EPS))
+          return (
+            <Fragment key={seg.id}>
+              {seam !== undefined && <div className={css.seam}><span>{t('transcript.seam', { n: String(seams.indexOf(seam) + 2) })}</span></div>}
+              <Paragraph t={t} view={view} project={project} seg={seg} sp={speakers.get(seg.speakerId)} removed={removed} appliedCuts={appliedCuts}
+                proposed={proposed} hits={hits} now={now} active={seg.id === activeId} playing={playing} edits={edits}
+                onCut={(start, end, cut) => void act(() => p.setCut({ projectId: project.id, start, end, cut }))}
+                onPlay={(at) => playFrom(at)}
+                onReassign={(speakerId) => void act(() => p.reassignSegment({ projectId: project.id, segmentId: seg.id, speakerId }))} />
+            </Fragment>
+          )
+        })}
         {segs.length > limit && <div ref={sentinel} className={css.muted}>{t('state.loading')}</div>}
         {sel && selPos && (
           <div className={css.bubble} style={{ left: selPos.x, top: selPos.y }} data-below={selPos.below || undefined}>

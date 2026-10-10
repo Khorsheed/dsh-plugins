@@ -152,9 +152,19 @@ export async function decodeMono(ffmpeg: string, path: string, rate: number, sta
   return new Float32Array(buf.buffer, buf.byteOffset, Math.floor(buf.byteLength / 4)).slice()
 }
 
-/** 16 kHz mono 16-bit WAV — the ASR / diarization input. */
-export async function writeAsrWav(ffmpeg: string, path: string, out: string, onProgress?: (sec: number) => void, signal?: AbortSignal): Promise<void> {
-  await must(ffmpeg, ['-v', 'error', '-stats', '-nostdin', '-y', '-i', path, '-vn', '-ac', '1', '-ar', '16000', '-c:a', 'pcm_s16le', out], {
+/** 16 kHz mono 16-bit WAV — the ASR / diarization input. Several paths are the legs of a continuous recording, butt-joined. */
+export async function writeAsrWav(ffmpeg: string, path: string | string[], out: string, onProgress?: (sec: number) => void, signal?: AbortSignal): Promise<void> {
+  const paths = Array.isArray(path) ? path : [path]
+  const args = ['-v', 'error', '-stats', '-nostdin', '-y']
+  for (const one of paths) args.push('-i', one)
+  if (paths.length > 1) {
+    const legs = paths.map((_, i) => `[${i}:a]aresample=16000,aformat=sample_rates=16000:channel_layouts=mono[l${i}]`).join(';')
+    args.push('-filter_complex', `${legs};${paths.map((_, i) => `[l${i}]`).join('')}concat=n=${paths.length}:v=0:a=1[o]`, '-map', '[o]')
+  } else {
+    args.push('-vn')
+  }
+  args.push('-ac', '1', '-ar', '16000', '-c:a', 'pcm_s16le', out)
+  await must(ffmpeg, args, {
     signal,
     onStderr: (s) => {
       const t = parseProgressTime(s)

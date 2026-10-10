@@ -228,6 +228,18 @@ describe('bed music and cache sweep', () => {
     expect(plain).toContain('[body]')
   })
 
+  it('splits a multi-leg reference explicitly when several kept ranges consume it', async () => {
+    const { audioGraph } = await import('../src/media/export.ts')
+    const g = audioGraph([{ start: 0, end: 10 }, { start: 20, end: 30 }], { refInputs: 2 })
+    expect(g).toContain('concat=n=2:v=0:a=1[ref]')
+    expect(g).toContain('asplit=2[r0][r1]')
+    expect(g).toContain('[r0]atrim=start=0.000')
+    expect(g).toContain('[r1]atrim=start=20.000')
+    // one consumer needs no split
+    const one = audioGraph([{ start: 0, end: 10 }], { refInputs: 2 })
+    expect(one).not.toContain('asplit')
+  })
+
   it('sweeps only caches of projects exported longer than cleanupDays ago', async () => {
     const { mkdtempSync, mkdirSync, writeFileSync, existsSync } = await import('node:fs')
     const { tmpdir } = await import('node:os')
@@ -262,12 +274,37 @@ describe('bed music and cache sweep', () => {
 
 describe('export graph helpers', () => {
   it('snaps ranges to the frame grid and builds a balanced select sum', async () => {
-    const { balancedSum, snapToFrames } = await import('../src/media/export.ts')
+    const { balancedSum } = await import('../src/media/export.ts')
+    const { mapFramesToVideo } = await import('../src/core/parts.ts')
     expect(balancedSum(['a', 'b', 'c'])).toBe('(a+(b+c))')
     expect(balancedSum([])).toBe('0')
-    const snapped = snapToFrames([{ start: 1.01, end: 2.02 }, { start: 3, end: 3.01 }], -0.42, 100)
+    const src = (id: string, durationSec: number, offsetSec = 0): import('../src/core/types.ts').Source => ({
+      id, path: id, role: 'recording', durationSec, hasAudio: true, hasVideo: false, offsetSec,
+    })
+    const parts = [{ source: src('a', 100), startSec: 0 }]
+    const video = { ...src('v', 100, -0.42), hasVideo: true }
+    const snapped = mapFramesToVideo([{ start: 1.01, end: 2.02 }, { start: 3, end: 3.01 }], parts, video)
     expect(snapped).toHaveLength(1)
-    expect(snapped[0]!.start * 30).toBeCloseTo(Math.round(snapped[0]!.start * 30), 9)
-    expect((snapped[0]!.end - snapped[0]!.start) * 30).toBeCloseTo(Math.round((snapped[0]!.end - snapped[0]!.start) * 30), 9)
+    expect(snapped[0]!.video.start * 30).toBeCloseTo(Math.round(snapped[0]!.video.start * 30), 9)
+    expect((snapped[0]!.video.end - snapped[0]!.video.start) * 30).toBeCloseTo(Math.round((snapped[0]!.video.end - snapped[0]!.video.start) * 30), 9)
+    // ref time translates back by the same offset
+    expect(snapped[0]!.ref.start - snapped[0]!.video.start).toBeCloseTo(0.42, 6)
+  })
+
+  it('splits kept ranges at leg seams and maps each piece with its own video offset', async () => {
+    const { mapFramesToVideo, partsDuration, seamTimes } = await import('../src/core/parts.ts')
+    const src = (id: string, durationSec: number): import('../src/core/types.ts').Source => ({
+      id, path: id, role: 'recording', durationSec, hasAudio: true, hasVideo: false, offsetSec: 0,
+    })
+    const parts = [{ source: src('a', 10), startSec: 0 }, { source: src('b', 10), startSec: 10 }]
+    expect(partsDuration(parts)).toBe(20)
+    expect(seamTimes(parts)).toEqual([10])
+    // the camera kept rolling during the pause: leg b starts 25 s into the video
+    const video = { ...src('v', 100), hasVideo: true, partOffsets: { a: 0, b: 25 } }
+    const frames = mapFramesToVideo([{ start: 8, end: 12 }], parts, video)
+    expect(frames).toHaveLength(2)
+    expect(frames[0]!.video).toEqual({ start: 8, end: 10 })
+    expect(frames[1]!.video).toEqual({ start: 25, end: 27 })
+    expect(frames[1]!.ref).toEqual({ start: 10, end: 12 })
   })
 })
