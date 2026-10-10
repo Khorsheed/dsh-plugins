@@ -6,8 +6,7 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding-right: 4px;
-  padding-bottom: 12px;
+  padding: 14px 16px 28px;
 }
 
 .timeSummary {
@@ -324,3 +323,7 @@
 .legend { display: flex; flex-wrap: wrap; gap: 5px 12px; margin-bottom: 8px; font-size: var(--dsh-panel-text-meta, 11px); color: var(--dsw-alias-label-secondary); }
 .legend > span { display: inline-flex; align-items: center; gap: 4px; }
 .dot { display: inline-block; }
+
+@container dsh-panel (max-width: 560px) {
+  .scroll { padding: 12px 10px 24px; }
+}

@@ -11,14 +11,14 @@
 
 ## 两个视角
 
-- **请求**：轮次步进和可拖动的会话走势选择请求。详情依次为真实缓存命中/未命中与精确前缀差异、新增输入与捕获输出、system/tools/history/added 构成。可展开逐字原文，或筛选全文相同且至少 40 字符的重复条目。长输出展开后仍限高。
+- **请求**：轮次步进和可拖动的会话走势选择请求。详情依次为真实缓存命中/未命中与精确前缀差异、新增输入与捕获输出、system/tools/history/added 构成。可展开逐字原文，或筛选全文相同且至少 40 字符的重复条目。重复字符数只计多余副本；类别和重复筛选不改变分组总量或本次交换。输入预览、思考和工具参数直接可见，展开仍限高。右上角 `{ }` 按钮切换详情 JSON，保留请求列表与指标；没有底部工具栏。
 - **耗时**：四格展示所选 agent 的总耗时、模型、工具执行和间隙。独立泳道可跳到请求。工具表可按调用/报错/思考/参数/执行排序，非工具表展开到各次请求及缓存率。两表加总为实际经过时间；并发区间分摊且标注，请求内余量与请求间隙分开。
 
 每次委派独立一个 chip。主对话不重复累加已包含在委派执行中的子 agent 模型时间，无请求的失败运行仍可见。
 
 ## 测量口径
 
-- 分段大小 = **精确字符数**（宿主不暴露分段级 token 数）；请求级 token 总量 = **真实 provider usage**（含 `cacheReadTokens` 实测缓存命中）。面板页脚标注此口径。
+- 分段大小 = **精确字符数**（宿主不暴露分段级 token 数）；请求级 token 总量 = **真实 provider usage**（含 `cacheReadTokens` 实测缓存命中）。构成区的信息提示标注此口径。
 - 历史/新增切分 = 对同一 scope 内相邻请求做消息级 diff（durable id 优先，无 id 用内容哈希）。
 
 ## 工作原理
@@ -33,7 +33,7 @@
 
 **子 agent 覆盖**：`subagent_dsh` one-shot 是独立子进程（SDK spawn），父进程瀑布看不到它的请求——这类运行从**子会话落盘日志**重建（消息/usage/耗时齐全；one-shot 的 system 原文与工具定义不落日志，面板显示诚实空态，不伪造）。进程内 subagent provider 的请求与主对话同保真度。
 
-数据只进内存（可配置），不写会话日志、不落盘：每会话最近 30 个 turn；历史回溯另占每会话 500 次请求的上限；全部会话的明细文本合计受一个全局字符预算约束（默认约 150MB——明细全文才是内存大头）。预算挤压时最旧的**回溯** turn 先淘汰，实采内容永不被回溯压力挤掉；被预算裁掉的旧 turn 会在页脚标注，空间释放后的下一次查询自动补齐。
+数据只进内存（可配置），不写会话日志、不落盘：每会话最近 30 个 turn；历史回溯另占每会话 500 次请求的上限；全部会话的明细文本合计受一个全局字符预算约束（默认约 150MB——明细全文才是内存大头）。预算挤压时最旧的**回溯** turn 先淘汰，实采内容永不被回溯压力挤掉；被预算裁掉的旧 turn 会在轮次导航区标注，空间释放后的下一次查询自动补齐。
 
 ## 工作区接入接缝（服务端消费）
 
@@ -58,7 +58,7 @@ const { turns, backfill, generation, authorizedScopes } =
 
 - npm 发布线（`@deepseek-ai/dsh@0.1.7-rc.1`）：✅ 完整——右栏页型 tab 自 0.1.5 起存在（`minHost` 钉在 0.1.5-rc.1），turn 动作行槽 `conversation.chat.assistant-actions` 自 0.1.7-rc.1 起存在；0.1.5–0.1.6 宿主上动作行图标静默缺席，只剩会话头部入口（所有注册走 `ctx.slots.inject`，缺席位不炸 boot）。
 - 源码线（deepseek-harness master）：✅（verifiedHost: 0.2.0-rc.1）。
-- **wire body 视图是 0.1.2+ 探测增强**：字节级请求体依赖 `deepseekLlmApiExtensions.prepare`（且仅 deepseek adapter），探测不到时底部该视图灰显，主功能不受影响。
+- **JSON 展示捕获的组装内容**，不是 adapter 投影后的 wire 字节；未实现的 wire body 占位入口已移除。
 - **web 面插件**：headless profile 没有浏览器消费者，宿主半边照常采集并提供 Remote。
 - **能力探测降级**：`sessionPersistence` 缺席时日志车道整体关闭（子 agent 明细与历史回溯都关闭，主对话实采不受影响）；`llm/stream`/`system-prompt/assemble`/`session/event` 任一缺席静默降级为更空的面板，不影响启动。
 
@@ -67,10 +67,14 @@ const { turns, backfill, generation, authorizedScopes } =
 - **正在流式进行的 turn 不实时刷新**：面板是拉取式（打开/切 turn 时取数），进行中的 turn 视图停在拉取时刻。
 - **子 agent 日志车道的诚实空态**：one-shot 子运行的 system 原文与工具定义不可见（不落日志），segment 级历史/新增切分只在同一子运行内有意义。
 - **日志回溯的 system 段无 section 归因**：重建自日志的 turn，system 提示词渲染为一整块（无 `system-prompt/assemble` 的 section 名）；aux 请求（compaction / session-title）不落请求日志，不出现在历史 turn 里。
-- **预算裁断会标注**：历史回溯在内存预算装不下更旧的 turn 时从新到旧截断，页脚出现「更早的 turn 受内存预算限制未载入」；空间释放后的查询自动补齐。日志解码失败时（如未知事件类型）空态显示「日志不可读」及原因，与「确实没有数据」区分。
+- **预算裁断会标注**：历史回溯在内存预算装不下更旧的 turn 时从新到旧截断，轮次导航区出现「更早的 turn 受内存预算限制未载入」；空间释放后的查询自动补齐。日志解码失败时（如未知事件类型）空态显示「日志不可读」及原因，与「确实没有数据」区分。
 - **直接打开一个子 agent 会话**（catalog'd child session id 进入）看到的是它自己日志的重建视图（one-shot 没有 system/tools），父会话里的同内容在对应 scope 下。
-- 面板无主动刷新按钮（留作后续）；wire body 视图待宿主 0.1.2+ 能力接入。
+- 面板无主动刷新按钮（留作后续）；尚未实现 adapter 投影后的 wire body 采集。
 
 ## 改名迁移
 
 将旧 request-inspector 依赖与 bundle 行替换为 `@khorsheed/dsh-context-lens`，不要同时挂载。`requestInspector` 服务/Remote 命名空间保持兼容。旧侧栏页可从新入口重开。部署迁移须经 profile owner 支持的流程完成。
+
+## 视觉验证
+
+`pnpm exec tsx packages/context-lens/examples/workbench/serve.mts` 在 4177 端口用合成数据展示实际组件。控件可切换深浅主题和 390px 面板；不读取会话数据，也不连接生产实例。

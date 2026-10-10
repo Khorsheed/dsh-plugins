@@ -1,3 +1,4 @@
+import { duplicateStats } from '../src/client/aggregate.ts'
 /**
  * The client aggregation layer's spec: turn resolution (the turn action's
  * closingMessageId match + latest fallback), the category aggregation behind
@@ -179,5 +180,18 @@ describe('summaryText', () => {
     expect(summaryText({ kind: 'text' }, '直接回答')).toBe('直接回答')
     expect(summaryText({ kind: 'text' }, 'Direct answer')).toBe('Direct answer')
     expect(summaryText({ kind: 'none' }, '直接回答')).toBe('—')
+  })
+})
+
+
+describe('duplicateStats', () => {
+  it('compares full text, ignores short strings, and excludes the first occurrence', () => {
+    const full = 'a'.repeat(40)
+    const item = (text: string) => ({ index: 1, category: 'tool-result' as const, source: 'tool', full: text, preview: text.slice(0, 20), chars: text.length, freshness: 'history' as const })
+    const stats = duplicateStats([item(full), item(full), item(full), item(full + 'different'), item('short'), item('short')])
+    expect(stats.extraChars).toBe(80)
+    expect(stats.counts.get(full)).toBe(3)
+    expect(stats.counts.get(full + 'different')).toBe(1)
+    expect(stats.counts.has('short')).toBe(false)
   })
 })

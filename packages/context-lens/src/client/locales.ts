@@ -2,6 +2,21 @@
 
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
+  "lens.outputLimit": "输出上限 {count}",
+  "lens.duration": "耗时",
+  "lens.firstToken": "首字 {duration}",
+  "lens.compositionHint": "构成按字符精确统计；tok 来自模型真实 usage，两者不能直接换算。重复为本请求内全文逐字相同（至少 40 字符）的条目，重复字符数不含首次出现。",
+  "lens.layerSystem": "系统",
+  "lens.layerTools": "工具",
+  "lens.layerHistory": "历史",
+  "lens.layerAdded": "新增",
+  "lens.messages": "{count} 条",
+  "lens.repeatedChars": "重复 {count} 字符",
+  "lens.newTools": "新增 {count}",
+  "lens.noMatch": "（无匹配）",
+  "lens.noResponse": "（没有捕获到响应）",
+  "lens.newInput": "新增输入",
+
   "lens.equation": "= 模型 + 工具 + 其他",
   "lens.model": "模型调用",
   "lens.tools": "工具调用",
@@ -148,6 +163,21 @@ export const zh = {
 
 /** English dictionary (same key set). */
 export const en: Record<keyof typeof zh, string> = {
+  "lens.outputLimit": "Output limit {count}",
+  "lens.duration": "Duration",
+  "lens.firstToken": "First token {duration}",
+  "lens.compositionHint": "Composition uses exact characters; tokens come from provider usage and cannot be converted directly. Duplicates match full text of at least 40 characters within this request; excess characters exclude the first occurrence.",
+  "lens.layerSystem": "System",
+  "lens.layerTools": "Tools",
+  "lens.layerHistory": "History",
+  "lens.layerAdded": "Added",
+  "lens.messages": "{count} messages",
+  "lens.repeatedChars": "{count} repeated chars",
+  "lens.newTools": "{count} new",
+  "lens.noMatch": "(no matches)",
+  "lens.noResponse": "(no response captured)",
+  "lens.newInput": "New input",
+
   "lens.equation": "= model + tools + other",
   "lens.model": "Model calls",
   "lens.tools": "Tool calls",

@@ -1,32 +1,14 @@
 import type { SessionTrend } from '../types.ts'
 import { Trend } from './Trend.tsx'
-/**
- * The context-lens right-Sidebar tab body: the 请求明细 page. Header =
- * title + the Token/耗时 mini switch; the query line carries the turn switcher
- * (default latest); the scope chips row navigates 主对话 + one chip per
- * delegation run; the body is the token tab (request list + four-segment
- * detail), the timing tab (whole-turn buckets/lanes/tools), or the raw JSON
- * view; the footer switches 结构化 / 原始 JSON / wire body (the last is the
- * not-yet-implemented enhancement seat, rendered disabled with its host
- * requirement as the tooltip).
- *
- * Data flow: `listTurns` on mount (navigation params re-assert their turn on
- * every navigation revision), `getTurn` per selected turn, `getRequest` per
- * selected card (cached per turn), `getTurnTiming` when the timing tab shows.
- * The Remote is pull-based — the panel refetches on open / turn switch, per
- * the wire contract.
- *
- * @module @khorsheed/dsh-context-lens/client
- */
+/** Session/turn/scope navigation; request detail owns its JSON toggle. */
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { ChipRow, PanelRoot } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
 import type {
-  AgentScopeOverview, BackfillInfo, CapturedRequest, SegmentCategory, TurnListItem, TurnOverview, TurnTiming,
+  AgentScopeOverview, BackfillInfo, CapturedRequest, TurnListItem, TurnOverview, TurnTiming,
 } from '../types.ts'
-import { fmtSpan, latestTurnSeq } from './aggregate.ts'
+import { fmtSpan, latestTurnSeq, type CompositionFilter } from './aggregate.ts'
 import type { InspectorTabProps } from './contract.ts'
 import type { RequestInspectorTabParams } from './definition.tsx'
-import { RawView } from './RawView.tsx'
 import { scrollConversationToBottom, scrollConversationToTurn } from './scroll-sync.ts'
 import { SegCtl } from './SegCtl.tsx'
 import { TimingView } from './TimingView.tsx'
@@ -39,8 +21,6 @@ type T = InspectorTabProps['t']
 
 /** The two main views. */
 type MainTab = 'token' | 'time'
-/** The footer's data views. */
-type ViewTab = 'structured' | 'raw'
 
 /** The failure state page — a failed run with 0 requests IS the diagnostic. */
 function FailureCard({ scope, t }: { readonly scope: AgentScopeOverview; readonly t: T }) {
@@ -92,8 +72,7 @@ export function InspectorPanel({
   const [timing, setTiming] = useState<TurnTiming | null>(null)
   const [request, setRequest] = useState<CapturedRequest | null>(null)
   const [mainTab, setMainTab] = useState<MainTab>('token')
-  const [viewTab, setViewTab] = useState<ViewTab>('structured')
-  const [filterCat, setFilterCat] = useState<SegmentCategory | null>(null)
+  const [filterCat, setFilterCat] = useState<CompositionFilter>(null)
   const [scopeId, setScopeId] = useState<string>('main')
   const [selectedSeq, setSelectedSeq] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -126,7 +105,6 @@ export function InspectorPanel({
     setSelectedSeq(null)
     setFilterCat(null)
     setMainTab('token')
-    setViewTab('structured')
     // Real turns key on the host's turn number, so a positive seq scrolls even
     // before the turn list resolves; pseudo-turns (negative) never scroll.
     if (navTurnSeq > 0) scrollConversationToTurn(navTurnSeq)
@@ -327,18 +305,15 @@ export function InspectorPanel({
     setScopeId(next)
     setSelectedSeq(null)
     setFilterCat(null)
-    setViewTab('structured')
   }
 
   const onMainTab = (next: MainTab): void => {
     setMainTab(next)
-    setViewTab('structured')
   }
 
   /** A timing tab call row's click-through: the token tab, that scope, that request. */
   const onOpenRequest = (seq: number, targetScopeId: string): void => {
     setMainTab('token')
-    setViewTab('structured')
     setScopeId(targetScopeId)
     setSelectedSeq(seq)
     setFilterCat(null)
@@ -384,10 +359,6 @@ export function InspectorPanel({
         <FailureCard scope={effectiveScope} t={t} />
       </div>
     )
-  } else if (viewTab === 'raw') {
-    body = request === null
-      ? <div className={css.stateNote} role="status">{t('state.loading')}</div>
-      : <RawView request={request} t={t} />
   } else if (mainTab === 'token') {
     body = (
       <div className={css.bodyFill}>
@@ -398,7 +369,7 @@ export function InspectorPanel({
           request={request}
           filterCat={filterCat}
           previousResponseSeq={previousResponseSeq}
-          onSelect={seq => { setSelectedSeq(seq) }}
+          onSelect={seq => { setSelectedSeq(seq); setFilterCat(null) }}
           onToggleFilter={category => { setFilterCat(previous => previous === category ? null : category) }}
           t={t}
         />
@@ -448,6 +419,7 @@ export function InspectorPanel({
         </div>
         {turn !== undefined && <div className={css.query}><b>{turn.query}</b></div>}
         {trend && <Trend data={trend} turnSeq={turnSeq} selectedSeq={selectedRequestSeq} t={t} onSelect={(next, seq, targetScope) => { onSelectTurn(next); onOpenRequest(seq, targetScope) }} />}
+        {backfill?.state === 'partial' && <div className={css.stateNote}>{t('hint.backfillTruncated')}</div>}
         {chips.length > 0 && (
           <ChipRow
             className={css.agentNav}
@@ -459,22 +431,6 @@ export function InspectorPanel({
         )}
       </div>
       <div className={css.body}>{body}</div>
-      <div className={css.foot}>
-        <SegCtl
-          label={t('view.structured')}
-          options={[
-            { id: 'structured' as const, label: t('view.structured') },
-            { id: 'raw' as const, label: t('view.raw') },
-            { id: 'wire' as const, label: 'wire body', disabled: true, hint: t('view.wireHint'), tag: '≥0.1.2' },
-          ]}
-          value={viewTab}
-          onChange={id => { setViewTab(id === 'raw' ? 'raw' : 'structured') }}
-        />
-        <span className={css.footNote}>{t('foot.note')}</span>
-        {backfill?.state === 'partial' && (
-          <span className={css.footNote}>{t('hint.backfillTruncated')}</span>
-        )}
-      </div>
     </PanelRoot>
   )
 }
