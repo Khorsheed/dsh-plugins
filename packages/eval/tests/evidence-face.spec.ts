@@ -19,11 +19,12 @@
  * The local default is pinned by the whole pre-existing suite — every
  * provision/capability/readiness spec runs the face-absent path unmodified.
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { instanceCapabilityProbe, scopeKeepsOwnPreset } from '../src/capability-probe.ts'
+import { instanceCapabilityProbe } from '../src/capability-probe.ts'
 import { hashConditionDocument, hashHome } from '../src/contract/hash.ts'
+import { produceScopedHomeEvidence } from '../src/evidence.ts'
 import { hashPresetTree, scopePresetDir, scopePresetProblem } from '../src/preset-snapshot.ts'
 import { EvalProvisionRefused, provisionCondition } from '../src/provision.ts'
 import { checkReadiness, type ReadinessSubject } from '../src/run/readiness.ts'
@@ -33,7 +34,7 @@ import type {
   CapabilityCatalogFace, LocalAgentEffectiveSettingsFace, LocalAgentFace, LocalAgentScopeStatus,
   ScopedHomeEvidenceFace,
 } from '../src/faces.ts'
-import { cleanupTmp, tmpTree, writeJson } from './helpers.ts'
+import { cleanupTmp, tmpTree, useDshHome, writeJson } from './helpers.ts'
 
 afterEach(cleanupTmp)
 
@@ -101,10 +102,10 @@ const RELOCATABLE_COMPOSITION = `- insert:
 
 /**
  * A scoped home fixture: two config files, a denied credentials dir, and —
- * with `preset` — a sub-profile rostering it plus the scope's own copy of the
- * preset package.
+ * with `preset` — a sub-profile rostering it plus (unless `copy: false`) the
+ * scope's own copy of the preset package.
  */
-function fixtureHome(options: { preset?: string; harness?: string } = {}): string {
+function fixtureHome(options: { preset?: string; harness?: string; copy?: boolean; composition?: string } = {}): string {
   const harness = options.harness ?? 'codex'
   const home = join(tmpTree(), `${harness}@eval-b`)
   writeJson(home, 'config.json', { model: 'gpt-5.6-sol', sandbox: 'workspace-write' })
@@ -118,43 +119,37 @@ function fixtureHome(options: { preset?: string; harness?: string } = {}): strin
       `- insert:\n    - id: agent-preset-registry\n      name: '@deepseek-ai/dsh-agent-preset-registry'\n      config:\n        default: ${JSON.stringify(options.preset)}\n`,
       'utf8',
     )
-    const dir = scopePresetDir(home, options.preset)
-    mkdirSync(join(dir, 'skills', 'eval-planning'), { recursive: true })
-    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: '@dataseek-eval/preset-eval-lean', version: '0.0.0', dsh: { bundle: { patch: './cordis.patch.yml' } } }))
-    writeFileSync(join(dir, 'cordis.patch.yml'), RELOCATABLE_COMPOSITION)
-    writeFileSync(join(dir, 'skills', 'eval-planning', 'SKILL.md'), 'Draft the plan. One stage, then stop and report.\n')
+    if (options.copy !== false) {
+      const dir = scopePresetDir(home, options.preset)
+      mkdirSync(join(dir, 'skills', 'eval-planning'), { recursive: true })
+      writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: '@dataseek-eval/preset-eval-lean', version: '0.0.0', dsh: { bundle: { patch: './cordis.patch.yml' } } }))
+      writeFileSync(join(dir, 'cordis.patch.yml'), options.composition ?? RELOCATABLE_COMPOSITION)
+      writeFileSync(join(dir, 'skills', 'eval-planning', 'SKILL.md'), 'Draft the plan. One stage, then stop and report.\n')
+    }
   }
   return home
 }
 
 /**
- * The PRODUCER — what runs on the execution target. It answers every evidence
- * channel with the same functions the local path uses, over the fixture home
- * it can actually see. The bundle is plain data; nothing in it is callable.
+ * The PRODUCER — what runs on the execution target. The three fs-derived
+ * channels come from the package's own evidence factory (this seam's whole
+ * point: the producer reuses the algorithms, never copies them); the
+ * credential grade and effective settings stay the producer's own auth
+ * implementation, exactly as the factory's contract says. The bundle is
+ * plain data; nothing in it is callable.
  */
 async function produceEvidence(
   home: string,
   preset: string | undefined,
   settings: LocalAgentEffectiveSettingsFace | undefined,
 ): Promise<Record<string, unknown>> {
-  const homeHash = await hashHome(home)
-  const rostered = readScopePreset(home)
+  const produced = await produceScopedHomeEvidence(home, preset === undefined ? {} : { preset })
   return {
-    homeHash: { homeDir: home, ...homeHash },
+    homeHash: produced.home,
     credentialGrade: 'present-unverified',
     effectiveSettings: settings,
-    rosteredPreset: rostered,
-    ...(preset === undefined
-      ? {}
-      : {
-          presetSnapshot: scopeKeepsOwnPreset(home, preset)
-            ? {
-                keepsCopy: true,
-                problem: await scopePresetProblem(scopePresetDir(home, preset)),
-                snapshot: await hashPresetTree(scopePresetDir(home, preset)),
-              }
-            : { keepsCopy: false },
-        }),
+    rosteredPreset: produced.rosteredPreset,
+    ...(produced.presetSnapshot === undefined ? {} : { presetSnapshot: produced.presetSnapshot }),
   }
 }
 
@@ -539,5 +534,72 @@ describe('composition with the instance stateRoot', () => {
     })
     const report = await fresh.conditions()
     expect(report.conditions[0]?.warnings.map(w => w.code) ?? []).not.toContain('CAPABILITIES_SNAPSHOT_STALE')
+  })
+})
+
+describe('the target-side evidence factory', () => {
+  it('answers byte-identical evidence to the local algorithms over the same home', async () => {
+    const home = fixtureHome({ preset: 'eval-lean', harness: 'dsh' })
+    const produced = await produceScopedHomeEvidence(home, { preset: 'eval-lean' })
+
+    expect(produced.home).toEqual({ homeDir: home, ...(await hashHome(home)) })
+    expect(produced.rosteredPreset).toBe(readScopePreset(home))
+    expect(produced.rosteredPreset).toBe('eval-lean')
+    expect(produced.presetSnapshot).toEqual({
+      keepsCopy: true,
+      snapshot: await hashPresetTree(scopePresetDir(home, 'eval-lean')),
+    })
+  })
+
+  it('a scope rostering a preset but keeping no copy answers keepsCopy false — the instance-root arrangement', async () => {
+    const home = fixtureHome({ preset: 'eval-lean', harness: 'dsh', copy: false })
+    const produced = await produceScopedHomeEvidence(home, { preset: 'eval-lean' })
+    expect(produced.rosteredPreset).toBe('eval-lean')
+    expect(produced.presetSnapshot).toEqual({ keepsCopy: false })
+  })
+
+  it('a home with no roster answers rosteredPreset undefined, and a preset copy question gets keepsCopy false', async () => {
+    const home = fixtureHome()
+    const produced = await produceScopedHomeEvidence(home, { preset: 'eval-lean' })
+    expect(produced.rosteredPreset).toBeUndefined()
+    expect(produced.presetSnapshot).toEqual({ keepsCopy: false })
+    // No preset asked, no snapshot key at all.
+    expect(await produceScopedHomeEvidence(home)).not.toHaveProperty('presetSnapshot')
+  })
+
+  it('a copy that cannot be a subject carries scopePresetProblem\'s text and NO digest — the consumer\'s own order', async () => {
+    const pinned = `- insert:\n    - id: preset-eval-lean\n      name: '@deepseek-ai/dsh-agent-preset'\n      config:\n        id: eval-lean\n        plugins:\n          - id: skill-filesystem\n            config:\n              customSkillDirs:\n                - /abs/path/skills\n`
+    const home = fixtureHome({ preset: 'eval-lean', harness: 'dsh', composition: pinned })
+    const produced = await produceScopedHomeEvidence(home, { preset: 'eval-lean' })
+    expect(produced.presetSnapshot).toEqual({
+      keepsCopy: true,
+      problem: await scopePresetProblem(scopePresetDir(home, 'eval-lean')),
+    })
+    expect(produced.presetSnapshot?.problem).toContain('/abs/path/skills')
+  })
+
+  it('a copy that is not a plain tree carries no digest — hashPresetTree\'s own undefined', async () => {
+    const home = fixtureHome({ preset: 'eval-lean', harness: 'dsh' })
+    symlinkSync(join(home, 'settings.yml'), join(scopePresetDir(home, 'eval-lean'), 'linked.yml'))
+    const produced = await produceScopedHomeEvidence(home, { preset: 'eval-lean' })
+    expect(await hashPresetTree(scopePresetDir(home, 'eval-lean'))).toBeUndefined()
+    expect(produced.presetSnapshot).toEqual({ keepsCopy: true })
+  })
+
+  it('refuses a relative home path, and a missing home propagates hashHome\'s own throw', async () => {
+    await expect(produceScopedHomeEvidence('relative/home')).rejects.toThrow(/absolute/)
+    await expect(produceScopedHomeEvidence(join(tmpTree(), 'nope'))).rejects.toThrow(/does not exist/)
+  })
+
+  it('reads only the named home — a second tree and DSH_HOME are never consulted', async () => {
+    useDshHome()
+    const a = fixtureHome()
+    const b = join(tmpTree(), 'decoy-home')
+    writeJson(b, 'config.json', { different: 'content entirely' })
+    process.env['DSH_HOME'] = b
+
+    const produced = await produceScopedHomeEvidence(a)
+    expect(produced.home).toEqual({ homeDir: a, ...(await hashHome(a)) })
+    expect(produced.home.sha).not.toBe((await hashHome(b)).sha)
   })
 })
