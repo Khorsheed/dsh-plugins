@@ -522,6 +522,13 @@ export interface ChapterRecord {
   /** The user's ✓确认计划 timestamp (the plan gate's durable fact; absent = unconfirmed). */
   readonly planConfirmedAt?: string
   /**
+   * Where the current plan was put to the person: the registering session and
+   * the seq of its newest user message then. The agent may record the
+   * person's chat approval only after a LATER user message — a plan
+   * registered and "confirmed" in one breath was never seen (2026-10-10).
+   */
+  readonly planAsk?: { readonly session: string; readonly userSeq: number }
+  /**
    * 用户原稿: the user wrote this chapter themselves (imported or pasted). It
    * needs no plan to carry a body, and the 对账 skips plan verification.
    */
@@ -714,6 +721,10 @@ export function normalizeChapter(raw: unknown): ChapterRecord | undefined {
   const wordCount = cleanNumber(record['wordCount'])
   const planConfirmedAt = cleanText(record['planConfirmedAt'], 40)
   const extractedAt = cleanText(record['extractedAt'], 40)
+  const askRaw = record['planAsk'] as Record<string, unknown> | undefined
+  const planAsk = typeof askRaw === 'object' && askRaw !== null && typeof askRaw['session'] === 'string' && typeof askRaw['userSeq'] === 'number'
+    ? { session: askRaw['session'], userSeq: askRaw['userSeq'] }
+    : undefined
   const delivery = normalizeDelivery(record['delivery'])
   const bodyHash = cleanText(record['bodyHash'], 40)
   const settings = cleanStringList(record['settings'], 200)
@@ -729,6 +740,7 @@ export function normalizeChapter(raw: unknown): ChapterRecord | undefined {
     ...(plan === undefined ? {} : { plan }),
     ...(planConfirmedAt === undefined ? {} : { planConfirmedAt }),
     ...(extractedAt === undefined ? {} : { extractedAt }),
+    ...(planAsk === undefined ? {} : { planAsk }),
     ...(record['byUser'] === true ? { byUser: true as const } : {}),
     ...(delivery === undefined ? {} : { delivery }),
     ...(recap === undefined ? {} : { recap }),
@@ -1280,7 +1292,7 @@ export function normalizePendingItem(raw: unknown): PendingItem | undefined {
 /* --------------------------------------------------------------- outcomes */
 
 /** The store's failure codes (the canvas vocabulary, plus the chapter gates'). */
-export type NovelError = 'invalid-name' | 'missing' | 'io' | 'stale' | 'denied' | 'not-reviewed' | 'not-extracted' | 'no-workspace' | 'duplicate' | 'plan-unconfirmed' | 'unknown-foreshadow' | 'body-exists' | 'plan-on-draft' | 'unknown-protagonist' | 'unknown-volume' | 'no-proposal'
+export type NovelError = 'invalid-name' | 'missing' | 'io' | 'stale' | 'denied' | 'not-reviewed' | 'not-extracted' | 'no-workspace' | 'duplicate' | 'plan-unconfirmed' | 'unknown-foreshadow' | 'body-exists' | 'plan-on-draft' | 'unknown-protagonist' | 'unknown-volume' | 'no-proposal' | 'plan-unseen'
 
 /* ---------------------------------------------- wire-boundary contracts */
 

@@ -102,6 +102,25 @@ export function novelErrorOf(error: unknown): NovelError {
 }
 
 /** Map one canvas failure code onto the store's (the two vocabularies share their common codes). */
+/**
+ * The seq of the session's newest user message, read from its event log
+ * (structurally: a host line without `snapshotEvents` yields undefined, and
+ * the confirm gate then stays open as before).
+ */
+export function latestUserSeq(session: unknown): number | undefined {
+  try {
+    const events = (session as { snapshotEvents?: () => readonly { readonly type: string; readonly seq?: number }[] } | undefined)?.snapshotEvents?.()
+    if (events === undefined) return undefined
+    for (let index = events.length - 1; index >= 0; index -= 1) {
+      const event = events[index]!
+      if (event.type === 'user/message' && typeof event.seq === 'number') return event.seq
+    }
+    return 0
+  } catch {
+    return undefined
+  }
+}
+
 function canvasErrorOf(error: string): NovelError {
   return error === 'invalid-name' || error === 'missing' || error === 'stale' || error === 'denied' ? error : 'io'
 }
@@ -1195,6 +1214,9 @@ export class NovelService {
     if (meta === undefined) return { ok: false, error: 'missing' }
     const rawPlan = request.plan === undefined ? undefined : normalizePlan(request.plan)
     if (request.plan !== undefined && rawPlan === undefined) return { ok: false, error: 'invalid-name' }
+    // Where this plan is put to the person (see `ChapterRecord.planAsk`).
+    const askSeq = latestUserSeq(session)
+    const ask = session === undefined || askSeq === undefined ? undefined : { session: String(session.id), userSeq: askSeq }
     let plan = rawPlan
     if (rawPlan !== undefined) {
       const resolved = await this.resolvePlan(workId, rawPlan)
@@ -1310,6 +1332,8 @@ export class NovelService {
             // yet — and the user has not confirmed it.
             delete mutable.delivery
             delete mutable.planConfirmedAt
+            if (ask !== undefined) mutable.planAsk = ask
+            else delete mutable.planAsk
           }
           if (byUser) mutable.byUser = true
           if (volumeId !== undefined) mutable.volume = volumeId
@@ -1334,6 +1358,7 @@ export class NovelService {
           createdAt: now,
           updatedAt: now,
           ...(plan === undefined ? {} : { plan }),
+          ...(plan === undefined || ask === undefined ? {} : { planAsk: ask }),
           ...(byUser ? { byUser: true as const } : {}),
         }
         table.chapters.push(created)
@@ -1650,12 +1675,15 @@ export class NovelService {
    * @returns the fresh record, or the failure code.
    */
   async confirmChapterPlan(
-    request: { readonly workId: string; readonly n: number },
+    request: { readonly workId: string; readonly n: number; readonly byAgent?: boolean },
     session: Session | undefined,
   ): Promise<{ readonly ok: boolean; readonly error?: NovelError; readonly chapter?: ChapterRecord }> {
     this.assertAlive('confirmChapterPlan')
     const workId = normalizeWorkId(request.workId)
     if (workId === undefined) return { ok: false, error: 'invalid-name' }
+    // The agent recording the person's chat approval: only once the person has
+    // spoken since the plan was put to them (the page's ✓ is the person's own).
+    const userSeq = request.byAgent === true ? latestUserSeq(session) : undefined
     let chapter: ChapterRecord | undefined
     const outcome = await this.mutateJson(
       await this.fileTarget(workId, WORK_FILES.chapters), session,
@@ -1665,6 +1693,10 @@ export class NovelService {
         const row = table.chapters.find(candidate => candidate.n === request.n)
         if (row === undefined) return 'missing'
         if (row.plan === undefined) return 'invalid-name'
+        if (row.planConfirmedAt === undefined && request.byAgent === true && row.planAsk !== undefined
+          && row.planAsk.session === String(session?.id) && userSeq !== undefined && userSeq <= row.planAsk.userSeq) {
+          return 'plan-unseen'
+        }
         if (row.planConfirmedAt === undefined) {
           const mutable = row as { -readonly [K in keyof ChapterRecord]: ChapterRecord[K] }
           mutable.planConfirmedAt = now

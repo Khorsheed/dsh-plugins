@@ -214,6 +214,18 @@ describe('ChapterPage', () => {
   })
 })
 
+describe('ChapterPage opened from a plan card', () => {
+  it('opens the plan block even on a written chapter, where it would fold under the text', async () => {
+    const remote = fakeRemote({ items: [], rows: [{ chapter: chapter(1, '门与假门', { plan: PLAN, planConfirmedAt: NOW }), phase: 'writing', body: '他推开门。' }] })
+    render(<ChapterPage {...props(remote)} page={CHAPTER_PAGE} param="1:plan" />)
+    expect(await screen.findByText(PLAN.summary)).toBeTruthy()
+    cleanup()
+    render(<ChapterPage {...props(remote)} page={CHAPTER_PAGE} param="1" />)
+    await screen.findByText('他推开门。')
+    expect(screen.queryByText(PLAN.summary)).toBeNull()
+  })
+})
+
 describe('ChapterReader', () => {
   const rows = (): Row[] => [
     { chapter: chapter(1, '第1章 门与假门'), phase: 'reviewed', body: '他推开门。' },
@@ -426,7 +438,7 @@ describe('novel_write tool row', () => {
     expect(screen.getByText(zh['card.awaiting'])).toBeTruthy()
     expect(screen.getByText('推进 1')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: `${zh['card.confirm']} →` }))
-    expect(openPage).toHaveBeenCalledWith(CANVAS_ID, CHAPTER_PAGE, '第1章 · 门', '1')
+    expect(openPage).toHaveBeenCalledWith(CANVAS_ID, CHAPTER_PAGE, '第1章 · 门', '1:plan')
   })
 
   it('a plan it watched land opens the chapter page once, so the confirm survives the turn folding away', async () => {
@@ -434,7 +446,7 @@ describe('novel_write tool row', () => {
     const openPage = vi.fn()
     const { rerender } = render(<WriteToolRow block={{}} phase="preparing" remote={() => remote} openPage={() => openPage} chapterPage={CHAPTER_PAGE} t={t} />)
     rerender(<WriteToolRow block={settled(PLANNED)} remote={() => remote} openPage={() => openPage} chapterPage={CHAPTER_PAGE} t={t} />)
-    await waitFor(() => { expect(openPage).toHaveBeenCalledWith(CANVAS_ID, CHAPTER_PAGE, '第1章 · 门', '1') })
+    await waitFor(() => { expect(openPage).toHaveBeenCalledWith(CANVAS_ID, CHAPTER_PAGE, '第1章 · 门', '1:plan') })
     rerender(<WriteToolRow block={settled(PLANNED)} remote={() => remote} openPage={() => openPage} chapterPage={CHAPTER_PAGE} t={t} />)
     expect(openPage).toHaveBeenCalledTimes(1)
   })

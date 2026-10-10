@@ -398,6 +398,7 @@ export const zh = {
   'error.unknown-protagonist': '主角要是一张人物卡',
   'error.unknown-volume': '大纲里没有这一卷',
   'error.no-proposal': '没有等你采用的提议了',
+  'error.plan-unseen': '这版计划用户还没看过',
   'error.generic': '出错了：{message}',
   'state.loading': '读取中…',
 } as const
@@ -800,6 +801,7 @@ export const en: Record<keyof typeof zh, string> = {
   'error.unknown-protagonist': 'The protagonist must be a character card',
   'error.unknown-volume': 'The outline has no such volume',
   'error.no-proposal': 'Nothing waits for adoption any more',
+  'error.plan-unseen': 'The person has not seen this plan yet',
   'error.generic': 'Something went wrong: {message}',
   'state.loading': 'Loading…',
 }

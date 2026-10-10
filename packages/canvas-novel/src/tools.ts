@@ -321,8 +321,12 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
       }
       if (args.what === 'confirm') {
         if (args.chapter === undefined) return '失败：what=confirm 要给 chapter（章号）。'
-        const outcome = await store.confirmChapterPlan({ workId, n: args.chapter }, resolved.session)
+        const outcome = await store.confirmChapterPlan({ workId, n: args.chapter, byAgent: true }, resolved.session)
         if (!outcome.ok) {
+          if (outcome.error === 'plan-unseen') {
+            return `失败：第 ${args.chapter} 章这版计划是在用户最后一条消息之后才登记的，用户还没看过，更没同意——用户提的修改意见不等于同意改完的计划。`
+              + '现在不要写正文：回复里用两三句说改了什么，请用户看一眼（章节页或会话里的计划卡），等他下一条消息明确同意，再 confirm。'
+          }
           if (outcome.error === 'missing') return `失败：没有第 ${args.chapter} 章。`
           if (outcome.error === 'invalid-name') return `失败：第 ${args.chapter} 章还没有计划，先 novel_write(what=chapter, plan=…) 登记。`
           return `失败：${outcome.error ?? 'io'}`

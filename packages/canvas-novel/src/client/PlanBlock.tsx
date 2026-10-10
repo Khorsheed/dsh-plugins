@@ -10,7 +10,7 @@
  *
  * @module @khorsheed/dsh-canvas-novel/client
  */
-import { useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import { capacityOf, type ChapterRecord, type EffectiveChapterPhase, type ForeshadowOp, type PlanBeat } from '../types.ts'
 import css from './novel.module.css'
@@ -19,7 +19,7 @@ const OP_KEYS = { 推进: 'plan.op.advance', 暗示: 'plan.op.hint', 新埋: 'pl
 const MARK_KEYS = { 转折: 'plan.mark.turn', 落点: 'plan.mark.land' } as const
 
 /** The plan block; the empty line when the chapter has no plan, nothing for the person's own draft (its 原稿 tag says so). */
-export function PlanBlock({ chapter, phase, names, words, canConfirm, busy, onConfirm, planText, onSave, t }: {
+export function PlanBlock({ chapter, phase, names, words, canConfirm, busy, onConfirm, planText, onSave, focus = false, t }: {
   readonly chapter: ChapterRecord
   readonly phase: EffectiveChapterPhase
   /** The chapter's 目标字数 (its plan's, else the outline's per-chapter default). */
@@ -33,6 +33,8 @@ export function PlanBlock({ chapter, phase, names, words, canConfirm, busy, onCo
   readonly planText?: string
   /** Save the edited lines (saving confirms); resolves to an error line, or null when saved. */
   readonly onSave?: (text: string) => Promise<string | null>
+  /** Opened from a plan card: open whatever the phase, and scroll into view. */
+  readonly focus?: boolean
   readonly t: TranslateNS<'novel'>
 }): ReactNode {
   // A plan waiting on the person leads whatever the phase: a chapter re-planned
@@ -40,7 +42,11 @@ export function PlanBlock({ chapter, phase, names, words, canConfirm, busy, onCo
   // the only ✓ 确认计划 while the gate refused the body (2026-10-09).
   const awaiting = chapter.plan !== undefined && chapter.planConfirmedAt === undefined && chapter.byUser !== true
   const lead = phase === 'planning' || awaiting
-  const [open, setOpen] = useState(lead)
+  const [open, setOpen] = useState(lead || focus)
+  const block = useRef<HTMLElement>(null)
+  useEffect(() => {
+    if (focus) block.current?.scrollIntoView?.({ block: 'start' })
+  }, [focus])
   const [draft, setDraft] = useState<string | null>(null)
   const [editError, setEditError] = useState<string | null>(null)
   const plan = chapter.plan
@@ -60,7 +66,7 @@ export function PlanBlock({ chapter, phase, names, words, canConfirm, busy, onCo
         ops: delivery.ops.filter(Boolean).length, opsTotal: plan.foreshadowOps.length,
       })
   return (
-    <section className={css.plan} data-lead={lead || undefined} data-open={open || undefined}>
+    <section ref={block} className={css.plan} data-lead={lead || undefined} data-open={open || undefined}>
       <button type="button" className={css.planHead} aria-expanded={open} onClick={() => { setOpen(value => !value) }}>
         <span className={css.planLabel}>{t('chapter.plan')}</span>
         <span className={css.planSum}>

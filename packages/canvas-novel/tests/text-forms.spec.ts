@@ -137,6 +137,30 @@ describe('confirming and editing a plan', () => {
     expect(await write({ what: 'confirm', chapter: 99 })).toBe('失败：没有第 99 章。')
   })
 
+  it('refuses the agent\'s confirm until the person has spoken since the plan was registered', async () => {
+    const { store, write } = await bench()
+    // A session whose log grows: one user message, then the plan, then (later) another user message.
+    const events: { type: string; seq: number }[] = [{ type: 'user/message', seq: 1 }]
+    const session = { id: 's-text', snapshotEvents: () => events } as unknown as Session
+    await store.writeChapter({ workId: DREAM.workId, title: '入梦', plan: planFromText(PLAN.replace('#5', 'c_doorGap')) }, session)
+    const n = (await store.listChapters({ workId: DREAM.workId })).at(-1)!.chapter.n
+    // Registered and "confirmed" in one breath: refused.
+    expect(await store.confirmChapterPlan({ workId: DREAM.workId, n, byAgent: true }, session)).toMatchObject({ ok: false, error: 'plan-unseen' })
+    // The person's own ✓ on the page is theirs, whenever.
+    // After the person replies, the agent may record it.
+    events.push({ type: 'user/message', seq: 9 })
+    expect((await store.confirmChapterPlan({ workId: DREAM.workId, n, byAgent: true }, session)).ok).toBe(true)
+    void write
+  })
+
+  it('the person\'s ✓ on the page confirms a plan registered a moment ago', async () => {
+    const { store } = await bench()
+    const session = { id: 's-text', snapshotEvents: () => [{ type: 'user/message', seq: 1 }] } as unknown as Session
+    await store.writeChapter({ workId: DREAM.workId, title: '入梦', plan: planFromText(PLAN.replace('#5', 'c_doorGap')) }, session)
+    const n = (await store.listChapters({ workId: DREAM.workId })).at(-1)!.chapter.n
+    expect((await store.confirmChapterPlan({ workId: DREAM.workId, n }, session)).ok).toBe(true)
+  })
+
   it('saves the person\'s edit as the plan and confirms it in one gesture', async () => {
     const { store, write } = await bench()
     await write({ what: 'chapter', title: '入梦', content: PLAN.replace('#5', 'c_doorGap') })

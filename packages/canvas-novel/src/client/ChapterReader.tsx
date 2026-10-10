@@ -33,10 +33,22 @@ const LAMP_STEP: Readonly<Record<EffectiveChapterPhase, number>> = {
 
 /** The `novel:chapter` page entry (param: the chapter number to start at). */
 export function ChapterPage(props: NovelSurfaceProps<NovelPageOwnerProps>): ReactNode {
-  const [n, setN] = useState(Number(props.param))
+  const asked = parseInt(props.param ?? '', 10)
+  const focusPlan = (props.param ?? '').endsWith(PLAN_FOCUS)
+  const [n, setN] = useState(asked)
+  // The row re-opened on another chapter (a later card's door): follow it.
+  useEffect(() => { if (Number.isFinite(asked)) setN(asked) }, [asked, props.param])
   if (props.board.genre?.id !== NOVEL_GENRE_ID) return null
-  return <ChapterReader {...props} n={n} host="page" onGo={setN} onToc={props.navigate.openManuscripts} />
+  return <ChapterReader {...props} n={n} host="page" focusPlan={focusPlan && n === asked} onGo={setN} onToc={props.navigate.openManuscripts} />
 }
+
+/**
+ * The chapter page's param suffix that opens it on the plan (a plan card's
+ * door): the plan block opens and scrolls into view whatever the phase —
+ * folded under a written chapter's text, it read as a page that did not open
+ * the plan (2026-10-10).
+ */
+export const PLAN_FOCUS = ':plan'
 
 /** A chapter title without the number it often carries (`第1章 门与假门` → `门与假门`). */
 export function bareTitle(n: number, title: string): string {
@@ -50,6 +62,8 @@ export function ChapterReader(props: NovelSurfaceProps & {
   readonly host: 'book' | 'page'
   readonly onGo: (n: number) => void
   readonly onToc: () => void
+  /** Open on the plan (the page was opened from a plan card). */
+  readonly focusPlan?: boolean
 }): ReactNode {
   const { canvasId, board, rev, n, host, onGo, onToc, navigate, sessionId, remote, t } = props
   const api = remote()
@@ -133,7 +147,8 @@ export function ChapterReader(props: NovelSurfaceProps & {
           </header>
           <Progress n={n} phase={phase} pending={items.length} writable={sessionId !== undefined} t={t} />
           <PlanBlock
-            key={n}
+            key={`${n}${props.focusPlan === true ? PLAN_FOCUS : ''}`}
+            focus={props.focusPlan === true}
             chapter={chapter}
             phase={phase}
             names={view.names}
