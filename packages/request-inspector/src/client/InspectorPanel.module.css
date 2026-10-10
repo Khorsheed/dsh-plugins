@@ -132,6 +132,25 @@
   padding: 8px 4px;
 }
 
+.retry {
+  display: inline-flex;
+  align-items: center;
+  font-family: inherit;
+  font-size: var(--dsh-panel-text-meta, 12px);
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-layer-2);
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  padding: 2px 8px;
+  margin-left: 8px;
+  cursor: pointer;
+}
+
+/* hover-only: pure tint on an always-visible control */
+.retry:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
 .failCard {
   border: 1px solid var(--dsw-alias-state-error-secondary);
   background: var(--dsw-alias-bg-layer-2);

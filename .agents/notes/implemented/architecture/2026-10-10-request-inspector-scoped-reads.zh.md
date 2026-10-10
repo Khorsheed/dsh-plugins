@@ -32,3 +32,4 @@ request-inspector 采集核心（见[宿主采集 Agent Note](../feature/2026-10
 - 即使 `'main'` 被过滤掉，主会话日志回溯仍会读会话自身的日志：这次读取是会话级发现（子 scope 常常只能经它发现），其内容在 wire 上过滤。只有 scope 级读取（子日志）被 filter 把门。
 - 整会话逐出仍与从没见过不可区分（槽随最后一个 turn 释放）；README 与 `evictedTurnCount` 的 TSDoc 都写明这个盲区。
 - 已与响应原文采集（`CapturedRequest.response`、`CapturedResponse`）对账：面审计确认响应原文只挂在 `CapturedRequest` 上——`TurnListItem`、`AgentScopeOverview`、`RequestListItem` 与计时 lane/tools 都不携带——因此 `getRequest` 的门（payload 或 `ScopedRefusal`）覆盖它们，子日志门覆盖其日志响应记录（同一条 open/read 路径，被排除的 scope 直接跳过）。联合体对加宽的 `CapturedRequest` 照常通过类型检查；合同测试用标记串扫描四个动词的输出钉死。
+- 可选 wire 尾参的客户端元数后果：网关运行时按各动词**声明的**参数个数精确把门（`prepareInvocation` 在任何网络流量之前拒绝，可选尾参也计数），所以客户端每次调用都显式传 `filter`——`src/client/wire.ts` 的 `inspectorWire` 是四个动词（含 `openForMessage`）的唯一漏斗。`tests/client-wire-arity.spec.ts` 用真实生成的 descriptor 复刻这道门：以后加 wire 参数而不更新客户端调用点，红的是测试套件。配套的面板修复：加载失败（拒绝或网络前拒绝）渲染为显式错误态并带重试动作——只有不存在错误时才显示加载中。

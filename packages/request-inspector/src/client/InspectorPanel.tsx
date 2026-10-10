@@ -91,8 +91,18 @@ export function InspectorPanel({
   const [selectedSeq, setSelectedSeq] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [turnMissing, setTurnMissing] = useState(false)
+  /** Bump to re-run the pull (the error state's retry). */
+  const [reloadKey, setReloadKey] = useState(0)
   /** The selected turn's fetched request details (seq → capture). */
   const detailCache = useRef(new Map<number, CapturedRequest>())
+
+  /** Retry a failed load: back to the loading state, re-run the pull. */
+  const onRetry = (): void => {
+    setError(null)
+    setTurns(null)
+    setOverview(null)
+    setReloadKey(key => key + 1)
+  }
 
   // Navigation params apply once per revision (a repeat open re-navigates the
   // one tab): the turn action's { turnSeq } selects that turn and scroll-syncs
@@ -115,7 +125,7 @@ export function InspectorPanel({
     if (navTurnSeq > 0) scrollConversationToTurn(navTurnSeq)
   }, [revision, navTurnSeq])
 
-  // The session's turn list, on mount (pull-based: refetch = reopen).
+  // The session's turn list, on mount (pull-based: refetch = reopen or retry).
   useEffect(() => {
     let cancelled = false
     setError(null)
@@ -132,10 +142,13 @@ export function InspectorPanel({
         ? previous
         : latestTurnSeq(result.value.turns) ?? null)
     }).catch((cause: unknown) => {
+      // A call that rejects (e.g. the gateway's arity gate, a disconnected
+      // carrier) is the same load failure as a refusal: the error state, not
+      // a spinner that never resolves.
       if (!cancelled) setError(cause instanceof Error ? cause.message : String(cause))
     })
     return () => { cancelled = true }
-  }, [sessionId, listTurns, tab.signal])
+  }, [sessionId, listTurns, tab.signal, reloadKey])
 
   // The selected turn's scope/request overview.
   useEffect(() => {
@@ -334,12 +347,22 @@ export function InspectorPanel({
       label: `#${effectiveScope.scopeSeq} ${effectiveScope.label ?? effectiveScope.scopeId}`,
     })
 
+  // A load failure (refusal, disconnect, a call rejected before any network
+  // traffic) is an explicit state with a retry — loading shows only while no
+  // error exists.
+  const errorBody = error === null ? undefined : (
+    <div className={css.stateNote} role="alert">
+      {t('state.error', { message: error })}
+      <button type="button" className={css.retry} onClick={onRetry}>{t('state.retry')}</button>
+    </div>
+  )
+
   let body: ReactNode
   if (turns === null) {
-    body = <div className={css.stateNote} role="status">{t('state.loading')}</div>
-  } else if (error !== null && (turns.length === 0 || overview === null)) {
+    body = errorBody ?? <div className={css.stateNote} role="status">{t('state.loading')}</div>
+  } else if (errorBody !== undefined && (turns.length === 0 || overview === null)) {
     // A failed verb (listTurns or getTurn) outranks the empty states.
-    body = <div className={css.stateNote} role="alert">{t('state.error', { message: error })}</div>
+    body = errorBody
   } else if (turns.length === 0) {
     body = backfill?.state === 'broken'
       // The log exists but refused to decode: a note, not an error page.
