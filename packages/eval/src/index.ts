@@ -27,6 +27,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-jobs'
 import { EvalRemoteService } from './remote.ts'
 import { EvalService } from './service.ts'
+import type { ScopedHomeEvidenceFace } from './faces.ts'
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'eval'
 
@@ -60,6 +61,16 @@ export interface EvalConfig {
    * roots see disjoint state.
    */
   readonly stateRoot?: string
+  /**
+   * The execution target's scoped-home evidence face: provision, the
+   * readiness gate and the freshness checks consume the target's answers
+   * (home fingerprint, credential grade, effective settings, roster
+   * read-back, preset-copy digest) as plain data instead of reading local
+   * directories. Fail-closed by construction — a missing or invalid answer
+   * lands where the corresponding local failure lands today. Absent, the
+   * local facade/directory reads behave byte-identically.
+   */
+  readonly evidence?: ScopedHomeEvidenceFace
 }
 
 /**
@@ -204,6 +215,8 @@ export type {
   DatasetsFace, DatasetsRegistryFace, MissionActionFace, MissionAnnotateFace, MissionExportFace,
   MissionFace, MissionFinalizeFace, MissionReadFace, MissionRunListFace, MissionStatusRow,
   LocalAgentFace, DelegationRun, DelegationResult, EvalDelegationOptions, MissionSubmitFile,
+  LocalAgentCredentialGrade, LocalAgentEffectiveSettingsFace,
+  ScopedHomeEvidenceFace, ScopedHomeHashEvidence, PresetSnapshotEvidence,
   LabFace, LabAcquireSpec, LabFingerprintComponents, LabMountSpec, LabPopulateResult, LabResourceLimits,
   LabUnitInfo, LabVerifyResult,
 } from './faces.ts'

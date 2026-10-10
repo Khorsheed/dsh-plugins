@@ -73,7 +73,7 @@ import { instanceCapabilityProbe } from './capability-probe.ts'
 import type {
   CapabilityCatalogFace, DatasetsFace, DatasetsRegistryFace, LabFace, LabUnitRow, LocalAgentFace, MissionActionFace,
   MissionAnnotateFace, MissionExportFace,
-  MissionFace, MissionFinalizeFace, MissionReadFace, MissionRunListFace,
+  MissionFace, MissionFinalizeFace, MissionReadFace, MissionRunListFace, ScopedHomeEvidenceFace,
 } from './faces.ts'
 import { isDatasetsRegistryFace } from './faces.ts'
 import type {
@@ -192,6 +192,14 @@ export class EvalService {
    */
   private readonly instanceStateRoot: string | undefined
 
+  /**
+   * The execution target's scoped-home evidence face, when this service was
+   * constructed with one. Provision, the readiness gate's snapshot freshness,
+   * and validate/conditions' freshness check consume it INSTEAD of the local
+   * facade/directory reads; absent, everything reads locally as before.
+   */
+  private readonly evidence: ScopedHomeEvidenceFace | undefined
+
   /** Set by {@link dispose}; terminal — every public verb refuses afterwards. */
   private disposed = false
 
@@ -200,13 +208,15 @@ export class EvalService {
    *   at call time (never required at mount).
    * @param config - `stateRoot` binds this instance's whole state tree
    *   (experiments, the condition library, the per-run cell dirs) to the given
-   *   directory instead of `$DSH_HOME/state/eval`.
+   *   directory instead of `$DSH_HOME/state/eval`; `evidence` supplies the
+   *   scoped-home fairness evidence from the execution target as plain data.
    */
   constructor(
     private readonly hosts?: { get(name: string): unknown },
-    config: { stateRoot?: string } = {},
+    config: { stateRoot?: string; evidence?: ScopedHomeEvidenceFace } = {},
   ) {
     this.instanceStateRoot = config.stateRoot === undefined ? undefined : containmentPath(config.stateRoot)
+    this.evidence = config.evidence
     this.jobs = new EvalRunJobs(hosts, this.instanceStateRoot === undefined ? {} : { stateRoot: this.instanceStateRoot })
   }
 
@@ -396,12 +406,37 @@ export class EvalService {
   }
 
   /**
-   * The scoped-home resolver the read verbs hand to validation, or `{}` in a
-   * composition with no local-agent facade. Never throws: a facade that
-   * cannot answer leaves the freshness check unrun, which is the same thing
-   * as not having one.
+   * The freshness resolvers the read verbs hand to validation, or `{}` in a
+   * composition with no way to answer. Never throws: a face that cannot
+   * answer leaves the freshness check unrun, which is the same thing as not
+   * having one.
+   *
+   * With an evidence face mounted the scope's preset-copy digest comes from
+   * the face (`scopePresetSha`) and the local facade's home resolution is NOT
+   * wired at all — on the topology the face exists for, the same-named local
+   * directory is a different environment, and the freshness check absent an
+   * answer skips itself rather than hashing the wrong tree.
    */
-  private scopeHomeDirResolver(): { scopeHomeDir?: (harness: string, scope?: string) => string | undefined } {
+  private scopeHomeDirResolver(): {
+    scopeHomeDir?: (harness: string, scope?: string) => string | undefined
+    scopePresetSha?: (harness: string, scope: string | undefined, preset: string) => Promise<string | undefined>
+  } {
+    const evidence = this.evidence
+    if (evidence !== undefined) {
+      if (typeof evidence.presetSnapshot !== 'function') return {}
+      return {
+        scopePresetSha: async (harness: string, scope: string | undefined, preset: string): Promise<string | undefined> => {
+          try {
+            const answer = await evidence.presetSnapshot?.(harness, scope, preset)
+            if (answer === undefined || answer.keepsCopy !== true) return undefined
+            const sha = answer.snapshot?.sha
+            return typeof sha === 'string' && sha !== '' ? sha : undefined
+          } catch {
+            return undefined
+          }
+        },
+      }
+    }
     const localAgent = this.hosts?.get('localAgent') as LocalAgentFace | undefined
     if (typeof localAgent?.homeDir !== 'function') return {}
     return {
@@ -630,11 +665,18 @@ export class EvalService {
     return provisionCondition(conditionPath, {
       repo: options.repo,
       localAgent,
+      ...(this.evidence === undefined ? {} : { evidence: this.evidence }),
       ...(options.writeBack === undefined ? {} : { writeBack: options.writeBack }),
       ...(options.log === undefined ? {} : { log: options.log }),
       ...(catalog === undefined
         ? {}
-        : { capabilities: instanceCapabilityProbe({ catalog, ...(options.log === undefined ? {} : { log: options.log }) }) }),
+        : {
+          capabilities: instanceCapabilityProbe({
+            catalog,
+            ...(this.evidence === undefined ? {} : { evidence: this.evidence }),
+            ...(options.log === undefined ? {} : { log: options.log }),
+          }),
+        }),
     })
   }
 
@@ -1807,6 +1849,7 @@ export class EvalService {
     if (localAgent !== undefined) deps.localAgent = localAgent
     if (lab !== undefined) deps.lab = lab
     if (capabilityCatalog !== undefined) deps.capabilityCatalog = capabilityCatalog
+    if (this.evidence !== undefined) deps.evidence = this.evidence
     return runPlan(plan, resolved, deps)
   }
 

@@ -13,8 +13,14 @@
  * fails the cell honestly (submission-rejected), never silently
  * mis-attributes output. `delegationOf` is optional on the face: a facade
  * predating T11 leaves the observed model null.
+ *
+ * {@link ScopedHomeEvidenceFace} is the one face here that is NOT a host
+ * service: it is injected at construction by whoever mounts this service, and
+ * it carries the execution target's scoped-home evidence as plain data.
  * @module @khorsheed/dsh-eval
  */
+import type { HomeHash } from './contract/hash.ts'
+import type { PresetTreeHash } from './preset-snapshot.ts'
 
 /**
  * The scope every datasets call carries. The run loop reads the player-facing
@@ -469,6 +475,102 @@ export interface LocalAgentScopeProvisionedFace {
    */
   presetSnapshot?: { matchesSource: boolean }
 }
+
+/* ─────────────────── the execution target's evidence face ─────────────────── */
+
+/**
+ * The scoped home's content fingerprint, as evidence: exactly what
+ * `hashHome(homeDir)` answers over the directory — plus the home's identity
+ * ON THE PRODUCER, carried as data (recorded in the provision report and
+ * handed to the capability probe's input; a consumer never resolves it
+ * against its own filesystem).
+ */
+export interface ScopedHomeHashEvidence extends HomeHash {
+  /** The scoped home as the producer knows it — a label, not a readable path. */
+  homeDir: string
+}
+
+/**
+ * The scope's own copy of one preset, as evidence: exactly what
+ * `scopeKeepsOwnPreset`, `scopePresetProblem` and
+ * `hashPresetTree(scopePresetDir(homeDir, preset))` answer over the directory.
+ */
+export interface PresetSnapshotEvidence {
+  /**
+   * Whether the scope keeps its own copy of the preset at all (`false` is the
+   * instance-root arrangement: the scope defers to the deployment's preset
+   * root, and there is nothing to fingerprint).
+   */
+  keepsCopy: boolean
+  /**
+   * Why the copy cannot be a measured subject — `scopePresetProblem`'s refusal
+   * text, verbatim. Present only when `keepsCopy` is true.
+   */
+  problem?: string
+  /**
+   * The copy's digest — `hashPresetTree`'s answer (every file, `SKILL.md`
+   * included). Absent when the copy is not a plain tree of regular files,
+   * which is exactly the local read's `undefined`.
+   */
+  snapshot?: PresetTreeHash
+}
+
+/**
+ * The execution target's evidence about one scoped home — the fairness
+ * fingerprints provision and the readiness gate anchor, produced WHERE the
+ * rounds run rather than read from this process's directories.
+ *
+ * The shape is the local reads', verbatim: each verb answers exactly the data
+ * its local counterpart produces (`hashHome`, `statusOf`'s credential grade,
+ * `effectiveSettings`, `readScopePreset`, the scope-preset trio), as plain
+ * JSON-able data — the producer runs on the execution target, the consumer
+ * here, and no filesystem handle crosses. Parity with the local reads is the
+ * contract: two runs' evidence must stay comparable, so a target answers the
+ * same digest functions over the same deny rules, not a reinterpretation.
+ *
+ * Every verb is OPTIONAL structurally (degrade-don't-explode), but a mounted
+ * face is the WHOLE evidence source for its scopes: a verb the face lacks is
+ * missing evidence — the same not-ready/refused outcome as today's missing or
+ * unreadable local data — never a fallthrough to reading a same-named local
+ * directory, which on this topology is a different environment. Unmounted,
+ * nothing here is consulted and the local reads behave byte-identically.
+ */
+export interface ScopedHomeEvidenceFace {
+  /**
+   * The scoped home's content fingerprint — `hashHome`'s answer plus the
+   * home's producer-side identity. `undefined` (or a throw) is the local
+   * "home directory does not exist" outcome: provision refuses.
+   */
+  homeHash?(harness: string, scope?: string): Promise<ScopedHomeHashEvidence | undefined>
+  /**
+   * The credential grade — the `credentialState` of `statusOf(harness, scope)`.
+   * `undefined`, a throw, or a word outside the four grades is the local
+   * "facade cannot answer" outcome: provision refuses — a lock is never
+   * written against a credential nobody graded.
+   */
+  credentialGrade?(harness: string, scope?: string): Promise<LocalAgentCredentialGrade | undefined>
+  /**
+   * The fairness-relevant effective settings — `effectiveSettings(harness,
+ * scope)`'s answer. `undefined` keeps today's exact meaning ("the harness
+   * declares no snapshot": every field reads uncomparable, and provision
+   * records that rather than guessing); a throw is the facade's refusal.
+   */
+  effectiveSettings?(harness: string, scope?: string): Promise<LocalAgentEffectiveSettingsFace | undefined>
+  /**
+   * The preset the scope's sub-profile rosters — `readScopePreset`'s answer.
+   * `undefined` is the local "no roster read back" outcome: the capability
+   * probe declines the measurement (which the readiness gate refuses later).
+   */
+  rosteredPreset?(harness: string, scope?: string): Promise<string | undefined>
+  /**
+   * The scope's own copy of one preset — the `scopeKeepsOwnPreset` /
+   * `scopePresetProblem` / `hashPresetTree` trio as one answer. `undefined`
+   * and every invalid shape read as the local "nothing to re-hash": the
+   * locked record stands unchallenged, never a guessed digest.
+   */
+  presetSnapshot?(harness: string, scope: string | undefined, preset: string): Promise<PresetSnapshotEvidence | undefined>
+}
+
 
 /**
  * The datasets service's REGISTRY reads, as eval's experiment layer calls them

@@ -310,6 +310,8 @@ import { apply } from '@khorsheed/dsh-eval'
 
 apply(isolatedCtx, {
   stateRoot: '/path/to/instance-state/eval',
+  // 可选：执行目标供给的 scoped-home 证据（见下）。不配则一切本地读取照旧。
+  evidence: targetEvidence,
 })
 ```
 
@@ -317,8 +319,9 @@ apply(isolatedCtx, {
 
 - **配置只此一项，缺省逐字节不变**：不配 `stateRoot` 的实例与之前逐字节一致——一切照旧从 DSH_HOME 派生，DSH_HOME 未设照旧抛「set DSH_HOME」。构造时根被规范化（绝对化、`~` 展开、沿已存在的目录树 realpath），所以边界比较比的是真实位置而不是路径字符串。
 - **runStart 的 stateRoot 收边界约束**：配了实例根之后，run 的格子根缺省就是实例根本身；`runStart` 与 `runExperimentStart`（以及 `run` / `runExperiment` 和 Remote `runStart` 新增的 `stateRoot` 选项）显式给出的路径必须解析在实例根**之内**——`..` 段越界与根内指向外面的软链都以带码拒绝 `STATEROOT_OUTSIDE_INSTANCE`（`EvalRunRefused`）挡下，且拒绝发生在任何注册之前。没配实例根时该选项照旧原样透传，不加任何检查。
+- **公平性证据可由执行目标供给（可选 `config.evidence`，`ScopedHomeEvidenceFace`）**：provision 与就绪闸钉住的证据——scoped home 内容指纹（`home.sha`）、凭证档位、有效配置逐项核对、（条件声明 preset 时的）roster 回读与 scope 自存 preset 副本的摘要——今天读的是本机目录；配上 face 之后改由**执行目标**以纯数据回答（生产侧在目标上跑同一套哈希函数与拒绝清单，经 JSON 边界送过来），本侧绝不解析或打开同名本机目录——在那种拓扑上同名目录是另一个环境。带面时该 face 是其 scope 的**整个**证据源：某动词缺席、答不出、或答非所形，落点与本地对应失败逐点相同——缺指纹 = 本地读不到目录的拒绝；凭证未分级 = 拒绝写 lock；有效配置缺席 = 「不可比」记录而非捏造一致；副本摘要缺席 = 锁定记录原样成立、绝不猜一份。对等性是契约：钉住的 fixture 上，face 路径与本地路径写出的 lock 逐字节一致。不配时一切本地行为不变。
 - **dispose 只动自己的 run**：`dispose()` 幂等且终态，并随借入 Context 的销毁自动触发（`apply` 里的 `ctx.effect` 接线）。它取消的是**本实例起过的、还没 settle 的** run job——走的就是 `job_kill` 那一条：job 的 cancel 钩子 → run 的 AbortSignal → 停开新格、被抓住的格按 `interrupted` 走完正常收尾落盘，绝不是 kill -9；run 自己开的父会话仍在 settle 路径里归还。**不覆盖**别的实例起过的 job——unowned-by-design 的注册语义不变，dispose 不扩大成注册表清扫；已 settle 的 job 无需处理。**永远没有 resume**：停掉的 run 只能重跑，这是既有设计，不随本接缝改变；盘上的中断格保持 `interrupted`。dispose 之后每个公开动词（含读取）以带码的包名错误 `EvalDisposedError`（`code: 'disposed'`）拒绝；与 dispose 竞态的 start 拒绝同一个码、什么都不注册（竞态中已开的父会话照常归还）。同根重建合法：同一 stateRoot 上新建服务实例照常工作，旧实例写入的数据都在。
-- **部署级的东西仍是部署级**：条件的 scoped home（凭证目录）由 localAgent 门面的 `homeDir(harness, scope)` 回答，在 eval 的状态根之外，不随实例根走；mission 账本与题集登记仓库同理——实例根绑定的只是 eval 自己的状态树。
+- **部署级的东西仍是部署级**：localAgent 门面仍是委派与 scope 组合（`provisionScope` 的写）的入口；mission 账本与题集登记仓库同理不向实例根绑定——实例根绑定的只是 eval 自己的状态树，证据 face 替换的只是公平性证据的**读取**，凭证本身哪里都不复制。
 
 ## 报告（report）
 
