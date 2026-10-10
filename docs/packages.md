@@ -27,6 +27,7 @@
 | `@khorsheed/dsh-capability-catalog` | `packages/capability-catalog` | 0.1.98 | bundle | — | web | 0.1.5-rc.1 | basic, web-eval |
 | `@khorsheed/dsh-capture` | `packages/capture` | 0.1.2 | bundle | — | web | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-context-guard` | `packages/context-guard` | 0.2.4 | bundle | — | web | 0.1.2-rc.1 | basic, web-eval |
+| `@khorsheed/dsh-context-lens` | `packages/context-lens` | 0.1.0 | bundle | — | web | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-datasets` | `packages/datasets` | 0.2.0-rc.1 | bundle | — | web | 0.2.0-rc.2 | — |
 | `@khorsheed/dsh-reader` | `packages/dsh-reader` | 0.3.0 | bundle | — | web | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-eval` | `packages/eval` | 0.2.0-rc.1 | bundle | — | web | 0.2.0-rc.2 | — |
@@ -48,7 +49,6 @@
 | `@khorsheed/dsh-mobile` | `packages/mobile` | 0.1.3 | bundle | — | web | 0.1.5-rc.1 | basic |
 | `@khorsheed/dsh-presets` | `packages/presets` | 0.3.0 | bundle | — | — | 0.1.7-rc.1 | — |
 | `@khorsheed/dsh-quote` | `packages/quote` | 0.1.2 | bundle | — | web | 0.1.5-rc.1 | basic |
-| `@khorsheed/dsh-request-inspector` | `packages/request-inspector` | 0.1.0 | bundle | — | web | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-room` | `packages/room` | 0.2.1 | bundle | — | web | 0.1.5-rc.1 | dev |
 | `@khorsheed/dsh-client-session-title-edit` | `packages/session-title-edit` | 0.2.5 | bundle | — | web | 0.1.2-rc.1 | basic, web-eval |
 | `@khorsheed/dsh-sidechat` | `packages/sidechat` | 0.2.3 | bundle | — | web | 0.1.5-rc.1 | — |

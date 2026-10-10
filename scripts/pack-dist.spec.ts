@@ -557,6 +557,39 @@ describe('verifyTarball', () => {
     }
   })
 
+  it('exempts generated typert faces from the family-edge scan', () => {
+    // gen-typert embeds the composition-wide merged MessageSourceMap — another
+    // package's message source carrying a `plugin: '@khorsheed/...'` literal —
+    // into EVERY typert-faced package's lib/typert.*. That name is generated
+    // composition data: no manifest field can declare it without inventing an
+    // edge (canvas must not depend on game), so the scan skips those files.
+    const dir = stage({
+      'package.json': JSON.stringify({ name: '@khorsheed/dsh-x' }),
+      'lib/typert.host.js': 'const d = "\'dsh-game\': { plugin: \'@khorsheed/dsh-game\'; }";',
+      'lib/typert.remote-client.d.ts': "export type R = '@khorsheed/dsh-game';",
+    })
+    try {
+      expect(() => verifyTarball(pack(dir), dir, '@khorsheed/dsh-x')).not.toThrow()
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('still fails on a family reference in a hand-authored artifact', () => {
+    // The typert exemption covers only the generated faces; a real import in
+    // the package's own lib output remains an edge the manifest must declare.
+    const dir = stage({
+      'package.json': JSON.stringify({ name: '@khorsheed/dsh-x' }),
+      'lib/typert.host.js': 'const d = "\'@khorsheed/dsh-game\'";',
+      'lib/index.js': "import '@khorsheed/dsh-game';",
+    })
+    try {
+      expect(() => verifyTarball(pack(dir), dir, '@khorsheed/dsh-x')).toThrow(/without manifest edges.*dsh-game/)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   it('fails on a tarball carrying sourcemaps or tsbuildinfo', () => {
     // packDist prunes staging; this is the artifact-level backstop for a glob
     // or a late build writing them back in.
