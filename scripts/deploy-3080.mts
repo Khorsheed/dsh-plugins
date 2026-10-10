@@ -37,6 +37,7 @@
  *   pnpm deploy:3080 --package packages/<dir> --no-restart   # pack+refresh only
  *
  * Options:
+ *   --replace OLD=NEW  replace an old direct plugin with a co-deployed new identity
  *   --version X     override the tarball version (default: package.json)
  *   --initiator ID  session id the restart report is routed to. DEFAULT IS TO
  *      OMIT THE FLAG: the guard then routes the report to its caller's
@@ -78,6 +79,7 @@ function usage(message) {
 
 const args = process.argv.slice(2)
 const packages = []
+const replacements: Array<{ oldName: string; newName: string }> = []
 let versionOverride
 // The restart report's routing session. Deliberately undefined by default:
 // the --initiator flag is only passed when the operator names a session
@@ -92,6 +94,11 @@ for (let i = 0; i < args.length; i++) {
   const a = args[i]
   if (a === '--package') packages.push(args[++i])
   else if (a.startsWith('--package=')) packages.push(a.slice('--package='.length))
+  else if (a === '--replace') {
+    const match = /^(@khorsheed\/dsh-[a-z0-9-]+)=(@khorsheed\/dsh-[a-z0-9-]+)$/.exec(args[++i] ?? '')
+    if (!match || match[1] === match[2]) usage('--replace requires distinct OLD=NEW community package names')
+    replacements.push({ oldName: match[1], newName: match[2] })
+  }
   else if (a === '--version') versionOverride = args[++i]
   else if (a === '--initiator') initiator = args[++i]
   else if (a === '--no-restart') noRestart = true
@@ -270,6 +277,16 @@ try {
 
   const manifestPath = join(PROFILE, 'package.json')
   const initial = JSON.parse(readFileSync(manifestPath, 'utf8'))
+  const oldNames = new Set(replacements.map(r => r.oldName))
+  if (oldNames.size !== replacements.length || new Set(replacements.map(r => r.newName)).size !== replacements.length) usage('duplicate replacement identity')
+  const patchPath = join(PROFILE, 'cordis.patch.yml')
+  for (const { oldName, newName } of replacements) {
+    if (oldNames.has(newName) || metas.some(m => m.name === oldName) || retreat.has(newName)) usage('replacement identities must not form chains or overlap deployed/retreated packages')
+    if (!metas.some(m => m.name === newName && m.pkg.dsh?.bundle?.patch)) usage(`replacement target ${newName} must be a co-deployed self-mounting package`)
+    // Custom rows cannot be inferred from an npm identity. Refuse before writes.
+    if (existsSync(patchPath) && readFileSync(patchPath, 'utf8').includes(oldName)) usage(`${oldName} has an explicit profile patch reference; resolve that composition before replacement`)
+  }
+
 
   // Retired-package sweep: a folded companion left in the profile is the
   // stuck-middle the 2026-09-28 incident ran into (the replacement shipped;
@@ -335,6 +352,27 @@ try {
 
   // 3. profile manifest + family overrides + clean install.
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+  const wsPath = join(PROFILE, 'pnpm-workspace.yaml')
+  let ws = readFileSync(wsPath, 'utf8')
+  if (replacements.length) {
+    const backup = join(DSH_HOME, 'state', 'deploy-replacements', `${buildStamp}-${process.pid}`)
+    mkdirSync(backup, { recursive: true })
+    for (const name of ['package.json', 'pnpm-workspace.yaml', 'cordis.patch.yml']) {
+      if (existsSync(join(PROFILE, name))) copyFileSync(join(PROFILE, name), join(backup, name))
+    }
+    process.stdout.write(`deploy-3080: replacement configuration backup: ${backup}\n`)
+    for (const { oldName, newName } of replacements) {
+      delete manifest.dependencies?.[oldName]
+      const bundles = manifest.dsh?.profile?.bundles
+      if (Array.isArray(bundles)) manifest.dsh.profile.bundles = bundles.filter(b => b !== oldName)
+      // Pins written by this flow are flat mapping entries. Preserve every other line.
+      const escaped = oldName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      const pin = new RegExp(`^  ['"]?${escaped}['"]?:[^\n]*(?:\n|$)`, 'gm')
+      ws = ws.replace(pin, '')
+      process.stdout.write(`deploy-3080: replacing ${oldName} → ${newName}\n`)
+    }
+  }
+
   for (const m of metas) {
     // Existing dependencies move together before official add resolves the family.
     // New names and bundle registration remain owned by the official CLI.
@@ -354,8 +392,6 @@ try {
     if (!hadDep && !hadBundle) process.stdout.write(`deploy-3080: family member ${member} is not in the profile manifest — nothing to retreat\n`)
   }
   writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n')
-  const wsPath = join(PROFILE, 'pnpm-workspace.yaml')
-  let ws = readFileSync(wsPath, 'utf8')
   for (const m of metas) ws = upsertOverride(ws, m.name, m.tgzPath)
   // Retreat pins: the member's file: pin STAYS — the bundle's rewritten
   // ^-edges resolve transitively through it. A missing pin is restored from
@@ -381,6 +417,10 @@ try {
   run('pnpm', ['install'], { cwd: PROFILE })
 
   const installed = JSON.parse(readFileSync(manifestPath, 'utf8'))
+  for (const { oldName } of replacements) {
+    if (installed.dependencies?.[oldName] || installed.dsh?.profile?.bundles?.includes(oldName)) throw new Error(`${oldName}: replacement left the old identity registered`)
+  }
+
   for (const m of metas) {
     // A co-named family member verifies through the retreat contract, not the
     // direct-dependency one: it just LEFT both direct lists.

@@ -1,7 +1,7 @@
 /** Run the real orchestrator with fake executables and an isolated home: no production processes. */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createHash } from 'node:crypto'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, readdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { spawn } from 'node:child_process'
@@ -28,6 +28,7 @@ const fs=require('node:fs'),path=require('node:path');const cmd=path.basename(pr
 fs.appendFileSync(process.env.CALL_LOG,JSON.stringify([cmd,...args])+'\\n');
 if(process.env.FAILURE==='add'&&cmd==='node'&&args[1]==='plugin')process.exit(3);
 if(process.env.FAILURE==='gate'&&cmd==='node'&&['preflight','schedule-exit'].includes(args[1]))process.exit(4);
+if(process.env.FAILURE==='build'&&cmd==='pnpm'&&args.includes('build'))process.exit(5);
 if(cmd==='git')process.exit(0);
 if(cmd==='npx') { const dir=args[args.indexOf('--package')+1],out=args[args.indexOf('--out')+1],p=JSON.parse(fs.readFileSync(path.join(dir,'package.json'),'utf8')); for(const sec of ['dependencies','peerDependencies','devDependencies'])for(const [n,s]of Object.entries(p[sec]??{}))if(String(s).startsWith('workspace:')){for(const d of fs.readdirSync('packages')){const q=path.join('packages',d,'package.json');if(fs.existsSync(q)){const w=JSON.parse(fs.readFileSync(q,'utf8'));if(w.name===n){p[sec][n]='^'+w.version;break}}}} fs.mkdirSync(out,{recursive:true});fs.writeFileSync(path.join(out,'khorsheed-'+p.name.replace('@khorsheed/','')+'-'+p.version+'.tgz'),JSON.stringify(p)); }
 if(cmd==='node'&&args[1]==='plugin') { const p=JSON.parse(fs.readFileSync(file));for(const tar of args.slice(3,args.indexOf('--profile'))){const pkg=JSON.parse(fs.readFileSync(tar));p.dependencies[pkg.name]='file:'+tar;if(process.env.FAILURE!=='registration'&&!p.dsh.profile.bundles.includes(pkg.name))p.dsh.profile.bundles.push(pkg.name);}fs.writeFileSync(file,JSON.stringify(p)); }
@@ -82,6 +83,42 @@ function fixture({ dependency = true, bundle = true, selfMounting = true, failur
 }
 
 describe('deploy 3080 flow', () => {
+  function retiredFixture(failure = '') {
+    const f = fixture({ dependency: false, bundle: false, failure })
+    const oldName = '@khorsheed/dsh-old-demo'
+    writeFileSync(join(f.profile, 'package.json'), JSON.stringify({ dependencies: { [oldName]: `file:${f.old}` }, dsh: { profile: { bundles: [oldName] } } }))
+    writeFileSync(join(f.profile, 'pnpm-workspace.yaml'), `overrides:\n  '${oldName}': 'file:${f.old}'\nminimumReleaseAgeExclude:\n  - '@khorsheed/*'\n`)
+    return { ...f, oldName, extra: ['--replace', `${oldName}=@khorsheed/dsh-demo`] }
+  }
+  it('replaces a direct identity after packing, backs up config, and retries idempotently', async () => {
+    const f = retiredFixture(), before = readFileSync(join(f.profile, 'package.json'), 'utf8')
+    const r = await f.run(false, f.extra)
+    expect(r.status, r.output).toBe(0)
+    const installed = JSON.parse(readFileSync(join(f.profile, 'package.json'), 'utf8'))
+    expect(installed.dependencies[f.oldName]).toBeUndefined()
+    expect(installed.dsh.profile.bundles).toEqual(['@khorsheed/dsh-demo'])
+    expect(readFileSync(join(f.profile, 'pnpm-workspace.yaml'), 'utf8')).not.toContain(f.oldName)
+    const backups = join(f.home, 'state/deploy-replacements')
+    expect(readFileSync(join(backups, readdirSync(backups)[0]!, 'package.json'), 'utf8')).toBe(before)
+    expect(r.output).toContain('canary PASS')
+    expect((await f.run(true, f.extra)).status).toBe(0)
+  })
+  it('keeps the old registration when replacement build fails', async () => {
+    const f = retiredFixture('build'), before = readFileSync(join(f.profile, 'package.json'), 'utf8')
+    const r = await f.run(false, f.extra)
+    expect(r.status).not.toBe(0)
+    expect(readFileSync(join(f.profile, 'package.json'), 'utf8')).toBe(before)
+    expect(r.calls.some(c => c.includes('record') || c.includes('schedule-exit'))).toBe(false)
+  })
+  it('rejects an undeployed replacement target or custom patch before any command', async () => {
+    const f = retiredFixture()
+    const bad = await f.run(true, ['--replace', `${f.oldName}=@khorsheed/dsh-absent`])
+    expect(bad.status).not.toBe(0); expect(bad.calls).toEqual([])
+    writeFileSync(join(f.profile, 'cordis.patch.yml'), `name: '${f.oldName}'\n`)
+    const custom = await f.run(true, f.extra)
+    expect(custom.status).not.toBe(0); expect(custom.calls).toEqual([])
+  })
+
   it('reports refresh-only truthfully and never requests a restart', async () => {
     const f = fixture(), r = await f.run()
     expect(r.status, r.output).toBe(0)
