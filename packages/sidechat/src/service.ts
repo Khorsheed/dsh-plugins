@@ -4,13 +4,14 @@
  * Remote face delegates to.
  *
  * The model: each contextKey binds ONE persistent agent session — created
- * lazily on the first send (`ctx.agents.create`, the eval/room precedent),
- * cold-resumed on the first gesture after a restart (`ctx.agents.resume`),
- * and projected from its session journal (never a shadow copy, so history
- * survives restart by construction). `openWith` is per-turn FRESH, never a
- * create-time snapshot: the agent-scoped prompt section's text provider reads
- * the record's latest segment at every assembly, and caller tools re-attach
- * by name on the live agent.
+ * lazily on the first send and cold-resumed on the first gesture after a
+ * restart — through the EXECUTION BACKEND port (`SideChatExecutionBackend`;
+ * the default is the `ctx.agents` behavior extracted as-is, a mounting side
+ * may inject its own target). The transcript projects from the session's
+ * events (never a shadow copy, so history survives restart by construction).
+ * `openWith` is per-turn FRESH, never a create-time snapshot: the prompt
+ * segment and the caller tools reach the backend as LIVE READERS, re-read at
+ * every assembly.
  *
  * Mutations serialize through one in-process queue; every state write rides
  * the store's re-rooted fence (the session that carried the gesture stamps
@@ -24,24 +25,25 @@
  */
 import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
-import type { Agent, AgentOptions, AgentSetup, ModelSelection } from '@deepseek-ai/dsh-agent'
+import type { Agent, AgentOptions, ModelSelection } from '@deepseek-ai/dsh-agent'
 import { FsError, type FsVersion } from '@deepseek-ai/dsh-fs'
-import { createUserMessage, type ContextFormed, type MessageSource } from '@deepseek-ai/dsh-llm'
+import type { ContextFormed, MessageSource } from '@deepseek-ai/dsh-llm'
 import { SessionId, type Session } from '@deepseek-ai/dsh-session'
-// Type-only: pulls the ctx.systemPrompt service merge (the agent-scope section registration).
-import type {} from '@deepseek-ai/dsh-system-prompt'
+import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
-import { composeSideAgent, inspectCold, type SideAgentComposition } from './agent-setup.ts'
+import {
+  SideChatDefaultExecutionBackend, type SideChatExecutionBackend, type SideChatExecutionOpenInit,
+  type SideChatExecutionSession,
+} from './execution.ts'
 import { PACKAGE_NAME } from './invariant.ts'
 import { messageTextOf, projectTranscript, projectTurnError } from './journal.ts'
 import { SideChatStore } from './store.ts'
 import {
-  foldRefsIntoText, MAX_REFS_PER_CONTEXT, refLabelOf, SIDECHAT_DEFAULT_SEGMENT, SIDECHAT_SECTION_NAME,
-  SIDECHAT_SECTION_ORDER,
+  foldRefsIntoText, MAX_REFS_PER_CONTEXT, refLabelOf, SIDECHAT_DEFAULT_SEGMENT,
   type SideChatContextRecord, type SideChatContextsDoc, type SideChatContextSummary,
   type SideChatListResult, type SideChatOpenInput, type SideChatQuoteOutcome, type SideChatQuoteRequest,
   type SideChatRef, type SideChatSendOutcome, type SideChatSendRequest, type SideChatState,
-  type SideChatStateOutcome, type SideChatStatus, type SideChatSurfaceHints,
+  type SideChatStateOutcome, type SideChatStatus, type SideChatStopOutcome, type SideChatSurfaceHints,
 } from './types.ts'
 
 /**
@@ -101,6 +103,15 @@ export interface SideChatConfig {
    * calling session's); unset keeps the inheritance chain.
    */
   readonly cwd?: string
+  /**
+   * The execution backend every context's session opens through (the canvas
+   * factory-config precedent: construction-time, one per service instance).
+   * Absent = the default backend (the `ctx.agents` behavior, byte-identical
+   * to before). An injected backend owns execution: it receives the resolved
+   * route/preset/cwd in the open payload, and the service never falls back
+   * to deployment defaults on its behalf.
+   */
+  readonly executionBackend?: SideChatExecutionBackend
 }
 
 /**
@@ -121,10 +132,8 @@ interface ContextRuntime {
   record: SideChatContextRecord
   /** Caller-supplied tools by name (host-side objects — never persisted, never on the wire). */
   readonly tools: Map<string, ToolDefinition>
-  /** Live-agent tool registration disposers by name. */
-  readonly toolDisposers: Map<string, () => void>
-  /** In-flight agent creation/resume (concurrent gestures dedupe onto it). */
-  pending?: Promise<Agent>
+  /** In-flight session open (concurrent gestures dedupe onto it). */
+  pending?: Promise<SideChatExecutionSession>
 }
 
 /** The segment one assembly renders: the built-in orientation plus the consumer's latest segment. */
@@ -137,13 +146,6 @@ function renderSegment(segment: string | undefined): string {
 /** The agentDefaultModel face this package consumes (probed, never injected — the session-controller's own fallback). */
 export type AgentDefaultModelProbe = Pick<{ currentSelection(): ModelSelection }, 'currentSelection'>
 
-/** The live status overlay for one record (synchronous — the list verb's per-row read). */
-function liveStatusOf(agents: Context['agents'], record: SideChatContextRecord): SideChatStatus {
-  if (record.sessionId === undefined) return 'new'
-  const live = agents.get(SessionId(record.sessionId))
-  return live === undefined ? 'cold' : live.status
-}
-
 /**
  * The side-chat service core. Provided as `ctx.sideChat`; the Remote face
  * (`remote.sidechat`) is a thin adapter over it.
@@ -153,8 +155,12 @@ export class SideChatService {
   readonly store: SideChatStore
 
   private readonly contexts = new Map<string, ContextRuntime>()
-  /** contextKey → owned agent handle (the create/resume ownership capability). */
-  private readonly handles = new Map<string, { dispose(): Promise<void> }>()
+  /** contextKey → live execution session (the open ownership handle). */
+  private readonly liveSessions = new Map<string, SideChatExecutionSession>()
+  /** The execution target every session opens through (default: the `ctx.agents` behavior). */
+  private readonly backend: SideChatExecutionBackend
+  /** true when no backend was injected — the deployment-default route probe and the calling-less route rule apply. */
+  private readonly backendIsDefault: boolean
   private docVersion: FsVersion | null = null
   private loaded = false
   private queue: Promise<unknown> = Promise.resolve()
@@ -164,9 +170,11 @@ export class SideChatService {
 
   /**
    * @param ctx - host context (`agents`/`sessions` are the plugin's declared injects).
-   * @param config - optional state-root, agent-preset, route and cwd overrides.
+   * @param config - optional state-root, agent-preset, route/cwd and execution-backend overrides.
    */
   constructor(private readonly ctx: Context, private readonly config: SideChatConfig = {}) {
+    this.backend = config.executionBackend ?? new SideChatDefaultExecutionBackend(ctx)
+    this.backendIsDefault = config.executionBackend === undefined
     this.store = new SideChatStore(ctx, config)
     // fs arriving LATE (the common mount order: the 3080 bug was it never
     // being seen at all): allow one fresh ensureLoaded, which merges the disk
@@ -204,7 +212,7 @@ export class SideChatService {
       let merged = 0
       for (const record of read.doc.contexts) {
         if (this.contexts.has(record.contextKey)) continue
-        this.contexts.set(record.contextKey, { record, tools: new Map(), toolDisposers: new Map() })
+        this.contexts.set(record.contextKey, { record, tools: new Map() })
         merged += 1
       }
       // Memory knows records disk does not (created before fs arrived): flush
@@ -278,55 +286,12 @@ export class SideChatService {
     const runtime: ContextRuntime = {
       record: { contextKey, label: label === undefined || label === '' ? contextKey : label, refs: [], createdAt: now, updatedAt: now },
       tools: new Map(),
-      toolDisposers: new Map(),
     }
     this.contexts.set(contextKey, runtime)
     return runtime
   }
 
   /* ------------------------------------------------------ the agent world */
-
-  /**
-   * Compose one context's agent-scoped contributions: the prompt section
-   * whose text provider reads the record's LATEST segment at every assembly
-   * (per-turn freshness by construction), plus the caller-supplied tools.
-   * Every registration is probed — a scope without the service degrades to
-   * none rather than failing the agent's creation.
-   * @param agentCtx - the agent's scope context (creation/resume setup, or `agent.ctx` live).
-   * @param runtime - the context's runtime.
-   */
-  private contribute(agentCtx: Context, runtime: ContextRuntime): void {
-    if (agentCtx.get('systemPrompt') !== undefined) {
-      try {
-        agentCtx.systemPrompt.section({
-          name: SIDECHAT_SECTION_NAME,
-          order: SIDECHAT_SECTION_ORDER,
-          text: () => renderSegment(runtime.record.segment),
-        })
-      } catch (error) {
-        this.ctx.logger.warn(`sidechat: the prompt section was refused: ${error instanceof Error ? error.message : String(error)}`)
-      }
-    }
-    this.attachTools(agentCtx, runtime, [...runtime.tools.values()])
-  }
-
-  /**
-   * Attach caller tools by name on one agent scope, replacing same-named
-   * registrations (the caller's newer definition always wins). Origin tagging
-   * is the CALLER's responsibility — side-chat never tags on its behalf.
-   */
-  private attachTools(agentCtx: Context, runtime: ContextRuntime, defs: readonly ToolDefinition[]): void {
-    if (defs.length === 0 || agentCtx.get('tools') === undefined) return
-    for (const def of defs) {
-      try {
-        runtime.toolDisposers.get(def.name)?.()
-        runtime.toolDisposers.delete(def.name)
-        runtime.toolDisposers.set(def.name, agentCtx.tools.register(def))
-      } catch (error) {
-        this.ctx.logger.warn(`sidechat: tool "${def.name}" was refused: ${error instanceof Error ? error.message : String(error)}`)
-      }
-    }
-  }
 
   /** The cwd one new side session runs at: the explicit config anchor when set, else the inheritance chain ({@link inheritCwd}). */
   private cwdOf(contextKey: string, calling: Agent | undefined): string | undefined {
@@ -354,10 +319,12 @@ export class SideChatService {
    * unset), then the CALLING session's own folded request header (the user
    * talks to the same model in the side chat as in the conversation), then
    * the deployment default via the probed `agentDefaultModel` service
-   * (probe-with-degrade, never an inject), else nothing — and the turn
-   * error then surfaces through `lastError` instead of vanishing.
+   * (probe-with-degrade, never an inject) — DEFAULT backend only: an
+   * injected backend owns execution and the service never falls back to
+   * deployment defaults on its behalf — else nothing, and the turn error
+   * then surfaces through `lastError` instead of vanishing.
    * @param calling - the calling session's agent, when a wire gesture carried one.
-   * @returns the agentOptions to pass create/resume, or undefined.
+   * @returns the route for the open payload, or undefined.
    */
   private agentOptionsOf(calling: Agent | undefined): AgentOptions | undefined {
     const route = this.config.agentRoute
@@ -373,6 +340,7 @@ export class SideChatService {
         ...config.reasoningEffort === undefined ? {} : { reasoningEffort: config.reasoningEffort },
       }
     }
+    if (!this.backendIsDefault) return undefined
     const defaults = this.ctx.get('agentDefaultModel') as AgentDefaultModelProbe | undefined
     const selection = typeof defaults?.currentSelection === 'function'
       ? defaults.currentSelection()
@@ -388,98 +356,91 @@ export class SideChatService {
   }
 
   /**
-   * Create or cold-resume one context's agent, deduped per context. A resume
-   * failure (a torn or removed session log) falls through to a FRESH session
-   * rather than erroring the gesture — the mapping is corrected, the lost
-   * history is simply gone.
+   * Open one context's session live, deduped per context. A resume failure
+   * (a torn or removed session log) falls through to a FRESH session rather
+   * than erroring the gesture — the mapping is corrected, the lost history
+   * is simply gone.
    */
-  private async ensureAgent(runtime: ContextRuntime, calling: Agent | undefined): Promise<Agent> {
-    const { record } = runtime
-    if (record.sessionId !== undefined) {
-      const live = this.ctx.agents.get(SessionId(record.sessionId))
-      if (live !== undefined) return live
-    }
-    runtime.pending ??= this.spawnAgent(runtime, calling).finally(() => { delete runtime.pending })
+  private async ensureSession(runtime: ContextRuntime, calling: Agent | undefined): Promise<SideChatExecutionSession> {
+    const live = this.liveSessions.get(runtime.record.contextKey)
+    if (live !== undefined) return live
+    runtime.pending ??= this.openSession(runtime, calling).finally(() => { delete runtime.pending })
     return runtime.pending
   }
 
-  /** One creation/resume pass for one context (see {@link ensureAgent}). */
-  private async spawnAgent(runtime: ContextRuntime, calling: Agent | undefined): Promise<Agent> {
-    // The route MUST travel with both create and resume: resume rebuilds the
-    // agent world with no logged header yet, so the seed route comes from
-    // these options alone.
-    const agentOptions = this.agentOptionsOf(calling)
-    // A send with NO calling agent must resolve a route up front: with no
-    // user-facing session an unrouted turn's error is invisible, so refuse
-    // honestly (send maps this onto `agent-unavailable`) instead of creating
-    // a deaf agent.
-    if (calling === undefined && agentOptions === undefined) {
+  /** One open pass for one context (see {@link ensureSession}). */
+  private async openSession(runtime: ContextRuntime, calling: Agent | undefined): Promise<SideChatExecutionSession> {
+    const route = this.agentOptionsOf(calling)
+    // A send with NO calling agent must resolve a route up front — DEFAULT
+    // backend only (an injected backend owns routing): with no user-facing
+    // session an unrouted turn's error is invisible, so refuse honestly
+    // (send maps this onto `agent-unavailable`) instead of creating a deaf
+    // agent.
+    if (calling === undefined && route === undefined && this.backendIsDefault) {
       throw new Error('sidechat: no execution route resolves without a calling session (set the explicit config route or mount agentDefaultModel)')
     }
-    const setupFor = (composition: SideAgentComposition): AgentSetup =>
-      async (agentCtx, agent) => {
-        if (composition.setup !== undefined) await composition.setup(agentCtx, agent)
-        this.contribute(agentCtx, runtime)
-      }
-    if (runtime.record.sessionId !== undefined) {
-      try {
-        // History was composed under the recorded preset — resume keeps it
-        // (the header's comment semantics: replay under what created it).
-        const composition = await composeSideAgent(this.ctx, runtime.record.agentPreset ?? this.config.agentPreset)
-        const handle = await this.ctx.agents.resume({
-          resumeSessionId: SessionId(runtime.record.sessionId),
-          ...agentOptions === undefined ? {} : { agentOptions },
-          setup: setupFor(composition),
-        })
-        await this.refuseLateHandle(handle)
-        this.handles.set(runtime.record.contextKey, handle)
-        return handle.agent
-      } catch (error) {
-        if (error instanceof SideChatDisposedError) throw error
-        this.ctx.logger.warn(`sidechat: resuming "${runtime.record.contextKey}" failed, starting a fresh session: ${error instanceof Error ? error.message : String(error)}`)
+    const { record } = runtime
+    // The open payload: identity plus the RESOLVED route/preset/cwd, plus the
+    // live readers a backend re-reads at every assembly (per-turn freshness
+    // survives any backend by construction).
+    const init = (sessionId: string, resume: boolean): SideChatExecutionOpenInit => {
+      // RESUME replays the recorded preset (the header's comment semantics);
+      // CREATE inherits the CALLING session's own preset first (a
+      // standard-mode conversation gets a standard-mode side chat), then the
+      // recorded preset, then the plugin config — the backend resolves its
+      // own default when none is named.
+      const presetId = resume
+        ? (record.agentPreset ?? this.config.agentPreset)
+        : (calling?.session.header.agentPreset ?? record.agentPreset ?? this.config.agentPreset)
+      // The cwd anchor is a FIRST-OPEN fact: a resume replays what created
+      // the session.
+      const cwd = resume ? undefined : this.cwdOf(record.contextKey, calling)
+      return {
+        contextKey: record.contextKey,
+        sessionId,
+        resume,
+        ...route === undefined ? {} : { route },
+        ...presetId === undefined ? {} : { presetId },
+        ...cwd === undefined ? {} : { cwd },
+        segmentText: () => renderSegment(runtime.record.segment),
+        tools: () => [...runtime.tools.values()],
       }
     }
-    // CREATE: inherit the CALLING session's own preset first (a standard-mode
-    // conversation gets a standard-mode side chat; the deployment default
-    // happening to match was luck, not design), then the recorded preset,
-    // then the plugin config, then the deployment default.
-    const presetId = calling?.session.header.agentPreset
-      ?? runtime.record.agentPreset
-      ?? this.config.agentPreset
-    const composition = await composeSideAgent(this.ctx, presetId)
-    const cwd = this.cwdOf(runtime.record.contextKey, calling)
-    const handle = await this.ctx.agents.create({
-      sessionId: SessionId(randomUUID()),
-      meta: {
-        ...cwd === undefined ? {} : { cwd },
-        ...composition.agentPreset === undefined ? {} : { agentPreset: composition.agentPreset },
-      },
-      ...agentOptions === undefined ? {} : { agentOptions },
-      setup: setupFor(composition),
-    })
-    await this.refuseLateHandle(handle)
-    this.handles.set(runtime.record.contextKey, handle)
+    if (record.sessionId !== undefined) {
+      try {
+        const session = await this.backend.open(init(record.sessionId, true))
+        await this.refuseLateSession(session)
+        this.liveSessions.set(record.contextKey, session)
+        return session
+      } catch (error) {
+        if (error instanceof SideChatDisposedError) throw error
+        this.ctx.logger.warn(`sidechat: resuming "${record.contextKey}" failed, starting a fresh session: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
+    const session = await this.backend.open(init(randomUUID(), false))
+    await this.refuseLateSession(session)
+    this.liveSessions.set(record.contextKey, session)
     runtime.record = {
       ...runtime.record,
-      sessionId: String(handle.agent.session.id),
-      ...composition.agentPreset === undefined ? {} : { agentPreset: composition.agentPreset },
+      sessionId: session.sessionId,
+      ...session.resolvedPresetId === undefined ? {} : { agentPreset: session.resolvedPresetId },
       updatedAt: new Date().toISOString(),
     }
     await this.persist(calling?.session)
-    return handle.agent
+    return session
   }
 
   /**
-   * Close the spawn/dispose race: a handle that comes back AFTER disposal
-   * ran is disposed on the spot (never leaked into the owned set) and the
+   * Close the open/dispose race: a session that comes back AFTER disposal
+   * ran is released on the spot (never leaked into the owned set) and the
    * caller is refused with the coded error (no resurrected usability).
    * Without the race this is a no-op.
-   * @param handle - the just-created/resumed ownership handle.
+   * @param session - the just-opened execution session.
    */
-  private async refuseLateHandle(handle: { dispose(): Promise<void> }): Promise<void> {
+  private async refuseLateSession(session: SideChatExecutionSession): Promise<void> {
     if (!this.disposed) return
-    await handle.dispose().catch(() => undefined)
-    throw new SideChatDisposedError('sidechat: the agent arrived after dispose and was disposed at once', 'disposed')
+    await session.release().catch(() => undefined)
+    throw new SideChatDisposedError('sidechat: the session arrived after dispose and was released at once', 'disposed')
   }
 
   /* ------------------------------------------------------------- the seam */
@@ -488,9 +449,10 @@ export class SideChatService {
    * The cross-plugin seam: open (or update) one side-chat context. Repeated
    * calls with the same contextKey UPDATE — the label, the prompt segment
    * (read fresh at the next assembly, never a create-time snapshot), the
-   * caller tools (re-attached by name on the live agent), and any refs — and
-   * NEVER recreate the session. The agent itself stays lazy: it spins up on
-   * the first send, not here.
+   * caller tools (re-synced by name on the live session, when the backend
+   * attaches caller tools at all), and any refs — and NEVER recreate the
+   * session. The session itself stays lazy: it opens on the first send, not
+   * here.
    * @param input - context identity, display label, and the optional prompt/tools/refs contributions.
    */
   async openWith(input: SideChatOpenInput): Promise<void> {
@@ -513,10 +475,12 @@ export class SideChatService {
       // over the wire and surfaces the context the consumer just opened.
       runtime.record = { ...record, rev: (record.rev ?? 0) + 1, updatedAt: new Date().toISOString() }
       await this.persist()
-      // The prompt section reads the record fresh by itself; tools need a live re-attach.
+      // The prompt segment reaches the backend as a live reader (fresh by
+      // itself); caller tools need a live re-sync — skipped silently when
+      // the backend attaches no caller tools.
       if (input.tools !== undefined && runtime.record.sessionId !== undefined) {
-        const live = this.ctx.agents.get(SessionId(runtime.record.sessionId))
-        if (live !== undefined) this.attachTools(live.ctx, runtime, input.tools)
+        const live = this.liveSessions.get(input.contextKey)
+        if (live !== undefined && this.backend.capabilities.callerTools) live.syncTools?.()
       }
     })
   }
@@ -525,7 +489,8 @@ export class SideChatService {
 
   /**
    * One context's full presentation state. Read-only: a cold context answers
-   * from a persistence inspection, never by resuming its agent.
+   * from the backend's cold read, never by resuming its session (a backend
+   * without cold reads answers the honest unknown).
    * @param contextKey - the context to read.
    * @returns the state, or `not-found` when the context has no record yet.
    */
@@ -546,17 +511,17 @@ export class SideChatService {
     let transcript: SideChatState['transcript'] = []
     let lastError: string | null = null
     if (record.sessionId !== undefined) {
-      const live = this.ctx.agents.get(SessionId(record.sessionId))
+      const live = this.liveSessions.get(record.contextKey)
       if (live !== undefined) {
         status = live.status
-        const events = live.session.snapshotEvents()
+        const events = live.events()
         transcript = projectTranscript(events)
         lastError = projectTurnError(events)
       } else {
         status = 'cold'
-        const cold = await inspectCold(this.ctx, SessionId(record.sessionId))
-        transcript = cold === undefined ? [] : projectTranscript(cold.events)
-        lastError = cold === undefined ? null : projectTurnError(cold.events)
+        const events = await this.readCold(record.sessionId)
+        transcript = events === undefined ? [] : projectTranscript(events)
+        lastError = events === undefined ? null : projectTurnError(events)
       }
     }
     return {
@@ -566,6 +531,21 @@ export class SideChatService {
       refs: record.refs,
       transcript,
       lastError,
+    }
+  }
+
+  /**
+   * Cold read through the backend's `coldRead` capability: a backend without
+   * it (or a failing read) answers the honest UNKNOWN — no events, never a
+   * resume, never a crash.
+   */
+  private async readCold(sessionId: string): Promise<readonly SessionEvent[] | undefined> {
+    if (!this.backend.capabilities.coldRead || this.backend.readCold === undefined) return undefined
+    try {
+      return await this.backend.readCold(sessionId)
+    } catch (error) {
+      this.ctx.logger.warn(`sidechat: cold read of "${sessionId}" failed: ${error instanceof Error ? error.message : String(error)}`)
+      return undefined
     }
   }
 
@@ -588,10 +568,17 @@ export class SideChatService {
     })
   }
 
+  /** The live status overlay for one record (synchronous — the list verb's per-row read). */
+  private liveStatusOf(record: SideChatContextRecord): SideChatStatus {
+    if (record.sessionId === undefined) return 'new'
+    const live = this.liveSessions.get(record.contextKey)
+    return live === undefined ? 'cold' : live.status
+  }
+
   /**
    * List every known context, most recently active first. Each row carries
    * the latest assistant-row time of its journal projection (live contexts
-   * from the snapshot, cold contexts from a persistence inspection — the
+   * from the snapshot, cold contexts from the backend's cold read — the
    * read-only path, never a resume) so the client can mark unread activity.
    * @returns the summaries with the live status overlay.
    */
@@ -604,7 +591,7 @@ export class SideChatService {
         items.push({
           contextKey: runtime.record.contextKey,
           label: runtime.record.label,
-          status: liveStatusOf(this.ctx.agents, runtime.record),
+          status: this.liveStatusOf(runtime.record),
           refs: runtime.record.refs.length,
           updatedAt: runtime.record.updatedAt,
           ...await this.activityOf(runtime.record),
@@ -618,14 +605,13 @@ export class SideChatService {
   /**
    * The projection times of one record's journal: the latest assistant row
    * (the unread marker's basis) and the latest row of any kind (the list's
-   * ordering). Read-only: live from the snapshot, cold from an inspection.
+   * ordering). Read-only: live from the snapshot, cold from the backend's
+   * cold read.
    */
   private async activityOf(record: SideChatContextRecord): Promise<{ lastAssistantAt: number | null; lastActivityAt: number | null }> {
     if (record.sessionId === undefined) return { lastAssistantAt: null, lastActivityAt: null }
-    const live = this.ctx.agents.get(SessionId(record.sessionId))
-    const events = live !== undefined
-      ? live.session.snapshotEvents()
-      : (await inspectCold(this.ctx, SessionId(record.sessionId)))?.events
+    const live = this.liveSessions.get(record.contextKey)
+    const events = live !== undefined ? live.events() : await this.readCold(record.sessionId)
     if (events === undefined) return { lastAssistantAt: null, lastActivityAt: null }
     let lastAssistantAt: number | null = null
     let lastActivityAt: number | null = null
@@ -638,14 +624,14 @@ export class SideChatService {
 
   /**
    * Send one user message into one context: pending refs (plus any one-shot
-   * refs) fold into the message and clear, the context's agent spins up
-   * lazily, and the turn starts as a producer-sourced followup. The CALLING
-   * agent's session — when the gesture carries one — only donates the fence
-   * and the cwd inheritance; the message never touches it. Without one the
-   * write fences at the deployment default mode and the route/cwd resolve
-   * from the explicit config or the deployment defaults (a calling-less send
-   * with NO resolvable route refuses `agent-unavailable` rather than
-   * creating a deaf agent).
+   * refs) fold into the message and clear, the context's session opens lazily
+   * through the execution backend, and the turn starts as a producer-sourced
+   * followup. The CALLING agent's session — when the gesture carries one —
+   * only donates the fence and the cwd inheritance; the message never touches
+   * it. Without one the write fences at the deployment default mode and the
+   * route/cwd resolve from the explicit config or (default backend only) the
+   * deployment defaults — a calling-less send with NO resolvable route
+   * refuses `agent-unavailable` rather than creating a deaf agent.
    * @param calling - the calling session's agent, when the gesture carries one (the wire's agent-first convention).
    * @param request - contextKey, text, optional label and one-shot refs.
    * @returns the fresh state (already `running`), or the refusal.
@@ -658,9 +644,9 @@ export class SideChatService {
       await this.ensureLoaded()
       const runtime = this.ensureRuntime(request.contextKey, request.label)
       const refs: readonly SideChatRef[] = [...runtime.record.refs, ...(request.refs ?? [])].slice(-MAX_REFS_PER_CONTEXT)
-      let agent: Agent
+      let session: SideChatExecutionSession
       try {
-        agent = await this.ensureAgent(runtime, calling)
+        session = await this.ensureSession(runtime, calling)
         runtime.record = { ...runtime.record, refs: [], updatedAt: new Date().toISOString() }
         await this.persist(calling?.session)
       } catch (error) {
@@ -669,10 +655,7 @@ export class SideChatService {
         this.ctx.logger.warn(`sidechat: no agent for "${request.contextKey}": ${error instanceof Error ? error.message : String(error)}`)
         return { ok: false, error: 'agent-unavailable' }
       }
-      agent.followup(createUserMessage({
-        content: [{ type: 'text', text: foldRefsIntoText(refs, text) }],
-        source: sidechatSource(),
-      }))
+      session.send({ text: foldRefsIntoText(refs, text), source: sidechatSource() })
       return { ok: true, state: await this.stateOf(runtime) }
     })
   }
@@ -713,17 +696,41 @@ export class SideChatService {
   }
 
   /**
-   * Tear down every owned agent handle (plugin unload); the sessions stay
-   * persisted. Idempotent and TERMINAL: afterwards every public verb refuses
-   * with {@link SideChatDisposedError}, and a create/resume still in flight
-   * is disposed on arrival rather than leaked into the owned set. A rebuild
+   * Stop one context's running turn (host-side only — the wire carries no
+   * stop gesture). Cancel is a no-op on an idle session; a cold or
+   * never-opened context has nothing to stop. The refusal is coded:
+   * `not-found` (no such context), `cancel-unsupported` (the backend declares
+   * no cancel capability, or the live session cannot), `not-running`
+   * (nothing live to stop right now).
+   * @param contextKey - the context to stop.
+   */
+  async stop(contextKey: string): Promise<SideChatStopOutcome> {
+    this.assertAlive('stop')
+    return this.mutate(async () => {
+      await this.ensureLoaded()
+      const runtime = this.contexts.get(contextKey)
+      if (runtime === undefined) return { ok: false, error: 'not-found' }
+      if (!this.backend.capabilities.cancel) return { ok: false, error: 'cancel-unsupported' }
+      const live = this.liveSessions.get(contextKey)
+      if (live === undefined || live.status !== 'running') return { ok: false, error: 'not-running' }
+      if (live.cancel === undefined) return { ok: false, error: 'cancel-unsupported' }
+      live.cancel()
+      return { ok: true }
+    })
+  }
+
+  /**
+   * Tear down every owned execution session (plugin unload); the sessions
+   * stay persisted. Idempotent and TERMINAL: afterwards every public verb
+   * refuses with {@link SideChatDisposedError}, and an open still in flight
+   * is released on arrival rather than leaked into the owned set. A rebuild
    * over the same state root is a NEW service instance's business.
    */
   async disposeAgents(): Promise<void> {
     this.disposed = true
-    for (const handle of this.handles.values()) {
-      await handle.dispose().catch(() => undefined)
+    for (const session of this.liveSessions.values()) {
+      await session.release().catch(() => undefined)
     }
-    this.handles.clear()
+    this.liveSessions.clear()
   }
 }

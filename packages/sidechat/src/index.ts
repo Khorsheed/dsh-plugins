@@ -21,6 +21,11 @@ import { SideChatService, type SideChatConfig } from './service.ts'
 
 export { SideChatService, SideChatDisposedError } from './service.ts'
 export type { SideChatConfig } from './service.ts'
+export {
+  SideChatDefaultExecutionBackend,
+  type SideChatExecutionBackend, type SideChatExecutionCapabilities, type SideChatExecutionMessage,
+  type SideChatExecutionOpenInit, type SideChatExecutionSession,
+} from './execution.ts'
 export { SideChatStore, resolveSideChatStateRoot, SideChatStoreError } from './store.ts'
 export { SideChatRemoteService } from './remote.ts'
 export { projectTranscript, messageTextOf } from './journal.ts'

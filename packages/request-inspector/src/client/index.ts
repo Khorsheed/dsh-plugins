@@ -38,6 +38,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import { resolveTurnSeq } from './aggregate.ts'
 import type { ListTurnsResult } from '../types.ts'
 import type { InspectorRemote, InspectorTabInjected } from './contract.ts'
+import { inspectorWire } from './wire.ts'
 import { REQUEST_INSPECTOR_KIND, REQUEST_INSPECTOR_TAB_ID, requestInspectorDefinition } from './definition.tsx'
 import { HeaderInspectUtility } from './HeaderUtility.tsx'
 import { InspectorPanel } from './InspectorPanel.tsx'
@@ -113,13 +114,12 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
 
   // Read lazily: a composition without the host half yields RPC errors on the
   // verbs, which the panel surfaces as its error state — never a boot failure.
+  // All wire calls route through `inspectorWire`: the gateway runtime enforces
+  // each verb's declared parameter count EXACTLY (a trailing optional param
+  // counts), so the trailing filter arg is always passed explicitly.
   const remote = (): InspectorRemote => ctx.get('remote.requestInspector') as InspectorRemote
-  const tabFace = (): InspectorTabInjected => ({
-    listTurns: sessionId => remote().listTurns(sessionId),
-    getTurn: (sessionId, turnSeq) => remote().getTurn(sessionId, turnSeq),
-    getRequest: (sessionId, seq) => remote().getRequest(sessionId, seq),
-    getTurnTiming: (sessionId, turnSeq) => remote().getTurnTiming(sessionId, turnSeq),
-  })
+  const wire = (): InspectorTabInjected => inspectorWire(remote())
+  const tabFace = (): InspectorTabInjected => wire()
 
   /** Open the inspector tab; a kind hidden by the criterion throws, degrade to a log. */
   const openTab = (turnSeq: number | undefined): void => {
@@ -137,7 +137,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   const openForMessage = async (sessionId: SessionId, messageId?: string): Promise<void> => {
     let turnSeq: number | undefined
     try {
-      const result: RemoteResult<ListTurnsResult> = await remote().listTurns(sessionId)
+      const result: RemoteResult<ListTurnsResult> = await wire().listTurns(sessionId)
       if (result.ok) turnSeq = resolveTurnSeq(result.value.turns, messageId)
     } catch {
       // A dead namespace still opens the tab (its own error state reports it).

@@ -30,6 +30,7 @@
     "src/client/TimingView.tsx",
     "src/client/TokenView.tsx",
     "src/client/TurnAction.tsx",
-    "src/client/TurnMenu.tsx"
+    "src/client/TurnMenu.tsx",
+    "src/client/wire.ts"
   ]
 }

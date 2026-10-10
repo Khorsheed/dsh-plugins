@@ -30,6 +30,7 @@ export const zh = {
   'state.turnMissing': '该 turn 的捕获已不在缓冲区（旧 turn 会被淘汰）',
   'state.hostMissing': '宿主未安装请求明细的宿主半边',
   'state.error': '加载失败：{message}',
+  'state.retry': '重试',
 
   'run.failed': '运行失败',
   'run.failedMeta': '耗时 {duration} · {count} 次模型调用',
@@ -131,6 +132,7 @@ export const en: Record<keyof typeof zh, string> = {
   'state.turnMissing': 'This turn’s capture has left the buffer (old turns are evicted)',
   'state.hostMissing': 'The host half of request-inspector is not installed',
   'state.error': 'Load failed: {message}',
+  'state.retry': 'Retry',
 
   'run.failed': 'Run failed',
   'run.failedMeta': '{duration} · {count} model calls',

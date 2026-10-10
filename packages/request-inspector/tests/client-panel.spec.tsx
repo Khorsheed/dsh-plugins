@@ -161,6 +161,8 @@ interface BenchOptions {
   readonly turns?: TurnListItem[] | undefined
   readonly backfill?: BackfillInfo | undefined
   readonly listError?: boolean | undefined
+  /** Fail the FIRST listTurns call this way, succeed after (retry coverage). */
+  readonly listFailFirst?: 'refusal' | 'reject' | undefined
   readonly params?: RequestInspectorTabParams | undefined
   readonly revision?: number | undefined
   /** Per-test getTurn override (replaces the turnSeq 1/2 routing). */
@@ -170,10 +172,20 @@ interface BenchOptions {
 }
 
 function bench(opts: BenchOptions = {}) {
+  let listAttempts = 0
   const mocks = {
-    listTurns: vi.fn(async (): Promise<Result<ListTurnsResult>> => opts.listError === true
-      ? { ok: false, error: { code: 'x', message: 'boom' } }
-      : { ok: true, value: { turns: opts.turns ?? TURNS, backfill: opts.backfill ?? { state: 'complete' } } }),
+    listTurns: vi.fn(async (): Promise<Result<ListTurnsResult>> => {
+      const attempt = listAttempts
+      listAttempts += 1
+      if (opts.listError !== true && opts.listFailFirst === 'reject' && attempt === 0) {
+        // The gateway runtime's exact-arity gate rejects before any network traffic.
+        throw new Error('client api: requestInspector/listTurns expected 2 argument(s), got 1')
+      }
+      if (opts.listError === true || (opts.listFailFirst !== undefined && attempt === 0)) {
+        return { ok: false, error: { code: 'x', message: 'boom' } }
+      }
+      return { ok: true, value: { turns: opts.turns ?? TURNS, backfill: opts.backfill ?? { state: 'complete' } } }
+    }),
     getTurn: vi.fn(async (_sessionId: string, turnSeq: number): Promise<Result<TurnOverview | undefined>> => ({
       ok: true,
       value: opts.overview !== undefined
@@ -419,6 +431,27 @@ describe('InspectorPanel · empty and error states', () => {
   it('reports a listTurns failure', async () => {
     bench({ listError: true })
     await waitFor(() => expect(screen.getByText(/boom/)).toBeTruthy())
+  })
+
+  it('a refused listTurns shows the error with a retry action; the retry refetches and recovers', async () => {
+    const { mocks } = bench({ listFailFirst: 'refusal' })
+    await waitFor(() => expect(screen.getByText(/boom/)).toBeTruthy())
+    // The failure is an explicit error state — never the spinner.
+    expect(screen.queryByText(zh['state.loading'])).toBeNull()
+    const callsBefore = mocks.listTurns.mock.calls.length
+    fireEvent.click(screen.getByRole('button', { name: zh['state.retry'] }))
+    await waitFor(() => expect(screen.getByText('#101 · read:a.ts')).toBeTruthy())
+    expect(mocks.listTurns.mock.calls.length).toBeGreaterThan(callsBefore)
+    expect(screen.queryByText(/boom/)).toBeNull()
+  })
+
+  it('a call rejected before any network traffic (the arity gate shape) lands in the error state, not loading', async () => {
+    const { mocks } = bench({ listFailFirst: 'reject' })
+    await waitFor(() => expect(screen.getByText(/expected 2 argument\(s\), got 1/)).toBeTruthy())
+    expect(screen.queryByText(zh['state.loading'])).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: zh['state.retry'] }))
+    await waitFor(() => expect(screen.getByText('#101 · read:a.ts')).toBeTruthy())
+    expect(mocks.listTurns.mock.calls.length).toBeGreaterThanOrEqual(2)
   })
 
   it('reports a turn whose capture left the buffer', async () => {
