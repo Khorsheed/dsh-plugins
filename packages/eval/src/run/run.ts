@@ -36,7 +36,7 @@ import { readFile } from 'node:fs/promises'
 import { basename, dirname, join, resolve } from 'node:path'
 import { evalVersion } from '../eval-version.ts'
 import { canonicalJson, hashConditionDocument } from '../contract/hash.ts'
-import type { CapabilityCatalogFace, DatasetsFace, LabFace, LocalAgentFace, MissionFace } from '../faces.ts'
+import type { CapabilityCatalogFace, DatasetsFace, LabFace, LocalAgentFace, MissionFace, ScopedHomeEvidenceFace } from '../faces.ts'
 import { conditionDiagnostics, expandHome, validatePlan, type EvalDiagnostic, type PlanValidation } from '../contract/validate.ts'
 import { generateTemplateFromManifest, type GeneratedTemplate } from '../contract/template.ts'
 import { loadManifest } from '../contract/manifest.ts'
@@ -219,6 +219,13 @@ export interface RunDeps {
    * compared and never a factor. A composition without it records no line.
    */
   capabilityCatalog?: CapabilityCatalogFace
+  /**
+   * The execution target's scoped-home evidence, when the service was mounted
+   * with one. Only the readiness gate's preset-copy freshness read consults
+   * it here; absent, the local facade read applies (see
+   * {@link ReadinessInput.evidence}).
+   */
+  evidence?: ScopedHomeEvidenceFace
   stateRoot: string
 }
 
@@ -836,6 +843,7 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
     readbackWaitMs: options.readbackWaitMs ?? DEFAULT_READBACK_WAIT_MS,
     now,
     log,
+    ...(deps?.evidence === undefined ? {} : { evidence: deps.evidence }),
     // Freshness: the lock says what the preset hashed to at provision time;
     // this asks what it hashes to now. Only the instance's own catalog can
     // answer, so a composition without one keeps the pre-T32b gate

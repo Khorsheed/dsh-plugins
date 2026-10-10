@@ -7,15 +7,21 @@
  *
  * The writes are the person's own gestures (accept/discard a pending item,
  * ✓ 审过 a chapter) and run under the calling session's fence, exactly like
- * the tools.
+ * the tools. Every gesture verb is a thin wrapper over the shared cores in
+ * `./gestures.ts` — the agent-free adapter factory runs the SAME cores, so
+ * the two faces answer identically by construction.
  *
  * @module @khorsheed/dsh-canvas-novel/remote
  */
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
+import {
+  confirmPlanGesture, decideOutlineGesture, decidePendingGesture, editPlanGesture,
+  reviewChapterGesture, setCurrentStateGesture, starForeshadowGesture,
+} from './gestures.ts'
 import type { NovelService, WorkEntries } from './store.ts'
-import { planFromText, planToText } from './text-forms.ts'
+import { planToText } from './text-forms.ts'
 import {
   coreSuspenseNudge, revealText, revealVolume, targetWordsOf,
   type CharacterView, type LedgerResult, type NovelCardRequest, type NovelCardResult, type NovelChapterRequest, type NovelChapterResult, type NovelChaptersResult,
@@ -75,7 +81,7 @@ export class NovelRemoteService extends TypertRemoteService<NovelRemoteConfig> {
   /** Accept or discard one pending item. */
   @Remote('decidePending')
   decidePending(agent: Agent, request: NovelDecideRequest): Promise<NovelGestureResult> {
-    return this.core.decidePending({ workId: request.canvasId, id: request.id, action: request.action }, agent.session)
+    return decidePendingGesture(this.core, agent.session, request)
   }
 
   /** The foreshadow ledger's counts and rows (the board strip reads its health). */
@@ -139,9 +145,8 @@ export class NovelRemoteService extends TypertRemoteService<NovelRemoteConfig> {
 
   /** The person's ✓ 审过: closes an extracted chapter. */
   @Remote('reviewChapter')
-  async reviewChapter(agent: Agent, request: NovelChapterRequest): Promise<NovelGestureResult> {
-    const result = await this.core.reviewChapter({ workId: request.canvasId, n: request.n }, agent.session)
-    return result.ok ? { ok: true } : { ok: false, error: result.error ?? 'io' }
+  reviewChapter(agent: Agent, request: NovelChapterRequest): Promise<NovelGestureResult> {
+    return reviewChapterGesture(this.core, agent.session, request)
   }
 
   /**
@@ -198,16 +203,14 @@ export class NovelRemoteService extends TypertRemoteService<NovelRemoteConfig> {
 
   /** The person's 采用 / 不采用 on the outline proposal. */
   @Remote('decideOutline')
-  async decideOutline(agent: Agent, request: NovelOutlineDecideRequest): Promise<NovelGestureResult> {
-    const result = await this.core.decideOutline({ workId: request.canvasId, action: request.action }, agent.session)
-    return result.ok ? { ok: true } : { ok: false, error: result.error ?? 'io' }
+  decideOutline(agent: Agent, request: NovelOutlineDecideRequest): Promise<NovelGestureResult> {
+    return decideOutlineGesture(this.core, agent.session, request)
   }
 
   /** The person's ✓ 确认计划 on a planned chapter. */
   @Remote('confirmPlan')
-  async confirmPlan(agent: Agent, request: NovelChapterRequest): Promise<NovelGestureResult> {
-    const result = await this.core.confirmChapterPlan({ workId: request.canvasId, n: request.n }, agent.session)
-    return result.ok ? { ok: true } : { ok: false, error: result.error ?? 'io' }
+  confirmPlan(agent: Agent, request: NovelChapterRequest): Promise<NovelGestureResult> {
+    return confirmPlanGesture(this.core, agent.session, request)
   }
 
   /** What the newest 对账 did, card by card (the 设定 face's 最近更新). */
@@ -218,10 +221,8 @@ export class NovelRemoteService extends TypertRemoteService<NovelRemoteConfig> {
 
   /** The person's own edit of a plan (the page's edit box), saved and confirmed at once. */
   @Remote('editPlan')
-  async editPlan(agent: Agent, request: NovelPlanEditRequest): Promise<NovelPlanEditResult> {
-    const result = await this.core.editPlan({ workId: request.canvasId, n: request.n, plan: planFromText(request.text) }, agent.session)
-    if (!result.ok) return { ok: false, error: result.error ?? 'io', ...(result.unknown === undefined ? {} : { unknown: result.unknown }) }
-    return { ok: true, changed: result.changed ?? [] }
+  editPlan(agent: Agent, request: NovelPlanEditRequest): Promise<NovelPlanEditResult> {
+    return editPlanGesture(this.core, agent.session, request)
   }
 
   /** One card's engine side: its role, the star (foreshadows), 此刻, 出场 and 关系 (characters), the bar (relations). */
@@ -253,16 +254,14 @@ export class NovelRemoteService extends TypertRemoteService<NovelRemoteConfig> {
 
   /** The person's ★ on a foreshadow. */
   @Remote('starForeshadow')
-  async starForeshadow(agent: Agent, request: NovelStarRequest): Promise<NovelGestureResult> {
-    const result = await this.core.starForeshadow({ workId: request.canvasId, cardId: request.cardId, starred: request.starred }, agent.session)
-    return result.ok ? { ok: true } : { ok: false, error: result.error ?? 'io' }
+  starForeshadow(agent: Agent, request: NovelStarRequest): Promise<NovelGestureResult> {
+    return starForeshadowGesture(this.core, agent.session, request)
   }
 
   /** The person's edit of a character's 此刻. */
   @Remote('setCurrentState')
-  async setCurrentState(agent: Agent, request: NovelStateRequest): Promise<NovelGestureResult> {
-    const result = await this.core.setCurrentState({ workId: request.canvasId, cardId: request.cardId, state: request.state }, agent.session)
-    return result.ok ? { ok: true } : { ok: false, error: result.error ?? 'io' }
+  setCurrentState(agent: Agent, request: NovelStateRequest): Promise<NovelGestureResult> {
+    return setCurrentStateGesture(this.core, agent.session, request)
   }
 }
 

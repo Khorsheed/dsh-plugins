@@ -431,6 +431,15 @@ export interface ConditionReadinessOptions {
    * behaves exactly as it always has.
    */
   scopeHomeDir?: (harness: string, scope?: string) => string | undefined
+  /**
+   * The evidence-face twin of {@link scopeHomeDir}: the scope's preset-copy
+   * digest as the execution target answers it, crossing as data. PREFERRED
+   * when both are present — a caller that has the face has no business
+   * reading a same-named local directory (a different environment on that
+   * topology). `undefined` back skips the freshness check, exactly the local
+   * read's absent-answer semantics.
+   */
+  scopePresetSha?: (harness: string, scope: string | undefined, preset: string) => Promise<string | undefined>
 }
 
 /** What {@link validatePlan} may additionally be told. */
@@ -557,24 +566,38 @@ export async function resolveConditionReadiness(
   // the capability record a reader with no live instance can check, and it is
   // the part that moves when a skill BODY is edited — which `home.sha` never
   // sees (it hashes config-suffixed files) and the capability face sees only
-  // through a catalog. Without a resolver this is skipped entirely.
-  if (declaredPreset !== null && capabilities?.snapshot !== undefined && options.scopeHomeDir !== undefined) {
+  // through a catalog. Without a resolver this is skipped entirely. The
+  // digest comes from the evidence face when one is wired (data, answered by
+  // the execution target), else from the local directory read.
+  const scopePresetSha = options.scopePresetSha
+  const scopeHomeDir = options.scopeHomeDir
+  if (declaredPreset !== null && capabilities?.snapshot !== undefined
+    && (scopePresetSha !== undefined || scopeHomeDir !== undefined)) {
     const harness = typeof (loaded.value['harness'] as { name?: unknown } | undefined)?.name === 'string'
       ? ((loaded.value['harness'] as { name: string }).name)
       : ''
     const scope = typeof loaded.value['scope'] === 'string' ? loaded.value['scope'] : undefined
-    let homeDir: string | undefined
-    try {
-      homeDir = options.scopeHomeDir(harness, scope)
-    } catch {
-      homeDir = undefined
+    let freshSha: string | undefined
+    if (scopePresetSha !== undefined) {
+      try {
+        freshSha = await scopePresetSha(harness, scope, declaredPreset)
+      } catch {
+        freshSha = undefined
+      }
+    } else {
+      let homeDir: string | undefined
+      try {
+        homeDir = scopeHomeDir?.(harness, scope)
+      } catch {
+        homeDir = undefined
+      }
+      freshSha = homeDir === undefined ? undefined : (await hashPresetTree(scopePresetDir(homeDir, declaredPreset)))?.sha
     }
-    const fresh = homeDir === undefined ? undefined : await hashPresetTree(scopePresetDir(homeDir, declaredPreset))
-    if (fresh !== undefined && fresh.sha !== capabilities.snapshot.sha) {
+    if (freshSha !== undefined && freshSha !== capabilities.snapshot.sha) {
       warnings.push({
         code: 'CAPABILITIES_SNAPSHOT_STALE',
         message: `condition ${id} locked the scope's ${JSON.stringify(declaredPreset)} copy at ${capabilities.snapshot.sha.slice(0, 12)}…`
-          + ` but it now hashes to ${fresh.sha.slice(0, 12)}… — the preset this scope runs changed after provision (run \`conditions provision\` again)`,
+          + ` but it now hashes to ${freshSha.slice(0, 12)}… — the preset this scope runs changed after provision (run \`conditions provision\` again)`,
       })
     }
   }

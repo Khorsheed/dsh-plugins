@@ -10,6 +10,7 @@
     "src/brief.ts",
     "src/genre.ts",
     "src/genre-agent.ts",
+    "src/gestures.ts",
     "src/index.ts",
     "src/invariant.ts",
     "src/remote.ts",

@@ -60,8 +60,17 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'nod
 import { hashConditionDocument, hashHome, type HomeHash } from './contract/hash.ts'
 import { CONDITION_ID_RE, CONDITION_SCHEMA_ID, LOCK_SCHEMA, LOCK_SCHEMA_ID, validateJson } from './contract/schema.ts'
 import { checkAgainstEffective, flattenEffective, type ProvisionCheck } from './effective.ts'
-import type { LocalAgentEffectiveSettingsFace, LocalAgentFace, LocalAgentScopeStatus } from './faces.ts'
+import type {
+  LocalAgentCredentialGrade, LocalAgentEffectiveSettingsFace, LocalAgentFace, LocalAgentScopeStatus,
+  ScopedHomeEvidenceFace, ScopedHomeHashEvidence,
+} from './faces.ts'
 import { conditionDiagnostics, expandHome, type EvalDiagnostic } from './contract/validate.ts'
+
+/** 64-hex sha256 — the shape every fingerprint crossing the evidence seam must carry. */
+const SHA256_HEX_RE = /^[0-9a-f]{64}$/
+
+/** The four credential grades — anything else crossing the seam is invalid evidence. */
+const CREDENTIAL_GRADES: ReadonlySet<string> = new Set(['absent', 'present-unverified', 'verified', 'rejected'])
 
 /** Thrown when provision cannot even begin — an unusable path, a facade that cannot answer. */
 export class EvalProvisionRefused extends Error {
@@ -129,6 +138,42 @@ function stringOrNull(value: unknown): string | null {
 function isInside(root: string, child: string): boolean {
   const rel = relative(root, child)
   return rel === '' || (!rel.startsWith(`..${sep}`) && rel !== '..' && !isAbsolute(rel))
+}
+
+/**
+ * Ask the evidence face for the scoped home's fingerprint, and hold the answer
+ * to the local read's contract: the producer-side identity is a non-empty
+ * string, the digest is a 64-hex sha256, the counts are non-negative integers.
+ * `undefined`, a throw, and every other shape are the local "the scoped home
+ * cannot be read" outcome — a refusal, because a lock minted over them would
+ * claim a measurement nobody made.
+ */
+async function readHomeEvidence(
+  evidence: ScopedHomeEvidenceFace,
+  harness: string,
+  scope: string | null,
+  named: string,
+): Promise<ScopedHomeHashEvidence> {
+  const homeHash = evidence.homeHash
+  let answer: ScopedHomeHashEvidence | undefined
+  try {
+    answer = await homeHash?.(harness, scope ?? undefined)
+  } catch (error) {
+    throw new EvalProvisionRefused(`the evidence face could not fingerprint the scoped home for ${named}: ${error instanceof Error ? error.message : String(error)}`)
+  }
+  if (
+    answer === undefined || !isPlainObject(answer)
+    || typeof answer.homeDir !== 'string' || answer.homeDir === ''
+    || typeof answer.sha !== 'string' || !SHA256_HEX_RE.test(answer.sha)
+    || !Number.isInteger(answer.files) || (answer.files as number) < 0
+    || !Number.isInteger(answer.denied) || (answer.denied as number) < 0
+  ) {
+    throw new EvalProvisionRefused(
+      `the evidence face answered no usable home fingerprint for ${named}`
+      + ' — the same outcome as a scoped home that cannot be read locally',
+    )
+  }
+  return answer
 }
 
 /**
@@ -212,6 +257,20 @@ export interface ProvisionOptions {
   repo: string
   localAgent: LocalAgentFace
   /**
+   * The execution target's scoped-home evidence, when the service was mounted
+   * with one. PRESENT, every scoped-home read of this provision — the home
+   * fingerprint, the credential grade, the effective settings, and (through
+   * the capability probe) the roster read-back and the preset copy's
+   * digest — comes from the face as plain data, and NO same-named local
+   * directory is consulted: on the topology this exists for, the local path
+   * is a different environment. A verb the face lacks, an answer it cannot
+   * give, and an answer whose shape is not the local read's all land where
+   * the corresponding local failure lands today (a refusal, or the channel's
+   * own absent-answer semantics) — never a skipped check. ABSENT, everything
+   * below reads the local facade exactly as before.
+   */
+  evidence?: ScopedHomeEvidenceFace
+  /**
    * Measure the provisioned environment's capability face. Absent means the
    * face is not measured: a condition declaring a preset is then locked
    * without a capability record and warned about, and the readiness gate
@@ -290,12 +349,30 @@ export async function provisionCondition(conditionPath: string, options: Provisi
   const warnings: EvalDiagnostic[] = []
 
   // ── 1. the scoped home (reading it materializes it) ────────────────────
-  if (typeof options.localAgent.homeDir !== 'function') {
-    throw new EvalProvisionRefused(
-      "the mounted local-agent facade has no homeDir(harness, scope), so the condition's scoped home cannot be resolved — upgrade dsh-local-agent",
-    )
+  // With an evidence face the home lives on the execution target: the face
+  // answers the fingerprint AND the producer-side identity as data, and no
+  // local directory is resolved. The answer is taken here and step 4 reuses
+  // it — asking twice would invite a target that moved between the two.
+  const evidence = options.evidence
+  let homeDir: string
+  let homeEvidence: ScopedHomeHashEvidence | undefined
+  if (evidence === undefined) {
+    if (typeof options.localAgent.homeDir !== 'function') {
+      throw new EvalProvisionRefused(
+        "the mounted local-agent facade has no homeDir(harness, scope), so the condition's scoped home cannot be resolved — upgrade dsh-local-agent",
+      )
+    }
+    homeDir = options.localAgent.homeDir(harness, scope ?? undefined)
+  } else {
+    if (typeof evidence.homeHash !== 'function') {
+      throw new EvalProvisionRefused(
+        "the evidence face has no homeHash(harness, scope), so the condition's scoped home cannot be resolved"
+        + ' — a mounted face is the whole evidence source for its scopes, and this channel is missing',
+      )
+    }
+    homeEvidence = await readHomeEvidence(evidence, harness, scope, named)
+    homeDir = homeEvidence.homeDir
   }
-  const homeDir = options.localAgent.homeDir(harness, scope ?? undefined)
   log(`provision ${id}: ${named} → ${homeDir}`)
 
   const report: ProvisionReport = {
@@ -320,43 +397,85 @@ export async function provisionCondition(conditionPath: string, options: Provisi
   }
 
   // ── 2. the credential: present, or stop and say how to get one ────────
-  if (typeof options.localAgent.statusOf !== 'function') {
-    throw new EvalProvisionRefused(
-      "the mounted local-agent facade has no statusOf(harness, scope), so the scope's credential cannot be graded — upgrade dsh-local-agent"
-      + ' (a lock written against an unchecked credential is exactly what provision exists to prevent)',
-    )
+  let credentialState: LocalAgentCredentialGrade
+  if (evidence === undefined) {
+    if (typeof options.localAgent.statusOf !== 'function') {
+      throw new EvalProvisionRefused(
+        "the mounted local-agent facade has no statusOf(harness, scope), so the scope's credential cannot be graded — upgrade dsh-local-agent"
+        + ' (a lock written against an unchecked credential is exactly what provision exists to prevent)',
+      )
+    }
+    let status: LocalAgentScopeStatus
+    try {
+      status = await options.localAgent.statusOf(harness, scope ?? undefined)
+    } catch (error) {
+      throw new EvalProvisionRefused(`local-agent could not answer status for ${named}: ${error instanceof Error ? error.message : String(error)}`)
+    }
+    credentialState = status.credentialState
+  } else {
+    if (typeof evidence.credentialGrade !== 'function') {
+      throw new EvalProvisionRefused(
+        "the evidence face has no credentialGrade(harness, scope), so the scope's credential cannot be graded"
+        + ' — a lock written against an unchecked credential is exactly what provision exists to prevent',
+      )
+    }
+    let grade: LocalAgentCredentialGrade | undefined
+    try {
+      grade = await evidence.credentialGrade(harness, scope ?? undefined)
+    } catch (error) {
+      throw new EvalProvisionRefused(`the evidence face could not grade the credential for ${named}: ${error instanceof Error ? error.message : String(error)}`)
+    }
+    if (grade === undefined || !CREDENTIAL_GRADES.has(grade)) {
+      throw new EvalProvisionRefused(
+        `the evidence face answered credential grade ${JSON.stringify(grade)} for ${named} — not one of the four grades, so the credential counts as ungraded`,
+      )
+    }
+    credentialState = grade
   }
-  let status: LocalAgentScopeStatus
-  try {
-    status = await options.localAgent.statusOf(harness, scope ?? undefined)
-  } catch (error) {
-    throw new EvalProvisionRefused(`local-agent could not answer status for ${named}: ${error instanceof Error ? error.message : String(error)}`)
-  }
-  report.credentialState = status.credentialState
-  if (!CREDENTIAL_PRESENT.has(status.credentialState)) {
+  report.credentialState = credentialState
+  if (!CREDENTIAL_PRESENT.has(credentialState)) {
     const command = loginCommandFor(harness, scope)
     errors.push({
-      code: status.credentialState === 'rejected' ? 'CREDENTIAL_REJECTED' : 'CREDENTIAL_ABSENT',
-      message: `${named} reports credentialState ${JSON.stringify(status.credentialState)}`
+      code: credentialState === 'rejected' ? 'CREDENTIAL_REJECTED' : 'CREDENTIAL_ABSENT',
+      message: `${named} reports credentialState ${JSON.stringify(credentialState)}`
         + ` — log in on this instance and provision again: ${command}`
         + ' (provision never logs in and never copies a credential from another scope)',
     })
-    log(`provision ${id}: STOPPED — credential ${status.credentialState}; run ${command}`)
+    log(`provision ${id}: STOPPED — credential ${credentialState}; run ${command}`)
     return report
   }
-  log(`provision ${id}: credential ${status.credentialState}`)
+  log(`provision ${id}: credential ${credentialState}`)
 
   // ── 3. the declaration against the scope, field by field ──────────────
-  if (typeof options.localAgent.effectiveSettings !== 'function') {
-    throw new EvalProvisionRefused(
-      'the mounted local-agent facade has no effectiveSettings(harness, scope), so the declaration cannot be checked against the scope — upgrade dsh-local-agent',
-    )
-  }
   let effective: LocalAgentEffectiveSettingsFace | undefined
-  try {
-    effective = await options.localAgent.effectiveSettings(harness, scope ?? undefined)
-  } catch (error) {
-    throw new EvalProvisionRefused(`local-agent could not answer effective settings for ${named}: ${error instanceof Error ? error.message : String(error)}`)
+  if (evidence === undefined) {
+    if (typeof options.localAgent.effectiveSettings !== 'function') {
+      throw new EvalProvisionRefused(
+        'the mounted local-agent facade has no effectiveSettings(harness, scope), so the declaration cannot be checked against the scope — upgrade dsh-local-agent',
+      )
+    }
+    try {
+      effective = await options.localAgent.effectiveSettings(harness, scope ?? undefined)
+    } catch (error) {
+      throw new EvalProvisionRefused(`local-agent could not answer effective settings for ${named}: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  } else {
+    if (typeof evidence.effectiveSettings !== 'function') {
+      throw new EvalProvisionRefused(
+        'the evidence face has no effectiveSettings(harness, scope), so the declaration cannot be checked against the scope'
+        + ' — a mounted face is the whole evidence source for its scopes, and this channel is missing',
+      )
+    }
+    try {
+      effective = await evidence.effectiveSettings(harness, scope ?? undefined)
+    } catch (error) {
+      throw new EvalProvisionRefused(`the evidence face could not answer effective settings for ${named}: ${error instanceof Error ? error.message : String(error)}`)
+    }
+    if (effective !== undefined && !isPlainObject(effective)) {
+      throw new EvalProvisionRefused(
+        `the evidence face answered effective settings for ${named} that are not an object — invalid evidence, so the declaration cannot be checked against the scope`,
+      )
+    }
   }
   const snapshot = flattenEffective(harness, effective)
   report.checks = checkAgainstEffective(document, snapshot)
@@ -410,10 +529,16 @@ export async function provisionCondition(conditionPath: string, options: Provisi
   }
 
   // ── 4. the scoped home's content hash ─────────────────────────────────
-  try {
-    report.home = await hashHome(homeDir)
-  } catch (error) {
-    throw new EvalProvisionRefused(`cannot hash the scoped home ${homeDir}: ${error instanceof Error ? error.message : String(error)}`)
+  // Evidence mode already holds the fingerprint (step 1 asked once); the
+  // local mode reads the directory now, exactly as before.
+  if (homeEvidence !== undefined) {
+    report.home = { sha: homeEvidence.sha, files: homeEvidence.files, denied: homeEvidence.denied }
+  } else {
+    try {
+      report.home = await hashHome(homeDir)
+    } catch (error) {
+      throw new EvalProvisionRefused(`cannot hash the scoped home ${homeDir}: ${error instanceof Error ? error.message : String(error)}`)
+    }
   }
   const declaredHomeSha = stringOrNull((isPlainObject(document['home']) ? document['home'] : {})['sha'])
   if (declaredHomeSha !== report.home.sha) {

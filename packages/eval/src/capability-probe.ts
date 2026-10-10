@@ -37,10 +37,13 @@
  * @module @khorsheed/dsh-eval
  */
 import { existsSync } from 'node:fs'
-import type { CapabilityCatalogFace } from './faces.ts'
+import type { CapabilityCatalogFace, PresetSnapshotEvidence, ScopedHomeEvidenceFace } from './faces.ts'
 import { hashPresetTree, scopePresetDir, scopePresetProblem } from './preset-snapshot.ts'
 import type { CapabilityProbe, CapabilityProbeInput, ProvisionedCapabilities } from './provision.ts'
 import { readScopePreset } from './sub-profile.ts'
+
+/** 64-hex sha256 — the shape a snapshot digest crossing the evidence seam must carry. */
+const SHA256_HEX_RE = /^[0-9a-f]{64}$/
 
 /**
  * Whether the scope keeps a preset directory of its own for this id.
@@ -73,6 +76,18 @@ export interface CapabilityProbeDeps {
   readPreset?: (homeDir: string) => string | undefined
   /** Whether the scope keeps its own copy of a preset directory. Injected for the tests. */
   keepsOwnPreset?: (homeDir: string, preset: string) => boolean
+  /**
+   * The execution target's scoped-home evidence, when the mounting side
+   * supplies one. PRESENT, the roster read-back, the keeps-a-copy question
+   * and the copy's problem/digest all come from the face — the input's
+   * `homeDir` is then producer-side identity data and nothing here resolves
+   * it against this filesystem (the same-named local directory is a
+   * different environment). A face missing `rosteredPreset` or
+   * `presetSnapshot`, a throw, and an invalid answer all decline the
+   * measurement — provision records `CAPABILITIES_UNMEASURED` and the
+   * readiness gate refuses, exactly the local "cannot read" outcome.
+   */
+  evidence?: ScopedHomeEvidenceFace
   log?: (message: string) => void
 }
 
@@ -94,11 +109,24 @@ export function instanceCapabilityProbe(deps: CapabilityProbeDeps): CapabilityPr
   const log = deps.log ?? ((): void => {})
 
   return async (input: CapabilityProbeInput): Promise<ProvisionedCapabilities | undefined> => {
+    const evidence = deps.evidence
     // 1. The read-back. `provisioned.preset` is supposed to be what the scope
     //    HAS, so a scope whose roster cannot be read has nothing to record —
     //    copying the declaration here is the one thing that would make the
-    //    field meaningless.
-    const rostered = readPreset(input.homeDir)
+    //    field meaningless. With an evidence face the roster answer crosses
+    //    as data; an absent verb, a throw and a non-string all read as "no
+    //    roster read back" — the local read's own degrade.
+    let rostered: string | undefined
+    if (evidence === undefined) {
+      rostered = readPreset(input.homeDir)
+    } else if (typeof evidence.rosteredPreset === 'function') {
+      try {
+        const answer = await evidence.rosteredPreset(input.harness, input.scope ?? undefined)
+        rostered = typeof answer === 'string' && answer !== '' ? answer : undefined
+      } catch {
+        rostered = undefined
+      }
+    }
     if (rostered === undefined) {
       log(`capability probe ${input.condition}: the scoped home rosters no readable preset`
         + ` (expected the sub-profile to compose ${JSON.stringify(input.preset)})`
@@ -116,8 +144,33 @@ export function instanceCapabilityProbe(deps: CapabilityProbeDeps): CapabilityPr
     // 3. Which arrangement this scope is, and whether it is measurable.
     //    A copy the provisioning did not vouch for is the silent-wrong-hash
     //    case T32b refused outright: same id, different content, a plausible
-    //    number that describes neither subject.
-    const scopeCopy = keepsOwnPreset(input.homeDir, rostered)
+    //    number that describes neither subject. On the evidence path the
+    //    arrangement, the problem and the digest all come from ONE face
+    //    answer — taken once so they cannot disagree with each other — and
+    //    `input.homeDir` is never resolved against this filesystem.
+    let scopeCopy: boolean
+    let copyEvidence: PresetSnapshotEvidence | undefined
+    if (evidence === undefined) {
+      scopeCopy = keepsOwnPreset(input.homeDir, rostered)
+    } else {
+      if (typeof evidence.presetSnapshot !== 'function') {
+        log(`capability probe ${input.condition}: the evidence face has no presetSnapshot verb, so the scope's copy cannot be read back`)
+        return undefined
+      }
+      let copy: PresetSnapshotEvidence | undefined
+      try {
+        copy = await evidence.presetSnapshot(input.harness, input.scope ?? undefined, rostered)
+      } catch (error) {
+        log(`capability probe ${input.condition}: the evidence face could not answer the scope's ${rostered} copy: ${error instanceof Error ? error.message : String(error)}`)
+        return undefined
+      }
+      if (copy === undefined || typeof copy !== 'object' || typeof copy.keepsCopy !== 'boolean') {
+        log(`capability probe ${input.condition}: the evidence face answered the scope's ${rostered} copy in a shape that is not evidence`)
+        return undefined
+      }
+      copyEvidence = copy
+      scopeCopy = copy.keepsCopy
+    }
     let snapshot: { sha: string } | undefined
     if (scopeCopy) {
       if (input.snapshot?.matchesSource !== true) {
@@ -126,18 +179,32 @@ export function instanceCapabilityProbe(deps: CapabilityProbeDeps): CapabilityPr
           + ' Provision this condition through a facade that composes the scope\'s preset (localAgent.provisionScope), or remove the scope\'s copy')
         return undefined
       }
-      const problem = await scopePresetProblem(scopePresetDir(input.homeDir, rostered))
-      if (problem !== undefined) {
-        log(`capability probe ${input.condition}: the scope's ${rostered} copy cannot be a subject — ${problem}`)
-        return undefined
+      if (copyEvidence === undefined) {
+        const problem = await scopePresetProblem(scopePresetDir(input.homeDir, rostered))
+        if (problem !== undefined) {
+          log(`capability probe ${input.condition}: the scope's ${rostered} copy cannot be a subject — ${problem}`)
+          return undefined
+        }
+        const tree = await hashPresetTree(scopePresetDir(input.homeDir, rostered))
+        if (tree === undefined) {
+          log(`capability probe ${input.condition}: the scope's ${rostered} copy is not a plain tree of files, so it cannot be hashed`
+            + ' — a symlink does not survive the bind mount into an evaluation unit')
+          return undefined
+        }
+        snapshot = { sha: tree.sha }
+      } else {
+        if (copyEvidence.problem !== undefined) {
+          log(`capability probe ${input.condition}: the scope's ${rostered} copy cannot be a subject — ${copyEvidence.problem}`)
+          return undefined
+        }
+        const tree = copyEvidence.snapshot
+        if (tree === undefined || typeof tree.sha !== 'string' || !SHA256_HEX_RE.test(tree.sha)) {
+          log(`capability probe ${input.condition}: the scope's ${rostered} copy carries no usable digest`
+            + ' — the local read\'s "not a plain tree of files" outcome')
+          return undefined
+        }
+        snapshot = { sha: tree.sha }
       }
-      const tree = await hashPresetTree(scopePresetDir(input.homeDir, rostered))
-      if (tree === undefined) {
-        log(`capability probe ${input.condition}: the scope's ${rostered} copy is not a plain tree of files, so it cannot be hashed`
-          + ' — a symlink does not survive the bind mount into an evaluation unit')
-        return undefined
-      }
-      snapshot = { sha: tree.sha }
     } else {
       log(`capability probe ${input.condition}: the scope defers to this deployment's preset root for ${rostered}`
         + ' — measurable here, but a unit mounts only the scoped home, so the sub-dsh will not resolve the preset on the container path')
