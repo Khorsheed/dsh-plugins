@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-10-09-game-dev-mode.md
-.agents/notes/implemented/feature/2026-10-09-game-dev-mode.md: d2a9c197bf31f20041d56040c4f43dd057eea26b
-.agents/notes/implemented/feature/2026-10-09-game-dev-mode.zh.md: ca788efe43a821ae3e1f64598a968057e008d56a
+.agents/notes/implemented/feature/2026-10-09-game-dev-mode.md: 4389476be1e08c9fb85faf218a204ce2d7292472
+.agents/notes/implemented/feature/2026-10-09-game-dev-mode.zh.md: 6376974d311420667930d04c860258eea9a1b3bb

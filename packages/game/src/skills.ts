@@ -113,7 +113,8 @@ export const GAME_DESIGN_SKILL: GameSkill = {
 ## 策划文档（design/ 下，右栏「策划」按章节显示）
 | 章节 | 文件 | 写什么 |
 |---|---|---|
-| 设计支柱 | design/pillars.md | pitch、支柱、风格（建项目时生成，置顶） |
+| 一页纸 | game.json | pitch、元素类型、风格、支柱（面板置顶显示；改支柱就改 game.json 的 pillars） |
+| 支柱说明 | design/pillars.md | 每条支柱为什么重要、怎么检验（别复述一页纸） |
 | 核心循环 | design/core-loop.md | 玩家每 10 秒 / 每 1 分钟 / 每局在重复什么，奖励是什么 |
 | 机制与规则 | design/mechanics.md | 操作、规则、胜负、成长 |
 | 元素与数值 | 自动 | 由 elements/*.json 生成，别手写 |

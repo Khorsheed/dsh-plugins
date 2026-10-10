@@ -59,7 +59,8 @@ describe('GameService', () => {
     expect((await store.boundProject('s1'))?.id).toBe(project.id)
     expect(JSON.parse(await readFile(join(project.root, 'game.json'), 'utf8'))).toMatchObject({ id: project.id, artStyle: 'pixel', autoConfirm: true })
     const view = await store.view(project.id)
-    expect(view?.chapters[0]).toMatchObject({ id: 'pillars', status: 'draft' })
+    // The one-pager lives in game.json; no chapter restates it at creation.
+    expect(view?.chapters[0]).toMatchObject({ id: 'pillars', status: 'todo', text: '' })
     expect(view?.chapters.find(c => c.id === 'core-loop')?.status).toBe('todo')
     expect(view?.hasEntry).toBe(false)
 

@@ -109,7 +109,7 @@ export interface ChapterSpec {
 
 /** The chaptered design doc (decision D12): fixed chapters, pillars pinned first. */
 export const CHAPTERS: readonly ChapterSpec[] = [
-  { id: 'pillars', title: '设计支柱', file: 'design/pillars.md' },
+  { id: 'pillars', title: '支柱说明', file: 'design/pillars.md' },
   { id: 'core-loop', title: '核心循环', file: 'design/core-loop.md' },
   { id: 'mechanics', title: '机制与规则', file: 'design/mechanics.md' },
   { id: 'elements', title: '元素与数值', file: 'design/elements.md', generated: true },

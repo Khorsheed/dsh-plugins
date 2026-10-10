@@ -135,6 +135,17 @@ describe('the user layer', () => {
   })
 })
 
+describe('the one-pager', () => {
+  it('edits pitch, element types and pillars in game.json and queues one change', async () => {
+    const p = await project()
+    expect(await store.setOnePager(p.id, { pitch: '守到天亮', pillars: '紧张\n\n灯就是生命' }, session)).toEqual({ ok: true })
+    const view = await store.view(p.id)
+    expect(view?.manifest).toMatchObject({ pitch: '守到天亮', pillars: ['紧张', '灯就是生命'], elementTypes: ['角色', '敌人'] })
+    expect(view?.pending.map(x => x.key)).toEqual(['onepager'])
+    expect(await store.setOnePager(p.id, { pitch: '  ' }, session)).toEqual({ ok: false, error: 'invalid' })
+  })
+})
+
 describe('turn reports', () => {
   it('records what a turn changed: version, check, elements, chapters, params, code', async () => {
     const p = await project()

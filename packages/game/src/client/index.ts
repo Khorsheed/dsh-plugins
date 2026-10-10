@@ -109,6 +109,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     pickProposal: (sid, projectId, elementId, at, index) => remote.pickProposal(sid, { projectId, elementId, at, index }),
     writeChapter: (sid, projectId, chapterId, text) => remote.writeChapter(sid, { projectId, chapterId, text }),
     requestRestyle: (sid, projectId, styleId) => remote.requestRestyle(sid, { projectId, styleId }),
+    setOnePager: (sid, projectId, patch) => remote.setOnePager(sid, { projectId, ...patch }),
     dropPending: (sid, projectId, key) => remote.dropPending(sid, { projectId, key }),
   }
 

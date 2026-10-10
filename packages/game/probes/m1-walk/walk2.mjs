@@ -183,4 +183,12 @@ if (phase === 'k') {
   log('jump', await p.evaluate(() => { const card = [...document.querySelectorAll('section')].find(s => (s.getAttribute('aria-label') || '').startsWith('本轮改动')); const row = [...(card?.querySelectorAll('li') ?? [])].find(li => li.textContent.includes('暗礁')); row?.querySelector('button')?.click(); return !!row })); await wait(2000)
   await shot('y-jumped')
 }
+if (phase === 'l') {
+  await openTab('我想做个小游戏')
+  log('design', await click('策划')); await wait(1500)
+  log('notes', await clickHas('支柱说明')); await wait(800)
+  await shot('z-design')
+  log('edit', await click('编辑')); await wait(800)
+  await shot('z-edit')
+}
 await b.close()

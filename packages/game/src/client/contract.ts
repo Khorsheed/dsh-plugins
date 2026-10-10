@@ -39,6 +39,7 @@ export interface GameApi {
   pickProposal: (sid: SessionId, projectId: string, elementId: string, at: string, index: number) => R<Ok>
   writeChapter: (sid: SessionId, projectId: string, chapterId: string, text: string) => R<Ok>
   requestRestyle: (sid: SessionId, projectId: string, styleId: string) => R<Ok>
+  setOnePager: (sid: SessionId, projectId: string, patch: { pitch?: string; elementTypes?: string; pillars?: string }) => R<Ok>
   dropPending: (sid: SessionId, projectId: string, key: string) => R<Ok>
 }
 

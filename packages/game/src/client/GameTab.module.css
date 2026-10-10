@@ -301,6 +301,8 @@ button.strip { cursor: pointer; }
   margin-left: auto; font: inherit; font-size: var(--dsh-panel-text-meta, 12px); padding: 2px 10px; border-radius: 10px; cursor: pointer;
   border: 1px solid var(--dsw-alias-border-l2); background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-secondary); min-height: 24px;
 }
+.notesChapter { border: 1px solid var(--g-line); border-radius: 12px; overflow: hidden; }
+.onePagerForm { display: flex; flex-direction: column; gap: 8px; }
 .pitch { margin: 0; font-size: var(--dsh-panel-text-reading, 14px); line-height: 1.6; font-weight: 500; text-wrap: pretty; }
 .typeRow { display: flex; gap: 6px; flex-wrap: wrap; }
 .typeTag { font-size: var(--dsh-panel-text-meta, 12px); padding: 1px 8px; border-radius: 10px; border: 1px solid var(--g-line); color: var(--dsw-alias-label-secondary); background: var(--dsw-alias-bg-base); }

@@ -30,7 +30,7 @@ import type { Session } from '@deepseek-ai/dsh-session'
 import { ChromeChecker, type BrowserChecker } from './checks.ts'
 import {
   artStyleLabel, chapterStatus, elementsChapter, gate, isBuildFile, isTextFile, mimeOf, normalizeLook, parseManifest,
-  patchElementText, pillarsChapter, resolveArtStyle, serializeManifest, slugOf, validateElements, type CreateRequest,
+  patchElementText, listOf, pillarNotes, resolveArtStyle, serializeManifest, slugOf, validateElements, type CreateRequest,
 } from './project.ts'
 import {
   CHAPTERS, MANIFEST_FILE, PANEL_CHANGES_MARK, STATE_DIR,
@@ -480,7 +480,6 @@ export class GameService {
     const manifest: GameManifest = { ...verdict.manifest, id, createdAt: now }
     try {
       await this.writeFenced(join(root, MANIFEST_FILE), serializeManifest(manifest), session)
-      await this.writeFenced(join(root, 'design', 'pillars.md'), pillarsChapter(manifest), session)
     } catch (error) {
       return { ok: false, error: `写不进工作区：${(error as Error).message.split('\n')[0]}` }
     }
@@ -520,7 +519,9 @@ export class GameService {
     for (const spec of CHAPTERS) {
       const text = spec.id === 'elements'
         ? elementsChapter(elements, manifest?.elementTypes ?? [])
-        : spec.id === 'playtest' ? playtest : (await readText(join(row.root, spec.file))) ?? ''
+        : spec.id === 'playtest' ? playtest
+        : spec.id === 'pillars' ? pillarNotes((await readText(join(row.root, spec.file))) ?? '', manifest)
+        : (await readText(join(row.root, spec.file))) ?? ''
       const source = spec.id === 'playtest' ? join(row.root, STATE_DIR, 'playtest-log.jsonl') : spec.id === 'elements' ? join(row.root, 'elements') : join(row.root, spec.file)
       const mtime = await stat(source).then(info => info.mtimeMs, () => 0)
       chapters.push({
@@ -968,6 +969,29 @@ export class GameService {
     if (spec === undefined || spec.generated === true) return { ok: false, error: 'invalid' }
     await writeAtomic(join(row.root, spec.file), text.endsWith('\n') ? text : `${text}\n`)
     await this.addPending(row.root, { key: `design:${chapterId}`, text: `直接改了策划《${spec.title}》（${spec.file}），以文件为准` })
+    await this.touch(projectId)
+    return { ok: true }
+  }
+
+  /** Edit the one-pager in game.json (pitch, element types, pillars) — the user's direct edit. */
+  async setOnePager(projectId: string, patch: { pitch?: string; elementTypes?: string; pillars?: string }, session: Session | undefined): Promise<GameResult> {
+    const row = await this.row(projectId)
+    if (row === undefined) return { ok: false, error: 'not-found' }
+    if (!this.writable(session)) return { ok: false, error: 'denied' }
+    const manifest = await this.manifestOf(row.root)
+    if (manifest === undefined) return { ok: false, error: 'invalid' }
+    const pitch = patch.pitch === undefined ? manifest.pitch : patch.pitch.trim().slice(0, 400)
+    const elementTypes = patch.elementTypes === undefined ? manifest.elementTypes : listOf(patch.elementTypes).slice(0, 12)
+    const pillars = patch.pillars === undefined ? manifest.pillars : listOf(patch.pillars.split(/\n/)).slice(0, 5)
+    if (pitch === '' || elementTypes.length === 0) return { ok: false, error: 'invalid' }
+    const parts: string[] = []
+    if (pitch !== manifest.pitch) parts.push(`玩法「${pitch}」`)
+    if (elementTypes.join('、') !== manifest.elementTypes.join('、')) parts.push(`元素类型 ${elementTypes.join('、')}`)
+    if (pillars.join('；') !== manifest.pillars.join('；')) parts.push(`支柱 ${pillars.map((p, i) => `${i + 1}.${p}`).join(' ')}`)
+    if (parts.length === 0) return { ok: true }
+    await writeAtomic(join(row.root, MANIFEST_FILE), serializeManifest({ ...manifest, pitch, elementTypes, pillars }))
+    await this.addPending(row.root, { key: 'onepager', text: `改了一页纸（game.json）：${parts.join('；')}` })
+    await this.log(row.root, true, `用户改了一页纸：${parts.join('；')}`)
     await this.touch(projectId)
     return { ok: true }
   }

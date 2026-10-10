@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  pillarNotes,
   chapterStatus, elementsChapter, gate, isBuildFile, listOf, parseManifest, resolveArtStyle, slugOf, validateElements,
 } from '../src/project.ts'
 
@@ -80,5 +81,14 @@ describe('files', () => {
     expect(slugOf('Lighthouse Keeper!')).toBe('lighthouse-keeper')
     expect(slugOf('灯塔守夜人')).toBe('game')
     expect(listOf(' a、b,,a ')).toEqual(['a', 'b'])
+  })
+})
+
+describe('pillar notes', () => {
+  it('drops lines that restate the one-pager and keeps real notes', () => {
+    const manifest = { title: '灯塔', pitch: '守住灯塔', pillars: ['紧张', '灯就是生命'], artStyle: 'pixel', elementTypes: ['角色', '敌人'] }
+    const old = '# 灯塔 · 设计支柱\n\n> 守住灯塔\n\n1. 紧张\n2. 灯就是生命\n\n美术风格：像素\n元素类型：角色、敌人\n'
+    expect(pillarNotes(old, manifest)).toBe('')
+    expect(pillarNotes(`${old}\n## 紧张\n每一秒都在掉灯油。\n`, manifest)).toBe('## 紧张\n每一秒都在掉灯油。')
   })
 })

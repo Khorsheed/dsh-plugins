@@ -138,6 +138,12 @@ export class GameRemoteService extends TypertRemoteService<GameRemoteConfig> {
     return this.store.writeChapter(request.projectId, request.chapterId, request.text, agent.session)
   }
 
+  /** Edit the one-pager (game.json pitch / element types / pillars). */
+  @Remote('setOnePager')
+  setOnePager(agent: Agent, request: { projectId: string; pitch?: string; elementTypes?: string; pillars?: string }): Promise<GameResult> {
+    return this.store.setOnePager(request.projectId, request, agent.session)
+  }
+
   /** Mark a pending restyle (the next passing version becomes a candidate). */
   @Remote('requestRestyle')
   requestRestyle(agent: Agent, request: { projectId: string; styleId: string }): Promise<GameResult> {

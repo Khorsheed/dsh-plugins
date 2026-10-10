@@ -45,7 +45,7 @@ function writeSeen(projectId: string, seen: Record<string, number>): void {
 
 /** The design view. */
 export function DesignView(props: DesignViewProps): ReactNode {
-  const { t, project, onStyle } = props
+  const { t, project } = props
   const manifest = project.manifest
   const [open, setOpen] = useState<string | null>(props.openChapter ?? null)
   useEffect(() => { if (props.openChapter != null) setOpen(props.openChapter) }, [props.openChapter])
@@ -63,26 +63,17 @@ export function DesignView(props: DesignViewProps): ReactNode {
   const authored = project.chapters.filter(c => !c.generated).length
 
   return <div className={css.scroll}>
-    <section className={css.onePager}>
-      <div className={css.onePagerHead}>
-        <span className={css.eyebrow}>{t('design.onePager')}</span>
-        <button type="button" className={css.styleChip} onClick={onStyle} title={t('style.change')}>
-          {t('design.style', { style: manifest === null ? '—' : artStyleLabel(manifest.artStyle) })}
-        </button>
-      </div>
-      <p className={css.pitch}>{manifest?.pitch || t('design.noPitch')}</p>
-      <div className={css.typeRow}>{(manifest?.elementTypes ?? []).map(type => <span key={type} className={css.typeTag}>{type}</span>)}</div>
-      <div className={css.pillars}>
-        <span className={css.eyebrow}>{t('design.pillars')}</span>
-        {(manifest?.pillars.length ?? 0) > 0
-          ? <ol className={css.pillarList}>{manifest!.pillars.map((p, i) => <li key={i}>{p}</li>)}</ol>
-          : <p className={css.metaLine}>{t('design.noPillars')}</p>}
-      </div>
-      {pillarsChapter !== undefined && <button type="button" className={css.link} onClick={() => { toggle(pillarsChapter) }}>
-        {open === 'pillars' ? t('design.collapse') : t('design.openPillars')}
-      </button>}
-      {open === 'pillars' && pillarsChapter !== undefined && <ChapterBody {...props} chapter={pillarsChapter} />}
-    </section>
+    <OnePager {...props} />
+    {pillarsChapter !== undefined && <section className={`${css.chapter} ${css.notesChapter}`} data-open={open === 'pillars' ? 'true' : 'false'}>
+      <button type="button" className={css.chapterHead} aria-expanded={open === 'pillars'} onClick={() => { toggle(pillarsChapter) }}>
+        <span className={css.chevron} aria-hidden="true">{open === 'pillars' ? '▾' : '▸'}</span>
+        <span className={css.chapterTitle}>{pillarsChapter.title}</span>
+        <span className={css.metaLine}>{t('design.pillarNotesHint')}</span>
+        <span className={css.spacer} />
+        <span className={css.status} data-status={pillarsChapter.status}>{t(STATUS_KEY[pillarsChapter.status])}</span>
+      </button>
+      {open === 'pillars' && <ChapterBody {...props} chapter={pillarsChapter} />}
+    </section>}
 
     <div className={css.progressRow}>
       <span className={css.metaLine}>{t('design.progress', { done, total: authored })}</span>
@@ -112,6 +103,66 @@ export function DesignView(props: DesignViewProps): ReactNode {
   </div>
 }
 
+/** The one-pager (game.json): pitch, element types, style, pillars — read, or edited in place. */
+function OnePager(props: DesignViewProps): ReactNode {
+  const { t, sessionId, api, project, onStyle, refresh, changed } = props
+  const manifest = project.manifest
+  const [editing, setEditing] = useState(false)
+  const [pitch, setPitch] = useState('')
+  const [types, setTypes] = useState('')
+  const [pillars, setPillars] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const begin = (): void => {
+    setPitch(manifest?.pitch ?? '')
+    setTypes((manifest?.elementTypes ?? []).join('、'))
+    setPillars((manifest?.pillars ?? []).join('\n'))
+    setError(null)
+    setEditing(true)
+  }
+  return <section className={css.onePager}>
+    <div className={css.onePagerHead}>
+      <span className={css.eyebrow}>{t('design.onePager')}</span>
+      <span className={css.metaLine}>game.json</span>
+      <span className={css.spacer} />
+      <button type="button" className={css.styleChip} onClick={onStyle} title={t('style.change')}>
+        {t('design.style', { style: manifest === null ? '—' : artStyleLabel(manifest.artStyle) })}
+      </button>
+      {!editing && manifest !== null && <button type="button" className={css.ghost} onClick={begin}>{t('design.editOnePager')}</button>}
+    </div>
+    {editing
+      ? <div className={css.onePagerForm}>
+          <label className={css.field}><span className={css.fieldKey}>{t('design.pitchLabel')}</span>
+            <textarea className={css.textarea} rows={2} value={pitch} onChange={e => { setPitch(e.target.value) }} /></label>
+          <label className={css.field}><span className={css.fieldKey}>{t('design.typesLabel')}</span>
+            <input className={css.input} value={types} onChange={e => { setTypes(e.target.value) }} /></label>
+          <label className={css.field}><span className={css.fieldKey}>{t('design.pillarsLabel')}</span>
+            <textarea className={css.textarea} rows={4} value={pillars} onChange={e => { setPillars(e.target.value) }} /></label>
+          {error !== null && <p className={css.warnText}>{error}</p>}
+          <div className={css.rowEnd}>
+            <button type="button" className={css.ghost} onClick={() => { setEditing(false) }}>{t('common.cancel')}</button>
+            <button type="button" className={css.primary} onClick={() => {
+              void api.setOnePager(sessionId, project.id, { pitch, elementTypes: types, pillars }).then(r => {
+                if (failureOf(r) !== undefined) { setError(t('design.onePagerInvalid')); return }
+                setEditing(false)
+                changed('onepager', t('nudge.onePager'))
+                refresh()
+              })
+            }}>{t('common.save')}</button>
+          </div>
+        </div>
+      : <>
+          <p className={css.pitch}>{manifest?.pitch || t('design.noPitch')}</p>
+          <div className={css.typeRow}>{(manifest?.elementTypes ?? []).map(type => <span key={type} className={css.typeTag}>{type}</span>)}</div>
+          <div className={css.pillars}>
+            <span className={css.eyebrow}>{t('design.pillars')}</span>
+            {(manifest?.pillars.length ?? 0) > 0
+              ? <ol className={css.pillarList}>{manifest!.pillars.map((p, i) => <li key={i}>{p}</li>)}</ol>
+              : <p className={css.metaLine}>{t('design.noPillars')}</p>}
+          </div>
+        </>}
+  </section>
+}
+
 /** One chapter's body: read, or edit in place. */
 function ChapterBody(props: DesignViewProps & { chapter: ChapterView }): ReactNode {
   const { t, sessionId, api, project, chapter, refresh } = props
@@ -139,7 +190,7 @@ function ChapterBody(props: DesignViewProps & { chapter: ChapterView }): ReactNo
   }
   return <div className={css.chapterBody}>
     {chapter.text === ''
-      ? <p className={css.lead}>{chapter.generated ? t('design.emptyGenerated') : t('design.empty', { file: chapter.file })}</p>
+      ? <p className={css.lead}>{chapter.generated ? t('design.emptyGenerated') : chapter.id === 'pillars' ? t('design.pillarNotesEmpty') : t('design.empty', { file: chapter.file })}</p>
       : <Markdown text={chapter.text} />}
     {!chapter.generated && <div className={css.rowEnd}>
       <span className={css.metaLine}>{chapter.file}</span>

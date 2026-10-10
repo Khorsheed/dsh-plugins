@@ -2,6 +2,8 @@
 
 ## 0.1.0 (unreleased)
 
+- The one-pager has one source (`game.json`), edited on the design card; `design/pillars.md` becomes 支柱说明 (pillar notes only), lines restating the one-pager are filtered out.
+
 - Turn card in the conversation's turn tail (outside the fold): what the turn changed, with jumps into the tab; host-side turn baselines diffed at turn/end.
 - Sliders are trials only (no pending change); "Tell the agent" writes the trial values into the composer.
 - After a change the panel asks whether to tell the agent (write into chat / not this one / later / stop asking).

@@ -201,16 +201,29 @@ export function chapterStatus(text: string | undefined): ChapterStatus {
   return 'draft'
 }
 
-/** The pillars chapter's opening text, written at creation. */
-export function pillarsChapter(manifest: Pick<GameManifest, 'title' | 'pitch' | 'pillars' | 'artStyle' | 'elementTypes'>): string {
-  const lines = [`# ${manifest.title} · 设计支柱`, '', `> ${manifest.pitch}`, '']
-  if (manifest.pillars.length > 0) {
-    lines.push(...manifest.pillars.map((p, i) => `${i + 1}. ${p}`), '')
-  } else {
-    lines.push('（还没定支柱：和用户聊出 2–3 条「这个游戏一定要做到的体验」再写进来。）', '')
-  }
-  lines.push(`美术风格：${artStyleLabel(manifest.artStyle)}`, `元素类型：${manifest.elementTypes.join('、')}`, '')
-  return lines.join('\n')
+/**
+ * The one-pager (pitch, element types, style, pillars) lives in `game.json`
+ * and the panel pins it; `design/pillars.md` holds only the notes about the
+ * pillars (why each matters, how to test it). Projects created before
+ * 2026-10-10 got a pillars.md that restated the one-pager: this strips those
+ * restated lines so the notes view never shows the card twice.
+ * @param text - the chapter's text.
+ * @param manifest - the one-pager it may restate.
+ * @returns the notes that are not a restatement (trimmed; '' when none).
+ */
+export function pillarNotes(text: string, manifest: Pick<GameManifest, 'title' | 'pitch' | 'pillars' | 'artStyle' | 'elementTypes'> | null): string {
+  if (manifest === null) return text.trim()
+  const pillars = new Set(manifest.pillars.map(p => p.trim()))
+  const kept = text.split('\n').filter(line => {
+    const l = line.trim()
+    if (/^#\s/.test(l) && /设计支柱|支柱说明/.test(l)) return false
+    if (l.startsWith('>') && l.replace(/^>\s*/, '') === manifest.pitch.trim()) return false
+    if (/^(\d+\.|[-*])\s/.test(l) && pillars.has(l.replace(/^(\d+\.|[-*])\s+/, ''))) return false
+    if (l === `美术风格：${artStyleLabel(manifest.artStyle)}` || l === `元素类型：${manifest.elementTypes.join('、')}`) return false
+    if (l.startsWith('（还没定支柱')) return false
+    return true
+  })
+  return kept.join('\n').replace(/\n{3,}/g, '\n\n').trim()
 }
 
 /** Element-file scalar values worth tabulating. */
