@@ -47,9 +47,16 @@ function tagOrigin<T extends object>(definition: T): T {
   return definition
 }
 
+/** The host converts thrown tool failures into durable isError results. */
+export class CanvasToolError extends Error {}
+
+function canvasFailure(message: string): never {
+  throw new CanvasToolError(message)
+}
+
 /** One tool outcome as model-facing text (the card id matters most). */
 function renderOutcome(outcome: { ok: boolean; error?: string | undefined; cardId?: string | undefined }): string {
-  if (!outcome.ok) return `失败：${outcome.error ?? 'io'}`
+  if (!outcome.ok) return canvasFailure(`失败：${outcome.error ?? 'io'}`)
   return outcome.cardId === undefined ? '完成' : `完成：${outcome.cardId}`
 }
 
@@ -154,7 +161,7 @@ function renderCards(board: CanvasBoard, options: { kind?: string; includeArchiv
 /** One card in full, the generic way: kind, status, fields, body, source, comments. */
 function renderCard(board: CanvasBoard, cardId: string): string {
   const card = board.cards.find(candidate => candidate.id === cardId)
-  if (card === undefined) return `失败：这块画布没有卡片「${cardId}」。canvas_read 不带参数看全部卡片。`
+  if (card === undefined) return canvasFailure(`失败：这块画布没有卡片「${cardId}」。canvas_read 不带参数看全部卡片。`)
   const category = board.categories.find(candidate => candidate.id === card.kind)
   const definitions = new Map(board.categories.map(row => [row.id, row.definition]))
   const nameOf = (id: string): string => {
@@ -490,7 +497,7 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
         const category = current.categories.find(candidate => candidate.id === args.kind)
           ?? current.categories.find(candidate => categoryNameOf(candidate) === args.kind)
         if (category === undefined) {
-          return { text: `失败：这块画布没有 id 为「${args.kind}」的分类。可用的：${current.categories.map(row => `${row.id}（${categoryNameOf(row)}）`).join('、')}。`, images: [] }
+          return { text: canvasFailure(`失败：这块画布没有 id 为「${args.kind}」的分类。可用的：${current.categories.map(row => `${row.id}（${categoryNameOf(row)}）`).join('、')}。`), images: [] }
         }
         const type = await renderType(current, category, exec)
         return { text: `${type.text}\n\n${await listCards(current, category.id, includeArchived, resolved.session)}`, images: type.images }
@@ -559,7 +566,7 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
       if (args.op === 'archive') return archiveCard(args, resolved)
       if (args.op === 'manuscript') return writeManuscript(args, resolved)
       if (args.op === 'card') return writeCard(args, resolved)
-      return '失败：op 只能是 card、comment、archive 或 manuscript。'
+      return canvasFailure('失败：op 只能是 card、comment、archive 或 manuscript。')
     },
   })
 
@@ -579,7 +586,7 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
     const source = { ...raw, text: idLine.text, ...(patchId === undefined ? {} : { cardId: patchId }) }
     if (token !== undefined && raw.cardId === undefined) delete (source as { title?: string }).title
     const whole = cardArgsOf(source, read.board)
-    if (token === undefined && whole.kind === undefined && whole.text === '' && whole.fields === undefined) return EMPTY_CARD_MESSAGE
+    if (token === undefined && whole.kind === undefined && whole.text === '' && whole.fields === undefined) return canvasFailure(EMPTY_CARD_MESSAGE)
     const { fields: _arrived, ...others } = raw
     const args: Omit<WriteArgs, 'fields'> & { fields?: Record<string, unknown> } = {
       ...others,
@@ -600,9 +607,9 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
       }, resolved.session)
       if (answer !== undefined) return answer
     }
-    if (args.cardId !== undefined) return '失败：这张卡由用户来改；要补充就 op=comment 在这张卡上留言，或 op=card 另提一张。'
+    if (args.cardId !== undefined) return canvasFailure('失败：这张卡由用户来改；要补充就 op=comment 在这张卡上留言，或 op=card 另提一张。')
     if (args.kind === undefined || args.kind.trim() === '') {
-      return `失败：op=card 要给 kind（分类 id 或名称，canvas_read 可查）。参数没到达的话，在 text 第一行写「分类：…」。可用的：${enabledKinds(read.board)}。`
+      return canvasFailure(`失败：op=card 要给 kind（分类 id 或名称，canvas_read 可查）。参数没到达的话，在 text 第一行写「分类：…」。可用的：${enabledKinds(read.board)}。`)
     }
     const kind = whole.categoryId ?? args.kind
     const text = args.text ?? ''
@@ -610,13 +617,13 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
     if (args.fields !== undefined && Object.keys(args.fields).length > 0) {
       const category = read.board.categories.find(candidate => candidate.id === kind)
       if (category?.definition === undefined) {
-        return `失败：分类「${category === undefined ? kind : categoryNameOf(category)}」没有字段定义，不能填 fields——把内容写进 text。`
+        return canvasFailure(`失败：分类「${category === undefined ? kind : categoryNameOf(category)}」没有字段定义，不能填 fields——把内容写进 text。`)
       }
       const check = checkFieldValues(category.definition, args.fields, refResolverOf(read.board))
-      if (!check.ok) return `失败：字段不合「${categoryNameOf(category)}」的定义——\n${check.problems.map(problem => `- ${problem}`).join('\n')}`
+      if (!check.ok) return canvasFailure(`失败：字段不合「${categoryNameOf(category)}」的定义——\n${check.problems.map(problem => `- ${problem}`).join('\n')}`)
       fields = check.values
     }
-    if (text.trim().length === 0 && fields === undefined) return '失败：text 和 fields 至少要有一样。'
+    if (text.trim().length === 0 && fields === undefined) return canvasFailure('失败：text 和 fields 至少要有一样。')
     const outcome = await board.proposeCard({
       canvasId: resolved.canvasId,
       kind: kind as CardCategoryId,
@@ -630,8 +637,8 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
       const why = category === undefined
         ? `这块画布没有 id 为「${kind}」的分类`
         : `分类「${categoryNameOf(category)}」已停用`
-      return `失败：${why}。可用的 kind：${enabledKinds(read.board)}。`
-        + (isBoardCardKind(kind) || category !== undefined ? '' : '用户说的是分类名的话，从这里挑对应的 id。')
+      return canvasFailure(`失败：${why}。可用的 kind：${enabledKinds(read.board)}。`
+        + (isBoardCardKind(kind) || category !== undefined ? '' : '用户说的是分类名的话，从这里挑对应的 id。'))
     }
     if (!outcome.ok) return renderOutcome({ ok: false, error: outcome.error })
     const card = outcome.board.cards[outcome.board.cards.length - 1]
@@ -647,21 +654,21 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
 
   const writeComment = async (arrived: WriteArgs, resolved: Target): Promise<string> => {
     const args = withCardFromText(arrived)
-    if (args.cardId === undefined || (args.text ?? '').trim() === '') return '失败：op=comment 要给 cardId 和 text（cardId 到不了就在 text 第一行写「编号：…」）。'
+    if (args.cardId === undefined || (args.text ?? '').trim() === '') return canvasFailure('失败：op=comment 要给 cardId 和 text（cardId 到不了就在 text 第一行写「编号：…」）。')
     const outcome = await board.addComment({
       canvasId: resolved.canvasId, cardId: await resolveCardId(resolved, args.cardId), text: args.text ?? '', author: 'agent',
     }, resolved.session)
-    if (!outcome.ok && outcome.error === 'missing') return `失败：没有卡片「${args.cardId}」。`
+    if (!outcome.ok && outcome.error === 'missing') return canvasFailure(`失败：没有卡片「${args.cardId}」。`)
     return renderOutcome({ ok: outcome.ok, ...(outcome.ok ? {} : { error: outcome.error }) })
   }
 
   const archiveCard = async (arrived: WriteArgs, resolved: Target): Promise<string> => {
     const args = withCardFromText(arrived)
-    if (args.cardId === undefined) return '失败：op=archive 要给 cardId（cardId 到不了就在 text 写「编号：…」）。'
+    if (args.cardId === undefined) return canvasFailure('失败：op=archive 要给 cardId（cardId 到不了就在 text 写「编号：…」）。')
     const outcome = await board.patchCard({
       canvasId: resolved.canvasId, cardId: await resolveCardId(resolved, args.cardId), status: 'archived',
     }, resolved.session)
-    if (!outcome.ok && outcome.error === 'missing') return `失败：没有卡片「${args.cardId}」。`
+    if (!outcome.ok && outcome.error === 'missing') return canvasFailure(`失败：没有卡片「${args.cardId}」。`)
     if (!outcome.ok) return renderOutcome({ ok: false, error: outcome.error })
     return `已归档：${args.cardId}（用户在画布的「已归档」里能找回）。`
   }
@@ -670,7 +677,7 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
     const read = await board.readBoard({ canvasId: resolved.canvasId })
     const hooked = read.ok ? agentOf(read.board) : undefined
     if (hooked?.genre.ownsManuscripts === true && hooked.agent.manuscriptGuide !== undefined) return hooked.agent.manuscriptGuide
-    if ((args.text ?? '').trim() === '') return '失败：op=manuscript 要把整篇正文放在 text。'
+    if ((args.text ?? '').trim() === '') return canvasFailure('失败：op=manuscript 要把整篇正文放在 text。')
     const outcome = await board.writeManuscript({
       canvasId: resolved.canvasId,
       body: args.text ?? '',
@@ -732,10 +739,10 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
       }
       if (outcome.error === 'invalid-name') {
         return args.kind === undefined && (args.label ?? '').trim() === ''
-          ? '失败：新建一类要给 label；改已有分类要给 kind。'
-          : '失败：definition 里没有一个合格的字段——每个字段要有合法的 key（小写字母开头）、label、type 和 hint。'
+          ? canvasFailure('失败：新建一类要给 label；改已有分类要给 kind。')
+          : canvasFailure('失败：definition 里没有一个合格的字段——每个字段要有合法的 key（小写字母开头）、label、type 和 hint。')
       }
-      if (outcome.error === 'missing') return `失败：这块画布没有 id 为「${args.kind ?? ''}」的分类。先用 canvas_read 读出 id。`
+      if (outcome.error === 'missing') return canvasFailure(`失败：这块画布没有 id 为「${args.kind ?? ''}」的分类。先用 canvas_read 读出 id。`)
       return renderOutcome({ ok: false, error: outcome.error })
     },
   })
@@ -808,7 +815,7 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
       const session = exec.agent?.session
       const wanted = plainTitle(args.create ?? args.canvas ?? '')
       if (wanted === '') return renderCanvasList(session)
-      if (session === undefined) return '失败：这次调用没有会话，切不了画布。'
+      if (session === undefined) return canvasFailure('失败：这次调用没有会话，切不了画布。')
       const { items } = await board.listCanvases()
       const live = items.filter(item => item.archivedAt === null)
 
@@ -827,7 +834,7 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
           const genres = board.listGenres()
           const genre = genres.find(row => row.id === name) ?? genres.find(row => row.label === name)
           if (genre === undefined) {
-            return `失败：没有体裁「${name}」。${genres.length === 0 ? '这里没有安装任何体裁，不带 genre 建普通画布。' : `可选：${genres.map(row => `${row.id}（${row.label}）`).join('、')}。`}`
+            return canvasFailure(`失败：没有体裁「${name}」。${genres.length === 0 ? '这里没有安装任何体裁，不带 genre 建普通画布。' : `可选：${genres.map(row => `${row.id}（${row.label}）`).join('、')}。`}`)
           }
           genreId = genre.id
         }
@@ -848,12 +855,12 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
       const matches = exact.length > 0 ? exact : items.filter(item => item.title.includes(wanted))
       // A live canvas outranks an archived namesake.
       const pool = matches.some(item => item.archivedAt === null) ? matches.filter(item => item.archivedAt === null) : matches
-      if (pool.length === 0) return `失败：没有叫「${wanted}」的画布。\n${await renderCanvasList(session)}`
+      if (pool.length === 0) return canvasFailure(`失败：没有叫「${wanted}」的画布。\n${await renderCanvasList(session)}`)
       if (pool.length > 1) {
         return `「${wanted}」对应多块画布，请问用户是哪一块（或用 id）：${pool.map(item => `${item.id}《${item.title}》`).join('、')}`
       }
       const target = pool[0]!
-      if (target.archivedAt !== null) return `失败：《${target.title}》已归档（只读）。请用户先在画布里恢复它，或另建一块。`
+      if (target.archivedAt !== null) return canvasFailure(`失败：《${target.title}》已归档（只读）。请用户先在画布里恢复它，或另建一块。`)
       const switched = await switchTo(target.id, session)
       if (!switched.ok) return renderOutcome({ ok: false, error: switched.error })
       return `完成：已切到画布《${target.title}》（${target.id}）。${switched.note}`
