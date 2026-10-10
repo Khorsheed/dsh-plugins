@@ -29,3 +29,4 @@ Status: implemented
 - 十个新契约测试钉住这条接缝：显式路由同时压过调用请求头与部署默认探测、不可用显式路由落回继承链、显式 cwd 获胜、无调用方 send 在显式路由下工作、无调用方 send 走部署默认路由、无调用方且无路由时拒绝 `agent-unavailable`；dispose 后每个动词拒绝带码错误、dispose 幂等、in-flight spawn 与 dispose 的竞态把迟来句柄恰好 dispose 一次并拒绝调用方、同根重建可用。全部 86 个既有测试原样通过（总计 96）；`remote.spec.ts`、`journal.spec.ts`、`vocabulary.spec.ts`、`client.spec.tsx`、`persistence-probe.host.spec.ts` 零预期变更。
 - 隔离结论仍归挂载侧所有：Context 的 `agents` 服务决定侧边 agent 在哪里执行，显式配置钉住 route/cwd，README 的「工作区接入接缝」一节要求以观察验证挂载（核对实际创建出的侧边会话的 route 与 cwd），绝不靠假设。
 - 无调用方 send 按构造只是宿主侧形态；若将来需要线上携带「缺席 agent」的 send，那是 typert 边界的能力（可选 lookup 参数），不是 sidechat 的改动。
+- 后续（同日）：[执行后端端口](2026-10-10-sidechat-execution-backend.md)取代了本笔记「`agentRoute`/`cwd` 对非本地目标够用」的隐含假设——这两个配置键只参数化「经 Context 的 `agents` 服务的创建」，而在按目标隔离的拓扑里那个服务就是管理宿主的注册表。两键保留，现经后端 open 载荷消费；默认后端的行为即本笔记所交付内容的原样抽出。

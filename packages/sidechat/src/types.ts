@@ -170,6 +170,16 @@ export type SideChatQuoteOutcome =
   | { readonly ok: true; readonly contextKey: string; readonly refs: number }
   | { readonly ok: false; readonly error: SideChatError }
 
+/**
+ * `stop` outcome (host-side only — the wire carries no stop gesture). The
+ * refusals are coded: `not-found` (no such context), `not-running` (nothing
+ * live to stop), `cancel-unsupported` (the execution backend declares no
+ * cancel capability, or the live session cannot).
+ */
+export type SideChatStopOutcome =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly error: 'not-found' | 'not-running' | 'cancel-unsupported' }
+
 /* ------------------------------------------------------- persisted document */
 
 /** One context's durable record in `contexts.json`. */
