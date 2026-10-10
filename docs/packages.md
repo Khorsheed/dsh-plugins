@@ -4,10 +4,10 @@
 
 ## 概览
 
-- 包总数:**42**
-- 自挂载 bundle(`dsh.bundle.patch`):**38**
+- 包总数:**43**
+- 自挂载 bundle(`dsh.bundle.patch`):**39**
 - 组合组件(不自挂载,`dsh.composition.component`):**4** — `preset-composed-row` 1、`source-plane-library` 2、`sub-profile-patch` 1
-- 带浏览器半边(`dsh.client`):**31**
+- 带浏览器半边(`dsh.client`):**32**
 - 整合 profile(默认安装单元):**3** — `basic`、`dev`、`web-eval`
 
 **安装单元是 profile,不是单包。** 单包安装是高级路径:自挂载包 `dsh plugin add <pkg>` 即可,
@@ -31,6 +31,7 @@
 | `@khorsheed/dsh-reader` | `packages/dsh-reader` | 0.3.0 | bundle | — | web | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-eval` | `packages/eval` | 0.2.0-rc.1 | bundle | — | web | 0.2.0-rc.2 | — |
 | `@khorsheed/dsh-file-preview` | `packages/file-preview` | 0.4.1 | bundle | — | web | 0.1.5-rc.1 | basic, web-eval |
+| `@khorsheed/dsh-game` | `packages/game` | 0.1.0 | bundle | — | web | 0.2.0-rc.1 | — |
 | `@khorsheed/dsh-inline-html-render` | `packages/inline-html-render` | 0.1.15 | bundle | — | web | 0.1.2-rc.1 | basic, web-eval |
 | `@khorsheed/dsh-lab` | `packages/lab` | 0.2.0-rc.1 | bundle | — | — | 0.2.0-rc.2 | — |
 | `@khorsheed/dsh-library` | `packages/library` | 0.1.0 | bundle | — | web | 0.1.7-rc.1 | — |
