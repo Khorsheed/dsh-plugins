@@ -41,9 +41,9 @@
 
 import { useState } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { RegisteredSet, RegistryRow } from '../types.ts'
+import type { DatasetsCapabilities, RegisteredSet, RegistryRow } from '../types.ts'
 import type { DatasetExperimentRow, DatasetsViewProps } from './contract.ts'
-import { Chevron, Chip, LayersEdit, LayersWordView, shortCommit } from './parts.tsx'
+import { capabilityOf, Chevron, Chip, LayersEdit, LayersWordView, shortCommit } from './parts.tsx'
 import { MoreMenu } from './more-menu.tsx'
 import css from './DatasetsView.module.css'
 
@@ -103,6 +103,8 @@ export interface RegistryListProps {
   experiments: readonly DatasetExperimentRow[] | null
   /** «题数» per registration, then per set; absent = loading, null = the read failed. */
   itemCounts: Readonly<Record<string, Record<string, number> | null>>
+  /** This instance's gesture availability; null (unanswered) leaves every gesture visible. */
+  caps: DatasetsCapabilities | null
   onOpen: (repo: string, dataset: string) => void
   /** 「交给 Agent 修改」: a new 题集整理 session for this registration. */
   onAskAgent: (repo: string) => void
@@ -188,27 +190,39 @@ interface RowActions {
   onAskAgent: (repo: string) => void
   onEdit: (repo: string) => void
   onRemove: (repo: string) => void
+  /** This instance's gesture availability; null (unanswered) leaves every action visible. */
+  caps: DatasetsCapabilities | null
 }
 
 /** The 「操作」 cell of a registration's row: one word button, the rest behind a ⋯. */
 function ActionsCell(props: RowActions & { repo: string; t: DatasetsViewProps['t'] }) {
-  const { repo, onAskAgent, onEdit, onRemove, t } = props
+  const { repo, onAskAgent, onEdit, onRemove, caps, t } = props
+  const organize = capabilityOf(caps, 'agentOrganize')
+  const registration = capabilityOf(caps, 'registration')
+  const del = capabilityOf(caps, 'delete')
+  // 「删除」 opens a dialog whose other option is unregister (the registration
+  // group): the entry hides only when BOTH outcomes are unavailable.
+  const menuItems = [
+    ...(registration.available ? [{ id: 'edit', label: t('registry.edit') }] : []),
+    ...(registration.available || del.available ? [{ id: 'remove', label: t('registry.remove'), danger: true }] : []),
+  ]
   return (
     <td className={css.actionsCell}>
       <span className={css.rowActions}>
-        <Button variant="outline" size="sm" onClick={() => { onAskAgent(repo) }}>{t('registry.askAgent')}</Button>
-        <MoreMenu
-          label={t('registry.more', { id: repo })}
-          className={css.moreTrigger}
-          items={[
-            { id: 'edit', label: t('registry.edit') },
-            { id: 'remove', label: t('registry.remove'), danger: true },
-          ]}
-          onSelect={(id) => {
-            if (id === 'edit') onEdit(repo)
-            else if (id === 'remove') onRemove(repo)
-          }}
-        />
+        {organize.available && (
+          <Button variant="outline" size="sm" onClick={() => { onAskAgent(repo) }}>{t('registry.askAgent')}</Button>
+        )}
+        {menuItems.length > 0 && (
+          <MoreMenu
+            label={t('registry.more', { id: repo })}
+            className={css.moreTrigger}
+            items={menuItems}
+            onSelect={(id) => {
+              if (id === 'edit') onEdit(repo)
+              else if (id === 'remove') onRemove(repo)
+            }}
+          />
+        )}
       </span>
     </td>
   )
@@ -223,9 +237,11 @@ function SetFacts(props: {
   count: number | undefined
   usage: SetUsage | null
   onEdit: (repo: string) => void
+  /** The registration group is available: the visible-layers edit shows. */
+  canEdit: boolean
   t: DatasetsViewProps['t']
 }) {
-  const { repo, trackedRef, latest, set, count, usage, onEdit, t } = props
+  const { repo, trackedRef, latest, set, count, usage, onEdit, canEdit, t } = props
   const date = latest.date.slice(0, 10)
   return (
     <>
@@ -243,7 +259,7 @@ function SetFacts(props: {
       <td>
         <span className={css.layersCell}>
           <LayersWordView layers={set.layers} t={t} className={css.layersWord} />
-          <LayersEdit set={set.ref} onEdit={() => { onEdit(repo) }} t={t} />
+          {canEdit && <LayersEdit set={set.ref} onEdit={() => { onEdit(repo) }} t={t} />}
         </span>
       </td>
       {usage !== null && <td className={css.usageCell}><UsageCell usage={usage} t={t} /></td>}
@@ -261,6 +277,8 @@ interface SetRowProps {
   usage: SetUsage | null
   onOpen: (repo: string, dataset: string) => void
   onEdit: (repo: string) => void
+  /** The registration group is available: the visible-layers edit shows. */
+  canEdit: boolean
   t: DatasetsViewProps['t']
 }
 
@@ -345,12 +363,13 @@ function SingleSetRow(props: SetRowProps & RowActions & { row: RegistryRow; onRe
  * @param props - see {@link RegistryListProps}.
  */
 export function RegistryList(props: RegistryListProps) {
-  const { rows, experiments, itemCounts, onOpen, onAskAgent, onReview, onEdit, onRemove, t } = props
+  const { rows, experiments, itemCounts, caps, onOpen, onAskAgent, onReview, onEdit, onRemove, t } = props
   // The data columns a group row's heading spans; 「最新版本」 and 「操作」 are
   // cells of their own, so hiding that column on a narrow pane (≤720px) keeps
   // every row's visible column count equal instead of growing a ghost column.
   const headingColumns = experiments === null ? 3 : 4
-  const actions = { onAskAgent, onEdit, onRemove }
+  const actions = { onAskAgent, onEdit, onRemove, caps }
+  const canEdit = capabilityOf(caps, 'registration').available
   return (
     <div className={css.listScroll}>
       {/* The 版心 the chat column uses (T83), so the list lines up with the
@@ -385,6 +404,7 @@ export function RegistryList(props: RegistryListProps) {
                   usage={usageOf(only.set)}
                   onOpen={onOpen}
                   onReview={onReview}
+                  canEdit={canEdit}
                   {...actions}
                   t={t}
                 />
@@ -425,6 +445,7 @@ export function RegistryList(props: RegistryListProps) {
                   usage={usageOf(set.set)}
                   onOpen={onOpen}
                   onEdit={onEdit}
+                  canEdit={canEdit}
                   t={t}
                 />
               ))}

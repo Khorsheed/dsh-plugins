@@ -68,6 +68,8 @@ export type DatasetsErrorCode =
   | 'NO_AUTHORING_CHECKOUT'
   /** T99: a repository whose files must stay (outside the datasets home, a symlink, not the repository root). */
   | 'NOT_REMOVABLE'
+  /** A write/read path crosses the root boundary through a symlink (realpath containment, TOCTOU re-verify). */
+  | 'PATH_ESCAPE'
 
 /** Domain error with a stable, greppable code. */
 export class DatasetsError extends Error {

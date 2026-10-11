@@ -31,13 +31,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
-  DatasetOverviewRow, ListDatasetsResult, ListItemsResult, OrganizingSetup, RegisterInput, RegistryEntry, UpdateInput,
+  DatasetOverviewRow, DatasetsCapabilities, ListDatasetsResult, ListItemsResult, OrganizingSetup, RegisterInput, RegistryEntry, UpdateInput,
 } from '../types.ts'
 import { AddDatasetDialog } from './AddDatasetDialog.tsx'
 import type { DatasetsViewProps } from './contract.ts'
 import { DatasetDetail } from './DatasetDetail.tsx'
 import { classifyError, ErrorState } from './ErrorState.tsx'
-import { Chip, EmptyState, LayersEdit, LayersWordView, ShelfIcon, shortCommit } from './parts.tsx'
+import { capabilityOf, Chip, EmptyState, LayersEdit, LayersWordView, ShelfIcon, shortCommit } from './parts.tsx'
 import { RegisterForm } from './RegisterForm.tsx'
 import { RegistryList } from './RegistryList.tsx'
 import { DeleteDialog, DiscardDialog } from './RemoveDialogs.tsx'
@@ -98,6 +98,7 @@ function OrganizeNoticeView(props: { notice: OrganizeNotice; onDismiss: () => vo
 export function DatasetsView(props: DatasetsViewProps) {
   const {
     sessionId, useStore, actions, t,
+    capabilities: fetchCapabilities,
     fetchRegistry, previewRepo, register, updateRegistration, unregister, importBindings,
     deletePlan, deleteRegistration, discardPlan, discardProposal,
     listDatasets, readFile, readPassthroughFile,
@@ -149,6 +150,10 @@ export function DatasetsView(props: DatasetsViewProps) {
   const [setup, setSetup] = useState<OrganizingSetup | null>(null)
   const [organized, setOrganized] = useState<OrganizeNotice | null>(null)
   const [done, setDone] = useState<string | null>(null)
+  // The instance's gesture availability (null until answered; an absent face
+  // member or a failed read leaves every gesture visible — fail-open display,
+  // the server's admission rules enforce).
+  const [caps, setCaps] = useState<DatasetsCapabilities | null>(null)
   // Which item briefs have been asked for. A REF, not store state: the request
   // sets a loading flag, the flag re-renders, and a re-render that re-ran the
   // effect would cancel the very request it just started (the effect's cleanup
@@ -188,6 +193,25 @@ export function DatasetsView(props: DatasetsViewProps) {
     })
     return () => { cancelled = true }
   }, [sessionId, organizingSetup])
+
+  // The capabilities descriptor, once — which gesture groups this instance admits.
+  useEffect(() => {
+    if (fetchCapabilities === undefined) return
+    let cancelled = false
+    void fetchCapabilities(sessionId).then((result) => {
+      if (!cancelled && result.ok) setCaps(result.value)
+    })
+    return () => { cancelled = true }
+  }, [sessionId, fetchCapabilities])
+
+  const capRegistration = capabilityOf(caps, 'registration')
+  const capOrganize = capabilityOf(caps, 'agentOrganize')
+  const capImport = capabilityOf(caps, 'bindingImport')
+  const capReview = capabilityOf(caps, 'proposalReview')
+  const capDelete = capabilityOf(caps, 'delete')
+  // 「添加题集」 bundles the organizing hand-off and (under 高级) the register
+  // form: it stays while either path is available.
+  const canAdd = capOrganize.available || capRegistration.available
 
   // The open registration's rows (item counts, slot mapping, validate) for the detail page.
   useEffect(() => {
@@ -452,6 +476,7 @@ export function DatasetsView(props: DatasetsViewProps) {
               reviewFiles={() => reviewFiles(sessionId, target.id)}
               confirm={(registryId, sets) => confirmProposal(sessionId, target.id, registryId, sets)}
               sendBack={reviewOf === null ? null : (note) => { sendBackProposal(target.id, note) }}
+              reviewCap={capReview}
               onBack={() => { actions.openReview(null) }}
               onDone={confirmed}
               t={t}
@@ -465,6 +490,7 @@ export function DatasetsView(props: DatasetsViewProps) {
               reviewFiles={null}
               confirm={(_registryId, sets, loaded) => confirmPending(sessionId, target.repo, loaded.facts.version.commit, sets)}
               sendBack={(note) => { sendBackPending(target.repo, note) }}
+              reviewCap={capReview}
               onBack={() => { actions.openReview(null) }}
               onDone={confirmed}
               t={t}
@@ -499,7 +525,9 @@ export function DatasetsView(props: DatasetsViewProps) {
                   </span>
                   <span className={css.bindingScope}>
                     {t('registry.colVisible')} · <LayersWordView layers={openSet.layers} t={t} />
-                    <LayersEdit set={openSet.ref} onEdit={() => { editRegistration(openRow.entry.id) }} variant="bar" t={t} />
+                    {capRegistration.available && (
+                      <LayersEdit set={openSet.ref} onEdit={() => { editRegistration(openRow.entry.id) }} variant="bar" t={t} />
+                    )}
                   </span>
                 </span>
               </>
@@ -516,15 +544,22 @@ export function DatasetsView(props: DatasetsViewProps) {
             )}
           {page === 'list' && !registryEmpty && (
             <>
-              <Button size="sm" variant="outline" onClick={() => { setAddOpen(true) }}>
-                {t('registry.add')}
-              </Button>
-              <Button variant="ghost" size="sm" onClick={runImport} disabled={importing}>
-                {importing ? t('registry.importing') : t('registry.import')}
-              </Button>
+              {canAdd && (
+                <Button size="sm" variant="outline" onClick={() => { setAddOpen(true) }}>
+                  {t('registry.add')}
+                </Button>
+              )}
+              {!canAdd && (
+                <span className={css.cellQuiet}>{capOrganize.reason ?? capRegistration.reason}</span>
+              )}
+              {capImport.available && (
+                <Button variant="ghost" size="sm" onClick={runImport} disabled={importing}>
+                  {importing ? t('registry.importing') : t('registry.import')}
+                </Button>
+              )}
             </>
           )}
-          {page === 'detail' && openRow !== undefined && (
+          {page === 'detail' && openRow !== undefined && capOrganize.available && (
             <Button variant="outline" size="sm" onClick={() => { askAgent(openRow.entry.id) }}>{t('registry.askAgent')}</Button>
           )}
           {page === 'detail' && (
@@ -554,14 +589,16 @@ export function DatasetsView(props: DatasetsViewProps) {
                 <Button size="sm" variant="primary" onClick={() => { setDone(null); actions.openReview({ kind: 'proposal', id: proposal.id }) }}>
                   {proposal.kind === 'update' ? t('banner.reviewUpdate') : t('banner.review')}
                 </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  title={t('discard.actionTitle')}
-                  onClick={() => { setDiscarding({ id: proposal.id, name: proposal.registryId }) }}
-                >
-                  {t('discard.action')}
-                </Button>
+                {capDelete.available && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    title={t('discard.actionTitle')}
+                    onClick={() => { setDiscarding({ id: proposal.id, name: proposal.registryId }) }}
+                  >
+                    {t('discard.action')}
+                  </Button>
+                )}
               </div>
             ))}
             {held.map(row => (
@@ -655,12 +692,21 @@ export function DatasetsView(props: DatasetsViewProps) {
               secondary link under it. */}
           {registryEmpty && (
             <EmptyState page icon={<ShelfIcon />} title={t('registry.empty')} hint={t('registry.emptyHint')}>
-              <Button size="sm" variant="primary" onClick={() => { setAddOpen(true) }}>
-                {t('registry.emptyAction')}
-              </Button>
-              <button type="button" className={css.emptyLink} onClick={runImport} disabled={importing}>
-                {importing ? t('registry.importing') : t('registry.import')}
-              </button>
+              {canAdd && (
+                <Button size="sm" variant="primary" onClick={() => { setAddOpen(true) }}>
+                  {t('registry.emptyAction')}
+                </Button>
+              )}
+              {capImport.available && (
+                <button type="button" className={css.emptyLink} onClick={runImport} disabled={importing}>
+                  {importing ? t('registry.importing') : t('registry.import')}
+                </button>
+              )}
+              {!canAdd && !capImport.available && (
+                <span className={css.cellQuiet}>
+                  {capOrganize.reason ?? capRegistration.reason ?? capImport.reason}
+                </span>
+              )}
             </EmptyState>
           )}
           {listLoading && registry === null && <div className={css.empty}>{t('list.loading')}</div>}
@@ -672,6 +718,7 @@ export function DatasetsView(props: DatasetsViewProps) {
               rows={registry}
               experiments={experiments}
               itemCounts={itemCounts}
+              caps={caps}
               onOpen={(repo, dataset) => { actions.openDataset({ repo, dataset }) }}
               onAskAgent={askAgent}
               onReview={(repo) => { setDone(null); actions.openReview({ kind: 'pending', repo }) }}
@@ -713,6 +760,7 @@ export function DatasetsView(props: DatasetsViewProps) {
         id={deleting}
         sets={registry?.find(row => row.entry.id === deleting)?.sets.map(set => set.set) ?? []}
         experiments={experiments}
+        caps={caps}
         loadPlan={loadDeletePlan}
         onDelete={deleteWithFiles}
         onUnregister={removeRegistration}
@@ -722,6 +770,7 @@ export function DatasetsView(props: DatasetsViewProps) {
       <DiscardDialog
         id={discarding?.id ?? null}
         name={discarding?.name ?? ''}
+        caps={caps}
         loadPlan={loadDiscardPlan}
         onDiscard={discard}
         onClose={() => { setDiscarding(null) }}
@@ -730,6 +779,7 @@ export function DatasetsView(props: DatasetsViewProps) {
       <AddDatasetDialog
         open={addOpen}
         datasetsHome={setup?.datasetsHome ?? ''}
+        caps={caps}
         onClose={() => { setAddOpen(false) }}
         onOrganize={submitAdd}
         onAdvanced={() => {

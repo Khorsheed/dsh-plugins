@@ -28,7 +28,9 @@
 
 import { useId, useState } from 'react'
 import { Button, Input, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { DatasetsCapabilities } from '../types.ts'
 import type { DatasetsViewProps } from './contract.ts'
+import { capabilityOf } from './parts.tsx'
 import { checkDatasetName, cleanPickedPath, repoParentOf, repoPathFor, splitPathTail, type AddDatasetFields } from './organize.ts'
 import css from './Organize.module.css'
 
@@ -40,6 +42,8 @@ export function AddDatasetDialog(props: {
   open: boolean
   /** The datasets home (decision C), '' while unknown. */
   datasetsHome: string
+  /** This instance's gesture availability; null (unanswered) leaves every gesture visible. */
+  caps: DatasetsCapabilities | null
   onClose: () => void
   onOrganize: (fields: AddDatasetFields) => void
   /** 「高级」: the direct register form. */
@@ -50,7 +54,9 @@ export function AddDatasetDialog(props: {
   pickDirectory: () => Promise<string | null>
   t: DatasetsViewProps['t']
 }) {
-  const { open, datasetsHome, onClose, onOrganize, onAdvanced, canPick, pickDirectory, t } = props
+  const { open, datasetsHome, caps, onClose, onOrganize, onAdvanced, canPick, pickDirectory, t } = props
+  const organize = capabilityOf(caps, 'agentOrganize')
+  const registration = capabilityOf(caps, 'registration')
   const ids = useId()
   const [source, setSource] = useState('')
   const [name, setName] = useState('')
@@ -90,7 +96,9 @@ export function AddDatasetDialog(props: {
       footer={(
         <>
           <Button variant="outline" size="sm" onClick={onClose}>{t('add.cancel')}</Button>
-          <Button size="sm" variant="primary" disabled={!ready} onClick={submit}>{t('add.organize')}</Button>
+          {organize.available
+            ? <Button size="sm" variant="primary" disabled={!ready} onClick={submit}>{t('add.organize')}</Button>
+            : <span className={css.help}>{organize.reason}</span>}
         </>
       )}
     >
@@ -192,7 +200,9 @@ export function AddDatasetDialog(props: {
           <div className={css.help}>{t('add.gitNeeded')}</div>
         </div>
 
-        <button type="button" className={css.link} onClick={onAdvanced}>{t('add.advanced')}</button>
+        {registration.available && (
+          <button type="button" className={css.link} onClick={onAdvanced}>{t('add.advanced')}</button>
+        )}
       </div>
     </Modal>
   )

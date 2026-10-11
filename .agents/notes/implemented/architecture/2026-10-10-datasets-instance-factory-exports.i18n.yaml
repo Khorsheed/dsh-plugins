@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-10-10-datasets-instance-factory-exports.md
-.agents/notes/implemented/architecture/2026-10-10-datasets-instance-factory-exports.md: b6c2f221b1546b77103cd8277e885963e8881deb
-.agents/notes/implemented/architecture/2026-10-10-datasets-instance-factory-exports.zh.md: 57fa7ae2251294b8bbfbf36b90f1bb54cb4f84fd
+.agents/notes/implemented/architecture/2026-10-10-datasets-instance-factory-exports.md: 337c9dc4f58808fe7779e2643ac7e9e29f56b4da
+.agents/notes/implemented/architecture/2026-10-10-datasets-instance-factory-exports.zh.md: 3368bbbbe9f4262bcd02342e20ccba6a51721839

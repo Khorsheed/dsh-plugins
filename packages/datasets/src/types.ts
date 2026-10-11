@@ -23,6 +23,7 @@ export type { KeepReason, RemovalPlan } from './removal.ts'
 export type { SkeletonResult } from './scaffold.ts'
 export type {
   DeletePlan, DiscardPlan, ImportItemInput, ItemBriefRequest, OrganizingSetup, RemovalResult,
+  DatasetsCapabilities, DatasetsCapabilityAvailability, DatasetsCapabilityGroup, DatasetsCapabilityOverrides,
   ListDatasetsResult, ListItemsResult, ListRequest, PreviewRepoRequest,
   ReadPassthroughRequest, ReadQuery, ReadResult, ScaffoldDatasetInput, ScaffoldItemInput,
   ShowRequest, ShowResult, ValidateDatasetResult, ValidateError, ValidateRequest, ValidateResult,
