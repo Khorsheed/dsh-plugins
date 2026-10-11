@@ -323,9 +323,14 @@ export async function loadSkillDetail(
   if (def === undefined) return undefined
   // metadata.credentials are the user-configurable secrets; env-var references
   // detected in the body are the agent's own runtime inputs (DSH_HOME etc.) and
-  // must NOT be offered as configurable credential forms — keep them apart.
+  // must NOT be offered as configurable credential forms — keep them apart. A
+  // body reference already declared as a credential renders in the credential
+  // form; repeating it as a read-only ref would show the same key twice.
   const metadataDecls = decodeCredentialDecls(def.metadata)
-  const environmentRefs = decodeEnvDecls(def.content).map((decl) => decl.key)
+  const declaredKeys = new Set(metadataDecls.map((decl) => decl.key))
+  const environmentRefs = decodeEnvDecls(def.content)
+    .map((decl) => decl.key)
+    .filter((key) => !declaredKeys.has(key))
   const { credentials } = resolveServices(ctx)
   let credentialStates: readonly CatalogCredentialState[] = []
   if (metadataDecls.length > 0 && credentials !== undefined) {

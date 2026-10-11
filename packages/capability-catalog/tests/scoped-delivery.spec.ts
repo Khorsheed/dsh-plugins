@@ -290,6 +290,30 @@ describe('ScopedSkillDelivery over a real skill registry', () => {
     expect(detail?.provider).toBe('capability-catalog')
   })
 
+  it('keeps a metadata-declared credential out of the read-only env refs', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SkillRegistry)
+    ctx.provide('credentials', {
+      describe: async () => ({ configured: true }),
+      set: async () => {},
+    } as never)
+    ctx.skills.register({
+      name: 'weread-skills',
+      description: 'WeRead helper',
+      invocation: { modelInvocable: true, userInvocable: true },
+      source: 'user-dsh',
+      resourceBase: { kind: 'opaque' },
+      metadata: { credentials: [{ key: 'WEREAD_API_KEY', label: 'WeRead API key' }] },
+      content: 'Send Authorization: Bearer $WEREAD_API_KEY. $DSH_HOME holds the instance home.',
+    })
+    const { registry } = { registry: ctx.get('skills') as unknown as Parameters<typeof loadSkillDetail>[1] }
+    const detail = await loadSkillDetail(ctx, registry, 'weread-skills', undefined)
+    expect(detail?.credentials).toEqual([{ key: 'WEREAD_API_KEY', label: 'WeRead API key', configured: true }])
+    // The declared key renders in the credential form alone; the undeclared body
+    // ref stays a read-only runtime reference.
+    expect(detail?.environmentRefs).toEqual(['DSH_HOME'])
+  })
+
   it('degrades without a roster rather than failing', async () => {
     const home = await mkdtemp(join(tmpdir(), 'catalog-noroster-'))
     const ctx = new Context()

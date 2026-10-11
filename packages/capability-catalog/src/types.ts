@@ -172,7 +172,9 @@ export interface CatalogSkillDetail {
   /** Declared credentials + their configured state (metadata.credentials only). */
   readonly credentials?: readonly CatalogCredentialState[]
   /** Env-var references detected in the skill body (read-only, informational —
-   * typically provided by the runtime/caller, NOT user-configurable here). */
+   * typically provided by the runtime/caller, NOT user-configurable here). A key
+   * already declared in metadata.credentials is excluded — it renders in the
+   * credential form instead. */
   readonly environmentRefs?: readonly string[]
   /** Bundle-relative file paths (SKILL.md + scripts/assets/references) for a directory side. */
   readonly files?: readonly string[]
