@@ -19,7 +19,7 @@ import type { DatasetOverview, ItemBrief } from './brief.ts'
 import type { Proposal, ProposalReview, ReviewFiles, ReviewHead, ReviewItem } from './proposal.ts'
 import type { SkeletonResult } from './scaffold.ts'
 import {
-  type DatasetScope, type DatasetsService, type OrganizingSetup,
+  type DatasetScope, type DatasetsCapabilities, type DatasetsService, type OrganizingSetup,
   type DeletePlan, type DiscardPlan, type RemovalResult,
   type ImportItemInput, type ItemBriefRequest,
   type ListDatasetsResult, type ListItemsResult, type ListRequest,
@@ -94,6 +94,17 @@ export class DatasetsRemoteService extends TypertRemoteService<DatasetsRemoteCon
       )
     }
     return { repo: entry.authoringCheckout, operator: true }
+  }
+
+  /**
+   * What this instance's gestures may do (the tab hides what is unavailable
+   * and shows the reason). A display contract, additive by construction —
+   * enforcement stays at the server's own admission rules.
+   * @returns the capabilities descriptor.
+   */
+  @Remote('capabilities')
+  capabilities(): DatasetsCapabilities {
+    return this.datasets.capabilities()
   }
 
   /**

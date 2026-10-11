@@ -488,6 +488,12 @@ export interface LocalAgentScopeProvisionedFace {
 export interface ScopedHomeHashEvidence extends HomeHash {
   /** The scoped home as the producer knows it — a label, not a readable path. */
   homeDir: string
+  /**
+   * The identity token pinning this evidence to an execution-home port's
+   * plan for the same (harness, scope) — see {@link ScopedHomePlan.homeIdentity}
+   * for the comparison rule. Opaque and free-form; compared, never interpreted.
+   */
+  homeIdentity?: string
 }
 
 /**
@@ -569,6 +575,86 @@ export interface ScopedHomeEvidenceFace {
    * locked record stands unchallenged, never a guessed digest.
    */
   presetSnapshot?(harness: string, scope: string | undefined, preset: string): Promise<PresetSnapshotEvidence | undefined>
+}
+
+/* ─────────────── the execution-home port (the unit path) ─────────────── */
+
+/**
+ * What the execution-home port is asked about: ONE condition's registered
+ * identity — the harness and scope its (reviewed) condition document declares,
+ * never a caller-supplied volume name or local directory — plus the
+ * in-container mount declaration that document carries and the unit's uid
+ * context for the availability check.
+ */
+export interface ScopedHomePlanRequest {
+  /** The condition id, as registered in the condition library. */
+  conditionId: string
+  /** The condition's `harness.name`. */
+  harness: string
+  /** The condition's named scope; absent for the harness's default scope. */
+  scope?: string
+  /** The condition's `unit.scopedHome.container` — the reviewed in-container mount point. */
+  container: string
+  /** The condition's `unit.scopedHome.var` — the variable naming that mount point. */
+  var: string
+  /** The unit's numeric uid when the plan declares one (the availability check's ownership context); null otherwise. */
+  unitUid: number | null
+}
+
+/**
+ * What the port answers with: the mount plan the acquire spec consumes, and
+ * the identity token that pins it to the evidence face.
+ *
+ * NO credential content crosses in either direction — the answer is a mount
+ * plan and an identity string, and the request carries names, never bytes.
+ */
+export interface ScopedHomePlan {
+  /**
+   * The mount the acquire spec consumes in place of the hardcoded bind.
+   * `source` is opaque to the orchestrator: a target-side path for `bind`, a
+   * volume name for `volume` — it is handed to lab verbatim and NEVER
+   * resolved or stat'ed against this filesystem.
+   */
+  mount: { source: string; type: 'bind' | 'volume'; readonly?: boolean }
+  /**
+   * The identity token pinning this plan to the evidence face's answer for
+   * the same (harness, scope). When the service mounts BOTH seams, both
+   * answers must carry the token and the tokens must be equal — a missing or
+   * mismatching token refuses the run before any unit is acquired, because
+   * evidence measured on one target must never pair with a mount planned for
+   * another. Opaque and free-form (a target id, a generation marker); the
+   * orchestrator compares, never interprets.
+   */
+  homeIdentity?: string
+}
+
+/**
+ * The execution-home port: the unit path's three decisions — scoped-home
+ * RESOLUTION, AVAILABILITY verification, and MOUNT planning — answered where
+ * the rounds run, for topologies where the verified scoped home is not a
+ * management-process-local directory (a named volume, a target-side path).
+ *
+ * Injected per instance (the constructor config's `executionHome`), like
+ * {@link ScopedHomeEvidenceFace} and independent of it; when both are
+ * mounted, the identity pin ({@link ScopedHomePlan.homeIdentity} versus the
+ * evidence answer's `homeIdentity`) is enforced at unit-planning time.
+ *
+ * The contract, in both directions:
+ *
+ * - `undefined` back means the port knows no home for that registered
+ *   identity — the run refuses it coded (`EXECUTION_HOME_UNKNOWN`) rather
+ *   than planning from a guess.
+ * - A throw means the target could not verify or plan — the run refuses
+ *   coded (`EXECUTION_HOME_UNAVAILABLE`) with the message.
+ * - An answer whose shape is not a mount plan refuses coded
+ *   (`EXECUTION_HOME_INVALID`).
+ *
+ * Unmounted, nothing here is consulted: the unit path resolves through
+ * `localAgent.homeDir`, verifies with the local `checkCredentialsDir`, and
+ * mounts `type: 'bind'` — byte-identical to before.
+ */
+export interface ExecutionHomePort {
+  planScopedHome?(request: ScopedHomePlanRequest): Promise<ScopedHomePlan | undefined>
 }
 
 

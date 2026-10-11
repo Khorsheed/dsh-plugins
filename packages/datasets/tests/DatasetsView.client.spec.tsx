@@ -21,7 +21,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { useSyncExternalStore } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {
-  DatasetOverview, DeletePlan, DiscardPlan, ImportBindingsResult, ItemBrief, ListDatasetsResult, ListItemsResult,
+  DatasetOverview, DatasetsCapabilities, DeletePlan, DiscardPlan, ImportBindingsResult, ItemBrief, ListDatasetsResult, ListItemsResult,
   Proposal, ProposalReview, ReadResult, RegisterPreview, RegistryEntry, RegistryRow, ValidateResult,
 } from '../src/types.ts'
 import type { DatasetsViewProps, ItemRunsView } from '../src/client/contract.ts'
@@ -48,6 +48,7 @@ type Mock = ReturnType<typeof vi.fn>
 interface Harness {
   instance: Instance
   actions: Instance['actions']
+  capabilities: Mock
   fetchRegistry: Mock
   previewRepo: Mock
   register: Mock
@@ -287,11 +288,23 @@ const IMPORTED: ImportBindingsResult = {
   dangling: [{ repoPath: '/tmp/old-scratch', sessions: 1, reason: 'the path no longer exists' }],
 }
 
+/** The descriptor's default: every gesture group available, no reasons (today's local behavior). */
+const ALL_AVAILABLE: DatasetsCapabilities = {
+  protocolVersion: 1,
+  registration: { available: true },
+  fileWrite: { available: true },
+  agentOrganize: { available: true },
+  bindingImport: { available: true },
+  proposalReview: { available: true },
+  delete: { available: true },
+}
+
 function makeHarness(rows: RegistryRow[] = [rowOf()]): Harness {
   const instance = createDatasetsViewStore().create()
   return {
     instance,
     actions: instance.actions,
+    capabilities: vi.fn(async (): Promise<Result<DatasetsCapabilities>> => ({ ok: true, value: ALL_AVAILABLE })),
     fetchRegistry: vi.fn(async (): Promise<Result<RegistryRow[]>> => ({ ok: true, value: rows })),
     previewRepo: vi.fn(async (): Promise<Result<RegisterPreview>> => ({ ok: true, value: PREVIEW })),
     register: vi.fn(async (_sid: string, input: unknown): Promise<Result<unknown>> => ({ ok: true, value: input })),
@@ -355,6 +368,7 @@ function faceProps(h: Harness, canPick: boolean): Record<string, unknown> {
   return {
     useStore: hookOf(h.instance),
     actions: h.actions,
+    capabilities: h.capabilities,
     fetchRegistry: h.fetchRegistry,
     previewRepo: h.previewRepo,
     register: h.register,
@@ -1573,6 +1587,76 @@ describe('等你确认登记 (T90)', () => {
     await waitFor(() => {
       expect(h.confirmPending).toHaveBeenCalledWith('s1', 'dataseek-eval', pendingCommit, { gsm8k: { layers: ['prompt'] } })
     })
+  })
+})
+
+// The capabilities descriptor: the mounting side marks gesture groups
+// unavailable; the tab hides them and shows the reason. An absent face member
+// (an older double) leaves every gesture visible — fail-open display.
+describe('the capabilities descriptor (gesture availability)', () => {
+  it('default (all available): the gestures render as today', async () => {
+    const h = makeHarness()
+    renderView(h)
+    expect(await screen.findByText('bench')).toBeTruthy()
+    expect(screen.getByText('registry.add')).toBeTruthy()
+    expect(screen.getByText('registry.import')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'registry.askAgent' })).toBeTruthy()
+    expect(h.capabilities).toHaveBeenCalledWith('s1')
+  })
+
+  it('a face WITHOUT the member (an older double) leaves every gesture visible', async () => {
+    const h = makeHarness()
+    renderView(h, { extra: { capabilities: undefined } })
+    expect(await screen.findByText('bench')).toBeTruthy()
+    expect(screen.getByText('registry.add')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'registry.askAgent' })).toBeTruthy()
+  })
+
+  it('agentOrganize unavailable: the organize gestures hide with the reason; the register path stays', async () => {
+    const h = makeHarness()
+    h.capabilities.mockResolvedValue({
+      ok: true,
+      value: {
+        ...ALL_AVAILABLE,
+        agentOrganize: { available: false, reason: 'no new sessions in this deployment' },
+        bindingImport: { available: false, reason: 'imports are not admitted' },
+      },
+    })
+    renderView(h)
+    expect(await screen.findByText('bench')).toBeTruthy()
+    // The row's 「交给 Agent 修改」 and the toolbar's 「从旧绑定登记」 hide.
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: 'registry.askAgent' })).toBeNull()
+      expect(screen.queryByText('registry.import')).toBeNull()
+    })
+    // 「添加题集」 stays — the register form under 高级 still works.
+    fireEvent.click(screen.getByText('registry.add'))
+    // The dialog's organize primary is replaced by the reason; 高级 stays.
+    expect(await screen.findByText('no new sessions in this deployment')).toBeTruthy()
+    expect(screen.queryByText('add.organize')).toBeNull()
+    expect(screen.getByText('add.advanced')).toBeTruthy()
+    // The registration group's gestures are untouched.
+    expect(screen.getByRole('button', { name: 'registry.more {"id":"dataseek-eval"}' })).toBeTruthy()
+  })
+
+  it('registration and agentOrganize both unavailable: 添加题集 hides and the bar shows the reason', async () => {
+    const h = makeHarness()
+    h.capabilities.mockResolvedValue({
+      ok: true,
+      value: {
+        ...ALL_AVAILABLE,
+        registration: { available: false, reason: 'the registry is read-only here' },
+        agentOrganize: { available: false, reason: 'no new sessions in this deployment' },
+      },
+    })
+    renderView(h)
+    expect(await screen.findByText('bench')).toBeTruthy()
+    await waitFor(() => { expect(screen.queryByText('registry.add')).toBeNull() })
+    expect(await screen.findByText('no new sessions in this deployment')).toBeTruthy()
+    // The ⋯ menu keeps only 「删除」 (the delete group is available).
+    fireEvent.click(screen.getByRole('button', { name: 'registry.more {"id":"dataseek-eval"}' }))
+    expect(await screen.findByRole('menuitem', { name: 'registry.remove' })).toBeTruthy()
+    expect(screen.queryByRole('menuitem', { name: 'registry.edit' })).toBeNull()
   })
 })
 

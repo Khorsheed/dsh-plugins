@@ -8,7 +8,8 @@ import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
 import { resolveMaterializedRoot } from './defaults.ts'
 import { checkMaterializedRootIntegrity } from './materialize.ts'
 
-const PACKAGE_NAME = '@khorsheed/dsh-datasets'
+/** This package's published name (dispose-refusal messages carry it). */
+export const PACKAGE_NAME = '@khorsheed/dsh-datasets'
 
 /** Cordis companion plugin name. */
 export const name = 'datasets-invariant'

@@ -13,6 +13,15 @@
  * No host path ever appears in a reviewed data file, and no credential value
  * ever reaches an argv.
  *
+ * On a topology where the verified scoped home is NOT a
+ * management-process-local directory (a named volume, a target-side path),
+ * the three decisions this module makes about it — resolution, availability,
+ * the mount plan — belong to the execution-home port
+ * ({@link planScopedHomeMount}): the port answers with an opaque mount source
+ * (`bind` or `volume`) and no local path is derived, resolved or stat'ed
+ * anywhere in the unit segment. The default is the local pair above,
+ * byte-identical when no port is mounted.
+ *
  * Nothing here knows the word docker: an image reference, a network name and
  * a user string are lab's vocabulary, and lab is the only plugin that holds
  * the socket (frozen decision 12).
@@ -20,7 +29,7 @@
  */
 import { readdirSync, statSync } from 'node:fs'
 import type { EvalDiagnostic } from '../contract/validate.ts'
-import type { LabAcquireSpec, LabFingerprintComponents } from '../faces.ts'
+import type { ExecutionHomePort, LabAcquireSpec, LabFingerprintComponents, ScopedHomeEvidenceFace, ScopedHomePlan } from '../faces.ts'
 
 /** The in-unit working directory every cell's workspace is populated into. */
 export const UNIT_WORKSPACE = '/workspace'
@@ -124,8 +133,20 @@ export interface CellUnitPlan {
   network?: string
   user?: string
   resources?: { cpus?: string | number; memory?: string | number }
-  /** The scoped credential directory: host side (never in a data file), unit side, and its variable. */
+  /**
+   * The scoped credential home: the mount SOURCE, the unit side, and its
+   * variable. The source is a host path on the default path (never in a data
+   * file); with an execution-home port it is the port's opaque mount source —
+   * a volume name or a target-side path — and is never resolved against this
+   * filesystem. The unit side and the variable are the condition's reviewed
+   * declaration either way.
+   */
   scopedHome: { host: string; container: string; var: string }
+  /**
+   * The mount plan an execution-home port returned; ABSENT means the default
+   * `type: 'bind'`, exactly as before the port existed.
+   */
+  mount?: { type: 'bind' | 'volume'; readonly?: boolean }
   /**
    * The condition's named harness scope, when it declares one — the NAME
    * behind the host side above (`<harness>@<scope>`). Recorded so the run's
@@ -358,7 +379,10 @@ export function claudeScopeDiagnostics(
  *   For a condition declaring a `scope` this is that scope's directory
  *   (`<homesRoot>/<harness>@<scope>`), which the caller resolved through the
  *   family — the mount source and the read-back source stay one directory in
- *   exactly the way they do for the default scope.
+ *   exactly the way they do for the default scope. With an execution-home
+ *   port this is the port's opaque mount source instead (a volume name or a
+ *   target-side path), never a path this process resolves.
+ * @param mount - the port's mount plan; absent keeps the default `bind`.
  * @returns the resolved plan, or the diagnostics that stopped it.
  */
 export function resolveCellUnit(
@@ -366,6 +390,7 @@ export function resolveCellUnit(
   conditionId: string,
   condition: unknown,
   hostHome: string,
+  mount?: { type: 'bind' | 'volume'; readonly?: boolean },
 ): { ok: true; plan: CellUnitPlan } | { ok: false; diagnostics: EvalDiagnostic[] } {
   const diagnostics = conditionUnitDiagnostics(conditionId, condition)
   if (diagnostics.length > 0) return { ok: false, diagnostics }
@@ -378,6 +403,7 @@ export function resolveCellUnit(
     image: planUnit.image,
     scopedHome: { host: hostHome, container: decl.scopedHome.container, var: decl.scopedHome.var },
     extraEnv: harnessName === 'dsh' ? { NODE_OPTIONS: DSH_CONTAINER_NODE_OPTIONS } : {},
+    ...(mount === undefined ? {} : { mount }),
     ...(scope === undefined ? {} : { scope }),
   }
   if (planUnit.network !== undefined) plan.network = planUnit.network
@@ -398,7 +424,12 @@ export function resolveCellUnit(
 export function acquireSpecFor(plan: CellUnitPlan, binding: { missionId?: string; runId?: string } = {}): LabAcquireSpec {
   const spec: LabAcquireSpec = {
     image: plan.image,
-    mounts: [{ source: plan.scopedHome.host, target: plan.scopedHome.container, type: 'bind' }],
+    mounts: [{
+      source: plan.scopedHome.host,
+      target: plan.scopedHome.container,
+      type: plan.mount?.type ?? 'bind',
+      ...(plan.mount?.readonly === true ? { readonly: true } : {}),
+    }],
     env: { [plan.scopedHome.var]: plan.scopedHome.container, ...plan.extraEnv },
     workdir: UNIT_WORKSPACE,
     ownWorkdir: true,
@@ -520,6 +551,143 @@ export function checkCredentialsDir(dir: string, conditionId: string, uid: numbe
 }
 
 /**
+ * The execution-home port's answer to one condition, turned into its cell
+ * unit plan — the port-mounted twin of the `resolveCellUnit` +
+ * `checkCredentialsDir` pair.
+ *
+ * All three decisions move to the port: the scoped home's RESOLUTION (the
+ * answer's mount source, opaque — never resolved or stat'ed here), its
+ * AVAILABILITY (the port answering at all is the verification; the local
+ * directory check does not run), and the MOUNT plan (`bind` or `volume`,
+ * consumed verbatim by {@link acquireSpecFor}). The contract diagnostics a
+ * condition's unit segment must pass run first and unchanged — a condition
+ * that declares no in-container mount point has no home anywhere.
+ *
+ * When the service also mounts the evidence face, the two seams are pinned
+ * by identity: the port's `homeIdentity` and the evidence `homeIdentity` for
+ * the same (harness, scope) must both exist and be equal — evidence measured
+ * on one target must never pair with a mount planned for another.
+ * @param port - the mounted execution-home port.
+ * @param evidence - the mounted evidence face, when one is (the identity pin).
+ * @param input - the condition's registered identity, its document, and the plan's unit segment.
+ * @returns the resolved plan, or the coded diagnostics that refused it.
+ */
+export async function planScopedHomeMount(
+  port: ExecutionHomePort,
+  evidence: ScopedHomeEvidenceFace | undefined,
+  input: {
+    planUnit: PlanUnitDecl
+    conditionId: string
+    condition: unknown
+    harnessName: string
+    scope?: string
+    unitUid: number | null
+  },
+): Promise<{ ok: true; plan: CellUnitPlan } | { ok: false; diagnostics: EvalDiagnostic[] }> {
+  const contractDiagnostics = conditionUnitDiagnostics(input.conditionId, input.condition)
+  if (contractDiagnostics.length > 0) return { ok: false, diagnostics: contractDiagnostics }
+  const decl = conditionUnitOf(input.condition) as ConditionUnitDecl
+  const named = `${input.harnessName}${input.scope === undefined ? '' : `@${input.scope}`}`
+
+  if (typeof port.planScopedHome !== 'function') {
+    return {
+      ok: false,
+      diagnostics: [{
+        code: 'EXECUTION_HOME_UNAVAILABLE',
+        message: `condition ${input.conditionId}: the execution-home port has no planScopedHome verb`
+          + ' — a mounted port owns scoped-home resolution, availability and the mount plan for its scopes',
+      }],
+    }
+  }
+  let answer: ScopedHomePlan | undefined
+  try {
+    answer = await port.planScopedHome({
+      conditionId: input.conditionId,
+      harness: input.harnessName,
+      ...(input.scope === undefined ? {} : { scope: input.scope }),
+      container: decl.scopedHome.container,
+      var: decl.scopedHome.var,
+      unitUid: input.unitUid,
+    })
+  } catch (error) {
+    return {
+      ok: false,
+      diagnostics: [{
+        code: 'EXECUTION_HOME_UNAVAILABLE',
+        message: `condition ${input.conditionId}: the execution-home port could not verify or plan ${named}: ${error instanceof Error ? error.message : String(error)}`,
+      }],
+    }
+  }
+  if (answer === undefined) {
+    return {
+      ok: false,
+      diagnostics: [{
+        code: 'EXECUTION_HOME_UNKNOWN',
+        message: `condition ${input.conditionId}: the execution-home port knows no scoped home for ${named}`
+          + ' — an unknown identity is refused, never planned from a management-host guess',
+      }],
+    }
+  }
+  if (
+    !isPlainObject(answer) || !isPlainObject(answer.mount)
+    || typeof answer.mount.source !== 'string' || answer.mount.source === ''
+    || (answer.mount.type !== 'bind' && answer.mount.type !== 'volume')
+    || (answer.mount.readonly !== undefined && typeof answer.mount.readonly !== 'boolean')
+  ) {
+    return {
+      ok: false,
+      diagnostics: [{
+        code: 'EXECUTION_HOME_INVALID',
+        message: `condition ${input.conditionId}: the execution-home port's answer for ${named} is not a mount plan`
+          + ' (needs mount.source, and mount.type of bind|volume) — invalid evidence, refused like unreadable evidence',
+      }],
+    }
+  }
+
+  // The identity pin — only when the service mounts both seams. The evidence
+  // face's answer and the port's must name ONE home identity; a port plan
+  // that cannot be pinned to the evidence's target is refused before any
+  // unit is acquired.
+  if (evidence !== undefined) {
+    let homeIdentity: string | undefined
+    if (typeof evidence.homeHash === 'function') {
+      try {
+        const home = await evidence.homeHash(input.harnessName, input.scope)
+        homeIdentity = home?.homeIdentity
+      } catch {
+        homeIdentity = undefined
+      }
+    }
+    if (homeIdentity === undefined) {
+      return {
+        ok: false,
+        diagnostics: [{
+          code: 'EXECUTION_HOME_EVIDENCE_MISSING',
+          message: `condition ${input.conditionId}: the evidence face answered no homeIdentity for ${named}`
+            + ' — with both seams mounted the port\'s plan must pin to the evidence\'s target, and there is nothing to pin to',
+        }],
+      }
+    }
+    if (answer.homeIdentity === undefined || answer.homeIdentity !== homeIdentity) {
+      return {
+        ok: false,
+        diagnostics: [{
+          code: 'EXECUTION_HOME_IDENTITY_MISMATCH',
+          message: `condition ${input.conditionId}: the evidence face pins ${JSON.stringify(homeIdentity)} for ${named}`
+            + ` but the execution-home port planned ${JSON.stringify(answer.homeIdentity)}`
+            + ' — evidence measured on one target must never pair with a mount planned for another',
+        }],
+      }
+    }
+  }
+
+  return resolveCellUnit(input.planUnit, input.conditionId, input.condition, answer.mount.source, {
+    type: answer.mount.type,
+    ...(answer.mount.readonly === undefined ? {} : { readonly: answer.mount.readonly }),
+  })
+}
+
+/**
  * The components one CONDITION contributes to its unit — the ones the
  * environment class subtracts.
  *
@@ -530,8 +698,7 @@ export function checkCredentialsDir(dir: string, conditionId: string, uid: numbe
  * same environment class as one that injects different ones — the run is
  * comparing what the PLAN set up, and each subject's credentials are part of
  * the subject, not of the environment.
- */
-export interface ConditionOwnedComponents {
+ */export interface ConditionOwnedComponents {
   /** In-container mount targets this condition brought (its scoped home). */
   mountTargets: string[]
   /** Env variable NAMES this condition brought (scoped-home var, harness extras, declared keys). */

@@ -36,7 +36,7 @@ import { readFile } from 'node:fs/promises'
 import { basename, dirname, join, resolve } from 'node:path'
 import { evalVersion } from '../eval-version.ts'
 import { canonicalJson, hashConditionDocument } from '../contract/hash.ts'
-import type { CapabilityCatalogFace, DatasetsFace, LabFace, LocalAgentFace, MissionFace, ScopedHomeEvidenceFace } from '../faces.ts'
+import type { CapabilityCatalogFace, DatasetsFace, LabFace, LocalAgentFace, MissionFace, ExecutionHomePort, ScopedHomeEvidenceFace } from '../faces.ts'
 import { conditionDiagnostics, expandHome, validatePlan, type EvalDiagnostic, type PlanValidation } from '../contract/validate.ts'
 import { generateTemplateFromManifest, type GeneratedTemplate } from '../contract/template.ts'
 import { loadManifest } from '../contract/manifest.ts'
@@ -46,7 +46,7 @@ import { checkReadiness, DEFAULT_READINESS_TIMEOUT_MS, type ReadinessRecord, typ
 import { buildDeidentifyRules, pickRubricPath, DEFAULT_JUDGE_SAMPLES, type ResolvedJudge } from '../judge/judge.ts'
 import { checkUnitEgress } from './egress.ts'
 import type { EgressCheckDecl } from './unit.ts'
-import { acquireSpecFor, checkCredentialsDir, claudeScopeDiagnostics, describeAcquireSpec, egressCheckAbsentNote, planUnitDiagnostics, planUnitOf, resolveCellUnit, unitUid, type CellUnitPlan, type CredentialsCheck } from './unit.ts'
+import { acquireSpecFor, checkCredentialsDir, claudeScopeDiagnostics, describeAcquireSpec, egressCheckAbsentNote, planScopedHomeMount, planUnitDiagnostics, planUnitOf, resolveCellUnit, unitUid, type CellUnitPlan, type CredentialsCheck } from './unit.ts'
 import { buildRubricWeightTable, writeRubricWeightTable } from '../judge/weights.ts'
 import { recordExportNoteOn } from '../report/export-note.ts'
 import { writeEvalReport } from '../report/report.ts'
@@ -226,6 +226,14 @@ export interface RunDeps {
    * {@link ReadinessInput.evidence}).
    */
   evidence?: ScopedHomeEvidenceFace
+  /**
+   * The execution-home port, when the service was mounted with one: the unit
+   * path's scoped-home resolution, availability verification and mount plan
+   * come from it, and NO management-host path is derived or consulted in the
+   * unit segment. Absent, the unit path resolves through
+   * `localAgent.homeDir` and mounts `bind`, exactly as before.
+   */
+  executionHome?: ExecutionHomePort
   stateRoot: string
 }
 
@@ -663,7 +671,7 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
         + " — upgrade dsh-lab, or drop the plan's unit segment to run on the host",
       )
     }
-    if (typeof faces.localAgent.homeDir !== 'function') {
+    if (deps?.executionHome === undefined && typeof faces.localAgent.homeDir !== 'function') {
       // Without it there is no way to mount the directory the read-back
       // reads, and mounting any OTHER directory fails silently: the rounds
       // run, the rollout lands somewhere nothing parses, and every
@@ -682,6 +690,28 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
     const uid = unitUid(planUnit.user)
     const problems: EvalDiagnostic[] = []
     for (const condition of conditions) {
+      if (deps?.executionHome !== undefined) {
+        // The port path: resolution, availability and the mount plan all come
+        // from the execution-home port. NO management-host path is derived or
+        // consulted here — a same-named local directory is a different
+        // environment on this topology, and reading it would pass the wrong
+        // home's check.
+        const planned = await planScopedHomeMount(deps.executionHome, deps.evidence, {
+          planUnit,
+          conditionId: condition.id,
+          condition: condition.document,
+          harnessName: condition.harnessName,
+          ...(condition.scope === undefined ? {} : { scope: condition.scope }),
+          unitUid: uid,
+        })
+        if (!planned.ok) {
+          problems.push(...planned.diagnostics)
+          continue
+        }
+        cellUnits.set(condition.id, planned.plan)
+        log(`credentials ${condition.id}: verified by the execution-home port (mount ${planned.plan.mount?.type ?? 'bind'})`)
+        continue
+      }
       // THE fix: the mount source is the harness's own scoped home on this
       // instance — the directory `/<harness> login` writes into and the
       // directory the read-back parses. One directory, so a containerized
@@ -690,11 +720,15 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
       // conditions of one harness then mount two different scoped homes, each
       // holding its own login, and each round's rollout lands where that
       // condition's read-back looks.
+      // The precondition above refused a facade without homeDir when no port
+      // is mounted; the cast is that refusal, narrowed for the compiler (the
+      // call keeps its receiver — the facade's homeDir is a method).
+      const homeOwner = faces.localAgent as { homeDir: (harness: string, scope?: string) => string }
       const resolved = resolveCellUnit(
         planUnit,
         condition.id,
         condition.document,
-        faces.localAgent.homeDir(condition.harnessName, condition.scope),
+        homeOwner.homeDir(condition.harnessName, condition.scope),
       )
       if (!resolved.ok) {
         problems.push(...resolved.diagnostics)

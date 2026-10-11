@@ -19,6 +19,7 @@
     "src/repo-path.ts",
     "src/remote.ts",
     "src/rubric.ts",
+    "src/safe-write.ts",
     "src/scaffold.ts",
     "src/service.ts",
     "src/slash.ts",

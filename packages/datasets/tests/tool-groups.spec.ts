@@ -33,6 +33,8 @@ function applyCore(): { provided: string[]; commands: RecordedCommand[]; plugins
   const ctx = {
     provide: (name: string) => { provided.push(name) },
     plugin: () => { plugins += 1 },
+    // The dispose wiring (ctx.effect → service.dispose on teardown).
+    effect: () => () => {},
     commands: { register: (command: RecordedCommand) => { commands.push(command); return () => {} } },
   }
   apply(ctx as never, { materializedRoot: '' })
@@ -76,8 +78,9 @@ describe('the datasets core faces', () => {
     expect(inject).toEqual([])
     // T90 added the organizing setup (the preset the 「让 Agent 整理」 session
     // selects and the new-repository home) — still no tool-group key. T102: the
-    // preset defaults to '' (picked by grant on the host side).
-    expect(new Config({} as never)).toEqual({ materializedRoot: '', authoringPreset: '', datasetsHome: '' })
+    // preset defaults to '' (picked by grant on the host side). The gesture
+    // availability overrides default to {} (every group available).
+    expect(new Config({} as never)).toEqual({ materializedRoot: '', authoringPreset: '', datasetsHome: '', capabilities: {} })
   })
 })
 

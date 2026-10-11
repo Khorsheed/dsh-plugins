@@ -10,7 +10,7 @@ import type {} from '@khorsheed/dsh-datasets/remote'
 // Type-only: pulls ui-conversation's SlotMap merge ('conversation.view').
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {
-  DatasetOverview, DeletePlan, DiscardPlan, ImportBindingsResult, RemovalResult, ItemBrief, ListDatasetsResult, ListItemsResult, OrganizingSetup,
+  DatasetOverview, DatasetsCapabilities, DeletePlan, DiscardPlan, ImportBindingsResult, RemovalResult, ItemBrief, ListDatasetsResult, ListItemsResult, OrganizingSetup,
   Proposal, ProposalReview, ReadPassthroughRequest, ReadQuery, ReadResult, RegisterInput, RegisterPreview,
   RegistryEntry, RegistryRow, ReviewFiles, ReviewHead, ReviewItem, UpdateInput, ValidateResult,
 } from '../types.ts'
@@ -94,6 +94,13 @@ export interface DatasetExperimentRow {
  * tab is a view of the deployment's registry, not of a session binding.
  */
 export interface DatasetsViewInjected {
+  /**
+   * This instance's gesture availability (the Remote `capabilities` verb): the
+   * view hides an unavailable group's gestures and shows the reason. Optional
+   * so an older double still types — absent or unreadable, every gesture shows
+   * (fail-open display; the server's own admission rules enforce, unchanged).
+   */
+  capabilities?: (sessionId: SessionId) => Promise<RemoteResult<DatasetsCapabilities>>
   /** Every registration with its tracked branch's tip and sets (one RPC). */
   fetchRegistry: (sessionId: SessionId) => Promise<RemoteResult<RegistryRow[]>>
   /** The register form's live verdict for one candidate path (one RPC). */
