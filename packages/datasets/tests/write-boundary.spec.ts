@@ -13,7 +13,7 @@
  * escaped artifact), and importItem's source reads re-verified at open time
  * (O_NOFOLLOW) rather than at enumeration.
  */
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
@@ -173,8 +173,10 @@ describe('the write boundary module', () => {
     const outside = tempDir('dsh-datasets-outside-')
     mkdirSync(join(root, 'sub'))
     await expect(writeFileWithinRoot(root, 'sub/file.md', 'x', {
-      guard: () => {
-        // The controlled substitution: the verified directory becomes a symlink.
+      guard: (point) => {
+        // The controlled substitution, at the pre-commit audit point: the
+        // verified directory becomes a symlink.
+        if (point !== 'beforeCommit') return
         rmSync(join(root, 'sub'), { recursive: true })
         symlinkSync(outside, join(root, 'sub'))
       },
@@ -198,6 +200,112 @@ describe('the write boundary module', () => {
     rmSync(join(root, 'dir'), { recursive: true })
     symlinkSync(outside, join(root, 'dir'))
     await expect(readFileWithinRoot(root, 'dir/secret.md')).rejects.toMatchObject({ code: 'PATH_ESCAPE' })
+    // A directory at the source path: the opened fd says not-a-regular-file (fstat, not a second path lookup).
+    mkdirSync(join(root, 'somedir'))
+    await expect(readFileWithinRoot(root, 'somedir')).rejects.toMatchObject({ code: 'PATH_ESCAPE' })
+  })
+})
+
+describe('exclusive temp writes and ownership-tracked cleanup', () => {
+  it('a few pre-placed temp names are never opened: the write completes under a fresh name, the sentinel byte-identical', async () => {
+    const root = tempDir('dsh-datasets-root-')
+    const outside = tempDir('dsh-datasets-outside-')
+    writeFiles(outside, { 'sentinel.md': 'the external original\n' })
+    // The candidate namespace's first band pre-placed as symlinks: the write
+    // must skip them — NEVER open one for writing — and land under a fresh name.
+    for (let n = 0; n < 16; n++) {
+      symlinkSync(join(outside, 'sentinel.md'), join(root, `file.md.${process.pid}.${n}.tmp`))
+    }
+    expect(await writeFileWithinRoot(root, 'file.md', 'payload\n')).toBe(true)
+    expect(readFileSync(join(root, 'file.md'), 'utf8')).toBe('payload\n')
+    // The acceptance is the external ORIGINAL's bytes: had any pre-placed name
+    // been opened for writing, the sentinel would be gone.
+    expect(readFileSync(join(outside, 'sentinel.md'), 'utf8')).toBe('the external original\n')
+    expect(readdirSync(outside)).toEqual(['sentinel.md'])
+    // …and the pre-placed links themselves are not ours to delete: all remain.
+    expect(readdirSync(root).filter(name => name.endsWith('.tmp'))).toHaveLength(16)
+  })
+
+  it('a fully pre-placed temp namespace forces a coded refusal — never a write through somebody else\'s file', async () => {
+    const root = tempDir('dsh-datasets-root-')
+    const outside = tempDir('dsh-datasets-outside-')
+    writeFiles(outside, { 'sentinel.md': 'the external original\n' })
+    for (let n = 0; n < 256; n++) {
+      symlinkSync(join(outside, 'sentinel.md'), join(root, `file.md.${process.pid}.${n}.tmp`))
+    }
+    await expect(writeFileWithinRoot(root, 'file.md', 'payload\n')).rejects.toMatchObject({ code: 'PATH_ESCAPE' })
+    expect(readFileSync(join(outside, 'sentinel.md'), 'utf8')).toBe('the external original\n')
+    expect(readdirSync(outside)).toEqual(['sentinel.md'])
+    expect(existsSync(join(root, 'file.md'))).toBe(false)
+  })
+
+  it('the pre-placement probe, verbatim: temp-name symlinks beside the target — scaffoldDataset refuses and the sentinel is byte-identical', async () => {
+    const repo = makeFixtureRepo()
+    repos.push(repo)
+    const outside = tempDir('dsh-datasets-outside-')
+    writeFiles(outside, { 'sentinel.md': 'the external original\n' })
+    const dir = join(repo.dir, 'datasets/temporary-link')
+    mkdirSync(dir, { recursive: true })
+    for (let n = 0; n < 256; n++) {
+      symlinkSync(join(outside, 'sentinel.md'), join(dir, `dataset.json.${process.pid}.${n}.tmp`))
+    }
+    const { service } = instance()
+    await expect(service.scaffoldDataset({ repo: repo.dir, operator: true }, { id: 'temporary-link' }))
+      .rejects.toMatchObject({ code: 'PATH_ESCAPE' })
+    // 操作报错不等于未发生越界写 — the acceptance is the external ORIGINAL's
+    // bytes, not the error: nothing outside was created, deleted, or written.
+    expect(readFileSync(join(outside, 'sentinel.md'), 'utf8')).toBe('the external original\n')
+    expect(readdirSync(outside)).toEqual(['sentinel.md'])
+    expect(existsSync(join(dir, 'dataset.json'))).toBe(false)
+  })
+
+  it('a foreign real file swapped in for the temp between write and commit is left alone (identity mismatch)', async () => {
+    const root = tempDir('dsh-datasets-root-')
+    mkdirSync(join(root, 'sub'))
+    await expect(writeFileWithinRoot(root, 'sub/file.md', 'ours\n', {
+      guard: (point, path) => {
+        if (point !== 'beforeCommit') return
+        rmSync(path)
+        writeFileSync(path, 'foreign — not ours\n')
+      },
+    })).rejects.toMatchObject({ code: 'PATH_ESCAPE' })
+    // Cleanup deletes only what is provably ours: the foreign replacement stands.
+    const leftovers = readdirSync(join(root, 'sub')).filter(name => name.endsWith('.tmp'))
+    expect(leftovers).toHaveLength(1)
+    expect(readFileSync(join(root, 'sub', leftovers[0]!), 'utf8')).toBe('foreign — not ours\n')
+    expect(existsSync(join(root, 'sub/file.md'))).toBe(false)
+  })
+
+  it('a foreign file swapped in after the rename is left alone; the refusal is still coded', async () => {
+    const root = tempDir('dsh-datasets-root-')
+    mkdirSync(join(root, 'sub'))
+    await expect(writeFileWithinRoot(root, 'sub/file.md', 'ours\n', {
+      guard: (point, path) => {
+        if (point !== 'afterRename') return
+        rmSync(path)
+        writeFileSync(path, 'foreign — not ours\n')
+      },
+    })).rejects.toMatchObject({ code: 'PATH_ESCAPE' })
+    expect(readFileSync(join(root, 'sub/file.md'), 'utf8')).toBe('foreign — not ours\n')
+  })
+
+  it('a real-directory rename-swap between write and rename is caught by inode, where a path-string compare is blind', async () => {
+    const root = tempDir('dsh-datasets-root-')
+    const aside = join(root, 'sub-aside')
+    mkdirSync(join(root, 'sub'))
+    await expect(writeFileWithinRoot(root, 'sub/file.md', 'ours\n', {
+      guard: (point) => {
+        if (point !== 'beforeCommit') return
+        renameSync(join(root, 'sub'), aside)
+        mkdirSync(join(root, 'sub'))
+      },
+    })).rejects.toMatchObject({ code: 'PATH_ESCAPE' })
+    // The checked parent's inode changed: coded refusal; the fresh directory
+    // gains nothing of ours, and the attacker's move — not our write — is
+    // what carried the temp into the renamed-away directory (inside the root).
+    expect(readdirSync(join(root, 'sub'))).toEqual([])
+    expect(readdirSync(aside)).toHaveLength(1)
+    expect(readFileSync(join(aside, readdirSync(aside)[0]!), 'utf8')).toBe('ours\n')
   })
 })
 
