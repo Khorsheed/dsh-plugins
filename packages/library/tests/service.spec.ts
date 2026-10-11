@@ -309,6 +309,16 @@ describe('quizzes: the two axes', () => {
     expect(!noUrl.ok && noUrl.message).toMatch(/url/)
   })
 
+  it('refuses a choice question whose answer matches no option, and takes a letter key', async () => {
+    const { projectId, bookId } = await seed()
+    const stray = await service.putQuiz({ projectId, quiz: { scope: { bookId }, questions: [question({ kind: 'choice', options: ['环绕', '限定'], answer: '征服' })] } })
+    expect(!stray.ok && stray.message).toMatch(/matches no option/)
+    const outOfRange = await service.putQuiz({ projectId, quiz: { scope: { bookId }, questions: [question({ kind: 'choice', options: ['环绕', '限定'], answer: 'D' })] } })
+    expect(!outOfRange.ok && outOfRange.message).toMatch(/matches no option/)
+    const lettered = await service.putQuiz({ projectId, quiz: { scope: { bookId }, questions: [question({ kind: 'choice', options: ['环绕', '限定'], answer: 'b. 限定' })] } })
+    expect(lettered.ok).toBe(true)
+  })
+
   it('warns when the scoped node is still locked', async () => {
     const { projectId, bookId } = await seed()
     await adopt(projectId, bookId)

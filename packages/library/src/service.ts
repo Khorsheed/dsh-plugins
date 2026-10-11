@@ -1099,6 +1099,9 @@ export class LibraryService {
       if (question.kind === 'choice' && (question.options === undefined || question.options.length < 2)) {
         return refuse('evidence-gate', `${label} is a choice question with fewer than two options`)
       }
+      if (question.kind === 'choice' && question.options !== undefined && choiceOptionIndex(question.options, question.answer) < 0) {
+        return refuse('evidence-gate', `${label}.answer matches no option — a choice question's answer IS one of its options, copied verbatim (or its letter); write the correct option first, then the distractors around it`)
+      }
       const target = question.target
       if (target === undefined || !['marked', 'asked', 'missed', 'topic'].includes(target.kind)) {
         return refuse('evidence-gate', `${label} needs target: { kind: marked|asked|missed|topic, cardIds? } — what the question aims at: the learner's marked cards, the points they asked about, the ones they missed before, or the chapter's topic`)
@@ -1447,6 +1450,29 @@ export class LibraryService {
 /** A node's title, for event rows. */
 function titleOf(nodes: readonly RoadmapNode[], nodeId: string): string {
   return nodes.find(node => node.id === nodeId)?.title ?? ''
+}
+
+/**
+ * The option an answer key names — a letter in range, a lettered option, the
+ * option text, else a one-way containment — or -1. The sidebar's judge
+ * (`client/judge.ts`'s choiceIndex) resolves the same spellings; a question
+ * this resolves to -1 is judged wrong no matter what the learner picks, so
+ * the write gate refuses it.
+ */
+function choiceOptionIndex(options: readonly string[], answer: string): number {
+  const key = normalizeFragment(answer)
+  if (/^[a-z]$/.test(key)) {
+    const at = key.charCodeAt(0) - 97
+    return at < options.length ? at : -1
+  }
+  const lettered = /^([a-z])[.、)）:：]\s*/.exec(key)
+  if (lettered !== null) {
+    const at = lettered[1]!.charCodeAt(0) - 97
+    return at < options.length ? at : -1
+  }
+  const exact = options.findIndex(option => normalizeFragment(option) === key)
+  if (exact >= 0) return exact
+  return options.findIndex(option => normalizeFragment(option).includes(key) || key.includes(normalizeFragment(option)))
 }
 
 /** Move every locked node whose deps are all done to current. */
