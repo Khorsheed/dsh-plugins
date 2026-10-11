@@ -102,6 +102,7 @@ export function QuizView({ p, projectId, bookId, quizId }: ViewProps & { project
         )}
         {question !== undefined && (
           <QuestionCard
+            key={question.id}
             p={p}
             question={question}
             answered={answered}
@@ -134,10 +135,11 @@ function QuestionCard({ p, question, answered, draft, onDraft, onAnswer }: {
   const { t } = p
   const correct = question.kind === 'choice' ? choiceIndex(question.options ?? [], question.answer) : -1
   const evidenceTone = question.evidence.kind === 'photo' ? 'photo' : question.evidence.kind === 'web' ? 'web' : 'know'
-  // An open question's quote frames the discussion and leaks nothing, so it
-  // shows with the prompt; a choice or fill quote often IS the answer, so it
-  // waits for the feedback.
+  // A choice or fill quote often IS the answer, so it waits for the feedback.
+  // An open question's quote frames the discussion but can hand the answer
+  // over just the same — it stays folded behind 参考原文 until peeked or answered.
   const quoteUpfront = question.kind === 'free'
+  const [peek, setPeek] = useState(false)
   return (
     <section className={css.question}>
       <div className={css.chips}>
@@ -145,7 +147,14 @@ function QuestionCard({ p, question, answered, draft, onDraft, onAnswer }: {
         <span className={css.chip} data-tone={evidenceTone}>{t(`evidence.${question.evidence.kind}`)}</span>
       </div>
       <div className={css.prompt}>{question.prompt}</div>
-      {quoteUpfront && question.evidence.quote !== undefined && <blockquote className={css.quote}>{question.evidence.quote}</blockquote>}
+      {quoteUpfront && question.evidence.quote !== undefined && answered === undefined && (
+        <div className={css.row}>
+          <button type="button" className={css.textButton} aria-expanded={peek} onClick={() => { setPeek(!peek) }}>{t(peek ? 'quiz.hideQuote' : 'quiz.showQuote')}</button>
+        </div>
+      )}
+      {quoteUpfront && question.evidence.quote !== undefined && (peek || answered !== undefined) && (
+        <blockquote className={css.quote}>{question.evidence.quote}</blockquote>
+      )}
       {question.kind === 'choice' && (
         <div className={css.options}>
           {(question.options ?? []).map((option, at) => {
