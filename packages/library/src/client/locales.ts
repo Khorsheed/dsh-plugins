@@ -70,7 +70,6 @@ export const zh = {
   'book.adopt': '采用',
   'book.discard': '放弃',
   'book.pathTitle': '学习路线 · {done}/{total}',
-  'book.legend': '方形是关卡，过章节考解锁下一关 · 旁边的小圆点是可读可跳的读物',
   'book.contentsMeta': '目录 {rows} 行 · {kind}',
   'book.contentsSource': '目录来源',
 
@@ -105,6 +104,8 @@ export const zh = {
   'node.passRule': '答对 {percent}% 过关',
   'node.best': '最好 {percent}%，考过 {attempts} 次',
   'node.quizRow': '{count} 题',
+  'node.quizLatest': '最新考卷 · {count} 题',
+  'node.quizEarlier': '之前的考卷',
   'node.askQuiz': '请教练出题',
   'node.quizWaiting': '等教练出题…',
   'node.focusTitle': '出题范围',
@@ -150,6 +151,7 @@ export const zh = {
   'evidence.knowledge': '领域知识',
 
   'quiz.start': '开始',
+  'quiz.startNow': '开始作答',
   'quiz.progress': '章节考 {at}/{total}',
   'quiz.submit': '提交',
   'quiz.next': '下一题',
@@ -335,7 +337,6 @@ export const en: Record<LibraryKey, string> = {
   'book.adopt': 'Adopt',
   'book.discard': 'Discard',
   'book.pathTitle': 'Roadmap · {done}/{total}',
-  'book.legend': 'Squares are levels, unlocked by a chapter quiz · the small dots beside them are optional reading',
   'book.contentsMeta': '{rows} contents rows · {kind}',
   'book.contentsSource': 'contents source',
 
@@ -370,6 +371,8 @@ export const en: Record<LibraryKey, string> = {
   'node.passRule': 'Pass at {percent}%',
   'node.best': 'best {percent}%, {attempts} sittings',
   'node.quizRow': '{count} questions',
+  'node.quizLatest': 'Latest quiz · {count} questions',
+  'node.quizEarlier': 'Earlier quizzes',
   'node.askQuiz': 'Ask for a quiz',
   'node.quizWaiting': 'Waiting for the coach…',
   'node.focusTitle': 'What to quiz',
@@ -415,6 +418,7 @@ export const en: Record<LibraryKey, string> = {
   'evidence.knowledge': 'domain knowledge',
 
   'quiz.start': 'Start',
+  'quiz.startNow': 'Start answering',
   'quiz.progress': 'Quiz {at}/{total}',
   'quiz.submit': 'Submit',
   'quiz.next': 'Next',

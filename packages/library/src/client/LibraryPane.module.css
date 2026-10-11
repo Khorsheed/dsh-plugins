@@ -525,12 +525,6 @@
   font-weight: 600;
 }
 
-.legend {
-  color: var(--dsw-alias-label-tertiary);
-  font-size: var(--dsh-panel-text-meta, 12px);
-  text-align: center;
-}
-
 /* 项目与书的样子（M4） */
 /* Project identity hues: one mid-tone per preset that reads on both themes. */
 [data-color='ember'] { --pc: #e8590c; } /* panel-check: allow-color */
@@ -1245,6 +1239,31 @@ textarea.input { resize: vertical; font: inherit; line-height: 1.5; }
 }
 
 /* 章节考 */
+/* The latest quiz: the one thing this tab wants done — soft accent card, primary CTA. */
+.quizLatest {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--lib-accent);
+  border-radius: 10px;
+  background: var(--lib-accent-soft);
+}
+
+.quizLatestText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.quizLatestText strong {
+  font-size: var(--dsh-panel-text-title, 14px);
+  font-weight: 600;
+}
+
 .progress {
   height: 4px;
   overflow: hidden;
