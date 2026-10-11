@@ -19,14 +19,14 @@ import { createHash } from 'node:crypto'
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, resolve, sep } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { runPlan, EvalRunRefused } from '../src/run/run.ts'
 import type { RunOptions, RunReport } from '../src/run/run.ts'
 import { EvalRunJobs } from '../src/run/job.ts'
 import { EgressUnavailable } from '../src/run/egress.ts'
 import { READINESS_PROMPT } from '../src/run/readiness.ts'
 import type { DatasetsFace, LabAcquireSpec, LabFace, LabFingerprintComponents, LabUnitInfo, LabVerifyResult, LocalAgentFace, MissionFace, MissionSubmitFile } from '../src/faces.ts'
-import type { DelegationProgress, DelegationResult, DelegationRun } from '../src/faces.ts'
+import type { DelegationProgress, DelegationResult, DelegationRun, ExecutionHomePort, ScopedHomeEvidenceFace } from '../src/faces.ts'
 import { canonicalJson } from '../src/contract/hash.ts'
 import { expandMatrix, orderCells } from '../src/run/matrix.ts'
 import { validateJson } from '../src/contract/schema.ts'
@@ -2785,6 +2785,180 @@ describe('runPlan — the container path drives one unit per cell (I3·T20)', ()
     // The shape says WHICH scoped home, so a reviewer of the rehearsal can see
     // that two conditions of one harness mount two directories.
     expect(JSON.stringify(units[0]?.acquire)).toContain('scoped home of dsh@eval-b')
+  })
+})
+
+describe('runPlan — the execution-home port plans the mount (E3)', () => {
+  /** A port planning one volume-backed home per condition, recording its asks. */
+  function volumePort(asks: Array<Record<string, unknown>>, homeIdentity?: string): ExecutionHomePort {
+    return {
+      planScopedHome: async (request) => {
+        asks.push({ ...request })
+        return {
+          mount: { source: 'vol-eval-dsh', type: 'volume' },
+          ...(homeIdentity === undefined ? {} : { homeIdentity }),
+        }
+      },
+    }
+  }
+
+  it('a volume-backed home: the mount plan flows, and no local home is staged or consulted', async () => {
+    const root = makeDatasetTree()
+    writeUnitCondition(root)
+    // NO stageScopedHome: the verified home is a named volume on the
+    // execution target, and the management host holds nothing.
+    const planPath = writePlan(root, { conditions: ['dsh-unit'], unit: UNIT_SEGMENT }, 'container-port')
+    const mission = new FakeMission(join(root, 'mission'))
+    const lab = new FakeLab(join(root, 'units'), mission)
+    const agent = new FakeLocalAgent({ workspaceOf: (container) => {
+      const held = [...lab.live.values()].find(unit => unit.info.resource === container)
+      return held?.workspace ?? ''
+    } })
+    const homeDirSpy = vi.spyOn(agent, 'homeDir')
+    const asks: Array<Record<string, unknown>> = []
+    const report = await runPlan(planPath, {
+      parentSessionId: PARENT_SESSION,
+      stateRoot: join(root, 'state'),
+      finalize: true,
+    }, {
+      datasets: fakeDatasets(root, { grading: new Map([['P0-placeholder/rubric.yml', RUBRIC]]), verify: unitProbes() }),
+      mission, localAgent: agent, lab,
+      executionHome: volumePort(asks),
+    })
+
+    expect(report.cells[0]?.finalState).toBe('released')
+    // Both acquires — the readiness probe unit and the cell's — carry the
+    // port's plan verbatim: the opaque source, the reviewed target, volume.
+    expect(lab.acquired).toHaveLength(2)
+    for (const spec of lab.acquired) {
+      expect(spec.mounts).toEqual([{ source: 'vol-eval-dsh', target: '/creds/dsh', type: 'volume' }])
+    }
+    // The port was asked about the REGISTERED identity: harness, no scope,
+    // the reviewed in-container declaration.
+    expect(asks).toEqual([{ conditionId: 'dsh-unit', harness: 'dsh', container: '/creds/dsh', var: 'DSH_HOME', unitUid: 1000 }])
+    // And the management host's filesystem was never consulted for a home.
+    expect(homeDirSpy).not.toHaveBeenCalled()
+    // The trajectory is the container path's own — the port changed the mount
+    // plan and nothing else (the same verb order the non-port loop pins).
+    expect(lab.calls.map(call => call.verb)).toEqual([
+      'acquire', 'release',
+      'acquire', 'populate',
+      'checkpoint', 'collect',
+      'checkpoint', 'collect',
+      'verify', 'verify', 'collect', 'verify',
+      'archive', 'release',
+    ])
+    expect(lab.live.size).toBe(0)
+  })
+
+  it('an unknown identity refuses the run coded, before any unit is acquired', async () => {
+    const root = makeDatasetTree()
+    writeUnitCondition(root)
+    const planPath = writePlan(root, { conditions: ['dsh-unit'], unit: UNIT_SEGMENT }, 'container-port-unknown')
+    const mission = new FakeMission(join(root, 'mission'))
+    const lab = new FakeLab(join(root, 'units'), mission)
+    const agent = new FakeLocalAgent({})
+    const error = await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') }, {
+      datasets: fakeDatasets(root, { grading: new Map([['P0-placeholder/rubric.yml', RUBRIC]]), verify: unitProbes() }),
+      mission, localAgent: agent, lab,
+      executionHome: { planScopedHome: async () => undefined },
+    }).catch((caught: unknown) => caught)
+
+    expect(error).toBeInstanceOf(EvalRunRefused)
+    expect((error as EvalRunRefused).diagnostics.map(d => d.code)).toContain('EXECUTION_HOME_UNKNOWN')
+    expect(lab.acquired).toEqual([])
+    expect(mission.runs.size).toBe(0)
+  })
+
+  it('evidence and port pinned to different targets refuse coded, before any unit is acquired', async () => {
+    const root = makeDatasetTree()
+    writeUnitCondition(root)
+    const planPath = writePlan(root, { conditions: ['dsh-unit'], unit: UNIT_SEGMENT }, 'container-port-mismatch')
+    const mission = new FakeMission(join(root, 'mission'))
+    const lab = new FakeLab(join(root, 'units'), mission)
+    const agent = new FakeLocalAgent({})
+    const asks: Array<Record<string, unknown>> = []
+    const evidence: ScopedHomeEvidenceFace = {
+      homeHash: async () => ({ homeDir: '/target-a/homes/dsh', sha: 'b'.repeat(64), files: 1, denied: 0, homeIdentity: 'target-a' }),
+    }
+    const error = await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') }, {
+      datasets: fakeDatasets(root, { grading: new Map([['P0-placeholder/rubric.yml', RUBRIC]]), verify: unitProbes() }),
+      mission, localAgent: agent, lab,
+      evidence,
+      executionHome: volumePort(asks, 'target-b'),
+    }).catch((caught: unknown) => caught)
+
+    expect(error).toBeInstanceOf(EvalRunRefused)
+    expect((error as EvalRunRefused).diagnostics.map(d => d.code)).toContain('EXECUTION_HOME_IDENTITY_MISMATCH')
+    expect(lab.acquired).toEqual([])
+  })
+
+  it('evidence and port pinned to the SAME target pass the pin and run', async () => {
+    const root = makeDatasetTree()
+    writeUnitCondition(root)
+    const planPath = writePlan(root, { conditions: ['dsh-unit'], unit: UNIT_SEGMENT }, 'container-port-pinned')
+    const mission = new FakeMission(join(root, 'mission'))
+    const lab = new FakeLab(join(root, 'units'), mission)
+    const agent = new FakeLocalAgent({ workspaceOf: (container) => {
+      const held = [...lab.live.values()].find(unit => unit.info.resource === container)
+      return held?.workspace ?? ''
+    } })
+    const asks: Array<Record<string, unknown>> = []
+    const evidence: ScopedHomeEvidenceFace = {
+      homeHash: async () => ({ homeDir: '/target-a/homes/dsh', sha: 'b'.repeat(64), files: 1, denied: 0, homeIdentity: 'target-a' }),
+    }
+    const report = await runPlan(planPath, {
+      parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state'), finalize: true,
+    }, {
+      datasets: fakeDatasets(root, { grading: new Map([['P0-placeholder/rubric.yml', RUBRIC]]), verify: unitProbes() }),
+      mission, localAgent: agent, lab,
+      evidence,
+      executionHome: volumePort(asks, 'target-a'),
+    })
+    expect(report.cells[0]?.finalState).toBe('released')
+    expect(lab.acquired[0]?.mounts).toEqual([{ source: 'vol-eval-dsh', target: '/creds/dsh', type: 'volume' }])
+  })
+
+  it('a cancelled port-planned run stops through the same lever — the kill path never saw the mount', async () => {
+    const root = makeDatasetTree()
+    writeUnitCondition(root)
+    const planPath = writePlan(root, { conditions: ['dsh-unit'], unit: UNIT_SEGMENT }, 'container-port-cancel')
+    const mission = new FakeMission(join(root, 'mission'))
+    const lab = new FakeLab(join(root, 'units'), mission)
+    const localAgent = new FakeLocalAgent({ hangUntilCancel: true, workspaceOf: (container) => {
+      const held = [...lab.live.values()].find(unit => unit.info.resource === container)
+      return held?.workspace ?? ''
+    } })
+    const controller = new AbortController()
+    const cancelWhenRunning = async (): Promise<void> => {
+      for (let attempt = 0; attempt < 200; attempt += 1) {
+        if (localAgent.pending.size > 0) { controller.abort(); return }
+        await new Promise(resolve => setTimeout(resolve, 5))
+      }
+      throw new Error('no delegation ever started')
+    }
+    const [report] = await Promise.all([
+      runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state'), signal: controller.signal },
+        {
+          datasets: fakeDatasets(root, { grading: new Map([['P0-placeholder/rubric.yml', RUBRIC]]), verify: unitProbes() }),
+          mission, localAgent, lab,
+          executionHome: volumePort([]),
+        }),
+      cancelWhenRunning(),
+    ])
+
+    // The same interrupted shape the host-path cancel pins: the live cell is
+    // cancelled mid-stage, not retried, and the run records cancelled.
+    const cell = report.cells[0] as { attempts: number; cancelled?: { reason: string } }
+    expect(cell.cancelled?.reason).toContain('cancelled')
+    expect(cell.attempts).toBe(1)
+    expect(report.meta['cancelled']).toBe(true)
+    // The unit was acquired from the port's volume plan — and the cancel left
+    // it HELD, exactly like the host path: the release gate only passes
+    // archived cells, so a cancelled cell's unit is finalize's business later,
+    // never a special port path.
+    expect(lab.acquired.map(spec => spec.mounts?.[0]?.type)).toEqual(['volume', 'volume'])
+    expect(lab.live.size).toBe(1)
   })
 })
 

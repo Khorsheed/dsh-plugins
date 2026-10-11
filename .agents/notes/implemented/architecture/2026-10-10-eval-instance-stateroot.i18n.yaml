@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-10-10-eval-instance-stateroot.md
-.agents/notes/implemented/architecture/2026-10-10-eval-instance-stateroot.md: 137dcc681bbea7ec652d4aaca41199c162ffbd6a
-.agents/notes/implemented/architecture/2026-10-10-eval-instance-stateroot.zh.md: 019013c05b0ab91c077b7f8c7f62a4681e769ae2
+.agents/notes/implemented/architecture/2026-10-10-eval-instance-stateroot.md: eda59235fa89c08f1c8accfa3278329428ff7885
+.agents/notes/implemented/architecture/2026-10-10-eval-instance-stateroot.zh.md: 6b3a2430e095a2fec4c8c97fee822b871d65a92a

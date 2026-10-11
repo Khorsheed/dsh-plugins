@@ -73,7 +73,7 @@ import { instanceCapabilityProbe } from './capability-probe.ts'
 import type {
   CapabilityCatalogFace, DatasetsFace, DatasetsRegistryFace, LabFace, LabUnitRow, LocalAgentFace, MissionActionFace,
   MissionAnnotateFace, MissionExportFace,
-  MissionFace, MissionFinalizeFace, MissionReadFace, MissionRunListFace, ScopedHomeEvidenceFace,
+  MissionFace, MissionFinalizeFace, MissionReadFace, MissionRunListFace, ExecutionHomePort, ScopedHomeEvidenceFace,
 } from './faces.ts'
 import { isDatasetsRegistryFace } from './faces.ts'
 import type {
@@ -200,6 +200,14 @@ export class EvalService {
    */
   private readonly evidence: ScopedHomeEvidenceFace | undefined
 
+  /**
+   * The execution-home port, when this service was constructed with one: the
+   * unit path's scoped-home resolution, availability verification and mount
+   * plan come from it, and no management-host path is consulted in the unit
+   * segment. Absent, the unit path is byte-identical to before.
+   */
+  private readonly executionHome: ExecutionHomePort | undefined
+
   /** Set by {@link dispose}; terminal — every public verb refuses afterwards. */
   private disposed = false
 
@@ -209,14 +217,17 @@ export class EvalService {
    * @param config - `stateRoot` binds this instance's whole state tree
    *   (experiments, the condition library, the per-run cell dirs) to the given
    *   directory instead of `$DSH_HOME/state/eval`; `evidence` supplies the
-   *   scoped-home fairness evidence from the execution target as plain data.
+   *   scoped-home fairness evidence from the execution target as plain data;
+   *   `executionHome` hands the unit path's scoped-home decisions to the
+   *   execution target.
    */
   constructor(
     private readonly hosts?: { get(name: string): unknown },
-    config: { stateRoot?: string; evidence?: ScopedHomeEvidenceFace } = {},
+    config: { stateRoot?: string; evidence?: ScopedHomeEvidenceFace; executionHome?: ExecutionHomePort } = {},
   ) {
     this.instanceStateRoot = config.stateRoot === undefined ? undefined : containmentPath(config.stateRoot)
     this.evidence = config.evidence
+    this.executionHome = config.executionHome
     this.jobs = new EvalRunJobs(hosts, this.instanceStateRoot === undefined ? {} : { stateRoot: this.instanceStateRoot })
   }
 
@@ -1850,6 +1861,7 @@ export class EvalService {
     if (lab !== undefined) deps.lab = lab
     if (capabilityCatalog !== undefined) deps.capabilityCatalog = capabilityCatalog
     if (this.evidence !== undefined) deps.evidence = this.evidence
+    if (this.executionHome !== undefined) deps.executionHome = this.executionHome
     return runPlan(plan, resolved, deps)
   }
 

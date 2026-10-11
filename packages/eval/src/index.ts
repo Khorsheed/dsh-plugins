@@ -27,7 +27,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-jobs'
 import { EvalRemoteService } from './remote.ts'
 import { EvalService } from './service.ts'
-import type { ScopedHomeEvidenceFace } from './faces.ts'
+import type { ExecutionHomePort, ScopedHomeEvidenceFace } from './faces.ts'
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'eval'
 
@@ -71,6 +71,16 @@ export interface EvalConfig {
    * local facade/directory reads behave byte-identically.
    */
   readonly evidence?: ScopedHomeEvidenceFace
+  /**
+   * The execution-home port: the unit path's scoped-home resolution,
+   * availability verification and mount planning (`bind` or `volume`) come
+   * from the execution target; no management-host path is derived or
+   * consulted anywhere in the unit segment. When both this and `evidence`
+   * are mounted, the two are pinned by `homeIdentity` — a mismatch refuses
+   * the run before any unit is acquired. Absent, the unit path is the local
+   * `homeDir` + credential-dir check + `bind` mount, byte-identical.
+   */
+  readonly executionHome?: ExecutionHomePort
 }
 
 /**
@@ -207,7 +217,7 @@ export { runPlan, defaultStateRoot } from './run/run.ts'
 export { evalVersion } from './eval-version.ts'
 export {
   acquireSpecFor, checkCredentialsDir, claudeScopeDiagnostics, conditionOwnedComponents, conditionUnitDiagnostics, conditionUnitOf,
-  describeAcquireSpec, environmentClassComponents, planUnitOf, resolveCellUnit, unitUid,
+  describeAcquireSpec, environmentClassComponents, planScopedHomeMount, planUnitOf, resolveCellUnit, unitUid,
   DSH_CONTAINER_NODE_OPTIONS, UNIT_VERDICTS_DIR, UNIT_WORKSPACE,
 } from './run/unit.ts'
 export type { CellUnitPlan, ConditionOwnedComponents, ConditionUnitDecl, CredentialsCheck, PlanUnitDecl, ScopedConditionRef } from './run/unit.ts'
@@ -220,6 +230,7 @@ export type {
   LocalAgentFace, DelegationRun, DelegationResult, EvalDelegationOptions, MissionSubmitFile,
   LocalAgentCredentialGrade, LocalAgentEffectiveSettingsFace,
   ScopedHomeEvidenceFace, ScopedHomeHashEvidence, PresetSnapshotEvidence,
+  ExecutionHomePort, ScopedHomePlanRequest, ScopedHomePlan,
   LabFace, LabAcquireSpec, LabFingerprintComponents, LabMountSpec, LabPopulateResult, LabResourceLimits,
   LabUnitInfo, LabVerifyResult,
 } from './faces.ts'
