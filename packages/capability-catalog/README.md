@@ -10,7 +10,7 @@ dsh 的每个会话都由一个 agent preset 组合而成，插件、技能目�
 
 ## 特性
 
-- **技能一览**——三列预览网格（名字、一行描述、来源/provider 徽标），带搜索、排序和 内置/插件/其他 分段过滤。点卡片进详情弹窗：完整描述与调用面 meta、统一源码浏览器（左边 bundle 文件树、右边内容窗格——内容合成型 skill 渲染成单个虚拟 `SKILL.md` 节点）、frontmatter metadata（形似密钥的值显示为 `···`），以及凭据表单——从 `metadata.credentials` 与正文里的 `$ENV` / `process.env.X` / `env['X']` / `{{env:X}}` 引用解析出的每个 env 都可在此配置。值落在 dsh 凭据库，不上 wire。
+- **技能一览**——三列预览网格（名字、一行描述、来源/provider 徽标），带搜索、排序和 内置/插件/其他 分段过滤。点卡片进详情弹窗：完整描述与调用面 meta、统一源码浏览器（左边 bundle 文件树、右边内容窗格——内容合成型 skill 渲染成单个虚拟 `SKILL.md` 节点）、frontmatter metadata（形似密钥的值显示为 `···`），以及凭据表单——skill 在 frontmatter `metadata.credentials` 声明的每项凭据都可在此配置，值落在 dsh 凭据库，不上 wire；正文里 `$ENV` / `process.env.X` / `env['X']` / `{{env:X}}` 引用到的变量则单独列为只读的运行时引用（多为 `DSH_HOME` 一类宿主注入的事实，不是用户密钥）。
 - **工具带渠道归因**——折叠卡标明每个工具从哪来：作者声明的 origin 标记（精确）、`mcp__` 前缀（精确）、生成的官方工具白名单（精确）、apply 时序差分（推断）。详情弹窗把参数 schema 展示为结构树或原始 JSON。
 
 - **三种方式装技能**——一个弹窗：上传（单个 `SKILL.md`、含 SKILL.md 的 `.zip`、或整个技能文件夹，零依赖 `node:zlib` 解压）；命令安装（`owner/repo`、git URL，或整条粘贴来的 `npx skills add <repo> [--skill <名字>]` 命令——GitHub 仓库内路径与 `tree/`/`blob/` URL 都归一到同一个克隆，只有 `github.com` 会拆成 owner/repo，GitLab 子组按原样存活）；或从本机目录勾选。每个来源都可选目标根（`$DSH_HOME/skills` 或 `.agents/skills`）与是否进模型 catalog；skill-filesystem watcher 会自动发现结果。
