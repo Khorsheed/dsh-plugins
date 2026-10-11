@@ -266,6 +266,12 @@ export class LibraryRemoteService extends TypertRemoteService<LibraryRemoteConfi
     return this.core.recentRecords(request)
   }
 
+  /** The newest event's timestamp anywhere — the pane polls it to re-read (no push channel). */
+  @Remote('latestActivity')
+  latestActivity(): Promise<{ at?: string }> {
+    return this.core.latestActivity()
+  }
+
   /** The whole-library tally. */
   @Remote('stats')
   stats(): Promise<{ projects: number; books: number; cards: number; due: number; quizzes: number; attempts: number }> {

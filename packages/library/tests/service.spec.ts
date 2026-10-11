@@ -383,6 +383,18 @@ describe('the assess cascade', () => {
   })
 })
 
+describe('activity', () => {
+  it('reports the newest event across projects, or nothing', async () => {
+    expect(await service.latestActivity()).toEqual({})
+    const { projectId } = await seed()
+    const first = await service.latestActivity()
+    expect(first.at).toBeDefined()
+    await service.writeCards({ projectId, cards: [{ kind: 'concept', term: '阈值', gloss: 'g', source: { type: 'chat' } }] })
+    const next = await service.latestActivity()
+    expect(next.at !== undefined && first.at !== undefined && next.at >= first.at).toBe(true)
+  })
+})
+
 describe('bindings', () => {
   it('binds a session to a project and book, and refuses a missing book', async () => {
     const { projectId, bookId } = await seed()

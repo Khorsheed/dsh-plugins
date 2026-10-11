@@ -66,6 +66,8 @@ export interface LibraryPaneInjected {
   getQuiz: (projectId: string, quizId: string) => Answer<{ quiz: LibraryQuiz }>
   putAttempt: (projectId: string, quizId: string, verdicts: readonly LibraryVerdict[]) => Answer<LibraryAssessResult>
   recentRecords: () => Promise<RemoteResult<{ records: (LibraryEvent & { projectId: string; projectName: string })[] }>>
+  /** The newest event's timestamp anywhere — the pane's change poll (host-side writes otherwise surface only on remount). */
+  latestActivity: () => Promise<RemoteResult<{ at?: string }>>
   /** The session's binding, when it has one. */
   boundTarget: () => Promise<RemoteResult<LibraryBinding | null>>
   /** Bind the session (null unbinds). */

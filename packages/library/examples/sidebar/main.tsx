@@ -132,6 +132,7 @@ const face = {
     { at: iso(-0.01), type: 'cards.recorded', source: 'chat', title: '绝对 / 相对不应期', projectId: 'p_neuro', projectName: '神经科学' },
     { at: iso(-1), type: 'cards.recorded', source: 'quiz', title: 'settle ≈ resolve', projectId: 'p_ielts', projectName: '雅思' },
   ] }),
+  latestActivity: () => ok({}),
   updateProject: () => done({}),
   boundTarget: () => ok(null), bindTarget: () => done({ binding: null }),
   primeConversation: () => true,
