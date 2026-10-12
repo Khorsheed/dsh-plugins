@@ -49,7 +49,10 @@ export function installSkillEnvHint(ctx: Context, getScope: () => Promise<unknow
     if (exec?.name !== 'skill') return next()
     const skillName = (exec.arguments as { name?: string } | undefined)?.name
     if (typeof skillName !== 'string' || skillName.length === 0) return next()
-    const scope = await getScope().catch(() => undefined)
+    // Read at the CALLER's scope, not the catalog's settings scope: a skill
+    // scoped to a non-default preset is invisible to the latter, and the hint
+    // would never fire exactly where that skill actually loads.
+    const scope = exec.agent ?? await getScope().catch(() => undefined)
     const { registry, credentials } = resolveServices(ctx)
     if (registry === undefined) return next()
     const lookup = scope === undefined ? {} : { scope }

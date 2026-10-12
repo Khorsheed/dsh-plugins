@@ -71,6 +71,37 @@ describe('installSkillEnvHint (skill env hint)', () => {
     expect(decision).toBe('next')
   })
 
+  it('reads the skill at the caller\'s scope, so a preset-scoped skill still gets its hint', async () => {
+    const agent = { marker: 'learning-agent' }
+    const captured: Captured = { handler: undefined as never }
+    const ctx = {
+      inject: (_names: readonly string[], cb: () => void) => cb(),
+      on: (_event: string, handler: Captured['handler']) => { captured.handler = handler },
+      get: (name: string) => {
+        if (name === 'skills') {
+          return {
+            // Visible only at the caller's own scope — the catalog's settings
+            // scope must not be the read position.
+            get: async (_name: string, options?: { scope?: unknown }) =>
+              options?.scope === agent
+                ? { metadata: { credentials: [{ key: 'WEREAD_API_KEY' }] }, content: 'x' }
+                : undefined,
+          }
+        }
+        if (name === 'credentials') return { describe: async () => ({ configured: true }) }
+        return undefined
+      },
+    }
+    installSkillEnvHint(ctx as never, async () => undefined)
+    const decision = await captured.handler(
+      { name: 'skill', arguments: { name: 'weread-skills' }, agent },
+      undefined,
+      async () => 'next',
+    ) as { kind: string; additionalContexts: Array<{ content: Array<{ text: string }> }> }
+    expect(decision.kind).toBe('accept')
+    expect(decision.additionalContexts[0]?.content[0]?.text).toContain('DSH_WEREAD_API_KEY')
+  })
+
   it('lists a scoped-delivered skill\'s bundle files when the caller\'s scope carries the reader', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'catalog-envhint-'))
     try {

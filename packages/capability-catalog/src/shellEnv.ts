@@ -10,6 +10,13 @@
  * model's context; it only becomes visible if the model (or a command) actively
  * prints it — a default-hide, not a hard secret boundary.
  *
+ * Coverage: the registry snapshot is read at the catalog's preset scope, which
+ * a preset-scoped managed skill never appears in — so the managed root is ALSO
+ * scanned directly (its skills' declared keys join the same set). The injected
+ * variables are instance-wide per execution: preset scope is a delivery policy,
+ * not a secret boundary, and a value leaves the shell env only if a command
+ * prints it.
+ *
  * Constraint handling (shell-env/src/index.ts):
  * - keys must start `DSH_` and match `/^[A-Z][A-Z0-9_]*$/`; one owner per key;
  *   reserved built-ins (`DSH_HOME`/`DSH_SHELL`/`DSH_SESSION_ID`) are not ownable.
@@ -34,6 +41,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-credentials'
 import { decodeCredentialDecls, decodeEnvDecls, mergeCredentialDecls } from './skills.ts'
+import { definitionFor, scanManagedSkills, scopedSkillsRoot } from './scoped-delivery.ts'
 
 const DSH_PREFIX = 'DSH_'
 const ENV_KEY_SUFFIX = /^[A-Z][A-Z0-9_]*$/
@@ -89,7 +97,7 @@ interface SkillRegistrySlice {
  * the impl only while its fiber is active) immediately before calling `register`,
  * and self-retries on `INACTIVE_EFFECT` so it self-heals once boot stabilizes.
  */
-export function installSkillEnvInjection(ctx: Context, getScope: () => Promise<unknown | undefined>): () => void {
+export function installSkillEnvInjection(ctx: Context, getScope: () => Promise<unknown | undefined>, getDshHome: () => string): () => void {
   let disposed = false
   let envCache = new Map<string, string>()
   let disposeEnv: (() => void) | undefined
@@ -161,18 +169,8 @@ export function installSkillEnvInjection(ctx: Context, getScope: () => Promise<u
         )
         const keys = new Set<string>()
         const values = new Map<string, string>()
-        for (const row of snapshot.skills) {
-          // Only skills the model may invoke get their credentials injected —
-          // a model-disabled (user-only) skill cannot be used by the model, so
-          // putting its secret in the model shell would be pure exposure.
-          if (row.invocation?.modelInvocable === false) continue
-          let def
-          try {
-            def = await skills.get(row.name, snapshotOptions)
-          } catch {
-            continue
-          }
-          if (def === undefined) continue
+        /** Fold one definition's declared env keys into the contributor's set. */
+        const collectDecls = async (def: { readonly content?: string; readonly metadata?: Readonly<Record<string, unknown>> }): Promise<void> => {
           const decls = mergeCredentialDecls(
             decodeCredentialDecls(def.metadata),
             decodeEnvDecls(def.content ?? ''),
@@ -189,6 +187,28 @@ export function installSkillEnvInjection(ctx: Context, getScope: () => Promise<u
             const resolved = await credentials.resolve(decl.key).catch(() => undefined)
             if (resolved !== undefined && resolved.value.length > 0) values.set(dshKey, resolved.value)
           }
+        }
+        for (const row of snapshot.skills) {
+          // Only skills the model may invoke get their credentials injected —
+          // a model-disabled (user-only) skill cannot be used by the model, so
+          // putting its secret in the model shell would be pure exposure.
+          if (row.invocation?.modelInvocable === false) continue
+          let def
+          try {
+            def = await skills.get(row.name, snapshotOptions)
+          } catch {
+            continue
+          }
+          if (def === undefined) continue
+          await collectDecls(def)
+        }
+        // The registry read is scoped to the catalog's preset view: a skill
+        // scoped AWAY from that preset never appears in the snapshot, and its
+        // declared credentials would never be injected. Scan the managed root
+        // directly so a preset-scoped skill's keys are covered too.
+        for (const skill of await scanManagedSkills(scopedSkillsRoot(getDshHome())).catch(() => [] as const)) {
+          if (!skill.modelInvocable) continue
+          await collectDecls(definitionFor(skill))
         }
 
         if (disposed || gen !== refreshGen) return // stale or disposed — drop the commit

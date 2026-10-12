@@ -271,7 +271,7 @@ export class CapabilityCatalogService extends TypertRemoteService {
     // inject so the env-injection runs once shellEnv/credentials/skills are
     // registered (at the catalog's apply they may not be composed yet).
     ctx.inject(['shellEnv', 'credentials', 'skills'], () => {
-      installSkillEnvInjection(ctx, () => this.catalogScope())
+      installSkillEnvInjection(ctx, () => this.catalogScope(), () => this.dshHome())
     })
     // Runtime companion hint (generic): when the skill tool loads a skill,
     // tell the model the configured credential env mappings so it uses the
