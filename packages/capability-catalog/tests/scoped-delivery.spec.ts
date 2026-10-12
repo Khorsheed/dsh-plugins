@@ -470,4 +470,47 @@ describe('ScopedSkillDelivery over a real skill registry', () => {
     const row = delivery.status().presets.find(preset => preset.presetId === 'dsh-writing')
     expect(row?.error).toContain('agent-preset/invalid')
   })
+
+  it('serializes concurrent reconciles: at most one in flight, at most one queued rerun', async () => {
+    // A roster whose key reads block until the test releases them, so a
+    // reconcile pass can be held open while more triggers arrive.
+    let gateOpen = true
+    const waiters: Array<() => void> = []
+    let running = 0
+    let maxRunning = 0
+    let reads = 0
+    const { delivery } = await boot('[dsh-writing]', [], (keys) => ({
+      defaultId: 'standard',
+      standingKeyFor: async (id?: string) => {
+        reads += 1
+        running += 1
+        maxRunning = Math.max(maxRunning, running)
+        try {
+          if (!gateOpen) await new Promise<void>(resolve => waiters.push(resolve))
+        } finally {
+          running -= 1
+        }
+        return keys.get(id ?? 'standard')
+      },
+    }))
+    // start()'s own reconcile ran with the gate open; only the gated passes count.
+    reads = 0
+    maxRunning = 0
+    gateOpen = false
+    const first = delivery.reconcile()
+    const second = delivery.reconcile()
+    const third = delivery.reconcile()
+    // Wait until the first pass is blocked mid-read; the other two calls must
+    // coalesce into ONE queued rerun rather than start passes of their own.
+    const deadline = Date.now() + 2000
+    while (reads < 1 && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 5))
+    expect(reads).toBe(1)
+    expect(maxRunning).toBe(1)
+    gateOpen = true
+    for (const release of waiters.splice(0)) release()
+    await Promise.all([first, second, third])
+    // Three triggers, two passes: the in-flight one and the single queued rerun.
+    expect(reads).toBe(2)
+    expect(maxRunning).toBe(1)
+  })
 })

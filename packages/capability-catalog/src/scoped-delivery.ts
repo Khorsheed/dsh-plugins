@@ -455,6 +455,9 @@ export class ScopedSkillDelivery {
   private failure: string | undefined
   private started = false
   private disposed = false
+  /** Reconcile gate: one pass in flight, one queued rerun (see reconcile). */
+  private reconcileInFlight: Promise<void> | undefined
+  private reconcileQueued = false
   /** The probed registry's mount list (undefined until start()'s probe resolves). */
   private presetMounts: LivePresetMounts | undefined
 
@@ -479,8 +482,47 @@ export class ScopedSkillDelivery {
     await this.reconcile()
   }
 
-  /** Re-read policy and files, then converge the delivery registrations. */
+  /**
+   * Re-read policy and files, then converge the delivery registrations.
+   *
+   * Triggers arrive concurrently — the filesystem watcher, the
+   * `agent-preset/selected` event, and the management Remotes — and two
+   * overlapping passes can both decide a preset has no registration and each
+   * register one, leaving two same-named providers serving one preset. The
+   * gate allows ONE pass in flight and coalesces every trigger that arrives
+   * during it into ONE queued rerun (the pass re-reads policy and files from
+   * scratch, so a rerun loses no update). A caller that finds a pass in
+   * flight waits for the chain its flag provoked, so an awaited reconcile
+   * still reflects the write that triggered it.
+   */
   async reconcile(): Promise<void> {
+    if (this.disposed) return
+    if (this.reconcileInFlight !== undefined) {
+      this.reconcileQueued = true
+      let run: Promise<void> | undefined = this.reconcileInFlight
+      while (run !== undefined) {
+        await run
+        if (this.disposed) return
+        run = this.reconcileInFlight
+      }
+      return
+    }
+    const run = (async () => {
+      try {
+        do {
+          this.reconcileQueued = false
+          await this.reconcileNow()
+        } while (this.reconcileQueued && !this.disposed)
+      } finally {
+        this.reconcileInFlight = undefined
+      }
+    })()
+    this.reconcileInFlight = run
+    return run
+  }
+
+  /** One reconcile pass (call only through {@link reconcile}'s gate). */
+  private async reconcileNow(): Promise<void> {
     if (this.disposed) return
     const registry = this.deps.registry()
     const roster = this.deps.roster()
