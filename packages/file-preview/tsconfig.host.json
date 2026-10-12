@@ -11,6 +11,7 @@
     "src/index.ts",
     "src/invariant.ts",
     "src/open-external.ts",
+    "src/read-surface.ts",
     "src/reveal.ts",
     "src/types.ts"
   ]

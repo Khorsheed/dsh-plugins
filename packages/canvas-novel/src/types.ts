@@ -522,6 +522,13 @@ export interface ChapterRecord {
   /** The user's ✓确认计划 timestamp (the plan gate's durable fact; absent = unconfirmed). */
   readonly planConfirmedAt?: string
   /**
+   * Where the current plan was put to the person: the registering session and
+   * the seq of its newest user message then. The agent may record the
+   * person's chat approval only after a LATER user message — a plan
+   * registered and "confirmed" in one breath was never seen (2026-10-10).
+   */
+  readonly planAsk?: { readonly session: string; readonly userSeq: number }
+  /**
    * 用户原稿: the user wrote this chapter themselves (imported or pasted). It
    * needs no plan to carry a body, and the 对账 skips plan verification.
    */
@@ -533,6 +540,10 @@ export interface ChapterRecord {
   readonly wordCount?: number
   /** The fingerprint ({@link bodyFingerprint}) of the body the last 对账 read; a different body now reads 待对账. */
   readonly bodyHash?: string
+  /** When the last 对账 of this chapter landed (the 最近更新 scope reads the newest). */
+  readonly extractedAt?: string
+  /** The cards the last 对账 of this chapter created (a foreshadow keeps no change history to read them from). */
+  readonly newCards?: readonly string[]
   /** The world cards the last 对账 found in this chapter (new ones and existing ones it linked). */
   readonly settings?: readonly string[]
   readonly sessionIds: readonly string[]
@@ -607,6 +618,8 @@ export interface MentionEntry {
   /** The chapter plan listed this operation. */
   readonly planned: boolean
   readonly note?: string
+  /** The text's words the 对账 quoted for it. */
+  readonly evidence?: string
   readonly createdAt: string
 }
 
@@ -707,9 +720,15 @@ export function normalizeChapter(raw: unknown): ChapterRecord | undefined {
   const recap = cleanText(record['recap'], 500)
   const wordCount = cleanNumber(record['wordCount'])
   const planConfirmedAt = cleanText(record['planConfirmedAt'], 40)
+  const extractedAt = cleanText(record['extractedAt'], 40)
+  const askRaw = record['planAsk'] as Record<string, unknown> | undefined
+  const planAsk = typeof askRaw === 'object' && askRaw !== null && typeof askRaw['session'] === 'string' && typeof askRaw['userSeq'] === 'number'
+    ? { session: askRaw['session'], userSeq: askRaw['userSeq'] }
+    : undefined
   const delivery = normalizeDelivery(record['delivery'])
   const bodyHash = cleanText(record['bodyHash'], 40)
   const settings = cleanStringList(record['settings'], 200)
+  const newCards = cleanStringList(record['newCards'], 200)
   const volume = cleanText(record['volume'], 40)
   return {
     n,
@@ -720,12 +739,15 @@ export function normalizeChapter(raw: unknown): ChapterRecord | undefined {
     ...(volume === undefined ? {} : { volume }),
     ...(plan === undefined ? {} : { plan }),
     ...(planConfirmedAt === undefined ? {} : { planConfirmedAt }),
+    ...(extractedAt === undefined ? {} : { extractedAt }),
+    ...(planAsk === undefined ? {} : { planAsk }),
     ...(record['byUser'] === true ? { byUser: true as const } : {}),
     ...(delivery === undefined ? {} : { delivery }),
     ...(recap === undefined ? {} : { recap }),
     ...(wordCount === undefined ? {} : { wordCount }),
     ...(bodyHash === undefined ? {} : { bodyHash }),
     ...(settings.length === 0 ? {} : { settings }),
+    ...(newCards.length === 0 ? {} : { newCards }),
     sessionIds: cleanStringList(record['sessionIds'], 40),
     createdAt: cleanText(record['createdAt'], 40) ?? now,
     updatedAt: cleanText(record['updatedAt'], 40) ?? now,
@@ -1270,7 +1292,7 @@ export function normalizePendingItem(raw: unknown): PendingItem | undefined {
 /* --------------------------------------------------------------- outcomes */
 
 /** The store's failure codes (the canvas vocabulary, plus the chapter gates'). */
-export type NovelError = 'invalid-name' | 'missing' | 'io' | 'stale' | 'denied' | 'not-reviewed' | 'not-extracted' | 'no-workspace' | 'duplicate' | 'plan-unconfirmed' | 'unknown-foreshadow' | 'body-exists' | 'plan-on-draft' | 'unknown-protagonist' | 'unknown-volume' | 'no-proposal'
+export type NovelError = 'invalid-name' | 'missing' | 'io' | 'stale' | 'denied' | 'not-reviewed' | 'not-extracted' | 'no-workspace' | 'duplicate' | 'plan-unconfirmed' | 'unknown-foreshadow' | 'body-exists' | 'plan-on-draft' | 'unknown-protagonist' | 'unknown-volume' | 'no-proposal' | 'plan-unseen'
 
 /* ---------------------------------------------- wire-boundary contracts */
 
@@ -1423,7 +1445,7 @@ export interface ExtractPayload {
 /** One dropped import item and why (the anti-fabrication log). */
 export interface ImportDrop {
   readonly kind: string
-  readonly reason: 'evidence-not-found' | 'evidence-spliced' | 'evidence-too-long' | 'id-not-in-ledger' | 'character-not-in-roster' | 'card-refused' | 'duplicate' | 'stage-mismatch'
+  readonly reason: 'evidence-not-found' | 'evidence-spliced' | 'evidence-too-long' | 'id-not-in-ledger' | 'character-not-in-roster' | 'card-refused' | 'duplicate' | 'stage-mismatch' | 'apply-failed'
   readonly ref: string
 }
 
@@ -1443,9 +1465,15 @@ export interface ImportReport {
   readonly missed: number
   /** Plan beats the manuscript carried, and the beats it did not (a reminder, never pending). */
   readonly beats: { readonly delivered: number; readonly missed: number }
-  readonly pending: number
   readonly dropped: readonly ImportDrop[]
-  readonly pendingItems: readonly { readonly id: string; readonly kind: PendingKind; readonly reason: string }[]
+  /**
+   * What used to wait in 待审 and is applied at once now (2026-10-09): 信息差,
+   * relation moves, a setting the chapter words otherwise — one line each,
+   * for the answer to tell the person.
+   */
+  readonly applied: readonly { readonly kind: PendingKind; readonly line: string }[]
+  /** Planned foreshadow ops the text did not carry (`推进 [#12]`): a reminder, never a question. */
+  readonly planMisses: readonly string[]
   /** The live cards this import landed (new rules, foreshadows, characters), marked new (✦) on the board. */
   readonly newCards: readonly { readonly cardId: string; readonly role: EntryRole; readonly text: string; readonly ref?: string }[]
 }
@@ -1560,6 +1588,30 @@ export interface StoryLogResult {
   readonly relations: readonly StoryRelation[]
   readonly characters: readonly StoryCharacter[]
   readonly world: readonly StoryCard[]
+}
+
+/**
+ * One thing the newest 对账 did to one card (the 设定 face's 最近更新): it
+ * created the card, moved one of its fields, journaled a foreshadow mention,
+ * an experience, relation points or a stage. `text` is the value, the entry
+ * or the text's words.
+ */
+export interface RecentNote {
+  readonly kind: 'create' | 'field' | 'mention' | 'experience' | 'points' | 'stage'
+  readonly field?: string
+  readonly mention?: MentionEntry['kind']
+  readonly delta?: number
+  readonly text?: string
+}
+
+/** The newest 对账 and what it did, card by card (empty before any 对账 recorded its time). */
+export interface NovelRecentResult {
+  readonly ok: boolean
+  readonly error?: NovelError
+  readonly chapter?: number
+  readonly title?: string
+  readonly at?: string
+  readonly cards: Readonly<Record<string, readonly RecentNote[]>>
 }
 
 /** The chapter index as the pages read it: the rows plus each chapter's unresolved pending count. */

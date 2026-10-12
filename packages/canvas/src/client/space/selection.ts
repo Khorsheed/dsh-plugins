@@ -98,6 +98,23 @@ export interface CanvasBoardState {
   readonly canvasId: string | null
   /** Bumped on every board mutation from either seat (a re-read trigger). */
   readonly rev: number
+  /**
+   * A one-shot ask from outside the tab (a genre's conversation card): show
+   * this canvas's board on one face, with one scope pressed. `n` tells one ask
+   * from the next; never stored.
+   */
+  readonly ask?: CanvasFaceAsk
+}
+
+/** The faces of a canvas board (卡板, 连线, 成稿, the genre's own, its lead). */
+export type CanvasBoardFace = 'board' | 'link' | 'manuscripts' | 'view' | 'lead'
+
+/** Show one canvas on one face, a genre scope pressed (null: 全部). */
+export interface CanvasFaceAsk {
+  readonly canvasId: string
+  readonly face: CanvasBoardFace
+  readonly scope: string | null
+  readonly n: number
 }
 
 /** The shared feed's published shape (the store's read face). */
@@ -164,6 +181,20 @@ export class CanvasSelectionStore {
   /** Open a genre page inside its canvas's row. */
   openPageTab(canvasId: string, page: string, heading: string, param?: string): void {
     this.ensure(canvasId, param === undefined ? { kind: 'page', page, heading } : { kind: 'page', page, param, heading })
+  }
+
+  /**
+   * Put a canvas's row on its board and ask the tab to show one face with one
+   * scope pressed (the novel's 已对账 card opens 设定 · 最近更新).
+   */
+  /** Asks made so far: a later strip write drops the ask, so its number cannot restart from the snapshot. */
+  private asks = 0
+
+  openBoardFace(canvasId: string, face: CanvasBoardFace, scope: string | null): void {
+    this.ensure(canvasId, AT_BOARD)
+    const current = this.source.getSnapshot()
+    this.asks += 1
+    this.source.set({ ...current, ask: { canvasId, face, scope, n: this.asks } })
   }
 
   /** Show a row that is already open. A row that is gone changes nothing. */

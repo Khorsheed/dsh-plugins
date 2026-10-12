@@ -40,12 +40,19 @@ export interface DatasetsPluginConfig {
   authoringPreset?: string
   /** T90: where new dataset repositories go ('' = `$DSH_HOME/datasets`). */
   datasetsHome?: string
+  /**
+   * Gesture groups this deployment marks unavailable: group id → the reason
+   * the tab shows beside the hidden gesture (a non-empty string). A display
+   * contract only — the service verbs' own admission rules are unchanged.
+   */
+  capabilities?: Record<string, string>
 }
 
 export const Config: z = z.object({
   materializedRoot: z.string().default(''),
   authoringPreset: z.string().default(''),
   datasetsHome: z.string().default(''),
+  capabilities: z.dict(z.string()).default({}),
 })
 
 declare module '@deepseek-ai/cordis' {
@@ -84,8 +91,13 @@ export function apply(ctx: Context, config: DatasetsPluginConfig): void {
       preset: config.authoringPreset ?? '',
       datasetsHome: resolveDatasetsHome(config.datasetsHome),
     },
+    ...(config.capabilities === undefined ? {} : { capabilities: config.capabilities }),
   })
   ctx.provide('datasets', service)
+  // The borrowed Context's teardown IS this instance's disposal: afterwards
+  // every public verb refuses coded (reads included), and a write in flight
+  // when the teardown lands refuses at the write boundary.
+  ctx.effect(() => () => { service.dispose() }, 'datasets: dispose on context teardown')
   // The web session tab's data face: the same service core behind a Typert
   // Remote (wire namespace `datasets`), registrations resolved per call.
   ctx.plugin(DatasetsRemoteService)
@@ -93,3 +105,18 @@ export function apply(ctx: Context, config: DatasetsPluginConfig): void {
 
 export { handleDatasetsCommand, registerDatasetsSlash } from './slash.ts'
 export { datasetToolDefinitions, toolsOfGroup, type DatasetsToolGroup } from './tool-definition.ts'
+
+// The instance-mounting seam: a consumer running per-instance storage builds
+// the service over its own roots (registry / bindings / materialized /
+// proposals) and mounts the native Remote face on the same isolated Context.
+// `apply` above and its deployment-default root resolution are the unchanged
+// local path; the README's 「工作区接入接缝」 section carries the consumption
+// contract (no Remote verb takes an Agent lookup).
+export {
+  createDatasetsService,
+  DatasetsDisposedError,
+  type DatasetsCapabilities, type DatasetsCapabilityAvailability, type DatasetsCapabilityGroup,
+  type DatasetsCapabilityOverrides,
+  type DatasetsService, type DatasetsServiceOptions, type DatasetScope, type OrganizingSetup,
+} from './service.ts'
+export { DatasetsRemoteService, type DatasetsRemoteConfig } from './remote.ts'

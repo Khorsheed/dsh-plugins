@@ -110,6 +110,11 @@ export const TYPERT_PACKAGES: readonly TypertPackage[] = [
     hostConfigs: ['tsconfig.host.json'],
   },
   {
+    dir: 'packages/game',
+    name: '@khorsheed/dsh-game',
+    hostConfigs: ['tsconfig.host.json'],
+  },
+  {
     dir: 'packages/worktrees',
     name: '@khorsheed/dsh-worktrees',
     hostConfigs: ['tsconfig.host.json'],
@@ -170,8 +175,8 @@ export const TYPERT_PACKAGES: readonly TypertPackage[] = [
     hostConfigs: ['tsconfig.host.json'],
   },
   {
-    dir: 'packages/request-inspector',
-    name: '@khorsheed/dsh-request-inspector',
+    dir: 'packages/context-lens',
+    name: '@khorsheed/dsh-context-lens',
     hostConfigs: ['tsconfig.host.json'],
   },
 ]

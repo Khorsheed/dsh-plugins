@@ -104,6 +104,39 @@ T73 之前每个会话绑一个仓库（`$DSH_HOME/state/datasets/bindings/<sess
 
 从旧绑定迁移是一键的：tab 的「从旧绑定登记」（CLI `import-bindings`）把指向同一仓库的多条绑定合成一条登记，指向已不存在路径的绑定标红跳过；绑定文件本身逐字节不动，重复执行不会重复登记。
 
+## 工作区接入接缝（按实例挂载）
+
+除了 `apply` 的部署缺省挂载，本包还支持另一种消费方式：挂载方在**自己的隔离 Context** 上、用**自己的一套根**直接构造服务实例。包根公开导出消费入口（全部复用既有名字，行为一字不改）：
+
+- **`createDatasetsService(options)`** —— 服务工厂。`options: DatasetsServiceOptions` 收四个根：`registryPath`（登记 JSON 文件）、`bindingsRoot`（旧会话绑定目录，只有一键迁移读它）、`materializedRoot`（物化缓存根）、`proposalsRoot`（登记提案库，缺省取登记文件旁的 `proposals/`），外加可选的 `organizing: OrganizingSetup`（「让 Agent 整理」的预设与新仓库的缺省位置）。
+- **`DatasetsService` / `DatasetScope`** —— 服务面与查询 scope 的类型：每个动词的第一个参数是 scope（`{ repo, ref?, datasets?, layers?, operator? }`）。
+- **`DatasetsRemoteService`** —— 原生 Remote 面（线 namespace `datasets`）。构造函数就是挂载入口：在同一个 Context 上 `ctx.provide('datasets', service)` 之后 `ctx.plugin(DatasetsRemoteService, {})`，同一个服务内核就挂成了 Typert Remote；`DatasetsRemoteConfig` 是它的配置类型（自 T73 起是空对象）。
+
+```ts
+import { createDatasetsService, DatasetsRemoteService, type DatasetsServiceOptions } from '@khorsheed/dsh-datasets'
+
+const options: DatasetsServiceOptions = {
+  registryPath: '/home/user/instance-a/state/registry.json',
+  bindingsRoot: '/home/user/instance-a/state/bindings',
+  materializedRoot: '/home/user/instance-a/state/materialized',
+  proposalsRoot: '/home/user/instance-a/state/proposals',
+}
+const service = createDatasetsService(options)
+ctx.provide('datasets', service)
+ctx.plugin(DatasetsRemoteService, {})
+```
+
+语义与边界：
+
+- **两个实例、两套根，互不相通**：登记、读取、写入检出、物化缓存与提案库全部按实例绑定，不引入任何全局可变状态（`tests/instance-exports.spec.ts` 钉住）。
+- **服务不需要 Agent**：读取是纯 git 对象读取，写入只进登记的 `authoringCheckout`，没有模型执行，也没有后台进程；登记是每个根下一个 JSON 文件。
+- **Remote 没有任何一个动词带 Agent**：全部动词（登记读写、浏览、骨架与导入、提案与更新闸）的参数都是普通请求对象（登记 id + 数据集/题目/路径/commit），没有哪个收 agent 参数，也没有哪个做 agent 实例查找。唯一的宿主探测是 `organizingSetup` 经 `ctx.get` 读 `agentPresets` 的**注册表切片**（`list` / `readDocument` / `defaultId`，T102）——读的是预设文档，不是 agent 实例；读不到（或读到坏的）就降级为 `preset: ''`，会话保留默认预设，绝不抛错。
+- **`apply` 的部署缺省路径不变**：不走工厂的挂载一切照旧——登记文件在 `$DSH_HOME/state/datasets/registry.json`，`resolveStateRoot` / `resolveMaterializedRoot` / `resolveDatasetsHome` 的解析一字不动。工厂是隔离实例的消费入口，不是本地默认路径的新配置口。
+- **两个实例不得共享同一个 `authoringCheckout`**：它是写动词唯一会写的工作树；两个实例把写落进同一棵工作树，就是两个写入者在上面赛跑（插件从不提交，提交与合并仍是人的动作）。每个实例登记各自的检出。
+- **写边界按真实路径与文件身份判定**（`src/safe-write.ts`）：每个写动词（`scaffoldDataset` / `scaffoldItem` / `importItem` / `putItem`）的落盘都过同一道边界。根按每次操作 realpath 一次；父目录逐段 `lstat` 核查、单级 `mkdir`——绝不跟随软链建目录，所以一次被拒的写在根外连半个目录树都不会留下。临时文件以 `O_CREAT | O_EXCL | O_NOFOLLOW` 独占创建：预先埋在候选名上的文件或软链**永远不会被打开写入**（撞上 EEXIST/ELOOP 换下一个名字，32 个候选全被埋满则带码拒绝——埋名最多逼出一次拒绝，逼不出一次越界写；操作报错不等于没发生越界写，所以先在创建处挡死）；字节经 fd 落盘再 rename 就位。复核比较的是**身份**（创建时 fd 的 dev+ino），不是路径串：临时文件必须仍是本次操作创建的那一个，父目录必须仍是核查过的那一个——换真目录的 rename 调包骗得过路径串比较，骗不过 inode。清理只删本次操作确证拥有的东西：临时文件或 rename 后的目标，删除前 `lstat` 复核仍是那份身份的普通文件；外来替换件一律原样留下，拒绝照样带码（`PATH_ESCAPE`）。`importItem` 的来源读取在打开时核查（`O_NOFOLLOW`：枚举之后被替换成软链的文件在 open 当场失败；打开后 `fstat` 确认是普通文件——fd 回答的是文件本身，路径查找回答的只是路径），被替换的中间目录由 realpath 包含检查拦下。普通仓库（无软链）的本地行为逐字节不变。
+- **`capabilities` 动词是本实例手势的展示契约**：Remote 的 `capabilities` 动词返回 `{ protocolVersion: 1, registration, fileWrite, agentOrganize, bindingImport, proposalReview, delete }`，每组 `{ available, reason? }`；缺省全部可用、无原因（今天的本地行为）。哪组不可用由**挂载方**在实例配置里标注——工厂的 `options.capabilities` 或插件配置的同名键，组名映射到原因字符串；题集 tab 据此隐藏对应手势并把原因显示在原位（读不到这个动词时一切照常显示——失败开放，准入仍在服务端）。这只是展示契约：服务自己的准入规则不变，网关侧未接纳的动词照样在服务端被拒。
+- **dispose 闸**：`dispose()` 幂等且终态——之后每个公开动词（含读取）以带码的包名错误 `DatasetsDisposedError`（`code: 'disposed'`，从包根导出）拒绝；dispose 落地时在途的写在写边界处拒绝，已越界的写安全完成。经 `apply` 挂载时随借入 Context 的销毁自动触发（`ctx.effect`）。同根重建合法：旧实例写的数据都在。
+
 ## 模型工具
 
 **核心行不注册任何模型工具**：下面这九个工具与 `datasets:tools` 提示词段归本包的 `./tool` 组合入口（工具行 `@khorsheed/dsh-datasets/tool`），由 agent preset 按会话授予。授予方式：在目标 preset 的 `agent.cordis.yml` 里加两行——`- id: datasets-tool` 与 `  name: '@khorsheed/dsh-datasets/tool'`（该行可带 `config: { tools: authoring }`）。下面的清单、分组与行为描述自此描述的是**工具行**的工具面；服务、CLI、`/datasets` 与会话 tab 仍归本包。
@@ -176,7 +209,7 @@ web profile 下插件向会话的视图环贡献 **`datasets` tab**（标签「�
 
 **五档颜色真的落到 tokens 了**（I5·T67 补，走查 W3）：`stageTone` / `bucketTone` 选的 tone 一直是对的，painted 的却不是——`ok` 用了品牌蓝 `--dsw-alias-state-business-primary`，`busy` 用了正文色 `--dsw-alias-label-primary`，于是「完成」是蓝的、「进行中」是灰的。现在 `ok` → `--dsw-alias-state-success-primary`、`busy` → `--dsw-alias-state-business-primary`。两个 tab 的 chip 是**手抄的两份**（§八），所以两份一起改；eval 的 `tests/tones.spec.ts` 读**两份样式表**把这条钉住——chip 的颜色是样式表里的一个 token，jsdom 既不加载样式表也不算 computed style，客户端用例照不到它。
 
-tab 的数据面是一个 Typert Remote 服务（`datasetsRemote`，线 namespace `datasets`），架在与工具同一个服务内核之上：`registry` / `previewRepo` / `register` / `updateRegistration` / `unregister` / `importBindings` / `list` / `show` / `read` / `readPassthrough` / `overview` / `itemBrief` / `validate` / `scaffoldDataset` / `scaffoldItem` / `importItem`，以及 T90 的 `organizingSetup` / `proposals` / `proposalReview` / `reviewItem` / `reviewFiles` / `confirmProposal` / `returnProposal` / `pendingReview` / `confirmPending`，以及 T99 的 `deletePlan` / `deleteRegistration`（「删除」：只删 datasets home 之下、确是登记的那个仓库根、路径不经软链的目录，其余只撤登记、文件留在原处）/ `discardPlan` / `discardProposal`（待登记横幅的「放弃」）——都只收 id，目录由宿主从记录推出。读取请求带登记 `id`（`repo`），宿主解析到仓库；读取方法是 operator 视图——白名单与 modelFacing 底线约束的是 agent 边界（工具 + 物化视图），不是看自己仓库的人；敏感层带「· 敏感」标记照常可读，真正没保护的透传区与 `item.json` 则显眼标出。唯一的例外是 `itemBrief` 背后那两次判定层读取：它们**显式指名单层**（`layers: ['grading']` / `['verify']`）而不是走 operator 旁路——页面要的是答案键的形状（几条、什么 kind），字节从不上线。浏览器半经官方 `ctx.remote.$mount` 通道挂载该 namespace；eval 的 namespace 在**每次调用时**用 `ctx.get` 探测，不在挂载时探一次——两个插件各自 `$mount`，谁先落地没有保证。
+tab 的数据面是一个 Typert Remote 服务（`datasetsRemote`，线 namespace `datasets`），架在与工具同一个服务内核之上：`capabilities` / `registry` / `previewRepo` / `register` / `updateRegistration` / `unregister` / `importBindings` / `list` / `show` / `read` / `readPassthrough` / `overview` / `itemBrief` / `validate` / `scaffoldDataset` / `scaffoldItem` / `importItem`，以及 T90 的 `organizingSetup` / `proposals` / `proposalReview` / `reviewItem` / `reviewFiles` / `confirmProposal` / `returnProposal` / `pendingReview` / `confirmPending`，以及 T99 的 `deletePlan` / `deleteRegistration`（「删除」：只删 datasets home 之下、确是登记的那个仓库根、路径不经软链的目录，其余只撤登记、文件留在原处）/ `discardPlan` / `discardProposal`（待登记横幅的「放弃」）——都只收 id，目录由宿主从记录推出。读取请求带登记 `id`（`repo`），宿主解析到仓库；读取方法是 operator 视图——白名单与 modelFacing 底线约束的是 agent 边界（工具 + 物化视图），不是看自己仓库的人；敏感层带「· 敏感」标记照常可读，真正没保护的透传区与 `item.json` 则显眼标出。唯一的例外是 `itemBrief` 背后那两次判定层读取：它们**显式指名单层**（`layers: ['grading']` / `['verify']`）而不是走 operator 旁路——页面要的是答案键的形状（几条、什么 kind），字节从不上线。浏览器半经官方 `ctx.remote.$mount` 通道挂载该 namespace；eval 的 namespace 在**每次调用时**用 `ctx.get` 探测，不在挂载时探一次——两个插件各自 `$mount`，谁先落地没有保证。
 
 ## 添加题集与确认登记（T90）
 

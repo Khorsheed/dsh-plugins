@@ -1,4 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { installSkillEnvInjection } from '../src/shellEnv.ts'
 
@@ -62,6 +65,13 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
+/** Flush the refresh chain, which includes real fs reads (the managed-root scan). */
+async function settle(registrations: Registration[]): Promise<void> {
+  for (let i = 0; i < 40 && registrations.length === 0; i++) {
+    await new Promise(resolve => setTimeout(resolve, 25))
+  }
+}
+
 describe('installSkillEnvInjection', () => {
   it('registers the contributor with the resolved DSH_ key set', async () => {
     const registrations: Registration[] = []
@@ -70,9 +80,8 @@ describe('installSkillEnvInjection', () => {
       credentials,
       skills,
     })
-    installSkillEnvInjection(ctx, async () => undefined)
-    // Flush the async snapshot/get/resolve chain (all immediate promises).
-    for (let i = 0; i < 12; i++) await Promise.resolve()
+    installSkillEnvInjection(ctx, async () => undefined, () => '/nonexistent-home')
+    await settle(registrations)
 
     expect(registrations).toHaveLength(1)
     expect(registrations[0].name).toBe('capability-catalog')
@@ -84,7 +93,7 @@ describe('installSkillEnvInjection', () => {
     vi.useFakeTimers()
     const registrations: Registration[] = []
     const { ctx, services } = makeFakeCtx() // no services yet -> inactive
-    installSkillEnvInjection(ctx, async () => undefined)
+    installSkillEnvInjection(ctx, async () => undefined, () => '/nonexistent-home')
     // The initial synchronous pass sees no shellEnv -> schedules a retry.
     expect(registrations).toHaveLength(0)
 
@@ -93,6 +102,10 @@ describe('installSkillEnvInjection', () => {
     services.skills = skills
 
     await vi.advanceTimersByTimeAsync(300)
+    // The retry's refresh chain includes real fs (the managed-root scan):
+    // settle it on wall-clock time.
+    vi.useRealTimers()
+    await settle(registrations)
 
     expect(registrations).toHaveLength(1)
     expect(registrations[0].name).toBe('capability-catalog')
@@ -107,13 +120,18 @@ describe('installSkillEnvInjection', () => {
       credentials,
       skills,
     })
-    installSkillEnvInjection(ctx, async () => undefined)
+    installSkillEnvInjection(ctx, async () => undefined, () => '/nonexistent-home')
     // Flush the async chain up to register; it throws INACTIVE_EFFECT once.
     for (let i = 0; i < 12; i++) await Promise.resolve()
     expect(registrations).toHaveLength(0)
 
     inactive = false
     await vi.advanceTimersByTimeAsync(300)
+    // The retry's refresh chain includes real fs (the managed-root scan):
+    // settle it on wall-clock time. The second retry delay (300 ms) is real
+    // now, and settle's polling covers it.
+    vi.useRealTimers()
+    await settle(registrations)
 
     expect(registrations).toHaveLength(1)
     expect(registrations[0].name).toBe('capability-catalog')
@@ -134,8 +152,8 @@ describe('installSkillEnvInjection', () => {
         { name: 'sess', content: 'use $SESSION_ID' },
       ]),
     })
-    installSkillEnvInjection(ctx, async () => undefined)
-    for (let i = 0; i < 12; i++) await Promise.resolve()
+    installSkillEnvInjection(ctx, async () => undefined, () => '/nonexistent-home')
+    await settle(registrations)
 
     expect(registrations).toHaveLength(1)
     const keys = Object.keys(registrations[0].variables)
@@ -143,5 +161,42 @@ describe('installSkillEnvInjection', () => {
     expect(keys).not.toContain('DSH_HOME') // HOME decl never shadows the built-in
     expect(keys).not.toContain('DSH_SHELL') // raw SHELL dropped
     expect(keys).not.toContain('DSH_SESSION_ID') // raw SESSION_ID dropped
+  })
+
+  it('injects credentials declared by a managed skill the scoped registry snapshot cannot see', async () => {
+    // A skill scoped to a non-default preset never appears in the catalog-scope
+    // snapshot; without the managed-root scan its keys would never inject.
+    const home = await mkdtemp(join(tmpdir(), 'catalog-shellenv-'))
+    try {
+      const dir = join(home, 'capability-catalog', 'skills', 'weread-skills')
+      await mkdir(dir, { recursive: true })
+      await writeFile(join(dir, 'SKILL.md'), [
+        '---',
+        'name: weread-skills',
+        'description: d',
+        'metadata:',
+        '  presetScope: [learning]',
+        '  credentials:',
+        '    - key: WEREAD_API_KEY',
+        '---',
+        '',
+        'body',
+        '',
+      ].join('\n'))
+      const registrations: Registration[] = []
+      const { ctx } = makeFakeCtx({
+        shellEnv: makeShellEnv(registrations),
+        credentials,
+        skills: makeSkills([]),
+      })
+      installSkillEnvInjection(ctx, async () => undefined, () => home)
+      await settle(registrations)
+
+      expect(registrations).toHaveLength(1)
+      expect(Object.keys(registrations[0].variables)).toEqual(['DSH_WEREAD_API_KEY'])
+      expect(registrations[0].resolve(undefined)).toEqual({ DSH_WEREAD_API_KEY: 'secret' })
+    } finally {
+      await rm(home, { recursive: true, force: true })
+    }
   })
 })

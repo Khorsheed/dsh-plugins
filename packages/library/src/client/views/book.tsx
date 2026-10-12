@@ -60,7 +60,6 @@ export function BookView({ p, projectId, bookId }: ViewProps & { projectId: stri
     <>
       <PanelHeader
         title={book?.title ?? ''}
-        meta={book?.edition}
         onBack={() => { actions.pop() }}
         backLabel={t('action.back')}
         actions={book === undefined ? [] : [
@@ -97,7 +96,7 @@ export function BookView({ p, projectId, bookId }: ViewProps & { projectId: stri
           />
         )}
         {book !== undefined && loaded.data?.roadmap !== undefined && (
-          <Path p={p} roadmap={loaded.data.roadmap} onOpen={node => { actions.push({ view: 'node', projectId, bookId, nodeId: node.id, tab: node.kind === 'read' ? 'guide' : 'quiz' }) }} />
+          <Path p={p} roadmap={loaded.data.roadmap} onOpen={node => { actions.push({ view: 'node', projectId, bookId, nodeId: node.id, tab: 'guide' }) }} />
         )}
         {book !== undefined && loaded.data?.roadmap === undefined && loaded.data?.draft === undefined && (
           <div className={css.empty}>
@@ -242,7 +241,6 @@ function Path({ p, roadmap, onOpen }: { p: ViewProps['p']; roadmap: LibraryRoadm
           </div>
         ))}
       </div>
-      <div className={css.legend}>{t('book.legend')}</div>
     </section>
   )
 }
@@ -507,12 +505,19 @@ function QuizTab({ p, projectId, bookId, node, passRatio, onPrime }: {
   }, [watching])
   const quizzes = useLoad(() => value(p.listQuizzes(projectId, bookId, node.id)), [projectId, bookId, node.id, rev, tick])
   const quizCount = quizzes.data?.quizzes.length ?? 0
+  // The quiz the learner is waiting for opens itself when it lands.
   useEffect(() => {
-    if (watching !== undefined && quizCount > watching.count) setWatching(undefined)
+    if (watching === undefined || quizCount <= watching.count) return
+    setWatching(undefined)
+    const landed = quizzes.data?.quizzes.at(-1)
+    if (landed !== undefined) actions.push({ view: 'quiz', projectId, bookId, quizId: landed.id })
   }, [quizCount, watching])
   const mine = useLoad(() => value(p.listCards({ projectId, nodeId: node.id, limit: 5 })), [projectId, node.id, rev])
   const stats = node.quizStats
   const mineCount = mine.data?.total ?? 0
+  const list = quizzes.data?.quizzes ?? []
+  const latest = list.at(-1)
+  const earlier = list.slice(0, -1).reverse()
   return (
     <>
       {node.state === 'locked' && <div className={css.notice}>{t('node.locked')}</div>}
@@ -521,15 +526,15 @@ function QuizTab({ p, projectId, bookId, node, passRatio, onPrime }: {
         {stats !== undefined && stats.attempts > 0 && ` · ${t('node.best', { percent: String(Math.round((stats.bestRatio ?? 0) * 100)), attempts: String(stats.attempts) })}`}
       </div>
       <StateLine loaded={quizzes} t={t} />
-      {(quizzes.data?.quizzes ?? []).slice().reverse().map(quiz => (
-        <ListRow
-          key={quiz.id}
-          title={t('node.quizRow', { count: String(quiz.questions.length) })}
-          meta={[t(`focus.${quiz.focus ?? 'mixed'}`), sourceMix(quiz.questions.map(question => question.evidence.kind), t)].join(' · ')}
-          trailing={<span className={css.linkText}>{t('quiz.start')}</span>}
-          onSelect={() => { actions.push({ view: 'quiz', projectId, bookId, quizId: quiz.id }) }}
-        />
-      ))}
+      {latest !== undefined && (
+        <section className={css.quizLatest}>
+          <div className={css.quizLatestText}>
+            <strong>{t('node.quizLatest', { count: String(latest.questions.length) })}</strong>
+            <span className={css.muted}>{[t(`focus.${latest.focus ?? 'mixed'}`), sourceMix(latest.questions.map(question => question.evidence.kind), t)].join(' · ')}</span>
+          </div>
+          <button type="button" className={css.primary} onClick={() => { actions.push({ view: 'quiz', projectId, bookId, quizId: latest.id }) }}>{t('quiz.startNow')}</button>
+        </section>
+      )}
       <section className={css.section}>
         <h3 className={css.sectionTitle}>{t('node.focusTitle')}</h3>
         <ChipRow
@@ -545,8 +550,22 @@ function QuizTab({ p, projectId, bookId, node, passRatio, onPrime }: {
         </div>
       </section>
       <div className={css.actions}>
-        <button type="button" className={(quizzes.data?.quizzes.length ?? 0) === 0 ? css.primary : css.secondary} onClick={() => { onPrime(focus); setWatching({ since: Date.now(), count: quizCount }) }}>{watching === undefined ? t('node.askQuiz') : t('node.quizWaiting')}</button>
+        <button type="button" className={latest === undefined ? css.primary : css.secondary} onClick={() => { onPrime(focus); setWatching({ since: Date.now(), count: quizCount }) }}>{watching === undefined ? t('node.askQuiz') : t('node.quizWaiting')}</button>
       </div>
+      {earlier.length > 0 && (
+        <section className={css.section}>
+          <h3 className={css.sectionTitle}>{t('node.quizEarlier')}</h3>
+          {earlier.map(quiz => (
+            <ListRow
+              key={quiz.id}
+              title={t('node.quizRow', { count: String(quiz.questions.length) })}
+              meta={[t(`focus.${quiz.focus ?? 'mixed'}`), sourceMix(quiz.questions.map(question => question.evidence.kind), t)].join(' · ')}
+              trailing={<span className={css.linkText}>{t('quiz.start')}</span>}
+              onSelect={() => { actions.push({ view: 'quiz', projectId, bookId, quizId: quiz.id }) }}
+            />
+          ))}
+        </section>
+      )}
     </>
   )
 }

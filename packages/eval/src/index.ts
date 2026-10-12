@@ -27,6 +27,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-jobs'
 import { EvalRemoteService } from './remote.ts'
 import { EvalService } from './service.ts'
+import type { ExecutionHomePort, ScopedHomeEvidenceFace } from './faces.ts'
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'eval'
 
@@ -48,15 +49,56 @@ declare module '@deepseek-ai/cordis' {
 }
 
 /**
+ * The optional plugin config. Unset everywhere keeps the legacy
+ * DSH_HOME-derived behavior byte-identical.
+ */
+export interface EvalConfig {
+  /**
+   * An instance-bound eval state root: experiments, the condition library and
+   * the per-run cell directories live under it instead of
+   * `$DSH_HOME/state/eval`, and a Remote `runStart` stateRoot must resolve
+   * under it. Nothing global is mutated — two instances mounted with two
+   * roots see disjoint state.
+   */
+  readonly stateRoot?: string
+  /**
+   * The execution target's scoped-home evidence face: provision, the
+   * readiness gate and the freshness checks consume the target's answers
+   * (home fingerprint, credential grade, effective settings, roster
+   * read-back, preset-copy digest) as plain data instead of reading local
+   * directories. Fail-closed by construction — a missing or invalid answer
+   * lands where the corresponding local failure lands today. Absent, the
+   * local facade/directory reads behave byte-identically.
+   */
+  readonly evidence?: ScopedHomeEvidenceFace
+  /**
+   * The execution-home port: the unit path's scoped-home resolution,
+   * availability verification and mount planning (`bind` or `volume`) come
+   * from the execution target; no management-host path is derived or
+   * consulted anywhere in the unit segment. When both this and `evidence`
+   * are mounted, the two are pinned by `homeIdentity` — a mismatch refuses
+   * the run before any unit is acquired. Absent, the unit path is the local
+   * `homeDir` + credential-dir check + `bind` mount, byte-identical.
+   */
+  readonly executionHome?: ExecutionHomePort
+}
+
+/**
  * Mount the eval service, its Remote face, and the run-job controller. The
  * `/eval` slash command and the model tools are deliberately NOT registered
  * here: both moved to the `./tool` composition row `@khorsheed/dsh-eval/tool`, which an
  * agent preset composes per session.
  * @param ctx - plugin context.
+ * @param config - optional instance binding; every field is additive and the
+ *   row boots without it.
  */
-export function apply(ctx: Context): void {
-  const service = new EvalService(ctx)
+export function apply(ctx: Context, config: EvalConfig = {}): void {
+  const service = new EvalService(ctx, config)
   ctx.provide('dshEval', service)
+  // The borrowed Context's teardown IS this instance's disposal: the run jobs
+  // it started are cancelled through their own AbortSignal, and every public
+  // verb refuses coded afterwards.
+  ctx.effect(() => () => { service.dispose() }, 'eval: dispose on context teardown')
   // The Typert Remote face (wire namespace `dshEval`): start / watch / stop a
   // run from outside a browser — the CI door. It mounts through the plugin
   // seam like every other Remote, so a composition without the Typert
@@ -75,7 +117,7 @@ export function apply(ctx: Context): void {
   })
 }
 
-export { EvalService, EvalContractError } from './service.ts'
+export { EvalService, EvalContractError, EvalDisposedError } from './service.ts'
 export { EvalRunRefused } from './service.ts'
 export { EvalFinalizeRefused, finalizeRun, skipCategoryOf, FINALIZE_FROM_STATE } from './run/finalize.ts'
 export type { FinalizeOptions, FinalizeReport, FinalizeCellOutcome, FinalizeSkipCategory } from './run/finalize.ts'
@@ -86,6 +128,9 @@ export type { ReadinessRecord, ReadinessSubject, ReadinessInput, ReadinessUnit }
 export { capabilityRefusal } from './run/readiness.ts'
 export { awaitObservedModel, DEFAULT_READBACK_WAIT_MS } from './run/readback.ts'
 export { EvalReadRefused } from './read.ts'
+/** The target-side evidence producer: the ScopedHomeEvidenceFace's answers, computed where the scoped home lives. */
+export { produceScopedHomeEvidence } from './evidence.ts'
+export type { ProducedScopedHomeEvidence } from './evidence.ts'
 /** The narrow write into one experiment's analysis/ (the analysis draft's door; I5·T39 · G16, T73). */
 export { ANALYSIS_WRITE_PREFIX, EvalWriteRefused, resolveAnalysisWrite, writeAnalysisFile } from './design/analysis-write.ts'
 export type { AnalysisWriteResult, AnalysisWriteTarget } from './design/analysis-write.ts'
@@ -172,7 +217,7 @@ export { runPlan, defaultStateRoot } from './run/run.ts'
 export { evalVersion } from './eval-version.ts'
 export {
   acquireSpecFor, checkCredentialsDir, claudeScopeDiagnostics, conditionOwnedComponents, conditionUnitDiagnostics, conditionUnitOf,
-  describeAcquireSpec, environmentClassComponents, planUnitOf, resolveCellUnit, unitUid,
+  describeAcquireSpec, environmentClassComponents, planScopedHomeMount, planUnitOf, resolveCellUnit, unitUid,
   DSH_CONTAINER_NODE_OPTIONS, UNIT_VERDICTS_DIR, UNIT_WORKSPACE,
 } from './run/unit.ts'
 export type { CellUnitPlan, ConditionOwnedComponents, ConditionUnitDecl, CredentialsCheck, PlanUnitDecl, ScopedConditionRef } from './run/unit.ts'
@@ -183,6 +228,9 @@ export type {
   DatasetsFace, DatasetsRegistryFace, MissionActionFace, MissionAnnotateFace, MissionExportFace,
   MissionFace, MissionFinalizeFace, MissionReadFace, MissionRunListFace, MissionStatusRow,
   LocalAgentFace, DelegationRun, DelegationResult, EvalDelegationOptions, MissionSubmitFile,
+  LocalAgentCredentialGrade, LocalAgentEffectiveSettingsFace,
+  ScopedHomeEvidenceFace, ScopedHomeHashEvidence, PresetSnapshotEvidence,
+  ExecutionHomePort, ScopedHomePlanRequest, ScopedHomePlan,
   LabFace, LabAcquireSpec, LabFingerprintComponents, LabMountSpec, LabPopulateResult, LabResourceLimits,
   LabUnitInfo, LabVerifyResult,
 } from './faces.ts'

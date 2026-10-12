@@ -576,6 +576,9 @@ export function packDist(options: PackDistOptions): string {
  *      Data mentions must never become manifest edges: a core↔companion pair
  *      declared in both directions forms a cycle that pnpm's build sequencer
  *      schedules into one concurrent chunk, which raced cold builds to death.
+ *      Generated typert faces (`lib/typert.*`) are exempt from this scan: they
+ *      embed the composition-wide merged type surface, so a sibling name there
+ *      is generated data no single manifest can declare.
  */
 export function verifyTarball(tarball: string, staging: string, selfName: string, devDeclared: Iterable<string> = []): void {
   const listing = execFileSync('tar', ['-tzf', tarball], { encoding: 'utf8' })
@@ -618,8 +621,17 @@ export function verifyTarball(tarball: string, staging: string, selfName: string
   // depending on it — declared here, never in a dependency field (a core and
   // its companion declared in both directions form a pnpm sequencing cycle).
   for (const name of manifest.dsh?.references ?? []) declared.add(name)
+  // Generated typert faces (lib/typert.host.*, lib/typert.remote-client.*) are
+  // exempt: the generator embeds the COMPOSITION-WIDE merged type surface —
+  // e.g. a MessageSourceMap whose message-source entries carry
+  // `plugin: '@khorsheed/...'` literals — into EVERY typert-faced package, so
+  // a sibling name there is generated composition data, not an edge this
+  // package chose, and no manifest field can honestly declare it (canvas must
+  // not depend on game). The one runtime import such a file makes (zod) is
+  // pinned by the dedicated typert-face check in rescopePackageJson.
+  const isGeneratedTypertFace = (file: string): boolean => basename(file).startsWith('typert.')
   const referenced = new Set<string>()
-  for (const file of walk(staging).filter(f => f.endsWith('.js') || f.endsWith('.d.ts') || f.endsWith('.yml'))) {
+  for (const file of walk(staging).filter(f => (f.endsWith('.js') || f.endsWith('.d.ts') || f.endsWith('.yml')) && !isGeneratedTypertFace(f))) {
     const text = readFileSync(file, 'utf8')
     // Comments are not edges: a patch or artifact may mention a companion by
     // name without depending on it (the host/client pair documents each other).

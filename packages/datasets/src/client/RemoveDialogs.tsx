@@ -24,8 +24,9 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { Button, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
-import type { DeletePlan, DiscardPlan, KeepReason, RemovalPlan } from '../types.ts'
+import type { DatasetsCapabilities, DeletePlan, DiscardPlan, KeepReason, RemovalPlan } from '../types.ts'
 import type { DatasetExperimentRow, DatasetsViewProps } from './contract.ts'
+import { capabilityOf } from './parts.tsx'
 import css from './Organize.module.css'
 
 /** How many experiment names the dialog lists before 「等 N 个」. */
@@ -125,6 +126,8 @@ export interface DeleteDialogProps {
   sets: readonly string[]
   /** eval's experiment rows; null when this instance has no eval. */
   experiments: readonly DatasetExperimentRow[] | null
+  /** This instance's gesture availability; null (unanswered) leaves every option visible. */
+  caps: DatasetsCapabilities | null
   loadPlan: (id: string) => Promise<RemoteResult<DeletePlan>>
   /** 「删除题集和文件」; resolves to an error message, or null when done. */
   onDelete: (id: string) => Promise<string | null>
@@ -139,13 +142,15 @@ export interface DeleteDialogProps {
  * @param props - see {@link DeleteDialogProps}.
  */
 export function DeleteDialog(props: DeleteDialogProps) {
-  const { id, sets, experiments, loadPlan, onDelete, onUnregister, onClose, t } = props
+  const { id, sets, experiments, caps, loadPlan, onDelete, onUnregister, onClose, t } = props
   const state = usePlan(id, loadPlan)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   useEffect(() => { setBusy(false); setError(null) }, [id])
   const plan = state.kind === 'ready' ? state.plan : null
   const deletable = plan?.files === 'delete'
+  const capDelete = capabilityOf(caps, 'delete')
+  const capRegistration = capabilityOf(caps, 'registration')
   const used = experiments === null || id === null
     ? null
     : registrationExperiments(experiments, id, plan === null ? sets : [...new Set([...sets, ...plan.sets])])
@@ -172,21 +177,29 @@ export function DeleteDialog(props: DeleteDialogProps) {
       footer={(
         <>
           <Button variant="outline" size="sm" onClick={onClose} disabled={busy}>{t('remove.cancel')}</Button>
+          {!capRegistration.available && <span className={css.help}>{capRegistration.reason}</span>}
+          {!capDelete.available && deletable && <span className={css.help}>{capDelete.reason}</span>}
           {deletable
             ? (
               <>
-                <Button variant="outline" size="sm" disabled={busy} onClick={() => { run(onUnregister) }}>
-                  {t('remove.unregisterOnly')}
-                </Button>
-                <Button size="sm" variant="outline" className={css.dangerButton as string} disabled={busy} onClick={() => { run(onDelete) }}>
-                  {busy ? t('remove.working') : t('remove.delete')}
-                </Button>
+                {capRegistration.available && (
+                  <Button variant="outline" size="sm" disabled={busy} onClick={() => { run(onUnregister) }}>
+                    {t('remove.unregisterOnly')}
+                  </Button>
+                )}
+                {capDelete.available && (
+                  <Button size="sm" variant="outline" className={css.dangerButton as string} disabled={busy} onClick={() => { run(onDelete) }}>
+                    {busy ? t('remove.working') : t('remove.delete')}
+                  </Button>
+                )}
               </>
             )
             : (
-              <Button size="sm" variant="primary" disabled={busy || state.kind === 'loading'} onClick={() => { run(onUnregister) }}>
-                {busy ? t('remove.working') : t('remove.unregister')}
-              </Button>
+              capRegistration.available && (
+                <Button size="sm" variant="primary" disabled={busy || state.kind === 'loading'} onClick={() => { run(onUnregister) }}>
+                  {busy ? t('remove.working') : t('remove.unregister')}
+                </Button>
+              )
             )}
         </>
       )}
@@ -232,6 +245,8 @@ export interface DiscardDialogProps {
   id: string | null
   /** The name it would have registered as (the banner's 「{name}」). */
   name: string
+  /** This instance's gesture availability; null (unanswered) leaves the confirm visible. */
+  caps: DatasetsCapabilities | null
   loadPlan: (id: string) => Promise<RemoteResult<DiscardPlan>>
   /** 「放弃」; resolves to an error message, or null when done. */
   onDiscard: (id: string) => Promise<string | null>
@@ -244,13 +259,14 @@ export interface DiscardDialogProps {
  * @param props - see {@link DiscardDialogProps}.
  */
 export function DiscardDialog(props: DiscardDialogProps) {
-  const { id, name, loadPlan, onDiscard, onClose, t } = props
+  const { id, name, caps, loadPlan, onDiscard, onClose, t } = props
   const state = usePlan(id, loadPlan)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   useEffect(() => { setBusy(false); setError(null) }, [id])
   const plan = state.kind === 'ready' ? state.plan : null
   const deletable = plan?.files === 'delete'
+  const capDelete = capabilityOf(caps, 'delete')
 
   const run = (): void => {
     if (id === null) return
@@ -273,17 +289,20 @@ export function DiscardDialog(props: DiscardDialogProps) {
       footer={(
         <>
           <Button variant="outline" size="sm" onClick={onClose} disabled={busy}>{t('remove.cancel')}</Button>
-          {deletable
-            ? (
-              <Button size="sm" variant="outline" className={css.dangerButton as string} disabled={busy} onClick={run}>
-                {busy ? t('remove.working') : t('discard.confirmDelete')}
-              </Button>
-            )
-            : (
-              <Button size="sm" variant="primary" disabled={busy || state.kind === 'loading'} onClick={run}>
-                {busy ? t('remove.working') : t('discard.confirm')}
-              </Button>
-            )}
+          {!capDelete.available && <span className={css.help}>{capDelete.reason}</span>}
+          {capDelete.available && (
+            deletable
+              ? (
+                <Button size="sm" variant="outline" className={css.dangerButton as string} disabled={busy} onClick={run}>
+                  {busy ? t('remove.working') : t('discard.confirmDelete')}
+                </Button>
+              )
+              : (
+                <Button size="sm" variant="primary" disabled={busy || state.kind === 'loading'} onClick={run}>
+                  {busy ? t('remove.working') : t('discard.confirm')}
+                </Button>
+              )
+          )}
         </>
       )}
     >

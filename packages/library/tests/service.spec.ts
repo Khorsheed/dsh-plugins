@@ -16,8 +16,8 @@ import type { LibraryQuizQuestion, LibraryTemplate } from '../src/types.ts'
 let root: string
 let service: LibraryService
 
-/** A ctx with no attachments service (the probe path reads as absent). */
-const ctx = { get: () => undefined } as unknown as Context
+/** A ctx with no attachments service (the probe path reads as absent); `effect` is a no-op here (teardown wiring is pinned against a real Context in capabilities-dispose.spec.ts). */
+const ctx = { get: () => undefined, effect: () => () => {} } as unknown as Context
 
 const photo = { attachmentId: 'att_p16', mediaType: 'image/jpeg', bytes: 1000, width: 1200, height: 1600 }
 
@@ -309,6 +309,16 @@ describe('quizzes: the two axes', () => {
     expect(!noUrl.ok && noUrl.message).toMatch(/url/)
   })
 
+  it('refuses a choice question whose answer matches no option, and takes a letter key', async () => {
+    const { projectId, bookId } = await seed()
+    const stray = await service.putQuiz({ projectId, quiz: { scope: { bookId }, questions: [question({ kind: 'choice', options: ['环绕', '限定'], answer: '征服' })] } })
+    expect(!stray.ok && stray.message).toMatch(/matches no option/)
+    const outOfRange = await service.putQuiz({ projectId, quiz: { scope: { bookId }, questions: [question({ kind: 'choice', options: ['环绕', '限定'], answer: 'D' })] } })
+    expect(!outOfRange.ok && outOfRange.message).toMatch(/matches no option/)
+    const lettered = await service.putQuiz({ projectId, quiz: { scope: { bookId }, questions: [question({ kind: 'choice', options: ['环绕', '限定'], answer: 'b. 限定' })] } })
+    expect(lettered.ok).toBe(true)
+  })
+
   it('warns when the scoped node is still locked', async () => {
     const { projectId, bookId } = await seed()
     await adopt(projectId, bookId)
@@ -370,6 +380,18 @@ describe('the assess cascade', () => {
     if (!retake.ok) throw new Error(retake.message)
     const passed = await service.putAttempt({ projectId, quizId: retake.quiz.id, verdicts: [{ task: 'q1', criterion: 'x', pass: true, evidence: 'y', by: 'llm' }] })
     expect(passed.ok && [passed.completed, passed.unlocked]).toEqual(['n1', ['n2']])
+  })
+})
+
+describe('activity', () => {
+  it('reports the newest event across projects, or nothing', async () => {
+    expect(await service.latestActivity()).toEqual({})
+    const { projectId } = await seed()
+    const first = await service.latestActivity()
+    expect(first.at).toBeDefined()
+    await service.writeCards({ projectId, cards: [{ kind: 'concept', term: '阈值', gloss: 'g', source: { type: 'chat' } }] })
+    const next = await service.latestActivity()
+    expect(next.at !== undefined && first.at !== undefined && next.at >= first.at).toBe(true)
   })
 })
 

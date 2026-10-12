@@ -270,7 +270,9 @@ function parseArguments(argumentsJson: string): Record<string, unknown> {
 
 /** Options for {@link BashWriteCollector}. */
 export interface BashWriteCollectorOptions {
-  fs: FileSystem
+  /** The fs face candidates resolve and stat through (the two members the
+   * collector reads from `ctx.fs`; any face honoring the same contract plugs in). */
+  fs: Pick<FileSystem, 'resolve' | 'stat'>
   env?: NodeJS.ProcessEnv
   home?: string
   /** Cap on captured writes per session (mirrors the fold's maxFiles). */
@@ -286,7 +288,7 @@ export interface BashWriteCollectorOptions {
  * regains captures without any durable state of its own.
  */
 export class BashWriteCollector {
-  readonly #fs: FileSystem
+  readonly #fs: Pick<FileSystem, 'resolve' | 'stat'>
   readonly #env: NodeJS.ProcessEnv
   readonly #home: string
   readonly #maxFiles: number
@@ -329,6 +331,53 @@ export class BashWriteCollector {
     return this.#captured.get(sessionId)
   }
 
+  /**
+   * Rebuild one session's captures from its own event snapshot — the
+   * snapshot-driven twin of the live feed's replay, for a caller that holds
+   * the session's events rather than a composition's event feed. The same
+   * extraction, expansion, and stat-verification pipeline runs in event
+   * order, every verification awaited, so the result mirrors what the live
+   * feed would have captured from the same events. Nothing is stored in the
+   * live registry: pending candidates and verified captures are local to the
+   * call.
+   * @param cwd - the session's cwd for relative write targets, or undefined.
+   * @param events - the session's events in ascending seq order.
+   * @returns the verified captures (undefined when none survived, mirroring
+   *   `captured`).
+   */
+  async replaySnapshot(cwd: string | undefined, events: readonly SessionEvent[]): Promise<ReadonlyMap<string, CapturedWrite> | undefined> {
+    const pending = new Map<string, PendingWrite>()
+    const captured = new Map<string, CapturedWrite>()
+    for (const event of events) {
+      if (event.type === 'tool/call') {
+        if (event.data.name !== 'bash') continue
+        const command = parseArguments(event.data.arguments).command
+        if (typeof command !== 'string' || command.length === 0) continue
+        const candidates = extractWriteTargets(command)
+          .map(token => expandShellPath(token, this.#env, this.#home, cwd))
+          .filter((path): path is string => path !== null)
+        if (candidates.length === 0) continue
+        pending.set(String(event.data.callId), {
+          turn: event.data.turn,
+          step: event.data.step,
+          seq: event.seq,
+          candidates,
+        })
+        continue
+      }
+      if (event.type === 'tool/result') {
+        const callId = String(event.data.message?.source?.callId ?? '')
+        const write = pending.get(callId)
+        if (write === undefined) continue
+        pending.delete(callId)
+        // Awaited in event order so the capture map's contents and insertion
+        // order are the deterministic twin of the live feed's.
+        await this.#verifyInto(captured, write)
+      }
+    }
+    return captured.size === 0 ? undefined : captured
+  }
+
   /** Rebuild one session's registry from its own history (host restart). */
   #replay(session: Session): void {
     this.#pending.set(session.id, new Map())
@@ -369,6 +418,12 @@ export class BashWriteCollector {
   /** stat-verify the pending candidates and store the survivors. */
   async #verify(session: Session, pending: PendingWrite): Promise<void> {
     const captured = this.#captured.get(session.id) ?? new Map<string, CapturedWrite>()
+    await this.#verifyInto(captured, pending)
+    if (captured.size > 0) this.#captured.set(session.id, captured)
+  }
+
+  /** stat-verify the pending candidates into the given capture map. */
+  async #verifyInto(captured: Map<string, CapturedWrite>, pending: PendingWrite): Promise<void> {
     for (const candidate of pending.candidates) {
       if (captured.size >= this.#maxFiles || captured.has(candidate)) continue
       let ok = false
@@ -383,6 +438,5 @@ export class BashWriteCollector {
         captured.set(candidate, { turn: pending.turn, step: pending.step, seq: pending.seq })
       }
     }
-    if (captured.size > 0) this.#captured.set(session.id, captured)
   }
 }

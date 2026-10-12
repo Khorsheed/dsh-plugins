@@ -225,6 +225,15 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
   const setView = useCallback((face: BoardFace) => { patchView(() => ({ face, faceChosen: true })) }, [patchView])
   const setScope = useCallback((next: string | null) => { patchView(() => ({ scope: next })) }, [patchView])
   const markEmpty = useCallback(() => { patchView(was => (was.empty ? {} : { empty: true })) }, [patchView])
+  // An ask from outside the tab (a genre's conversation card): once its
+  // canvas is the open one, show the face and press the scope it names.
+  const ask = selection.ask
+  const answeredAsk = useRef(0)
+  useEffect(() => {
+    if (ask === undefined || ask.n <= answeredAsk.current || ask.canvasId !== openId) return
+    answeredAsk.current = ask.n
+    setViews(all => ({ ...all, [ask.canvasId]: { ...(all[ask.canvasId] ?? FRESH_VIEW), face: ask.face, faceChosen: true, scope: ask.scope } }))
+  }, [ask, openId])
   const toggleShowArchived = useCallback(() => { patchView(was => ({ showArchived: !was.showArchived })) }, [patchView])
   const setWire = useCallback((next: BoardLink | null) => { patchView(() => ({ wire: next })) }, [patchView])
   const setZoom = useCallback((next: number) => { patchView(() => ({ zoom: next })) }, [patchView])
@@ -287,10 +296,8 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
       : { canvasId, rows })
   }, [])
   const openScopes = scopes !== null && scopes.canvasId === openId ? scopes.rows : []
-  const scopeIds = useMemo(() => {
-    const row = scope === null ? undefined : openScopes.find(candidate => candidate.id === scope)
-    return row === undefined ? undefined : new Set(row.cardIds)
-  }, [scope, openScopes])
+  const scopeRow = scope === null ? undefined : openScopes.find(candidate => candidate.id === scope)
+  const scopeIds = useMemo(() => scopeRow === undefined ? undefined : new Set(scopeRow.cardIds), [scopeRow])
   /** The open board's live (unarchived) cards: the scope counts count these. */
   const liveCardIds = useMemo(
     () => new Set((openBoard?.board.cards ?? []).filter(card => card.status !== 'archived').map(card => card.id)),
@@ -1300,6 +1307,7 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
                 newCard={boardReadonly ? undefined : newCardSlot}
                 front={front}
                 scopeIds={scopeIds}
+                scopeNotes={scopeRow?.notes}
                 onMarkAllSeen={boardReadonly ? undefined : () => { seeCards(openBoard.board.id) }}
               />
             )

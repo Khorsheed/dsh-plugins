@@ -15,6 +15,27 @@
 - **模型工具面**（`./tool` 组合入口，preset 按会话授予）：`library_read`、`library_write`、`library_assess`，用法写在工具描述里，拒收信息自带正确用法。可选 `hideSections` / `denyTools` 在该 scope 里静音根上无关的提示段与工具。
 - **自隐**：tab 类型按 canvas 双查判据注册，一切不可读路径 fail-open。
 
+## 工作区接入接缝（服务端消费）
+
+把本包挂到**隔离 Context + 独立 stateRoot** 上是受支持的消费方式：挂载方在自己的 Context 上以本包的 `apply` + `config.stateRoot` 起一份独立实例——状态全部按实例绑定（`<stateRoot>/state.json`、`bindings.json`、`projects/<项目 id>/`）；服务核心的动词都不需要会话（绑定以会话 id 为键，是数据，不是前提）。
+
+```ts
+import { apply } from '@khorsheed/dsh-library'
+
+apply(isolatedCtx, {
+  stateRoot: '/path/to/instance-state/library',
+})
+```
+
+挂载侧的义务与语义：
+
+- **`capabilities` 动词是展示契约**：`remote.library.capabilities()`（宿主侧 `service.capabilities()`）回答 `{ protocolVersion: 1, hasStorage, storageUnavailableReason?, hasAttachments }`——存储可写性与其原因（store 探测的原文）、附件存储在调用时刻的探测结果。只读展示：强制执行照旧发生在写边界（`storage-unavailable` / `unavailable` 拒收）；形状只增不改，新字段永远可选（reader 的演进规则）。
+- **附件按调用探测**：图像路由（`savePhoto` / `readPagePhoto`）每次调用都重新 `ctx.get('attachments')`；把实例挂在一个没有附件服务的 Context 上，这两条路由降级为 `unavailable` 拒收——绝不抛错，其余一切照常。
+- **状态根是部署本地路径**：存储走裸 `node:fs`（原子写 + 项目级锁 + append-only JSONL），刻意不经 `ctx.fs` 的会话沙箱。需要把状态放进某个被同步 / 共享的目录时，把 `stateRoot` 直接指到那个路径本身——实例不感知也不参与任何同步机制。
+- **文件锁跨实例真互斥**：同一 `stateRoot` 上并存（或先后）的实例靠 `projects/<id>.lock`、`state.json.lock`、`bindings.json.lock` 真正协调——一个实例持锁时另一个的写等待，锁释放后落盘，绝不写穿。
+- **dispose 终态 + 同根重建**：`dispose()` 幂等且终态，并随借入 Context 的销毁自动触发（构造时 `ctx.effect` 接线）——之后每个公开动词（含读取）都以带码的包名错误 `LibraryDisposedError`（`code: 'disposed'`）拒绝；与 dispose 竞态的写在拿到锁之前就被编码拒绝（盘侧本就有锁 / 临时写 / 原子改名兜底）。同根重建合法：同一 `stateRoot` 上新建服务实例照常工作，旧实例写入的数据都在。
+- **本地行为零变化**：除这些新增面之外，一切语义与之前逐字节一致。
+
 ## 安装
 
 ```sh

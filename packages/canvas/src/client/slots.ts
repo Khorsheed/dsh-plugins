@@ -52,6 +52,11 @@ export interface CanvasGenreOwnerProps {
 export interface CanvasNavService {
   /** Open the canvas tab and put `canvasId`'s row on a genre page. */
   openPage: (canvasId: string, page: string, heading: string, param?: string) => void
+  /**
+   * Open the canvas tab on `canvasId`'s board, on one face, with one of the
+   * genre's scopes pressed (null: 全部). Absent on older canvas builds.
+   */
+  openFace?: (canvasId: string, face: 'board' | 'link' | 'manuscripts' | 'view' | 'lead', scope: string | null) => void
 }
 
 declare module '@deepseek-ai/cordis' {
@@ -94,6 +99,17 @@ export interface CanvasCardScope {
    * question has no such way out — nothing would miss it).
    */
   readonly archiveFirst?: boolean
+  /**
+   * One line under a card while this scope is pressed (the novel's 最近更新:
+   * what the newest 对账 did to it), by card id.
+   */
+  readonly notes?: Readonly<Record<string, CanvasCardNote>>
+}
+
+/** A scope's line under one card: a short label (`新建`, `推进`) and the words after it. */
+export interface CanvasCardNote {
+  readonly label: string
+  readonly text?: string
 }
 
 /**

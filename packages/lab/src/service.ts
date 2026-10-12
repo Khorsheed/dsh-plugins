@@ -29,6 +29,16 @@ export interface LabServiceOptions {
   warn: (message: string) => void
   /** Directory for the authority-free fingerprint mirror; mirroring is skipped when unset. */
   stateDir?: string
+  /**
+   * Instance scope, stamped as the `dsh-lab.scope` resource label on every
+   * unit this instance acquires. When set, reconcile adopts ONLY units
+   * carrying this scope (pre-existing unscoped units are not adopted either),
+   * the held-unit ceiling counts in-scope units only, and a verb aimed at a
+   * unit outside the scope fails closed. When unset the behavior is the
+   * legacy full view: every managed unit is adopted, scoped ones included.
+   * `''` normalizes to unset.
+   */
+  scope?: string
   /** Clock hook (tests). */
   now?: () => number
   /** Unit id hook (tests). */
@@ -45,14 +55,23 @@ const TASK_HASH_PREFIX = 8
 export class LabService implements Lab {
   private readonly units = new Map<string, UnitInfo>()
   private readonly runningUnits = new Set<string>()
+  /**
+   * Units the latest reconcile saw but did not adopt because they sit outside
+   * this instance's scope (id → its scope label, `undefined` when the unit
+   * carries none) — kept so a refused verb can say WHY, instead of collapsing
+   * into "unknown unit". Always empty on an unscoped instance.
+   */
+  private readonly foreignUnits = new Map<string, string | undefined>()
   private reconciliation: Promise<void> | undefined
   private readonly now: () => number
   private readonly idgen: () => string
+  private readonly scope: string | undefined
 
   /** @param options - service wiring. */
   constructor(private readonly options: LabServiceOptions) {
     this.now = options.now ?? (() => Date.now())
     this.idgen = options.idgen ?? (() => randomBytes(4).toString('hex'))
+    this.scope = options.scope === undefined || options.scope === '' ? undefined : options.scope
   }
 
   async acquire(spec: AcquireSpec): Promise<UnitInfo> {
@@ -68,7 +87,7 @@ export class LabService implements Lab {
     }
     const fingerprint = await provider.fingerprint(spec)
     const id = this.idgen()
-    const resource = await provider.acquire(id, spec, fingerprint)
+    const resource = await provider.acquire(id, spec, fingerprint, this.scope)
     const info: UnitInfo = {
       id,
       provider: kind,
@@ -302,7 +321,7 @@ export class LabService implements Lab {
       }
       rows.push(row)
     }
-    if (unitId !== undefined && rows.length === 0) throw new Error(`lab: unknown unit ${JSON.stringify(unitId)}`)
+    if (unitId !== undefined && rows.length === 0) throw this.unknownUnitError(unitId)
     return rows
   }
 
@@ -332,7 +351,12 @@ export class LabService implements Lab {
     }
   }
 
-  /** Rebuild the registry from the providers' own labels (single-flight). */
+  /**
+   * Rebuild the registry from the providers' own labels (single-flight). A
+   * scoped instance adopts only units carrying its own `dsh-lab.scope` value
+   * — which also makes the acquire ceiling count in-scope units only, since
+   * foreign units never enter the registry.
+   */
   private reconcile(): Promise<void> {
     this.reconciliation ??= this.doReconcile()
     return this.reconciliation
@@ -340,8 +364,18 @@ export class LabService implements Lab {
 
   private async doReconcile(): Promise<void> {
     this.runningUnits.clear()
+    this.foreignUnits.clear()
     for (const provider of Object.values(this.options.providers)) {
       for (const managed of await provider.listManaged()) {
+        // A scoped instance adopts only its own scope's units — and pinned:
+        // NOT pre-existing unscoped units either, so a foreign or legacy unit
+        // can never be silently adopted into an instance that would then
+        // release it. An unscoped instance keeps the legacy full view and
+        // adopts everything, scoped units included.
+        if (this.scope !== undefined && managed.labels['dsh-lab.scope'] !== this.scope) {
+          this.foreignUnits.set(managed.id, managed.labels['dsh-lab.scope'])
+          continue
+        }
         if (managed.running) this.runningUnits.add(managed.id)
         if (this.units.has(managed.id)) continue
         const info: UnitInfo = {
@@ -395,10 +429,28 @@ export class LabService implements Lab {
   private async locate(unitId: string): Promise<{ unit: UnitInfo; provider: UnitProvider }> {
     await this.reconcile()
     const unit = this.units.get(unitId)
-    if (unit === undefined) throw new Error(`lab: unknown unit ${JSON.stringify(unitId)}`)
+    if (unit === undefined) throw this.unknownUnitError(unitId)
     const provider = this.options.providers[unit.provider]
     if (provider === undefined) throw new Error(`lab: no provider for kind ${JSON.stringify(unit.provider)}`)
     return { unit, provider }
+  }
+
+  /**
+   * The refusal for a unit this instance does not hold. A scoped instance
+   * distinguishes an out-of-scope unit (named, with the scope it carries)
+   * from one the daemon never reported — the refusal is the cross-scope
+   * fence, and it must say why rather than read as a typo.
+   */
+  private unknownUnitError(unitId: string): Error {
+    if (!this.foreignUnits.has(unitId)) return new Error(`lab: unknown unit ${JSON.stringify(unitId)}`)
+    const holder = this.foreignUnits.get(unitId)
+    const owned = holder === undefined
+      ? 'carries no scope label'
+      : `belongs to scope ${JSON.stringify(holder)}`
+    return new Error(
+      `lab: unit ${JSON.stringify(unitId)} ${owned} — this instance is scoped to ${JSON.stringify(this.scope ?? '')}`
+      + ' and touches only its own scope; an unscoped instance sees the whole daemon',
+    )
   }
 }
 

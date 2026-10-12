@@ -9,8 +9,8 @@
  * @module @khorsheed/dsh-capability-catalog/skills
  */
 
-import { readFile, readdir, rm, stat } from 'node:fs/promises'
-import { join, relative } from 'node:path'
+import { readFile, readdir, realpath, rm, stat } from 'node:fs/promises'
+import { join, relative, sep } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { hashSkillBody } from './capabilities.ts'
 import type {
@@ -225,7 +225,7 @@ export async function collectSkills(
 const SKIP_SKILL_DIRS = new Set(['.git', 'node_modules'])
 
 /** Recursively collect a directory's file paths relative to `root`. */
-async function collectSkillFiles(
+export async function collectSkillFiles(
   dir: string,
   root: string,
   out: string[],
@@ -250,7 +250,7 @@ async function collectSkillFiles(
 }
 
 /** Reject unsafe bundle-relative paths (absolute, drive-letter, or `..`). */
-function sanitizeBundlePath(path: string): string | undefined {
+export function sanitizeBundlePath(path: string): string | undefined {
   if (path === '' || path.startsWith('/') || /^[a-zA-Z]:/.test(path)) return undefined
   const safe: string[] = []
   for (const segment of path.split('/')) {
@@ -259,6 +259,29 @@ function sanitizeBundlePath(path: string): string | undefined {
     safe.push(segment)
   }
   return safe.length === 0 ? undefined : safe.join('/')
+}
+
+/**
+ * Resolve an already-sanitized bundle-relative path to its real on-disk
+ * target, refusing anything that escapes the bundle. {@link sanitizeBundlePath}
+ * has already removed the lexical escapes (absolute forms, drive letters,
+ * `..`); this closes what a lexical check cannot:
+ *
+ * - a symlink INSIDE the bundle whose target lives outside it (the bundle
+ *   directory is user content), and
+ * - a prefix collision — containment is a separator-terminated comparison on
+ *   realpaths, so `/root/foobar` never contain-matches `/root/foo`.
+ *
+ * @param bundleDir - the skill's bundle directory (its resource base).
+ * @param safe - a path that already passed {@link sanitizeBundlePath}.
+ * @returns the resolved absolute target, or undefined when the file is absent
+ *   or would escape the bundle.
+ */
+export async function resolveBundleTarget(bundleDir: string, safe: string): Promise<string | undefined> {
+  const base = await realpath(bundleDir).catch(() => bundleDir)
+  const target = await realpath(join(bundleDir, safe)).catch(() => undefined)
+  if (target === undefined || (target !== base && !target.startsWith(base + sep))) return undefined
+  return target
 }
 
 /** Read one skill-bundle file's text content, on demand. */
@@ -279,10 +302,10 @@ export async function readSkillFileContent(
   if (bundleDir === undefined) return undefined
   const safe = sanitizeBundlePath(filePath)
   if (safe === undefined) return undefined
-  const full = join(bundleDir, safe)
-  if (!full.startsWith(bundleDir)) return undefined
+  const target = await resolveBundleTarget(bundleDir, safe)
+  if (target === undefined) return undefined
   try {
-    const buf = await readFile(full)
+    const buf = await readFile(target)
     return { content: buf.toString('utf8') }
   } catch {
     return undefined
@@ -323,9 +346,14 @@ export async function loadSkillDetail(
   if (def === undefined) return undefined
   // metadata.credentials are the user-configurable secrets; env-var references
   // detected in the body are the agent's own runtime inputs (DSH_HOME etc.) and
-  // must NOT be offered as configurable credential forms — keep them apart.
+  // must NOT be offered as configurable credential forms — keep them apart. A
+  // body reference already declared as a credential renders in the credential
+  // form; repeating it as a read-only ref would show the same key twice.
   const metadataDecls = decodeCredentialDecls(def.metadata)
-  const environmentRefs = decodeEnvDecls(def.content).map((decl) => decl.key)
+  const declaredKeys = new Set(metadataDecls.map((decl) => decl.key))
+  const environmentRefs = decodeEnvDecls(def.content)
+    .map((decl) => decl.key)
+    .filter((key) => !declaredKeys.has(key))
   const { credentials } = resolveServices(ctx)
   let credentialStates: readonly CatalogCredentialState[] = []
   if (metadataDecls.length > 0 && credentials !== undefined) {

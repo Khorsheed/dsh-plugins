@@ -4,10 +4,10 @@
 
 ## 概览
 
-- 包总数:**43**
-- 自挂载 bundle(`dsh.bundle.patch`):**39**
+- 包总数:**44**
+- 自挂载 bundle(`dsh.bundle.patch`):**40**
 - 组合组件(不自挂载,`dsh.composition.component`):**4** — `preset-composed-row` 1、`source-plane-library` 2、`sub-profile-patch` 1
-- 带浏览器半边(`dsh.client`):**32**
+- 带浏览器半边(`dsh.client`):**33**
 - 整合 profile(默认安装单元):**3** — `basic`、`dev`、`web-eval`
 
 **安装单元是 profile,不是单包。** 单包安装是高级路径:自挂载包 `dsh plugin add <pkg>` 即可,
@@ -27,10 +27,12 @@
 | `@khorsheed/dsh-capability-catalog` | `packages/capability-catalog` | 0.1.98 | bundle | — | web | 0.1.5-rc.1 | basic, web-eval |
 | `@khorsheed/dsh-capture` | `packages/capture` | 0.1.2 | bundle | — | web | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-context-guard` | `packages/context-guard` | 0.2.4 | bundle | — | web | 0.1.2-rc.1 | basic, web-eval |
+| `@khorsheed/dsh-context-lens` | `packages/context-lens` | 0.1.0 | bundle | — | web | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-datasets` | `packages/datasets` | 0.2.0-rc.1 | bundle | — | web | 0.2.0-rc.2 | — |
 | `@khorsheed/dsh-reader` | `packages/dsh-reader` | 0.3.0 | bundle | — | web | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-eval` | `packages/eval` | 0.2.0-rc.1 | bundle | — | web | 0.2.0-rc.2 | — |
 | `@khorsheed/dsh-file-preview` | `packages/file-preview` | 0.4.1 | bundle | — | web | 0.1.5-rc.1 | basic, web-eval |
+| `@khorsheed/dsh-game` | `packages/game` | 0.1.0 | bundle | — | web | 0.2.0-rc.1 | — |
 | `@khorsheed/dsh-inline-html-render` | `packages/inline-html-render` | 0.1.15 | bundle | — | web | 0.1.2-rc.1 | basic, web-eval |
 | `@khorsheed/dsh-lab` | `packages/lab` | 0.2.0-rc.1 | bundle | — | — | 0.2.0-rc.2 | — |
 | `@khorsheed/dsh-library` | `packages/library` | 0.1.0 | bundle | — | web | 0.1.7-rc.1 | — |
@@ -45,9 +47,8 @@
 | `@khorsheed/dsh-client-message-tools` | `packages/message-tools` | 0.3.3 | bundle | — | web | 0.1.5-rc.1 | basic, web-eval |
 | `@khorsheed/dsh-mission` | `packages/mission` | 0.2.0-rc.1 | bundle | — | web | 0.2.0-rc.2 | — |
 | `@khorsheed/dsh-mobile` | `packages/mobile` | 0.1.3 | bundle | — | web | 0.1.5-rc.1 | basic |
-| `@khorsheed/dsh-presets` | `packages/presets` | 0.3.0 | bundle | — | — | 0.1.7-rc.1 | — |
+| `@khorsheed/dsh-presets` | `packages/presets` | 0.3.1 | bundle | — | — | 0.1.7-rc.1 | — |
 | `@khorsheed/dsh-quote` | `packages/quote` | 0.1.2 | bundle | — | web | 0.1.5-rc.1 | basic |
-| `@khorsheed/dsh-request-inspector` | `packages/request-inspector` | 0.1.0 | bundle | — | web | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-room` | `packages/room` | 0.2.1 | bundle | — | web | 0.1.5-rc.1 | dev |
 | `@khorsheed/dsh-client-session-title-edit` | `packages/session-title-edit` | 0.2.5 | bundle | — | web | 0.1.2-rc.1 | basic, web-eval |
 | `@khorsheed/dsh-sidechat` | `packages/sidechat` | 0.2.3 | bundle | — | web | 0.1.5-rc.1 | — |

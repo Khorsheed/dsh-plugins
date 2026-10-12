@@ -90,7 +90,7 @@ describe('the novel tools', () => {
   it('refuses a body before the plan is confirmed, and registers 用户原稿 with byUser', async () => {
     const { write } = await bench({ bound: true })
     expect(await call(write, { what: 'chapter', title: '新的一章', content: '抢跑。' })).toContain('正文只能写进已确认计划的章节')
-    expect(await call(write, { what: 'chapter', title: '新的一章', byUser: true, content: '我自己写的。' })).toContain('已建第')
+    expect(await call(write, { what: 'chapter', title: '新的一章', byUser: true, content: '我自己写的。' })).toContain(`已写入第 7 章《新的一章》正文（画布 ${DREAM.workId} · 6 字）`)
   })
 
   it('novel_read / novel_write carry no cards (canvas_read / canvas_write do); review is the pending queue only', async () => {
@@ -108,7 +108,7 @@ describe('the novel tools', () => {
       plan: { summary: '穿过第一层', beats: [{ text: '推门' }, { text: '回头', mark: '转折' }], foreshadowOps: [{ op: '推进', id: '#12', note: '门后第一层' }], cast: [{ who: 'c1' }] },
     })
     // The answer names the canvas: the conversation card opens the chapter page from it.
-    expect(created).toContain(`已登记第 7 章《回响》（画布 ${DREAM.workId}）plan：走向 2 拍 / 伏笔 1 条 / 出场 1 人。`)
+    expect(created).toContain(`已登记第 7 章《回响》（画布 ${DREAM.workId}）plan：情节 2 段 / 伏笔 1 条 / 出场 1 人。`)
     const replanned = await call(write, { what: 'chapter', chapter: 7, title: '回响·改', plan: { summary: '退回门缝' } })
     expect(replanned).toContain('第 7 章')
     expect(await call(write, { what: 'chapter', chapter: 7, title: '回响', plan: { goal: '旧形状' } })).toContain('至少要有 summary')

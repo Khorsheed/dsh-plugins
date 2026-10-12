@@ -13,13 +13,18 @@
  */
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
-import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { Agent, AgentOptions } from '@deepseek-ai/dsh-agent'
 import { FsError, type FsTarget, type FsVersion } from '@deepseek-ai/dsh-fs'
+import { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import { describe, expect, it, vi } from 'vitest'
-import { SideChatService } from '../src/service.ts'
+import {
+  type SideChatExecutionBackend, type SideChatExecutionCapabilities, type SideChatExecutionMessage,
+  type SideChatExecutionOpenInit, type SideChatExecutionSession,
+} from '../src/execution.ts'
+import { SideChatDisposedError, SideChatService } from '../src/service.ts'
 import { resolveSideChatStateRoot } from '../src/store.ts'
 import type { SideChatContextsDoc } from '../src/types.ts'
 
@@ -146,6 +151,7 @@ interface FakeAgentRec {
   readonly events: SessionEvent[]
   readonly scopeKit: ReturnType<typeof fakeScope>
   readonly followup: ReturnType<typeof vi.fn>
+  readonly cancel: ReturnType<typeof vi.fn>
 }
 
 function makeAgentRec(id: string, cwd: string | undefined): FakeAgentRec {
@@ -158,8 +164,9 @@ function makeAgentRec(id: string, cwd: string | undefined): FakeAgentRec {
     const text = message.content.filter(block => block.type === 'text').map(block => block.text ?? '').join('\n')
     events.push(userEvent(text, events.length + 1))
   })
-  const agent = { session, status: 'idle', ctx: scopeKit.scope, followup, whenIdle: async () => {} } as unknown as Agent
-  return { id, agent, session, events, scopeKit, followup }
+  const cancel = vi.fn()
+  const agent = { session, status: 'idle', ctx: scopeKit.scope, followup, cancel, whenIdle: async () => {} } as unknown as Agent
+  return { id, agent, session, events, scopeKit, followup, cancel }
 }
 
 /** The fake agents registry: runs the create/resume setup like the real factory. */
@@ -168,12 +175,20 @@ function fakeAgents() {
   const created: Array<{ sessionId: string; meta?: { cwd?: string; agentPreset?: string }; agentOptions?: unknown }> = []
   const resumed: string[] = []
   const resumedOpts: Array<{ agentOptions?: unknown }> = []
+  /** Handles the service disposed, in order (both disposeAgents and the late-handle race guard land here). */
+  const disposed: string[] = []
   let failCreate: Error | undefined
   let failResume: Error | undefined
+  let holdCreate: Promise<void> | undefined
   const agents = {
     get: (id: SessionId) => live.get(String(id))?.agent,
     create: vi.fn(async (opts: { sessionId: SessionId; meta?: { cwd?: string; agentPreset?: string }; agentOptions?: unknown; setup?: (ctx: unknown, agent: Agent) => Promise<void> }) => {
       if (failCreate !== undefined) throw failCreate
+      if (holdCreate !== undefined) {
+        const hold = holdCreate
+        holdCreate = undefined
+        await hold
+      }
       const rec = makeAgentRec(String(opts.sessionId), opts.meta?.cwd)
       await opts.setup?.(rec.scopeKit.scope, rec.agent)
       live.set(rec.id, rec)
@@ -182,7 +197,7 @@ function fakeAgents() {
         ...(opts.meta === undefined ? {} : { meta: opts.meta }),
         ...(opts.agentOptions === undefined ? {} : { agentOptions: opts.agentOptions }),
       })
-      return { agent: rec.agent, dispose: async () => { live.delete(rec.id) } }
+      return { agent: rec.agent, dispose: async () => { live.delete(rec.id); disposed.push(rec.id) } }
     }),
     resume: vi.fn(async (opts: { resumeSessionId: SessionId; agentOptions?: unknown; setup?: (ctx: unknown, agent: Agent) => Promise<void> }) => {
       if (failResume !== undefined) throw failResume
@@ -191,7 +206,7 @@ function fakeAgents() {
       live.set(rec.id, rec)
       resumed.push(rec.id)
       resumedOpts.push({ ...(opts.agentOptions === undefined ? {} : { agentOptions: opts.agentOptions }) })
-      return { agent: rec.agent, dispose: async () => { live.delete(rec.id) } }
+      return { agent: rec.agent, dispose: async () => { live.delete(rec.id); disposed.push(rec.id) } }
     }),
   }
   return {
@@ -200,9 +215,16 @@ function fakeAgents() {
     created,
     resumed,
     resumedOpts,
+    disposed,
     recOf: (id: string) => live.get(id),
     failNextCreate(error: Error): void { failCreate = error },
     failNextResume(error: Error): void { failResume = error },
+    /** Gate the next create on a manual release (the spawn/dispose race bench). */
+    holdNextCreate(): () => void {
+      let release!: () => void
+      holdCreate = new Promise<void>(resolve => { release = resolve })
+      return release
+    },
   }
 }
 
@@ -230,6 +252,7 @@ function bench(opts: {
   callingHeader?: { provider: string; model: string; reasoningEffort?: string }
   callingPreset?: string
   defaultModel?: { provider: string; model: string; reasoningEffort?: string }
+  config?: { agentRoute?: AgentOptions; cwd?: string }
 } = {}): Bench {
   const ctx = new Context()
   const fs = opts.fs === null ? undefined : (opts.fs ?? new FakeFs())
@@ -277,7 +300,7 @@ function bench(opts: {
       requestHeader: () => opts.callingHeader === undefined ? undefined : { config: { ...opts.callingHeader } },
     },
   } as unknown as Agent
-  const service = new SideChatService(ctx, { stateRoot: STATE_ROOT })
+  const service = new SideChatService(ctx, { stateRoot: STATE_ROOT, ...opts.config })
   return { service, fs: fs as FakeFs, agentsKit, sessions, calling, callingEvents, persistence, resolveCalls }
 }
 
@@ -658,6 +681,431 @@ describe('SideChatService — the openWith revision (the surfacer signal)', () =
     fs.seed(DOC_PATH, JSON.stringify({ version: 1, contexts: [{ contextKey: 'old', label: 'o', refs: [], createdAt: 't', updatedAt: 't' }] }))
     const third = bench({ fs })
     expect(await third.service.surfaceHints()).toEqual({ items: [{ contextKey: 'old', rev: 0 }] })
+  })
+})
+
+describe('SideChatService — the explicit route and cwd anchors (config seam)', () => {
+  it('wins over both the calling header and the deployment default when set', async () => {
+    const { service, agentsKit, calling } = bench({
+      callingHeader: { provider: 'p-call', model: 'm-call' },
+      defaultModel: { provider: 'p-default', model: 'm-default' },
+      config: { agentRoute: { provider: 'p-explicit', model: 'm-explicit', reasoningEffort: ReasoningEffortId('high') } },
+    })
+    await service.send(calling, { contextKey: 'k', text: '问' })
+    expect(agentsKit.created[0]!.agentOptions).toEqual({ provider: 'p-explicit', model: 'm-explicit', reasoningEffort: 'high' })
+  })
+
+  it('reads an unusable explicit route as unset (the legacy chain runs byte-identical)', async () => {
+    const { service, agentsKit, calling } = bench({
+      callingHeader: { provider: 'p-call', model: 'm-call' },
+      config: { agentRoute: { provider: '', model: '' } },
+    })
+    await service.send(calling, { contextKey: 'k', text: '问' })
+    expect(agentsKit.created[0]!.agentOptions).toEqual({ provider: 'p-call', model: 'm-call' })
+  })
+
+  it('wins the cwd over both the source session and the calling session when set', async () => {
+    const { service, agentsKit, sessions, calling } = bench({ presets: true, config: { cwd: '/home/user/anchor' } })
+    sessions.set('s-main', fakeSession('s-main', SOURCE_CWD))
+    await service.send(calling, { contextKey: 's-main', text: '问' })
+    expect(agentsKit.created[0]!.meta).toMatchObject({ cwd: '/home/user/anchor' })
+  })
+
+  it('sends without a calling agent once the explicit route resolves (fenced with no session)', async () => {
+    const { service, agentsKit, fs } = bench({
+      config: { agentRoute: { provider: 'p-explicit', model: 'm-explicit' }, cwd: '/home/user/anchor' },
+    })
+    const outcome = await service.send(undefined, { contextKey: 'k', text: '问' })
+    expect(outcome.ok).toBe(true)
+    expect(agentsKit.created[0]!.agentOptions).toEqual({ provider: 'p-explicit', model: 'm-explicit' })
+    expect(agentsKit.created[0]!.meta).toMatchObject({ cwd: '/home/user/anchor' })
+    // No calling session: the write fences like a host-side openWith — the deployment mode, no session id.
+    expect(fs.policies.length).toBeGreaterThan(0)
+    for (const policy of fs.policies) {
+      expect(policy).toMatchObject({ mode: 'workspace-write', workspaceRoot: STATE_ROOT })
+      expect(policy?.sessionId).toBeUndefined()
+    }
+  })
+
+  it('sends without a calling agent through the deployment-default route', async () => {
+    const { service, agentsKit } = bench({ defaultModel: { provider: 'p-default', model: 'm-default' } })
+    const outcome = await service.send(undefined, { contextKey: 'k', text: '问' })
+    expect(outcome.ok).toBe(true)
+    expect(agentsKit.created[0]!.agentOptions).toEqual({ provider: 'p-default', model: 'm-default' })
+  })
+
+  it('refuses a calling-less send with agent-unavailable when no route resolves', async () => {
+    const { service, agentsKit } = bench()
+    expect(await service.send(undefined, { contextKey: 'k', text: '问' })).toEqual({ ok: false, error: 'agent-unavailable' })
+    expect(agentsKit.created).toHaveLength(0)
+  })
+})
+
+describe('SideChatService — disposal (the terminal guard)', () => {
+  it('refuses every public verb with the coded package error after disposeAgents', async () => {
+    const { service, agentsKit, calling } = bench()
+    await service.send(calling, { contextKey: 'k', text: '一' })
+    const recId = agentsKit.created[0]!.sessionId
+    await service.disposeAgents()
+    expect(agentsKit.disposed).toEqual([recId])
+    await expect(service.openWith({ contextKey: 'k', label: 'k' })).rejects.toBeInstanceOf(SideChatDisposedError)
+    await expect(service.getState('k')).rejects.toBeInstanceOf(SideChatDisposedError)
+    await expect(service.listContexts()).rejects.toBeInstanceOf(SideChatDisposedError)
+    await expect(service.surfaceHints()).rejects.toBeInstanceOf(SideChatDisposedError)
+    await expect(service.send(calling, { contextKey: 'k', text: '二' })).rejects.toBeInstanceOf(SideChatDisposedError)
+    await expect(service.quoteMessage(calling, { messageId: 'm1' })).rejects.toBeInstanceOf(SideChatDisposedError)
+    // Coded and package-named — never a bare throw of arbitrary shape.
+    const error = await service.getState('k').catch((caught: unknown) => caught)
+    expect(error).toMatchObject({ name: 'SideChatDisposedError', code: 'disposed' })
+  })
+
+  it('is idempotent across repeated disposeAgents calls', async () => {
+    const { service, agentsKit, calling } = bench()
+    await service.send(calling, { contextKey: 'k', text: '一' })
+    await service.disposeAgents()
+    await service.disposeAgents()
+    expect(agentsKit.disposed).toHaveLength(1)
+  })
+
+  it('an in-flight spawn racing disposal leaks no handle and refuses the caller', async () => {
+    const { service, agentsKit, calling } = bench()
+    const release = agentsKit.holdNextCreate()
+    const sending = service.send(calling, { contextKey: 'k', text: '问' })
+    const refused = expect(sending).rejects.toBeInstanceOf(SideChatDisposedError)
+    await vi.waitFor(() => { expect(agentsKit.agents.create).toHaveBeenCalledTimes(1) })
+    // Disposal lands while the create is still in flight: the owned set is empty.
+    await service.disposeAgents()
+    release()
+    await refused
+    // The late handle was disposed on arrival — exactly once, never leaked.
+    expect(agentsKit.created).toHaveLength(1)
+    expect(agentsKit.disposed).toEqual([agentsKit.created[0]!.sessionId])
+    expect(agentsKit.live.size).toBe(0)
+    await service.disposeAgents()
+    expect(agentsKit.disposed).toHaveLength(1)
+  })
+
+  it('a same-root rebuild after dispose works (the disposed instance alone stays dead)', async () => {
+    const fs = new FakeFs()
+    const first = bench({ fs })
+    await first.service.send(first.calling, { contextKey: 'k', text: '一' })
+    await first.service.disposeAgents()
+    await expect(first.service.getState('k')).rejects.toBeInstanceOf(SideChatDisposedError)
+    // A NEW service instance over the same state root is ordinary business.
+    const second = bench({ fs, coldEvents: [userEvent('一', 1)] })
+    expect(await second.service.listContexts()).toMatchObject({ items: [{ contextKey: 'k', status: 'cold' }] })
+    expect((await second.service.send(second.calling, { contextKey: 'k', text: '二' })).ok).toBe(true)
+    expect(second.agentsKit.resumed).toHaveLength(1)
+  })
+})
+
+/* ------------------------------------------------------- the backend port */
+
+/** One fake execution session the fake backend opened (events are SHARED with the persisted log, like a real one). */
+interface FakeExecRec {
+  readonly init: SideChatExecutionOpenInit
+  status: 'idle' | 'running'
+  readonly events: SessionEvent[]
+  readonly sent: SideChatExecutionMessage[]
+  readonly syncTools: ReturnType<typeof vi.fn>
+  readonly cancel: ReturnType<typeof vi.fn>
+  releases: number
+}
+
+/**
+ * The fake execution backend: an own little execution world (live sessions +
+ * a persisted event log), with a per-capability switchboard. `ctx.agents`
+ * never participates — the bench mounts a throwing stub for it.
+ */
+function fakeBackend(opts: { capabilities?: Partial<SideChatExecutionCapabilities> } = {}) {
+  const capabilities: SideChatExecutionCapabilities = {
+    presets: true, promptContext: true, callerTools: true, cancel: true, coldRead: true,
+    ...opts.capabilities,
+  }
+  const opened: SideChatExecutionOpenInit[] = []
+  const coldReads: string[] = []
+  const recs: FakeExecRec[] = []
+  const live = new Map<string, FakeExecRec>()
+  const persisted = new Map<string, SessionEvent[]>()
+  let holdOpen: Promise<void> | undefined
+  const open = vi.fn(async (init: SideChatExecutionOpenInit): Promise<SideChatExecutionSession> => {
+    if (holdOpen !== undefined) {
+      const hold = holdOpen
+      holdOpen = undefined
+      await hold
+    }
+    let events = persisted.get(init.sessionId)
+    if (init.resume) {
+      if (events === undefined) throw new Error('torn log')
+    } else {
+      events = []
+      persisted.set(init.sessionId, events)
+    }
+    const rec: FakeExecRec = {
+      init, status: 'idle', events, sent: [], syncTools: vi.fn(), cancel: vi.fn(), releases: 0,
+    }
+    recs.push(rec)
+    live.set(init.sessionId, rec)
+    opened.push(init)
+    return {
+      sessionId: init.sessionId,
+      ...(init.resume || init.presetId === undefined ? {} : { resolvedPresetId: init.presetId }),
+      get status() { return rec.status },
+      events: () => [...rec.events],
+      send: (message: SideChatExecutionMessage) => {
+        rec.sent.push(message)
+        rec.events.push(userEvent(message.text, rec.events.length + 1))
+      },
+      syncTools: rec.syncTools as () => void,
+      cancel: rec.cancel as () => void,
+      release: async () => { rec.releases += 1; live.delete(init.sessionId) },
+    }
+  })
+  const backend: SideChatExecutionBackend = {
+    capabilities,
+    open,
+    readCold: async (sessionId: string) => {
+      coldReads.push(sessionId)
+      return persisted.get(sessionId)
+    },
+  }
+  return {
+    backend,
+    open,
+    opened,
+    coldReads,
+    recs,
+    live,
+    recOf: (sessionId: string) => live.get(sessionId),
+    /** Gate the next open on a manual release (the open/dispose race bench). */
+    holdNextOpen(): () => void {
+      let release!: () => void
+      holdOpen = new Promise<void>(resolve => { release = resolve })
+      return release
+    },
+  }
+}
+
+/**
+ * Mount the service over an INJECTED backend. `ctx.agents` and
+ * `sessionPersistence` are throwing stubs: any touch of the host execution
+ * world fails the test on the spot. `agentDefaultModel` can be a throwing
+ * stub too (the no-deployment-defaults rule).
+ */
+function benchBackend(opts: {
+  fs?: FakeFs
+  kit?: ReturnType<typeof fakeBackend>
+  capabilities?: Partial<SideChatExecutionCapabilities>
+  callingHeader?: { provider: string; model: string; reasoningEffort?: string }
+  callingPreset?: string
+  config?: { agentRoute?: AgentOptions; cwd?: string; agentPreset?: string }
+  defaultModelThrows?: boolean
+} = {}) {
+  const ctx = new Context()
+  const fs = opts.fs ?? new FakeFs()
+  const kit = opts.kit ?? fakeBackend({ capabilities: opts.capabilities })
+  const buster = (): never => { throw new Error('sidechat: the host execution world must not be touched with an injected backend') }
+  ctx.provide('agents', { get: buster, create: buster, resume: buster } as never)
+  ctx.provide('sessionPersistence', { open: buster } as never)
+  const sessions = new Map<string, Session>()
+  ctx.provide('sessions', { get: (id: SessionId) => sessions.get(String(id)) } as never)
+  ctx.provide('fs', fs as never)
+  ctx.provide('sandboxPolicy', fakeSandboxPolicy() as never)
+  if (opts.defaultModelThrows === true) {
+    ctx.provide('agentDefaultModel', { currentSelection: buster } as never)
+  }
+  const calling = {
+    session: {
+      id: 's-main',
+      header: { cwd: SOURCE_CWD, ...opts.callingPreset === undefined ? {} : { agentPreset: opts.callingPreset } },
+      snapshotEvents: () => [] as SessionEvent[],
+      requestHeader: () => opts.callingHeader === undefined ? undefined : { config: { ...opts.callingHeader } },
+    },
+  } as unknown as Agent
+  const service = new SideChatService(ctx, { stateRoot: STATE_ROOT, ...opts.config, executionBackend: kit.backend })
+  return { service, fs, kit, sessions, calling }
+}
+
+describe('SideChatService — the execution backend port (injected target)', () => {
+  it('drives open/send/read/release through the port', async () => {
+    const { service, kit, calling } = benchBackend()
+    const outcome = await service.send(calling, { contextKey: 'k', text: '问' })
+    expect(outcome.ok).toBe(true)
+    expect(kit.opened).toHaveLength(1)
+    expect(kit.opened[0]).toMatchObject({ contextKey: 'k', resume: false })
+    const rec = kit.recs[0]!
+    expect(rec.sent).toHaveLength(1)
+    expect(rec.sent[0]).toMatchObject({ text: '问', source: { kind: 'sidechat' } })
+    // The live read projects the session's own events.
+    const state = await service.getState('k')
+    expect(state).toMatchObject({ ok: true, state: { status: 'idle', transcript: [{ kind: 'user', text: '问' }] } })
+    // Release lands on dispose, exactly once.
+    await service.disposeAgents()
+    expect(rec.releases).toBe(1)
+  })
+
+  it('carries the resolved route, preset and cwd in the open payload (explicit config wins) and records the backend-resolved preset', async () => {
+    const { service, fs, kit, calling } = benchBackend({
+      callingHeader: { provider: 'p-call', model: 'm-call' },
+      callingPreset: 'p-call-preset',
+      config: {
+        agentRoute: { provider: 'p-explicit', model: 'm-explicit', reasoningEffort: ReasoningEffortId('high') },
+        agentPreset: 'p-config',
+        cwd: '/home/user/anchor',
+      },
+    })
+    await service.send(calling, { contextKey: 'k', text: '问' })
+    expect(kit.opened[0]).toMatchObject({
+      route: { provider: 'p-explicit', model: 'm-explicit', reasoningEffort: 'high' },
+      presetId: 'p-call-preset',
+      cwd: '/home/user/anchor',
+    })
+    const doc = docOf(fs)
+    expect(doc.contexts[0]).toMatchObject({ sessionId: kit.opened[0]!.sessionId, agentPreset: 'p-call-preset' })
+  })
+
+  it('never probes the deployment default with an injected backend (the backend owns routing)', async () => {
+    const { service, kit, calling } = benchBackend({ defaultModelThrows: true })
+    await service.send(calling, { contextKey: 'k', text: '问' })
+    expect(kit.opened[0]!.route).toBeUndefined()
+  })
+
+  it('a calling-less send with no route resolves through an injected backend', async () => {
+    const { service, kit } = benchBackend({ defaultModelThrows: true })
+    const outcome = await service.send(undefined, { contextKey: 'k', text: '问' })
+    expect(outcome.ok).toBe(true)
+    expect(kit.opened[0]!.route).toBeUndefined()
+  })
+
+  it('cold reads come from the backend — never a resume, never host persistence', async () => {
+    const fs = new FakeFs()
+    const kit = fakeBackend()
+    const first = benchBackend({ fs, kit })
+    await first.service.send(first.calling, { contextKey: 'k', text: '重启前' })
+    const sessionId = kit.opened[0]!.sessionId
+    await first.service.disposeAgents()
+    // A rebuild over the same root: the cold read goes to the backend, no open fires.
+    const second = benchBackend({ fs, kit })
+    const opensBefore = kit.opened.length
+    const state = await second.service.getState('k')
+    expect(state).toMatchObject({ ok: true, state: { status: 'cold', transcript: [{ kind: 'user', text: '重启前' }] } })
+    expect(kit.opened).toHaveLength(opensBefore)
+    expect(kit.coldReads).toEqual([sessionId])
+  })
+
+  it('a same-root rebuild resumes through the injected backend', async () => {
+    const fs = new FakeFs()
+    const kit = fakeBackend()
+    const first = benchBackend({ fs, kit })
+    await first.service.send(first.calling, { contextKey: 'k', text: '一' })
+    const sessionId = kit.opened[0]!.sessionId
+    await first.service.disposeAgents()
+    const second = benchBackend({ fs, kit })
+    const sent = await second.service.send(second.calling, { contextKey: 'k', text: '二' })
+    expect(sent.ok).toBe(true)
+    expect(kit.opened).toHaveLength(2)
+    expect(kit.opened[1]).toMatchObject({ sessionId, resume: true })
+    const state = await second.service.getState('k')
+    expect(state).toMatchObject({ ok: true, state: { transcript: [{ kind: 'user', text: '一' }, { kind: 'user', text: '二' }] } })
+  })
+
+  it('an in-flight open racing disposal releases the late session and refuses the caller', async () => {
+    const { service, kit, calling } = benchBackend()
+    const release = kit.holdNextOpen()
+    const sending = service.send(calling, { contextKey: 'k', text: '问' })
+    const refused = expect(sending).rejects.toBeInstanceOf(SideChatDisposedError)
+    await vi.waitFor(() => { expect(kit.open).toHaveBeenCalledTimes(1) })
+    await service.disposeAgents()
+    release()
+    await refused
+    // The late session was released on arrival — exactly once, never leaked.
+    expect(kit.recs).toHaveLength(1)
+    expect(kit.recs[0]!.releases).toBe(1)
+    expect(kit.live.size).toBe(0)
+    await service.disposeAgents()
+    expect(kit.recs[0]!.releases).toBe(1)
+  })
+})
+
+describe('SideChatService — backend capabilities degrade, never crash', () => {
+  it('skips the caller-tool sync silently when the backend declares no callerTools', async () => {
+    const { service, kit, calling } = benchBackend({ capabilities: { callerTools: false } })
+    const tool = { name: 'canvas_read', description: 'v1' } as unknown as ToolDefinition
+    await service.openWith({ contextKey: 'k', label: 'k', tools: [tool] })
+    await service.send(calling, { contextKey: 'k', text: '问' })
+    await service.openWith({ contextKey: 'k', label: 'k', tools: [tool] })
+    expect(kit.recs[0]!.syncTools).not.toHaveBeenCalled()
+  })
+
+  it('refuses the stop gesture coded when the backend declares no cancel', async () => {
+    const { service, kit, calling } = benchBackend({ capabilities: { cancel: false } })
+    await service.send(calling, { contextKey: 'k', text: '问' })
+    kit.recs[0]!.status = 'running'
+    expect(await service.stop('k')).toEqual({ ok: false, error: 'cancel-unsupported' })
+    expect(kit.recs[0]!.cancel).not.toHaveBeenCalled()
+  })
+
+  it('answers the honest unknown on cold reads when the backend declares no coldRead', async () => {
+    const fs = new FakeFs()
+    const kit = fakeBackend()
+    const first = benchBackend({ fs, kit })
+    await first.service.send(first.calling, { contextKey: 'k', text: '重启前' })
+    await first.service.disposeAgents()
+    const blind = benchBackend({ fs, kit: fakeBackend({ capabilities: { coldRead: false } }) })
+    expect(await blind.service.getState('k')).toMatchObject({
+      ok: true,
+      state: { status: 'cold', transcript: [], lastError: null },
+    })
+    expect(blind.kit.coldReads).toHaveLength(0)
+    expect(await blind.service.listContexts()).toMatchObject({
+      items: [{ contextKey: 'k', status: 'cold', lastAssistantAt: null, lastActivityAt: null }],
+    })
+  })
+
+  it('passes the full open payload regardless of declared capabilities (the backend chooses)', async () => {
+    const tool = { name: 't', description: 'd' } as unknown as ToolDefinition
+    const { service, kit, calling } = benchBackend({
+      capabilities: { presets: false, promptContext: false, callerTools: false, cancel: false, coldRead: false },
+      callingPreset: 'p-call',
+      config: { agentRoute: { provider: 'p', model: 'm' }, cwd: '/home/user/anchor' },
+    })
+    await service.openWith({ contextKey: 'k', label: 'k', systemPrompt: '段', tools: [tool] })
+    await service.send(calling, { contextKey: 'k', text: '问' })
+    const init = kit.opened[0]!
+    expect(init).toMatchObject({ route: { provider: 'p', model: 'm' }, presetId: 'p-call', cwd: '/home/user/anchor' })
+    expect(init.segmentText()).toContain('side-chat agent')
+    expect(init.segmentText()).toContain('段')
+    expect(init.tools()).toEqual([tool])
+  })
+})
+
+describe('SideChatService — the stop gesture (host-side only)', () => {
+  it('cancels a running turn through the port, with coded refusals otherwise', async () => {
+    const { service, kit, calling } = benchBackend()
+    await service.send(calling, { contextKey: 'k', text: '问' })
+    const rec = kit.recs[0]!
+    expect(await service.stop('k')).toEqual({ ok: false, error: 'not-running' })
+    rec.status = 'running'
+    expect(await service.stop('k')).toEqual({ ok: true })
+    expect(rec.cancel).toHaveBeenCalledTimes(1)
+    expect(await service.stop('nobody')).toEqual({ ok: false, error: 'not-found' })
+  })
+
+  it('stops through the default backend via the live agent\'s own cancel', async () => {
+    const { service, agentsKit, calling } = bench()
+    await service.send(calling, { contextKey: 'k', text: '问' })
+    const rec = agentsKit.live.values().next().value as FakeAgentRec
+    ;(rec.agent as { status: string }).status = 'running'
+    expect(await service.stop('k')).toEqual({ ok: true })
+    expect(rec.cancel).toHaveBeenCalledTimes(1)
+    expect(rec.cancel).toHaveBeenCalledWith({ kind: 'user' })
+  })
+
+  it('refuses post-dispose with the coded disposed error', async () => {
+    const { service, calling } = benchBackend()
+    await service.send(calling, { contextKey: 'k', text: '问' })
+    await service.disposeAgents()
+    await expect(service.stop('k')).rejects.toBeInstanceOf(SideChatDisposedError)
   })
 })
 

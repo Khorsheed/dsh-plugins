@@ -1,0 +1,25 @@
+/* The 原始 JSON view. */
+
+.scroll {
+  min-width: 0;
+}
+
+.hint {
+  font-size: var(--dsh-panel-text-meta, 12px);
+  color: var(--dsw-alias-label-tertiary);
+  margin-bottom: 6px;
+}
+
+.pre {
+  background: var(--dsw-alias-bg-layer-2);
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  padding: 12px;
+  font-family: var(--dsw-font-family-mono, ui-monospace, monospace);
+  font-size: var(--dsh-panel-text-meta, 12px);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin: 0 0 12px;
+  color: var(--dsw-alias-label-primary);
+}

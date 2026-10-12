@@ -13,8 +13,14 @@
  * fails the cell honestly (submission-rejected), never silently
  * mis-attributes output. `delegationOf` is optional on the face: a facade
  * predating T11 leaves the observed model null.
+ *
+ * {@link ScopedHomeEvidenceFace} is the one face here that is NOT a host
+ * service: it is injected at construction by whoever mounts this service, and
+ * it carries the execution target's scoped-home evidence as plain data.
  * @module @khorsheed/dsh-eval
  */
+import type { HomeHash } from './contract/hash.ts'
+import type { PresetTreeHash } from './preset-snapshot.ts'
 
 /**
  * The scope every datasets call carries. The run loop reads the player-facing
@@ -469,6 +475,188 @@ export interface LocalAgentScopeProvisionedFace {
    */
   presetSnapshot?: { matchesSource: boolean }
 }
+
+/* ─────────────────── the execution target's evidence face ─────────────────── */
+
+/**
+ * The scoped home's content fingerprint, as evidence: exactly what
+ * `hashHome(homeDir)` answers over the directory — plus the home's identity
+ * ON THE PRODUCER, carried as data (recorded in the provision report and
+ * handed to the capability probe's input; a consumer never resolves it
+ * against its own filesystem).
+ */
+export interface ScopedHomeHashEvidence extends HomeHash {
+  /** The scoped home as the producer knows it — a label, not a readable path. */
+  homeDir: string
+  /**
+   * The identity token pinning this evidence to an execution-home port's
+   * plan for the same (harness, scope) — see {@link ScopedHomePlan.homeIdentity}
+   * for the comparison rule. Opaque and free-form; compared, never interpreted.
+   */
+  homeIdentity?: string
+}
+
+/**
+ * The scope's own copy of one preset, as evidence: exactly what
+ * `scopeKeepsOwnPreset`, `scopePresetProblem` and
+ * `hashPresetTree(scopePresetDir(homeDir, preset))` answer over the directory.
+ */
+export interface PresetSnapshotEvidence {
+  /**
+   * Whether the scope keeps its own copy of the preset at all (`false` is the
+   * instance-root arrangement: the scope defers to the deployment's preset
+   * root, and there is nothing to fingerprint).
+   */
+  keepsCopy: boolean
+  /**
+   * Why the copy cannot be a measured subject — `scopePresetProblem`'s refusal
+   * text, verbatim. Present only when `keepsCopy` is true.
+   */
+  problem?: string
+  /**
+   * The copy's digest — `hashPresetTree`'s answer (every file, `SKILL.md`
+   * included). Absent when the copy is not a plain tree of regular files,
+   * which is exactly the local read's `undefined`.
+   */
+  snapshot?: PresetTreeHash
+}
+
+/**
+ * The execution target's evidence about one scoped home — the fairness
+ * fingerprints provision and the readiness gate anchor, produced WHERE the
+ * rounds run rather than read from this process's directories.
+ *
+ * The shape is the local reads', verbatim: each verb answers exactly the data
+ * its local counterpart produces (`hashHome`, `statusOf`'s credential grade,
+ * `effectiveSettings`, `readScopePreset`, the scope-preset trio), as plain
+ * JSON-able data — the producer runs on the execution target, the consumer
+ * here, and no filesystem handle crosses. Parity with the local reads is the
+ * contract: two runs' evidence must stay comparable, so a target answers the
+ * same digest functions over the same deny rules, not a reinterpretation.
+ *
+ * Every verb is OPTIONAL structurally (degrade-don't-explode), but a mounted
+ * face is the WHOLE evidence source for its scopes: a verb the face lacks is
+ * missing evidence — the same not-ready/refused outcome as today's missing or
+ * unreadable local data — never a fallthrough to reading a same-named local
+ * directory, which on this topology is a different environment. Unmounted,
+ * nothing here is consulted and the local reads behave byte-identically.
+ */
+export interface ScopedHomeEvidenceFace {
+  /**
+   * The scoped home's content fingerprint — `hashHome`'s answer plus the
+   * home's producer-side identity. `undefined` (or a throw) is the local
+   * "home directory does not exist" outcome: provision refuses.
+   */
+  homeHash?(harness: string, scope?: string): Promise<ScopedHomeHashEvidence | undefined>
+  /**
+   * The credential grade — the `credentialState` of `statusOf(harness, scope)`.
+   * `undefined`, a throw, or a word outside the four grades is the local
+   * "facade cannot answer" outcome: provision refuses — a lock is never
+   * written against a credential nobody graded.
+   */
+  credentialGrade?(harness: string, scope?: string): Promise<LocalAgentCredentialGrade | undefined>
+  /**
+   * The fairness-relevant effective settings — `effectiveSettings(harness,
+ * scope)`'s answer. `undefined` keeps today's exact meaning ("the harness
+   * declares no snapshot": every field reads uncomparable, and provision
+   * records that rather than guessing); a throw is the facade's refusal.
+   */
+  effectiveSettings?(harness: string, scope?: string): Promise<LocalAgentEffectiveSettingsFace | undefined>
+  /**
+   * The preset the scope's sub-profile rosters — `readScopePreset`'s answer.
+   * `undefined` is the local "no roster read back" outcome: the capability
+   * probe declines the measurement (which the readiness gate refuses later).
+   */
+  rosteredPreset?(harness: string, scope?: string): Promise<string | undefined>
+  /**
+   * The scope's own copy of one preset — the `scopeKeepsOwnPreset` /
+   * `scopePresetProblem` / `hashPresetTree` trio as one answer. `undefined`
+   * and every invalid shape read as the local "nothing to re-hash": the
+   * locked record stands unchallenged, never a guessed digest.
+   */
+  presetSnapshot?(harness: string, scope: string | undefined, preset: string): Promise<PresetSnapshotEvidence | undefined>
+}
+
+/* ─────────────── the execution-home port (the unit path) ─────────────── */
+
+/**
+ * What the execution-home port is asked about: ONE condition's registered
+ * identity — the harness and scope its (reviewed) condition document declares,
+ * never a caller-supplied volume name or local directory — plus the
+ * in-container mount declaration that document carries and the unit's uid
+ * context for the availability check.
+ */
+export interface ScopedHomePlanRequest {
+  /** The condition id, as registered in the condition library. */
+  conditionId: string
+  /** The condition's `harness.name`. */
+  harness: string
+  /** The condition's named scope; absent for the harness's default scope. */
+  scope?: string
+  /** The condition's `unit.scopedHome.container` — the reviewed in-container mount point. */
+  container: string
+  /** The condition's `unit.scopedHome.var` — the variable naming that mount point. */
+  var: string
+  /** The unit's numeric uid when the plan declares one (the availability check's ownership context); null otherwise. */
+  unitUid: number | null
+}
+
+/**
+ * What the port answers with: the mount plan the acquire spec consumes, and
+ * the identity token that pins it to the evidence face.
+ *
+ * NO credential content crosses in either direction — the answer is a mount
+ * plan and an identity string, and the request carries names, never bytes.
+ */
+export interface ScopedHomePlan {
+  /**
+   * The mount the acquire spec consumes in place of the hardcoded bind.
+   * `source` is opaque to the orchestrator: a target-side path for `bind`, a
+   * volume name for `volume` — it is handed to lab verbatim and NEVER
+   * resolved or stat'ed against this filesystem.
+   */
+  mount: { source: string; type: 'bind' | 'volume'; readonly?: boolean }
+  /**
+   * The identity token pinning this plan to the evidence face's answer for
+   * the same (harness, scope). When the service mounts BOTH seams, both
+   * answers must carry the token and the tokens must be equal — a missing or
+   * mismatching token refuses the run before any unit is acquired, because
+   * evidence measured on one target must never pair with a mount planned for
+   * another. Opaque and free-form (a target id, a generation marker); the
+   * orchestrator compares, never interprets.
+   */
+  homeIdentity?: string
+}
+
+/**
+ * The execution-home port: the unit path's three decisions — scoped-home
+ * RESOLUTION, AVAILABILITY verification, and MOUNT planning — answered where
+ * the rounds run, for topologies where the verified scoped home is not a
+ * management-process-local directory (a named volume, a target-side path).
+ *
+ * Injected per instance (the constructor config's `executionHome`), like
+ * {@link ScopedHomeEvidenceFace} and independent of it; when both are
+ * mounted, the identity pin ({@link ScopedHomePlan.homeIdentity} versus the
+ * evidence answer's `homeIdentity`) is enforced at unit-planning time.
+ *
+ * The contract, in both directions:
+ *
+ * - `undefined` back means the port knows no home for that registered
+ *   identity — the run refuses it coded (`EXECUTION_HOME_UNKNOWN`) rather
+ *   than planning from a guess.
+ * - A throw means the target could not verify or plan — the run refuses
+ *   coded (`EXECUTION_HOME_UNAVAILABLE`) with the message.
+ * - An answer whose shape is not a mount plan refuses coded
+ *   (`EXECUTION_HOME_INVALID`).
+ *
+ * Unmounted, nothing here is consulted: the unit path resolves through
+ * `localAgent.homeDir`, verifies with the local `checkCredentialsDir`, and
+ * mounts `type: 'bind'` — byte-identical to before.
+ */
+export interface ExecutionHomePort {
+  planScopedHome?(request: ScopedHomePlanRequest): Promise<ScopedHomePlan | undefined>
+}
+
 
 /**
  * The datasets service's REGISTRY reads, as eval's experiment layer calls them

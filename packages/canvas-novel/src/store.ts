@@ -15,13 +15,22 @@
  *
  * That state root is deployment-level state, NOT a session workspace, and the
  * fence reflects that — the canvas store's exact pattern: the CALLING session
- * resolves the MODE (a read-only deployment stays read-only) and lends its id
- * to the write, while the writable boundary re-roots at the plugin's own
- * state dir. Every document write goes through the mounted `ctx.fs` under a
- * version guard (read → apply → replaceIfVersion, one stale retry); the
- * JSONL journals append by guarded read-concat-write, so a lost race retries
- * instead of clobbering (ctx.fs has no append verb; bare node:fs is never
- * used for state).
+ * — when a gesture carries one — resolves the MODE (a read-only deployment
+ * stays read-only) and lends its id to the write, while the writable boundary
+ * re-roots at the plugin's own state dir. A caller WITHOUT a session (a
+ * host-side consumer with no conversation) resolves the DEPLOYMENT DEFAULT
+ * mode with no session id — the fence is never skipped, and a policy home
+ * that cannot resolve session-less refuses the write coded instead of letting
+ * it through unfenced. Every document write goes through the mounted `ctx.fs`
+ * under a version guard (read → apply → replaceIfVersion, one stale retry);
+ * the JSONL journals append by guarded read-concat-write, so a lost race
+ * retries instead of clobbering (ctx.fs has no append verb; bare node:fs is
+ * never used for state).
+ *
+ * Disposal is terminal: once the instance is disposed (explicitly, or by the
+ * borrowed Context's own teardown), every public verb refuses with
+ * {@link NovelDisposedError}; a rebuild over the same state root is a new
+ * instance's business.
  *
  * @module @khorsheed/dsh-canvas-novel
  */
@@ -32,6 +41,7 @@ import type { SandboxExecutionPolicy } from '@deepseek-ai/dsh-sandbox'
 import type { SandboxPolicyService } from '@deepseek-ai/dsh-sandbox-policy'
 import type { Session } from '@deepseek-ai/dsh-session'
 import { renderExtractBrief, type BriefData } from './brief.ts'
+import { PACKAGE_NAME } from './invariant.ts'
 import {
   canvasBoardOf, NOVEL_GENRE, NOVEL_ROLES, WORLD_KINDS,
   type CanvasBoardSlice, type NovelBoardMutation, type NovelBoardView, type NovelCardSource, type NovelCardView,
@@ -42,7 +52,7 @@ import {
   normalizeAnnotations, normalizeChapter, normalizeHistoryEntry, PLOT_FIELDS, plotDiff, plotOf, normalizePendingItem, normalizePlan, normalizeWorkId, NOVEL_GENRE_ID,
   nextMilestoneOf, normalizeRelationEntry, OP_TO_MENTION, parseRef, PTS_PER_LEVEL, MAX_RELATION_DELTA, readRelationStage,
   refGroupOf, refOf, relationEventOf, relationMove, typeChangeOf, relationProgress, relationTypeOf, stageNameOf, RELATION_TYPES,
-  isOptionalPending, type Annotations, type CardNote, type ChapterPlan, type ChapterRecord, type ChapterRow, type ChapterTable, type CharacterView, type Confidence,
+  isOptionalPending, type Annotations, type NovelRecentResult, type RecentNote, type CardNote, type ChapterPlan, type ChapterRecord, type ChapterRow, type ChapterTable, type CharacterView, type Confidence,
   type CurrentState, type EffectiveChapterPhase, type HistoryChange, type HistoryEntry, type HistorySource, type EntryRole, type ExperienceEntry, type ExtractPayload,
   type ForeshadowView, type ImportDrop, type ImportReport, type LedgerResult, type MentionEntry, type NovelError,
   type PendingItem, type PendingKind, type PendingPayload, type PendingTable, type RefGroup, type RelationEntry, type RelationEvent,
@@ -92,6 +102,25 @@ export function novelErrorOf(error: unknown): NovelError {
 }
 
 /** Map one canvas failure code onto the store's (the two vocabularies share their common codes). */
+/**
+ * The seq of the session's newest user message, read from its event log
+ * (structurally: a host line without `snapshotEvents` yields undefined, and
+ * the confirm gate then stays open as before).
+ */
+export function latestUserSeq(session: unknown): number | undefined {
+  try {
+    const events = (session as { snapshotEvents?: () => readonly { readonly type: string; readonly seq?: number }[] } | undefined)?.snapshotEvents?.()
+    if (events === undefined) return undefined
+    for (let index = events.length - 1; index >= 0; index -= 1) {
+      const event = events[index]!
+      if (event.type === 'user/message' && typeof event.seq === 'number') return event.seq
+    }
+    return 0
+  } catch {
+    return undefined
+  }
+}
+
 function canvasErrorOf(error: string): NovelError {
   return error === 'invalid-name' || error === 'missing' || error === 'stale' || error === 'denied' ? error : 'io'
 }
@@ -336,9 +365,25 @@ function emptyAnnotations(): Annotations {
 }
 
 /**
+ * Thrown by every public verb after {@link NovelService.dispose} ran (an
+ * explicit teardown, or the borrowed Context's own disposal): a coded,
+ * package-named refusal, never a silent operation on a dead Context. The
+ * disposed instance stays dead — a rebuild over the same state root is a NEW
+ * service instance's business (the reader/sidechat precedent, hardened into a
+ * coded package error).
+ */
+export class NovelDisposedError extends Error {
+  constructor(message: string, readonly code: 'disposed') {
+    super(message)
+    this.name = 'NovelDisposedError'
+  }
+}
+
+/**
  * The canvas-novel's service core. Stateless apart from the context it borrows
  * for `ctx.fs` and the canvas, and the policy home it resolves each caller's
- * mode through.
+ * mode through. Disposal follows the borrowed Context: an instance mounted
+ * dynamically dies with it, and a dead instance refuses every verb coded.
  */
 export class NovelService {
   static inject = ['fs']
@@ -349,6 +394,9 @@ export class NovelService {
   /** The per-session policy home, captured only when the mounted filesystem actually confines. */
   private readonly sandboxPolicy: SandboxPolicyService | undefined
 
+  /** Set by {@link dispose} (explicit, or the borrowed Context's teardown); every public verb refuses afterwards. */
+  private disposed = false
+
   /**
    * @param ctx - host context carrying the mounted filesystem.
    * @param config - optional state-root override.
@@ -358,7 +406,19 @@ export class NovelService {
     config: NovelConfig = {},
   ) {
     this.stateRoot = resolveNovelStateRoot(config.stateRoot)
-    this.sandboxPolicy = ctx.fs.sandboxMode === undefined ? undefined : ctx.get('sandboxPolicy')
+    // Eager by contract (`static inject = ['fs']`): the mounting Context MUST
+    // provide the filesystem at construction — cordis never mounts the plugin
+    // row without it, and a direct construction gets this honest failure
+    // instead of a property-access TypeError deeper in.
+    const fs = ctx.fs as Context['fs'] | undefined
+    if (fs === undefined) {
+      throw new Error(`${PACKAGE_NAME}: the mounting Context must provide fs at construction (the package injects ['fs'])`)
+    }
+    this.sandboxPolicy = fs.sandboxMode === undefined ? undefined : ctx.get('sandboxPolicy')
+    // The borrowed Context's disposal IS this instance's disposal: an
+    // instance mounted per-workspace dies with its mounting Context instead
+    // of answering verbs off a dead scope.
+    ctx.effect(() => () => { this.dispose() }, 'canvas-novel: dispose on context teardown')
   }
 
   private get fs(): Context['fs'] {
@@ -371,18 +431,60 @@ export class NovelService {
   }
 
   /**
-   * The policy one mutation carries: the caller's session resolves the MODE
-   * and stamps its id, but the writable boundary is the plugin's state root —
-   * a session's own workspace can never hold deployment-level state (the
-   * canvas store's re-rooted fence). `undefined` means the mounted backend
-   * does not confine.
-   * @param session - the session that owns the gesture.
+   * Refuse one public verb after disposal: the instance is dead and nothing
+   * it could still answer is meant to be consumed — reads included, so a
+   * mounting side never keeps consuming a stale instance indefinitely.
+   */
+  private assertAlive(verb: string): void {
+    if (this.disposed) throw new NovelDisposedError(`${PACKAGE_NAME}: ${verb} after dispose`, 'disposed')
+  }
+
+  /**
+   * Tear the instance down (also wired to the borrowed Context's disposal at
+   * construction). Idempotent and TERMINAL: afterwards every public verb
+   * refuses with {@link NovelDisposedError}; a write that already passed the
+   * write boundary may complete, one reaching it after disposal refuses.
+   */
+  dispose(): void {
+    this.disposed = true
+  }
+
+  /**
+   * Resolve the caller's fence at the policy home, BEFORE the boundary is
+   * re-rooted: with a session, the session's own mode and id (today's
+   * behavior, exceptions and all); without one (a host-side caller with no
+   * conversation), the DEPLOYMENT DEFAULT mode with no session id — the
+   * sidechat store's precedent; the fence is never skipped. `'denied'` means
+   * the home could not resolve a session-less call at all: the write refuses
+   * coded, never slips through unfenced. `undefined` means the mounted
+   * backend does not confine.
+   * @param session - the session that owns the gesture, when one carried it.
+   * @returns the resolved policy, the refusal, or no confinement.
+   */
+  private resolveFence(session: Session | undefined): SandboxExecutionPolicy | 'denied' | undefined {
+    if (this.sandboxPolicy === undefined) return undefined
+    if (session !== undefined) return this.sandboxPolicy.resolve({ session })
+    try {
+      return this.sandboxPolicy.resolve({})
+    } catch {
+      return 'denied'
+    }
+  }
+
+  /**
+   * The policy one mutation carries: the caller's session — when there is
+   * one — resolves the MODE and stamps its id, but the writable boundary is
+   * the plugin's state root — a session's own workspace can never hold
+   * deployment-level state (the canvas store's re-rooted fence). Without a
+   * session the deployment default mode applies, with no id lent. `undefined`
+   * means the mounted backend does not confine; `'denied'` refuses the write
+   * (see {@link resolveFence}).
+   * @param session - the session that owns the gesture, when one carried it.
    * @returns the policy to stamp onto the call.
    */
-  private policyOf(session: Session): SandboxExecutionPolicy | undefined {
-    const resolved = this.sandboxPolicy?.resolve({ session })
-    if (resolved === undefined) return undefined
-    return { ...resolved, workspaceRoot: this.stateRoot }
+  private policyOf(session: Session | undefined): SandboxExecutionPolicy | 'denied' | undefined {
+    const resolved = this.resolveFence(session)
+    return resolved === undefined || resolved === 'denied' ? resolved : { ...resolved, workspaceRoot: this.stateRoot }
   }
 
   /** One work's directory under the state root. */
@@ -431,19 +533,20 @@ export class NovelService {
    * the caller passes a factory; a create-race retries exactly like a stale
    * write.
    * @param target - the resolved file target.
-   * @param session - the session that owns the gesture; supplies the fence.
+   * @param session - the session that owns the gesture, when one carried it; supplies the fence.
    * @param normalize - the document's tolerant reader.
    * @param createDefault - the factory for a missing document, or undefined to refuse missing.
    * @param change - the pure data-to-data edit, or an error code to refuse.
    */
   private async mutateJson<T extends object>(
     target: FsTarget,
-    session: Session,
+    session: Session | undefined,
     normalize: (raw: unknown) => T | undefined,
     createDefault: (() => T) | undefined,
     change: (data: T, now: string) => T | NovelError,
   ): Promise<Mutation<T>> {
     const policy = this.policyOf(session)
+    if (policy === 'denied') return { ok: false, error: 'denied' }
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const current = await this.readJson(target, normalize)
       if (current === 'corrupt') return { ok: false, error: 'io' }
@@ -453,6 +556,10 @@ export class NovelService {
       const now = new Date().toISOString()
       const next = change(base, now)
       if (typeof next === 'string') return { ok: false, error: next }
+      // The write boundary: a disposal that lands after the entry guard dies
+      // here, never reaching the fs a rebuilt instance on the same root owns
+      // (kept OUTSIDE the try so the refusal propagates as itself, not 'io').
+      this.assertAlive('mutateJson')
       try {
         await this.fs.writeText(
           target, `${JSON.stringify(next, null, 2)}\n`,
@@ -481,13 +588,13 @@ export class NovelService {
    * `replace` makes the same write a chapter-scoped replace: existing lines
    * it matches are dropped first (a re-对账 replaces the chapter's previous
    * findings; unreadable lines are kept as they are).
-   * @param session - the session that owns the gesture; supplies the fence.
+   * @param session - the session that owns the gesture, when one carried it; supplies the fence.
    * @param lines - the records to append (one JSON per line).
    * @param replace - which existing records the new lines replace.
    */
   private async appendJsonl(
     target: FsTarget,
-    session: Session,
+    session: Session | undefined,
     lines: readonly Record<string, unknown>[],
     replace?: (record: Record<string, unknown>) => boolean,
   ): Promise<{ readonly ok: boolean; readonly error?: NovelError }> {
@@ -502,6 +609,7 @@ export class NovelService {
       }
     }).map(line => `${line}\n`).join('')
     const policy = this.policyOf(session)
+    if (policy === 'denied') return { ok: false, error: 'denied' }
     const addition = lines.map(line => `${JSON.stringify(line)}\n`).join('')
     for (let attempt = 0; attempt < 2; attempt += 1) {
       let existing = ''
@@ -516,6 +624,8 @@ export class NovelService {
         if (!(error instanceof FsError && error.code === 'FS_NOT_FOUND')) return { ok: false, error: novelErrorOf(error) }
       }
       if (version === undefined && addition === '') return { ok: true }
+      // The write boundary (see mutateJson): outside the try, so the refusal propagates as itself.
+      this.assertAlive('appendJsonl')
       try {
         await this.fs.writeText(
           target, existing + addition,
@@ -576,6 +686,7 @@ export class NovelService {
    * @returns the work view, or undefined.
    */
   async readWorkMeta(workId: string): Promise<WorkMeta | undefined> {
+    this.assertAlive('readWorkMeta')
     const board = await this.readNovelBoard(workId)
     return board === undefined ? undefined : { id: board.id, title: board.title, workspace: board.attachedWorkspaces[0] }
   }
@@ -588,6 +699,7 @@ export class NovelService {
    * @returns the work view, or undefined.
    */
   async boundWork(sessionId: string): Promise<WorkMeta | undefined> {
+    this.assertAlive('boundWork')
     const canvas = this.canvas
     if (canvas === undefined) return undefined
     const canvasId = await canvas.boundCanvasId(sessionId)
@@ -599,6 +711,7 @@ export class NovelService {
    * @returns id and title per work, in the canvas list's order.
    */
   async listWorks(): Promise<readonly { readonly id: string; readonly title: string }[]> {
+    this.assertAlive('listWorks')
     const canvas = this.canvas
     if (canvas === undefined) return []
     const { items } = await canvas.listCanvases()
@@ -611,7 +724,8 @@ export class NovelService {
    * Bind the calling session to one work, named by canvas id or title (an
    * exact title wins; otherwise a unique title containing the name). The
    * model binds by the conversation's subject; the chip stays the user's
-   * own way to do the same.
+   * own way to do the same. The session is NOT optional here: binding is a
+   * session's own gesture, so a session-less caller has nothing to bind.
    * @param name - canvas id or (part of) the title.
    * @param session - the session being bound.
    * @returns the bound work, or the failure with the candidates to choose from.
@@ -620,6 +734,7 @@ export class NovelService {
     | { readonly ok: true; readonly work: { readonly id: string; readonly title: string } }
     | { readonly ok: false; readonly error: NovelError | 'ambiguous'; readonly works: readonly { readonly id: string; readonly title: string }[] }
   > {
+    this.assertAlive('bindWork')
     const canvas = this.canvas
     const works = await this.listWorks()
     const wanted = name.trim().replace(/^《(.*)》$/, '$1')
@@ -650,6 +765,7 @@ export class NovelService {
    * @returns the entries, or undefined when the canvas is no novel work.
    */
   async readEntries(workId: string): Promise<WorkEntries | undefined> {
+    this.assertAlive('readEntries')
     const board = await this.readNovelBoard(workId)
     if (board === undefined) return undefined
     const [annotations, mentions, chapters, relationJournal] = await Promise.all([
@@ -676,7 +792,7 @@ export class NovelService {
    * only takes the snapshot. Nothing is written when nothing changes, so
    * reads may call this freely.
    * @param workId - the canvas id.
-   * @param session - the session that owns the gesture; supplies the fence.
+   * @param session - the session that owns the gesture, when one carried it; supplies the fence.
    * @param board - the board as just returned by a card mutation, or undefined to read it.
    * @param notes - per-card note fields to merge (later fields win).
    * @param writes - the cards this gesture wrote, and on whose behalf.
@@ -684,11 +800,12 @@ export class NovelService {
    */
   async ensureRefs(
     workId: string,
-    session: Session,
+    session: Session | undefined,
     board?: NovelBoardView,
     notes: ReadonlyMap<string, CardNote> = new Map(),
     writes: ReadonlyMap<string, CardWrite> = new Map(),
   ): Promise<{ readonly ok: boolean; readonly error?: NovelError; readonly annotations?: Annotations }> {
+    this.assertAlive('ensureRefs')
     const current = board ?? await this.readNovelBoard(workId)
     if (current === undefined) return { ok: false, error: 'missing' }
     const roleOf = rolesOn(current)
@@ -774,6 +891,7 @@ export class NovelService {
    * @returns the card, or undefined.
    */
   resolveCard(entries: WorkEntries, token: unknown, roleHint?: EntryRole): CardHandle | undefined {
+    this.assertAlive('resolveCard')
     const text = typeof token === 'number' ? String(token) : cleanText(token, 200)
     if (text === undefined) return undefined
     const direct = entries.roleOf.get(text)
@@ -804,13 +922,14 @@ export class NovelService {
    * type; unknown keys are ignored and reported back. A relation card goes
    * through {@link NovelService.writeRelation}.
    * @param request - work id, role, optional card handle, fields, optional comment.
-   * @param session - the session that owns the gesture; supplies the fence.
+   * @param session - the session that owns the gesture, when one carried it; supplies the fence.
    * @returns the card's id and ref, or the failure code.
    */
   async writeCard(
     request: { readonly workId: string; readonly role: EntryRole; readonly id?: string; readonly fields: unknown; readonly comment?: string },
-    session: Session,
+    session: Session | undefined,
   ): Promise<{ readonly ok: boolean; readonly error?: NovelError; readonly cardId?: string; readonly ref?: string; readonly ignored?: readonly string[]; readonly problem?: string }> {
+    this.assertAlive('writeCard')
     const canvas = this.canvas
     const entries = await this.readEntries(request.workId)
     if (canvas === undefined || entries === undefined) return { ok: false, error: 'missing' }
@@ -876,7 +995,7 @@ export class NovelService {
     request: { readonly id?: string; readonly comment?: string },
     fields: Record<string, NovelFieldValue>,
     ignored: string[],
-    session: Session,
+    session: Session | undefined,
   ): Promise<{ readonly ok: boolean; readonly error?: NovelError; readonly cardId?: string; readonly ref?: string; readonly ignored?: readonly string[]; readonly problem?: string }> {
     const canvas = this.canvas!
     const handle = request.id === undefined ? undefined : this.resolveCard(entries, request.id, 'relation')
@@ -968,6 +1087,7 @@ export class NovelService {
 
   /** List the experience journal (optionally one character's), oldest first. */
   async listExperiences(request: { readonly workId: string; readonly characterId?: string }): Promise<ExperienceEntry[]> {
+    this.assertAlive('listExperiences')
     const id = normalizeWorkId(request.workId)
     if (id === undefined) return []
     const entries = await this.readJsonl(await this.fileTarget(id, WORK_FILES.experiences), raw => normalizeExperience(raw))
@@ -976,6 +1096,7 @@ export class NovelService {
 
   /** The mention journal (a foreshadow card's chapter track), optionally one card's, oldest first. */
   async listMentions(request: { readonly workId: string; readonly foreshadowId?: string }): Promise<MentionEntry[]> {
+    this.assertAlive('listMentions')
     const id = normalizeWorkId(request.workId)
     if (id === undefined) return []
     const entries = await this.readJsonl(await this.fileTarget(id, WORK_FILES.mentions), raw => normalizeMention(raw))
@@ -984,6 +1105,7 @@ export class NovelService {
 
   /** The relation journal (a relation card's points and stage events), optionally one card's, oldest first. */
   async listRelationJournal(request: { readonly workId: string; readonly relationId?: string }): Promise<RelationEntry[]> {
+    this.assertAlive('listRelationJournal')
     const id = normalizeWorkId(request.workId)
     if (id === undefined) return []
     const entries = await this.readJsonl(await this.fileTarget(id, WORK_FILES.relations), raw => normalizeRelationEntry(raw))
@@ -992,6 +1114,7 @@ export class NovelService {
 
   /** The card change history (plot fields of characters and world cards), optionally one card's, oldest first. */
   async listHistory(request: { readonly workId: string; readonly cardId?: string }): Promise<HistoryEntry[]> {
+    this.assertAlive('listHistory')
     const id = normalizeWorkId(request.workId)
     if (id === undefined) return []
     const entries = await this.readJsonl(await this.fileTarget(id, WORK_FILES.history), raw => normalizeHistoryEntry(raw))
@@ -1013,6 +1136,7 @@ export class NovelService {
 
   /** The chapter index, seq-ordered, with the effective phase derived per row. */
   async listChapters(request: { readonly workId: string }): Promise<ChapterRow[]> {
+    this.assertAlive('listChapters')
     const id = normalizeWorkId(request.workId)
     if (id === undefined) return []
     const meta = await this.readWorkMeta(id)
@@ -1027,6 +1151,7 @@ export class NovelService {
 
   /** Read one chapter's manuscript (a missing body reads as empty — the metadata stays openable). */
   async readChapterBody(work: WorkMeta, chapter: ChapterRecord): Promise<string> {
+    this.assertAlive('readChapterBody')
     const path = this.bodyPath(work, chapter)
     if (path === undefined) return ''
     try {
@@ -1044,6 +1169,7 @@ export class NovelService {
     readonly phase?: EffectiveChapterPhase
     readonly body?: string
   }> {
+    this.assertAlive('readChapter')
     const id = normalizeWorkId(request.workId)
     if (id === undefined) return { ok: false, error: 'invalid-name' }
     const meta = await this.readWorkMeta(id)
@@ -1073,13 +1199,14 @@ export class NovelService {
    * created by the fs layer. The plan-only path (no content) registers as
    * planning without touching the workspace.
    * @param request - the chapter data.
-   * @param session - the session that owns the gesture; supplies the fence.
+   * @param session - the session that owns the gesture, when one carried it; supplies the fence.
    * @returns the fresh record, or the failure code.
    */
   async writeChapter(
     request: WriteChapterRequest,
-    session: Session,
+    session: Session | undefined,
   ): Promise<{ readonly ok: boolean; readonly error?: NovelError; readonly chapter?: ChapterRecord; readonly unknown?: readonly string[]; readonly existingLength?: number; readonly attachedWorkspace?: string }> {
+    this.assertAlive('writeChapter')
     const workId = normalizeWorkId(request.workId)
     const title = cleanText(request.title, 200)
     if (workId === undefined || title === undefined) return { ok: false, error: 'invalid-name' }
@@ -1087,6 +1214,9 @@ export class NovelService {
     if (meta === undefined) return { ok: false, error: 'missing' }
     const rawPlan = request.plan === undefined ? undefined : normalizePlan(request.plan)
     if (request.plan !== undefined && rawPlan === undefined) return { ok: false, error: 'invalid-name' }
+    // Where this plan is put to the person (see `ChapterRecord.planAsk`).
+    const askSeq = latestUserSeq(session)
+    const ask = session === undefined || askSeq === undefined ? undefined : { session: String(session.id), userSeq: askSeq }
     let plan = rawPlan
     if (rawPlan !== undefined) {
       const resolved = await this.resolvePlan(workId, rawPlan)
@@ -1112,8 +1242,9 @@ export class NovelService {
     // A work with no workspace takes the session's own when the body arrives:
     // the person asked for the chapter, and the canvas had nowhere to put it
     // (a canvas the agent made, before canvas_open attached one; 2026-10-09).
+    // A session-less caller has no cwd to lend — the work must bring its own.
     let attachedWorkspace: string | undefined
-    if (content !== undefined && workspace === undefined) {
+    if (content !== undefined && workspace === undefined && session !== undefined) {
       const cwd = session.header?.cwd
       const attach = this.canvas?.setWorkspace
       if (cwd !== undefined && attach !== undefined) {
@@ -1141,8 +1272,8 @@ export class NovelService {
       const chapters = await this.readChapters(workId)
       const n = request.n ?? chapters.reduce((max, row) => Math.max(max, row.n), 0) + 1
       const target = await this.fs.resolve(join(workspace, meta.title, chapterFileName(n)))
-      const resolved = this.sandboxPolicy?.resolve({ session })
-      if (resolved?.mode === 'read-only') return { ok: false, error: 'denied' }
+      const resolved = this.resolveFence(session)
+      if (resolved === 'denied' || resolved?.mode === 'read-only') return { ok: false, error: 'denied' }
       const policy = resolved === undefined ? undefined : { ...resolved, workspaceRoot: workspace }
       let version: string | undefined
       try {
@@ -1159,6 +1290,8 @@ export class NovelService {
         }
         if (existing.trim().length > 0) return { ok: false, error: 'body-exists', existingLength: existing.trim().length }
       }
+      // The write boundary (see mutateJson): outside the try, so the refusal propagates as itself.
+      this.assertAlive('writeChapter')
       try {
         await this.fs.writeText(
           target, content,
@@ -1199,12 +1332,15 @@ export class NovelService {
             // yet — and the user has not confirmed it.
             delete mutable.delivery
             delete mutable.planConfirmedAt
+            if (ask !== undefined) mutable.planAsk = ask
+            else delete mutable.planAsk
           }
           if (byUser) mutable.byUser = true
           if (volumeId !== undefined) mutable.volume = volumeId
           mutable.updatedAt = now
-          const sessionId = String(session.id)
-          if (!row.sessionIds.includes(sessionId)) (mutable.sessionIds as string[]).push(sessionId)
+          // A session-less gesture lends no id: the row's trail simply gains nothing.
+          const sessionId = session === undefined ? undefined : String(session.id)
+          if (sessionId !== undefined && !row.sessionIds.includes(sessionId)) (mutable.sessionIds as string[]).push(sessionId)
           chapter = { ...row }
           return table
         }
@@ -1218,10 +1354,11 @@ export class NovelService {
           file: chapterFileName(n),
           phase: 'planning',
           ...(volume === undefined ? {} : { volume }),
-          sessionIds: [String(session.id)],
+          sessionIds: session === undefined ? [] : [String(session.id)],
           createdAt: now,
           updatedAt: now,
           ...(plan === undefined ? {} : { plan }),
+          ...(plan === undefined || ask === undefined ? {} : { planAsk: ask }),
           ...(byUser ? { byUser: true as const } : {}),
         }
         table.chapters.push(created)
@@ -1237,6 +1374,7 @@ export class NovelService {
 
   /** The work's outline (an empty one before anything was proposed; a corrupt file reads empty and is never rewritten). */
   async readOutline(workId: string): Promise<OutlineDoc> {
+    this.assertAlive('readOutline')
     const id = normalizeWorkId(workId)
     if (id === undefined) return emptyOutline()
     const read = await this.readJson(await this.fileTarget(id, WORK_FILES.outline), raw => normalizeOutline(raw))
@@ -1251,13 +1389,14 @@ export class NovelService {
    * Nothing counts until the user adopts it ({@link decideOutline}). The
    * protagonist must be a character card (its ref, name or id).
    * @param request - work id and the parts proposed.
-   * @param session - the session that owns the gesture; supplies the fence.
+   * @param session - the session that owns the gesture, when one carried it; supplies the fence.
    * @returns the fresh outline, or the failure code.
    */
   async proposeOutline(
     request: { readonly workId: string; readonly sheet?: unknown; readonly volumes?: unknown; readonly sketches?: unknown; readonly rationale?: unknown },
-    session: Session,
+    session: Session | undefined,
   ): Promise<{ readonly ok: boolean; readonly error?: NovelError; readonly outline?: OutlineDoc }> {
+    this.assertAlive('proposeOutline')
     const workId = normalizeWorkId(request.workId)
     if (workId === undefined) return { ok: false, error: 'invalid-name' }
     let sheet: OutlineSheet = normalizeSheet(request.sheet)
@@ -1302,13 +1441,14 @@ export class NovelService {
    * into the outline (one revision, one history row naming what moved);
    * discarding drops it.
    * @param request - work id and the action.
-   * @param session - the session that owns the gesture; supplies the fence.
+   * @param session - the session that owns the gesture, when one carried it; supplies the fence.
    * @returns the fresh outline, or the failure code (`no-proposal`: nothing pending).
    */
   async decideOutline(
     request: { readonly workId: string; readonly action: 'accept' | 'discard' },
-    session: Session,
+    session: Session | undefined,
   ): Promise<{ readonly ok: boolean; readonly error?: NovelError; readonly outline?: OutlineDoc }> {
+    this.assertAlive('decideOutline')
     const workId = normalizeWorkId(request.workId)
     if (workId === undefined) return { ok: false, error: 'invalid-name' }
     let outline: OutlineDoc | undefined
@@ -1378,13 +1518,14 @@ export class NovelService {
    * against takes one (a chapter in planning, or a re-plan still awaiting
    * the person) — a 用户原稿 never has a plan.
    * @param request - work id, chapter number, the raw plan (the text form, parsed by the caller).
-   * @param session - the session that owns the gesture; supplies the fence.
+   * @param session - the session that owns the gesture, when one carried it; supplies the fence.
    * @returns the fresh record, or the failure code (`unknown` names foreshadow handles that resolve to no card).
    */
   async editPlan(
     request: { readonly workId: string; readonly n: number; readonly plan: unknown },
-    session: Session,
+    session: Session | undefined,
   ): Promise<{ readonly ok: boolean; readonly error?: NovelError; readonly chapter?: ChapterRecord; readonly unknown?: readonly string[]; readonly changed?: readonly PlanField[] }> {
+    this.assertAlive('editPlan')
     const workId = normalizeWorkId(request.workId)
     if (workId === undefined) return { ok: false, error: 'invalid-name' }
     const rawPlan = normalizePlan(request.plan)
@@ -1423,13 +1564,14 @@ export class NovelService {
    * 最后): extracted → reviewed. A chapter whose 对账 never ran cannot close
    * (记忆里不能有没有对过账的章); a reviewed chapter re-answers ok.
    * @param request - work id and chapter number.
-   * @param session - the session that owns the gesture; supplies the fence.
+   * @param session - the session that owns the gesture, when one carried it; supplies the fence.
    * @returns the fresh record, or the failure code.
    */
   async reviewChapter(
     request: { readonly workId: string; readonly n: number },
-    session: Session,
+    session: Session | undefined,
   ): Promise<{ readonly ok: boolean; readonly error?: NovelError; readonly chapter?: ChapterRecord }> {
+    this.assertAlive('reviewChapter')
     const workId = normalizeWorkId(request.workId)
     if (workId === undefined) return { ok: false, error: 'invalid-name' }
     let chapter: ChapterRecord | undefined
@@ -1478,13 +1620,14 @@ export class NovelService {
    * never the engine's: it lives in the sidecar, so the card fields stay
    * what the user typed.
    * @param request - work id, the foreshadow's card id, and the new star.
-   * @param session - the session that owns the gesture; supplies the fence.
+   * @param session - the session that owns the gesture, when one carried it; supplies the fence.
    * @returns ok, or the failure code.
    */
   async starForeshadow(
     request: { readonly workId: string; readonly cardId: string; readonly starred: boolean },
-    session: Session,
+    session: Session | undefined,
   ): Promise<{ readonly ok: boolean; readonly error?: NovelError }> {
+    this.assertAlive('starForeshadow')
     const entries = await this.readEntries(request.workId)
     if (entries === undefined) return { ok: false, error: 'missing' }
     if (entries.roleOf.get(request.cardId) !== 'foreshadow') return { ok: false, error: 'invalid-name' }
@@ -1496,13 +1639,14 @@ export class NovelService {
    * The user's own edit of a character's 此刻 (当前态). The next 对账
    * overwrites it with what the chapter shows, as it does any 当前态.
    * @param request - work id, the character's card id, and the whole new state (empty parts clear).
-   * @param session - the session that owns the gesture; supplies the fence.
+   * @param session - the session that owns the gesture, when one carried it; supplies the fence.
    * @returns ok, or the failure code.
    */
   async setCurrentState(
     request: { readonly workId: string; readonly cardId: string; readonly state: CurrentState },
-    session: Session,
+    session: Session | undefined,
   ): Promise<{ readonly ok: boolean; readonly error?: NovelError }> {
+    this.assertAlive('setCurrentState')
     const entries = await this.readEntries(request.workId)
     if (entries === undefined) return { ok: false, error: 'missing' }
     if (entries.roleOf.get(request.cardId) !== 'character') return { ok: false, error: 'invalid-name' }
@@ -1527,15 +1671,19 @@ export class NovelService {
    * on a chapter that HAS a plan. Idempotent — a confirmed plan re-answers
    * ok; a chapter with no plan refuses (there is nothing to confirm).
    * @param request - work id and chapter number.
-   * @param session - the session that owns the gesture; supplies the fence.
+   * @param session - the session that owns the gesture, when one carried it; supplies the fence.
    * @returns the fresh record, or the failure code.
    */
   async confirmChapterPlan(
-    request: { readonly workId: string; readonly n: number },
-    session: Session,
+    request: { readonly workId: string; readonly n: number; readonly byAgent?: boolean },
+    session: Session | undefined,
   ): Promise<{ readonly ok: boolean; readonly error?: NovelError; readonly chapter?: ChapterRecord }> {
+    this.assertAlive('confirmChapterPlan')
     const workId = normalizeWorkId(request.workId)
     if (workId === undefined) return { ok: false, error: 'invalid-name' }
+    // The agent recording the person's chat approval: only once the person has
+    // spoken since the plan was put to them (the page's ✓ is the person's own).
+    const userSeq = request.byAgent === true ? latestUserSeq(session) : undefined
     let chapter: ChapterRecord | undefined
     const outcome = await this.mutateJson(
       await this.fileTarget(workId, WORK_FILES.chapters), session,
@@ -1545,6 +1693,10 @@ export class NovelService {
         const row = table.chapters.find(candidate => candidate.n === request.n)
         if (row === undefined) return 'missing'
         if (row.plan === undefined) return 'invalid-name'
+        if (row.planConfirmedAt === undefined && request.byAgent === true && row.planAsk !== undefined
+          && row.planAsk.session === String(session?.id) && userSeq !== undefined && userSeq <= row.planAsk.userSeq) {
+          return 'plan-unseen'
+        }
         if (row.planConfirmedAt === undefined) {
           const mutable = row as { -readonly [K in keyof ChapterRecord]: ChapterRecord[K] }
           mutable.planConfirmedAt = now
@@ -1571,6 +1723,7 @@ export class NovelService {
    * @returns the ledger rows and counts, or the failure code.
    */
   async ledger(request: { readonly workId: string }): Promise<LedgerResult> {
+    this.assertAlive('ledger')
     const entries = await this.readEntries(request.workId)
     if (entries === undefined) return { ok: false, error: 'missing', active: [], resolved: [], counts: { active: 0, overdue: 0, resolved: 0, abandoned: 0 }, relations: [], currentChapter: 0 }
     const kept = entries.foreshadows.filter(view => view.cardStatus === 'kept')
@@ -1592,6 +1745,67 @@ export class NovelService {
   }
 
   /**
+   * What the newest 对账 did, card by card — the 设定 face's 最近更新 (only
+   * the newest: the person who looked and said nothing has accepted it,
+   * 2026-10-09). Read back from the journals the import wrote (card history,
+   * mentions, experiences, the relation journal), from the import's start on.
+   * @param request - the work id.
+   * @returns the chapter, its title, when, and the notes per card id.
+   */
+  async recentUpdates(request: { readonly workId: string }): Promise<NovelRecentResult> {
+    this.assertAlive('recentUpdates')
+    const id = normalizeWorkId(request.workId)
+    if (id === undefined) return { ok: false, error: 'invalid-name', cards: {} }
+    const latest = (await this.readChapters(id))
+      .filter(row => row.extractedAt !== undefined && (row.phase === 'extracted' || row.phase === 'reviewed'))
+      .sort((a, b) => b.extractedAt!.localeCompare(a.extractedAt!))[0]
+    if (latest === undefined) return { ok: true, cards: {} }
+    const n = latest.n
+    const at = latest.extractedAt!
+    const [history, mentions, experiences, journal, entries] = await Promise.all([
+      this.listHistory({ workId: id }), this.listMentions({ workId: id }), this.listExperiences({ workId: id }),
+      this.listRelationJournal({ workId: id }), this.readEntries(id),
+    ])
+    const cards = new Map<string, RecentNote[]>()
+    const note = (cardId: string, entry: RecentNote): void => {
+      if (entries !== undefined && !entries.board.cards.some(card => card.id === cardId && card.status !== 'archived')) return
+      cards.set(cardId, [...cards.get(cardId) ?? [], entry])
+    }
+    const fresh = (row: { readonly chapter: number; readonly createdAt: string }): boolean => row.chapter === n && row.createdAt >= at
+    for (const cardId of latest.newCards ?? []) {
+      const evidence = entries?.annotations.notes[cardId]?.evidenceInText
+      note(cardId, { kind: 'create', ...(evidence === undefined ? {} : { text: evidence }) })
+    }
+    for (const entry of history) {
+      if (!fresh(entry) || entry.source === 'user') continue
+      if (entry.kind === 'create') {
+        if (!cards.get(entry.cardId)?.some(item => item.kind === 'create')) {
+          note(entry.cardId, { kind: 'create', ...(entry.evidence === undefined ? {} : { text: entry.evidence }) })
+        }
+        continue
+      }
+      for (const change of entry.changes) note(entry.cardId, { kind: 'field', field: change.field, text: change.value })
+    }
+    for (const entry of mentions) {
+      if (!fresh(entry)) continue
+      const text = entry.evidence ?? entry.note
+      note(entry.foreshadowId, { kind: 'mention', mention: entry.kind, ...(text === undefined ? {} : { text }) })
+    }
+    for (const entry of experiences) if (fresh(entry)) note(entry.characterId, { kind: 'experience', text: entry.entry })
+    for (const entry of journal) {
+      if (!fresh(entry)) continue
+      if (entry.kind === 'points') note(entry.relationId, { kind: 'points', delta: entry.delta, ...(entry.evidence === undefined ? {} : { text: entry.evidence }) })
+      else if (entry.kind === 'stage') note(entry.relationId, { kind: 'stage', text: entry.stage })
+    }
+    // A card this 对账 created leads with that, whatever else it did.
+    for (const [cardId, notes] of cards) {
+      const created = notes.find(item => item.kind === 'create')
+      if (created !== undefined) cards.set(cardId, [created, ...notes.filter(item => item !== created)])
+    }
+    return { ok: true, chapter: n, title: latest.title, at, cards: Object.fromEntries(cards) }
+  }
+
+  /**
    * The 故事日志: the kept foreshadow, relation, character and world cards
    * that have entered the story, laid out over the chapters, for the timeline
    * page. A card no chapter touches (not reconciled, not planned) is still
@@ -1604,6 +1818,7 @@ export class NovelService {
    * @returns the chapters and the four bands, or the failure code.
    */
   async storyLog(request: { readonly workId: string }): Promise<StoryLogResult> {
+    this.assertAlive('storyLog')
     const empty: StoryLogResult = { ok: false, error: 'missing', chapters: [], foreshadows: [], relations: [], characters: [], world: [] }
     const entries = await this.readEntries(request.workId)
     if (entries === undefined) return empty
@@ -1706,6 +1921,7 @@ export class NovelService {
     readonly error?: NovelError
     readonly data?: BriefData
   }> {
+    this.assertAlive('gatherBrief')
     const meta = await this.readWorkMeta(request.workId)
     const entries = await this.readEntries(request.workId)
     if (meta === undefined || entries === undefined) return { ok: false, error: 'missing' }
@@ -1774,6 +1990,7 @@ export class NovelService {
     readonly foreshadowIds?: readonly string[]
     readonly characterIds?: readonly string[]
   }> {
+    this.assertAlive('extractPrepare')
     const meta = await this.readWorkMeta(request.workId)
     if (meta === undefined) return { ok: false, error: 'missing' }
     const chapter = (await this.readChapters(meta.id)).find(candidate => candidate.n === request.n)
@@ -1810,16 +2027,17 @@ export class NovelService {
    *      Plan beats the subagent found (evidence-gated like everything else)
    *      land on the chapter's delivery; a missed beat is a reminder only.
    * @param request - work id, chapter number, the subagent's strict JSON.
-   * @param session - the session that owns the gesture; supplies the fence.
+   * @param session - the session that owns the gesture, when one carried it; supplies the fence.
    * @returns the reconciliation report, or the failure code.
    */
   async extractImport(
     request: { readonly workId: string; readonly n: number; readonly payload: ExtractPayload },
-    session: Session,
+    session: Session | undefined,
   ): Promise<ImportReport> {
+    this.assertAlive('extractImport')
     const empty = {
       settled: false, linked: 0, verified: 0, missed: 0, beats: { delivered: 0, missed: 0 }, pending: 0,
-      dropped: [] as ImportDrop[], pendingItems: [] as { id: string; kind: PendingKind; reason: string }[],
+      dropped: [] as ImportDrop[], applied: [] as { kind: PendingKind; line: string }[], planMisses: [] as string[],
       newCards: [] as { cardId: string; role: EntryRole; text: string }[],
     }
     const canvas = this.canvas
@@ -1856,9 +2074,14 @@ export class NovelService {
     if (misses.length > 0 && misses.length * 2 > quotes) return { ...empty, ok: true, dropped: misses }
 
     const dropped: ImportDrop[] = []
-    const report = { verified: 0, missed: 0, beats: { delivered: 0, missed: 0 }, pending: 0 }
+    const report = { verified: 0, missed: 0, beats: { delivered: 0, missed: 0 } }
+    const planMisses: string[] = []
     const toPending: { kind: PendingKind; confidence?: 'medium' | 'low'; chapter?: number; reason: string; evidenceInText?: string; payload: PendingPayload }[] = []
-    const pend = (item: (typeof toPending)[number]): void => { toPending.push(item); report.pending += 1 }
+    // 2026-10-09: 对账 asks nothing. What used to wait in 待审 (信息差, relation
+    // moves, a setting the chapter words differently) is applied after the
+    // import's own writes, through the same doors an accept took; the answer
+    // lists it, and the person corrects a card if it is wrong.
+    const pend = (item: (typeof toPending)[number]): void => { toPending.push(item) }
     const confidenceOf = (raw: unknown): Confidence => raw === 'high' ? 'high' : raw === 'low' ? 'low' : 'medium'
     const foreshadowOf = new Map(entries.foreshadows.map(view => [view.cardId, view]))
     const whitelist = new Set(entries.foreshadows
@@ -1909,8 +2132,8 @@ export class NovelService {
       if (role === 'world') {
         const name = bareName(cleanText(raw.name, 80)) ?? settingNameOf(content)
         // A setting the board already has is this chapter USING it: linked to
-        // the chapter, and checked — a chapter that says otherwise waits for
-        // the person (the card is never rewritten by a 对账).
+        // the chapter, and checked — a chapter that words it otherwise adds
+        // its line to the card (never replacing it) and the answer says so.
         const existing = namesake(entries, role, name)
         if (existing !== undefined) {
           if (!settings.includes(existing.cardId)) settings.push(existing.cardId)
@@ -1919,7 +2142,7 @@ export class NovelService {
           const said = squashText(content)
           if (rule !== '' && !rule.includes(said) && !said.includes(rule)) {
             pend({
-              kind: 'setting', chapter: chapter.n, reason: `设定对不上：${existing.ref}「${name}」——卡上写的和这章不一样，以哪个为准？`,
+              kind: 'setting', chapter: chapter.n, reason: `补进设定 ${existing.ref}「${name}」：这章写的是「${content}」，和卡上原来的说法不完全一样，已补在卡上`,
               payload: { cardId: existing.cardId, content }, evidenceInText: evidence!,
             })
           }
@@ -1967,22 +2190,18 @@ export class NovelService {
       // A mention of a foreshadow the confirmed plan moved records whatever
       // the confidence: the person already agreed to it in the plan, and a
       // second ask in 待审 was the same question twice (2026-10-09).
-      if (confidence === 'high' || plannedIds.has(foreshadowId)) {
-        recordedMentions.push({ id: foreshadowId, kind: mentionKind })
-        touch.set(foreshadowId, { kind: mentionKind, ...(answer === undefined ? {} : { answer }) })
-        journalLines.push({
-          foreshadowId, chapter: chapter.n, kind: mentionKind,
-          planned: plannedIds.has(foreshadowId),
-          ...(note === undefined ? {} : { note }),
-          createdAt: now,
-        } satisfies Record<string, unknown>)
-      } else {
-        pend({
-          kind: 'mention', confidence, chapter: chapter.n, reason: '疑似提及',
-          payload: { foreshadowId, kind: mentionKind, ...(note === undefined ? {} : { note }), ...(answer === undefined ? {} : { answer }) },
-          ...(evidence === undefined ? {} : { evidenceInText: evidence }),
-        })
-      }
+      // A low-confidence guess outside the plan is left out; everything else
+      // records (a planned one whatever the confidence: the plan already asked).
+      if (confidence === 'low' && !plannedIds.has(foreshadowId)) continue
+      recordedMentions.push({ id: foreshadowId, kind: mentionKind })
+      touch.set(foreshadowId, { kind: mentionKind, ...(answer === undefined ? {} : { answer }) })
+      journalLines.push({
+        foreshadowId, chapter: chapter.n, kind: mentionKind,
+        planned: plannedIds.has(foreshadowId),
+        ...(note === undefined ? {} : { note }),
+        ...(evidence === undefined ? {} : { evidence }),
+        createdAt: now,
+      } satisfies Record<string, unknown>)
     }
 
     // Gate 3: new foreshadows and characters land as live cards (evidence still greps — gate 1).
@@ -2038,14 +2257,11 @@ export class NovelService {
         report.verified += 1
       } else {
         report.missed += 1
+        // A reminder, never a question: the plan block marks it ✗ and the answer names it.
         const label = opId !== undefined
           ? ` [${foreshadowOf.get(opId)?.ref ?? opId}]`
           : op.id !== undefined ? ` [${op.id}]` : op.question === undefined ? '' : ` [${op.question}]`
-        pend({
-          kind: 'plan-missed', chapter: chapter.n,
-          reason: `计划落空：${op.op}${label} —— 忘了还是改主意？`,
-          payload: { op: op.op, ...(op.id === undefined ? {} : { id: opId ?? op.id }), ...(op.question === undefined ? {} : { question: op.question }) },
-        })
+        planMisses.push(`${op.op}${label}`)
       }
     }
     const beatsSeen = new Set<number>()
@@ -2105,16 +2321,9 @@ export class NovelService {
         dropped.push({ kind: 'experience', reason: evidenceMiss(raw.evidence_in_text), ref: String(raw.character_id) })
         continue
       }
-      const confidence = confidenceOf(raw.confidence)
-      if (confidence === 'high') {
-        experienceLines.push({ characterId, chapter: chapter.n, entry, createdAt: now })
-      } else {
-        pend({
-          kind: 'experience', confidence, chapter: chapter.n, reason: '拿不准的经历',
-          payload: { characterId, entry },
-          ...(evidence === undefined ? {} : { evidenceInText: evidence }),
-        })
-      }
+      // A low-confidence guess is left out; the rest records.
+      if (confidenceOf(raw.confidence) === 'low') continue
+      experienceLines.push({ characterId, chapter: chapter.n, entry, createdAt: now })
     }
     for (const raw of payload.current_states ?? []) {
       const characterId = asCharacter(raw.character_id)
@@ -2147,7 +2356,7 @@ export class NovelService {
       }
       gapsSeen.add(index!)
       pend({
-        kind: 'info-gap', chapter: chapter.n, reason: `信息差：得知「${gap.fact}」`,
+        kind: 'info-gap', chapter: chapter.n, reason: `${gap.who} 得知「${gap.fact}」`,
         payload: { characterId, fact: gap.fact },
         evidenceInText: evidence!,
       })
@@ -2336,6 +2545,9 @@ export class NovelService {
         if (recap !== undefined) mutable.recap = recap
         mutable.wordCount = body.replace(/\s+/g, '').length
         mutable.bodyHash = bodyFingerprint(body)!
+        mutable.extractedAt = now
+        if (landed.length > 0) mutable.newCards = landed.map(card => card.cardId)
+        else delete mutable.newCards
         if (settings.length > 0) mutable.settings = settings
         else delete mutable.settings
         mutable.updatedAt = timestamp
@@ -2344,44 +2556,33 @@ export class NovelService {
     )
     if (!chapterWritten.ok) return { ok: false, error: chapterWritten.error, ...empty, dropped }
 
-    // The pending queue lands last (its ids allocate max+1 inside the write).
-    const pendingItems: { id: string; kind: PendingKind; reason: string }[] = []
-    const waiting = (await this.readPendingItems(id)).some(item => item.status === 'pending' && item.chapter === chapter.n)
-    if (toPending.length > 0 || waiting) {
-      const written = await this.mutateJson(
+    // What used to wait in 待审 is applied now, through the doors an accept
+    // took; an earlier 对账's undecided items for this chapter are superseded.
+    const applied: { kind: PendingKind; line: string }[] = []
+    const stale = (await this.readPendingItems(id)).some(item => item.status === 'pending' && item.chapter === chapter.n)
+    if (stale) {
+      const cleared = await this.mutateJson(
         await this.fileTarget(id, WORK_FILES.pending), session,
         raw => normalizePendingTable(raw),
-        () => ({ version: 1 as const, items: [] }),
+        undefined,
         (table, timestamp) => {
-          // The chapter's undecided items from its last 对账 are superseded (ids are never reused).
-          const superseded = table.items.filter(item => item.status === 'pending' && item.chapter === chapter.n)
-          let next = table.items.reduce((max, row) => {
-            const match = /^p(\d+)$/.exec(row.id)
-            return match === null ? max : Math.max(max, Number(match[1]))
-          }, 0) + 1
-          for (const item of superseded) table.items.splice(table.items.indexOf(item), 1)
-          for (const item of toPending) {
-            const idText = `p${next}`
-            next += 1
-            table.items.push({
-              id: idText,
-              kind: item.kind,
-              ...(item.confidence === undefined ? {} : { confidence: item.confidence }),
-              ...(item.chapter === undefined ? {} : { chapter: item.chapter }),
-              reason: item.reason,
-              ...(item.evidenceInText === undefined ? {} : { evidenceInText: item.evidenceInText }),
-              payload: item.payload,
-              status: 'pending',
-              createdAt: timestamp,
-            })
-            pendingItems.push({ id: idText, kind: item.kind, reason: item.reason })
+          for (const row of table.items) {
+            if (row.status !== 'pending' || row.chapter !== chapter.n) continue
+            const mutable = row as { -readonly [K in keyof PendingItem]: PendingItem[K] }
+            mutable.status = 'discarded'
+            mutable.resolvedAt = timestamp
           }
           return table
         },
       )
-      if (!written.ok) return { ok: false, error: written.error, ...empty, dropped }
+      if (!cleared.ok) return { ok: false, error: cleared.error, ...empty, dropped }
     }
-    return { ok: true, settled: true, linked: settings.length - newCards.filter(card => card.role === 'world').length, ...report, dropped, pendingItems, newCards: landed }
+    for (const item of toPending) {
+      const failed = await this.materializePending(id, { ...item, id: 'auto', status: 'pending', createdAt: now }, session, 'model')
+      if (failed === undefined) applied.push({ kind: item.kind, line: item.reason })
+      else dropped.push({ kind: item.kind, reason: 'apply-failed', ref: item.reason.slice(0, 40) })
+    }
+    return { ok: true, settled: true, linked: settings.length - newCards.filter(card => card.role === 'world').length, ...report, dropped, applied, planMisses, newCards: landed }
   }
 
   /* -------------------------------------------------------------- pending */
@@ -2394,6 +2595,7 @@ export class NovelService {
 
   /** List the pending queue (unresolved only, unless asked for history). */
   async listPending(request: { readonly workId: string; readonly includeResolved?: boolean }): Promise<PendingItem[]> {
+    this.assertAlive('listPending')
     const id = normalizeWorkId(request.workId)
     if (id === undefined) return []
     const items = await this.readPendingItems(id)
@@ -2407,13 +2609,14 @@ export class NovelService {
    * discard just settles the item. Settled items stay in the table (the queue
    * is a snapshot, and the trail matters).
    * @param request - work id, item id, the action.
-   * @param session - the session that owns the gesture; supplies the fence.
+   * @param session - the session that owns the gesture, when one carried it; supplies the fence.
    * @returns the receipt, or the failure code.
    */
   async decidePending(
     request: { readonly workId: string; readonly id: string; readonly action: 'accept' | 'discard' },
-    session: Session,
+    session: Session | undefined,
   ): Promise<{ readonly ok: boolean; readonly error?: NovelError }> {
+    this.assertAlive('decidePending')
     const workId = normalizeWorkId(request.workId)
     if (workId === undefined) return { ok: false, error: 'invalid-name' }
     const items = await this.readPendingItems(workId)
@@ -2440,8 +2643,12 @@ export class NovelService {
     return settled.ok ? { ok: true } : { ok: false, error: settled.error }
   }
 
-  /** Materialize one accepted pending item; undefined on success, the failure code otherwise. */
-  private async materializePending(workId: string, item: PendingItem, session: Session): Promise<NovelError | undefined> {
+  /**
+   * Materialize one pending item — the person's accept of an item left from
+   * before, or the 对账 applying its own finding (`source: 'model'`, the
+   * card history's author); undefined on success, the failure code otherwise.
+   */
+  private async materializePending(workId: string, item: PendingItem, session: Session | undefined, source: HistorySource = 'accept'): Promise<NovelError | undefined> {
     const now = new Date().toISOString()
     // Every journal line belongs to the chapter its finding came from; an item without one cannot land.
     const chapter = item.chapter
@@ -2488,7 +2695,7 @@ export class NovelService {
       if (canvas === undefined || card === undefined) return 'missing'
       const mutation = await canvas.patchCard({ canvasId: workId, cardId: characterId, fields: learnFact(card.fields ?? {}, fact, chapter) }, session)
       if (!mutation.ok) return canvasErrorOf(mutation.error)
-      const adopted: CardWrite = { source: 'accept', fields: ['knows', 'unaware'], chapter, ...(item.evidenceInText === undefined ? {} : { evidence: item.evidenceInText }) }
+      const adopted: CardWrite = { source, fields: ['knows', 'unaware'], chapter, ...(item.evidenceInText === undefined ? {} : { evidence: item.evidenceInText }) }
       const logged = await this.ensureRefs(workId, session, mutation.board, new Map(), new Map([[characterId, adopted]]))
       return logged.ok ? undefined : logged.error ?? 'io'
     }
@@ -2507,7 +2714,7 @@ export class NovelService {
       if (move === undefined) return 'invalid-name'
       const mutation = await canvas.patchCard({ canvasId: workId, cardId: relationId, fields: { ...card.fields, type: move.type, stage: move.stage } }, session)
       if (!mutation.ok) return canvasErrorOf(mutation.error)
-      const logged = await this.ensureRefs(workId, session, mutation.board, new Map(), new Map([[relationId, { source: 'accept', chapter }]]))
+      const logged = await this.ensureRefs(workId, session, mutation.board, new Map(), new Map([[relationId, { source, chapter }]]))
       if (!logged.ok) return logged.error ?? 'io'
       const appended = await this.appendJsonl(await this.fileTarget(workId, WORK_FILES.relations), session, [stageLine({
         relationId, chapter, event, stage: move.stage,
@@ -2518,15 +2725,19 @@ export class NovelService {
       return appended.ok ? undefined : appended.error
     }
     if (item.kind === 'setting') {
-      // The person sided with the chapter: the card's 设定 becomes what the text says.
+      // The chapter words a setting otherwise: its line joins the card's 设定
+      // (marked with the chapter), never replacing what the card already said.
       const canvas = this.canvas
       const { cardId, content } = item.payload
       if (chapter === undefined || cardId === undefined || content === undefined) return 'invalid-name'
       const card = (await this.readEntries(workId))?.board.cards.find(candidate => candidate.id === cardId)
       if (canvas === undefined || card === undefined) return 'missing'
-      const mutation = await canvas.patchCard({ canvasId: workId, cardId, fields: { ...card.fields, rule: content } }, session)
+      const rule = typeof card.fields?.['rule'] === 'string' ? card.fields['rule'].trim() : ''
+      const added = `（第${chapter}章）${content}`
+      if (rule.includes(added)) return undefined
+      const mutation = await canvas.patchCard({ canvasId: workId, cardId, fields: { ...card.fields, rule: rule === '' ? content : `${rule}\n${added}` } }, session)
       if (!mutation.ok) return canvasErrorOf(mutation.error)
-      const adopted: CardWrite = { source: 'accept', fields: ['rule'], chapter, ...(item.evidenceInText === undefined ? {} : { evidence: item.evidenceInText }) }
+      const adopted: CardWrite = { source, fields: ['rule'], chapter, ...(item.evidenceInText === undefined ? {} : { evidence: item.evidenceInText }) }
       const logged = await this.ensureRefs(workId, session, mutation.board, new Map(), new Map([[cardId, adopted]]))
       return logged.ok ? undefined : logged.error ?? 'io'
     }
@@ -2819,12 +3030,14 @@ function normalizeMention(raw: unknown): MentionEntry | undefined {
   if (foreshadowId === undefined || chapter === undefined
     || (kind !== 'planted' && kind !== 'advanced' && kind !== 'hinted' && kind !== 'resolved')) return undefined
   const note = cleanText(record['note'], 200)
+  const evidence = cleanText(record['evidence'], 200)
   return {
     foreshadowId,
     chapter,
     kind,
     planned: record['planned'] === true,
     ...(note === undefined ? {} : { note }),
+    ...(evidence === undefined ? {} : { evidence }),
     createdAt: cleanText(record['createdAt'], 40) ?? '',
   }
 }

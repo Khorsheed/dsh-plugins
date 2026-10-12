@@ -60,17 +60,31 @@ const TOAST_MS = 10_000
  * 「已记下」: when the coach notes a weak point from THIS session, say so in
  * the sidebar with an undo — the chat line says it too, this is where the
  * undo lives. Only notes made after the pane opened are toasted.
+ *
+ * The same timer is the pane's change poll: the host's writes (a landed quiz,
+ * a recorded page) move `latestActivity`, and a move refreshes the open view —
+ * the per-tab watch windows alone lapsed after two minutes and left the tab
+ * stale until a remount.
  */
 function RecordToast({ p }: { p: LibraryPaneProps }): ReactNode {
   const { t, actions } = p
   const since = useRef(new Date().toISOString())
   const seen = useRef(new Set<string>())
+  const activityAt = useRef<string | undefined>()
   const [record, setRecord] = useState<(LibraryEvent & { projectId: string }) | undefined>()
   const [undone, setUndone] = useState(false)
 
   useEffect(() => {
     const poll = (): void => {
       if (document.visibilityState !== 'visible') return
+      void p.latestActivity().then(result => {
+        if (!result.ok) return
+        const at = result.value.at
+        if (at === undefined) return
+        // The first read only sets the baseline — the views just loaded fresh.
+        if (activityAt.current !== undefined && at > activityAt.current) actions.refresh()
+        activityAt.current = at
+      }, () => {})
       void p.recentRecords().then(result => {
         if (!result.ok) return
         const fresh = result.value.records.find(entry =>

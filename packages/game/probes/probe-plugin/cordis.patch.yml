@@ -1,0 +1,3 @@
+- insert:
+    - id: gamedev-probe
+      name: '@khorsheed/dsh-gamedev-probe'

@@ -84,6 +84,8 @@ pnpm deploy:check-links
    - **家族内部 bundle 的挂载声明已撤（T6, 2026-09-05）**——`@khorsheed/dsh-local-agent-dsh-headless` 这类子 profile 专属 bundle 不声明 `dsh.bundle`，reconcilePlugins 对它永不自动挂载（误装成直接依赖也只是 "plain dependency" 警告）;仍应经其父包传递安装（overrides 钉版），patch 由 provisioner 拷进子 profile 自己的 patch 层。历史背景（2026-08-23 P0）:声明还在时,直接依赖 → 自动挂载 → `code-runtime` 撞 web-app 同名行 → 全实例 boot 失败;未来新的家族内部组合包必须沿用"不声明 + provisioner/父 patch 落位"模式
    - 多人并行 install 会把官方包解析出多个 peer 变体,模块增强(SlotMap/LocaleNamespaceMap)挂到不同实例上,报 `constraint 'never'` 类错误——`pnpm dedupe` 收敛即可
 
+包改名时，在同一部署命令中添加 `--replace @khorsheed/dsh-old=@khorsheed/dsh-new`，且新包必须通过 `--package` 同发。流程先构建、打包，再在部署锁内备份 profile 配置并移除旧依赖、bundles 条目和 override pin；官方 add、干净安装、preflight 和 canary 不变。自定义 profile patch 仍引用旧包时会提前拒绝。失败后重跑同一命令，不要手改 profile。备份位于 `$DSH_HOME/state/deploy-replacements/`，旧 tarball 保留。
+
 ## 部署卡在中途 / 退役包清理(2026-09-28 事故后立)
 
 **时长预期与调用方预算。** 六道闸刻意全非增量——全新 profile 安装、整树组合干跑、按闸重启 + canary——多 agent 并发下全程 10-20 分钟是常态(16GB 机器,swap 压力会放大每一步);脚本按 `[deploy-3080 +Ns]` 打印各阶段耗时。**调用方必须给足预算**:后台任务默认 600s 超时会把它杀在中途——杀在全新安装中途 = profile 半写(node_modules 已删未装完,下一次任何重启都会踩中);杀在重启之后 = 实例其实会被 watchdog 自己拉回来,但调用方看不到 canary 结论。修复方式只有一个:原命令重跑一遍(锁在原 holder 死后自动回收)。

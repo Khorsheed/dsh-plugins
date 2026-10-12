@@ -384,6 +384,14 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       }
       selection.openPageTab(canvasId, page, heading, param)
     },
+    openFace: (canvasId, face, scope) => {
+      try {
+        ctx.sidebarRight.openTab(CANVAS_KIND)
+      } catch (error) {
+        ctx.logger.warn('canvas: openTab failed (tab type not registered?)', error)
+      }
+      selection.openBoardFace(canvasId, face, scope)
+    },
   }
   ctx.provide('canvasNav', canvasNav)
   ctx.effect(() => toolSlots.inject('tool.call.toolview', () => toolSlots.register({

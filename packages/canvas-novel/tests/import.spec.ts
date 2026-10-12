@@ -98,7 +98,7 @@ describe('novel_extract import — the five gates (proposal §5)', () => {
     expect(annotations.notes[foreshadow!.id]).toEqual({ evidenceInText: '门后传来一个女人的声音，哼着不成调的摇篮曲' })
   })
 
-  it('gate 4: rule cards land live with their evidence; medium/low journal lines pend', async () => {
+  it('gate 4: rule cards land live with their evidence; a medium mention records, a low guess outside the plan is left out', async () => {
     const { store, canvas } = seededStore()
     await store.extractImport({ workId: DREAM.workId, n: 5, payload: PAYLOAD }, SESSION)
     const [high] = cardsWith(canvas, '门后的敲击以三下为一组，像某种耐心的呼吸。')
@@ -112,26 +112,51 @@ describe('novel_extract import — the five gates (proposal §5)', () => {
     // ✗ on a wrong one archives it.
     expect(await canvas.patchCard({ canvasId: DREAM.workId, cardId: medium!.id, status: 'archived' }, SESSION)).toMatchObject({ ok: true })
     expect(canvas.card(DREAM.workId, medium!.id)?.status).toBe('archived')
-    // A medium MENTION outside the plan pends (榜上判不了的疑似提及进人审), and moves nothing yet.
-    const pending = await store.listPending({ workId: DREAM.workId })
-    expect(pending.some(item => item.kind === 'mention' && item.payload.foreshadowId === CARD.formerKeeper)).toBe(true)
-    expect(await store.listMentions({ workId: DREAM.workId, foreshadowId: CARD.formerKeeper })).toEqual([])
+    // 对账 asks nothing (2026-10-09): a medium mention outside the plan records, quoting the text.
+    expect(await store.listPending({ workId: DREAM.workId })).toEqual([])
+    expect((await store.listMentions({ workId: DREAM.workId, foreshadowId: CARD.formerKeeper })).map(entry => [entry.chapter, entry.evidence]))
+      .toEqual([[5, '指尖碰到门缝的边缘']])
   })
 
-  it('gate 5: plan ops verify against recorded mentions; a missed plan pends as 计划落空, journal lines carry the planned flag', async () => {
+  it('最近更新 reads what the newest 对账 did, card by card, and only that one', async () => {
+    const { store, canvas } = seededStore()
+    expect(await store.recentUpdates({ workId: DREAM.workId })).toEqual({ ok: true, cards: {} })
+    await store.extractImport({ workId: DREAM.workId, n: 5, payload: PAYLOAD }, SESSION)
+    const recent = await store.recentUpdates({ workId: DREAM.workId })
+    expect(recent).toMatchObject({ ok: true, chapter: 5 })
+    // A new card leads with its creation; a mention quotes the text; an experience is its line.
+    const [song] = cardsWith(canvas, '摇篮曲是谁唱的')
+    expect(recent.cards[song!.id]![0]).toMatchObject({ kind: 'create' })
+    expect(recent.cards[CARD.formerKeeper]).toEqual([{ kind: 'mention', mention: 'hinted', text: '指尖碰到门缝的边缘' }])
+    expect(recent.cards[CARD.zhao]?.some(note => note.kind === 'experience')).toBe(true)
+    // Cards the 对账 did not touch are not listed.
+    expect(recent.cards[CARD.towerShadow]).toBeUndefined()
+  })
+
+  it('a low-confidence guess outside the plan is left out (mention or experience)', async () => {
+    const { store } = seededStore()
+    const report = await store.extractImport({ workId: DREAM.workId, n: 5, payload: {
+      foreshadow_mentions: [{ foreshadow_id: '#18', kind: 'hinted', confidence: 'low', evidence_in_text: '指尖碰到门缝的边缘' }],
+      experiences: [{ character_id: 'c2', entry: '似乎在等什么', confidence: 'low', evidence_in_text: '指尖碰到门缝的边缘' }],
+    } }, SESSION)
+    expect(report).toMatchObject({ ok: true, settled: true, applied: [] })
+    expect(await store.listMentions({ workId: DREAM.workId, foreshadowId: CARD.formerKeeper })).toEqual([])
+    expect((await store.listExperiences({ workId: DREAM.workId, characterId: CARD.aiwen })).some(entry => entry.chapter === 5 && entry.entry === '似乎在等什么')).toBe(false)
+    expect(await store.listPending({ workId: DREAM.workId })).toEqual([])
+  })
+
+  it('gate 5: plan ops verify against recorded mentions; a missed op is a reminder, journal lines carry the planned flag', async () => {
     const { store, fs, canvas } = seededStore()
     const report = await store.extractImport({ workId: DREAM.workId, n: 5, payload: PAYLOAD }, SESSION)
     // 暗示 #15 was touched (hinted mention recorded) → verified; 推进 #12 was not → missed.
     expect(report.verified).toBe(1)
     expect(report.missed).toBe(1)
-    const pending = await store.listPending({ workId: DREAM.workId })
-    const missed = pending.find(item => item.kind === 'plan-missed')
-    expect(missed?.reason).toContain('计划落空：推进 [#12]')
-    expect(missed?.reason).toContain('忘了还是改主意')
+    expect(report.planMisses).toEqual(['推进 [#12]'])
+    expect(await store.listPending({ workId: DREAM.workId })).toEqual([])
     // The recorded mention carries the planned flag, and the card's status moved.
     const mentions = fs.read(`${DREAM.stateRoot}/${DREAM.workId}/mentions.jsonl`).trim().split('\n').map(line => JSON.parse(line) as Record<string, unknown>)
     const recorded = mentions.find(line => line['chapter'] === 5 && line['foreshadowId'] === CARD.leafGlow)
-    expect(recorded).toEqual({ foreshadowId: CARD.leafGlow, chapter: 5, kind: 'hinted', planned: true, createdAt: expect.any(String) })
+    expect(recorded).toEqual({ foreshadowId: CARD.leafGlow, chapter: 5, kind: 'hinted', planned: true, evidence: '袖口的蓝叶在靠近门缝时亮得刺眼', createdAt: expect.any(String) })
     expect(canvas.card(DREAM.workId, CARD.leafGlow)?.fields).toMatchObject({ question: '蓝色叶子为什么发光', status: '推进中', plantedAt: 2 })
     const ledger = await store.ledger({ workId: DREAM.workId })
     expect(ledger.active.find(view => view.cardId === CARD.leafGlow)?.lastActiveChapter).toBe(5)
@@ -150,20 +175,7 @@ describe('novel_extract import — the five gates (proposal §5)', () => {
     expect(mentions.find(line => line['chapter'] === 5 && line['foreshadowId'] === CARD.doorGap)).toMatchObject({ kind: 'advanced', planned: true })
   })
 
-  it('审过 leaves no suspected mention behind: unhandled reads as not mentioned', async () => {
-    const { store } = seededStore()
-    await store.extractImport({ workId: DREAM.workId, n: 5, payload: PAYLOAD }, SESSION)
-    const before = await store.listPending({ workId: DREAM.workId })
-    expect(before.some(item => item.kind === 'mention' && item.chapter === 5)).toBe(true)
-    expect((await store.reviewChapter({ workId: DREAM.workId, n: 5 }, SESSION)).ok).toBe(true)
-    const after = await store.listPending({ workId: DREAM.workId })
-    expect(after.some(item => item.kind === 'mention' && item.chapter === 5)).toBe(false)
-    // …the questions that hold the gate stay.
-    expect(after.some(item => item.kind === 'plan-missed' && item.chapter === 5)).toBe(true)
-    expect(await store.listMentions({ workId: DREAM.workId, foreshadowId: CARD.formerKeeper })).toEqual([])
-  })
-
-  it('信息差: a planned gap the text closed pends; adopting it moves the fact from 不知道 to 知道', async () => {
+  it('信息差: a planned gap the text closed moves the fact from 不知道 to 知道 at once, and the answer says so', async () => {
     const { store, fs, canvas } = seededStore()
     const file = `${DREAM.stateRoot}/${DREAM.workId}/chapters.json`
     const table = JSON.parse(fs.read(file)) as { chapters: { n: number; plan?: Record<string, unknown> }[] }
@@ -183,9 +195,8 @@ describe('novel_extract import — the five gates (proposal §5)', () => {
       { kind: 'info-gap', reason: 'evidence-not-found', ref: '2' },
       { kind: 'info-gap', reason: 'character-not-in-roster', ref: '没这个人' },
     ])
-    const gap = (await store.listPending({ workId: DREAM.workId })).find(item => item.kind === 'info-gap')!
-    expect(gap).toMatchObject({ chapter: 5, reason: '信息差：得知「门缝里有什么」', payload: { characterId: CARD.zhao, fact: '门缝里有什么' } })
-    expect(await store.decidePending({ workId: DREAM.workId, id: gap.id, action: 'accept' }, SESSION)).toEqual({ ok: true })
+    expect(report.applied).toEqual([{ kind: 'info-gap', line: '赵启明 得知「门缝里有什么」' }])
+    expect(await store.listPending({ workId: DREAM.workId })).toEqual([])
     expect(canvas.card(DREAM.workId, CARD.zhao)?.fields).toMatchObject({
       knows: '监护守则的全部条文\n二层梦的基本规则\n门缝里有什么（第5章得知）',
       unaware: '蓝色叶子的来历\n艾文的真实身份',
@@ -228,9 +239,12 @@ describe('novel_extract import — the five gates (proposal §5)', () => {
     expect(closed).toMatchObject({ ok: false, error: 'not-reviewed' })
   })
 
-  it('decidePending accept materializes through the same doors (a pended mention → the journal and the card)', async () => {
-    const { store, canvas } = seededStore()
-    await store.extractImport({ workId: DREAM.workId, n: 5, payload: PAYLOAD }, SESSION)
+  it('a pending item left from before still accepts through the same doors (a pended mention → the journal and the card)', async () => {
+    const { store, canvas, fs } = seededStore()
+    fs.seed(`${DREAM.stateRoot}/${DREAM.workId}/pending.json`, `${JSON.stringify({ version: 1, items: [{
+      id: 'p1', kind: 'mention', confidence: 'medium', chapter: 5, reason: '疑似提及',
+      payload: { foreshadowId: CARD.formerKeeper, kind: 'hinted' }, status: 'pending', createdAt: 't',
+    }] }, null, 2)}\n`)
     const pending = await store.listPending({ workId: DREAM.workId })
     const mention = pending.find(item => item.kind === 'mention')!
     expect(await store.decidePending({ workId: DREAM.workId, id: mention.id, action: 'accept' }, SESSION)).toEqual({ ok: true })
@@ -295,12 +309,15 @@ describe('re-reconciling a changed chapter, and what a failed import leaves', ()
     expect((await store.listChapters({ workId: DREAM.workId })).find(row => row.chapter.n === 5)?.phase).toBe('writing')
   })
 
-  it('a changed body reads 待对账, and its re-import replaces the chapter\'s journal lines and pending items', async () => {
+  it('a changed body reads 待对账, and its re-import replaces the chapter\'s journal lines and supersedes its old pending items', async () => {
     const { store, fs } = seededStore()
+    fs.seed(`${DREAM.stateRoot}/${DREAM.workId}/pending.json`, `${JSON.stringify({ version: 1, items: [{
+      id: 'p1', kind: 'mention', confidence: 'medium', chapter: 5, reason: '疑似提及',
+      payload: { foreshadowId: CARD.formerKeeper, kind: 'hinted' }, status: 'pending', createdAt: 't',
+    }] }, null, 2)}\n`)
     const first = await store.extractImport({ workId: DREAM.workId, n: 5, payload: PAYLOAD }, SESSION)
     expect(first).toMatchObject({ ok: true, settled: true })
-    const pendingBefore = (await store.listPending({ workId: DREAM.workId })).filter(item => item.chapter === 5)
-    expect(pendingBefore.length).toBeGreaterThan(0)
+    expect((await store.listPending({ workId: DREAM.workId })).filter(item => item.chapter === 5)).toEqual([])
     // Untouched text: nothing to reconcile.
     expect(await store.extractImport({ workId: DREAM.workId, n: 5, payload: PAYLOAD }, SESSION)).toMatchObject({ ok: false, error: 'not-reviewed' })
     // The person rewrites the chapter: 待对账, and a second pass replaces instead of stacking.
@@ -313,12 +330,10 @@ describe('re-reconciling a changed chapter, and what a failed import leaves', ()
     const lines = (await store.listExperiences({ workId: DREAM.workId, characterId: CARD.zhao })).filter(entry => entry.chapter === 5)
     expect(lines.map(entry => entry.entry)).toEqual(['没有推门，离开档案室'])
     expect((await store.listMentions({ workId: DREAM.workId, foreshadowId: CARD.leafGlow })).some(entry => entry.chapter === 5)).toBe(false)
-    const pendingAfter = (await store.listPending({ workId: DREAM.workId })).filter(item => item.chapter === 5)
-    expect(pendingAfter.some(item => pendingBefore.some(old => old.id === item.id))).toBe(false)
     expect((await store.listChapters({ workId: DREAM.workId })).find(row => row.chapter.n === 5)?.phase).toBe('extracted')
   })
 
-  it('a setting the board already holds is linked to the chapter; one that disagrees waits for the person, the card untouched', async () => {
+  it('a setting the board already holds is linked to the chapter; one worded otherwise adds its line to the card and the answer says so', async () => {
     const { store, canvas } = seededStore()
     const rule = canvas.card(DREAM.workId, CARD.leafCarrier)!.fields!['rule']
     const report = await store.extractImport({ workId: DREAM.workId, n: 5, payload: {
@@ -328,15 +343,13 @@ describe('re-reconciling a changed chapter, and what a failed import leaves', ()
       ],
     } }, SESSION)
     expect(report).toMatchObject({ ok: true, settled: true, linked: 2, newCards: [] })
-    expect(canvas.card(DREAM.workId, CARD.leafCarrier)!.fields!['rule']).toBe(rule)
-    const conflicts = (await store.listPending({ workId: DREAM.workId })).filter(item => item.kind === 'setting')
-    expect(conflicts).toHaveLength(1)
-    expect(conflicts[0]!.payload).toMatchObject({ cardId: CARD.leafCarrier, content: '蓝叶是门后递出来的回答。' })
+    // The card keeps what it said; the chapter's words join it, marked with the chapter.
+    expect(canvas.card(DREAM.workId, CARD.leafCarrier)!.fields!['rule']).toBe(`${String(rule)}\n（第5章）蓝叶是门后递出来的回答。`)
+    expect(report.applied).toHaveLength(1)
+    expect(report.applied[0]!.line).toContain('补进设定')
+    expect(await store.listPending({ workId: DREAM.workId })).toEqual([])
     const chapter = (await store.listChapters({ workId: DREAM.workId })).find(row => row.chapter.n === 5)!.chapter
     expect(chapter.settings).toEqual([CARD.leafCarrier, CARD.trueName])
-    // Accepting rewrites the card with this chapter's version.
-    expect(await store.decidePending({ workId: DREAM.workId, id: conflicts[0]!.id, action: 'accept' }, SESSION)).toEqual({ ok: true })
-    expect(canvas.card(DREAM.workId, CARD.leafCarrier)!.fields!['rule']).toBe('蓝叶是门后递出来的回答。')
   })
 
   it('a new character named with an aside is the registered one, not a second card', async () => {

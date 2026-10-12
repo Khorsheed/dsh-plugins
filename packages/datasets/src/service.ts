@@ -9,8 +9,8 @@
  * deduplicated sparse-checkout worktrees. No path produces a second copy.
  */
 import { existsSync, realpathSync } from 'node:fs'
-import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises'
-import { dirname, join, resolve, sep } from 'node:path'
+import { readdir, readFile, stat } from 'node:fs/promises'
+import { dirname, join, resolve } from 'node:path'
 import {
   assertSafeRelativePath, assertValidName, buildRegistry, canaryWarnings, computePassthrough, datasetDir,
   DATASET_DESCRIPTOR, DatasetsError,
@@ -33,6 +33,8 @@ import { openProposals, type ProposalStore } from './proposal.ts'
 import { finishRemoval, planRepoRemoval, repositoryDirOf, stageRemoval, type RemovalPlan, type RemovalRoots } from './removal.ts'
 import { notRegistered, openRegistry, type LatestCommit, type RegistryEntry, type RepoRegistry } from './registry.ts'
 import { normalizeRepoPath } from './repo-path.ts'
+import { readFileWithinRoot, writeFileWithinRoot } from './safe-write.ts'
+import { PACKAGE_NAME } from './invariant.ts'
 
 /**
  * The effective visibility scope of one call: the resolved repository plus
@@ -395,6 +397,21 @@ export interface DatasetsService {
   /** Fail loud unless `repo` is inside a git work tree; resolves to the canonical toplevel. */
   assertRepository(repo: string): Promise<string>
   /**
+   * The display contract for this instance's gestures (Remote `capabilities`):
+   * which action groups the mounting side marked unavailable, with their
+   * reasons. Read-only — enforcement stays at the server's own admission rules.
+   */
+  capabilities(): DatasetsCapabilities
+  /**
+   * Tear the instance down (wired to the borrowed Context's teardown by
+   * `apply`; an instance built from the factory is disposed by its owner).
+   * Idempotent and terminal: afterwards every public verb refuses with
+   * {@link DatasetsDisposedError}, reads included, and a write in flight when
+   * dispose lands refuses at the write boundary. Rebuilding over the same
+   * roots is legal — the old instance's data is all there.
+   */
+  dispose(): void
+  /**
    * Validate one dataset (or all) of a repository: shape errors fail loud per
    * dataset, warnings never block. Author-facing — sees everything
    * (operator semantics), including the passthrough zone it reports on. It is
@@ -439,6 +456,66 @@ export interface DatasetsService {
  */
 export const FULL_VIEW_KEY = '_full'
 
+/**
+ * Thrown by every public verb after {@link DatasetsService.dispose} ran (an
+ * explicit teardown, or the borrowed Context's own disposal when the service
+ * came from `apply`): a coded, package-named refusal, never a silent answer
+ * from a dead instance. A rebuild over the same roots is a NEW instance's
+ * business (the library/eval precedent).
+ */
+export class DatasetsDisposedError extends Error {
+  constructor(message: string, readonly code: 'disposed') {
+    super(message)
+    this.name = 'DatasetsDisposedError'
+  }
+}
+
+/** The gesture groups an instance may mark unavailable (the capabilities descriptor's keys). */
+export type DatasetsCapabilityGroup =
+  /** Registration management: register / edit / unregister. */
+  | 'registration'
+  /** File writes into the authoring checkout: scaffold gestures, putItem, import. */
+  | 'fileWrite'
+  /** The organizing hand-off: 「添加题集」 / 「交给 Agent 修改」. */
+  | 'agentOrganize'
+  /** The legacy-bindings one-click import. */
+  | 'bindingImport'
+  /** Proposal review: confirm / return / the pending-version confirm. */
+  | 'proposalReview'
+  /** Deletion: deleteRegistration / discardProposal. */
+  | 'delete'
+
+/**
+ * Per-group overrides in the instance config: a non-empty string marks the
+ * group unavailable and IS the reason the tab shows beside the hidden gesture.
+ */
+export type DatasetsCapabilityOverrides = Partial<Record<DatasetsCapabilityGroup, string>>
+
+/** One gesture group's availability, as the tab consumes it (hide the gesture, show the reason). */
+export interface DatasetsCapabilityAvailability {
+  readonly available: boolean
+  /** Why the group is unavailable, when it is. */
+  readonly reason?: string
+}
+
+/**
+ * What this instance's gestures may do (the Remote `capabilities` verb). A
+ * DISPLAY contract: the mounting side marks groups unavailable and the tab
+ * hides those gestures with the reason; the server's own admission rules are
+ * unchanged (a gateway's unadmitted verbs stay refused server-side
+ * regardless). Additive by construction: later fields are optional, and
+ * `protocolVersion` pins the semantics.
+ */
+export interface DatasetsCapabilities {
+  readonly protocolVersion: 1
+  readonly registration: DatasetsCapabilityAvailability
+  readonly fileWrite: DatasetsCapabilityAvailability
+  readonly agentOrganize: DatasetsCapabilityAvailability
+  readonly bindingImport: DatasetsCapabilityAvailability
+  readonly proposalReview: DatasetsCapabilityAvailability
+  readonly delete: DatasetsCapabilityAvailability
+}
+
 /** Service construction options (roots already resolved by the caller). */
 export interface DatasetsServiceOptions {
   /** Materialized-layer root (`<stateRoot>/materialized`). */
@@ -451,6 +528,8 @@ export interface DatasetsServiceOptions {
   proposalsRoot?: string
   /** T90: the organizing session's preset and the default home of new dataset repositories. */
   organizing?: OrganizingSetup
+  /** Gesture groups this instance marks unavailable (the capabilities descriptor; default: all available). */
+  capabilities?: DatasetsCapabilityOverrides
 }
 
 /** T99 · a registration's delete plan. */
@@ -653,6 +732,11 @@ function filterSummaryLayers(ceiling: readonly string[] | undefined, summary: Da
  * @returns the service instance.
  */
 export function createDatasetsService(options: DatasetsServiceOptions): DatasetsService {
+  /** Set by dispose(): every public verb refuses coded afterwards (reads included). */
+  let disposed = false
+  const assertAlive = (verb: string): void => {
+    if (disposed) throw new DatasetsDisposedError(`${PACKAGE_NAME}: ${verb} after dispose`, 'disposed')
+  }
   const resolveCommitAt = async (scope: DatasetScope, commit?: string): Promise<{ repo: string; sha: string }> => {
     const repo = await readRepoOf(scope.repo)
     const ref = commit ?? scope.ref ?? 'HEAD'
@@ -666,9 +750,13 @@ export function createDatasetsService(options: DatasetsServiceOptions): Datasets
   }
 
   /**
-   * A working-tree write, containment-checked. Shared by `putItem` and the
-   * three skeleton gestures so that one rule decides what «inside the
-   * repository» means.
+   * A working-tree write, containment-checked at the realpath boundary
+   * (safe-write.ts): the parent chain is built without ever following a
+   * symlink, the write is a temp file + rename with the boundary re-verified
+   * across it, and the dispose guard runs at the boundary itself, so a
+   * disposal racing the write refuses there rather than after it. Shared by
+   * `putItem` and the three skeleton gestures so that one rule decides what
+   * «inside the repository» means.
    * @param repo - the resolved repository toplevel.
    * @param rel - the repo-relative path to write.
    * @param content - the bytes.
@@ -677,14 +765,7 @@ export function createDatasetsService(options: DatasetsServiceOptions): Datasets
    * @returns whether the file was written.
    */
   const writeInRepo = async (repo: string, rel: string, content: string | Buffer, keepExisting = false): Promise<boolean> => {
-    const target = resolve(repo, rel)
-    if (target !== repo && !target.startsWith(`${repo}${sep}`)) {
-      throw new DatasetsError(`refusing to write outside the repository: ${rel}`, 'INVALID_NAME')
-    }
-    if (keepExisting && existsSync(target)) return false
-    await mkdir(dirname(target), { recursive: true })
-    await writeFile(target, content)
-    return true
+    return await writeFileWithinRoot(repo, rel, content, { keepExisting, guard: () => assertAlive('write') })
   }
 
   /**
@@ -725,11 +806,45 @@ export function createDatasetsService(options: DatasetsServiceOptions): Datasets
     if (registered) return { path: repositoryDirOf(commonDir), files: 'keep', keepReason: 'registered', state: [] }
     return await planRepoRemoval(commonDir, removalRoots())
   }
+  const registryStore = openRegistry(options.registryPath)
+  const organizingSetup = options.organizing ?? { preset: '', datasetsHome: resolveDatasetsHome(undefined) }
   const service: DatasetsService = {
-    bindingsRoot: options.bindingsRoot,
-    registry: openRegistry(options.registryPath),
-    organizing: options.organizing ?? { preset: '', datasetsHome: resolveDatasetsHome(undefined) },
+    // The live faces are guarded getters so EVERY Remote verb — they all reach
+    // one of these — refuses coded once the instance is disposed.
+    get bindingsRoot(): string {
+      assertAlive('bindingsRoot')
+      return options.bindingsRoot
+    },
+    get registry(): RepoRegistry {
+      assertAlive('registry')
+      return registryStore
+    },
+    get organizing(): OrganizingSetup {
+      assertAlive('organizing')
+      return organizingSetup
+    },
+    capabilities() {
+      assertAlive('capabilities')
+      const group = (name: DatasetsCapabilityGroup): DatasetsCapabilityAvailability => {
+        const reason = options.capabilities?.[name]
+        return reason === undefined || reason === '' ? { available: true } : { available: false, reason }
+      }
+      return {
+        protocolVersion: 1,
+        registration: group('registration'),
+        fileWrite: group('fileWrite'),
+        agentOrganize: group('agentOrganize'),
+        bindingImport: group('bindingImport'),
+        proposalReview: group('proposalReview'),
+        delete: group('delete'),
+      }
+    },
+    dispose() {
+      // Idempotent and terminal; the data on disk is the next instance's.
+      disposed = true
+    },
     async planDelete(id) {
+      assertAlive('planDelete')
       const entry = service.registry.get(id)
       if (entry === undefined) throw notRegistered(id)
       let sets: string[] = []
@@ -742,6 +857,7 @@ export function createDatasetsService(options: DatasetsServiceOptions): Datasets
     },
 
     async deleteRegistration(id) {
+      assertAlive('deleteRegistration')
       const entry = service.registry.get(id)
       if (entry === undefined) throw notRegistered(id)
       const plan = await planRepoRemoval(entry.commonDir, removalRoots())
@@ -763,11 +879,13 @@ export function createDatasetsService(options: DatasetsServiceOptions): Datasets
     },
 
     async planDiscard(id) {
+      assertAlive('planDiscard')
       const proposal = service.proposals.get(id)
       return { ...(await discardPlanOf(proposal.commonDir, proposal.kind)), id, registryId: proposal.registryId }
     },
 
     async discardProposal(id) {
+      assertAlive('discardProposal')
       const proposal = service.proposals.get(id)
       if (proposal.status !== 'pending' && proposal.status !== 'returned') {
         throw new DatasetsError(`proposal ${id} is ${proposal.status} — only an open proposal can be discarded`, 'SHAPE_INVALID')
@@ -788,6 +906,7 @@ export function createDatasetsService(options: DatasetsServiceOptions): Datasets
     },
 
     get proposals(): ProposalStore {
+      assertAlive('proposals')
       proposalStore ??= openProposals(options.proposalsRoot ?? join(dirname(options.registryPath), 'proposals'), {
         registry: service.registry,
         validate: async (repo, commit) => await service.validate({ repo, ref: commit, operator: true }),
@@ -795,6 +914,7 @@ export function createDatasetsService(options: DatasetsServiceOptions): Datasets
       return proposalStore
     },
     async list(scope, datasetId, commit) {
+      assertAlive('list')
       const { repo, sha } = await resolveCommitAt(scope, commit)
       if (datasetId !== undefined) {
         assertDatasetAllowed(scope, datasetId)
@@ -818,6 +938,7 @@ export function createDatasetsService(options: DatasetsServiceOptions): Datasets
     },
 
     async show(scope, datasetId, itemId, commit) {
+      assertAlive('show')
       assertDatasetAllowed(scope, datasetId)
       const { repo, sha } = await resolveCommitAt(scope, commit)
       const descriptor = await loadDescriptor(repo, sha, datasetId)
@@ -838,6 +959,7 @@ export function createDatasetsService(options: DatasetsServiceOptions): Datasets
     },
 
     async describe(scope, datasetId, commit) {
+      assertAlive('describe')
       assertDatasetAllowed(scope, datasetId)
       const { repo, sha } = await resolveCommitAt(scope, commit)
       const descriptor = await loadDescriptor(repo, sha, datasetId)
@@ -845,6 +967,7 @@ export function createDatasetsService(options: DatasetsServiceOptions): Datasets
     },
 
     async read(scope, query) {
+      assertAlive('read')
       assertDatasetAllowed(scope, query.dataset)
       if (query.item !== undefined) assertValidName('item id', query.item)
       assertValidName('layer name', query.layer)
@@ -882,6 +1005,7 @@ export function createDatasetsService(options: DatasetsServiceOptions): Datasets
     },
 
     async readPassthrough(scope, datasetId, path, commit) {
+      assertAlive('readPassthrough')
       assertDatasetAllowed(scope, datasetId)
       const rel = assertSafeRelativePath(path)
       const { repo, sha } = await resolveCommitAt(scope, commit)
@@ -894,6 +1018,7 @@ export function createDatasetsService(options: DatasetsServiceOptions): Datasets
     },
 
     async snapshot(scope, datasetId, commit) {
+      assertAlive('snapshot')
       assertDatasetAllowed(scope, datasetId)
       const { repo, sha } = await resolveCommitAt(scope, commit)
       await loadDescriptor(repo, sha, datasetId) // the pin must name a real dataset
@@ -901,6 +1026,7 @@ export function createDatasetsService(options: DatasetsServiceOptions): Datasets
     },
 
     async worktreePath(scope, datasetId, worktreeOptions) {
+      assertAlive('worktreePath')
       assertDatasetAllowed(scope, datasetId)
       const { repo, sha } = await resolveCommitAt(scope, worktreeOptions?.commit)
       const descriptor = await loadDescriptor(repo, sha, datasetId)
@@ -941,6 +1067,7 @@ export function createDatasetsService(options: DatasetsServiceOptions): Datasets
     },
 
     async putItem(scope, input) {
+      assertAlive('putItem')
       assertDatasetAllowed(scope, input.dataset)
       assertValidName('item id', input.item)
       const repo = await toplevelOf(scope.repo)
@@ -970,6 +1097,7 @@ export function createDatasetsService(options: DatasetsServiceOptions): Datasets
     },
 
     async validate(scope, datasetId) {
+      assertAlive('validate')
       const { repo, sha } = await resolveCommitAt(scope, undefined)
       const ids = datasetId !== undefined ? [datasetId] : await listDatasetIds(repo, sha)
       const datasets: ValidateDatasetResult[] = []
@@ -1052,6 +1180,7 @@ export function createDatasetsService(options: DatasetsServiceOptions): Datasets
     },
 
     async overview(scope) {
+      assertAlive('overview')
       const { repo, sha } = await resolveCommitAt(scope, undefined)
       const ids = (await listDatasetIds(repo, sha))
         .filter(id => scope.operator === true || scope.datasets === undefined || scope.datasets.includes(id))
@@ -1068,6 +1197,7 @@ export function createDatasetsService(options: DatasetsServiceOptions): Datasets
     },
 
     async itemBrief(scope, datasetId, itemId, commit) {
+      assertAlive('itemBrief')
       assertDatasetAllowed(scope, datasetId)
       assertValidName('item id', itemId)
       const { repo, sha } = await resolveCommitAt(scope, commit)
@@ -1084,6 +1214,7 @@ export function createDatasetsService(options: DatasetsServiceOptions): Datasets
     },
 
     async scaffoldDataset(scope, input) {
+      assertAlive('scaffoldDataset')
       assertOperator(scope, 'creating a dataset')
       assertValidName('dataset id', input.id)
       const repo = await toplevelOf(scope.repo)
@@ -1105,6 +1236,7 @@ export function createDatasetsService(options: DatasetsServiceOptions): Datasets
     },
 
     async scaffoldItem(scope, input) {
+      assertAlive('scaffoldItem')
       assertOperator(scope, 'drafting an item skeleton')
       assertDatasetAllowed(scope, input.dataset)
       assertValidName('item id', input.item)
@@ -1122,6 +1254,7 @@ export function createDatasetsService(options: DatasetsServiceOptions): Datasets
     },
 
     async importItem(scope, input) {
+      assertAlive('importItem')
       assertOperator(scope, 'importing an item')
       assertDatasetAllowed(scope, input.dataset)
       assertValidName('item id', input.item)
@@ -1141,7 +1274,10 @@ export function createDatasetsService(options: DatasetsServiceOptions): Datasets
       const written: string[] = []
       const notes: string[] = [...files.notes]
       for (const rel of files.paths) {
-        const bytes = await readFile(join(source, rel))
+        // Re-verify at the read, not at enumeration: a file swapped for a
+        // symlink after the walk fails closed at the open (O_NOFOLLOW), and a
+        // swapped intermediate directory fails the realpath containment check.
+        const bytes = await readFileWithinRoot(source, rel)
         if (bytes.byteLength > IMPORT_BYTE_LIMIT) {
           notes.push(`${rel} skipped: ${bytes.byteLength} bytes is over the ${IMPORT_BYTE_LIMIT}-byte per-file import limit`)
           continue
@@ -1154,10 +1290,12 @@ export function createDatasetsService(options: DatasetsServiceOptions): Datasets
     },
 
     async assertRepository(repo) {
+      assertAlive('assertRepository')
       return await toplevelOf(repo)
     },
 
     async registration(id) {
+      assertAlive('registration')
       const entry = registered(id)
       return {
         id: entry.id, commonDir: entry.commonDir, trackedRef: entry.trackedRef,
@@ -1166,6 +1304,7 @@ export function createDatasetsService(options: DatasetsServiceOptions): Datasets
     },
 
     async resolveRegistryCommit(id, ref) {
+      assertAlive('resolveRegistryCommit')
       const entry = registered(id)
       try {
         return await resolveCommit(entry.commonDir, ref)
@@ -1175,6 +1314,7 @@ export function createDatasetsService(options: DatasetsServiceOptions): Datasets
     },
 
     async registryObjectId(id, commit, path) {
+      assertAlive('registryObjectId')
       const entry = registered(id)
       const rel = path === '' ? '' : assertSafeRelativePath(path)
       try {
@@ -1186,11 +1326,13 @@ export function createDatasetsService(options: DatasetsServiceOptions): Datasets
     },
 
     async registryListFiles(id, commit, prefix) {
+      assertAlive('registryListFiles')
       const entry = registered(id)
       return await listFiles(entry.commonDir, commit, prefix === '' ? '' : assertSafeRelativePath(prefix))
     },
 
     async registryShowFile(id, commit, path) {
+      assertAlive('registryShowFile')
       const entry = registered(id)
       const rel = assertSafeRelativePath(path)
       try {
@@ -1204,6 +1346,7 @@ export function createDatasetsService(options: DatasetsServiceOptions): Datasets
     },
 
     async datasetView(id, set, commit) {
+      assertAlive('datasetView')
       const entry = registered(id)
       assertValidName('dataset id', set)
       const base = datasetDir(set)

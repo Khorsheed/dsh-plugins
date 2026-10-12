@@ -8,7 +8,9 @@
  * is missing.
  * @module @khorsheed/dsh-eval
  */
-import { resolve } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { realpathSync } from 'node:fs'
+import { PACKAGE_NAME } from './invariant.ts'
 import { hashConditionDocument, hashHome, type HomeHash } from './contract/hash.ts'
 import { writeEvalReport, type ReportWrite } from './report/report.ts'
 import { CONDITION_SCHEMA_ID } from './contract/schema.ts'
@@ -71,7 +73,7 @@ import { instanceCapabilityProbe } from './capability-probe.ts'
 import type {
   CapabilityCatalogFace, DatasetsFace, DatasetsRegistryFace, LabFace, LabUnitRow, LocalAgentFace, MissionActionFace,
   MissionAnnotateFace, MissionExportFace,
-  MissionFace, MissionFinalizeFace, MissionReadFace, MissionRunListFace,
+  MissionFace, MissionFinalizeFace, MissionReadFace, MissionRunListFace, ExecutionHomePort, ScopedHomeEvidenceFace,
 } from './faces.ts'
 import { isDatasetsRegistryFace } from './faces.ts'
 import type {
@@ -88,6 +90,43 @@ import type {
 
 /** Thrown when a verb is handed a document that violates its contract. */
 export class EvalContractError extends Error {}
+
+/**
+ * Thrown by every public verb after {@link EvalService.dispose} ran: a coded,
+ * package-named refusal, never a silent operation on a dead instance. The
+ * disposed instance stays dead — a rebuild over the same state root is a NEW
+ * service instance's business (the library/canvas-novel precedent).
+ */
+export class EvalDisposedError extends Error {
+  constructor(message: string, readonly code: 'disposed') {
+    super(message)
+    this.name = 'EvalDisposedError'
+  }
+}
+
+/**
+ * The path a containment check compares: absolute, `~` expanded, and realpathed
+ * as far up as the tree exists — a tail that does not exist yet (the run's
+ * cell dirs are created by the run) keeps its lexical form. A symlinked
+ * instance root and a symlink laid inside the candidate both compare by their
+ * REAL location, so neither spelling smuggles the boundary past the check.
+ */
+function containmentPath(path: string): string {
+  const resolved = resolve(expandHome(path))
+  const tail: string[] = []
+  let current = resolved
+  for (;;) {
+    try {
+      const real = realpathSync(current)
+      return tail.length === 0 ? real : join(real, ...tail)
+    } catch {
+      const parent = dirname(current)
+      if (parent === current) return resolved
+      tail.unshift(basename(current))
+      current = parent
+    }
+  }
+}
 
 /**
  * The export verbs' refusal. mission's service face is where the leak gate
@@ -129,6 +168,12 @@ export interface ConditionHash {
  * an optional host accessor so the in-host plugin can probe its upstream
  * services (the CLI builds the same kernel without a host — run stays
  * dry-run-only there).
+ *
+ * Constructed with `config.stateRoot`, the instance binds its whole state
+ * tree (experiments, the condition library, every run's cell dirs) to that
+ * root instead of the DSH_HOME-derived one, and {@link EvalService.dispose}
+ * cancels the run jobs this instance started; unset, everything below is
+ * byte-identical to the DSH_HOME behavior.
  */
 export class EvalService {
   /**
@@ -138,12 +183,90 @@ export class EvalService {
    */
   private readonly jobs: EvalRunJobs
 
-  constructor(private readonly hosts?: { get(name: string): unknown }) {
-    this.jobs = new EvalRunJobs(hosts)
+  /**
+   * The instance-bound state root, when this service was constructed with one:
+   * experiments, the condition library and every run's cell directories live
+   * under it instead of the DSH_HOME-derived root. Canonicalized by
+   * {@link containmentPath} so the runStart containment check compares real
+   * locations. Undefined keeps the legacy DSH_HOME behavior byte-identical.
+   */
+  private readonly instanceStateRoot: string | undefined
+
+  /**
+   * The execution target's scoped-home evidence face, when this service was
+   * constructed with one. Provision, the readiness gate's snapshot freshness,
+   * and validate/conditions' freshness check consume it INSTEAD of the local
+   * facade/directory reads; absent, everything reads locally as before.
+   */
+  private readonly evidence: ScopedHomeEvidenceFace | undefined
+
+  /**
+   * The execution-home port, when this service was constructed with one: the
+   * unit path's scoped-home resolution, availability verification and mount
+   * plan come from it, and no management-host path is consulted in the unit
+   * segment. Absent, the unit path is byte-identical to before.
+   */
+  private readonly executionHome: ExecutionHomePort | undefined
+
+  /** Set by {@link dispose}; terminal — every public verb refuses afterwards. */
+  private disposed = false
+
+  /**
+   * @param hosts - the host accessor the upstream services are probed through
+   *   at call time (never required at mount).
+   * @param config - `stateRoot` binds this instance's whole state tree
+   *   (experiments, the condition library, the per-run cell dirs) to the given
+   *   directory instead of `$DSH_HOME/state/eval`; `evidence` supplies the
+   *   scoped-home fairness evidence from the execution target as plain data;
+   *   `executionHome` hands the unit path's scoped-home decisions to the
+   *   execution target.
+   */
+  constructor(
+    private readonly hosts?: { get(name: string): unknown },
+    config: { stateRoot?: string; evidence?: ScopedHomeEvidenceFace; executionHome?: ExecutionHomePort } = {},
+  ) {
+    this.instanceStateRoot = config.stateRoot === undefined ? undefined : containmentPath(config.stateRoot)
+    this.evidence = config.evidence
+    this.executionHome = config.executionHome
+    this.jobs = new EvalRunJobs(hosts, this.instanceStateRoot === undefined ? {} : { stateRoot: this.instanceStateRoot })
+  }
+
+  /**
+   * Refuse one public verb after disposal: the instance is dead and nothing it
+   * could still answer is meant to be consumed — reads included, so a mounting
+   * side never keeps consuming a stale instance.
+   */
+  private assertAlive(verb: string): void {
+    if (this.disposed) throw new EvalDisposedError(`${PACKAGE_NAME}: ${verb} after dispose`, 'disposed')
+  }
+
+  /**
+   * Tear this instance down. Idempotent and TERMINAL.
+   *
+   * What it covers: every run job THIS instance started that has not settled
+   * is cancelled through the one lever there is — the job's cancel hook
+   * resolving to the run's AbortSignal, the same path `job_kill` takes — so a
+   * live run stops starting cells and the cells the cancel caught finalize as
+   * `interrupted` through the normal path. Nothing is force-killed, and a run
+   * that opened its own parent session still releases it in its settle path.
+   *
+   * What it does NOT cover: jobs other instances started. Run jobs are
+   * registered UNOWNED by design so they outlive their starter, and that stays
+   * true — dispose reaches only the records of this instance's own
+   * {@link EvalRunJobs}. There is also no resume on the other side: a stopped
+   * run is re-run, never resumed (that was already the design), and a
+   * mid-stage cell on disk stays `interrupted`. Afterwards every public verb
+   * refuses with {@link EvalDisposedError}.
+   */
+  dispose(): void {
+    if (this.disposed) return
+    this.disposed = true
+    this.jobs.dispose()
   }
 
   /** Whether a run can be started as a background job in this composition. */
   runJobsAvailable(): boolean {
+    this.assertAlive('runJobsAvailable')
     return this.jobs.available()
   }
 
@@ -159,6 +282,7 @@ export class EvalService {
    * validation.
    */
   validatePlan(planPath: string, options: Pick<ValidatePlanOptions, 'roots'> = {}): Promise<PlanValidation> {
+    this.assertAlive('validatePlan')
     return validatePlan(expandHome(planPath), { ...this.scopeHomeDirResolver(), ...options })
   }
 
@@ -172,23 +296,62 @@ export class EvalService {
    * @throws {@link EvalReadRefused} when the experiment or its registration cannot be read.
    */
   async validateExperiment(experimentId: string): Promise<PlanValidation> {
+    this.assertAlive('validateExperiment')
     const record = await this.experimentRecord(experimentId)
     return this.validatePlan(record.planPath, { roots: await this.experimentRoots(record) })
   }
 
   /**
    * The eval state root: experiments, the condition library and the cell
-   * directories all live under it.
-   * @throws {@link EvalReadRefused} when DSH_HOME is unset.
+   * directories all live under it. The instance-bound root when this service
+   * was constructed with one; the DSH_HOME-derived root otherwise.
+   * @throws {@link EvalReadRefused} when no instance root is configured and DSH_HOME is unset.
    */
   stateRoot(): string {
-    const root = defaultStateRoot()
+    this.assertAlive('stateRoot')
+    const root = this.defaultedStateRoot()
     if (root === undefined) {
       throw new EvalReadRefused(
         'no eval state root: set DSH_HOME — experiments and the condition library live under $DSH_HOME/state/eval',
       )
     }
     return root
+  }
+
+  /**
+   * The instance root when one was configured, else the DSH_HOME-derived one —
+   * undefined when neither exists. The non-throwing half of
+   * {@link EvalService.stateRoot}, for the verbs that DEGRADE without a root
+   * rather than refusing.
+   */
+  private defaultedStateRoot(): string | undefined {
+    return this.instanceStateRoot ?? defaultStateRoot()
+  }
+
+  /**
+   * The run's cell root under the instance boundary. With no instance root
+   * configured this is today's pass-through — `RunOptions.stateRoot` verbatim,
+   * and the run's own DSH_HOME default when even that is absent. With one, an
+   * absent option defaults to the instance root and a given one must resolve
+   * UNDER it: the real-path comparison exists so neither a `..` segment nor a
+   * symlink laid inside the root points a run's writes out of the instance.
+   * @throws {@link EvalRunRefused} when the given root escapes the instance root.
+   */
+  private resolveRunStateRoot(options: RunOptions): RunOptions {
+    if (this.instanceStateRoot === undefined) return options
+    if (options.stateRoot === undefined) return { ...options, stateRoot: this.instanceStateRoot }
+    const candidate = containmentPath(options.stateRoot)
+    const outside = relative(this.instanceStateRoot, candidate)
+    if (outside === '' || (outside !== '..' && !outside.startsWith(`..${sep}`) && !isAbsolute(outside))) {
+      return candidate === options.stateRoot ? options : { ...options, stateRoot: candidate }
+    }
+    throw new EvalRunRefused(
+      `stateRoot ${candidate} is outside this instance's state root ${this.instanceStateRoot} — a run's cells must stay under the instance root`,
+      [{
+        code: 'STATEROOT_OUTSIDE_INSTANCE',
+        message: `stateRoot must resolve under this instance's state root ${this.instanceStateRoot}; got ${candidate}`,
+      }],
+    )
   }
 
   /**
@@ -212,6 +375,7 @@ export class EvalService {
    * @throws {@link EvalReadRefused} when the id is malformed or names nothing here.
    */
   async experimentRecord(experimentId: string): Promise<ExperimentRecord> {
+    this.assertAlive('experimentRecord')
     try {
       return await readExperiment(this.stateRoot(), experimentId)
     } catch (error) {
@@ -253,12 +417,37 @@ export class EvalService {
   }
 
   /**
-   * The scoped-home resolver the read verbs hand to validation, or `{}` in a
-   * composition with no local-agent facade. Never throws: a facade that
-   * cannot answer leaves the freshness check unrun, which is the same thing
-   * as not having one.
+   * The freshness resolvers the read verbs hand to validation, or `{}` in a
+   * composition with no way to answer. Never throws: a face that cannot
+   * answer leaves the freshness check unrun, which is the same thing as not
+   * having one.
+   *
+   * With an evidence face mounted the scope's preset-copy digest comes from
+   * the face (`scopePresetSha`) and the local facade's home resolution is NOT
+   * wired at all — on the topology the face exists for, the same-named local
+   * directory is a different environment, and the freshness check absent an
+   * answer skips itself rather than hashing the wrong tree.
    */
-  private scopeHomeDirResolver(): { scopeHomeDir?: (harness: string, scope?: string) => string | undefined } {
+  private scopeHomeDirResolver(): {
+    scopeHomeDir?: (harness: string, scope?: string) => string | undefined
+    scopePresetSha?: (harness: string, scope: string | undefined, preset: string) => Promise<string | undefined>
+  } {
+    const evidence = this.evidence
+    if (evidence !== undefined) {
+      if (typeof evidence.presetSnapshot !== 'function') return {}
+      return {
+        scopePresetSha: async (harness: string, scope: string | undefined, preset: string): Promise<string | undefined> => {
+          try {
+            const answer = await evidence.presetSnapshot?.(harness, scope, preset)
+            if (answer === undefined || answer.keepsCopy !== true) return undefined
+            const sha = answer.snapshot?.sha
+            return typeof sha === 'string' && sha !== '' ? sha : undefined
+          } catch {
+            return undefined
+          }
+        },
+      }
+    }
     const localAgent = this.hosts?.get('localAgent') as LocalAgentFace | undefined
     if (typeof localAgent?.homeDir !== 'function') return {}
     return {
@@ -278,6 +467,7 @@ export class EvalService {
    * `dataseek.condition/1` — a hash of an invalid document means nothing.
    */
   hashCondition(condition: unknown): ConditionHash {
+    this.assertAlive('hashCondition')
     const { errors, warnings } = conditionDiagnostics(condition)
     if (errors.length > 0) {
       throw new EvalContractError(
@@ -293,6 +483,7 @@ export class EvalService {
    * @throws Error when the directory does not exist.
    */
   hashHome(homeDir: string): Promise<HomeHash> {
+    this.assertAlive('hashHome')
     return hashHome(homeDir)
   }
 
@@ -304,6 +495,7 @@ export class EvalService {
    * @throws Error when the directory is not a bundle (no readable run.json).
    */
   report(bundleDir: string, options: { out?: string } = {}): Promise<ReportWrite> {
+    this.assertAlive('report')
     return writeEvalReport(expandHome(bundleDir), options.out === undefined ? options : { out: expandHome(options.out) })
   }
 
@@ -327,6 +519,7 @@ export class EvalService {
     content: string
     overwrite?: boolean
   }): Promise<AnalysisWriteResult & { confirmation: string }> {
+    this.assertAlive('writeAnalysis')
     const record = await this.experimentRecord(options.experimentId)
     const result = await writeAnalysisFile(record, options.path, options.content, {
       ...(options.overwrite === undefined ? {} : { overwrite: options.overwrite }),
@@ -344,6 +537,7 @@ export class EvalService {
    * @throws {@link EvalReadRefused} when the experiment cannot be read or the path is refused.
    */
   async experimentArtifact(request: EvalExperimentArtifactRequest): Promise<EvalExperimentArtifactView> {
+    this.assertAlive('experimentArtifact')
     const record = await this.experimentRecord(request.experimentId)
     return readExperimentArtifact(record, request.path)
   }
@@ -384,6 +578,7 @@ export class EvalService {
    * @throws {@link EvalReadRefused} when the experiment, the registration or the item cannot be read.
    */
   async itemMaterials(request: EvalItemMaterialsRequest): Promise<EvalItemMaterialsView> {
+    this.assertAlive('itemMaterials')
     const { pin, stages } = await this.experimentPin(request.experimentId)
     return listItemMaterials(pin, { experimentId: request.experimentId, item: request.item, planStages: stages })
   }
@@ -393,6 +588,7 @@ export class EvalService {
    * past the size limit and said so.
    */
   async datasetFile(request: EvalDatasetFileRequest): Promise<EvalDatasetFileView> {
+    this.assertAlive('datasetFile')
     const { pin } = await this.experimentPin(request.experimentId)
     return readDatasetFile(pin, request)
   }
@@ -402,6 +598,7 @@ export class EvalService {
    * in-scope llm-draft criteria, the player's material as placeholders.
    */
   async judgePromptPreview(request: EvalJudgePromptPreviewRequest): Promise<EvalJudgePromptPreviewView> {
+    this.assertAlive('judgePromptPreview')
     const { pin, stages, judges } = await this.experimentPin(request.experimentId)
     const judge = request.judge ?? judges[0] ?? 'judge'
     return previewJudgePrompt(pin, { experimentId: request.experimentId, item: request.item, judge, planStages: stages })
@@ -412,6 +609,7 @@ export class EvalService {
    * confined to that run's judge directory.
    */
   async judgePrompt(request: EvalJudgePromptRequest): Promise<EvalJudgePromptView> {
+    this.assertAlive('judgePrompt')
     return readJudgePrompt(this.stateRoot(), request)
   }
 
@@ -423,6 +621,7 @@ export class EvalService {
    * @throws {@link EvalReadRefused} when DSH_HOME is unset.
    */
   conditions(): Promise<ConditionsReport> {
+    this.assertAlive('conditions')
     return listConditions(conditionLibraryRoot(this.stateRoot()), this.scopeHomeDirResolver())
   }
 
@@ -435,6 +634,7 @@ export class EvalService {
    * @throws {@link EvalReadRefused} when a side cannot be resolved.
    */
   conditionDiff(options: { a: string; b: string }): Promise<ConditionDiff> {
+    this.assertAlive('conditionDiff')
     return diffConditions(conditionLibraryRoot(this.stateRoot()), options.a, options.b)
   }
 
@@ -459,6 +659,7 @@ export class EvalService {
     conditionPath: string,
     options: { repo: string; writeBack?: boolean; log?: (message: string) => void },
   ): Promise<ProvisionReport> {
+    this.assertAlive('provision')
     const localAgent = this.hosts?.get('localAgent') as LocalAgentFace | undefined
     if (localAgent === undefined) {
       return Promise.reject(new EvalProvisionRefused(
@@ -475,11 +676,18 @@ export class EvalService {
     return provisionCondition(conditionPath, {
       repo: options.repo,
       localAgent,
+      ...(this.evidence === undefined ? {} : { evidence: this.evidence }),
       ...(options.writeBack === undefined ? {} : { writeBack: options.writeBack }),
       ...(options.log === undefined ? {} : { log: options.log }),
       ...(catalog === undefined
         ? {}
-        : { capabilities: instanceCapabilityProbe({ catalog, ...(options.log === undefined ? {} : { log: options.log }) }) }),
+        : {
+          capabilities: instanceCapabilityProbe({
+            catalog,
+            ...(this.evidence === undefined ? {} : { evidence: this.evidence }),
+            ...(options.log === undefined ? {} : { log: options.log }),
+          }),
+        }),
     })
   }
 
@@ -492,6 +700,7 @@ export class EvalService {
    *   service — the run ledger lives there, so there is nothing to read.
    */
   runStatus(runId: string): RunStatusReport {
+    this.assertAlive('runStatus')
     const mission = this.hosts?.get('mission') as MissionReadFace | undefined
     if (mission === undefined) {
       // Named without its scope on purpose: a scoped `@khorsheed/…` string in
@@ -533,6 +742,7 @@ export class EvalService {
    *   service — the run ledger lives there, so there is nothing to read.
    */
   cells(runId: string, query: RunCellsQuery = {}): RunCellsReport {
+    this.assertAlive('cells')
     const mission = this.hosts?.get('mission') as MissionReadFace | undefined
     if (mission === undefined) {
       // Named without its scope for the same reason as in `runStatus`: this
@@ -560,8 +770,9 @@ export class EvalService {
    * @returns the rows, newest run first, then the unstarted experiments.
    */
   experiments(options: { session?: { id: string } } = {}): Promise<EvalExperimentsResult> {
+    this.assertAlive('experiments')
     const mission = this.hosts?.get('mission') as MissionRunListFace | undefined
-    const stateRoot = defaultStateRoot()
+    const stateRoot = this.defaultedStateRoot()
     return listExperiments({
       ...(mission === undefined ? {} : { mission }),
       ...(stateRoot === undefined ? {} : { stateRoot }),
@@ -584,6 +795,7 @@ export class EvalService {
    *   service — the run ledger lives there, so there is nothing to read.
    */
   experiment(runId: string): EvalExperimentDetail {
+    this.assertAlive('experiment')
     const mission = this.hosts?.get('mission') as MissionRunListFace | undefined
     if (mission === undefined) {
       // Named without its scope like the two read verbs above: a sentence for
@@ -611,6 +823,7 @@ export class EvalService {
    * @throws {@link EvalReadRefused} when the ref names no experiment here.
    */
   async experimentGet(ref: string, options: { session?: { id: string } } = {}): Promise<EvalExperimentGetView> {
+    this.assertAlive('experimentGet')
     const list = await this.experiments(options)
     const rows = list.rows.filter(row => row.experimentId === ref || row.id === ref || row.runId === ref)
     const first = rows[0]
@@ -677,6 +890,7 @@ export class EvalService {
     request: EvalDraftRequest,
     options: { session?: { id: string } } = {},
   ): Promise<EvalDraftResult> {
+    this.assertAlive('draftExperiment')
     const write = await writeDraft({
       stateRoot: this.stateRoot(),
       registry: this.registryFace(),
@@ -751,6 +965,7 @@ export class EvalService {
    * @throws {@link EvalReadRefused} when the composition mounts no registry.
    */
   async draftOptions(): Promise<EvalDraftOptionsView> {
+    this.assertAlive('draftOptions')
     return readDraftOptions(this.registryFace())
   }
 
@@ -763,6 +978,7 @@ export class EvalService {
    * @throws {@link EvalImportRefused} when the import cannot proceed.
    */
   async importExperiments(request: EvalImportRequest): Promise<ImportReport> {
+    this.assertAlive('importExperiments')
     return await importExperiments(this.registryFace(), this.stateRoot(), {
       from: request.from,
       ...(request.plan === undefined ? {} : { plan: request.plan }),
@@ -780,6 +996,7 @@ export class EvalService {
    * @throws {@link EvalReadRefused} when neither is given or the experiment cannot be read.
    */
   async planReview(request: EvalPlanRequest): Promise<EvalPlanReview> {
+    this.assertAlive('planReview')
     if (request.experimentId !== undefined && request.experimentId !== '') {
       const record = await this.experimentRecord(request.experimentId)
       const validation = await this.validatePlan(record.planPath, { roots: await this.experimentRoots(record) })
@@ -842,6 +1059,7 @@ export class EvalService {
    * @throws {@link EvalPlanEditRefused} when the plan is frozen or a value is not allowed.
    */
   async setPlanNumbers(request: EvalPlanNumbersRequest): Promise<EvalPlanNumbersResult> {
+    this.assertAlive('setPlanNumbers')
     const record = await this.experimentRecord(request.experimentId)
     const frozen = await this.experimentStartedBy(record)
     if (frozen !== null) {
@@ -884,6 +1102,7 @@ export class EvalService {
    * the lock and the readiness word.
    */
   async conditionsPage(): Promise<EvalConditionsView> {
+    this.assertAlive('conditionsPage')
     return conditionsView(await this.conditions())
   }
 
@@ -905,6 +1124,7 @@ export class EvalService {
     condition: string,
     options: { writeBack?: boolean; log?: (message: string) => void } = {},
   ): Promise<ProvisionReport> {
+    this.assertAlive('provisionLibraryCondition')
     let stateRoot: string
     try {
       stateRoot = this.stateRoot()
@@ -923,6 +1143,7 @@ export class EvalService {
    * row as it now reads.
    */
   async provisionCondition(request: EvalConditionProvisionRequest): Promise<EvalConditionProvisionView> {
+    this.assertAlive('provisionCondition')
     const report = await this.provisionLibraryCondition(
       request.condition,
       request.keepDeclaration === true ? { writeBack: false } : {},
@@ -951,6 +1172,7 @@ export class EvalService {
    * @throws {@link EvalConditionEditRefused} when the declaration cannot be edited.
    */
   async setConditionEndpoint(request: EvalConditionEndpointRequest): Promise<EvalConditionEndpointView> {
+    this.assertAlive('setConditionEndpoint')
     const report = await writeConditionEndpoint({
       root: conditionLibraryRoot(this.stateRoot()),
       condition: request.condition,
@@ -989,6 +1211,7 @@ export class EvalService {
    * side's value as canonical JSON text, and ONLY the fields that differ.
    */
   async conditionDiffPage(options: { a: string; b: string }): Promise<EvalConditionDiffView> {
+    this.assertAlive('conditionDiffPage')
     return conditionDiffView(await this.conditionDiff(options))
   }
 
@@ -1015,6 +1238,7 @@ export class EvalService {
    * @returns what validate said, and — when it started — the job and run ids.
    */
   async approve(experimentId: string, options: { parentSessionId: string; cwd?: string; keepUnits?: boolean }): Promise<EvalApproveResult> {
+    this.assertAlive('approve')
     const review = await this.planReview({ experimentId })
     const refused = (refusal: string): EvalApproveResult => ({
       started: false,
@@ -1074,6 +1298,7 @@ export class EvalService {
     stuckMs?: number
     now?: number
   } = {}): Promise<EvalMatrixView> {
+    this.assertAlive('matrix')
     const mission = this.requireMissionRead('arrange a run\'s matrix')
     const report = runCells(mission, runId, options.now === undefined ? {} : { now: options.now })
     const status = mission.runStatus(runId)
@@ -1110,6 +1335,7 @@ export class EvalService {
    * @throws {@link EvalReadRefused} when the composition mounts no mission service.
    */
   cellRows(runId: string, query: RunCellsQuery = {}): EvalCellsResult {
+    this.assertAlive('cellRows')
     const report = this.cells(runId, query)
     return {
       runId: report.runId,
@@ -1149,6 +1375,7 @@ export class EvalService {
   // and a caller that only attached `.catch` would otherwise be hit by a
   // synchronous throw.
   async cell(runId: string, missionId: string, options: { now?: number } = {}): Promise<EvalCellDetail> {
+    this.assertAlive('cell')
     const mission = this.requireMissionRead('open a cell')
     return await runCellDetail(mission, this.missionActions(), runId, missionId, options)
   }
@@ -1167,6 +1394,7 @@ export class EvalService {
    *   leaves the attempt directory, or when nothing is there.
    */
   async cellArtifact(request: EvalCellArtifactRequest): Promise<EvalCellArtifactView> {
+    this.assertAlive('cellArtifact')
     const mission = this.requireMissionRead('read a cell artifact')
     return await readCellArtifact({
       mission,
@@ -1190,6 +1418,7 @@ export class EvalService {
    *   reason is blank — an attempt nobody can account for is worse than none.
    */
   retryCell(runId: string, missionId: string, options: { reason: string; category: string; by?: string }): Promise<{ attempt: number }> {
+    this.assertAlive('retryCell')
     const actions = this.missionActions()
     if (actions === undefined) {
       return Promise.reject(new EvalReadRefused(
@@ -1218,6 +1447,7 @@ export class EvalService {
    * @throws {@link EvalReadRefused} when no mission service is mounted.
    */
   releaseCheck(runId: string, missionId: string): { missionId: string; releasable: boolean } {
+    this.assertAlive('releaseCheck')
     const actions = this.missionActions()
     if (actions === undefined) {
       throw new EvalReadRefused(
@@ -1243,6 +1473,7 @@ export class EvalService {
    * @throws {@link EvalReadRefused} when mission's export face is absent.
    */
   exportPlan(_agent: unknown, request: EvalExportPlanRequest): Promise<EvalExportPlanView> {
+    this.assertAlive('exportPlan')
     const mission = this.missionExport()
     if (mission === undefined) return Promise.reject(MISSION_EXPORT_ABSENT)
     return mission.exportPlanGated(request)
@@ -1267,6 +1498,7 @@ export class EvalService {
    * @throws {@link EvalReadRefused} when mission's export face is absent.
    */
   async exportRun(_agent: unknown, request: EvalExportRunRequest, by?: string): Promise<EvalExportResultView> {
+    this.assertAlive('exportRun')
     const mission = this.missionExport()
     if (mission === undefined) throw MISSION_EXPORT_ABSENT
     const exported = await mission.exportRunGated(request)
@@ -1297,6 +1529,7 @@ export class EvalService {
    *   when this run has no recorded export to repeat.
    */
   async reexportRun(_agent: unknown, request: EvalReexportRequest, by?: string): Promise<EvalExportResultView> {
+    this.assertAlive('reexportRun')
     const exporter = this.missionExport()
     if (exporter === undefined) throw MISSION_EXPORT_ABSENT
     const mission = this.requireMissionRead('export a run again')
@@ -1397,6 +1630,7 @@ export class EvalService {
    *   the run holds no cell of that 题.
    */
   async cellAnswers(request: EvalCellAnswersRequest): Promise<EvalAnswerSheet> {
+    this.assertAlive('cellAnswers')
     const mission = this.requireMissionRead('read the answers')
     const datasets = this.hosts?.get('datasets') as DatasetsFace | undefined
     return await cellAnswersView({
@@ -1425,6 +1659,7 @@ export class EvalService {
   // a promise, and a caller that only attached `.catch` would otherwise be hit
   // by a synchronous throw.
   async judgeQueue(runId: string): Promise<EvalJudgeQueueView> {
+    this.assertAlive('judgeQueue')
     const mission = this.requireMissionRead('open the judging queue')
     const datasets = this.hosts?.get('datasets') as DatasetsFace | undefined
     return await judgeQueueView({
@@ -1457,6 +1692,7 @@ export class EvalService {
     verdicts: readonly EvalJudgeVerdictInput[],
     sessionId: string | null,
   ): Promise<EvalHumanFinalResult> {
+    this.assertAlive('humanFinal')
     const mission = this.requireMissionRead('write a human-final verdict')
     const annotate = this.missionAnnotate()
     if (annotate === undefined) {
@@ -1480,6 +1716,7 @@ export class EvalService {
    * @throws {@link EvalReadRefused} when mission's read or annotate face is absent.
    */
   async closeRun(runId: string, request: { exit: unknown; reason?: string | null }, by: string): Promise<EvalClosureWrite> {
+    this.assertAlive('closeRun')
     const mission = this.requireMissionRead('close an evaluation')
     const annotate = this.missionAnnotate()
     if (annotate === undefined) {
@@ -1499,6 +1736,7 @@ export class EvalService {
    * @throws {@link EvalReadRefused} when mission's read or annotate face is absent.
    */
   async archiveRun(runId: string, archived: boolean, by: string): Promise<EvalArchiveWrite> {
+    this.assertAlive('archiveRun')
     const mission = this.requireMissionRead('archive an experiment')
     const annotate = this.missionAnnotate()
     if (annotate === undefined) {
@@ -1518,6 +1756,7 @@ export class EvalService {
    * @param itemId - the item id (the cells' `task` label).
    */
   itemRuns(datasetId: string, itemId: string): EvalItemRunsResult {
+    this.assertAlive('itemRuns')
     return runsForItem(this.hosts?.get('mission') as MissionRunListFace | undefined, datasetId, itemId)
   }
 
@@ -1563,6 +1802,7 @@ export class EvalService {
    * beside the plan).
    */
   generateTemplate(manifestPath: string, options?: GenerateTemplateOptions): Promise<GeneratedTemplate> {
+    this.assertAlive('generateTemplate')
     return generateTemplate(manifestPath, options)
   }
 
@@ -1576,15 +1816,17 @@ export class EvalService {
    * @throws {@link EvalRunRefused} when the run is refused before executing.
    */
   run(planPath: string, options: RunOptions = {}): Promise<RunReport> {
+    this.assertAlive('run')
     // Paths cross this seam from three faces — the slash command, the CLI,
     // and the Remote — and every one of them can carry a shell-unexpanded
     // `~`: a slash argument never saw a shell, and a CLI argument quoted to
     // survive one did not either. Expanding HERE means one rule for all
     // three instead of three call sites that must each remember.
     const plan = expandHome(planPath)
-    const resolved: RunOptions = options.exportsDir === undefined
-      ? options
-      : { ...options, exportsDir: expandHome(options.exportsDir) }
+    const withRoot = this.resolveRunStateRoot(options)
+    const resolved: RunOptions = withRoot.exportsDir === undefined
+      ? withRoot
+      : { ...withRoot, exportsDir: expandHome(withRoot.exportsDir) }
     if (resolved.dryRun === true) {
       return runPlan(plan, resolved)
     }
@@ -1618,6 +1860,8 @@ export class EvalService {
     if (localAgent !== undefined) deps.localAgent = localAgent
     if (lab !== undefined) deps.lab = lab
     if (capabilityCatalog !== undefined) deps.capabilityCatalog = capabilityCatalog
+    if (this.evidence !== undefined) deps.evidence = this.evidence
+    if (this.executionHome !== undefined) deps.executionHome = this.executionHome
     return runPlan(plan, resolved, deps)
   }
 
@@ -1631,6 +1875,7 @@ export class EvalService {
    * @throws {@link EvalRunRefused} when the run is refused before executing.
    */
   async runExperiment(experimentId: string, options: RunOptions = {}): Promise<RunReport> {
+    this.assertAlive('runExperiment')
     const { planPath, experiment } = await this.runExperimentOf(experimentId)
     return this.run(planPath, { ...options, experiment })
   }
@@ -1643,6 +1888,7 @@ export class EvalService {
     experimentId: string,
     options: RunOptions & { cwd?: string; label?: string } = {},
   ): Promise<EvalRunHandle> {
+    this.assertAlive('runExperimentStart')
     const { planPath, experiment } = await this.runExperimentOf(experimentId)
     return this.runStart(planPath, { ...options, experiment, label: options.label ?? `eval run ${experimentId}` })
   }
@@ -1655,6 +1901,11 @@ export class EvalService {
    * turn (and the session) that started it; its log lines are readable
    * through {@link runOutput} while it runs, and `job_kill` — through
    * {@link runCancel} — is its one cancellation entry.
+   *
+   * With an instance state root configured, `options.stateRoot` defaults to
+   * it and a given one must resolve under it (the boundary check is
+   * {@link EvalService.resolveRunStateRoot}); without one the option passes
+   * through exactly as before.
    * @param planPath - path to a `dataseek.plan/1` document (`~` expanded).
    * @param options - the same run options `run` takes, minus the ones this
    *   owns (`runId`, `signal`).
@@ -1662,13 +1913,28 @@ export class EvalService {
    * @throws {@link EvalJobsUnavailable} when the composition mounts no job
    *   registry (the caller then decides: `/eval run` waits synchronously and
    *   says so).
+   * @throws {@link EvalRunRefused} when `options.stateRoot` escapes a
+   *   configured instance root.
+   * @throws {@link EvalDisposedError} when this instance was disposed — before
+   *   the start, or racing it (a start disposal caught mid-flight registers
+   *   nothing).
    */
-  runStart(planPath: string, options: RunOptions & { cwd?: string; label?: string } = {}): Promise<EvalRunHandle> {
+  async runStart(planPath: string, options: RunOptions & { cwd?: string; label?: string } = {}): Promise<EvalRunHandle> {
+    this.assertAlive('runStart')
     const plan = expandHome(planPath)
-    return this.jobs.start(
-      runOptions => this.run(plan, runOptions),
-      { ...options, plan, label: options.label ?? `eval run ${plan}` },
-    )
+    const resolved = this.resolveRunStateRoot(options)
+    try {
+      return await this.jobs.start(
+        runOptions => this.run(plan, runOptions),
+        { ...resolved, plan, label: options.label ?? `eval run ${plan}` },
+      )
+    } catch (error) {
+      // Disposal caught the start mid-flight (the job layer's backstop fired
+      // after its last await): nothing registered, and the honest answer is
+      // the coded disposed refusal, not the wiring error the race surfaced.
+      if (this.disposed) throw new EvalDisposedError(`${PACKAGE_NAME}: runStart after dispose`, 'disposed')
+      throw error
+    }
   }
 
   /**
@@ -1679,6 +1945,7 @@ export class EvalService {
    * @returns the status, or undefined when this service never started it.
    */
   runJobStatus(jobId: string): EvalRunStatus | undefined {
+    this.assertAlive('runJobStatus')
     return this.jobs.status(jobId)
   }
 
@@ -1690,6 +1957,7 @@ export class EvalService {
    * @returns the lines after the cursor, or undefined for an unknown job.
    */
   runJobOutput(jobId: string, cursor?: number): EvalRunOutput | undefined {
+    this.assertAlive('runJobOutput')
     return this.jobs.output(jobId, cursor)
   }
 
@@ -1702,11 +1970,13 @@ export class EvalService {
    * @returns what the registry did, or `unknown-job`.
    */
   runJobCancel(jobId: string): 'requested' | 'already-finished' | 'unknown-job' {
+    this.assertAlive('runJobCancel')
     return this.jobs.cancel(jobId)
   }
 
   /** Every background run this service started, in start order. */
   runJobList(): EvalRunStatus[] {
+    this.assertAlive('runJobList')
     return this.jobs.list()
   }
 
@@ -1728,6 +1998,7 @@ export class EvalService {
    *   mission service, or the run cannot be projected.
    */
   finalize(runId: string, options: FinalizeOptions = {}): Promise<FinalizeReport> {
+    this.assertAlive('finalize')
     const mission = this.hosts?.get('mission') as MissionFinalizeFace | undefined
     if (mission === undefined) {
       return Promise.reject(new EvalFinalizeRefused(
@@ -1765,6 +2036,7 @@ export class EvalService {
    * @throws {@link EvalReadRefused} when mission is absent, or the run is unknown.
    */
   async runReport(runId: string, options: { outDir?: string } = {}): Promise<EvalRunReportView> {
+    this.assertAlive('runReport')
     const mission = this.requireMissionRead('read a run\'s report')
     const experiment = await this.experimentOfRun(mission, runId)
     return runReportView(mission, runId, { ...options, ...(experiment === null ? {} : { experiment }) })
@@ -1772,7 +2044,7 @@ export class EvalService {
 
   /** The experiment a run belongs to, or null (an old run, or no state root). */
   private async experimentOfRun(mission: MissionReadFace, runId: string): Promise<ExperimentRecord | null> {
-    const stateRoot = defaultStateRoot()
+    const stateRoot = this.defaultedStateRoot()
     if (stateRoot === undefined) return null
     let meta: Record<string, unknown>
     try {
@@ -1801,6 +2073,7 @@ export class EvalService {
    * @returns the held units, or why the list is unknown.
    */
   async runUnits(runId: string): Promise<EvalRunUnitsView> {
+    this.assertAlive('runUnits')
     const lab = this.hosts?.get('lab') as FinalizeUnitsFace | undefined
     if (lab === undefined) {
       return {
@@ -1855,6 +2128,7 @@ export class EvalService {
    * @throws {@link EvalFinalizeRefused} when mission is absent or the run cannot be projected.
    */
   async finalizeView(runId: string, by?: string): Promise<EvalFinalizeView> {
+    this.assertAlive('finalizeView')
     const log: string[] = []
     const report = await this.finalize(runId, {
       log: (message) => { log.push(message) },

@@ -53,7 +53,7 @@ dsh plugin --profile web add @khorsheed/dsh-lab         # this plugin
 
 The package declares `dsh.bundle`, so the add reconciles its `cordis.patch.yml` row (a bare `lab` mount) into the profile's bundles layer — no hand-edited cordis.yml. A composition may mount the `lab` row id only once; check with `dsh --profile web --dump-config | grep lab` before adding to a composition that might already mount it. From source: clone the monorepo; the package lives at `packages/lab` (`pnpm install && pnpm run build`).
 
-Config (all optional): `maxConcurrentUnits` — the held-unit ceiling (default 4); `stateDir` — the fingerprint mirror's directory (default `$DSH_HOME/lab`, else `<cwd>/.dsh-lab-state`).
+Config (all optional): `maxConcurrentUnits` — the held-unit ceiling (default 4); `stateDir` — the fingerprint mirror's directory (default `$DSH_HOME/lab`, else `<cwd>/.dsh-lab-state`); `scope` — the instance scope (default empty = the unscoped operator view, see [the instance-mounting seam](#the-instance-mounting-seam-per-instance-scope)).
 
 Requirements: the docker CLI reachable from the host, and images that ship `sleep` and `sh` (the keep-alive command and the pid-recording wrapper).
 
@@ -96,6 +96,29 @@ One thing at the same layer: `acquire` now also makes `/run/dsh-lab` itself `177
 `fingerprintOf` is the hashing function `acquire` itself uses, exposed because a caller sometimes needs to ask what a DIFFERENT component set would hash to. The evaluation orchestrator is that case: comparing cells needs "the same environment the plan declared", not "the same unit", and those differ by exactly the components each condition contributes (its own credential mount, its own env variable). It takes the unit's components, drops those, and asks for the hash of what is left. Doing that arithmetic here rather than re-implementing the canonicalization keeps one hashing rule in the repository — a second copy would drift the first time a component is added. Pure: no unit, no provider, no daemon.
 
 The mission integration is a probed structural face (`setRefs` / `addArtifact` / `addCheckpoint` / `annotate` / `isReleasable`), never an import: with `@khorsheed/dsh-mission` absent, registration writes warn-and-skip and `release` degrades to `force` + warning. A mission binding registered at acquire survives host restarts (it rides the container labels), so the gate still protects reconciled units.
+
+## The instance-mounting seam (per-instance scope)
+
+Running several `LabService` instances against ONE docker daemon is a supported consumption form: each instance carries its own `scope` (a `LabService` constructor option; through the plugin entry it is the `scope` config key, default empty = off). The scope is a pure instance property — never part of `AcquireSpec`, never a fingerprint component; it only rides the container as the resource label `dsh-lab.scope=<scope>` at acquire time, the same "the daemon is the registry of record" path the unit id, the fingerprint, and the mission binding already take.
+
+```ts
+const service = new LabService({
+  providers: { docker: new DockerProvider(exec) },
+  maxConcurrentUnits: 4,
+  scope: 'instance-a',              // unset / '' = unscoped (the behavior so far)
+  getMission: () => undefined,
+  warn: (message) => console.warn(message),
+})
+```
+
+The mounting side's obligations and the semantics:
+
+- **acquire stamps the label**: every container a scoped instance acquires carries one extra `dsh-lab.scope=<scope>` label; an unscoped instance stamps nothing extra — the argv is byte-identical to before. The `SCOPE_LABEL` constant is exported from the package root, so an ops script can filter by it.
+- **reconcile adopts only its own scope**: a scoped instance rebuilds its registry from the units whose label value equals its scope. **Pre-existing units without the label are NOT adopted either** — pinned: a scoped instance treats an unlabeled unit as out of bounds and never silently adopts a unit it could later release. Reach those units with an unscoped instance.
+- **the ceiling counts in-scope units only**: `maxConcurrentUnits` counts the units in this instance's registry; however many containers other instances hold on the daemon consumes none of this instance's budget.
+- **cross-scope fails closed**: a scoped instance refuses release / verify / populate / collect / archive / checkpoint aimed at an out-of-scope unit, and the refusal is distinguishable from "unknown unit" — the error names the scope the unit belongs to, or that it carries no label. `status` lists only the instance's own scope; querying a foreign unit by id gets the same refusal.
+- **unscoped = legacy = the operator's full view**: an instance without a scope behaves byte-identically to before — it adopts every `dsh-lab.managed=true` unit on the daemon (scoped ones included) and can act on any of them. So **the unscoped instance belongs to the deployment operator** (the cross-scope overview and reaping are theirs); a per-instance mount always sets a scope. The `dsh-lab` CLI constructs without a scope and is unchanged.
+- **no dispose semantics added**: containers deliberately outlive process and host restarts — a fresh instance with the same scope re-adopts that scope's surviving units from their labels at its first reconcile (the labels are the registry; the host-side fingerprint mirror holds no authority). `release` remains the only destroy path, the mission gate and force rules untouched; unmounting an instance does not reap its containers, because the next instance with the same scope still needs them.
 
 ## CLI
 

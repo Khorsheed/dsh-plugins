@@ -210,11 +210,22 @@ export function runWorkDir(options: { stateRoot?: string }, runId: string): stri
 export class EvalRunJobs {
   private readonly records = new Map<string, RunRecord>()
 
+  /** Set by {@link dispose}: starts refuse afterwards, live records were cancelled. */
+  private disposed = false
+
   /**
    * @param hosts - the host accessor the service already carries; `jobs` and
    *   `agents` are probed through it at call time, never required at mount.
+   * @param config - `stateRoot` is the fallback for the run's own parent
+   *   session's working directory when the run options name none — the owning
+   *   service's instance root, so a configured instance never derives
+   *   anything from DSH_HOME. Unset keeps the legacy `defaultStateRoot()`
+   *   fallback inside {@link runWorkDir}.
    */
-  constructor(private readonly hosts?: { get(name: string): unknown }) {}
+  constructor(
+    private readonly hosts?: { get(name: string): unknown },
+    private readonly config: { stateRoot?: string } = {},
+  ) {}
 
   /** Whether this composition mounts a job registry at all. */
   available(): boolean {
@@ -246,6 +257,11 @@ export class EvalRunJobs {
     execute: (options: RunOptions) => Promise<RunReport>,
     options: RunOptions & { cwd?: string; label?: string; plan?: string },
   ): Promise<EvalRunHandle> {
+    if (this.disposed) {
+      // The owning service normally refuses before this point; this is the
+      // backstop for a caller that reached the layer directly.
+      throw new EvalJobsUnavailable('the eval instance was disposed: no new run starts')
+    }
     const jobs = this.jobs()
     if (jobs === undefined) {
       throw new EvalJobsUnavailable(
@@ -260,13 +276,25 @@ export class EvalRunJobs {
     // fails in the shell, before the harness that would have explained it.
     let cwd = options.cwd
     if (cwd === undefined) {
-      const derived = runWorkDir(options, runId)
+      const fallbackRoot = options.stateRoot ?? this.config.stateRoot
+      const derived = runWorkDir(fallbackRoot === undefined ? {} : { stateRoot: fallbackRoot }, runId)
       if (derived !== undefined) {
         mkdirSync(derived, { recursive: true })
         cwd = derived
       }
     }
     const parent = await this.resolveParent(options.parentSessionId, cwd)
+    if (this.disposed) {
+      // Disposal raced the start across the parent resolution: nothing
+      // registers, and the session this start may have opened for the run
+      // goes back rather than leaking.
+      try {
+        await parent.release?.()
+      } catch {
+        // Best-effort teardown — the refusal below is the answer.
+      }
+      throw new EvalJobsUnavailable('the eval instance was disposed while the run was starting')
+    }
     const controller = new AbortController()
     const record: RunRecord = {
       jobId: '',
@@ -439,6 +467,38 @@ export class EvalRunJobs {
       return 'requested'
     }
     return jobs.kill(record.jobId, undefined, 'eval run cancelled')
+  }
+
+  /**
+   * The owning service's teardown: cancel every run this layer started that
+   * has not settled, through the ONE cancellation entry — {@link cancel},
+   * which lands on the run's AbortSignal exactly like `job_kill` — so a live
+   * run finalizes the cells the cancel caught as `interrupted` through the
+   * normal path rather than being force-killed, and a run that opened its own
+   * parent session still releases it in its settle path. Idempotent;
+   * afterwards {@link start} refuses.
+   *
+   * Scope, precisely: the records of THIS layer, which are the jobs the owning
+   * service instance started. Jobs other instances registered in the same
+   * registry are untouched — the unowned-by-design registration is what lets
+   * them outlive their starter, and dispose does not widen into a registry
+   * sweep. Settled jobs need nothing. There is no resume on the other side:
+   * a cancelled run is re-run, never resumed (that was already the design).
+   */
+  dispose(): void {
+    if (this.disposed) return
+    this.disposed = true
+    for (const record of this.records.values()) {
+      if (record.settled !== undefined) continue
+      try {
+        this.cancel(record.jobId)
+      } catch {
+        // A registry that errors on the kill must not strand the run: pull
+        // the same lever directly. Aborting an already-aborted signal is a
+        // no-op, so this is safe when cancel got partway.
+        record.controller.abort()
+      }
+    }
   }
 
   /** Every run this service started, newest last. */

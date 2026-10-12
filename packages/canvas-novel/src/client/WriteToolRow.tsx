@@ -21,9 +21,10 @@
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
-import { isOptionalPending, type ForeshadowOp } from '../types.ts'
+import type { ForeshadowOp } from '../types.ts'
 import type { NovelFace } from './contract.ts'
 import { chapterHeading } from './PendingList.tsx'
+import { PLAN_FOCUS } from './ChapterReader.tsx'
 import { useNovelRead } from './use-novel.ts'
 import { asksInTurn, type NovelTurnOwner } from './novel-turn.ts'
 import { writeRowModel, type NovelToolBlock, type WriteRowChapter } from './write-row.ts'
@@ -41,6 +42,10 @@ export interface WriteToolFace extends NovelFace {
   readonly chapterPage: string
   /** The 规划 page's key (an outline proposal's door). */
   readonly planPage: string
+  /** Open the canvas tab on a board face with a scope pressed; undefined on a canvas without that door. */
+  readonly openFace: () => ((canvasId: string, face: 'board', scope: string | null) => void) | undefined
+  /** The 设定 face's 最近更新 scope id (a 已对账 card's door). */
+  readonly recentScope: string
 }
 
 /** The props the keyed tool slot composes for this row. */
@@ -57,6 +62,7 @@ export function WriteToolRow(props: WriteToolRowProps): ReactNode {
   if (row.state === 'running') sawRunning.current = true
   if (row.state === 'chapter') return <PlanCard {...props} chapter={row.chapter!} live={sawRunning.current} />
   if (row.state === 'outline') return <OutlineCard {...props} canvasId={row.canvasId!} live={sawRunning.current} />
+  if (row.state === 'body') return <BodyCard {...props} chapter={row.chapter!} words={row.words} />
   return <Line state={row.state === 'extracted' ? 'line' : row.state} text={row.text} t={props.t} />
 }
 
@@ -104,7 +110,7 @@ export function PlanCard({ chapter, live: watched, remote, openPage, chapterPage
   useEffect(() => {
     if (!watched || followed.current || !awaiting || open === undefined) return
     followed.current = true
-    open(canvasId, chapterPage, chapterHeading(t, n, title), String(n))
+    open(canvasId, chapterPage, chapterHeading(t, n, title), `${n}${PLAN_FOCUS}`)
   }, [watched, awaiting, open, canvasId, chapterPage, n, title, t])
   // The live plan wins; the answer's counts stand in until it is read (or when it cannot be).
   const facts: string[] = plan !== undefined
@@ -138,7 +144,7 @@ export function PlanCard({ chapter, live: watched, remote, openPage, chapterPage
           type="button"
           className={css.go}
           data-primary={awaiting || undefined}
-          onClick={() => { open(canvasId, chapterPage, chapterHeading(t, n, title), String(n)) }}
+          onClick={() => { open(canvasId, chapterPage, chapterHeading(t, n, title), `${n}${PLAN_FOCUS}`) }}
         >
           {t(awaiting ? 'card.confirm' : 'card.view')} →
         </button>
@@ -194,33 +200,61 @@ export function OutlineCard({ canvasId, live: watched, remote, openPage, planPag
 }
 
 /**
- * A chapter the Turn reconciled: what the text carried of the plan (走向 x/y ·
- * 伏笔 a/b), the new cards, and what is left for the person — the items that
- * hold 审过, the optional suspected mentions — read live, with one door to
- * the chapter page where they are handled and the chapter is closed.
+ * A chapter's text the Turn wrote: its length against the target, its first
+ * lines, and one door — 读正文 → — to the chapter page. Its state is read
+ * live (待对账 until the 对账 lands).
  */
-export function ExtractCard({ chapter, newCards, remote, openPage, chapterPage, t }: Omit<WriteToolRowProps, 'block' | 'phase'> & {
+export function BodyCard({ chapter, words, remote, openPage, chapterPage, t }: Omit<WriteToolRowProps, 'block' | 'phase'> & {
   readonly chapter: WriteRowChapter
-  readonly newCards: number
+  /** The length the answer gave. */
+  readonly words?: number | undefined
 }): ReactNode {
   const { canvasId, n } = chapter
-  const api = remote()
-  const [tick, setTick] = useState(0)
-  const read = useNovelRead(api, r => r.chapter({ canvasId, n }), `chapter:${canvasId}:${n}`, tick)
-  const pending = useNovelRead(api, r => r.pending({ canvasId }), `pending:${canvasId}`, tick)
+  const read = useNovelRead(remote(), r => r.chapter({ canvasId, n }), `chapter:${canvasId}:${n}`, 0)
+  const view = read.state === 'ready' && read.value.ok ? read.value : undefined
+  const title = view?.chapter?.title ?? chapter.title
+  const opening = (view?.body ?? '').split('\n').map(line => line.trim()).filter(line => line !== '' && !line.startsWith('#')).slice(0, 2).join('')
+  const count = view?.chapter?.wordCount ?? words
+  const settled = view?.phase === 'extracted' || view?.phase === 'reviewed'
+  const open = openPage()
+  return (
+    <div className={css.card} data-tool="novel_write" data-state="plain">
+      <div className={css.head}>
+        <span className={css.kicker}>{t('card.bodyKicker', { n })}</span>
+        {view !== undefined && <span className={css.status} data-confirmed={settled || undefined}>{t(settled ? 'card.bodySettled' : 'card.bodyWritten')}</span>}
+      </div>
+      <div className={css.title}>{title}</div>
+      {opening !== '' && <p className={css.opening}>{opening}</p>}
+      <div className={css.facts}>
+        {count !== undefined && <span>{t('chapter.words', { count })}</span>}
+        {view?.targetWords !== undefined && <span>{t('card.target', { words: view.targetWords.toLocaleString() })}</span>}
+      </div>
+      {open !== undefined && (
+        <button type="button" className={css.go} onClick={() => { open(canvasId, chapterPage, chapterHeading(t, n, title), String(n)) }}>
+          {t('card.read')} →
+        </button>
+      )}
+    </div>
+  )
+}
+
+/**
+ * A chapter the Turn reconciled. Everything already landed — 对账 asks
+ * nothing (2026-10-09) — so the card says what it did (情节 x/y · 伏笔 a/b,
+ * new cards, existing cards changed) and opens 设定 · 最近更新, where those
+ * cards are, each with a line on what changed; the person fixes a card there
+ * or says so in the chat. Without the canvas's face door it opens the
+ * chapter page.
+ */
+export function ExtractCard({ chapter, newCards, updated, remote, openPage, openFace, chapterPage, recentScope, t }: Omit<WriteToolRowProps, 'block' | 'phase'> & {
+  readonly chapter: WriteRowChapter
+  readonly newCards: number
+  readonly updated: number
+}): ReactNode {
+  const { canvasId, n } = chapter
+  const read = useNovelRead(remote(), r => r.chapter({ canvasId, n }), `chapter:${canvasId}:${n}`, 0)
   const view = read.state === 'ready' && read.value.ok ? read.value : undefined
   const live = view?.chapter
-  const items = pending.state === 'ready' ? pending.value.items.filter(item => item.chapter === n) : []
-  const blocking = items.filter(item => !isOptionalPending(item)).length
-  const optional = items.length - blocking
-  const reviewed = view?.phase === 'reviewed'
-  // Until it is closed, the person handles and reviews on the page: re-read on the same beat as a waiting plan.
-  const settled = view === undefined || reviewed
-  useEffect(() => {
-    if (settled) return
-    const timer = setInterval(() => { setTick(value => value + 1) }, AWAIT_POLL_MS)
-    return () => { clearInterval(timer) }
-  }, [settled])
   const plan = live?.plan
   const delivery = live?.delivery
   const facts: string[] = [
@@ -231,17 +265,19 @@ export function ExtractCard({ chapter, newCards, remote, openPage, chapterPage, 
         })]
       : []),
     ...(newCards > 0 ? [t('card.newCards', { count: newCards })] : []),
-    ...(blocking > 0 ? [t('card.pending', { count: blocking })] : []),
-    ...(optional > 0 ? [t('card.optional', { count: optional })] : []),
+    ...(updated > 0 ? [t('card.updated', { count: updated })] : []),
   ]
   const title = live?.title ?? ''
-  const open = openPage()
-  const status = reviewed ? 'card.reviewed' : blocking > 0 ? 'card.toHandle' : 'card.reviewReady'
+  const face = openFace()
+  const page = openPage()
+  const go = face !== undefined
+    ? () => { face(canvasId, 'board', recentScope) }
+    : page !== undefined ? () => { page(canvasId, chapterPage, chapterHeading(t, n, title), String(n)) } : undefined
   return (
-    <div className={css.card} data-tool="novel_extract" data-state={reviewed ? 'confirmed' : 'awaiting'}>
+    <div className={css.card} data-tool="novel_extract" data-state="confirmed">
       <div className={css.head}>
         <span className={css.kicker}>{t('card.extracted', { n })}</span>
-        {view !== undefined && <span className={css.status} data-confirmed={reviewed || undefined}>{t(status)}</span>}
+        <span className={css.status} data-confirmed>{t('card.written')}</span>
       </div>
       {title !== '' && <div className={css.title}>{title}</div>}
       {facts.length > 0 && (
@@ -249,14 +285,9 @@ export function ExtractCard({ chapter, newCards, remote, openPage, chapterPage, 
           {facts.map(fact => <span key={fact}>{fact}</span>)}
         </div>
       )}
-      {open !== undefined && (
-        <button
-          type="button"
-          className={css.go}
-          data-primary={!reviewed || undefined}
-          onClick={() => { open(canvasId, chapterPage, chapterHeading(t, n, title), String(n)) }}
-        >
-          {t(reviewed ? 'card.view' : blocking > 0 ? 'card.handle' : 'card.review')} →
+      {go !== undefined && (
+        <button type="button" className={css.go} data-primary onClick={go}>
+          {t(face !== undefined ? 'card.recent' : 'card.read')} →
         </button>
       )}
     </div>
@@ -288,8 +319,10 @@ export function NovelTurnTail(props: NovelTurnTailProps): ReactNode {
       {asks.map(ask => ask.row.state === 'outline'
         ? <OutlineCard key={ask.key} {...props} canvasId={ask.row.canvasId!} live={false} />
         : ask.row.state === 'extracted'
-          ? <ExtractCard key={ask.key} {...props} chapter={ask.row.chapter!} newCards={ask.row.newCards ?? 0} />
-          : <PlanCard key={ask.key} {...props} chapter={ask.row.chapter!} live={false} />)}
+          ? <ExtractCard key={ask.key} {...props} chapter={ask.row.chapter!} newCards={ask.row.newCards ?? 0} updated={ask.row.updated ?? 0} />
+          : ask.row.state === 'body'
+            ? <BodyCard key={ask.key} {...props} chapter={ask.row.chapter!} words={ask.row.words} />
+            : <PlanCard key={ask.key} {...props} chapter={ask.row.chapter!} live={false} />)}
     </div>
   )
 }

@@ -37,9 +37,17 @@ export function ChapterBook(props: NovelSurfaceProps & { readonly onEmpty?: (() 
   return <Contents {...props} onRead={setReading} />
 }
 
-/** Whether a chapter needs the person: pending items, or extracted and waiting for ✓ 审过. */
+/**
+ * Whether a chapter still needs something: its text waits for a 对账, or it
+ * holds pending items left from before 对账 stopped asking (2026-10-09).
+ */
 function needsPerson(row: ChapterRow, pending: Readonly<Record<number, number>>): boolean {
-  return (pending[row.chapter.n] ?? 0) > 0 || row.phase === 'extracted' || row.phase === 'stale'
+  return (pending[row.chapter.n] ?? 0) > 0 || awaitsReconcile(row.phase)
+}
+
+/** A chapter whose memory is caught up (已对账; a 已审过 from before counts the same). */
+function settled(phase: EffectiveChapterPhase): boolean {
+  return phase === 'extracted' || phase === 'reviewed'
 }
 
 function Contents({ canvasId, rev, navigate, sessionId, remote, t, onRead, onEmpty }: NovelSurfaceProps & {
@@ -67,9 +75,9 @@ function Contents({ canvasId, rev, navigate, sessionId, remote, t, onRead, onEmp
     )
   }
   const words = rows.reduce((sum, row) => sum + (row.chapter.wordCount ?? 0), 0)
-  const reviewed = rows.filter(row => row.phase === 'reviewed').length
+  const reviewed = rows.filter(row => settled(row.phase)).length
   const todo = rows.filter(row => needsPerson(row, pending))
-  const open = rows.filter(row => row.phase !== 'reviewed')
+  const open = rows.filter(row => !settled(row.phase))
   const current = currentChapter(rows, pending)!
   const stale = rows.filter(item => awaitsReconcile(item.phase))
   const items = queue.state === 'ready' ? queue.value.items : []
@@ -89,7 +97,7 @@ function Contents({ canvasId, rev, navigate, sessionId, remote, t, onRead, onEmp
               key={item.chapter.n}
               type="button"
               className={css.tick}
-              data-phase={item.phase}
+              data-phase={item.phase === 'reviewed' ? 'extracted' : item.phase}
               data-todo={(pending[item.chapter.n] ?? 0) > 0 || undefined}
               title={`${t('strip.chapter', { n: item.chapter.n })} ${bareTitle(item.chapter.n, item.chapter.title)} · ${phaseLabel(item, pending, t)}`}
               aria-label={t('strip.chapter', { n: item.chapter.n })}
@@ -98,7 +106,7 @@ function Contents({ canvasId, rev, navigate, sessionId, remote, t, onRead, onEmp
           ))}
         </div>
         <div className={css.legend}>
-          {(['reviewed', 'extracted', 'stale', 'todo', 'writing', 'planning'] as const).map(kind => (
+          {(['extracted', 'stale', 'writing', 'planning'] as const).map(kind => (
             <span key={kind} data-kind={kind}>{t(`toc.legend.${kind}`)}</span>
           ))}
         </div>
@@ -145,9 +153,9 @@ function Contents({ canvasId, rev, navigate, sessionId, remote, t, onRead, onEmp
       ) : groups.map((group, index) => {
         const first = group[0]!.chapter.n
         const last = group.at(-1)!.chapter.n
-        const done = group.filter(item => item.phase === 'reviewed').length
+        const done = group.filter(item => settled(item.phase)).length
         const groupWords = formatWords(group.reduce((sum, item) => sum + (item.chapter.wordCount ?? 0), 0), t)
-        const busy = group.some(item => item.phase !== 'reviewed')
+        const busy = group.some(item => !settled(item.phase))
         const isOpen = toggled[index] ?? (busy || index === groups.length - 1)
         return (
           <div key={first} className={css.group} data-open={isOpen || undefined}>
@@ -197,14 +205,14 @@ function ChapterLine({ row, pending, onRead, t }: {
 
 /** The contents' three states (and a missing text): 已对账, 待对账, 计划. */
 function tocState(phase: EffectiveChapterPhase): 'done' | 'wait' | 'plan' | 'missing' {
-  if (phase === 'reviewed' || phase === 'extracted') return 'done'
+  if (settled(phase)) return 'done'
   if (awaitsReconcile(phase)) return 'wait'
   return phase === 'planning' ? 'plan' : 'missing'
 }
 
 function phaseLabel(row: ChapterRow, pending: Readonly<Record<number, number>>, t: TranslateNS<'novel'>): string {
   const count = pending[row.chapter.n] ?? 0
-  return count > 0 ? t('strip.pending', { count }) : t(`phase.${row.phase}`)
+  return count > 0 ? t('strip.pending', { count }) : t(`phase.${row.phase === 'reviewed' ? 'extracted' : row.phase}`)
 }
 
 /** `86400` → `8.6 万` (zh) / `86k` (en): the dictionary picks its unit. */

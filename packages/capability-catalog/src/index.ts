@@ -97,7 +97,7 @@ export type { PresetRosterSlice, PresetRosterRow, ResolvedPresetScope } from './
 export { modeOptions, readModeFaces } from './modes.ts'
 export {
   ScopedSkillDelivery, scopedSkillsRoot, scanManagedSkills, managedSkillFrom,
-  parsePresetScopeFrontmatter, defaultSkillRoots, detectConflicts,
+  defaultSkillRoots, detectConflicts,
   SCOPED_PROVIDER_NAME, MANAGED_SKILL_RANK,
 } from './scoped-delivery.ts'
 export {
@@ -271,7 +271,7 @@ export class CapabilityCatalogService extends TypertRemoteService {
     // inject so the env-injection runs once shellEnv/credentials/skills are
     // registered (at the catalog's apply they may not be composed yet).
     ctx.inject(['shellEnv', 'credentials', 'skills'], () => {
-      installSkillEnvInjection(ctx, () => this.catalogScope())
+      installSkillEnvInjection(ctx, () => this.catalogScope(), () => this.dshHome())
     })
     // Runtime companion hint (generic): when the skill tool loads a skill,
     // tell the model the configured credential env mappings so it uses the
@@ -650,12 +650,6 @@ export class CapabilityCatalogService extends TypertRemoteService {
   @Remote('pickDirectory')
   async pickDirectory(): Promise<string | null> {
     return catalogPickDirectory(this.ctx)
-  }
-
-  @Remote('mcpList')
-  async mcpList(): Promise<readonly CatalogMcpServerConfig[]> {
-    // Masked DTO: never surface secretRef markers (or the secret key names) to the browser.
-    return this.mcp.list().map(maskConfig)
   }
 
   @Remote('mcpAdd')

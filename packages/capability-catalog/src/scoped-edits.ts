@@ -17,11 +17,10 @@ import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import {
   defaultSkillRoots,
-  isKebabId,
   scanManagedSkills,
   scopedSkillsRoot,
-  splitFrontmatter,
 } from './scoped-delivery.ts'
+import { isKebabId, splitFrontmatter } from './frontmatter.ts'
 
 /** Shared guard: every write path addresses one skill directory by name. */
 function invalidName(name: string): ScopedEditResult | undefined {

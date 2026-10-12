@@ -31,9 +31,15 @@ import { useState } from 'react'
     provider?: string
     /** Every preset the roster supplies. */
     options: readonly CatalogPresetOption[]
-    save: (presets: readonly string[]) => Promise<CatalogPresetScopeEditResult>
-    adopt: (presets: readonly string[]) => Promise<CatalogPresetScopeEditResult>
-    release: () => Promise<CatalogPresetScopeEditResult>
+    /**
+     * Apply the picked presets. The routing stays invisible to the user: adopt
+     * for a skill outside the managed root, re-scope for a managed one, and
+     * release back to the user skill root when a managed skill's selection is
+     * emptied — an empty selection means "every preset", which needs no managed
+     * delivery. An empty pick on an unmanaged skill is already the truth and
+     * reports success without a write.
+     */
+    apply: (presets: readonly string[]) => Promise<CatalogPresetScopeEditResult>
   }
 
 /** Why a skill with no writable preset scope has no editor. */
@@ -44,12 +50,14 @@ function providedScopeNote(t: (key: CapabilityCatalogKey) => string, provider: s
 }
 
 /** Centered modal with a skill's full detail, source browser, metadata and credential config. */
-export function SkillDetailModal({ name, claim, onClose, setCredential, readSkillFile, t, scope, modeChips, modesLoading, onModeSelect }: {
+export function SkillDetailModal({ name, claim, onClose, setCredential, readSkillFile, presetId, t, scope, modeChips, modesLoading, onModeSelect }: {
   name: string
   claim: DetailClaim
   onClose: () => void
   setCredential: (key: string, value: string) => Promise<boolean>
-  readSkillFile: (name: string, path: string) => Promise<CatalogSkillFileRead | undefined>
+  readSkillFile: (name: string, path: string, presetId?: string) => Promise<CatalogSkillFileRead | undefined>
+  /** The mode this detail was read at; bundle files resolve at the same scope. */
+  presetId?: string | undefined
   t: (key: CapabilityCatalogKey) => string
   scope?: ScopeEditor | undefined
   /** The modes that load this skill, when its scope section cannot say (a
@@ -92,6 +100,10 @@ export function SkillDetailModal({ name, claim, onClose, setCredential, readSkil
   }
 
   const pickedScope = scopePick ?? scope?.declared ?? []
+  /** The pick matches the declared scope set-for-set (order-insensitive). */
+  const sameAsDeclared = scope !== undefined
+    && pickedScope.length === scope.declared.length
+    && pickedScope.every(id => scope.declared.includes(id))
 
   /** Run one scope mutation, then report its outcome in place. */
   const runScope = async (action: () => Promise<CatalogPresetScopeEditResult>): Promise<void> => {
@@ -121,7 +133,7 @@ export function SkillDetailModal({ name, claim, onClose, setCredential, readSkil
     }
     setSrcLoading(true)
     setSrcContent(undefined)
-    void readSkillFile(name, path).then(res => {
+    void readSkillFile(name, path, presetId).then(res => {
       setSrcContent(res?.content)
       setSrcLoading(false)
     })
@@ -205,37 +217,19 @@ export function SkillDetailModal({ name, claim, onClose, setCredential, readSkil
                     ))}
                   </div>
                   <div className={css.scopeActions}>
-                    {/* A skill not yet in the managed root has nothing to save
-                        yet: its selection is the scope `adopt` installs it with. */}
-                    {scope.managed ? (
-                      <button
-                        type="button"
-                        className={css.addBtn}
-                        disabled={scopeBusy}
-                        onClick={() => void runScope(() => scope.save(pickedScope))}
-                      >
-                        {scopeBusy ? t('scopeSaving') : t('scopeSave')}
-                      </button>
-                    ) : null}
-                    {scope.managed ? (
-                      <button
-                        type="button"
-                        className={css.addBtn}
-                        disabled={scopeBusy}
-                        onClick={() => void runScope(() => scope.release())}
-                      >
-                        {t('scopeRelease')}
-                      </button>
-                    ) : scope.adoptable ? (
-                      <button
-                        type="button"
-                        className={css.addBtn}
-                        disabled={scopeBusy}
-                        onClick={() => void runScope(() => scope.adopt(pickedScope))}
-                      >
-                        {t('scopeAdopt')}
-                      </button>
-                    ) : null}
+                    {/* One action: the pick IS the intent. Emptying a managed
+                        skill's selection releases it back to the user root;
+                        an empty pick on an unmanaged one is already the truth. */}
+                    <button
+                      type="button"
+                      className={css.addBtn}
+                      disabled={scopeBusy || (scope.managed
+                        ? sameAsDeclared && scope.declared.length > 0
+                        : pickedScope.length === 0)}
+                      onClick={() => void runScope(() => scope.apply(pickedScope))}
+                    >
+                      {scopeBusy ? t('scopeSaving') : t('scopeSave')}
+                    </button>
                     {scopeMsg !== null ? <span className={css.scopeHint}>{scopeMsg}</span> : null}
                   </div>
                   {scope.conflict !== undefined ? (

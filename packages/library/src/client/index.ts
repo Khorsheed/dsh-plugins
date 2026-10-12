@@ -140,6 +140,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     getQuiz: (projectId, quizId) => remote.getQuiz({ projectId, quizId }),
     putAttempt: (projectId, quizId, verdicts) => remote.putAttempt({ projectId, quizId, verdicts }),
     recentRecords: () => remote.recentRecords({ limit: 3 }),
+    latestActivity: () => remote.latestActivity(),
     boundTarget: () => remote.boundTarget(sessionId),
     bindTarget: binding => remote.bindTarget(sessionId, { binding }),
     sendMessage: text => {

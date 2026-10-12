@@ -102,6 +102,7 @@ export function QuizView({ p, projectId, bookId, quizId }: ViewProps & { project
         )}
         {question !== undefined && (
           <QuestionCard
+            key={question.id}
             p={p}
             question={question}
             answered={answered}
@@ -122,7 +123,7 @@ export function QuizView({ p, projectId, bookId, quizId }: ViewProps & { project
   )
 }
 
-/** One question: its two tags, its quote, the answer control, the feedback. */
+/** One question: its two tags, the answer control, the feedback. The evidence quote shows only after answering — quoted up front, it often IS the answer. */
 function QuestionCard({ p, question, answered, draft, onDraft, onAnswer }: {
   p: ViewProps['p']
   question: LibraryQuizQuestion
@@ -134,6 +135,11 @@ function QuestionCard({ p, question, answered, draft, onDraft, onAnswer }: {
   const { t } = p
   const correct = question.kind === 'choice' ? choiceIndex(question.options ?? [], question.answer) : -1
   const evidenceTone = question.evidence.kind === 'photo' ? 'photo' : question.evidence.kind === 'web' ? 'web' : 'know'
+  // A choice or fill quote often IS the answer, so it waits for the feedback.
+  // An open question's quote frames the discussion but can hand the answer
+  // over just the same — it stays folded behind 参考原文 until peeked or answered.
+  const quoteUpfront = question.kind === 'free'
+  const [peek, setPeek] = useState(false)
   return (
     <section className={css.question}>
       <div className={css.chips}>
@@ -141,7 +147,14 @@ function QuestionCard({ p, question, answered, draft, onDraft, onAnswer }: {
         <span className={css.chip} data-tone={evidenceTone}>{t(`evidence.${question.evidence.kind}`)}</span>
       </div>
       <div className={css.prompt}>{question.prompt}</div>
-      {question.evidence.quote !== undefined && <blockquote className={css.quote}>{question.evidence.quote}</blockquote>}
+      {quoteUpfront && question.evidence.quote !== undefined && answered === undefined && (
+        <div className={css.row}>
+          <button type="button" className={css.textButton} aria-expanded={peek} onClick={() => { setPeek(!peek) }}>{t(peek ? 'quiz.hideQuote' : 'quiz.showQuote')}</button>
+        </div>
+      )}
+      {quoteUpfront && question.evidence.quote !== undefined && (peek || answered !== undefined) && (
+        <blockquote className={css.quote}>{question.evidence.quote}</blockquote>
+      )}
       {question.kind === 'choice' && (
         <div className={css.options}>
           {(question.options ?? []).map((option, at) => {
@@ -191,6 +204,7 @@ function QuestionCard({ p, question, answered, draft, onDraft, onAnswer }: {
           {answered.pass === false && <strong className={css.bad}>{t('quiz.wrong', { answer: correct >= 0 && question.options?.[correct] !== undefined ? `${String.fromCharCode(65 + correct)}. ${question.options[correct]}` : question.answer })}</strong>}
           {answered.pass === undefined && <strong>{t('quiz.coachJudges')}</strong>}
           {question.explanation !== undefined && <div>{question.explanation}</div>}
+          {!quoteUpfront && question.evidence.quote !== undefined && <blockquote className={css.quote}>{question.evidence.quote}</blockquote>}
           {question.evidence.url !== undefined && <a className={css.link} href={question.evidence.url} target="_blank" rel="noreferrer">{t('quiz.source')}</a>}
         </div>
       )}

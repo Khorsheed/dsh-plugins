@@ -112,7 +112,7 @@ interface Model {
   readonly w: readonly WorldRow[]
 }
 
-const MENTION_KEY = {
+export const MENTION_KEY = {
   planted: 'pending.mention.planted', advanced: 'pending.mention.advanced',
   hinted: 'pending.mention.hinted', resolved: 'pending.mention.resolved',
 } as const
@@ -375,7 +375,7 @@ const FIELD_KEY = {
   appearance: 'log.field.appearance', voice: 'log.field.voice', knows: 'log.field.knows', unaware: 'log.field.unaware',
   secrets: 'log.field.secrets', now: 'log.field.now', kind: 'log.field.kind', rule: 'log.field.rule',
 } as const
-const fieldLabel = (t: T, field: string): string => field in FIELD_KEY ? t(FIELD_KEY[field as keyof typeof FIELD_KEY]) : field
+export const fieldLabel = (t: T, field: string): string => field in FIELD_KEY ? t(FIELD_KEY[field as keyof typeof FIELD_KEY]) : field
 const LIST_FIELDS = new Set(['knows', 'unaware', 'secrets'])
 
 function sourceLine(t: T, entry: HistoryEntry): string {

@@ -199,6 +199,10 @@ export class EvalRemoteService extends TypertRemoteService<never> {
       ...(request.only === undefined ? {} : { only: request.only }),
       ...(request.maxCells === undefined ? {} : { maxCells: request.maxCells }),
       ...(request.ignoreReadiness === true ? { ignoreReadiness: true } : {}),
+      // The containment check against an instance-bound state root is the
+      // service's (`STATEROOT_OUTSIDE_INSTANCE`); this face only carries the
+      // option across.
+      ...(request.stateRoot === undefined ? {} : { stateRoot: request.stateRoot }),
       label: `eval run ${target} (remote)`,
     }
     const handle = request.experimentId !== undefined

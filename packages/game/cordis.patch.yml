@@ -1,0 +1,24 @@
+# game bundle patch: inserts the plugin rows into the composing profile, so
+# `dsh plugin --profile <name> add @khorsheed/dsh-game` reconciles it into the
+# bundles layer. The first row is a bare mount — the host half provides the
+# `gameStore` service, mounts its Remote face and runs the end-of-turn checks
+# for sessions bound to a game project; the browser half is discovered
+# through the package.json `dsh.client` block.
+#
+# NOTE: a composition must mount each row id exactly once — a duplicate loader
+# entry id fails boot.
+#
+# The second row is the `./agent` composition entry (game_open / game_read,
+# the mode's guidance section, the gamedev and game-design skills). It is
+# DISABLED here: the game-development preset (`preset-dsh-gamedev` in
+# @khorsheed/dsh-presets) names the same entry in its own composition, so the
+# tools exist for that preset's sessions only. To give EVERY session the game
+# tools instead, enable this row and do not use the preset — THE TWO MUST
+# NEVER BE LIVE AT ONCE (the tools would register twice; the canvas `./agent`
+# pattern).
+- insert:
+    - id: game
+      name: "@khorsheed/dsh-game"
+    - id: game-agent
+      name: "@khorsheed/dsh-game/agent"
+      disabled: true

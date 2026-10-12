@@ -19,7 +19,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { LibraryService } from './service.ts'
 import { LibraryRemoteService } from './remote.ts'
 
-export { LibraryService, leitnerDueAt, unlockReady, validateRoadmapShape } from './service.ts'
+export { LibraryService, LibraryDisposedError, leitnerDueAt, unlockReady, validateRoadmapShape } from './service.ts'
 export { cardKey, cardKeys, cardMatchesQuery, exactMatch, keySimilarity, nearMatches, NEAR_DUPLICATE } from './cards.ts'
 export { LibraryRemoteService } from './remote.ts'
 export type { LibraryRemoteConfig } from './remote.ts'

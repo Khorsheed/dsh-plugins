@@ -378,6 +378,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   // either; the session id the view passes along only reaches the doors that
   // open or draft into a session.
   const face: DatasetsViewInjected = {
+    capabilities: (_sid: SessionId) => remote.capabilities(),
     fetchRegistry: (_sid: SessionId) => remote.registry(),
     previewRepo: (_sid: SessionId, path: string, trackedRef?: string) =>
       remote.previewRepo(trackedRef === undefined ? { path } : { path, trackedRef }),

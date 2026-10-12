@@ -269,22 +269,20 @@ describe('the type tools', () => {
     await board.decideType({ canvasId, kind, decision: 'adopt' }, SESSION)
 
     expect((await execute('canvas_read', {}) as { text: string }).text).toContain('name（名字）: line 必填')
-    const refused = await execute('canvas_write', { op: 'card', kind, fields: { role: '反派' } }) as string
-    expect(refused).toContain('缺必填字段 name')
-    expect(refused).toContain('只能取：主角、配角')
+    await expect(execute('canvas_write', { op: 'card', kind, fields: { role: '反派' } })).rejects.toThrow(/缺必填字段 name[\s\S]*只能取：主角、配角/)
     const landed = await execute('canvas_write', { op: 'card', kind, fields: { name: '林澈', role: '主角' } }) as string
     expect(landed).toMatch(/^完成：/)
     expect((await read()).cards[0]).toMatchObject({ status: 'proposed', text: '', fields: { name: '林澈', role: '主角' } })
     expect((await execute('canvas_read', {}) as { text: string }).text).toContain('林澈')
-    expect(await execute('canvas_write', { op: 'card', kind: 'fragment', fields: { x: 1 } }))
-      .toBe('失败：分类「灵感」没有字段定义，不能填 fields——把内容写进 text。')
+    await expect(execute('canvas_write', { op: 'card', kind: 'fragment', fields: { x: 1 } }))
+      .rejects.toThrow('失败：分类「灵感」没有字段定义，不能填 fields——把内容写进 text。')
   })
 
   it('explains an empty definition and a missing target', async () => {
     const { execute } = await bench()
-    expect(await execute('canvas_propose_type', { label: '人物', definition: { fields: [] }, rationale: '' }))
-      .toContain('definition 里没有一个合格的字段')
-    expect(await execute('canvas_propose_type', { kind: 'cat_nopenopenope', definition: PERSON, rationale: '' }))
-      .toContain('没有 id 为「cat_nopenopenope」')
+    await expect(execute('canvas_propose_type', { label: '人物', definition: { fields: [] }, rationale: '' }))
+      .rejects.toThrow('definition 里没有一个合格的字段')
+    await expect(execute('canvas_propose_type', { kind: 'cat_nopenopenope', definition: PERSON, rationale: '' }))
+      .rejects.toThrow('没有 id 为「cat_nopenopenope」')
   })
 })

@@ -31,6 +31,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { createScope, type ScopeKey } from '@deepseek-ai/dsh-scope'
+import { defineTool } from '@deepseek-ai/dsh-tools'
 // Type-only: the ctx.skills service merge and the provider contract this module
 // implements. The skill registry is an optional peer; a runtime import would
 // make the catalog fail to boot without it.
@@ -39,6 +40,9 @@ import type { SkillCandidate, SkillDefinition, SkillProvider, SkillProviderContr
 // event declaration (the roster itself is a real dependency).
 import type {} from '@deepseek-ai/dsh-agent-preset-registry'
 import { acquireStandingScope, type PresetRosterSlice } from './preset-scope.ts'
+import { collectSkillFiles, resolveBundleTarget, sanitizeBundlePath } from './skills.ts'
+import { isKebabId, parseSkillFrontmatter } from './frontmatter.ts'
+import { setToolOrigin } from './tool-origin.ts'
 
 let presetRegistryProbe: Promise<unknown> | undefined
 
@@ -82,12 +86,6 @@ export const SCOPED_SKILLS_DIR = join('capability-catalog', 'skills')
 /** Debounce for filesystem-triggered rescans. */
 const RESCAN_DEBOUNCE_MS = 150
 
-/** Frontmatter block, then the body it precedes. */
-const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/
-
-/** Kebab-case skill / preset id grammar (the registry's own). */
-const KEBAB_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
-
 /** One managed skill read from the plugin-owned root. */
 export interface ManagedSkill {
   readonly name: string
@@ -97,6 +95,8 @@ export interface ManagedSkill {
   readonly userInvocable: boolean
   /** Preset ids this skill is delivered to; absent/empty means "not scoped". */
   readonly presetScope: readonly string[] | undefined
+  /** The frontmatter's full `metadata:` block, preserved verbatim when parseable. */
+  readonly metadata?: Readonly<Record<string, unknown>>
   /** The skill's own directory (its `resourceBase`). */
   readonly dir: string
   /** Absolute `SKILL.md` path. */
@@ -165,104 +165,32 @@ export interface ScopedDeliveryRegistry {
 }
 
 /**
- * Read the `presetScope` list out of a frontmatter block.
- *
- * Accepted forms, at any indentation (the canonical one is
- * `metadata.presetScope`):
- *
- * ```yaml
- * metadata:
- *   presetScope: [dsh-writing, dev]
- *   presetScope:
- *     - dsh-writing
- * ```
- * @param front - the frontmatter text without its `---` fences.
- * @returns the declared ids, or undefined when the key is absent.
- */
-export function parsePresetScopeFrontmatter(front: string): readonly string[] | undefined {
-  const lines = front.split('\n')
-  for (let index = 0; index < lines.length; index += 1) {
-    const match = /^(\s*)presetScope\s*:\s*(.*)$/.exec(lines[index] ?? '')
-    if (match === null) continue
-    const indent = (match[1] ?? '').length
-    const rest = (match[2] ?? '').trim()
-    if (rest.startsWith('[')) {
-      const inner = rest.slice(1, rest.lastIndexOf(']') === -1 ? undefined : rest.lastIndexOf(']'))
-      return presetIdsOf(inner.split(','))
-    }
-    if (rest !== '') return presetIdsOf([rest])
-    const block: string[] = []
-    for (let item = index + 1; item < lines.length; item += 1) {
-      const entry = /^(\s*)-\s*(.*?)\s*$/.exec(lines[item] ?? '')
-      if (entry === null) break
-      if ((entry[1] ?? '').length <= indent) break
-      block.push(entry[2] ?? '')
-    }
-    return presetIdsOf(block)
-  }
-  return undefined
-}
-
-/** Normalize YAML scalars onto the preset-id grammar. */
-function presetIdsOf(values: readonly string[]): readonly string[] {
-  const ids: string[] = []
-  for (const value of values) {
-    const id = value.trim().replace(/^['"]|['"]$/g, '')
-    if (id === '' || !KEBAB_ID.test(id)) continue
-    if (!ids.includes(id)) ids.push(id)
-  }
-  return ids
-}
-
-/** Whether a string is a usable skill / preset id. */
-export function isKebabId(value: string): boolean {
-  return KEBAB_ID.test(value)
-}
-
-/** Split a SKILL.md into its frontmatter block and body. */
-export function splitFrontmatter(content: string): { front: string; body: string } | undefined {
-  const match = FRONTMATTER.exec(content)
-  if (match === null) return undefined
-  return { front: match[1] ?? '', body: match[2] ?? '' }
-}
-
-/** Read a boolean frontmatter flag (`key: true|false`). */
-function frontmatterFlag(front: string, key: string): boolean | undefined {
-  const match = new RegExp(`^\\s*${key}\\s*:\\s*(true|false)\\s*$`, 'm').exec(front)
-  if (match === null) return undefined
-  return match[1] === 'true'
-}
-
-/** Read a scalar frontmatter value, unquoting a simple quoted or plain form. */
-function frontmatterScalar(front: string, key: string): string | undefined {
-  const match = new RegExp(`^\\s*${key}\\s*:\\s*(.+)$`, 'm').exec(front)
-  if (match === null) return undefined
-  const value = (match[1] ?? '').trim().replace(/^['"]|['"]$/g, '')
-  return value === '' ? undefined : value
-}
-
-/**
  * Parse one managed `SKILL.md` into its delivery record.
+ *
+ * The frontmatter is ONE real-YAML parse (see `./frontmatter.ts`): name and
+ * description read top-level only, the invocation flags accept the host
+ * loader's boolean variants, and the scope list comes from the canonical
+ * `metadata.presetScope` (falling back to a legacy top-level key). A malformed
+ * `metadata:` block degrades to no-metadata — the skill still delivers —
+ * rather than rejecting a file the rest of the block could still serve.
  * @param content - the file text.
  * @param dir - the skill's directory (its resource base).
  * @param path - the absolute `SKILL.md` path.
  * @returns the record, or undefined when the frontmatter is unusable.
  */
 export function managedSkillFrom(content: string, dir: string, path: string): ManagedSkill | undefined {
-  const split = splitFrontmatter(content)
-  if (split === undefined) return undefined
-  const name = frontmatterScalar(split.front, 'name')
-  const description = frontmatterScalar(split.front, 'description')
-  if (name === undefined || description === undefined || !KEBAB_ID.test(name)) return undefined
-  const whenToUse = frontmatterScalar(split.front, 'when-to-use') ?? frontmatterScalar(split.front, 'whenToUse')
-  const presetScope = parsePresetScopeFrontmatter(split.front)
+  const parsed = parseSkillFrontmatter(content)
+  if (parsed === undefined) return undefined
+  const { name, description } = parsed
+  if (name === undefined || description === undefined || !isKebabId(name)) return undefined
   return {
     name,
     description,
-    ...whenToUse === undefined ? {} : { whenToUse },
-    modelInvocable: frontmatterFlag(split.front, 'disable-model-invocation') !== true,
-    userInvocable: frontmatterFlag(split.front, 'user-invocable') !== false,
-    presetScope,
+    ...parsed.whenToUse === undefined ? {} : { whenToUse: parsed.whenToUse },
+    modelInvocable: parsed.modelInvocable,
+    userInvocable: parsed.userInvocable,
+    presetScope: parsed.presetScope,
+    ...parsed.metadata === undefined ? {} : { metadata: parsed.metadata },
     dir,
     path,
     content,
@@ -286,7 +214,10 @@ export function candidateFor(skill: ManagedSkill): SkillCandidate {
     rank: MANAGED_SKILL_RANK,
     locator: skill.path,
     path: skill.path,
-    metadata: { presetScope: [...(skill.presetScope ?? [])] },
+    // The declared scope is overlaid onto the skill's own metadata block (never
+    // a rebuild): credentials declarations and other plugin data must survive
+    // delivery unchanged, or the detail surface loses them on adoption.
+    metadata: { ...skill.metadata, presetScope: [...(skill.presetScope ?? [])] },
     resourceBase: { kind: 'directory', path: skill.dir },
   }
 }
@@ -350,7 +281,7 @@ export async function scanManagedSkills(root: string): Promise<readonly ManagedS
   }
   const found: ManagedSkill[] = []
   for (const child of children) {
-    if (!child.isDirectory() || !KEBAB_ID.test(child.name)) continue
+    if (!child.isDirectory() || !isKebabId(child.name)) continue
     const dir = join(root, child.name)
     const path = join(dir, 'SKILL.md')
     try {
@@ -402,6 +333,9 @@ export class ScopedSkillDelivery {
   private failure: string | undefined
   private started = false
   private disposed = false
+  /** Reconcile gate: one pass in flight, one queued rerun (see reconcile). */
+  private reconcileInFlight: Promise<void> | undefined
+  private reconcileQueued = false
   /** The probed registry's mount list (undefined until start()'s probe resolves). */
   private presetMounts: LivePresetMounts | undefined
 
@@ -426,8 +360,47 @@ export class ScopedSkillDelivery {
     await this.reconcile()
   }
 
-  /** Re-read policy and files, then converge the delivery registrations. */
+  /**
+   * Re-read policy and files, then converge the delivery registrations.
+   *
+   * Triggers arrive concurrently — the filesystem watcher, the
+   * `agent-preset/selected` event, and the management Remotes — and two
+   * overlapping passes can both decide a preset has no registration and each
+   * register one, leaving two same-named providers serving one preset. The
+   * gate allows ONE pass in flight and coalesces every trigger that arrives
+   * during it into ONE queued rerun (the pass re-reads policy and files from
+   * scratch, so a rerun loses no update). A caller that finds a pass in
+   * flight waits for the chain its flag provoked, so an awaited reconcile
+   * still reflects the write that triggered it.
+   */
   async reconcile(): Promise<void> {
+    if (this.disposed) return
+    if (this.reconcileInFlight !== undefined) {
+      this.reconcileQueued = true
+      let run: Promise<void> | undefined = this.reconcileInFlight
+      while (run !== undefined) {
+        await run
+        if (this.disposed) return
+        run = this.reconcileInFlight
+      }
+      return
+    }
+    const run = (async () => {
+      try {
+        do {
+          this.reconcileQueued = false
+          await this.reconcileNow()
+        } while (this.reconcileQueued && !this.disposed)
+      } finally {
+        this.reconcileInFlight = undefined
+      }
+    })()
+    this.reconcileInFlight = run
+    return run
+  }
+
+  /** One reconcile pass (call only through {@link reconcile}'s gate). */
+  private async reconcileNow(): Promise<void> {
     if (this.disposed) return
     const registry = this.deps.registry()
     const roster = this.deps.roster()
@@ -665,6 +638,13 @@ export class ScopedSkillDelivery {
         invalidate = control.invalidate
         return this.providerFor(presetId, control)
       })
+      // The bundle-file reader rides the same scope layer: a preset that mounts
+      // no fs tools (learning mode) still lets the model read a delivered
+      // skill's reference files. Best-effort — a composition without the tools
+      // service keeps the delivery and drops only the reader.
+      const withTools = await injectableScope(injected, TOOLS_SERVICE)
+      const tools = withTools?.get(TOOLS_SERVICE) as { register?: (def: unknown) => void } | undefined
+      tools?.register?.(this.bundleFileTool(presetId))
       this.entries.push({
         presetId,
         key,
@@ -726,6 +706,55 @@ export class ScopedSkillDelivery {
         : (skill.presetScope ?? []).includes(presetId)))
   }
 
+  /** The managed skills readable through one preset's reader: its own scoped
+   * delivery plus the unscoped ones every preset sees through the global layer. */
+  private readableFor(presetId: string): readonly ManagedSkill[] {
+    return [...this.skillsFor(presetId), ...this.skillsFor(GLOBAL_PRESET)]
+  }
+
+  /** The read-only bundle-file reader served with one preset's delivery. */
+  private bundleFileTool(presetId: string): ReturnType<typeof defineTool> {
+    return setToolOrigin(defineTool({
+      name: READ_SKILL_FILE_TOOL,
+      description: 'Read a file from the bundle of a skill delivered to this mode — the reference documents and scripts beside its SKILL.md (a SKILL.md may point at them, e.g. "see search.md"). Omit path to list the bundle files.',
+      parameters: {
+        name: { type: 'string', required: true, description: 'The exact skill name from the available skills list.' },
+        path: { type: 'string', description: 'The bundle-relative file path (e.g. search.md). Omit it to list the bundle files.' },
+      },
+      output: {
+        schema: { type: 'string' },
+        render: (_args: unknown, value: unknown) => [{ type: 'text' as const, text: String(value) }],
+      },
+      execute: async (args: { name: string; path?: string }) => this.readBundleFile(presetId, args.name, args.path),
+    }), { channel: 'plugin', owner: '@khorsheed/dsh-capability-catalog' })
+  }
+
+  /** Serve one bundle file (or the bundle's file list) to a delivered skill's caller. */
+  private async readBundleFile(presetId: string, name: string, filePath: string | undefined): Promise<string> {
+    const skill = this.readableFor(presetId).find(entry => entry.name === name)
+    if (skill === undefined) return `skill "${name}" is not delivered to this mode by the capability catalog`
+    if (filePath === undefined || filePath.trim() === '') {
+      const files: string[] = []
+      await collectSkillFiles(skill.dir, skill.dir, files, 0)
+      return files.length === 0 ? `skill "${name}" has no bundle files` : files.sort().join('\n')
+    }
+    const safe = sanitizeBundlePath(filePath)
+    if (safe === undefined) return `refused: "${filePath}" is not a bundle-relative path`
+    // Containment including symlinks — the bundle directory is user content.
+    const target = await resolveBundleTarget(skill.dir, safe)
+    if (target === undefined) return `no such bundle file: ${safe}`
+    let content: string
+    try {
+      content = await readFile(target, 'utf8')
+    } catch {
+      return `no such bundle file: ${safe}`
+    }
+    if (content.length > MAX_BUNDLE_FILE_CHARS) {
+      return `${content.slice(0, MAX_BUNDLE_FILE_CHARS)}\n…(truncated at ${MAX_BUNDLE_FILE_CHARS} characters)`
+    }
+    return content
+  }
+
   /** Invalidate every registration's completed catalogs. */
   private invalidateAll(): void {
     for (const entry of this.entries) entry.invalidate()
@@ -763,6 +792,15 @@ function describeError(error: unknown): string {
 /** The registry every delivery registration is made through. */
 const SKILLS_SERVICE = 'skills'
 
+/** The tools registry the bundle-file reader registers through (optional). */
+const TOOLS_SERVICE = 'tools'
+
+/** The scoped bundle-file reader's tool name. */
+export const READ_SKILL_FILE_TOOL = 'read_skill_file'
+
+/** A bundle file's served text is capped so a giant asset cannot flood a turn. */
+const MAX_BUNDLE_FILE_CHARS = 100_000
+
 /** How long an injection may take before the registration is abandoned. */
 const INJECT_TIMEOUT_MS = 500
 
@@ -774,9 +812,10 @@ const INJECT_TIMEOUT_MS = 500
  * await, which gives `reconcile()` a settled answer instead of a registration
  * that appears at some later tick.
  * @param scopeCtx - the context minted for one preset's standing key.
+ * @param service - the service the injected context must reach.
  * @returns the injected context, or undefined when it never became available.
  */
-function injectableScope(scopeCtx: Context): Promise<Context | undefined> {
+function injectableScope(scopeCtx: Context, service: string = SKILLS_SERVICE): Promise<Context | undefined> {
   return new Promise(resolve => {
     let settled = false
     const finish = (value: Context | undefined): void => {
@@ -786,6 +825,6 @@ function injectableScope(scopeCtx: Context): Promise<Context | undefined> {
       resolve(value)
     }
     const timer = setTimeout(() => finish(undefined), INJECT_TIMEOUT_MS)
-    scopeCtx.inject([SKILLS_SERVICE], (injected: Context) => finish(injected))
+    scopeCtx.inject([service], (injected: Context) => finish(injected))
   })
 }

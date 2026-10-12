@@ -87,6 +87,7 @@ pnpm gate --full   # 额外用 act 在 Docker 里跑真实 workflow(覆盖冷装
 
 ## 推送与分支保护
 
+- **开发基线是最新本地 HEAD,不是 origin/main。** push 由 human 一事一议,所以本地 main 几乎总是领先远端——其他 agent 未推送的提交就堆在本地 main 上,那才是最新基线。开工前 `git fetch origin` 后看 `git status -sb`:`behind 0` 是常态,直接以本地 HEAD 为基开工,此时 `git pull --rebase` 是空操作、拉不来任何新东西;`behind > 0` 说明远端出现了本地没有的提交——**不要机械 `git pull --rebase`**,它会把共享检出里全部未推送提交(包括其他 agent 的)逐个重放,冲突会落在别人的提交上;报给 human/mainline 协调重基。worktree 从本地 main HEAD 切出,天然站在最新基线上。
 - **push 由 human 一事一议**:AGENTS.md 的「never push unilaterally」不变。mainline 在每批合并后申请推送,并在推送后盯 CI、修组合层的红。
 - **main 的保护目前在本地**:GitHub 对免费账户的私有仓拒绝 protected branch 与 ruleset(两个接口都答 403),所以「禁止强推、禁止删除 main」由 `.githooks/pre-push` 兜着(随 `pnpm hooks:install` 生效)。**仓库转 public 后应在服务端开启真正的分支保护**,届时这个 hook 退化为本地快速回声。
 - **推送节奏是这套设计的前提**:冷装那层永远只有 CI 能验,所以 CI 是最后一道网——网可以稀疏,但不能一周才收一次(2026-09-01 的三连红攒了 378 个提交才暴露)。

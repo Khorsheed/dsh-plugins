@@ -23,7 +23,7 @@ import { effortEvidence, frozenConfigurationOptions, requireEffortAdmission, typ
  */
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import type { DelegationProgress, DelegationResult, LocalAgentFace } from '../faces.ts'
+import type { DelegationProgress, DelegationResult, LocalAgentFace, ScopedHomeEvidenceFace } from '../faces.ts'
 import { hashPresetTree, scopePresetDir } from '../preset-snapshot.ts'
 import { awaitObservedModel, DEFAULT_READBACK_WAIT_MS } from './readback.ts'
 import { EGRESS_UNAVAILABLE } from './egress.ts'
@@ -227,6 +227,30 @@ export async function snapshotNow(
 }
 
 /**
+ * {@link snapshotNow} over the evidence face: the scope's preset-copy digest
+ * as the EXECUTION TARGET answers it. Every absence reads as the local
+ * "nothing to re-hash" — the locked record stands, because the absence of a
+ * measurement is evidence about this reader, not about the subject: no verb,
+ * no answer, a copy the target says is not there (`keepsCopy: false`), a
+ * problem answer, and a missing or misshapen digest all map to undefined.
+ * @param evidence - the mounted evidence face.
+ * @param condition - the probed condition.
+ * @returns the digest of the scope's copy, or undefined.
+ */
+export async function snapshotFromEvidence(
+  evidence: ScopedHomeEvidenceFace,
+  condition: ReadinessSubject,
+): Promise<string | undefined> {
+  const preset = condition.preset ?? null
+  if (preset === null || condition.capabilities?.snapshot === undefined) return undefined
+  if (typeof evidence.presetSnapshot !== 'function') return undefined
+  const answer = await evidence.presetSnapshot(condition.harnessName, condition.scope, preset)
+  if (answer === undefined || typeof answer !== 'object' || answer.keepsCopy !== true) return undefined
+  const sha = answer.snapshot?.sha
+  return typeof sha === 'string' && sha !== '' ? sha : undefined
+}
+
+/**
  * A throwaway probe unit: where the round runs, and how to destroy it. The
  * caller owns both — this module never acquires or releases anything itself,
  * so the run loop keeps exactly one destroy path.
@@ -291,6 +315,14 @@ export interface ReadinessInput {
    * meets.
    */
   unitFor?: (condition: ReadinessSubject) => Promise<ReadinessUnit | undefined>
+  /**
+   * The execution target's scoped-home evidence, when the service was mounted
+   * with one. PRESENT, the preset-copy freshness digest comes from the face
+   * ({@link snapshotFromEvidence}) and the scoped home is never resolved
+   * against this filesystem; ABSENT, {@link snapshotNow} reads it through the
+   * facade exactly as before.
+   */
+  evidence?: ScopedHomeEvidenceFace
 }
 
 /**
@@ -317,6 +349,7 @@ export async function checkReadiness(input: ReadinessInput): Promise<ReadinessRe
       log,
       ...(input.unitFor !== undefined ? { unitFor: input.unitFor } : {}),
       ...(input.capabilitiesNow !== undefined ? { capabilitiesNow: input.capabilitiesNow } : {}),
+      ...(input.evidence === undefined ? {} : { evidence: input.evidence }),
     }))
   }
   return records
@@ -334,6 +367,7 @@ async function probeOne(
     log: (message: string) => void
     unitFor?: (condition: ReadinessSubject) => Promise<ReadinessUnit | undefined>
     capabilitiesNow?: (condition: ReadinessSubject) => Promise<string | undefined>
+    evidence?: ScopedHomeEvidenceFace
   },
 ): Promise<ReadinessRecord> {
   if (env.unitFor === undefined) return await probeIn(localAgent, condition, env, undefined)
@@ -426,6 +460,7 @@ async function probeIn(
     now: () => number
     log: (message: string) => void
     capabilitiesNow?: (condition: ReadinessSubject) => Promise<string | undefined>
+    evidence?: ScopedHomeEvidenceFace
   },
   unit: ReadinessUnit | undefined,
 ): Promise<ReadinessRecord> {
@@ -453,7 +488,9 @@ async function probeIn(
   let freshSnapshot: string | undefined
   if ((condition.preset ?? null) !== null && condition.capabilities?.snapshot !== undefined) {
     try {
-      freshSnapshot = await snapshotNow(localAgent, condition)
+      freshSnapshot = env.evidence === undefined
+        ? await snapshotNow(localAgent, condition)
+        : await snapshotFromEvidence(env.evidence, condition)
     } catch (error) {
       env.log(`readiness ${condition.id}: the scope's preset copy could not be re-hashed`
         + ` (${error instanceof Error ? error.message : String(error)}) — the locked record stands`)

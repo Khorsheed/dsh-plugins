@@ -93,10 +93,9 @@ describe('the change history in the engine', () => {
     expect(history).toContainEqual(expect.objectContaining({
       cardId: CARD.zhao, source: 'model', chapter: 5, changes: [expect.objectContaining({ field: 'now', value: '档案室门缝前 · 下定决心 · 妹妹的下落' })],
     }))
-    const gap = (await store.listPending({ workId: DREAM.workId })).find(item => item.kind === 'info-gap')!
-    await store.decidePending({ workId: DREAM.workId, id: gap.id, action: 'accept' }, SESSION)
+    // The 信息差 the text closed is applied by the 对账 itself: the model's, with its evidence.
     expect((await store.listHistory({ workId: DREAM.workId, cardId: CARD.zhao })).at(-1)).toMatchObject({
-      source: 'accept', chapter: 5, evidence: '门后传来一个女人的声音',
+      source: 'model', chapter: 5, evidence: '门后传来一个女人的声音',
       changes: [{ field: 'knows', op: '+', value: '门缝里有什么（第5章得知）' }, { field: 'unaware', op: '−', value: '门缝里有什么' }],
     })
   })

@@ -60,6 +60,36 @@
   - 把判卷委派给宿主原生 subagent 是主 agent 的事，插件本身不委派。
 - **brief 有 token 预算**：write 约 2k，plan 约 2.5k，extract 随正文长短。任何变体都不注入全部前章或全部伏笔。
 
+## 工作区接入接缝（服务端消费）
+
+把本包挂到**隔离 Context + 独立 stateRoot** 上是受支持的消费方式：挂载方在自己的 Context 上以本包的 `apply` + `config.stateRoot` 起一份独立实例——引擎状态全部按实例绑定（`<stateRoot>/<画布 id>/`），读取动词（`readWorkMeta` / `listWorks` / `readEntries` 等）不需要任何会话。画布服务按调用探测（`canvasBoardOf`）：把**同一 Context** 上的 `canvasBoard` 提供给它即零代码绑定；缺席时没有作品，每个动词回答 `missing`，绝不抛错。
+
+```ts
+import { apply } from '@khorsheed/dsh-canvas-novel'
+
+apply(isolatedCtx, {
+  stateRoot: '/path/to/instance-state/novel',
+})
+```
+
+挂载侧的义务与语义：
+
+- **挂载 Context 必须在构造时提供 `fs`**：包的 inject 是 `['fs']`（急切注入）——cordis 不会在没有 fs 的组合里挂载本行；直接 `new NovelService(ctx)` 而 Context 上没有 fs，会在构造时以带包名的错误立即失败，而不是延迟到第一次写入。
+- **写入的会话可选，围栏绝不缺席**：每个写动词的 `session` 参数接受 `Session | undefined`。传会话时行为与之前逐字节一致（会话解析**模式**、借出 id，可写边界重定界到插件 state 根）；不传会话（无会话的服务端调用方）时按**部署默认模式**解析、不借 id——只读部署照样 `denied` 拒绝。策略服务根本无法无会话解析时，写入以 `denied` 编码拒绝，绝不静默放行。章节正文依旧先落画布工作区（边界重定界到作品的工作区），落不进去就不登记；无会话时作品必须自带工作区（没有可借的会话 cwd）。
+- **`bindWork` 仍要求会话**：它绑定的就是会话本身，无会话的调用方没有可绑之物。
+- **dispose 终态 + 同根重建**：`dispose()` 幂等且终态，并随借入 Context 的销毁自动触发——之后每个公开动词（含读取）都以带码的包名错误 `NovelDisposedError`（`code: 'disposed'`）拒绝；与 dispose 竞态的 in-flight 写要么已在写边界前完成、要么在写边界处被拒绝，绝不写进新实例接管的磁盘。同根重建合法：同一 `stateRoot` 上新建服务实例照常工作（死掉的只是旧实例）。
+- **本地行为零变化**：照常传会话时，语义与之前逐字节一致。
+
+**无 agent 的原生手势适配器**：Remote 面（`remote.novel.*`）的手势动词第一个参数是调用 `agent`（线上查找惯例），服务端调用方没有也不该伪造它。`createNovelGestureAdapter(core, session?)`（包根导出）把七个手势动词——`decidePending`、`reviewChapter`、`decideOutline`、`confirmPlan`、`editPlan`、`starForeshadow`、`setCurrentState`——以普通函数调用的形式给出，请求与回执就是 Remote 自己的线上类型；Remote 动词与适配器跑**同一份**共享核心（`src/gestures.ts`），所以两个面的回答按构造逐字节一致——包括 `editPlan` 的文本计划解析（解析规则只在 `planFromText` 一处）、`changed` 回执与 unknown 引用清单。`session` 省略时走上面的无会话围栏；core 已 dispose 时每个动词都以 `NovelDisposedError` 带码拒绝。适配器从不触碰 Agent、宿主查找或 `agents` 服务。八个读取动词（`pending`、`ledger`、`storyLog` 等）只是核心投影上的浏览器塑形，服务端调用方直接读自己手里的 core（`readEntries`、`listChapters`、`readOutline` 等），适配器不复制它们。注意 `./src/*` 不是消费入口——发布包只发 `lib/`，一律从包根导入。
+
+```ts
+import { apply, createNovelGestureAdapter } from '@khorsheed/dsh-canvas-novel'
+
+apply(isolatedCtx, { stateRoot: '/path/to/instance-state/novel' })
+const gestures = createNovelGestureAdapter(isolatedCtx.canvasNovel) // session 可选
+await gestures.editPlan({ canvasId: work, n: 6, text: '梗概：…\n情节：\n- …' })
+```
+
 ## 安装
 
 ```sh

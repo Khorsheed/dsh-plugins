@@ -301,6 +301,29 @@ Ask the person which version this experiment should pin with ask_user_question, 
 | `experimentArtifact({experimentId, path})` | 读一个实验目录里的一个文件：只在这个实验目录里（字面判越界 + realpath 再判），只内联文本，超 256 KB 截断并说明 |
 | `humanFinal(runId, ticket, verdicts, sessionId)` | 把一格的终评记进 `human-final` ns——**这个 ns 在整个家族里唯一的写入口**。ticket 在服务端反解回格子；转发 mission 的 `annotate`，只追加不改写；注解的 `by` 记 `tab:<sessionId>`（不是 `tool:` 前缀），verdict 文档的 `by` 记 `judge-bench`。每条判定必须带证据，空的拒绝。**没有对应的模型工具，将来也不会有**（界面规格 R1） |
 
+## 工作区接入接缝（按实例挂载）
+
+把本包挂到**隔离 Context + 独立 stateRoot** 上是受支持的消费方式：挂载方在自己的 Context 上以本包的 `apply` + `config.stateRoot` 起一份独立实例，或直接 `new EvalService(hosts, { stateRoot })`——eval 自己的状态树全部按实例绑定：实验目录、条件库、每次 run 的格子目录（`<stateRoot>/experiments/`、`conditions/`、`cells|readiness|judge|probes/<runId>/`），不再从 `$DSH_HOME/state/eval` 派生。两个实例配两个根，看到的就是两份互不相交的实验、条件与格子；不引入任何全局可变状态。
+
+```ts
+import { apply } from '@khorsheed/dsh-eval'
+
+apply(isolatedCtx, {
+  stateRoot: '/path/to/instance-state/eval',
+  // 可选：执行目标供给的 scoped-home 证据（见下）。不配则一切本地读取照旧。
+  evidence: targetEvidence,
+})
+```
+
+挂载侧的义务与语义：
+
+- **配置只此一项，缺省逐字节不变**：不配 `stateRoot` 的实例与之前逐字节一致——一切照旧从 DSH_HOME 派生，DSH_HOME 未设照旧抛「set DSH_HOME」。构造时根被规范化（绝对化、`~` 展开、沿已存在的目录树 realpath），所以边界比较比的是真实位置而不是路径字符串。
+- **runStart 的 stateRoot 收边界约束**：配了实例根之后，run 的格子根缺省就是实例根本身；`runStart` 与 `runExperimentStart`（以及 `run` / `runExperiment` 和 Remote `runStart` 新增的 `stateRoot` 选项）显式给出的路径必须解析在实例根**之内**——`..` 段越界与根内指向外面的软链都以带码拒绝 `STATEROOT_OUTSIDE_INSTANCE`（`EvalRunRefused`）挡下，且拒绝发生在任何注册之前。没配实例根时该选项照旧原样透传，不加任何检查。
+- **公平性证据可由执行目标供给（可选 `config.evidence`，`ScopedHomeEvidenceFace`）**：provision 与就绪闸钉住的证据——scoped home 内容指纹（`home.sha`）、凭证档位、有效配置逐项核对、（条件声明 preset 时的）roster 回读与 scope 自存 preset 副本的摘要——今天读的是本机目录；配上 face 之后改由**执行目标**以纯数据回答（生产侧在目标上跑同一套哈希函数与拒绝清单，经 JSON 边界送过来），本侧绝不解析或打开同名本机目录——在那种拓扑上同名目录是另一个环境。带面时该 face 是其 scope 的**整个**证据源：某动词缺席、答不出、或答非所形，落点与本地对应失败逐点相同——缺指纹 = 本地读不到目录的拒绝；凭证未分级 = 拒绝写 lock；有效配置缺席 = 「不可比」记录而非捏造一致；副本摘要缺席 = 锁定记录原样成立、绝不猜一份。对等性是契约：钉住的 fixture 上，face 路径与本地路径写出的 lock 逐字节一致。不配时一切本地行为不变。生产侧不抄实现：包根导出 `produceScopedHomeEvidence(homeDir, { preset? })`——输入是调用方已鉴权的绝对路径（相对路径拒绝），输出就是 face 三个文件系动词的答案（指纹、roster 回读、副本摘要），由本包自己的 `hashHome`/`readScopePreset`/preset 三件套算出；它没有任何缺省 home 可读（没有、也不推导），fail-closed 与本地读取逐点相同（目录不在 = `hashHome` 原样的抛错；无 roster = undefined；无副本 = `{ keepsCopy: false }`；不能当受试的副本 = 带 `problem` 原文、不给摘要）。凭证档位与有效配置不在这家工厂里——那是调用方自己的鉴权实现。
+- **单元路径的 scoped home 三决策可由执行目标接管（可选 `config.executionHome`，`ExecutionHomePort`）**：带 unit 段的 run 今天在本进程里做三件事——经 `localAgent.homeDir` 解析 home、用 `checkCredentialsDir` 验可用、acquire spec 里写死 `type: 'bind'`。配上 port 之后这三件全部归 `planScopedHomeMount`：port 收到的是**登记过的身份**（条件 id、harness、scope，加条件审过的容器内挂载点与变量名——绝不收调用方给的卷名或本机目录），回答的是目标侧的核验结果加一份挂载计划（`mount.source` 是不透明引用——卷名或目标侧路径——原样交给 lab，本进程绝不解析、绝不 stat；`type` 可为 `bind` 或 `volume`）。fail-closed 矩阵：port 没这个动词或核验抛错 = `EXECUTION_HOME_UNAVAILABLE`；不认识该身份 = `EXECUTION_HOME_UNKNOWN`；答非所形 = `EXECUTION_HOME_INVALID`——全部在任何单元 acquire 之前带码拒绝。与证据 face 的身份钉：两者同挂时，face 的 `homeIdentity` 与 port 的 `homeIdentity` 必须都在且相等——缺或不等即 `EXECUTION_HOME_IDENTITY_MISMATCH`，证据来自目标 X 绝不配目标 Y 的挂载。凭证边界不变：跨到委派/worker 侧的永远只有容器内路径与变量名，home 引用只走控制器 → lab 的 acquire spec。不配时一切本地行为逐字节不变（homeDir + 本机核对 + bind）。
+- **dispose 只动自己的 run**：`dispose()` 幂等且终态，并随借入 Context 的销毁自动触发（`apply` 里的 `ctx.effect` 接线）。它取消的是**本实例起过的、还没 settle 的** run job——走的就是 `job_kill` 那一条：job 的 cancel 钩子 → run 的 AbortSignal → 停开新格、被抓住的格按 `interrupted` 走完正常收尾落盘，绝不是 kill -9；run 自己开的父会话仍在 settle 路径里归还。**不覆盖**别的实例起过的 job——unowned-by-design 的注册语义不变，dispose 不扩大成注册表清扫；已 settle 的 job 无需处理。**永远没有 resume**：停掉的 run 只能重跑，这是既有设计，不随本接缝改变；盘上的中断格保持 `interrupted`。dispose 之后每个公开动词（含读取）以带码的包名错误 `EvalDisposedError`（`code: 'disposed'`）拒绝；与 dispose 竞态的 start 拒绝同一个码、什么都不注册（竞态中已开的父会话照常归还）。同根重建合法：同一 stateRoot 上新建服务实例照常工作，旧实例写入的数据都在。
+- **部署级的东西仍是部署级**：localAgent 门面仍是委派与 scope 组合（`provisionScope` 的写）的入口；mission 账本与题集登记仓库同理不向实例根绑定——实例根绑定的只是 eval 自己的状态树，证据 face 替换的只是公平性证据的**读取**，凭证本身哪里都不复制。
+
 ## 报告（report）
 
 输入是 mission export 的 bundle（manifest.json、run.json、missions/<id>/attempt-N/{meta,annotations,artifacts}、dataset/<layer>/），输出三份文件：

@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-10-12-managed-skill-metadata-preservation.md
+.agents/notes/implemented/bug-fix/2026-10-12-managed-skill-metadata-preservation.md: 0e5150bc2a71aca40844848ffb1d14db961be64d
+.agents/notes/implemented/bug-fix/2026-10-12-managed-skill-metadata-preservation.zh.md: c503e22ac68c7a156fd0e18ff98f918aa52f6715

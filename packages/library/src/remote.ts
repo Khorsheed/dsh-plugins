@@ -18,6 +18,7 @@ import type {
   LibraryAttachmentRef,
   LibraryBinding,
   LibraryBook,
+  LibraryCapabilities,
   LibraryCard,
   LibraryCardInput,
   LibraryCardQuery,
@@ -59,6 +60,14 @@ export class LibraryRemoteService extends TypertRemoteService<LibraryRemoteConfi
   /** The service core this face delegates to. */
   private get core(): LibraryService {
     return this.ctx.library
+  }
+
+  /* -------------------------------------------------------- capabilities */
+
+  /** What this composition can do: storage and attachments, with the reason — the display contract. */
+  @Remote('capabilities')
+  capabilities(): Promise<LibraryCapabilities> {
+    return this.core.capabilities()
   }
 
   /* ------------------------------------------------------------ projects */
@@ -255,6 +264,12 @@ export class LibraryRemoteService extends TypertRemoteService<LibraryRemoteConfi
   @Remote('recentRecords')
   recentRecords(request: { limit?: number }): Promise<{ records: (LibraryEvent & { projectId: string; projectName: string })[] }> {
     return this.core.recentRecords(request)
+  }
+
+  /** The newest event's timestamp anywhere — the pane polls it to re-read (no push channel). */
+  @Remote('latestActivity')
+  latestActivity(): Promise<{ at?: string }> {
+    return this.core.latestActivity()
   }
 
   /** The whole-library tally. */

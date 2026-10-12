@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-10-10-pack-dist-typert-face-exemption.md
+.agents/notes/implemented/bug-fix/2026-10-10-pack-dist-typert-face-exemption.md: 993e23f657cd0dcf2a973eb1c5af17ad5afdb252
+.agents/notes/implemented/bug-fix/2026-10-10-pack-dist-typert-face-exemption.zh.md: d08ea91c5045ca81e922fed469271060b382b778

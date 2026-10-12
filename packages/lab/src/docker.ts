@@ -27,6 +27,13 @@ const FINGERPRINT_LABEL = 'dsh-lab.fingerprint'
 /** Label carrying the fingerprint's component JSON, so reconcile recovers it without a state file. */
 export const COMPONENTS_LABEL = 'dsh-lab.fingerprint-components'
 const WORKSPACE_LABEL = 'dsh-lab.workdir'
+/**
+ * Label marking the acquiring instance's scope: a scoped service adopts only
+ * units carrying its own value, so several instances can share one daemon
+ * without adopting one another's units. Absent on units an unscoped instance
+ * acquired (every pre-seam unit).
+ */
+export const SCOPE_LABEL = 'dsh-lab.scope'
 
 /** In-container root of every scratch directory this provider creates. */
 const SCRATCH_DIR = '/run/dsh-lab'
@@ -94,7 +101,7 @@ export class DockerProvider implements UnitProvider {
     return digests[0] ?? id
   }
 
-  async acquire(id: string, spec: AcquireSpec, fingerprint: EnvironmentFingerprint): Promise<string> {
+  async acquire(id: string, spec: AcquireSpec, fingerprint: EnvironmentFingerprint, scope?: string): Promise<string> {
     const resource = `dsh-lab-${id}`
     const argv = [
       'run', '-d', '--name', resource,
@@ -109,6 +116,7 @@ export class DockerProvider implements UnitProvider {
     ]
     if (spec.missionId !== undefined) argv.push('--label', `${MISSION_LABEL}=${spec.missionId}`)
     if (spec.runId !== undefined) argv.push('--label', `${RUN_LABEL}=${spec.runId}`)
+    if (scope !== undefined) argv.push('--label', `${SCOPE_LABEL}=${scope}`)
     // Everything declared is applied, not merely hashed — a fingerprint that
     // claims an isolation the container does not carry would be a lie, and
     // the network is the one where the lie is dangerous: undeclared means

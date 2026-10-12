@@ -35,6 +35,31 @@ await ctx.sideChat.openWith({
 - **单向边**：消费方探测 `ctx.get('sideChat')`，在自己的 manifest `dsh.references` 登记服务名；side-chat 永不提及消费方。消费方缺席=它自己降级；side-chat 独立装卸。
 - **回合级新鲜度**：`openWith` 重复调用同一 contextKey **更新** systemPrompt 段（agent 作用域的 prompt section 在每次组装时重读记录，绝非创建时快照），同名工具在 live agent 上热替换，**绝不重建会话**。
 
+## 工作区接入接缝（服务端消费）
+
+把本包挂到**隔离 Context + 独立 stateRoot** 上是受支持的消费方式：挂载方在自己的 Context 上以本包的 `apply` + `config.stateRoot` 起一份独立实例——业务状态全部按实例绑定（`contexts.json` 落在实例自己的 state root 下），读取动词（`getState` / `listContexts` / `surfaceHints`）不需要任何会话。包的 inject 是 `agents` 与 `sessions`，挂载侧的 Context 必须提供（注入自定义执行后端时 `agents` 永不被动用，空桩即可）；`fs` 缺席时状态退化为纯内存（不阻塞任何手势）。
+
+```ts
+import { apply } from '@khorsheed/dsh-sidechat'
+
+apply(isolatedCtx, {
+  stateRoot: '/path/to/instance-state/sidechat',
+  agentRoute: { provider: '…', model: '…' }, // 可选：显式执行路由
+  cwd: '/path/to/workdir',                   // 可选：显式 cwd 锚点
+  executionBackend: myBackend,               // 可选：自定义执行后端端口
+})
+```
+
+挂载侧的义务与语义：
+
+- **执行落点由执行后端端口决定**：一切触达执行目标的环节都走 `SideChatExecutionBackend`——懒打开（create）与冷恢复（resume，一个 `open(init)`，`init.resume` 区分）、发送（`session.send({ text, source })`，refs 已由服务折进正文）、读取（live `status` + `events()` 快照；冷读 `readCold(sessionId)` 走持久侧、绝不 resume）、取消（`session.cancel()`，停止手势）、释放（`session.release()`，句柄 dispose，会话本身保持持久化）。默认后端（`SideChatDefaultExecutionBackend`）就是既有 `ctx.agents` 行为原样抽出；**注入自定义后端时服务绝不回退到部署默认**——路由链的 `agentDefaultModel` 探测只对默认后端运行，无调用方且解析不到路由的 `agent-unavailable` 拒绝同理只适用于默认后端（自定义后端自己拥有路由）。挂载是否正确必须**以观察为准**（核对后端实际打开的会话），不能靠假设。
+- **open 载荷带解析结果**：`{ contextKey, sessionId, resume, route?, presetId?, cwd?, segmentText(), tools() }`。`route`/`presetId`/`cwd` 是服务按链解析好的——路由：**显式 `agentRoute` > 调用会话折叠请求头**（默认后端再 + `agentDefaultModel` 探测）；preset：调用请求头 > 记录 > 插件配置（后端再解析自己的默认）；cwd：**显式 `cwd` > 来源会话 > 调用会话**，只在首次打开携带（resume 重放创建时的一切）。`segmentText`/`tools` 是**活读取器**（进程内 thunk，永不上线）：后端每轮组装重读它们——回合级新鲜度对任何后端成立。引用（refs，即附件语义）永不到达后端：服务在发送前已折成 `<quoted_context>` 正文块，transcript 投影时再按同一格式解析回来。
+- **能力声明 + 逐项降级**：`capabilities: { presets, promptContext, callerTools, cancel, coldRead }`，缺一项降一项，绝不崩。`callerTools: false` → openWith 的工具同步静默跳过；`cancel: false` → 停止手势带码拒绝 `cancel-unsupported`；`coldRead: false` → 冷上下文诚实回答未知（transcript 空、`lastError` null、时间 null、status 仍 `cold`）；`presets` / `promptContext` 由后端自己兑现——服务照传 `presetId` 与 `segmentText` 读取器，能力标志不改写 open 载荷。
+- **停止手势（宿主侧）**：`ctx.sideChat.stop(contextKey)`——运行中的 turn 经后端 `cancel()` 取消（默认后端走 agent 自带的 `cancel({ kind: 'user' })`；老宿主线上 agent 无此能力时按 `cancel-unsupported` 拒绝）。带码拒绝三分：`not-found`（无此上下文）/ `not-running`（当前没有 live 运行）/ `cancel-unsupported`（后端或会话无取消能力）。线上 Remote 无此动词。
+- **调用 agent 可选**：`ctx.sideChat.send(undefined, …)` 是无会话服务端调用方的形态——写入围栏按部署默认模式、不带 session id，路由/cwd 走显式配置或（默认后端）部署默认。`quoteMessage` 仍要求强制 calling（它引用的就是调用会话里的消息）。
+- **dispose 终态 + 同根重建**：`disposeAgents()` 幂等且终态——之后每个公开动词（含读取）都以带码的包名错误 `SideChatDisposedError`（`code: 'disposed'`）拒绝；与 dispose 竞态的 in-flight open 在落地时被当即 release——句柄不泄漏，调用方收到同一个 disposed 错误。同根重建合法：同一 `stateRoot` 上新建服务实例照常工作（自定义后端也一样——resume 经后端的 `open({ resume: true })` 落到后端自己的持久日志），死掉的只是旧实例。
+- **本地行为零变化**：不注入后端、不配新键、照常传 calling 时，语义与之前逐字节一致（既有测试套件原样全绿即为钉）；线上 Remote 面逐字节不变。
+
 ## Remote（`remote.sidechat`）
 
 | 动词 | 说明 |

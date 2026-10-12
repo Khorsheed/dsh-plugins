@@ -10,6 +10,7 @@
  */
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
+import { resolveWorktreesStateRoot, WORKTREES_SWITCHED_EVENT } from './bindings.ts'
 import { WorktreesRemoteService } from './remote.ts'
 import { WorktreesService } from './service.ts'
 
@@ -31,6 +32,16 @@ export interface WorktreesPluginConfig {
    * sees this object.
    */
   visiblePresets?: string[] | undefined
+  /**
+   * State root for the per-session worktree bindings (`bindings.json`).
+   * Absent/'' resolves to `$DSH_HOME/state/worktrees` (or
+   * `<cwd>/.dsh-worktrees` when `DSH_HOME` is unset) — the sidechat/canvas
+   * resolve precedent. The bindings file makes active-worktree overrides
+   * survive a host restart; when the file cannot be loaded (corrupt,
+   * unreadable) the deployment degrades to memory-only and controlled-switch
+   * receipts say so (`persisted: false`), never exploding the boot.
+   */
+  stateRoot?: string | undefined
 }
 
 // Bare `z`: schemastery 3.18.4's tightened variance reports TS2375 on the
@@ -39,6 +50,7 @@ export interface WorktreesPluginConfig {
 export const Config: z = z.object({
   baseRef: z.string().default('main'),
   visiblePresets: z.array(z.string()).default([]),
+  stateRoot: z.string().default(''),
 })
 
 declare module '@deepseek-ai/cordis' {
@@ -56,7 +68,14 @@ export const name = 'worktrees'
  * @param config - plugin configuration (baseRef defaulted by the schema).
  */
 export function apply(ctx: Context, config: WorktreesPluginConfig): void {
-  const service = new WorktreesService(config.baseRef ?? 'main')
+  const service = new WorktreesService(config.baseRef ?? 'main', {
+    stateRoot: resolveWorktreesStateRoot(config.stateRoot),
+    // Every successful binding SET (legacy switch/create and the controlled
+    // switch alike) re-emits as a cordis event. It is an IN-PROCESS event,
+    // NOT a browser push: bridging it to clients or re-reading on it is the
+    // consumer's job.
+    onSwitched: event => ctx.emit(WORKTREES_SWITCHED_EVENT, event),
+  })
   ctx.provide('worktrees', service)
   ctx.plugin(WorktreesRemoteService, { visiblePresets: config.visiblePresets ?? [] })
   // The model-facing `worktrees` tool is deliberately NOT registered here:

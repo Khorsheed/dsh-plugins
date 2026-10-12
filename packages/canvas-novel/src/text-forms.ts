@@ -122,7 +122,7 @@ const PLAN_SCALARS: Readonly<Record<string, string>> = {
   视角: 'pov', pov: 'pov', 目标字数: 'words', 字数: 'words',
 }
 const PLAN_LISTS: Readonly<Record<string, string>> = {
-  走向: 'beats', 伏笔: 'foreshadowOps', 出场: 'cast', 信息差: 'infoGaps',
+  走向: 'beats', 情节: 'beats', 伏笔: 'foreshadowOps', 出场: 'cast', 信息差: 'infoGaps',
 }
 
 /** One 走向 item: 「午后｜他推开门（转折）」. */
@@ -217,7 +217,7 @@ export function planToText(plan: ChapterPlan, handleOf: (id: string) => string):
   const lines: string[] = [`梗概：${oneLine(plan.summary)}`]
   if (plan.words !== undefined) lines.push(`目标字数：${plan.words}`)
   if (plan.beats.length > 0) {
-    lines.push('走向：')
+    lines.push('情节：')
     for (const beat of plan.beats) {
       lines.push(`- ${beat.at === undefined ? '' : `${oneLine(beat.at)}｜`}${oneLine(beat.text)}${beat.mark === undefined ? '' : `（${beat.mark}）`}`)
     }

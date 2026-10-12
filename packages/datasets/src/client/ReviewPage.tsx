@@ -23,7 +23,7 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { Button, Input, Switch } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type {
-  Proposal, ProposalProblem, ProposalReview, RegistryEntry, ReviewChange, ReviewFiles, ReviewHead, ReviewItem, ReviewOutput,
+  DatasetsCapabilityAvailability, Proposal, ProposalProblem, ProposalReview, RegistryEntry, ReviewChange, ReviewFiles, ReviewHead, ReviewItem, ReviewOutput,
   ReviewSource,
 } from '../types.ts'
 import type { DatasetsViewProps } from './contract.ts'
@@ -54,6 +54,12 @@ export interface ReviewPageProps {
   ) => Promise<RemoteResult<RegistryEntry>>
   /** Null when there is no organizing session to send it back to. */
   sendBack: ((note: string) => void) | null
+  /**
+   * The proposalReview group's availability (the capabilities descriptor):
+   * unavailable hides the confirm / send-back gestures and shows the reason —
+   * the review itself stays readable. Defaults to available.
+   */
+  reviewCap?: DatasetsCapabilityAvailability
   onBack: () => void
   /** After a successful confirm. */
   onDone: (entry: RegistryEntry) => void
@@ -434,7 +440,7 @@ function ReviewSkeleton(props: { head: ReviewHead | null; onBack: () => void; t:
  * @param props - see {@link ReviewPageProps}.
  */
 export function ReviewPage(props: ReviewPageProps) {
-  const { loadKey, load, loadHead, reviewItem, reviewFiles, confirm, sendBack, onBack, onDone, t } = props
+  const { loadKey, load, loadHead, reviewItem, reviewFiles, confirm, sendBack, reviewCap, onBack, onDone, t } = props
   const ids = useId()
   const [review, setReview] = useState<ProposalReview | null>(null)
   const [head, setHead] = useState<ReviewHead | null>(null)
@@ -742,7 +748,8 @@ export function ReviewPage(props: ReviewPageProps) {
           </div>
         )}
         <div className={css.footer}>
-          {sendBack !== null && (returning
+          {reviewCap !== undefined && !reviewCap.available && <span className={css.help}>{reviewCap.reason}</span>}
+          {(reviewCap === undefined || reviewCap.available) && sendBack !== null && (returning
             ? (
               <>
                 <Button size="sm" variant="ghost" onClick={() => { setReturning(false) }}>{t('review.cancel')}</Button>
@@ -750,9 +757,11 @@ export function ReviewPage(props: ReviewPageProps) {
               </>
             )
             : <Button size="sm" variant="outline" onClick={() => { setReturning(true) }}>{t('review.return')}</Button>)}
-          <Button size="sm" variant="primary" disabled={!canConfirm} onClick={submit}>
-            {busy ? t('review.confirming') : update ? t('review.confirmUpdate') : t('review.confirm')}
-          </Button>
+          {(reviewCap === undefined || reviewCap.available) && (
+            <Button size="sm" variant="primary" disabled={!canConfirm} onClick={submit}>
+              {busy ? t('review.confirming') : update ? t('review.confirmUpdate') : t('review.confirm')}
+            </Button>
+          )}
         </div>
       </div>
     </div>

@@ -104,6 +104,14 @@ describe('resolveSkillNameFromContent', () => {
     const bad = '---\nname: Bad Name\ndescription: d\n---\nbody'
     expect(resolveSkillNameFromContent(bad)).toBeUndefined()
   })
+
+  it('parses a CRLF frontmatter block', () => {
+    expect(resolveSkillNameFromContent('---\r\nname: crlf-skill\r\ndescription: d\r\n---\r\nbody')).toEqual({ name: 'crlf-skill', description: 'd' })
+  })
+
+  it('parses a quoted name', () => {
+    expect(resolveSkillNameFromContent("---\nname: 'quoted-skill'\ndescription: d\n---\nbody")).toEqual({ name: 'quoted-skill', description: 'd' })
+  })
 })
 
 describe('inferModelInvocable', () => {
@@ -113,6 +121,12 @@ describe('inferModelInvocable', () => {
 
   it('reads disable-model-invocation: true as false', () => {
     expect(inferModelInvocable(SKILL_DISABLED)).toBe(false)
+  })
+
+  it('accepts the host parser\'s boolean variants (yes / 1 / on)', () => {
+    for (const truthy of ['yes', '1', 'on']) {
+      expect(inferModelInvocable(`---\nname: x\ndescription: d\ndisable-model-invocation: ${truthy}\n---\nbody`), truthy).toBe(false)
+    }
   })
 })
 

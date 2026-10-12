@@ -1,6 +1,0 @@
-{
-  "meta": {
-    "title": "Request Inspector",
-    "description": "Per-turn structured breakdown of every model request: system-prompt section attribution, tool definitions, history vs newly added context, plus token and timing views."
-  }
-}

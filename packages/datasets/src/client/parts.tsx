@@ -11,9 +11,22 @@
 import type { ReactNode } from 'react'
 import { IconChevronDownOutlineMedium, IconChevronRightOutlineMedium, IconEditOutlineMedium } from './icons.tsx'
 import { exposureOfRole, type DatasetExposure, type DatasetRole, type DatasetSlot } from '../slots.ts'
+import type { DatasetsCapabilities, DatasetsCapabilityAvailability, DatasetsCapabilityGroup } from '../types.ts'
 import type { DatasetsViewProps } from './contract.ts'
 import { layersPhrase, type Phrase } from './vocab.ts'
 import css from './DatasetsView.module.css'
+
+/**
+ * One gesture group's availability from the capabilities descriptor. An
+ * unanswered or failed read leaves the gesture visible (fail-open display —
+ * enforcement stays at the server's own admission rules).
+ */
+export function capabilityOf(
+  caps: DatasetsCapabilities | null | undefined,
+  group: DatasetsCapabilityGroup,
+): DatasetsCapabilityAvailability {
+  return caps?.[group] ?? { available: true }
+}
 
 /** The dictionary key of one slot word — the union keeps the copy exhaustive. */
 export function slotKey(slot: DatasetSlot): `slot.${DatasetSlot}` {

@@ -35,6 +35,31 @@ await ctx.sideChat.openWith({
 - **One-way edge**: a consumer probes `ctx.get('sideChat')` and declares the service name in its own manifest's `dsh.references`; side-chat never mentions a consumer. A consumer's absence is its own degrade; side-chat installs and uninstalls alone.
 - **Per-turn freshness**: re-calling `openWith` with the same contextKey UPDATES the systemPrompt segment (an agent-scoped prompt section re-reads the record at every assembly — never a create-time snapshot), same-named tools hot-swap on the live agent, and the session is NEVER recreated.
 
+## Workspace admission seam (server-side consumption)
+
+Mounting this package on an **isolated Context with its own stateRoot** is a supported consumption form: the mounting side starts an independent instance through this package's `apply` plus `config.stateRoot` — all business state is instance-bound (`contexts.json` lands under the instance's own state root), and the read verbs (`getState` / `listContexts` / `surfaceHints`) need no session. The package's injects are `agents` and `sessions`, which the mounting Context must provide (with an injected execution backend `agents` is never touched — an empty stub suffices); without `fs` the state degrades to memory-only (never blocking a gesture).
+
+```ts
+import { apply } from '@khorsheed/dsh-sidechat'
+
+apply(isolatedCtx, {
+  stateRoot: '/path/to/instance-state/sidechat',
+  agentRoute: { provider: '…', model: '…' }, // optional: the explicit execution route
+  cwd: '/path/to/workdir',                   // optional: the explicit cwd anchor
+  executionBackend: myBackend,               // optional: a custom execution backend port
+})
+```
+
+The mounting side's obligations and the semantics:
+
+- **Where side agents execute is decided by the execution backend port**: everything that touches an execution target goes through `SideChatExecutionBackend` — lazy open (create) and cold resume (one `open(init)`, told apart by `init.resume`), send (`session.send({ text, source })`, refs already folded into the text by the service), read (live `status` + the `events()` snapshot; the cold read `readCold(sessionId)` hits the durable side and never resumes), cancel (`session.cancel()`, the stop gesture), and release (`session.release()`, the handle dispose — the session itself stays persisted). The default backend (`SideChatDefaultExecutionBackend`) is the existing `ctx.agents` behavior extracted as-is; **with an injected backend the service never falls back to deployment defaults** — the route chain's `agentDefaultModel` probe runs only for the default backend, and so does the calling-less-no-route `agent-unavailable` refusal (an injected backend owns routing itself). A correct mount must be **verified by observation** (inspect the sessions the backend actually opens), never assumed.
+- **The open payload carries the resolved values**: `{ contextKey, sessionId, resume, route?, presetId?, cwd?, segmentText(), tools() }`. `route`/`presetId`/`cwd` arrive resolved by the service's chains — route: **explicit `agentRoute` > the calling session's folded request header** (the default backend additionally probes `agentDefaultModel`); preset: calling header > the record > the plugin config (the backend resolves its own default); cwd: **explicit `cwd` > the source session > the calling session**, carried on first open only (a resume replays what created the session). `segmentText`/`tools` are **live readers** (in-process thunks, never on a wire): the backend re-reads them at every assembly — per-turn freshness holds for any backend. Refs (the attachment semantics) never reach the backend: the service folds them into `<quoted_context>` text blocks before sending and parses them back on projection.
+- **Capabilities degrade one by one, never crash**: `capabilities: { presets, promptContext, callerTools, cancel, coldRead }`. `callerTools: false` → the openWith tool sync is skipped silently; `cancel: false` → the stop gesture is refused coded `cancel-unsupported`; `coldRead: false` → a cold context answers the honest unknown (empty transcript, `lastError` null, null times, status still `cold`); `presets` / `promptContext` are honored backend-side — the service passes `presetId` and the `segmentText` reader regardless, the flags never rewrite the open payload.
+- **The stop gesture (host-side)**: `ctx.sideChat.stop(contextKey)` — a running turn is cancelled through the backend's `cancel()` (the default backend rides the agent's own `cancel({ kind: 'user' })`; on an old host line whose agent lacks the capability the refusal is `cancel-unsupported`). The coded refusals are three-way: `not-found` (no such context) / `not-running` (nothing live right now) / `cancel-unsupported` (backend or session cannot cancel). The wire Remote has no such verb.
+- **The calling agent is optional**: `ctx.sideChat.send(undefined, …)` is the shape for a server-side caller without a session — the write fences at the deployment default mode with no session id, and the route/cwd resolve from the explicit config or (default backend) the deployment defaults. `quoteMessage` keeps its mandatory calling (it quotes a message OF the calling session).
+- **Terminal dispose + same-root rebuild**: `disposeAgents()` is idempotent and terminal — afterwards every public verb (reads included) refuses with the coded, package-named `SideChatDisposedError` (`code: 'disposed'`); an in-flight open racing disposal is released on arrival — no handle leaks, and its caller gets the same disposed error. Rebuilding on the same root is legal: a new service instance over the same `stateRoot` works as usual (with a custom backend too — the resume rides the backend's `open({ resume: true })` onto its own persisted log); only the old instance stays dead.
+- **Local behavior unchanged**: with no backend injected, the new keys unset, and a calling agent passed as today, semantics are byte-identical to before (the pre-existing test suite passing unmodified is the pin); the wire Remote face is byte-identical.
+
 ## Remote (`remote.sidechat`)
 
 | Verb | What it does |

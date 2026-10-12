@@ -1,0 +1,39 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types",
+    "tsBuildInfoFile": "lib/tsconfig.client.tsbuildinfo",
+    "jsx": "react-jsx",
+    "lib": [
+      "ES2024",
+      "DOM",
+      "DOM.Iterable"
+    ]
+  },
+  "files": [
+    "src/css-modules.d.ts",
+    "src/types.ts",
+    "src/project.ts",
+    "src/vfs.ts",
+    "src/client/chat-node.tsx",
+    "src/client/contract.ts",
+    "src/client/definition.tsx",
+    "src/client/DesignView.tsx",
+    "src/client/ElementsView.tsx",
+    "src/client/GameDock.tsx",
+    "src/client/GameTab.tsx",
+    "src/client/index.ts",
+    "src/client/locales.ts",
+    "src/client/looks.tsx",
+    "src/client/markdown.tsx",
+    "src/client/PlayFrame.tsx",
+    "src/client/PlayView.tsx",
+    "src/client/ProjectSwitcher.tsx",
+    "src/client/preset-visibility.ts",
+    "src/client/style-samples.ts",
+    "src/client/StyleGallery.tsx",
+    "src/client/VersionsView.tsx",
+    "src/client/TurnCard.tsx"
+  ]
+}

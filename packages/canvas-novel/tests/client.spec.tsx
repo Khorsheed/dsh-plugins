@@ -75,6 +75,7 @@ function fakeRemote(fixture: { items: PendingView[]; phase?: EffectiveChapterPha
     decidePending: vi.fn(() => ok({ ok: true })),
     reviewChapter: vi.fn(() => ok({ ok: true })),
     confirmPlan: vi.fn(() => ok({ ok: true })),
+    recentUpdates: vi.fn(() => ok({ ok: true, cards: {} })),
   } satisfies NovelRemote
   return remote
 }
@@ -177,53 +178,51 @@ describe('ChapterPage', () => {
     return p
   }
 
-  it('holds ✓ 审过 while this chapter still has pending items', async () => {
-    const remote = fakeRemote({ items: [item('p1', { kind: 'experience', payload: { characterId: 'c_a', entry: '推门' } })], phase: 'extracted' })
-    renderPage(remote)
-    expect(await screen.findByText('还有 1 条待审，处理完才能审过')).toBeTruthy()
-    expect(screen.queryByRole('button', { name: zh['chapter.review'] })).toBeNull()
+  it('a reconciled chapter is done: no 审过, the next step points at 设定 · 最近更新', async () => {
+    renderPage(fakeRemote({ items: [], phase: 'extracted' }))
+    expect(await screen.findByText(zh['chapter.gate.ready'])).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /审过/ })).toBeNull()
     expect(screen.getByText('他推开门。')).toBeTruthy()
   })
 
-  it('a suspected mention outside the plan is optional: it never holds ✓ 审过', async () => {
-    renderPage(fakeRemote({ items: [item('p1')], phase: 'extracted' }))
-    expect(await screen.findByText(zh['chapter.gate.optional'].replace('{count}', '1'))).toBeTruthy()
-    expect(await screen.findByRole('button', { name: zh['chapter.review'] })).toBeTruthy()
+  it('pending items left from before still show, and hold nothing', async () => {
+    renderPage(fakeRemote({ items: [item('p1', { kind: 'experience', payload: { characterId: 'c_a', entry: '推门' } })], phase: 'extracted' }))
+    expect(await screen.findByText(zh['chapter.gate.pending'].replace('{count}', '1'))).toBeTruthy()
+    expect(screen.getByText(zh['chapter.pendingHeading'])).toBeTruthy()
   })
 
-  it('holds it before the chapter is reconciled', async () => {
+  it('says how to reconcile before the chapter is reconciled', async () => {
     renderPage(fakeRemote({ items: [], phase: 'writing' }))
     expect(await screen.findByText(zh['chapter.gate.writing'].replace('{n}', '1'))).toBeTruthy()
-    expect(screen.queryByRole('button', { name: zh['chapter.review'] })).toBeNull()
   })
 
   it('a text changed since its 对账 says how to reconcile again, at the top only', async () => {
     renderPage(fakeRemote({ items: [], phase: 'stale' }))
     expect(await screen.findByText(zh['chapter.gate.stale'].replace('{n}', '1'))).toBeTruthy()
     expect(screen.getByText(zh['phase.stale'])).toBeTruthy()
-    expect(screen.queryByRole('button', { name: zh['chapter.review'] })).toBeNull()
   })
 
-  it('offers it once extracted and handled, and closes the chapter through the Remote', async () => {
-    const remote = fakeRemote({ items: [], phase: 'extracted' })
-    const p = renderPage(remote)
-    const button = await screen.findByRole('button', { name: zh['chapter.review'] })
-    await waitFor(() => { expect((button as HTMLButtonElement).disabled).toBe(false) })
-    fireEvent.click(button)
-    await waitFor(() => { expect(p.navigate.refresh).toHaveBeenCalled() })
-    expect(remote.reviewChapter).toHaveBeenCalledWith(SESSION, { canvasId: CANVAS_ID, n: 1 })
-  })
-
-  it('a reviewed chapter shows the closed state instead of the button', async () => {
+  it('a chapter closed under the old 审过 reads as reconciled', async () => {
     renderPage(fakeRemote({ items: [], phase: 'reviewed' }))
-    expect(await screen.findByText(`✓ ${zh['chapter.reviewed']}`)).toBeTruthy()
-    expect(screen.queryByRole('button', { name: zh['chapter.review'] })).toBeNull()
+    expect(await screen.findByText(zh['chapter.gate.ready'])).toBeTruthy()
+    expect(screen.getAllByText(zh['phase.reviewed']).length).toBeGreaterThan(0)
   })
 
-  it('a read-only canvas never offers it', async () => {
+  it('a read-only canvas says so', async () => {
     renderPage(fakeRemote({ items: [], phase: 'extracted' }), null)
     expect(await screen.findByText(zh['chapter.gate.readOnly'])).toBeTruthy()
-    expect(screen.queryByRole('button', { name: zh['chapter.review'] })).toBeNull()
+  })
+})
+
+describe('ChapterPage opened from a plan card', () => {
+  it('opens the plan block even on a written chapter, where it would fold under the text', async () => {
+    const remote = fakeRemote({ items: [], rows: [{ chapter: chapter(1, '门与假门', { plan: PLAN, planConfirmedAt: NOW }), phase: 'writing', body: '他推开门。' }] })
+    render(<ChapterPage {...props(remote)} page={CHAPTER_PAGE} param="1:plan" />)
+    expect(await screen.findByText(PLAN.summary)).toBeTruthy()
+    cleanup()
+    render(<ChapterPage {...props(remote)} page={CHAPTER_PAGE} param="1" />)
+    await screen.findByText('他推开门。')
+    expect(screen.queryByText(PLAN.summary)).toBeNull()
   })
 })
 
@@ -274,7 +273,7 @@ describe('PlanBlock', () => {
       phase: 'extracted',
       body: '他推开门。',
     })
-    const head = await screen.findByRole('button', { name: /走向 1\/2 · 伏笔 0\/1/ })
+    const head = await screen.findByRole('button', { name: /情节 1\/2 · 伏笔 0\/1/ })
     expect(head.textContent).toContain('1 项落空')
     expect(screen.queryByText(PLAN.summary)).toBeNull()
     fireEvent.click(head)
@@ -350,11 +349,11 @@ describe('ChapterBook', () => {
   it('shows the contents, filters to the chapters that need the person, and reads in place', async () => {
     const rows: Row[] = [
       { chapter: chapter(1, '入职', { wordCount: 6000 }), phase: 'reviewed', body: '值夜。' },
-      { chapter: chapter(2, '蓝叶', { wordCount: 5000 }), phase: 'extracted', body: '叶子。' },
+      { chapter: chapter(2, '蓝叶', { wordCount: 5000 }), phase: 'stale', body: '叶子。' },
       { chapter: chapter(3, '门后', { phase: 'planning' }), phase: 'planning' },
     ]
     render(<ChapterBook {...props(fakeRemote({ items: [], rows }))} />)
-    expect(await screen.findByText('共 3 章 · 1.1 万 字 · 1 章已审过')).toBeTruthy()
+    expect(await screen.findByText('共 3 章 · 1.1 万 字 · 1 章已对账')).toBeTruthy()
     expect(screen.getByRole('button', { name: /第 1–3 章/ }).getAttribute('aria-expanded')).toBe('true')
     fireEvent.click(screen.getByRole('button', { name: /^待处理/ }))
     expect(screen.queryByRole('button', { name: /入职/ })).toBeNull()
@@ -439,7 +438,7 @@ describe('novel_write tool row', () => {
     expect(screen.getByText(zh['card.awaiting'])).toBeTruthy()
     expect(screen.getByText('推进 1')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: `${zh['card.confirm']} →` }))
-    expect(openPage).toHaveBeenCalledWith(CANVAS_ID, CHAPTER_PAGE, '第1章 · 门', '1')
+    expect(openPage).toHaveBeenCalledWith(CANVAS_ID, CHAPTER_PAGE, '第1章 · 门', '1:plan')
   })
 
   it('a plan it watched land opens the chapter page once, so the confirm survives the turn folding away', async () => {
@@ -447,7 +446,7 @@ describe('novel_write tool row', () => {
     const openPage = vi.fn()
     const { rerender } = render(<WriteToolRow block={{}} phase="preparing" remote={() => remote} openPage={() => openPage} chapterPage={CHAPTER_PAGE} t={t} />)
     rerender(<WriteToolRow block={settled(PLANNED)} remote={() => remote} openPage={() => openPage} chapterPage={CHAPTER_PAGE} t={t} />)
-    await waitFor(() => { expect(openPage).toHaveBeenCalledWith(CANVAS_ID, CHAPTER_PAGE, '第1章 · 门', '1') })
+    await waitFor(() => { expect(openPage).toHaveBeenCalledWith(CANVAS_ID, CHAPTER_PAGE, '第1章 · 门', '1:plan') })
     rerender(<WriteToolRow block={settled(PLANNED)} remote={() => remote} openPage={() => openPage} chapterPage={CHAPTER_PAGE} t={t} />)
     expect(openPage).toHaveBeenCalledTimes(1)
   })
@@ -462,7 +461,7 @@ describe('novel_write tool row', () => {
 
   it('without the canvas the card keeps its answer counts and offers no door', () => {
     render(<WriteToolRow block={settled(PLANNED)} remote={() => undefined} openPage={() => undefined} chapterPage={CHAPTER_PAGE} t={t} />)
-    expect(screen.getByText('走向 2 拍')).toBeTruthy()
+    expect(screen.getByText('情节 2 段')).toBeTruthy()
     expect(screen.queryByRole('button')).toBeNull()
   })
 
@@ -620,13 +619,13 @@ describe('the three faces', () => {
     expect(usage.has('c2')).toBe(false)
   })
 
-  it('章节 labels the face and its badge counts what waits (chapters to reconcile + items); another genre keeps the canvas label', async () => {
+  it('章节 labels the face and its badge counts the chapters to reconcile (nothing else waits); another genre keeps the canvas label', async () => {
     render(<FaceLabel {...props(remote())} face="manuscripts" label="成稿" />)
     expect(screen.getByText(zh['face.chapters'])).toBeTruthy()
     cleanup()
     // The count is the tab's badge, not part of the label (outside the underline).
     render(<ChaptersBadge {...props(remote())} />)
-    expect(await screen.findByText('2')).toBeTruthy()
+    expect(await screen.findByText('1')).toBeTruthy()
     cleanup()
     render(<FaceLabel {...props(remote(), null)} face="manuscripts" label="成稿" />)
     expect(screen.getByText('成稿')).toBeTruthy()
@@ -649,6 +648,32 @@ describe('the three faces', () => {
       { id: 'story', label: zh['scope.story'], cardIds: ['f12'], archiveFirst: true },
       { id: 'idea', label: zh['scope.idea'], cardIds: ['c2'] },
     ])
+  })
+
+  it('设定 scopes: 最近更新 lists the cards the newest 对账 touched, each with its line', async () => {
+    const onScopes = vi.fn()
+    const p = props({
+      ...remote(),
+      recentUpdates: vi.fn(() => ok({ ok: true, chapter: 5, title: '门后', at: 't', cards: {
+        f12: [{ kind: 'mention', mention: 'advanced', text: '门缝又宽了一指' }],
+        c2: [{ kind: 'create', text: '门后传来一个女人的声音' }, { kind: 'experience', text: '在门后哼歌' }],
+        gone: [{ kind: 'create' }],
+      } })),
+    } as unknown as NovelRemote)
+    const board = {
+      ...p.board,
+      cards: [{ id: 'f12', kind: 'cat_f' }, { id: 'c2', kind: 'cat_c' }, { id: 'p1', kind: 'cat_p' }],
+      categories: [{ id: 'cat_f', role: 'foreshadow' }, { id: 'cat_c', role: 'character' }, { id: 'cat_p', role: 'principle' }],
+    }
+    render(<CardScopes {...p} board={board} onScopes={onScopes} />)
+    await waitFor(() => { expect(onScopes.mock.lastCall?.[0]).toHaveLength(3) })
+    expect(onScopes.mock.lastCall![0][2]).toEqual({
+      id: 'recent', label: '最近更新 · 第 5 章', cardIds: ['f12', 'c2'], archiveFirst: true,
+      notes: {
+        f12: { label: zh['pending.mention.advanced'], text: '门缝又宽了一指' },
+        c2: { label: '新建 · 经历', text: '门后传来一个女人的声音' },
+      },
+    })
   })
 
   it('the delete note lists the chapters using a card, says an idea goes for good, and skips principles', async () => {

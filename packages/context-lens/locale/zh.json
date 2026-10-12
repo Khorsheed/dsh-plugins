@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Context Lens",
+    "description": "按 turn 查看每次模型请求的完整组成：system 分段归因、工具定义、历史与新增上下文，以及 token 与耗时分布。"
+  }
+}
