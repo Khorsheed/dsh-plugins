@@ -6,6 +6,7 @@ import { Context } from '@deepseek-ai/cordis'
 import SkillRegistry from '@deepseek-ai/dsh-skill'
 import type { ScopeKey } from '@deepseek-ai/dsh-scope'
 import {
+  candidateFor,
   definitionFor,
   detectConflicts,
   managedSkillFrom,
@@ -86,6 +87,33 @@ describe('managedSkillFrom', () => {
   it('rejects a skill without usable identity frontmatter', () => {
     expect(managedSkillFrom('# no frontmatter', '/m/x', '/m/x/SKILL.md')).toBeUndefined()
     expect(managedSkillFrom('---\nname: Not Kebab\n---\n', '/m/x', '/m/x/SKILL.md')).toBeUndefined()
+  })
+
+  it('preserves the frontmatter metadata block through parsing and the delivery projection', () => {
+    const skill = managedSkillFrom(
+      skillText('md-to-wechat', '[dsh-writing]', '  credentials:\n    - key: WEREAD_API_KEY\n      label: WeRead API key'),
+      '/managed/md-to-wechat',
+      '/managed/md-to-wechat/SKILL.md',
+    )!
+    // The block survives verbatim, with the normalized scope overlaid on serve.
+    expect(skill.metadata).toEqual({
+      presetScope: ['dsh-writing'],
+      credentials: [{ key: 'WEREAD_API_KEY', label: 'WeRead API key' }],
+    })
+    expect(candidateFor(skill).metadata).toEqual({
+      presetScope: ['dsh-writing'],
+      credentials: [{ key: 'WEREAD_API_KEY', label: 'WeRead API key' }],
+    })
+  })
+
+  it('still delivers when the metadata block is malformed, minus the metadata', () => {
+    const skill = managedSkillFrom(
+      skillText('md-to-wechat', undefined, 'metadata:\n  credentials: [unclosed'),
+      '/managed/md-to-wechat',
+      '/managed/md-to-wechat/SKILL.md',
+    )
+    expect(skill?.name).toBe('md-to-wechat')
+    expect(skill?.metadata).toBeUndefined()
   })
 })
 
@@ -312,6 +340,25 @@ describe('ScopedSkillDelivery over a real skill registry', () => {
     // The declared key renders in the credential form alone; the undeclared body
     // ref stays a read-only runtime reference.
     expect(detail?.environmentRefs).toEqual(['DSH_HOME'])
+  })
+
+  it('carries a managed skill\'s declared credentials through the detail read fallback', async () => {
+    const { ctx, keys } = await boot('[dsh-writing]')
+    ctx.provide('credentials', {
+      describe: async () => ({ configured: true }),
+      set: async () => {},
+    } as never)
+    const managed = managedSkillFrom(
+      skillText('md-to-wechat', '[dsh-writing]', '  credentials:\n    - key: WEREAD_API_KEY'),
+      '/managed/md-to-wechat',
+      '/managed/md-to-wechat/SKILL.md',
+    )!
+    const { registry } = { registry: ctx.get('skills') as unknown as Parameters<typeof loadSkillDetail>[1] }
+    // The default preset's scope does not carry this skill; the managed fallback answers.
+    const detail = await loadSkillDetail(
+      ctx, registry, 'md-to-wechat', undefined, keys.get('standard'), definitionFor(managed),
+    )
+    expect(detail?.credentials).toEqual([{ key: 'WEREAD_API_KEY', configured: true }])
   })
 
   it('degrades without a roster rather than failing', async () => {

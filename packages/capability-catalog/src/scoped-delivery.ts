@@ -31,6 +31,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { createScope, type ScopeKey } from '@deepseek-ai/dsh-scope'
+import yaml from 'js-yaml'
 // Type-only: the ctx.skills service merge and the provider contract this module
 // implements. The skill registry is an optional peer; a runtime import would
 // make the catalog fail to boot without it.
@@ -97,6 +98,8 @@ export interface ManagedSkill {
   readonly userInvocable: boolean
   /** Preset ids this skill is delivered to; absent/empty means "not scoped". */
   readonly presetScope: readonly string[] | undefined
+  /** The frontmatter's full `metadata:` block, preserved verbatim when parseable. */
+  readonly metadata?: Readonly<Record<string, unknown>>
   /** The skill's own directory (its `resourceBase`). */
   readonly dir: string
   /** Absolute `SKILL.md` path. */
@@ -214,6 +217,48 @@ function presetIdsOf(values: readonly string[]): readonly string[] {
   return ids
 }
 
+/**
+ * Read the whole `metadata:` block out of a frontmatter block, parsed as YAML.
+ *
+ * The line-based readers above answer the delivery's own keys; the served
+ * definition must carry the block VERBATIM (credentials declarations, plugin
+ * data) or the detail surface loses them the moment a skill turns managed.
+ * Only the block's own lines are parsed: a malformed metadata value degrades
+ * to `undefined` (the skill still delivers, minus the extra metadata) instead
+ * of rejecting a file the rest of this module could still read.
+ * @param front - the frontmatter text without its `---` fences.
+ * @returns the parsed metadata object, or undefined when absent/unusable.
+ */
+export function parseMetadataFrontmatter(front: string): Record<string, unknown> | undefined {
+  const lines = front.split('\n')
+  for (let index = 0; index < lines.length; index += 1) {
+    const match = /^(\s*)metadata\s*:\s*(.*)$/.exec(lines[index] ?? '')
+    if (match === null) continue
+    const indent = (match[1] ?? '').length
+    const rest = (match[2] ?? '').trim()
+    let text = rest
+    if (rest === '') {
+      const block: string[] = []
+      for (let item = index + 1; item < lines.length; item += 1) {
+        const line = lines[item] ?? ''
+        if (line.trim() !== '' && (/^(\s*)/.exec(line)?.[1] ?? '').length <= indent) break
+        block.push(line)
+      }
+      text = block.join('\n')
+    }
+    try {
+      const value: unknown = yaml.load(text)
+      if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+        return value as Record<string, unknown>
+      }
+      return undefined
+    } catch {
+      return undefined
+    }
+  }
+  return undefined
+}
+
 /** Whether a string is a usable skill / preset id. */
 export function isKebabId(value: string): boolean {
   return KEBAB_ID.test(value)
@@ -256,6 +301,7 @@ export function managedSkillFrom(content: string, dir: string, path: string): Ma
   if (name === undefined || description === undefined || !KEBAB_ID.test(name)) return undefined
   const whenToUse = frontmatterScalar(split.front, 'when-to-use') ?? frontmatterScalar(split.front, 'whenToUse')
   const presetScope = parsePresetScopeFrontmatter(split.front)
+  const metadata = parseMetadataFrontmatter(split.front)
   return {
     name,
     description,
@@ -263,6 +309,7 @@ export function managedSkillFrom(content: string, dir: string, path: string): Ma
     modelInvocable: frontmatterFlag(split.front, 'disable-model-invocation') !== true,
     userInvocable: frontmatterFlag(split.front, 'user-invocable') !== false,
     presetScope,
+    ...metadata === undefined ? {} : { metadata },
     dir,
     path,
     content,
@@ -286,7 +333,10 @@ export function candidateFor(skill: ManagedSkill): SkillCandidate {
     rank: MANAGED_SKILL_RANK,
     locator: skill.path,
     path: skill.path,
-    metadata: { presetScope: [...(skill.presetScope ?? [])] },
+    // The declared scope is overlaid onto the skill's own metadata block (never
+    // a rebuild): credentials declarations and other plugin data must survive
+    // delivery unchanged, or the detail surface loses them on adoption.
+    metadata: { ...skill.metadata, presetScope: [...(skill.presetScope ?? [])] },
     resourceBase: { kind: 'directory', path: skill.dir },
   }
 }
