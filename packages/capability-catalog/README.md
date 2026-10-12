@@ -18,7 +18,7 @@ dsh 的每个会话都由一个 agent preset 组合而成，插件、技能目�
 <img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/capability-catalog-2.png" width="640" alt="新增 Skill 弹窗：文件上传 / 命令安装 / 从本机目录三种安装方式，每个来源可选目标根与是否进模型 catalog">
 
 - **模式视图**——每个会话都由一个 agent preset（「模式」）组合而成，不同模式注册的 skill 与 tool 各不相同。搜索框旁边的模式选择框按**该 preset 的 standing scope** 读（`snapshotAt(presetId)`）——网格就是那个模式的能力面，不再合并任何东西；「全部模式（对比）」一次调用读回每个模式的面（`modeFaces`），给每张卡片标上加载它的模式 chip，「这个能力出现在哪些模式」一点即达。读不到的模式标为「无法读取」，绝不渲染成空面。
-- **按 preset 投递的技能**——插件自管一个受管根（`$DSH_HOME/capability-catalog/skills`），其中技能用 frontmatter `presetScope` 声明属于哪些模式；详情弹窗直接编辑（保存、把已装技能收编进受管根、释放回用户技能目录），不在任何模式生效的受管技能由一条诊断行保持可达，而不是被过滤没了。
+- **按 preset 投递的技能**——插件自管一个受管根（`$DSH_HOME/capability-catalog/skills`），其中技能用 frontmatter `presetScope` 声明属于哪些模式；详情弹窗直接编辑：勾选网格 + 一个「保存」，收编/改范围/释放（清空勾选）都在内部自动路由，被限定技能的 frontmatter metadata（如 `credentials`）在投递中原样保留。随投递注册的只读 `read_skill_file` 工具让不挂 fs 的模式也能读受管 skill 的 bundle 分册；不在任何模式生效的受管技能由一条诊断行保持可达，而不是被过滤没了。
 - **MCP server 管理**——粘贴一段 `mcp.json` server 配置，弹窗自动解析传输、识别凭据（形似凭据的字段在存储的配置里变成 `secretRef:` 标记，Remote 只回 `configured` 状态——值永远到不了浏览器）。连接后发现该 server 的工具，整台 server 或单个工具都可开关，每个启用的工具都以 `mcp__<server>__<tool>` 注册到 `ctx.tools`，模型当场可调。配置的 server 经 settings 服务跨重启存活。
 
 <img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/capability-catalog-3.png" width="640" alt="新增 MCP 服务器弹窗:粘贴一段 mcp.json server 配置,自动解析传输与凭据">
@@ -63,7 +63,7 @@ dsh plugin --profile web remove @khorsheed/dsh-capability-catalog
 
 **渠道归因。** `ToolSchema` 不携带来源字段，所以工具渠道按优先级解析：作者声明的 origin 标记（留在注册表按引用保留的 definition 上的 `Symbol.for('dsh.tool.origin')` 属性，经 `ctx.tools.get(name)` 读回——系统提示投影会剥掉它，所以永不上模型 wire），然后 `mcp__` 前缀（按最长已配置前缀匹配 server 名），然后生成的官方工具白名单（`scripts/gen-official-tools.mts`，由锁定的 harness 检出生成），最后 apply 时序差分。基线在延迟的 `ctx.inject(['tools'], …)` 里取，注册表自己的挂载顺序不可能造成空基线、把每个工具误标成插件。
 
-**模式视图。** 实例把每个会话组合自一个 agent preset：内置的 标准/极简/PTC/创造，加上部署或用户自建的 preset，各自注册不同的 skill 与 tool。选中某个 preset 就按该 preset 的 standing scope 读（`snapshotAt(presetId)`），网格**就是那个模式的能力面**——只投递给写作模式的 skill 不会出现在开发模式下，标签页计数也是这个模式的计数。「全部模式（对比）」一次调用读回每个 preset 的面（`modeFaces`）显示并集，每张卡片一排模式 chip 标明哪些模式加载它；每个可读模式都加载的能力折叠成一颗 `全部模式 · N`，部分匹配但很长时只显示两颗 chip + `+N`，就地展开。读不到的模式（组合失败、roster 解不出 standing scope）保留自己的行并标为「无法读取」，而不是渲染成空面——「这个模式什么都没有」和「这个模式读不出来」是两回事。没声明 `presetScope` 的受管 skill 投递给每个 preset；范围指向本部署没有的 preset 的受管 skill 不属于任何模式的面，技能页此时给一条诊断行（`N 个受管 skill 未在任何模式生效`），展开点卡片进详情即可改范围或释放——没有这条出口，按模式过滤就不只是隐藏，而是让这类 skill 彻底够不着。读一个模式**不是免费的**：解析 preset 的 standing scope 会**挂载**它的组合（roster 的 single-flight standing mount），所以对比是一次显式选择，打开页面绝不做；客户端每个会话只读一次能力面（single-flight 缓存，和详情弹窗共用）。详情与删除跟着同一个读位置走：点卡片读的是该卡片来源模式下的详情与技能包，删除同样针对这个模式。
+**模式视图。** 实例把每个会话组合自一个 agent preset：内置的 标准/极简/PTC/创造，加上部署或用户自建的 preset，各自注册不同的 skill 与 tool。选中某个 preset 就按该 preset 的 standing scope 读（`snapshotAt(presetId)`），网格**就是那个模式的能力面**——只投递给写作模式的 skill 不会出现在开发模式下，标签页计数也是这个模式的计数。「全部模式（对比）」一次调用读回每个 preset 的面（`modeFaces`）显示并集，每张卡片一排模式 chip 标明哪些模式加载它；每个可读模式都加载的能力折叠成一颗 `全部模式 · N`，部分匹配但很长时只显示两颗 chip + `+N`，就地展开。读不到的模式（组合失败、roster 解不出 standing scope）保留自己的行并标为「无法读取」，而不是渲染成空面——「这个模式什么都没有」和「这个模式读不出来」是两回事。没声明 `presetScope` 的受管 skill 投递给每个 preset；范围指向本部署没有的 preset 的受管 skill 不属于任何模式的面，技能页此时给一条诊断行（`N 个受管 skill 未在任何模式生效`），展开点卡片进详情即可改范围（清空勾选并保存即还原为普通用户技能）——没有这条出口，按模式过滤就不只是隐藏，而是让这类 skill 彻底够不着。读一个模式**不是免费的**：解析 preset 的 standing scope 会**挂载**它的组合（roster 的 single-flight standing mount），所以对比是一次显式选择，打开页面绝不做；客户端每个会话只读一次能力面（single-flight 缓存，和详情弹窗共用）。详情与删除跟着同一个读位置走：点卡片读的是该卡片来源模式下的详情与技能包，删除同样针对这个模式。
 
 卡片徽标标的是**来源**（插件 / 内置 / 用户 / 项目 / 自定义）；受管 skill 的 `preset` 范围是策略不是来源，所以只在「范围就是主题」的地方出现——未生效清单和详情弹窗。
 
@@ -71,8 +71,8 @@ dsh plugin --profile web remove @khorsheed/dsh-capability-catalog
 
 | skill | 该区块显示 |
 |---|---|
-| 在受管根里 | preset 勾选网格 + 保存 + 释放回用户技能目录 |
-| 用户 / 项目 / 自定义根 | preset 勾选网格 + 移入受管目录并可限定 preset（没有「保存」：勾选就是 adopt 装进去时的范围） |
+| 在受管根里 | preset 勾选网格 + 一个「保存」（清空勾选并保存 = 释放回用户技能目录，恢复为所有模式可见的普通用户技能） |
+| 用户 / 项目 / 自定义根 | preset 勾选网格 + 一个「保存」（勾了子集再保存 = 收编进受管根并以该范围投递；全不勾 = 已经处处可见，无需写入） |
 | 插件提供（`runtime`） | 说明为什么不能设，并列出实际加载它的模式（chip 取自共用的能力面缓存） |
 | 内置（`bundled`） | 说明为什么不能设——跟随部署组合 |
 | 该部署没有 preset 名单 / 没有受管投递 | 不可用提示 |

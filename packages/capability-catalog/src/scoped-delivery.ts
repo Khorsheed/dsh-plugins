@@ -26,11 +26,12 @@
 
 import { existsSync } from 'node:fs'
 import { watch, type FSWatcher } from 'node:fs'
-import { mkdir, readFile, readdir, stat } from 'node:fs/promises'
+import { mkdir, readFile, readdir, realpath, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { join, sep } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { createScope, type ScopeKey } from '@deepseek-ai/dsh-scope'
+import { defineTool } from '@deepseek-ai/dsh-tools'
 import yaml from 'js-yaml'
 // Type-only: the ctx.skills service merge and the provider contract this module
 // implements. The skill registry is an optional peer; a runtime import would
@@ -40,6 +41,8 @@ import type { SkillCandidate, SkillDefinition, SkillProvider, SkillProviderContr
 // event declaration (the roster itself is a real dependency).
 import type {} from '@deepseek-ai/dsh-agent-preset-registry'
 import { acquireStandingScope, type PresetRosterSlice } from './preset-scope.ts'
+import { collectSkillFiles, sanitizeBundlePath } from './skills.ts'
+import { setToolOrigin } from './tool-origin.ts'
 
 let presetRegistryProbe: Promise<unknown> | undefined
 
@@ -715,6 +718,13 @@ export class ScopedSkillDelivery {
         invalidate = control.invalidate
         return this.providerFor(presetId, control)
       })
+      // The bundle-file reader rides the same scope layer: a preset that mounts
+      // no fs tools (learning mode) still lets the model read a delivered
+      // skill's reference files. Best-effort — a composition without the tools
+      // service keeps the delivery and drops only the reader.
+      const withTools = await injectableScope(injected, TOOLS_SERVICE)
+      const tools = withTools?.get(TOOLS_SERVICE) as { register?: (def: unknown) => void } | undefined
+      tools?.register?.(this.bundleFileTool(presetId))
       this.entries.push({
         presetId,
         key,
@@ -776,6 +786,58 @@ export class ScopedSkillDelivery {
         : (skill.presetScope ?? []).includes(presetId)))
   }
 
+  /** The managed skills readable through one preset's reader: its own scoped
+   * delivery plus the unscoped ones every preset sees through the global layer. */
+  private readableFor(presetId: string): readonly ManagedSkill[] {
+    return [...this.skillsFor(presetId), ...this.skillsFor(GLOBAL_PRESET)]
+  }
+
+  /** The read-only bundle-file reader served with one preset's delivery. */
+  private bundleFileTool(presetId: string): ReturnType<typeof defineTool> {
+    return setToolOrigin(defineTool({
+      name: READ_SKILL_FILE_TOOL,
+      description: 'Read a file from the bundle of a skill delivered to this mode — the reference documents and scripts beside its SKILL.md (a SKILL.md may point at them, e.g. "see search.md"). Omit path to list the bundle files.',
+      parameters: {
+        name: { type: 'string', required: true, description: 'The exact skill name from the available skills list.' },
+        path: { type: 'string', description: 'The bundle-relative file path (e.g. search.md). Omit it to list the bundle files.' },
+      },
+      output: {
+        schema: { type: 'string' },
+        render: (_args: unknown, value: unknown) => [{ type: 'text' as const, text: String(value) }],
+      },
+      execute: async (args: { name: string; path?: string }) => this.readBundleFile(presetId, args.name, args.path),
+    }), { channel: 'plugin', owner: '@khorsheed/dsh-capability-catalog' })
+  }
+
+  /** Serve one bundle file (or the bundle's file list) to a delivered skill's caller. */
+  private async readBundleFile(presetId: string, name: string, filePath: string | undefined): Promise<string> {
+    const skill = this.readableFor(presetId).find(entry => entry.name === name)
+    if (skill === undefined) return `skill "${name}" is not delivered to this mode by the capability catalog`
+    if (filePath === undefined || filePath.trim() === '') {
+      const files: string[] = []
+      await collectSkillFiles(skill.dir, skill.dir, files, 0)
+      return files.length === 0 ? `skill "${name}" has no bundle files` : files.sort().join('\n')
+    }
+    const safe = sanitizeBundlePath(filePath)
+    if (safe === undefined) return `refused: "${filePath}" is not a bundle-relative path`
+    // Containment including symlinks — the bundle directory is user content.
+    const base = await realpath(skill.dir).catch(() => skill.dir)
+    const target = await realpath(join(skill.dir, safe)).catch(() => undefined)
+    if (target === undefined || (target !== base && !target.startsWith(base + sep))) {
+      return `no such bundle file: ${safe}`
+    }
+    let content: string
+    try {
+      content = await readFile(target, 'utf8')
+    } catch {
+      return `no such bundle file: ${safe}`
+    }
+    if (content.length > MAX_BUNDLE_FILE_CHARS) {
+      return `${content.slice(0, MAX_BUNDLE_FILE_CHARS)}\n…(truncated at ${MAX_BUNDLE_FILE_CHARS} characters)`
+    }
+    return content
+  }
+
   /** Invalidate every registration's completed catalogs. */
   private invalidateAll(): void {
     for (const entry of this.entries) entry.invalidate()
@@ -813,6 +875,15 @@ function describeError(error: unknown): string {
 /** The registry every delivery registration is made through. */
 const SKILLS_SERVICE = 'skills'
 
+/** The tools registry the bundle-file reader registers through (optional). */
+const TOOLS_SERVICE = 'tools'
+
+/** The scoped bundle-file reader's tool name. */
+export const READ_SKILL_FILE_TOOL = 'read_skill_file'
+
+/** A bundle file's served text is capped so a giant asset cannot flood a turn. */
+const MAX_BUNDLE_FILE_CHARS = 100_000
+
 /** How long an injection may take before the registration is abandoned. */
 const INJECT_TIMEOUT_MS = 500
 
@@ -824,9 +895,10 @@ const INJECT_TIMEOUT_MS = 500
  * await, which gives `reconcile()` a settled answer instead of a registration
  * that appears at some later tick.
  * @param scopeCtx - the context minted for one preset's standing key.
+ * @param service - the service the injected context must reach.
  * @returns the injected context, or undefined when it never became available.
  */
-function injectableScope(scopeCtx: Context): Promise<Context | undefined> {
+function injectableScope(scopeCtx: Context, service: string = SKILLS_SERVICE): Promise<Context | undefined> {
   return new Promise(resolve => {
     let settled = false
     const finish = (value: Context | undefined): void => {
@@ -836,6 +908,6 @@ function injectableScope(scopeCtx: Context): Promise<Context | undefined> {
       resolve(value)
     }
     const timer = setTimeout(() => finish(undefined), INJECT_TIMEOUT_MS)
-    scopeCtx.inject([SKILLS_SERVICE], (injected: Context) => finish(injected))
+    scopeCtx.inject([service], (injected: Context) => finish(injected))
   })
 }

@@ -1,6 +1,7 @@
 /**
  * Skill env hint via `tools/post-execute` — a runtime companion context that
- * tells the model about any skill's configured credential env mappings.
+ * tells the model about any skill's configured credential env mappings, and a
+ * scoped-delivered skill's bundle files.
  *
  * The catalog injects credentials as trusted per-execution `DSH_<KEY>` env
  * vars (see shellEnv.ts), but a skill's own text references the original
@@ -9,6 +10,11 @@
  * a generic, per-skill note listing each configured mapping, so the model can
  * use the value without us modifying the user's SKILL.md.
  *
+ * A second block covers scoped-delivered skills (provider `capability-catalog`):
+ * their SKILL.md may reference bundle files (search.md etc.) in a mode that
+ * mounts no fs tools, so the note lists those files and names the scoped
+ * `read_skill_file` reader — only when the caller's own scope carries it.
+ *
  * Generic: it derives the mappings from the loaded skill's own env-decl keys
  * (decodeEnvDecls) + the credential store, so any future key / skill is
  * covered. It never touches the skill file or the provider's returned content.
@@ -16,9 +22,15 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { decodeCredentialDecls, decodeEnvDecls, mergeCredentialDecls, resolveServices } from './skills.ts'
+import { collectSkillFiles, decodeCredentialDecls, decodeEnvDecls, mergeCredentialDecls, resolveServices } from './skills.ts'
+import { READ_SKILL_FILE_TOOL, SCOPED_PROVIDER_NAME } from './scoped-delivery.ts'
 
 const DSH_PREFIX = 'DSH_'
+
+/** The tools-registry slice the bundle hint probes (optional). */
+interface ToolsSlice {
+  readonly schemas?: (scope?: unknown) => readonly { readonly name: string }[]
+}
 
 /** Subscribe to `tools/post-execute`; appends an env-mapping hint for the
  * loaded skill. Returns a disposer. Degrades silently when tools/registry/
@@ -30,7 +42,7 @@ export function installSkillEnvHint(ctx: Context, getScope: () => Promise<unknow
   // composition without one (dropping only the hint, never the boot).
   ctx.inject(['tools'], () => {
     ctx.on('tools/post-execute', (async (
-      exec: { name?: string; arguments?: unknown },
+      exec: { name?: string; arguments?: unknown; agent?: unknown },
       _result: unknown,
       next: () => Promise<unknown>,
     ) => {
@@ -39,7 +51,7 @@ export function installSkillEnvHint(ctx: Context, getScope: () => Promise<unknow
     if (typeof skillName !== 'string' || skillName.length === 0) return next()
     const scope = await getScope().catch(() => undefined)
     const { registry, credentials } = resolveServices(ctx)
-    if (registry === undefined || credentials === undefined) return next()
+    if (registry === undefined) return next()
     const lookup = scope === undefined ? {} : { scope }
     let def
     try {
@@ -49,27 +61,52 @@ export function installSkillEnvHint(ctx: Context, getScope: () => Promise<unknow
     }
     if (def === undefined) return next()
 
-    const decls = mergeCredentialDecls(decodeCredentialDecls(def.metadata), decodeEnvDecls(def.content ?? ''))
-    const configured: string[] = []
-    for (const decl of decls) {
-      const info = await credentials.describe(decl.key).catch(() => undefined)
-      if (info?.configured === true) configured.push(decl.key)
+    const blocks: string[] = []
+    if (credentials !== undefined) {
+      const decls = mergeCredentialDecls(decodeCredentialDecls(def.metadata), decodeEnvDecls(def.content ?? ''))
+      const configured: string[] = []
+      for (const decl of decls) {
+        const info = await credentials.describe(decl.key).catch(() => undefined)
+        if (info?.configured === true) configured.push(decl.key)
+      }
+      if (configured.length > 0) {
+        blocks.push([
+          `Runtime credential mapping for ${skillName}:`,
+          ...configured.map(k => `- ${k} is configured; in the model shell it is available as ${DSH_PREFIX}${k}. Use it as ${k}="${DSH_PREFIX}${k}" <command>.`),
+          `Do not search dotenv files or ask the user for this credential, and do not print either variable.`,
+        ].join('\n'))
+      }
     }
-    if (configured.length === 0) return next()
 
-    const lines = [
-      `Runtime credential mapping for ${skillName}:`,
-      ...configured.map(k => `- ${k} is configured; in the model shell it is available as ${DSH_PREFIX}${k}. Use it as ${k}="${DSH_PREFIX}${k}" <command>.`),
-      `Do not search dotenv files or ask the user for this credential, and do not print either variable.`,
-    ]
-    const hint = lines.join('\n')
+    // A scoped-delivered skill's SKILL.md may point at bundle files (search.md
+    // etc.) while the mode mounts no fs tools to read them. Name the reader
+    // only when the caller's own scope carries it — naming an absent tool
+    // teaches the model a call that can only fail.
+    const bundleDir = def.resourceBase?.kind === 'directory' ? def.resourceBase.path : undefined
+    if (def.provider === SCOPED_PROVIDER_NAME && bundleDir !== undefined && exec.agent !== undefined) {
+      const tools = ctx.get?.('tools') as ToolsSlice | undefined
+      const hasReader = tools?.schemas?.(exec.agent)?.some(schema => schema.name === READ_SKILL_FILE_TOOL) === true
+      if (hasReader) {
+        const files: string[] = []
+        await collectSkillFiles(bundleDir, bundleDir, files, 0)
+        const rest = files.filter(file => file !== 'SKILL.md').sort()
+        if (rest.length > 0) {
+          blocks.push([
+            `Bundle files for ${skillName}: ${rest.join(', ')}`,
+            `Read them with ${READ_SKILL_FILE_TOOL} (name: "${skillName}", path: "<file>") — this mode may have no fs tools.`,
+          ].join('\n'))
+        }
+      }
+    }
+
+    if (blocks.length === 0) return next()
 
     return {
       kind: 'accept',
       additionalContexts: [{
         id: `capability-catalog-env-hint-${skillName}`,
         role: 'user',
-        content: [{ type: 'text', text: hint }],
+        content: [{ type: 'text', text: blocks.join('\n\n') }],
         // Producer-owned kind: the retired {kind: 'plugin'} wrapper fails the
         // rc.1 native source admission at the durable write (turn-killing).
         source: { kind: 'capability-catalog', plugin: 'capability-catalog', form: 'env-hint' },

@@ -201,6 +201,8 @@ describe('ScopedSkillDelivery over a real skill registry', () => {
       standingKeyFor: vi.fn(async (id?: string) => keys.get(id ?? 'standard')),
     }
     ctx.provide('agentPresets', roster as never)
+    const toolsRegister = vi.fn()
+    ctx.provide('tools', { register: toolsRegister } as never)
     await ctx.plugin(SkillRegistry)
 
     const delivery = new ScopedSkillDelivery(ctx, {
@@ -214,7 +216,7 @@ describe('ScopedSkillDelivery over a real skill registry', () => {
       await rm(home, { recursive: true, force: true })
     })
     await delivery.start()
-    return { ctx, keys, delivery, home }
+    return { ctx, keys, delivery, home, toolsRegister }
   }
 
   const namesIn = async (ctx: Context, key: ScopeKey | undefined) =>
@@ -359,6 +361,53 @@ describe('ScopedSkillDelivery over a real skill registry', () => {
       ctx, registry, 'md-to-wechat', undefined, keys.get('standard'), definitionFor(managed),
     )
     expect(detail?.credentials).toEqual([{ key: 'WEREAD_API_KEY', configured: true }])
+  })
+
+  it('registers a read-only bundle-file reader into the preset layer and serves delivered skills only', async () => {
+    const { delivery, home, toolsRegister } = await boot('[dsh-writing]')
+    const root = scopedSkillsRoot(home)
+    await writeFile(join(root, 'md-to-wechat', 'notes.md'), '# notes doc\n')
+    await delivery.reconcile()
+    const reader = toolsRegister.mock.calls
+      .map(call => call[0])
+      .find((def: { name?: string }) => def?.name === 'read_skill_file') as
+      { execute: (args: { name: string; path?: string }) => Promise<string> } | undefined
+    expect(reader).toBeDefined()
+    const list = await reader!.execute({ name: 'md-to-wechat' })
+    expect(list).toContain('SKILL.md')
+    expect(list).toContain('notes.md')
+    expect(await reader!.execute({ name: 'md-to-wechat', path: 'notes.md' })).toBe('# notes doc\n')
+    expect(await reader!.execute({ name: 'md-to-wechat', path: '../escape.md' })).toContain('refused')
+    // A skill not delivered to this preset — and a name nobody manages — read as refused.
+    expect(await reader!.execute({ name: 'tech-article-polish' })).toContain('not delivered')
+    expect(await reader!.execute({ name: 'ghost' })).toContain('not delivered')
+  })
+
+  it('delivers without the tools service, dropping only the reader', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'catalog-notools-'))
+    const root = scopedSkillsRoot(home)
+    await mkdir(join(root, 'md-to-wechat'), { recursive: true })
+    await writeFile(join(root, 'md-to-wechat', 'SKILL.md'), skillText('md-to-wechat', '[dsh-writing]'))
+    const keys = new Map<string, ScopeKey>([['dsh-writing', { agentPreset: 'dsh-writing' }]])
+    const ctx = new Context()
+    ctx.provide('agentPresets', {
+      defaultId: 'dsh-writing',
+      standingKeyFor: async (id?: string) => keys.get(id ?? 'dsh-writing'),
+    } as never)
+    await ctx.plugin(SkillRegistry)
+    const delivery = new ScopedSkillDelivery(ctx, {
+      dshHome: () => home,
+      roster: () => ctx.get('agentPresets') as PresetRosterSlice,
+      registry: () => ctx.get('skills') as unknown as ScopedDeliveryRegistry,
+      log: () => {},
+    })
+    cleanups.push(async () => {
+      await delivery.dispose()
+      await rm(home, { recursive: true, force: true })
+    })
+    await delivery.start()
+    expect(delivery.status().enabled).toBe(true)
+    expect(await namesIn(ctx, keys.get('dsh-writing'))).toContain('md-to-wechat')
   })
 
   it('degrades without a roster rather than failing', async () => {

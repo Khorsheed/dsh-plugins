@@ -225,7 +225,7 @@ export async function collectSkills(
 const SKIP_SKILL_DIRS = new Set(['.git', 'node_modules'])
 
 /** Recursively collect a directory's file paths relative to `root`. */
-async function collectSkillFiles(
+export async function collectSkillFiles(
   dir: string,
   root: string,
   out: string[],
@@ -250,7 +250,7 @@ async function collectSkillFiles(
 }
 
 /** Reject unsafe bundle-relative paths (absolute, drive-letter, or `..`). */
-function sanitizeBundlePath(path: string): string | undefined {
+export function sanitizeBundlePath(path: string): string | undefined {
   if (path === '' || path.startsWith('/') || /^[a-zA-Z]:/.test(path)) return undefined
   const safe: string[] = []
   for (const segment of path.split('/')) {

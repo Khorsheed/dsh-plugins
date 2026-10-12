@@ -6,12 +6,15 @@
  * rejects it at the append encode, which killed the whole turn the moment a
  * credentialed skill loaded (real 3093 reproduction, 2026-09-24).
  */
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { installSkillEnvHint } from '../src/envHint.ts'
 
 interface Captured {
   handler: (
-    exec: { name?: string; arguments?: unknown },
+    exec: { name?: string; arguments?: unknown; agent?: unknown },
     result: unknown,
     next: () => Promise<unknown>,
   ) => Promise<unknown>
@@ -66,5 +69,81 @@ describe('installSkillEnvHint (skill env hint)', () => {
     const { handler } = bench({ configured: true })
     const decision = await handler({ name: 'read', arguments: {} }, undefined, async () => 'next')
     expect(decision).toBe('next')
+  })
+
+  it('lists a scoped-delivered skill\'s bundle files when the caller\'s scope carries the reader', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'catalog-envhint-'))
+    try {
+      await writeFile(join(dir, 'SKILL.md'), '---\nname: weread-skills\ndescription: d\n---\nSee notes.md.\n')
+      await writeFile(join(dir, 'notes.md'), '# notes\n')
+      const captured: Captured = { handler: undefined as never }
+      const ctx = {
+        inject: (_names: readonly string[], cb: () => void) => cb(),
+        on: (_event: string, handler: Captured['handler']) => { captured.handler = handler },
+        get: (name: string) => {
+          if (name === 'skills') {
+            return {
+              get: async () => ({
+                metadata: undefined,
+                content: 'See notes.md.',
+                provider: 'capability-catalog',
+                resourceBase: { kind: 'directory', path: dir },
+              }),
+            }
+          }
+          if (name === 'tools') return { schemas: () => [{ name: 'read_skill_file' }] }
+          return undefined
+        },
+      }
+      installSkillEnvHint(ctx as never, async () => undefined)
+      const decision = await captured.handler(
+        { name: 'skill', arguments: { name: 'weread-skills' }, agent: {} },
+        undefined,
+        async () => 'next',
+      ) as { kind: string; additionalContexts: Array<{ content: Array<{ text: string }> }> }
+      expect(decision.kind).toBe('accept')
+      const text = decision.additionalContexts[0]?.content[0]?.text ?? ''
+      expect(text).toContain('notes.md')
+      expect(text).toContain('read_skill_file')
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('names no reader the caller\'s scope does not carry', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'catalog-envhint-'))
+    try {
+      await writeFile(join(dir, 'SKILL.md'), '---\nname: weread-skills\ndescription: d\n---\nSee notes.md.\n')
+      await writeFile(join(dir, 'notes.md'), '# notes\n')
+      const captured: Captured = { handler: undefined as never }
+      const ctx = {
+        inject: (_names: readonly string[], cb: () => void) => cb(),
+        on: (_event: string, handler: Captured['handler']) => { captured.handler = handler },
+        get: (name: string) => {
+          if (name === 'skills') {
+            return {
+              get: async () => ({
+                metadata: undefined,
+                content: 'See notes.md.',
+                provider: 'capability-catalog',
+                resourceBase: { kind: 'directory', path: dir },
+              }),
+            }
+          }
+          if (name === 'tools') return { schemas: () => [] }
+          return undefined
+        },
+      }
+      installSkillEnvHint(ctx as never, async () => undefined)
+      const decision = await captured.handler(
+        { name: 'skill', arguments: { name: 'weread-skills' }, agent: {} },
+        undefined,
+        async () => 'next',
+      )
+      // No configured credential and no reader in scope: nothing to hint.
+      expect(decision).toBe('next')
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
   })
 })
