@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Game Development",
+    "description": "Build and play a small 2D web game with the agent: a right-sidebar design workbench (tunable params, look editor, chaptered design doc, versions and rollback) with end-of-turn checks; tools and skills are granted per session."
+  }
+}

@@ -78,10 +78,10 @@ describe('package.json', () => {
 })
 
 describe('locale card metadata', () => {
-  it('folds the family into one 评测 card', () => {
+  it('folds the family into one 评测套件 card (distinct from the eval member card)', () => {
     const zh = JSON.parse(readFileSync(join(root, 'locale', 'zh.json'), 'utf8')) as { meta: { title: string } }
     const en = JSON.parse(readFileSync(join(root, 'locale', 'en.json'), 'utf8')) as { meta: { title: string } }
-    expect(zh.meta.title).toBe('评测')
-    expect(en.meta.title).toBe('Evaluation')
+    expect(zh.meta.title).toBe('评测套件')
+    expect(en.meta.title).toBe('Evaluation Suite')
   })
 })
