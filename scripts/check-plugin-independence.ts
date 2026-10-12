@@ -522,6 +522,41 @@ export function scanPackage(pkg: Pkg, allNames: ReadonlyArray<string>): Finding[
     if (!(json.files ?? []).some((f) => f === patchRel || f === patchRel.replace(/^\.\//, ''))) {
       add('package.json', 'self-mounting', `dsh.bundle.patch ${patchRel} is not listed in files — the published tarball would not self-mount`)
     }
+
+    // Display metadata. The host's plugin card reads locale/<lang>.json
+    // meta.title/meta.description, discovered through the en.json anchor
+    // (deepseek-harness app-boot package-meta.ts); with no locale directory the
+    // card falls back to the raw package name — the canvas-novel/game listing
+    // bug fixed on 2026-10-12. A self-mounting package therefore ships BOTH
+    // locale files with BOTH meta fields, the ./locale/*.json export the host
+    // resolver needs, and the files entry that puts them in the tarball.
+    for (const lang of ['en', 'zh']) {
+      const localeRel = `locale/${lang}.json`
+      const localePath = join(path, localeRel)
+      if (!existsSync(localePath)) {
+        add(localeRel, 'display metadata', 'missing — the plugin card falls back to the raw package name without locale/<lang>.json meta')
+        continue
+      }
+      let meta: unknown
+      try {
+        meta = (JSON.parse(readFileSync(localePath, 'utf8')) as { meta?: unknown }).meta
+      } catch {
+        add(localeRel, 'display metadata', 'does not parse as JSON')
+        continue
+      }
+      const fields = (typeof meta === 'object' && meta !== null ? meta : {}) as Record<string, unknown>
+      for (const field of ['title', 'description']) {
+        if (typeof fields[field] !== 'string' || (fields[field] as string).trim() === '') {
+          add(localeRel, 'display metadata', `meta.${field} must be a non-empty string — the plugin card reads it`)
+        }
+      }
+    }
+    if (!JSON.stringify(json.exports ?? {}).includes('./locale/')) {
+      add('package.json', 'display metadata', 'exports lacks ./locale/*.json — the host resolves locale files through the package specifier')
+    }
+    if (!(json.files ?? []).some((f) => f.replace(/^\.\//, '') === 'locale/*.json')) {
+      add('package.json', 'display metadata', 'files lacks locale/*.json — the published tarball would carry no card metadata')
+    }
   }
 
   // 2. identity. Quoting applies to every `name:` line at any depth (nested
@@ -765,6 +800,38 @@ function scanCrossPackage(pkgs: Pkg[]): { findings: Finding[]; ledger: string[] 
         kind: 'loader row id',
         detail: `row id "${id}" is mounted by ${owners.join(' and ')} — a duplicate loader entry id fails boot`,
       })
+    }
+  }
+
+  // Plugin-card titles: the plugin manager lists every installed
+  // self-mounting package by its locale meta.title, so two cards sharing a zh
+  // (or en) title are indistinguishable — bundle-eval's 评测 collided with
+  // eval's 评测 until 2026-10-12. A bundle's title must read as a collection,
+  // never a member's name. Missing/unreadable locale files are reported by
+  // scanPackage's display-metadata check; here only collisions.
+  for (const lang of ['en', 'zh']) {
+    const titleOwners = new Map<string, string[]>()
+    for (const pkg of pkgs) {
+      if (pkg.json.dsh?.bundle?.patch === undefined) continue
+      const file = join(pkg.path, 'locale', `${lang}.json`)
+      if (!existsSync(file)) continue
+      let title: unknown
+      try {
+        title = (JSON.parse(readFileSync(file, 'utf8')) as { meta?: { title?: unknown } }).meta?.title
+      } catch {
+        continue
+      }
+      if (typeof title !== 'string' || title.trim() === '') continue
+      titleOwners.set(title, [...(titleOwners.get(title) ?? []), pkg.json.name])
+    }
+    for (const [title, owners] of titleOwners) {
+      if (owners.length > 1) {
+        findings.push({
+          path: `packages/*/locale/${lang}.json`,
+          kind: 'display metadata',
+          detail: `${lang} card title "${title}" is shared by ${owners.join(' and ')} — plugin cards must be distinguishable; a bundle's title reads as a collection, never a member's name`,
+        })
+      }
     }
   }
 

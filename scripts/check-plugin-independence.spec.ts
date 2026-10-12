@@ -121,12 +121,17 @@ describe('preset-declarations bundles', () => {
     const { pkg, cleanup } = fixture(
       {
         name: '@khorsheed/dsh-presets',
-        files: ['lib', 'cordis.patch.yml'],
+        files: ['lib', 'cordis.patch.yml', 'locale/*.json'],
+        exports: { './locale/*.json': './locale/*.json' },
         keywords: ['dsh', 'dsh-plugin'],
         repository: { url: 'git+https://github.com/Khorsheed/dsh-plugins.git', directory: 'packages/presets' },
         dsh: { bundle: { patch: './cordis.patch.yml', kind: 'preset-declarations' } },
       },
-      { 'cordis.patch.yml': PATCH },
+      {
+        'cordis.patch.yml': PATCH,
+        'locale/en.json': '{"meta":{"title":"Agent Presets","description":"Scene presets."}}',
+        'locale/zh.json': '{"meta":{"title":"预设模式","description":"场景预设。"}}',
+      },
     )
     try {
       expect(scanPackage(pkg, ['@khorsheed/dsh-presets'])).toEqual([])
@@ -276,15 +281,24 @@ describe('family bundles', () => {
     return { root, cleanup: () => rmSync(root, { recursive: true, force: true }) }
   }
 
+  const localeFiles = (title: string, zhTitle: string): Record<string, string> => ({
+    'locale/en.json': `{"meta":{"title":"${title}","description":"Demo card."}}`,
+    'locale/zh.json': `{"meta":{"title":"${zhTitle}","description":"演示卡片。"}}`,
+  })
+  const CARD_MANIFEST = {
+    files: ['lib', 'cordis.patch.yml', 'locale/*.json'],
+    exports: { './locale/*.json': './locale/*.json' },
+  }
   const core = {
     dir: 'core',
     json: {
       name: '@khorsheed/dsh-core',
       private: true,
-      files: ['lib', 'cordis.patch.yml'],
+      ...CARD_MANIFEST,
       dsh: { bundle: { patch: './cordis.patch.yml' } },
     },
     files: {
+      ...localeFiles('Core', '核心'),
       'cordis.patch.yml': [
         '- id: tool-core-official',
         '  disabled: true',
@@ -302,10 +316,11 @@ describe('family bundles', () => {
     json: {
       name: '@khorsheed/dsh-provider',
       private: true,
-      files: ['lib', 'cordis.patch.yml'],
+      ...CARD_MANIFEST,
       dsh: { bundle: { patch: './cordis.patch.yml' } },
     },
     files: {
+      ...localeFiles('Provider', '委派方'),
       // The provider's canonical rows include one naming a package that does
       // NOT self-mount (the pre-fold local-agent shape: a provider patch's
       // tool row named the family's deps-only tool package) — the bundle's
@@ -335,7 +350,7 @@ describe('family bundles', () => {
   const bundleJson = {
     name: '@khorsheed/dsh-bundle-demo',
     private: true,
-    files: ['lib', 'cordis.patch.yml'],
+    ...CARD_MANIFEST,
     dependencies: { '@khorsheed/dsh-core': 'workspace:*', '@khorsheed/dsh-provider': 'workspace:*' },
     dsh: {
       bundle: {
@@ -349,7 +364,7 @@ describe('family bundles', () => {
   const bundle = {
     dir: 'bundle',
     json: bundleJson,
-    files: { 'cordis.patch.yml': BUNDLE_PATCH, 'src/index.ts': 'export const MEMBERS = 2\n' },
+    files: { ...localeFiles('Demo Suite', '演示套件'), 'cordis.patch.yml': BUNDLE_PATCH, 'src/index.ts': 'export const MEMBERS = 2\n' },
   }
   const MEMBER_NAMES = ['@khorsheed/dsh-core', '@khorsheed/dsh-provider', '@khorsheed/dsh-bundle-demo']
 
@@ -612,7 +627,8 @@ describe('scanPackage', () => {
     const { pkg, cleanup } = fixture(
       {
         name: '@khorsheed/dsh-demo',
-        files: ['lib', 'cordis.patch.yml'],
+        files: ['lib', 'cordis.patch.yml', 'locale/*.json'],
+        exports: { './locale/*.json': './locale/*.json' },
         keywords: ['dsh', 'dsh-plugin'],
         repository: { url: 'git+https://github.com/Khorsheed/dsh-plugins.git', directory: 'packages/demo' },
         dsh: { bundle: { patch: './cordis.patch.yml' } },
@@ -620,6 +636,8 @@ describe('scanPackage', () => {
       {
         'cordis.patch.yml': `- insert:\n    - id: demo\n      name: '@khorsheed/dsh-demo'\n`,
         'src/invariant.ts': `const PACKAGE_NAME = '@khorsheed/dsh-demo'\n`,
+        'locale/en.json': '{"meta":{"title":"Demo","description":"Demo card."}}',
+        'locale/zh.json': '{"meta":{"title":"演示","description":"演示卡片。"}}',
       },
     )
     try {
@@ -791,6 +809,92 @@ describe('composition metadata and the NO_OWN_PATCH cross-check', () => {
       expect(findings.some((f) => f.detail.includes('is not one of'))).toBe(true)
     } finally {
       cleanup()
+    }
+  })
+})
+
+describe('display metadata', () => {
+  function fixture(pkg: Record<string, unknown>, files: Record<string, string>) {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-independence-card-'))
+    const dir = join(root, 'demo')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'package.json'), JSON.stringify(pkg))
+    for (const [rel, text] of Object.entries(files)) {
+      mkdirSync(dirname(join(dir, rel)), { recursive: true })
+      writeFileSync(join(dir, rel), text)
+    }
+    return {
+      pkg: { dir: 'demo', path: dir, json: pkg as never },
+      cleanup: () => rmSync(root, { recursive: true, force: true }),
+    }
+  }
+
+  const MANIFEST = {
+    name: '@khorsheed/dsh-demo',
+    files: ['lib', 'cordis.patch.yml', 'locale/*.json'],
+    exports: { './locale/*.json': './locale/*.json' },
+    dsh: { bundle: { patch: './cordis.patch.yml' } },
+  }
+  const FILES = {
+    'cordis.patch.yml': `- insert:\n    - id: demo\n      name: '@khorsheed/dsh-demo'\n`,
+    'locale/en.json': '{"meta":{"title":"Demo","description":"Demo card."}}',
+    'locale/zh.json': '{"meta":{"title":"演示","description":"演示卡片。"}}',
+  }
+
+  it('flags a self-mounting package with no locale directory (the raw-package-name card)', () => {
+    const { pkg, cleanup } = fixture(MANIFEST, { 'cordis.patch.yml': FILES['cordis.patch.yml'] })
+    try {
+      const findings = scanPackage(pkg, [MANIFEST.name]).filter((f) => f.kind === 'display metadata')
+      expect(findings.some((f) => f.path.endsWith('locale/en.json'))).toBe(true)
+      expect(findings.some((f) => f.path.endsWith('locale/zh.json'))).toBe(true)
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('flags a locale file whose meta.title or meta.description is missing or empty', () => {
+    const { pkg, cleanup } = fixture(MANIFEST, {
+      ...FILES,
+      'locale/zh.json': '{"meta":{"title":"演示"}}',
+    })
+    try {
+      const findings = scanPackage(pkg, [MANIFEST.name]).filter((f) => f.kind === 'display metadata')
+      expect(findings.some((f) => f.detail.includes('meta.description'))).toBe(true)
+      expect(findings.some((f) => f.detail.includes('meta.title'))).toBe(false)
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('flags the manifest when the locale files would not resolve or ship', () => {
+    const { pkg, cleanup } = fixture(
+      { ...MANIFEST, files: ['lib', 'cordis.patch.yml'], exports: {} },
+      FILES,
+    )
+    try {
+      const findings = scanPackage(pkg, [MANIFEST.name]).filter((f) => f.kind === 'display metadata')
+      expect(findings.some((f) => f.detail.includes('./locale/*.json'))).toBe(true)
+      expect(findings.some((f) => f.detail.includes('locale/*.json — the published tarball'))).toBe(true)
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('flags two self-mounting packages sharing a card title (tree-level)', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-independence-card-tree-'))
+    for (const dir of ['a', 'b']) {
+      mkdirSync(join(root, dir, 'locale'), { recursive: true })
+      writeFileSync(join(root, dir, 'package.json'), JSON.stringify({ ...MANIFEST, name: `@khorsheed/dsh-${dir}` }))
+      writeFileSync(join(root, dir, 'cordis.patch.yml'), `- insert:\n    - id: ${dir}\n      name: '@khorsheed/dsh-${dir}'\n`)
+      writeFileSync(join(root, dir, 'locale', 'en.json'), FILES['locale/en.json'])
+      writeFileSync(join(root, dir, 'locale', 'zh.json'), FILES['locale/zh.json'])
+    }
+    try {
+      const findings = scanTree(root).findings.filter((f) => f.kind === 'display metadata')
+      expect(findings.some((f) => f.detail.includes('"演示"'))).toBe(true)
+      expect(findings.some((f) => f.detail.includes('"Demo"'))).toBe(true)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
     }
   })
 })
