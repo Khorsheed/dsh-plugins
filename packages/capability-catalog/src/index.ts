@@ -97,7 +97,7 @@ export type { PresetRosterSlice, PresetRosterRow, ResolvedPresetScope } from './
 export { modeOptions, readModeFaces } from './modes.ts'
 export {
   ScopedSkillDelivery, scopedSkillsRoot, scanManagedSkills, managedSkillFrom,
-  parsePresetScopeFrontmatter, defaultSkillRoots, detectConflicts,
+  defaultSkillRoots, detectConflicts,
   SCOPED_PROVIDER_NAME, MANAGED_SKILL_RANK,
 } from './scoped-delivery.ts'
 export {

@@ -23,11 +23,10 @@ import { homedir, tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { promisify } from 'node:util'
 import type { CatalogAddSkillRequest, CatalogAddSkillResult, CatalogDirSkillInfo } from './types.ts'
+import { isKebabId, parseSkillFrontmatter, splitFrontmatter } from './frontmatter.ts'
 import { extractZip, type ZipEntry } from './zip.ts'
 
 const execFileAsync = promisify(execFile)
-
-const FRONTMATTER = /^---\n([\s\S]*?)\n---\n([\s\S]*)$/
 
 /** First bytes of a ZIP archive (local file header / empty / spanned). */
 const ZIP_MAGIC_PK = 0x50 // 'P'
@@ -42,12 +41,10 @@ export function managedRoot(root: 'user' | 'project', dshHome: string): string {
 
 /** Extract the kebab-case `name` and `description` from a SKILL.md body. */
 export function resolveSkillNameFromContent(content: string): { name: string; description: string } | undefined {
-  const m = FRONTMATTER.exec(content)
-  if (m === null) return undefined
-  const front = m[1] ?? ''
-  const name = /^name:\s*(.+)$/m.exec(front)?.[1]?.trim()
-  const description = /^description:\s*(.+)$/m.exec(front)?.[1]?.trim()
-  if (name === undefined || description === undefined || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name)) return undefined
+  const parsed = parseSkillFrontmatter(content)
+  if (parsed === undefined) return undefined
+  const { name, description } = parsed
+  if (name === undefined || description === undefined || !isKebabId(name)) return undefined
   return { name, description }
 }
 
@@ -58,11 +55,7 @@ function decodeBase64(payload: string): string {
 
 /** Read the frontmatter `disable-model-invocation` flag (default model-invocable true). */
 export function inferModelInvocable(content: string): boolean {
-  const m = FRONTMATTER.exec(content)
-  if (m === null) return true
-  const front = m[1] ?? ''
-  const line = /^disable-model-invocation:\s*(true|false)$/m.exec(front)?.[1]
-  return line !== 'true'
+  return parseSkillFrontmatter(content)?.modelInvocable ?? true
 }
 
 /** Whether a filesystem path exists (dir or file). */
@@ -101,20 +94,18 @@ function sanitizeRelPath(p: string): string | undefined {
 
 /** Apply the frontmatter `disable-model-invocation` line to match the request. */
 function finalizeSkillText(content: string, modelInvocable: boolean): string {
-  const m = FRONTMATTER.exec(content)
-  if (m === null) return content
-  const front = String(m[1] ?? '')
-  const body = String(m[2] ?? '')
+  const split = splitFrontmatter(content)
+  if (split === undefined) return content
   const effective = inferModelInvocable(content)
   if (effective === modelInvocable) return content
-  const without = front
+  const without = split.front
     .split('\n')
     .filter(line => !line.trim().startsWith('disable-model-invocation:'))
     .join('\n')
   const withFlag = modelInvocable
     ? without
     : `${without}${without.endsWith('\n') ? '' : '\n'}disable-model-invocation: true`
-  return `---\n${withFlag}\n---\n${body}`
+  return `---\n${withFlag}\n---\n${split.body}`
 }
 
 /**

@@ -32,7 +32,6 @@ import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { createScope, type ScopeKey } from '@deepseek-ai/dsh-scope'
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import yaml from 'js-yaml'
 // Type-only: the ctx.skills service merge and the provider contract this module
 // implements. The skill registry is an optional peer; a runtime import would
 // make the catalog fail to boot without it.
@@ -42,6 +41,7 @@ import type { SkillCandidate, SkillDefinition, SkillProvider, SkillProviderContr
 import type {} from '@deepseek-ai/dsh-agent-preset-registry'
 import { acquireStandingScope, type PresetRosterSlice } from './preset-scope.ts'
 import { collectSkillFiles, resolveBundleTarget, sanitizeBundlePath } from './skills.ts'
+import { isKebabId, parseSkillFrontmatter } from './frontmatter.ts'
 import { setToolOrigin } from './tool-origin.ts'
 
 let presetRegistryProbe: Promise<unknown> | undefined
@@ -85,12 +85,6 @@ export const SCOPED_SKILLS_DIR = join('capability-catalog', 'skills')
 
 /** Debounce for filesystem-triggered rescans. */
 const RESCAN_DEBOUNCE_MS = 150
-
-/** Frontmatter block, then the body it precedes. */
-const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/
-
-/** Kebab-case skill / preset id grammar (the registry's own). */
-const KEBAB_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 
 /** One managed skill read from the plugin-owned root. */
 export interface ManagedSkill {
@@ -171,148 +165,32 @@ export interface ScopedDeliveryRegistry {
 }
 
 /**
- * Read the `presetScope` list out of a frontmatter block.
- *
- * Accepted forms, at any indentation (the canonical one is
- * `metadata.presetScope`):
- *
- * ```yaml
- * metadata:
- *   presetScope: [dsh-writing, dev]
- *   presetScope:
- *     - dsh-writing
- * ```
- * @param front - the frontmatter text without its `---` fences.
- * @returns the declared ids, or undefined when the key is absent.
- */
-export function parsePresetScopeFrontmatter(front: string): readonly string[] | undefined {
-  const lines = front.split('\n')
-  for (let index = 0; index < lines.length; index += 1) {
-    const match = /^(\s*)presetScope\s*:\s*(.*)$/.exec(lines[index] ?? '')
-    if (match === null) continue
-    const indent = (match[1] ?? '').length
-    const rest = (match[2] ?? '').trim()
-    if (rest.startsWith('[')) {
-      const inner = rest.slice(1, rest.lastIndexOf(']') === -1 ? undefined : rest.lastIndexOf(']'))
-      return presetIdsOf(inner.split(','))
-    }
-    if (rest !== '') return presetIdsOf([rest])
-    const block: string[] = []
-    for (let item = index + 1; item < lines.length; item += 1) {
-      const entry = /^(\s*)-\s*(.*?)\s*$/.exec(lines[item] ?? '')
-      if (entry === null) break
-      if ((entry[1] ?? '').length <= indent) break
-      block.push(entry[2] ?? '')
-    }
-    return presetIdsOf(block)
-  }
-  return undefined
-}
-
-/** Normalize YAML scalars onto the preset-id grammar. */
-function presetIdsOf(values: readonly string[]): readonly string[] {
-  const ids: string[] = []
-  for (const value of values) {
-    const id = value.trim().replace(/^['"]|['"]$/g, '')
-    if (id === '' || !KEBAB_ID.test(id)) continue
-    if (!ids.includes(id)) ids.push(id)
-  }
-  return ids
-}
-
-/**
- * Read the whole `metadata:` block out of a frontmatter block, parsed as YAML.
- *
- * The line-based readers above answer the delivery's own keys; the served
- * definition must carry the block VERBATIM (credentials declarations, plugin
- * data) or the detail surface loses them the moment a skill turns managed.
- * Only the block's own lines are parsed: a malformed metadata value degrades
- * to `undefined` (the skill still delivers, minus the extra metadata) instead
- * of rejecting a file the rest of this module could still read.
- * @param front - the frontmatter text without its `---` fences.
- * @returns the parsed metadata object, or undefined when absent/unusable.
- */
-export function parseMetadataFrontmatter(front: string): Record<string, unknown> | undefined {
-  const lines = front.split('\n')
-  for (let index = 0; index < lines.length; index += 1) {
-    const match = /^(\s*)metadata\s*:\s*(.*)$/.exec(lines[index] ?? '')
-    if (match === null) continue
-    const indent = (match[1] ?? '').length
-    const rest = (match[2] ?? '').trim()
-    let text = rest
-    if (rest === '') {
-      const block: string[] = []
-      for (let item = index + 1; item < lines.length; item += 1) {
-        const line = lines[item] ?? ''
-        if (line.trim() !== '' && (/^(\s*)/.exec(line)?.[1] ?? '').length <= indent) break
-        block.push(line)
-      }
-      text = block.join('\n')
-    }
-    try {
-      const value: unknown = yaml.load(text)
-      if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
-        return value as Record<string, unknown>
-      }
-      return undefined
-    } catch {
-      return undefined
-    }
-  }
-  return undefined
-}
-
-/** Whether a string is a usable skill / preset id. */
-export function isKebabId(value: string): boolean {
-  return KEBAB_ID.test(value)
-}
-
-/** Split a SKILL.md into its frontmatter block and body. */
-export function splitFrontmatter(content: string): { front: string; body: string } | undefined {
-  const match = FRONTMATTER.exec(content)
-  if (match === null) return undefined
-  return { front: match[1] ?? '', body: match[2] ?? '' }
-}
-
-/** Read a boolean frontmatter flag (`key: true|false`). */
-function frontmatterFlag(front: string, key: string): boolean | undefined {
-  const match = new RegExp(`^\\s*${key}\\s*:\\s*(true|false)\\s*$`, 'm').exec(front)
-  if (match === null) return undefined
-  return match[1] === 'true'
-}
-
-/** Read a scalar frontmatter value, unquoting a simple quoted or plain form. */
-function frontmatterScalar(front: string, key: string): string | undefined {
-  const match = new RegExp(`^\\s*${key}\\s*:\\s*(.+)$`, 'm').exec(front)
-  if (match === null) return undefined
-  const value = (match[1] ?? '').trim().replace(/^['"]|['"]$/g, '')
-  return value === '' ? undefined : value
-}
-
-/**
  * Parse one managed `SKILL.md` into its delivery record.
+ *
+ * The frontmatter is ONE real-YAML parse (see `./frontmatter.ts`): name and
+ * description read top-level only, the invocation flags accept the host
+ * loader's boolean variants, and the scope list comes from the canonical
+ * `metadata.presetScope` (falling back to a legacy top-level key). A malformed
+ * `metadata:` block degrades to no-metadata — the skill still delivers —
+ * rather than rejecting a file the rest of the block could still serve.
  * @param content - the file text.
  * @param dir - the skill's directory (its resource base).
  * @param path - the absolute `SKILL.md` path.
  * @returns the record, or undefined when the frontmatter is unusable.
  */
 export function managedSkillFrom(content: string, dir: string, path: string): ManagedSkill | undefined {
-  const split = splitFrontmatter(content)
-  if (split === undefined) return undefined
-  const name = frontmatterScalar(split.front, 'name')
-  const description = frontmatterScalar(split.front, 'description')
-  if (name === undefined || description === undefined || !KEBAB_ID.test(name)) return undefined
-  const whenToUse = frontmatterScalar(split.front, 'when-to-use') ?? frontmatterScalar(split.front, 'whenToUse')
-  const presetScope = parsePresetScopeFrontmatter(split.front)
-  const metadata = parseMetadataFrontmatter(split.front)
+  const parsed = parseSkillFrontmatter(content)
+  if (parsed === undefined) return undefined
+  const { name, description } = parsed
+  if (name === undefined || description === undefined || !isKebabId(name)) return undefined
   return {
     name,
     description,
-    ...whenToUse === undefined ? {} : { whenToUse },
-    modelInvocable: frontmatterFlag(split.front, 'disable-model-invocation') !== true,
-    userInvocable: frontmatterFlag(split.front, 'user-invocable') !== false,
-    presetScope,
-    ...metadata === undefined ? {} : { metadata },
+    ...parsed.whenToUse === undefined ? {} : { whenToUse: parsed.whenToUse },
+    modelInvocable: parsed.modelInvocable,
+    userInvocable: parsed.userInvocable,
+    presetScope: parsed.presetScope,
+    ...parsed.metadata === undefined ? {} : { metadata: parsed.metadata },
     dir,
     path,
     content,
@@ -403,7 +281,7 @@ export async function scanManagedSkills(root: string): Promise<readonly ManagedS
   }
   const found: ManagedSkill[] = []
   for (const child of children) {
-    if (!child.isDirectory() || !KEBAB_ID.test(child.name)) continue
+    if (!child.isDirectory() || !isKebabId(child.name)) continue
     const dir = join(root, child.name)
     const path = join(dir, 'SKILL.md')
     try {

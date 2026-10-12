@@ -10,7 +10,6 @@ import {
   definitionFor,
   detectConflicts,
   managedSkillFrom,
-  parsePresetScopeFrontmatter,
   scanManagedSkills,
   scopedSkillsRoot,
   ScopedSkillDelivery,
@@ -33,32 +32,6 @@ function skillText(name: string, scope?: string, extra = ''): string {
     '',
   ].join('\n')
 }
-
-describe('parsePresetScopeFrontmatter', () => {
-  it('reads an inline flow list', () => {
-    expect(parsePresetScopeFrontmatter('metadata:\n  presetScope: [dsh-writing, dev]'))
-      .toEqual(['dsh-writing', 'dev'])
-  })
-
-  it('reads a block list', () => {
-    expect(parsePresetScopeFrontmatter('metadata:\n  presetScope:\n    - dsh-writing\n    - dev\n  other: 1'))
-      .toEqual(['dsh-writing', 'dev'])
-  })
-
-  it('reads a bare scalar and drops surrounding quotes', () => {
-    expect(parsePresetScopeFrontmatter("presetScope: 'dsh-writing'")).toEqual(['dsh-writing'])
-  })
-
-  it('distinguishes an explicit empty list from an absent key', () => {
-    expect(parsePresetScopeFrontmatter('presetScope: []')).toEqual([])
-    expect(parsePresetScopeFrontmatter('name: x')).toBeUndefined()
-  })
-
-  it('drops ids outside the kebab-case grammar and de-duplicates', () => {
-    expect(parsePresetScopeFrontmatter('presetScope: [dsh-writing, ../evil, dsh-writing, DEV]'))
-      .toEqual(['dsh-writing'])
-  })
-})
 
 describe('managedSkillFrom', () => {
   it('parses identity, invocation flags and the preset scope', () => {
@@ -114,6 +87,51 @@ describe('managedSkillFrom', () => {
     )
     expect(skill?.name).toBe('md-to-wechat')
     expect(skill?.metadata).toBeUndefined()
+  })
+
+  it('accepts the host parser\'s boolean variants for the invocation flags', () => {
+    // skill-filesystem's frontmatterBoolean takes 1/0, yes/no, on/off beside
+    // true/false (the catalog used to read only true/false).
+    for (const truthy of ['1', 'yes', 'on']) {
+      const skill = managedSkillFrom(skillText('flag-off', undefined, `disable-model-invocation: ${truthy}`), '/m/flag-off', '/m/flag-off/SKILL.md')
+      expect(skill?.modelInvocable, `disable-model-invocation: ${truthy}`).toBe(false)
+    }
+    for (const falsy of ['0', 'no', 'off']) {
+      const skill = managedSkillFrom(skillText('flag-off', undefined, `user-invocable: ${falsy}`), '/m/flag-off', '/m/flag-off/SKILL.md')
+      expect(skill?.userInvocable, `user-invocable: ${falsy}`).toBe(false)
+    }
+  })
+
+  it('reads presetScope only at the top level or under metadata, not nested elsewhere', () => {
+    // The any-indent scan used to count a presetScope nested under an unrelated
+    // key; real YAML scoping sees only the two meaningful positions.
+    const skill = managedSkillFrom(
+      skillText('nested-scope', undefined, 'other:\n  presetScope: [dsh-writing]'),
+      '/m/nested-scope',
+      '/m/nested-scope/SKILL.md',
+    )
+    expect(skill?.presetScope).toBeUndefined()
+  })
+
+  it('reads a top-level scalar even when a nested same-named key appears first', () => {
+    // The line-based scalar scan matched in TEXT order, so an indented
+    // `name:` under metadata shadowed the real one.
+    const skill = managedSkillFrom(
+      '---\nmetadata:\n  name: shadow\nname: real-name\ndescription: d\n---\n\n# real\n',
+      '/m/real-name',
+      '/m/real-name/SKILL.md',
+    )
+    expect(skill?.name).toBe('real-name')
+  })
+
+  it('reads a folded multi-line description as its folded text', () => {
+    const skill = managedSkillFrom(
+      '---\nname: folded\ndescription: >\n  A longer description\n  over two lines.\n---\n\n# folded\n',
+      '/m/folded',
+      '/m/folded/SKILL.md',
+    )
+    // A folded scalar keeps its trailing newline.
+    expect(skill?.description).toBe('A longer description over two lines.\n')
   })
 })
 

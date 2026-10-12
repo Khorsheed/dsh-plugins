@@ -17,6 +17,7 @@
     "src/modes.ts",
     "src/scoped-delivery.ts",
     "src/scoped-edits.ts",
+    "src/frontmatter.ts",
     "src/remote.ts",
     "src/import.ts",
     "src/zip.ts",
