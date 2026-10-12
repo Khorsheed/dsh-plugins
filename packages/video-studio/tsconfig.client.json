@@ -1,0 +1,42 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types",
+    "tsBuildInfoFile": "lib/tsconfig.client.tsbuildinfo",
+    "jsx": "react-jsx",
+    "lib": [
+      "ES2024",
+      "DOM",
+      "DOM.Iterable"
+    ]
+  },
+  "files": [
+    "src/css-modules.d.ts",
+    "src/core/align.ts",
+    "src/core/parts.ts",
+    "src/core/scan.ts",
+    "src/core/settings.ts",
+    "src/core/subtitles.ts",
+    "src/core/text.ts",
+    "src/core/timeline.ts",
+    "src/core/types.ts",
+    "src/media/export.ts",
+    "src/media/ffmpeg.ts",
+    "src/media/models.ts",
+    "src/media/speech.ts",
+    "src/media/speech-protocol.ts",
+    "src/service.ts",
+    "src/store.ts",
+    "src/types.ts",
+    "src/client/contract.ts",
+    "src/client/definition.tsx",
+    "src/client/index.ts",
+    "src/client/locales.ts",
+    "src/client/store.ts",
+    "src/client/VideoPane.tsx",
+    "src/client/TranscriptTab.tsx",
+    "src/client/player.ts",
+    "src/client/preset-visibility.ts"
+  ]
+}

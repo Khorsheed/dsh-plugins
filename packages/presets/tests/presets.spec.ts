@@ -20,7 +20,7 @@ function presetBlock(text: string, id: string): string {
 }
 
 describe('cordis.patch.yml', () => {
-  it('mounts exactly the five preset declarations (T102: no dataset-authoring), in PRESET_IDS order', () => {
+  it('mounts exactly the six preset declarations (T102: no dataset-authoring), in PRESET_IDS order', () => {
     expect(topLevelRowIds(patch)).toEqual(PRESET_IDS.map((id) => `preset-${id}`))
     for (const id of PRESET_IDS) {
       const block = presetBlock(patch, id)
@@ -210,7 +210,7 @@ describe('cordis.patch.yml', () => {
     const rows = (id: string): string =>
       presetBlock(patch, id).split('\n').filter((line) => !line.trimStart().startsWith('#')).join('\n')
 
-    for (const id of ['dev', 'dsh-writing', 'dsh-gamedev', 'learning']) {
+    for (const id of ['dev', 'dsh-writing', 'dsh-gamedev', 'learning', 'dsh-video']) {
       it(`${id} names no datasets / eval / mission row and no evaluation skill`, () => {
         const block = rows(id)
         for (const entry of EVAL_FAMILY_ROWS) expect(block).not.toContain(entry)

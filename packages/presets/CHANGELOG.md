@@ -1,7 +1,15 @@
 # 变更记录
 
-## 未发布
+## 0.3.2（未发布）
 
+- **并入 `preset-learning`（学习模式），`@khorsheed/dsh-bundle-learning` 退役**：行自该单行包逐字迁入（行 id `preset-learning`、preset id `learning`、`order: 12` 不变，已装部署的组合状态不受影响）；`dsh.references` 加 `@khorsheed/dsh-library`。外显文案（locale 与包描述）改为不枚举模式清单——「三种/五种」式描述跟不上模式增长。bundle-learning 已发布 npm 0.1.0：npm deprecate 与 3080 的摘除（先摘旧包再上本版，避免 `preset-learning` 双挂）为人工尾随，见 `.agents/notes/implemented/feature/2026-10-12-presets-learning-fold.md`
+- **合并 feat/video-studio 线**：`preset-dsh-video`（剪辑模式）与 `preset-learning` 并存，`PRESET_IDS` 现为六个（dev / dsh-eval / dsh-writing / dsh-gamedev / learning / dsh-video）
+
+
+## 0.3.1（未发布）
+
+- **恢复 `preset-dsh-gamedev`（游戏开发模式）行**：video-studio 分支从 main 分叉早于 76ea67d7（游戏开发 preset）合入，从该分支打包部署 0.3.0 时把 3080 的游戏开发模式顶掉；本行 cherry-pick 自 main 的 76ea67d7，与 `preset-dsh-video` 并存，`PRESET_IDS` 现为五个（dev / dsh-eval / dsh-writing / dsh-gamedev / dsh-video）。包描述与 locale 从「三种」更正为「五种」
+- **新增剪辑模式 `preset-dsh-video`**（剪辑台 M1，2026-10-06；2026-10-12 起为独立设计）：剪辑搭档 persona（混录不能只剪一个人、修改都是待确认的提议、成片时间戳由工具算），工具组合按剪辑流程自配——fs 找素材路径、skill 加载器、compaction、ask-user、todo，不再带 shell（绕过提议纪律的万能出口）和 web（不是剪辑的工作流）；末尾 `video-studio-tool` 行授予 `@khorsheed/dsh-video-studio/tool` 的 `video_*` 工具与 `video-studio` 技能。右栏「剪辑」tab 同期限定为按 preset 自隐：只在剪辑模式会话出现（标准模式是宿主内建 standard preset，组合里没有该行 → 隐藏；读不到组合数据的所有路径 fail-open）。`PRESET_IDS` 加 `dsh-video`，`dsh.references` 加 `@khorsheed/dsh-video-studio`
 - **题集整理并进评测模式（T102）**：删除 `preset-dataset-authoring`（题集整理）行，`PRESET_IDS` 回到三个；`preset-dsh-eval` 照 web-eval `preset-eval` 的新组成改：加 `tool-bash` / `tool-pwsh`（整理要跑 git 与转换脚本）、`tool-web` 开 fetch、`datasets-tool` 从 `authoring` 换成 `organize`（读 + put_item + 只写申请，挂 `dataset-authoring` 技能），persona 合并评测口径与整理的工作方式，描述同步。用过「题集整理」的旧会话在续接时找不到预设，见 T102 的 Agent Note
 - **评测线迁 3080（T100）**：`preset-dsh-eval` 的 persona 同步成 web-eval `preset-eval` 的现行版本（只认 `datasets_list` 登记的题集、版本歧义问人且跳过即停、「新建实验」表单的逐项询问、路径不是题集、草稿不写进题库），`eval-tool` 行注释改成「四读两写」；此后 web-eval 那份是组合正本，两份由 `scripts/eval-preset-parity.spec.ts` 比对。新增第四行 `preset-dataset-authoring`（`id: dataset-authoring`，题集整理，order 11），照 web-eval bundle 的同名行镜像：挂 shell、`datasets-tool` 取 `tools: organize`、不挂 eval 工具，datasets 核心的 `authoringPreset` 默认值在跑本包的部署上从此有对象。`PRESET_IDS` 加 `dataset-authoring`；测试新增「开发、写作预设不点名 datasets / eval / mission 工具行，不提评测技能」
 - **写作模式并入长篇小说工具**：`preset-dsh-writing` 加 `canvas-novel-agent` 行（`@khorsheed/dsh-canvas-novel/agent`），原 `@khorsheed/dsh-bundle-writing` 的「写作」preset 退役。`novel_bind`、novel skill 与轻指引段随本 preset 授予；`novel_read` / `novel_write` / `novel_extract` 只在会话绑定长篇小说画布时出现，其余画布照旧只有画布工具。persona 的 Canvas 段加一句：小说画布上的卡照旧走 canvas_write、直接落成正式卡，绑定后另有 novel_* 管章节、台账与待审；`dsh.references` 加 `@khorsheed/dsh-canvas-novel`

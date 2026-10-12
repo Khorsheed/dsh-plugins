@@ -36,6 +36,12 @@
 #                       whitelisted skill face and a guarded shell, and the
 #                       @khorsheed/dsh-library/tool grant. Row id and preset
 #                       id unchanged, so composition state is unaffected.
+#   preset-dsh-video    剪辑模式  2026-10-06 (video studio M1); standalone since
+#                       2026-10-12: an editing-partner persona + the editing flow's
+#                       own tool set (fs to locate recordings, skill loader,
+#                       compaction, ask-user, todo) + the video-studio ./tool row
+#                       (video_* tools + skill). No shell (it would bypass the
+#                       proposal discipline) and no web (not editing's workflow).
 #
 # The display fields (name/description/order) come from each legacy preset.yml.
 # Every `name:` value is quoted (@ is YAML-reserved; 'cordis:group' follows the
@@ -1055,3 +1061,86 @@
                 - 'ui:deliverable-file-references'
               denyTools:
                 - list_capabilities
+
+    - id: preset-dsh-video
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: dsh-video
+        name: '剪辑模式'
+        description: 播客与对谈剪辑：一条混录自动分人、节目声纹认人、删字即删音频；会话里商量剪什么，右栏剪辑面板调细节，导出音频、视频、字幕和 shownotes。
+        plugins:
+          # ── identity ────────────────────────────────────────────────────────────────
+
+          # 剪辑搭档的身份（2026-10-06 剪辑台 M1）。工具机制写在 video-studio 技能里，
+          # 这里只放身份、语言和协作原则；单语英文，与宿主提示同一种声音。
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              suffix: Your working directory is {{cwd}}.
+              prefix: |-
+                You are an editing partner for podcasts, casual chats and conversations, powered by the {{model}} model. You reply in the user's language.
+
+                ## How you work
+
+                - The user and their friends usually record everyone on ONE device (a mixed recording), often with a phone filming. The 剪辑 panel on the right is the same project you edit through the video_* tools: what you change, the user sees there; what they change there, you read back with video_read.
+                - Every change you make is a proposal the user accepts or rejects. Never apply a proposal unless the user said so in the conversation.
+                - Times you use are seconds of the ORIGINAL recording. Output timestamps (shownotes, subtitles, durations) come from the tools; never estimate them.
+                - In a mixed recording you cannot remove one person's voice: cutting a range removes everyone in it. Say so when it matters.
+                - Load the `video-studio` skill at the start of an editing session and follow its workflow.
+
+                ## Taste
+
+                Keep the conversation's warmth: trim fillers, dead air and repetition, and suggest cutting off-topic stretches with a one-line reason each. Leave the decisions about what a friend said to the user.
+
+          # ── filesystem ──────────────────────────────────────────────────────────────
+
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+
+          # ── skills ──────────────────────────────────────────────────────────────────
+
+          - id: skill-filesystem
+            name: '@deepseek-ai/dsh-skill-filesystem'
+
+          - id: tool-skill
+            name: '@deepseek-ai/dsh-tool-skill'
+
+          # ── compaction ──────────────────────────────────────────────────────────────
+
+          - id: compaction
+            name: 'cordis:group'
+            group: true
+            isolate:
+              compaction: true
+              toolResultPruner: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+
+              - id: command-compact
+                name: '@deepseek-ai/dsh-command-compact'
+
+              - id: tool-result-pruner
+                name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+                config:
+                  thresholdChars: 8192
+                  headChars: 4096
+                  tailChars: 1024
+
+          # ── remaining model-facing rows ─────────────────────────────────────────────
+
+          - id: tool-ask-user
+            name: '@deepseek-ai/dsh-tool-ask-user'
+
+          - id: tool-todo
+            name: '@deepseek-ai/dsh-tool-todo'
+            config:
+              allowParallelInProgress: true
+
+          # ── video studio ────────────────────────────────────────────────────────────
+
+          # video_* 工具与 video-studio 技能只授予本 preset 的会话（worktrees ./tool
+          # 写法：profile 根不挂这一行）。服务核心（videoStudio）由 profile 根的
+          # video-studio 行提供，本行 inject 它；未装时本行 pending、零注册。
+          - id: video-studio-tool
+            name: '@khorsheed/dsh-video-studio/tool'

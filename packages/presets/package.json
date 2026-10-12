@@ -1,7 +1,7 @@
 {
   "name": "@khorsheed/dsh-presets",
   "description": "The community agent presets as declarative `@deepseek-ai/dsh-agent-preset` bundle rows — the 0.1.5 directory presets migrated to the host 0.1.7-rc.1 preset mechanism, plus later scene modes; the roster grows with releases. Data only: no runtime code, no client half.",
-  "version": "0.3.0",
+  "version": "0.3.2",
   "publishConfig": {
     "access": "public"
   },
@@ -71,12 +71,13 @@
       "@khorsheed/dsh-canvas",
       "@khorsheed/dsh-canvas-novel",
       "@khorsheed/dsh-game",
+      "@khorsheed/dsh-video-studio",
       "@khorsheed/dsh-library"
     ],
     "compat": {
       "minHost": "0.1.7-rc.1",
       "verifiedHost": "0.1.7-rc.1",
-      "notes": "Declarative preset bundle: every row is an `@deepseek-ai/dsh-agent-preset` declaration, a loader row type that exists only on host 0.1.7-rc.1 and later. On 0.1.5 the row type does not exist — the bundle cannot mount there at all (0.1.5 presets are directory-based under $DSH_HOME/.agent-presets, which 0.1.7-rc.1 no longer reads). The community tool rows the presets name (@khorsheed/dsh-local-agent-kimi/tool, -codex/tool, -claude-code/tool, -worktrees/tool, -room/tool, -typesafe-tool, -datasets/tool, -eval/tool, -canvas/agent, -canvas-novel/agent, -game/agent) resolve from the installing profile's dependency closure, same as the legacy directory presets; they are data references (dsh.references), never npm dependency edges."
+      "notes": "Declarative preset bundle: every row is an `@deepseek-ai/dsh-agent-preset` declaration, a loader row type that exists only on host 0.1.7-rc.1 and later. On 0.1.5 the row type does not exist — the bundle cannot mount there at all (0.1.5 presets are directory-based under $DSH_HOME/.agent-presets, which 0.1.7-rc.1 no longer reads). The community tool rows the presets name (@khorsheed/dsh-local-agent-kimi/tool, -codex/tool, -claude-code/tool, -worktrees/tool, -room/tool, -typesafe-tool, -datasets/tool, -eval/tool, -canvas/agent, -canvas-novel/agent, -game/agent, -video-studio/tool, -library/tool) resolve from the installing profile's dependency closure, same as the legacy directory presets; they are data references (dsh.references), never npm dependency edges."
     }
   }
 }

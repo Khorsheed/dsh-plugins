@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-10-12-presets-branch-sync-gamedev.md
+.agents/notes/implemented/process/2026-10-12-presets-branch-sync-gamedev.md: 64cbf41fd0501866d9290819f43ce36c4731ff43
+.agents/notes/implemented/process/2026-10-12-presets-branch-sync-gamedev.zh.md: 0f3fc00dd8f683c4917cbf5b37af8861e336cbb4

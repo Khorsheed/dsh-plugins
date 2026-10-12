@@ -4,10 +4,10 @@
 
 ## 概览
 
-- 包总数:**42**
-- 自挂载 bundle(`dsh.bundle.patch`):**38**
+- 包总数:**43**
+- 自挂载 bundle(`dsh.bundle.patch`):**39**
 - 组合组件(不自挂载,`dsh.composition.component`):**4** — `preset-composed-row` 1、`source-plane-library` 2、`sub-profile-patch` 1
-- 带浏览器半边(`dsh.client`):**32**
+- 带浏览器半边(`dsh.client`):**33**
 - 整合 profile(默认安装单元):**3** — `basic`、`dev`、`web-eval`
 
 **安装单元是 profile,不是单包。** 单包安装是高级路径:自挂载包 `dsh plugin add <pkg>` 即可,
@@ -17,7 +17,7 @@
 
 | 包 | 目录 | 版本 | 形态 | 组件 | 客户端 | minHost | 出现在 profile |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `@khorsheed/dsh-ankh-guard` | `packages/ankh-guard` | 0.4.2 | bundle | — | web | 0.1.5-rc.1 | basic, dev, web-eval |
+| `@khorsheed/dsh-ankh-guard` | `packages/ankh-guard` | 0.4.3 | bundle | — | web | 0.1.5-rc.1 | basic, dev, web-eval |
 | `@khorsheed/dsh-bundle-conversation-toolbox` | `packages/bundle-conversation-toolbox` | 0.1.2 | bundle | — | — | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-bundle-eval` | `packages/bundle-eval` | 0.1.0 | bundle | — | — | 0.2.0-rc.2 | web-eval |
 | `@khorsheed/dsh-bundle-local-agent` | `packages/bundle-local-agent` | 0.2.0 | bundle | — | — | 0.1.5-rc.1 | — |
@@ -46,7 +46,7 @@
 | `@khorsheed/dsh-client-message-tools` | `packages/message-tools` | 0.3.3 | bundle | — | web | 0.1.5-rc.1 | basic, web-eval |
 | `@khorsheed/dsh-mission` | `packages/mission` | 0.2.0-rc.1 | bundle | — | web | 0.2.0-rc.2 | — |
 | `@khorsheed/dsh-mobile` | `packages/mobile` | 0.1.3 | bundle | — | web | 0.1.5-rc.1 | basic |
-| `@khorsheed/dsh-presets` | `packages/presets` | 0.3.0 | bundle | — | — | 0.1.7-rc.1 | — |
+| `@khorsheed/dsh-presets` | `packages/presets` | 0.3.2 | bundle | — | — | 0.1.7-rc.1 | — |
 | `@khorsheed/dsh-quote` | `packages/quote` | 0.1.2 | bundle | — | web | 0.1.5-rc.1 | basic |
 | `@khorsheed/dsh-room` | `packages/room` | 0.2.1 | bundle | — | web | 0.1.5-rc.1 | dev |
 | `@khorsheed/dsh-client-session-title-edit` | `packages/session-title-edit` | 0.2.5 | bundle | — | web | 0.1.2-rc.1 | basic, web-eval |
@@ -57,6 +57,7 @@
 | `@khorsheed/dsh-client-ui-content-preview` | `packages/ui-content-preview` | 0.1.1 | composition | source-plane-library | — | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-client-ui-panel-kit` | `packages/ui-panel-kit` | 0.1.0 | composition | source-plane-library | — | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-ui-shortcuts` | `packages/ui-shortcuts` | 0.2.4 | bundle | — | web | 0.1.2-rc.1 | basic, web-eval |
+| `@khorsheed/dsh-video-studio` | `packages/video-studio` | 0.1.0 | bundle | — | web | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-whalesong` | `packages/whalesong` | 0.2.4 | bundle | — | web | 0.1.2-rc.1 | basic, web-eval |
 | `@khorsheed/dsh-worktrees` | `packages/worktrees` | 0.3.1 | bundle | — | web | 0.1.5-rc.1 | dev |
 

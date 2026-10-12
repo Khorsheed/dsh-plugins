@@ -2557,13 +2557,20 @@ describe('supervise', () => {
     // The watchdog spawns the instance with its own environment: every WD_*
     // (the CLI's explicit WD_PORT/WD_HOME/WD_STATE_DIR/WD_START, plus ambient
     // leaks from a caller inside another supervised instance) must be scrubbed
-    // at launch, or they land in every shell the instance hosts.
+    // at launch, or they land in every shell the instance hosts. NODE_PATH and
+    // NODE_OPTIONS get the same scrub: from a tool-wrapped caller (tsx pins
+    // NODE_PATH to its own pnpm store) they would hijack the instance's module
+    // resolution onto that checkout's workspace (3080, 2026-10-12).
     const env = supervisedEnv()
     const repo = makeRepo()
     const port = await freePort()
     const dump = join(env.home, 'instance-env.txt')
     const previousProbe = process.env.WD_PROBE_LEAK
+    const previousNodePath = process.env.NODE_PATH
+    const previousNodeOptions = process.env.NODE_OPTIONS
     process.env.WD_PROBE_LEAK = 'must-not-reach-the-instance'
+    process.env.NODE_PATH = '/probe-must-not-reach-the-instance'
+    process.env.NODE_OPTIONS = '--probe-must-not-reach-the-instance'
     try {
       const startCmd = `env > '${dump}'; "${process.execPath}" -e "require('http').createServer().listen(${port},'127.0.0.1')"`
       const first = io()
@@ -2575,9 +2582,15 @@ describe('supervise', () => {
       await waitForPort(port)
       const leaked = readFileSync(dump, 'utf8').split('\n').filter(line => line.startsWith('WD_'))
       expect(leaked).toEqual([])
+      const leakedNode = readFileSync(dump, 'utf8').split('\n').filter(line => line.startsWith('NODE_PATH=') || line.startsWith('NODE_OPTIONS='))
+      expect(leakedNode).toEqual([])
     } finally {
       if (previousProbe === undefined) delete process.env.WD_PROBE_LEAK
       else process.env.WD_PROBE_LEAK = previousProbe
+      if (previousNodePath === undefined) delete process.env.NODE_PATH
+      else process.env.NODE_PATH = previousNodePath
+      if (previousNodeOptions === undefined) delete process.env.NODE_OPTIONS
+      else process.env.NODE_OPTIONS = previousNodeOptions
       env.stop()
       await killListener(port)
       env.restore()

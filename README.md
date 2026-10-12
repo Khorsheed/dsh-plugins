@@ -38,6 +38,7 @@
 | --- | --- | --- | --- | --- |
 | [`file-preview`](packages/file-preview) | 会话「**产物**」tab + 宿主服务一体:产物 tab、回合变更卡片、详情页预览抽屉,与只读文件预览 Remote 服务同包(0.4.0 起两行合一) | `@khorsheed/dsh-file-preview` | ≥ 0.1.5-rc.1 | basic |
 | [`local-files`](packages/local-files) | 右栏**本地文件浏览器**:懒加载文件树 + HTML/Markdown/JSON/CSV/图片结构化预览 | `@khorsheed/dsh-local-files` | ≥ 0.1.5-rc.1 | basic |
+| [`video-studio`](packages/video-studio) | 右栏**剪辑台**:播客/对谈混录自动分人、节目声纹认人、删字即删音频,导出音频/视频/字幕;配合剪辑模式 preset | `@khorsheed/dsh-video-studio` | ≥ 0.1.5-rc.1 | — |
 
 ### 任务与氛围
 
