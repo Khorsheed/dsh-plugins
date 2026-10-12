@@ -1,6 +1,6 @@
 {
   "name": "@khorsheed/dsh-context-lens",
-  "description": "Context Lens：查看逐次请求的上下文、缓存命中、输入输出与多 agent 耗时",
+  "description": "Context Lens: inspect every model request turn by turn — context composition, cache hits, inputs and outputs, and per-agent timing",
   "version": "0.1.0",
   "publishConfig": {
     "access": "public"

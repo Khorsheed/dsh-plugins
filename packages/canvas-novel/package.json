@@ -1,6 +1,6 @@
 {
   "name": "@khorsheed/dsh-canvas-novel",
-  "description": "画布的「长篇小说」创作体裁：人物/伏笔/章节的作品记忆引擎、对账闸门、写作工具，以及画布里的待审条、伏笔台账与章节页",
+  "description": "The full-length-novel genre for the canvas: a story-memory engine for characters, foreshadowing and chapters, the reconciliation gate and writing tools, plus the pending-review strip, foreshadowing ledger and chapter pages in the canvas",
   "version": "0.1.0",
   "publishConfig": {
     "access": "public"
