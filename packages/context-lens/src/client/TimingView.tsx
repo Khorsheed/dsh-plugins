@@ -11,6 +11,7 @@ import {
 import { scopeTiming } from './timing.ts'
 import type { InspectorTabProps } from './contract.ts'
 import css from './TimingView.module.css'
+import { ScopeConfigs } from './ConfigFacts.tsx'
 type T = InspectorTabProps['t']
 export interface TimingViewProps {
   readonly timing: TurnTiming | null
@@ -52,6 +53,7 @@ export function TimingView({
   const span = Math.max(1, end - start)
   return (
     <div className={css.scroll}>
+      <ScopeConfigs scope={scope} onOpenRequest={onOpenRequest} t={t} />
       <div className={css.timeSummary}>
         {[
           [

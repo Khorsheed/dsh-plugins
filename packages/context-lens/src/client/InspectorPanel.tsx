@@ -418,7 +418,6 @@ export function InspectorPanel({
           </div>
         </div>
         {turn !== undefined && <div className={css.query}><b>{turn.query}</b></div>}
-        {trend && <Trend data={trend} turnSeq={turnSeq} selectedSeq={selectedRequestSeq} t={t} onSelect={(next, seq, targetScope) => { onSelectTurn(next); onOpenRequest(seq, targetScope) }} />}
         {backfill?.state === 'partial' && <div className={css.stateNote}>{t('hint.backfillTruncated')}</div>}
         {chips.length > 0 && (
           <ChipRow
@@ -429,6 +428,7 @@ export function InspectorPanel({
             label={t('tab.title')}
           />
         )}
+        {trend && effectiveScope && <Trend data={trend} turnSeq={turnSeq} selectedSeq={selectedRequestSeq} scopeId={effectiveScope.scopeId} scopeLabel={effectiveScope.kind === 'main' ? t('scope.mainName') : `#${effectiveScope.scopeSeq} ${effectiveScope.label ?? effectiveScope.scopeId}`} t={t} onSelect={(next, seq, targetScope) => { onSelectTurn(next); onOpenRequest(seq, targetScope) }} />}
       </div>
       <div className={css.body}>{body}</div>
     </PanelRoot>

@@ -435,6 +435,8 @@ function snapshotOptions(options: GenerateOptions): RequestSnapshot {
     config: {
       provider: options.provider,
       model: options.model,
+      ...options.reasoningEffort === undefined ? {} : { reasoningEffort: options.reasoningEffort },
+      ...options.temperature === undefined ? {} : { temperature: options.temperature },
       ...options.maxTokens === undefined ? {} : { maxTokens: options.maxTokens },
     },
     messages: options.messages.map(fromRequestMessage),

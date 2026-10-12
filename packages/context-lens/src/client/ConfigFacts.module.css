@@ -1,0 +1,16 @@
+.facts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; min-width: 0; border-radius: 8px; background: var(--dsw-alias-bg-layer-2); padding: 9px 12px; font-size: var(--dsh-panel-text-meta, 12px); }
+.route { display: flex; flex-direction: column; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+.route b { color: var(--dsw-alias-label-primary); font-size: var(--dsh-panel-text-body, 13px); }
+.route span, .facts dt { color: var(--dsw-alias-label-tertiary); }
+.facts dl { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 0; }
+.facts dt { font-size: var(--dsh-panel-text-meta, 11px); margin-bottom: 2px; }
+.facts dd { margin: 0; color: var(--dsw-alias-label-secondary); font-family: var(--dsw-font-family-mono, ui-monospace, monospace); overflow-wrap: anywhere; }
+.scope { margin-bottom: 16px; }
+.scope h3 { margin: 0 0 7px; color: var(--dsw-alias-label-secondary); font-size: var(--dsh-panel-text-body, 13px); }
+.runs { display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow-y: auto; }
+.run { display: grid; grid-template-columns: 100px minmax(0, 1fr); align-items: center; gap: 10px; }
+.run > button { border: 0; background: transparent; color: var(--dsw-alias-state-business-primary); font: inherit; font-size: var(--dsh-panel-text-meta, 12px); text-align: left; cursor: pointer; overflow-wrap: anywhere; padding: 6px; }
+@container dsh-panel (max-width: 560px) {
+  .run { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .facts { gap: 8px 16px; }
+}

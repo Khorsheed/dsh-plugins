@@ -98,6 +98,28 @@ describe('reconstructSession (fold shape)', () => {
 })
 
 describe('backfill (no live content)', () => {
+  it('keeps each log request’s reasoning and token configuration separate', async () => {
+    let n = 0
+    const rows = structuredClone(fixtureRows)
+    const steps = rows.map((r, i) => r.type === 'step/start' ? i : -1).filter(i => i >= 0)
+    const header = structuredClone(rows.find(r => r.type === 'request/header')!)
+    header.time = rows[steps[1]!]!.time + 1
+    rows.splice(steps[1]! + 1, 0, header)
+    for (const row of rows) if (row.type === 'request/header') {
+      const data = row.data as { header: { config: Record<string, unknown> } }
+      data.header.config = { ...data.header.config, model: `model-${++n}`, reasoningEffort: n === 1 ? 'high' : 'low', maxTokens: n * 1024, temperature: 0 }
+    }
+    const { ctx, service } = await mount(new MainLogReader(rows))
+    ctx.sessions.create(FIXTURE_SESSION as SessionId)
+    const overview = await service.getTurn(FIXTURE_SESSION, 1)
+    const requests = overview!.scopes.find(s => s.kind === 'main')!.requests
+    expect(requests[0]?.config).toMatchObject({ model: 'model-1', reasoningEffort: 'high', maxTokens: 1024, temperature: 0 })
+    expect(requests[1]?.config).toMatchObject({ model: 'model-2', reasoningEffort: 'low', maxTokens: 2048, temperature: 0 })
+    const detail = await service.getRequest(FIXTURE_SESSION, requests[1]!.seq)
+    expect(detail?.config).toEqual(requests[1]?.config)
+    service.dispose()
+  })
+
   it('rebuilds the pre-mount turns at log fidelity on the first query', async () => {
     const reader = new MainLogReader()
     const { ctx, service } = await mount(reader)

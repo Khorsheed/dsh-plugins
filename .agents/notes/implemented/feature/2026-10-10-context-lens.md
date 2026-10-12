@@ -10,7 +10,7 @@ The request inspector exposed captured data but made cache regressions, repeated
 
 The package, directory, bundle row and sidebar kind are renamed to `context-lens` (`@khorsheed/dsh-context-lens`). The `requestInspector` service and Remote namespace remain stable for scoped-read consumers. This is an installation identity change: an existing deployment must replace the old direct dependency and bundle row; mounting both packages would register the same service twice. This change does not publish to npm.
 
-The retained visual style uses bordered metric cells, mono numbers and the prototype's timing palette. A turn stepper and latest button synchronize the conversation scroll. A horizontally scrollable, draggable session map shows input/cache data for each retained request; `getSessionTrend(sessionId, filter)` returns only request headers and inherits scope filtering, retention and generation metadata.
+The retained visual style uses bordered metric cells, mono numbers and the prototype's timing palette. A turn stepper and latest button synchronize the conversation scroll. A horizontally scrollable, draggable session map follows the selected agent and shows only its retained requests, with an input/cache legend and a scale computed from that agent; `getSessionTrend(sessionId, filter)` returns only request headers and inherits scope filtering, retention and generation metadata.
 
 Request detail is ordered as measured cache usage, this exchange (new input beside captured output), then context composition. Full-text duplicates of at least 40 characters can be filtered. Message rows expose explicit tool errors and the originating session-event turn where known. Long output and reasoning show bounded previews and remain scroll-bounded when opened; argument values expand independently.
 
@@ -18,9 +18,11 @@ The request list uses compact two-line rows: action/cache percentage, then input
 
 Composition is one bordered stack: category bar, compact percentage legend, then system/tools/history/added layers with proportional bars and original counts. Category and duplicate filters are exclusive and affect detail rows only. Selecting a filter opens matching layers; repeated rows keep wire order and show ×N. Exact full-text matches of at least 40 characters count only excess copies after the first, including duplicates crossing layers. Default added rows remain expanded. Exchange cards show previews immediately; reasoning and argument values expand independently without stretching the panel horizontally.
 
-Prefix comparison uses exact retained segment content in the same scope, including across turns. Appending messages preserves the prefix; replacement/removal or tool-schema changes remain visible. Prefix differences describe assembly facts, not a claim about the provider's cache invalidation cause. Without a retained predecessor the comparison is unavailable.
+Prefix comparison uses exact retained segment content in the same scope, including across turns. Appending messages preserves the prefix; replacement/removal or tool-schema changes remain visible. Prefix differences describe assembly facts, not a claim about the provider's cache invalidation cause. Without a retained predecessor the UI calls this a comparison baseline, explicitly scoped to retained records rather than claiming the actual first-ever request. Cache usage remains an independent provider fact. Text differences use full segment text, trim shared leading/trailing content, and highlight the bounded replacement span with a character offset and old/new lengths. Previews keep 48 context characters on each side and at most 160 changed characters per side, with explicit omissions; Unicode characters remain intact.
 
 Timing cards and both tables describe one selected agent. All agents stay visible on separate clickable timeline lanes. Model-internal residuals and between-request gaps are separate. Tool reasoning is allocated equally among calls from that request, parameter time follows its tool lane, and execution errors use explicit `isError`. Concurrent intervals share elapsed time across active spans, with an explanatory note, keeping cards and tables additive. All duration labels retain tenths of a second.
+
+Each request carries its captured provider/model, reasoning effort, output limit and temperature. Request detail displays a compact configuration strip above metrics. Request headers also carry that per-request snapshot, so the timing page can display consecutive configuration runs for the selected agent and turn, with request links. A → B → A stays three runs. Missing historical fields say not recorded; scope-level configuration is never substituted for a request or interpreted as a provider default.
 
 ## Alternatives considered
 
@@ -33,6 +35,10 @@ Timing cards and both tables describe one selected agent. All agents stay visibl
 **Guessing errors from tool prose.** Error totals consume the host flag; Canvas fixes its own declared failures through the host's thrown-error path instead.
 
 **Keeping the footer or filtering a copied request object.** The footer contradicted the approved prototype; rewriting segments for filtering also changed denominators and hid original group sizes. A request-local toggle and row-only filter preserve both navigation and measurement meaning.
+
+**A single mixed-agent trend or scope-level configuration.** Both imply continuity where independent contexts or per-request settings differ. Agent selection filters the trend and exact request snapshots preserve configuration switches.
+
+**Comparing truncated message openings.** Equal openings hide later changes and whole-line colors hide the actual edit. Full-text comparison with bounded, highlighted context stays readable without transmitting another entire request.
 
 ## Consequences
 

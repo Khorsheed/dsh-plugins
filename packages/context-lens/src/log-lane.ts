@@ -192,6 +192,8 @@ export function foldLogRows(
           cursor.config = {
             ...typeof config['provider'] === 'string' ? { provider: config['provider'] } : {},
             ...typeof config['model'] === 'string' ? { model: config['model'] } : {},
+            ...typeof config['reasoningEffort'] === 'string' ? { reasoningEffort: config['reasoningEffort'] } : {},
+            ...typeof config['temperature'] === 'number' ? { temperature: config['temperature'] } : {},
             ...typeof config['maxTokens'] === 'number' ? { maxTokens: config['maxTokens'] } : {},
           }
         }

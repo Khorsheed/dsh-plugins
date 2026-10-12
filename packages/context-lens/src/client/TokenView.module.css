@@ -72,3 +72,9 @@
 .stack [data-cat="reminder-injection"], .dot[data-cat="reminder-injection"] { background: var(--ri-cat-reminder-injection); }
 .stack [data-cat="plugin-injection"], .dot[data-cat="plugin-injection"] { background: var(--ri-cat-plugin-injection); }
 .stack [data-cat="tool-change"], .dot[data-cat="tool-change"] { background: var(--ri-cat-tool-change); }
+
+.diffMeta { color: var(--dsw-alias-label-tertiary); font-size: var(--dsh-panel-text-meta, 11px); }
+.diffLine { color: var(--dsw-alias-label-tertiary); line-height: 1.6; }
+.diffLine del, .diffLine ins { padding: 1px 2px; border-radius: 3px; text-decoration: none; }
+.diffLine del { color: var(--dsw-alias-state-error-primary); background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 14%, transparent); }
+.diffLine ins { color: var(--dsw-alias-state-success-primary); background: color-mix(in srgb, var(--dsw-alias-state-success-primary) 14%, transparent); }

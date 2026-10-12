@@ -643,7 +643,11 @@ describe('InspectorPanel · 新增 provenance label', () => {
 describe('Context Lens session trend', () => {
   it('selects a child request through the session map and preserves its scope', async () => {
     bench()
+    await screen.findByText('#101 · read:a.ts')
+    expect(screen.queryByRole('button', { name: 'turn 2 #201 · 0%' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /#2 提取 JSON/ }))
     const bar = await screen.findByRole('button', { name: 'turn 2 #201 · 0%' })
+    expect(screen.queryByRole('button', { name: /turn 2 #101/ })).toBeNull()
     fireEvent.click(bar)
     await waitFor(() => expect(screen.getByText('#201 · 直接回答', { selector: 'b' })).toBeTruthy())
     expect(screen.getByRole('button', { name: /#2 提取 JSON/ }).getAttribute('aria-pressed')).toBe('true')
