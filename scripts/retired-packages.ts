@@ -69,4 +69,9 @@ export const RETIRED_PACKAGES: readonly RetiredPackage[] = [
     replacement: "@khorsheed/dsh-presets' 写作模式 (`preset-dsh-writing`), which now mounts `@khorsheed/dsh-canvas-novel/agent`",
     note: 'its 写作 preset folded into 写作模式 (2026-10-06): one writing preset, the novel tools gated by the session binding; never published to npm',
   },
+  {
+    name: '@khorsheed/dsh-bundle-learning',
+    replacement: "@khorsheed/dsh-presets' 学习模式 (`preset-learning` — row id and preset id unchanged)",
+    note: 'the single-row preset-declarations bundle folded into the presets package (2026-10-12) so every scene mode ships from one bundle; published as 0.1.0 — npm deprecation rides the next publish wave',
+  },
 ]
