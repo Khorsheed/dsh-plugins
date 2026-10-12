@@ -9,8 +9,8 @@
  * @module @khorsheed/dsh-capability-catalog/skills
  */
 
-import { readFile, readdir, rm, stat } from 'node:fs/promises'
-import { join, relative } from 'node:path'
+import { readFile, readdir, realpath, rm, stat } from 'node:fs/promises'
+import { join, relative, sep } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { hashSkillBody } from './capabilities.ts'
 import type {
@@ -261,6 +261,29 @@ export function sanitizeBundlePath(path: string): string | undefined {
   return safe.length === 0 ? undefined : safe.join('/')
 }
 
+/**
+ * Resolve an already-sanitized bundle-relative path to its real on-disk
+ * target, refusing anything that escapes the bundle. {@link sanitizeBundlePath}
+ * has already removed the lexical escapes (absolute forms, drive letters,
+ * `..`); this closes what a lexical check cannot:
+ *
+ * - a symlink INSIDE the bundle whose target lives outside it (the bundle
+ *   directory is user content), and
+ * - a prefix collision — containment is a separator-terminated comparison on
+ *   realpaths, so `/root/foobar` never contain-matches `/root/foo`.
+ *
+ * @param bundleDir - the skill's bundle directory (its resource base).
+ * @param safe - a path that already passed {@link sanitizeBundlePath}.
+ * @returns the resolved absolute target, or undefined when the file is absent
+ *   or would escape the bundle.
+ */
+export async function resolveBundleTarget(bundleDir: string, safe: string): Promise<string | undefined> {
+  const base = await realpath(bundleDir).catch(() => bundleDir)
+  const target = await realpath(join(bundleDir, safe)).catch(() => undefined)
+  if (target === undefined || (target !== base && !target.startsWith(base + sep))) return undefined
+  return target
+}
+
 /** Read one skill-bundle file's text content, on demand. */
 export async function readSkillFileContent(
   registry: RegistrySlice,
@@ -279,10 +302,10 @@ export async function readSkillFileContent(
   if (bundleDir === undefined) return undefined
   const safe = sanitizeBundlePath(filePath)
   if (safe === undefined) return undefined
-  const full = join(bundleDir, safe)
-  if (!full.startsWith(bundleDir)) return undefined
+  const target = await resolveBundleTarget(bundleDir, safe)
+  if (target === undefined) return undefined
   try {
-    const buf = await readFile(full)
+    const buf = await readFile(target)
     return { content: buf.toString('utf8') }
   } catch {
     return undefined

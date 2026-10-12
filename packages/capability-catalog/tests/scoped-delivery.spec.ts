@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
@@ -381,6 +381,20 @@ describe('ScopedSkillDelivery over a real skill registry', () => {
     // A skill not delivered to this preset — and a name nobody manages — read as refused.
     expect(await reader!.execute({ name: 'tech-article-polish' })).toContain('not delivered')
     expect(await reader!.execute({ name: 'ghost' })).toContain('not delivered')
+  })
+
+  it('refuses a bundle symlink that escapes the skill directory', async () => {
+    const { delivery, home, toolsRegister } = await boot('[dsh-writing]')
+    const root = scopedSkillsRoot(home)
+    // Outside the bundle but inside the temp home: a symlink to it must not resolve.
+    await writeFile(join(home, 'outside-secret.txt'), 'top secret')
+    await symlink(join(home, 'outside-secret.txt'), join(root, 'md-to-wechat', 'leak.md'))
+    await delivery.reconcile()
+    const reader = toolsRegister.mock.calls
+      .map(call => call[0])
+      .find((def: { name?: string }) => def?.name === 'read_skill_file') as
+      { execute: (args: { name: string; path?: string }) => Promise<string> } | undefined
+    expect(await reader!.execute({ name: 'md-to-wechat', path: 'leak.md' })).toContain('no such bundle file')
   })
 
   it('delivers without the tools service, dropping only the reader', async () => {

@@ -26,9 +26,9 @@
 
 import { existsSync } from 'node:fs'
 import { watch, type FSWatcher } from 'node:fs'
-import { mkdir, readFile, readdir, realpath, stat } from 'node:fs/promises'
+import { mkdir, readFile, readdir, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { join, sep } from 'node:path'
+import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { createScope, type ScopeKey } from '@deepseek-ai/dsh-scope'
 import { defineTool } from '@deepseek-ai/dsh-tools'
@@ -41,7 +41,7 @@ import type { SkillCandidate, SkillDefinition, SkillProvider, SkillProviderContr
 // event declaration (the roster itself is a real dependency).
 import type {} from '@deepseek-ai/dsh-agent-preset-registry'
 import { acquireStandingScope, type PresetRosterSlice } from './preset-scope.ts'
-import { collectSkillFiles, sanitizeBundlePath } from './skills.ts'
+import { collectSkillFiles, resolveBundleTarget, sanitizeBundlePath } from './skills.ts'
 import { setToolOrigin } from './tool-origin.ts'
 
 let presetRegistryProbe: Promise<unknown> | undefined
@@ -821,11 +821,8 @@ export class ScopedSkillDelivery {
     const safe = sanitizeBundlePath(filePath)
     if (safe === undefined) return `refused: "${filePath}" is not a bundle-relative path`
     // Containment including symlinks — the bundle directory is user content.
-    const base = await realpath(skill.dir).catch(() => skill.dir)
-    const target = await realpath(join(skill.dir, safe)).catch(() => undefined)
-    if (target === undefined || (target !== base && !target.startsWith(base + sep))) {
-      return `no such bundle file: ${safe}`
-    }
+    const target = await resolveBundleTarget(skill.dir, safe)
+    if (target === undefined) return `no such bundle file: ${safe}`
     let content: string
     try {
       content = await readFile(target, 'utf8')
