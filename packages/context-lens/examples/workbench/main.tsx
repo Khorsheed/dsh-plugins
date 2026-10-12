@@ -4,6 +4,7 @@ import { useState } from 'react'
 import type { AgentScopeOverview, CapturedRequest, TurnListItem, TurnOverview, TurnTiming } from '../../src/types.ts'
 import type { InspectorTabProps } from '../../src/client/contract.ts'
 import { InspectorPanel } from '../../src/client/InspectorPanel.tsx'
+import { prefixTextChange } from '../../src/prefix-diff.ts'
 import { zh } from '../../src/client/locales.ts'
 import './preview.css'
 const t = ((key: keyof typeof zh, params?: Record<string, string>) => zh[key].replace(/\{(\w+)\}/g, (match, name: string) => params?.[name] ?? match)) as InspectorTabProps['t']
@@ -26,7 +27,7 @@ const REQ101: CapturedRequest = {
   sessionId: 's1',
   startedAt: 3_100,
   status: 'ok',
-  config: { provider: 'deepseek', model: 'deepseek-chat', maxTokens: 131_072 },
+  config: { provider: 'deepseek', model: 'deepseek-chat', reasoningEffort: 'high', maxTokens: 131_072, temperature: 0.6 },
   usage: { inputTokens: 2_000, outputTokens: 100, cacheReadTokens: 8_000 },
   timing: { waitMs: 400, reasoningMs: 1_000, textMs: 800, totalMs: 4_200 },
   responseSummary: { kind: 'tool', name: 'read', hint: 'a.ts' },
@@ -60,6 +61,7 @@ const REQ101: CapturedRequest = {
 const REQ102: CapturedRequest = {
   ...REQ101,
   seq: 102,
+  config: { provider: 'example', model: 'second-model', reasoningEffort: 'low', maxTokens: 16_384 },
   startedAt: 8_000,
   usage: { inputTokens: 500, outputTokens: 200, cacheReadTokens: 9_500 },
   timing: { waitMs: 300, textMs: 1_500, totalMs: 2_000 },
@@ -71,7 +73,7 @@ const REQ201: CapturedRequest = {
   ...REQ101,
   seq: 201,
   scopeId: 'child-1',
-  config: {},
+  config: { provider: 'example', model: 'child-model', reasoningEffort: 'medium', maxTokens: 8_192 },
   startedAt: 5_000,
   usage: { inputTokens: 100, outputTokens: 20 },
   timing: { waitMs: 100, textMs: 200, totalMs: 400 },
@@ -84,7 +86,7 @@ const scope = (over: Partial<AgentScopeOverview>): AgentScopeOverview => ({
   scopeSeq: 1,
   kind: 'main',
   status: 'ok',
-  config: { provider: 'deepseek', model: 'deepseek-chat', maxTokens: 131_072 },
+  config: { provider: 'deepseek', model: 'deepseek-chat', reasoningEffort: 'high', maxTokens: 131_072, temperature: 0.6 },
   startedAt: 3_000,
   endedAt: 9_000,
   requests: [],
@@ -152,7 +154,12 @@ REQ101.response = {
   text: '这段内容可以更直接一些。我会保留叙事顺序，调整其中的描述。',
   toolCalls: [{ name: 'edit', arguments: JSON.stringify({ file_path: '/home/user/project/chapter.md', new_string: '调整后的内容，使用直接的表达。'.repeat(20), old_string: '原来的内容。'.repeat(30) }) }],
 }
-REQ101.prefix = { previousSeq: 11, gapMs: 0, toolsChanged: false }
+const priorSystem = 'You are an AI agent powered by DeepSeek Harness. You are a coding agent powered by the current model.'
+const currentSystem = 'You are an AI agent powered by DeepSeek Harness.'
+REQ101.segments.system = [{ index: 0, category: 'system', source: 'identity', preview: currentSystem, full: currentSystem, chars: currentSystem.length, freshness: 'history' }]
+REQ101.prefix = { previousSeq: 11, gapMs: 0, toolsChanged: false, changed: { index: 0, before: priorSystem, after: currentSystem, beforeCategory: 'system', afterCategory: 'system', text: prefixTextChange(priorSystem, currentSystem) } }
+for (const s of OVERVIEW2.scopes) for (const r of s.requests) r.config = r.seq === 101 ? REQ101.config : r.seq === 102 ? REQ102.config : REQ201.config
+
 const previousAssistant = { text: '前一段已改完。下一步检查第二章里表达含混的句子，保留人物当时能够观察到的事实。', calls: [] }
 REQ101.segments.added = [
   { index: 25, category: 'assistant', source: 'model', full: JSON.stringify(previousAssistant), preview: previousAssistant.text, chars: JSON.stringify(previousAssistant).length, freshness: 'new' },
@@ -166,7 +173,7 @@ const props = {
   useTabInfo: () => ({ sidebar: { expanded: true, fullscreen: false }, panel: { id: 'demo' }, tab: { navigation: { address: 'dsh-page://context-lens', revision: 0 }, signal } }),
   listTurns: () => success({ turns: TURNS, backfill: { state: 'partial' } }),
   getTurn: (_: string, turn: number) => success(turn === 2 ? OVERVIEW2 : OVERVIEW1),
-  getRequest: (_: string, seq: number) => success(seq === 101 ? REQ101 : seq === 102 ? REQ102 : seq === 201 ? REQ201 : { ...REQ101, seq: 11 }),
+  getRequest: (_: string, seq: number) => success(seq === 101 ? REQ101 : seq === 102 ? REQ102 : seq === 201 ? REQ201 : { ...REQ101, seq: 11, prefix: undefined }),
   getTurnTiming: () => success(TIMING2),
   getSessionTrend: () => success({ turns: TURNS, backfill: { state: 'complete' }, requests: [...OVERVIEW1.scopes.flatMap(s => s.requests.map(r => ({ ...r, turnSeq: 1 }))), ...OVERVIEW2.scopes.flatMap(s => s.requests.map(r => ({ ...r, turnSeq: 2 })))] }),
 } as unknown as InspectorTabProps

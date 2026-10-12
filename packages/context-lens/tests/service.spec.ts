@@ -51,6 +51,8 @@ function frozenOptions(session: Session, systemText: string): GenerateOptions {
     provider: 'deepseek',
     model: 'deepseek-chat',
     maxTokens: 4096,
+    reasoningEffort: 'high',
+    temperature: 0,
     messages: [
       createSystemMessage(systemText),
       createUserMessage({ content: [{ type: 'text', text: '把第一章跑完' }], source: { kind: 'user' } }),
@@ -104,6 +106,8 @@ describe('llm/stream lane', () => {
     expect(row).toMatchObject({ status: 'ok', responseSummary: { kind: 'text' } })
 
     const detail = await service.getRequest(String(session.id), row?.seq ?? -1)
+    expect(detail?.config).toMatchObject({ maxTokens: 4096, reasoningEffort: 'high', temperature: 0 })
+    expect(row?.config).toEqual(detail?.config)
     expect(detail?.segments.system[0]?.full).toBe('你是助手')
     expect(detail?.segments.added.map(item => item.category)).toEqual(['user'])
     expect(detail?.timing.waitMs).toBeTypeOf('number')

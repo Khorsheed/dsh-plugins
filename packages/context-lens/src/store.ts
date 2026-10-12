@@ -47,6 +47,7 @@ import type {
 import { splitRequest, type CapturedToolSchema, type ScopeFingerprint, type AssemblyRecord } from './segmenter.ts'
 import type { CapturedMessage } from './messages.ts'
 import type { LogTurn } from './log-lane.ts'
+import { prefixTextChange } from './prefix-diff.ts'
 
 /** Retention knobs (InspectorConfig in the service mirrors these). */
 export interface StoreConfig {
@@ -1039,6 +1040,7 @@ export class InspectorStore {
             seq: request.seq,
             scopeId: request.scopeId,
             status: request.status,
+            config: request.config,
             responseSummary: request.responseSummary,
             startedAt: request.startedAt,
             ...request.usage === undefined ? {} : { usage: request.usage },
@@ -1429,7 +1431,15 @@ function comparePrefix(previous: StoredRequest, current: StoredRequest): NonNull
   let i = 0
   while (i < a.length && i < b.length && a[i]?.full === b[i]?.full && a[i]?.category === b[i]?.category) i++
   // Appending new messages preserves the old prefix; deletion or replacement breaks it.
-  const changed = i < a.length ? { index: b[i]?.index ?? a[i]?.index ?? 0, before: a[i]?.preview ?? '', after: b[i]?.preview ?? '' } : undefined
+  const text = i < a.length ? prefixTextChange(a[i]?.full ?? '', b[i]?.full ?? '') : undefined
+  const changed = text === undefined ? undefined : {
+    index: b[i]?.index ?? a[i]?.index ?? 0,
+    before: `${text.leadingOmitted ? '…' : ''}${text.leading}${text.removed}${text.removedChars > 160 ? '…' : ''}${text.trailing}${text.trailingOmitted ? '…' : ''}`,
+    after: `${text.leadingOmitted ? '…' : ''}${text.leading}${text.added}${text.addedChars > 160 ? '…' : ''}${text.trailing}${text.trailingOmitted ? '…' : ''}`,
+    ...a[i] === undefined ? {} : { beforeCategory: a[i]!.category },
+    ...b[i] === undefined ? {} : { afterCategory: b[i]!.category },
+    text,
+  }
   return { previousSeq: previous.seq, gapMs: Math.max(0, current.startedAt - (previous.settledAt ?? previous.startedAt)),
     toolsChanged: JSON.stringify(previous.segments.tools.map(({ added, ...tool }) => tool)) !== JSON.stringify(current.segments.tools.map(({ added, ...tool }) => tool)),
     ...changed === undefined ? {} : { changed } }

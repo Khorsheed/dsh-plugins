@@ -114,6 +114,8 @@ export interface RequestConfig {
   provider?: string
   model?: string
   maxTokens?: number
+  reasoningEffort?: string
+  temperature?: number
 }
 
 /**
@@ -139,6 +141,20 @@ export interface CapturedResponse {
   text?: string
   /** Tool calls issued: name + raw arguments string. */
   toolCalls: { name: string; arguments: string }[]
+}
+
+/** Bounded view of the smallest replacement span, with unchanged context on either side. */
+export interface PrefixTextChange {
+  /** Unicode character offset, zero based. */
+  offset: number
+  leading: string
+  trailing: string
+  leadingOmitted: boolean
+  trailingOmitted: boolean
+  removed: string
+  added: string
+  removedChars: number
+  addedChars: number
 }
 
 /** One model call, fully captured. */
@@ -172,7 +188,7 @@ export interface CapturedRequest {
    */
   response?: CapturedResponse
   /** Exact comparison with the preceding retained request in this scope. */
-  prefix?: { previousSeq: number; gapMs: number; changed?: { index: number; before: string; after: string }; toolsChanged: boolean }
+  prefix?: { previousSeq: number; gapMs: number; changed?: { index: number; before: string; after: string; beforeCategory?: SegmentCategory; afterCategory?: SegmentCategory; text?: PrefixTextChange }; toolsChanged: boolean }
   segments: {
     /** systemPrompt 组装原文；source 为 assemble section 名。 */
     system: SegmentItem[]
@@ -364,6 +380,8 @@ export interface AgentScopeOverview {
 
 /** `getTurn` request row — everything the left list card shows. */
 export interface RequestListItem {
+  /** Per-request snapshot; never substitute the scope’s latest config. */
+  config?: RequestConfig
   seq: number
   scopeId: string
   status: 'streaming' | 'ok' | 'failed'

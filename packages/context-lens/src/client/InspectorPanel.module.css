@@ -221,7 +221,7 @@
   }
 
 }
-.trendLabel { font-size: var(--dsh-panel-text-meta, 11px); color: var(--dsw-alias-label-tertiary); }
+.trendLabel { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: var(--dsh-panel-text-meta, 11px); color: var(--dsw-alias-label-tertiary); }
 .trend { position: relative; display: flex; gap: 4px; overflow-x: auto; user-select: none; touch-action: pan-x; cursor: grab; padding: 3px 0; scrollbar-width: thin; }
 .trendGroup { flex: none; padding: 2px 3px; border-radius: 5px; text-align: center; font-family: var(--dsw-font-family-mono, ui-monospace, monospace); font-size: var(--dsh-panel-text-meta, 10px); color: var(--dsw-alias-label-tertiary); }
 .trendGroup[data-current="true"] { background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 10%, transparent); }
@@ -230,7 +230,7 @@
 .trendBar i { width: 100%; background: var(--dsw-alias-state-success-primary); }
 .trendGroup[data-current="true"] .trendBar { opacity: 1; }
 .trendBar[data-selected="true"] { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 1px; }
-.trendBar[data-sub="true"] i { opacity: .65; }
+.trendLabel > span { font-size: var(--dsh-panel-text-meta, 11px); }
 .stepper { display: flex; align-items: center; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; overflow: hidden; }
 .stepper > button { border: 0; background: transparent; color: inherit; padding: 3px 7px; cursor: pointer; }
 .stepper > button:disabled { opacity: .3; }

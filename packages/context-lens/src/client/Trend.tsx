@@ -8,12 +8,16 @@ export function Trend({
   data,
   turnSeq,
   selectedSeq,
+  scopeId,
+  scopeLabel,
   onSelect,
   t,
 }: {
   readonly data: SessionTrend
   readonly turnSeq: number | null
   readonly selectedSeq: number | null
+  readonly scopeId: string
+  readonly scopeLabel: string
   readonly onSelect: (turnSeq: number, seq: number, scopeId: string) => void
   readonly t: InspectorTabProps['t']
 }) {
@@ -27,15 +31,18 @@ export function Trend({
     if (el && current)
       el.scrollLeft =
         current.offsetLeft - el.clientWidth / 2 + current.offsetWidth / 2
-  }, [turnSeq, data])
+  }, [turnSeq, scopeId, data])
+  const requests = data.requests.filter(r => r.scopeId === scopeId)
+  const turns = data.turns.filter(turn => requests.some(r => r.turnSeq === turn.turnSeq))
   const max = Math.max(
     1,
-    ...data.requests.map((r) => (r.usage ? inputTotal(r.usage) : 0)),
+    ...requests.map((r) => (r.usage ? inputTotal(r.usage) : 0)),
   )
   return (
-    <div>
+    <section aria-label={t('lens.trendScope', { scope: scopeLabel })}>
       <div className={css.trendLabel}>
-        {t('lens.trend')} · {data.turns.length}
+        {t('lens.trendScope', { scope: scopeLabel })} · {t('lens.trendCount', { count: String(requests.length) })}
+        <span>{t('lens.trendLegend')}</span>
       </div>
       <div
         ref={ref}
@@ -70,14 +77,14 @@ export function Trend({
             e.currentTarget.scrollLeft += e.deltaY
         }}
       >
-        {data.turns.map((turn) => (
+        {turns.map((turn) => (
           <div
             key={turn.turnSeq}
             className={css.trendGroup}
             data-current={turnSeq === turn.turnSeq}
           >
             <div className={css.trendBars}>
-              {data.requests
+              {requests
                 .filter((r) => r.turnSeq === turn.turnSeq)
                 .map((r) => {
                   const total = r.usage ? inputTotal(r.usage) : 0,
@@ -88,7 +95,6 @@ export function Trend({
                       type="button"
                       className={css.trendBar}
                       data-selected={r.seq === selectedSeq}
-                      data-sub={r.scopeId !== 'main'}
                       aria-label={`${t('turn.label', { seq: String(turn.hostTurn ?? turn.turnSeq) })} #${r.seq} · ${hit ?? '—'}%`}
                       title={`#${r.seq} · ${total} tok · ${hit ?? '—'}%`}
                       style={{ height: `${Math.max(3, (total / max) * 40)}px` }}
@@ -106,6 +112,7 @@ export function Trend({
           </div>
         ))}
       </div>
-    </div>
+      {requests.length === 0 && <span className={css.trendLabel}>{t('lens.trendEmpty')}</span>}
+    </section>
   )
 }

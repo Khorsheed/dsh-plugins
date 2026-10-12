@@ -12,6 +12,9 @@ Both land on the same right-sidebar tab (`context-lens`); the panel's turn switc
 ## The two views
 
 - **Requests**: the turn stepper and draggable session trend select a request. Detail shows measured cache hits/misses and exact prefix differences, new input beside captured output, then system/tools/history/added composition. Expand verbatim text or filter exact duplicates of at least 40 characters. Duplicate character totals count excess copies only; category/duplicate filtering preserves group totals and the exchange. Input previews, reasoning and tool arguments are visible immediately, with bounded expansion. The top-right `{ }` button replaces the detail with JSON while keeping the request list and metrics; there is no footer toolbar.
+
+The trend follows the selected agent instead of mixing main and child requests. Prefix changes highlight the replacement span at its character offset; the first retained request is a comparison baseline. A configuration strip shows model, reasoning effort, output limit and recorded temperature. Timing groups consecutive configurations within the selected turn, with links back to requests. Missing values are not recorded, never inferred defaults.
+
 - **Timing**: four cards show total, model, tool execution and gaps for the selected agent. Separate agent lanes link to requests. The sortable tool table covers calls/errors/reasoning/arguments/execution; the non-tool table expands to individual requests and cache rates. Both tables sum to elapsed time; concurrent intervals share their overlap and are labeled. Internal slack and inter-request gaps remain separate.
 
 Each delegation has its own chip. Parent totals exclude child model spans already included in delegation execution; a failed run without requests remains visible.
