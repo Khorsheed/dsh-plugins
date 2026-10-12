@@ -42,12 +42,15 @@ describe('cordis.patch.yml', () => {
     expect(patch).toContain('waiting for library')
   })
 
-  it('keeps the learning tool list strict: persona, ask-user, web, compaction — no fs, skills, todo or shell', () => {
-    for (const kept of ['persona', 'tool-ask-user', 'tool-web', 'compaction-basic', 'library-tool']) {
+  it('keeps the learning tool list strict: persona, ask-user, web, whitelisted skills, compaction — no fs, todo or shell', () => {
+    for (const kept of ['persona', 'tool-ask-user', 'tool-web', 'tool-skill', 'compaction-basic', 'library-tool']) {
       expect(patch).toContain(`- id: ${kept}\n`)
     }
+    // skill-filesystem stays out on purpose: with no default-root provider the
+    // registry holds only skills explicitly scoped to this preset (managed
+    // delivery), so the skill face is a whitelist rather than every local skill.
     for (const gone of [
-      'tool-fs', 'skill-filesystem', 'tool-skill', 'tool-todo',
+      'tool-fs', 'skill-filesystem', 'tool-todo',
       'tool-bash', 'tool-pwsh', 'tool-fs-search', 'tool-jobs', 'plan-mode', 'tool-subagent',
       'tool-workflow', 'tool-goal', 'command-goal', 'tool-present', 'agent-instructions',
     ]) {

@@ -10,7 +10,7 @@
 
 - **persona**：精读教练——陪读而非代读（随讲随问、苏格拉底式追问）；用学习者的语言；图书馆工具即记忆；不编造书的内容，书与照片优先于记忆；学习者的薄弱点优先；判题两步走（会话里判、`library_assess` 落账）。
 - **library 的 agent 面**：在作用域内挂载 `@khorsheed/dsh-library/tool`（config `tools: all`），并在本 scope 里静音根上与学习无关的提示段（宿主源码路径、Web GUI 地址、交付物链接写法）与 `list_capabilities` 工具。
-- **学习场景工具单**（官方 standard 的严格节食版）：tool-ask-user（选项目、选书、选版本）、tool-web（核对版本与目录、引用网上原文）、compaction 组（长会话折叠）。不带 fs（书不上传，没有书籍文件）、skill（用法写在工具描述里）、todo（路线图就是学习计划），也没有 shell / goal / plan-mode / 委派。
+- **学习场景工具单**（官方 standard 的严格节食版）：tool-ask-user（选项目、选书、选版本）、tool-web（核对版本与目录、引用网上原文）、compaction 组（长会话折叠）、tool-skill（白名单化的 skill 面——不带 skill-filesystem，本地 skill 不会涌入，只有在「工具与技能」里显式限定到本模式的 skill 才可见）。不带 fs（书不上传，没有书籍文件；skill 的分册文件也因此读不到，只有 SKILL.md 到达模型）、todo（路线图就是学习计划），也没有 shell / goal / plan-mode / 委派。
 
 ## 安装与启用
 

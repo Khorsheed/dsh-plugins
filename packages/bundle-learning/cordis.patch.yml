@@ -14,16 +14,15 @@
 # The official base is a STRICT diet of the host's standard.patch.yml: a
 # learning session keeps only what its loop needs — the library tools, web
 # search/fetch (verifying a book's edition and contents, quoting the web), the
-# ask-user card (which book, which edition) and compaction (long sessions).
-# Dropped on purpose: fs (no book files exist — books are registered, not
-# uploaded — and fs tools invite the model to read the workspace or the
-# library's own state), skills (the library's usage lives in its tool
-# descriptions; the skill registry would surface unrelated local skills),
-# todo (the roadmap IS the study plan), and everything shell-, plan- or
-# delegation-shaped. The library-tool row additionally quiets the scope:
-# root prompt sections about the host's source tree, the web surface and
-# deliverable links are blanked, and the root `list_capabilities` tool is
-# masked — none of them applies to a learning session.
+# ask-user card (which book, which edition), compaction (long sessions), and a
+# WHITELISTED skill face (below). Dropped on purpose: fs (no book files exist —
+# books are registered, not uploaded — and fs tools invite the model to read the
+# workspace or the library's own state), todo (the roadmap IS the study plan),
+# and everything shell-, plan- or delegation-shaped. The library-tool row
+# additionally quiets the scope: root prompt sections about the host's source
+# tree, the web surface and deliverable links are blanked, and the root
+# `list_capabilities` tool is masked — none of them applies to a learning
+# session.
 #
 # The display fields (name/description) are this bundle's own. `name:` values
 # are quoted (@ is YAML-reserved). The persona follows the community preset
@@ -81,6 +80,21 @@
             config:
               fetch: true
               searchTimeoutMs: 60000
+
+          # ── skills (a whitelist, not the floodgate) ──────────────────────────
+
+          # The skill tool + per-step catalog, WITHOUT skill-filesystem: no
+          # default-root provider runs in this composition, so no local skill
+          # enters the registry from here. The only skills a learning session
+          # sees are the ones explicitly scoped to it through the capability
+          # catalog's managed delivery — scoped delivery turns the old
+          # all-or-nothing choice (the registry would surface unrelated local
+          # skills) into a whitelist. tool-skill injects agents/tools/skills,
+          # all resolvable up the scope chain; the skill registry itself is
+          # root-mounted. Note the bundle half of a scoped skill stays
+          # unreadable here: with fs dropped, only SKILL.md reaches the model.
+          - id: tool-skill
+            name: '@deepseek-ai/dsh-tool-skill'
 
           # ── compaction (the standard preset's proven shape) ─────────────────
 
