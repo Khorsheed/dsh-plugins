@@ -43,6 +43,9 @@ export function CapabilityCatalogCard({
   const [kind, setKind] = useState<Kind>('skills')
   const [selectedName, setSelectedName] = useState<string | null>(null)
   const [claim, setClaim] = useState<DetailClaim>({ status: 'idle', data: undefined })
+  /** The mode the open detail was read at (see openDetail); the modal's bundle
+   * file reads must resolve at the same scope. */
+  const [detailMode, setDetailMode] = useState<string | undefined>(undefined)
   const [showAdd, setShowAdd] = useState(false)
   const [showAddMcp, setShowAddMcp] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
@@ -354,14 +357,20 @@ export function CapabilityCatalogCard({
   }
 
   const openDetail = async (name: string): Promise<void> => {
+    // The mode this detail is read at: the body AND any bundle file it points
+    // at resolve at the same scope, or a file that exists only in this mode
+    // reads as missing.
+    const readMode = readModeFor(name)
     setSelectedName(name)
+    setDetailMode(readMode)
     setClaim({ status: 'loading', data: undefined })
     void loadDetailModes(name)
-    const data = await detail(name, readModeFor(name))
+    const data = await detail(name, readMode)
     setClaim({ status: 'done', data })
   }
   const closeDetail = (): void => {
     setSelectedName(null)
+    setDetailMode(undefined)
     setClaim({ status: 'idle', data: undefined })
     setDetailModes(null)
   }
@@ -578,6 +587,7 @@ export function CapabilityCatalogCard({
           onClose={closeDetail}
           setCredential={setCredential}
           readSkillFile={readSkillFile}
+          presetId={detailMode}
           t={t}
           scope={scopeEditorFor(selectedName, skills, scopeStatus, localizedOptions, {
             save: async (presets) => {

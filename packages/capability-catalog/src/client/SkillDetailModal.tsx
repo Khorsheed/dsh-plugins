@@ -50,12 +50,14 @@ function providedScopeNote(t: (key: CapabilityCatalogKey) => string, provider: s
 }
 
 /** Centered modal with a skill's full detail, source browser, metadata and credential config. */
-export function SkillDetailModal({ name, claim, onClose, setCredential, readSkillFile, t, scope, modeChips, modesLoading, onModeSelect }: {
+export function SkillDetailModal({ name, claim, onClose, setCredential, readSkillFile, presetId, t, scope, modeChips, modesLoading, onModeSelect }: {
   name: string
   claim: DetailClaim
   onClose: () => void
   setCredential: (key: string, value: string) => Promise<boolean>
-  readSkillFile: (name: string, path: string) => Promise<CatalogSkillFileRead | undefined>
+  readSkillFile: (name: string, path: string, presetId?: string) => Promise<CatalogSkillFileRead | undefined>
+  /** The mode this detail was read at; bundle files resolve at the same scope. */
+  presetId?: string | undefined
   t: (key: CapabilityCatalogKey) => string
   scope?: ScopeEditor | undefined
   /** The modes that load this skill, when its scope section cannot say (a
@@ -131,7 +133,7 @@ export function SkillDetailModal({ name, claim, onClose, setCredential, readSkil
     }
     setSrcLoading(true)
     setSrcContent(undefined)
-    void readSkillFile(name, path).then(res => {
+    void readSkillFile(name, path, presetId).then(res => {
       setSrcContent(res?.content)
       setSrcLoading(false)
     })

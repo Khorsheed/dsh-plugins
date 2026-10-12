@@ -67,6 +67,8 @@ function renderCard(options: {
   readonly faces?: readonly CatalogModeFace[]
   readonly roster?: readonly CatalogPresetOption[]
   readonly status?: CatalogPresetScopeStatus
+  readonly detail?: CapabilityCatalogCardProps['detail']
+  readonly readSkillFile?: CapabilityCatalogCardProps['readSkillFile']
 } = {}) {
   const snapshot: CapabilityCatalogSnapshot = {
     skills: options.skills ?? [skillRow('3d-artifact')],
@@ -81,11 +83,11 @@ function renderCard(options: {
     useCatalog: (selector: (value: CapabilityCatalogSnapshot | undefined) => unknown) => selector(snapshot),
     refresh,
     refreshSettled: vi.fn(async () => true),
-    detail: vi.fn(async (name: string) => ({
+    detail: options.detail ?? vi.fn(async (name: string) => ({
       name, description: 'detail description', source: 'runtime', provider: 'inline-html-render',
       modelInvocable: true, userInvocable: true, content: '# skill',
     })),
-    readSkillFile: vi.fn(async () => undefined),
+    readSkillFile: options.readSkillFile ?? vi.fn(async () => undefined),
     listDirSkills: vi.fn(async () => []),
     setCredential: vi.fn(async () => true),
     addSkill: vi.fn(async () => ({ ok: true })),
@@ -294,6 +296,48 @@ describe('the mode grid', () => {
     })
     expect(await screen.findByText(en.sourceUser)).toBeTruthy()
     expect(screen.queryByText(/^preset · /)).toBeNull()
+  })
+})
+
+describe('the source browser', () => {
+  /** A detail read whose skill carries one bundle file beside SKILL.md. */
+  const detailWithFiles = () => vi.fn(async (name: string) => ({
+    name, description: 'd', source: 'runtime', provider: 'inline-html-render',
+    modelInvocable: true, userInvocable: true, content: '# skill',
+    files: ['SKILL.md', 'notes.md'],
+  }))
+
+  it('reads a bundle file at the preset the detail was opened from', async () => {
+    const detail = detailWithFiles()
+    const readSkillFile = vi.fn(async () => ({ content: 'file body' }))
+    renderCard({ detail, readSkillFile })
+    fireEvent.change(await modeSelect(), { target: { value: 'minimal' } })
+    fireEvent.click(await screen.findByRole('button', { name: /3d-artifact/ }))
+    await waitFor(() => expect(detail).toHaveBeenCalledWith('3d-artifact', 'minimal'))
+    fireEvent.click(await screen.findByText(en.viewSource))
+    fireEvent.click(await screen.findByRole('button', { name: 'notes.md' }))
+    await waitFor(() => expect(readSkillFile).toHaveBeenCalledWith('3d-artifact', 'notes.md', 'minimal'))
+  })
+
+  it('reads a bundle file at the mode that actually loads the skill in the compare view', async () => {
+    const detail = detailWithFiles()
+    const readSkillFile = vi.fn(async () => ({ content: 'file body' }))
+    renderCard({
+      detail,
+      readSkillFile,
+      faces: [
+        { preset: 'standard', name: '标准模式', isDefault: true, skills: [], tools: [] },
+        { preset: 'minimal', name: '极简模式', isDefault: false, skills: [skillRow('3d-artifact')], tools: [] },
+      ],
+    })
+    fireEvent.change(await modeSelect(), { target: { value: ' compare' } })
+    await screen.findByText(/Compared 2 modes/)
+    fireEvent.click(await screen.findByRole('button', { name: /3d-artifact/ }))
+    // The comparison reads where the capability lives: only 极简模式 has it.
+    await waitFor(() => expect(detail).toHaveBeenCalledWith('3d-artifact', 'minimal'))
+    fireEvent.click(await screen.findByText(en.viewSource))
+    fireEvent.click(await screen.findByRole('button', { name: 'notes.md' }))
+    await waitFor(() => expect(readSkillFile).toHaveBeenCalledWith('3d-artifact', 'notes.md', 'minimal'))
   })
 })
 
