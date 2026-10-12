@@ -161,18 +161,7 @@ export class McpStore {
       const { connectMcpServer } = await import('./mcpConnector.ts')
       // Resolve secretRef markers to the stored credential values before connecting,
       // so a configured API key is sent as its real value (never the secretRef).
-      const resolved = await resolveConfigSecrets(s.config, async (ref) => {
-        const candidates = [
-          `mcp.${serverName}.env.${ref}`,
-          `mcp.${serverName}.header.${ref}`,
-          `mcp.${serverName}.query.${ref}`,
-        ]
-        for (const candidate of candidates) {
-          const value = s.credentials.get(candidate)
-          if (value !== undefined) return value
-        }
-        return undefined
-      })
+      const resolved = await resolveConfigSecrets(s.config, this.secretResolver(serverName, s))
       const connection = await connectMcpServer(resolved)
       // Preserve the user's per-tool enable flags — re-discovering refreshes
       // descriptions/parameters without resetting toggles (new tools default on).
@@ -191,7 +180,21 @@ export class McpStore {
   async callTool(serverName: string, rawName: string, args: Record<string, unknown>): Promise<unknown> {
     const s = this.servers.get(serverName)
     if (s === undefined) throw new Error(`unknown MCP server: ${serverName}`)
-    const resolved = await resolveConfigSecrets(s.config, async (ref) => {
+    const resolved = await resolveConfigSecrets(s.config, this.secretResolver(serverName, s))
+    const { connectMcpServer } = await import('./mcpConnector.ts')
+    const connection = await connectMcpServer(resolved)
+    try {
+      return await connection.call(rawName, args)
+    } finally {
+      await connection.close()
+    }
+  }
+
+  /** The `resolveConfigSecrets` callback for one server: a bare secret ref
+   * resolves to the stored credential under the server's env/header/query
+   * namespace (the same namespaces {@link credentialRefsOf} writes). */
+  private secretResolver(serverName: string, s: StoredServer): (ref: string) => Promise<string | undefined> {
+    return async (ref) => {
       const candidates = [
         `mcp.${serverName}.env.${ref}`,
         `mcp.${serverName}.header.${ref}`,
@@ -202,13 +205,6 @@ export class McpStore {
         if (value !== undefined) return value
       }
       return undefined
-    })
-    const { connectMcpServer } = await import('./mcpConnector.ts')
-    const connection = await connectMcpServer(resolved)
-    try {
-      return await connection.call(rawName, args)
-    } finally {
-      await connection.close()
     }
   }
 
