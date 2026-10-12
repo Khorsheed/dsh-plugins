@@ -15,6 +15,8 @@ Both land on the same right-sidebar tab (`context-lens`); the panel's turn switc
 
 The trend follows the selected agent instead of mixing main and child requests. Prefix changes highlight the replacement span at its character offset; the first retained request is a comparison baseline. A configuration strip shows model, reasoning effort, output limit and recorded temperature. Timing groups consecutive configurations within the selected turn, with links back to requests. Missing values are not recorded, never inferred defaults.
 
+Request labels count cumulatively within each agent, starting at 1 when the beginning is known and continuing across turns. Eviction does not rebase them; incomplete history shows an unknown number. Internal `seq` remains the query ID and is preserved in JSON. The redundant prose above the trend is removed.
+
 - **Timing**: four cards show total, model, tool execution and gaps for the selected agent. Separate agent lanes link to requests. The sortable tool table covers calls/errors/reasoning/arguments/execution; the non-tool table expands to individual requests and cache rates. Both tables sum to elapsed time; concurrent intervals share their overlap and are labeled. Internal slack and inter-request gaps remain separate.
 
 Each delegation has its own chip. Parent totals exclude child model spans already included in delegation execution; a failed run without requests remains visible.

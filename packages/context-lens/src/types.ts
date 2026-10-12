@@ -159,8 +159,10 @@ export interface PrefixTextChange {
 
 /** One model call, fully captured. */
 export interface CapturedRequest {
+  /** Stable 1-based request ordinal within this agent’s history; absent when the beginning is unknown. */
+  requestNumber?: number
   /**
-   * Collector-assigned process-wide monotonic sequence (the panel's `#784`).
+   * Collector-assigned process-wide query ID, separate from the displayed request number.
    * Process-local and ephemeral — the counter resets on restart, so a seq
    * only selects within the answering instance's `generation`.
    */
@@ -188,7 +190,7 @@ export interface CapturedRequest {
    */
   response?: CapturedResponse
   /** Exact comparison with the preceding retained request in this scope. */
-  prefix?: { previousSeq: number; gapMs: number; changed?: { index: number; before: string; after: string; beforeCategory?: SegmentCategory; afterCategory?: SegmentCategory; text?: PrefixTextChange }; toolsChanged: boolean }
+  prefix?: { previousSeq: number; previousRequestNumber?: number; gapMs: number; changed?: { index: number; before: string; after: string; beforeCategory?: SegmentCategory; afterCategory?: SegmentCategory; text?: PrefixTextChange }; toolsChanged: boolean }
   segments: {
     /** systemPrompt 组装原文；source 为 assemble section 名。 */
     system: SegmentItem[]
@@ -380,6 +382,7 @@ export interface AgentScopeOverview {
 
 /** `getTurn` request row — everything the left list card shows. */
 export interface RequestListItem {
+  requestNumber?: number
   /** Per-request snapshot; never substitute the scope’s latest config. */
   config?: RequestConfig
   seq: number

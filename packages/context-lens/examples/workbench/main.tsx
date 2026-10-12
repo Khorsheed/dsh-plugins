@@ -22,7 +22,7 @@ const TURNS: TurnListItem[] = [
 ]
 
 const REQ101: CapturedRequest = {
-  seq: 101,
+  seq: 101, requestNumber: 2,
   scopeId: 'main',
   sessionId: 's1',
   startedAt: 3_100,
@@ -60,7 +60,7 @@ const REQ101: CapturedRequest = {
 
 const REQ102: CapturedRequest = {
   ...REQ101,
-  seq: 102,
+  seq: 102, requestNumber: 3,
   config: { provider: 'example', model: 'second-model', reasoningEffort: 'low', maxTokens: 16_384 },
   startedAt: 8_000,
   usage: { inputTokens: 500, outputTokens: 200, cacheReadTokens: 9_500 },
@@ -71,7 +71,7 @@ const REQ102: CapturedRequest = {
 
 const REQ201: CapturedRequest = {
   ...REQ101,
-  seq: 201,
+  seq: 201, requestNumber: 1,
   scopeId: 'child-1',
   config: { provider: 'example', model: 'child-model', reasoningEffort: 'medium', maxTokens: 8_192 },
   startedAt: 5_000,
@@ -99,14 +99,14 @@ const OVERVIEW2: TurnOverview = {
     scope({
       scopeId: 'main',
       requests: [
-        { seq: 101, scopeId: 'main', status: 'ok', responseSummary: { kind: 'tool', name: 'read', hint: 'a.ts' }, startedAt: 3_100, usage: REQ101.usage, totalMs: 4_200, totalChars: 126 },
-        { seq: 102, scopeId: 'main', status: 'ok', responseSummary: { kind: 'text' }, startedAt: 8_000, usage: REQ102.usage, totalMs: 2_000, totalChars: 130 },
+        { seq: 101, requestNumber: 2, scopeId: 'main', status: 'ok', responseSummary: { kind: 'tool', name: 'read', hint: 'a.ts' }, startedAt: 3_100, usage: REQ101.usage, totalMs: 4_200, totalChars: 126 },
+        { seq: 102, requestNumber: 3, scopeId: 'main', status: 'ok', responseSummary: { kind: 'text' }, startedAt: 8_000, usage: REQ102.usage, totalMs: 2_000, totalChars: 130 },
       ],
     }),
     scope({
       scopeId: 'child-1', scopeSeq: 2, kind: 'subagent', label: '提取 JSON', startedAt: 5_000, endedAt: 5_400,
       requests: [
-        { seq: 201, scopeId: 'child-1', status: 'ok', responseSummary: { kind: 'text' }, startedAt: 5_000, usage: REQ201.usage, totalMs: 400, totalChars: 76 },
+        { seq: 201, requestNumber: 1, scopeId: 'child-1', status: 'ok', responseSummary: { kind: 'text' }, startedAt: 5_000, usage: REQ201.usage, totalMs: 400, totalChars: 76 },
       ],
     }),
     scope({
@@ -120,7 +120,7 @@ const OVERVIEW1: TurnOverview = {
   turn: TURNS[0] as TurnListItem,
   scopes: [scope({
     requests: [
-      { seq: 11, scopeId: 'main', status: 'ok', responseSummary: { kind: 'text' }, startedAt: 1_100, usage: REQ101.usage, totalMs: 900, totalChars: 126 },
+      { seq: 11, requestNumber: 1, scopeId: 'main', status: 'ok', responseSummary: { kind: 'text' }, startedAt: 1_100, usage: REQ101.usage, totalMs: 900, totalChars: 126 },
     ],
   })],
 }
@@ -157,7 +157,7 @@ REQ101.response = {
 const priorSystem = 'You are an AI agent powered by DeepSeek Harness. You are a coding agent powered by the current model.'
 const currentSystem = 'You are an AI agent powered by DeepSeek Harness.'
 REQ101.segments.system = [{ index: 0, category: 'system', source: 'identity', preview: currentSystem, full: currentSystem, chars: currentSystem.length, freshness: 'history' }]
-REQ101.prefix = { previousSeq: 11, gapMs: 0, toolsChanged: false, changed: { index: 0, before: priorSystem, after: currentSystem, beforeCategory: 'system', afterCategory: 'system', text: prefixTextChange(priorSystem, currentSystem) } }
+REQ101.prefix = { previousSeq: 11, previousRequestNumber: 1, gapMs: 0, toolsChanged: false, changed: { index: 0, before: priorSystem, after: currentSystem, beforeCategory: 'system', afterCategory: 'system', text: prefixTextChange(priorSystem, currentSystem) } }
 for (const s of OVERVIEW2.scopes) for (const r of s.requests) r.config = r.seq === 101 ? REQ101.config : r.seq === 102 ? REQ102.config : REQ201.config
 
 const previousAssistant = { text: '前一段已改完。下一步检查第二章里表达含混的句子，保留人物当时能够观察到的事实。', calls: [] }
@@ -173,7 +173,7 @@ const props = {
   useTabInfo: () => ({ sidebar: { expanded: true, fullscreen: false }, panel: { id: 'demo' }, tab: { navigation: { address: 'dsh-page://context-lens', revision: 0 }, signal } }),
   listTurns: () => success({ turns: TURNS, backfill: { state: 'partial' } }),
   getTurn: (_: string, turn: number) => success(turn === 2 ? OVERVIEW2 : OVERVIEW1),
-  getRequest: (_: string, seq: number) => success(seq === 101 ? REQ101 : seq === 102 ? REQ102 : seq === 201 ? REQ201 : { ...REQ101, seq: 11, prefix: undefined }),
+  getRequest: (_: string, seq: number) => success(seq === 101 ? REQ101 : seq === 102 ? REQ102 : seq === 201 ? REQ201 : { ...REQ101, seq: 11, requestNumber: 1, prefix: undefined }),
   getTurnTiming: () => success(TIMING2),
   getSessionTrend: () => success({ turns: TURNS, backfill: { state: 'complete' }, requests: [...OVERVIEW1.scopes.flatMap(s => s.requests.map(r => ({ ...r, turnSeq: 1 }))), ...OVERVIEW2.scopes.flatMap(s => s.requests.map(r => ({ ...r, turnSeq: 2 })))] }),
 } as unknown as InspectorTabProps

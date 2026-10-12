@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import type { SessionTrend } from '../types.ts'
 import type { InspectorTabProps } from './contract.ts'
-import { cachePct, inputTotal } from './aggregate.ts'
+import { requestNumberText, cachePct, inputTotal } from './aggregate.ts'
 import css from './InspectorPanel.module.css'
 /** A body-free map of captured requests; drag, wheel or keyboard to reach older turns. */
 export function Trend({
@@ -40,10 +40,6 @@ export function Trend({
   )
   return (
     <section aria-label={t('lens.trendScope', { scope: scopeLabel })}>
-      <div className={css.trendLabel}>
-        {t('lens.trendScope', { scope: scopeLabel })} · {t('lens.trendCount', { count: String(requests.length) })}
-        <span>{t('lens.trendLegend')}</span>
-      </div>
       <div
         ref={ref}
         className={css.trend}
@@ -95,8 +91,8 @@ export function Trend({
                       type="button"
                       className={css.trendBar}
                       data-selected={r.seq === selectedSeq}
-                      aria-label={`${t('turn.label', { seq: String(turn.hostTurn ?? turn.turnSeq) })} #${r.seq} · ${hit ?? '—'}%`}
-                      title={`#${r.seq} · ${total} tok · ${hit ?? '—'}%`}
+                      aria-label={`${t('turn.label', { seq: String(turn.hostTurn ?? turn.turnSeq) })} #${requestNumberText(r)} · ${hit ?? '—'}%`}
+                      title={`#${requestNumberText(r)} · ${total} tok · ${hit ?? '—'}%`}
                       style={{ height: `${Math.max(3, (total / max) * 40)}px` }}
                       onClick={() => {
                         if (!drag.current?.moved)

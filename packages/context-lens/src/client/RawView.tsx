@@ -6,7 +6,7 @@
  */
 import type { ReactNode } from 'react'
 import type { CapturedRequest } from '../types.ts'
-import { fmt } from './aggregate.ts'
+import { requestNumberText, fmt } from './aggregate.ts'
 import type { InspectorTabProps } from './contract.ts'
 import css from './RawView.module.css'
 
@@ -18,7 +18,7 @@ export function RawView({ request, t }: { readonly request: CapturedRequest; rea
   const serialized = JSON.stringify(request, null, 1)
   return (
     <div className={css.scroll}>
-      <div className={css.hint}>{t('raw.hint', { seq: String(request.seq), chars: fmt(serialized.length) })}</div>
+      <div className={css.hint}>{t('raw.hint', { seq: requestNumberText(request), chars: fmt(serialized.length) })}</div>
       <pre className={css.pre}>{serialized}</pre>
     </div>
   )

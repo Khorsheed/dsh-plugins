@@ -82,6 +82,8 @@ export interface LogDelegation {
 export interface SessionLogCursor {
   /** Events consumed so far (the next read's offset). */
   consumed: number
+  /** The log begins at its header/event zero, so request ordinals are anchored. */
+  numberedFromStart: boolean
   /** Model-visible messages folded so far, in log order. */
   messages: FoldedMessage[]
   /** The latest step/start time — the next request's dispatch proxy. */
@@ -133,6 +135,7 @@ export interface FoldSink {
 export function openCursor(): SessionLogCursor {
   return {
     consumed: 0,
+    numberedFromStart: false,
     messages: [],
     stepStartAt: undefined,
     config: undefined,
@@ -163,6 +166,7 @@ export function foldLogRows(
 ): BuiltLogRequest[] {
   const built: BuiltLogRequest[] = []
   for (const row of rows) {
+    if (cursor.consumed === 0) cursor.numberedFromStart = row.type === 'session' || row.seq === 0
     cursor.consumed += 1
     const data = (typeof row.data === 'object' && row.data !== null ? row.data : {}) as Record<string, unknown>
     switch (row.type) {
@@ -467,6 +471,7 @@ function buildRequest(
     : undefined
   const finishKind = finish?.kind
   return {
+    ...cursor.numberedFromStart ? { requestNumber: cursor.requests.length + 1 } : {},
     startedAt,
     status: failed ? 'failed' : 'ok',
     ...error === undefined ? {} : { error },

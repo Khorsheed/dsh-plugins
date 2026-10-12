@@ -57,8 +57,6 @@ export const zh = {
   "lens.diffCategory": "消息类型：{before} → {after}",
   "lens.diffEmpty": "（空）",
   "lens.trendScope": "{scope} · 输入走势",
-  "lens.trendCount": "{count} 次请求",
-  "lens.trendLegend": "高度＝输入 tokens · 绿＝命中 / 红＝未命中",
   "lens.trendEmpty": "该 agent 暂无捕获的请求",
   "scope.mainName": "主对话",
   "config.title": "请求配置",
@@ -114,6 +112,7 @@ export const zh = {
   'run.failedMeta': '耗时 {duration} · {count} 次模型调用',
   'run.failedHint': '子会话 {id} 已创建，但未完成任何请求——失败发生在首次模型调用之前。',
 
+  'req.numberUnknown': '历史记录不足，暂时无法确定该 agent 的累计请求编号。',
   'req.input': '输入',
   'req.output': '输出',
   'req.cacheHit': '缓存命中 {tokens} tok（{pct}%）',
@@ -237,8 +236,6 @@ export const en: Record<keyof typeof zh, string> = {
   "lens.diffCategory": "Message type: {before} → {after}",
   "lens.diffEmpty": "(empty)",
   "lens.trendScope": "{scope} · Input trend",
-  "lens.trendCount": "{count} requests",
-  "lens.trendLegend": "Height = input tokens · green = hit / red = miss",
   "lens.trendEmpty": "No requests captured for this agent",
   "scope.mainName": "Main conversation",
   "config.title": "Request configuration",
@@ -294,6 +291,7 @@ export const en: Record<keyof typeof zh, string> = {
   'run.failedMeta': '{duration} · {count} model calls',
   'run.failedHint': 'Child session {id} was created but never completed a request — the failure happened before the first model call.',
 
+  'req.numberUnknown': 'Insufficient history to determine this agent’s cumulative request number.',
   'req.input': 'in',
   'req.output': 'out',
   'req.cacheHit': 'cache hit {tokens} tok ({pct}%)',

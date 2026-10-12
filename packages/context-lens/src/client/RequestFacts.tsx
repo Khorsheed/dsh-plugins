@@ -1,5 +1,5 @@
 import type { CapturedRequest } from '../types.ts'
-import { aggregateCategories, cachePct, fmt, fmtK, fmtSpan, inputTotal, summaryText } from './aggregate.ts'
+import { requestNumberText, aggregateCategories, cachePct, fmt, fmtK, fmtSpan, inputTotal, summaryText } from './aggregate.ts'
 import type { InspectorTabProps } from './contract.ts'
 import css from './TokenView.module.css'
 import { ConfigFacts } from './ConfigFacts.tsx'
@@ -23,7 +23,7 @@ export function RequestFacts({ request: r, t, raw = false, onToggleRaw }: {
   ]
   return <>
     <div className={css.detailHead}>
-      <b>#{r.seq} · {summaryText(r.responseSummary, t('resp.directAnswer'))}</b>
+      <b title={r.requestNumber === undefined ? t('req.numberUnknown') : undefined}>#{requestNumberText(r)} · {summaryText(r.responseSummary, t('resp.directAnswer'))}</b>
       {onToggleRaw && <button type="button" className={css.jsonToggle} aria-label={t('view.raw')} title={t('view.raw')} aria-pressed={raw} onClick={onToggleRaw}>{'{ }'}</button>}
     </div>
     <ConfigFacts config={r.config} t={t} />
@@ -44,9 +44,9 @@ export function CacheFacts({ request: r, t }: { readonly request: CapturedReques
         <div className={css.cacheLegend}><span><i />{t('lens.hit')} {fmt(u.cacheReadTokens ?? 0)}</span><span><i />{t('lens.miss')} {fmt(u.inputTokens)}</span></div>
       </>}
       {prefix === undefined ? <span title={t('lens.prefixBaselineHint')}>{t('lens.prefixUnknown')}</span> : prefix.changed ? <>
-        <span>{t('lens.prefixChanged', { index: String(prefix.changed.index).padStart(3, '0'), seq: String(prefix.previousSeq) })}</span>
+        <span>{t('lens.prefixChanged', { index: String(prefix.changed.index).padStart(3, '0'), seq: requestNumberText({ requestNumber: prefix.previousRequestNumber }) })}</span>
         <PrefixDifference changed={prefix.changed} t={t} />
-      </> : <span>{t('lens.prefixSame', { seq: String(prefix.previousSeq), gap: fmtSpan(prefix.gapMs) })}</span>}
+      </> : <span>{t('lens.prefixSame', { seq: requestNumberText({ requestNumber: prefix.previousRequestNumber }), gap: fmtSpan(prefix.gapMs) })}</span>}
       {prefix?.toolsChanged && <div>{t('lens.toolsChanged')}</div>}
     </div>
   </section>

@@ -10,7 +10,7 @@ The request inspector exposed captured data but made cache regressions, repeated
 
 The package, directory, bundle row and sidebar kind are renamed to `context-lens` (`@khorsheed/dsh-context-lens`). The `requestInspector` service and Remote namespace remain stable for scoped-read consumers. This is an installation identity change: an existing deployment must replace the old direct dependency and bundle row; mounting both packages would register the same service twice. This change does not publish to npm.
 
-The retained visual style uses bordered metric cells, mono numbers and the prototype's timing palette. A turn stepper and latest button synchronize the conversation scroll. A horizontally scrollable, draggable session map follows the selected agent and shows only its retained requests, with an input/cache legend and a scale computed from that agent; `getSessionTrend(sessionId, filter)` returns only request headers and inherits scope filtering, retention and generation metadata.
+The retained visual style uses bordered metric cells, mono numbers and the prototype's timing palette. A turn stepper and latest button synchronize the conversation scroll. A horizontally scrollable, draggable session map follows the selected agent and shows only its retained requests, with a scale computed from that agent; the redundant visible agent/count and height/color explanation above the chart are removed; `getSessionTrend(sessionId, filter)` returns only request headers and inherits scope filtering, retention and generation metadata.
 
 Request detail is ordered as measured cache usage, this exchange (new input beside captured output), then context composition. Full-text duplicates of at least 40 characters can be filtered. Message rows expose explicit tool errors and the originating session-event turn where known. Long output and reasoning show bounded previews and remain scroll-bounded when opened; argument values expand independently.
 
@@ -23,6 +23,8 @@ Prefix comparison uses exact retained segment content in the same scope, includi
 Timing cards and both tables describe one selected agent. All agents stay visible on separate clickable timeline lanes. Model-internal residuals and between-request gaps are separate. Tool reasoning is allocated equally among calls from that request, parameter time follows its tool lane, and execution errors use explicit `isError`. Concurrent intervals share elapsed time across active spans, with an explanatory note, keeping cards and tables additive. All duration labels retain tenths of a second.
 
 Each request carries its captured provider/model, reasoning effort, output limit and temperature. Request detail displays a compact configuration strip above metrics. Request headers also carry that per-request snapshot, so the timing page can display consecutive configuration runs for the selected agent and turn, with request links. A → B → A stays three runs. Missing historical fields say not recorded; scope-level configuration is never substituted for a request or interpreted as a provider default.
+
+Request labels use a separate optional `requestNumber`: a 1-based cumulative ordinal within each agent, continuous across turns. Internal `seq` remains the process-local query/selection ID, including in raw JSON. Complete logs assign ordinals in event order before newest-first retention; incremental child folds continue their own count, including failed attempts. Live capture starts at 1 only when turn 1 was observed, otherwise a complete log anchors a fully observed turn. That numbering reconciliation may re-read a completed backfill while a live turn still lacks its first durable response. Retaining fewer turns never rebases known numbers. Unanchored partial histories and auxiliary requests show an unknown number rather than a fabricated first request. List/detail, trend, cache predecessor, exchange provenance and timing/config links all use the display ordinal while callbacks retain query IDs.
 
 ## Alternatives considered
 
@@ -40,6 +42,8 @@ Each request carries its captured provider/model, reasoning effort, output limit
 
 **Comparing truncated message openings.** Equal openings hide later changes and whole-line colors hide the actual edit. Full-text comparison with bounded, highlighted context stays readable without transmitting another entire request.
 
+**Displaying insertion IDs, turn/step numbers, or retained-list indices as request ordinals.** Insertion IDs depend on query order and newest-first backfill; turns contain multiple calls and retries need not have distinct steps; retained indices change after eviction. A separately anchored ordinal preserves chronology without changing query addresses.
+
 ## Consequences
 
 The new installation identity requires migration before production replacement. Old saved sidebar kinds may show the host's unavailable fallback. Capture is still pull-based and bounded by the existing retention budget; uncaptured or evicted data is not invented. A prefix preview is short, while the full request remains expandable.
@@ -51,3 +55,5 @@ Acceptance initially passed all build/test stages on main baseline `84399e6a` bu
 Production migration uses the explicit `deploy:3080 --replace OLD=NEW` flow ([decision](../process/2026-10-10-deploy-package-replacement.md)); never mount both identities. The rollout result is recorded separately after canary verification.
 
 The prototype-alignment regression pass covers excess-copy arithmetic, equal previews with different full text, exclusive filters, unchanged totals/exchange, and JSON navigation. The reproducible `packages/context-lens/examples/workbench/` preview uses synthetic data and actual components; 800px and 390px light/dark checks confirm no horizontal overflow.
+
+Numbering regressions cover newest-first backfill under retention, independent agents/sessions, eviction, live/log anchoring, partial-history honesty, incremental failed attempts, and display labels separated from query IDs.

@@ -59,7 +59,7 @@ function ToolCell({ tool, t }: { readonly tool: ToolDefItem; readonly t: T }) {
 export interface SegmentBlocksProps {
   readonly request: CapturedRequest
   readonly filterCat: CompositionFilter
-  readonly previousResponseSeq: number | null
+  readonly previousResponseNumber: number | null
   readonly t: T
 }
 
@@ -167,13 +167,13 @@ function InputCard({ item, from, repeats, t }: { readonly item: SegmentItem; rea
     {open ? <div className={css.messageFull}><div className={css.fullLabel}>{item.sourceTurn === undefined ? '' : t('lens.sourceTurn', { turn: String(item.sourceTurn) })}</div><ItemFull item={item} /></div> : <div className={css.messageBody} onClick={() => setOpen(true)}>{body}</div>}
   </div>
 }
-export function Exchange({ request, previousResponseSeq, t }: { readonly request: CapturedRequest; readonly previousResponseSeq: number | null; readonly t: T }) {
+export function Exchange({ request, previousResponseNumber, t }: { readonly request: CapturedRequest; readonly previousResponseNumber: number | null; readonly t: T }) {
   const duplicates = duplicateStats([...request.segments.system, ...request.segments.history, ...request.segments.added])
   return <section aria-label={t('lens.exchange')}>
     <h3 className={css.exchangeTitle}>{t('lens.exchange')}</h3>
     <div className={css.exchange}>
       <div className={css.column}><div className={css.columnLabel}>{t('lens.newInput')} · {request.segments.added.length}</div>
-        {request.segments.added.map((item,i) => <InputCard key={i} item={item} repeats={duplicates.counts.get(item.full) ?? 0} t={t} from={item.category === 'assistant' && previousResponseSeq !== null ? t('row.prevResponse', { seq:String(previousResponseSeq) }) : item.source} />)}
+        {request.segments.added.map((item,i) => <InputCard key={i} item={item} repeats={duplicates.counts.get(item.full) ?? 0} t={t} from={item.category === 'assistant' && previousResponseNumber !== null ? t('row.prevResponse', { seq:String(previousResponseNumber) }) : item.source} />)}
       </div>
       <div className={css.arrow} aria-hidden="true">→</div>
       <div className={css.column} role="region" aria-label={t('out.title')}><div className={css.columnLabel}><span>{t('out.title')}</span><span>{request.usage ? fmt(request.usage.outputTokens) : '—'} tok</span></div><OutputBlock request={request} t={t} /></div>
