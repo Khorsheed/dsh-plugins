@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-10-12-learning-mode-whitelisted-skills.md
-.agents/notes/implemented/feature/2026-10-12-learning-mode-whitelisted-skills.md: d35380eaf4d91a8f5335ecdd88f9c3834e573752
-.agents/notes/implemented/feature/2026-10-12-learning-mode-whitelisted-skills.zh.md: 6fc9336fac3a7aaaef192a32dcd350bb47669cd1
+.agents/notes/implemented/feature/2026-10-12-learning-mode-whitelisted-skills.md: 7ae9e603910539269a0407b7fd67f633d3acf8d5
+.agents/notes/implemented/feature/2026-10-12-learning-mode-whitelisted-skills.zh.md: 43fbe276b61aaa49e948c17560606b5d8b38f472

@@ -42,16 +42,18 @@ describe('cordis.patch.yml', () => {
     expect(patch).toContain('waiting for library')
   })
 
-  it('keeps the learning tool list strict: persona, ask-user, web, whitelisted skills, compaction — no fs, todo or shell', () => {
-    for (const kept of ['persona', 'tool-ask-user', 'tool-web', 'tool-skill', 'compaction-basic', 'library-tool']) {
+  it('keeps the learning tool list strict: persona, ask-user, web, whitelisted skills, a guarded shell, compaction — no fs, todo or delegation', () => {
+    for (const kept of ['persona', 'tool-ask-user', 'tool-web', 'tool-skill', 'tool-bash', 'tool-pwsh', 'compaction-basic', 'library-tool']) {
       expect(patch).toContain(`- id: ${kept}\n`)
     }
     // skill-filesystem stays out on purpose: with no default-root provider the
     // registry holds only skills explicitly scoped to this preset (managed
     // delivery), so the skill face is a whitelist rather than every local skill.
+    // The shell stays because the delegation path already gave the model a
+    // looser one; the session sandbox + ask approval is the tighter boundary.
     for (const gone of [
       'tool-fs', 'skill-filesystem', 'tool-todo',
-      'tool-bash', 'tool-pwsh', 'tool-fs-search', 'tool-jobs', 'plan-mode', 'tool-subagent',
+      'tool-fs-search', 'tool-jobs', 'plan-mode', 'tool-subagent',
       'tool-workflow', 'tool-goal', 'command-goal', 'tool-present', 'agent-instructions',
     ]) {
       expect(patch).not.toMatch(new RegExp(`- id: ${gone}\\n`))

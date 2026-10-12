@@ -18,4 +18,4 @@ preset 只挂 `tool-skill`——永不挂 `skill-filesystem`。组合里没有�
 
 ## 影响
 
-skill 在学习模式从「不可能」变成「显式授予」，代价是多挂载一行。由于 fs 仍然不带，被限定 skill 的 bundle 分册（`search.md`、`notes.md` 等）依然不可读——只有 SKILL.md 到达模型；是否值得补一条只读的分册通道，留待观察到真实需求再定。bundle 规格测试现在钉死 `tool-skill` 在场、`skill-filesystem` 缺席。
+skill 在学习模式从「不可能」变成「显式授予」，代价是多挂载一行。由于 fs 仍然不带，被限定 skill 的 bundle 分册（`search.md`、`notes.md` 等）改经 catalog 的 scoped 只读 `read_skill_file` 读取器到达模型（见[分册读取器](2026-10-12-scoped-skill-bundle-reader.zh.md)）。bundle 规格测试现在钉死 `tool-skill` 在场、`skill-filesystem` 缺席。

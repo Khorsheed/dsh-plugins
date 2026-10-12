@@ -18,4 +18,4 @@ The preset mounts `tool-skill` only — never `skill-filesystem`. With no defaul
 
 ## Consequences
 
-Skills become a deliberate grant in learning mode instead of an impossibility, at the price of one more mounted row. Because fs stays dropped, a scoped skill's bundle files (`search.md`, `notes.md`, …) stay unreadable — only its SKILL.md reaches the model; whether a read-only bundle-file channel is worth adding is deferred to observed need. The bundle spec now pins `tool-skill` present and `skill-filesystem` absent.
+Skills become a deliberate grant in learning mode instead of an impossibility, at the price of one more mounted row. Because fs stays dropped, a scoped skill's bundle files (`search.md`, `notes.md`, …) reach the model through the catalog's scoped read-only `read_skill_file` reader instead ([the bundle reader](2026-10-12-scoped-skill-bundle-reader.md)). The bundle spec now pins `tool-skill` present and `skill-filesystem` absent.

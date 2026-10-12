@@ -14,15 +14,15 @@
 # The official base is a STRICT diet of the host's standard.patch.yml: a
 # learning session keeps only what its loop needs — the library tools, web
 # search/fetch (verifying a book's edition and contents, quoting the web), the
-# ask-user card (which book, which edition), compaction (long sessions), and a
-# WHITELISTED skill face (below). Dropped on purpose: fs (no book files exist —
-# books are registered, not uploaded — and fs tools invite the model to read the
-# workspace or the library's own state), todo (the roadmap IS the study plan),
-# and everything shell-, plan- or delegation-shaped. The library-tool row
-# additionally quiets the scope: root prompt sections about the host's source
-# tree, the web surface and deliverable links are blanked, and the root
-# `list_capabilities` tool is masked — none of them applies to a learning
-# session.
+# ask-user card (which book, which edition), compaction (long sessions), a
+# WHITELISTED skill face (below), and a GUARDED shell (below). Dropped on
+# purpose: fs (no book files exist — books are registered, not uploaded — and
+# fs tools invite the model to read the workspace or the library's own state),
+# todo (the roadmap IS the study plan), and everything plan- or
+# delegation-shaped. The library-tool row additionally quiets the scope: root
+# prompt sections about the host's source tree, the web surface and
+# deliverable links are blanked, and the root `list_capabilities` tool is
+# masked — none of them applies to a learning session.
 #
 # The display fields (name/description) are this bundle's own. `name:` values
 # are quoted (@ is YAML-reserved). The persona follows the community preset
@@ -91,10 +91,30 @@
           # all-or-nothing choice (the registry would surface unrelated local
           # skills) into a whitelist. tool-skill injects agents/tools/skills,
           # all resolvable up the scope chain; the skill registry itself is
-          # root-mounted. Note the bundle half of a scoped skill stays
-          # unreadable here: with fs dropped, only SKILL.md reaches the model.
+          # root-mounted. A scoped skill's bundle files stay readable through
+          # the catalog's read-only read_skill_file reader, so fs stays dropped.
           - id: tool-skill
             name: '@deepseek-ai/dsh-tool-skill'
+
+          # ── shell (guarded by the session's own sandbox + ask approval) ─────
+
+          # Curl-style skills (weread) need a transport; the capability catalog
+          # injects their configured credentials into the model shell as
+          # DSH_<KEY>, so the raw key never enters the model's context. The
+          # diet's "no shell" line was already honored only in the letter —
+          # root-granted subagent tools let the model delegate the same commands
+          # to a child running danger-full-access — so the honest boundary is
+          # the session's own workspace-write sandbox + ask approval on every
+          # command, which is strictly tighter than the delegation path. The
+          # platform split follows the standard preset (bash off Windows, pwsh
+          # on it); tool-bash injects tools/shell/systemPrompt/shellEnv, all
+          # host-plane and resolvable up the scope chain.
+          - id: tool-bash
+            name: '@deepseek-ai/dsh-tool-bash'
+            disabled: !!js process.platform === 'win32'
+          - id: tool-pwsh
+            name: '@deepseek-ai/dsh-tool-pwsh'
+            disabled: !!js process.platform !== 'win32'
 
           # ── compaction (the standard preset's proven shape) ─────────────────
 
