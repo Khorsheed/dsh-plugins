@@ -36,6 +36,7 @@
     "src/client/store.ts",
     "src/client/VideoPane.tsx",
     "src/client/TranscriptTab.tsx",
-    "src/client/player.ts"
+    "src/client/player.ts",
+    "src/client/preset-visibility.ts"
   ]
 }

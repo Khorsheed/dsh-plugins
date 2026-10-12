@@ -21,7 +21,7 @@ Status: proposed
   - **宿主半**：部署级工程存储、媒体工具链（ffmpeg、语音模型）和后台任务队列。浏览器面板都经 Typert Remote（`videoStudio.*`）访问。
   - **`./tool` 子入口**：模型工具和 `video-studio` 技能。沿用 worktrees、room 折回核心包的伴生写法，不另开 `*-tool` 包。
   - **浏览器半**：一个页型右栏 tab「剪辑」，基于 `@khorsheed/dsh-client-ui-panel-kit`。
-- **在 `@khorsheed/dsh-presets` 里新增 preset 行 `dsh-video`（剪辑模式）**：授权 `./tool` 行，携带剪辑指引。面板是部署级工作区（同画布空间），不做会话 preset 自隐藏，它的模式可见性就是安装层（docs/plugin-visibility.md）。
+- **在 `@khorsheed/dsh-presets` 里新增 preset 行 `dsh-video`（剪辑模式）**：授权 `./tool` 行，携带剪辑指引。面板原计划不做会话 preset 自隐藏；2026-10-12 推翻：会话 preset 未授予 ./tool 行时 tab 自隐——见[preset 门 note](../../implemented/feature/2026-10-12-video-studio-preset-gate.zh.md)。
 
 ### 名词
 

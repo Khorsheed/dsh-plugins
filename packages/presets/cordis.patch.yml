@@ -26,9 +26,12 @@
 #                       comparison): plan-mode, delegation/workflow, fs-search,
 #                       jobs, present, agent-instructions removed; shell, fs,
 #                       skills, compaction, ask-user, todo, web, canvas stay.
-#   preset-dsh-video    剪辑模式  new 2026-10-06 (video studio M1): an editing-partner
-#                       persona over the trimmed writing tool set, plus the
-#                       video-studio ./tool row (video_* tools + skill).
+#   preset-dsh-video    剪辑模式  2026-10-06 (video studio M1); standalone since
+#                       2026-10-12: an editing-partner persona + the editing flow's
+#                       own tool set (fs to locate recordings, skill loader,
+#                       compaction, ask-user, todo) + the video-studio ./tool row
+#                       (video_* tools + skill). No shell (it would bypass the
+#                       proposal discipline) and no web (not editing's workflow).
 #
 # The display fields (name/description/order) come from each legacy preset.yml.
 # Every `name:` value is quoted (@ is YAML-reserved; 'cordis:group' follows the
@@ -807,16 +810,6 @@
 
                 Keep the conversation's warmth: trim fillers, dead air and repetition, and suggest cutting off-topic stretches with a one-line reason each. Leave the decisions about what a friend said to the user.
 
-          # ── shell ───────────────────────────────────────────────────────────────────
-
-          - id: tool-bash
-            name: '@deepseek-ai/dsh-tool-bash'
-            disabled: !!js process.platform === 'win32'
-
-          - id: tool-pwsh
-            name: '@deepseek-ai/dsh-tool-pwsh'
-            disabled: !!js process.platform !== 'win32'
-
           # ── filesystem ──────────────────────────────────────────────────────────────
 
           - id: tool-fs
@@ -861,12 +854,6 @@
             name: '@deepseek-ai/dsh-tool-todo'
             config:
               allowParallelInProgress: true
-
-          - id: tool-web
-            name: '@deepseek-ai/dsh-tool-web'
-            config:
-              fetch: true
-              searchTimeoutMs: 60000
 
           # ── video studio ────────────────────────────────────────────────────────────
 

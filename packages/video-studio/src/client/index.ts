@@ -1,8 +1,10 @@
 /**
  * Video studio, browser half: the 剪辑 right-Sidebar tab. It mounts the
- * videoStudio Remote and registers the tab type plus its body. Projects are
- * deployment-level (no session-preset self-hide): a profile that should not
- * show the tab does not install the package.
+ * videoStudio Remote and registers the tab type plus its body. The tab type
+ * registers exactly while the current session can reach the video_* tools —
+ * the dsh-video 剪辑模式 preset naming the ./tool row (every unreadable path
+ * fails open). A profile that should not offer editing at all does not install
+ * the package.
  *
  * @module @khorsheed/dsh-video-studio/client
  */
@@ -16,16 +18,18 @@ import type {} from '@khorsheed/dsh-video-studio/remote'
 // Type-only: the ctx.sidebarRightTabs merge and the 'sidebar.right.pane.tab' seat.
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import videoRemote from '@khorsheed/dsh-video-studio/remote'
 import type { VideoPaneInjected } from './contract.ts'
 import { VIDEO_TAB_ID, videoDefinition } from './definition.tsx'
+import { mainSessionId, RegistrationToggle, VideoTabVisibility, type VideoPluginInventorySnapshot } from './preset-visibility.ts'
 import { en, NS, zh } from './locales.ts'
 import { createVideoStudioStore } from './store.ts'
 import { VideoPane } from './VideoPane.tsx'
 
 export { VIDEO_KIND, VIDEO_TAB_ID } from './definition.tsx'
 
-export const inject = ['slots', 'remote', 'locale', 'sidebarRightTabs']
+export const inject = ['slots', 'remote', 'locale', 'sidebarRightTabs', 'sessions']
 
 export async function apply(ctx: Context): Promise<() => Promise<void>> {
   const disposers: Array<() => Promise<void>> = []
@@ -71,7 +75,24 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     downloadModels: () => remote.downloadModels(),
   })
 
-  ctx.effect(() => ctx.sidebarRightTabs.register(videoDefinition(t)), 'video-studio: tab type')
+  // The tab type registers exactly while the current session reaches the
+  // video_* tools (the 剪辑模式 preset names the ./tool row). Hidden means NOT
+  // registered: the guide enumerates the registry, opened tabs are stored per
+  // session, and an unregistered kind renders the host's tab.unavailable
+  // fallback. Every unreadable path fails open (preset-visibility.ts).
+  const pluginInventory = ctx.get('remote.pluginInventory') as {
+    list: () => Promise<RemoteResult<VideoPluginInventorySnapshot>>
+  } | undefined
+  const tabVisibility = new VideoTabVisibility(ctx, pluginInventory)
+  ctx.effect(() => {
+    const toggle = new RegistrationToggle(
+      () => ctx.sidebarRightTabs.register(videoDefinition(t)),
+      () => tabVisibility.show(mainSessionId(ctx.sessions.list.getSnapshot())),
+    )
+    toggle.setReady(true)
+    const unsubscribe = tabVisibility.subscribe(() => { toggle.sync() })
+    return () => { unsubscribe(); toggle.setReady(false) }
+  }, 'video-studio: tab type visibility')
   ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
     name: 'sidebar.right.pane.tab',
     key: VIDEO_TAB_ID,

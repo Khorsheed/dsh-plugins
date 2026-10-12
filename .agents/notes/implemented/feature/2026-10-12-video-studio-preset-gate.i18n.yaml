@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-10-12-video-studio-preset-gate.md
+.agents/notes/implemented/feature/2026-10-12-video-studio-preset-gate.md: 577fbab8f0f2afdbf8b81ec558ed309887cc3b9e
+.agents/notes/implemented/feature/2026-10-12-video-studio-preset-gate.zh.md: c1087833e6a9151bf83f4a6fbab44e8d7d3026d5

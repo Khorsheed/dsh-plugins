@@ -21,7 +21,7 @@ No package in this repo handles media. An interaction prototype went through six
   - **Host half:** a deployment-level project store, the media toolchain (ffmpeg, the speech models) and a background job queue. The browser panel reaches all of it through a Typert Remote (`videoStudio.*`).
   - **`./tool` subpath entry:** the model tools and a `video-studio` skill. This is the folded-companion pattern that worktrees and room use; there is no separate `*-tool` package.
   - **Browser half:** a page-type right-sidebar tab, 「剪辑」, built on `@khorsheed/dsh-client-ui-panel-kit`.
-- **New preset row `dsh-video` (剪辑模式) in `@khorsheed/dsh-presets`.** It grants the `./tool` row and carries the editing guidance. The panel is a deployment-level workspace, like the canvas space, so it gets no session-preset self-hide. Its mode visibility is the install layer (docs/plugin-visibility.md).
+- **New preset row `dsh-video` (剪辑模式) in `@khorsheed/dsh-presets`.** It grants the `./tool` row and carries the editing guidance. The panel was planned as a deployment-level workspace with no runtime switch; superseded 2026-10-12: the tab self-hides unless the session's preset grants the ./tool row — see [the preset-gate note](../../implemented/feature/2026-10-12-video-studio-preset-gate.md).
 
 ### Nouns
 
