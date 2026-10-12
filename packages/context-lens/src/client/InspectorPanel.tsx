@@ -210,11 +210,11 @@ export function InspectorPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, needsPreviousTurn, previousRealTurnSeq, getTurn, tab.signal])
 
-  const previousResponseSeq = ((): number | null => {
-    if (selectedIndex > 0) return scopeRequests[selectedIndex - 1]?.seq ?? null
+  const previousResponseNumber = ((): number | null => {
+    if (selectedIndex > 0) return scopeRequests[selectedIndex - 1]?.requestNumber ?? null
     if (selectedIndex === 0 && effectiveScope !== undefined && previousTurn !== null) {
       const previousScope = previousTurn.scopes.find(candidate => candidate.scopeId === effectiveScope.scopeId)
-      return previousScope?.requests.at(-1)?.seq ?? null
+      return previousScope?.requests.at(-1)?.requestNumber ?? null
     }
     return null
   })()
@@ -368,7 +368,7 @@ export function InspectorPanel({
           selectedSeq={selectedRequestSeq}
           request={request}
           filterCat={filterCat}
-          previousResponseSeq={previousResponseSeq}
+          previousResponseNumber={previousResponseNumber}
           onSelect={seq => { setSelectedSeq(seq); setFilterCat(null) }}
           onToggleFilter={category => { setFilterCat(previous => previous === category ? null : category) }}
           t={t}

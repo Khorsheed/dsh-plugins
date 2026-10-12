@@ -1,6 +1,6 @@
 import type { AgentScopeOverview, RequestConfig, RequestListItem } from '../types.ts'
 import type { InspectorTabProps } from './contract.ts'
-import { fmt } from './aggregate.ts'
+import { requestNumberText, fmt } from './aggregate.ts'
 import css from './ConfigFacts.module.css'
 type T = InspectorTabProps['t']
 
@@ -37,7 +37,7 @@ export function ScopeConfigs({ scope, onOpenRequest, t }: { scope: AgentScopeOve
     <div className={css.runs}>{runs.map(run => {
       const first = run.requests[0]!, last = run.requests[run.requests.length - 1]!
       return <div className={css.run} key={first.seq}>
-        <button type="button" aria-label={t('config.open', { seq: String(first.seq) })} onClick={() => onOpenRequest(first.seq, scope.scopeId)}>#{first.seq}{last.seq !== first.seq ? ` – #${last.seq}` : ''}</button>
+        <button type="button" aria-label={t('config.open', { seq: requestNumberText(first) })} onClick={() => onOpenRequest(first.seq, scope.scopeId)}>#{requestNumberText(first)}{last.seq !== first.seq ? ` – #${requestNumberText(last)}` : ''}</button>
         <ConfigFacts config={run.config} t={t} />
       </div>
     })}</div>

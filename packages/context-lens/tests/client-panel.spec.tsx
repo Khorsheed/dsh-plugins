@@ -37,7 +37,7 @@ const TURNS: TurnListItem[] = [
 ]
 
 const REQ101: CapturedRequest = {
-  seq: 101,
+  seq: 101, requestNumber: 101,
   scopeId: 'main',
   sessionId: 's1',
   startedAt: 3_100,
@@ -75,7 +75,7 @@ const REQ101: CapturedRequest = {
 
 const REQ102: CapturedRequest = {
   ...REQ101,
-  seq: 102,
+  seq: 102, requestNumber: 102,
   startedAt: 8_000,
   usage: { inputTokens: 500, outputTokens: 200, cacheReadTokens: 9_500 },
   timing: { waitMs: 300, textMs: 1_500, totalMs: 2_000 },
@@ -85,7 +85,7 @@ const REQ102: CapturedRequest = {
 
 const REQ201: CapturedRequest = {
   ...REQ101,
-  seq: 201,
+  seq: 201, requestNumber: 201,
   scopeId: 'child-1',
   config: {},
   startedAt: 5_000,
@@ -113,14 +113,14 @@ const OVERVIEW2: TurnOverview = {
     scope({
       scopeId: 'main',
       requests: [
-        { seq: 101, scopeId: 'main', status: 'ok', responseSummary: { kind: 'tool', name: 'read', hint: 'a.ts' }, startedAt: 3_100, usage: REQ101.usage, totalMs: 4_200, totalChars: 126 },
-        { seq: 102, scopeId: 'main', status: 'ok', responseSummary: { kind: 'text' }, startedAt: 8_000, usage: REQ102.usage, totalMs: 2_000, totalChars: 130 },
+        { seq: 101, requestNumber: 101, scopeId: 'main', status: 'ok', responseSummary: { kind: 'tool', name: 'read', hint: 'a.ts' }, startedAt: 3_100, usage: REQ101.usage, totalMs: 4_200, totalChars: 126 },
+        { seq: 102, requestNumber: 102, scopeId: 'main', status: 'ok', responseSummary: { kind: 'text' }, startedAt: 8_000, usage: REQ102.usage, totalMs: 2_000, totalChars: 130 },
       ],
     }),
     scope({
       scopeId: 'child-1', scopeSeq: 2, kind: 'subagent', label: '提取 JSON', startedAt: 5_000, endedAt: 5_400,
       requests: [
-        { seq: 201, scopeId: 'child-1', status: 'ok', responseSummary: { kind: 'text' }, startedAt: 5_000, usage: REQ201.usage, totalMs: 400, totalChars: 76 },
+        { seq: 201, requestNumber: 201, scopeId: 'child-1', status: 'ok', responseSummary: { kind: 'text' }, startedAt: 5_000, usage: REQ201.usage, totalMs: 400, totalChars: 76 },
       ],
     }),
     scope({
@@ -134,7 +134,7 @@ const OVERVIEW1: TurnOverview = {
   turn: TURNS[0] as TurnListItem,
   scopes: [scope({
     requests: [
-      { seq: 11, scopeId: 'main', status: 'ok', responseSummary: { kind: 'text' }, startedAt: 1_100, usage: REQ101.usage, totalMs: 900, totalChars: 126 },
+      { seq: 11, requestNumber: 11, scopeId: 'main', status: 'ok', responseSummary: { kind: 'text' }, startedAt: 1_100, usage: REQ101.usage, totalMs: 900, totalChars: 126 },
     ],
   })],
 }
@@ -195,7 +195,7 @@ function bench(opts: BenchOptions = {}) {
     })),
     getRequest: vi.fn(async (_sessionId: string, seq: number): Promise<Result<CapturedRequest | undefined>> => ({
       ok: true,
-      value: opts.requests?.[seq] ?? (seq === 101 ? REQ101 : seq === 102 ? REQ102 : seq === 201 ? REQ201 : seq === 11 ? { ...REQ101, seq: 11, responseSummary: { kind: 'text' } } : undefined),
+      value: opts.requests?.[seq] ?? (seq === 101 ? REQ101 : seq === 102 ? REQ102 : seq === 201 ? REQ201 : seq === 11 ? { ...REQ101, seq: 11, requestNumber: 11, responseSummary: { kind: 'text' } } : undefined),
     })),
     getTurnTiming: vi.fn(async (): Promise<Result<TurnTiming | undefined>> => ({ ok: true, value: TIMING2 })),
   }
@@ -561,7 +561,7 @@ describe('InspectorPanel · 输出 section', () => {
   /** A one-scope, one-request turn-2 overview routing to the given capture. */
   function singleBench(detail: CapturedRequest) {
     const item = {
-      seq: detail.seq, scopeId: 'main', status: detail.status, responseSummary: detail.responseSummary,
+      seq: detail.seq, ...detail.requestNumber === undefined ? {} : { requestNumber: detail.requestNumber }, scopeId: 'main', status: detail.status, responseSummary: detail.responseSummary,
       startedAt: detail.startedAt,
       ...(detail.usage === undefined ? {} : { usage: detail.usage }),
       ...(detail.timing.totalMs === undefined ? {} : { totalMs: detail.timing.totalMs }),
@@ -684,5 +684,36 @@ describe('Context Lens composition filters', () => {
     await screen.findByText('#102 · 直接回答', { selector: 'b' })
     expect(screen.queryByRole('button', { name: /只看重复/ })).toBeNull()
     expect(screen.getByText('文件内容')).toBeTruthy()
+  })
+})
+
+
+describe('agent-local display numbers', () => {
+  it('shows ordinals while selection and JSON retain internal query IDs; removes trend prose', async () => {
+    const overview = structuredClone(OVERVIEW2)
+    overview.scopes[0]!.requests[0]!.requestNumber = 2
+    overview.scopes[0]!.requests[1]!.requestNumber = 3
+    const { mocks, container } = bench({
+      overview: () => overview,
+      requests: { 101: { ...REQ101, requestNumber: 2 }, 102: { ...REQ102, requestNumber: 3 } },
+    })
+    await screen.findByRole('button', { name: '#2 · read:a.ts' })
+    expect(screen.queryByRole('button', { name: '#101 · read:a.ts' })).toBeNull()
+    expect(container.textContent).not.toContain('输入走势')
+    expect(container.textContent).not.toContain('高度＝输入 tokens')
+    fireEvent.click(screen.getByRole('button', { name: '#3 · 直接回答' }))
+    await waitFor(() => expect(mocks.getRequest.mock.calls.some(call => call[1] === 102)).toBe(true))
+    fireEvent.click(screen.getByRole('button', { name: zh['view.raw'] }))
+    await screen.findByText(/"seq": 102/)
+  })
+
+  it('does not fall back to internal seq when historical numbering is unknown', async () => {
+    const overview = structuredClone(OVERVIEW1)
+    delete overview.scopes[0]!.requests[0]!.requestNumber
+    const { requestNumber: _number, ...unknown } = REQ101
+    bench({ turns: [TURNS[0]!], overview: () => overview, requests: { 11: { ...unknown, seq: 11 } } })
+    await screen.findByRole('button', { name: '#— · 直接回答' })
+    expect(screen.queryByRole('button', { name: '#11 · 直接回答' })).toBeNull()
+    expect(screen.getAllByTitle(zh['req.numberUnknown']).length).toBeGreaterThan(0)
   })
 })

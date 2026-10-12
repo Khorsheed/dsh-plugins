@@ -1,6 +1,7 @@
 import { Fragment, useState, type ReactNode } from 'react'
 import type { AgentScopeOverview, RequestConfig, TurnTiming } from '../types.ts'
 import {
+  requestNumberText,
   cachePct,
   fmtK,
   fmtSpan,
@@ -40,6 +41,8 @@ export function TimingView({
   const scope =
     scopes.find((s) => s.scopeId === (filterScopeId ?? 'main')) ?? scopes[0]
   if (!timing || !scope) return <div role="status">{t('state.loading')}</div>
+  const requestBySeq = new Map(scopes.flatMap(s => s.requests).map(r => [r.seq, r]))
+  const numberOf = (seq: number) => requestNumberText(requestBySeq.get(seq))
   const data = scopeTiming(timing, scope)
   const rows = [...data.tools].sort((a, b) => b[sort] - a[sort])
   const keys = ['calls', 'errors', 'think', 'args', 'exec', 'total'] as const
@@ -117,8 +120,8 @@ export function TimingView({
                     type="button"
                     className={css.blk}
                     data-bucket={l.kind}
-                    title={`#${l.requestSeq} ${l.tool ?? t(`time.bucket.${l.kind}`)} · ${fmtSpan(l.durationMs)}`}
-                    aria-label={`#${l.requestSeq} ${t(`time.bucket.${l.kind}`)}`}
+                    title={`#${numberOf(l.requestSeq)} ${l.tool ?? t(`time.bucket.${l.kind}`)} · ${fmtSpan(l.durationMs)}`}
+                    aria-label={`#${numberOf(l.requestSeq)} ${t(`time.bucket.${l.kind}`)}`}
                     style={{
                       left: `${((l.startedAt - start) / span) * 100}%`,
                       width: `${Math.max(0.3, (l.durationMs / span) * 100)}%`,
@@ -229,7 +232,7 @@ export function TimingView({
                     </td>
                     <td>{items.length}</td>
                     <td>
-                      #{items[0]![0]} {fmtSpan(items[0]![1])}
+                      #{numberOf(items[0]![0])} {fmtSpan(items[0]![1])}
                     </td>
                     <td>{fmtSpan(items.reduce((n, [, ms]) => n + ms, 0))}</td>
                   </tr>
@@ -245,7 +248,7 @@ export function TimingView({
                               className={css.nonRow}
                               onClick={() => onOpenRequest(seq, scope.scopeId)}
                             >
-                              <span>#{seq}</span>
+                              <span>#{numberOf(seq)}</span>
                               <span>
                                 {summaryText(
                                   r.responseSummary,

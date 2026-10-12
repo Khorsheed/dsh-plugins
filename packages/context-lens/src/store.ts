@@ -96,6 +96,7 @@ export interface ToolExecSpan {
 
 /** A request row as the store keeps it — the wire shapes assemble on query. */
 export interface StoredRequest {
+  requestNumber?: number
   seq: number
   sessionId: string
   scopeId: string
@@ -171,6 +172,8 @@ export interface TurnRecord {
   purpose?: string
   /** True once any live (in-process) request or bracket landed here — backfill never merges into such a turn. */
   liveContent: boolean
+  /** Capture observed the turn opening, so this turn’s live request order is complete. */
+  liveStartObserved?: boolean
   query: string
   startedAt: number
   endedAt?: number
@@ -207,6 +210,8 @@ interface SessionRecord {
   lastSettledMain?: StoredRequest
   /** Turns evicted under the retention caps (the "collected then dropped" signal). */
   evictedTurns: number
+  /** Agent-local next ordinal, retained independently of body eviction. */
+  nextRequestNumbers: Map<string, number>
 }
 
 /** Snapshot one request needs at dispatch — the normalized GenerateOptions face. */
@@ -311,6 +316,7 @@ export class InspectorStore {
         messageTurns: new Map(),
         messageDurations: new Map(),
         evictedTurns: 0,
+        nextRequestNumbers: new Map(),
       }
       this.sessions.set(id, record)
     }
@@ -439,6 +445,12 @@ export class InspectorStore {
       fingerprint: segments.fingerprint,
     }
     this.seqCounter += 1
+    // Auxiliary/purpose calls have no complete conversation-history baseline.
+    const nextNumber = snapshot.purpose === undefined ? session.nextRequestNumbers.get(scopeId) : undefined
+    if (nextNumber !== undefined) {
+      request.requestNumber = nextNumber
+      session.nextRequestNumbers.set(scopeId, nextNumber + 1)
+    }
     scope.requests.push(request)
     turn.liveContent = true
     this.totalChars += request.totalChars
@@ -587,8 +599,11 @@ export class InspectorStore {
 
   /** turn/start on a root session (child sessions route their events to the parent instead). */
   turnStart(sessionId: string, hostTurn: number, at: number): void {
+    const rootId = this.rootOf(sessionId)
+    const session = this.session(rootId)
+    const scopeId = sessionId === rootId ? 'main' : sessionId
+    if (hostTurn === 1 && !session.nextRequestNumbers.has(scopeId)) session.nextRequestNumbers.set(scopeId, 1)
     if (this.isChild(sessionId)) return
-    const session = this.session(sessionId)
     if (session.openTurn !== undefined) return
     // The host turn number is the canonical address: a turn the log lane
     // already reconstructed reopens here rather than duplicating (defensive —
@@ -598,7 +613,7 @@ export class InspectorStore {
       session.openTurn = existing
       return
     }
-    session.openTurn = this.mintTurn(session, at, { hostTurn, turnSeq: hostTurn, liveContent: true })
+    session.openTurn = this.mintTurn(session, at, { hostTurn, turnSeq: hostTurn, liveContent: true, liveStartObserved: true })
   }
 
   /** turn/end: close the open turn, resolve its main scope, sweep abandoned streams. */
@@ -819,6 +834,7 @@ export class InspectorStore {
    */
   insertLogTurns(sessionId: string, logTurns: readonly LogTurn[]): number {
     const session = this.session(sessionId)
+    this.reconcileRequestNumbers(session, logTurns)
     if (session.backfillState === 'complete' || session.backfillState === 'broken') return 0
     const liveCount = session.turns.filter(turn => turn.liveContent).length
     const candidates = logTurns.filter(logTurn =>
@@ -851,6 +867,33 @@ export class InspectorStore {
     session.backfillState = dropped > 0 ? 'partial' : 'complete'
     if (inserted > 0) this.renumberScopes(session)
     return inserted
+  }
+
+  /** A complete log can anchor live turns without retaining old request bodies. */
+  private reconcileRequestNumbers(session: SessionRecord, logTurns: readonly LogTurn[]): void {
+    for (const logged of logTurns) {
+      const live = session.turns.find(t => t.hostTurn === logged.hostTurn && t.purpose === undefined && t.liveStartObserved)
+      const first = logged.requests[0]?.requestNumber
+      if (!live || first === undefined) continue
+      const requests = live.scopes.get('main')?.requests ?? []
+      for (let i = 0; i < requests.length; i++) requests[i]!.requestNumber ??= first + i
+    }
+    // An older partial live turn need not prevent a later, fully anchored turn
+    // from continuing. Only the latest observed request must have a number.
+    const liveTurns = session.turns.filter(t => t.liveContent && t.purpose === undefined)
+      .sort((a, b) => a.startedAt - b.startedAt || a.turnSeq - b.turnSeq)
+    const liveRequests = liveTurns.flatMap(t => t.scopes.get('main')?.requests ?? [])
+    if (liveRequests.length && liveRequests.at(-1)?.requestNumber === undefined) return
+    let next = session.nextRequestNumbers.get('main')
+    for (const r of [...logTurns.flatMap(t => t.requests), ...liveRequests]) {
+      if (r.requestNumber !== undefined) next = Math.max(next ?? 1, r.requestNumber + 1)
+    }
+    if (next !== undefined) session.nextRequestNumbers.set('main', next)
+  }
+
+  /** Retry numbering after a streaming turn’s first durable response becomes available. */
+  needsRequestNumbers(sessionId: string): boolean {
+    return this.sessions.get(sessionId)?.turns.some(t => t.liveStartObserved && (t.scopes.get('main')?.requests.some(r => r.purpose === undefined && r.requestNumber === undefined) ?? false)) ?? false
   }
 
   /** One reconstructed turn → one TurnRecord (main scope + delegation stubs). */
@@ -1038,6 +1081,7 @@ export class InspectorStore {
           ...origin === undefined ? {} : { origin },
           requests: scope.requests.map((request): RequestListItem => ({
             seq: request.seq,
+            ...request.requestNumber === undefined ? {} : { requestNumber: request.requestNumber },
             scopeId: request.scopeId,
             status: request.status,
             config: request.config,
@@ -1087,6 +1131,7 @@ export class InspectorStore {
   private requestView(request: StoredRequest): CapturedRequest {
     return {
       seq: request.seq,
+      ...request.requestNumber === undefined ? {} : { requestNumber: request.requestNumber },
       scopeId: request.scopeId,
       sessionId: request.sessionId,
       ...request.purpose === undefined ? {} : { purpose: request.purpose },
@@ -1207,6 +1252,7 @@ export class InspectorStore {
         }
         this.totalChars -= request.totalChars + (request.responseChars ?? 0)
       }
+      if (scope.kind === 'subagent') session.nextRequestNumbers.delete(scope.scopeId)
       // The per-session backfill cap tracks reconstructed main-scope rows.
       if (!turn.liveContent && scope.kind === 'main') session.backfilledRequests -= scope.requests.length
     }
@@ -1440,7 +1486,7 @@ function comparePrefix(previous: StoredRequest, current: StoredRequest): NonNull
     ...b[i] === undefined ? {} : { afterCategory: b[i]!.category },
     text,
   }
-  return { previousSeq: previous.seq, gapMs: Math.max(0, current.startedAt - (previous.settledAt ?? previous.startedAt)),
+  return { previousSeq: previous.seq, ...previous.requestNumber === undefined ? {} : { previousRequestNumber: previous.requestNumber }, gapMs: Math.max(0, current.startedAt - (previous.settledAt ?? previous.startedAt)),
     toolsChanged: JSON.stringify(previous.segments.tools.map(({ added, ...tool }) => tool)) !== JSON.stringify(current.segments.tools.map(({ added, ...tool }) => tool)),
     ...changed === undefined ? {} : { changed } }
 }

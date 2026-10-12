@@ -9,7 +9,7 @@ import type { InspectorTabProps } from '../src/client/contract.ts'
 import { zh } from '../src/client/locales.ts'
 const t = ((key: keyof typeof zh, params?: Record<string, string>) => zh[key].replace(/\{(\w+)\}/g, (s, k: string) => params?.[k] ?? s)) as InspectorTabProps['t']
 afterEach(cleanup)
-const row = (seq: number, config?: RequestListItem['config']): RequestListItem => ({ seq, scopeId: 'main', startedAt: seq, status: 'ok', responseSummary: { kind: 'text' }, totalChars: 0, ...config === undefined ? {} : { config } })
+const row = (seq: number, config?: RequestListItem['config']): RequestListItem => ({ seq, requestNumber: seq, scopeId: 'main', startedAt: seq, status: 'ok', responseSummary: { kind: 'text' }, totalChars: 0, ...config === undefined ? {} : { config } })
 const a = { model: 'model-a', provider: 'provider', reasoningEffort: 'high', maxTokens: 4096, temperature: 0 }
 const b = { ...a, model: 'model-b', reasoningEffort: 'low', maxTokens: 8192 }
 describe('per-request configuration', () => {
@@ -22,7 +22,7 @@ describe('per-request configuration', () => {
     expect(screen.getAllByText('未记录')).toHaveLength(3)
   })
   it('preserves chronological A → B → A switches and unknown snapshots', () => {
-    const requests = [row(1, a), row(2, a), row(3, b), row(4, a), row(5)]
+    const requests = [row(1, a), row(2, a), { ...row(3, b), requestNumber: 13 }, row(4, a), row(5)]
     expect(configRuns([...requests].reverse()).map(r => r.requests.map(q => q.seq))).toEqual([[1, 2], [3], [4], [5]])
     const scope: AgentScopeOverview = { scopeId: 'main', scopeSeq: 1, kind: 'main', status: 'ok', config: b, startedAt: 0, requests }
     const open = vi.fn()
@@ -30,7 +30,7 @@ describe('per-request configuration', () => {
     expect(screen.getAllByText('model-a')).toHaveLength(2)
     expect(screen.getAllByText('model-b')).toHaveLength(1)
     expect(screen.getAllByText('未记录')).toHaveLength(3)
-    fireEvent.click(screen.getByRole('button', { name: '查看请求 #3 的配置' }))
+    fireEvent.click(screen.getByRole('button', { name: '查看请求 #13 的配置' }))
     expect(open).toHaveBeenCalledWith(3, 'main')
   })
 })

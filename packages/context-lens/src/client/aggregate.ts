@@ -230,3 +230,8 @@ export function duplicateStats(items: readonly SegmentItem[]) {
   }
   return { counts, extraChars }
 }
+
+/** Public ordinal only. The internal seq must never be a display fallback. */
+export function requestNumberText(request: { requestNumber?: number | undefined } | null | undefined): string {
+  return request?.requestNumber === undefined ? '—' : String(request.requestNumber)
+}
