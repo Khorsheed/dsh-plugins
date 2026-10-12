@@ -23,7 +23,7 @@ Status: implemented
 
 - **引用移作答后**（`src/client/views/quiz.tsx`）：证据引用只在作答后的反馈区渲染，与解释、出处链接同列。证据种类 chip 仍保留在题前——它只标来源，不漏内容。
 - **选择题答案门**（`src/service.ts`）：`putQuiz` 拒绝 answer 命中不了任何选项的选择题——命中规则与侧栏判题一致（范围内的字母、带字母前缀、逐字文本、单向包含），并返回可教学的报错。超出范围的字母（两个选项配 answer `D`）同样视为未命中。
-- **提示词**（`src/tool.ts` 的 `LIBRARY_PROMPT`）：改写两条、新增两条——选择题的 answer 就是其中一个选项（先据证据写出正确选项，再围绕它出干扰项，逐字抄进 answer，解释辩护同一个选项）；存好的考卷在侧栏章节考里作答，回复只要一行（几题、依据什么），绝不在会话里复述题目；`focus: book` 只考这一章的书本内容，完全跳过 `library_read · cards`；「出什么，按顺序」一条现在只约束 mine 和 mixed。
+- **提示词**（`src/tool.ts` 的 `LIBRARY_PROMPT`）：选择题的 answer 就是其中一个选项（先据证据写出正确选项，再围绕它出干扰项，逐字抄进 answer，解释辩护同一个选项）；存好的考卷在侧栏章节考里作答，回复只要一行（几题、依据什么），绝不在会话里复述题目；`focus: book` 只考这一章的书本内容，完全跳过 `library_read · cards`；「出什么，按顺序」一条只约束 mine 和 mixed。之后又做了一次归并：把工具描述里已有的内容（联网核对的引用规则、extras/封面缩写的载荷细节、page 调用的机制）从提示词里删掉，段落从 ~900 token 收回到 ~650——上面的规则一条没动，走的都是重复。
 - **头部**（`src/client/views/book.tsx`）：BookView 头部去掉版本 `meta`（版本仍在下方 bookHead 行里，那里会换行）；标题只放书名。
 - **删图例行**（`src/client/views/book.tsx`、`src/client/locales.ts`、`src/client/LibraryPane.module.css`）：`book.legend` 文案、zh/en 键和 `.legend` 规则一并删除。
 - **默认导读**（`src/client/views/book.tsx`）：路线节点一律落到导读（原先是读节点进导读、考节点直接进章节考）。
