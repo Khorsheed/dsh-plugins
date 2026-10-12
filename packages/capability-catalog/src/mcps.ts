@@ -11,7 +11,7 @@
  * @module @khorsheed/dsh-capability-catalog/mcps
  */
 
-import type { CatalogJsonValue, CatalogMcpCredentialDecl, CatalogMcpServerConfig, CatalogMcpTool, McpTransport } from './types.ts'
+import type { CatalogJsonValue, CatalogMcpServerConfig, McpTransport } from './types.ts'
 
 /** Secret marker put in a config field whose value lives in the credential store. */
 export const SECRET_REF_PREFIX = 'secretRef:'
@@ -109,11 +109,6 @@ export function maskConfig(config: CatalogMcpServerConfig): CatalogMcpServerConf
   }
 }
 
-/** Whether the config still has an unfilled credential (= prompts for it). */
-export function hasUnconfiguredCredentials(credentials: readonly CatalogMcpCredentialDecl[]): boolean {
-  return credentials.some(c => !c.configured)
-}
-
 /** Resolve `secretRef:` markers in a config into plaintext before connecting
  * (the catalog resolves via the stored credential values, then connects).
  * Replaces embedded markers too, so a scheme-prefixed value (`Bearer secretRef:a`)
@@ -144,11 +139,6 @@ export async function resolveConfigSecrets(
   }
 }
 
-/** Sort tools by name and default each to enabled. */
-export function finalizeTools(tools: readonly CatalogMcpTool[]): CatalogMcpTool[] {
-  return [...tools].sort((a, b) => a.name.localeCompare(b.name))
-}
-
 /**
  * Map each bare secret config key (env/header name, or a query param) to its
  * catalog-stored, namespaced credential ref (`mcp.<server>.<kind>.<key>`). The
@@ -174,5 +164,4 @@ export function credentialStoredRefs(serverName: string, config: CatalogMcpServe
   return out
 }
 
-export { SECRET_REF_PREFIX as _SECRET_REF_PREFIX } // re-export for tests if needed
 export type { CatalogJsonValue }

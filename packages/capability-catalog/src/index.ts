@@ -652,12 +652,6 @@ export class CapabilityCatalogService extends TypertRemoteService {
     return catalogPickDirectory(this.ctx)
   }
 
-  @Remote('mcpList')
-  async mcpList(): Promise<readonly CatalogMcpServerConfig[]> {
-    // Masked DTO: never surface secretRef markers (or the secret key names) to the browser.
-    return this.mcp.list().map(maskConfig)
-  }
-
   @Remote('mcpAdd')
   async mcpAdd(config: CatalogMcpServerConfig): Promise<boolean> {
     if (config.serverName.trim() === '') return false

@@ -15,13 +15,12 @@ interface StoredServer {
   credentials: Map<string, string>
   /** Discovered tools (from connect + tools/list). */
   tools: CatalogMcpTool[]
-  /** Error from the last connect/discover attempt. */
-  error: string | undefined
 }
 
 /** One tool's persisted record: the user's toggle choice only. Descriptions and
  * parameter schemas are discovered at connect time and deliberately NOT persisted
- * (they bloat settings.yaml and go stale); `reconnectAll` re-fills them at boot. */
+ * (they bloat settings.yaml and go stale); the service re-fills them at boot by
+ * re-connecting the enabled servers. */
 export interface PersistedMcpTool {
   readonly name: string
   readonly enabled: boolean
@@ -66,7 +65,6 @@ export class McpStore {
         config: server.config,
         credentials: existing?.credentials ?? new Map(),
         tools,
-        error: undefined,
       })
     }
     for (const [ref, value] of Object.entries(state.credentials ?? {})) {
@@ -119,7 +117,6 @@ export class McpStore {
       config,
       credentials: existing?.credentials ?? new Map(),
       tools: existing?.tools ?? [],
-      error: existing?.error,
     })
     this.persist()
   }
@@ -181,31 +178,13 @@ export class McpStore {
       // descriptions/parameters without resetting toggles (new tools default on).
       const prevEnabled = new Map(s.tools.map(t => [t.name, t.enabled]))
       s.tools = connection.tools.map(t => ({ ...t, enabled: prevEnabled.get(t.name) ?? true }))
-      s.error = undefined
       await connection.close()
       this.persist()
       return s.tools
-    } catch (error) {
-      s.error = String(error)
+    } catch {
       this.persist()
       return s.tools
     }
-  }
-
-  /** Re-connect + re-discover every enabled server — boot-time refill of the
-   * discovered descriptions/parameters (the persisted block stores only
-   * name+enabled). Preserves per-tool enable flags; per-server errors are
-   * recorded and do not stop the others. */
-  async reconnectAll(): Promise<void> {
-    for (const server of this.list()) {
-      if (!server.enabled) continue
-      await this.discover(server.serverName)
-    }
-  }
-
-  /** A server's most recent connection/dev error. */
-  errorOf(serverName: string): string | undefined {
-    return this.servers.get(serverName)?.error
   }
 
   /** Forward one tool call to a server (connect → call → close). Resolves secrets. */
