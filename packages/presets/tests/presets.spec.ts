@@ -20,7 +20,7 @@ function presetBlock(text: string, id: string): string {
 }
 
 describe('cordis.patch.yml', () => {
-  it('mounts exactly the four preset declarations (T102: no dataset-authoring), in PRESET_IDS order', () => {
+  it('mounts exactly the five preset declarations (T102: no dataset-authoring), in PRESET_IDS order', () => {
     expect(topLevelRowIds(patch)).toEqual(PRESET_IDS.map((id) => `preset-${id}`))
     for (const id of PRESET_IDS) {
       const block = presetBlock(patch, id)
@@ -44,6 +44,10 @@ describe('cordis.patch.yml', () => {
     expect(presetBlock(patch, 'dsh-eval')).toContain('        order: 0\n')
     expect(presetBlock(patch, 'dsh-writing')).toContain("        name: '写作模式'\n")
     expect(presetBlock(patch, 'dsh-writing')).not.toContain('        order:')
+    // learning: folded in from the retired @khorsheed/dsh-bundle-learning
+    // (2026-10-12) — display fields carried over verbatim.
+    expect(presetBlock(patch, 'learning')).toContain("        name: '学习模式'\n")
+    expect(presetBlock(patch, 'learning')).toContain('        order: 12\n')
     // T102: 题集整理 folded into 评测模式 — no row, no id, not even in a comment-free line.
     expect(topLevelRowIds(patch)).not.toContain('preset-dataset-authoring')
     expect(patch).not.toMatch(/^ {8}id: dataset-authoring$/m)
@@ -159,6 +163,40 @@ describe('cordis.patch.yml', () => {
     }
   })
 
+  it('learning: coach persona, the strict diet with a whitelisted skill face, and the library grant (folded from bundle-learning, 2026-10-12)', () => {
+    const block = presetBlock(patch, 'learning')
+    // The grant: library's model face through the package subpath entry.
+    expect(block).toContain('          - id: library-tool\n')
+    expect(block).toContain("            name: '@khorsheed/dsh-library/tool'\n")
+    expect(block).toContain('              tools: all\n')
+    // The learning tool list: persona, ask-user, web, whitelisted skills
+    // (tool-skill WITHOUT skill-filesystem), a guarded shell, compaction.
+    for (const kept of [
+      'persona', 'tool-ask-user', 'tool-web', 'tool-skill',
+      'tool-bash', 'tool-pwsh', 'compaction-basic', 'library-tool',
+    ]) {
+      expect(block).toContain(`- id: ${kept}\n`)
+    }
+    for (const gone of [
+      'tool-fs', 'skill-filesystem', 'tool-todo',
+      'tool-fs-search', 'tool-jobs', 'plan-mode', 'tool-subagent',
+      'tool-workflow', 'tool-goal', 'command-goal', 'present', 'agent-instructions',
+    ]) {
+      expect(block).not.toMatch(new RegExp(`- id: ${gone}\\n`))
+    }
+    // The library row quiets the root sections and tool that do not apply.
+    for (const section of ['harness:source', 'app:web-surface', 'ui:deliverable-file-references']) {
+      expect(block).toContain(`- '${section}'\n`)
+    }
+    expect(block).toContain('- list_capabilities\n')
+    // The persona names the coach stance and the disciplines; the mechanics
+    // stay in the library skill (the persona does not copy payload shapes).
+    expect(block).toContain('You are a close-reading coach.')
+    expect(block).toContain('library_assess')
+    expect(block).not.toContain('chapterRanges')
+    expect(block).not.toContain('mergeInto')
+  })
+
   // T100: the evaluation line runs on 3080 beside dev and writing, so the
   // evaluation surface must arrive ONLY through the presets that name it. Every
   // piece of it rides a companion tool row: the eval tools, /eval and the
@@ -172,7 +210,7 @@ describe('cordis.patch.yml', () => {
     const rows = (id: string): string =>
       presetBlock(patch, id).split('\n').filter((line) => !line.trimStart().startsWith('#')).join('\n')
 
-    for (const id of ['dev', 'dsh-writing', 'dsh-gamedev']) {
+    for (const id of ['dev', 'dsh-writing', 'dsh-gamedev', 'learning']) {
       it(`${id} names no datasets / eval / mission row and no evaluation skill`, () => {
         const block = rows(id)
         for (const entry of EVAL_FAMILY_ROWS) expect(block).not.toContain(entry)

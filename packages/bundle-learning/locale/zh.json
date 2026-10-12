@@ -1,6 +1,0 @@
-{
-  "meta": {
-    "title": "学习模式 preset",
-    "description": "声明式 preset 包：把 library 的 agent 能力（三个工具 + 教练 prompt 段 + library skill）授予「学习模式」会话。"
-  }
-}

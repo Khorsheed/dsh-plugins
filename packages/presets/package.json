@@ -1,6 +1,6 @@
 {
   "name": "@khorsheed/dsh-presets",
-  "description": "The three community agent presets (dev / dsh-eval / dsh-writing) as declarative `@deepseek-ai/dsh-agent-preset` bundle rows — the 0.1.5 directory presets migrated to the host 0.1.7-rc.1 preset mechanism. Data only: no runtime code, no client half.",
+  "description": "The community agent presets as declarative `@deepseek-ai/dsh-agent-preset` bundle rows — the 0.1.5 directory presets migrated to the host 0.1.7-rc.1 preset mechanism, plus later scene modes; the roster grows with releases. Data only: no runtime code, no client half.",
   "version": "0.3.0",
   "publishConfig": {
     "access": "public"
@@ -70,7 +70,8 @@
       "@khorsheed/dsh-eval",
       "@khorsheed/dsh-canvas",
       "@khorsheed/dsh-canvas-novel",
-      "@khorsheed/dsh-game"
+      "@khorsheed/dsh-game",
+      "@khorsheed/dsh-library"
     ],
     "compat": {
       "minHost": "0.1.7-rc.1",

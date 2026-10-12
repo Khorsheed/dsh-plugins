@@ -42,7 +42,7 @@ The mounting side's obligations and the semantics:
 dsh plugin --profile <name> add @khorsheed/dsh-library
 ```
 
-This package alone: the Library tab and the data face work; the model tools do not exist (they are granted per session by the `preset-learning` row declared in `@khorsheed/dsh-bundle-learning`). Uninstalling removes every surface.
+This package alone: the Library tab and the data face work; the model tools do not exist (they are granted per session by the `preset-learning` row declared in `@khorsheed/dsh-presets`). Uninstalling removes every surface.
 
 ## Compatibility
 

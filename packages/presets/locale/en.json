@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Agent Presets",
-    "description": "Declare the dev, dsh-eval, and dsh-writing agent presets."
+    "description": "Scene presets beyond the official standard mode, granted per session; the roster grows with releases."
   }
 }
