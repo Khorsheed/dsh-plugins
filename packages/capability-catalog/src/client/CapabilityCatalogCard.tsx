@@ -816,8 +816,13 @@ export function scopeEditorFor(
     declared: managedRow?.presets ?? [],
     ...managedRow?.conflict === undefined ? {} : { conflict: managedRow.conflict },
     options,
-    save: actions.save,
-    adopt: actions.adopt,
-    release: actions.release,
+    // One action for the modal, the managed-root mechanics hidden behind it:
+    // an emptied selection on a managed skill releases it back to the user
+    // root ("every preset" needs no managed delivery); an empty pick on an
+    // unmanaged skill is already the truth and needs no write at all.
+    apply: async (presets) => {
+      if (managedRow !== undefined) return presets.length === 0 ? actions.release() : actions.save(presets)
+      return presets.length === 0 ? { ok: true } : actions.adopt(presets)
+    },
   }
 }

@@ -309,7 +309,6 @@ describe('the scope editor', () => {
     fireEvent.click(await screen.findByRole('button', { name: /3d-artifact/ }))
     expect(await screen.findByText(en.scopeProvided.replace('{provider}', 'inline-html-render'))).toBeTruthy()
     expect(screen.queryByText(en.scopeSave)).toBeNull()
-    expect(screen.queryByText(en.scopeAdopt)).toBeNull()
     // The modes that carry it, read once from the shared faces cache.
     expect(await screen.findByRole('button', { name: '标准模式' })).toBeTruthy()
     expect(modeFaces).toHaveBeenCalledTimes(1)
@@ -350,8 +349,38 @@ describe('the scope editor', () => {
     render(<CapabilityCatalogCard {...props} />)
     fireEvent.click(await screen.findByRole('button', { name: /3d-artifact/ }))
     expect(await screen.findByText(en.scopeSave)).toBeTruthy()
-    expect(screen.getByText(en.scopeRelease)).toBeTruthy()
+    // One action only: the managed-root mechanics (adopt/release) never surface.
+    expect(screen.getAllByRole('button', { name: en.scopeSave })).toHaveLength(1)
     expect(screen.queryByText(en.scopeProvided.replace('{provider}', 'inline-html-render'))).toBeNull()
+  })
+
+  it('adopts with one Save: the pick is the scope', async () => {
+    const { props } = renderCard({ skills: [skillRow('coding-helper', 'user-dsh')] })
+    fireEvent.click(await screen.findByRole('button', { name: /coding-helper/ }))
+    // Empty pick = every preset: Save stays disabled until a subset is picked.
+    const save = await screen.findByRole('button', { name: en.scopeSave })
+    expect((save as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(await screen.findByRole('checkbox', { name: '极简模式' }))
+    expect((save as HTMLButtonElement).disabled).toBe(false)
+    fireEvent.click(save)
+    await waitFor(() => expect(props.presetScopeAdopt).toHaveBeenCalledWith('coding-helper', ['minimal']))
+    expect(props.presetScopeSet).not.toHaveBeenCalled()
+    expect(props.presetScopeRelease).not.toHaveBeenCalled()
+  })
+
+  it('releases with one Save when a managed skill\'s pick is emptied', async () => {
+    const { props } = renderCard({
+      skills: [skillRow('md-to-wechat', 'user-dsh')],
+      status: { ...scopeStatus, skills: [managedRow('md-to-wechat', ['minimal'])] },
+    })
+    fireEvent.click(await screen.findByRole('button', { name: /md-to-wechat/ }))
+    const box = await screen.findByRole('checkbox', { name: '极简模式' })
+    expect((box as HTMLInputElement).checked).toBe(true)
+    fireEvent.click(box)
+    fireEvent.click(screen.getByRole('button', { name: en.scopeSave }))
+    await waitFor(() => expect(props.presetScopeRelease).toHaveBeenCalledWith('md-to-wechat'))
+    expect(props.presetScopeSet).not.toHaveBeenCalled()
+    expect(props.presetScopeAdopt).not.toHaveBeenCalled()
   })
 })
 
@@ -383,5 +412,26 @@ describe('scopeEditorFor', () => {
     }
     const editor = scopeEditorFor('x', [], status, roster, actions)
     expect(editor).toMatchObject({ managed: true, writable: true, declared: ['standard'] })
+  })
+
+  it('routes apply: adopt for an unmanaged pick, re-scope for a managed one, release when emptied', async () => {
+    const calls: string[] = []
+    const routed = {
+      save: async (presets: readonly string[]) => { calls.push(`save:${presets.join(',')}`); return { ok: true } },
+      adopt: async (presets: readonly string[]) => { calls.push(`adopt:${presets.join(',')}`); return { ok: true } },
+      release: async () => { calls.push('release'); return { ok: true } },
+    }
+    const unmanaged = scopeEditorFor('x', [skillRow('x', 'user-dsh')], scopeStatus, roster, routed)!
+    await unmanaged.apply(['standard'])
+    // An empty pick on an unmanaged skill is already the truth: no write.
+    expect(await unmanaged.apply([])).toEqual({ ok: true })
+    const status: CatalogPresetScopeStatus = {
+      ...scopeStatus,
+      skills: [managedRow('x', ['standard'])],
+    }
+    const managed = scopeEditorFor('x', [], status, roster, routed)!
+    await managed.apply(['minimal'])
+    await managed.apply([])
+    expect(calls).toEqual(['adopt:standard', 'save:minimal', 'release'])
   })
 })
