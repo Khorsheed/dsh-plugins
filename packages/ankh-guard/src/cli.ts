@@ -2234,6 +2234,12 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         for (const key of Object.keys(startEnv)) {
           if (key.startsWith('WD_')) delete startEnv[key]
         }
+        // NODE_PATH/NODE_OPTIONS go too: from a tool-wrapped caller (tsx pins
+        // NODE_PATH to its own pnpm store) they hijack the instance's module
+        // resolution onto that checkout's workspace — the watchdog's
+        // launch_instance scrubs them for the same reason (3080, 2026-10-12).
+        delete startEnv.NODE_PATH
+        delete startEnv.NODE_OPTIONS
         const child = spawn(start, {
           shell: true, detached: true, stdio: 'ignore',
           env: testChildEnv('restart-instance-root', startEnv, { port, tempRoot: stateDir }),
@@ -2466,6 +2472,12 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
       for (const key of Object.keys(supervisorBaseEnv)) {
         if (key.startsWith('WD_')) delete supervisorBaseEnv[key]
       }
+      // NODE_PATH/NODE_OPTIONS must not reach the watchdog either: it forwards
+      // its environment to every instance it launches, and a tool-wrapped
+      // caller (tsx pins NODE_PATH to its own pnpm store) would otherwise
+      // hijack instance module resolution onto that checkout (3080, 2026-10-12).
+      delete supervisorBaseEnv.NODE_PATH
+      delete supervisorBaseEnv.NODE_OPTIONS
       const env = {
         ...supervisorBaseEnv,
         WD_PORT: String(spec.port),

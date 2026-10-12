@@ -182,6 +182,14 @@ launch_instance() {
     if [ -n "$launch_harness_root" ]; then export DSH_HARNESS="$launch_harness_root"; fi
     cd "$launch_home/home" 2>/dev/null || cd /tmp || exit 1
     for v in $(env | sed -n 's/^\(WD_[^=]*\)=.*/\1/p'); do unset "$v"; done
+    # NODE_PATH/NODE_OPTIONS get the same scrub: launched from a tool-wrapped
+    # shell (tsx sets NODE_PATH to its own pnpm store), the instance's module
+    # resolution would be hijacked onto that checkout's workspace — bundle
+    # patches then resolve to the REPO's packages instead of the profile's
+    # installed ones, and the composition silently serves whatever the repo
+    # checkout happens to hold (3080, 2026-10-12: presets resolved to the main
+    # checkout's workspace copy, hiding the newly deployed preset rows).
+    unset NODE_PATH NODE_OPTIONS
     sh -c "$start_cmd"
   )
 }

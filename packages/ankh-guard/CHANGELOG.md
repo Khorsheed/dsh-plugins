@@ -1,5 +1,9 @@
 # 变更记录
 
+## 0.4.3（未发布）
+
+- **启动环境 scrub 扩展到 NODE_PATH / NODE_OPTIONS**：看门狗 `launch_instance`、CLI 的 bare-restart spawn 与 supervisor spawn 三处在清 `WD_*` 之外同步清 `NODE_PATH` / `NODE_OPTIONS`。从 tsx 等工具包裹的 shell 拉起看门狗时，tsx 会把 `NODE_PATH` 钉到自己的 pnpm 仓；不清掉的话它遗传给每一代实例，bundle 解析被劫持到那个检出的 workspace——组合默默地服务那个检出的内容而不是 profile 里装的版本（3080，2026-10-12：presets 被解析到主检出的 workspace 副本，新部署的 preset 行整天不可见，逐字节排查复现 9 vs 10 才定位）
+
 ## 0.4.2（2026-09-30）
 
 - **修复重启浮层卡死**：标签页带着 pending handoff 时，若 cutover 已不经由本标签页收口（操作员 restore、handoff off、监督链楔死），服务端对该 cutoverId 永远回 409，「正在重启」浮层会无限重试不下台。现在每 8 次失败 ACK 花一次 poll——`idle` 即证明没有在途事务，丢弃 pending 并收浮层。sessionStorage 按标签页存活，所以旧实例上已卡住的标签页不受影响此修复——关掉重开即可（3080 实测案例）
