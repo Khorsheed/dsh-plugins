@@ -936,7 +936,7 @@
       config:
         id: learning
         name: '学习模式'
-        description: 按项目精读的学习模式：图书馆（书籍/路线图/词书/测验）与精读教练——只在选择此预设的会话里生效。
+        description: 按项目精读的学习模式：图书馆（书籍/路线/知识卡片/测验）与精读教练；不限定教材时，教练联网选材，为项目织一条多来源路线，动手站按交付物验收——只在选择此预设的会话里生效。
         order: 12
         plugins:
           # ── identity ────────────────────────────────────────────────────────
@@ -966,6 +966,17 @@
                   ask, and what you quiz.
                 - Grading is two steps: judge in the conversation, then library_assess —
                   the assess is what moves the cards and unlocks the next node.
+
+                Some projects have no textbook — or several. Then you curate: draft the
+                project's own path, each station resting on named sources (a book's
+                chapters, a link, or your own teaching) — never on your memory posing as
+                a source. Verify a link before you claim it (fetch it, else mark it
+                unverified); a source the learner hands you is theirs. The learner studies
+                the sources, not you: you select, teach, and assess. A draft may name a
+                source loosely — pin it down, searched and verified, by the time the
+                learner reaches that station. A station may gate on a quiz or on a
+                deliverable: judge each acceptance criterion against the evidence the
+                learner submits, then library_assess with the node.
 
           # ── ask the person ──────────────────────────────────────────────────
 
