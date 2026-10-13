@@ -5,7 +5,7 @@ export interface MobileRoom { members: readonly MobileMember[]; runs: readonly {
 export type RoomRemoteFace = Record<string, (request: Record<string, unknown>) => Promise<{ ok: boolean; value?: unknown }>>
 export class RoomFailure extends Error { constructor(readonly code: string) { super(code) } }
 export class MobileRooms {
-  private cache = new Map<string, { state: MobileRoom | null; at: number }>()
+  private cache = new Map<string, { state: MobileRoom | null; at: number; signature: string }>()
   private pending = new Map<string, Promise<MobileRoom | null | undefined>>()
   private listeners = new Set<() => void>()
   private version = 0
@@ -34,7 +34,16 @@ export class MobileRooms {
   }
   private publish(id: string, state: MobileRoom | null) {
     if (!this.alive) return
-    this.cache.delete(id); this.cache.set(id, { state, at: Date.now() })
+    // Compare only the presentation we consume; server timestamps and journal
+    // metadata must not re-render the roster or re-elect the composer.
+    const signature = JSON.stringify(state === null ? null : {
+      members: state.members.map(({ name, kind, provider, instructions, cwd, childSessionId }) =>
+        [name, kind, provider, instructions, cwd, childSessionId]),
+      runs: state.runs.map(({ member, state }) => [member, state]),
+    })
+    const previous = this.cache.get(id)
+    if (previous?.signature === signature) { previous.at = Date.now(); return }
+    this.cache.delete(id); this.cache.set(id, { state, at: Date.now(), signature })
     if (this.cache.size > 200) this.cache.delete(this.cache.keys().next().value!)
     this.version++; for (const fn of this.listeners) fn()
   }

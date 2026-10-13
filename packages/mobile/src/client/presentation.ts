@@ -39,7 +39,12 @@ export class MobilePresentation {
     this.style.dataset.mobileOwned = 'styles'
     this.style.textContent = MOBILE_CSS
     win.document.head.append(this.style)
-    this.observer = new MutationObserver(this.schedule)
+    this.observer = new MutationObserver(records => {
+      if (records.some(record => {
+        const target = record.target instanceof Element ? record.target : record.target.parentElement
+        return !target?.closest('[data-conversation-scroll] [data-slot="conversation.session"]')
+      })) this.schedule()
+    })
     this.observer.observe(win.document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['data-sidebar-collapsed', 'data-phase', 'aria-selected', 'aria-expanded', 'data-ds-dark-theme', 'src'], characterData: true })
     this.media.addEventListener('change', this.schedule)
     win.addEventListener('resize', this.schedule)

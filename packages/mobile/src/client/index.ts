@@ -81,17 +81,21 @@ export function apply(ctx: Context): void {
   for (const name of ['conversation.input.dock', 'conversation.session.header.actions'] as const) {
     ctx.slots.inject(name, () => ctx.slots.register({ name, id: 'mobile-send-focus' }, MobileSubmissionFocus))
   }
-  // Room's first asynchronous cache fill does not bump its composer slot in
-  // this revision. A declining mobile entry refreshes the public election;
+  // Older Room versions need a first-fill election bump. Refresh only when
+  // discovering a room, not on every roster/run change;
   // the original Room/approval/local-agent entries still decide the winner.
   ctx.slots.inject('conversation.composer', () => {
     let remove: (() => void) | undefined
     let timer: ReturnType<typeof setTimeout> | undefined
+    let lastRoom: string | undefined
     const refresh = () => {
       const list = navigation.getSnapshot()?.sessions.list.getSnapshot()
       const current = list === undefined ? undefined : mainSessionId(list)
-      if (!presentation.getSnapshot().active || !current || !rooms.get(current)) return
+      const room = current && rooms.get(current) ? current : undefined
+      if (!presentation.getSnapshot().active || room === lastRoom) return
+      lastRoom = room
       clearTimeout(timer)
+      if (!room) return
       timer = setTimeout(() => {
         remove?.()
         remove = ctx.slots.register({ name: 'conversation.composer', priority: 10000, select: () => null }, () => null)

@@ -61,6 +61,21 @@ describe('mobile presentation ownership', () => {
     await update()
     expect(p.getSnapshot().active).toBe(false)
   })
+  it('ignores streaming history mutations while still adapting header changes', async () => {
+    const main = document.querySelector('[data-slot="main.conversation"]')!
+    main.innerHTML = '<div data-phase="active"><header>Title</header><div data-conversation-scroll><div data-slot="conversation.session"><p>First</p></div></div><div data-composer-seat></div></div>'
+    const p = mount(true)
+    await update()
+    const sync = vi.spyOn(p.surface, 'sync')
+    const history = document.querySelector('[data-slot="conversation.session"]')!
+    history.querySelector('p')!.firstChild!.textContent = 'Streaming text'
+    history.insertAdjacentHTML('beforeend', '<p>More tokens</p>')
+    await update()
+    expect(sync).not.toHaveBeenCalled()
+    main.querySelector('header')!.firstChild!.textContent = 'New title'
+    await update()
+    expect(sync).toHaveBeenCalled()
+  })
   it('observes official sidebar state without rewriting layout or storage', async () => {
     const p = mount(true)
     const frame = document.querySelector('[data-mobile-frame]')!

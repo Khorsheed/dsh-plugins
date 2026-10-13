@@ -34,12 +34,15 @@ export class MobilePanels {
   private scheduled = false
   private failed = false
   constructor(private readonly doc: Document) {
-    this.observer = new MutationObserver(() => {
-      if (this.scheduled) return
+    this.observer = new MutationObserver(records => {
+      if (this.scheduled || !records.some(record => {
+        const target = record.target instanceof Element ? record.target : record.target.parentElement
+        return !target?.closest('[data-conversation-scroll] [data-slot="conversation.session"]')
+      })) return
       this.scheduled = true
       queueMicrotask(() => { this.scheduled = false; if (!this.disposed) this.sync() })
     })
-    this.observer.observe(doc.body, { subtree: true, childList: true, characterData: true, attributes: true,
+    this.observer.observe(doc.body, { subtree: true, childList: true, attributes: true,
       attributeFilter: ['data-sidebar-right-open', 'data-dockkit-pane-active', 'data-dockkit-float-active', 'aria-selected', 'hidden'] })
   }
   readonly getSnapshot = () => this.snapshot

@@ -21,3 +21,22 @@ it('reads only Room state and ignores late results on removal', async () => {
   const request = rooms.refresh('s'); rooms.dispose(); finish({ ok: true, value: { ok: true, value: { members: [], runs: [] } } }); await request
   expect(remote.invite).not.toHaveBeenCalled(); expect(changed).not.toHaveBeenCalled(); expect(rooms.get('s')).toBeUndefined()
 })
+
+it('keeps unchanged room snapshots stable while renewing freshness and still publishes roster changes', async () => {
+  let members = [{ name: 'main', kind: 'main-agent' }]
+  const getState = vi.fn(async () => ({ ok: true, value: { ok: true, value: { members, runs: [], updatedAt: Math.random() } } }))
+  const rooms = new MobileRooms(() => ({ getState })), changed = vi.fn()
+  rooms.subscribe(changed)
+  await rooms.refresh('s')
+  const first = rooms.get('s')
+  await rooms.refresh('s', true)
+  expect(rooms.get('s')).toBe(first)
+  expect(changed).toHaveBeenCalledOnce()
+  members = [...members, { name: 'ada', kind: 'cli' }]
+  await rooms.refresh('s', true)
+  expect(rooms.get('s')?.members).toHaveLength(2)
+  expect(changed).toHaveBeenCalledTimes(2)
+  await rooms.refresh('s')
+  expect(getState).toHaveBeenCalledTimes(3)
+  rooms.dispose()
+})

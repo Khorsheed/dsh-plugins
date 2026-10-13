@@ -139,3 +139,18 @@ it('exposes all opened tabs and supports arrow-key selection without a dropdown'
   expect(canvas.getAttribute('aria-selected')).toBe('true')
   expect(document.activeElement).toBe(canvas)
 })
+
+it('does not re-read panel state for streaming text or history node insertion', async () => {
+  const f = fixture()
+  document.body.insertAdjacentHTML('beforeend', '<div data-conversation-scroll><div data-slot="conversation.session"><p>First</p></div></div>')
+  await act(async () => {})
+  const read = vi.spyOn(f.service, 'tabsIn')
+  await act(async () => {
+    const history = document.querySelector('[data-slot="conversation.session"]')!
+    history.querySelector('p')!.firstChild!.textContent = 'Next token'
+    history.insertAdjacentHTML('beforeend', '<p>Next paragraph</p>')
+  })
+  expect(read).not.toHaveBeenCalled()
+  await act(async () => { document.querySelector('[data-dockkit-host]')!.remove() })
+  expect(f.panels.getSnapshot().managed).toBe(false)
+})
