@@ -309,60 +309,11 @@ type Player = ReturnType<typeof usePlayer>
 function SourcesTab({ p, v, o, act, report, player, reload }: { p: VideoPaneProps; v: ProjectView; o: Overview | undefined; act: Act; report: (e: unknown) => void; player: Player; reload: () => void }): ReactNode {
   const { t } = p
   const project = v.project
-  const [paths, setPaths] = useState('')
-  const [continuous, setContinuous] = useState(false)
-  const [busy, setBusy] = useState(false)
-  const [picking, setPicking] = useState(false)
-  const [picked, setPicked] = useState<{ dir: string; files: MediaFile[] } | null>(null)
-  const [checked, setChecked] = useState<Set<string>>(new Set())
   const partIndex = new Map((project.referenceParts ?? []).map((pt, i) => [pt.sourceId, i + 1]))
-  const doImport = async () => {
-    const list = paths.split('\n').map((s) => s.trim()).filter(Boolean)
-    if (!list.length) return
-    setBusy(true)
-    await act(() => p.importSources({ projectId: project.id, paths: list, continuous }))
-    setBusy(false)
-    setPaths('')
-    setContinuous(false)
-  }
-  // The host's native directory picker → a checklist of the folder's media
-  // files. Hidden off-host (the dialog would open on a machine nobody is
-  // watching); a host without the picker resolves null, like a cancel.
-  const pick = async () => {
-    setPicking(true)
-    try {
-      const dir = await p.pickDirectory()
-      if (!dir) return
-      const files = await value(p.listMedia({ dir }))
-      setPicked({ dir, files })
-      setChecked(new Set(files.map((f) => f.path)))
-    } catch (e) {
-      report(e)
-    } finally {
-      setPicking(false)
-    }
-  }
-  const importPicked = async () => {
-    if (!picked) return
-    const list = picked.files.filter((f) => checked.has(f.path)).map((f) => f.path)
-    if (!list.length) return
-    setBusy(true)
-    try {
-      await value(p.importSources({ projectId: project.id, paths: list, continuous }))
-      reload()
-      setPicked(null)
-      setContinuous(false)
-    } catch (e) {
-      report(e)
-    } finally {
-      setBusy(false)
-    }
-  }
   return (
     <>
       {o && <Warnings t={t} o={o} onDownload={() => value(p.downloadModels()).then(reload, report)} />}
       <div className={css.sect}>{t('sources.title')}</div>
-      {!project.sources.length && <div className={css.muted}>{t('sources.empty')}</div>}
       {project.sources.map((s) => (
         <div key={s.id} className={css.asset}>
           <span className={css.dot} data-role={s.role} />
@@ -375,37 +326,7 @@ function SourcesTab({ p, v, o, act, report, player, reload }: { p: VideoPaneProp
           {s.offsetSec !== 0 && <span className={css.tag}>{t('sources.offset', { sec: s.offsetSec.toFixed(2) })}</span>}
         </div>
       ))}
-      <label className={css.field}><span>{t('sources.importLabel')}</span>
-        <textarea id="vs-import-paths" className={css.textarea} rows={2} value={paths} placeholder={t('sources.importPlaceholder')} onChange={(e) => setPaths(e.target.value)} />
-      </label>
-      {picked && (
-        <div className={css.pickList}>
-          <span className={css.muted} title={picked.dir}>{picked.dir}</span>
-          {!picked.files.length && <span className={css.muted}>{t('sources.pickEmpty')}</span>}
-          {picked.files.map((f) => (
-            <label key={f.path} className={css.check} title={f.path}>
-              <input type="checkbox" checked={checked.has(f.path)}
-                onChange={(e) => setChecked((prev) => { const next = new Set(prev); if (e.target.checked) next.add(f.path); else next.delete(f.path); return next })} />
-              <span className={css.dot} data-role={f.kind === 'video' ? 'video' : 'recording'} />
-              <span className={css.pickName}>{f.name}</span>
-              <span className={css.meta}>{formatBytes(f.bytes)}</span>
-            </label>
-          ))}
-          <div className={css.actions}>
-            <button type="button" className={css.btn} onClick={() => setPicked(null)}>{t('action.cancel')}</button>
-            <button type="button" className={css.primary} disabled={busy || checked.size === 0} onClick={() => void importPicked()}>{t('sources.importSelected', { count: String(checked.size) })}</button>
-          </div>
-        </div>
-      )}
-      <div className={css.actions}>
-        <label className={css.check} title={project.transcript.length ? t('sources.continuousLocked') : undefined}>
-          <input type="checkbox" checked={continuous} disabled={project.transcript.length > 0} onChange={(e) => setContinuous(e.target.checked)} />
-          {t('sources.continuous')}
-        </label>
-        {browserOnHost() && <button type="button" className={css.btn} disabled={busy || picking} onClick={() => void pick()}>{t('sources.pickFolder')}</button>}
-        <span className={css.muted}>{t('sources.importHint')}</span>
-        <button type="button" className={css.primary} disabled={busy || !paths.trim()} onClick={() => void doImport()}>{t('sources.import')}</button>
-      </div>
+      <ImportPanel p={p} project={project} report={report} reload={reload} hero={project.sources.length === 0} />
 
       <JobList t={t} jobs={v.jobs.filter((j) => j.kind !== 'export')} onCancel={(id) => value(p.cancelJob(id)).then(reload, report)}
         onRetry={(job) => value(p.retryTranscribe(job.projectId)).then(reload, report)} />
@@ -420,6 +341,118 @@ function SourcesTab({ p, v, o, act, report, player, reload }: { p: VideoPaneProp
       {project.speakers.map((s) => (
         <SpeakerRow key={s.id} p={p} v={v} sp={s} act={act} player={player} />
       ))}
+    </>
+  )
+}
+
+/**
+ * The import journey. Empty project: a hero that leads with the native folder
+ * picker (host-local pages only) and keeps hand-typed paths one click away.
+ * With sources: a compact button row, the same two surfaces unfolding inline.
+ * A successful pick closes the manual box, so only one surface shows at a
+ * time; both import through the same `importSources` path, 连续录制 included.
+ */
+function ImportPanel({ p, project, report, reload, hero }: { p: VideoPaneProps; project: Project; report: (e: unknown) => void; reload: () => void; hero: boolean }): ReactNode {
+  const { t } = p
+  const onHost = browserOnHost()
+  const [paths, setPaths] = useState('')
+  const [continuous, setContinuous] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [picking, setPicking] = useState(false)
+  const [manual, setManual] = useState(!onHost)
+  const [picked, setPicked] = useState<{ dir: string; files: MediaFile[] } | null>(null)
+  const [checked, setChecked] = useState<Set<string>>(new Set())
+  const locked = project.transcript.length > 0
+  const importPaths = async (list: string[]) => {
+    if (!list.length) return
+    setBusy(true)
+    try {
+      await value(p.importSources({ projectId: project.id, paths: list, continuous }))
+      reload()
+      setPaths('')
+      setPicked(null)
+      setContinuous(false)
+    } catch (e) {
+      report(e)
+    } finally {
+      setBusy(false)
+    }
+  }
+  const pick = async () => {
+    setPicking(true)
+    try {
+      const dir = await p.pickDirectory()
+      if (!dir) return
+      const files = await value(p.listMedia({ dir }))
+      setPicked({ dir, files })
+      setChecked(new Set(files.map((f) => f.path)))
+      setManual(false)
+    } catch (e) {
+      report(e)
+    } finally {
+      setPicking(false)
+    }
+  }
+  const continuousBox = (
+    <label className={css.check} title={locked ? t('sources.continuousLocked') : undefined}>
+      <input type="checkbox" checked={continuous} disabled={locked} onChange={(e) => setContinuous(e.target.checked)} />
+      {t('sources.continuous')}
+    </label>
+  )
+  const manualBox = manual && (
+    <div className={css.manualBox}>
+      <textarea id="vs-import-paths" className={css.textarea} rows={2} value={paths} placeholder={t('sources.importPlaceholder')} aria-label={t('sources.importLabel')} onChange={(e) => setPaths(e.target.value)} />
+      <div className={css.actions}>
+        {continuousBox}
+        <button type="button" className={css.primary} disabled={busy || !paths.trim()}
+          onClick={() => void importPaths(paths.split('\n').map((s) => s.trim()).filter(Boolean))}>{t('sources.import')}</button>
+      </div>
+    </div>
+  )
+  const pickedList = picked && (
+    <div className={css.pickList}>
+      <span className={css.muted} title={picked.dir}>{picked.dir}</span>
+      {!picked.files.length && <span className={css.muted}>{t('sources.pickEmpty')}</span>}
+      {picked.files.map((f) => (
+        <label key={f.path} className={css.check} title={f.path}>
+          <input type="checkbox" checked={checked.has(f.path)}
+            onChange={(e) => setChecked((prev) => { const next = new Set(prev); if (e.target.checked) next.add(f.path); else next.delete(f.path); return next })} />
+          <span className={css.dot} data-role={f.kind === 'video' ? 'video' : 'recording'} />
+          <span className={css.pickName}>{f.name}</span>
+          <span className={css.meta}>{formatBytes(f.bytes)}</span>
+        </label>
+      ))}
+      <div className={css.actions}>
+        {continuousBox}
+        <button type="button" className={css.btn} onClick={() => setPicked(null)}>{t('action.cancel')}</button>
+        <button type="button" className={css.primary} disabled={busy || checked.size === 0}
+          onClick={() => void importPaths(picked.files.filter((f) => checked.has(f.path)).map((f) => f.path))}>{t('sources.importSelected', { count: String(checked.size) })}</button>
+      </div>
+    </div>
+  )
+  if (hero) {
+    return (
+      <div className={css.hero}>
+        <div className={css.heroTitle}>{t('sources.heroTitle')}</div>
+        <div className={css.heroSub}>{t('sources.heroSub')}</div>
+        {onHost && <button type="button" className={`${css.primary} ${css.bigPrimary}`} disabled={busy || picking} onClick={() => void pick()}>{t('sources.pickFolder')}</button>}
+        <div className={css.heroAlt}>
+          <button type="button" className={css.linkBtn} onClick={() => setManual((v) => !v)}>{t('sources.manualPaths')}</button>
+          <span> · {t('sources.heroAlt')}</span>
+        </div>
+        {manualBox}
+        {pickedList}
+      </div>
+    )
+  }
+  return (
+    <>
+      <div className={css.importRow}>
+        {onHost && <button type="button" className={css.btn} disabled={busy || picking} onClick={() => void pick()}>{t('sources.pickFolder')}</button>}
+        <button type="button" className={css.btn} aria-pressed={manual} onClick={() => setManual((v) => !v)}>{t('sources.manualPaths')}</button>
+      </div>
+      {manualBox}
+      {pickedList}
     </>
   )
 }
