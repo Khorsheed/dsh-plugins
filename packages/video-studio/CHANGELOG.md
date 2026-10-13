@@ -13,3 +13,5 @@ M1 收尾（见 `2026-10-11-video-studio-m1-polish`）：文稿 tab 双视图—
 工具面收敛为 5 个：`video_scan` 折进 `video_propose_edit scan`；技能新增「校稿」一步——模型通读文稿，用常识把同音错字、专名作为 `fix_text` 提议组交给用户 ✓。文稿 tab 交互：拖选弹出浮动工具条（▶ / 剪掉 / 恢复 / 改字 / 找同款），「待决」更名「待确认」，删除线与停顿徽章视觉降噪。
 
 修复：新建工程名称为空时禁止创建（此前静默落为「未命名工程」，且在「新节目」名称框按 Enter 会隐式提交整个表单）；service 层已有的 `renameProject` 接通 Remote 与面板——「设置 → 这期」顶部可改工程名；名称占位符改为「例：…」不再像已填内容。见 `2026-10-13-video-studio-project-rename`。
+
+素材导入新增「选择文件夹…」：复用宿主原生目录选择器（`remote.directoryPicker`，local-files 同款 ctx.get 降级模式）选中文件夹后，面板列出其中的音视频文件（名称排序、大小、类型圆点）勾选导入；只在页面从宿主机本机打开时显示，远程访问隐藏，宿主无选择器时按取消处理。见 `2026-10-13-video-studio-folder-pick-import`。

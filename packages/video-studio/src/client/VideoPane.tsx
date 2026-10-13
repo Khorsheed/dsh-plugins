@@ -5,10 +5,10 @@
  * poll: the model edits the same project from the conversation.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { ChipRow, PanelHeader, PanelRoot, UnderlineTabs, type PanelAction } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
+import { ChipRow, PanelHeader, PanelRoot, UnderlineTabs, browserOnHost, type PanelAction } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
 import { formatClock } from '../core/timeline.ts'
 import type {
-  EffectiveSetting, GlobalConfig, SettingValue, Job, ModelStatus, Overview, Project, ProjectView, SettingKey, Show, Speaker,
+  EffectiveSetting, GlobalConfig, SettingValue, Job, MediaFile, ModelStatus, Overview, Project, ProjectView, SettingKey, Show, Speaker,
 } from '../types.ts'
 import type { RemoteResult, VideoPaneProps } from './contract.ts'
 import type { VideoStudioKey } from './locales.ts'
@@ -92,6 +92,12 @@ function usePlayer(): { playing: string | null; play: (key: string, load: () => 
 
 function basename(path: string): string {
   return path.split(/[\\/]/).pop() ?? path
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(1)} GB`
+  if (bytes >= 1e6) return `${Math.round(bytes / 1e6)} MB`
+  return `${Math.max(1, Math.round(bytes / 1e3))} KB`
 }
 
 /** A speaker's display name: their name, or 「说话人 N」 by position. */
@@ -306,6 +312,9 @@ function SourcesTab({ p, v, o, act, report, player, reload }: { p: VideoPaneProp
   const [paths, setPaths] = useState('')
   const [continuous, setContinuous] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [picking, setPicking] = useState(false)
+  const [picked, setPicked] = useState<{ dir: string; files: MediaFile[] } | null>(null)
+  const [checked, setChecked] = useState<Set<string>>(new Set())
   const partIndex = new Map((project.referenceParts ?? []).map((pt, i) => [pt.sourceId, i + 1]))
   const doImport = async () => {
     const list = paths.split('\n').map((s) => s.trim()).filter(Boolean)
@@ -315,6 +324,39 @@ function SourcesTab({ p, v, o, act, report, player, reload }: { p: VideoPaneProp
     setBusy(false)
     setPaths('')
     setContinuous(false)
+  }
+  // The host's native directory picker → a checklist of the folder's media
+  // files. Hidden off-host (the dialog would open on a machine nobody is
+  // watching); a host without the picker resolves null, like a cancel.
+  const pick = async () => {
+    setPicking(true)
+    try {
+      const dir = await p.pickDirectory()
+      if (!dir) return
+      const files = await value(p.listMedia({ dir }))
+      setPicked({ dir, files })
+      setChecked(new Set(files.map((f) => f.path)))
+    } catch (e) {
+      report(e)
+    } finally {
+      setPicking(false)
+    }
+  }
+  const importPicked = async () => {
+    if (!picked) return
+    const list = picked.files.filter((f) => checked.has(f.path)).map((f) => f.path)
+    if (!list.length) return
+    setBusy(true)
+    try {
+      await value(p.importSources({ projectId: project.id, paths: list, continuous }))
+      reload()
+      setPicked(null)
+      setContinuous(false)
+    } catch (e) {
+      report(e)
+    } finally {
+      setBusy(false)
+    }
   }
   return (
     <>
@@ -336,11 +378,31 @@ function SourcesTab({ p, v, o, act, report, player, reload }: { p: VideoPaneProp
       <label className={css.field}><span>{t('sources.importLabel')}</span>
         <textarea id="vs-import-paths" className={css.textarea} rows={2} value={paths} placeholder={t('sources.importPlaceholder')} onChange={(e) => setPaths(e.target.value)} />
       </label>
+      {picked && (
+        <div className={css.pickList}>
+          <span className={css.muted} title={picked.dir}>{picked.dir}</span>
+          {!picked.files.length && <span className={css.muted}>{t('sources.pickEmpty')}</span>}
+          {picked.files.map((f) => (
+            <label key={f.path} className={css.check} title={f.path}>
+              <input type="checkbox" checked={checked.has(f.path)}
+                onChange={(e) => setChecked((prev) => { const next = new Set(prev); if (e.target.checked) next.add(f.path); else next.delete(f.path); return next })} />
+              <span className={css.dot} data-role={f.kind === 'video' ? 'video' : 'recording'} />
+              <span className={css.pickName}>{f.name}</span>
+              <span className={css.meta}>{formatBytes(f.bytes)}</span>
+            </label>
+          ))}
+          <div className={css.actions}>
+            <button type="button" className={css.btn} onClick={() => setPicked(null)}>{t('action.cancel')}</button>
+            <button type="button" className={css.primary} disabled={busy || checked.size === 0} onClick={() => void importPicked()}>{t('sources.importSelected', { count: String(checked.size) })}</button>
+          </div>
+        </div>
+      )}
       <div className={css.actions}>
         <label className={css.check} title={project.transcript.length ? t('sources.continuousLocked') : undefined}>
           <input type="checkbox" checked={continuous} disabled={project.transcript.length > 0} onChange={(e) => setContinuous(e.target.checked)} />
           {t('sources.continuous')}
         </label>
+        {browserOnHost() && <button type="button" className={css.btn} disabled={busy || picking} onClick={() => void pick()}>{t('sources.pickFolder')}</button>}
         <span className={css.muted}>{t('sources.importHint')}</span>
         <button type="button" className={css.primary} disabled={busy || !paths.trim()} onClick={() => void doImport()}>{t('sources.import')}</button>
       </div>

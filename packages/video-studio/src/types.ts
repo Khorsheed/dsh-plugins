@@ -38,6 +38,18 @@ export interface ImportRequest extends ProjectRef {
   continuous?: boolean
 }
 
+export interface ListMediaRequest {
+  dir: string
+}
+
+/** One audio/video file found directly inside a folder (the folder-pick import). */
+export interface MediaFile {
+  path: string
+  name: string
+  bytes: number
+  kind: 'audio' | 'video'
+}
+
 export interface CutRequest extends ProjectRef {
   start: number
   end: number

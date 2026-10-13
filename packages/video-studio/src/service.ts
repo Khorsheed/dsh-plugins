@@ -4,7 +4,7 @@
  * perform. Both faces call the same methods; a panel-originated mutation also
  * appends a PanelEvent so the model learns about it on its next read.
  */
-import { mkdir, open, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, open, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, extname, join } from 'node:path'
@@ -21,7 +21,7 @@ import { MediaError, decodeMono, findBinaries, findBinary, probe, run, versionSc
 import { ModelManager, speechModelPaths, type ModelStatus } from './media/models.ts'
 import { runSpeech } from './media/speech.ts'
 import { Store, newId, resolveStateRoot, type GlobalConfig } from './store.ts'
-import type { AudioChunk } from './types.ts'
+import type { AudioChunk, MediaFile } from './types.ts'
 
 export const SPEAKER_COLORS = ['s1', 's2', 's3', 's4', 's5', 's6', 's7', 's8'] as const
 
@@ -365,6 +365,31 @@ export class VideoStudioService {
   }
 
   // ───────────────────────── import ─────────────────────────
+
+  /**
+   * Media files directly inside a folder, name-sorted — the panel's
+   * folder-pick import lists them for selection. Subfolders are not entered.
+   */
+  async listMediaFiles(dir: string): Promise<MediaFile[]> {
+    const root = expandHome(dir.trim())
+    let entries
+    try {
+      entries = await readdir(root, { withFileTypes: true })
+    } catch {
+      throw new Error(`读不了这个文件夹：${root}`)
+    }
+    const files: MediaFile[] = []
+    for (const e of entries) {
+      if (!e.isFile()) continue
+      const ext = extname(e.name).toLowerCase()
+      const kind = VIDEO_EXT.has(ext) ? 'video' : AUDIO_EXT.has(ext) ? 'audio' : null
+      if (!kind) continue
+      const path = join(root, e.name)
+      const bytes = await stat(path).then((s) => s.size, () => 0)
+      files.push({ path, name: e.name, bytes, kind })
+    }
+    return files.sort((a, b) => a.name.localeCompare(b.name))
+  }
 
   async importSources(projectId: string, paths: string[], origin: Origin, continuous: boolean = false): Promise<Project> {
     const { ffprobe } = await this.requireTools()

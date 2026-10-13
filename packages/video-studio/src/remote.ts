@@ -16,7 +16,7 @@ import type { Overview, ProjectView, VideoStudioService } from './service.ts'
 import type { ModelStatus } from './media/models.ts'
 import type {
   BindRequest, ClipRequest, CreateProjectRequest, CreateShowRequest, CutRequest, DecideRequest, ExportRequest,
-  GlobalPatchRequest, ImportRequest, JobRef, ProjectRef, ProjectSettingRequest, RenameProjectRequest, SegmentReassignRequest, SessionRef,
+  GlobalPatchRequest, ImportRequest, JobRef, ListMediaRequest, MediaFile, ProjectRef, ProjectSettingRequest, RenameProjectRequest, SegmentReassignRequest, SessionRef,
   ShowSettingRequest, SpeakerMergeRequest, SpeakerRenameRequest, VoiceprintDeleteRequest,
   AudioChunk, AudioChunkRequest, KeywordCutRequest, ReplaceRequest, TextFixRequest,
 } from './types.ts'
@@ -100,6 +100,12 @@ export class VideoStudioRemoteService extends TypertRemoteService<VideoStudioRem
   @Remote('project')
   project(request: ProjectRef): Promise<ProjectView> {
     return this.svc.view(request.projectId)
+  }
+
+  /** Media files directly inside a folder — the folder-pick import lists them. */
+  @Remote('listMedia')
+  listMedia(request: ListMediaRequest): Promise<MediaFile[]> {
+    return this.svc.listMediaFiles(request.dir)
   }
 
   @Remote('importSources')

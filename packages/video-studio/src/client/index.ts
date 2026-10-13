@@ -56,6 +56,20 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     renameProject: request => remote.renameProject(request),
     project: projectId => remote.project({ projectId }),
     importSources: request => remote.importSources(request),
+    listMedia: request => remote.listMedia(request),
+    // The host's native directory picker (host ≥ 0.1.2). ctx.get, not an
+    // inject: a composition without the picker yields undefined and the
+    // gesture degrades to a cancel-shaped null (the local-files pattern —
+    // declaring the namespace would pend the whole plugin instead).
+    pickDirectory: async () => {
+      const picker = ctx.get('remote.directoryPicker') as {
+        pick(): Promise<{ ok: boolean; value?: string | null; error?: { message: string } }>
+      } | undefined
+      if (picker === undefined) return null
+      const result = await picker.pick()
+      if (!result.ok) throw new Error(result.error?.message ?? 'directory picker failed')
+      return result.value ?? null
+    },
     setCut: request => remote.setCut(request),
     decide: request => remote.decide(request),
     scan: projectId => remote.scan({ projectId }),
