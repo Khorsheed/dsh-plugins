@@ -26,8 +26,8 @@ import { EvalRunJobs } from '../src/run/job.ts'
 import { EgressUnavailable } from '../src/run/egress.ts'
 import { READINESS_PROMPT } from '../src/run/readiness.ts'
 import type { DatasetsFace, LabAcquireSpec, LabFace, LabFingerprintComponents, LabUnitInfo, LabVerifyResult, LocalAgentFace, MissionFace, MissionSubmitFile } from '../src/faces.ts'
-import type { DelegationProgress, DelegationResult, DelegationRun, ExecutionHomePort, ScopedHomeEvidenceFace } from '../src/faces.ts'
-import { canonicalJson } from '../src/contract/hash.ts'
+import type { DelegationProgress, DelegationResult, DelegationRun, CapabilityCompositionEvidence, ExecutionHomePort, ScopedHomeEvidenceFace } from '../src/faces.ts'
+import { canonicalJson, hashConditionDocument } from '../src/contract/hash.ts'
 import { expandMatrix, orderCells } from '../src/run/matrix.ts'
 import { validateJson } from '../src/contract/schema.ts'
 import { RUBRIC_WEIGHTS_PATH, RUBRIC_WEIGHTS_SCHEMA } from '../src/judge/weights.ts'
@@ -3535,6 +3535,87 @@ describe('runPlan frozen native effort', () => {
     writeCondition(root, 'dsh-exec', { reasoning: { effort: 'high' } })
     const localAgent = new FakeLocalAgent()
     await expect(runPlan(writePlan(root, {}, 'unsupported-effort'), { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') }, { datasets: fakeDatasets(root), mission: new FakeMission(join(root, 'mission')), localAgent })).rejects.toThrow(/requires native configuration admission/)
+    expect(localAgent.calls).toHaveLength(0)
+  })
+})
+
+describe('runPlan — the bound member’s composition replaces the management catalog (E4)', () => {
+  /** The composition evidence the member answers with, shared by the lock and the face. */
+  const memberComposition = (over: Partial<CapabilityCompositionEvidence> = {}): CapabilityCompositionEvidence => ({
+    measurement: { kind: 'preset-composition', presetId: 'eval-lean', revision: 'rev-1' },
+    sha: 'd'.repeat(64),
+    completeness: {
+      skills: { state: 'complete' },
+      tools: { state: 'complete' },
+      mcpServers: { state: 'complete' },
+      channels: { state: 'complete' },
+    },
+    providerFormat: 'capability-catalog/evidence@1',
+    homeIdentity: 'target-1',
+    binding: 'member-1',
+    ...over,
+  })
+
+  /** A dataset tree whose dsh-exec condition declares the preset, locked against the member's evidence. */
+  function memberLockedTree(composition: CapabilityCompositionEvidence): string {
+    const root = makeDatasetTree()
+    const conditionPath = join(root, 'datasets', 'harness-comparison', 'conditions', 'dsh-exec.json')
+    const condition = JSON.parse(readFileSync(conditionPath, 'utf8')) as Record<string, unknown>
+    condition['preset'] = 'eval-lean'
+    writeFileSync(conditionPath, JSON.stringify(condition, null, 2))
+    writeFileSync(join(root, 'datasets', 'harness-comparison', 'conditions', 'dsh-exec.lock.json'), `${JSON.stringify({
+      schema: 'dataseek.condition-lock/1',
+      condition: 'dsh-exec',
+      sha: hashConditionDocument(condition),
+      provisioned: {
+        at: 1757500000000,
+        cliVersion: '0.1.5',
+        effective: { model: null, reasoningEffort: null, permissions: null, endpoint: null },
+        preset: 'eval-lean',
+        capabilityComposition: composition,
+      },
+    }, null, 2)}\n`)
+    return root
+  }
+
+  it('passes the gate on the member’s evidence and never calls the management catalog', async () => {
+    const composition = memberComposition()
+    const root = memberLockedTree(composition)
+    const planPath = writePlan(root)
+    const mission = new FakeMission(join(root, 'mission'))
+    const catalog = { snapshotFor: vi.fn(async (): Promise<never> => { throw new Error('the management catalog must never be called for these scopes') }) }
+    const report = await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') }, {
+      datasets: fakeDatasets(root), mission, localAgent: new FakeLocalAgent(),
+      capabilityCatalog: catalog,
+      evidence: { capabilityComposition: async () => composition },
+    })
+
+    expect(report.cells[0]?.finalState).toBe('archived')
+    // The catalog IS allowed exactly one call: the orchestrator's own
+    // provenance read (no preset argument — run.meta.orchestrator, which is
+    // genuinely local and not a condition's measurement). The condition's
+    // capability freshness — a call NAMING a preset — must never happen.
+    expect(catalog.snapshotFor.mock.calls.every(args => args.length === 0)).toBe(true)
+    // The readiness annotation says WHICH face the subject was measured at:
+    // the member's digest and preset, from the one measurement object.
+    expect(report.readiness[0]?.capabilities).toMatchObject({ sha: composition.sha, preset: 'eval-lean' })
+  })
+
+  it('a member evidence drift refuses the run coded, before any delegation', async () => {
+    const root = memberLockedTree(memberComposition())
+    const planPath = writePlan(root)
+    const mission = new FakeMission(join(root, 'mission'))
+    const localAgent = new FakeLocalAgent()
+    const drifted = memberComposition({ sha: 'e'.repeat(64) })
+    const error = await runPlan(planPath, { parentSessionId: PARENT_SESSION, stateRoot: join(root, 'state') }, {
+      datasets: fakeDatasets(root), mission, localAgent,
+      evidence: { capabilityComposition: async () => drifted },
+    }).catch((caught: unknown) => caught)
+
+    expect(error).toBeInstanceOf(EvalRunRefused)
+    expect((error as EvalRunRefused).diagnostics[0]?.code).toBe('READINESS_FAILED')
+    expect((error as EvalRunRefused).diagnostics[0]?.message).toContain('CAPABILITY_COMPOSITION_STALE')
+    expect(mission.runs.size).toBe(0)
     expect(localAgent.calls).toHaveLength(0)
   })
 })

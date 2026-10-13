@@ -314,6 +314,7 @@ rev12 及以前，`conditions/` 与 `plans/`（以及 `analysis/`）放在题集
 - `preset` 非 null 时，lock 的 `provisioned` 里必须有 `capabilities`：capability-catalog 对那份已配好的环境算出的**能力哈希**（规范形取技能的 name/source/正文 sha 与工具的 name/channel/parameters——描述措辞不进，改一次文案不该换一个受试对象）。没有它，就绪检查在花掉任何一次委派之前就拒（`CAPABILITIES_NOT_PROVISIONED`）：preset 进条件哈希，两条只差 preset 的条件是两个受试对象，没人量过就只是纸面上的两个。记录里的 `preset` 与声明不一致同样拒——配出来的是另一个受试对象。
 - `capabilities.source` 说这次是在**哪一份** preset 目录上量的。`scope-snapshot`：scope 自己持有一份逐字节相同的副本（`<scoped home>/.agent-presets/<id>`），这是容器轮唯一可行的形态——一个单元 bind 挂进去的只有 scoped home，roster 指向部署 preset 根的路径在单元里不存在。`instance-root`：scope 沿用部署的 preset 根，量得到，但只有宿主轮解析得到。
 - `scope-snapshot` 还带 `capabilities.snapshot.sha`：那份副本**全部文件**的哈希，`SKILL.md` 也算。它不是对能力面的第二种说法，而是**离线**判断「受试对象还是被量过的那一个」的唯一凭据——`home.sha` 按设计只哈希配置后缀的文件，技能正文改了它不动；能力面要有活的 catalog 才量得到。就绪检查与 `validate` 都核这一条，不一致即拒并叫人重跑 provision。
+- 受试对象是一份**已绑定成员**的组合时，能力证据记在 `provisioned.capabilityComposition`——它自己的一种记录（`preset-composition`），**绝不**并进 `capabilities`、也不冒充 `scope-snapshot`/`instance-root`。它由执行目标的证据面供给（管理实例的 catalog 与 home 的 roster 回读都不参与），载 `measurement`（kind + 可选 presetId / workdir / revision）、`providerFormat`（生产者格式名，如 `capability-catalog/evidence@1`）、`sha`（生产者对快照算出的摘要——消费方只比对，**绝不**从行内容重算）、`completeness` 四节（skills / tools / mcpServers / channels；每节 `complete` 才算数——`complete` 含「量过且为零」，`partial`/`unavailable` 一律是「未验证」，provision 与就绪闸各按 `CAPABILITY_COMPOSITION_INCOMPLETE` 拒绝），以及身份对 `homeIdentity` + `binding`（该证据属于哪个 home、关于哪个成员；与挂载计划同一钉词表）。新鲜度逐项比对 sha、measurement 描述、身份对与完备态，各按带码拒绝区分（`CAPABILITY_COMPOSITION_STALE` / `CAPABILITY_COMPOSITION_MEASUREMENT_MISMATCH` / `CAPABILITY_COMPOSITION_HOME_MISMATCH` / `CAPABILITY_COMPOSITION_BINDING_MISMATCH` / `CAPABILITY_COMPOSITION_INCOMPLETE`；答不出或答非所形即 `CAPABILITY_COMPOSITION_INVALID`，**无**本地回落）。
 - 作因子的 preset，其 `agent.cordis.yml` 里**不得出现绝对路径**。同一份 preset 会被从三个目录读到（部署的 preset 根、scope 的副本、单元里的挂载点），绝对路径至少在其中两处是错的，而且是静音的错（`skill-filesystem` 把读不到的根当空根）。要相对，用 loader 自己的表达式——官方 `cordis` preset 的写法：`!!js "process.getBuiltinModule('node:url').fileURLToPath(new URL('skills/', baseUrl))"`，`baseUrl` 是该组合文件自己的目录。快照端与测量端都会拒绝带绝对路径的 preset。
 - `unit` 可缺省，缺省即「本条件只在宿主上跑」。plan 声明了 `unit` 时它**必须在场**：`unit.scopedHome` 说这条件的凭证目录挂到容器内的哪里、由哪个变量指向它（`CODEX_HOME` / `CLAUDE_CONFIG_DIR` / `KIMI_CODE_HOME` / `DSH_HOME`），`var` 必须同时出现在 `env.keys` 里——注入的名字要跟声明的名字一致，validate 报 error。宿主一侧的目录**不写在这里**：编排器挂的是评测实例自己的该家作用域目录——`/<家> login` 写进去的那个，也是委派回读读的那个。挂副本会静默坏掉：容器轮把 rollout 写进挂进去的那个目录，回读却按 `homeDir(家名)` 去找，两者不是一处时不报错，只是永远读不到。
 - `unit` 进条件哈希（只有 `notes` 不进）：受试对象从哪里读凭证是一项因子，不是注释。给既有条件补 `unit` 会改哈希，lock 随之过期，要重新 provision。
@@ -517,6 +518,179 @@ validate 也用同一个函数复核：lock 的 `provisioned.effective` 与条�
                   "description": "64-hex sha256 over the copy's `<relPath>\\0<content>\\0` stream, sorted by relPath."
                 }
               }
+            }
+          }
+        },
+        "capabilityComposition": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "measurement",
+            "providerFormat",
+            "sha",
+            "completeness",
+            "binding"
+          ],
+          "description": "The capability evidence of an already-bound member, measured WHERE the member runs and recorded as its OWN kind — `preset-composition` — never merged into `capabilities` (the management-instance measurement) and never masquerading as `scope-snapshot`/`instance-root`. Present only when provision consumed a scoped-home evidence face carrying the `capabilityComposition` verb; its sections' completeness is the verification floor (every section `complete`, where `complete` includes measured-zero, and any `partial`/`unavailable` section means not verified). Freshness compares the sha, the measurement descriptor, the identity pair and the completeness state, each refusing distinguishably.",
+          "properties": {
+            "measurement": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind"
+              ],
+              "description": "The measured claim, verbatim as the producer made it. `presetId` when present must equal the declared preset — otherwise the measurement describes another subject.",
+              "properties": {
+                "kind": {
+                  "const": "preset-composition"
+                },
+                "presetId": {
+                  "type": "string",
+                  "description": "The preset the measured composition runs, as the caller verified it."
+                },
+                "workdir": {
+                  "type": "string",
+                  "description": "The workdir whose project-scoped roots were measured."
+                },
+                "revision": {
+                  "type": "string",
+                  "description": "The measured composition's revision (e.g. its configuration digest), when the caller has one."
+                }
+              }
+            },
+            "providerFormat": {
+              "type": "string",
+              "description": "Who produced the measurement (e.g. 'capability-catalog/evidence@1'); recorded so a future producer never collides with it."
+            },
+            "sha": {
+              "type": "string",
+              "description": "64-hex sha256 of the fingerprinted capability snapshot, by the producer's own algorithm — compared, never recomputed from rows."
+            },
+            "completeness": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "skills",
+                "tools",
+                "mcpServers",
+                "channels"
+              ],
+              "description": "Per-section completeness of the measurement; every section must be `complete` for the evidence to verify anything.",
+              "properties": {
+                "skills": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "state"
+                  ],
+                  "properties": {
+                    "state": {
+                      "enum": [
+                        "complete",
+                        "partial",
+                        "unavailable"
+                      ],
+                      "description": "`complete` includes measured-zero (empty, measured) — only failure modes carry the other two."
+                    },
+                    "reason": {
+                      "type": "string",
+                      "description": "Why the section is not complete; absent when it is."
+                    }
+                  }
+                },
+                "tools": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "state"
+                  ],
+                  "properties": {
+                    "state": {
+                      "enum": [
+                        "complete",
+                        "partial",
+                        "unavailable"
+                      ],
+                      "description": "`complete` includes measured-zero (empty, measured) — only failure modes carry the other two."
+                    },
+                    "reason": {
+                      "type": "string",
+                      "description": "Why the section is not complete; absent when it is."
+                    }
+                  }
+                },
+                "mcpServers": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "state"
+                  ],
+                  "properties": {
+                    "state": {
+                      "enum": [
+                        "complete",
+                        "partial",
+                        "unavailable"
+                      ],
+                      "description": "`complete` includes measured-zero (empty, measured) — only failure modes carry the other two."
+                    },
+                    "reason": {
+                      "type": "string",
+                      "description": "Why the section is not complete; absent when it is."
+                    }
+                  }
+                },
+                "channels": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "state"
+                  ],
+                  "properties": {
+                    "state": {
+                      "enum": [
+                        "complete",
+                        "partial",
+                        "unavailable"
+                      ],
+                      "description": "`complete` includes measured-zero (empty, measured) — only failure modes carry the other two."
+                    },
+                    "reason": {
+                      "type": "string",
+                      "description": "Why the section is not complete; absent when it is."
+                    }
+                  }
+                }
+              }
+            },
+            "coverage": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "What the measurement read, echoed for expectation checks — a digest says nothing about its own coverage.",
+              "properties": {
+                "directories": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Directories the measurement read."
+                },
+                "services": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Services the measurement read."
+                }
+              }
+            },
+            "homeIdentity": {
+              "type": "string",
+              "description": "The home-identity token pinning this evidence to the scoped home it belongs to (the execution-home pin vocabulary)."
+            },
+            "binding": {
+              "type": "string",
+              "description": "The execution binding the evidence is about — the member whose composition was measured. Opaque; a change refuses distinguishably."
             }
           }
         }

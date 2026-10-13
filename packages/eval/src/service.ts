@@ -70,8 +70,9 @@ import {
   type EvalExportNote,
 } from './report/export-note.ts'
 import { instanceCapabilityProbe } from './capability-probe.ts'
+import { readCapabilityCompositionShape } from './capability-composition.ts'
 import type {
-  CapabilityCatalogFace, DatasetsFace, DatasetsRegistryFace, LabFace, LabUnitRow, LocalAgentFace, MissionActionFace,
+  CapabilityCatalogFace, CapabilityCompositionEvidence, DatasetsFace, DatasetsRegistryFace, LabFace, LabUnitRow, LocalAgentFace, MissionActionFace,
   MissionAnnotateFace, MissionExportFace,
   MissionFace, MissionFinalizeFace, MissionReadFace, MissionRunListFace, ExecutionHomePort, ScopedHomeEvidenceFace,
 } from './faces.ts'
@@ -431,12 +432,16 @@ export class EvalService {
   private scopeHomeDirResolver(): {
     scopeHomeDir?: (harness: string, scope?: string) => string | undefined
     scopePresetSha?: (harness: string, scope: string | undefined, preset: string) => Promise<string | undefined>
+    capabilityCompositionNow?: (harness: string, scope?: string) => Promise<CapabilityCompositionEvidence | undefined>
   } {
     const evidence = this.evidence
     if (evidence !== undefined) {
-      if (typeof evidence.presetSnapshot !== 'function') return {}
-      return {
-        scopePresetSha: async (harness: string, scope: string | undefined, preset: string): Promise<string | undefined> => {
+      const resolvers: {
+        scopePresetSha?: (harness: string, scope: string | undefined, preset: string) => Promise<string | undefined>
+        capabilityCompositionNow?: (harness: string, scope?: string) => Promise<CapabilityCompositionEvidence | undefined>
+      } = {}
+      if (typeof evidence.presetSnapshot === 'function') {
+        resolvers.scopePresetSha = async (harness: string, scope: string | undefined, preset: string): Promise<string | undefined> => {
           try {
             const answer = await evidence.presetSnapshot?.(harness, scope, preset)
             if (answer === undefined || answer.keepsCopy !== true) return undefined
@@ -445,8 +450,18 @@ export class EvalService {
           } catch {
             return undefined
           }
-        },
+        }
       }
+      if (typeof evidence.capabilityComposition === 'function') {
+        resolvers.capabilityCompositionNow = async (harness: string, scope?: string): Promise<CapabilityCompositionEvidence | undefined> => {
+          try {
+            return readCapabilityCompositionShape(await evidence.capabilityComposition?.(harness, scope))
+          } catch {
+            return undefined
+          }
+        }
+      }
+      return resolvers
     }
     const localAgent = this.hosts?.get('localAgent') as LocalAgentFace | undefined
     if (typeof localAgent?.homeDir !== 'function') return {}

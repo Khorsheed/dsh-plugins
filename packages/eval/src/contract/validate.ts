@@ -14,10 +14,12 @@ import { homedir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { statSync } from 'node:fs'
 import { checkAgainstEffective, type EffectiveSnapshot } from '../effective.ts'
+import { compositionFreshnessRefusal, readCapabilityCompositionShape } from '../capability-composition.ts'
 import { hashConditionDocument } from './hash.ts'
 import { llmDraftCriteria, pickRubricPath, probePaths } from '../judge/judge.ts'
 import { hashPresetTree, scopePresetDir } from '../preset-snapshot.ts'
 import { claudeScopeDiagnostics, conditionUnitDiagnostics, planUnitOf, type ScopedConditionRef } from '../run/unit.ts'
+import type { CapabilityCompositionEvidence } from '../faces.ts'
 import {
   CONDITION_ID_RE,
   CONDITION_SCHEMA,
@@ -70,6 +72,8 @@ export interface LockProvisionRecord {
   preset?: string | null
   /** The capability fingerprint of that environment; absent means nobody measured it. */
   capabilities?: LockedCapabilities
+  /** The bound member's capability-composition record, when provision measured through the evidence face. */
+  capabilityComposition?: CapabilityCompositionEvidence
 }
 
 /** One plan-referenced condition, resolved as far as the dataset repo allows. */
@@ -78,7 +82,14 @@ export interface ConditionResolution {
   /** sha256 of the condition document; null when it could not be read or validated. */
   sha: string | null
   /** The parsed lock record; null when absent or unreadable. */
-  lock: { sha: string; homeSha?: string; provisioned?: LockProvisionRecord; capabilities?: LockedCapabilities } | null
+  lock: {
+    sha: string
+    homeSha?: string
+    provisioned?: LockProvisionRecord
+    capabilities?: LockedCapabilities
+    /** The bound member's capability-composition record; present when provision measured through the evidence face's `capabilityComposition` verb. */
+    capabilityComposition?: CapabilityCompositionEvidence
+  } | null
   /** ready: lock matches the fresh hash, home is verified, and provision agrees. missing: no usable declaration. */
   status: 'ready' | 'unready' | 'missing'
 }
@@ -440,6 +451,14 @@ export interface ConditionReadinessOptions {
    * read's absent-answer semantics.
    */
   scopePresetSha?: (harness: string, scope: string | undefined, preset: string) => Promise<string | undefined>
+  /**
+   * The capability-composition freshness twin: the bound member's composition
+   * evidence as the face answers it NOW, for a lock that recorded one. Same
+   * absent-answer semantics as {@link scopePresetSha} — `undefined` skips the
+   * freshness check; a present but drifting answer warns coded. The GATE is
+   * the readiness check, not this reader.
+   */
+  capabilityCompositionNow?: (harness: string, scope?: string) => Promise<CapabilityCompositionEvidence | undefined>
 }
 
 /** What {@link validatePlan} may additionally be told. */
@@ -523,10 +542,12 @@ export async function resolveConditionReadiness(
   const lockHome = isPlainObject(lock.value['home']) ? lock.value['home'] : undefined
   const lockHomeSha = typeof lockHome?.['sha'] === 'string' ? lockHome['sha'] : undefined
   const capabilities = lockedCapabilitiesOf(lock.value)
+  const capabilityComposition = lockedCapabilityCompositionOf(lock.value)
   entry.lock = {
     sha: lockSha,
     ...(lockHomeSha !== undefined ? { homeSha: lockHomeSha } : {}),
     ...(capabilities !== undefined ? { capabilities } : {}),
+    ...(capabilityComposition !== undefined ? { capabilityComposition } : {}),
   }
   if (lock.value['condition'] !== id) {
     warnings.push({ code: 'LOCK_MALFORMED', message: `conditions/${id}.lock.json records condition ${JSON.stringify(lock.value['condition'])}, not ${JSON.stringify(id)}` })
@@ -602,6 +623,32 @@ export async function resolveConditionReadiness(
     }
   }
 
+  // The bound member's capability composition, re-measured through the same
+  // face the lock recorded it from. One measurement object at all three
+  // consumption points: provision wrote it, this read compares it, the
+  // readiness gate refuses on it. Undefined back skips the check (the
+  // reader's limitation, never the subject's innocence); a drifting answer
+  // warns with the refusal code the gate will use.
+  const capabilityCompositionNow = options.capabilityCompositionNow
+  if (capabilityComposition !== undefined && capabilityCompositionNow !== undefined) {
+    const harness = typeof (loaded.value['harness'] as { name?: unknown } | undefined)?.name === 'string'
+      ? ((loaded.value['harness'] as { name: string }).name)
+      : ''
+    const scope = typeof loaded.value['scope'] === 'string' ? loaded.value['scope'] : undefined
+    let fresh: CapabilityCompositionEvidence | undefined
+    try {
+      fresh = readCapabilityCompositionShape(await capabilityCompositionNow(harness, scope))
+    } catch {
+      fresh = undefined
+    }
+    if (fresh !== undefined) {
+      const refusal = compositionFreshnessRefusal(capabilityComposition, fresh)
+      if (refusal !== undefined) {
+        warnings.push({ code: refusal.slice(0, refusal.indexOf(':')), message: `condition ${id}: ${refusal}` })
+      }
+    }
+  }
+
   const homeVerified = declaredSha !== undefined && declaredSha === lockHomeSha
 
   // What provision RECORDED about the scope, re-checked against the
@@ -612,7 +659,7 @@ export async function resolveConditionReadiness(
   // two error-grade fields (permissions, model.endpoint) are the approval
   // boundary and the upstream route, and a run on a lock that lies about
   // either is not the experiment the condition describes.
-  const provisioned = provisionRecordOf(lock.value['provisioned'], capabilities)
+  const provisioned = provisionRecordOf(lock.value['provisioned'], capabilities, capabilityComposition)
   let provisionVerified = true
   if (provisioned === null) {
     warnings.push({
@@ -636,9 +683,14 @@ export async function resolveConditionReadiness(
   return readiness
 }
 
-/** Read `provisioned.capabilities` off a lock document (absent / malformed yields undefined). */
-function lockedCapabilitiesOf(lock: Record<string, unknown>): LockedCapabilities | undefined {
+/** Read `provisioned.capabilityComposition` off a lock document (absent / malformed yields undefined — a malformed record is a display gap, the gate is readiness). */
+function lockedCapabilityCompositionOf(lock: Record<string, unknown>): CapabilityCompositionEvidence | undefined {
   const provisioned = isPlainObject(lock['provisioned']) ? lock['provisioned'] : undefined
+  return readCapabilityCompositionShape(provisioned?.['capabilityComposition'])
+}
+
+/** Read `provisioned.capabilities` off a lock document (absent / malformed yields undefined). */
+function lockedCapabilitiesOf(lock: Record<string, unknown>): LockedCapabilities | undefined {  const provisioned = isPlainObject(lock['provisioned']) ? lock['provisioned'] : undefined
   const capabilities = isPlainObject(provisioned?.['capabilities']) ? provisioned['capabilities'] : undefined
   const sha = capabilities?.['sha']
   if (typeof sha !== 'string' || !SHA256_HEX_RE.test(sha)) return undefined
@@ -664,7 +716,7 @@ function lockedCapabilitiesOf(lock: Record<string, unknown>): LockedCapabilities
  * @param value - the lock's `provisioned` property.
  * @returns the record, or null when there is none to trust.
  */
-function provisionRecordOf(value: unknown, capabilities: LockedCapabilities | undefined): LockProvisionRecord | null {
+function provisionRecordOf(value: unknown, capabilities: LockedCapabilities | undefined, capabilityComposition: CapabilityCompositionEvidence | undefined): LockProvisionRecord | null {
   if (!isPlainObject(value) || typeof value['at'] !== 'number') return null
   const effective = value['effective']
   if (!isPlainObject(effective)) return null
@@ -686,6 +738,7 @@ function provisionRecordOf(value: unknown, capabilities: LockedCapabilities | un
     effective: { model, reasoningEffort, permissions, endpoint },
     ...(typeof preset === 'string' || preset === null ? { preset } : {}),
     ...(capabilities === undefined ? {} : { capabilities }),
+    ...(capabilityComposition === undefined ? {} : { capabilityComposition }),
   }
 }
 

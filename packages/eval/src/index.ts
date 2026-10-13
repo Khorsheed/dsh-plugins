@@ -230,10 +230,13 @@ export type {
   LocalAgentFace, DelegationRun, DelegationResult, EvalDelegationOptions, MissionSubmitFile,
   LocalAgentCredentialGrade, LocalAgentEffectiveSettingsFace,
   ScopedHomeEvidenceFace, ScopedHomeHashEvidence, PresetSnapshotEvidence,
+  CapabilityCompositionEvidence, CapabilitySectionCompleteness,
   ExecutionHomePort, ScopedHomePlanRequest, ScopedHomePlan,
   LabFace, LabAcquireSpec, LabFingerprintComponents, LabMountSpec, LabPopulateResult, LabResourceLimits,
   LabUnitInfo, LabVerifyResult,
 } from './faces.ts'
+export { CAPABILITY_COMPOSITION_FORMAT } from './faces.ts'
+export { compositionFreshnessRefusal, incompleteSections, readCapabilityCompositionShape } from './capability-composition.ts'
 export { handleEvalCommand, registerEvalSlash } from './slash.ts'
 export {
   CONDITION_SCHEMA,

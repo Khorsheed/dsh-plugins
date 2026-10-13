@@ -54,6 +54,30 @@ Per-mode capability reads (the mode picker, `snapshotAt` / `snapshotFor` / `mode
 - **Untagged plugin tools fall back to heuristics** — a tool whose author did not set an origin tag may be listed under 内置/builtin; the tab's 「为什么我的插件工具不在这里？」 modal (and [docs/tool-origin-guide.md](../../docs/tool-origin-guide.md)) explains the one-line fix.
 - **The MCP bridge covers the text-result case** — discovered tools are registered text-in/text-out, without image/attachment projection; and on a composition without the settings service, MCP server state is in-memory only and resets on restart.
 
+## The workspace integration seam
+
+Producing capability-composition EVIDENCE in the process where the composition runs, and handing it to another process as plain data to verify, is a supported consumption form: the package root exports `produceCapabilityEvidence(options)` — every input explicit (a caller-verified `presetId` and absolute `workdir`, the `skills` / `tools` registry slices to measure, an optional already-resolved opaque `scope`, and the caller's `coverage` declaration) — and the output is one JSON-safe bundle: the composition digest `sha`, the per-section `completeness`, the `measurement` object (`kind: 'preset-composition'`, with presetId + workdir + an optional revision), and the `coverage` declaration. The digest reuses this package's own `catalogSnapshot` / `hashOf` (the tools side is read through the same `tool-face` implementation the Remote verbs use), so over the same registries it is byte-identical to the one `snapshotFor` stamps — a contract test pins that parity.
+
+```ts
+import { produceCapabilityEvidence } from '@khorsheed/dsh-capability-catalog'
+
+const evidence = await produceCapabilityEvidence({
+  presetId: 'eval-lean',                   // caller-verified
+  workdir: '/abs/path/to/project',         // a relative path is refused
+  skills: ctx.skills, tools: ctx.tools,    // the registry slices to measure
+  coverage: { directories: ['…/skills'], services: ['skills', 'tools'] },
+})
+// → { measurement, sha, completeness, coverage }
+```
+
+The mounting side's obligations and the semantics:
+
+- **Per-section completeness is part of the evidence**: every section the snapshot covers (skills / tools / mcpServers / channels) carries a `{ state, reason? }` descriptor — `complete` = scanned and everything found is included (zero found is complete-with-zero, distinguishable from failure); `partial` = some sources failed and the rows are a subset (`reason` names the failed source class — registry read failed / registry reported incomplete discovery / skill bodies unreadable / origin tags unreadable — never secret content, and never raw error text, which may carry paths); `unavailable` = the section could not be measured at all (service not installed / read failed / no permission). "Scanned, it is empty" and "not installed / unreadable" are therefore two distinguishable answers.
+- **The digest records what it covered**: the digest itself covers only the capability face (the same algorithm and the same exclusions as `snapshotFor`), and the measurement object plus the coverage declaration travel in the bundle — the caller declares which directories and services were read, so the consumer can check "is this digest measuring the composition I expected?" An empty or partial digest cannot be mistaken for a complete one: a section whose completeness is not `complete` is "not verified".
+- **Consumers never recompute, and never treat partial as complete**: the digest algorithm is owned by THIS package (what is compared across processes is the digest, not the rows); any `partial` / `unavailable` section is "not verified" — never read as complete, and never read as "the section is empty".
+- **The Remote verbs' standing-scope cost is unchanged, and local-only**: `snapshotAt` / `snapshotFor` / `modeFaces` MOUNT a not-yet-composed preset by design (the roster's single-flight standing mount), and their output is byte-identical to before. The production face therefore resolves no scope — the API has no roster parameter at all (in the normal target-side topology the process's own registries already ARE the composition's face, so no scope is needed; an already-resolved scope may be passed as an opaque token, and resolving and releasing it stays the caller's business) — and mounts or registers no cordis service, so it runs in a bare process (the published tarball is the target-side runtime, with no dependency beyond what this package already has).
+- **Local behavior is unchanged when this face is unused**: the Remote verbs never carry the completeness field; the listing's and fingerprint's output, and the "a listing degrades, a fingerprint refuses" split, are byte-identical to before.
+
 ## How it works
 
 <details>

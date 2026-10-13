@@ -19,7 +19,7 @@ import type {
   CatalogToolRow,
 } from './types.ts'
 import {
-  collectSkills, loadSkillDetail, readSkillFileContent, deleteSkillDir, resolveServices, CREDENTIAL_REF_NAME, type CredentialsSlice, type RegistrySlice, type SkillDefinitionLike,
+  collectSkills, loadSkillDetail, readSkillFileContent, deleteSkillDir, resolveServices, CREDENTIAL_REF_NAME, type CredentialsSlice, type RegistrySlice, type SkillDefinitionLike, type SkillsCollectionReport,
 } from './skills.ts'
 import { attributeToolChannel } from './channels.ts'
 import { hashOf } from './capabilities.ts'
@@ -27,7 +27,7 @@ import type { ToolOrigin } from './tool-origin.ts'
 import { addSkillFromPayload, commandInstall, listDirSkills, resolveSkillNameFromContent } from './import.ts'
 import { OFFICIAL_TOOLS } from './official-tools.ts'
 
-export type { CredentialsSlice, RegistrySlice }
+export type { CredentialsSlice, RegistrySlice, SkillsCollectionReport }
 
 /** Load the cached official-tools names. */
 function officialToolsSet(): ReadonlySet<string> {
@@ -66,6 +66,15 @@ interface ToolSchemaLike {
 }
 
 /**
+ * Out-bag a snapshot caller may pass to receive the collection health the
+ * rows were gathered with. Evidence production reads it to build the
+ * per-section completeness descriptors; the Remote verbs never pass one.
+ */
+export interface CatalogSnapshotReport {
+  skills?: SkillsCollectionReport
+}
+
+/**
  * Build the full catalog snapshot (skills + tools).
  *
  * `fingerprint` decides whether the snapshot is a LISTING or an IDENTITY: it
@@ -81,10 +90,12 @@ export async function catalogSnapshot(
   appearedAfterApply: ReadonlySet<string>,
   scopes: readonly unknown[] = [undefined],
   toolOrigins: ReadonlyMap<string, ToolOrigin> = new Map(),
-  options: { fingerprint?: boolean; preset?: string } = {},
+  options: { fingerprint?: boolean; preset?: string; report?: CatalogSnapshotReport } = {},
 ): Promise<CapabilityCatalogSnapshot> {
   const fingerprint = options.fingerprint === true
-  const base = await collectSkills(registry, workdir, scopes, { bodySha: fingerprint })
+  const skillsReport: SkillsCollectionReport = { attemptedScopes: 0, failedScopes: 0, incompleteReads: 0, unreadableBodies: 0 }
+  const base = await collectSkills(registry, workdir, scopes, { bodySha: fingerprint, report: skillsReport })
+  if (options.report !== undefined) options.report.skills = skillsReport
   const tools = projectTools(toolsSchemas, mcpServers, appearedAfterApply as Set<string>, toolOrigins)
   const snapshot: CapabilityCatalogSnapshot = {
     skills: base.skills,

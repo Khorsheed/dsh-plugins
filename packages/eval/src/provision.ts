@@ -57,11 +57,12 @@
  */
 import { readFile, writeFile } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { incompleteSections, readCapabilityCompositionShape } from './capability-composition.ts'
 import { hashConditionDocument, hashHome, type HomeHash } from './contract/hash.ts'
 import { CONDITION_ID_RE, CONDITION_SCHEMA_ID, LOCK_SCHEMA, LOCK_SCHEMA_ID, validateJson } from './contract/schema.ts'
 import { checkAgainstEffective, flattenEffective, type ProvisionCheck } from './effective.ts'
 import type {
-  LocalAgentCredentialGrade, LocalAgentEffectiveSettingsFace, LocalAgentFace, LocalAgentScopeStatus,
+  CapabilityCompositionEvidence, LocalAgentCredentialGrade, LocalAgentEffectiveSettingsFace, LocalAgentFace, LocalAgentScopeStatus,
   ScopedHomeEvidenceFace, ScopedHomeHashEvidence,
 } from './faces.ts'
 import { conditionDiagnostics, expandHome, type EvalDiagnostic } from './contract/validate.ts'
@@ -174,6 +175,35 @@ async function readHomeEvidence(
     )
   }
   return answer
+}
+
+/**
+ * Ask the evidence face for the bound member's capability composition, and
+ * hold the answer to the evidence contract (provider format, digest,
+ * descriptor, completeness, binding). A throw and a non-evidence shape are
+ * both coded refusals — NEVER a fallthrough to the management catalog, which
+ * is the whole point of the verb existing.
+ */
+async function readCompositionEvidence(
+  evidence: ScopedHomeEvidenceFace,
+  harness: string,
+  scope: string | null,
+  named: string,
+): Promise<CapabilityCompositionEvidence> {
+  let answer: unknown
+  try {
+    answer = await evidence.capabilityComposition?.(harness, scope ?? undefined)
+  } catch (error) {
+    throw new EvalProvisionRefused(`CAPABILITY_COMPOSITION_INVALID: the evidence face could not answer the capability composition for ${named}: ${error instanceof Error ? error.message : String(error)}`)
+  }
+  const composition = readCapabilityCompositionShape(answer)
+  if (composition === undefined) {
+    throw new EvalProvisionRefused(
+      `CAPABILITY_COMPOSITION_INVALID: the evidence face answered the capability composition for ${named} in a shape that is not evidence`
+      + ' (provider format, 64-hex digest, measurement descriptor, four-section completeness and binding are all required)',
+    )
+  }
+  return composition
 }
 
 /**
@@ -593,8 +623,58 @@ export async function provisionCondition(conditionPath: string, options: Provisi
   // nobody measured leaves them two on paper and one in fact. Measuring is
   // the caller's hook (see the module doc), and its absence is said out
   // loud rather than papered over.
+  //
+  // The BOUND-MEMBER path comes first: when the evidence face carries the
+  // `capabilityComposition` verb, the member's own measurement IS the
+  // capability evidence for these scopes — the home's roster read and the
+  // management-instance catalog are never consulted (the probe below is
+  // skipped entirely), and the lock records the evidence as its own kind.
   let capabilities: ProvisionedCapabilities | undefined
-  if (declaredPreset !== null) {
+  let capabilityComposition: CapabilityCompositionEvidence | undefined
+  if (declaredPreset !== null && evidence?.capabilityComposition !== undefined) {
+    const composition = await readCompositionEvidence(evidence, harness, scope, named)
+    // The completeness floor: every section must be complete (measured-zero
+    // included); a partial or unavailable section is "not verified", and no
+    // lock is written on it — the coded refusal the review named.
+    const incomplete = incompleteSections(composition)
+    if (incomplete.length > 0) {
+      for (const section of incomplete) {
+        const row = composition.completeness[section as keyof typeof composition.completeness]
+        errors.push({
+          code: 'CAPABILITY_COMPOSITION_INCOMPLETE',
+          message: `the member's capability composition measures ${section} as ${row.state}`
+            + `${row.reason === undefined ? '' : ` (${row.reason})`} — "not verified", so no lock is written on it`,
+        })
+      }
+      log(`provision ${id}: REFUSED — capability composition not complete (${incomplete.join(', ')}); no lock written`)
+      return report
+    }
+    // The identity pin (the E3 vocabulary): the home evidence and the
+    // composition evidence must name ONE home identity — a face wired to two
+    // targets would otherwise record a measurement about the wrong home.
+    if (
+      homeEvidence?.homeIdentity !== undefined && composition.homeIdentity !== undefined
+      && homeEvidence.homeIdentity !== composition.homeIdentity
+    ) {
+      throw new EvalProvisionRefused(
+        `EXECUTION_HOME_IDENTITY_MISMATCH: the home evidence pins ${JSON.stringify(homeEvidence.homeIdentity)} for ${named}`
+        + ` but the capability composition pins ${JSON.stringify(composition.homeIdentity)}`
+        + ' — evidence measured on one target must never record beside a home fingerprint from another',
+      )
+    }
+    // The measurement disagreeing with the declaration is the whole reason to
+    // record what was measured rather than what was asked for — a warning
+    // here, the readiness gate's refusal later (the catalog path's own rule).
+    if (composition.measurement.presetId !== undefined && composition.measurement.presetId !== declaredPreset) {
+      warnings.push({
+        code: 'CAPABILITIES_PRESET_MISMATCH',
+        message: `the condition declares preset ${JSON.stringify(declaredPreset)} but the member's composition was measured under`
+          + ` ${JSON.stringify(composition.measurement.presetId)} — the lock records what was measured, and the readiness gate refuses the pair`,
+      })
+    }
+    capabilityComposition = composition
+    log(`provision ${id}: capability composition caps:${composition.sha.slice(0, 12)}… (binding ${composition.binding}${composition.measurement.presetId === undefined ? '' : `, preset ${composition.measurement.presetId}`})`)
+  } else if (declaredPreset !== null) {
     if (options.capabilities === undefined) {
       warnings.push({
         code: 'CAPABILITIES_UNMEASURED',
@@ -664,8 +744,28 @@ export async function provisionCondition(conditionPath: string, options: Provisi
       // Recorded only when there is something to record: a `preset: null`
       // key on a condition that declares none would read as "measured, and
       // it composes nothing", which is a different claim from silence.
-      ...(declaredPreset === null ? {} : { preset: capabilities?.preset ?? declaredPreset }),
+      ...(declaredPreset === null ? {} : { preset: capabilities?.preset ?? capabilityComposition?.measurement.presetId ?? declaredPreset }),
       ...(capabilities === undefined ? {} : { capabilities }),
+      // The bound member's evidence, recorded as its OWN kind — alongside
+      // `capabilities`, never merged into it.
+      ...(capabilityComposition === undefined
+        ? {}
+        : {
+          capabilityComposition: {
+            measurement: {
+              kind: 'preset-composition',
+              ...(capabilityComposition.measurement.presetId === undefined ? {} : { presetId: capabilityComposition.measurement.presetId }),
+              ...(capabilityComposition.measurement.workdir === undefined ? {} : { workdir: capabilityComposition.measurement.workdir }),
+              ...(capabilityComposition.measurement.revision === undefined ? {} : { revision: capabilityComposition.measurement.revision }),
+            },
+            providerFormat: capabilityComposition.providerFormat,
+            sha: capabilityComposition.sha,
+            completeness: capabilityComposition.completeness,
+            ...(capabilityComposition.coverage === undefined ? {} : { coverage: capabilityComposition.coverage }),
+            ...(capabilityComposition.homeIdentity === undefined ? {} : { homeIdentity: capabilityComposition.homeIdentity }),
+            binding: capabilityComposition.binding,
+          },
+        }),
     },
   }
   const violations = validateJson(LOCK_SCHEMA, lock)

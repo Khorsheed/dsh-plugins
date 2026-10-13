@@ -54,6 +54,30 @@ dsh plugin --profile web remove @khorsheed/dsh-capability-catalog
 - **未打标的插件工具退回启发式**——作者没设 origin 标记的工具可能被归到「内置」；设置页的「为什么我的插件工具不在这里？」弹窗（与 [docs/tool-origin-guide.md](../../docs/tool-origin-guide.md)）给出了一行的修法。
 - **MCP 桥只覆盖文本结果形态**——发现的工具按纯文本进出注册，无图片/附件投影；组合里没有 settings 服务时，MCP server 状态只活在内存里，重启即重置。
 
+## 工作区接入接缝
+
+把能力组合的**证据**在生产它的进程里算出来、以纯数据交给另一个进程核验，是受支持的消费方式：包根导出 `produceCapabilityEvidence(options)`——输入全部显式（调用方已核验的 `presetId` 与绝对 `workdir`、要测量的 `skills` / `tools` 注册表切片、可选的已解析不透明 `scope`、调用方的覆盖声明 `coverage`），输出是一份 JSON 安全的数据包：组合摘要 `sha`、逐节完备性 `completeness`、测量对象 `measurement`（`kind: 'preset-composition'`，带 presetId + workdir + 可选 revision）与覆盖声明 `coverage`。摘要复用本包自己的 `catalogSnapshot` / `hashOf`（工具侧读取与 Remote 动词共用同一份 `tool-face` 实现），所以同一份注册表输入给出的摘要与 `snapshotFor` 钉出来的逐字节一致——合同测试钉死了这条对等。
+
+```ts
+import { produceCapabilityEvidence } from '@khorsheed/dsh-capability-catalog'
+
+const evidence = await produceCapabilityEvidence({
+  presetId: 'eval-lean',                   // 调用方已核验
+  workdir: '/abs/path/to/project',         // 相对路径拒绝
+  skills: ctx.skills, tools: ctx.tools,    // 要测量的注册表切片
+  coverage: { directories: ['…/skills'], services: ['skills', 'tools'] },
+})
+// → { measurement, sha, completeness, coverage }
+```
+
+接入侧的义务与语义：
+
+- **逐节完备性是证据的一部分**：snapshot 覆盖的每一节（skills / tools / mcpServers / channels）各带一个 `{ state, reason? }` 描述符——`complete` = 扫完且发现的全部在内（零发现也是 complete-with-zero，与失败可区分）；`partial` = 部分来源失败、行只是子集（reason 点名失败的来源类别——注册表读失败 / 注册表自报发现不完整 / 技能体读不出 / origin 标记读不到，绝不带秘密内容，也不带可能含路径的错误原文）；`unavailable` = 该节根本不可测（服务未安装 / 读取失败 / 无权限）。「扫过了，是空的」与「没装 / 没读成」因此是两种可区分的答案。
+- **摘要记录它覆盖了什么**：digest 本身只覆盖能力面（与 `snapshotFor` 同一算法、同一套排除项），测量对象与覆盖声明随行在证据包里——调用方声明读了哪些目录与哪些服务，消费方据此核对「这份摘要量的是不是我期望的那份组合」。一份空的或部分的摘要不会被误读成完整的：完备性不是 `complete` 的节就是「未核验」。
+- **消费方绝不重算、绝不把 partial 当 complete**：摘要算法归本包所有（跨进程比对的是摘要本身，不是行）；任何 `partial` / `unavailable` 的节一律按「未核验」处理——既不当作完整，也不当作「该节为空」。
+- **Remote 动词的 standing-scope 代价不变，且只在本机用**：`snapshotAt` / `snapshotFor` / `modeFaces` 按设计会**挂载**一个尚未组合的 preset（roster 的 single-flight standing mount），它们的输出与之前逐字节一致。生产面因此不解析任何 scope——API 里根本没有 roster 参数（正常的目标侧拓扑里，本进程的注册表就是该组合的能力面，无需 scope；已解析的 scope 可作为不透明令牌传入，解析与租约释放始终是调用方的事），也不挂载、不注册任何 cordis 服务，裸进程即可运行（发布的 tarball 就是目标侧运行时，依赖不超出本包既有依赖）。
+- **不用此面时本地行为不变**：Remote 动词从不携带完备性字段，清单与指纹的输出、以及「清单降级 / 指纹拒绝」的分流与之前逐字节一致。
+
 ## 实现原理
 
 <details>

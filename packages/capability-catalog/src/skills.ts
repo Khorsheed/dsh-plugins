@@ -180,34 +180,62 @@ async function skillBodySha(
 }
 
 /**
+ * The health of one skills collection pass — the facts a completeness
+ * descriptor is built from. Counts only, never error text (which may carry
+ * paths). Filled by {@link collectSkills} when the caller passes a bag.
+ */
+export interface SkillsCollectionReport {
+  /** Scope reads attempted. */
+  attemptedScopes: number
+  /** Scope reads whose `registry.snapshot()` threw (source class: registry read). */
+  failedScopes: number
+  /** Reads the registry itself flagged as incomplete discovery (`complete: false`). */
+  incompleteReads: number
+  /** Skills whose body could not be loaded while fingerprinting. */
+  unreadableBodies: number
+}
+
+/**
  * Collect the skills portion of the catalog across the given view scopes.
  *
  * `bodySha` costs one registry load per skill, so it is opt-in: the browser
  * card wants a listing, and the capability fingerprint wants the bodies.
+ *
+ * `report`, when given, is filled with the collection's health (see
+ * {@link SkillsCollectionReport}); the Remote verbs never pass one, so their
+ * rows — and their digests — are exactly what they were.
  */
 export async function collectSkills(
   registry: RegistrySlice,
   workdir: string | undefined,
   scopes: readonly unknown[] = [undefined],
-  collectOptions: { bodySha?: boolean } = {},
+  collectOptions: { bodySha?: boolean; report?: SkillsCollectionReport } = {},
 ): Promise<CapabilityCatalogSnapshot> {
   const byName = new Map<string, CatalogSkillRow>()
   for (const scope of scopes) {
     const base = workdir === undefined ? {} : { cwd: workdir }
     const options = scope === undefined ? base : { ...base, scope }
+    if (collectOptions.report !== undefined) collectOptions.report.attemptedScopes += 1
     let snapshot
     try {
       snapshot = await registry.snapshot(options)
     } catch {
       // A single scope (e.g. one agent preset) failing must not blank the whole
       // catalog; skip it and keep the rest.
+      if (collectOptions.report !== undefined) collectOptions.report.failedScopes += 1
       continue
+    }
+    if (snapshot.complete === false && collectOptions.report !== undefined) {
+      collectOptions.report.incompleteReads += 1
     }
     for (const summary of snapshot.skills) {
       if (byName.has(summary.name)) continue
       const bodySha = collectOptions.bodySha === true
         ? await skillBodySha(registry, summary.name, options)
         : undefined
+      if (collectOptions.bodySha === true && bodySha === undefined && collectOptions.report !== undefined) {
+        collectOptions.report.unreadableBodies += 1
+      }
       const row = skillRowFrom(summary, await skillUpdatedAt(summary), bodySha)
       byName.set(row.name, row)
     }
