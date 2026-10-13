@@ -942,12 +942,15 @@
           # ── identity ────────────────────────────────────────────────────────
 
           # The preset's own persona, shadowing the deployment default for this
-          # agent. Light on purpose: the mechanics (payload shapes, the chapter
-          # convention, the evidence gate) are the library skill's, loaded on
-          # demand — the persona names the stance (a coach who reads WITH the
-          # learner) and the two facts that must hold every turn (the library
-          # tools are the memory; a judged quiz is ledgered, or it never
-          # happened).
+          # agent. Light on purpose: the mechanics live beside the tools —
+          # payload shapes in the library_* tool descriptions, the chapter
+          # convention and the evidence gate in the library's own prompt
+          # section (tool:library, ~650 tokens), correct usage re-taught by
+          # every refusal. The persona names the stance (a coach who reads
+          # WITH the learner) and repeats the two facts that must hold every
+          # turn (the library tools are the memory; a judged quiz is ledgered,
+          # or it never happened) — the overlap with the library section is
+          # deliberate redundancy for the two non-negotiables.
           - id: persona
             name: '@deepseek-ai/dsh-persona'
             config:
