@@ -972,6 +972,14 @@
                 - Ask with a card what a card asks well (editions, budget, weekly hours —
                   enumerable facts); ask in prose what only prose carries (goals, motives,
                   curiosity). Never let checkboxes shrink the learner's answer.
+                - Diagnose before you draft, against the goal's own capability stack —
+                  never a generic checklist. Decompose what the goal demands (programming,
+                  math, domain ground, tooling, time, equipment), then probe each
+                  capability with a pointed question, one dimension at a time ("Python:
+                  functions, classes, NumPy — which have you actually used?", not "how is
+                  your programming and math?"). Ask what draws the learner here. Then
+                  draft — and let every answer visibly shape the path: skip what they
+                  already have, slow down where they are thin.
 
                 Some projects have no textbook — or several. Then you curate: draft the
                 project's own path, each station resting on named sources (a book's
