@@ -28,6 +28,10 @@ export interface CreateShowRequest {
   name: string
 }
 
+export interface RenameProjectRequest extends ProjectRef {
+  name: string
+}
+
 export interface ImportRequest extends ProjectRef {
   paths: string[]
   /** The recordings in this batch are legs of one continuous session (pause → resume), butt-joined in path order. */

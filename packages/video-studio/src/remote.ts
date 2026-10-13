@@ -16,7 +16,7 @@ import type { Overview, ProjectView, VideoStudioService } from './service.ts'
 import type { ModelStatus } from './media/models.ts'
 import type {
   BindRequest, ClipRequest, CreateProjectRequest, CreateShowRequest, CutRequest, DecideRequest, ExportRequest,
-  GlobalPatchRequest, ImportRequest, JobRef, ProjectRef, ProjectSettingRequest, SegmentReassignRequest, SessionRef,
+  GlobalPatchRequest, ImportRequest, JobRef, ProjectRef, ProjectSettingRequest, RenameProjectRequest, SegmentReassignRequest, SessionRef,
   ShowSettingRequest, SpeakerMergeRequest, SpeakerRenameRequest, VoiceprintDeleteRequest,
   AudioChunk, AudioChunkRequest, KeywordCutRequest, ReplaceRequest, TextFixRequest,
 } from './types.ts'
@@ -84,6 +84,12 @@ export class VideoStudioRemoteService extends TypertRemoteService<VideoStudioRem
     const p = await this.svc.createProject({ name: request.name, showId: request.showId ?? null })
     if (request.sessionId) await this.svc.bind(request.sessionId, p.id)
     return this.svc.view(p.id)
+  }
+
+  @Remote('renameProject')
+  async renameProject(request: RenameProjectRequest): Promise<ProjectView> {
+    await this.svc.renameProject(request.projectId, request.name, 'user')
+    return this.svc.view(request.projectId)
   }
 
   @Remote('deleteProject')

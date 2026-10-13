@@ -40,7 +40,7 @@ export const zh = {
   'status.exported': '已导出',
 
   'new.name': '名称',
-  'new.namePlaceholder': '#23 · 这期聊了什么',
+  'new.namePlaceholder': '例：#23 · 这期聊了什么',
   'new.show': '节目',
   'new.newShow': '新节目…',
   'new.newShowPlaceholder': '节目名',
@@ -231,7 +231,7 @@ export const en: Record<VideoStudioKey, string> = {
   'status.exported': 'Exported',
 
   'new.name': 'Name',
-  'new.namePlaceholder': '#23 · what this episode is about',
+  'new.namePlaceholder': 'e.g. #23 · what this episode is about',
   'new.show': 'Show',
   'new.newShow': 'New show…',
   'new.newShowPlaceholder': 'Show name',

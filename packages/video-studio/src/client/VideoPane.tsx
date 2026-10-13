@@ -240,7 +240,7 @@ function NewProject({ p, o, onDone, onCancel, onError }: { p: VideoPaneProps; o:
       {(showId || newShow !== null) && <div className={css.muted}>{t('new.inherits')}</div>}
       <div className={css.actions}>
         <button type="button" className={css.btn} onClick={onCancel}>{t('action.cancel')}</button>
-        <button type="submit" className={css.primary} disabled={busy}>{t('action.create')}</button>
+        <button type="submit" className={css.primary} disabled={busy || !name.trim()}>{t('action.create')}</button>
       </div>
     </form>
   )
@@ -484,6 +484,10 @@ function SettingsTab({ p, v, o, act, report, reloadOverview }: { p: VideoPanePro
         chips={[{ id: 'project', label: t('settings.project') }, { id: 'show', label: show ? `${t('settings.show')} · ${show.name}` : t('settings.show') }, { id: 'global', label: t('settings.global') }]} />
       {scope === 'project' && (
         <>
+          <div className={css.srow}>
+            <span className={css.skey}>{t('new.name')}</span>
+            <DraftInput id="vs-project-name" value={project.name} onCommit={(s) => void act(() => p.renameProject({ projectId: project.id, name: s }))} />
+          </div>
           {v.effective.filter((e) => EDITABLE.includes(e.key)).map((e) => (
             <div key={e.key} className={css.srow} data-source={e.source}>
               <span className={css.skey}>{t(`key.${e.key}` as VideoStudioKey)}</span>

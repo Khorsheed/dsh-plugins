@@ -53,6 +53,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     updateShow: request => remote.updateShow(request),
     deleteVoiceprint: request => remote.deleteVoiceprint(request),
     createProject: request => remote.createProject({ ...request, sessionId }),
+    renameProject: request => remote.renameProject(request),
     project: projectId => remote.project({ projectId }),
     importSources: request => remote.importSources(request),
     setCut: request => remote.setCut(request),

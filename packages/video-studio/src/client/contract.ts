@@ -13,7 +13,7 @@ import type {} from '@khorsheed/dsh-video-studio/remote'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {
   ClipRequest, CreateProjectRequest, CutRequest, DecideRequest, ExportRequest, GlobalConfig, GlobalPatchRequest, ImportRequest,
-  Job, ModelStatus, Overview, ProjectSettingRequest, ProjectView, SegmentReassignRequest, Show, ShowSettingRequest,
+  Job, ModelStatus, Overview, ProjectSettingRequest, ProjectView, RenameProjectRequest, SegmentReassignRequest, Show, ShowSettingRequest,
   SpeakerMergeRequest, SpeakerRenameRequest, VoiceprintDeleteRequest,
   AudioChunk, AudioChunkRequest, KeywordCutRequest, ReplaceRequest, TextFixRequest,
 } from '../types.ts'
@@ -32,6 +32,7 @@ export interface VideoPaneInjected {
   updateShow: (request: ShowSettingRequest) => R<Show>
   deleteVoiceprint: (request: VoiceprintDeleteRequest) => R<Show>
   createProject: (request: Omit<CreateProjectRequest, 'sessionId'>) => R<ProjectView>
+  renameProject: (request: RenameProjectRequest) => R<ProjectView>
   project: (projectId: string) => R<ProjectView>
   importSources: (request: ImportRequest) => R<ProjectView>
   setCut: (request: CutRequest) => R<ProjectView>
