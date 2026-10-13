@@ -25,7 +25,6 @@ import type {
   CatalogAddSkillResult,
   CatalogCredentialSetRequest,
   CatalogDeleteSkillResult,
-  CatalogJsonValue,
   CatalogMcpServerConfig,
   CatalogMcpSnapshot,
   CatalogMcpTool,
@@ -41,6 +40,7 @@ import type {
 } from './types.ts'
 import { catalogAddSkill, catalogDetail, catalogListDirSkills, catalogReadSkillFile, catalogSetCredential, catalogSnapshot, catalogDeleteSkill, catalogPickDirectory } from './remote.ts'
 import { resolveServices, type RegistrySlice, type SkillDefinitionLike } from './skills.ts'
+import { toolSchemasFacing, toolOriginsFacing, mcpServerNamesFacing, type CatalogToolsSlice, type ToolSchemaLike } from './tool-face.ts'
 import {
   definitionFor, scanManagedSkills, ScopedSkillDelivery, scopedSkillsRoot, type ScopedDeliveryRegistry,
 } from './scoped-delivery.ts'
@@ -53,8 +53,7 @@ import type { PersistedMcpState } from './mcpStore.ts'
 import { reconcileRegisteredMcpTools, desiredMcpTools, type McpToolRegistry } from './mcpTools.ts'
 import { maskConfig } from './mcps.ts'
 import { installSkillEnvHint } from './envHint.ts'
-import { MCP_TOOL_PREFIX } from './channels.ts'
-import { toolOrigin, isValidOrigin, type ToolOrigin } from './tool-origin.ts'
+import { type ToolOrigin } from './tool-origin.ts'
 import { CAPABILITY_CATALOG_NS } from './namespace.ts'
 import { CapabilityCatalogSettingsSchema } from './settings.ts'
 import { capsTag, hashOf } from './capabilities.ts'
@@ -68,6 +67,8 @@ export type { ToolOrigin } from './tool-origin.ts'
 
 export type {
   CapabilityCatalogSnapshot,
+  CatalogSectionCompleteness,
+  CatalogSnapshotCompleteness,
   CatalogJsonValue,
   CatalogSkillRow,
   CatalogToolRow,
@@ -120,22 +121,28 @@ export type {
   CanonicalCapabilities, CanonicalMcpServer, CanonicalSkill, CanonicalTool,
 } from './capabilities.ts'
 
+// Capability-composition EVIDENCE: the pure-data production face a target
+// side runs where the composition lives. It reuses this package's own
+// snapshot/digest algorithms (parity by construction), mounts no standing
+// scope, registers no service, and returns plain JSON-safe data: the digest,
+// the per-section completeness, the measurement object, and the caller's
+// coverage declaration. Consumers never recompute the digest and never treat
+// a partial/unavailable section as verified.
+export { produceCapabilityEvidence } from './evidence.ts'
+export type {
+  CapabilityEvidenceCompleteness,
+  CapabilityEvidenceCoverage,
+  CapabilityEvidenceMeasurement,
+  ProduceCapabilityEvidenceOptions,
+  ProducedCapabilityEvidence,
+} from './evidence.ts'
+export type { RegistrySlice, SkillsCollectionReport } from './skills.ts'
+export type { CatalogToolsSlice, ToolSchemaLike } from './tool-face.ts'
+
 declare module '@deepseek-ai/cordis' {
   interface Context {
     capabilityCatalog: CapabilityCatalogService
   }
-}
-
-/** The slice of the tools registry this service reads (optional). */
-interface ToolsSlice {
-  schemas: (scope?: unknown) => readonly ToolSchemaLike[]
-  get?: (name: string, scope?: unknown) => object | undefined
-}
-
-interface ToolSchemaLike {
-  readonly name: string
-  readonly description?: string
-  readonly parameters?: CatalogJsonValue
 }
 
 /** The optional settings service, used to locate the managed root's dshHome. */
@@ -408,7 +415,7 @@ export class CapabilityCatalogService extends TypertRemoteService {
   /** Record tools that appeared after the apply-time baseline (reads the live
    * registry each time, so a change event never sees a stale/undefined ref). */
   private markNewTools(): void {
-    const tools = this.ctx.get?.('tools') as ToolsSlice | undefined
+    const tools = this.toolsRegistry()
     const current = new Set(tools?.schemas().map(t => t.name) ?? [])
     for (const name of current) {
       if (!this.baseline.has(name)) this.appearedAfterApply.add(name)
@@ -701,55 +708,31 @@ export class CapabilityCatalogService extends TypertRemoteService {
     }
   }
 
+  /** The live tools registry, when the composition provides one. */
+  private toolsRegistry(): CatalogToolsSlice | undefined {
+    return this.ctx.get?.('tools') as CatalogToolsSlice | undefined
+  }
+
   /** The visible tool schemas in the standing scope (the set the model sees),
    * or the global layer when no preset standing key resolves. Skills already
    * enumerate through the same scope; tools must use it too so the
    * settings reader sees the official/plugin/MCP tools the model actually has. */
   private toolSchemasIn(scope: unknown): readonly ToolSchemaLike[] {
-    const tools = this.ctx.get?.('tools') as ToolsSlice | undefined
-    if (tools?.schemas === undefined) return []
-    return scope === undefined ? tools.schemas() : tools.schemas(scope)
+    return toolSchemasFacing(this.toolsRegistry(), scope)
   }
 
   /** tool name → author-declared origin, read via `ctx.tools.get(name)` so the
    * `Symbol.for('dsh.tool.origin')` tag on the retained definition survives (the
    * system-prompt assembly strips it, but `get()` returns the full definition). */
   private toolOriginsMap(scope: unknown): ReadonlyMap<string, ToolOrigin> {
-    const tools = this.ctx.get?.('tools') as ToolsSlice | undefined
-    if (tools?.get === undefined) return new Map()
-    const schemas = scope === undefined ? tools.schemas() : tools.schemas(scope)
-    const out = new Map<string, ToolOrigin>()
-    for (const schema of schemas) {
-      const def = scope === undefined ? tools.get(schema.name) : tools.get(schema.name, scope)
-      if (def === undefined) {
-        // `schemas()` and `get()` disagree for this scope — the author's origin
-        // tag (if any) cannot be read, so the tool falls back to heuristics.
-        this.ctx.logger.warn(`capability-catalog: tool "${schema.name}" is visible but ctx.tools.get() is undefined in this scope — its origin tag cannot be read; it will be classified by heuristics`)
-        continue
-      }
-      const origin = toolOrigin(def)
-      if (origin !== undefined) {
-        if (!isValidOrigin(origin)) {
-          this.ctx.logger.warn(`capability-catalog: tool "${schema.name}" origin channel "${String(origin.channel)}" is not a known channel (plugin/builtin/mcp) — ignoring the tag, falling back to heuristics`)
-          continue
-        }
-        out.set(schema.name, origin)
-      }
-    }
-    return out
+    const tools = this.toolsRegistry()
+    const { origins } = toolOriginsFacing(tools, toolSchemasFacing(tools, scope), scope, (message) => this.ctx.logger.warn(message))
+    return origins
   }
 
   /** MCP server names from live `mcp__`-prefixed tools (prefix-derived baseline). */
-  private mcpServerNamesIn(scope: unknown): string[] {
-    const names: string[] = []
-    for (const schema of this.toolSchemasIn(scope)) {
-      if (!schema.name.startsWith(MCP_TOOL_PREFIX)) continue
-      const rest = schema.name.slice(MCP_TOOL_PREFIX.length)
-      const sep = rest.indexOf('__')
-      const server = sep > 0 ? rest.slice(0, sep) : rest
-      if (server.length > 0 && !names.includes(server)) names.push(server)
-    }
-    return names
+  private mcpServerNamesIn(scope: unknown): readonly string[] {
+    return mcpServerNamesFacing(this.toolSchemasIn(scope))
   }
 
   /**

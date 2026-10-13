@@ -139,6 +139,38 @@ export interface CatalogChannelSummary {
   readonly count: number
 }
 
+/**
+ * Evidence-grade completeness of ONE snapshot section's measurement.
+ *
+ * The three states are a contract about what the rows may be read as:
+ *
+ * - `complete` — the section was measured and everything found is included.
+ *   Zero rows is complete-with-zero (scanned, nothing there), which is
+ *   distinguishable from a failure.
+ * - `partial` — some sources failed, so the rows are a SUBSET. `reason`
+ *   names the failed source class (never secret content, never raw error
+ *   text, which may carry paths).
+ * - `unavailable` — the section could not be measured at all (the service
+ *   is not installed, or the read failed, or permission was denied). The
+ *   rows carry no meaning.
+ *
+ * A consumer MUST treat `partial` and `unavailable` as "not verified" —
+ * never as complete, and never as "the section is empty".
+ */
+export interface CatalogSectionCompleteness {
+  readonly state: 'complete' | 'partial' | 'unavailable'
+  /** Why the section is not complete; absent when it is. */
+  readonly reason?: string
+}
+
+/** Per-section completeness of a snapshot, keyed by the section names the snapshot carries. */
+export interface CatalogSnapshotCompleteness {
+  readonly skills?: CatalogSectionCompleteness
+  readonly tools?: CatalogSectionCompleteness
+  readonly mcpServers?: CatalogSectionCompleteness
+  readonly channels?: CatalogSectionCompleteness
+}
+
 /** Full catalog snapshot. */
 export interface CapabilityCatalogSnapshot {
   readonly skills: readonly CatalogSkillRow[]
@@ -153,6 +185,13 @@ export interface CapabilityCatalogSnapshot {
   readonly sha?: string
   /** The agent preset this snapshot was taken under; absent when none resolved. */
   readonly preset?: string
+  /**
+   * Evidence-grade per-section completeness, attached only by evidence
+   * production (the Remote listing/fingerprint verbs never set it, so their
+   * wire form is unchanged). Like `sha`, it is NOT part of the canonical
+   * form `hashOf` digests.
+   */
+  readonly completeness?: CatalogSnapshotCompleteness
 }
 
 /** Fresh detail of one skill (body + metadata), loaded on demand. */
