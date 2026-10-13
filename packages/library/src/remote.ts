@@ -34,6 +34,8 @@ import type {
   LibraryProject,
   LibraryProjectSummary,
   LibraryQuiz,
+  LibraryResource,
+  LibraryResourceKind,
   LibraryReviewRating,
   LibraryRoadmap,
   LibraryTemplate,
@@ -114,6 +116,26 @@ export class LibraryRemoteService extends TypertRemoteService<LibraryRemoteConfi
   @Remote('deleteBook')
   deleteBook(request: { projectId: string; bookId: string }): Promise<LibraryOutcome<{ id: string }>> {
     return this.core.deleteBook(request)
+  }
+
+  /* ------------------------------------------------------------ resources */
+
+  /** A project's shelf links, oldest first. */
+  @Remote('listResources')
+  listResources(request: { projectId: string }): Promise<{ resources: LibraryResource[] }> {
+    return this.core.listResources(request)
+  }
+
+  /** Put a link on the project's shelf. */
+  @Remote('addResource')
+  addResource(request: { projectId: string; resource: { title: string; url: string; kind: LibraryResourceKind; note?: string; addedBy: 'coach' | 'learner' } }): Promise<LibraryOutcome<{ resource: LibraryResource }>> {
+    return this.core.addResource(request)
+  }
+
+  /** Take a link off the project's shelf. */
+  @Remote('removeResource')
+  removeResource(request: { projectId: string; resourceId: string }): Promise<LibraryOutcome<{ id: string }>> {
+    return this.core.removeResource(request)
   }
 
   /* ------------------------------------------------------------- roadmap */

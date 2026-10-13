@@ -28,6 +28,7 @@ import type {
   LibraryCardSourceType,
   LibraryMark,
   LibraryOutcome,
+  LibraryResourceKind,
   LibraryTemplate,
   LibraryQuizQuestion,
   LibraryVerdict,
@@ -53,8 +54,8 @@ function unwrap<T>(outcome: LibraryOutcome<T>): T {
   throw new Error(outcome.message)
 }
 
-const READ_WHATS = ['projects', 'books', 'toc', 'roadmap', 'pages', 'cards', 'quiz', 'stats'] as const
-const WRITE_WHATS = ['project', 'book', 'roadmap', 'page', 'cards', 'quiz', 'binding'] as const
+const READ_WHATS = ['projects', 'books', 'resources', 'toc', 'roadmap', 'pages', 'cards', 'quiz', 'stats'] as const
+const WRITE_WHATS = ['project', 'book', 'roadmap', 'page', 'cards', 'quiz', 'resource', 'binding'] as const
 
 type Exec = { agent?: Agent }
 
@@ -106,6 +107,7 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
       'Read the learner\'s library (read-only). what: '
       + '"projects" — every project with its books\' progress and card tallies, plus this session\'s binding; '
       + '"books" — a project\'s books with their tables of contents; '
+      + '"resources" — a project\'s shelf links (article | video | repo | tool | course | hardware), each with its one-line why — light entries: no contents, no roadmap, never quizzed; '
       + '"toc" — one book (title, edition, kind, contents rows numbered n); '
       + '"roadmap" — one book\'s adopted path and any pending draft; '
       + '"pages" — one book\'s photographed pages (printed text + the learner\'s marks), node narrows; '
@@ -139,6 +141,8 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
           const detail = unwrap(await service.getProject({ id: projectOf(args.project, exec) }))
           return { project: detail.project, books: detail.books } as unknown as JsonValue
         }
+        case 'resources':
+          return (await service.listResources({ projectId: projectOf(args.project, exec) })) as unknown as JsonValue
         case 'toc':
           return unwrap(await service.getBook({ projectId: projectOf(args.project, exec), bookId: bookOf(args.book, exec) })).book as unknown as JsonValue
         case 'roadmap':
@@ -221,6 +225,9 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
       + 'what="quiz": quiz { node?, focus?: "mine"|"book"|"mixed" (the learner\'s choice of source — mine: only their own cards, book: only the chapter\'s content), questions: [{ id, kind: "choice"|"fill"|"free", prompt, options?, answer, explanation?, target: { kind: "marked"|"asked"|"missed"|"topic", cardIds? }, '
       + 'evidence: { kind: "photo"|"web"|"knowledge", pageId?, url?, quote? } }] } — target the learner\'s own cards first; photo evidence quotes a recorded page, web evidence cites url + quote; '
       + 'a material book never takes a knowledge-backed question about its content. '
+      + 'what="resource": op "add" — resource { title, url, kind: "article"|"video"|"repo"|"tool"|"course"|"hardware", note?, addedBy? } — put a light link entry on the '
+      + 'project\'s shelf: no contents, no roadmap, never quizzed (something you reference BY CHAPTER is registered as a book instead — library_write · book). Open the link on '
+      + 'the web first: the title is what its own page calls it, and note is your one line on why it earns its place. op "remove" — resource { id }. '
       + 'what="binding": binding { project, book? } — bind this session; binding: null unbinds.',
     parameters: {
       what: { type: 'string', required: true, description: `What to write: ${WRITE_WHATS.join(' | ')}.` },
@@ -230,6 +237,8 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
       page: { type: 'object', description: 'what=page: { attachment, label?, node?, text, marks }.', additionalProperties: true },
       cards: { type: 'array', description: 'what=cards: the cards to record.', items: { type: 'object', additionalProperties: true } },
       quiz: { type: 'object', description: 'what=quiz: { node?, questions }.', additionalProperties: true },
+      op: { type: 'string', description: 'what=resource: add | remove.' },
+      resource: { type: 'object', description: 'what=resource: add — { title, url, kind, note?, addedBy? }; remove — { id }.', additionalProperties: true },
       binding: { type: 'json', description: 'what=binding: { project, book? } or null.' },
     },
     output: jsonOutput(),
@@ -343,6 +352,30 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
               questions: body.questions as LibraryQuizQuestion[],
             },
           })) as unknown as JsonValue
+        }
+        case 'resource': {
+          const body = payload(args.resource)
+          if (args.op === 'add') {
+            if (body === undefined || typeof body.title !== 'string' || typeof body.url !== 'string') {
+              throw new Error('what=resource · op=add takes resource: { title, url, kind: "article"|"video"|"repo"|"tool"|"course"|"hardware", note? } — a light link on the project\'s shelf; open it on the web first, and let note say why it earns its place')
+            }
+            return unwrap(await service.addResource({
+              projectId: projectOf(args.project, exec),
+              resource: {
+                title: body.title,
+                url: body.url,
+                kind: body.kind as LibraryResourceKind,
+                ...(typeof body.note === 'string' ? { note: body.note } : {}),
+                addedBy: body.addedBy === 'learner' ? 'learner' : 'coach',
+              },
+            })) as unknown as JsonValue
+          }
+          if (args.op === 'remove') {
+            const resourceId = typeof body?.id === 'string' ? body.id : undefined
+            if (resourceId === undefined) throw new Error('what=resource · op=remove takes resource: { id } — library_read · resources lists the ids')
+            return unwrap(await service.removeResource({ projectId: projectOf(args.project, exec), resourceId })) as unknown as JsonValue
+          }
+          throw new Error(`what=resource needs op: add | remove — got ${JSON.stringify(args.op)}`)
         }
         case 'binding': {
           const sessionId = sessionIdOf(exec)

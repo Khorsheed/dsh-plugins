@@ -31,6 +31,7 @@ import {
   DEFAULT_PASS_RATIO,
   LIBRARY_COLORS,
   LIBRARY_ICONS,
+  LIBRARY_RESOURCE_KINDS,
   TEMPLATE_LOOK,
   LEITNER_INTERVAL_DAYS,
   libraryErrorMessage,
@@ -66,6 +67,8 @@ import {
   type LibraryQuizFocus,
   type LibraryQuizQuestion,
   type LibraryRefusal,
+  type LibraryResource,
+  type LibraryResourceKind,
   type LibraryReviewRating,
   type LibraryRoadmap,
   type LibraryTemplate,
@@ -492,6 +495,71 @@ export class LibraryService {
     const book = this.store.readBook(request.projectId, request.bookId)
     if (book === undefined) return refuse('not-found', `no book ${JSON.stringify(request.bookId)} — library_read · books lists the project's`)
     return { ok: true, book }
+  }
+
+  /* ------------------------------------------------------------ resources */
+
+  /**
+   * Put a link on the project's shelf. A resource is a light entry — no
+   * contents, no roadmap, never quizzed — one per url; what the coach
+   * references BY CHAPTER is registered as a book instead.
+   */
+  async addResource(request: {
+    projectId: string
+    resource: { title: string; url: string; kind: LibraryResourceKind; note?: string; addedBy: 'coach' | 'learner' }
+  }): Promise<LibraryOutcome<{ resource: LibraryResource }>> {
+    this.assertAlive('addResource')
+    const project = this.readProjectOrRefusal(request.projectId)
+    if ('error' in project) return project
+    const title = request.resource.title.trim()
+    if (title === '') return refuse('invalid', 'a resource needs its title — open the link (web) and name it what its own page calls it')
+    const url = request.resource.url.trim()
+    if (!/^https?:\/\//.test(url)) {
+      return refuse('invalid', 'a resource\'s url starts with http:// or https:// — the learner opens it straight off the shelf')
+    }
+    if (!(LIBRARY_RESOURCE_KINDS as readonly string[]).includes(request.resource.kind)) {
+      return refuse('invalid', `kind is ${LIBRARY_RESOURCE_KINDS.join(' | ')} — what the link IS: an article to read, a video to watch, a repo or tool to build with, a course to follow, hardware to get`)
+    }
+    if (request.resource.addedBy !== 'coach' && request.resource.addedBy !== 'learner') {
+      return refuse('invalid', 'addedBy is coach | learner — who put the link on the shelf')
+    }
+    return await this.mutate(project.value.id, () => {
+      if (this.store.readResources(project.value.id).some(resource => resource.url === url)) {
+        return refuse('exists', `${url} is already on this project's shelf — library_read · resources lists them; to change its note, remove it (library_write · resource, op remove) and add it again`)
+      }
+      const resource: LibraryResource = {
+        id: mintLibraryId('res'),
+        title,
+        url,
+        kind: request.resource.kind,
+        ...(request.resource.note === undefined || request.resource.note.trim() === '' ? {} : { note: request.resource.note.trim() }),
+        addedBy: request.resource.addedBy,
+        createdAt: new Date().toISOString(),
+      }
+      this.store.appendResource(project.value.id, resource)
+      this.event(project.value.id, 'resource.added', { id: resource.id })
+      return { ok: true as const, resource }
+    })
+  }
+
+  /** Take a link off the project's shelf (the line is physically dropped). */
+  async removeResource(request: { projectId: string; resourceId: string }): Promise<LibraryOutcome<{ id: string }>> {
+    this.assertAlive('removeResource')
+    const project = this.readProjectOrRefusal(request.projectId)
+    if ('error' in project) return project
+    return await this.mutate(project.value.id, () => {
+      if (!this.store.readResources(project.value.id).some(resource => resource.id === request.resourceId)) {
+        return refuse('not-found', `no resource ${JSON.stringify(request.resourceId)} on this project's shelf — library_read · resources lists them`)
+      }
+      this.store.removeResource(project.value.id, request.resourceId)
+      return { ok: true as const, id: request.resourceId }
+    })
+  }
+
+  /** A project's shelf links, oldest first. */
+  async listResources(request: { projectId: string }): Promise<{ resources: LibraryResource[] }> {
+    this.assertAlive('listResources')
+    return { resources: this.store.readResources(request.projectId) }
   }
 
   /* ------------------------------------------------------------- roadmap */

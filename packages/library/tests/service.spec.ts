@@ -188,6 +188,39 @@ describe('books and roadmaps', () => {
   })
 })
 
+describe('resources', () => {
+  it('puts a link on the shelf, validates url / kind / title, and refuses a duplicate', async () => {
+    const { projectId } = await seed()
+    const noProject = await service.addResource({ projectId: 'p_none', resource: { title: 'x', url: 'https://x.example', kind: 'article', addedBy: 'coach' } })
+    expect(!noProject.ok && noProject.error).toBe('not-found')
+    const badUrl = await service.addResource({ projectId, resource: { title: 'x', url: 'ftp://x.example', kind: 'article', addedBy: 'coach' } })
+    expect(!badUrl.ok && badUrl.message).toMatch(/https?:\/\//)
+    const badKind = await service.addResource({ projectId, resource: { title: 'x', url: 'https://x.example', kind: 'zine' as never, addedBy: 'coach' } })
+    expect(!badKind.ok && badKind.message).toMatch(/article \| video/)
+    const bare = await service.addResource({ projectId, resource: { title: '  ', url: 'https://x.example', kind: 'article', addedBy: 'coach' } })
+    expect(!bare.ok && bare.message).toMatch(/title/)
+    const added = await service.addResource({ projectId, resource: { title: 'NumPy 快速教程', url: 'https://numpy.org/quickstart', kind: 'article', note: '热身站的读物', addedBy: 'coach' } })
+    if (!added.ok) throw new Error(added.message)
+    expect(added.resource.id).toMatch(/^res_/)
+    const dupe = await service.addResource({ projectId, resource: { title: 'same link', url: 'https://numpy.org/quickstart', kind: 'video', addedBy: 'learner' } })
+    expect(!dupe.ok && dupe.error).toBe('exists')
+  })
+
+  it('lists oldest first, ledgers the add, and removes only what exists', async () => {
+    const { projectId } = await seed()
+    const first = await service.addResource({ projectId, resource: { title: 'MuJoCo', url: 'https://mujoco.org', kind: 'tool', addedBy: 'coach' } })
+    const second = await service.addResource({ projectId, resource: { title: 'LeRobot', url: 'https://github.com/huggingface/lerobot', kind: 'repo', addedBy: 'coach' } })
+    if (!first.ok || !second.ok) throw new Error('add')
+    expect((await service.listResources({ projectId })).resources.map(resource => resource.title)).toEqual(['MuJoCo', 'LeRobot'])
+    const events = await service.listEvents({ projectId, types: ['resource.added'] })
+    expect(events.events.map(event => event.id)).toEqual([second.resource.id, first.resource.id])
+    const missing = await service.removeResource({ projectId, resourceId: 'res_none' })
+    expect(!missing.ok && missing.error).toBe('not-found')
+    expect((await service.removeResource({ projectId, resourceId: first.resource.id })).ok).toBe(true)
+    expect((await service.listResources({ projectId })).resources.map(resource => resource.title)).toEqual(['LeRobot'])
+  })
+})
+
 describe('pages and cards', () => {
   it('cards every certain mark at once and holds uncertain ones back', async () => {
     const { projectId, bookId } = await seed('language', 'material')

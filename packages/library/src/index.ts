@@ -40,6 +40,7 @@ export {
   normalizeLibraryIndex,
   normalizeProject,
   normalizeQuiz,
+  normalizeResource,
   normalizeRoadmap,
   resolveLibraryStateRoot,
 } from './store.ts'

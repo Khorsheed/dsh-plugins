@@ -131,6 +131,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     markNodeRead: (projectId, bookId, nodeId) => remote.markNodeRead({ projectId, bookId, nodeId }),
     listPages: (projectId, bookId, nodeId) => remote.listPages(nodeId === undefined ? { projectId, bookId } : { projectId, bookId, nodeId }),
     readPagePhoto: (projectId, pageId) => remote.readPagePhoto({ projectId, pageId }),
+    listResources: projectId => remote.listResources({ projectId }),
     listCards: query => remote.listCards(query),
     dueCards: projectId => remote.dueCards(projectId === undefined ? {} : { projectId }),
     editCard: (projectId, cardId, patch) => remote.editCard({ projectId, cardId, patch }),

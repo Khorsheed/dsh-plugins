@@ -12,6 +12,7 @@
  *   books/<bookId>/roadmap.json    # the adopted path
  *   books/<bookId>/roadmap.draft.json  # the coach's draft, until 采用
  *   books/<bookId>/pages.jsonl     # photographed pages, append-only
+ *   resources.jsonl                # shelf link entries (append on add, rewritten whole on remove)
  *   cards.jsonl                    # knowledge cards (rewritten whole on update)
  *   quizzes/<quizId>.json
  *   attempts.jsonl                 # append-only
@@ -46,6 +47,7 @@ import {
   LIBRARY_EVENT_TYPES,
   LIBRARY_COLORS,
   LIBRARY_ICONS,
+  LIBRARY_RESOURCE_KINDS,
   LIBRARY_STATE_VERSION,
   MAX_BOX,
   MAX_WEAKNESS,
@@ -62,6 +64,7 @@ import {
   type LibraryProject,
   type LibraryQuiz,
   type LibraryQuizQuestion,
+  type LibraryResource,
   type LibraryRoadmap,
   type RoadmapNode,
 } from './types.ts'
@@ -306,6 +309,24 @@ export function normalizeBook(value: unknown): LibraryBook | undefined {
       ...opt('url', text(source.url, 1000)),
       ...opt('verifiedAt', text(source.verifiedAt, 40)),
     },
+    createdAt: stamp(record.createdAt),
+  }
+}
+
+/** One shelf link (one resources.jsonl line), when it parses. */
+export function normalizeResource(value: unknown): LibraryResource | undefined {
+  const record = asRecord(value)
+  const resourceId = id(record?.id)
+  const title = text(record?.title, 300)
+  const url = text(record?.url, 1000)
+  if (record === undefined || resourceId === undefined || title === undefined || url === undefined) return undefined
+  return {
+    id: resourceId,
+    title,
+    url,
+    kind: LIBRARY_RESOURCE_KINDS.find(kind => kind === record.kind) ?? 'article',
+    ...opt('note', text(record.note, 300)),
+    addedBy: record.addedBy === 'learner' ? 'learner' : 'coach',
     createdAt: stamp(record.createdAt),
   }
 }
@@ -644,6 +665,10 @@ export class LibraryStore {
     return join(this.projectDir(projectId), 'cards.jsonl')
   }
 
+  private resourcesFile(projectId: string): string {
+    return join(this.projectDir(projectId), 'resources.jsonl')
+  }
+
   private attemptsFile(projectId: string): string {
     return join(this.projectDir(projectId), 'attempts.jsonl')
   }
@@ -836,6 +861,11 @@ export class LibraryStore {
     return this.readJsonlFile(this.cardsFile(projectId), normalizeCard)
   }
 
+  /** One project's shelf links, oldest first. */
+  readResources(projectId: string): LibraryResource[] {
+    return this.readJsonlFile(this.resourcesFile(projectId), normalizeResource)
+  }
+
   /** Every attempt (the JSONL ledger, tolerant per line). */
   readAttempts(projectId: string): LibraryAttempt[] {
     return this.readJsonlFile(this.attemptsFile(projectId), normalizeAttempt)
@@ -908,6 +938,20 @@ export class LibraryStore {
    */
   writeCards(projectId: string, cards: readonly LibraryCard[]): void {
     this.writeTextFile(this.cardsFile(projectId), cards.map(card => `${JSON.stringify(card)}\n`).join(''))
+  }
+
+  /** Append one shelf link (call inside `withProjectLock`). */
+  appendResource(projectId: string, resource: LibraryResource): void {
+    this.appendJsonlFile(this.resourcesFile(projectId), [resource])
+  }
+
+  /**
+   * Drop one shelf link: a resource has no status machine, so removal rewrites
+   * the ledger without its line (the temp+rename keeps the swap atomic).
+   */
+  removeResource(projectId: string, resourceId: string): void {
+    const kept = this.readResources(projectId).filter(resource => resource.id !== resourceId)
+    this.writeTextFile(this.resourcesFile(projectId), kept.map(resource => `${JSON.stringify(resource)}\n`).join(''))
   }
 
   /** Append one attempt (call inside `withProjectLock`). */

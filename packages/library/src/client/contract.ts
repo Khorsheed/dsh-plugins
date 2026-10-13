@@ -29,6 +29,7 @@ import type {
   LibraryProject,
   LibraryProjectSummary,
   LibraryQuiz,
+  LibraryResource,
   LibraryReviewRating,
   LibraryRoadmap,
   LibraryTemplate,
@@ -57,6 +58,8 @@ export interface LibraryPaneInjected {
   markNodeRead: (projectId: string, bookId: string, nodeId: string) => Answer<{ roadmap: LibraryRoadmap; unlocked: string[] }>
   listPages: (projectId: string, bookId: string, nodeId?: string) => Promise<RemoteResult<{ pages: LibraryPage[] }>>
   readPagePhoto: (projectId: string, pageId: string) => Answer<{ data: string; mediaType: string }>
+  /** A project's shelf links (the resource section under the shelf). */
+  listResources: (projectId: string) => Promise<RemoteResult<{ resources: LibraryResource[] }>>
   listCards: (query: LibraryCardQuery) => Promise<RemoteResult<{ cards: LibraryCard[]; total: number }>>
   dueCards: (projectId?: string) => Promise<RemoteResult<{ cards: (LibraryCard & { projectId: string })[] }>>
   editCard: (projectId: string, cardId: string, patch: { status?: LibraryCard['status']; gloss?: string }) => Answer<{ card: LibraryCard }>

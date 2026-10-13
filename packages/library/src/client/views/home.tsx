@@ -7,9 +7,9 @@
  */
 import { useState, type ReactNode } from 'react'
 import { ChipRow, ListRow, PanelHeader } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
-import { LIBRARY_COLORS, LIBRARY_ICONS, type LibraryColor, type LibraryIcon, type LibraryProjectSummary, type LibraryTemplate } from '../../types.ts'
+import { LIBRARY_COLORS, LIBRARY_ICONS, type LibraryColor, type LibraryIcon, type LibraryProjectSummary, type LibraryResourceKind, type LibraryTemplate } from '../../types.ts'
 import { colorOf, Cover, GlyphStrokes, iconOf, ProjectGlyph, Ring } from '../look.tsx'
-import { IconCardsOutlineMedium, IconPenOutlineMedium, IconPlusOutlineMedium, IconRefreshOutlineMedium, IconSparkleOutlineMedium } from '../icons.tsx'
+import { IconArticleOutlineMedium, IconCardsOutlineMedium, IconCourseOutlineMedium, IconHardwareOutlineMedium, IconLinkOutlineMedium, IconPenOutlineMedium, IconPlayOutlineMedium, IconPlusOutlineMedium, IconRefreshOutlineMedium, IconRepoOutlineMedium, IconSparkleOutlineMedium, IconToolOutlineMedium } from '../icons.tsx'
 import { outcome, StateLine, useLoad, value, when, type ViewProps } from '../ui.tsx'
 import css from '../LibraryPane.module.css'
 
@@ -233,15 +233,23 @@ export function ProjectView({ p, projectId }: ViewProps & { projectId: string })
   const { t, actions, useStore } = p
   const rev = useStore(s => s.rev)
   const loaded = useLoad(() => outcome(p.getProject(projectId)), [projectId, rev])
+  const resources = useLoad(() => value(p.listResources(projectId)), [projectId, rev])
   const [notice, setNotice] = useState<string | undefined>()
   const [editing, setEditing] = useState(false)
   const project = loaded.data?.project
   const books = loaded.data?.books ?? []
+  const resourceList = resources.data?.resources ?? []
 
   const askToAddBook = (): void => {
     if (project === undefined) return
     void p.bindTarget({ projectId })
     setNotice(p.primeConversation(t('prime.addBook', { project: project.name })) ? t('notice.primed') : t('notice.noConversation'))
+  }
+
+  const askToAddResource = (): void => {
+    if (project === undefined) return
+    void p.bindTarget({ projectId })
+    setNotice(p.primeConversation(t('prime.addResource', { project: project.name })) ? t('notice.primed') : t('notice.noConversation'))
   }
 
   return (
@@ -252,6 +260,7 @@ export function ProjectView({ p, projectId }: ViewProps & { projectId: string })
         backLabel={t('action.back')}
         actions={[
           { id: 'add', label: t('book.add'), icon: <IconPlusOutlineMedium />, onSelect: askToAddBook },
+          { id: 'addLink', label: t('resource.add'), icon: <IconLinkOutlineMedium />, onSelect: askToAddResource },
           { id: 'cards', label: t('cards.title'), icon: <IconCardsOutlineMedium />, onSelect: () => { actions.push({ view: 'cards', projectId, filter: 'all' }) } },
           { id: 'edit', label: t('project.edit'), icon: <IconPenOutlineMedium />, menuOnly: true, onSelect: () => { setEditing(true) } },
           { id: 'bind', label: t('action.bindProject'), icon: <IconSparkleOutlineMedium />, menuOnly: true, onSelect: () => { void p.bindTarget({ projectId }).then(() => { setNotice(t('notice.bound')) }) } },
@@ -303,7 +312,43 @@ export function ProjectView({ p, projectId }: ViewProps & { projectId: string })
             </div>
           </section>
         )}
+        {project !== undefined && (
+          <section className={css.section}>
+            <div className={css.sectionHead}>
+              <h3 className={css.sectionTitle}>{t('resource.title', { count: String(resourceList.length) })}</h3>
+              <button type="button" className={css.textButton} onClick={askToAddResource}>＋ {t('resource.add')}</button>
+            </div>
+            {resources.data !== undefined && resourceList.length === 0 && (
+              <span className={css.muted}>{t('resource.empty')}</span>
+            )}
+            {resourceList.length > 0 && (
+              <div className={css.resList}>
+                {resourceList.map(resource => (
+                  <div key={resource.id} className={css.res}>
+                    <span className={css.resKind} title={t(`resource.kind.${resource.kind}`)}>{resourceKindIcon(resource.kind)}</span>
+                    <div className={css.resMain}>
+                      <button type="button" className={css.resTitle} title={resource.url} onClick={() => { window.open(resource.url, '_blank', 'noopener,noreferrer') }}>{resource.title}</button>
+                      {resource.note !== undefined && <span className={css.resNote}>{resource.note}</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
       </div>
     </>
   )
+}
+
+/** A resource row's kind tile glyph (article is the default). */
+function resourceKindIcon(kind: LibraryResourceKind): ReactNode {
+  switch (kind) {
+    case 'video': return <IconPlayOutlineMedium size={13} />
+    case 'repo': return <IconRepoOutlineMedium size={13} />
+    case 'tool': return <IconToolOutlineMedium size={13} />
+    case 'course': return <IconCourseOutlineMedium size={13} />
+    case 'hardware': return <IconHardwareOutlineMedium size={13} />
+    default: return <IconArticleOutlineMedium size={13} />
+  }
 }

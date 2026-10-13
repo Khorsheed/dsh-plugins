@@ -16,9 +16,10 @@ import {
   normalizeBook,
   normalizeCard,
   normalizeLibraryIndex,
+  normalizeResource,
   resolveLibraryStateRoot,
 } from '../src/store.ts'
-import type { LibraryBook, LibraryCard, LibraryProject, LibraryRoadmap } from '../src/types.ts'
+import type { LibraryBook, LibraryCard, LibraryProject, LibraryResource, LibraryRoadmap } from '../src/types.ts'
 
 let root: string
 let store: LibraryStore
@@ -57,6 +58,16 @@ const card: LibraryCard = {
   status: 'active',
   createdAt: '2026-10-06T00:00:00.000Z',
   updatedAt: '2026-10-06T00:00:00.000Z',
+}
+
+const resource: LibraryResource = {
+  id: 'res_one',
+  title: 'NumPy 快速教程',
+  url: 'https://numpy.org/doc/stable/user/quickstart.html',
+  kind: 'article',
+  note: '热身站的读物，只看数组与广播两节',
+  addedBy: 'coach',
+  createdAt: '2026-10-06T00:00:00.000Z',
 }
 
 describe('state root resolution', () => {
@@ -167,6 +178,42 @@ describe('the ledgers', () => {
     expect(store.readBindings().get('s1')).toEqual({ projectId: project.id, bookId: book.id })
     writeFileSync(join(root, 'bindings.json'), JSON.stringify({ s2: { projectId: '../x' }, s3: { projectId: 'p_ok' } }))
     expect([...store.readBindings().keys()]).toEqual(['s3'])
+  })
+})
+
+describe('the resource ledger', () => {
+  it('appends, reads back and removes a shelf link', async () => {
+    const second: LibraryResource = { id: 'res_two', title: 'MuJoCo', url: 'https://mujoco.org', kind: 'tool', addedBy: 'learner', createdAt: '2026-10-06T00:00:00.000Z' }
+    await store.withProjectLock(project.id, () => {
+      store.writeProject(project)
+      store.appendResource(project.id, resource)
+      store.appendResource(project.id, second)
+    })
+    expect(store.readResources(project.id).map(entry => entry.id)).toEqual(['res_one', 'res_two'])
+    await store.withProjectLock(project.id, () => {
+      store.removeResource(project.id, 'res_one')
+    })
+    const left = store.readResources(project.id)
+    expect(left.map(entry => entry.id)).toEqual(['res_two'])
+    expect(left[0]?.note).toBeUndefined()
+    expect(left[0]?.addedBy).toBe('learner')
+  })
+
+  it('reads tolerantly: a torn line and a row missing its fields are skipped', async () => {
+    await store.withProjectLock(project.id, () => {
+      store.writeProject(project)
+      store.appendResource(project.id, resource)
+    })
+    const file = join(root, 'projects', project.id, 'resources.jsonl')
+    writeFileSync(file, `${readFileSync(file, 'utf8')}{"id":"res_torn","tit\n${JSON.stringify({ id: 'res_bad', url: 'https://x.example' })}\n`)
+    expect(store.readResources(project.id).map(entry => entry.id)).toEqual(['res_one'])
+  })
+
+  it('normalizeResource requires id, title and url, and defaults a drifted kind', () => {
+    expect(normalizeResource({ id: 'res_x', title: 't' })).toBeUndefined()
+    expect(normalizeResource({ id: '../x', title: 't', url: 'https://x.example' })).toBeUndefined()
+    const drifted = normalizeResource({ id: 'res_x', title: 't', url: 'https://x.example', kind: 'zine', addedBy: 'nobody' })
+    expect([drifted?.kind, drifted?.addedBy]).toEqual(['article', 'coach'])
   })
 })
 

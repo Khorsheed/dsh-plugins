@@ -9,6 +9,9 @@
  *
  * - a BOOK is registered, never uploaded: title, edition, kind and a table of
  *   contents the coach verified on the web (or took from a photo);
+ * - a RESOURCE is a light link entry on the project's shelf, beside the books:
+ *   title, url, kind and the coach's one-line why — no contents, no roadmap,
+ *   never quizzed (what you reference BY CHAPTER is registered as a book);
  * - a ROADMAP belongs to one book; the coach writes DRAFTS, the learner adopts
  *   one, and the adopted path's state machine has three edges only
  *   (`locked → current → done`);
@@ -216,6 +219,30 @@ export interface LibraryBook {
   readonly bookKind: LibraryBookKind
   readonly toc: readonly LibraryTocEntry[]
   readonly tocSource: LibraryTocSource
+  readonly createdAt: string
+}
+
+/* ------------------------------------------------------------ resources */
+
+/** What a shelf link IS: the shape of the thing its url points at. */
+export const LIBRARY_RESOURCE_KINDS = ['article', 'video', 'repo', 'tool', 'course', 'hardware'] as const
+export type LibraryResourceKind = typeof LIBRARY_RESOURCE_KINDS[number]
+
+/**
+ * One link entry on a project's shelf (`resources.jsonl` line), beside the
+ * books: something the learner opens in the browser — an article, a video, a
+ * repo, a tool, a course, a piece of hardware. A resource has no contents, no
+ * roadmap and never enters the quiz axis.
+ */
+export interface LibraryResource {
+  readonly id: string
+  readonly title: string
+  readonly url: string
+  readonly kind: LibraryResourceKind
+  /** The coach's one line: why it is on the shelf (「热身站的读物，只看两节」). */
+  readonly note?: string
+  /** Who put it there. */
+  readonly addedBy: 'coach' | 'learner'
   readonly createdAt: string
 }
 
@@ -546,6 +573,7 @@ export interface LibraryBinding {
 /** The audit ledger's event types (`events.jsonl`, append-only). */
 export type LibraryEventType =
   | 'book.added'
+  | 'resource.added'
   | 'roadmap.drafted'
   | 'roadmap.adopted'
   | 'page.recorded'
@@ -580,6 +608,7 @@ export interface LibraryEvent {
 /** The event vocabulary, for tests and for writers who must not invent types. */
 export const LIBRARY_EVENT_TYPES: readonly LibraryEventType[] = [
   'book.added',
+  'resource.added',
   'roadmap.drafted',
   'roadmap.adopted',
   'page.recorded',

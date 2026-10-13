@@ -122,6 +122,27 @@ describe('binding defaults', () => {
   })
 })
 
+describe('resources', () => {
+  it('a bound session adds, lists and removes a shelf link without naming the project', async () => {
+    await seed()
+    const added = (await call('library_write', { what: 'resource', op: 'add', resource: { title: 'MuJoCo', url: 'https://mujoco.org', kind: 'tool', note: '仿真物理引擎' } })) as { resource: { id: string; addedBy: string } }
+    expect(added.resource.addedBy).toBe('coach')
+    const listed = (await call('library_read', { what: 'resources' })) as { resources: { title: string }[] }
+    expect(listed.resources.map(resource => resource.title)).toEqual(['MuJoCo'])
+    await expect(call('library_write', { what: 'resource', op: 'add', resource: { title: 'x', url: 'https://mujoco.org', kind: 'tool' } })).rejects.toThrow(/already on this project's shelf/)
+    const removed = (await call('library_write', { what: 'resource', op: 'remove', resource: { id: added.resource.id } })) as { id: string }
+    expect(removed.id).toBe(added.resource.id)
+    expect(((await call('library_read', { what: 'resources' })) as { resources: unknown[] }).resources).toEqual([])
+  })
+
+  it('teaches the payload shape and the op', async () => {
+    await seed()
+    await expect(call('library_write', { what: 'resource', op: 'add', resource: { title: 'x' } })).rejects.toThrow(/op=add takes resource/)
+    await expect(call('library_write', { what: 'resource', op: 'remove', resource: {} })).rejects.toThrow(/op=remove takes resource/)
+    await expect(call('library_write', { what: 'resource', resource: {} })).rejects.toThrow(/op: add \| remove/)
+  })
+})
+
 describe('photo pages', () => {
   it('records a page from the session\'s latest photo when the model names none', async () => {
     await seed()
@@ -135,8 +156,8 @@ describe('photo pages', () => {
 
 describe('teaching errors', () => {
   it('rejects an unknown what with the valid list', async () => {
-    await expect(call('library_read', { what: 'everything' })).rejects.toThrow(/projects \| books \| toc \| roadmap \| pages \| cards \| quiz \| stats/)
-    await expect(call('library_write', { what: 'notes' })).rejects.toThrow(/project \| book \| roadmap \| page \| cards \| quiz \| binding/)
+    await expect(call('library_read', { what: 'everything' })).rejects.toThrow(/projects \| books \| resources \| toc \| roadmap \| pages \| cards \| quiz \| stats/)
+    await expect(call('library_write', { what: 'notes' })).rejects.toThrow(/project \| book \| roadmap \| page \| cards \| quiz \| resource \| binding/)
   })
 
   it('surfaces the service refusal verbatim', async () => {
