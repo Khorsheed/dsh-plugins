@@ -575,6 +575,80 @@ export interface ScopedHomeEvidenceFace {
    * locked record stands unchallenged, never a guessed digest.
    */
   presetSnapshot?(harness: string, scope: string | undefined, preset: string): Promise<PresetSnapshotEvidence | undefined>
+  /**
+   * The bound member's capability composition — one measurement of the
+   * composition an already-bound member of this scope actually runs, as
+   * {@link CapabilityCompositionEvidence} (plain data, producer-shaped).
+   *
+   * PRESENT, this verb replaces the management-instance measurement for the
+   * scope's preset conditions at all three consumption points (provision's
+   * capability admission, validation/display's lock record, the readiness
+   * gate's freshness): the home's roster read and the management catalog are
+   * never consulted for them. ABSENT, the local path applies byte-identically
+   * (roster read-back + the instance's catalog). An answer that is missing or
+   * not the evidence shape is a coded refusal — never a local fallback.
+   */
+  capabilityComposition?(harness: string, scope?: string): Promise<CapabilityCompositionEvidence | undefined>
+}
+
+/* ─────────────── the bound member's capability composition ─────────────── */
+
+/**
+ * The producer-format token eval accepts for {@link CapabilityCompositionEvidence}.
+ * Declared on the answer so a future producer can never collide with the
+ * catalog's: any other value is invalid evidence, not a dialect.
+ */
+export const CAPABILITY_COMPOSITION_FORMAT = 'capability-catalog/evidence@1'
+
+/** One measured section's completeness, as the producer declares it. `partial`/`unavailable` is "not verified" — never read as complete. */
+export interface CapabilitySectionCompleteness {
+  readonly state: 'complete' | 'partial' | 'unavailable'
+  /** Why the section is not complete; absent when it is. */
+  readonly reason?: string
+}
+
+/**
+ * The bound member's capability-composition evidence: one measurement of the
+ * composition an already-bound member actually runs, produced WHERE the member
+ * runs (structurally the catalog family's `ProducedCapabilityEvidence`, carried
+ * as data — eval imports no producer package), plus the identity pair eval
+ * pins it with.
+ *
+ * Consumption rules, all structural:
+ *
+ * - The `sha` is compared, never recomputed from rows — the producer's own
+ *   algorithm made it.
+ * - Every completeness section must be `complete` to verify anything. A
+ *   `complete` section includes the measured-zero case (empty, measured);
+ *   `partial`/`unavailable` is "not verified" and refuses coded, never an
+ *   admission.
+ * - `measurement.presetId` when present must equal the condition's declared
+ *   preset — otherwise the measurement describes another subject.
+ */
+export interface CapabilityCompositionEvidence {
+  /** What claims to have been measured — the descriptor freshness compares verbatim. */
+  readonly measurement: { readonly kind: 'preset-composition'; readonly presetId?: string; readonly workdir?: string; readonly revision?: string }
+  /** The composition digest over the fingerprinted snapshot (rows never cross). */
+  readonly sha: string
+  /** Per-section completeness — all four, always. */
+  readonly completeness: {
+    readonly skills: CapabilitySectionCompleteness
+    readonly tools: CapabilitySectionCompleteness
+    readonly mcpServers: CapabilitySectionCompleteness
+    readonly channels: CapabilitySectionCompleteness
+  }
+  /** What the measurement read (directories, services), echoed for expectation checks. */
+  readonly coverage?: { readonly directories?: readonly string[]; readonly services?: readonly string[] }
+  /** {@link CAPABILITY_COMPOSITION_FORMAT} — anything else is invalid evidence. */
+  readonly providerFormat: string
+  /** The home-identity token (the E3 pin vocabulary) this evidence belongs to. */
+  readonly homeIdentity?: string
+  /**
+   * The execution binding the evidence is about — the member whose composition
+   * was measured. Opaque to eval; the caller vouches for it, and a change
+   * refuses distinguishably (`CAPABILITY_COMPOSITION_BINDING_MISMATCH`).
+   */
+  readonly binding: string
 }
 
 /* ─────────────── the execution-home port (the unit path) ─────────────── */

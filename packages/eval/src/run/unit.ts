@@ -28,6 +28,7 @@
  * @module @khorsheed/dsh-eval
  */
 import { readdirSync, statSync } from 'node:fs'
+import { readCapabilityCompositionShape } from '../capability-composition.ts'
 import type { EvalDiagnostic } from '../contract/validate.ts'
 import type { ExecutionHomePort, LabAcquireSpec, LabFingerprintComponents, ScopedHomeEvidenceFace, ScopedHomePlan } from '../faces.ts'
 
@@ -677,6 +678,39 @@ export async function planScopedHomeMount(
             + ` but the execution-home port planned ${JSON.stringify(answer.homeIdentity)}`
             + ' — evidence measured on one target must never pair with a mount planned for another',
         }],
+      }
+    }
+    // The capability composition, when the face carries the verb, must name
+    // the SAME identity: home fingerprint, capability evidence and mount
+    // plan are three answers about one home, and they name one target or
+    // nothing runs.
+    if (typeof evidence.capabilityComposition === 'function') {
+      let compositionIdentity: string | undefined
+      try {
+        compositionIdentity = readCapabilityCompositionShape(await evidence.capabilityComposition(input.harnessName, input.scope))?.homeIdentity
+      } catch {
+        compositionIdentity = undefined
+      }
+      if (compositionIdentity === undefined) {
+        return {
+          ok: false,
+          diagnostics: [{
+            code: 'EXECUTION_HOME_EVIDENCE_MISSING',
+            message: `condition ${input.conditionId}: the evidence face answered no usable capability composition (with its homeIdentity) for ${named}`
+              + ' — with the verb mounted its measurement must pin to the same target as the mount plan',
+          }],
+        }
+      }
+      if (compositionIdentity !== homeIdentity) {
+        return {
+          ok: false,
+          diagnostics: [{
+            code: 'EXECUTION_HOME_IDENTITY_MISMATCH',
+            message: `condition ${input.conditionId}: the capability composition pins ${JSON.stringify(compositionIdentity)} for ${named}`
+              + ` but the home evidence pins ${JSON.stringify(homeIdentity)}`
+              + ' — fingerprint, composition and mount plan are three answers about one home, and they disagree',
+          }],
+        }
       }
     }
   }

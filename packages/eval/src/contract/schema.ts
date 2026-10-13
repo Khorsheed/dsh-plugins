@@ -585,6 +585,75 @@ export const LOCK_SCHEMA: SchemaObject = {
             },
           },
         },
+        capabilityComposition: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['measurement', 'providerFormat', 'sha', 'completeness', 'binding'],
+          description: "The capability evidence of an already-bound member, measured WHERE the member runs and recorded as its OWN kind — `preset-composition` — never merged into `capabilities` (the management-instance measurement) and never masquerading as `scope-snapshot`/`instance-root`. Present only when provision consumed a scoped-home evidence face carrying the `capabilityComposition` verb; its sections' completeness is the verification floor (every section `complete`, where `complete` includes measured-zero, and any `partial`/`unavailable` section means not verified). Freshness compares the sha, the measurement descriptor, the identity pair and the completeness state, each refusing distinguishably.",
+          properties: {
+            measurement: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['kind'],
+              description: 'The measured claim, verbatim as the producer made it. `presetId` when present must equal the declared preset — otherwise the measurement describes another subject.',
+              properties: {
+                kind: { const: 'preset-composition' },
+                presetId: { type: 'string', description: 'The preset the measured composition runs, as the caller verified it.' },
+                workdir: { type: 'string', description: 'The workdir whose project-scoped roots were measured.' },
+                revision: { type: 'string', description: "The measured composition's revision (e.g. its configuration digest), when the caller has one." },
+              },
+            },
+            providerFormat: { type: 'string', description: "Who produced the measurement (e.g. 'capability-catalog/evidence@1'); recorded so a future producer never collides with it." },
+            sha: { type: 'string', description: '64-hex sha256 of the fingerprinted capability snapshot, by the producer\'s own algorithm — compared, never recomputed from rows.' },
+            completeness: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['skills', 'tools', 'mcpServers', 'channels'],
+              description: 'Per-section completeness of the measurement; every section must be `complete` for the evidence to verify anything.',
+              properties: {
+                skills: {
+                  type: 'object', additionalProperties: false, required: ['state'],
+                  properties: {
+                    state: { enum: ['complete', 'partial', 'unavailable'], description: '`complete` includes measured-zero (empty, measured) — only failure modes carry the other two.' },
+                    reason: { type: 'string', description: 'Why the section is not complete; absent when it is.' },
+                  },
+                },
+                tools: {
+                  type: 'object', additionalProperties: false, required: ['state'],
+                  properties: {
+                    state: { enum: ['complete', 'partial', 'unavailable'], description: '`complete` includes measured-zero (empty, measured) — only failure modes carry the other two.' },
+                    reason: { type: 'string', description: 'Why the section is not complete; absent when it is.' },
+                  },
+                },
+                mcpServers: {
+                  type: 'object', additionalProperties: false, required: ['state'],
+                  properties: {
+                    state: { enum: ['complete', 'partial', 'unavailable'], description: '`complete` includes measured-zero (empty, measured) — only failure modes carry the other two.' },
+                    reason: { type: 'string', description: 'Why the section is not complete; absent when it is.' },
+                  },
+                },
+                channels: {
+                  type: 'object', additionalProperties: false, required: ['state'],
+                  properties: {
+                    state: { enum: ['complete', 'partial', 'unavailable'], description: '`complete` includes measured-zero (empty, measured) — only failure modes carry the other two.' },
+                    reason: { type: 'string', description: 'Why the section is not complete; absent when it is.' },
+                  },
+                },
+              },
+            },
+            coverage: {
+              type: 'object',
+              additionalProperties: false,
+              description: 'What the measurement read, echoed for expectation checks — a digest says nothing about its own coverage.',
+              properties: {
+                directories: { type: 'array', items: { type: 'string' }, description: 'Directories the measurement read.' },
+                services: { type: 'array', items: { type: 'string' }, description: 'Services the measurement read.' },
+              },
+            },
+            homeIdentity: { type: 'string', description: 'The home-identity token pinning this evidence to the scoped home it belongs to (the execution-home pin vocabulary).' },
+            binding: { type: 'string', description: 'The execution binding the evidence is about — the member whose composition was measured. Opaque; a change refuses distinguishably.' },
+          },
+        },
       },
     },
   },

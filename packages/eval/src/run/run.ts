@@ -526,8 +526,17 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
     }
     // The capability record rides validate's resolution, which already read
     // and schema-checked the lock — re-reading it here would be a second
-    // opinion on the same file.
+    // opinion on the same file. A lock carrying the bound member's
+    // capabilityComposition contributes its own record: the sha and preset
+    // the readiness annotation reports come from it (that is the face the
+    // subject runs), and the record itself rides along for the gate.
     const lockedCapabilities = resolution.lock?.capabilities
+    const lockedComposition = resolution.lock?.capabilityComposition
+    const subjectCapabilities = lockedCapabilities !== undefined
+      ? { ...lockedCapabilities, ...(lockedComposition === undefined ? {} : { composition: lockedComposition }) }
+      : lockedComposition === undefined
+        ? undefined
+        : { sha: lockedComposition.sha, preset: lockedComposition.measurement.presetId ?? null, composition: lockedComposition }
     conditions.push({
       id: resolution.id,
       sha,
@@ -537,7 +546,7 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
       provider: '',
       ...(typeof document['scope'] === 'string' ? { scope: document['scope'] } : {}),
       preset: typeof document['preset'] === 'string' ? document['preset'] : null,
-      ...(lockedCapabilities === undefined ? {} : { lockedCapabilities }),
+      ...(subjectCapabilities === undefined ? {} : { lockedCapabilities: subjectCapabilities }),
       document,
     })
   }
@@ -881,8 +890,10 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
     // Freshness: the lock says what the preset hashed to at provision time;
     // this asks what it hashes to now. Only the instance's own catalog can
     // answer, so a composition without one keeps the pre-T32b gate
-    // (presence and agreement, no freshness).
-    ...(deps?.capabilityCatalog === undefined
+    // (presence and agreement, no freshness). When the evidence face carries
+    // the composition verb the catalog is NEVER called for these scopes —
+    // the member's own measurement governs, per the face's contract.
+    ...(deps?.capabilityCatalog === undefined || deps.evidence?.capabilityComposition !== undefined
       ? {}
       : {
         capabilitiesNow: async (subject: ReadinessSubject): Promise<string | undefined> => {

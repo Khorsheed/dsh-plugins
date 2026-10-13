@@ -4,7 +4,7 @@
  * run-data file names. Moved verbatim from run.ts.
  */
 import { createHash } from 'node:crypto'
-import type { LabFace } from '../faces.ts'
+import type { CapabilityCompositionEvidence, LabFace } from '../faces.ts'
 import { type EvalDiagnostic, type LockedCapabilities } from '../contract/validate.ts'
 import { type DeidentifyRule, type ResolvedJudge } from '../judge/judge.ts'
 import type { EgressCheckDecl } from './unit.ts'
@@ -82,9 +82,11 @@ export interface ResolvedCondition {
    * The capability fingerprint the condition's lock records, when provision
    * has measured one. It is the only evidence the declared `preset` was
    * actually built; a condition that declares a preset without it is a
-   * subject whose capability face nobody checked.
+   * subject whose capability face nobody checked. For a lock recording the
+   * bound member's `capabilityComposition`, the sha and preset come from
+   * that record and the record itself rides in `composition`.
    */
-  lockedCapabilities?: LockedCapabilities
+  lockedCapabilities?: LockedCapabilities & { composition?: CapabilityCompositionEvidence }
   /** The full condition document (recorded into run.meta for the report's factor diff). */
   document: Record<string, unknown>
 }

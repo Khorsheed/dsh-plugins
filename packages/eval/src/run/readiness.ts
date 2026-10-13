@@ -1,4 +1,5 @@
 import { effortEvidence, frozenConfigurationOptions, requireEffortAdmission, type EffortEvidence } from '../frozen-configuration.ts'
+import { compositionFreshnessRefusal, readCapabilityCompositionShape } from '../capability-composition.ts'
 /**
  * The pre-run readiness check (pilot A · G4).
  *
@@ -23,7 +24,7 @@ import { effortEvidence, frozenConfigurationOptions, requireEffortAdmission, typ
  */
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import type { DelegationProgress, DelegationResult, LocalAgentFace, ScopedHomeEvidenceFace } from '../faces.ts'
+import type { CapabilityCompositionEvidence, DelegationProgress, DelegationResult, LocalAgentFace, ScopedHomeEvidenceFace } from '../faces.ts'
 import { hashPresetTree, scopePresetDir } from '../preset-snapshot.ts'
 import { awaitObservedModel, DEFAULT_READBACK_WAIT_MS } from './readback.ts'
 import { EGRESS_UNAVAILABLE } from './egress.ts'
@@ -138,9 +139,12 @@ export interface ReadinessSubject {
   /**
    * The capability fingerprint the condition's lock records, when provision
    * measured one. A condition that declares a preset and has none of these
-   * is refused before its delegation: see {@link capabilityRefusal}.
+   * is refused before its delegation: see {@link capabilityRefusal}. The
+   * optional `composition` is the bound member's own record — when present it
+   * replaces the catalog record's freshness semantics wholesale (the
+   * member's evidence governs; the management catalog is never consulted).
    */
-  capabilities?: { sha: string; preset?: string | null; snapshot?: { sha: string } }
+  capabilities?: { sha: string; preset?: string | null; snapshot?: { sha: string }; composition?: CapabilityCompositionEvidence }
 }
 
 /**
@@ -160,7 +164,12 @@ export interface ReadinessSubject {
  * @param condition - the probed condition.
  * @returns the refusal reason, or undefined when nothing is claimed or all agrees.
  */
-export function capabilityRefusal(condition: ReadinessSubject, fresh?: string, freshSnapshot?: string): string | undefined {
+export function capabilityRefusal(
+  condition: ReadinessSubject,
+  fresh?: string,
+  freshSnapshot?: string,
+  freshComposition?: { answer?: CapabilityCompositionEvidence; unavailable?: string },
+): string | undefined {
   const preset = condition.preset ?? null
   if (preset === null) return undefined
   if (condition.capabilities === undefined) {
@@ -168,6 +177,31 @@ export function capabilityRefusal(condition: ReadinessSubject, fresh?: string, f
       + ' — the capability face was never measured, so the declared preset is a claim with nothing behind it'
       + ' (run `conditions provision` for this condition)'
   }
+
+  // The bound member's record replaces the catalog record's whole freshness
+  // story: it is one measurement object at all three consumption points —
+  // provision wrote it, validate displays it, and this gate refuses on it.
+  // The management catalog and the scope-copy digest are not consulted here.
+  const composition = condition.capabilities.composition
+  if (composition !== undefined) {
+    const measuredPreset = composition.measurement.presetId
+    if (measuredPreset !== undefined && measuredPreset !== preset) {
+      return `the condition declares preset ${JSON.stringify(preset)} but its capability composition was measured under ${JSON.stringify(measuredPreset)}`
+        + ' — the evidence is about another subject'
+    }
+    if (freshComposition?.unavailable !== undefined) {
+      return `CAPABILITY_COMPOSITION_INVALID: the member's capability composition could not be re-measured (${freshComposition.unavailable})`
+        + ' — a bound member\'s evidence has no local fallback, so the condition is not verified'
+    }
+    if (freshComposition?.answer !== undefined) {
+      return compositionFreshnessRefusal(composition, freshComposition.answer)
+    }
+    // No freshness source (the face dropped the verb, or none is mounted):
+    // the locked record stands on presence and agreement, as the catalog
+    // path's own pre-freshness rule reads.
+    return undefined
+  }
+
   const measured = condition.capabilities.preset
   if (measured !== undefined && measured !== preset) {
     return `the condition declares preset ${JSON.stringify(preset)} but its capability record was taken under ${JSON.stringify(measured)}`
@@ -477,7 +511,7 @@ async function probeIn(
   // catalog. Failing the condition on the second would refuse runs for a
   // reason that has nothing to do with the subject.
   let freshCapabilities: string | undefined
-  if (env.capabilitiesNow !== undefined && condition.capabilities !== undefined && (condition.preset ?? null) !== null) {
+  if (env.capabilitiesNow !== undefined && condition.capabilities !== undefined && condition.capabilities.composition === undefined && (condition.preset ?? null) !== null) {
     try {
       freshCapabilities = await env.capabilitiesNow(condition)
     } catch (error) {
@@ -496,7 +530,20 @@ async function probeIn(
         + ` (${error instanceof Error ? error.message : String(error)}) — the locked record stands`)
     }
   }
-  const capabilityProblem = capabilityRefusal(condition, freshCapabilities, freshSnapshot)
+  // The bound member's freshness: re-measure through the face's composition
+  // verb. A face that cannot answer is a coded refusal — there is NO local
+  // fallback for a bound member's evidence, by the verb's own contract.
+  let freshComposition: { answer?: CapabilityCompositionEvidence; unavailable?: string } | undefined
+  if ((condition.preset ?? null) !== null && condition.capabilities?.composition !== undefined
+    && env.evidence !== undefined && typeof env.evidence.capabilityComposition === 'function') {
+    try {
+      const answer = readCapabilityCompositionShape(await env.evidence.capabilityComposition(condition.harnessName, condition.scope))
+      freshComposition = answer === undefined ? { unavailable: 'the answer is not capability-composition evidence' } : { answer }
+    } catch (error) {
+      freshComposition = { unavailable: error instanceof Error ? error.message : String(error) }
+    }
+  }
+  const capabilityProblem = capabilityRefusal(condition, freshCapabilities, freshSnapshot, freshComposition)
   if (capabilityProblem !== undefined) {
     env.log(`readiness ${condition.role === 'judge' ? 'judge ' : ''}${condition.id}: NOT READY — ${capabilityProblem}`)
     return {
