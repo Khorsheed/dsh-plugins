@@ -189,6 +189,22 @@ describe('browser handoff client lifecycle', () => {
     dispose()
   })
 
+  it('backs off when an older server immediately answers idle', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('location', { hash: '', href: 'http://localhost/', origin: 'http://localhost', reload: vi.fn(), replace: vi.fn() })
+    const fetch = vi.fn(async () => response(200, { state: 'idle' }))
+    vi.stubGlobal('fetch', fetch)
+    const dispose = apply({} as never)
+    try {
+      await vi.advanceTimersByTimeAsync(1)
+      expect(fetch).toHaveBeenCalledOnce()
+      await vi.advanceTimersByTimeAsync(200)
+      expect(fetch).toHaveBeenCalledOnce()
+      await vi.advanceTimersByTimeAsync(50)
+      expect(fetch).toHaveBeenCalledTimes(2)
+    } finally { dispose() }
+  })
+
   it('learns the serving boot id from idle and carries it on the next poll', async () => {
     vi.stubGlobal('location', {
       hash: '',

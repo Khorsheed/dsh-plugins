@@ -299,9 +299,9 @@ export function apply(_ctx: ClientContext): () => void {
       if (typeof result.bootId === 'string') sessionStorage.setItem(BOOT_ID_KEY, result.bootId)
       if (result.state === 'idle') {
         document.getElementById('ankh-guard-browser-handoff')?.remove()
-        // The server holds idle polls, providing event-like wakeup without a
-        // permanent fixed-frequency request loop.
-        schedule()
+        // Healthy servers hold idle polls. Keep a floor for older servers or
+        // terminal states that answer immediately, so they cannot create a spin.
+        schedule(ACTIVE_RETRY_MS)
         return
       }
       if (result.state === 'waiting') waitingOverlay()

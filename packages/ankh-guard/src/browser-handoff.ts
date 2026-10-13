@@ -31,7 +31,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { dirname } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { activeCutover, readCutoverReceipt, type CutoverProcessOwnership, type LaunchRole } from './launch-spec.ts'
-import { processIdentity, processIdentityMatches, type ProcessIdentity } from './processes.ts'
+import { processIdentity, type processIdentityMatches, type ProcessIdentity } from './processes.ts'
 import { stateFile } from './state-files.ts'
 
 export const BROWSER_HANDOFF_ROUTE = '/_ankh-guard/browser-handoff'
@@ -375,19 +375,24 @@ function authenticationState(
 export function createBrowserHandoffHandler(dependencies: BrowserHandoffDependencies) {
   const pid = dependencies.pid ?? process.pid
   const now = dependencies.now ?? Date.now
-  const identityMatches = dependencies.identityMatches ?? processIdentityMatches
   const identityProvider = dependencies.identityProvider ?? processIdentity
   const longPollMs = dependencies.longPollMs ?? DEFAULT_LONG_POLL_MS
   const longPollIntervalMs = dependencies.longPollIntervalMs ?? DEFAULT_LONG_POLL_INTERVAL_MS
-  // Cached: a process's boot id never changes over its lifetime, and the
-  // platform lookup (ps/python3) must not run per held poll.
-  let bootIdCache: string | null | undefined
+  // The handler only proves its own listener identity. That identity cannot
+  // change while this process is serving: a recycled PID has a new handler.
+  // Share one lookup with the boot channel; never spawn ps/python per poll.
+  let selfIdentity: ProcessIdentity | null | undefined
+  const identity = (): ProcessIdentity | null => {
+    if (selfIdentity === undefined) selfIdentity = identityProvider(pid)
+    return selfIdentity
+  }
+  const identityMatches = dependencies.identityMatches ?? ((expected: ProcessIdentity): boolean => {
+    const own = identity()
+    return own !== null && expected.pid === pid && own.pid === pid && own.startToken === expected.startToken
+  })
   const thisBootId = (): string | undefined => {
-    if (bootIdCache === undefined) {
-      const identity = identityProvider(pid)
-      bootIdCache = identity === null ? null : `${String(identity.pid)}:${identity.startToken}`
-    }
-    return bootIdCache ?? undefined
+    const own = identity()
+    return own === null ? undefined : `${String(own.pid)}:${own.startToken}`
   }
   return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const connection = dependencies.connectionProvider?.() ?? dependencies.connection
@@ -450,9 +455,10 @@ export function createBrowserHandoffHandler(dependencies: BrowserHandoffDependen
         }
         const ready = currentReadyOwnership(dependencies.stateDir, pid, identityMatches)
         const registration = readBrowserHandoffRequest(dependencies.stateDir)
-        return ready !== null && matchingRegistration(
+        const registered = ready === null ? undefined : matchingRegistration(
           registration, ready.cutoverId, requestAuthority.authority, digest,
-        )?.acknowledgedAt === undefined
+        )
+        return registered !== undefined && registered.acknowledgedAt === undefined
       }
       await waitForPollState(pollHasState, longPollMs, longPollIntervalMs)
       const active = activeCutover(dependencies.stateDir)

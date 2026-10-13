@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   createBrowserHandoffHandler, readBrowserHandoffAcknowledgement,
   readBrowserHandoffRequest,
@@ -243,6 +243,40 @@ describe('browser handoff host bridge', () => {
         authentication: 'launch-url',
         authority: new URL(origin).host,
       })
+    })
+  })
+
+  it('holds unregistered tabs after a settled cutover and reads its own identity only once', async () => {
+    const dir = stateDir(), id = 'settled-idle'
+    prepare(dir, id)
+    recordCutoverEvent(dir, id, 'child-started', ['target', '1', '503', 'child-503'], 4000)
+    recordCutoverEvent(dir, id, 'ownership-stable', ['target', '503', 'child-503', '504', 'listener-504', '3000', '0'], 4001)
+    recordCutoverEvent(dir, id, 'canary', ['pass'], 4002)
+    recordCutoverEvent(dir, id, 'browser-handoff', ['acknowledged', 'fallback-tab', 'existing-cookie', 'localhost'], 4003)
+    recordCutoverEvent(dir, id, 'ready', ['target'], 4004)
+    const identityProvider = vi.fn((pid: number) => ({ pid, startToken: 'listener-504' }))
+    await withHandler(createBrowserHandoffHandler({
+      stateDir: dir, pid: 504, identityProvider, longPollMs: 100, longPollIntervalMs: 5,
+    }), async (_setHandler, origin) => {
+      const start = Date.now()
+      const responses = await Promise.all(['K', 'L'].map(char => post(origin, {
+        version: 1, operation: 'poll', capability: char.repeat(43),
+      })))
+      expect(Date.now() - start).toBeGreaterThanOrEqual(90)
+      for (const response of responses) expect(await response.json()).toEqual({ state: 'idle', bootId: '504:listener-504' })
+      expect(identityProvider).toHaveBeenCalledOnce()
+      // Reusing a numeric PID never authorizes an old receipt's start token.
+      const wrongIdentity = createBrowserHandoffHandler({
+        stateDir: dir, pid: 504, identityProvider: pid => ({ pid, startToken: 'different-start' }), longPollMs: 0,
+      })
+      _setHandler(wrongIdentity)
+      expect((await post(origin, {
+        version: 1, operation: 'ack', cutoverId: id, channel: 'fallback-tab', authentication: 'existing-cookie',
+      })).status).toBe(409)
+      _setHandler(createBrowserHandoffHandler({ stateDir: dir, pid: 504, identityProvider: () => null, longPollMs: 0 }))
+      expect((await post(origin, {
+        version: 1, operation: 'ack', cutoverId: id, channel: 'fallback-tab', authentication: 'existing-cookie',
+      })).status).toBe(409)
     })
   })
 
