@@ -482,7 +482,8 @@
   font-variant-numeric: tabular-nums;
 }
 
-.disc[data-kind='quiz'] {
+.disc[data-kind='quiz'],
+.disc[data-kind='practice'] {
   border-radius: 12px;
 }
 
@@ -958,6 +959,157 @@ textarea.input { resize: vertical; font: inherit; line-height: 1.5; }
   font-size: var(--dsh-panel-text-meta, 12px);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* 项目路线卡与 covers */
+.kind[data-kind='practice'] {
+  background: var(--lib-ok-soft);
+  color: var(--lib-ok);
+}
+
+.stations {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.station {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.station:hover { background: var(--dsw-alias-interactive-bg-hover); }
+
+.station:focus-visible {
+  outline: 2px solid var(--pc, var(--lib-accent));
+  outline-offset: 2px;
+}
+
+.stationDot {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
+  border: 2px solid var(--dsw-alias-border-l3);
+  border-radius: 50%;
+  color: var(--dsw-alias-label-primary-inverted);
+}
+
+.stationDot[data-state='current'] {
+  border-color: var(--pc, var(--lib-accent));
+  box-shadow: 0 0 0 3px var(--pc-soft, var(--lib-accent-soft));
+}
+
+.stationDot[data-state='done'] {
+  border-color: var(--pc, var(--lib-ok));
+  background: var(--pc, var(--lib-ok));
+}
+
+.stationText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.stationTitle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-weight: 600;
+}
+
+.station[data-state='locked'] .stationTitle { color: var(--dsw-alias-label-tertiary); }
+
+.stationText .muted {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.coversRow {
+  padding: 8px var(--lib-gap) 0;
+}
+
+/* provenance 徽章：小文字 chip，跟在引用后面 */
+.prov {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 4px;
+  padding: 0 5px;
+  border-radius: 8px;
+  font-size: var(--dsh-panel-text-meta, 12px);
+}
+
+.prov[data-by='web'] { background: var(--lib-ok-soft); color: var(--lib-ok); }
+.prov[data-by='model'] { background: var(--lib-warn-soft); color: var(--lib-warn); }
+.prov[data-by='user'] { background: var(--lib-accent-soft); color: var(--lib-accent); }
+
+/* 验收 tab 与证据政策卡 */
+.policy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border-left: 3px solid var(--lib-accent);
+  border-radius: 0 8px 8px 0;
+  background: var(--dsw-alias-bg-layer-1);
+  font-size: var(--dsh-panel-text-meta, 12px);
+  line-height: 1.5;
+}
+
+.acceptList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.acceptItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.acceptMark {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  border: 1.5px solid var(--dsw-alias-border-l3);
+  border-radius: 4px;
+  color: var(--dsw-alias-label-primary-inverted);
+  font-size: 10px; /* panel-check: allow-small-text — a verdict glyph */
+}
+
+.acceptMark[data-state='pass'] { border-color: var(--lib-ok); background: var(--lib-ok); }
+.acceptMark[data-state='fail'] { border-color: var(--lib-bad); background: var(--lib-bad); }
+
+.acceptText {
+  min-width: 0;
+  line-height: 1.5;
 }
 
 

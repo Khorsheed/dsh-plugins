@@ -18,6 +18,7 @@ import type {} from '@khorsheed/dsh-library/remote'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {
   LibraryAssessResult,
+  LibraryAttempt,
   LibraryBinding,
   LibraryBook,
   LibraryCard,
@@ -52,20 +53,22 @@ export interface LibraryPaneInjected {
   getProject: (id: string) => Answer<{ project: LibraryProjectSummary; books: LibraryBook[] }>
   createProject: (request: { name: string; template: LibraryTemplate; goal?: string }) => Answer<{ project: LibraryProject }>
   updateProject: (projectId: string, patch: LibraryProjectPatch) => Answer<{ project: LibraryProject }>
-  getRoadmap: (projectId: string, bookId: string) => Promise<RemoteResult<{ roadmap?: LibraryRoadmap; draft?: LibraryRoadmap }>>
-  adoptRoadmap: (projectId: string, bookId: string) => Answer<{ roadmap: LibraryRoadmap }>
-  discardDraft: (projectId: string, bookId: string) => Answer<{ bookId: string }>
-  markNodeRead: (projectId: string, bookId: string, nodeId: string) => Answer<{ roadmap: LibraryRoadmap; unlocked: string[] }>
+  getRoadmap: (projectId: string, bookId?: string) => Promise<RemoteResult<{ roadmap?: LibraryRoadmap; draft?: LibraryRoadmap }>>
+  adoptRoadmap: (projectId: string, bookId?: string) => Answer<{ roadmap: LibraryRoadmap }>
+  discardDraft: (projectId: string, bookId?: string) => Answer<{ bookId?: string }>
+  markNodeRead: (projectId: string, bookId: string | undefined, nodeId: string) => Answer<{ roadmap: LibraryRoadmap; unlocked: string[] }>
   listPages: (projectId: string, bookId: string, nodeId?: string) => Promise<RemoteResult<{ pages: LibraryPage[] }>>
   readPagePhoto: (projectId: string, pageId: string) => Answer<{ data: string; mediaType: string }>
   /** A project's shelf links (the resource section under the shelf). */
   listResources: (projectId: string) => Promise<RemoteResult<{ resources: LibraryResource[] }>>
+  /** One practice station's acceptance history, newest first. */
+  listAttempts: (projectId: string, nodeId: string) => Promise<RemoteResult<{ attempts: LibraryAttempt[] }>>
   listCards: (query: LibraryCardQuery) => Promise<RemoteResult<{ cards: LibraryCard[]; total: number }>>
   dueCards: (projectId?: string) => Promise<RemoteResult<{ cards: (LibraryCard & { projectId: string })[] }>>
   editCard: (projectId: string, cardId: string, patch: { status?: LibraryCard['status']; gloss?: string }) => Answer<{ card: LibraryCard }>
   undoCards: (projectId: string, ids: readonly string[], at: string) => Answer<{ removed: number; reverted: number }>
   reviewCard: (projectId: string, cardId: string, rating: LibraryReviewRating) => Answer<{ card: LibraryCard }>
-  listQuizzes: (projectId: string, bookId: string, nodeId?: string) => Promise<RemoteResult<{ quizzes: LibraryQuiz[] }>>
+  listQuizzes: (projectId: string, bookId: string | undefined, nodeId?: string) => Promise<RemoteResult<{ quizzes: LibraryQuiz[] }>>
   getQuiz: (projectId: string, quizId: string) => Answer<{ quiz: LibraryQuiz }>
   putAttempt: (projectId: string, quizId: string, verdicts: readonly LibraryVerdict[]) => Answer<LibraryAssessResult>
   recentRecords: () => Promise<RemoteResult<{ records: (LibraryEvent & { projectId: string; projectName: string })[] }>>

@@ -28,7 +28,7 @@ interface Answered {
 }
 
 /** The quiz screen. */
-export function QuizView({ p, projectId, bookId, quizId }: ViewProps & { projectId: string; bookId: string; quizId: string }): ReactNode {
+export function QuizView({ p, projectId, bookId, quizId }: ViewProps & { projectId: string; bookId: string | undefined; quizId: string }): ReactNode {
   const { t, actions } = p
   const loaded = useLoad(() => outcome(p.getQuiz(projectId, quizId)), [projectId, quizId])
   const [index, setIndex] = useState(0)
@@ -79,7 +79,7 @@ export function QuizView({ p, projectId, bookId, quizId }: ViewProps & { project
     setBusy(true)
     try {
       const result = await outcome(p.putAttempt(projectId, quiz.id, verdicts))
-      actions.replace({ view: 'result', projectId, bookId, result })
+      actions.replace({ view: 'result', projectId, ...(bookId === undefined ? {} : { bookId }), result })
     } catch (failure) {
       setNotice(failure instanceof Error ? failure.message : String(failure))
     } finally {
@@ -220,7 +220,7 @@ function QuestionCard({ p, question, answered, draft, onDraft, onAnswer }: {
 }
 
 /** The sitting's result: the score, what unlocked, how the cards moved. */
-export function ResultView({ p, projectId, bookId, result }: ViewProps & { projectId: string; bookId: string; result: LibraryAssessResult }): ReactNode {
+export function ResultView({ p, projectId, bookId, result }: ViewProps & { projectId: string; bookId: string | undefined; result: LibraryAssessResult }): ReactNode {
   const { t, actions } = p
   const percent = Math.round(result.attempt.ratio * 100)
   const passed = result.completed !== undefined
@@ -250,9 +250,14 @@ export function ResultView({ p, projectId, bookId, result }: ViewProps & { proje
         )}
         <div className={css.actions}>
           {result.unlocked[0] !== undefined && (
-            <button type="button" className={css.primary} onClick={() => { actions.replace({ view: 'node', projectId, bookId, nodeId: result.unlocked[0]!, tab: 'guide' }) }}>{t('result.next')}</button>
+            <button type="button" className={css.primary} onClick={() => { actions.replace({ view: 'node', projectId, ...(bookId === undefined ? {} : { bookId }), nodeId: result.unlocked[0]!, tab: 'guide' }) }}>{t('result.next')}</button>
           )}
-          <button type="button" className={css.secondary} onClick={() => { actions.replace({ view: 'book', projectId, bookId }) }}>{t('result.toPath')}</button>
+          {bookId !== undefined && (
+            <button type="button" className={css.secondary} onClick={() => { actions.replace({ view: 'book', projectId, bookId }) }}>{t('result.toPath')}</button>
+          )}
+          {bookId === undefined && (
+            <button type="button" className={css.secondary} onClick={() => { actions.replace({ view: 'project', projectId }) }}>{t('result.toPath')}</button>
+          )}
         </div>
       </div>
     </>

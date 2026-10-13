@@ -3,7 +3,7 @@
  * documents, drafts beside adopted roadmaps, the tolerant JSONL ledgers, the
  * bindings, and the lock — all against a temp state root.
  */
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -16,6 +16,7 @@ import {
   normalizeBook,
   normalizeCard,
   normalizeLibraryIndex,
+  normalizeNodeCover,
   normalizeResource,
   resolveLibraryStateRoot,
 } from '../src/store.ts'
@@ -120,7 +121,7 @@ describe('documents', () => {
     const adopted: LibraryRoadmap = {
       bookId: book.id,
       status: 'adopted',
-      nodes: [{ id: 'n1', title: '概论', kind: 'quiz', goals: [], dependsOn: [], chapterRanges: [{ from: 1, to: 1 }], state: 'current', quizStats: { attempts: 0 } }],
+      nodes: [{ id: 'n1', title: '概论', kind: 'quiz', goals: [], dependsOn: [], covers: [{ kind: 'book', bookId: book.id, ranges: [{ from: 1, to: 1 }] }], state: 'current', quizStats: { attempts: 0 } }],
       generatedAt: '2026-10-06T00:00:00.000Z',
     }
     await store.withProjectLock(project.id, () => {
@@ -178,6 +179,118 @@ describe('the ledgers', () => {
     expect(store.readBindings().get('s1')).toEqual({ projectId: project.id, bookId: book.id })
     writeFileSync(join(root, 'bindings.json'), JSON.stringify({ s2: { projectId: '../x' }, s3: { projectId: 'p_ok' } }))
     expect([...store.readBindings().keys()]).toEqual(['s3'])
+  })
+})
+
+describe('the project-level path (v3)', () => {
+  const projectPath: LibraryRoadmap = {
+    status: 'adopted',
+    nodes: [
+      { id: 's1', title: '热身', kind: 'practice', goals: [], dependsOn: [], covers: [{ kind: 'topic', text: '教练带写' }], state: 'current', acceptance: ['跑通脚本'] },
+      { id: 's2', title: '快慢回路', kind: 'quiz', goals: [], dependsOn: ['s1'], covers: [{ kind: 'book', bookId: book.id, ranges: [{ from: 1, to: 1 }] }], state: 'locked', quizStats: { attempts: 0 } },
+    ],
+    generatedAt: '2026-10-06T00:00:00.000Z',
+  }
+
+  it('round-trips a roadmap at the project root, draft beside it', async () => {
+    await store.withProjectLock(project.id, () => {
+      store.writeProject(project)
+      store.writeRoadmap(project.id, projectPath)
+      store.writeRoadmap(project.id, { ...projectPath, status: 'draft', note: '每周 2 站' })
+    })
+    expect(store.readRoadmap(project.id)?.nodes[0]?.acceptance).toEqual(['跑通脚本'])
+    expect(store.readRoadmap(project.id)?.nodes[0]?.covers).toEqual([{ kind: 'topic', text: '教练带写' }])
+    expect(store.readRoadmap(project.id, undefined, 'draft')?.note).toBe('每周 2 站')
+    store.removeDraft(project.id)
+    expect(store.readRoadmap(project.id, undefined, 'draft')).toBeUndefined()
+    expect(store.readRoadmap(project.id)?.status).toBe('adopted')
+  })
+
+  it('normalizeNodeCover drops an unusable cover and keeps provenance', () => {
+    expect(normalizeNodeCover({ kind: 'url' })).toBeUndefined()
+    expect(normalizeNodeCover({ kind: 'wiki', url: 'https://x.example' })).toBeUndefined()
+    expect(normalizeNodeCover({ kind: 'url', url: 'https://x.example', by: 'web', verifiedAt: '2026-10-13T00:00:00.000Z' })).toEqual({ kind: 'url', url: 'https://x.example', by: 'web', verifiedAt: '2026-10-13T00:00:00.000Z' })
+  })
+})
+
+describe('the v2 → v3 migration', () => {
+  /** A v2 fixture: one project whose book holds an adopted path, a draft, cards and a quiz. */
+  function seedV2(): void {
+    const dir = join(root, 'projects', project.id)
+    mkdirSync(join(dir, 'books', book.id), { recursive: true })
+    mkdirSync(join(dir, 'quizzes'), { recursive: true })
+    writeFileSync(join(root, 'state.json'), JSON.stringify({ version: 2, projects: [project] }))
+    writeFileSync(join(dir, 'project.json'), JSON.stringify(project))
+    writeFileSync(join(dir, 'books', book.id, 'book.json'), JSON.stringify(book))
+    writeFileSync(join(dir, 'books', book.id, 'roadmap.json'), JSON.stringify({
+      bookId: book.id,
+      status: 'adopted',
+      generatedAt: '2026-10-06T00:00:00.000Z',
+      adoptedAt: '2026-10-07T00:00:00.000Z',
+      passRatio: 0.7,
+      nodes: [
+        { id: 'n1', title: '离子通道', kind: 'quiz', goals: ['说清离子通道'], dependsOn: [], chapterRanges: [{ from: 1, to: 1 }], state: 'done', quizStats: { attempts: 2, lastRatio: 0.9, bestRatio: 0.9 } },
+        { id: 'n2', title: '动作电位', kind: 'quiz', goals: [], dependsOn: ['n1'], chapterRanges: [{ from: 2, to: 2 }], state: 'current', quizStats: { attempts: 0 } },
+      ],
+    }))
+    writeFileSync(join(dir, 'books', book.id, 'roadmap.draft.json'), JSON.stringify({
+      bookId: book.id,
+      status: 'draft',
+      generatedAt: '2026-10-08T00:00:00.000Z',
+      nodes: [{ id: 'r1', title: '导论', kind: 'read', goals: [], dependsOn: [], chapterRanges: [], state: 'locked' }],
+    }))
+    writeFileSync(join(dir, 'cards.jsonl'), `${JSON.stringify(card)}\n`)
+    writeFileSync(join(dir, 'quizzes', 'q_one.json'), JSON.stringify({
+      id: 'q_one',
+      scope: { bookId: book.id, nodeId: 'n1' },
+      questions: [{ id: 'q1', kind: 'free', prompt: 'p', answer: 'a', target: { kind: 'topic' }, evidence: { kind: 'knowledge' } }],
+      createdAt: '2026-10-07T00:00:00.000Z',
+    }))
+  }
+
+  it('reads a v2 root tolerantly before any migration runs', () => {
+    seedV2()
+    expect(store.readIndex().projects.map(p => p.id)).toEqual([project.id])
+    const roadmap = store.readRoadmap(project.id, book.id)
+    expect(roadmap?.nodes[0]?.covers).toEqual([{ kind: 'book', bookId: book.id, ranges: [{ from: 1, to: 1 }] }])
+    expect(roadmap?.nodes[0]?.state).toBe('done')
+    expect(roadmap?.nodes[0]?.quizStats).toEqual({ attempts: 2, lastRatio: 0.9, bestRatio: 0.9 })
+  })
+
+  it('rewrites chapterRanges into covers, keeps every other byte, and bumps the version', async () => {
+    seedV2()
+    expect(await store.migrateState()).toBe(true)
+    const indexRaw = JSON.parse(readFileSync(join(root, 'state.json'), 'utf8')) as { version: number }
+    expect(indexRaw.version).toBe(3)
+    const adopted = store.readRoadmap(project.id, book.id)
+    expect(adopted?.passRatio).toBe(0.7)
+    expect(adopted?.adoptedAt).toBe('2026-10-07T00:00:00.000Z')
+    expect(adopted?.nodes.map(node => [node.id, node.state])).toEqual([['n1', 'done'], ['n2', 'current']])
+    expect(adopted?.nodes[1]?.covers).toEqual([{ kind: 'book', bookId: book.id, ranges: [{ from: 2, to: 2 }] }])
+    // A node with empty chapterRanges keeps an empty-ranges book cover.
+    const draft = store.readRoadmap(project.id, book.id, 'draft')
+    expect(draft?.nodes[0]?.covers).toEqual([{ kind: 'book', bookId: book.id, ranges: [] }])
+    // The raw files carry covers and no chapterRanges anymore.
+    const raw = JSON.parse(readFileSync(join(root, 'projects', project.id, 'books', book.id, 'roadmap.json'), 'utf8')) as { nodes: Record<string, unknown>[] }
+    expect(raw.nodes[0]?.covers).toBeDefined()
+    expect(raw.nodes[0]?.chapterRanges).toBeUndefined()
+    // Cards and quizzes are untouched.
+    expect(store.readCards(project.id).map(entry => entry.id)).toEqual([card.id])
+    expect(store.readQuiz(project.id, 'q_one')?.scope).toEqual({ bookId: book.id, nodeId: 'n1' })
+  })
+
+  it('is idempotent, leaves v1 alone, and no-ops on a fresh root', async () => {
+    seedV2()
+    expect(await store.migrateState()).toBe(true)
+    expect(await store.migrateState()).toBe(false)
+    expect(store.readRoadmap(project.id, book.id)?.nodes[0]?.covers).toEqual([{ kind: 'book', bookId: book.id, ranges: [{ from: 1, to: 1 }] }])
+    // v1 (never deployed) still reads as empty and is not migrated.
+    writeFileSync(join(root, 'state.json'), JSON.stringify({ version: 1, projects: [project] }))
+    expect(await store.migrateState()).toBe(false)
+    expect(store.readIndex().projects).toEqual([])
+    // A root without an index at all.
+    rmSync(join(root, 'state.json'))
+    expect(await store.migrateState()).toBe(false)
   })
 })
 

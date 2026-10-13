@@ -18,8 +18,9 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { LibraryService } from './service.ts'
 import { LibraryRemoteService } from './remote.ts'
+import { libraryErrorMessage } from './types.ts'
 
-export { LibraryService, LibraryDisposedError, leitnerDueAt, unlockReady, validateRoadmapShape } from './service.ts'
+export { LibraryService, LibraryDisposedError, leitnerDueAt, unlockReady, validateRoadmapShape, coversVerbatimBlocker } from './service.ts'
 export { cardKey, cardKeys, cardMatchesQuery, exactMatch, keySimilarity, nearMatches, NEAR_DUPLICATE } from './cards.ts'
 export { LibraryRemoteService } from './remote.ts'
 export type { LibraryRemoteConfig } from './remote.ts'
@@ -36,6 +37,7 @@ export {
   normalizeBook,
   normalizeCard,
   normalizeEvent,
+  normalizeNodeCover,
   normalizePage,
   normalizeLibraryIndex,
   normalizeProject,
@@ -76,4 +78,10 @@ export function apply(ctx: Context, config: LibraryConfig = {}): void {
   const service = new LibraryService(ctx, config)
   ctx.provide('library', service)
   ctx.plugin(LibraryRemoteService, {})
+  // Migrate a v2 state root to v3 (roadmap nodes' chapterRanges → covers).
+  // Fire-and-forget: reads tolerate v2 until it lands, and a failed pass (a
+  // read-only root) only means the files stay v2 — never a boot failure.
+  void service.store.migrateState().catch((error: unknown) => {
+    ctx.logger.warn(`library: state migration did not run — ${libraryErrorMessage(error)}`)
+  })
 }

@@ -12,9 +12,14 @@
  * - a RESOURCE is a light link entry on the project's shelf, beside the books:
  *   title, url, kind and the coach's one-line why — no contents, no roadmap,
  *   never quizzed (what you reference BY CHAPTER is registered as a book);
- * - a ROADMAP belongs to one book; the coach writes DRAFTS, the learner adopts
- *   one, and the adopted path's state machine has three edges only
- *   (`locked → current → done`);
+ * - a ROADMAP is the project's path; a book's roadmap is the special case
+ *   (`bookId` present, every cover naming that one book). A node draws on
+ *   mixed COVERS — a book's chapter ranges, a shelf resource, a bare url, or
+ *   plain coached teaching — each carrying its provenance. The coach writes
+ *   DRAFTS, the learner adopts one, and the adopted path's state machine has
+ *   three edges only (`locked → current → done`). Beyond quiz and read nodes,
+ *   a PRACTICE node is a hands-on station: it completes by acceptance, one
+ *   verdict per acceptance line;
  * - a PAGE is one photographed page: its recognized text plus the marks the
  *   learner made (underlines, margin notes);
  * - a CARD (知识卡片) is the learner's own memory: a word or a concept met in a
@@ -33,9 +38,11 @@ export const STATE_ROOT_SEGMENT = 'dsh-library'
 
 /**
  * The on-disk schema version of `state.json`. v1 (uploaded books, project
- * roadmaps, the vocab book) was never deployed; a v1 root reads as empty.
+ * roadmaps, the vocab book) was never deployed; a v1 root reads as empty. A
+ * v2 root (per-book roadmaps whose nodes carry `chapterRanges`) reads
+ * tolerantly and is rewritten to v3 by the store's `migrateState`.
  */
-export const LIBRARY_STATE_VERSION = 2
+export const LIBRARY_STATE_VERSION = 3
 
 /** The Leitner intervals in days, indexed by box (box 5 reuses the last rung). */
 export const LEITNER_INTERVAL_DAYS: readonly number[] = [1, 2, 4, 7, 15]
@@ -253,18 +260,38 @@ export type RoadmapNodeState = 'locked' | 'current' | 'done'
 
 /**
  * What kind of learning a node carries. `quiz` nodes are the path's levels:
- * they gate on an assessed quiz at the pass ratio. `read` nodes are side
- * stops (an overview chapter worth reading, not testing): always open,
- * complete by 「读完」, and never a dependency of a level. How-to-use pages,
- * answer keys and appendices are not nodes at all — they are book extras.
+ * they gate on an assessed quiz at the pass ratio. `practice` nodes are
+ * hands-on stations: they gate on acceptance — the learner submits evidence,
+ * the coach judges one verdict per acceptance line. `read` nodes are side
+ * stops (an overview worth reading, not testing): always open, complete by
+ * 「读完」, and never a dependency of a level. How-to-use pages, answer keys
+ * and appendices are not nodes at all — they are book extras.
  */
-export type RoadmapNodeKind = 'quiz' | 'read'
+export type RoadmapNodeKind = 'quiz' | 'read' | 'practice'
 
 /** A table-of-contents span one node covers, 1-based and inclusive. */
 export interface LibraryChapterRange {
   readonly from: number
   readonly to: number
 }
+
+/** Who vouches for one cover, and when it was checked. */
+export interface LibraryCoverProvenance {
+  /** web: fetched and checked; model: from the coach's memory, unverified; user: the learner gave it. */
+  readonly by?: 'web' | 'model' | 'user'
+  readonly verifiedAt?: string
+}
+
+/**
+ * What one node draws on: a book's chapter ranges, a shelf resource, a bare
+ * url, or plain coached teaching (topic). A book cover's provenance may be
+ * omitted (the book's own tocSource records it) and a topic needs none.
+ */
+export type LibraryNodeCover =
+  | (LibraryCoverProvenance & { readonly kind: 'book'; readonly bookId: string; readonly ranges: readonly LibraryChapterRange[] })
+  | (LibraryCoverProvenance & { readonly kind: 'resource'; readonly resourceId: string })
+  | (LibraryCoverProvenance & { readonly kind: 'url'; readonly url: string; readonly title?: string })
+  | (LibraryCoverProvenance & { readonly kind: 'topic'; readonly text: string })
 
 /** A node's quiz ledger, updated by every assessed attempt that names it. */
 export interface LibraryQuizStats {
@@ -281,16 +308,20 @@ export interface RoadmapNode {
   readonly goals: readonly string[]
   /** Node ids that must be `done` before this one may leave `locked`. */
   readonly dependsOn: readonly string[]
-  readonly chapterRanges: readonly LibraryChapterRange[]
+  /** What the station draws on — at least one cover. */
+  readonly covers: readonly LibraryNodeCover[]
   readonly state: RoadmapNodeState
   readonly kind: RoadmapNodeKind
-  /** Quiz nodes only — a read node never carries one. */
+  /** Quiz nodes only — a read / practice node never carries one. */
   readonly quizStats?: LibraryQuizStats
+  /** Practice nodes only: the acceptance lines, one verdict per line at assess time. */
+  readonly acceptance?: readonly string[]
 }
 
-/** A book's roadmap — the adopted path (`roadmap.json`) or a draft (`roadmap.draft.json`). */
+/** A roadmap — the adopted path (`roadmap.json`) or a draft (`roadmap.draft.json`). */
 export interface LibraryRoadmap {
-  readonly bookId: string
+  /** The book whose path this is; absent = the project's own path (the general case). */
+  readonly bookId?: string
   readonly status: 'draft' | 'adopted'
   readonly nodes: readonly RoadmapNode[]
   /** The pass threshold (default {@link DEFAULT_PASS_RATIO}). */
@@ -504,7 +535,8 @@ export type LibraryQuizFocus = 'mine' | 'book' | 'mixed'
 export interface LibraryQuiz {
   readonly id: string
   readonly scope: {
-    readonly bookId: string
+    /** The book whose content is quizzed; absent + nodeId present = a project-path station, both absent = free practice. */
+    readonly bookId?: string
     /** The roadmap node this quiz gates, when it is a node quiz. */
     readonly nodeId?: string
   }
@@ -533,7 +565,10 @@ export interface LibraryVerdict {
 /** One graded sitting (`attempts.jsonl` line). */
 export interface LibraryAttempt {
   readonly id: string
-  readonly quizId: string
+  /** The quiz judged (a quiz sitting). Exactly one of quizId / nodeId is set. */
+  readonly quizId?: string
+  /** The practice station accepted (an acceptance sitting — no quiz entity). */
+  readonly nodeId?: string
   readonly verdicts: readonly LibraryVerdict[]
   /** Credit over the non-void verdicts — the node's unlock input. */
   readonly ratio: number

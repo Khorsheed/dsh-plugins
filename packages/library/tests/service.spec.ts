@@ -54,8 +54,8 @@ async function adopt(projectId: string, bookId: string): Promise<void> {
     projectId,
     bookId,
     nodes: [
-      { id: 'n1', title: '离子通道', kind: 'quiz', chapterRanges: [{ from: 1, to: 1 }] },
-      { id: 'n2', title: '动作电位', kind: 'quiz', chapterRanges: [{ from: 2, to: 2 }], dependsOn: ['n1'] },
+      { id: 'n1', title: '离子通道', kind: 'quiz', covers: [{ kind: 'book', bookId, ranges: [{ from: 1, to: 1 }] }] },
+      { id: 'n2', title: '动作电位', kind: 'quiz', covers: [{ kind: 'book', bookId, ranges: [{ from: 2, to: 2 }] }], dependsOn: ['n1'] },
     ],
     note: '每周 3 章',
   })
@@ -135,7 +135,8 @@ describe('books and roadmaps', () => {
 
   it('a draft does nothing until adopted; adoption starts the roots', async () => {
     const { projectId, bookId } = await seed()
-    await service.draftRoadmap({ projectId, bookId, nodes: [{ id: 'n1', title: 'a', kind: 'quiz' }, { id: 'n2', title: 'b', kind: 'quiz', dependsOn: ['n1'] }] })
+    const cover = { kind: 'book' as const, bookId, ranges: [] }
+    await service.draftRoadmap({ projectId, bookId, nodes: [{ id: 'n1', title: 'a', kind: 'quiz', covers: [cover] }, { id: 'n2', title: 'b', kind: 'quiz', covers: [cover], dependsOn: ['n1'] }] })
     const before = await service.getRoadmap({ projectId, bookId })
     expect(before.roadmap).toBeUndefined()
     expect(before.draft?.status).toBe('draft')
@@ -146,10 +147,11 @@ describe('books and roadmaps', () => {
 
   it('re-adopting keeps the progress of surviving nodes', async () => {
     const { projectId, bookId } = await seed()
-    await service.draftRoadmap({ projectId, bookId, nodes: [{ id: 'r1', title: '导论', kind: 'read' }, { id: 'n1', title: 'a', kind: 'quiz' }] })
+    const cover = { kind: 'book' as const, bookId, ranges: [] }
+    await service.draftRoadmap({ projectId, bookId, nodes: [{ id: 'r1', title: '导论', kind: 'read', covers: [cover] }, { id: 'n1', title: 'a', kind: 'quiz', covers: [cover] }] })
     await service.adoptRoadmap({ projectId, bookId })
     await service.markNodeRead({ projectId, bookId, nodeId: 'r1' })
-    await service.draftRoadmap({ projectId, bookId, nodes: [{ id: 'r1', title: '导论', kind: 'read' }, { id: 'n1', title: 'a', kind: 'quiz' }, { id: 'n2', title: 'b', kind: 'quiz', dependsOn: ['n1'] }, { id: 'r2', title: '概述', kind: 'read', dependsOn: ['n2'] }] })
+    await service.draftRoadmap({ projectId, bookId, nodes: [{ id: 'r1', title: '导论', kind: 'read', covers: [cover] }, { id: 'n1', title: 'a', kind: 'quiz', covers: [cover] }, { id: 'n2', title: 'b', kind: 'quiz', covers: [cover], dependsOn: ['n1'] }, { id: 'r2', title: '概述', kind: 'read', covers: [cover], dependsOn: ['n2'] }] })
     const again = await service.adoptRoadmap({ projectId, bookId })
     // A read node is a side stop: open at once, whatever it follows.
     expect(again.ok && again.roadmap.nodes.map(node => node.state)).toEqual(['done', 'current', 'locked', 'current'])
@@ -157,7 +159,8 @@ describe('books and roadmaps', () => {
 
   it('never lets a read node gate a level, and keeps extras and the cover abbreviation', async () => {
     const { projectId, bookId } = await seed()
-    const gated = await service.draftRoadmap({ projectId, bookId, nodes: [{ id: 'r1', title: '怎么用这本书', kind: 'read' }, { id: 'n1', title: 'a', kind: 'quiz', dependsOn: ['r1'] }] })
+    const cover = { kind: 'book' as const, bookId, ranges: [] }
+    const gated = await service.draftRoadmap({ projectId, bookId, nodes: [{ id: 'r1', title: '怎么用这本书', kind: 'read', covers: [cover] }, { id: 'n1', title: 'a', kind: 'quiz', covers: [cover], dependsOn: ['r1'] }] })
     expect(!gated.ok && gated.message).toMatch(/never gates a level/)
     const book = await service.putBook({
       projectId, bookId, title: 'Principles of Neural Science', short: 'PNS', bookKind: 'knowledge', tocSource: { by: 'model' },
@@ -174,16 +177,16 @@ describe('books and roadmaps', () => {
     })
     if (!book.ok) throw new Error(book.message)
     expect(book.book.toc.map(row => row.title)).toEqual(['Ion Channels'])
-    const draft = await service.draftRoadmap({ projectId, bookId: book.book.id, nodes: [{ id: 'n1', title: 'a', kind: 'quiz', goals: '说清离子通道' }] })
+    const draft = await service.draftRoadmap({ projectId, bookId: book.book.id, nodes: [{ id: 'n1', title: 'a', kind: 'quiz', goals: '说清离子通道', covers: [{ kind: 'book', bookId: book.book.id, ranges: [] }] }] })
     expect(draft.ok && draft.draft.nodes[0]?.goals).toEqual(['说清离子通道'])
     expect((await service.getRoadmap({ projectId, bookId: book.book.id })).draft?.nodes[0]?.goals).toEqual(['说清离子通道'])
   })
 
   it('refuses ranges outside the contents and forward dependencies', async () => {
     const { projectId, bookId } = await seed()
-    const outside = await service.draftRoadmap({ projectId, bookId, nodes: [{ id: 'n1', title: 'a', kind: 'quiz', chapterRanges: [{ from: 1, to: 9 }] }] })
+    const outside = await service.draftRoadmap({ projectId, bookId, nodes: [{ id: 'n1', title: 'a', kind: 'quiz', covers: [{ kind: 'book', bookId, ranges: [{ from: 1, to: 9 }] }] }] })
     expect(!outside.ok && outside.message).toMatch(/3 rows/)
-    const forward = await service.draftRoadmap({ projectId, bookId, nodes: [{ id: 'n1', title: 'a', kind: 'quiz', dependsOn: ['n2'] }, { id: 'n2', title: 'b', kind: 'quiz' }] })
+    const forward = await service.draftRoadmap({ projectId, bookId, nodes: [{ id: 'n1', title: 'a', kind: 'quiz', covers: [{ kind: 'book', bookId, ranges: [] }], dependsOn: ['n2'] }, { id: 'n2', title: 'b', kind: 'quiz', covers: [{ kind: 'book', bookId, ranges: [] }] }] })
     expect(!forward.ok && forward.message).toMatch(/AFTER/)
   })
 })
@@ -218,6 +221,216 @@ describe('resources', () => {
     expect(!missing.ok && missing.error).toBe('not-found')
     expect((await service.removeResource({ projectId, resourceId: first.resource.id })).ok).toBe(true)
     expect((await service.listResources({ projectId })).resources.map(resource => resource.title)).toEqual(['LeRobot'])
+  })
+})
+
+describe('project paths', () => {
+  it('drafts, adopts, reads and discards the project\'s own path (no book anywhere)', async () => {
+    const { projectId, bookId } = await seed()
+    const draft = await service.draftRoadmap({
+      projectId,
+      nodes: [
+        { id: 's1', title: 'NumPy 热身', kind: 'practice', goals: ['能写 50 行脚本'], covers: [{ kind: 'topic', text: '教练带写 RobotArm 类' }], acceptance: ['跑通三关节脚本'] },
+        { id: 's2', title: '快慢回路', kind: 'quiz', covers: [{ kind: 'book', bookId, ranges: [{ from: 2, to: 2 }] }], dependsOn: ['s1'] },
+      ],
+      note: '每周 2 站',
+    })
+    if (!draft.ok) throw new Error(draft.message)
+    expect(draft.draft.bookId).toBeUndefined()
+    const seen = await service.getRoadmap({ projectId })
+    expect(seen.draft?.nodes.map(node => node.id)).toEqual(['s1', 's2'])
+    expect(seen.roadmap).toBeUndefined()
+    const adopted = await service.adoptRoadmap({ projectId })
+    expect(adopted.ok && adopted.roadmap.nodes.map(node => node.state)).toEqual(['current', 'locked'])
+    expect((await service.getRoadmap({ projectId })).draft).toBeUndefined()
+    // The book's own path is a separate scope — untouched by the project's.
+    expect((await service.getRoadmap({ projectId, bookId })).roadmap).toBeUndefined()
+    await service.draftRoadmap({ projectId, nodes: [{ id: 's9', title: 'x', kind: 'read', covers: [{ kind: 'topic', text: 'x' }] }] })
+    expect((await service.discardDraft({ projectId })).ok).toBe(true)
+    expect((await service.getRoadmap({ projectId })).draft).toBeUndefined()
+  })
+
+  it('a read node on the project path completes by 读完', async () => {
+    const { projectId } = await seed()
+    await service.draftRoadmap({ projectId, nodes: [{ id: 'r1', title: '套件评测', kind: 'read', covers: [{ kind: 'url', url: 'https://so-arm.example', by: 'web' }] }] })
+    await service.adoptRoadmap({ projectId })
+    const read = await service.markNodeRead({ projectId, nodeId: 'r1' })
+    expect(read.ok && read.roadmap.nodes[0]?.state).toBe('done')
+  })
+
+  it('a book-level draft stays the special case: one cover naming that one book', async () => {
+    const { projectId, bookId } = await seed()
+    const mixed = await service.draftRoadmap({ projectId, bookId, nodes: [{ id: 'n1', title: 'a', kind: 'quiz', covers: [{ kind: 'book', bookId, ranges: [] }, { kind: 'topic', text: '讲授' }] }] })
+    expect(!mixed.ok && mixed.message).toMatch(/PROJECT's path/)
+    const topicOnly = await service.draftRoadmap({ projectId, bookId, nodes: [{ id: 'n1', title: 'a', kind: 'quiz', covers: [{ kind: 'topic', text: '讲授' }] }] })
+    expect(!topicOnly.ok && topicOnly.message).toMatch(/PROJECT's path/)
+  })
+
+  it('validates covers: existing books and resources, urls, topic text, acceptance rules', async () => {
+    const { projectId, bookId } = await seed()
+    const draft = (covers: readonly unknown[], kind: 'quiz' | 'read' | 'practice' = 'quiz', acceptance?: readonly string[]) =>
+      service.draftRoadmap({ projectId, nodes: [{ id: 's1', title: 'a', kind, covers: covers as never, ...(acceptance === undefined ? {} : { acceptance }) }] })
+    const badBook = await draft([{ kind: 'book', bookId: 'b_none', ranges: [] }])
+    expect(!badBook.ok && badBook.message).toMatch(/does not hold/)
+    const outOfRange = await draft([{ kind: 'book', bookId, ranges: [{ from: 1, to: 99 }] }])
+    expect(!outOfRange.ok && outOfRange.message).toMatch(/3 rows/)
+    const badResource = await draft([{ kind: 'resource', resourceId: 'res_none' }])
+    expect(!badResource.ok && badResource.message).toMatch(/not on the project's shelf/)
+    const badUrl = await draft([{ kind: 'url', url: 'ftp://x.example' }])
+    expect(!badUrl.ok && badUrl.message).toMatch(/http/)
+    const blankTopic = await draft([{ kind: 'topic', text: '  ' }])
+    expect(!blankTopic.ok && blankTopic.message).toMatch(/no text/)
+    const unknown = await draft([{ kind: 'wiki', url: 'https://x.example' }])
+    expect(!unknown.ok && unknown.message).toMatch(/unknown kind/)
+    const noAcceptance = await draft([{ kind: 'topic', text: 'x' }], 'practice')
+    expect(!noAcceptance.ok && noAcceptance.message).toMatch(/acceptance/)
+    const misplaced = await draft([{ kind: 'topic', text: 'x' }], 'quiz', ['x'])
+    expect(!misplaced.ok && misplaced.message).toMatch(/kind: "practice" only/)
+    const empty = await draft([])
+    expect(!empty.ok && empty.message).toMatch(/at least one cover/)
+    // A resource cover resolves against the shelf.
+    const added = await service.addResource({ projectId, resource: { title: 'Gymnasium 文档', url: 'https://gymnasium.example', kind: 'tool', addedBy: 'coach' } })
+    if (!added.ok) throw new Error(added.message)
+    const ok = await draft([{ kind: 'resource', resourceId: added.resource.id }])
+    expect(ok.ok).toBe(true)
+  })
+})
+
+describe('the evidence gate on covers', () => {
+  /** Adopt a one-station project path covering the seeded book. */
+  async function station(kind: 'knowledge' | 'material'): Promise<{ projectId: string; bookId: string }> {
+    const seeded = await seed('subject', kind)
+    const draft = await service.draftRoadmap({ projectId: seeded.projectId, nodes: [{ id: 's1', title: '一站', kind: 'quiz', covers: [{ kind: 'book', bookId: seeded.bookId, ranges: [] }] }] })
+    if (!draft.ok) throw new Error(draft.message)
+    const adopted = await service.adoptRoadmap({ projectId: seeded.projectId })
+    if (!adopted.ok) throw new Error(adopted.message)
+    return seeded
+  }
+
+  it('a station covering a material book refuses a memory-backed content question', async () => {
+    const { projectId } = await station('material')
+    const memory = await service.putQuiz({ projectId, quiz: { scope: { nodeId: 's1' }, questions: [question()] } })
+    expect(!memory.ok && memory.message).toMatch(/material book/)
+  })
+
+  it('a station drawing on knowledge books and teaching allows domain knowledge', async () => {
+    const { projectId, bookId } = await seed()
+    const draft = await service.draftRoadmap({ projectId, nodes: [{ id: 's1', title: '一站', kind: 'quiz', covers: [{ kind: 'book', bookId, ranges: [{ from: 1, to: 1 }] }, { kind: 'topic', text: '讲授' }] }] })
+    if (!draft.ok) throw new Error(draft.message)
+    await service.adoptRoadmap({ projectId })
+    const stored = await service.putQuiz({ projectId, quiz: { scope: { nodeId: 's1' }, questions: [question()] } })
+    expect(stored.ok).toBe(true)
+  })
+
+  it('a station covering a url demands a verbatim quote for content questions', async () => {
+    const { projectId } = await seed()
+    const draft = await service.draftRoadmap({ projectId, nodes: [{ id: 's1', title: 'RL 直觉', kind: 'quiz', covers: [{ kind: 'url', url: 'https://gymnasium.example', title: 'Gymnasium 文档', by: 'web', verifiedAt: '2026-10-13T00:00:00.000Z' }] }] })
+    if (!draft.ok) throw new Error(draft.message)
+    await service.adoptRoadmap({ projectId })
+    const memory = await service.putQuiz({ projectId, quiz: { scope: { nodeId: 's1' }, questions: [question()] } })
+    expect(!memory.ok && memory.message).toMatch(/web text/)
+    const quoted = await service.putQuiz({ projectId, quiz: { scope: { nodeId: 's1' }, questions: [question({ evidence: { kind: 'web', url: 'https://gymnasium.example', quote: 'a long enough quote' } })] } })
+    expect(quoted.ok).toBe(true)
+  })
+
+  it('a free quiz (no book, no node) may rest on domain knowledge, and reads back', async () => {
+    const { projectId } = await seed()
+    const stored = await service.putQuiz({ projectId, quiz: { scope: {}, questions: [question()] } })
+    if (!stored.ok) throw new Error(stored.message)
+    expect(stored.quiz.scope.bookId).toBeUndefined()
+    const read = await service.getQuiz({ projectId, quizId: stored.quiz.id })
+    expect(read.ok && read.quiz.questions).toHaveLength(1)
+    expect((await service.listQuizzes({ projectId })).quizzes.map(quiz => quiz.id)).toContain(stored.quiz.id)
+  })
+
+  it('a node-scoped quiz on a book\'s own path reads the same gate through its cover', async () => {
+    const { projectId, bookId } = await seed('language', 'material')
+    await adopt(projectId, bookId)
+    const memory = await service.putQuiz({ projectId, quiz: { scope: { bookId, nodeId: 'n1' }, questions: [question()] } })
+    expect(!memory.ok && memory.message).toMatch(/material book/)
+    const recorded = await service.recordPage({ projectId, bookId, attachment: photo, text: 'anxious to define and circumscribe the various worlds', marks: [{ text: 'circumscribe', gloss: '限定' }] })
+    if (!recorded.ok) throw new Error(recorded.message)
+    const grounded = await service.putQuiz({ projectId, quiz: { scope: { bookId, nodeId: 'n1' }, questions: [question({ evidence: { kind: 'photo', pageId: recorded.page.id, quote: 'define and circumscribe the various worlds' } })] } })
+    expect(grounded.ok).toBe(true)
+  })
+})
+
+describe('practice acceptance', () => {
+  /** Adopt a project path: s1 practice (three acceptance lines) → s2 quiz. */
+  async function seedPath(): Promise<{ projectId: string }> {
+    const { projectId } = await seed()
+    const draft = await service.draftRoadmap({
+      projectId,
+      nodes: [
+        { id: 's1', title: 'RL 直觉', kind: 'practice', covers: [{ kind: 'topic', text: '奖励 = 行为塑造' }], acceptance: ['跑满 20 万步', '平均奖励 > 475', '说清 reward 谁写的'] },
+        { id: 's2', title: '快慢回路', kind: 'quiz', covers: [{ kind: 'topic', text: '讲授' }], dependsOn: ['s1'] },
+      ],
+    })
+    if (!draft.ok) throw new Error(draft.message)
+    const adopted = await service.adoptRoadmap({ projectId })
+    if (!adopted.ok) throw new Error(adopted.message)
+    return { projectId }
+  }
+
+  it('judges one verdict per acceptance line, verbatim; partial credit rides the pass ratio', async () => {
+    const { projectId } = await seedPath()
+    const wrongLine = await service.putAttempt({ projectId, nodeId: 's1', verdicts: [{ task: 's1', criterion: '跑满了', pass: true, evidence: '终端', by: 'llm' }] })
+    expect(!wrongLine.ok && wrongLine.message).toMatch(/acceptance lines, verbatim/)
+    // 2 pass + 1 fail = 2/3 ≈ 0.67 < 0.8: no completion, no unlock; the failed line leaves a card.
+    const first = await service.putAttempt({ projectId, nodeId: 's1', verdicts: [
+      { task: 's1', criterion: '跑满 20 万步', pass: true, evidence: '终端输出', by: 'llm' },
+      { task: 's1', criterion: '平均奖励 > 475', pass: true, evidence: '曲线截图', by: 'llm' },
+      { task: 's1', criterion: '说清 reward 谁写的', pass: false, evidence: '会话回答', by: 'llm', missedCard: { term: 'CartPole 奖励', gloss: '杆子不倒 +1' } },
+    ] })
+    if (!first.ok) throw new Error(first.message)
+    expect(first.attempt.ratio).toBeCloseTo(2 / 3)
+    expect(first.attempt.nodeId).toBe('s1')
+    expect(first.attempt.quizId).toBeUndefined()
+    expect(first.completed).toBeUndefined()
+    expect(first.unlocked).toEqual([])
+    expect(first.cardUpdates.find(update => update.created === true)?.term).toBe('CartPole 奖励')
+    expect((await service.getRoadmap({ projectId })).roadmap?.nodes.map(node => node.state)).toEqual(['current', 'locked'])
+    // The retake: 2 pass + 1 half credit = (1+1+0.5)/3 ≈ 0.83 ≥ 0.8 — completes, unlocks.
+    const second = await service.putAttempt({ projectId, nodeId: 's1', verdicts: [
+      { task: 's1', criterion: '跑满 20 万步', pass: true, evidence: '终端输出', by: 'llm' },
+      { task: 's1', criterion: '平均奖励 > 475', pass: true, evidence: '曲线截图', by: 'llm' },
+      { task: 's1', criterion: '说清 reward 谁写的', pass: false, ratio: 0.5, evidence: '会话回答', by: 'llm' },
+    ] })
+    if (!second.ok) throw new Error(second.message)
+    expect(second.attempt.ratio).toBeCloseTo(5 / 6)
+    expect([second.completed, second.unlocked]).toEqual(['s1', ['s2']])
+    expect((await service.getRoadmap({ projectId })).roadmap?.nodes.map(node => node.state)).toEqual(['done', 'current'])
+    // The station's history reads back newest first, and the events ledgered.
+    const history = await service.listAttempts({ projectId, nodeId: 's1' })
+    expect(history.attempts).toHaveLength(2)
+    expect(history.attempts[0]?.ratio).toBeCloseTo(5 / 6)
+    expect(history.attempts[1]?.ratio).toBeCloseTo(2 / 3)
+    const events = await service.listEvents({ projectId, types: ['node.completed', 'node.unlocked'] })
+    expect(events.events.map(event => [event.type, event.id])).toEqual([['node.unlocked', 's2'], ['node.completed', 's1']])
+  })
+
+  it('refuses the wrong shape: both keys, neither, an unknown station, a non-practice node', async () => {
+    const { projectId } = await seedPath()
+    const verdicts = [{ task: 's1', criterion: '跑满 20 万步', pass: true, evidence: 'x', by: 'llm' as const }]
+    expect(!((await service.putAttempt({ projectId, quizId: 'q_1', nodeId: 's1', verdicts })).ok)).toBe(true)
+    const neither = await service.putAttempt({ projectId, verdicts })
+    expect(!neither.ok && neither.message).toMatch(/exactly one/)
+    const unknown = await service.putAttempt({ projectId, nodeId: 's9', verdicts })
+    expect(!unknown.ok && unknown.error).toBe('not-found')
+    const quizNode = await service.putAttempt({ projectId, nodeId: 's2', verdicts })
+    expect(!quizNode.ok && quizNode.error).toBe('state-machine')
+  })
+
+  it('accepts a practice station on a book\'s own path too', async () => {
+    const { projectId, bookId } = await seed()
+    const draft = await service.draftRoadmap({
+      projectId, bookId,
+      nodes: [{ id: 'p1', title: '动手', kind: 'practice', covers: [{ kind: 'book', bookId, ranges: [{ from: 1, to: 1 }] }], acceptance: ['做完实验'] }],
+    })
+    if (!draft.ok) throw new Error(draft.message)
+    await service.adoptRoadmap({ projectId, bookId })
+    const assessed = await service.putAttempt({ projectId, nodeId: 'p1', bookId, verdicts: [{ task: 'p1', criterion: '做完实验', pass: true, evidence: '照片', by: 'user' }] })
+    expect(assessed.ok && assessed.completed).toBe('p1')
   })
 })
 
@@ -373,7 +586,7 @@ describe('quizzes: the two axes', () => {
 
   it('refuses a read node as the quiz scope', async () => {
     const { projectId, bookId } = await seed()
-    await service.draftRoadmap({ projectId, bookId, nodes: [{ id: 'r1', title: '导读', kind: 'read' }] })
+    await service.draftRoadmap({ projectId, bookId, nodes: [{ id: 'r1', title: '导读', kind: 'read', covers: [{ kind: 'book', bookId, ranges: [] }] }] })
     await service.adoptRoadmap({ projectId, bookId })
     const scoped = await service.putQuiz({ projectId, quiz: { scope: { bookId, nodeId: 'r1' }, questions: [question()] } })
     expect(!scoped.ok && scoped.message).toMatch(/read node/)
@@ -447,5 +660,20 @@ describe('bindings', () => {
     expect(summary.book?.title).toBe('Principles of Neural Science')
     expect(summary.progress?.current?.id).toBe('n1')
     expect(summary.weakCards.map(card => card.term)).toEqual(['不应期'])
+  })
+
+  it('a project-only binding reports the project path\'s current station', async () => {
+    const { projectId } = await seed()
+    const draft = await service.draftRoadmap({
+      projectId,
+      nodes: [{ id: 's1', title: 'RL 直觉', kind: 'practice', covers: [{ kind: 'topic', text: '讲授' }], acceptance: ['跑通'] }],
+    })
+    if (!draft.ok) throw new Error(draft.message)
+    await service.adoptRoadmap({ projectId })
+    await service.setBinding('s2', { projectId })
+    const summary = service.bindingSummary('s2')
+    expect(summary.book).toBeUndefined()
+    expect(summary.progress?.current?.id).toBe('s1')
+    expect(summary.progress?.current?.title).toBe('RL 直觉')
   })
 })

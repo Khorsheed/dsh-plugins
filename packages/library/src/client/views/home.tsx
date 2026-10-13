@@ -7,9 +7,11 @@
  */
 import { useState, type ReactNode } from 'react'
 import { ChipRow, ListRow, PanelHeader } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
-import { LIBRARY_COLORS, LIBRARY_ICONS, type LibraryColor, type LibraryIcon, type LibraryProjectSummary, type LibraryResourceKind, type LibraryTemplate } from '../../types.ts'
+import { LIBRARY_COLORS, LIBRARY_ICONS, type LibraryColor, type LibraryIcon, type LibraryProjectSummary, type LibraryResourceKind, type LibraryRoadmap, type LibraryTemplate } from '../../types.ts'
 import { colorOf, Cover, GlyphStrokes, iconOf, ProjectGlyph, Ring } from '../look.tsx'
-import { IconArticleOutlineMedium, IconCardsOutlineMedium, IconCourseOutlineMedium, IconHardwareOutlineMedium, IconLinkOutlineMedium, IconPenOutlineMedium, IconPlayOutlineMedium, IconPlusOutlineMedium, IconRefreshOutlineMedium, IconRepoOutlineMedium, IconSparkleOutlineMedium, IconToolOutlineMedium } from '../icons.tsx'
+import { summarizeCovers, type CoverContext } from '../covers.tsx'
+import { DraftCard } from './book.tsx'
+import { IconArticleOutlineMedium, IconCardsOutlineMedium, IconCheckOutlineMedium, IconCourseOutlineMedium, IconHardwareOutlineMedium, IconLinkOutlineMedium, IconLockOutlineMedium, IconPenOutlineMedium, IconPlayOutlineMedium, IconPlusOutlineMedium, IconRefreshOutlineMedium, IconRepoOutlineMedium, IconSparkleOutlineMedium, IconToolOutlineMedium } from '../icons.tsx'
 import { outcome, StateLine, useLoad, value, when, type ViewProps } from '../ui.tsx'
 import css from '../LibraryPane.module.css'
 
@@ -228,17 +230,20 @@ function ProjectEditor({ p, project, onDone }: ViewProps & { project: LibraryPro
   )
 }
 
-/** One project: its colored header, its shelf, its cards and reviews. */
+/** One project: its colored header, its path card, its shelf, its resources. */
 export function ProjectView({ p, projectId }: ViewProps & { projectId: string }): ReactNode {
   const { t, actions, useStore } = p
   const rev = useStore(s => s.rev)
   const loaded = useLoad(() => outcome(p.getProject(projectId)), [projectId, rev])
   const resources = useLoad(() => value(p.listResources(projectId)), [projectId, rev])
+  const path = useLoad(() => value(p.getRoadmap(projectId)), [projectId, rev])
   const [notice, setNotice] = useState<string | undefined>()
   const [editing, setEditing] = useState(false)
+  const [busy, setBusy] = useState(false)
   const project = loaded.data?.project
   const books = loaded.data?.books ?? []
   const resourceList = resources.data?.resources ?? []
+  const coverContext: CoverContext = { books, resources: resourceList }
 
   const askToAddBook = (): void => {
     if (project === undefined) return
@@ -250,6 +255,18 @@ export function ProjectView({ p, projectId }: ViewProps & { projectId: string })
     if (project === undefined) return
     void p.bindTarget({ projectId })
     setNotice(p.primeConversation(t('prime.addResource', { project: project.name })) ? t('notice.primed') : t('notice.noConversation'))
+  }
+
+  const act = async (run: () => Promise<unknown>): Promise<void> => {
+    setBusy(true)
+    try {
+      await run()
+      actions.refresh()
+    } catch (failure) {
+      setNotice(failure instanceof Error ? failure.message : String(failure))
+    } finally {
+      setBusy(false)
+    }
   }
 
   return (
@@ -289,6 +306,20 @@ export function ProjectView({ p, projectId }: ViewProps & { projectId: string })
       <div className={css.body}>
         <StateLine loaded={loaded} t={t} />
         {notice !== undefined && <div className={css.notice}>{notice}</div>}
+        {project !== undefined && path.data?.draft !== undefined && (
+          <DraftCard
+            p={p}
+            draft={path.data.draft}
+            context={coverContext}
+            replaces={path.data.roadmap !== undefined}
+            busy={busy}
+            onAdopt={() => { void act(() => outcome(p.adoptRoadmap(projectId))) }}
+            onDiscard={() => { void act(() => outcome(p.discardDraft(projectId))) }}
+          />
+        )}
+        {project !== undefined && path.data?.roadmap !== undefined && (
+          <PathCard p={p} projectId={projectId} roadmap={path.data.roadmap} context={coverContext} />
+        )}
         {project !== undefined && (
           <section className={css.section} data-color={colorOf(project)}>
             <h3 className={css.sectionTitle}>{t('project.shelf', { count: String(project.books.length) })}</h3>
@@ -351,4 +382,35 @@ function resourceKindIcon(kind: LibraryResourceKind): ReactNode {
     case 'hardware': return <IconHardwareOutlineMedium size={13} />
     default: return <IconArticleOutlineMedium size={13} />
   }
+}
+
+/** The adopted project path: progress plus every station, compact; a station opens its node page. */
+function PathCard({ p, projectId, roadmap, context }: ViewProps & { projectId: string; roadmap: LibraryRoadmap; context: CoverContext }): ReactNode {
+  const { t, actions } = p
+  const done = roadmap.nodes.filter(node => node.state === 'done').length
+  return (
+    <section className={css.section}>
+      <h3 className={css.sectionTitle}>{t('path.title', { done: String(done), total: String(roadmap.nodes.length) })}</h3>
+      {roadmap.note !== undefined && <div className={css.muted}>{roadmap.note}</div>}
+      <ol className={css.stations}>
+        {roadmap.nodes.map(node => (
+          <li key={node.id}>
+            <button type="button" className={css.station} data-state={node.state} onClick={() => { actions.push({ view: 'node', projectId, nodeId: node.id, tab: 'guide' }) }}>
+              <span className={css.stationDot} data-state={node.state} aria-hidden="true">
+                {node.state === 'done' ? <IconCheckOutlineMedium size={10} /> : node.state === 'locked' ? <IconLockOutlineMedium size={10} /> : null}
+              </span>
+              <span className={css.stationText}>
+                <span className={css.stationTitle}>
+                  <span className={css.kind} data-kind={node.kind}>{t(`nodeKind.${node.kind}`)}</span>
+                  {node.title}
+                  {node.state === 'done' && node.quizStats?.bestRatio !== undefined && <span className={css.best}>{Math.round(node.quizStats.bestRatio * 100)}%</span>}
+                </span>
+                <span className={css.muted}>{summarizeCovers(node.covers, context, t)}</span>
+              </span>
+            </button>
+          </li>
+        ))}
+      </ol>
+    </section>
+  )
 }

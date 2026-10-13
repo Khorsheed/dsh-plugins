@@ -13,7 +13,7 @@ import type { LibraryAssessResult } from '../types.ts'
 export type LibraryCardFilter = 'all' | 'photo' | 'chat' | 'quiz' | 'due'
 
 /** The node page's tabs. */
-export type LibraryNodeTab = 'guide' | 'pages' | 'quiz'
+export type LibraryNodeTab = 'guide' | 'pages' | 'quiz' | 'acceptance'
 
 /** One screen of the sidebar. */
 export type LibraryRoute =
@@ -21,10 +21,10 @@ export type LibraryRoute =
   | { readonly view: 'newProject' }
   | { readonly view: 'project'; readonly projectId: string }
   | { readonly view: 'book'; readonly projectId: string; readonly bookId: string }
-  | { readonly view: 'node'; readonly projectId: string; readonly bookId: string; readonly nodeId: string; readonly tab: LibraryNodeTab }
+  | { readonly view: 'node'; readonly projectId: string; readonly bookId?: string; readonly nodeId: string; readonly tab: LibraryNodeTab }
   | { readonly view: 'cards'; readonly projectId: string; readonly filter: LibraryCardFilter }
-  | { readonly view: 'quiz'; readonly projectId: string; readonly bookId: string; readonly quizId: string }
-  | { readonly view: 'result'; readonly projectId: string; readonly bookId: string; readonly result: LibraryAssessResult }
+  | { readonly view: 'quiz'; readonly projectId: string; readonly bookId?: string; readonly quizId: string }
+  | { readonly view: 'result'; readonly projectId: string; readonly bookId?: string; readonly result: LibraryAssessResult }
   | { readonly view: 'review'; readonly projectId?: string }
 
 /** The pane's state. */

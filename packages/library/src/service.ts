@@ -69,6 +69,7 @@ import {
   type LibraryRefusal,
   type LibraryResource,
   type LibraryResourceKind,
+  type LibraryNodeCover,
   type LibraryReviewRating,
   type LibraryRoadmap,
   type LibraryTemplate,
@@ -564,8 +565,8 @@ export class LibraryService {
 
   /* ------------------------------------------------------------- roadmap */
 
-  /** One book's adopted roadmap and its pending draft. */
-  async getRoadmap(request: { projectId: string; bookId: string }): Promise<{ roadmap?: LibraryRoadmap; draft?: LibraryRoadmap }> {
+  /** One scope's adopted roadmap and its pending draft; no bookId = the project's own path. */
+  async getRoadmap(request: { projectId: string; bookId?: string }): Promise<{ roadmap?: LibraryRoadmap; draft?: LibraryRoadmap }> {
     this.assertAlive('getRoadmap')
     const roadmap = this.store.readRoadmap(request.projectId, request.bookId)
     const draft = this.store.readRoadmap(request.projectId, request.bookId, 'draft')
@@ -573,26 +574,36 @@ export class LibraryService {
   }
 
   /**
-   * Write the coach's draft for one book. Shape rules: unique ids, a kind,
-   * ranges inside the table of contents, dependencies pointing backwards.
-   * States are not the coach's to set — adoption initializes them.
+   * Write the coach's draft — a book's path (bookId) or the project's own
+   * (no bookId: the general case, mixing covers freely). Shape rules: unique
+   * ids, a kind, at least one cover per node, references that exist, ranges
+   * inside the book's contents, dependencies pointing backwards. States are
+   * not the coach's to set — adoption initializes them.
    */
   async draftRoadmap(request: {
     projectId: string
-    bookId: string
-    nodes: readonly { id: string; title: string; kind: RoadmapNode['kind']; goals?: readonly string[] | string; chapterRanges?: readonly { from: number; to: number }[]; dependsOn?: readonly string[] }[]
+    bookId?: string
+    nodes: readonly {
+      id: string
+      title: string
+      kind: RoadmapNode['kind']
+      goals?: readonly string[] | string
+      covers?: readonly LibraryNodeCover[]
+      dependsOn?: readonly string[]
+      acceptance?: readonly string[]
+    }[]
     passRatio?: number
     note?: string
   }): Promise<LibraryOutcome<{ draft: LibraryRoadmap }>> {
     this.assertAlive('draftRoadmap')
     const project = this.readProjectOrRefusal(request.projectId)
     if ('error' in project) return project
-    const book = this.store.readBook(project.value.id, request.bookId)
-    if (book === undefined) {
-      return refuse('not-found', `no book ${JSON.stringify(request.bookId)} in project ${JSON.stringify(project.value.name)} — a roadmap rides a book; library_read · books lists them`)
+    const book = request.bookId === undefined ? undefined : this.store.readBook(project.value.id, request.bookId)
+    if (request.bookId !== undefined && book === undefined) {
+      return refuse('not-found', `no book ${JSON.stringify(request.bookId)} in project ${JSON.stringify(project.value.name)} — a book's roadmap rides the book; library_read · books lists them (omit bookId for the project's own path)`)
     }
     if (request.nodes.length === 0) {
-      return refuse('invalid', 'a roadmap needs at least one node — split the table of contents into learning units; each: { id, title, kind: "quiz"|"read", goals, chapterRanges: [{ from, to }], dependsOn }')
+      return refuse('invalid', 'a roadmap needs at least one node — split the material into learning stations; each: { id, title, kind: "quiz"|"read"|"practice", goals, covers: [{ kind: "book"|"resource"|"url"|"topic", ... }], dependsOn }; a practice station also needs acceptance: [...]')
     }
     if (request.passRatio !== undefined && !(request.passRatio > 0 && request.passRatio <= 1)) {
       return refuse('invalid', 'passRatio is a fraction in (0, 1] — 0.8 means 8 of 10 right')
@@ -603,15 +614,21 @@ export class LibraryService {
       kind: node.kind,
       // A model writes one goal as a bare string as often as a list.
       goals: typeof node.goals === 'string' ? [node.goals] : (node.goals ?? []).filter(goal => typeof goal === 'string'),
-      chapterRanges: node.chapterRanges ?? [],
+      covers: node.covers ?? [],
       dependsOn: node.dependsOn ?? [],
       state: 'locked',
+      ...(Array.isArray(node.acceptance) ? { acceptance: node.acceptance.filter(line => typeof line === 'string') } : {}),
     }))
-    const shapeError = validateRoadmapShape(nodes, book)
+    const resourceIds = new Set(this.store.readResources(project.value.id).map(resource => resource.id))
+    const shapeError = validateRoadmapShape(nodes, {
+      ...(book === undefined ? {} : { bookId: book.id }),
+      book: candidate => this.store.readBook(project.value.id, candidate),
+      hasResource: candidate => resourceIds.has(candidate),
+    })
     if (shapeError !== undefined) return refuse('invalid', shapeError)
     return await this.mutate(project.value.id, () => {
       const draft: LibraryRoadmap = {
-        bookId: book.id,
+        ...(book === undefined ? {} : { bookId: book.id }),
         status: 'draft',
         nodes,
         ...(request.passRatio === undefined ? {} : { passRatio: request.passRatio }),
@@ -619,23 +636,25 @@ export class LibraryService {
         generatedAt: new Date().toISOString(),
       }
       this.store.writeRoadmap(project.value.id, draft)
-      this.event(project.value.id, 'roadmap.drafted', { id: book.id, title: book.title, bookId: book.id, count: nodes.length })
+      this.event(project.value.id, 'roadmap.drafted', book === undefined
+        ? { id: project.value.id, title: project.value.name, count: nodes.length }
+        : { id: book.id, title: book.title, bookId: book.id, count: nodes.length })
       return { ok: true as const, draft }
     })
   }
 
   /**
-   * The learner's 采用: the draft becomes the book's path. Nodes whose deps are
+   * The learner's 采用: the draft becomes the path. Nodes whose deps are
    * all done start `current`; a node that survives a re-split (same id) keeps
    * its state and quiz stats, so re-planning never erases progress.
    */
-  async adoptRoadmap(request: { projectId: string; bookId: string }): Promise<LibraryOutcome<{ roadmap: LibraryRoadmap }>> {
+  async adoptRoadmap(request: { projectId: string; bookId?: string }): Promise<LibraryOutcome<{ roadmap: LibraryRoadmap }>> {
     this.assertAlive('adoptRoadmap')
     const project = this.readProjectOrRefusal(request.projectId)
     if ('error' in project) return project
     return await this.mutate(project.value.id, () => {
       const draft = this.store.readRoadmap(project.value.id, request.bookId, 'draft')
-      if (draft === undefined) return refuse('not-found', 'this book has no draft to adopt — ask the coach to draft a roadmap first')
+      if (draft === undefined) return refuse('not-found', 'no draft to adopt here — ask the coach to draft a roadmap first')
       const prior = new Map((this.store.readRoadmap(project.value.id, request.bookId)?.nodes ?? []).map(node => [node.id, node]))
       const nodes: RoadmapNode[] = []
       for (const node of draft.nodes) {
@@ -653,33 +672,39 @@ export class LibraryService {
       const roadmap: LibraryRoadmap = { ...draft, status: 'adopted', nodes, adoptedAt: now }
       this.store.writeRoadmap(project.value.id, roadmap)
       this.store.removeDraft(project.value.id, request.bookId)
-      const book = this.store.readBook(project.value.id, request.bookId)
-      this.event(project.value.id, 'roadmap.adopted', { at: now, id: request.bookId, title: book?.title ?? '', bookId: request.bookId, count: nodes.length })
+      const book = request.bookId === undefined ? undefined : this.store.readBook(project.value.id, request.bookId)
+      this.event(project.value.id, 'roadmap.adopted', {
+        at: now,
+        id: request.bookId ?? project.value.id,
+        title: book?.title ?? project.value.name,
+        ...(request.bookId === undefined ? {} : { bookId: request.bookId }),
+        count: nodes.length,
+      })
       return { ok: true as const, roadmap }
     })
   }
 
-  /** Drop a book's draft without adopting it. */
-  async discardDraft(request: { projectId: string; bookId: string }): Promise<LibraryOutcome<{ bookId: string }>> {
+  /** Drop a scope's draft without adopting it. */
+  async discardDraft(request: { projectId: string; bookId?: string }): Promise<LibraryOutcome<{ bookId?: string }>> {
     this.assertAlive('discardDraft')
     const project = this.readProjectOrRefusal(request.projectId)
     if ('error' in project) return project
     return await this.mutate(project.value.id, () => {
       this.store.removeDraft(project.value.id, request.bookId)
-      return { ok: true as const, bookId: request.bookId }
+      return { ok: true as const, ...(request.bookId === undefined ? {} : { bookId: request.bookId }) }
     })
   }
 
   /** 「读完」: a current read node completes and unlocks what it gates. */
-  async markNodeRead(request: { projectId: string; bookId: string; nodeId: string }): Promise<LibraryOutcome<{ roadmap: LibraryRoadmap; unlocked: string[] }>> {
+  async markNodeRead(request: { projectId: string; bookId?: string; nodeId: string }): Promise<LibraryOutcome<{ roadmap: LibraryRoadmap; unlocked: string[] }>> {
     this.assertAlive('markNodeRead')
     const project = this.readProjectOrRefusal(request.projectId)
     if ('error' in project) return project
     return await this.mutate(project.value.id, () => {
       const roadmap = this.store.readRoadmap(project.value.id, request.bookId)
       const node = roadmap?.nodes.find(candidate => candidate.id === request.nodeId)
-      if (roadmap === undefined || node === undefined) return refuse('not-found', `no node ${JSON.stringify(request.nodeId)} on this book's adopted path`)
-      if (node.kind !== 'read') return refuse('state-machine', `${node.title} is a quiz node — it completes by passing its chapter quiz, not by 读完`)
+      if (roadmap === undefined || node === undefined) return refuse('not-found', `no node ${JSON.stringify(request.nodeId)} on the adopted path`)
+      if (node.kind !== 'read') return refuse('state-machine', `${node.title} is a ${node.kind} node — only a read node completes by 读完 (a quiz node by passing its quiz, a practice station by acceptance)`)
       if (node.state !== 'current') return refuse('state-machine', `${node.title} is ${node.state} — only a current node can be marked read`)
       const now = new Date().toISOString()
       const completed = roadmap.nodes.map(candidate => candidate.id === node.id ? { ...candidate, state: 'done' as const } : candidate)
@@ -687,8 +712,8 @@ export class LibraryService {
       const next: LibraryRoadmap = { ...roadmap, nodes }
       this.store.writeRoadmap(project.value.id, next)
       this.store.appendEvents(project.value.id, [
-        { at: now, type: 'node.completed', id: node.id, title: node.title, bookId: request.bookId },
-        ...unlocked.map(nodeId => ({ at: now, type: 'node.unlocked' as const, id: nodeId, title: titleOf(nodes, nodeId), bookId: request.bookId })),
+        { at: now, type: 'node.completed', id: node.id, title: node.title, ...(request.bookId === undefined ? {} : { bookId: request.bookId }) },
+        ...unlocked.map(nodeId => ({ at: now, type: 'node.unlocked' as const, id: nodeId, title: titleOf(nodes, nodeId), ...(request.bookId === undefined ? {} : { bookId: request.bookId }) })),
       ])
       return { ok: true as const, roadmap: next, unlocked }
     })
@@ -1123,19 +1148,22 @@ export class LibraryService {
    * Store a quiz behind the two-axis checks. Target: a marked / asked / missed
    * question names the live cards it probes. Evidence: a photo quote names a
    * recorded page (a quote the page text lacks comes back as a warning); a web
-   * quote carries its url; knowledge is allowed on knowledge books, and on
-   * material books only for card drills — never for the book's content.
+   * quote carries its url; whether domain knowledge may back a CONTENT question
+   * is judged on the gated node's covers (a material book, a shelf resource or
+   * a url among them demands a verbatim quote) — a book-scoped quiz without a
+   * node keeps the book-level rule, and a scopeless free quiz allows knowledge.
    */
   async putQuiz(request: {
     projectId: string
-    quiz: { scope: { bookId: string; nodeId?: string }; focus?: LibraryQuizFocus; questions: readonly LibraryQuizQuestion[] }
+    quiz: { scope: { bookId?: string; nodeId?: string }; focus?: LibraryQuizFocus; questions: readonly LibraryQuizQuestion[] }
   }): Promise<LibraryOutcome<{ quiz: LibraryQuiz; warnings: string[] }>> {
     this.assertAlive('putQuiz')
     const project = this.readProjectOrRefusal(request.projectId)
     if ('error' in project) return project
-    const book = this.store.readBook(project.value.id, request.quiz.scope.bookId)
-    if (book === undefined) {
-      return refuse('not-found', `quiz scope names book ${JSON.stringify(request.quiz.scope.bookId)}, which project ${JSON.stringify(project.value.name)} does not hold — library_read · books lists them`)
+    const scope = request.quiz.scope
+    const book = scope.bookId === undefined ? undefined : this.store.readBook(project.value.id, scope.bookId)
+    if (scope.bookId !== undefined && book === undefined) {
+      return refuse('not-found', `quiz scope names book ${JSON.stringify(scope.bookId)}, which project ${JSON.stringify(project.value.name)} does not hold — library_read · books lists them`)
     }
     if (request.quiz.focus !== undefined && !['mine', 'book', 'mixed'].includes(request.quiz.focus)) {
       return refuse('invalid', 'quiz.focus is mine | book | mixed — mine: only the learner\'s own cards; book: only the chapter\'s content')
@@ -1143,17 +1171,27 @@ export class LibraryService {
     if (request.quiz.questions.length === 0) {
       return refuse('invalid', 'a quiz needs at least one question — each: { id, kind, prompt, options?, answer, explanation?, target: { kind, cardIds? }, evidence: { kind, pageId?, url?, quote? } }')
     }
-    const nodeId = request.quiz.scope.nodeId
+    const nodeId = scope.nodeId
     let lockedNote: string | undefined
+    let gatedNode: RoadmapNode | undefined
     if (nodeId !== undefined) {
-      const roadmap = this.store.readRoadmap(project.value.id, book.id)
+      const roadmap = this.store.readRoadmap(project.value.id, scope.bookId)
       const node = roadmap?.nodes.find(candidate => candidate.id === nodeId)
-      if (node === undefined) return refuse('not-found', `quiz scope names node ${JSON.stringify(nodeId)}, which this book's adopted path does not hold — library_read · roadmap lists the nodes`)
+      if (node === undefined) return refuse('not-found', `quiz scope names node ${JSON.stringify(nodeId)}, which the adopted path does not hold — library_read · roadmap lists the nodes`)
       if (node.kind === 'read') return refuse('invalid', `${node.title} is a read node — it has no quiz gate; quiz a quiz-kind node, or leave scope.node off for a free practice quiz`)
+      if (node.kind === 'practice') return refuse('invalid', `${node.title} is a practice station — it completes by acceptance (library_assess with node), not by a quiz`)
       if (node.state === 'locked') lockedNote = `${node.title} is still locked — the learner can take this quiz, but passing it completes the node only once the nodes before it are done`
+      gatedNode = node
     }
     const liveCards = new Set(this.store.readCards(project.value.id).filter(live).map(card => card.id))
-    const pages = new Map(this.store.readPages(project.value.id, book.id).map(page => [page.id, page]))
+    // Photo evidence names a page; the pool is the scoped book's pages, the
+    // gated node's covered books' pages, or (a free quiz) the whole project's.
+    const pageBookIds = book !== undefined
+      ? [book.id]
+      : gatedNode !== undefined
+        ? [...new Set(gatedNode.covers.flatMap(cover => cover.kind === 'book' ? [cover.bookId] : []))]
+        : this.store.listBooks(project.value.id).map(candidate => candidate.id)
+    const pages = new Map(pageBookIds.flatMap(candidate => this.store.readPages(project.value.id, candidate).map(page => [page.id, page] as const)))
     const seenIds = new Set<string>()
     const warnings: string[] = lockedNote === undefined ? [] : [lockedNote]
     for (const [index, question] of request.quiz.questions.entries()) {
@@ -1203,20 +1241,33 @@ export class LibraryService {
         if (evidence.url === undefined || !/^https?:\/\//.test(evidence.url)) return refuse('evidence-gate', `${label} rests on the web — evidence.url is the page the quote is from`)
         if (normalizeFragment(evidence.quote ?? '').length < 8) return refuse('evidence-gate', `${label} rests on the web — quote the passage (a sentence or two) so the learner can check it`)
       }
-      if (evidence.kind === 'knowledge' && book.bookKind === 'material' && target.kind === 'topic') {
-        return refuse('evidence-gate', `${label} asks about 《${book.title}》's content from memory — it is a material book (specific text you cannot recall reliably). Quote a photographed page (evidence.kind photo) or a web copy (web, with url), or drill the learner's cards instead`)
+      if (evidence.kind === 'knowledge' && target.kind === 'topic') {
+        // The gate sits on the node's covers now: a station drawing only on
+        // knowledge books / plain teaching may be content-quizzed from memory;
+        // a material book, a resource or a url among the covers demands a
+        // verbatim quote. No node in scope = the book-level rule, unchanged.
+        if (gatedNode === undefined) {
+          if (book?.bookKind === 'material') {
+            return refuse('evidence-gate', `${label} asks about 《${book.title}》's content from memory — it is a material book (specific text you cannot recall reliably). Quote a photographed page (evidence.kind photo) or a web copy (web, with url), or drill the learner's cards instead`)
+          }
+        } else {
+          const blocker = coversVerbatimBlocker(gatedNode.covers, candidate => this.store.readBook(project.value.id, candidate))
+          if (blocker !== undefined) {
+            return refuse('evidence-gate', `${label} asks the station's content from memory, but ${blocker}. Quote a photographed page (evidence.kind photo) or the page on the web (web, with url), or drill the learner's cards instead`)
+          }
+        }
       }
     }
     return await this.mutate(project.value.id, () => {
       const quiz: LibraryQuiz = {
         id: mintLibraryId('q'),
-        scope: { bookId: book.id, ...(nodeId === undefined ? {} : { nodeId }) },
+        scope: { ...(book === undefined ? {} : { bookId: book.id }), ...(nodeId === undefined ? {} : { nodeId }) },
         ...(request.quiz.focus === undefined ? {} : { focus: request.quiz.focus }),
         questions: request.quiz.questions,
         createdAt: new Date().toISOString(),
       }
       this.store.writeQuiz(project.value.id, quiz)
-      this.event(project.value.id, 'quiz.created', { at: quiz.createdAt, id: quiz.id, bookId: book.id, count: quiz.questions.length })
+      this.event(project.value.id, 'quiz.created', { at: quiz.createdAt, id: quiz.id, ...(book === undefined ? {} : { bookId: book.id }), count: quiz.questions.length })
       return { ok: true as const, quiz, warnings }
     })
   }
@@ -1224,28 +1275,46 @@ export class LibraryService {
   /* ------------------------------------------------------------- attempts */
 
   /**
-   * Grade a sitting — the only cascading write. Void verdicts count for
-   * nothing. Every probed card moves: a pass climbs a Leitner box and eases
-   * weakness by one; a fail resets to box 0 (due tomorrow) and adds weakness.
-   * A failed question with no card gets one (`missedCard`, or its prompt).
-   * The gated node's stats update; at or above the pass ratio it completes
-   * and unlocks its dependents.
+   * Grade a sitting — the only cascading write. Two shapes, exactly one key:
+   * `quizId` judges a stored quiz; `nodeId` (+ `bookId` when the station sits
+   * on a book's path) accepts a PRACTICE station — each verdict's criterion is
+   * one of the node's acceptance lines, verbatim, and no quiz entity exists.
+   *
+   * Void verdicts count for nothing. Every probed card moves: a pass climbs a
+   * Leitner box and eases weakness by one; a fail resets to box 0 (due
+   * tomorrow) and adds weakness. A failed line with no card gets one
+   * (`missedCard`). The gated node's stats update (quiz nodes); at or above
+   * the pass ratio it completes and unlocks its dependents.
    */
   async putAttempt(request: {
     projectId: string
-    quizId: string
+    quizId?: string
+    nodeId?: string
+    /** The book whose path the practice station sits on (omit for the project's own path). */
+    bookId?: string
     verdicts: readonly LibraryVerdict[]
   }): Promise<LibraryOutcome<LibraryAssessResult>> {
     this.assertAlive('putAttempt')
     const project = this.readProjectOrRefusal(request.projectId)
     if ('error' in project) return project
-    const quiz = this.store.readQuiz(project.value.id, request.quizId)
-    if (quiz === undefined) return refuse('not-found', `no quiz ${JSON.stringify(request.quizId)} — store the quiz first (library_write · quiz), then assess it`)
+    const quizId = request.quizId
+    const nodeId = request.nodeId
+    if ((quizId === undefined) === (nodeId === undefined)) {
+      return refuse('invalid', 'assess takes exactly one of quizId / nodeId — quizId: a graded sitting on a stored quiz; nodeId: acceptance of a practice station')
+    }
     if (request.verdicts.length === 0) {
       return refuse('invalid', 'library_assess needs the verdicts — one per question: { task: <question id>, criterion, pass, ratio?, evidence, by, void?, missedCard? }')
     }
+    if (quizId !== undefined) return await this.putQuizAttempt(project.value, quizId, request.verdicts)
+    return await this.putPracticeAttempt(project.value, nodeId ?? '', request.bookId, request.verdicts)
+  }
+
+  /** The quiz path of putAttempt: verdicts judged against a stored quiz's questions. */
+  private async putQuizAttempt(project: LibraryProject, quizId: string, verdicts: readonly LibraryVerdict[]): Promise<LibraryOutcome<LibraryAssessResult>> {
+    const quiz = this.store.readQuiz(project.id, quizId)
+    if (quiz === undefined) return refuse('not-found', `no quiz ${JSON.stringify(quizId)} — store the quiz first (library_write · quiz), then assess it`)
     const questionById = new Map(quiz.questions.map(question => [question.id, question]))
-    for (const [index, verdict] of request.verdicts.entries()) {
+    for (const [index, verdict] of verdicts.entries()) {
       if (!questionById.has(verdict.task)) {
         return refuse('invalid', `verdicts[${index}] judges task ${JSON.stringify(verdict.task)}, which quiz ${quiz.id} does not ask — its questions are: ${quiz.questions.map(question => question.id).join(', ')}`)
       }
@@ -1255,27 +1324,27 @@ export class LibraryService {
       if (verdict.by !== 'llm' && verdict.by !== 'self' && verdict.by !== 'user') return refuse('invalid', `verdicts[${index}].by must be llm | self | user`)
       if (verdict.ratio !== undefined && !(verdict.ratio >= 0 && verdict.ratio <= 1)) return refuse('invalid', `verdicts[${index}].ratio is partial credit in [0, 1]`)
     }
-    const counted = request.verdicts.filter(verdict => verdict.void !== true)
+    const counted = verdicts.filter(verdict => verdict.void !== true)
     const ratio = counted.length === 0 ? 0 : counted.reduce((sum, verdict) => sum + (verdict.ratio ?? (verdict.pass ? 1 : 0)), 0) / counted.length
-    return await this.mutate(project.value.id, () => {
+    return await this.mutate(project.id, () => {
       const now = new Date()
       const at = now.toISOString()
-      const attempt: LibraryAttempt = { id: mintLibraryId('a'), quizId: quiz.id, verdicts: request.verdicts, ratio, at }
-      this.store.appendAttempt(project.value.id, attempt)
+      const attempt: LibraryAttempt = { id: mintLibraryId('a'), quizId: quiz.id, verdicts, ratio, at }
+      this.store.appendAttempt(project.id, attempt)
 
       // Cards: every counted verdict moves the cards its question probed.
-      const cards = this.store.readCards(project.value.id)
+      const cards = this.store.readCards(project.id)
       const byId = new Map(cards.map(card => [card.id, card]))
       const order = cards.map(card => card.id)
       const touched = new Map<string, LibraryCardUpdate>()
-      const book = this.store.readBook(project.value.id, quiz.scope.bookId)
+      const book = quiz.scope.bookId === undefined ? undefined : this.store.readBook(project.id, quiz.scope.bookId)
       for (const verdict of counted) {
         const question = questionById.get(verdict.task)!
         const credit = verdict.ratio ?? (verdict.pass ? 1 : 0)
         const passed = verdict.pass && credit >= 0.5
         const cardIds = [...(question.target.cardIds ?? [])]
         if (cardIds.length === 0 && !passed) {
-          const created = this.missedCardFor(question, verdict, quiz, book?.id, project.value.template, at)
+          const created = this.missedCardFor(question, verdict, quiz, book?.id, project.template, at)
           const existing = exactMatch([...byId.values()], [cardKey(created.term)])
           if (existing === undefined) {
             byId.set(created.id, created)
@@ -1300,12 +1369,12 @@ export class LibraryService {
           touched.set(card.id, { id: card.id, term: card.term, weakness: next.weakness, mastery: next.mastery })
         }
       }
-      if (touched.size > 0) this.store.writeCards(project.value.id, order.map(cardId => byId.get(cardId)!))
+      if (touched.size > 0) this.store.writeCards(project.id, order.map(cardId => byId.get(cardId)!))
 
       // The gated node's stats, its completion, and what that unlocks.
       let unlocked: string[] = []
       let completed: string | undefined
-      const roadmap = this.store.readRoadmap(project.value.id, quiz.scope.bookId)
+      const roadmap = quiz.scope.nodeId === undefined ? undefined : this.store.readRoadmap(project.id, quiz.scope.bookId)
       const passRatio = roadmap?.passRatio ?? DEFAULT_PASS_RATIO
       const gated = quiz.scope.nodeId === undefined ? undefined : roadmap?.nodes.find(node => node.id === quiz.scope.nodeId)
       if (roadmap !== undefined && gated !== undefined && gated.kind === 'quiz') {
@@ -1324,22 +1393,139 @@ export class LibraryService {
         })
         const result = completed === undefined ? { nodes: updated, unlocked: [] } : unlockReady(updated)
         unlocked = result.unlocked
-        this.store.writeRoadmap(project.value.id, { ...roadmap, nodes: result.nodes })
+        this.store.writeRoadmap(project.id, { ...roadmap, nodes: result.nodes })
       }
       const created = [...touched.values()].filter(update => update.created === true)
-      this.store.appendEvents(project.value.id, [
-        { at, type: 'attempt.assessed', id: quiz.id, bookId: quiz.scope.bookId, ratio },
+      const onBook = quiz.scope.bookId === undefined ? {} : { bookId: quiz.scope.bookId }
+      this.store.appendEvents(project.id, [
+        { at, type: 'attempt.assessed', id: quiz.id, ...onBook, ratio },
         ...(created.length === 0 ? [] : [{
           at,
           type: 'cards.recorded' as const,
           source: 'quiz' as const,
           title: created.map(update => update.term).join('、').slice(0, 300),
           ids: created.map(update => update.id),
-          bookId: quiz.scope.bookId,
+          ...onBook,
           count: created.length,
         }]),
-        ...(completed === undefined ? [] : [{ at, type: 'node.completed' as const, id: completed, title: titleOf(roadmap?.nodes ?? [], completed), bookId: quiz.scope.bookId, ratio }]),
-        ...unlocked.map(nodeId => ({ at, type: 'node.unlocked' as const, id: nodeId, title: titleOf(roadmap?.nodes ?? [], nodeId), bookId: quiz.scope.bookId })),
+        ...(completed === undefined ? [] : [{ at, type: 'node.completed' as const, id: completed, title: titleOf(roadmap?.nodes ?? [], completed), ...onBook, ratio }]),
+        ...unlocked.map(nodeId => ({ at, type: 'node.unlocked' as const, id: nodeId, title: titleOf(roadmap?.nodes ?? [], nodeId), ...onBook })),
+      ])
+      return {
+        ok: true as const,
+        attempt,
+        cardUpdates: [...touched.values()],
+        unlocked,
+        ...(completed === undefined ? {} : { completed }),
+        passRatio,
+      }
+    })
+  }
+
+  /**
+   * The practice path of putAttempt: acceptance of a hands-on station. No quiz
+   * entity, no probed cards — a failed acceptance line with a `missedCard`
+   * leaves (or re-weakens) a card; at the pass ratio the station completes.
+   */
+  private async putPracticeAttempt(project: LibraryProject, nodeId: string, bookId: string | undefined, verdicts: readonly LibraryVerdict[]): Promise<LibraryOutcome<LibraryAssessResult>> {
+    const roadmap = this.store.readRoadmap(project.id, bookId)
+    const node = roadmap?.nodes.find(candidate => candidate.id === nodeId)
+    if (roadmap === undefined || node === undefined) {
+      return refuse('not-found', `no station ${JSON.stringify(nodeId)} on the adopted path — library_read · roadmap lists the nodes`)
+    }
+    if (node.kind !== 'practice') {
+      return refuse('state-machine', `${node.title} is a ${node.kind} node — a quiz node completes by passing its quiz (assess with quizId), a read node by 读完; only a practice station takes acceptance verdicts`)
+    }
+    const acceptance = node.acceptance ?? []
+    for (const [index, verdict] of verdicts.entries()) {
+      if (!acceptance.includes(verdict.criterion)) {
+        return refuse('invalid', `verdicts[${index}].criterion must be one of the station's acceptance lines, verbatim — they are: ${acceptance.map(line => JSON.stringify(line)).join(', ')}`)
+      }
+      if (verdict.evidence.trim() === '') {
+        return refuse('invalid', `verdicts[${index}] needs evidence — what the learner showed (terminal output, a screenshot, a repo link)`)
+      }
+      if (verdict.by !== 'llm' && verdict.by !== 'self' && verdict.by !== 'user') return refuse('invalid', `verdicts[${index}].by must be llm | self | user`)
+      if (verdict.ratio !== undefined && !(verdict.ratio >= 0 && verdict.ratio <= 1)) return refuse('invalid', `verdicts[${index}].ratio is partial credit in [0, 1]`)
+    }
+    const counted = verdicts.filter(verdict => verdict.void !== true)
+    const ratio = counted.length === 0 ? 0 : counted.reduce((sum, verdict) => sum + (verdict.ratio ?? (verdict.pass ? 1 : 0)), 0) / counted.length
+    return await this.mutate(project.id, () => {
+      const now = new Date()
+      const at = now.toISOString()
+      const attempt: LibraryAttempt = { id: mintLibraryId('a'), nodeId: node.id, verdicts, ratio, at }
+      this.store.appendAttempt(project.id, attempt)
+
+      // Cards: a failed acceptance line may leave a card (missedCard); a
+      // re-miss of a known card weakens it, exactly like a quiz miss.
+      const cards = this.store.readCards(project.id)
+      const byId = new Map(cards.map(card => [card.id, card]))
+      const order = cards.map(card => card.id)
+      const touched = new Map<string, LibraryCardUpdate>()
+      for (const verdict of counted) {
+        const passed = verdict.pass && (verdict.ratio ?? 1) >= 0.5
+        if (passed || verdict.missedCard === undefined) continue
+        const term = verdict.missedCard.term.trim() || verdict.criterion.slice(0, 80)
+        const gloss = verdict.missedCard.gloss.trim() || verdict.criterion
+        const existing = exactMatch([...byId.values()], [cardKey(term)])
+        if (existing !== undefined) {
+          if (!live(existing)) continue
+          const next: LibraryCard = {
+            ...existing,
+            mastery: { box: 0, dueAt: leitnerDueAt(0, now), streak: 0 },
+            weakness: clampWeakness(existing.weakness + 1),
+            sources: [...existing.sources, { type: 'quiz', note: verdict.criterion.slice(0, 120), weakened: true, at }],
+            updatedAt: at,
+          }
+          byId.set(next.id, next)
+          touched.set(next.id, { id: next.id, term: next.term, weakness: next.weakness, mastery: next.mastery })
+          continue
+        }
+        const card: LibraryCard = {
+          id: mintLibraryId('c'),
+          kind: project.template === 'language' && !/\s/.test(term) ? 'word' : 'concept',
+          term,
+          aliases: [],
+          gloss,
+          contexts: [],
+          sources: [{ type: 'quiz', note: verdict.criterion.slice(0, 120), weakened: true, at }],
+          weakness: 1,
+          mastery: { box: 0, dueAt: leitnerDueAt(0, now), streak: 0 },
+          status: 'active',
+          createdAt: at,
+          updatedAt: at,
+        }
+        byId.set(card.id, card)
+        order.push(card.id)
+        touched.set(card.id, { id: card.id, term: card.term, weakness: card.weakness, mastery: card.mastery, created: true })
+      }
+      if (touched.size > 0) this.store.writeCards(project.id, order.map(cardId => byId.get(cardId)!))
+
+      // The station's completion and what it unlocks (practice carries no quizStats).
+      const passRatio = roadmap.passRatio ?? DEFAULT_PASS_RATIO
+      let unlocked: string[] = []
+      let completed: string | undefined
+      if (ratio >= passRatio && node.state === 'current') {
+        completed = node.id
+        const marked = roadmap.nodes.map(candidate => candidate.id === node.id ? { ...candidate, state: 'done' as const } : candidate)
+        const result = unlockReady(marked)
+        unlocked = result.unlocked
+        this.store.writeRoadmap(project.id, { ...roadmap, nodes: result.nodes })
+      }
+      const created = [...touched.values()].filter(update => update.created === true)
+      const onBook = bookId === undefined ? {} : { bookId }
+      this.store.appendEvents(project.id, [
+        { at, type: 'attempt.assessed', id: node.id, ...onBook, ratio },
+        ...(created.length === 0 ? [] : [{
+          at,
+          type: 'cards.recorded' as const,
+          source: 'quiz' as const,
+          title: created.map(update => update.term).join('、').slice(0, 300),
+          ids: created.map(update => update.id),
+          ...onBook,
+          count: created.length,
+        }]),
+        ...(completed === undefined ? [] : [{ at, type: 'node.completed' as const, id: completed, title: titleOf(roadmap.nodes, completed), ...onBook, ratio }]),
+        ...unlocked.map(unlockedId => ({ at, type: 'node.unlocked' as const, id: unlockedId, title: titleOf(roadmap.nodes, unlockedId), ...onBook })),
       ])
       return {
         ok: true as const,
@@ -1380,6 +1566,13 @@ export class LibraryService {
     }
   }
 
+  /** A project's graded sittings, newest first; `nodeId` narrows to one practice station's acceptance history. */
+  async listAttempts(request: { projectId: string; nodeId?: string }): Promise<{ attempts: LibraryAttempt[] }> {
+    this.assertAlive('listAttempts')
+    const attempts = this.store.readAttempts(request.projectId)
+    return { attempts: (request.nodeId === undefined ? attempts : attempts.filter(attempt => attempt.nodeId === request.nodeId)).reverse() }
+  }
+
   /* ------------------------------------------------------------- bindings */
 
   /** The project / book a session works on, when it is bound. */
@@ -1416,7 +1609,9 @@ export class LibraryService {
   /**
    * The bound session's working set, read synchronously (the per-turn prompt
    * context renders inside a synchronous callback): the project, the book,
-   * its current node and draft flag, and the weakest live cards there.
+   * its current node and draft flag, and the weakest live cards there. A
+   * project-only binding reports the PROJECT path's current station in
+   * `progress` (the book's when bound to a book).
    */
   bindingSummary(sessionId: string, cardLimit: number = 12): {
     binding?: LibraryBinding
@@ -1436,14 +1631,34 @@ export class LibraryService {
     }
     if (project === undefined) return { binding, weakCards: [] }
     const book = binding.bookId === undefined ? undefined : this.store.readBook(project.id, binding.bookId)
+    // No bound book: the progress is the project's own path (current station,
+    // a waiting draft) so the coach sees it every turn.
+    const pathProgress = (): LibraryBookProgress | undefined => {
+      if (book !== undefined) return this.bookProgress(project.id, book)
+      const roadmap = this.store.readRoadmap(project.id)
+      const draft = this.store.readRoadmap(project.id, undefined, 'draft')
+      if (roadmap === undefined && draft === undefined) return undefined
+      const current = roadmap?.nodes.find(node => node.state === 'current')
+      return {
+        id: project.id,
+        title: project.name,
+        ...(roadmap === undefined ? {} : {
+          roadmap: { done: roadmap.nodes.filter(node => node.state === 'done').length, total: roadmap.nodes.length },
+        }),
+        ...(current === undefined ? {} : { current: { id: current.id, title: current.title } }),
+        hasDraft: draft !== undefined,
+      }
+    }
     const weakCards = this.store.readCards(project.id)
       .filter(card => card.status === 'active' && card.weakness > 0 && (book === undefined || card.bookId === book.id))
       .sort((a, b) => b.weakness - a.weakness || b.updatedAt.localeCompare(a.updatedAt))
       .slice(0, cardLimit)
+    const progress = pathProgress()
     return {
       binding,
       project,
-      ...(book === undefined ? {} : { book, progress: this.bookProgress(project.id, book) }),
+      ...(book === undefined ? {} : { book }),
+      ...(progress === undefined ? {} : { progress }),
       weakCards,
     }
   }
@@ -1573,8 +1788,22 @@ export function unlockReady(nodes: readonly RoadmapNode[]): { nodes: RoadmapNode
   return { nodes: next, unlocked }
 }
 
-/** Structural validation of a roadmap's nodes; returns the teaching error or undefined. */
-export function validateRoadmapShape(nodes: readonly RoadmapNode[], book: LibraryBook): string | undefined {
+/**
+ * Structural validation of a roadmap's nodes; returns the teaching error or
+ * undefined. `scope.bookId` marks a book-level draft: the special case whose
+ * every node covers that one book only.
+ */
+export function validateRoadmapShape(
+  nodes: readonly RoadmapNode[],
+  scope: {
+    /** A book-level draft: the one book every node's covers must name. */
+    bookId?: string
+    /** Resolve a book cover (existence + contents length). */
+    book: (bookId: string) => LibraryBook | undefined
+    /** Whether a shelf resource exists. */
+    hasResource: (resourceId: string) => boolean
+  },
+): string | undefined {
   const seen = new Set<string>()
   for (const [index, node] of nodes.entries()) {
     if (typeof node.id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(node.id) || seen.has(node.id)) {
@@ -1582,24 +1811,73 @@ export function validateRoadmapShape(nodes: readonly RoadmapNode[], book: Librar
     }
     seen.add(node.id)
     if (typeof node.title !== 'string' || node.title.trim() === '') return `nodes[${index}] (${node.id}) needs a title — what the learner masters here`
-    if (node.kind !== 'quiz' && node.kind !== 'read') {
-      return `nodes[${index}] (${node.id}) needs kind: "quiz" | "read" — quiz nodes gate on a chapter quiz; read nodes (how to use the book, front matter, appendices) complete by 读完`
+    if (node.kind !== 'quiz' && node.kind !== 'read' && node.kind !== 'practice') {
+      return `nodes[${index}] (${node.id}) needs kind: "quiz" | "read" | "practice" — quiz nodes gate on a quiz; practice nodes gate on acceptance (a hands-on deliverable); read nodes are optional side stops (读完 completes them, they never gate)`
     }
-    for (const range of node.chapterRanges) {
-      if (!Number.isInteger(range.from) || !Number.isInteger(range.to) || range.from < 1 || range.to < range.from) {
-        return `nodes[${index}] (${node.id}) has a bad chapterRange [${String(range.from)}, ${String(range.to)}] — ranges count table-of-contents rows, 1-based and inclusive: { from: 3, to: 5 }`
-      }
-      if (range.to > book.toc.length) {
-        return `nodes[${index}] (${node.id}) covers up to row ${range.to}, but 《${book.title}》's contents has ${book.toc.length} rows — library_read · toc lists them`
+    if (node.kind === 'practice' && (node.acceptance === undefined || node.acceptance.length === 0)) {
+      return `nodes[${index}] (${node.id}) is a practice station — it needs acceptance: ["...", ...], the lines the coach judges one verdict each at assess time`
+    }
+    if (node.kind !== 'practice' && node.acceptance !== undefined && node.acceptance.length > 0) {
+      return `nodes[${index}] (${node.id}) carries acceptance but is not a practice station — acceptance belongs to kind: "practice" only`
+    }
+    if (!Array.isArray(node.covers) || node.covers.length === 0) {
+      return `nodes[${index}] (${node.id}) needs at least one cover — what the station draws on: { kind: "book", bookId, ranges: [{ from, to }] } | { kind: "resource", resourceId } | { kind: "url", url, title? } | { kind: "topic", text }`
+    }
+    if (scope.bookId !== undefined && (node.covers.length !== 1 || node.covers[0]?.kind !== 'book' || node.covers[0].bookId !== scope.bookId)) {
+      return `nodes[${index}] (${node.id}) draws on more than this one book — a book's own path covers that book only; for a path mixing books / links / teaching, draft the PROJECT's path (omit book)`
+    }
+    for (const cover of node.covers) {
+      if (cover.kind === 'book') {
+        const covered = scope.book(cover.bookId)
+        if (covered === undefined) return `nodes[${index}] (${node.id}) covers book ${JSON.stringify(cover.bookId)}, which the project does not hold — library_read · books lists them; register it first (library_write · book)`
+        for (const range of cover.ranges) {
+          if (!Number.isInteger(range.from) || !Number.isInteger(range.to) || range.from < 1 || range.to < range.from) {
+            return `nodes[${index}] (${node.id}) has a bad range [${String(range.from)}, ${String(range.to)}] on 《${covered.title}》 — ranges count table-of-contents rows, 1-based and inclusive: { from: 3, to: 5 }`
+          }
+          if (range.to > covered.toc.length) {
+            return `nodes[${index}] (${node.id}) covers up to row ${range.to}, but 《${covered.title}》's contents has ${covered.toc.length} rows — library_read · toc lists them`
+          }
+        }
+      } else if (cover.kind === 'resource') {
+        if (!scope.hasResource(cover.resourceId)) {
+          return `nodes[${index}] (${node.id}) covers resource ${JSON.stringify(cover.resourceId)}, which is not on the project's shelf — library_read · resources lists them; add it first (library_write · resource, op add)`
+        }
+      } else if (cover.kind === 'url') {
+        if (!/^https?:\/\//.test(cover.url)) return `nodes[${index}] (${node.id}) covers a url that does not start with http:// or https://`
+      } else if (cover.kind === 'topic') {
+        if (typeof cover.text !== 'string' || cover.text.trim() === '') return `nodes[${index}] (${node.id}) covers a topic with no text — what the coach teaches here`
+      } else {
+        return `nodes[${index}] (${node.id}) has a cover of an unknown kind — book | resource | url | topic`
       }
     }
     for (const dep of node.dependsOn) {
       const depIndex = nodes.findIndex(candidate => candidate.id === dep)
       if (depIndex === -1) return `nodes[${index}] (${node.id}) depends on ${JSON.stringify(dep)}, which the roadmap does not declare`
-      if (node.kind === 'quiz' && nodes[depIndex]?.kind === 'read') {
-        return `nodes[${index}] (${node.id}) depends on read node ${JSON.stringify(dep)} — a read node is a side stop and never gates a level; depend on the previous quiz node instead. How-to-use pages, answer keys, transcripts and appendices are not nodes at all: put them in the book's extras`
+      if (node.kind !== 'read' && nodes[depIndex]?.kind === 'read') {
+        return `nodes[${index}] (${node.id}) depends on read node ${JSON.stringify(dep)} — a read node is a side stop and never gates a level; depend on the previous quiz or practice node instead. How-to-use pages, answer keys, transcripts and appendices are not nodes at all: put them in the book's extras`
       }
       if (depIndex >= index) return `nodes[${index}] (${node.id}) depends on ${JSON.stringify(dep)}, which comes AFTER it — list a node after everything it depends on`
+    }
+  }
+  return undefined
+}
+
+/**
+ * Why a node's covers forbid a memory-backed content question, or undefined
+ * when they allow one: only knowledge books and plain coached teaching (topic)
+ * may be quizzed from domain knowledge; a material book, a shelf resource or
+ * a bare url among the covers demands a verbatim quote. The evidence-gate's
+ * node-level half (a book-scoped quiz without a node keeps the book rule).
+ */
+export function coversVerbatimBlocker(covers: readonly LibraryNodeCover[], book: (bookId: string) => LibraryBook | undefined): string | undefined {
+  for (const cover of covers) {
+    if (cover.kind === 'book') {
+      const covered = book(cover.bookId)
+      if (covered?.bookKind === 'material') return `《${covered.title}》 is a material book (specific text you cannot recall reliably)`
+    } else if (cover.kind === 'resource') {
+      return 'the station draws on a shelf resource (a linked text you cannot recall reliably)'
+    } else if (cover.kind === 'url') {
+      return `the station covers ${cover.url} (a web text you cannot recall reliably)`
     }
   }
   return undefined

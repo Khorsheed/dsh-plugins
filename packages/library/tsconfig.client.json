@@ -15,6 +15,7 @@
     "src/css-modules.d.ts",
     "src/types.ts",
     "src/client/contract.ts",
+    "src/client/covers.tsx",
     "src/client/definition.tsx",
     "src/client/icons.tsx",
     "src/client/index.ts",

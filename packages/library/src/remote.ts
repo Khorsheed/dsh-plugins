@@ -16,6 +16,7 @@ import type { LibraryService } from './service.ts'
 import type {
   LibraryAssessResult,
   LibraryAttachmentRef,
+  LibraryAttempt,
   LibraryBinding,
   LibraryBook,
   LibraryCapabilities,
@@ -140,27 +141,27 @@ export class LibraryRemoteService extends TypertRemoteService<LibraryRemoteConfi
 
   /* ------------------------------------------------------------- roadmap */
 
-  /** One book's adopted roadmap and its pending draft. */
+  /** One scope's adopted roadmap and its pending draft; no bookId = the project's own path. */
   @Remote('getRoadmap')
-  getRoadmap(request: { projectId: string; bookId: string }): Promise<{ roadmap?: LibraryRoadmap; draft?: LibraryRoadmap }> {
+  getRoadmap(request: { projectId: string; bookId?: string }): Promise<{ roadmap?: LibraryRoadmap; draft?: LibraryRoadmap }> {
     return this.core.getRoadmap(request)
   }
 
   /** The learner's 采用. */
   @Remote('adoptRoadmap')
-  adoptRoadmap(request: { projectId: string; bookId: string }): Promise<LibraryOutcome<{ roadmap: LibraryRoadmap }>> {
+  adoptRoadmap(request: { projectId: string; bookId?: string }): Promise<LibraryOutcome<{ roadmap: LibraryRoadmap }>> {
     return this.core.adoptRoadmap(request)
   }
 
   /** Drop a draft. */
   @Remote('discardDraft')
-  discardDraft(request: { projectId: string; bookId: string }): Promise<LibraryOutcome<{ bookId: string }>> {
+  discardDraft(request: { projectId: string; bookId?: string }): Promise<LibraryOutcome<{ bookId?: string }>> {
     return this.core.discardDraft(request)
   }
 
   /** 「读完」 a read node. */
   @Remote('markNodeRead')
-  markNodeRead(request: { projectId: string; bookId: string; nodeId: string }): Promise<LibraryOutcome<{ roadmap: LibraryRoadmap; unlocked: string[] }>> {
+  markNodeRead(request: { projectId: string; bookId?: string; nodeId: string }): Promise<LibraryOutcome<{ roadmap: LibraryRoadmap; unlocked: string[] }>> {
     return this.core.markNodeRead(request)
   }
 
@@ -256,8 +257,14 @@ export class LibraryRemoteService extends TypertRemoteService<LibraryRemoteConfi
 
   /** Grade a sitting answered in the sidebar (choice / fill judged in the page). */
   @Remote('putAttempt')
-  putAttempt(request: { projectId: string; quizId: string; verdicts: readonly LibraryVerdict[] }): Promise<LibraryOutcome<LibraryAssessResult>> {
+  putAttempt(request: { projectId: string; quizId?: string; nodeId?: string; bookId?: string; verdicts: readonly LibraryVerdict[] }): Promise<LibraryOutcome<LibraryAssessResult>> {
     return this.core.putAttempt(request)
+  }
+
+  /** A project's graded sittings, newest first; `nodeId` narrows to one practice station's history. */
+  @Remote('listAttempts')
+  listAttempts(request: { projectId: string; nodeId?: string }): Promise<{ attempts: LibraryAttempt[] }> {
+    return this.core.listAttempts(request)
   }
 
   /* ------------------------------------------------------------- bindings */

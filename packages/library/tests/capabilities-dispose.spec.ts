@@ -109,6 +109,7 @@ describe('the dispose guard', () => {
     await expect(service.dueCards({})).rejects.toBeInstanceOf(LibraryDisposedError)
     await expect(service.listQuizzes({ projectId })).rejects.toBeInstanceOf(LibraryDisposedError)
     await expect(service.getQuiz({ projectId, quizId: 'q_1' })).rejects.toBeInstanceOf(LibraryDisposedError)
+    await expect(service.listAttempts({ projectId })).rejects.toBeInstanceOf(LibraryDisposedError)
     await expect(service.listEvents({ projectId })).rejects.toBeInstanceOf(LibraryDisposedError)
     await expect(service.recentRecords({})).rejects.toBeInstanceOf(LibraryDisposedError)
     await expect(service.stats()).rejects.toBeInstanceOf(LibraryDisposedError)

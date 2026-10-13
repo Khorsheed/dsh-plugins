@@ -143,6 +143,40 @@ describe('resources', () => {
   })
 })
 
+describe('project paths through the tools', () => {
+  it('drafts the project\'s path with covers (book: null), reads it back, keeps the chapterRanges sugar for a book', async () => {
+    const { book } = await seed()
+    const draft = (await call('library_write', {
+      what: 'roadmap',
+      book: null,
+      roadmap: {
+        nodes: [
+          { id: 's1', title: 'RL 直觉', kind: 'practice', covers: [{ kind: 'topic', text: '奖励 = 行为塑造' }], acceptance: ['跑满 20 万步'] },
+          { id: 's2', title: '快慢回路', kind: 'quiz', covers: [{ kind: 'topic', text: '讲授' }], dependsOn: ['s1'] },
+        ],
+      },
+    })) as { draft: { bookId?: string; nodes: { id: string }[] } }
+    expect(draft.draft.bookId).toBeUndefined()
+    expect(draft.draft.nodes.map(node => node.id)).toEqual(['s1', 's2'])
+    const seen = (await call('library_read', { what: 'roadmap', book: null })) as { draft?: { nodes: { id: string }[] } }
+    expect(seen.draft?.nodes.map(node => node.id)).toEqual(['s1', 's2'])
+    // chapterRanges on the bound book's own path wrap into its one book cover.
+    const bookDraft = (await call('library_write', { what: 'roadmap', roadmap: { nodes: [{ id: 'n1', title: '离子通道', kind: 'quiz', chapterRanges: [{ from: 1, to: 1 }] }] } })) as { draft: { bookId?: string; nodes: { covers: { kind: string; bookId?: string }[] }[] } }
+    expect(bookDraft.draft.bookId).toBe(book)
+    expect(bookDraft.draft.nodes[0]?.covers[0]).toMatchObject({ kind: 'book', bookId: book })
+  })
+
+  it('assesses a practice station by node through library_assess', async () => {
+    const { project } = await seed()
+    await call('library_write', { what: 'roadmap', book: null, roadmap: { nodes: [{ id: 's1', title: 'RL 直觉', kind: 'practice', covers: [{ kind: 'topic', text: '讲授' }], acceptance: ['跑满 20 万步'] }] } })
+    const adopted = await service.adoptRoadmap({ projectId: project })
+    if (!adopted.ok) throw new Error(adopted.message)
+    const assessed = (await call('library_assess', { node: 's1', verdicts: [{ task: 's1', criterion: '跑满 20 万步', pass: true, evidence: '终端输出', by: 'llm' }] })) as { completed?: string }
+    expect(assessed.completed).toBe('s1')
+    await expect(call('library_assess', { verdicts: [{ task: 'x', criterion: 'x', pass: true, evidence: 'x', by: 'llm' }] })).rejects.toThrow(/quiz/)
+  })
+})
+
 describe('photo pages', () => {
   it('records a page from the session\'s latest photo when the model names none', async () => {
     await seed()
@@ -170,7 +204,7 @@ describe('teaching errors', () => {
 describe('the bound context', () => {
   it('names the bound book, its current node and the weak cards', async () => {
     const { project, book } = await seed()
-    await service.draftRoadmap({ projectId: project, bookId: book, nodes: [{ id: 'n1', title: '离子通道', kind: 'quiz' }] })
+    await service.draftRoadmap({ projectId: project, bookId: book, nodes: [{ id: 'n1', title: '离子通道', kind: 'quiz', covers: [{ kind: 'book', bookId: book, ranges: [] }] }] })
     await service.adoptRoadmap({ projectId: project, bookId: book })
     await service.writeCards({ projectId: project, bookId: book, cards: [{ kind: 'concept', term: '不应期', gloss: 'g', source: { type: 'chat' } }] })
     const text = renderBindingContext(service, 's_learn')

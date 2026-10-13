@@ -8,6 +8,8 @@
  * bindings.json                    # sessionId → { projectId, bookId? }
  * projects/<projectId>/
  *   project.json                   # { id, name, template, goal?, createdAt }
+ *   roadmap.json                   # the project's own adopted path (v3)
+ *   roadmap.draft.json             # the project path's draft, until 采用
  *   books/<bookId>/book.json       # registered metadata + toc (no bodies)
  *   books/<bookId>/roadmap.json    # the adopted path
  *   books/<bookId>/roadmap.draft.json  # the coach's draft, until 采用
@@ -60,6 +62,7 @@ import {
   type LibraryCardSourceType,
   type LibraryEvent,
   type LibraryEventType,
+  type LibraryNodeCover,
   type LibraryPage,
   type LibraryProject,
   type LibraryQuiz,
@@ -233,10 +236,14 @@ export function emptyLibraryIndex(): LibraryIndexDoc {
   return { version: LIBRARY_STATE_VERSION, projects: [] }
 }
 
-/** Coerce a parsed value into an index; another schema version reads as empty. */
+/**
+ * Coerce a parsed value into an index. Another schema version reads as empty —
+ * except v2, which v3 reads tolerantly (its per-book roadmaps wrap their
+ * `chapterRanges` into covers at read time; `migrateState` rewrites the files).
+ */
 export function normalizeLibraryIndex(value: unknown): LibraryIndexDoc {
   const record = asRecord(value)
-  if (record === undefined || record.version !== LIBRARY_STATE_VERSION) return emptyLibraryIndex()
+  if (record === undefined || (record.version !== LIBRARY_STATE_VERSION && record.version !== 2)) return emptyLibraryIndex()
   const projects = Array.isArray(record.projects) ? record.projects : []
   const seen = new Set<string>()
   return {
@@ -331,11 +338,52 @@ export function normalizeResource(value: unknown): LibraryResource | undefined {
   }
 }
 
+/** One node's cover, when it parses; provenance rides along when present. */
+export function normalizeNodeCover(value: unknown): LibraryNodeCover | undefined {
+  const record = asRecord(value)
+  if (record === undefined) return undefined
+  const by: 'web' | 'model' | 'user' | undefined = record.by === 'web' || record.by === 'model' || record.by === 'user' ? record.by : undefined
+  const provenance = { ...opt('by', by), ...opt('verifiedAt', text(record.verifiedAt, 40)) }
+  switch (record.kind) {
+    case 'book': {
+      const bookId = id(record.bookId)
+      if (bookId === undefined) return undefined
+      return { kind: 'book', bookId, ranges: legacyRanges(record.ranges), ...provenance }
+    }
+    case 'resource': {
+      const resourceId = id(record.resourceId)
+      return resourceId === undefined ? undefined : { kind: 'resource', resourceId, ...provenance }
+    }
+    case 'url': {
+      const url = text(record.url, 1000)
+      return url === undefined ? undefined : { kind: 'url', url, ...opt('title', text(record.title, 300)), ...provenance }
+    }
+    case 'topic': {
+      const topicText = text(record.text, 300)
+      return topicText === undefined ? undefined : { kind: 'topic', text: topicText, ...provenance }
+    }
+    default:
+      return undefined
+  }
+}
+
+/** A v2 node's chapter ranges (or a book cover's ranges), as ranges. */
+function legacyRanges(value: unknown): { from: number; to: number }[] {
+  return Array.isArray(value)
+    ? (value as unknown[]).flatMap(range => {
+      const r = asRecord(range)
+      const from = finite(r?.from)
+      const to = finite(r?.to)
+      return from === undefined || to === undefined ? [] : [{ from, to }]
+    })
+    : []
+}
+
 /** One roadmap (adopted or draft), when it parses; rule checks live in the service. */
 export function normalizeRoadmap(value: unknown): LibraryRoadmap | undefined {
   const record = asRecord(value)
-  const bookId = id(record?.bookId)
-  if (record === undefined || bookId === undefined || !Array.isArray(record.nodes)) return undefined
+  if (record === undefined || !Array.isArray(record.nodes)) return undefined
+  const bookId = id(record.bookId)
   const nodes: RoadmapNode[] = []
   for (const item of record.nodes as unknown[]) {
     const node = asRecord(item)
@@ -343,7 +391,17 @@ export function normalizeRoadmap(value: unknown): LibraryRoadmap | undefined {
     const title = text(node?.title, 300)
     const state = node?.state === 'locked' || node?.state === 'current' || node?.state === 'done' ? node.state : undefined
     if (node === undefined || nodeId === undefined || title === undefined || state === undefined) return undefined
-    const kind = node.kind === 'read' ? 'read' as const : 'quiz' as const
+    const kind = node.kind === 'read' ? 'read' as const : node.kind === 'practice' ? 'practice' as const : 'quiz' as const
+    // v3 nodes carry covers; a v2 node wraps its chapterRanges into the one
+    // book cover of its book's path (migrateState rewrites the file).
+    const covers: LibraryNodeCover[] = Array.isArray(node.covers)
+      ? (node.covers as unknown[]).flatMap(cover => {
+        const normalized = normalizeNodeCover(cover)
+        return normalized === undefined ? [] : [normalized]
+      })
+      : bookId !== undefined && node.chapterRanges !== undefined
+        ? [{ kind: 'book', bookId, ranges: legacyRanges(node.chapterRanges) }]
+        : []
     const stats = asRecord(node.quizStats)
     nodes.push({
       id: nodeId,
@@ -351,27 +409,21 @@ export function normalizeRoadmap(value: unknown): LibraryRoadmap | undefined {
       kind,
       goals: typeof node.goals === 'string' ? strings([node.goals], 300) : strings(node.goals, 300),
       dependsOn: Array.isArray(node.dependsOn) ? (node.dependsOn as unknown[]).filter((dep): dep is string => typeof dep === 'string') : [],
-      chapterRanges: Array.isArray(node.chapterRanges)
-        ? (node.chapterRanges as unknown[]).flatMap(range => {
-          const r = asRecord(range)
-          const from = finite(r?.from)
-          const to = finite(r?.to)
-          return from === undefined || to === undefined ? [] : [{ from, to }]
-        })
-        : [],
+      covers,
       state,
-      ...(stats === undefined || kind === 'read' ? {} : {
+      ...(stats === undefined || kind !== 'quiz' ? {} : {
         quizStats: {
           attempts: finite(stats.attempts) ?? 0,
           ...opt('lastRatio', finite(stats.lastRatio)),
           ...opt('bestRatio', finite(stats.bestRatio)),
         },
       }),
+      ...(kind === 'practice' && Array.isArray(node.acceptance) ? { acceptance: strings(node.acceptance, 300) } : {}),
     })
   }
   const passRatio = finite(record.passRatio)
   return {
-    bookId,
+    ...opt('bookId', bookId),
     status: record.status === 'adopted' ? 'adopted' : 'draft',
     nodes,
     ...(passRatio !== undefined && passRatio > 0 && passRatio <= 1 ? { passRatio } : {}),
@@ -486,7 +538,8 @@ export function normalizeQuiz(value: unknown): LibraryQuiz | undefined {
   const quizId = id(record?.id)
   const scope = asRecord(record?.scope)
   const bookId = id(scope?.bookId)
-  if (record === undefined || quizId === undefined || bookId === undefined || !Array.isArray(record.questions)) return undefined
+  const nodeId = id(scope?.nodeId)
+  if (record === undefined || quizId === undefined || scope === undefined || !Array.isArray(record.questions)) return undefined
   const questions: LibraryQuizQuestion[] = []
   for (const item of record.questions as unknown[]) {
     const q = asRecord(item)
@@ -517,7 +570,7 @@ export function normalizeQuiz(value: unknown): LibraryQuiz | undefined {
   }
   return {
     id: quizId,
-    scope: { bookId, ...opt('nodeId', id(scope?.nodeId)) },
+    scope: { ...opt('bookId', bookId), ...opt('nodeId', nodeId) },
     ...(record.focus === 'mine' || record.focus === 'book' || record.focus === 'mixed' ? { focus: record.focus } : {}),
     questions,
     createdAt: stamp(record.createdAt),
@@ -529,8 +582,9 @@ export function normalizeAttempt(value: unknown): LibraryAttempt | undefined {
   const record = asRecord(value)
   const attemptId = id(record?.id)
   const quizId = id(record?.quizId)
+  const nodeId = id(record?.nodeId)
   const ratio = finite(record?.ratio)
-  if (record === undefined || attemptId === undefined || quizId === undefined || ratio === undefined || !Array.isArray(record.verdicts)) return undefined
+  if (record === undefined || attemptId === undefined || (quizId === undefined && nodeId === undefined) || ratio === undefined || !Array.isArray(record.verdicts)) return undefined
   const verdicts: LibraryAttempt['verdicts'][number][] = []
   for (const item of record.verdicts as unknown[]) {
     const v = asRecord(item)
@@ -547,7 +601,7 @@ export function normalizeAttempt(value: unknown): LibraryAttempt | undefined {
       ...(v.void === true ? { void: true } : {}),
     })
   }
-  return { id: attemptId, quizId, verdicts, ratio, at: stamp(record.at) }
+  return { id: attemptId, ...opt('quizId', quizId), ...opt('nodeId', nodeId), verdicts, ratio, at: stamp(record.at) }
 }
 
 /** One audit event (one events.jsonl line), when it parses. */
@@ -845,10 +899,10 @@ export class LibraryStore {
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
   }
 
-  /** One book's adopted roadmap, or its draft. */
-  readRoadmap(projectId: string, bookId: string, which: 'adopted' | 'draft' = 'adopted'): LibraryRoadmap | undefined {
+  /** One scope's adopted roadmap, or its draft; no bookId = the project's own path. */
+  readRoadmap(projectId: string, bookId?: string, which: 'adopted' | 'draft' = 'adopted'): LibraryRoadmap | undefined {
     const file = which === 'adopted' ? 'roadmap.json' : 'roadmap.draft.json'
-    return this.readJsonFile(join(this.bookDir(projectId, bookId), file), normalizeRoadmap)
+    return this.readJsonFile(bookId === undefined ? join(this.projectDir(projectId), file) : join(this.bookDir(projectId, bookId), file), normalizeRoadmap)
   }
 
   /** One book's photographed pages, oldest first. */
@@ -916,15 +970,15 @@ export class LibraryStore {
     this.writeJsonFile(join(this.bookDir(projectId, book.id), 'book.json'), book)
   }
 
-  /** Write one book's adopted roadmap or its draft (call inside `withProjectLock`). */
+  /** Write one scope's adopted roadmap or its draft (call inside `withProjectLock`). */
   writeRoadmap(projectId: string, roadmap: LibraryRoadmap): void {
     const file = roadmap.status === 'adopted' ? 'roadmap.json' : 'roadmap.draft.json'
-    this.writeJsonFile(join(this.bookDir(projectId, roadmap.bookId), file), roadmap)
+    this.writeJsonFile(roadmap.bookId === undefined ? join(this.projectDir(projectId), file) : join(this.bookDir(projectId, roadmap.bookId), file), roadmap)
   }
 
-  /** Drop one book's draft (adopted or discarded). */
-  removeDraft(projectId: string, bookId: string): void {
-    rmSync(join(this.bookDir(projectId, bookId), 'roadmap.draft.json'), { force: true })
+  /** Drop one scope's draft (adopted or discarded); no bookId = the project's. */
+  removeDraft(projectId: string, bookId?: string): void {
+    rmSync(bookId === undefined ? join(this.projectDir(projectId), 'roadmap.draft.json') : join(this.bookDir(projectId, bookId), 'roadmap.draft.json'), { force: true })
   }
 
   /** Append one photographed page (call inside `withProjectLock`). */
@@ -978,6 +1032,74 @@ export class LibraryStore {
   removeProject(projectId: string): void {
     rmSync(this.projectDir(projectId), { recursive: true, force: true })
     rmSync(this.projectLock(projectId), { force: true })
+  }
+
+  /**
+   * v2 → v3: wrap every stored roadmap node's `chapterRanges` into
+   * `covers: [{ kind: 'book', bookId, ranges }]` (the v2 paths are all
+   * per-book), then bump the index version. Idempotent (a node that already
+   * carries covers is left untouched, so a re-run is a no-op), each project's
+   * files rewritten under its own lock, the index bump last — a crash midway
+   * leaves version 2 and the next run resumes. v1 roots were never deployed:
+   * they read as empty and are NOT migrated. Reads never wait for this pass —
+   * `normalizeRoadmap` wraps a v2 node on the fly.
+   *
+   * @returns whether a migration ran.
+   */
+  async migrateState(): Promise<boolean> {
+    if (!this.available) return false
+    let raw: string
+    try {
+      raw = readFileSync(this.indexFile, 'utf8')
+    } catch {
+      return false // no index yet — nothing to migrate
+    }
+    let version: unknown
+    try {
+      version = (JSON.parse(raw) as { version?: unknown }).version
+    } catch {
+      return false // a corrupt index stays a hand-fix matter, not a migration's
+    }
+    if (version !== 2) return false
+    await this.withIndexLock(async () => {
+      const index = this.readIndex()
+      for (const project of index.projects) {
+        await this.withProjectLock(project.id, () => {
+          this.migrateProjectRoadmapsV2(project.id)
+        })
+      }
+      this.writeIndex({ ...index, version: LIBRARY_STATE_VERSION })
+    })
+    return true
+  }
+
+  /** Rewrite one project's v2 book roadmaps (adopted and draft) into covers. */
+  private migrateProjectRoadmapsV2(projectId: string): void {
+    const dir = join(this.projectDir(projectId), 'books')
+    if (!existsSync(dir)) return
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (!entry.isDirectory() || !isLibraryId(entry.name)) continue
+      for (const file of ['roadmap.json', 'roadmap.draft.json']) {
+        const path = join(dir, entry.name, file)
+        let parsed: unknown
+        try {
+          parsed = JSON.parse(readFileSync(path, 'utf8'))
+        } catch {
+          continue // absent or corrupt — reads treat it as absent either way
+        }
+        const roadmap = asRecord(parsed)
+        if (roadmap === undefined || !Array.isArray(roadmap.nodes)) continue
+        let touched = false
+        const nodes = (roadmap.nodes as unknown[]).map(item => {
+          const node = asRecord(item)
+          if (node === undefined || node.covers !== undefined || node.chapterRanges === undefined) return item
+          touched = true
+          const { chapterRanges, ...rest } = node
+          return { ...rest, covers: [{ kind: 'book', bookId: entry.name, ranges: Array.isArray(chapterRanges) ? chapterRanges : [] }] }
+        })
+        if (touched) this.writeJsonFile(path, { ...roadmap, nodes })
+      }
+    }
   }
 }
 

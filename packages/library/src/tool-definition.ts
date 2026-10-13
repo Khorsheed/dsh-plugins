@@ -32,7 +32,6 @@ import type {
   LibraryTemplate,
   LibraryQuizQuestion,
   LibraryVerdict,
-  RoadmapNode,
 } from './types.ts'
 import type { LibraryService } from './service.ts'
 import { ImageRefCache } from './image-refs.ts'
@@ -99,6 +98,13 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
   const optBook = (value: unknown, exec: Exec | undefined): string | undefined =>
     typeof value === 'string' && value.trim() !== '' ? value.trim() : bindingOf(exec)?.bookId
 
+  /** A path/quiz scope's book: a string wins, an explicit null means "the project's own path", absent falls back to the binding's book. */
+  const scopeBookOf = (value: unknown, exec: Exec | undefined): string | undefined => {
+    if (value === null) return undefined
+    if (typeof value === 'string' && value.trim() !== '') return value.trim()
+    return bindingOf(exec)?.bookId
+  }
+
   const definitions: ToolDefinition[] = []
 
   definitions.push(defineTool({
@@ -109,7 +115,7 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
       + '"books" — a project\'s books with their tables of contents; '
       + '"resources" — a project\'s shelf links (article | video | repo | tool | course | hardware), each with its one-line why — light entries: no contents, no roadmap, never quizzed; '
       + '"toc" — one book (title, edition, kind, contents rows numbered n); '
-      + '"roadmap" — one book\'s adopted path and any pending draft; '
+      + '"roadmap" — the adopted path and any pending draft (book defaults to the binding\'s book; pass book: null for the project\'s own path); '
       + '"pages" — one book\'s photographed pages (printed text + the learner\'s marks), node narrows; '
       + '"cards" — the knowledge cards: query searches term, aliases, gloss and sentences; filters book, node, kind (word|concept), '
       + 'source (photo|chat|quiz|manual), weakMin (0-3), due; sorted weakest first — check here before teaching a point, '
@@ -119,7 +125,7 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
     parameters: {
       what: { type: 'string', required: true, description: `What to read: ${READ_WHATS.join(' | ')}.` },
       project: { type: 'string', description: 'Project id (defaults to the binding).' },
-      book: { type: 'string', description: 'Book id (defaults to the binding\'s book).' },
+      book: { type: 'json', description: 'Book id (defaults to the binding\'s book; null reads the project\'s own roadmap).' },
       node: { type: 'string', description: 'Roadmap node id (pages / cards).' },
       quiz: { type: 'string', description: 'Quiz id (quiz; omit for the list).' },
       query: { type: 'string', description: 'Free-text card search (cards).' },
@@ -145,8 +151,10 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
           return (await service.listResources({ projectId: projectOf(args.project, exec) })) as unknown as JsonValue
         case 'toc':
           return unwrap(await service.getBook({ projectId: projectOf(args.project, exec), bookId: bookOf(args.book, exec) })).book as unknown as JsonValue
-        case 'roadmap':
-          return (await service.getRoadmap({ projectId: projectOf(args.project, exec), bookId: bookOf(args.book, exec) })) as unknown as JsonValue
+        case 'roadmap': {
+          const book = scopeBookOf(args.book, exec)
+          return (await service.getRoadmap({ projectId: projectOf(args.project, exec), ...(book === undefined ? {} : { bookId: book }) })) as unknown as JsonValue
+        }
         case 'pages':
           return (await service.listPages({
             projectId: projectOf(args.project, exec),
@@ -212,10 +220,13 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
       + 'register a book (no upload): search the web for the exact edition\'s contents and cite the url — a publisher, library-catalog or retailer page, never a full-text copy; '
       + 'toc has one row per chapter (or passage), never a row for a part heading — the part goes in part; "material" = exam papers, novels, anthologies '
       + '(specific text you cannot recall); bookId corrects an existing one. '
-      + 'what="roadmap": roadmap { nodes: [{ id, title, kind: "quiz"|"read", goals: [..], chapterRanges: [{ from, to }], dependsOn }], passRatio?, note? } — '
-      + 'writes a DRAFT the learner adopts in the sidebar (采用); ranges count contents rows. Quiz nodes are the levels (a chapter quiz completes them) and depend only on quiz nodes; '
-      + 'read nodes are optional side stops for an overview chapter worth reading but not testing (读完 completes them, they never gate). How-to-use pages, answer keys, transcripts '
-      + 'and appendices are book extras, not nodes. note is the one-line pacing shown on the draft card. '
+      + 'what="roadmap": roadmap { nodes: [{ id, title, kind: "quiz"|"read"|"practice", goals: [..], covers: [{ kind: "book", book, ranges: [{ from, to }] } | { kind: "resource", resourceId } | { kind: "url", url, title? } | { kind: "topic", text }], dependsOn, acceptance?: [..] }], passRatio?, note? } — '
+      + 'writes a DRAFT the learner adopts in the sidebar (采用). book defaults to the binding\'s book; pass book: null for the project\'s OWN path (the general case: a station draws on mixed covers — '
+      + 'a book\'s chapter rows, a shelf resource, a bare url, or plain coached teaching via topic). A book\'s path is the special case: every node covers that one book (chapterRanges: [{ from, to }] '
+      + 'still accepted as sugar for its single book cover). Every url / resource cover carries provenance: by: "web" + verifiedAt once you actually opened it, "model" straight from memory '
+      + '(verify and replace before the learner adopts), "user" when the learner gave it. Quiz nodes are the levels (a chapter quiz completes them) and depend only on quiz / practice nodes; '
+      + 'a practice node is a hands-on station gated by acceptance — acceptance lists the criteria, one verbatim verdict.criterion per line at assess time; '
+      + 'read nodes are optional side stops (读完 completes them, they never gate). note is the one-line pacing shown on the draft card. '
       + 'what="page": page { attachment? (the image id; omit it for the latest photo in this conversation), label?, node?, text (the page\'s printed text), '
       + 'marks: [{ text, sentence?, handNote?, gloss?, uncertain? }] } — records a photographed page and cards every mark at once; gloss is the in-context meaning; '
       + 'uncertain marks are kept but not carded. '
@@ -224,7 +235,7 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
       + 'A near-duplicate comes back in pending with candidates: resend it with mergeInto: <id> or asNew: true. '
       + 'what="quiz": quiz { node?, focus?: "mine"|"book"|"mixed" (the learner\'s choice of source — mine: only their own cards, book: only the chapter\'s content), questions: [{ id, kind: "choice"|"fill"|"free", prompt, options?, answer, explanation?, target: { kind: "marked"|"asked"|"missed"|"topic", cardIds? }, '
       + 'evidence: { kind: "photo"|"web"|"knowledge", pageId?, url?, quote? } }] } — target the learner\'s own cards first; photo evidence quotes a recorded page, web evidence cites url + quote; '
-      + 'a material book never takes a knowledge-backed question about its content. '
+      + 'whether domain knowledge may back a CONTENT question is judged on the gated station\'s covers: a material book, a resource or a url among them demands a verbatim quote (book may be null / omitted for a station on the project\'s own path). '
       + 'what="resource": op "add" — resource { title, url, kind: "article"|"video"|"repo"|"tool"|"course"|"hardware", note?, addedBy? } — put a light link entry on the '
       + 'project\'s shelf: no contents, no roadmap, never quizzed (something you reference BY CHAPTER is registered as a book instead — library_write · book). Open the link on '
       + 'the web first: the title is what its own page calls it, and note is your one line on why it earns its place. op "remove" — resource { id }. '
@@ -288,12 +299,27 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
         case 'roadmap': {
           const body = payload(args.roadmap)
           if (body === undefined || !Array.isArray(body.nodes)) {
-            throw new Error('what=roadmap takes roadmap: { nodes: [{ id, title, kind: "quiz"|"read", goals, chapterRanges: [{ from, to }], dependsOn }], note? } — read the toc first')
+            throw new Error('what=roadmap takes roadmap: { nodes: [{ id, title, kind: "quiz"|"read"|"practice", goals, covers: [{ kind: "book", book, ranges: [{ from, to }] } | { kind: "resource", resourceId } | { kind: "url", url } | { kind: "topic", text }], dependsOn, acceptance? (practice only) }], note? }')
           }
+          const rawBook = args.book === null || typeof args.book === 'string' ? args.book : body.book === null || typeof body.book === 'string' ? body.book : undefined
+          const bookId = rawBook === null ? undefined : rawBook ?? bindingOf(exec)?.bookId
+          const nodes = (body.nodes as Record<string, unknown>[]).map(node => {
+            const { chapterRanges, covers, ...rest } = node
+            if (covers !== undefined) return { ...rest, covers }
+            // Sugar for the book special case: chapterRanges wrap into the
+            // one book cover a book's own path allows.
+            if (chapterRanges !== undefined) {
+              if (bookId === undefined) {
+                throw new Error('chapterRanges count a book\'s contents rows — the project\'s OWN path (book: null) needs covers instead: { kind: "book", book, ranges: [{ from, to }] } names the book explicitly')
+              }
+              return { ...rest, covers: [{ kind: 'book', bookId, ranges: chapterRanges }] }
+            }
+            return rest
+          })
           return unwrap(await service.draftRoadmap({
             projectId: projectOf(args.project, exec),
-            bookId: bookOf(typeof args.book === 'string' ? args.book : body.book, exec),
-            nodes: body.nodes as RoadmapNode[],
+            ...(bookId === undefined ? {} : { bookId }),
+            nodes: nodes as unknown as Parameters<LibraryService['draftRoadmap']>[0]['nodes'],
             ...(typeof body.passRatio === 'number' ? { passRatio: body.passRatio } : {}),
             ...(typeof body.note === 'string' ? { note: body.note } : {}),
           })) as unknown as JsonValue
@@ -344,11 +370,13 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
             throw new Error('what=quiz takes quiz: { node?, questions: [{ id, kind, prompt, options?, answer, explanation?, target: { kind, cardIds? }, evidence: { kind, pageId?, url?, quote? } }] }')
           }
           const node = typeof body.node === 'string' ? body.node : undefined
+          const rawBook = args.book === null || typeof args.book === 'string' ? args.book : body.book === null || typeof body.book === 'string' ? body.book : undefined
+          const bookId = rawBook === null ? undefined : rawBook ?? bindingOf(exec)?.bookId
           return unwrap(await service.putQuiz({
             projectId: projectOf(args.project, exec),
             quiz: {
               ...(body.focus === 'mine' || body.focus === 'book' || body.focus === 'mixed' ? { focus: body.focus } : {}),
-              scope: { bookId: bookOf(typeof args.book === 'string' ? args.book : body.book, exec), ...(node === undefined ? {} : { nodeId: node }) },
+              scope: { ...(bookId === undefined ? {} : { bookId }), ...(node === undefined ? {} : { nodeId: node }) },
               questions: body.questions as LibraryQuizQuestion[],
             },
           })) as unknown as JsonValue
@@ -405,10 +433,14 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
       + 'then record one verdict per question: { task: <question id>, criterion: <what you judged>, pass, ratio?: <partial credit 0..1>, evidence: <what it rests on>, '
       + 'by: "llm"|"self"|"user", void?: true when the learner flagged the question as broken, missedCard?: { term, gloss } for a missed question that targets no card }. '
       + 'The engine moves every probed card (a pass climbs a review box and eases weakness; a miss resets it to tomorrow and adds weakness), creates a card for a '
-      + 'card-less miss, updates the gated node, and completes it at the pass ratio (default 0.8), unlocking what follows — report what moved and what unlocked.',
+      + 'card-less miss, updates the gated node, and completes it at the pass ratio (default 0.8), unlocking what follows — report what moved and what unlocked. '
+      + 'Practice acceptance: pass node instead of quiz (plus book when the station sits on a book\'s path) — the station must be a practice node, and every '
+      + 'verdict\'s criterion is one of its acceptance lines, VERBATIM; the learner submits the evidence (terminal output, a screenshot, a repo link), you judge each line. Same cascade.',
     parameters: {
       project: { type: 'string', description: 'Project id (defaults to the binding).' },
-      quiz: { type: 'string', required: true, description: 'The quiz id library_write · quiz returned.' },
+      quiz: { type: 'string', description: 'The quiz id library_write · quiz returned (a quiz sitting).' },
+      node: { type: 'string', description: 'Practice station id (an acceptance sitting — instead of quiz).' },
+      book: { type: 'string', description: 'Book id when the practice station sits on a book\'s path (omit for the project\'s).' },
       verdicts: {
         type: 'array',
         required: true,
@@ -437,7 +469,17 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
     output: jsonOutput(),
     isConcurrencySafe: () => false,
     async execute(args, exec) {
-      if (args.quiz.trim() === '') throw new Error('quiz is the id library_write · quiz returned')
+      const node = typeof args.node === 'string' && args.node.trim() !== '' ? args.node.trim() : undefined
+      if (node !== undefined) {
+        const book = typeof args.book === 'string' && args.book.trim() !== '' ? args.book.trim() : undefined
+        return unwrap(await service.putAttempt({
+          projectId: projectOf(args.project, exec),
+          nodeId: node,
+          ...(book === undefined ? {} : { bookId: book }),
+          verdicts: [...args.verdicts] as LibraryVerdict[],
+        })) as unknown as JsonValue
+      }
+      if (args.quiz === undefined || args.quiz.trim() === '') throw new Error('quiz is the id library_write · quiz returned — or pass node (a practice station\'s id) for acceptance')
       return unwrap(await service.putAttempt({
         projectId: projectOf(args.project, exec),
         quizId: args.quiz.trim(),

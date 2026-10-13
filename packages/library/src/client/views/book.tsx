@@ -3,17 +3,23 @@
  * path as an S-shaped trail of nodes, and one node's page (guide, the pages
  * photographed for it, its chapter quizzes).
  *
+ * The same pieces serve the project's OWN path (v3): NodeView with no bookId
+ * reads the project-level roadmap, a station's covers row replaces the chapter
+ * row, a practice station's third tab is acceptance instead of a quiz, and
+ * 「我的记录」 exists only when the station covers a book.
+ *
  * @module @khorsheed/dsh-library/client/views/book
  */
 import { useEffect, useState, type ReactNode } from 'react'
 import { ChipRow, ListRow, PanelHeader, UnderlineTabs } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
-import type { LibraryBook, LibraryPage, LibraryQuizFocus, LibraryRoadmap, RoadmapNode } from '../../types.ts'
+import type { LibraryBook, LibraryPage, LibraryQuizFocus, LibraryRoadmap, LibraryVerdict, RoadmapNode } from '../../types.ts'
 import { colorOf, Cover } from '../look.tsx'
+import { CoverChips, coverLabel, evidencePolicy, ProvenanceBadge, summarizeCovers, type CoverContext } from '../covers.tsx'
 import type { LibraryNodeTab } from '../store.ts'
 import {
   IconCameraOutlineMedium, IconCheckOutlineMedium, IconLockOutlineMedium, IconRefreshOutlineMedium, IconSparkleOutlineMedium,
 } from '../icons.tsx'
-import { outcome, shortGloss, StateLine, useLoad, value, WeaknessBars, type ViewProps } from '../ui.tsx'
+import { outcome, shortGloss, StateLine, useLoad, value, WeaknessBars, when, type ViewProps } from '../ui.tsx'
 import css from '../LibraryPane.module.css'
 
 /** The zigzag column (0..2) a node at `index` sits in. */
@@ -22,9 +28,11 @@ function column(index: number): number {
   return phase === 3 ? 1 : phase
 }
 
-/** A node's chapter rows, as titles. */
+/** A node's chapter rows of one book, as titles. */
 function rowsOf(node: RoadmapNode, book: LibraryBook): string[] {
-  return node.chapterRanges.flatMap(range => book.toc.filter(row => row.n >= range.from && row.n <= range.to).map(row => row.title))
+  return node.covers
+    .flatMap(cover => (cover.kind === 'book' && cover.bookId === book.id ? cover.ranges : []))
+    .flatMap(range => book.toc.filter(row => row.n >= range.from && row.n <= range.to).map(row => row.title))
 }
 
 /** One book: draft card, path, or the ask for one. */
@@ -87,8 +95,9 @@ export function BookView({ p, projectId, bookId }: ViewProps & { projectId: stri
         {book !== undefined && loaded.data?.draft !== undefined && (
           <DraftCard
             p={p}
-            book={book}
             draft={loaded.data.draft}
+            context={{ books: [book], resources: [] }}
+            tocBy={book.tocSource.by}
             replaces={loaded.data.roadmap !== undefined}
             busy={busy}
             onAdopt={() => { void act(() => outcome(p.adoptRoadmap(projectId, bookId))) }}
@@ -116,11 +125,14 @@ export function BookView({ p, projectId, bookId }: ViewProps & { projectId: stri
   )
 }
 
-/** The draft card: what the coach proposes, and the learner's 采用 / 放弃. */
-function DraftCard({ p, book, draft, replaces, busy, onAdopt, onDiscard }: {
+/** The draft card: what the coach proposes, and the learner's 采用 / 放弃. Shared by the book page and the project page (no book = the project's own path). */
+export function DraftCard({ p, draft, context, tocBy, replaces, busy, onAdopt, onDiscard }: {
   p: ViewProps['p']
-  book: LibraryBook
   draft: LibraryRoadmap
+  /** Books and resources for labeling covers. */
+  context: CoverContext
+  /** The book's contents-source badge (a book's own draft only). */
+  tocBy?: LibraryBook['tocSource']['by']
   replaces: boolean
   busy: boolean
   onAdopt: () => void
@@ -131,14 +143,20 @@ function DraftCard({ p, book, draft, replaces, busy, onAdopt, onDiscard }: {
     <section className={css.draft}>
       <div className={css.draftHead}>
         <span className={css.draftTitle}>{t('book.draftTitle')}</span>
-        <span className={css.chip} data-tone={book.tocSource.by === 'web' ? 'web' : 'know'}>{t(`tocSource.${book.tocSource.by}`)}</span>
+        {tocBy !== undefined && <span className={css.chip} data-tone={tocBy === 'web' ? 'web' : 'know'}>{t(`tocSource.${tocBy}`)}</span>}
       </div>
       <div className={css.muted}>{t('book.draftMeta', { count: String(draft.nodes.length) })}{draft.note === undefined ? '' : ` · ${draft.note}`}</div>
       <ol className={css.draftNodes}>
         {draft.nodes.map(node => (
           <li key={node.id}>
             <span className={css.kind} data-kind={node.kind}>{t(`nodeKind.${node.kind}`)}</span>
-            <span>{node.title}</span>
+            <span className={css.extraText}>
+              <span>{node.title}</span>
+              <span className={css.muted}>{summarizeCovers(node.covers, context, t)}{node.kind === 'practice' && node.acceptance !== undefined ? ` · ${t('accept.meta', { count: String(node.acceptance.length) })}` : ''}</span>
+              {node.covers.some(cover => cover.by !== undefined) && (
+                <span className={css.chips}>{node.covers.map((cover, at) => <ProvenanceBadge key={at} cover={cover} t={t} />)}</span>
+              )}
+            </span>
           </li>
         ))}
       </ol>
@@ -191,12 +209,13 @@ const COLUMNS = [1 / 6, 1 / 2, 5 / 6]
  */
 function Path({ p, roadmap, onOpen }: { p: ViewProps['p']; roadmap: LibraryRoadmap; onOpen: (node: RoadmapNode) => void }): ReactNode {
   const { t } = p
-  const levels = roadmap.nodes.filter(node => node.kind === 'quiz')
+  // Levels gate (quiz by its quiz, practice by acceptance); read nodes are side stops.
+  const levels = roadmap.nodes.filter(node => node.kind !== 'read')
   // Each side stop hangs beside the level before it (or the first one).
   const sides = new Map<string, RoadmapNode[]>()
   let anchor = levels[0]?.id
   for (const node of roadmap.nodes) {
-    if (node.kind === 'quiz') { anchor = node.id; continue }
+    if (node.kind !== 'read') { anchor = node.id; continue }
     if (anchor === undefined) continue
     sides.set(anchor, [...(sides.get(anchor) ?? []), node])
   }
@@ -226,7 +245,7 @@ function Path({ p, roadmap, onOpen }: { p: ViewProps['p']; roadmap: LibraryRoadm
         {levels.map((node, index) => (
           <div key={node.id} className={css.pathSlot} style={{ left: `${(COLUMNS[column(index)] ?? 0.5) * 100}%`, top: y(index) }}>
             <button type="button" className={css.pathNode} onClick={() => { onOpen(node) }}>
-              <span className={css.disc} data-state={node.state} data-kind="quiz">
+              <span className={css.disc} data-state={node.state} data-kind={node.kind}>
                 {node.state === 'done' ? <IconCheckOutlineMedium /> : node.state === 'locked' ? <IconLockOutlineMedium /> : index + 1}
               </span>
               <span className={css.pathLabel} data-state={node.state}>{node.title}</span>
@@ -245,69 +264,98 @@ function Path({ p, roadmap, onOpen }: { p: ViewProps['p']; roadmap: LibraryRoadm
   )
 }
 
-/** One node: guide, photographed pages, chapter quizzes. */
-export function NodeView({ p, projectId, bookId, nodeId, tab }: ViewProps & { projectId: string; bookId: string; nodeId: string; tab: LibraryNodeTab }): ReactNode {
+/** One node: guide, photographed pages, chapter quizzes — or a practice station's acceptance. */
+export function NodeView({ p, projectId, bookId, nodeId, tab }: ViewProps & { projectId: string; bookId: string | undefined; nodeId: string; tab: LibraryNodeTab }): ReactNode {
   const { t, actions, useStore } = p
   const rev = useStore(s => s.rev)
   const loaded = useLoad(async () => {
-    const [detail, roadmaps] = await Promise.all([outcome(p.getProject(projectId)), value(p.getRoadmap(projectId, bookId))])
-    const book = detail.books.find(candidate => candidate.id === bookId)
+    const [detail, roadmaps, resources] = await Promise.all([outcome(p.getProject(projectId)), value(p.getRoadmap(projectId, bookId)), value(p.listResources(projectId))])
+    const book = bookId === undefined ? undefined : detail.books.find(candidate => candidate.id === bookId)
     const node = roadmaps.roadmap?.nodes.find(candidate => candidate.id === nodeId)
-    return { book, node, passRatio: roadmaps.roadmap?.passRatio ?? 0.8 }
+    return { book, books: detail.books, project: detail.project, node, passRatio: roadmaps.roadmap?.passRatio ?? 0.8, resources: resources.resources }
   }, [projectId, bookId, nodeId, rev])
   const [notice, setNotice] = useState<string | undefined>()
-  const book = loaded.data?.book
   const node = loaded.data?.node
+  // The pages tab rides a book: the route's, else the station's first book
+  // cover (the learner picks when several).
+  const coveredBooks = (node?.covers ?? []).flatMap(cover => (cover.kind === 'book' ? [cover.bookId] : []))
+  const [pickedBook, setPickedBook] = useState<string | undefined>()
+  const pagesBookId = bookId ?? pickedBook ?? coveredBooks[0]
+  const pagesBook = loaded.data?.books.find(candidate => candidate.id === pagesBookId)
+  const book = loaded.data?.book
 
   const prime = (text: string): void => {
-    void p.bindTarget({ projectId, bookId })
+    void p.bindTarget(bookId === undefined ? { projectId } : { projectId, bookId })
     setNotice(p.primeConversation(text) ? t('notice.primed') : t('notice.noConversation'))
   }
+
+  const tabs: { id: LibraryNodeTab; label: string }[] = [
+    { id: 'guide', label: t('node.guide') },
+    ...(coveredBooks.length > 0 ? [{ id: 'pages' as const, label: t('node.pages') }] : []),
+    ...(node?.kind === 'quiz' ? [{ id: 'quiz' as const, label: t('node.quiz') }] : []),
+    ...(node?.kind === 'practice' ? [{ id: 'acceptance' as const, label: t('node.acceptance') }] : []),
+  ]
+  const activeTab = tabs.some(candidate => candidate.id === tab) ? tab : 'guide'
+  const coverContext: CoverContext = { books: loaded.data?.books ?? [], resources: loaded.data?.resources ?? [] }
 
   return (
     <>
       <PanelHeader
         title={node?.title ?? ''}
-        meta={book?.title}
+        meta={book?.title ?? loaded.data?.project.name}
         onBack={() => { actions.pop() }}
         backLabel={t('action.back')}
-        actions={node === undefined || book === undefined ? [] : [
-          { id: 'ask', label: t('action.askCoach'), icon: <IconSparkleOutlineMedium />, onSelect: () => { prime(t('prime.node', { book: book.title, node: node.title })) } },
+        actions={node === undefined ? [] : [
+          { id: 'ask', label: t('action.askCoach'), icon: <IconSparkleOutlineMedium />, onSelect: () => { prime(book === undefined ? t('prime.nodeOnPath', { node: node.title }) : t('prime.node', { book: book.title, node: node.title })) } },
         ]}
         moreLabel={t('action.more')}
       />
+      {node !== undefined && (
+        <div className={css.coversRow}>
+          <CoverChips covers={node.covers} context={coverContext} t={t} />
+        </div>
+      )}
       <UnderlineTabs
         label={t('node.tabs')}
-        tabs={[
-          { id: 'guide' as const, label: t('node.guide') },
-          { id: 'pages' as const, label: t('node.pages') },
-          { id: 'quiz' as const, label: t('node.quiz'), disabled: node?.kind === 'read' },
-        ]}
-        value={tab}
-        onChange={next => { actions.replace({ view: 'node', projectId, bookId, nodeId, tab: next }) }}
+        tabs={tabs}
+        value={activeTab}
+        onChange={next => { actions.replace({ view: 'node', projectId, ...(bookId === undefined ? {} : { bookId }), nodeId, tab: next }) }}
       />
       <div className={css.body}>
         <StateLine loaded={loaded} t={t} />
         {notice !== undefined && <div className={css.notice}>{notice}</div>}
-        {node !== undefined && book !== undefined && tab === 'guide' && (
-          <GuideTab p={p} projectId={projectId} bookId={bookId} node={node} book={book} onPrime={prime} />
+        {node !== undefined && activeTab === 'guide' && (
+          <GuideTab p={p} projectId={projectId} bookId={bookId} node={node} book={book} coverContext={coverContext} onPrime={prime} />
         )}
-        {node !== undefined && book !== undefined && tab === 'pages' && (
-          <PagesTab p={p} projectId={projectId} bookId={bookId} bookTitle={book.title} node={node} onBind={() => { void p.bindTarget({ projectId, bookId }) }} />
+        {node !== undefined && activeTab === 'pages' && pagesBook !== undefined && pagesBookId !== undefined && (
+          <>
+            {coveredBooks.length > 1 && bookId === undefined && (
+              <ChipRow
+                label={t('node.pagesPick')}
+                chips={coveredBooks.map(candidate => ({ id: candidate, label: loaded.data?.books.find(b => b.id === candidate)?.title ?? candidate }))}
+                value={pagesBookId}
+                onSelect={setPickedBook}
+              />
+            )}
+            <PagesTab p={p} projectId={projectId} bookId={pagesBookId} bookTitle={pagesBook.title} node={node} onBind={() => { void p.bindTarget({ projectId, bookId: pagesBookId }) }} />
+          </>
         )}
-        {node !== undefined && book !== undefined && tab === 'quiz' && (
-          <QuizTab p={p} projectId={projectId} bookId={bookId} node={node} passRatio={loaded.data?.passRatio ?? 0.8} onPrime={focus => { prime(t(`prime.quiz.${focus}`, { book: book.title, node: node.title })) }} />
+        {node !== undefined && activeTab === 'quiz' && (
+          <QuizTab p={p} projectId={projectId} bookId={bookId} node={node} passRatio={loaded.data?.passRatio ?? 0.8} books={loaded.data?.books ?? []} onPrime={focus => { prime(book === undefined ? t(`prime.quiz.station.${focus}`, { node: node.title }) : t(`prime.quiz.${focus}`, { book: book.title, node: node.title })) }} />
+        )}
+        {node !== undefined && activeTab === 'acceptance' && (
+          <AcceptanceTab p={p} projectId={projectId} node={node} passRatio={loaded.data?.passRatio ?? 0.8} onPrime={() => { prime(t('prime.accept', { node: node.title, nodeId: node.id, criteria: (node.acceptance ?? []).map(line => `- ${line}`).join('\n') })) }} />
         )}
       </div>
     </>
   )
 }
 
-function GuideTab({ p, projectId, bookId, node, book, onPrime }: {
-  p: ViewProps['p']; projectId: string; bookId: string; node: RoadmapNode; book: LibraryBook; onPrime: (text: string) => void
+function GuideTab({ p, projectId, bookId, node, book, coverContext, onPrime }: {
+  p: ViewProps['p']; projectId: string; bookId: string | undefined; node: RoadmapNode; book: LibraryBook | undefined; coverContext: CoverContext; onPrime: (text: string) => void
 }): ReactNode {
   const { t, actions } = p
-  const rows = rowsOf(node, book)
+  const rows = book === undefined ? [] : rowsOf(node, book)
   const [error, setError] = useState<string | undefined>()
   return (
     <>
@@ -324,8 +372,14 @@ function GuideTab({ p, projectId, bookId, node, book, onPrime }: {
           <ul className={css.goals}>{rows.map(row => <li key={row}>{row}</li>)}</ul>
         </section>
       )}
+      {book === undefined && node.covers.length > 0 && (
+        <section className={css.section}>
+          <h3 className={css.sectionTitle}>{t('node.covers')}</h3>
+          <ul className={css.goals}>{node.covers.map((cover, at) => <li key={at}>{coverLabel(cover, coverContext, t)}</li>)}</ul>
+        </section>
+      )}
       <div className={css.actions}>
-        <button type="button" className={css.secondary} onClick={() => { onPrime(t('prime.node', { book: book.title, node: node.title })) }}>{t('action.askCoach')}</button>
+        <button type="button" className={css.secondary} onClick={() => { onPrime(book === undefined ? t('prime.nodeOnPath', { node: node.title }) : t('prime.node', { book: book.title, node: node.title })) }}>{t('action.askCoach')}</button>
         {node.kind === 'read' && node.state === 'current' && (
           <button
             type="button"
@@ -486,8 +540,8 @@ function PageThumb({ p, projectId, page }: { p: ViewProps['p']; projectId: strin
   )
 }
 
-function QuizTab({ p, projectId, bookId, node, passRatio, onPrime }: {
-  p: ViewProps['p']; projectId: string; bookId: string; node: RoadmapNode; passRatio: number; onPrime: (focus: LibraryQuizFocus) => void
+function QuizTab({ p, projectId, bookId, node, passRatio, books, onPrime }: {
+  p: ViewProps['p']; projectId: string; bookId: string | undefined; node: RoadmapNode; passRatio: number; books: readonly LibraryBook[]; onPrime: (focus: LibraryQuizFocus) => void
 }): ReactNode {
   const { t, actions, useStore } = p
   const rev = useStore(s => s.rev)
@@ -510,7 +564,7 @@ function QuizTab({ p, projectId, bookId, node, passRatio, onPrime }: {
     if (watching === undefined || quizCount <= watching.count) return
     setWatching(undefined)
     const landed = quizzes.data?.quizzes.at(-1)
-    if (landed !== undefined) actions.push({ view: 'quiz', projectId, bookId, quizId: landed.id })
+    if (landed !== undefined) actions.push({ view: 'quiz', projectId, ...(bookId === undefined ? {} : { bookId }), quizId: landed.id })
   }, [quizCount, watching])
   const mine = useLoad(() => value(p.listCards({ projectId, nodeId: node.id, limit: 5 })), [projectId, node.id, rev])
   const stats = node.quizStats
@@ -518,6 +572,7 @@ function QuizTab({ p, projectId, bookId, node, passRatio, onPrime }: {
   const list = quizzes.data?.quizzes ?? []
   const latest = list.at(-1)
   const earlier = list.slice(0, -1).reverse()
+  const policy = evidencePolicy(node.covers, books)
   return (
     <>
       {node.state === 'locked' && <div className={css.notice}>{t('node.locked')}</div>}
@@ -525,6 +580,10 @@ function QuizTab({ p, projectId, bookId, node, passRatio, onPrime }: {
         {t('node.passRule', { percent: String(Math.round(passRatio * 100)) })}
         {stats !== undefined && stats.attempts > 0 && ` · ${t('node.best', { percent: String(Math.round((stats.bestRatio ?? 0) * 100)), attempts: String(stats.attempts) })}`}
       </div>
+      <section className={css.policy}>
+        <span className={css.muted}>{t('policy.title')}</span>
+        <span>{t(`policy.${policy}`)}</span>
+      </section>
       <StateLine loaded={quizzes} t={t} />
       {latest !== undefined && (
         <section className={css.quizLatest}>
@@ -532,7 +591,7 @@ function QuizTab({ p, projectId, bookId, node, passRatio, onPrime }: {
             <strong>{t('node.quizLatest', { count: String(latest.questions.length) })}</strong>
             <span className={css.muted}>{[t(`focus.${latest.focus ?? 'mixed'}`), sourceMix(latest.questions.map(question => question.evidence.kind), t)].join(' · ')}</span>
           </div>
-          <button type="button" className={css.primary} onClick={() => { actions.push({ view: 'quiz', projectId, bookId, quizId: latest.id }) }}>{t('quiz.startNow')}</button>
+          <button type="button" className={css.primary} onClick={() => { actions.push({ view: 'quiz', projectId, ...(bookId === undefined ? {} : { bookId }), quizId: latest.id }) }}>{t('quiz.startNow')}</button>
         </section>
       )}
       <section className={css.section}>
@@ -561,8 +620,59 @@ function QuizTab({ p, projectId, bookId, node, passRatio, onPrime }: {
               title={t('node.quizRow', { count: String(quiz.questions.length) })}
               meta={[t(`focus.${quiz.focus ?? 'mixed'}`), sourceMix(quiz.questions.map(question => question.evidence.kind), t)].join(' · ')}
               trailing={<span className={css.linkText}>{t('quiz.start')}</span>}
-              onSelect={() => { actions.push({ view: 'quiz', projectId, bookId, quizId: quiz.id }) }}
+              onSelect={() => { actions.push({ view: 'quiz', projectId, ...(bookId === undefined ? {} : { bookId }), quizId: quiz.id }) }}
             />
+          ))}
+        </section>
+      )}
+    </>
+  )
+}
+
+/** A practice station's acceptance tab: the criteria, the submit gesture, the history. */
+function AcceptanceTab({ p, projectId, node, passRatio, onPrime }: {
+  p: ViewProps['p']; projectId: string; node: RoadmapNode; passRatio: number; onPrime: () => void
+}): ReactNode {
+  const { t, useStore } = p
+  const rev = useStore(s => s.rev)
+  const attempts = useLoad(() => value(p.listAttempts(projectId, node.id)), [projectId, node.id, rev])
+  const latest = attempts.data?.attempts[0]
+  const verdictOf = (line: string): LibraryVerdict | undefined =>
+    latest?.verdicts.find(verdict => verdict.criterion === line && verdict.void !== true)
+  const acceptance = node.acceptance ?? []
+  return (
+    <>
+      {node.state === 'locked' && <div className={css.notice}>{t('node.locked')}</div>}
+      <div className={css.muted}>{t('node.passRule', { percent: String(Math.round(passRatio * 100)) })}</div>
+      <section className={css.section}>
+        <h3 className={css.sectionTitle}>{t('accept.title')}</h3>
+        <ul className={css.acceptList}>
+          {acceptance.map(line => {
+            const verdict = verdictOf(line)
+            return (
+              <li key={line} className={css.acceptItem}>
+                <span className={css.acceptMark} data-state={verdict === undefined ? 'none' : (verdict.pass && (verdict.ratio ?? 1) >= 0.5) ? 'pass' : 'fail'} aria-hidden="true">
+                  {verdict === undefined ? '' : (verdict.pass && (verdict.ratio ?? 1) >= 0.5) ? <IconCheckOutlineMedium size={11} /> : '✕'}
+                </span>
+                <span className={css.acceptText}>{line}{verdict !== undefined && verdict.ratio !== undefined && verdict.ratio > 0 && verdict.ratio < 1 ? <span className={css.muted}> · {Math.round(verdict.ratio * 100)}%</span> : null}</span>
+              </li>
+            )
+          })}
+        </ul>
+        <div className={css.muted}>{t('accept.hint')}</div>
+      </section>
+      <div className={css.actions}>
+        <button type="button" className={css.primary} onClick={onPrime}>{t('accept.submit')}</button>
+      </div>
+      <div className={css.muted}>{t('accept.submitHint')}</div>
+      {(attempts.data?.attempts.length ?? 0) > 0 && (
+        <section className={css.section}>
+          <h3 className={css.sectionTitle}>{t('accept.history')}</h3>
+          {attempts.data!.attempts.map(attempt => (
+            <div key={attempt.id} className={css.moveRow}>
+              <span>{Math.round(attempt.ratio * 100)}%</span>
+              <span className={css.muted}>{when(attempt.at, t)}</span>
+            </div>
           ))}
         </section>
       )}
