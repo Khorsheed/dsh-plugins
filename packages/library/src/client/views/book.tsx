@@ -14,7 +14,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { ChipRow, ListRow, PanelHeader, UnderlineTabs } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
 import type { LibraryBook, LibraryPage, LibraryQuizFocus, LibraryRoadmap, LibraryVerdict, RoadmapNode } from '../../types.ts'
 import { colorOf, Cover } from '../look.tsx'
-import { CoverChips, coverLabel, evidencePolicy, ProvenanceBadge, summarizeCovers, type CoverContext } from '../covers.tsx'
+import { CoverChips, coverLabel, evidencePolicy, type CoverContext } from '../covers.tsx'
 import type { LibraryNodeTab } from '../store.ts'
 import {
   IconCameraOutlineMedium, IconCheckOutlineMedium, IconLockOutlineMedium, IconRefreshOutlineMedium, IconSparkleOutlineMedium,
@@ -150,13 +150,14 @@ export function DraftCard({ p, draft, context, tocBy, replaces, busy, onAdopt, o
         {draft.nodes.map(node => (
           <li key={node.id}>
             <span className={css.kind} data-kind={node.kind}>{t(`nodeKind.${node.kind}`)}</span>
-            <span className={css.extraText}>
+            <div className={css.extraText}>
               <span>{node.title}</span>
-              <span className={css.muted}>{summarizeCovers(node.covers, context, t)}{node.kind === 'practice' && node.acceptance !== undefined ? ` · ${t('accept.meta', { count: String(node.acceptance.length) })}` : ''}</span>
-              {node.covers.some(cover => cover.by !== undefined) && (
-                <span className={css.chips}>{node.covers.map((cover, at) => <ProvenanceBadge key={at} cover={cover} t={t} />)}</span>
+              {node.goals.length > 0 && <span className={css.muted}>{node.goals[0]}</span>}
+              {node.kind === 'practice' && node.acceptance !== undefined && (
+                <span className={css.muted}>{t('accept.meta', { count: String(node.acceptance.length) })}</span>
               )}
-            </span>
+              <CoverChips covers={node.covers} context={context} t={t} />
+            </div>
           </li>
         ))}
       </ol>
