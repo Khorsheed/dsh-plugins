@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { ChatConversationViewNode } from '@deepseek-ai/dsh-client-ui-chat/client'
-import { hiddenFlowKeys, installDomHider, renderHiderRules } from '../src/client/dom-hider.ts'
+import { hiddenFlowKeys, hiddenGroupFlowKeys, installDomHider, renderHiderRules } from '../src/client/dom-hider.ts'
 import type { ChatSlice } from '../src/client/chat-hook.ts'
 
 function node(kind: string, key: string, anchorSeq: number, data?: unknown): ChatConversationViewNode {
@@ -31,6 +31,26 @@ function chatOf(nodes: readonly ChatConversationViewNode[]): ChatSlice {
   } as unknown as ChatSlice
 }
 
+/** One group record of the grouped-view stub: member references in order. */
+type GroupStubMembers = readonly { key: string; groupPart?: string }[]
+
+/**
+ * Grouped-view stub (host 0.1.7-alpha.1's `views.grouped('chat')`): the root
+ * entries carry one group reference per record key; a `null` record models a
+ * group whose source resolves no snapshot.
+ */
+function groupedViewOf(groups: Record<string, GroupStubMembers | null>) {
+  return {
+    entries: Object.keys(groups).map(key => ({ kind: 'group' as const, key })),
+    groupSource: (key: string) => ({
+      getSnapshot: () => {
+        const members = groups[key]
+        return members === undefined || members === null ? undefined : { key, members }
+      },
+    }),
+  }
+}
+
 /**
  * Minimal host stub: the session list store plus the uiConversation service
  * whose per-session binding targets carry the chat slices (host 0.1.2's
@@ -39,11 +59,26 @@ function chatOf(nodes: readonly ChatConversationViewNode[]): ChatSlice {
 function harness() {
   const list = createSnapshotStore<{ current: string | undefined }>({ current: undefined })
   const chatTargets = new Map<string, ReturnType<typeof createSnapshotStore<ChatSlice | undefined>>>()
+  const groupedViews = new Map<string, ReturnType<typeof groupedViewOf>>()
+  /** Sessions simulating a pre-group host: the views store carries no `grouped`. */
+  const legacySessions = new Set<string>()
+  /** Sessions whose conversation snapshot read throws (unknown-binding arm). */
+  const throwingSessions = new Set<string>()
   const uiConversation = {
     binding: (id: string) => ({
       target: (name: string) => {
         if (name !== 'chat' || !chatTargets.has(id)) throw new Error(`uiConversation.binding: unknown session "${id}"`)
         return chatTargets.get(id)
+      },
+      snapshot: {
+        getSnapshot: () => {
+          if (throwingSessions.has(id)) throw new Error(`uiConversation.binding: unknown session "${id}"`)
+          return {
+            views: legacySessions.has(id)
+              ? {}
+              : { grouped: (name: string) => (name === 'chat' ? groupedViews.get(id) : undefined) },
+          }
+        },
       },
     }),
   }
@@ -57,7 +92,15 @@ function harness() {
     chatTargets.set(id, store)
     return store
   }
-  return { ctx, list, addSession }
+  /** Attach the session's grouped view (host ≥ 0.1.7-alpha.1 group rows). */
+  const addGroups = (id: string, view: ReturnType<typeof groupedViewOf>) => {
+    groupedViews.set(id, view)
+  }
+  /** Mark the session's host as pre-group (no `views.grouped` at all). */
+  const markLegacy = (id: string) => { legacySessions.add(id) }
+  /** Make the session's conversation snapshot read throw. */
+  const markThrowing = (id: string) => { throwingSessions.add(id) }
+  return { ctx, list, addSession, addGroups, markLegacy, markThrowing }
 }
 
 async function nextFrame(): Promise<void> {
@@ -85,6 +128,42 @@ describe('hiddenFlowKeys', () => {
 
   it('returns no keys without a divider', () => {
     expect(hiddenFlowKeys([node('user', '4:userA', 5)])).toEqual([])
+  })
+})
+
+describe('hiddenGroupFlowKeys', () => {
+  it('returns no keys without a grouped view or hidden nodes', () => {
+    const view = groupedViewOf({ g1: [{ key: '14:assistant-stepB' }] })
+    expect(hiddenGroupFlowKeys(undefined, new Set(['14:assistant-stepB']))).toEqual([])
+    expect(hiddenGroupFlowKeys(view, new Set())).toEqual([])
+  })
+
+  it('hides a fully hidden group and the composite part rows the plain rules never reach', () => {
+    const view = groupedViewOf({
+      g1: [
+        { key: '14:assistant-stepB' },
+        { key: '14:assistant-stepB', groupPart: 'reasoning' },
+        { key: '9:tool-callC', groupPart: 'response' },
+      ],
+    })
+    expect(hiddenGroupFlowKeys(view, new Set(['14:assistant-stepB', '9:tool-callC'])))
+      .toEqual([JSON.stringify(['14:assistant-stepB', 'reasoning']), 'g1'])
+  })
+
+  it('keeps the header of a group with a visible member, still hiding hidden part rows', () => {
+    const view = groupedViewOf({
+      g1: [
+        { key: '14:assistant-stepB', groupPart: 'reasoning' },
+        { key: '4:userZ' },
+      ],
+    })
+    expect(hiddenGroupFlowKeys(view, new Set(['14:assistant-stepB'])))
+      .toEqual([JSON.stringify(['14:assistant-stepB', 'reasoning'])])
+  })
+
+  it('skips empty groups and groups whose source resolves no snapshot', () => {
+    const view = groupedViewOf({ g1: [], g2: null })
+    expect(hiddenGroupFlowKeys(view, new Set(['14:assistant-stepB']))).toEqual([])
   })
 })
 
@@ -324,6 +403,68 @@ describe('installDomHider edges', () => {
     // A session with no binding clears the rules without throwing.
     list.update((s) => { s.current = 'ghost' })
     expect(document.querySelector('style[data-message-tools-hider]')?.textContent).toBe('')
+    dispose()
+  })
+
+  it('hides a fully hidden group container and composite part rows alongside the member rules', async () => {
+    const { ctx, list, addSession, addGroups } = harness()
+    const row = document.createElement('div')
+    row.setAttribute('data-chat-flow-key', '4:userA')
+    document.body.appendChild(row)
+    addSession('s1', chatOf([
+      node('user', '4:userA', 5),
+      node('assistant-step', '14:assistant-stepB', 6),
+      node('tool-call', '9:tool-callC', 7),
+      divider(5, 10),
+      node('user', '4:userZ', 11),
+    ]))
+    addGroups('s1', groupedViewOf({
+      g1: [
+        { key: '14:assistant-stepB' },
+        { key: '14:assistant-stepB', groupPart: 'reasoning' },
+        { key: '9:tool-callC' },
+      ],
+      // A group straddling the span boundary keeps its header.
+      g2: [{ key: '14:assistant-stepB' }, { key: '4:userZ' }],
+    }))
+    const dispose = installDomHider(ctx)
+    list.update((s) => { s.current = 's1' })
+    await nextFrame()
+    const rules = document.querySelector('style[data-message-tools-hider]')?.textContent ?? ''
+    expect(rules).toContain('[data-chat-flow-key="g1"]')
+    expect(rules).toContain(`[data-chat-flow-key=${JSON.stringify(JSON.stringify(['14:assistant-stepB', 'reasoning']))}]`)
+    expect(rules).toContain('[data-chat-flow-key="14:assistant-stepB"]')
+    expect(rules).not.toContain('[data-chat-flow-key="g2"]')
+    dispose()
+  })
+
+  it('writes plain member rules unchanged on a pre-group host (no views.grouped)', async () => {
+    const { ctx, list, addSession, markLegacy } = harness()
+    const row = document.createElement('div')
+    row.setAttribute('data-chat-flow-key', '4:userA')
+    document.body.appendChild(row)
+    addSession('s1', chatOf([node('user', '4:userA', 5), node('tool-call', '9:tool-callC', 7), divider(5, 10)]))
+    markLegacy('s1')
+    const dispose = installDomHider(ctx)
+    list.update((s) => { s.current = 's1' })
+    await nextFrame()
+    const rules = document.querySelector('style[data-message-tools-hider]')?.textContent ?? ''
+    expect(rules).toContain('[data-chat-flow-key="4:userA"]')
+    expect(rules).toContain('[data-chat-flow-key="9:tool-callC"]')
+    dispose()
+  })
+
+  it('still writes the member rules when the conversation snapshot read throws', async () => {
+    const { ctx, list, addSession, markThrowing } = harness()
+    const row = document.createElement('div')
+    row.setAttribute('data-chat-flow-key', '4:userA')
+    document.body.appendChild(row)
+    addSession('s1', chatOf([node('user', '4:userA', 5), divider(5, 10)]))
+    markThrowing('s1')
+    const dispose = installDomHider(ctx)
+    list.update((s) => { s.current = 's1' })
+    await nextFrame()
+    expect(document.querySelector('style[data-message-tools-hider]')?.textContent).toContain('[data-chat-flow-key="4:userA"]')
     dispose()
   })
 })

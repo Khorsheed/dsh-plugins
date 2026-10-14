@@ -2,10 +2,16 @@
  * DOM hider: hide EVERY chat row whose node anchor falls inside a withdrawn
  * span — all node kinds, not just user messages — through a dynamic
  * stylesheet keyed on the row's `data-chat-flow-key` attribute
- * (ChatNodeSeat.tsx). The projection itself offers no suppression seam (see
- * README), so this works at the DOM layer. The attribute is an undocumented
- * surface: the first time a non-empty rule set is computed, the hider probes
- * for it (after a frame, so React has committed). A page restored onto a tab
+ * (ChatNodeSeat.tsx). Host 0.1.7-alpha.1's conversation groups wrap a turn's
+ * process rows in a Group seat whose CONTAINER carries the group key as its
+ * flow key (ChatGroupSeat.tsx): member rules hide the rows inside, but the
+ * container itself (the「已调用工具」fold header) would show through, so the
+ * rule set also covers fully-hidden groups' container keys plus the composite
+ * `["<nodeKey>","<groupPart>"]` row keys the plain node-key rules never
+ * reach. The projection itself offers no suppression seam (see README), so
+ * this works at the DOM layer. The attribute is an undocumented surface: the
+ * first time a non-empty rule set is computed, the hider probes for it (after
+ * a frame, so React has committed). A page restored onto a tab
  * where the chat rows are not mounted yet (the trace tab, or the chat area
  * still mounting) makes that first probe miss, so a miss does NOT disable
  * the hider outright: it enters a bounded retry — a MutationObserver waits
@@ -23,6 +29,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 // Type-only: pulls the ctx.sessions service merge (ISessions).
 import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { ChatConversationViewNode } from '@deepseek-ai/dsh-client-ui-chat/client'
+import type { ConversationGroupedView } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { chatSourceOf, type ChatSlice } from './chat-hook.ts'
 import { isMessageToolsSource, messageToolsOp } from '../marker.ts'
 import { foldHiddenRanges, isSeqHidden, type RestoredMessageData } from './withdrawn-node.ts'
@@ -83,6 +90,64 @@ export function hiddenFlowKeys(nodes: readonly ChatConversationViewNode[], range
 }
 
 /**
+ * Flow keys the grouped rendering (host 0.1.7-alpha.1's conversation groups)
+ * adds on top of {@link hiddenFlowKeys}. A Group seat's container row carries
+ * the GROUP key as its `data-chat-flow-key`, so member rules leave the fold
+ * header visible: hide the container when every member's node key is hidden
+ * (a group straddling a span boundary keeps its header for the visible
+ * members). A member's composite groupPart row (`["<nodeKey>","<part>"]`,
+ * ChatNodeSeat — e.g. the reasoning pane) is never reached by the plain
+ * node-key rule either, so hidden members contribute those keys on top,
+ * whether or not their group hides as a whole.
+ * @param view - the chat target's grouped reader (undefined on pre-group hosts).
+ * @param hiddenNodeKeys - node keys the plain rules already hide.
+ * @returns additional flow keys to hide, in root-entry order.
+ */
+export function hiddenGroupFlowKeys(
+  view: ConversationGroupedView<unknown> | undefined,
+  hiddenNodeKeys: ReadonlySet<string>,
+): string[] {
+  if (view === undefined || hiddenNodeKeys.size === 0) return []
+  const keys: string[] = []
+  for (const entry of view.entries) {
+    if (entry.kind !== 'group') continue
+    const members = view.groupSource(entry.key).getSnapshot()?.members ?? []
+    if (members.length === 0) continue
+    let hidden = 0
+    for (const member of members) {
+      if (!hiddenNodeKeys.has(member.key)) continue
+      hidden += 1
+      if (member.groupPart !== undefined && member.groupPart !== 'response') {
+        keys.push(JSON.stringify([member.key, member.groupPart]))
+      }
+    }
+    if (hidden === members.length) keys.push(entry.key)
+  }
+  return keys
+}
+
+/**
+ * The chat target's grouped reader on hosts with conversation groups
+ * (0.1.7-alpha.1); earlier hosts carry no `views.grouped` and degrade to
+ * undefined — their ungrouped rows are covered by the plain node-key rules.
+ * @param ctx - client root context.
+ * @param sessionId - owning session.
+ * @returns the grouped reader, or undefined when the host or session lacks it.
+ */
+function groupedChatViewOf(ctx: Context, sessionId: SessionId): ConversationGroupedView<unknown> | undefined {
+  const uiConversation = ctx.get('uiConversation')
+  if (uiConversation === undefined) return undefined
+  try {
+    const views = uiConversation.binding(sessionId).snapshot.getSnapshot().views as {
+      grouped?: (target: string) => ConversationGroupedView<unknown> | undefined
+    }
+    return typeof views.grouped === 'function' ? views.grouped('chat') : undefined
+  } catch {
+    return undefined // unknown session — the caller's undefined branch
+  }
+}
+
+/**
  * Render the display rules for one rule set.
  * @param keys - flow keys to hide.
  * @returns the stylesheet text (empty string hides nothing).
@@ -107,7 +172,8 @@ export interface DomHiderOptions {
 
 /**
  * Install the hider: one shared style element, rebound whenever the selected
- * session changes, rewritten only when the span set or the node count moves.
+ * session changes, rewritten only when the span set, the node count, or the
+ * hidden group keys move.
  * @param ctx - client root context (reads the sessions service).
  * @param options - probe retry tuning.
  * @returns disposer removing the stylesheet and every subscription.
@@ -137,10 +203,18 @@ export function installDomHider(ctx: Context, options: DomHiderOptions = {}): ()
     latest = chat
     const nodes = chat.nodes.values()
     const ranges = foldHiddenRanges(nodes)
-    const nextSignature = `${ranges.join(',')}:${nodes.length}`
+    const nodeKeys = hiddenFlowKeys(nodes, ranges)
+    // Group membership only moves with node changes, and the assembler runs
+    // group definitions inside the same publish this snapshot reports, so the
+    // grouped reader is current here; its keys join the signature so a
+    // grouping-only delta still rewrites the rules.
+    const groupKeys = activeSession === undefined
+      ? []
+      : hiddenGroupFlowKeys(groupedChatViewOf(ctx, activeSession), new Set(nodeKeys))
+    const nextSignature = `${ranges.join(',')}:${nodes.length}:${groupKeys.join(',')}`
     if (nextSignature === signature) return
     signature = nextSignature
-    style.textContent = renderHiderRules(hiddenFlowKeys(nodes, ranges))
+    style.textContent = renderHiderRules([...nodeKeys, ...groupKeys])
   }
 
   const probeFound = (): boolean => document.querySelector('[data-chat-flow-key]') !== null
