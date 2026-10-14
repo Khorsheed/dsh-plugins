@@ -12,7 +12,7 @@
  * @module @khorsheed/dsh-canvas/client
  */
 import {
-  useCallback, useEffect, useRef,
+  useCallback, useRef,
   type ClipboardEvent as ReactClipboardEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode,
 } from 'react'
 import css from './board.module.css'
@@ -44,7 +44,15 @@ export function CardTextarea({ defaultValue, placeholder, submitOn, autoFocus, c
     element.style.height = `${element.scrollHeight}px`
   }, [])
 
-  useEffect(() => { autosize() }, [autosize])
+  // The ref callback stays STABLE across renders: an inline one is a new
+  // identity per commit, so React re-attaches it and the autosize runs again —
+  // its collapse-to-zero frame clamps the page's scroll, and the tab's 4s
+  // board poll walked the detail editor back to the top (2026-10-14). With a
+  // stable identity it fires on mount alone; typing sizes through onInput.
+  const attach = useCallback((element: HTMLTextAreaElement | null) => {
+    ref.current = element
+    if (element !== null) autosize()
+  }, [autosize])
 
   const submit = useCallback(() => {
     const element = ref.current
@@ -75,13 +83,7 @@ export function CardTextarea({ defaultValue, placeholder, submitOn, autoFocus, c
 
   return (
     <textarea
-      ref={element => {
-        ref.current = element
-        if (element !== null) {
-          element.style.height = '0px'
-          element.style.height = `${element.scrollHeight}px`
-        }
-      }}
+      ref={attach}
       className={className ?? css.cardEditor}
       defaultValue={defaultValue}
       placeholder={placeholder}
