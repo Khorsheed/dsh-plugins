@@ -242,6 +242,9 @@ export function extractArticle(pageHtml: string, baseUrl: string): ExtractArticl
   const title = articleTitleOf(scored.element, docTitle)
   const excerpt = articleExcerptOf(scored.element)
   trimLeadingChrome(scored.element, doc)
+  // …and the lead image comes in AFTER the trim: grafted first, it would
+  // stop the masthead walk at its own border and keep the junk behind it.
+  graftLeadingFigures(doc, scored.element, baseUrl)
   // The title block is a custom element, so it has no tag of its own: the
   // normalizer UNWRAPS it and its `<br>`s land at the front of the body. Four
   // blank lines before the first paragraph is not content by any reading, and
@@ -337,6 +340,10 @@ function trimLeadingChrome(root: Element, doc: Document): void {
     const tag = node.localName
     const text = normalize(node.textContent ?? '')
     if (ROOT_STOPS.has(tag)) break
+    // A picture stops the walk whether it IS this node or sits inside it — a
+    // bare leading <img> has no img DESCENDANT, and dropping it as "masthead"
+    // is how a text-column-less cover used to vanish.
+    if (tag === 'img' || tag === 'picture' || tag === 'figure') break
     if (node.querySelector('img, picture, canvas, video, figure') !== null) break
     if (text.length >= 40) break
     node.remove()
@@ -365,6 +372,81 @@ function trimLeadingChrome(root: Element, doc: Document): void {
  * a masthead hides in, and a wrapper is judged by what it holds instead.
  */
 const ROOT_STOPS = new Set(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'table', 'blockquote', 'pre', 'ul', 'ol'])
+
+/**
+ * The most lead images one graft brings in. A hero is one picture; the second
+ * slot covers the two-image masthead (a logo plate beside the cover). Anything
+ * beyond that is a gallery the page put before its prose, not a lead.
+ */
+const LEAD_GRAFT_MAX = 2
+
+/**
+ * The declared width that separates a lead image from an icon. SSR'd hero
+ * markup carries the design width (Next.js writes `width`/`height` on every
+ * `<img>` it optimizes); an icon or avatar that omits it, or declares a small
+ * one, is not the article's cover by any reading.
+ */
+const LEAD_IMAGE_MIN_WIDTH = 480
+
+/**
+ * Bring the page's lead image into the body when the scorer left it outside.
+ *
+ * The scorer keeps ONE container — the text-heavy block — and on magazine-style
+ * templates (Anthropic's research posts, measured 2026-10-14) the cover art
+ * sits in a sibling wrapper BEFORE that block: inside the `<article>` but not
+ * inside the winner, so the extracted body came back with zero images on a
+ * page whose hero was the one picture it had.
+ *
+ * Only what PRECEDES the winner qualifies: what follows the text is a
+ * related-stories grid, and a figure already inside the winner needs nothing.
+ * A `<figure>`/`<picture>` qualifies by markup alone (a figure IS content); a
+ * bare `<img>` must also declare a hero-sized width, or every site's top-bar
+ * logo would ride in. Grafting MOVES the elements, so the images normalize
+ * through the same resolver as everything else the body carries.
+ *
+ * @param doc - the parsed document (already stripped of noise subtrees).
+ * @param winner - the container the scorer picked.
+ * @param baseUrl - the page URL, for resolving candidate sources.
+ */
+function graftLeadingFigures(doc: Document, winner: Element, baseUrl: string | undefined): void {
+  // The search scope: the OUTERMOST article/main ancestor, not the nearest —
+  // templates nest them (`main > article > wrapper > article > text column`),
+  // and the lead image sits under the outer one, beside the wrapper.
+  let scope: Element | null = null
+  for (let el = winner.parentElement; el !== null && el !== doc.body; el = el.parentElement) {
+    if (el.localName === 'article' || el.localName === 'main') scope = el
+  }
+  scope ??= doc.body
+  if (scope === null || scope === winner) return
+  const grafted: Element[] = []
+  for (const element of Array.from(scope.querySelectorAll('figure, picture, img'))) {
+    if (grafted.length >= LEAD_GRAFT_MAX) break
+    if (winner.contains(element)) continue
+    // `winner` FOLLOWING the element means the element precedes the body.
+    if ((element.compareDocumentPosition(winner) & 4 /* Node.DOCUMENT_POSITION_FOLLOWING */) === 0) continue
+    const tag = element.localName
+    if (tag === 'figure') {
+      const img = element.querySelector('img')
+      if (img === null || imageSrc(img, baseUrl) === undefined) continue
+      grafted.push(element)
+      continue
+    }
+    if (tag === 'picture') {
+      // A figure's own picture rides the figure (it came first in the walk).
+      if (element.closest('figure') !== null) continue
+      if (pictureImg(element, baseUrl).length === 0) continue
+      grafted.push(element)
+      continue
+    }
+    // A bare <img>: covered when a figure/picture ancestor carries it.
+    if (element.closest('figure, picture') !== null) continue
+    const width = dimensionAttr(element.getAttribute('width'))
+    if (width === undefined || Number(width) < LEAD_IMAGE_MIN_WIDTH) continue
+    if (imageSrc(element, baseUrl) === undefined) continue
+    grafted.push(element)
+  }
+  for (const element of grafted.reverse()) winner.prepend(element)
+}
 
 /**
  * Count the figures whose picture is not in the markup.
@@ -1136,7 +1218,10 @@ function imageSrc(element: Element, baseUrl: string | undefined): string | undef
     const resolved = absolutize(element.getAttribute(name), baseUrl)
     if (resolved !== undefined) return resolved
   }
+  // lazysizes-style markup keeps the candidate list in `data-srcset` and leaves
+  // `srcset` to the script that never runs here: read both, the real one first.
   return bestSrcset(element.getAttribute('srcset'), baseUrl)
+    ?? bestSrcset(element.getAttribute('data-srcset'), baseUrl)
 }
 
 /**
@@ -1195,6 +1280,7 @@ function pictureImg(element: Element, baseUrl: string | undefined): string {
   for (const source of Array.from(element.children)) {
     if (source.localName !== 'source') continue
     const url = bestSrcset(source.getAttribute('srcset'), baseUrl)
+      ?? bestSrcset(source.getAttribute('data-srcset'), baseUrl)
     if (url !== undefined) return emitImg(url, alt)
   }
   if (fallback !== undefined) {

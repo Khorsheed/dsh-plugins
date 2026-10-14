@@ -419,6 +419,81 @@ describe('lazy-loaded images are recovered', () => {
     expect(result.html).toContain('drawn at runtime')
     expect(result.html).not.toContain('<img')
   })
+
+  it('reads the candidate list from data-srcset when srcset is absent (lazysizes)', () => {
+    expect(normalizeRichText('<p><img data-srcset="/a-400.png 400w, /a-800.png 800w"></p>', 'https://example.com/'))
+      .toBe('<p><img src="https://example.com/a-800.png" referrerpolicy="no-referrer"></p>')
+    // A picture's sources carry the same stash.
+    expect(normalizeRichText(
+      '<p><picture><source data-srcset="/wide-400.webp 400w, /wide-900.webp 900w">'
+      + '<img src="/img/fallback.png" alt="A"></picture></p>',
+      'https://example.com/post/',
+    )).toBe('<p><img src="https://example.com/wide-900.webp" alt="A" referrerpolicy="no-referrer"></p>')
+  })
+})
+
+/**
+ * The lead image the scorer leaves outside.
+ *
+ * The scorer keeps ONE container — the text-heavy block — and magazine-style
+ * templates (Anthropic's research posts, measured 2026-10-14) put the cover
+ * art in a sibling wrapper BEFORE it: inside the `<article>`, outside the
+ * winner, so the body came back with zero images on a page whose hero was the
+ * one picture it had. The graft moves leading figures into the body.
+ */
+describe('the lead image outside the text block is grafted in', () => {
+  /** The Anthropic shape: the hero in its own wrapper, then the text column. */
+  const magazinePage = (before: string, after = ''): string =>
+    `<html><head><title>T</title></head><body><main><article>`
+    + `<div class="hero">${before}</div>`
+    + `<div class="text"><p>${'prose '.repeat(30)}</p><p>${'more prose '.repeat(30)}</p>${after}</div>`
+    + `</article></main></body></html>`
+
+  it('grafts the hero image that precedes the text column', () => {
+    const result = extractArticle(magazinePage('<img src="/hero.png" width="2000" height="1125" alt="Cover">'), 'https://example.com/post/')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.html).toContain('src="https://example.com/hero.png"')
+    expect(result.html.indexOf('hero.png')).toBeLessThan(result.html.indexOf('prose'))
+  })
+
+  it('grafts a leading figure by its markup alone (no declared width needed)', () => {
+    const result = extractArticle(magazinePage('<figure><img src="/lead.png"><figcaption>Cover story.</figcaption></figure>'), 'https://example.com/post/')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.html).toContain('src="https://example.com/lead.png"')
+    expect(result.html).toContain('Cover story.')
+  })
+
+  it('never reaches for what FOLLOWS the text (a related-stories grid)', () => {
+    const result = extractArticle(magazinePage(
+      '<img src="/hero.png" width="2000" height="1125">',
+      '',
+    ).replace('</article>', '<div class="related"><img src="/related.png" width="1200" height="800"></div></article>'), 'https://example.com/post/')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.html).toContain('hero.png')
+    expect(result.html).not.toContain('related.png')
+  })
+
+  it('leaves a small bare image alone — an icon is not the cover', () => {
+    const result = extractArticle(magazinePage('<img src="/logo.png" width="64" height="64">'), 'https://example.com/post/')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.html).not.toContain('logo.png')
+  })
+
+  it('grafts nothing when the winner already holds the images (idempotent body)', () => {
+    // The winner is the article itself here, so the hero is already inside:
+    // the graft must not duplicate it.
+    const html = `<html><head><title>T</title></head><body><article>`
+      + `<img src="/inside.png" width="1600" height="900">`
+      + `<p>${'prose '.repeat(60)}</p></article></body></html>`
+    const result = extractArticle(html, 'https://example.com/post/')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.html.match(/inside\.png/g)).toHaveLength(1)
+  })
 })
 
 /**
