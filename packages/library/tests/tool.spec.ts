@@ -201,6 +201,29 @@ describe('teaching errors', () => {
   })
 })
 
+describe('payload transport', () => {
+  it('accepts a roadmap payload as JSON text — models stringify deep parameters', async () => {
+    await seed()
+    const roadmap = { nodes: [{ id: 'n1', title: '离子通道', kind: 'quiz', chapterRanges: [{ from: 1, to: 1 }] }] }
+    const draft = (await call('library_write', { what: 'roadmap', roadmap: JSON.stringify(roadmap) })) as { draft: { status: string } }
+    expect(draft.draft.status).toBe('draft')
+  })
+
+  it('accepts cards as JSON text', async () => {
+    await seed()
+    const cards = [{ kind: 'concept', term: '不应期', gloss: 'Na⁺ 失活', source: { type: 'chat' } }]
+    const recorded = (await call('library_write', { what: 'cards', cards: JSON.stringify(cards) })) as { added: { term: string }[] }
+    expect(recorded.added[0]?.term).toBe('不应期')
+  })
+
+  it('a refusal names what arrived: nothing, unparseable text, or the wrong shape', async () => {
+    await seed()
+    await expect(call('library_write', { what: 'roadmap' })).rejects.toThrow(/no roadmap field arrived/)
+    await expect(call('library_write', { what: 'roadmap', roadmap: '{not json' })).rejects.toThrow(/not valid JSON/)
+    await expect(call('library_write', { what: 'cards' })).rejects.toThrow(/no cards field arrived/)
+  })
+})
+
 describe('the bound context', () => {
   it('names the bound book, its current node and the weak cards', async () => {
     const { project, book } = await seed()

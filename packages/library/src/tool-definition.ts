@@ -244,20 +244,46 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
       what: { type: 'string', required: true, description: `What to write: ${WRITE_WHATS.join(' | ')}.` },
       project: { type: 'json', description: 'what=project: the new project payload; otherwise the project id (defaults to the binding).' },
       book: { type: 'json', description: 'what=book: the book payload; otherwise the book id (defaults to the binding\'s book).' },
-      roadmap: { type: 'object', description: 'what=roadmap: { nodes, passRatio?, note? }.', additionalProperties: true },
-      page: { type: 'object', description: 'what=page: { attachment, label?, node?, text, marks }.', additionalProperties: true },
-      cards: { type: 'array', description: 'what=cards: the cards to record.', items: { type: 'object', additionalProperties: true } },
-      quiz: { type: 'object', description: 'what=quiz: { node?, questions }.', additionalProperties: true },
+      roadmap: { type: 'json', description: 'what=roadmap: { nodes, passRatio?, note? } (an object, or its JSON text).' },
+      page: { type: 'json', description: 'what=page: { attachment, label?, node?, text, marks } (an object, or its JSON text).' },
+      cards: { type: 'json', description: 'what=cards: the cards to record (an array, or its JSON text).' },
+      quiz: { type: 'json', description: 'what=quiz: { node?, questions } (an object, or its JSON text).' },
       op: { type: 'string', description: 'what=resource: add | remove.' },
-      resource: { type: 'object', description: 'what=resource: add — { title, url, kind, note?, addedBy? }; remove — { id }.', additionalProperties: true },
+      resource: { type: 'json', description: 'what=resource: add — { title, url, kind, note?, addedBy? }; remove — { id } (an object, or its JSON text).' },
       binding: { type: 'json', description: 'what=binding: { project, book? } or null.' },
     },
     output: jsonOutput(),
     // Writes serialize on the store's locks; one at a time keeps their order legible.
     isConcurrencySafe: () => false,
     async execute(args, exec) {
-      const payload = (value: unknown): Record<string, unknown> | undefined =>
-        typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : undefined
+      // Payloads arrive as objects — or, from models that stringify deep
+      // parameters (common with big nested ones), as their JSON text; both
+      // parse. A refusal names what actually arrived, so the model fixes the
+      // transport instead of guessing at the shape.
+      const payload = (value: unknown): Record<string, unknown> | undefined => {
+        if (typeof value === 'string') {
+          try { value = JSON.parse(value) } catch { return undefined }
+        }
+        return typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : undefined
+      }
+      const payloadList = (value: unknown): unknown[] | undefined => {
+        if (typeof value === 'string') {
+          try { value = JSON.parse(value) } catch { return undefined }
+        }
+        return Array.isArray(value) ? value : undefined
+      }
+      const arrival = (field: string, value: unknown): string => {
+        if (value === undefined) return `no ${field} field arrived — send the payload itself (its JSON text also works)`
+        if (typeof value === 'string') {
+          try {
+            JSON.parse(value)
+            return `${field} arrived as JSON text that is not the expected shape`
+          } catch {
+            return `${field} arrived as text that is not valid JSON — send the object itself (or its JSON text)`
+          }
+        }
+        return `${field} arrived as ${Array.isArray(value) ? 'an array' : typeof value} with an unexpected shape`
+      }
       switch (args.what) {
         case 'project': {
           const body = payload(args.project)
@@ -272,14 +298,14 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
             return unwrap(await service.updateProject({ id, patch })) as unknown as JsonValue
           }
           if (body === undefined || typeof body.name !== 'string') {
-            throw new Error('what=project takes project: { name, template: "language"|"subject"|"custom", goal? }')
+            throw new Error(`what=project takes project: { name, template: "language"|"subject"|"custom", goal? } — ${arrival('project', args.project)}`)
           }
           return unwrap(await service.createProject(body as { name: string })) as unknown as JsonValue
         }
         case 'book': {
           const body = payload(args.book)
           if (body === undefined || typeof body.title !== 'string' || !Array.isArray(body.toc)) {
-            throw new Error('what=book takes book: { title, edition?, bookKind: "knowledge"|"material", toc: [{ title, part? }], tocSource: { by, url? } }')
+            throw new Error(`what=book takes book: { title, edition?, bookKind: "knowledge"|"material", toc: [{ title, part? }], tocSource: { by, url? } } — ${arrival('book', args.book)}`)
           }
           const toc = (body.toc as unknown[]).map(row => typeof row === 'string' ? { title: row } : row as { title: string; part?: string })
           return unwrap(await service.putBook({
@@ -299,7 +325,7 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
         case 'roadmap': {
           const body = payload(args.roadmap)
           if (body === undefined || !Array.isArray(body.nodes)) {
-            throw new Error('what=roadmap takes roadmap: { nodes: [{ id, title, kind: "quiz"|"read"|"practice", goals, covers: [{ kind: "book", book, ranges: [{ from, to }] } | { kind: "resource", resourceId } | { kind: "url", url } | { kind: "topic", text }], dependsOn, acceptance? (practice only) }], note? }')
+            throw new Error(`what=roadmap takes roadmap: { nodes: [{ id, title, kind: "quiz"|"read"|"practice", goals, covers: [{ kind: "book", book, ranges: [{ from, to }] } | { kind: "resource", resourceId } | { kind: "url", url } | { kind: "topic", text }], dependsOn, acceptance? (practice only) }], note? } — ${arrival('roadmap', args.roadmap)}`)
           }
           const rawBook = args.book === null || typeof args.book === 'string' ? args.book : body.book === null || typeof body.book === 'string' ? body.book : undefined
           const bookId = rawBook === null ? undefined : rawBook ?? bindingOf(exec)?.bookId
@@ -327,7 +353,7 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
         case 'page': {
           const body = payload(args.page)
           if (body === undefined || typeof body.text !== 'string' || !Array.isArray(body.marks)) {
-            throw new Error('what=page takes page: { attachment?: <the image id>, text, marks: [{ text, sentence?, handNote?, gloss?, uncertain? }], label?, node? }')
+            throw new Error(`what=page takes page: { attachment?: <the image id>, text, marks: [{ text, sentence?, handNote?, gloss?, uncertain? }], label?, node? } — ${arrival('page', args.page)}`)
           }
           const attachment = images.resolve(sessionIdOf(exec), body.attachment)
           if (attachment === undefined) {
@@ -344,11 +370,12 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
           })) as unknown as JsonValue
         }
         case 'cards': {
-          if (!Array.isArray(args.cards)) {
-            throw new Error('what=cards takes cards: [{ kind: "word"|"concept", term, gloss, context?, source: { type: "chat", note? }, weaken? }]')
+          const list = payloadList(args.cards)
+          if (list === undefined) {
+            throw new Error(`what=cards takes cards: [{ kind: "word"|"concept", term, gloss, context?, source: { type: "chat", note? }, weaken? }] — ${arrival('cards', args.cards)}`)
           }
           const sessionId = sessionIdOf(exec)
-          const cards = (args.cards as Record<string, unknown>[]).map(card => {
+          const cards = (list as Record<string, unknown>[]).map(card => {
             const source = payload(card.source) ?? { type: 'chat' }
             const context = payload(card.context)
             return {
@@ -367,7 +394,7 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
         case 'quiz': {
           const body = payload(args.quiz)
           if (body === undefined || !Array.isArray(body.questions)) {
-            throw new Error('what=quiz takes quiz: { node?, questions: [{ id, kind, prompt, options?, answer, explanation?, target: { kind, cardIds? }, evidence: { kind, pageId?, url?, quote? } }] }')
+            throw new Error(`what=quiz takes quiz: { node?, questions: [{ id, kind, prompt, options?, answer, explanation?, target: { kind, cardIds? }, evidence: { kind, pageId?, url?, quote? } }] } — ${arrival('quiz', args.quiz)}`)
           }
           const node = typeof body.node === 'string' ? body.node : undefined
           const rawBook = args.book === null || typeof args.book === 'string' ? args.book : body.book === null || typeof body.book === 'string' ? body.book : undefined
@@ -385,7 +412,7 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
           const body = payload(args.resource)
           if (args.op === 'add') {
             if (body === undefined || typeof body.title !== 'string' || typeof body.url !== 'string') {
-              throw new Error('what=resource · op=add takes resource: { title, url, kind: "article"|"video"|"repo"|"tool"|"course"|"hardware", note? } — a light link on the project\'s shelf; open it on the web first, and let note say why it earns its place')
+              throw new Error(`what=resource · op=add takes resource: { title, url, kind: "article"|"video"|"repo"|"tool"|"course"|"hardware", note? } — a light link on the project's shelf; open it on the web first, and let note say why it earns its place — ${arrival('resource', args.resource)}`)
             }
             return unwrap(await service.addResource({
               projectId: projectOf(args.project, exec),
