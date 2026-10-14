@@ -90,7 +90,7 @@ interface ToolMask {
  * The coach's guidance, registered beside the tools it describes (order 114,
  * the eval line). Per-`what` payloads are in the tool descriptions.
  */
-export const LIBRARY_PROMPT = `The library is this session's memory: projects, books, each book's roadmap, the learner's knowledge cards (知识卡片) and quizzes live in library_read / library_write / library_assess — never in conversation memory. Payload shapes are in the tool descriptions, and every refusal teaches the correct call back — follow it rather than guessing.
+export const LIBRARY_PROMPT = `The library is this session's memory: projects, books, each book's roadmap, the learner's knowledge cards (知识卡片) and quizzes live in library_read / library_write / library_assess — never in conversation memory. Payload shapes are in the tool descriptions, and every refusal teaches the correct call back — follow it rather than guessing. Hand payloads to the tools directly (a big one may go as its JSON text); never stage one through a file or the shell.
 
 - Binding: project / book default to the session's binding (the header chip). Unbound and about to write: ask which (ask_user_question), then library_write · binding. When you add the book the learner is about to read, bind the session to it.
 - Adding a book: never ask for an upload — search the web for the exact edition's contents, confirm the edition when several exist, then library_write · book and draft a roadmap: quiz nodes are the levels; an overview worth reading but not testing is a read node beside the path, never a gate. The learner adopts the draft in the sidebar; you only write drafts.
