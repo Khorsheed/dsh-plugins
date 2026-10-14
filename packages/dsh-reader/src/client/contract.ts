@@ -76,6 +76,16 @@ export interface ReaderExtractedMeta {
 }
 
 /**
+ * Which leg of one entry fetch is running, reported between the awaits.
+ *
+ * The fetch is a relay — the host downloads, THIS process extracts, the host
+ * stores — and a long article makes each leg visible to the reader. The pane
+ * renders the phase (plus elapsed time) so a slow fetch reads as work in
+ * progress, not as a dead click.
+ */
+export type ReaderFetchPhase = 'downloading' | 'extracting' | 'storing'
+
+/**
  * The business face every reader surface receives from its registration.
  *
  * The wire verbs come straight off the Remote; the last four are local
@@ -153,9 +163,10 @@ export interface ReaderPaneInjected {
   /**
    * Fetch one entry's article, extract it in THIS process (the host has no
    * parser) and cache what came out. One call from the view's perspective; the
-   * extracted title/excerpt ride along for the card upgrade.
+   * extracted title/excerpt ride along for the card upgrade. `onPhase` fires
+   * between the legs, so a slow fetch has something to show.
    */
-  fetchEntryBody: (entryId: string, url: string) => Promise<ReaderEntryBodyView & ReaderExtractedMeta>
+  fetchEntryBody: (entryId: string, url: string, onPhase?: (phase: ReaderFetchPhase) => void) => Promise<ReaderEntryBodyView & ReaderExtractedMeta>
   /**
    * Fetch one image through the host, for an `<img>` the browser already
    * failed on (CORP/hotlink protection — the bytes answer 200 to a direct

@@ -29,7 +29,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { IconChevronDownOutlineMedium, IconChevronLeftOutlineMedium, IconClockOutlineMedium, IconCopyOutlineMedium, IconGlobeOutlineMedium, IconPlusOutlineMedium, IconRefreshOutlineMedium, IconRightUpOutlineMedium, IconSettingsOutlineMedium, IconTrashOutlineMedium } from './icons.tsx'
-import type { ReaderPaneProps } from './contract.ts'
+import type { ReaderFetchPhase, ReaderPaneProps } from './contract.ts'
 import { ChipRow, PanelHeader, PanelRoot, usePanelCompactContext, type Chip, type PanelAction } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
 import {
   kindQuery,
@@ -82,7 +82,36 @@ import {
 } from './session.ts'
 import css from './ReaderPane.module.css'
 
-/** One in-flight fetch's kind, for the verdict message. */
+/**
+ * An in-flight line that says WHAT is running and, once it has taken a moment,
+ * how long it has been — the difference between "working" and "dead" on a slow
+ * page. The elapsed figure only appears after a few seconds: a fast fetch never
+ * shows a number at all.
+ */
+function BusyLine({ t, label, since }: {
+  readonly t: ReaderPaneProps['t']
+  readonly label: string
+  readonly since?: number
+}): ReactNode {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const timer = setInterval(() => { setNow(Date.now()) }, 1000)
+    return () => { clearInterval(timer) }
+  }, [])
+  const elapsed = since === undefined ? 0 : Math.max(0, Math.round((now - since) / 1000))
+  return (
+    <p className={css.incomplete}>
+      <span className={css.renderingLine}>
+        <span className={css.renderingRing} aria-hidden="true" />
+        {label}
+        {elapsed >= 3 ? ` · ${t('detail.fetchElapsed', { seconds: elapsed })}` : ''}
+      </span>
+    </p>
+  )
+}
+
+/**
+ * One in-flight fetch's kind, for the verdict message. */
 type Verdict = 'subscribed' | 'savedLink' | 'savedLinkNoPreview' | 'duplicate' | 'invalidUrl' | 'unsupportedContent' | 'fetchFailed'
 
 /** A tiny stroke glyph set for the chrome the host has no icon for. */
@@ -749,6 +778,12 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
   const renderedBodiesRef = useRef(new Set<string>())
   /** Auto-render fires once per entry per pane session; failures leave the manual retry. */
   const autoRenderTriedRef = useRef(new Set<string>())
+  /**
+   * Which leg of a fetch is running, keyed to its entry: the detail view's
+   * 「抓取中」 line renders the phase (download → extract → store) and the
+   * elapsed time, so a slow page reads as progress instead of a dead click.
+   */
+  const [bodyFetch, setBodyFetch] = useState<{ entryId: string; phase: ReaderFetchPhase; since: number } | null>(null)
   /** What the plugin holds per entry, as the host reports it (the 抓取 pills). */
   const fetchStates = useStore(s => s.fetchStates)
   /** What the reader opened, as the host stores it (the 「最近阅读」 page). */
@@ -756,6 +791,8 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
   const [addOpen, setAddOpen] = useState(false)
   const [sortOpen, setSortOpen] = useState(false)
   const [draftUrl, setDraftUrl] = useState('')
+  /** When the in-flight add began — the dialog's busy line, and the double-submit guard. */
+  const [addBusySince, setAddBusySince] = useState<number | null>(null)
   const [verdict, setVerdict] = useState<{ kind: Verdict; label?: string; reason?: string; code?: ReaderPreviewFailureCode; url?: string } | null>(null)
   const [draft, setDraft] = useState('')
   const [sideChatAvailable, setSideChatAvailable] = useState(false)
@@ -2033,8 +2070,11 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
    */
   const fetchBody = useCallback(async (entryId: string, url: string): Promise<boolean> => {
     actions.setFetching(entryId, true)
+    setBodyFetch({ entryId, phase: 'downloading', since: Date.now() })
     try {
-      const result = await props.fetchEntryBody(entryId, url)
+      const result = await props.fetchEntryBody(entryId, url, phase => {
+        setBodyFetch(current => (current?.entryId === entryId ? { entryId, phase, since: current.since } : current))
+      })
       // A late answer belongs to the entry that ASKED for it: if the detail
       // view has moved on (another entry, or the wall), the article area is no
       // longer this entry's to write. The per-entry records are unaffected —
@@ -2067,6 +2107,7 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
       return result.error !== undefined && browserSolvable(result.error)
     } finally {
       actions.setFetching(entryId, false)
+      setBodyFetch(current => (current?.entryId === entryId ? null : current))
       // The card reads the host's annotation through the mirror: re-read the
       // one entry this fetch settled, so the pill flips on this gesture and
       // not at the next mount.
@@ -2653,53 +2694,61 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
   /** Submit the add form and report the host's verdict. */
   const submit = useCallback(async () => {
     const url = draftUrl.trim()
-    if (url.length === 0) return
+    // The await below chains the resolver APIs, the fetch, and its fallback —
+    // seconds to half a minute. Without the busy line (and this re-entry guard)
+    // the dialog read as a dead click the whole time.
+    if (url.length === 0 || addBusySince !== null) return
     setVerdict(null)
-    const result = await props.addSource(url)
-    if (!result.ok) {
-      // A transport-level failure: the host never answered, so the reason is
-      // whatever the wire layer said.
-      setVerdict({ kind: 'fetchFailed', reason: result.error.message })
-      return
-    }
-    const value = result.value
-    if (typeof value === 'string') {
-      setVerdict({ kind: verdictForRefusal(value) })
-      return
-    }
-    if (value.outcome === 'fetch-failed') {
-      // The fetch failed with a reason of its own ("connect ECONNREFUSED …",
-      // "body over the seam's byte cap"). Showing it is the difference between
-      // a retry and a report nobody can act on.
-      setVerdict({ kind: 'fetchFailed', reason: value.reason })
-      return
-    }
-    if (value.failure !== undefined) {
-      // Saved, but there is no body to preview. This is NOT a failure verdict:
-      // the link is in the wall, and the sentence names the reason so the
-      // reader knows whether it is worth opening in a browser. The URL rides
-      // along: for the causes a real browser solves, the verdict itself offers
-      // the way out (the moment "why" lands is the moment to act on it).
+    setAddBusySince(Date.now())
+    try {
+      const result = await props.addSource(url)
+      if (!result.ok) {
+        // A transport-level failure: the host never answered, so the reason is
+        // whatever the wire layer said.
+        setVerdict({ kind: 'fetchFailed', reason: result.error.message })
+        return
+      }
+      const value = result.value
+      if (typeof value === 'string') {
+        setVerdict({ kind: verdictForRefusal(value) })
+        return
+      }
+      if (value.outcome === 'fetch-failed') {
+        // The fetch failed with a reason of its own ("connect ECONNREFUSED …",
+        // "body over the seam's byte cap"). Showing it is the difference between
+        // a retry and a report nobody can act on.
+        setVerdict({ kind: 'fetchFailed', reason: value.reason })
+        return
+      }
+      if (value.failure !== undefined) {
+        // Saved, but there is no body to preview. This is NOT a failure verdict:
+        // the link is in the wall, and the sentence names the reason so the
+        // reader knows whether it is worth opening in a browser. The URL rides
+        // along: for the causes a real browser solves, the verdict itself offers
+        // the way out (the moment "why" lands is the moment to act on it).
+        setVerdict({
+          kind: 'savedLinkNoPreview',
+          label: value.label,
+          reason: value.failure.message,
+          code: value.failure.code,
+          url,
+        })
+        setDraftUrl('')
+        actions.refresh()
+        return
+      }
       setVerdict({
-        kind: 'savedLinkNoPreview',
+        kind: value.outcome === 'subscribed' ? 'subscribed' : 'savedLink',
         label: value.label,
-        reason: value.failure.message,
-        code: value.failure.code,
-        url,
       })
       setDraftUrl('')
+      // Reload so the new entry is on the wall behind the dialog, not only in
+      // the host's state.
       actions.refresh()
-      return
+    } finally {
+      setAddBusySince(null)
     }
-    setVerdict({
-      kind: value.outcome === 'subscribed' ? 'subscribed' : 'savedLink',
-      label: value.label,
-    })
-    setDraftUrl('')
-    // Reload so the new entry is on the wall behind the dialog, not only in
-    // the host's state.
-    actions.refresh()
-  }, [actions, draftUrl, props])
+  }, [actions, addBusySince, draftUrl, props])
 
   /** Re-fetch one source from the subscription page. */
   const refreshOne = useCallback(async (id: string) => {
@@ -3478,9 +3527,11 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
           autoFocus
           value={draftUrl}
           placeholder={t('add.placeholder')}
+          disabled={addBusySince !== null}
           onChange={event => setDraftUrl(event.target.value)}
           onKeyDown={event => { if (event.key === 'Enter') void submit() }}
         />
+        {addBusySince !== null && <BusyLine t={t} label={t('add.busy')} since={addBusySince} />}
         {verdict !== null && (
           <div className={css.verdict}>
             <b>
@@ -3524,8 +3575,8 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
               ? t('action.done')
               : t('action.cancel')}
           </button>
-          <button type="button" className={css.submit} onClick={() => { void submit() }}>
-            {t('action.submit')}
+          <button type="button" className={css.submit} disabled={addBusySince !== null} onClick={() => { void submit() }}>
+            {addBusySince !== null ? t('detail.refetching') : t('action.submit')}
           </button>
         </div>
       </div>
@@ -3808,7 +3859,11 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
             </div>
           )}
           {bodyFetching && (
-            <p className={css.incomplete}>{t('detail.fetchingBody')}</p>
+            <BusyLine
+              t={t}
+              label={bodyFetch?.entryId === openEntryId ? t(`detail.phase.${bodyFetch.phase}`) : t('detail.fetchingBody')}
+              {...(bodyFetch?.entryId === openEntryId ? { since: bodyFetch.since } : {})}
+            />
           )}
           {/* The page draws these figures at runtime and a fetch runs no
               scripts, so the body has the text and the captions but no

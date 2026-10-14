@@ -40,6 +40,8 @@ export type ReaderKey =
   | 'preview.blocked' | 'preview.login' | 'preview.unsupportedType' | 'preview.redirected'
   | 'preview.empty' | 'preview.unreachable' | 'preview.http' | 'preview.unreadable'
   | 'detail.linkOnlyBadge' | 'detail.removeLink' | 'detail.fetchingBody'
+  | 'detail.phase.downloading' | 'detail.phase.extracting' | 'detail.phase.storing'
+  | 'detail.fetchElapsed' | 'add.busy'
   | 'detail.refetch' | 'detail.refetching' | 'detail.refetchTitle'
   | 'state.loading' | 'state.emptyTitle' | 'state.emptyBody' | 'state.noMatch'
   | 'state.fetching' | 'state.incomplete' | 'state.error' | 'state.stale'
@@ -169,6 +171,11 @@ export const en = {
   'preview.unreadable': 'this page is a script-rendered app behind an anti-bot wall, so there is nothing to read server-side — if it has an arXiv version, paste that link instead',
   'detail.linkOnlyBadge': 'Link only',
   'detail.fetchingBody': 'Fetching the full text…',
+  'detail.phase.downloading': 'Downloading the page…',
+  'detail.phase.extracting': 'Extracting the article…',
+  'detail.phase.storing': 'Saving the body…',
+  'detail.fetchElapsed': '{seconds}s',
+  'add.busy': 'Identifying and fetching the link…',
   'detail.refetch': 'Fetch again',
   'detail.refetching': 'Fetching…',
   'detail.refetchTitle': 'Fetch this article again — what is on screen is the copy fetched earlier',
@@ -373,6 +380,11 @@ export const zh = {
   'preview.unreadable': '这个页面是 JS 应用且有反爬，服务器端读不到内容 —— 如果它有 arxiv 版，直接粘贴 arxiv 链接',
   'detail.linkOnlyBadge': '仅链接',
   'detail.fetchingBody': '正在抓取正文…',
+  'detail.phase.downloading': '正在下载页面…',
+  'detail.phase.extracting': '正在解析正文…',
+  'detail.phase.storing': '正在保存正文…',
+  'detail.fetchElapsed': '{seconds} 秒',
+  'add.busy': '正在识别并抓取链接…',
   'detail.refetch': '重新抓取',
   'detail.refetching': '抓取中',
   'detail.refetchTitle': '重新抓取这篇正文 —— 现在看到的是之前抓下来的版本',

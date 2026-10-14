@@ -25,7 +25,7 @@ import type {} from '@khorsheed/dsh-reader/remote'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import readerRemote from '@khorsheed/dsh-reader/remote'
 import type { ReaderEntryBodyView } from '../types.ts'
-import type { ReaderCaptureRemote, ReaderPaneInjected } from './contract.ts'
+import type { ReaderCaptureRemote, ReaderExtractedMeta, ReaderFetchPhase, ReaderPaneInjected } from './contract.ts'
 import { extractArticle } from './extract-article.ts'
 import { translationHash } from './translate.ts'
 import { READER_TAB_ID, readerDefinition } from './definition.tsx'
@@ -124,8 +124,13 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
    * The split is the host/browser boundary: the host owns the network (its
    * sanctioned egress seam), this process owns the DOM, and neither can do the
    * other's half — so the view calls this one function and both halves happen.
+   * `onPhase` marks the legs for the pane's progress line; the extracting leg
+   * is preceded by one macrotask so the phase actually PAINTS — the extraction
+   * of a long article is a synchronous second the renderer would otherwise
+   * spend before the reader ever saw the word.
    */
-  const fetchEntryBody = async (entryId: string, url: string): Promise<ReaderEntryBodyView> => {
+  const fetchEntryBody = async (entryId: string, url: string, onPhase?: (phase: ReaderFetchPhase) => void): Promise<ReaderEntryBodyView & ReaderExtractedMeta> => {
+    onPhase?.('downloading')
     const fetched = await remote.fetchEntryBody({ entryId, url })
     if (!fetched.ok) {
       return { entryId, cached: false, fresh: false, fromFeed: false, error: fetched.error.message }
@@ -134,6 +139,8 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     if (value.raw === undefined || value.url === undefined) {
       return { entryId, cached: false, fresh: false, fromFeed: false, error: value.error ?? 'fetch-failed' }
     }
+    onPhase?.('extracting')
+    await new Promise(resolve => setTimeout(resolve, 0))
     const extracted = extractArticle(value.raw, value.url)
     if (!extracted.ok) {
       return { entryId, cached: false, fresh: false, fromFeed: false, error: extracted.error }
@@ -142,6 +149,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       ...(extracted.title === undefined ? {} : { title: extracted.title }),
       ...(extracted.excerpt === undefined ? {} : { excerpt: extracted.excerpt }),
     }
+    onPhase?.('storing')
     const stored = await remote.storeEntryBody({
       entryId,
       url: value.url,

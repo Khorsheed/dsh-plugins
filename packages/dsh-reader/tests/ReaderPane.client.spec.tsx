@@ -637,6 +637,27 @@ describe('the add form reports the host verdict', () => {
     expect(ui.mocks.addSource).toHaveBeenCalledWith('https://example.com/feed.xml')
   })
 
+  it('says it is working while the add is in flight, and never submits twice', async () => {
+    // The add chains the resolver APIs, the fetch and its fallback — seconds to
+    // half a minute. The dialog used to sit unchanged the whole time, which
+    // read as a dead click (and invited a second one).
+    const ui = bench()
+    await ui.settle()
+    let release: ((value: unknown) => void) | undefined
+    ui.mocks.addSource.mockImplementation(async () => await new Promise(resolve => { release = resolve }))
+    fireEvent.click(screen.getByTitle(zh['action.add']))
+    const input = await screen.findByPlaceholderText(zh['add.placeholder'])
+    fireEvent.change(input, { target: { value: 'https://example.com/feed.xml' } })
+    fireEvent.click(screen.getByText(zh['action.submit']))
+    expect(await screen.findByText(zh['add.busy'])).toBeTruthy()
+    expect((input as HTMLInputElement).disabled).toBe(true)
+    fireEvent.click(screen.getByText(zh['detail.refetching']))
+    expect(ui.mocks.addSource).toHaveBeenCalledTimes(1)
+    release?.({ ok: true, value: { outcome: 'subscribed', kind: 'rss', id: 'new', label: '新源' } })
+    expect(await screen.findByText(zh['verdict.subscribed'].replace('{label}', '新源'))).toBeTruthy()
+    expect(screen.queryByText(zh['add.busy'])).toBeNull()
+  })
+
   it('maps each refusal onto its own sentence', async () => {
     const ui = bench({ addAnswer: { ok: true, value: 'invalid-url' } })
     await ui.settle()
@@ -1646,9 +1667,11 @@ describe('opening an entry with no body pays for one fetch', () => {
         void entryId
       }))
     fireEvent.click((await screen.findAllByRole('button', { name: /没有正文的条目/ }))[0] as HTMLElement)
-    expect(await screen.findByText(zh['detail.fetchingBody'])).toBeTruthy()
+    // The in-flight line names the leg the relay is on (the mock never answers,
+    // so the fetch stays in the download leg).
+    expect(await screen.findByText(zh['detail.phase.downloading'])).toBeTruthy()
     release?.({ entryId: 'x', cached: true, fresh: true, fromFeed: false, html: '<p>fetched</p>' })
-    await waitFor(() => { expect(screen.queryByText(zh['detail.fetchingBody'])).toBeNull() })
+    await waitFor(() => { expect(screen.queryByText(zh['detail.phase.downloading'])).toBeNull() })
     expect(await screen.findByText('fetched')).toBeTruthy()
   })
 
@@ -2427,7 +2450,10 @@ describe('the card says what the plugin holds, and fetches on demand', () => {
     const ui = await wallWithStates('none')
     const pill = await screen.findByText(zh['fetch.none'])
     fireEvent.click(pill)
-    await waitFor(() => { expect(ui.mocks.fetchEntryBody).toHaveBeenCalledWith(expect.any(String), expect.stringContaining('example.com')) })
+    // The third argument is the fetch-phase callback the progress line reads.
+    await waitFor(() => {
+      expect(ui.mocks.fetchEntryBody).toHaveBeenCalledWith(expect.any(String), expect.stringContaining('example.com'), expect.any(Function))
+    })
   })
 
   it('shows 已抓取 when the body is cached', async () => {
