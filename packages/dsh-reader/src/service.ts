@@ -98,6 +98,16 @@ export const BACKFILL_MAX_PER_RUN = 8
 /** How long a FAILED fetch is left alone before it may be retried (6 hours). */
 export const BACKFILL_RETRY_MS = 6 * 60 * 60 * 1000
 
+/**
+ * How many sources one refresh fetches at once.
+ *
+ * A strictly sequential loop made one dead source (a full 30 s timeout) stall
+ * every source behind it — the "refresh takes minutes" half of the slow-load
+ * report. Three at a time is the politeness ceiling this package applies to
+ * other people's servers everywhere (the backfill runs at two).
+ */
+export const REFRESH_CONCURRENCY = 3
+
 /** Cross-origin redirect hops the service will follow before giving up. */
 const MAX_REDIRECT_HOPS = 3
 
@@ -489,64 +499,79 @@ export class ReaderService {
     const results: ReaderRefreshResult[] = []
     const patches = new Map<string, ReaderSource>()
     const base = new Map(doc.sources.map(source => [source.id, source]))
+    /**
+     * Failures to record AFTER the pool: the workers below run concurrently,
+     * but every document write (a failure record is its own commit) stays
+     * single-filed here — the store's commit is a read-modify-write, and two
+     * in flight at once is how a lost update happens.
+     */
+    const failures: { entryId: string; message: string }[] = []
 
-    for (const source of wanted) {
-      const fetchedAt = new Date().toISOString()
-      try {
-        const fetched = await this.fetchFollowing(source.url)
-        // The same classification the add performs: a refresh that comes back
-        // with a challenge page or a PDF must not replace a good body with it,
-        // and must record why there is nothing to read.
-        const problem = source.kind === 'link' ? inspectPreview(fetched.raw, fetched.url, source.url) : undefined
-        if (problem !== undefined) {
-          const failure: ReaderPreviewFailure = { code: problem.code, message: problem.message, at: fetchedAt }
+    const queue = [...wanted]
+    const workers = Array.from({ length: Math.min(REFRESH_CONCURRENCY, queue.length) }, async () => {
+      for (;;) {
+        const source = queue.shift()
+        if (source === undefined) return
+        const fetchedAt = new Date().toISOString()
+        try {
+          const fetched = await this.fetchFollowing(source.url)
+          // The same classification the add performs: a refresh that comes back
+          // with a challenge page or a PDF must not replace a good body with it,
+          // and must record why there is nothing to read.
+          const problem = source.kind === 'link' ? inspectPreview(fetched.raw, fetched.url, source.url) : undefined
+          if (problem !== undefined) {
+            const failure: ReaderPreviewFailure = { code: problem.code, message: problem.message, at: fetchedAt }
+            patches.set(source.id, {
+              // Keep the last-known-good payload: a site that starts refusing us
+              // must not erase the article the reader already had.
+              // …and keep its address: the refusal's landing page is not it.
+              ...withoutFailure(source),
+              fetchedAt,
+              status: 'error',
+              error: failure.message,
+              failure,
+            })
+            failures.push({ entryId: linkEntryId(source.id), message: failure.message })
+            results.push({ id: source.id, status: 'unavailable', message: failure.message })
+            continue
+          }
           patches.set(source.id, {
-            // Keep the last-known-good payload: a site that starts refusing us
-            // must not erase the article the reader already had.
-            // …and keep its address: the refusal's landing page is not it.
             ...withoutFailure(source),
+            url: fetched.url,
+            raw: fetched.raw,
+            fetchedAt,
+            status: 'ok',
+            truncated: fetched.truncated,
+          })
+          results.push({
+            id: source.id,
+            status: fetched.truncated ? 'truncated' : 'ok',
+            ...(fetched.truncated ? { message: "payload hit the fetch seam's size cap" } : {}),
+          })
+        } catch (error) {
+          const failure = classifyFetchFailure(error, fetchedAt)
+          // A failed refresh keeps the previous payload (last-known-good) and
+          // records why: a transient network error must not erase the reader's
+          // copy of an article.
+          const previous = base.get(source.id)
+          patches.set(source.id, {
+            ...(previous ?? source),
             fetchedAt,
             status: 'error',
             error: failure.message,
             failure,
           })
-          await this.recordFetchFailure(linkEntryId(source.id), failure.message)
-          results.push({ id: source.id, status: 'unavailable', message: failure.message })
-          continue
+          results.push({
+            id: source.id,
+            status: error instanceof UnsupportedContent ? 'unavailable' : 'fetch-failed',
+            message: failure.message,
+          })
         }
-        patches.set(source.id, {
-          ...withoutFailure(source),
-          url: fetched.url,
-          raw: fetched.raw,
-          fetchedAt,
-          status: 'ok',
-          truncated: fetched.truncated,
-        })
-        results.push({
-          id: source.id,
-          status: fetched.truncated ? 'truncated' : 'ok',
-          ...(fetched.truncated ? { message: "payload hit the fetch seam's size cap" } : {}),
-        })
-      } catch (error) {
-        const failure = classifyFetchFailure(error, fetchedAt)
-        // A failed refresh keeps the previous payload (last-known-good) and
-        // records why: a transient network error must not erase the reader's
-        // copy of an article.
-        const previous = base.get(source.id)
-        patches.set(source.id, {
-          ...(previous ?? source),
-          fetchedAt,
-          status: 'error',
-          error: failure.message,
-          failure,
-        })
-        results.push({
-          id: source.id,
-          status: error instanceof UnsupportedContent ? 'unavailable' : 'fetch-failed',
-          message: failure.message,
-        })
       }
-    }
+    })
+    await Promise.all(workers)
+
+    for (const failure of failures) await this.recordFetchFailure(failure.entryId, failure.message)
 
     if (patches.size > 0) {
       await this.commit(current => ({
