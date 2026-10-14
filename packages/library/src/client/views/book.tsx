@@ -17,7 +17,7 @@ import { colorOf, Cover } from '../look.tsx'
 import { CoverChips, coverLabel, evidencePolicy, type CoverContext } from '../covers.tsx'
 import type { LibraryNodeTab } from '../store.ts'
 import {
-  IconCameraOutlineMedium, IconCheckOutlineMedium, IconLockOutlineMedium, IconRefreshOutlineMedium, IconSparkleOutlineMedium,
+  IconCameraOutlineMedium, IconCheckOutlineMedium, IconLockOutlineMedium, IconRefreshOutlineMedium, IconSparkleOutlineMedium, IconTrashOutlineMedium,
 } from '../icons.tsx'
 import { outcome, shortGloss, StateLine, useLoad, value, WeaknessBars, when, type ViewProps } from '../ui.tsx'
 import css from '../LibraryPane.module.css'
@@ -45,6 +45,7 @@ export function BookView({ p, projectId, bookId }: ViewProps & { projectId: stri
   }, [projectId, bookId, rev])
   const [notice, setNotice] = useState<string | undefined>()
   const [busy, setBusy] = useState(false)
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
   const book = loaded.data?.book
 
   const prime = (text: string): void => {
@@ -64,6 +65,18 @@ export function BookView({ p, projectId, bookId }: ViewProps & { projectId: stri
     }
   }
 
+  const remove = async (): Promise<void> => {
+    setBusy(true)
+    try {
+      await outcome(p.deleteBook(projectId, bookId))
+      actions.refresh()
+      actions.pop()
+    } catch (failure) {
+      setNotice(failure instanceof Error ? failure.message : String(failure))
+      setBusy(false)
+    }
+  }
+
   return (
     <>
       <PanelHeader
@@ -74,12 +87,22 @@ export function BookView({ p, projectId, bookId }: ViewProps & { projectId: stri
           { id: 'ask', label: t('action.askCoach'), icon: <IconSparkleOutlineMedium />, onSelect: () => { prime(t('prime.readBook', { book: book.title })) } },
           { id: 'replan', label: t('book.replan'), icon: <IconRefreshOutlineMedium />, onSelect: () => { prime(t('prime.replan', { book: book.title })) } },
           { id: 'bind', label: t('action.bindBook'), icon: <IconSparkleOutlineMedium />, menuOnly: true, onSelect: () => { void p.bindTarget({ projectId, bookId }).then(() => { setNotice(t('notice.bound')) }) } },
+          { id: 'delete', label: t('book.delete'), icon: <IconTrashOutlineMedium />, menuOnly: true, onSelect: () => { setConfirmingDelete(true) } },
         ]}
         moreLabel={t('action.more')}
       />
       <div className={css.body} data-color={loaded.data?.project === undefined ? undefined : colorOf(loaded.data.project)}>
         <StateLine loaded={loaded} t={t} />
         {notice !== undefined && <div className={css.notice}>{notice}</div>}
+        {confirmingDelete && (
+          <div className={css.notice} role="alert">
+            <span>{t('book.deleteConfirm')}</span>
+            <span className={css.chips}>
+              <button type="button" className={css.danger} disabled={busy} onClick={() => { void remove() }}>{t('action.confirmDelete')}</button>
+              <button type="button" className={css.ghost} onClick={() => { setConfirmingDelete(false) }}>{t('action.cancel')}</button>
+            </span>
+          </div>
+        )}
         {book !== undefined && (
           <section className={css.bookHead}>
             <Cover book={book} shade={loaded.data?.shade ?? 0} size="badge" />

@@ -683,6 +683,17 @@
   border-bottom: 1px solid var(--dsw-alias-border-l2);
 }
 
+.dangerZone {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--dsw-alias-border-l2);
+}
+
+.dangerZone .textButton { color: var(--lib-bad); }
+.dangerZone .muted { flex: 1; }
+
 textarea.input { resize: vertical; font: inherit; line-height: 1.5; }
 
 .bandGoal {

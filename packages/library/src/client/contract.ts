@@ -53,6 +53,10 @@ export interface LibraryPaneInjected {
   getProject: (id: string) => Answer<{ project: LibraryProjectSummary; books: LibraryBook[] }>
   createProject: (request: { name: string; template: LibraryTemplate; goal?: string }) => Answer<{ project: LibraryProject }>
   updateProject: (projectId: string, patch: LibraryProjectPatch) => Answer<{ project: LibraryProject }>
+  /** Delete a project and everything it holds (books, paths, pages, cards) — irreversible. */
+  deleteProject: (projectId: string) => Answer<{ id: string }>
+  /** Delete a book: its registration, roadmaps and pages go; its cards stay, unhung. */
+  deleteBook: (projectId: string, bookId: string) => Answer<{ id: string }>
   getRoadmap: (projectId: string, bookId?: string) => Promise<RemoteResult<{ roadmap?: LibraryRoadmap; draft?: LibraryRoadmap }>>
   adoptRoadmap: (projectId: string, bookId?: string) => Answer<{ roadmap: LibraryRoadmap }>
   discardDraft: (projectId: string, bookId?: string) => Answer<{ bookId?: string }>

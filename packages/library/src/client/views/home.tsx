@@ -174,6 +174,7 @@ function ProjectEditor({ p, project, onDone }: ViewProps & { project: LibraryPro
   const [icon, setIcon] = useState<LibraryIcon>(iconOf(project))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | undefined>()
+  const [deleting, setDeleting] = useState(false)
 
   const save = async (): Promise<void> => {
     setBusy(true)
@@ -185,6 +186,20 @@ function ProjectEditor({ p, project, onDone }: ViewProps & { project: LibraryPro
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : String(failure))
     } finally {
+      setBusy(false)
+    }
+  }
+
+  const remove = async (): Promise<void> => {
+    setBusy(true)
+    setError(undefined)
+    try {
+      await outcome(p.deleteProject(project.id))
+      actions.refresh()
+      onDone()
+      actions.pop()
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : String(failure))
       setBusy(false)
     }
   }
@@ -225,6 +240,17 @@ function ProjectEditor({ p, project, onDone }: ViewProps & { project: LibraryPro
       <div className={css.actions}>
         <button type="button" className={css.secondary} onClick={onDone}>{t('action.cancel')}</button>
         <button type="submit" className={css.primary} disabled={busy || name.trim() === ''}>{t('action.save')}</button>
+      </div>
+      <div className={css.dangerZone}>
+        {deleting ? (
+          <>
+            <span className={css.muted}>{t('project.deleteConfirm')}</span>
+            <button type="button" className={css.danger} disabled={busy} onClick={() => { void remove() }}>{t('action.confirmDelete')}</button>
+            <button type="button" className={css.ghost} onClick={() => { setDeleting(false) }}>{t('action.cancel')}</button>
+          </>
+        ) : (
+          <button type="button" className={css.textButton} onClick={() => { setDeleting(true) }}>{t('project.delete')}</button>
+        )}
       </div>
     </form>
   )
