@@ -220,7 +220,7 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
       + 'register a book (no upload): search the web for the exact edition\'s contents and cite the url — a publisher, library-catalog or retailer page, never a full-text copy; '
       + 'toc has one row per chapter (or passage), never a row for a part heading — the part goes in part; "material" = exam papers, novels, anthologies '
       + '(specific text you cannot recall); bookId corrects an existing one. '
-      + 'what="roadmap": roadmap { nodes: [{ id, title, kind: "quiz"|"read"|"practice", goals: [..], covers: [{ kind: "book", book, ranges: [{ from, to }] } | { kind: "resource", resourceId } | { kind: "url", url, title? } | { kind: "topic", text }], dependsOn, acceptance?: [..] }], passRatio?, note? } — '
+      + 'what="roadmap": roadmap { nodes: [{ id, title, kind: "quiz"|"read"|"practice", goals: [..], covers: [{ kind: "book", bookId, ranges: [{ from, to }] } | { kind: "resource", resourceId } | { kind: "url", url, title? } | { kind: "topic", text }], dependsOn, acceptance?: [..] }], passRatio?, note? } — '
       + 'writes a DRAFT the learner adopts in the sidebar (采用). book defaults to the binding\'s book; pass book: null for the project\'s OWN path (the general case: a station draws on mixed covers — '
       + 'a book\'s chapter rows, a shelf resource, a bare url, or plain coached teaching via topic). A book\'s path is the special case: every node covers that one book (chapterRanges: [{ from, to }] '
       + 'still accepted as sugar for its single book cover). Every url / resource cover carries provenance: by: "web" + verifiedAt once you actually opened it, "model" straight from memory '
@@ -273,7 +273,7 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
         return Array.isArray(value) ? value : undefined
       }
       const arrival = (field: string, value: unknown): string => {
-        if (value === undefined) return `no ${field} field arrived — send the payload itself (its JSON text also works)`
+        if (value === undefined) return `no ${field} field arrived — set the ${field} field itself; its value may be the object or its JSON text`
         if (typeof value === 'string') {
           try {
             JSON.parse(value)
@@ -325,18 +325,31 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
         case 'roadmap': {
           const body = payload(args.roadmap)
           if (body === undefined || !Array.isArray(body.nodes)) {
-            throw new Error(`what=roadmap takes roadmap: { nodes: [{ id, title, kind: "quiz"|"read"|"practice", goals, covers: [{ kind: "book", book, ranges: [{ from, to }] } | { kind: "resource", resourceId } | { kind: "url", url } | { kind: "topic", text }], dependsOn, acceptance? (practice only) }], note? } — ${arrival('roadmap', args.roadmap)}`)
+            throw new Error(`what=roadmap takes roadmap: { nodes: [{ id, title, kind: "quiz"|"read"|"practice", goals, covers: [{ kind: "book", bookId, ranges: [{ from, to }] } | { kind: "resource", resourceId } | { kind: "url", url } | { kind: "topic", text }], dependsOn, acceptance? (practice only) }], note? } — ${arrival('roadmap', args.roadmap)}`)
           }
           const rawBook = args.book === null || typeof args.book === 'string' ? args.book : body.book === null || typeof body.book === 'string' ? body.book : undefined
           const bookId = rawBook === null ? undefined : rawBook ?? bindingOf(exec)?.bookId
           const nodes = (body.nodes as Record<string, unknown>[]).map(node => {
             const { chapterRanges, covers, ...rest } = node
-            if (covers !== undefined) return { ...rest, covers }
+            if (covers !== undefined) {
+              // Tolerate the natural shorthand: a cover's target may arrive as
+              // book / resource; the stored fields are bookId / resourceId.
+              const aliased = (covers as Record<string, unknown>[]).map(cover => {
+                if (cover === null || typeof cover !== 'object' || Array.isArray(cover)) return cover
+                const { book, resource, ...restCover } = cover as Record<string, unknown>
+                return {
+                  ...restCover,
+                  ...(restCover.bookId === undefined && typeof book === 'string' ? { bookId: book } : {}),
+                  ...(restCover.resourceId === undefined && typeof resource === 'string' ? { resourceId: resource } : {}),
+                }
+              })
+              return { ...rest, covers: aliased }
+            }
             // Sugar for the book special case: chapterRanges wrap into the
             // one book cover a book's own path allows.
             if (chapterRanges !== undefined) {
               if (bookId === undefined) {
-                throw new Error('chapterRanges count a book\'s contents rows — the project\'s OWN path (book: null) needs covers instead: { kind: "book", book, ranges: [{ from, to }] } names the book explicitly')
+                throw new Error('chapterRanges count a book\'s contents rows — the project\'s OWN path (book: null) needs covers instead: { kind: "book", bookId, ranges: [{ from, to }] } names the book explicitly')
               }
               return { ...rest, covers: [{ kind: 'book', bookId, ranges: chapterRanges }] }
             }

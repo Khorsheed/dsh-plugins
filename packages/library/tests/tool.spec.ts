@@ -218,9 +218,26 @@ describe('payload transport', () => {
 
   it('a refusal names what arrived: nothing, unparseable text, or the wrong shape', async () => {
     await seed()
-    await expect(call('library_write', { what: 'roadmap' })).rejects.toThrow(/no roadmap field arrived/)
+    await expect(call('library_write', { what: 'roadmap' })).rejects.toThrow(/no roadmap field arrived — set the roadmap field itself/)
     await expect(call('library_write', { what: 'roadmap', roadmap: '{not json' })).rejects.toThrow(/not valid JSON/)
     await expect(call('library_write', { what: 'cards' })).rejects.toThrow(/no cards field arrived/)
+  })
+
+  it('a book cover may name its book as book or bookId; a missing reference teaches, never crashes', async () => {
+    const { book } = await seed()
+    // A book cover missing its reference teaches — never a store-level crash.
+    await expect(call('library_write', {
+      what: 'roadmap',
+      book: null,
+      roadmap: { nodes: [{ id: 'n1', title: '离子通道', kind: 'quiz', covers: [{ kind: 'book', ranges: [{ from: 1, to: 1 }] }] }] },
+    })).rejects.toThrow(/no bookId/)
+    // The natural shorthand { kind: "book", book } lands as bookId.
+    const ok = (await call('library_write', {
+      what: 'roadmap',
+      book: null,
+      roadmap: { nodes: [{ id: 'n1', title: '离子通道', kind: 'quiz', covers: [{ kind: 'book', book, ranges: [{ from: 1, to: 1 }] }] }] },
+    })) as { draft: { nodes: { covers: { bookId?: string }[] }[] } }
+    expect(ok.draft.nodes[0]?.covers[0]?.bookId).toBe(book)
   })
 })
 

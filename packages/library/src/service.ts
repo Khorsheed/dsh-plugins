@@ -1828,6 +1828,9 @@ export function validateRoadmapShape(
     }
     for (const cover of node.covers) {
       if (cover.kind === 'book') {
+        if (typeof cover.bookId !== 'string' || cover.bookId === '') {
+          return `nodes[${index}] (${node.id}) has a book cover with no bookId — { kind: "book", bookId, ranges: [{ from, to }] }; library_read · books lists the ids`
+        }
         const covered = scope.book(cover.bookId)
         if (covered === undefined) return `nodes[${index}] (${node.id}) covers book ${JSON.stringify(cover.bookId)}, which the project does not hold — library_read · books lists them; register it first (library_write · book)`
         for (const range of cover.ranges) {
@@ -1839,6 +1842,9 @@ export function validateRoadmapShape(
           }
         }
       } else if (cover.kind === 'resource') {
+        if (typeof cover.resourceId !== 'string' || cover.resourceId === '') {
+          return `nodes[${index}] (${node.id}) has a resource cover with no resourceId — { kind: "resource", resourceId }; library_read · resources lists the shelf`
+        }
         if (!scope.hasResource(cover.resourceId)) {
           return `nodes[${index}] (${node.id}) covers resource ${JSON.stringify(cover.resourceId)}, which is not on the project's shelf — library_read · resources lists them; add it first (library_write · resource, op add)`
         }
