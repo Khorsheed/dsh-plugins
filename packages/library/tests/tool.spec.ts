@@ -231,11 +231,14 @@ describe('payload transport', () => {
       book: null,
       roadmap: { nodes: [{ id: 'n1', title: '离子通道', kind: 'quiz', covers: [{ kind: 'book', ranges: [{ from: 1, to: 1 }] }] }] },
     })).rejects.toThrow(/no bookId/)
-    // The natural shorthand { kind: "book", book } lands as bookId.
+    // The natural shorthand { kind: "book", book } lands as bookId (on a genuine project path — a second station keeps it off the book's own turf).
     const ok = (await call('library_write', {
       what: 'roadmap',
       book: null,
-      roadmap: { nodes: [{ id: 'n1', title: '离子通道', kind: 'quiz', covers: [{ kind: 'book', book, ranges: [{ from: 1, to: 1 }] }] }] },
+      roadmap: { nodes: [
+        { id: 'n1', title: '离子通道', kind: 'quiz', covers: [{ kind: 'book', book, ranges: [{ from: 1, to: 1 }] }] },
+        { id: 'n2', title: '串讲', kind: 'quiz', covers: [{ kind: 'topic', text: '讲授' }], dependsOn: ['n1'] },
+      ] },
     })) as { draft: { nodes: { covers: { bookId?: string }[] }[] } }
     expect(ok.draft.nodes[0]?.covers[0]?.bookId).toBe(book)
   })

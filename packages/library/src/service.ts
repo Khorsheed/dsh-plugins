@@ -1865,6 +1865,25 @@ export function validateRoadmapShape(
       if (depIndex >= index) return `nodes[${index}] (${node.id}) depends on ${JSON.stringify(dep)}, which comes AFTER it — list a node after everything it depends on`
     }
   }
+  // The mirror of the per-node rule above: a PROJECT path whose stations all
+  // draw on the same single book is that book's own path written to the wrong
+  // scope — the two journeys stay distinct.
+  if (scope.bookId === undefined && nodes.length > 0) {
+    const bookIds = new Set<string>()
+    let onlyBookCovers = true
+    for (const node of nodes) {
+      for (const cover of node.covers) {
+        if (cover.kind !== 'book') { onlyBookCovers = false; break }
+        bookIds.add(cover.bookId)
+      }
+      if (!onlyBookCovers) break
+    }
+    if (onlyBookCovers && bookIds.size === 1) {
+      const onlyId = [...bookIds][0] ?? ''
+      const title = scope.book(onlyId)?.title ?? onlyId
+      return `every station draws only on 《${title}》 — that is the book's OWN path: resend with book: ${JSON.stringify(onlyId)} (its nodes then cover that book only). The project's own path is for a journey spanning several books / shelf links / coached teaching`
+    }
+  }
   return undefined
 }
 

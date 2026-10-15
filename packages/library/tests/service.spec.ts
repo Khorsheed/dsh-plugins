@@ -250,6 +250,23 @@ describe('project paths', () => {
     expect((await service.getRoadmap({ projectId })).draft).toBeUndefined()
   })
 
+  it('a project path whose stations all cover the same single book is sent to the book', async () => {
+    const { projectId, bookId } = await seed()
+    const cover = { kind: 'book', bookId, ranges: [{ from: 1, to: 2 }] } as const
+    const parked = await service.draftRoadmap({ projectId, nodes: [
+      { id: 's1', title: '极限', kind: 'quiz', covers: [cover] },
+      { id: 's2', title: '微分', kind: 'quiz', covers: [cover], dependsOn: ['s1'] },
+    ] })
+    expect(!parked.ok && parked.message).toMatch(/book's OWN path/)
+    expect(!parked.ok && parked.message).toContain(bookId)
+    // A second book or any non-book cover keeps it a genuine project path.
+    const mixed = await service.draftRoadmap({ projectId, nodes: [
+      { id: 's1', title: '极限', kind: 'quiz', covers: [cover] },
+      { id: 's2', title: '串讲', kind: 'quiz', covers: [{ kind: 'topic', text: '讲授' }], dependsOn: ['s1'] },
+    ] })
+    expect(mixed.ok).toBe(true)
+  })
+
   it('a read node on the project path completes by 读完', async () => {
     const { projectId } = await seed()
     await service.draftRoadmap({ projectId, nodes: [{ id: 'r1', title: '套件评测', kind: 'read', covers: [{ kind: 'url', url: 'https://so-arm.example', by: 'web' }] }] })
@@ -297,19 +314,19 @@ describe('project paths', () => {
 })
 
 describe('the evidence gate on covers', () => {
-  /** Adopt a one-station project path covering the seeded book. */
+  /** Adopt a one-station path on the seeded book itself (a lone book's stations ride the book). */
   async function station(kind: 'knowledge' | 'material'): Promise<{ projectId: string; bookId: string }> {
     const seeded = await seed('subject', kind)
-    const draft = await service.draftRoadmap({ projectId: seeded.projectId, nodes: [{ id: 's1', title: '一站', kind: 'quiz', covers: [{ kind: 'book', bookId: seeded.bookId, ranges: [] }] }] })
+    const draft = await service.draftRoadmap({ projectId: seeded.projectId, bookId: seeded.bookId, nodes: [{ id: 's1', title: '一站', kind: 'quiz', covers: [{ kind: 'book', bookId: seeded.bookId, ranges: [] }] }] })
     if (!draft.ok) throw new Error(draft.message)
-    const adopted = await service.adoptRoadmap({ projectId: seeded.projectId })
+    const adopted = await service.adoptRoadmap({ projectId: seeded.projectId, bookId: seeded.bookId })
     if (!adopted.ok) throw new Error(adopted.message)
     return seeded
   }
 
   it('a station covering a material book refuses a memory-backed content question', async () => {
-    const { projectId } = await station('material')
-    const memory = await service.putQuiz({ projectId, quiz: { scope: { nodeId: 's1' }, questions: [question()] } })
+    const { projectId, bookId } = await station('material')
+    const memory = await service.putQuiz({ projectId, quiz: { scope: { bookId, nodeId: 's1' }, questions: [question()] } })
     expect(!memory.ok && memory.message).toMatch(/material book/)
   })
 
