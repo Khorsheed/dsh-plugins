@@ -194,6 +194,11 @@ describe('teaching errors', () => {
     await expect(call('library_write', { what: 'everythings' })).rejects.toThrow(/project \| book \| roadmap \| notes \| page \| cards \| quiz \| resource \| binding/)
   })
 
+  it('a missing what teaches too (the host\'s bare schema rejection taught nothing)', async () => {
+    await expect(call('library_read', {})).rejects.toThrow(/what is required — one of projects/)
+    await expect(call('library_write', { binding: { project: 'p_x' } })).rejects.toThrow(/what is required — one of project/)
+  })
+
   it('surfaces the service refusal verbatim', async () => {
     await seed()
     await expect(call('library_write', { what: 'quiz', quiz: { questions: [{ id: 'q1', kind: 'free', prompt: 'p', answer: 'a', target: { kind: 'asked' }, evidence: { kind: 'knowledge' } }] } }))
@@ -241,6 +246,16 @@ describe('payload transport', () => {
       ] },
     })) as { draft: { nodes: { covers: { bookId?: string }[] }[] } }
     expect(ok.draft.nodes[0]?.covers[0]?.bookId).toBe(book)
+  })
+
+  it('accepts a book\'s contents as one newline-joined string — the payload models mangle most', async () => {
+    const { project } = await seed()
+    const added = (await call('library_write', {
+      what: 'book',
+      project,
+      book: { title: '普林斯顿微积分读本', bookKind: 'knowledge', toc: '引言\n极限导论\n\n求极限', tocSource: { by: 'web', url: 'https://example.org/toc' } },
+    })) as { book: { toc: { title: string }[] } }
+    expect(added.book.toc.map(row => row.title)).toEqual(['引言', '极限导论', '求极限'])
   })
 })
 

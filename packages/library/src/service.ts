@@ -346,7 +346,7 @@ export class LibraryService {
       const outcome = await this.store.withIndexLock(async () => {
         const index = this.store.readIndex()
         const project = index.projects.find(candidate => candidate.id === request.id)
-        if (project === undefined) return refuse('not-found', `no project ${JSON.stringify(request.id)}`)
+        if (project === undefined) return refuse('not-found', `no project ${JSON.stringify(request.id)} — ids are minted (p_…); library_read · projects lists the ones that exist, and omitting id creates a new project`)
         const { goal: _goal, ...rest } = project
         const goal = patch.goal === undefined ? project.goal : patch.goal.trim()
         const next: LibraryProject = {
@@ -431,7 +431,7 @@ export class LibraryService {
     return await this.mutate(project.value.id, () => {
       const existing = request.bookId === undefined ? undefined : this.store.readBook(project.value.id, request.bookId)
       if (request.bookId !== undefined && existing === undefined) {
-        return refuse('not-found', `no book ${JSON.stringify(request.bookId)} in this project — omit bookId to add a new book`)
+        return refuse('not-found', `no book ${JSON.stringify(request.bookId)} in this project — omit bookId to add a new book; library_read · books lists the existing ids`)
       }
       if (existing === undefined && this.store.listBooks(project.value.id).some(book => book.title === title && book.edition === request.edition?.trim())) {
         return refuse('exists', `《${title}》 is already on this project's shelf — pass its bookId to correct it`)
@@ -1846,7 +1846,7 @@ export function validateRoadmapShape(
       return `nodes[${index}] (${node.id}) is a practice station — it needs acceptance: ["...", ...], the lines the coach judges one verdict each at assess time`
     }
     if (node.kind !== 'practice' && node.acceptance !== undefined && node.acceptance.length > 0) {
-      return `nodes[${index}] (${node.id}) carries acceptance but is not a practice station — acceptance belongs to kind: "practice" only`
+      return `nodes[${index}] (${node.id}) carries acceptance but is not a practice station — acceptance belongs to kind: "practice" only; for a quiz / read station, write the completion expectations into goals: [...] instead`
     }
     if (!Array.isArray(node.covers) || node.covers.length === 0) {
       return `nodes[${index}] (${node.id}) needs at least one cover — what the station draws on: { kind: "book", bookId, ranges: [{ from, to }] } | { kind: "resource", resourceId } | { kind: "url", url, title? } | { kind: "topic", text }`

@@ -123,7 +123,7 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
       + '"quiz" — one quiz whole (quiz id), or the list; '
       + '"stats" — the whole library\'s tally. project and book default to this session\'s binding.',
     parameters: {
-      what: { type: 'string', required: true, description: `What to read: ${READ_WHATS.join(' | ')}.` },
+      what: { type: 'string', description: `Required. What to read: ${READ_WHATS.join(' | ')}.` },
       project: { type: 'string', description: 'Project id (defaults to the binding).' },
       book: { type: 'json', description: 'Book id (defaults to the binding\'s book; null reads the project\'s own roadmap).' },
       node: { type: 'string', description: 'Roadmap node id (pages / cards).' },
@@ -204,7 +204,7 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
         case 'stats':
           return (await service.stats()) as unknown as JsonValue
         default:
-          throw new Error(`what must be one of ${READ_WHATS.join(' | ')} — got ${JSON.stringify(args.what)}`)
+          throw new Error(`what is required — one of ${READ_WHATS.join(' | ')} — got ${JSON.stringify(args.what) ?? 'nothing'}; e.g. { what: "books" } reads the bound project's books`)
       }
     },
   }))
@@ -212,48 +212,28 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
   definitions.push(defineTool({
     name: 'library_write',
     description:
-      'Validate and persist what you authored. Pass what plus the matching payload; project / book default to this session\'s binding. '
-      + 'what="project": project { name, template: "language"|"subject"|"custom", templateNote?, goal? } — language: marks are words; subject: marks are concepts. '
-      + 'With project { id, name?, goal?, template? } it edits that project instead (the learner renamed or refocused it; goal "" clears it). '
-      + 'what="book": book { title, short (a 2-4 character cover abbreviation, e.g. 剑5 / PNS), author?, edition?, isbn?, bookKind: "knowledge"|"material", toc: [{ title, part? }], tocSource: { by: "web"|"model"|"photo", url? }, '
-      + 'extras?: [{ title, note?, where?, when: "before"|"reference" }] (how to use the book, the answer key, transcripts, appendices — they are NOT roadmap nodes), bookId? } — '
-      + 'register a book (no upload): search the web for the exact edition\'s contents and cite the url — a publisher, library-catalog or retailer page, never a full-text copy; '
-      + 'toc has one row per chapter (or passage), never a row for a part heading — the part goes in part; "material" = exam papers, novels, anthologies '
-      + '(specific text you cannot recall); bookId corrects an existing one. '
-      + 'what="roadmap": roadmap { nodes: [{ id, title, kind: "quiz"|"read"|"practice", goals: [..], covers: [{ kind: "book", bookId, ranges: [{ from, to }] } | { kind: "resource", resourceId } | { kind: "url", url, title? } | { kind: "topic", text }], dependsOn, acceptance?: [..] }], passRatio?, note? } — '
-      + 'writes a DRAFT the learner adopts in the sidebar (采用). book defaults to the binding\'s book; pass book: null for the project\'s OWN path (the general case: a station draws on mixed covers — '
-      + 'a book\'s chapter rows, a shelf resource, a bare url, or plain coached teaching via topic). A book\'s path is the special case: every node covers that one book (chapterRanges: [{ from, to }] '
-      + 'still accepted as sugar for its single book cover). Every url / resource cover carries provenance: by: "web" + verifiedAt once you actually opened it, "model" straight from memory '
-      + '(verify and replace before the learner adopts), "user" when the learner gave it. Quiz nodes are the levels (a chapter quiz completes them) and depend only on quiz / practice nodes; '
-      + 'a practice node is a hands-on station gated by acceptance — acceptance lists the criteria, one verbatim verdict.criterion per line at assess time; '
-      + 'read nodes are optional side stops (读完 completes them, they never gate). note is the one-line pacing shown on the draft card. '
-      + 'what="notes": notes { node, text } — write the station\'s 讲义 (markdown) onto the adopted path: distill what you taught — the explanation, '
-      + 'the points THIS learner got stuck on, the pitfalls. On a 讲授 (topic) station the notes ARE the textbook; on a book station they are marginalia, never a substitute for the book. '
-      + 'Write them when you finish teaching a station (and whenever 补讲 deepens it — each write bumps 第 N 次更新). book defaults to the binding\'s book; book: null for a project-path station. '
-      + 'what="page": page { attachment? (the image id; omit it for the latest photo in this conversation), label?, node?, text (the page\'s printed text), '
-      + 'marks: [{ text, sentence?, handNote?, gloss?, uncertain? }] } — records a photographed page and cards every mark at once; gloss is the in-context meaning; '
-      + 'uncertain marks are kept but not carded. '
-      + 'what="cards": cards [{ kind: "word"|"concept", term, aliases?, gloss, userGloss?, context?: { sentence, node? }, source: { type: "chat"|"photo"|"quiz"|"manual", note? }, weaken?, mergeInto?, asNew? }] — '
-      + 'record a weak point when the learner is stuck (says they mix it up, asks the same point again, keeps probing): source chat, weaken true, and tell them in your reply what you noted. '
-      + 'A near-duplicate comes back in pending with candidates: resend it with mergeInto: <id> or asNew: true. '
-      + 'what="quiz": quiz { node?, focus?: "mine"|"book"|"mixed" (the learner\'s choice of source — mine: only their own cards, book: only the chapter\'s content), questions: [{ id, kind: "choice"|"fill"|"free", prompt, options?, answer, explanation?, target: { kind: "marked"|"asked"|"missed"|"topic", cardIds? }, '
-      + 'evidence: { kind: "photo"|"web"|"knowledge", pageId?, url?, quote? } }] } — target the learner\'s own cards first; photo evidence quotes a recorded page, web evidence cites url + quote; '
-      + 'whether domain knowledge may back a CONTENT question is judged on the gated station\'s covers: a material book, a resource or a url among them demands a verbatim quote (book may be null / omitted for a station on the project\'s own path). '
-      + 'what="resource": op "add" — resource { title, url, kind: "article"|"video"|"repo"|"tool"|"course"|"hardware", note?, addedBy? } — put a light link entry on the '
-      + 'project\'s shelf: no contents, no roadmap, never quizzed (something you reference BY CHAPTER is registered as a book instead — library_write · book). Open the link on '
-      + 'the web first: the title is what its own page calls it, and note is your one line on why it earns its place. op "remove" — resource { id }. '
-      + 'what="binding": binding { project, book? } — bind this session; binding: null unbinds.',
+      'Validate and persist what you authored: what plus its payload (each payload\'s shape sits in its parameter\'s description below; project / book default to this session\'s binding). '
+      + 'project — create; with id, edit (goal "" clears). '
+      + 'book — register (never ask for an upload): web-verify the exact edition\'s contents first and cite the url in tocSource (a publisher / catalog / retailer page, never a full-text copy). '
+      + 'roadmap — write a DRAFT the learner adopts in the sidebar (采用); book defaults to the binding\'s book, book: null = the project\'s OWN path. A route whose every station covers the same single book belongs to that book — the service refuses it on the project. '
+      + 'notes — a station\'s 讲义 (markdown) on the adopted path: the textbook on a 讲授 (topic) station, marginalia on a book station; rewrite as 补讲 deepens (each write bumps 第 N 次更新). '
+      + 'page — record a photographed page, carding every mark at once. '
+      + 'cards — record a weak point when the learner is stuck, and say what you noted. '
+      + 'quiz — store a composed quiz; focus is the learner\'s choice. '
+      + 'resource — op add | remove: a light shelf link (no contents, no roadmap, never quizzed; something referenced BY CHAPTER is a book instead). '
+      + 'binding — bind this session (null unbinds). '
+      + 'A refusal names exactly what to fix — change only that and resend the same payload.',
     parameters: {
-      what: { type: 'string', required: true, description: `What to write: ${WRITE_WHATS.join(' | ')}.` },
-      project: { type: 'json', description: 'what=project: the new project payload; otherwise the project id (defaults to the binding).' },
-      book: { type: 'json', description: 'what=book: the book payload; otherwise the book id (defaults to the binding\'s book).' },
-      roadmap: { type: 'json', description: 'what=roadmap: { nodes, passRatio?, note? } (an object, or its JSON text).' },
-      notes: { type: 'json', description: 'what=notes: { node, text } (an object, or its JSON text).' },
-      page: { type: 'json', description: 'what=page: { attachment, label?, node?, text, marks } (an object, or its JSON text).' },
-      cards: { type: 'json', description: 'what=cards: the cards to record (an array, or its JSON text).' },
-      quiz: { type: 'json', description: 'what=quiz: { node?, questions } (an object, or its JSON text).' },
+      what: { type: 'string', description: `Required. What to write: ${WRITE_WHATS.join(' | ')}.` },
+      project: { type: 'json', description: 'what=project: { name, template: "language"|"subject"|"custom" (language: marks are words; subject: concepts), templateNote?, goal? } — with id it edits instead. Otherwise: the project id (defaults to the binding).' },
+      book: { type: 'json', description: 'what=book: { title, short (2-4 char cover abbreviation, e.g. 剑5 / PNS), author?, edition?, isbn?, bookKind: "knowledge"|"material" ("material" = exam papers / novels / anthologies — specific text you cannot recall), toc: [{ title, part? }] (one row per chapter or passage, never a part heading — the part goes in part; a bare string per row, or one newline-joined string, works), extras?: [{ title, note?, where?, when: "before"|"reference" }] (how-to-use pages, answer keys, transcripts, appendices — NOT roadmap nodes), tocSource: { by: "web"|"model"|"photo", url? }, bookId? (corrects an existing one) } — an object, or its JSON text. Otherwise: the book id (defaults to the binding\'s book; null on roadmap / notes / quiz = the project\'s own path).' },
+      roadmap: { type: 'json', description: 'what=roadmap: { nodes: [{ id, title, kind: "quiz"|"read"|"practice", goals: [...] (a bare string works), covers: [{ kind: "book", bookId, ranges: [{ from, to }] } | { kind: "resource", resourceId } | { kind: "url", url, title? } | { kind: "topic", text }], dependsOn, acceptance?: [...] (practice only) }], passRatio?, note? } — or its JSON text. quiz nodes are the levels (a chapter quiz completes them) and depend only on quiz / practice nodes; a practice node is a hands-on station gated by acceptance lines; read nodes are optional side stops (读完 completes them, they never gate). Covers mix freely on the project\'s path; on a book\'s own path every node covers that one book (chapterRanges: [{ from, to }] works as sugar for its single book cover). Every url / resource cover carries provenance: by: "web" + verifiedAt once actually opened, "model" straight from memory (verify and replace before the learner adopts), "user" when the learner gave it.' },
+      notes: { type: 'json', description: 'what=notes: { node: <station id>, text: <the station\'s 讲义, markdown> } — an object, or its JSON text. book defaults to the binding\'s book; book: null for a project-path station.' },
+      page: { type: 'json', description: 'what=page: { attachment? (the image id; omit for the latest photo in this conversation), label?, node?, text (the page\'s printed text), marks: [{ text, sentence?, handNote?, gloss? (the in-context meaning), uncertain? (kept, not carded) }] } — an object, or its JSON text.' },
+      cards: { type: 'json', description: 'what=cards: [{ kind: "word"|"concept", term, aliases?, gloss, userGloss?, context?: { sentence, node? }, source: { type: "chat"|"photo"|"quiz"|"manual", note? }, weaken?, mergeInto?, asNew? }] — or the JSON text. When the learner is stuck: source chat, weaken true. A near-duplicate comes back in pending with candidates: resend it with mergeInto: <id> or asNew: true.' },
+      quiz: { type: 'json', description: 'what=quiz: { node?, focus?: "mine"|"book"|"mixed" (the learner\'s choice of source — mine: only their own cards, book: only the chapter\'s content), questions: [{ id, kind: "choice"|"fill"|"free", prompt, options?, answer, explanation?, target: { kind: "marked"|"asked"|"missed"|"topic", cardIds? }, evidence: { kind: "photo"|"web"|"knowledge", pageId?, url?, quote? } }] } — or its JSON text. Target the learner\'s own cards first; photo evidence quotes a recorded page, web evidence cites url + quote; a material book, a resource or a url among the gated station\'s covers demands a verbatim quote for a content question.' },
       op: { type: 'string', description: 'what=resource: add | remove.' },
-      resource: { type: 'json', description: 'what=resource: add — { title, url, kind, note?, addedBy? }; remove — { id } (an object, or its JSON text).' },
+      resource: { type: 'json', description: 'what=resource: add — { title, url, kind: "article"|"video"|"repo"|"tool"|"course"|"hardware", note? (one line: why it earns its place), addedBy? }; remove — { id }. An object, or its JSON text. Open the link on the web first: the title is what its own page calls it.' },
       binding: { type: 'json', description: 'what=binding: { project, book? } or null.' },
     },
     output: jsonOutput(),
@@ -308,10 +288,15 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
         }
         case 'book': {
           const body = payload(args.book)
-          if (body === undefined || typeof body.title !== 'string' || !Array.isArray(body.toc)) {
-            throw new Error(`what=book takes book: { title, edition?, bookKind: "knowledge"|"material", toc: [{ title, part? }], tocSource: { by, url? } } — ${arrival('book', args.book)}`)
+          if (body === undefined || typeof body.title !== 'string' || (!Array.isArray(body.toc) && typeof body.toc !== 'string')) {
+            throw new Error(`what=book takes book: { title, edition?, bookKind: "knowledge"|"material", toc: [{ title, part? }] (a bare string per row, or one newline-joined string), tocSource: { by, url? } } — ${arrival('book', args.book)}`)
           }
-          const toc = (body.toc as unknown[]).map(row => typeof row === 'string' ? { title: row } : row as { title: string; part?: string })
+          // A whole contents may arrive as one newline-joined string — the
+          // biggest single payload, and the one models mangle most as JSON.
+          const tocRows = typeof body.toc === 'string'
+            ? body.toc.split('\n').map(line => line.trim()).filter(line => line !== '')
+            : body.toc as unknown[]
+          const toc = tocRows.map(row => typeof row === 'string' ? { title: row } : row as { title: string; part?: string })
           return unwrap(await service.putBook({
             projectId: projectOf(args.project, exec),
             ...(typeof body.bookId === 'string' ? { bookId: body.bookId } : {}),
@@ -479,7 +464,7 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
           return unwrap(await service.setBinding(sessionId, { projectId, ...(bookId === undefined ? {} : { bookId }) })) as unknown as JsonValue
         }
         default:
-          throw new Error(`what must be one of ${WRITE_WHATS.join(' | ')} — got ${JSON.stringify(args.what)}`)
+          throw new Error(`what is required — one of ${WRITE_WHATS.join(' | ')} — got ${JSON.stringify(args.what) ?? 'nothing'}; e.g. { what: "binding", binding: { project: "p_…" } } binds this session`)
       }
     },
   }))

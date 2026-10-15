@@ -303,6 +303,7 @@ describe('project paths', () => {
     expect(!noAcceptance.ok && noAcceptance.message).toMatch(/acceptance/)
     const misplaced = await draft([{ kind: 'topic', text: 'x' }], 'quiz', ['x'])
     expect(!misplaced.ok && misplaced.message).toMatch(/kind: "practice" only/)
+    expect(!misplaced.ok && misplaced.message).toMatch(/goals/)
     const empty = await draft([])
     expect(!empty.ok && empty.message).toMatch(/at least one cover/)
     // A resource cover resolves against the shelf.
