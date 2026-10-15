@@ -212,28 +212,50 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
   definitions.push(defineTool({
     name: 'library_write',
     description:
-      'Validate and persist what you authored: what plus its payload (each payload\'s shape sits in its parameter\'s description below; project / book default to this session\'s binding). '
-      + 'project — create; with id, edit (goal "" clears). '
-      + 'book — register (never ask for an upload): web-verify the exact edition\'s contents first and cite the url in tocSource (a publisher / catalog / retailer page, never a full-text copy). '
-      + 'roadmap — write a DRAFT the learner adopts in the sidebar (采用); book defaults to the binding\'s book, book: null = the project\'s OWN path. A route whose every station covers the same single book belongs to that book — the service refuses it on the project. '
-      + 'notes — a station\'s 讲义 (markdown) on the adopted path: the textbook on a 讲授 (topic) station, marginalia on a book station; rewrite as 补讲 deepens (each write bumps 第 N 次更新). '
-      + 'page — record a photographed page, carding every mark at once. '
+      'Validate and persist what you authored: what plus its fields as TOP-LEVEL parameters (each field is documented below, where you write it; project / book default to this session\'s binding). '
+      + 'project — create (name + template), or edit with project: <id> (goal "" clears). '
+      + 'book — register (title + bookKind + toc + tocSource): never ask for an upload; web-verify the exact edition\'s contents first and cite the page (a publisher / catalog / retailer page, never a full-text copy). '
+      + 'roadmap — write a DRAFT (nodes) the learner adopts in the sidebar (采用); book defaults to the binding\'s book, book: null = the project\'s OWN path; a route whose every station covers the same single book belongs to that book. '
+      + 'notes — a station\'s 讲义 (node + text, markdown): the textbook on a 讲授 (topic) station, marginalia on a book station; rewrite as 补讲 deepens. '
+      + 'page — record a photographed page (text + marks), carding every mark at once. '
       + 'cards — record a weak point when the learner is stuck, and say what you noted. '
-      + 'quiz — store a composed quiz; focus is the learner\'s choice. '
+      + 'quiz — store a composed quiz (questions; focus is the learner\'s choice). '
       + 'resource — op add | remove: a light shelf link (no contents, no roadmap, never quizzed; something referenced BY CHAPTER is a book instead). '
-      + 'binding — bind this session (null unbinds). '
-      + 'A refusal names exactly what to fix — change only that and resend the same payload.',
+      + 'binding — bind this session (binding: null unbinds). '
+      + 'A refusal names exactly what to fix — change only that and resend.',
     parameters: {
-      what: { type: 'string', description: `Required. What to write: ${WRITE_WHATS.join(' | ')}.` },
-      project: { type: 'json', description: 'what=project: { name, template: "language"|"subject"|"custom" (language: marks are words; subject: concepts), templateNote?, goal? } — with id it edits instead. Otherwise: the project id (defaults to the binding).' },
-      book: { type: 'json', description: 'what=book: { title, short (2-4 char cover abbreviation, e.g. 剑5 / PNS), author?, edition?, isbn?, bookKind: "knowledge"|"material" ("material" = exam papers / novels / anthologies — specific text you cannot recall), toc: [{ title, part? }] (one row per chapter or passage, never a part heading — the part goes in part; a bare string per row, or one newline-joined string, works), extras?: [{ title, note?, where?, when: "before"|"reference" }] (how-to-use pages, answer keys, transcripts, appendices — NOT roadmap nodes), tocSource: { by: "web"|"model"|"photo", url? }, bookId? (corrects an existing one) } — an object, or its JSON text. Otherwise: the book id (defaults to the binding\'s book; null on roadmap / notes / quiz = the project\'s own path).' },
-      roadmap: { type: 'json', description: 'what=roadmap: { nodes: [{ id, title, kind: "quiz"|"read"|"practice", goals: [...] (a bare string works), covers: [{ kind: "book", bookId, ranges: [{ from, to }] } | { kind: "resource", resourceId } | { kind: "url", url, title? } | { kind: "topic", text }], dependsOn, acceptance?: [...] (practice only) }], passRatio?, note? } — or its JSON text. quiz nodes are the levels (a chapter quiz completes them) and depend only on quiz / practice nodes; a practice node is a hands-on station gated by acceptance lines; read nodes are optional side stops (读完 completes them, they never gate). Covers mix freely on the project\'s path; on a book\'s own path every node covers that one book (chapterRanges: [{ from, to }] works as sugar for its single book cover). Every url / resource cover carries provenance: by: "web" + verifiedAt once actually opened, "model" straight from memory (verify and replace before the learner adopts), "user" when the learner gave it.' },
-      notes: { type: 'json', description: 'what=notes: { node: <station id>, text: <the station\'s 讲义, markdown> } — an object, or its JSON text. book defaults to the binding\'s book; book: null for a project-path station.' },
-      page: { type: 'json', description: 'what=page: { attachment? (the image id; omit for the latest photo in this conversation), label?, node?, text (the page\'s printed text), marks: [{ text, sentence?, handNote?, gloss? (the in-context meaning), uncertain? (kept, not carded) }] } — an object, or its JSON text.' },
-      cards: { type: 'json', description: 'what=cards: [{ kind: "word"|"concept", term, aliases?, gloss, userGloss?, context?: { sentence, node? }, source: { type: "chat"|"photo"|"quiz"|"manual", note? }, weaken?, mergeInto?, asNew? }] — or the JSON text. When the learner is stuck: source chat, weaken true. A near-duplicate comes back in pending with candidates: resend it with mergeInto: <id> or asNew: true.' },
-      quiz: { type: 'json', description: 'what=quiz: { node?, focus?: "mine"|"book"|"mixed" (the learner\'s choice of source — mine: only their own cards, book: only the chapter\'s content), questions: [{ id, kind: "choice"|"fill"|"free", prompt, options?, answer, explanation?, target: { kind: "marked"|"asked"|"missed"|"topic", cardIds? }, evidence: { kind: "photo"|"web"|"knowledge", pageId?, url?, quote? } }] } — or its JSON text. Target the learner\'s own cards first; photo evidence quotes a recorded page, web evidence cites url + quote; a material book, a resource or a url among the gated station\'s covers demands a verbatim quote for a content question.' },
+      what: { type: 'string', description: `Required. What to write: ${WRITE_WHATS.join(' | ')}. The payload goes in the TOP-LEVEL fields below (title / toc / nodes / text / questions / …), not in a wrapper object.` },
+      project: { type: 'json', description: 'The project id (defaults to this session\'s binding). what=project: omit it to create; pass the id to edit.' },
+      book: { type: 'json', description: 'The book id (defaults to the binding\'s book; null = the project\'s own path on roadmap / notes / quiz).' },
+      name: { type: 'string', description: 'what=project: the project\'s name.' },
+      template: { type: 'string', description: 'what=project: "language" (marks are words) | "subject" (marks are concepts) | "custom".' },
+      goal: { type: 'string', description: 'what=project: the one-line goal.' },
+      title: { type: 'string', description: 'what=book: the exact edition\'s title. what=resource · op=add: what the link\'s own page calls it.' },
+      short: { type: 'string', description: 'what=book: a 2-4 character cover abbreviation (剑5 / PNS).' },
+      author: { type: 'string', description: 'what=book.' },
+      edition: { type: 'string', description: 'what=book (e.g. 2020 年 9 月第一版).' },
+      isbn: { type: 'string', description: 'what=book.' },
+      bookKind: { type: 'string', description: 'what=book: "knowledge" | "material" ("material" = exam papers / novels / anthologies — specific text you cannot recall).' },
+      toc: { type: 'json', description: 'what=book: the contents — [{ title, part? }] with one row per chapter or passage (never a part heading; the part goes in part), a bare string per row, or ONE newline-joined string of titles.' },
+      extras: { type: 'json', description: 'what=book: [{ title, note?, where?, when: "before"|"reference" }] — how-to-use pages, answer keys, transcripts, appendices; NOT roadmap nodes.' },
+      tocSource: { type: 'json', description: 'what=book: { by: "web"|"model"|"photo", url? } — cite the page you verified.' },
+      bookId: { type: 'string', description: 'what=book: correct this existing book instead of adding (library_read · books lists the ids).' },
+      nodes: { type: 'json', description: 'what=roadmap: [{ id, title, kind: "quiz"|"read"|"practice", goals: [...] (a bare string works), covers: [{ kind: "book", bookId, ranges: [{ from, to }] } | { kind: "resource", resourceId } | { kind: "url", url, title? } | { kind: "topic", text }], dependsOn, acceptance?: [...] (practice only) }] — or the JSON text. quiz nodes are the levels (a chapter quiz completes them) and depend only on quiz / practice nodes; a practice node is a hands-on station gated by acceptance lines; read nodes are optional side stops (读完 completes them, they never gate). On a book\'s own path every node covers that one book (chapterRanges: [{ from, to }] works as sugar); on the project\'s path covers mix. Every url / resource cover carries provenance: by: "web" + verifiedAt once actually opened, "model" from memory (verify and replace before the learner adopts), "user" when the learner gave it.' },
+      passRatio: { type: 'number', description: 'what=roadmap: the pass line in (0, 1] — 0.8 means 8 of 10 right (the default).' },
+      note: { type: 'string', description: 'what=roadmap: the one-line pacing on the draft card. what=resource · op=add: one line on why the link earns its place.' },
+      node: { type: 'string', description: 'The station id (what=notes; the scope on what=quiz).' },
+      text: { type: 'string', description: 'what=notes: the station\'s 讲义 in markdown. what=page: the photographed page\'s printed text.' },
+      attachment: { type: 'string', description: 'what=page: the image id (omit for the latest photo in this conversation).' },
+      label: { type: 'string', description: 'what=page: what the learner calls the page (「p.16」).' },
+      marks: { type: 'json', description: 'what=page: [{ text, sentence?, handNote?, gloss? (the in-context meaning), uncertain? (kept, not carded) }].' },
+      cards: { type: 'json', description: 'what=cards: [{ kind: "word"|"concept", term, aliases?, gloss, userGloss?, context?: { sentence, node? }, source: { type: "chat"|"photo"|"quiz"|"manual", note? }, weaken?, mergeInto?, asNew? }] — or the JSON text. When the learner is stuck: source chat, weaken true; a near-duplicate comes back in pending — resend it with mergeInto: <id> or asNew: true.' },
+      focus: { type: 'string', description: 'what=quiz: "mine" | "book" | "mixed" — the learner\'s choice of source.' },
+      questions: { type: 'json', description: 'what=quiz: [{ id, kind: "choice"|"fill"|"free", prompt, options?, answer, explanation?, target: { kind: "marked"|"asked"|"missed"|"topic", cardIds? }, evidence: { kind: "photo"|"web"|"knowledge", pageId?, url?, quote? } }] — or the JSON text. Target the learner\'s own cards first; a material book, a resource or a url among the gated station\'s covers demands a verbatim quote for a content question.' },
       op: { type: 'string', description: 'what=resource: add | remove.' },
-      resource: { type: 'json', description: 'what=resource: add — { title, url, kind: "article"|"video"|"repo"|"tool"|"course"|"hardware", note? (one line: why it earns its place), addedBy? }; remove — { id }. An object, or its JSON text. Open the link on the web first: the title is what its own page calls it.' },
+      url: { type: 'string', description: 'what=resource · op=add: the link — open it on the web first.' },
+      kind: { type: 'string', description: 'what=resource: article | video | repo | tool | course | hardware.' },
+      addedBy: { type: 'string', description: 'what=resource: "coach" (the default) | "learner".' },
+      resourceId: { type: 'string', description: 'what=resource · op=remove: the shelf entry id (library_read · resources lists them).' },
       binding: { type: 'json', description: 'what=binding: { project, book? } or null.' },
     },
     output: jsonOutput(),
@@ -268,34 +290,47 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
         }
         return `${field} arrived as ${Array.isArray(value) ? 'an array' : typeof value} with an unexpected shape`
       }
+      // The canonical form is FLAT top-level fields (title / toc / nodes / …);
+      // a nested payload in the what-named slot (book: {…}, roadmap: {…}) is
+      // the tolerated legacy form — undeclared keys pass the open parameter
+      // root, so read them through this record view. Flat wins when both arrive.
+      const legacy = args as unknown as Record<string, unknown>
+      const strField = (key: keyof typeof args): Record<string, string> =>
+        typeof args[key] === 'string' ? { [key]: args[key] as string } : {}
       switch (args.what) {
         case 'project': {
-          const body = payload(args.project)
-          if (body !== undefined && typeof body.id === 'string') {
-            const { id, name, goal, template } = body
-            const patch = {
-              ...(typeof name === 'string' ? { name } : {}),
-              ...(typeof goal === 'string' ? { goal } : {}),
-              ...(typeof template === 'string' ? { template: template as LibraryTemplate } : {}),
-            }
-            if (Object.keys(patch).length === 0) throw new Error('editing a project takes project: { id, name?, goal?, template? }')
-            return unwrap(await service.updateProject({ id, patch })) as unknown as JsonValue
+          const nested = payload(args.project)
+          const body: Record<string, unknown> = { ...(nested ?? {}), ...strField('name'), ...strField('goal'), ...strField('template') }
+          const editId = typeof args.project === 'string' && args.project.trim() !== '' ? args.project.trim() : (typeof body.id === 'string' ? body.id : undefined)
+          if (editId !== undefined) {
+            const { id: _id, ...patch } = body
+            if (Object.keys(patch).length === 0) throw new Error('editing a project takes project: "<id>" (a minted id — library_read · projects lists them; to CREATE a project omit project and set name + template) plus the top-level fields to change (name? / goal? / template?)')
+            return unwrap(await service.updateProject({ id: editId, patch: patch as { name?: string; goal?: string; template?: LibraryTemplate } })) as unknown as JsonValue
           }
-          if (body === undefined || typeof body.name !== 'string') {
-            throw new Error(`what=project takes project: { name, template: "language"|"subject"|"custom", goal? } — ${arrival('project', args.project)}`)
+          if (typeof body.name !== 'string') {
+            throw new Error(`what=project takes top-level fields: name, template ("language"|"subject"|"custom"), goal? — e.g. { what: "project", name: "数学", template: "subject" } — ${arrival('name', args.name)}`)
           }
           return unwrap(await service.createProject(body as { name: string })) as unknown as JsonValue
         }
         case 'book': {
-          const body = payload(args.book)
-          if (body === undefined || typeof body.title !== 'string' || (!Array.isArray(body.toc) && typeof body.toc !== 'string')) {
-            throw new Error(`what=book takes book: { title, edition?, bookKind: "knowledge"|"material", toc: [{ title, part? }] (a bare string per row, or one newline-joined string), tocSource: { by, url? } } — ${arrival('book', args.book)}`)
+          const nested = payload(args.book)
+          const body: Record<string, unknown> = {
+            ...(nested ?? {}),
+            ...strField('title'), ...strField('short'), ...strField('author'), ...strField('edition'), ...strField('isbn'), ...strField('bookKind'), ...strField('bookId'),
+            ...(args.toc !== undefined ? { toc: args.toc } : {}),
+            ...(args.extras !== undefined ? { extras: args.extras } : {}),
+            ...(args.tocSource !== undefined ? { tocSource: args.tocSource } : {}),
+          }
+          if (typeof body.title !== 'string' || (!Array.isArray(body.toc) && typeof body.toc !== 'string')) {
+            const got = [typeof body.title === 'string' ? 'title ✓' : 'title ✗ MISSING', body.toc !== undefined ? 'toc ✓' : 'toc ✗ MISSING'].join(' · ')
+            throw new Error(`what=book takes TOP-LEVEL fields: title, bookKind: "knowledge"|"material", toc ([{ title, part? }] | a bare string per row | one newline-joined string), tocSource: { by, url? } (+ short?, author?, edition?, isbn?, extras?) — got ${got}`)
           }
           // A whole contents may arrive as one newline-joined string — the
           // biggest single payload, and the one models mangle most as JSON.
-          const tocRows = typeof body.toc === 'string'
+          const tocList = payloadList(body.toc)
+          const tocRows = typeof body.toc === 'string' && payloadList(body.toc) === undefined
             ? body.toc.split('\n').map(line => line.trim()).filter(line => line !== '')
-            : body.toc as unknown[]
+            : (tocList ?? [])
           const toc = tocRows.map(row => typeof row === 'string' ? { title: row } : row as { title: string; part?: string })
           return unwrap(await service.putBook({
             projectId: projectOf(args.project, exec),
@@ -306,19 +341,20 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
             ...(typeof body.isbn === 'string' ? { isbn: body.isbn } : {}),
             bookKind: body.bookKind as 'knowledge' | 'material',
             ...(typeof body.short === 'string' ? { short: body.short } : {}),
-            ...(Array.isArray(body.extras) ? { extras: body.extras as { title: string; note?: string; where?: string; when?: 'before' | 'reference' }[] } : {}),
+            ...(Array.isArray(payloadList(body.extras)) ? { extras: payloadList(body.extras) as { title: string; note?: string; where?: string; when?: 'before' | 'reference' }[] } : {}),
             toc,
             tocSource: (payload(body.tocSource) ?? { by: 'model' }) as { by: 'web' | 'model' | 'photo'; url?: string },
           })) as unknown as JsonValue
         }
         case 'roadmap': {
-          const body = payload(args.roadmap)
-          if (body === undefined || !Array.isArray(body.nodes)) {
-            throw new Error(`what=roadmap takes roadmap: { nodes: [{ id, title, kind: "quiz"|"read"|"practice", goals, covers: [{ kind: "book", bookId, ranges: [{ from, to }] } | { kind: "resource", resourceId } | { kind: "url", url } | { kind: "topic", text }], dependsOn, acceptance? (practice only) }], note? } — ${arrival('roadmap', args.roadmap)}`)
+          const nested = payload(legacy.roadmap)
+          const list = payloadList(args.nodes ?? nested?.nodes)
+          if (list === undefined) {
+            throw new Error(`what=roadmap takes the TOP-LEVEL nodes field: nodes: [{ id, title, kind: "quiz"|"read"|"practice", goals, covers: [{ kind: "book", bookId, ranges: [{ from, to }] } | { kind: "resource", resourceId } | { kind: "url", url } | { kind: "topic", text }], dependsOn, acceptance? (practice only) }] (+ passRatio?, note?) — ${arrival('nodes', args.nodes ?? nested?.nodes ?? legacy.roadmap)}`)
           }
-          const rawBook = args.book === null || typeof args.book === 'string' ? args.book : body.book === null || typeof body.book === 'string' ? body.book : undefined
-          const bookId = rawBook === null ? undefined : rawBook ?? bindingOf(exec)?.bookId
-          const nodes = (body.nodes as Record<string, unknown>[]).map(node => {
+          const rawBook = args.book === null || typeof args.book === 'string' ? args.book : nested?.book === null || typeof nested?.book === 'string' ? nested.book : undefined
+          const bookId = rawBook === null ? undefined : (rawBook as string | undefined) ?? bindingOf(exec)?.bookId
+          const nodes = (list as Record<string, unknown>[]).map(node => {
             const { chapterRanges, covers, ...rest } = node
             if (covers !== undefined) {
               // Tolerate the natural shorthand: a cover's target may arrive as
@@ -348,41 +384,47 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
             projectId: projectOf(args.project, exec),
             ...(bookId === undefined ? {} : { bookId }),
             nodes: nodes as unknown as Parameters<LibraryService['draftRoadmap']>[0]['nodes'],
-            ...(typeof body.passRatio === 'number' ? { passRatio: body.passRatio } : {}),
-            ...(typeof body.note === 'string' ? { note: body.note } : {}),
+            ...(typeof args.passRatio === 'number' ? { passRatio: args.passRatio } : typeof nested?.passRatio === 'number' ? { passRatio: nested.passRatio as number } : {}),
+            ...(typeof args.note === 'string' ? { note: args.note } : typeof nested?.note === 'string' ? { note: nested.note as string } : {}),
           })) as unknown as JsonValue
         }
         case 'notes': {
-          const body = payload(args.notes)
-          if (body === undefined || typeof body.node !== 'string' || typeof body.text !== 'string') {
-            throw new Error(`what=notes takes notes: { node: <station id>, text: <the station's 讲义, markdown> } — ${arrival('notes', args.notes)}`)
+          const nested = payload(legacy.notes)
+          const nodeId = typeof args.node === 'string' && args.node !== '' ? args.node : (typeof nested?.node === 'string' ? nested.node as string : undefined)
+          const text = typeof args.text === 'string' && args.text !== '' ? args.text : (typeof nested?.text === 'string' ? nested.text as string : undefined)
+          if (nodeId === undefined || text === undefined) {
+            throw new Error(`what=notes takes TOP-LEVEL fields: node: <station id>, text: <the station's 讲义, markdown> — got node ${nodeId === undefined ? '✗ MISSING' : '✓'} · text ${text === undefined ? '✗ MISSING' : '✓'}`)
           }
-          const rawBook = args.book === null || typeof args.book === 'string' ? args.book : body.book === null || typeof body.book === 'string' ? body.book : undefined
-          const bookId = rawBook === null ? undefined : rawBook ?? bindingOf(exec)?.bookId
+          const rawBook = args.book === null || typeof args.book === 'string' ? args.book : nested?.book === null || typeof nested?.book === 'string' ? nested.book : undefined
+          const bookId = rawBook === null ? undefined : (rawBook as string | undefined) ?? bindingOf(exec)?.bookId
           return unwrap(await service.putNotes({
             projectId: projectOf(args.project, exec),
             ...(bookId === undefined ? {} : { bookId }),
-            nodeId: body.node,
-            text: body.text,
+            nodeId,
+            text,
           })) as unknown as JsonValue
         }
         case 'page': {
-          const body = payload(args.page)
-          if (body === undefined || typeof body.text !== 'string' || !Array.isArray(body.marks)) {
-            throw new Error(`what=page takes page: { attachment?: <the image id>, text, marks: [{ text, sentence?, handNote?, gloss?, uncertain? }], label?, node? } — ${arrival('page', args.page)}`)
+          const nested = payload(legacy.page)
+          const pageText = typeof args.text === 'string' && args.text !== '' ? args.text : (typeof nested?.text === 'string' ? nested.text as string : undefined)
+          const marks = payloadList(args.marks ?? nested?.marks)
+          if (pageText === undefined || marks === undefined) {
+            throw new Error(`what=page takes TOP-LEVEL fields: text (the page's printed text), marks: [{ text, sentence?, handNote?, gloss?, uncertain? }] (+ attachment?, label?, node?) — got text ${pageText === undefined ? '✗ MISSING' : '✓'} · marks ${marks === undefined ? '✗ MISSING' : '✓'}`)
           }
-          const attachment = images.resolve(sessionIdOf(exec), body.attachment)
+          const attachmentRef = typeof args.attachment === 'string' ? args.attachment : nested?.attachment
+          const attachment = images.resolve(sessionIdOf(exec), attachmentRef)
           if (attachment === undefined) {
             throw new Error('no photo to record: this conversation has no image the library saw arrive (or the id names none) — ask the learner to send the page photo here, then record it')
           }
+          const pageNode = typeof args.node === 'string' && args.node !== '' ? args.node : (typeof nested?.node === 'string' ? nested.node as string : undefined)
           return unwrap(await service.recordPage({
             projectId: projectOf(args.project, exec),
-            bookId: bookOf(typeof args.book === 'string' ? args.book : body.book, exec),
-            ...(typeof body.node === 'string' ? { nodeId: body.node } : {}),
-            ...(typeof body.label === 'string' ? { label: body.label } : {}),
+            bookId: bookOf(typeof args.book === 'string' ? args.book : nested?.book, exec),
+            ...(pageNode === undefined ? {} : { nodeId: pageNode }),
+            ...(typeof (args.label ?? nested?.label) === 'string' ? { label: (args.label ?? nested?.label) as string } : {}),
             attachment,
-            text: body.text,
-            marks: body.marks as LibraryMark[],
+            text: pageText,
+            marks: marks as LibraryMark[],
           })) as unknown as JsonValue
         }
         case 'cards': {
@@ -408,42 +450,46 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
           })) as unknown as JsonValue
         }
         case 'quiz': {
-          const body = payload(args.quiz)
-          if (body === undefined || !Array.isArray(body.questions)) {
-            throw new Error(`what=quiz takes quiz: { node?, questions: [{ id, kind, prompt, options?, answer, explanation?, target: { kind, cardIds? }, evidence: { kind, pageId?, url?, quote? } }] } — ${arrival('quiz', args.quiz)}`)
+          const nested = payload(legacy.quiz)
+          const questions = payloadList(args.questions ?? nested?.questions)
+          if (questions === undefined) {
+            throw new Error(`what=quiz takes the TOP-LEVEL questions field: questions: [{ id, kind: "choice"|"fill"|"free", prompt, options?, answer, explanation?, target: { kind, cardIds? }, evidence: { kind, pageId?, url?, quote? } }] (+ node?, focus?) — ${arrival('questions', args.questions ?? nested?.questions ?? legacy.quiz)}`)
           }
-          const node = typeof body.node === 'string' ? body.node : undefined
-          const rawBook = args.book === null || typeof args.book === 'string' ? args.book : body.book === null || typeof body.book === 'string' ? body.book : undefined
-          const bookId = rawBook === null ? undefined : rawBook ?? bindingOf(exec)?.bookId
+          const node = typeof args.node === 'string' && args.node !== '' ? args.node : (typeof nested?.node === 'string' ? nested.node as string : undefined)
+          const rawBook = args.book === null || typeof args.book === 'string' ? args.book : nested?.book === null || typeof nested?.book === 'string' ? nested.book : undefined
+          const bookId = rawBook === null ? undefined : (rawBook as string | undefined) ?? bindingOf(exec)?.bookId
+          const focus = args.focus ?? nested?.focus
           return unwrap(await service.putQuiz({
             projectId: projectOf(args.project, exec),
             quiz: {
-              ...(body.focus === 'mine' || body.focus === 'book' || body.focus === 'mixed' ? { focus: body.focus } : {}),
+              ...(focus === 'mine' || focus === 'book' || focus === 'mixed' ? { focus } : {}),
               scope: { ...(bookId === undefined ? {} : { bookId }), ...(node === undefined ? {} : { nodeId: node }) },
-              questions: body.questions as LibraryQuizQuestion[],
+              questions: questions as unknown as LibraryQuizQuestion[],
             },
           })) as unknown as JsonValue
         }
         case 'resource': {
-          const body = payload(args.resource)
+          const nested = payload(legacy.resource)
           if (args.op === 'add') {
-            if (body === undefined || typeof body.title !== 'string' || typeof body.url !== 'string') {
-              throw new Error(`what=resource · op=add takes resource: { title, url, kind: "article"|"video"|"repo"|"tool"|"course"|"hardware", note? } — a light link on the project's shelf; open it on the web first, and let note say why it earns its place — ${arrival('resource', args.resource)}`)
+            const title = typeof args.title === 'string' && args.title !== '' ? args.title : (typeof nested?.title === 'string' ? nested.title as string : undefined)
+            const url = typeof args.url === 'string' && args.url !== '' ? args.url : (typeof nested?.url === 'string' ? nested.url as string : undefined)
+            if (title === undefined || url === undefined) {
+              throw new Error(`what=resource · op=add takes TOP-LEVEL fields: title, url, kind: "article"|"video"|"repo"|"tool"|"course"|"hardware", note? — a light link on the project's shelf; open it on the web first, and let note say why it earns its place — got title ${title === undefined ? '✗ MISSING' : '✓'} · url ${url === undefined ? '✗ MISSING' : '✓'}`)
             }
             return unwrap(await service.addResource({
               projectId: projectOf(args.project, exec),
               resource: {
-                title: body.title,
-                url: body.url,
-                kind: body.kind as LibraryResourceKind,
-                ...(typeof body.note === 'string' ? { note: body.note } : {}),
-                addedBy: body.addedBy === 'learner' ? 'learner' : 'coach',
+                title,
+                url,
+                kind: (typeof args.kind === 'string' ? args.kind : nested?.kind) as LibraryResourceKind,
+                ...(typeof (args.note ?? nested?.note) === 'string' ? { note: (args.note ?? nested?.note) as string } : {}),
+                addedBy: (args.addedBy ?? nested?.addedBy) === 'learner' ? 'learner' : 'coach',
               },
             })) as unknown as JsonValue
           }
           if (args.op === 'remove') {
-            const resourceId = typeof body?.id === 'string' ? body.id : undefined
-            if (resourceId === undefined) throw new Error('what=resource · op=remove takes resource: { id } — library_read · resources lists the ids')
+            const resourceId = typeof args.resourceId === 'string' && args.resourceId !== '' ? args.resourceId : (typeof nested?.id === 'string' ? nested.id as string : undefined)
+            if (resourceId === undefined) throw new Error('what=resource · op=remove takes the top-level resourceId field — library_read · resources lists the ids')
             return unwrap(await service.removeResource({ projectId: projectOf(args.project, exec), resourceId })) as unknown as JsonValue
           }
           throw new Error(`what=resource needs op: add | remove — got ${JSON.stringify(args.op)}`)

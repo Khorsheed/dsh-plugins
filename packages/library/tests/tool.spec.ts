@@ -80,7 +80,7 @@ describe('editing a project', () => {
     expect(edited.project.goal).toBeUndefined()
     const listed = (await call('library_read', { what: 'projects' })) as { projects: unknown[] }
     expect(listed.projects).toHaveLength(1)
-    await expect(call('library_write', { what: 'project', project: { id: project } })).rejects.toThrow(/name\?, goal\?/)
+    await expect(call('library_write', { what: 'project', project: { id: project } })).rejects.toThrow(/top-level fields to change/)
   })
 })
 
@@ -137,8 +137,8 @@ describe('resources', () => {
 
   it('teaches the payload shape and the op', async () => {
     await seed()
-    await expect(call('library_write', { what: 'resource', op: 'add', resource: { title: 'x' } })).rejects.toThrow(/op=add takes resource/)
-    await expect(call('library_write', { what: 'resource', op: 'remove', resource: {} })).rejects.toThrow(/op=remove takes resource/)
+    await expect(call('library_write', { what: 'resource', op: 'add', resource: { title: 'x' } })).rejects.toThrow(/op=add takes TOP-LEVEL/)
+    await expect(call('library_write', { what: 'resource', op: 'remove', resource: {} })).rejects.toThrow(/op=remove takes the top-level resourceId/)
     await expect(call('library_write', { what: 'resource', resource: {} })).rejects.toThrow(/op: add \| remove/)
   })
 })
@@ -223,7 +223,7 @@ describe('payload transport', () => {
 
   it('a refusal names what arrived: nothing, unparseable text, or the wrong shape', async () => {
     await seed()
-    await expect(call('library_write', { what: 'roadmap' })).rejects.toThrow(/no roadmap field arrived — set the roadmap field itself/)
+    await expect(call('library_write', { what: 'roadmap' })).rejects.toThrow(/no nodes field arrived — set the nodes field itself/)
     await expect(call('library_write', { what: 'roadmap', roadmap: '{not json' })).rejects.toThrow(/not valid JSON/)
     await expect(call('library_write', { what: 'cards' })).rejects.toThrow(/no cards field arrived/)
   })
@@ -259,6 +259,41 @@ describe('payload transport', () => {
   })
 })
 
+describe('flat top-level fields (the canonical form)', () => {
+  it('creates a project, registers a book, drafts a path and writes notes without any wrapper object', async () => {
+    const created = (await call('library_write', { what: 'project', name: '数学', template: 'subject' })) as { project: { id: string } }
+    const added = (await call('library_write', {
+      what: 'book',
+      project: created.project.id,
+      title: '普林斯顿微积分读本',
+      bookKind: 'knowledge',
+      toc: '第1章 函数\n第2章 极限',
+      tocSource: { by: 'web', url: 'https://example.org/toc' },
+    })) as { book: { id: string; toc: { title: string }[] } }
+    expect(added.book.toc.map(row => row.title)).toEqual(['第1章 函数', '第2章 极限'])
+    await call('library_write', { what: 'binding', binding: { project: created.project.id, book: added.book.id } })
+    const drafted = (await call('library_write', {
+      what: 'roadmap',
+      nodes: [{ id: 'n1', title: '函数', kind: 'quiz', covers: [{ kind: 'book', bookId: added.book.id, ranges: [{ from: 1, to: 1 }] }] }],
+    })) as { draft: { nodes: unknown[] } }
+    expect(drafted.draft.nodes.length).toBe(1)
+    const adopted = await service.adoptRoadmap({ projectId: created.project.id, bookId: added.book.id })
+    if (!adopted.ok) throw new Error(adopted.message)
+    const noted = (await call('library_write', { what: 'notes', node: 'n1', text: '## 函数讲义' })) as { notes: { revisions: number } }
+    expect(noted.notes.revisions).toBe(1)
+    const res = (await call('library_write', { what: 'resource', op: 'add', title: 'Gymnasium 文档', url: 'https://gymnasium.example', kind: 'tool' })) as { resource: { id: string } }
+    expect((await call('library_write', { what: 'resource', op: 'remove', resourceId: res.resource.id })) as { ok: boolean })
+  })
+
+  it('the observed failure modes name the missing top-level field', async () => {
+    await seed()
+    // The book fields forgotten entirely (the live "满屏报错" session).
+    await expect(call('library_write', { what: 'book', project: 'p_any' })).rejects.toThrow(/title ✗ MISSING · toc ✗ MISSING/)
+    // Prose poured into the id slot.
+    await expect(call('library_write', { what: 'project', project: '新建数学项目' })).rejects.toThrow(/minted/)
+  })
+})
+
 describe('station notes through the tools', () => {
   it('library_write · notes lands on the bound book\'s path, and on the project path with book: null', async () => {
     const { project, book } = await seed()
@@ -274,7 +309,7 @@ describe('station notes through the tools', () => {
     // The payload may arrive as its JSON text, and the bad calls teach.
     const asText = (await call('library_write', { what: 'notes', notes: JSON.stringify({ node: 'n1', text: '补讲版' }) })) as { notes: { revisions: number } }
     expect(asText.notes.revisions).toBe(2)
-    await expect(call('library_write', { what: 'notes', notes: { text: 'x' } })).rejects.toThrow(/what=notes takes notes/)
+    await expect(call('library_write', { what: 'notes', notes: { text: 'x' } })).rejects.toThrow(/what=notes takes TOP-LEVEL/)
     await expect(call('library_write', { what: 'notes', notes: { node: 'n9', text: 'x' } })).rejects.toThrow(/no node/)
     // A project-path station takes book: null.
     await call('library_write', { what: 'roadmap', book: null, roadmap: { nodes: [
