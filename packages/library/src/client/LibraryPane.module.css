@@ -1610,6 +1610,87 @@ textarea.input { resize: vertical; font: inherit; line-height: 1.5; }
   border-bottom: 1px solid var(--dsw-alias-border-l2);
 }
 
+/* 讲义（notes tab） */
+.notesPaper {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.notesMeta {
+  padding-bottom: 8px;
+  border-bottom: 1px dashed var(--dsw-alias-border-l2);
+  color: var(--dsw-alias-label-secondary);
+  font-size: var(--dsh-panel-text-meta, 12px);
+}
+
+.notesBody {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: var(--dsh-panel-text-reading, 14px);
+  line-height: var(--dsh-panel-reading-line-height, 1.65);
+}
+
+.notesBody h4 {
+  margin: 4px 0 0;
+  font-size: var(--dsh-panel-text-title, 14px);
+}
+
+.notesBody p { margin: 0; }
+
+.notesBody ul {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding-left: 18px;
+}
+
+.notesBody code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--dsw-alias-bg-layer-2);
+  font-size: 0.92em;
+}
+
+/* 这一站的错题 */
+.missRow {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--lib-bad) 30%, transparent);
+  border-radius: 10px;
+  background: var(--lib-bad-soft);
+}
+
+.missMark {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  border-radius: 50%;
+  background: var(--lib-bad);
+  color: #fff; /* panel-check: allow-color — the ✕ glyph on a bad-tone dot */
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.missText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
 /* 复习 */
 .flash {
   display: flex;

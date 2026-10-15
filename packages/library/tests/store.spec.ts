@@ -18,6 +18,7 @@ import {
   normalizeLibraryIndex,
   normalizeNodeCover,
   normalizeResource,
+  normalizeRoadmap,
   resolveLibraryStateRoot,
 } from '../src/store.ts'
 import type { LibraryBook, LibraryCard, LibraryProject, LibraryResource, LibraryRoadmap } from '../src/types.ts'
@@ -115,6 +116,14 @@ describe('documents', () => {
     const normalized = normalizeBook({ ...book, bookKind: 'zine', toc: [{ title: 'b' }, { n: 9, title: 'c' }] })
     expect(normalized?.bookKind).toBe('knowledge')
     expect(normalized?.toc.map(row => row.n)).toEqual([1, 2])
+  })
+
+  it('keeps a node\'s 讲义 through normalize, and drops a malformed one', () => {
+    const node = { id: 'n1', title: '概论', kind: 'quiz', goals: [], dependsOn: [], covers: [{ kind: 'book', bookId: book.id, ranges: [{ from: 1, to: 1 }] }], state: 'current' }
+    const kept = normalizeRoadmap({ status: 'adopted', generatedAt: '2026-10-06T00:00:00.000Z', nodes: [{ ...node, notes: { text: '## 讲义', updatedAt: '2026-10-15T00:00:00.000Z', revisions: 2 } }] })
+    expect(kept?.nodes[0]?.notes).toEqual({ text: '## 讲义', updatedAt: '2026-10-15T00:00:00.000Z', revisions: 2 })
+    const torn = normalizeRoadmap({ status: 'adopted', generatedAt: '2026-10-06T00:00:00.000Z', nodes: [{ ...node, notes: { revisions: 'x' } }] })
+    expect(torn?.nodes[0]?.notes).toBeUndefined()
   })
 
   it('keeps a draft beside the adopted path, and drops it on demand', async () => {

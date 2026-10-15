@@ -191,7 +191,7 @@ describe('photo pages', () => {
 describe('teaching errors', () => {
   it('rejects an unknown what with the valid list', async () => {
     await expect(call('library_read', { what: 'everything' })).rejects.toThrow(/projects \| books \| resources \| toc \| roadmap \| pages \| cards \| quiz \| stats/)
-    await expect(call('library_write', { what: 'notes' })).rejects.toThrow(/project \| book \| roadmap \| page \| cards \| quiz \| resource \| binding/)
+    await expect(call('library_write', { what: 'everythings' })).rejects.toThrow(/project \| book \| roadmap \| notes \| page \| cards \| quiz \| resource \| binding/)
   })
 
   it('surfaces the service refusal verbatim', async () => {
@@ -241,6 +241,36 @@ describe('payload transport', () => {
       ] },
     })) as { draft: { nodes: { covers: { bookId?: string }[] }[] } }
     expect(ok.draft.nodes[0]?.covers[0]?.bookId).toBe(book)
+  })
+})
+
+describe('station notes through the tools', () => {
+  it('library_write · notes lands on the bound book\'s path, and on the project path with book: null', async () => {
+    const { project, book } = await seed()
+    await call('library_write', { what: 'roadmap', roadmap: { nodes: [
+      { id: 'n1', title: '离子通道', kind: 'quiz', covers: [{ kind: 'book', bookId: book, ranges: [{ from: 1, to: 1 }] }] },
+      { id: 'n2', title: '动作电位', kind: 'quiz', covers: [{ kind: 'book', bookId: book, ranges: [{ from: 2, to: 2 }] }], dependsOn: ['n1'] },
+    ] } })
+    const adoptedBook = await service.adoptRoadmap({ projectId: project, bookId: book })
+    if (!adoptedBook.ok) throw new Error(adoptedBook.message)
+    const written = (await call('library_write', { what: 'notes', notes: { node: 'n1', text: '## 讲义\n\n- 要点' } })) as { notes: { revisions: number } }
+    expect(written.notes.revisions).toBe(1)
+    expect((await service.getRoadmap({ projectId: project, bookId: book })).roadmap?.nodes[0]?.notes?.text).toContain('要点')
+    // The payload may arrive as its JSON text, and the bad calls teach.
+    const asText = (await call('library_write', { what: 'notes', notes: JSON.stringify({ node: 'n1', text: '补讲版' }) })) as { notes: { revisions: number } }
+    expect(asText.notes.revisions).toBe(2)
+    await expect(call('library_write', { what: 'notes', notes: { text: 'x' } })).rejects.toThrow(/what=notes takes notes/)
+    await expect(call('library_write', { what: 'notes', notes: { node: 'n9', text: 'x' } })).rejects.toThrow(/no node/)
+    // A project-path station takes book: null.
+    await call('library_write', { what: 'roadmap', book: null, roadmap: { nodes: [
+      { id: 's1', title: '极限', kind: 'quiz', covers: [{ kind: 'book', bookId: book, ranges: [{ from: 1, to: 1 }] }] },
+      { id: 's2', title: '串讲', kind: 'quiz', covers: [{ kind: 'topic', text: '讲授' }], dependsOn: ['s1'] },
+    ] } })
+    const adoptedProject = await service.adoptRoadmap({ projectId: project })
+    if (!adoptedProject.ok) throw new Error(adoptedProject.message)
+    const station = (await call('library_write', { what: 'notes', book: null, notes: { node: 's2', text: '讲授站讲义' } })) as { notes: { revisions: number } }
+    expect(station.notes.revisions).toBe(1)
+    expect((await service.getRoadmap({ projectId: project })).roadmap?.nodes[1]?.notes?.text).toBe('讲授站讲义')
   })
 })
 

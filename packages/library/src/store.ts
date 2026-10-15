@@ -403,6 +403,8 @@ export function normalizeRoadmap(value: unknown): LibraryRoadmap | undefined {
         ? [{ kind: 'book', bookId, ranges: legacyRanges(node.chapterRanges) }]
         : []
     const stats = asRecord(node.quizStats)
+    const notesRec = asRecord(node.notes)
+    const notesText = text(notesRec?.text, 40000)
     nodes.push({
       id: nodeId,
       title,
@@ -419,6 +421,9 @@ export function normalizeRoadmap(value: unknown): LibraryRoadmap | undefined {
         },
       }),
       ...(kind === 'practice' && Array.isArray(node.acceptance) ? { acceptance: strings(node.acceptance, 300) } : {}),
+      ...(notesRec === undefined || notesText === undefined ? {} : {
+        notes: { text: notesText, updatedAt: stamp(notesRec.updatedAt), revisions: finite(notesRec.revisions) ?? 1 },
+      }),
     })
   }
   const passRatio = finite(record.passRatio)

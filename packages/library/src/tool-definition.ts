@@ -54,7 +54,7 @@ function unwrap<T>(outcome: LibraryOutcome<T>): T {
 }
 
 const READ_WHATS = ['projects', 'books', 'resources', 'toc', 'roadmap', 'pages', 'cards', 'quiz', 'stats'] as const
-const WRITE_WHATS = ['project', 'book', 'roadmap', 'page', 'cards', 'quiz', 'resource', 'binding'] as const
+const WRITE_WHATS = ['project', 'book', 'roadmap', 'notes', 'page', 'cards', 'quiz', 'resource', 'binding'] as const
 
 type Exec = { agent?: Agent }
 
@@ -227,6 +227,9 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
       + '(verify and replace before the learner adopts), "user" when the learner gave it. Quiz nodes are the levels (a chapter quiz completes them) and depend only on quiz / practice nodes; '
       + 'a practice node is a hands-on station gated by acceptance — acceptance lists the criteria, one verbatim verdict.criterion per line at assess time; '
       + 'read nodes are optional side stops (读完 completes them, they never gate). note is the one-line pacing shown on the draft card. '
+      + 'what="notes": notes { node, text } — write the station\'s 讲义 (markdown) onto the adopted path: distill what you taught — the explanation, '
+      + 'the points THIS learner got stuck on, the pitfalls. On a 讲授 (topic) station the notes ARE the textbook; on a book station they are marginalia, never a substitute for the book. '
+      + 'Write them when you finish teaching a station (and whenever 补讲 deepens it — each write bumps 第 N 次更新). book defaults to the binding\'s book; book: null for a project-path station. '
       + 'what="page": page { attachment? (the image id; omit it for the latest photo in this conversation), label?, node?, text (the page\'s printed text), '
       + 'marks: [{ text, sentence?, handNote?, gloss?, uncertain? }] } — records a photographed page and cards every mark at once; gloss is the in-context meaning; '
       + 'uncertain marks are kept but not carded. '
@@ -245,6 +248,7 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
       project: { type: 'json', description: 'what=project: the new project payload; otherwise the project id (defaults to the binding).' },
       book: { type: 'json', description: 'what=book: the book payload; otherwise the book id (defaults to the binding\'s book).' },
       roadmap: { type: 'json', description: 'what=roadmap: { nodes, passRatio?, note? } (an object, or its JSON text).' },
+      notes: { type: 'json', description: 'what=notes: { node, text } (an object, or its JSON text).' },
       page: { type: 'json', description: 'what=page: { attachment, label?, node?, text, marks } (an object, or its JSON text).' },
       cards: { type: 'json', description: 'what=cards: the cards to record (an array, or its JSON text).' },
       quiz: { type: 'json', description: 'what=quiz: { node?, questions } (an object, or its JSON text).' },
@@ -361,6 +365,20 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
             nodes: nodes as unknown as Parameters<LibraryService['draftRoadmap']>[0]['nodes'],
             ...(typeof body.passRatio === 'number' ? { passRatio: body.passRatio } : {}),
             ...(typeof body.note === 'string' ? { note: body.note } : {}),
+          })) as unknown as JsonValue
+        }
+        case 'notes': {
+          const body = payload(args.notes)
+          if (body === undefined || typeof body.node !== 'string' || typeof body.text !== 'string') {
+            throw new Error(`what=notes takes notes: { node: <station id>, text: <the station's 讲义, markdown> } — ${arrival('notes', args.notes)}`)
+          }
+          const rawBook = args.book === null || typeof args.book === 'string' ? args.book : body.book === null || typeof body.book === 'string' ? body.book : undefined
+          const bookId = rawBook === null ? undefined : rawBook ?? bindingOf(exec)?.bookId
+          return unwrap(await service.putNotes({
+            projectId: projectOf(args.project, exec),
+            ...(bookId === undefined ? {} : { bookId }),
+            nodeId: body.node,
+            text: body.text,
           })) as unknown as JsonValue
         }
         case 'page': {

@@ -300,6 +300,21 @@ export interface LibraryQuizStats {
   readonly bestRatio?: number
 }
 
+/**
+ * The station's 讲义 — the coach's distilled teaching, persisted on the node so
+ * the learner re-reads it in the sidebar instead of scrolling the chat. On a
+ * 讲授 (topic) station it IS the textbook; on a book station it is marginalia
+ * (the explanation, the learner's own stuck points, the pitfalls) and never a
+ * substitute for the book. Coach-written only (library_write · notes).
+ */
+export interface LibraryNodeNotes {
+  /** Markdown body. */
+  readonly text: string
+  readonly updatedAt: string
+  /** 1-based — the Nth version (「第 N 次更新」). */
+  readonly revisions: number
+}
+
 /** One roadmap node. */
 export interface RoadmapNode {
   readonly id: string
@@ -316,6 +331,8 @@ export interface RoadmapNode {
   readonly quizStats?: LibraryQuizStats
   /** Practice nodes only: the acceptance lines, one verdict per line at assess time. */
   readonly acceptance?: readonly string[]
+  /** The station's 讲义, once the coach has taught it. */
+  readonly notes?: LibraryNodeNotes
 }
 
 /** A roadmap — the adopted path (`roadmap.json`) or a draft (`roadmap.draft.json`). */
@@ -618,6 +635,7 @@ export type LibraryEventType =
   | 'attempt.assessed'
   | 'node.completed'
   | 'node.unlocked'
+  | 'node.noted'
 
 /** One event: a timestamp, a type, and a small summary per type. */
 export interface LibraryEvent {
@@ -653,6 +671,7 @@ export const LIBRARY_EVENT_TYPES: readonly LibraryEventType[] = [
   'attempt.assessed',
   'node.completed',
   'node.unlocked',
+  'node.noted',
 ]
 
 /* ------------------------------------------------------------- id minting */

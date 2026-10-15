@@ -313,6 +313,47 @@ describe('project paths', () => {
   })
 })
 
+describe('station notes (讲义)', () => {
+  it('writes and rewrites a station\'s notes on the adopted path; a re-plan keeps them', async () => {
+    const { projectId, bookId } = await seed()
+    await adopt(projectId, bookId)
+    const written = await service.putNotes({ projectId, bookId, nodeId: 'n1', text: '## 离子通道\n\n先讲通透…' })
+    expect(written.ok && written.notes.revisions).toBe(1)
+    const seen = await service.getRoadmap({ projectId, bookId })
+    expect(seen.roadmap?.nodes[0]?.notes?.text).toContain('离子通道')
+    const rewritten = await service.putNotes({ projectId, bookId, nodeId: 'n1', text: '## 离子通道（补讲版）' })
+    expect(rewritten.ok && rewritten.notes.revisions).toBe(2)
+    // A re-plan that keeps the station's id also keeps its 讲义.
+    await service.draftRoadmap({ projectId, bookId, nodes: [
+      { id: 'n1', title: '离子通道（重排）', kind: 'quiz', covers: [{ kind: 'book', bookId, ranges: [{ from: 1, to: 1 }] }] },
+      { id: 'n2', title: '动作电位', kind: 'quiz', covers: [{ kind: 'book', bookId, ranges: [{ from: 2, to: 2 }] }], dependsOn: ['n1'] },
+    ] })
+    await service.adoptRoadmap({ projectId, bookId })
+    const replanned = await service.getRoadmap({ projectId, bookId })
+    expect(replanned.roadmap?.nodes[0]?.notes?.revisions).toBe(2)
+  })
+
+  it('writes notes on a project-path station too, and teaches the bad calls', async () => {
+    const { projectId, bookId } = await seed()
+    const draft = await service.draftRoadmap({ projectId, nodes: [
+      { id: 's1', title: '极限', kind: 'quiz', covers: [{ kind: 'book', bookId, ranges: [{ from: 1, to: 1 }] }] },
+      { id: 's2', title: '串讲', kind: 'quiz', covers: [{ kind: 'topic', text: '讲授' }], dependsOn: ['s1'] },
+    ] })
+    if (!draft.ok) throw new Error(draft.message)
+    await service.adoptRoadmap({ projectId })
+    const written = await service.putNotes({ projectId, nodeId: 's2', text: '讲授站讲义正文' })
+    expect(written.ok).toBe(true)
+    expect((await service.getRoadmap({ projectId })).roadmap?.nodes[1]?.notes?.text).toBe('讲授站讲义正文')
+    // The bad calls teach.
+    const noNode = await service.putNotes({ projectId, nodeId: 's9', text: 'x' })
+    expect(!noNode.ok && noNode.message).toMatch(/no node/)
+    const empty = await service.putNotes({ projectId, nodeId: 's2', text: '   ' })
+    expect(!empty.ok && empty.message).toMatch(/need text/)
+    const noPath = await service.putNotes({ projectId, bookId, nodeId: 'n1', text: 'x' })
+    expect(!noPath.ok && noPath.message).toMatch(/no node/)
+  })
+})
+
 describe('the evidence gate on covers', () => {
   /** Adopt a one-station path on the seeded book itself (a lone book's stations ride the book). */
   async function station(kind: 'knowledge' | 'material'): Promise<{ projectId: string; bookId: string }> {

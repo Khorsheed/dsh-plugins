@@ -70,6 +70,7 @@ import {
   type LibraryResource,
   type LibraryResourceKind,
   type LibraryNodeCover,
+  type LibraryNodeNotes,
   type LibraryReviewRating,
   type LibraryRoadmap,
   type LibraryTemplate,
@@ -666,6 +667,8 @@ export class LibraryService {
           ...node,
           state,
           ...(node.kind === 'quiz' ? { quizStats: kept?.quizStats ?? { attempts: 0 } } : {}),
+          // A re-plan that keeps the station's id also keeps its 讲义.
+          ...(kept?.notes !== undefined ? { notes: kept.notes } : {}),
         })
       }
       const now = new Date().toISOString()
@@ -692,6 +695,31 @@ export class LibraryService {
     return await this.mutate(project.value.id, () => {
       this.store.removeDraft(project.value.id, request.bookId)
       return { ok: true as const, ...(request.bookId === undefined ? {} : { bookId: request.bookId }) }
+    })
+  }
+
+  /**
+   * Write (or rewrite) a station's 讲义 — the coach's distilled teaching,
+   * persisted on the adopted path's node. Replanning keeps it when the
+   * station's id survives; every write bumps `revisions`.
+   */
+  async putNotes(request: { projectId: string; bookId?: string; nodeId: string; text: string }): Promise<LibraryOutcome<{ notes: LibraryNodeNotes }>> {
+    this.assertAlive('putNotes')
+    const project = this.readProjectOrRefusal(request.projectId)
+    if ('error' in project) return project
+    const text = request.text.trim()
+    if (text === '') return refuse('invalid', 'notes need text — the distilled teaching for this station (markdown): the explanation, the points the learner got stuck on, the pitfalls')
+    return await this.mutate(project.value.id, () => {
+      const roadmap = this.store.readRoadmap(project.value.id, request.bookId)
+      const node = roadmap?.nodes.find(candidate => candidate.id === request.nodeId)
+      if (roadmap === undefined || node === undefined) {
+        return refuse('not-found', `no node ${JSON.stringify(request.nodeId)} on the adopted path — read the roadmap for its stations (notes ride the adopted path; the learner adopts a draft first)`)
+      }
+      const notes: LibraryNodeNotes = { text, updatedAt: new Date().toISOString(), revisions: (node.notes?.revisions ?? 0) + 1 }
+      const next: LibraryRoadmap = { ...roadmap, nodes: roadmap.nodes.map(candidate => candidate.id === node.id ? { ...candidate, notes } : candidate) }
+      this.store.writeRoadmap(project.value.id, next)
+      this.event(project.value.id, 'node.noted', { id: node.id, title: node.title, ...(request.bookId === undefined ? {} : { bookId: request.bookId }), count: notes.revisions })
+      return { ok: true as const, notes }
     })
   }
 

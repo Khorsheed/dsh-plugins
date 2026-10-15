@@ -66,7 +66,7 @@ export interface LibraryPaneInjected {
   /** A project's shelf links (the resource section under the shelf). */
   listResources: (projectId: string) => Promise<RemoteResult<{ resources: LibraryResource[] }>>
   /** One practice station's acceptance history, newest first. */
-  listAttempts: (projectId: string, nodeId: string) => Promise<RemoteResult<{ attempts: LibraryAttempt[] }>>
+  listAttempts: (projectId: string, nodeId?: string) => Promise<RemoteResult<{ attempts: LibraryAttempt[] }>>
   listCards: (query: LibraryCardQuery) => Promise<RemoteResult<{ cards: LibraryCard[]; total: number }>>
   dueCards: (projectId?: string) => Promise<RemoteResult<{ cards: (LibraryCard & { projectId: string })[] }>>
   editCard: (projectId: string, cardId: string, patch: { status?: LibraryCard['status']; gloss?: string }) => Answer<{ card: LibraryCard }>
