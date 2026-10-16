@@ -21,6 +21,7 @@ import {
   IconCameraOutlineMedium, IconCheckOutlineMedium, IconLockOutlineMedium, IconRefreshOutlineMedium, IconSparkleOutlineMedium, IconTrashOutlineMedium,
 } from '../icons.tsx'
 import { outcome, shortGloss, StateLine, useLoad, value, WeaknessBars, when, type ViewProps } from '../ui.tsx'
+import { MathText, Tex } from '../math.tsx'
 import css from '../LibraryPane.module.css'
 
 /** The zigzag column (0..2) a node at `index` sits in. */
@@ -630,9 +631,11 @@ function NotesBody({ text }: { text: string }): ReactNode {
   return <div className={css.notesBody}>{blocks}</div>
 }
 
-/** `**bold**` and `` `code` `` spans — deliberately the only inline marks. */
+/** `**bold**`, `` `code` `` and $…$ TeX spans — deliberately the only inline marks. */
 function inline(text: string): ReactNode {
-  return text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).map((part, at) => {
+  return text.split(/(\$\$[\s\S]+?\$\$|\$[^$\n]+\$|\*\*[^*]+\*\*|`[^`]+`)/g).map((part, at) => {
+    if (part.startsWith('$$') && part.endsWith('$$') && part.length > 4) return <Tex key={at} tex={part.slice(2, -2)} block />
+    if (part.startsWith('$') && part.endsWith('$') && part.length > 2) return <Tex key={at} tex={part.slice(1, -1)} />
     if (part.startsWith('**') && part.endsWith('**') && part.length > 4) return <strong key={at}>{part.slice(2, -2)}</strong>
     if (part.startsWith('`') && part.endsWith('`') && part.length > 2) return <code key={at}>{part.slice(1, -1)}</code>
     return <Fragment key={at}>{part}</Fragment>
@@ -742,7 +745,7 @@ function QuizTab({ p, projectId, bookId, node, passRatio, books, onPrime, onReta
               <span className={css.missMark} aria-hidden="true">✕</span>
               <div className={css.missText}>
                 <span>{row.question.prompt}</span>
-                <span className={css.muted}>{t('node.missedAnswer', { answer: answerText(row.question) })} · {when(row.at, t)}</span>
+                <span className={css.muted}><MathText text={t('node.missedAnswer', { answer: answerText(row.question) })} /> · {when(row.at, t)}</span>
               </div>
             </div>
           ))}

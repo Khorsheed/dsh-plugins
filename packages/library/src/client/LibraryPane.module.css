@@ -1528,6 +1528,19 @@ textarea.input { resize: vertical; font: inherit; line-height: 1.5; }
   line-height: var(--dsh-panel-reading-line-height, 1.65);
 }
 
+/* TeX (MathML — browser-native, no fonts to bundle) */
+.mathBlock {
+  display: block;
+  margin: 6px 0;
+  text-align: center;
+}
+
+.mathBlock math,
+.prompt math,
+.notesBody math {
+  font-size: 1.05em;
+}
+
 .quote {
   margin: 0;
   padding: 8px 10px;

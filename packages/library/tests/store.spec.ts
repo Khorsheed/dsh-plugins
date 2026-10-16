@@ -17,6 +17,7 @@ import {
   normalizeCard,
   normalizeLibraryIndex,
   normalizeNodeCover,
+  normalizeQuizOptions,
   normalizeResource,
   normalizeRoadmap,
   resolveLibraryStateRoot,
@@ -124,6 +125,14 @@ describe('documents', () => {
     expect(kept?.nodes[0]?.notes).toEqual({ text: '## 讲义', updatedAt: '2026-10-15T00:00:00.000Z', revisions: 2 })
     const torn = normalizeRoadmap({ status: 'adopted', generatedAt: '2026-10-06T00:00:00.000Z', nodes: [{ ...node, notes: { revisions: 'x' } }] })
     expect(torn?.nodes[0]?.notes).toBeUndefined()
+  })
+
+  it('normalizes quiz options from strings, { label } objects, and letter-keyed maps alike', () => {
+    expect(normalizeQuizOptions(['甲', '乙'])).toEqual(['甲', '乙'])
+    expect(normalizeQuizOptions([{ label: 'A) 甲' }, { label: 'B) 乙' }])).toEqual(['甲', '乙'])
+    expect(normalizeQuizOptions({ A: '甲', B: '乙' })).toEqual(['甲', '乙'])
+    expect(normalizeQuizOptions(undefined)).toBeUndefined()
+    expect(normalizeQuizOptions(['甲', 42])).toBeUndefined()
   })
 
   it('keeps a draft beside the adopted path, and drops it on demand', async () => {

@@ -16,6 +16,7 @@ import { useMemo, useState, type ReactNode } from 'react'
 import { PanelHeader } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
 import { LEITNER_INTERVAL_DAYS, type LibraryAssessResult, type LibraryCard, type LibraryQuizQuestion, type LibraryReviewRating, type LibraryVerdict } from '../../types.ts'
 import { choiceIndex, choiceOptions, clozeOf, fillMatches, letterMarks, pickMode, spellMatches } from '../judge.ts'
+import { MathText } from '../math.tsx'
 import { Highlight, outcome, shortGloss, StateLine, useLoad, value, type ViewProps } from '../ui.tsx'
 import css from '../LibraryPane.module.css'
 
@@ -27,28 +28,21 @@ interface Answered {
   readonly void?: boolean
 }
 
-/** The quiz screen. */
+/** The quiz screen: the whole paper on one scroll — every question numbered, judged on the spot, 交卷 once all are answered. */
 export function QuizView({ p, projectId, bookId, quizId }: ViewProps & { projectId: string; bookId: string | undefined; quizId: string }): ReactNode {
   const { t, actions } = p
   const loaded = useLoad(() => outcome(p.getQuiz(projectId, quizId)), [projectId, quizId])
-  const [index, setIndex] = useState(0)
   const [answers, setAnswers] = useState<Record<string, Answered>>({})
-  const [draft, setDraft] = useState('')
+  const [drafts, setDrafts] = useState<Record<string, string>>({})
   const [notice, setNotice] = useState<string | undefined>()
   const [busy, setBusy] = useState(false)
   const quiz = loaded.data?.quiz
-  const question = quiz?.questions[index]
-  const answered = question === undefined ? undefined : answers[question.id]
-  const last = quiz !== undefined && index === quiz.questions.length - 1
+  const total = quiz?.questions.length ?? 0
+  const done = quiz === undefined ? 0 : quiz.questions.filter(item => answers[item.id] !== undefined).length
+  const allAnswered = quiz !== undefined && done === total
 
-  const record = (entry: Answered): void => {
-    if (question === undefined) return
-    setAnswers(previous => ({ ...previous, [question.id]: entry }))
-  }
-
-  const next = (): void => {
-    setDraft('')
-    setIndex(index + 1)
+  const record = (id: string, entry: Answered): void => {
+    setAnswers(previous => ({ ...previous, [id]: entry }))
   }
 
   const finish = async (): Promise<void> => {
@@ -90,7 +84,7 @@ export function QuizView({ p, projectId, bookId, quizId }: ViewProps & { project
   return (
     <>
       <PanelHeader
-        title={quiz === undefined ? t('node.quiz') : t('quiz.progress', { at: String(index + 1), total: String(quiz.questions.length) })}
+        title={quiz === undefined ? t('node.quiz') : t('quiz.progress', { at: String(done), total: String(total) })}
         onBack={() => { actions.pop() }}
         backLabel={t('action.back')}
         moreLabel={t('action.more')}
@@ -98,24 +92,26 @@ export function QuizView({ p, projectId, bookId, quizId }: ViewProps & { project
       <div className={css.body}>
         <StateLine loaded={loaded} t={t} />
         {quiz !== undefined && (
-          <div className={css.progress} aria-hidden="true"><i style={{ width: `${Math.round(((index + (answered === undefined ? 0 : 1)) / quiz.questions.length) * 100)}%` }} /></div>
+          <div className={css.progress} aria-hidden="true"><i style={{ width: `${total === 0 ? 0 : Math.round((done / total) * 100)}%` }} /></div>
         )}
-        {question !== undefined && (
+        {quiz?.questions.map((question, at) => (
           <QuestionCard
             key={question.id}
             p={p}
+            number={at + 1}
             question={question}
-            answered={answered}
-            draft={draft}
-            onDraft={setDraft}
-            onAnswer={record}
+            answered={answers[question.id]}
+            draft={drafts[question.id] ?? ''}
+            onDraft={text => { setDrafts(previous => ({ ...previous, [question.id]: text })) }}
+            onAnswer={entry => { record(question.id, entry) }}
           />
-        )}
+        ))}
         {notice !== undefined && <div className={css.notice}>{notice}</div>}
-        {question !== undefined && answered !== undefined && (
+        {quiz !== undefined && (
           <div className={css.actions}>
-            {!last && <button type="button" className={css.primary} onClick={next}>{t('quiz.next')}</button>}
-            {last && <button type="button" className={css.primary} disabled={busy} onClick={() => { void finish() }}>{t('quiz.finish')}</button>}
+            <button type="button" className={css.primary} disabled={busy || !allAnswered} onClick={() => { void finish() }}>
+              {allAnswered ? t('quiz.finish') : t('quiz.remaining', { count: String(total - done) })}
+            </button>
           </div>
         )}
       </div>
@@ -123,10 +119,11 @@ export function QuizView({ p, projectId, bookId, quizId }: ViewProps & { project
   )
 }
 
-/** One question: its two tags, the answer control, the feedback. The evidence quote shows only after answering — quoted up front, it often IS the answer. */
-function QuestionCard({ p, question, answered, draft, onDraft, onAnswer }: {
+/** One question on the paper: its number, two tags, the answer control, the feedback. The evidence quote shows only after answering — quoted up front, it often IS the answer. */
+function QuestionCard({ p, question, number, answered, draft, onDraft, onAnswer }: {
   p: ViewProps['p']
   question: LibraryQuizQuestion
+  number: number
   answered: Answered | undefined
   draft: string
   onDraft: (value: string) => void
@@ -143,10 +140,11 @@ function QuestionCard({ p, question, answered, draft, onDraft, onAnswer }: {
   return (
     <section className={css.question}>
       <div className={css.chips}>
+        <span className={css.optionKey} aria-hidden="true">{number}</span>
         <span className={css.chip} data-tone={question.target.kind === 'asked' || question.target.kind === 'missed' ? 'weak' : undefined}>{t(`target.${question.target.kind}`)}</span>
         <span className={css.chip} data-tone={evidenceTone}>{t(`evidence.${question.evidence.kind}`)}</span>
       </div>
-      <div className={css.prompt}>{question.prompt}</div>
+      <div className={css.prompt}><MathText text={question.prompt} /></div>
       {quoteUpfront && question.evidence.quote !== undefined && answered === undefined && (
         <div className={css.row}>
           <button type="button" className={css.textButton} aria-expanded={peek} onClick={() => { setPeek(!peek) }}>{t(peek ? 'quiz.hideQuote' : 'quiz.showQuote')}</button>
@@ -170,7 +168,7 @@ function QuestionCard({ p, question, answered, draft, onDraft, onAnswer }: {
                 onClick={() => { onAnswer({ given: option, pass: at === correct }) }}
               >
                 <span className={css.optionKey}>{String.fromCharCode(65 + at)}</span>
-                <span>{option}</span>
+                <span><MathText text={option} /></span>
               </button>
             )
           })}
@@ -201,9 +199,9 @@ function QuestionCard({ p, question, answered, draft, onDraft, onAnswer }: {
       {answered !== undefined && answered.void !== true && (
         <div className={css.feedback}>
           {answered.pass === true && <strong className={css.ok}>{t('quiz.right')}</strong>}
-          {answered.pass === false && <strong className={css.bad}>{t('quiz.wrong', { answer: correct >= 0 && question.options?.[correct] !== undefined ? `${String.fromCharCode(65 + correct)}. ${question.options[correct]}` : question.answer })}</strong>}
+          {answered.pass === false && <strong className={css.bad}><MathText text={t('quiz.wrong', { answer: correct >= 0 && question.options?.[correct] !== undefined ? `${String.fromCharCode(65 + correct)}. ${question.options[correct]}` : question.answer })} /></strong>}
           {answered.pass === undefined && <strong>{t('quiz.coachJudges')}</strong>}
-          {question.explanation !== undefined && <div>{question.explanation}</div>}
+          {question.explanation !== undefined && <div><MathText text={question.explanation} /></div>}
           {!quoteUpfront && question.evidence.quote !== undefined && <blockquote className={css.quote}>{question.evidence.quote}</blockquote>}
           {question.evidence.url !== undefined && <a className={css.link} href={question.evidence.url} target="_blank" rel="noreferrer">{t('quiz.source')}</a>}
         </div>

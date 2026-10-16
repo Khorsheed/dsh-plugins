@@ -57,6 +57,7 @@
   ],
   "license": "MIT",
   "dependencies": {
+    "katex": "^0.16.47",
     "zod": "^4.4.3"
   },
   "peerDependencies": {
@@ -115,6 +116,7 @@
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
+    "@types/katex": "^0.16.7",
     "@deepseek-ai/dsh-agent": "^0.2.0-rc.1",
     "@deepseek-ai/dsh-api-remotes": "^0.2.0-rc.1",
     "@deepseek-ai/dsh-api-session-controller": "^0.2.0-rc.1",

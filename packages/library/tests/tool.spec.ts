@@ -248,6 +248,25 @@ describe('payload transport', () => {
     expect(ok.draft.nodes[0]?.covers[0]?.bookId).toBe(book)
   })
 
+  it('choice options arriving as { label } objects are stored as plain strings', async () => {
+    const { project, book } = await seed()
+    await call('library_write', { what: 'roadmap', roadmap: { nodes: [{ id: 'n1', title: '离子通道', kind: 'quiz', covers: [{ kind: 'book', bookId: book, ranges: [{ from: 1, to: 1 }] }] }] } })
+    const adopted = await service.adoptRoadmap({ projectId: project, bookId: book })
+    if (!adopted.ok) throw new Error(adopted.message)
+    const written = (await call('library_write', {
+      what: 'quiz',
+      node: 'n1',
+      questions: [{
+        id: 'q1', kind: 'choice', prompt: 'p',
+        options: [{ label: 'A) 甲' }, { label: 'B) 乙' }],
+        answer: 'A) 甲',
+        target: { kind: 'topic' },
+        evidence: { kind: 'knowledge' },
+      }],
+    })) as { quiz: { questions: { options?: string[] }[] } }
+    expect(written.quiz.questions[0]?.options).toEqual(['甲', '乙'])
+  })
+
   it('accepts a book\'s contents as one newline-joined string — the payload models mangle most', async () => {
     const { project } = await seed()
     const added = (await call('library_write', {

@@ -24,6 +24,7 @@
     "src/client/store.ts",
     "src/client/judge.ts",
     "src/client/look.tsx",
+    "src/client/math.tsx",
     "src/client/ui.tsx",
     "src/client/views/home.tsx",
     "src/client/views/book.tsx",

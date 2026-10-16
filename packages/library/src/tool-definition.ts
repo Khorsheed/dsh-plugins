@@ -35,6 +35,7 @@ import type {
 } from './types.ts'
 import type { LibraryService } from './service.ts'
 import { ImageRefCache } from './image-refs.ts'
+import { normalizeQuizOptions } from './store.ts'
 
 /** The names this module registers, in registration order. */
 export const LIBRARY_TOOL_NAMES: readonly string[] = ['library_read', 'library_write', 'library_assess']
@@ -303,7 +304,7 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
       passRatio: { type: 'number', description: 'what=roadmap: the pass line in (0, 1] — 0.8 means 8 of 10 right (the default).' },
       note: { type: 'string', description: 'what=roadmap: the one-line pacing on the draft card. what=resource · op=add: one line on why the link earns its place.' },
       node: { type: 'string', description: 'The station id (what=notes; the scope on what=quiz).' },
-      text: { type: 'string', description: 'what=notes: the station\'s 讲义 in markdown. what=page: the photographed page\'s printed text.' },
+      text: { type: 'string', description: 'what=notes: the station\'s 讲义 in markdown (math in $…$ / $$…$$ LaTeX renders for the learner). what=page: the photographed page\'s printed text.' },
       attachment: { type: 'string', description: 'what=page: the image id (omit for the latest photo in this conversation).' },
       label: { type: 'string', description: 'what=page: what the learner calls the page (「p.16」).' },
       marks: {
@@ -350,7 +351,10 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
             id: { type: 'string', required: true },
             kind: { type: 'string', required: true, enum: ['choice', 'fill', 'free'], description: 'choice: the answer IS one of options, verbatim; fill: a short verbatim answer (a term, a formula, a date); free: an open discussion (the prompt locates the passage).' },
             prompt: { type: 'string', required: true },
-            options: { type: 'array', items: { type: 'string' }, description: 'choice only.' },
+            options: { type: 'array', description: 'choice only.', items: { oneOf: [
+              { type: 'string', description: 'The option text.' },
+              { type: 'object', additionalProperties: true, properties: { label: { type: 'string', required: true, description: 'The option text (the label form is stored as its plain text).' } } },
+            ] } },
             answer: { type: 'string', required: true, description: 'choice: the correct option, copied verbatim.' },
             explanation: { type: 'string', description: 'Why the answer is right.' },
             target: { type: 'object', additionalProperties: true, properties: {
@@ -366,7 +370,7 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
           } } },
           { type: 'string', description: 'The same array as its JSON text.' },
         ],
-        description: 'what=quiz: the questions of the composed quiz.',
+        description: 'what=quiz: the questions of the composed quiz. Math typesets: write it as $…$ (inline) or $$…$$ (block) LaTeX and it renders for the learner — \\sqrt{3-x} over \\sqrt{(3-x)/(x+2)} is exactly the vinculum difference.',
       },
       op: { type: 'string', description: 'what=resource: add | remove.' },
       url: { type: 'string', description: 'what=resource · op=add: the link — open it on the web first.' },
@@ -585,12 +589,19 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
           const rawBook = args.book === null || typeof args.book === 'string' ? args.book : nested?.book === null || typeof nested?.book === 'string' ? nested.book : undefined
           const bookId = rawBook === null ? undefined : (rawBook as string | undefined) ?? bindingOf(exec)?.bookId
           const focus = args.focus ?? nested?.focus
+          // Options may arrive as { label } objects or a letter-keyed map —
+          // the stored form is plain strings (the same tolerance reads them back).
+          const cleaned = (questions as Record<string, unknown>[]).map(question => {
+            if (question.options === undefined) return question
+            const options = normalizeQuizOptions(question.options)
+            return options === undefined ? question : { ...question, options }
+          })
           return unwrap(await service.putQuiz({
             projectId: projectOf(args.project, exec),
             quiz: {
               ...(focus === 'mine' || focus === 'book' || focus === 'mixed' ? { focus } : {}),
               scope: { ...(bookId === undefined ? {} : { bookId }), ...(node === undefined ? {} : { nodeId: node }) },
-              questions: questions as unknown as LibraryQuizQuestion[],
+              questions: cleaned as unknown as LibraryQuizQuestion[],
             },
           })) as unknown as JsonValue
         }

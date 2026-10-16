@@ -538,6 +538,27 @@ export function normalizeCard(value: unknown): LibraryCard | undefined {
 }
 
 /** One quiz, when it parses; the two-axis checks live in the service. */
+/**
+ * Options arrive as plain strings, as { label } objects, or letter-keyed maps —
+ * the stored form is always plain strings, letter prefixes ("A) ") stripped
+ * (the answering UI badges the letter itself).
+ */
+export function normalizeQuizOptions(value: unknown): string[] | undefined {
+  const letter = /^[A-Za-z][.、)）:：]\s*/
+  const list: unknown[] = Array.isArray(value)
+    ? value
+    : (typeof value === 'object' && value !== null ? Object.values(value) : [])
+  if (list.length === 0) return undefined
+  const out: string[] = []
+  for (const option of list) {
+    if (typeof option === 'string') { out.push(option); continue }
+    const label = asRecord(option)?.label
+    if (typeof label === 'string') { out.push(label.replace(letter, '')); continue }
+    return undefined
+  }
+  return out
+}
+
 export function normalizeQuiz(value: unknown): LibraryQuiz | undefined {
   const record = asRecord(value)
   const quizId = id(record?.id)
@@ -561,7 +582,7 @@ export function normalizeQuiz(value: unknown): LibraryQuiz | undefined {
       id: qid,
       kind,
       prompt: q.prompt,
-      ...(Array.isArray(q.options) ? { options: (q.options as unknown[]).filter((o): o is string => typeof o === 'string') } : {}),
+      ...(() => { const options = normalizeQuizOptions(q.options); return options === undefined ? {} : { options } })(),
       answer: typeof q.answer === 'string' ? q.answer : '',
       ...opt('explanation', text(q.explanation, 2000)),
       target: { kind: targetKind, ...(Array.isArray(target.cardIds) ? { cardIds: strings(target.cardIds, 100) } : {}) },
