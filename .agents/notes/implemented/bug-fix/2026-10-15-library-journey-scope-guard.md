@@ -10,6 +10,7 @@ The two journeys diverged in the wild: asked to plan one book inside the 数学 
 
 - `validateRoadmapShape` gains the mirror guard: on a project-scope draft (no `bookId`), when every cover of every node is a book cover naming the same single book, refuse with a teaching message that names the book and says to resend with `book: <id>`. A second book, or any non-book cover (resource / url / topic), keeps it a genuine project path.
 - `LIBRARY_PROMPT`'s paths rule states the mirror explicitly: a route whose every station covers the same single book IS that book's path — pass `book`, never park it on the project.
+- **Superseded at the tool layer (2026-10-16)**: the scope is derived from the covers, so the tool-layer refusal this note installed no longer fires there — see [the scope-derivation note](../feature/2026-10-16-library-scope-derivation-and-axis-defaults.md). The service-level guard remains as the explicit override's (and non-tool callers') safety net.
 
 ## Alternatives considered
 

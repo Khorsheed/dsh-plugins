@@ -177,6 +177,59 @@ describe('project paths through the tools', () => {
   })
 })
 
+describe('the roadmap scope reads itself off the covers', () => {
+  it('every station on the same single book lands on that book\'s path — no book parameter', async () => {
+    const { book } = await seed()
+    const draft = (await call('library_write', { what: 'roadmap', nodes: [{ id: 'n1', title: '离子通道', kind: 'quiz', covers: [{ kind: 'book', bookId: book, ranges: [{ from: 1, to: 1 }] }] }] })) as { draft: { bookId?: string } }
+    expect(draft.draft.bookId).toBe(book)
+  })
+
+  it('mixed covers land on the project\'s own path — even with the session bound to a book', async () => {
+    const { book } = await seed()
+    const draft = (await call('library_write', { what: 'roadmap', nodes: [
+      { id: 's1', title: '离子通道', kind: 'quiz', covers: [{ kind: 'book', bookId: book, ranges: [{ from: 1, to: 1 }] }] },
+      { id: 's2', title: '拓展阅读', kind: 'read', covers: [{ kind: 'url', url: 'https://example.org/notes' }] },
+    ] })) as { draft: { bookId?: string } }
+    expect(draft.draft.bookId).toBeUndefined()
+  })
+
+  it('an explicit book string still overrides — and is still validated', async () => {
+    const { book } = await seed()
+    const draft = (await call('library_write', { what: 'roadmap', book, nodes: [{ id: 'n1', title: '离子通道', kind: 'quiz', chapterRanges: [{ from: 1, to: 1 }] }] })) as { draft: { bookId?: string } }
+    expect(draft.draft.bookId).toBe(book)
+    await expect(call('library_write', { what: 'roadmap', book, nodes: [{ id: 's1', title: '杂', kind: 'quiz', covers: [{ kind: 'topic', text: '讲授' }] }] })).rejects.toThrow(/draws on more than this one book/)
+  })
+})
+
+describe('the question axes default and take shorthands', () => {
+  it('a bare question stores topic + knowledge; the flat shorthands fill the axes', async () => {
+    await seed()
+    const cards = (await call('library_write', { what: 'cards', cards: [{ kind: 'concept', term: '垂线检验', gloss: '每条竖线至多交一点', source: { type: 'chat' } }] })) as { added: { id: string }[] }
+    const cardId = cards.added[0]!.id
+    const stored = (await call('library_write', { what: 'quiz', questions: [
+      { id: 'q1', kind: 'free', prompt: '为什么会失活？', answer: 'Na⁺ 通道构象' },
+      { id: 'q2', kind: 'free', prompt: '垂线检验说什么？', answer: '每条竖线至多交一点', cardIds: [cardId] },
+      { id: 'q3', kind: 'free', prompt: '书上怎么说？', answer: '原文', url: 'https://example.org/ch1', quote: 'a long enough quote from the page' },
+      { id: 'q4', kind: 'free', prompt: 'p4', answer: 'a4', target: 'topic', evidence: 'knowledge' },
+    ] })) as { quiz: { id: string } }
+    const read = (await call('library_read', { what: 'quiz', quiz: stored.quiz.id })) as { questions: { id: string; target: { kind: string; cardIds?: string[] }; evidence: { kind: string; url?: string; quote?: string } }[] }
+    expect(read.questions.map(question => [question.id, question.target.kind, question.evidence.kind])).toEqual([
+      ['q1', 'topic', 'knowledge'],
+      ['q2', 'marked', 'knowledge'],
+      ['q3', 'topic', 'web'],
+      ['q4', 'topic', 'knowledge'],
+    ])
+    expect(read.questions[1]?.target.cardIds).toEqual([cardId])
+    expect(read.questions[2]?.evidence).toMatchObject({ url: 'https://example.org/ch1', quote: 'a long enough quote from the page' })
+  })
+
+  it('a defaulted question still hits the verbatim gate on a material book', async () => {
+    await seed()
+    const material = (await call('library_write', { what: 'book', book: { title: 'Cambridge IELTS 5', bookKind: 'material', toc: ['Test 1'], tocSource: { by: 'model' } } })) as { book: { id: string } }
+    await expect(call('library_write', { what: 'quiz', book: material.book.id, questions: [{ id: 'q1', kind: 'free', prompt: '第二段说了什么？', answer: 'x' }] })).rejects.toThrow(/material book/)
+  })
+})
+
 describe('photo pages', () => {
   it('records a page from the session\'s latest photo when the model names none', async () => {
     await seed()

@@ -66,6 +66,51 @@ function sessionIdOf(exec: Exec | undefined): string | undefined {
 }
 
 /**
+ * A roadmap's scope read off its content: the one book every station's covers
+ * name, when they all name exactly that one — anything else (mixed books, a
+ * resource / url / topic among the covers, a coverless node) is the project's
+ * own path. Runs on the post-sugar nodes, so chapterRanges have already become
+ * the book cover they wrap.
+ */
+function deriveRoadmapBook(nodes: readonly Record<string, unknown>[]): string | undefined {
+  const ids = new Set<string>()
+  for (const node of nodes) {
+    const covers = node.covers
+    if (!Array.isArray(covers) || covers.length === 0) return undefined
+    for (const cover of covers) {
+      if (cover === null || typeof cover !== 'object' || Array.isArray(cover)) return undefined
+      const row = cover as Record<string, unknown>
+      if (row.kind !== 'book' || typeof row.bookId !== 'string' || row.bookId === '') return undefined
+      ids.add(row.bookId)
+    }
+  }
+  return ids.size === 1 ? [...ids][0] : undefined
+}
+
+/**
+ * A question's two axes are optional on the wire: target defaults to the
+ * station's topic, evidence to domain knowledge. Flat shorthands fill them in —
+ * cardIds imply a marked target; pageId / url imply photo / web evidence; a
+ * bare string sets just the kind. The service's two-axis gate is untouched: it
+ * judges the normalized shape.
+ */
+function normalizeQuestionAxes(question: Record<string, unknown>): Record<string, unknown> {
+  const { cardIds, quote, url, pageId, ...rest } = question
+  const flatIds = Array.isArray(cardIds) ? cardIds.filter((id): id is string => typeof id === 'string' && id !== '') : undefined
+  const rawTarget = typeof rest.target === 'string' ? { kind: rest.target } : rest.target
+  const targetIn = rawTarget !== null && typeof rawTarget === 'object' && !Array.isArray(rawTarget) ? rawTarget as Record<string, unknown> : undefined
+  let target: Record<string, unknown> = targetIn ?? (flatIds !== undefined && flatIds.length > 0 ? { kind: 'marked' } : { kind: 'topic' })
+  if (flatIds !== undefined && flatIds.length > 0 && target.cardIds === undefined) target = { ...target, cardIds: flatIds }
+  const rawEvidence = typeof rest.evidence === 'string' ? { kind: rest.evidence } : rest.evidence
+  const evidenceIn = rawEvidence !== null && typeof rawEvidence === 'object' && !Array.isArray(rawEvidence) ? rawEvidence as Record<string, unknown> : undefined
+  let evidence: Record<string, unknown> = evidenceIn ?? { kind: typeof pageId === 'string' && pageId !== '' ? 'photo' : typeof url === 'string' && url !== '' ? 'web' : 'knowledge' }
+  for (const [key, value] of [['quote', quote], ['url', url], ['pageId', pageId]] as const) {
+    if (typeof value === 'string' && value !== '' && evidence[key] === undefined) evidence = { ...evidence, [key]: value }
+  }
+  return { ...rest, target, evidence }
+}
+
+/**
  * Build the three tools. Creating them is the package's `./tool` row, which
  * applies the origin tag; this module never registers.
  * @param service - the library service the adapters translate to.
@@ -216,18 +261,18 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
       'Validate and persist what you authored: what plus its fields as TOP-LEVEL parameters (each field is documented below, where you write it; project / book default to this session\'s binding). '
       + 'project — create (name + template), or edit with project: <id> (goal "" clears). '
       + 'book — register (title + bookKind + toc + tocSource): never ask for an upload; web-verify the exact edition\'s contents first and cite the page (a publisher / catalog / retailer page, never a full-text copy). '
-      + 'roadmap — write a DRAFT (nodes) the learner adopts in the sidebar (采用); book defaults to the binding\'s book, book: null = the project\'s OWN path; a route whose every station covers the same single book belongs to that book. '
+      + 'roadmap — write a DRAFT (nodes) the learner adopts in the sidebar (采用); the scope reads itself off the covers: every station drawing on the same single book lands on THAT book\'s path, anything mixed lands on the project\'s own — omit book (a string is an explicit override). '
       + 'notes — a station\'s 讲义 (node + text, markdown): the textbook on a 讲授 (topic) station, marginalia on a book station; rewrite as 补讲 deepens. '
       + 'page — record a photographed page (text + marks), carding every mark at once. '
       + 'cards — record a weak point when the learner is stuck, and say what you noted. '
-      + 'quiz — store a composed quiz (questions; node names the quiz-kind station it gates — omitted, it is book-level (the book page\'s 本书测验), or free with book: null (the project page\'s 自由测验); focus is the learner\'s choice). '
+      + 'quiz — store a composed quiz (questions; node names the quiz-kind station it gates — omitted, it is book-level (the book page\'s 本书测验), or free with book: null (the project page\'s 自由测验); focus is the learner\'s choice; a question\'s target defaults to topic (flat cardIds imply marked), evidence to knowledge (flat pageId / url imply photo / web)). '
       + 'resource — op add | remove: a light shelf link (no contents, no roadmap, never quizzed; something referenced BY CHAPTER is a book instead). '
       + 'binding — bind this session (binding: null unbinds). '
       + 'A refusal names exactly what to fix — change only that and resend.',
     parameters: {
       what: { type: 'string', required: true, description: `What to write: ${WRITE_WHATS.join(' | ')}. The payload goes in the TOP-LEVEL fields below (title / toc / nodes / text / questions / …), not in a wrapper object.` },
       project: { type: 'json', description: 'The project id (defaults to this session\'s binding). what=project: omit it to create; pass the id to edit.' },
-      book: { type: 'json', description: 'The book id (defaults to the binding\'s book; null = the project\'s own path on roadmap / notes / quiz).' },
+      book: { type: 'json', description: 'Defaults to the binding\'s book; null = the project\'s own path (notes / quiz). what=roadmap: omit it — the scope reads itself off the covers; a string is an explicit override, validated as before.' },
       name: { type: 'string', description: 'what=project: the project\'s name.' },
       template: { type: 'string', description: 'what=project: "language" (marks are words) | "subject" (marks are concepts) | "custom".' },
       goal: { type: 'string', description: 'what=project: the one-line goal.' },
@@ -357,20 +402,36 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
             ] } },
             answer: { type: 'string', required: true, description: 'choice: the correct option, copied verbatim.' },
             explanation: { type: 'string', description: 'Why the answer is right.' },
-            target: { type: 'object', additionalProperties: true, properties: {
-              kind: { type: 'string', required: true, enum: ['marked', 'asked', 'missed', 'topic'], description: 'The learner\'s own cards first (marked / asked / missed + cardIds), else the chapter\'s topic.' },
-              cardIds: { type: 'array', items: { type: 'string' } },
-            } },
-            evidence: { type: 'object', additionalProperties: true, properties: {
-              kind: { type: 'string', required: true, enum: ['photo', 'web', 'knowledge'], description: 'photo quotes a recorded page (pageId + quote); web cites url + quote; knowledge only where the station\'s covers allow it.' },
-              pageId: { type: 'string' },
-              url: { type: 'string' },
-              quote: { type: 'string', description: 'The passage, verbatim.' },
-            } },
+            target: {
+              oneOf: [
+                { type: 'object', additionalProperties: true, properties: {
+                  kind: { type: 'string', required: true, enum: ['marked', 'asked', 'missed', 'topic'], description: 'The learner\'s own cards first (marked / asked / missed + cardIds), else the chapter\'s topic.' },
+                  cardIds: { type: 'array', items: { type: 'string' } },
+                } },
+                { type: 'string', enum: ['marked', 'asked', 'missed', 'topic'], description: 'Just the kind.' },
+              ],
+              description: 'OPTIONAL: what the question probes — omit for the station\'s topic (the default); flat cardIds imply marked.',
+            },
+            evidence: {
+              oneOf: [
+                { type: 'object', additionalProperties: true, properties: {
+                  kind: { type: 'string', required: true, enum: ['photo', 'web', 'knowledge'], description: 'photo quotes a recorded page (pageId + quote); web cites url + quote; knowledge only where the station\'s covers allow it.' },
+                  pageId: { type: 'string' },
+                  url: { type: 'string' },
+                  quote: { type: 'string', description: 'The passage, verbatim.' },
+                } },
+                { type: 'string', enum: ['photo', 'web', 'knowledge'], description: 'Just the kind.' },
+              ],
+              description: 'OPTIONAL: what the answer rests on — omit for domain knowledge (the default); the flat pageId / url / quote set the kind. The verbatim gate still bites: a material book, a shelf resource or a url among the covers demands a quote.',
+            },
+            cardIds: { type: 'array', items: { type: 'string' }, description: 'Shorthand for target.cardIds (kind defaults to marked): live cards from library_read · cards.' },
+            quote: { type: 'string', description: 'Shorthand for evidence.quote (with pageId → photo, with url → web).' },
+            url: { type: 'string', description: 'Shorthand: evidence { kind: "web", url, quote? }.' },
+            pageId: { type: 'string', description: 'Shorthand: evidence { kind: "photo", pageId, quote? } — page ids from library_read · pages.' },
           } } },
           { type: 'string', description: 'The same array as its JSON text.' },
         ],
-        description: 'what=quiz: the questions of the composed quiz. Math typesets: write it as $…$ (inline) or $$…$$ (block) LaTeX and it renders for the learner — \\sqrt{3-x} over \\sqrt{(3-x)/(x+2)} is exactly the vinculum difference.',
+        description: 'what=quiz: the questions of the composed quiz — target / evidence are OPTIONAL (defaults: the station\'s topic + domain knowledge). Math typesets: write it as $…$ (inline) or $$…$$ (block) LaTeX and it renders for the learner — \\sqrt{3-x} over \\sqrt{(3-x)/(x+2)} is exactly the vinculum difference.',
       },
       op: { type: 'string', description: 'what=resource: add | remove.' },
       url: { type: 'string', description: 'what=resource · op=add: the link — open it on the web first.' },
@@ -483,7 +544,13 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
             throw new Error(`what=roadmap takes the TOP-LEVEL nodes field: nodes: [{ id, title, kind: "quiz"|"read"|"practice", goals, covers: [{ kind: "book", bookId, ranges: [{ from, to }] } | { kind: "resource", resourceId } | { kind: "url", url } | { kind: "topic", text }], dependsOn, acceptance? (practice only) }] (+ passRatio?, note?) — ${arrival('nodes', args.nodes ?? nested?.nodes ?? legacy.roadmap)}`)
           }
           const rawBook = args.book === null || typeof args.book === 'string' ? args.book : nested?.book === null || typeof nested?.book === 'string' ? nested.book : undefined
-          const bookId = rawBook === null ? undefined : (rawBook as string | undefined) ?? bindingOf(exec)?.bookId
+          // The scope reads itself off the covers: every station drawing on
+          // the same single book lands on THAT book's path, anything mixed
+          // lands on the project's own. `book` survives only as an explicit
+          // override (a string is honored and validated as before); the
+          // binding's book is consulted solely by the chapterRanges sugar.
+          const overrideBook = typeof rawBook === 'string' ? rawBook : undefined
+          const sugarBook = overrideBook ?? bindingOf(exec)?.bookId
           const nodes = (list as Record<string, unknown>[]).map(node => {
             const { chapterRanges, covers, ...rest } = node
             if (covers !== undefined) {
@@ -503,13 +570,14 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
             // Sugar for the book special case: chapterRanges wrap into the
             // one book cover a book's own path allows.
             if (chapterRanges !== undefined) {
-              if (bookId === undefined) {
-                throw new Error('chapterRanges count a book\'s contents rows — the project\'s OWN path (book: null) needs covers instead: { kind: "book", bookId, ranges: [{ from, to }] } names the book explicitly')
+              if (sugarBook === undefined) {
+                throw new Error('chapterRanges count a book\'s contents rows — the covers need the book named: { kind: "book", bookId, ranges: [{ from, to }] } (or bind this session to the book first)')
               }
-              return { ...rest, covers: [{ kind: 'book', bookId, ranges: chapterRanges }] }
+              return { ...rest, covers: [{ kind: 'book', bookId: sugarBook, ranges: chapterRanges }] }
             }
             return rest
           })
+          const bookId = overrideBook ?? deriveRoadmapBook(nodes)
           return unwrap(await service.draftRoadmap({
             projectId: projectOf(args.project, exec),
             ...(bookId === undefined ? {} : { bookId }),
@@ -590,11 +658,16 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
           const bookId = rawBook === null ? undefined : (rawBook as string | undefined) ?? bindingOf(exec)?.bookId
           const focus = args.focus ?? nested?.focus
           // Options may arrive as { label } objects or a letter-keyed map —
-          // the stored form is plain strings (the same tolerance reads them back).
+          // the stored form is plain strings (the same tolerance reads them
+          // back); the two axes default (topic + knowledge) and take the flat
+          // cardIds / quote / url / pageId shorthands.
           const cleaned = (questions as Record<string, unknown>[]).map(question => {
-            if (question.options === undefined) return question
-            const options = normalizeQuizOptions(question.options)
-            return options === undefined ? question : { ...question, options }
+            let next = question
+            if (next.options !== undefined) {
+              const options = normalizeQuizOptions(next.options)
+              if (options !== undefined) next = { ...next, options }
+            }
+            return normalizeQuestionAxes(next)
           })
           return unwrap(await service.putQuiz({
             projectId: projectOf(args.project, exec),

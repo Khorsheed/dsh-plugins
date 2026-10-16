@@ -10,6 +10,7 @@ Status: implemented
 
 - `validateRoadmapShape` 加镜像护栏：项目级草稿（无 `bookId`）若每个节点的每条 cover 都指同一本书，拒收并在教学信息里点书名、要求带 `book: <id>` 重发。出现第二本书、或任何非书 cover（resource / url / topic），才算真正的项目路线。
 - `LIBRARY_PROMPT` 的路线规则补上镜像表述：每站只覆盖同一本书的路线 IS 那本书的路线——传 `book`，不停在项目上。
+- **工具层已被取代（2026-10-16）**：作用域改为从 covers 推导，本 note 装的工具层拒收不再触发——见[作用域推导 note](../feature/2026-10-16-library-scope-derivation-and-axis-defaults.md)。service 层的护栏保留，作为显式覆盖写法（及非工具调用方）的安全网。
 
 ## Alternatives considered
 
