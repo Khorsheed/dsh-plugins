@@ -499,6 +499,15 @@ export class LibraryService {
     return { ok: true, book }
   }
 
+  /** The project holding a book, when an id is all the caller has (the tools' project fallback). */
+  findBookOwner(bookId: string): string | undefined {
+    this.assertAlive('findBookOwner')
+    for (const project of this.store.readIndex().projects) {
+      if (this.store.readBook(project.id, bookId) !== undefined) return project.id
+    }
+    return undefined
+  }
+
   /* ------------------------------------------------------------ resources */
 
   /**
@@ -1851,7 +1860,7 @@ export function validateRoadmapShape(
       return `nodes[${index}] (${node.id}) is a practice station — it needs acceptance: ["...", ...], the lines the coach judges one verdict each at assess time`
     }
     if (node.kind !== 'practice' && node.acceptance !== undefined && node.acceptance.length > 0) {
-      return `nodes[${index}] (${node.id}) carries acceptance but is not a practice station — acceptance belongs to kind: "practice" only; for a quiz / read station, write the completion expectations into goals: [...] instead`
+      return `nodes[${index}] (${node.id}) carries acceptance but is not a practice station — if these lines are judged one verdict each at completion, set kind: "practice"; if they are descriptive expectations while a quiz gates the station, move them into goals: [...]`
     }
     if (!Array.isArray(node.covers) || node.covers.length === 0) {
       return `nodes[${index}] (${node.id}) needs at least one cover — what the station draws on: { kind: "book", bookId, ranges: [{ from, to }] } | { kind: "resource", resourceId } | { kind: "url", url, title? } | { kind: "topic", text }`

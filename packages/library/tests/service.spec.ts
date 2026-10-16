@@ -302,7 +302,7 @@ describe('project paths', () => {
     const noAcceptance = await draft([{ kind: 'topic', text: 'x' }], 'practice')
     expect(!noAcceptance.ok && noAcceptance.message).toMatch(/acceptance/)
     const misplaced = await draft([{ kind: 'topic', text: 'x' }], 'quiz', ['x'])
-    expect(!misplaced.ok && misplaced.message).toMatch(/kind: "practice" only/)
+    expect(!misplaced.ok && misplaced.message).toMatch(/kind: "practice"/)
     expect(!misplaced.ok && misplaced.message).toMatch(/goals/)
     const empty = await draft([])
     expect(!empty.ok && empty.message).toMatch(/at least one cover/)

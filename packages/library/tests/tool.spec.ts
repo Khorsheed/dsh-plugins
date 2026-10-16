@@ -230,6 +230,31 @@ describe('the question axes default and take shorthands', () => {
   })
 })
 
+describe('the write chain strings itself', () => {
+  it('create → register → draft needs no id passing: each write binds the unbound session', async () => {
+    const created = (await call('library_write', { what: 'project', name: '数学', template: 'subject' })) as { project: { id: string } }
+    expect(service.getBinding('s_learn')).toEqual({ projectId: created.project.id })
+    const registered = (await call('library_write', { what: 'book', title: '微积分读本', bookKind: 'knowledge', toc: ['极限', '导数'], tocSource: { by: 'model' } })) as { book: { id: string } }
+    expect(service.getBinding('s_learn')).toEqual({ projectId: created.project.id, bookId: registered.book.id })
+    const drafted = (await call('library_write', { what: 'roadmap', nodes: [{ id: 'n1', title: '极限', kind: 'quiz', covers: [{ kind: 'book', bookId: registered.book.id, ranges: [{ from: 1, to: 1 }] }] }] })) as { draft: { bookId?: string }; scopeNote: string }
+    expect(drafted.draft.bookId).toBe(registered.book.id)
+    expect(drafted.scopeNote).toContain('微积分读本')
+  })
+
+  it('a book id alone resolves its project for an unbound, project-less session', async () => {
+    const { project, book } = await seed()
+    const elsewhere = { agent: { session: { id: 's_elsewhere' } } }
+    const drafted = (await call('library_write', { what: 'roadmap', nodes: [{ id: 'n1', title: '离子通道', kind: 'quiz', covers: [{ kind: 'book', bookId: book, ranges: [{ from: 1, to: 1 }] }] }] }, elsewhere)) as { draft: { bookId?: string } }
+    expect(drafted.draft.bookId).toBe(book)
+    expect(service.getBinding('s_elsewhere')).toEqual({ projectId: project, bookId: book })
+  })
+
+  it('acceptance on a quiz station is taught both exits', async () => {
+    const { book } = await seed()
+    await expect(call('library_write', { what: 'roadmap', nodes: [{ id: 'n1', title: '极限', kind: 'quiz', covers: [{ kind: 'book', bookId: book, ranges: [{ from: 1, to: 1 }] }], acceptance: ['会求极限'] }] })).rejects.toThrow(/kind: "practice"[\s\S]*goals/)
+  })
+})
+
 describe('photo pages', () => {
   it('records a page from the session\'s latest photo when the model names none', async () => {
     await seed()

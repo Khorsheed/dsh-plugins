@@ -125,12 +125,26 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
     return sessionId === undefined ? undefined : service.getBinding(sessionId)
   }
 
-  /** The project: the argument, else the binding, else a lesson. */
-  const projectOf = (value: unknown, exec: Exec | undefined): string => {
+  /** The project: the argument, else the binding, else the book's owner, else a lesson. */
+  const projectOf = (value: unknown, exec: Exec | undefined, book?: string): string => {
     if (typeof value === 'string' && value.trim() !== '') return value.trim()
     const bound = bindingOf(exec)?.projectId
     if (bound !== undefined) return bound
-    throw new Error('no project: this session is not bound to one — library_read · projects lists them; ask the learner which one (ask_user_question), then library_write · binding { project, book? }')
+    if (book !== undefined) {
+      const owner = service.findBookOwner(book)
+      if (owner !== undefined) return owner
+    }
+    throw new Error('no project: this session is not bound to one and no book resolves one — library_read · projects lists them; ask the learner which one (ask_user_question), then library_write · binding { project, book? }')
+  }
+
+  /** A successful write knows its work context: an unbound session binds to it, and a project-bound session picks up the book it just registered — create the project, register the book, draft the path, and the chain has strung itself. Never steals another project's session, never yanks a book off one. */
+  const autoBind = async (exec: Exec | undefined, binding: LibraryBinding): Promise<void> => {
+    const sessionId = sessionIdOf(exec)
+    if (sessionId === undefined) return
+    const current = bindingOf(exec)
+    if (current !== undefined && (current.projectId !== binding.projectId || current.bookId !== undefined)) return
+    if (current !== undefined && binding.bookId === undefined) return
+    await service.setBinding(sessionId, binding)
   }
 
   /** The book: the argument, else the binding's book, else a lesson. */
@@ -195,22 +209,26 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
         }
         case 'resources':
           return (await service.listResources({ projectId: projectOf(args.project, exec) })) as unknown as JsonValue
-        case 'toc':
-          return unwrap(await service.getBook({ projectId: projectOf(args.project, exec), bookId: bookOf(args.book, exec) })).book as unknown as JsonValue
+        case 'toc': {
+          const book = bookOf(args.book, exec)
+          return unwrap(await service.getBook({ projectId: projectOf(args.project, exec, book), bookId: book })).book as unknown as JsonValue
+        }
         case 'roadmap': {
           const book = scopeBookOf(args.book, exec)
-          return (await service.getRoadmap({ projectId: projectOf(args.project, exec), ...(book === undefined ? {} : { bookId: book }) })) as unknown as JsonValue
+          return (await service.getRoadmap({ projectId: projectOf(args.project, exec, book), ...(book === undefined ? {} : { bookId: book }) })) as unknown as JsonValue
         }
-        case 'pages':
+        case 'pages': {
+          const book = bookOf(args.book, exec)
           return (await service.listPages({
-            projectId: projectOf(args.project, exec),
-            bookId: bookOf(args.book, exec),
+            projectId: projectOf(args.project, exec, book),
+            bookId: book,
             ...(args.node === undefined ? {} : { nodeId: args.node }),
           })) as unknown as JsonValue
+        }
         case 'cards': {
           const book = typeof args.book === 'string' && args.book.trim() !== '' ? args.book.trim() : undefined
           const result = await service.listCards({
-            projectId: projectOf(args.project, exec),
+            projectId: projectOf(args.project, exec, book),
             ...(book === undefined ? {} : { bookId: book }),
             ...(args.node === undefined ? {} : { nodeId: args.node }),
             ...(args.query === undefined ? {} : { query: args.query }),
@@ -240,9 +258,9 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
           } as unknown as JsonValue
         }
         case 'quiz': {
-          const project = projectOf(args.project, exec)
+          const book = optBook(args.book, exec)
+          const project = projectOf(args.project, exec, book)
           if (args.quiz === undefined || args.quiz.trim() === '') {
-            const book = optBook(args.book, exec)
             return (await service.listQuizzes({ projectId: project, ...(book === undefined ? {} : { bookId: book }) })) as unknown as JsonValue
           }
           return unwrap(await service.getQuiz({ projectId: project, quizId: args.quiz.trim() })).quiz as unknown as JsonValue
@@ -271,7 +289,7 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
       + 'A refusal names exactly what to fix — change only that and resend.',
     parameters: {
       what: { type: 'string', required: true, description: `What to write: ${WRITE_WHATS.join(' | ')}. The payload goes in the TOP-LEVEL fields below (title / toc / nodes / text / questions / …), not in a wrapper object.` },
-      project: { type: 'json', description: 'The project id (defaults to this session\'s binding). what=project: omit it to create; pass the id to edit.' },
+      project: { type: 'json', description: 'The project id (defaults to this session\'s binding; a book id resolves its owner). what=project: omit it to create; pass the id to edit.' },
       book: { type: 'json', description: 'Defaults to the binding\'s book; null = the project\'s own path (notes / quiz). what=roadmap: omit it — the scope reads itself off the covers; a string is an explicit override, validated as before.' },
       name: { type: 'string', description: 'what=project: the project\'s name.' },
       template: { type: 'string', description: 'what=project: "language" (marks are words) | "subject" (marks are concepts) | "custom".' },
@@ -496,12 +514,16 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
           if (editId !== undefined) {
             const { id: _id, ...patch } = body
             if (Object.keys(patch).length === 0) throw new Error('editing a project takes project: "<id>" (a minted id — library_read · projects lists them; to CREATE a project omit project and set name + template) plus the top-level fields to change (name? / goal? / template?)')
-            return unwrap(await service.updateProject({ id: editId, patch: patch as { name?: string; goal?: string; template?: LibraryTemplate } })) as unknown as JsonValue
+            const edited = unwrap(await service.updateProject({ id: editId, patch: patch as { name?: string; goal?: string; template?: LibraryTemplate } }))
+            await autoBind(exec, { projectId: edited.project.id })
+            return edited as unknown as JsonValue
           }
           if (typeof body.name !== 'string') {
             throw new Error(`what=project takes top-level fields: name, template ("language"|"subject"|"custom"), goal? — e.g. { what: "project", name: "数学", template: "subject" } — ${arrival('name', args.name)}`)
           }
-          return unwrap(await service.createProject(body as { name: string })) as unknown as JsonValue
+          const created = unwrap(await service.createProject(body as { name: string }))
+          await autoBind(exec, { projectId: created.project.id })
+          return created as unknown as JsonValue
         }
         case 'book': {
           const nested = payload(args.book)
@@ -523,8 +545,9 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
             ? body.toc.split('\n').map(line => line.trim()).filter(line => line !== '')
             : (tocList ?? [])
           const toc = tocRows.map(row => typeof row === 'string' ? { title: row } : row as { title: string; part?: string })
-          return unwrap(await service.putBook({
-            projectId: projectOf(args.project, exec),
+          const projectId = projectOf(args.project, exec)
+          const written = unwrap(await service.putBook({
+            projectId,
             ...(typeof body.bookId === 'string' ? { bookId: body.bookId } : {}),
             title: body.title,
             ...(typeof body.author === 'string' ? { author: body.author } : {}),
@@ -535,7 +558,9 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
             ...(Array.isArray(payloadList(body.extras)) ? { extras: payloadList(body.extras) as { title: string; note?: string; where?: string; when?: 'before' | 'reference' }[] } : {}),
             toc,
             tocSource: (payload(body.tocSource) ?? { by: 'model' }) as { by: 'web' | 'model' | 'photo'; url?: string },
-          })) as unknown as JsonValue
+          }))
+          await autoBind(exec, { projectId, bookId: written.book.id })
+          return written as unknown as JsonValue
         }
         case 'roadmap': {
           const nested = payload(legacy.roadmap)
@@ -578,13 +603,19 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
             return rest
           })
           const bookId = overrideBook ?? deriveRoadmapBook(nodes)
-          return unwrap(await service.draftRoadmap({
-            projectId: projectOf(args.project, exec),
+          const projectId = projectOf(args.project, exec, bookId)
+          const drafted = unwrap(await service.draftRoadmap({
+            projectId,
             ...(bookId === undefined ? {} : { bookId }),
             nodes: nodes as unknown as Parameters<LibraryService['draftRoadmap']>[0]['nodes'],
             ...(typeof args.passRatio === 'number' ? { passRatio: args.passRatio } : typeof nested?.passRatio === 'number' ? { passRatio: nested.passRatio as number } : {}),
             ...(typeof args.note === 'string' ? { note: args.note } : typeof nested?.note === 'string' ? { note: nested.note as string } : {}),
-          })) as unknown as JsonValue
+          }))
+          await autoBind(exec, { projectId, ...(bookId === undefined ? {} : { bookId }) })
+          const placedOn = bookId === undefined
+            ? "the project's own path (the covers mix sources)"
+            : `《${unwrap(await service.getBook({ projectId, bookId })).book.title}》's path`
+          return { ...drafted, scopeNote: `draft placed on ${placedOn} — the learner adopts it in the sidebar (采用)` } as unknown as JsonValue
         }
         case 'notes': {
           const nested = payload(legacy.notes)
@@ -596,7 +627,7 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
           const rawBook = args.book === null || typeof args.book === 'string' ? args.book : nested?.book === null || typeof nested?.book === 'string' ? nested.book : undefined
           const bookId = rawBook === null ? undefined : (rawBook as string | undefined) ?? bindingOf(exec)?.bookId
           return unwrap(await service.putNotes({
-            projectId: projectOf(args.project, exec),
+            projectId: projectOf(args.project, exec, bookId),
             ...(bookId === undefined ? {} : { bookId }),
             nodeId,
             text,
@@ -615,9 +646,10 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
             throw new Error('no photo to record: this conversation has no image the library saw arrive (or the id names none) — ask the learner to send the page photo here, then record it')
           }
           const pageNode = typeof args.node === 'string' && args.node !== '' ? args.node : (typeof nested?.node === 'string' ? nested.node as string : undefined)
+          const pageBook = bookOf(typeof args.book === 'string' ? args.book : nested?.book, exec)
           return unwrap(await service.recordPage({
-            projectId: projectOf(args.project, exec),
-            bookId: bookOf(typeof args.book === 'string' ? args.book : nested?.book, exec),
+            projectId: projectOf(args.project, exec, pageBook),
+            bookId: pageBook,
             ...(pageNode === undefined ? {} : { nodeId: pageNode }),
             ...(typeof (args.label ?? nested?.label) === 'string' ? { label: (args.label ?? nested?.label) as string } : {}),
             attachment,
@@ -642,7 +674,7 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
           })
           const book = optBook(args.book, exec)
           return unwrap(await service.writeCards({
-            projectId: projectOf(args.project, exec),
+            projectId: projectOf(args.project, exec, book),
             ...(book === undefined ? {} : { bookId: book }),
             cards,
           })) as unknown as JsonValue
@@ -669,14 +701,17 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
             }
             return normalizeQuestionAxes(next)
           })
-          return unwrap(await service.putQuiz({
-            projectId: projectOf(args.project, exec),
+          const projectId = projectOf(args.project, exec, bookId)
+          const written = unwrap(await service.putQuiz({
+            projectId,
             quiz: {
               ...(focus === 'mine' || focus === 'book' || focus === 'mixed' ? { focus } : {}),
               scope: { ...(bookId === undefined ? {} : { bookId }), ...(node === undefined ? {} : { nodeId: node }) },
               questions: cleaned as unknown as LibraryQuizQuestion[],
             },
-          })) as unknown as JsonValue
+          }))
+          await autoBind(exec, { projectId, ...(bookId === undefined ? {} : { bookId }) })
+          return written as unknown as JsonValue
         }
         case 'resource': {
           const nested = payload(legacy.resource)
@@ -686,8 +721,9 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
             if (title === undefined || url === undefined) {
               throw new Error(`what=resource · op=add takes TOP-LEVEL fields: title, url, kind: "article"|"video"|"repo"|"tool"|"course"|"hardware", note? — a light link on the project's shelf; open it on the web first, and let note say why it earns its place — got title ${title === undefined ? '✗ MISSING' : '✓'} · url ${url === undefined ? '✗ MISSING' : '✓'}`)
             }
-            return unwrap(await service.addResource({
-              projectId: projectOf(args.project, exec),
+            const projectId = projectOf(args.project, exec)
+            const added = unwrap(await service.addResource({
+              projectId,
               resource: {
                 title,
                 url,
@@ -695,7 +731,9 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
                 ...(typeof (args.note ?? nested?.note) === 'string' ? { note: (args.note ?? nested?.note) as string } : {}),
                 addedBy: (args.addedBy ?? nested?.addedBy) === 'learner' ? 'learner' : 'coach',
               },
-            })) as unknown as JsonValue
+            }))
+            await autoBind(exec, { projectId })
+            return added as unknown as JsonValue
           }
           if (args.op === 'remove') {
             const resourceId = typeof args.resourceId === 'string' && args.resourceId !== '' ? args.resourceId : (typeof nested?.id === 'string' ? nested.id as string : undefined)
