@@ -21,6 +21,8 @@ Request labels count cumulatively within each agent, starting at 1 when the begi
 
 Each delegation has its own chip. Parent totals exclude child model spans already included in delegation execution; a failed run without requests remains visible.
 
+Tool call cards show their own execution outcome: failure previews are immediately visible, successful result bodies start collapsed, and full text expands within a bounded area. Sidebar tool failures are distinct from model-request failures. Input tool results identify the issuing request when its call ID can be resolved; execution results do not change input composition totals.
+
 ## Measurement honesty
 
 - Segment sizes are **exact character counts** (the host exposes no per-segment tokenizer); request token totals are **real provider usage** (including measured `cacheReadTokens`). The composition info tooltip states this split.

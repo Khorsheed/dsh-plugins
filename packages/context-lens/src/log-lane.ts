@@ -311,6 +311,7 @@ export function foldLogRows(
           if (span !== undefined) {
             if (row.time !== undefined) span.end = row.time
             span.isError = message?.isError === true
+            if (message !== undefined) span.result = serializeMessage(message)
           }
           const delegation = cursor.pendingDelegations.get(callId)
           if (delegation !== undefined) {
@@ -537,7 +538,7 @@ function responseFromMessage(message: CapturedMessage): CapturedResponse | undef
     .join('')
   const toolCalls = message.content
     .filter(block => block.type === 'tool-call' && block.name !== undefined)
-    .map(block => ({ name: block.name as string, arguments: block.arguments ?? '' }))
+    .map(block => ({ ...block.id === undefined ? {} : { callId: block.id }, name: block.name as string, arguments: block.arguments ?? '' }))
   if (reasoning === '' && text === '' && toolCalls.length === 0) return undefined
   return {
     ...reasoning === '' ? {} : { reasoning },
