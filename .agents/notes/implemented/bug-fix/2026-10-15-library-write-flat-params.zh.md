@@ -8,12 +8,12 @@ Status: implemented
 
 ## Decision
 
-`library_write` 参数改为**平铺顶层字段**——`title`、`bookKind`、`toc`、`tocSource`、`nodes`、`passRatio`、`note`、`node`、`text`、`attachment`、`label`、`marks`、`cards`、`focus`、`questions`、`op`、`url`、`kind`、`addedBy`、`resourceId`、`name`、`template`、`goal`、`bookId`——每个字段带类型、在模型写它的位置带描述（对照工具的风格）。`project` / `book` 回归纯 scope 选择器（id，`null` 表项目路线）。嵌套包裹形式（`book: {…}`、`roadmap: { nodes }`…）作为不文档化的兼容形式保留：参数根是开放对象，旧槽位能到达 execute，执行层按「平铺优先、嵌套兜底」合并。教学拒收现在点名缺失的顶层字段（`got title ✗ MISSING · toc ✗ MISSING`）。`library_read` 本就平铺、`library_assess` 的 verdicts 本就是结构化 schema——都不动。
+`library_write` 参数改为**平铺顶层字段**——`title`、`bookKind`、`toc`、`tocSource`、`nodes`、`passRatio`、`note`、`node`、`text`、`attachment`、`label`、`marks`、`cards`、`focus`、`questions`、`op`、`url`、`kind`、`addedBy`、`resourceId`、`name`、`template`、`goal`、`bookId`——每个字段带类型、在模型写它的位置带描述（对照工具的风格）。`project` / `book` 回归纯 scope 选择器（id，`null` 表项目路线）。深层集合（`nodes`、`questions`、`cards`、`marks`、`toc`、`extras`、`tocSource`）带真正的嵌套 JSON Schema——`array<object>` 加逐字段描述，即 `ask_user_question` 的渲染方式——每个都写成 `oneOf [结构化, string]`，JSON 文本传输这条活路不断；`binding` 是 `oneOf [object, null]`。`what`（read / write）与 `verdicts`（assess）恢复 schema 级 `required`，与其他工具一致。嵌套包裹形式（`book: {…}`、`roadmap: { nodes }`…）作为不文档化的兼容形式保留：参数根是开放对象，旧槽位能到达 execute，执行层按「平铺优先、嵌套兜底」合并。教学拒收现在点名缺失的顶层字段（`got title ✗ MISSING · toc ✗ MISSING`）。`library_read` 本就平铺；`library_assess` 的 verdicts 保持结构化 schema，且其 execute 对缺失 / 空 verdicts 给教学报错（裸展开会崩）。
 
 ## Alternatives considered
 
 - **拆成 ~10 个单动词工具**（`library_add_book`、`library_draft_roadmap`…）：最纯的对照风格，但打破提示词、playbook 和在途会话都依赖的三动词心智模型，而平铺参数已拿到同等的 schema 层收益。
-- **每个 payload 用严格对象 schema**（`book: { type: 'object', properties… }`）：否决——形状一错又会撞上宿主无教学的 schema 拒绝，且 JSON 文本传输（大 payload 模型的退路）将无法通过校验。
+- **每个 payload 用严格包裹对象 schema**（`book: { type: 'object', properties… }`）：否决——形状一错又会撞上宿主无教学的 schema 拒绝，且 JSON 文本传输（大 payload 模型的退路）将无法通过校验。以软化形式改采用：平铺字段自身携带嵌套结构（`nodes: array<object>…`），每个写成 `oneOf [结构化, string]`，传输退路保留。
 - **删掉嵌套兜底**：否决——在途会话的上下文里仍是包裹写法。
 
 ## Consequences

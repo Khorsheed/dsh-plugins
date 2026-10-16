@@ -123,7 +123,7 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
       + '"quiz" — one quiz whole (quiz id), or the list; '
       + '"stats" — the whole library\'s tally. project and book default to this session\'s binding.',
     parameters: {
-      what: { type: 'string', description: `Required. What to read: ${READ_WHATS.join(' | ')}.` },
+      what: { type: 'string', required: true, description: `What to read: ${READ_WHATS.join(' | ')}.` },
       project: { type: 'string', description: 'Project id (defaults to the binding).' },
       book: { type: 'json', description: 'Book id (defaults to the binding\'s book; null reads the project\'s own roadmap).' },
       node: { type: 'string', description: 'Roadmap node id (pages / cards).' },
@@ -224,7 +224,7 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
       + 'binding — bind this session (binding: null unbinds). '
       + 'A refusal names exactly what to fix — change only that and resend.',
     parameters: {
-      what: { type: 'string', description: `Required. What to write: ${WRITE_WHATS.join(' | ')}. The payload goes in the TOP-LEVEL fields below (title / toc / nodes / text / questions / …), not in a wrapper object.` },
+      what: { type: 'string', required: true, description: `What to write: ${WRITE_WHATS.join(' | ')}. The payload goes in the TOP-LEVEL fields below (title / toc / nodes / text / questions / …), not in a wrapper object.` },
       project: { type: 'json', description: 'The project id (defaults to this session\'s binding). what=project: omit it to create; pass the id to edit.' },
       book: { type: 'json', description: 'The book id (defaults to the binding\'s book; null = the project\'s own path on roadmap / notes / quiz).' },
       name: { type: 'string', description: 'what=project: the project\'s name.' },
@@ -236,27 +236,153 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
       edition: { type: 'string', description: 'what=book (e.g. 2020 年 9 月第一版).' },
       isbn: { type: 'string', description: 'what=book.' },
       bookKind: { type: 'string', description: 'what=book: "knowledge" | "material" ("material" = exam papers / novels / anthologies — specific text you cannot recall).' },
-      toc: { type: 'json', description: 'what=book: the contents — [{ title, part? }] with one row per chapter or passage (never a part heading; the part goes in part), a bare string per row, or ONE newline-joined string of titles.' },
-      extras: { type: 'json', description: 'what=book: [{ title, note?, where?, when: "before"|"reference" }] — how-to-use pages, answer keys, transcripts, appendices; NOT roadmap nodes.' },
-      tocSource: { type: 'json', description: 'what=book: { by: "web"|"model"|"photo", url? } — cite the page you verified.' },
+      toc: {
+        oneOf: [
+          { type: 'array', description: 'One row per chapter or passage.', items: { oneOf: [
+            { type: 'string', description: 'A bare row title.' },
+            { type: 'object', additionalProperties: true, properties: {
+              title: { type: 'string', required: true, description: 'The chapter / passage title.' },
+              part: { type: 'string', description: 'The part heading this row belongs to (a part is never a row of its own).' },
+            } },
+          ] } },
+          { type: 'string', description: 'The whole contents as ONE newline-joined string of titles (the form least mangled by models).' },
+        ],
+        description: 'what=book: the contents (required).',
+      },
+      extras: {
+        oneOf: [
+          { type: 'array', items: { type: 'object', additionalProperties: true, properties: {
+            title: { type: 'string', required: true },
+            note: { type: 'string' },
+            where: { type: 'string' },
+            when: { type: 'string', required: true, enum: ['before', 'reference'], description: 'before: read before starting; reference: consult when needed.' },
+          } } },
+          { type: 'string', description: 'The same array as its JSON text.' },
+        ],
+        description: 'what=book: how-to-use pages, answer keys, transcripts, appendices — NOT roadmap nodes.',
+      },
+      tocSource: {
+        oneOf: [
+          { type: 'object', additionalProperties: true, properties: {
+            by: { type: 'string', required: true, enum: ['web', 'model', 'photo'], description: 'web: you verified it online (cite url); model: from memory; photo: from the learner\'s photo.' },
+            url: { type: 'string', description: 'The page you verified (publisher / catalog / retailer).' },
+          } },
+          { type: 'string', description: 'The same object as its JSON text.' },
+        ],
+        description: 'what=book: where the contents came from (required).',
+      },
       bookId: { type: 'string', description: 'what=book: correct this existing book instead of adding (library_read · books lists the ids).' },
-      nodes: { type: 'json', description: 'what=roadmap: [{ id, title, kind: "quiz"|"read"|"practice", goals: [...] (a bare string works), covers: [{ kind: "book", bookId, ranges: [{ from, to }] } | { kind: "resource", resourceId } | { kind: "url", url, title? } | { kind: "topic", text }], dependsOn, acceptance?: [...] (practice only) }] — or the JSON text. quiz nodes are the levels (a chapter quiz completes them) and depend only on quiz / practice nodes; a practice node is a hands-on station gated by acceptance lines; read nodes are optional side stops (读完 completes them, they never gate). On a book\'s own path every node covers that one book (chapterRanges: [{ from, to }] works as sugar); on the project\'s path covers mix. Every url / resource cover carries provenance: by: "web" + verifiedAt once actually opened, "model" from memory (verify and replace before the learner adopts), "user" when the learner gave it.' },
+      nodes: {
+        oneOf: [
+          { type: 'array', description: 'The stations, in dependency order.', items: { type: 'object', additionalProperties: true, properties: {
+            id: { type: 'string', required: true, description: 'Unique station id (letters, digits, . _ -).' },
+            title: { type: 'string', required: true, description: 'What the learner masters here.' },
+            kind: { type: 'string', required: true, enum: ['quiz', 'read', 'practice'], description: 'quiz: a level gated by its chapter quiz (depends only on quiz / practice nodes); practice: a hands-on station gated by acceptance lines; read: an optional side stop (读完 completes it, never gates).' },
+            goals: { oneOf: [{ type: 'array', items: { type: 'string' } }, { type: 'string' }], description: 'What to master / complete here — a quiz / read station\'s completion expectations live HERE, never in acceptance.' },
+            covers: { type: 'array', description: 'What the station draws on (at least one). On a book\'s own path: exactly one book cover naming that book.', items: { type: 'object', additionalProperties: true, properties: {
+              kind: { type: 'string', required: true, enum: ['book', 'resource', 'url', 'topic'], description: 'book: a shelf book\'s chapters (+ bookId, ranges); resource: a shelf link (+ resourceId); url: a bare link (+ url, title?); topic: plain coached teaching (+ text).' },
+              bookId: { type: 'string', description: 'kind=book: the book (library_read · books lists ids).' },
+              ranges: { type: 'array', description: 'kind=book: contents rows, 1-based inclusive.', items: { type: 'object', additionalProperties: true, properties: {
+                from: { type: 'integer', required: true },
+                to: { type: 'integer', required: true },
+              } } },
+              resourceId: { type: 'string', description: 'kind=resource: the shelf entry (library_read · resources).' },
+              url: { type: 'string', description: 'kind=url.' },
+              title: { type: 'string', description: 'kind=url: a short label.' },
+              text: { type: 'string', description: 'kind=topic: what the coach teaches here.' },
+              by: { type: 'string', enum: ['web', 'model', 'user'], description: 'url / resource provenance: "web" once actually opened (+ verifiedAt), "model" straight from memory (verify and replace before the learner adopts), "user" when the learner gave it.' },
+              verifiedAt: { type: 'string', description: 'ISO time of the web check.' },
+            } } },
+            dependsOn: { type: 'array', items: { type: 'string' }, description: 'Earlier station ids this one gates on.' },
+            acceptance: { type: 'array', items: { type: 'string' }, description: 'kind=practice only: the criteria — one verbatim verdict.criterion per line at assess time.' },
+          } } },
+          { type: 'string', description: 'The same array as its JSON text.' },
+        ],
+        description: 'what=roadmap: the stations of the DRAFT the learner adopts in the sidebar (采用).',
+      },
       passRatio: { type: 'number', description: 'what=roadmap: the pass line in (0, 1] — 0.8 means 8 of 10 right (the default).' },
       note: { type: 'string', description: 'what=roadmap: the one-line pacing on the draft card. what=resource · op=add: one line on why the link earns its place.' },
       node: { type: 'string', description: 'The station id (what=notes; the scope on what=quiz).' },
       text: { type: 'string', description: 'what=notes: the station\'s 讲义 in markdown. what=page: the photographed page\'s printed text.' },
       attachment: { type: 'string', description: 'what=page: the image id (omit for the latest photo in this conversation).' },
       label: { type: 'string', description: 'what=page: what the learner calls the page (「p.16」).' },
-      marks: { type: 'json', description: 'what=page: [{ text, sentence?, handNote?, gloss? (the in-context meaning), uncertain? (kept, not carded) }].' },
-      cards: { type: 'json', description: 'what=cards: [{ kind: "word"|"concept", term, aliases?, gloss, userGloss?, context?: { sentence, node? }, source: { type: "chat"|"photo"|"quiz"|"manual", note? }, weaken?, mergeInto?, asNew? }] — or the JSON text. When the learner is stuck: source chat, weaken true; a near-duplicate comes back in pending — resend it with mergeInto: <id> or asNew: true.' },
+      marks: {
+        oneOf: [
+          { type: 'array', items: { type: 'object', additionalProperties: true, properties: {
+            text: { type: 'string', required: true, description: 'The marked word / phrase, as printed.' },
+            sentence: { type: 'string', description: 'The sentence it sits in, as printed.' },
+            handNote: { type: 'string', description: 'The learner\'s handwritten gloss beside it, transcribed.' },
+            gloss: { type: 'string', description: 'The in-context meaning.' },
+            uncertain: { type: 'boolean', description: 'You could not tell — kept, never auto-carded.' },
+          } } },
+          { type: 'string', description: 'The same array as its JSON text.' },
+        ],
+        description: 'what=page: every mark on the photographed page.',
+      },
+      cards: {
+        oneOf: [
+          { type: 'array', items: { type: 'object', additionalProperties: true, properties: {
+            kind: { type: 'string', required: true, enum: ['word', 'concept'] },
+            term: { type: 'string', required: true },
+            gloss: { type: 'string', required: true, description: 'The in-context meaning.' },
+            aliases: { type: 'array', items: { type: 'string' } },
+            userGloss: { type: 'string', description: 'The learner\'s own wording.' },
+            context: { type: 'object', additionalProperties: true, properties: {
+              sentence: { type: 'string' },
+              node: { type: 'string', description: 'The station id.' },
+            } },
+            source: { type: 'object', additionalProperties: true, properties: {
+              type: { type: 'string', required: true, enum: ['chat', 'photo', 'quiz', 'manual'] },
+              note: { type: 'string' },
+            }, description: 'When the learner is stuck: chat + weaken true.' },
+            weaken: { type: 'boolean', description: 'The learner is stuck on it.' },
+            mergeInto: { type: 'string', description: 'Resolve a pending near-duplicate: merge into this card id.' },
+            asNew: { type: 'boolean', description: 'Resolve a pending near-duplicate: keep it separate.' },
+          } } },
+          { type: 'string', description: 'The same array as its JSON text.' },
+        ],
+        description: 'what=cards: the weak points to record.',
+      },
       focus: { type: 'string', description: 'what=quiz: "mine" | "book" | "mixed" — the learner\'s choice of source.' },
-      questions: { type: 'json', description: 'what=quiz: [{ id, kind: "choice"|"fill"|"free", prompt, options?, answer, explanation?, target: { kind: "marked"|"asked"|"missed"|"topic", cardIds? }, evidence: { kind: "photo"|"web"|"knowledge", pageId?, url?, quote? } }] — or the JSON text. Target the learner\'s own cards first; a material book, a resource or a url among the gated station\'s covers demands a verbatim quote for a content question.' },
+      questions: {
+        oneOf: [
+          { type: 'array', items: { type: 'object', additionalProperties: true, properties: {
+            id: { type: 'string', required: true },
+            kind: { type: 'string', required: true, enum: ['choice', 'fill', 'free'], description: 'choice: the answer IS one of options, verbatim; fill: a short verbatim answer (a term, a formula, a date); free: an open discussion (the prompt locates the passage).' },
+            prompt: { type: 'string', required: true },
+            options: { type: 'array', items: { type: 'string' }, description: 'choice only.' },
+            answer: { type: 'string', required: true, description: 'choice: the correct option, copied verbatim.' },
+            explanation: { type: 'string', description: 'Why the answer is right.' },
+            target: { type: 'object', additionalProperties: true, properties: {
+              kind: { type: 'string', required: true, enum: ['marked', 'asked', 'missed', 'topic'], description: 'The learner\'s own cards first (marked / asked / missed + cardIds), else the chapter\'s topic.' },
+              cardIds: { type: 'array', items: { type: 'string' } },
+            } },
+            evidence: { type: 'object', additionalProperties: true, properties: {
+              kind: { type: 'string', required: true, enum: ['photo', 'web', 'knowledge'], description: 'photo quotes a recorded page (pageId + quote); web cites url + quote; knowledge only where the station\'s covers allow it.' },
+              pageId: { type: 'string' },
+              url: { type: 'string' },
+              quote: { type: 'string', description: 'The passage, verbatim.' },
+            } },
+          } } },
+          { type: 'string', description: 'The same array as its JSON text.' },
+        ],
+        description: 'what=quiz: the questions of the composed quiz.',
+      },
       op: { type: 'string', description: 'what=resource: add | remove.' },
       url: { type: 'string', description: 'what=resource · op=add: the link — open it on the web first.' },
       kind: { type: 'string', description: 'what=resource: article | video | repo | tool | course | hardware.' },
       addedBy: { type: 'string', description: 'what=resource: "coach" (the default) | "learner".' },
       resourceId: { type: 'string', description: 'what=resource · op=remove: the shelf entry id (library_read · resources lists them).' },
-      binding: { type: 'json', description: 'what=binding: { project, book? } or null.' },
+      binding: {
+        oneOf: [
+          { type: 'object', additionalProperties: true, properties: {
+            project: { type: 'string', required: true, description: 'The project id (library_read · projects lists them).' },
+            book: { type: 'string', description: 'Optionally the book within it.' },
+          } },
+          { type: 'null', description: 'Unbind this session.' },
+        ],
+        description: 'what=binding: bind this session to a project (and optionally a book).',
+      },
     },
     output: jsonOutput(),
     // Writes serialize on the store's locks; one at a time keeps their order legible.
@@ -558,6 +684,9 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
     output: jsonOutput(),
     isConcurrencySafe: () => false,
     async execute(args, exec) {
+      if (!Array.isArray(args.verdicts) || args.verdicts.length === 0) {
+        throw new Error('verdicts is required — one verdict per question: [{ task: <question id>, criterion: <what you judged>, pass, evidence: <what it rests on>, by: "llm"|"self"|"user", ratio?, void?, missedCard? }]')
+      }
       const node = typeof args.node === 'string' && args.node.trim() !== '' ? args.node.trim() : undefined
       if (node !== undefined) {
         const book = typeof args.book === 'string' && args.book.trim() !== '' ? args.book.trim() : undefined

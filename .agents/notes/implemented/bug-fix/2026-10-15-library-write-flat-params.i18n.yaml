@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-10-15-library-write-flat-params.md
-.agents/notes/implemented/bug-fix/2026-10-15-library-write-flat-params.md: 623fb5421b3994e6ec50358d939125d49265d3b5
-.agents/notes/implemented/bug-fix/2026-10-15-library-write-flat-params.zh.md: 62d004b326a33587d8aa378f5b39517e6f1e313a
+.agents/notes/implemented/bug-fix/2026-10-15-library-write-flat-params.md: 5a82145b162eff75c257f325b1da65a1358ca75c
+.agents/notes/implemented/bug-fix/2026-10-15-library-write-flat-params.zh.md: 7aaf1844fa2caf991da1d7fa33794e7b8cc8e70a

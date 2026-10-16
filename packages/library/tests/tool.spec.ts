@@ -194,9 +194,9 @@ describe('teaching errors', () => {
     await expect(call('library_write', { what: 'everythings' })).rejects.toThrow(/project \| book \| roadmap \| notes \| page \| cards \| quiz \| resource \| binding/)
   })
 
-  it('a missing what teaches too (the host\'s bare schema rejection taught nothing)', async () => {
-    await expect(call('library_read', {})).rejects.toThrow(/what is required — one of projects/)
-    await expect(call('library_write', { binding: { project: 'p_x' } })).rejects.toThrow(/what is required — one of project/)
+  it('a missing what is rejected at the schema line (required: [what], like every other tool)', async () => {
+    await expect(call('library_read', {})).rejects.toThrow(/missing required property/)
+    await expect(call('library_write', {})).rejects.toThrow(/missing required property/)
   })
 
   it('surfaces the service refusal verbatim', async () => {
