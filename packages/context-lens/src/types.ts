@@ -52,6 +52,9 @@ export interface SegmentItem {
   source: string
   /** Tool calls this assistant row issued (the chip on assistant rows). */
   toolCalls?: string[]
+  /** Exact tool-result provenance when the issuing request is retained. */
+  toolCallId?: string
+  sourceRequestNumber?: number
   /** Single-line preview (whitespace-collapsed). */
   preview: string
   /**
@@ -140,7 +143,13 @@ export interface CapturedResponse {
   /** Assembled visible text, when any. */
   text?: string
   /** Tool calls issued: name + raw arguments string. */
-  toolCalls: { name: string; arguments: string }[]
+  toolCalls: {
+    callId?: string
+    name: string
+    arguments: string
+    /** Execution happens after the model response; never part of input composition. */
+    execution?: { status: 'running' | 'ok' | 'failed'; result?: string }
+  }[]
 }
 
 /** Bounded view of the smallest replacement span, with unchanged context on either side. */

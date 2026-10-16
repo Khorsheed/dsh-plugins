@@ -151,9 +151,29 @@ describe('child-log lane', () => {
     expect(third?.usage).toBeUndefined()
     expect(third?.response).toEqual({ text: '正在写一半', toolCalls: [] })
     // The settled responses carry their own content too (输出 section data).
-    expect(first?.response?.toolCalls).toEqual([
+    expect(first?.response?.toolCalls).toMatchObject([
       { name: 'read', arguments: '{"file_path":"/home/user/work/幻梦境/第1章.md"}' },
     ])
+    service.dispose()
+  })
+
+  it('attaches a late child result to the already retained issuing call', async () => {
+    const cut = fixtureRows.findIndex(r => r.type === 'tool/result')
+    const rows = structuredClone(fixtureRows.slice(0, cut))
+    const { service } = await mount(new FixtureReader(rows, undefined, 'child-late'))
+    const rootId = delegate(service, 'child-late', false)
+    const first = await service.getTurn(rootId, 1)
+    const seq = first!.scopes.find(s => s.kind === 'subagent')!.requests[0]!.seq
+    expect((await service.getRequest(rootId, seq))?.response?.toolCalls[0]?.execution?.status).toBe('running')
+    const result = structuredClone(fixtureRows[cut]!)
+    const data = result.data as { message: { isError?: boolean; content: unknown[] } }
+    data.message.isError = true
+    data.message.content = [{ type: 'text', text: 'late child failure' }]
+    rows.push(result)
+    const detail = await service.getRequest(rootId, seq)
+    expect(detail?.response?.toolCalls[0]?.execution).toEqual({ status: 'failed', result: 'late child failure' })
+    const overview = await service.getTurn(rootId, 1)
+    expect(overview!.scopes.find(s => s.kind === 'subagent')!.requests[0]!.toolErrors).toBe(1)
     service.dispose()
   })
 

@@ -165,6 +165,16 @@ REQ101.segments.added = [
   { index: 25, category: 'assistant', source: 'model', full: JSON.stringify(previousAssistant), preview: previousAssistant.text, chars: JSON.stringify(previousAssistant).length, freshness: 'new' },
   { index: 26, category: 'user', source: 'user', full: '继续看下一段，删掉抽象的判断，改成具体动作。', preview: '继续看下一段，删掉抽象的判断，改成具体动作。', chars: 25, freshness: 'new' },
 ]
+// Execution-result example: prior success is input; this call's failure is output-side.
+REQ101.responseSummary = { kind: 'tool', name: 'library_write', hint: 'book' }
+REQ101.response = { toolCalls: [{ callId: 'write-book', name: 'library_write', arguments: JSON.stringify({ what: 'book', title: '示例数学读本', author: 'Example Author', toc: [{ chapters: [] }] }), execution: { status: 'failed', result: '参数校验失败：toc[0].title 为必填字段。\n请为目录条目提供章节标题后重试。\n' + '详细信息：该条目缺少 title，收到的内容为 {"chapters":[]}。\n'.repeat(8) } }] }
+REQ101.prefix = { previousSeq: 11, previousRequestNumber: 1, gapMs: 1000, toolsChanged: false }
+REQ101.segments.added = [
+  { index: 25, category: 'assistant', source: 'model', full: '{"text":"先建立项目，再录入书籍。","calls":[{"name":"library_write","arguments":"{}"}]}', preview: '先建立项目，再录入书籍。', chars: 90, freshness: 'new' },
+  { index: 26, category: 'tool-result', source: 'library_write', toolCallId: 'create-project', sourceRequestNumber: 1, full: '{"ok":true,"project":{"name":"数学"}}', preview: '{"ok":true,"project":{"name":"数学"}}', chars: 33, freshness: 'new' },
+]
+OVERVIEW2.scopes[0]!.requests[0]!.responseSummary = REQ101.responseSummary
+OVERVIEW2.scopes[0]!.requests[0]!.toolErrors = 1
 REQ102.segments = { ...REQ101.segments }
 const signal = new AbortController().signal
 const success = <T,>(value: T) => Promise.resolve({ ok: true as const, value })

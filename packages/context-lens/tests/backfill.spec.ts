@@ -163,8 +163,10 @@ describe('backfill (no live content)', () => {
     // appears in no later request's 新增 — it only exists as `response`.
     expect(second?.response?.text).toContain('这个设定我很愿意接')
     expect(second?.response?.reasoning).toContain('准备以专业编辑身份')
+    expect(first?.response?.toolCalls[0]?.execution?.status).toBe('ok')
+    expect(first?.response?.toolCalls[0]?.execution?.result).toBeTruthy()
     // The first request answered with a tool call: the response carries it verbatim.
-    expect(first?.response?.toolCalls).toEqual([{ name: 'skill', arguments: '{"name":"novel"}' }])
+    expect(first?.response?.toolCalls).toMatchObject([{ name: 'skill', arguments: '{"name":"novel"}' }])
     service.dispose()
   })
 

@@ -1,6 +1,6 @@
 /** Compact composition rows and immediately readable exchange cards. */
 import { useEffect, useState } from 'react'
-import type { CapturedRequest, SegmentCategory, SegmentItem, ToolDefItem } from '../types.ts'
+import type { CapturedRequest, CapturedResponse, SegmentCategory, SegmentItem, ToolDefItem } from '../types.ts'
 import { duplicateStats, fmt, fmtK, fmtSpan, type CompositionFilter } from './aggregate.ts'
 import type { InspectorTabProps } from './contract.ts'
 import css from './SegmentBlocks.module.css'
@@ -141,6 +141,29 @@ function Reasoning({ text, ms, t }: { readonly text: string; readonly ms: number
     <div className={css.thinkText} data-open={open}>{text}</div>
   </div>
 }
+/** Result text is attached by call ID, including same-name and parallel calls. */
+function ToolCallCard({ call, t }: { call: CapturedResponse['toolCalls'][number]; t: T }) {
+  const [open, setOpen] = useState(false)
+  const execution = call.execution
+  const failed = execution?.status === 'failed'
+  const result = execution?.result
+  const status = execution?.status ?? 'unknown'
+  return <div className={css.call} data-status={status}>
+    <div className={css.callHead}><span>{t('lens.calls')}</span><b>{call.name}</b>
+      <span className={css.callStatus} data-status={status}>{t(`tool.status.${status}`)}</span>
+      <span className={css.number}>{fmt(call.arguments.length)}</span>
+    </div>
+    <Arguments raw={call.arguments} t={t} />
+    {execution && execution.status !== 'running' && <div className={css.result} data-error={failed}>
+      <div className={css.resultHead}><b>{t('tool.result')}</b>
+        {result !== undefined && <button type="button" className={css.more} aria-expanded={open} onClick={() => setOpen(v => !v)}>{open ? t('lens.collapse') : t(failed ? 'tool.expand' : 'tool.show', { count: fmt(result.length) })}</button>}
+      </div>
+      {result === undefined ? <div className={css.emptyNote}>{t('tool.noResult')}</div>
+        : (failed || open) && <pre className={css.resultText} data-open={open}>{result || t('tool.emptyResult')}</pre>}
+    </div>}
+  </div>
+}
+
 /** The output body is visible, including reasoning and arguments, without opening a wrapper. */
 export function OutputBlock({ request, t }: { readonly request: CapturedRequest; readonly t: T }) {
   const response = request.response
@@ -149,9 +172,7 @@ export function OutputBlock({ request, t }: { readonly request: CapturedRequest;
     {response === undefined ? <div className={css.emptyNote}>{t(request.status === 'streaming' ? 'out.streaming' : 'lens.noResponse')}</div> : <>
       {response.reasoning && <Reasoning text={response.reasoning} ms={request.timing.reasoningMs} t={t} />}
       {response.text && <Clamped text={response.text} t={t} />}
-      {response.toolCalls.map((c,i) => <div className={css.call} key={i}>
-        <div className={css.callHead}><span>{t('lens.calls')}</span><b>{c.name}</b><span className={css.number}>{fmt(c.arguments.length)}</span></div><Arguments raw={c.arguments} t={t} />
-      </div>)}
+      {response.toolCalls.map((call, i) => <ToolCallCard key={call.callId ?? i} call={call} t={t} />)}
     </>}
   </div>
 }
@@ -173,7 +194,7 @@ export function Exchange({ request, previousResponseNumber, t }: { readonly requ
     <h3 className={css.exchangeTitle}>{t('lens.exchange')}</h3>
     <div className={css.exchange}>
       <div className={css.column}><div className={css.columnLabel}>{t('lens.newInput')} · {request.segments.added.length}</div>
-        {request.segments.added.map((item,i) => <InputCard key={i} item={item} repeats={duplicates.counts.get(item.full) ?? 0} t={t} from={item.category === 'assistant' && previousResponseNumber !== null ? t('row.prevResponse', { seq:String(previousResponseNumber) }) : item.source} />)}
+        {request.segments.added.map((item,i) => <InputCard key={i} item={item} repeats={duplicates.counts.get(item.full) ?? 0} t={t} from={item.category === 'assistant' && previousResponseNumber !== null ? t('row.prevResponse', { seq:String(previousResponseNumber) }) : item.category === 'tool-result' && item.sourceRequestNumber !== undefined ? `${item.source} · ${t('row.callResult', { seq: String(item.sourceRequestNumber) })}` : item.source} />)}
       </div>
       <div className={css.arrow} aria-hidden="true">→</div>
       <div className={css.column} role="region" aria-label={t('out.title')}><div className={css.columnLabel}><span>{t('out.title')}</span><span>{request.usage ? fmt(request.usage.outputTokens) : '—'} tok</span></div><OutputBlock request={request} t={t} /></div>

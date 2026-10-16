@@ -182,6 +182,7 @@ export function splitRequest(input: {
       chars: full.length,
       ...durationMs === undefined ? {} : { durationMs },
       ...message.isError === undefined ? {} : { isError: message.isError },
+      ...message.toolCallId === undefined ? {} : { toolCallId: message.toolCallId },
       ...sourceTurn === undefined ? {} : { sourceTurn },
       freshness,
     }
@@ -237,6 +238,7 @@ function attributeSystem(
       full: section.text,
       chars: section.text.length,
       ...message.isError === undefined ? {} : { isError: message.isError },
+      ...message.toolCallId === undefined ? {} : { toolCallId: message.toolCallId },
       ...message.sourceTurn === undefined ? {} : { sourceTurn: message.sourceTurn },
       freshness,
     }))

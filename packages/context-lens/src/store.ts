@@ -38,6 +38,7 @@ import type {
   ResponseSummary,
   ScopeFilter,
   ScopedRefusal,
+  SegmentItem,
   TimingLane,
   ToolTiming,
   TurnListItem,
@@ -45,7 +46,7 @@ import type {
   TurnTiming,
 } from './types.ts'
 import { splitRequest, type CapturedToolSchema, type ScopeFingerprint, type AssemblyRecord } from './segmenter.ts'
-import type { CapturedMessage } from './messages.ts'
+import { previewLine, type CapturedMessage } from './messages.ts'
 import type { LogTurn } from './log-lane.ts'
 import { prefixTextChange } from './prefix-diff.ts'
 
@@ -92,6 +93,7 @@ export interface ToolExecSpan {
   start: number
   end?: number
   isError?: boolean
+  result?: string
 }
 
 /** A request row as the store keeps it — the wire shapes assemble on query. */
@@ -112,6 +114,8 @@ export interface StoredRequest {
   totalChars: number
   /** The response's own char weight (counted in the store budget, not in 请求体 totalChars). */
   responseChars?: number
+  /** Execution result storage, excluded from request/input metrics. */
+  executionChars?: number
   /** The request's own response, set at settle (see CapturedRequest.response). */
   response?: CapturedResponse
   firstChunkAt?: number
@@ -484,6 +488,7 @@ export class InspectorStore {
     found.scope.previous = built.fingerprint
     this.totalChars += request.totalChars
     this.attachResponse(request, built.response)
+    this.accountExecutionResults(request)
     this.enforceCaps()
     return request
   }
@@ -590,11 +595,23 @@ export class InspectorStore {
   private attachResponse(request: StoredRequest, response: CapturedResponse | undefined): void {
     if (response === undefined) return
     request.response = response
-    const chars = (response.reasoning?.length ?? 0)
-      + (response.text?.length ?? 0)
-      + response.toolCalls.reduce((n, call) => n + call.name.length + call.arguments.length, 0)
+    const chars = responseSize(response)
     request.responseChars = chars
     this.totalChars += chars
+  }
+
+  private accountExecutionResults(request: StoredRequest): void {
+    const chars = executionSize(request)
+    this.totalChars += chars - (request.executionChars ?? 0)
+    request.executionChars = chars
+  }
+
+  /** Incremental child folds mutate shared execution spans after insertion. */
+  refreshExecutionResults(sessionId: string, scopeId: string): void {
+    const session = this.sessions.get(sessionId)
+    const scope = session && this.findScope(session, scopeId)?.scope
+    for (const request of scope?.requests ?? []) this.accountExecutionResults(request)
+    this.enforceCaps()
   }
 
   /** turn/start on a root session (child sessions route their events to the parent instead). */
@@ -713,7 +730,7 @@ export class InspectorStore {
   }
 
   /** tool/result: close the exec interval; resolve a delegation scope's outcome. */
-  toolResult(sessionId: string, callId: string, isError: boolean, preview: string, at: number): void {
+  toolResult(sessionId: string, callId: string, isError: boolean, result: string, at: number): void {
     const rootId = this.rootOf(sessionId)
     const session = this.sessions.get(rootId)
     const owner = this.callOwners.get(callId)
@@ -722,6 +739,9 @@ export class InspectorStore {
       if (span !== undefined) {
         span.end = at
         span.isError = isError
+        span.result = result
+        this.accountExecutionResults(owner)
+        this.enforceCaps()
       }
     }
     if (session === undefined) return
@@ -736,7 +756,7 @@ export class InspectorStore {
     const scope = found?.scope ?? this.openChildScope(session, scopeId, pending.label, at, callId)
     if (scope === undefined) return
     scope.status = isError ? 'failed' : 'ok'
-    if (isError) scope.error = preview
+    if (isError) scope.error = previewLine(result)
     scope.endedAt = at
   }
 
@@ -844,7 +864,7 @@ export class InspectorStore {
     // Newest-first; every constraint skips (never aborts the older candidates).
     for (let i = candidates.length - 1; i >= 0; i -= 1) {
       const candidate = candidates[i] as LogTurn
-      const candidateChars = candidate.requests.reduce((n, request) => n + request.totalChars, 0)
+      const candidateChars = candidate.requests.reduce((n, request) => n + request.totalChars + executionSize(request) + responseSize(request.response), 0)
       // Backfilled turns share the per-session window behind live content.
       if (session.turns.filter(turn => !turn.liveContent).length >= this.maxTurnsPerSession - liveCount) {
         dropped += 1
@@ -947,6 +967,7 @@ export class InspectorStore {
       this.totalChars += request.totalChars
       session.backfilledRequests += 1
       this.attachResponse(request, built.response)
+      this.accountExecutionResults(request)
     }
     for (const delegation of logTurn.delegations) {
       const scopeId = delegation.childId ?? `call:${delegation.callId}`
@@ -1129,6 +1150,25 @@ export class InspectorStore {
   }
 
   private requestView(request: StoredRequest): CapturedRequest {
+    const owners = new Map<string, number>()
+    for (const turn of this.sessions.get(request.sessionId)?.turns ?? []) {
+      for (const r of turn.scopes.get(request.scopeId)?.requests ?? []) {
+        if (r.requestNumber !== undefined) for (const c of r.response?.toolCalls ?? []) {
+          if (c.callId !== undefined) owners.set(c.callId, r.requestNumber)
+        }
+      }
+    }
+    const provenance = (items: SegmentItem[]) => items.map(item => {
+      const number = item.toolCallId === undefined ? undefined : owners.get(item.toolCallId)
+      return number === undefined ? item : { ...item, sourceRequestNumber: number }
+    })
+    const response = request.response && { ...request.response, toolCalls: request.response.toolCalls.map(call => {
+      const exec = call.callId === undefined ? undefined : request.execs.find(e => e.callId === call.callId)
+      return exec === undefined ? call : { ...call, execution: {
+        status: exec.isError === true ? 'failed' as const : exec.end !== undefined || exec.isError === false ? 'ok' as const : 'running' as const,
+        ...exec.result === undefined ? {} : { result: exec.result },
+      } }
+    }) }
     return {
       seq: request.seq,
       ...request.requestNumber === undefined ? {} : { requestNumber: request.requestNumber },
@@ -1143,8 +1183,8 @@ export class InspectorStore {
       timing: requestTiming(request),
       generation: this.generation,
       responseSummary: request.responseSummary,
-      ...request.response === undefined ? {} : { response: request.response },
-      segments: request.segments,
+      ...response === undefined ? {} : { response },
+      segments: { ...request.segments, history: provenance(request.segments.history), added: provenance(request.segments.added) },
     }
   }
 
@@ -1250,7 +1290,7 @@ export class InspectorStore {
             this.callNames.delete(block.callId)
           }
         }
-        this.totalChars -= request.totalChars + (request.responseChars ?? 0)
+        this.totalChars -= request.totalChars + (request.responseChars ?? 0) + (request.executionChars ?? 0)
       }
       if (scope.kind === 'subagent') session.nextRequestNumbers.delete(scope.scopeId)
       // The per-session backfill cap tracks reconstructed main-scope rows.
@@ -1386,7 +1426,7 @@ export function responseFromSpans(blocks: readonly BlockSpan[]): CapturedRespons
   const text = blocks.filter(block => block.kind === 'text').map(block => block.text ?? '').join('')
   const toolCalls = blocks
     .filter(block => block.kind === 'tool-call' && block.toolName !== undefined)
-    .map(block => ({ name: block.toolName as string, arguments: block.args ?? '' }))
+    .map(block => ({ ...block.callId === undefined ? {} : { callId: block.callId }, name: block.toolName as string, arguments: block.args ?? '' }))
   if (reasoning === '' && text === '' && toolCalls.length === 0) return undefined
   return {
     ...reasoning === '' ? {} : { reasoning },
@@ -1489,4 +1529,13 @@ function comparePrefix(previous: StoredRequest, current: StoredRequest): NonNull
   return { previousSeq: previous.seq, ...previous.requestNumber === undefined ? {} : { previousRequestNumber: previous.requestNumber }, gapMs: Math.max(0, current.startedAt - (previous.settledAt ?? previous.startedAt)),
     toolsChanged: JSON.stringify(previous.segments.tools.map(({ added, ...tool }) => tool)) !== JSON.stringify(current.segments.tools.map(({ added, ...tool }) => tool)),
     ...changed === undefined ? {} : { changed } }
+}
+
+/** Extra captured bodies consume retention budget, never input character totals. */
+function executionSize(request: Pick<StoredRequest, 'execs'>): number {
+  return request.execs.reduce((n, exec) => n + (exec.result?.length ?? 0), 0)
+}
+function responseSize(response: CapturedResponse | undefined): number {
+  return (response?.reasoning?.length ?? 0) + (response?.text?.length ?? 0)
+    + (response?.toolCalls.reduce((n, call) => n + call.name.length + call.arguments.length, 0) ?? 0)
 }

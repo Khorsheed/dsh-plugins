@@ -19,7 +19,7 @@ function RequestCard({ request: r, selected, onSelect, t }: {
     <span className={css.reqHit} data-low={pct === 0}>{pct === null ? '—' : `${pct.toFixed(1)}%`}</span>
     <span className={css.reqIo}>{r.usage ? `${fmtK(inputTotal(r.usage))} → ${fmtK(r.usage.outputTokens)}` : t(r.status === 'streaming' ? 'req.streaming' : 'req.failed')}</span>
     <span className={css.reqTime}>{r.totalMs === undefined ? '—' : fmtSpan(r.totalMs)}</span>
-    {(r.toolErrors ?? 0) > 0 && <span className={css.reqFlag}>{t('lens.errors')} {r.toolErrors}</span>}
+    {(r.toolErrors ?? 0) > 0 && <span className={css.reqFlag}>{t('tool.failures')} {r.toolErrors}</span>}
     {r.status === 'failed' && <span className={css.reqFlag}>{t('req.failed')}</span>}
   </button>
 }

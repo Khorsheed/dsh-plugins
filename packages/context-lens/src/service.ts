@@ -32,7 +32,7 @@ import type { PromptAssembly } from '@deepseek-ai/dsh-system-prompt'
 import type { CapturedRequest, ListTurnsResult, ScopeFilter, ScopedRefusal, TurnOverview, TurnTiming } from './types.ts'
 import { InspectorStore, scopeAuthorized, type EvictedTurn, type RequestSnapshot, type StoredRequest, type StoreConfig } from './store.ts'
 import { recordAssembly } from './segmenter.ts'
-import { fromRequestMessage, serializeMessage, previewLine } from './messages.ts'
+import { fromRequestMessage, serializeMessage } from './messages.ts'
 import {
   foldLogRows,
   isSessionLogReader,
@@ -215,7 +215,7 @@ export class InspectorService {
           sessionId,
           event.data.message.toolCallId,
           event.data.message.isError === true,
-          previewLine(serializeMessage(message)),
+          serializeMessage(message),
           at,
         )
         return
@@ -307,6 +307,7 @@ export class InspectorService {
       for (const request of foldLogRows(cursor, events)) {
         this.store.appendLogRequest(rootSessionId, childId, request)
       }
+      this.store.refreshExecutionResults(rootSessionId, childId)
     } catch (error) {
       // A not-yet-materialized child log is transient (the child process flushes
       // on its own schedule) — retry on the next refresh. Anything else is a
