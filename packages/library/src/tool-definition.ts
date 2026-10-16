@@ -220,7 +220,7 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
       + 'notes — a station\'s 讲义 (node + text, markdown): the textbook on a 讲授 (topic) station, marginalia on a book station; rewrite as 补讲 deepens. '
       + 'page — record a photographed page (text + marks), carding every mark at once. '
       + 'cards — record a weak point when the learner is stuck, and say what you noted. '
-      + 'quiz — store a composed quiz (questions; focus is the learner\'s choice). '
+      + 'quiz — store a composed quiz (questions; node names the quiz-kind station it gates — omitted, it is book-level (the book page\'s 本书测验), or free with book: null (the project page\'s 自由测验); focus is the learner\'s choice). '
       + 'resource — op add | remove: a light shelf link (no contents, no roadmap, never quizzed; something referenced BY CHAPTER is a book instead). '
       + 'binding — bind this session (binding: null unbinds). '
       + 'A refusal names exactly what to fix — change only that and resend.',
@@ -303,7 +303,7 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
       },
       passRatio: { type: 'number', description: 'what=roadmap: the pass line in (0, 1] — 0.8 means 8 of 10 right (the default).' },
       note: { type: 'string', description: 'what=roadmap: the one-line pacing on the draft card. what=resource · op=add: one line on why the link earns its place.' },
-      node: { type: 'string', description: 'The station id (what=notes; the scope on what=quiz).' },
+      node: { type: 'string', description: 'what=notes: the station. what=quiz: the quiz-kind station the quiz gates — omit for a book-level quiz (the book page\'s 本书测验), or with book: null a free one (the project page\'s 自由测验).' },
       text: { type: 'string', description: 'what=notes: the station\'s 讲义 in markdown (math in $…$ / $$…$$ LaTeX renders for the learner). what=page: the photographed page\'s printed text.' },
       attachment: { type: 'string', description: 'what=page: the image id (omit for the latest photo in this conversation).' },
       label: { type: 'string', description: 'what=page: what the learner calls the page (「p.16」).' },

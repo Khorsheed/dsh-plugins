@@ -603,7 +603,7 @@ describe('quizzes: the two axes', () => {
       target: { kind: 'marked', cardIds: [cardId] },
       evidence: { kind: 'photo', pageId: recorded.page.id, quote: 'define and circumscribe the various worlds' },
     })] } })
-    expect(grounded.ok && grounded.warnings).toEqual([])
+    expect(grounded.ok && grounded.warnings).toEqual([expect.stringContaining('本书测验')])
   })
 
   it('names what is wrong: no cards for a card target, no url for web evidence, a misquote', async () => {
@@ -629,6 +629,14 @@ describe('quizzes: the two axes', () => {
     await adopt(projectId, bookId)
     const stored = await service.putQuiz({ projectId, quiz: { scope: { bookId, nodeId: 'n2' }, questions: [question()] } })
     expect(stored.ok && stored.warnings[0]).toMatch(/still locked/)
+  })
+
+  it('says where a station-less quiz landed: the book page, or the project page for a free one', async () => {
+    const { projectId, bookId } = await seed()
+    const bookLevel = await service.putQuiz({ projectId, quiz: { scope: { bookId }, questions: [question()] } })
+    expect(bookLevel.ok && bookLevel.warnings.at(-1)).toMatch(/本书测验/)
+    const free = await service.putQuiz({ projectId, quiz: { scope: {}, questions: [question()] } })
+    expect(free.ok && free.warnings.at(-1)).toMatch(/自由测验/)
   })
 
   it('holds a quiz to the learner\'s chosen source', async () => {

@@ -10,7 +10,7 @@ import { ChipRow, ListRow, PanelHeader } from '@khorsheed/dsh-client-ui-panel-ki
 import { LIBRARY_COLORS, LIBRARY_ICONS, type LibraryColor, type LibraryIcon, type LibraryProjectSummary, type LibraryResourceKind, type LibraryRoadmap, type LibraryTemplate } from '../../types.ts'
 import { colorOf, Cover, GlyphStrokes, iconOf, ProjectGlyph, Ring } from '../look.tsx'
 import { summarizeCovers, type CoverContext } from '../covers.tsx'
-import { DraftCard } from './book.tsx'
+import { DraftCard, QuizRows } from './book.tsx'
 import { IconArticleOutlineMedium, IconCardsOutlineMedium, IconCheckOutlineMedium, IconCourseOutlineMedium, IconHardwareOutlineMedium, IconLinkOutlineMedium, IconLockOutlineMedium, IconPenOutlineMedium, IconPlayOutlineMedium, IconPlusOutlineMedium, IconRefreshOutlineMedium, IconRepoOutlineMedium, IconSparkleOutlineMedium, IconToolOutlineMedium } from '../icons.tsx'
 import { outcome, StateLine, useLoad, value, when, type ViewProps } from '../ui.tsx'
 import css from '../LibraryPane.module.css'
@@ -263,11 +263,14 @@ export function ProjectView({ p, projectId }: ViewProps & { projectId: string })
   const loaded = useLoad(() => outcome(p.getProject(projectId)), [projectId, rev])
   const resources = useLoad(() => value(p.listResources(projectId)), [projectId, rev])
   const path = useLoad(() => value(p.getRoadmap(projectId)), [projectId, rev])
+  // Free quizzes hang on no book and no station — this section is their only entry.
+  const quizzes = useLoad(() => value(p.listQuizzes(projectId, undefined)), [projectId, rev])
   const [notice, setNotice] = useState<string | undefined>()
   const [editing, setEditing] = useState(false)
   const [busy, setBusy] = useState(false)
   const project = loaded.data?.project
   const books = loaded.data?.books ?? []
+  const freeQuizzes = (quizzes.data?.quizzes ?? []).filter(quiz => quiz.scope.bookId === undefined && quiz.scope.nodeId === undefined).sort((a, b) => b.createdAt.localeCompare(a.createdAt))
   const resourceList = resources.data?.resources ?? []
   const coverContext: CoverContext = { books, resources: resourceList }
 
@@ -345,6 +348,12 @@ export function ProjectView({ p, projectId }: ViewProps & { projectId: string })
         )}
         {project !== undefined && path.data?.roadmap !== undefined && (
           <PathCard p={p} projectId={projectId} roadmap={path.data.roadmap} context={coverContext} />
+        )}
+        {project !== undefined && freeQuizzes.length > 0 && (
+          <section className={css.section}>
+            <h3 className={css.sectionTitle}>{t('project.quizzes', { count: String(freeQuizzes.length) })}</h3>
+            <QuizRows p={p} projectId={projectId} quizzes={freeQuizzes} />
+          </section>
         )}
         {project !== undefined && (
           <section className={css.section} data-color={colorOf(project)}>

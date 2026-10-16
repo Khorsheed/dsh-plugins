@@ -1286,6 +1286,11 @@ export class LibraryService {
         }
       }
     }
+    if (nodeId === undefined) {
+      warnings.push(book === undefined
+        ? 'stored as a free quiz (no station, no book): the learner finds it on the project page (自由测验) and it gates nothing — name node (a quiz-kind station) to gate one'
+        : `stored as a book-level quiz of 《${book.title}》 (no station): the learner finds it on the book page (本书测验) — name node (a quiz-kind station) to gate one`)
+    }
     return await this.mutate(project.value.id, () => {
       const quiz: LibraryQuiz = {
         id: mintLibraryId('q'),

@@ -13,7 +13,7 @@
  */
 import { Fragment, useEffect, useState, type ReactNode } from 'react'
 import { ChipRow, ListRow, PanelHeader, UnderlineTabs } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
-import type { LibraryAttempt, LibraryBook, LibraryPage, LibraryQuizFocus, LibraryQuizQuestion, LibraryRoadmap, LibraryVerdict, RoadmapNode } from '../../types.ts'
+import type { LibraryAttempt, LibraryBook, LibraryPage, LibraryQuiz, LibraryQuizFocus, LibraryQuizQuestion, LibraryRoadmap, LibraryVerdict, RoadmapNode } from '../../types.ts'
 import { colorOf, Cover } from '../look.tsx'
 import { CoverChips, coverLabel, evidencePolicy, type CoverContext } from '../covers.tsx'
 import type { LibraryNodeTab } from '../store.ts'
@@ -45,10 +45,13 @@ export function BookView({ p, projectId, bookId }: ViewProps & { projectId: stri
     const [detail, roadmaps] = await Promise.all([outcome(p.getProject(projectId)), value(p.getRoadmap(projectId, bookId))])
     return { book: detail.books.find(candidate => candidate.id === bookId), project: detail.project, shade: Math.max(0, detail.books.findIndex(candidate => candidate.id === bookId)), ...roadmaps }
   }, [projectId, bookId, rev])
+  // Book-level quizzes hang on no station — this section is their only entry.
+  const quizzes = useLoad(() => value(p.listQuizzes(projectId, bookId)), [projectId, bookId, rev])
   const [notice, setNotice] = useState<string | undefined>()
   const [busy, setBusy] = useState(false)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const book = loaded.data?.book
+  const looseQuizzes = (quizzes.data?.quizzes ?? []).filter(quiz => quiz.scope.nodeId === undefined).sort((a, b) => b.createdAt.localeCompare(a.createdAt))
 
   const prime = (text: string): void => {
     void p.bindTarget({ projectId, bookId })
@@ -138,6 +141,12 @@ export function BookView({ p, projectId, bookId }: ViewProps & { projectId: stri
             <div className={css.muted}>{t('book.noRoadmapBody')}</div>
             <button type="button" className={css.primary} onClick={() => { prime(t('prime.plan', { book: book.title })) }}>{t('book.askPlan')}</button>
           </div>
+        )}
+        {book !== undefined && looseQuizzes.length > 0 && (
+          <section className={css.section}>
+            <h3 className={css.sectionTitle}>{t('book.quizzes', { count: String(looseQuizzes.length) })}</h3>
+            <QuizRows p={p} projectId={projectId} quizzes={looseQuizzes} />
+          </section>
         )}
         {book !== undefined && (
           <div className={css.muted}>
@@ -665,21 +674,27 @@ function QuizTab({ p, projectId, bookId, node, passRatio, books, onPrime, onReta
     }, 4000)
     return () => { clearInterval(timer) }
   }, [watching])
-  const quizzes = useLoad(() => value(p.listQuizzes(projectId, bookId, node.id)), [projectId, bookId, node.id, rev, tick])
-  const quizCount = quizzes.data?.quizzes.length ?? 0
+  // Book-wide read, split below into the station's own quizzes and the ones
+  // gating no station (本书测验 / 自由测验) — else those are invisible from here.
+  const quizzes = useLoad(() => value(p.listQuizzes(projectId, bookId)), [projectId, bookId, rev, tick])
+  const shown = (quizzes.data?.quizzes ?? []).filter(quiz =>
+    quiz.scope.nodeId === node.id
+    || (quiz.scope.nodeId === undefined && (bookId !== undefined ? quiz.scope.bookId === bookId : quiz.scope.bookId === undefined)))
+  const quizCount = shown.length
   // The quiz the learner is waiting for opens itself when it lands.
   useEffect(() => {
     if (watching === undefined || quizCount <= watching.count) return
     setWatching(undefined)
-    const landed = quizzes.data?.quizzes.at(-1)
-    if (landed !== undefined) actions.push({ view: 'quiz', projectId, ...(bookId === undefined ? {} : { bookId }), quizId: landed.id })
+    const landed = shown.at(-1)
+    if (landed !== undefined) actions.push({ view: 'quiz', projectId, ...(landed.scope.bookId === undefined ? {} : { bookId: landed.scope.bookId }), quizId: landed.id })
   }, [quizCount, watching])
   const mine = useLoad(() => value(p.listCards({ projectId, nodeId: node.id, limit: 5 })), [projectId, node.id, rev])
   // B: this station's missed questions — every quiz's latest sitting, joined by quizId.
   const allAttempts = useLoad(() => value(p.listAttempts(projectId)), [projectId, rev])
   const stats = node.quizStats
   const mineCount = mine.data?.total ?? 0
-  const list = quizzes.data?.quizzes ?? []
+  const list = shown.filter(quiz => quiz.scope.nodeId === node.id)
+  const loose = shown.filter(quiz => quiz.scope.nodeId === undefined)
   const latest = list.at(-1)
   const earlier = list.slice(0, -1).reverse()
   const policy = evidencePolicy(node.covers, books)
@@ -768,6 +783,12 @@ function QuizTab({ p, projectId, bookId, node, passRatio, books, onPrime, onReta
           ))}
         </section>
       )}
+      {loose.length > 0 && (
+        <section className={css.section}>
+          <h3 className={css.sectionTitle}>{t(bookId === undefined ? 'project.quizzes' : 'book.quizzes', { count: String(loose.length) })}</h3>
+          <QuizRows p={p} projectId={projectId} quizzes={loose.slice().reverse()} />
+        </section>
+      )}
     </>
   )
 }
@@ -779,6 +800,13 @@ function AcceptanceTab({ p, projectId, node, passRatio, onPrime }: {
   const { t, useStore } = p
   const rev = useStore(s => s.rev)
   const attempts = useLoad(() => value(p.listAttempts(projectId, node.id)), [projectId, node.id, rev])
+  // The station gates no quiz itself, but its covered books may hold
+  // book-level ones (本书测验) — the acceptance lines often name them.
+  const coveredBookIds = [...new Set(node.covers.flatMap(cover => cover.kind === 'book' ? [cover.bookId] : []))]
+  const looseQuizzes = useLoad(async () => {
+    const lists = await Promise.all(coveredBookIds.map(id => value(p.listQuizzes(projectId, id))))
+    return lists.flatMap(result => result.quizzes).filter(quiz => quiz.scope.nodeId === undefined)
+  }, [projectId, node.id, rev, coveredBookIds.join(',')])
   const latest = attempts.data?.attempts[0]
   const verdictOf = (line: string): LibraryVerdict | undefined =>
     latest?.verdicts.find(verdict => verdict.criterion === line && verdict.void !== true)
@@ -804,6 +832,12 @@ function AcceptanceTab({ p, projectId, node, passRatio, onPrime }: {
         </ul>
         <div className={css.muted}>{t('accept.hint')}</div>
       </section>
+      {(looseQuizzes.data?.length ?? 0) > 0 && (
+        <section className={css.section}>
+          <h3 className={css.sectionTitle}>{t('book.quizzes', { count: String(looseQuizzes.data!.length) })}</h3>
+          <QuizRows p={p} projectId={projectId} quizzes={looseQuizzes.data!} />
+        </section>
+      )}
       <div className={css.actions}>
         <button type="button" className={css.primary} onClick={onPrime}>{t('accept.submit')}</button>
       </div>
@@ -824,6 +858,28 @@ function AcceptanceTab({ p, projectId, node, passRatio, onPrime }: {
 }
 
 const FOCUSES: readonly LibraryQuizFocus[] = ['mine', 'book', 'mixed']
+
+/**
+ * Rows of quizzes that gate no station (the book page's 本书测验, the project
+ * page's 自由测验, a station's same-scope list) — each opens the paper. The
+ * route's book comes from the quiz's own scope.
+ */
+export function QuizRows({ p, projectId, quizzes }: { p: ViewProps['p']; projectId: string; quizzes: readonly LibraryQuiz[] }): ReactNode {
+  const { t, actions } = p
+  return (
+    <>
+      {quizzes.map(quiz => (
+        <ListRow
+          key={quiz.id}
+          title={t('node.quizRow', { count: String(quiz.questions.length) })}
+          meta={[t(`focus.${quiz.focus ?? 'mixed'}`), sourceMix(quiz.questions.map(question => question.evidence.kind), t), when(quiz.createdAt, t)].join(' · ')}
+          trailing={<span className={css.linkText}>{t('quiz.start')}</span>}
+          onSelect={() => { actions.push({ view: 'quiz', projectId, ...(quiz.scope.bookId === undefined ? {} : { bookId: quiz.scope.bookId }), quizId: quiz.id }) }}
+        />
+      ))}
+    </>
+  )
+}
 
 /** 「照片 3 · 领域知识 7」 for a quiz row. */
 function sourceMix(kinds: readonly string[], t: ViewProps['p']['t']): string {
