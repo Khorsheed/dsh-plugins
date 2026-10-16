@@ -13,7 +13,7 @@ import type { LibraryAssessResult } from '../types.ts'
 export type LibraryCardFilter = 'all' | 'photo' | 'chat' | 'quiz' | 'due'
 
 /** The node page's tabs. */
-export type LibraryNodeTab = 'guide' | 'pages' | 'notes' | 'quiz' | 'acceptance'
+export type LibraryNodeTab = 'guide' | 'pages' | 'notes' | 'quiz'
 
 /** One screen of the sidebar. */
 export type LibraryRoute =

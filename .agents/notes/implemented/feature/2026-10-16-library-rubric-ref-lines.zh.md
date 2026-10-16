@@ -10,7 +10,7 @@ Status: implemented
 
 - **验收行获得稳定位置 id**（`L1`、`L2`…，types.ts 的 `acceptanceLines()`）：verdict 现在按行 id 或逐字文本（旧形式）解析，落账时记规范 id + 文本。重排改措辞不再孤儿化历史。
 - **行可以机检**：写作 `{ line, ref: <考卷 id> }`（卷子必须先存在——形状校验否则拒收）。验收时 service 用被引卷子最新一场自动判 ref 行（过线 = 得分 ≥ 路线过线率，`by: "auto"`），拒收教练对它们的 verdict，并折进同一个 ratio 与级联。ref 行失败不建卡——测验那场已经给错题建过卡。
-- practice 验收 tab 按 rubric 渲染（「机检 →」链接直开卷子），没有任何验收记录时就按引用卷的最新一场显示 ref 行的**实时**状态；「提交验收」的 prime 文案带行 id，教练按 id 判。
+- ~~practice 验收 tab 按 rubric 渲染~~ **后被取代（2026-10-16）**：验收 tab 已移除，练习验收只走会话——见 [验收 tab 移除](../simplification/2026-10-16-library-acceptance-tab-removal.zh.md)。本 note 在 service 侧的机检不变：ref 行仍按被引卷子最新一场自动判，其余行教练按行 id 判（教练读路线处皆有行 id）。
 - `LibraryVerdict.by` 扩 `'auto'`（从不接受自调用方）；attempt 的 normalize 保留它。
 - 本刀刻意**不做**：Assessment 实体落库（practice rubric 独立成文件）与 `Attempt` 的单 `assessmentId` 键——它们随第二刀（Resource 合并）一起走，那时整个存储布局都要动。盘上 `quizId | nodeId` 双键照旧。
 

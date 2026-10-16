@@ -1072,7 +1072,7 @@ textarea.input { resize: vertical; font: inherit; line-height: 1.5; }
 .prov[data-by='model'] { background: var(--lib-warn-soft); color: var(--lib-warn); }
 .prov[data-by='user'] { background: var(--lib-accent-soft); color: var(--lib-accent); }
 
-/* 验收 tab 与证据政策卡 */
+/* 证据政策卡 */
 .policy {
   display: flex;
   flex-direction: column;
@@ -1084,45 +1084,6 @@ textarea.input { resize: vertical; font: inherit; line-height: 1.5; }
   font-size: var(--dsh-panel-text-meta, 12px);
   line-height: 1.5;
 }
-
-.acceptList {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.acceptItem {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  min-width: 0;
-}
-
-.acceptMark {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  margin-top: 2px;
-  border: 1.5px solid var(--dsw-alias-border-l3);
-  border-radius: 4px;
-  color: var(--dsw-alias-label-primary-inverted);
-  font-size: 10px; /* panel-check: allow-small-text — a verdict glyph */
-}
-
-.acceptMark[data-state='pass'] { border-color: var(--lib-ok); background: var(--lib-ok); }
-.acceptMark[data-state='fail'] { border-color: var(--lib-bad); background: var(--lib-bad); }
-
-.acceptText {
-  min-width: 0;
-  line-height: 1.5;
-}
-
 
 .bookHead {
   display: flex;

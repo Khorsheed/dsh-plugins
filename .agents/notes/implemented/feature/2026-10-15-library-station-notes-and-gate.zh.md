@@ -10,7 +10,7 @@ Status: implemented
 
 - **A——站点讲义**：`RoadmapNode.notes?: LibraryNodeNotes`（`{ text, updatedAt, revisions }`，markdown，仅教练可写）。`library_write · notes { node, text }` → `service.putNotes` 写到**已采用**路线的节点上（书级或项目级，book 缺省逻辑与 roadmap 相同），每写一次 `revisions` 加一；`adoptRoadmap` 在重排时保住幸存站点（同 id）的讲义；`normalizeRoadmap` 容忍传递该字段；事件账本记 `node.noted`。侧栏加「讲义」tab（在 我的记录 与 章节考 之间）：元信息行（时间 · 第 N 次更新）、一个刻意极简的 markdown 渲染（标题 / 列表 / 段落 / 粗体 / 代码）、空态、「请教练写讲义 / 补讲」prime。讲授（topic）站的讲义 IS 教材——「LLM 编的教材是什么 kind」的答案：不是书架上的书（那会污染证据闸），而是讲授在每站沉淀的讲义。
 - **B——错题区**：章节考 tab 列出「这一站的错题」——每张考卷取其最近一次作答（attempts 在客户端按 `quizId` join；`listAttempts` 的 `nodeId` 参数在 contract 层改可选，因为考卷作答以 `quizId` 为键），每条未通过且未作废的 verdict 映射回存储的题目（题干 + 正确答案，选择题带字母）。一个「重考错题」按钮把请求带进会话，让教练围绕同一批薄弱点出新卷。零新存储：考卷和作答账本本就齐了。
-- **C——一个关底 tab**：节点视图的第三 tab 永远叫章节考。知识（quiz）站显示考卷；动手（practice）站显示验收单，改题「这一站考作品 · N 条验收标准 · 过 P% 解锁」。`acceptance` 这个 tab id 保留（路由兼容）；locale 键 `node.acceptance` 删除。
+- **C——一个关底 tab**：节点视图的关底 tab 叫章节考。知识（quiz）站显示考卷；locale 键 `node.acceptance` 删除。**后被取代的部分（2026-10-16）**：动手（practice）站不再显示验收单——`acceptance` 这个 tab id、验收单和它的提交验收 prime 一并移除，练习验收只走会话；见 [验收 tab 移除](../simplification/2026-10-16-library-acceptance-tab-removal.zh.md)。
 
 ## Alternatives considered
 

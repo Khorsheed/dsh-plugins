@@ -5,15 +5,16 @@
  *
  * The same pieces serve the project's OWN path (v3): NodeView with no bookId
  * reads the project-level roadmap, a station's covers row replaces the chapter
- * row, and 「我的记录」 exists only when the station covers a book. Every
- * station ends in one gate tab, 章节考: a knowledge station's quiz, or a
- * practice station's deliverable (the acceptance sheet).
+ * row, and 「我的记录」 exists only when the station covers a book. A quiz
+ * station ends in its gate tab, 章节考; a practice station completes in
+ * conversation (the coach judges its acceptance lines with library_assess) and
+ * carries no gate tab.
  *
  * @module @khorsheed/dsh-library/client/views/book
  */
 import { Fragment, useEffect, useState, type ReactNode } from 'react'
 import { ChipRow, ListRow, PanelHeader, UnderlineTabs } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
-import { acceptanceLines, type LibraryAcceptanceLine, type LibraryAttempt, type LibraryBook, type LibraryPage, type LibraryQuiz, type LibraryQuizFocus, type LibraryQuizQuestion, type LibraryRoadmap, type LibraryVerdict, type RoadmapNode } from '../../types.ts'
+import { type LibraryAttempt, type LibraryBook, type LibraryPage, type LibraryQuiz, type LibraryQuizFocus, type LibraryQuizQuestion, type LibraryRoadmap, type RoadmapNode } from '../../types.ts'
 import { colorOf, Cover } from '../look.tsx'
 import { CoverChips, coverLabel, evidencePolicy, type CoverContext } from '../covers.tsx'
 import type { LibraryNodeTab } from '../store.ts'
@@ -299,7 +300,7 @@ function Path({ p, roadmap, onOpen }: { p: ViewProps['p']; roadmap: LibraryRoadm
   )
 }
 
-/** One node: guide, photographed pages, chapter quizzes — or a practice station's acceptance. */
+/** One node: guide, photographed pages, its 讲义, and (a quiz station) the chapter quiz. */
 export function NodeView({ p, projectId, bookId, nodeId, tab }: ViewProps & { projectId: string; bookId: string | undefined; nodeId: string; tab: LibraryNodeTab }): ReactNode {
   const { t, actions, useStore } = p
   const rev = useStore(s => s.rev)
@@ -328,10 +329,9 @@ export function NodeView({ p, projectId, bookId, nodeId, tab }: ViewProps & { pr
     { id: 'guide', label: t('node.guide') },
     ...(coveredBooks.length > 0 ? [{ id: 'pages' as const, label: t('node.pages') }] : []),
     { id: 'notes', label: t('node.notes') },
-    // C: one name for the gate every station ends in — a knowledge station's
-    // quiz or a practice station's deliverable, both are its 章节考.
+    // C: the gate tab, 章节考, is the station's quiz. A practice station has
+    // none — the coach judges its acceptance lines in the conversation.
     ...(node?.kind === 'quiz' ? [{ id: 'quiz' as const, label: t('node.quiz') }] : []),
-    ...(node?.kind === 'practice' ? [{ id: 'acceptance' as const, label: t('node.quiz') }] : []),
   ]
   const activeTab = tabs.some(candidate => candidate.id === tab) ? tab : 'guide'
   const coverContext: CoverContext = { books: loaded.data?.books ?? [], resources: loaded.data?.resources ?? [] }
@@ -392,9 +392,6 @@ export function NodeView({ p, projectId, bookId, nodeId, tab }: ViewProps & { pr
             onPrime={focus => { prime(book === undefined ? t(`prime.quiz.station.${focus}`, { node: node.title }) : t(`prime.quiz.${focus}`, { book: book.title, node: node.title })) }}
             onRetake={prompts => { prime(t('prime.quiz.retake', { node: node.title, list: prompts.map(prompt => `- ${prompt}`).join('\n') })) }}
           />
-        )}
-        {node !== undefined && activeTab === 'acceptance' && (
-          <AcceptanceTab p={p} projectId={projectId} node={node} passRatio={loaded.data?.passRatio ?? 0.8} onPrime={() => { prime(t('prime.accept', { node: node.title, nodeId: node.id, criteria: acceptanceLines(node).map(line => `- ${line.id}: ${line.line}`).join('\n') })) }} />
         )}
       </div>
     </>
@@ -787,83 +784,6 @@ function QuizTab({ p, projectId, bookId, node, passRatio, books, onPrime, onReta
         <section className={css.section}>
           <h3 className={css.sectionTitle}>{t(bookId === undefined ? 'project.quizzes' : 'book.quizzes', { count: String(loose.length) })}</h3>
           <QuizRows p={p} projectId={projectId} quizzes={loose.slice().reverse()} />
-        </section>
-      )}
-    </>
-  )
-}
-
-/** A practice station's acceptance tab: the criteria, the submit gesture, the history. */
-function AcceptanceTab({ p, projectId, node, passRatio, onPrime }: {
-  p: ViewProps['p']; projectId: string; node: RoadmapNode; passRatio: number; onPrime: () => void
-}): ReactNode {
-  const { t, actions, useStore } = p
-  const rev = useStore(s => s.rev)
-  const attempts = useLoad(() => value(p.listAttempts(projectId, node.id)), [projectId, node.id, rev])
-  // The station gates no quiz itself, but its covered books may hold
-  // book-level ones (本书测验) — the acceptance lines often name them.
-  const coveredBookIds = [...new Set(node.covers.flatMap(cover => cover.kind === 'book' ? [cover.bookId] : []))]
-  const looseQuizzes = useLoad(async () => {
-    const lists = await Promise.all(coveredBookIds.map(id => value(p.listQuizzes(projectId, id))))
-    return lists.flatMap(result => result.quizzes).filter(quiz => quiz.scope.nodeId === undefined)
-  }, [projectId, node.id, rev, coveredBookIds.join(',')])
-  // A ref line's live state, before any acceptance sitting: the referenced
-  // quiz's latest sitting does the judging (attempts arrive newest first).
-  const allAttempts = useLoad(() => value(p.listAttempts(projectId)), [projectId, rev])
-  const latest = attempts.data?.attempts[0]
-  const rubric = acceptanceLines(node)
-  const verdictOf = (line: LibraryAcceptanceLine): LibraryVerdict | undefined =>
-    latest?.verdicts.find(verdict => (verdict.task === line.id || verdict.criterion === line.line) && verdict.void !== true)
-    ?? (line.ref === undefined ? undefined : (() => {
-      const sitting = (allAttempts.data?.attempts ?? []).find(attempt => attempt.quizId === line.ref)
-      return sitting === undefined ? undefined : { task: line.id, criterion: line.line, pass: sitting.ratio >= passRatio, ratio: sitting.ratio, evidence: '', by: 'auto' as const }
-    })())
-  return (
-    <>
-      {node.state === 'locked' && <div className={css.notice}>{t('node.locked')}</div>}
-      <div className={css.muted}>{t('accept.station', { count: String(rubric.length) })} · {t('accept.passRule', { percent: String(Math.round(passRatio * 100)) })}</div>
-      <section className={css.section}>
-        <h3 className={css.sectionTitle}>{t('accept.title')}</h3>
-        <ul className={css.acceptList}>
-          {rubric.map(line => {
-            const verdict = verdictOf(line)
-            return (
-              <li key={line.id} className={css.acceptItem}>
-                <span className={css.acceptMark} data-state={verdict === undefined ? 'none' : (verdict.pass && (verdict.ratio ?? 1) >= 0.5) ? 'pass' : 'fail'} aria-hidden="true">
-                  {verdict === undefined ? '' : (verdict.pass && (verdict.ratio ?? 1) >= 0.5) ? <IconCheckOutlineMedium size={11} /> : '✕'}
-                </span>
-                <span className={css.acceptText}>
-                  {line.line}
-                  {line.ref !== undefined && (
-                    <button type="button" className={css.textButton} onClick={() => { actions.push({ view: 'quiz', projectId, quizId: line.ref! }) }}>{t('accept.machine')} →</button>
-                  )}
-                  {verdict !== undefined && verdict.ratio !== undefined && verdict.ratio > 0 && verdict.ratio < 1 ? <span className={css.muted}> · {Math.round(verdict.ratio * 100)}%</span> : null}
-                </span>
-              </li>
-            )
-          })}
-        </ul>
-        <div className={css.muted}>{t('accept.hint')}</div>
-      </section>
-      {(looseQuizzes.data?.length ?? 0) > 0 && (
-        <section className={css.section}>
-          <h3 className={css.sectionTitle}>{t('book.quizzes', { count: String(looseQuizzes.data!.length) })}</h3>
-          <QuizRows p={p} projectId={projectId} quizzes={looseQuizzes.data!} />
-        </section>
-      )}
-      <div className={css.actions}>
-        <button type="button" className={css.primary} onClick={onPrime}>{t('accept.submit')}</button>
-      </div>
-      <div className={css.muted}>{t('accept.submitHint')}</div>
-      {(attempts.data?.attempts.length ?? 0) > 0 && (
-        <section className={css.section}>
-          <h3 className={css.sectionTitle}>{t('accept.history')}</h3>
-          {attempts.data!.attempts.map(attempt => (
-            <div key={attempt.id} className={css.moveRow}>
-              <span>{Math.round(attempt.ratio * 100)}%</span>
-              <span className={css.muted}>{when(attempt.at, t)}</span>
-            </div>
-          ))}
         </section>
       )}
     </>
