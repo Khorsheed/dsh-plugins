@@ -12,7 +12,7 @@
 - **两轴出题**：考什么（我划的 / 我问过的 / 我答错的 / 本章主题）× 凭什么（照片原句 / 网上原文 + url / 领域知识）。材料型书不接受凭记忆出的内容题。
 - **判题级联**：作废题不计分；考对的卡升格并减薄弱度，答错的回到明天并加薄弱度，无卡的错题自动建卡；节点达标解锁后继。
 - **会话绑定**：会话可绑项目或项目下的某本书，工具的 project / book 参数默认取绑定；每轮注入一行绑定上下文（当前书、节点、最薄弱的卡）。
-- **模型工具面**（`./tool` 组合入口，preset 按会话授予）：`library_read`、`library_write`、`library_assess`，用法写在工具描述里，拒收信息自带正确用法。可选 `hideSections` / `denyTools` 在该 scope 里静音根上无关的提示段与工具。
+- **模型工具面**（`./tool` 组合入口，preset 按会话授予）：`library_read`、每个名词一个写工具（`library_project` / `library_book` / `library_resource` / `library_roadmap` / `library_notes` / `library_page` / `library_cards` / `library_quiz` / `library_binding`）、`library_assess`，用法写在工具描述里，拒收信息自带正确用法。可选 `hideSections` / `denyTools` 在该 scope 里静音根上无关的提示段与工具。
 - **自隐**：tab 类型按 canvas 双查判据注册，一切不可读路径 fail-open。
 
 ## 工作区接入接缝（服务端消费）

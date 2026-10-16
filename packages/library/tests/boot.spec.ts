@@ -16,6 +16,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { apply, name } from '../src/index.ts'
 import type { LibraryService } from '../src/service.ts'
 import * as toolEntry from '../src/tool.ts'
+import { LIBRARY_TOOL_NAMES } from '../src/tool-definition.ts'
 
 /** The origin-tag key, read straight from the global symbol registry (no import edge). */
 const TOOL_ORIGIN = Symbol.for('dsh.tool.origin')
@@ -84,7 +85,7 @@ describe('the core row', () => {
 })
 
 describe('the ./tool row', () => {
-  it('declares the core inject and grants the three tagged tools, the guidance and the bound context', async () => {
+  it('declares the core inject and grants the tagged tools, the guidance and the bound context', async () => {
     expect(toolEntry.inject).toEqual(['library'])
     expect(toolEntry.name).toBe('library-tool')
     const ctx = await boot()
@@ -93,7 +94,7 @@ describe('the ./tool row', () => {
     await ctx.fiber.await()
     await new Promise(resolve => setTimeout(resolve, 0))
 
-    expect(seen.registered.map(definition => definition.name)).toEqual(['library_read', 'library_write', 'library_assess'])
+    expect(seen.registered.map(definition => definition.name)).toEqual(LIBRARY_TOOL_NAMES)
     for (const definition of seen.registered) {
       expect((definition as Record<symbol, unknown>)[TOOL_ORIGIN]).toEqual({ channel: 'plugin', owner: '@khorsheed/dsh-library' })
     }

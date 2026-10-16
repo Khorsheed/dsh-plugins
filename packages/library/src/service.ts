@@ -536,7 +536,7 @@ export class LibraryService {
     }
     return await this.mutate(project.value.id, () => {
       if (this.store.readResources(project.value.id).some(resource => resource.url === url)) {
-        return refuse('exists', `${url} is already on this project's shelf — library_read · resources lists them; to change its note, remove it (library_write · resource, op remove) and add it again`)
+        return refuse('exists', `${url} is already on this project's shelf — library_read · resources lists them; to change its note, remove it (library_resource · op remove) and add it again`)
       }
       const resource: LibraryResource = {
         id: mintLibraryId('res'),
@@ -1354,7 +1354,7 @@ export class LibraryService {
   /** The quiz path of putAttempt: verdicts judged against a stored quiz's questions. */
   private async putQuizAttempt(project: LibraryProject, quizId: string, verdicts: readonly LibraryVerdict[]): Promise<LibraryOutcome<LibraryAssessResult>> {
     const quiz = this.store.readQuiz(project.id, quizId)
-    if (quiz === undefined) return refuse('not-found', `no quiz ${JSON.stringify(quizId)} — store the quiz first (library_write · quiz), then assess it`)
+    if (quiz === undefined) return refuse('not-found', `no quiz ${JSON.stringify(quizId)} — store the quiz first (library_quiz), then assess it`)
     const questionById = new Map(quiz.questions.map(question => [question.id, question]))
     for (const [index, verdict] of verdicts.entries()) {
       if (!questionById.has(verdict.task)) {
@@ -1782,7 +1782,7 @@ export class LibraryService {
       return storeRefusal(error)
     }
     if (project === undefined) {
-      return refuse('not-found', `no project ${JSON.stringify(projectId)} — library_read · projects lists every project; create one with library_write · project`)
+      return refuse('not-found', `no project ${JSON.stringify(projectId)} — library_read · projects lists every project; create one with library_project`)
     }
     return { value: project }
   }
@@ -1874,7 +1874,7 @@ export function validateRoadmapShape(
           return `nodes[${index}] (${node.id}) has a book cover with no bookId — { kind: "book", bookId, ranges: [{ from, to }] }; library_read · books lists the ids`
         }
         const covered = scope.book(cover.bookId)
-        if (covered === undefined) return `nodes[${index}] (${node.id}) covers book ${JSON.stringify(cover.bookId)}, which the project does not hold — library_read · books lists them; register it first (library_write · book)`
+        if (covered === undefined) return `nodes[${index}] (${node.id}) covers book ${JSON.stringify(cover.bookId)}, which the project does not hold — library_read · books lists them; register it first (library_book)`
         for (const range of cover.ranges) {
           if (!Number.isInteger(range.from) || !Number.isInteger(range.to) || range.from < 1 || range.to < range.from) {
             return `nodes[${index}] (${node.id}) has a bad range [${String(range.from)}, ${String(range.to)}] on 《${covered.title}》 — ranges count table-of-contents rows, 1-based and inclusive: { from: 3, to: 5 }`
@@ -1888,7 +1888,7 @@ export function validateRoadmapShape(
           return `nodes[${index}] (${node.id}) has a resource cover with no resourceId — { kind: "resource", resourceId }; library_read · resources lists the shelf`
         }
         if (!scope.hasResource(cover.resourceId)) {
-          return `nodes[${index}] (${node.id}) covers resource ${JSON.stringify(cover.resourceId)}, which is not on the project's shelf — library_read · resources lists them; add it first (library_write · resource, op add)`
+          return `nodes[${index}] (${node.id}) covers resource ${JSON.stringify(cover.resourceId)}, which is not on the project's shelf — library_read · resources lists them; add it first (library_resource · op add)`
         }
       } else if (cover.kind === 'url') {
         if (!/^https?:\/\//.test(cover.url)) return `nodes[${index}] (${node.id}) covers a url that does not start with http:// or https://`

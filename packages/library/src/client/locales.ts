@@ -214,7 +214,7 @@ export const zh = {
   'review.youMissed': '你答错过：{note}',
 
   'prime.addBook': '请帮我在「{project}」里加一本书：《》（版本：）。请联网核对版本和目录，然后排一条学习路线草稿。',
-  'prime.addResource': '请把这条链接放上「{project}」的架子：（粘贴 url）。请联网打开它，补上标题、类型（article/video/repo/tool/course/hardware）和一句话 note（为什么给它），用 library_write · resource 落账。',
+  'prime.addResource': '请把这条链接放上「{project}」的架子：（粘贴 url）。请联网打开它，补上标题、类型（article/video/repo/tool/course/hardware）和一句话 note（为什么给它），用 library_resource 落账。',
   'prime.nodeOnPath': '我在项目路线的「{node}」这一站，想问：',
   'prime.quiz.station.mine': '请为项目路线站「{node}」出一套考，只考我自己画的重点和记下的卡片（focus: mine）；如果我画的不够，就少出几题并告诉我。',
   'prime.quiz.station.book': '请为项目路线站「{node}」出一套考，只考这一站取材里的内容（focus: book）。',
@@ -232,8 +232,8 @@ export const zh = {
   'prime.keepMark': '{page} 上的「{word}」确实是我划的，请补成知识卡片（按这一页的原句给本句义）。',
   'prime.addMissed': '{page} 上我还划了「{word}」，你漏记了，请补成知识卡片（按这一页的原句给本句义）。',
   'prime.grade': '我在侧栏做完了章节考（quiz {quiz}），请判题并用 library_assess 落账：\n{answers}',
-  'prime.notes': '请为「{node}」（站 id {nodeId}）写一份讲义落库（library_write · notes）：这一站的讲解、我卡住的点、易错清单。这一站取材是讲授的话，讲义就是教材，请写完整；是书的话，讲义是陪读笔记，不替代原书。写完不必贴在会话里，我会去「讲义」tab 读。',
-  'prime.quiz.retake': '请为「{node}」出一套错题重考：下面是我答错过的题，请换角度围绕同样的薄弱点出题（不要照抄原题），用 library_write · quiz 落库：\n{list}',
+  'prime.notes': '请为「{node}」（站 id {nodeId}）写一份讲义落库（library_notes）：这一站的讲解、我卡住的点、易错清单。这一站取材是讲授的话，讲义就是教材，请写完整；是书的话，讲义是陪读笔记，不替代原书。写完不必贴在会话里，我会去「讲义」tab 读。',
+  'prime.quiz.retake': '请为「{node}」出一套错题重考：下面是我答错过的题，请换角度围绕同样的薄弱点出题（不要照抄原题），用 library_quiz 落库：\n{list}',
 
   'bind.unbound': '绑定书',
   'bind.bound': '学习 · {title}',
@@ -539,7 +539,7 @@ export const en: Record<LibraryKey, string> = {
   'review.youMissed': 'You missed it: {note}',
 
   'prime.addBook': 'Please add a book to “{project}”: (title, edition). Verify the edition and its contents on the web, then draft a roadmap.',
-  'prime.addResource': 'Please put this link on “{project}”’s shelf: (paste the url). Open it on the web, fill in its title, its kind (article/video/repo/tool/course/hardware) and a one-line note on why it earns its place, then record it with library_write · resource.',
+  'prime.addResource': 'Please put this link on “{project}”’s shelf: (paste the url). Open it on the web, fill in its title, its kind (article/video/repo/tool/course/hardware) and a one-line note on why it earns its place, then record it with library_resource.',
   'prime.nodeOnPath': 'I’m at the “{node}” station of the project path and want to ask: ',
   'prime.quiz.station.mine': 'Please compose a quiz for the “{node}” station of the project path on my own marked points and cards only (focus: mine); if I marked too little, ask fewer questions and tell me.',
   'prime.quiz.station.book': 'Please compose a quiz for the “{node}” station of the project path on this station’s covered material only (focus: book).',
@@ -557,8 +557,8 @@ export const en: Record<LibraryKey, string> = {
   'prime.keepMark': '“{word}” on {page} is one I marked — please add it as a card (meaning from that page’s sentence).',
   'prime.addMissed': 'I also marked “{word}” on {page} and it was missed — please add it as a card (meaning from that page’s sentence).',
   'prime.grade': 'I finished the chapter quiz (quiz {quiz}) in the sidebar — please grade it and record it with library_assess:\n{answers}',
-  'prime.notes': 'Please write notes for 「{node}」 (station id {nodeId}) into the library (library_write · notes): the teaching of this station, the points I got stuck on, the pitfalls. If the station draws on coached teaching, the notes ARE the textbook — write them in full; if it draws on a book, the notes are marginalia, never a substitute. No need to paste them here — I will read them in the Notes tab.',
-  'prime.quiz.retake': 'Please compose a retake for 「{node}」: these are the questions I missed — probe the same weak points from new angles (do not copy the originals), and store it with library_write · quiz:\n{list}',
+  'prime.notes': 'Please write notes for 「{node}」 (station id {nodeId}) into the library (library_notes): the teaching of this station, the points I got stuck on, the pitfalls. If the station draws on coached teaching, the notes ARE the textbook — write them in full; if it draws on a book, the notes are marginalia, never a substitute. No need to paste them here — I will read them in the Notes tab.',
+  'prime.quiz.retake': 'Please compose a retake for 「{node}」: these are the questions I missed — probe the same weak points from new angles (do not copy the originals), and store it with library_quiz:\n{list}',
 
   'bind.unbound': 'Bind a book',
   'bind.bound': 'Studying · {title}',

@@ -1070,7 +1070,7 @@
 
           # ── the library grant ────────────────────────────────────────────────
 
-          # library 三工具（library_read / library_write / library_assess）、
+          # library 三工具（library_read + 每个名词一个写工具 + library_assess）、
           # 教练指引段与每轮的绑定上下文只授予本 preset 的会话。服务核心
           # （library）由 profile 根的 library 行提供，本行沿 scope 父链解析；
           # library 未装时本行降级为 pending（注册表显示 waiting for library），
