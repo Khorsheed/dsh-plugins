@@ -34,9 +34,11 @@ import {
   LIBRARY_RESOURCE_KINDS,
   TEMPLATE_LOOK,
   LEITNER_INTERVAL_DAYS,
+  acceptanceLines,
   libraryErrorMessage,
   MAX_BOX,
   MAX_WEAKNESS,
+  type LibraryAcceptanceInput,
   type LibraryAssessResult,
   type LibraryAttachmentRef,
   type LibraryAttempt,
@@ -600,7 +602,7 @@ export class LibraryService {
       goals?: readonly string[] | string
       covers?: readonly LibraryNodeCover[]
       dependsOn?: readonly string[]
-      acceptance?: readonly string[]
+      acceptance?: readonly LibraryAcceptanceInput[]
     }[]
     passRatio?: number
     note?: string
@@ -627,13 +629,20 @@ export class LibraryService {
       covers: node.covers ?? [],
       dependsOn: node.dependsOn ?? [],
       state: 'locked',
-      ...(Array.isArray(node.acceptance) ? { acceptance: node.acceptance.filter(line => typeof line === 'string') } : {}),
+      ...(Array.isArray(node.acceptance) ? {
+        acceptance: node.acceptance.flatMap((entry): LibraryAcceptanceInput[] => {
+          if (typeof entry === 'string') return entry.trim() === '' ? [] : [entry]
+          if (typeof entry?.line !== 'string' || entry.line.trim() === '') return []
+          return [{ line: entry.line.trim(), ...(typeof entry.ref === 'string' && entry.ref.trim() !== '' ? { ref: entry.ref.trim() } : {}) }]
+        }),
+      } : {}),
     }))
     const resourceIds = new Set(this.store.readResources(project.value.id).map(resource => resource.id))
     const shapeError = validateRoadmapShape(nodes, {
       ...(book === undefined ? {} : { bookId: book.id }),
       book: candidate => this.store.readBook(project.value.id, candidate),
       hasResource: candidate => resourceIds.has(candidate),
+      hasQuiz: candidate => this.store.readQuiz(project.value.id, candidate) !== undefined,
     })
     if (shapeError !== undefined) return refuse('invalid', shapeError)
     return await this.mutate(project.value.id, () => {
@@ -1216,7 +1225,7 @@ export class LibraryService {
       const node = roadmap?.nodes.find(candidate => candidate.id === nodeId)
       if (node === undefined) return refuse('not-found', `quiz scope names node ${JSON.stringify(nodeId)}, which the adopted path does not hold — library_read · roadmap lists the nodes`)
       if (node.kind === 'read') return refuse('invalid', `${node.title} is a read node — it has no quiz gate; quiz a quiz-kind node, or leave scope.node off for a free practice quiz`)
-      if (node.kind === 'practice') return refuse('invalid', `${node.title} is a practice station — it completes by acceptance (library_assess with node), not by a quiz`)
+      if (node.kind === 'practice') return refuse('invalid', `${node.title} is a practice station — it completes by acceptance (library_assess with node), not by a quiz; to gate it ON a quiz, compose the quiz without a node (book-level), then reference it from the station's acceptance: { line: "…", ref: "<quiz id>" } — the line auto-passes when the quiz passes`)
       if (node.state === 'locked') lockedNote = `${node.title} is still locked — the learner can take this quiz, but passing it completes the node only once the nodes before it are done`
       gatedNode = node
     }
@@ -1478,23 +1487,52 @@ export class LibraryService {
     if (node.kind !== 'practice') {
       return refuse('state-machine', `${node.title} is a ${node.kind} node — a quiz node completes by passing its quiz (assess with quizId), a read node by 读完; only a practice station takes acceptance verdicts`)
     }
-    const acceptance = node.acceptance ?? []
+    const rubric = acceptanceLines(node)
+    const passRatio = roadmap.passRatio ?? DEFAULT_PASS_RATIO
+    // Machine-checked lines: the referenced quiz's latest sitting does the judging.
+    const auto: LibraryVerdict[] = []
+    const autoTasks = new Set<string>()
+    for (const line of rubric) {
+      if (line.ref === undefined) continue
+      const quiz = this.store.readQuiz(project.id, line.ref)
+      const latest = quiz === undefined ? undefined : this.store.readAttempts(project.id).filter(attempt => attempt.quizId === quiz.id).at(-1)
+      const quizRatio = latest?.ratio ?? 0
+      auto.push({
+        task: line.id,
+        criterion: line.line,
+        pass: latest !== undefined && quizRatio >= passRatio,
+        ratio: quizRatio,
+        evidence: latest === undefined ? `机检：${line.ref} 还没有判分记录` : `机检：${line.ref} 最新一场 ${Math.round(quizRatio * 100)}%（过线 ${Math.round(passRatio * 100)}%）`,
+        by: 'auto',
+      })
+      autoTasks.add(line.id)
+    }
+    // A coach verdict resolves its line by id (L1, L2, …) or by the line's
+    // verbatim text (the legacy form); a ref line is the machine's, never the
+    // coach's. Judged verdicts are ledgered with the canonical id + text.
+    const judged: LibraryVerdict[] = []
     for (const [index, verdict] of verdicts.entries()) {
-      if (!acceptance.includes(verdict.criterion)) {
-        return refuse('invalid', `verdicts[${index}].criterion must be one of the station's acceptance lines, verbatim — they are: ${acceptance.map(line => JSON.stringify(line)).join(', ')}`)
+      const line = rubric.find(candidate => candidate.id === verdict.task) ?? rubric.find(candidate => candidate.line === verdict.criterion)
+      if (line === undefined) {
+        return refuse('invalid', `verdicts[${index}] names no rubric line — task is the line id, criterion the line verbatim; the rubric is: ${rubric.map(candidate => `${candidate.id} ${JSON.stringify(candidate.line)}`).join(', ')}`)
+      }
+      if (autoTasks.has(line.id)) {
+        return refuse('invalid', `verdicts[${index}] judges ${line.id}, which quiz ${line.ref} machine-checks — a ref line takes no verdict`)
       }
       if (verdict.evidence.trim() === '') {
         return refuse('invalid', `verdicts[${index}] needs evidence — what the learner showed (terminal output, a screenshot, a repo link)`)
       }
       if (verdict.by !== 'llm' && verdict.by !== 'self' && verdict.by !== 'user') return refuse('invalid', `verdicts[${index}].by must be llm | self | user`)
       if (verdict.ratio !== undefined && !(verdict.ratio >= 0 && verdict.ratio <= 1)) return refuse('invalid', `verdicts[${index}].ratio is partial credit in [0, 1]`)
+      judged.push({ ...verdict, task: line.id, criterion: line.line })
     }
-    const counted = verdicts.filter(verdict => verdict.void !== true)
+    const all = [...judged, ...auto]
+    const counted = all.filter(verdict => verdict.void !== true)
     const ratio = counted.length === 0 ? 0 : counted.reduce((sum, verdict) => sum + (verdict.ratio ?? (verdict.pass ? 1 : 0)), 0) / counted.length
     return await this.mutate(project.id, () => {
       const now = new Date()
       const at = now.toISOString()
-      const attempt: LibraryAttempt = { id: mintLibraryId('a'), nodeId: node.id, verdicts, ratio, at }
+      const attempt: LibraryAttempt = { id: mintLibraryId('a'), nodeId: node.id, verdicts: all, ratio, at }
       this.store.appendAttempt(project.id, attempt)
 
       // Cards: a failed acceptance line may leave a card (missedCard); a
@@ -1543,7 +1581,6 @@ export class LibraryService {
       if (touched.size > 0) this.store.writeCards(project.id, order.map(cardId => byId.get(cardId)!))
 
       // The station's completion and what it unlocks (practice carries no quizStats).
-      const passRatio = roadmap.passRatio ?? DEFAULT_PASS_RATIO
       let unlocked: string[] = []
       let completed: string | undefined
       if (ratio >= passRatio && node.state === 'current') {
@@ -1844,6 +1881,8 @@ export function validateRoadmapShape(
     book: (bookId: string) => LibraryBook | undefined
     /** Whether a shelf resource exists. */
     hasResource: (resourceId: string) => boolean
+    /** Whether a quiz exists (an acceptance line's ref). */
+    hasQuiz: (quizId: string) => boolean
   },
 ): string | undefined {
   const seen = new Set<string>()
@@ -1861,6 +1900,15 @@ export function validateRoadmapShape(
     }
     if (node.kind !== 'practice' && node.acceptance !== undefined && node.acceptance.length > 0) {
       return `nodes[${index}] (${node.id}) carries acceptance but is not a practice station — if these lines are judged one verdict each at completion, set kind: "practice"; if they are descriptive expectations while a quiz gates the station, move them into goals: [...]`
+    }
+    for (const [lineIndex, entry] of (node.acceptance ?? []).entries()) {
+      if (typeof entry === 'string') continue
+      if (typeof entry.line !== 'string' || entry.line.trim() === '') {
+        return `nodes[${index}] (${node.id}) acceptance line ${lineIndex + 1} needs its line text`
+      }
+      if (entry.ref !== undefined && !scope.hasQuiz(entry.ref)) {
+        return `nodes[${index}] (${node.id}) acceptance line ${lineIndex + 1} refs quiz ${JSON.stringify(entry.ref)}, which does not exist — compose it first (library_quiz), then draft`
+      }
     }
     if (!Array.isArray(node.covers) || node.covers.length === 0) {
       return `nodes[${index}] (${node.id}) needs at least one cover — what the station draws on: { kind: "book", bookId, ranges: [{ from, to }] } | { kind: "resource", resourceId } | { kind: "url", url, title? } | { kind: "topic", text }`

@@ -45,6 +45,7 @@ import {
 import { dirname, join } from 'node:path'
 import {
   isLibraryId,
+  type LibraryAcceptanceInput,
   libraryErrorMessage,
   LIBRARY_EVENT_TYPES,
   LIBRARY_COLORS,
@@ -216,6 +217,21 @@ function stamp(value: unknown): string {
 
 function strings(value: unknown, max: number): string[] {
   return Array.isArray(value) ? value.flatMap(item => { const s = text(item, max); return s === undefined ? [] : [s] }) : []
+}
+
+/** Acceptance lines: bare strings pass through; { line, ref? } objects normalize. */
+function acceptanceEntries(value: unknown): LibraryAcceptanceInput[] {
+  if (!Array.isArray(value)) return []
+  return (value as unknown[]).flatMap((entry): LibraryAcceptanceInput[] => {
+    if (typeof entry === 'string') {
+      const line = text(entry, 300)
+      return line === undefined ? [] : [line]
+    }
+    const record = asRecord(entry)
+    const line = text(record?.line, 300)
+    if (record === undefined || line === undefined) return []
+    return [{ line, ...opt('ref', text(record.ref, 100)) }]
+  })
 }
 
 /** Spread `{ [key]: value }` only when value is defined. */
@@ -420,7 +436,7 @@ export function normalizeRoadmap(value: unknown): LibraryRoadmap | undefined {
           ...opt('bestRatio', finite(stats.bestRatio)),
         },
       }),
-      ...(kind === 'practice' && Array.isArray(node.acceptance) ? { acceptance: strings(node.acceptance, 300) } : {}),
+      ...(kind === 'practice' && Array.isArray(node.acceptance) ? { acceptance: acceptanceEntries(node.acceptance) } : {}),
       ...(notesRec === undefined || notesText === undefined ? {} : {
         notes: { text: notesText, updatedAt: stamp(notesRec.updatedAt), revisions: finite(notesRec.revisions) ?? 1 },
       }),
@@ -623,7 +639,7 @@ export function normalizeAttempt(value: unknown): LibraryAttempt | undefined {
       pass: v.pass,
       ...opt('ratio', finite(v.ratio)),
       evidence: v.evidence,
-      by: v.by === 'self' || v.by === 'user' ? v.by : 'llm',
+      by: v.by === 'self' || v.by === 'user' || v.by === 'auto' ? v.by : 'llm',
       ...(v.void === true ? { void: true } : {}),
     })
   }

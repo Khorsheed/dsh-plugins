@@ -434,7 +434,7 @@ describe('practice acceptance', () => {
   it('judges one verdict per acceptance line, verbatim; partial credit rides the pass ratio', async () => {
     const { projectId } = await seedPath()
     const wrongLine = await service.putAttempt({ projectId, nodeId: 's1', verdicts: [{ task: 's1', criterion: '跑满了', pass: true, evidence: '终端', by: 'llm' }] })
-    expect(!wrongLine.ok && wrongLine.message).toMatch(/acceptance lines, verbatim/)
+    expect(!wrongLine.ok && wrongLine.message).toMatch(/names no rubric line/)
     // 2 pass + 1 fail = 2/3 ≈ 0.67 < 0.8: no completion, no unlock; the failed line leaves a card.
     const first = await service.putAttempt({ projectId, nodeId: 's1', verdicts: [
       { task: 's1', criterion: '跑满 20 万步', pass: true, evidence: '终端输出', by: 'llm' },
@@ -466,6 +466,40 @@ describe('practice acceptance', () => {
     expect(history.attempts[1]?.ratio).toBeCloseTo(2 / 3)
     const events = await service.listEvents({ projectId, types: ['node.completed', 'node.unlocked'] })
     expect(events.events.map(event => [event.type, event.id])).toEqual([['node.unlocked', 's2'], ['node.completed', 's1']])
+  })
+
+  it('a ref acceptance line machine-checks against its quiz\'s latest sitting; the coach judges the rest', async () => {
+    const { projectId } = await seedPath()
+    // The quiz must exist before the draft references it.
+    const missing = await service.draftRoadmap({ projectId, nodes: [{ id: 's1', title: 'RL 直觉', kind: 'practice', covers: [{ kind: 'topic', text: '讲授' }], acceptance: [{ line: '完成摸底测验', ref: 'q_nope' }] }] })
+    expect(!missing.ok && missing.message).toMatch(/compose it first/)
+    const quiz = await service.putQuiz({ projectId, quiz: { scope: {}, questions: [question()] } })
+    if (!quiz.ok) throw new Error(quiz.message)
+    const draft = await service.draftRoadmap({ projectId, nodes: [
+      { id: 's1', title: 'RL 直觉', kind: 'practice', covers: [{ kind: 'topic', text: '讲授' }], acceptance: [{ line: '完成摸底测验 ≥ 过线', ref: quiz.quiz.id }, '跑满 20 万步'] },
+      { id: 's2', title: '快慢回路', kind: 'quiz', covers: [{ kind: 'topic', text: '讲授' }], dependsOn: ['s1'] },
+    ] })
+    if (!draft.ok) throw new Error(draft.message)
+    const adopted = await service.adoptRoadmap({ projectId })
+    if (!adopted.ok) throw new Error(adopted.message)
+    // No sitting yet: the ref line auto-fails (1/2 < 0.8 — no completion).
+    const cold = await service.putAttempt({ projectId, nodeId: 's1', verdicts: [{ task: 'L2', criterion: '跑满 20 万步', pass: true, evidence: '终端输出', by: 'llm' }] })
+    if (!cold.ok) throw new Error(cold.message)
+    expect(cold.attempt.ratio).toBeCloseTo(1 / 2)
+    expect(cold.completed).toBeUndefined()
+    expect(cold.attempt.verdicts.find(verdict => verdict.task === 'L1')?.by).toBe('auto')
+    // A ref line takes no coach verdict.
+    const judgedRef = await service.putAttempt({ projectId, nodeId: 's1', verdicts: [{ task: 'L1', criterion: '完成摸底测验 ≥ 过线', pass: true, evidence: 'x', by: 'llm' }] })
+    expect(!judgedRef.ok && judgedRef.message).toMatch(/machine-checks/)
+    // Pass the quiz, re-run acceptance: L1 auto-passes, L2 judged → done, s2 unlocks.
+    const sitting = await service.putAttempt({ projectId, quizId: quiz.quiz.id, verdicts: [{ task: 'q1', criterion: '机制', pass: true, evidence: '领域知识', by: 'llm' }] })
+    if (!sitting.ok) throw new Error(sitting.message)
+    const done = await service.putAttempt({ projectId, nodeId: 's1', verdicts: [{ task: 'L2', criterion: '跑满 20 万步', pass: true, evidence: '终端输出', by: 'llm' }] })
+    if (!done.ok) throw new Error(done.message)
+    expect([done.completed, done.unlocked]).toEqual(['s1', ['s2']])
+    // The auto verdict survives the read-back normalize.
+    const history = await service.listAttempts({ projectId, nodeId: 's1' })
+    expect(history.attempts[0]?.verdicts.find(verdict => verdict.task === 'L1')).toMatchObject({ by: 'auto', pass: true })
   })
 
   it('refuses the wrong shape: both keys, neither, an unknown station, a non-practice node', async () => {

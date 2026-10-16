@@ -13,7 +13,7 @@
  */
 import { Fragment, useEffect, useState, type ReactNode } from 'react'
 import { ChipRow, ListRow, PanelHeader, UnderlineTabs } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
-import type { LibraryAttempt, LibraryBook, LibraryPage, LibraryQuiz, LibraryQuizFocus, LibraryQuizQuestion, LibraryRoadmap, LibraryVerdict, RoadmapNode } from '../../types.ts'
+import { acceptanceLines, type LibraryAcceptanceLine, type LibraryAttempt, type LibraryBook, type LibraryPage, type LibraryQuiz, type LibraryQuizFocus, type LibraryQuizQuestion, type LibraryRoadmap, type LibraryVerdict, type RoadmapNode } from '../../types.ts'
 import { colorOf, Cover } from '../look.tsx'
 import { CoverChips, coverLabel, evidencePolicy, type CoverContext } from '../covers.tsx'
 import type { LibraryNodeTab } from '../store.ts'
@@ -394,7 +394,7 @@ export function NodeView({ p, projectId, bookId, nodeId, tab }: ViewProps & { pr
           />
         )}
         {node !== undefined && activeTab === 'acceptance' && (
-          <AcceptanceTab p={p} projectId={projectId} node={node} passRatio={loaded.data?.passRatio ?? 0.8} onPrime={() => { prime(t('prime.accept', { node: node.title, nodeId: node.id, criteria: (node.acceptance ?? []).map(line => `- ${line}`).join('\n') })) }} />
+          <AcceptanceTab p={p} projectId={projectId} node={node} passRatio={loaded.data?.passRatio ?? 0.8} onPrime={() => { prime(t('prime.accept', { node: node.title, nodeId: node.id, criteria: acceptanceLines(node).map(line => `- ${line.id}: ${line.line}`).join('\n') })) }} />
         )}
       </div>
     </>
@@ -797,7 +797,7 @@ function QuizTab({ p, projectId, bookId, node, passRatio, books, onPrime, onReta
 function AcceptanceTab({ p, projectId, node, passRatio, onPrime }: {
   p: ViewProps['p']; projectId: string; node: RoadmapNode; passRatio: number; onPrime: () => void
 }): ReactNode {
-  const { t, useStore } = p
+  const { t, actions, useStore } = p
   const rev = useStore(s => s.rev)
   const attempts = useLoad(() => value(p.listAttempts(projectId, node.id)), [projectId, node.id, rev])
   // The station gates no quiz itself, but its covered books may hold
@@ -807,25 +807,38 @@ function AcceptanceTab({ p, projectId, node, passRatio, onPrime }: {
     const lists = await Promise.all(coveredBookIds.map(id => value(p.listQuizzes(projectId, id))))
     return lists.flatMap(result => result.quizzes).filter(quiz => quiz.scope.nodeId === undefined)
   }, [projectId, node.id, rev, coveredBookIds.join(',')])
+  // A ref line's live state, before any acceptance sitting: the referenced
+  // quiz's latest sitting does the judging (attempts arrive newest first).
+  const allAttempts = useLoad(() => value(p.listAttempts(projectId)), [projectId, rev])
   const latest = attempts.data?.attempts[0]
-  const verdictOf = (line: string): LibraryVerdict | undefined =>
-    latest?.verdicts.find(verdict => verdict.criterion === line && verdict.void !== true)
-  const acceptance = node.acceptance ?? []
+  const rubric = acceptanceLines(node)
+  const verdictOf = (line: LibraryAcceptanceLine): LibraryVerdict | undefined =>
+    latest?.verdicts.find(verdict => (verdict.task === line.id || verdict.criterion === line.line) && verdict.void !== true)
+    ?? (line.ref === undefined ? undefined : (() => {
+      const sitting = (allAttempts.data?.attempts ?? []).find(attempt => attempt.quizId === line.ref)
+      return sitting === undefined ? undefined : { task: line.id, criterion: line.line, pass: sitting.ratio >= passRatio, ratio: sitting.ratio, evidence: '', by: 'auto' as const }
+    })())
   return (
     <>
       {node.state === 'locked' && <div className={css.notice}>{t('node.locked')}</div>}
-      <div className={css.muted}>{t('accept.station', { count: String(acceptance.length) })} · {t('accept.passRule', { percent: String(Math.round(passRatio * 100)) })}</div>
+      <div className={css.muted}>{t('accept.station', { count: String(rubric.length) })} · {t('accept.passRule', { percent: String(Math.round(passRatio * 100)) })}</div>
       <section className={css.section}>
         <h3 className={css.sectionTitle}>{t('accept.title')}</h3>
         <ul className={css.acceptList}>
-          {acceptance.map(line => {
+          {rubric.map(line => {
             const verdict = verdictOf(line)
             return (
-              <li key={line} className={css.acceptItem}>
+              <li key={line.id} className={css.acceptItem}>
                 <span className={css.acceptMark} data-state={verdict === undefined ? 'none' : (verdict.pass && (verdict.ratio ?? 1) >= 0.5) ? 'pass' : 'fail'} aria-hidden="true">
                   {verdict === undefined ? '' : (verdict.pass && (verdict.ratio ?? 1) >= 0.5) ? <IconCheckOutlineMedium size={11} /> : '✕'}
                 </span>
-                <span className={css.acceptText}>{line}{verdict !== undefined && verdict.ratio !== undefined && verdict.ratio > 0 && verdict.ratio < 1 ? <span className={css.muted}> · {Math.round(verdict.ratio * 100)}%</span> : null}</span>
+                <span className={css.acceptText}>
+                  {line.line}
+                  {line.ref !== undefined && (
+                    <button type="button" className={css.textButton} onClick={() => { actions.push({ view: 'quiz', projectId, quizId: line.ref! }) }}>{t('accept.machine')} →</button>
+                  )}
+                  {verdict !== undefined && verdict.ratio !== undefined && verdict.ratio > 0 && verdict.ratio < 1 ? <span className={css.muted}> · {Math.round(verdict.ratio * 100)}%</span> : null}
+                </span>
               </li>
             )
           })}

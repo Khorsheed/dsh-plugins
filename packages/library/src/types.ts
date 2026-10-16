@@ -329,10 +329,33 @@ export interface RoadmapNode {
   readonly kind: RoadmapNodeKind
   /** Quiz nodes only — a read / practice node never carries one. */
   readonly quizStats?: LibraryQuizStats
-  /** Practice nodes only: the acceptance lines, one verdict per line at assess time. */
-  readonly acceptance?: readonly string[]
+  /** Practice nodes only: the acceptance lines, one verdict per line at assess time. A line may carry `ref` — the quiz that machine-checks it. */
+  readonly acceptance?: readonly LibraryAcceptanceInput[]
   /** The station's 讲义, once the coach has taught it. */
   readonly notes?: LibraryNodeNotes
+}
+
+/**
+ * One acceptance line as authored: a bare line the coach judges, or
+ * `{ line, ref }` — a machine-checked line that auto-passes when the
+ * referenced quiz's latest sitting passes the roadmap's pass ratio.
+ */
+export type LibraryAcceptanceInput = string | { readonly line: string; readonly ref?: string }
+
+/** One rubric line of a practice station, with its stable positional id. */
+export interface LibraryAcceptanceLine {
+  /** Stable id: L + 1-based position — verdicts name it, so a replan rewording the line never orphans history. */
+  readonly id: string
+  readonly line: string
+  /** The quiz that machine-checks this line. */
+  readonly ref?: string
+}
+
+/** A practice station's rubric: its acceptance lines with stable positional ids (L1, L2, …). */
+export function acceptanceLines(node: { acceptance?: readonly LibraryAcceptanceInput[] }): LibraryAcceptanceLine[] {
+  return (node.acceptance ?? []).map((entry, index) => typeof entry === 'string'
+    ? { id: `L${index + 1}`, line: entry }
+    : { id: `L${index + 1}`, line: entry.line, ...(entry.ref === undefined ? {} : { ref: entry.ref }) })
 }
 
 /** A roadmap — the adopted path (`roadmap.json`) or a draft (`roadmap.draft.json`). */
@@ -572,7 +595,8 @@ export interface LibraryVerdict {
   /** Partial credit (defaults to pass ? 1 : 0). */
   readonly ratio?: number
   readonly evidence: string
-  readonly by: 'llm' | 'self' | 'user'
+  /** auto: the machine's verdict on a ref acceptance line (never accepted from a caller). */
+  readonly by: 'llm' | 'self' | 'user' | 'auto'
   /** The learner flagged the question as broken (「这题有问题」): it counts for nothing. */
   readonly void?: boolean
   /** A missed question with no target card: the card to create for it. */

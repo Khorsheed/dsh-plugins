@@ -179,7 +179,13 @@ const NODES_SCHEMA = {
         verifiedAt: { type: 'string', description: 'ISO time of the web check.' },
       } } },
       dependsOn: { type: 'array', items: { type: 'string' }, description: 'Earlier station ids this one gates on.' },
-      acceptance: { type: 'array', items: { type: 'string' }, description: 'kind=practice only: the criteria — one verbatim verdict.criterion per line at assess time.' },
+      acceptance: { type: 'array', description: 'kind=practice only: the criteria — judged one verdict per line at assess time (task = the line id L1, L2…, or the line verbatim). A line may be { line, ref: <quiz id> } — machine-checked: it auto-passes when that quiz\'s latest sitting passes; compose the quiz FIRST (library_quiz), then ref it.', items: { oneOf: [
+        { type: 'string', description: 'The criterion line, judged by the coach.' },
+        { type: 'object', additionalProperties: true, properties: {
+          line: { type: 'string', required: true, description: 'The criterion line.' },
+          ref: { type: 'string', description: 'The quiz that machine-checks this line (library_quiz returned its id).' },
+        } },
+      ] } },
     } } },
     { type: 'string', description: 'The same array as its JSON text.' },
   ],
@@ -861,8 +867,9 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
       + 'by: "llm"|"self"|"user", void?: true when the learner flagged the question as broken, missedCard?: { term, gloss } for a missed question that targets no card }. '
       + 'The engine moves every probed card (a pass climbs a review box and eases weakness; a miss resets it to tomorrow and adds weakness), creates a card for a '
       + 'card-less miss, updates the gated node, and completes it at the pass ratio (default 0.8), unlocking what follows — report what moved and what unlocked. '
-      + 'Practice acceptance: pass node instead of quiz (plus book when the station sits on a book\'s path) — the station must be a practice node, and every '
-      + 'verdict\'s criterion is one of its acceptance lines, VERBATIM; the learner submits the evidence (terminal output, a screenshot, a repo link), you judge each line. Same cascade.',
+      + 'Practice acceptance: pass node instead of quiz (plus book when the station sits on a book\'s path) — the station must be a practice node; each '
+      + 'verdict\'s task is the rubric line\'s id (L1, L2, …) or the line VERBATIM. A line carrying ref is machine-checked by that quiz — never judge it. '
+      + 'The learner submits the evidence (terminal output, a screenshot, a repo link), you judge each line. Same cascade.',
     parameters: {
       project: { type: 'string', description: 'Project id (defaults to the binding).' },
       quiz: { type: 'string', description: 'The quiz id library_quiz returned (a quiz sitting).' },
@@ -876,7 +883,7 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
           type: 'object',
           additionalProperties: false,
           properties: {
-            task: { type: 'string', description: 'The question id.' },
+            task: { type: 'string', description: 'The question id (a quiz sitting), or the rubric line id — L1, L2… (a practice acceptance).' },
             criterion: { type: 'string', description: 'What was judged, in one line.' },
             pass: { type: 'boolean', description: 'Whether the answer passes.' },
             ratio: { type: 'number', description: 'Partial credit 0..1.' },
