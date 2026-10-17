@@ -10,7 +10,6 @@
     "src/agent-setup.ts",
     "src/dispatch.ts",
     "src/index.ts",
-    "src/invariant.ts",
     "src/journal.ts",
     "src/tool.ts",
     "src/tool-definition.ts",

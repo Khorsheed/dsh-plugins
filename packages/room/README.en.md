@@ -71,7 +71,7 @@ Uninstalling removes the plugin's surfaces; persisted Room journals stay in thei
 
 **Model experience.** The current goal rides the top of the roster section in every member prompt; there is deliberately no blackboard fold — member prompts never consume the room's running log (speech/dispatch events are journaled for UI projection and replay only). Model-facing tools arrive with the session's preset grant, tagged by the package's own `./tool` row.
 
-**Identity triangle.** cordis row id `room` (`cordis.patch.yml`) = `clientBundle('@khorsheed/dsh-room')` (`tsdown.config.ts`) = `src/invariant.ts` `PACKAGE_NAME`. Exports: `.` host service, `/client` (plugin `apply`/`inject` plus the `RoomRemote` type), `/tool` the session-granted model tool row, `/types`, `/typert`, `/remote`, `/invariant`.
+**Identity.** cordis row id `room` (`cordis.patch.yml`) = `clientBundle('@khorsheed/dsh-room')` (`tsdown.config.ts`). Exports: `.` host service, `/client` (plugin `apply`/`inject` plus the `RoomRemote` type), `/tool` the session-granted model tool row, `/types`, `/typert`, `/remote`.
 
 </details>
 

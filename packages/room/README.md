@@ -71,7 +71,7 @@ dsh plugin --profile web remove @khorsheed/dsh-room
 
 **模型体验。** 当前目标随每个成员提示词的名册段顶部下发；刻意不做黑板折叠——成员提示词从不消费房间的运行日志（speech/dispatch 事件只为 UI 投影与回放落日志）。面向模型的工具随会话 preset 授予到达，由本包的 `./tool` 行打标。
 
-**身份三角。** cordis 行 id `room`（`cordis.patch.yml`）= `clientBundle('@khorsheed/dsh-room')`（`tsdown.config.ts`）= `src/invariant.ts` 的 `PACKAGE_NAME`。导出：`.` 宿主服务、`/client`（插件 `apply`/`inject` 与 `RoomRemote` 类型）、`/tool` 按会话授予的模型工具行、`/types`、`/typert`、`/remote`、`/invariant`。
+**身份同名。** cordis 行 id `room`（`cordis.patch.yml`）= `clientBundle('@khorsheed/dsh-room')`（`tsdown.config.ts`）。导出：`.` 宿主服务、`/client`（插件 `apply`/`inject` 与 `RoomRemote` 类型）、`/tool` 按会话授予的模型工具行、`/types`、`/typert`、`/remote`。
 
 </details>
 
