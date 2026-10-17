@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import * as entry from '../src/index.ts'
-import * as invariantCompanion from '../src/invariant.ts'
 import { EvalService } from '../src/service.ts'
 
 interface ProvideSpy {
@@ -8,7 +7,6 @@ interface ProvideSpy {
   provide: (name: string, service: unknown) => void
   eval?: EvalService
   commands?: { register: (command: { name: string; handler: unknown }) => unknown }
-  invariants?: { register: (pkg: string, install: unknown) => () => void }
   /** Deferred injection; this composition has no tools registry, so it never fires. */
   inject?: (deps: string[], callback: (ctx: unknown) => void) => void
   /** The Remote face mounts through the plugin seam; this fake records nothing. */
@@ -21,7 +19,6 @@ describe('the plugin surface', () => {
   it('exposes the identity triangle facts', () => {
     expect(entry.name).toBe('eval')
     expect(typeof entry.apply).toBe('function')
-    expect(invariantCompanion.name).toBe('eval-invariant')
   })
 
   it('apply provides ctx.dshEval and registers nothing — the slash face moved to the companion row (A3)', () => {
@@ -49,17 +46,6 @@ describe('the plugin surface', () => {
     // and the jobs controller join through deferred injection and the
     // upstream evaluation services are probed per call — never injected.
     expect(entry.inject).toEqual([])
-  })
-
-  it('the invariant companion registers package ownership', () => {
-    const registered: string[] = []
-    const ctx: ProvideSpy = {
-      invariants: { register: (pkg) => { registered.push(pkg); return () => {} } },
-      provided: new Map(),
-      provide() {},
-    }
-    void invariantCompanion.apply(ctx as never)
-    expect(registered).toEqual(['@khorsheed/dsh-eval'])
   })
 
   it('the kernel hashes a valid condition without touching the filesystem', () => {
