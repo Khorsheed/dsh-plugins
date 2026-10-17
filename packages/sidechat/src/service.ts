@@ -35,7 +35,6 @@ import {
   SideChatDefaultExecutionBackend, type SideChatExecutionBackend, type SideChatExecutionOpenInit,
   type SideChatExecutionSession,
 } from './execution.ts'
-import { PACKAGE_NAME } from './invariant.ts'
 import { messageTextOf, projectTranscript, projectTurnError } from './journal.ts'
 import { SideChatStore } from './store.ts'
 import {
@@ -54,6 +53,9 @@ import {
  * the producer kind.
  */
 export const SIDECHAT_KIND = 'sidechat'
+
+/** The released V3 wrapper identity a pre-V4 host still serves verbatim. */
+const PACKAGE_NAME = '@khorsheed/dsh-sidechat'
 
 declare module '@deepseek-ai/dsh-llm' {
   interface MessageSourceMap {
