@@ -5,8 +5,8 @@
  * was recorded on and to a freshness window — and answers `verify()` against
  * the CURRENT head and wall clock. A later fully gated boot may promote that
  * credential into a deployment proof whose exact runtime fingerprint can be
- * reused by the same-launch restart path. Framework-free: the cordis plugin,
- * the CLI, and the invariant companion all share this module.
+ * reused by the same-launch restart path. Framework-free: the cordis plugin
+ * and the CLI share this module.
  */
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { stateFile } from './state-files.ts'
@@ -161,8 +161,8 @@ export function loadState(stateDir: string): GuardState {
 export function saveState(stateDir: string, state: GuardState): void {
   mkdirSync(stateDir, { recursive: true })
   // Atomic via tmp + rename: a crash mid-write must never leave a truncated
-  // state file — a malformed one throws in loadState and fails the host's
-  // boot invariant, i.e. the guard's own state would take the host down.
+  // state file — a malformed one throws in loadState the next time the gate
+  // reads it, i.e. the guard's own state would fail every later verify.
   const file = stateFilePath(stateDir)
   const tmp = `${file}.${process.pid}.tmp`
   writeFileSync(tmp, `${JSON.stringify(state, null, 2)}\n`)
