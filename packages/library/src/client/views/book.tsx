@@ -408,6 +408,7 @@ export function NodeView({ p, projectId, resourceId, nodeId, tab }: ViewProps & 
             resources={loaded.data?.resources ?? []}
             onPrime={focus => { prime(resource === undefined ? t(`prime.quiz.station.${focus}`, { node: node.title }) : t(`prime.quiz.${focus}`, { book: resource.title, node: node.title })) }}
             onRetake={prompts => { prime(t('prime.quiz.retake', { node: node.title, list: prompts.map(prompt => `- ${prompt}`).join('\n') })) }}
+            onReplace={prompts => { prime(t('prime.quiz.replace', { node: node.title, list: prompts.map(prompt => `- ${prompt}`).join('\n') })) }}
           />
         )}
       </div>
@@ -671,12 +672,13 @@ function answerText(question: LibraryQuizQuestion): string {
   return at >= 0 ? `${String.fromCharCode(65 + at)}. ${question.answer}` : question.answer
 }
 
-function QuizTab({ p, projectId, resourceId, node, passRatio, resources, onPrime, onRetake }: {
-  p: ViewProps['p']; projectId: string; resourceId: string | undefined; node: RoadmapNode; passRatio: number; resources: readonly LibraryResource[]; onPrime: (focus: LibraryQuizFocus) => void; onRetake: (prompts: string[]) => void
+function QuizTab({ p, projectId, resourceId, node, passRatio, resources, onPrime, onRetake, onReplace }: {
+  p: ViewProps['p']; projectId: string; resourceId: string | undefined; node: RoadmapNode; passRatio: number; resources: readonly LibraryResource[]; onPrime: (focus: LibraryQuizFocus) => void; onRetake: (prompts: string[]) => void; onReplace: (prompts: string[]) => void
 }): ReactNode {
   const { t, actions, useStore } = p
   const rev = useStore(s => s.rev)
-  const [focus, setFocus] = useState<LibraryQuizFocus>('mine')
+  // The quiz direction: the three focuses, plus 「错题重考」 once this station has any.
+  const [direction, setDirection] = useState<LibraryQuizFocus | 'missed'>('mine')
   // After asking, re-read until the coach has stored the new quiz (two minutes at most).
   const [watching, setWatching] = useState<{ since: number; count: number } | undefined>()
   const [tick, setTick] = useState(0)
@@ -716,6 +718,7 @@ function QuizTab({ p, projectId, resourceId, node, passRatio, resources, onPrime
   const loose = shown.filter(quiz => quiz.scope.nodeId === undefined)
   const policy = evidencePolicy(node.covers, resources)
   const missed: { quizId: string; question: LibraryQuizQuestion; at: string }[] = []
+  const voided: { quizId: string; question: LibraryQuizQuestion; at: string }[] = []
   {
     const latestByQuiz = new Map<string, LibraryAttempt>()
     for (const attempt of allAttempts.data?.attempts ?? []) {
@@ -725,12 +728,25 @@ function QuizTab({ p, projectId, resourceId, node, passRatio, resources, onPrime
       const attempt = latestByQuiz.get(quiz.id)
       if (attempt === undefined) continue
       for (const verdict of attempt.verdicts) {
-        if (verdict.pass || verdict.void === true) continue
         const question = quiz.questions?.find(candidate => candidate.id === verdict.task)
-        if (question !== undefined) missed.push({ quizId: quiz.id, question, at: attempt.at })
+        if (question === undefined) continue
+        if (verdict.void === true) voided.push({ quizId: quiz.id, question, at: attempt.at })
+        else if (!verdict.pass) missed.push({ quizId: quiz.id, question, at: attempt.at })
       }
     }
   }
+  // The ask button's label follows where the station is: never quizzed → ask
+  // for one; quizzed → a fresh set; the missed direction → a retake.
+  const ask = (): void => {
+    if (direction === 'missed') onRetake(missed.map(row => row.question.prompt))
+    else onPrime(direction)
+    setWatching({ since: Date.now(), count: quizCount })
+  }
+  const askLabel = watching !== undefined
+    ? t('node.quizWaiting')
+    : direction === 'missed'
+      ? t('node.missedRetake')
+      : (stats?.attempts ?? 0) > 0 ? t('node.askQuizAgain') : t('node.askQuiz')
   return (
     <>
       {node.state === 'locked' && <div className={css.notice}>{t('node.locked')}</div>}
@@ -756,18 +772,18 @@ function QuizTab({ p, projectId, resourceId, node, passRatio, resources, onPrime
         <h3 className={css.sectionTitle}>{t('node.focusTitle')}</h3>
         <ChipRow
           label={t('node.focusTitle')}
-          chips={FOCUSES.map(id => ({ id, label: t(`focus.${id}`), ...(id === 'mine' ? { count: mineCount } : {}) }))}
-          value={focus}
-          onSelect={setFocus}
+          chips={[...FOCUSES.map(id => ({ id, label: t(`focus.${id}`), ...(id === 'mine' ? { count: mineCount } : {}) })), ...(missed.length > 0 ? [{ id: 'missed', label: t('focus.missed'), count: missed.length }] : [])]}
+          value={direction}
+          onSelect={id => { setDirection(id as LibraryQuizFocus | 'missed') }}
         />
         <div className={css.muted}>
-          {focus === 'mine'
+          {direction === 'mine'
             ? mineCount === 0 ? t('node.focusMineEmpty') : t('node.focusMineHint', { terms: (mine.data?.cards ?? []).map(card => card.term).join('、') })
-            : t(`node.focusHint.${focus}`)}
+            : t(`node.focusHint.${direction}`)}
         </div>
       </section>
       <div className={css.actions}>
-        <button type="button" className={latest === undefined ? css.primary : css.secondary} onClick={() => { onPrime(focus); setWatching({ since: Date.now(), count: quizCount }) }}>{watching === undefined ? t('node.askQuiz') : t('node.quizWaiting')}</button>
+        <button type="button" className={latest === undefined ? css.primary : css.secondary} onClick={ask}>{askLabel}</button>
       </div>
       {missed.length > 0 && (
         <section className={css.section}>
@@ -783,6 +799,24 @@ function QuizTab({ p, projectId, resourceId, node, passRatio, resources, onPrime
           ))}
           <div className={css.actions}>
             <button type="button" className={css.secondary} onClick={() => { onRetake(missed.map(row => row.question.prompt)) }}>{t('node.missedRetake')}</button>
+          </div>
+        </section>
+      )}
+      {voided.length > 0 && (
+        <section className={css.section}>
+          <h3 className={css.sectionTitle}>{t('node.voidedTitle', { count: String(voided.length) })}</h3>
+          {voided.map(row => (
+            <div key={`${row.quizId}:${row.question.id}`} className={css.missRow}>
+              <span className={css.missMark} data-void="true" aria-hidden="true">?</span>
+              <div className={css.missText}>
+                <span>{row.question.prompt}</span>
+                <span className={css.muted}>{when(row.at, t)}</span>
+              </div>
+            </div>
+          ))}
+          <div className={css.muted}>{t('node.voidedHint')}</div>
+          <div className={css.actions}>
+            <button type="button" className={css.secondary} onClick={() => { onReplace(voided.map(row => row.question.prompt)) }}>{t('node.voidedReplace')}</button>
           </div>
         </section>
       )}

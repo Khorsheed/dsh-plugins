@@ -7,8 +7,9 @@
  */
 import { useState, type ReactNode } from 'react'
 import { ChipRow, ListRow, PanelHeader } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
-import { isThickResource, LIBRARY_COLORS, LIBRARY_ICONS, type LibraryColor, type LibraryIcon, type LibraryProjectSummary, type LibraryResourceKind, type LibraryRoadmap, type LibraryTemplate } from '../../types.ts'
+import { isThickResource, LIBRARY_COLORS, LIBRARY_ICONS, type LibraryAssessment, type LibraryColor, type LibraryIcon, type LibraryProjectSummary, type LibraryQuizQuestion, type LibraryResource, type LibraryResourceKind, type LibraryRoadmap, type LibraryTemplate } from '../../types.ts'
 import { colorOf, coverOf, Cover, GlyphStrokes, iconOf, ProjectGlyph, Ring } from '../look.tsx'
+import { MathText } from '../math.tsx'
 import { summarizeCovers, type CoverContext } from '../covers.tsx'
 import { DraftCard, QuizRows } from './book.tsx'
 import { IconArticleOutlineMedium, IconCardsOutlineMedium, IconCheckOutlineMedium, IconCourseOutlineMedium, IconHardwareOutlineMedium, IconLinkOutlineMedium, IconLockOutlineMedium, IconPenOutlineMedium, IconPlayOutlineMedium, IconPlusOutlineMedium, IconRefreshOutlineMedium, IconRepoOutlineMedium, IconSparkleOutlineMedium, IconToolOutlineMedium } from '../icons.tsx'
@@ -355,6 +356,7 @@ export function ProjectView({ p, projectId }: ViewProps & { projectId: string })
             <QuizRows p={p} projectId={projectId} quizzes={freeQuizzes} />
           </section>
         )}
+        {project !== undefined && <MistakesSection p={p} projectId={projectId} resources={resources} />}
         {project !== undefined && (
           <section className={css.section} data-color={colorOf(project)}>
             <h3 className={css.sectionTitle}>{t('project.shelf', { count: String(thick.length) })}</h3>
@@ -417,6 +419,71 @@ function resourceKindIcon(kind: LibraryResourceKind): ReactNode {
     case 'hardware': return <IconHardwareOutlineMedium size={13} />
     default: return <IconArticleOutlineMedium size={13} />
   }
+}
+
+/**
+ * 错题本: every missed question across the project's papers (each paper's
+ * latest sitting), newest first, with a one-tap 「围绕错题出一套」 for the
+ * coach. The station-level list lives on the station's 章节考 tab; this is
+ * the cross-station shelf.
+ */
+function MistakesSection({ p, projectId, resources }: ViewProps & { projectId: string; resources: readonly LibraryResource[] }): ReactNode {
+  const { t, useStore } = p
+  const rev = useStore(s => s.rev)
+  const attempts = useLoad(() => value(p.listAttempts(projectId)), [projectId, rev])
+  const assessments = useLoad(() => value(p.listAssessments(projectId, undefined, undefined, 'quiz')), [projectId, rev])
+  const [notice, setNotice] = useState<string | undefined>()
+  const missed: { key: string; quiz: LibraryAssessment; question: LibraryQuizQuestion; at: string }[] = []
+  {
+    const byAssessment = new Map((assessments.data?.assessments ?? []).map(assessment => [assessment.id, assessment]))
+    const seenQuizzes = new Set<string>()
+    const seenQuestions = new Set<string>()
+    for (const attempt of attempts.data?.attempts ?? []) {
+      const quiz = byAssessment.get(attempt.assessmentId ?? '')
+      if (quiz === undefined || seenQuizzes.has(quiz.id)) continue
+      seenQuizzes.add(quiz.id)
+      for (const verdict of attempt.verdicts) {
+        if (verdict.pass || verdict.void === true) continue
+        const question = quiz.questions?.find(candidate => candidate.id === verdict.task)
+        if (question === undefined) continue
+        const key = `${quiz.id}:${question.id}`
+        if (seenQuestions.has(key)) continue
+        seenQuestions.add(key)
+        missed.push({ key, quiz, question, at: attempt.at })
+      }
+    }
+  }
+  if (assessments.data === undefined || missed.length === 0) return null
+  const resourceTitle = (quiz: LibraryAssessment): string | undefined =>
+    quiz.scope.resourceId === undefined ? undefined : resources.find(candidate => candidate.id === quiz.scope.resourceId)?.title
+  return (
+    <section className={css.section}>
+      <h3 className={css.sectionTitle}>{t('mistakes.title', { count: String(missed.length) })}</h3>
+      {missed.map(row => (
+        <div key={row.key} className={css.missRow}>
+          <span className={css.missMark} aria-hidden="true">✕</span>
+          <div className={css.missText}>
+            <span>{row.question.prompt}</span>
+            <span className={css.muted}>
+              <MathText text={t('node.missedAnswer', { answer: row.question.options !== undefined && row.question.options.indexOf(row.question.answer) >= 0 ? `${String.fromCharCode(65 + row.question.options.indexOf(row.question.answer))}. ${row.question.answer}` : row.question.answer })} />
+              {' · '}{when(row.at, t)}{resourceTitle(row.quiz) === undefined ? '' : ` · ${resourceTitle(row.quiz)}`}
+            </span>
+          </div>
+        </div>
+      ))}
+      <div className={css.actions}>
+        <button
+          type="button"
+          className={css.secondary}
+          onClick={() => {
+            const list = missed.map(row => `- ${row.question.prompt}`).join('\n')
+            setNotice(p.primeConversation(t('prime.quiz.missedAll', { list })) ? t('notice.primed') : t('notice.noConversation'))
+          }}
+        >{t('mistakes.cta')}</button>
+      </div>
+      {notice !== undefined && <div className={css.notice}>{notice}</div>}
+    </section>
+  )
 }
 
 /** The adopted project path: progress plus every station, compact; a station opens its node page. */
