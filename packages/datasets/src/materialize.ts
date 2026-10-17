@@ -217,7 +217,7 @@ export async function materializePaths(
 }
 
 /**
- * Integrity of the materialized root (the invariant companion's check): each
+ * Integrity of the materialized root: each
  * entry is `<16-hex repo key>/<sha>/<set>/<layers-key>` or the staging area.
  * A foreign entry means the cache can no longer be trusted to hold what its
  * key says.

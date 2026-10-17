@@ -10,7 +10,6 @@
     "src/checks.ts",
     "src/hooks.ts",
     "src/index.ts",
-    "src/invariant.ts",
     "src/project.ts",
     "src/remote.ts",
     "src/skills.ts",

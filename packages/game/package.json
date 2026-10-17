@@ -22,10 +22,6 @@
       "types": "./lib/types/agent.d.ts",
       "default": "./lib/types/agent.js"
     },
-    "./invariant": {
-      "types": "./lib/types/invariant.d.ts",
-      "default": "./lib/invariant.js"
-    },
     "./types": {
       "types": "./lib/types/types.d.ts",
       "default": "./lib/types.js"
@@ -56,6 +52,9 @@
     "locale/*.json"
   ],
   "license": "MIT",
+  "engines": {
+    "dsh": ">=0.2.0-rc.1 <0.3.0-0"
+  },
   "dependencies": {
     "puppeteer-core": "^25.11.0",
     "zod": "^4.4.3"
@@ -70,7 +69,6 @@
     "@deepseek-ai/dsh-client-ui-sidebar-right": "^0.1.7-rc.1 || ^0.2.0-rc.1",
     "@deepseek-ai/dsh-client-ui-slots": "^0.1.0-rc.6 || ^0.2.0-rc.1",
     "@deepseek-ai/dsh-fs": "^0.1.0-rc.6 || ^0.2.0-rc.1",
-    "@deepseek-ai/dsh-invariants": "^0.1.0-rc.6 || ^0.2.0-rc.1",
     "@deepseek-ai/dsh-llm": "^0.1.0-rc.6 || ^0.2.0-rc.1",
     "@deepseek-ai/dsh-sandbox": "^0.1.0-rc.6 || ^0.2.0-rc.1",
     "@deepseek-ai/dsh-sandbox-policy": "^0.1.0-rc.6 || ^0.2.0-rc.1",
@@ -96,9 +94,6 @@
       "optional": true
     },
     "@deepseek-ai/dsh-client-ui-slots": {
-      "optional": true
-    },
-    "@deepseek-ai/dsh-invariants": {
       "optional": true
     },
     "@deepseek-ai/dsh-tools": {

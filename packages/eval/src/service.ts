@@ -10,7 +10,6 @@
  */
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { realpathSync } from 'node:fs'
-import { PACKAGE_NAME } from './invariant.ts'
 import { hashConditionDocument, hashHome, type HomeHash } from './contract/hash.ts'
 import { writeEvalReport, type ReportWrite } from './report/report.ts'
 import { CONDITION_SCHEMA_ID } from './contract/schema.ts'
@@ -88,6 +87,9 @@ import type {
   EvalExportRunRequest, EvalFinalizeView, EvalHumanFinalResult, EvalItemRunsResult, EvalJudgeQueueView, EvalAnswerSheet, EvalCellAnswersRequest,
   EvalJudgeVerdictInput, EvalMatrixView, EvalPlanItemsView, EvalPlanNumbersRequest, EvalPlanNumbersResult, EvalPlanRequest, EvalPlanReview, EvalReexportRequest, EvalRunReportView, EvalRunUnitsView,
 } from './types.ts'
+
+/** The package's own name — the prefix of its coded errors. */
+const PACKAGE_NAME = '@khorsheed/dsh-eval'
 
 /** Thrown when a verb is handed a document that violates its contract. */
 export class EvalContractError extends Error {}
