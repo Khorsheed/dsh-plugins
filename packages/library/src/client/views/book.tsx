@@ -677,8 +677,9 @@ function QuizTab({ p, projectId, resourceId, node, passRatio, resources, onPrime
 }): ReactNode {
   const { t, actions, useStore } = p
   const rev = useStore(s => s.rev)
-  // The quiz direction: the three focuses, plus 「错题重考」 once this station has any.
-  const [direction, setDirection] = useState<LibraryQuizFocus | 'missed'>('mine')
+  // The quiz direction: the three focuses. 错题重考 is not a direction — it is
+  // the paper card's primary action once this station has misses.
+  const [direction, setDirection] = useState<LibraryQuizFocus>('mine')
   // After asking, re-read until the coach has stored the new quiz (two minutes at most).
   const [watching, setWatching] = useState<{ since: number; count: number } | undefined>()
   const [tick, setTick] = useState(0)
@@ -717,36 +718,43 @@ function QuizTab({ p, projectId, resourceId, node, passRatio, resources, onPrime
   const earlier = stations.filter(quiz => quiz !== latest).reverse()
   const loose = shown.filter(quiz => quiz.scope.nodeId === undefined)
   const policy = evidencePolicy(node.covers, resources)
+  // Every quiz's latest sitting (attempts arrive newest first) drives both the
+  // paper card's state and the missed / flagged lists.
+  const latestByQuiz = new Map<string, LibraryAttempt>()
+  for (const attempt of allAttempts.data?.attempts ?? []) {
+    if (attempt.assessmentId !== undefined && !latestByQuiz.has(attempt.assessmentId)) latestByQuiz.set(attempt.assessmentId, attempt)
+  }
   const missed: { quizId: string; question: LibraryQuizQuestion; at: string }[] = []
   const voided: { quizId: string; question: LibraryQuizQuestion; at: string }[] = []
-  {
-    const latestByQuiz = new Map<string, LibraryAttempt>()
-    for (const attempt of allAttempts.data?.attempts ?? []) {
-      if (attempt.assessmentId !== undefined && !latestByQuiz.has(attempt.assessmentId)) latestByQuiz.set(attempt.assessmentId, attempt)
-    }
-    for (const quiz of [...stations].reverse()) {
-      const attempt = latestByQuiz.get(quiz.id)
-      if (attempt === undefined) continue
-      for (const verdict of attempt.verdicts) {
-        const question = quiz.questions?.find(candidate => candidate.id === verdict.task)
-        if (question === undefined) continue
-        if (verdict.void === true) voided.push({ quizId: quiz.id, question, at: attempt.at })
-        else if (!verdict.pass) missed.push({ quizId: quiz.id, question, at: attempt.at })
-      }
+  for (const quiz of [...stations].reverse()) {
+    const attempt = latestByQuiz.get(quiz.id)
+    if (attempt === undefined) continue
+    for (const verdict of attempt.verdicts) {
+      const question = quiz.questions?.find(candidate => candidate.id === verdict.task)
+      if (question === undefined) continue
+      if (verdict.void === true) voided.push({ quizId: quiz.id, question, at: attempt.at })
+      else if (!verdict.pass) missed.push({ quizId: quiz.id, question, at: attempt.at })
     }
   }
-  // The ask button's label follows where the station is: never quizzed → ask
-  // for one; quizzed → a fresh set; the missed direction → a retake.
+  // The paper card's three states: untaken → 开始作答; passed → 再出一套;
+  // failed with misses → 重考错题. The focus chips always configure the ask.
+  const sitting = latest === undefined ? undefined : latestByQuiz.get(latest.id)
+  const taken = sitting !== undefined
+  const passed = taken && sitting.ratio >= passRatio
+  const openPaper = (quiz: LibraryAssessment): void => {
+    actions.push({ view: 'quiz', projectId, ...(quiz.scope.resourceId === undefined ? (resourceId === undefined ? {} : { resourceId }) : { resourceId: quiz.scope.resourceId }), quizId: quiz.id })
+  }
   const ask = (): void => {
-    if (direction === 'missed') onRetake(missed.map(row => row.question.prompt))
-    else onPrime(direction)
+    onPrime(direction)
     setWatching({ since: Date.now(), count: quizCount })
   }
-  const askLabel = watching !== undefined
-    ? t('node.quizWaiting')
-    : direction === 'missed'
-      ? t('node.missedRetake')
-      : (stats?.attempts ?? 0) > 0 ? t('node.askQuizAgain') : t('node.askQuiz')
+  const retake = (): void => {
+    onRetake(missed.map(row => row.question.prompt))
+    setWatching({ since: Date.now(), count: quizCount })
+  }
+  const asking = watching !== undefined
+  const againLabel = asking ? t('node.quizWaiting') : t('node.askQuizAgain')
+  const retakeLabel = asking ? t('node.quizWaiting') : t('node.retakeCount', { count: String(missed.length) })
   return (
     <>
       {node.state === 'locked' && <div className={css.notice}>{t('node.locked')}</div>}
@@ -762,19 +770,27 @@ function QuizTab({ p, projectId, resourceId, node, passRatio, resources, onPrime
       {latest !== undefined && (
         <section className={css.quizLatest}>
           <div className={css.quizLatestText}>
-            <strong>{t('node.quizLatest', { count: String(latest.questions?.length ?? 0) })}</strong>
-            <span className={css.muted}>{[t(`focus.${latest.focus ?? 'mixed'}`), sourceMix((latest.questions ?? []).map(question => question.evidence.kind), t)].join(' · ')}</span>
+            <strong>{taken ? t(passed ? 'node.paperPassed' : 'node.paperFailed', { percent: String(Math.round(sitting.ratio * 100)) }) : t('node.quizLatest', { count: String(latest.questions?.length ?? 0) })}</strong>
+            <span className={css.muted}>{[t(`focus.${latest.focus ?? 'mixed'}`), sourceMix((latest.questions ?? []).map(question => question.evidence.kind), t), ...(taken ? [when(sitting.at, t)] : [])].join(' · ')}</span>
           </div>
-          <button type="button" className={css.primary} onClick={() => { actions.push({ view: 'quiz', projectId, ...(latest.scope.resourceId === undefined ? (resourceId === undefined ? {} : { resourceId }) : { resourceId: latest.scope.resourceId }), quizId: latest.id }) }}>{t('quiz.startNow')}</button>
+          {!taken && <button type="button" className={css.primary} onClick={() => { openPaper(latest) }}>{t('quiz.startNow')}</button>}
+          {taken && !passed && missed.length > 0 && <button type="button" className={css.primary} disabled={asking} onClick={retake}>{retakeLabel}</button>}
+          {taken && (passed || missed.length === 0) && <button type="button" className={css.primary} disabled={asking} onClick={ask}>{againLabel}</button>}
+          <div className={css.quizLatestFoot}>
+            {!taken && <button type="button" className={css.textButton} disabled={asking} onClick={ask}>{againLabel}</button>}
+            {!taken && missed.length > 0 && <button type="button" className={css.textButton} disabled={asking} onClick={retake}>{retakeLabel}</button>}
+            {taken && !passed && missed.length > 0 && <button type="button" className={css.textButton} disabled={asking} onClick={ask}>{againLabel}</button>}
+            {taken && <button type="button" className={css.textButton} onClick={() => { openPaper(latest) }}>{t('node.redoSame')}</button>}
+          </div>
         </section>
       )}
       <section className={css.section}>
         <h3 className={css.sectionTitle}>{t('node.focusTitle')}</h3>
         <ChipRow
           label={t('node.focusTitle')}
-          chips={[...FOCUSES.map(id => ({ id, label: t(`focus.${id}`), ...(id === 'mine' ? { count: mineCount } : {}) })), ...(missed.length > 0 ? [{ id: 'missed', label: t('focus.missed'), count: missed.length }] : [])]}
+          chips={FOCUSES.map(id => ({ id, label: t(`focus.${id}`), ...(id === 'mine' ? { count: mineCount } : {}) }))}
           value={direction}
-          onSelect={id => { setDirection(id as LibraryQuizFocus | 'missed') }}
+          onSelect={id => { setDirection(id as LibraryQuizFocus) }}
         />
         <div className={css.muted}>
           {direction === 'mine'
@@ -782,9 +798,11 @@ function QuizTab({ p, projectId, resourceId, node, passRatio, resources, onPrime
             : t(`node.focusHint.${direction}`)}
         </div>
       </section>
-      <div className={css.actions}>
-        <button type="button" className={latest === undefined ? css.primary : css.secondary} onClick={ask}>{askLabel}</button>
-      </div>
+      {latest === undefined && (
+        <div className={css.actions}>
+          <button type="button" className={css.primary} disabled={asking} onClick={ask}>{asking ? t('node.quizWaiting') : t('node.askQuiz')}</button>
+        </div>
+      )}
       {missed.length > 0 && (
         <section className={css.section}>
           <h3 className={css.sectionTitle}>{t('node.missedTitle', { count: String(missed.length) })}</h3>
@@ -797,9 +815,6 @@ function QuizTab({ p, projectId, resourceId, node, passRatio, resources, onPrime
               </div>
             </div>
           ))}
-          <div className={css.actions}>
-            <button type="button" className={css.secondary} onClick={() => { onRetake(missed.map(row => row.question.prompt)) }}>{t('node.missedRetake')}</button>
-          </div>
         </section>
       )}
       {voided.length > 0 && (
@@ -816,7 +831,7 @@ function QuizTab({ p, projectId, resourceId, node, passRatio, resources, onPrime
           ))}
           <div className={css.muted}>{t('node.voidedHint')}</div>
           <div className={css.actions}>
-            <button type="button" className={css.secondary} onClick={() => { onReplace(voided.map(row => row.question.prompt)) }}>{t('node.voidedReplace')}</button>
+            <button type="button" className={css.textButton} onClick={() => { onReplace(voided.map(row => row.question.prompt)) }}>{t('node.voidedReplace')}</button>
           </div>
         </section>
       )}

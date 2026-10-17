@@ -238,11 +238,42 @@ function QuestionCard({ p, question, number, answered, draft, onDraft, onAnswer 
   )
 }
 
-/** The sitting's result: the score, what unlocked, how the cards moved. */
+/** The sitting's result: the score, what unlocked, how the cards moved — and the loop's next step, which rides the conversation from here (a retake of the misses or a fresh set), so the flow never dead-ends on the score. */
 export function ResultView({ p, projectId, resourceId, result }: ViewProps & { projectId: string; resourceId: string | undefined; result: LibraryAssessResult }): ReactNode {
   const { t, actions } = p
+  const [notice, setNotice] = useState<string | undefined>()
   const percent = Math.round(result.attempt.ratio * 100)
   const passed = result.completed !== undefined
+  const assessmentId = result.attempt.assessmentId
+  // The paper itself, for the retake's question list; a gone one hides the asks.
+  const assessment = useLoad(
+    () => assessmentId === undefined
+      ? Promise.resolve(undefined)
+      : outcome(p.getAssessment(projectId, assessmentId)).then(answer => answer.assessment, () => undefined),
+    [projectId, assessmentId],
+  )
+  const questions = assessment.data?.type === 'quiz' ? (assessment.data.questions ?? []) : []
+  const missedPrompts = result.attempt.verdicts
+    .filter(verdict => !verdict.pass && verdict.void !== true)
+    .map(verdict => questions.find(question => question.id === verdict.task)?.prompt ?? verdict.criterion)
+
+  const prime = (text: string): void => {
+    void p.bindTarget(resourceId === undefined ? { projectId } : { projectId, resourceId })
+    setNotice(p.primeConversation(text) ? t('notice.primed') : t('notice.noConversation'))
+  }
+  const retake = (): void => {
+    if (assessmentId === undefined) return
+    prime(t('prime.result.retake', { quiz: assessmentId, count: String(missedPrompts.length), list: missedPrompts.map(prompt => `- ${prompt}`).join('\n') }))
+  }
+  const again = (): void => {
+    if (assessmentId === undefined) return
+    prime(t('prime.result.again', { quiz: assessmentId, percent: String(percent) }))
+  }
+
+  const nextId = result.unlocked[0]
+  const retakePrimary = !passed && missedPrompts.length > 0
+  const nextPrimary = passed && nextId !== undefined
+  const againPrimary = !retakePrimary && !nextPrimary
   return (
     <>
       <PanelHeader title={t('result.title')} onBack={() => { actions.pop() }} backLabel={t('action.back')} moreLabel={t('action.more')} />
@@ -267,15 +298,22 @@ export function ResultView({ p, projectId, resourceId, result }: ViewProps & { p
             ))}
           </section>
         )}
+        {notice !== undefined && <div className={css.notice}>{notice}</div>}
         <div className={css.actions}>
-          {result.unlocked[0] !== undefined && (
-            <button type="button" className={css.primary} onClick={() => { actions.replace({ view: 'node', projectId, ...(resourceId === undefined ? {} : { resourceId }), nodeId: result.unlocked[0]!, tab: 'guide' }) }}>{t('result.next')}</button>
+          {nextId !== undefined && (
+            <button type="button" className={nextPrimary ? css.primary : css.secondary} onClick={() => { actions.replace({ view: 'node', projectId, ...(resourceId === undefined ? {} : { resourceId }), nodeId: nextId, tab: 'guide' }) }}>{t('result.next')}</button>
+          )}
+          {assessmentId !== undefined && missedPrompts.length > 0 && (
+            <button type="button" className={retakePrimary ? css.primary : css.secondary} onClick={retake}>{t('result.retake', { count: String(missedPrompts.length) })}</button>
+          )}
+          {assessmentId !== undefined && (
+            <button type="button" className={againPrimary ? css.primary : css.secondary} onClick={again}>{t('result.again')}</button>
           )}
           {resourceId !== undefined && (
-            <button type="button" className={css.secondary} onClick={() => { actions.replace({ view: 'resource', projectId, resourceId }) }}>{t('result.toPath')}</button>
+            <button type="button" className={css.ghost} onClick={() => { actions.replace({ view: 'resource', projectId, resourceId }) }}>{t('result.toPath')}</button>
           )}
           {resourceId === undefined && (
-            <button type="button" className={css.secondary} onClick={() => { actions.replace({ view: 'project', projectId }) }}>{t('result.toPath')}</button>
+            <button type="button" className={css.ghost} onClick={() => { actions.replace({ view: 'project', projectId }) }}>{t('result.toPath')}</button>
           )}
         </div>
       </div>

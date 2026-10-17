@@ -218,6 +218,12 @@
   gap: 8px;
 }
 
+/* A section's own gap is 2px (title-to-content tightness) — an action row
+   trailing content needs a real breath, or the button hugs the row above. */
+.section .actions {
+  margin-top: 6px;
+}
+
 .row {
   display: flex;
   align-items: center;
@@ -1502,6 +1508,14 @@ textarea.input { resize: vertical; font: inherit; line-height: 1.5; }
 .quizLatestText strong {
   font-size: var(--dsh-panel-text-title, 14px);
   font-weight: 600;
+}
+
+/* The paper card's foot: the demoted actions (a fresh set, a redo) as text links on their own row. */
+.quizLatestFoot {
+  display: flex;
+  flex-basis: 100%;
+  flex-wrap: wrap;
+  gap: 4px 16px;
 }
 
 .progress {
