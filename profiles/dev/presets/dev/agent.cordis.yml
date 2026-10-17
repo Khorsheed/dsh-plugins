@@ -20,11 +20,13 @@
 # ── identity ────────────────────────────────────────────────────────────────
 
 # The preset's own persona, shadowing the deployment default for this agent.
-# `{{model}}` and `{{cwd}}` resolve from the agent's own route and workspace.
+# `{{model}}` resolves from the agent's own route. Host 0.2.1 removed the
+# `{{cwd}}` prompt variable (a template retaining it fails before the model
+# request) — the working-directory service supplies the directory as required
+# user context instead, so no suffix clause is needed here.
 - id: persona
   name: '@deepseek-ai/dsh-persona'
   config:
-    suffix: Your working directory is {{cwd}}.
     prefix: >-
       You are a coding agent powered by the {{model}} model.
 
@@ -184,18 +186,16 @@
         provider: spawn
         toolName: subagent
         modelSelectionSettings: true
-        backgroundMode: continuable
 
     # Fork omits model selection so provider/model stay equal to the parent and
-    # the inherited history remains eligible for KV Cache reuse. This preset
-    # keeps fork continuable; parent and child inherit the same messaging tool,
-    # while the parent id and return guidance follow the inherited history.
+    # the inherited history remains eligible for KV Cache reuse. Parent and
+    # child inherit the same messaging tool, while the parent id and return
+    # guidance follow the inherited history.
     - id: tool-subagent-fork
       name: '@deepseek-ai/dsh-tool-subagent'
       config:
         provider: fork
         toolName: subagent_fork
-        backgroundMode: continuable
 
     # Production dsh does not install these optional providers. Install the
     # matching Bundle in this Profile and restart the Host, then copy this
@@ -207,7 +207,6 @@
       config:
         provider: codex
         toolName: subagent_codex
-        backgroundMode: one-shot
         maxDepth: provider-managed
 
     - id: tool-subagent-claude-code
@@ -216,7 +215,6 @@
       config:
         provider: claude-code
         toolName: subagent_claude_code
-        backgroundMode: one-shot
         maxDepth: provider-managed
 
     - id: workflow-ptc
