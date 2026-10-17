@@ -67,7 +67,7 @@ dsh --profile headless-local-agent-dsh --model deepseek-official/deepseek-v4-pro
 ## 已知限制
 
 - **绝不要把这个 bundle 加进交互式 profile 的 `bundles`**——它的子 profile 专属 patch 行（persona 覆盖、`hmr` 禁用、`tools` mode、`ptc-runtime` insert、member-bridge MCP）会撞交互式组合，并把覆盖泄漏进真实用户会话。本包**不声明 `dsh.bundle`**（manifest 里标的是 `dsh.composition.component: "sub-profile-patch"`），手工加的 bundles 行在 boot 的 `loadProfile` 处直接 fail loud，这正是一道闸。
-- **`dsh plugin add` 它本身不挂载任何东西，也无需如此**——本包曾声明 `dsh.bundle`，而 reconcilePlugins 会把声明该字段的直接依赖自动挂进组合的 layer 栈：2026-08-23 P0（prod web profile 撞 duplicate `code-runtime`）与 2026-09-03 G3 复发都是这一挂。声明已撤（T6），装成直接依赖只会得到一条 "plain dependency" 警告、不挂载——经 `@khorsheed/dsh-local-agent-dsh` **传递**安装即可，父级 provider 会自动 provision。包内不变量（`/invariant` 子路径）对挂进 web 组合（检出 `webStartup` 服务）依旧 fail loud。
+- **`dsh plugin add` 它本身不挂载任何东西，也无需如此**——本包曾声明 `dsh.bundle`，而 reconcilePlugins 会把声明该字段的直接依赖自动挂进组合的 layer 栈：2026-08-23 P0（prod web profile 撞 duplicate `code-runtime`）与 2026-09-03 G3 复发都是这一挂。声明已撤（T6），装成直接依赖只会得到一条 "plain dependency" 警告、不挂载——经 `@khorsheed/dsh-local-agent-dsh` **传递**安装即可，父级 provider 会自动 provision。
 - 此 composition 里不装任何其他 `local-agent` 家族 bundle——这里没有任何东西再 spawn 一个 dsh。
 - patch 改动落地前必须做启动级验证（`dsh preflight` 或真实拉起一次子 dsh）：`!!js` 标签只支持标量，误标集合会在 profile 启动时直接失败。
 
@@ -101,11 +101,9 @@ startup provider 解析 task 位置参数与互斥的 `--session-id` / `--resume
 
 **wire 契约（`src/wire.ts`）。** 家族内部的行分隔 JSON-RPC 2.0 over stdio，帧格式与官方 `JsonRpcLineTransport`（`@deepseek-ai/dsh-sdk-protocol`）完全一致，将来换成官方 SDK server 只是机械替换——官方 server 今天用不了：它的 wire 没有轮次级中断（只有 `initialize` / `session/prompt` / `shutdown`），而优雅中断正是 live driver 存在的理由（上游 seam 登记：SDK-wire-interrupt 条目）。所有请求都是快速应答（`turn/start` 应答即「已受理」），轮次的事件与结局全部以通知回流，长轮永远不占着一条请求。`turn/start` 带上父侧的轮次号，并在本轮每个 `session/event` / `session/idle` 通知上回显，父侧借此丢弃被取消轮次的迟到收尾，不让它误 settle 下一轮；`session/idle` 在会话日志落盘**之后**才发出，父侧随即做的文件对账看到的就是完整一轮。握手（`initialize`）回报 server 名与协议版本（当前 1）；`session/prepare` 让父侧在起轮之前校验常驻进程绑定的模型与推理强度——不建会话、不生成。一个常驻进程服务一个成员。
 
-**组合守卫。** `/invariant` 子路径注册一条组合不变量：检出 `webStartup` 服务（web 组合的标记）即 fail loud。loader 的 duplicate-id 失败虽响但难读，且只在 id 相撞时才触发——若上游改了 row id，persona 覆盖就会静音泄漏进真实用户会话；不变量是不相撞情形的那个清晰失败。
-
 **preset roster（可选）。** 如果子 profile 的 patch 多带一层 `@deepseek-ai/dsh-agent-presets`（父级 provider 在这个 scope 声明了 preset 时写进去的），agent loader 会在 `setup` 里 join 它——在 agent 发布之前，因此 preset 的工具与提示词片段在第一次组装提示词之前就在位。没有这一层就什么也不做，模型可见的行留在宿主面、agent 从全局层读，与本行为出现之前逐字节相同。roster **拒绝**（preset id 不存在、composition 坏了）不会被降级绕过：mount 抛错，agent 创建回滚，启动带着 preset 名失败——一个被要求跑 preset X 却悄悄跑了全局层的子 dsh，会把这一轮归到它从没有过的能力面上。
 
-**导出。** `.` 导出 runner 插件本体（`apply` / `inject` / `Config`）；`/startup` 导出命令行 provider（`localAgentDshHeadlessStartup` 服务的来源）；`/wire` 导出 wire 契约类型与协议常量；`/invariant` 导出组合守卫 companion。
+**导出。** `.` 导出 runner 插件本体（`apply` / `inject` / `Config`）；`/startup` 导出命令行 provider（`localAgentDshHeadlessStartup` 服务的来源）；`/wire` 导出 wire 契约类型与协议常量。
 
 </details>
 
