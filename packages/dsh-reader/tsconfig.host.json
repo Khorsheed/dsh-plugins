@@ -9,7 +9,6 @@
     "src/arxiv.ts",
     "src/image-fetch.ts",
     "src/index.ts",
-    "src/invariant.ts",
     "src/link-resolvers.ts",
     "src/remote.ts",
     "src/service.ts",
