@@ -4,6 +4,9 @@
   "description": "Removable mobile presentation and iOS bridge for DeepSeek Harness.",
   "type": "module",
   "license": "MIT",
+  "engines": {
+    "dsh": ">=0.1.5-rc.1 <0.3.0-0"
+  },
   "keywords": [
     "dsh-plugin",
     "mobile",
@@ -27,10 +30,6 @@
     "./client": {
       "types": "./lib/types/client/index.d.ts",
       "default": "./lib/client.js"
-    },
-    "./invariant": {
-      "types": "./lib/types/invariant.d.ts",
-      "default": "./lib/invariant.js"
     },
     "./package.json": "./package.json",
     "./locale/*.json": "./locale/*.json"
@@ -74,7 +73,6 @@
     "@deepseek-ai/dsh-client-ui-slots": "^0.1.0-rc.6 || ^0.2.0-rc.1",
     "@deepseek-ai/dsh-client-ui-renderer": "^0.1.0-rc.6 || ^0.2.0-rc.1",
     "@deepseek-ai/dsh-client-ui-conversation": "^0.1.0-rc.6 || ^0.2.0-rc.1",
-    "@deepseek-ai/dsh-invariants": "^0.1.0-rc.6 || ^0.2.0-rc.1",
     "react": "^18.2.0",
     "@deepseek-ai/dsh-client-ui-workspace": "^0.1.0-rc.6 || ^0.2.0-rc.1",
     "@deepseek-ai/dsh-api-session-controller": "^0.1.0-rc.6 || ^0.2.0-rc.1",
@@ -97,9 +95,6 @@
       "optional": true
     },
     "@deepseek-ai/dsh-client-ui-conversation": {
-      "optional": true
-    },
-    "@deepseek-ai/dsh-invariants": {
       "optional": true
     },
     "@deepseek-ai/dsh-client-ui-workspace": {
