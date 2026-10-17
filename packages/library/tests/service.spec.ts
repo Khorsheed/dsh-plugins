@@ -213,8 +213,11 @@ describe('resources', () => {
   it('lists oldest first, ledgers the add, and removes only what exists', async () => {
     const { projectId, bookId } = await seed()
     const first = await service.putResource({ projectId, title: 'MuJoCo', url: 'https://mujoco.org', kind: 'tool', addedBy: 'coach' })
-    // The sort key is createdAt at millisecond precision — give the second write its own tick.
-    await new Promise(resolve => setTimeout(resolve, 5))
+    if (!first.ok) throw new Error(first.message)
+    // The sort key is createdAt at millisecond precision — wait out the first
+    // write's tick instead of a blind sleep (a 5ms sleep still ties under load).
+    const stamp = Date.parse(first.resource.createdAt)
+    while (Date.now() <= stamp) await new Promise(resolve => setTimeout(resolve, 1))
     const second = await service.putResource({ projectId, title: 'LeRobot', url: 'https://github.com/huggingface/lerobot', kind: 'repo', addedBy: 'coach' })
     if (!first.ok || !second.ok) throw new Error('add')
     expect((await service.listResources({ projectId })).resources.map(resource => resource.title)).toEqual(['Principles of Neural Science', 'MuJoCo', 'LeRobot'])
