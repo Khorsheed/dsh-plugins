@@ -64,9 +64,9 @@ dsh plugin --profile web remove @khorsheed/dsh-local-files
 
 **A reused preview layer.** The detail pane is `@khorsheed/dsh-client-ui-content-preview`'s shared content pane (workspace source bundled into the client build, not a runtime dependency): Markdown / JSON tree / CSV table / code views each in place; HTML renders statically by default (scripts never execute), a scripted document gets a hint, and scripts run inside the sandbox only after confirmation.
 
-**Identity triangle.** The cordis row id `local-files`, `clientBundle('@khorsheed/dsh-local-files')`, and `src/invariant.ts`'s `PACKAGE_NAME` move together.
+**Identity triangle.** The cordis row id `local-files`, the package.json name, and `clientBundle('@khorsheed/dsh-local-files')` move together.
 
-**Exports.** `/` exports the host half (the `LocalFilesService` core and `LocalFilesRemoteService`); `/client` exports the plugin body (`apply`/`inject`) plus `WorkspaceView` and `LOCAL_FILES_KIND`/`LOCAL_FILES_TAB_ID`; `/types` carries the wire payload types; `/invariant` ships the deployment self-check.
+**Exports.** `/` exports the host half (the `LocalFilesService` core and `LocalFilesRemoteService`); `/client` exports the plugin body (`apply`/`inject`) plus `WorkspaceView` and `LOCAL_FILES_KIND`/`LOCAL_FILES_TAB_ID`; `/types` carries the wire payload types.
 
 </details>
 

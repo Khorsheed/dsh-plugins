@@ -12,7 +12,6 @@
     "src/export.ts",
     "src/gate.ts",
     "src/index.ts",
-    "src/invariant.ts",
     "src/projection.ts",
     "src/remote.ts",
     "src/schema.ts",

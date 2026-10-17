@@ -202,8 +202,8 @@ const DSH_TOOL_NAME = 'subagent_dsh'
 /**
  * This package's own name, passed to the family tool factory as the
  * tool-origin owner (AGENTS.md § Tool origin tagging — a shared factory never
- * hardcodes an owner). Duplicated from src/invariant.ts, the same pattern the
- * worktrees/room `./tool` entries use.
+ * hardcodes an owner), the same pattern the worktrees/room `./tool` entries
+ * use.
  */
 const PACKAGE_NAME = '@khorsheed/dsh-local-agent-dsh'
 

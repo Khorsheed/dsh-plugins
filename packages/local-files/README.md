@@ -64,9 +64,9 @@ dsh plugin --profile web remove @khorsheed/dsh-local-files
 
 **预览层复用。** 详情区是 `@khorsheed/dsh-client-ui-content-preview` 的共享内容面板（workspace 源码在构建期打进 client bundle，非运行时依赖）：Markdown / JSON 树 / CSV 表 / 代码视图各就各位；HTML 默认静态渲染（脚本不执行），含脚本文档给出提示，确认后才在沙箱内运行。
 
-**身份三角。** cordis 行 id `local-files`、`clientBundle('@khorsheed/dsh-local-files')`、`src/invariant.ts` 的 `PACKAGE_NAME` 三处同名。
+**身份三角。** cordis 行 id `local-files`、package.json 的 name、`clientBundle('@khorsheed/dsh-local-files')` 三处同名。
 
-**导出。** `/` 导出 host 半（`LocalFilesService` 核心与 `LocalFilesRemoteService`）；`/client` 导出插件本体（`apply`/`inject`）与 `WorkspaceView`、`LOCAL_FILES_KIND`/`LOCAL_FILES_TAB_ID`；`/types` 提供线上载荷类型；`/invariant` 提供部署自检件。
+**导出。** `/` 导出 host 半（`LocalFilesService` 核心与 `LocalFilesRemoteService`）；`/client` 导出插件本体（`apply`/`inject`）与 `WorkspaceView`、`LOCAL_FILES_KIND`/`LOCAL_FILES_TAB_ID`；`/types` 提供线上载荷类型。
 
 </details>
 

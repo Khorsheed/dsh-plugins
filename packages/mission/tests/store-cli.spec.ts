@@ -6,7 +6,6 @@ import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { runCli, type CliIo } from '../src/cli-core.ts'
-import { install } from '../src/invariant.ts'
 import { resolveCliDataDir, resolveDataDir } from '../src/defaults.ts'
 import { MissionService } from '../src/service.ts'
 
@@ -264,45 +263,5 @@ describe('one store, many writers', () => {
     ])
     const { mission } = a.get('m')
     expect(mission.annotations.map(an => (an.payload as { i: number }).i).sort()).toEqual([0, 1, 2, 3, 4, 5])
-  })
-})
-
-describe('invariant companion', () => {
-  function withHome(home: string, fn: () => void): void {
-    const previous = process.env.DSH_HOME
-    process.env.DSH_HOME = home
-    try {
-      fn()
-    } finally {
-      if (previous === undefined) delete process.env.DSH_HOME
-      else process.env.DSH_HOME = previous
-    }
-  }
-
-  it('passes on healthy run files, fails loud on malformed ones', async () => {
-    const home = mkdtempSync(join(tmpdir(), 'mission-home-'))
-    try {
-      withHome(home, () => {
-        const failures: string[] = []
-        install({} as never, (message: string) => { failures.push(message) })
-        expect(failures).toEqual([]) // no data root at all → nothing to check
-      })
-      const service = new MissionService(join(home, 'state', 'mission'))
-      await service.create({ id: 'm' })
-      withHome(home, () => {
-        const failures: string[] = []
-        install({} as never, (message: string) => { failures.push(message) })
-        expect(failures).toEqual([])
-      })
-      writeFileSync(join(home, 'state', 'mission', 'runs', 'broken.json'), 'not json')
-      withHome(home, () => {
-        const failures: string[] = []
-        install({} as never, (message: string) => { failures.push(message) })
-        expect(failures).toHaveLength(1)
-        expect(failures[0]).toMatch(/malformed/)
-      })
-    } finally {
-      rmSync(home, { recursive: true, force: true })
-    }
   })
 })

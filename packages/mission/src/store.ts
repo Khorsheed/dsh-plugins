@@ -173,7 +173,7 @@ export class MissionStore {
 
   /**
    * Read one run. Absent → null; malformed → loud error (never silently
-   * treated as absent — the invariant companion reports the same corruption).
+   * treated as absent).
    */
   readRun(runId: string): RunRecord | null {
     const file = this.runFile(runId)

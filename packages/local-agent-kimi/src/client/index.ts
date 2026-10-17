@@ -57,7 +57,7 @@ export type { LocalAgentKimiKey }
 /**
  * This bundle's package name — the key the Plugins page dispatches
  * `plugins.bundle.config` entries on (identity triangle: cordis.patch.yml,
- * tsdown.config.ts, invariant.ts).
+ * tsdown.config.ts, package.json).
  */
 const PACKAGE_NAME = '@khorsheed/dsh-local-agent-kimi'
 
