@@ -63,7 +63,6 @@ Pure browser-side behavior over the session list, plus a tiny config-serving hos
 
 ```
 src/index.ts            host half: Config + GET /whalesong/config route (mount anchor)
-src/invariant.ts        package invariant companion
 src/client/index.ts     cordis client plugin: inject ['sessions'], ctx.effect owns lifecycle
 src/client/config.ts    config sync: fetch + 3 s poll
 src/client/controller.ts  runtime controller: idempotent enabled/disabled state machine + 2.5 s reconcile poll
