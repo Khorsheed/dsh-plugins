@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/simplification/2026-10-17-host-021-invariant-sweep.md
+.agents/notes/implemented/simplification/2026-10-17-host-021-invariant-sweep.md: 7381ea0849cfe33a9e987755e45f46ec1c75a886
+.agents/notes/implemented/simplification/2026-10-17-host-021-invariant-sweep.zh.md: d62c61855d89a9e663ce021ed470527f0f7afaf5
