@@ -15,7 +15,9 @@ import { Context } from '@deepseek-ai/cordis'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import SessionStore, { KNOWN_SESSION_EVENT_TYPES, SESSION_FORMAT_VERSION, SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
-import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
+// Host 0.2.1: the package dropped its default export; the namespace object
+// (name + Config + apply) is the plugin shape cordis mounts.
+import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import RoomService, { ROOM_EVENT_TYPES } from '../src/index.ts'
 import { ROOM_KIND, ROOM_PLUGIN, roomSource } from '../src/dispatch.ts'
 import { replay } from '../src/journal.ts'
