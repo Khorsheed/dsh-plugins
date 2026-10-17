@@ -85,6 +85,7 @@ import {
   type LibraryResourceProgress,
   type LibraryNodeCover,
   type LibraryNodeNotes,
+  type LibraryPoint,
   type LibraryReviewRating,
   type LibraryRoadmap,
   type LibraryTemplate,
@@ -618,6 +619,8 @@ export class LibraryService {
       covers?: readonly LibraryNodeCover[]
       dependsOn?: readonly string[]
       acceptance?: readonly LibraryAcceptanceInput[]
+      /** Quiz-gated stations only: the knowledge points this station tests (3-6) — stable slug ids, reviewed on the draft card. */
+      points?: readonly LibraryPoint[]
     }[]
     passRatio?: number
     note?: string
@@ -638,6 +641,17 @@ export class LibraryService {
     if (request.passRatio !== undefined && !(request.passRatio > 0 && request.passRatio <= 1)) {
       return refuse('invalid', 'passRatio is a fraction in (0, 1] — 0.8 means 8 of 10 right')
     }
+    for (const node of request.nodes) {
+      if (node.points === undefined || node.points.length === 0) continue
+      if (node.gate !== 'quiz') return refuse('invalid', `${node.title} is a ${node.gate} node — points (考点) belong to quiz-gated stations only`)
+      const seen = new Set<string>()
+      for (const point of node.points) {
+        if (!isLibraryId(point.id)) return refuse('invalid', `point id ${JSON.stringify(point.id)} on ${node.title} is not a safe slug (letters, digits, . _ -) — it is the mastery key, stable across quizzes`)
+        if (typeof point.title !== 'string' || point.title.trim() === '') return refuse('invalid', `point ${point.id} on ${node.title} needs a title — the point as the learner reads it (「极限的定义」)`)
+        if (seen.has(point.id)) return refuse('invalid', `duplicate point id ${point.id} on ${node.title} — reference the existing one`)
+        seen.add(point.id)
+      }
+    }
     const nodes: RoadmapNode[] = request.nodes.map(node => ({
       id: node.id,
       title: node.title,
@@ -647,6 +661,7 @@ export class LibraryService {
       covers: node.covers ?? [],
       dependsOn: node.dependsOn ?? [],
       state: 'locked',
+      ...(node.points === undefined || node.points.length === 0 ? {} : { points: node.points.map(point => ({ id: point.id, title: point.title.trim() })) }),
       ...(Array.isArray(node.acceptance) ? {
         acceptance: node.acceptance.flatMap((entry): LibraryAcceptanceInput[] => {
           if (typeof entry === 'string') return entry.trim() === '' ? [] : [entry]
@@ -1265,7 +1280,13 @@ export class LibraryService {
    */
   async putQuiz(request: {
     projectId: string
-    quiz: { scope: { resourceId?: string; nodeId?: string }; focus?: LibraryQuizFocus; questions: readonly LibraryQuizQuestion[] }
+    quiz: {
+      scope: { resourceId?: string; nodeId?: string }
+      focus?: LibraryQuizFocus
+      questions: readonly LibraryQuizQuestion[]
+      /** Append knowledge points to the gated station (a genuine gap in the split) — ids must be new; an existing id is referenced, never re-added. */
+      addPoints?: readonly LibraryPoint[]
+    }
   }): Promise<LibraryOutcome<{ quiz: LibraryAssessment; warnings: string[] }>> {
     this.assertAlive('putQuiz')
     const project = this.readProjectOrRefusal(request.projectId)
@@ -1301,6 +1322,23 @@ export class LibraryService {
       if (gatedNode.gate === 'acceptance') return refuse('invalid', `${gatedNode.title} is an acceptance station — it completes by acceptance (library_assess with node), not by a quiz; to gate it ON a quiz, compose the quiz without a node (resource-level or free), then reference it from the station's acceptance: { line: "…", ref: "<quiz id>" } — the line auto-passes when the quiz passes`)
       if (gatedNode.state === 'locked') lockedNote = `${gatedNode.title} is still locked — the learner can take this quiz, but passing it completes the node only once the nodes before it are done`
     }
+    // Points: the gated station's split (drafted with the roadmap, reviewed at
+    // adoption), plus any addPoints this quiz establishes. Every question names
+    // the point it probes once the station has any; mastery aggregates by id.
+    const pointAdds: LibraryPoint[] = []
+    if (request.quiz.addPoints !== undefined && request.quiz.addPoints.length > 0) {
+      if (gatedNode === undefined) return refuse('invalid', 'addPoints belongs to a station quiz (scope.node) — a resource-level or free quiz has no points to extend')
+      const seen = new Set((gatedNode.points ?? []).map(point => point.id))
+      for (const point of request.quiz.addPoints) {
+        if (!isLibraryId(point.id)) return refuse('invalid', `point id ${JSON.stringify(point.id)} is not a safe slug (letters, digits, . _ -)`)
+        if (typeof point.title !== 'string' || point.title.trim() === '') return refuse('invalid', `point ${point.id} needs a title — the point as the learner reads it (「极限的定义」)`)
+        if (seen.has(point.id)) return refuse('invalid', `point ${point.id} already exists on ${gatedNode.title} — reference it (point: ${JSON.stringify(point.id)}), never re-add`)
+        seen.add(point.id)
+        pointAdds.push({ id: point.id, title: point.title.trim() })
+      }
+    }
+    const knownPoints = [...(gatedNode?.points ?? []), ...pointAdds]
+    const knownPointIds = new Set(knownPoints.map(point => point.id))
     const liveCards = new Set(this.store.readCards(project.value.id).filter(live).map(card => card.id))
     // Photo evidence names a page; the pool is the scoped resource's pages, the
     // gated node's covered resources' pages, or (a free quiz) the whole project's.
@@ -1350,9 +1388,14 @@ export class LibraryService {
           }
         }
       }
+      if (question.point !== undefined) {
+        if (gatedNode === undefined) errors.push(`${label} names point ${JSON.stringify(question.point)}, but points belong to a station quiz (scope.node) — a resource-level or free quiz carries none`)
+        else if (!knownPointIds.has(question.point)) errors.push(`${label} probes point ${JSON.stringify(question.point)}, which ${gatedNode.title} does not hold — its points are: ${knownPoints.map(point => `${point.id} (${point.title})`).join(', ') || 'none yet'}; reuse one or add it via addPoints`)
+      } else if (knownPoints.length > 0) {
+        errors.push(`${label} names no point — this station's quizzes tag every question with the point it probes (point: one of ${[...knownPointIds].join(', ')})`)
+      }
       const evidence = question.evidence
-      if (evidence === undefined || !['photo', 'web', 'knowledge'].includes(evidence.kind)) {
-        errors.push(`${label} needs evidence: { kind: photo|web|knowledge, … } — what the answer rests on`)
+      if (evidence === undefined || !['photo', 'web', 'knowledge'].includes(evidence.kind)) {        errors.push(`${label} needs evidence: { kind: photo|web|knowledge, … } — what the answer rests on`)
       } else {
         if (evidence.kind === 'photo') {
           const page = evidence.pageId === undefined ? undefined : pages.get(evidence.pageId)
@@ -1390,6 +1433,10 @@ export class LibraryService {
     if (errors.length > 1) {
       return refuse('evidence-gate', `${errors.length} problems in questions — fix them all, then resend:\n${errors.map(error => `- ${error}`).join('\n')}`)
     }
+    // A full chapter quiz touches every point; a retake legitimately does not — warn, never block.
+    const probed = new Set(request.quiz.questions.map(question => question.point))
+    const uncovered = knownPoints.filter(point => !probed.has(point.id))
+    if (uncovered.length > 0) warnings.push(`never asks about ${uncovered.map(point => point.title).join(', ')} — fine for a retake; a full chapter quiz touches every point at least once`)
     if (nodeId === undefined) {
       warnings.push(resource === undefined
         ? 'stored as a free quiz (no station, no resource): the learner finds it on the project page (自由测验) and it gates nothing — name node (a quiz-gated station) to gate one'
@@ -1415,7 +1462,12 @@ export class LibraryService {
           }
         }
       }
-      this.event(project.value.id, 'quiz.created', { at: quiz.createdAt, id: quiz.id, ...(resource === undefined ? {} : { resourceId: resource.id }), count: request.quiz.questions.length })
+      // addPoints land on the adopted path's node (the draft is long gone).
+      if (pointAdds.length > 0 && gatedNode !== undefined && gatedRoadmap !== undefined) {
+        const nodes = gatedRoadmap.nodes.map(node => node.id === gatedNode.id ? { ...node, points: [...(node.points ?? []), ...pointAdds] } : node)
+        this.store.writeRoadmap(project.value.id, { ...gatedRoadmap, nodes })
+      }
+      this.event(project.value.id, 'quiz.created', { at: quiz.createdAt, id: quiz.id, ...(resource === undefined ? {} : { resourceId: resource.id }), count: request.quiz.questions.length, ...(pointAdds.length === 0 ? {} : { count2: pointAdds.length }) })
       return { ok: true as const, quiz, warnings }
     })
   }

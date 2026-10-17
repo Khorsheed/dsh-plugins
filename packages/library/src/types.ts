@@ -362,6 +362,20 @@ export interface LibraryQuizStats {
 }
 
 /**
+ * One knowledge point a quiz station tests (考点). Points are authored on the
+ * roadmap draft and reviewed at adoption — the learner's consent checkpoint
+ * covers the split. Questions reference a point by id, so a reworded title
+ * never orphans mastery; per-point state aggregates off the newest verdict of
+ * any question probing it.
+ */
+export interface LibraryPoint {
+  /** Stable slug (letters, digits, . _ -) — the mastery key. */
+  readonly id: string
+  /** The point as the learner reads it (「极限的定义」). */
+  readonly title: string
+}
+
+/**
  * The station's 讲义 — the coach's distilled teaching, persisted on the node so
  * the learner re-reads it in the sidebar instead of scrolling the chat. On a
  * 讲授 (topic) station it IS the textbook; on a book station it is marginalia
@@ -391,6 +405,8 @@ export interface RoadmapNode {
   readonly gate: RoadmapNodeGate
   /** Quiz-gated nodes only — a read / acceptance node never carries one. */
   readonly quizStats?: LibraryQuizStats
+  /** Quiz-gated nodes only: the station's knowledge points (3-6), drafted with the roadmap and reviewed at adoption. Quiz questions reference them by id. */
+  readonly points?: readonly LibraryPoint[]
   /** Acceptance nodes only: the rubric lines as authored (the draft's and the display's source of truth; adoption materializes them into the node's practice assessment). */
   readonly acceptance?: readonly LibraryAcceptanceInput[]
   /** The station's 讲义, once the coach has taught it. */
@@ -464,6 +480,8 @@ export interface LibraryQuizQuestion {
   readonly answer: string
   /** Why the answer is right — shown after answering. */
   readonly explanation?: string
+  /** The gated station's point this question probes (a point id) — required once the station carries points; mastery aggregates by it. */
+  readonly point?: string
   readonly target: LibraryQuestionTarget
   readonly evidence: LibraryQuestionEvidence
 }

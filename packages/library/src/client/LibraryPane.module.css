@@ -1518,6 +1518,50 @@ textarea.input { resize: vertical; font: inherit; line-height: 1.5; }
   gap: 4px 16px;
 }
 
+/* 考点: the station's knowledge points — the mastery readout and the pick-to-focus picker in one chip grid. */
+.points {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.point {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: var(--dsh-panel-text-meta, 12px);
+  cursor: pointer;
+}
+
+.point[aria-pressed='true'] {
+  border-color: var(--lib-accent);
+  background: var(--lib-accent-soft);
+}
+
+.pointState {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: var(--dsh-panel-text-meta, 12px);
+}
+
+.point[data-state='strong'] .pointState {
+  color: var(--lib-ok);
+}
+
+.point[data-state='weak'] .pointState {
+  color: var(--lib-bad);
+}
+
+.point:focus-visible {
+  outline: 2px solid var(--lib-accent);
+  outline-offset: 2px;
+}
+
 .progress {
   height: 4px;
   overflow: hidden;
@@ -1777,7 +1821,7 @@ textarea.input { resize: vertical; font: inherit; line-height: 1.5; }
 
 @media (pointer: coarse) {
   .primary, .secondary, .ghost, .danger { min-height: 44px; }
-  .option, .rateButton { min-height: 44px; }
+  .option, .rateButton, .point { min-height: 44px; }
   .input, .answer { font-size: 16px; }
   .textButton { min-height: 40px; }
 }

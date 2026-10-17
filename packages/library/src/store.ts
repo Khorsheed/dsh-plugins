@@ -467,6 +467,15 @@ export function normalizeRoadmap(value: unknown): LibraryRoadmap | undefined {
     const stats = asRecord(node.quizStats)
     const notesRec = asRecord(node.notes)
     const notesText = text(notesRec?.text, 40000)
+    // 考点: quiz-gated nodes only; a malformed entry drops out, the rest survive.
+    const points = gate === 'quiz' && Array.isArray(node.points)
+      ? (node.points as unknown[]).flatMap(entry => {
+        const point = asRecord(entry)
+        const pointId = point !== undefined ? id(point.id) : undefined
+        const pointTitle = text(point?.title, 100)
+        return pointId === undefined || pointTitle === undefined ? [] : [{ id: pointId, title: pointTitle }]
+      })
+      : undefined
     nodes.push({
       id: nodeId,
       title,
@@ -482,6 +491,7 @@ export function normalizeRoadmap(value: unknown): LibraryRoadmap | undefined {
           ...opt('bestRatio', finite(stats.bestRatio)),
         },
       }),
+      ...(points === undefined || points.length === 0 ? {} : { points }),
       ...(gate === 'acceptance' && Array.isArray(node.acceptance) ? { acceptance: acceptanceEntries(node.acceptance) } : {}),
       ...(notesRec === undefined || notesText === undefined ? {} : {
         notes: { text: notesText, updatedAt: stamp(notesRec.updatedAt), revisions: finite(notesRec.revisions) ?? 1 },
@@ -642,6 +652,7 @@ function normalizeQuizQuestions(value: unknown): LibraryQuizQuestion[] | undefin
       ...(() => { const options = normalizeQuizOptions(q.options); return options === undefined ? {} : { options } })(),
       answer: typeof q.answer === 'string' ? q.answer : '',
       ...opt('explanation', text(q.explanation, 2000)),
+      ...opt('point', text(q.point, 60)),
       target: { kind: targetKind, ...(Array.isArray(target.cardIds) ? { cardIds: strings(target.cardIds, 100) } : {}) },
       evidence: {
         kind: evidenceKind,

@@ -251,6 +251,10 @@ const NODES_SCHEMA = {
         } },
       ] } },
       dependsOn: { type: 'array', items: { type: 'string' }, description: 'Earlier station ids this one gates on.' },
+      points: { type: 'array', description: 'gate=quiz only: the station\'s knowledge points (3-6), reviewed by the learner on the draft card. Questions reference them by id (question.point) and mastery aggregates by id — keep ids stable slugs, never reword one.', items: { type: 'object', additionalProperties: true, properties: {
+        id: { type: 'string', required: true, description: 'Stable slug (letters, digits, . _ -).' },
+        title: { type: 'string', required: true, description: 'The point as the learner reads it (「极限的定义」).' },
+      } } },
       acceptance: { type: 'array', description: 'gate=acceptance only: the criteria — judged one verdict per line at assess time (task = the line id L1, L2…, or the line verbatim). A line may be { line, ref: <quiz id> } — machine-checked: it auto-passes when that quiz\'s latest sitting passes; compose the quiz FIRST (library_quiz), then ref it.', items: { oneOf: [
         { type: 'string', description: 'The criterion line, judged by the coach.' },
         { type: 'object', additionalProperties: true, properties: {
@@ -277,6 +281,7 @@ const QUESTIONS_SCHEMA = {
       ] } },
       answer: { type: 'string', required: true, description: 'choice: the correct option, copied verbatim.' },
       explanation: { type: 'string', description: 'Why the answer is right.' },
+      point: { type: 'string', description: 'The gated station\'s point this question probes (an id from the station\'s points — library_read · roadmap lists them). Required once the station carries points; a full chapter quiz touches every point at least once.' },
       target: {
         oneOf: [
           { type: 'object', additionalProperties: true, properties: {
@@ -877,11 +882,15 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
   definitions.push(defineTool({
     name: 'library_quiz',
     description:
-      'Store a composed quiz. node names the quiz-gated station it gates — omit for a resource-level quiz (the resource page\'s 本书测验) or, with resource: null, a free one (the project page\'s 自由测验). focus is the learner\'s choice (mine | book | mixed). A question\'s target defaults to the station\'s topic (flat cardIds imply marked), evidence to domain knowledge (flat pageId / url / quote imply photo / web). After it returns, reply with one line — the learner answers in the sidebar, never in the conversation.',
+      'Store a composed quiz. node names the quiz-gated station it gates — omit for a resource-level quiz (the resource page\'s 本书测验) or, with resource: null, a free one (the project page\'s 自由测验). focus is the learner\'s choice (mine | book | mixed). A question\'s target defaults to the station\'s topic (flat cardIds imply marked), evidence to domain knowledge (flat pageId / url / quote imply photo / web). A station with knowledge points demands point: <id> on every question, and a full chapter quiz touches every point at least once; a genuine gap in the split goes in addPoints. After it returns, reply with one line — the learner answers in the sidebar, never in the conversation.',
     parameters: {
       ...scopeParamsResource,
       node: { type: 'string', description: 'The quiz-gated station the quiz gates — omit for a resource-level quiz, or with resource: null a free one.' },
       focus: { type: 'string', enum: ['mine', 'book', 'mixed'], description: 'The learner\'s choice of source.' },
+      addPoints: { type: 'array', description: 'Append knowledge points to the gated station — only a genuine gap in its split; an existing id is referenced (question.point), never re-added.', items: { type: 'object', additionalProperties: true, properties: {
+        id: { type: 'string', required: true, description: 'New stable slug (letters, digits, . _ -).' },
+        title: { type: 'string', required: true, description: 'The point as the learner reads it.' },
+      } } },
       questions: {
         ...QUESTIONS_SCHEMA,
         required: true,
@@ -916,6 +925,7 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
           ...(args.focus === 'mine' || args.focus === 'book' || args.focus === 'mixed' ? { focus: args.focus } : {}),
           scope: { ...(resourceId === undefined ? {} : { resourceId }), ...(node === undefined ? {} : { nodeId: node }) },
           questions: cleaned as unknown as LibraryQuizQuestion[],
+          ...(Array.isArray(args.addPoints) ? { addPoints: args.addPoints as { id: string; title: string }[] } : {}),
         },
       }))
       await autoBind(exec, { projectId, ...(resourceId === undefined ? {} : { resourceId }) })

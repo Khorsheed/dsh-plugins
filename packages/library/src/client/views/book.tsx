@@ -198,6 +198,9 @@ export function DraftCard({ p, draft, context, tocBy, replaces, busy, onAdopt, o
             <div className={css.extraText}>
               <span>{node.title}</span>
               {node.goals.length > 0 && <span className={css.muted}>{node.goals[0]}</span>}
+              {node.gate === 'quiz' && node.points !== undefined && node.points.length > 0 && (
+                <span className={css.muted}>{t('book.points', { points: node.points.map(point => point.title).join(' / ') })}</span>
+              )}
               {node.gate === 'acceptance' && node.acceptance !== undefined && (
                 <span className={css.muted}>{t('accept.meta', { count: String(node.acceptance.length) })}</span>
               )}
@@ -407,9 +410,13 @@ export function NodeView({ p, projectId, resourceId, nodeId, tab }: ViewProps & 
             node={node}
             passRatio={loaded.data?.passRatio ?? 0.8}
             resources={loaded.data?.resources ?? []}
-            onPrime={(focus, weakTerms) => {
+            onPrime={(focus, context) => {
               const base = resource === undefined ? t(`prime.quiz.station.${focus}`, { node: node.title }) : t(`prime.quiz.${focus}`, { book: resource.title, node: node.title })
-              prime(weakTerms !== undefined && weakTerms.length > 0 ? `${base}${t('prime.quiz.weakSuffix', { terms: weakTerms.join('、') })}` : base)
+              const weak = context?.weak ?? []
+              const points = context?.points ?? []
+              prime(base
+                + (weak.length > 0 ? t('prime.quiz.weakSuffix', { terms: weak.join('、') }) : '')
+                + (points.length > 0 ? t('prime.quiz.pointsSuffix', { points: points.join('、') }) : ''))
             }}
             onRetake={prompts => { prime(t('prime.quiz.retake', { node: node.title, list: prompts.map(prompt => `- ${prompt}`).join('\n') })) }}
             onRetakeAll={prompts => { prime(t('prime.quiz.missedAll', { list: prompts.map(prompt => `- ${prompt}`).join('\n') })) }}
@@ -695,7 +702,7 @@ function MissRow({ p, row, variant, book }: { p: ViewProps['p']; row: MissedRow;
 }
 
 function QuizTab({ p, projectId, resourceId, node, passRatio, resources, onPrime, onRetake, onRetakeAll, onReplace }: {
-  p: ViewProps['p']; projectId: string; resourceId: string | undefined; node: RoadmapNode; passRatio: number; resources: readonly LibraryResource[]; onPrime: (focus: LibraryQuizFocus, weakTerms?: readonly string[]) => void; onRetake: (prompts: string[]) => void; onRetakeAll: (prompts: string[]) => void; onReplace: (prompts: string[]) => void
+  p: ViewProps['p']; projectId: string; resourceId: string | undefined; node: RoadmapNode; passRatio: number; resources: readonly LibraryResource[]; onPrime: (focus: LibraryQuizFocus, context?: { weak?: readonly string[]; points?: readonly string[] }) => void; onRetake: (prompts: string[]) => void; onRetakeAll: (prompts: string[]) => void; onReplace: (prompts: string[]) => void
 }): ReactNode {
   const { t, actions, useStore } = p
   const rev = useStore(s => s.rev)
@@ -703,6 +710,8 @@ function QuizTab({ p, projectId, resourceId, node, passRatio, resources, onPrime
   // the paper card's primary action once this station has misses.
   const [direction, setDirection] = useState<LibraryQuizFocus>('mine')
   const [showOthers, setShowOthers] = useState(false)
+  // The picked points (重点出这些) — empty means the coach picks by weakness.
+  const [picked, setPicked] = useState<readonly string[]>([])
   // After asking, re-read until the coach has stored the new quiz (two minutes at most).
   const [watching, setWatching] = useState<{ since: number; count: number } | undefined>()
   const [tick, setTick] = useState(0)
@@ -758,6 +767,27 @@ function QuizTab({ p, projectId, resourceId, node, passRatio, resources, onPrime
   const voided = collectVoided(allAttempts.data?.attempts ?? [], stations)
   const bookOf = (quiz: LibraryAssessment): string | undefined =>
     quiz.scope.resourceId === undefined ? undefined : resources.find(candidate => candidate.id === quiz.scope.resourceId)?.title
+  // Per-point mastery: the newest verdict (attempts arrive newest first) of any
+  // question probing the point decides — strong, weak, or untested.
+  const points = node.points ?? []
+  const pointStates = new Map<string, 'strong' | 'weak'>()
+  {
+    const quizById = new Map(allQuizzes.map(quiz => [quiz.id, quiz]))
+    for (const attempt of allAttempts.data?.attempts ?? []) {
+      const quiz = quizById.get(attempt.assessmentId ?? '')
+      if (quiz === undefined || quiz.scope.nodeId !== node.id) continue
+      for (const verdict of attempt.verdicts) {
+        if (verdict.void === true) continue
+        const question = quiz.questions?.find(candidate => candidate.id === verdict.task)
+        if (question?.point === undefined || pointStates.has(question.point)) continue
+        pointStates.set(question.point, verdict.pass ? 'strong' : 'weak')
+      }
+    }
+  }
+  const pickedTitles = points.filter(point => picked.includes(point.id)).map(point => point.title)
+  const togglePoint = (pointId: string): void => {
+    setPicked(previous => previous.includes(pointId) ? previous.filter(candidate => candidate !== pointId) : [...previous, pointId])
+  }
   // The paper card's three states: untaken → 开始作答; passed → 再出一套;
   // failed with misses → 重考错题. The focus chips always configure the ask.
   const sitting = latest === undefined ? undefined : latestByQuiz.get(latest.id)
@@ -767,7 +797,7 @@ function QuizTab({ p, projectId, resourceId, node, passRatio, resources, onPrime
     actions.push({ view: 'quiz', projectId, ...(quiz.scope.resourceId === undefined ? (resourceId === undefined ? {} : { resourceId }) : { resourceId: quiz.scope.resourceId }), quizId: quiz.id })
   }
   const ask = (): void => {
-    onPrime(direction, weak.data?.cards.map(card => card.term) ?? [])
+    onPrime(direction, { weak: weak.data?.cards.map(card => card.term) ?? [], points: pickedTitles })
     setWatching({ since: Date.now(), count: quizCount })
   }
   const retake = (): void => {
@@ -775,8 +805,12 @@ function QuizTab({ p, projectId, resourceId, node, passRatio, resources, onPrime
     setWatching({ since: Date.now(), count: quizCount })
   }
   const asking = watching !== undefined
-  const againLabel = asking ? t('node.quizWaiting') : t('node.askQuizAgain')
+  // A picked set of points overrides the default ask (the agreed priority: 选了考点 > 开始作答 > 重考错题 > 再出一套).
+  const askLabel = asking ? t('node.quizWaiting')
+    : pickedTitles.length > 0 ? t('node.askPoints', { count: String(pickedTitles.length) })
+    : t('node.askQuizAgain')
   const retakeLabel = asking ? t('node.quizWaiting') : t('node.retakeCount', { count: String(missed.length) })
+  const primaryIsRetake = taken && !passed && missed.length > 0 && pickedTitles.length === 0
   return (
     <>
       {node.state === 'locked' && <div className={css.notice}>{t('node.locked')}</div>}
@@ -799,14 +833,31 @@ function QuizTab({ p, projectId, resourceId, node, passRatio, resources, onPrime
             <span className={css.muted}>{[t(`focus.${latest.focus ?? 'mixed'}`), sourceMix((latest.questions ?? []).map(question => question.evidence.kind), t), ...(taken ? [when(sitting.at, t)] : [])].join(' · ')}</span>
           </div>
           {!taken && <button type="button" className={css.primary} onClick={() => { openPaper(latest) }}>{t('quiz.startNow')}</button>}
-          {taken && !passed && missed.length > 0 && <button type="button" className={css.primary} disabled={asking} onClick={retake}>{retakeLabel}</button>}
-          {taken && (passed || missed.length === 0) && <button type="button" className={css.primary} disabled={asking} onClick={ask}>{againLabel}</button>}
+          {taken && primaryIsRetake && <button type="button" className={css.primary} disabled={asking} onClick={retake}>{retakeLabel}</button>}
+          {taken && !primaryIsRetake && <button type="button" className={css.primary} disabled={asking} onClick={ask}>{askLabel}</button>}
           <div className={css.quizLatestFoot}>
-            {!taken && <button type="button" className={css.textButton} disabled={asking} onClick={ask}>{againLabel}</button>}
-            {!taken && missed.length > 0 && <button type="button" className={css.textButton} disabled={asking} onClick={retake}>{retakeLabel}</button>}
-            {taken && !passed && missed.length > 0 && <button type="button" className={css.textButton} disabled={asking} onClick={ask}>{againLabel}</button>}
+            {(!taken || primaryIsRetake) && <button type="button" className={css.textButton} disabled={asking} onClick={ask}>{askLabel}</button>}
+            {missed.length > 0 && !primaryIsRetake && <button type="button" className={css.textButton} disabled={asking} onClick={retake}>{retakeLabel}</button>}
             {taken && <button type="button" className={css.textButton} onClick={() => { openPaper(latest) }}>{t('node.redoSame')}</button>}
           </div>
+        </section>
+      )}
+      {points.length > 0 && (
+        <section className={css.section}>
+          <h3 className={css.sectionTitle}>{t('node.pointsTitle')}</h3>
+          <div className={css.points}>
+            {points.map(point => {
+              const state = pointStates.get(point.id) ?? 'untested'
+              const on = picked.includes(point.id)
+              return (
+                <button key={point.id} type="button" className={css.point} data-state={state} aria-pressed={on} onClick={() => { togglePoint(point.id) }}>
+                  <span className={css.pointName}>{point.title}</span>
+                  <span className={css.pointState}>{t(`node.pointState.${state}`)}</span>
+                </button>
+              )
+            })}
+          </div>
+          <div className={css.muted}>{pickedTitles.length === 0 ? t('node.pointsHint') : t('node.pointsPicked', { count: String(pickedTitles.length) })}</div>
         </section>
       )}
       <section className={css.section}>

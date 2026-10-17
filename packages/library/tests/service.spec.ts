@@ -698,6 +698,71 @@ describe('quizzes: the two axes', () => {
   })
 })
 
+describe('quiz points (考点)', () => {
+  /** Draft and adopt a one-node path whose quiz station carries two points. */
+  async function adoptPointed(projectId: string, bookId: string): Promise<void> {
+    const draft = await service.draftRoadmap({
+      projectId,
+      resourceId: bookId,
+      nodes: [{ id: 'n1', title: '离子通道', gate: 'quiz', covers: [{ ref: bookId, locator: '1' }], points: [
+        { id: 'gating', title: '门控机制' },
+        { id: 'selectivity', title: '选择性通透' },
+      ] }],
+    })
+    if (!draft.ok) throw new Error(draft.message)
+    const adopted = await service.adoptRoadmap({ projectId, resourceId: bookId })
+    if (!adopted.ok) throw new Error(adopted.message)
+  }
+
+  it('drafts, adopts and reads back a station\'s points', async () => {
+    const { projectId, bookId } = await seed()
+    await adoptPointed(projectId, bookId)
+    const { roadmap } = await service.getRoadmap({ projectId, resourceId: bookId })
+    expect(roadmap?.nodes[0]?.points?.map(point => point.id)).toEqual(['gating', 'selectivity'])
+  })
+
+  it('refuses points on a read node, and duplicate or unsafe ids', async () => {
+    const { projectId, bookId } = await seed()
+    const readNode = await service.draftRoadmap({ projectId, resourceId: bookId, nodes: [{ id: 'r1', title: '导读', gate: 'read', covers: [{ ref: bookId }], points: [{ id: 'p1', title: 'x' }] }] })
+    expect(!readNode.ok && readNode.message).toMatch(/quiz-gated/)
+    const dup = await service.draftRoadmap({ projectId, resourceId: bookId, nodes: [{ id: 'n1', title: 'x', gate: 'quiz', covers: [{ ref: bookId }], points: [{ id: 'p1', title: 'a' }, { id: 'p1', title: 'b' }] }] })
+    expect(!dup.ok && dup.message).toMatch(/duplicate point id/)
+    const unsafe = await service.draftRoadmap({ projectId, resourceId: bookId, nodes: [{ id: 'n1', title: 'x', gate: 'quiz', covers: [{ ref: bookId }], points: [{ id: 'not a slug!', title: 'a' }] }] })
+    expect(!unsafe.ok && unsafe.message).toMatch(/safe slug/)
+  })
+
+  it('demands a known point per question once the station has any, and warns on uncovered points', async () => {
+    const { projectId, bookId } = await seed()
+    await adoptPointed(projectId, bookId)
+    const missing = await service.putQuiz({ projectId, quiz: { scope: { resourceId: bookId, nodeId: 'n1' }, questions: [question()] } })
+    expect(!missing.ok && missing.message).toMatch(/names no point/)
+    const unknown = await service.putQuiz({ projectId, quiz: { scope: { resourceId: bookId, nodeId: 'n1' }, questions: [question({ point: 'nope' })] } })
+    expect(!unknown.ok && unknown.message).toMatch(/does not hold/)
+    const partial = await service.putQuiz({ projectId, quiz: { scope: { resourceId: bookId, nodeId: 'n1' }, questions: [question({ point: 'gating' })] } })
+    expect(partial.ok && partial.warnings.some(warning => warning.includes('选择性通透'))).toBe(true)
+    expect(partial.ok && partial.quiz.questions?.[0]?.point).toBe('gating')
+  })
+
+  it('addPoints extends the station\'s split, immediately referenceable and never re-addable', async () => {
+    const { projectId, bookId } = await seed()
+    await adoptPointed(projectId, bookId)
+    const stored = await service.putQuiz({ projectId, quiz: { scope: { resourceId: bookId, nodeId: 'n1' }, questions: [question({ point: 'gating' }), question({ id: 'q2', point: 'pharmacology' })], addPoints: [{ id: 'pharmacology', title: '药理学' }] } })
+    expect(stored.ok).toBe(true)
+    const { roadmap } = await service.getRoadmap({ projectId, resourceId: bookId })
+    expect(roadmap?.nodes[0]?.points?.map(point => point.id)).toEqual(['gating', 'selectivity', 'pharmacology'])
+    const full = await service.putQuiz({ projectId, quiz: { scope: { resourceId: bookId, nodeId: 'n1' }, questions: [question({ point: 'gating' }), question({ id: 'q2', point: 'selectivity' }), question({ id: 'q3', point: 'pharmacology' })] } })
+    expect(full.ok && full.warnings.every(warning => !warning.includes('药理学'))).toBe(true)
+    const readd = await service.putQuiz({ projectId, quiz: { scope: { resourceId: bookId, nodeId: 'n1' }, questions: [question({ point: 'gating' })], addPoints: [{ id: 'gating', title: '重复' }] } })
+    expect(!readd.ok && readd.message).toMatch(/already exists/)
+  })
+
+  it('refuses points on a station-less quiz', async () => {
+    const { projectId } = await seed()
+    const free = await service.putQuiz({ projectId, quiz: { scope: {}, questions: [question({ point: 'p1' })], addPoints: [{ id: 'p1', title: 'x' }] } })
+    expect(!free.ok && free.message).toMatch(/station quiz/)
+  })
+})
+
 describe('the assess cascade', () => {
   it('moves target cards, cards a card-less miss, and unlocks at the pass ratio', async () => {
     const { projectId, bookId } = await seed()
