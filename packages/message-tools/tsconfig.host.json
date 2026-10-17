@@ -7,7 +7,6 @@
   },
   "files": [
     "src/index.ts",
-    "src/invariant.ts",
     "src/marker.ts",
     "src/restore-projection.ts",
     "src/types.ts",
