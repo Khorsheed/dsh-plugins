@@ -1013,20 +1013,28 @@ export class LibraryService {
     if (request.cards.length === 0) {
       return refuse('invalid', 'cards needs at least one card — each: { kind: word|concept, term, gloss, context?, source: { type: chat|photo|quiz|manual, note? }, weaken? }')
     }
+    // Per-card problems are collected and reported at once: a batch with
+    // three bad cards earns one refusal listing all three, not three
+    // fail-fast round trips.
+    const errors: string[] = []
     for (const [index, input] of request.cards.entries()) {
-      if (input.kind !== 'word' && input.kind !== 'concept') return refuse('invalid', `cards[${index}].kind is word | concept`)
+      if (input.kind !== 'word' && input.kind !== 'concept') errors.push(`cards[${index}].kind is word | concept`)
       if (input.term.trim() === '' || input.gloss.trim() === '') {
-        return refuse('invalid', `cards[${index}] needs term and gloss — the gloss is the in-context meaning (a word) or a one-line explanation (a concept)`)
+        errors.push(`cards[${index}] needs term and gloss — the gloss is the in-context meaning (a word) or a one-line explanation (a concept)`)
       }
       if (!['photo', 'chat', 'quiz', 'manual'].includes(input.source?.type)) {
-        return refuse('invalid', `cards[${index}].source.type is chat | photo | quiz | manual — chat: the learner asked / got stuck in conversation`)
+        errors.push(`cards[${index}].source.type is chat | photo | quiz | manual — chat: the learner asked / got stuck in conversation`)
       }
     }
     const cards = this.store.readCards(project.value.id)
     for (const [index, input] of request.cards.entries()) {
       if (input.mergeInto !== undefined && !cards.some(card => card.id === input.mergeInto && live(card))) {
-        return refuse('not-found', `cards[${index}].mergeInto names ${JSON.stringify(input.mergeInto)}, which is not a live card — use an id from the pending candidates`)
+        errors.push(`cards[${index}].mergeInto names ${JSON.stringify(input.mergeInto)}, which is not a live card — use an id from the pending candidates`)
       }
+    }
+    if (errors.length === 1) return refuse('invalid', errors[0]!)
+    if (errors.length > 1) {
+      return refuse('invalid', `${errors.length} problems in cards — fix them all, then resend:\n${errors.map(error => `- ${error}`).join('\n')}`)
     }
     if (request.bookId !== undefined && this.store.readBook(project.value.id, request.bookId) === undefined) {
       return refuse('not-found', `no book ${JSON.stringify(request.bookId)} in this project — omit bookId for a project-level card`)
@@ -1240,69 +1248,83 @@ export class LibraryService {
     const pages = new Map(pageBookIds.flatMap(candidate => this.store.readPages(project.value.id, candidate).map(page => [page.id, page] as const)))
     const seenIds = new Set<string>()
     const warnings: string[] = lockedNote === undefined ? [] : [lockedNote]
+    // Every question's problems are collected and reported at once: a quiz
+    // with four bad questions earns ONE refusal listing all four, not four
+    // fail-fast round trips (each retry resends the whole questions payload).
+    const errors: string[] = []
     for (const [index, question] of request.quiz.questions.entries()) {
       const label = `questions[${index}]${question.id === '' ? '' : ` (${question.id})`}`
-      if (question.id === '' || seenIds.has(question.id)) return refuse('evidence-gate', `${label} needs a unique id — q1, q2, … is plenty`)
+      if (question.id === '' || seenIds.has(question.id)) errors.push(`${label} needs a unique id — q1, q2, … is plenty`)
       seenIds.add(question.id)
-      if (!['choice', 'fill', 'free'].includes(question.kind)) return refuse('evidence-gate', `${label}.kind is choice | fill | free`)
+      if (!['choice', 'fill', 'free'].includes(question.kind)) errors.push(`${label}.kind is choice | fill | free`)
       if (question.prompt.trim() === '' || question.answer.trim() === '') {
-        return refuse('evidence-gate', `${label} needs both a prompt and an answer — a question without its answer cannot be graded`)
+        errors.push(`${label} needs both a prompt and an answer — a question without its answer cannot be graded`)
       }
       if (question.kind === 'choice' && (question.options === undefined || question.options.length < 2)) {
-        return refuse('evidence-gate', `${label} is a choice question with fewer than two options`)
-      }
-      if (question.kind === 'choice' && question.options !== undefined && choiceOptionIndex(question.options, question.answer) < 0) {
-        return refuse('evidence-gate', `${label}.answer matches no option — a choice question's answer IS one of its options, copied verbatim (or its letter); write the correct option first, then the distractors around it`)
+        errors.push(`${label} is a choice question with fewer than two options`)
+      } else if (question.kind === 'choice' && question.options !== undefined && choiceOptionIndex(question.options, question.answer) < 0) {
+        errors.push(`${label}.answer matches no option — a choice question's answer IS one of its options, copied verbatim (or its letter); write the correct option first, then the distractors around it`)
       }
       const target = question.target
-      if (target === undefined || !['marked', 'asked', 'missed', 'topic'].includes(target.kind)) {
-        return refuse('evidence-gate', `${label} needs target: { kind: marked|asked|missed|topic, cardIds? } — what the question aims at: the learner's marked cards, the points they asked about, the ones they missed before, or the chapter's topic`)
-      }
-      const focus = request.quiz.focus
-      if (focus === 'mine' && target.kind === 'topic') {
-        return refuse('evidence-gate', `${label} tests the chapter's topic, but the learner asked for their OWN points only (focus: mine) — every question must target their cards (marked / asked / missed, with cardIds from library_read · cards). If this node has too few cards, write fewer questions and tell the learner; never pad with book content`)
-      }
-      if (focus === 'book' && target.kind !== 'topic') {
-        return refuse('evidence-gate', `${label} targets the learner's cards, but they asked for the book's content only (focus: book) — target: { kind: "topic" } for every question`)
-      }
-      if (target.kind !== 'topic') {
-        if (target.cardIds === undefined || target.cardIds.length === 0) {
-          return refuse('evidence-gate', `${label} targets ${target.kind} cards but names none — target.cardIds lists the cards it probes (library_read · cards finds them)`)
+      const targetOk = target !== undefined && ['marked', 'asked', 'missed', 'topic'].includes(target.kind)
+      if (!targetOk) {
+        errors.push(`${label} needs target: { kind: marked|asked|missed|topic, cardIds? } — what the question aims at: the learner's marked cards, the points they asked about, the ones they missed before, or the chapter's topic`)
+      } else {
+        const focus = request.quiz.focus
+        if (focus === 'mine' && target.kind === 'topic') {
+          errors.push(`${label} tests the chapter's topic, but the learner asked for their OWN points only (focus: mine) — every question must target their cards (marked / asked / missed, with cardIds from library_read · cards). If this node has too few cards, write fewer questions and tell the learner; never pad with book content`)
         }
-        const unknown = target.cardIds.filter(cardId => !liveCards.has(cardId))
-        if (unknown.length > 0) return refuse('evidence-gate', `${label} names cards that do not exist: ${unknown.join(', ')} — use ids from library_read · cards`)
+        if (focus === 'book' && target.kind !== 'topic') {
+          errors.push(`${label} targets the learner's cards, but they asked for the book's content only (focus: book) — target: { kind: "topic" } for every question`)
+        }
+        if (target.kind !== 'topic') {
+          if (target.cardIds === undefined || target.cardIds.length === 0) {
+            errors.push(`${label} targets ${target.kind} cards but names none — target.cardIds lists the cards it probes (library_read · cards finds them)`)
+          } else {
+            const unknown = target.cardIds.filter(cardId => !liveCards.has(cardId))
+            if (unknown.length > 0) errors.push(`${label} names cards that do not exist: ${unknown.join(', ')} — use ids from library_read · cards`)
+          }
+        }
       }
       const evidence = question.evidence
       if (evidence === undefined || !['photo', 'web', 'knowledge'].includes(evidence.kind)) {
-        return refuse('evidence-gate', `${label} needs evidence: { kind: photo|web|knowledge, … } — what the answer rests on`)
-      }
-      if (evidence.kind === 'photo') {
-        const page = evidence.pageId === undefined ? undefined : pages.get(evidence.pageId)
-        if (page === undefined) return refuse('evidence-gate', `${label} rests on a photo but names no page of this book — evidence.pageId comes from library_read · pages`)
-        const quote = normalizeFragment(evidence.quote ?? '')
-        if (quote.length < 4) return refuse('evidence-gate', `${label} rests on a photo — quote the printed passage (evidence.quote) the answer comes from`)
-        if (!normalizeFragment(page.text).includes(quote)) warnings.push(`${label}: its quote is not verbatim in page ${page.label ?? page.id}'s text — stored; re-read the page and fix the quote`)
-      }
-      if (evidence.kind === 'web') {
-        if (evidence.url === undefined || !/^https?:\/\//.test(evidence.url)) return refuse('evidence-gate', `${label} rests on the web — evidence.url is the page the quote is from`)
-        if (normalizeFragment(evidence.quote ?? '').length < 8) return refuse('evidence-gate', `${label} rests on the web — quote the passage (a sentence or two) so the learner can check it`)
-      }
-      if (evidence.kind === 'knowledge' && target.kind === 'topic') {
-        // The gate sits on the node's covers now: a station drawing only on
-        // knowledge books / plain teaching may be content-quizzed from memory;
-        // a material book, a resource or a url among the covers demands a
-        // verbatim quote. No node in scope = the book-level rule, unchanged.
-        if (gatedNode === undefined) {
-          if (book?.bookKind === 'material') {
-            return refuse('evidence-gate', `${label} asks about 《${book.title}》's content from memory — it is a material book (specific text you cannot recall reliably). Quote a photographed page (evidence.kind photo) or a web copy (web, with url), or drill the learner's cards instead`)
+        errors.push(`${label} needs evidence: { kind: photo|web|knowledge, … } — what the answer rests on`)
+      } else {
+        if (evidence.kind === 'photo') {
+          const page = evidence.pageId === undefined ? undefined : pages.get(evidence.pageId)
+          if (page === undefined) {
+            errors.push(`${label} rests on a photo but names no page of this book — evidence.pageId comes from library_read · pages`)
+          } else {
+            const quote = normalizeFragment(evidence.quote ?? '')
+            if (quote.length < 4) errors.push(`${label} rests on a photo — quote the printed passage (evidence.quote) the answer comes from`)
+            else if (!normalizeFragment(page.text).includes(quote)) warnings.push(`${label}: its quote is not verbatim in page ${page.label ?? page.id}'s text — stored; re-read the page and fix the quote`)
           }
-        } else {
-          const blocker = coversVerbatimBlocker(gatedNode.covers, candidate => this.store.readBook(project.value.id, candidate))
-          if (blocker !== undefined) {
-            return refuse('evidence-gate', `${label} asks the station's content from memory, but ${blocker}. Quote a photographed page (evidence.kind photo) or the page on the web (web, with url), or drill the learner's cards instead`)
+        }
+        if (evidence.kind === 'web') {
+          if (evidence.url === undefined || !/^https?:\/\//.test(evidence.url)) errors.push(`${label} rests on the web — evidence.url is the page the quote is from`)
+          else if (normalizeFragment(evidence.quote ?? '').length < 8) errors.push(`${label} rests on the web — quote the passage (a sentence or two) so the learner can check it`)
+        }
+        if (evidence.kind === 'knowledge' && targetOk && target.kind === 'topic') {
+          // The gate sits on the node's covers now: a station drawing only on
+          // knowledge books / plain teaching may be content-quizzed from memory;
+          // a material book, a resource or a url among the covers demands a
+          // verbatim quote. No node in scope = the book-level rule, unchanged.
+          if (gatedNode === undefined) {
+            if (book?.bookKind === 'material') {
+              errors.push(`${label} asks about 《${book.title}》's content from memory — it is a material book (specific text you cannot recall reliably). Quote a photographed page (evidence.kind photo) or a web copy (web, with url), or drill the learner's cards instead`)
+            }
+          } else {
+            const blocker = coversVerbatimBlocker(gatedNode.covers, candidate => this.store.readBook(project.value.id, candidate))
+            if (blocker !== undefined) {
+              errors.push(`${label} asks the station's content from memory, but ${blocker}. Quote a photographed page (evidence.kind photo) or the page on the web (web, with url), or drill the learner's cards instead`)
+            }
           }
         }
       }
+    }
+    if (errors.length === 1) return refuse('evidence-gate', errors[0]!)
+    if (errors.length > 1) {
+      return refuse('evidence-gate', `${errors.length} problems in questions — fix them all, then resend:\n${errors.map(error => `- ${error}`).join('\n')}`)
     }
     if (nodeId === undefined) {
       warnings.push(book === undefined
@@ -1668,7 +1690,7 @@ export class LibraryService {
       const project = this.readProjectOrRefusal(binding.projectId)
       if ('error' in project) return project
       if (binding.bookId !== undefined && this.store.readBook(binding.projectId, binding.bookId) === undefined) {
-        return refuse('not-found', `no book ${JSON.stringify(binding.bookId)} in project ${JSON.stringify(project.value.name)}`)
+        return refuse('not-found', `no book ${JSON.stringify(binding.bookId)} in project ${JSON.stringify(project.value.name)} — book ids are minted (b_…), never chosen by the caller; library_read · books lists them. Registering the book (library_book) binds this session itself — no separate library_binding call needed`)
       }
     }
     try {
@@ -1870,7 +1892,10 @@ export function unlockReady(nodes: readonly RoadmapNode[]): { nodes: RoadmapNode
 /**
  * Structural validation of a roadmap's nodes; returns the teaching error or
  * undefined. `scope.bookId` marks a book-level draft: the special case whose
- * every node covers that one book only.
+ * every node covers that one book only. Every per-node problem is collected
+ * and reported at once — a draft with five mistakes earns ONE refusal listing
+ * all five, not five fail-fast round trips (each retry resends the whole
+ * nodes payload).
  */
 export function validateRoadmapShape(
   nodes: readonly RoadmapNode[],
@@ -1885,80 +1910,105 @@ export function validateRoadmapShape(
     hasQuiz: (quizId: string) => boolean
   },
 ): string | undefined {
+  const errors: string[] = []
   const seen = new Set<string>()
   for (const [index, node] of nodes.entries()) {
     if (typeof node.id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(node.id) || seen.has(node.id)) {
-      return `nodes[${index}] needs a unique id made of letters, digits, '.', '_', '-' (n1, n2, … is plenty)`
+      errors.push(`nodes[${index}] needs a unique id made of letters, digits, '.', '_', '-' (n1, n2, … is plenty)`)
+    } else {
+      seen.add(node.id)
     }
-    seen.add(node.id)
-    if (typeof node.title !== 'string' || node.title.trim() === '') return `nodes[${index}] (${node.id}) needs a title — what the learner masters here`
-    if (node.kind !== 'quiz' && node.kind !== 'read' && node.kind !== 'practice') {
-      return `nodes[${index}] (${node.id}) needs kind: "quiz" | "read" | "practice" — quiz nodes gate on a quiz; practice nodes gate on acceptance (a hands-on deliverable); read nodes are optional side stops (读完 completes them, they never gate)`
+    if (typeof node.title !== 'string' || node.title.trim() === '') errors.push(`nodes[${index}] (${node.id}) needs a title — what the learner masters here`)
+    const kindKnown = node.kind === 'quiz' || node.kind === 'read' || node.kind === 'practice'
+    if (!kindKnown) {
+      errors.push(`nodes[${index}] (${node.id}) needs kind: "quiz" | "read" | "practice" — quiz nodes gate on a quiz; practice nodes gate on acceptance (a hands-on deliverable); read nodes are optional side stops (读完 completes them, they never gate)`)
+    } else {
+      if (node.kind === 'practice' && (node.acceptance === undefined || node.acceptance.length === 0)) {
+        errors.push(`nodes[${index}] (${node.id}) is a practice station — it needs acceptance: ["...", ...], the lines the coach judges one verdict each at assess time`)
+      }
+      if (node.kind !== 'practice' && node.acceptance !== undefined && node.acceptance.length > 0) {
+        errors.push(`nodes[${index}] (${node.id}) carries acceptance but is not a practice station — if these lines are judged one verdict each at completion, set kind: "practice"; if they are descriptive expectations while a quiz gates the station, move them into goals: [...]`)
+      }
     }
-    if (node.kind === 'practice' && (node.acceptance === undefined || node.acceptance.length === 0)) {
-      return `nodes[${index}] (${node.id}) is a practice station — it needs acceptance: ["...", ...], the lines the coach judges one verdict each at assess time`
-    }
-    if (node.kind !== 'practice' && node.acceptance !== undefined && node.acceptance.length > 0) {
-      return `nodes[${index}] (${node.id}) carries acceptance but is not a practice station — if these lines are judged one verdict each at completion, set kind: "practice"; if they are descriptive expectations while a quiz gates the station, move them into goals: [...]`
-    }
-    for (const [lineIndex, entry] of (node.acceptance ?? []).entries()) {
+    for (const [lineIndex, entry] of (Array.isArray(node.acceptance) ? (node.acceptance as readonly (LibraryAcceptanceInput | null)[]) : []).entries()) {
       if (typeof entry === 'string') continue
-      if (typeof entry.line !== 'string' || entry.line.trim() === '') {
-        return `nodes[${index}] (${node.id}) acceptance line ${lineIndex + 1} needs its line text`
+      if (entry === null || typeof entry !== 'object' || typeof entry.line !== 'string' || entry.line.trim() === '') {
+        errors.push(`nodes[${index}] (${node.id}) acceptance line ${lineIndex + 1} needs its line text`)
+        continue
       }
       if (entry.ref !== undefined && !scope.hasQuiz(entry.ref)) {
-        return `nodes[${index}] (${node.id}) acceptance line ${lineIndex + 1} refs quiz ${JSON.stringify(entry.ref)}, which does not exist — compose it first (library_quiz), then draft`
+        errors.push(`nodes[${index}] (${node.id}) acceptance line ${lineIndex + 1} refs quiz ${JSON.stringify(entry.ref)}, which does not exist — compose it first (library_quiz), then draft`)
       }
     }
     if (!Array.isArray(node.covers) || node.covers.length === 0) {
-      return `nodes[${index}] (${node.id}) needs at least one cover — what the station draws on: { kind: "book", bookId, ranges: [{ from, to }] } | { kind: "resource", resourceId } | { kind: "url", url, title? } | { kind: "topic", text }`
-    }
-    if (scope.bookId !== undefined && (node.covers.length !== 1 || node.covers[0]?.kind !== 'book' || node.covers[0].bookId !== scope.bookId)) {
-      return `nodes[${index}] (${node.id}) draws on more than this one book — a book's own path covers that book only; for a path mixing books / links / teaching, draft the PROJECT's path (omit book)`
-    }
-    for (const cover of node.covers) {
-      if (cover.kind === 'book') {
-        if (typeof cover.bookId !== 'string' || cover.bookId === '') {
-          return `nodes[${index}] (${node.id}) has a book cover with no bookId — { kind: "book", bookId, ranges: [{ from, to }] }; library_read · books lists the ids`
+      errors.push(`nodes[${index}] (${node.id}) needs at least one cover — what the station draws on: { kind: "book", bookId, ranges: [{ from, to }] } | { kind: "resource", resourceId } | { kind: "url", url, title? } | { kind: "topic", text }`)
+    } else {
+      if (scope.bookId !== undefined && (node.covers.length !== 1 || node.covers[0]?.kind !== 'book' || node.covers[0].bookId !== scope.bookId)) {
+        errors.push(`nodes[${index}] (${node.id}) draws on more than this one book — a book's own path covers that book only; for a path mixing books / links / teaching, draft the PROJECT's path (omit book)`)
+      }
+      for (const cover of node.covers as readonly (LibraryNodeCover | null)[]) {
+        if (cover === null || typeof cover !== 'object') {
+          errors.push(`nodes[${index}] (${node.id}) has a cover of an unknown kind — book | resource | url | topic`)
+          continue
         }
-        const covered = scope.book(cover.bookId)
-        if (covered === undefined) return `nodes[${index}] (${node.id}) covers book ${JSON.stringify(cover.bookId)}, which the project does not hold — library_read · books lists them; register it first (library_book)`
-        for (const range of cover.ranges) {
-          if (!Number.isInteger(range.from) || !Number.isInteger(range.to) || range.from < 1 || range.to < range.from) {
-            return `nodes[${index}] (${node.id}) has a bad range [${String(range.from)}, ${String(range.to)}] on 《${covered.title}》 — ranges count table-of-contents rows, 1-based and inclusive: { from: 3, to: 5 }`
+        if (cover.kind === 'book') {
+          if (typeof cover.bookId !== 'string' || cover.bookId === '') {
+            errors.push(`nodes[${index}] (${node.id}) has a book cover with no bookId — { kind: "book", bookId, ranges: [{ from, to }] }; library_read · books lists the ids`)
+            continue
           }
-          if (range.to > covered.toc.length) {
-            return `nodes[${index}] (${node.id}) covers up to row ${range.to}, but 《${covered.title}》's contents has ${covered.toc.length} rows — library_read · toc lists them`
+          const covered = scope.book(cover.bookId)
+          if (covered === undefined) {
+            errors.push(`nodes[${index}] (${node.id}) covers book ${JSON.stringify(cover.bookId)}, which the project does not hold — library_read · books lists them; register it first (library_book)`)
+            continue
           }
+          if (!Array.isArray(cover.ranges)) {
+            errors.push(`nodes[${index}] (${node.id}) has a book cover with no ranges on 《${covered.title}》 — ranges count table-of-contents rows, 1-based and inclusive: [{ from, to }]`)
+            continue
+          }
+          for (const range of cover.ranges) {
+            const from = (range as { from?: unknown } | null)?.from
+            const to = (range as { to?: unknown } | null)?.to
+            if (!Number.isInteger(from) || !Number.isInteger(to) || (from as number) < 1 || (to as number) < (from as number)) {
+              errors.push(`nodes[${index}] (${node.id}) has a bad range [${String(from)}, ${String(to)}] on 《${covered.title}》 — ranges count table-of-contents rows, 1-based and inclusive: { from: 3, to: 5 }`)
+              continue
+            }
+            if ((to as number) > covered.toc.length) {
+              errors.push(`nodes[${index}] (${node.id}) covers up to row ${to}, but 《${covered.title}》's contents has ${covered.toc.length} rows — library_read · toc lists them`)
+            }
+          }
+        } else if (cover.kind === 'resource') {
+          if (typeof cover.resourceId !== 'string' || cover.resourceId === '') {
+            errors.push(`nodes[${index}] (${node.id}) has a resource cover with no resourceId — { kind: "resource", resourceId }; library_read · resources lists the shelf`)
+          } else if (!scope.hasResource(cover.resourceId)) {
+            errors.push(`nodes[${index}] (${node.id}) covers resource ${JSON.stringify(cover.resourceId)}, which is not on the project's shelf — library_read · resources lists them; add it first (library_resource · op add)`)
+          }
+        } else if (cover.kind === 'url') {
+          if (!/^https?:\/\//.test(cover.url)) errors.push(`nodes[${index}] (${node.id}) covers a url that does not start with http:// or https://`)
+        } else if (cover.kind === 'topic') {
+          if (typeof cover.text !== 'string' || cover.text.trim() === '') errors.push(`nodes[${index}] (${node.id}) covers a topic with no text — what the coach teaches here`)
+        } else {
+          errors.push(`nodes[${index}] (${node.id}) has a cover of an unknown kind — book | resource | url | topic`)
         }
-      } else if (cover.kind === 'resource') {
-        if (typeof cover.resourceId !== 'string' || cover.resourceId === '') {
-          return `nodes[${index}] (${node.id}) has a resource cover with no resourceId — { kind: "resource", resourceId }; library_read · resources lists the shelf`
-        }
-        if (!scope.hasResource(cover.resourceId)) {
-          return `nodes[${index}] (${node.id}) covers resource ${JSON.stringify(cover.resourceId)}, which is not on the project's shelf — library_read · resources lists them; add it first (library_resource · op add)`
-        }
-      } else if (cover.kind === 'url') {
-        if (!/^https?:\/\//.test(cover.url)) return `nodes[${index}] (${node.id}) covers a url that does not start with http:// or https://`
-      } else if (cover.kind === 'topic') {
-        if (typeof cover.text !== 'string' || cover.text.trim() === '') return `nodes[${index}] (${node.id}) covers a topic with no text — what the coach teaches here`
-      } else {
-        return `nodes[${index}] (${node.id}) has a cover of an unknown kind — book | resource | url | topic`
       }
     }
-    for (const dep of node.dependsOn) {
+    for (const dep of Array.isArray(node.dependsOn) ? node.dependsOn : []) {
       const depIndex = nodes.findIndex(candidate => candidate.id === dep)
-      if (depIndex === -1) return `nodes[${index}] (${node.id}) depends on ${JSON.stringify(dep)}, which the roadmap does not declare`
-      if (node.kind !== 'read' && nodes[depIndex]?.kind === 'read') {
-        return `nodes[${index}] (${node.id}) depends on read node ${JSON.stringify(dep)} — a read node is a side stop and never gates a level; depend on the previous quiz or practice node instead. How-to-use pages, answer keys, transcripts and appendices are not nodes at all: put them in the book's extras`
+      if (depIndex === -1) {
+        errors.push(`nodes[${index}] (${node.id}) depends on ${JSON.stringify(dep)}, which the roadmap does not declare`)
+        continue
       }
-      if (depIndex >= index) return `nodes[${index}] (${node.id}) depends on ${JSON.stringify(dep)}, which comes AFTER it — list a node after everything it depends on`
+      if (kindKnown && node.kind !== 'read' && nodes[depIndex]?.kind === 'read') {
+        errors.push(`nodes[${index}] (${node.id}) depends on read node ${JSON.stringify(dep)} — a read node is a side stop and never gates a level; depend on the previous quiz or practice node instead. How-to-use pages, answer keys, transcripts and appendices are not nodes at all: put them in the book's extras`)
+        continue
+      }
+      if (depIndex >= index) errors.push(`nodes[${index}] (${node.id}) depends on ${JSON.stringify(dep)}, which comes AFTER it — list a node after everything it depends on`)
     }
   }
   // The mirror of the per-node rule above: a PROJECT path whose stations all
   // draw on the same single book is that book's own path written to the wrong
-  // scope — the two journeys stay distinct.
-  if (scope.bookId === undefined && nodes.length > 0) {
+  // scope — the two journeys stay distinct. Only checked once the per-node
+  // shape is clean (it reads covers).
+  if (errors.length === 0 && scope.bookId === undefined && nodes.length > 0) {
     const bookIds = new Set<string>()
     let onlyBookCovers = true
     for (const node of nodes) {
@@ -1974,7 +2024,9 @@ export function validateRoadmapShape(
       return `every station draws only on 《${title}》 — that is the book's OWN path: resend with book: ${JSON.stringify(onlyId)} (its nodes then cover that book only). The project's own path is for a journey spanning several books / shelf links / coached teaching`
     }
   }
-  return undefined
+  if (errors.length === 0) return undefined
+  if (errors.length === 1) return errors[0]
+  return `${errors.length} shape errors — fix them all, then resend:\n${errors.map(error => `- ${error}`).join('\n')}`
 }
 
 /**

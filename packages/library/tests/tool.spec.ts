@@ -81,6 +81,20 @@ describe('editing a project', () => {
     expect(listed.projects).toHaveLength(1)
     await expect(call('library_project', { id: project })).rejects.toThrow(/fields to change/)
   })
+
+  it('the edit target is projectId (id stays a silent alias)', async () => {
+    const { project } = await seed()
+    const edited = (await call('library_project', { projectId: project, goal: '覆盖神经科学' })) as { project: { goal?: string } }
+    expect(edited.project.goal).toBe('覆盖神经科学')
+  })
+
+  it('an unknown id with a name creates and says so — a slug is a create in disguise, never a failure', async () => {
+    await seed()
+    const created = (await call('library_project', { id: 'math', name: '数学', template: 'subject' })) as { project: { id: string }; note: string }
+    expect(created.project.id).toMatch(/^p_/)
+    expect(created.note).toMatch(/no project "math" existed/)
+    await expect(call('library_project', { projectId: 'p_nope', goal: 'x' })).rejects.toThrow(/no project/)
+  })
 })
 
 describe('binding defaults', () => {
@@ -248,6 +262,15 @@ describe('the write chain strings itself', () => {
     const { book } = await seed()
     await expect(call('library_roadmap', { nodes: [{ id: 'n1', title: '极限', kind: 'quiz', covers: [{ kind: 'book', bookId: book, ranges: [{ from: 1, to: 1 }] }], acceptance: ['会求极限'] }] })).rejects.toThrow(/kind: "practice"[\s\S]*goals/)
   })
+
+  it('a draft with several shape problems gets ONE refusal listing them all — not one round trip each', async () => {
+    const { book } = await seed()
+    await expect(call('library_roadmap', { nodes: [
+      { id: 'n1', title: '读', kind: 'read', covers: [{ kind: 'book', bookId: book, ranges: [{ from: 1, to: 1 }] }], acceptance: ['读完它'] },
+      { id: 'n2', title: '练', kind: 'practice', covers: [{ kind: 'book', bookId: book, ranges: [{ from: 2, to: 2 }] }] },
+      { id: 'n3', title: '考', kind: 'quiz', covers: [{ kind: 'book', bookId: book, ranges: [{ from: 2, to: 2 }] }], dependsOn: ['n1'] },
+    ] })).rejects.toThrow(/3 shape errors[\s\S]*carries acceptance[\s\S]*it needs acceptance[\s\S]*depends on read node/)
+  })
 })
 
 describe('photo pages', () => {
@@ -276,6 +299,16 @@ describe('teaching errors', () => {
     await seed()
     await expect(call('library_quiz', { questions: [{ id: 'q1', kind: 'free', prompt: 'p', answer: 'a', target: { kind: 'asked' }, evidence: { kind: 'knowledge' } }] }))
       .rejects.toThrow(/cardIds/)
+  })
+
+  it('a quiz with several bad questions gets ONE refusal listing them all', async () => {
+    await seed()
+    await expect(call('library_quiz', {
+      questions: [
+        { id: 'q1', kind: 'choice', prompt: 'p', options: ['A) 甲'], answer: 'A) 甲', target: { kind: 'topic' }, evidence: { kind: 'knowledge' } },
+        { id: 'q1', kind: 'fill', prompt: '', answer: 'a', target: { kind: 'topic' }, evidence: { kind: 'knowledge' } },
+      ],
+    })).rejects.toThrow(/problems in questions[\s\S]*fewer than two options[\s\S]*unique id[\s\S]*prompt and an answer/)
   })
 })
 
@@ -341,6 +374,19 @@ describe('payload transport', () => {
       tocSource: { by: 'web', url: 'https://example.org/toc' },
     })) as { book: { toc: { title: string }[] } }
     expect(added.book.toc.map(row => row.title)).toEqual(['引言', '极限导论', '求极限'])
+  })
+
+  it('unwraps a list payload wrapped as { items: [...] } — a toc keeps its parts', async () => {
+    const { project } = await seed()
+    const added = (await call('library_book', {
+      project,
+      title: '普林斯顿微积分读本 · 修订版',
+      bookKind: 'knowledge',
+      toc: { items: [{ title: '第1章 函数、图像和直线', part: '第一部分：预备与基础' }, '第2章 三角函数复习'] },
+      tocSource: { by: 'model' },
+    })) as { book: { toc: { title: string; part?: string }[] } }
+    expect(added.book.toc.map(row => row.title)).toEqual(['第1章 函数、图像和直线', '第2章 三角函数复习'])
+    expect(added.book.toc[0]?.part).toBe('第一部分：预备与基础')
   })
 })
 

@@ -95,7 +95,11 @@ function payloadList(value: unknown): unknown[] | undefined {
   if (typeof value === 'string') {
     try { value = JSON.parse(value) } catch { return undefined }
   }
-  return Array.isArray(value) ? value : undefined
+  if (Array.isArray(value)) return value
+  // A model as often wraps the list: { items: [...] } — unwrap it (the schema
+  // carries a matching object branch so this shape reaches execute at all).
+  const items = payload(value)?.items
+  return Array.isArray(items) ? items : undefined
 }
 
 function arrival(field: string, value: unknown): string {
@@ -156,6 +160,15 @@ function normalizeQuestionAxes(question: Record<string, unknown>): Record<string
   return { ...rest, target, evidence }
 }
 
+/**
+ * Models sometimes wrap a list payload as `{ items: [...] }`. Declaring the
+ * wrapper as a oneOf branch lets it past schema validation into execute (which
+ * unwraps it in payloadList) — and a genuinely wrong object then earns the
+ * tool's own teaching error instead of the harness's opaque "must match
+ * exactly one oneOf branch" refusal.
+ */
+const LIST_WRAPPER_SCHEMA = { type: 'object', additionalProperties: true, description: 'The same list wrapped: { items: [...] }.' } as const
+
 /** The roadmap nodes schema — shared by the parameter declaration and its description. */
 const NODES_SCHEMA = {
   oneOf: [
@@ -188,6 +201,7 @@ const NODES_SCHEMA = {
       ] } },
     } } },
     { type: 'string', description: 'The same array as its JSON text.' },
+    LIST_WRAPPER_SCHEMA,
   ],
 } as const
 
@@ -232,6 +246,7 @@ const QUESTIONS_SCHEMA = {
       pageId: { type: 'string', description: 'Shorthand: evidence { kind: "photo", pageId, quote? } — page ids from library_read · pages.' },
     } } },
     { type: 'string', description: 'The same array as its JSON text.' },
+    LIST_WRAPPER_SCHEMA,
   ],
 } as const
 
@@ -410,11 +425,11 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
   definitions.push(defineTool({
     name: 'library_project',
     description:
-      'Create a learning project, or edit one (id + the fields to change; goal "" clears). '
+      'Create a learning project, or edit one (projectId + the fields to change; goal "" clears). '
       + 'template: "language" (marks are words) | "subject" (marks are concepts) | "custom". '
       + 'Creating or editing binds an unbound session to the project — the onboarding chain is just: create, register a book (library_book), draft (library_roadmap).',
     parameters: {
-      id: { type: 'string', description: 'Edit this existing project (library_read · projects lists the ids); omit to create.' },
+      projectId: { type: 'string', description: 'Edit this existing project (library_read · projects lists the ids). Omit to CREATE — ids are minted (p_…), never chosen by the caller.' },
       name: { type: 'string', description: 'The project\'s name (required when creating).' },
       template: { type: 'string', description: '"language" | "subject" | "custom".' },
       goal: { type: 'string', description: 'The one-line goal ("" clears).' },
@@ -422,15 +437,31 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
     output: jsonOutput(),
     isConcurrencySafe: () => false,
     async execute(args, exec) {
-      if (typeof args.id === 'string' && args.id.trim() !== '') {
+      // The edit target's id: projectId now, `id` from a model that memorized
+      // the old name (read off the typed surface). An id that resolves to
+      // nothing plus a name is a CREATE the model dressed up with a slug —
+      // create and say so, never fail it.
+      const legacyId = (args as Record<string, unknown>).id
+      const editId = [args.projectId, legacyId].find((value): value is string => typeof value === 'string' && value.trim() !== '')?.trim()
+      if (editId !== undefined) {
         const patch: Record<string, unknown> = {}
         if (typeof args.name === 'string') patch.name = args.name
         if (typeof args.template === 'string') patch.template = args.template
         if (typeof args.goal === 'string') patch.goal = args.goal
-        if (Object.keys(patch).length === 0) throw new Error('editing a project takes id plus the fields to change (name? / goal? / template?) — omit id to CREATE one (name + template)')
-        const edited = unwrap(await service.updateProject({ id: args.id.trim(), patch: patch as { name?: string; goal?: string; template?: LibraryTemplate } }))
-        await autoBind(exec, { projectId: edited.project.id })
-        return edited as unknown as JsonValue
+        if (Object.keys(patch).length === 0) throw new Error('editing a project takes projectId plus the fields to change (name? / goal? / template?) — omit projectId to CREATE one (name + template)')
+        const edited = await service.updateProject({ id: editId, patch: patch as { name?: string; goal?: string; template?: LibraryTemplate } })
+        if (edited.ok) {
+          await autoBind(exec, { projectId: edited.project.id })
+          return edited as unknown as JsonValue
+        }
+        if (typeof args.name !== 'string' || args.name.trim() === '') throw new Error(edited.message)
+        const created = unwrap(await service.createProject({
+          name: args.name,
+          ...(typeof args.template === 'string' ? { template: args.template as LibraryTemplate } : {}),
+          ...(typeof args.goal === 'string' ? { goal: args.goal } : {}),
+        }))
+        await autoBind(exec, { projectId: created.project.id })
+        return { ...created, note: `no project ${JSON.stringify(editId)} existed — created a new one instead (ids are minted (p_…), never chosen by the caller; omit projectId to create)` } as unknown as JsonValue
       }
       if (typeof args.name !== 'string' || args.name.trim() === '') {
         throw new Error('creating a project takes name (+ template: "language" | "subject" | "custom", goal?) — e.g. { name: "数学", template: "subject" }')
@@ -464,6 +495,7 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
             } },
           ] } },
           { type: 'string', description: 'The whole contents as ONE newline-joined string of titles (the form least mangled by models).' },
+          LIST_WRAPPER_SCHEMA,
         ],
         required: true,
         description: 'The contents.',
@@ -491,6 +523,7 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
             when: { type: 'string', required: true, enum: ['before', 'reference'], description: 'before: read before starting; reference: consult when needed.' },
           } } },
           { type: 'string', description: 'The same array as its JSON text.' },
+          LIST_WRAPPER_SCHEMA,
         ],
         description: 'How-to-use pages, answer keys, transcripts, appendices — NOT roadmap nodes.',
       },
@@ -682,6 +715,7 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
             uncertain: { type: 'boolean', description: 'You could not tell — kept, never auto-carded.' },
           } } },
           { type: 'string', description: 'The same array as its JSON text.' },
+          LIST_WRAPPER_SCHEMA,
         ],
         required: true,
         description: 'Every mark on the photographed page.',
@@ -742,6 +776,7 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
             asNew: { type: 'boolean', description: 'Resolve a pending near-duplicate: keep it separate.' },
           } } },
           { type: 'string', description: 'The same array as its JSON text.' },
+          LIST_WRAPPER_SCHEMA,
         ],
         required: true,
         description: 'The weak points to record.',
