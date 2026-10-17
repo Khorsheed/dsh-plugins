@@ -37,16 +37,26 @@ async function mount(previous?: { root: string; stored: StoredSessions }) {
   const registry = new LocalAgentRegistry(ctx, root, 10)
   ctx.provide('localAgent', registry)
   const nativePrepare = vi.fn(async (_request: LocalAgentPreparation) => {})
-  const starts = vi.fn(async (_provider: string, request: SubagentStartRequest) => {
+  const starts = vi.fn(async (spec: SubagentActivationSpec) => {
+    const request: SubagentStartRequest = {
+      ...spec.request,
+      ...spec.label === '' ? {} : { label: spec.label },
+      signal: spec.signal,
+    }
     const intent = registry.takeDelegationIntent(request.parent.session.id, 'fake-cli')
     if (intent?.kind !== 'fresh' || intent.preparedMemberId === undefined) throw new Error('missing prepared identity')
     const binding = registry.memberBinding(intent.preparedMemberId)!
-    return registry.withMemberConfigurationRound(binding, async () => ({
-      id: SessionId(intent.preparedMemberId!), localAgent: undefined,
-      result: Promise.resolve({ output: [], stopReason: 'completed' as const }), dispose: async () => {},
-    }))
+    return registry.withMemberConfigurationRound(binding, async () => {
+      const run = {
+        id: SessionId(intent.preparedMemberId!),
+        result: Promise.resolve({ output: [], stopReason: 'completed' as const }), dispose: async () => {},
+      }
+      // The 0.2.1 activation boundary: the facade reads result/dispose off the
+      // activation; the childId here is the prepared session's, unused by it.
+      return { childId: run.id, result: run.result, dispose: () => run.dispose() }
+    })
   })
-  ctx.provide('subagents', { getProvider: () => ({ name: 'fake-cli' }), start: starts } as never)
+  ctx.provide('subagents', { getProvider: () => ({ name: 'fake-cli' }), startActivation: starts } as never)
   registry.register({ name: 'fake', displayName: 'Fake', homeEnvVar: 'FAKE_HOME', delegationProvider: 'fake-cli',
     records: { listSessions: async () => [] }, isAuthenticated: async () => authenticated, prepareMember: nativePrepare,
     modelBroker: {

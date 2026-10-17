@@ -31,6 +31,9 @@ const EMPTY_CHAT: ChatSlice = {
   nodes: {
     get: () => undefined,
     source: () => ({ getSnapshot: () => undefined, subscribe: () => () => {} }),
+    // Host 0.2.1 added this required store face; the frozen empty snapshot
+    // reports every node as not belonging to the latest exchange.
+    bottomSource: () => ({ getSnapshot: () => false, subscribe: () => () => {} }),
     turnDataSource: () => ({ getSnapshot: () => [], subscribe: () => () => {} }),
     processSource: () => ({ getSnapshot: () => undefined, subscribe: () => () => {} }),
     values: () => [],

@@ -1,6 +1,6 @@
 /**
  * The worktrees Remote service: the badge and changes drawer's data face. A
- * thin adapter over the same `ctx.worktrees` service core — no logic is
+ * thin adapter over the same `ctx.worktreesCore` service core — no logic is
  * copied here. The AGENT-BOUND half takes the calling `agent` as its first
  * parameter, resolves the session workspace (`header.cwd`, or the session's
  * active-worktree override) from it, and delegates to the service core, so
@@ -12,7 +12,7 @@
  * resume offline sessions). Like the local-files verbs, the agent-free half
  * accepts any absolute path: authorization and jailing are the trusted
  * caller's job, never this surface's. The cordis service key is
- * `worktreesRemote` (`worktrees` is the core service); the WIRE namespace is
+ * `worktreesRemote` (`worktreesCore` is the core service); the WIRE namespace is
  * `worktrees`, so the browser calls `remote.worktrees.*`.
  *
  * @module @khorsheed/dsh-worktrees
@@ -82,10 +82,10 @@ export interface WorktreesRemoteConfig {
  * `worktrees`; the browser calls `remote.worktrees.<method>(sessionId, …)`.
  */
 export class WorktreesRemoteService extends TypertRemoteService<WorktreesRemoteConfig> {
-  static inject = ['worktrees']
+  static inject = ['worktreesCore']
 
   /**
-   * @param ctx - owning Cordis Context carrying `worktrees` (provided by the
+   * @param ctx - owning Cordis Context carrying `worktreesCore` (provided by the
    *   plugin's apply before this service mounts).
    * @param config - the badge's display gate, forwarded from the plugin config.
    */
@@ -98,7 +98,7 @@ export class WorktreesRemoteService extends TypertRemoteService<WorktreesRemoteC
   private readonly visiblePresets: string[]
 
   private get worktrees(): WorktreesService {
-    return this.ctx.worktrees
+    return this.ctx.worktreesCore
   }
 
   /** The calling session's workspace; '' when the session has none. Prefers

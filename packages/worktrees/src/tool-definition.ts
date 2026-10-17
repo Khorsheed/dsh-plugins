@@ -1,6 +1,6 @@
 /**
  * The model-facing `worktrees` tool DEFINITION — a thin adapter over the same
- * `ctx.worktrees` service core the Remote data face uses, no logic duplicated.
+ * `ctx.worktreesCore` service core the Remote data face uses, no logic duplicated.
  * The core row never registers the tool itself: the package's `./tool`
  * subpath row ({@link file://./tool.ts}) consumes this factory and mounts it
  * inside agent-preset compositions, so the capability is granted per session
@@ -40,7 +40,7 @@ const description = 'Manage the session\'s git worktrees. '
  * The definition is returned UNTAGGED: the registering row applies its own
  * tool-origin tag (AGENTS.md § Tool origin tagging — the owner is whichever
  * package mounts the row).
- * @param service - the worktrees service core (the global `ctx.worktrees`
+ * @param service - the worktrees service core (the global `ctx.worktreesCore`
  *   the core row provides at the profile root).
  * @returns the tool definition, ready for `ctx.tools.register`.
  */

@@ -3,11 +3,12 @@
  * the plugin's own 'message-tools-edited' and 'message-tools-restored' rows):
  * a visual clone of the official bubble chrome — ui-conversation ships no
  * public components, so the structure is replicated against ui-primitives
- * platform modules, with historical images rendered through the owner-prop
- * `renderMessageImages` attachment slot (rc8 contract) — plus the
- * copy/edit/withdraw action row and the「已编辑」/「已恢复」labels. User
- * messages inside a withdrawn span render nothing; the withdrawal divider
- * marks the spot.
+ * platform modules — plus the copy/edit/withdraw action row and the
+ * 「已编辑」/「已恢复」labels. Attached images render through the host's
+ * gallery surface (see message-images.ts): the pre-0.2.1 `renderMessageImages`
+ * owner prop when the host still passes it, otherwise the root-scoped
+ * `conversation.images.content` factory. User messages inside a withdrawn
+ * span render nothing; the withdrawal divider marks the spot.
  */
 import { memo, useEffect, useRef, useState, type ReactNode } from 'react'
 import { shallowEqual } from '@deepseek-ai/dsh-client-store'
@@ -17,6 +18,7 @@ import { IconCheckOutlineMedium, IconCopyOutlineMedium, IconEditOutlineMedium } 
 import { IconUndoOutlineMedium } from './icons-local.tsx'
 import { foldHiddenRanges, isSeqHidden } from './withdrawn-node.ts'
 import { chatHookOf, type ChatSlice } from './chat-hook.ts'
+import { renderImageGallery } from './message-images.ts'
 import { withdrawAndBackfill } from './withdraw-backfill.ts'
 import { ModelChip, type ModelChipProps } from './ModelChip.tsx'
 import type { UserMessageViewProps } from './slots.ts'
@@ -176,7 +178,7 @@ function InlineEditor({ initial, busy, t, onSave, onCancel, models }: {
 
 /** The shadowed user-message view: bubble plus copy/edit/withdraw actions. */
 export const UserMessageView = memo(function UserMessageView({
-  node, renderMessageImages, t, editMessage, withdrawMessage, backfillDraft,
+  node, renderMessageImages, loadImage, renderFactorySlot, t, editMessage, withdrawMessage, backfillDraft,
   useModelDirectory, modelsAvailable, loadModels, selectModel,
   ...standard
 }: UserMessageViewProps): ReactNode {
@@ -246,7 +248,7 @@ export const UserMessageView = memo(function UserMessageView({
         {node.kind === 'message-tools-restored' && (
           <div className={css.editedLabel}>{t('withdrawn.restored')}</div>
         )}
-        {images.length > 0 ? renderMessageImages({ images, align: 'end' }) : null}
+        {images.length > 0 ? renderImageGallery(renderMessageImages, renderFactorySlot, loadImage, { images, align: 'end' }) : null}
         {showBubble && (
           <div className={css.bubble}>
             {projectUserText(text)}

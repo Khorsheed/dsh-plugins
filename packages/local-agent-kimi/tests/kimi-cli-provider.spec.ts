@@ -370,7 +370,6 @@ describe('kimi-cli-provider child session record', () => {
       prompt: [{ type: 'text', text: '建个文件' }],
       parent: { session: parent },
       signal: new AbortController().signal,
-      descriptor: { version: 2, mode: 'one-shot', provider: 'kimi-cli', label: 'Kimi 建文件' },
     } as unknown as Parameters<KimiCliProvider['start']>[0]
 
     await expect(provider.start(request)).rejects.toThrow(/not spawned/)
@@ -385,7 +384,7 @@ describe('kimi-cli-provider child session record', () => {
     })
     const descriptor = created[0]!.session.snapshotEvents().find(event => event.type === 'subagent/descriptor')
     // The label carries the harness display name as the source marker.
-    expect(descriptor?.data).toEqual({ version: 2, mode: 'one-shot', provider: 'kimi-cli', label: 'Kimi Code: Kimi 建文件' })
+    expect(descriptor?.data).toEqual({ version: 3, mode: 'one-shot', provider: 'kimi-cli', label: 'Kimi Code: Kimi 建文件' })
     // The parent-side catalog row lands once, with the same composed label,
     // feeding the official subagent/catalog discovery projection.
     const catalog = parent.snapshotEvents().filter(event => event.type === 'subagent/catalog')
@@ -420,7 +419,6 @@ describe('kimi-cli-provider child session record', () => {
       prompt: [{ type: 'text', text: '建个文件' }],
       parent: { session: { id: SessionId('parent-2'), header: { cwd: '/tmp' } } },
       signal: new AbortController().signal,
-      descriptor: { version: 2, mode: 'one-shot', provider: 'kimi-cli', label: 'Kimi 建文件' },
     } as unknown as Parameters<KimiCliProvider['start']>[0]
 
     await expect(provider.start(request)).rejects.toThrow(/not spawned/)
@@ -483,7 +481,6 @@ describe('kimi-cli-provider resume round', () => {
       prompt: [{ type: 'text', text: '接着做' }],
       parent: { session: parent },
       signal: new AbortController().signal,
-      descriptor: { version: 2, mode: 'one-shot', provider: 'kimi-cli', label: '继续' },
     } as unknown as Parameters<KimiCliProvider['start']>[0]
 
     const run = await provider.start(request)
@@ -491,8 +488,10 @@ describe('kimi-cli-provider resume round', () => {
     expect(result.stopReason).toBe('completed')
     // The resume round continues the SAME kimi session with -S before -p.
     expect(spawned[0]).toEqual(['kimi', '-S', 'session_run-1', '-p', '接着做'])
-    // The run id is the existing child session id, not a new one.
-    expect(run.id).toBe(SessionId('child-run-1'))
+    // Host 0.2.1: the run id is a fresh PER-EXECUTION identity (a live
+    // child session id would be DUPLICATE_CHILD to the activation manager);
+    // the child-session continuity is pinned by the spawn argv and turn counts.
+    expect(run.id).not.toBe(SessionId('child-run-1'))
     // A resume round never re-writes the parent-side catalog row: the
     // discovery fact lands once, with the descriptor, on the fresh round.
     expect(parent.snapshotEvents().filter(event => event.type === 'subagent/catalog')).toHaveLength(0)
@@ -552,7 +551,6 @@ describe('kimi-cli-provider resume round', () => {
       prompt: [{ type: 'text', text: '接着做' }],
       parent: { session: { id: SessionId('parent-1'), header: { cwd: '/tmp' } } },
       signal: new AbortController().signal,
-      descriptor: { version: 2, mode: 'one-shot', provider: 'kimi-cli', label: '继续' },
     } as unknown as Parameters<KimiCliProvider['start']>[0]
 
     const run = await provider.start(request)
@@ -879,7 +877,6 @@ describe('kimi-cli-provider observed model and cwd', () => {
     prompt: [{ type: 'text', text: '建个文件' }],
     parent: { session: { id: SessionId('parent-1'), header: { cwd: '/tmp', delegationDepth: 0 } } },
     signal: new AbortController().signal,
-    descriptor: { version: 2, mode: 'one-shot', provider: 'kimi-cli', label: '任务' },
   } as unknown as Parameters<KimiCliProvider['start']>[0]
 
   /** A scoped home whose wire names the model in its usage.record events. */

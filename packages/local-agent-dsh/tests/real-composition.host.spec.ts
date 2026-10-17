@@ -11,11 +11,13 @@ import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
+import AgentRegistry from '@deepseek-ai/dsh-agent'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import CommandRuntime from '@deepseek-ai/dsh-commands'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
-import type { SubagentStartRequest } from '@deepseek-ai/dsh-subagent'
+import { SessionId } from '@deepseek-ai/dsh-session'
 import * as localAgentCore from '@khorsheed/dsh-local-agent'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as localAgentDsh from '../src/index.ts'
@@ -31,6 +33,7 @@ afterEach(async () => {
 async function boot(initialEnabled: boolean): Promise<{
   ctx: Context
   setEnabled: (enabled: boolean) => void
+  parent: Agent
 }> {
   const ctx = new Context()
   // Real registries the controller registers into and the real tool module
@@ -38,6 +41,14 @@ async function boot(initialEnabled: boolean): Promise<{
   await ctx.plugin(CommandRuntime)
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRuntime)
+  // Host 0.2.1: the runtime's static inject requires workingDirectory (the
+  // manager resolves the child directory through it; the probe below relies
+  // on its failure), and startActivation's manager exists only with the
+  // agents service mounted.
+  ctx.provide('workingDirectory', {
+    ensure: async () => { throw new Error('no working directory') },
+  } as never)
+  await ctx.plugin(AgentRegistry)
   await ctx.plugin(SubagentRuntime)
   await ctx.plugin(localAgentCore, { homesRoot: mkdtempSync(join(tmpdir(), 'dsh-realcomp-')) })
   // External faces the controller reads; subprocess spawn is never exercised
@@ -62,8 +73,16 @@ async function boot(initialEnabled: boolean): Promise<{
   // without the injected service scope and fail on ctx.localAgent.
   await ctx.plugin(localAgentDsh, {})
   disposers.push(async () => { await ctx.fiber.dispose() })
+  // The activation probe's exact live parent (host 0.2.1 startActivation
+  // compares identity against the registry); its session carries no cwd, so
+  // the workingDirectory stub's rejection stands in for the provider's own
+  // 0.2.0-era 'no working directory' start error.
+  const id = SessionId('parent-1')
+  const parent = { id, session: { id, header: {} } } as unknown as Agent
+  ctx.agents.enter(parent, undefined)
   return {
     ctx,
+    parent,
     setEnabled: (enabled) => {
       current = { enabled }
       for (const watcher of [...watchers]) watcher(current)
@@ -71,18 +90,22 @@ async function boot(initialEnabled: boolean): Promise<{
   }
 }
 
-/** A request with no parent cwd: a REGISTERED dsh-cli provider rejects it with its own
- * start-time error, while an unregistered provider is rejected by the manager by name. */
-function startDshCli(ctx: Context): Promise<unknown> {
-  return ctx.subagents.start('dsh-cli', {
-    prompt: [],
-    parent: { session: { header: {} } },
-  } as unknown as SubagentStartRequest)
+/** A caller-delivered activation probe: a REGISTERED dsh-cli provider reaches the
+ * manager's directory resolution, whose stub rejects with 'no working directory',
+ * while an unregistered provider is rejected by name before any of that. */
+function startDshCli(ctx: Context, parent: Agent): Promise<unknown> {
+  return ctx.subagents.startActivation({
+    provider: 'dsh-cli',
+    label: 'probe',
+    request: { prompt: [], parent },
+    signal: new AbortController().signal,
+    delivery: 'caller',
+  })
 }
 
 describe('local-agent-dsh toggle (real composition)', () => {
   it('registers the harness, provider, and tool while ON, and REALLY removes them on OFF', async () => {
-    const { ctx, setEnabled } = await boot(true)
+    const { ctx, setEnabled, parent } = await boot(true)
 
     // ON: harness registered in the real registry, tool visible in the real
     // tool runtime, provider dispatchable.
@@ -94,7 +117,7 @@ describe('local-agent-dsh toggle (real composition)', () => {
     expect(ctx.subagents.list()).toContain('dsh-cli')
     // The registered provider dispatches and answers with its own start-time error.
     expect(ctx.subagents.getProvider('dsh-cli')).toBeDefined()
-    await expect(startDshCli(ctx)).rejects.toThrow('no working directory')
+    await expect(startDshCli(ctx, parent)).rejects.toThrow('no working directory')
 
     // OFF: everything the toggle owns is detached from the live registries —
     // the harness is gone from the roster, the provider is no longer
@@ -109,7 +132,7 @@ describe('local-agent-dsh toggle (real composition)', () => {
     // The provider is really gone: the manager rejects it by name, and the
     // start-time dispatch never reaches the provider.
     expect(ctx.subagents.getProvider('dsh-cli')).toBeUndefined()
-    await expect(startDshCli(ctx)).rejects.toThrow('no subagent provider registered')
+    await expect(startDshCli(ctx, parent)).rejects.toThrow('no subagent provider registered')
 
     // ON again: the composition restores.
     setEnabled(true)

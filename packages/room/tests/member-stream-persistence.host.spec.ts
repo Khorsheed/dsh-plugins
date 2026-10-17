@@ -6,7 +6,9 @@ import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import CommandRuntime from '@deepseek-ai/dsh-commands'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
-import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
+// Host 0.2.1: the package dropped its default export; the namespace object
+// (name + Config + apply) is the plugin shape cordis mounts.
+import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import * as localAgent from '@khorsheed/dsh-local-agent'
 
 describe('member stream durability through the host backend', () => {

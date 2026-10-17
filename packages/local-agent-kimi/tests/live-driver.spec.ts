@@ -322,7 +322,6 @@ function request(over: { prompt?: string; signal?: AbortSignal } = {}): unknown 
   return {
     prompt: [{ type: 'text', text: over.prompt ?? '建个文件' }],
     parent: { session: { id: 'parent-1', header: { cwd: '/tmp' } } },
-    descriptor: { description: '测试委派' },
     signal: over.signal ?? new AbortController().signal,
   }
 }

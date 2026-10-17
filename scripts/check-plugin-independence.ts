@@ -271,7 +271,10 @@ export const COMMUNITY_SERVICE_INJECTORS: Readonly<Record<string, RegExp>> = {
   // rows at the evaluation-family fold (T88), so the core package itself is
   // the allowed injector there.
   typesafe: /^typesafe-tool$/,
-  worktrees: /^worktrees$/,
+  // Renamed from `worktrees` at host 0.2.1: the official experimental
+  // `worktree` package provides `ctx.worktrees`, so this package's core moved
+  // to `worktreesCore` (a duplicate provide fails the boot).
+  worktreesCore: /^worktrees$/,
   room: /^room$/,
   datasets: /^datasets$/,
   dshEval: /^eval$/,

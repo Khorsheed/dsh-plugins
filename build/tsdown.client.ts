@@ -54,6 +54,14 @@ const VENDORED_LIBRARY = /^@deepseek-ai\/(cosmokit|schemastery)(\/|$)/
 const GENERATED_REMOTE = /^@deepseek-ai\/dsh-[a-z0-9]+(?:-[a-z0-9]+)*\/remote$/
 
 /**
+ * The 0.2.1 typert generator's client artifact value-imports this lazy
+ * descriptor assembler (caller-supplied Zod, no runtime imports, per-call
+ * instances — the module's own docblock pins the purity premise). Pinned by
+ * exact subpath: the package root carries the protocol runtime.
+ */
+const TYPERT_REMOTE_INFO = /^@deepseek-ai\/dsh-typert-protocol\/remote-info$/
+
+/**
  * Pure display folds a host package publishes exactly so browser bundles inline
  * them (the module's own docblock says so: no imports, no runtime identity).
  * Pinned by exact subpath — the package ROOT stays forbidden: its main module
@@ -228,6 +236,7 @@ function clientConfig(id: string, entry: string): UserConfig {
         if (CLIENT_EXTERNALS.includes(source)) return null // platform module: external wins
         if (VENDORED_LIBRARY.test(source)) return null // vendored library: inline, no shared identity
         if (INLINE_SAFE.test(source) || GENERATED_REMOTE.test(source)) return null // wire contribution: inline is the point
+        if (TYPERT_REMOTE_INFO.test(source)) return null // 0.2.1 generated artifact's descriptor assembler: inline-safe
         if (INLINE_PURE_FOLD.test(source)) return null // pure display fold published for browser inlining
         throw new Error(
           `client bundle purity: "${source}" is not a platform module (CLIENT_EXTERNALS), an inline-safe wire layer, or a generated /remote contribution — `

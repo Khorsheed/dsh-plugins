@@ -14,7 +14,7 @@ Status: implemented
 
 **把工具行拆成伴生包**（`@khorsheed/dsh-worktrees-tool`），沿用 local-agent core/companion 先例并在 `check-plugin-independence` 里显式放行（`ALLOWED_EDGES` + `NO_OWN_PATCH`）：
 
-- 伴生包不发布任何服务（唯一能进 preset 的形态），只注册一个模型工具，委派给主插件仍在 profile 根提供的全局 `ctx.worktrees` 服务核——官方工具行形态（出厂 `tool-bash` 行同样消费宿主服务）。
+- 伴生包不发布任何服务（唯一能进 preset 的形态），只注册一个模型工具，委派给主插件仍在 profile 根提供的全局 `ctx.worktreesCore` 服务核——官方工具行形态（出厂 `tool-bash` 行同样消费宿主服务）。
 - 伴生包不声明 `dsh.bundle`：作为依赖安装只让模块可解析（`@khorsheed/dsh-local-agent-dsh-headless` 的 plain-dependency 先例）；授予入口是 preset 的 `agent.cordis.yml` 按名引用。`static inject = []`——worktrees 服务在 apply 时 `ctx.get` 探测，core 缺席则静默不注册（引用该行的 preset 照常挂载）；tools 注册表走 `ctx.inject` 延迟注入（沿用包内注册时代的挂载序竞态教训）。
 - 工具定义工厂（`defineWorktreesTool(service)`）由 core 的 `./tool` 导出，业务实现零复制；origin tag 由伴生包自己打——归因跟随挂载包。
 - core **停止在 profile 根注册该工具（BREAKING）**；UI/服务/Remote 不动。迁移：安装伴生包并在目标 preset 引用该行（dev 的 dev preset 已带）。

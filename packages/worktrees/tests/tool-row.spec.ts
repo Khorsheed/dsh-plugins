@@ -21,7 +21,7 @@ function makeCtx(over: { service?: unknown; withTools?: boolean } = {}) {
   const tools: FakeTools = { register: vi.fn() }
   const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }
   const ctx = {
-    get: (key: string) => (key === 'worktrees' ? over.service : undefined),
+    get: (key: string) => (key === 'worktreesCore' ? over.service : undefined),
     inject: (_names: string[], cb: (ctx: unknown) => void) => {
       if (over.withTools !== false) {
         cb({ effect: (fn: () => void) => fn(), tools })

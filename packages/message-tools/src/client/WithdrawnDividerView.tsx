@@ -9,7 +9,10 @@
  * restoration is impossible — and the divider carries a「已恢复」badge while
  * a live restore row cites the span (withdrawing the restored rows clears
  * the badge and re-enables the action). The「重新编辑」action was removed
- * once withdrawals backfill the draft automatically.
+ * once withdrawals backfill the draft automatically. Replayed images render
+ * through the host's gallery surface (see message-images.ts): the pre-0.2.1
+ * `renderMessageImages` owner prop when the host still passes it, otherwise
+ * the root-scoped `conversation.images.content` factory.
  */
 import { useState, type ReactNode } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -20,19 +23,16 @@ import {
   type WithdrawnEntry,
 } from './withdrawn-node.ts'
 import { chatHookOf } from './chat-hook.ts'
+import { renderImageGallery } from './message-images.ts'
 import type { WithdrawnDividerViewProps } from './slots.ts'
 import css from './WithdrawnDividerView.module.css'
 
 /** The withdrawal divider: collapsed marker row plus the expandable replay. */
 export function WithdrawnDividerView({
-  node, t, restoreMessage, renderMessageImages,
+  node, t, restoreMessage, renderMessageImages, loadImage, renderFactorySlot,
   ...standard
 }: WithdrawnDividerViewProps): ReactNode {
   const data = node.data
-  // The gallery closure is a required owner prop of every `conversation.chat.node`
-  // renderer; widening it to `| undefined` keeps the degrade path explicit — a
-  // composition without the attachment UI replays text only instead of throwing.
-  const renderImages: WithdrawnDividerViewProps['renderMessageImages'] | undefined = renderMessageImages
   const [expanded, setExpanded] = useState(false)
   const [entries, setEntries] = useState<readonly WithdrawnEntry[] | null>(null)
   const [busy, setBusy] = useState(false)
@@ -108,8 +108,10 @@ export function WithdrawnDividerView({
                 </div>
                 {/* The retired official MessageText primitive, kept as a local text-run block. */}
                 {entry.text !== '' && <div className={css.textRun}>{entry.text}</div>}
-                {renderImages !== undefined && entry.images.length > 0 && (
-                  <div className={css.entryImages}>{renderImages({ images: entry.images, align: 'end' })}</div>
+                {entry.images.length > 0 && (
+                  <div className={css.entryImages}>
+                    {renderImageGallery(renderMessageImages, renderFactorySlot, loadImage, { images: entry.images, align: 'end' })}
+                  </div>
                 )}
               </div>
             ))

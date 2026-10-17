@@ -13,9 +13,11 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 // Type-only: pulls the commands / jobs / subagents Context merges into the
-// program so the injected members below type-check.
+// program so the injected members below type-check. The jobs merge must name
+// the package root — since host 0.2.1, dsh-subagent no longer re-exports it.
 import type {} from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-commands'
+import type {} from '@deepseek-ai/dsh-jobs'
 import type { JobId } from '@deepseek-ai/dsh-jobs/brand'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-subagent'

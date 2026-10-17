@@ -53,9 +53,12 @@ export const Config: z = z.object({
   stateRoot: z.string().default(''),
 })
 
+// The core key is `worktreesCore`, NOT `worktrees`: the host's experimental
+// `worktree` package provides `ctx.worktrees` since 0.2.1, and a duplicate
+// cordis provide fails the boot when both are mounted.
 declare module '@deepseek-ai/cordis' {
   interface Context {
-    worktrees: WorktreesService
+    worktreesCore: WorktreesService
   }
 }
 
@@ -76,7 +79,7 @@ export function apply(ctx: Context, config: WorktreesPluginConfig): void {
     // consumer's job.
     onSwitched: event => ctx.emit(WORKTREES_SWITCHED_EVENT, event),
   })
-  ctx.provide('worktrees', service)
+  ctx.provide('worktreesCore', service)
   ctx.plugin(WorktreesRemoteService, { visiblePresets: config.visiblePresets ?? [] })
   // The model-facing `worktrees` tool is deliberately NOT registered here:
   // it lives in this package's `./tool` composition entry, which agent-preset

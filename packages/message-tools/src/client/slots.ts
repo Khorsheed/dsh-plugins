@@ -2,15 +2,31 @@
  * Slot-facing types of the message-tools client half: the injected action
  * face and the composed props of its two `conversation.chat.node` entries.
  */
+import type { ReactNode } from 'react'
 import type { ModelSelection } from '@deepseek-ai/dsh-api-remotes/client'
 import type { ModelDirectoryState } from '@deepseek-ai/dsh-client-ui-model-selection/client'
-import type { HostObservable, InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { MessageImagesOwnerProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type { HostObservable, InjectFace, PropsLocale, PropsRenderFactories, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: pulls ui-chat's SlotMap merge ('conversation.chat.node') and its
 // useChat session standard prop.
 import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 // Type-only: pulls this plugin's LocaleNamespaceMap and ChatNodeDataMap merges.
 import type {} from './locales.ts'
 import type {} from './withdrawn-node.ts'
+
+/**
+ * The pre-0.2.1 image-gallery owner prop. Hosts before 0.2.1-alpha.3 pass a
+ * `renderMessageImages` closure in `ChatNodeOwnerProps` (the session-authorized
+ * loader is bound inside it); 0.2.1-alpha.3 removed the prop when the images
+ * slot split into `conversation.chat.user.images` /
+ * `conversation.chat.message.images` plus the root-scoped
+ * `conversation.images.content` factory. The views prefer this prop when the
+ * host still passes it and otherwise render through the factory seat
+ * (`PropsRenderFactories`), so one build serves both host lines.
+ */
+export interface LegacyMessageImagesProp {
+  readonly renderMessageImages?: ((owner: Omit<MessageImagesOwnerProps, 'loadImage'>) => ReactNode) | undefined
+}
 
 /** Injected action face of the shadowed user-message entry. */
 export interface MessageToolsInjected {
@@ -43,8 +59,10 @@ export interface MessageToolsInjected {
 /** Full props of the shadowed 'user'/'steering'/'message-tools-edited'/'message-tools-restored' renderer (all keys share it). */
 export type UserMessageViewProps =
   PropsRuntime<'conversation.chat.node', 'user' | 'steering' | 'message-tools-edited' | 'message-tools-restored'>
+  & PropsRenderFactories
   & InjectFace<MessageToolsInjected>
   & PropsLocale<'message-tools'>
+  & LegacyMessageImagesProp
 
 /** Injected action face of the withdrawal divider entry. */
 export interface WithdrawnDividerInjected {
@@ -55,5 +73,7 @@ export interface WithdrawnDividerInjected {
 /** Full props of the withdrawal divider renderer. */
 export type WithdrawnDividerViewProps =
   PropsRuntime<'conversation.chat.node', 'message-tools-withdrawn'>
+  & PropsRenderFactories
   & InjectFace<WithdrawnDividerInjected>
   & PropsLocale<'message-tools'>
+  & LegacyMessageImagesProp

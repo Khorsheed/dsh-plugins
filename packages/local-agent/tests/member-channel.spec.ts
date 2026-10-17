@@ -7,7 +7,7 @@ import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import CommandRuntime from '@deepseek-ai/dsh-commands'
 import SessionStore, { SESSION_FORMAT_VERSION, SessionId } from '@deepseek-ai/dsh-session'
-import type { SubagentRun, SubagentStartRequest } from '@deepseek-ai/dsh-subagent'
+import type { SubagentActivationSpec, SubagentRun, SubagentStartRequest } from '@deepseek-ai/dsh-subagent'
 import * as localAgent from '@khorsheed/dsh-local-agent'
 import { LOCAL_AGENT_SERVICE, type LocalAgentHarness } from '@khorsheed/dsh-local-agent'
 import type { LocalAgentMemberMessage, RoomMemberMessageReceipt } from '@khorsheed/dsh-local-agent'
@@ -22,7 +22,6 @@ const CHILD_B = 'child-b'
 function makeRun(id: string): SubagentRun {
   return {
     id: SessionId(id),
-    localAgent: undefined,
     result: Promise.resolve({ stopReason: 'completed', output: [] }),
     dispose: () => Promise.resolve(),
   }
@@ -53,10 +52,17 @@ async function mountChannel(): Promise<ChannelHarness> {
   const requests: SubagentStartRequest[] = []
   ctx.provide('subagents', {
     getProvider: (name: string) => name === PROVIDER ? { name } : undefined,
-    start: (_name: string, request: SubagentStartRequest) => {
+    // The 0.2.1 activation boundary: label/signal ride the spec, not the request.
+    startActivation: async (spec: SubagentActivationSpec) => {
+      const request: SubagentStartRequest = {
+        ...spec.request,
+        ...spec.label === '' ? {} : { label: spec.label },
+        signal: spec.signal,
+      }
       requests.push(request)
       registry.takeDelegationIntent(request.parent.session.id, PROVIDER)
-      return Promise.resolve(makeRun(String(request.parent.session.id)))
+      const run = makeRun(String(request.parent.session.id))
+      return { childId: run.id, result: run.result, dispose: () => run.dispose() }
     },
   })
   ctx.provide('sessionPersistence', {

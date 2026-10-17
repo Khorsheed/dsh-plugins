@@ -46,7 +46,7 @@ for (const catalog of streamCatalogs) {
 import type { Session, SessionHeader } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import type { SessionHandle } from '@deepseek-ai/dsh-session-persistence'
-import type { SubagentRun, SubagentRuntime } from '@deepseek-ai/dsh-subagent'
+import type { SubagentActivation, SubagentRun, SubagentRuntime } from '@deepseek-ai/dsh-subagent'
 import type {
   DelegationCallOptions,
   LocalAgentCredentialState,
@@ -657,10 +657,47 @@ function delegationIntentKey(parentSessionId: string, provider: string): string 
  * `cancel()` and the caller's own abort channel both reach the run.
  * `AbortSignal.any` is the harness's own fusion primitive (agent-loop's resume
  * uses it); either source aborts the run.
+ *
+ * Host 0.2.1 note: the fused signal reaches `startActivation`'s `spec.signal`,
+ * which owns cancellation only up to publication — after the activation is
+ * published the manager unlinks it and `dispose()` is the sole cancel channel.
+ * {@link activationRun} therefore re-wires the caller signal to disposal.
  */
 function fusedSignal(controller: AbortController, caller: AbortSignal | undefined): AbortSignal {
   if (caller === undefined) return controller.signal
   return AbortSignal.any([controller.signal, caller])
+}
+
+/**
+ * Adapt a 0.2.1 managed activation to the family's published `SubagentRun`
+ * shape. The adapter's `id` is the dsh child session id — the family's
+ * tracking key, resume handle, and client-facing identity — NOT the
+ * activation's `childId`, which for an external (CLI) provider is the
+ * provider's per-execution id and never names the mirrored live Session.
+ * `dispose()` is the activation's exact-epoch cancellation: it settles the
+ * result with an `aborted`-class stop reason and runs teardown, so a caller
+ * signal aborted mid-run is re-wired to it (the start signal the facade fused
+ * is unlinked by the manager at publication). The listener detaches when the
+ * result settles, so a long-lived caller signal never accumulates them.
+ */
+function activationRun(
+  activation: SubagentActivation,
+  childSessionId: string,
+  caller: AbortSignal | undefined,
+  warn: (message: string) => void,
+): SubagentRun {
+  const dispose = (): Promise<void> => activation.dispose()
+  if (caller !== undefined) {
+    const onAbort = (): void => {
+      void dispose().catch((error: unknown) => {
+        warn(`localAgent: caller-signal disposal of ${childSessionId} failed: ${String(error)}`)
+      })
+    }
+    caller.addEventListener('abort', onAbort, { once: true })
+    const detach = (): void => { caller.removeEventListener('abort', onAbort) }
+    void activation.result.then(detach, detach)
+  }
+  return { id: SessionId(childSessionId), result: activation.result, dispose }
 }
 
 /**
@@ -1073,9 +1110,9 @@ export class LocalAgentRegistry {
   /**
    * Per-(parent session, provider) FIFO of delegation intents. The family
    * resume tool stages exactly one intent per call before awaiting
-   * `ctx.subagents.start()`, and the owning provider consumes exactly one per
-   * start, so fresh and resume rounds stay paired even under parallel
-   * delegations from one parent.
+   * `ctx.subagents.startActivation()`, and the owning provider consumes
+   * exactly one per start, so fresh and resume rounds stay paired even under
+   * parallel delegations from one parent.
    */
   private readonly delegationIntents = new Map<string, LocalAgentDelegationIntent[]>()
   /**
@@ -1128,10 +1165,12 @@ export class LocalAgentRegistry {
    * - **facade-tracked** ({@link trackRun}): runs started through
    *   {@link LocalAgentRegistry.start} / {@link LocalAgentRegistry.resume},
    *   carrying the fused AbortController whose signal reached
-   *   `ctx.subagents.start`; cancel aborts it.
+   *   `ctx.subagents.startActivation`; cancel aborts the pre-publication
+   *   signal and disposes the published activation.
    * - **tool-registered** ({@link trackDelegationRun}): runs the family tool
-   *   starts directly through `ctx.subagents.start`, carrying an explicit
-   *   cancel lever (its fused controller); cancel calls it.
+   *   starts directly through `ctx.subagents.startActivation`, carrying an
+   *   explicit cancel lever (its fused controller plus the activation's
+   *   dispose); cancel calls it.
    *
    * Every entry clears itself when the run's result settles (any stop
    * reason), and facade entries also stop their heartbeat timer then.
@@ -1632,9 +1671,10 @@ export class LocalAgentRegistry {
   /**
    * Stage one delegation intent for a provider's next `start()`. The family
    * resume tool stages exactly one intent per call before awaiting
-   * `ctx.subagents.start()`; the provider consumes exactly one per start via
-   * {@link takeDelegationIntent}, so the per-(parent, provider) FIFO pairs
-   * fresh and resume rounds even under parallel delegations from one parent.
+   * `ctx.subagents.startActivation()`; the provider consumes exactly one per
+   * start via {@link takeDelegationIntent}, so the per-(parent, provider)
+   * FIFO pairs fresh and resume rounds even under parallel delegations from
+   * one parent.
    * @param parentSessionId - the delegating parent session id.
    * @param provider - the `ctx.subagents` provider name.
    * @param intent - the fresh or resume intent for the next start.
@@ -1675,7 +1715,7 @@ export class LocalAgentRegistry {
 
   /**
    * Remove one previously staged intent by reference, returning whether it was
-   * still queued. The delegation facade calls this when `ctx.subagents.start()`
+   * still queued. The delegation facade calls this when `ctx.subagents.startActivation()`
    * throws: an intent the provider never consumed must not linger in the FIFO,
    * where the NEXT same-(parent, provider) start would misconsume it as its own
    * (orphan-intent crosstalk). When the provider already consumed the intent
@@ -2013,7 +2053,9 @@ export class LocalAgentRegistry {
    * {@link unstageDelegationIntent} (a no-op once the provider consumed it).
    *
    * The returned run is tracked under its `run.id` (== the new dsh child
-   * session id) until `run.result` settles; {@link cancel} aborts it by that
+   * session id, minted here and carried to the provider through the staged
+   * intent — host 0.2.1's `startActivation` never surfaces it on the
+   * activation) until `run.result` settles; {@link cancel} aborts it by that
    * id. Note on trust: cordis plugins share one process, so the ownership
    * checks here and in {@link resume} guard against caller MISTAKES, not
    * against a malicious plugin — their real protection target is untrusted
@@ -2049,13 +2091,21 @@ export class LocalAgentRegistry {
     const subagents = this.requireSubagents()
     this.requireProvider(subagents, provider)
     const parent = this.requireLiveParent(parentSessionId)
+    // The durable child identity is caller-minted here: host 0.2.1 activations
+    // forbid a provider run id that names a live Session (the manager rejects
+    // it as DUPLICATE_CHILD), so the provider's returned run carries a
+    // per-execution id and the child session id rides the staged intent — the
+    // same channel the prepared-member path already used for it.
+    const childSessionId = prepared?.binding.childSessionId ?? randomUUID()
     // The cwd override rides the staged intent, not the host seam (the
-    // SubagentStartRequest contract has no cwd field and must not grow one):
-    // the provider consumes it as the resolveChildCwd override.
+    // SubagentStartRequest contract's cwd is the manager-resolved directory,
+    // not the family's resolveChildCwd override): the provider consumes it as
+    // the resolveChildCwd override.
     const intent: LocalAgentDelegationIntent = {
       kind: 'fresh',
       ...options?.onAdmitted === undefined ? {} : { onAdmitted: options.onAdmitted },
       ...options?.preparedMemberId === undefined ? {} : { preparedMemberId: options.preparedMemberId },
+      ...prepared === undefined ? { childSessionId } : {},
       ...options?.cwd === undefined ? {} : { cwd: options.cwd },
       // The container exec target rides the same channel for the same
       // reason: it is a family-private start fact, and the host
@@ -2076,17 +2126,24 @@ export class LocalAgentRegistry {
     const controller = new AbortController()
     let run: SubagentRun
     try {
-      run = await subagents.start(provider, {
-        prompt,
-        parent,
+      // Caller delivery: the family collects the result itself and pushes it
+      // through its own Remote; the parent agent gets no completion notice.
+      // The activation spec's label is required, so the absent-description
+      // case rides through as the empty string, which the provider's label
+      // composition reads as "no description" (the harness display name wins).
+      const activation = await subagents.startActivation({
+        provider,
+        label: options?.label ?? '',
+        request: { prompt, parent },
         signal: fusedSignal(controller, options?.signal),
-        ...options?.label === undefined ? {} : { label: options.label },
+        delivery: 'caller',
       })
+      run = activationRun(activation, childSessionId, options?.signal, message => this.ctx.logger.warn(message))
     } catch (error: unknown) {
       this.unstageDelegationIntent(parentSessionId, provider, intent)
       throw error
     }
-    this.trackRun(run.id, controller, run, options?.onProgress)
+    this.trackRun(childSessionId, controller, run, options?.onProgress)
     if (prepared !== undefined) {
       try { this.preparedMembers.write({ ...prepared, phase: 'used' }) }
       catch (error) {
@@ -2111,12 +2168,12 @@ export class LocalAgentRegistry {
    *    without staging; the provider still takes the authoritative lock inside
    *    its `start()`;
    * 4. live parent agent resolution (`ctx.agents.get`) — a harness hard
-   *    constraint, since `ctx.subagents.start` requires a live parent;
+   *    constraint, since `ctx.subagents.startActivation` requires a live parent;
    * 5. child-session REATTACH when `ctx.sessions.get(childSessionId)` is
    *    undefined (recipe below; `opts.reattach === false` disables this step
    *    and fails loud on a non-live child instead);
    * 6. stage `{ kind: 'resume', childSessionId, cliSessionId }` and, in the
-   *    same synchronous flow, `await ctx.subagents.start(provider, …)`;
+   *    same synchronous flow, `await ctx.subagents.startActivation({…})`;
    * 7. on start failure, roll the intent back via
    *    {@link unstageDelegationIntent} (no-op once consumed);
    * 8. on success, track the run under `childSessionId` for {@link cancel}
@@ -2232,12 +2289,18 @@ export class LocalAgentRegistry {
     const controller = new AbortController()
     let run: SubagentRun
     try {
-      run = await subagents.start(provider, {
-        prompt,
-        parent,
+      // Caller delivery (see start): the family self-collects the result and
+      // pushes it through its own Remote; the resumed child session id stays
+      // the tracking key while the activation carries the provider's
+      // per-execution id.
+      const activation = await subagents.startActivation({
+        provider,
+        label: options?.label ?? '',
+        request: { prompt, parent },
         signal: fusedSignal(controller, options?.signal),
-        ...options?.label === undefined ? {} : { label: options.label },
+        delivery: 'caller',
       })
+      run = activationRun(activation, childSessionId, options?.signal, message => this.ctx.logger.warn(message))
     } catch (error: unknown) {
       this.unstageDelegationIntent(parentSessionId, provider, intent)
       throw error
@@ -2247,11 +2310,12 @@ export class LocalAgentRegistry {
   }
 
   /**
-   * Cancel an in-flight facade-started run by its dsh child session id: aborts
-   * the internal controller whose (fused) signal was passed to
-   * `ctx.subagents.start`, which is the canonical cancellation channel for a
-   * one-shot run. The provider settles the run with an `aborted`-class stop
-   * reason. A caller holding the `SubagentRun` may also `run.dispose()`.
+   * Cancel an in-flight facade-started run by its dsh child session id:
+   * aborts the internal controller (the pre-publication channel fused into
+   * the activation's start signal) and disposes the activation — host 0.2.1's
+   * canonical POST-publication cancellation, which settles the run with an
+   * `aborted`-class stop reason. A caller holding the `SubagentRun` may also
+   * `run.dispose()`.
    * @param childSessionId - the dsh child session id of the run to cancel.
    * @returns whether an in-flight run was found and signalled (false on a
    *   miss — never a silent success, never a throw).
@@ -2261,9 +2325,16 @@ export class LocalAgentRegistry {
     if (entry === undefined) return this.memberInbox.cancelStarting(childSessionId)
     if (entry.controller !== undefined) {
       entry.controller.abort()
+      // The start signal is unlinked at publication, so disposal is the lever
+      // that actually reaches a running round. Idempotent and memoized by the
+      // manager; a teardown failure is reported, never thrown from here.
+      void entry.run.dispose().catch((error: unknown) => {
+        this.ctx.logger.warn(`localAgent: cancel disposal of ${childSessionId} failed: ${String(error)}`)
+      })
     } else {
       // Tool-registered run: the caller-supplied cancel lever (its fused
-      // controller), the same abort channel the facade entry aborts.
+      // controller plus the activation's dispose), the same channels the
+      // facade entry drives.
       entry.cancel?.()
     }
     return true
@@ -2273,16 +2344,17 @@ export class LocalAgentRegistry {
    * Register a NON-facade in-flight delegation run with the active-delegation
    * registry, keyed by the dsh child session id, so the `/local-agent stop`
    * command and {@link cancel} can reach it. This is the family TOOL's entry
-   * point: the tool starts its runs through `ctx.subagents.start` directly
-   * (not the facade), so without this registration its in-flight runs would
-   * be invisible to the stop command. The caller owns the cancel lever — a
-   * controller fused with the run's request signal, aborted exactly like the
-   * facade's tracked controller. The entry clears itself when the run's
-   * result settles (any stop reason); an existing facade entry for the same
-   * child session wins (it already owns cancellation and progress).
-   * @param childSessionId - the dsh child session id (the run id).
-   * @param run - the published subagent run.
-   * @param cancel - the lever that aborts the run's request signal.
+   * point: the tool starts its runs through `ctx.subagents.startActivation`
+   * directly (not the facade), so without this registration its in-flight
+   * runs would be invisible to the stop command. The caller owns the cancel
+   * lever — aborting the fused controller (pre-publication) and disposing the
+   * activation (post-publication), the same channels the facade drives. The
+   * entry clears itself when the run's result settles (any stop reason); an
+   * existing facade entry for the same child session wins (it already owns
+   * cancellation and progress).
+   * @param childSessionId - the dsh child session id.
+   * @param run - the published subagent run (the tool's activation adapter).
+   * @param cancel - the lever that cancels the run.
    */
   trackDelegationRun(childSessionId: string, run: SubagentRun, cancel: () => void): void {
     if (this.runs.has(childSessionId)) return
@@ -2388,7 +2460,7 @@ export class LocalAgentRegistry {
    * from persistence when it is not — a host restart evicts every child from
    * the live store. This is the public entry of the facade resume's reattach
    * recipe for callers that start resume rounds WITHOUT the facade (the
-   * family subagent tool starts runs directly through `ctx.subagents.start`;
+   * family subagent tool starts runs directly through `ctx.subagents.startActivation`;
    * without this call the provider refuses the resume as "not live").
    * Idempotent; a child that was never persisted fails through the
    * persistence layer's own not-found error.

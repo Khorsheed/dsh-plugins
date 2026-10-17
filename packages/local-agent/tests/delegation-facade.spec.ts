@@ -8,7 +8,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import CommandRuntime from '@deepseek-ai/dsh-commands'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SESSION_FORMAT_VERSION, SessionId } from '@deepseek-ai/dsh-session'
-import type { SubagentResult, SubagentRun, SubagentStartRequest } from '@deepseek-ai/dsh-subagent'
+import type { SubagentActivationSpec, SubagentResult, SubagentRun, SubagentStartRequest } from '@deepseek-ai/dsh-subagent'
 import * as localAgent from '@khorsheed/dsh-local-agent'
 import { LOCAL_AGENT_SERVICE, RUN_PROGRESS_HEARTBEAT_MS } from '@khorsheed/dsh-local-agent'
 import type { LocalAgentDelegationIntent, LocalAgentRunProgress } from '@khorsheed/dsh-local-agent'
@@ -17,21 +17,23 @@ const PROVIDER = 'fake-cli'
 const PARENT = 'parent-1'
 const PROMPT: ContentBlock[] = [{ type: 'text', text: 'do the thing' }]
 
-/** A controllable fake run: settle() resolves run.result. */
+/** A controllable fake run: settle() resolves run.result; dispose settles it aborted. */
 function makeRun(id: string, signal?: AbortSignal): { run: SubagentRun; settle(result: SubagentResult): void } {
   let settle!: (result: SubagentResult) => void
   const result = new Promise<SubagentResult>((resolve) => {
     settle = resolve
-    // The canonical cancellation channel for a one-shot run is the start signal.
+    // The pre-publication cancellation channel (host 0.2.1 unlinks it once
+    // the activation is published; disposal takes over then).
     signal?.addEventListener('abort', () => { resolve({ stopReason: 'aborted', output: [] }) })
   })
   return {
     settle,
     run: {
       id: SessionId(id),
-      localAgent: undefined,
       result,
-      dispose: () => Promise.resolve(),
+      // The 0.2.1 seam contract: dispose() settles local cancellation, so the
+      // facade's post-publication cancel lever (activation.dispose) lands here.
+      dispose: () => { settle({ stopReason: 'aborted', output: [] }); return Promise.resolve() },
     },
   }
 }
@@ -62,6 +64,13 @@ interface FacadeHarness {
  * records takeDelegationIntent consumption and returns controllable runs, and
  * a fake `sessionPersistence` whose open() hands back an empty-log write
  * handle (the host 0.1.5 handle API).
+ *
+ * The fake's `startActivation` mirrors the 0.2.1 manager's contract at the
+ * provider boundary: the spec carries label/signal separately from the
+ * request, the returned activation's `childId` is the provider's per-execution
+ * id (never the family's child session id), and `dispose()` is the
+ * post-publication cancel channel. The spec is reconstructed into the
+ * 0.2.0-era request shape so the recorded `requests` keep their old form.
  */
 async function mountFacade(): Promise<FacadeHarness> {
   const ctx = new Context()
@@ -98,9 +107,19 @@ async function mountFacade(): Promise<FacadeHarness> {
   }
   ctx.provide('subagents', {
     getProvider: (name: string) => name === PROVIDER ? { name } : undefined,
-    start: async (_name: string, request: SubagentStartRequest) => {
+    startActivation: async (spec: SubagentActivationSpec) => {
+      // Reconstruct the provider-facing request: the 0.2.1 manager passes the
+      // spec's label through verbatim (the facade's empty-string sentinel
+      // reads as "no description", mirroring the provider-side composition),
+      // and its own startup signal.
+      const request: SubagentStartRequest = {
+        ...spec.request,
+        ...spec.label === '' ? {} : { label: spec.label },
+        signal: spec.signal,
+      }
       harness.requests.push(request)
-      return startHandler(request)
+      const run = await startHandler(request)
+      return { childId: run.id, result: run.result, dispose: () => run.dispose() }
     },
   })
   ctx.provide('sessionPersistence', {
@@ -146,9 +165,14 @@ describe('LocalAgentRegistry delegation facade', () => {
 
     const run = await h.registry.start(PARENT, PROVIDER, PROMPT, { label: 'scout' })
 
-    expect(run).toBe(controllable.run)
+    // The facade adapts the 0.2.1 activation: the returned run's id is the
+    // child session id minted into the staged intent, never the provider's
+    // per-execution id.
+    const minted = (h.consumed[0] as { childSessionId?: string } | undefined)?.childSessionId
+    expect(minted).toBeDefined()
+    expect(run.id).toBe(SessionId(minted!))
     // The staged fresh intent was consumed by exactly this start, FIFO-paired.
-    expect(h.consumed).toEqual([{ kind: 'fresh' }])
+    expect(h.consumed).toEqual([{ kind: 'fresh', childSessionId: minted }])
     expectNothingStaged(h.registry)
     // The request carried the label, prompt, live parent, and a usable signal.
     expect(h.requests[0]?.label).toBe('scout')
@@ -156,12 +180,12 @@ describe('LocalAgentRegistry delegation facade', () => {
     expect(h.requests[0]?.parent.session.id).toBe(PARENT)
     expect(h.requests[0]?.signal.aborted).toBe(false)
     // The run is tracked while in flight…
-    expect(h.registry.cancel('child-fresh')).toBe(true)
+    expect(h.registry.cancel(minted!)).toBe(true)
     controllable.settle({ stopReason: 'aborted', output: [] })
     expect((await run.result).stopReason).toBe('aborted')
     // …and the registration clears once the run settles.
     await Promise.resolve()
-    expect(h.registry.cancel('child-fresh')).toBe(false)
+    expect(h.registry.cancel(minted!)).toBe(false)
   })
 
   it('resumes a recorded delegation and reattaches an absent child session', async () => {
@@ -382,7 +406,7 @@ describe('LocalAgentRegistry delegation facade', () => {
         return makeRun('child-2', request.signal).run
       })
       await h.registry.start(PARENT, PROVIDER, PROMPT)
-      expect(h.consumed).toEqual([{ kind: 'fresh' }])
+      expect(h.consumed).toEqual([{ kind: 'fresh', childSessionId: expect.any(String) }])
     })
 
     it('is a no-op when start throws after the provider consumed the intent', async () => {
@@ -398,7 +422,7 @@ describe('LocalAgentRegistry delegation facade', () => {
 
       // The provider consumed the intent, so the rollback found nothing to
       // remove — and the queue holds no orphan either way.
-      expect(h.consumed).toEqual([{ kind: 'fresh' }])
+      expect(h.consumed).toEqual([{ kind: 'fresh', childSessionId: expect.any(String) }])
       expectNothingStaged(h.registry)
     })
   })
@@ -444,10 +468,12 @@ describe('LocalAgentRegistry delegation facade', () => {
         })
 
         await h.registry.start(PARENT, PROVIDER, PROMPT)
+        const minted = (h.consumed[0] as { childSessionId?: string } | undefined)?.childSessionId
+        expect(minted).toBeDefined()
         expect(events).toHaveLength(0)
         await vi.advanceTimersByTimeAsync(RUN_PROGRESS_HEARTBEAT_MS)
         expect(events).toHaveLength(1)
-        expect(events[0]?.[0]).toBe('child-hb')
+        expect(events[0]?.[0]).toBe(minted)
         expect(events[0]?.[1].kind).toBe('heartbeat')
         await vi.advanceTimersByTimeAsync(RUN_PROGRESS_HEARTBEAT_MS)
         expect(events).toHaveLength(2)
@@ -477,12 +503,18 @@ describe('LocalAgentRegistry delegation facade', () => {
       })
       await h.registry.start(PARENT, PROVIDER, PROMPT, { onProgress: progress => { seenA.push(progress) } })
       await h.registry.start(PARENT, PROVIDER, PROMPT, { onProgress: progress => { seenB.push(progress) } })
+      // The facade tracks each run under the child session id it minted into
+      // the staged intent (host 0.2.1: the provider's run id is per-execution).
+      const idA = (h.consumed[0] as { childSessionId?: string } | undefined)?.childSessionId
+      const idB = (h.consumed[1] as { childSessionId?: string } | undefined)?.childSessionId
+      expect(idA).toBeDefined()
+      expect(idB).toBeDefined()
 
-      h.registry.reportRunProgress('child-a', { kind: 'mirror', mirroredLines: 12 })
+      h.registry.reportRunProgress(idA!, { kind: 'mirror', mirroredLines: 12 })
 
       expect(seenA).toEqual([{ kind: 'mirror', mirroredLines: 12 }])
       expect(seenB).toEqual([])
-      expect(cordisEvents).toEqual([['child-a', { kind: 'mirror', mirroredLines: 12 }]])
+      expect(cordisEvents).toEqual([[idA, { kind: 'mirror', mirroredLines: 12 }]])
     })
 
     it('still routes the provider’s settle observation after the result resolved', async () => {
@@ -497,13 +529,15 @@ describe('LocalAgentRegistry delegation facade', () => {
       const controllable = makeRun('child-late')
       h.setStartHandler((request) => { h.consumeIntent(request); return controllable.run })
       await h.registry.start(PARENT, PROVIDER, PROMPT, { onProgress: progress => { seen.push(progress) } })
+      const minted = (h.consumed[0] as { childSessionId?: string } | undefined)?.childSessionId
+      expect(minted).toBeDefined()
 
       controllable.settle({ stopReason: 'completed', output: [] })
       await controllable.run.result
       // Let the facade's own settle handler run before the provider reports.
       await Promise.resolve()
 
-      h.registry.recordRoundSettled('child-late', {
+      h.registry.recordRoundSettled(minted!, {
         observedModel: 'gpt-5.6-sol',
         cliVersion: '0.144.0',
         usage: { inputTokens: 10, outputTokens: 4 },
@@ -517,7 +551,7 @@ describe('LocalAgentRegistry delegation facade', () => {
 
       // The route closes on delivery: a second report reaches the cordis event
       // only, never the finished call's callback.
-      h.registry.reportRunProgress('child-late', { kind: 'mirror', mirroredLines: 1 })
+      h.registry.reportRunProgress(minted!, { kind: 'mirror', mirroredLines: 1 })
       expect(seen).toHaveLength(1)
     })
 
@@ -610,13 +644,16 @@ describe('LocalAgentRegistry delegation facade', () => {
         return controllable.run
       })
       await h.registry.start(PARENT, PROVIDER, PROMPT)
-      // The facade already tracks the child; a tool registration must not
-      // replace the facade controller (which owns cancellation + progress).
+      // The facade tracks the child under the id it minted into the intent;
+      // a tool registration must not replace the facade controller (which
+      // owns cancellation + progress).
+      const minted = (h.consumed[0] as { childSessionId?: string } | undefined)?.childSessionId
+      expect(minted).toBeDefined()
       let strayCancelled = 0
-      h.registry.trackDelegationRun('child-fresh', controllable.run, () => { strayCancelled += 1 })
+      h.registry.trackDelegationRun(minted!, controllable.run, () => { strayCancelled += 1 })
 
-      expect(h.registry.isDelegationActive('child-fresh')).toBe(true)
-      expect(h.registry.cancel('child-fresh')).toBe(true)
+      expect(h.registry.isDelegationActive(minted!)).toBe(true)
+      expect(h.registry.cancel(minted!)).toBe(true)
       // The facade controller aborted the run; the tool lever never fired.
       expect(strayCancelled).toBe(0)
       controllable.settle({ stopReason: 'aborted', output: [] })
@@ -636,7 +673,7 @@ describe('delegation cwd option and observation read side', () => {
     const h = await mountFacade()
     h.enterParent(PARENT)
     await h.registry.start(PARENT, PROVIDER, PROMPT, { cwd: '/cell-a' })
-    expect(h.consumed[0]).toEqual({ kind: 'fresh', cwd: '/cell-a' })
+    expect(h.consumed[0]).toEqual({ kind: 'fresh', childSessionId: expect.any(String), cwd: '/cell-a' })
 
     h.registry.recordDelegation({
       childSessionId: 'child-cwd', provider: PROVIDER, parentSessionId: PARENT, cliSessionId: 'cli-1', cwd: '/cell-a',
@@ -651,7 +688,7 @@ describe('delegation cwd option and observation read side', () => {
     const h = await mountFacade()
     h.enterParent(PARENT)
     await h.registry.start(PARENT, PROVIDER, PROMPT, { cwd: '/cell-a', scope: 'eval-b' })
-    expect(h.consumed[0]).toEqual({ kind: 'fresh', cwd: '/cell-a', scope: 'eval-b' })
+    expect(h.consumed[0]).toEqual({ kind: 'fresh', childSessionId: expect.any(String), cwd: '/cell-a', scope: 'eval-b' })
 
     h.registry.recordDelegation({
       childSessionId: 'child-scope', provider: PROVIDER, parentSessionId: PARENT, cliSessionId: 'cli-3', cwd: '/cell-a', scope: 'eval-b',
@@ -675,7 +712,7 @@ describe('delegation cwd option and observation read side', () => {
     const h = await mountFacade()
     h.enterParent(PARENT)
     await h.registry.start(PARENT, PROVIDER, PROMPT, { cwd: '/cell-a', model: 'model-a' })
-    expect(h.consumed[0]).toEqual({ kind: 'fresh', cwd: '/cell-a', model: 'model-a' })
+    expect(h.consumed[0]).toEqual({ kind: 'fresh', childSessionId: expect.any(String), cwd: '/cell-a', model: 'model-a' })
 
     // A resume re-requests what the record holds; naming one here would
     // switch a live conversation's model mid-way, so it is refused BEFORE
@@ -701,14 +738,14 @@ describe('delegation cwd option and observation read side', () => {
     const h = await mountFacade()
     h.enterParent(PARENT)
     await h.registry.start(PARENT, PROVIDER, PROMPT, {})
-    expect(h.consumed[0]).toEqual({ kind: 'fresh' })
+    expect(h.consumed[0]).toEqual({ kind: 'fresh', childSessionId: expect.any(String) })
   })
 
   it('stages no cwd when the option is absent — the default intent is unchanged', async () => {
     const h = await mountFacade()
     h.enterParent(PARENT)
     await h.registry.start(PARENT, PROVIDER, PROMPT)
-    expect(h.consumed[0]).toEqual({ kind: 'fresh' })
+    expect(h.consumed[0]).toEqual({ kind: 'fresh', childSessionId: expect.any(String) })
     expectNothingStaged(h.registry)
   })
 
@@ -717,7 +754,7 @@ describe('delegation cwd option and observation read side', () => {
     h.enterParent(PARENT)
     const exec = { container: 'dsh-lab-abc', workdir: '/workspace', env: { CODEX_HOME: '/creds/codex' } }
     await h.registry.start(PARENT, PROVIDER, PROMPT, { cwd: '/cell-a', exec })
-    expect(h.consumed[0]).toEqual({ kind: 'fresh', cwd: '/cell-a', exec })
+    expect(h.consumed[0]).toEqual({ kind: 'fresh', childSessionId: expect.any(String), cwd: '/cell-a', exec })
 
     h.registry.recordDelegation({
       childSessionId: 'child-exec', provider: PROVIDER, parentSessionId: PARENT, cliSessionId: 'cli-2', cwd: '/cell-a',
@@ -733,7 +770,7 @@ describe('delegation cwd option and observation read side', () => {
     const h = await mountFacade()
     h.enterParent(PARENT)
     await h.registry.start(PARENT, PROVIDER, PROMPT, { cwd: '/cell-a' })
-    expect(h.consumed[0]).toEqual({ kind: 'fresh', cwd: '/cell-a' })
+    expect(h.consumed[0]).toEqual({ kind: 'fresh', childSessionId: expect.any(String), cwd: '/cell-a' })
     expectNothingStaged(h.registry)
   })
 

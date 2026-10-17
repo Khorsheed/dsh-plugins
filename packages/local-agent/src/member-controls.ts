@@ -7,9 +7,20 @@ import type { LocalAgentAppliedConfiguration, LocalAgentMemberBinding } from './
 /** The provider boundary owns the lease; facade and direct tool starts share it. */
 export class MemberControls {
   private readonly admitted = new WeakMap<object, LocalAgentAppliedConfiguration>()
+  /**
+   * Latest admitted configuration per child session id. Host 0.2.1 note: the
+   * activation manager wraps the provider's run, so a facade/tool caller never
+   * holds the exact object {@link admitted} keys — its run adapter names the
+   * child session id instead. Rounds of one child serialize through this
+   * class's queue, so the latest entry at read time is the reader's own round.
+   */
+  private readonly admittedByChild = new Map<string, LocalAgentAppliedConfiguration>()
   configurationOf(run: object): LocalAgentAppliedConfiguration | undefined {
-    const configuration = this.admitted.get(run)
-    return configuration === undefined ? undefined : structuredClone(configuration)
+    const exact = this.admitted.get(run)
+    if (exact !== undefined) return structuredClone(exact)
+    const id = (run as { readonly id?: unknown }).id
+    const byChild = typeof id === 'string' ? this.admittedByChild.get(id) : undefined
+    return byChild === undefined ? undefined : structuredClone(byChild)
   }
   private readonly members = new Map<string, { binding: LocalAgentMemberBinding; control: MemberConfigurationController }>()
 
@@ -112,6 +123,7 @@ export class MemberControls {
       nativeStarted = true
       const run = await start(lease.configuration)
       this.admitted.set(run, lease.configuration)
+      this.admittedByChild.set(binding.childSessionId, lease.configuration)
       const release = (): void => { try { lease.release() } catch (error) { this.onError(error) } }
       void run.result.then(release, release)
       return run
