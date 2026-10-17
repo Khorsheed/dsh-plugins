@@ -21,6 +21,7 @@
     "src/client/index.ts",
     "src/client/locales.ts",
     "src/client/preset-visibility.ts",
+    "src/client/quiz-drafts.ts",
     "src/client/store.ts",
     "src/client/judge.ts",
     "src/client/look.tsx",

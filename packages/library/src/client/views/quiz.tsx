@@ -16,6 +16,7 @@ import { useMemo, useState, type ReactNode } from 'react'
 import { PanelHeader } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
 import { LEITNER_INTERVAL_DAYS, type LibraryAssessResult, type LibraryCard, type LibraryQuizQuestion, type LibraryReviewRating, type LibraryVerdict } from '../../types.ts'
 import { choiceIndex, choiceOptions, clozeOf, fillMatches, letterMarks, pickMode, spellMatches } from '../judge.ts'
+import { clearQuizDraft, loadQuizDraft, saveQuizDraft } from '../quiz-drafts.ts'
 import { MathText } from '../math.tsx'
 import { Highlight, outcome, shortGloss, StateLine, useLoad, value, type ViewProps } from '../ui.tsx'
 import css from '../LibraryPane.module.css'
@@ -28,15 +29,16 @@ interface Answered {
   readonly void?: boolean
 }
 
-/** The quiz screen: the whole paper on one scroll — every question numbered, judged on the spot, 交卷 once all are answered. */
+/** The quiz screen: the whole paper on one scroll — every question numbered, judged on the spot, 交卷 once all are answered. The in-progress sitting persists locally (quiz-drafts) — leaving the paper never loses an answer. */
 export function QuizView({ p, projectId, resourceId, quizId }: ViewProps & { projectId: string; resourceId: string | undefined; quizId: string }): ReactNode {
   const { t, actions } = p
   const loaded = useLoad(async () => {
     const result = await outcome(p.getAssessment(projectId, quizId))
     return result.assessment
   }, [projectId, quizId])
-  const [answers, setAnswers] = useState<Record<string, Answered>>({})
-  const [drafts, setDrafts] = useState<Record<string, string>>({})
+  const [initialDraft] = useState(() => loadQuizDraft(quizId))
+  const [answers, setAnswers] = useState<Record<string, Answered>>(() => ({ ...(initialDraft?.answers ?? {}) }))
+  const [drafts, setDrafts] = useState<Record<string, string>>(() => ({ ...(initialDraft?.drafts ?? {}) }))
   const [notice, setNotice] = useState<string | undefined>()
   const [busy, setBusy] = useState(false)
   const assessment = loaded.data
@@ -48,7 +50,19 @@ export function QuizView({ p, projectId, resourceId, quizId }: ViewProps & { pro
   const allAnswered = quiz !== undefined && done === total
 
   const record = (id: string, entry: Answered): void => {
-    setAnswers(previous => ({ ...previous, [id]: entry }))
+    setAnswers(previous => {
+      const next = { ...previous, [id]: entry }
+      saveQuizDraft(quizId, { answers: next, drafts, at: new Date().toISOString() })
+      return next
+    })
+  }
+
+  const recordDraft = (id: string, text: string): void => {
+    setDrafts(previous => {
+      const next = { ...previous, [id]: text }
+      saveQuizDraft(quizId, { answers, drafts: next, at: new Date().toISOString() })
+      return next
+    })
   }
 
   const finish = async (): Promise<void> => {
@@ -79,6 +93,7 @@ export function QuizView({ p, projectId, resourceId, quizId }: ViewProps & { pro
     setBusy(true)
     try {
       const result = await outcome(p.putAttempt(projectId, quiz.id, verdicts))
+      clearQuizDraft(quiz.id)
       actions.replace({ view: 'result', projectId, ...(resourceId === undefined ? {} : { resourceId }), result })
     } catch (failure) {
       setNotice(failure instanceof Error ? failure.message : String(failure))
@@ -108,7 +123,7 @@ export function QuizView({ p, projectId, resourceId, quizId }: ViewProps & { pro
             question={question}
             answered={answers[question.id]}
             draft={drafts[question.id] ?? ''}
-            onDraft={text => { setDrafts(previous => ({ ...previous, [question.id]: text })) }}
+            onDraft={text => { recordDraft(question.id, text) }}
             onAnswer={entry => { record(question.id, entry) }}
           />
         ))}
