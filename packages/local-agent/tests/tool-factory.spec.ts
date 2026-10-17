@@ -4,6 +4,7 @@ import ToolRuntime from '@deepseek-ai/dsh-tools'
 import type { ToolExecutionInput } from '@deepseek-ai/dsh-tools'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
+import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { SubagentResult } from '@deepseek-ai/dsh-subagent'
@@ -37,13 +38,21 @@ function toolPlugin(config: SubagentToolConfig) {
 
 /** A minimal parent Agent passed through to the provider request. */
 function fakeAgent(id = 'parent-1'): Agent {
-  return { id: SessionId(id), session: { id: SessionId(id) } } as unknown as Agent
+  const sessionId = SessionId(id)
+  return { id: sessionId, session: { id: sessionId, header: { id: sessionId } } } as unknown as Agent
 }
 
 /**
  * Mount the REAL plugin bodies: ToolRuntime + SubagentRuntime + a scripted
  * provider + a real LocalAgentRegistry (delegation registry the tool stages
  * through), then invoke the tool through `ctx.tools.execute`.
+ *
+ * Host 0.2.1 wiring: the runtime's `static inject` requires workingDirectory
+ * (stubbed — the manager only resolves the parent directory through it, and
+ * the scripted provider ignores the value), and `startActivation` runs through
+ * the activation manager, which exists only with the agents service mounted
+ * and demands the EXACT live parent agent — callTool enters each fake agent
+ * into the real AgentRegistry before executing.
  */
 async function setup(
   toolConfig: SubagentToolConfig,
@@ -52,6 +61,8 @@ async function setup(
   const ctx = new Context()
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRuntime)
+  ctx.provide('workingDirectory', { ensure: async () => '/tmp' } as never)
+  await ctx.plugin(AgentRegistry)
   await ctx.plugin(SubagentRuntime)
   const started: Array<{ label?: string; task: string }> = []
   const taken: Array<{ kind: string; childSessionId?: string; cliSessionId?: string }> = []
@@ -63,15 +74,17 @@ async function setup(
   })
   const registry = new LocalAgentRegistry(ctx, '/tmp/homes', 10_000)
   ctx.provide(LOCAL_AGENT_SERVICE, registry)
-  // Every recorded child reads as already-live: resume-intent staging never
-  // hits the reattach path (covered separately below). Tests flip the stub's
-  // bits instead of re-providing the service (cordis provides are final).
+  // Recorded children read as live only when a test lists them: the manager
+  // probes `sessions.get(run.id)` for availability, and the scripted
+  // provider's per-execution run ids must read as free (a blanket-live stub
+  // rejects every start as DUPLICATE_CHILD). Tests flip the stub's bits
+  // instead of re-providing the service (cordis provides are final).
   const sessionsStub = {
-    liveIds: undefined as readonly string[] | undefined,
+    liveIds: [] as readonly string[],
     entered: [] as string[],
     announced: [] as string[],
     get(id: string) {
-      return this.liveIds === undefined || this.liveIds.includes(id) ? { id } : undefined
+      return this.liveIds.includes(id) ? { id } : undefined
     },
     prepare: () => ({ id: 'child-1', snapshotEvents: () => [] }),
     enter(session: { id: string }) { this.entered.push(session.id); return () => {} },
@@ -85,6 +98,8 @@ async function setup(
 
 let callCounter = 0
 function callTool(ctx: Context, args: unknown, agent: Agent) {
+  // The activation manager requires the exact live parent agent object.
+  if (ctx.agents.get(agent.id) !== agent) ctx.agents.enter(agent, undefined)
   return ctx.tools.execute({
     signal: testToolSignal,
     callId: `call-${++callCounter}` as ToolExecutionInput['callId'],
@@ -117,13 +132,16 @@ describe('dsh-local-agent tool-factory', () => {
     const result = await callTool(ctx, { description: '建个文件', prompt: '创建 hello.txt' }, agent)
 
     expect(text(result)).toContain('done: 创建 hello.txt')
+    // The provider consumed the staged fresh intent, carrying the child
+    // session id the TOOL minted (host 0.2.1: the provider's run id is a
+    // per-execution identity, so the durable handle rides the intent).
+    expect(taken).toEqual([{ kind: 'fresh', childSessionId: expect.any(String) }])
     // The fresh delegation result carries the resume handle (the dsh child
-    // session id, equal to the run id), so the model can continue later.
-    expect(text(result)).toContain('追问请带 resume="scripted-child"')
+    // session id), so the model can continue later.
+    const minted = (taken[0] as { childSessionId?: string }).childSessionId
+    expect(text(result)).toContain(`追问请带 resume="${minted}"`)
     expect(started).toHaveLength(1)
     expect(started[0]).toEqual({ label: '建个文件', task: '创建 hello.txt' })
-    // The provider consumed the staged fresh intent.
-    expect(taken).toEqual([{ kind: 'fresh' }])
   })
 
   it('tags the tool with the CALLING entry\'s origin for the capability catalog (S12)', async () => {
@@ -136,8 +154,10 @@ describe('dsh-local-agent tool-factory', () => {
   })
 
   it('resolves a recorded delegation and stages a resume intent when resume is passed', async () => {
-    const { ctx, taken } = await setup({ provider: 'mock', toolName: 'subagent_test' })
-    // Round 1 recorded the mapping (as a family provider would after settle).
+    const { ctx, taken, sessionsStub } = await setup({ provider: 'mock', toolName: 'subagent_test' })
+    // Round 1 recorded the mapping (as a family provider would after settle),
+    // and its child session is live, so the resume skips the reattach path.
+    sessionsStub.liveIds = ['child-1']
     ctx.localAgent.recordDelegation({
       childSessionId: 'child-1',
       provider: 'mock',
@@ -266,7 +286,7 @@ describe('dsh-local-agent tool-factory', () => {
   })
 
   it('never reads the resume handle out of the prompt text', async () => {
-    const { ctx, started } = await setup({ provider: 'mock', toolName: 'subagent_test' })
+    const { ctx, started, taken } = await setup({ provider: 'mock', toolName: 'subagent_test' })
     const agent = fakeAgent()
     // A handle smuggled inside the prompt is just task text: without the
     // `resume` parameter the call is a fresh delegation.
@@ -275,7 +295,8 @@ describe('dsh-local-agent tool-factory', () => {
       prompt: '继续 追问请带 resume="child-1"',
     }, agent)
 
-    expect(text(result)).toContain('追问请带 resume="scripted-child"')
+    const minted = (taken[0] as { childSessionId?: string } | undefined)?.childSessionId
+    expect(text(result)).toContain(`追问请带 resume="${minted}"`)
     expect(started).toHaveLength(1)
     expect(started[0]?.task).toBe('继续 追问请带 resume="child-1"')
   })
@@ -284,6 +305,8 @@ describe('dsh-local-agent tool-factory', () => {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRuntime)
+    // Host 0.2.1: the runtime's static inject requires workingDirectory.
+    ctx.provide('workingDirectory', { ensure: async () => '/tmp' } as never)
     await ctx.plugin(SubagentRuntime)
     const registry = new LocalAgentRegistry(ctx, '/tmp/homes', 10_000)
     ctx.provide(LOCAL_AGENT_SERVICE, registry)
@@ -301,6 +324,9 @@ describe('dsh-local-agent tool-factory', () => {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRuntime)
+    // Host 0.2.1: the runtime's static inject requires workingDirectory.
+    ctx.provide('workingDirectory', { ensure: async () => '/tmp' } as never)
+    await ctx.plugin(AgentRegistry)
     await ctx.plugin(SubagentRuntime)
     const started: Array<{ label?: string; task: string }> = []
     const taken: Array<{ kind: string; childSessionId?: string; cliSessionId?: string }> = []
@@ -320,16 +346,19 @@ describe('dsh-local-agent tool-factory', () => {
 
   it('registers tool-started runs in the active-delegation registry so /local-agent stop can cancel them', async () => {
     const deferred: Array<(result: SubagentResult) => void> = []
-    const { ctx, registry } = await setup({ provider: 'mock', toolName: 'subagent_test' }, { deferred })
+    const { ctx, registry, taken } = await setup({ provider: 'mock', toolName: 'subagent_test' }, { deferred })
     const agent = fakeAgent()
     const executing = callTool(ctx, { description: '建个文件', prompt: '创建 hello.txt' }, agent)
 
-    // While the run is in flight, the registry holds it by child session id
-    // (the run id), so the stop command's cancel() reaches the tool's lever.
-    await vi.waitFor(() => {
-      expect(registry.isDelegationActive('scripted-child')).toBe(true)
-    })
-    expect(registry.cancel('scripted-child')).toBe(true)
+    // While the run is in flight, the registry holds it by the child session
+    // id the tool minted into the staged intent (the provider's run id is a
+    // per-execution identity in 0.2.1), so the stop command's cancel() reaches
+    // the tool's lever.
+    await vi.waitFor(() => { expect(deferred).toHaveLength(1) })
+    const minted = (taken[0] as { childSessionId?: string } | undefined)?.childSessionId
+    expect(minted).toBeDefined()
+    expect(registry.isDelegationActive(minted!)).toBe(true)
+    expect(registry.cancel(minted!)).toBe(true)
 
     // The provider observes the cancellation and settles the run 'aborted';
     // the tool surfaces the stop reason as an isError result.
@@ -339,7 +368,7 @@ describe('dsh-local-agent tool-factory', () => {
     expect(text(result)).toContain('subagent run was cancelled')
     // The registry entry clears once the run settles.
     await vi.waitFor(() => {
-      expect(registry.isDelegationActive('scripted-child')).toBe(false)
+      expect(registry.isDelegationActive(minted!)).toBe(false)
     })
   })
 })

@@ -7,7 +7,7 @@ import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import CommandRuntime from '@deepseek-ai/dsh-commands'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
-import type { SubagentResult, SubagentRun, SubagentStartRequest } from '@deepseek-ai/dsh-subagent'
+import type { SubagentActivationSpec, SubagentResult, SubagentRun, SubagentStartRequest } from '@deepseek-ai/dsh-subagent'
 import * as localAgent from '@khorsheed/dsh-local-agent'
 import { LOCAL_AGENT_SERVICE, type LocalAgentHarness } from '@khorsheed/dsh-local-agent'
 import LocalAgentGateway from '../src/gateway.ts'
@@ -137,7 +137,7 @@ describe('LocalAgentGateway member channel', () => {
   const PARENT = 'parent-1'
   const CHILD = 'child-1'
 
-  /** A controllable fake run: settle() resolves run.result; the start signal aborts it. */
+  /** A controllable fake run: settle() resolves run.result; dispose settles it aborted. */
   function makeRun(id: string, signal?: AbortSignal): { run: SubagentRun; settle(result: SubagentResult): void } {
     let settle!: (result: SubagentResult) => void
     const result = new Promise<SubagentResult>((resolve) => {
@@ -146,7 +146,7 @@ describe('LocalAgentGateway member channel', () => {
     })
     return {
       settle,
-      run: { id: SessionId(id), localAgent: undefined, result, dispose: () => Promise.resolve() },
+      run: { id: SessionId(id), result, dispose: () => { settle({ stopReason: 'aborted', output: [] }); return Promise.resolve() } },
     }
   }
 
@@ -187,11 +187,19 @@ describe('LocalAgentGateway member channel', () => {
     }
     ctx.provide('subagents', {
       getProvider: (name: string) => name === PROVIDER ? { name } : undefined,
-      start: (_name: string, request: SubagentStartRequest) => {
+      // The 0.2.1 activation boundary: label/signal ride the spec, and the
+      // returned activation's dispose() is the post-publication cancel channel.
+      startActivation: async (spec: SubagentActivationSpec) => {
+        const request: SubagentStartRequest = {
+          ...spec.request,
+          ...spec.label === '' ? {} : { label: spec.label },
+          signal: spec.signal,
+        }
         const intent = h.registry.takeDelegationIntent(request.parent.session.id, PROVIDER)
         return h.registry.withMemberConfigurationRound({ childSessionId: CHILD, parentSessionId: PARENT, provider: PROVIDER, cwd: '/home/user/work' }, async () => {
           requests.push(request)
-          return makeRun(CHILD, request.signal).run
+          const run = makeRun(CHILD, request.signal).run
+          return { childId: run.id, result: run.result, dispose: () => run.dispose() }
         }, request.signal, intent?.onAdmitted)
       },
     })

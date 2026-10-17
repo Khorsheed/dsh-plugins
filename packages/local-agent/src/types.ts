@@ -706,15 +706,24 @@ export interface LocalAgentMemberRun {
 /**
  * What one delegation tool call intends for the provider's next `start()`.
  * The tool stages exactly one intent per call before awaiting
- * `ctx.subagents.start()`, and the provider consumes exactly one per start,
- * so a per-(parent, provider) FIFO keeps fresh and resume rounds paired even
- * under parallel delegation.
+ * `ctx.subagents.startActivation()`, and the provider consumes exactly one per
+ * start, so a per-(parent, provider) FIFO keeps fresh and resume rounds
+ * paired even under parallel delegation.
  */
 export type LocalAgentDelegationIntent =
   | {
     readonly kind: 'fresh'
     readonly onAdmitted?: () => void | Promise<void>
     readonly preparedMemberId?: string
+    /**
+     * The dsh child session id the caller minted for this round (facade/tool
+     * fresh starts). Host 0.2.1 activation semantics forbid a provider run id
+     * that names a live Session (`startActivation` rejects it as
+     * DUPLICATE_CHILD), so the provider's returned run carries a per-execution
+     * id and the durable child identity rides this channel instead. Absent
+     * means the provider mints one (a direct start with no staged intent).
+     */
+    readonly childSessionId?: string
     readonly effort?: string
     readonly configurationLock?: string
     /**

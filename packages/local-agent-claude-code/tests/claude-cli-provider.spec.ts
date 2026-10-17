@@ -528,7 +528,6 @@ describe('claude-cli-provider child session record', () => {
       prompt: [{ type: 'text', text: '建个文件' }],
       parent: { session: parent },
       signal: new AbortController().signal,
-      descriptor: { version: 2, mode: 'one-shot', provider: 'claude-local', label: '任务' },
     } as unknown as Parameters<ClaudeCliProvider['start']>[0]
 
     await expect(provider.start(request)).rejects.toThrow(/not spawned/)
@@ -589,14 +588,15 @@ describe('claude-cli-provider resume round', () => {
       prompt: [{ type: 'text', text: '接着做' }],
       parent: { session: { id: SessionId('parent-1'), header: { cwd: '/tmp' } } },
       signal: new AbortController().signal,
-      descriptor: { version: 2, mode: 'one-shot', provider: 'claude-local', label: '继续' },
     } as unknown as Parameters<ClaudeCliProvider['start']>[0]
 
     const run = await provider.start(request)
     const result = await run.result
     expect(result.stopReason).toBe('completed')
     expect(spawned[0]).toEqual(['claude', '-p', '--dangerously-skip-permissions', '--verbose', '--resume', 's1', '--output-format', 'stream-json', '接着做'])
-    expect(run.id).toBe(SessionId('child-run-1'))
+    // Host 0.2.1: a fresh PER-EXECUTION run id; the SAME child session is
+    // pinned by the argv and the turn counts below, not by the run id.
+    expect(run.id).not.toBe(SessionId('child-run-1'))
     const turnStarts = child.snapshotEvents().filter(event => event.type === 'turn/start')
     const turnEnds = child.snapshotEvents().filter(event => event.type === 'turn/end')
     expect(turnStarts).toHaveLength(2)
@@ -851,7 +851,6 @@ describe('claude-cli-provider observed model and cwd', () => {
     prompt: [{ type: 'text', text: '建个文件' }],
     parent: { session: { id: SessionId('parent-1'), header: { cwd: '/tmp', delegationDepth: 0 } } },
     signal: new AbortController().signal,
-    descriptor: { version: 2, mode: 'one-shot', provider: 'claude-local', label: '任务' },
   } as unknown as Parameters<ClaudeCliProvider['start']>[0]
 
   /** The init event names the model on the real 2.x wire. */

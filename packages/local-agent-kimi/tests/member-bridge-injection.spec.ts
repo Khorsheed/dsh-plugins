@@ -109,7 +109,6 @@ describe('kimi-cli-provider member bridge injection', () => {
       prompt: [{ type: 'text', text: '建个文件' }],
       parent: { session: { id: SessionId(PARENT), header: { cwd: '/tmp', delegationDepth: 0 } } },
       signal: new AbortController().signal,
-      descriptor: { version: 2, mode: 'one-shot', provider: 'kimi-cli', label: '委派' },
     } as unknown as SubagentStartRequest
   }
 

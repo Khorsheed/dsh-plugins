@@ -38,11 +38,13 @@ import type { LocalAgentResolvedConfiguration } from '@khorsheed/dsh-local-agent
 import { configureKimiSession } from './session-configuration.ts'
 import { kimiNativeConfiguration, type KimiNativeConfiguration } from './model-catalog.ts'
 import { StringDecoder } from 'node:string_decoder'
+import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { TokenUsage } from '@deepseek-ai/dsh-llm'
 import type { Session } from '@deepseek-ai/dsh-session'
+import { SessionId } from '@deepseek-ai/dsh-session'
 import {
   settleRunResult,
   subprocessRunHandle,
@@ -1426,7 +1428,11 @@ export class KimiAcpLiveDriver {
     await Promise.race([accepted, abortBranch.catch(() => undefined)])
 
     return subprocessRunHandle({
-      id: childSession.id,
+      // Host 0.2.1: a fresh PER-EXECUTION run id — the activation manager
+      // rejects a run id naming a live Session (this child session is live),
+      // and resume rounds reuse the child session id. The family's durable
+      // tracking key (the child session id) rides the staged intent instead.
+      id: SessionId(randomUUID()),
       result,
       signal: request.signal,
       onAbort,

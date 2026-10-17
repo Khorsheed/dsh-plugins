@@ -40,10 +40,10 @@ describe('local-agent-kimi public Loader composition', () => {
       provider: {
         name: 'kimi-cli',
         capabilities: {
+          agentOptions: false,
+          agentPreset: false,
           outputSchema: false,
           depthLimit: false,
-          toolFilter: false,
-          persona: false,
         },
         inheritsParentContext: false,
       },

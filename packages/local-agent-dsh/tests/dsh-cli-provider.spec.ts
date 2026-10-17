@@ -113,7 +113,6 @@ function request(over: Partial<{ prompt: string; cwd: string; signal: AbortSigna
         header: over.cwd === undefined ? { cwd: '/tmp' } : (over.cwd === null ? {} : { cwd: over.cwd }),
       },
     },
-    descriptor: { description: '测试委派' },
     signal: over.signal ?? new AbortController().signal,
   }
 }
@@ -171,11 +170,11 @@ describe('dsh-cli-provider fresh run', () => {
   })
 
   it('appends the parent-side subagent/catalog row once, where the child descriptor lands', async () => {
-    const { ctx } = mount({ key: 'sk-test' })
+    const { ctx, records } = mount({ key: 'sk-test' })
     const provider = new DshCliProvider(ctx, {})
     // A real parent Session: the provider appends the parent-side
-    // subagent/catalog discovery row to it — the row the official runtime
-    // only appends for in-process children (run.localAgent).
+    // subagent/catalog discovery row to it — the 0.2.1 manager writes it only
+    // for parent-delivered children, and the family runs caller delivery.
     const parent = Session.create(SessionId('parent-1'), [], {
       id: SessionId('parent-1'),
       version: SESSION_FORMAT_VERSION,
@@ -186,17 +185,18 @@ describe('dsh-cli-provider fresh run', () => {
     const run = await provider.start({
       prompt: [{ type: 'text', text: '建个文件' }],
       parent: { session: parent },
-      descriptor: { description: '测试委派' },
       signal: new AbortController().signal,
     } as never)
     await run.result
     const catalog = parent.snapshotEvents().filter(event => event.type === 'subagent/catalog')
     expect(catalog).toHaveLength(1)
-    // The row names the child session the provider just created (for dsh the
-    // run id IS the child session id) and carries the harness label.
+    // The row names the child session the provider just created — the id the
+    // delegation record carries (host 0.2.1: the run id is a per-execution
+    // identity, never the live child session's) — with the harness label.
+    const recorded = records.mock.calls[0]?.[0] as { childSessionId?: string } | undefined
     expect(catalog[0]?.data).toMatchObject({
       version: 0,
-      childId: run.id,
+      childId: recorded?.childSessionId,
       mode: 'one-shot',
       label: 'dsh',
     })

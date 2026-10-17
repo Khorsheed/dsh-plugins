@@ -62,7 +62,6 @@ describe('dsh-cli-provider member bridge injection', () => {
       prompt: [{ type: 'text', text: 'do the task' }],
       parent: { session: { id: SessionId(PARENT), header: { cwd: '/tmp', delegationDepth: 0 } } },
       signal: new AbortController().signal,
-      descriptor: { version: 2, mode: 'one-shot', provider: 'dsh-cli', label: '委派' },
     } as unknown as SubagentStartRequest
   }
 

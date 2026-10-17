@@ -18,6 +18,7 @@ import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import {
   NO_START_CAPABILITIES,
+  SUBAGENT_DESCRIPTOR_VERSION,
   settleRunResult,
   subprocessRunHandle,
   type ResolvedSubagentStartRequest,
@@ -229,7 +230,7 @@ export class DshCliProvider implements SubagentProvider {
         ...record?.configurationLock === undefined ? {} : { configurationLock: record.configurationLock },
       }, configuration => this.startDshResume(request, intent, cwd, homeDir, exec, scope, record?.model, configuration), request.signal, intent?.onAdmitted)
     }
-    const childSessionId = SessionId(intent?.preparedMemberId ?? randomUUID())
+    const childSessionId = SessionId(intent?.preparedMemberId ?? intent?.childSessionId ?? randomUUID())
     if (typeof this.ctx.localAgent.withMemberConfigurationRound !== 'function') {
       if (intent?.effort !== undefined) throw new Error('DSH effort requires the configuration admission core')
       return this.startDshFresh(request, cwd, homeDir, exec, scope, intent?.model, childSessionId)
@@ -271,20 +272,25 @@ export class DshCliProvider implements SubagentProvider {
           delegationDepth: (request.parent.session.header.delegationDepth ?? 0) + 1,
         },
       })
-      // The durable one-shot descriptor the runtime resolved marks this child
-      // as session-backed; without it the 子代理 projection cannot classify
-      // the session and the delegation stays invisible. The label carries the
-      // harness display name as the source marker so the dropdown shows which
-      // local agent produced the conversation.
+      // The durable one-shot descriptor marks this child as session-backed;
+      // without it the 子代理 projection cannot classify the session and the
+      // delegation stays invisible. Host 0.2.1 no longer resolves a descriptor
+      // onto the request (the runtime's one-shot snapshot is gone), so the
+      // provider stamps the same payload itself. The label carries the harness
+      // display name as the source marker so the dropdown shows which local
+      // agent produced the conversation; the activation spec's required label
+      // arrives as the empty string when the caller named none.
       const harness = this.ctx.localAgent.get('dsh')
-      const label = subagentDelegationLabel(harness?.displayName ?? 'dsh', request.descriptor.label)
+      const label = subagentDelegationLabel(harness?.displayName ?? 'dsh', request.label || undefined)
       childSession.append('subagent/descriptor', {
-        ...request.descriptor,
+        version: SUBAGENT_DESCRIPTOR_VERSION,
+        mode: 'one-shot',
+        provider: this.name,
         label,
       })
-      // The official runtime appends the parent-side subagent/catalog
-      // discovery row only for in-process children (run.localAgent); this run
-      // is remote, so the provider appends it here — once per child, where
+      // The 0.2.1 manager appends the parent-side subagent/catalog discovery
+      // row only for parent-delivered children; the family runs caller
+      // delivery, so the provider appends it here — once per child, where
       // the descriptor lands. A failure degrades to the warn below; a missing
       // row never blocks the delegation.
       establishSubagentCatalogChild(request.parent.session, childSession.header, label)
@@ -874,10 +880,12 @@ export async function startDshCliRun(
   )
 
   return Promise.resolve(subprocessRunHandle({
-    // A session-backed run's id is the child session id (the seam's local-run
-    // contract), so the tool's resume self-description names the same handle
-    // the delegation registry records.
-    id: spec.childSession?.id ?? SessionId(randomUUID()),
+    // Host 0.2.1: the published run id is a fresh PER-EXECUTION identity —
+    // the activation manager rejects a run id naming a live Session (the
+    // mirrored child session is exactly that), and resume rounds reuse the
+    // child session id. The durable child identity the family tracks rides
+    // the staged intent instead (spec.childSession.id == its childSessionId).
+    id: SessionId(randomUUID()),
     result,
     signal: request.signal,
     onAbort,
