@@ -3,11 +3,16 @@
  * the plugin's own 'message-tools-edited' and 'message-tools-restored' rows):
  * a visual clone of the official bubble chrome — ui-conversation ships no
  * public components, so the structure is replicated against ui-primitives
- * platform modules, with historical images rendered through the owner-prop
- * `renderMessageImages` attachment slot (rc8 contract) — plus the
- * copy/edit/withdraw action row and the「已编辑」/「已恢复」labels. User
- * messages inside a withdrawn span render nothing; the withdrawal divider
- * marks the spot.
+ * platform modules — plus the copy/edit/withdraw action row and the
+ * 「已编辑」/「已恢复」labels. User messages inside a withdrawn span render
+ * nothing; the withdrawal divider marks the spot.
+ *
+ * TODO(host-021 batch-3): historical images rendered through the owner-prop
+ * `renderMessageImages`, which host 0.2.1 removed from ChatNodeOwnerProps
+ * (the conversation.message.images slot split into
+ * conversation.chat.user.images / conversation.chat.message.images plus the
+ * conversation.images.content factory). The prop is now the always-undefined
+ * batch-3 shim (see slots.ts), so images render nothing until the rewiring.
  */
 import { memo, useEffect, useRef, useState, type ReactNode } from 'react'
 import { shallowEqual } from '@deepseek-ai/dsh-client-store'
@@ -246,7 +251,7 @@ export const UserMessageView = memo(function UserMessageView({
         {node.kind === 'message-tools-restored' && (
           <div className={css.editedLabel}>{t('withdrawn.restored')}</div>
         )}
-        {images.length > 0 ? renderMessageImages({ images, align: 'end' }) : null}
+        {images.length > 0 && renderMessageImages !== undefined ? renderMessageImages({ images, align: 'end' }) : null}
         {showBubble && (
           <div className={css.bubble}>
             {projectUserText(text)}

@@ -10,6 +10,12 @@
  * a live restore row cites the span (withdrawing the restored rows clears
  * the badge and re-enables the action). The「重新编辑」action was removed
  * once withdrawals backfill the draft automatically.
+ *
+ * TODO(host-021 batch-3): the replay's images ride the owner-prop
+ * `renderMessageImages`, which host 0.2.1 removed from ChatNodeOwnerProps
+ * (see slots.ts). The prop is now the always-undefined batch-3 shim, so the
+ * replay renders text-only until batch 3 rewires it to the
+ * conversation.images.content factory.
  */
 import { useState, type ReactNode } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -29,9 +35,9 @@ export function WithdrawnDividerView({
   ...standard
 }: WithdrawnDividerViewProps): ReactNode {
   const data = node.data
-  // The gallery closure is a required owner prop of every `conversation.chat.node`
-  // renderer; widening it to `| undefined` keeps the degrade path explicit — a
-  // composition without the attachment UI replays text only instead of throwing.
+  // The gallery closure arrived as an owner prop before host 0.2.1; it is now
+  // the always-undefined batch-3 shim (see slots.ts), and the degrade arm
+  // replays text only instead of throwing.
   const renderImages: WithdrawnDividerViewProps['renderMessageImages'] | undefined = renderMessageImages
   const [expanded, setExpanded] = useState(false)
   const [entries, setEntries] = useState<readonly WithdrawnEntry[] | null>(null)
