@@ -9,7 +9,6 @@
     "src/bash-writes.ts",
     "src/fold.ts",
     "src/index.ts",
-    "src/invariant.ts",
     "src/open-external.ts",
     "src/read-surface.ts",
     "src/reveal.ts",
