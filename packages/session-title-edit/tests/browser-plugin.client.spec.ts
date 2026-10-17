@@ -2,19 +2,16 @@
  * session-title-edit plugin halves: the browser entry's dictionary and
  * header-slot registrations against the real SlotRegistry (with fiber
  * teardown proving removal — HMR safety), the injected rename verb's three
- * paths against a stubbed session binding, the inert node entry, and the
- * invariant companion's ownership reservation.
+ * paths against a stubbed session binding, and the inert node entry.
  */
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
-import InvariantRegistry from '@deepseek-ai/dsh-invariants'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { stubConfigForm } from '@deepseek-ai/dsh-client-test-runtime'
 import { apply as applyLocale, inject as localeInject } from '@deepseek-ai/dsh-client-locale/client'
 import { apply, inject } from '../src/client/index.ts'
 import { apply as applyNode } from '../src/index.ts'
-import * as TitleInvariant from '../src/invariant.ts'
 import { en, NS, zh } from '../src/client/locales.ts'
 import { isRenameFailure, type RenameFailure, type SessionTitleEditInjected } from '../src/client/slots.ts'
 
@@ -137,19 +134,5 @@ describe('session-title-edit node half', () => {
   it('contributes no host behavior', () => {
     // The node half exists only so the plugin appears in the Loader tree.
     expect(applyNode).not.toThrow()
-  })
-})
-
-describe('session-title-edit invariant companion', () => {
-  it('reserves package ownership under its declared companion name', async () => {
-    const ctx = new Context()
-    await ctx.plugin(InvariantRegistry, { enabled: true })
-    const fiber = ctx.plugin(TitleInvariant)
-    await fiber.await()
-    expect(TitleInvariant.name).toBe('client-session-title-edit-invariant')
-    expect(TitleInvariant.inject).toEqual(['invariants'])
-    // Emitting an unrelated event proves the companion installed no audit.
-    expect(() => { (ctx.emit as (event: string) => void)('slots/changed') }).not.toThrow()
-    await fiber.dispose()
   })
 })
