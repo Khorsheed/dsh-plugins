@@ -2,9 +2,9 @@
  * Coverage for the self-restart guard: the pure state core (freshness,
  * HEAD binding, clear, checkpoint), the mounted cordis service over a real
  * git repository (record → verify → mutate → verify-denied → checkpoint →
- * reset), the Loader real-load path, the CLI end to end, and the invariant's
- * malformed-state check. Deterministic time is injected everywhere the core
- * reads the clock; git calls run against throwaway repositories.
+ * reset), the Loader real-load path, and the CLI end to end. Deterministic
+ * time is injected everywhere the core reads the clock; git calls run against
+ * throwaway repositories.
  */
 import { execFileSync, spawn as nodeSpawn, type SpawnOptions } from 'node:child_process'
 import { createHash } from 'node:crypto'
@@ -23,7 +23,6 @@ import {
   findOwnedListener, findPidOnPort, processIdentity,
   processIdentityMatches, signalProcessIdentity,
 } from '../src/processes.ts'
-import { install as installInvariant } from '../src/invariant.ts'
 import {
   acknowledgeRestartRecord, buildLaunchCommand, continueAndReportText, isParkedOnUserInput, pendingRestartRecord,
   readInstanceLaunch, readInterruptedSnapshot, restartContextText, writeInstanceLaunch,
@@ -5142,36 +5141,6 @@ describe('restart context injection', () => {
   })
 })
 
-describe('invariant', () => {
-  it('fails on a malformed state file at the default location', () => {
-    const home = tmpDir('guard-home-')
-    const previous = process.env.DSH_HOME
-    process.env.DSH_HOME = home
-    try {
-      mkdirSync(join(home, 'state'), { recursive: true })
-      writeFileSync(join(home, 'state', 'self-restart-guard.json'), '{ nope')
-      const fail = vi.fn((message: string): never => { throw new Error(message) })
-      expect(() => installInvariant({} as never, fail)).toThrow(/malformed/)
-    } finally {
-      if (previous === undefined) delete process.env.DSH_HOME
-      else process.env.DSH_HOME = previous
-    }
-  })
-
-  it('passes when no state file exists', () => {
-    const home = tmpDir('guard-home-')
-    const previous = process.env.DSH_HOME
-    process.env.DSH_HOME = home
-    try {
-      const fail = vi.fn((message: string): never => { throw new Error(message) })
-      expect(() => installInvariant({} as never, fail)).not.toThrow()
-    } finally {
-      if (previous === undefined) delete process.env.DSH_HOME
-      else process.env.DSH_HOME = previous
-    }
-  })
-})
-
 describe('pack smoke', () => {
   // The published artifact must be self-contained: tsdown splits shared state
   // and git helpers into hashed chunks (lib/state-*.js, lib/git-*.js) that the
@@ -5183,7 +5152,7 @@ describe('pack smoke', () => {
   it('the tarball contains every relative import of the lib entries', async () => {
     const pkgDir = fileURLToPath(new URL('..', import.meta.url))
     const libDir = join(pkgDir, 'lib')
-    const entries = ['index.js', 'invariant.js', 'cli.js', 'client.js']
+    const entries = ['index.js', 'cli.js', 'client.js']
     for (const entry of entries) {
       expect(existsSync(join(libDir, entry)), `lib/${entry} missing — run the host build first`).toBe(true)
     }

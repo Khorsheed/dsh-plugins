@@ -104,9 +104,9 @@ cordis.yml 行 `config`（全部可选）：
 - **SSRF**：私网/回环/链路本地/元数据地址在每一跳重定向后重查；DNS 解析失败即拒绝（未验证的主机绝不导航）。
 - **进程面**：pipe 连接不监听端口；临时 profile 目录进程退出即清（残留下次拉起前扫除）；二进制来自 Google 官方 Chrome for Testing 渠道。
 
-**架构。** Host 半 `apply` 提供 `capture` 服务核心（`ctx.provide('capture', …)`）并挂上薄 Remote 面 `captureRemote`（命名空间 `capture`，一行委托给服务核心）；浏览器半经 `ctx.remote.$mount` 挂载生成的 Remote contribution，无任何 UI。身份三角：`cordis.patch.yml` 行名、tsdown `clientBundle` id、`src/invariant.ts` 的 `PACKAGE_NAME` 同为 `@khorsheed/dsh-capture`。
+**架构。** Host 半 `apply` 提供 `capture` 服务核心（`ctx.provide('capture', …)`）并挂上薄 Remote 面 `captureRemote`（命名空间 `capture`，一行委托给服务核心）；浏览器半经 `ctx.remote.$mount` 挂载生成的 Remote contribution，无任何 UI。身份锚点：`cordis.patch.yml` 行名与 tsdown `clientBundle` id 同为 `@khorsheed/dsh-capture`。
 
-**导出。** 主入口导出 `CaptureService`、`CaptureBrowserManager`、`SerialRenderQueue`、`CaptureStore`、URL 政策与页面任务的纯函数及全部线上类型；`/client` 导出浏览器半（`apply`/`inject`），`/remote` 是生成的客户端 Remote contribution，`/types` 提供线上类型，`/invariant` 是能力探针伴侣。
+**导出。** 主入口导出 `CaptureService`、`CaptureBrowserManager`、`SerialRenderQueue`、`CaptureStore`、URL 政策与页面任务的纯函数及全部线上类型；`/client` 导出浏览器半（`apply`/`inject`），`/remote` 是生成的客户端 Remote contribution，`/types` 提供线上类型。
 
 </details>
 

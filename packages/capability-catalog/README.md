@@ -83,7 +83,7 @@ const evidence = await produceCapabilityEvidence({
 <details>
 <summary>内部结构（点击展开）</summary>
 
-**架构。** host 半是 `CapabilityCatalogService`，一个 `capabilityCatalog` 命名空间的 Typert Remote 服务；浏览器半经 `ctx.remote.$mount` 挂载生成的 Remote，再经 `slots.inject` 注册独立 `settings.section` 槽位（id `capabilities`，order 20——紧随「插件」区块），因此 apply 顺序永远不影响。身份三角：`cordis.patch.yml` 的 `capability-catalog` 行 id、npm 包名、`src/invariant.ts` 的 `PACKAGE_NAME`。包根导出服务本体、指纹 helper（`hashOf` / `capsTag` / `canonicalCapabilities`）、preset-scope/投递原语与工具来源 helper；`/client` 导出浏览器插件体。
+**架构。** host 半是 `CapabilityCatalogService`，一个 `capabilityCatalog` 命名空间的 Typert Remote 服务；浏览器半经 `ctx.remote.$mount` 挂载生成的 Remote，再经 `slots.inject` 注册独立 `settings.section` 槽位（id `capabilities`，order 20——紧随「插件」区块），因此 apply 顺序永远不影响。身份锚点：`cordis.patch.yml` 的 `capability-catalog` 行 id 与 npm 包名。包根导出服务本体、指纹 helper（`hashOf` / `capsTag` / `canonicalCapabilities`）、preset-scope/投递原语与工具来源 helper；`/client` 导出浏览器插件体。
 
 **渠道归因。** `ToolSchema` 不携带来源字段，所以工具渠道按优先级解析：作者声明的 origin 标记（留在注册表按引用保留的 definition 上的 `Symbol.for('dsh.tool.origin')` 属性，经 `ctx.tools.get(name)` 读回——系统提示投影会剥掉它，所以永不上模型 wire），然后 `mcp__` 前缀（按最长已配置前缀匹配 server 名），然后生成的官方工具白名单（`scripts/gen-official-tools.mts`，由锁定的 harness 检出生成），最后 apply 时序差分。基线在延迟的 `ctx.inject(['tools'], …)` 里取，注册表自己的挂载顺序不可能造成空基线、把每个工具误标成插件。
 

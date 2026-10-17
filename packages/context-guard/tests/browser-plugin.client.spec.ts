@@ -3,19 +3,16 @@
  * row and settings-card registrations against the real SlotRegistry (with
  * fiber teardown proving removal — HMR safety), the injected compact verb's
  * three paths against a stubbed command Remote, the shared settings-scope
- * channel, the host half's dual-face settings registration, and the
- * invariant companion's ownership reservation.
+ * channel, and the host half's dual-face settings registration.
  */
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
-import InvariantRegistry from '@deepseek-ai/dsh-invariants'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { apply, inject, NS } from '../src/client/index.ts'
 import { apply as applyNode } from '../src/index.ts'
 import { CONTEXT_GUARD_NS } from '../src/namespace.ts'
-import * as ContextGuardInvariant from '../src/invariant.ts'
 import { en, zh } from '../src/client/locales.ts'
 import type { ContextGuardConfig } from '../src/client/config.ts'
 import type { GuardScope } from '../src/client/scope.ts'
@@ -348,19 +345,5 @@ describe('context-guard node half', () => {
 
   it('contributes nothing when no settings provider exists', () => {
     expect(() => applyNode(new Context())).not.toThrow()
-  })
-})
-
-describe('context-guard invariant companion', () => {
-  it('reserves package ownership under its declared companion name', async () => {
-    const ctx = new Context()
-    await ctx.plugin(InvariantRegistry, { enabled: true })
-    const fiber = ctx.plugin(ContextGuardInvariant)
-    await fiber.await()
-    expect(ContextGuardInvariant.name).toBe('context-guard-invariant')
-    expect(ContextGuardInvariant.inject).toEqual(['invariants'])
-    // Emitting an unrelated event proves the companion installed no audit.
-    expect(() => { (ctx.emit as (event: string) => void)('slots/changed') }).not.toThrow()
-    await fiber.dispose()
   })
 })

@@ -104,9 +104,9 @@ Every degradation is silent, never a boot failure: with no Chrome binary every c
 - **SSRF**: private/loopback/link-local/metadata addresses are re-checked after EVERY redirect hop; a resolution failure refuses (an unvalidated host is never navigated to).
 - **Process surface**: the pipe transport listens on no port; throwaway profile directories are cleaned at exit (stale ones are swept before the next launch); the binary comes from Google's official Chrome for Testing channel.
 
-**Architecture.** The host half's `apply` provides the `capture` service core (`ctx.provide('capture', …)`) and mounts the thin Remote face `captureRemote` (namespace `capture`, a one-line delegation to the core); the browser half mounts the generated Remote contribution via `ctx.remote.$mount` and carries no UI. The identity triangle: the `cordis.patch.yml` row name, the tsdown `clientBundle` id, and `src/invariant.ts`'s `PACKAGE_NAME` are all `@khorsheed/dsh-capture`.
+**Architecture.** The host half's `apply` provides the `capture` service core (`ctx.provide('capture', …)`) and mounts the thin Remote face `captureRemote` (namespace `capture`, a one-line delegation to the core); the browser half mounts the generated Remote contribution via `ctx.remote.$mount` and carries no UI. The identity anchors: the `cordis.patch.yml` row name and the tsdown `clientBundle` id are both `@khorsheed/dsh-capture`.
 
-**Exports.** The main entry exports `CaptureService`, `CaptureBrowserManager`, `SerialRenderQueue`, `CaptureStore`, the pure URL-policy and page-task helpers, and every wire type; `/client` exports the browser half (`apply`/`inject`), `/remote` is the generated client-side Remote contribution, `/types` carries the wire types, and `/invariant` is the capability-probe companion.
+**Exports.** The main entry exports `CaptureService`, `CaptureBrowserManager`, `SerialRenderQueue`, `CaptureStore`, the pure URL-policy and page-task helpers, and every wire type; `/client` exports the browser half (`apply`/`inject`), `/remote` is the generated client-side Remote contribution, and `/types` carries the wire types.
 
 </details>
 

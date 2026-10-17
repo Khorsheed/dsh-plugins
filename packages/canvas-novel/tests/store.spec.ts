@@ -391,7 +391,7 @@ describe('the novel store', () => {
     expect(manuscriptParagraphs('只有一段。')).toBe('只有一段。')
   })
 
-  it('the chapter file vocabulary round-trips (the invariant probe shares it)', () => {
+  it('the chapter file vocabulary round-trips', () => {
     expect(chapterNumberOfFile(chapterFileName(60))).toBe(60)
     expect(chapterNumberOfFile('第6章.txt')).toBeUndefined()
     expect(chapterNumberOfFile('第六十章.md')).toBeUndefined()

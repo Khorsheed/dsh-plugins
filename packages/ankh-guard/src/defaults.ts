@@ -1,6 +1,6 @@
 /**
- * Default state/repo directory resolution, shared by the cordis plugin, the
- * CLI, and the invariant companion so all three agree on where a credential
+ * Default state/repo directory resolution, shared by the cordis plugin and
+ * the CLI so both agree on where a credential
  * lives. The state file must survive a restart, so it anchors to DSH_HOME (or
  * the checkout) rather than any process-lifetime directory.
  */

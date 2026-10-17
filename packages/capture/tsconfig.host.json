@@ -8,7 +8,6 @@
   "files": [
     "src/browser.ts",
     "src/index.ts",
-    "src/invariant.ts",
     "src/page-tasks.ts",
     "src/queue.ts",
     "src/remote.ts",
