@@ -1,6 +1,6 @@
 /**
- * Data-root resolution, shared by the cordis plugin, the CLI, and the
- * invariant companion so all three agree on where runs live. The root must
+ * Data-root resolution, shared by the cordis plugin and the CLI so both
+ * agree on where runs live. The root must
  * survive restarts and be reachable from outside the host process (scripts),
  * so it anchors to config / DSH_HOME rather than any process-lifetime dir.
  */
