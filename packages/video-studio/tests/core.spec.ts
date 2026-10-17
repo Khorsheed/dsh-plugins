@@ -309,6 +309,24 @@ describe('export graph helpers', () => {
   })
 })
 
+describe('job retry', () => {
+  it('re-enqueues a failed job in place instead of stacking a new row', async () => {
+    const { mkdtempSync } = await import('node:fs')
+    const { tmpdir } = await import('node:os')
+    const { join } = await import('node:path')
+    const { VideoStudioService } = await import('../src/service.ts')
+    const svc = new VideoStudioService(mkdtempSync(join(tmpdir(), 'vs-retry-')))
+    const now = new Date().toISOString()
+    // export kind: the pump fails fast on the missing project, never touching the network
+    const seeded = { id: 'job_old', projectId: 'p1', kind: 'export' as const, state: 'failed' as const, progress: 0, label: '导出 音频', error: 'boom', payload: { kinds: ['audio'] }, createdAt: now, updatedAt: now }
+    await svc.store.saveJobs([seeded])
+    const job = await svc.enqueue('p1', 'export', '导出 音频', { kinds: ['audio'] })
+    expect(job.id).toBe('job_old')
+    expect((await svc.store.jobs()).filter((j) => j.projectId === 'p1' && j.kind === 'export')).toHaveLength(1)
+    svc.dispose()
+  })
+})
+
 describe('folder-pick import', () => {
   it('lists media files directly inside a folder, audio and video only', async () => {
     const { mkdtempSync, mkdirSync, writeFileSync } = await import('node:fs')

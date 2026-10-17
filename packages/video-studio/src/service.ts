@@ -785,8 +785,21 @@ export class VideoStudioService {
 
   async enqueue(projectId: string, kind: JobKind, label: string, payload?: JobPayload): Promise<Job> {
     await this.loadJobs()
-    const dup = this.jobs.find((j) => j.projectId === projectId && j.kind === kind && j.state === 'queued' && JSON.stringify(j.payload ?? null) === JSON.stringify(payload ?? null))
+    const same = (j: Job) => j.projectId === projectId && j.kind === kind && JSON.stringify(j.payload ?? null) === JSON.stringify(payload ?? null)
+    const dup = this.jobs.find((j) => same(j) && j.state === 'queued')
     if (dup) return dup
+    // A retry restarts the failed row in place instead of stacking a new one.
+    const failed = this.jobs.find((j) => same(j) && j.state === 'failed')
+    if (failed) {
+      failed.state = 'queued'
+      failed.progress = 0
+      failed.error = undefined
+      failed.label = label
+      failed.updatedAt = new Date().toISOString()
+      await this.persistJobs()
+      void this.pump()
+      return failed
+    }
     const now = new Date().toISOString()
     const job: Job = { id: newId('job'), projectId, kind, state: 'queued', progress: 0, label, createdAt: now, updatedAt: now, payload }
     this.jobs.push(job)
