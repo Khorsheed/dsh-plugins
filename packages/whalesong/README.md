@@ -63,7 +63,6 @@ dsh plugin --profile web remove @khorsheed/dsh-whalesong
 
 ```
 src/index.ts            宿主半：Config + GET /whalesong/config 路由（挂载锚点）
-src/invariant.ts        包 invariant 伴生
 src/client/index.ts     cordis 客户端插件：inject ['sessions']，ctx.effect 管生命周期
 src/client/config.ts    配置同步：fetch + 3 秒轮询
 src/client/controller.ts  运行时控制器：幂等启用/禁用状态机 + 2.5 秒 reconcile 轮询

@@ -97,7 +97,7 @@ preset 组合里引用 `@khorsheed/dsh-worktrees/tool` 的会话获得模型可�
 
 **模型工具在 `./tool` 子路径行。** 工具定义工厂 `defineWorktreesTool(service)` 住在内部模块 `./tool-definition.ts`（不进 exports 面），可挂载行是 `./tool` 导出（`name` / `inject = ['worktrees']` / `apply`，零 `ctx.provide`——preset 挂载面的 isolate-realm 规则只拒服务行，工具行可裸放 preset，官方 `tool-bash` 行同构），由各 agent preset 的 `agent.cordis.yml` 按名引用——能力按会话授予，profile 根永远没有这行。对 core 服务是**声明式 inject**（同族 companion 例外）：preset 的 standing scope 在注册表激活时挂载，早于 profile 靠后 bundle 行提供 core，一次性 `ctx.get` 探测曾在此竞态下看到 ABSENT 并静默惰死（2026-09-27 3080 实证）；声明式 inject 让行 pending 到 core 提供再激活，行内守卫仅留作防御性直调路径。工具注册走 `ctx.inject(['tools'])` 延迟注入。四个动作：`list`（路径/分支/是否主检出/脏文件数/是否已并回 base）、`switch`（会话徽标与 tab 跟随）、`create`（`git worktree add`，可 `-b` 新分支，随后切换）、`remove`（`confirm: true` 必填；主 worktree 与有未提交改动的 worktree 一律拒绝）。
 
-**健康探针与身份。** `./invariant` 子路径注册 invariant companion：加载时探测 PATH 上的 `git` 二进制——整个插件都是 git 读取器，没有 git 的宿主永远答不出任何查询，与其到处空徽标不如加载期响亮失败。身份三角：`cordis.patch.yml` 行 id `worktrees` ↔ tsdown `clientBundle('@khorsheed/dsh-worktrees')` ↔ invariant 的 `PACKAGE_NAME`。
+**身份锚点。** `cordis.patch.yml` 行 id `worktrees` 与 tsdown `clientBundle` id 同为 `@khorsheed/dsh-worktrees`。
 
 **导出。** `.` 导出插件本体（`apply`/`Config`/`name`）；`/client` 导出浏览器半部分（`apply`/`inject`、`WorktreesBadge`/`WorktreesTab`/`WorktreesController`）；`/tool` 导出按会话授予的模型工具行；`/types` 是 Remote 线上类型词汇表（含 `WorktreesService` 类型）；`/typert`、`/remote` 是生成的 Remote 两侧。
 

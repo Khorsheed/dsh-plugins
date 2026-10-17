@@ -9,7 +9,6 @@
     "src/bindings.ts",
     "src/git.ts",
     "src/index.ts",
-    "src/invariant.ts",
     "src/remote.ts",
     "src/service.ts",
     "src/tool.ts",

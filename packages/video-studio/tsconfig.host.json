@@ -22,7 +22,6 @@
     "src/media/speech-worker-core.ts",
     "src/media/speech-worker.ts",
     "src/index.ts",
-    "src/invariant.ts",
     "src/remote.ts",
     "src/service.ts",
     "src/skill.ts",
