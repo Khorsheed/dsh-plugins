@@ -85,6 +85,15 @@ export function Cover({ book, shade = 0, size = 'shelf', kindLabel }: {
   )
 }
 
+/** The display shape a cover tile needs, lifted off a shelf resource's meta. */
+export function coverOf(resource: { readonly title: string; readonly meta?: { readonly short?: string; readonly edition?: string } | undefined }): { title: string; short?: string; edition?: string } {
+  return {
+    title: resource.title,
+    ...(resource.meta?.short === undefined ? {} : { short: resource.meta.short }),
+    ...(resource.meta?.edition === undefined ? {} : { edition: resource.meta.edition }),
+  }
+}
+
 /** A circular progress ring in the project's color. */
 export function Ring({ percent }: { percent: number }): ReactNode {
   return (

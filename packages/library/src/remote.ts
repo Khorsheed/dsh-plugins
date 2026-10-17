@@ -7,6 +7,10 @@
  * Session-bound methods take the calling `agent` first (the canvas precedent):
  * its session is the one bound.
  *
+ * v5: the shelf unified — books are resources (`getResource` / `putResource` /
+ * `removeResource`), quizzes are assessments (`listAssessments` /
+ * `getAssessment`), and every scope key is `resourceId`.
+ *
  * @module @khorsheed/dsh-library/remote
  */
 import type { Context } from '@deepseek-ai/cordis'
@@ -15,10 +19,11 @@ import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { LibraryService } from './service.ts'
 import type {
   LibraryAssessResult,
+  LibraryAssessment,
   LibraryAttachmentRef,
   LibraryAttempt,
   LibraryBinding,
-  LibraryBook,
+  LibraryBookKind,
   LibraryCapabilities,
   LibraryCard,
   LibraryCardInput,
@@ -34,12 +39,12 @@ import type {
   LibraryPage,
   LibraryProject,
   LibraryProjectSummary,
-  LibraryQuiz,
   LibraryResource,
   LibraryResourceKind,
   LibraryReviewRating,
   LibraryRoadmap,
   LibraryTemplate,
+  LibraryTocSource,
   LibraryVerdict,
 } from './types.ts'
 
@@ -75,15 +80,15 @@ export class LibraryRemoteService extends TypertRemoteService<LibraryRemoteConfi
 
   /* ------------------------------------------------------------ projects */
 
-  /** Every project with its books' progress and card tallies. */
+  /** Every project with its shelf progress and card tallies. */
   @Remote('listProjects')
   listProjects(): Promise<{ projects: LibraryProjectSummary[] }> {
     return this.core.listProjects()
   }
 
-  /** One project's summary plus its books. */
+  /** One project's summary plus its resources. */
   @Remote('getProject')
-  getProject(request: { id: string }): Promise<LibraryOutcome<{ project: LibraryProjectSummary; books: LibraryBook[] }>> {
+  getProject(request: { id: string }): Promise<LibraryOutcome<{ project: LibraryProjectSummary; resources: LibraryResource[] }>> {
     return this.core.getProject(request)
   }
 
@@ -105,35 +110,44 @@ export class LibraryRemoteService extends TypertRemoteService<LibraryRemoteConfi
     return this.core.deleteProject(request)
   }
 
-  /* --------------------------------------------------------------- books */
-
-  /** One book with its table of contents. */
-  @Remote('getBook')
-  getBook(request: { projectId: string; bookId: string }): Promise<LibraryOutcome<{ book: LibraryBook }>> {
-    return this.core.getBook(request)
-  }
-
-  /** Remove a book (its cards stay, unhung). */
-  @Remote('deleteBook')
-  deleteBook(request: { projectId: string; bookId: string }): Promise<LibraryOutcome<{ id: string }>> {
-    return this.core.deleteBook(request)
-  }
-
   /* ------------------------------------------------------------ resources */
 
-  /** A project's shelf links, oldest first. */
+  /** One shelf entry, whole. */
+  @Remote('getResource')
+  getResource(request: { projectId: string; resourceId: string }): Promise<LibraryOutcome<{ resource: LibraryResource }>> {
+    return this.core.getResource(request)
+  }
+
+  /** A project's shelf, oldest first. */
   @Remote('listResources')
   listResources(request: { projectId: string }): Promise<{ resources: LibraryResource[] }> {
     return this.core.listResources(request)
   }
 
-  /** Put a link on the project's shelf. */
-  @Remote('addResource')
-  addResource(request: { projectId: string; resource: { title: string; url: string; kind: LibraryResourceKind; note?: string; addedBy: 'coach' | 'learner' } }): Promise<LibraryOutcome<{ resource: LibraryResource }>> {
-    return this.core.addResource(request)
+  /** Put one entry on the shelf (a thin link from the sidebar's add form). */
+  @Remote('putResource')
+  putResource(request: {
+    projectId: string
+    resourceId?: string
+    title: string
+    kind: LibraryResourceKind
+    url?: string
+    note?: string
+    addedBy?: 'coach' | 'learner'
+    toc?: readonly { title: string; part?: string }[]
+    tocSource?: LibraryTocSource
+    bookKind?: LibraryBookKind
+    short?: string
+    extras?: readonly { title: string; note?: string; where?: string; when?: 'before' | 'reference' }[]
+    author?: string
+    edition?: string
+    isbn?: string
+    from?: { projectId: string; resourceId: string }
+  }): Promise<LibraryOutcome<{ resource: LibraryResource }>> {
+    return this.core.putResource(request)
   }
 
-  /** Take a link off the project's shelf. */
+  /** Remove a shelf entry (its cards stay, unhung). */
   @Remote('removeResource')
   removeResource(request: { projectId: string; resourceId: string }): Promise<LibraryOutcome<{ id: string }>> {
     return this.core.removeResource(request)
@@ -141,35 +155,35 @@ export class LibraryRemoteService extends TypertRemoteService<LibraryRemoteConfi
 
   /* ------------------------------------------------------------- roadmap */
 
-  /** One scope's adopted roadmap and its pending draft; no bookId = the project's own path. */
+  /** One scope's adopted roadmap and its pending draft; no resourceId = the project's own path. */
   @Remote('getRoadmap')
-  getRoadmap(request: { projectId: string; bookId?: string }): Promise<{ roadmap?: LibraryRoadmap; draft?: LibraryRoadmap }> {
+  getRoadmap(request: { projectId: string; resourceId?: string }): Promise<{ roadmap?: LibraryRoadmap; draft?: LibraryRoadmap }> {
     return this.core.getRoadmap(request)
   }
 
   /** The learner's 采用. */
   @Remote('adoptRoadmap')
-  adoptRoadmap(request: { projectId: string; bookId?: string }): Promise<LibraryOutcome<{ roadmap: LibraryRoadmap }>> {
+  adoptRoadmap(request: { projectId: string; resourceId?: string }): Promise<LibraryOutcome<{ roadmap: LibraryRoadmap }>> {
     return this.core.adoptRoadmap(request)
   }
 
   /** Drop a draft. */
   @Remote('discardDraft')
-  discardDraft(request: { projectId: string; bookId?: string }): Promise<LibraryOutcome<{ bookId?: string }>> {
+  discardDraft(request: { projectId: string; resourceId?: string }): Promise<LibraryOutcome<{ resourceId?: string }>> {
     return this.core.discardDraft(request)
   }
 
   /** 「读完」 a read node. */
   @Remote('markNodeRead')
-  markNodeRead(request: { projectId: string; bookId?: string; nodeId: string }): Promise<LibraryOutcome<{ roadmap: LibraryRoadmap; unlocked: string[] }>> {
+  markNodeRead(request: { projectId: string; resourceId?: string; nodeId: string }): Promise<LibraryOutcome<{ roadmap: LibraryRoadmap; unlocked: string[] }>> {
     return this.core.markNodeRead(request)
   }
 
   /* --------------------------------------------------------------- pages */
 
-  /** One book's pages, optionally one node's. */
+  /** One resource's pages, optionally one node's. */
   @Remote('listPages')
-  listPages(request: { projectId: string; bookId: string; nodeId?: string }): Promise<{ pages: LibraryPage[] }> {
+  listPages(request: { projectId: string; resourceId: string; nodeId?: string }): Promise<{ pages: LibraryPage[] }> {
     return this.core.listPages(request)
   }
 
@@ -189,7 +203,7 @@ export class LibraryRemoteService extends TypertRemoteService<LibraryRemoteConfi
   @Remote('recordPage')
   recordPage(request: {
     projectId: string
-    bookId: string
+    resourceId: string
     nodeId?: string
     label?: string
     attachment: LibraryAttachmentRef
@@ -215,7 +229,7 @@ export class LibraryRemoteService extends TypertRemoteService<LibraryRemoteConfi
 
   /** Record cards by hand. */
   @Remote('writeCards')
-  writeCards(request: { projectId: string; bookId?: string; cards: readonly LibraryCardInput[] }): Promise<LibraryOutcome<LibraryCardWriteResult>> {
+  writeCards(request: { projectId: string; resourceId?: string; cards: readonly LibraryCardInput[] }): Promise<LibraryOutcome<LibraryCardWriteResult>> {
     return this.core.writeCards(request)
   }
 
@@ -224,7 +238,7 @@ export class LibraryRemoteService extends TypertRemoteService<LibraryRemoteConfi
   editCard(request: {
     projectId: string
     cardId: string
-    patch: { term?: string; gloss?: string; userGloss?: string; aliases?: readonly string[]; status?: LibraryCard['status']; bookId?: string | null }
+    patch: { term?: string; gloss?: string; userGloss?: string; aliases?: readonly string[]; status?: LibraryCard['status']; resourceId?: string | null }
   }): Promise<LibraryOutcome<{ card: LibraryCard }>> {
     return this.core.editCard(request)
   }
@@ -241,29 +255,29 @@ export class LibraryRemoteService extends TypertRemoteService<LibraryRemoteConfi
     return this.core.reviewCard(request)
   }
 
-  /* -------------------------------------------------------------- quizzes */
+  /* ---------------------------------------------------------- assessments */
 
-  /** A project's quizzes, optionally one book's / node's. */
-  @Remote('listQuizzes')
-  listQuizzes(request: { projectId: string; bookId?: string; nodeId?: string }): Promise<{ quizzes: LibraryQuiz[] }> {
-    return this.core.listQuizzes(request)
+  /** A project's assessments, optionally one resource's / node's / one type's. */
+  @Remote('listAssessments')
+  listAssessments(request: { projectId: string; resourceId?: string; nodeId?: string; type?: 'quiz' | 'practice' }): Promise<{ assessments: LibraryAssessment[] }> {
+    return this.core.listAssessments(request)
   }
 
-  /** One quiz, whole. */
-  @Remote('getQuiz')
-  getQuiz(request: { projectId: string; quizId: string }): Promise<LibraryOutcome<{ quiz: LibraryQuiz }>> {
-    return this.core.getQuiz(request)
+  /** One assessment, whole. */
+  @Remote('getAssessment')
+  getAssessment(request: { projectId: string; assessmentId: string }): Promise<LibraryOutcome<{ assessment: LibraryAssessment }>> {
+    return this.core.getAssessment(request)
   }
 
   /** Grade a sitting answered in the sidebar (choice / fill judged in the page). */
   @Remote('putAttempt')
-  putAttempt(request: { projectId: string; quizId?: string; nodeId?: string; bookId?: string; verdicts: readonly LibraryVerdict[] }): Promise<LibraryOutcome<LibraryAssessResult>> {
+  putAttempt(request: { projectId: string; assessmentId?: string; quizId?: string; nodeId?: string; resourceId?: string; verdicts: readonly LibraryVerdict[] }): Promise<LibraryOutcome<LibraryAssessResult>> {
     return this.core.putAttempt(request)
   }
 
-  /** A project's graded sittings, newest first; `nodeId` narrows to one practice station's history. */
+  /** A project's graded sittings, newest first; `nodeId` narrows to one station's history, `assessmentId` to one assessment's. */
   @Remote('listAttempts')
-  listAttempts(request: { projectId: string; nodeId?: string }): Promise<{ attempts: LibraryAttempt[] }> {
+  listAttempts(request: { projectId: string; nodeId?: string; assessmentId?: string }): Promise<{ attempts: LibraryAttempt[] }> {
     return this.core.listAttempts(request)
   }
 
@@ -275,7 +289,7 @@ export class LibraryRemoteService extends TypertRemoteService<LibraryRemoteConfi
     return this.core.getBinding(String(agent.session.id)) ?? null
   }
 
-  /** Bind the calling session to a project / book (null unbinds). */
+  /** Bind the calling session to a project / resource (null unbinds). */
   @Remote('bindTarget')
   bindTarget(agent: Agent, request: { binding: LibraryBinding | null }): Promise<LibraryOutcome<{ binding: LibraryBinding | null }>> {
     return this.core.setBinding(String(agent.session.id), request.binding)

@@ -7,8 +7,8 @@
  */
 import { useState, type ReactNode } from 'react'
 import { ChipRow, ListRow, PanelHeader } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
-import { LIBRARY_COLORS, LIBRARY_ICONS, type LibraryColor, type LibraryIcon, type LibraryProjectSummary, type LibraryResourceKind, type LibraryRoadmap, type LibraryTemplate } from '../../types.ts'
-import { colorOf, Cover, GlyphStrokes, iconOf, ProjectGlyph, Ring } from '../look.tsx'
+import { isThickResource, LIBRARY_COLORS, LIBRARY_ICONS, type LibraryColor, type LibraryIcon, type LibraryProjectSummary, type LibraryResourceKind, type LibraryRoadmap, type LibraryTemplate } from '../../types.ts'
+import { colorOf, coverOf, Cover, GlyphStrokes, iconOf, ProjectGlyph, Ring } from '../look.tsx'
 import { summarizeCovers, type CoverContext } from '../covers.tsx'
 import { DraftCard, QuizRows } from './book.tsx'
 import { IconArticleOutlineMedium, IconCardsOutlineMedium, IconCheckOutlineMedium, IconCourseOutlineMedium, IconHardwareOutlineMedium, IconLinkOutlineMedium, IconLockOutlineMedium, IconPenOutlineMedium, IconPlayOutlineMedium, IconPlusOutlineMedium, IconRefreshOutlineMedium, IconRepoOutlineMedium, IconSparkleOutlineMedium, IconToolOutlineMedium } from '../icons.tsx'
@@ -138,8 +138,8 @@ export function NewProjectView({ p }: ViewProps): ReactNode {
 
 /** Overall progress of a project: done nodes over all nodes of its adopted paths. */
 function progressOf(project: LibraryProjectSummary): number {
-  const total = project.books.reduce((sum, book) => sum + (book.roadmap?.total ?? 0), 0)
-  const done = project.books.reduce((sum, book) => sum + (book.roadmap?.done ?? 0), 0)
+  const total = project.resources.reduce((sum, resource) => sum + (resource.roadmap?.total ?? 0), 0)
+  const done = project.resources.reduce((sum, resource) => sum + (resource.roadmap?.done ?? 0), 0)
   return total === 0 ? 0 : Math.round((done / total) * 100)
 }
 
@@ -158,7 +158,7 @@ function ProjectCard({ p, project }: ViewProps & { project: LibraryProjectSummar
       </span>
       {project.goal !== undefined && <span className={css.projectGoal}>{project.goal}</span>}
       <span className={css.projectFoot}>
-        <span className={css.muted}>{t('project.cardMeta', { books: String(project.books.length), cards: String(project.cardCount), due: String(project.dueCount) })}</span>
+        <span className={css.muted}>{t('project.cardMeta', { books: String(project.resources.filter(row => row.kind === 'book' || row.kind === 'course').length), cards: String(project.cardCount), due: String(project.dueCount) })}</span>
       </span>
     </button>
   )
@@ -256,23 +256,23 @@ function ProjectEditor({ p, project, onDone }: ViewProps & { project: LibraryPro
   )
 }
 
-/** One project: its colored header, its path card, its shelf, its resources. */
+/** One project: its colored header, its path card, its shelf (thick covers and thin links). */
 export function ProjectView({ p, projectId }: ViewProps & { projectId: string }): ReactNode {
   const { t, actions, useStore } = p
   const rev = useStore(s => s.rev)
   const loaded = useLoad(() => outcome(p.getProject(projectId)), [projectId, rev])
-  const resources = useLoad(() => value(p.listResources(projectId)), [projectId, rev])
   const path = useLoad(() => value(p.getRoadmap(projectId)), [projectId, rev])
-  // Free quizzes hang on no book and no station — this section is their only entry.
-  const quizzes = useLoad(() => value(p.listQuizzes(projectId, undefined)), [projectId, rev])
+  // Free quizzes hang on no resource and no station — this section is their only entry.
+  const assessments = useLoad(() => value(p.listAssessments(projectId, undefined, undefined, 'quiz')), [projectId, rev])
   const [notice, setNotice] = useState<string | undefined>()
   const [editing, setEditing] = useState(false)
   const [busy, setBusy] = useState(false)
   const project = loaded.data?.project
-  const books = loaded.data?.books ?? []
-  const freeQuizzes = (quizzes.data?.quizzes ?? []).filter(quiz => quiz.scope.bookId === undefined && quiz.scope.nodeId === undefined).sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-  const resourceList = resources.data?.resources ?? []
-  const coverContext: CoverContext = { books, resources: resourceList }
+  const resources = loaded.data?.resources ?? []
+  const thick = resources.filter(isThickResource)
+  const thin = resources.filter(resource => !isThickResource(resource))
+  const freeQuizzes = (assessments.data?.assessments ?? []).filter(quiz => quiz.scope.resourceId === undefined && quiz.scope.nodeId === undefined).sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+  const coverContext: CoverContext = { resources }
 
   const askToAddBook = (): void => {
     if (project === undefined) return
@@ -357,17 +357,17 @@ export function ProjectView({ p, projectId }: ViewProps & { projectId: string })
         )}
         {project !== undefined && (
           <section className={css.section} data-color={colorOf(project)}>
-            <h3 className={css.sectionTitle}>{t('project.shelf', { count: String(project.books.length) })}</h3>
+            <h3 className={css.sectionTitle}>{t('project.shelf', { count: String(thick.length) })}</h3>
             <div className={css.shelf}>
-              {project.books.map((row, index) => {
-                const book = books.find(candidate => candidate.id === row.id)
-                const percent = row.roadmap === undefined || row.roadmap.total === 0 ? 0 : Math.round((row.roadmap.done / row.roadmap.total) * 100)
+              {thick.map((resource, index) => {
+                const row = project.resources.find(candidate => candidate.id === resource.id)
+                const percent = row?.roadmap === undefined || row.roadmap.total === 0 ? 0 : Math.round((row.roadmap.done / row.roadmap.total) * 100)
                 return (
-                  <button key={row.id} type="button" className={css.shelfBook} title={row.title} onClick={() => { actions.push({ view: 'book', projectId, bookId: row.id }) }}>
-                    <Cover book={book ?? row} shade={index} kindLabel={book === undefined ? undefined : t(`bookKind.${book.bookKind}`)} />
+                  <button key={resource.id} type="button" className={css.shelfBook} title={resource.title} onClick={() => { actions.push({ view: 'resource', projectId, resourceId: resource.id }) }}>
+                    <Cover book={coverOf(resource)} shade={index} kindLabel={resource.kind === 'book' ? t(`bookKind.${resource.meta?.bookKind ?? 'knowledge'}`) : t(`resource.kind.${resource.kind}`)} />
                     <span className={css.shelfLabel}>
-                      <span className={css.shelfTitle}>{row.title}</span>
-                      <span className={css.shelfMeta}>{row.hasDraft ? t('book.draftWaiting') : row.roadmap === undefined ? t('book.noRoadmap') : `${t('book.shelfMeta', { done: String(row.roadmap.done), total: String(row.roadmap.total) })} · ${percent}%`}</span>
+                      <span className={css.shelfTitle}>{resource.title}</span>
+                      <span className={css.shelfMeta}>{row?.hasDraft === true ? t('book.draftWaiting') : row?.roadmap === undefined ? t('book.noRoadmap') : `${t('book.shelfMeta', { done: String(row.roadmap.done), total: String(row.roadmap.total) })} · ${percent}%`}</span>
                     </span>
                   </button>
                 )
@@ -381,19 +381,19 @@ export function ProjectView({ p, projectId }: ViewProps & { projectId: string })
         {project !== undefined && (
           <section className={css.section}>
             <div className={css.sectionHead}>
-              <h3 className={css.sectionTitle}>{t('resource.title', { count: String(resourceList.length) })}</h3>
+              <h3 className={css.sectionTitle}>{t('resource.title', { count: String(thin.length) })}</h3>
               <button type="button" className={css.textButton} onClick={askToAddResource}>＋ {t('resource.add')}</button>
             </div>
-            {resources.data !== undefined && resourceList.length === 0 && (
+            {loaded.data !== undefined && thin.length === 0 && (
               <span className={css.muted}>{t('resource.empty')}</span>
             )}
-            {resourceList.length > 0 && (
+            {thin.length > 0 && (
               <div className={css.resList}>
-                {resourceList.map(resource => (
+                {thin.map(resource => (
                   <div key={resource.id} className={css.res}>
                     <span className={css.resKind} title={t(`resource.kind.${resource.kind}`)}>{resourceKindIcon(resource.kind)}</span>
                     <div className={css.resMain}>
-                      <button type="button" className={css.resTitle} title={resource.url} onClick={() => { window.open(resource.url, '_blank', 'noopener,noreferrer') }}>{resource.title}</button>
+                      <button type="button" className={css.resTitle} title={resource.url} onClick={() => { if (resource.url !== undefined) window.open(resource.url, '_blank', 'noopener,noreferrer') }}>{resource.title}</button>
                       {resource.note !== undefined && <span className={css.resNote}>{resource.note}</span>}
                     </div>
                   </div>
@@ -436,7 +436,7 @@ function PathCard({ p, projectId, roadmap, context }: ViewProps & { projectId: s
               </span>
               <span className={css.stationText}>
                 <span className={css.stationTitle}>
-                  <span className={css.kind} data-kind={node.kind}>{t(`nodeKind.${node.kind}`)}</span>
+                  <span className={css.kind} data-kind={node.gate}>{t(`nodeKind.${node.gate}`)}</span>
                   {node.title}
                   {node.state === 'done' && node.quizStats?.bestRatio !== undefined && <span className={css.best}>{Math.round(node.quizStats.bestRatio * 100)}%</span>}
                 </span>

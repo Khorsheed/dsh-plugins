@@ -1,21 +1,24 @@
 /**
- * One book in the sidebar: its roadmap draft waiting for 采用, its adopted
- * path as an S-shaped trail of nodes, and one node's page (guide, the pages
- * photographed for it, its chapter quizzes).
+ * One shelf resource in the sidebar (a thick one — a book, a course): its
+ * roadmap draft waiting for 采用, its adopted path as an S-shaped trail of
+ * nodes, and one node's page.
  *
- * The same pieces serve the project's OWN path (v3): NodeView with no bookId
- * reads the project-level roadmap, a station's covers row replaces the chapter
- * row, and 「我的记录」 exists only when the station covers a book. A quiz
- * station ends in its gate tab, 章节考; a practice station completes in
- * conversation (the coach judges its acceptance lines with library_assess) and
- * carries no gate tab.
+ * The same pieces serve the project's OWN path: NodeView with no resourceId
+ * reads the project-level roadmap, and 「我的记录」 exists only when the
+ * station covers a thick resource. Every station carries the same four tabs —
+ * 导读 / 我的记录 / 讲义 / 章节考: the gate tab is the station's quiz on a
+ * quiz / read node, and its acceptance sheet (the coach judges the rubric
+ * with library_assess) on an acceptance node.
  *
  * @module @khorsheed/dsh-library/client/views/book
  */
 import { Fragment, useEffect, useState, type ReactNode } from 'react'
 import { ChipRow, ListRow, PanelHeader, UnderlineTabs } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
-import { type LibraryAttempt, type LibraryBook, type LibraryPage, type LibraryQuiz, type LibraryQuizFocus, type LibraryQuizQuestion, type LibraryRoadmap, type RoadmapNode } from '../../types.ts'
-import { colorOf, Cover } from '../look.tsx'
+import {
+  acceptanceLines, coverKind, isThickResource, parseLocator,
+  type LibraryAcceptanceLine, type LibraryAssessment, type LibraryAttempt, type LibraryPage, type LibraryQuizFocus, type LibraryQuizQuestion, type LibraryResource, type LibraryRoadmap, type LibraryVerdict, type RoadmapNode,
+} from '../../types.ts'
+import { colorOf, Cover, coverOf } from '../look.tsx'
 import { CoverChips, coverLabel, evidencePolicy, type CoverContext } from '../covers.tsx'
 import type { LibraryNodeTab } from '../store.ts'
 import {
@@ -31,31 +34,37 @@ function column(index: number): number {
   return phase === 3 ? 1 : phase
 }
 
-/** A node's chapter rows of one book, as titles. */
-function rowsOf(node: RoadmapNode, book: LibraryBook): string[] {
+/** A node's contents rows of one thick resource, as titles. */
+function rowsOf(node: RoadmapNode, resource: LibraryResource): string[] {
+  const toc = resource.toc ?? []
   return node.covers
-    .flatMap(cover => (cover.kind === 'book' && cover.bookId === book.id ? cover.ranges : []))
-    .flatMap(range => book.toc.filter(row => row.n >= range.from && row.n <= range.to).map(row => row.title))
+    .flatMap(cover => (coverKind(cover) === 'resource' && cover.ref === resource.id && cover.locator !== undefined ? parseLocator(cover.locator) : []))
+    .flatMap(range => toc.filter(row => row.n >= range.from && row.n <= range.to).map(row => row.title))
 }
 
-/** One book: draft card, path, or the ask for one. */
-export function BookView({ p, projectId, bookId }: ViewProps & { projectId: string; bookId: string }): ReactNode {
+/** The kind line of a thick resource: a book's bookKind, else its kind label. */
+function kindLabelOf(resource: LibraryResource, t: ViewProps['p']['t']): string {
+  return resource.kind === 'book' ? t(`bookKind.${resource.meta?.bookKind ?? 'knowledge'}`) : t(`resource.kind.${resource.kind}`)
+}
+
+/** One resource: draft card, path, or the ask for one. */
+export function BookView({ p, projectId, resourceId }: ViewProps & { projectId: string; resourceId: string }): ReactNode {
   const { t, actions, useStore } = p
   const rev = useStore(s => s.rev)
   const loaded = useLoad(async () => {
-    const [detail, roadmaps] = await Promise.all([outcome(p.getProject(projectId)), value(p.getRoadmap(projectId, bookId))])
-    return { book: detail.books.find(candidate => candidate.id === bookId), project: detail.project, shade: Math.max(0, detail.books.findIndex(candidate => candidate.id === bookId)), ...roadmaps }
-  }, [projectId, bookId, rev])
-  // Book-level quizzes hang on no station — this section is their only entry.
-  const quizzes = useLoad(() => value(p.listQuizzes(projectId, bookId)), [projectId, bookId, rev])
+    const [detail, roadmaps] = await Promise.all([outcome(p.getProject(projectId)), value(p.getRoadmap(projectId, resourceId))])
+    return { resource: detail.resources.find(candidate => candidate.id === resourceId), resources: detail.resources, project: detail.project, shade: Math.max(0, detail.resources.filter(isThickResource).findIndex(candidate => candidate.id === resourceId)), ...roadmaps }
+  }, [projectId, resourceId, rev])
+  // Resource-level quizzes hang on no station — this section is their entry.
+  const assessments = useLoad(() => value(p.listAssessments(projectId, resourceId)), [projectId, resourceId, rev])
   const [notice, setNotice] = useState<string | undefined>()
   const [busy, setBusy] = useState(false)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
-  const book = loaded.data?.book
-  const looseQuizzes = (quizzes.data?.quizzes ?? []).filter(quiz => quiz.scope.nodeId === undefined).sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+  const resource = loaded.data?.resource
+  const looseQuizzes = (assessments.data?.assessments ?? []).filter(quiz => quiz.type === 'quiz' && quiz.scope.nodeId === undefined).sort((a, b) => b.createdAt.localeCompare(a.createdAt))
 
   const prime = (text: string): void => {
-    void p.bindTarget({ projectId, bookId })
+    void p.bindTarget({ projectId, resourceId })
     setNotice(p.primeConversation(text) ? t('notice.primed') : t('notice.noConversation'))
   }
 
@@ -74,7 +83,7 @@ export function BookView({ p, projectId, bookId }: ViewProps & { projectId: stri
   const remove = async (): Promise<void> => {
     setBusy(true)
     try {
-      await outcome(p.deleteBook(projectId, bookId))
+      await outcome(p.removeResource(projectId, resourceId))
       actions.refresh()
       actions.pop()
     } catch (failure) {
@@ -86,13 +95,13 @@ export function BookView({ p, projectId, bookId }: ViewProps & { projectId: stri
   return (
     <>
       <PanelHeader
-        title={book?.title ?? ''}
+        title={resource?.title ?? ''}
         onBack={() => { actions.pop() }}
         backLabel={t('action.back')}
-        actions={book === undefined ? [] : [
-          { id: 'ask', label: t('action.askCoach'), icon: <IconSparkleOutlineMedium />, onSelect: () => { prime(t('prime.readBook', { book: book.title })) } },
-          { id: 'replan', label: t('book.replan'), icon: <IconRefreshOutlineMedium />, onSelect: () => { prime(t('prime.replan', { book: book.title })) } },
-          { id: 'bind', label: t('action.bindBook'), icon: <IconSparkleOutlineMedium />, menuOnly: true, onSelect: () => { void p.bindTarget({ projectId, bookId }).then(() => { setNotice(t('notice.bound')) }) } },
+        actions={resource === undefined ? [] : [
+          { id: 'ask', label: t('action.askCoach'), icon: <IconSparkleOutlineMedium />, onSelect: () => { prime(t('prime.readBook', { book: resource.title })) } },
+          { id: 'replan', label: t('book.replan'), icon: <IconRefreshOutlineMedium />, onSelect: () => { prime(t('prime.replan', { book: resource.title })) } },
+          { id: 'bind', label: t('action.bindBook'), icon: <IconSparkleOutlineMedium />, menuOnly: true, onSelect: () => { void p.bindTarget({ projectId, resourceId }).then(() => { setNotice(t('notice.bound')) }) } },
           { id: 'delete', label: t('book.delete'), icon: <IconTrashOutlineMedium />, menuOnly: true, onSelect: () => { setConfirmingDelete(true) } },
         ]}
         moreLabel={t('action.more')}
@@ -109,50 +118,50 @@ export function BookView({ p, projectId, bookId }: ViewProps & { projectId: stri
             </span>
           </div>
         )}
-        {book !== undefined && (
+        {resource !== undefined && (
           <section className={css.bookHead}>
-            <Cover book={book} shade={loaded.data?.shade ?? 0} size="badge" />
+            <Cover book={coverOf(resource)} shade={loaded.data?.shade ?? 0} size="badge" />
             <span className={css.projectText}>
-              <span className={css.projectName}>{book.title}</span>
+              <span className={css.projectName}>{resource.title}</span>
               <span className={css.muted}>
-                {[book.edition, t(`bookKind.${book.bookKind}`), loaded.data?.roadmap === undefined ? undefined : t('book.shelfMeta', { done: String(loaded.data.roadmap.nodes.filter(node => node.kind === 'quiz' && node.state === 'done').length), total: String(loaded.data.roadmap.nodes.filter(node => node.kind === 'quiz').length) })].filter(Boolean).join(' · ')}
+                {[resource.meta?.edition, kindLabelOf(resource, t), loaded.data?.roadmap === undefined ? undefined : t('book.shelfMeta', { done: String(loaded.data.roadmap.nodes.filter(node => node.gate === 'quiz' && node.state === 'done').length), total: String(loaded.data.roadmap.nodes.filter(node => node.gate === 'quiz').length) })].filter(Boolean).join(' · ')}
               </span>
             </span>
           </section>
         )}
-        {book?.extras !== undefined && book.extras.length > 0 && <Extras p={p} book={book} />}
-        {book !== undefined && loaded.data?.draft !== undefined && (
+        {resource?.meta?.extras !== undefined && resource.meta.extras.length > 0 && <Extras p={p} resource={resource} />}
+        {resource !== undefined && loaded.data?.draft !== undefined && (
           <DraftCard
             p={p}
             draft={loaded.data.draft}
-            context={{ books: [book], resources: [] }}
-            tocBy={book.tocSource.by}
+            context={{ resources: loaded.data.resources }}
+            tocBy={resource.tocSource?.by}
             replaces={loaded.data.roadmap !== undefined}
             busy={busy}
-            onAdopt={() => { void act(() => outcome(p.adoptRoadmap(projectId, bookId))) }}
-            onDiscard={() => { void act(() => outcome(p.discardDraft(projectId, bookId))) }}
+            onAdopt={() => { void act(() => outcome(p.adoptRoadmap(projectId, resourceId))) }}
+            onDiscard={() => { void act(() => outcome(p.discardDraft(projectId, resourceId))) }}
           />
         )}
-        {book !== undefined && loaded.data?.roadmap !== undefined && (
-          <Path p={p} roadmap={loaded.data.roadmap} onOpen={node => { actions.push({ view: 'node', projectId, bookId, nodeId: node.id, tab: 'guide' }) }} />
+        {resource !== undefined && loaded.data?.roadmap !== undefined && (
+          <Path p={p} roadmap={loaded.data.roadmap} onOpen={node => { actions.push({ view: 'node', projectId, resourceId, nodeId: node.id, tab: 'guide' }) }} />
         )}
-        {book !== undefined && loaded.data?.roadmap === undefined && loaded.data?.draft === undefined && (
+        {resource !== undefined && loaded.data?.roadmap === undefined && loaded.data?.draft === undefined && (
           <div className={css.empty}>
             <div className={css.emptyTitle}>{t('book.noRoadmap')}</div>
             <div className={css.muted}>{t('book.noRoadmapBody')}</div>
-            <button type="button" className={css.primary} onClick={() => { prime(t('prime.plan', { book: book.title })) }}>{t('book.askPlan')}</button>
+            <button type="button" className={css.primary} onClick={() => { prime(t('prime.plan', { book: resource.title })) }}>{t('book.askPlan')}</button>
           </div>
         )}
-        {book !== undefined && looseQuizzes.length > 0 && (
+        {resource !== undefined && looseQuizzes.length > 0 && (
           <section className={css.section}>
             <h3 className={css.sectionTitle}>{t('book.quizzes', { count: String(looseQuizzes.length) })}</h3>
             <QuizRows p={p} projectId={projectId} quizzes={looseQuizzes} />
           </section>
         )}
-        {book !== undefined && (
+        {resource !== undefined && (
           <div className={css.muted}>
-            {t('book.contentsMeta', { rows: String(book.toc.length), kind: t(`bookKind.${book.bookKind}`) })}
-            {book.tocSource.url !== undefined && <> · <a className={css.link} href={book.tocSource.url} target="_blank" rel="noreferrer">{t('book.contentsSource')}</a></>}
+            {t('book.contentsMeta', { rows: String(resource.toc?.length ?? 0), kind: kindLabelOf(resource, t) })}
+            {resource.tocSource?.url !== undefined && <> · <a className={css.link} href={resource.tocSource.url} target="_blank" rel="noreferrer">{t('book.contentsSource')}</a></>}
           </div>
         )}
       </div>
@@ -160,14 +169,14 @@ export function BookView({ p, projectId, bookId }: ViewProps & { projectId: stri
   )
 }
 
-/** The draft card: what the coach proposes, and the learner's 采用 / 放弃. Shared by the book page and the project page (no book = the project's own path). */
+/** The draft card: what the coach proposes, and the learner's 采用 / 放弃. Shared by the resource page and the project page (no resource = the project's own path). */
 export function DraftCard({ p, draft, context, tocBy, replaces, busy, onAdopt, onDiscard }: {
   p: ViewProps['p']
   draft: LibraryRoadmap
-  /** Books and resources for labeling covers. */
+  /** The project's shelf, for labeling covers. */
   context: CoverContext
-  /** The book's contents-source badge (a book's own draft only). */
-  tocBy?: LibraryBook['tocSource']['by']
+  /** The resource's contents-source badge (a resource's own draft only). */
+  tocBy?: 'web' | 'model' | 'photo' | undefined
   replaces: boolean
   busy: boolean
   onAdopt: () => void
@@ -184,11 +193,11 @@ export function DraftCard({ p, draft, context, tocBy, replaces, busy, onAdopt, o
       <ol className={css.draftNodes}>
         {draft.nodes.map(node => (
           <li key={node.id}>
-            <span className={css.kind} data-kind={node.kind}>{t(`nodeKind.${node.kind}`)}</span>
+            <span className={css.kind} data-kind={node.gate}>{t(`nodeKind.${node.gate}`)}</span>
             <div className={css.extraText}>
               <span>{node.title}</span>
               {node.goals.length > 0 && <span className={css.muted}>{node.goals[0]}</span>}
-              {node.kind === 'practice' && node.acceptance !== undefined && (
+              {node.gate === 'acceptance' && node.acceptance !== undefined && (
                 <span className={css.muted}>{t('accept.meta', { count: String(node.acceptance.length) })}</span>
               )}
               <CoverChips covers={node.covers} context={context} t={t} />
@@ -205,11 +214,11 @@ export function DraftCard({ p, draft, context, tocBy, replaces, busy, onAdopt, o
   )
 }
 
-/** The 「开始前 / 附录」 strip: what the book holds that is not a stop on the path. */
-function Extras({ p, book }: { p: ViewProps['p']; book: LibraryBook }): ReactNode {
+/** The 「开始前 / 附录」 strip: what the resource holds that is not a stop on the path. */
+function Extras({ p, resource }: { p: ViewProps['p']; resource: LibraryResource }): ReactNode {
   const { t } = p
   const [open, setOpen] = useState(false)
-  const extras = book.extras ?? []
+  const extras = resource.meta?.extras ?? []
   const before = extras.filter(extra => extra.when === 'before')
   return (
     <section className={css.extras}>
@@ -239,19 +248,20 @@ const ROW = 84
 const COLUMNS = [1 / 6, 1 / 2, 5 / 6]
 
 /**
- * The adopted path: levels (quiz nodes) on an S-shaped trail joined by
- * connectors — solid up to the furthest reached level, dotted beyond — and
- * side stops (read nodes) as small dots beside the level they follow.
+ * The adopted path: levels (quiz and acceptance nodes) on an S-shaped trail
+ * joined by connectors — solid up to the furthest reached level, dotted
+ * beyond — and side stops (read nodes) as small dots beside the level they
+ * follow.
  */
 function Path({ p, roadmap, onOpen }: { p: ViewProps['p']; roadmap: LibraryRoadmap; onOpen: (node: RoadmapNode) => void }): ReactNode {
   const { t } = p
-  // Levels gate (quiz by its quiz, practice by acceptance); read nodes are side stops.
-  const levels = roadmap.nodes.filter(node => node.kind !== 'read')
+  // Levels gate (quiz by its quiz, acceptance by its rubric); read nodes are side stops.
+  const levels = roadmap.nodes.filter(node => node.gate !== 'read')
   // Each side stop hangs beside the level before it (or the first one).
   const sides = new Map<string, RoadmapNode[]>()
   let anchor = levels[0]?.id
   for (const node of roadmap.nodes) {
-    if (node.kind !== 'read') { anchor = node.id; continue }
+    if (node.gate !== 'read') { anchor = node.id; continue }
     if (anchor === undefined) continue
     sides.set(anchor, [...(sides.get(anchor) ?? []), node])
   }
@@ -281,7 +291,7 @@ function Path({ p, roadmap, onOpen }: { p: ViewProps['p']; roadmap: LibraryRoadm
         {levels.map((node, index) => (
           <div key={node.id} className={css.pathSlot} style={{ left: `${(COLUMNS[column(index)] ?? 0.5) * 100}%`, top: y(index) }}>
             <button type="button" className={css.pathNode} onClick={() => { onOpen(node) }}>
-              <span className={css.disc} data-state={node.state} data-kind={node.kind}>
+              <span className={css.disc} data-state={node.state} data-kind={node.gate}>
                 {node.state === 'done' ? <IconCheckOutlineMedium /> : node.state === 'locked' ? <IconLockOutlineMedium /> : index + 1}
               </span>
               <span className={css.pathLabel} data-state={node.state}>{node.title}</span>
@@ -300,51 +310,55 @@ function Path({ p, roadmap, onOpen }: { p: ViewProps['p']; roadmap: LibraryRoadm
   )
 }
 
-/** One node: guide, photographed pages, its 讲义, and (a quiz station) the chapter quiz. */
-export function NodeView({ p, projectId, bookId, nodeId, tab }: ViewProps & { projectId: string; bookId: string | undefined; nodeId: string; tab: LibraryNodeTab }): ReactNode {
+/** One node: guide, photographed pages, its 讲义, and the gate tab 章节考 — on every kind of station. */
+export function NodeView({ p, projectId, resourceId, nodeId, tab }: ViewProps & { projectId: string; resourceId: string | undefined; nodeId: string; tab: LibraryNodeTab }): ReactNode {
   const { t, actions, useStore } = p
   const rev = useStore(s => s.rev)
   const loaded = useLoad(async () => {
-    const [detail, roadmaps, resources] = await Promise.all([outcome(p.getProject(projectId)), value(p.getRoadmap(projectId, bookId)), value(p.listResources(projectId))])
-    const book = bookId === undefined ? undefined : detail.books.find(candidate => candidate.id === bookId)
+    const [detail, roadmaps] = await Promise.all([outcome(p.getProject(projectId)), value(p.getRoadmap(projectId, resourceId))])
+    const resource = resourceId === undefined ? undefined : detail.resources.find(candidate => candidate.id === resourceId)
     const node = roadmaps.roadmap?.nodes.find(candidate => candidate.id === nodeId)
-    return { book, books: detail.books, project: detail.project, node, passRatio: roadmaps.roadmap?.passRatio ?? 0.8, resources: resources.resources }
-  }, [projectId, bookId, nodeId, rev])
+    return { resource, resources: detail.resources, project: detail.project, node, passRatio: roadmaps.roadmap?.passRatio ?? 0.8 }
+  }, [projectId, resourceId, nodeId, rev])
   const [notice, setNotice] = useState<string | undefined>()
   const node = loaded.data?.node
-  // The pages tab rides a book: the route's, else the station's first book
-  // cover (the learner picks when several).
-  const coveredBooks = (node?.covers ?? []).flatMap(cover => (cover.kind === 'book' ? [cover.bookId] : []))
-  const [pickedBook, setPickedBook] = useState<string | undefined>()
-  const pagesBookId = bookId ?? pickedBook ?? coveredBooks[0]
-  const pagesBook = loaded.data?.books.find(candidate => candidate.id === pagesBookId)
-  const book = loaded.data?.book
+  // The pages tab rides a thick resource: the route's, else the station's
+  // first thick cover (the learner picks when several).
+  const coveredThick = (node?.covers ?? []).flatMap(cover => {
+    if (coverKind(cover) !== 'resource') return []
+    const resource = loaded.data?.resources.find(candidate => candidate.id === cover.ref)
+    return resource !== undefined && isThickResource(resource) ? [resource.id] : []
+  })
+  const [pickedResource, setPickedResource] = useState<string | undefined>()
+  const pagesResourceId = resourceId ?? pickedResource ?? coveredThick[0]
+  const pagesResource = loaded.data?.resources.find(candidate => candidate.id === pagesResourceId)
+  const resource = loaded.data?.resource
 
   const prime = (text: string): void => {
-    void p.bindTarget(bookId === undefined ? { projectId } : { projectId, bookId })
+    void p.bindTarget(resourceId === undefined ? { projectId } : { projectId, resourceId })
     setNotice(p.primeConversation(text) ? t('notice.primed') : t('notice.noConversation'))
   }
 
   const tabs: { id: LibraryNodeTab; label: string }[] = [
     { id: 'guide', label: t('node.guide') },
-    ...(coveredBooks.length > 0 ? [{ id: 'pages' as const, label: t('node.pages') }] : []),
+    ...(coveredThick.length > 0 ? [{ id: 'pages' as const, label: t('node.pages') }] : []),
     { id: 'notes', label: t('node.notes') },
-    // C: the gate tab, 章节考, is the station's quiz. A practice station has
-    // none — the coach judges its acceptance lines in the conversation.
-    ...(node?.kind === 'quiz' ? [{ id: 'quiz' as const, label: t('node.quiz') }] : []),
+    // Every station ends in 章节考: a quiz / read station's papers, an
+    // acceptance station's rubric sheet.
+    { id: 'quiz', label: t('node.quiz') },
   ]
   const activeTab = tabs.some(candidate => candidate.id === tab) ? tab : 'guide'
-  const coverContext: CoverContext = { books: loaded.data?.books ?? [], resources: loaded.data?.resources ?? [] }
+  const coverContext: CoverContext = { resources: loaded.data?.resources ?? [] }
 
   return (
     <>
       <PanelHeader
         title={node?.title ?? ''}
-        meta={book?.title ?? loaded.data?.project.name}
+        meta={resource?.title ?? loaded.data?.project.name}
         onBack={() => { actions.pop() }}
         backLabel={t('action.back')}
         actions={node === undefined ? [] : [
-          { id: 'ask', label: t('action.askCoach'), icon: <IconSparkleOutlineMedium />, onSelect: () => { prime(book === undefined ? t('prime.nodeOnPath', { node: node.title }) : t('prime.node', { book: book.title, node: node.title })) } },
+          { id: 'ask', label: t('action.askCoach'), icon: <IconSparkleOutlineMedium />, onSelect: () => { prime(resource === undefined ? t('prime.nodeOnPath', { node: node.title }) : t('prime.node', { book: resource.title, node: node.title })) } },
         ]}
         moreLabel={t('action.more')}
       />
@@ -357,39 +371,42 @@ export function NodeView({ p, projectId, bookId, nodeId, tab }: ViewProps & { pr
         label={t('node.tabs')}
         tabs={tabs}
         value={activeTab}
-        onChange={next => { actions.replace({ view: 'node', projectId, ...(bookId === undefined ? {} : { bookId }), nodeId, tab: next }) }}
+        onChange={next => { actions.replace({ view: 'node', projectId, ...(resourceId === undefined ? {} : { resourceId }), nodeId, tab: next }) }}
       />
       <div className={css.body}>
         <StateLine loaded={loaded} t={t} />
         {notice !== undefined && <div className={css.notice}>{notice}</div>}
         {node !== undefined && activeTab === 'guide' && (
-          <GuideTab p={p} projectId={projectId} bookId={bookId} node={node} book={book} coverContext={coverContext} onPrime={prime} />
+          <GuideTab p={p} projectId={projectId} resourceId={resourceId} node={node} resource={resource} coverContext={coverContext} onPrime={prime} />
         )}
-        {node !== undefined && activeTab === 'pages' && pagesBook !== undefined && pagesBookId !== undefined && (
+        {node !== undefined && activeTab === 'pages' && pagesResource !== undefined && pagesResourceId !== undefined && (
           <>
-            {coveredBooks.length > 1 && bookId === undefined && (
+            {coveredThick.length > 1 && resourceId === undefined && (
               <ChipRow
                 label={t('node.pagesPick')}
-                chips={coveredBooks.map(candidate => ({ id: candidate, label: loaded.data?.books.find(b => b.id === candidate)?.title ?? candidate }))}
-                value={pagesBookId}
-                onSelect={setPickedBook}
+                chips={coveredThick.map(candidate => ({ id: candidate, label: loaded.data?.resources.find(r => r.id === candidate)?.title ?? candidate }))}
+                value={pagesResourceId}
+                onSelect={setPickedResource}
               />
             )}
-            <PagesTab p={p} projectId={projectId} bookId={pagesBookId} bookTitle={pagesBook.title} node={node} onBind={() => { void p.bindTarget({ projectId, bookId: pagesBookId }) }} />
+            <PagesTab p={p} projectId={projectId} resourceId={pagesResourceId} resourceTitle={pagesResource.title} node={node} onBind={() => { void p.bindTarget({ projectId, resourceId: pagesResourceId }) }} />
           </>
         )}
         {node !== undefined && activeTab === 'notes' && (
           <NotesTab p={p} node={node} onPrime={prime} />
         )}
-        {node !== undefined && activeTab === 'quiz' && (
+        {node !== undefined && activeTab === 'quiz' && node.gate === 'acceptance' && (
+          <AcceptanceTab p={p} projectId={projectId} node={node} passRatio={loaded.data?.passRatio ?? 0.8} onPrime={() => { prime(t('prime.accept', { node: node.title, nodeId: node.id, criteria: acceptanceLines(node).map(line => `- ${line.id}: ${line.line}`).join('\n') })) }} />
+        )}
+        {node !== undefined && activeTab === 'quiz' && node.gate !== 'acceptance' && (
           <QuizTab
             p={p}
             projectId={projectId}
-            bookId={bookId}
+            resourceId={resourceId}
             node={node}
             passRatio={loaded.data?.passRatio ?? 0.8}
-            books={loaded.data?.books ?? []}
-            onPrime={focus => { prime(book === undefined ? t(`prime.quiz.station.${focus}`, { node: node.title }) : t(`prime.quiz.${focus}`, { book: book.title, node: node.title })) }}
+            resources={loaded.data?.resources ?? []}
+            onPrime={focus => { prime(resource === undefined ? t(`prime.quiz.station.${focus}`, { node: node.title }) : t(`prime.quiz.${focus}`, { book: resource.title, node: node.title })) }}
             onRetake={prompts => { prime(t('prime.quiz.retake', { node: node.title, list: prompts.map(prompt => `- ${prompt}`).join('\n') })) }}
           />
         )}
@@ -398,11 +415,11 @@ export function NodeView({ p, projectId, bookId, nodeId, tab }: ViewProps & { pr
   )
 }
 
-function GuideTab({ p, projectId, bookId, node, book, coverContext, onPrime }: {
-  p: ViewProps['p']; projectId: string; bookId: string | undefined; node: RoadmapNode; book: LibraryBook | undefined; coverContext: CoverContext; onPrime: (text: string) => void
+function GuideTab({ p, projectId, resourceId, node, resource, coverContext, onPrime }: {
+  p: ViewProps['p']; projectId: string; resourceId: string | undefined; node: RoadmapNode; resource: LibraryResource | undefined; coverContext: CoverContext; onPrime: (text: string) => void
 }): ReactNode {
   const { t, actions } = p
-  const rows = book === undefined ? [] : rowsOf(node, book)
+  const rows = resource === undefined ? [] : rowsOf(node, resource)
   const [error, setError] = useState<string | undefined>()
   return (
     <>
@@ -419,19 +436,19 @@ function GuideTab({ p, projectId, bookId, node, book, coverContext, onPrime }: {
           <ul className={css.goals}>{rows.map(row => <li key={row}>{row}</li>)}</ul>
         </section>
       )}
-      {book === undefined && node.covers.length > 0 && (
+      {resource === undefined && node.covers.length > 0 && (
         <section className={css.section}>
           <h3 className={css.sectionTitle}>{t('node.covers')}</h3>
           <ul className={css.goals}>{node.covers.map((cover, at) => <li key={at}>{coverLabel(cover, coverContext, t)}</li>)}</ul>
         </section>
       )}
       <div className={css.actions}>
-        <button type="button" className={css.secondary} onClick={() => { onPrime(book === undefined ? t('prime.nodeOnPath', { node: node.title }) : t('prime.node', { book: book.title, node: node.title })) }}>{t('action.askCoach')}</button>
-        {node.kind === 'read' && node.state === 'current' && (
+        <button type="button" className={css.secondary} onClick={() => { onPrime(resource === undefined ? t('prime.nodeOnPath', { node: node.title }) : t('prime.node', { book: resource.title, node: node.title })) }}>{t('action.askCoach')}</button>
+        {node.gate === 'read' && node.state === 'current' && (
           <button
             type="button"
             className={css.primary}
-            onClick={() => { void outcome(p.markNodeRead(projectId, bookId, node.id)).then(() => { actions.pop() }, (failure: unknown) => { setError(String(failure)) }) }}
+            onClick={() => { void outcome(p.markNodeRead(projectId, resourceId, node.id)).then(() => { actions.pop() }, (failure: unknown) => { setError(String(failure)) }) }}
           >{t('node.markRead')}</button>
         )}
       </div>
@@ -440,8 +457,8 @@ function GuideTab({ p, projectId, bookId, node, book, coverContext, onPrime }: {
   )
 }
 
-function PagesTab({ p, projectId, bookId, bookTitle, node, onBind }: {
-  p: ViewProps['p']; projectId: string; bookId: string; bookTitle: string; node: RoadmapNode; onBind: () => void
+function PagesTab({ p, projectId, resourceId, resourceTitle, node, onBind }: {
+  p: ViewProps['p']; projectId: string; resourceId: string; resourceTitle: string; node: RoadmapNode; onBind: () => void
 }): ReactNode {
   const { t, useStore, actions } = p
   const rev = useStore(s => s.rev)
@@ -458,7 +475,7 @@ function PagesTab({ p, projectId, bookId, bookTitle, node, onBind }: {
     }, 4000)
     return () => { clearInterval(timer) }
   }, [watching])
-  const pages = useLoad(() => value(p.listPages(projectId, bookId, node.id)), [projectId, bookId, node.id, rev, tick])
+  const pages = useLoad(() => value(p.listPages(projectId, resourceId, node.id)), [projectId, resourceId, node.id, rev, tick])
   const cards = useLoad(() => value(p.listCards({ projectId, nodeId: node.id, limit: 50 })), [projectId, node.id, rev, tick])
   const count = pages.data?.pages.length ?? 0
   useEffect(() => {
@@ -475,7 +492,7 @@ function PagesTab({ p, projectId, bookId, bookTitle, node, onBind }: {
   const onPick = (file: File | undefined): void => {
     if (file === undefined) return
     onBind()
-    const sent = p.sendPhoto(file, t('prime.photo', { book: bookTitle, node: node.title }))
+    const sent = p.sendPhoto(file, t('prime.photo', { book: resourceTitle, node: node.title }))
     if (sent) setWatching({ since: Date.now(), pages: count })
     send(sent, t('node.photoSent'))
   }
@@ -588,7 +605,7 @@ function PageThumb({ p, projectId, page }: { p: ViewProps['p']; projectId: strin
 }
 
 /**
- * The station's 讲义 tab (A): the coach's distilled teaching on the node —
+ * The station's 讲义 tab: the coach's distilled teaching on the node —
  * marginalia for a book station, the textbook itself for a 讲授 station.
  */
 function NotesTab({ p, node, onPrime }: { p: ViewProps['p']; node: RoadmapNode; onPrime: (text: string) => void }): ReactNode {
@@ -654,8 +671,8 @@ function answerText(question: LibraryQuizQuestion): string {
   return at >= 0 ? `${String.fromCharCode(65 + at)}. ${question.answer}` : question.answer
 }
 
-function QuizTab({ p, projectId, bookId, node, passRatio, books, onPrime, onRetake }: {
-  p: ViewProps['p']; projectId: string; bookId: string | undefined; node: RoadmapNode; passRatio: number; books: readonly LibraryBook[]; onPrime: (focus: LibraryQuizFocus) => void; onRetake: (prompts: string[]) => void
+function QuizTab({ p, projectId, resourceId, node, passRatio, resources, onPrime, onRetake }: {
+  p: ViewProps['p']; projectId: string; resourceId: string | undefined; node: RoadmapNode; passRatio: number; resources: readonly LibraryResource[]; onPrime: (focus: LibraryQuizFocus) => void; onRetake: (prompts: string[]) => void
 }): ReactNode {
   const { t, actions, useStore } = p
   const rev = useStore(s => s.rev)
@@ -671,42 +688,45 @@ function QuizTab({ p, projectId, bookId, node, passRatio, books, onPrime, onReta
     }, 4000)
     return () => { clearInterval(timer) }
   }, [watching])
-  // Book-wide read, split below into the station's own quizzes and the ones
+  // Project-wide read, split below into the station's own quizzes and the ones
   // gating no station (本书测验 / 自由测验) — else those are invisible from here.
-  const quizzes = useLoad(() => value(p.listQuizzes(projectId, bookId)), [projectId, bookId, rev, tick])
-  const shown = (quizzes.data?.quizzes ?? []).filter(quiz =>
+  const assessments = useLoad(() => value(p.listAssessments(projectId, undefined, undefined, 'quiz')), [projectId, rev, tick])
+  const shown = (assessments.data?.assessments ?? []).filter(quiz =>
     quiz.scope.nodeId === node.id
-    || (quiz.scope.nodeId === undefined && (bookId !== undefined ? quiz.scope.bookId === bookId : quiz.scope.bookId === undefined)))
+    || (quiz.scope.nodeId === undefined && (resourceId !== undefined ? quiz.scope.resourceId === resourceId : quiz.scope.resourceId === undefined)))
   const quizCount = shown.length
   // The quiz the learner is waiting for opens itself when it lands.
   useEffect(() => {
     if (watching === undefined || quizCount <= watching.count) return
     setWatching(undefined)
     const landed = shown.at(-1)
-    if (landed !== undefined) actions.push({ view: 'quiz', projectId, ...(landed.scope.bookId === undefined ? {} : { bookId: landed.scope.bookId }), quizId: landed.id })
+    if (landed !== undefined) actions.push({ view: 'quiz', projectId, ...(landed.scope.resourceId === undefined ? {} : { resourceId: landed.scope.resourceId }), quizId: landed.id })
   }, [quizCount, watching])
   const mine = useLoad(() => value(p.listCards({ projectId, nodeId: node.id, limit: 5 })), [projectId, node.id, rev])
-  // B: this station's missed questions — every quiz's latest sitting, joined by quizId.
+  // This station's missed questions — every quiz's latest sitting, joined by assessmentId.
   const allAttempts = useLoad(() => value(p.listAttempts(projectId)), [projectId, rev])
   const stats = node.quizStats
   const mineCount = mine.data?.total ?? 0
-  const list = shown.filter(quiz => quiz.scope.nodeId === node.id)
+  // The station's papers, oldest first: the current one is the newest not
+  // superseded; everything superseded (or older than it) is history.
+  const stations = shown.filter(quiz => quiz.scope.nodeId === node.id)
+  const live = stations.filter(quiz => quiz.supersededBy === undefined)
+  const latest = live.at(-1) ?? stations.at(-1)
+  const earlier = stations.filter(quiz => quiz !== latest).reverse()
   const loose = shown.filter(quiz => quiz.scope.nodeId === undefined)
-  const latest = list.at(-1)
-  const earlier = list.slice(0, -1).reverse()
-  const policy = evidencePolicy(node.covers, books)
+  const policy = evidencePolicy(node.covers, resources)
   const missed: { quizId: string; question: LibraryQuizQuestion; at: string }[] = []
   {
     const latestByQuiz = new Map<string, LibraryAttempt>()
     for (const attempt of allAttempts.data?.attempts ?? []) {
-      if (attempt.quizId !== undefined && !latestByQuiz.has(attempt.quizId)) latestByQuiz.set(attempt.quizId, attempt)
+      if (attempt.assessmentId !== undefined && !latestByQuiz.has(attempt.assessmentId)) latestByQuiz.set(attempt.assessmentId, attempt)
     }
-    for (const quiz of [...list].reverse()) {
+    for (const quiz of [...stations].reverse()) {
       const attempt = latestByQuiz.get(quiz.id)
       if (attempt === undefined) continue
       for (const verdict of attempt.verdicts) {
         if (verdict.pass || verdict.void === true) continue
-        const question = quiz.questions.find(candidate => candidate.id === verdict.task)
+        const question = quiz.questions?.find(candidate => candidate.id === verdict.task)
         if (question !== undefined) missed.push({ quizId: quiz.id, question, at: attempt.at })
       }
     }
@@ -722,14 +742,14 @@ function QuizTab({ p, projectId, bookId, node, passRatio, books, onPrime, onReta
         <span className={css.muted}>{t('policy.title')}</span>
         <span>{t(`policy.${policy}`)}</span>
       </section>
-      <StateLine loaded={quizzes} t={t} />
+      <StateLine loaded={assessments} t={t} />
       {latest !== undefined && (
         <section className={css.quizLatest}>
           <div className={css.quizLatestText}>
-            <strong>{t('node.quizLatest', { count: String(latest.questions.length) })}</strong>
-            <span className={css.muted}>{[t(`focus.${latest.focus ?? 'mixed'}`), sourceMix(latest.questions.map(question => question.evidence.kind), t)].join(' · ')}</span>
+            <strong>{t('node.quizLatest', { count: String(latest.questions?.length ?? 0) })}</strong>
+            <span className={css.muted}>{[t(`focus.${latest.focus ?? 'mixed'}`), sourceMix((latest.questions ?? []).map(question => question.evidence.kind), t)].join(' · ')}</span>
           </div>
-          <button type="button" className={css.primary} onClick={() => { actions.push({ view: 'quiz', projectId, ...(bookId === undefined ? {} : { bookId }), quizId: latest.id }) }}>{t('quiz.startNow')}</button>
+          <button type="button" className={css.primary} onClick={() => { actions.push({ view: 'quiz', projectId, ...(latest.scope.resourceId === undefined ? (resourceId === undefined ? {} : { resourceId }) : { resourceId: latest.scope.resourceId }), quizId: latest.id }) }}>{t('quiz.startNow')}</button>
         </section>
       )}
       <section className={css.section}>
@@ -772,18 +792,95 @@ function QuizTab({ p, projectId, bookId, node, passRatio, books, onPrime, onReta
           {earlier.map(quiz => (
             <ListRow
               key={quiz.id}
-              title={t('node.quizRow', { count: String(quiz.questions.length) })}
-              meta={[t(`focus.${quiz.focus ?? 'mixed'}`), sourceMix(quiz.questions.map(question => question.evidence.kind), t)].join(' · ')}
+              title={t('node.quizRow', { count: String(quiz.questions?.length ?? 0) })}
+              meta={[t(`focus.${quiz.focus ?? 'mixed'}`), sourceMix((quiz.questions ?? []).map(question => question.evidence.kind), t)].join(' · ')}
               trailing={<span className={css.linkText}>{t('quiz.start')}</span>}
-              onSelect={() => { actions.push({ view: 'quiz', projectId, ...(bookId === undefined ? {} : { bookId }), quizId: quiz.id }) }}
+              onSelect={() => { actions.push({ view: 'quiz', projectId, ...(quiz.scope.resourceId === undefined ? (resourceId === undefined ? {} : { resourceId }) : { resourceId: quiz.scope.resourceId }), quizId: quiz.id }) }}
             />
           ))}
         </section>
       )}
       {loose.length > 0 && (
         <section className={css.section}>
-          <h3 className={css.sectionTitle}>{t(bookId === undefined ? 'project.quizzes' : 'book.quizzes', { count: String(loose.length) })}</h3>
+          <h3 className={css.sectionTitle}>{t(resourceId === undefined ? 'project.quizzes' : 'book.quizzes', { count: String(loose.length) })}</h3>
           <QuizRows p={p} projectId={projectId} quizzes={loose.slice().reverse()} />
+        </section>
+      )}
+    </>
+  )
+}
+
+/** An acceptance station's gate tab: the rubric, the submit gesture, the history. */
+function AcceptanceTab({ p, projectId, node, passRatio, onPrime }: {
+  p: ViewProps['p']; projectId: string; node: RoadmapNode; passRatio: number; onPrime: () => void
+}): ReactNode {
+  const { t, actions, useStore } = p
+  const rev = useStore(s => s.rev)
+  const attempts = useLoad(() => value(p.listAttempts(projectId, node.id)), [projectId, node.id, rev])
+  // The station gates no quiz itself, but its covered thick resources may hold
+  // resource-level ones (本书测验) — the acceptance lines often ref them.
+  const coveredThick = [...new Set(node.covers.flatMap(cover => coverKind(cover) === 'resource' ? [cover.ref] : []))]
+  const looseQuizzes = useLoad(async () => {
+    const lists = await Promise.all(coveredThick.map(id => value(p.listAssessments(projectId, id, undefined, 'quiz'))))
+    return lists.flatMap(result => result.assessments).filter(quiz => quiz.scope.nodeId === undefined)
+  }, [projectId, node.id, rev, coveredThick.join(',')])
+  // A ref line's live state, before any acceptance sitting: the referenced
+  // assessment's latest sitting does the judging (attempts arrive newest first).
+  const allAttempts = useLoad(() => value(p.listAttempts(projectId)), [projectId, rev])
+  const latest = attempts.data?.attempts[0]
+  const rubric = acceptanceLines(node)
+  const verdictOf = (line: LibraryAcceptanceLine): LibraryVerdict | undefined =>
+    latest?.verdicts.find(verdict => (verdict.task === line.id || verdict.criterion === line.line) && verdict.void !== true)
+    ?? (line.ref === undefined ? undefined : (() => {
+      const sitting = (allAttempts.data?.attempts ?? []).find(attempt => attempt.assessmentId === line.ref)
+      return sitting === undefined ? undefined : { task: line.id, criterion: line.line, pass: sitting.ratio >= passRatio, ratio: sitting.ratio, evidence: '', by: 'auto' as const }
+    })())
+  return (
+    <>
+      {node.state === 'locked' && <div className={css.notice}>{t('node.locked')}</div>}
+      <div className={css.muted}>{t('accept.station', { count: String(rubric.length) })} · {t('accept.passRule', { percent: String(Math.round(passRatio * 100)) })}</div>
+      <section className={css.section}>
+        <h3 className={css.sectionTitle}>{t('accept.title')}</h3>
+        <ul className={css.acceptList}>
+          {rubric.map(line => {
+            const verdict = verdictOf(line)
+            return (
+              <li key={line.id} className={css.acceptItem}>
+                <span className={css.acceptMark} data-state={verdict === undefined ? 'none' : (verdict.pass && (verdict.ratio ?? 1) >= 0.5) ? 'pass' : 'fail'} aria-hidden="true">
+                  {verdict === undefined ? '' : (verdict.pass && (verdict.ratio ?? 1) >= 0.5) ? <IconCheckOutlineMedium size={11} /> : '✕'}
+                </span>
+                <span className={css.acceptText}>
+                  {line.line}
+                  {line.ref !== undefined && (
+                    <button type="button" className={css.textButton} onClick={() => { actions.push({ view: 'quiz', projectId, quizId: line.ref! }) }}>{t('accept.machine')} →</button>
+                  )}
+                  {verdict !== undefined && verdict.ratio !== undefined && verdict.ratio > 0 && verdict.ratio < 1 ? <span className={css.muted}> · {Math.round(verdict.ratio * 100)}%</span> : null}
+                </span>
+              </li>
+            )
+          })}
+        </ul>
+        <div className={css.muted}>{t('accept.hint')}</div>
+      </section>
+      {(looseQuizzes.data?.length ?? 0) > 0 && (
+        <section className={css.section}>
+          <h3 className={css.sectionTitle}>{t('book.quizzes', { count: String(looseQuizzes.data!.length) })}</h3>
+          <QuizRows p={p} projectId={projectId} quizzes={looseQuizzes.data!} />
+        </section>
+      )}
+      <div className={css.actions}>
+        <button type="button" className={css.primary} onClick={onPrime}>{t('accept.submit')}</button>
+      </div>
+      <div className={css.muted}>{t('accept.submitHint')}</div>
+      {(attempts.data?.attempts.length ?? 0) > 0 && (
+        <section className={css.section}>
+          <h3 className={css.sectionTitle}>{t('accept.history')}</h3>
+          {attempts.data!.attempts.map(attempt => (
+            <div key={attempt.id} className={css.moveRow}>
+              <span>{Math.round(attempt.ratio * 100)}%</span>
+              <span className={css.muted}>{when(attempt.at, t)}</span>
+            </div>
+          ))}
         </section>
       )}
     </>
@@ -793,21 +890,21 @@ function QuizTab({ p, projectId, bookId, node, passRatio, books, onPrime, onReta
 const FOCUSES: readonly LibraryQuizFocus[] = ['mine', 'book', 'mixed']
 
 /**
- * Rows of quizzes that gate no station (the book page's 本书测验, the project
+ * Rows of quizzes that gate no station (the resource page's 本书测验, the project
  * page's 自由测验, a station's same-scope list) — each opens the paper. The
- * route's book comes from the quiz's own scope.
+ * route's resource comes from the quiz's own scope.
  */
-export function QuizRows({ p, projectId, quizzes }: { p: ViewProps['p']; projectId: string; quizzes: readonly LibraryQuiz[] }): ReactNode {
+export function QuizRows({ p, projectId, quizzes }: { p: ViewProps['p']; projectId: string; quizzes: readonly LibraryAssessment[] }): ReactNode {
   const { t, actions } = p
   return (
     <>
       {quizzes.map(quiz => (
         <ListRow
           key={quiz.id}
-          title={t('node.quizRow', { count: String(quiz.questions.length) })}
-          meta={[t(`focus.${quiz.focus ?? 'mixed'}`), sourceMix(quiz.questions.map(question => question.evidence.kind), t), when(quiz.createdAt, t)].join(' · ')}
+          title={t('node.quizRow', { count: String(quiz.questions?.length ?? 0) })}
+          meta={[t(`focus.${quiz.focus ?? 'mixed'}`), sourceMix((quiz.questions ?? []).map(question => question.evidence.kind), t), when(quiz.createdAt, t)].join(' · ')}
           trailing={<span className={css.linkText}>{t('quiz.start')}</span>}
-          onSelect={() => { actions.push({ view: 'quiz', projectId, ...(quiz.scope.bookId === undefined ? {} : { bookId: quiz.scope.bookId }), quizId: quiz.id }) }}
+          onSelect={() => { actions.push({ view: 'quiz', projectId, ...(quiz.scope.resourceId === undefined ? {} : { resourceId: quiz.scope.resourceId }), quizId: quiz.id }) }}
         />
       ))}
     </>
@@ -820,4 +917,3 @@ function sourceMix(kinds: readonly string[], t: ViewProps['p']['t']): string {
   for (const kind of kinds) counts.set(kind, (counts.get(kind) ?? 0) + 1)
   return [...counts].map(([kind, count]) => `${t(kind === 'photo' ? 'evidence.photo' : kind === 'web' ? 'evidence.web' : 'evidence.knowledge')} ${count}`).join(' · ')
 }
-

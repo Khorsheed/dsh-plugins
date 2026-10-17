@@ -4,22 +4,29 @@
  * `$DSH_HOME/state/dsh-library/`:
  *
  * ```
- * state.json                       # version-guarded index (project list)
- * bindings.json                    # sessionId → { projectId, bookId? }
+ * state.json                          # version-guarded index (project list)
+ * bindings.json                       # sessionId → { projectId, resourceId? }
  * projects/<projectId>/
- *   project.json                   # { id, name, template, goal?, createdAt }
- *   roadmap.json                   # the project's own adopted path (v3)
- *   roadmap.draft.json             # the project path's draft, until 采用
- *   books/<bookId>/book.json       # registered metadata + toc (no bodies)
- *   books/<bookId>/roadmap.json    # the adopted path
- *   books/<bookId>/roadmap.draft.json  # the coach's draft, until 采用
- *   books/<bookId>/pages.jsonl     # photographed pages, append-only
- *   resources.jsonl                # shelf link entries (append on add, rewritten whole on remove)
- *   cards.jsonl                    # knowledge cards (rewritten whole on update)
- *   quizzes/<quizId>.json
- *   attempts.jsonl                 # append-only
- *   events.jsonl                   # append-only audit trail
+ *   project.json                      # { id, name, template, goal?, createdAt }
+ *   resources/<resourceId>.json       # shelf entries, thick (toc) and thin
+ *   pages/<resourceId>.jsonl          # a thick resource's photographed pages, append-only
+ *   roadmaps/<key>.json               # the adopted path; key = resourceId | "project"
+ *   roadmaps/<key>.draft.json         # the coach's draft, until 采用
+ *   assessments/<assessmentId>.json   # quizzes and materialized practice rubrics
+ *   cards.jsonl                       # knowledge cards (rewritten whole on update)
+ *   attempts.jsonl                    # append-only
+ *   events.jsonl                      # append-only audit trail
  * ```
+ *
+ * **Read-old, write-new (v5).** The v3/v4 layout — `books/<bookId>/book.json`
+ * + `roadmap.json` + `pages.jsonl`, `resources.jsonl`, `quizzes/<id>.json`,
+ * and the project's root `roadmap.json` — is never written any more but
+ * always READ: every reader merges or falls back to the legacy spot, every
+ * normalize* function accepts the legacy field names (`bookId`, node `kind`,
+ * cover unions, `quizId`). Legacy files stay in place (a rollback loses
+ * nothing); the next write of an entity lands in the new layout. v2 roots
+ * (per-book roadmaps with `chapterRanges`) still normalize on the fly, and
+ * `migrateState` rewrites them into the covers shape as before.
  *
  * The write discipline is the mission store's (the in-repo precedent for
  * shared JSON state): every mutation funnels through a per-scope lock → read →
@@ -44,8 +51,10 @@ import {
 } from 'node:fs'
 import { dirname, join } from 'node:path'
 import {
+  formatLocator,
   isLibraryId,
   type LibraryAcceptanceInput,
+  type LibraryAcceptanceLine,
   libraryErrorMessage,
   LIBRARY_EVENT_TYPES,
   LIBRARY_COLORS,
@@ -55,10 +64,10 @@ import {
   MAX_BOX,
   MAX_WEAKNESS,
   STATE_ROOT_SEGMENT,
+  type LibraryAssessment,
   type LibraryAttachmentRef,
   type LibraryAttempt,
   type LibraryBinding,
-  type LibraryBook,
   type LibraryCard,
   type LibraryCardSourceType,
   type LibraryEvent,
@@ -66,9 +75,9 @@ import {
   type LibraryNodeCover,
   type LibraryPage,
   type LibraryProject,
-  type LibraryQuiz,
   type LibraryQuizQuestion,
   type LibraryResource,
+  type LibraryResourceExtra,
   type LibraryRoadmap,
   type RoadmapNode,
 } from './types.ts'
@@ -253,13 +262,15 @@ export function emptyLibraryIndex(): LibraryIndexDoc {
 }
 
 /**
- * Coerce a parsed value into an index. Another schema version reads as empty —
- * except v2, which v3 reads tolerantly (its per-book roadmaps wrap their
- * `chapterRanges` into covers at read time; `migrateState` rewrites the files).
+ * Coerce a parsed value into an index. A version this store does not
+ * recognize reads as empty — v2 through v5 all read tolerantly (every entity
+ * normalize accepts the older shapes; `migrateState` still rewrites v2
+ * chapterRanges into covers).
  */
 export function normalizeLibraryIndex(value: unknown): LibraryIndexDoc {
   const record = asRecord(value)
-  if (record === undefined || (record.version !== LIBRARY_STATE_VERSION && record.version !== 2)) return emptyLibraryIndex()
+  const version = finite(record?.version)
+  if (record === undefined || version === undefined || version < 2 || version > LIBRARY_STATE_VERSION) return emptyLibraryIndex()
   const projects = Array.isArray(record.projects) ? record.projects : []
   const seen = new Set<string>()
   return {
@@ -292,98 +303,89 @@ export function normalizeProject(value: unknown): LibraryProject | undefined {
   }
 }
 
-/** One book's metadata, when it carries the fields that make it one. */
-export function normalizeBook(value: unknown): LibraryBook | undefined {
-  const record = asRecord(value)
-  const bookId = id(record?.id)
-  const title = text(record?.title, 300)
-  if (record === undefined || bookId === undefined || title === undefined) return undefined
-  const source = asRecord(record.tocSource) ?? {}
-  const toc = Array.isArray(record.toc) ? record.toc : []
-  return {
-    id: bookId,
-    title,
-    ...opt('short', text(record.short, 8)),
-    ...(Array.isArray(record.extras) ? {
-      extras: (record.extras as unknown[]).flatMap(item => {
-        const extra = asRecord(item)
-        const extraTitle = text(extra?.title, 200)
-        if (extra === undefined || extraTitle === undefined) return []
-        return [{
-          title: extraTitle,
-          ...opt('note', text(extra.note, 300)),
-          ...opt('where', text(extra.where, 60)),
-          when: extra.when === 'reference' ? 'reference' as const : 'before' as const,
-        }]
-      }),
-    } : {}),
-    ...opt('author', text(record.author, 200)),
-    ...opt('edition', text(record.edition, 100)),
-    ...opt('isbn', text(record.isbn, 40)),
-    bookKind: record.bookKind === 'material' ? 'material' : 'knowledge',
-    toc: toc.flatMap((item, index) => {
-      const entry = asRecord(item)
-      const entryTitle = text(entry?.title, 300)
-      if (entryTitle === undefined) return []
-      return [{ n: index + 1, title: entryTitle, ...opt('part', text(entry?.part, 200)) }]
-    }),
-    tocSource: {
-      by: source.by === 'web' || source.by === 'photo' ? source.by : 'model',
-      ...opt('url', text(source.url, 1000)),
-      ...opt('verifiedAt', text(source.verifiedAt, 40)),
-    },
-    createdAt: stamp(record.createdAt),
-  }
+/** One table-of-contents list, re-numbered 1-based, when any row parses. */
+function tocEntries(value: unknown): LibraryResource['toc'] {
+  if (!Array.isArray(value)) return undefined
+  const toc = (value as unknown[]).flatMap(item => {
+    const entry = asRecord(item)
+    const entryTitle = text(entry?.title, 300)
+    if (entryTitle === undefined) return []
+    return [{ title: entryTitle, ...opt('part', text(entry?.part, 200)) }]
+  })
+  return toc.map((entry, index) => ({ ...entry, n: index + 1 }))
 }
 
-/** One shelf link (one resources.jsonl line), when it parses. */
+/** The extras strip (开始前 / 附录), when any row parses. */
+function extraEntries(value: unknown): LibraryResourceExtra[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  return (value as unknown[]).flatMap(item => {
+    const extra = asRecord(item)
+    const extraTitle = text(extra?.title, 200)
+    if (extra === undefined || extraTitle === undefined) return []
+    return [{
+      title: extraTitle,
+      ...opt('note', text(extra.note, 300)),
+      ...opt('where', text(extra.where, 60)),
+      when: extra.when === 'reference' ? 'reference' as const : 'before' as const,
+    }]
+  })
+}
+
+/**
+ * One shelf entry, when it parses. Reads BOTH layouts: a v5
+ * `resources/<id>.json` (kind may be 'book', toc/meta live at the top) and a
+ * legacy one — a `books/<id>/book.json` (kind forced to 'book', book-ish
+ * fields folded into meta) or a `resources.jsonl` line (a thin link).
+ */
 export function normalizeResource(value: unknown): LibraryResource | undefined {
   const record = asRecord(value)
   const resourceId = id(record?.id)
   const title = text(record?.title, 300)
-  const url = text(record?.url, 1000)
-  if (record === undefined || resourceId === undefined || title === undefined || url === undefined) return undefined
+  if (record === undefined || resourceId === undefined || title === undefined) return undefined
+  // Legacy book.json: the book-ish fields sat at the top level.
+  const legacyBook = Array.isArray(record.toc) || record.bookKind !== undefined
+  const kind = legacyBook
+    ? 'book' as const
+    : LIBRARY_RESOURCE_KINDS.find(kind => kind === record.kind) ?? 'article'
+  const toc = tocEntries(record.toc)
+  const source = asRecord(record.tocSource)
+  const metaRecord = asRecord(record.meta)
+  const meta: LibraryResource['meta'] = (() => {
+    const bookKind = (metaRecord?.bookKind ?? record.bookKind) === 'material' ? 'material' as const
+      : (metaRecord?.bookKind ?? record.bookKind) === 'knowledge' ? 'knowledge' as const
+        : undefined
+    const extras = extraEntries(metaRecord?.extras ?? record.extras)
+    const merged = {
+      ...opt('bookKind', bookKind),
+      ...opt('short', text(metaRecord?.short ?? record.short, 8)),
+      ...(extras !== undefined && extras.length > 0 ? { extras } : {}),
+      ...opt('author', text(metaRecord?.author ?? record.author, 200)),
+      ...opt('edition', text(metaRecord?.edition ?? record.edition, 100)),
+      ...opt('isbn', text(metaRecord?.isbn ?? record.isbn, 40)),
+    }
+    return Object.keys(merged).length === 0 ? undefined : merged
+  })()
   return {
     id: resourceId,
     title,
-    url,
-    kind: LIBRARY_RESOURCE_KINDS.find(kind => kind === record.kind) ?? 'article',
+    kind,
+    ...opt('url', text(record.url, 1000)),
     ...opt('note', text(record.note, 300)),
-    addedBy: record.addedBy === 'learner' ? 'learner' : 'coach',
+    ...opt('addedBy', record.addedBy === 'learner' ? 'learner' as const : record.addedBy === 'coach' ? 'coach' as const : legacyBook ? 'coach' as const : undefined),
+    ...(toc !== undefined && toc.length > 0 ? { toc } : {}),
+    ...(source === undefined ? {} : {
+      tocSource: {
+        by: source.by === 'web' || source.by === 'photo' ? source.by : 'model',
+        ...opt('url', text(source.url, 1000)),
+        ...opt('verifiedAt', text(source.verifiedAt, 40)),
+      },
+    }),
+    ...(meta === undefined ? {} : { meta }),
     createdAt: stamp(record.createdAt),
   }
 }
 
-/** One node's cover, when it parses; provenance rides along when present. */
-export function normalizeNodeCover(value: unknown): LibraryNodeCover | undefined {
-  const record = asRecord(value)
-  if (record === undefined) return undefined
-  const by: 'web' | 'model' | 'user' | undefined = record.by === 'web' || record.by === 'model' || record.by === 'user' ? record.by : undefined
-  const provenance = { ...opt('by', by), ...opt('verifiedAt', text(record.verifiedAt, 40)) }
-  switch (record.kind) {
-    case 'book': {
-      const bookId = id(record.bookId)
-      if (bookId === undefined) return undefined
-      return { kind: 'book', bookId, ranges: legacyRanges(record.ranges), ...provenance }
-    }
-    case 'resource': {
-      const resourceId = id(record.resourceId)
-      return resourceId === undefined ? undefined : { kind: 'resource', resourceId, ...provenance }
-    }
-    case 'url': {
-      const url = text(record.url, 1000)
-      return url === undefined ? undefined : { kind: 'url', url, ...opt('title', text(record.title, 300)), ...provenance }
-    }
-    case 'topic': {
-      const topicText = text(record.text, 300)
-      return topicText === undefined ? undefined : { kind: 'topic', text: topicText, ...provenance }
-    }
-    default:
-      return undefined
-  }
-}
-
-/** A v2 node's chapter ranges (or a book cover's ranges), as ranges. */
+/** A v2/v3 chapter-ranges list, as ranges. */
 function legacyRanges(value: unknown): { from: number; to: number }[] {
   return Array.isArray(value)
     ? (value as unknown[]).flatMap(range => {
@@ -395,11 +397,52 @@ function legacyRanges(value: unknown): { from: number; to: number }[] {
     : []
 }
 
+/**
+ * One node's cover, when it parses. Reads the v5 shape (`{ ref, locator? }`)
+ * and every legacy union member: `{ kind: 'book', bookId, ranges }`,
+ * `{ kind: 'resource', resourceId }`, `{ kind: 'url', url, title? }`,
+ * `{ kind: 'topic', text }`. Provenance rides along when present.
+ */
+export function normalizeNodeCover(value: unknown): LibraryNodeCover | undefined {
+  const record = asRecord(value)
+  if (record === undefined) return undefined
+  const by: 'web' | 'model' | 'user' | undefined = record.by === 'web' || record.by === 'model' || record.by === 'user' ? record.by : undefined
+  const provenance = { ...opt('by', by), ...opt('verifiedAt', text(record.verifiedAt, 40)) }
+  // v5: { ref, locator?, title? }.
+  const ref = text(record.ref, 1000)
+  if (ref !== undefined) {
+    return { ref, ...opt('locator', text(record.locator, 200)), ...opt('title', text(record.title, 300)), ...provenance }
+  }
+  switch (record.kind) {
+    case 'book': {
+      const bookId = id(record.bookId)
+      if (bookId === undefined) return undefined
+      const ranges = legacyRanges(record.ranges)
+      return { ref: bookId, ...(ranges.length === 0 ? {} : { locator: formatLocator(ranges) }), ...provenance }
+    }
+    case 'resource': {
+      const resourceId = id(record.resourceId)
+      return resourceId === undefined ? undefined : { ref: resourceId, ...provenance }
+    }
+    case 'url': {
+      const url = text(record.url, 1000)
+      return url === undefined ? undefined : { ref: url, ...opt('title', text(record.title, 300)), ...provenance }
+    }
+    case 'topic': {
+      const topicText = text(record.text, 300)
+      return topicText === undefined ? undefined : { ref: `topic:${topicText}`, ...provenance }
+    }
+    default:
+      return undefined
+  }
+}
+
 /** One roadmap (adopted or draft), when it parses; rule checks live in the service. */
 export function normalizeRoadmap(value: unknown): LibraryRoadmap | undefined {
   const record = asRecord(value)
   if (record === undefined || !Array.isArray(record.nodes)) return undefined
-  const bookId = id(record.bookId)
+  // v5 names it primaryResourceId; v3/v4 roadmaps carried bookId.
+  const primaryResourceId = id(record.primaryResourceId) ?? id(record.bookId)
   const nodes: RoadmapNode[] = []
   for (const item of record.nodes as unknown[]) {
     const node = asRecord(item)
@@ -407,16 +450,19 @@ export function normalizeRoadmap(value: unknown): LibraryRoadmap | undefined {
     const title = text(node?.title, 300)
     const state = node?.state === 'locked' || node?.state === 'current' || node?.state === 'done' ? node.state : undefined
     if (node === undefined || nodeId === undefined || title === undefined || state === undefined) return undefined
-    const kind = node.kind === 'read' ? 'read' as const : node.kind === 'practice' ? 'practice' as const : 'quiz' as const
-    // v3 nodes carry covers; a v2 node wraps its chapterRanges into the one
-    // book cover of its book's path (migrateState rewrites the file).
+    // v5 carries `gate`; v3/v4 carried kind: quiz | read | practice.
+    const gate: RoadmapNode['gate'] = node.gate === 'read' || node.gate === 'acceptance' || node.gate === 'quiz'
+      ? node.gate
+      : node.kind === 'read' ? 'read' : node.kind === 'practice' ? 'acceptance' : 'quiz'
+    // v3+ nodes carry covers; a v2 node wraps its chapterRanges into the one
+    // book cover of its book's path.
     const covers: LibraryNodeCover[] = Array.isArray(node.covers)
       ? (node.covers as unknown[]).flatMap(cover => {
         const normalized = normalizeNodeCover(cover)
         return normalized === undefined ? [] : [normalized]
       })
-      : bookId !== undefined && node.chapterRanges !== undefined
-        ? [{ kind: 'book', bookId, ranges: legacyRanges(node.chapterRanges) }]
+      : primaryResourceId !== undefined && node.chapterRanges !== undefined
+        ? [{ ref: primaryResourceId, locator: formatLocator(legacyRanges(node.chapterRanges)) }]
         : []
     const stats = asRecord(node.quizStats)
     const notesRec = asRecord(node.notes)
@@ -424,19 +470,19 @@ export function normalizeRoadmap(value: unknown): LibraryRoadmap | undefined {
     nodes.push({
       id: nodeId,
       title,
-      kind,
+      gate,
       goals: typeof node.goals === 'string' ? strings([node.goals], 300) : strings(node.goals, 300),
       dependsOn: Array.isArray(node.dependsOn) ? (node.dependsOn as unknown[]).filter((dep): dep is string => typeof dep === 'string') : [],
       covers,
       state,
-      ...(stats === undefined || kind !== 'quiz' ? {} : {
+      ...(stats === undefined || gate !== 'quiz' ? {} : {
         quizStats: {
           attempts: finite(stats.attempts) ?? 0,
           ...opt('lastRatio', finite(stats.lastRatio)),
           ...opt('bestRatio', finite(stats.bestRatio)),
         },
       }),
-      ...(kind === 'practice' && Array.isArray(node.acceptance) ? { acceptance: acceptanceEntries(node.acceptance) } : {}),
+      ...(gate === 'acceptance' && Array.isArray(node.acceptance) ? { acceptance: acceptanceEntries(node.acceptance) } : {}),
       ...(notesRec === undefined || notesText === undefined ? {} : {
         notes: { text: notesText, updatedAt: stamp(notesRec.updatedAt), revisions: finite(notesRec.revisions) ?? 1 },
       }),
@@ -444,7 +490,7 @@ export function normalizeRoadmap(value: unknown): LibraryRoadmap | undefined {
   }
   const passRatio = finite(record.passRatio)
   return {
-    ...opt('bookId', bookId),
+    ...opt('primaryResourceId', primaryResourceId),
     status: record.status === 'adopted' ? 'adopted' : 'draft',
     nodes,
     ...(passRatio !== undefined && passRatio > 0 && passRatio <= 1 ? { passRatio } : {}),
@@ -466,16 +512,17 @@ export function normalizeAttachmentRef(value: unknown): LibraryAttachmentRef | u
   return { attachmentId, mediaType, bytes, width, height }
 }
 
-/** One photographed page (one pages.jsonl line), when it parses. */
+/** One photographed page (one pages/<resourceId>.jsonl line), when it parses. */
 export function normalizePage(value: unknown): LibraryPage | undefined {
   const record = asRecord(value)
   const pageId = id(record?.id)
-  const bookId = id(record?.bookId)
+  // v5 names it resourceId; v3/v4 pages carried bookId.
+  const resourceId = id(record?.resourceId) ?? id(record?.bookId)
   const attachment = normalizeAttachmentRef(record?.attachment)
-  if (record === undefined || pageId === undefined || bookId === undefined || attachment === undefined) return undefined
+  if (record === undefined || pageId === undefined || resourceId === undefined || attachment === undefined) return undefined
   return {
     id: pageId,
-    bookId,
+    resourceId,
     ...opt('nodeId', id(record.nodeId)),
     ...opt('label', text(record.label, 60)),
     attachment,
@@ -523,10 +570,10 @@ export function normalizeCard(value: unknown): LibraryCard | undefined {
         const context = asRecord(item)
         const sentence = text(context?.sentence, 1000)
         if (context === undefined || sentence === undefined) return []
-        return [{ sentence, ...opt('bookId', id(context.bookId)), ...opt('pageId', id(context.pageId)), ...opt('nodeId', id(context.nodeId)) }]
+        return [{ sentence, ...opt('resourceId', id(context.resourceId) ?? id(context.bookId)), ...opt('pageId', id(context.pageId)), ...opt('nodeId', id(context.nodeId)) }]
       })
       : [],
-    ...opt('bookId', id(record.bookId)),
+    ...opt('resourceId', id(record.resourceId) ?? id(record.bookId)),
     sources: Array.isArray(record.sources)
       ? (record.sources as unknown[]).flatMap(item => {
         const source = asRecord(item)
@@ -553,7 +600,6 @@ export function normalizeCard(value: unknown): LibraryCard | undefined {
   }
 }
 
-/** One quiz, when it parses; the two-axis checks live in the service. */
 /**
  * Options arrive as plain strings, as { label } objects, or letter-keyed maps —
  * the stored form is always plain strings, letter prefixes ("A) ") stripped
@@ -575,15 +621,10 @@ export function normalizeQuizOptions(value: unknown): string[] | undefined {
   return out
 }
 
-export function normalizeQuiz(value: unknown): LibraryQuiz | undefined {
-  const record = asRecord(value)
-  const quizId = id(record?.id)
-  const scope = asRecord(record?.scope)
-  const bookId = id(scope?.bookId)
-  const nodeId = id(scope?.nodeId)
-  if (record === undefined || quizId === undefined || scope === undefined || !Array.isArray(record.questions)) return undefined
+function normalizeQuizQuestions(value: unknown): LibraryQuizQuestion[] | undefined {
+  if (!Array.isArray(value)) return undefined
   const questions: LibraryQuizQuestion[] = []
-  for (const item of record.questions as unknown[]) {
+  for (const item of value as unknown[]) {
     const q = asRecord(item)
     const qid = text(q?.id, 60)
     const kind = q?.kind === 'choice' || q?.kind === 'fill' || q?.kind === 'free' ? q.kind : undefined
@@ -610,11 +651,55 @@ export function normalizeQuiz(value: unknown): LibraryQuiz | undefined {
       },
     })
   }
+  return questions
+}
+
+function normalizeRubricLines(value: unknown): LibraryAcceptanceLine[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const lines: LibraryAcceptanceLine[] = []
+  for (const [index, item] of (value as unknown[]).entries()) {
+    const record = asRecord(item)
+    const line = text(record?.line, 300)
+    if (line === undefined) return undefined
+    lines.push({ id: text(record?.id, 20) ?? `L${index + 1}`, line, ...opt('ref', text(record?.ref, 100)) })
+  }
+  return lines
+}
+
+/**
+ * One assessment, when it parses. Reads BOTH shapes: a v5
+ * `assessments/<id>.json` (type quiz | practice, scope.resourceId) and a
+ * legacy `quizzes/<id>.json` (a quiz — scope.bookId folds into resourceId).
+ */
+export function normalizeAssessment(value: unknown): LibraryAssessment | undefined {
+  const record = asRecord(value)
+  const assessmentId = id(record?.id)
+  const scope = asRecord(record?.scope)
+  if (record === undefined || assessmentId === undefined || scope === undefined) return undefined
+  const nodeId = id(scope.nodeId)
+  const resourceId = id(scope.resourceId) ?? id(scope.bookId)
+  const type = record.type === 'practice' ? 'practice' as const : 'quiz' as const
+  if (type === 'practice') {
+    const rubric = normalizeRubricLines(record.rubric)
+    if (rubric === undefined) return undefined
+    return {
+      id: assessmentId,
+      type,
+      scope: { ...opt('nodeId', nodeId), ...opt('resourceId', resourceId) },
+      rubric,
+      ...opt('supersededBy', id(record.supersededBy)),
+      createdAt: stamp(record.createdAt),
+    }
+  }
+  const questions = normalizeQuizQuestions(record.questions)
+  if (questions === undefined) return undefined
   return {
-    id: quizId,
-    scope: { ...opt('bookId', bookId), ...opt('nodeId', nodeId) },
+    id: assessmentId,
+    type,
+    scope: { ...opt('nodeId', nodeId), ...opt('resourceId', resourceId) },
     ...(record.focus === 'mine' || record.focus === 'book' || record.focus === 'mixed' ? { focus: record.focus } : {}),
     questions,
+    ...opt('supersededBy', id(record.supersededBy)),
     createdAt: stamp(record.createdAt),
   }
 }
@@ -623,10 +708,13 @@ export function normalizeQuiz(value: unknown): LibraryQuiz | undefined {
 export function normalizeAttempt(value: unknown): LibraryAttempt | undefined {
   const record = asRecord(value)
   const attemptId = id(record?.id)
-  const quizId = id(record?.quizId)
+  // v5 names the assessment; a v3/v4 quiz sitting carried quizId (the same
+  // entity, the same id) and a v4 acceptance sitting carried nodeId (kept as
+  // the legacy key, resolved through the node's practice assessment).
+  const assessmentId = id(record?.assessmentId) ?? id(record?.quizId)
   const nodeId = id(record?.nodeId)
   const ratio = finite(record?.ratio)
-  if (record === undefined || attemptId === undefined || (quizId === undefined && nodeId === undefined) || ratio === undefined || !Array.isArray(record.verdicts)) return undefined
+  if (record === undefined || attemptId === undefined || (assessmentId === undefined && nodeId === undefined) || ratio === undefined || !Array.isArray(record.verdicts)) return undefined
   const verdicts: LibraryAttempt['verdicts'][number][] = []
   for (const item of record.verdicts as unknown[]) {
     const v = asRecord(item)
@@ -643,14 +731,16 @@ export function normalizeAttempt(value: unknown): LibraryAttempt | undefined {
       ...(v.void === true ? { void: true } : {}),
     })
   }
-  return { id: attemptId, ...opt('quizId', quizId), ...opt('nodeId', nodeId), verdicts, ratio, at: stamp(record.at) }
+  return { id: attemptId, ...opt('assessmentId', assessmentId), ...opt('nodeId', nodeId), verdicts, ratio, at: stamp(record.at) }
 }
 
 /** One audit event (one events.jsonl line), when it parses. */
 export function normalizeEvent(value: unknown): LibraryEvent | undefined {
   const record = asRecord(value)
-  const type = typeof record?.type === 'string' && (LIBRARY_EVENT_TYPES as readonly string[]).includes(record.type)
-    ? record.type as LibraryEventType
+  // The v3/v4 'book.added' reads as 'resource.added' — the shelf unified.
+  const rawType = record?.type === 'book.added' ? 'resource.added' : record?.type
+  const type = typeof rawType === 'string' && (LIBRARY_EVENT_TYPES as readonly string[]).includes(rawType)
+    ? rawType as LibraryEventType
     : undefined
   if (record === undefined || type === undefined) return undefined
   const count = finite(record.count)
@@ -660,7 +750,7 @@ export function normalizeEvent(value: unknown): LibraryEvent | undefined {
     type,
     ...opt('id', text(record.id, 200)),
     ...opt('title', text(record.title, 300)),
-    ...opt('bookId', id(record.bookId)),
+    ...opt('resourceId', id(record.resourceId) ?? id(record.bookId)),
     ...opt('source', CARD_SOURCE_TYPES.find(candidate => candidate === record.source)),
     ...opt('session', text(record.session, 200)),
     ...(Array.isArray(record.ids) ? { ids: strings(record.ids, 100) } : {}),
@@ -679,7 +769,7 @@ export function normalizeBindings(value: unknown): Map<string, LibraryBinding> {
     const binding = asRecord(raw)
     const projectId = id(binding?.projectId)
     if (sessionId === '' || projectId === undefined) continue
-    out.set(sessionId, { projectId, ...opt('bookId', id(binding?.bookId)) })
+    out.set(sessionId, { projectId, ...opt('resourceId', id(binding?.resourceId) ?? id(binding?.bookId)) })
   }
   return out
 }
@@ -748,11 +838,14 @@ export class LibraryStore {
     return join(this.projectsDir, projectId)
   }
 
-  private projectFile(projectId: string): string {
-    return join(this.projectDir(projectId), 'project.json')
+  /** The v5 resource file. */
+  private resourceFile(projectId: string, resourceId: string): string {
+    assertLibraryId(resourceId, 'resource id')
+    return join(this.projectDir(projectId), 'resources', `${resourceId}.json`)
   }
 
-  private bookDir(projectId: string, bookId: string): string {
+  /** The legacy per-book directory (v3/v4 layout — read-only now). */
+  private legacyBookDir(projectId: string, bookId: string): string {
     assertLibraryId(bookId, 'book id')
     return join(this.projectDir(projectId), 'books', bookId)
   }
@@ -761,7 +854,8 @@ export class LibraryStore {
     return join(this.projectDir(projectId), 'cards.jsonl')
   }
 
-  private resourcesFile(projectId: string): string {
+  /** The legacy thin-links ledger (v3/v4 layout — read-only now). */
+  private legacyResourcesFile(projectId: string): string {
     return join(this.projectDir(projectId), 'resources.jsonl')
   }
 
@@ -773,9 +867,40 @@ export class LibraryStore {
     return join(this.projectDir(projectId), 'events.jsonl')
   }
 
-  private quizFile(projectId: string, quizId: string): string {
+  /** The v5 assessment file. */
+  private assessmentFile(projectId: string, assessmentId: string): string {
+    assertLibraryId(assessmentId, 'assessment id')
+    return join(this.projectDir(projectId), 'assessments', `${assessmentId}.json`)
+  }
+
+  /** The legacy quiz file (v3/v4 layout — read-only now). */
+  private legacyQuizFile(projectId: string, quizId: string): string {
     assertLibraryId(quizId, 'quiz id')
     return join(this.projectDir(projectId), 'quizzes', `${quizId}.json`)
+  }
+
+  /** The roadmap key: the primary resource's id, or 'project' for the project's own path. */
+  private roadmapKey(resourceId: string | undefined): string {
+    if (resourceId !== undefined) assertLibraryId(resourceId, 'resource id')
+    return resourceId ?? 'project'
+  }
+
+  /** The v5 roadmap file. */
+  private roadmapFile(projectId: string, resourceId: string | undefined, which: 'adopted' | 'draft'): string {
+    const key = this.roadmapKey(resourceId)
+    return join(this.projectDir(projectId), 'roadmaps', which === 'adopted' ? `${key}.json` : `${key}.draft.json`)
+  }
+
+  /** The legacy roadmap file (v3/v4 layout — read-only now). */
+  private legacyRoadmapFile(projectId: string, resourceId: string | undefined, which: 'adopted' | 'draft'): string {
+    const file = which === 'adopted' ? 'roadmap.json' : 'roadmap.draft.json'
+    return resourceId === undefined ? join(this.projectDir(projectId), file) : join(this.legacyBookDir(projectId, resourceId), file)
+  }
+
+  /** The v5 pages ledger of one thick resource. */
+  private pagesFile(projectId: string, resourceId: string): string {
+    assertLibraryId(resourceId, 'resource id')
+    return join(this.projectDir(projectId), 'pages', `${resourceId}.jsonl`)
   }
 
   /** The per-project lock's path. */
@@ -923,43 +1048,74 @@ export class LibraryStore {
     return this.readJsonFile(this.projectFile(projectId), normalizeProject)
   }
 
-  /** One book's metadata; undefined when absent. */
-  readBook(projectId: string, bookId: string): LibraryBook | undefined {
-    return this.readJsonFile(join(this.bookDir(projectId, bookId), 'book.json'), normalizeBook)
+  private projectFile(projectId: string): string {
+    return join(this.projectDir(projectId), 'project.json')
   }
 
-  /** Every book of one project, oldest first. */
-  listBooks(projectId: string): LibraryBook[] {
-    const dir = join(this.projectDir(projectId), 'books')
-    if (!existsSync(dir)) return []
-    return readdirSync(dir, { withFileTypes: true })
-      .filter(entry => entry.isDirectory() && isLibraryId(entry.name))
-      .flatMap(entry => {
-        const book = this.readBook(projectId, entry.name)
-        return book === undefined ? [] : [book]
-      })
-      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+  /**
+   * One shelf entry; undefined when absent. The v5 file wins; the legacy
+   * spots follow (a book's `books/<id>/book.json`, then a thin link's
+   * resources.jsonl line).
+   */
+  readResource(projectId: string, resourceId: string): LibraryResource | undefined {
+    const current = this.readJsonFile(this.resourceFile(projectId, resourceId), normalizeResource)
+    if (current !== undefined) return current
+    const legacyBook = this.readJsonFile(join(this.legacyBookDir(projectId, resourceId), 'book.json'), normalizeResource)
+    if (legacyBook !== undefined) return legacyBook
+    return this.readJsonlFile(this.legacyResourcesFile(projectId), normalizeResource).find(resource => resource.id === resourceId)
   }
 
-  /** One scope's adopted roadmap, or its draft; no bookId = the project's own path. */
-  readRoadmap(projectId: string, bookId?: string, which: 'adopted' | 'draft' = 'adopted'): LibraryRoadmap | undefined {
-    const file = which === 'adopted' ? 'roadmap.json' : 'roadmap.draft.json'
-    return this.readJsonFile(bookId === undefined ? join(this.projectDir(projectId), file) : join(this.bookDir(projectId, bookId), file), normalizeRoadmap)
+  /** Every shelf entry of one project, oldest first, both layouts merged (a v5 file shadows a legacy twin of the same id). */
+  listResources(projectId: string): LibraryResource[] {
+    const byId = new Map<string, LibraryResource>()
+    const legacyDir = join(this.projectDir(projectId), 'books')
+    if (existsSync(legacyDir)) {
+      for (const entry of readdirSync(legacyDir, { withFileTypes: true })) {
+        if (!entry.isDirectory() || !isLibraryId(entry.name)) continue
+        const book = this.readJsonFile(join(legacyDir, entry.name, 'book.json'), normalizeResource)
+        if (book !== undefined) byId.set(book.id, book)
+      }
+    }
+    for (const link of this.readJsonlFile(this.legacyResourcesFile(projectId), normalizeResource)) {
+      byId.set(link.id, link)
+    }
+    const resourcesDir = join(this.projectDir(projectId), 'resources')
+    if (existsSync(resourcesDir)) {
+      for (const name of readdirSync(resourcesDir)) {
+        if (!name.endsWith('.json') || !isLibraryId(name.slice(0, -'.json'.length))) continue
+        const resource = this.readJsonFile(join(resourcesDir, name), normalizeResource)
+        if (resource !== undefined) byId.set(resource.id, resource)
+      }
+    }
+    return [...byId.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt))
   }
 
-  /** One book's photographed pages, oldest first. */
-  readPages(projectId: string, bookId: string): LibraryPage[] {
-    return this.readJsonlFile(join(this.bookDir(projectId, bookId), 'pages.jsonl'), normalizePage)
+  /**
+   * One scope's adopted roadmap, or its draft; no resourceId = the project's
+   * own path. The v5 file wins; the legacy spot (the project's root file or
+   * the book's directory) follows.
+   */
+  readRoadmap(projectId: string, resourceId?: string, which: 'adopted' | 'draft' = 'adopted'): LibraryRoadmap | undefined {
+    const current = this.readJsonFile(this.roadmapFile(projectId, resourceId, which), normalizeRoadmap)
+    if (current !== undefined) return current
+    const legacy = this.readJsonFile(this.legacyRoadmapFile(projectId, resourceId, which), normalizeRoadmap)
+    return legacy === undefined ? undefined : { ...legacy, ...(resourceId === undefined || legacy.primaryResourceId !== undefined ? {} : { primaryResourceId: resourceId }) }
+  }
+
+  /**
+   * One thick resource's photographed pages, oldest first — both layouts
+   * merged: pages recorded before the v5 write cutover stay in the legacy
+   * book directory, new ones append to `pages/<id>.jsonl`.
+   */
+  readPages(projectId: string, resourceId: string): LibraryPage[] {
+    const legacy = this.readJsonlFile(join(this.legacyBookDir(projectId, resourceId), 'pages.jsonl'), normalizePage)
+    const current = this.readJsonlFile(this.pagesFile(projectId, resourceId), normalizePage)
+    return [...legacy, ...current]
   }
 
   /** Every knowledge card of one project (deleted ones included — callers filter). */
   readCards(projectId: string): LibraryCard[] {
     return this.readJsonlFile(this.cardsFile(projectId), normalizeCard)
-  }
-
-  /** One project's shelf links, oldest first. */
-  readResources(projectId: string): LibraryResource[] {
-    return this.readJsonlFile(this.resourcesFile(projectId), normalizeResource)
   }
 
   /** Every attempt (the JSONL ledger, tolerant per line). */
@@ -972,22 +1128,36 @@ export class LibraryStore {
     return this.readJsonlFile(this.eventsFile(projectId), normalizeEvent)
   }
 
-  /** One quiz; undefined when absent. */
-  readQuiz(projectId: string, quizId: string): LibraryQuiz | undefined {
-    return this.readJsonFile(this.quizFile(projectId, quizId), normalizeQuiz)
+  /**
+   * One assessment; undefined when absent. The v5 file wins; a legacy quiz
+   * file (`quizzes/<id>.json`) reads as a type=quiz assessment.
+   */
+  readAssessment(projectId: string, assessmentId: string): LibraryAssessment | undefined {
+    const current = this.readJsonFile(this.assessmentFile(projectId, assessmentId), normalizeAssessment)
+    if (current !== undefined) return current
+    return this.readJsonFile(this.legacyQuizFile(projectId, assessmentId), normalizeAssessment)
   }
 
-  /** Every quiz of one project, oldest first. */
-  listQuizzes(projectId: string): LibraryQuiz[] {
-    const dir = join(this.projectDir(projectId), 'quizzes')
-    if (!existsSync(dir)) return []
-    return readdirSync(dir)
-      .filter(name => name.endsWith('.json') && isLibraryId(name.slice(0, -'.json'.length)))
-      .flatMap(name => {
-        const quiz = this.readQuiz(projectId, name.slice(0, -'.json'.length))
-        return quiz === undefined ? [] : [quiz]
-      })
-      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+  /** Every assessment of one project, oldest first, both layouts merged. */
+  listAssessments(projectId: string): LibraryAssessment[] {
+    const byId = new Map<string, LibraryAssessment>()
+    const quizzesDir = join(this.projectDir(projectId), 'quizzes')
+    if (existsSync(quizzesDir)) {
+      for (const name of readdirSync(quizzesDir)) {
+        if (!name.endsWith('.json') || !isLibraryId(name.slice(0, -'.json'.length))) continue
+        const quiz = this.readJsonFile(join(quizzesDir, name), normalizeAssessment)
+        if (quiz !== undefined) byId.set(quiz.id, quiz)
+      }
+    }
+    const assessmentsDir = join(this.projectDir(projectId), 'assessments')
+    if (existsSync(assessmentsDir)) {
+      for (const name of readdirSync(assessmentsDir)) {
+        if (!name.endsWith('.json') || !isLibraryId(name.slice(0, -'.json'.length))) continue
+        const assessment = this.readJsonFile(join(assessmentsDir, name), normalizeAssessment)
+        if (assessment !== undefined) byId.set(assessment.id, assessment)
+      }
+    }
+    return [...byId.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt))
   }
 
   /* --------------------------------------------------------------- writes */
@@ -1007,25 +1177,25 @@ export class LibraryStore {
     this.writeJsonFile(this.projectFile(project.id), project)
   }
 
-  /** Write one book's metadata (call inside `withProjectLock`). */
-  writeBook(projectId: string, book: LibraryBook): void {
-    this.writeJsonFile(join(this.bookDir(projectId, book.id), 'book.json'), book)
+  /** Write one shelf entry (call inside `withProjectLock`) — the v5 layout. */
+  writeResource(projectId: string, resource: LibraryResource): void {
+    this.writeJsonFile(this.resourceFile(projectId, resource.id), resource)
   }
 
-  /** Write one scope's adopted roadmap or its draft (call inside `withProjectLock`). */
+  /** Write one scope's adopted roadmap or its draft (call inside `withProjectLock`) — the v5 layout. */
   writeRoadmap(projectId: string, roadmap: LibraryRoadmap): void {
-    const file = roadmap.status === 'adopted' ? 'roadmap.json' : 'roadmap.draft.json'
-    this.writeJsonFile(roadmap.bookId === undefined ? join(this.projectDir(projectId), file) : join(this.bookDir(projectId, roadmap.bookId), file), roadmap)
+    this.writeJsonFile(this.roadmapFile(projectId, roadmap.primaryResourceId, roadmap.status === 'adopted' ? 'adopted' : 'draft'), roadmap)
   }
 
-  /** Drop one scope's draft (adopted or discarded); no bookId = the project's. */
-  removeDraft(projectId: string, bookId?: string): void {
-    rmSync(bookId === undefined ? join(this.projectDir(projectId), 'roadmap.draft.json') : join(this.bookDir(projectId, bookId), 'roadmap.draft.json'), { force: true })
+  /** Drop one scope's draft (adopted or discarded), in BOTH layouts; no resourceId = the project's. */
+  removeDraft(projectId: string, resourceId?: string): void {
+    rmSync(this.roadmapFile(projectId, resourceId, 'draft'), { force: true })
+    rmSync(this.legacyRoadmapFile(projectId, resourceId, 'draft'), { force: true })
   }
 
-  /** Append one photographed page (call inside `withProjectLock`). */
+  /** Append one photographed page (call inside `withProjectLock`) — the v5 layout. */
   appendPage(projectId: string, page: LibraryPage): void {
-    this.appendJsonlFile(join(this.bookDir(projectId, page.bookId), 'pages.jsonl'), [page])
+    this.appendJsonlFile(this.pagesFile(projectId, page.resourceId), [page])
   }
 
   /**
@@ -1034,20 +1204,6 @@ export class LibraryStore {
    */
   writeCards(projectId: string, cards: readonly LibraryCard[]): void {
     this.writeTextFile(this.cardsFile(projectId), cards.map(card => `${JSON.stringify(card)}\n`).join(''))
-  }
-
-  /** Append one shelf link (call inside `withProjectLock`). */
-  appendResource(projectId: string, resource: LibraryResource): void {
-    this.appendJsonlFile(this.resourcesFile(projectId), [resource])
-  }
-
-  /**
-   * Drop one shelf link: a resource has no status machine, so removal rewrites
-   * the ledger without its line (the temp+rename keeps the swap atomic).
-   */
-  removeResource(projectId: string, resourceId: string): void {
-    const kept = this.readResources(projectId).filter(resource => resource.id !== resourceId)
-    this.writeTextFile(this.resourcesFile(projectId), kept.map(resource => `${JSON.stringify(resource)}\n`).join(''))
   }
 
   /** Append one attempt (call inside `withProjectLock`). */
@@ -1060,14 +1216,25 @@ export class LibraryStore {
     this.appendJsonlFile(this.eventsFile(projectId), events)
   }
 
-  /** Write one quiz (call inside `withProjectLock`). */
-  writeQuiz(projectId: string, quiz: LibraryQuiz): void {
-    this.writeJsonFile(this.quizFile(projectId, quiz.id), quiz)
+  /** Write one assessment (call inside `withProjectLock`) — the v5 layout. */
+  writeAssessment(projectId: string, assessment: LibraryAssessment): void {
+    this.writeJsonFile(this.assessmentFile(projectId, assessment.id), assessment)
   }
 
-  /** Remove one book's directory (metadata, roadmaps, pages). */
-  removeBook(projectId: string, bookId: string): void {
-    rmSync(this.bookDir(projectId, bookId), { recursive: true, force: true })
+  /**
+   * Remove one shelf entry: the v5 file, its pages ledger, its roadmap files,
+   * and any legacy trace (the book directory, the resources.jsonl line).
+   */
+  removeResource(projectId: string, resourceId: string): void {
+    rmSync(this.resourceFile(projectId, resourceId), { force: true })
+    rmSync(this.pagesFile(projectId, resourceId), { force: true })
+    rmSync(this.roadmapFile(projectId, resourceId, 'adopted'), { force: true })
+    rmSync(this.roadmapFile(projectId, resourceId, 'draft'), { force: true })
+    rmSync(this.legacyBookDir(projectId, resourceId), { recursive: true, force: true })
+    if (existsSync(this.legacyResourcesFile(projectId))) {
+      const kept = this.readJsonlFile(this.legacyResourcesFile(projectId), normalizeResource).filter(resource => resource.id !== resourceId)
+      this.writeTextFile(this.legacyResourcesFile(projectId), kept.map(resource => `${JSON.stringify(resource)}\n`).join(''))
+    }
   }
 
   /** Remove one project's whole directory. */
@@ -1077,12 +1244,10 @@ export class LibraryStore {
   }
 
   /**
-   * v2 → v3: wrap every stored roadmap node's `chapterRanges` into
-   * `covers: [{ kind: 'book', bookId, ranges }]` (the v2 paths are all
-   * per-book), then bump the index version. Idempotent (a node that already
-   * carries covers is left untouched, so a re-run is a no-op), each project's
-   * files rewritten under its own lock, the index bump last — a crash midway
-   * leaves version 2 and the next run resumes. v1 roots were never deployed:
+   * v2 → covers: wrap every stored roadmap node's `chapterRanges` into a book
+   * cover (the v2 paths are all per-book). Idempotent, each project's files
+   * rewritten under its own lock, the index bump last — a crash midway leaves
+   * the old version and the next run resumes. v1 roots were never deployed:
    * they read as empty and are NOT migrated. Reads never wait for this pass —
    * `normalizeRoadmap` wraps a v2 node on the fly.
    *

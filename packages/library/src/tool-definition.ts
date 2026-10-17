@@ -10,8 +10,16 @@
  * descriptions carry its payload shape, and every refusal teaches the correct
  * call back.
  *
- * `project` / `book` default to the session's binding (the header chip), so a
- * bound session rarely names them; a book id alone resolves its owner project.
+ * v5: the shelf unified — a BOOK is `library_resource` with kind "book" and a
+ * toc; every scope parameter is named `resource` (the old `book` spelling
+ * still parses). A node's `gate` says how it completes (quiz | acceptance |
+ * read; the old `kind: "practice"` reads as acceptance). A cover is one
+ * string shorthand — "r_…#1-5" | "https://…" | "topic: …" — or the object
+ * `{ ref, locator? }` it expands to.
+ *
+ * `project` / `resource` default to the session's binding (the header chip),
+ * so a bound session rarely names them; a resource id alone resolves its
+ * owner project.
  *
  * Every tool is a thin adapter over {@link LibraryService}. This module BUILDS
  * the definitions and registers nothing; the package's `./tool` row
@@ -23,6 +31,7 @@ import { defineTool, type ToolDefinition } from '@deepseek-ai/dsh-tools'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import {
+  formatLocator,
   LIBRARY_RESOURCE_KINDS,
   type LibraryBinding,
   type LibraryCardInput,
@@ -43,7 +52,6 @@ import { normalizeQuizOptions } from './store.ts'
 export const LIBRARY_TOOL_NAMES: readonly string[] = [
   'library_read',
   'library_project',
-  'library_book',
   'library_resource',
   'library_roadmap',
   'library_notes',
@@ -68,7 +76,7 @@ function unwrap<T>(outcome: LibraryOutcome<T>): T {
   throw new Error(outcome.message)
 }
 
-const READ_WHATS = ['projects', 'books', 'resources', 'toc', 'roadmap', 'pages', 'cards', 'quiz', 'stats'] as const
+const READ_WHATS = ['projects', 'resources', 'toc', 'roadmap', 'pages', 'cards', 'quiz', 'stats'] as const
 
 type Exec = { agent?: Agent }
 
@@ -115,23 +123,78 @@ function arrival(field: string, value: unknown): string {
   return `${field} arrived as ${Array.isArray(value) ? 'an array' : typeof value} with an unexpected shape`
 }
 
+/** The first non-blank string of the candidates (the resource/book alias pairs). */
+function pickString(...values: unknown[]): string | undefined {
+  return values.find((value): value is string => typeof value === 'string' && value.trim() !== '')?.trim()
+}
+
 /**
- * A roadmap's scope read off its content: the one book every station's covers
- * name, when they all name exactly that one — anything else (mixed books, a
- * resource / url / topic among the covers, a coverless node) is the project's
- * own path. Runs on the post-sugar nodes, so chapterRanges have already become
- * the book cover they wrap.
+ * One cover argument → the stored `{ ref, locator?, … }`. Accepts the string
+ * shorthand ("r_…#1-5" | "https://…" | "topic: …"), the v5 object, and every
+ * legacy union member ({ kind: "book", bookId|book, ranges } |
+ * { kind: "resource", resourceId|resource } | { kind: "url", url, title? } |
+ * { kind: "topic", text }). Undefined when nothing usable arrived.
  */
-function deriveRoadmapBook(nodes: readonly Record<string, unknown>[]): string | undefined {
+function normalizeCoverArg(value: unknown): Record<string, unknown> | undefined {
+  if (typeof value === 'string') {
+    const shorthand = value.trim()
+    if (shorthand === '') return undefined
+    if (shorthand.startsWith('topic:') || /^https?:\/\//.test(shorthand)) return { ref: shorthand }
+    const match = /^([A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:#\s*(.+))?$/.exec(shorthand)
+    return { ref: match?.[1] ?? shorthand, ...(match?.[2] === undefined ? {} : { locator: match[2].trim() }) }
+  }
+  const record = payload(value)
+  if (record === undefined) return undefined
+  const provenance = {
+    ...(typeof record.by === 'string' ? { by: record.by } : {}),
+    ...(typeof record.verifiedAt === 'string' ? { verifiedAt: record.verifiedAt } : {}),
+  }
+  if (typeof record.ref === 'string' && record.ref.trim() !== '') {
+    return {
+      ref: record.ref.trim(),
+      ...(typeof record.locator === 'string' && record.locator.trim() !== '' ? { locator: record.locator.trim() } : {}),
+      ...(typeof record.title === 'string' && record.title.trim() !== '' ? { title: record.title.trim() } : {}),
+      ...provenance,
+    }
+  }
+  const bookId = pickString(record.bookId, record.book)
+  if ((record.kind === 'book' || record.kind === undefined) && bookId !== undefined) {
+    const ranges = Array.isArray(record.ranges)
+      ? (record.ranges as unknown[]).flatMap(range => {
+        const row = payload(range)
+        const from = typeof row?.from === 'number' ? row.from : undefined
+        const to = typeof row?.to === 'number' ? row.to : undefined
+        return from === undefined || to === undefined ? [] : [{ from, to }]
+      })
+      : []
+    return { ref: bookId, ...(ranges.length === 0 ? {} : { locator: formatLocator(ranges) }), ...provenance }
+  }
+  const resourceId = pickString(record.resourceId, record.resource)
+  if (record.kind === 'resource' && resourceId !== undefined) return { ref: resourceId, ...provenance }
+  if (record.kind === 'url' && typeof record.url === 'string') {
+    return { ref: record.url, ...(typeof record.title === 'string' ? { title: record.title } : {}), ...provenance }
+  }
+  if (record.kind === 'topic' && typeof record.text === 'string') return { ref: `topic:${record.text}`, ...provenance }
+  return undefined
+}
+
+/**
+ * A roadmap's scope read off its content: the one resource every station's
+ * covers name, when they all name exactly that one — anything else (mixed
+ * resources, a url / topic among the covers, a coverless node) is the
+ * project's own path. Runs on the post-normalize nodes, whose covers all
+ * carry `ref`.
+ */
+function deriveRoadmapResource(nodes: readonly Record<string, unknown>[]): string | undefined {
   const ids = new Set<string>()
   for (const node of nodes) {
     const covers = node.covers
     if (!Array.isArray(covers) || covers.length === 0) return undefined
     for (const cover of covers) {
       if (cover === null || typeof cover !== 'object' || Array.isArray(cover)) return undefined
-      const row = cover as Record<string, unknown>
-      if (row.kind !== 'book' || typeof row.bookId !== 'string' || row.bookId === '') return undefined
-      ids.add(row.bookId)
+      const ref = (cover as Record<string, unknown>).ref
+      if (typeof ref !== 'string' || ref === '' || ref.startsWith('topic:') || /^https?:\/\//.test(ref)) return undefined
+      ids.add(ref)
     }
   }
   return ids.size === 1 ? [...ids][0] : undefined
@@ -175,24 +238,20 @@ const NODES_SCHEMA = {
     { type: 'array', description: 'The stations, in dependency order.', items: { type: 'object', additionalProperties: true, properties: {
       id: { type: 'string', required: true, description: 'Unique station id (letters, digits, . _ -).' },
       title: { type: 'string', required: true, description: 'What the learner masters here.' },
-      kind: { type: 'string', required: true, enum: ['quiz', 'read', 'practice'], description: 'quiz: a level gated by its chapter quiz (depends only on quiz / practice nodes); practice: a hands-on station gated by acceptance lines; read: an optional side stop (读完 completes it, never gates).' },
+      gate: { type: 'string', required: true, enum: ['quiz', 'acceptance', 'read'], description: 'quiz: a level gated by its chapter quiz (depends only on quiz / acceptance nodes); acceptance: a hands-on station gated by acceptance lines; read: an optional side stop (读完 completes it, never gates).' },
       goals: { oneOf: [{ type: 'array', items: { type: 'string' } }, { type: 'string' }], description: 'What to master / complete here — a quiz / read station\'s completion expectations live HERE, never in acceptance.' },
-      covers: { type: 'array', description: 'What the station draws on (at least one). On a book\'s own path: exactly one book cover naming that book.', items: { type: 'object', additionalProperties: true, properties: {
-        kind: { type: 'string', required: true, enum: ['book', 'resource', 'url', 'topic'], description: 'book: a shelf book\'s chapters (+ bookId, ranges); resource: a shelf link (+ resourceId); url: a bare link (+ url, title?); topic: plain coached teaching (+ text).' },
-        bookId: { type: 'string', description: 'kind=book: the book (library_read · books lists ids).' },
-        ranges: { type: 'array', description: 'kind=book: contents rows, 1-based inclusive.', items: { type: 'object', additionalProperties: true, properties: {
-          from: { type: 'integer', required: true },
-          to: { type: 'integer', required: true },
-        } } },
-        resourceId: { type: 'string', description: 'kind=resource: the shelf entry (library_read · resources).' },
-        url: { type: 'string', description: 'kind=url.' },
-        title: { type: 'string', description: 'kind=url: a short label.' },
-        text: { type: 'string', description: 'kind=topic: what the coach teaches here.' },
-        by: { type: 'string', enum: ['web', 'model', 'user'], description: 'url / resource provenance: "web" once actually opened (+ verifiedAt), "model" straight from memory (verify and replace before the learner adopts), "user" when the learner gave it.' },
-        verifiedAt: { type: 'string', description: 'ISO time of the web check.' },
-      } } },
+      covers: { type: 'array', description: 'What the station draws on (at least one). On a resource\'s own path: exactly one cover naming that resource.', items: { oneOf: [
+        { type: 'string', description: 'The shorthand: "r_…#1-5" (a shelf resource + contents rows) | "https://…" (a bare web text) | "topic: …" (plain coached teaching).' },
+        { type: 'object', additionalProperties: true, properties: {
+          ref: { type: 'string', required: true, description: 'The resource id (r_…), the url, or "topic:…".' },
+          locator: { type: 'string', description: 'A thick resource\'s contents rows, 1-based inclusive: "1-5,7".' },
+          title: { type: 'string', description: 'A url cover\'s short label.' },
+          by: { type: 'string', enum: ['web', 'model', 'user'], description: 'Provenance: "web" once actually opened (+ verifiedAt), "model" straight from memory (verify and replace before the learner adopts), "user" when the learner gave it.' },
+          verifiedAt: { type: 'string', description: 'ISO time of the web check.' },
+        } },
+      ] } },
       dependsOn: { type: 'array', items: { type: 'string' }, description: 'Earlier station ids this one gates on.' },
-      acceptance: { type: 'array', description: 'kind=practice only: the criteria — judged one verdict per line at assess time (task = the line id L1, L2…, or the line verbatim). A line may be { line, ref: <quiz id> } — machine-checked: it auto-passes when that quiz\'s latest sitting passes; compose the quiz FIRST (library_quiz), then ref it.', items: { oneOf: [
+      acceptance: { type: 'array', description: 'gate=acceptance only: the criteria — judged one verdict per line at assess time (task = the line id L1, L2…, or the line verbatim). A line may be { line, ref: <quiz id> } — machine-checked: it auto-passes when that quiz\'s latest sitting passes; compose the quiz FIRST (library_quiz), then ref it.', items: { oneOf: [
         { type: 'string', description: 'The criterion line, judged by the coach.' },
         { type: 'object', additionalProperties: true, properties: {
           line: { type: 'string', required: true, description: 'The criterion line.' },
@@ -238,7 +297,7 @@ const QUESTIONS_SCHEMA = {
           } },
           { type: 'string', enum: ['photo', 'web', 'knowledge'], description: 'Just the kind.' },
         ],
-        description: 'OPTIONAL: what the answer rests on — omit for domain knowledge (the default); the flat pageId / url / quote set the kind. The verbatim gate still bites: a material book, a shelf resource or a url among the covers demands a quote.',
+        description: 'OPTIONAL: what the answer rests on — omit for domain knowledge (the default); the flat pageId / url / quote set the kind. The verbatim gate still bites: a material book, a thin link or a url among the covers demands a quote.',
       },
       cardIds: { type: 'array', items: { type: 'string' }, description: 'Shorthand for target.cardIds (kind defaults to marked): live cards from library_read · cards.' },
       quote: { type: 'string', description: 'Shorthand for evidence.quote (with pageId → photo, with url → web).' },
@@ -265,53 +324,51 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
     return sessionId === undefined ? undefined : service.getBinding(sessionId)
   }
 
-  /** The project: the argument, else the binding, else the book's owner, else a lesson. */
-  const projectOf = (value: unknown, exec: Exec | undefined, book?: string): string => {
+  /** The project: the argument, else the binding, else the resource's owner, else a lesson. */
+  const projectOf = (value: unknown, exec: Exec | undefined, resource?: string): string => {
     if (typeof value === 'string' && value.trim() !== '') return value.trim()
     const bound = bindingOf(exec)?.projectId
     if (bound !== undefined) return bound
-    if (book !== undefined) {
-      const owner = service.findBookOwner(book)
+    if (resource !== undefined) {
+      const owner = service.findResourceOwner(resource)
       if (owner !== undefined) return owner
     }
-    throw new Error('no project: this session is not bound to one and no book resolves one — library_read · projects lists them; ask the learner which one (ask_user_question), then library_binding { project, book? }')
+    throw new Error('no project: this session is not bound to one and no resource resolves one — library_read · projects lists them; ask the learner which one (ask_user_question), then library_binding { project, resource? }')
   }
 
-  /** A successful write knows its work context: an unbound session binds to it, and a project-bound session picks up the book it just registered — create the project, register the book, draft the path, and the chain has strung itself. Never steals another project's session, never yanks a book off one. */
+  /** A successful write knows its work context: an unbound session binds to it, and a project-bound session picks up the resource it just registered — create the project, register the book, draft the path, and the chain has strung itself. Never steals another project's session, never yanks a resource off one. */
   const autoBind = async (exec: Exec | undefined, binding: LibraryBinding): Promise<void> => {
     const sessionId = sessionIdOf(exec)
     if (sessionId === undefined) return
     const current = bindingOf(exec)
-    if (current !== undefined && (current.projectId !== binding.projectId || current.bookId !== undefined)) return
-    if (current !== undefined && binding.bookId === undefined) return
+    if (current !== undefined && (current.projectId !== binding.projectId || current.resourceId !== undefined)) return
+    if (current !== undefined && binding.resourceId === undefined) return
     await service.setBinding(sessionId, binding)
   }
 
-  /** The book: the argument, else the binding's book, else a lesson. */
-  const bookOf = (value: unknown, exec: Exec | undefined): string => {
-    if (typeof value === 'string' && value.trim() !== '') return value.trim()
-    const bound = bindingOf(exec)?.bookId
+  /** The resource: the argument (either spelling), else the binding's resource, else a lesson. */
+  const resourceOf = (args: Record<string, unknown>, exec: Exec | undefined): string => {
+    const named = pickString(args.resource, args.book)
+    if (named !== undefined) return named
+    const bound = bindingOf(exec)?.resourceId
     if (bound !== undefined) return bound
-    throw new Error('no book: name it (library_read · books lists the project\'s), or bind this session to a book with library_binding')
+    throw new Error('no resource: name it (library_read · resources lists the project\'s), or bind this session to one with library_binding')
   }
 
-  const optBook = (value: unknown, exec: Exec | undefined): string | undefined =>
-    typeof value === 'string' && value.trim() !== '' ? value.trim() : bindingOf(exec)?.bookId
-
-  /** A path/quiz scope's book: a string wins, an explicit null means "the project's own path", absent falls back to the binding's book. */
-  const scopeBookOf = (value: unknown, exec: Exec | undefined): string | undefined => {
-    if (value === null) return undefined
-    if (typeof value === 'string' && value.trim() !== '') return value.trim()
-    return bindingOf(exec)?.bookId
+  /** A path/quiz scope's resource: a string wins (either spelling), an explicit null means "the project's own path", absent falls back to the binding's resource. */
+  const scopeResourceOf = (args: Record<string, unknown>, exec: Exec | undefined): string | undefined => {
+    if (args.resource === null || args.book === null) return undefined
+    const named = pickString(args.resource, args.book)
+    return named ?? bindingOf(exec)?.resourceId
   }
 
   /** The shared scope parameter descriptions (write tools). */
   const scopeParams = {
-    project: { type: 'string', description: 'The project id (defaults to this session\'s binding; a book id resolves its owner).' },
+    project: { type: 'string', description: 'The project id (defaults to this session\'s binding; a resource id resolves its owner).' },
   } as const
-  const scopeParamsBook = {
+  const scopeParamsResource = {
     ...scopeParams,
-    book: { type: 'json', description: 'Defaults to the binding\'s book; null = the project\'s own path.' },
+    resource: { type: 'json', description: 'Defaults to the binding\'s resource; null = the project\'s own path.' },
   } as const
 
   const definitions: ToolDefinition[] = []
@@ -320,21 +377,20 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
     name: 'library_read',
     description:
       'Read the learner\'s library (read-only). what: '
-      + '"projects" — every project with its books\' progress and card tallies, plus this session\'s binding; '
-      + '"books" — a project\'s books with their tables of contents; '
-      + '"resources" — a project\'s shelf links (article | video | repo | tool | course | hardware), each with its one-line why — light entries: no contents, no roadmap, never quizzed; '
-      + '"toc" — one book (title, edition, kind, contents rows numbered n); '
-      + '"roadmap" — the adopted path and any pending draft (book defaults to the binding\'s book; pass book: null for the project\'s own path); '
-      + '"pages" — one book\'s photographed pages (printed text + the learner\'s marks), node narrows; '
-      + '"cards" — the knowledge cards: query searches term, aliases, gloss and sentences; filters book, node, kind (word|concept), '
+      + '"projects" — every project with its shelf progress and card tallies, plus this session\'s binding; '
+      + '"resources" — a project\'s shelf: every entry with kind (book | course | article | video | repo | tool | hardware), toc presence, and its one-line why; '
+      + '"toc" — one thick resource (title, edition, kind, contents rows numbered n); '
+      + '"roadmap" — the adopted path and any pending draft (resource defaults to the binding\'s resource; pass resource: null for the project\'s own path); '
+      + '"pages" — one thick resource\'s photographed pages (printed text + the learner\'s marks), node narrows; '
+      + '"cards" — the knowledge cards: query searches term, aliases, gloss and sentences; filters resource, node, kind (word|concept), '
       + 'source (photo|chat|quiz|manual), weakMin (0-3), due; sorted weakest first — check here before teaching a point, '
       + 'to know where they got stuck before; '
       + '"quiz" — one quiz whole (quiz id), or the list; '
-      + '"stats" — the whole library\'s tally. project and book default to this session\'s binding.',
+      + '"stats" — the whole library\'s tally. project and resource default to this session\'s binding.',
     parameters: {
       what: { type: 'string', required: true, description: `What to read: ${READ_WHATS.join(' | ')}.` },
       project: { type: 'string', description: 'Project id (defaults to the binding).' },
-      book: { type: 'json', description: 'Book id (defaults to the binding\'s book; null reads the project\'s own roadmap).' },
+      resource: { type: 'json', description: 'Resource id (defaults to the binding\'s resource; null reads the project\'s own roadmap).' },
       node: { type: 'string', description: 'Roadmap node id (pages / cards).' },
       quiz: { type: 'string', description: 'Quiz id (quiz; omit for the list).' },
       query: { type: 'string', description: 'Free-text card search (cards).' },
@@ -352,33 +408,32 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
           const listed = await service.listProjects()
           return { ...listed, binding: bindingOf(exec) ?? null } as unknown as JsonValue
         }
-        case 'books': {
-          const detail = unwrap(await service.getProject({ id: projectOf(args.project, exec) }))
-          return { project: detail.project, books: detail.books } as unknown as JsonValue
-        }
         case 'resources':
-          return (await service.listResources({ projectId: projectOf(args.project, exec) })) as unknown as JsonValue
+        case 'books': { // the v4 spelling
+          const detail = unwrap(await service.getProject({ id: projectOf(args.project, exec) }))
+          return { project: detail.project, resources: detail.resources } as unknown as JsonValue
+        }
         case 'toc': {
-          const book = bookOf(args.book, exec)
-          return unwrap(await service.getBook({ projectId: projectOf(args.project, exec, book), bookId: book })).book as unknown as JsonValue
+          const resource = resourceOf(args, exec)
+          return unwrap(await service.getResource({ projectId: projectOf(args.project, exec, resource), resourceId: resource })).resource as unknown as JsonValue
         }
         case 'roadmap': {
-          const book = scopeBookOf(args.book, exec)
-          return (await service.getRoadmap({ projectId: projectOf(args.project, exec, book), ...(book === undefined ? {} : { bookId: book }) })) as unknown as JsonValue
+          const resource = scopeResourceOf(args, exec)
+          return (await service.getRoadmap({ projectId: projectOf(args.project, exec, resource), ...(resource === undefined ? {} : { resourceId: resource }) })) as unknown as JsonValue
         }
         case 'pages': {
-          const book = bookOf(args.book, exec)
+          const resource = resourceOf(args, exec)
           return (await service.listPages({
-            projectId: projectOf(args.project, exec, book),
-            bookId: book,
+            projectId: projectOf(args.project, exec, resource),
+            resourceId: resource,
             ...(args.node === undefined ? {} : { nodeId: args.node }),
           })) as unknown as JsonValue
         }
         case 'cards': {
-          const book = typeof args.book === 'string' && args.book.trim() !== '' ? args.book.trim() : undefined
+          const resource = pickString(args.resource, (args as Record<string, unknown>).book)
           const result = await service.listCards({
-            projectId: projectOf(args.project, exec, book),
-            ...(book === undefined ? {} : { bookId: book }),
+            projectId: projectOf(args.project, exec, resource),
+            ...(resource === undefined ? {} : { resourceId: resource }),
             ...(args.node === undefined ? {} : { nodeId: args.node }),
             ...(args.query === undefined ? {} : { query: args.query }),
             ...(args.kind === 'word' || args.kind === 'concept' ? { kind: args.kind as LibraryCardKind } : {}),
@@ -397,7 +452,7 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
               ...(card.aliases.length === 0 ? {} : { aliases: card.aliases }),
               gloss: card.gloss,
               ...(card.userGloss === undefined ? {} : { userGloss: card.userGloss }),
-              ...(card.bookId === undefined ? {} : { book: card.bookId }),
+              ...(card.resourceId === undefined ? {} : { resource: card.resourceId }),
               contexts: card.contexts.slice(0, 2).map(context => context.sentence),
               weakness: card.weakness,
               box: card.mastery.box,
@@ -407,17 +462,17 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
           } as unknown as JsonValue
         }
         case 'quiz': {
-          const book = optBook(args.book, exec)
-          const project = projectOf(args.project, exec, book)
+          const resource = scopeResourceOf(args, exec)
+          const project = projectOf(args.project, exec, resource)
           if (args.quiz === undefined || args.quiz.trim() === '') {
-            return (await service.listQuizzes({ projectId: project, ...(book === undefined ? {} : { bookId: book }) })) as unknown as JsonValue
+            return (await service.listAssessments({ projectId: project, type: 'quiz', ...(resource === undefined ? {} : { resourceId: resource }) })) as unknown as JsonValue
           }
-          return unwrap(await service.getQuiz({ projectId: project, quizId: args.quiz.trim() })).quiz as unknown as JsonValue
+          return unwrap(await service.getAssessment({ projectId: project, assessmentId: args.quiz.trim() })).assessment as unknown as JsonValue
         }
         case 'stats':
           return (await service.stats()) as unknown as JsonValue
         default:
-          throw new Error(`what is required — one of ${READ_WHATS.join(' | ')} — got ${JSON.stringify(args.what) ?? 'nothing'}; e.g. { what: "books" } reads the bound project's books`)
+          throw new Error(`what is required — one of ${READ_WHATS.join(' | ')} — got ${JSON.stringify(args.what) ?? 'nothing'}; e.g. { what: "resources" } reads the bound project's shelf`)
       }
     },
   }))
@@ -427,7 +482,7 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
     description:
       'Create a learning project, or edit one (projectId + the fields to change; goal "" clears). '
       + 'template: "language" (marks are words) | "subject" (marks are concepts) | "custom". '
-      + 'Creating or editing binds an unbound session to the project — the onboarding chain is just: create, register a book (library_book), draft (library_roadmap).',
+      + 'Creating or editing binds an unbound session to the project — the onboarding chain is just: create, register a book (library_resource, kind "book"), draft (library_roadmap).',
     parameters: {
       projectId: { type: 'string', description: 'Edit this existing project (library_read · projects lists the ids). Omit to CREATE — ids are minted (p_…), never chosen by the caller.' },
       name: { type: 'string', description: 'The project\'s name (required when creating).' },
@@ -442,7 +497,7 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
       // nothing plus a name is a CREATE the model dressed up with a slug —
       // create and say so, never fail it.
       const legacyId = (args as Record<string, unknown>).id
-      const editId = [args.projectId, legacyId].find((value): value is string => typeof value === 'string' && value.trim() !== '')?.trim()
+      const editId = pickString(args.projectId, legacyId)
       if (editId !== undefined) {
         const patch: Record<string, unknown> = {}
         if (typeof args.name === 'string') patch.name = args.name
@@ -477,14 +532,18 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
   }))
 
   definitions.push(defineTool({
-    name: 'library_book',
+    name: 'library_resource',
     description:
-      'Register a book on the project\'s shelf (or correct one with bookId). Never ask for an upload: web-verify the exact edition\'s contents first and cite the page (publisher / catalog / retailer — never a full-text copy). The contents may go as ONE newline-joined string of titles — the least mangled form. Registering binds an unbound session to the project and this book.',
+      'Put one entry on the project\'s shelf, or remove one. A THICK entry (kind "book"; a "course" with episodes) registers its contents: web-verify the exact contents first and cite the page (publisher / catalog / retailer — never a full-text copy); the toc may go as ONE newline-joined string of titles, the least mangled form. A THIN link (article | video | repo | tool | hardware) is title + url + one line on why it earns its place. Creating binds an unbound session to the project and the entry. Never ask for an upload.',
     parameters: {
       ...scopeParams,
-      bookId: { type: 'string', description: 'Correct this existing book instead of adding (library_read · books lists the ids).' },
-      title: { type: 'string', required: true, description: 'The exact edition\'s title.' },
-      bookKind: { type: 'string', required: true, enum: ['knowledge', 'material'], description: 'knowledge: a textbook / popular science (its content is domain knowledge); material: exam papers / novels / anthologies (specific text you cannot recall).' },
+      op: { type: 'string', required: true, enum: ['create', 'remove'], description: 'create: shelve a new entry (or correct one with resourceId); remove: take one off (its roadmap and pages go with it).' },
+      resourceId: { type: 'string', description: 'op=remove: the entry id (library_read · resources lists them). op=create: correct this existing entry instead of adding.' },
+      kind: { type: 'string', enum: [...LIBRARY_RESOURCE_KINDS], description: 'What it IS — book: a book (toc required); course: a lecture series with episodes (toc required); article | video | repo | tool | hardware: a thin link (url required).' },
+      title: { type: 'string', description: 'op=create: the exact edition\'s title, or what the link\'s own page calls it.' },
+      url: { type: 'string', description: 'A thin link\'s address (required for one); a book\'s web copy, when one exists.' },
+      note: { type: 'string', description: 'A thin link: one line on why it earns its place.' },
+      addedBy: { type: 'string', enum: ['coach', 'learner'], description: 'Who put it on the shelf (default coach).' },
       toc: {
         oneOf: [
           { type: 'array', description: 'One row per chapter or passage.', items: { oneOf: [
@@ -497,8 +556,7 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
           { type: 'string', description: 'The whole contents as ONE newline-joined string of titles (the form least mangled by models).' },
           LIST_WRAPPER_SCHEMA,
         ],
-        required: true,
-        description: 'The contents.',
+        description: 'op=create, a thick entry (book / course): the contents — required for one.',
       },
       tocSource: {
         oneOf: [
@@ -508,12 +566,13 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
           } },
           { type: 'string', description: 'The same object as its JSON text.' },
         ],
-        description: 'Where the contents came from — defaults to { by: "model" }; say web (+ url) once you actually verified.',
+        description: 'A thick entry: where the contents came from — defaults to { by: "model" }; say web (+ url) once you actually verified.',
       },
-      short: { type: 'string', description: 'A 2-4 character cover abbreviation (剑5 / PNS).' },
-      author: { type: 'string', description: 'The author.' },
-      edition: { type: 'string', description: 'The edition (e.g. 2020 年 9 月第一版).' },
-      isbn: { type: 'string', description: 'The ISBN.' },
+      bookKind: { type: 'string', enum: ['knowledge', 'material'], description: 'A thick entry: knowledge — the content is domain knowledge (a textbook, popular science; you may quiz from what you know); material — specific text you cannot recall (exam papers, novels; quizzing needs a photo or a web quote).' },
+      short: { type: 'string', description: 'A thick entry: a 2-4 character cover abbreviation (剑5 / PNS).' },
+      author: { type: 'string', description: 'A thick entry: the author.' },
+      edition: { type: 'string', description: 'A thick entry: the edition (e.g. 2020 年 9 月第一版).' },
+      isbn: { type: 'string', description: 'A book: the ISBN.' },
       extras: {
         oneOf: [
           { type: 'array', items: { type: 'object', additionalProperties: true, properties: {
@@ -525,83 +584,90 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
           { type: 'string', description: 'The same array as its JSON text.' },
           LIST_WRAPPER_SCHEMA,
         ],
-        description: 'How-to-use pages, answer keys, transcripts, appendices — NOT roadmap nodes.',
+        description: 'A thick entry: how-to-use pages, answer keys, transcripts, appendices — NOT roadmap nodes.',
       },
+      from: { type: 'object', additionalProperties: true, properties: {
+        project: { type: 'string', required: true, description: 'The source project id.' },
+        resource: { type: 'string', required: true, description: 'The source entry id.' },
+      }, description: 'op=create: clone an entry from ANOTHER project (its toc and verification come along) — how a book serves two projects.' },
     },
     output: jsonOutput(),
     isConcurrencySafe: () => false,
     async execute(args, exec) {
+      // The v4 spellings ride along off the untyped surface (bookId → resourceId).
+      const argsAny = args as Record<string, unknown>
+      const namedId = pickString(args.resourceId, argsAny.bookId)
+      if (args.op === 'remove') {
+        if (namedId === undefined) throw new Error('library_resource · op=remove takes the resourceId field — library_read · resources lists the ids')
+        return unwrap(await service.removeResource({ projectId: projectOf(args.project, exec, namedId), resourceId: namedId })) as unknown as JsonValue
+      }
+      if (args.op !== 'create') {
+        throw new Error(`library_resource needs op: create | remove — got ${JSON.stringify(args.op)}`)
+      }
+      const projectId = projectOf(args.project, exec, namedId)
+      const from = payload(args.from)
+      if (from !== undefined) {
+        const fromProject = pickString(from.project, from.projectId)
+        const fromResource = pickString(from.resource, from.resourceId, from.book, from.bookId)
+        if (fromProject === undefined || fromResource === undefined) throw new Error('from is { project, resource } — the OTHER project\'s id and the entry\'s id there')
+        const cloned = unwrap(await service.putResource({
+          projectId,
+          title: '',
+          kind: 'article',
+          ...(namedId === undefined ? {} : { resourceId: namedId }),
+          from: { projectId: fromProject, resourceId: fromResource },
+        }))
+        await autoBind(exec, { projectId, resourceId: cloned.resource.id })
+        return cloned as unknown as JsonValue
+      }
       // A whole contents may arrive as one newline-joined string — the
       // biggest single payload, and the one models mangle most as JSON.
       const tocList = payloadList(args.toc)
       const tocRows = typeof args.toc === 'string' && tocList === undefined
         ? args.toc.split('\n').map(line => line.trim()).filter(line => line !== '')
         : (tocList ?? [])
-      if (typeof args.title !== 'string' || args.title.trim() === '' || tocRows.length === 0) {
-        throw new Error(`library_book takes: title, bookKind ("knowledge"|"material"), toc ([{ title, part? }] | bare titles | one newline-joined string), tocSource { by, url? } (+ short?, author?, edition?, isbn?, extras?, bookId? to correct) — ${arrival('toc', args.toc)}`)
-      }
-      const toc = tocRows.map(row => typeof row === 'string' ? { title: row } : row as { title: string; part?: string })
-      const projectId = projectOf(args.project, exec)
-      const written = unwrap(await service.putBook({
-        projectId,
-        ...(typeof args.bookId === 'string' ? { bookId: args.bookId } : {}),
-        title: args.title,
-        ...(typeof args.author === 'string' ? { author: args.author } : {}),
-        ...(typeof args.edition === 'string' ? { edition: args.edition } : {}),
-        ...(typeof args.isbn === 'string' ? { isbn: args.isbn } : {}),
-        bookKind: args.bookKind as 'knowledge' | 'material',
-        ...(typeof args.short === 'string' ? { short: args.short } : {}),
-        ...(Array.isArray(payloadList(args.extras)) ? { extras: payloadList(args.extras) as { title: string; note?: string; where?: string; when?: 'before' | 'reference' }[] } : {}),
-        toc,
-        tocSource: (payload(args.tocSource) ?? { by: 'model' }) as { by: 'web' | 'model' | 'photo'; url?: string },
-      }))
-      await autoBind(exec, { projectId, bookId: written.book.id })
-      return written as unknown as JsonValue
-    },
-  }))
-
-  definitions.push(defineTool({
-    name: 'library_resource',
-    description:
-      'Add or remove a light shelf link — no contents, no roadmap, never quizzed; something referenced BY CHAPTER is a book instead (library_book). Open the link on the web first, and let note say why it earns its place.',
-    parameters: {
-      ...scopeParams,
-      op: { type: 'string', required: true, enum: ['add', 'remove'], description: 'add: shelve the link; remove: take it off (the line is physically dropped).' },
-      title: { type: 'string', description: 'op=add: what the link\'s own page calls it.' },
-      url: { type: 'string', description: 'op=add: the link.' },
-      kind: { type: 'string', enum: [...LIBRARY_RESOURCE_KINDS], description: 'What the link IS: an article to read, a video to watch, a repo or tool to build with, a course to follow, hardware to get.' },
-      note: { type: 'string', description: 'op=add: one line on why it earns its place.' },
-      addedBy: { type: 'string', enum: ['coach', 'learner'], description: 'Who put it on the shelf (default coach).' },
-      resourceId: { type: 'string', description: 'op=remove: the shelf entry id (library_read · resources lists them).' },
-    },
-    output: jsonOutput(),
-    isConcurrencySafe: () => false,
-    async execute(args, exec) {
-      if (args.op === 'add') {
-        const title = typeof args.title === 'string' && args.title !== '' ? args.title : undefined
-        const url = typeof args.url === 'string' && args.url !== '' ? args.url : undefined
-        if (title === undefined || url === undefined) {
-          throw new Error(`library_resource · op=add takes: title, url, kind ("article"|"video"|"repo"|"tool"|"course"|"hardware"), note? — got title ${title === undefined ? '✗ MISSING' : '✓'} · url ${url === undefined ? '✗ MISSING' : '✓'}`)
+      const thick = tocRows.length > 0 || args.kind === 'book' || args.kind === 'course'
+      if (thick) {
+        if (typeof args.title !== 'string' || args.title.trim() === '' || tocRows.length === 0) {
+          throw new Error(`a thick entry (kind "book" | "course") takes: title, toc ([{ title, part? }] | bare titles | one newline-joined string), tocSource { by, url? } (+ bookKind, short?, author?, edition?, isbn?, extras?, url?, resourceId? to correct) — ${arrival('toc', args.toc)}`)
         }
-        const projectId = projectOf(args.project, exec)
-        const added = unwrap(await service.addResource({
+        const toc = tocRows.map(row => typeof row === 'string' ? { title: row } : row as { title: string; part?: string })
+        const written = unwrap(await service.putResource({
           projectId,
-          resource: {
-            title,
-            url,
-            kind: args.kind as LibraryResourceKind,
-            ...(typeof args.note === 'string' ? { note: args.note } : {}),
-            addedBy: args.addedBy === 'learner' ? 'learner' : 'coach',
-          },
+          ...(namedId === undefined ? {} : { resourceId: namedId }),
+          title: args.title,
+          kind: args.kind === 'course' ? 'course' : 'book',
+          ...(typeof args.url === 'string' ? { url: args.url } : {}),
+          ...(typeof args.note === 'string' ? { note: args.note } : {}),
+          ...(args.addedBy === 'learner' ? { addedBy: 'learner' as const } : {}),
+          toc,
+          tocSource: (payload(args.tocSource) ?? { by: 'model' }) as { by: 'web' | 'model' | 'photo'; url?: string },
+          ...(args.bookKind === 'knowledge' || args.bookKind === 'material' ? { bookKind: args.bookKind } : {}),
+          ...(typeof args.short === 'string' ? { short: args.short } : {}),
+          ...(typeof args.author === 'string' ? { author: args.author } : {}),
+          ...(typeof args.edition === 'string' ? { edition: args.edition } : {}),
+          ...(typeof args.isbn === 'string' ? { isbn: args.isbn } : {}),
+          ...(Array.isArray(payloadList(args.extras)) ? { extras: payloadList(args.extras) as { title: string; note?: string; where?: string; when?: 'before' | 'reference' }[] } : {}),
         }))
-        await autoBind(exec, { projectId })
-        return added as unknown as JsonValue
+        await autoBind(exec, { projectId, resourceId: written.resource.id })
+        return written as unknown as JsonValue
       }
-      if (args.op === 'remove') {
-        if (typeof args.resourceId !== 'string' || args.resourceId === '') throw new Error('library_resource · op=remove takes the resourceId field — library_read · resources lists the ids')
-        return unwrap(await service.removeResource({ projectId: projectOf(args.project, exec), resourceId: args.resourceId })) as unknown as JsonValue
+      const title = pickString(args.title)
+      const url = pickString(args.url)
+      if (title === undefined || url === undefined) {
+        throw new Error(`a thin link takes: title, url, kind ("article"|"video"|"repo"|"tool"|"hardware"), note? — got title ${title === undefined ? '✗ MISSING' : '✓'} · url ${url === undefined ? '✗ MISSING' : '✓'} (a book / course goes thick: kind "book" + toc)`)
       }
-      throw new Error(`library_resource needs op: add | remove — got ${JSON.stringify(args.op)}`)
+      const added = unwrap(await service.putResource({
+        projectId,
+        ...(namedId === undefined ? {} : { resourceId: namedId }),
+        title,
+        kind: (LIBRARY_RESOURCE_KINDS as readonly string[]).includes(args.kind ?? '') && args.kind !== 'book' ? args.kind as LibraryResourceKind : 'article',
+        url,
+        ...(typeof args.note === 'string' ? { note: args.note } : {}),
+        addedBy: args.addedBy === 'learner' ? 'learner' : 'coach',
+      }))
+      await autoBind(exec, { projectId })
+      return added as unknown as JsonValue
     },
   }))
 
@@ -609,11 +675,11 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
     name: 'library_roadmap',
     description:
       'Write a DRAFT path (nodes) the learner adopts in the sidebar (采用) — you only ever write drafts; adoption is the learner\'s consent. '
-      + 'The scope reads itself off the covers: every station drawing on the same single book lands on THAT book\'s path, anything mixed lands on the project\'s own — omit book (a string is an explicit override, validated as such). '
-      + 'Returns scopeNote saying where the draft landed.',
+      + 'The scope reads itself off the covers: every station drawing on the same single resource lands on THAT resource\'s path, anything mixed lands on the project\'s own — omit resource (a string is an explicit override, validated as such). '
+      + 'A cover is the shorthand string "r_…#1-5" | "https://…" | "topic: …" (or the object { ref, locator? }). Returns scopeNote saying where the draft landed.',
     parameters: {
       ...scopeParams,
-      book: { type: 'json', description: 'Usually omit — the scope reads itself off the covers. A string is an explicit override (validated: a book\'s own path covers that book only).' },
+      resource: { type: 'json', description: 'Usually omit — the scope reads itself off the covers. A string is an explicit override (validated: a resource\'s own path covers that resource only); null forces the project\'s own path.' },
       nodes: { ...NODES_SCHEMA, required: true, description: 'The stations of the draft.' },
       passRatio: { type: 'number', description: 'The pass line in (0, 1] — 0.8 means 8 of 10 right (the default).' },
       note: { type: 'string', description: 'The one-line pacing on the draft card.' },
@@ -623,54 +689,54 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
     async execute(args, exec) {
       const list = payloadList(args.nodes)
       if (list === undefined) {
-        throw new Error(`library_roadmap takes the nodes field: nodes: [{ id, title, kind: "quiz"|"read"|"practice", goals, covers: [{ kind: "book", bookId, ranges: [{ from, to }] } | { kind: "resource", resourceId } | { kind: "url", url } | { kind: "topic", text }], dependsOn, acceptance? (practice only) }] (+ passRatio?, note?) — ${arrival('nodes', args.nodes)}`)
+        throw new Error(`library_roadmap takes the nodes field: nodes: [{ id, title, gate: "quiz"|"acceptance"|"read", goals, covers: ["r_…#1-5" | "https://…" | "topic: …"], dependsOn, acceptance? (acceptance only) }] (+ passRatio?, note?) — ${arrival('nodes', args.nodes)}`)
       }
       // The scope reads itself off the covers: every station drawing on
-      // the same single book lands on THAT book's path, anything mixed
-      // lands on the project's own. `book` survives only as an explicit
-      // override (a string is honored and validated as before); the
-      // binding's book is consulted solely by the chapterRanges sugar.
-      const overrideBook = typeof args.book === 'string' ? args.book : undefined
-      const sugarBook = overrideBook ?? bindingOf(exec)?.bookId
+      // the same single resource lands on THAT resource's path, anything
+      // mixed lands on the project's own. `resource` survives as an explicit
+      // override (a string is honored and validated; null forces the
+      // project's own path); the binding's resource is consulted solely by
+      // the chapterRanges sugar.
+      const overrideResource = args.resource === null ? undefined : pickString(args.resource, (args as Record<string, unknown>).book)
+      const sugarResource = overrideResource ?? bindingOf(exec)?.resourceId
       const nodes = (list as Record<string, unknown>[]).map(node => {
-        const { chapterRanges, covers, ...rest } = node
-        if (covers !== undefined) {
-          // Tolerate the natural shorthand: a cover's target may arrive as
-          // book / resource; the stored fields are bookId / resourceId.
-          const aliased = (covers as Record<string, unknown>[]).map(cover => {
-            if (cover === null || typeof cover !== 'object' || Array.isArray(cover)) return cover
-            const { book, resource, ...restCover } = cover as Record<string, unknown>
-            return {
-              ...restCover,
-              ...(restCover.bookId === undefined && typeof book === 'string' ? { bookId: book } : {}),
-              ...(restCover.resourceId === undefined && typeof resource === 'string' ? { resourceId: resource } : {}),
-            }
-          })
-          return { ...rest, covers: aliased }
-        }
-        // Sugar for the book special case: chapterRanges wrap into the
-        // one book cover a book's own path allows.
-        if (chapterRanges !== undefined) {
-          if (sugarBook === undefined) {
-            throw new Error('chapterRanges count a book\'s contents rows — the covers need the book named: { kind: "book", bookId, ranges: [{ from, to }] } (or bind this session to the book first)')
+        const { chapterRanges, covers, kind, gate, ...rest } = node
+        // gate is the v5 spelling; the old kind still parses (practice → acceptance).
+        const gateValue = typeof gate === 'string' ? gate : kind === 'practice' ? 'acceptance' : kind
+        let outCovers: unknown[] | undefined
+        if (Array.isArray(covers)) {
+          outCovers = (covers as unknown[]).map(cover => normalizeCoverArg(cover) ?? cover)
+        } else if (chapterRanges !== undefined) {
+          // Sugar for the single-resource special case: chapterRanges wrap
+          // into the one resource cover a resource's own path allows.
+          if (sugarResource === undefined) {
+            throw new Error('chapterRanges count a resource\'s contents rows — the covers need the resource named: "r_…#1-5" (or bind this session to it first)')
           }
-          return { ...rest, covers: [{ kind: 'book', bookId: sugarBook, ranges: chapterRanges }] }
+          const ranges = Array.isArray(chapterRanges)
+            ? (chapterRanges as unknown[]).flatMap(range => {
+              const row = payload(range)
+              const from = typeof row?.from === 'number' ? row.from : undefined
+              const to = typeof row?.to === 'number' ? row.to : undefined
+              return from === undefined || to === undefined ? [] : [{ from, to }]
+            })
+            : []
+          outCovers = [{ ref: sugarResource, locator: formatLocator(ranges) }]
         }
-        return rest
+        return { ...rest, ...(gateValue === undefined ? {} : { gate: gateValue }), ...(outCovers === undefined ? {} : { covers: outCovers }) }
       })
-      const bookId = overrideBook ?? deriveRoadmapBook(nodes)
-      const projectId = projectOf(args.project, exec, bookId)
+      const resourceId = overrideResource ?? deriveRoadmapResource(nodes)
+      const projectId = projectOf(args.project, exec, resourceId)
       const drafted = unwrap(await service.draftRoadmap({
         projectId,
-        ...(bookId === undefined ? {} : { bookId }),
+        ...(resourceId === undefined ? {} : { resourceId }),
         nodes: nodes as unknown as Parameters<LibraryService['draftRoadmap']>[0]['nodes'],
         ...(typeof args.passRatio === 'number' ? { passRatio: args.passRatio } : {}),
         ...(typeof args.note === 'string' ? { note: args.note } : {}),
       }))
-      await autoBind(exec, { projectId, ...(bookId === undefined ? {} : { bookId }) })
-      const placedOn = bookId === undefined
+      await autoBind(exec, { projectId, ...(resourceId === undefined ? {} : { resourceId }) })
+      const placedOn = resourceId === undefined
         ? "the project's own path (the covers mix sources)"
-        : `《${unwrap(await service.getBook({ projectId, bookId })).book.title}》's path`
+        : `《${unwrap(await service.getResource({ projectId, resourceId })).resource.title}》's path`
       return { ...drafted, scopeNote: `draft placed on ${placedOn} — the learner adopts it in the sidebar (采用)` } as unknown as JsonValue
     },
   }))
@@ -680,17 +746,17 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
     description:
       'Write or rewrite a station\'s 讲义 (markdown; math in $…$ / $$…$$ LaTeX renders for the learner): the textbook on a 讲授 (topic) station, marginalia on a book station. Rewrite as 补讲 deepens — each write bumps 第 N 次更新.',
     parameters: {
-      ...scopeParamsBook,
+      ...scopeParamsResource,
       node: { type: 'string', required: true, description: 'The station id (library_read · roadmap lists them).' },
       text: { type: 'string', required: true, description: 'The station\'s 讲义 in markdown.' },
     },
     output: jsonOutput(),
     isConcurrencySafe: () => false,
     async execute(args, exec) {
-      const bookId = scopeBookOf(args.book, exec)
+      const resourceId = scopeResourceOf(args, exec)
       return unwrap(await service.putNotes({
-        projectId: projectOf(args.project, exec, bookId),
-        ...(bookId === undefined ? {} : { bookId }),
+        projectId: projectOf(args.project, exec, resourceId),
+        ...(resourceId === undefined ? {} : { resourceId }),
         nodeId: args.node,
         text: args.text,
       })) as unknown as JsonValue
@@ -703,7 +769,7 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
       'Record a photographed page: transcribe the printed text (a photo-backed question quotes it), list every mark — each certain mark is carded at once; flag the unreadable uncertain (kept, never auto-carded). attachment is the image id — omit for the latest photo in this conversation.',
     parameters: {
       ...scopeParams,
-      book: { type: 'json', description: 'The book id (defaults to the binding\'s book).' },
+      resource: { type: 'json', description: 'The resource id (defaults to the binding\'s resource) — pages belong to a thick one (a book).'},
       text: { type: 'string', required: true, description: 'The page\'s printed text, as recognized.' },
       marks: {
         oneOf: [
@@ -735,10 +801,10 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
       if (attachment === undefined) {
         throw new Error('no photo to record: this conversation has no image the library saw arrive (or the id names none) — ask the learner to send the page photo here, then record it')
       }
-      const pageBook = bookOf(args.book, exec)
+      const pageResource = resourceOf(args, exec)
       return unwrap(await service.recordPage({
-        projectId: projectOf(args.project, exec, pageBook),
-        bookId: pageBook,
+        projectId: projectOf(args.project, exec, pageResource),
+        resourceId: pageResource,
         ...(typeof args.node === 'string' && args.node !== '' ? { nodeId: args.node } : {}),
         ...(typeof args.label === 'string' ? { label: args.label } : {}),
         attachment,
@@ -754,7 +820,7 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
       'Record weak points — when the learner is stuck (mixes it up, asks the same point again), each: { kind: word|concept, term, gloss, context?, source: { type: chat, note? }, weaken? }. Say in one short line what you noted; ordinary curiosity is not a weak point. Near-duplicates come back pending with candidates — resend each with mergeInto or asNew.',
     parameters: {
       ...scopeParams,
-      book: { type: 'string', description: 'The book id (defaults to the binding\'s book; omit for a project-level card).' },
+      resource: { type: 'string', description: 'The resource id (defaults to the binding\'s resource; omit for a project-level card).' },
       cards: {
         oneOf: [
           { type: 'array', items: { type: 'object', additionalProperties: true, properties: {
@@ -799,10 +865,10 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
           ...(context === undefined ? {} : { context: { sentence: String(context.sentence ?? ''), ...(typeof context.node === 'string' ? { nodeId: context.node } : {}) } }),
         } as unknown as LibraryCardInput
       })
-      const book = optBook(args.book, exec)
+      const resource = pickString(args.resource, (args as Record<string, unknown>).book) ?? bindingOf(exec)?.resourceId
       return unwrap(await service.writeCards({
-        projectId: projectOf(args.project, exec, book),
-        ...(book === undefined ? {} : { bookId: book }),
+        projectId: projectOf(args.project, exec, resource),
+        ...(resource === undefined ? {} : { resourceId: resource }),
         cards,
       })) as unknown as JsonValue
     },
@@ -811,10 +877,10 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
   definitions.push(defineTool({
     name: 'library_quiz',
     description:
-      'Store a composed quiz. node names the quiz-kind station it gates — omit for a book-level quiz (the book page\'s 本书测验) or, with book: null, a free one (the project page\'s 自由测验). focus is the learner\'s choice (mine | book | mixed). A question\'s target defaults to the station\'s topic (flat cardIds imply marked), evidence to domain knowledge (flat pageId / url / quote imply photo / web). After it returns, reply with one line — the learner answers in the sidebar, never in the conversation.',
+      'Store a composed quiz. node names the quiz-gated station it gates — omit for a resource-level quiz (the resource page\'s 本书测验) or, with resource: null, a free one (the project page\'s 自由测验). focus is the learner\'s choice (mine | book | mixed). A question\'s target defaults to the station\'s topic (flat cardIds imply marked), evidence to domain knowledge (flat pageId / url / quote imply photo / web). After it returns, reply with one line — the learner answers in the sidebar, never in the conversation.',
     parameters: {
-      ...scopeParamsBook,
-      node: { type: 'string', description: 'The quiz-kind station the quiz gates — omit for a book-level quiz, or with book: null a free one.' },
+      ...scopeParamsResource,
+      node: { type: 'string', description: 'The quiz-gated station the quiz gates — omit for a resource-level quiz, or with resource: null a free one.' },
       focus: { type: 'string', enum: ['mine', 'book', 'mixed'], description: 'The learner\'s choice of source.' },
       questions: {
         ...QUESTIONS_SCHEMA,
@@ -830,7 +896,7 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
         throw new Error(`library_quiz takes the questions field: questions: [{ id, kind: "choice"|"fill"|"free", prompt, options?, answer, explanation?, target?, evidence? }] (+ node?, focus?) — ${arrival('questions', args.questions)}`)
       }
       const node = typeof args.node === 'string' && args.node !== '' ? args.node : undefined
-      const bookId = scopeBookOf(args.book, exec)
+      const resourceId = scopeResourceOf(args, exec)
       // Options may arrive as { label } objects or a letter-keyed map —
       // the stored form is plain strings (the same tolerance reads them
       // back); the two axes default (topic + knowledge) and take the flat
@@ -843,16 +909,16 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
         }
         return normalizeQuestionAxes(next)
       })
-      const projectId = projectOf(args.project, exec, bookId)
+      const projectId = projectOf(args.project, exec, resourceId)
       const written = unwrap(await service.putQuiz({
         projectId,
         quiz: {
           ...(args.focus === 'mine' || args.focus === 'book' || args.focus === 'mixed' ? { focus: args.focus } : {}),
-          scope: { ...(bookId === undefined ? {} : { bookId }), ...(node === undefined ? {} : { nodeId: node }) },
+          scope: { ...(resourceId === undefined ? {} : { resourceId }), ...(node === undefined ? {} : { nodeId: node }) },
           questions: cleaned as unknown as LibraryQuizQuestion[],
         },
       }))
-      await autoBind(exec, { projectId, ...(bookId === undefined ? {} : { bookId }) })
+      await autoBind(exec, { projectId, ...(resourceId === undefined ? {} : { resourceId }) })
       return written as unknown as JsonValue
     },
   }))
@@ -860,20 +926,20 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
   definitions.push(defineTool({
     name: 'library_binding',
     description:
-      'Bind this session to a project (and optionally a book) — the header chip, and every tool\'s defaults. binding: null unbinds. Most writes bind an unbound session by themselves; bind by hand to switch, or when there is nothing to infer from.',
+      'Bind this session to a project (and optionally a resource) — the header chip, and every tool\'s defaults. binding: null unbinds. Most writes bind an unbound session by themselves; bind by hand to switch, or when there is nothing to infer from.',
     parameters: {
       binding: {
         oneOf: [
           { type: 'object', additionalProperties: true, properties: {
             project: { type: 'string', required: true, description: 'The project id (library_read · projects lists them).' },
-            book: { type: 'string', description: 'Optionally the book within it.' },
+            resource: { type: 'string', description: 'Optionally the resource within it (a book, to work inside its path).' },
           } },
           { type: 'null', description: 'Unbind this session.' },
         ],
         description: 'The binding — or null to unbind.',
       },
       project: { type: 'string', description: 'Alias for binding.project (both work).' },
-      book: { type: 'string', description: 'Alias for binding.book.' },
+      resource: { type: 'string', description: 'Alias for binding.resource.' },
     },
     output: jsonOutput(),
     isConcurrencySafe: () => false,
@@ -884,13 +950,12 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
       // the top level as inside binding (live trial) — both bind.
       if (args.binding === null) return unwrap(await service.setBinding(sessionId, null)) as unknown as JsonValue
       const body = payload(args.binding) ?? {}
-      const pick = (...values: unknown[]): string | undefined => values.find((value): value is string => typeof value === 'string' && value.trim() !== '')?.trim()
-      const projectId = pick(body.project, body.projectId, args.project)
-      const bookId = pick(body.book, body.bookId, args.book)
+      const projectId = pickString(body.project, body.projectId, args.project)
+      const resourceId = pickString(body.resource, body.resourceId, body.book, body.bookId, args.resource, (args as Record<string, unknown>).book)
       if (projectId === undefined) {
-        throw new Error('binding needs the project: binding { project, book? } (library_read · projects lists them); pass binding: null to unbind')
+        throw new Error('binding needs the project: binding { project, resource? } (library_read · projects lists them); pass binding: null to unbind')
       }
-      return unwrap(await service.setBinding(sessionId, { projectId, ...(bookId === undefined ? {} : { bookId }) })) as unknown as JsonValue
+      return unwrap(await service.setBinding(sessionId, { projectId, ...(resourceId === undefined ? {} : { resourceId }) })) as unknown as JsonValue
     },
   }))
 
@@ -902,14 +967,13 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
       + 'by: "llm"|"self"|"user", void?: true when the learner flagged the question as broken, missedCard?: { term, gloss } for a missed question that targets no card }. '
       + 'The engine moves every probed card (a pass climbs a review box and eases weakness; a miss resets it to tomorrow and adds weakness), creates a card for a '
       + 'card-less miss, updates the gated node, and completes it at the pass ratio (default 0.8), unlocking what follows — report what moved and what unlocked. '
-      + 'Practice acceptance: pass node instead of quiz (plus book when the station sits on a book\'s path) — the station must be a practice node; each '
-      + 'verdict\'s task is the rubric line\'s id (L1, L2, …) or the line VERBATIM. A line carrying ref is machine-checked by that quiz — never judge it. '
-      + 'The learner submits the evidence (terminal output, a screenshot, a repo link), you judge each line. Same cascade.',
+      + 'Acceptance: pass node instead of quiz — the station must be an acceptance node; each verdict\'s task is the rubric line\'s id (L1, L2, …) or the line VERBATIM. '
+      + 'A line carrying ref is machine-checked by that quiz — never judge it. The learner submits the evidence (terminal output, a screenshot, a repo link), you judge each line. Same cascade.',
     parameters: {
       project: { type: 'string', description: 'Project id (defaults to the binding).' },
       quiz: { type: 'string', description: 'The quiz id library_quiz returned (a quiz sitting).' },
-      node: { type: 'string', description: 'Practice station id (an acceptance sitting — instead of quiz).' },
-      book: { type: 'string', description: 'Book id when the practice station sits on a book\'s path (omit for the project\'s).' },
+      node: { type: 'string', description: 'Acceptance station id (an acceptance sitting — instead of quiz).' },
+      resource: { type: 'string', description: 'Resource id when the acceptance station sits on a resource\'s path (omit for the project\'s).' },
       verdicts: {
         type: 'array',
         required: true,
@@ -918,7 +982,7 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
           type: 'object',
           additionalProperties: false,
           properties: {
-            task: { type: 'string', description: 'The question id (a quiz sitting), or the rubric line id — L1, L2… (a practice acceptance).' },
+            task: { type: 'string', description: 'The question id (a quiz sitting), or the rubric line id — L1, L2… (an acceptance sitting).' },
             criterion: { type: 'string', description: 'What was judged, in one line.' },
             pass: { type: 'boolean', description: 'Whether the answer passes.' },
             ratio: { type: 'number', description: 'Partial credit 0..1.' },
@@ -941,20 +1005,21 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
       if (!Array.isArray(args.verdicts) || args.verdicts.length === 0) {
         throw new Error('verdicts is required — one verdict per question: [{ task: <question id>, criterion: <what you judged>, pass, evidence: <what it rests on>, by: "llm"|"self"|"user", ratio?, void?, missedCard? }]')
       }
-      const node = typeof args.node === 'string' && args.node.trim() !== '' ? args.node.trim() : undefined
+      const node = pickString(args.node)
       if (node !== undefined) {
-        const book = typeof args.book === 'string' && args.book.trim() !== '' ? args.book.trim() : undefined
+        const resource = pickString(args.resource, (args as Record<string, unknown>).book)
         return unwrap(await service.putAttempt({
-          projectId: projectOf(args.project, exec, book),
+          projectId: projectOf(args.project, exec, resource),
           nodeId: node,
-          ...(book === undefined ? {} : { bookId: book }),
+          ...(resource === undefined ? {} : { resourceId: resource }),
           verdicts: [...args.verdicts] as LibraryVerdict[],
         })) as unknown as JsonValue
       }
-      if (args.quiz === undefined || args.quiz.trim() === '') throw new Error('quiz is the id library_quiz returned — or pass node (a practice station\'s id) for acceptance')
+      const quiz = pickString(args.quiz)
+      if (quiz === undefined) throw new Error('quiz is the id library_quiz returned — or pass node (an acceptance station\'s id) for acceptance')
       return unwrap(await service.putAttempt({
         projectId: projectOf(args.project, exec),
-        quizId: args.quiz.trim(),
+        assessmentId: quiz,
         verdicts: [...args.verdicts] as LibraryVerdict[],
       })) as unknown as JsonValue
     },

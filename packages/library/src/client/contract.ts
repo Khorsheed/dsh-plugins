@@ -18,9 +18,9 @@ import type {} from '@khorsheed/dsh-library/remote'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {
   LibraryAssessResult,
+  LibraryAssessment,
   LibraryAttempt,
   LibraryBinding,
-  LibraryBook,
   LibraryCard,
   LibraryCardQuery,
   LibraryProjectPatch,
@@ -29,7 +29,6 @@ import type {
   LibraryPage,
   LibraryProject,
   LibraryProjectSummary,
-  LibraryQuiz,
   LibraryResource,
   LibraryReviewRating,
   LibraryRoadmap,
@@ -50,31 +49,31 @@ type Answer<T> = Promise<RemoteResult<LibraryOutcome<T>>>
  */
 export interface LibraryPaneInjected {
   listProjects: () => Promise<RemoteResult<{ projects: LibraryProjectSummary[] }>>
-  getProject: (id: string) => Answer<{ project: LibraryProjectSummary; books: LibraryBook[] }>
+  getProject: (id: string) => Answer<{ project: LibraryProjectSummary; resources: LibraryResource[] }>
   createProject: (request: { name: string; template: LibraryTemplate; goal?: string }) => Answer<{ project: LibraryProject }>
   updateProject: (projectId: string, patch: LibraryProjectPatch) => Answer<{ project: LibraryProject }>
-  /** Delete a project and everything it holds (books, paths, pages, cards) — irreversible. */
+  /** Delete a project and everything it holds (shelf, paths, pages, cards) — irreversible. */
   deleteProject: (projectId: string) => Answer<{ id: string }>
-  /** Delete a book: its registration, roadmaps and pages go; its cards stay, unhung. */
-  deleteBook: (projectId: string, bookId: string) => Answer<{ id: string }>
-  getRoadmap: (projectId: string, bookId?: string) => Promise<RemoteResult<{ roadmap?: LibraryRoadmap; draft?: LibraryRoadmap }>>
-  adoptRoadmap: (projectId: string, bookId?: string) => Answer<{ roadmap: LibraryRoadmap }>
-  discardDraft: (projectId: string, bookId?: string) => Answer<{ bookId?: string }>
-  markNodeRead: (projectId: string, bookId: string | undefined, nodeId: string) => Answer<{ roadmap: LibraryRoadmap; unlocked: string[] }>
-  listPages: (projectId: string, bookId: string, nodeId?: string) => Promise<RemoteResult<{ pages: LibraryPage[] }>>
+  /** Remove a shelf entry: its registration, roadmaps and pages go; its cards stay, unhung. */
+  removeResource: (projectId: string, resourceId: string) => Answer<{ id: string }>
+  getRoadmap: (projectId: string, resourceId?: string) => Promise<RemoteResult<{ roadmap?: LibraryRoadmap; draft?: LibraryRoadmap }>>
+  adoptRoadmap: (projectId: string, resourceId?: string) => Answer<{ roadmap: LibraryRoadmap }>
+  discardDraft: (projectId: string, resourceId?: string) => Answer<{ resourceId?: string }>
+  markNodeRead: (projectId: string, resourceId: string | undefined, nodeId: string) => Answer<{ roadmap: LibraryRoadmap; unlocked: string[] }>
+  listPages: (projectId: string, resourceId: string, nodeId?: string) => Promise<RemoteResult<{ pages: LibraryPage[] }>>
   readPagePhoto: (projectId: string, pageId: string) => Answer<{ data: string; mediaType: string }>
-  /** A project's shelf links (the resource section under the shelf). */
+  /** A project's shelf, thick and thin. */
   listResources: (projectId: string) => Promise<RemoteResult<{ resources: LibraryResource[] }>>
-  /** One practice station's acceptance history, newest first. */
-  listAttempts: (projectId: string, nodeId?: string) => Promise<RemoteResult<{ attempts: LibraryAttempt[] }>>
+  /** A station's acceptance history, newest first. */
+  listAttempts: (projectId: string, nodeId?: string, assessmentId?: string) => Promise<RemoteResult<{ attempts: LibraryAttempt[] }>>
   listCards: (query: LibraryCardQuery) => Promise<RemoteResult<{ cards: LibraryCard[]; total: number }>>
   dueCards: (projectId?: string) => Promise<RemoteResult<{ cards: (LibraryCard & { projectId: string })[] }>>
   editCard: (projectId: string, cardId: string, patch: { status?: LibraryCard['status']; gloss?: string }) => Answer<{ card: LibraryCard }>
   undoCards: (projectId: string, ids: readonly string[], at: string) => Answer<{ removed: number; reverted: number }>
   reviewCard: (projectId: string, cardId: string, rating: LibraryReviewRating) => Answer<{ card: LibraryCard }>
-  listQuizzes: (projectId: string, bookId: string | undefined, nodeId?: string) => Promise<RemoteResult<{ quizzes: LibraryQuiz[] }>>
-  getQuiz: (projectId: string, quizId: string) => Answer<{ quiz: LibraryQuiz }>
-  putAttempt: (projectId: string, quizId: string, verdicts: readonly LibraryVerdict[]) => Answer<LibraryAssessResult>
+  listAssessments: (projectId: string, resourceId?: string, nodeId?: string, type?: 'quiz' | 'practice') => Promise<RemoteResult<{ assessments: LibraryAssessment[] }>>
+  getAssessment: (projectId: string, assessmentId: string) => Answer<{ assessment: LibraryAssessment }>
+  putAttempt: (projectId: string, assessmentId: string, verdicts: readonly LibraryVerdict[]) => Answer<LibraryAssessResult>
   recentRecords: () => Promise<RemoteResult<{ records: (LibraryEvent & { projectId: string; projectName: string })[] }>>
   /** The newest event's timestamp anywhere — the pane's change poll (host-side writes otherwise surface only on remount). */
   latestActivity: () => Promise<RemoteResult<{ at?: string }>>

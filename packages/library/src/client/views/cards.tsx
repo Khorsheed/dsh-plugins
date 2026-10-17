@@ -31,7 +31,7 @@ export function CardsView({ p, projectId, filter }: ViewProps & { projectId: str
     ...(filter === 'all' ? { sort: 'recent' as const } : {}),
     ...(query.trim() === '' ? {} : { query }),
   })), [projectId, filter, query, rev])
-  const books = new Map((project.data?.books ?? []).map(book => [book.id, book.title]))
+  const resources = new Map((project.data?.resources ?? []).map(resource => [resource.id, resource.title]))
 
   return (
     <>
@@ -70,7 +70,7 @@ export function CardsView({ p, projectId, filter }: ViewProps & { projectId: str
               p={p}
               projectId={projectId}
               card={card}
-              bookTitle={card.bookId === undefined ? undefined : books.get(card.bookId)}
+              bookTitle={card.resourceId === undefined ? undefined : resources.get(card.resourceId)}
               open={open === card.id}
               onToggle={() => { setOpen(open === card.id ? undefined : card.id) }}
             />

@@ -38,11 +38,11 @@ export function LibraryPane(props: LibraryPaneProps): ReactNode {
           case 'today': return <TodayView p={props} />
           case 'newProject': return <NewProjectView p={props} />
           case 'project': return <ProjectView p={props} projectId={route.projectId} />
-          case 'book': return <BookView p={props} projectId={route.projectId} bookId={route.bookId} />
-          case 'node': return <NodeView p={props} projectId={route.projectId} bookId={route.bookId} nodeId={route.nodeId} tab={route.tab} />
+          case 'resource': return <BookView p={props} projectId={route.projectId} resourceId={route.resourceId} />
+          case 'node': return <NodeView p={props} projectId={route.projectId} resourceId={route.resourceId} nodeId={route.nodeId} tab={route.tab} />
           case 'cards': return <CardsView p={props} projectId={route.projectId} filter={route.filter} />
-          case 'quiz': return <QuizView p={props} projectId={route.projectId} bookId={route.bookId} quizId={route.quizId} />
-          case 'result': return <ResultView p={props} projectId={route.projectId} bookId={route.bookId} result={route.result} />
+          case 'quiz': return <QuizView p={props} projectId={route.projectId} resourceId={route.resourceId} quizId={route.quizId} />
+          case 'result': return <ResultView p={props} projectId={route.projectId} resourceId={route.resourceId} result={route.result} />
           case 'review': return <ReviewView p={props} {...(route.projectId === undefined ? {} : { projectId: route.projectId })} />
         }
       })()}

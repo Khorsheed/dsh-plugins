@@ -70,8 +70,9 @@ describe('the core row', () => {
     expect(ctx.get('libraryRemote')).toBeDefined()
     const created = await library.createProject({ name: '神经科学' })
     expect(created.ok).toBe(true)
-    const book = await library.putBook({
+    const book = await library.putResource({
       projectId: created.ok ? created.project.id : '',
+      kind: 'book',
       title: 'Principles of Neural Science',
       bookKind: 'knowledge',
       toc: [{ title: 'Ion Channels' }],

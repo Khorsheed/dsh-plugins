@@ -29,14 +29,20 @@ interface Answered {
 }
 
 /** The quiz screen: the whole paper on one scroll — every question numbered, judged on the spot, 交卷 once all are answered. */
-export function QuizView({ p, projectId, bookId, quizId }: ViewProps & { projectId: string; bookId: string | undefined; quizId: string }): ReactNode {
+export function QuizView({ p, projectId, resourceId, quizId }: ViewProps & { projectId: string; resourceId: string | undefined; quizId: string }): ReactNode {
   const { t, actions } = p
-  const loaded = useLoad(() => outcome(p.getQuiz(projectId, quizId)), [projectId, quizId])
+  const loaded = useLoad(async () => {
+    const result = await outcome(p.getAssessment(projectId, quizId))
+    return result.assessment
+  }, [projectId, quizId])
   const [answers, setAnswers] = useState<Record<string, Answered>>({})
   const [drafts, setDrafts] = useState<Record<string, string>>({})
   const [notice, setNotice] = useState<string | undefined>()
   const [busy, setBusy] = useState(false)
-  const quiz = loaded.data?.quiz
+  const assessment = loaded.data
+  const quiz = assessment !== undefined && assessment.type === 'quiz' && assessment.questions !== undefined
+    ? { ...assessment, questions: assessment.questions }
+    : undefined
   const total = quiz?.questions.length ?? 0
   const done = quiz === undefined ? 0 : quiz.questions.filter(item => answers[item.id] !== undefined).length
   const allAnswered = quiz !== undefined && done === total
@@ -73,7 +79,7 @@ export function QuizView({ p, projectId, bookId, quizId }: ViewProps & { project
     setBusy(true)
     try {
       const result = await outcome(p.putAttempt(projectId, quiz.id, verdicts))
-      actions.replace({ view: 'result', projectId, ...(bookId === undefined ? {} : { bookId }), result })
+      actions.replace({ view: 'result', projectId, ...(resourceId === undefined ? {} : { resourceId }), result })
     } catch (failure) {
       setNotice(failure instanceof Error ? failure.message : String(failure))
     } finally {
@@ -218,7 +224,7 @@ function QuestionCard({ p, question, number, answered, draft, onDraft, onAnswer 
 }
 
 /** The sitting's result: the score, what unlocked, how the cards moved. */
-export function ResultView({ p, projectId, bookId, result }: ViewProps & { projectId: string; bookId: string | undefined; result: LibraryAssessResult }): ReactNode {
+export function ResultView({ p, projectId, resourceId, result }: ViewProps & { projectId: string; resourceId: string | undefined; result: LibraryAssessResult }): ReactNode {
   const { t, actions } = p
   const percent = Math.round(result.attempt.ratio * 100)
   const passed = result.completed !== undefined
@@ -248,12 +254,12 @@ export function ResultView({ p, projectId, bookId, result }: ViewProps & { proje
         )}
         <div className={css.actions}>
           {result.unlocked[0] !== undefined && (
-            <button type="button" className={css.primary} onClick={() => { actions.replace({ view: 'node', projectId, ...(bookId === undefined ? {} : { bookId }), nodeId: result.unlocked[0]!, tab: 'guide' }) }}>{t('result.next')}</button>
+            <button type="button" className={css.primary} onClick={() => { actions.replace({ view: 'node', projectId, ...(resourceId === undefined ? {} : { resourceId }), nodeId: result.unlocked[0]!, tab: 'guide' }) }}>{t('result.next')}</button>
           )}
-          {bookId !== undefined && (
-            <button type="button" className={css.secondary} onClick={() => { actions.replace({ view: 'book', projectId, bookId }) }}>{t('result.toPath')}</button>
+          {resourceId !== undefined && (
+            <button type="button" className={css.secondary} onClick={() => { actions.replace({ view: 'resource', projectId, resourceId }) }}>{t('result.toPath')}</button>
           )}
-          {bookId === undefined && (
+          {resourceId === undefined && (
             <button type="button" className={css.secondary} onClick={() => { actions.replace({ view: 'project', projectId }) }}>{t('result.toPath')}</button>
           )}
         </div>

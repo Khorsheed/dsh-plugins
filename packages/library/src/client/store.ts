@@ -20,11 +20,11 @@ export type LibraryRoute =
   | { readonly view: 'today' }
   | { readonly view: 'newProject' }
   | { readonly view: 'project'; readonly projectId: string }
-  | { readonly view: 'book'; readonly projectId: string; readonly bookId: string }
-  | { readonly view: 'node'; readonly projectId: string; readonly bookId?: string; readonly nodeId: string; readonly tab: LibraryNodeTab }
+  | { readonly view: 'resource'; readonly projectId: string; readonly resourceId: string }
+  | { readonly view: 'node'; readonly projectId: string; readonly resourceId?: string; readonly nodeId: string; readonly tab: LibraryNodeTab }
   | { readonly view: 'cards'; readonly projectId: string; readonly filter: LibraryCardFilter }
-  | { readonly view: 'quiz'; readonly projectId: string; readonly bookId?: string; readonly quizId: string }
-  | { readonly view: 'result'; readonly projectId: string; readonly bookId?: string; readonly result: LibraryAssessResult }
+  | { readonly view: 'quiz'; readonly projectId: string; readonly resourceId?: string; readonly quizId: string }
+  | { readonly view: 'result'; readonly projectId: string; readonly resourceId?: string; readonly result: LibraryAssessResult }
   | { readonly view: 'review'; readonly projectId?: string }
 
 /** The pane's state. */

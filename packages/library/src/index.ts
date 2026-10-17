@@ -8,10 +8,11 @@
  * the attachment store (saving sidebar photos, reading page photos back). The
  * browser half renders.
  *
- * The model face (library_read / library_write / library_assess, the coach
- * prompt section, the per-turn bound context) is deliberately NOT here: it is the
- * `./tool` composition entry (`src/tool.ts`), which an agent preset names —
- * the evaluation-family fold pattern.
+ * The model face (library_read, one library_<noun> tool per write,
+ * library_assess, the coach prompt section, the per-turn bound context) is
+ * deliberately NOT here: it is the `./tool` composition entry
+ * (`src/tool.ts`), which an agent preset names — the evaluation-family fold
+ * pattern.
  *
  * @module @khorsheed/dsh-library
  */
@@ -31,17 +32,16 @@ export {
   LibraryStore,
   LibraryStoreError,
   mintLibraryId,
+  normalizeAssessment,
   normalizeAttachmentRef,
   normalizeAttempt,
   normalizeBindings,
-  normalizeBook,
   normalizeCard,
   normalizeEvent,
   normalizeNodeCover,
   normalizePage,
   normalizeLibraryIndex,
   normalizeProject,
-  normalizeQuiz,
   normalizeResource,
   normalizeRoadmap,
   resolveLibraryStateRoot,

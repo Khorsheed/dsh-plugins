@@ -6,7 +6,7 @@
  *
  * Shown only in sessions that hold the library tools (the strict half of the
  * visibility criterion), and it re-reads the binding while visible: the coach
- * binds through `library_write · binding` and nothing announces that here.
+ * binds through `library_binding` and nothing announces that here.
  *
  * @module @khorsheed/dsh-library/client/bind
  */
@@ -37,7 +37,7 @@ const BIND_POLL_MS = 4000
 
 /** A binding's menu id. */
 function idOf(binding: LibraryBinding): string {
-  return binding.bookId === undefined ? `project:${binding.projectId}` : `book:${binding.projectId}:${binding.bookId}`
+  return binding.resourceId === undefined ? `project:${binding.projectId}` : `resource:${binding.projectId}:${binding.resourceId}`
 }
 
 export function LibraryBindChip(props: LibraryBindChipProps): ReactNode {
@@ -67,7 +67,7 @@ function BindMenu({ t, boundTarget, bindTarget, listProjects }: LibraryBindChipP
   }, [boundTarget])
   // A binding to something the chip has not listed yet (the coach just made it): list again.
   const unseen = bound !== null && !projects.some(project => project.id === bound.projectId
-    && (bound.bookId === undefined || project.books.some(book => book.id === bound.bookId)))
+    && (bound.resourceId === undefined || project.resources.some(resource => resource.id === bound.resourceId)))
   useEffect(() => {
     if (!unseen) return
     void listProjects().then(list => { if (list.ok) setProjects(list.value.projects) }).catch(() => {})
@@ -84,15 +84,16 @@ function BindMenu({ t, boundTarget, bindTarget, listProjects }: LibraryBindChipP
   }
 
   const project = bound === null ? undefined : projects.find(candidate => candidate.id === bound.projectId)
-  const book = bound?.bookId === undefined ? undefined : project?.books.find(candidate => candidate.id === bound.bookId)
-  const title = book?.title ?? project?.name
+  const resource = bound?.resourceId === undefined ? undefined : project?.resources.find(candidate => candidate.id === bound.resourceId)
+  const title = resource?.title ?? project?.name
   const items: MenuEntry[] = [
     { type: 'label', id: 'heading', text: t('bind.heading') },
     ...projects.length === 0
       ? [{ id: 'empty', label: t('bind.empty'), disabled: true }]
       : projects.flatMap((entry): MenuEntry[] => [
         { id: `project:${entry.id}`, label: t('bind.wholeProject', { project: entry.name }) },
-        ...entry.books.map(entryBook => ({ id: `book:${entry.id}:${entryBook.id}`, label: `　${entryBook.title}` })),
+        // Only a thick entry (a book, a course) is bindable — a thin link carries no path.
+        ...entry.resources.filter(entryResource => entryResource.kind === 'book' || entryResource.kind === 'course').map(entryResource => ({ id: `resource:${entry.id}:${entryResource.id}`, label: `　${entryResource.title}` })),
       ]),
     ...bound === null ? [] : [
       { type: 'separator' as const, id: 'sep' },
@@ -111,9 +112,9 @@ function BindMenu({ t, boundTarget, bindTarget, listProjects }: LibraryBindChipP
         setOpen(false)
         if (id === 'unbind') void pick(null)
         else if (id.startsWith('project:')) void pick({ projectId: id.slice('project:'.length) })
-        else if (id.startsWith('book:')) {
-          const [, projectId, bookId] = id.split(':')
-          if (projectId !== undefined && bookId !== undefined) void pick({ projectId, bookId })
+        else if (id.startsWith('resource:')) {
+          const [, projectId, resourceId] = id.split(':')
+          if (projectId !== undefined && resourceId !== undefined) void pick({ projectId, resourceId })
         }
       }}
       onClose={() => { setOpen(false) }}
