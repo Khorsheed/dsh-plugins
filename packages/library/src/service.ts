@@ -93,8 +93,9 @@ import {
   type RoadmapNode,
 } from './types.ts'
 import { cardKey, cardKeys, cardMatchesQuery, exactMatch, nearMatches } from './cards.ts'
-import { PACKAGE_NAME } from './invariant.ts'
 import { LibraryStore, LibraryStoreError, mintLibraryId } from './store.ts'
+
+const PACKAGE_NAME = '@khorsheed/dsh-library'
 
 /** The attachment store's faces, mirrored structurally (probed, never injected). */
 interface AttachmentsSlice {

@@ -25,10 +25,6 @@
       "types": "./lib/types/index.d.ts",
       "default": "./lib/index.js"
     },
-    "./invariant": {
-      "types": "./lib/types/invariant.d.ts",
-      "default": "./lib/invariant.js"
-    },
     "./tool-factory": {
       "types": "./lib/types/tool-factory.d.ts",
       "default": "./lib/tool-factory.js"
@@ -82,6 +78,9 @@
     "locale/*.json"
   ],
   "license": "MIT",
+  "engines": {
+    "dsh": ">=0.1.5-rc.1 <0.3.0-0"
+  },
   "dependencies": {
     "@deepseek-ai/schemastery": "^3.18.1",
     "zod": "^4.4.3"
@@ -94,7 +93,6 @@
     "@deepseek-ai/dsh-client-ui-settings": "^0.1.0-rc.6 || ^0.2.0-rc.1",
     "@deepseek-ai/dsh-client-ui-slots": "^0.1.0-rc.6 || ^0.2.0-rc.1",
     "@deepseek-ai/dsh-commands": "^0.1.0-rc.6 || ^0.2.0-rc.1",
-    "@deepseek-ai/dsh-invariants": "^0.1.0-rc.6 || ^0.2.0-rc.1",
     "@deepseek-ai/dsh-llm": "^0.1.0-rc.6 || ^0.2.0-rc.1",
     "@deepseek-ai/dsh-session": "^0.1.0-rc.6 || ^0.2.0-rc.1",
     "@deepseek-ai/dsh-settings": "^0.1.0-rc.6 || ^0.2.0-rc.1",

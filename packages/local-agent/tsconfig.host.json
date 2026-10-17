@@ -10,7 +10,6 @@
     "src/cli-version.ts",
     "src/container.ts",
     "src/env.ts",
-    "src/invariant.ts",
     "src/types.ts",
     "src/gateway.ts",
     "src/member-channel.ts",

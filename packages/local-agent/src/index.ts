@@ -362,9 +362,7 @@ export interface LocalAgentHarness {
   homeEnvVar: string
   /**
    * Subagent provider name this harness delegates through, when it has one.
-   * A harness without delegation is record-and-login only. The core invariant
-   * cross-checks this against the mounted subagent providers, so a record
-   * that names a provider the composition does not mount fails loud.
+   * A harness without delegation is record-and-login only.
    */
   delegationProvider?: string
   /**
@@ -1705,9 +1703,7 @@ export class LocalAgentRegistry {
   }
 
   /**
-   * Every recorded delegation, in recording order. The invariant companion
-   * cross-checks each record's provider against the mounted subagent
-   * providers so a provider rename cannot leave a stale resume mapping.
+   * Every recorded delegation, in recording order.
    * @returns the recorded delegations.
    */
   listDelegations(): readonly LocalAgentDelegationRecord[] {

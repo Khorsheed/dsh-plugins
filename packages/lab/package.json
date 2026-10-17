@@ -18,10 +18,6 @@
       "types": "./lib/types/index.d.ts",
       "default": "./lib/index.js"
     },
-    "./invariant": {
-      "types": "./lib/types/invariant.d.ts",
-      "default": "./lib/invariant.js"
-    },
     "./cli": {
       "types": "./lib/types/cli.d.ts",
       "default": "./lib/cli.js"
@@ -37,16 +33,13 @@
     "locale/*.json"
   ],
   "license": "MIT",
+  "engines": {
+    "dsh": ">=0.2.0-rc.2 <0.3.0-0"
+  },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
-    "@deepseek-ai/dsh-invariants": "^0.1.0-rc.6 || ^0.2.0-rc.1",
     "@deepseek-ai/dsh-subprocess": "^0.1.0-rc.6 || ^0.2.0-rc.1",
     "@deepseek-ai/schemastery": "^3.18.1"
-  },
-  "peerDependenciesMeta": {
-    "@deepseek-ai/dsh-invariants": {
-      "optional": true
-    }
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
