@@ -697,6 +697,14 @@ function GlobalSettings({ p, o, report, onChanged }: { p: VideoPaneProps; o: Ove
       <div className={css.srow}><span className={css.skey}>ffmpeg</span><span className={css.meta}>{o.toolchain.ffmpeg ?? t('settings.missing')}</span><span className={css.src}>{o.toolchain.burnSubtitles ? t('settings.burnYes') : t('settings.burnNo')}</span></div>
       <div className={css.srow}><span className={css.skey}>ffprobe</span><span className={css.meta}>{o.toolchain.ffprobe ?? t('settings.missing')}</span></div>
       <div className={css.sect}>{t('settings.models')}</div>
+      <div className={css.srow}>
+        <span className={css.skey}>{t('settings.modelSource')}</span>
+        <select className={css.select} value={g.modelSource} aria-label={t('settings.modelSource')} onChange={(e) => void set({ modelSource: e.target.value })}>
+          <option value="auto">{t('settings.modelSourceAuto')}</option>
+          <option value="huggingface">Hugging Face</option>
+          <option value="hf-mirror">{t('settings.modelSourceMirror')}</option>
+        </select>
+      </div>
       <ModelList t={t} models={o.models} />
       {o.models.some((m) => m.state === 'missing' || m.state === 'failed') && (
         <div className={css.actions}><button type="button" className={css.btn} onClick={() => value(p.downloadModels()).then(onChanged, report)}>{t('warn.modelsDownload')}</button></div>
@@ -713,7 +721,11 @@ function ModelList({ t, models }: { t: T; models: ModelStatus[] }): ReactNode {
           <span className={css.rowMain}><b>{m.label}</b>{m.error && <small>{m.error}</small>}</span>
           <span className={css.meta}>{Math.round(m.bytes / 1e6)} MB</span>
           <span className={css.src} data-state={m.state}>
-            {m.state === 'downloading' ? t('model.downloading', { percent: String(Math.round(m.progress * 100)) }) : t(`model.${m.state}` as VideoStudioKey)}
+            {m.state === 'downloading'
+              ? t('model.downloading', { percent: String(Math.round(m.progress * 100)) })
+              : m.partial
+                ? `${t(`model.${m.state}` as VideoStudioKey)} · ${t('model.partial', { percent: String(Math.round((m.partial / m.bytes) * 100)) })}`
+                : t(`model.${m.state}` as VideoStudioKey)}
           </span>
         </div>
       ))}

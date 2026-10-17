@@ -27,6 +27,8 @@ export interface GlobalConfig {
   cleanupDays: number
   /** Cosine similarity at or above which a voice is the stored one. */
   voiceMatchThreshold: number
+  /** Speech-model download source: auto-probe, or pin github / huggingface / hf-mirror. */
+  modelSource: string
 }
 
 export function defaultGlobal(): GlobalConfig {
@@ -38,6 +40,7 @@ export function defaultGlobal(): GlobalConfig {
     ffprobePath: '',
     cleanupDays: 30,
     voiceMatchThreshold: 0.6,
+    modelSource: 'auto',
   }
 }
 

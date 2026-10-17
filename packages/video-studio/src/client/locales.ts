@@ -47,7 +47,7 @@ export const zh = {
   'new.inherits': '会沿用这个节目的片头片尾、响度、字幕样式和声纹',
 
   'warn.noFfmpeg': '本机没有找到 ffmpeg：导入和导出不可用。安装 ffmpeg，或在设置 → 全局里填写路径。',
-  'warn.models': '语音模型还没下载（约 330 MB，只需一次）。导入素材时会自动下载，也可以现在下载。',
+  'warn.models': '语音模型还没下载（约 360 MB，只需一次）。导入素材时会自动下载，也可以现在下载。',
   'warn.modelsDownload': '下载模型',
   'warn.noSubtitleBurn': '本机 ffmpeg 不支持字幕烧录（缺 libass），视频里会是一条可开关的字幕轨。',
 
@@ -165,6 +165,9 @@ export const zh = {
   'settings.voiceprintMeta': '样本 {sec} 秒 · 出现 {episodes} 期',
   'settings.voiceprintConfirm': '删除{name}的声纹？以后不会再自动认出这个人，已剪好的工程不受影响。',
   'settings.models': '本机模型',
+  'settings.modelSource': '模型下载源',
+  'settings.modelSourceAuto': '自动选择（推荐）',
+  'settings.modelSourceMirror': 'HF-Mirror（国内镜像）',
   'settings.toolchain': '工具',
   'settings.found': '已找到',
   'settings.missing': '没找到',
@@ -198,6 +201,7 @@ export const zh = {
   'model.downloading': '下载中 {percent}%',
   'model.installed': '已安装',
   'model.failed': '失败',
+  'model.partial': '已下载 {percent}%，将续传',
 }
 
 export type VideoStudioKey = keyof typeof zh
@@ -243,7 +247,7 @@ export const en: Record<VideoStudioKey, string> = {
   'new.inherits': 'Uses this show’s intro/outro, loudness, subtitle style and voiceprints',
 
   'warn.noFfmpeg': 'ffmpeg was not found: import and export are unavailable. Install ffmpeg or set its path in Settings → Global.',
-  'warn.models': 'The speech models are not downloaded yet (about 330 MB, once). They download on first import, or now.',
+  'warn.models': 'The speech models are not downloaded yet (about 360 MB, once). They download on first import, or now.',
   'warn.modelsDownload': 'Download models',
   'warn.noSubtitleBurn': 'This ffmpeg cannot burn subtitles (no libass); the video gets a switchable subtitle track instead.',
 
@@ -361,6 +365,9 @@ export const en: Record<VideoStudioKey, string> = {
   'settings.voiceprintMeta': '{sec} s sample · in {episodes} episodes',
   'settings.voiceprintConfirm': 'Delete {name}’s voiceprint? This person will no longer be recognised automatically; finished projects are not affected.',
   'settings.models': 'Local models',
+  'settings.modelSource': 'Download source',
+  'settings.modelSourceAuto': 'Auto (recommended)',
+  'settings.modelSourceMirror': 'HF-Mirror (China mirror)',
   'settings.toolchain': 'Tools',
   'settings.found': 'Found',
   'settings.missing': 'Not found',
@@ -394,6 +401,7 @@ export const en: Record<VideoStudioKey, string> = {
   'model.downloading': 'Downloading {percent}%',
   'model.installed': 'Installed',
   'model.failed': 'Failed',
+  'model.partial': '{percent}% on disk, will resume',
 }
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {

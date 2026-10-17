@@ -27,7 +27,7 @@ dsh plugin --profile web add @khorsheed/dsh-video-studio
 dsh plugin --profile web add @khorsheed/dsh-presets   # editing mode (dsh-video)
 ```
 
-Needs `ffmpeg` / `ffprobe` on the host (on PATH, or set in the panel under Settings → Global). The speech models (about 330 MB: Paraformer Chinese ASR, CT-Transformer punctuation, pyannote segmentation, CAM++ voiceprints) download automatically on the first transcription into `$DSH_HOME/state/video-studio/models/`, or by hand from Settings.
+Needs `ffmpeg` / `ffprobe` on the host (on PATH, or set in the panel under Settings → Global). The speech models (about 360 MB: Paraformer Chinese ASR, CT-Transformer punctuation, pyannote segmentation, CAM++ voiceprints) download automatically on the first transcription into `$DSH_HOME/state/video-studio/models/`, or by hand from Settings. The download source is selectable under Settings → Global (auto / Hugging Face / HF-Mirror China mirror; auto probes for the fastest reachable source). Downloads resume from the bytes already on disk (a restart or network drop never re-downloads them) and are verified against pinned byte sizes and sha256 hashes on completion.
 
 Uninstall:
 

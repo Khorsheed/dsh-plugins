@@ -18,7 +18,7 @@ import { formatClock, keptRanges, outputDuration, removedRanges, toOutputTime } 
 import { SCHEMA_VERSION, type Edit, type Job, type JobKind, type JobPayload, type Project, type SettingKey, type Settings, type Show, type Source, type Speaker } from './core/types.ts'
 import { audioGraph, exportAudio, exportVideo, hasFilter, renderClip, videoGraph, windowOf } from './media/export.ts'
 import { MediaError, decodeMono, findBinaries, findBinary, probe, run, versionScore, writeAsrWav } from './media/ffmpeg.ts'
-import { ModelManager, speechModelPaths, type ModelStatus } from './media/models.ts'
+import { ModelManager, speechModelPaths, type ModelSourceChoice, type ModelStatus } from './media/models.ts'
 import { runSpeech } from './media/speech.ts'
 import { Store, newId, resolveStateRoot, type GlobalConfig } from './store.ts'
 import type { AudioChunk, MediaFile } from './types.ts'
@@ -919,7 +919,7 @@ export class VideoStudioService {
     const { ffmpeg } = await this.requireTools()
     if (!(await this.models.ready())) {
       progress(0.01)
-      await this.models.ensure()
+      await this.models.ensure((await this.store.global()).modelSource as ModelSourceChoice)
       if (!(await this.models.ready())) {
         const failed = this.models.list().find((m) => m.state === 'failed')
         throw new Error(`语音模型下载失败${failed?.error ? `：${failed.error}` : ''}，可在设置 → 全局里重试`)

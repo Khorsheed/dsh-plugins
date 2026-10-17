@@ -27,7 +27,7 @@ dsh plugin --profile web add @khorsheed/dsh-video-studio
 dsh plugin --profile web add @khorsheed/dsh-presets   # 剪辑模式（dsh-video）
 ```
 
-需要本机有 `ffmpeg` / `ffprobe`（在 PATH 上，或在面板「设置 → 全局」里填路径）。语音模型（约 330 MB：Paraformer 中文转写、CT-Transformer 标点、pyannote 分段、CAM++ 声纹）在第一次转写时自动下载到 `$DSH_HOME/state/video-studio/models/`，也可以在设置里手动下载。
+需要本机有 `ffmpeg` / `ffprobe`（在 PATH 上，或在面板「设置 → 全局」里填路径）。语音模型（约 360 MB：Paraformer 中文转写、CT-Transformer 标点、pyannote 分段、CAM++ 声纹）在第一次转写时自动下载到 `$DSH_HOME/state/video-studio/models/`，也可以在设置里手动下载。下载源可在「设置 → 全局」选择（自动选择 / Hugging Face / HF-Mirror 国内镜像，默认自动探测最快可达源），支持断点续传：进程重启或网络中断不丢已下载的字节，完成后按钉死的字节数与 sha256 校验。
 
 卸载：
 

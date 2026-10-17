@@ -102,6 +102,7 @@ export interface GlobalPatchRequest {
   ffmpegPath?: string
   ffprobePath?: string
   cleanupDays?: number
+  modelSource?: string
   key?: string
   value?: SettingValue
 }

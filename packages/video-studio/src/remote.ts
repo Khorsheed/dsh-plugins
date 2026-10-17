@@ -13,7 +13,7 @@ import { DEFAULT_SETTINGS } from './core/settings.ts'
 import type { SettingKey, Settings, Show } from './core/types.ts'
 import type { GlobalConfig } from './store.ts'
 import type { Overview, ProjectView, VideoStudioService } from './service.ts'
-import type { ModelStatus } from './media/models.ts'
+import type { ModelSourceChoice, ModelStatus } from './media/models.ts'
 import type {
   BindRequest, ClipRequest, CreateProjectRequest, CreateShowRequest, CutRequest, DecideRequest, ExportRequest,
   GlobalPatchRequest, ImportRequest, JobRef, ListMediaRequest, MediaFile, ProjectRef, ProjectSettingRequest, RenameProjectRequest, SegmentReassignRequest, SessionRef,
@@ -219,7 +219,8 @@ export class VideoStudioRemoteService extends TypertRemoteService<VideoStudioRem
   /** Start downloading any missing speech models (returns at once). */
   @Remote('downloadModels')
   async downloadModels(): Promise<ModelStatus[]> {
-    void this.svc.models.ensure()
+    const g = await this.svc.store.global()
+    void this.svc.models.ensure(g.modelSource as ModelSourceChoice)
     return this.svc.models.list()
   }
 }
