@@ -71,7 +71,7 @@ host 半边注册的 `inline-html-card` 与 `3d-artifact` 两个 skill 同属一
 <details>
 <summary>内部结构(点击展开)</summary>
 
-**架构。** 浏览器半部分是纯 DOM 层效果:不拥有 slot、不注册 Remote,只改写官方已渲染的 DOM——与 message-tools 的 dom-hider 同属仓库接受的 last-resort 模式,因此可以作为独立包组合,不改任何核心包。host 半部分(`src/index.ts`)只做一件事:经 `ctx.inject(['skills'], …)` 等 skill 注册表就绪后,注册随包的两个内容型 skill(SKILL.md 缺失/畸形只 warn 不 throw;组合里没有 `skills` 服务时保持 pending,绝不炸 boot)。身份三角:cordis.patch.yml 行 id `inline-html-render` = package.json name = `src/invariant.ts` 的 PACKAGE_NAME;invariant 伴生无运行时不变量,仅向 loader 登记存活。
+**架构。** 浏览器半部分是纯 DOM 层效果:不拥有 slot、不注册 Remote,只改写官方已渲染的 DOM——与 message-tools 的 dom-hider 同属仓库接受的 last-resort 模式,因此可以作为独立包组合,不改任何核心包。host 半部分(`src/index.ts`)只做一件事:经 `ctx.inject(['skills'], …)` 等 skill 注册表就绪后,注册随包的两个内容型 skill(SKILL.md 缺失/畸形只 warn 不 throw;组合里没有 `skills` 服务时保持 pending,绝不炸 boot)。身份三角:cordis.patch.yml 行 id `inline-html-render` = package.json name = tsdown `clientBundle` id。
 
 | 模块 | 职责 |
 | --- | --- |
