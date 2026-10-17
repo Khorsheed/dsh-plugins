@@ -14,6 +14,8 @@ Client-level, no storage change (misses and voids were already ledgered in attem
 - **A fresh set is the primary action once a station has been quizzed**: the ask button flips 请教练出题 → 再出一套新题, and the direction chips gain 「错题重考」 (with the miss count) when the station has misses — it primes the retake wording directly (same weak points, new angles, never the originals).
 - **Flagged questions close the loop**: the 章节考 tab lists voided questions (「你觉得有问题的题」) with a 「请教练换题」 gesture (prime.quiz.replace), and the coach prompt now teaches: a void is a broken question — when grading mentions voids, offer replacements.
 
+*(2026-10-18: two facts above moved on — the project-page 错题本 section became a 错题 band entry plus the station tab's 其他站 shelf (one shared collection in `client/mistakes.ts`), and the 错题重考 direction chip became the paper card's state-driven CTA. See [the quiz-loop note](2026-10-18-library-quiz-loop-points.md).)*
+
 ## Alternatives considered
 
 - **A separate 错题本 tab/route**: rejected — the project page is where the learner already lands; a section there beats another destination, and the cards view (source quiz) already serves the weakness-ledger reading.
@@ -22,8 +24,8 @@ Client-level, no storage change (misses and voids were already ledgered in attem
 
 ## Consequences
 
-- QuizTab's direction state is `LibraryQuizFocus | 'missed'` — the extra chip is priming-only, never sent to putQuiz.
-- The project page reads attempts + assessments once more per mount (both lists are small and already cached by the pane's poll).
+- QuizTab's direction state is back to plain `LibraryQuizFocus` — the priming-only `| 'missed'` chip was retired with the state-driven paper card (2026-10-18).
+- The project page reads attempts + assessments once per mount for the 错题 band entry (both lists are small and already cached by the pane's poll).
 
 ## Testing
 

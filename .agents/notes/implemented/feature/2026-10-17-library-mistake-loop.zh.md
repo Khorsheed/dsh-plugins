@@ -14,6 +14,8 @@ Status: implemented
 - **考过的站，主行动变成再出新题**：出题按钮从「请教练出题」变「再出一套新题」；出题方向 chips 在有错题时多一个「错题重考」（带错题数）——直接带重考话术（同薄弱点、新角度、不照抄原题）。
 - **作废题闭环**：章节考 tab 列出作废的题（「你觉得有问题的题」）+「请教练换题」手势（prime.quiz.replace），教练提示词也教了：void 就是坏题——判分提到作废时主动提出换题。
 
+*（2026-10-18：上文两处事实已演进——项目页「错题本」区块变成了统计行「错题」入口 + 站内折叠的「其他站」架（统一走 `client/mistakes.ts` 一本账），「错题重考」方向 chip 变成了考卷卡的状态化主按钮。见 [考试闭环 note](2026-10-18-library-quiz-loop-points.md)。）*
+
 ## 已否决方案
 
 - **单独的错题本 tab/路由**：否决——项目页就是学员的落点，那里一个区块胜过新去处；卡片页（来源 quiz）已覆盖弱点账本的读法。
@@ -22,8 +24,8 @@ Status: implemented
 
 ## 后果
 
-- QuizTab 的方向状态是 `LibraryQuizFocus | 'missed'`——多出的 chip 只管 prime，不进 putQuiz。
-- 项目页每次挂载多读一次 attempts + assessments（两个列表都小，且面板的轮询已缓存）。
+- QuizTab 的方向状态回到纯 `LibraryQuizFocus`——只管 prime 的 `| 'missed'` chip 随考卷卡状态化退役（2026-10-18）。
+- 项目页每次挂载为「错题」入口读一次 attempts + assessments（两个列表都小，且面板的轮询已缓存）。
 
 ## 测试
 
