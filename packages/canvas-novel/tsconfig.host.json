@@ -12,7 +12,6 @@
     "src/genre-agent.ts",
     "src/gestures.ts",
     "src/index.ts",
-    "src/invariant.ts",
     "src/remote.ts",
     "src/skill.ts",
     "src/store.ts",

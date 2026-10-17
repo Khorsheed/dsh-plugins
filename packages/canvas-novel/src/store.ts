@@ -41,7 +41,6 @@ import type { SandboxExecutionPolicy } from '@deepseek-ai/dsh-sandbox'
 import type { SandboxPolicyService } from '@deepseek-ai/dsh-sandbox-policy'
 import type { Session } from '@deepseek-ai/dsh-session'
 import { renderExtractBrief, type BriefData } from './brief.ts'
-import { PACKAGE_NAME } from './invariant.ts'
 import {
   canvasBoardOf, NOVEL_GENRE, NOVEL_ROLES, WORLD_KINDS,
   type CanvasBoardSlice, type NovelBoardMutation, type NovelBoardView, type NovelCardSource, type NovelCardView,
@@ -62,6 +61,9 @@ import {
   type OutlineDoc, type OutlineProposal, type OutlineSheet, type OutlineVolume,
 } from './types.ts'
 import { changedPlanFields, type PlanField } from './text-forms.ts'
+
+/** The package's npm name, stamped on store errors. */
+const PACKAGE_NAME = '@khorsheed/dsh-canvas-novel'
 
 /** The state directory name under `$DSH_HOME/state`. */
 export const NOVEL_STATE_DIR_NAME = 'novel'
