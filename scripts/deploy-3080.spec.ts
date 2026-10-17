@@ -31,7 +31,7 @@ if(process.env.FAILURE==='gate'&&cmd==='node'&&['preflight','schedule-exit'].inc
 if(process.env.FAILURE==='build'&&cmd==='pnpm'&&args.includes('build'))process.exit(5);
 if(cmd==='git')process.exit(0);
 if(cmd==='npx') { const dir=args[args.indexOf('--package')+1],out=args[args.indexOf('--out')+1],p=JSON.parse(fs.readFileSync(path.join(dir,'package.json'),'utf8')); for(const sec of ['dependencies','peerDependencies','devDependencies'])for(const [n,s]of Object.entries(p[sec]??{}))if(String(s).startsWith('workspace:')){for(const d of fs.readdirSync('packages')){const q=path.join('packages',d,'package.json');if(fs.existsSync(q)){const w=JSON.parse(fs.readFileSync(q,'utf8'));if(w.name===n){p[sec][n]='^'+w.version;break}}}} fs.mkdirSync(out,{recursive:true});fs.writeFileSync(path.join(out,'khorsheed-'+p.name.replace('@khorsheed/','')+'-'+p.version+'.tgz'),JSON.stringify(p)); }
-if(cmd==='node'&&args[1]==='plugin') { const p=JSON.parse(fs.readFileSync(file));for(const tar of args.slice(3,args.indexOf('--profile'))){const pkg=JSON.parse(fs.readFileSync(tar));p.dependencies[pkg.name]='file:'+tar;if(process.env.FAILURE!=='registration'&&!p.dsh.profile.bundles.includes(pkg.name))p.dsh.profile.bundles.push(pkg.name);}fs.writeFileSync(file,JSON.stringify(p)); }
+if(cmd==='node'&&args[1]==='plugin') { const p=JSON.parse(fs.readFileSync(file));for(const tar of args.slice(args.indexOf('add')+1)){const pkg=JSON.parse(fs.readFileSync(tar));p.dependencies[pkg.name]='file:'+tar;if(process.env.FAILURE!=='registration'&&!p.dsh.profile.bundles.includes(pkg.name))p.dsh.profile.bundles.push(pkg.name);}fs.writeFileSync(file,JSON.stringify(p)); }
 if(cmd==='pnpm'&&args[0]==='install') { const p=JSON.parse(fs.readFileSync(file)),ws=fs.existsSync(path.join(profile,'pnpm-workspace.yaml'))?fs.readFileSync(path.join(profile,'pnpm-workspace.yaml'),'utf8'):'';
  const pin=(n)=>{const tag="'"+n+"': 'file:";const i=ws.indexOf(tag);if(i<0)return null;const rest=ws.slice(i+tag.length);return rest.slice(0,rest.indexOf("'"));};
  const materialize=(pkg,dir)=>{fs.mkdirSync(dir,{recursive:true});fs.writeFileSync(path.join(dir,'package.json'),JSON.stringify(pkg));if(pkg.dsh&&pkg.dsh.bundle&&pkg.dsh.bundle.patch&&process.env.FAILURE!=='patch')fs.writeFileSync(path.join(dir,pkg.dsh.bundle.patch),'# fixture');};
@@ -131,8 +131,8 @@ describe('deploy 3080 flow', () => {
     expect(r.status, r.output).toBe(0)
     const add = r.calls.findIndex(c => c.includes('plugin'))
     expect(add).toBeGreaterThan(r.calls.findIndex(c => c.includes('--out')))
-    expect(r.calls[add].slice(2, 4)).toEqual(['plugin', 'add'])
-    expect(r.calls[add].at(-2)).toBe('--profile'); expect(r.calls[add].at(-1)).toBe('web')
+    expect(r.calls[add].slice(2, 6)).toEqual(['plugin', '--profile', 'web', 'add'])
+    expect(r.calls[add].slice(6).every(c => c.endsWith('.tgz'))).toBe(true)
     expect(r.calls[add + 1]).toEqual(['pnpm', 'install'])
     expect(JSON.parse(readFileSync(join(f.profile, 'package.json'), 'utf8')).dsh.profile.bundles).toContain('@khorsheed/dsh-demo')
   })
@@ -355,7 +355,7 @@ describe('deploy 3080 family bundle member retreat', () => {
     const add = r.calls.findIndex(c => c.includes('plugin'))
     expect(add).toBeGreaterThan(-1)
     expect(add).toBeGreaterThan(r.calls.findIndex(c => c.includes('--out'))) // registration after packing
-    expect(r.calls[add].slice(2, 4)).toEqual(['plugin', 'add'])
+    expect(r.calls[add].slice(2, 6)).toEqual(['plugin', '--profile', 'web', 'add'])
     expect(r.calls[add].some(c => c.includes('khorsheed-dsh-bundle-'))).toBe(true) // only the bundle registers
     expect(r.calls[add].some(c => c.includes('khorsheed-dsh-demo-'))).toBe(false)
     const manifest = JSON.parse(readFileSync(join(f.profile, 'package.json'), 'utf8'))

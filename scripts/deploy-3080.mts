@@ -408,7 +408,7 @@ try {
   writeFileSync(wsPath, ws)
   if (needsRegistration.length) {
     process.stdout.write(`\n=== official first-install / bundle registration: ${needsRegistration.map(m => m.name).join(', ')} ===\n`)
-    run('node', [hostCli, 'plugin', 'add', ...needsRegistration.map(m => m.tgzPath), '--profile', 'web'], {
+    run('node', [hostCli, 'plugin', '--profile', 'web', 'add', ...needsRegistration.map(m => m.tgzPath)], {
       env: { ...process.env, DSH_HOME, DSH_HARNESS: HARNESS },
     })
   }
