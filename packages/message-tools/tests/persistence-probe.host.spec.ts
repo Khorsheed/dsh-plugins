@@ -30,7 +30,9 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { createUserMessage, type UserMessage } from '@deepseek-ai/dsh-llm'
 import SessionStore, { Session, SessionId } from '@deepseek-ai/dsh-session'
-import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
+// Host 0.2.1: the package dropped its default export; the namespace object
+// (name + Config + apply) is the plugin shape cordis mounts.
+import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import MessageToolsService from '../src/index.ts'
 import {
