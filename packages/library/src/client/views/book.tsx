@@ -407,7 +407,10 @@ export function NodeView({ p, projectId, resourceId, nodeId, tab }: ViewProps & 
             node={node}
             passRatio={loaded.data?.passRatio ?? 0.8}
             resources={loaded.data?.resources ?? []}
-            onPrime={focus => { prime(resource === undefined ? t(`prime.quiz.station.${focus}`, { node: node.title }) : t(`prime.quiz.${focus}`, { book: resource.title, node: node.title })) }}
+            onPrime={(focus, weakTerms) => {
+              const base = resource === undefined ? t(`prime.quiz.station.${focus}`, { node: node.title }) : t(`prime.quiz.${focus}`, { book: resource.title, node: node.title })
+              prime(weakTerms !== undefined && weakTerms.length > 0 ? `${base}${t('prime.quiz.weakSuffix', { terms: weakTerms.join('、') })}` : base)
+            }}
             onRetake={prompts => { prime(t('prime.quiz.retake', { node: node.title, list: prompts.map(prompt => `- ${prompt}`).join('\n') })) }}
             onRetakeAll={prompts => { prime(t('prime.quiz.missedAll', { list: prompts.map(prompt => `- ${prompt}`).join('\n') })) }}
             onReplace={prompts => { prime(t('prime.quiz.replace', { node: node.title, list: prompts.map(prompt => `- ${prompt}`).join('\n') })) }}
@@ -692,7 +695,7 @@ function MissRow({ p, row, variant, book }: { p: ViewProps['p']; row: MissedRow;
 }
 
 function QuizTab({ p, projectId, resourceId, node, passRatio, resources, onPrime, onRetake, onRetakeAll, onReplace }: {
-  p: ViewProps['p']; projectId: string; resourceId: string | undefined; node: RoadmapNode; passRatio: number; resources: readonly LibraryResource[]; onPrime: (focus: LibraryQuizFocus) => void; onRetake: (prompts: string[]) => void; onRetakeAll: (prompts: string[]) => void; onReplace: (prompts: string[]) => void
+  p: ViewProps['p']; projectId: string; resourceId: string | undefined; node: RoadmapNode; passRatio: number; resources: readonly LibraryResource[]; onPrime: (focus: LibraryQuizFocus, weakTerms?: readonly string[]) => void; onRetake: (prompts: string[]) => void; onRetakeAll: (prompts: string[]) => void; onReplace: (prompts: string[]) => void
 }): ReactNode {
   const { t, actions, useStore } = p
   const rev = useStore(s => s.rev)
@@ -726,7 +729,9 @@ function QuizTab({ p, projectId, resourceId, node, passRatio, resources, onPrime
     if (landed !== undefined) actions.push({ view: 'quiz', projectId, ...(landed.scope.resourceId === undefined ? {} : { resourceId: landed.scope.resourceId }), quizId: landed.id })
   }, [quizCount, watching])
   const mine = useLoad(() => value(p.listCards({ projectId, nodeId: node.id, limit: 5 })), [projectId, node.id, rev])
-  // This station's missed questions — every quiz's latest sitting, joined by assessmentId.
+  // The station's weak cards drive both the 薄弱 line under the pass rule and the weak list the ask primes carry.
+  const weak = useLoad(() => value(p.listCards({ projectId, nodeId: node.id, weakMin: 1, limit: 5 })), [projectId, node.id, rev])
+  // Every attempt of the project — the paper card's state and the missed lists both read it (through mistakes.ts).
   const allAttempts = useLoad(() => value(p.listAttempts(projectId)), [projectId, rev])
   const stats = node.quizStats
   const mineCount = mine.data?.total ?? 0
@@ -762,7 +767,7 @@ function QuizTab({ p, projectId, resourceId, node, passRatio, resources, onPrime
     actions.push({ view: 'quiz', projectId, ...(quiz.scope.resourceId === undefined ? (resourceId === undefined ? {} : { resourceId }) : { resourceId: quiz.scope.resourceId }), quizId: quiz.id })
   }
   const ask = (): void => {
-    onPrime(direction)
+    onPrime(direction, weak.data?.cards.map(card => card.term) ?? [])
     setWatching({ since: Date.now(), count: quizCount })
   }
   const retake = (): void => {
@@ -779,6 +784,9 @@ function QuizTab({ p, projectId, resourceId, node, passRatio, resources, onPrime
         {t('node.passRule', { percent: String(Math.round(passRatio * 100)) })}
         {stats !== undefined && stats.attempts > 0 && ` · ${t('node.best', { percent: String(Math.round((stats.bestRatio ?? 0) * 100)), attempts: String(stats.attempts) })}`}
       </div>
+      {(weak.data?.cards.length ?? 0) > 0 && (
+        <div className={css.muted}>{t('node.weakLine', { terms: weak.data!.cards.map(card => card.term).join('、') })}</div>
+      )}
       <section className={css.policy}>
         <span className={css.muted}>{t('policy.title')}</span>
         <span>{t(`policy.${policy}`)}</span>
