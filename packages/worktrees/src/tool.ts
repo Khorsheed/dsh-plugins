@@ -3,7 +3,7 @@
  * composition entry (the canvas `./agent` pattern) for agent-preset
  * compositions. The row provides NO service (the preset-mount isolate-realm
  * rule forbids service rows), it only registers the model-facing `worktrees`
- * tool into the host tools registry, delegating to the global `ctx.worktrees`
+ * tool into the host tools registry, delegating to the global `ctx.worktreesCore`
  * service core the main row provides at the profile root — the official
  * tool-row shape (the shipped `tool-bash` rows work the same way). Granting
  * is therefore per-session: a preset names the row, its sessions get the
@@ -21,7 +21,7 @@
  * @module @khorsheed/dsh-worktrees/tool
  */
 import type { Context } from '@deepseek-ai/cordis'
-// Type-only: pulls this package's `Context.worktrees` service augmentation.
+// Type-only: pulls this package's `Context.worktreesCore` service augmentation.
 import type {} from './index.ts'
 import { defineWorktreesTool } from './tool-definition.ts'
 
@@ -43,7 +43,7 @@ const definePluginTool = <T extends object>(def: T): T =>
 export const name = 'worktrees-tool'
 
 /**
- * The `worktrees` core is a declared inject (the owning-family companion
+ * The `worktreesCore` core is a declared inject (the owning-family companion
  * exception to the community-service probe rule): a preset's standing scope
  * mounts at registry-activation time, BEFORE the profile's later bundle rows
  * provide the core, so a one-shot ctx.get probe at apply saw ABSENT there and
@@ -52,21 +52,21 @@ export const name = 'worktrees-tool'
  * applies. The tools registry still joins through deferred injection so its
  * mount order cannot strand the registration.
  */
-export const inject = ['worktrees']
+export const inject = ['worktreesCore']
 
 /**
- * Plugin body: register the tool. The declared `worktrees` inject pends the
+ * Plugin body: register the tool. The declared `worktreesCore` inject pends the
  * row until the core provides, so mount order can no longer strand it; the
  * in-body guard stays as the defensive direct-call path.
  * @param ctx - Cordis context (the preset's agent-plane mount).
  */
 export function apply(ctx: Context): void {
-  const service = ctx.get('worktrees')
+  const service = ctx.get('worktreesCore')
   if (service === undefined) {
     // Degrade, don't explode: the core plugin is not mounted in this
     // profile, so there is nothing to delegate to. The badge/tab UI is the
     // core's own concern and unaffected; only the model tool stays absent.
-    ctx.logger.info(`${name}: the global worktrees service is absent — the worktrees tool is not registered`)
+    ctx.logger.info(`${name}: the worktreesCore service is absent — the worktrees tool is not registered`)
     return
   }
   // Deferred injection, NOT an apply-time probe: `ctx.get('tools')` races the

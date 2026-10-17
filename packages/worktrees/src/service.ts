@@ -1,5 +1,5 @@
 /**
- * The worktrees service core. `ctx.worktrees` exposes this; the Remote
+ * The worktrees service core. `ctx.worktreesCore` exposes this; the Remote
  * service is a thin adapter that resolves the calling session's cwd and
  * delegates here — no logic is copied. Every query is a git read; the git
  * side stays stateless (the worktree registry is `git worktree list`

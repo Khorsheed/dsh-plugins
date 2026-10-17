@@ -69,7 +69,7 @@ afterEach(async () => {
 /** A Remote over one service on a real (but bare) cordis Context. */
 function makeRemote(service: WorktreesService): WorktreesRemoteService {
   const ctx = new Context()
-  Object.assign(ctx, { worktrees: service })
+  Object.assign(ctx, { worktreesCore: service })
   return new WorktreesRemoteService(ctx, {})
 }
 
@@ -319,7 +319,7 @@ describe('the worktrees/switched event', () => {
     const seen: WorktreeSwitchedEvent[] = []
     ctx.on(WORKTREES_SWITCHED_EVENT, event => { seen.push(event) })
     apply(ctx, { stateRoot })
-    const receipt = await ctx.worktrees.controlledSwitch(sessionId, { path: linked })
+    const receipt = await ctx.worktreesCore.controlledSwitch(sessionId, { path: linked })
     expect(receipt.kind).toBe('switched')
     expect(seen).toEqual([{ sessionId, path: canonicalLinked }])
     await ctx.fiber.dispose().catch(() => undefined)

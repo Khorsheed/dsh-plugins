@@ -47,7 +47,7 @@ preset 组合里引用 `@khorsheed/dsh-worktrees/tool` 的会话获得模型可�
 
 - **一个工具，四个动作**——`list` / `switch` / `create` / `remove`：列出会话仓库的全部 worktree（路径、分支、是否 main、脏文件数、stale 提示）；切换会话跟随的 worktree（徽标/tab 联动）；`git worktree add` 建新 worktree 并切过去；确认后删除。
 - **删除有服务侧硬闸门**——`remove` 必须带 `confirm: true`，main worktree 与有未提交改动的 worktree 一律被服务拒绝（代码强制，不只是提示词约定）。
-- **core 缺席就 pending，不炸**——行对 core 服务声明 `inject = ['worktrees']`：core 未挂载时该行保持 pending（注册表审计显示 `waiting for worktrees`），preset 组合照常挂载、不报错；core 出现后行自动激活。core 与本行同包，正常安装永远不会缺席。
+- **core 缺席就 pending，不炸**——行对 core 服务声明 `inject = ['worktreesCore']`：core 未挂载时该行保持 pending（注册表审计显示 `waiting for worktreesCore`），preset 组合照常挂载、不报错；core 出现后行自动激活。core 与本行同包，正常安装永远不会缺席。
 - **归因到本包**——工具携带 `dsh.tool.origin` 来源标记（owner = `@khorsheed/dsh-worktrees`），能力目录据此归因。
 
 ## 配置
@@ -89,13 +89,13 @@ preset 组合里引用 `@khorsheed/dsh-worktrees/tool` 的会话获得模型可�
 <details>
 <summary>内部结构（点击展开）</summary>
 
-**架构。** Host 半部分是服务核心 `WorktreesService`（`ctx.provide('worktrees')`）加 `WorktreesRemoteService` Typert Remote（cordis key `worktreesRemote`，wire 命名空间 `worktrees`，浏览器调 `remote.worktrees.*`）。git 面无状态——worktree 注册表就是 `git worktree list` 本身；唯一持有的状态是按会话的 active-worktree 绑定 map（配置状态根时写穿 `bindings.json`，挂载时加载回，见「工作区接入接缝」节）。Remote 是薄适配层，从调用方 agent 解析会话工作目录（会话的 active-worktree override 优先，回落 `header.cwd`）后委托给服务核心，零逻辑复制；agent-free 的 `*At` 动词则直接收绝对路径锚点。所有 git 命令都在解析出的仓库 toplevel 内执行，客户端给的路径一律先过 `assertSafePath`（拒绝绝对路径与 `..`）再参与 diff/读取——表面永远逃不出会话仓库。Remote 另带一组 git 无关的本地文件方法（`listLocalDirectory` / `readLocalFile` / `readLocalImage`）：绝对路径、同样过校验、不绑定会话，任何会话或全局框架都可调用。
+**架构。** Host 半部分是服务核心 `WorktreesService`（`ctx.provide('worktreesCore')`——键名 0.2.1 起带 `Core` 后缀，避开宿主实验包 `worktree` 提供的 `ctx.worktrees`）加 `WorktreesRemoteService` Typert Remote（cordis key `worktreesRemote`，wire 命名空间 `worktrees`，浏览器调 `remote.worktrees.*`）。git 面无状态——worktree 注册表就是 `git worktree list` 本身；唯一持有的状态是按会话的 active-worktree 绑定 map（配置状态根时写穿 `bindings.json`，挂载时加载回，见「工作区接入接缝」节）。Remote 是薄适配层，从调用方 agent 解析会话工作目录（会话的 active-worktree override 优先，回落 `header.cwd`）后委托给服务核心，零逻辑复制；agent-free 的 `*At` 动词则直接收绝对路径锚点。所有 git 命令都在解析出的仓库 toplevel 内执行，客户端给的路径一律先过 `assertSafePath`（拒绝绝对路径与 `..`）再参与 diff/读取——表面永远逃不出会话仓库。Remote 另带一组 git 无关的本地文件方法（`listLocalDirectory` / `readLocalFile` / `readLocalImage`）：绝对路径、同样过校验、不绑定会话，任何会话或全局框架都可调用。
 
 **客户端。** 经官方 `ctx.remote.$mount` 自挂载生成的 Remote contribution，无需改动任何核心包；组合里去掉本插件即移除它添加的所有表面。徽标注册进 `conversation.session.header.utilities`（order -20，最左）；右栏 tab 走官方两段式注册——类型进 `ctx.sidebarRightTabs`（套注册级显隐开关），body 进 keyed `sidebar.right.pane.tab` 槽位。「打开此文件夹」用 ui-content-preview 的 `OpenInAppProbe`（apply 时每页一次探测，结果经 snapshot store 供各表面订阅）；预览内核同样是 ui-content-preview 的 `ContentPane`。host→client 失效通知借用官方 `api/remotes` 白名单转发的两个事件（`api-session/status` 轮次边界、`api-session/activity` 用户消息）；`$on` 能力是探测出来的，老宿主没有它时徽标靠其余触发器照常工作。
 
 **指引 agent。** `directAgent` 把一条 durable `user/message`（`surfaceOp: 'append'`）追加进会话而不唤醒它：生产者归属 source kind `worktrees`、`form: 'notice'` 一行形态，transcript 立即渲染为上下文注入行，并在下一个模型边界折进上下文。读侧 `isWorktreesSource` 三种形态都认：新 kind、V3→V4 迁移形态 `plugin:@khorsheed/dsh-worktrees`、以及 0.1.5 宿主原位提供的 V3 包装（`kind: 'plugin'` + `plugin` 字段）。
 
-**模型工具在 `./tool` 子路径行。** 工具定义工厂 `defineWorktreesTool(service)` 住在内部模块 `./tool-definition.ts`（不进 exports 面），可挂载行是 `./tool` 导出（`name` / `inject = ['worktrees']` / `apply`，零 `ctx.provide`——preset 挂载面的 isolate-realm 规则只拒服务行，工具行可裸放 preset，官方 `tool-bash` 行同构），由各 agent preset 的 `agent.cordis.yml` 按名引用——能力按会话授予，profile 根永远没有这行。对 core 服务是**声明式 inject**（同族 companion 例外）：preset 的 standing scope 在注册表激活时挂载，早于 profile 靠后 bundle 行提供 core，一次性 `ctx.get` 探测曾在此竞态下看到 ABSENT 并静默惰死（2026-09-27 3080 实证）；声明式 inject 让行 pending 到 core 提供再激活，行内守卫仅留作防御性直调路径。工具注册走 `ctx.inject(['tools'])` 延迟注入。四个动作：`list`（路径/分支/是否主检出/脏文件数/是否已并回 base）、`switch`（会话徽标与 tab 跟随）、`create`（`git worktree add`，可 `-b` 新分支，随后切换）、`remove`（`confirm: true` 必填；主 worktree 与有未提交改动的 worktree 一律拒绝）。
+**模型工具在 `./tool` 子路径行。** 工具定义工厂 `defineWorktreesTool(service)` 住在内部模块 `./tool-definition.ts`（不进 exports 面），可挂载行是 `./tool` 导出（`name` / `inject = ['worktreesCore']` / `apply`，零 `ctx.provide`——preset 挂载面的 isolate-realm 规则只拒服务行，工具行可裸放 preset，官方 `tool-bash` 行同构），由各 agent preset 的 `agent.cordis.yml` 按名引用——能力按会话授予，profile 根永远没有这行。对 core 服务是**声明式 inject**（同族 companion 例外）：preset 的 standing scope 在注册表激活时挂载，早于 profile 靠后 bundle 行提供 core，一次性 `ctx.get` 探测曾在此竞态下看到 ABSENT 并静默惰死（2026-09-27 3080 实证）；声明式 inject 让行 pending 到 core 提供再激活，行内守卫仅留作防御性直调路径。工具注册走 `ctx.inject(['tools'])` 延迟注入。四个动作：`list`（路径/分支/是否主检出/脏文件数/是否已并回 base）、`switch`（会话徽标与 tab 跟随）、`create`（`git worktree add`，可 `-b` 新分支，随后切换）、`remove`（`confirm: true` 必填；主 worktree 与有未提交改动的 worktree 一律拒绝）。
 
 **身份锚点。** `cordis.patch.yml` 行 id `worktrees` 与 tsdown `clientBundle` id 同为 `@khorsheed/dsh-worktrees`。
 

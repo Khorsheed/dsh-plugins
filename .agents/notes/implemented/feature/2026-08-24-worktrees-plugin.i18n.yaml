@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-24-worktrees-plugin.md
-.agents/notes/implemented/feature/2026-08-24-worktrees-plugin.md: 3f48d7291ef12366a831e047c738dcc60c92166d
-.agents/notes/implemented/feature/2026-08-24-worktrees-plugin.zh.md: 469fdeff695a489c71644e1233f0632de953c417
+.agents/notes/implemented/feature/2026-08-24-worktrees-plugin.md: 51cc3cac24d67b14b92cebd21277584546a413be
+.agents/notes/implemented/feature/2026-08-24-worktrees-plugin.zh.md: 16a28285443e15ca1c6c0340e9bb469c9d2e1ba7

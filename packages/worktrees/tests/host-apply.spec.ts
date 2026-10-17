@@ -18,7 +18,7 @@ describe('worktrees core apply (post tool split)', () => {
       inject: vi.fn(),
     } as unknown as Context
     apply(ctx, {})
-    expect(ctx.provide).toHaveBeenCalledWith('worktrees', expect.anything())
+    expect(ctx.provide).toHaveBeenCalledWith('worktreesCore', expect.anything())
     expect(ctx.plugin).toHaveBeenCalledOnce()
     expect(ctx.inject).not.toHaveBeenCalled()
   })
