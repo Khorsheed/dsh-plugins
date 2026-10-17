@@ -57,8 +57,8 @@ export type { LocalAgentCodexKey }
 
 /**
  * This bundle's package name — the key the Plugins page dispatches
- * `plugins.bundle.config` entries on (identity triangle: cordis.patch.yml,
- * tsdown.config.ts, invariant.ts).
+ * `plugins.bundle.config` entries on (identity: cordis.patch.yml,
+ * tsdown.config.ts).
  */
 const PACKAGE_NAME = '@khorsheed/dsh-local-agent-codex'
 
