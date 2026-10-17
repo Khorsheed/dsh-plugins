@@ -876,7 +876,7 @@ function QuizTab({ p, projectId, resourceId, node, passRatio, resources, onPrime
       </section>
       {latest === undefined && (
         <div className={css.actions}>
-          <button type="button" className={css.primary} disabled={asking} onClick={ask}>{asking ? t('node.quizWaiting') : t('node.askQuiz')}</button>
+          <button type="button" className={css.primary} disabled={asking} onClick={ask}>{asking ? t('node.quizWaiting') : pickedTitles.length > 0 ? t('node.askPoints', { count: String(pickedTitles.length) }) : t('node.askQuiz')}</button>
         </div>
       )}
       {(missed.length > 0 || others.length > 0) && (
