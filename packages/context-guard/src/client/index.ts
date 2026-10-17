@@ -72,8 +72,8 @@ export { NS }
 
 /**
  * This bundle's package name — the key the Plugins page dispatches
- * `plugins.bundle.config` entries on (identity triangle: cordis.patch.yml,
- * tsdown.config.ts, invariant.ts).
+ * `plugins.bundle.config` entries on (also the cordis.patch.yml row name and
+ * the tsdown clientBundle id).
  */
 const PACKAGE_NAME = '@khorsheed/dsh-context-guard'
 
