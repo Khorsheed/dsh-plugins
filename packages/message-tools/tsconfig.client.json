@@ -24,6 +24,7 @@
     "src/client/withdraw-backfill.ts",
     "src/client/icons.tsx",
     "src/client/locales.ts",
+    "src/client/message-images.ts",
     "src/client/slots.ts",
     "src/client/withdrawn-node.ts",
     "src/client/ModelChip.tsx",

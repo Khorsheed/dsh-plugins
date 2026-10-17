@@ -71,9 +71,13 @@ function directoryState(over: Partial<ModelDirectoryState> = {}): ModelDirectory
   }
 }
 
+/** Session-authorized loader stub; the gallery factory receives it verbatim. */
+const loadImage = vi.fn(async () => 'blob:stub')
+
 function props(over: {
   node?: ChatConversationViewNode
   snapshotNodes?: readonly ChatConversationViewNode[]
+  renderFactorySlot?: (name: string, input: { images: readonly { attachment?: { name?: string } }[] }) => ReactNode
   renderMessageImages?: (owner: { images: readonly { attachment?: { name?: string } }[]; align: 'start' | 'end' }) => ReactNode
   editMessage?: (seq: number, text: string) => Promise<void>
   withdrawMessage?: (seq: number) => Promise<void>
@@ -88,7 +92,12 @@ function props(over: {
   const directory = over.directory ?? directoryState()
   return {
     node,
-    renderMessageImages: over.renderMessageImages ?? vi.fn(() => null),
+    loadImage,
+    // The 0.2.1 factory seat; the null default mirrors the seat's
+    // missing-factory result (a composition without ui-attachment).
+    renderFactorySlot: over.renderFactorySlot ?? vi.fn(() => null),
+    // The pre-0.2.1 owner prop stays absent unless a case exercises it.
+    ...(over.renderMessageImages === undefined ? {} : { renderMessageImages: over.renderMessageImages }),
     t,
     useChat: (select: (snapshot: ChatSlice) => unknown) => select(chat),
     editMessage: over.editMessage ?? vi.fn(async () => {}),
@@ -164,23 +173,33 @@ describe('UserMessageView images and extra blocks', () => {
     attachmentId: 'a1', mediaType: 'image/png', bytes: 10, width: 200, height: 100, name: 'photo.png',
   }
 
-  /** Stand-in for the rc8 attachment-slot renderer: one <img> per owned image. */
-  const galleryStub = (owner: { images: readonly { attachment?: { name?: string } }[] }): ReactNode => (
-    <>{owner.images.map((image, index) => <img key={index} alt={image.attachment?.name ?? 'image'} />)}</>
+  /** Stand-in for the official gallery: one <img> per owned image. */
+  const galleryStub = (input: { images: readonly { attachment?: { name?: string } }[] }): ReactNode => (
+    <>{input.images.map((image, index) => <img key={index} alt={image.attachment?.name ?? 'image'} />)}</>
   )
 
-  it('renders image blocks through the owner-prop attachment slot next to the bubble text', async () => {
-    const renderMessageImages = vi.fn(galleryStub)
+  it('renders image blocks through the conversation.images.content factory next to the bubble text', async () => {
+    const renderFactorySlot = vi.fn((_name: string, input: { images: readonly { attachment?: { name?: string } }[] }) => galleryStub(input))
     const node = userNode([{ type: 'text', text: '看图' }, { type: 'image', attachment }])
-    render(<UserMessageView {...props({ node, renderMessageImages })} />)
+    render(<UserMessageView {...props({ node, renderFactorySlot })} />)
     expect(screen.getByText('看图')).toBeTruthy()
+    expect(renderFactorySlot).toHaveBeenCalledWith('conversation.images.content', { images: [{ attachment }], loadImage, align: 'end' })
+    expect(await screen.findByRole('img', { name: 'photo.png' })).toBeTruthy()
+  })
+
+  it('prefers the pre-0.2.1 renderMessageImages owner prop when the host still passes it', async () => {
+    const renderMessageImages = vi.fn(galleryStub)
+    const renderFactorySlot = vi.fn(() => null)
+    const node = userNode([{ type: 'image', attachment }])
+    render(<UserMessageView {...props({ node, renderMessageImages, renderFactorySlot })} />)
     expect(renderMessageImages).toHaveBeenCalledWith({ images: [{ attachment }], align: 'end' })
+    expect(renderFactorySlot).not.toHaveBeenCalled()
     expect(await screen.findByRole('img', { name: 'photo.png' })).toBeTruthy()
   })
 
   it('omits the bubble for an image-only message', async () => {
     const node = userNode([{ type: 'image', attachment }])
-    render(<UserMessageView {...props({ node, renderMessageImages: vi.fn(galleryStub) })} />)
+    render(<UserMessageView {...props({ node, renderFactorySlot: vi.fn((_n: string, input: { images: readonly { attachment?: { name?: string } }[] }) => galleryStub(input)) })} />)
     expect(await screen.findByRole('img')).toBeTruthy()
     expect(screen.queryByRole('button', { name: /附加内容块/ })).toBeNull()
   })

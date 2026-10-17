@@ -6,7 +6,7 @@ import type { ReactNode } from 'react'
 import type { ModelSelection } from '@deepseek-ai/dsh-api-remotes/client'
 import type { ModelDirectoryState } from '@deepseek-ai/dsh-client-ui-model-selection/client'
 import type { MessageImagesOwnerProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
-import type { HostObservable, InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { HostObservable, InjectFace, PropsLocale, PropsRenderFactories, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: pulls ui-chat's SlotMap merge ('conversation.chat.node') and its
 // useChat session standard prop.
 import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
@@ -15,20 +15,17 @@ import type {} from './locales.ts'
 import type {} from './withdrawn-node.ts'
 
 /**
- * TODO(host-021 batch-3): host 0.2.1 removed `renderMessageImages` from
- * ChatNodeOwnerProps — the `conversation.message.images` slot split into
- * `conversation.chat.user.images` / `conversation.chat.message.images` plus
- * the `conversation.images.content` factory. The host no longer passes this
- * prop, so both views render TEXT-ONLY (the pre-existing undefined degrade
- * arm) until batch 3 rewires them to the new surface. This local OPTIONAL
- * prop keeps that degrade arm and the client tests compiling against the
- * pre-0.2.1 call shape; it is always undefined in production.
+ * The pre-0.2.1 image-gallery owner prop. Hosts before 0.2.1-alpha.3 pass a
+ * `renderMessageImages` closure in `ChatNodeOwnerProps` (the session-authorized
+ * loader is bound inside it); 0.2.1-alpha.3 removed the prop when the images
+ * slot split into `conversation.chat.user.images` /
+ * `conversation.chat.message.images` plus the root-scoped
+ * `conversation.images.content` factory. The views prefer this prop when the
+ * host still passes it and otherwise render through the factory seat
+ * (`PropsRenderFactories`), so one build serves both host lines.
  */
-export type RenderMessageImagesShim = (owner: Omit<MessageImagesOwnerProps, 'loadImage'>) => ReactNode
-
-/** The batch-3 shim prop both chat-node views accept (always undefined from the 0.2.1 host). */
-export interface RenderMessageImagesShimProp {
-  readonly renderMessageImages?: RenderMessageImagesShim | undefined
+export interface LegacyMessageImagesProp {
+  readonly renderMessageImages?: ((owner: Omit<MessageImagesOwnerProps, 'loadImage'>) => ReactNode) | undefined
 }
 
 /** Injected action face of the shadowed user-message entry. */
@@ -62,9 +59,10 @@ export interface MessageToolsInjected {
 /** Full props of the shadowed 'user'/'steering'/'message-tools-edited'/'message-tools-restored' renderer (all keys share it). */
 export type UserMessageViewProps =
   PropsRuntime<'conversation.chat.node', 'user' | 'steering' | 'message-tools-edited' | 'message-tools-restored'>
+  & PropsRenderFactories
   & InjectFace<MessageToolsInjected>
   & PropsLocale<'message-tools'>
-  & RenderMessageImagesShimProp
+  & LegacyMessageImagesProp
 
 /** Injected action face of the withdrawal divider entry. */
 export interface WithdrawnDividerInjected {
@@ -75,6 +73,7 @@ export interface WithdrawnDividerInjected {
 /** Full props of the withdrawal divider renderer. */
 export type WithdrawnDividerViewProps =
   PropsRuntime<'conversation.chat.node', 'message-tools-withdrawn'>
+  & PropsRenderFactories
   & InjectFace<WithdrawnDividerInjected>
   & PropsLocale<'message-tools'>
-  & RenderMessageImagesShimProp
+  & LegacyMessageImagesProp
