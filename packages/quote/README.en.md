@@ -113,9 +113,9 @@ dsh plugin --profile web remove @khorsheed/dsh-quote
 
 **Main-session detection (across host shapes)**: host 0.1.6-alpha.2 retired `SessionListState.current` in favor of the `retainedBy.mainView` count on each summary; the menu probes the count first and falls back to the legacy field, so the npm line and the source line share one code path.
 
-**Identity triangle**: the cordis row id `quote`, `clientBundle('@khorsheed/dsh-quote')`, and `src/invariant.ts`'s `PACKAGE_NAME` move together.
+**Identity**: the cordis row id `quote` and `clientBundle('@khorsheed/dsh-quote')` move together.
 
-**Exports**: `/client` exports the plugin body (`apply`/`inject`), `SelectionQuoteMenu`, `QuoteActionRegistryRuntime`, and the registry/selection-seam types; the host export is `QuoteRemoteService`, the `/types` subpath carries the wire payload types, and `/invariant` ships the deployment self-check.
+**Exports**: `/client` exports the plugin body (`apply`/`inject`), `SelectionQuoteMenu`, `QuoteActionRegistryRuntime`, and the registry/selection-seam types; the host export is `QuoteRemoteService`, and the `/types` subpath carries the wire payload types.
 </details>
 
 ## Development

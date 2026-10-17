@@ -2,7 +2,6 @@
  * TaskPilot bundle layout, via the shared clientBundle preset:
  *
  * - lib/index.js    — node half (ESM), registers the stop/interrupt commands.
- * - lib/invariant.js — invariant companion (registered by the invariants service).
  * - lib/client.js   — browser half, closure-factory bundle speaking the
  *   @deepseek-ai/dsh-client-modules loader contract (window.__ModuleLoader__).
  *
@@ -13,4 +12,4 @@
  */
 import { clientBundle } from '../../build/tsdown.client.ts'
 
-export default clientBundle('@khorsheed/dsh-taskpilot', ['lib/types/index.js', 'lib/types/invariant.js'])
+export default clientBundle('@khorsheed/dsh-taskpilot', ['lib/types/index.js'])

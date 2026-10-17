@@ -9,7 +9,6 @@
     "src/agent-setup.ts",
     "src/execution.ts",
     "src/index.ts",
-    "src/invariant.ts",
     "src/journal.ts",
     "src/remote.ts",
     "src/service.ts",

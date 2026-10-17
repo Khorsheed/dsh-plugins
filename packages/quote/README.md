@@ -112,9 +112,9 @@ dsh plugin --profile web remove @khorsheed/dsh-quote
 
 **主会话判定（跨宿主形状）**：宿主 0.1.6-alpha.2 起 `SessionListState.current` 退役，主视图会话改由每个 summary 的 `retainedBy.mainView` 计数表达；菜单先探计数、再回退旧字段，npm 线与源码线共用同一份代码。
 
-**身份三角**：cordis 行 id `quote` / `clientBundle('@khorsheed/dsh-quote')` / `src/invariant.ts` 的 `PACKAGE_NAME` 三处同名。
+**身份同名**：cordis 行 id `quote` 与 `clientBundle('@khorsheed/dsh-quote')` 同名。
 
-**导出**：`/client` 导出插件本体（`apply`/`inject`）、`SelectionQuoteMenu`、`QuoteActionRegistryRuntime` 与注册表/选区 seam 的类型；host 侧导出 `QuoteRemoteService`，`/types` 子路径提供线上载荷类型，`/invariant` 提供部署自检件。
+**导出**：`/client` 导出插件本体（`apply`/`inject`）、`SelectionQuoteMenu`、`QuoteActionRegistryRuntime` 与注册表/选区 seam 的类型；host 侧导出 `QuoteRemoteService`，`/types` 子路径提供线上载荷类型。
 </details>
 
 ## 开发

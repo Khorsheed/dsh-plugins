@@ -20,5 +20,5 @@
     "outDir": "lib/types",
     "types": ["node"]
   },
-  "include": ["src/index.ts", "src/invariant.ts", "src/types.ts"]
+  "include": ["src/index.ts", "src/types.ts"]
 }
