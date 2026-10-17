@@ -42,8 +42,12 @@ const BUNDLE_DIR = join(PROFILE, 'presets')
  * this one is gone, so the block now runs to the end of the file. A new
  * apparatus means a new run: results before and after this digest are not
  * comparable runs of one apparatus.
+ *
+ * host-021 (2026-10-17): the digest moved when the two dsh-tool-subagent rows
+ * dropped `backgroundMode` — host 0.2.1 rejects the key outright (managed
+ * activations are the only delegation mode). Same apparatus, new host line.
  */
-const DIRECTORY_COMPOSITION_SHA = '8f9267710150a11121845b71ad7aa8e0bffa2d23f4291dc0b2a8785d70daf111'
+const DIRECTORY_COMPOSITION_SHA = '19059d1869b502200300c9d33cc811e2a3c1e8f8c4d3ac3d493c05ac73d1bb31'
 
 /**
  * The preset-eval row's `plugins:` block, de-indented back to the directory
