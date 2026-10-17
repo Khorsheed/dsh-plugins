@@ -120,7 +120,6 @@
     "@deepseek-ai/dsh-client-ui-sidebar-right": "^0.2.0-rc.1",
     "@deepseek-ai/dsh-client-ui-slots": "^0.2.0-rc.1",
     "@deepseek-ai/dsh-fs": "^0.2.0-rc.1",
-    "@deepseek-ai/dsh-invariants": "^0.2.0-rc.1",
     "@deepseek-ai/dsh-llm": "^0.2.0-rc.1",
     "@deepseek-ai/dsh-loader-smoke": "^0.2.0-rc.1",
     "@deepseek-ai/dsh-native-command": "^0.2.0-rc.1",

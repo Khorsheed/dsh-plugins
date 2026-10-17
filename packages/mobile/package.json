@@ -115,7 +115,6 @@
     "@deepseek-ai/dsh-client-ui-slots": "^0.2.0-rc.1",
     "@deepseek-ai/dsh-client-ui-renderer": "^0.2.0-rc.1",
     "@deepseek-ai/dsh-client-ui-conversation": "^0.2.0-rc.1",
-    "@deepseek-ai/dsh-invariants": "^0.2.0-rc.1",
     "@types/node": "^26.2.0",
     "@types/react": "^18.3.1",
     "@types/react-dom": "^18.3.1",
