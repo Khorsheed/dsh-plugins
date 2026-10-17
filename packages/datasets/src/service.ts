@@ -34,7 +34,9 @@ import { finishRemoval, planRepoRemoval, repositoryDirOf, stageRemoval, type Rem
 import { notRegistered, openRegistry, type LatestCommit, type RegistryEntry, type RepoRegistry } from './registry.ts'
 import { normalizeRepoPath } from './repo-path.ts'
 import { readFileWithinRoot, writeFileWithinRoot } from './safe-write.ts'
-import { PACKAGE_NAME } from './invariant.ts'
+
+/** This package's published name (dispose-refusal messages carry it). */
+const PACKAGE_NAME = '@khorsheed/dsh-datasets'
 
 /**
  * The effective visibility scope of one call: the resolved repository plus

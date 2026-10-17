@@ -69,7 +69,7 @@ dsh plugin --profile web add @khorsheed/dsh-datasets    # 本插件
 
 配置（可选）：`materializedRoot`（物化根覆盖；缺省 `$DSH_HOME/state/datasets/materialized`，否则 `<cwd>/.dsh-datasets/materialized`）。登记文件固定在状态根下：`$DSH_HOME/state/datasets/registry.json`。`tools` 不再是本行的键：模型工具的分组配置搬到了本包的工具行 `@khorsheed/dsh-datasets/tool`，见[模型工具](#模型工具)。
 
-插件提供 `ctx.datasets` 服务供其他插件可选消费，挂载 `datasetsRemote` Typert Remote 服务（web 会话 tab 的数据面），并（在 composition 挂载 `@khorsheed/dsh-datasets/invariant` 时）于加载期检查物化根的结构完整性。`/datasets` slash 命令的**注册**自 preset 可见性收口（A3）起归工具行——落进 preset 的 scope 层，只有授予会话可见；handler 与定义仍在本包，由工具行调 `registerDatasetsSlash` 接入。`datasets_*` 模型工具与 `datasets:tools` 提示词段归本包的 `./tool` 组合入口（工具行 `@khorsheed/dsh-datasets/tool`），由 agent preset 按会话授予——见[模型工具](#模型工具)。
+插件提供 `ctx.datasets` 服务供其他插件可选消费，挂载 `datasetsRemote` Typert Remote 服务（web 会话 tab 的数据面）。`/datasets` slash 命令的**注册**自 preset 可见性收口（A3）起归工具行——落进 preset 的 scope 层，只有授予会话可见；handler 与定义仍在本包，由工具行调 `registerDatasetsSlash` 接入。`datasets_*` 模型工具与 `datasets:tools` 提示词段归本包的 `./tool` 组合入口（工具行 `@khorsheed/dsh-datasets/tool`），由 agent preset 按会话授予——见[模型工具](#模型工具)。
 
 ## 题库登记（T73）
 

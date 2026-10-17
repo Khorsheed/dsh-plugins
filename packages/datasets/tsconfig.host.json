@@ -14,7 +14,6 @@
     "src/format.ts",
     "src/git.ts",
     "src/index.ts",
-    "src/invariant.ts",
     "src/organizing-preset.ts",
     "src/repo-path.ts",
     "src/remote.ts",

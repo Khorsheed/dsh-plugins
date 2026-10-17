@@ -1,6 +1,6 @@
 /**
- * Default directory resolution, shared by the cordis plugin, the CLI, and the
- * invariant companion so all three agree on where materialized layers, the
+ * Default directory resolution, shared by the cordis plugin and the CLI so
+ * both agree on where materialized layers, the
  * registry, and the legacy session bindings live. Managed state must survive a restart, so it anchors
  * to DSH_HOME rather than any process-lifetime directory.
  */
