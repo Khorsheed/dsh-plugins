@@ -14,6 +14,26 @@ function schema(raw: string): { value: unknown; count: number | null } | null {
     return { value, count: schemaRecord(value) && schemaRecord(value.properties) ? Object.keys(value.properties).length : null }
   } catch { return null }
 }
+function RawSchema({ text, t }: { readonly text: string; readonly t: T }) {
+  const [copyState, setCopyState] = useState<'idle' | 'copying' | 'copied' | 'failed'>('idle')
+  const copy = async () => {
+    setCopyState('copying')
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopyState('copied')
+    } catch { setCopyState('failed') }
+  }
+  return <div className={css.rawSection}>
+    <section className={css.rawCode} aria-label={t('view.raw')}>
+      <div className={css.rawHead}>
+        <span className={css.rawLanguage}>JSON</span>
+        <span className={css.copyStatus} role="status" data-error={copyState === 'failed'}>{copyState === 'copied' ? t('lens.copied') : copyState === 'failed' ? t('lens.copyFailed') : ''}</span>
+        <button type="button" className={css.copyButton} disabled={copyState === 'copying'} onClick={() => void copy()}>{t('lens.copyJson')}</button>
+      </div>
+      <pre className={css.pre}><code>{text}</code></pre>
+    </section>
+  </div>
+}
 function ToolRow({ tool, t }: { readonly tool: ToolDefItem; readonly t: T }) {
   const [open, setOpen] = useState(false)
   const [raw, setRaw] = useState(false)
@@ -37,7 +57,7 @@ function ToolRow({ tool, t }: { readonly tool: ToolDefItem; readonly t: T }) {
     {open && <div className={css.toolBody}>
       <div className={css.toolToolbar}><span>{t('lens.toolDefinition')}</span><button type="button" className={css.more} aria-pressed={raw} onClick={() => setRaw(!raw)}>{t(raw ? 'view.structured' : 'view.raw')}</button></div>
       <div className={css.prose}>{tool.description}</div>
-      {raw ? <pre className={css.pre}>{tool.parameters}</pre> : parsed ? <SchemaFields value={parsed.value} t={t} /> : <div className={css.schemaCaption}>{t('schema.unreadable')}</div>}
+      {raw ? <RawSchema key={tool.parameters} text={tool.parameters} t={t} /> : parsed ? <SchemaFields value={parsed.value} t={t} /> : <div className={css.schemaCaption}>{t('schema.unreadable')}</div>}
     </div>}
   </details>
 }

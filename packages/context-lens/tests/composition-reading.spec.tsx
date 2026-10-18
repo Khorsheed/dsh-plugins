@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { SegmentBlocks } from '../src/client/SegmentBlocks.tsx'
 import { ToolCatalog } from '../src/client/ToolCatalog.tsx'
 import type { CapturedRequest, SegmentItem } from '../src/types.ts'
@@ -8,7 +8,7 @@ import type { InspectorTabProps } from '../src/client/contract.ts'
 import { zh } from '../src/client/locales.ts'
 const t = ((key: keyof typeof zh, params?: Record<string, string>) => zh[key].replace(/\{(\w+)\}/g, (match, name: string) => params?.[name] ?? match)) as InspectorTabProps['t']
 const originalScroll = Element.prototype.scrollIntoView
-afterEach(() => { cleanup(); vi.restoreAllMocks(); if (originalScroll) Element.prototype.scrollIntoView = originalScroll; else Reflect.deleteProperty(Element.prototype, 'scrollIntoView') })
+afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); if (originalScroll) Element.prototype.scrollIntoView = originalScroll; else Reflect.deleteProperty(Element.prototype, 'scrollIntoView') })
 const message = (index: number, category: SegmentItem['category'] = 'user'): SegmentItem => ({ index, category, source: 'test', preview: `preview-${index}`, full: `Body ${index}\n${'Long prose line.\n'.repeat(60)}`, chars: 1000, freshness: 'new' })
 const request = { seq: 1, scopeId: 'main', sessionId: 's', status: 'ok', startedAt: 0, config: {}, timing: {}, segments: { system: [], tools: [], history: [], added: [message(1), message(2, 'assistant'), message(3)] } } satisfies CapturedRequest
 const summary = (text: string) => screen.getByText(text).closest('summary')!
@@ -60,6 +60,32 @@ describe('composition reading', () => {
       fireEvent.click(within(row).getByRole('button', { name: '原始 JSON' }))
       expect(within(row).getByText(tool.parameters).textContent).toBe(tool.parameters)
     }
+  })
+  it('copies the complete original capture, including whitespace, and reports success', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('navigator', { clipboard: { writeText } })
+    const parameters = ' {\n "description": "' + '原始内容 '.repeat(500) + '"\n} '
+    render(<ToolCatalog tools={[{ name: 'copy-tool', description: 'Tool description', parameters, chars: parameters.length, added: false }]} t={t} />)
+    fireEvent.click(summary('copy-tool'))
+    fireEvent.click(screen.getByRole('button', { name: '原始 JSON' }))
+    const codeRegion = screen.getByRole('region', { name: '原始 JSON' })
+    expect(codeRegion.querySelector('pre')?.textContent).toBe(parameters)
+    fireEvent.click(within(codeRegion).getByRole('button', { name: '复制 JSON' }))
+    await waitFor(() => expect(within(codeRegion).getByRole('status').textContent).toBe('已复制'))
+    expect(writeText).toHaveBeenCalledWith(parameters)
+  })
+  it('reports blocked clipboard access without hiding the raw text and permits retry', async () => {
+    const writeText = vi.fn().mockRejectedValueOnce(new Error('Permission denied')).mockResolvedValueOnce(undefined)
+    vi.stubGlobal('navigator', { clipboard: { writeText } })
+    render(<ToolCatalog tools={[{ name: 'blocked-copy', description: '', parameters: '{truncated', chars: 10, added: false }]} t={t} />)
+    fireEvent.click(summary('blocked-copy'))
+    fireEvent.click(screen.getByRole('button', { name: '原始 JSON' }))
+    fireEvent.click(screen.getByRole('button', { name: '复制 JSON' }))
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('复制失败，请手动选择内容'))
+    expect(document.querySelector('pre')?.textContent).toBe('{truncated')
+    fireEvent.click(screen.getByRole('button', { name: '复制 JSON' }))
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('已复制'))
+    expect(writeText).toHaveBeenCalledTimes(2)
   })
 })
 
