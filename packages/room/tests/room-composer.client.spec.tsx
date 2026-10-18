@@ -1,13 +1,14 @@
 // @vitest-environment jsdom
 /** The room composer takeover: chain selector (room election + interaction yield), mention completion, dispatch submit, bare-message release, error line, the inherited environment surfaces (Stop, todo strip, queue strip, dock capsules, stats row). */
 import { describe, expect, it, vi, afterEach } from 'vitest'
+import { useSyncExternalStore } from 'react'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { UseProjection } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { ComposerChainProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { RoomComposer, selectRoomComposer } from '../src/client/RoomComposer.tsx'
 import { RoomStore, type RoomGateway } from '../src/client/room-store.ts'
 import { zh } from '../src/client/locales.ts'
@@ -55,16 +56,29 @@ interface SessionSlice {
 
 const IDLE: SessionSlice = { running: false, queue: [] }
 
+/** The input-machine slice the composer reads and writes (the draft only). */
+interface InputSlice {
+  readonly draft: string
+}
+
+type InputStore = ReturnType<typeof createSnapshotStore<InputSlice>>
+
 interface Bench {
   roomStore: RoomStore
   area: HTMLTextAreaElement
-  /** The session standard kit's official input actions (stubbed). */
-  inputActions: { setDraft: ReturnType<typeof vi.fn>; submit: ReturnType<typeof vi.fn> }
+  /**
+   * The fake official input machine: setDraft writes the store (the draft IS
+   * the machine now), submit must NEVER be called (busy admission stays out
+   * of the dispatch path), persistDraft is a best-effort flush spy.
+   */
+  inputActions: { setDraft: ReturnType<typeof vi.fn>; submit: ReturnType<typeof vi.fn>; persistDraft: ReturnType<typeof vi.fn> }
+  /** The machine's store — external writers (the quote path) push into it. */
+  inputStore: InputStore
   /** The injected main-agent turn Stop (stubbed). */
   stop: ReturnType<typeof vi.fn>
 }
 
-/** Render the composer with the framework shares stubbed (inputActions/stop are spies). */
+/** Render the composer with the framework shares stubbed (a stateful fake input machine backs the draft; stop is a spy). */
 async function bench(
   submit: (sessionId: SessionId, text: string, targets?: readonly string[]) => Promise<RoomMutationOutcome>,
   options: {
@@ -72,6 +86,8 @@ async function bench(
     t?: RoomComposerProps['t']
     session?: SessionSlice
     state?: RoomState
+    /** Prime (or share, across remounts) the machine's draft. */
+    inputStore?: InputStore
     renderMemberConfiguration?: RoomComposerProps['renderMemberConfiguration']
     renderMemberInbox?: RoomComposerProps['renderMemberInbox']
     stopMember?: (name: string) => void
@@ -79,7 +95,16 @@ async function bench(
   } = {},
 ): Promise<Bench> {
   const roomStore = await primedStore(options.state)
-  const inputActions = { setDraft: vi.fn(), submit: vi.fn() }
+  const inputStore = options.inputStore ?? createSnapshotStore<InputSlice>({ draft: '' })
+  const inputActions = {
+    setDraft: vi.fn((text: string) => { inputStore.set({ draft: text }) }),
+    submit: vi.fn(),
+    persistDraft: vi.fn(),
+  }
+  // The session standard kit's useInput: a reactive selector over the fake machine.
+  const useInput = (<T,>(selector: (snapshot: InputSlice) => T): T =>
+    // eslint-disable-next-line react-hooks/rules-of-hooks -- the framework hook contract, faked
+    useSyncExternalStore(inputStore.subscribe, () => selector(inputStore.getSnapshot()))) as unknown as RoomComposerProps['useInput']
   const stop = vi.fn()
   const slice = options.session ?? IDLE
   const useSession = (<T,>(selector: (snapshot: SessionSlice) => T): T => selector(slice)) as unknown as RoomComposerProps['useSession']
@@ -87,6 +112,7 @@ async function bench(
     sessionId: SESSION,
     matched: { room: true },
     inputActions,
+    useInput,
     roomStore,
     submit,
     stop,
@@ -110,7 +136,7 @@ async function bench(
   } as unknown as RoomComposerProps
   render(<RoomComposer {...props} />)
   const area = screen.getByRole('textbox') as HTMLTextAreaElement
-  return { roomStore, area, inputActions, stop }
+  return { roomStore, area, inputActions, inputStore, stop }
 }
 
 /** Change the draft with the caret at the end (a real typing position). */
@@ -160,8 +186,10 @@ describe('RoomComposer', () => {
     fireEvent.keyDown(area, { key: 'Enter' })
     await waitFor(() => { expect(submit).toHaveBeenCalledWith(SESSION, '@ada 出方案') })
     await waitFor(() => { expect(area.value).toBe('') })
-    // The dispatch path never touches the official input machine.
-    expect(inputActions.setDraft).not.toHaveBeenCalled()
+    // The draft lives in the official machine: typing wrote it there and the
+    // successful send cleared it there. The SUBMISSION never touches the
+    // machine — busy admission stays out of the dispatch path.
+    expect(inputActions.setDraft).toHaveBeenLastCalledWith('')
     expect(inputActions.submit).not.toHaveBeenCalled()
   })
 
@@ -171,10 +199,30 @@ describe('RoomComposer', () => {
     type(area, '随便聊聊')
     fireEvent.keyDown(area, { key: 'Enter' })
     await waitFor(() => { expect(area.value).toBe('') })
-    // The official input machine received the text and the submission —
-    // the room Remote was never called.
+    // Bare text dispatches through the room Remote (the host routes it to the
+    // current coordinator) — the official machine carries the draft only,
+    // never the submission.
     expect(inputActions.submit).not.toHaveBeenCalled()
     expect(submit).toHaveBeenCalledWith(SESSION, '随便聊聊')
+  })
+
+  it('reflects external machine-draft writes (the quote path) in the textarea', async () => {
+    const inputStore = createSnapshotStore<InputSlice>({ draft: '' })
+    const { area } = await bench(vi.fn(), { inputStore })
+    expect(area.value).toBe('')
+    // An external writer — quote-anything's 引用到当前会话 — drives the same
+    // official input machine the fallback bar renders; the takeover follows.
+    act(() => { inputStore.set({ draft: '> 况开场，从展开 Thinking 的日常体验切入。\n> —— 引用自「大模型心理学文章初稿组织」' }) })
+    expect(area.value).toBe('> 况开场，从展开 Thinking 的日常体验切入。\n> —— 引用自「大模型心理学文章初稿组织」')
+  })
+
+  it('keeps the draft across a remount (the machine owns it, not the component)', async () => {
+    const inputStore = createSnapshotStore<InputSlice>({ draft: '' })
+    const first = await bench(vi.fn(), { inputStore })
+    type(first.area, '写到一半')
+    cleanup()
+    const second = await bench(vi.fn(), { inputStore })
+    expect(second.area.value).toBe('写到一半')
   })
 
   it('triggers the menu on a whitespace-preceded @ anywhere (line start, mid-sentence, sentence end), never on a glued @', async () => {
@@ -278,11 +326,15 @@ describe('RoomComposer', () => {
 
   it('renders no stats row when the framework omits the projection seat entirely', async () => {
     const roomStore = await primedStore()
+    const inputStore = createSnapshotStore<InputSlice>({ draft: '' })
     const useSession = (<T,>(selector: (snapshot: SessionSlice) => T): T => selector(IDLE)) as unknown as RoomComposerProps['useSession']
     const props = {
       sessionId: SESSION,
       matched: { room: true },
-      inputActions: { setDraft: vi.fn(), submit: vi.fn() },
+      inputActions: { setDraft: vi.fn(), submit: vi.fn(), persistDraft: vi.fn() },
+      useInput: (<T,>(selector: (snapshot: InputSlice) => T): T =>
+        // eslint-disable-next-line react-hooks/rules-of-hooks -- the framework hook contract, faked
+        useSyncExternalStore(inputStore.subscribe, () => selector(inputStore.getSnapshot()))) as unknown as RoomComposerProps['useInput'],
       roomStore,
       submit: vi.fn(),
       stop: vi.fn(),

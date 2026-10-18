@@ -10,14 +10,22 @@
  * records explicit addressing wherever the `@name` sits in the sentence —
  * the text is dispatched verbatim, the picks ride the postMessage request's
  * `targets`). Hand-typed mid-sentence mentions without a menu pick stay
- * prose: they address nobody. A bare message (neither channel) is NOT room
- * business: it is released to the official submit
- * path — the takeover writes the text into the session's official input
- * machine (`inputActions.setDraft` + `inputActions.submit()`, the same entry
- * the InputBar's Enter key drives), so it becomes an ordinary main-agent
- * turn; sent while that turn runs, the machine's busy admission enqueues it
- * exactly as the official bar's does. A structured rejection (unknown
- * targets) shows as an inline error line.
+ * prose: they address nobody. EVERY send — bare text included — routes
+ * through room's own dispatch (the postMessage Remote; the host routes bare
+ * text to the current coordinator), never through `inputActions.submit()`:
+ * the machine's busy admission would enqueue behind a running coordinator
+ * and serialize what the dispatch engine deliberately runs in parallel. A
+ * structured rejection (unknown targets) shows as an inline error line.
+ *
+ * The DRAFT, though, lives in the session's official input machine: the
+ * chain occupant's standard session kit (`useInput`/`inputActions`) is this
+ * component's draft store, so the takeover and the display:none fallback
+ * share one draft — text typed during the first-pull election window
+ * carries over, drafts persist across navigation, and external draft
+ * writers (quote-anything's 引用到当前会话) land here with zero
+ * room-specific code. A reference chip in the machine projects to its
+ * clipboard text in this plain textarea, and editing flattens chips back
+ * to text (`setDraft` semantics).
  *
  * Taking over the chain inherits the official bar's environment duties (the
  * member-channel rule, local-agent 84a2ed0): a pending interaction yields (the
@@ -36,7 +44,7 @@
  */
 import { coordinatorMember } from '../journal.ts'
 import {
-  useRef, useState, useSyncExternalStore, type ChangeEvent, type KeyboardEvent, type ReactNode,
+  useEffect, useRef, useState, useSyncExternalStore, type ChangeEvent, type KeyboardEvent, type ReactNode,
 } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { ComposerChainProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -120,10 +128,13 @@ export function selectRoomComposer(
 export function RoomComposer({
   sessionId, roomStore, submit, stop, addTask, closeTask, setGoal, planCommand, openPlanSession, openPlan, stopExecution, backgroundSessions, activeChildren, stopChild, reconcileDelivery,
   roomCwd, invite, listProviders, listNames, browseDirectory, modelSurface, renderHarnessModelPicker, roomChrome,
-  modelDirectory, renderMemberConfiguration, renderMemberInbox, stopMember, useSession, useProjection, t,
+  modelDirectory, renderMemberConfiguration, renderMemberInbox, stopMember, useSession, useProjection, useInput, inputActions, t,
 }: RoomComposerProps): ReactNode {
   const state = useSyncExternalStore(roomStore.subscribe, () => roomStore.getCached(sessionId))
-  const [draft, setDraft] = useState('')
+  // The draft is the session's official input machine (the module header):
+  // shared with the hidden fallback bar, persistent across navigation, and
+  // writable by external drafters (quote) with zero room-specific code.
+  const draft = useInput(input => input.draft)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [mention, setMention] = useState<(ActiveMention & { index: number }) | null>(null)
@@ -160,9 +171,15 @@ export function RoomComposer({
     area.style.height = `${area.scrollHeight}px`
   }
 
+  // External draft writes (a quote insertion, the election window's
+  // carry-over) never fire onChange — keep the height in sync with the draft.
+  useEffect(() => {
+    if (areaRef.current !== null) resize(areaRef.current)
+  }, [draft])
+
   const onChange = (event: ChangeEvent<HTMLTextAreaElement>): void => {
     const value = event.target.value
-    setDraft(value)
+    inputActions.setDraft(value)
     resize(event.target)
     const active = detectMention(value, event.target.selectionStart ?? value.length)
     setMention(active === null ? null : { ...active, index: 0 })
@@ -172,9 +189,13 @@ export function RoomComposer({
     if (mention === null) return
     const caret = areaRef.current?.selectionStart ?? draft.length
     const next = `${draft.slice(0, mention.start)}@${name} ${draft.slice(caret)}`
-    setDraft(next)
+    inputActions.setDraft(next)
     setMention(null)
     setPicked(picked.includes(name) ? picked : [...picked, name])
+    // The machine tracks no caret: restore it behind the spliced pick once
+    // the store round-trip has re-rendered the textarea.
+    const restored = mention.start + name.length + 2
+    requestAnimationFrame(() => areaRef.current?.setSelectionRange(restored, restored))
   }
 
   const send = async (): Promise<void> => {
@@ -192,7 +213,11 @@ export function RoomComposer({
         setError(outcome.message)
         return
       }
-      setDraft('')
+      inputActions.setDraft('')
+      // Persist the cleared draft when the host's kit exposes the flush (the
+      // send bypasses the machine's own submit, which would do it).
+      const flushDraft = (inputActions as { persistDraft?: () => void }).persistDraft
+      flushDraft?.()
       setMention(null)
       setPicked([])
     } catch {

@@ -191,10 +191,13 @@ export interface RoomComposerInjected extends RoomTasksInjected, RoomInviteInjec
   readonly renderMemberConfiguration?: LocalAgentUi['renderMemberConfiguration'] | undefined
   readonly stopMember?: ((name: string, expectedRunId?: string) => void) | undefined
   /**
-   * Dispatch an @-message into the room and refresh the store on success.
-   * Bare messages never reach here — the composer releases them to the
-   * official submit path (useInput/inputActions) itself. `targets` carries
-   * the mention-menu picks (explicit addressing wherever the `@name` sits in
+   * Dispatch a message into the room and refresh the store on success. EVERY
+   * send routes here, bare text included (the host routes bare text to the
+   * current coordinator); the composer's useInput/inputActions kit carries
+   * the DRAFT only, never the submission — the official machine's busy
+   * admission must stay out of the dispatch path (it would serialize what
+   * the dispatch engine runs in parallel). `targets` carries the
+   * mention-menu picks (explicit addressing wherever the `@name` sits in
    * the sentence); the host unions them with the parsed leading tokens.
    */
   readonly submit: (sessionId: SessionId, text: string, targets?: readonly string[]) => Promise<RoomMutationOutcome>
