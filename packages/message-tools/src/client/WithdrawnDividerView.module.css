@@ -6,13 +6,14 @@
   padding: 2px 0;
 }
 
-/* The marker row: a quiet 24px button with a chevron, dim title, and the
-   optional restored badge. */
+/* The marker row: a quiet button with a chevron, dim title, and the
+   optional restored badge; height tracks the official compaction row's
+   24px-plus-font-delta band so a Settings font-size change never clips it. */
 .marker {
   display: flex;
   align-items: center;
   width: 100%;
-  height: 24px;
+  height: calc(24px + var(--dsh-content-font-delta, 0px));
   min-width: 0;
   padding: 0;
   border: none;
@@ -33,16 +34,18 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  height: 16px;
+  width: calc(16px + var(--dsh-content-font-delta, 0px));
+  height: calc(16px + var(--dsh-content-font-delta, 0px));
   margin-right: 6px;
   color: var(--dsw-alias-label-secondary, var(--dsw-alias-label-primary));
 }
 
 .title {
   flex: none;
-  font-size: 14px;
-  line-height: 24px;
+  /* The official compaction title's own metrics: secondary size on the
+     primary-delta band height. */
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: calc(24px + var(--dsh-content-font-delta, 0px));
   color: var(--dsw-alias-label-primary-dimmed, var(--dsw-alias-label-tertiary));
 }
 
@@ -52,8 +55,8 @@
   align-items: center;
   gap: 4px;
   margin-left: 10px;
-  font-size: 12px;
-  line-height: 18px;
+  font-size: calc(var(--dsh-content-font-size-secondary, 13px) - 1px);
+  line-height: calc(18px + var(--dsh-content-font-delta-secondary, 0px));
   color: var(--dsw-alias-label-tertiary, var(--dsw-alias-label-primary-dimmed));
 }
 
@@ -64,8 +67,8 @@
 
 .empty {
   color: var(--dsw-alias-label-tertiary, var(--dsw-alias-label-primary-dimmed));
-  font-size: 13px;
-  line-height: 20px;
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: calc(20px + var(--dsh-content-font-delta-secondary, 0px));
 }
 
 /* Replay entry text — the retired official `MessageText` primitive's exact
@@ -80,15 +83,16 @@
 .entryUser,
 .entryAssistant {
   padding: 4px 0;
-  font-size: 14px;
-  line-height: 22px;
+  /* Replayed message text follows the body size axis, like the live stream. */
+  font-size: var(--dsh-content-font-size, 14px);
+  line-height: calc(22px + var(--dsh-content-font-delta, 0px));
   color: var(--dsw-alias-label-secondary, var(--dsw-alias-label-primary));
 }
 
 .entryKind {
   margin-bottom: 2px;
-  font-size: 12px;
-  line-height: 18px;
+  font-size: calc(var(--dsh-content-font-size-secondary, 13px) - 1px);
+  line-height: calc(18px + var(--dsh-content-font-delta-secondary, 0px));
   color: var(--dsw-alias-label-tertiary, var(--dsw-alias-label-primary-dimmed));
 }
 
