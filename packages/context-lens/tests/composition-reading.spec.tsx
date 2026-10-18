@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { useState } from 'react'
 import { SegmentBlocks } from '../src/client/SegmentBlocks.tsx'
 import { ToolCatalog } from '../src/client/ToolCatalog.tsx'
 import type { CapturedRequest, SegmentItem } from '../src/types.ts'
@@ -13,6 +14,63 @@ const message = (index: number, category: SegmentItem['category'] = 'user'): Seg
 const request = { seq: 1, scopeId: 'main', sessionId: 's', status: 'ok', startedAt: 0, config: {}, timing: {}, segments: { system: [], tools: [], history: [], added: [message(1), message(2, 'assistant'), message(3)] } } satisfies CapturedRequest
 const summary = (text: string) => screen.getByText(text).closest('summary')!
 describe('composition reading', () => {
+  it('links exact duplicates across categories and collapsed layers, then returns with focus', () => {
+    const first = { ...message(1), source: 'user', sourceTurn: 1 }
+    const second = { ...message(7, 'plugin-injection'), full: first.full }
+    const third = { ...message(8, 'system'), full: first.full }
+    const captured = { ...request, segments: { ...request.segments, system: [third], history: [second], added: [first] } }
+    const scroll = vi.fn()
+    Object.defineProperty(Element.prototype, 'scrollIntoView', { configurable: true, value: scroll })
+    render(<SegmentBlocks request={captured} filterCat={null} previousResponseNumber={null} t={t} />)
+    fireEvent.click(summary('preview-1'))
+    expect(screen.getByText('user · 来源轮次 1')).toBeTruthy()
+    expect(screen.getByText('×3')).toBeTruthy()
+    expect(screen.getByRole('button', { name: '008 · 系统提示词 ↗' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '007 · 插件注入 ↗' }))
+    expect(summary('preview-7').closest('details')?.open).toBe(true)
+    expect(summary('preview-1').closest('details')?.open).toBe(false)
+    expect(document.activeElement).toBe(summary('preview-7'))
+    expect(summary('preview-7').closest('details')?.dataset.jump).toBe('true')
+    fireEvent.click(screen.getByRole('button', { name: '008 · 系统提示词 ↗' }))
+    expect(document.activeElement).toBe(summary('preview-8'))
+    fireEvent.click(screen.getByRole('button', { name: '返回 007 ↩' }))
+    expect(document.activeElement).toBe(summary('preview-7'))
+    fireEvent.click(screen.getByRole('button', { name: '返回 001 ↩' }))
+    expect(document.activeElement).toBe(summary('preview-1'))
+    expect(screen.queryByRole('button', { name: /返回/ })).toBeNull()
+    expect(scroll).toHaveBeenCalled()
+  })
+  it('reveals a duplicate hidden by a category filter, and leaves duplicates-only filtering intact', () => {
+    const first = message(1)
+    const second = { ...message(7, 'plugin-injection'), full: first.full }
+    const captured = { ...request, segments: { ...request.segments, history: [second], added: [first] } }
+    const clear = vi.fn()
+    function Filtered() {
+      const [filter, setFilter] = useState<'user' | null>('user')
+      return <SegmentBlocks request={captured} filterCat={filter} onClearFilter={() => { clear(); setFilter(null) }} previousResponseNumber={null} t={t} />
+    }
+    const view = render(<Filtered />)
+    fireEvent.click(summary('preview-1'))
+    expect(screen.queryByText('preview-7')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '007 · 插件注入 ↗' }))
+    expect(clear).toHaveBeenCalledTimes(1)
+    expect(document.activeElement).toBe(summary('preview-7'))
+    view.unmount(); clear.mockClear()
+    render(<SegmentBlocks request={captured} filterCat="__dup" onClearFilter={clear} previousResponseNumber={null} t={t} />)
+    fireEvent.click(summary('preview-1'))
+    fireEvent.click(screen.getByRole('button', { name: '007 · 插件注入 ↗' }))
+    expect(clear).not.toHaveBeenCalled()
+    expect(document.activeElement).toBe(summary('preview-7'))
+  })
+  it('never links short repeated text or matching previews with different full content', () => {
+    const short = { ...message(1), full: 'short' }
+    const shortCopy = { ...message(2), full: 'short' }
+    const samePreview = { ...message(3), preview: short.preview }
+    render(<SegmentBlocks request={{ ...request, segments: { ...request.segments, added: [short, shortCopy, samePreview] } }} filterCat={null} previousResponseNumber={null} t={t} />)
+    fireEvent.click(screen.getAllByText('preview-1')[0]!.closest('summary')!)
+    expect(screen.queryByText('全文一致')).toBeNull()
+    expect(screen.queryByText('×2')).toBeNull()
+  })
   it('jumps directly to the next visible message and preserves filter order', () => {
     const scroll = vi.fn()
     Object.defineProperty(Element.prototype, 'scrollIntoView', { configurable: true, writable: true, value: scroll })
