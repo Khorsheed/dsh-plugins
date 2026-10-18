@@ -41,11 +41,12 @@ export class ClaudeModelCatalog {
     /** Per-probe endpoint credential resolver (the scope's file over the plugin config). */
     endpoint?: (homeDir: string) => Promise<ClaudeEndpointAuth>
     /**
-     * The cache key's endpoint component: the plugin config's baseUrl. A
-     * scope FILE's baseUrl needs no place here — the file itself is in the
-     * key's fingerprinted file list, so editing it invalidates the cache.
+     * The cache key's endpoint component: the settings layer's baseUrl,
+     * resolved per read so a card write re-keys the cache. A scope FILE's
+     * baseUrl needs no place here — the file itself is in the key's
+     * fingerprinted file list, so editing it invalidates the cache.
      */
-    endpointLabel?: string
+    endpointLabel?: () => string | undefined
     cli?: string
     timeoutMs?: number
     ttlMs?: number
@@ -67,7 +68,8 @@ export class ClaudeModelCatalog {
       files.push(join(directory, '.claude', 'settings.json'), join(directory, '.claude', 'settings.local.json'))
       if (dirname(directory) === directory) break
     }
-    return modelDirectoryContextKey({ provider: 'claude-code', homeDir, cwd, cli: [this.deps.cli ?? 'claude'], files, ...this.deps.endpointLabel === undefined ? {} : { endpoint: this.deps.endpointLabel } })
+    const endpointLabel = this.deps.endpointLabel?.()
+    return modelDirectoryContextKey({ provider: 'claude-code', homeDir, cwd, cli: [this.deps.cli ?? 'claude'], files, ...endpointLabel === undefined ? {} : { endpoint: endpointLabel } })
   }
 
   read(homeDir: string, cwd?: string): LocalAgentModelDirectory { return this.cache.read(this.key(homeDir, cwd)) }

@@ -49,7 +49,10 @@ function makeSnapshot(
 }
 
 function claudeStatus(authenticated: boolean): LocalAgentStatus {
-  return { name: 'claude-code', displayName: 'Claude Code', authenticated, homeDir: '/h' }
+  // The endpoint-key era: no login flow is declared, so the core reports the
+  // harness as not loginable; logout (clearing the scope's endpoint file)
+  // still exists.
+  return { name: 'claude-code', displayName: 'Claude Code', authenticated, homeDir: '/h', loginable: false, logoutable: true }
 }
 
 interface CardHarness {
@@ -158,7 +161,10 @@ describe('ClaudeCodeSettingsCard', () => {
     await openCard()
 
     expect(screen.getByText(coreZh['settings.notAuthenticated'])).toBeTruthy()
-    expect(screen.getByRole('button', { name: coreZh['settings.login'] })).toBeTruthy()
+    // No login flow exists to offer: the endpoint credential form is the
+    // authentication surface.
+    expect(screen.queryByRole('button', { name: coreZh['settings.login'] })).toBeNull()
+    expect(screen.getByLabelText(zh['endpoint.baseUrl'])).toBeTruthy()
     const toggle = screen.getByRole('switch', { name: zh['live.title'] })
     expect(toggle.getAttribute('aria-checked')).toBe('false')
   })
@@ -200,18 +206,13 @@ describe('ClaudeCodeSettingsCard', () => {
     expect(screen.getByText(zh['live.unavailable'])).toBeTruthy()
   })
 
-  it('runs the auth login flow from the card (manual-handoff prompt)', async () => {
-    // claude ≥2.1 prints no OAuth URL off a TTY: the login reply is the exact
-    // terminal command to run, not a device-code URL.
-    const runCommand = vi.fn().mockResolvedValue('在终端执行：claude auth login（浏览器会打开授权页面），完成后用 /claude-code code <值> 粘贴授权码')
+  it('offers no login action — the harness has no login flow to run', async () => {
+    const runCommand = vi.fn().mockResolvedValue('')
     renderCard({ runCommand })
     await openCard()
 
-    fireEvent.click(screen.getByRole('button', { name: coreZh['settings.login'] }))
-    await act(async () => {})
-    expect(runCommand).toHaveBeenCalledWith(SESSION, '/claude-code login')
-    // (Full login/poll/toast parity — the manual handoff and code paste
-    // included — is pinned by the core package's block spec.)
+    expect(screen.queryByRole('button', { name: coreZh['settings.login'] })).toBeNull()
+    expect(runCommand).not.toHaveBeenCalled()
   })
 })
 
@@ -480,5 +481,67 @@ describe('ClaudeCodeBundleConfig', () => {
     fireEvent.click(screen.getByRole('switch', { name: zh['live.title'] }))
     await act(async () => {})
     expect(scope.set).toHaveBeenCalledWith('live', true)
+  })
+})
+
+describe('ClaudeCodeSettingsCard endpoint credential block', () => {
+  it('echoes the stored baseUrl but never the secrets (configured shows as a placeholder)', async () => {
+    renderCard({ value: { live: false, liveMirrorGranularity: 'event', baseUrl: 'https://relay.example.com/claude', apiKey: 'sk-stored' } })
+    await openCard()
+
+    const baseUrl = screen.getByLabelText(zh['endpoint.baseUrl']) as HTMLInputElement
+    expect(baseUrl.value).toBe('https://relay.example.com/claude')
+    const apiKey = screen.getByLabelText(zh['endpoint.apiKey']) as HTMLInputElement
+    expect(apiKey.value).toBe('')
+    expect(apiKey.placeholder).toBe(zh['endpoint.secret.configured'])
+    const authToken = screen.getByLabelText(zh['endpoint.authToken']) as HTMLInputElement
+    expect(authToken.placeholder).toBe(zh['endpoint.secret.placeholder'])
+  })
+
+  it('saves the typed endpoint and key through the scope, clearing drafts', async () => {
+    const harness = renderCard({})
+    await openCard()
+
+    fireEvent.change(screen.getByLabelText(zh['endpoint.baseUrl']), { target: { value: ' https://relay.example.com/claude ' } })
+    fireEvent.change(screen.getByLabelText(zh['endpoint.apiKey']), { target: { value: ' sk-new ' } })
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['endpoint.save'] })) })
+
+    expect(harness.scope.set).toHaveBeenCalledWith('baseUrl', 'https://relay.example.com/claude')
+    expect(harness.scope.set).toHaveBeenCalledWith('apiKey', 'sk-new')
+    expect(harness.scope.set).not.toHaveBeenCalledWith('authToken', expect.anything())
+    expect(screen.getByText(zh['endpoint.applied'])).toBeTruthy()
+    // The key draft cleared: the input is back to its placeholder state.
+    expect((screen.getByLabelText(zh['endpoint.apiKey']) as HTMLInputElement).value).toBe('')
+  })
+
+  it('a blank key write UNSETS the field (the clear gesture)', async () => {
+    const harness = renderCard({ value: { live: false, liveMirrorGranularity: 'event', apiKey: 'sk-stored' } })
+    await openCard()
+
+    const input = screen.getByLabelText(zh['endpoint.apiKey'])
+    fireEvent.change(input, { target: { value: 'x' } })
+    fireEvent.change(input, { target: { value: '' } })
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['endpoint.save'] })) })
+    expect(harness.scope.unset).toHaveBeenCalledWith('apiKey')
+    expect(harness.scope.set).not.toHaveBeenCalledWith('apiKey', expect.anything())
+  })
+
+  it('keeps save disabled until a draft exists', async () => {
+    renderCard({})
+    await openCard()
+    const save = screen.getByRole('button', { name: zh['endpoint.save'] }) as HTMLButtonElement
+    expect(save.disabled).toBe(true)
+    fireEvent.change(screen.getByLabelText(zh['endpoint.baseUrl']), { target: { value: 'https://relay.example.com' } })
+    expect(save.disabled).toBe(false)
+  })
+
+  it('an unchanged baseUrl is not re-written', async () => {
+    const harness = renderCard({ value: { live: false, liveMirrorGranularity: 'event', baseUrl: 'https://relay.example.com' } })
+    await openCard()
+    fireEvent.change(screen.getByLabelText(zh['endpoint.apiKey']), { target: { value: 'sk-new' } })
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['endpoint.save'] })) })
+    expect(harness.scope.set).toHaveBeenCalledWith('apiKey', 'sk-new')
+    expect(harness.scope.set).not.toHaveBeenCalledWith('baseUrl', expect.anything())
+    expect(harness.scope.unset).not.toHaveBeenCalledWith('baseUrl')
   })
 })

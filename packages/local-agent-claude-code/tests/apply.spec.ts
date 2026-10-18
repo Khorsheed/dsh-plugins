@@ -171,7 +171,7 @@ describe('local-agent-claude-code apply', () => {
   })
 
   it('reports the configured permission mode, live drive, and pinned endpoint', async () => {
-    const { home, registered } = mount({ live: true }, { permissionMode: 'normal', baseUrl: 'https://proxy.example.com/anthropic' })
+    const { home, registered } = mount({ live: true, baseUrl: 'https://proxy.example.com/anthropic' }, { permissionMode: 'normal' })
     const harness = registered[0]!
     await expect(harness.effectiveSettings!(home)).resolves.toEqual({
       drive: 'live',
@@ -223,8 +223,8 @@ describe('local-agent-claude-code apply', () => {
     })
   })
 
-  it('the config endpoint supplies the snapshot endpoint', async () => {
-    const { home, registered } = mount({}, { baseUrl: 'https://config.example.com/v1' })
+  it('the settings-layer endpoint supplies the snapshot endpoint (the YAML base reaches it)', async () => {
+    const { home, registered } = mount({ baseUrl: 'https://config.example.com/v1' })
     const harness = registered[0]!
     await expect(harness.effectiveSettings!(home)).resolves.toMatchObject({
       baseUrlSet: true,
@@ -232,8 +232,8 @@ describe('local-agent-claude-code apply', () => {
     })
   })
 
-  it('the scope endpoint file overrides the config endpoint in the snapshot', async () => {
-    const { home, registered } = mount({}, { baseUrl: 'https://config.example.com/v1', apiKey: 'sk-deploy' })
+  it('the scope endpoint file overrides the settings layer in the snapshot', async () => {
+    const { home, registered } = mount({ baseUrl: 'https://config.example.com/v1', apiKey: 'sk-deploy' })
     writeFileSync(join(home, 'endpoint-auth.json'), JSON.stringify({ baseUrl: 'https://scope.example.com/v1', apiKey: 'sk-scope' }))
     const harness = registered[0]!
     await expect(harness.effectiveSettings!(home)).resolves.toMatchObject({
@@ -326,19 +326,32 @@ describe('local-agent-claude-code model broker', () => {
 })
 
 describe('local-agent-claude-code endpoint auth', () => {
-  it('reports unauthenticated with neither a scope file nor a config key', async () => {
+  it('reports unauthenticated with neither a scope file nor a settings-layer key', async () => {
     const { home, registered } = mount()
     await expect(registered[0]!.isAuthenticated!(home)).resolves.toBe(false)
     await expect(registered[0]!.credentialStamp!(home)).resolves.toBeUndefined()
   })
 
-  it('the config apiKey authenticates every scope (the deployment default)', async () => {
-    const { home, registered } = mount({}, { baseUrl: 'https://relay.example.com', apiKey: 'sk-deploy' })
+  it('carries the YAML endpoint triple into the composition base', () => {
+    const { settings } = mount({}, { baseUrl: 'https://relay.example.com', apiKey: 'sk-deploy' })
+    const registration = settings.registrations[0] as { options?: { base?: object } }
+    expect(registration.options?.base).toEqual({ baseUrl: 'https://relay.example.com', apiKey: 'sk-deploy' })
+  })
+
+  it('the settings-layer apiKey authenticates every scope (the deployment default)', async () => {
+    const { home, registered } = mount({ baseUrl: 'https://relay.example.com', apiKey: 'sk-deploy' })
     await expect(registered[0]!.isAuthenticated!(home)).resolves.toBe(true)
   })
 
-  it('the config authToken authenticates too (the Bearer relay shape)', async () => {
-    const { home, registered } = mount({}, { authToken: 'tok-deploy' })
+  it('the settings-layer authToken authenticates too (the Bearer relay shape)', async () => {
+    const { home, registered } = mount({ authToken: 'tok-deploy' })
+    await expect(registered[0]!.isAuthenticated!(home)).resolves.toBe(true)
+  })
+
+  it('a card write reaches the credential resolution without a reload', async () => {
+    const { home, settings, registered } = mount()
+    await expect(registered[0]!.isAuthenticated!(home)).resolves.toBe(false)
+    settings.set({ live: false, liveMirrorGranularity: 'event', apiKey: 'sk-card' })
     await expect(registered[0]!.isAuthenticated!(home)).resolves.toBe(true)
   })
 
@@ -349,18 +362,27 @@ describe('local-agent-claude-code endpoint auth', () => {
     await expect(registered[0]!.credentialStamp!(home)).resolves.toBeTypeOf('number')
   })
 
+  it('the scope file outranks the settings layer field by field', async () => {
+    const { home, registered } = mount({ baseUrl: 'https://config.example.com/v1', apiKey: 'sk-deploy' })
+    writeFileSync(join(home, 'endpoint-auth.json'), JSON.stringify({ apiKey: 'sk-scope' }))
+    // Authenticated by the file; the snapshot still routes the fileless
+    // baseUrl field through the settings layer.
+    await expect(registered[0]!.isAuthenticated!(home)).resolves.toBe(true)
+    await expect(registered[0]!.effectiveSettings!(home)).resolves.toMatchObject({ baseUrlHost: 'config.example.com' })
+  })
+
   it('a baseUrl alone is not a credential', async () => {
-    const { home, registered } = mount({}, { baseUrl: 'https://relay.example.com' })
+    const { home, registered } = mount({ baseUrl: 'https://relay.example.com' })
     await expect(registered[0]!.isAuthenticated!(home)).resolves.toBe(false)
   })
 
-  it('logout clears the scope file and refuses when only the config carries the credential', async () => {
-    const { home, registered } = mount({}, { apiKey: 'sk-deploy' })
+  it('logout clears the scope file and refuses when only the settings layer carries the credential', async () => {
+    const { home, registered } = mount({ apiKey: 'sk-deploy' })
     writeFileSync(join(home, 'endpoint-auth.json'), JSON.stringify({ apiKey: 'sk-scope' }))
     await registered[0]!.logout!(home)
-    // The file is gone; the config credential still answers the probe.
+    // The file is gone; the settings-layer credential still answers the probe.
     await expect(registered[0]!.credentialStamp!(home)).resolves.toBeUndefined()
     await expect(registered[0]!.isAuthenticated!(home)).resolves.toBe(true)
-    await expect(registered[0]!.logout!(home)).rejects.toThrow('plugin config')
+    await expect(registered[0]!.logout!(home)).rejects.toThrow('settings card')
   })
 })

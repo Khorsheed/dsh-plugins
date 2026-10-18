@@ -63,16 +63,18 @@ export interface Config {
   /**
    * The deployment-level endpoint: `ANTHROPIC_BASE_URL` for every delegation
    * (e.g. a relay like `https://openproxy.to/claude`, or absent for the
-   * official API). A scope's own `endpoint-auth.json` overrides it field by
+   * official API). Editable on the settings card (the user layer over this
+   * YAML base); a scope's own `endpoint-auth.json` overrides both, field by
    * field. See endpoint-auth.ts for the whole auth model — there is no OAuth
    * path in this package.
    */
   baseUrl?: string
   /**
    * The deployment-level credential, sent as `ANTHROPIC_API_KEY` (the
-   * `x-api-key` header). Keep it in the LOCAL profile row only — never commit
-   * it (the repo hygiene gate blocks credential-shaped strings, but the
-   * profile is not the repo's business).
+   * `x-api-key` header). Editable on the settings card. Keep the YAML value
+   * in the LOCAL profile row only — never commit it (the repo hygiene gate
+   * blocks credential-shaped strings, but the profile is not the repo's
+   * business).
    */
   apiKey?: string
   /**
@@ -106,7 +108,8 @@ export interface Config {
 
 /**
  * The settings fields (`live`, `liveMirrorGranularity`, `model`,
- * `recentModels`) ride the plugin Config, marked `.volatile()` where the
+ * `recentModels`, and the endpoint credential `baseUrl`/`apiKey`/`authToken`)
+ * ride the plugin Config, marked `.volatile()` where the
  * host's schemastery has it (3.18.4+, the rc.1 line — probed, never sniffed):
  * there the SettingsForms writes hot-track the running fiber's Volatile
  * references without a remount, and the official one-shot import moves an old
@@ -122,6 +125,12 @@ const SETTINGS_FIELDS = {
   liveMirrorGranularity: z.union([z.const('event'), z.const('token')]).default('token'),
   model: z.string(),
   recentModels: z.array(z.string()).default([]),
+  // The endpoint credential rides the settings layer so the settings card can
+  // write it without a profile edit; the scope's endpoint-auth.json still
+  // outranks both layers (endpoint-auth.ts).
+  baseUrl: z.string(),
+  apiKey: z.string(),
+  authToken: z.string(),
 }
 
 /** Mark one schema field volatile when the host's schemastery has the method (rc.1), pass it through plain when not (0.1.5). */
@@ -138,9 +147,9 @@ export const Config: z = z.object({
     z.const('normal'),
   ]),
   model: volatilize(SETTINGS_FIELDS.model),
-  baseUrl: z.string(),
-  apiKey: z.string(),
-  authToken: z.string(),
+  baseUrl: volatilize(SETTINGS_FIELDS.baseUrl),
+  apiKey: volatilize(SETTINGS_FIELDS.apiKey),
+  authToken: volatilize(SETTINGS_FIELDS.authToken),
   proxyUrl: z.string(),
   live: volatilize(SETTINGS_FIELDS.live),
   liveIdleMs: z.number().default(DEFAULT_LIVE_IDLE_MS),
@@ -178,17 +187,6 @@ export function apply(ctx: Context, config: Config): void {
     void provisionClaudeHome(homeDir, config.proxyUrl).catch((error: unknown) => {
       ctx.logger.warn(`local-agent-claude-code: scoped home provisioning failed: ${error instanceof Error ? error.message : String(error)}`)
     })
-    // The endpoint credential's deployment level: the plugin config triple,
-    // merged per field UNDER the scope's own endpoint-auth.json at resolve
-    // time. Resolved PER ROUND (and per status probe) against the round's
-    // scoped home — a key rotation lands with the next read, no reload.
-    const endpointConfig: ClaudeEndpointAuth = {
-      ...config.baseUrl === undefined ? {} : { baseUrl: config.baseUrl },
-      ...config.apiKey === undefined ? {} : { apiKey: config.apiKey },
-      ...config.authToken === undefined ? {} : { authToken: config.authToken },
-    }
-    const resolveEndpoint = (scopeHome: string): Promise<ClaudeEndpointAuth> =>
-      resolveEndpointAuth(scopeHome, endpointConfig)
     // The live driver is settings-driven: the settings card's toggle (user
     // layer over the YAML composition base) swaps driver generations without
     // a reload. Toggling OFF drains the retiring generation — new rounds fall
@@ -201,15 +199,21 @@ export function apply(ctx: Context, config: Config): void {
     const readSettings = (): ClaudeLiveSettings => {
       const model = vol(config.model)
       const recentModels = vol(config.recentModels)
+      const baseUrl = vol(config.baseUrl)
+      const apiKey = vol(config.apiKey)
+      const authToken = vol(config.authToken)
       return {
         live: vol(config.live) ?? false,
         liveMirrorGranularity: vol(config.liveMirrorGranularity) ?? 'token',
         ...model === undefined ? {} : { model },
         ...recentModels === undefined ? {} : { recentModels },
+        ...baseUrl === undefined ? {} : { baseUrl },
+        ...apiKey === undefined ? {} : { apiKey },
+        ...authToken === undefined ? {} : { authToken },
       }
     }
     const legacyBase: Record<string, unknown> = {}
-    for (const field of ['live', 'liveMirrorGranularity', 'model'] as const) {
+    for (const field of ['live', 'liveMirrorGranularity', 'model', 'baseUrl', 'apiKey', 'authToken'] as const) {
       const value = vol(config[field])
       if (value !== undefined) legacyBase[field] = value
     }
@@ -219,6 +223,18 @@ export function apply(ctx: Context, config: Config): void {
       legacyBase,
       read: readSettings,
     })
+    // The endpoint credential, resolved PER READ: the scope's
+    // endpoint-auth.json merged field by field over the settings layer (the
+    // card's user layer over the profile's YAML base — both reached through
+    // the face, so a card write lands on the next round with no reload).
+    const resolveEndpoint = (scopeHome: string): Promise<ClaudeEndpointAuth> => {
+      const current = face.get()
+      return resolveEndpointAuth(scopeHome, {
+        ...current.baseUrl === undefined ? {} : { baseUrl: current.baseUrl },
+        ...current.apiKey === undefined ? {} : { apiKey: current.apiKey },
+        ...current.authToken === undefined ? {} : { authToken: current.authToken },
+      })
+    }
     // The model is read PER ROUND, not captured at apply: the settings card
     // writes the same namespace field, so a change has to reach the next
     // delegation without a plugin reload — exactly like the live toggle.
@@ -258,7 +274,7 @@ export function apply(ctx: Context, config: Config): void {
     const modelCatalog = new ClaudeModelCatalog({
       spawn: spec => ctx.subprocess.spawn(spec),
       endpoint: resolveEndpoint,
-      ...config.baseUrl === undefined ? {} : { endpointLabel: config.baseUrl },
+      endpointLabel: () => face.get().baseUrl,
       warn: message => ctx.logger.warn(message),
     })
     const modelContext = (childSessionId?: string): { home: string; cwd: string | undefined } => {
@@ -330,7 +346,7 @@ export function apply(ctx: Context, config: Config): void {
           await clearEndpointAuth(home)
           return
         }
-        throw new Error('claude-code has no scoped endpoint-auth.json to clear — the credential comes from the plugin config (baseUrl/apiKey/authToken); edit the profile row instead')
+        throw new Error('claude-code has no scoped endpoint-auth.json to clear — the credential comes from the settings card or the profile row (baseUrl/apiKey/authToken); clear it there instead')
       },
       // The model surface: the settings card reads the memberless info ("what
       // would a round run with"), the member composer reads and switches a

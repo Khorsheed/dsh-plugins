@@ -44,3 +44,25 @@ describe('provisionClaudeHome proxy env', () => {
     await expect(access(join(home, 'settings.json'))).rejects.toMatchObject({ code: 'ENOENT' })
   })
 })
+
+describe('provisionClaudeHome legacy OAuth sweep', () => {
+  it('removes the grant file and the oauthAccount marker, keeping other .claude.json state', async () => {
+    const home = tempHome()
+    writeFileSync(join(home, '.credentials.json'), '{"claudeAiOauth":{"accessToken":"stale"}}')
+    writeFileSync(join(home, '.claude.json'), JSON.stringify({ oauthAccount: { emailAddress: 'x@example.com' }, hasCompletedOnboarding: true }))
+    await provisionClaudeHome(home)
+    const { access, readFile } = await import('node:fs/promises')
+    await expect(access(join(home, '.credentials.json'))).rejects.toMatchObject({ code: 'ENOENT' })
+    const config = JSON.parse(await readFile(join(home, '.claude.json'), 'utf8'))
+    expect(config.oauthAccount).toBeUndefined()
+    expect(config.hasCompletedOnboarding).toBe(true)
+  })
+
+  it('is a no-op on a fresh or malformed home', async () => {
+    const home = tempHome()
+    writeFileSync(join(home, '.claude.json'), 'not json')
+    await expect(provisionClaudeHome(home)).resolves.toBeUndefined()
+    const fresh = tempHome()
+    await expect(provisionClaudeHome(fresh)).resolves.toBeUndefined()
+  })
+})

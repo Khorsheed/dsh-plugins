@@ -36,6 +36,12 @@ export interface ClaudeLiveSettings {
   model?: string
   /** Model identifiers saved before; the input's suggestions, capped at five. */
   recentModels?: readonly string[]
+  /** The endpoint (`ANTHROPIC_BASE_URL`); blank/absent = Anthropic's own endpoint. */
+  baseUrl?: string
+  /** The `x-api-key` credential. Never echoed back by the card; a write replaces it, a blank write clears it. */
+  apiKey?: string
+  /** The `Authorization: Bearer` credential. Same no-echo rule as {@link apiKey}. */
+  authToken?: string
 }
 
 /** Injected face of the claude-code settings card. */
@@ -221,11 +227,52 @@ function useCardState(
         ? t('model.menuDefaultLastObserved', { model: modelSurface.lastObserved })
         : t('model.menuDefault')
 
+  // The endpoint credential fields: baseUrl echoes (it is not a secret); the
+  // two keys never echo — a configured key shows as a "configured" placeholder
+  // and the input holds only the draft of a REPLACEMENT. A blank key write
+  // clears the field; a blank baseUrl unsets it (the official endpoint).
+  const storedBaseUrl = snapshot.value?.baseUrl ?? ''
+  const apiKeyConfigured = (snapshot.value?.apiKey ?? '').trim() !== ''
+  const authTokenConfigured = (snapshot.value?.authToken ?? '').trim() !== ''
+  const [baseUrlDraft, setBaseUrlDraft] = useState<string | null>(null)
+  const [apiKeyDraft, setApiKeyDraft] = useState<string | null>(null)
+  const [authTokenDraft, setAuthTokenDraft] = useState<string | null>(null)
+  const [endpointSaved, setEndpointSaved] = useState(false)
+  const [endpointError, setEndpointError] = useState(false)
+  const endpointDirty = baseUrlDraft !== null || apiKeyDraft !== null || authTokenDraft !== null
+  const saveEndpoint = (): void => {
+    setEndpointSaved(false)
+    setEndpointError(false)
+    const writes: Promise<unknown>[] = []
+    const nextBaseUrl = (baseUrlDraft ?? storedBaseUrl).trim()
+    if (baseUrlDraft !== null && nextBaseUrl !== storedBaseUrl) {
+      writes.push(nextBaseUrl === '' ? scope.unset('baseUrl') : scope.set('baseUrl', nextBaseUrl))
+    }
+    if (apiKeyDraft !== null) {
+      writes.push(apiKeyDraft.trim() === '' ? scope.unset('apiKey') : scope.set('apiKey', apiKeyDraft.trim()))
+    }
+    if (authTokenDraft !== null) {
+      writes.push(authTokenDraft.trim() === '' ? scope.unset('authToken') : scope.set('authToken', authTokenDraft.trim()))
+    }
+    void Promise.all(writes).then(
+      () => {
+        setBaseUrlDraft(null)
+        setApiKeyDraft(null)
+        setAuthTokenDraft(null)
+        setEndpointSaved(true)
+      },
+      () => { setEndpointError(true) },
+    )
+  }
+
   return {
     snapshot, saved, error, ready, live, storedModel, modelValue, modelSaved,
     modelError, choices, modelMenuOpen, modelMenuUp, modelFieldRef,
     modelPlaceholder, modelDefaultItem, saveModel, write, toggleModelMenu,
     setModelDraft, setModelMenuOpen,
+    baseUrlValue: baseUrlDraft ?? storedBaseUrl, apiKeyConfigured, authTokenConfigured,
+    apiKeyDraft, authTokenDraft, endpointSaved, endpointError, endpointDirty,
+    saveEndpoint, setBaseUrlDraft, setApiKeyDraft, setAuthTokenDraft,
   }
 }
 
@@ -243,6 +290,9 @@ function CardBody({ state, auth, authT, renderModelPicker, useSessions, t }: {
     modelError, choices, modelMenuOpen, modelMenuUp, modelFieldRef,
     modelPlaceholder, modelDefaultItem, saveModel, write, toggleModelMenu,
     setModelDraft, setModelMenuOpen,
+    baseUrlValue, apiKeyConfigured, authTokenConfigured, apiKeyDraft, authTokenDraft,
+    endpointSaved, endpointError, endpointDirty, saveEndpoint,
+    setBaseUrlDraft, setApiKeyDraft, setAuthTokenDraft,
   } = state
   // The free-text input, single-sourced for both presentations: bare when no
   // vocabulary exists (a fresh install degrades to exactly the pre-picker
@@ -262,7 +312,12 @@ function CardBody({ state, auth, authT, renderModelPicker, useSessions, t }: {
   return (
     <div className={css.body}>
       <section className={css.block}>
-        <h3 className={css.blockTitle}>{t('auth.title')}</h3>
+        <h3 className={css.blockTitle}>
+          {t('auth.title')}
+          <Tooltip label={t('endpoint.info')} side="bottom" maxWidth={360}>
+            <button type="button" className={css.info} aria-label={t('endpoint.info.aria')}>ⓘ</button>
+          </Tooltip>
+        </h3>
         <ProviderAuthBlock
           harness={{ id: 'claude-code', label: 'Claude Code' }}
           useSessions={useSessions}
@@ -270,6 +325,49 @@ function CardBody({ state, auth, authT, renderModelPicker, useSessions, t }: {
           runCommand={auth.runCommand}
           t={authT}
         />
+        <div className={css.endpointFields}>
+          <input
+            type="text"
+            className={css.modelInput}
+            value={baseUrlValue}
+            placeholder={t('endpoint.baseUrl.placeholder')}
+            aria-label={t('endpoint.baseUrl')}
+            disabled={!ready}
+            onChange={(event) => { setBaseUrlDraft(event.currentTarget.value) }}
+          />
+          <input
+            type="password"
+            className={css.modelInput}
+            value={apiKeyDraft ?? ''}
+            placeholder={apiKeyConfigured ? t('endpoint.secret.configured') : t('endpoint.secret.placeholder')}
+            aria-label={t('endpoint.apiKey')}
+            autoComplete="off"
+            disabled={!ready}
+            onChange={(event) => { setApiKeyDraft(event.currentTarget.value) }}
+          />
+          <input
+            type="password"
+            className={css.modelInput}
+            value={authTokenDraft ?? ''}
+            placeholder={authTokenConfigured ? t('endpoint.secret.configured') : t('endpoint.secret.placeholder')}
+            aria-label={t('endpoint.authToken')}
+            autoComplete="off"
+            disabled={!ready}
+            onChange={(event) => { setAuthTokenDraft(event.currentTarget.value) }}
+          />
+          <div className={css.row}>
+            <button
+              type="button"
+              className={css.modelSave}
+              disabled={!ready || !endpointDirty}
+              onClick={() => { saveEndpoint() }}
+            >
+              {t('endpoint.save')}
+            </button>
+            {endpointSaved && <span className={css.saved}>{t('endpoint.applied')}</span>}
+            {endpointError && <span className={css.errorText}>{t('endpoint.error')}</span>}
+          </div>
+        </div>
       </section>
       <section className={css.block}>
         <h3 className={css.blockTitle}>

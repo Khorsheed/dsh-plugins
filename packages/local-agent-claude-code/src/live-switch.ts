@@ -26,6 +26,16 @@ export interface ClaudeLiveSettings {
   model?: string
   /** Model identifiers the card has saved before (its input's suggestions). */
   recentModels?: readonly string[]
+  /**
+   * The endpoint credential, editable on the settings card (the user layer
+   * over the YAML base). The scope's endpoint-auth.json still outranks both;
+   * the harness resolves the merge per round (endpoint-auth.ts).
+   */
+  baseUrl?: string
+  /** The `x-api-key` credential (see {@link baseUrl}). */
+  apiKey?: string
+  /** The `Authorization: Bearer` credential (see {@link baseUrl}). */
+  authToken?: string
 }
 
 /** The Cordis-config inputs every driver generation shares. */

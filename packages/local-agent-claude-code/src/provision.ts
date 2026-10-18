@@ -12,7 +12,7 @@
  * @module @khorsheed/dsh-local-agent-claude-code/provision
  */
 
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
 /** The scoped settings file carrying the CLI's env block. */
@@ -21,17 +21,25 @@ const SCOPED_SETTINGS = 'settings.json'
 /**
  * Provision the scoped home directory. Claude creates it lazily on first
  * use, but creating it eagerly keeps the harness's homeDir contract uniform
- * with the other harnesses. When `proxyUrl` is configured, the scoped
- * `settings.json` gains an env block pointing the CLI's own traffic at it —
- * claude reads proxy settings from this file, so the child works even when
- * the host process environment carries no proxy (a supervisor-spawned
- * instance's env is not the user's shell env). An existing settings file is
- * merged, not overwritten; only the two proxy keys are managed.
+ * with the other harnesses. Two maintenance duties run here:
+ *
+ * - Legacy OAuth sweep: the endpoint-key era never reads `.credentials.json`
+ *   or the `.claude.json` `oauthAccount` marker — both are deleted so a
+ *   pre-migration scoped home carries no dead grant (measured: claude
+ *   2.1.296 prefers the env credential over a stored one anyway; the sweep
+ *   is hygiene, not priority repair). Other `.claude.json` keys survive.
+ * - When `proxyUrl` is configured, the scoped `settings.json` gains an env
+ *   block pointing the CLI's own traffic at it — claude reads proxy settings
+ *   from this file, so the child works even when the host process environment
+ *   carries no proxy (a supervisor-spawned instance's env is not the user's
+ *   shell env). An existing settings file is merged, not overwritten; only
+ *   the two proxy keys are managed.
  * @param homeDir - the `claude-code` harness's scoped home.
  * @param proxyUrl - optional HTTP proxy URL for the child CLI's traffic.
  */
 export async function provisionClaudeHome(homeDir: string, proxyUrl?: string): Promise<void> {
   await mkdir(homeDir, { recursive: true })
+  await sweepLegacyOauth(homeDir)
   if (proxyUrl === undefined) return
   const path = join(homeDir, SCOPED_SETTINGS)
   let settings: Record<string, unknown> = {}
@@ -46,6 +54,30 @@ export async function provisionClaudeHome(homeDir: string, proxyUrl?: string): P
   env.http_proxy = proxyUrl
   settings.env = env
   await writeFile(path, JSON.stringify(settings, undefined, 2) + '\n')
+}
+
+/**
+ * Remove the OAuth era's artifacts from the scoped home: the
+ * `.credentials.json` grant file outright, and the `oauthAccount` marker key
+ * from `.claude.json` (the file itself carries live CLI state and stays).
+ * Idempotent and best-effort per file — a missing or malformed file is
+ * simply not a sweep target. The macOS keychain entry is deliberately left
+ * alone: the CLI never consults it once an env credential rides the spawn,
+ * and keychain writes are outside the harness's file-based contract.
+ * @param homeDir - the `claude-code` harness's scoped home.
+ */
+export async function sweepLegacyOauth(homeDir: string): Promise<void> {
+  await rm(join(homeDir, '.credentials.json'), { force: true })
+  const configPath = join(homeDir, '.claude.json')
+  let config: Record<string, unknown>
+  try {
+    config = JSON.parse(await readFile(configPath, 'utf8')) as Record<string, unknown>
+  } catch {
+    return
+  }
+  if (typeof config !== 'object' || config === null || !('oauthAccount' in config)) return
+  delete config['oauthAccount']
+  await writeFile(configPath, JSON.stringify(config, undefined, 2) + '\n')
 }
 
 /**

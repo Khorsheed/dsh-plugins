@@ -113,10 +113,13 @@ export async function resolveEndpointAuth(
   config: ClaudeEndpointAuth,
 ): Promise<ClaudeEndpointAuth> {
   const file = await readEndpointAuthFile(homeDir)
+  const configBaseUrl = field(config.baseUrl)
+  const configApiKey = field(config.apiKey)
+  const configAuthToken = field(config.authToken)
   return {
-    ...config.baseUrl === undefined ? {} : { baseUrl: config.baseUrl },
-    ...config.apiKey === undefined ? {} : { apiKey: config.apiKey },
-    ...config.authToken === undefined ? {} : { authToken: config.authToken },
+    ...configBaseUrl === undefined ? {} : { baseUrl: configBaseUrl },
+    ...configApiKey === undefined ? {} : { apiKey: configApiKey },
+    ...configAuthToken === undefined ? {} : { authToken: configAuthToken },
     ...file,
   }
 }

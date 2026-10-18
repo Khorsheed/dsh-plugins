@@ -134,6 +134,14 @@
   gap: 12px;
 }
 
+/* The endpoint credential form: the three inputs stack under the auth row. */
+.endpointFields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+
 .rowLabel {
   display: inline-flex;
   align-items: center;

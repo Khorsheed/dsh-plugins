@@ -27,7 +27,7 @@
 dsh plugin --profile web add @khorsheed/dsh-local-agent @khorsheed/dsh-local-agent-claude-code
 ```
 
-重启 web 实例前，在 profile 的本包配置行里配好端点凭据（`baseUrl` + `apiKey` 或 `authToken`，见下）；不配则状态为未认证。卸载：
+重启 web 实例后，打开 设置 → 插件 里本包的卡片，在「认证」区填端点与 key 即可（也可预配在 profile 的本包配置行）；都不配则状态为未认证。卸载：
 
 ```sh
 dsh plugin --profile web remove @khorsheed/dsh-local-agent-claude-code
@@ -41,16 +41,16 @@ bundle 行接受这些可选字段：
 
 - `permissionMode`——`skip`（默认）传 `--dangerously-skip-permissions`，子代理写文件无需审批；`normal` 不传，需审批的动作（如写文件）被拒绝。
 - `model`——每轮委派以它起 CLI（`claude -p --model <模型>`）；不写就一个模型参数都不传。见下。
-- `baseUrl`——部署级端点，为子 CLI 设置 `ANTHROPIC_BASE_URL`（例如 `https://openproxy.to/claude` 这类中转，或自部署路由器）；不写即 Anthropic 官方端点。宿主 shell 里 export 的同名变量**从不被读取**——宿主环境对子进程一律清洗，路由只由配置与 scope 文件决定。
-- `apiKey`——部署级凭据，以 `ANTHROPIC_API_KEY`（`x-api-key` 头）发给端点。只写进本地 profile，绝不入库。
-- `authToken`——部署级凭据的另一形态，以 `ANTHROPIC_AUTH_TOKEN`（`Authorization: Bearer` 头）发出——部分中转只认 Bearer。两个键都配时优先级由 CLI 自己决定。
+- `baseUrl`——部署级端点，为子 CLI 设置 `ANTHROPIC_BASE_URL`（例如 `https://openproxy.to/claude` 这类中转，或自部署路由器）；不写即 Anthropic 官方端点。宿主 shell 里 export 的同名变量**从不被读取**——宿主环境对子进程一律清洗，路由只由配置与 scope 文件决定。**也可在设置卡「认证」区直接填**，不必动 profile。
+- `apiKey`——部署级凭据，以 `ANTHROPIC_API_KEY`（`x-api-key` 头）发给端点。设置卡可写（保存进本机设置层，不回显）；写进 profile 时只放本地，绝不入库。
+- `authToken`——部署级凭据的另一形态，以 `ANTHROPIC_AUTH_TOKEN`（`Authorization: Bearer` 头）发出——部分中转只认 Bearer。两个键都配时优先级由 CLI 自己决定。同样可在设置卡填写。
 - `proxyUrl`——子 CLI 自身流量的 HTTP 代理，provision 进作用域 `settings.json` 的 env 块；宿主进程环境不带代理时（例如 supervisor 拉起的实例不继承 shell export）用这项。它是本地流量转发器，与 `baseUrl` 的端点路由是两个层面。
 - `live`——长驻驱动：每成员常驻一个 stream-json 进程（`--input-format stream-json`），按轮发 stdin 消息（runtime 级优雅中断 control interrupt、同形推送流）；关闭或通道不可用即回一次性 `claude -p`。
 - `liveIdleMs`——长驻 runtime 空闲回收时限（默认 30 分钟）。
 
-> **迁移说明（下一发布线，破坏性变更）**——OAuth 网页授权整体移除：`/claude-code login` 不再存在，钥匙串/`.credentials.json` 协调随之删除。升级前先在 profile 行配好 `baseUrl` + `apiKey`（官方端点的 console key 同样可用），否则升级即未认证。旧 `liveMirrorGranularity: event | token` 配置键继续兼容读取，但不再影响行为。
+> **迁移说明（下一发布线，破坏性变更）**——OAuth 网页授权整体移除：`/claude-code login` 不再存在，钥匙串/`.credentials.json` 协调随之删除；升级后首次启动会清扫作用域目录里残留的 OAuth 文件（`.credentials.json` 与 `.claude.json` 的 `oauthAccount` 标记），实测 claude 2.1.296 在两者并存时本就优先采用环境变量凭据。升级前先在设置卡或 profile 行配好 `baseUrl` + `apiKey`（官方端点的 console key 同样可用），否则升级即未认证。旧 `liveMirrorGranularity: event | token` 配置键继续兼容读取，但不再影响行为。
 
-> **每个 scope 的覆盖**——`<作用域目录>/endpoint-auth.json`（0600）按字段覆盖部署级配置：`{ "baseUrl": …, "apiKey": …, "authToken": … }`，缺哪个字段就回落到配置值。一个只写 `apiKey` 的文件等于给这个 scope 换 key。`/claude-code logout` 清除的就是这个文件；凭据完全来自插件配置时 logout 会拒绝并提示去改 profile 行。
+> **每个 scope 的覆盖**——`<作用域目录>/endpoint-auth.json`（0600）按字段覆盖，三层生效顺序：**scope 文件 > 设置卡（用户层）> profile 的 YAML 行**，缺哪个字段就回落到下一层。一个只写 `apiKey` 的文件等于给这个 scope 换 key。`/claude-code logout` 清除的就是这个文件；凭据完全来自卡片或配置时 logout 会拒绝并提示去对应层面清除。
 
 ### 默认模型（`model`）
 
@@ -95,7 +95,7 @@ bundle 行接受这些可选字段：
 
 **工具调用计数。** 每轮 settle 时，provider 顺带数出本轮的工具调用，随 `settled` 进度事件上报（`toolCalls: { count, byName }`）。计数就在流解析**已经走过**的 `tool_use` 分支里，`byName` 的键是该块自己的 `name`（`Bash`、`Read`、`TodoWrite`，MCP 工具则是 `mcp__server__tool` 全名），原样保留、不跨家归一。`TodoWrite` 也计——折叠逻辑把它挪去了 todo 快照、不进 transcript，但 CLI 确实调了它。本轮一份，绝不累计；一次都没调用就整个字段缺位（缺席 ≠ 0）。实测：一轮「先 Read 两个文件再 Bash 列目录」回读 `{count: 3, byName: {Read: 2, Bash: 1}}`，与镜像出的工具卡片逐个对得上。
 
-**端点凭据模型。** 认证只有一种形态：`endpoint-auth.ts` 把作用域 `endpoint-auth.json` 逐字段合并到插件配置三元组（`baseUrl`/`apiKey`/`authToken`）之上，provider、长驻驱动与模型目录在每次 spawn 前现解现注（`ANTHROPIC_BASE_URL`/`ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN`），换 key 即下一轮生效，无需重载。已实测：claude 2.1.296 在全新作用域目录里仅凭这组环境变量即可跑通 `claude -p`——CLI 自行脚手架 `.claude.json`，headless 模式没有 onboarding 或 key 批准门槛。状态探针是轻量文件+配置检查（有非空 key 即认证），绝不为探测 spawn CLI；`endpoint-auth.json` 的 mtime 充任凭据戳记——一轮 401 把等级打成 `rejected`，重写该文件（换 key）即恢复，与 OAuth 时代「重新登录改写标记」语义一一对应。
+**端点凭据模型。** 认证只有一种形态：`endpoint-auth.ts` 把作用域 `endpoint-auth.json` 逐字段合并到设置层之上（设置卡的用户层覆盖 profile 的 YAML 行，两者经设置面读取），provider、长驻驱动与模型目录在每次 spawn 前现解现注（`ANTHROPIC_BASE_URL`/`ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN`），换 key 即下一轮生效，无需重载。已实测：claude 2.1.296 在全新作用域目录里仅凭这组环境变量即可跑通 `claude -p`——CLI 自行脚手架 `.claude.json`，headless 模式没有 onboarding 或 key 批准门槛；与陈旧的 OAuth 文件并存时同样优先采用环境变量凭据（provision 仍会在升级后首次启动清扫这些残留）。状态探针是轻量文件+配置检查（有非空 key 即认证），绝不为探测 spawn CLI；`endpoint-auth.json` 的 mtime 充任凭据戳记——一轮 401 把等级打成 `rejected`，重写该文件（换 key）即恢复，与 OAuth 时代「重新登录改写标记」语义一一对应。
 
 **命名 scope。** 每个命名 scope 在 `<homesRoot>/claude-code@<名>` 另开一份 `CLAUDE_CONFIG_DIR`：自己的 `endpoint-auth.json`、自己的会话记录、自己的凭据等级。scope 文件缺省即跟随部署级配置——这正是一次配置、全部 scope 可用的来源。带 scope 的委派用该目录跑 `claude -p`、从它回读；只走 exec。
 

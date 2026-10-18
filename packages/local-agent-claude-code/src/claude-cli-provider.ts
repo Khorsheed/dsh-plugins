@@ -244,8 +244,8 @@ export class ClaudeCliProvider implements SubagentProvider {
     // The scoped home this round runs against: the staged intent's scope
     // names a sibling directory under the homes root, absent means the
     // default one — the directory every round used before scopes existed.
-    // claude's keychain item is keyed by the config directory's path, so a
-    // named scope gets its own credential item for free.
+    // A named scope's endpoint-auth.json overrides the deployment credential
+    // for its rounds (endpoint-auth.ts).
     const scope = intent?.scope
     const homeDir = this.ctx.localAgent.homeDir('claude-code', scope)
     // The effective cwd: the caller's override (the staged intent's `cwd`,
