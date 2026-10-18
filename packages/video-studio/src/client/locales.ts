@@ -106,6 +106,11 @@ export const zh = {
   'transcript.pause': '停顿 {sec} 秒',
   'transcript.reassign': '改给…',
   'proposal.items': '{count} 处 · 采纳后缩短约 {saved}',
+  'transcript.assist': 'AI 帮改',
+  'transcript.assistPrompt': '帮我过一遍当前工程「{name}」的文稿（原始 {duration} → 成片 {output}）。先 video_read 读全文，再按需要提议（一律等我在面板确认，不要直接 apply）：\n1. 校稿：同音错字、人名专名、断句 → fix_text，逐组提议，标题写清「错→对」\n2. 口误、车轱辘话、跑题段 → propose 剪掉，写清理由\n没把握的先问我。我还想重点处理：',
+  'transcript.assistPrimed': '已把请求填进会话输入框，补充后发送即可',
+  'transcript.assistCopied': '没有找到会话输入框——请求已复制到剪贴板，粘贴到会话里即可',
+  'transcript.assistFailed': '没有找到会话输入框，复制到剪贴板也失败了',
 
   'find.toggle': '查找替换',
   'find.placeholder': '查找词语，例如「门法」或「然后」',
@@ -307,6 +312,11 @@ export const en: Record<VideoStudioKey, string> = {
   'transcript.pause': 'Pause {sec} s',
   'transcript.reassign': 'Assign to…',
   'proposal.items': '{count} items · saves about {saved}',
+  'transcript.assist': 'Agent assist',
+  'transcript.assistPrompt': 'Review the transcript of my current project “{name}” (original {duration} → edit {output}). Read it with video_read first, then propose as needed (I confirm every group in the panel — never apply directly):\n1. Proofread: homophone errors, names, bad segmentation → fix_text, one group per fix, title “wrong→right”\n2. Slips, repeated filler runs, off-topic stretches → propose cuts with reasons\nAsk me when unsure. What I specifically want: ',
+  'transcript.assistPrimed': 'The request is in the conversation box — add details and send',
+  'transcript.assistCopied': 'No conversation box found — the request was copied to the clipboard, paste it into a conversation',
+  'transcript.assistFailed': 'No conversation box found and copying to the clipboard failed',
 
   'find.toggle': 'Find / replace',
   'find.placeholder': 'Find a word, e.g. a misheard name or a filler',

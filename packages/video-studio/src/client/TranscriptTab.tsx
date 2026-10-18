@@ -11,6 +11,7 @@ import { displayTokens, findOccurrences } from '../core/text.ts'
 import { formatClock, isRemoved, keptRanges, removedRanges, toOutputTime, toReferenceTime, type Range } from '../core/timeline.ts'
 import type { Edit, Project, ProjectView, Segment, Speaker, Token } from '../types.ts'
 import type { RemoteResult, VideoPaneProps } from './contract.ts'
+import { IconCut, IconPen, IconPlay, IconRestore } from './icons.tsx'
 import type { VideoStudioKey } from './locales.ts'
 import { TranscriptPlayer } from './player.ts'
 import css from './VideoPane.module.css'
@@ -64,7 +65,7 @@ interface Selection {
   text: string
 }
 
-export function TranscriptTab({ p, v, act }: { p: VideoPaneProps; v: ProjectView; act: Act }): ReactNode {
+export function TranscriptTab({ p, v, act, report }: { p: VideoPaneProps; v: ProjectView; act: Act; report: (e: unknown) => void }): ReactNode {
   const { t } = p
   const project = v.project
   const [view, setView] = useState<View>('final')
@@ -271,6 +272,21 @@ export function TranscriptTab({ p, v, act }: { p: VideoPaneProps; v: ProjectView
     listRef.current?.querySelector(`[data-seg="${currentHit.segmentId}"]`)?.scrollIntoView({ block: 'center' })
   })
 
+  /** 「AI 帮改」: prime the session's composer with a proofread/polish brief (never sends). */
+  const assist = async () => {
+    const text = t('transcript.assistPrompt', { name: project.name, duration: formatClock(v.durationSec), output: formatClock(v.outputSec) })
+    if (p.primeConversation(text)) {
+      report(t('transcript.assistPrimed'))
+      return
+    }
+    try {
+      await navigator.clipboard.writeText(text)
+      report(t('transcript.assistCopied'))
+    } catch {
+      report(t('transcript.assistFailed'))
+    }
+  }
+
   if (!project.transcript.length) return <div className={css.empty}>{t('transcript.empty')}</div>
 
   const userCount = project.transcript.filter((s) => touches(s, cutsBy('user'))).length
@@ -289,18 +305,21 @@ export function TranscriptTab({ p, v, act }: { p: VideoPaneProps; v: ProjectView
         <span className={css.stats}>{t('transcript.stats', { duration: formatClock(v.durationSec), output: formatClock(v.outputSec) })}</span>
         <button type="button" className={css.btn} aria-pressed={finding} onClick={() => setFinding((f) => !f)}>{t('find.toggle')}</button>
         <button type="button" className={css.btn} onClick={() => void act(() => p.scan(project.id))}>{t('transcript.scan')}</button>
+        <button type="button" className={css.btn} onClick={() => void assist()}>{t('transcript.assist')}</button>
       </div>
 
       {finding && (
         <div className={css.findBar}>
-          <input id="vs-find" className={css.inlineInput} value={query} placeholder={t('find.placeholder')} autoFocus
-            onChange={(e) => { setQuery(e.target.value); setHitIndex(0) }}
-            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); step(e.shiftKey ? -1 : 1) } else if (e.key === 'Escape') setFinding(false) }} />
-          <span className={css.muted}>{query.trim() ? (hits.length ? t('find.position', { index: String(current + 1), count: String(hits.length) }) : t('find.count', { count: '0' })) : ''}</span>
-          <button type="button" className={css.btn} disabled={!hits.length} title={t('find.prev')} aria-label={t('find.prev')} onClick={() => step(-1)}>↑</button>
-          <button type="button" className={css.btn} disabled={!hits.length} title={t('find.next')} aria-label={t('find.next')} onClick={() => step(1)}>↓</button>
-          <button type="button" className={css.danger} disabled={!hits.length} onClick={() => void act(() => p.cutMatches({ projectId: project.id, needle: query }))}>{t('find.cutAll')}</button>
-          <button type="button" className={css.btn} title={t('find.close')} aria-label={t('find.close')} onClick={() => setFinding(false)}>×</button>
+          <div className={css.findRow}>
+            <input id="vs-find" className={css.inlineInput} value={query} placeholder={t('find.placeholder')} autoFocus
+              onChange={(e) => { setQuery(e.target.value); setHitIndex(0) }}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); step(e.shiftKey ? -1 : 1) } else if (e.key === 'Escape') setFinding(false) }} />
+            <span className={css.muted}>{query.trim() ? (hits.length ? t('find.position', { index: String(current + 1), count: String(hits.length) }) : t('find.count', { count: '0' })) : ''}</span>
+            <button type="button" className={css.btn} disabled={!hits.length} title={t('find.prev')} aria-label={t('find.prev')} onClick={() => step(-1)}>↑</button>
+            <button type="button" className={css.btn} disabled={!hits.length} title={t('find.next')} aria-label={t('find.next')} onClick={() => step(1)}>↓</button>
+            <button type="button" className={css.danger} disabled={!hits.length} onClick={() => void act(() => p.cutMatches({ projectId: project.id, needle: query }))}>{t('find.cutAll')}</button>
+            <button type="button" className={css.btn} title={t('find.close')} aria-label={t('find.close')} onClick={() => setFinding(false)}>×</button>
+          </div>
           <div className={css.findRow}>
             <input id="vs-replace" ref={replaceRef} className={css.inlineInput} value={replacement} placeholder={t('find.replacePlaceholder')}
               onChange={(e) => setReplacement(e.target.value)}
@@ -366,13 +385,14 @@ export function TranscriptTab({ p, v, act }: { p: VideoPaneProps; v: ProjectView
         })}
         {segs.length > limit && <div ref={sentinel} className={css.muted}>{t('state.loading')}</div>}
         {sel && selPos && (
-          <div ref={bubbleRef} className={css.bubble} style={{ left: selPos.x, top: selPos.y }} data-below={selPos.below || undefined}>
-            <button type="button" className={css.bubbleBtn} onClick={() => { playFrom(sel.start); clearSel() }}><span aria-hidden="true">▶</span>{t('player.fromHere')}</button>
-            <button type="button" className={css.bubbleDanger} onClick={() => { if (view === 'final') cutWithUndo(sel.start, sel.end, sel.text); else void act(() => p.setCut({ projectId: project.id, start: sel.start, end: sel.end, cut: true })); clearSel() }}><span aria-hidden="true">✂</span>{t('select.cut')}</button>
+          <div ref={bubbleRef} className={css.bubble} role="menu" style={{ left: selPos.x, top: selPos.y }} data-below={selPos.below || undefined}
+            onMouseDown={(e) => e.preventDefault()}>
+            <button type="button" className={css.bubbleItem} onClick={() => { playFrom(sel.start); clearSel() }}><IconPlay size={14} />{t('player.fromHere')}</button>
+            <button type="button" className={css.bubbleItem} onClick={() => { if (view === 'final') cutWithUndo(sel.start, sel.end, sel.text); else void act(() => p.setCut({ projectId: project.id, start: sel.start, end: sel.end, cut: true })); clearSel() }}><IconCut size={14} />{t('select.cut')}</button>
             {removed.some((r) => r.start < sel.end && r.end > sel.start) && (
-              <button type="button" className={css.bubbleBtn} onClick={() => { void act(() => p.setCut({ projectId: project.id, start: sel.start, end: sel.end, cut: false })); clearSel() }}><span aria-hidden="true">↩</span>{t('select.restore')}</button>
+              <button type="button" className={css.bubbleItem} onClick={() => { void act(() => p.setCut({ projectId: project.id, start: sel.start, end: sel.end, cut: false })); clearSel() }}><IconRestore size={14} />{t('select.restore')}</button>
             )}
-            <button type="button" className={css.bubbleBtn} title={t('select.fixHint')} onClick={startFix}><span aria-hidden="true">✎</span>{t('select.fix')}</button>
+            <button type="button" className={css.bubbleItem} title={t('select.fixHint')} onClick={startFix}><IconPen size={14} />{t('select.fix')}</button>
           </div>
         )}
       </div>

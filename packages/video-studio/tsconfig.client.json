@@ -31,6 +31,7 @@
     "src/types.ts",
     "src/client/contract.ts",
     "src/client/definition.tsx",
+    "src/client/icons.tsx",
     "src/client/index.ts",
     "src/client/locales.ts",
     "src/client/store.ts",

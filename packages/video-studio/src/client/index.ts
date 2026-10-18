@@ -70,6 +70,19 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       if (!result.ok) throw new Error(result.error?.message ?? 'directory picker failed')
       return result.value ?? null
     },
+    // Prime the session's composer with a draft (library's primeConversation
+    // pattern): a structural probe, false when no input machine exists — the
+    // caller falls back to the clipboard.
+    primeConversation: text => {
+      const scope = ctx.get('sessions')?.scope(sessionId)
+      const input = (scope?.get('conversation') as {
+        input?: { for(actx: unknown): { setDraft?: (text: string) => void; state?: { getSnapshot(): { draft: string } } } | undefined }
+      } | undefined)?.input?.for(scope)
+      if (typeof input?.setDraft !== 'function' || typeof input.state?.getSnapshot !== 'function') return false
+      const draft = input.state.getSnapshot().draft
+      input.setDraft(draft.trim() === '' ? text : `${draft}\n\n${text}`)
+      return true
+    },
     setCut: request => remote.setCut(request),
     decide: request => remote.decide(request),
     scan: projectId => remote.scan({ projectId }),

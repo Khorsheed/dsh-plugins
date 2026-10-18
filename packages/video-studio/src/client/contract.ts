@@ -38,6 +38,8 @@ export interface VideoPaneInjected {
   listMedia: (request: ListMediaRequest) => R<MediaFile[]>
   /** The host's native directory picker; null when the user cancels or the host has no picker. */
   pickDirectory: () => Promise<string | null>
+  /** Prime this session's composer with a draft (never sends); false when no input machine exists. */
+  primeConversation: (text: string) => boolean
   setCut: (request: CutRequest) => R<ProjectView>
   decide: (request: DecideRequest) => R<ProjectView>
   scan: (projectId: string) => R<ProjectView>
