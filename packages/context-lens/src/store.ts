@@ -46,7 +46,7 @@ import type {
   TurnOverview,
   TurnTiming,
 } from './types.ts'
-import { splitRequest, type CapturedToolSchema, type ScopeFingerprint, type AssemblyRecord } from './segmenter.ts'
+import { splitRequest, rebaseSegments, type CapturedToolSchema, type ScopeFingerprint, type AssemblyRecord } from './segmenter.ts'
 import { previewLine, type CapturedMessage } from './messages.ts'
 import type { LogTurn } from './log-lane.ts'
 import { prefixTextChange } from './prefix-diff.ts'
@@ -126,6 +126,8 @@ export interface StoredRequest {
   blocks: BlockSpan[]
   execs: ToolExecSpan[]
   fingerprint: ScopeFingerprint
+  /** Live capture preceded availability of its conversation-history baseline. */
+  needsHistoryBaseline?: boolean
 }
 
 /** One delegation call awaiting its catalog binding / result. */
@@ -446,6 +448,10 @@ export class InspectorStore {
       : turn.scopes.get(scopeId)
     if (scope === undefined) return undefined
 
+    // UI scopes belong to turns; the main agent's input history does not reset there.
+    const previous = scope.previous ?? (snapshot.purpose === undefined
+      ? this.previousRequest(session, scopeId, startedAt, this.seqCounter)?.fingerprint : undefined)
+
     const segments = splitRequest({
       messages: snapshot.messages.map(message => {
         const pruning = message.id === undefined ? undefined : session.prunings.get(`${snapshot.sessionId}:${message.id}`)
@@ -454,7 +460,7 @@ export class InspectorStore {
       ...snapshot.systemSlot === undefined ? {} : { systemSlot: snapshot.systemSlot },
       ...snapshot.tools === undefined ? {} : { tools: snapshot.tools },
       context: {
-        ...scope.previous === undefined || snapshot.purpose === 'compaction' ? {} : { previous: scope.previous },
+        ...previous === undefined || snapshot.purpose === 'compaction' ? {} : { previous },
         assemblies: this.assemblies,
         resolveToolName: callId => this.callNames.get(callId),
         durationFor: messageId => session.messageDurations.get(messageId),
@@ -484,6 +490,7 @@ export class InspectorStore {
       blocks: [],
       execs: [],
       fingerprint: segments.fingerprint,
+      ...snapshot.purpose === undefined && previous === undefined ? { needsHistoryBaseline: true } : {},
     }
     this.seqCounter += 1
     // Auxiliary/purpose calls have no complete conversation-history baseline.
@@ -1190,7 +1197,18 @@ export class InspectorStore {
     return undefined
   }
 
+  private previousRequest(session: SessionRecord, scopeId: string, at: number, seq: number): StoredRequest | undefined {
+    return session.turns.flatMap(turn => turn.scopes.get(scopeId)?.requests ?? [])
+      .filter(r => r.purpose === undefined && (r.startedAt < at || (r.startedAt === at && r.seq < seq)))
+      .sort((a, b) => b.startedAt - a.startedAt || b.seq - a.seq)[0]
+  }
+
   private requestView(request: StoredRequest): CapturedRequest {
+    const session = this.sessions.get(request.sessionId)
+    const baseline = request.needsHistoryBaseline && session !== undefined
+      ? this.previousRequest(session, request.scopeId, request.startedAt, request.seq) : undefined
+    const segments = baseline === undefined ? request.segments
+      : rebaseSegments(request.segments, request.fingerprint, baseline.fingerprint)
     const owners = new Map<string, number>()
     for (const turn of this.sessions.get(request.sessionId)?.turns ?? []) {
       for (const r of turn.scopes.get(request.scopeId)?.requests ?? []) {
@@ -1235,7 +1253,7 @@ export class InspectorStore {
       generation: this.generation,
       responseSummary: request.responseSummary,
       ...response === undefined ? {} : { response },
-      segments: { ...request.segments, history: provenance(request.segments.history), added: provenance(request.segments.added) },
+      segments: { ...segments, history: provenance(segments.history), added: provenance(segments.added) },
     }
   }
 

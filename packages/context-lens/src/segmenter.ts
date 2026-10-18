@@ -15,7 +15,7 @@
  *
  * @module @khorsheed/dsh-context-lens/segmenter
  */
-import type { SegmentItem, ToolDefItem } from './types.ts'
+import type { CapturedRequest, SegmentItem, ToolDefItem } from './types.ts'
 import {
   classifyMessage,
   messageKey,
@@ -137,10 +137,7 @@ export function splitRequest(input: {
 }): SegmentResult {
   const { messages, context } = input
   const keys = messages.map(message => messageKey(message, contentHash))
-  // Membership, with occurrence counts: replacement must not make an unchanged
-  // retained tail new, nor let a second identical occurrence reuse the first.
-  const remaining = new Map<string, number>()
-  for (const key of context.previous?.messageKeys ?? []) remaining.set(key, (remaining.get(key) ?? 0) + 1)
+  const freshnessByIndex = messageFreshness(keys, context.previous)
   const previousToolNames = new Set(context.previous?.toolNames ?? [])
 
   const system: SegmentItem[] = []
@@ -161,10 +158,7 @@ export function splitRequest(input: {
   const history: SegmentItem[] = []
   const added: SegmentItem[] = []
   messages.forEach((message, index) => {
-    const key = keys[index]!
-    const count = remaining.get(key) ?? 0
-    const freshness: SegmentItem['freshness'] = count > 0 ? 'history' : 'new'
-    if (count > 0) remaining.set(key, count - 1)
+    const freshness = freshnessByIndex[index]!
     if (message.role === 'system') {
       system.push(...attributeSystem(message, index, freshness, context.assemblies))
       return
@@ -225,6 +219,33 @@ export function splitRequest(input: {
       ...input.systemSlot === undefined ? {} : { systemSlot: input.systemSlot },
     },
     totalChars,
+  }
+}
+
+/** Match occurrences, preserving unchanged tails across surface replacements. */
+function messageFreshness(keys: readonly string[], previous?: ScopeFingerprint): SegmentItem['freshness'][] {
+  const remaining = new Map<string, number>()
+  for (const key of previous?.messageKeys ?? []) remaining.set(key, (remaining.get(key) ?? 0) + 1)
+  return keys.map(key => {
+    const count = remaining.get(key) ?? 0
+    if (count > 0) remaining.set(key, count - 1)
+    return count > 0 ? 'history' : 'new'
+  })
+}
+
+/** A late log backfill can supply the baseline that was missing at capture. */
+export function rebaseSegments(segments: CapturedRequest['segments'], current: ScopeFingerprint, previous: ScopeFingerprint): CapturedRequest['segments'] {
+  const freshness = messageFreshness(current.messageKeys, previous)
+  const refresh = (item: SegmentItem): SegmentItem => ({ ...item, freshness: item.index === -1
+    ? current.systemSlot === previous.systemSlot ? 'history' : 'new'
+    : freshness[item.index] ?? item.freshness })
+  const messages = [...segments.history, ...segments.added].sort((a, b) => a.index - b.index).map(refresh)
+  const tools = new Set(previous.toolNames)
+  return {
+    system: segments.system.map(refresh),
+    tools: segments.tools.map(tool => ({ ...tool, added: !tools.has(tool.name) })),
+    history: messages.filter(item => item.freshness === 'history'),
+    added: messages.filter(item => item.freshness === 'new'),
   }
 }
 
