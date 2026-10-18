@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "Dev Mode",
+    "title": "Dev Suite",
     "description": "The dsh-dev agent mode plus its family: local CLI delegation (Kimi / Codex / Claude Code / dsh), worktrees, room and typesafe — one install."
   }
 }
