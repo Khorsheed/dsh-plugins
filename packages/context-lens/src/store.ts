@@ -23,6 +23,7 @@
  *
  * @module @khorsheed/dsh-context-lens/store
  */
+import { countToolCalls } from './tool-summary.ts'
 import type {
   AgentScopeOverview,
   BackfillInfo,
@@ -1445,7 +1446,7 @@ function summarizeResponse(request: StoredRequest): ResponseSummary {
       kind: 'tool',
       name: first.toolName as string,
       ...hint === undefined ? {} : { hint },
-      ...calls.length > 1 ? { more: calls.length - 1 } : {},
+      ...calls.length > 1 ? { more: calls.length - 1, toolCounts: countToolCalls(calls.map(call => call.toolName as string)) } : {},
     }
   }
   const hasText = request.blocks.some(block => block.kind === 'text')

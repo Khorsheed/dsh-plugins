@@ -30,6 +30,8 @@ Tool execution results are attached to response calls by exact call ID, in both 
 
 Tool additions require an observed preceding request in the same agent scope. An absent baseline shows the tool inventory without addition badges; an observed empty tool set still allows real additions. Trend bars keep token-scaled heights inside full-height hit columns (16px wide for a pointer, 40px for touch), with visible hover, selection and keyboard focus. Enlarging the hit column instead of the data bar preserves the measurement while making short and unknown-usage requests selectable.
 
+Response summaries count repeated calls by exact tool name, in first-occurrence order: `skill ×2`, or `skill ×2 · read` for mixed tools. All live, settled-log and failed-attempt paths supply these counts. Single calls retain their argument hint; older summaries without name counts retain the honest `+N` fallback. Text responses without tool calls are labeled “Assistant reply”, without implying no reasoning or earlier tool use.
+
 ## Alternatives considered
 
 **Another visual redesign.** Rejected by the user after reviewing the prototype; retain the earlier visual direction.

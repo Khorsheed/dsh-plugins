@@ -24,6 +24,7 @@
  *
  * @module @khorsheed/dsh-context-lens/log-lane
  */
+import { countToolCalls } from './tool-summary.ts'
 import type { RequestConfig, RequestUsage, ResponseSummary } from './types.ts'
 import type { CapturedResponse } from './types.ts'
 import { responseFromSpans, type BlockSpan, type StoredRequest } from './store.ts'
@@ -557,7 +558,7 @@ function summarizeMessage(message: CapturedMessage): ResponseSummary {
       kind: 'tool',
       name: first.name as string,
       ...hint === undefined ? {} : { hint },
-      ...calls.length > 1 ? { more: calls.length - 1 } : {},
+      ...calls.length > 1 ? { more: calls.length - 1, toolCounts: countToolCalls(calls.map(call => call.name as string)) } : {},
     }
   }
   const hasText = message.content.some(block => block.type === 'text' && (block.text ?? '').trim().length > 0)
@@ -574,7 +575,7 @@ function summarizeBlocks(blocks: readonly BlockSpan[]): ResponseSummary {
     kind: 'tool',
     name: first.toolName as string,
     ...hint === undefined ? {} : { hint },
-    ...calls.length > 1 ? { more: calls.length - 1 } : {},
+    ...calls.length > 1 ? { more: calls.length - 1, toolCounts: countToolCalls(calls.map(call => call.toolName as string)) } : {},
   }
 }
 

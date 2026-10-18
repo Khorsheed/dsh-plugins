@@ -128,10 +128,11 @@ export interface RequestConfig {
 export type ResponseSummary =
   /**
    * 响应以工具调用收尾：`name` 为首个调用的工具名，`hint` 为其参数摘要
-   *（what → 文件 basename → for → description），`more` 为其余调用的个数。
+   *（what → 文件 basename → for → description）。多调用用 `toolCounts` 按名称计数；
+   * `more` 为兼容旧客户端保留的其余调用个数。
    */
-  | { kind: 'tool'; name: string; hint?: string; more?: number }
-  /** 直接回答（有可见文本、无工具调用）。 */
+  | { kind: 'tool'; name: string; hint?: string; more?: number; toolCounts?: { name: string; count: number }[] }
+  /** 助手回复（有可见文本、无工具调用）。 */
   | { kind: 'text' }
   /** 空响应（无文本也无工具调用——失败/中断的响应落这里）。 */
   | { kind: 'none' }
@@ -189,7 +190,7 @@ export interface CapturedRequest {
   generation?: string
   /**
    * 明细头锚点：本请求的响应干了什么（结构化；面板本地化渲染为
-   * `name:hint` / 「直接回答」 / —）。
+   * `name:hint` / 「助手回复」 / —）。
    */
   responseSummary: ResponseSummary
   /**

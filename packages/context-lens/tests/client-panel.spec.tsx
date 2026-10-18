@@ -309,8 +309,8 @@ describe('InspectorPanel · token tab', () => {
   it('switches the selected request from the card list', async () => {
     bench()
     await waitFor(() => expect(screen.getByText('#101 · read:a.ts')).toBeTruthy())
-    fireEvent.click(screen.getByRole('button', { name: /#102 · 直接回答/ }))
-    await waitFor(() => expect(screen.getByText('#102 · 直接回答', { selector: 'b' })).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: /#102 · 助手回复/ }))
+    await waitFor(() => expect(screen.getByText('#102 · 助手回复', { selector: 'b' })).toBeTruthy())
   })
 })
 
@@ -327,14 +327,14 @@ describe('InspectorPanel · turn switcher / navigation params', () => {
     expect(items[1]?.textContent).toContain('输入 1.0k')
     expect(items[1]?.textContent).toContain('输出 50')
     fireEvent.click(items[1] as HTMLElement)
-    await waitFor(() => expect(screen.getByText('#11 · 直接回答')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('#11 · 助手回复')).toBeTruthy())
     expect(screen.getByText('第一条 query')).toBeTruthy()
     expect(screen.getByRole('button', { name: zh['turn.switch'] }).textContent).toContain('1 / 2')
   })
 
   it('applies navigation params on the first revision (the turn action entry)', async () => {
     bench({ params: { turnSeq: 1 }, revision: 1 })
-    await waitFor(() => expect(screen.getByText('#11 · 直接回答')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('#11 · 助手回复')).toBeTruthy())
     expect(screen.getByRole('button', { name: zh['turn.switch'] }).textContent).toContain('1 / 2')
   })
 })
@@ -353,7 +353,7 @@ describe('InspectorPanel · scope chips', () => {
     bench()
     await waitFor(() => expect(screen.getByRole('button', { name: /#2 提取 JSON/ })).toBeTruthy())
     fireEvent.click(screen.getByRole('button', { name: /#2 提取 JSON/ }))
-    await waitFor(() => expect(screen.getByText('#201 · 直接回答')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('#201 · 助手回复')).toBeTruthy())
     // The child-lane scope has no captured system/tools: the blocks render the empty states.
     openDetails(zh['lens.layerSystem'])
     await waitFor(() => expect(screen.getByText(zh['seg.systemEmpty'])).toBeTruthy())
@@ -378,7 +378,7 @@ describe('InspectorPanel · timing tab', () => {
     const sub = screen.getByRole('button', { name: '#201 ' + zh['time.bucket.wait'] })
     fireEvent.click(sub)
     // …landing on the token tab with the run's scope selected and #201 in detail.
-    await waitFor(() => expect(screen.getByText('#201 · 直接回答')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('#201 · 助手回复')).toBeTruthy())
     expect(screen.getByRole('button', { name: zh['view.token'] }).getAttribute('aria-pressed')).toBe('true')
   })
 
@@ -409,7 +409,7 @@ describe('InspectorPanel · request-local JSON view', () => {
     expect(screen.getByRole('navigation', { name: zh['view.token'] })).toBeTruthy()
     expect(screen.getByText('196 字符')).toBeTruthy()
     expect(screen.queryByRole('region', { name: zh['lens.exchange'] })).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: '#102 · 直接回答' }))
+    fireEvent.click(screen.getByRole('button', { name: '#102 · 助手回复' }))
     await screen.findByText(/"seq": 102/)
     fireEvent.click(screen.getByRole('button', { name: zh['view.raw'] }))
     expect(screen.getByRole('region', { name: zh['lens.exchange'] })).toBeTruthy()
@@ -516,7 +516,7 @@ describe('InspectorPanel · scroll-sync + 最新', () => {
   it('opening from the action row scroll-syncs to the navigated turn', async () => {
     mountConversation([1, 2])
     bench({ params: { turnSeq: 1 }, revision: 1 })
-    await waitFor(() => expect(screen.getByText('#11 · 直接回答')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('#11 · 助手回复')).toBeTruthy())
     expect(scrollIntoView.mock.instances[0]).toBe(port?.querySelector('[data-chat-turn="1"]'))
   })
 
@@ -619,7 +619,7 @@ describe('InspectorPanel · 新增 provenance label', () => {
   it('labels the added assistant rows with the previous request in the same scope (within a turn)', async () => {
     bench()
     await waitFor(() => expect(screen.getByText('#101 · read:a.ts')).toBeTruthy())
-    fireEvent.click(screen.getByRole('button', { name: /#102 · 直接回答/ }))
+    fireEvent.click(screen.getByRole('button', { name: /#102 · 助手回复/ }))
     await waitFor(() => expect(screen.getByText('← #101 的响应')).toBeTruthy())
   })
 
@@ -635,7 +635,7 @@ describe('InspectorPanel · 新增 provenance label', () => {
     // Turn 1's only main request (#11): no previous turn exists.
     fireEvent.click(screen.getByRole('button', { name: zh['turn.switch'] }))
     fireEvent.click(screen.getByRole('menuitem', { name: /turn 1/ }))
-    await waitFor(() => expect(screen.getByText('#11 · 直接回答')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('#11 · 助手回复')).toBeTruthy())
     expect(screen.queryByText(/← #\d+ 的响应/)).toBeNull()
   })
 })
@@ -649,7 +649,7 @@ describe('Context Lens session trend', () => {
     const bar = await screen.findByRole('button', { name: 'turn 2 #201 · 0%' })
     expect(screen.queryByRole('button', { name: /turn 2 #101/ })).toBeNull()
     fireEvent.click(bar)
-    await waitFor(() => expect(screen.getByText('#201 · 直接回答', { selector: 'b' })).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('#201 · 助手回复', { selector: 'b' })).toBeTruthy())
     expect(screen.getByRole('button', { name: /#2 提取 JSON/ }).getAttribute('aria-pressed')).toBe('true')
   })
 })
@@ -680,8 +680,8 @@ describe('Context Lens composition filters', () => {
     expect(duplicate.getAttribute('aria-pressed')).toBe('false')
     expect(within(composition).getByText('same prefix, different tail')).toBeTruthy()
     fireEvent.click(duplicate)
-    fireEvent.click(screen.getByRole('button', { name: '#102 · 直接回答' }))
-    await screen.findByText('#102 · 直接回答', { selector: 'b' })
+    fireEvent.click(screen.getByRole('button', { name: '#102 · 助手回复' }))
+    await screen.findByText('#102 · 助手回复', { selector: 'b' })
     expect(screen.queryByRole('button', { name: /只看重复/ })).toBeNull()
     expect(screen.getByText('文件内容')).toBeTruthy()
   })
@@ -701,7 +701,7 @@ describe('agent-local display numbers', () => {
     expect(screen.queryByRole('button', { name: '#101 · read:a.ts' })).toBeNull()
     expect(container.textContent).not.toContain('输入走势')
     expect(container.textContent).not.toContain('高度＝输入 tokens')
-    fireEvent.click(screen.getByRole('button', { name: '#3 · 直接回答' }))
+    fireEvent.click(screen.getByRole('button', { name: '#3 · 助手回复' }))
     await waitFor(() => expect(mocks.getRequest.mock.calls.some(call => call[1] === 102)).toBe(true))
     fireEvent.click(screen.getByRole('button', { name: zh['view.raw'] }))
     await screen.findByText(/"seq": 102/)
@@ -712,8 +712,8 @@ describe('agent-local display numbers', () => {
     delete overview.scopes[0]!.requests[0]!.requestNumber
     const { requestNumber: _number, ...unknown } = REQ101
     bench({ turns: [TURNS[0]!], overview: () => overview, requests: { 11: { ...unknown, seq: 11 } } })
-    await screen.findByRole('button', { name: '#— · 直接回答' })
-    expect(screen.queryByRole('button', { name: '#11 · 直接回答' })).toBeNull()
+    await screen.findByRole('button', { name: '#— · 助手回复' })
+    expect(screen.queryByRole('button', { name: '#11 · 助手回复' })).toBeNull()
     expect(screen.getAllByTitle(zh['req.numberUnknown']).length).toBeGreaterThan(0)
   })
 })

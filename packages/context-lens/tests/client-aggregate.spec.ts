@@ -173,13 +173,20 @@ describe('formatting', () => {
 })
 
 describe('summaryText', () => {
+  it('groups only exact repeated tool names, including non-adjacent calls', () => {
+    expect(summaryText({ kind: 'tool', name: 'skill', more: 1, toolCounts: [{ name: 'skill', count: 2 }] }, '助手回复')).toBe('skill ×2')
+    expect(summaryText({ kind: 'tool', name: 'skill', more: 2, toolCounts: [{ name: 'skill', count: 2 }, { name: 'read', count: 1 }] }, '助手回复')).toBe('skill ×2 · read')
+    expect(summaryText({ kind: 'tool', name: 'skill', more: 1, toolCounts: [{ name: 'skill', count: 1 }, { name: 'read', count: 1 }] }, '助手回复')).toBe('skill · read')
+    // A legacy total cannot tell us that the omitted call was another skill.
+    expect(summaryText({ kind: 'tool', name: 'skill', more: 1 }, '助手回复')).toBe('skill +1')
+  })
   it('renders the tool case as name:hint, the text case localized, none as a dash', () => {
-    expect(summaryText({ kind: 'tool', name: 'read', hint: 'a.ts' }, '直接回答')).toBe('read:a.ts')
-    expect(summaryText({ kind: 'tool', name: 'read' }, '直接回答')).toBe('read')
-    expect(summaryText({ kind: 'tool', name: 'read', hint: 'a.ts', more: 2 }, '直接回答')).toBe('read:a.ts +2')
-    expect(summaryText({ kind: 'text' }, '直接回答')).toBe('直接回答')
-    expect(summaryText({ kind: 'text' }, 'Direct answer')).toBe('Direct answer')
-    expect(summaryText({ kind: 'none' }, '直接回答')).toBe('—')
+    expect(summaryText({ kind: 'tool', name: 'read', hint: 'a.ts' }, '助手回复')).toBe('read:a.ts')
+    expect(summaryText({ kind: 'tool', name: 'read' }, '助手回复')).toBe('read')
+    expect(summaryText({ kind: 'tool', name: 'read', hint: 'a.ts', more: 2 }, '助手回复')).toBe('read:a.ts +2')
+    expect(summaryText({ kind: 'text' }, '助手回复')).toBe('助手回复')
+    expect(summaryText({ kind: 'text' }, 'Assistant reply')).toBe('Assistant reply')
+    expect(summaryText({ kind: 'none' }, '助手回复')).toBe('—')
   })
 })
 

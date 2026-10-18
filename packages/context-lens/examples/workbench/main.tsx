@@ -121,7 +121,7 @@ const OVERVIEW1: TurnOverview = {
   turn: TURNS[0] as TurnListItem,
   scopes: [scope({
     requests: [
-      { seq: 11, requestNumber: 1, scopeId: 'main', status: 'ok', responseSummary: { kind: 'text' }, startedAt: 1_100, usage: REQ101.usage, totalMs: 900, totalChars: 126 },
+      { seq: 11, requestNumber: 1, scopeId: 'main', status: 'ok', responseSummary: { kind: 'tool', name: 'skill', more: 1, toolCounts: [{ name: 'skill', count: 2 }] }, startedAt: 1_100, usage: REQ101.usage, totalMs: 900, totalChars: 126 },
     ],
   })],
 }
@@ -184,7 +184,7 @@ const props = {
   useTabInfo: () => ({ sidebar: { expanded: true, fullscreen: false }, panel: { id: 'demo' }, tab: { navigation: { address: 'dsh-page://context-lens', revision: 0 }, signal } }),
   listTurns: () => success({ turns: TURNS, backfill: { state: 'partial' } }),
   getTurn: (_: string, turn: number) => success(turn === 2 ? OVERVIEW2 : OVERVIEW1),
-  getRequest: (_: string, seq: number) => success(seq === 101 ? REQ101 : seq === 102 ? REQ102 : seq === 201 ? REQ201 : { ...REQ101, seq: 11, requestNumber: 1, prefix: undefined, segments: { ...REQ101.segments, tools: REQ101.segments.tools.map(tool => ({ ...tool, added: false })) } }),
+  getRequest: (_: string, seq: number) => success(seq === 101 ? REQ101 : seq === 102 ? REQ102 : seq === 201 ? REQ201 : { ...REQ101, seq: 11, requestNumber: 1, responseSummary: OVERVIEW1.scopes[0]!.requests[0]!.responseSummary, response: { toolCalls: [{ name: 'skill', arguments: '{\"name\":\"example-a\"}' }, { name: 'skill', arguments: '{\"name\":\"example-b\"}' }] }, prefix: undefined, segments: { ...REQ101.segments, tools: REQ101.segments.tools.map(tool => ({ ...tool, added: false })) } }),
   getTurnTiming: () => success(TIMING2),
   getSessionTrend: () => success({ turns: TURNS, backfill: { state: 'complete' }, requests: [...OVERVIEW1.scopes.flatMap(s => s.requests.map(r => ({ ...r, turnSeq: 1 }))), ...OVERVIEW2.scopes.flatMap(s => s.requests.map(r => ({ ...r, turnSeq: 2 })))] }),
 } as unknown as InspectorTabProps

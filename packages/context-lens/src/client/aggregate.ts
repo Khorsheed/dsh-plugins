@@ -11,15 +11,17 @@ import type {
 
 /**
  * Render one {@link ResponseSummary} for the card title / anchor header:
- * the tool case is `name:hint`（多个调用追加 ` +N`）, the text case is the
- * caller's localized 直接回答, an empty response is the plain dash.
+ * the tool case groups repeated names as `name ×N` (single calls keep hints), the text case is the
+ * caller's localized assistant reply, an empty response is the plain dash.
  */
-export function summaryText(summary: ResponseSummary, directAnswer: string): string {
+export function summaryText(summary: ResponseSummary, assistantReply: string): string {
   switch (summary.kind) {
     case 'tool':
+      if (summary.toolCounts?.length) return summary.toolCounts.map(tool => `${tool.name}${tool.count > 1 ? ` ×${tool.count}` : ''}`).join(' · ')
+      // Older hosts only expose the first name and a total; never guess repeated tools.
       return `${summary.name}${summary.hint === undefined ? '' : `:${summary.hint}`}${summary.more === undefined ? '' : ` +${summary.more}`}`
     case 'text':
-      return directAnswer
+      return assistantReply
     case 'none':
       return '—'
   }

@@ -150,3 +150,34 @@ describe('tool execution results', () => {
     expect(store.getRequest('s1', first.seq)?.response?.toolCalls[0]?.execution?.result).toHaveLength(100001)
   })
 })
+
+
+describe('response tool counts', () => {
+  it.each([
+    { names: ['skill', 'skill'], expected: [{ name: 'skill', count: 2 }] },
+    { names: ['skill', 'read', 'skill'], expected: [{ name: 'skill', count: 2 }, { name: 'read', count: 1 }] },
+  ])('agrees across live, settled log and failed-attempt capture: $names', ({ names, expected }) => {
+    const at = clock()
+    const store = new InspectorStore({}, { now: at.now })
+    store.turnStart('s1', 1, at.tick(1))
+    const calls = names.map((name, index) => ({ type: 'tool-call' as const, id: `c${index}`, name, arguments: '{}' }))
+    const chunks: Parameters<InspectorStore['observeChunk']>[1][] = calls.flatMap((block, index) => [
+      { type: 'block-start', index, blockType: 'tool-call' },
+      { type: 'block-end', index, block },
+    ])
+    const live = drive(store, at, chunks)!
+    expect(live.responseSummary).toMatchObject({ toolCounts: expected })
+    for (const failed of [false, true]) {
+      const turns = reconstructSession([
+        { type: 'turn/start', time: 1, data: { turn: 1 } },
+        { type: 'step/start', time: 2, data: { turn: 1, step: 1 } },
+        { type: failed ? 'assistant/attempt' : 'assistant/message', time: 20, data: {
+          turn: 1, step: 1,
+          ...failed ? {} : { message: { role: 'assistant', content: calls } },
+          stream: chunks.map((chunk, index) => ({ type: 'chunk', time: 3 + index, chunk })),
+        } },
+      ])
+      expect(turns[0]?.requests[0]?.responseSummary).toEqual(live.responseSummary)
+    }
+  })
+})
