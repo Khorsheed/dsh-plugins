@@ -462,6 +462,22 @@ describe('SideChatService — openWith update semantics', () => {
     await service.openWith({ contextKey: 'k', label: 'k', tools: [toolV2] })
     expect(rec.scopeKit.tools.get('canvas_read')).toBe(toolV2)
   })
+
+  it('never stamps its own origin on caller tools — a caller tag survives, an untagged tool stays untagged', async () => {
+    // Origin tagging is the CALLER's responsibility (execution.ts's attachTools
+    // contract): the tool's owner is the package that DEFINED it, and side-chat
+    // is only the conduit.
+    const { service, agentsKit, calling } = bench()
+    const ORIGIN = Symbol.for('dsh.tool.origin')
+    const callerOrigin = { channel: 'plugin', owner: '@khorsheed/dsh-caller' }
+    const tagged = Object.assign({ name: 'caller_tagged', description: 't' } as unknown as ToolDefinition, { [ORIGIN]: callerOrigin })
+    const plain = { name: 'caller_plain', description: 'u' } as unknown as ToolDefinition
+    await service.openWith({ contextKey: 'k', label: 'k', tools: [tagged, plain] })
+    await service.send(calling, { contextKey: 'k', text: '问' })
+    const rec = agentsKit.live.values().next().value as FakeAgentRec
+    expect((rec.scopeKit.tools.get('caller_tagged')! as Record<symbol, unknown>)[ORIGIN]).toEqual(callerOrigin)
+    expect((rec.scopeKit.tools.get('caller_plain')! as Record<symbol, unknown>)[ORIGIN]).toBeUndefined()
+  })
 })
 
 describe('SideChatService — state, list, and the store fence', () => {
