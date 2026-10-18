@@ -87,22 +87,3 @@ export function summarizeCovers(covers: readonly LibraryNodeCover[], context: Co
   if (topics > 0) parts.push(`${t('cover.topic')} ×${topics}`)
   return parts.join(' · ')
 }
-
-/**
- * The station's evidence policy, computed from its covers — the client mirror
- * of the host's gate, for the quiz tab's policy card only: only knowledge
- * books / plain teaching allow memory-backed content questions; a material
- * book, a thin link or a url demands a verbatim quote.
- */
-export function evidencePolicy(covers: readonly LibraryNodeCover[], resources: readonly LibraryResource[]): 'knowledge-ok' | 'verbatim' {
-  for (const cover of covers) {
-    const kind = coverKind(cover)
-    if (kind === 'url') return 'verbatim'
-    if (kind === 'resource') {
-      const resource = resources.find(candidate => candidate.id === cover.ref)
-      if (resource === undefined) continue
-      if (!isThickResource(resource) || resource.meta?.bookKind === 'material') return 'verbatim'
-    }
-  }
-  return 'knowledge-ok'
-}

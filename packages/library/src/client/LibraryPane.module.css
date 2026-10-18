@@ -1562,6 +1562,19 @@ textarea.input { resize: vertical; font: inherit; line-height: 1.5; }
   outline-offset: 2px;
 }
 
+/* 题型 / 题量 rows under 出题范围: a fixed muted label, chips scroll in the rest. */
+.settingRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.settingChips {
+  flex: 1;
+  min-width: 0;
+}
+
 .progress {
   height: 4px;
   overflow: hidden;

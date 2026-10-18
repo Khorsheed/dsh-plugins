@@ -19,7 +19,7 @@ import {
   type LibraryAcceptanceLine, type LibraryAssessment, type LibraryAttempt, type LibraryPage, type LibraryQuizFocus, type LibraryQuizQuestion, type LibraryResource, type LibraryRoadmap, type LibraryVerdict, type RoadmapNode,
 } from '../../types.ts'
 import { colorOf, Cover, coverOf } from '../look.tsx'
-import { CoverChips, coverLabel, evidencePolicy, type CoverContext } from '../covers.tsx'
+import { CoverChips, coverLabel, type CoverContext } from '../covers.tsx'
 import { collectMissed, collectVoided, type MissedRow } from '../mistakes.ts'
 import type { LibraryNodeTab } from '../store.ts'
 import {
@@ -414,9 +414,12 @@ export function NodeView({ p, projectId, resourceId, nodeId, tab }: ViewProps & 
               const base = resource === undefined ? t(`prime.quiz.station.${focus}`, { node: node.title }) : t(`prime.quiz.${focus}`, { book: resource.title, node: node.title })
               const weak = context?.weak ?? []
               const points = context?.points ?? []
+              const kinds = context?.kinds ?? []
               prime(base
                 + (weak.length > 0 ? t('prime.quiz.weakSuffix', { terms: weak.join('、') }) : '')
-                + (points.length > 0 ? t('prime.quiz.pointsSuffix', { points: points.join('、') }) : ''))
+                + (points.length > 0 ? t('prime.quiz.pointsSuffix', { points: points.join('、') }) : '')
+                + (kinds.length > 0 ? t('prime.quiz.kindsSuffix', { kinds: kinds.map(kind => t(`kind.${kind}`)).join('、') }) : '')
+                + (context?.count !== undefined ? t('prime.quiz.countSuffix', { count: String(context.count) }) : ''))
             }}
             onRetake={prompts => { prime(t('prime.quiz.retake', { node: node.title, list: prompts.map(prompt => `- ${prompt}`).join('\n') })) }}
             onRetakeAll={prompts => { prime(t('prime.quiz.missedAll', { list: prompts.map(prompt => `- ${prompt}`).join('\n') })) }}
@@ -702,7 +705,7 @@ function MissRow({ p, row, variant, book }: { p: ViewProps['p']; row: MissedRow;
 }
 
 function QuizTab({ p, projectId, resourceId, node, passRatio, resources, onPrime, onRetake, onRetakeAll, onReplace }: {
-  p: ViewProps['p']; projectId: string; resourceId: string | undefined; node: RoadmapNode; passRatio: number; resources: readonly LibraryResource[]; onPrime: (focus: LibraryQuizFocus, context?: { weak?: readonly string[]; points?: readonly string[] }) => void; onRetake: (prompts: string[]) => void; onRetakeAll: (prompts: string[]) => void; onReplace: (prompts: string[]) => void
+  p: ViewProps['p']; projectId: string; resourceId: string | undefined; node: RoadmapNode; passRatio: number; resources: readonly LibraryResource[]; onPrime: (focus: LibraryQuizFocus, context?: { weak?: readonly string[]; points?: readonly string[]; kinds?: readonly LibraryQuizQuestion['kind'][]; count?: number | undefined }) => void; onRetake: (prompts: string[]) => void; onRetakeAll: (prompts: string[]) => void; onReplace: (prompts: string[]) => void
 }): ReactNode {
   const { t, actions, useStore } = p
   const rev = useStore(s => s.rev)
@@ -712,6 +715,9 @@ function QuizTab({ p, projectId, resourceId, node, passRatio, resources, onPrime
   const [showOthers, setShowOthers] = useState(false)
   // The picked points (重点出这些) — empty means the coach picks by weakness.
   const [picked, setPicked] = useState<readonly string[]>([])
+  // 题型 / 题量: no kinds and no count mean the coach's default mix.
+  const [kinds, setKinds] = useState<readonly LibraryQuizQuestion['kind'][]>([])
+  const [count, setCount] = useState<number | undefined>(undefined)
   // After asking, re-read until the coach has stored the new quiz (two minutes at most).
   const [watching, setWatching] = useState<{ since: number; count: number } | undefined>()
   const [tick, setTick] = useState(0)
@@ -751,7 +757,6 @@ function QuizTab({ p, projectId, resourceId, node, passRatio, resources, onPrime
   const latest = live.at(-1) ?? stations.at(-1)
   const earlier = stations.filter(quiz => quiz !== latest).reverse()
   const loose = shown.filter(quiz => quiz.scope.nodeId === undefined)
-  const policy = evidencePolicy(node.covers, resources)
   // Every quiz's latest sitting (attempts arrive newest first) drives both the
   // paper card's state and the missed / flagged lists — one shared collection,
   // so the station's list, its 其他站 shelf and the project page's entry count
@@ -797,7 +802,7 @@ function QuizTab({ p, projectId, resourceId, node, passRatio, resources, onPrime
     actions.push({ view: 'quiz', projectId, ...(quiz.scope.resourceId === undefined ? (resourceId === undefined ? {} : { resourceId }) : { resourceId: quiz.scope.resourceId }), quizId: quiz.id })
   }
   const ask = (): void => {
-    onPrime(direction, { weak: weak.data?.cards.map(card => card.term) ?? [], points: pickedTitles })
+    onPrime(direction, { weak: weak.data?.cards.map(card => card.term) ?? [], points: pickedTitles, kinds, count })
     setWatching({ since: Date.now(), count: quizCount })
   }
   const retake = (): void => {
@@ -821,10 +826,6 @@ function QuizTab({ p, projectId, resourceId, node, passRatio, resources, onPrime
       {(weak.data?.cards.length ?? 0) > 0 && (
         <div className={css.muted}>{t('node.weakLine', { terms: weak.data!.cards.map(card => card.term).join('、') })}</div>
       )}
-      <section className={css.policy}>
-        <span className={css.muted}>{t('policy.title')}</span>
-        <span>{t(`policy.${policy}`)}</span>
-      </section>
       <StateLine loaded={assessments} t={t} />
       {latest !== undefined && (
         <section className={css.quizLatest}>
@@ -872,6 +873,26 @@ function QuizTab({ p, projectId, resourceId, node, passRatio, resources, onPrime
           {direction === 'mine'
             ? mineCount === 0 ? t('node.focusMineEmpty') : t('node.focusMineHint', { terms: (mine.data?.cards ?? []).map(card => card.term).join('、') })
             : t(`node.focusHint.${direction}`)}
+        </div>
+        <div className={css.settingRow}>
+          <span className={css.muted}>{t('node.kindsTitle')}</span>
+          <ChipRow
+            className={css.settingChips}
+            label={t('node.kindsTitle')}
+            chips={QUIZ_KINDS.map(id => ({ id, label: t(`kind.${id}`) }))}
+            value={kinds}
+            onSelect={id => { setKinds(previous => previous.includes(id) ? previous.filter(kind => kind !== id) : [...previous, id]) }}
+          />
+        </div>
+        <div className={css.settingRow}>
+          <span className={css.muted}>{t('node.countTitle')}</span>
+          <ChipRow
+            className={css.settingChips}
+            label={t('node.countTitle')}
+            chips={[{ id: 'auto', label: t('node.countAuto') }, ...QUIZ_COUNTS.map(n => ({ id: String(n), label: t('node.countN', { count: String(n) }) }))]}
+            value={count === undefined ? 'auto' : String(count)}
+            onSelect={id => { setCount(id === 'auto' ? undefined : Number(id)) }}
+          />
         </div>
       </section>
       {latest === undefined && (
@@ -1011,6 +1032,8 @@ function AcceptanceTab({ p, projectId, node, passRatio, onPrime }: {
 }
 
 const FOCUSES: readonly LibraryQuizFocus[] = ['mine', 'book', 'mixed']
+const QUIZ_KINDS: readonly LibraryQuizQuestion['kind'][] = ['choice', 'fill', 'free']
+const QUIZ_COUNTS: readonly number[] = [3, 6, 10]
 
 /**
  * Rows of quizzes that gate no station (the resource page's 本书测验, the project
