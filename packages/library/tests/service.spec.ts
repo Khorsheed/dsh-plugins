@@ -212,14 +212,21 @@ describe('resources', () => {
 
   it('lists oldest first, ledgers the add, and removes only what exists', async () => {
     const { projectId, bookId } = await seed()
+    // The sort key is createdAt at millisecond precision — every write must get
+    // its own tick, seed's book included: wait until the clock passes the
+    // previous write's stamp (a blind sleep still ties under gate load).
+    const tickPast = async (isoStamp: string): Promise<void> => {
+      const stamp = Date.parse(isoStamp)
+      while (Date.now() <= stamp) await new Promise(resolve => setTimeout(resolve, 1))
+    }
+    const book = await service.getResource({ projectId, resourceId: bookId })
+    if (!book.ok) throw new Error(book.message)
+    await tickPast(book.resource.createdAt)
     const first = await service.putResource({ projectId, title: 'MuJoCo', url: 'https://mujoco.org', kind: 'tool', addedBy: 'coach' })
     if (!first.ok) throw new Error(first.message)
-    // The sort key is createdAt at millisecond precision — wait out the first
-    // write's tick instead of a blind sleep (a 5ms sleep still ties under load).
-    const stamp = Date.parse(first.resource.createdAt)
-    while (Date.now() <= stamp) await new Promise(resolve => setTimeout(resolve, 1))
+    await tickPast(first.resource.createdAt)
     const second = await service.putResource({ projectId, title: 'LeRobot', url: 'https://github.com/huggingface/lerobot', kind: 'repo', addedBy: 'coach' })
-    if (!first.ok || !second.ok) throw new Error('add')
+    if (!second.ok) throw new Error(second.message)
     expect((await service.listResources({ projectId })).resources.map(resource => resource.title)).toEqual(['Principles of Neural Science', 'MuJoCo', 'LeRobot'])
     const events = await service.listEvents({ projectId, types: ['resource.added'] })
     expect(events.events.map(event => event.id)).toEqual([second.resource.id, first.resource.id, bookId])
