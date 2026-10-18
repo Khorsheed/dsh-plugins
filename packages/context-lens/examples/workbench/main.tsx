@@ -190,16 +190,31 @@ const repeatedPrompt = '/home/user/report/article.md 我准备写下一篇文章
 REQ101.segments.history[0] = { index: 1, category: 'user', source: 'user', sourceTurn: 1, full: repeatedPrompt, preview: repeatedPrompt.slice(0, 80), chars: repeatedPrompt.length, freshness: 'history' }
 REQ101.segments.added.push({ index: 29, category: 'plugin-injection', source: 'agent-instructions', sourceTurn: 2, full: repeatedPrompt, preview: repeatedPrompt.slice(0, 80), chars: repeatedPrompt.length, freshness: 'new' })
 REQ102.segments = { ...REQ101.segments }
+// Compression provenance uses the same cross-turn navigation as retained requests.
+const COMPACTION: CapturedRequest = { ...REQ101, seq: 301, requestNumber: undefined, purpose: 'compaction',
+  prefix: undefined, startedAt: 2500, responseSummary: { kind: 'compaction' }, compaction: { id: 'compact-demo', applied: true, hostTurn: 1, replacedCount: 2, replacedChars: 21073, inputPartial: true, before: { turnSeq: 1, scopeId: 'main', seq: 11, requestNumber: 1 } },
+  config: { provider: 'example', model: 'summary-model', maxTokens: 8192 },
+  response: { text: '已确认项目目标和现有约束。保留需要继续完成的任务与关键决定。', toolCalls: [] },
+  segments: { system: [], tools: [], history: [], added: [
+    { index: 0, category: 'user', source: 'user', preview: '被压缩的原始需求', full: '被压缩的原始需求：整理项目目标并核对已有约束。', chars: 24, freshness: 'new' },
+    { index: 1, category: 'tool-result', source: 'read', preview: '被压缩的文件内容', full: '被压缩的文件内容：此前的详细资料与工具返回。', chars: 23, freshness: 'new' },
+  ] },
+}
+const COMPACTION_TURN: TurnListItem = { ...TURNS[0]!, turnSeq: -1, hostTurn: undefined, query: 'compaction', startedAt: 2500, requestCount: 1 }
+TURNS.splice(1, 0, COMPACTION_TURN)
+const COMPACTION_OVERVIEW: TurnOverview = { turn: COMPACTION_TURN, scopes: [scope({ requests: [{ seq: 301, scopeId: 'main', status: 'ok', responseSummary: { kind: 'compaction' }, startedAt: 2500, config: COMPACTION.config, usage: COMPACTION.usage, totalMs: 4200, totalChars: 47 }] })] }
+REQ101.segments.added.unshift({ index: 2, category: 'compaction', source: 'compact-checkpoint', sourceTurn: 1, compactionId: 'compact-demo', compactionRequest: { turnSeq: -1, scopeId: 'main', seq: 301 }, full: '已确认项目目标和现有约束。保留需要继续完成的任务与关键决定。', preview: '已确认项目目标和现有约束。', chars: 34, freshness: 'new' })
+REQ101.segments.added.find(item => item.index === 26)!.pruning = { beforeChars: 24860, afterChars: 33, before: { turnSeq: 1, scopeId: 'main', seq: 11, requestNumber: 1 } }
 const signal = new AbortController().signal
 const success = <T,>(value: T) => Promise.resolve({ ok: true as const, value })
 const props = {
   sessionId: 's1', t,
   useTabInfo: () => ({ sidebar: { expanded: true, fullscreen: false }, panel: { id: 'demo' }, tab: { navigation: { address: 'dsh-page://context-lens', revision: 0 }, signal } }),
   listTurns: () => success({ turns: TURNS, backfill: { state: 'partial' } }),
-  getTurn: (_: string, turn: number) => success(turn === 2 ? OVERVIEW2 : OVERVIEW1),
-  getRequest: (_: string, seq: number) => success(seq === 101 ? REQ101 : seq === 102 ? REQ102 : seq === 201 ? REQ201 : { ...REQ101, seq: 11, requestNumber: 1, responseSummary: OVERVIEW1.scopes[0]!.requests[0]!.responseSummary, response: { toolCalls: [{ name: 'skill', arguments: '{\"name\":\"example-a\"}' }, { name: 'skill', arguments: '{\"name\":\"example-b\"}' }] }, prefix: undefined, segments: { ...REQ101.segments, tools: REQ101.segments.tools.map(tool => ({ ...tool, added: false })) } }),
+  getTurn: (_: string, turn: number) => success(turn === -1 ? COMPACTION_OVERVIEW : turn === 2 ? OVERVIEW2 : OVERVIEW1),
+  getRequest: (_: string, seq: number) => success(seq === 301 ? COMPACTION : seq === 101 ? REQ101 : seq === 102 ? REQ102 : seq === 201 ? REQ201 : { ...REQ101, seq: 11, requestNumber: 1, responseSummary: OVERVIEW1.scopes[0]!.requests[0]!.responseSummary, response: { toolCalls: [{ name: 'skill', arguments: '{\"name\":\"example-a\"}' }, { name: 'skill', arguments: '{\"name\":\"example-b\"}' }] }, prefix: undefined, segments: { ...REQ101.segments, tools: REQ101.segments.tools.map(tool => ({ ...tool, added: false })) } }),
   getTurnTiming: () => success(TIMING2),
-  getSessionTrend: () => success({ turns: TURNS, backfill: { state: 'complete' }, requests: [...OVERVIEW1.scopes.flatMap(s => s.requests.map(r => ({ ...r, turnSeq: 1 }))), ...OVERVIEW2.scopes.flatMap(s => s.requests.map(r => ({ ...r, turnSeq: 2 })))] }),
+  getSessionTrend: () => success({ turns: TURNS, backfill: { state: 'complete' }, requests: [...COMPACTION_OVERVIEW.scopes.flatMap(s => s.requests.map(r => ({ ...r, turnSeq: -1 }))), ...OVERVIEW1.scopes.flatMap(s => s.requests.map(r => ({ ...r, turnSeq: 1 }))), ...OVERVIEW2.scopes.flatMap(s => s.requests.map(r => ({ ...r, turnSeq: 2 })))] }),
 } as unknown as InspectorTabProps
 function Preview() {
   const [dark, setDark] = useState(false)

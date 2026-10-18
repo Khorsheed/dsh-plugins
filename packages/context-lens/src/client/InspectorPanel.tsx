@@ -73,6 +73,7 @@ export function InspectorPanel({
   const [request, setRequest] = useState<CapturedRequest | null>(null)
   const [mainTab, setMainTab] = useState<MainTab>('token')
   const [filterCat, setFilterCat] = useState<CompositionFilter>(null)
+  const [requestTrail, setRequestTrail] = useState<{ turnSeq: number; scopeId: string; seq: number }[]>([])
   const [scopeId, setScopeId] = useState<string>('main')
   const [selectedSeq, setSelectedSeq] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -85,6 +86,7 @@ export function InspectorPanel({
   /** Retry a failed load: back to the loading state, re-run the pull. */
   const onRetry = (): void => {
     setError(null)
+    setRequestTrail([])
     setTurns(null)
     setOverview(null)
     setReloadKey(key => key + 1)
@@ -211,10 +213,11 @@ export function InspectorPanel({
   }, [sessionId, needsPreviousTurn, previousRealTurnSeq, getTurn, tab.signal])
 
   const previousResponseNumber = ((): number | null => {
-    if (selectedIndex > 0) return scopeRequests[selectedIndex - 1]?.requestNumber ?? null
+    if (selectedItem?.responseSummary.kind === 'compaction') return null
+    if (selectedIndex > 0) return scopeRequests.slice(0, selectedIndex).filter(r => r.responseSummary.kind !== 'compaction').at(-1)?.requestNumber ?? null
     if (selectedIndex === 0 && effectiveScope !== undefined && previousTurn !== null) {
       const previousScope = previousTurn.scopes.find(candidate => candidate.scopeId === effectiveScope.scopeId)
-      return previousScope?.requests.at(-1)?.requestNumber ?? null
+      return previousScope?.requests.filter(r => r.responseSummary.kind !== 'compaction').at(-1)?.requestNumber ?? null
     }
     return null
   })()
@@ -364,6 +367,14 @@ export function InspectorPanel({
       <div className={css.bodyFill}>
         {effectiveScope.status === 'failed' && <FailureCard scope={effectiveScope} t={t} />}
         <TokenView
+          onOpenRequest={link => {
+            if (turnSeq !== null && selectedRequestSeq !== null) setRequestTrail(previous => [...previous, { turnSeq, scopeId: effectiveScope.scopeId, seq: selectedRequestSeq }])
+            setTurnSeq(link.turnSeq); onOpenRequest(link.seq, link.scopeId)
+          }}
+          onReturn={requestTrail.length === 0 ? undefined : () => {
+            const target = requestTrail.at(-1)!
+            setRequestTrail(previous => previous.slice(0, -1)); setTurnSeq(target.turnSeq); onOpenRequest(target.seq, target.scopeId)
+          }}
           scope={effectiveScope}
           selectedSeq={selectedRequestSeq}
           request={request}
@@ -417,7 +428,7 @@ export function InspectorPanel({
             />
           </div>
         </div>
-        {turn !== undefined && <div className={css.query}><b>{turn.query}</b></div>}
+        {turn !== undefined && <div className={css.query}><b>{turn.hostTurn === undefined && turn.query === 'compaction' ? t('compaction.title') : turn.query}</b></div>}
         {backfill?.state === 'partial' && <div className={css.stateNote}>{t('hint.backfillTruncated')}</div>}
         {chips.length > 0 && (
           <ChipRow

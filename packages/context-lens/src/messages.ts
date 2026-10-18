@@ -39,6 +39,8 @@ export interface CapturedMessage {
   sourceKind: string
   /** `ContextFormed.form` when the producer declared one. */
   sourceForm?: string
+  compactionId?: string
+  pruning?: { beforeChars: number; afterChars: number }
   content: CapturedBlock[]
   /** tool-role messages: the answered call. */
   toolCallId?: string
@@ -161,6 +163,8 @@ export function classifyMessage(message: CapturedMessage): SegmentCategory {
     case 'skill-catalog':
     case 'skill-invocation':
       return 'skill-injection'
+    case 'compact-checkpoint':
+      return 'compaction'
     case 'repeat-tool-reminder':
       return 'reminder-injection'
     default:
@@ -176,12 +180,11 @@ export function messageSourceLabel(message: CapturedMessage, toolName?: string):
 
 /**
  * Diff identity for one message: the durable id when present, else a content
- * hash. Ids never change content, so id equality is sufficient; the hash
+ * hash. Tool-result pruning preserves ids while changing content; the hash
  * fallback keeps hand-built id-less inputs (aux requests) diffable.
  */
 export function messageKey(message: CapturedMessage, hash: (text: string) => string): string {
-  if (message.id !== undefined) return `id:${message.id}`
-  return `h:${hash(JSON.stringify({
+  return `${message.id === undefined ? 'h' : `id:${message.id}`}:${hash(JSON.stringify({
     ...'turn' in message && typeof message.turn === 'number' ? { sourceTurn: message.turn } : {},
     role: message.role,
     kind: message.sourceKind,
@@ -197,12 +200,13 @@ export function fromRequestMessage(message: RequestMessage): CapturedMessage {
   // carry both. Narrowing through `in` keeps the `?: never` arms honest.
   const id = 'id' in message && typeof message.id === 'string' ? message.id : undefined
   const source = 'source' in message && typeof message.source === 'object'
-    ? message.source as { readonly kind: string; readonly form?: string }
+    ? message.source as { readonly kind: string; readonly form?: string; readonly compactionId?: string }
     : undefined
   const base = {
     ...id === undefined ? {} : { id },
     ...'turn' in message && typeof message.turn === 'number' ? { sourceTurn: message.turn } : {},
     role: message.role,
+    ...source?.compactionId === undefined ? {} : { compactionId: source.compactionId },
     sourceKind: source?.kind ?? 'user',
     ...source?.form === undefined ? {} : { sourceForm: source.form },
     content,
@@ -263,6 +267,7 @@ export function fromLogMessage(raw: unknown): CapturedMessage | undefined {
     ...typeof value['turn'] === 'number' ? { sourceTurn: value['turn'] } : {},
     role,
     sourceKind,
+    ...typeof source?.['compactionId'] === 'string' ? { compactionId: source['compactionId'] } : {},
     ...typeof source?.['form'] === 'string' ? { sourceForm: source['form'] } : {},
     content,
     ...typeof value['toolCallId'] === 'string' ? { toolCallId: value['toolCallId'] } : {},

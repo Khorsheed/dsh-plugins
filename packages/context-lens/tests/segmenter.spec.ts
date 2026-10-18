@@ -87,8 +87,8 @@ describe('serializeMessage / previewMessage', () => {
 })
 
 describe('messageKey', () => {
-  it('prefers the durable id and falls back to the content hash', () => {
-    expect(messageKey(msg({ id: 'm1' }), hash)).toBe('id:m1')
+  it('combines the durable id and content hash', () => {
+    expect(messageKey(msg({ id: 'm1' }), hash)).toMatch(/^id:m1:/)
     const a = messageKey(msg({ content: [{ type: 'text', text: 'a' }] }), hash)
     const b = messageKey(msg({ content: [{ type: 'text', text: 'a' }] }), hash)
     const c = messageKey(msg({ content: [{ type: 'text', text: 'b' }] }), hash)

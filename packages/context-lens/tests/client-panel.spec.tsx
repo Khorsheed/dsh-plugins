@@ -717,3 +717,19 @@ describe('agent-local display numbers', () => {
     expect(screen.getAllByTitle(zh['req.numberUnknown']).length).toBeGreaterThan(0)
   })
 })
+
+describe('compression provenance navigation', () => {
+  it('opens an auxiliary compaction across turns, then returns to the exact source request', async () => {
+    const auxiliaryTurn: TurnListItem = { ...TURNS[0]!, turnSeq: -1, hostTurn: undefined, query: 'compaction', startedAt: 2500 }
+    const auxiliary: CapturedRequest = { ...REQ101, seq: 301, requestNumber: undefined, purpose: 'compaction', responseSummary: { kind: 'compaction' }, compaction: { id: 'c', inputPartial: true, replacedCount: 2, before: { turnSeq: 1, scopeId: 'main', seq: 11 } } }
+    const source: CapturedRequest = { ...REQ101, segments: { ...REQ101.segments, added: [{ index: 5, category: 'compaction', source: 'compact-checkpoint', full: 'Summary body', preview: 'Summary body', chars: 12, freshness: 'new', compactionId: 'c', compactionRequest: { turnSeq: -1, scopeId: 'main', seq: 301 } }] } }
+    bench({ turns: [TURNS[0]!, auxiliaryTurn, TURNS[1]!], requests: { 101: source, 301: auxiliary }, overview: seq => seq === -1 ? { turn: auxiliaryTurn, scopes: [{ ...OVERVIEW1.scopes[0]!, requests: [{ ...OVERVIEW1.scopes[0]!.requests[0]!, seq: 301, requestNumber: undefined, responseSummary: { kind: 'compaction' } }] }] } : seq === 1 ? OVERVIEW1 : OVERVIEW2 })
+    fireEvent.click(await screen.findByRole('button', { name: '查看压缩调用及原历史 ↗' }))
+    await screen.findByText('日志恢复 · 输入仅含被压缩历史 ⓘ')
+    expect(screen.getByText('记录间隔')).toBeTruthy()
+    expect(screen.getByText('日志未保留完整输入，不比较缓存前缀。')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '← 返回来源请求' }))
+    await screen.findByRole('button', { name: '查看压缩调用及原历史 ↗' })
+    expect(screen.getByRole('button', { name: '#101 · read:a.ts' }).getAttribute('aria-pressed')).toBe('true')
+  })
+})

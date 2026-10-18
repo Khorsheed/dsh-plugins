@@ -83,6 +83,7 @@ export function TimingView({
           </div>
         ))}
       </div>
+      {scopes.some(s => s.requests.some(r => r.timingApproximate)) && <div className={css.stateNote}>{t('compaction.timingHint')}</div>}
       {data.overlap > 0 && (
         <div className={css.stateNote}>{t('lens.overlap')}</div>
       )}
@@ -252,7 +253,7 @@ export function TimingView({
                               <span>
                                 {summaryText(
                                   r.responseSummary,
-                                  t('resp.directAnswer'),
+                                  t('resp.directAnswer'), t('compaction.title'),
                                 )}
                               </span>
                               {k === 'wait' && (

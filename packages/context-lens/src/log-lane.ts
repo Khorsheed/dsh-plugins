@@ -38,6 +38,8 @@ export interface SessionLogRow {
   time?: number
   data?: unknown
   ignorable?: true
+  surfaceOp?: 'append' | { op: 'replace'; startSeq: number; endSeq: number }
+  sourceEventSeqs?: number[]
 }
 
 /** What the lane asks of the host's persistence service (structural probe). */
@@ -87,6 +89,7 @@ export interface SessionLogCursor {
   numberedFromStart: boolean
   /** Model-visible messages folded so far, in log order. */
   messages: FoldedMessage[]
+  compactions: Map<string, { startedAt: number; hostTurn?: number; request?: BuiltLogRequest }>
   /** The latest step/start time — the next request's dispatch proxy. */
   stepStartAt: number | undefined
   /** The latest request/header config, when the log carries any. */
@@ -138,6 +141,7 @@ export function openCursor(): SessionLogCursor {
     consumed: 0,
     numberedFromStart: false,
     messages: [],
+    compactions: new Map(),
     stepStartAt: undefined,
     config: undefined,
     tools: undefined,
@@ -169,6 +173,7 @@ export function foldLogRows(
   for (const row of rows) {
     if (cursor.consumed === 0) cursor.numberedFromStart = row.type === 'session' || row.seq === 0
     cursor.consumed += 1
+    if (row.ignorable) continue
     const data = (typeof row.data === 'object' && row.data !== null ? row.data : {}) as Record<string, unknown>
     switch (row.type) {
       case 'turn/start': {
@@ -217,14 +222,14 @@ export function foldLogRows(
       case 'developer/message': {
         const message = fromLogMessage(data['message'])
         if (message !== undefined) message.sourceTurn = typeof data['turn'] === 'number' ? data['turn'] : cursor.turnHost
-        if (message !== undefined) cursor.messages.push({ seq: row.seq ?? cursor.consumed, message })
+        if (message !== undefined) placeMessage(cursor, row, message)
         break
       }
       case 'user/message': {
         const message = fromLogMessage(data)
         if (message !== undefined) message.sourceTurn = cursor.turnHost
         if (message !== undefined) {
-          cursor.messages.push({ seq: row.seq ?? cursor.consumed, message })
+          placeMessage(cursor, row, message)
           if (!cursor.turnQuerySeen && message.sourceKind === 'user') {
             cursor.turnQuerySeen = true
             sink.queryText?.(cursor.turnHost, collapseQuery(serializeMessage(message)), row.time)
@@ -241,7 +246,7 @@ export function foldLogRows(
         const message = fromLogMessage(data['message'])
         if (message !== undefined) message.sourceTurn = typeof data['turn'] === 'number' ? data['turn'] : cursor.turnHost
         if (message !== undefined) {
-          cursor.messages.push({ seq: row.seq ?? cursor.consumed, message })
+          placeMessage(cursor, row, message)
           if (message.id !== undefined) {
             if (request.settledAt !== undefined) {
               cursor.messageDurations.set(message.id, request.settledAt - request.startedAt)
@@ -300,10 +305,28 @@ export function foldLogRows(
         }
         break
       }
+      case 'compaction/start': {
+        const id = data['compactionId']
+        if (typeof id === 'string') cursor.compactions.set(id, { startedAt: row.time ?? 0, ...typeof data['turn'] === 'number' ? { hostTurn: data['turn'] } : {} })
+        break
+      }
+      case 'compaction/summary': {
+        const request = buildCompaction(cursor, row, data)
+        if (request) {
+          const id = request.compaction!.id
+          cursor.compactions.set(id, { ...cursor.compactions.get(id), startedAt: request.startedAt, request })
+          built.push(request); sink.request?.(cursor.turnHost, request)
+        }
+        break
+      }
+      case 'compaction/end':
+        if (typeof data['compactionId'] === 'string') cursor.compactions.delete(data['compactionId'])
+        break
       case 'tool/result': {
         const message = fromLogMessage(data['message'])
         if (message !== undefined) message.sourceTurn = typeof data['turn'] === 'number' ? data['turn'] : cursor.turnHost
-        if (message !== undefined) cursor.messages.push({ seq: row.seq ?? cursor.consumed, message })
+        if (message !== undefined) placeMessage(cursor, row, message)
+        if (row.surfaceOp && row.surfaceOp !== 'append') break
         const callId = message?.toolCallId
           ?? (typeof data['toolCallId'] === 'string' ? data['toolCallId'] : undefined)
         if (callId !== undefined) {
@@ -334,6 +357,51 @@ export function foldLogRows(
     }
   }
   return built
+}
+
+/** Apply inclusive endpoints in CURRENT surface order (seq order may differ). */
+function placeMessage(cursor: SessionLogCursor, row: SessionLogRow, message: CapturedMessage): void {
+  const node = { seq: row.seq ?? cursor.consumed, message }
+  const op = row.surfaceOp
+  // Markerless legacy fixtures behave as append; native decoded logs carry the marker.
+  if (op === undefined || op === 'append') { cursor.messages.push(node); return }
+  const start = cursor.messages.findIndex(item => item.seq === op.startSeq)
+  const end = cursor.messages.findIndex(item => item.seq === op.endSeq)
+  if (op.op !== 'replace' || start < 0 || end < start) throw new Error(`Invalid context surface replacement at event ${row.seq}`)
+  if (row.type === 'tool/result') {
+    const original = cursor.messages[start]!.message
+    const beforeChars = original.pruning?.beforeChars ?? serializeMessage(original).length
+    const afterChars = serializeMessage(message).length
+    if (afterChars < beforeChars) message.pruning = { beforeChars, afterChars }
+  }
+  cursor.messages.splice(start, end - start + 1, node)
+  const compression = message.compactionId === undefined ? undefined : cursor.compactions.get(message.compactionId)?.request?.compaction
+  if (compression) compression.applied = true
+}
+
+/** Recover recorded model-backed summaries without inventing the missing instruction. */
+function buildCompaction(cursor: SessionLogCursor, row: SessionLogRow, data: Record<string, unknown>): BuiltLogRequest | undefined {
+  const id = data['compactionId']
+  if (typeof id !== 'string' || (data['llmStreamCall'] !== true && data['usage'] === undefined)) return undefined
+  const start = cursor.compactions.get(id)
+  const seqs = Array.isArray(data['shadowedSeqs']) ? data['shadowedSeqs'] : []
+  const selected = new Set(seqs)
+  const region = cursor.messages.filter(item => selected.has(item.seq))
+  const summary = fromLogMessage({ role: 'assistant', content: data['summary'] })
+  if (!summary) return undefined
+  const temp = openCursor()
+  temp.messages = region
+  temp.stepStartAt = start?.startedAt ?? row.time
+  temp.config = {
+    ...typeof data['provider'] === 'string' ? { provider: data['provider'] } : {},
+    ...typeof data['model'] === 'string' ? { model: data['model'] } : {},
+    ...typeof data['maxTokens'] === 'number' ? { maxTokens: data['maxTokens'] } : {},
+  }
+  const result = buildRequest(temp, row, { message: { role: 'assistant', content: data['summary'] }, usage: data['usage'] }, false)
+  return { ...result, responseSummary: { kind: 'compaction' }, purpose: 'compaction', compaction: {
+    id, applied: false, ...start?.hostTurn === undefined ? {} : { hostTurn: start.hostTurn },
+    ...Array.isArray(data['shadowedSeqs']) && region.length === seqs.length ? { replacedCount: region.length, replacedChars: region.reduce((n, item) => n + serializeMessage(item.message).length, 0) } : {}, inputPartial: true,
+  } }
 }
 
 /**
@@ -382,7 +450,9 @@ export function reconstructSession(rows: readonly SessionLogRow[]): LogTurn[] {
       if (turn !== undefined) turn.closingMessageId = messageId
     },
     request: (hostTurn, request) => {
-      turnFor(hostTurn, request.startedAt)?.requests.push(request)
+      if (request.compaction) {
+        turns.push({ hostTurn: -turns.length - 1, purpose: 'compaction', query: 'compaction', startedAt: request.startedAt, endedAt: request.settledAt ?? request.startedAt, endReasonKind: 'completed', requests: [request], delegations: [] })
+      } else turnFor(hostTurn, request.startedAt)?.requests.push(request)
     },
     delegation: (delegation) => {
       turnFor(delegation.hostTurn, delegation.at)?.delegations.push(delegation)
@@ -398,6 +468,7 @@ export function reconstructSession(rows: readonly SessionLogRow[]): LogTurn[] {
 /** One reconstructed turn (the store turns this into a TurnRecord). */
 export interface LogTurn {
   hostTurn: number
+  purpose?: string
   query: string
   startedAt: number
   endedAt?: number

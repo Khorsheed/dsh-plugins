@@ -38,6 +38,22 @@ export type SegmentCategory =
   | 'runtime-snapshot'
   /** 工具变更通告。 */
   | 'tool-change'
+  | 'compaction'
+
+/** A retained request address; only emitted while the target is readable. */
+export interface RequestLink { turnSeq: number; scopeId: string; seq: number; requestNumber?: number }
+/** Durable compression identity, separate from a model request's display ordinal. */
+export interface CompactionInfo {
+  id: string
+  hostTurn?: number
+  /** True only after a checkpoint replacement actually committed. */
+  applied?: boolean
+  replacedCount?: number
+  replacedChars?: number
+  /** Log recovery knows the selected region, but not the complete model input. */
+  inputPartial?: boolean
+  before?: RequestLink
+}
 
 /** One message row inside a request's four-segment breakdown. */
 export interface SegmentItem {
@@ -47,6 +63,10 @@ export interface SegmentItem {
    * ahead of the message array rather than inside it.
    */
   index: number
+  messageId?: string
+  compactionId?: string
+  compactionRequest?: RequestLink
+  pruning?: { beforeChars: number; afterChars: number; before?: RequestLink }
   category: SegmentCategory
   /** 角色/来源标签：model、runtime-context、skill-catalog、section 名等。 */
   source: string
@@ -126,6 +146,7 @@ export interface RequestConfig {
  * 来自响应流的 tool-call / text blocks。
  */
 export type ResponseSummary =
+  | { kind: 'compaction' }
   /**
    * 响应以工具调用收尾：`name` 为首个调用的工具名，`hint` 为其参数摘要
    *（what → 文件 basename → for → description）。多调用用 `toolCounts` 按名称计数；
@@ -180,6 +201,7 @@ export interface CapturedRequest {
   scopeId: string
   sessionId: string
   purpose?: string
+  compaction?: CompactionInfo
   startedAt: number
   status: 'streaming' | 'ok' | 'failed'
   error?: string
@@ -402,6 +424,8 @@ export interface RequestListItem {
   startedAt: number
   usage?: RequestUsage
   totalMs?: number
+  /** Logged compaction bracket, not an exact provider-call duration. */
+  timingApproximate?: boolean
   /** 请求体总字符数（明细头右上）。 */
   totalChars: number
   toolErrors?: number

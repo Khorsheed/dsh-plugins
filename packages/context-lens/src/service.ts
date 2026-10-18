@@ -188,6 +188,19 @@ export class InspectorService {
   private dispatchSessionEvent(session: Session, event: SessionEvent): void {
     const sessionId: string = session.id
     const at = event.time
+    const eventType: string = event.type
+    if (eventType.startsWith('compaction/')) this.store.noteCompaction(sessionId, eventType, event.data as unknown as Record<string, unknown>)
+    if (event.type === 'tool/result' && event.surfaceOp !== 'append') {
+      const original = session.eventAt(event.surfaceOp.startSeq)
+      if (original?.type === 'tool/result') {
+        this.store.notePruning(sessionId, event.data.message.id,
+          serializeMessage(fromRequestMessage(original.data.message)).length,
+          serializeMessage(fromRequestMessage(event.data.message)).length)
+      }
+      // A replacement updates context, not the original execution's result.
+      return
+    }
+
     switch (event.type) {
       case 'turn/start':
         this.store.turnStart(sessionId, event.data.turn, at)
@@ -197,6 +210,7 @@ export class InspectorService {
         return
       case 'user/message': {
         const message = fromRequestMessage(event.data)
+        if (message.compactionId !== undefined && event.surfaceOp !== 'append') this.store.noteCompaction(sessionId, 'compaction/applied', { compactionId: message.compactionId })
         if (message.id) this.store.noteMessageTurn(sessionId, message.id)
         this.store.noteUserMessage(sessionId, message.sourceKind, serializeMessage(message))
         return
