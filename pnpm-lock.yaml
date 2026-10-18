@@ -2168,7 +2168,7 @@ importers:
   packages/presets:
     dependencies:
       '@deepseek-ai/dsh-agent-preset':
-        specifier: ^0.1.7-rc.1 || ^0.2.0-rc.1
+        specifier: ^0.1.7-rc.1 || ^0.2.0-rc.1 || ^0.2.1-rc.1
         version: 0.2.0-rc.2(@deepseek-ai/cordis-plugin-loader@1.0.5)(@deepseek-ai/cordis@4.0.4)(@deepseek-ai/dsh-agent-preset-registry@0.2.1-rc.1(f634e48299eaa3e43c580bdbeabef67a))
     devDependencies:
       '@deepseek-ai/cordis':
@@ -6543,7 +6543,7 @@ snapshots:
       '@deepseek-ai/cordis': 4.0.4(@deepseek-ai/cordis-plugin-include@1.0.10)(@deepseek-ai/cordis-plugin-loader@1.0.5)
       '@deepseek-ai/cordis-plugin-loader': 1.0.5(@deepseek-ai/cordis@4.0.4)(node-addon-require-builtin@0.1.9)
       '@deepseek-ai/dsh-agent-preset-registry': 0.2.1-rc.1(f634e48299eaa3e43c580bdbeabef67a)
-      '@deepseek-ai/schemastery': 3.18.4
+      '@deepseek-ai/schemastery': 3.18.5
 
   '@deepseek-ai/dsh-agent-presets@0.1.0-rc.8(f87db45a7b7f936591b15b1a78a73618)':
     dependencies:
@@ -7070,7 +7070,7 @@ snapshots:
   '@deepseek-ai/dsh-invariants@0.1.0-rc.8(@deepseek-ai/cordis@4.0.4)':
     dependencies:
       '@deepseek-ai/cordis': 4.0.4(@deepseek-ai/cordis-plugin-include@1.0.10)(@deepseek-ai/cordis-plugin-loader@1.0.5)
-      '@deepseek-ai/schemastery': 3.18.4
+      '@deepseek-ai/schemastery': 3.18.5
 
   '@deepseek-ai/dsh-jobs@0.2.1-rc.1(e7475752da41ab25dc5f503be87d2987)':
     dependencies:
