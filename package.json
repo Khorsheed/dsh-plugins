@@ -31,7 +31,8 @@
     "deploy:check-links": "tsx scripts/check-deployment-links.mts",
     "compat:report": "tsx scripts/compat-report.ts",
     "verify:package": "tsx scripts/verify-package.mts",
-    "release:status": "tsx scripts/release-status.ts"
+    "release:status": "tsx scripts/release-status.ts",
+    "release:wave": "tsx scripts/release-wave.mts"
   },
   "devDependencies": {
     "@testing-library/dom": "^10.4.1",
