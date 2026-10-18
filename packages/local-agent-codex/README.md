@@ -97,7 +97,7 @@ model_provider = "dsh-router"
 
 ## Compatibility
 
-- npm 发布线(`@deepseek-ai/dsh@0.1.5-rc.1`):✅ 公开 API 兼容。生成中的内容走 local-agent 瞬时 Remote 与公开 Conversation 节点;增量耐久检查点负责恢复,最终原生消息保留转写与用量语义。端到端延迟验收由 room 协调者提案跟踪。minHost 0.1.5-rc.1,更旧宿主请停留在旧发布线。
+- npm 发布线(`@deepseek-ai/dsh@0.1.5-rc.1`):✅ 公开 API 兼容。生成中的内容走 local-agent 瞬时 Remote 与公开 Conversation 节点;增量耐久检查点负责恢复,最终原生消息保留转写与用量语义。端到端延迟验收由 room 协调者提案跟踪。minHost 0.1.5-rc.1,更旧宿主请停留在旧发布线。设置卡自本版起只挂 0.1.7-alpha.1+ 的 Plugins 页 `plugins.item` 席位(`configForms.whileServed` 随宿主服务的 `local-agent-codex` 命名空间挂载);0.1.5 线不再呈现卡片(宿主删除了 `settings.plugin.item` 席位),其余表面不变。
 - 源码线(deepseek-harness master):✅(verifiedHost: 0.2.1-rc.1)——host-021 波对 0.2.1-rc.1 树全量 build+test 绿;委派迁移到 `ctx.subagents.startActivation`(受管 activation),run.id 改为每次执行唯一。
 
 ## 已知限制
@@ -114,7 +114,7 @@ model_provider = "dsh-router"
 
 **命名 scope。** `/codex login --scope <名>` 会在 `<homesRoot>/codex@<名>` 里另开一份作用域目录:目录建立时自动跑同一份 `config.toml` provision(把凭据存储钉在文件而非 macOS keychain),因此该 scope 的登录落在它自己的 `auth.json` 里。带 scope 的委派用它跑 `codex exec`、把 rollout 写进它、从它回读;只走 exec——常驻 app-server 绑的是缺省作用域目录。
 
-**bundle 组成。** patch 注册 `codex` harness(`CODEX_HOME` 作用域目录、PTY 登录、rollout 文件会话记录)——恰好一行 provider 行;`subagent_codex` 工具自家族折叠起是本包的 `./tool` 组合入口,由点名它的 agent 预设按会话授予(dev 预设的 `tool-subagent-codex-local` 行),不再挂 profile 根。家族沿用官方模型名 `subagent_codex`:官方 preset 的同名行本就 `disabled: true`,patch 对 profile 根的同名行再禁一次,社区安装永远不会注册出两个 `subagent_codex`;刻意在自有 preset 层重新启用官方行的用户会得到响亮的重名冲突,按设计必须二选一。`codex-local` provider 在该作用域目录下 spawn `codex exec`(live 未启用时的一次性驱动)。浏览器半部分随本包 `./client` 提供:Codex 设置卡组合家族 core 的共享 `ProviderAuthBlock`,独立安装落在 Plugins 页的包详情视图(`plugins.bundle.config`,按包名派发),作为家族 bundle 成员安装落在 bundle 详情页的行级配置入口(`plugins.row.config`),0.1.5 落在 设置 → 插件 → 插件配置(`settings.plugin.item`,按设置命名空间派发);卡片写入经绑定的 settingsScope 热生效,不用重载。core 本身来自声明为依赖的 `@khorsheed/dsh-local-agent`。
+**bundle 组成。** patch 注册 `codex` harness(`CODEX_HOME` 作用域目录、PTY 登录、rollout 文件会话记录)——恰好一行 provider 行;`subagent_codex` 工具自家族折叠起是本包的 `./tool` 组合入口,由点名它的 agent 预设按会话授予(dev 预设的 `tool-subagent-codex-local` 行),不再挂 profile 根。家族沿用官方模型名 `subagent_codex`:官方 preset 的同名行本就 `disabled: true`,patch 对 profile 根的同名行再禁一次,社区安装永远不会注册出两个 `subagent_codex`;刻意在自有 preset 层重新启用官方行的用户会得到响亮的重名冲突,按设计必须二选一。`codex-local` provider 在该作用域目录下 spawn `codex exec`(live 未启用时的一次性驱动)。浏览器半部分随本包 `./client` 提供:Codex 设置卡组合家族 core 的共享 `ProviderAuthBlock`,落在 Plugins 页的 `plugins.item` 条目——宿主服务 `local-agent-codex` 命名空间时经 `configForms.whileServed` 挂载,独立安装、家族 bundle、模式包同一张卡;卡片写入经绑定的 settingsScope 热生效,不用重载。core 本身来自声明为依赖的 `@khorsheed/dsh-local-agent`。
 
 **登录与凭据。** `/codex login` 经宿主 subprocess seam 在伪终端里跑 `codex login`——CLI 自己起 localhost 回调服务并打开浏览器,这是第一类流程;命令回复附带从输出里抓取的授权 URL 作兜底链接,CLI 追问 code 时用户以 `/codex code <code>` 粘贴(写入子进程 stdin)。完成由监听作用域目录的凭证 watch 判定:`auth.json` 出现且时间戳新于 watch 起点——残留的旧凭证不会被误认成新登录。无浏览器的远程终端可以手动以 `CODEX_HOME` 指向作用域目录跑 `codex login --device-auth`,凭据落在同一份 `auth.json`。首次启动写入一份最小 `config.toml`,固定 `cli_auth_credentials_store = "file"`——Codex 默认的 `auto` 会解析到 macOS keychain,把凭据泄漏到作用域目录之外并使本包的 `auth.json` 存在性检查失效;已存在的 config 保持不动。`/codex logout` 删除作用域 `auth.json`,之后重新登录即可换账号。
 

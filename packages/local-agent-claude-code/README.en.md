@@ -72,7 +72,7 @@ The model surface now also reads Claude's native `initialize` directory, preserv
 
 ## Compatibility
 
-- npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`): ✅ public API compatible. Live generation uses the local-agent transient Remote and public Conversation nodes; incremental durable recovery checkpoints handle persistence, and native final messages retain transcript and usage semantics. Browser P95 acceptance is tracked by the room coordinator proposal. minHost is 0.1.5-rc.1 — older hosts stay on the previous release line.
+- npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`): ✅ public API compatible. Live generation uses the local-agent transient Remote and public Conversation nodes; incremental durable recovery checkpoints handle persistence, and native final messages retain transcript and usage semantics. Browser P95 acceptance is tracked by the room coordinator proposal. minHost is 0.1.5-rc.1 — older hosts stay on the previous release line. The settings card now mounts only on the Plugins page's `plugins.item` seat on host 0.1.7-alpha.1+ (`configForms.whileServed` follows the served `local-agent-claude-code` namespace); 0.1.5 renders no card (the host removed the `settings.plugin.item` seat) — every other surface is unchanged.
 - source line (deepseek-harness master): ✅ (verifiedHost: 0.2.1-rc.1) — host-021 wave: full build+test green against the 0.2.1-rc.1 tree; delegation moved to `ctx.subagents.startActivation` (managed activation), and run.id is now unique per execution.
 
 ## Known Limitations

@@ -1,5 +1,5 @@
 # capability-catalog bundle patch: inserts the plugin row into the composing
-# profile. The browser half (settings.plugin.item card) is discovered through
+# profile. The browser half (the settings.section card) is discovered through
 # the package.json dsh.client block; this row activates the host half (the
 # skills snapshot + add-skill Remote). The @-prefixed name must stay quoted —
 # it is a YAML reserved character.

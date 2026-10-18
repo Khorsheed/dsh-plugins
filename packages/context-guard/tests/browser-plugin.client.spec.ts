@@ -1,9 +1,10 @@
 /**
  * context-guard plugin halves: the browser entry's dictionary, composer-tool-
  * row and settings-card registrations against the real SlotRegistry (with
- * fiber teardown proving removal — HMR safety), the injected compact verb's
- * three paths against a stubbed command Remote, the shared settings-scope
- * channel, and the host half's dual-face settings registration.
+ * fiber teardown proving removal — HMR safety), the whileServed gate on the
+ * Plugins-page `plugins.item` card, the injected compact verb's three paths
+ * against a stubbed command Remote, the shared settings-scope channel, and the
+ * host half's dual-face settings registration.
  */
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
@@ -20,9 +21,6 @@ import type { ContextGuardInjected, ContextGuardSettingsCardInjected } from '../
 
 /** A session id the slot system may materialize the inject face for. */
 const KNOWN = 's1' as SessionId
-
-/** This bundle's package name — the key the alpha.2 plugins.bundle.config entry registers under. */
-const PACKAGE_NAME = '@khorsheed/dsh-context-guard'
 
 /**
  * In-memory fake of the 0.1.5 settings face: the explicit `register` face the
@@ -134,11 +132,18 @@ interface Bench {
   scope: GuardScope
 }
 
-/** Boot the browser half over a real slot tree that declares the input.right list and the given settings slot. */
+/**
+ * Boot the browser half over a real slot tree that declares the input.right
+ * list and (by default) the plugins.item list. `served` is the namespace set
+ * the fake configForms reports to the whileServed gate; null means the host
+ * line has no configForms service at all (0.1.5).
+ */
 async function bench(
   config?: Parameters<typeof apply>[1],
-  settingsSlot: 'settings.plugin.item' | 'plugins.bundle.config' | 'plugins.row.config' = 'settings.plugin.item',
+  options?: { served?: readonly string[] | null; declareItemSlot?: boolean },
 ): Promise<Bench> {
+  const served = options?.served === undefined ? [CONTEXT_GUARD_NS] : options.served
+  const declareItemSlot = options?.declareItemSlot ?? true
   const execute = vi.fn()
   const { scope } = stubScope()
   const ctx = new Context()
@@ -147,7 +152,7 @@ async function bench(
     name: 'root',
     children: {
       'conversation.input.right': { kind: 'list', scope: 'session' },
-      [settingsSlot]: { kind: 'keyed', scope: 'root' },
+      ...(declareItemSlot ? { 'plugins.item': { kind: 'list', scope: 'root' } } : {}),
     },
   } as never, () => null)
   ctx.provide('locale', new LocaleRuntime(ctx))
@@ -155,12 +160,22 @@ async function bench(
   // The plugin injects the exact 'remote.commands' service key (how the
   // generated commands namespace is mounted in the real client assembly).
   ctx.provide('remote.commands', { execute } as never)
-  // The 0.1.5 settings face: the scope channel's legacy probe arms from this
-  // (the rc.1 `configForms` probe never fires here — by design).
-  ctx.provide('settingsScope', { bind: () => scope } as never)
+  if (served !== null) {
+    const servedSet = new Set(served)
+    // The rc.1+ settings face: the scope channel's first probe arms from
+    // `get`, and the card track's whileServed gate consults `servedSet`.
+    ctx.provide('configForms', {
+      get: () => scope,
+      whileServed: (namespaces: readonly string[], register: (served: ReadonlySet<string>) => () => void) =>
+        namespaces.some(ns => servedSet.has(ns)) ? register(servedSet) : () => {},
+    } as never)
+  }
   // ctx.plugin(meta, config) hands `config` to apply as its second argument.
   const fiber = ctx.plugin({ inject: [...inject], apply }, config)
   await fiber.await()
+  // The card track rides a deferred ctx.inject fiber, which loads past a
+  // microtask boundary; give it a macrotask to land.
+  await new Promise(resolve => setTimeout(resolve, 0))
   return { ctx, fiber, execute, scope }
 }
 
@@ -173,21 +188,12 @@ function buttonInjectedFor(ctx: Context, sessionId: SessionId): ContextGuardInje
   return (entry.inject as unknown as (id: SessionId) => ContextGuardInjected)(sessionId)
 }
 
-/** Read the registered settings-card entry's inject factory (0.1.5 slot). */
+/** Read the registered settings-card entry's inject factory (the plugins.item list entry). */
 function cardInjectedFor(ctx: Context): ContextGuardSettingsCardInjected {
   const entry = ctx.slots
-    .entries('settings.plugin.item')
-    .find(e => e.options.key === CONTEXT_GUARD_NS)
+    .entries('plugins.item')
+    .find(e => e.options.id === CONTEXT_GUARD_NS)
   if (entry === undefined) throw new Error('context-guard settings card missing')
-  return (entry.inject as unknown as () => ContextGuardSettingsCardInjected)()
-}
-
-/** Read the registered bundle-config entry's inject factory (alpha.2 slot). */
-function bundleConfigInjectedFor(ctx: Context): ContextGuardSettingsCardInjected {
-  const entry = ctx.slots
-    .entries('plugins.bundle.config')
-    .find(e => e.options.key === PACKAGE_NAME)
-  if (entry === undefined) throw new Error('context-guard bundle config missing')
   return (entry.inject as unknown as () => ContextGuardSettingsCardInjected)()
 }
 
@@ -207,30 +213,26 @@ describe('context-guard browser half', () => {
     expect(ctx.slots.entries('conversation.input.right').map(e => e.options.id)).not.toContain('context-guard')
   })
 
-  it('registers the settings card keyed on the namespace on the 0.1.5 slot, removed with the fiber', async () => {
+  it('registers the settings card on plugins.item while the namespace is served, removed with the fiber', async () => {
     const { ctx, fiber } = await bench()
-    expect(ctx.slots.entries('settings.plugin.item').map(e => e.options.key)).toContain(CONTEXT_GUARD_NS)
-    // The alpha.2 registration never fires without the bundle-config declaration.
-    expect(ctx.slots.entries('plugins.bundle.config').map(e => e.options.key)).not.toContain(PACKAGE_NAME)
+    expect(ctx.slots.entries('plugins.item').map(e => e.options.id)).toContain(CONTEXT_GUARD_NS)
     await fiber.dispose()
-    expect(ctx.slots.entries('settings.plugin.item').map(e => e.options.key)).not.toContain(CONTEXT_GUARD_NS)
+    expect(ctx.slots.entries('plugins.item').map(e => e.options.id)).not.toContain(CONTEXT_GUARD_NS)
   })
 
-  it('registers the bundle configuration keyed by package name on the alpha.2 slot, removed with the fiber', async () => {
-    const { ctx, fiber } = await bench(undefined, 'plugins.bundle.config')
-    expect(ctx.slots.entries('plugins.bundle.config').map(e => e.options.key)).toContain(PACKAGE_NAME)
-    // The legacy registration never fires without the 0.1.5 declaration.
-    expect(ctx.slots.entries('settings.plugin.item').map(e => e.options.key)).not.toContain(CONTEXT_GUARD_NS)
-    await fiber.dispose()
-    expect(ctx.slots.entries('plugins.bundle.config').map(e => e.options.key)).not.toContain(PACKAGE_NAME)
+  it('registers no card when the host serves no such namespace (the row is not composed)', async () => {
+    const { ctx } = await bench(undefined, { served: [] })
+    expect(ctx.slots.entries('plugins.item').map(e => e.options.id)).not.toContain(CONTEXT_GUARD_NS)
   })
 
-  it('registers the row-level configuration keyed by the family bundle row id, removed with the fiber', async () => {
-    const ROW_KEY = '@khorsheed/dsh-bundle-conversation-toolbox#context-guard'
-    const { ctx, fiber } = await bench(undefined, 'plugins.row.config')
-    expect(ctx.slots.entries('plugins.row.config').map(e => e.options.key)).toContain(ROW_KEY)
-    await fiber.dispose()
-    expect(ctx.slots.entries('plugins.row.config').map(e => e.options.key)).not.toContain(ROW_KEY)
+  it('registers no card on a host line without configForms (0.1.5)', async () => {
+    const { ctx } = await bench(undefined, { served: null })
+    expect(ctx.slots.entries('plugins.item').map(e => e.options.id)).not.toContain(CONTEXT_GUARD_NS)
+  })
+
+  it('waits for the plugins.item declaration when the Plugins page is absent', async () => {
+    const { ctx } = await bench(undefined, { declareItemSlot: false })
+    expect(ctx.slots.entries('plugins.item').map(e => e.options.id)).not.toContain(CONTEXT_GUARD_NS)
   })
 
   it('registers both dictionaries under its own namespace and releases them with the fiber', async () => {
@@ -248,19 +250,14 @@ describe('context-guard browser half', () => {
     expect(translate('settings.title')).not.toBe(en['settings.title'])
   })
 
-  it('arms one shared scope channel from the 0.1.5 face for the button and the card', async () => {
+  it('arms one shared scope channel from the configForms face for the button and the card', async () => {
     const { ctx, scope } = await bench()
     const buttonConfig = buttonInjectedFor(ctx, KNOWN).hooks.config
     const cardConfig = cardInjectedFor(ctx).hooks.config
     // Both faces bind the SAME channel, and the armed channel mirrors the
-    // stubbed legacy scope's snapshot.
+    // stubbed scope's snapshot.
     expect(buttonConfig).toBe(cardConfig)
     expect(buttonConfig.getSnapshot()).toEqual(scope.getSnapshot())
-  })
-
-  it('shares the same live settings scope on the alpha.2 bundle-config face', async () => {
-    const { ctx, scope } = await bench(undefined, 'plugins.bundle.config')
-    expect(bundleConfigInjectedFor(ctx).hooks.config.getSnapshot()).toEqual(scope.getSnapshot())
   })
 
   it('publishes `unavailable` while no settings provider serves the section', async () => {

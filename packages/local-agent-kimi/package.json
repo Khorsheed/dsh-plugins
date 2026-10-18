@@ -58,7 +58,7 @@
     },
     "compat": {
       "minHost": "0.1.5-rc.1",
-      "notes": "liveMirrorGranularity token: host 0.1.5 retired the per-chunk session event, so token-mode deltas no longer land in the child session log — they ride the run-progress channel and the round settles as one combined assistant/message (identical final text); a late-arriving usage whose carrier message already mirrored is dropped with a warn (no usage-backfill event exists). The thinkingEffort config item (default high, provision-time only) and the effectiveSettings eval snapshot are plugin-level — scoped-file provisioning and reads with no host-API dependency on either host line",
+      "notes": "liveMirrorGranularity token: host 0.1.5 retired the per-chunk session event, so token-mode deltas no longer land in the child session log — they ride the run-progress channel and the round settles as one combined assistant/message (identical final text); a late-arriving usage whose carrier message already mirrored is dropped with a warn (no usage-backfill event exists). The thinkingEffort config item (default high, provision-time only) and the effectiveSettings eval snapshot are plugin-level — scoped-file provisioning and reads with no host-API dependency on either host line The settings card mounts only on host 0.1.7-alpha.1+ (the Plugins page plugins.item seat, gated by configForms.whileServed on the served namespace); 0.1.5 renders no card (the host removed the settings.plugin.item seat) — every other surface is unchanged.",
       "verifiedHost": "0.2.1-rc.1"
     }
   },

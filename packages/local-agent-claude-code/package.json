@@ -61,7 +61,7 @@
     },
     "compat": {
       "minHost": "0.1.5-rc.1",
-      "notes": "Live output uses the local-agent transient Remote and public Conversation nodes, with incremental durable recovery checkpoints; native final messages retain their existing transcript and usage semantics. End-to-end latency acceptance is tracked by the room coordinator proposal.",
+      "notes": "Live output uses the local-agent transient Remote and public Conversation nodes, with incremental durable recovery checkpoints; native final messages retain their existing transcript and usage semantics. End-to-end latency acceptance is tracked by the room coordinator proposal. The settings card mounts only on host 0.1.7-alpha.1+ (the Plugins page plugins.item seat, gated by configForms.whileServed on the served namespace); 0.1.5 renders no card (the host removed the settings.plugin.item seat) — every other surface is unchanged.",
       "verifiedHost": "0.2.1-rc.1"
     }
   },

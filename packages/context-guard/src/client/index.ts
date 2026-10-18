@@ -4,14 +4,11 @@
  * tool row that appears automatically when the next request's budget
  * (`contextPressure.projectedTokens` + the output budget) crosses
  * `thresholdRatio` of the routed model's context window — plus one settings
- * surface editing the same number live: a standalone install renders the
- * bundle's own configuration on its Plugins-page detail view
- * (`plugins.bundle.config`, keyed by package name), a family-bundle install
- * renders the same card through the row-level configure entry on the
- * BUNDLE's detail view (`plugins.row.config`, keyed
- * `@khorsheed/dsh-bundle-conversation-toolbox#context-guard`), and 0.1.5
- * renders the `settings.plugin.item` card in the plugin configuration tab
- * (keyed by the settings namespace). The action
+ * card editing the same number live: a `plugins.item` entry on the Plugins
+ * page gated by `configForms.whileServed` on the `context-guard` namespace
+ * (the official companion convention), so every install shape — standalone,
+ * the conversation-toolbox bundle, a mode pack — surfaces the same card, and
+ * a composition without the row shows no trace of it. The action
  * rides the official `/compact` command
  * channel (`remote.commands.execute` → host `ctx.commands` →
  * `ctx.compaction.compactNow`); the config rides the official settings
@@ -38,13 +35,14 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 // Type-only: pulls the ctx.locale service merge.
 import type {} from '@deepseek-ai/dsh-client-locale/client'
+// Type-only: pulls the ctx.configForms service merge (the whileServed gate).
+import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 // Type-only: pulls the ctx.slots service merge.
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // Type-only: pulls ui-conversation's SlotMap merge
 // ('conversation.input.right').
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
-// Type-only: pulls ui-plugin-manager's SlotMap merge
-// ('plugins.bundle.config').
+// Type-only: pulls ui-plugin-manager's SlotMap merge ('plugins.item').
 import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
 // Type-only: pulls the `contextPressure` SessionProjectionMap merge for
 // useProjection.
@@ -55,7 +53,7 @@ import { en, NS, zh } from './locales.ts'
 import { bindGuardScope, GuardScopeChannel } from './scope.ts'
 import type { ContextGuardInjected, ContextGuardSettingsCardInjected } from './slots.ts'
 import { CompactGuardButton } from './CompactGuardButton.tsx'
-import { ContextGuardBundleConfig, ContextGuardSettingsCard } from './SettingsCard.tsx'
+import { ContextGuardBundleConfig } from './SettingsCard.tsx'
 
 export type { ContextGuardConfig } from './config.ts'
 export { resolveConfig } from './config.ts'
@@ -64,18 +62,11 @@ export { guardReading } from './guard.ts'
 export type { GuardInput, GuardLevel, GuardReading } from './guard.ts'
 export type { GuardScope, GuardScopeSnapshot } from './scope.ts'
 export type {
-  CompactGuardButtonProps, ContextGuardBundleConfigProps, ContextGuardInjected, ContextGuardSettingsCardInjected, ContextGuardSettingsCardProps,
+  CompactGuardButtonProps, ContextGuardBundleConfigProps, ContextGuardInjected, ContextGuardSettingsCardInjected,
 } from './slots.ts'
 
 /** Dictionary namespace owned by this plugin. */
 export { NS }
-
-/**
- * This bundle's package name — the key the Plugins page dispatches
- * `plugins.bundle.config` entries on (also the cordis.patch.yml row name and
- * the tsdown clientBundle id).
- */
-const PACKAGE_NAME = '@khorsheed/dsh-context-guard'
 
 /**
  * Required services: the slot ledger, the command Remote, and the copy. The
@@ -125,52 +116,33 @@ export function apply(ctx: Context, config?: Partial<ContextGuardConfig>): void 
     }),
   }, CompactGuardButton))
 
-  // The settings surface follows the host line AND the install shape — three
-  // tracks, all riding slots.inject so each fires only where its declaration
-  // exists. Standalone install: the package's own Plugins-page detail view
-  // (`plugins.bundle.config`, keyed by package name). Installed as a
-  // conversation-toolbox member: the member is no longer the profile's
-  // direct dependency, so only the bundle gets a detail view — the card rides
-  // the row-level slot (`plugins.row.config`, keyed `<bundle package>#<row
-  // id>` with the row id the bundle's patch declares) and the bundle's page
-  // gains a configure entry opening it. 0.1.5: the legacy
-  // configurable-plugins tab card (`settings.plugin.item`, keyed by the
-  // settings namespace) through a string-keyed duck narrow of the same
-  // service (the slot name is gone from the alpha.2 SlotMap).
-  ctx.slots.inject('plugins.bundle.config', () => ctx.slots.register({
-    name: 'plugins.bundle.config',
-    key: PACKAGE_NAME,
-    locale: NS,
-    inject: (): ContextGuardSettingsCardInjected => ({
-      scope,
-      hooks: { config: scope },
-    }),
-  }, ContextGuardBundleConfig))
-  ctx.slots.inject('plugins.row.config', () => ctx.slots.register({
-    name: 'plugins.row.config',
-    key: '@khorsheed/dsh-bundle-conversation-toolbox#context-guard',
-    locale: NS,
-    inject: (): ContextGuardSettingsCardInjected => ({
-      scope,
-      hooks: { config: scope },
-    }),
-  }, ContextGuardBundleConfig))
-  const legacy = ctx.slots as unknown as {
-    inject(key: string, callback: () => unknown): unknown
-    register(entry: {
-      name: string
-      key: string
-      locale: string
-      inject: () => ContextGuardSettingsCardInjected
-    }, component: typeof ContextGuardSettingsCard): unknown
-  }
-  legacy.inject('settings.plugin.item', () => legacy.register({
-    name: 'settings.plugin.item',
-    key: CONTEXT_GUARD_NS,
-    locale: NS,
-    inject: (): ContextGuardSettingsCardInjected => ({
-      scope,
-      hooks: { config: scope },
-    }),
-  }, ContextGuardSettingsCard))
+  // One Plugins-page card gated on the SERVED NAMESPACE, never on the install
+  // shape: whichever composition carries the `context-guard` row — standalone,
+  // the conversation-toolbox bundle, or a mode pack — serves the row's
+  // volatile Config under the row id, and `whileServed` keeps the
+  // `plugins.item` entry alive for exactly that span (the official companion
+  // convention), so a composition without the row shows no trace of the card.
+  // This replaces the retired per-shape seats: `plugins.row.config` hardcoded
+  // one carrier bundle into its key, and the host deleted
+  // `settings.plugin.item`. The probe rides a deferred inject because
+  // configForms exists only on the alpha.2+ host line; a 0.1.5 host never
+  // fires it, and a configForms predating whileServed (0.1.6-alpha.2) skips
+  // the card.
+  const t = ctx.locale.bind(NS)
+  ctx.inject(['configForms'], (formsCtx) => {
+    const forms = formsCtx.configForms
+    if (typeof forms.whileServed !== 'function') return
+    return forms.whileServed([CONTEXT_GUARD_NS], () => ctx.slots.inject('plugins.item', () => ctx.slots.register({
+      name: 'plugins.item',
+      id: CONTEXT_GUARD_NS,
+      // Community cards sort after the official settings pages (orders 10-40).
+      order: 100,
+      label: () => t('settings.title'),
+      locale: NS,
+      inject: (): ContextGuardSettingsCardInjected => ({
+        scope,
+        hooks: { config: scope },
+      }),
+    }, ContextGuardBundleConfig)))
+  })
 }

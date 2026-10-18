@@ -47,8 +47,8 @@ plugins:
 
 ## Compatibility
 
-- npm 发布线（`@deepseek-ai/dsh@0.1.2-rc.1`）：✅ 完整——基线迁移至 0.1.2-rc.1 API 面（单臂消费 0.1.2 API，0.1.1-rc.2 运行臂已退役），全量构建测试通过；minHost 前移至 0.1.2-rc.1，旧宿主请停留在旧发布线。
-- 0.1.6-alpha.2 预发布线（`@deepseek-ai/dsh@0.1.6-alpha.2`）：✅ 完整——`settings.plugin.item` 槽随 ui-settings-plugins 重构删除，设置卡改投 `plugins.bundle.config`（按包名 keyed，Plugins 页绘制标题后渲染本表单）；双注入探测保持 0.1.5 线旧卡可用，minHost 不动。
+- npm 发布线（`@deepseek-ai/dsh@0.1.2-rc.1`）：⚠️ 按钮完整、设置卡缺位——基线迁移至 0.1.2-rc.1 API 面（单臂消费 0.1.2 API，0.1.1-rc.2 运行臂已退役），全量构建测试通过；设置卡自本版起只挂 0.1.7-alpha.1 起的 Plugins 页 `plugins.item` 席位（随 `configForms.whileServed` 在宿主服务 `context-guard` 命名空间时挂载，独立安装、toolbox 家族 bundle、模式包同一张卡），此线不再呈现卡片，composer 按钮不受影响；minHost 前移至 0.1.2-rc.1，旧宿主请停留在旧发布线。
+- 0.1.6-alpha.2 预发布线（`@deepseek-ai/dsh@0.1.6-alpha.2`）：⚠️ 按钮完整、设置卡缺位——`plugins.item` 槽已在，但 `whileServed` 门控随 0.1.7-alpha.1 落地，此线不挂卡；0.1.5 的旧 `settings.plugin.item` 席位已随宿主删除一并退役，minHost 不动。
 - 源码线（deepseek-harness master）：✅（verifiedHost: 0.2.1-rc.1）——host-021 波对 0.2.1-rc.1 树全量 build+test 绿，无其它表面变化。
 
 **版本线对照**：0.2.0 起支持宿主 `0.1.2-rc.1` 及以后；宿主 `0.1.0-rc.6` ~ `0.1.1-rc.2` 的用户请停留在 0.1.x 发布线（末版 `0.1.0`）。
@@ -81,7 +81,7 @@ plugins:
 
 对模型没有任何变化：点击执行的是与用户手动输入相同的 `/compact`，会话日志里也是同样的命令生命周期。插件本身无 token 与 KV 缓存影响。
 
-`/client` 导出即插件本体（`apply`/`inject`）与 `CompactGuardButtonProps` / `ContextGuardSettingsCardProps` 类型。
+`/client` 导出即插件本体（`apply`/`inject`）与 `CompactGuardButtonProps` / `ContextGuardBundleConfigProps` 类型。
 
 </details>
 

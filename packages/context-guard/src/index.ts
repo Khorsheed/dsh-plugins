@@ -54,8 +54,8 @@ export function apply(ctx: Context, config: Record<string, unknown> = {}): void 
       return
     }
     // rc.1: the entry's own Config (above) is the served form. Keep the
-    // auto-generated page out of the settings tree — the bundle's own cards
-    // (plugins.bundle.config / the legacy tab seat) edit the same field.
+    // auto-generated page out of the settings tree — the bundle's own
+    // Plugins-page card (plugins.item) edits the same field.
     if (typeof settings.configure === 'function') settings.configure({ auto: false }, ctx.fiber)
   })
 }

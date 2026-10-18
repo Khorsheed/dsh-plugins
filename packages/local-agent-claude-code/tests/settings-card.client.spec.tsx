@@ -5,8 +5,8 @@
  * for the auth states, the resident-mode switch writing through the bound
  * settingsScope, and the default-model block — free-text write plus the
  * gateway's model surface, degrading to the bare input when the surface is
- * absent) and the alpha.2 plugins.bundle.config entry (the summary one-liner,
- * the bare page form).
+ * absent) and the plugins.item entry (the summary one-liner, the bare page
+ * form).
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'

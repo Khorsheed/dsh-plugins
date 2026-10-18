@@ -1,16 +1,13 @@
 import type { LocalAgentUi } from '@khorsheed/dsh-local-agent/client'
 import { bindSettingsScope } from '@khorsheed/dsh-local-agent/src/client/settings-scope.ts'
 /**
- * Local-agent-codex plugin, browser half: the codex settings surface, one
- * face per install shape and host line — a standalone install renders the
- * bundle's own configuration on its Plugins-page detail view
- * (`plugins.bundle.config`, keyed by package name), a family-bundle install
- * renders the same card through the row-level configure entry on the
- * BUNDLE's detail view (`plugins.row.config`, keyed
- * `@khorsheed/dsh-bundle-local-agent#local-agent-codex`), and 0.1.5 renders
- * the `settings.plugin.item` card (keyed to the `local-agent-codex`
- * settings namespace the host half registers) in the official
- * Plugins → 可配置插件 tab. The card carries the family core's shared
+ * Local-agent-codex plugin, browser half: the codex settings card on the
+ * Plugins page — one `plugins.item` entry gated by `configForms.whileServed`
+ * on the `local-agent-codex` namespace (the official companion convention).
+ * Every install shape serves the row's volatile Config under the row id —
+ * standalone install, family bundle, or mode pack — so the card follows the
+ * served namespace rather than any carrier bundle, and a composition without
+ * the row shows no trace of it. The card carries the family core's shared
  * ProviderAuthBlock (login/logout/device-code, backed by the core's
  * localAgentGateway Remote and the commands channel) plus the resident-mode
  * block (live switch) and the default-model block (free-text input, the
@@ -27,12 +24,12 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 // Type-only: the ctx.locale service merge.
 import type {} from '@deepseek-ai/dsh-client-locale/client'
-// Type-only: the ctx.settingsScope service merge.
+// Type-only: the ctx.configForms service merge (the scope probe and the
+// whileServed gate both ride it).
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 // Type-only: the ctx.slots service merge (renderer-owned slot registry).
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
-// Type-only: the 'plugins.bundle.config' / 'plugins.row.config' keyed-slot
-// SlotMap merges (alpha.2).
+// Type-only: the 'plugins.item' list-slot SlotMap merge.
 import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
 // Type-only: the family core's LocaleNamespaceMap merge ('local-agent', the
 // auth block's copy) and the gateway Remote type.
@@ -45,7 +42,7 @@ import type {} from '@khorsheed/dsh-local-agent/remote'
 import type { LocalAgentGatewayRemote } from '@khorsheed/dsh-local-agent/client'
 import { en, NS, zh, type LocalAgentCodexKey } from './locales.ts'
 import {
-  CodexBundleConfig, CodexSettingsCard, type CodexLiveSettings, type CodexSettingsCardInjected,
+  CodexBundleConfig, type CodexLiveSettings, type CodexSettingsCardInjected,
 } from './SettingsCard.tsx'
 
 export { CodexBundleConfig, CodexSettingsCard } from './SettingsCard.tsx'
@@ -56,29 +53,24 @@ export { en, NS, zh }
 export type { LocalAgentCodexKey }
 
 /**
- * This bundle's package name — the key the Plugins page dispatches
- * `plugins.bundle.config` entries on (identity: cordis.patch.yml,
- * tsdown.config.ts).
- */
-const PACKAGE_NAME = '@khorsheed/dsh-local-agent-codex'
-
-/**
  * Required services: slot registry, command Remote, and locale registry. The
  * settings scope is NOT a static inject — its service name differs per host
  * line (`settingsScope` on 0.1.5, `configForms` on rc.1), so a static entry
  * would pend the whole client plugin on the other line; bindSettingsScope
  * probes the serving one instead (the settings client package is a declared
- * client inject, so one of them is always already up).
+ * client inject, so one of them is always already up). The card track probes
+ * `configForms` through the same kind of deferred inject (see apply).
  */
 export const inject = ['slots', 'remote', 'remote.commands', 'locale']
 
 /**
- * Client plugin body: register the dictionaries and the codex settings
- * surfaces bound to the local-agent-codex namespace.
+ * Client plugin body: register the dictionaries and the codex settings card
+ * bound to the local-agent-codex namespace.
  * @param ctx - client root context.
  */
 export function apply(ctx: Context): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'local-agent-codex: dictionaries')
+  const t = ctx.locale.bind(NS)
   const scope = bindSettingsScope<CodexLiveSettings>(ctx, 'local-agent-codex')
   // The auth block's copy lives in the family core's dictionary; binding is
   // stable per namespace and late dictionary registration still resolves.
@@ -89,7 +81,7 @@ export function apply(ctx: Context): void {
   // the core client is absent.
   const gateway = (): LocalAgentGatewayRemote | undefined =>
     ctx.get('remote.localAgentGateway') as LocalAgentGatewayRemote | undefined
-  // Both settings surfaces inject the same face.
+  // The settings card injects this face.
   const cardInject = (): CodexSettingsCardInjected => ({
     scope,
     hooks: { settings: scope },
@@ -111,43 +103,29 @@ export function apply(ctx: Context): void {
           .then(result => (result.ok ? result.value?.result.text : undefined)),
     },
   })
-  // The settings surface follows the host line AND the install shape — three
-  // tracks, all riding slots.inject so each fires only where its declaration
-  // exists. Standalone install: the package's own Plugins-page detail view
-  // (`plugins.bundle.config`, keyed by package name). Installed as a family
-  // member: the member is no longer the profile's direct dependency, so only
-  // the bundle gets a detail view — the card rides the row-level slot
-  // (`plugins.row.config`, keyed `<bundle package>#<row id>` with the row id
-  // the bundle's patch declares) and the bundle's page gains a configure
-  // entry opening it. 0.1.5: the legacy configurable-plugins tab card
-  // (`settings.plugin.item`, keyed by the settings namespace) through a
-  // string-keyed duck narrow of the same service (the slot name is gone from
-  // the alpha.2 SlotMap).
-  ctx.slots.inject('plugins.bundle.config', () => ctx.slots.register({
-    name: 'plugins.bundle.config',
-    key: PACKAGE_NAME,
-    locale: NS,
-    inject: cardInject,
-  }, CodexBundleConfig))
-  ctx.slots.inject('plugins.row.config', () => ctx.slots.register({
-    name: 'plugins.row.config',
-    key: '@khorsheed/dsh-bundle-local-agent#local-agent-codex',
-    locale: NS,
-    inject: cardInject,
-  }, CodexBundleConfig))
-  const legacy = ctx.slots as unknown as {
-    inject(key: string, callback: () => unknown): unknown
-    register(entry: {
-      name: string
-      key: string
-      locale: string
-      inject: () => CodexSettingsCardInjected
-    }, component: typeof CodexSettingsCard): unknown
-  }
-  legacy.inject('settings.plugin.item', () => legacy.register({
-    name: 'settings.plugin.item',
-    key: 'local-agent-codex',
-    locale: NS,
-    inject: cardInject,
-  }, CodexSettingsCard))
+  // One Plugins-page card gated on the SERVED NAMESPACE, never on the install
+  // shape: whichever composition carries the `local-agent-codex` row —
+  // standalone install, family bundle, or mode pack — serves the row's
+  // volatile Config under the row id, and `whileServed` keeps the
+  // `plugins.item` entry alive for exactly that span (the official companion
+  // convention), so a composition without the row shows no trace of the card.
+  // This replaces the retired per-shape seats: `plugins.row.config` hardcoded
+  // one carrier bundle into its key, and the host deleted
+  // `settings.plugin.item`. The probe rides a deferred inject because
+  // configForms exists only on the alpha.2+ host line; a 0.1.5 host never
+  // fires it, and a configForms predating whileServed (0.1.6-alpha.2) skips
+  // the card.
+  ctx.inject(['configForms'], (formsCtx) => {
+    const forms = formsCtx.configForms
+    if (typeof forms.whileServed !== 'function') return
+    return forms.whileServed(['local-agent-codex'], () => ctx.slots.inject('plugins.item', () => ctx.slots.register({
+      name: 'plugins.item',
+      id: 'local-agent-codex',
+      // Community cards sort after the official settings pages (orders 10-40).
+      order: 120,
+      label: () => t('card.title'),
+      locale: NS,
+      inject: cardInject,
+    }, CodexBundleConfig)))
+  })
 }

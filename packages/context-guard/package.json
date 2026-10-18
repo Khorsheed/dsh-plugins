@@ -52,7 +52,8 @@
     },
     "compat": {
       "minHost": "0.1.2-rc.1",
-      "verifiedHost": "0.2.1-rc.1"
+      "verifiedHost": "0.2.1-rc.1",
+      "notes": "The settings card mounts only on host 0.1.7-alpha.1+ (the Plugins page plugins.item seat, gated by configForms.whileServed on the served context-guard namespace); older lines render the composer button only."
     }
   },
   "scripts": {

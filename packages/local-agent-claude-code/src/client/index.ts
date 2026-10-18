@@ -1,24 +1,22 @@
 import type { LocalAgentUi } from '@khorsheed/dsh-local-agent/client'
 import { bindSettingsScope } from '@khorsheed/dsh-local-agent/src/client/settings-scope.ts'
 /**
- * Local-agent-claude-code plugin, browser half: the claude-code settings
- * surface, one face per install shape and host line — a standalone install
- * renders the bundle's own configuration on its Plugins-page detail view
- * (`plugins.bundle.config`, keyed by package name), a family-bundle install
- * renders the same card through the row-level configure entry on the
- * BUNDLE's detail view (`plugins.row.config`, keyed
- * `@khorsheed/dsh-bundle-local-agent#local-agent-claude-code`, the row id the
- * bundle's patch declares), and 0.1.5 renders the `settings.plugin.item`
- * card (keyed to the `local-agent-claude-code` settings namespace the host
- * half registers) in the official Plugins → 可配置插件 tab. The card carries the family core's
- * shared ProviderAuthBlock (login/logout/manual-handoff, backed by the core's
- * localAgentGateway Remote and the commands channel), the default-model block
- * (free-text write plus the gateway's model surface: the effective-model line
- * and the suggestion vocabulary), and the resident-mode switch, whose writes
- * ride the bound settingsScope — the host watcher hot-applies them, no
- * reload. Every read degrades: an absent gateway renders the auth block's
- * 'unavailable' state and drops the model surface, an unregistered namespace
- * disables the live controls.
+ * Local-agent-claude-code plugin, browser half: the claude-code settings card
+ * on the Plugins page — one `plugins.item` entry gated by
+ * `configForms.whileServed` on the `local-agent-claude-code` namespace (the
+ * official companion convention). Every install shape serves the row's
+ * volatile Config under the row id — standalone install, family bundle, or
+ * mode pack — so the card follows the served namespace rather than any
+ * carrier bundle, and a composition without the row shows no trace of it. The
+ * card carries the family core's shared ProviderAuthBlock
+ * (login/logout/manual-handoff, backed by the core's localAgentGateway Remote
+ * and the commands channel), the default-model block (free-text write plus
+ * the gateway's model surface: the effective-model line and the suggestion
+ * vocabulary), and the resident-mode switch, whose writes ride the bound
+ * settingsScope — the host watcher hot-applies them, no reload. Every read
+ * degrades: an absent gateway renders the auth block's 'unavailable' state
+ * and drops the model surface, an unregistered namespace disables the live
+ * controls.
  * @module @khorsheed/dsh-local-agent-claude-code/client
  */
 import type { Context } from '@deepseek-ai/cordis'
@@ -27,12 +25,12 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 // Type-only: the ctx.locale service merge.
 import type {} from '@deepseek-ai/dsh-client-locale/client'
-// Type-only: the ctx.settingsScope service merge.
+// Type-only: the ctx.configForms service merge (the scope probe and the
+// whileServed gate both ride it).
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 // Type-only: the ctx.slots service merge (renderer-owned slot registry).
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
-// Type-only: the 'plugins.bundle.config' / 'plugins.row.config' keyed-slot
-// SlotMap merges (alpha.2).
+// Type-only: the 'plugins.item' list-slot SlotMap merge.
 import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
 // Type-only: the family core's LocaleNamespaceMap merge ('local-agent', the
 // auth block's copy) and the gateway Remote type.
@@ -45,7 +43,7 @@ import type {} from '@khorsheed/dsh-local-agent/remote'
 import type { LocalAgentGatewayRemote } from '@khorsheed/dsh-local-agent/client'
 import { en, NS, zh, type LocalAgentClaudeCodeKey } from './locales.ts'
 import {
-  ClaudeCodeBundleConfig, ClaudeCodeSettingsCard, type ClaudeLiveSettings, type ClaudeCodeSettingsCardInjected,
+  ClaudeCodeBundleConfig, type ClaudeLiveSettings, type ClaudeCodeSettingsCardInjected,
 } from './SettingsCard.tsx'
 
 export { ClaudeCodeBundleConfig, ClaudeCodeSettingsCard } from './SettingsCard.tsx'
@@ -56,22 +54,24 @@ export { en, NS, zh }
 export type { LocalAgentClaudeCodeKey }
 
 /**
- * This bundle's package name — the key the Plugins page dispatches
- * `plugins.bundle.config` entries on (identity: cordis.patch.yml,
- * tsdown.config.ts).
+ * Required services: slot registry, command Remote, and locale registry. The
+ * settings scope is NOT a static inject — its service name differs per host
+ * line (`settingsScope` on 0.1.5, `configForms` on rc.1), so a static entry
+ * would pend the whole client plugin on the other line; bindSettingsScope
+ * probes the serving one instead (the settings client package is a declared
+ * client inject, so one of them is always already up). The card track probes
+ * `configForms` through the same kind of deferred inject (see apply).
  */
-const PACKAGE_NAME = '@khorsheed/dsh-local-agent-claude-code'
-
-/** Required services: slot registry, settings scope, command Remote, and locale registry. */
 export const inject = ['slots', 'remote', 'remote.commands', 'locale']
 
 /**
  * Client plugin body: register the dictionaries and the claude-code settings
- * surfaces bound to the local-agent-claude-code namespace.
+ * card bound to the local-agent-claude-code namespace.
  * @param ctx - client root context.
  */
 export function apply(ctx: Context): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'local-agent-claude-code: dictionaries')
+  const t = ctx.locale.bind(NS)
   const scope = bindSettingsScope<ClaudeLiveSettings>(ctx, 'local-agent-claude-code')
   // The auth block's copy lives in the family core's dictionary; binding is
   // stable per namespace and late dictionary registration still resolves.
@@ -82,7 +82,7 @@ export function apply(ctx: Context): void {
   // the core client is absent.
   const gateway = (): LocalAgentGatewayRemote | undefined =>
     ctx.get('remote.localAgentGateway') as LocalAgentGatewayRemote | undefined
-  // Both settings surfaces inject the same face.
+  // The settings card injects this face.
   const cardInject = (): ClaudeCodeSettingsCardInjected => ({
     scope,
     hooks: { settings: scope },
@@ -108,43 +108,29 @@ export function apply(ctx: Context): void {
           .then(result => (result.ok ? result.value?.result.text : undefined)),
     },
   })
-  // The settings surface follows the host line AND the install shape — three
-  // tracks, all riding slots.inject so each fires only where its declaration
-  // exists. Standalone install: the package's own Plugins-page detail view
-  // (`plugins.bundle.config`, keyed by package name). Installed as a family
-  // member: the member is no longer the profile's direct dependency, so only
-  // the bundle gets a detail view — the card rides the row-level slot
-  // (`plugins.row.config`, keyed `<bundle package>#<row id>` with the row id
-  // the bundle's patch declares) and the bundle's page gains a configure
-  // entry opening it. 0.1.5: the legacy configurable-plugins tab card
-  // (`settings.plugin.item`, keyed by the settings namespace) through a
-  // string-keyed duck narrow of the same service (the slot name is gone from
-  // the alpha.2 SlotMap).
-  ctx.slots.inject('plugins.bundle.config', () => ctx.slots.register({
-    name: 'plugins.bundle.config',
-    key: PACKAGE_NAME,
-    locale: NS,
-    inject: cardInject,
-  }, ClaudeCodeBundleConfig))
-  ctx.slots.inject('plugins.row.config', () => ctx.slots.register({
-    name: 'plugins.row.config',
-    key: '@khorsheed/dsh-bundle-local-agent#local-agent-claude-code',
-    locale: NS,
-    inject: cardInject,
-  }, ClaudeCodeBundleConfig))
-  const legacy = ctx.slots as unknown as {
-    inject(key: string, callback: () => unknown): unknown
-    register(entry: {
-      name: string
-      key: string
-      locale: string
-      inject: () => ClaudeCodeSettingsCardInjected
-    }, component: typeof ClaudeCodeSettingsCard): unknown
-  }
-  legacy.inject('settings.plugin.item', () => legacy.register({
-    name: 'settings.plugin.item',
-    key: 'local-agent-claude-code',
-    locale: NS,
-    inject: cardInject,
-  }, ClaudeCodeSettingsCard))
+  // One Plugins-page card gated on the SERVED NAMESPACE, never on the install
+  // shape: whichever composition carries the `local-agent-claude-code` row —
+  // standalone install, family bundle, or mode pack — serves the row's
+  // volatile Config under the row id, and `whileServed` keeps the
+  // `plugins.item` entry alive for exactly that span (the official companion
+  // convention), so a composition without the row shows no trace of the card.
+  // This replaces the retired per-shape seats: `plugins.row.config` hardcoded
+  // one carrier bundle into its key, and the host deleted
+  // `settings.plugin.item`. The probe rides a deferred inject because
+  // configForms exists only on the alpha.2+ host line; a 0.1.5 host never
+  // fires it, and a configForms predating whileServed (0.1.6-alpha.2) skips
+  // the card.
+  ctx.inject(['configForms'], (formsCtx) => {
+    const forms = formsCtx.configForms
+    if (typeof forms.whileServed !== 'function') return
+    return forms.whileServed(['local-agent-claude-code'], () => ctx.slots.inject('plugins.item', () => ctx.slots.register({
+      name: 'plugins.item',
+      id: 'local-agent-claude-code',
+      // Community cards sort after the official settings pages (orders 10-40).
+      order: 130,
+      label: () => t('card.title'),
+      locale: NS,
+      inject: cardInject,
+    }, ClaudeCodeBundleConfig)))
+  })
 }

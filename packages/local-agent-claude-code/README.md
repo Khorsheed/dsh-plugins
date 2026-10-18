@@ -72,7 +72,7 @@ bundle 行接受这些可选字段：
 
 ## Compatibility
 
-- npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：✅ 公开 API 兼容。生成中的内容走 local-agent 瞬时 Remote 与公开 Conversation 节点；增量耐久恢复检查点负责落盘，最终原生消息保留转写与用量语义。浏览器 P95 验收由 room 协调者提案跟踪。minHost 0.1.5-rc.1——更旧宿主请停留在前一发布线。
+- npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：✅ 公开 API 兼容。生成中的内容走 local-agent 瞬时 Remote 与公开 Conversation 节点；增量耐久恢复检查点负责落盘，最终原生消息保留转写与用量语义。浏览器 P95 验收由 room 协调者提案跟踪。minHost 0.1.5-rc.1——更旧宿主请停留在前一发布线。设置卡自本版起只挂 0.1.7-alpha.1+ 的 Plugins 页 `plugins.item` 席位（`configForms.whileServed` 随宿主服务的 `local-agent-claude-code` 命名空间挂载）；0.1.5 线不再呈现卡片（宿主删除了 `settings.plugin.item` 席位），其余表面不变。
 - 源码线（deepseek-harness master）：✅（verifiedHost: 0.2.1-rc.1）——host-021 波对 0.2.1-rc.1 树全量 build+test 绿；委派迁移到 `ctx.subagents.startActivation`（受管 activation），run.id 改为每次执行唯一。
 
 ## 已知限制

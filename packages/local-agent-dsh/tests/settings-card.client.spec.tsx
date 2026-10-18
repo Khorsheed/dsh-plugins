@@ -5,8 +5,7 @@
  * only, the DeepSeek delegation switch, the resident-mode block (live
  * switch) writing through the bound settingsScope, and the default-model
  * block reading the harness's broker surface with a bare-input degrade) and
- * the alpha.2 plugins.bundle.config entry (the summary one-liner, the bare
- * page form).
+ * the plugins.item entry (the summary one-liner, the bare page form).
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'

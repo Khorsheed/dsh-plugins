@@ -6,8 +6,7 @@
  * DISPLAYS the followed default dimmed while unset, a chevron menu with a
  * leading follow-default item plus the broker's full unfiltered vocabulary —
  * and the resident-mode switch writing through the bound settingsScope) and
- * the alpha.2 plugins.bundle.config entry (the summary one-liner, the bare
- * page form).
+ * the plugins.item entry (the summary one-liner, the bare page form).
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'

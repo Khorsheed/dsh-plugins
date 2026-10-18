@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { IconChevronDownOutlineMedium } from './icons.tsx'
 import type { GuardScopeSnapshot } from './scope.ts'
 import type { ContextGuardConfig } from './config.ts'
-import type { ContextGuardBundleConfigProps, ContextGuardSettingsCardProps } from './slots.ts'
+import type { ContextGuardBundleConfigProps } from './slots.ts'
 import css from './SettingsCard.module.css'
 
 /** One number field's staged draft, its validity, and the reset/save actions. */
@@ -25,8 +24,8 @@ function overridden(snapshot: GuardScopeSnapshot, field: keyof ContextGuardConfi
     && field in snapshot.user
 }
 
-type Scope = ContextGuardSettingsCardProps['scope']
-type Translate = ContextGuardSettingsCardProps['t']
+type Scope = ContextGuardBundleConfigProps['scope']
+type Translate = ContextGuardBundleConfigProps['t']
 
 /**
  * The staged threshold edit both settings surfaces share. Two staged number
@@ -156,47 +155,11 @@ function SettingsBody({ snapshot, draft, t }: {
 }
 
 /**
- * The context-guard settings card in the 0.1.5 plugin configuration tab: the
- * same collapsible chrome the official plugin cards use (a header naming the
- * plugin and what its settings govern, disclosing the controls in place),
- * re-implemented here because the client bundle-purity gate forbids
- * value-importing the official card chrome.
- */
-export function ContextGuardSettingsCard({ useConfig, scope, t }: ContextGuardSettingsCardProps) {
-  const snapshot = useConfig(value => value)
-  const value = snapshot.status === 'ready' ? snapshot.value : undefined
-  const [open, setOpen] = useState(false)
-  const draft = useThresholdDraft(scope, snapshot, value)
-
-  if (snapshot.status === 'unavailable') return null
-
-  const title = t('settings.title')
-
-  return (
-    <li className={open ? `${css.card} ${css.cardOpen}` : css.card}>
-      <button
-        type="button"
-        className={css.header}
-        aria-expanded={open}
-        aria-label={`${t(open ? 'settings.collapse' : 'settings.expand')}: ${title}`}
-        onClick={() => { setOpen(!open) }}
-      >
-        <span className={css.headText}>
-          <span className={css.name}>{title}</span>
-          <span className={css.description}>{t('settings.description')}</span>
-        </span>
-        <IconChevronDownOutlineMedium className={open ? `${css.chevron} ${css.chevronOpen}` : css.chevron} />
-      </button>
-      {open && value !== undefined && <SettingsBody snapshot={snapshot} draft={draft} t={t} />}
-    </li>
-  )
-}
-
-/**
- * The bundle's configuration on the alpha.2 Plugins page
- * (`plugins.bundle.config`, keyed by package name): the page draws the title,
- * the icon, and the crumb itself, so the entry renders the one-liner for the
- * `summary` view and the bare form — with its own save control — for `page`.
+ * The context-guard settings card on the Plugins page (the `plugins.item`
+ * entry client/index.ts registers while the Host serves the namespace): the
+ * page draws the title, the icon, and the crumb itself, so the entry renders
+ * the one-liner for the `summary` view and the bare form — with its own save
+ * control — for `page`.
  */
 export function ContextGuardBundleConfig({ view, useConfig, scope, t }: ContextGuardBundleConfigProps) {
   const snapshot = useConfig(value => value)

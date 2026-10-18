@@ -93,8 +93,8 @@ export interface ProviderAuthBlockProps extends ProviderAuthInjected, PropsLocal
 
 /**
  * One harness's auth interactions, shared between the per-provider settings
- * cards (the alpha.2 `plugins.bundle.config` pages and the 0.1.5
- * `settings.plugin.item` tab): auth status through
+ * cards (each a `plugins.item` entry on the Plugins page, registered while
+ * the Host serves the provider's namespace): auth status through
  * the read-only Remote channel and a web-login action that runs
  * `/<harness> login`, surfaces the device-code prompt, and offers a link to
  * the authorization page. The login command returns at prompt time while the

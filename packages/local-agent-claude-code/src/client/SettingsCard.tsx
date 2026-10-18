@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import { useEffect, useRef, useState } from 'react'
 import type { SettingsScope, SettingsScopeSnapshot } from '@khorsheed/dsh-local-agent/src/client/settings-scope.ts'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-// Type-only: the plugins.bundle.config keyed-slot SlotMap merge (alpha.2).
+// Type-only: the plugins.item list-slot SlotMap merge.
 import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
 import { Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import { IconChevronDownOutlineMedium } from './icons.tsx'
@@ -62,11 +62,13 @@ export interface ClaudeCodeSettingsCardInjected {
 }
 
 /**
- * Full props of the 0.1.5 settings.plugin.item card entry. The removed slot's
- * owner share was intentionally empty and its root scope delivered the global
- * seats; the structural type below is exact about the one seat the auth block
- * consumes (the slot name is gone from the alpha.2 SlotMap, so the
- * registration goes through a duck-typed narrow — see client/index.ts).
+ * Full props of the retired 0.1.5 settings.plugin.item card. The host removed
+ * that seat and client/index.ts no longer registers the component — the live
+ * settings surface is the plugins.item entry built on the BundleConfig
+ * component below; this export remains for the component spec and direct
+ * composers. The removed slot's owner share was intentionally empty and its
+ * root scope delivered the global seats; the structural type below is exact
+ * about the one seat the auth block consumes.
  */
 export type ClaudeCodeSettingsCardProps =
   InjectFace<ClaudeCodeSettingsCardInjected>
@@ -76,9 +78,9 @@ export type ClaudeCodeSettingsCardProps =
     useSessions: ProviderAuthBlockProps['useSessions']
   }
 
-/** Full props of the alpha.2 plugins.bundle.config entry (owner prop `view`). */
+/** Full props of the plugins.item entry (owner prop `view`). */
 export type ClaudeCodeBundleConfigProps =
-  PropsRuntime<'plugins.bundle.config'>
+  PropsRuntime<'plugins.item'>
   & InjectFace<ClaudeCodeSettingsCardInjected>
   & PropsLocale<typeof NS>
 
@@ -370,8 +372,10 @@ function CardBody({ state, auth, authT, renderModelPicker, useSessions, t }: {
 }
 
 /**
- * The claude-code harness settings card in the 0.1.5 plugin configuration
- * tab: the same collapsible chrome the official plugin cards use,
+ * The claude-code harness settings card of the retired 0.1.5 plugin
+ * configuration tab (no longer registered; the live surface is the
+ * plugins.item entry below): the same collapsible chrome the official plugin
+ * cards use,
  * re-implemented locally (the bundle-purity gate forbids value-importing the
  * official chrome — the context-guard pattern), with the at-a-glance
  * credential dot in the header. Explanation copy lives in hover/focus bubbles
@@ -418,10 +422,11 @@ export function ClaudeCodeSettingsCard(props: ClaudeCodeSettingsCardProps) {
 }
 
 /**
- * The bundle's configuration on the alpha.2 Plugins page
- * (`plugins.bundle.config`, keyed by package name): the page draws the title,
- * the icon, and the crumb itself, so the entry renders the one-liner for the
- * `summary` view and the bare form — with its own save control — for `page`.
+ * The provider's card on the Plugins page (the `plugins.item` entry
+ * client/index.ts registers while the Host serves the namespace): the page
+ * draws the title, the icon, and the crumb itself, so the entry renders the
+ * one-liner for the `summary` view and the bare form — with its own save
+ * control — for `page`.
  * @param props - the owner view, the injected scope/auth faces, and copy.
  * @returns the entry.
  */
