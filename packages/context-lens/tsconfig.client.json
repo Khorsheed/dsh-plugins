@@ -28,6 +28,7 @@
     "src/client/SegCtl.tsx",
     "src/client/SegmentBlocks.tsx",
     "src/client/ToolCatalog.tsx",
+    "src/client/SchemaFields.tsx",
     "src/client/TimingView.tsx",
     "src/client/TokenView.tsx",
     "src/client/TurnAction.tsx",
