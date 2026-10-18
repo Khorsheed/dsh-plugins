@@ -59,6 +59,15 @@ export const IconChevronLeftOutlineMedium = ({ size = 16, className }: IconProps
   </svg>
 )
 
+/** An info ⓘ — an on-demand hint beside a section title. */
+export const IconInfoOutlineMedium = ({ size = 16, className }: IconProps) => (
+  <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" strokeWidth={1.3}>
+    <circle cx="8" cy="8" r="6.2" stroke="currentColor" />
+    <path d="M8 7.2V11.4" stroke="currentColor" strokeLinecap="round" />
+    <circle cx="8" cy="4.9" r="0.55" fill="currentColor" stroke="none" />
+  </svg>
+)
+
 /** A circular arrow — regenerate the roadmap. */
 export const IconRefreshOutlineMedium = ({ size = 16, className }: IconProps) => (
   <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" strokeWidth={1.3}>

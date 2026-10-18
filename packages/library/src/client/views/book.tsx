@@ -23,7 +23,7 @@ import { CoverChips, coverLabel, type CoverContext } from '../covers.tsx'
 import { collectMissed, collectVoided, type MissedRow } from '../mistakes.ts'
 import type { LibraryNodeTab } from '../store.ts'
 import {
-  IconCameraOutlineMedium, IconCheckOutlineMedium, IconLockOutlineMedium, IconRefreshOutlineMedium, IconSparkleOutlineMedium, IconTrashOutlineMedium,
+  IconCameraOutlineMedium, IconCheckOutlineMedium, IconInfoOutlineMedium, IconLockOutlineMedium, IconRefreshOutlineMedium, IconSparkleOutlineMedium, IconTrashOutlineMedium,
 } from '../icons.tsx'
 import { outcome, shortGloss, StateLine, useLoad, value, WeaknessBars, when, type ViewProps } from '../ui.tsx'
 import { MathText, Tex } from '../math.tsx'
@@ -713,6 +713,8 @@ function QuizTab({ p, projectId, resourceId, node, passRatio, resources, onPrime
   // the paper card's primary action once this station has misses.
   const [direction, setDirection] = useState<LibraryQuizFocus>('mine')
   const [showOthers, setShowOthers] = useState(false)
+  // The points grid's explainer hides behind the title's ⓘ (tap to toggle).
+  const [showPointsHint, setShowPointsHint] = useState(false)
   // The picked points (重点出这些) — empty means the coach picks by weakness.
   const [picked, setPicked] = useState<readonly string[]>([])
   // 题型 / 题量: no kinds picked = the coach's mix; 题量 is a number field, default 10.
@@ -847,7 +849,16 @@ function QuizTab({ p, projectId, resourceId, node, passRatio, resources, onPrime
       )}
       {points.length > 0 && (
         <section className={css.section}>
-          <h3 className={css.sectionTitle}>{t('node.pointsTitle')}</h3>
+          <h3 className={`${css.sectionTitle} ${css.pointsHead}`}>
+            {t('node.pointsTitle')}
+            <button
+              type="button"
+              className={css.infoButton}
+              aria-expanded={showPointsHint}
+              aria-label={t('node.pointsHintLabel')}
+              onClick={() => { setShowPointsHint(value => !value) }}
+            ><IconInfoOutlineMedium size={13} /></button>
+          </h3>
           <div className={css.points}>
             {points.map(point => {
               const state = pointStates.get(point.id) ?? 'untested'
@@ -860,7 +871,7 @@ function QuizTab({ p, projectId, resourceId, node, passRatio, resources, onPrime
               )
             })}
           </div>
-          {pickedTitles.length === 0 && <div className={css.muted}>{t('node.pointsHint')}</div>}
+          {showPointsHint && <div className={css.muted}>{t('node.pointsHint')}</div>}
         </section>
       )}
       <section className={css.section}>
