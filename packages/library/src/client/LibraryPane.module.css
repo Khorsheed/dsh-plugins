@@ -1562,12 +1562,31 @@ textarea.input { resize: vertical; font: inherit; line-height: 1.5; }
   outline-offset: 2px;
 }
 
-/* 题型 / 题量 rows under 出题范围: a fixed muted label, chips scroll in the rest. */
+/* 出题设置 rows: one label column on the left, the control on the right. */
 .settingRow {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
-  margin-top: 6px;
+}
+
+.section .settingRow {
+  margin-top: 8px;
+}
+
+.settingLabel {
+  flex: none;
+  min-width: 4em;
+  padding-top: 8px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: var(--dsh-panel-text-meta, 12px);
+}
+
+.settingControl {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
 }
 
 .settingChips {
@@ -1575,10 +1594,10 @@ textarea.input { resize: vertical; font: inherit; line-height: 1.5; }
   min-width: 0;
 }
 
-/* The free-typed 题量 sits at the count row's end, fixed and compact. */
+/* 题量: a compact number field (default 10, cap 20). */
 .countInput {
   flex: none;
-  width: 88px;
+  width: 76px;
   padding: 5px 8px;
   text-align: center;
   font-size: var(--dsh-panel-text-meta, 12px);

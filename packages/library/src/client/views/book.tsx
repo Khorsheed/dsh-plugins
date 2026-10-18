@@ -715,11 +715,9 @@ function QuizTab({ p, projectId, resourceId, node, passRatio, resources, onPrime
   const [showOthers, setShowOthers] = useState(false)
   // The picked points (重点出这些) — empty means the coach picks by weakness.
   const [picked, setPicked] = useState<readonly string[]>([])
-  // 题型 / 题量: no kinds and no count mean the coach's default mix.
+  // 题型 / 题量: no kinds picked = the coach's mix; 题量 is a number field, default 10.
   const [kinds, setKinds] = useState<readonly LibraryQuizQuestion['kind'][]>([])
-  const [count, setCount] = useState<number | undefined>(undefined)
-  // The free-typed 题量 — non-empty overrides the chips, clamped to MAX_QUIZ_COUNT.
-  const [countText, setCountText] = useState('')
+  const [countText, setCountText] = useState(String(DEFAULT_QUIZ_COUNT))
   // After asking, re-read until the coach has stored the new quiz (two minutes at most).
   const [watching, setWatching] = useState<{ since: number; count: number } | undefined>()
   const [tick, setTick] = useState(0)
@@ -804,6 +802,8 @@ function QuizTab({ p, projectId, resourceId, node, passRatio, resources, onPrime
     actions.push({ view: 'quiz', projectId, ...(quiz.scope.resourceId === undefined ? (resourceId === undefined ? {} : { resourceId }) : { resourceId: quiz.scope.resourceId }), quizId: quiz.id })
   }
   const ask = (): void => {
+    const parsed = Number.parseInt(countText.trim(), 10)
+    const count = Number.isFinite(parsed) ? Math.min(Math.max(parsed, 1), MAX_QUIZ_COUNT) : DEFAULT_QUIZ_COUNT
     onPrime(direction, { weak: weak.data?.cards.map(card => card.term) ?? [], points: pickedTitles, kinds, count })
     setWatching({ since: Date.now(), count: quizCount })
   }
@@ -864,20 +864,25 @@ function QuizTab({ p, projectId, resourceId, node, passRatio, resources, onPrime
         </section>
       )}
       <section className={css.section}>
-        <h3 className={css.sectionTitle}>{t('node.focusTitle')}</h3>
-        <ChipRow
-          label={t('node.focusTitle')}
-          chips={FOCUSES.map(id => ({ id, label: t(`focus.${id}`), ...(id === 'mine' ? { count: mineCount } : {}) }))}
-          value={direction}
-          onSelect={id => { setDirection(id as LibraryQuizFocus) }}
-        />
-        <div className={css.muted}>
-          {direction === 'mine'
-            ? mineCount === 0 ? t('node.focusMineEmpty') : t('node.focusMineHint', { terms: (mine.data?.cards ?? []).map(card => card.term).join('、') })
-            : t(`node.focusHint.${direction}`)}
+        <h3 className={css.sectionTitle}>{t('node.settingsTitle')}</h3>
+        <div className={css.settingRow}>
+          <span className={css.settingLabel}>{t('node.setting.range')}</span>
+          <div className={css.settingControl}>
+            <ChipRow
+              label={t('node.setting.range')}
+              chips={FOCUSES.map(id => ({ id, label: t(`focus.${id}`), ...(id === 'mine' ? { count: mineCount } : {}) }))}
+              value={direction}
+              onSelect={id => { setDirection(id as LibraryQuizFocus) }}
+            />
+            <div className={css.muted}>
+              {direction === 'mine'
+                ? mineCount === 0 ? t('node.focusMineEmpty') : t('node.focusMineHint', { terms: (mine.data?.cards ?? []).map(card => card.term).join('、') })
+                : t(`node.focusHint.${direction}`)}
+            </div>
+          </div>
         </div>
         <div className={css.settingRow}>
-          <span className={css.muted}>{t('node.kindsTitle')}</span>
+          <span className={css.settingLabel}>{t('node.kindsTitle')}</span>
           <ChipRow
             className={css.settingChips}
             label={t('node.kindsTitle')}
@@ -887,33 +892,17 @@ function QuizTab({ p, projectId, resourceId, node, passRatio, resources, onPrime
           />
         </div>
         <div className={css.settingRow}>
-          <span className={css.muted}>{t('node.countTitle')}</span>
-          <ChipRow
-            className={css.settingChips}
-            label={t('node.countTitle')}
-            chips={[{ id: 'auto', label: t('node.countAuto') }, ...QUIZ_COUNTS.map(n => ({ id: String(n), label: t('node.countN', { count: String(n) }) }))]}
-            value={countText.trim() === '' ? (count === undefined ? 'auto' : String(count)) : '__custom__'}
-            onSelect={id => { setCount(id === 'auto' ? undefined : Number(id)); setCountText('') }}
-          />
+          <span className={css.settingLabel}>{t('node.countTitle')}</span>
           <input
             className={`${css.input} ${css.countInput}`}
             inputMode="numeric"
-            aria-label={t('node.countCustom', { max: String(MAX_QUIZ_COUNT) })}
-            placeholder={t('node.countCustom', { max: String(MAX_QUIZ_COUNT) })}
+            aria-label={t('node.countTitle')}
+            placeholder={String(DEFAULT_QUIZ_COUNT)}
             value={countText}
-            onChange={event => {
-              const text = event.target.value
-              setCountText(text)
-              if (text.trim() === '') { setCount(undefined); return }
-              const n = Number.parseInt(text, 10)
-              if (Number.isFinite(n)) setCount(Math.min(Math.max(n, 1), MAX_QUIZ_COUNT))
-            }}
+            onChange={event => { setCountText(event.target.value) }}
             onBlur={() => {
-              const text = countText.trim()
-              if (!/^\d+$/.test(text)) { setCountText(''); return }
-              const n = Math.min(Math.max(Number.parseInt(text, 10), 1), MAX_QUIZ_COUNT)
-              setCount(n)
-              setCountText(String(n))
+              const parsed = Number.parseInt(countText.trim(), 10)
+              setCountText(Number.isFinite(parsed) ? String(Math.min(Math.max(parsed, 1), MAX_QUIZ_COUNT)) : String(DEFAULT_QUIZ_COUNT))
             }}
           />
         </div>
@@ -1056,8 +1045,9 @@ function AcceptanceTab({ p, projectId, node, passRatio, onPrime }: {
 
 const FOCUSES: readonly LibraryQuizFocus[] = ['mine', 'book', 'mixed']
 const QUIZ_KINDS: readonly LibraryQuizQuestion['kind'][] = ['choice', 'fill', 'free']
-const QUIZ_COUNTS: readonly number[] = [3, 6, 10]
-/** Free-typed 题量 is capped — past this a chapter quiz stops being one sitting. */
+/** 题量 field's default — a chapter quiz's one-sitting size. */
+const DEFAULT_QUIZ_COUNT = 10
+/** The 题量 field's cap — past this a chapter quiz stops being one sitting. */
 const MAX_QUIZ_COUNT = 20
 
 /**
