@@ -30,4 +30,4 @@ Status: implemented
 
 ## Testing
 
-`pnpm --filter @khorsheed/dsh-video-studio build` 全绿（gen-typert + tsc + tsdown），包内 vitest 29/29，`pnpm check:panels --package packages/video-studio` 零错误；部署 3080 后按两种主题截图复核（桌面面板）。
+`pnpm --filter @khorsheed/dsh-video-studio build` 全绿（gen-typert + tsc + tsdown），包内 vitest 29/29，`pnpm check:panels --package packages/video-studio` 零错误；经 `examples/transcript` 样例页做了深浅两色截图复核（样例页抓出了查找栏折行与统计文本折行两个问题），随后部署 3080。

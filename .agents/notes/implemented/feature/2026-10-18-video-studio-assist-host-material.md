@@ -30,4 +30,4 @@ Two gaps surfaced when reviewing the shipped M1 on the production instance:
 
 ## Testing
 
-`pnpm --filter @khorsheed/dsh-video-studio build` green (gen-typert + tsc + tsdown), package suite 29/29 green, `pnpm check:panels --package packages/video-studio` 0 errors; deployed to 3080 and screenshot-reviewed (desktop panel, light and dark).
+`pnpm --filter @khorsheed/dsh-video-studio build` green (gen-typert + tsc + tsdown), package suite 29/29 green, `pnpm check:panels --package packages/video-studio` 0 errors; screenshot-reviewed light and dark via the `examples/transcript` fixture page (which caught the find bar's row-wrap and the stats wrap), then deployed to 3080.
