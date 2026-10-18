@@ -12,7 +12,7 @@
  *
  * @module @khorsheed/dsh-library/client/views/quiz
  */
-import { useMemo, useState, type ReactNode } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { PanelHeader } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
 import { LEITNER_INTERVAL_DAYS, type LibraryAssessResult, type LibraryCard, type LibraryQuizQuestion, type LibraryReviewRating, type LibraryVerdict } from '../../types.ts'
 import { choiceIndex, choiceOptions, clozeOf, fillMatches, letterMarks, pickMode, spellMatches } from '../judge.ts'
@@ -158,6 +158,14 @@ function QuestionCard({ p, question, number, answered, draft, onDraft, onAnswer 
   // over just the same — it stays folded behind 参考原文 until peeked or answered.
   const quoteUpfront = question.kind === 'free'
   const [peek, setPeek] = useState(false)
+  // The answer box grows with what you type (up to a cap, then it scrolls).
+  const answerRef = useRef<HTMLTextAreaElement>(null)
+  useLayoutEffect(() => {
+    const el = answerRef.current
+    if (el === null) return
+    el.style.height = 'auto'
+    el.style.height = `${Math.min(el.scrollHeight, 240)}px`
+  }, [draft, answered])
   return (
     <section className={css.question}>
       <div className={css.chips}>
@@ -198,6 +206,7 @@ function QuestionCard({ p, question, number, answered, draft, onDraft, onAnswer 
       {question.kind !== 'choice' && (
         <>
           <textarea
+            ref={answerRef}
             className={css.answer}
             rows={question.kind === 'free' ? 4 : 1}
             value={answered?.given ?? draft}
@@ -256,6 +265,8 @@ export function ResultView({ p, projectId, resourceId, result }: ViewProps & { p
   const [notice, setNotice] = useState<string | undefined>()
   const percent = Math.round(result.attempt.ratio * 100)
   const passed = result.completed !== undefined
+  // Flagged questions counted for nothing — say so once, right under the score.
+  const voidedCount = result.attempt.verdicts.filter(verdict => verdict.void === true).length
   const assessmentId = result.attempt.assessmentId
   // The paper itself, for the retake's question list; a gone one hides the asks.
   const assessment = useLoad(
@@ -297,6 +308,7 @@ export function ResultView({ p, projectId, resourceId, result }: ViewProps & { p
           </div>
           <strong className={passed ? css.ok : css.bad}>{passed ? t('result.passed') : t('result.notYet')}</strong>
         </section>
+        {voidedCount > 0 && <div className={css.muted}>{t('result.voided', { count: String(voidedCount) })}</div>}
         {result.cardUpdates.length > 0 && (
           <section className={css.section}>
             <h3 className={css.sectionTitle}>{t('result.cards')}</h3>

@@ -324,7 +324,7 @@
 }
 
 .answer {
-  resize: vertical;
+  resize: none;
 }
 
 .searchRow {
