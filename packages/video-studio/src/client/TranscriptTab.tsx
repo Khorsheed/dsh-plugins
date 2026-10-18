@@ -310,14 +310,16 @@ export function TranscriptTab({ p, v, act, report }: { p: VideoPaneProps; v: Pro
 
       {finding && (
         <div className={css.findBar}>
-          <input id="vs-find" className={css.inlineInput} value={query} placeholder={t('find.placeholder')} autoFocus
-            onChange={(e) => { setQuery(e.target.value); setHitIndex(0) }}
-            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); step(e.shiftKey ? -1 : 1) } else if (e.key === 'Escape') setFinding(false) }} />
-          <span className={css.muted}>{query.trim() ? (hits.length ? t('find.position', { index: String(current + 1), count: String(hits.length) }) : t('find.count', { count: '0' })) : ''}</span>
-          <button type="button" className={css.btn} disabled={!hits.length} title={t('find.prev')} aria-label={t('find.prev')} onClick={() => step(-1)}>↑</button>
-          <button type="button" className={css.btn} disabled={!hits.length} title={t('find.next')} aria-label={t('find.next')} onClick={() => step(1)}>↓</button>
-          <button type="button" className={css.danger} disabled={!hits.length} onClick={() => void act(() => p.cutMatches({ projectId: project.id, needle: query }))}>{t('find.cutAll')}</button>
-          <button type="button" className={css.btn} title={t('find.close')} aria-label={t('find.close')} onClick={() => setFinding(false)}>×</button>
+          <div className={css.findRow}>
+            <input id="vs-find" className={css.inlineInput} value={query} placeholder={t('find.placeholder')} autoFocus
+              onChange={(e) => { setQuery(e.target.value); setHitIndex(0) }}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); step(e.shiftKey ? -1 : 1) } else if (e.key === 'Escape') setFinding(false) }} />
+            <span className={css.muted}>{query.trim() ? (hits.length ? t('find.position', { index: String(current + 1), count: String(hits.length) }) : t('find.count', { count: '0' })) : ''}</span>
+            <button type="button" className={css.btn} disabled={!hits.length} title={t('find.prev')} aria-label={t('find.prev')} onClick={() => step(-1)}>↑</button>
+            <button type="button" className={css.btn} disabled={!hits.length} title={t('find.next')} aria-label={t('find.next')} onClick={() => step(1)}>↓</button>
+            <button type="button" className={css.danger} disabled={!hits.length} onClick={() => void act(() => p.cutMatches({ projectId: project.id, needle: query }))}>{t('find.cutAll')}</button>
+            <button type="button" className={css.btn} title={t('find.close')} aria-label={t('find.close')} onClick={() => setFinding(false)}>×</button>
+          </div>
           <div className={css.findRow}>
             <input id="vs-replace" ref={replaceRef} className={css.inlineInput} value={replacement} placeholder={t('find.replacePlaceholder')}
               onChange={(e) => setReplacement(e.target.value)}

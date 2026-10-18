@@ -1,0 +1,28 @@
+/* Fixture palette: the dsw alias tokens the panel reads, light and dark.
+   Values follow the host's design-platform tokens loosely — this page never
+   ships; it only needs to look like the host for screenshot review. */
+:root { font:14px/1.5 -apple-system,system-ui,sans-serif; color:#0f1115; background:#e9ebf0;
+  --dsw-font-family:system-ui;
+  --dsw-alias-label-primary:#0f1115; --dsw-alias-label-secondary:#3d4454; --dsw-alias-label-tertiary:#5d6575; --dsw-alias-label-caption:#7c8492; --dsw-alias-label-primary-inverted:#fff;
+  --dsw-alias-bg-base:#fff; --dsw-alias-bg-layer-1:#f7f8fa; --dsw-alias-bg-layer-2:#f2f3f7;
+  --dsw-alias-border-l1:rgba(0,0,0,.05); --dsw-alias-border-l2:rgba(0,0,0,.1); --dsw-alias-border-l3:rgba(0,0,0,.12);
+  --dsw-alias-brand-primary:#4d6bfe; --dsw-alias-state-business-primary:#4172e6; --dsw-alias-state-warn-primary:#e8a13a; --dsw-alias-state-error-primary:#e5484d; --dsw-alias-state-success-primary:#30a46c;
+  --dsw-alias-interactive-bg-hover:rgba(38,49,72,.06); --dsw-alias-interactive-bg-active:rgba(38,49,72,.1);
+  --dsw-specific-menu:rgba(248,249,250,.94); --dsw-menu-backdrop-filter:blur(20px) saturate(150%);
+  --dsw-elevation-prominent:0 0 0 .5px var(--dsw-elevation-stroke-color,rgba(0,0,0,.07)),0 3px 8px rgba(0,0,0,.05),0 0 20px rgba(0,0,0,.06);
+  --dsh-panel-text-title:14px; --dsh-panel-text-body:13px; --dsh-panel-text-meta:12px; --dsh-panel-text-reading:14px;
+}
+* { box-sizing:border-box }
+body { margin:0; padding:16px }
+button,input { font:inherit }
+.frame { height:780px; margin:auto; background:var(--dsw-alias-bg-base); border:1px solid var(--dsw-alias-border-l2); border-radius:20px; overflow:hidden; display:flex; flex-direction:column }
+body[data-preview-touch="1"] { --dsh-panel-text-title:17px; --dsh-panel-text-body:15px; --dsh-panel-text-meta:13px; --dsh-panel-text-reading:17px }
+body[data-preview-theme=dark] { color:#f9fafb; background:#101012;
+  --dsw-alias-label-primary:#f9fafb; --dsw-alias-label-secondary:#c3c5cf; --dsw-alias-label-tertiary:#9a9ba5; --dsw-alias-label-caption:#858690; --dsw-alias-label-primary-inverted:#141416;
+  --dsw-alias-bg-base:#17171a; --dsw-alias-bg-layer-1:#1e1e22; --dsw-alias-bg-layer-2:#26262b;
+  --dsw-alias-border-l1:rgba(255,255,255,.06); --dsw-alias-border-l2:rgba(255,255,255,.12); --dsw-alias-border-l3:rgba(255,255,255,.16);
+  --dsw-alias-state-business-primary:#7aa2ff; --dsw-alias-state-warn-primary:#f0b35c; --dsw-alias-state-error-primary:#f1747a; --dsw-alias-state-success-primary:#3fc387;
+  --dsw-alias-interactive-bg-hover:rgba(255,255,255,.08); --dsw-alias-interactive-bg-active:rgba(255,255,255,.14);
+  --dsw-specific-menu:rgba(67,69,74,.94);
+  --dsw-elevation-prominent:0 0 0 .5px var(--dsw-elevation-stroke-color,rgba(255,255,255,.1)),0 3px 8px rgba(0,0,0,.32),0 0 20px rgba(0,0,0,.38);
+}

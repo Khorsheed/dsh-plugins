@@ -49,7 +49,7 @@
 .muted { color: var(--dsw-alias-label-tertiary); font-size: var(--dsh-panel-text-meta, 12px); }
 .empty { color: var(--dsw-alias-label-secondary); padding: 16px 4px; line-height: 1.6; }
 .meta { color: var(--dsw-alias-label-secondary); font-size: var(--dsh-panel-text-meta, 12px); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.stats { color: var(--dsw-alias-label-secondary); font-size: var(--dsh-panel-text-meta, 12px); font-variant-numeric: tabular-nums; }
+.stats { color: var(--dsw-alias-label-secondary); font-size: var(--dsh-panel-text-meta, 12px); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .actions > .stats { flex: 1; }
 .when { color: var(--dsw-alias-label-tertiary); font-size: var(--dsh-panel-text-meta, 12px); font-variant-numeric: tabular-nums; }
 
@@ -260,8 +260,10 @@
 .swProp { height: 10px; border: 1.5px dashed var(--vs-prop); border-radius: 2px; background: var(--vs-prop-soft); }
 .findBar { position: sticky; top: 0; z-index: 2; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 10px; border: 0; border-radius: 12px; background: var(--dsw-alias-bg-layer-2); --dsw-elevation-stroke-color: var(--dsw-alias-border-l1); box-shadow: var(--dsw-elevation-prominent, 0 4px 16px color-mix(in srgb, var(--dsw-alias-label-primary) 10%, transparent)); }
 .findBar > .inlineInput { flex: 1; min-width: 140px; width: auto; }
-.findRow { display: flex; gap: 8px; align-items: center; flex-basis: 100%; flex-wrap: wrap; }
-.findRow > .inlineInput { flex: 1; min-width: 140px; width: auto; }
+.findRow { display: flex; gap: 8px; align-items: center; flex-basis: 100%; flex-wrap: nowrap; }
+.findRow > .inlineInput { flex: 1; min-width: 0; width: auto; }
+.findRow > button { flex: none; }
+.findRow > .muted { white-space: nowrap; }
 .check { display: inline-flex; gap: 5px; align-items: center; font-size: var(--dsh-panel-text-meta, 12px); color: var(--dsw-alias-label-secondary); white-space: nowrap; }
 .check input { margin: 0; accent-color: var(--vs-accent); }
 .actions > .check { margin-right: auto; }
