@@ -47,6 +47,7 @@
     },
     "./src/*": "./src/*",
     "./locale/*.json": "./locale/*.json",
+    "./tool/locale/*.json": "./locale/*.json",
     "./package.json": "./package.json"
   },
   "files": [
