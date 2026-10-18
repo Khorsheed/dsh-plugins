@@ -46,8 +46,18 @@
 .parameterHead span { color: var(--dsw-alias-label-tertiary); }
 .parameterHead b { font-size: var(--dsh-panel-text-meta,11px); font-weight: 400; color: var(--dsw-alias-state-business-primary); }
 .parameter .pre { margin-top: 4px; }
-.schemaConstraints { margin-top: 10px; font-size: var(--dsh-panel-text-meta,12px); color: var(--dsw-alias-label-secondary); }
-.schemaConstraints summary { cursor: pointer; padding: 4px 0; }
+.schemaRoot { margin-top: 12px; }
+.schemaChildren { margin: 6px 0 4px 6px; padding-left: 12px; border-left: 1px solid var(--dsw-alias-border-l2); }
+.schemaChildren .parameter { padding: 6px 0; border-top: 0; }
+.schemaGroup { margin-top: 8px; }
+.schemaCaption { color: var(--dsw-alias-label-tertiary); font-size: var(--dsh-panel-text-meta,12px); line-height: 1.5; overflow-wrap: anywhere; }
+.schemaFacts { margin: 5px 0; font-size: var(--dsh-panel-text-meta,12px); line-height: 1.5; }
+.schemaFacts > div { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 10px; }
+.schemaFacts dt { color: var(--dsw-alias-label-tertiary); overflow-wrap: anywhere; }
+.schemaFacts dd { margin: 0; min-width: 0; color: var(--dsw-alias-label-secondary); overflow-wrap: anywhere; }
+.schemaFacts code { font-family: var(--dsw-font-family-mono,ui-monospace,monospace); }
+.schemaValues { display: flex; flex-wrap: wrap; gap: 2px 8px; }
+.schemaFacts .schemaFacts { margin: 0 0 3px; padding-left: 8px; border-left: 1px solid var(--dsw-alias-border-l2); }
 .row:focus-visible, .layerHead:focus-visible, .toolRow:focus-visible, .readActions button:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: -2px; }
 .exchangeTitle { font-size: var(--dsh-panel-text-body,13px); margin: 0 0 8px; }
 .exchange { display: grid; grid-template-columns: minmax(0,1fr) 20px minmax(0,1fr); align-items: stretch; }
@@ -89,6 +99,7 @@
   .full { padding: 10px 12px 14px; }
   .toolRow { grid-template-columns: minmax(0,1fr) 56px 48px 16px; gap: 6px; padding: 9px 8px; }
   .toolRow > .preview { display: none; }
+  .schemaChildren { margin-left: 0; padding-left: 8px; }
   .toolBody { padding: 10px 12px 14px; }
 }
 

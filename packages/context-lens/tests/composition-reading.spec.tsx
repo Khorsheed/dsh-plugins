@@ -38,22 +38,76 @@ describe('composition reading', () => {
     fireEvent.click(summary('read'))
     expect(screen.getByText('必填')).toBeTruthy()
     expect(screen.getByText('File path')).toBeTruthy()
-    expect(screen.getByText(/"minLength": 1/)).toBeTruthy()
-    expect(screen.getByText(/"anyOf"/)).toBeTruthy()
-    expect(screen.getByText('false')).toBeTruthy()
+    expect(screen.getByText('最短长度')).toBeTruthy()
+    expect(screen.getByText('至少满足一个分支')).toBeTruthy()
+    expect(screen.getByText('不接受任何值')).toBeTruthy()
+    expect(screen.getByText('不允许')).toBeTruthy()
+    expect(document.querySelector('pre')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: '原始 JSON' }))
     expect(screen.getByText(parameters).textContent).toBe(parameters)
     fireEvent.click(screen.getByRole('button', { name: '结构化' }))
     expect(screen.getByText('File path')).toBeTruthy()
   })
-  it('shows malformed, boolean and unrecognized schemas verbatim without inventing a parameter count', () => {
+  it('keeps raw capture behind its toggle, even for malformed or boolean schemas', () => {
     const tools = ['{truncated', 'false', '{"oneOf":[{"type":"string"},{"type":"number"}]}'].map((parameters, index) => ({ name: `tool-${index}`, description: 'Schema', parameters, chars: parameters.length, added: false }))
     render(<ToolCatalog tools={tools} t={t} />)
     for (const tool of tools) {
       const head = summary(tool.name)
       expect(within(head).queryByText(/参数/)).toBeNull()
       fireEvent.click(head)
-      expect(screen.getByText(tool.parameters).textContent).toBe(tool.parameters)
+      const row = head.closest('details')!
+      expect(row.querySelector('pre')).toBeNull()
+      fireEvent.click(within(row).getByRole('button', { name: '原始 JSON' }))
+      expect(within(row).getByText(tool.parameters).textContent).toBe(tool.parameters)
     }
+  })
+})
+
+
+describe('recursive tool definitions', () => {
+  const show = (schema: unknown) => {
+    const parameters = JSON.stringify(schema)
+    const view = render(<ToolCatalog tools={[{ name: 'library_binding', description: 'Bind the session', parameters, chars: parameters.length, added: false }]} t={t} />)
+    fireEvent.click(summary('library_binding'))
+    return view
+  }
+  it('reads nullable objects and nested arrays without raw blocks or duplicate required lists', () => {
+    const { container } = show({ type: 'object', properties: { binding: { description: 'A binding or null', oneOf: [
+      { type: 'object', additionalProperties: true, properties: { project: { type: 'string', description: 'Project id' }, resource: { type: 'string' }, targets: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' } }, required: ['name'] } } }, required: ['project'] },
+      { type: 'null' },
+    ] } }, required: ['binding'] })
+    expect(screen.getByText('object | null')).toBeTruthy()
+    expect(screen.getByText('恰好满足一个分支')).toBeTruthy()
+    expect(screen.getByText('数组元素')).toBeTruthy()
+    expect(screen.getByText('Project id')).toBeTruthy()
+    expect(screen.getAllByText('必填')).toHaveLength(3)
+    expect(container.textContent).not.toContain('required')
+    expect(container.textContent).not.toContain('完整约束')
+    expect(container.querySelector('pre')).toBeNull()
+    expect(screen.getByText('额外字段')).toBeTruthy()
+  })
+  it('keeps union/allOf distinctions, root types, orphan required fields and extension metadata', () => {
+    const { container } = show({ type: ['object', 'null'], properties: { item: { allOf: [{ type: 'number', minimum: 1 }, { maximum: 5 }] } }, required: ['undeclared'], constructor: 'extension metadata', 'x-extra': { options: ['a', 'b'], enabled: true }, additionalProperties: false })
+    expect(screen.getByText('object | null')).toBeTruthy()
+    expect(screen.getByText('同时满足所有分支')).toBeTruthy()
+    expect(screen.getByText('最小值')).toBeTruthy()
+    expect(screen.getByText('最大值')).toBeTruthy()
+    expect(screen.getByText('其他必填字段')).toBeTruthy()
+    expect(screen.getByText('"undeclared"')).toBeTruthy()
+    expect(screen.getByText('x-extra')).toBeTruthy()
+    expect(screen.getByText('constructor')).toBeTruthy()
+    expect(screen.getByText('"b"')).toBeTruthy()
+    expect(screen.getByText('不允许')).toBeTruthy()
+    expect(container.querySelector('pre')).toBeNull()
+  })
+  it('leaves references explicit and bounds deeply nested rendering with a raw escape hatch', () => {
+    let nested: unknown = { type: 'string' }
+    for (let i = 0; i < 20; i++) nested = { type: 'object', properties: { child: nested } }
+    const { container } = show({ type: 'object', properties: { tree: nested, ref: { $ref: '#/$defs/node' } }, $defs: { node: { $ref: '#/$defs/node' } } })
+    expect(screen.getAllByText('"#/$defs/node"')).toHaveLength(2)
+    expect(screen.getByText(/更深层的定义请查看原始 JSON/)).toBeTruthy()
+    expect(container.querySelector('pre')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '原始 JSON' }))
+    expect(container.querySelector('pre')?.textContent).toContain('"type":"string"')
   })
 })
