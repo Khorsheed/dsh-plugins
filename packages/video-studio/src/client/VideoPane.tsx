@@ -288,7 +288,7 @@ function ProjectScreen({ p, projectId }: { p: VideoPaneProps; projectId: string 
         {view.error && <div className={css.error}>{t('state.error', { reason: view.error })}</div>}
         {!v && !view.error && <div className={css.muted}>{t('state.loading')}</div>}
         {v && tab === 'sources' && <SourcesTab p={p} v={v} o={ov.data} act={act} report={report} player={player} reload={view.reload} />}
-        {v && tab === 'transcript' && <TranscriptTab p={p} v={v} act={act} />}
+        {v && tab === 'transcript' && <TranscriptTab p={p} v={v} act={act} report={report} />}
         {v && tab === 'export' && <ExportTab p={p} v={v} o={ov.data} report={report} reload={view.reload} />}
         {v && tab === 'settings' && <SettingsTab p={p} v={v} o={ov.data} act={act} report={report} reloadOverview={ov.reload} />}
       </div>
