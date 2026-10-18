@@ -46,8 +46,10 @@ const BUNDLE_DIR = join(PROFILE, 'presets')
  * host-021 (2026-10-17): the digest moved when the two dsh-tool-subagent rows
  * dropped `backgroundMode` — host 0.2.1 rejects the key outright (managed
  * activations are the only delegation mode). Same apparatus, new host line.
+ * Moved again 2026-10-18: the persona prefix dropped its `{{cwd}}` sentence —
+ * 0.2.1 removed that prompt variable (strict references fail the model request).
  */
-const DIRECTORY_COMPOSITION_SHA = '19059d1869b502200300c9d33cc811e2a3c1e8f8c4d3ac3d493c05ac73d1bb31'
+const DIRECTORY_COMPOSITION_SHA = 'f8f3b3ba314189bd266c05d59104b7cbc64787d337ba8d8bcc6e18549dfa7736'
 
 /**
  * The preset-eval row's `plugins:` block, de-indented back to the directory

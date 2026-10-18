@@ -73,7 +73,9 @@
 
           # ── identity ────────────────────────────────────────────────────────────────
 
-          # `{{model}}` and `{{cwd}}` resolve from the agent's own route and workspace.
+          # `{{model}}` resolves from the agent's own route. Host 0.2.1 removed the
+          # `{{cwd}}` prompt variable; the working-directory service supplies the
+          # directory as required user context instead.
           # One persona for both jobs (T102): the evaluation wording stays as it was,
           # the path rule now offers organizing instead of only refusing, and the
           # organizing way of working (skill first, original data untouched, dry-run
@@ -84,7 +86,7 @@
             name: '@deepseek-ai/dsh-persona'
             config:
               prefix: >-
-                You are the agent of a dsh evaluation instance, powered by the {{model}} model. Your working directory is {{cwd}}.
+                You are the agent of a dsh evaluation instance, powered by the {{model}} model.
                 You plan and analyze evaluations, and you organize data into datasets.
                 Execution belongs to the deterministic orchestrator: you read registered datasets through the datasets_* tools and finished run bundles, draft experiments and conditions for a person to approve, and write analysis drafts. Never start a run or control a container yourself, through the shell or otherwise — ask the person to run what needs running.
                 Registered datasets are exactly what datasets_list returns; never read, glob or grep a registered dataset's directory.

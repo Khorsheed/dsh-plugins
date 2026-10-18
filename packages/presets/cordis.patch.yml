@@ -59,7 +59,9 @@
           - id: persona
             name: '@deepseek-ai/dsh-persona'
             config:
-              suffix: Your working directory is {{cwd}}.
+              # Host 0.2.1 removed the {{cwd}} prompt variable (a template
+              # retaining it fails the model request); the working-directory
+              # service supplies the directory as required user context.
               prefix: You are a coding agent powered by the {{model}} model.
           - id: agent-instructions
             name: '@deepseek-ai/dsh-agent-instructions'
@@ -317,7 +319,9 @@
 
           # ── identity ────────────────────────────────────────────────────────────────
 
-          # `{{model}}` and `{{cwd}}` resolve from the agent's own route and workspace.
+          # `{{model}}` resolves from the agent's own route. Host 0.2.1 removed the
+          # `{{cwd}}` prompt variable; the working-directory service supplies the
+          # directory as required user context instead.
           # One persona for both jobs (T102): the evaluation wording stays as it was,
           # the path rule now offers organizing instead of only refusing, and the
           # organizing way of working (skill first, original data untouched, dry-run
@@ -328,7 +332,7 @@
             name: '@deepseek-ai/dsh-persona'
             config:
               prefix: >-
-                You are the agent of a dsh evaluation instance, powered by the {{model}} model. Your working directory is {{cwd}}.
+                You are the agent of a dsh evaluation instance, powered by the {{model}} model.
                 You plan and analyze evaluations, and you organize data into datasets.
                 Execution belongs to the deterministic orchestrator: you read registered datasets through the datasets_* tools and finished run bundles, draft experiments and conditions for a person to approve, and write analysis drafts. Never start a run or control a container yourself, through the shell or otherwise — ask the person to run what needs running.
                 Registered datasets are exactly what datasets_list returns; never read, glob or grep a registered dataset's directory.
@@ -544,7 +548,9 @@
           # ── identity ────────────────────────────────────────────────────────────────
 
           # The preset's own persona, shadowing the deployment default for this agent.
-          # `{{model}}` and `{{cwd}}` resolve from the agent's own route and workspace.
+          # `{{model}}` resolves from the agent's own route. Host 0.2.1 removed the
+          # `{{cwd}}` prompt variable; the working-directory service supplies the
+          # directory as required user context, so no suffix clause is needed here.
           # The prefix carries the full writing-scene contract (2026-09-30 revision):
           # task modes (writing/analysis/editing), bilingual style rules (banned
           # jargon and filler in BOTH languages, sentence rhythm, concreteness), the
@@ -558,7 +564,6 @@
           - id: persona
             name: '@deepseek-ai/dsh-persona'
             config:
-              suffix: Your working directory is {{cwd}}.
               prefix: |-
                 You are a writer powered by the {{model}} model. You write in the user's language — Chinese or English — following that language's own conventions. Clarity over cleverness. The goal is text a general reader can follow: clear, natural, specific.
 
@@ -806,7 +811,6 @@
           - id: persona
             name: '@deepseek-ai/dsh-persona'
             config:
-              suffix: Your working directory is {{cwd}}.
               prefix: |-
                 You are a game developer and game-design mentor powered by the {{model}} model. You build small 2D web games together with the user, who usually has never worked as a game designer. Answer in the user's language.
 
@@ -1095,7 +1099,6 @@
           - id: persona
             name: '@deepseek-ai/dsh-persona'
             config:
-              suffix: Your working directory is {{cwd}}.
               prefix: |-
                 You are an editing partner for podcasts, casual chats and conversations, powered by the {{model}} model. You reply in the user's language.
 
