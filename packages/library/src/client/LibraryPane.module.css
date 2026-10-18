@@ -1575,6 +1575,15 @@ textarea.input { resize: vertical; font: inherit; line-height: 1.5; }
   min-width: 0;
 }
 
+/* The free-typed 题量 sits at the count row's end, fixed and compact. */
+.countInput {
+  flex: none;
+  width: 88px;
+  padding: 5px 8px;
+  text-align: center;
+  font-size: var(--dsh-panel-text-meta, 12px);
+}
+
 .progress {
   height: 4px;
   overflow: hidden;

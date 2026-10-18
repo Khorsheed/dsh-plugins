@@ -718,6 +718,8 @@ function QuizTab({ p, projectId, resourceId, node, passRatio, resources, onPrime
   // 题型 / 题量: no kinds and no count mean the coach's default mix.
   const [kinds, setKinds] = useState<readonly LibraryQuizQuestion['kind'][]>([])
   const [count, setCount] = useState<number | undefined>(undefined)
+  // The free-typed 题量 — non-empty overrides the chips, clamped to MAX_QUIZ_COUNT.
+  const [countText, setCountText] = useState('')
   // After asking, re-read until the coach has stored the new quiz (two minutes at most).
   const [watching, setWatching] = useState<{ since: number; count: number } | undefined>()
   const [tick, setTick] = useState(0)
@@ -858,7 +860,7 @@ function QuizTab({ p, projectId, resourceId, node, passRatio, resources, onPrime
               )
             })}
           </div>
-          <div className={css.muted}>{pickedTitles.length === 0 ? t('node.pointsHint') : t('node.pointsPicked', { count: String(pickedTitles.length) })}</div>
+          {pickedTitles.length === 0 && <div className={css.muted}>{t('node.pointsHint')}</div>}
         </section>
       )}
       <section className={css.section}>
@@ -890,8 +892,29 @@ function QuizTab({ p, projectId, resourceId, node, passRatio, resources, onPrime
             className={css.settingChips}
             label={t('node.countTitle')}
             chips={[{ id: 'auto', label: t('node.countAuto') }, ...QUIZ_COUNTS.map(n => ({ id: String(n), label: t('node.countN', { count: String(n) }) }))]}
-            value={count === undefined ? 'auto' : String(count)}
-            onSelect={id => { setCount(id === 'auto' ? undefined : Number(id)) }}
+            value={countText.trim() === '' ? (count === undefined ? 'auto' : String(count)) : '__custom__'}
+            onSelect={id => { setCount(id === 'auto' ? undefined : Number(id)); setCountText('') }}
+          />
+          <input
+            className={`${css.input} ${css.countInput}`}
+            inputMode="numeric"
+            aria-label={t('node.countCustom', { max: String(MAX_QUIZ_COUNT) })}
+            placeholder={t('node.countCustom', { max: String(MAX_QUIZ_COUNT) })}
+            value={countText}
+            onChange={event => {
+              const text = event.target.value
+              setCountText(text)
+              if (text.trim() === '') { setCount(undefined); return }
+              const n = Number.parseInt(text, 10)
+              if (Number.isFinite(n)) setCount(Math.min(Math.max(n, 1), MAX_QUIZ_COUNT))
+            }}
+            onBlur={() => {
+              const text = countText.trim()
+              if (!/^\d+$/.test(text)) { setCountText(''); return }
+              const n = Math.min(Math.max(Number.parseInt(text, 10), 1), MAX_QUIZ_COUNT)
+              setCount(n)
+              setCountText(String(n))
+            }}
           />
         </div>
       </section>
@@ -1034,6 +1057,8 @@ function AcceptanceTab({ p, projectId, node, passRatio, onPrime }: {
 const FOCUSES: readonly LibraryQuizFocus[] = ['mine', 'book', 'mixed']
 const QUIZ_KINDS: readonly LibraryQuizQuestion['kind'][] = ['choice', 'fill', 'free']
 const QUIZ_COUNTS: readonly number[] = [3, 6, 10]
+/** Free-typed 题量 is capped — past this a chapter quiz stops being one sitting. */
+const MAX_QUIZ_COUNT = 20
 
 /**
  * Rows of quizzes that gate no station (the resource page's 本书测验, the project
