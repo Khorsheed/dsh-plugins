@@ -41,7 +41,9 @@
 
 ### 3080 的 preset 名册：正本是 packages/presets 的声明式 bundle 行
 
-0.1.7-rc.1 起宿主不再读取 `$DSH_HOME/.agent-presets/` 目录式 preset——preset 是 `@khorsheed/dsh-presets` bundle patch 里的声明式 `@deepseek-ai/dsh-agent-preset` 行（loader id `preset-<id>`)。六个 preset（dsh-dev / dsh-eval / dsh-writing / dsh-gamedev / dsh-learning / dsh-video，2026-10-18 起统一带 `dsh-` 前缀）的唯一事实源是 `packages/presets/cordis.patch.yml`；改它 = 正常 PR 评审 + `pnpm deploy:3080 --package packages/presets` 部署（重启生效；存量会话的 preset 记在其事件日志与投影缓存里，改名需同步迁移——`scripts/migrate-preset-selections.ts` 即 2026-10-18 前缀统一时的迁移器）。
+0.1.7-rc.1 起宿主不再读取 `$DSH_HOME/.agent-presets/` 目录式 preset——preset 是声明式 `@deepseek-ai/dsh-agent-preset` 行（loader id `preset-<id>`)。六个 preset（dsh-dev / dsh-eval / dsh-writing / dsh-gamedev / dsh-learning / dsh-video，2026-10-18 起统一带 `dsh-` 前缀）的唯一事实源是 `packages/presets/cordis.patch.yml`；改它 = 正常 PR 评审 + `pnpm deploy:3080 --package packages/presets` 部署（重启生效；存量会话的 preset 记在其事件日志与投影缓存里，改名需同步迁移——`scripts/migrate-preset-selections.ts` 即 2026-10-18 前缀统一时的迁移器）。
+
+**2026-10-18 晚起 3080 的组合单元切换为七个模式包**(`dsh-basic` / `dsh-dev` / `dsh-writing` / `dsh-learning` / `dsh-video` / `dsh-gamedev` / `dsh-bundle-eval`,`dsh.bundle.kind: 'mode'` 或 basic 的 `'family'`):preset 行由六个模式包逐字镜像携带（parity 由 `scripts/preset-mode-parity.spec.ts` 与三方化的 `eval-preset-parity.spec.ts` 钉住）,`dsh-presets`、`dsh-bundle-local-agent`、`dsh-bundle-conversation-toolbox` 随之退出 profile(--replace),成员全部退场为传递依赖。过渡期正本仍是 packages/presets——**改 preset 组合要六处镜像同步改**(parity spec 漏一处即红);模式包在 npm 上架后 presets 包退役、模式包升为正本。成员包更新照旧 `--package packages/<member>`,deploy 的成员退场认 mode kind。
 
 历史：目录正本 + `sync-presets.sh` 的同步制已于 2026-09-24 迁移进 bundle(见 note `2026-09-24-community-presets-declarative-bundle`),`profiles/web/` 目录已于 2026-09-30 删除。
 
