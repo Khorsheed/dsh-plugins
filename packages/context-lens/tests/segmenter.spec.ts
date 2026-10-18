@@ -163,15 +163,21 @@ describe('splitRequest tools segment', () => {
     { name: 'write', description: '写文件', parameters: { type: 'object', properties: {} } },
   ]
 
-  it('marks every definition added on the first request, then only the newcomers', () => {
+  it('does not claim additions without a baseline, then marks only newcomers', () => {
     const first = splitRequest({ messages: [], tools, context: { assemblies: [] } })
-    expect(first.tools.map(tool => tool.added)).toEqual([true, true])
+    expect(first.tools.map(tool => tool.added)).toEqual([false, false])
     const second = splitRequest({
       messages: [],
       tools: [...tools, { name: 'bash', description: '跑命令', parameters: { type: 'object' } }],
       context: { assemblies: [], previous: first.fingerprint },
     })
     expect(second.tools.map(tool => tool.added)).toEqual([false, false, true])
+  })
+
+  it('distinguishes an observed empty tool set from an absent baseline', () => {
+    const empty = splitRequest({ messages: [], tools: [], context: { assemblies: [] } })
+    const next = splitRequest({ messages: [], tools, context: { assemblies: [], previous: empty.fingerprint } })
+    expect(next.tools.map(tool => tool.added)).toEqual([true, true])
   })
 })
 

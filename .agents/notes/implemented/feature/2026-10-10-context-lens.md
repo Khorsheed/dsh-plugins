@@ -28,6 +28,8 @@ Request labels use a separate optional `requestNumber`: a 1-based cumulative ord
 
 Tool execution results are attached to response calls by exact call ID, in both live capture and main/child log reconstruction. Same-name parallel calls keep distinct outcomes; an incremental child result updates the already retained call. Request details expose execution status and full captured result text independently of model-request success. Failed calls show a three-line error preview with bounded full expansion; success bodies start collapsed, while running, unrecorded, missing-body and empty results remain distinct. The list says tool failures rather than generic errors. Input tool-result cards name the issuing request only when its exact call ID resolves within the retained agent history. Result bodies consume the existing retention budget (including late arrivals), but never alter input composition, tokens or duplicate accounting. Existing live-capture priority under memory pressure remains unchanged.
 
+Tool additions require an observed preceding request in the same agent scope. An absent baseline shows the tool inventory without addition badges; an observed empty tool set still allows real additions. Trend bars keep token-scaled heights inside full-height hit columns (16px wide for a pointer, 40px for touch), with visible hover, selection and keyboard focus. Enlarging the hit column instead of the data bar preserves the measurement while making short and unknown-usage requests selectable.
+
 ## Alternatives considered
 
 **Another visual redesign.** Rejected by the user after reviewing the prototype; retain the earlier visual direction.

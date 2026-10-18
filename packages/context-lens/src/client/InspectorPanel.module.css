@@ -225,11 +225,17 @@
 .trend { position: relative; display: flex; gap: 4px; overflow-x: auto; user-select: none; touch-action: pan-x; cursor: grab; padding: 3px 0; scrollbar-width: thin; }
 .trendGroup { flex: none; padding: 2px 3px; border-radius: 5px; text-align: center; font-family: var(--dsw-font-family-mono, ui-monospace, monospace); font-size: var(--dsh-panel-text-meta, 10px); color: var(--dsw-alias-label-tertiary); }
 .trendGroup[data-current="true"] { background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 10%, transparent); }
-.trendBars { display: flex; align-items: end; gap: 2px; height: 42px; }
-.trendBar { width: 7px; border: 0; padding: 0; display: flex; align-items: end; background: var(--dsw-alias-state-error-primary); border-radius: 2px; overflow: hidden; cursor: pointer; opacity: .6; }
+.trendBars { display: flex; align-items: end; height: 44px; }
+/* Keep the hit column independent of token height, including zero/unknown usage. */
+.trendTarget { flex: none; width: 16px; height: 44px; border: 0; padding: 2px 0; display: flex; justify-content: center; align-items: end; background: transparent; border-radius: 4px; cursor: pointer; }
+.trendTarget:hover, .trendTarget[data-selected="true"] { background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 16%, transparent); }
+.trendTarget:focus-visible, .trendTarget[data-selected="true"] { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: -1px; }
+@media (pointer: coarse) {
+  .trendTarget { width: 40px; }
+}
+.trendBar { width: 7px; flex: none; display: flex; align-items: end; background: var(--dsw-alias-state-error-primary); border-radius: 2px; overflow: hidden; cursor: pointer; opacity: .6; }
 .trendBar i { width: 100%; background: var(--dsw-alias-state-success-primary); }
 .trendGroup[data-current="true"] .trendBar { opacity: 1; }
-.trendBar[data-selected="true"] { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 1px; }
 .trendLabel > span { font-size: var(--dsh-panel-text-meta, 11px); }
 .stepper { display: flex; align-items: center; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; overflow: hidden; }
 .stepper > button { border: 0; background: transparent; color: inherit; padding: 3px 7px; cursor: pointer; }

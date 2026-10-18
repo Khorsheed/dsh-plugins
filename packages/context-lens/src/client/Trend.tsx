@@ -89,17 +89,19 @@ export function Trend({
                     <button
                       key={r.seq}
                       type="button"
-                      className={css.trendBar}
+                      className={css.trendTarget}
                       data-selected={r.seq === selectedSeq}
+                      aria-pressed={r.seq === selectedSeq}
                       aria-label={`${t('turn.label', { seq: String(turn.hostTurn ?? turn.turnSeq) })} #${requestNumberText(r)} · ${hit ?? '—'}%`}
                       title={`#${requestNumberText(r)} · ${total} tok · ${hit ?? '—'}%`}
-                      style={{ height: `${Math.max(3, (total / max) * 40)}px` }}
                       onClick={() => {
                         if (!drag.current?.moved)
                           onSelect(turn.turnSeq, r.seq, r.scopeId)
                       }}
                     >
-                      <i style={{ height: `${hit ?? 0}%` }} />
+                      <span className={css.trendBar} aria-hidden="true" style={{ height: `${Math.max(3, (total / max) * 40)}px` }}>
+                        <i style={{ height: `${hit ?? 0}%` }} />
+                      </span>
                     </button>
                   )
                 })}

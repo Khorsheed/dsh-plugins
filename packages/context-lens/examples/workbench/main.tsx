@@ -63,7 +63,8 @@ const REQ102: CapturedRequest = {
   seq: 102, requestNumber: 3,
   config: { provider: 'example', model: 'second-model', reasoningEffort: 'low', maxTokens: 16_384 },
   startedAt: 8_000,
-  usage: { inputTokens: 500, outputTokens: 200, cacheReadTokens: 9_500 },
+  // A minimal bar exercises selection in the empty space above the mark.
+  usage: { inputTokens: 1, outputTokens: 200, cacheReadTokens: 0 },
   timing: { waitMs: 300, textMs: 1_500, totalMs: 2_000 },
   responseSummary: { kind: 'text' },
   segments: { ...REQ101.segments },
@@ -183,7 +184,7 @@ const props = {
   useTabInfo: () => ({ sidebar: { expanded: true, fullscreen: false }, panel: { id: 'demo' }, tab: { navigation: { address: 'dsh-page://context-lens', revision: 0 }, signal } }),
   listTurns: () => success({ turns: TURNS, backfill: { state: 'partial' } }),
   getTurn: (_: string, turn: number) => success(turn === 2 ? OVERVIEW2 : OVERVIEW1),
-  getRequest: (_: string, seq: number) => success(seq === 101 ? REQ101 : seq === 102 ? REQ102 : seq === 201 ? REQ201 : { ...REQ101, seq: 11, requestNumber: 1, prefix: undefined }),
+  getRequest: (_: string, seq: number) => success(seq === 101 ? REQ101 : seq === 102 ? REQ102 : seq === 201 ? REQ201 : { ...REQ101, seq: 11, requestNumber: 1, prefix: undefined, segments: { ...REQ101.segments, tools: REQ101.segments.tools.map(tool => ({ ...tool, added: false })) } }),
   getTurnTiming: () => success(TIMING2),
   getSessionTrend: () => success({ turns: TURNS, backfill: { state: 'complete' }, requests: [...OVERVIEW1.scopes.flatMap(s => s.requests.map(r => ({ ...r, turnSeq: 1 }))), ...OVERVIEW2.scopes.flatMap(s => s.requests.map(r => ({ ...r, turnSeq: 2 })))] }),
 } as unknown as InspectorTabProps

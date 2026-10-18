@@ -196,7 +196,7 @@ export function splitRequest(input: {
       description: tool.description,
       parameters,
       chars: tool.name.length + tool.description.length + parameters.length,
-      added: !previousToolNames.has(tool.name),
+      added: context.previous !== undefined && !previousToolNames.has(tool.name),
     }
   })
 
