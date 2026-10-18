@@ -37,7 +37,10 @@
  * The transcript pair: sent user messages carry the quote's wire blockquote,
  * which the `quote-block` UserTextRule matches and the keyed
  * `conversation.user.text.node` renderer shows as a styled card — so the
- * quote reads structured after send, not only in the composer.
+ * quote reads structured after send, not only in the composer. And a click on
+ * a composer chip routes through the trigger source's `openReference` to the
+ * overlay preview card (`quote-preview`), showing the quote's full text —
+ * the chip label alone never tells you what you quoted.
  *
  * @module @khorsheed/dsh-quote/client
  */
@@ -61,10 +64,11 @@ import quoteRemote from '@khorsheed/dsh-quote/remote'
 import { mergedQuoteDraft, type QuoteAddRefOutcome, type QuoteAddRefRequest } from '../types.ts'
 import type { QuoteMenuInjected } from './contract.ts'
 import { en, NS, zh } from './locales.ts'
-import { insertQuoteChip, quoteTriggerSource, type QuoteBailScope, type QuoteInputTriggersMirror } from './reference.ts'
+import { createQuotePreviewStore, createQuoteTriggerSource, insertQuoteChip, type QuoteBailScope, type QuoteInputTriggersMirror } from './reference.ts'
 import { QuoteActionRegistryRuntime } from './registry.ts'
 import { createSelectionSource } from './selection.ts'
 import { SelectionQuoteMenu } from './SelectionMenu.tsx'
+import { QuotePreview } from './QuotePreview.tsx'
 import { QuoteTextNode } from './QuoteTextNode.tsx'
 import { quoteTextRule } from './usertext.ts'
 
@@ -123,14 +127,25 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   // without the service never fires the arm, and every insert falls back to
   // plain text. codecMounted flips with the arm's effect, so a click never
   // inserts a chip whose codec is gone; a duplicate-name throw is a
-  // composition error and degrades the same way.
+  // composition error and degrades the same way. The source also carries the
+  // chip-click preview: openReference decodes the ref and shows the full
+  // quote on the overlay card below, anchored to the recorded pointer
+  // position (openReference carries no coordinates, so the card floats beside
+  // the click via this capture-phase record).
+  const previewStore = createQuotePreviewStore()
+  let lastPointer: { readonly x: number; readonly y: number } | undefined
+  const onPointerDown = (event: PointerEvent): void => {
+    lastPointer = { x: event.clientX, y: event.clientY }
+  }
+  window.addEventListener('pointerdown', onPointerDown, { capture: true })
+  disposers.push(async () => { window.removeEventListener('pointerdown', onPointerDown, { capture: true }) })
   let codecMounted = false
   ctx.inject(['inputTriggers'], (lctx) => {
     lctx.effect(() => {
       try {
         const service = lctx.get('inputTriggers') as QuoteInputTriggersMirror | undefined
         if (service === undefined) return () => {}
-        const disposeSource = service.registerSource(quoteTriggerSource)
+        const disposeSource = service.registerSource(createQuoteTriggerSource(data => previewStore.show(data, lastPointer)))
         codecMounted = true
         return () => {
           codecMounted = false
@@ -142,6 +157,17 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       }
     }, 'quote: trigger source')
   })
+
+  // The chip-click preview card: a second entry on the same frame-wide
+  // overlay seat as the selection menu (a host without the seat mounts
+  // neither; a host without the chip seam never opens it).
+  ctx.effect(() => ctx.slots.inject('shell.overlay', () => ctx.slots.register({
+    name: 'shell.overlay',
+    id: 'quote-preview',
+    order: 170,
+    locale: NS,
+    inject: () => ({ preview: previewStore }),
+  }, QuotePreview)), 'quote: preview card')
 
   // The transcript half: sent user messages keep the block's wire form, and
   // this rule + keyed renderer pair turns it into the styled card. The rule

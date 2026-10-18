@@ -16,6 +16,8 @@ Status: implemented
 
 **发出后，引用渲染为卡片。** `quote-block` 用户文本规则（`src/client/usertext.ts`，order 20——没有官方规则在 `>` 起点竞争）匹配行首锚定的 `> ` 行串加任一语言的署名行；keyed `conversation.user.text.node` 渲染器（`QuoteTextNode`）渲染为行内合法的卡片（block 呈现的 span）：去掉 wire 前缀的正文，外加按当前语言重渲染的来源行。宿主没有 userText 缝时消息保持原始 wire 文本。
 
+**点击 chip 在点击处浮出全文预览卡。** 宿主把 chip 的单击（折叠选区、左键、非双击）路由给来源的 `openReference`；本插件的源解码 ref，把 `{ title, body }` 推给 `shell.overlay` 座位上的预览卡。该手势不带坐标，因此 apply 里以 capture 相位的 pointerdown 记录供卡片锚定点击处（无坐标时居中于 composer 上方）。ref 载荷自含 `{ text, label }`——无 label 的旧载荷照解（预览仅回退为通用标题）。悬浮没有官方缝——原生 tooltip 继续只显示标签。
+
 **房间不需要 quote 侧任何代码。** 房间作曲器的草稿一旦挂在官方输入机上，两条插入路径（chip 与纯文本）在房间里原样生效；chip 在房间的纯 textarea 里投影为其剪贴板文本，编辑即摊平——房间侧被接受的降级。
 
 ## Alternatives considered

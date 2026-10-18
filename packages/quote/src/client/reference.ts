@@ -15,6 +15,7 @@
  * @module @khorsheed/dsh-quote/client
  */
 import { decodeQuoteRef, encodeQuoteRef, QUOTE_REFERENCE_SOURCE } from '../types.ts'
+import { quotePreviewFromRef, type QuotePreviewData } from './usertext.ts'
 
 /** The host's TokenSpan, mirrored (pick-time draft span guarded by the input revision). */
 export interface QuoteTokenSpan {
@@ -61,31 +62,89 @@ export interface QuoteChipInput {
  * the error and restores the draft) — never a silent downgrade.
  */
 export const quoteReferenceCodec = {
-  clipboardText: (ref: string): string => decodeQuoteRef(ref) ?? ref,
+  clipboardText: (ref: string): string => decodeQuoteRef(ref)?.text ?? ref,
   serialize: async (ref: string): Promise<string> => {
-    const text = decodeQuoteRef(ref)
+    const text = decodeQuoteRef(ref)?.text
     if (text === undefined) throw new Error('@khorsheed/dsh-quote: corrupt quote reference chip')
     return text
   },
 }
 
+/** The chip-click preview's store: what the overlay card renders (null = closed). */
+export interface QuotePreviewStore {
+  readonly subscribe: (listener: () => void) => () => void
+  readonly getSnapshot: () => QuotePreviewData | null
+  readonly show: (data: QuotePreviewData, anchor?: { readonly x: number; readonly y: number }) => void
+  readonly clear: () => void
+}
+
+/** Create the preview store (a dozen lines, no dependency). */
+export function createQuotePreviewStore(): QuotePreviewStore {
+  let state: QuotePreviewData | null = null
+  const listeners = new Set<() => void>()
+  return {
+    subscribe: (listener) => {
+      listeners.add(listener)
+      return () => { listeners.delete(listener) }
+    },
+    getSnapshot: () => state,
+    show: (data, anchor) => {
+      state = { ...data, ...anchor === undefined ? {} : { anchor } }
+      for (const listener of listeners) listener()
+    },
+    clear: () => {
+      if (state === null) return
+      state = null
+      for (const listener of listeners) listener()
+    },
+  }
+}
+
+/** The `openReference` gesture's reference payload, mirrored (the host picks ref/appearance). */
+export interface QuoteOpenReferencePayload {
+  readonly ref: string
+  readonly appearance?: string
+}
+
+/** The trigger source shape this plugin registers (headless + chip-click preview). */
+export interface QuoteTriggerSource {
+  readonly trigger: '@'
+  readonly name: string
+  candidates(): Promise<readonly never[]>
+  onPick(): undefined
+  readonly codec: typeof quoteReferenceCodec
+  openReference(session: unknown, reference: QuoteOpenReferencePayload): boolean
+}
+
 /**
- * The headless trigger source carrying the codec: `candidates` never
- * produces a row, so no menu group ever renders and no adjudication hook
- * participates — the source exists because the submit-time serializer
- * resolves codecs by source name and refuses codec-less references.
+ * The headless trigger source carrying the codec and the chip-click preview:
+ * `candidates` never produces a row, so no menu group ever renders and no
+ * adjudication hook participates — the source exists because the submit-time
+ * serializer resolves codecs by source name and refuses codec-less
+ * references, and because a chip click routes to the source's openReference
+ * (the host's preview gesture). The click decodes the ref and shows the
+ * quote's full text on the overlay card; a corrupt ref declines (false), so
+ * the editor keeps its ordinary chip handling.
  */
-export const quoteTriggerSource = {
-  trigger: '@',
-  name: QUOTE_REFERENCE_SOURCE,
-  candidates: async (): Promise<readonly never[]> => [],
-  onPick: (): undefined => undefined,
-  codec: quoteReferenceCodec,
-} as const
+export function createQuoteTriggerSource(show: (data: QuotePreviewData) => void): QuoteTriggerSource {
+  return {
+    trigger: '@',
+    name: QUOTE_REFERENCE_SOURCE,
+    candidates: async (): Promise<readonly never[]> => [],
+    onPick: (): undefined => undefined,
+    codec: quoteReferenceCodec,
+    openReference: (_session, reference) => {
+      const decoded = decodeQuoteRef(reference.ref)
+      if (decoded === undefined) return false
+      show(quotePreviewFromRef(decoded))
+      return true
+    },
+  }
+}
 
 /** The `ctx.inputTriggers` slice this plugin probes, mirrored. */
 export interface QuoteInputTriggersMirror {
-  registerSource(source: typeof quoteTriggerSource): () => void
+  registerSource(source: QuoteTriggerSource): () => void
 }
 
 /**
@@ -114,7 +173,7 @@ export function insertQuoteChip(scope: QuoteBailScope, input: QuoteChipInput, bl
     const applied = scope.bail(scope, 'slash/input-insert-reference', {
       reference: {
         source: QUOTE_REFERENCE_SOURCE,
-        ref: encodeQuoteRef(clipboardText),
+        ref: encodeQuoteRef(clipboardText, chipLabel),
         label: chipLabel,
         clipboardText,
       },

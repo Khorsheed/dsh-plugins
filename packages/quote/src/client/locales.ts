@@ -10,6 +10,7 @@ export const zh = {
   'quote.attribution': '—— 引用自「{label}」',
   'chip.label': '引用「{label}」',
   'card.source': '引用自「{label}」',
+  'preview.close': '关闭',
   'source.fallback': '选区',
 }
 
@@ -23,6 +24,7 @@ export const en: Record<keyof typeof zh, string> = {
   'quote.attribution': '— quoted from “{label}”',
   'chip.label': 'Quote “{label}”',
   'card.source': 'Quoted from “{label}”',
+  'preview.close': 'Close',
   'source.fallback': 'Selection',
 }
 

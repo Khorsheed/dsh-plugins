@@ -11,7 +11,7 @@
 ## 特性
 
 - **选中即出菜单**——应用内任意非输入区域选中文本，选区旁浮出小工具条；输入框、菜单自身内的选区不触发，滚动或缩放即隐藏。
-- **引用到当前会话**——选中文本在支持引用 chip 的宿主线上变成 composer 草稿里的结构化引用 chip（行内标签带来源，发送时由本插件注册的 codec 序列化回带来源标注的 `> 引用块`；无此缝的宿主或插入被拒时回退纯文本块）：空白草稿直接填入，已有内容空一行后追加——绝不覆盖、绝不发送。房间会话同样生效（房间作曲器的草稿即官方输入机草稿）。
+- **引用到当前会话**——选中文本在支持引用 chip 的宿主线上变成 composer 草稿里的结构化引用 chip（行内标签带来源，发送时由本插件注册的 codec 序列化回带来源标注的 `> 引用块`；无此缝的宿主或插入被拒时回退纯文本块）：空白草稿直接填入，已有内容空一行后追加——绝不覆盖、绝不发送。**点击 chip 在点击处浮出全文预览卡**（×、Esc、点外部关闭），随时核对引了什么。房间会话同样生效（房间作曲器的草稿即官方输入机草稿）。
 - **发出后渲染为引用卡片**——发出的消息里，引用块由本插件的 `quote-block` 用户文本规则匹配，经 keyed 槽位渲染为带来源行的卡片（两种语言的署名都能匹配，卡片来源行跟随当前语言）；宿主没有 user-text 缝时保持原始文本。
 - **引用到侧边对话**——选中内容排成绑定当前会话的 side-chat 待发送 ref（contextKey = 会话 id），成功后右侧栏的 side-chat 标签页自动浮现。
 - **复制**——原文经官方 `writeClipboard` 助手进剪贴板。
@@ -113,6 +113,8 @@ dsh plugin --profile web remove @khorsheed/dsh-quote
 **路由：当前会话**：`formatQuoteBlock`（每行 `> ` 前缀 + 块尾来源标注行）是先行的文本形态。有引用缝的宿主上，插入走 `slash/input-insert-reference` 作用域 bail 事件：chip 的 `ref` 编码完整剪贴板文本（含空行前缀），codec 的 `serialize`/`clipboardText` 都解码同一份载荷，模型收到的与用户看到的逐字一致；span 坐标用 detect 投影（已有 chip 折叠为单字符），草稿修订号 CAS 被拒时重读快照重试一次。缝缺席或两度被拒时回退 `mergedQuoteDraft` 纯文本合并——空白草稿直接填入，已有草稿空一行后追加，绝不覆盖用户正在输入的内容（message-tools backfill 先例）。
 
 **发出后的卡片**：`quote-block` 用户文本规则（`src/client/usertext.ts`）按行首锚点匹配 `> ` 行串 + 双语署名行，payload 只带 `{ label, text }` 纯 JSON；keyed 渲染器（`QuoteTextNode`）去掉 wire 前缀、按当前语言重渲染来源行。规则顺序 20 排在官方内置之后，与 @ 会话引用无同起点竞争。
+
+**chip 点击预览**：chip 的单击走宿主 `openReference` 手势（`reference-activation`：折叠选区、左键、非双击才路由），本插件的触发源解码 ref、把全文推给 `shell.overlay` 上的预览卡；预览卡锚定点击位置（`openReference` 不带坐标，apply 里 capture 相位的 pointerdown 记录供其锚定），无坐标时居中于 composer 上方。ref 载荷自含 `{ text, label }`，旧格式（无 label）照解。
 
 **路由：侧边对话**：`remote.quote.addRef({ contextKey, label, ref })` → 宿主半 `openWith`（side-chat 记录 pending refs，下一条发送折叠进消息并清空）。verb 不带 calling agent：`openWith` 不持有会话域写入，side-chat store 对宿主侧调用按部署默认模式落围栏（canvas askAgent 先例）。
 

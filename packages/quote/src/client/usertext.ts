@@ -10,6 +10,7 @@
  * @module @khorsheed/dsh-quote/client
  */
 import type { UserTextNode, UserTextRule } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type { QuoteRefPayload } from '../types.ts'
 import { en, zh } from './locales.ts'
 
 /** The quote-block node payload (declaration-merged into the host's UserTextDataMap). */
@@ -30,15 +31,49 @@ declare module '@deepseek-ai/dsh-client-ui-conversation/client' {
 const escapeRe = (source: string): string => source.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 /**
+ * One full-line attribution matcher per locale (`> ` + the template, the
+ * `{label}` slot captured). Shared by the block rule below and the chip
+ * preview's body/attribution split.
+ */
+export const ATTRIBUTION_LINES: readonly RegExp[] = [zh, en].map(({ 'quote.attribution': attribution }) =>
+  new RegExp(`^> ${escapeRe(attribution).replace('\\{label\\}', '(.+)')}$`))
+
+/**
  * One block matcher per attribution locale: a run of `> ` lines (each but the
  * last newline-terminated) closed by the attribution line, anchored to a line
  * start by a non-consuming lookbehind so a block beginning exactly at `from`
  * still matches. The label capture is the attribution template's `{label}`.
  */
-const BLOCKS = [zh, en].map(({ 'quote.attribution': attribution }) => {
-  const attr = escapeRe(attribution).replace('\\{label\\}', '(.+)')
-  return new RegExp(`(?<=^|\\n)((?:> ?[^\\n]*\\n)*> ${attr})(?=\\n|$)`, 'g')
-})
+const BLOCKS = ATTRIBUTION_LINES.map(line =>
+  new RegExp(`(?<=^|\\n)((?:> ?[^\\n]*\\n)*${line.source.slice(1, -1)})(?=\\n|$)`, 'g'))
+
+/** Strip one wire line's `> ` prefix (`> ` and bare `>` both). */
+export const unquoteLine = (line: string): string => line.replace(/^> ?/, '')
+
+/** The chip preview's view data: the label for the title row, the quote body, the click anchor. */
+export interface QuotePreviewData {
+  /** The chip label (absent on pre-label payloads — the title falls back). */
+  readonly title?: string
+  /** The quote body: prefix stripped, the attribution line dropped. */
+  readonly body: string
+  /** The click position the card anchors to (absent = centered over the composer). */
+  readonly anchor?: { readonly x: number; readonly y: number }
+}
+
+/**
+ * Fold a decoded chip payload into preview data: drop the blank-line prefix
+ * (a non-blank draft's separator) and the closing attribution line (the title
+ * carries the source), and strip every body line's wire prefix.
+ */
+export function quotePreviewFromRef(decoded: QuoteRefPayload): QuotePreviewData {
+  const lines = decoded.text.replace(/^\n+/, '').split('\n')
+  const last = lines[lines.length - 1] ?? ''
+  const attributed = ATTRIBUTION_LINES.some(line => line.test(last))
+  return {
+    ...decoded.label === undefined ? {} : { title: decoded.label },
+    body: (attributed ? lines.slice(0, -1) : lines).map(unquoteLine).join('\n'),
+  }
+}
 
 /**
  * The quote-block rule. Order 20 sits after the built-ins (the session

@@ -1,0 +1,75 @@
+/* The quote chip preview card — menu surface + prominent elevation like the
+ * selection menu. The overlay layer is click-through; the card opts back in.
+ * Two placements: anchored floats beside the click; the fallback centers over
+ * the composer area (the chip's home). */
+.rootAnchored,
+.rootCentered {
+  position: fixed;
+  z-index: 1100;
+  box-sizing: border-box;
+  width: min(560px, calc(100vw - 32px));
+  max-height: 48vh;
+  display: flex;
+  flex-direction: column;
+  border-radius: 16px;
+  background: var(--dsw-specific-menu);
+  /* rc.1's menu material is translucent; pair it with the host's backdrop blur. */
+  backdrop-filter: var(--dsw-menu-backdrop-filter, blur(20px));
+  --dsw-elevation-stroke-color: var(--dsw-alias-border-l1);
+  box-shadow: var(--dsw-elevation-prominent);
+  pointer-events: auto;
+}
+
+.rootCentered {
+  left: 50%;
+  bottom: 120px;
+  transform: translateX(-50%);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px 6px;
+}
+
+.title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.close {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.close:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+/* The quote body: pre-wrap, scrollable when long. */
+.body {
+  padding: 2px 12px 12px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--dsw-alias-label-primary);
+}

@@ -22,6 +22,7 @@
     "src/client/selection.ts",
     "src/client/SelectionMenu.tsx",
     "src/client/usertext.ts",
+    "src/client/QuotePreview.tsx",
     "src/client/QuoteTextNode.tsx",
     "src/client/icons.tsx"
   ]

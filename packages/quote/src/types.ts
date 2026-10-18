@@ -87,24 +87,35 @@ export function mergedQuoteDraft(current: string, block: string): string {
 export const QUOTE_REFERENCE_SOURCE = 'quote'
 
 /**
- * Encode the chip's full clipboard text as the opaque `ref` string the
- * editor persists: single-line JSON (`{v, text}`), so the codec can
- * reconstruct the exact model-facing text from the ref alone — the host's
- * `serialize(ref)`/`clipboardText(ref)` receive nothing else. The blank-line
- * prefix (when the quote appended to a non-blank draft) is part of `text`,
- * so deleting the chip removes it too.
+ * The chip payload: the full clipboard text (the blank-line prefix of a
+ * non-blank draft included, so deleting the chip removes it too) plus the
+ * chip label for the click preview's title. `label` is absent in payloads
+ * written by the first chip cut — decode keeps it optional.
  */
-export function encodeQuoteRef(clipboardText: string): string {
-  return JSON.stringify({ v: 1, text: clipboardText })
+export interface QuoteRefPayload {
+  readonly text: string
+  readonly label?: string
+}
+
+/**
+ * Encode the chip payload as the opaque `ref` string the editor persists:
+ * single-line JSON, so the codec can reconstruct the exact model-facing text
+ * from the ref alone — the host's `serialize(ref)`/`clipboardText(ref)`
+ * receive nothing else.
+ */
+export function encodeQuoteRef(clipboardText: string, label?: string): string {
+  return JSON.stringify({ v: 1, text: clipboardText, ...label === undefined ? {} : { label } })
 }
 
 /** Inverse of {@link encodeQuoteRef}; undefined on any corruption. */
-export function decodeQuoteRef(ref: string): string | undefined {
+export function decodeQuoteRef(ref: string): QuoteRefPayload | undefined {
   try {
     const parsed: unknown = JSON.parse(ref)
     if (typeof parsed !== 'object' || parsed === null) return undefined
     const text = (parsed as { readonly text?: unknown }).text
-    return typeof text === 'string' ? text : undefined
+    if (typeof text !== 'string') return undefined
+    const label = (parsed as { readonly label?: unknown }).label
+    return { text, ...typeof label === 'string' ? { label } : {} }
   } catch {
     return undefined
   }

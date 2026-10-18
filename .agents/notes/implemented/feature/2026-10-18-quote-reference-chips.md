@@ -16,6 +16,8 @@ English | [中文](2026-10-18-quote-reference-chips.zh.md)
 
 **After send, the quote renders as a card.** The `quote-block` UserTextRule (`src/client/usertext.ts`, order 20 — no official rule competes at a `>` start) matches a line-start-anchored `> ` run closed by EITHER locale's attribution line, and the keyed `conversation.user.text.node` renderer (`QuoteTextNode`) shows an inline-valid card (span with block presentation): body lines without the wire prefix, plus a source row re-localized to the current locale. A host without the userText seam keeps the raw wire text.
 
+**A chip click opens the full-text preview beside the click.** The host routes a chip's single click (collapsed selection, left button, not a double) to the source's `openReference`; this plugin's source decodes the ref and pushes `{ title, body }` to a preview card on the `shell.overlay` seat. The gesture carries no coordinates, so a capture-phase `pointerdown` record in apply anchors the card to the click (centered-over-composer fallback). The ref payload is self-contained `{ text, label }` — pre-label payloads still decode (the preview just falls back to the generic title). Hover has no official seam — the native tooltip keeps showing the label.
+
 **Rooms needed zero quote code.** Once the room composer's draft lives in the official input machine, both insert paths (chip and plain text) work in rooms unchanged; a chip projects to its clipboard text in the room's plain textarea and flattens on edit — the accepted room-side degradation.
 
 ## Alternatives considered

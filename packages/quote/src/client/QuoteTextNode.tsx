@@ -9,7 +9,7 @@
 import type { ReactNode } from 'react'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: pulls this plugin's UserTextDataMap merge ('quote-block').
-import type {} from './usertext.ts'
+import { unquoteLine } from './usertext.ts'
 import type {} from './locales.ts'
 import css from './QuoteTextNode.module.css'
 
@@ -18,16 +18,13 @@ export type QuoteTextNodeProps =
   PropsRuntime<'conversation.user.text.node', 'quote-block'>
   & PropsLocale<'quote'>
 
-/** Strip one wire line's `> ` prefix (`> ` and bare `>` both). */
-const unquote = (line: string): string => line.replace(/^> ?/, '')
-
 /** The quote-block transcript card. */
 export function QuoteTextNode({ node, t }: QuoteTextNodeProps): ReactNode {
   const lines = node.data.text.split('\n')
   // The attribution line closes the wire block; the card renders the source
   // row itself, localized to the CURRENT locale (the wire line keeps the
   // insertion-time locale).
-  const body = lines.slice(0, -1).map(unquote).join('\n')
+  const body = lines.slice(0, -1).map(unquoteLine).join('\n')
   return (
     <span className={css.quote}>
       <span className={css.body}>{body}</span>

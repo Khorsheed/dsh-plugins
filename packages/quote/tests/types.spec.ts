@@ -33,9 +33,13 @@ describe('mergedQuoteDraft', () => {
 })
 
 describe('quote ref wire (encodeQuoteRef/decodeQuoteRef)', () => {
-  it('round-trips the chip clipboard text (multi-line, quotes, unicode)', () => {
+  it('round-trips the chip clipboard text and label (multi-line, quotes, unicode)', () => {
     const text = '\n\n> 第一行\n> —— 引用自「主会话”引号」'
-    expect(decodeQuoteRef(encodeQuoteRef(text))).toBe(text)
+    expect(decodeQuoteRef(encodeQuoteRef(text, '引用「主会话」'))).toEqual({ text, label: '引用「主会话」' })
+  })
+
+  it('decodes a pre-label payload without the field', () => {
+    expect(decodeQuoteRef(JSON.stringify({ v: 1, text: '> 旧' }))).toEqual({ text: '> 旧' })
   })
 
   it('decodes to undefined on garbage, non-objects, and a missing text field', () => {

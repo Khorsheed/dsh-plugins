@@ -8,7 +8,7 @@
 import { describe, expect, it } from 'vitest'
 import { decodeQuoteRef, QUOTE_REFERENCE_SOURCE } from '../src/types.ts'
 import {
-  insertQuoteChip, quoteReferenceCodec, quoteTriggerSource, type QuoteBailScope, type QuoteChipInput,
+  createQuoteTriggerSource, insertQuoteChip, quoteReferenceCodec, type QuoteBailScope, type QuoteChipInput,
   type QuoteInputSnapshot,
 } from '../src/client/reference.ts'
 
@@ -42,7 +42,7 @@ describe('insertQuoteChip', () => {
     expect(reference.source).toBe(QUOTE_REFERENCE_SOURCE)
     expect(reference.label).toBe('引用「A」')
     expect(reference.clipboardText).toBe('> 引用\n> —— 引用自「A」')
-    expect(decodeQuoteRef(reference.ref)).toBe(reference.clipboardText)
+    expect(decodeQuoteRef(reference.ref)).toEqual({ text: reference.clipboardText, label: '引用「A」' })
     expect(span).toEqual({ start: 0, end: 0, draftRev: 3 })
   })
 
@@ -92,10 +92,34 @@ describe('quoteReferenceCodec', () => {
   })
 })
 
-describe('quoteTriggerSource (the headless codec carrier)', () => {
+describe('quoteTriggerSource (the headless codec carrier + click preview)', () => {
   it('never produces a menu row and never claims a pick', async () => {
-    expect(quoteTriggerSource.name).toBe(QUOTE_REFERENCE_SOURCE)
-    await expect(quoteTriggerSource.candidates()).resolves.toEqual([])
-    expect(quoteTriggerSource.onPick()).toBeUndefined()
+    const source = createQuoteTriggerSource(() => {})
+    expect(source.name).toBe(QUOTE_REFERENCE_SOURCE)
+    await expect(source.candidates()).resolves.toEqual([])
+    expect(source.onPick()).toBeUndefined()
+  })
+
+  it('openReference decodes the chip and shows the preview (title + stripped body)', () => {
+    const shown: { title?: string; body: string }[] = []
+    const source = createQuoteTriggerSource(data => shown.push(data))
+    const scope = scopeWith([true])
+    insertQuoteChip(scope, inputWith({ draft: '已有', draftRev: 0, occurrences: [] }), '> 引用块\n> 第二行\n> —— 引用自「A」', '引用「A」')
+    const ref = scope.calls[0]!.reference.ref
+    expect(source.openReference(undefined, { ref })).toBe(true)
+    expect(shown).toEqual([{ title: '引用「A」', body: '引用块\n第二行' }])
+  })
+
+  it('openReference declines a corrupt ref (the editor keeps its ordinary handling)', () => {
+    const source = createQuoteTriggerSource(() => {})
+    expect(source.openReference(undefined, { ref: 'garbage' })).toBe(false)
+  })
+
+  it('openReference on a pre-label payload still previews the body, untitled', () => {
+    const shown: { title?: string; body: string }[] = []
+    const source = createQuoteTriggerSource(data => shown.push(data))
+    const legacy = JSON.stringify({ v: 1, text: '> 旧引用\n> —— 引用自「旧」' })
+    expect(source.openReference(undefined, { ref: legacy })).toBe(true)
+    expect(shown).toEqual([{ body: '旧引用' }])
   })
 })
