@@ -1428,6 +1428,12 @@ export class LibraryService {
           }
         }
       }
+      // Math that never typesets: the fields smell like math (unicode symbols,
+      // \commands, ^digits) but carry no $…$ at all — warn, never block.
+      const text = [question.prompt, question.answer, ...(question.options ?? []), question.explanation ?? ''].join(' ')
+      if (!text.includes('$') && /[√∫∑∏∂∞±]|\\[a-zA-Z]{2,}|\^\{|\w\^\d/.test(text)) {
+        warnings.push(`${label} reads like math without any $…$ — the sidebar typesets LaTeX only inside $…$ / $$…$$, so this shows as raw text; rewrite the formula parts (e.g. $\\sqrt{x+1}$)`)
+      }
     }
     if (errors.length === 1) return refuse('evidence-gate', errors[0]!)
     if (errors.length > 1) {

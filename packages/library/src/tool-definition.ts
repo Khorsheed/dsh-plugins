@@ -894,7 +894,7 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
       questions: {
         ...QUESTIONS_SCHEMA,
         required: true,
-        description: 'The questions of the composed quiz. Math typesets: write it as $…$ (inline) or $$…$$ (block) LaTeX and it renders for the learner — \\sqrt{3-x} over \\sqrt{(3-x)/(x+2)} is exactly the vinculum difference.',
+        description: 'The questions of the composed quiz. Math typesets ONLY inside $…$ (inline) / $$…$$ (block) — write $g(x)=\\sqrt{(x+1)/(x-2)}$, never unicode approximations like √(x+1) or x^2 (they stay raw text for the learner); \\sqrt{3-x} over \\sqrt{(3-x)/(x+2)} is exactly the vinculum difference. The prompt itself stays clean: no kind label (（填空）), no chapter reference, no solution recipe (that is what explanation is for).',
       },
     },
     output: jsonOutput(),

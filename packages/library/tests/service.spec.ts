@@ -706,6 +706,14 @@ describe('quizzes: the two axes', () => {
     const scoped = await service.putQuiz({ projectId, quiz: { scope: { resourceId: bookId, nodeId: 'r1' }, questions: [question()] } })
     expect(!scoped.ok && scoped.message).toMatch(/read node/)
   })
+
+  it('warns when a math-smelling question carries no $…$ LaTeX', async () => {
+    const { projectId, bookId } = await seed()
+    const raw = await service.putQuiz({ projectId, quiz: { scope: { resourceId: bookId }, questions: [question({ prompt: '求 g(x) = √(x+1) / (x-2) 的定义域' })] } })
+    expect(raw.ok && raw.warnings.some(warning => warning.includes('$…$'))).toBe(true)
+    const texed = await service.putQuiz({ projectId, quiz: { scope: { resourceId: bookId }, questions: [question({ prompt: '求 $g(x) = \\sqrt{(x+1)/(x-2)}$ 的定义域' })] } })
+    expect(texed.ok && texed.warnings.every(warning => !warning.includes('$…$'))).toBe(true)
+  })
 })
 
 describe('quiz points (考点)', () => {

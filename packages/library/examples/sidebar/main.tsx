@@ -111,7 +111,7 @@ const quizzes: LibraryAssessment[] = [
       quizQuestion('q2', '第二段「this view」指的是哪种观点？', 'reference', ['先天决定论', '后天塑造论', '两者混合论', '不可知论'], '后天塑造论'),
       quizQuestion('q3', '作者对 nurture 派的态度是？', 'attitude', ['全力支持', '温和质疑', '强烈反对', '中立罗列'], '温和质疑'),
       quizQuestion('q4', '「held」在这里的意思是？（答案出错的坏题）', 'inference', ['握住', '举办', '认为', '保持'], '认为'),
-      quizQuestion('q5', '末段的实验说明了什么？', 'inference'),
+      { ...quizQuestion('q5', '求 $g(x) = \\sqrt{(x+1)/(x-2)}$ 的定义域，用区间表示写出', 'inference'), answer: '$[-1, 2) \\cup (2, +\\infty)$', evidence: { kind: 'knowledge' } },
     ],
   },
   {

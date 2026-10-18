@@ -694,7 +694,7 @@ function MissRow({ p, row, variant, book }: { p: ViewProps['p']; row: MissedRow;
     <div className={css.missRow}>
       <span className={css.missMark} data-void={variant === 'voided' ? 'true' : undefined} aria-hidden="true">{variant === 'voided' ? '?' : '✕'}</span>
       <div className={css.missText}>
-        <span>{row.question.prompt}</span>
+        <span><MathText text={row.question.prompt} /></span>
         <span className={css.muted}>
           {variant === 'missed' && <><MathText text={t('node.missedAnswer', { answer: answerText(row.question) })} /> · </>}
           {when(row.at, t)}{book === undefined ? '' : ` · ${book}`}

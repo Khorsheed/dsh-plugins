@@ -31,6 +31,14 @@ describe('fillMatches', () => {
     expect(fillMatches('instalment', 'instalments')).toBe(false)
     expect(fillMatches('', 'x')).toBe(false)
   })
+
+  it('folds LaTeX notation onto its plain reading before judging', () => {
+    expect(fillMatches('$-2$', '-2')).toBe(true)
+    expect(fillMatches('\\sqrt{2}', '√2')).toBe(true)
+    expect(fillMatches('(-\\infty, 2) \\cup [3, +\\infty)', '(-∞, 2) ∪ [3, +∞)')).toBe(true)
+    expect(fillMatches('x \\le 2', 'x ≤ 2')).toBe(true)
+    expect(fillMatches('\\sqrt{4}', '√2')).toBe(false)
+  })
 })
 
 import { choiceOptions, clozeOf, letterMarks, pickMode, spellMatches } from '../src/client/judge.ts'

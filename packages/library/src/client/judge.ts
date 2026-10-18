@@ -7,9 +7,27 @@
  * @module @khorsheed/dsh-library/client/judge
  */
 
+/** The common LaTeX commands as their unicode glyphs — a fill answer's spelling, never its notation, should decide. */
+const MATH_COMMANDS: Readonly<Record<string, string>> = {
+  infty: '∞', pm: '±', times: '×', div: '÷', cdot: '·', sqrt: '√',
+  le: '≤', leq: '≤', ge: '≥', geq: '≥', ne: '≠', neq: '≠', approx: '≈',
+  cup: '∪', cap: '∩', in: '∈', subset: '⊂', supset: '⊃', emptyset: '∅',
+  to: '→', rightarrow: '→', leftarrow: '←', degree: '°',
+  pi: 'π', alpha: 'α', beta: 'β', gamma: 'γ', theta: 'θ', lambda: 'λ', mu: 'μ', sigma: 'σ', phi: 'φ', omega: 'ω',
+}
+
+/** Fold LaTeX notation onto its plain reading: $…$ delimiters, known commands, braces, \!/\, spacing. */
+function mathFold(text: string): string {
+  return text
+    .replace(/\$+/g, '')
+    .replace(/\\([a-zA-Z]+)/g, (_raw, cmd: string) => MATH_COMMANDS[cmd] ?? cmd)
+    .replace(/\\[^a-zA-Z]/g, '')
+    .replace(/[{}]/g, '')
+}
+
 /** Compare answers loosely. */
 function norm(text: string): string {
-  return text.normalize('NFKC').toLowerCase().replace(/\s+/g, ' ').trim().replace(/[。.!！?？]+$/, '')
+  return mathFold(text.normalize('NFKC')).toLowerCase().replace(/\s+/g, ' ').trim().replace(/[。.!！?？]+$/, '')
 }
 
 /** The option index an answer key names, or -1. */

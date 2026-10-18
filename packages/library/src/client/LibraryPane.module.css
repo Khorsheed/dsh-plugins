@@ -1679,6 +1679,23 @@ textarea.input { resize: vertical; font: inherit; line-height: 1.5; }
   line-height: 1.55;
 }
 
+/* The answer box's live TeX preview: quiet card under the textarea. */
+.answerPreview {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  font-size: var(--dsh-panel-text-meta, 12px);
+}
+
+.answerPreviewBody {
+  min-width: 0;
+  overflow-x: auto;
+  color: var(--dsw-alias-label-primary);
+}
+
 .options {
   display: flex;
   flex-direction: column;

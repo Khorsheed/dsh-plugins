@@ -17,7 +17,7 @@ import { PanelHeader } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index
 import { LEITNER_INTERVAL_DAYS, type LibraryAssessResult, type LibraryCard, type LibraryQuizQuestion, type LibraryReviewRating, type LibraryVerdict } from '../../types.ts'
 import { choiceIndex, choiceOptions, clozeOf, fillMatches, letterMarks, pickMode, spellMatches } from '../judge.ts'
 import { clearQuizDraft, loadQuizDraft, saveQuizDraft } from '../quiz-drafts.ts'
-import { MathText } from '../math.tsx'
+import { MathText, Tex } from '../math.tsx'
 import { Highlight, outcome, shortGloss, StateLine, useLoad, value, type ViewProps } from '../ui.tsx'
 import css from '../LibraryPane.module.css'
 
@@ -202,9 +202,10 @@ function QuestionCard({ p, question, number, answered, draft, onDraft, onAnswer 
             rows={question.kind === 'free' ? 4 : 1}
             value={answered?.given ?? draft}
             disabled={answered !== undefined}
-            placeholder={t(question.kind === 'free' ? 'quiz.freePlaceholder' : 'quiz.fillPlaceholder')}
+            placeholder={t(question.kind === 'free' ? 'quiz.freePlaceholder' : /\$|\\[a-zA-Z]|[√∫∑∏∂∞±]/.test(question.prompt) ? 'quiz.fillMathPlaceholder' : 'quiz.fillPlaceholder')}
             onChange={event => { onDraft(event.target.value) }}
           />
+          <AnswerPreview text={answered?.given ?? draft} t={t} />
           {answered === undefined && (
             <div className={css.actions}>
               <button
@@ -235,6 +236,17 @@ function QuestionCard({ p, question, number, answered, draft, onDraft, onAnswer 
         >{answered?.void === true ? t('quiz.unvoid') : t('quiz.void')}</button>
       </div>
     </section>
+  )
+}
+
+/** The answer box's live math preview: appears once the draft smells like TeX ($…$ or a \command); bare commands preview as one inline formula. */
+function AnswerPreview({ text, t }: { text: string; t: ViewProps['p']['t'] }): ReactNode {
+  if (!/\$|\\[a-zA-Z]/.test(text)) return null
+  return (
+    <div className={css.answerPreview}>
+      <span className={css.muted}>{t('quiz.preview')}</span>
+      <span className={css.answerPreviewBody}>{text.includes('$') ? <MathText text={text} /> : <Tex tex={text} />}</span>
+    </div>
   )
 }
 
