@@ -13,7 +13,7 @@ Status: implemented
 改名之「破坏性」来自机制而非拼写选择:注册表对未知 preset id 回硬错误 `agent-preset/not-found`(packages/preset/agent-preset-registry 的 `resolve`/`retain`)——会话存了已消失的 preset 时**没有**回退到默认的逻辑。按会话的选择是会话事件日志里的 `agent-preset/selected` 事件(`$DSH_HOME/sessions/<项目>/<会话>/session.v*.jsonl.zstd`),所以钉在 `dev`/`learning` 的旧会话会打不开 agent,直到用户在模式选择器里重选。随改动带两条缓解:
 
 1. 部署默认值跟着改:`agent-preset-registry` 配置的 `selectedDefault: dev` → `dsh-dev`(3080 的 profile patch),新会话无感。
-2. 3080 跑一次一次性迁移:把 `agent-preset/selected` 事件里的 `agentPreset: "dev"` → `"dsh-dev"`、`"learning"` → `"dsh-learning"`(只动这个事件类型、值精确匹配),先整份备份 `sessions/`,逐文件原子替换。从未存过选择的会话无需处理。
+2. 3080 跑一次一次性迁移(`scripts/migrate-preset-selections.ts`):把两处留存 id 的地方都改写——`agent-preset/selected` 事件**与会话 header 行**(`agentPreset` 投影从 header 初始化,只有 header 的会话由第二趟补网;该趟顺带修了帧解析器对重压帧 FCS flag-1 字段宽度的错误)。值精确匹配、字符串级替换、先整份备份 `sessions/`、逐文件原子替换、幂等。从未存过选择的会话无需处理。
 
 ## 备选
 

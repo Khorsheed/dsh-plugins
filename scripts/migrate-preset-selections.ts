@@ -11,11 +11,14 @@
  * script rewrites the stored selections in place.
  *
  * Rewrite rule, deliberately string-level (no JSON round-trip): on lines that
- * carry `"type":"agent-preset/selected"`, replace the exact substrings
- * `"agentPreset":"dev"` → `"agentPreset":"dsh-dev"` and
+ * carry `"type":"agent-preset/selected"`, and on the session header line
+ * (`{"type":"session"…` — the projection initializes from the header's
+ * creation-time preset, so header-only sessions need it too), replace the
+ * exact substrings `"agentPreset":"dev"` → `"agentPreset":"dsh-dev"` and
  * `"agentPreset":"learning"` → `"agentPreset":"dsh-learning"`. Every other
  * byte of the log is preserved, and the rewritten plaintext must equal the
- * original except for those substitutions (checked before anything lands).
+ * original except for those substitutions (checked line by line before
+ * anything lands).
  *
  * Container handling follows repair-session-source-op.ts: concatenated-
  * Zstandard frames whose FIRST frame is exactly the header line — frame 0 is
@@ -53,6 +56,8 @@ const RENAMES: ReadonlyArray<readonly [string, string]> = [
 ]
 
 const SELECTED_MARKER = '"type":"agent-preset/selected"'
+/** The session header also records the creation-time preset (the projection initializes from it). */
+const HEADER_MARKER = '{"type":"session"'
 
 interface Candidate {
   readonly file: string
@@ -71,7 +76,11 @@ function firstFrameEnd(buffer: Buffer, start = 0): number {
   if (!singleSegment) offset += 1 // window descriptor
   offset += [0, 1, 2, 4][dictIdFlag] ?? 0
   const fcsFlag = descriptor >> 6
-  const fcsBytes = singleSegment && fcsFlag === 0 ? 1 : [0, 1, 2, 4, 8][fcsFlag]
+  // FCS field size: flag 0 → 0 bytes (1 when single-segment), 1 → 2, 2 → 4,
+  // 3 → 8. (The flag-1 size is two bytes — FCS stores size−256 there; a
+  // recompressed frame0 from node:zlib uses flag 1, which is why this parser
+  // must get it right and not just mirror the host writer's habits.)
+  const fcsBytes = singleSegment && fcsFlag === 0 ? 1 : [0, 2, 4, 8][fcsFlag]
   if (fcsBytes === undefined) throw new Error('invalid frame-content-size flag')
   offset += fcsBytes
   while (true) {
@@ -89,9 +98,9 @@ function firstFrameEnd(buffer: Buffer, start = 0): number {
   return offset
 }
 
-/** Rewrite one plaintext line; only `agent-preset/selected` events qualify. */
+/** Rewrite one plaintext line; `agent-preset/selected` events and the header qualify. */
 function migrateLine(line: string): { line: string; hit: boolean } {
-  if (line === '' || !line.includes(SELECTED_MARKER)) return { line, hit: false }
+  if (line === '' || (!line.includes(SELECTED_MARKER) && !line.startsWith(HEADER_MARKER))) return { line, hit: false }
   let next = line
   let hit = false
   for (const [from, to] of RENAMES) {
@@ -148,7 +157,7 @@ if (candidates.length === 0) {
   process.stdout.write('nothing to migrate\n')
   process.exit(0)
 }
-for (const c of candidates) process.stdout.write(`${c.rel}: ${c.rows} selected event(s) name a bare preset id\n`)
+  for (const c of candidates) process.stdout.write(`${c.rel}: ${c.rows} preset reference(s) name a bare id\n`)
 if (!apply) {
   process.stdout.write('\ndry run — pass --apply to migrate\n')
   process.exit(0)
@@ -167,6 +176,12 @@ for (const c of candidates) {
   const frame0Text = decoder.decode(decompress(frame0))
   if (!fullText.startsWith(frame0Text)) throw new Error(`${c.rel}: header frame is not the plaintext prefix`)
 
+  // The header records the creation-time preset (the projection initializes
+  // from it) — frame 0 is re-emitted rather than copied when it names a bare id.
+  const frame0Migrated = migrateLine(frame0Text)
+  const outFrame0Text = frame0Migrated.line
+  const frame0Out = frame0Migrated.hit ? zstdCompressSync(outFrame0Text, FRAME_OPTIONS) : frame0
+
   const bodyLines = fullText.slice(frame0Text.length).split('\n')
   let migrated = 0
   const outBody = bodyLines.map((line) => {
@@ -174,14 +189,14 @@ for (const c of candidates) {
     if (next.hit) migrated++
     return next.line
   }).join('\n')
-  const output = Buffer.concat([frame0, zstdCompressSync(outBody, FRAME_OPTIONS)])
+  const output = Buffer.concat([frame0Out, zstdCompressSync(outBody, FRAME_OPTIONS)])
 
   // Acceptance on the REWRITTEN bytes: frame 0 still decodes to exactly the
   // header line, and line-by-line the plaintext differs from the original only
   // where migrateLine claims a hit (no collateral damage, idempotency-safe —
   // a reverse substitution would misfire on already-migrated events).
   const rewrittenText = decoder.decode(decompress(output))
-  if (rewrittenText !== `${frame0Text}${outBody}`) throw new Error(`${c.rel}: plaintext drift beyond the rename`)
+  if (rewrittenText !== `${outFrame0Text}${outBody}`) throw new Error(`${c.rel}: plaintext drift beyond the rename`)
   const origLines = fullText.split('\n')
   const newLines = rewrittenText.split('\n')
   if (origLines.length !== newLines.length) throw new Error(`${c.rel}: line count changed`)
@@ -194,7 +209,7 @@ for (const c of candidates) {
     }
   }
   const rewrittenFrame0 = decoder.decode(decompress(output.subarray(0, firstFrameEnd(output))))
-  if (rewrittenFrame0.trimEnd() !== frame0Text.trimEnd() || rewrittenFrame0.trimEnd().includes('\n')) {
+  if (rewrittenFrame0.trimEnd() !== outFrame0Text.trimEnd() || rewrittenFrame0.trimEnd().includes('\n')) {
     throw new Error(`${c.rel}: frame 0 is not exactly the header line`)
   }
 

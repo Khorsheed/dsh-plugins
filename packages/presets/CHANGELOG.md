@@ -2,7 +2,7 @@
 
 ## 0.3.2（未发布）
 
-- **破坏性：preset id 统一带 `dsh-` 前缀**——`dev` → `dsh-dev`、`learning` → `dsh-learning`（loader 行 id 同步为 `preset-dsh-dev` / `preset-dsh-learning`），与官方裸名（`standard`/`minimal`）及任何第三方 preset 区分命名空间。宿主对未知 preset id 是硬错误（`agent-preset/not-found`，不回退）：升级后旧会话需在模式选择器里重选一次；部署侧把 `agent-preset-registry` 的 `selectedDefault: dev` 改为 `dsh-dev`，会话事件日志中的 `agent-preset/selected` 记录可做一次性改写迁移（3080 已随部署执行）
+- **破坏性：preset id 统一带 `dsh-` 前缀**——`dev` → `dsh-dev`、`learning` → `dsh-learning`（loader 行 id 同步为 `preset-dsh-dev` / `preset-dsh-learning`），与官方裸名（`standard`/`minimal`）及任何第三方 preset 区分命名空间。宿主对未知 preset id 是硬错误（`agent-preset/not-found`，不回退）：升级后旧会话需在模式选择器里重选一次；部署侧把 `agent-preset-registry` 的 `selectedDefault: dev` 改为 `dsh-dev`，并用 `scripts/migrate-preset-selections.ts` 对会话日志做一次性改写（`agent-preset/selected` 事件与会话 header 行都改——投影从 header 初始化；3080 已随部署执行）
 - **并入 `preset-dsh-learning`（学习模式），`@khorsheed/dsh-bundle-learning` 退役**：行自该单行包逐字迁入；`dsh.references` 加 `@khorsheed/dsh-library`。外显文案（locale 与包描述）改为不枚举模式清单——「三种/五种」式描述跟不上模式增长。bundle-learning 已发布 npm 0.1.0：npm deprecate 与 3080 的摘除（先摘旧包再上本版，避免 `preset-dsh-learning` 双挂）为人工尾随，见 `.agents/notes/implemented/feature/2026-10-12-presets-learning-fold.md`
 - **合并 feat/video-studio 线**：`preset-dsh-video`（剪辑模式）与其余模式并存，`PRESET_IDS` 现为六个（dsh-dev / dsh-eval / dsh-writing / dsh-gamedev / dsh-learning / dsh-video）
 
