@@ -5,7 +5,8 @@
 # @khorsheed/dsh-presets — parity is pinned by scripts/preset-mode-parity.spec.ts,
 # and once that package retires this file becomes the canonical copy.
 # check-plugin-independence's `mode` sanction pins this file to exactly the
-# members'-rows union plus the one preset row.
+# members'-rows union minus their companion composition rows, plus the one
+# preset row.
 #
 # Why no double mount: `dsh plugin add` reconciles only the profile's DIRECT
 # dependencies into the bundles layer (apps/cli plugin.ts reconcilePlugins).
@@ -14,17 +15,15 @@
 # member directly alongside still self-mounts that member — the official bundle
 # detail page's row-level switches resolve any overlap.
 #
-# The one deliberate deviation from verbatim: canvas's own patch mounts its
-# `./agent` row (canvas-agent) ENABLED at the profile root — the every-session
-# community default. A MODE pack scopes the canvas tools to its own sessions
-# instead: the bare override below disables the root row so the preset row's
-# `canvas-agent` grant is the only live one (the two live at once register the
-# same tool names twice and fail the boot — canvas's own patch documents the
-# rule). canvas-novel's `./agent` row already ships disabled in the member's
-# own patch and is copied verbatim.
-
-- id: canvas-agent
-  disabled: true
+# The companion composition rows (`@khorsheed/dsh-canvas/agent`,
+# `@khorsheed/dsh-canvas-novel/agent`) live ONLY in the preset composition
+# below: a pack never mounts them at the profile root, and no bare override is
+# needed either — under host 0.2.x a preset session's scoped copy shadows the
+# global row of the same entry (the host pins this in
+# packages/core/tools/tests/scoped.spec.ts), so the two coexist without a
+# double registration. The members' own patches stay inert under this bundle;
+# installed alone, each mounts its agent row enabled, available to every
+# session.
 
 - insert:
     # 灵感画布: the canvas core (canvasStore/canvasBoard, the 灵感空间 surface).
@@ -34,12 +33,6 @@
     # 长篇小说 genre: the story-memory engine core (canvasNovel service).
     - id: canvas-novel
       name: "@khorsheed/dsh-canvas-novel"
-
-    # The novel agent surface ships DISABLED at the profile root by design
-    # (verbatim from the member patch) — the preset row below grants it.
-    - id: canvas-novel-agent
-      name: "@khorsheed/dsh-canvas-novel/agent"
-      disabled: true
 
     - id: preset-dsh-writing
       name: '@deepseek-ai/dsh-agent-preset'
@@ -274,8 +267,9 @@
 
           # 画布会话工具（2026-09-17；09-30 收成 canvas_read / canvas_write /
           # canvas_propose_type 三个，细则进 canvas 技能）、引导段与技能只
-          # 授予本 preset 的会话；profile 根的同名行已在 cordis.patch.yml 停用，两者绝不
-          # 同时生效（同名工具双注册）。服务核心（canvasBoard）由 profile 根的 canvas 行
+          # 授予本 preset 的会话；本 bundle 不在 profile 根挂同名行——成员单装时其自有
+          # patch 让它全局可用，宿主 0.2.x 下本 preset 会话见 scoped 副本遮蔽全局行，
+          # 不再双注册崩 boot。服务核心（canvasBoard）由 profile 根的 canvas 行
           # 提供，本行沿 scope 父链解析；画布未装时本行降级为零注册。
           - id: canvas-agent
             name: '@khorsheed/dsh-canvas/agent'
@@ -286,8 +280,9 @@
           # novel_bind 与 novel skill、轻指引段只授予本 preset 的会话；novel_read /
           # novel_write / novel_extract 再按会话绑定决定——会话绑定的是长篇小说画布才出现，
           # 其余画布照旧只有上面的画布工具。小说画布上的卡也走 canvas_read / canvas_write，
-          # 体裁钩子让它们直接落成正式卡、带编号；novel_* 只管章节、台账与待审。profile 根的同名行出厂
-          # 停用，两者绝不同时生效；服务核心（canvasNovel）由 profile 根的 canvas-novel 行
-          # 提供，未装时本行降级为零注册。
+          # 体裁钩子让它们直接落成正式卡、带编号；novel_* 只管章节、台账与待审。本 bundle 不在
+          # profile 根挂同名行——成员单装时其自有 patch 让它全局可用，宿主 0.2.x 下本
+          # preset 会话见 scoped 副本遮蔽全局行；服务核心（canvasNovel）由 profile 根的
+          # canvas-novel 行提供，未装时本行降级为零注册。
           - id: canvas-novel-agent
             name: '@khorsheed/dsh-canvas-novel/agent'

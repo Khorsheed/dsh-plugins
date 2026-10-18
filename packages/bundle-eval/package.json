@@ -1,6 +1,6 @@
 {
   "name": "@khorsheed/dsh-bundle-eval",
-  "description": "Mode bundle 评测模式: the evaluation family (datasets / mission / lab / eval) plus the dsh-eval agent preset in one install. Thin meta package: a patch carrying the members' canonical rows and the mode's preset row, npm dependencies on the members, locale card metadata — no runtime code, no client half.",
+  "description": "Mode bundle 评测模式: the evaluation family (datasets / mission / lab / eval) plus the local-agent delegation family (the core and the kimi / codex / claude-code / dsh harness providers the run verb delegates through) plus the dsh-eval agent preset in one install. Thin meta package: a patch carrying the members' canonical rows and the mode's preset row, npm dependencies on the members, locale card metadata — no runtime code, no client half.",
   "version": "0.1.0",
   "publishConfig": {
     "access": "public"
@@ -39,6 +39,12 @@
     "@khorsheed/dsh-datasets": "workspace:*",
     "@khorsheed/dsh-eval": "workspace:*",
     "@khorsheed/dsh-lab": "workspace:*",
+    "@khorsheed/dsh-local-agent": "workspace:*",
+    "@khorsheed/dsh-local-agent-claude-code": "workspace:*",
+    "@khorsheed/dsh-local-agent-codex": "workspace:*",
+    "@khorsheed/dsh-local-agent-dsh": "workspace:*",
+    "@khorsheed/dsh-local-agent-dsh-headless": "workspace:*",
+    "@khorsheed/dsh-local-agent-kimi": "workspace:*",
     "@khorsheed/dsh-mission": "workspace:*"
   },
   "peerDependencies": {
@@ -64,19 +70,29 @@
         "@khorsheed/dsh-datasets",
         "@khorsheed/dsh-mission",
         "@khorsheed/dsh-lab",
-        "@khorsheed/dsh-eval"
+        "@khorsheed/dsh-eval",
+        "@khorsheed/dsh-local-agent",
+        "@khorsheed/dsh-local-agent-kimi",
+        "@khorsheed/dsh-local-agent-codex",
+        "@khorsheed/dsh-local-agent-claude-code",
+        "@khorsheed/dsh-local-agent-dsh"
       ]
     },
     "references": [
       "@khorsheed/dsh-datasets",
       "@khorsheed/dsh-mission",
       "@khorsheed/dsh-lab",
-      "@khorsheed/dsh-eval"
+      "@khorsheed/dsh-eval",
+      "@khorsheed/dsh-local-agent",
+      "@khorsheed/dsh-local-agent-kimi",
+      "@khorsheed/dsh-local-agent-codex",
+      "@khorsheed/dsh-local-agent-claude-code",
+      "@khorsheed/dsh-local-agent-dsh"
     ],
     "compat": {
       "minHost": "0.2.0-rc.2",
       "verifiedHost": "0.2.1-rc.1",
-      "notes": "Pure composition: the bundle mounts the members' canonical rows plus the dsh-eval preset row and registers nothing of its own, so the floor is the members' highest — the four members floor at 0.2.0-rc.2 together (the family moves as one line since the T88 fold; the preset row's 0.1.7-rc.1 mechanism floor sits below that). lab's container path needs a reachable Docker daemon; without one lab's verbs fail at call time and eval's container path refuses naming lab, while the host path, datasets, and mission are unaffected. Individual member behaviors are documented in each member's own dsh.compat."
+      "notes": "Pure composition: the bundle mounts the members' canonical rows plus the dsh-eval preset row and registers nothing of its own, so the floor is the members' highest — datasets / mission / lab / eval floor at 0.2.0-rc.2 together (the evaluation family moves as one line since the T88 fold), the five local-agent members floor at 0.1.5-rc.1, and the preset row's 0.1.7-rc.1 mechanism floor sits below both. lab's container path needs a reachable Docker daemon; without one lab's verbs fail at call time and eval's container path refuses naming lab, while the host path, datasets, and mission are unaffected. Individual member behaviors are documented in each member's own dsh.compat."
     }
   }
 }

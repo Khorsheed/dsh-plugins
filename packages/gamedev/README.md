@@ -12,9 +12,9 @@
 
 | 成员包 | 行 id | 能力 |
 | --- | --- | --- |
-| `@khorsheed/dsh-game` | `game`、`game-agent`(出厂停用) | 游戏开发:gameStore 服务、右栏「游戏」策划操作台(试玩调参、外观编辑、分章节策划、版本与回滚)、每轮结束自动检查 |
+| `@khorsheed/dsh-game` | `game`、`game-agent`(由本包 preset 授予) | 游戏开发:gameStore 服务、右栏「游戏」策划操作台(试玩调参、外观编辑、分章节策划、版本与回滚)、每轮结束自动检查 |
 
-游戏工具与技能(game `./agent` 入口)在根行出厂停用,由本包 preset 行的 `game-agent` 授予点按会话授予——两条同活会同名双注册、无法启动,成员 patch 注释写明了这条规则。
+游戏工具与技能(game `./agent` 入口)不在 profile 根挂行,由本包 preset 行的 `game-agent` 授予点按会话授予;成员单装时其自有 patch 会让该入口全局可用,宿主 0.2.x 下本模式会话见 scoped 副本遮蔽全局行,不再双注册崩 boot(宿主 scoped.spec.ts 钉死)。
 
 ## 安装
 
@@ -49,7 +49,7 @@ dsh plugin --profile web remove @khorsheed/dsh-gamedev
 <details>
 <summary>内部结构(点击展开)</summary>
 
-**模式包 = 家族整合包 + 一行模式 preset。** `cordis.patch.yml` 的成员行逐字来自成员包自己的 `cordis.patch.yml`(含根级 `game-agent` 停用行);末尾一行 `preset-dsh-gamedev`(`@deepseek-ai/dsh-agent-preset` 声明)逐字镜像自 `@khorsheed/dsh-presets`,由 `scripts/preset-mode-parity.spec.ts` 钉住两边 plugins 组合与展示字段不漂移。仓级 check:plugins 的 `dsh.bundle.kind: 'mode'` sanction 机械钉死整个形状:行只允许落在「成员规范行全集 + 恰好一行 preset-<mode>」内,成员必须是真实自挂载包,每个成员至少贡献一行,mode 值全树唯一。
+**模式包 = 家族整合包 + 一行模式 preset。** `cordis.patch.yml` 的成员行逐字来自成员包自己的 `cordis.patch.yml`(`game-agent` 伴生组合行不进 patch,只活在下方 preset 组合里);末尾一行 `preset-dsh-gamedev`(`@deepseek-ai/dsh-agent-preset` 声明)逐字镜像自 `@khorsheed/dsh-presets`,由 `scripts/preset-mode-parity.spec.ts` 钉住两边 plugins 组合与展示字段不漂移。仓级 check:plugins 的 `dsh.bundle.kind: 'mode'` sanction 机械钉死整个形状:行只允许落在「成员规范行全集 − 伴生组合行 + 恰好一行 preset-<mode>」内,被减去的伴生行必须由本包 preset 组合点名授予,成员必须是真实自挂载包,每个成员至少贡献一行,mode 值全树唯一。
 
 **装我 = 装成员 + 一个模式,不双挂。** 成员列进 `dependencies`(安装即带齐),同时登记进 `dsh.references`(家族名册供 pack 期与目录层读取)。`dsh plugin add` 只把 profile 的**直接依赖**收编进 bundles 层(`reconcilePlugins`)——装本 bundle 只应用**本** patch,成员自己的 patch 不被应用,任何一行都不会挂两次。成员单独安装仍自挂载;重叠由 bundle 详情页的行级开关解决。
 

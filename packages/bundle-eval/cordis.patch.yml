@@ -1,11 +1,14 @@
-# @khorsheed/dsh-bundle-eval bundle patch: the evaluation family as one bundle
-# card — the datasets / mission / lab / eval rows, re-mounted VERBATIM from each
-# member package's own cordis.patch.yml (the canonical rows), PLUS the family's
-# mode preset row `preset-dsh-eval` mirrored VERBATIM from
-# @khorsheed/dsh-presets (parity pinned by scripts/preset-mode-parity.spec.ts;
-# once that package retires this file becomes the canonical copy).
-# check-plugin-independence's `mode` sanction pins this file to exactly that
-# union plus the one preset row — no invented ids, no foreign rows).
+# @khorsheed/dsh-bundle-eval bundle patch: the 评测模式 (dsh-eval) mode pack —
+# the evaluation family's rows (datasets / mission / lab / eval), the
+# local-agent delegation family's rows (the core plus the kimi / codex /
+# claude-code / dsh providers, with the two bare overrides), and the mode's own
+# preset row. Member rows (and the bare overrides) are re-mounted VERBATIM from
+# each member package's own cordis.patch.yml (the canonical rows); the preset
+# row is mirrored VERBATIM from @khorsheed/dsh-presets — parity is pinned by
+# scripts/preset-mode-parity.spec.ts, and once that package retires this file
+# becomes the canonical copy. check-plugin-independence's `mode` sanction pins
+# this file to exactly that union minus the members' companion composition rows
+# (the ./tool entries a preset grants), plus the one preset row.
 #
 # Why no double mount: `dsh plugin add` reconciles only the profile's DIRECT
 # dependencies into the bundles layer (apps/cli plugin.ts reconcilePlugins).
@@ -14,6 +17,18 @@
 # member directly alongside still self-mounts that member — the official bundle
 # detail page's row-level switches resolve any overlap.
 #
+# Why the local-agent family rides along: eval's run / provision verbs delegate
+# to the external CLI harnesses through the localAgent SERVICE facade
+# (packages/eval/src/service.ts refuses by name when the service is absent), so
+# the evaluation suite carries the family itself. That is a service-level
+# dependency, not a session tool grant — the preset row below names NO
+# local-agent ./tool row, and the delegation tools stay out of evaluation
+# sessions by design.
+#
+# The two bare overrides disable the official preset rows whose model-facing
+# tool names the family takes (subagent_codex / subagent_claude_code) — carried
+# verbatim from the codex / claude-code providers' own patches.
+#
 # The model TOOLS are not here by design: since the family fold each core
 # ships its tool row as its own `./tool` composition entry
 # (`@khorsheed/dsh-datasets/tool`, `@khorsheed/dsh-mission/tool`,
@@ -21,6 +36,18 @@
 # per session — a profile-root row would grant every session. The grant points
 # are the `datasets-tool` / `eval-tool` rows inside this bundle's preset row
 # (`preset-dsh-eval`, appended at the end of the insert list below).
+#
+# The deps-only family library (@khorsheed/dsh-local-agent-dsh-headless) is an
+# npm dependency of this bundle but contributes NO row here — card-less by
+# design (the same treatment as in @khorsheed/dsh-bundle-local-agent and
+# @khorsheed/dsh-dev).
+
+- id: tool-subagent-codex
+  disabled: true
+
+- id: tool-subagent-claude-code
+  disabled: true
+
 - insert:
     # Dataset registry, read-only materialization, the 题集 tab.
     - id: datasets
@@ -37,6 +64,31 @@
     # The orchestrator: experiments, conditions, runs, judging, the 实验室 tab.
     - id: eval
       name: '@khorsheed/dsh-eval'
+
+    # ── the local-agent delegation family (service-level: eval's run/provision ──
+    # ── verbs go through the localAgent facade; no ./tool row is granted here) ──
+
+    # The local-agent family core: shared scoped-homes root.
+    - id: local-agent
+      name: '@khorsheed/dsh-local-agent'
+      config:
+        homesRoot: !!js dshHomePath('local-agent')
+
+    # Kimi harness (its `subagent_kimi` tool: the package's ./tool entry).
+    - id: local-agent-kimi
+      name: '@khorsheed/dsh-local-agent-kimi'
+
+    # Codex harness (its `subagent_codex` tool: the package's ./tool entry).
+    - id: local-agent-codex
+      name: '@khorsheed/dsh-local-agent-codex'
+
+    # Claude Code harness (its `subagent_claude_code` tool: the package's ./tool entry).
+    - id: local-agent-claude-code
+      name: '@khorsheed/dsh-local-agent-claude-code'
+
+    # The dsh harness controller (Settings → 本地 Agent switch, default off).
+    - id: local-agent-dsh
+      name: '@khorsheed/dsh-local-agent-dsh'
 
     # ── the mode row: preset-dsh-eval (评测模式) — mirrored verbatim from
     # @khorsheed/dsh-presets; grants datasets-tool / eval-tool per session.

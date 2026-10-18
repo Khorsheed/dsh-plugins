@@ -30,7 +30,7 @@ dsh plugin --profile <name> add @khorsheed/dsh-game
 dsh plugin --profile <name> add @khorsheed/dsh-presets   # 游戏开发模式 preset
 ```
 
-本包的 `cordis.patch.yml` 插入两行：`game`（服务核心、Remote、每轮检查）与 `game-agent`（`./agent` 入口：工具、提示段、技能），后者**出厂停用**，由 `dsh-gamedev` preset 按会话授予。想让所有会话都有游戏工具，就启用 `game-agent` 行且不用该 preset——两者绝不能同时生效（同名工具会注册两次）。
+本包的 `cordis.patch.yml` 插入两行：`game`（服务核心、Remote、每轮检查）与 `game-agent`（`./agent` 入口：工具、提示段、技能），两行都**默认使能**——单装即所有会话可用（与 canvas 对齐）。`dsh-gamedev` 模式包不重复挂载根行，只在自己的 preset 组合里授予同一入口：宿主 0.2.x 下该模式的会话看到 scoped 副本遮蔽全局行，不再双注册崩 boot（宿主 scoped.spec.ts 钉死）。想让游戏工具只出现在游戏开发模式，就在 profile 里把 `game-agent` 行停用并改用该模式包。
 
 ## 配置
 

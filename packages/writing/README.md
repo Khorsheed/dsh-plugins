@@ -13,9 +13,9 @@
 | 成员包 | 行 id | 能力 |
 | --- | --- | --- |
 | `@khorsheed/dsh-canvas` | `canvas` | 灵感画布:卡片、连线与模型提议的主题画布(canvasStore/canvasBoard 服务与界面) |
-| `@khorsheed/dsh-canvas-novel` | `canvas-novel`、`canvas-novel-agent`(出厂停用) | 「长篇小说」体裁:人物/伏笔/章节的作品记忆引擎、对账闸门、画布里的待审条与章节页 |
+| `@khorsheed/dsh-canvas-novel` | `canvas-novel`、`canvas-novel-agent`(由本包 preset 授予) | 「长篇小说」体裁:人物/伏笔/章节的作品记忆引擎、对账闸门、画布里的待审条与章节页 |
 
-画布工具行(canvas `./agent`)在成员自己的 patch 里默认对**所有**会话开放;模式包把它收窄为仅写作模式会话——patch 里以一条 `disabled: true` 覆写实现(两行同活会同名双注册、直接无法启动,成员 patch 注释写明了这条规则)。
+画布工具行(canvas `./agent`)在成员自己的 patch 里默认对**所有**会话开放;模式包不在 profile 根挂这两个 agent 行、也不再覆写停用——授予只活在 preset 组合里,宿主 0.2.x 下写作模式会话见 scoped 副本遮蔽全局行,不再双注册崩 boot(宿主 scoped.spec.ts 钉死)。
 
 ## 安装
 
@@ -50,11 +50,11 @@ dsh plugin --profile web remove @khorsheed/dsh-writing
 <details>
 <summary>内部结构(点击展开)</summary>
 
-**模式包 = 家族整合包 + 一行模式 preset。** `cordis.patch.yml` 的成员行逐字来自对应成员包自己的 `cordis.patch.yml`;末尾一行 `preset-dsh-writing`(`@deepseek-ai/dsh-agent-preset` 声明)逐字镜像自 `@khorsheed/dsh-presets`,由 `scripts/preset-mode-parity.spec.ts` 钉住两边 plugins 组合与展示字段不漂移。仓级 check:plugins 的 `dsh.bundle.kind: 'mode'` sanction 机械钉死整个形状:行只允许落在「成员规范行全集 + 恰好一行 preset-<mode>」内,成员必须是真实自挂载包,每个成员至少贡献一行,mode 值全树唯一。
+**模式包 = 家族整合包 + 一行模式 preset。** `cordis.patch.yml` 的成员行逐字来自对应成员包自己的 `cordis.patch.yml`(两成员的 `./agent` 伴生组合行不进 patch,只活在下方 preset 组合里);末尾一行 `preset-dsh-writing`(`@deepseek-ai/dsh-agent-preset` 声明)逐字镜像自 `@khorsheed/dsh-presets`,由 `scripts/preset-mode-parity.spec.ts` 钉住两边 plugins 组合与展示字段不漂移。仓级 check:plugins 的 `dsh.bundle.kind: 'mode'` sanction 机械钉死整个形状:行只允许落在「成员规范行全集 − 伴生组合行 + 恰好一行 preset-<mode>」内,被减去的伴生行必须由本包 preset 组合点名授予,成员必须是真实自挂载包,每个成员至少贡献一行,mode 值全树唯一。
 
 **装我 = 装一族 + 一个模式,不双挂。** 成员全部列进 `dependencies`(安装即带齐),同时登记进 `dsh.references`(家族名册供 pack 期与目录层读取)。`dsh plugin add` 只把 profile 的**直接依赖**收编进 bundles 层(`reconcilePlugins`)——装本 bundle 只应用**本** patch,成员自己的 patch 不被应用,任何一行都不会挂两次。成员单独安装仍自挂载;重叠由 bundle 详情页的行级开关解决。
 
-**`src/index.ts` 只导出常量**(`MODE` / `FAMILY_MEMBERS` / `FAMILY_ROOT_OVERRIDES`),让包有可构建的 `lib/`(pack-dist 的硬性要求)。
+**`src/index.ts` 只导出常量**(`MODE` / `FAMILY_MEMBERS`),让包有可构建的 `lib/`(pack-dist 的硬性要求)。
 
 </details>
 

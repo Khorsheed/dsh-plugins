@@ -2,7 +2,7 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { parseTopLevelPatchRows, type PatchRow } from '../../../scripts/check-plugin-independence.ts'
-import { FAMILY_MEMBERS, MODE } from '../src/index.ts'
+import { FAMILY_DEPS_ONLY, FAMILY_MEMBERS, MODE } from '../src/index.ts'
 
 const root = join(import.meta.dirname, '..')
 const patch = readFileSync(join(root, 'cordis.patch.yml'), 'utf8')
@@ -28,17 +28,23 @@ function memberRows(pkgName: string): PatchRow[] {
 const sameRow = (a: PatchRow, b: PatchRow): boolean => a.id === b.id && a.name === b.name
 
 describe('cordis.patch.yml', () => {
-  it('mounts exactly the members’ canonical rows, in member order, plus the one mode preset row last', () => {
+  it('mounts exactly the members’ canonical rows plus the one mode preset row (mounted last), verbatim', () => {
     const rows = parseTopLevelPatchRows(patch)
     const canonical = FAMILY_MEMBERS.flatMap((member) => memberRows(member))
-    expect(rows).toHaveLength(canonical.length + 1)
-    rows.slice(0, canonical.length).forEach((row, index) => {
-      expect(sameRow(row, canonical[index]!), `row ${row.id ?? '(no id)'} (${row.name ?? 'no name'}) must be member row #${index}`).toBe(true)
-    })
-    // The mode row: exactly one agent-preset row, id preset-<mode>, mounted last.
     const presetRows = rows.filter((row) => row.name === '@deepseek-ai/dsh-agent-preset')
     expect(presetRows, 'exactly one agent-preset row').toHaveLength(1)
     expect(presetRows[0]!.id).toBe(`preset-${MODE}`)
+    const memberSide = rows.filter((row) => row.name !== '@deepseek-ai/dsh-agent-preset')
+    // The local-agent members contribute the two bare tool-subagent-* overrides
+    // alongside their insert rows; both sit at the top level, so membership is
+    // checked order-insensitively (the preset row still mounts last).
+    expect(memberSide).toHaveLength(canonical.length)
+    for (const row of memberSide) {
+      expect(
+        canonical.some((r) => sameRow(r, row)),
+        `row ${row.id ?? '(no id)'} (${row.name ?? 'no name'}) must be member row`,
+      ).toBe(true)
+    }
     expect(rows[rows.length - 1]).toEqual(presetRows[0])
     // Every member contributes at least one row.
     for (const member of FAMILY_MEMBERS) {
@@ -73,9 +79,9 @@ describe('package.json', () => {
     expect(manifest.dsh.bundle.members).toEqual([...FAMILY_MEMBERS])
   })
 
-  it('carries every member as an npm dependency, and nothing else', () => {
-    expect(Object.keys(manifest.dependencies).sort()).toEqual([...FAMILY_MEMBERS].sort())
-    for (const name of FAMILY_MEMBERS) {
+  it('carries every member and the deps-only library as npm dependencies, and nothing else', () => {
+    expect(Object.keys(manifest.dependencies).sort()).toEqual([...FAMILY_MEMBERS, ...FAMILY_DEPS_ONLY].sort())
+    for (const name of [...FAMILY_MEMBERS, ...FAMILY_DEPS_ONLY]) {
       expect(manifest.dependencies[name], name).toBe('workspace:*')
     }
   })

@@ -1,13 +1,12 @@
 # @khorsheed/dsh-gamedev bundle patch: the 游戏开发模式 (dsh-gamedev) mode pack
-# — the game member rows plus the mode's own preset row. The member rows are
+# — the game member row plus the mode's own preset row. The member row is
 # re-mounted VERBATIM from the member package's own cordis.patch.yml (the
-# canonical rows — including the root `game-agent` row, which ships DISABLED in
-# the member patch by design: the preset row below is the only live grant, and
-# the two live at once would register the same tool names twice); the preset
-# row is mirrored VERBATIM from @khorsheed/dsh-presets — parity is pinned by
+# canonical row); the preset row is mirrored VERBATIM from
+# @khorsheed/dsh-presets — parity is pinned by
 # scripts/preset-mode-parity.spec.ts, and once that package retires this file
 # becomes the canonical copy. check-plugin-independence's `mode` sanction pins
-# this file to exactly the member's rows plus the one preset row.
+# this file to exactly the member's rows minus its companion composition rows,
+# plus the one preset row.
 #
 # Why no double mount: `dsh plugin add` reconciles only the profile's DIRECT
 # dependencies into the bundles layer (apps/cli plugin.ts reconcilePlugins).
@@ -15,18 +14,21 @@
 # a transitive npm dependency and its own patch stays inert. Installing the
 # member directly alongside still self-mounts it — the official bundle detail
 # page's row-level switches resolve any overlap.
+#
+# The companion composition row (`@khorsheed/dsh-game/agent` — game_open /
+# game_read, the guidance section, the gamedev / game-design skills) lives ONLY
+# in the preset composition below: a pack never mounts it at the profile root.
+# The member's own patch stays inert under this bundle; installed alone it
+# mounts that row enabled, available to every session. Under host 0.2.x a
+# preset session's scoped copy shadows the global row (the host pins this in
+# packages/core/tools/tests/scoped.spec.ts), so the two no longer fail the
+# boot — keeping the grant inside the preset is what scopes the tools to this
+# mode's sessions.
 - insert:
     # 游戏开发: the gameStore service, the 游戏 right-sidebar workbench, and the
     # end-of-turn checks.
     - id: game
       name: "@khorsheed/dsh-game"
-
-    # The game agent surface (game_open / game_read, the guidance section, the
-    # gamedev / game-design skills) ships DISABLED at the profile root by design
-    # (verbatim from the member patch) — the preset row below grants it.
-    - id: game-agent
-      name: "@khorsheed/dsh-game/agent"
-      disabled: true
 
     - id: preset-dsh-gamedev
       name: '@deepseek-ai/dsh-agent-preset'
@@ -123,10 +125,13 @@
           # ── game ────────────────────────────────────────────────────────────────────
 
           # game_open / game_read, the mode's guidance section and the gamedev /
-          # game-design skills, granted to this preset's sessions only; the
-          # profile-root row of the same entry ships disabled, and the two are
-          # never live at once. The service core (gameStore) and the end-of-turn
-          # checks come from the profile-root game row; without the package this
-          # row degrades to zero registrations.
+          # game-design skills, granted to this preset's sessions only — the
+          # profile root carries no row of this entry from this bundle (the
+          # member's own patch mounts it enabled when the package is installed
+          # alone; under host 0.2.x a preset session's scoped copy shadows that
+          # global one, so the two coexist without a double registration). The
+          # service core (gameStore) and the end-of-turn checks come from the
+          # profile-root game row; without the package this row degrades to
+          # zero registrations.
           - id: game-agent
             name: '@khorsheed/dsh-game/agent'

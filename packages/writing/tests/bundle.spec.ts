@@ -2,7 +2,7 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { parseTopLevelPatchRows, type PatchRow } from '../../scripts/check-plugin-independence.ts'
-import { FAMILY_MEMBERS, FAMILY_ROOT_OVERRIDES, MODE } from '../src/index.ts'
+import { FAMILY_MEMBERS, MODE } from '../src/index.ts'
 
 const root = join(import.meta.dirname, '..')
 const patch = readFileSync(join(root, 'cordis.patch.yml'), 'utf8')
@@ -29,44 +29,41 @@ function memberRows(pkgName: string): PatchRow[] {
 
 const sameRow = (a: PatchRow, b: PatchRow): boolean => a.id === b.id && a.name === b.name
 
+/** A companion composition row: a name with a subpath beyond the package (`@khorsheed/dsh-canvas/agent`). */
+const isCompanionRow = (row: PatchRow): boolean => row.name !== undefined && /^@khorsheed\/[^/]+\/.+/.test(row.name)
+
 describe('cordis.patch.yml', () => {
-  it('mounts exactly the members’ canonical rows, the root-row overrides and the one mode preset row', () => {
+  it('mounts exactly the members’ canonical rows minus the companion composition rows, plus the one mode preset row', () => {
     const rows = parseTopLevelPatchRows(patch)
     const canonical = FAMILY_MEMBERS.flatMap((member) => memberRows(member))
+    const expected = canonical.filter((row) => !isCompanionRow(row))
     const presetRows = rows.filter((row) => row.name === AGENT_PRESET)
     expect(presetRows, 'exactly one agent-preset row').toHaveLength(1)
     expect(presetRows[0]!.id).toBe(`preset-${MODE}`)
     const memberSide = rows.filter((row) => row.name !== AGENT_PRESET)
-    // canvas contributes two canonical rows; the bundle replaces the enabled
-    // root canvas-agent mount with a bare disable override of the same id, so
-    // the mounted count equals the canonical count.
-    expect(memberSide).toHaveLength(canonical.length)
+    // canvas and canvas-novel each contribute one canonical row (their cores);
+    // their ./agent rows are companion composition rows and never mount here.
+    expect(memberSide).toHaveLength(expected.length)
     for (const row of memberSide) {
-      if (row.name === undefined) {
-        // A bare override: sanctioned only when it pins a declared override id
-        // and a member's canonical row carries that id.
-        expect(FAMILY_ROOT_OVERRIDES, `override row ${row.id ?? '(no id)'}`).toContain(row.id)
-        expect(canonical.some((r) => r.id === row.id), `override row ${row.id ?? '(no id)'} names no member row`).toBe(true)
-        continue
-      }
+      expect(row.name, `row ${row.id ?? '(no id)'} must be a named member row — the pack carries no bare overrides`).toBeDefined()
       expect(
-        canonical.some((r) => sameRow(r, row)),
+        expected.some((r) => sameRow(r, row)),
         `row ${row.id ?? '(no id)'} (${row.name}) must come from a member's own patch`,
       ).toBe(true)
     }
-    // Every member contributes at least one NAMED row (a bare override alone
-    // does not count — it adds nothing without the member's own mount).
+    // Every member contributes at least one row.
     for (const member of FAMILY_MEMBERS) {
-      const own = memberRows(member)
-      expect(memberSide.some((row) => row.name !== undefined && own.some((r) => sameRow(r, row))), member).toBe(true)
+      const own = memberRows(member).filter((row) => !isCompanionRow(row))
+      expect(memberSide.some((row) => own.some((r) => sameRow(r, row))), member).toBe(true)
     }
   })
 
-  it('disables the root canvas-agent row — the preset grant is the only live one', () => {
-    expect(patch).toMatch(/^- id: canvas-agent\n {2}disabled: true$/m)
+  it('keeps the companion agent rows out of the profile root, granted by the preset instead', () => {
     const rows = parseTopLevelPatchRows(patch)
-    expect(rows.filter((row) => row.id === 'canvas-agent')).toHaveLength(1)
-    expect(rows.find((row) => row.id === 'canvas-agent')!.name).toBeUndefined()
+    expect(rows.some((row) => row.id === 'canvas-agent' || row.id === 'canvas-novel-agent')).toBe(false)
+    // The grants: the mode preset names the same entries in its composition.
+    expect(patch).toContain("name: '@khorsheed/dsh-canvas/agent'")
+    expect(patch).toContain("name: '@khorsheed/dsh-canvas-novel/agent'")
   })
 
   it('quotes every name: value (@ is YAML-reserved)', () => {

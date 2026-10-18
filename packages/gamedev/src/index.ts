@@ -2,10 +2,12 @@
  * @khorsheed/dsh-gamedev — the 游戏开发模式 (dsh-gamedev) mode bundle: the game
  * workbench (build and play a small 2D web game with the agent) plus the
  * mode's own preset row, as one thin meta package. The bundle is composition
- * data: cordis.patch.yml re-mounts the member's canonical rows and the preset
- * row, and package.json carries the member as an npm dependency; this module
- * exists so the package has a buildable `lib/` (pack-dist requires one). It
- * registers no service, tool, slot, or command of its own.
+ * data: cordis.patch.yml re-mounts the member's canonical rows (minus the
+ * companion `./agent` composition row — it lives only in the preset row's
+ * grant list) plus the preset row, and package.json carries the member as an
+ * npm dependency; this module exists so the package has a buildable `lib/`
+ * (pack-dist requires one). It registers no service, tool, slot, or command
+ * of its own.
  */
 
 /** The mode this bundle installs: the preset row id is `preset-${MODE}`. */

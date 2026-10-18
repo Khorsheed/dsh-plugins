@@ -30,7 +30,7 @@ dsh plugin --profile <name> add @khorsheed/dsh-game
 dsh plugin --profile <name> add @khorsheed/dsh-presets   # the game-development preset
 ```
 
-The package's `cordis.patch.yml` inserts two rows: `game` (service core, Remote, the per-turn checks) and `game-agent` (the `./agent` entry: tools, prompt section, skills), which ships **disabled** — the `dsh-gamedev` preset grants it per session. To give every session the game tools instead, enable `game-agent` and do not use the preset; the two must never be live at once (the tools would register twice).
+The package's `cordis.patch.yml` inserts two rows: `game` (service core, Remote, the per-turn checks) and `game-agent` (the `./agent` entry: tools, prompt section, skills), both **enabled by default** — installing alone gives every session the tools (aligned with canvas). The `dsh-gamedev` mode pack does not re-mount the root row; it grants the same entry inside its own preset composition, and under host 0.2.x that mode's sessions see the scoped copy shadow the global row — no double registration, no boot failure (pinned by the host's scoped.spec.ts). To keep the game tools exclusive to game-dev mode, disable the `game-agent` row in the profile and use the mode pack instead.
 
 ## Config
 

@@ -69,7 +69,7 @@ The four canvas tools (`canvas_open` / `canvas_read` / `canvas_write` / `canvas_
   name: "@khorsheed/dsh-canvas/agent"
 ```
 
-**The two must never be live at once** (the tools would register twice under the same names — the local-agent family's established pattern). Sessions without the preset see no canvas guidance in their system prompt no canvas_* tools in their catalog, and no canvas skill in their skill list. When the entry probes no `canvasBoard` (the core row is not mounted) it only warns and registers nothing — the composition still loads.
+Under host 0.2.x the two CAN be live at once: a preset session sees its scoped copy shadow the global row (the host pins the shadowing in packages/core/tools/tests/scoped.spec.ts), and sessions on other presets keep the global one — so disabling the root row has exactly one remaining reason: you want the tools to exist ONLY in that mode. That is what the mode packs (e.g. `@khorsheed/dsh-writing`) do: the pack's patch never mounts the root row and the grant lives only in the preset composition. Sessions without the preset (and with the root row off) see no canvas guidance in their system prompt, no canvas_* tools in their catalog, and no canvas skill in their skill list. When the entry probes no `canvasBoard` (the core row is not mounted) it only warns and registers nothing — the composition still loads.
 
 ## Compatibility
 

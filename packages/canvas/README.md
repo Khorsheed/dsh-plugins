@@ -69,7 +69,7 @@ dsh plugin --profile web remove @khorsheed/dsh-canvas
   name: "@khorsheed/dsh-canvas/agent"
 ```
 
-**两者绝不能同时生效**（同名工具会注册两次——local-agent 家族的既定模式）。未授予 preset 的会话：系统提示词完全不含画布引导，工具目录没有 canvas_*，技能目录也没有 canvas。入口缺席 `canvasBoard` 时（比如核心行没装）只 warn 不注册，绝不炸组合。
+宿主 0.2.x 下两者同活不再冲突：preset 会话看到的是 scoped 副本遮蔽全局行（宿主在 packages/core/tools/tests/scoped.spec.ts 钉死这一遮蔽），其它 preset 的会话照用全局行——所以「关掉根行」只剩一个理由：让工具**只**出现在那个模式里。模式包（如 `@khorsheed/dsh-writing`）走的就是这条路：它的 pack patch 不挂根行，授予只活在 preset 组合里。未授予 preset 的会话（根行也关掉时）：系统提示词完全不含画布引导，工具目录没有 canvas_*，技能目录也没有 canvas。入口缺席 `canvasBoard` 时（比如核心行没装）只 warn 不注册，绝不炸组合。
 
 ## Compatibility
 

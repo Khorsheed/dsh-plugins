@@ -29,26 +29,37 @@ function memberRows(pkgName: string): PatchRow[] {
 
 const sameRow = (a: PatchRow, b: PatchRow): boolean => a.id === b.id && a.name === b.name
 
+/** A companion composition row: a name with a subpath beyond the package (`@khorsheed/dsh-game/agent`). */
+const isCompanionRow = (row: PatchRow): boolean => row.name !== undefined && /^@khorsheed\/[^/]+\/.+/.test(row.name)
+
 describe('cordis.patch.yml', () => {
-  it('mounts exactly the members’ canonical rows plus the one mode preset row, verbatim', () => {
+  it('mounts exactly the member’s canonical rows minus the companion composition rows, plus the one mode preset row, verbatim', () => {
     const rows = parseTopLevelPatchRows(patch)
     const canonical = FAMILY_MEMBERS.flatMap((member) => memberRows(member))
+    const expected = canonical.filter((row) => !isCompanionRow(row))
     const presetRows = rows.filter((row) => row.name === AGENT_PRESET)
     expect(presetRows, 'exactly one agent-preset row').toHaveLength(1)
     expect(presetRows[0]!.id).toBe(`preset-${MODE}`)
     const memberSide = rows.filter((row) => row.name !== AGENT_PRESET)
-    expect(memberSide).toHaveLength(canonical.length)
+    expect(memberSide).toHaveLength(expected.length)
     for (const row of memberSide) {
       expect(
-        canonical.some((r) => sameRow(r, row)),
+        expected.some((r) => sameRow(r, row)),
         `row ${row.id ?? '(no id)'} (${row.name ?? 'no name'}) must come from a member's own patch`,
       ).toBe(true)
     }
     // Every member contributes at least one row.
     for (const member of FAMILY_MEMBERS) {
-      const own = memberRows(member)
+      const own = memberRows(member).filter((row) => !isCompanionRow(row))
       expect(memberSide.some((row) => own.some((r) => sameRow(r, row))), member).toBe(true)
     }
+  })
+
+  it('keeps the game agent surface out of the profile root, granted by the preset instead', () => {
+    const rows = parseTopLevelPatchRows(patch)
+    expect(rows.some((row) => row.id === 'game-agent')).toBe(false)
+    // The grant: the mode preset names the same entry in its composition.
+    expect(patch).toContain("name: '@khorsheed/dsh-game/agent'")
   })
 
   it('quotes every name: value (@ is YAML-reserved)', () => {

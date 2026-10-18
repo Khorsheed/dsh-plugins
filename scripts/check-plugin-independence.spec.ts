@@ -8,8 +8,12 @@ import {
   findCrossImports,
   findInjects,
   isAllowedEdge,
+  isCompanionRow,
+  packageNameOf,
   parsePatchInjects,
   parsePatchNames,
+  parsePresetGrantRows,
+  parseTopLevelPatchRowBlocks,
   parseTopLevelPatchRows,
   scanPackage,
   scanTree,
@@ -88,6 +92,79 @@ describe('parseTopLevelPatchRows', () => {
   it('reads rows whose name sits on the item line and ignores entries with neither id nor name', () => {
     const patch = `- insert:\n    - name: '@khorsheed/dsh-a'\n      id: a\n- remove: ghost\n`
     expect(parseTopLevelPatchRows(patch)).toEqual([{ id: 'a', name: '@khorsheed/dsh-a' }])
+  })
+})
+
+describe('parseTopLevelPatchRowBlocks', () => {
+  it('carries the row content block with comments, blank lines and quote style normalized away', () => {
+    const patch = [
+      '- insert:',
+      '    # a comment above the row',
+      "    - id: core\n      name: '@khorsheed/dsh-core'\n      config:\n        # an inner comment\n        homesRoot: /tmp",
+      '',
+      "    - id: next\n      name: \"@khorsheed/dsh-next\"  ",
+    ].join('\n')
+    const blocks = parseTopLevelPatchRowBlocks(patch)
+    expect(blocks).toEqual([
+      { id: 'core', name: '@khorsheed/dsh-core', block: '    - id: core\n      name: "@khorsheed/dsh-core"\n      config:\n        homesRoot: /tmp' },
+      { id: 'next', name: '@khorsheed/dsh-next', block: '    - id: next\n      name: "@khorsheed/dsh-next"' },
+    ])
+  })
+})
+
+describe('parsePresetGrantRows', () => {
+  const patch = [
+    '- insert:',
+    '    - id: core',
+    "      name: '@khorsheed/dsh-core'",
+    '',
+    '    - id: preset-dsh-demo',
+    "      name: '@deepseek-ai/dsh-agent-preset'",
+    '      config:',
+    '        id: dsh-demo',
+    '        plugins:',
+    '          - id: persona',
+    "            name: '@deepseek-ai/dsh-persona'",
+    '          - id: planning',
+    "            name: 'cordis:group'",
+    '            group: true',
+    '            config:',
+    '              - id: member-surface',
+    "                name: '@khorsheed/dsh-member/agent'",
+    '          - id: tool-x',
+    "            name: '@khorsheed/dsh-x/tool'",
+    '',
+    '    - id: tail',
+    "      name: '@khorsheed/dsh-tail'",
+  ].join('\n')
+
+  it('reads every (id, name) item under the named preset row, at any depth', () => {
+    expect(parsePresetGrantRows(patch, 'preset-dsh-demo')).toEqual([
+      { id: 'persona', name: '@deepseek-ai/dsh-persona' },
+      { id: 'planning', name: 'cordis:group' },
+      { id: 'member-surface', name: '@khorsheed/dsh-member/agent' },
+      { id: 'tool-x', name: '@khorsheed/dsh-x/tool' },
+    ])
+  })
+
+  it('returns nothing when the row id is absent or carries no plugins list', () => {
+    expect(parsePresetGrantRows(patch, 'preset-ghost')).toEqual([])
+    expect(parsePresetGrantRows('- insert:\n    - id: preset-dsh-demo\n      name: \'@deepseek-ai/dsh-agent-preset\'\n', 'preset-dsh-demo')).toEqual([])
+    expect(parsePresetGrantRows('- insert:\n    - id: preset-dsh-demo\n      name: \'@deepseek-ai/dsh-agent-preset\'\n      config:\n        plugins: []\n', 'preset-dsh-demo')).toEqual([])
+  })
+})
+
+describe('companion composition rows', () => {
+  it('isCompanionRow matches a package name carrying a subpath', () => {
+    expect(isCompanionRow({ id: 'game-agent', name: '@khorsheed/dsh-game/agent' })).toBe(true)
+    expect(isCompanionRow({ id: 'game', name: '@khorsheed/dsh-game' })).toBe(false)
+    expect(isCompanionRow({ id: 'tool-subagent-codex' })).toBe(false)
+    expect(isCompanionRow({ id: 'preset-dsh-eval', name: '@deepseek-ai/dsh-agent-preset' })).toBe(false)
+  })
+
+  it('packageNameOf drops the subpath', () => {
+    expect(packageNameOf('@khorsheed/dsh-game/agent')).toBe('@khorsheed/dsh-game')
+    expect(packageNameOf('@khorsheed/dsh-game')).toBe('@khorsheed/dsh-game')
   })
 })
 
@@ -684,6 +761,145 @@ describe('mode bundles', () => {
       cleanB()
     }
   })
+
+  // Companion composition rows (a member row named with a subpath beyond the
+  // package, like `@khorsheed/dsh-member/agent`) never mount at a pack's
+  // profile root: they live in the mode preset's grant list, and the pack
+  // must keep the grant — same id, same name.
+  const memberWithAgent = {
+    dir: 'member-agent',
+    json: {
+      name: '@khorsheed/dsh-member-agent',
+      private: true,
+      ...CARD_MANIFEST,
+      dsh: { bundle: { patch: './cordis.patch.yml' } },
+    },
+    files: {
+      'locale/en.json': `{"meta":{"title":"Member Agent","description":"Demo card."}}`,
+      'locale/zh.json': `{"meta":{"title":"成员甲","description":"演示卡片。"}}`,
+      'cordis.patch.yml': [
+        '- insert:',
+        "    - id: member-agent",
+        "      name: '@khorsheed/dsh-member-agent'",
+        "    - id: member-agent-surface",
+        "      name: '@khorsheed/dsh-member-agent/agent'",
+      ].join('\n'),
+    },
+  }
+  const GRANTED_PRESET_ROW = [
+    '    - id: preset-dsh-demo',
+    "      name: '@deepseek-ai/dsh-agent-preset'",
+    '      config:',
+    '        id: dsh-demo',
+    "        name: '演示模式'",
+    '        plugins:',
+    '          - id: persona',
+    "            name: '@deepseek-ai/dsh-persona'",
+    '          - id: member-agent-surface',
+    "            name: '@khorsheed/dsh-member-agent/agent'",
+  ].join('\n')
+  const grantJson = {
+    ...modeJson,
+    dependencies: { '@khorsheed/dsh-member': 'workspace:*', '@khorsheed/dsh-member-agent': 'workspace:*' },
+    dsh: {
+      bundle: { patch: './cordis.patch.yml', kind: 'mode', members: ['@khorsheed/dsh-member', '@khorsheed/dsh-member-agent'], mode: 'dsh-demo' },
+      references: ['@khorsheed/dsh-member', '@khorsheed/dsh-member-agent'],
+    },
+  }
+  const grantBundle = (patch: string) => ({
+    dir: 'mode-demo',
+    json: grantJson,
+    files: {
+      'locale/en.json': `{"meta":{"title":"Demo Mode","description":"Demo mode pack."}}`,
+      'locale/zh.json': `{"meta":{"title":"演示模式包","description":"演示模式包。"}}`,
+      'cordis.patch.yml': patch,
+      'src/index.ts': 'export const MODE = 1\n',
+    },
+  })
+  const GRANT_PATCH = `- insert:\n    - id: member\n      name: '@khorsheed/dsh-member'\n\n    - id: member-agent\n      name: '@khorsheed/dsh-member-agent'\n\n${GRANTED_PRESET_ROW}\n`
+
+  it('passes when a member companion row lives only in the preset grant list', () => {
+    const { root, cleanup } = packagesRoot([member, memberWithAgent, grantBundle(GRANT_PATCH)])
+    try {
+      expect(scanTree(root).findings).toEqual([])
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('flags a companion composition row mounted at the pack profile root', () => {
+    const rooted = [
+      '- insert:',
+      "    - id: member\n      name: '@khorsheed/dsh-member'",
+      '',
+      "    - id: member-agent\n      name: '@khorsheed/dsh-member-agent'",
+      '',
+      "    - id: member-agent-surface\n      name: '@khorsheed/dsh-member-agent/agent'",
+      '',
+      GRANTED_PRESET_ROW,
+      '',
+    ].join('\n')
+    const { root, cleanup } = packagesRoot([member, memberWithAgent, grantBundle(rooted)])
+    try {
+      const findings = scanTree(root).findings.filter((f) => f.kind === 'mode bundle')
+      expect(findings.some((f) => f.detail.includes('member-agent-surface') && f.detail.includes('companion composition row'))).toBe(true)
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('flags a subtracted companion row the preset never grants', () => {
+    const noGrant = [
+      '- insert:',
+      "    - id: member\n      name: '@khorsheed/dsh-member'",
+      '',
+      "    - id: member-agent\n      name: '@khorsheed/dsh-member-agent'",
+      '',
+      PRESET_ROW,
+      '',
+    ].join('\n')
+    const { root, cleanup } = packagesRoot([member, memberWithAgent, grantBundle(noGrant)])
+    try {
+      const findings = scanTree(root).findings.filter((f) => f.kind === 'mode bundle')
+      expect(findings.some((f) => f.detail.includes('member-agent-surface') && f.detail.includes('never granted by the preset row preset-dsh-demo'))).toBe(true)
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('flags a preset composition naming a @khorsheed module outside the members', () => {
+    const strangerGrant = GRANT_PATCH.replace(
+      "          - id: member-agent-surface\n            name: '@khorsheed/dsh-member-agent/agent'",
+      "          - id: member-agent-surface\n            name: '@khorsheed/dsh-member-agent/agent'\n          - id: stranger-tool\n            name: '@khorsheed/dsh-stranger/tool'",
+    )
+    const { root, cleanup } = packagesRoot([member, memberWithAgent, grantBundle(strangerGrant)])
+    try {
+      const findings = scanTree(root).findings.filter((f) => f.kind === 'mode bundle')
+      expect(findings.some((f) => f.detail.includes('@khorsheed/dsh-stranger/tool') && f.detail.includes('not one of the declared dsh.bundle.members'))).toBe(true)
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('finds a grant nested inside a cordis:group (depth is not restricted)', () => {
+    const nestedGrant = GRANT_PATCH.replace(
+      "          - id: member-agent-surface\n            name: '@khorsheed/dsh-member-agent/agent'",
+      [
+        "          - id: planning",
+        "            name: 'cordis:group'",
+        '            group: true',
+        '            config:',
+        '              - id: member-agent-surface',
+        "                name: '@khorsheed/dsh-member-agent/agent'",
+      ].join('\n'),
+    )
+    const { root, cleanup } = packagesRoot([member, memberWithAgent, grantBundle(nestedGrant)])
+    try {
+      expect(scanTree(root).findings).toEqual([])
+    } finally {
+      cleanup()
+    }
+  })
 })
 
 describe('findInjects', () => {
@@ -1218,6 +1434,123 @@ describe('patch row ownership', () => {
     }])
     try {
       expect(scanTree(root).findings.filter((f) => f.kind === 'patch row ownership')).toEqual([])
+    } finally {
+      cleanup()
+    }
+  })
+})
+
+describe('cross-bundle row parity', () => {
+  // A row id shared by several bundle patches must carry the same YAML item
+  // content in every one (dev / bundle-eval / bundle-local-agent re-mounting
+  // the local-agent rows; basic / bundle-conversation-toolbox sharing the
+  // toolbox rows). Compared as YAML content: comments, blank lines and scalar
+  // quoting are normalized; anything else must match.
+  function packagesRoot(specs: Array<{ dir: string; json: Record<string, unknown>; files: Record<string, string> }>) {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-independence-parity-'))
+    for (const s of specs) {
+      const dir = join(root, s.dir)
+      mkdirSync(dir, { recursive: true })
+      writeFileSync(join(dir, 'package.json'), JSON.stringify(s.json))
+      for (const [rel, text] of Object.entries(s.files)) {
+        mkdirSync(dirname(join(dir, rel)), { recursive: true })
+        writeFileSync(join(dir, rel), text)
+      }
+    }
+    return { root, cleanup: () => rmSync(root, { recursive: true, force: true }) }
+  }
+
+  const CARD_MANIFEST = {
+    files: ['lib', 'cordis.patch.yml', 'locale/*.json'],
+    exports: { './locale/*.json': './locale/*.json' },
+  }
+  const core = {
+    dir: 'core',
+    json: { name: '@khorsheed/dsh-core', private: true, ...CARD_MANIFEST, dsh: { bundle: { patch: './cordis.patch.yml' } } },
+    files: {
+      'locale/en.json': `{"meta":{"title":"Core","description":"Demo card."}}`,
+      'locale/zh.json': `{"meta":{"title":"核心","description":"演示卡片。"}}`,
+      'cordis.patch.yml': `- insert:\n    - id: core\n      name: '@khorsheed/dsh-core'\n      config:\n        homesRoot: /tmp\n`,
+    },
+  }
+  const familyJson = (name: string) => ({
+    name,
+    private: true,
+    ...CARD_MANIFEST,
+    dependencies: { '@khorsheed/dsh-core': 'workspace:*' },
+    dsh: {
+      bundle: { patch: './cordis.patch.yml', kind: 'family', members: ['@khorsheed/dsh-core'] },
+      references: ['@khorsheed/dsh-core'],
+    },
+  })
+  const familyBundle = (dir: string, name: string, patch: string) => ({
+    dir,
+    json: familyJson(name),
+    files: {
+      'locale/en.json': `{"meta":{"title":"${name} Suite","description":"Demo card."}}`,
+      'locale/zh.json': `{"meta":{"title":"${name} 套件","description":"演示卡片。"}}`,
+      'cordis.patch.yml': patch,
+      'src/index.ts': 'export const MEMBERS = 1\n',
+    },
+  })
+
+  it('passes when the shared row is verbatim modulo comments and quote style', () => {
+    const patchA = `- insert:\n    # core row comment\n    - id: core\n      name: '@khorsheed/dsh-core'\n      config:\n        homesRoot: /tmp\n`
+    const patchB = `- insert:\n    - id: core\n      name: "@khorsheed/dsh-core"\n      config:\n        # another comment\n        homesRoot: /tmp\n`
+    const { root, cleanup } = packagesRoot([
+      core,
+      familyBundle('bundle-a', '@khorsheed/dsh-bundle-a', patchA),
+      familyBundle('bundle-b', '@khorsheed/dsh-bundle-b', patchB),
+    ])
+    try {
+      expect(scanTree(root).findings).toEqual([])
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('flags a shared row id whose content drifts between bundle patches', () => {
+    const patchA = `- insert:\n    - id: core\n      name: '@khorsheed/dsh-core'\n      config:\n        homesRoot: /tmp\n`
+    const patchB = `- insert:\n    - id: core\n      name: '@khorsheed/dsh-core'\n      config:\n        homesRoot: /var\n`
+    const { root, cleanup } = packagesRoot([
+      core,
+      familyBundle('bundle-a', '@khorsheed/dsh-bundle-a', patchA),
+      familyBundle('bundle-b', '@khorsheed/dsh-bundle-b', patchB),
+    ])
+    try {
+      const findings = scanTree(root).findings.filter((f) => f.kind === 'bundle row parity')
+      expect(findings).toHaveLength(1)
+      expect(findings[0]!.detail).toContain('"core"')
+      expect(findings[0]!.detail).toContain('@khorsheed/dsh-bundle-a')
+      expect(findings[0]!.detail).toContain('@khorsheed/dsh-bundle-b')
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('exempts preset rows (their parity is composition-level, owned by the parity specs)', () => {
+    const preset = (description: string) => [
+      '- insert:',
+      '    - id: core',
+      "      name: '@khorsheed/dsh-core'",
+      '      config:',
+      '        homesRoot: /tmp',
+      '',
+      '    - id: preset-dsh-demo',
+      "      name: '@deepseek-ai/dsh-agent-preset'",
+      '      config:',
+      '        id: dsh-demo',
+      `        description: ${description}`,
+      '        plugins: []',
+      '',
+    ].join('\n')
+    const { root, cleanup } = packagesRoot([
+      core,
+      familyBundle('bundle-a', '@khorsheed/dsh-bundle-a', preset('one copy')),
+      familyBundle('bundle-b', '@khorsheed/dsh-bundle-b', preset('a drifted copy')),
+    ])
+    try {
+      expect(scanTree(root).findings.filter((f) => f.kind === 'bundle row parity')).toEqual([])
     } finally {
       cleanup()
     }

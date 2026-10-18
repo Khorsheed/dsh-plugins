@@ -103,19 +103,15 @@ patch 挂两行：
 | 行 | 内容 | 出厂状态 |
 |---|---|---|
 | `canvas-novel` | 核心：体裁加引擎 | 全局可用 |
-| `canvas-novel-agent` | 四个工具、轻指引和 skill | 在 profile 根**禁用** |
+| `canvas-novel-agent` | 四个工具、轻指引和 skill | 全局可用（与 canvas 对齐） |
 
-agent 能力属于写作场景，不属于每个会话。
-
-**启用 agent 能力的唯一正确姿势是 preset 授予**：
+单装即所有会话可用：`novel_bind`、轻指引与 `novel` 技能对每个会话开放，`novel_read` / `novel_write` / `novel_extract` 仍会按会话绑定出现——绑定长篇小说画布的会话才有。写作场景想收窄成按模式授予，装写作模式包即可：
 
 ```sh
-dsh plugin add @khorsheed/dsh-presets
+dsh plugin add @khorsheed/dsh-writing
 ```
 
-它的「写作模式」（`preset-dsh-writing`）在自己的作用域内挂载 `@khorsheed/dsh-canvas-novel/agent`，和画布工具 `@khorsheed/dsh-canvas/agent` 并列：会话绑定长篇小说画布时才出现 `novel_*` 工具，其余画布照常只用画布工具。用自建 preset 也一样：在该 preset 的 `agent.cordis.yml` 里加一行 `name: "@khorsheed/dsh-canvas-novel/agent"`。
-
-手工打开根行（删掉 `disabled: true`）会让所有会话都生效。**只能在没有任何 preset 授予时这么做**：两处同时生效会重名注册，导致启动失败。
+它的「写作模式」（`preset-dsh-writing`）在自己的作用域内授予同一个入口 `@khorsheed/dsh-canvas-novel/agent`，和画布工具 `@khorsheed/dsh-canvas/agent` 并列；模式包的 patch 不再挂 profile 根的同名行，宿主 0.2.x 下该模式的会话看到 scoped 副本遮蔽全局行（宿主 scoped.spec.ts 钉死），同活不再崩 boot。自建 preset 也一样：在该 preset 的 `agent.cordis.yml` 里加一行 `name: "@khorsheed/dsh-canvas-novel/agent"`。想让小说工具**只**出现在写作模式，再在 profile 里把 `canvas-novel-agent` 根行停用即可——那是收窄语义的选择，不是避免崩溃的必须。
 
 ## 快速开始
 

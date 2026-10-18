@@ -94,8 +94,12 @@ export const COMPOSITION_COMPONENTS: ReadonlyArray<string> = [
  *   family               a thin meta package (proposal
  *                        2026-09-24-family-bundles-and-collections) whose patch
  *                        re-mounts the canonical rows of its declared
- *                        `dsh.bundle.members` — the official "one bundle card,
- *                        many rows" shape. Members are real self-mounting
+ *                        `dsh.bundle.members` — minus each member's companion
+ *                        composition rows (a `name` with a subpath beyond the
+ *                        package, like `@khorsheed/dsh-game/agent`; those live
+ *                        in a preset's grant list, never at a pack's profile
+ *                        root) — the official "one bundle card, many rows"
+ *                        shape. Members are real self-mounting
  *                        packages carried as npm dependencies (installing the
  *                        bundle brings the family along; `dsh plugin add`
  *                        reconciles only the profile's DIRECT dependencies, so
@@ -108,7 +112,11 @@ export const COMPOSITION_COMPONENTS: ReadonlyArray<string> = [
  *                        `@deepseek-ai/dsh-agent-preset` row — the mode the
  *                        bundle installs (id `preset-<mode>`,
  *                        `dsh.bundle.mode` declares `<mode>`). Every rule of
- *                        `family` applies unchanged; the preset row is the
+ *                        `family` applies unchanged, plus two grant rules:
+ *                        each subtracted companion row must be named (same id,
+ *                        same name) by the preset row's composition, and every
+ *                        `@khorsheed/*` module that composition names must
+ *                        belong to a declared member. The preset row is the
  *                        bundle's own declaration (its name is the official
  *                        preset plugin, never a community self-mount, so row
  *                        ownership stays clean). Mode values are unique across
@@ -207,6 +215,10 @@ export const ALLOWED_EDGES: Readonly<Record<string, ReadonlyArray<string>>> = {
   // dev (the dsh-dev mode bundle) installs the same deps-only library for the
   // same reason — its local-agent-dsh member provisions the sub-dsh through it.
   'dev': ['@khorsheed/dsh-local-agent-dsh-headless'],
+  // bundle-eval (the dsh-eval mode bundle) takes the local-agent family along
+  // for eval's service-level delegation (the run / provision verbs go through
+  // the localAgent facade) — the same deps-only library rides with it.
+  'bundle-eval': ['@khorsheed/dsh-local-agent-dsh-headless'],
   // The worktrees and room tool rows folded back into their core packages
   // (worktrees 0.3.0, room 0.2.0) as the `./tool` composition entry (the
   // canvas ./agent pattern) — no cross-package edge remains. Each core used
@@ -447,6 +459,22 @@ export interface PatchRow {
 }
 
 /**
+ * A top-level patch row plus its normalized YAML block: the item's own lines
+ * with comment and blank lines dropped, trailing whitespace trimmed, and
+ * single-quoted whole scalars requoted double (YAML-equivalent — the parity
+ * specs' convention), so a cross-file verbatim comparison does not fail on a
+ * copy's comment placement or quote style.
+ */
+export interface PatchRowBlock extends PatchRow {
+  readonly block: string
+}
+
+/** Normalize one content line for verbatim block comparison. */
+function normalizeBlockLine(line: string): string {
+  return line.trimEnd().replace(/^(.*?:\s*)'([^']*)'$/, '$1"$2"')
+}
+
+/**
  * The loader rows a patch mounts at the profile root: the direct items of each
  * top-level `- insert:` list, plus bare top-level `- id:` entries (the override
  * form). Content nested inside a row's `config` — an agent preset's
@@ -459,14 +487,14 @@ export interface PatchRow {
  * never leaks into the row, and every patch shape already in the tree
  * (insert lists, bare overrides, comment/blank padding) parses the same.
  */
-export function parseTopLevelPatchRows(patch: string): PatchRow[] {
+export function parseTopLevelPatchRowBlocks(patch: string): PatchRowBlock[] {
   const lines = patch.split(/\r?\n/)
   const isContent = (line: string): boolean => line.trim() !== '' && !line.trimStart().startsWith('#')
   const indentOf = (line: string): number => line.length - line.trimStart().length
   const unquote = (raw: string): string => raw.trim().replace(/^['"]|['"]$/g, '')
 
   /** Read the id/name fields of the row whose item line is `start`. */
-  const readRow = (start: number, itemIndent: number): { row: PatchRow; end: number } => {
+  const readRow = (start: number, itemIndent: number): { row: PatchRowBlock; end: number } => {
     const row: { id?: string; name?: string } = {}
     const assign = (key: string, raw: string): void => {
       if (key === 'id') row.id = unquote(raw)
@@ -489,10 +517,11 @@ export function parseTopLevelPatchRows(patch: string): PatchRow[] {
       }
       j++
     }
-    return { row, end: j }
+    const block = lines.slice(start, j).filter(isContent).map(normalizeBlockLine).join('\n')
+    return { row: { ...row, block }, end: j }
   }
 
-  const rows: PatchRow[] = []
+  const rows: PatchRowBlock[] = []
   let i = 0
   while (i < lines.length) {
     const line = lines[i]!
@@ -528,6 +557,93 @@ export function parseTopLevelPatchRows(patch: string): PatchRow[] {
     const { row, end } = readRow(i, indent)
     if (row.id !== undefined || row.name !== undefined) rows.push(row)
     i = end
+  }
+  return rows
+}
+
+/** The same rows without their YAML blocks (the long-standing check surface). */
+export function parseTopLevelPatchRows(patch: string): PatchRow[] {
+  return parseTopLevelPatchRowBlocks(patch).map(({ id, name }) => ({ id, name }))
+}
+
+/**
+ * A companion composition row: its `name` carries a subpath beyond the package
+ * (`@khorsheed/dsh-game/agent`, `@khorsheed/dsh-canvas/agent`). Such an entry
+ * belongs to an agent preset's grant list — a pack patch never mounts it at
+ * the profile root (the member's own patch stays inert under the bundle, and
+ * under host 0.2.x a preset session's scoped copy shadows the global row).
+ */
+export const COMPANION_ROW_NAME_RE = /^@khorsheed\/[^/]+\/.+/
+
+export function isCompanionRow(row: PatchRow): boolean {
+  return row.name !== undefined && COMPANION_ROW_NAME_RE.test(row.name)
+}
+
+/** The package name part of a `@khorsheed/…` module specifier (subpath dropped). */
+export function packageNameOf(name: string): string {
+  return name.split('/').slice(0, 2).join('/')
+}
+
+/**
+ * The (id, name) pairs of every list item under a preset row's
+ * `config.plugins` — the grant list a mode bundle's preset row declares.
+ * Line- and indent-based like parseTopLevelPatchRowBlocks; items nested inside
+ * `cordis:group` rows are composition too, so depth is not restricted.
+ */
+export function parsePresetGrantRows(patch: string, presetRowId: string): PatchRow[] {
+  const lines = patch.split(/\r?\n/)
+  const isContent = (line: string): boolean => line.trim() !== '' && !line.trimStart().startsWith('#')
+  const indentOf = (line: string): number => line.length - line.trimStart().length
+  const unquote = (raw: string): string => raw.trim().replace(/^['"]|['"]$/g, '')
+
+  // Locate the preset row's own top-level item line.
+  let start = -1
+  for (let idx = 0; idx < lines.length; idx++) {
+    const m = /^\s*-\s+id:\s*(\S+)\s*$/.exec(lines[idx]!)
+    if (m !== null && m[1] === presetRowId) { start = idx; break }
+  }
+  if (start === -1) return []
+  const itemIndent = indentOf(lines[start]!)
+  let end = lines.length
+  for (let j = start + 1; j < lines.length; j++) {
+    if (!isContent(lines[j]!)) continue
+    if (indentOf(lines[j]!) <= itemIndent) { end = j; break }
+  }
+  let pluginsIdx = -1
+  for (let j = start + 1; j < end; j++) {
+    if (/^\s+plugins:\s*$/.test(lines[j]!)) { pluginsIdx = j; break }
+  }
+  if (pluginsIdx === -1) return []
+  const pluginsIndent = indentOf(lines[pluginsIdx]!)
+
+  const rows: PatchRow[] = []
+  for (let j = pluginsIdx + 1; j < end; j++) {
+    const line = lines[j]!
+    if (!isContent(line)) continue
+    if (indentOf(line) <= pluginsIndent) break
+    const m = /^(\s*)-\s+(id|name):\s*(\S.*)$/.exec(line)
+    if (m === null) continue
+    const row: { id?: string; name?: string } = {}
+    const assign = (key: string, raw: string): void => {
+      if (key === 'id') row.id = unquote(raw)
+      else row.name = unquote(raw)
+    }
+    assign(m[2]!, m[3]!)
+    const itemInd = m[1]!.length
+    let fieldIndent: number | null = null
+    for (let k = j + 1; k < end; k++) {
+      const nested = lines[k]!
+      if (!isContent(nested)) continue
+      const indent = indentOf(nested)
+      if (indent <= itemInd) break
+      if (/^\s*-\s/.test(nested)) break
+      if (fieldIndent === null) fieldIndent = indent
+      if (indent === fieldIndent) {
+        const field = /^\s*(id|name):\s*(\S.*)$/.exec(nested)
+        if (field !== null) assign(field[1]!, field[2]!)
+      }
+    }
+    if (row.id !== undefined || row.name !== undefined) rows.push(row)
   }
   return rows
 }
@@ -684,10 +800,11 @@ export function scanPackage(pkg: Pkg, allNames: ReadonlyArray<string>): Finding[
       }
     } else if (familyLike) {
       // The row whitelist itself is a TREE-level check: the exact allowlist is
-      // the union of the members' canonical patch rows, which this per-package
-      // scan cannot see. Here only the own-row rule is replaced. A mode bundle
-      // additionally pins its single preset row here (the membership half is
-      // tree-level like the family's).
+      // the union of the members' canonical patch rows minus their companion
+      // composition rows, which this per-package scan cannot see. Here only
+      // the own-row rule is replaced. A mode bundle additionally pins its
+      // single preset row here (the membership half is tree-level like the
+      // family's).
       if (rows.length === 0) {
         add(patchRel, 'identity', `declares dsh.bundle.kind ${bundleKind} but mounts no rows`)
       }
@@ -954,14 +1071,19 @@ function scanCrossPackage(pkgs: Pkg[]): { findings: Finding[]; ledger: string[] 
     const file = join(pkg.path, patch)
     return existsSync(file) ? parseTopLevelPatchRows(readFileSync(file, 'utf8')) : []
   }
-  /** The exact allowlist of one family-like bundle's patch: the union of its declared members' own top-level rows. */
+  /**
+   * The exact allowlist of one family-like bundle's patch: the union of its
+   * declared members' own top-level rows, minus the companion composition rows
+   * (a name with a subpath beyond the package — those live in a preset's grant
+   * list, never at a pack's profile root).
+   */
   const familyCanonicalRows = (pkg: Pkg): PatchRow[] => {
     const kind = pkg.json.dsh?.bundle?.kind
     if (kind === undefined || !FAMILY_LIKE_KINDS.includes(kind)) return []
     return (pkg.json.dsh.bundle.members ?? []).flatMap((member) => {
       const owner = byName.get(member)
       return owner === undefined ? [] : ownRowsOf(owner)
-    })
+    }).filter((row) => !isCompanionRow(row))
   }
   const isCanonicalRow = (canonical: PatchRow[], row: PatchRow): boolean =>
     canonical.some((r) => r.id === row.id && (row.name === undefined || r.name === row.name))
@@ -990,11 +1112,21 @@ function scanCrossPackage(pkgs: Pkg[]): { findings: Finding[]; ledger: string[] 
   // Family-like bundles (dsh.bundle.kind: 'family' | 'mode'), the strict half
   // of the sanction the two exemptions above open: members must be real
   // self-mounting packages; every bundle row must come from the exact
-  // allowlist above — a row named outside the declared members, an invented
-  // id, or an override no member patch carries all fail — and every member
-  // must contribute at least one row, so the manifest roster and the patch
-  // cannot drift apart. A mode bundle's one preset row (its own declaration,
-  // pinned per-package) is the single allowed non-member row.
+  // allowlist — the union of the members' own top-level rows MINUS the
+  // companion composition rows (a member row whose name carries a subpath
+  // beyond the package, like `@khorsheed/dsh-game/agent`: those belong to a
+  // preset's grant list, never to a pack's profile root) — so an invented id,
+  // a row named outside the declared members, an override no member patch
+  // carries, or a companion row mounted here anyway all fail — and every
+  // member must contribute at least one row, so the manifest roster and the
+  // patch cannot drift apart. A mode bundle's one preset row (its own
+  // declaration, pinned per-package) is the single allowed non-member row.
+  //
+  // A mode bundle must keep the grant semantics of every subtracted companion
+  // row: its inline preset row's composition names the same id with the same
+  // name. And every `@khorsheed/*` module the preset composition names must
+  // belong to one of the declared members — a preset granting a stranger
+  // module would smuggle a cross-package edge past the roster.
   for (const pkg of pkgs) {
     const pkgKind = pkg.json.dsh?.bundle?.kind
     if (pkgKind === undefined || !FAMILY_LIKE_KINDS.includes(pkgKind)) continue
@@ -1017,17 +1149,26 @@ function scanCrossPackage(pkgs: Pkg[]): { findings: Finding[]; ledger: string[] 
       memberRows.set(member, ownRowsOf(owner))
     }
     if (patch === undefined || !existsSync(join(pkg.path, patch))) continue
+    const patchText = readFileSync(join(pkg.path, patch), 'utf8')
     const canonical = [...memberRows.values()].flat()
+    const allowed = canonical.filter((row) => !isCompanionRow(row))
+    const companions = canonical.filter(isCompanionRow)
     const covered = new Set<string>()
-    for (const row of parseTopLevelPatchRows(readFileSync(join(pkg.path, patch), 'utf8'))) {
+    for (const row of parseTopLevelPatchRows(patchText)) {
       if (modePresetRowId !== undefined && row.id === modePresetRowId && row.name === AGENT_PRESET_ROW_NAME) continue
-      if (isCanonicalRow(canonical, row)) {
+      if (isCanonicalRow(allowed, row)) {
         for (const [member, rows] of memberRows) {
-          if (rows.some((r) => r.id === row.id && r.name === row.name)) covered.add(member)
+          if (rows.some((r) => !isCompanionRow(r) && r.id === row.id && r.name === row.name)) covered.add(member)
         }
         continue
       }
-      if (row.name === undefined) {
+      if (isCanonicalRow(companions, row)) {
+        findings.push({
+          path: `packages/${pkg.dir}/${patch}`,
+          kind: pkgLabel,
+          detail: `row ${row.id ?? '(no id)'} (${row.name ?? 'no name'}) is a member's companion composition row — those live in the preset row's grant list, never at a pack's profile root`,
+        })
+      } else if (row.name === undefined) {
         findings.push({
           path: `packages/${pkg.dir}/${patch}`,
           kind: pkgLabel,
@@ -1052,9 +1193,66 @@ function scanCrossPackage(pkgs: Pkg[]): { findings: Finding[]; ledger: string[] 
         findings.push({
           path: `packages/${pkg.dir}/${patch}`,
           kind: pkgLabel,
-          detail: `member ${member} contributes no row to the bundle patch — every declared member must be mounted (or dropped from dsh.bundle.members)`,
+          detail: `member ${member} contributes no row to the bundle patch (a companion composition row granted by the preset does not count) — every declared member must be mounted (or dropped from dsh.bundle.members)`,
         })
       }
+    }
+    if (pkgKind === 'mode' && modePresetRowId !== undefined) {
+      const grants = parsePresetGrantRows(patchText, modePresetRowId)
+      for (const companion of companions) {
+        if (!grants.some((g) => g.id === companion.id && g.name === companion.name)) {
+          findings.push({
+            path: `packages/${pkg.dir}/${patch}`,
+            kind: pkgLabel,
+            detail: `companion row ${companion.id ?? '(no id)'} (${companion.name}) is dropped from the pack patch but never granted by the preset row ${modePresetRowId} — the grant semantics would be lost`,
+          })
+        }
+      }
+      for (const grant of grants) {
+        if (grant.name === undefined || !grant.name.startsWith('@khorsheed/')) continue
+        const owner = packageNameOf(grant.name)
+        if (!members.includes(owner)) {
+          findings.push({
+            path: `packages/${pkg.dir}/${patch}`,
+            kind: pkgLabel,
+            detail: `preset row ${modePresetRowId} names ${grant.name} (row ${grant.id ?? 'no id'}) — not one of the declared dsh.bundle.members`,
+          })
+        }
+      }
+    }
+  }
+
+  // Cross-bundle row parity: a row id shared by several bundle patches must
+  // carry the same YAML item content in every one (dev / bundle-eval /
+  // bundle-local-agent all re-mount the local-agent family rows; basic and
+  // bundle-conversation-toolbox share the toolbox rows). Compared as YAML
+  // content — comment and blank lines dropped, scalar quoting normalized (the
+  // parity specs' convention) — everything else must match byte for byte.
+  // Preset rows are exempt: their cross-copy parity is composition-level and
+  // owned by scripts/preset-mode-parity.spec.ts and
+  // scripts/eval-preset-parity.spec.ts.
+  {
+    const rowCopies = new Map<string, Array<{ readonly owner: string; readonly block: string }>>()
+    for (const pkg of pkgs) {
+      const kind = pkg.json.dsh?.bundle?.kind
+      if (kind === undefined || !BUNDLE_KINDS.includes(kind)) continue
+      const patch = pkg.json.dsh?.bundle?.patch
+      if (patch === undefined) continue
+      const file = join(pkg.path, patch)
+      if (!existsSync(file)) continue
+      for (const row of parseTopLevelPatchRowBlocks(readFileSync(file, 'utf8'))) {
+        if (row.id === undefined) continue
+        if (row.name === AGENT_PRESET_ROW_NAME) continue
+        rowCopies.set(row.id, [...(rowCopies.get(row.id) ?? []), { owner: pkg.json.name, block: row.block }])
+      }
+    }
+    for (const [id, copies] of rowCopies) {
+      if (new Set(copies.map((c) => c.block)).size <= 1) continue
+      findings.push({
+        path: 'packages/*/cordis.patch.yml',
+        kind: 'bundle row parity',
+        detail: `row id "${id}" is mounted by ${copies.map((c) => c.owner).join(' and ')} with different content — a row shared by bundle patches must be copied verbatim`,
+      })
     }
   }
 

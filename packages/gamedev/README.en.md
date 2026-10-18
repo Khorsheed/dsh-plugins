@@ -12,9 +12,9 @@ Game dev mode is the developer-and-design-mentor persona plus the game workbench
 
 | member package | row ids | contents |
 | --- | --- | --- |
-| `@khorsheed/dsh-game` | `game`, `game-agent` (disabled out of the box) | game development: the gameStore service, the right-sidebar 游戏 design workbench (tunable params, look editor, chaptered design doc, versions and rollback), and the end-of-turn checks |
+| `@khorsheed/dsh-game` | `game`, `game-agent` (granted by this bundle's preset) | game development: the gameStore service, the right-sidebar 游戏 design workbench (tunable params, look editor, chaptered design doc, versions and rollback), and the end-of-turn checks |
 
-The game tools and skills (the game's `./agent` entry) ship disabled at the profile root by design and are granted per session by the `game-agent` grant inside this bundle's preset row — the two live at once would register the same tool names twice and fail the boot, as the member patch's own comments document.
+The game tools and skills (the game's `./agent` entry) are not mounted at the profile root by this pack; they are granted per session by the `game-agent` grant inside this bundle's preset row. Installed alone, the member's own patch mounts that entry enabled for every session, and under host 0.2.x a session of this mode sees the scoped copy shadow the global row — no double registration, no boot failure (pinned by the host's scoped.spec.ts).
 
 ## Install
 
@@ -49,7 +49,7 @@ Removing the bundle removes the member along with the mode preset; to keep the m
 <details>
 <summary>Internals (click to expand)</summary>
 
-**A mode bundle = a family bundle plus one mode preset row.** The member rows in `cordis.patch.yml` come verbatim from the member's own `cordis.patch.yml` (including the root `game-agent` disable row); the closing `preset-dsh-gamedev` row (an `@deepseek-ai/dsh-agent-preset` declaration) is mirrored verbatim from `@khorsheed/dsh-presets`, with `scripts/preset-mode-parity.spec.ts` pinning the two copies' plugin composition and display fields against drift. The repo-wide check:plugins `dsh.bundle.kind: 'mode'` sanction pins the whole shape mechanically: rows may only come from the allowlist union of member canonical rows plus exactly one `preset-<mode>` row, members must be real self-mounting packages each contributing at least one row, and the mode value is unique across the tree.
+**A mode bundle = a family bundle plus one mode preset row.** The member rows in `cordis.patch.yml` come verbatim from the member's own `cordis.patch.yml` (the `game-agent` companion composition row stays out of the patch — it lives only in the preset composition below); the closing `preset-dsh-gamedev` row (an `@deepseek-ai/dsh-agent-preset` declaration) is mirrored verbatim from `@khorsheed/dsh-presets`, with `scripts/preset-mode-parity.spec.ts` pinning the two copies' plugin composition and display fields against drift. The repo-wide check:plugins `dsh.bundle.kind: 'mode'` sanction pins the whole shape mechanically: rows may only come from the allowlist union of member canonical rows minus the companion composition rows plus exactly one `preset-<mode>` row, every subtracted companion row must be granted by this bundle's preset composition, members must be real self-mounting packages each contributing at least one row, and the mode value is unique across the tree.
 
 **Installing me installs the member and the mode — without double-mounting.** The member is listed in `dependencies` (installation brings it along) and registered in `dsh.references` (the roster, read by pack-time and catalog checks). `dsh plugin add` reconciles only the profile's *direct* dependencies into the bundles layer (`reconcilePlugins`) — installing this bundle applies THIS patch only; the member's own patch stays inert, so no row ever mounts twice. A member installed directly still self-mounts; any overlap is resolved by the row-level switches on the bundle detail page.
 

@@ -21,7 +21,7 @@ Status: implemented
 
 preset 行逐字镜像自 `@khorsheed/dsh-presets` 的同名行,接在同一个 `- insert:` 列表的成员行之后。漂移即红测:`scripts/preset-mode-parity.spec.ts` 把每个模式包的行与 presets 副本比对(解析后的 `plugins:` 组合 + `name`/`description`/`order`——与 web-eval parity 不同,`order` 也必须一致,两个副本跑的是同一个部署的 chip 列表),`scripts/eval-preset-parity.spec.ts` 升级为三方比对(web-eval 正本 ↔ presets ↔ bundle-eval)。两个 spec 共享 `scripts/preset-row-blocks.ts`(`rowLines`/`unquote`/`composition`/`field`)。presets 包退役(计划下一发布波)后,模式包的 patch 升为正本——每个 patch 头注释已写明——parity spec 届时删除。
 
-对「逐字成员行」的一处有意偏离:canvas 自己的 patch 把 `canvas-agent` 行在 profile 根**启用**挂载(全会话的社区默认),而 preset-dsh-writing 授予同一入口——两者同活会把同名工具注册两次、直接无法启动。writing 包因此用一条裸 `- id: canvas-agent / disabled: true` override 替换那个根挂载(3080 的 profile 一直手工带着同一条 override;bundl 现在把它编成产品)。checker 认可:override 的 id 命中成员的规范行即在白名单内。canvas-novel 与 game 的 `./agent` 根行在各自 patch 里本来就出厂停用,逐字照抄。
+伴生行此后已改为只活在组合里——见 [2026-10-19-composition-only-companion-rows](2026-10-19-composition-only-companion-rows.zh.md):模式包 patch 只 insert 成员**根行**,`./tool` / `./agent` 入口由内联 preset 按会话授予,成员 patch 的 agent 行出厂**使能**让单装开箱可用(同 id 的 profile 行与 preset 行在宿主 0.2.x 下是遮蔽而非崩 boot)。本舰队起步时的 `canvas-agent` 裸覆盖与 `game-agent` / `canvas-novel-agent` 停用手柄行都已删除。
 
 每个包用 `tests/bundle.spec.ts` 钉住组合(行 = 成员规范行经 `parseTopLevelPatchRows` 逐字比对 + 恰好一条 preset 行 + 每成员至少贡献一行),并带齐常规范式:locale 卡面元数据、双语 README、CHANGELOG、只导常量的 `src/index.ts`(`MODE` / `FAMILY_MEMBERS`,有 deps-only 或 override 名册的也一并导出)。
 

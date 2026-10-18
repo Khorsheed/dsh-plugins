@@ -12,13 +12,14 @@
 # The second row mounts the `./agent` composition entry: the main-session
 # canvas tools (canvas_read / canvas_write / canvas_propose_type), their
 # guidance section and the `canvas` skill, live for EVERY session — the community default, and the pre-0.4.2
-# status quo. To scope the tools to one preset instead (e.g. writing mode
-# only): disable this row in the profile's cordis.patch.yml with
-# `- id: canvas-agent, disabled: true` and add a row named
-# `@khorsheed/dsh-canvas/agent` to that preset's own agent.cordis.yml. THE TWO
-# MUST NEVER BE LIVE AT ONCE — the tools would register twice under the same
-# names (the local-agent family's documented root-disabled + preset-granted
-# pattern).
+# status quo. A preset may ALSO name `@khorsheed/dsh-canvas/agent` in its own
+# composition (the writing mode pack does): under host 0.2.x that no longer
+# fails the boot — a preset session sees its scoped copy shadow this global
+# row (the host pins the shadowing in
+# packages/core/tools/tests/scoped.spec.ts), and sessions on other presets
+# keep the global one. What keeps a mode pack's grant semantics exact is that
+# the pack's own patch never re-mounts this row at the profile root — the
+# grant lives only in the preset composition.
 - insert:
     - id: canvas
       name: "@khorsheed/dsh-canvas"

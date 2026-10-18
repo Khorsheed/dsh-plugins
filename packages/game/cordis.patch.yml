@@ -9,16 +9,15 @@
 # entry id fails boot.
 #
 # The second row is the `./agent` composition entry (game_open / game_read,
-# the mode's guidance section, the gamedev and game-design skills). It is
-# DISABLED here: the game-development preset (`preset-dsh-gamedev` in
-# @khorsheed/dsh-presets) names the same entry in its own composition, so the
-# tools exist for that preset's sessions only. To give EVERY session the game
-# tools instead, enable this row and do not use the preset — THE TWO MUST
-# NEVER BE LIVE AT ONCE (the tools would register twice; the canvas `./agent`
-# pattern).
+# the mode's guidance section, the gamedev and game-design skills), live for
+# EVERY session — the community default (the canvas `./agent` pattern). The
+# game-development mode pack (@khorsheed/dsh-gamedev) does NOT re-mount this
+# row: it grants the same entry inside its preset composition, and under host
+# 0.2.x a preset session's scoped copy shadows this global row
+# (packages/core/tools/tests/scoped.spec.ts), so the two coexist — no
+# `disabled: true` handle is needed on either side.
 - insert:
     - id: game
       name: "@khorsheed/dsh-game"
     - id: game-agent
       name: "@khorsheed/dsh-game/agent"
-      disabled: true

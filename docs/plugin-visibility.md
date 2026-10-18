@@ -15,7 +15,7 @@
 
 | 维度 | 归属层 | 机制 |
 |---|---|---|
-| 工具注入（`ctx.tools.register`） | 会话级 | core/companion 拆分，工具行进 preset 的 `agent.cordis.yml`，官方原生授予 |
+| 工具注入（`ctx.tools.register`） | 会话级 | core/companion 拆分，伴生工具行只活在 preset 的 `agent.cordis.yml` 组合里（profile 层无行），官方原生授予；旧「出厂停用挂 profile + preset 组合授予」模式已退役，0.2.x 下同 id 行 profile+preset 双活是 scoped 遮蔽而非崩溃（宿主 `packages/core/tools/tests/scoped.spec.ts:87` 钉死） |
 | 提示词注入（`systemPrompt.section`） | 会话级 | 注册在伴生工具行里，随工具走（guidance 描述工具，所有权随注册） |
 | 会话级 UI（`conversation.view` tab、会话头徽标） | 会话级 | preset-visibility probe + RegistrationToggle / `return null`，**fail-open** |
 | 右栏 tab / panellist 入口，**内容或配套能力绑定会话**（worktrees 提交页、canvas 写作工作台） | 会话级 | 同上：preset 判据 + 注册级 toggle（host 注销语义支持，见第二层）；授予路径枚举完整（根挂 ∪ preset 挂） |
@@ -75,7 +75,7 @@ host 没有声明式可见性：右栏 tab 注册表只有静态字段——0.1.
 
 ## 各维度细则
 
-- **工具注入**：全部走 core/companion 拆分。core 不注册模型工具；伴生包（`preset-composed-row` 形态，不声明 `dsh.bundle`）由 preset 的 `agent.cordis.yml` 按名引用、按会话授予。伴生行 `ctx.get` 探测 core 服务，缺席则 log + no-op。新工具记得 `setToolOrigin` 打来源标签（见 AGENTS.md）。
+- **工具注入**：全部走 core/companion 拆分。core 不注册模型工具；伴生工具行（`preset-composed-row` 形态，不声明 `dsh.bundle`）**只活在 preset 的 `agent.cordis.yml` 组合里**（profile 层无行），按名引用、按会话授予——旧「伴生行出厂停用挂 profile、preset 组合再授予」的模式已退役。宿主 0.2.x 下同 id 行 profile+preset 双活不再是同名双注册崩 boot，而是 scoped 遮蔽（preset 层遮蔽全局层，`packages/core/tools/tests/scoped.spec.ts:87` 钉死）——授予路径仍按「一个能力一条路径」设计，不借遮蔽叠加挂载。伴生行 `ctx.get` 探测 core 服务，缺席则 log + no-op。新工具记得 `setToolOrigin` 打来源标签（见 AGENTS.md）。
 - **提示词注入**：`systemPrompt.section` 注册在伴生工具行里，随工具授予（guidance 描述工具，所有权随注册）。不要在全局挂载的 core 里注册模式专属的 prompt 段。
 - **会话级 UI**：按第二节执行。已有样板：eval「实验室」tab（`packages/eval/src/client/index.ts:93-148`）。
 - **sidebar（右栏 tab / 左栏面板）**：按「判据轴」分流，不看座位——内容绑定会话且伴生行被某 preset 引用（worktrees 右栏 tab 是样板）→ 第二层判据 + 注册级 toggle；内容跨会话（canvas 空间）→ 安装层，不要加判据。「开发插件的 sidebar 在别的 profile 可见」的第一动作仍是检查那个 profile 的 dependencies。
