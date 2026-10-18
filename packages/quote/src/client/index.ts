@@ -114,37 +114,51 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   }
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'quote: dictionaries')
 
-  // The quote chip codec rides a headless trigger source on the probed
-  // input-trigger service (never an inject): the submit-time serializer
-  // resolves codecs by source name, so the source must exist for any chip we
-  // insert to send at all. Absent service = the chip path stays dark and
-  // every insert falls back to plain text; a duplicate-name throw is a
+  // The quote chip codec rides a headless trigger source on the input-trigger
+  // service: the submit-time serializer resolves codecs by source name, so the
+  // source must exist for any chip we insert to send at all. The registration
+  // rides a deferred inject arm — mount order between client plugins is
+  // unconstrained, so a one-shot ctx.get probe misreads a not-yet-applied
+  // service as absent (the room uiConversation precedent); a composition
+  // without the service never fires the arm, and every insert falls back to
+  // plain text. codecMounted flips with the arm's effect, so a click never
+  // inserts a chip whose codec is gone; a duplicate-name throw is a
   // composition error and degrades the same way.
-  const inputTriggers = ctx.get('inputTriggers') as QuoteInputTriggersMirror | undefined
   let codecMounted = false
-  if (inputTriggers !== undefined) {
-    try {
-      const disposeSource = inputTriggers.registerSource(quoteTriggerSource)
-      codecMounted = true
-      disposers.push(async () => { disposeSource() })
-    } catch (error) {
-      ctx.logger.error(error)
-    }
-  }
+  ctx.inject(['inputTriggers'], (lctx) => {
+    lctx.effect(() => {
+      try {
+        const service = lctx.get('inputTriggers') as QuoteInputTriggersMirror | undefined
+        if (service === undefined) return () => {}
+        const disposeSource = service.registerSource(quoteTriggerSource)
+        codecMounted = true
+        return () => {
+          codecMounted = false
+          disposeSource()
+        }
+      } catch (error) {
+        ctx.logger.error(error)
+        return () => {}
+      }
+    }, 'quote: trigger source')
+  })
 
   // The transcript half: sent user messages keep the block's wire form, and
-  // this rule + keyed renderer pair turns it into the styled card. Both
-  // degrade — a host without the userText registry or the keyed node slot
-  // (or a declined duplicate registration) keeps the raw text.
-  const userText = ctx.get('uiConversation')?.userText
-  if (userText !== undefined) {
-    try {
-      const disposeRule = userText.register(quoteTextRule)
-      disposers.push(async () => { disposeRule() })
-    } catch (error) {
-      ctx.logger.error(error)
-    }
-  }
+  // this rule + keyed renderer pair turns it into the styled card. The rule
+  // registration rides the same deferred-arm pattern (mount order is
+  // unconstrained); a composition without the userText registry keeps the raw
+  // wire text, as does a declined duplicate registration.
+  ctx.inject(['uiConversation'], (lctx) => {
+    lctx.effect(() => {
+      try {
+        const disposeRule = lctx.uiConversation.userText.register(quoteTextRule)
+        return () => { disposeRule() }
+      } catch (error) {
+        ctx.logger.error(error)
+        return () => {}
+      }
+    }, 'quote: user-text rule')
+  })
   ctx.slots.inject('conversation.user.text.node', () => ctx.slots.register({
     name: 'conversation.user.text.node',
     key: 'quote-block',

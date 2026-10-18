@@ -10,9 +10,9 @@ Status: implemented
 
 ## Decision
 
-**在宿主支持处，composer 插入是结构化引用 chip。** 客户端向探测到的 `ctx.inputTriggers` 服务注册一个无头触发源——`candidates` 永不出行，源存在的唯一意义是携带 `quote` 引用 codec（`src/client/reference.ts`）。插入本身走作用域 `slash/input-insert-reference` bail 事件，落在草稿末尾 span：坐标按 detect 投影计算（每个已有 chip 折叠为一个 U+FFFC：`end = draft.length − Σ(occurrence.length − 1)`），由草稿修订号 CAS 保护并带一次重读快照的重试。chip 的 `ref` 是单行 JSON，携带完整剪贴板文本——包括非空白草稿的空行分隔符，删除 chip 即连它一起删——codec 的 `serialize`/`clipboardText` 解码同一份载荷，模型逐字收到用户在 composer 看到的文本。ref 损坏时拒绝发送（宿主的设计表面），绝不静默降级。
+**在宿主支持处，composer 插入是结构化引用 chip。** 客户端通过延迟 `ctx.inject(['inputTriggers'])` 臂注册一个无头触发源——`candidates` 永不出行，源存在的唯一意义是携带 `quote` 引用 codec（`src/client/reference.ts`）。延迟臂是必要的：客户端插件间的挂载顺序不受约束，首版曾在 apply 时一次性探测 `ctx.get('inputTriggers')`，在 3080 上与服务赛跑落败，静默退化为纯文本（部署后实机验证抓获）；userText 规则的注册同走延迟臂。插入本身走作用域 `slash/input-insert-reference` bail 事件，落在草稿末尾 span：坐标按 detect 投影计算（每个已有 chip 折叠为一个 U+FFFC：`end = draft.length − Σ(occurrence.length − 1)`），由草稿修订号 CAS 保护并带一次重读快照的重试。chip 的 `ref` 是单行 JSON，携带完整剪贴板文本——包括非空白草稿的空行分隔符，删除 chip 即连它一起删——codec 的 `serialize`/`clipboardText` 解码同一份载荷，模型逐字收到用户在 composer 看到的文本。ref 损坏时拒绝发送（宿主的设计表面），绝不静默降级。
 
-**降级阶梯，探测先行**：无 `inputTriggers` 服务 → 纯文本；bail 两度被拒（旧宿主无监听、相位锁定、CAS 竞争落败）→ 退回 chip 之前的 `mergedQuoteDraft` + `setDraft` 合并。`minHost` 不动。
+**降级阶梯，探测先行**：无 `inputTriggers` 服务（臂不触发）→ 纯文本；bail 两度被拒（旧宿主无监听、相位锁定、CAS 竞争落败）→ 退回 chip 之前的 `mergedQuoteDraft` + `setDraft` 合并。`minHost` 不动。
 
 **发出后，引用渲染为卡片。** `quote-block` 用户文本规则（`src/client/usertext.ts`，order 20——没有官方规则在 `>` 起点竞争）匹配行首锚定的 `> ` 行串加任一语言的署名行；keyed `conversation.user.text.node` 渲染器（`QuoteTextNode`）渲染为行内合法的卡片（block 呈现的 span）：去掉 wire 前缀的正文，外加按当前语言重渲染的来源行。宿主没有 userText 缝时消息保持原始 wire 文本。
 
