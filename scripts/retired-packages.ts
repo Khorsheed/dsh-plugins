@@ -74,4 +74,9 @@ export const RETIRED_PACKAGES: readonly RetiredPackage[] = [
     replacement: "@khorsheed/dsh-presets' 学习模式 (`preset-learning` — row id and preset id unchanged)",
     note: 'the single-row preset-declarations bundle folded into the presets package (2026-10-12) so every scene mode ships from one bundle; published as 0.1.0 — npm deprecation rides the next publish wave',
   },
+  {
+    name: '@khorsheed/dsh-rss-reader',
+    replacement: '@khorsheed/dsh-reader (>= 0.3.0)',
+    note: 'rewritten and renamed to dsh-reader; never published to npm — cleanup is profile-side only (a stale overrides pin survived until the host-021 wave)',
+  },
 ]
