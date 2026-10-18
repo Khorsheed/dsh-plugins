@@ -126,13 +126,15 @@ export const FAMILY_REGISTRATION_RE = /ctx\.tools\.register|ctx\.commands\.regis
  * not by letting the two drift).
  *
  * Packages deliberately NOT self-mounting: family-internal row packages whose
- * composition is mounted on their behalf — agent presets name the companion
- * tool row (typesafe-tool), and the
+ * composition is mounted on their behalf — the
  * local-agent-dsh provisioner copies the headless patch into the provisioned
  * sub-profile's own patch layer (a `dsh.bundle` declaration there would hand
  * the host's `dsh plugin` reconcile a mount trigger for a sub-dsh-only
  * composition; see AGENTS.md "Package conventions" and the two packages'
- * README "Install" sections).
+ * README "Install" sections). The preset-composed companion tool rows used to
+ * be the other member of this list; the last of them (typesafe-tool) folded
+ * into its core package's `./tool` composition entry at the host-021 wave, so
+ * no `preset-composed-row` package remains in the tree.
  */
 export const NO_OWN_PATCH: ReadonlyArray<string> = [
   // local-agent-tool-subagent used to be this shape (provider patches mounted
@@ -140,18 +142,12 @@ export const NO_OWN_PATCH: ReadonlyArray<string> = [
   // each provider's own `./tool` composition entry and the factory into the
   // core's `./tool-factory` export, then retired the package.
   'local-agent-dsh-headless',
-  // worktrees-tool and room-tool used to be this shape for their cores;
-  // worktrees 0.3.0 and room 0.2.0 folded each back into the core package as
-  // the `./tool` composition entry — the canvas ./agent precedent.
-  // mission-tool / datasets-tool / eval-tool were the same shape for the
-  // mission / datasets / eval cores (M4'③) until the evaluation-family fold
-  // (T88, 2026-10-01) moved each into its core's `./tool` entry the same way.
-  // typesafe-tool is the same shape for the typesafe core: the core publishes
-  // the `ctx.typesafe` service at the profile root and stays surface-free; this
-  // row only makes the tool module resolvable, and an agent preset names the
-  // row — a dsh.bundle declaration would auto-mount typesafe_judge at the
-  // profile root, exactly what the split removes.
-  'typesafe-tool',
+  // The preset-composed companion tool rows were this shape too, each folded
+  // back into its core package as the `./tool` composition entry (the canvas
+  // ./agent precedent): worktrees-tool and room-tool at worktrees 0.3.0 /
+  // room 0.2.0; mission-tool / datasets-tool / eval-tool at the
+  // evaluation-family fold (T88, 2026-10-01); typesafe-tool at the host-021
+  // wave (2026-10-18). No preset-composed-row package remains in the tree.
   // ui-content-preview is NOT a row and NOT a companion: it is the
   // source-plane library whose `dsh.composition.component` is
   // 'source-plane-library'. Listed here because the checker pairs the
@@ -262,15 +258,15 @@ export const COMMUNITY_SERVICE_INJECTORS: Readonly<Record<string, RegExp>> = {
   localAgent: /^local-agent/,
   localAgentDshHeadlessStartup: /^local-agent-dsh-headless$/,
   shortcuts: /^ui-shortcuts$/,
-  // The preset-composed tool companions inject their owning core: a one-shot
+  // The preset-composed tool rows inject their owning core: a one-shot
   // apply-time probe lost the rc.1 boot-order race (the standing scope mounts
   // before the profile's later bundle rows provide the core), so the row
   // pends on the core instead (2026-09-27 3080 incident). The worktrees and
   // room tool rows folded back into their core packages (worktrees 0.3.0,
-  // room 0.2.0) as the `./tool` entry, and the datasets / eval / mission tool
-  // rows at the evaluation-family fold (T88), so the core package itself is
-  // the allowed injector there.
-  typesafe: /^typesafe-tool$/,
+  // room 0.2.0) as the `./tool` entry, the datasets / eval / mission tool
+  // rows at the evaluation-family fold (T88), and the typesafe tool row at
+  // the host-021 wave, so the core package itself is the allowed injector.
+  typesafe: /^typesafe$/,
   // Renamed from `worktrees` at host 0.2.1: the official experimental
   // `worktree` package provides `ctx.worktrees`, so this package's core moved
   // to `worktreesCore` (a duplicate provide fails the boot).

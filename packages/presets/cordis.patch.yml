@@ -236,9 +236,13 @@
           # The TypeSafe judgement tool (2026-09-20): the core `@khorsheed/dsh-typesafe`
           # publishes `ctx.typesafe` at the profile root and stays surface-free; this row
           # grants `typesafe_judge`, its `typesafe:judge` guidance section and the
-          # `typesafe-decide` skill to this preset's sessions only.
+          # `typesafe-decide` skill to this preset's sessions only. Since the host-021
+          # wave (2026-10-18) the row ships inside the core package as the `./tool`
+          # composition entry (the T88 evaluation-family fold precedent; the standalone
+          # `@khorsheed/dsh-typesafe-tool` companion is folded away); the row id stays
+          # `typesafe-tool`, so the composition state is unaffected.
           - id: typesafe-tool
-            name: '@khorsheed/dsh-typesafe-tool'
+            name: '@khorsheed/dsh-typesafe/tool'
 
           # ── 评测三行已挪到 dsh-eval preset（2026-09-18）──────────────────────────────
           # mission/datasets/eval 的伴生工具行不再挂在本预设：它们的 tab/chip/slash 按

@@ -88,7 +88,11 @@ describe('cordis.patch.yml', () => {
     expect(dev).toContain("            name: '@khorsheed/dsh-worktrees/tool'\n")
     expect(dev).toContain('          - id: room-tool\n')
     expect(dev).toContain("            name: '@khorsheed/dsh-room/tool'\n")
+    // The typesafe row folded the same way at the host-021 wave (row id
+    // unchanged; only the module name moved into the core package).
     expect(dev).toContain('          - id: typesafe-tool\n')
+    expect(dev).toContain("            name: '@khorsheed/dsh-typesafe/tool'\n")
+    expect(rows).not.toContain('dsh-typesafe-tool')
     // The eval companion rows stay OUT of dev (their tabs self-hide by row presence).
     expect(dev).not.toContain('datasets-tool')
     expect(dev).not.toContain('eval-tool')

@@ -1,6 +1,6 @@
 {
   "name": "@khorsheed/dsh-typesafe",
-  "description": "TypeSafe (System One / Jev) decision primitives as a host service: typed noul/choice/score judgements through one named-question registry, with credential-reference key resolution, bounded timeout, retry, circuit breaker, cache and decision logs. Other plugins call it in code; the model-facing tool row ships separately in @khorsheed/dsh-typesafe-tool.",
+  "description": "TypeSafe (System One / Jev) decision primitives as a host service: typed noul/choice/score judgements through one named-question registry, with credential-reference key resolution, bounded timeout, retry, circuit breaker, cache and decision logs. Other plugins call it in code; the model-facing typesafe_judge tool ships as this package's ./tool composition entry, granted per session by an agent preset.",
   "keywords": [
     "dsh",
     "dsh-plugin",
@@ -29,26 +29,33 @@
       "types": "./lib/types/index.d.ts",
       "default": "./lib/index.js"
     },
+    "./tool": {
+      "types": "./lib/types/tool.d.ts",
+      "default": "./lib/tool.js"
+    },
     "./src/*": "./src/*",
     "./package.json": "./package.json",
     "./locale/*.json": "./locale/*.json"
   },
   "files": [
-    "lib/index.js",
+    "lib/*.js",
     "lib/types/**/*.js",
     "lib/types/**/*.d.ts",
     "cordis.patch.yml",
+    "skills/**/*.md",
     "locale/*.json"
   ],
   "license": "MIT",
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/dsh-credentials": "^0.1.0-rc.6 || ^0.2.0-rc.1 || ^0.2.1-rc.1",
+    "@deepseek-ai/dsh-tools": "^0.1.0-rc.6 || ^0.2.0-rc.1 || ^0.2.1-rc.1",
     "@deepseek-ai/schemastery": "^3.18.1"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/dsh-credentials": "^0.2.0-rc.1",
+    "@deepseek-ai/dsh-tools": "^0.2.0-rc.1",
     "@deepseek-ai/schemastery": "^3.18.1",
     "tsdown": "^0.22.2",
     "typescript": "^5.9.0",
@@ -66,7 +73,7 @@
     "compat": {
       "minHost": "0.1.5-rc.1",
       "verifiedHost": "0.2.1-rc.1",
-      "notes": "Provides a host-plane service and no model-facing surface, so it composes at the profile root. Key resolution reads the host credential store per call (ctx.credentials.resolve) and every outbound call is bounded: owned timeout + AbortSignal, 429/529 exponential backoff, circuit breaker, optional cache. A composition without the credentials service leaves the row pending rather than failing boot."
+      "notes": "Provides a host-plane service and no model-facing surface, so it composes at the profile root. Key resolution reads the host credential store per call (ctx.credentials.resolve) and every outbound call is bounded: owned timeout + AbortSignal, 429/529 exponential backoff, circuit breaker, optional cache. A composition without the credentials service leaves the row pending rather than failing boot. The session-granted tool row folded back from the standalone `@khorsheed/dsh-typesafe-tool` companion into this package at the host-021 wave (2026-10-18, the T88 evaluation-family precedent) as the `./tool` composition entry — the preset row id `typesafe-tool` is unchanged, so a preset's composition state is unaffected once its row name points at `@khorsheed/dsh-typesafe/tool`; the old package name is retired."
     }
   }
 }

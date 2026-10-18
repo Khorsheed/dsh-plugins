@@ -2,6 +2,13 @@
 
 monorepo 级别的发布摘要；各包的完整变更见 `packages/<包>/CHANGELOG.md`。
 
+## Unreleased —— 2026-10-18 host-021 波伴生工具包收尾：typesafe-tool 折进 typesafe
+
+- **工具行折进核心包**：`@khorsheed/dsh-typesafe-tool` 退役（目录删除，登记进 `scripts/retired-packages.ts`；已发布的 0.1.2 npm 名随同一发布波 deprecate），工具行改为核心包的 `./tool` 组合入口（`@khorsheed/dsh-typesafe/tool`）。preset 行 id（`typesafe-tool`）与 `tools:` 配置不变，只改 `name`；工具的 origin owner 与 skill provider 归一到核心包名。不搬能力，只做形态整理（T88 评测家族折叠同形态；room 0.2.0 / worktrees 0.3.0 / local-agent 先例）
+- **typesafe 包面变化**：新增 `./tool` export 与 `@deepseek-ai/dsh-tools` peer；`typesafe-decide` skill 与工具行套件随包携带（`skills/`、`tests/tool-row.spec.ts`）；跨包结构缝隙改为同包类型直引。版本不动，随发布波统一治理
+- **presets 同步**：dsh-dev preset 的 `typesafe-tool` 行改指 `@khorsheed/dsh-typesafe/tool`（组合状态无损），`dsh.references` 与 README/compat notes 的工具行清单同步
+- **检查器**：`check:plugins` 的 `NO_OWN_PATCH` 摘掉 typesafe-tool（`preset-composed-row` 词汇值保留，树内已无该形态包），`COMMUNITY_SERVICE_INJECTORS` 的 `typesafe` 服务改为核心包自注；spec 夹具改用 local-agent-dsh-headless
+
 ## Unreleased —— 2026-10-01 评测家族整理（T88）：工具行折进核心包 + 家族整合包 bundle-eval
 
 - **工具行折进核心包**：`@khorsheed/dsh-eval-tool` / `@khorsheed/dsh-datasets-tool` / `@khorsheed/dsh-mission-tool` 三个伴生包退役（目录删除，登记进 `scripts/retired-packages.ts`；npm deprecate 随下一个发布波），工具行改为各核心包的 `./tool` 组合入口（`@khorsheed/dsh-eval/tool` 等）。preset 行 id（`eval-tool` / `datasets-tool` / `mission-tool`）与 `tools:` 配置不变，只改 `name`；工具的 origin owner 改为核心包名。不搬能力，只做形态整理

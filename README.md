@@ -93,8 +93,7 @@
 | 包 | 插件能力 | 安装包名 | 宿主要求 | 随整合包 |
 | --- | --- | --- | --- | --- |
 | [`capability-catalog`](packages/capability-catalog) | **能力目录**:枚举运行实例的全部 skill 与工具及其注册渠道,设置页三列预览 + 详情弹窗 | `@khorsheed/dsh-capability-catalog` | ≥ 0.1.5-rc.1 | basic |
-| [`typesafe`](packages/typesafe) | (实验性)**TypeSafe 判定原语**宿主服务:接入 TypeSafe System One 模型(旗舰 Jev)支持模型快速决策场景调用,类型化 noul/choice/score 判定,带熔断、缓存与决策日志 | `@khorsheed/dsh-typesafe` | ≥ 0.1.5-rc.1 | 单包 |
-| [`typesafe-tool`](packages/typesafe-tool) | (实验性,伴生工具行)typesafe 的模型工具,由 preset 按会话授予 | `@khorsheed/dsh-typesafe-tool` | ≥ 0.1.5-rc.1 | 单包 |
+| [`typesafe`](packages/typesafe) | (实验性)**TypeSafe 判定原语**宿主服务:接入 TypeSafe System One 模型(旗舰 Jev)支持模型快速决策场景调用,类型化 noul/choice/score 判定,带熔断、缓存与决策日志;模型工具经包内 `./tool` 子路径行由 preset 按会话授予 | `@khorsheed/dsh-typesafe` | ≥ 0.1.5-rc.1 | 单包 |
 | [`capture`](packages/capture) | **渲染抓取** Remote:托管 headless Chrome 渲染 URL,返回内联样式的序列化页面 | `@khorsheed/dsh-capture` | ≥ 0.1.5-rc.1 | 单包 |
 
 ### 运维守护

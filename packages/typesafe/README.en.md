@@ -4,7 +4,7 @@ English | [中文](README.md)
 
 The common-sense judgements your code needs, returned in one call as typed answers you can `if` on directly — a yes/no probability, an option, a level — each with probabilities and a confidence, not prose you have to parse.
 
-Does this message need a model to reply? Which team owns this ticket? Is this claim supported by the source? Which of these candidate values was meant? Ordinary code cannot decide these, and a prompt-and-parse step is fragile and slow. This package turns TypeSafe's System One models (Jev is the flagship) into a host-side service, `ctx.typesafe`, for **other plugins to call in code**; it carries no model-facing surface of its own — the model-facing `typesafe_judge` tool, its guidance section and the skill live in the companion row [`@khorsheed/dsh-typesafe-tool`](https://www.npmjs.com/package/@khorsheed/dsh-typesafe-tool), granted per preset.
+Does this message need a model to reply? Which team owns this ticket? Is this claim supported by the source? Which of these candidate values was meant? Ordinary code cannot decide these, and a prompt-and-parse step is fragile and slow. This package turns TypeSafe's System One models (Jev is the flagship) into a host-side service, `ctx.typesafe`, for **other plugins to call in code**; it carries no model-facing surface of its own — the model-facing `typesafe_judge` tool, its guidance section and the skill ride the package's own `./tool` composition entry, granted per preset (the standalone companion package `@khorsheed/dsh-typesafe-tool` folded in and retired at the host-021 wave; the preset row id `typesafe-tool` is unchanged).
 
 There is exactly one call surface: `POST {baseUrl}/v1/systemone`, `Authorization: Bearer <KEY>`, body `{ state, model, questions }`.
 
@@ -16,7 +16,7 @@ There is exactly one call surface: `POST {baseUrl}/v1/systemone`, `Authorization
 - **Never throws** — every `judge` / `decide` failure is a structured return (`unconfigured` / `circuit-open` / `timeout` / `aborted` / `http` / `transport` / `decode` / `invalid-request`); the caller owns the fail-open/fail-closed policy.
 - **Keys resolve by reference only** — config carries an `apiKeyRef` (default `TYPESAFE_API_KEY`) and never accepts a literal secret; every call re-resolves through the official credential seam (`ctx.credentials.resolve`) and never caches it.
 - **Every call is bounded** — an owned timeout races the transport and the caller's `AbortSignal` is relayed; `429 / 5xx` back off exponentially (honouring `retry-after`) while `401 / 4xx` never retry; repeated failures trip a circuit breaker; an optional cache coalesces concurrent identical calls; every judgement logs one decision line.
-- **No model-facing surface** — this package provides the service only. The tool face is a separate companion row that installs and removes on its own; with the core absent that row is a no-op and never breaks boot.
+- **No model-facing surface** — the core row provides the service only. The decision tool `typesafe_judge` is granted through the package's `./tool` entry (the standalone typesafe-tool package is folded away); with the core absent that tool row is a no-op and never breaks boot.
 - **An extractable wire layer** — `src/wire.ts` imports nothing from the harness, ready to lift into a non-dsh caller.
 
 ## Install
@@ -25,7 +25,7 @@ There is exactly one call surface: `POST {baseUrl}/v1/systemone`, `Authorization
 dsh plugin --profile web add @khorsheed/dsh-typesafe
 ```
 
-The package declares `dsh.bundle`, so add merges its `cordis.patch.yml` row (loader row id `typesafe`) into the profile's bundles layer — no hand-editing of cordis.yml. Restart the web instance to activate. To let the model ask for judgements too, install the companion row `@khorsheed/dsh-typesafe-tool` (see its README); with only the core installed the service works and the model simply sees no tool.
+The package declares `dsh.bundle`, so add merges its `cordis.patch.yml` row (loader row id `typesafe`) into the profile's bundles layer — no hand-editing of cordis.yml. Restart the web instance to activate. To let the model ask for judgements too, an agent preset names this package's `./tool` row (`- id: typesafe-tool / name: '@khorsheed/dsh-typesafe/tool'`; the dev preset of `@khorsheed/dsh-presets` already carries it); in sessions whose preset does not name the row the service works and the model simply sees no tool.
 
 ```sh
 dsh plugin --profile web remove @khorsheed/dsh-typesafe
@@ -95,7 +95,7 @@ The thresholds are starting points, not truths: validate them on your own data a
 
 ## Setting the key (no CLI)
 
-1. **Recommended**: fill it once under 「设置 → 工具与技能 → typesafe-decide → 凭据配置」 — that password field is contributed by the credential metadata of the `typesafe-decide` skill the companion row registers (rendered by capability-catalog), so it appears only when the companion row is installed. It writes the host credential store (`$DSH_HOME/.credentials.yaml`, mode 0600), and this service re-resolves it per call.
+1. **Recommended**: fill it once under 「设置 → 工具与技能 → typesafe-decide → 凭据配置」 — that password field is contributed by the credential metadata of the `typesafe-decide` skill the `./tool` row registers (rendered by capability-catalog), so it appears only in sessions whose preset grants that row. It writes the host credential store (`$DSH_HOME/.credentials.yaml`, mode 0600), and this service re-resolves it per call.
 2. Or put `TYPESAFE_API_KEY=…` in `$DSH_HOME/.env` or the invoking directory's `.env` (the user-env / project-env layers of credential resolution) — the launch environment snapshot is frozen, so a restart is required.
 3. Or export it in the launch environment (the most trusted layer).
 
@@ -111,7 +111,7 @@ The key stays inside the host process: never in model context, never in the repo
 
 ## Known Limitations
 
-- **The settings-page key field comes from the companion row** — the credential input in 「工具与技能」 is contributed by the companion's skill metadata; a core-only composition sets the key through `.env` or the launch environment.
+- **The settings-page key field comes from the `./tool` row** — the credential input in 「工具与技能」 is contributed by that row's skill metadata; a composition whose preset grants no such row sets the key through `.env` or the launch environment.
 - **The cache lives in process memory** — the `cacheTtlMs` cache and the coalescing of concurrent identical calls are in-memory and empty again after a restart.
 
 ## How it works
@@ -127,9 +127,9 @@ The key stays inside the host process: never in model context, never in the repo
 
 **Registry and thresholds.** `decide` accepts a registry id or a one-off spec; a registry noul answer is compared against its threshold for `meetsThreshold` (choice/score get no threshold). Registry ids live in code only — the API never sees them and neither does the model: the instructions carry the whole meaning.
 
-**The companion seam's direction.** Companion → core, one way only: the companion probes `ctx.get('typesafe')` structurally at apply time and never imports this package (the core is named only as data in the companion's manifest, via `dsh.references`), so neither package can break the other's build order. With the core absent the companion row is a no-op, and the composition boots cleanly either way.
+**The tool row's dependency direction.** The tool row shares this package with the core (folded from the standalone companion package at the host-021 wave, the same shape as the T88 evaluation-family fold): it declares `inject: ['typesafe']` and pends until the core provides the service, then the whole body applies (the 2026-09-27 boot-order lesson — a preset's standing scope mounts before the profile's later bundle rows, so a one-shot probe would misread a not-yet-mounted core as permanently absent). With the core absent the row is a no-op, and the composition boots cleanly either way.
 
-**Exports.** The root export gives the `TypeSafeService` class, `resolveConfig`, `TYPE_SAFE_DEFAULTS`, `validateQuestions` / `decodeDecisions`, the registry helpers (`QUESTION_REGISTRY` / `QUESTION_IDS` / `isQuestionId` / `questionSpec` / `thresholdOf`), the wire helpers (`buildBody` / `callSystemOne` / `decodeAnswer` / `defaultTransport` / `stableStringify` / `TypeSafeWireError`) and all wire types.
+**Exports.** The root export gives the `TypeSafeService` class, `resolveConfig`, `TYPE_SAFE_DEFAULTS`, `validateQuestions` / `decodeDecisions`, the registry helpers (`QUESTION_REGISTRY` / `QUESTION_IDS` / `isQuestionId` / `questionSpec` / `thresholdOf`), the wire helpers (`buildBody` / `callSystemOne` / `decodeAnswer` / `defaultTransport` / `stableStringify` / `TypeSafeWireError`) and all wire types; the `./tool` export is the tool row agent presets name (`typesafe_judge` + the `typesafe:judge` guidance section + the `typesafe-decide` skill). The package's own bundle patch mounts ONLY the core row — a profile-root tool row would grant every session, exactly what the split removed.
 
 </details>
 

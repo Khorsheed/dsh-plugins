@@ -1,20 +1,24 @@
 /**
- * The session-granted TypeSafe model tool — the companion row of
- * `@khorsheed/dsh-typesafe` for agent-preset compositions. The row provides NO
- * service (the preset-mount isolate-realm rule forbids service rows); it
- * registers the model-facing `typesafe_judge` tool into the host tools
- * registry, contributes its guidance section, and registers the
- * `typesafe-decide` skill — all delegating to the global `ctx.typesafe`
- * service core the profile mounts. Granting is therefore per-session: a preset
- * names the row, its sessions get the tool; every other preset's sessions get
- * nothing.
+ * The session-granted TypeSafe model tool — this package's `./tool`
+ * composition entry (the canvas `./agent` pattern) for agent-preset
+ * compositions. The row provides NO service (the preset-mount isolate-realm
+ * rule forbids service rows); it registers the model-facing `typesafe_judge`
+ * tool into the host tools registry, contributes its guidance section, and
+ * registers the `typesafe-decide` skill, all delegating to the global
+ * `ctx.typesafe` service core the core row provides at the profile root.
+ * Granting is therefore per-session: a preset names the row, its sessions get
+ * the tool; every other preset's sessions get nothing.
  *
- * The package deliberately declares NO `dsh.bundle` patch: installing it as a
- * dependency only makes the module resolvable; an agent preset's
- * `agent.cordis.yml` references the row by name. The core package is named only
- * as data (`dsh.references`) — this row probes the service structurally and
- * never imports it, so neither package can break the other's build order.
- * @module @khorsheed/dsh-typesafe-tool
+ * This entry used to ship as the standalone companion package
+ * `@khorsheed/dsh-typesafe-tool`; the host-021 wave fold (2026-10-18, the T88
+ * evaluation-family / room 0.2.0 precedent) moved it into the core package as
+ * this subpath row, and the old package name is retired. An agent preset's
+ * `agent.cordis.yml` references the row by name:
+ * `- id: typesafe-tool / name: '@khorsheed/dsh-typesafe/tool'` (the row id is
+ * unchanged). The package's own bundle patch mounts ONLY the core row — a
+ * profile-root tool row would grant every session, exactly what the split
+ * removed.
+ * @module @khorsheed/dsh-typesafe/tool
  */
 
 import { readFileSync } from 'node:fs'
@@ -23,8 +27,12 @@ import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool, type ToolDefinition } from '@deepseek-ai/dsh-tools'
 import z from '@deepseek-ai/schemastery'
+// Type-only: pulls this package's `Context.typesafe` service augmentation.
+import type {} from './index.ts'
+import type { TypeSafeService } from './service.ts'
+import type { Decision, JudgeResult, QuestionSpec } from './types.ts'
 
-const PACKAGE_NAME = '@khorsheed/dsh-typesafe-tool'
+const PACKAGE_NAME = '@khorsheed/dsh-typesafe'
 
 /**
  * Tag the model-visible tool with its origin (AGENTS.md § Tool origin
@@ -39,43 +47,6 @@ const definePluginTool = <T extends object>(def: T): T =>
 
 /** The credential reference this row's tool expects the core to resolve. */
 const API_KEY_REF = 'TYPESAFE_API_KEY'
-
-/* ── the core's service, declared locally (structural seam, never imported) ── */
-
-interface SeamQuestion {
-  readonly id: string
-  readonly type: 'noul' | 'choice' | 'score'
-  readonly instructions: unknown
-  readonly criteria?: unknown
-}
-
-interface SeamDecision {
-  readonly id: string
-  readonly type: string
-  readonly answer: string | number | boolean
-  readonly confidence?: number
-  readonly probabilities?: Readonly<Record<string, number>>
-  readonly legend?: Readonly<Record<string, string>>
-}
-
-interface SeamJudgement {
-  readonly model: string
-  readonly decisions: readonly SeamDecision[]
-  readonly latencyMs: number
-  readonly cached: boolean
-  readonly usage?: { readonly inputTokens: number; readonly outputTokens: number }
-}
-
-type SeamResult =
-  | { readonly ok: true; readonly judgement: SeamJudgement }
-  | { readonly ok: false; readonly reason: string; readonly detail: string }
-
-interface TypeSafeSeam {
-  judge(
-    input: { state: unknown; questions: readonly SeamQuestion[] },
-    options?: { signal?: AbortSignal },
-  ): Promise<SeamResult>
-}
 
 /* ── the tool's arguments ──────────────────────────────────────────────────── */
 
@@ -181,7 +152,7 @@ function loadSkill(): SkillFile | undefined {
 const probability = (value: number): string => value.toFixed(2)
 
 /** One decision as one line of model-facing text. */
-function decisionLine(decision: SeamDecision): string {
+function decisionLine(decision: Decision): string {
   const head = `${decision.id} [${decision.type}]`
   if (decision.type === 'noul') return `${head}: ${probability(Number(decision.answer))}`
   const confidence = decision.confidence === undefined ? '' : ` confidence=${probability(decision.confidence)}`
@@ -195,7 +166,7 @@ function decisionLine(decision: SeamDecision): string {
 }
 
 /** The whole judgement as compact text, or the failure as a sentence. */
-export function formatResult(result: SeamResult): string {
+export function formatResult(result: JudgeResult): string {
   if (!result.ok) {
     return `typesafe_judge could not answer (${result.reason}): ${result.detail}\n`
       + 'If this judgement is essential, tell the human which credential or network dependency is missing; '
@@ -208,11 +179,11 @@ export function formatResult(result: SeamResult): string {
 }
 
 /** Turn the model's arguments into wire questions, rejecting malformed ones. */
-export function toSeamQuestions(questions: readonly unknown[]): SeamQuestion[] | string {
+export function toSeamQuestions(questions: readonly unknown[]): QuestionSpec[] | string {
   if (questions.length === 0) return 'at least one question is required'
   if (questions.length > 32) return 'at most 32 questions may be asked in one call'
   const seen = new Set<string>()
-  const out: SeamQuestion[] = []
+  const out: QuestionSpec[] = []
   for (const raw of questions) {
     if (raw === null || typeof raw !== 'object') return 'every question must be an object'
     const question = raw as { id?: unknown; type?: unknown; instructions?: unknown; choices?: unknown; levels?: unknown }
@@ -262,10 +233,10 @@ export function parseJudgeArgs(args: unknown): { state: string; questions: reado
 
 /**
  * Build the `typesafe_judge` definition for one service.
- * @param service - the probed core service.
+ * @param service - the core service this row pends on.
  * @returns the tagged definition, ready to register.
  */
-export function typesafeJudgeTool(service: TypeSafeSeam): ToolDefinition {
+export function typesafeJudgeTool(service: TypeSafeService): ToolDefinition {
   return definePluginTool(defineTool({
     name: 'typesafe_judge',
     description: TOOL_DESCRIPTION,
@@ -342,7 +313,7 @@ export function typesafeJudgeTool(service: TypeSafeSeam): ToolDefinition {
  * @param config - validated plugin config.
  */
 export function apply(ctx: Context, config: TypeSafeToolConfig = {}): void {
-  const service = ctx.get('typesafe') as TypeSafeSeam | undefined
+  const service = ctx.get('typesafe')
   if (service === undefined) {
     // Degrade, don't explode: the core is not mounted in this composition, so
     // there is nothing to delegate to. A preset naming this row still mounts.

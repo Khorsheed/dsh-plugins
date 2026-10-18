@@ -1,6 +1,8 @@
-/** The companion row: what it grants, how it degrades, and how it renders answers. */
+/** The `./tool` composition row (folded from the retired
+ * `@khorsheed/dsh-typesafe-tool` companion at the host-021 wave): what it grants, the origin tag (this package),
+ * how it degrades, and how it renders answers. */
 import { describe, expect, it } from 'vitest'
-import { apply, formatResult, toSeamQuestions, typesafeJudgeTool, type TypeSafeToolConfig } from '../src/index.ts'
+import { apply, formatResult, toSeamQuestions, typesafeJudgeTool, type TypeSafeToolConfig } from '../src/tool.ts'
 
 const ORIGIN = Symbol.for('dsh.tool.origin')
 
@@ -157,11 +159,11 @@ describe('formatResult', () => {
   })
 })
 
-describe('the typesafe-tool companion row', () => {
+describe('the typesafe ./tool composition row', () => {
   it('grants the tool, the guidance section and the skill', () => {
     const { tools, sections, skills } = mount(fakeService())
     expect(tools.map(tool => tool.name)).toEqual(['typesafe_judge'])
-    expect(tools[0]?.[ORIGIN]).toEqual({ channel: 'plugin', owner: '@khorsheed/dsh-typesafe-tool' })
+    expect(tools[0]?.[ORIGIN]).toEqual({ channel: 'plugin', owner: '@khorsheed/dsh-typesafe' })
     expect(tools[0]?.description).toContain('System One')
     expect(tools[0]?.description).toContain('Never build a CLI')
     expect(sections.map(section => section.name)).toEqual(['typesafe:judge'])
@@ -169,7 +171,7 @@ describe('the typesafe-tool companion row', () => {
     expect(sections[0]?.text).toContain('never through a shell command')
     expect(skills.map(skill => skill.name)).toEqual(['typesafe-decide'])
     expect(skills[0]?.source).toBe('runtime')
-    expect(skills[0]?.provider).toBe('@khorsheed/dsh-typesafe-tool')
+    expect(skills[0]?.provider).toBe('@khorsheed/dsh-typesafe')
     expect(skills[0]?.content).toContain('Never build a CLI')
     expect(skills[0]?.metadata).toEqual({
       credentials: [{ key: 'TYPESAFE_API_KEY', label: 'TypeSafe API key (console.typesafe.ai/keys)' }],

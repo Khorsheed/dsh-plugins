@@ -1,8 +1,8 @@
 /**
  * The profile-root core row: publishes `ctx.typesafe`, the TypeSafe System One
  * decision service other plugins call in code — no model-facing surface of its
- * own (the `typesafe_judge` tool and its guidance ship in the separate
- * preset-composed `@khorsheed/dsh-typesafe-tool` row).
+ * own (the `typesafe_judge` tool and its guidance ship as this package's
+ * `./tool` composition entry, the preset-composed `typesafe-tool` row).
  *
  * The row injects the official `credentials` service because every call
  * resolves the API key by reference through it; config therefore carries only

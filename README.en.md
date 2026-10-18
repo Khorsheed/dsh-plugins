@@ -93,8 +93,7 @@ How this differs from the official version: the developer can appoint the main a
 | Package | What it does | Install spec | Host | Ships with |
 | --- | --- | --- | --- | --- |
 | [`capability-catalog`](packages/capability-catalog) | A **capability catalog**: every skill and tool in the running instance with its registration channel, a three-column settings grid with detail modals | `@khorsheed/dsh-capability-catalog` | ≥ 0.1.5-rc.1 | basic |
-| [`typesafe`](packages/typesafe) | (experimental) **TypeSafe decision primitives** as a host service: powered by TypeSafe's System One models (the flagship is Jev) for fast model-decision scenarios, typed noul/choice/score judgements with circuit breaker, cache, and decision logs | `@khorsheed/dsh-typesafe` | ≥ 0.1.5-rc.1 | standalone |
-| [`typesafe-tool`](packages/typesafe-tool) | (experimental, companion tool row) The typesafe model tool, granted per session by a preset | `@khorsheed/dsh-typesafe-tool` | ≥ 0.1.5-rc.1 | standalone |
+| [`typesafe`](packages/typesafe) | (experimental) **TypeSafe decision primitives** as a host service: powered by TypeSafe's System One models (the flagship is Jev) for fast model-decision scenarios, typed noul/choice/score judgements with circuit breaker, cache, and decision logs; the model tool rides the package's `./tool` subpath row, granted per session by a preset | `@khorsheed/dsh-typesafe` | ≥ 0.1.5-rc.1 | standalone |
 | [`capture`](packages/capture) | A **rendered-fetch** Remote: a managed headless Chrome renders a URL and returns the serialized page with styles inlined | `@khorsheed/dsh-capture` | ≥ 0.1.5-rc.1 | standalone |
 
 ### Operations guard
