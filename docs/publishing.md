@@ -71,7 +71,7 @@ npx npm@12 publish /tmp/dist/<新包>.tgz --access public --otp=<token>
 - **monorepo 根**:`CHANGELOG.md` 记一行摘要(什么包、什么版本)。
 - **整合包仓**:dsh-basic 的 `CHANGELOG.md` 记用户向大白话——仅当该包属于整合包成员时。
 
-发版时打 git tag,格式 `<包名去掉 @khorsheed/dsh- 前缀>-v<版本>`,如 `message-tools-v0.5.0`;并在 GitHub 上建对应 Release(可附 CHANGELOG 条目)。local-agent 家族整体一波发布,tag 逐包打。
+发版时打 git tag,格式 `<包目录名>-v<版本>`,如 `message-tools-v0.5.0`(目录名通常就是包名去掉 `@khorsheed/dsh-` 前缀;两者不一致时**跟目录名**——历史 tag 与 release-wave 脚本都以目录名为准);并在 GitHub 上建对应 Release(可附 CHANGELOG 条目)。local-agent 家族整体一波发布,tag 逐包打。
 
 每波发布后运行 `pnpm release:status` 重新生成 [release-status.md](release-status.md)(各包 npm 已发布版本 / 仓内版本 / minHost / verifiedHost / 整合包成员一览)并提交——发布状态以此为准,不手维护。
 

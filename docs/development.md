@@ -95,7 +95,8 @@ pnpm gate --full   # 额外用 act 在 Docker 里跑真实 workflow(覆盖冷装
 ## 冲突规则
 
 1. **共享 index 是公共区**:暂存(git add)只放自己路径;提交只带自己路径(`git commit -- <paths>`);发现别人暂存的文件,不提交、不回滚、不清理——那不是你的。
-2. **基线迁移期的合并窗口**:mainline 推进官方新版本时,开发者**继续在 worktree 干活、暂缓合并**;基线落地(mainline 通报"基线绿")后再合并、再上 3080。这样基线迁移与新功能开发天然不冲突——就像本次 0.1.1 期间各包照常推进。
-3. **repo 级安装收敛**:主工作区的 repo 根 `pnpm install` 容易因并发把官方包解析出多个 peer 变体(模块增强身份错位,报 `constraint 'never'`)。遇到先 `pnpm dedupe`,不行删 lockfile+node_modules 重装;频发时由 mainline 统一收敛一次并提交。
-4. **deploy 互斥**:`deploy:3080` 自带 pid 锁,两个部署不会撞车;profile/凭证/preflight 状态由 mainline 定期巡检。
-5. **基线变更的通知义务**:基线迁移导致某插件源码被改(如 rc.8 的 4 个包)时,mainline 必须在 Agent Note 里点名该包,owner 拉取后确认并基于新基线开发;未触及源码的包由 mainline 用全量 build+test 机械证明,不逐个打扰。
+2. **共享检出里不做回收性操作**:`git reset`(任何模式)、`git clean`、`git checkout --`/「discard changes」都会抹掉别人**未提交**的工作——2026-10-18 一个 agent 收口 merge 前的 `git reset` 把另一个 agent 已写未提的脚本卸出索引,紧随的清理把未跟踪文件删掉,最后靠 `git fsck --lost-found` 的悬空 blob 才完整捞回。要清理只清自己创建、确认无主的文件;别人的未提交文件保持原样(同规则 1)。自己的防护只有一条:绿了就提交——committed work exists in git,未提交的工作在共享检出里随时可能消失。
+3. **基线迁移期的合并窗口**:mainline 推进官方新版本时,开发者**继续在 worktree 干活、暂缓合并**;基线落地(mainline 通报"基线绿")后再合并、再上 3080。这样基线迁移与新功能开发天然不冲突——就像本次 0.1.1 期间各包照常推进。
+4. **repo 级安装收敛**:主工作区的 repo 根 `pnpm install` 容易因并发把官方包解析出多个 peer 变体(模块增强身份错位,报 `constraint 'never'`)。遇到先 `pnpm dedupe`,不行删 lockfile+node_modules 重装;频发时由 mainline 统一收敛一次并提交。
+5. **deploy 互斥**:`deploy:3080` 自带 pid 锁,两个部署不会撞车;profile/凭证/preflight 状态由 mainline 定期巡检。
+6. **基线变更的通知义务**:基线迁移导致某插件源码被改(如 rc.8 的 4 个包)时,mainline 必须在 Agent Note 里点名该包,owner 拉取后确认并基于新基线开发;未触及源码的包由 mainline 用全量 build+test 机械证明,不逐个打扰。
