@@ -41,7 +41,7 @@
 
 ### 3080 的 preset 名册：正本是 packages/presets 的声明式 bundle 行
 
-0.1.7-rc.1 起宿主不再读取 `$DSH_HOME/.agent-presets/` 目录式 preset——preset 是 `@khorsheed/dsh-presets` bundle patch 里的声明式 `@deepseek-ai/dsh-agent-preset` 行（loader id `preset-<id>`)。三个 preset（dev / dsh-eval / dsh-writing）的唯一事实源是 `packages/presets/cordis.patch.yml`；改它 = 正常 PR 评审 + `pnpm deploy:3080 --package packages/presets` 部署（重启生效；存量会话的 preset 在建会话时已锁定，不受影响）。
+0.1.7-rc.1 起宿主不再读取 `$DSH_HOME/.agent-presets/` 目录式 preset——preset 是 `@khorsheed/dsh-presets` bundle patch 里的声明式 `@deepseek-ai/dsh-agent-preset` 行（loader id `preset-<id>`)。六个 preset（dsh-dev / dsh-eval / dsh-writing / dsh-gamedev / dsh-learning / dsh-video，2026-10-18 起统一带 `dsh-` 前缀）的唯一事实源是 `packages/presets/cordis.patch.yml`；改它 = 正常 PR 评审 + `pnpm deploy:3080 --package packages/presets` 部署（重启生效；存量会话的 preset 记在其事件日志与投影缓存里，改名需同步迁移——`scripts/migrate-preset-selections.ts` 即 2026-10-18 前缀统一时的迁移器）。
 
 历史：目录正本 + `sync-presets.sh` 的同步制已于 2026-09-24 迁移进 bundle(见 note `2026-09-24-community-presets-declarative-bundle`),`profiles/web/` 目录已于 2026-09-30 删除。
 
