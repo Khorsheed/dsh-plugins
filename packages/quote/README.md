@@ -11,7 +11,8 @@
 ## 特性
 
 - **选中即出菜单**——应用内任意非输入区域选中文本，选区旁浮出小工具条；输入框、菜单自身内的选区不触发，滚动或缩放即隐藏。
-- **引用到当前会话**——选中文本变成 `> 引用块`（块尾带来源标注）合入 composer 草稿：空白草稿直接填入，已有内容空一行后追加——绝不覆盖、绝不发送。
+- **引用到当前会话**——选中文本在支持引用 chip 的宿主线上变成 composer 草稿里的结构化引用 chip（行内标签带来源，发送时由本插件注册的 codec 序列化回带来源标注的 `> 引用块`；无此缝的宿主或插入被拒时回退纯文本块）：空白草稿直接填入，已有内容空一行后追加——绝不覆盖、绝不发送。房间会话同样生效（房间作曲器的草稿即官方输入机草稿）。
+- **发出后渲染为引用卡片**——发出的消息里，引用块由本插件的 `quote-block` 用户文本规则匹配，经 keyed 槽位渲染为带来源行的卡片（两种语言的署名都能匹配，卡片来源行跟随当前语言）；宿主没有 user-text 缝时保持原始文本。
 - **引用到侧边对话**——选中内容排成绑定当前会话的 side-chat 待发送 ref（contextKey = 会话 id），成功后右侧栏的 side-chat 标签页自动浮现。
 - **复制**——原文经官方 `writeClipboard` 助手进剪贴板。
 - **菜单行可扩展**——其他插件经 `ctx.quoteActions` 注册表注册自己的动作行（比如画布插件注册「存为画布卡片」），收到同样的 `{ text, label, sessionId }` 不透明载荷；菜单不知道任何动作把内容投递到哪里。
@@ -31,7 +32,7 @@
 
 | 目标 | 机制 | 形态 |
 | --- | --- | --- |
-| 引用到当前会话 | `ctx.sessions.scope(id).get('conversation').input.for(scope).setDraft(...)`（官方输入机；读现有草稿合并，绝不覆盖、绝不发送） | `> 引用块` + 来源标注，进 composer 待编辑 |
+| 引用到当前会话 | 官方输入机：`slash/input-insert-reference` 作用域事件插入结构化引用 chip（本插件注册的 codec 在发送时序列化回引用块；缝缺席或插入被拒时回退 `setDraft` 合并纯文本）——绝不覆盖、绝不发送 | 引用 chip（回退时 `> 引用块`）+ 来源标注，进 composer 待编辑 |
 | 引用到侧边对话 | 本包自带的薄 typert Remote（namespace `quote`，verb `addRef`）→ 宿主半探测 `ctx.get('sideChat')` → `openWith`（宿主到宿主的正当 seam，结构镜像，绝不 import sidechat） | ref chip 落在绑定当前会话的 context（contextKey = 会话 id）上，成功后经官方 `sidebarRight.openTab` 导航面浮现 tab（探测，无座位则静默） |
 | 复制 | 官方 `writeClipboard` 助手 | 原文进剪贴板 |
 
@@ -87,6 +88,9 @@ dsh plugin --profile web remove @khorsheed/dsh-quote
 - **座位探测降级**：唯一表面走 `ctx.slots.inject` 注册——宿主不声明 overlay 座位时浮层整体静默缺席，不影响启动；headless profile 没有浏览器消费者，本插件在那里不贡献任何东西（宿主半边照常提供 Remote，verb 按探测结果拒绝或受理）。
 - **选区读取是 last-resort DOM anchor**：只读 `window.getSelection()` 的纯文本与矩形；读取本身抛错时按「安静消失」兜底，绝不拖垮启动。
 - **side-chat 是声明式可选协作**：`dsh.references` 声明 `@khorsheed/dsh-sidechat`（数据引用，非依赖）；side-chat 缺席时对应菜单项隐藏，其余照常。
+- **引用 chip 是探测降级**：`ctx.inputTriggers` 服务缺席（codec 无载体）或插入被宿主拒绝（旧宿主无监听、草稿修订号竞争、相位锁定）→ 自动回退纯文本 `> 引用块`，行为与旧版一致；`minHost` 不动。
+- **发出后的引用卡片**：`uiConversation.userText` 注册表与 `conversation.user.text.node` keyed 槽位同在 0.2.x 线；缺缝的旧宿主上消息保持原始 wire 文本（纯 `> ` 引用块），不影响发送。
+- **房间会话**：房间插件的作曲器草稿即官方输入机草稿（2026-10 起），引用直接落在房间输入框——chip 在房间 textarea 投影为其文本形态，编辑即摊平（刻意降级）；旧版房间插件下引用写进不可见的官方草稿（看似没反应），升级房间插件即修复。
 
 ## 已知限制
 
@@ -94,6 +98,8 @@ dsh plugin --profile web remove @khorsheed/dsh-quote
 - **引用是纯文本快照**：不回链原文位置（v1 无锚点 seam）；来源标注只到「会话」粒度（选中自画布卡/文件预览时同样标注当前会话名，是 best-effort 的刻意取舍）。
 - **输入框内选区不触发**（避免和编辑行为打架）；代码块/表格选区按纯文本处理；滚动或缩放时浮层隐藏而不是跟随（v1 从简）。
 - **菜单不含键盘导航**：浮层是不占焦点的工具条（`role="toolbar"`），键盘流留待 M2 随上游 seam 一起评估。
+- **chip 是整块的**：引用正文在 composer 里不可逐字编辑（纯文本回退路径可以），退格整块删除；卸载本插件后草稿里残留的 chip 按宿主设计阻塞发送（删掉该 chip 即恢复，不会静默丢文本）。
+- **房间里的 chip 摊平**：房间作曲器是纯 textarea，chip 投影为其剪贴板文本，一旦编辑即摊平为纯文本。
 
 ## 工作原理
 
@@ -104,7 +110,9 @@ dsh plugin --profile web remove @khorsheed/dsh-quote
 
 **消费语义**：动作发生在捕获的快照上，与活选区无竞态。动作后菜单关闭；点击自身 mouseup 会让 source 重报同一选区，这一声「回声」被消费标记忽略，下一个不同选区正常唤起。
 
-**路由：当前会话**：`formatQuoteBlock`（每行 `> ` 前缀 + 块尾来源标注行）经 `mergedQuoteDraft` 合并——空白草稿直接填入，已有草稿空一行后追加，绝不覆盖用户正在输入的内容（message-tools backfill 先例）。
+**路由：当前会话**：`formatQuoteBlock`（每行 `> ` 前缀 + 块尾来源标注行）是先行的文本形态。有引用缝的宿主上，插入走 `slash/input-insert-reference` 作用域 bail 事件：chip 的 `ref` 编码完整剪贴板文本（含空行前缀），codec 的 `serialize`/`clipboardText` 都解码同一份载荷，模型收到的与用户看到的逐字一致；span 坐标用 detect 投影（已有 chip 折叠为单字符），草稿修订号 CAS 被拒时重读快照重试一次。缝缺席或两度被拒时回退 `mergedQuoteDraft` 纯文本合并——空白草稿直接填入，已有草稿空一行后追加，绝不覆盖用户正在输入的内容（message-tools backfill 先例）。
+
+**发出后的卡片**：`quote-block` 用户文本规则（`src/client/usertext.ts`）按行首锚点匹配 `> ` 行串 + 双语署名行，payload 只带 `{ label, text }` 纯 JSON；keyed 渲染器（`QuoteTextNode`）去掉 wire 前缀、按当前语言重渲染来源行。规则顺序 20 排在官方内置之后，与 @ 会话引用无同起点竞争。
 
 **路由：侧边对话**：`remote.quote.addRef({ contextKey, label, ref })` → 宿主半 `openWith`（side-chat 记录 pending refs，下一条发送折叠进消息并清空）。verb 不带 calling agent：`openWith` 不持有会话域写入，side-chat store 对宿主侧调用按部署默认模式落围栏（canvas askAgent 先例）。
 

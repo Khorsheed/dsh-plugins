@@ -74,3 +74,38 @@ export function formatQuoteBlock(text: string, attribution: string): string {
 export function mergedQuoteDraft(current: string, block: string): string {
   return current.trim() === '' ? block : `${current}\n\n${block}`
 }
+
+/* ------------------------------------------------- the reference chip wire */
+
+/**
+ * The trigger-source name the quote reference chips ride (the
+ * `slash/input-insert-reference` payload's `source`). The codec carrying it
+ * is registered by the client half; a draft holding a chip while the codec
+ * is gone refuses to send rather than silently downgrading (the host's
+ * designed behavior for codec-less references).
+ */
+export const QUOTE_REFERENCE_SOURCE = 'quote'
+
+/**
+ * Encode the chip's full clipboard text as the opaque `ref` string the
+ * editor persists: single-line JSON (`{v, text}`), so the codec can
+ * reconstruct the exact model-facing text from the ref alone — the host's
+ * `serialize(ref)`/`clipboardText(ref)` receive nothing else. The blank-line
+ * prefix (when the quote appended to a non-blank draft) is part of `text`,
+ * so deleting the chip removes it too.
+ */
+export function encodeQuoteRef(clipboardText: string): string {
+  return JSON.stringify({ v: 1, text: clipboardText })
+}
+
+/** Inverse of {@link encodeQuoteRef}; undefined on any corruption. */
+export function decodeQuoteRef(ref: string): string | undefined {
+  try {
+    const parsed: unknown = JSON.parse(ref)
+    if (typeof parsed !== 'object' || parsed === null) return undefined
+    const text = (parsed as { readonly text?: unknown }).text
+    return typeof text === 'string' ? text : undefined
+  } catch {
+    return undefined
+  }
+}

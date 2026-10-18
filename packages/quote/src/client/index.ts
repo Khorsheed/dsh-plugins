@@ -4,10 +4,15 @@
  * side-chat dock precedent). Select any non-editable text and the card
  * appears beside the selection; its routes:
  *
- * - 「引用到当前会话」 inserts a formatted `> quote` block into the current
- *   conversation's composer through the official input machine
+ * - 「引用到当前会话」 inserts the quote into the current conversation's
+ *   composer through the official input machine
  *   (`ctx.sessions.scope(id).get('conversation').input.for(scope)`, the
- *   ui-shortcuts/message-tools precedent) — never sends;
+ *   ui-shortcuts/message-tools precedent) — never sends. On hosts with the
+ *   insert-reference seam the insert is a structured reference chip (the
+ *   `slash/input-insert-reference` scoped bail event; serialized back to the
+ *   same block at submit by this plugin's own codec, carried by a headless
+ *   trigger source on the probed `ctx.inputTriggers` service); older hosts
+ *   and declined spans fall back to the merged plain-text `> quote` block;
  * - 「引用到侧边对话」 queues an opaque `{label, text}` ref on the side-chat
  *   context bound to the current session (contextKey = session id) through
  *   this package's own thin Remote (`remote.quote.addRef`), then surfaces
@@ -24,8 +29,15 @@
  * Every capability is probed and degrades silently: the registration rides
  * `ctx.slots.inject` (a host without the overlay seat mounts nothing), the
  * conversation item hides with no current session, the side-chat item hides
- * when either Remote namespace is absent, and the selection read itself is
- * the last-resort DOM anchor whose fallback is silent disappearance.
+ * when either Remote namespace is absent, the transcript card's rule and
+ * keyed renderer skip on a host without the userText seam (sent messages
+ * keep their raw wire form there), and the selection read itself is the
+ * last-resort DOM anchor whose fallback is silent disappearance.
+ *
+ * The transcript pair: sent user messages carry the quote's wire blockquote,
+ * which the `quote-block` UserTextRule matches and the keyed
+ * `conversation.user.text.node` renderer shows as a styled card — so the
+ * quote reads structured after send, not only in the composer.
  *
  * @module @khorsheed/dsh-quote/client
  */
@@ -49,9 +61,12 @@ import quoteRemote from '@khorsheed/dsh-quote/remote'
 import { mergedQuoteDraft, type QuoteAddRefOutcome, type QuoteAddRefRequest } from '../types.ts'
 import type { QuoteMenuInjected } from './contract.ts'
 import { en, NS, zh } from './locales.ts'
+import { insertQuoteChip, quoteTriggerSource, type QuoteBailScope, type QuoteInputTriggersMirror } from './reference.ts'
 import { QuoteActionRegistryRuntime } from './registry.ts'
 import { createSelectionSource } from './selection.ts'
 import { SelectionQuoteMenu } from './SelectionMenu.tsx'
+import { QuoteTextNode } from './QuoteTextNode.tsx'
+import { quoteTextRule } from './usertext.ts'
 
 export { SelectionQuoteMenu } from './SelectionMenu.tsx'
 export { QuoteActionRegistryRuntime } from './registry.ts'
@@ -99,6 +114,43 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   }
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'quote: dictionaries')
 
+  // The quote chip codec rides a headless trigger source on the probed
+  // input-trigger service (never an inject): the submit-time serializer
+  // resolves codecs by source name, so the source must exist for any chip we
+  // insert to send at all. Absent service = the chip path stays dark and
+  // every insert falls back to plain text; a duplicate-name throw is a
+  // composition error and degrades the same way.
+  const inputTriggers = ctx.get('inputTriggers') as QuoteInputTriggersMirror | undefined
+  let codecMounted = false
+  if (inputTriggers !== undefined) {
+    try {
+      const disposeSource = inputTriggers.registerSource(quoteTriggerSource)
+      codecMounted = true
+      disposers.push(async () => { disposeSource() })
+    } catch (error) {
+      ctx.logger.error(error)
+    }
+  }
+
+  // The transcript half: sent user messages keep the block's wire form, and
+  // this rule + keyed renderer pair turns it into the styled card. Both
+  // degrade — a host without the userText registry or the keyed node slot
+  // (or a declined duplicate registration) keeps the raw text.
+  const userText = ctx.get('uiConversation')?.userText
+  if (userText !== undefined) {
+    try {
+      const disposeRule = userText.register(quoteTextRule)
+      disposers.push(async () => { disposeRule() })
+    } catch (error) {
+      ctx.logger.error(error)
+    }
+  }
+  ctx.slots.inject('conversation.user.text.node', () => ctx.slots.register({
+    name: 'conversation.user.text.node',
+    key: 'quote-block',
+    locale: NS,
+  }, QuoteTextNode))
+
   // Read lazily and through `ctx.get`: a composition without the host half
   // yields undefined, and the gesture no-ops instead of the plugin pending
   // forever on an inject it cannot satisfy.
@@ -115,13 +167,16 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     && (ctx.get('remote.sidechat') as SideChatRemotePresence | undefined) !== undefined
 
   // 「引用到当前会话」: the message-tools backfill path — resolve the session's
-  // scope, read the live draft, and write the merged one back. Every absence
-  // (scope gone, conversation service missing) is a silent no-op.
-  const insertQuote = (sessionId: SessionId, block: string): void => {
+  // scope, then prefer the structured chip (the insert-reference seam) and
+  // fall back to the merged plain-text blockquote when the seam is unprobed
+  // or declines. Every absence (scope gone, conversation service missing) is
+  // a silent no-op.
+  const insertQuote = (sessionId: SessionId, block: string, chipLabel: string): void => {
     const scope = ctx.get('sessions')?.scope(sessionId)
     if (scope === undefined) return
     const input = scope.get('conversation')?.input.for(scope)
     if (input === undefined) return
+    if (codecMounted && insertQuoteChip(scope as unknown as QuoteBailScope, input, block, chipLabel)) return
     input.setDraft(mergedQuoteDraft(input.state.getSnapshot().draft, block))
   }
 

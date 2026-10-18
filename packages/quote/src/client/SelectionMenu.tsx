@@ -124,7 +124,7 @@ export function SelectionQuoteMenu(props: QuoteMenuProps): ReactNode {
       icon: <IconListPenOutlineMedium />,
       label: t('menu.quoteToConversation'),
       run: () => {
-        insertQuote(sessionId, formatQuoteBlock(snapshot.text, t('quote.attribution', { label })))
+        insertQuote(sessionId, formatQuoteBlock(snapshot.text, t('quote.attribution', { label })), t('chip.label', { label }))
         close()
       },
     })

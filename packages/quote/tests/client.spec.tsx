@@ -126,7 +126,7 @@ describe('SelectionQuoteMenu visibility (the degrade matrix)', () => {
     const { emit, mocks } = menuBench({ current: 's-1', mainView: true, title: '主会话' })
     emit(SNAPSHOT)
     fireEvent.click(screen.getByRole('button', { name: zh['menu.quoteToConversation'] }))
-    expect(mocks.insertQuote).toHaveBeenCalledWith('s-1', '> 两行\n> 文本\n> —— 引用自「主会话」')
+    expect(mocks.insertQuote).toHaveBeenCalledWith('s-1', '> 两行\n> 文本\n> —— 引用自「主会话」', '引用「主会话」')
   })
 
   it('hides again when the selection collapses', () => {
@@ -142,7 +142,7 @@ describe('SelectionQuoteMenu routes', () => {
     const { emit, mocks } = menuBench({ current: 's-1', title: '主会话' })
     emit(SNAPSHOT)
     fireEvent.click(screen.getByRole('button', { name: zh['menu.quoteToConversation'] }))
-    expect(mocks.insertQuote).toHaveBeenCalledWith('s-1', '> 两行\n> 文本\n> —— 引用自「主会话」')
+    expect(mocks.insertQuote).toHaveBeenCalledWith('s-1', '> 两行\n> 文本\n> —— 引用自「主会话」', '引用「主会话」')
     expect(screen.queryByRole('toolbar')).toBeNull()
   })
 
@@ -177,7 +177,7 @@ describe('SelectionQuoteMenu routes', () => {
     const { emit, mocks } = menuBench({ current: 's-1', noTitle: true })
     emit(SNAPSHOT)
     fireEvent.click(screen.getByRole('button', { name: zh['menu.quoteToConversation'] }))
-    expect(mocks.insertQuote).toHaveBeenCalledWith('s-1', `> 两行\n> 文本\n> —— 引用自「${zh['source.fallback']}」`)
+    expect(mocks.insertQuote).toHaveBeenCalledWith('s-1', `> 两行\n> 文本\n> —— 引用自「${zh['source.fallback']}」`, `引用「${zh['source.fallback']}」`)
   })
 })
 

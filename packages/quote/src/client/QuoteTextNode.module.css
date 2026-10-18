@@ -1,0 +1,26 @@
+/* The quote-block transcript card: a quiet blockquote surface inside the user
+ * bubble — left accent, layered background, the source row in tertiary. The
+ * pipeline renders nodes inside an inline span, so the card is a span with
+ * block presentation (valid inline content, block layout). */
+.quote {
+  display: block;
+  margin: 4px 0;
+  padding: 6px 10px;
+  border-left: 2px solid var(--dsw-alias-border-l2);
+  border-radius: 4px 8px 8px 4px;
+  background: var(--dsw-alias-bg-layer-1);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.body {
+  color: var(--dsw-alias-label-primary);
+}
+
+.source {
+  display: block;
+  margin-top: 4px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+}

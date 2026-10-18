@@ -35,8 +35,13 @@ export interface QuoteMenuInjected {
   readonly selection: SelectionSource
   /** Whether the side-chat route is wired (both Remote namespaces mounted). */
   sideChatAvailable: () => boolean
-  /** Insert the formatted quote block into one session's composer draft (never sends). */
-  insertQuote: (sessionId: SessionId, block: string) => void
+  /**
+   * Insert the quote into one session's composer draft (never sends): a
+   * structured reference chip on hosts with the insert-reference seam (the
+   * codec serializes it back to `block` at submit), the merged plain-text
+   * blockquote otherwise. `chipLabel` is the chip's inline label (localized).
+   */
+  insertQuote: (sessionId: SessionId, block: string, chipLabel: string) => void
   /**
    * Queue one opaque ref on the side-chat context bound to one session.
    * @returns whether the host accepted the ref (a refusal no-ops silently).

@@ -11,7 +11,8 @@ To follow up on a passage from an assistant reply or a file preview, you used to
 ## Features
 
 - **Menu on any selection** — select text anywhere outside inputs and a small toolbar floats beside the selection; selections inside inputs or the menu itself never trigger, and scroll or resize hides it.
-- **Quote to current chat** — the selection becomes a `> quote` block (the source label closing the block) merged into the composer draft: a blank draft is filled directly, a typed draft gets the block appended after one blank line — never overwritten, never sent.
+- **Quote to current chat** — on host lines with the reference-chip seam the selection becomes a structured inline chip in the composer draft (the label carries the source; at submit this plugin's own codec serializes it back to the annotated `> quote` block; hosts without the seam, or a declined insert, fall back to the plain-text block): a blank draft is filled directly, a typed draft gets the quote appended after one blank line — never overwritten, never sent. Room sessions work the same way (the room composer's draft IS the official input machine's draft).
+- **Styled card after send** — in sent messages the quote block is matched by this plugin's `quote-block` user-text rule and rendered through the keyed slot as a card with a source row (both locales' attributions match; the card's source row follows the current locale). A host without the user-text seam keeps the raw text.
 - **Quote to side chat** — the selection queues as a pending side-chat ref on the context bound to the current session (contextKey = session id); on success the side-chat tab surfaces in the right sidebar.
 - **Copy** — the verbatim text via the official `writeClipboard` helper.
 - **Extensible menu rows** — other plugins register their own action rows through the `ctx.quoteActions` registry (the canvas package, say, registering "Save as canvas card"), receiving the same opaque `{ text, label, sessionId }` payload; the menu never learns where an action delivers to.
@@ -31,7 +32,7 @@ To follow up on a passage from an assistant reply or a file preview, you used to
 
 | Target | Mechanism | Form |
 | --- | --- | --- |
-| Quote to current chat | `ctx.sessions.scope(id).get('conversation').input.for(scope).setDraft(...)` (the official input machine; the live draft is merged, never overwritten, never sent) | a `> quote` block with a source annotation, sitting in the composer |
+| Quote to current chat | the official input machine: the `slash/input-insert-reference` scoped event inserts a structured reference chip (this plugin's codec serializes it back to the quote block at submit; a missing seam or a declined insert falls back to a `setDraft` plain-text merge) — never overwritten, never sent | a reference chip (or the fallback `> quote` block) with a source annotation, sitting in the composer |
 | Quote to side chat | this package's own thin typert Remote (namespace `quote`, verb `addRef`) → the host half probes `ctx.get('sideChat')` → `openWith` (the sanctioned host-to-host seam, a structural mirror — sidechat is never imported) | a ref chip on the context bound to the current session (contextKey = session id); on success the side-chat tab surfaces through the official `sidebarRight.openTab` navigation face (probed, silent without the seat) |
 | Copy | the official `writeClipboard` helper | the verbatim text |
 
@@ -88,6 +89,9 @@ dsh plugin --profile web remove @khorsheed/dsh-quote
 - **Seat-probe degrade**: the only surface registers through `ctx.slots.inject` — a host without the overlay seat mounts nothing, and boot is unaffected. A headless profile has no browser consumer; the host half still provides the Remote, whose verb refuses or accepts per its own probe.
 - **The selection read is a last-resort DOM anchor**: it reads only `window.getSelection()`'s plain text and rect; if the read itself throws, the fallback is silent disappearance, never a boot failure.
 - **Side-chat is a declared optional collaboration**: `dsh.references` declares `@khorsheed/dsh-sidechat` (a data reference, not a dependency); without it the matching menu item hides and everything else works.
+- **The chip is a probed degrade**: with `ctx.inputTriggers` absent (no codec carrier) or the insert declined (an old host without the listener, a draft-revision race, a locked phase), the route falls back to the plain-text `> quote` block — same behavior as before; `minHost` is unmoved.
+- **The after-send card**: the `uiConversation.userText` registry and the keyed `conversation.user.text.node` seat live on the 0.2.x line; on older hosts a sent message simply keeps its raw wire text (a plain `> ` block) — sending is unaffected.
+- **Room sessions**: the room plugin's composer draft IS the official input machine's draft (since 2026-10), so quotes land in the room composer — a chip projects to its text form in the room's plain textarea and flattens on edit (a deliberate degrade). Under an older room plugin the quote writes the invisible official draft instead (it looks like a no-op); upgrading the room plugin fixes it.
 
 ## Known Limitations
 
@@ -95,6 +99,8 @@ dsh plugin --profile web remove @khorsheed/dsh-quote
 - **Quotes are plain-text snapshots**: no link back to the origin position (v1 has no anchor seam); the source annotation only reaches "which chat" granularity (a selection from a canvas card or a file preview is still annotated with the current chat's name — a deliberate best-effort trade-off).
 - **Selections inside inputs never trigger** (editing must not fight quoting); code-block/table selections quote as plain text; the menu hides on scroll/resize rather than following (kept simple in v1).
 - **No keyboard navigation in the menu**: the overlay is a focus-free toolbar (`role="toolbar"`); keyboard flow is re-evaluated in M2 alongside the upstream seam.
+- **Chips are atomic**: the quoted text is not editable character-by-character in the composer (the plain-text fallback path is); Backspace removes a chip whole. A chip left in a draft after uninstalling this plugin blocks the send by host design (delete the chip to recover — text is never silently downgraded).
+- **Chips flatten in rooms**: the room composer is a plain textarea — a chip projects to its clipboard text there and flattens to plain text on the first edit.
 
 ## How it works
 
@@ -105,7 +111,9 @@ dsh plugin --profile web remove @khorsheed/dsh-quote
 
 **Consumed semantics**: actions run on the captured snapshot, never racing the live selection. The menu closes after an action; the click's own mouseup makes the source re-report the same selection, and that one echo is ignored via a consumed marker — the next distinct selection re-arms the menu.
 
-**Route: current chat**: `formatQuoteBlock` (every line `> `-prefixed, the attribution closing the blockquote) merged by `mergedQuoteDraft` — a blank draft is filled directly, a typed draft gets the block appended after one blank line and is never overwritten (the message-tools backfill precedent).
+**Route: current chat**: `formatQuoteBlock` (every line `> `-prefixed, the attribution closing the blockquote) is the canonical text form. On hosts with the reference seam the insert rides the `slash/input-insert-reference` scoped bail event: the chip's `ref` encodes the full clipboard text (blank-line prefix included), and the codec's `serialize`/`clipboardText` decode that same payload, so the model receives exactly what the composer showed; span coordinates speak the detect projection (existing chips fold to one char), and a declined revision CAS re-reads the snapshot and retries once. Without the seam — or after two declines — the route falls back to the `mergedQuoteDraft` plain-text merge: a blank draft is filled directly, a typed draft is appended after one blank line and never overwritten (the message-tools backfill precedent).
+
+**The after-send card**: the `quote-block` user-text rule (`src/client/usertext.ts`) anchors a `> ` line run plus the (either-locale) attribution line at line starts; the node payload is plain JSON `{ label, text }`, and the keyed renderer (`QuoteTextNode`) strips the wire prefixes and re-renders the source row in the current locale. The rule's order 20 follows the official built-ins; no official rule competes at a `>` start.
 
 **Route: side chat**: `remote.quote.addRef({ contextKey, label, ref })` → the host half's `openWith` (the side-chat record holds pending refs, folded into the next send and cleared). The verb carries no calling agent: `openWith` owns no session-scoped write, and the side-chat store fences host-side calls on the deployment default mode (the canvas `askAgent` precedent).
 
