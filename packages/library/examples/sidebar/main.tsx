@@ -50,7 +50,7 @@ const pns: LibraryResource = {
 }
 const resources: LibraryResource[] = [cam5, avu, pns]
 
-type NodeSpec = { id: string; title: string; gate: 'quiz' | 'read'; state: 'done' | 'current' | 'locked'; locator: string; deps?: string[]; stats?: { attempts: number; lastRatio: number; bestRatio: number }; points?: { id: string; title: string }[] }
+type NodeSpec = { id: string; title: string; gate: 'quiz' | 'read'; state: 'done' | 'current' | 'locked'; locator: string; deps?: string[]; stats?: { attempts: number; lastRatio: number; bestRatio: number }; points?: { id: string; title: string }[]; notes?: string }
 const node = (resourceId: string, spec: NodeSpec) => ({
   id: spec.id, title: spec.title, gate: spec.gate, state: spec.state,
   goals: spec.gate === 'quiz' ? ['说清楚机制', '能举例'] : [],
@@ -58,11 +58,24 @@ const node = (resourceId: string, spec: NodeSpec) => ({
   covers: [{ ref: resourceId, locator: spec.locator }],
   ...(spec.gate === 'quiz' ? { quizStats: spec.stats ?? { attempts: 0 } } : {}),
   ...(spec.points === undefined ? {} : { points: spec.points }),
+  ...(spec.notes === undefined ? {} : { notes: { text: spec.notes, updatedAt: iso(-0.5), revisions: 2 } }),
 })
 const cam5Path: LibraryRoadmap = {
   primaryResourceId: 'r_cam5', status: 'adopted', generatedAt: iso(-9), adoptedAt: iso(-9),
   nodes: [
-    node('r_cam5', { id: 't1p1', title: 'T1 · P1 Johnson\'s Dictionary', gate: 'quiz', state: 'done', locator: '1', stats: { attempts: 2, lastRatio: 0.75, bestRatio: 1 }, points: [{ id: 'detail', title: '细节定位' }] }),
+    node('r_cam5', { id: 't1p1', title: 'T1 · P1 Johnson\'s Dictionary', gate: 'quiz', state: 'done', locator: '1', stats: { attempts: 2, lastRatio: 0.75, bestRatio: 1 }, points: [{ id: 'detail', title: '细节定位' }], notes: [
+      '## 细节定位题怎么稳',
+      '',
+      '这一站的核心是**先定位、再判断**，不要通读。步骤：',
+      '',
+      '- 题干划**关键词**（人名、数字、大写）',
+      '- 回原文按 `同义改写` 找落点，而不是原词',
+      '- 选项逐一对证据，**没有证据的排除**',
+      '',
+      '类比记忆：定位像求函数定义域——先看约束再取交集，$D = \\{x \\mid x+1 \\ge 0\\} \\cap \\{x \\mid x \\ne 2\\}$。',
+      '',
+      '你上次卡在「指代关系」：it/this 往前找最近的**名词**，别找句子。',
+    ].join('\n') }),
     node('r_cam5', { id: 'r1', title: '阅读题型总览', gate: 'read', state: 'done', locator: '1' }),
     node('r_cam5', { id: 't1p2', title: 'T1 · P2 Nature or Nurture?', gate: 'quiz', state: 'current', locator: '2', deps: ['t1p1'], stats: { attempts: 1, lastRatio: 0.5, bestRatio: 0.5 }, points: [{ id: 'inference', title: '词义推断' }, { id: 'reference', title: '指代关系' }, { id: 'attitude', title: '作者态度' }] }),
     node('r_cam5', { id: 't1p3', title: 'T1 · P3 The Truth about the Environment', gate: 'quiz', state: 'locked', locator: '3', deps: ['t1p2'] }),

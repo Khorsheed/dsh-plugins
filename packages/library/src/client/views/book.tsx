@@ -12,7 +12,8 @@
  *
  * @module @khorsheed/dsh-library/client/views/book
  */
-import { Fragment, useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { MarkdownText, type MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
 import { ChipRow, ListRow, PanelHeader, UnderlineTabs } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
 import {
   acceptanceLines, coverKind, isThickResource, parseLocator,
@@ -26,7 +27,7 @@ import {
   IconCameraOutlineMedium, IconCheckOutlineMedium, IconInfoOutlineMedium, IconLockOutlineMedium, IconRefreshOutlineMedium, IconSparkleOutlineMedium, IconTrashOutlineMedium,
 } from '../icons.tsx'
 import { outcome, shortGloss, StateLine, useLoad, value, WeaknessBars, when, type ViewProps } from '../ui.tsx'
-import { MathText, Tex } from '../math.tsx'
+import { MathText } from '../math.tsx'
 import css from '../LibraryPane.module.css'
 
 /** The zigzag column (0..2) a node at `index` sits in. */
@@ -623,10 +624,16 @@ function PageThumb({ p, projectId, page }: { p: ViewProps['p']; projectId: strin
 /**
  * The station's 讲义 tab: the coach's distilled teaching on the node —
  * marginalia for a book station, the textbook itself for a 讲授 station.
+ * The body renders through the host's MarkdownText (full GFM + KaTeX — the
+ * same surface the conversation has).
  */
 function NotesTab({ p, node, onPrime }: { p: ViewProps['p']; node: RoadmapNode; onPrime: (text: string) => void }): ReactNode {
   const { t } = p
   const notes = node.notes
+  const markdownLabels = useMemo<MarkdownLabels>(() => ({
+    code: { copyLabel: t('markdown.copy'), copiedLabel: t('markdown.copied') },
+    footnotes: t('markdown.footnotes'),
+  }), [t])
   return (
     <>
       {node.state === 'locked' && <div className={css.notice}>{t('node.locked')}</div>}
@@ -638,7 +645,7 @@ function NotesTab({ p, node, onPrime }: { p: ViewProps['p']; node: RoadmapNode; 
       ) : (
         <section className={css.notesPaper}>
           <div className={css.notesMeta}>{t('node.notesMeta', { at: when(notes.updatedAt, t), n: String(notes.revisions) })}</div>
-          <NotesBody text={notes.text} />
+          <MarkdownText text={notes.text} labels={markdownLabels} />
         </section>
       )}
       <div className={css.actions}>
@@ -646,39 +653,6 @@ function NotesTab({ p, node, onPrime }: { p: ViewProps['p']; node: RoadmapNode; 
       </div>
     </>
   )
-}
-
-/** 讲义 body: headings, bullet lists, paragraphs, with **bold** and `code` inline. */
-function NotesBody({ text }: { text: string }): ReactNode {
-  const blocks: ReactNode[] = []
-  let key = 0
-  for (const raw of text.split(/\n{2,}/)) {
-    const block = raw.trim()
-    if (block === '') continue
-    const heading = /^#{1,4}\s+(.*)$/.exec(block)
-    if (heading !== null) {
-      blocks.push(<h4 key={key++}>{inline(heading[1] ?? '')}</h4>)
-      continue
-    }
-    const lines = block.split('\n').map(line => line.trim()).filter(line => line !== '')
-    if (lines.length > 0 && lines.every(line => line.startsWith('- ') || line.startsWith('* '))) {
-      blocks.push(<ul key={key++}>{lines.map((line, at) => <li key={at}>{inline(line.slice(2))}</li>)}</ul>)
-      continue
-    }
-    blocks.push(<p key={key++}>{lines.map((line, at) => <Fragment key={at}>{at > 0 && <br />}{inline(line)}</Fragment>)}</p>)
-  }
-  return <div className={css.notesBody}>{blocks}</div>
-}
-
-/** `**bold**`, `` `code` `` and $…$ TeX spans — deliberately the only inline marks. */
-function inline(text: string): ReactNode {
-  return text.split(/(\$\$[\s\S]+?\$\$|\$[^$\n]+\$|\*\*[^*]+\*\*|`[^`]+`)/g).map((part, at) => {
-    if (part.startsWith('$$') && part.endsWith('$$') && part.length > 4) return <Tex key={at} tex={part.slice(2, -2)} block />
-    if (part.startsWith('$') && part.endsWith('$') && part.length > 2) return <Tex key={at} tex={part.slice(1, -1)} />
-    if (part.startsWith('**') && part.endsWith('**') && part.length > 4) return <strong key={at}>{part.slice(2, -2)}</strong>
-    if (part.startsWith('`') && part.endsWith('`') && part.length > 2) return <code key={at}>{part.slice(1, -1)}</code>
-    return <Fragment key={at}>{part}</Fragment>
-  })
 }
 
 /** The right answer as a row caption: choice questions get their letter. */
@@ -771,7 +745,7 @@ function QuizTab({ p, projectId, resourceId, node, passRatio, resources, onPrime
   const allMissed = collectMissed(allAttempts.data?.attempts ?? [], allQuizzes)
   const missed = allMissed.filter(row => row.quiz.scope.nodeId === node.id)
   const others = allMissed.filter(row => row.quiz.scope.nodeId !== node.id)
-  const voided = collectVoided(allAttempts.data?.attempts ?? [], stations)
+  const voided = collectVoided(allAttempts.data?.attempts ?? [], latest === undefined ? [] : [latest])
   const bookOf = (quiz: LibraryAssessment): string | undefined =>
     quiz.scope.resourceId === undefined ? undefined : resources.find(candidate => candidate.id === quiz.scope.resourceId)?.title
   // Per-point mastery: the newest verdict (attempts arrive newest first) of any
@@ -944,14 +918,11 @@ function QuizTab({ p, projectId, resourceId, node, passRatio, resources, onPrime
         </section>
       )}
       {voided.length > 0 && (
-        <section className={css.section}>
-          <h3 className={css.sectionTitle}>{t('node.voidedTitle', { count: String(voided.length) })}</h3>
-          {voided.map(row => <MissRow key={`${row.quiz.id}:${row.question.id}`} p={p} row={row} variant="voided" />)}
-          <div className={css.muted}>{t('node.voidedHint')}</div>
-          <div className={css.actions}>
-            <button type="button" className={css.textButton} onClick={() => { onReplace(voided.map(row => row.question.prompt)) }}>{t('node.voidedReplace')}</button>
-          </div>
-        </section>
+        <div className={css.muted}>
+          {t('node.voidedSummary', { count: String(voided.length) })}
+          {' · '}
+          <button type="button" className={css.textButton} onClick={() => { onReplace(voided.map(row => row.question.prompt)) }}>{t('node.voidedReplace')}</button>
+        </div>
       )}
       {earlier.length > 0 && (
         <section className={css.section}>
