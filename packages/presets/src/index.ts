@@ -6,4 +6,4 @@
  */
 
 /** Preset ids this bundle declares, in cordis.patch.yml row order. */
-export const PRESET_IDS = ['dev', 'dsh-eval', 'dsh-writing', 'dsh-gamedev', 'learning', 'dsh-video'] as const
+export const PRESET_IDS = ['dsh-dev', 'dsh-eval', 'dsh-writing', 'dsh-gamedev', 'dsh-learning', 'dsh-video'] as const

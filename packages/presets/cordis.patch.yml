@@ -2,12 +2,14 @@
 # declarative `@deepseek-ai/dsh-agent-preset` rows (host 0.1.7-rc.1 line — the
 # row type does not exist on 0.1.5, see the package README's Compatibility).
 #
-#   preset-dev          开发模式  the 0.1.5 directory preset dev, REBASED onto
+#   preset-dsh-dev      开发模式  the 0.1.5 directory preset dev, REBASED onto
 #                       rc.1's standard.patch.yml for the official part (the
 #                       0.1.5 copy had drifted: workflow-worker-thread renamed
 #                       to workflow-ptc, tool-ralph disabled upstream, the
 #                       disabled tool-plugin-manager row added), then the live
 #                       dev file's community tool rows appended verbatim.
+#                       Renamed dev → dsh-dev on 2026-10-18: every community
+#                       preset carries the dsh- prefix (namespace unification).
 #   preset-dsh-eval     评测模式  profiles/web-eval/presets/eval migrated; every
 #                       official package name checked against the rc.1 roster —
 #                       all still exist, zero renames. Mirrors web-eval's
@@ -29,13 +31,14 @@
 #   preset-dsh-gamedev  游戏开发模式  new 2026-10-09: game developer + design
 #                       mentor persona, the writing diet's tool rows, and the
 #                       @khorsheed/dsh-game/agent row (tools + skills).
-#   preset-learning     学习模式  folded in 2026-10-12 from the retired
+#   preset-dsh-learning  学习模式  folded in 2026-10-12 from the retired
 #                       @khorsheed/dsh-bundle-learning package (a one-row
 #                       preset-declarations bundle): close-reading coach
 #                       persona, a strict standard-preset diet with a
 #                       whitelisted skill face and a guarded shell, and the
-#                       @khorsheed/dsh-library/tool grant. Row id and preset
-#                       id unchanged, so composition state is unaffected.
+#                       @khorsheed/dsh-library/tool grant. Renamed
+#                       learning → dsh-learning on 2026-10-18 (preset-id
+#                       namespace unification).
 #   preset-dsh-video    剪辑模式  2026-10-06 (video studio M1); standalone since
 #                       2026-10-12: an editing-partner persona + the editing flow's
 #                       own tool set (fs to locate recordings, skill loader,
@@ -48,10 +51,10 @@
 # same repo rule). `!!js` in nested disabled/config is evaluated by the Loader
 # when the child plugin activates — the same mechanism standard.patch.yml uses.
 - insert:
-    - id: preset-dev
+    - id: preset-dsh-dev
       name: '@deepseek-ai/dsh-agent-preset'
       config:
-        id: dev
+        id: dsh-dev
         name: '开发模式'
         description: 单实例多模式的开发场景：官方标准模式的全部能力，外加 local-agent 委派工具（kimi/codex/claude）与 worktrees 模型工具，按会话授予。
         order: 10
@@ -712,7 +715,7 @@
           # Goal mode (autonomous objective pursuit) is a coding workflow the writing
           # scene never drives — the /goal command and the goal tool stay out of this
           # preset (2026-09-29 writing-scene tuning). The host-plane goal service is
-          # untouched; the dev and dsh-eval presets keep their rows.
+          # untouched; the dsh-dev and dsh-eval presets keep their rows.
 
           # ── plan mode / delegation / jobs / present: NOT here ───────────────────────
 
@@ -903,9 +906,10 @@
           - id: game-agent
             name: '@khorsheed/dsh-game/agent'
 
-    # The `learning` agent preset (学习模式): a close-reading coach, folded in
-    # from the retired @khorsheed/dsh-bundle-learning package on 2026-10-12
-    # (row id and preset id unchanged — composition state is unaffected).
+    # The `dsh-learning` agent preset (学习模式): a close-reading coach, folded in
+    # from the retired @khorsheed/dsh-bundle-learning package on 2026-10-12;
+    # renamed learning → dsh-learning on 2026-10-18 (preset-id namespace
+    # unification — every community preset carries the dsh- prefix).
     #
     # What the preset IS: a named scope. Sessions switched to it compose with
     # the persona below and this tool list; every other session sees none of
@@ -933,10 +937,10 @@
     # The persona follows the community preset convention: single-language
     # English (the host prompt's own voice) — the library row's guidance
     # section carries the mechanics.
-    - id: preset-learning
+    - id: preset-dsh-learning
       name: '@deepseek-ai/dsh-agent-preset'
       config:
-        id: learning
+        id: dsh-learning
         name: '学习模式'
         description: 按项目精读的学习模式：图书馆（书籍/路线/知识卡片/测验）与精读教练；不限定教材时，教练联网选材，为项目织一条多来源路线，动手站按交付物验收——只在选择此预设的会话里生效。
         order: 12

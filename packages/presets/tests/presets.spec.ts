@@ -38,23 +38,23 @@ describe('cordis.patch.yml', () => {
   })
 
   it('carries the display fields migrated from the legacy preset.yml files', () => {
-    expect(presetBlock(patch, 'dev')).toContain("        name: '开发模式'\n")
-    expect(presetBlock(patch, 'dev')).toContain('        order: 10\n')
+    expect(presetBlock(patch, 'dsh-dev')).toContain("        name: '开发模式'\n")
+    expect(presetBlock(patch, 'dsh-dev')).toContain('        order: 10\n')
     expect(presetBlock(patch, 'dsh-eval')).toContain("        name: '评测模式'\n")
     expect(presetBlock(patch, 'dsh-eval')).toContain('        order: 0\n')
     expect(presetBlock(patch, 'dsh-writing')).toContain("        name: '写作模式'\n")
     expect(presetBlock(patch, 'dsh-writing')).not.toContain('        order:')
     // learning: folded in from the retired @khorsheed/dsh-bundle-learning
     // (2026-10-12) — display fields carried over verbatim.
-    expect(presetBlock(patch, 'learning')).toContain("        name: '学习模式'\n")
-    expect(presetBlock(patch, 'learning')).toContain('        order: 12\n')
+    expect(presetBlock(patch, 'dsh-learning')).toContain("        name: '学习模式'\n")
+    expect(presetBlock(patch, 'dsh-learning')).toContain('        order: 12\n')
     // T102: 题集整理 folded into 评测模式 — no row, no id, not even in a comment-free line.
     expect(topLevelRowIds(patch)).not.toContain('preset-dataset-authoring')
     expect(patch).not.toMatch(/^ {8}id: dataset-authoring$/m)
   })
 
   it('dev is rebased on the rc.1 standard preset (no 0.1.5 drift)', () => {
-    const dev = presetBlock(patch, 'dev')
+    const dev = presetBlock(patch, 'dsh-dev')
     // rc.1 standard rows the 0.1.5 copy lacked or pinned differently.
     expect(dev).toContain('          - id: workflow-ptc\n')
     expect(dev).toContain("            name: '@deepseek-ai/dsh-workflow-ptc'\n")
@@ -68,7 +68,7 @@ describe('cordis.patch.yml', () => {
   })
 
   it('dev appends the live community tool rows verbatim', () => {
-    const dev = presetBlock(patch, 'dev')
+    const dev = presetBlock(patch, 'dsh-dev')
     expect(dev).toContain('          # ── dev mode: community tool rows granted per session')
     // Since the family fold, each delegation tool is its provider package's
     // `./tool` composition entry with self-defaulting config — the row ids are
@@ -168,7 +168,7 @@ describe('cordis.patch.yml', () => {
   })
 
   it('learning: coach persona, the strict diet with a whitelisted skill face, and the library grant (folded from bundle-learning, 2026-10-12)', () => {
-    const block = presetBlock(patch, 'learning')
+    const block = presetBlock(patch, 'dsh-learning')
     // The grant: library's model face through the package subpath entry.
     expect(block).toContain('          - id: library-tool\n')
     expect(block).toContain("            name: '@khorsheed/dsh-library/tool'\n")
@@ -214,7 +214,7 @@ describe('cordis.patch.yml', () => {
     const rows = (id: string): string =>
       presetBlock(patch, id).split('\n').filter((line) => !line.trimStart().startsWith('#')).join('\n')
 
-    for (const id of ['dev', 'dsh-writing', 'dsh-gamedev', 'learning', 'dsh-video']) {
+    for (const id of ['dsh-dev', 'dsh-writing', 'dsh-gamedev', 'dsh-learning', 'dsh-video']) {
       it(`${id} names no datasets / eval / mission row and no evaluation skill`, () => {
         const block = rows(id)
         for (const entry of EVAL_FAMILY_ROWS) expect(block).not.toContain(entry)

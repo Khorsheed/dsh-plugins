@@ -61,10 +61,10 @@ describe('the organizing preset is picked by grant (T102)', () => {
   })
 
   it('dsh-presets (3080): `dsh-eval`, although the default is 开发模式', async () => {
-    const registry = registryOf('packages/presets/cordis.patch.yml', 'dev')
+    const registry = registryOf('packages/presets/cordis.patch.yml', 'dsh-dev')
     expect(await resolveOrganizingPreset(registry)).toBe('dsh-eval')
     // Neither 开发模式 nor 写作模式 grants it; no 题集整理 preset is left to pick.
-    expect(compositionGrantsOrganize((await registry.readDocument!('dev')).content)).toBe(false)
+    expect(compositionGrantsOrganize((await registry.readDocument!('dsh-dev')).content)).toBe(false)
     expect(compositionGrantsOrganize((await registry.readDocument!('dsh-writing')).content)).toBe(false)
     await expect(registry.readDocument!('dataset-authoring')).rejects.toThrow('Unknown agent preset')
   })
@@ -87,13 +87,13 @@ describe('the organizing preset is picked by grant (T102)', () => {
   })
 
   it('skips a broken preset and degrades to "" without a registry', async () => {
-    expect(await resolveOrganizingPreset(registryOf('packages/presets/cordis.patch.yml', 'dev', ['dsh-eval']))).toBe('')
+    expect(await resolveOrganizingPreset(registryOf('packages/presets/cordis.patch.yml', 'dsh-dev', ['dsh-eval']))).toBe('')
     expect(await resolveOrganizingPreset(undefined)).toBe('')
     expect(await resolveOrganizingPreset({ list: async () => { throw new Error('down') }, readDocument: async () => ({ content: '' }) })).toBe('')
   })
 
   it('the Remote answers a configured id as is, else the pick', async () => {
-    const registry = registryOf('packages/presets/cordis.patch.yml', 'dev')
+    const registry = registryOf('packages/presets/cordis.patch.yml', 'dsh-dev')
     const answer = async (preset: string): Promise<unknown> => {
       const ctx = {
         datasets: { organizing: { preset, datasetsHome: '/home/user/.dsh/datasets' } },
