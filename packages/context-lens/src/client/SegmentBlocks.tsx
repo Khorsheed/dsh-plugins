@@ -1,9 +1,11 @@
 /** Compact composition rows and immediately readable exchange cards. */
-import { useEffect, useState } from 'react'
-import type { CapturedRequest, CapturedResponse, SegmentCategory, SegmentItem, ToolDefItem } from '../types.ts'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import type { CapturedRequest, CapturedResponse, SegmentCategory, SegmentItem } from '../types.ts'
 import { duplicateStats, fmt, fmtK, fmtSpan, type CompositionFilter } from './aggregate.ts'
 import type { InspectorTabProps } from './contract.ts'
 import css from './SegmentBlocks.module.css'
+import { IconChevronDownOutlineMedium } from './icons.tsx'
+import { ToolCatalog } from './ToolCatalog.tsx'
 type T = InspectorTabProps['t']
 
 export function categoryLabelKey(category: SegmentCategory): `cat.${SegmentCategory}` { return `cat.${category}` }
@@ -16,45 +18,65 @@ function parseAssistant(full: string): AssistantPayload | null {
   } catch { /* Plain assistant text is also valid. */ }
   return null
 }
+function BodyText({ text }: { readonly text: string }) {
+  let code = false
+  try { const value: unknown = JSON.parse(text); code = value !== null && typeof value === 'object' } catch { /* Prose stays verbatim. */ }
+  return <pre className={code ? css.pre : css.prose}>{text}</pre>
+}
 function ItemFull({ item }: { readonly item: SegmentItem }) {
   const a = item.category === 'assistant' ? parseAssistant(item.full) : null
-  if (!a || (!a.reasoning && !a.text && !a.calls?.length)) return <pre className={css.pre}>{item.full}</pre>
+  if (!a || (!a.reasoning && !a.text && !a.calls?.length)) return <BodyText text={item.full} />
   return <>
-    {a.reasoning && <><div className={css.fullLabel}>reasoning</div><pre className={css.pre}>{a.reasoning}</pre></>}
-    {a.text && <><div className={css.fullLabel}>text</div><pre className={css.pre}>{a.text}</pre></>}
+    {a.reasoning && <><div className={css.fullLabel}>reasoning</div><BodyText text={a.reasoning} /></>}
+    {a.text && <><div className={css.fullLabel}>text</div><BodyText text={a.text} /></>}
     {a.calls?.map((c, i) => <div key={i}><div className={css.fullLabel}>tool_call · {c.name}</div><pre className={css.pre}>{c.arguments}</pre></div>)}
   </>
 }
 
-/** Wire-order row, with verbatim expansion independent of its layer. */
-export function SegmentItemRow({ item, fromOverride, repeats = 0, highlight = false, t }: {
-  readonly item: SegmentItem; readonly fromOverride?: string | undefined
-  readonly repeats?: number; readonly highlight?: boolean; readonly t: T
+/** The list stays dense; only explicitly opened bodies enter the reading flow. */
+function MessageRows({ items, counts, highlight, t }: {
+  readonly items: SegmentItem[]; readonly counts: Map<string, number>; readonly highlight: boolean; readonly t: T
 }) {
-  const [open, setOpen] = useState(false)
-  return <details className={css.item} open={open} data-highlight={highlight}>
-    <summary className={css.row} title={item.preview} onClick={e => { e.preventDefault(); setOpen(v => !v) }}>
-      <span className={css.idx}>{item.index < 0 ? '—' : String(item.index).padStart(3, '0')}</span>
-      <i className={css.dot} data-cat={item.category} /><span className={css.type}>{t(categoryLabelKey(item.category))}</span>
-      <span className={css.preview}>{item.preview}</span>
-      <span>{repeats > 1 && <span className={css.badge}>×{repeats}</span>}{item.isError && <span className={css.errorNote}>{t('lens.errors')}</span>}</span>
-      <span className={css.number}>{fmt(item.chars)}</span>
-    </summary>
-    {open && <div className={css.full}>
-      <div className={css.fullLabel}>{fromOverride ?? item.source}{item.sourceTurn === undefined ? '' : ` · ${t('lens.sourceTurn', { turn: String(item.sourceTurn) })}`}{item.durationMs === undefined ? '' : ` · ${fmtSpan(item.durationMs)}`}</div>
-      <ItemFull item={item} />
-    </div>}
-  </details>
-}
-function ToolCell({ tool, t }: { readonly tool: ToolDefItem; readonly t: T }) {
-  const [open, setOpen] = useState(false)
-  let definition: string
-  try { definition = JSON.stringify({ name: tool.name, description: tool.description, parameters: JSON.parse(tool.parameters) as unknown }, null, 1) }
-  catch { definition = `${tool.name}\n${tool.description}\n${tool.parameters}` }
-  return <details className={css.toolCell} open={open}>
-    <summary onClick={e => { e.preventDefault(); setOpen(v => !v) }}><span>{tool.name}</span>{tool.added && <span className={css.badge}>{t('lens.layerAdded')}</span>}<span className={css.number}>{fmt(tool.chars)}</span></summary>
-    {open && <pre className={css.pre}>{definition}</pre>}
-  </details>
+  const [expanded, setExpanded] = useState(new Set<SegmentItem>())
+  const [target, setTarget] = useState<SegmentItem | null>(null)
+  const refs = useRef(new Map<SegmentItem, HTMLDetailsElement>())
+  useLayoutEffect(() => {
+    if (!target) return
+    const row = refs.current.get(target)
+    row?.scrollIntoView?.({ block: 'start', behavior: 'instant' })
+    row?.querySelector('summary')?.focus({ preventScroll: true })
+    setTarget(null)
+  }, [target])
+  return <>{items.map((item, i) => {
+    const open = expanded.has(item)
+    const repeats = counts.get(item.full) ?? 0
+    const next = items[i + 1]
+    return <details key={item.index} ref={el => { if (el) refs.current.set(item, el); else refs.current.delete(item) }} className={css.item} open={open} data-highlight={highlight}>
+      <summary className={css.row} title={item.preview} onClick={e => {
+        e.preventDefault()
+        setExpanded(previous => { const changed = new Set(previous); open ? changed.delete(item) : changed.add(item); return changed })
+        if (open) setTarget(item)
+      }}>
+        <span className={css.idx}>{item.index < 0 ? '—' : String(item.index).padStart(3, '0')}</span>
+        <i className={css.dot} data-cat={item.category} /><span className={css.type}>{t(categoryLabelKey(item.category))}</span>
+        <span className={css.preview}>{item.preview}</span>
+        <span className={css.rowBadges}>{repeats > 1 && <span className={css.badge}>×{repeats}</span>}{item.isError && <span className={css.errorNote}>{t('lens.errors')}</span>}</span>
+        <span className={css.number}>{fmt(item.chars)}</span>
+        <IconChevronDownOutlineMedium size={16} className={css.chevron} />
+        {open && <span className={css.readActions}><span>{t('lens.collapse')}</span><button type="button" disabled={!next} onClick={e => {
+          e.preventDefault(); e.stopPropagation()
+          if (!next) return
+          setExpanded(previous => { const changed = new Set(previous); changed.delete(item); changed.add(next); return changed })
+          setTarget(next)
+        }}>{t('lens.nextItem')} ↓</button></span>}
+      </summary>
+      {open && <div className={css.full}>
+        {item.isError && <div className={css.errorNote}>{t('lens.errors')}</div>}
+        <div className={css.fullLabel}>{item.source}{item.sourceTurn === undefined ? '' : ` · ${t('lens.sourceTurn', { turn: String(item.sourceTurn) })}`}{item.durationMs === undefined ? '' : ` · ${fmtSpan(item.durationMs)}`}</div>
+        <ItemFull item={item} />
+      </div>}
+    </details>
+  })}</>
 }
 export interface SegmentBlocksProps {
   readonly request: CapturedRequest
@@ -102,7 +124,7 @@ export function SegmentBlocks({ request, filterCat, t }: SegmentBlocksProps) {
     const names = { system: 'lens.layerSystem', tools: 'lens.layerTools', history: 'lens.layerHistory', added: 'lens.layerAdded' } as const
     return <details key={layer.id} className={css.layer} open={open}>
       <summary className={css.layerHead} onClick={e => { e.preventDefault(); setOpenLayers(previous => { const next = new Set(previous); next.has(layer.id) ? next.delete(layer.id) : next.add(layer.id); return next }) }}>
-        <span className={css.caret}>{open ? '▾' : '▸'}</span>
+        <IconChevronDownOutlineMedium size={16} className={css.chevron} />
         <span className={css.layerName}>{t(names[layer.id as keyof typeof names])}<small>{t(layer.unit, { count: String(layer.count) })}</small></span>
         <span className={css.mix}><span className={css.mini} style={{ width: `${total ? Math.max(3, layer.chars / total * 100) : 0}%` }}>{[...mix].sort((a,b) => b[1]-a[1]).map(([category,n]) => <i key={category} data-cat={category} style={{ flex: `${n} 1 0` }} />)}</span>
           {extra > 0 && <span className={css.badge}>{t('lens.repeatedChars', { count: fmtK(extra) })}</span>}
@@ -111,8 +133,8 @@ export function SegmentBlocks({ request, filterCat, t }: SegmentBlocksProps) {
         <span className={css.number}>{fmt(layer.chars)}</span>
       </summary>
       {open && <div className={css.rows}>
-        {layer.id === 'tools' ? ((filterCat === null || filterCat === 'tool-definition') && tools.length > 0 ? <div className={css.toolGrid}>{tools.map(tool => <ToolCell key={tool.name} tool={tool} t={t} />)}</div> : <div className={css.emptyNote}>{t(filterCat ? 'lens.noMatch' : 'seg.toolsEmpty')}</div>)
-          : rows.length ? rows.map((item, i) => <SegmentItemRow key={`${item.index}-${i}`} item={item} repeats={duplicates.counts.get(item.full) ?? 0} highlight={filterCat === '__dup'} t={t} />)
+        {layer.id === 'tools' ? ((filterCat === null || filterCat === 'tool-definition') && tools.length > 0 ? <ToolCatalog tools={tools} t={t} /> : <div className={css.emptyNote}>{t(filterCat ? 'lens.noMatch' : 'seg.toolsEmpty')}</div>)
+          : rows.length ? <MessageRows items={rows} counts={duplicates.counts} highlight={filterCat === '__dup'} t={t} />
           : <div className={css.emptyNote}>{t(filterCat ? 'lens.noMatch' : layer.id === 'system' ? 'seg.systemEmpty' : 'seg.empty')}</div>}
       </div>}
     </details>

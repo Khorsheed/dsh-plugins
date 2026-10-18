@@ -16,6 +16,11 @@ export const zh = {
   "lens.noMatch": "（无匹配）",
   "lens.noResponse": "（没有捕获到响应）",
   "lens.newInput": "新增输入",
+  "lens.nextItem": "下一条",
+  "lens.parameterCount": "{count} 参数",
+  "lens.required": "必填",
+  "lens.toolDefinition": "工具定义",
+  "lens.schemaConstraints": "完整约束",
 
   "lens.equation": "= 模型 + 工具 + 其他",
   "lens.model": "模型调用",
@@ -206,6 +211,11 @@ export const en: Record<keyof typeof zh, string> = {
   "lens.noMatch": "(no matches)",
   "lens.noResponse": "(no response captured)",
   "lens.newInput": "New input",
+  "lens.nextItem": "Next item",
+  "lens.parameterCount": "{count} params",
+  "lens.required": "Required",
+  "lens.toolDefinition": "Tool definition",
+  "lens.schemaConstraints": "Full constraints",
 
   "lens.equation": "= model + tools + other",
   "lens.model": "Model calls",

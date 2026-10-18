@@ -176,6 +176,14 @@ REQ101.segments.added = [
 ]
 OVERVIEW2.scopes[0]!.requests[0]!.responseSummary = REQ101.responseSummary
 OVERVIEW2.scopes[0]!.requests[0]!.toolErrors = 1
+// Long prose and nested schemas exercise the continuous composition reader.
+REQ101.segments.tools = ['read', 'write', 'ask_user_question', 'bash', 'library_read', 'library_write'].map((name, i) => ({
+  name, description: ['读取文件内容，可按范围返回行。', '写入文件，保留未修改部分。', '向用户询问缺失的信息或确认选项。'][i % 3]!,
+  parameters: JSON.stringify({ type: 'object', properties: { path: { type: 'string', description: '目标文件的路径。', minLength: 1 }, options: { type: 'object', description: '可选的读取范围。', properties: { start: { type: 'integer', minimum: 1 }, end: { type: 'integer' } } } }, required: ['path'], additionalProperties: false }),
+  chars: 1100 + i * 217, added: i === 1,
+}))
+const longInstructions = '<system-reminder>\nThe following workspace instructions may be relevant to your work.\n\n' + 'Keep the original request and its context together. Read the complete captured text before comparing changes.\n保留原始内容；正文按自然段阅读，代码和参数继续使用等宽字体。\n\n'.repeat(25) + '</system-reminder>'
+REQ101.segments.added.push({ index: 27, category: 'plugin-injection', source: 'agent-instructions', sourceTurn: 2, preview: longInstructions.slice(0, 120), full: longInstructions, chars: longInstructions.length, freshness: 'new' }, { index: 28, category: 'runtime-snapshot', source: 'runtime-context', preview: 'Current runtime context. This snapshot supersedes earlier snapshots.', full: 'Current runtime context.\nThis snapshot supersedes earlier snapshots.', chars: 67, freshness: 'new' })
 REQ102.segments = { ...REQ101.segments }
 const signal = new AbortController().signal
 const success = <T,>(value: T) => Promise.resolve({ ok: true as const, value })

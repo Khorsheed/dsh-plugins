@@ -32,7 +32,11 @@ Tool additions require an observed preceding request in the same agent scope. An
 
 Response summaries count repeated calls by exact tool name, in first-occurrence order: `skill ×2`, or `skill ×2 · read` for mixed tools. All live, settled-log and failed-attempt paths supply these counts. Single calls retain their argument hint; older summaries without name counts retain the honest `+N` fallback. Text responses without tool calls are labeled “Assistant reply”, without implying no reasoning or earlier tool use.
 
+Composition disclosure rows use 16px host-style SVG chevrons and whole-row hit targets. Tool definitions form a compact aligned inventory without search; inline expansion shows descriptions and parameter names/types/required flags, preserving nested constraints and exposing the exact original parameter JSON. Unrecognized schemas fall back to the original text without inventing counts. History and added messages retain one-line collapsed summaries. Expanded prose uses the panel body font; JSON and call arguments stay monospace. Composition bodies share the request-detail scrollport, with sticky message controls for collapse and advancing to the next visible row (respecting filters). Advancing closes the current body and moves keyboard focus to the next header. The composition border clips paint without creating a scroll container, so sticky headers follow the actual reader.
+
 ## Alternatives considered
+
+**Separate readers, spacious excerpts, tool search, or nested scrolling.** The reviewed prototypes made users navigate too often or made long histories too sparse. One-line summaries and compact inline reading preserve scan density; sticky next/collapse controls keep long content navigable without another viewport.
 
 **Another visual redesign.** Rejected by the user after reviewing the prototype; retain the earlier visual direction.
 
