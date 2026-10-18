@@ -22,7 +22,7 @@ type T = InspectorTabProps['t']
 /** One turn's one-line title: `turn N · query` for real turns, the purpose label otherwise. */
 export function turnTitle(turn: TurnListItem, t: T): string {
   return turn.hostTurn === undefined
-    ? turn.query
+    ? turn.query === 'compaction' ? t('compaction.title') : turn.query
     : `${t('turn.label', { seq: String(turn.hostTurn) })} · ${turn.query}`
 }
 
@@ -81,7 +81,7 @@ export function TurnMenu({ turns, turnSeq, onSelect, t }: TurnMenuProps): ReactN
           aria-label={t('turn.switch')}
           onClick={() => { setOpen(value => !value) }}
         >
-          <span className={css.triggerLabel}>{current === undefined ? t('turn.switch') : `${current.hostTurn ?? current.query} / ${turns.at(-1)?.hostTurn ?? turns.length}`}</span>
+          <span className={css.triggerLabel}>{current === undefined ? t('turn.switch') : `${current.hostTurn ?? (current.query === 'compaction' ? t('compaction.title') : current.query)} / ${turns.at(-1)?.hostTurn ?? turns.length}`}</span>
           <IconChevronDownOutlineMedium />
         </button>
       )}

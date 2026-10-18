@@ -78,3 +78,5 @@
 .diffLine del, .diffLine ins { padding: 1px 2px; border-radius: 3px; text-decoration: none; }
 .diffLine del { color: var(--dsw-alias-state-error-primary); background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 14%, transparent); }
 .diffLine ins { color: var(--dsw-alias-state-success-primary); background: color-mix(in srgb, var(--dsw-alias-state-success-primary) 14%, transparent); }
+
+.dot[data-cat="compaction"], [data-cat="compaction"] { background: var(--dsw-alias-state-business-primary); }

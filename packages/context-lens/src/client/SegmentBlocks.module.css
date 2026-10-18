@@ -149,3 +149,9 @@
   .readActions button { min-height: 36px; }
   .copyButton { min-height: 36px; }
 }
+
+.dot[data-cat="compaction"], [data-cat="compaction"] { background: var(--dsw-alias-state-business-primary); }
+
+.rewriteMeta { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; padding: 8px 0; color: var(--dsw-alias-label-secondary); font-size: var(--dsh-panel-text-caption, 12px); }
+.rewriteMeta button { border: 0; background: transparent; color: var(--dsw-alias-state-business-primary); font: inherit; cursor: pointer; padding: 4px 0; }
+@container dsh-panel (max-width: 560px) { .rewriteMeta { gap: 4px 8px; } }

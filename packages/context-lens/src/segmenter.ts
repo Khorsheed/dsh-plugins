@@ -1,7 +1,7 @@
 /**
  * The four-segment split of one captured request: system / tools / history /
- * added. History vs added is a longest-common-prefix diff against the previous
- * request IN THE SAME SCOPE (durable message ids where present, content hashes
+ * added. History vs added compares message identity AND content against the previous
+ * request IN THE SAME SCOPE (durable message ids and content hashes
  * otherwise); "added" therefore includes the previous response and its tool
  * results, and a compaction that rewrote the surface shows up as new content —
  * exactly what the model saw change.
@@ -137,7 +137,10 @@ export function splitRequest(input: {
 }): SegmentResult {
   const { messages, context } = input
   const keys = messages.map(message => messageKey(message, contentHash))
-  const splitAt = commonPrefixLength(context.previous?.messageKeys ?? [], keys)
+  // Membership, with occurrence counts: replacement must not make an unchanged
+  // retained tail new, nor let a second identical occurrence reuse the first.
+  const remaining = new Map<string, number>()
+  for (const key of context.previous?.messageKeys ?? []) remaining.set(key, (remaining.get(key) ?? 0) + 1)
   const previousToolNames = new Set(context.previous?.toolNames ?? [])
 
   const system: SegmentItem[] = []
@@ -158,7 +161,10 @@ export function splitRequest(input: {
   const history: SegmentItem[] = []
   const added: SegmentItem[] = []
   messages.forEach((message, index) => {
-    const freshness: SegmentItem['freshness'] = index < splitAt ? 'history' : 'new'
+    const key = keys[index]!
+    const count = remaining.get(key) ?? 0
+    const freshness: SegmentItem['freshness'] = count > 0 ? 'history' : 'new'
+    if (count > 0) remaining.set(key, count - 1)
     if (message.role === 'system') {
       system.push(...attributeSystem(message, index, freshness, context.assemblies))
       return
@@ -171,6 +177,9 @@ export function splitRequest(input: {
     const sourceTurn = message.sourceTurn ?? (message.id === undefined ? undefined : context.turnFor?.(message.id))
     const item: SegmentItem = {
       index,
+      ...message.id === undefined ? {} : { messageId: message.id },
+      ...message.compactionId === undefined ? {} : { compactionId: message.compactionId },
+      ...message.pruning === undefined ? {} : { pruning: message.pruning },
       category: classifyMessage(message),
       source: messageSourceLabel(
         message,
@@ -232,6 +241,9 @@ function attributeSystem(
     if (assembly === undefined || assembly.rendered !== full || assembly.sections.length === 0) continue
     return assembly.sections.map(section => ({
       index,
+      ...message.id === undefined ? {} : { messageId: message.id },
+      ...message.compactionId === undefined ? {} : { compactionId: message.compactionId },
+      ...message.pruning === undefined ? {} : { pruning: message.pruning },
       category: 'system' as const,
       source: section.name,
       preview: previewLine(section.text),
@@ -252,13 +264,6 @@ function attributeSystem(
     chars: full.length,
     freshness,
   }]
-}
-
-/** Longest-common-prefix length of two key lists. */
-function commonPrefixLength(previous: readonly string[], current: readonly string[]): number {
-  let index = 0
-  while (index < previous.length && index < current.length && previous[index] === current[index]) index += 1
-  return index
 }
 
 /** FNV-1a 32-bit — enough to keep id-less messages diffable, no crypto import needed. */

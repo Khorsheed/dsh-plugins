@@ -69,11 +69,13 @@ const { turns, backfill, generation, authorizedScopes } =
 - **Web-facing plugin**: a headless profile has no browser consumer; the host half still captures and serves the Remote.
 - **Probed degradation**: without `sessionPersistence` the log lane is off — both the child-scope detail and the history backfill (live main-conversation capture is unaffected); any missing capture seam silently degrades to an emptier panel, never a boot failure.
 
+Compaction checkpoints have their own category and link to retained compaction calls and pre-compaction requests. Log replay honors surface replacement: shadowed versions no longer enter later context or duplicate counts, while unchanged retained tails remain history. Pruned tool results show before/after character counts and link to an original request when retained. Pruning creates no model call and never overwrites the original execution result.
+
 ## Known Limitations
 
 - **No live refresh during streaming**: the panel is pull-based (fetch on open / turn switch); a running turn's view freezes at fetch time.
 - **Child-log lane honest gaps**: a one-shot sub-run's system prompt and tool definitions are unavailable (not logged); segment-level history/added diffing is only meaningful within one sub-run.
-- **No section attribution for backfilled system segments**: a log-reconstructed turn's system prompt renders as one block (the log keeps no `system-prompt/assemble` section names); aux requests (compaction / session-title) never land in the request log and do not appear historically.
+- **No section attribution for backfilled system segments**: a log-reconstructed turn's system prompt renders as one block (the log keeps no `system-prompt/assemble` section names). Recorded model-backed compaction summaries recover as auxiliary requests, with only the compacted history as input and a log interval as duration. Missing full inputs, streams and failed attempts are not invented; other unrecorded auxiliary calls remain unavailable.
 - **Budget truncation is labeled**: when the memory budget can't hold older turns the backfill truncates newest-first-kept and the turn navigation area shows "Older turns not loaded (memory budget)"; a later query refills automatically once room frees. A log that refuses to decode (e.g. unknown event types) shows a "Session log unreadable" note with the reason instead of looking empty.
 - **Opening a child session directly** (navigating into a catalog'd child session id) shows its own log-reconstructed view (a one-shot has no system/tools); the same content lives under the parent session's scope.
 - No manual refresh action yet (follow-up); adapter-projected wire-body capture is not implemented.

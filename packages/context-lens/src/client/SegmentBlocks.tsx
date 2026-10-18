@@ -1,6 +1,6 @@
 /** Compact composition rows and immediately readable exchange cards. */
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import type { CapturedRequest, CapturedResponse, SegmentCategory, SegmentItem } from '../types.ts'
+import type { CapturedRequest, CapturedResponse, RequestLink, SegmentCategory, SegmentItem } from '../types.ts'
 import { duplicateStats, fmt, fmtK, fmtSpan, type CompositionFilter } from './aggregate.ts'
 import type { InspectorTabProps } from './contract.ts'
 import css from './SegmentBlocks.module.css'
@@ -33,6 +33,18 @@ function ItemFull({ item }: { readonly item: SegmentItem }) {
   </>
 }
 
+/** Compression is provenance, not another copy of the active context. */
+function RewriteMeta({ item, onOpenRequest, t }: { readonly item: SegmentItem; readonly onOpenRequest?: ((link: RequestLink) => void) | undefined; readonly t: T }) {
+  if (!item.compactionId && !item.pruning) return null
+  return <div className={css.rewriteMeta}>
+    {item.compactionId && <><span>{t('compaction.checkpoint')}</span>{item.compactionRequest && onOpenRequest
+      ? <button type="button" onClick={() => onOpenRequest(item.compactionRequest!)}>{t('compaction.inspect')} ↗</button>
+      : <span>{t('compaction.unavailable')}</span>}</>}
+    {item.pruning && <><span>{t('pruning.changed', { before: fmt(item.pruning.beforeChars), after: fmt(item.pruning.afterChars) })}</span>
+      {item.pruning.before && onOpenRequest && <button type="button" onClick={() => onOpenRequest(item.pruning!.before!)}>{t('pruning.before')} ↗</button>}</>}
+  </div>
+}
+
 const itemNumber = (item: SegmentItem) => item.index < 0 ? '—' : String(item.index).padStart(3, '0')
 interface MessageReading {
   expanded: ReadonlySet<SegmentItem>
@@ -46,8 +58,8 @@ interface MessageReading {
   back: (from: SegmentItem) => void
 }
 /** The list stays dense; navigation is shared across system/history/added layers. */
-function MessageRows({ items, groups, highlight, reading, t }: {
-  readonly items: SegmentItem[]; readonly groups: Map<string, SegmentItem[]>; readonly highlight: boolean; readonly reading: MessageReading; readonly t: T
+function MessageRows({ items, groups, highlight, reading, onOpenRequest, t }: {
+  readonly items: SegmentItem[]; readonly groups: Map<string, SegmentItem[]>; readonly highlight: boolean; readonly reading: MessageReading; readonly onOpenRequest?: ((link: RequestLink) => void) | undefined; readonly t: T
 }) {
   return <>{items.map((item, i) => {
     const open = reading.expanded.has(item)
@@ -59,7 +71,7 @@ function MessageRows({ items, groups, highlight, reading, t }: {
         <span className={css.idx}>{itemNumber(item)}</span>
         <i className={css.dot} data-cat={item.category} /><span className={css.type}>{t(categoryLabelKey(item.category))}</span>
         <span className={css.preview}>{item.preview}</span>
-        <span className={css.rowBadges}>{group.length > 1 && <span className={css.badge}>×{group.length}</span>}{item.isError && <span className={css.errorNote}>{t('lens.errors')}</span>}</span>
+        <span className={css.rowBadges}>{item.pruning && <span className={css.badge}>{t('pruning.badge')}</span>}{group.length > 1 && <span className={css.badge}>×{group.length}</span>}{item.isError && <span className={css.errorNote}>{t('lens.errors')}</span>}</span>
         <span className={css.number}>{fmt(item.chars)}</span>
         <IconChevronDownOutlineMedium size={16} className={css.chevron} />
         {open && <span className={css.readActions}><span>{t('lens.collapse')}</span><button type="button" disabled={!next} onClick={e => {
@@ -78,6 +90,7 @@ function MessageRows({ items, groups, highlight, reading, t }: {
           </span>}
           {reading.destination === item && reading.returnTo && <button type="button" className={css.returnLink} onClick={() => reading.back(item)}>{t('lens.returnItem', { index: itemNumber(reading.returnTo) })} ↩</button>}
         </div>
+        <RewriteMeta item={item} onOpenRequest={onOpenRequest} t={t} />
         <ItemFull item={item} />
       </div>}
     </details>
@@ -86,13 +99,14 @@ function MessageRows({ items, groups, highlight, reading, t }: {
 export interface SegmentBlocksProps {
   readonly request: CapturedRequest
   readonly filterCat: CompositionFilter
+  readonly onOpenRequest?: ((link: RequestLink) => void) | undefined
   readonly onClearFilter?: () => void
   readonly previousResponseNumber: number | null
   readonly t: T
 }
 
 /** Filtering changes rows only: group counts, bars and sizes keep their full-request meaning. */
-export function SegmentBlocks({ request, filterCat, onClearFilter, t }: SegmentBlocksProps) {
+export function SegmentBlocks({ request, filterCat, onClearFilter, onOpenRequest, t }: SegmentBlocksProps) {
   const { system, tools, history, added } = request.segments
   const [openLayers, setOpenLayers] = useState(new Set(['added']))
   const duplicates = duplicateStats([...system, ...history, ...added])
@@ -194,7 +208,7 @@ export function SegmentBlocks({ request, filterCat, onClearFilter, t }: SegmentB
       </summary>
       {open && <div className={css.rows}>
         {layer.id === 'tools' ? ((filterCat === null || filterCat === 'tool-definition') && tools.length > 0 ? <ToolCatalog tools={tools} t={t} /> : <div className={css.emptyNote}>{t(filterCat ? 'lens.noMatch' : 'seg.toolsEmpty')}</div>)
-          : rows.length ? <MessageRows items={rows} groups={groups} highlight={filterCat === '__dup'} reading={reading} t={t} />
+          : rows.length ? <MessageRows items={rows} groups={groups} highlight={filterCat === '__dup'} reading={reading} onOpenRequest={onOpenRequest} t={t} />
           : <div className={css.emptyNote}>{t(filterCat ? 'lens.noMatch' : layer.id === 'system' ? 'seg.systemEmpty' : 'seg.empty')}</div>}
       </div>}
     </details>
@@ -258,7 +272,7 @@ export function OutputBlock({ request, t }: { readonly request: CapturedRequest;
     </>}
   </div>
 }
-function InputCard({ item, from, repeats, t }: { readonly item: SegmentItem; readonly from: string; readonly repeats: number; readonly t: T }) {
+function InputCard({ item, from, repeats, onOpenRequest, t }: { readonly item: SegmentItem; readonly from: string; readonly repeats: number; readonly onOpenRequest?: ((link: RequestLink) => void) | undefined; readonly t: T }) {
   const [open, setOpen] = useState(false)
   const a = item.category === 'assistant' ? parseAssistant(item.full) : null
   const body = a ? [a.text, ...(a.calls ?? []).map(c => `→ ${c.name}`)].filter(Boolean).join('\n') || item.preview : item.full || item.preview
@@ -267,16 +281,17 @@ function InputCard({ item, from, repeats, t }: { readonly item: SegmentItem; rea
       <i className={css.dot} data-cat={item.category} /><b>{t(categoryLabelKey(item.category))}</b><span className={css.source} title={from}>{from}</span>{repeats > 1 && <span className={css.badge}>×{repeats}</span>}<span className={css.number}>{fmt(item.chars)}</span>
     </button>
     {item.isError && <div className={css.errorNote}>{t('lens.errors')}</div>}
+    <RewriteMeta item={item} onOpenRequest={onOpenRequest} t={t} />
     {open ? <div className={css.messageFull}><div className={css.fullLabel}>{item.sourceTurn === undefined ? '' : t('lens.sourceTurn', { turn: String(item.sourceTurn) })}</div><ItemFull item={item} /></div> : <div className={css.messageBody} onClick={() => setOpen(true)}>{body}</div>}
   </div>
 }
-export function Exchange({ request, previousResponseNumber, t }: { readonly request: CapturedRequest; readonly previousResponseNumber: number | null; readonly t: T }) {
+export function Exchange({ request, previousResponseNumber, onOpenRequest, t }: { readonly request: CapturedRequest; readonly previousResponseNumber: number | null; readonly onOpenRequest?: ((link: RequestLink) => void) | undefined; readonly t: T }) {
   const duplicates = duplicateStats([...request.segments.system, ...request.segments.history, ...request.segments.added])
   return <section aria-label={t('lens.exchange')}>
     <h3 className={css.exchangeTitle}>{t('lens.exchange')}</h3>
     <div className={css.exchange}>
-      <div className={css.column}><div className={css.columnLabel}>{t('lens.newInput')} · {request.segments.added.length}</div>
-        {request.segments.added.map((item,i) => <InputCard key={i} item={item} repeats={duplicates.counts.get(item.full) ?? 0} t={t} from={item.category === 'assistant' && previousResponseNumber !== null ? t('row.prevResponse', { seq:String(previousResponseNumber) }) : item.category === 'tool-result' && item.sourceRequestNumber !== undefined ? `${item.source} · ${t('row.callResult', { seq: String(item.sourceRequestNumber) })}` : item.source} />)}
+      <div className={css.column}><div className={css.columnLabel}>{t(request.compaction?.inputPartial ? 'compaction.region' : 'lens.newInput')} · {request.segments.added.length}</div>
+        {request.segments.added.map((item,i) => <InputCard key={i} item={item} onOpenRequest={onOpenRequest} repeats={duplicates.counts.get(item.full) ?? 0} t={t} from={item.category === 'assistant' && previousResponseNumber !== null ? t('row.prevResponse', { seq:String(previousResponseNumber) }) : item.category === 'tool-result' && item.sourceRequestNumber !== undefined ? `${item.source} · ${t('row.callResult', { seq: String(item.sourceRequestNumber) })}` : item.source} />)}
       </div>
       <div className={css.arrow} aria-hidden="true">→</div>
       <div className={css.column} role="region" aria-label={t('out.title')}><div className={css.columnLabel}><span>{t('out.title')}</span><span>{request.usage ? fmt(request.usage.outputTokens) : '—'} tok</span></div><OutputBlock request={request} t={t} /></div>

@@ -105,6 +105,7 @@ export interface StoredRequest {
   scopeId: string
   turnSeq: number
   purpose?: string
+  compaction?: CapturedRequest['compaction']
   startedAt: number
   status: 'streaming' | 'ok' | 'failed'
   error?: string
@@ -191,6 +192,8 @@ export type EvictedTurn = TurnRecord
 
 interface SessionRecord {
   id: string
+  activeCompactions: Map<string, { id: string; hostTurn?: number }>
+  prunings: Map<string, { beforeChars: number; afterChars: number }>
   turns: TurnRecord[]
   /** The bracket currently open; cleared (not deleted) at turn/end. */
   openTurn: TurnRecord | undefined
@@ -310,6 +313,8 @@ export class InspectorStore {
       record = {
         id,
         turns: [],
+        activeCompactions: new Map(),
+        prunings: new Map(),
         openTurn: undefined,
         buckets: new Map(),
         nextBucketSeq: -1,
@@ -361,6 +366,31 @@ export class InspectorStore {
     return scope
   }
 
+  /** Observe durable compression boundaries without manufacturing model calls. */
+  noteCompaction(sessionId: string, type: string, data: Record<string, unknown>): void {
+    const session = this.session(this.rootOf(sessionId))
+    const id = data['compactionId']
+    if (typeof id !== 'string') return
+    if (type === 'compaction/start') session.activeCompactions.set(sessionId, { id, ...typeof data['turn'] === 'number' ? { hostTurn: data['turn'] } : {} })
+    if (type === 'compaction/end') session.activeCompactions.delete(sessionId)
+    if (type === 'compaction/summary' || type === 'compaction/applied') {
+      for (const turn of session.turns) for (const scope of turn.scopes.values()) for (const request of scope.requests) {
+        if (request.compaction?.id !== id) continue
+        if (Array.isArray(data['shadowedSeqs'])) request.compaction.replacedCount = data['shadowedSeqs'].length
+        if (type === 'compaction/applied') request.compaction.applied = true
+      }
+    }
+  }
+
+  /** Preserve pruning metadata across later requests, with bounded observation state. */
+  notePruning(sessionId: string, messageId: string, beforeChars: number, afterChars: number): void {
+    const state = this.session(this.rootOf(sessionId)).prunings
+    const key = `${sessionId}:${messageId}`
+    if (afterChars >= beforeChars && !state.has(key)) return
+    state.set(key, { beforeChars: state.get(key)?.beforeChars ?? beforeChars, afterChars })
+    if (state.size > 512) state.delete(state.keys().next().value!)
+  }
+
   /**
    * Begin one captured request: correlate session/turn/scope, split the
    * segments against the scope's previous fingerprint, assign the sequence.
@@ -374,6 +404,7 @@ export class InspectorStore {
     const rootId = this.rootOf(snapshot.sessionId)
     const session = this.session(rootId)
     const isChild = snapshot.sessionId !== rootId
+    const compaction = snapshot.purpose === 'compaction' ? session.activeCompactions.get(snapshot.sessionId) : undefined
 
     let turn: TurnRecord
     let scopeId: string
@@ -392,7 +423,8 @@ export class InspectorStore {
       // lands in the same kind of bucket under 'ad-hoc' (and a turn/end that
       // later closes a pre-mount turn drains it — see turnEnd).
       const purpose = snapshot.purpose ?? 'ad-hoc'
-      let bucket = session.buckets.get(purpose)
+      const bucketKey = compaction ? `${purpose}:${compaction.id}` : purpose
+      let bucket = session.buckets.get(bucketKey)
       if (bucket === undefined) {
         bucket = this.mintTurn(session, startedAt, {
           purpose,
@@ -400,7 +432,7 @@ export class InspectorStore {
           turnSeq: session.nextBucketSeq,
         })
         session.nextBucketSeq -= 1
-        session.buckets.set(purpose, bucket)
+        session.buckets.set(bucketKey, bucket)
       }
       turn = bucket
       scopeId = 'main'
@@ -415,18 +447,21 @@ export class InspectorStore {
     if (scope === undefined) return undefined
 
     const segments = splitRequest({
-      messages: snapshot.messages,
+      messages: snapshot.messages.map(message => {
+        const pruning = message.id === undefined ? undefined : session.prunings.get(`${snapshot.sessionId}:${message.id}`)
+        return pruning === undefined ? message : { ...message, pruning }
+      }),
       ...snapshot.systemSlot === undefined ? {} : { systemSlot: snapshot.systemSlot },
       ...snapshot.tools === undefined ? {} : { tools: snapshot.tools },
       context: {
-        ...scope.previous === undefined ? {} : { previous: scope.previous },
+        ...scope.previous === undefined || snapshot.purpose === 'compaction' ? {} : { previous: scope.previous },
         assemblies: this.assemblies,
         resolveToolName: callId => this.callNames.get(callId),
         durationFor: messageId => session.messageDurations.get(messageId),
         turnFor: messageId => session.messageTurns.get(messageId),
       },
     })
-    scope.previous = segments.fingerprint
+    if (snapshot.purpose !== 'compaction') scope.previous = segments.fingerprint
 
     const request: StoredRequest = {
       seq: this.seqCounter,
@@ -434,10 +469,11 @@ export class InspectorStore {
       scopeId: scope.scopeId,
       turnSeq: turn.turnSeq,
       ...snapshot.purpose === undefined ? {} : { purpose: snapshot.purpose },
+      ...compaction === undefined ? {} : { compaction: { ...compaction } },
       startedAt,
       status: 'streaming',
       config: snapshot.config,
-      responseSummary: { kind: 'none' },
+      responseSummary: { kind: snapshot.purpose === 'compaction' ? 'compaction' : 'none' },
       segments: {
         system: segments.system,
         tools: segments.tools,
@@ -486,7 +522,7 @@ export class InspectorStore {
     }
     this.seqCounter += 1
     found.scope.requests.push(request)
-    found.scope.previous = built.fingerprint
+    if (built.purpose === undefined) found.scope.previous = built.fingerprint
     this.totalChars += request.totalChars
     this.attachResponse(request, built.response)
     this.accountExecutionResults(request)
@@ -584,7 +620,7 @@ export class InspectorStore {
     } else {
       request.status = 'ok'
     }
-    request.responseSummary = summarizeResponse(request)
+    request.responseSummary = request.purpose === 'compaction' ? { kind: 'compaction' } : summarizeResponse(request)
     this.attachResponse(request, responseFromSpans(request.blocks))
     const session = this.sessions.get(request.sessionId)
     if (session !== undefined && request.purpose === undefined) {
@@ -859,7 +895,9 @@ export class InspectorStore {
     if (session.backfillState === 'complete' || session.backfillState === 'broken') return 0
     const liveCount = session.turns.filter(turn => turn.liveContent).length
     const candidates = logTurns.filter(logTurn =>
-      !session.turns.some(turn => turn.purpose === undefined && turn.hostTurn === logTurn.hostTurn))
+      !session.turns.some(turn => logTurn.purpose === undefined
+        ? turn.purpose === undefined && turn.hostTurn === logTurn.hostTurn
+        : [...turn.scopes.values()].some(scope => scope.requests.some(request => request.compaction?.id === logTurn.requests[0]?.compaction?.id))))
     let dropped = 0
     let inserted = 0
     // Newest-first; every constraint skips (never aborts the older candidates).
@@ -893,6 +931,7 @@ export class InspectorStore {
   /** A complete log can anchor live turns without retaining old request bodies. */
   private reconcileRequestNumbers(session: SessionRecord, logTurns: readonly LogTurn[]): void {
     for (const logged of logTurns) {
+      if (logged.purpose !== undefined) continue
       const live = session.turns.find(t => t.hostTurn === logged.hostTurn && t.purpose === undefined && t.liveStartObserved)
       const first = logged.requests[0]?.requestNumber
       if (!live || first === undefined) continue
@@ -920,8 +959,8 @@ export class InspectorStore {
   /** One reconstructed turn → one TurnRecord (main scope + delegation stubs). */
   private insertLogTurn(session: SessionRecord, logTurn: LogTurn): void {
     const turn = this.mintTurn(session, logTurn.startedAt, {
-      hostTurn: logTurn.hostTurn,
-      turnSeq: logTurn.hostTurn,
+      ...logTurn.purpose === undefined ? { hostTurn: logTurn.hostTurn } : { purpose: logTurn.purpose },
+      turnSeq: logTurn.purpose === undefined ? logTurn.hostTurn : session.nextBucketSeq--,
       query: logTurn.query,
     })
     if (logTurn.closingMessageId !== undefined) turn.closingMessageId = logTurn.closingMessageId
@@ -1111,6 +1150,7 @@ export class InspectorStore {
             startedAt: request.startedAt,
             ...request.usage === undefined ? {} : { usage: request.usage },
             ...request.settledAt === undefined ? {} : { totalMs: request.settledAt - request.startedAt },
+            ...request.compaction?.inputPartial ? { timingApproximate: true } : {},
             totalChars: request.totalChars,
             toolErrors: request.execs.filter(exec => exec.isError).length,
           })),
@@ -1144,7 +1184,7 @@ export class InspectorStore {
           .flatMap(s => s.requests)
           .filter(r => r.purpose === request.purpose && (r.startedAt < request.startedAt || (r.startedAt === request.startedAt && r.seq < request.seq)))
           .sort((a, b) => b.startedAt - a.startedAt || b.seq - a.seq)[0]
-        return { ...this.requestView(request), ...previous === undefined ? {} : { prefix: comparePrefix(previous, request) } }
+        return { ...this.requestView(request), ...previous === undefined || request.compaction?.inputPartial || previous.compaction?.inputPartial ? {} : { prefix: comparePrefix(previous, request) } }
       }
     }
     return undefined
@@ -1159,9 +1199,18 @@ export class InspectorStore {
         }
       }
     }
+    const retained = (this.sessions.get(request.sessionId)?.turns ?? []).flatMap(turn => turn.scopes.get(request.scopeId)?.requests ?? [])
+    const link = (r: StoredRequest) => ({ turnSeq: r.turnSeq, scopeId: r.scopeId, seq: r.seq, ...r.requestNumber === undefined ? {} : { requestNumber: r.requestNumber } })
+    const before = retained.filter(r => r.purpose === undefined && r.startedAt < request.startedAt).sort((a, b) => b.startedAt - a.startedAt)[0]
     const provenance = (items: SegmentItem[]) => items.map(item => {
       const number = item.toolCallId === undefined ? undefined : owners.get(item.toolCallId)
-      return number === undefined ? item : { ...item, sourceRequestNumber: number }
+      const compression = item.compactionId === undefined ? undefined : retained.find(r => r.compaction?.id === item.compactionId)
+      const original = item.pruning === undefined ? undefined : retained.filter(r => r.startedAt < request.startedAt && [...r.segments.history, ...r.segments.added].some(old => old.messageId === item.messageId && !old.pruning)).sort((a, b) => b.startedAt - a.startedAt)[0]
+      return { ...item,
+        ...number === undefined ? {} : { sourceRequestNumber: number },
+        ...compression === undefined ? {} : { compactionRequest: link(compression) },
+        ...item.pruning === undefined ? {} : { pruning: { ...item.pruning, ...original === undefined ? {} : { before: link(original) } } },
+      }
     })
     const response = request.response && { ...request.response, toolCalls: request.response.toolCalls.map(call => {
       const exec = call.callId === undefined ? undefined : request.execs.find(e => e.callId === call.callId)
@@ -1176,6 +1225,7 @@ export class InspectorStore {
       scopeId: request.scopeId,
       sessionId: request.sessionId,
       ...request.purpose === undefined ? {} : { purpose: request.purpose },
+      ...request.compaction === undefined ? {} : { compaction: { ...request.compaction, ...before === undefined ? {} : { before: link(before) } } },
       startedAt: request.startedAt,
       status: request.status,
       ...request.error === undefined ? {} : { error: request.error },

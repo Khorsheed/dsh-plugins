@@ -32,7 +32,8 @@ export function Trend({
       el.scrollLeft =
         current.offsetLeft - el.clientWidth / 2 + current.offsetWidth / 2
   }, [turnSeq, scopeId, data])
-  const requests = data.requests.filter(r => r.scopeId === scopeId)
+  const auxiliary = data.requests.find(r => r.seq === selectedSeq)?.responseSummary.kind === 'compaction'
+  const requests = data.requests.filter(r => r.scopeId === scopeId && (r.responseSummary.kind === 'compaction') === auxiliary)
   const turns = data.turns.filter(turn => requests.some(r => r.turnSeq === turn.turnSeq))
   const max = Math.max(
     1,
@@ -92,8 +93,8 @@ export function Trend({
                       className={css.trendTarget}
                       data-selected={r.seq === selectedSeq}
                       aria-pressed={r.seq === selectedSeq}
-                      aria-label={`${t('turn.label', { seq: String(turn.hostTurn ?? turn.turnSeq) })} #${requestNumberText(r)} · ${hit ?? '—'}%`}
-                      title={`#${requestNumberText(r)} · ${total} tok · ${hit ?? '—'}%`}
+                      aria-label={`${auxiliary ? t('compaction.title') : `${t('turn.label', { seq: String(turn.hostTurn ?? turn.turnSeq) })} #${requestNumberText(r)}`} · ${hit ?? '—'}%`}
+                      title={`${auxiliary ? t('compaction.title') : `#${requestNumberText(r)}`} · ${total} tok · ${hit ?? '—'}%`}
                       onClick={() => {
                         if (!drag.current?.moved)
                           onSelect(turn.turnSeq, r.seq, r.scopeId)

@@ -14,8 +14,10 @@ import type {
  * the tool case groups repeated names as `name ×N` (single calls keep hints), the text case is the
  * caller's localized assistant reply, an empty response is the plain dash.
  */
-export function summaryText(summary: ResponseSummary, assistantReply: string): string {
+export function summaryText(summary: ResponseSummary, assistantReply: string, compaction = 'Compaction'): string {
   switch (summary.kind) {
+    case 'compaction':
+      return compaction
     case 'tool':
       if (summary.toolCounts?.length) return summary.toolCounts.map(tool => `${tool.name}${tool.count > 1 ? ` ×${tool.count}` : ''}`).join(' · ')
       // Older hosts only expose the first name and a total; never guess repeated tools.

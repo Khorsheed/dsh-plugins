@@ -195,3 +195,17 @@ describe('recursive tool definitions', () => {
     expect(container.querySelector('pre')?.textContent).toContain('"type":"string"')
   })
 })
+
+describe('pruned result provenance', () => {
+  it('shows the count change and navigates to an existing original without including it in totals', () => {
+    const open = vi.fn()
+    const item: SegmentItem = { ...message(1, 'tool-result'), full: 'short', chars: 5, pruning: { beforeChars: 5000, afterChars: 5, before: { turnSeq: 1, scopeId: 'main', seq: 7 } } }
+    render(<SegmentBlocks request={{ ...request, segments: { ...request.segments, added: [item] } }} filterCat={null} previousResponseNumber={null} onOpenRequest={open} t={t} />)
+    expect(screen.getByText('已裁剪')).toBeTruthy()
+    fireEvent.click(summary('preview-1'))
+    expect(screen.getByText('已裁剪 · 5,000 → 5 字符')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '查看裁剪前请求 ↗' }))
+    expect(open).toHaveBeenCalledWith({ turnSeq: 1, scopeId: 'main', seq: 7 })
+    expect(screen.queryByText('5000')).toBeNull()
+  })
+})

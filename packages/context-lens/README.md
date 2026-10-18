@@ -69,11 +69,13 @@ const { turns, backfill, generation, authorizedScopes } =
 - **web 面插件**：headless profile 没有浏览器消费者，宿主半边照常采集并提供 Remote。
 - **能力探测降级**：`sessionPersistence` 缺席时日志车道整体关闭（子 agent 明细与历史回溯都关闭，主对话实采不受影响）；`llm/stream`/`system-prompt/assemble`/`session/event` 任一缺席静默降级为更空的面板，不影响启动。
 
+压缩摘要单独分类并可跳转到保留的压缩调用和压缩前请求。日志回放遵守上下文替换，已被压缩或裁剪的旧版本不进入后续上下文及重复统计；未改动的保留尾部继续算作历史。工具结果裁剪显示前后字符数，并在原请求仍被保留时提供跳转。裁剪不生成模型请求，也不改写原调用的执行结果。
+
 ## Known Limitations
 
 - **正在流式进行的 turn 不实时刷新**：面板是拉取式（打开/切 turn 时取数），进行中的 turn 视图停在拉取时刻。
 - **子 agent 日志车道的诚实空态**：one-shot 子运行的 system 原文与工具定义不可见（不落日志），segment 级历史/新增切分只在同一子运行内有意义。
-- **日志回溯的 system 段无 section 归因**：重建自日志的 turn，system 提示词渲染为一整块（无 `system-prompt/assemble` 的 section 名）；aux 请求（compaction / session-title）不落请求日志，不出现在历史 turn 里。
+- **日志回溯的 system 段无 section 归因**：重建自日志的 turn，system 提示词渲染为一整块（无 `system-prompt/assemble` 的 section 名）。有模型调用记录的压缩摘要可恢复成独立辅助请求，但输入仅展示被压缩历史，耗时仅是日志记录间隔；缺失的完整输入、流事件和失败尝试不会臆造。其他未记录的辅助调用仍无法恢复。
 - **预算裁断会标注**：历史回溯在内存预算装不下更旧的 turn 时从新到旧截断，轮次导航区出现「更早的 turn 受内存预算限制未载入」；空间释放后的查询自动补齐。日志解码失败时（如未知事件类型）空态显示「日志不可读」及原因，与「确实没有数据」区分。
 - **直接打开一个子 agent 会话**（catalog'd child session id 进入）看到的是它自己日志的重建视图（one-shot 没有 system/tools），父会话里的同内容在对应 scope 下。
 - 面板无主动刷新按钮（留作后续）；尚未实现 adapter 投影后的 wire body 采集。

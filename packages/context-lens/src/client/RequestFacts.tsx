@@ -16,14 +16,14 @@ export function RequestFacts({ request: r, t, raw = false, onToggleRaw }: {
   const chars = aggregateCategories(r).reduce((n, c) => n + c.chars, 0)
   const duration = (ms: number | undefined) => ms === undefined ? '—' : fmtSpan(ms)
   const metrics = [
-    { label: t('req.input'), value: u ? fmt(inputTotal(u)) : '—', unit: 'tok', sub: t('chain.chars', { count: fmt(chars) }) },
+    { label: t('req.input'), value: u ? fmt(inputTotal(u)) : '—', unit: 'tok', sub: t(r.compaction?.inputPartial ? 'compaction.recoveredChars' : 'chain.chars', { count: fmt(chars) }) },
     { label: t('lens.hit'), value: u ? (cachePct(u)?.toFixed(1) ?? '—') : '—', unit: '%', sub: u ? `${fmt(u.cacheReadTokens ?? 0)} tok` : '—' },
     { label: t('lens.miss'), value: u ? fmt(u.inputTokens) : '—', unit: 'tok', sub: r.config.maxTokens === undefined ? '' : t('lens.outputLimit', { count: fmtK(r.config.maxTokens) }) },
-    { label: t('lens.duration'), value: duration(r.timing.totalMs), unit: '', sub: `${t('req.output')} ${u ? fmt(u.outputTokens) : '—'} tok · ${t('lens.firstToken', { duration: duration(r.timing.waitMs) })}` },
+    { label: t(r.compaction?.inputPartial ? 'compaction.interval' : 'lens.duration'), value: duration(r.timing.totalMs), unit: '', sub: `${t('req.output')} ${u ? fmt(u.outputTokens) : '—'} tok · ${t('lens.firstToken', { duration: duration(r.timing.waitMs) })}` },
   ]
   return <>
     <div className={css.detailHead}>
-      <b title={r.requestNumber === undefined ? t('req.numberUnknown') : undefined}>#{requestNumberText(r)} · {summaryText(r.responseSummary, t('resp.directAnswer'))}</b>
+      <b title={r.requestNumber === undefined && r.purpose !== 'compaction' ? t('req.numberUnknown') : undefined}>{r.purpose !== 'compaction' && <>#{requestNumberText(r)} · </>}{summaryText(r.responseSummary, t('resp.directAnswer'), t('compaction.title'))}</b>
       {onToggleRaw && <button type="button" className={css.jsonToggle} aria-label={t('view.raw')} title={t('view.raw')} aria-pressed={raw} onClick={onToggleRaw}>{'{ }'}</button>}
     </div>
     <ConfigFacts config={r.config} t={t} />
@@ -43,7 +43,7 @@ export function CacheFacts({ request: r, t }: { readonly request: CapturedReques
         <div className={css.cacheStrip}><i style={{ width: `${cachePct(u) ?? 0}%` }} /></div>
         <div className={css.cacheLegend}><span><i />{t('lens.hit')} {fmt(u.cacheReadTokens ?? 0)}</span><span><i />{t('lens.miss')} {fmt(u.inputTokens)}</span></div>
       </>}
-      {prefix === undefined ? <span title={t('lens.prefixBaselineHint')}>{t('lens.prefixUnknown')}</span> : prefix.changed ? <>
+      {prefix === undefined ? <span title={t('lens.prefixBaselineHint')}>{t(r.compaction?.inputPartial ? 'compaction.noPrefix' : 'lens.prefixUnknown')}</span> : prefix.changed ? <>
         <span>{t('lens.prefixChanged', { index: String(prefix.changed.index).padStart(3, '0'), seq: requestNumberText({ requestNumber: prefix.previousRequestNumber }) })}</span>
         <PrefixDifference changed={prefix.changed} t={t} />
       </> : <span>{t('lens.prefixSame', { seq: requestNumberText({ requestNumber: prefix.previousRequestNumber }), gap: fmtSpan(prefix.gapMs) })}</span>}
