@@ -738,7 +738,7 @@ Host 0.2.0's left sidebar has a column of global entries. This package adds 「�
 ## Compatibility
 
 - npm release line (`@deepseek-ai/dsh@0.2.0-rc.2`): ✅ — consumes `Context.provide` and `commands`; the three sibling services are probed at run time, a missing one is a refusal, never a boot failure. Since T82 only host 0.2.0 and later are supported (minHost 0.2.0-rc.2) — 0.1.x hosts stay on the previous release line.
-- source line (deepseek-harness master): ✅ — same (verifiedHost: 0.2.0-rc.2, live-smoked on a web-eval temp instance).
+- source line (deepseek-harness master): ✅ — same (verifiedHost: 0.2.1-rc.1, live-smoked on a web-eval temp instance; host-021 wave: full build+test green against the 0.2.1-rc.1 tree, no other surface change).
 
 Degraded / absent items (kept in sync with `dsh.compat` in package.json):
 

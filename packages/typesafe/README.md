@@ -103,7 +103,7 @@ await typesafe.health()   // { available, source?, reason?, lastError?, circuitO
 ## Compatibility
 
 - npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：✅ 完整——自挂载行 + `ctx.provide` / `ctx.get` 服务发布 + `ctx.credentials.resolve` 按引用解析均为 0.1.5-rc.1 上实测通过的 seam；`minHost` 即 0.1.5-rc.1。
-- 源码线（deepseek-harness master）：所用 seam 均为长期原语，未见重命名；尚未在 master 上单独复验（`verifiedHost: 0.1.5-rc.1`）。
+- 源码线（deepseek-harness master）：✅（verifiedHost: 0.2.1-rc.1）——host-021 波对 0.2.1-rc.1 树全量 build+test 绿，无其它表面变化；所用 seam 均为长期原语，未见重命名。
 - 低于 0.1.5 的宿主未验证；`inject: ['credentials']` 在无凭据服务的组合里会让本行 pending（不崩 boot），此时服务不可用。
 
 **版本线对照**：`0.1.0` 起支持宿主 `0.1.5-rc.1` 及以后。

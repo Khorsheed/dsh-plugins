@@ -34,7 +34,7 @@ dsh plugin --profile web remove @khorsheed/dsh-local-files
 ## Compatibility
 
 - npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：✅ 完整——右栏页型 tab（`sidebar.right.pane.tab` 座位与 kind 级遮蔽注册表）与 open-in-app 路由在该线均在，`minHost` 钉在 `0.1.5-rc.1`。`0.1.2`–`0.1.4` 宿主没有右栏，本插件在那里没有任何浏览器表面（首个公开发布即要求 0.1.5 起，旧宿主请勿安装）。
-- 源码线（deepseek-harness master）：✅（verifiedHost: 0.1.7-rc.2）——rc 线的图标改名（`Icon*Outline14/16` → `Icon*OutlineMedium`）与插件清单展示元数据（`locale/*.json`）均已跟进；本包构建与测试在 0.1.7-rc.2 源码树（`DSH_HARNESS`）下通过。
+- 源码线（deepseek-harness master）：✅（verifiedHost: 0.2.1-rc.1）——host-021 波对 0.2.1-rc.1 树全量 build+test 绿，无其它表面变化；rc 线的图标改名（`Icon*Outline14/16` → `Icon*OutlineMedium`）与插件清单展示元数据（`locale/*.json`）均已跟进。
 - **Web 表面**：右栏 tab 是浏览器表面；headless profile 没有浏览器消费者，本插件在那里零贡献（host 半的 Remote 照常注册）。
 - **只在宿主本机显示的手势**：「打开此文件夹 / 打开所在文件夹 / 在 IDE 中打开 / 选择工作区」都会在宿主电脑上弹出访达、IDE 或目录对话框；页面不是从本机地址（localhost / 127.0.0.1 / ::1）打开时（手机经隧道、别的电脑），这些手势一律隐藏，手机紧凑标题栏只剩搜索、刷新、显示/隐藏文件。
 - **手势探测降级**：「打开此文件夹 / 打开所在文件夹 / 在 IDE 中打开」走官方 open-in-app——浏览器每页探测一次 `GET /open-in-app/apps`，宿主解析出对应应用（文件管理器 / 编辑器）才显示该手势，探测失败保持隐藏；「选择工作区」探测宿主的 directoryPicker Remote，缺席时按取消处理。两条路径都静默降级，不影响启动。

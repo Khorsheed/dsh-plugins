@@ -62,7 +62,7 @@ The parent `local-agent-dsh` provider supplies `--model` automatically: the harn
 ## Compatibility
 
 - npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`): ✅ full — the first release line (0.1.0-rc.6) is already based on the 0.1.5-rc.1 API surface, full build+test green; minHost is 0.1.5-rc.1, and older hosts have no earlier release line to fall back to.
-- source line (deepseek-harness master): ✅ (verifiedHost: 0.1.5-rc.1)
+- source line (deepseek-harness master): ✅ (verifiedHost: 0.2.1-rc.1) — host-021 wave: full build+test green against the 0.2.1-rc.1 tree; the family delegation migrated to `ctx.subagents.startActivation` (managed activation), and run.id is now unique per execution.
 
 ## Known Limitations
 

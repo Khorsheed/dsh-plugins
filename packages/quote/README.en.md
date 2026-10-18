@@ -84,7 +84,7 @@ dsh plugin --profile web remove @khorsheed/dsh-quote
 ## Compatibility
 
 - npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`): ✅ full — the `shell.overlay` seat (ui-layout's frame) and the conversation input machine (`conversation.input.for`) both exist on this line, so `minHost` pins 0.1.5-rc.1.
-- source line (deepseek-harness master): ✅ (verifiedHost: 0.1.5-rc.1)
+- source line (deepseek-harness master): ✅ (verifiedHost: 0.2.1-rc.1) — host-021 wave: full build+test green against the 0.2.1-rc.1 tree; no other surface changes.
 - **Seat-probe degrade**: the only surface registers through `ctx.slots.inject` — a host without the overlay seat mounts nothing, and boot is unaffected. A headless profile has no browser consumer; the host half still provides the Remote, whose verb refuses or accepts per its own probe.
 - **The selection read is a last-resort DOM anchor**: it reads only `window.getSelection()`'s plain text and rect; if the read itself throws, the fallback is silent disappearance, never a boot failure.
 - **Side-chat is a declared optional collaboration**: `dsh.references` declares `@khorsheed/dsh-sidechat` (a data reference, not a dependency); without it the matching menu item hides and everything else works.

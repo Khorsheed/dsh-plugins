@@ -38,4 +38,4 @@ import { PanelRoot, PanelHeader, UnderlineTabs, ChipRow, ListRow, panelVar } fro
 ## Compatibility
 
 - npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：✅ 完整——唯一的官方运行时导入是 ui-primitives 的 `Menu`（「…」菜单），0.1.5-rc.1 线已提供，与 ui-content-preview 相同；图标为内联 SVG。
-- 源码线（deepseek-harness master）：✅（verifiedHost: `0.2.0-rc.2`）——源码面库不注册任何 slot / service / locale / row，兼容面等于 `Menu` 的类型导出。
+- 源码线（deepseek-harness master）：✅（verifiedHost: `0.2.1-rc.1`）——host-021 波对 0.2.1-rc.1 树全量 build+test 绿，无其它表面变化；源码面库不注册任何 slot / service / locale / row，兼容面等于 `Menu` 的类型导出。

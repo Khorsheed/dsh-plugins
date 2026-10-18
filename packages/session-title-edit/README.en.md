@@ -34,7 +34,7 @@ dsh plugin --profile web remove @khorsheed/dsh-client-session-title-edit
 
 - npm release line (host `0.1.7-rc.2`, next release `0.2.4`): ✅ full — the rename rides the official `session.rename`, and **in-place editing works on both the 0.1.5 and 0.1.7 host lines** (one text-based probe covers the 0.1.5/0.1.6 disabled crumb button and the plain-text crumb that replaced it in 0.1.7-alpha.1), proven by the dual-line suite and on both host lines in a live instance; the minHost floor stays at `0.1.2-rc.1`.
 - Published `0.2.3` and earlier: on hosts from 0.1.7-alpha.1 the current crumb is no longer a disabled button, so in-place editing falls back to the inline editor in the actions row (**renaming itself keeps working**, it just no longer overlays the title); `0.2.4` restores it.
-- source line (deepseek-harness master, `0.1.7-rc.2`): ✅ (verifiedHost: `0.1.7-rc.2`)
+- source line (deepseek-harness master): ✅ (verifiedHost: `0.2.1-rc.1`) — host-021 wave: full build+test green against the 0.2.1-rc.1 tree; no other surface changes.
 
 **Version line mapping**: 0.2.0 and up support host `0.1.2-rc.1` and later; hosts on `0.1.0-rc.6` ~ `0.1.1-rc.2` stay on the 0.1.x release line (last release `0.1.0`).
 

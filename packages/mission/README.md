@@ -153,7 +153,7 @@ dsh-mission export RUN_ID --out DIR [--snapshot-dir DIR] [--snapshot-repo R --sn
 ## Compatibility
 
 - npm release line（`@deepseek-ai/dsh@0.2.0-rc.2`）：✅——store、状态机与 guard、lint、五桶投影、服务面、CLI、slash 命令在发布版宿主上全部可用（模型工具经本包的工具行 `@khorsheed/dsh-mission/tool` 提供，见下）。T88 起评测家族一起把 minHost 抬到 0.2.0-rc.2，0.1.x 宿主请停留在旧发布线。
-- source line（deepseek-harness master，fork 或 upstream）：✅——同上（verifiedHost: 0.2.0-rc.2）。
+- source line（deepseek-harness master，fork 或 upstream）：✅——同上（verifiedHost: 0.2.1-rc.1；host-021 波对 0.2.1-rc.1 树全量 build+test 绿，无其它表面变化）。
 
 降级 / 缺席项（与 package.json 的 `dsh.compat` 同步）：slash 命令需要交互式 UI adapter（web/TUI）——headless profile 没有 command adapter，`/mission` 在那里不可用，工具、服务面、CLI 不受影响。模型工具的分组（`tools: 'read'` / `'none'`）现在是**工具行** `@khorsheed/dsh-mission/tool` 上的选择，不是本行的配置——按上表裁掉模型工具不是宿主能力缺失，而是挂载方的选择；服务面、CLI、slash、tab 照常。任务 tab 自隐：只有当当前会话的 preset 组合引用了 `@khorsheed/dsh-mission/tool` 行时它才注册，判据取自官方 `pluginInventory` Remote，任何读不出的路径一律 fail-open（保持可见）。**「当前会话的 preset」沿父链取第一个**（I5·T60 · web-eval T39 · G13）：成员子会话自己没有 preset，单看它就失败开放，于是评测会话里 mission 明明该隐身，任务 tab 却出现在选手的子会话里。工具行随本包一起安装（T88 评测家族折叠前它是独立伴生包 `@khorsheed/dsh-mission-tool`，已退役）；行解析失败只让该 preset 组合报 broken，实例 boot 不受影响。会话 tab 是 web 面；TUI 没有 tab 机制，headless profile 只提供 Remote 数据面而没有浏览器消费者。tab 已在 `0.1.0-rc.8` web profile 做 live smoke；更早发布线共享同一 gateway 约定，但未做 smoke。
 

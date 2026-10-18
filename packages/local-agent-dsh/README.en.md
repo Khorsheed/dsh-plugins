@@ -74,7 +74,7 @@ The rich directory additionally retains public adapter labels, resolved route na
 ## Compatibility
 
 - npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`): ✅ public API compatible; minHost is 0.1.5-rc.1 — older hosts stay on the previous release line. Live generation uses the local-agent transient Remote and public Conversation nodes; suffix checkpoints provide recovery, and native final messages retain transcript and usage semantics. Browser P95 acceptance is tracked separately in the room coordinator proposal. One by-design degradation: host 0.1.5 retired the per-chunk session event, so token-granularity deltas no longer land in the child session log — they ride the run-progress channel and the round settles as one combined `assistant/message` (identical final text); a late-arriving usage whose carrier message already mirrored is dropped with a warn (no usage-backfill event exists). The old `liveMirrorGranularity: event | token` key is still accepted for existing profiles but no longer affects behavior or a running process; exec remains available for evaluation.
-- source line (deepseek-harness master): ✅ (verifiedHost: 0.1.5-rc.1)
+- source line (deepseek-harness master): ✅ (verifiedHost: 0.2.1-rc.1) — host-021 wave: full build+test green against the 0.2.1-rc.1 tree; delegation migrated to `ctx.subagents.startActivation` (managed activation), and run.id is now unique per execution.
 
 ## Known Limitations
 

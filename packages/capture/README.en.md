@@ -65,7 +65,7 @@ The cordis.yml row's `config` (all optional):
 ## Compatibility
 
 - npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`): ✅ full — minHost IS 0.1.5-rc.1 (`dsh.compat.verifiedHost`), full build+test green; the Remote face depends only on the Typert protocol and (for the browser-half mount) api-remotes.
-- source line (deepseek-harness master): ✅ (verifiedHost: 0.1.5-rc.1) — tracked upstream, never via a local fork.
+- source line (deepseek-harness master): ✅ (verifiedHost: 0.2.1-rc.1) — host-021 wave: full build+test green against the 0.2.1-rc.1 tree, no other surface change; tracked upstream, never via a local fork.
 
 Every degradation is silent, never a boot failure: with no Chrome binary every call earns `capture/unavailable`; with no writable disk the allow records stay in memory; a composition without session, fs, or web seams boots all the same. The browser half mounts the namespace in any web composition; a headless composition has no `remote` service and the mount skips silently. The machine-readable twin lives in package.json's `dsh.compat`.
 

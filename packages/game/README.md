@@ -42,7 +42,7 @@ dsh plugin --profile <name> add @khorsheed/dsh-presets   # 游戏开发模式 pr
 ## Compatibility
 
 - npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：❌ 不支持——每轮检查靠 `agent/turn-stopping` 与 `agent.steer`，preset 靠 `@deepseek-ai/dsh-agent-preset` 行，0.1.5 都没有。
-- 源码线（deepseek-harness master）：✅（verifiedHost: 0.2.0-rc.2）。降级项：插件交回 agent 的检查结果是插件来源的上下文消息，0.2.0 聊天视图不显示这类消息（聊天里的折叠行是后续里程碑）；无头检查要本机装有 Chrome。headless profile 没有浏览器消费方，右栏不出现，但检查照常跑。
+- 源码线（deepseek-harness master）：✅（verifiedHost: 0.2.1-rc.1）——host-021 波对 0.2.1-rc.1 树全量 build+test 绿，无其它表面变化。降级项：插件交回 agent 的检查结果是插件来源的上下文消息，0.2.0 聊天视图不显示这类消息（聊天里的折叠行是后续里程碑）；无头检查要本机装有 Chrome。headless profile 没有浏览器消费方，右栏不出现，但检查照常跑。
 
 ## 已知限制
 

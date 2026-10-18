@@ -77,7 +77,7 @@ const surface = createFilePreviewReadSurface({
 
 | Host 行 | 结论 |
 | --- | --- |
-| deepseek-harness master（`0.1.7-rc.2`） | ✅ 完整——与 0.1.5 同一形态：自建产物页 extension 档认领可渲染地址（rc.1 的 tab-registry 保留 band 机制）；turnTail list 槽臂附带官方 deliverables 遮蔽 |
+| deepseek-harness master（`0.2.1-rc.1`） | ✅ 完整——host-021 波对 0.2.1-rc.1 树全量 build+test 绿，无其它表面变化；与 0.1.5 同一形态：自建产物页 extension 档认领可渲染地址（rc.1 的 tab-registry 保留 band 机制）；turnTail list 槽臂附带官方 deliverables 遮蔽 |
 | npm release（`>= 0.1.5-rc.1`） | ✅ 完整（`verifiedHost: 0.1.5-rc.1`）——同一形态；turnTail 为 chain 槽时按探测回落 select + priority -1 抢占臂；0.1.5-rc.1 的 PTC 更名已适配（只匹配 `tool/ptc-dispatch`；旧日志由官方 v2→v3 迁移改写到新名） |
 | npm release（`<= 0.1.4.x`） | ❌ 不可用——右栏 tab 体系（`ctx.sidebarRightTabs` / `openResource`）随 0.1.5 落地；旧宿主请停留在旧发布线 |
 

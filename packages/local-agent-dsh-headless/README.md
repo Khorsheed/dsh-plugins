@@ -62,7 +62,7 @@ dsh --profile headless-local-agent-dsh --model deepseek-official/deepseek-v4-pro
 ## Compatibility
 
 - npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：✅ 完整——首个发布线（0.1.0-rc.6）即以 0.1.5-rc.1 API 面为基线，全量构建测试通过；minHost 即 0.1.5-rc.1，更旧的宿主没有可回退的旧发布线。
-- 源码线（deepseek-harness master）：✅（verifiedHost: 0.1.5-rc.1）
+- 源码线（deepseek-harness master）：✅（verifiedHost: 0.2.1-rc.1）——host-021 波对 0.2.1-rc.1 树全量 build+test 绿；家族委派迁移到 `ctx.subagents.startActivation`（受管 activation），run.id 改为每次执行唯一。
 
 ## 已知限制
 

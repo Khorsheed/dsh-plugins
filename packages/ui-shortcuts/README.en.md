@@ -29,7 +29,7 @@ dsh plugin --profile web remove @khorsheed/dsh-ui-shortcuts   # uninstall
 ## Compatibility
 
 - npm release line (`@deepseek-ai/dsh@0.1.2-rc.1`): ✅ full — baseline moved to the 0.1.2-rc.1 API surface (single-arm 0.1.2 API consumption; the 0.1.1-rc.2 runtime arm is retired), full build+test green; minHost moves up to 0.1.2-rc.1 — older hosts stay on the previous release line.
-- source line (deepseek-harness master): ✅ (verifiedHost: 0.1.7-rc.2). Two shapes by host line:
+- source line (deepseek-harness master): ✅ (verifiedHost: 0.2.1-rc.1) — host-021 wave: full build+test green against the 0.2.1-rc.1 tree, no other surface changes. Two shapes by host line:
   - **0.1.5 ~ 0.1.7-rc.1** (no official shortcuts service): the package ships its **full capability** — its own registry (`ctx.shortcuts`), the settings card, keyboard and mouse bindings, all five built-in actions.
   - **0.1.7-rc.2+** (the official shortcut system `dsh-client-shortcuts` is resident): the own registry, settings card, and mouse bindings are **all retired** (cordis throws on a duplicate `shortcuts` provide); the package shrinks to contributing the two commands the official catalog lacks — steer-send and compact. Pause, new-session, and the right-sidebar toggle are official natives (Esc Esc / `session.new` / `sidebar.right.toggle`), and rebinding rides the official shortcuts panel.
 

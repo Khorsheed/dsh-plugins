@@ -73,7 +73,7 @@ bundle 行接受这些可选字段：
 ## Compatibility
 
 - npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：✅ 公开 API 兼容。生成中的内容走 local-agent 瞬时 Remote 与公开 Conversation 节点；增量耐久恢复检查点负责落盘，最终原生消息保留转写与用量语义。浏览器 P95 验收由 room 协调者提案跟踪。minHost 0.1.5-rc.1——更旧宿主请停留在前一发布线。
-- 源码线（deepseek-harness master）：✅（verifiedHost: 0.1.5-rc.1）
+- 源码线（deepseek-harness master）：✅（verifiedHost: 0.2.1-rc.1）——host-021 波对 0.2.1-rc.1 树全量 build+test 绿；委派迁移到 `ctx.subagents.startActivation`（受管 activation），run.id 改为每次执行唯一。
 
 ## 已知限制
 

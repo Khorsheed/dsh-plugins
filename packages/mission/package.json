@@ -162,7 +162,7 @@
     "compat": {
       "minHost": "0.2.0-rc.2",
       "notes": "slash commands need an interactive UI adapter (web/TUI profile); on headless profiles they are unavailable while the service surface and the CLI stay fully functional. The model-tool face is NOT registered by this package any more: this package's `./tool` composition entry (`@khorsheed/dsh-mission/tool`) owns it, and an agent preset grants it per session (`tools`: all / read / none on that row) — the core row's service surface, CLI, slash command, and tab are unaffected by that choice. The 任务 tab self-hides in sessions whose preset composition names no `@khorsheed/dsh-mission/tool` row (fail-open on every unreadable path). The session tab is a web surface — TUI has no tab mechanism; headless profiles serve the Remote data face without a browser consumer. The tab is live-smoke-tested on the 0.2.0-rc.2 web-eval profile (T88). The session-granted tool row folded back from the standalone `@khorsheed/dsh-mission-tool` companion into this package at 0.2.0-rc.1 (T88, the evaluation-family fold) as the `./tool` composition entry — the preset row id `mission-tool` is unchanged, so a preset's composition state is unaffected once its row name points at `@khorsheed/dsh-mission/tool`; the old package name is retired.",
-      "verifiedHost": "0.2.0-rc.2"
+      "verifiedHost": "0.2.1-rc.1"
     }
   },
   "dependencies": {

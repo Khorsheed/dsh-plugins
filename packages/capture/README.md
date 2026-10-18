@@ -65,7 +65,7 @@ cordis.yml 行 `config`（全部可选）：
 ## Compatibility
 
 - npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：✅ 完整——minHost 即 0.1.5-rc.1（`dsh.compat.verifiedHost`），全量构建测试通过；Remote 面只依赖 Typert 协议与（浏览器半挂载用的）api-remotes。
-- 源码线（deepseek-harness master）：✅（verifiedHost: 0.1.5-rc.1）——跟踪上游，不经本地 fork。
+- 源码线（deepseek-harness master）：✅（verifiedHost: 0.2.1-rc.1）——host-021 波对 0.2.1-rc.1 树全量 build+test 绿，无其它表面变化；跟踪上游，不经本地 fork。
 
 降级都是安静的，绝不炸启动：没有浏览器二进制时每次调用得 `capture/unavailable`；磁盘不可写时 allow 记录仅内存；无会话、无 fs、无 web 缝的组合照样 boot。浏览器半在任何 web 组合里挂载命名空间；headless 组合没有 `remote` 服务，挂载静默跳过。机器可读版见 package.json 的 `dsh.compat`。
 

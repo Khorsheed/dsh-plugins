@@ -77,7 +77,7 @@ const surface = createFilePreviewReadSurface({
 
 | Host line | Verdict |
 | --- | --- |
-| deepseek-harness master (`0.1.7-rc.2`) | ✅ full — the same form as 0.1.5: the self-drawn page claims renderable addresses at the extension band (rc.1's tab registry kept the band mechanism); the turnTail list arm also carries the official deliverables shadow |
+| deepseek-harness master (`0.2.1-rc.1`) | ✅ full — host-021 wave: full build+test green against the 0.2.1-rc.1 tree, no other surface change; the same form as 0.1.5: the self-drawn page claims renderable addresses at the extension band (rc.1's tab registry kept the band mechanism); the turnTail list arm also carries the official deliverables shadow |
 | npm release (`>= 0.1.5-rc.1`) | ✅ full (`verifiedHost: 0.1.5-rc.1`) — same form; on chain-kind turnTail slots the registration probes and falls back to the select + priority -1 preemptive arm; the 0.1.5-rc.1 PTC rename is adapted (only `tool/ptc-dispatch` matches; the official v2→v3 log migration renames persisted rows) |
 | npm release (`<= 0.1.4.x`) | ❌ unsupported — the right-sidebar tab system (`ctx.sidebarRightTabs` / `openResource`) landed in 0.1.5; older hosts stay on the previous release line |
 

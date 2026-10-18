@@ -72,7 +72,7 @@
     "compat": {
       "minHost": "0.2.0-rc.2",
       "notes": "fully functional on the 0.2.0 host line (the evaluation family floors at 0.2.0-rc.2 together since T88); without the @khorsheed/dsh-mission plugin the release gate degrades to an explicit force flag plus a warning, and ref/artifact/checkpoint/verify registration is skipped with a warning; AcquireSpec.ownWorkdir creates the declared workdir and hands it to the unit's own user — needed because `docker run --workdir` creates a missing directory as root and a non-root unit then cannot write the directory its work happens in; the scratch root /run/dsh-lab is world-writable so verify can create its material directory as the unit's user, and verify hands that material to the unit so its own cleanup can remove it; `fingerprintOf(components)` is the hashing rule as a pure verb — the same function `acquire` uses, exposed so a caller can ask what a derived component set would hash to (the evaluation orchestrator's environment class); the CLI reads mission state through `dsh-mission get --json` (T89) and prints an upgrade hint, skipping that status, against an older mission CLI without --json",
-      "verifiedHost": "0.2.0-rc.2"
+      "verifiedHost": "0.2.1-rc.1"
     }
   },
   "bin": {

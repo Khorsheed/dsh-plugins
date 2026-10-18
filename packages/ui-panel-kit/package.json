@@ -55,7 +55,7 @@
     },
     "compat": {
       "minHost": "0.1.5-rc.1",
-      "verifiedHost": "0.2.0-rc.2",
+      "verifiedHost": "0.2.1-rc.1",
       "notes": "A source-plane library, not a plugin: it registers no slot, service, locale or row, and owns no client bundle of its own. Consumers declare it as a workspace dependency and import `@khorsheed/dsh-client-ui-panel-kit/src/client/*` directly, so tsdown inlines the kit into each plugin's own `lib/client.js` — zero runtime coupling and nothing to install alongside them. Its official-host surface is one runtime import, ui-primitives' `Menu` (the header's overflow list, present since the 0.1.5-rc.1 line, the same import ui-content-preview carries); icons are inlined artwork. Type sizes are `--dsh-panel-*` custom properties always read with a desktop fallback, so a panel renders identically with or without `@khorsheed/dsh-mobile`, which only raises the values on touch screens. Spec: proposal panel-responsive-spec (2026-10-06)."
     }
   }

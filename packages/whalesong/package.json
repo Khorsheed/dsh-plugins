@@ -44,7 +44,7 @@
     "compat": {
       "minHost": "0.1.2-rc.1",
       "notes": "the blocked chime reads the ui-session Session status feed (`ctx.uiSession.sessionStatus` on 0.1.6-alpha.2+, with the 0.1.5 `pendingInteractions` feed adapted forward); in an assembly without that service the blocked chime degrades off silently while completion chimes keep working",
-      "verifiedHost": "0.1.2-rc.1"
+      "verifiedHost": "0.2.1-rc.1"
     }
   },
   "scripts": {

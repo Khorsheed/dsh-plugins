@@ -235,7 +235,7 @@ tab 的数据面是一个 Typert Remote 服务（`datasetsRemote`，线 namespac
 ## Compatibility
 
 - npm release 线（`@deepseek-ai/dsh@0.2.0-rc.2`）：✅——全部能力可用；所依赖的契约面（`ctx.tools`、`ctx.commands`、log-only session 事件、Typert Remote 通道、`conversation.view`）在该线上稳定。T82 起只支持宿主 0.2.0 及以后（minHost 0.2.0-rc.2），0.1.x 宿主请停留在旧发布线。
-- source 线（deepseek-harness master）：✅（verifiedHost: 0.2.0-rc.2，题集 tab 在 web-eval 临时实例上真机冒烟）。
+- source 线（deepseek-harness master）：✅（verifiedHost: 0.2.1-rc.1，题集 tab 在 web-eval 临时实例上真机冒烟）——host-021 波对 0.2.1-rc.1 树全量 build+test 绿，无其它表面变化。
 - 金丝雀校验与可判性校验都在本插件内部完成（只读 git 对象），不依赖任何新的宿主能力；`tools` 分组随模型工具面搬到本包的工具行 `@khorsheed/dsh-datasets/tool`（`read` / `authoring` / `all` / `none`），本行不再有这个配置键。
 - 登记申请、对照核对与更新闸（T90）同样是插件内部的（提案库是状态根下的 JSON，核对只读 git 对象与原目录）。「让 Agent 整理」用宿主 0.2.0 的门：`sessions.create` / `rename`、`remote.agentPresets` 的 list / select、`uiWorkspace.openSession`、会话输入框的 `setDraft`；每一扇门都在调用时探测，缺哪扇就依次降级为剪贴板、再降级为页面上显示请求原文，不会报错。
 - 「核对并登记」轮尾卡片（T96）用宿主 0.2.0 的 `conversation.chat.turnTail` 列表槽与 `uiConversation.events` 会话定义，两者都在该槽声明后才读取；缺了就不出卡片，申请照常在提示条后面等。卡片的打开动作（T97）用 `ctx.layout.selectPanel('datasets')` 选中全局「题集」面板；没有 layout 服务、或面板没注册（选中时抛错），就退回本会话的题集 tab，并用一句话说去哪儿点。T96 的 tab 条 DOM 锚点已退役。

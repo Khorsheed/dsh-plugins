@@ -39,7 +39,7 @@ Exactly one directory is written: `$DSH_HOME/state/dsh-reader/` — `state.json`
 ## Compatibility
 
 - npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`): ✅ works, one designed degrade — the `sidebar.right.pane.tab` seat and the `ctx.web.fetch` egress seam are complete on 0.1.5-rc.1; the in-app Sidebar Browser exits (the script-figure notice, a bot-wall card's action) need the `browser` right-Sidebar tab kind from 0.1.6-alpha.2 and fall back to the ordinary external link on a 0.1.5 host. minHost `0.1.5-rc.1`; this package does no preset self-hide (no `pluginInventory` needed).
-- source line (deepseek-harness master): ✅ (verifiedHost: 0.1.5-rc.1)
+- source line (deepseek-harness master): ✅ (verifiedHost: 0.2.1-rc.1) — host-021 wave: full build+test green against the 0.2.1-rc.1 tree, no other surface change.
 
 Note: the host fetch seam truncates a decoded body at 100,000 characters and does so **silently** — that is a deployment-configurable cap (see the patch overlay under 「How it works · the egress seam and storage」), not this package's body budget.
 

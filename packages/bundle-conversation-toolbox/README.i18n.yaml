@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/bundle-conversation-toolbox/README.en.md
-packages/bundle-conversation-toolbox/README.en.md: 40de00a33faba8b82fdb35137e886990731f8376
-packages/bundle-conversation-toolbox/README.md: 9713a063c43d28eb6f072fc7b6c10e341af3ea9c
+packages/bundle-conversation-toolbox/README.en.md: f1a64b83db734fcb7ec09bd9b0c9bb8aaeedac2b
+packages/bundle-conversation-toolbox/README.md: 432eb50be4ba19db7614f8a74ce27d097d75c9ba

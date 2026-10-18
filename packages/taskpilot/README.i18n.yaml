@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/taskpilot/README.en.md
-packages/taskpilot/README.en.md: 5ad13de5925c33ef7b7dbec5218041f20c532aa4
-packages/taskpilot/README.md: 1dca6b4a152f7d22c0194460e2139c96f8695db5
+packages/taskpilot/README.en.md: 70acd13a0664c2c8ae3ab47b3b1a198a3afb0426
+packages/taskpilot/README.md: 6a3757778bd856dc2eaddd8be301b948a7cf5975

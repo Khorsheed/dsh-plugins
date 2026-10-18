@@ -98,7 +98,7 @@ The last line selects the provider for delegations; keep the rest of the file in
 ## Compatibility
 
 - npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`): ✅ public API compatible. Live generation uses the local-agent transient Remote and public Conversation nodes; incremental durable checkpoints provide recovery, and native final messages retain their transcript and usage semantics. End-to-end latency acceptance is tracked by the room coordinator proposal. minHost 0.1.5-rc.1 — older hosts stay on the previous release line.
-- source line (deepseek-harness master): ✅ (verifiedHost: 0.1.5-rc.1)
+- source line (deepseek-harness master): ✅ (verifiedHost: 0.2.1-rc.1) — host-021 wave: full build+test green against the 0.2.1-rc.1 tree; delegation moved to `ctx.subagents.startActivation` (managed activation), and run.id is now unique per execution.
 
 ## Known Limitations
 

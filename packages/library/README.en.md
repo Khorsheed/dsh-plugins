@@ -49,7 +49,7 @@ This package alone: the Library tab and the data face work; the model tools do n
 | Host line | Verdict |
 |---|---|
 | npm release line (0.2.0-rc.x) | Full support (`minHost: 0.1.7-rc.1`: beyond the page-type right-Sidebar tab and the Remote face, no host API newer than that; preset granting needs 0.1.7-rc.1's `@deepseek-ai/dsh-agent-preset` row type — declared by the bundle package) |
-| deepseek-harness master (the 0.2.0-rc.2 dev line) | Verified (`verifiedHost: 0.2.0-rc.2`) |
+| deepseek-harness master (the 0.2.1-rc.1 dev line) | Verified (`verifiedHost: 0.2.1-rc.1`) — host-021 wave: full build+test green against the 0.2.1-rc.1 tree, no other surface changes |
 
 Details live in the package.json `dsh.compat.notes`: state is plain `node:fs` under `$DSH_HOME/state/dsh-library` (atomic writes + a per-project lock + append-only JSONL), never `ctx.fs` (the session sandbox refuses it); photos are saved and read back through the probed `attachments` service, degrading to the `unavailable` error code.
 

@@ -38,7 +38,7 @@ dsh plugin --profile web remove @khorsheed/dsh-video-studio
 ## Compatibility
 
 - npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：⚠️ 面板与宿主服务可用（右栏页型 tab 自 0.1.5 起），但剪辑模式 preset 行需要 0.1.7-rc.1 起的 preset 机制，0.1.5 上只能在通用会话里用面板。
-- 源码线（deepseek-harness master）：✅（verifiedHost: 0.2.0-rc.1）——构建与测试在 0.2.0-rc.2 源码树下通过。
+- 源码线（deepseek-harness master）：✅（verifiedHost: 0.2.1-rc.1）——host-021 波对 0.2.1-rc.1 树全量 build+test 绿，无其它表面变化。
 - **原生依赖**：`sherpa-onnx-node` 按平台带预编译原生插件（darwin-arm64 约 34 MB）。语音任务在独立子进程里跑，原生插件加载失败只让转写任务失败，不影响启动。
 - **ffmpeg 版本**：只用 4.2 起就有的滤镜（atrim / concat / loudnorm / afftdn）。没有 libass（`subtitles` 滤镜）的 ffmpeg 导出视频时改为可开关字幕轨，面板会提示。
 - **Web 表面**：右栏 tab 是浏览器表面；headless profile 上只有宿主服务和工具。

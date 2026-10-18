@@ -39,7 +39,7 @@ dsh plugin --profile web remove @khorsheed/dsh-client-message-tools
 ## Compatibility
 
 - npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：✅ 完整——适配 0.1.5-rc.1 的 format v2/v3（`assistant/attempt` 取代 `assistant/chunk`；surfaceOp replace 字段 `start`/`end` 更名 `startSeq`/`endSeq`），全量构建测试通过；minHost 前移至 0.1.5-rc.1，旧宿主请停留在旧发布线。Session V4 的生产者归属 source（kind `message-tools`）在 0.1.5 宿主同样合法落盘：0.1.5 的 `user/message` 准入只要求非空 kind 字符串。
-- 源码线（deepseek-harness master）：✅（verifiedHost: 0.1.7-rc.2）——Session V4 适配：写侧改生产者归属 source（kind `message-tools`，V4 原生准入拒绝退役的 `kind: 'plugin'` 包装），读侧兼认新 kind、`plugin:message-tools`（V3→V4 迁移形态）与 V3 包装存量（0.1.5 宿主原位读取）；`conversation.chat.node` rc.1 契约（hookContext/inject 新形状、match 事件 `SessionEventLike` 并集）复验通过；ui-primitives 图标改名（`Icon*Outline14/16` → `Icon*OutlineMedium`）跟进。0.1.7-alpha.1 的会话分组渲染把一回合的过程行收进分组容器（「已调用工具」折叠头以分组键挂在同一 DOM 属性上），DOM 隐藏器现并入「成员全隐藏」分组的容器键与 groupPart 复合行键；0.1.7 之前的宿主没有分组渲染，原有节点键规则已覆盖，行为不变。
+- 源码线（deepseek-harness master）：✅（verifiedHost: 0.2.1-rc.1）——host-021 波对 0.2.1-rc.1 树全量 build+test 绿：图片臂在 0.2.1 上就地消费官方 `conversation.images.content` 工厂（0.1.5–0.2.0 线走 legacy prop 保留路径）；影子渲染器字号跟随宿主轴（Khorsheed/dsh-plugins#1）。Session V4 适配：写侧改生产者归属 source（kind `message-tools`，V4 原生准入拒绝退役的 `kind: 'plugin'` 包装），读侧兼认新 kind、`plugin:message-tools`（V3→V4 迁移形态）与 V3 包装存量（0.1.5 宿主原位读取）；`conversation.chat.node` rc.1 契约（hookContext/inject 新形状、match 事件 `SessionEventLike` 并集）复验通过；ui-primitives 图标改名（`Icon*Outline14/16` → `Icon*OutlineMedium`）跟进。0.1.7-alpha.1 的会话分组渲染把一回合的过程行收进分组容器（「已调用工具」折叠头以分组键挂在同一 DOM 属性上），DOM 隐藏器现并入「成员全隐藏」分组的容器键与 groupPart 复合行键；0.1.7 之前的宿主没有分组渲染，原有节点键规则已覆盖，行为不变。
 
 **版本线对照**：0.2.0 之后的首个发布起支持宿主 `0.1.5-rc.1` 及以后；宿主 `0.1.2-rc.1` 请停留在 `0.2.0`，宿主 `0.1.0-rc.6` ~ `0.1.1-rc.2` 请停留在 0.1.x 发布线（末版 `0.1.0`）。
 

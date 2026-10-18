@@ -34,7 +34,7 @@ dsh plugin --profile web remove @khorsheed/dsh-client-session-title-edit
 
 - npm 发布线（宿主 `0.1.7-rc.2`，下一版 `0.2.4`）：✅ 完整——改名走官方 `session.rename`；**就地覆盖在 0.1.5 与 0.1.7 两条宿主线上都可用**（同一套文本定位同时覆盖 0.1.5/0.1.6 的 disabled crumb 按钮与 0.1.7-alpha.1 起的纯文本 crumb），双线单测 + 两条宿主线实机验收通过；minHost 地板保持 `0.1.2-rc.1` 不动。
 - 已发布版本 `0.2.3` 及更早：在 0.1.7-alpha.1 起的宿主上，标题 crumb 不再是 disabled 按钮，就地覆盖会退回 actions 行内编辑器（**改名本身仍可用**，只是不再盖在标题上）；升到 `0.2.4` 即恢复。
-- 源码线（deepseek-harness master，`0.1.7-rc.2`）：✅（verifiedHost: `0.1.7-rc.2`）
+- 源码线（deepseek-harness master）：✅（verifiedHost: `0.2.1-rc.1`）——host-021 波对 0.2.1-rc.1 树全量 build+test 绿，无其它表面变化。
 
 **版本线对照**：0.2.0 起支持宿主 `0.1.2-rc.1` 及以后；宿主 `0.1.0-rc.6` ~ `0.1.1-rc.2` 的用户请停留在 0.1.x 发布线（末版 `0.1.0`）。
 

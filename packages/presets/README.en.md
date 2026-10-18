@@ -34,6 +34,6 @@ Once mounted, the presets appear in the session mode selection. Everything evalu
 ## Compatibility
 
 - **npm release line (`@deepseek-ai/dsh@0.1.5`)**: ❌ unavailable — the `@deepseek-ai/dsh-agent-preset` row type does not exist on 0.1.5 (whose presets are `$DSH_HOME/.agent-presets/` directories, which this package replaces); the bundle cannot even mount there — this is not a degraded mode.
-- **deepseek-harness master / npm 0.1.7-rc.1+**: ✅ full — the row type ships with the official web-app bundle (minHost `0.1.7-rc.1`). The availability of community companion rows inside a preset depends on the corresponding packages being installed alongside; a missing one leaves that preset on the roster with its diagnostic and does not affect the others.
+- **deepseek-harness master / npm 0.1.7-rc.1+**: ✅ full (verifiedHost: 0.2.1-rc.1) — host-021 wave: full build+test green against the 0.2.1-rc.1 tree; the six presets (开发/评测/写作/游戏开发/学习/剪辑) no longer use `{{cwd}}` in their persona rows (upstream 0.2.1 removed that variable). The row type ships with the official web-app bundle (minHost `0.1.7-rc.1`). The availability of community companion rows inside a preset depends on the corresponding packages being installed alongside; a missing one leaves that preset on the roster with its diagnostic and does not affect the others.
 
 **Version-line map**: `0.1.0` and later require host `0.1.7-rc.1` and up.

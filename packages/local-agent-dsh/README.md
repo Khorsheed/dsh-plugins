@@ -74,7 +74,7 @@ T30a 给三家 CLI harness 加了 `model` 插件配置键时，dsh 没拿到—�
 ## Compatibility
 
 - npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：✅ 公开 API 兼容；minHost 为 0.1.5-rc.1，更旧宿主留在前一发布线。生成中的内容走 local-agent 瞬时 Remote 与公开 Conversation 节点；后缀检查点负责恢复，最终原生消息保留转写与用量语义。浏览器 P95 另在 room 协调者提案中验收。一处设计内降级：宿主 0.1.5 退役了逐 chunk 的会话事件，token 粒度的增量不再落进子会话日志——它们改走 run-progress 通道，本轮 settle 为一条合并的 `assistant/message`（最终文本相同）；迟到的 usage 若其载体消息已镜像，则以一条 warn 丢弃（不存在 usage 回填事件）。旧 `liveMirrorGranularity: event | token` 配置继续兼容读取，但不再影响行为，也不会改变运行中的进程；评测继续保留 exec。
-- 源码线（deepseek-harness master）：✅（verifiedHost: 0.1.5-rc.1）
+- 源码线（deepseek-harness master）：✅（verifiedHost: 0.2.1-rc.1）——host-021 波对 0.2.1-rc.1 树全量 build+test 绿；委派迁移到 `ctx.subagents.startActivation`（受管 activation），run.id 改为每次执行唯一。
 
 ## 已知限制
 

@@ -93,7 +93,7 @@ base_url = "https://your-router.example/v1"
 ## Compatibility
 
 - npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：✅ 公开 API 兼容——生成中的内容走 local-agent 瞬时 Remote 与公开 Conversation 节点；后缀检查点负责恢复，最终原生消息保留转写与用量语义。minHost 为 0.1.5-rc.1，更旧宿主请停留在旧发布线。0.1.5 退役了 per-chunk 会话事件：token 粒度的增量不再落进子会话日志——改走 run-progress 通道，轮次 settle 为一条合并的 assistant/message（最终文本一致）；晚到的 usage 若其载体消息已经镜像，则带一条 warn 丢弃（宿主没有 usage 回填事件可挂）。
-- 源码线（deepseek-harness master）：✅（verifiedHost: 0.1.5-rc.1）——`thinkingEffort` 配置项（默认 high、仅预置期生效）与 `effectiveSettings` 评测快照均为插件级实现：只读写作用域文件，在两条宿主线上都不依赖宿主 API。
+- 源码线（deepseek-harness master）：✅（verifiedHost: 0.2.1-rc.1）——host-021 波对 0.2.1-rc.1 树全量 build+test 绿；委派迁移到 `ctx.subagents.startActivation`（受管 activation），run.id 改为每次执行唯一。`thinkingEffort` 配置项（默认 high、仅预置期生效）与 `effectiveSettings` 评测快照均为插件级实现：只读写作用域文件，在两条宿主线上都不依赖宿主 API。
 
 ## 已知限制
 

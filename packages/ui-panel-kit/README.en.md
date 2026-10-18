@@ -38,4 +38,4 @@ Copy comes from the caller: the kit owns no locale namespace, and every visible 
 ## Compatibility
 
 - npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`): ✅ full — the only official runtime import is ui-primitives' `Menu` (the ⋯ list), present on the 0.1.5-rc.1 line, the same import ui-content-preview carries; icons are inlined SVG.
-- Source line (deepseek-harness master): ✅ (verifiedHost: `0.2.0-rc.2`) — a source-plane library registers no slot / service / locale / row; its compatibility surface is `Menu`'s type export.
+- Source line (deepseek-harness master): ✅ (verifiedHost: `0.2.1-rc.1`) — host-021 wave: full build+test green against the 0.2.1-rc.1 tree, no other surface changes; a source-plane library registers no slot / service / locale / row; its compatibility surface is `Menu`'s type export.

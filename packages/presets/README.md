@@ -34,6 +34,6 @@ dsh plugin --profile web add @khorsheed/dsh-presets
 ## Compatibility
 
 - **npm 发布线（`@deepseek-ai/dsh@0.1.5`）**：❌ 不可用——`@deepseek-ai/dsh-agent-preset` 行类型在 0.1.5 不存在（0.1.5 的 preset 是 `$DSH_HOME/.agent-presets/` 目录，本包正是来替代它们的）；在 0.1.5 上本包连挂载都谈不上，非 degraded。
-- **源码线 / npm 0.1.7-rc.1+**：✅ 完整——行类型随官方 web-app bundle 发布（minHost `0.1.7-rc.1`）。preset 里引用的社区伴生行可用性取决于对应包是否同装（缺则该 preset 带诊断留在名册，其余 preset 不受影响）。
+- **源码线 / npm 0.1.7-rc.1+**：✅ 完整（verifiedHost: 0.2.1-rc.1）——host-021 波对 0.2.1-rc.1 树全量 build+test 绿：六个预设（开发/评测/写作/游戏开发/学习/剪辑）的 persona 行不再使用 `{{cwd}}`（上游 0.2.1 已删该变量）。行类型随官方 web-app bundle 发布（minHost `0.1.7-rc.1`）。preset 里引用的社区伴生行可用性取决于对应包是否同装（缺则该 preset 带诊断留在名册，其余 preset 不受影响）。
 
 **版本线对照**：`0.1.0` 起要求宿主 `0.1.7-rc.1` 及以后。

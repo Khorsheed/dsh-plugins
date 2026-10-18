@@ -44,7 +44,7 @@ Removal takes the seven rows back out of the composition (the members' own patch
 ## Compatibility
 
 - npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`): ✅ full — pure composition; the floor is the members' highest (minHost `0.1.5-rc.1`, from message-tools / quote / taskpilot; the rest floor at `0.1.2-rc.1`). Member-level degraded items on this line (e.g. quote's side-chat route probing) are documented in each member's own Compatibility section.
-- source line (deepseek-harness master): ✅ full (verifiedHost: 0.1.7-rc.2).
+- source line (deepseek-harness master): ✅ full (verifiedHost: 0.2.1-rc.1) — host-021 wave: full build+test green against the 0.2.1-rc.1 tree; no other surface changes.
 
 **Version line mapping**: `0.1.0` and later require host `0.1.5-rc.1` and up.
 

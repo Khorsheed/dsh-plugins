@@ -29,7 +29,7 @@ dsh plugin --profile web remove @khorsheed/dsh-ui-shortcuts   # 卸载
 ## Compatibility
 
 - npm 发布线（`@deepseek-ai/dsh@0.1.2-rc.1`）：✅ 完整——基线迁移至 0.1.2-rc.1 API 面（单臂消费 0.1.2 API，0.1.1-rc.2 运行臂已退役），全量构建测试通过；minHost 前移至 0.1.2-rc.1，旧宿主请停留在旧发布线。
-- 源码线（deepseek-harness master）：✅（verifiedHost: 0.1.7-rc.2）。按宿主线分两种形态：
+- 源码线（deepseek-harness master）：✅（verifiedHost: 0.2.1-rc.1）——host-021 波对 0.2.1-rc.1 树全量 build+test 绿，无其它表面变化。按宿主线分两种形态：
   - **0.1.5 ~ 0.1.7-rc.1**（官方无快捷键服务）：本包提供**完整能力**——自有注册表（`ctx.shortcuts`）、设置里的快捷键卡片、键盘与鼠标键绑定，五个内置动作全量运行。
   - **0.1.7-rc.2 起**（官方自带快捷键系统 `dsh-client-shortcuts`）：自有注册表、设置卡、鼠标键绑定**全部下线**（cordis 对重复的 `shortcuts` 服务名直接抛错），本包收缩为向官方目录贡献两条官方没有的命令——插队发送与压缩上下文；暂停、新建会话、右侧边栏开关由官方原生承载（Esc Esc / `session.new` / `sidebar.right.toggle`），改键由官方快捷键面板承接。
 

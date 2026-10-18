@@ -104,7 +104,7 @@ The key stays inside the host process: never in model context, never in the repo
 ## Compatibility
 
 - npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`): ✅ complete — the self-mounting row plus `ctx.provide` / `ctx.get` service publishing and `ctx.credentials.resolve` by-reference key resolution are all seams exercised on 0.1.5-rc.1; `minHost` is 0.1.5-rc.1.
-- Source line (deepseek-harness master): every seam used is a long-standing primitive and none has been renamed; not separately re-verified on master (`verifiedHost: 0.1.5-rc.1`).
+- Source line (deepseek-harness master): ✅ (verifiedHost: 0.2.1-rc.1) — host-021 wave: full build+test green against the 0.2.1-rc.1 tree, no other surface changes; every seam used is a long-standing primitive and none has been renamed.
 - Hosts below 0.1.5 are unverified; `inject: ['credentials']` leaves this row pending (never a boot failure) in a composition without a credential service, where the service is then unavailable.
 
 **Version lines**: `0.1.0` supports host `0.1.5-rc.1` and later.

@@ -65,7 +65,7 @@
     },
     "compat": {
       "minHost": "0.1.5-rc.1",
-      "verifiedHost": "0.1.5-rc.1",
+      "verifiedHost": "0.2.1-rc.1",
       "notes": "Provides a host-plane service and no model-facing surface, so it composes at the profile root. Key resolution reads the host credential store per call (ctx.credentials.resolve) and every outbound call is bounded: owned timeout + AbortSignal, 429/529 exponential backoff, circuit breaker, optional cache. A composition without the credentials service leaves the row pending rather than failing boot."
     }
   }

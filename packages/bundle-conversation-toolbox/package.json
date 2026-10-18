@@ -83,7 +83,7 @@
     ],
     "compat": {
       "minHost": "0.1.5-rc.1",
-      "verifiedHost": "0.1.7-rc.2",
+      "verifiedHost": "0.2.1-rc.1",
       "notes": "Pure composition: the bundle mounts the members' canonical rows and registers nothing of its own, so the floor is the members' highest — message-tools, quote and taskpilot floor at 0.1.5-rc.1, the rest at 0.1.2-rc.1. Member-level degraded items on the floor line (e.g. quote's side-chat route probing) are documented in each member's own dsh.compat."
     }
   }

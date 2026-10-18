@@ -146,7 +146,7 @@ A read-only canvas (one not opened from a session) can be read but not acted on:
 | Host line | Verdict |
 |---|---|
 | npm release 0.2.0-rc.2 | ✅ Development baseline (verifiedHost): the full build and test run on this line |
-| deepseek-harness master | Verified as it moves. Function prompt sections, the ctx.fs version guard and per-scope tool registration are long-term seams |
+| deepseek-harness master | ✅ Verified (verifiedHost: 0.2.1-rc.1) — host-021 wave: full build+test green against the 0.2.1-rc.1 tree; no other surface changes. Function prompt sections, the ctx.fs version guard and per-scope tool registration are long-term seams |
 
 The machine-readable label is `dsh.compat` in package.json (minHost `0.2.0-rc.2`):
 

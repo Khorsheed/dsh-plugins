@@ -52,7 +52,7 @@ dsh plugin --profile web remove @khorsheed/dsh-local-files
 ## Compatibility
 
 - npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：✅ 完整——官方宿主面就是消费方本来就带的 peer 集：ui-primitives（`MarkdownText` / `JsonTree` / `CodeBlock` / 图标）与 ui-slots（label 类型），因此 minHost 跟随消费插件的 0.1.5-rc.1 右栏线。
-- 源码线（deepseek-harness master）：✅（verifiedHost: `0.1.5-rc.1`）——源码面库不注册任何 slot / service / locale / row，也没有自己的 client bundle，兼容面等于它消费的那几个官方包的类型导出。
+- 源码线（deepseek-harness master）：✅（verifiedHost: `0.2.1-rc.1`）——host-021 波对 0.2.1-rc.1 树全量 build+test 绿，无其它表面变化；源码面库不注册任何 slot / service / locale / row，也没有自己的 client bundle，兼容面等于它消费的那几个官方包的类型导出。
 
 ## 已知限制
 

@@ -33,7 +33,7 @@ Restart the host afterwards; re-running add is safe (deduped by package name).
 ## Compatibility
 
 - npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`): ✅ full — the detail drawer migrated to the official right-sidebar tab surface (a page type registered into `ctx.sidebarRightTabs`, its body in the keyed `sidebar.right.pane.tab` seat), full build+test green; minHost moves up to 0.1.5-rc.1 — older hosts stay on the previous release line.
-- source line (deepseek-harness master): ✅ (verifiedHost: 0.1.5-rc.1)
+- source line (deepseek-harness master): ✅ (verifiedHost: 0.2.1-rc.1) — host-021 wave: full build+test green against the 0.2.1-rc.1 tree; the jobs augmentation is now imported directly from the `@deepseek-ai/dsh-jobs` package root.
 
 **Version line mapping**: the first release after `0.2.0` supports host `0.1.5-rc.1` and later; hosts on `0.1.2-rc.1` stay on `0.2.0`, hosts on `0.1.0-rc.6` ~ `0.1.1-rc.2` stay on the 0.1.x release line (last release `0.1.0`).
 

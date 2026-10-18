@@ -39,7 +39,7 @@ dsh plugin --profile web remove @khorsheed/dsh-reader
 ## Compatibility
 
 - npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：✅ 可用，一处设计内降级——`sidebar.right.pane.tab` 座位、`ctx.web.fetch` 出网缝在 0.1.5-rc.1 上完整；应用内 Sidebar Browser 出口（脚本插图提示、反爬卡片的动作）需要 0.1.6-alpha.2+ 的 `browser` 右栏 tab 类型，0.1.5 宿主上退化为普通外部链接。minHost `0.1.5-rc.1`；本插件不做 preset 自隐（不需要 `pluginInventory`）。
-- 源码线（deepseek-harness master）：✅（verifiedHost: 0.1.5-rc.1）。
+- 源码线（deepseek-harness master）：✅（verifiedHost: 0.2.1-rc.1）——host-021 波对 0.2.1-rc.1 树全量 build+test 绿，无其它表面变化。
 
 注意：宿主抓取缝默认把解码后的正文截到 100,000 字符且**静默截断**——这是部署配置可以抬升的上限（见「实现原理 · 抓取缝与存储」里的 patch 叠加层写法），不是插件的正文预算。
 

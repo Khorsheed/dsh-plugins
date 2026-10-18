@@ -93,7 +93,7 @@ The rich directory uses native ACP session model/configuration metadata when a l
 ## Compatibility
 
 - npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`): ✅ public API compatible — live generation rides the local-agent transient Remote and public Conversation nodes; suffix checkpoints provide recovery, and native final messages retain transcript and usage semantics. minHost is 0.1.5-rc.1; older hosts stay on the previous release line. 0.1.5 retired the per-chunk session event: token-granularity deltas no longer land in the child session log — they ride the run-progress channel and the round settles as one combined assistant/message (identical final text); a late-arriving usage whose carrier message already mirrored is dropped with a warn (the host has no usage-backfill event).
-- source line (deepseek-harness master): ✅ (verifiedHost: 0.1.5-rc.1) — the `thinkingEffort` config item (default high, provision-time only) and the `effectiveSettings` evaluation snapshot are plugin-level: they read and write scoped files only, with no host-API dependency on either host line.
+- source line (deepseek-harness master): ✅ (verifiedHost: 0.2.1-rc.1) — host-021 wave: full build+test green against the 0.2.1-rc.1 tree; delegation migrated to `ctx.subagents.startActivation` (managed activation), and run.id is now unique per execution. The `thinkingEffort` config item (default high, provision-time only) and the `effectiveSettings` evaluation snapshot are plugin-level: they read and write scoped files only, with no host-API dependency on either host line.
 
 ## Known Limitations
 

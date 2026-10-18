@@ -46,7 +46,7 @@ Uninstalling removes the whole family; to keep the family but turn one row off, 
 ## Compatibility
 
 - npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`): ❌ unsupported — the members floor at host `0.2.0-rc.2` together.
-- Source line (deepseek-harness 0.2.0 line): ✅ full (minHost / verifiedHost: 0.2.0-rc.2).
+- Source line (deepseek-harness 0.2 line): ✅ full (minHost: 0.2.0-rc.2, verifiedHost: 0.2.1-rc.1) — host-021 wave: full build+test green against the 0.2.1-rc.1 tree; no other surface changes.
 
 **Version line**: from `0.1.0`, requires host `0.2.0-rc.2` or later.
 

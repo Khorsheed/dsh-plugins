@@ -49,7 +49,7 @@ plugins:
 
 - npm release line (`@deepseek-ai/dsh@0.1.2-rc.1`): ✅ full — baseline moved to the 0.1.2-rc.1 API surface (single-arm 0.1.2 API consumption; the 0.1.1-rc.2 runtime arm is retired), full build+test green; minHost moves up to 0.1.2-rc.1 — older hosts stay on the previous release line.
 - 0.1.6-alpha.2 pre-release line (`@deepseek-ai/dsh@0.1.6-alpha.2`): ✅ full — the `settings.plugin.item` slot is removed in the ui-settings-plugins refactor; the settings card moves to `plugins.bundle.config` (keyed by package name, the Plugins page drawing the title chrome); the dual-inject probe keeps the 0.1.5 card working, minHost unchanged.
-- source line (deepseek-harness master): ✅ (verifiedHost: 0.1.2-rc.1)
+- source line (deepseek-harness master): ✅ (verifiedHost: 0.2.1-rc.1) — host-021 wave: full build+test green against the 0.2.1-rc.1 tree, no other surface change.
 
 **Version line mapping**: 0.2.0 and up support host `0.1.2-rc.1` and later; hosts on `0.1.0-rc.6` ~ `0.1.1-rc.2` stay on the 0.1.x release line (last release `0.1.0`).
 

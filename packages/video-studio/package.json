@@ -152,7 +152,7 @@
     },
     "compat": {
       "minHost": "0.1.5-rc.1",
-      "verifiedHost": "0.2.0-rc.1",
+      "verifiedHost": "0.2.1-rc.1",
       "notes": "剪辑 is a page-type right-Sidebar tab (0.1.5's sidebar.right.pane.tab + sidebarRightTabs registry, the local-files precedent), so minHost is 0.1.5-rc.1; the 剪辑模式 preset row (dsh-video, in @khorsheed/dsh-presets) needs the 0.1.7-rc.1+ preset mechanism, so on 0.1.5 the panel works from general sessions only (degraded). Projects are deployment-level state under $DSH_HOME/state/video-studio written with node fs by the host half (not through a session sandbox): media files stay where the user keeps them, exports go to the configured export folder. The host spawns ffmpeg/ffprobe found on PATH or at a configured path; a missing binary is a designed panel state, never a boot failure. Diarization and ASR run in a forked child process through sherpa-onnx-node (prebuilt per-platform addon); a failed addon load fails the transcription job only. Speech models download on first use. The ./tool entry (video_* tools + the video-studio skill) injects the core's videoStudio service and is granted by the dsh-video preset only; without the core it stays pending."
     },
     "runtimeDependencies": [

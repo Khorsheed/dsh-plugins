@@ -46,7 +46,7 @@ dsh plugin --profile web remove @khorsheed/dsh-bundle-eval
 ## Compatibility
 
 - npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：❌ 不支持——成员地板统一为宿主 `0.2.0-rc.2`。
-- 源码线（deepseek-harness 0.2.0 线）：✅ 完整（minHost / verifiedHost: 0.2.0-rc.2）。
+- 源码线（deepseek-harness 0.2 线）：✅ 完整（minHost: 0.2.0-rc.2,verifiedHost: 0.2.1-rc.1)——host-021 波对 0.2.1-rc.1 树全量 build+test 绿,无其它表面变化。
 
 **版本线对照**：`0.1.0` 起要求宿主 `0.2.0-rc.2` 及以后。
 

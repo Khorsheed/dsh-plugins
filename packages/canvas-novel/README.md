@@ -147,7 +147,7 @@ dsh plugin add @khorsheed/dsh-presets
 | 宿主线 | 结论 |
 |---|---|
 | npm release 0.2.0-rc.2 | ✅ 开发基线（verifiedHost），全量 build 和 test 都在这条线上完成 |
-| deepseek-harness master | 跟随验证。函数型 prompt 段、ctx.fs 版本守卫和 per-scope 工具注册都是长期 seam |
+| deepseek-harness master | ✅ 已验证（verifiedHost: 0.2.1-rc.1）——host-021 波对 0.2.1-rc.1 树全量 build+test 绿，无其它表面变化。函数型 prompt 段、ctx.fs 版本守卫和 per-scope 工具注册都是长期 seam |
 
 机器可读标注见 package.json 的 `dsh.compat`（minHost `0.2.0-rc.2`）：
 

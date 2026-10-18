@@ -42,7 +42,7 @@ The package's `cordis.patch.yml` inserts two rows: `game` (service core, Remote,
 ## Compatibility
 
 - npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`): ❌ unsupported — the per-turn checks need `agent/turn-stopping` and `agent.steer`, and the preset needs the `@deepseek-ai/dsh-agent-preset` row type; 0.1.5 has neither.
-- Source line (deepseek-harness master): ✅ (verifiedHost: 0.2.0-rc.2). Degraded: the check findings steered back to the agent are plugin-sourced context messages, which the 0.2.0 chat view hides (a collapsible chat row is a later milestone); the headless checks need Chrome installed on the host. A headless profile has no browser consumer, so no tab appears there, but the checks still run.
+- Source line (deepseek-harness master): ✅ (verifiedHost: 0.2.1-rc.1) — host-021 wave: full build+test green against the 0.2.1-rc.1 tree, no other surface changes. Degraded: the check findings steered back to the agent are plugin-sourced context messages, which the 0.2.0 chat view hides (a collapsible chat row is a later milestone); the headless checks need Chrome installed on the host. A headless profile has no browser consumer, so no tab appears there, but the checks still run.
 
 ## Known Limitations
 

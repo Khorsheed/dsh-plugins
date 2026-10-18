@@ -170,7 +170,7 @@
     "compat": {
       "minHost": "0.1.5-rc.1",
       "notes": "主面板是 page-type 右栏 tab（0.1.5 的 sidebar.right.pane.tab + sidebarRightTabs 注册表，local-files/canvas 先例），0.1.5 之前没有右栏席位。turn 动作行图标走 conversation.chat.assistant-actions（0.1.7-rc.1 起），旧宿主只剩会话头部入口——所有注册都走 ctx.slots.inject，缺席位即不挂表面，不炸 boot。JSON 展示组装层捕获；尚未实现 adapter 投影后的 wire body 采集，不显示占位入口。采集面（llm/stream、system-prompt/assemble、session/event）全程只读瀑布监听，不改写任何请求。",
-      "verifiedHost": "0.2.0-rc.1"
+      "verifiedHost": "0.2.1-rc.1"
     }
   }
 }

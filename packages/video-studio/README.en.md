@@ -38,7 +38,7 @@ dsh plugin --profile web remove @khorsheed/dsh-video-studio
 ## Compatibility
 
 - npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`): ⚠️ the panel and host service work (page-type right-sidebar tabs since 0.1.5), but the editing-mode preset row needs the 0.1.7-rc.1+ preset mechanism, so on 0.1.5 the panel is only usable from general sessions.
-- Source line (deepseek-harness master): ✅ (verifiedHost: 0.2.0-rc.1): build and tests pass against the 0.2.0-rc.2 source tree.
+- Source line (deepseek-harness master): ✅ (verifiedHost: 0.2.1-rc.1) — host-021 wave: full build+test green against the 0.2.1-rc.1 tree, no other surface changes.
 - **Native dependency**: `sherpa-onnx-node` ships prebuilt per-platform addons (about 34 MB on darwin-arm64). Speech jobs run in a child process, so an addon that fails to load fails the transcription job only, never boot.
 - **ffmpeg version**: only filters present since 4.2 are used (atrim / concat / loudnorm / afftdn). An ffmpeg without libass (the `subtitles` filter) gets a switchable subtitle track in the video instead, and the panel says so.
 - **Web surface**: the right-sidebar tab is a browser surface; a headless profile gets only the host service and tools.

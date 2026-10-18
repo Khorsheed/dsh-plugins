@@ -47,7 +47,7 @@ Removing the bundle removes the whole family; to keep the family and disable a s
 ## Compatibility
 
 - npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`): ✅ full — pure composition; the floor is the members' highest (minHost `0.1.5-rc.1`, the floor of the core and the four providers; the deps-only library local-agent-dsh-headless floors lower). Per-member behavior differences above that floor (e.g. token-granularity live mirroring on 0.1.5) are documented in each member's own Compatibility section.
-- source line (deepseek-harness master): ✅ full (verifiedHost: 0.1.7-rc.2).
+- source line (deepseek-harness master): ✅ full (verifiedHost: 0.2.1-rc.1) — host-021 wave: full build+test green against the 0.2.1-rc.1 tree; delegation moved to `ctx.subagents.startActivation` (managed activations), and run.id is now unique per execution.
 
 **Version-line map**: `0.1.0` and later require host `0.1.5-rc.1` and up.
 

@@ -49,7 +49,7 @@ dsh plugin --profile <name> add @khorsheed/dsh-library
 | 宿主线 | 结论 |
 |---|---|
 | npm 发布线（0.2.0-rc.x） | 完整支持（`minHost: 0.1.7-rc.1`：右栏页面型 tab 与 Remote 面之外无宿主新 API；preset 授予需 0.1.7-rc.1 的 `@deepseek-ai/dsh-agent-preset` 行类型——那由 bundle 包声明） |
-| deepseek-harness master（0.2.0-rc.2 开发线） | 已验证（`verifiedHost: 0.2.0-rc.2`） |
+| deepseek-harness master（0.2.1-rc.1 开发线） | 已验证（`verifiedHost: 0.2.1-rc.1`）——host-021 波对 0.2.1-rc.1 树全量 build+test 绿，无其它表面变化 |
 
 细节见 package.json 的 `dsh.compat.notes`：状态走 `$DSH_HOME/state/dsh-library` 的裸 `node:fs`（原子写 + 项目级锁 + append-only JSONL），不经 `ctx.fs`（会话沙箱会拒）；照片经探测的 `attachments` 服务保存与读回，缺席报 `unavailable` 错误码。
 

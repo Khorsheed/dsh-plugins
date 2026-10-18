@@ -52,7 +52,7 @@ dsh plugin --profile web remove @khorsheed/dsh-local-files
 ## Compatibility
 
 - npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`): ✅ full — the official-host surface is exactly the peer set the consumers already carry: ui-primitives (`MarkdownText` / `JsonTree` / `CodeBlock` / icons) and ui-slots (the label types), so minHost tracks the consuming plugins' 0.1.5-rc.1 right-sidebar line.
-- Source line (deepseek-harness master): ✅ (verifiedHost: `0.1.5-rc.1`) — as a source-plane library it registers no slot / service / locale / row and owns no client bundle, so its compatibility surface is exactly the type exports of the handful of official packages it consumes.
+- Source line (deepseek-harness master): ✅ (verifiedHost: `0.2.1-rc.1`) — host-021 wave: full build+test green against the 0.2.1-rc.1 tree, no other surface changes; as a source-plane library it registers no slot / service / locale / row and owns no client bundle, so its compatibility surface is exactly the type exports of the handful of official packages it consumes.
 
 ## Known Limitations
 
