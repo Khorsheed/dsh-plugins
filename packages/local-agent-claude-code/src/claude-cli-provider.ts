@@ -15,7 +15,6 @@
  * @module @khorsheed/dsh-local-agent-claude-code/claude-cli-provider
  */
 
-import { claudeProcessEnv } from './process-env.ts'
 import { randomUUID } from 'node:crypto'
 import type { ContentBlock, TokenUsage } from '@deepseek-ai/dsh-llm'
 import { createAssistantMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
@@ -54,7 +53,8 @@ import type { LocalAgentAppliedConfiguration, DelegationExecTarget, LocalAgentTo
 import { MEMBER_BRIDGE_SOCKET_ENV, MEMBER_BRIDGE_TOKEN_ENV } from '@khorsheed/dsh-local-agent/types'
 import { LiveChannelUnavailableError } from './live-driver.ts'
 import type { ClaudeLiveDriver } from './live-driver.ts'
-import { syncClaudeCredentialFile } from './records.ts'
+import type { ClaudeEndpointAuth } from './endpoint-auth.ts'
+import { endpointAuthEnv } from './endpoint-auth.ts'
 
 // The host renamed its tool-call id brand between lines (`CallId` on the npm
 // rc line, a new name on 0.1.2-alpha). A brand is compile-time-only and the
@@ -69,10 +69,13 @@ export const DEFAULT_DISPOSE_GRACE_MS = 3_000
 
 /**
  * Auth-shaped failure signatures in claude's result error or stderr: the
- * endpoint rejected the credential (401/403, revoked token). Narrow on
- * purpose — matched against provider-controlled error strings only.
+ * endpoint rejected the credential (401/403, revoked key). Matches the CLI's
+ * own phrasing ("Failed to authenticate. API Error: 401 …", the
+ * `authentication_failed` error tag) plus the relay phrasings seen in the
+ * wild ("invalid x-api-key" and friends). Narrow on purpose — matched against
+ * provider-controlled error strings only.
  */
-export const CLAUDE_AUTH_FAILURE = /failed to authenticate|authentication_failed|oauth access token/i
+export const CLAUDE_AUTH_FAILURE = /failed to authenticate|authentication_failed|oauth access token|invalid (x-api-key|api key|authentication token)|api error: 40[13]/i
 
 /**
  * Member channel registration for one claude process lifetime: mint the
@@ -178,7 +181,7 @@ export function claudeCliVersion(ctx: Context, homeDir: string): Promise<string 
     argv: ['claude', '--version'],
     cwd: homeDir,
     spawn: spec => subprocess.spawn(spec),
-    env: claudeProcessEnv({ CLAUDE_CONFIG_DIR: homeDir }),
+    env: delegationEnv({ CLAUDE_CONFIG_DIR: homeDir }),
   })
 }
 
@@ -192,6 +195,11 @@ export class ClaudeCliProvider implements SubagentProvider {
    *   generation's driver per member (the settings toggle swaps generations;
    *   a resolver may return undefined to steer one member's round to exec
    *   while a retiring generation still hosts it).
+   * @param endpoint - resolver for the round's endpoint credential (endpoint-auth.ts:
+   *   the scope's endpoint-auth.json over the plugin config triple), read PER
+   *   ROUND against the round's scoped home, so a key rotation or a profile
+   *   edit takes effect on the next delegation without a reload. Absent, no
+   *   `ANTHROPIC_*` variables reach the child at all.
    * @param model - resolver for the member's effective model, read PER ROUND
    *   so a settings-card write or a composer switch takes effect on the next
    *   delegation without a reload. Receives the member (the child session id)
@@ -203,7 +211,7 @@ export class ClaudeCliProvider implements SubagentProvider {
   constructor(
     private readonly ctx: Context,
     private readonly permissionMode: 'skip' | 'normal' = 'skip',
-    private readonly baseUrl?: string,
+    private readonly endpoint?: (homeDir: string) => Promise<ClaudeEndpointAuth>,
     private readonly live?: ClaudeLiveDriver | ((childSessionId: string) => ClaudeLiveDriver | undefined),
     private readonly model?: (childSessionId: string, delegationModel?: string) => string | undefined,
   ) {}
@@ -341,12 +349,12 @@ export class ClaudeCliProvider implements SubagentProvider {
     } catch (error) {
       this.ctx.logger.warn(`subagent-claude: subagent session record failed: ${error instanceof Error ? error.message : String(error)}`)
     }
-    // Resolve the effective endpoint once per run: the cordis Config field
-    // wins, else the host environment's ANTHROPIC_BASE_URL (a STARTUP-time
-    // snapshot — a long-running dsh process does not see later shell exports),
-    // else the CLI's own default. Log it (without the key) so a failing
-    // delegation reports which endpoint it actually used.
-    const effectiveBaseUrl = this.baseUrl ?? process.env.ANTHROPIC_BASE_URL
+    // Resolve the effective endpoint once per run: the scope's
+    // endpoint-auth.json over the plugin config triple (endpoint-auth.ts).
+    // Logged WITHOUT the key so a failing delegation reports which endpoint
+    // it actually used.
+    const endpoint = await this.endpoint?.(homeDir)
+    const effectiveBaseUrl = endpoint?.baseUrl
     this.ctx.logger.info(`subagent-claude: delegating via ${effectiveBaseUrl ?? 'claude default endpoint'}`)
     // Live driver: the round goes to the member's resident stream-json
     // process. A channel that fails at spawn falls through to the exec
@@ -402,9 +410,9 @@ export class ClaudeCliProvider implements SubagentProvider {
     try {
       const run = await startClaudeCliRun(request, {
         cwd,
-        env: (exec === undefined ? claudeProcessEnv : delegationEnv)({
+        env: delegationEnv({
           CLAUDE_CONFIG_DIR: homeDir,
-          ...this.baseUrl === undefined ? {} : { ANTHROPIC_BASE_URL: this.baseUrl },
+          ...endpointAuthEnv(endpoint),
         }),
         ...exec === undefined ? {} : { exec },
         endpointLabel: effectiveBaseUrl,
@@ -514,7 +522,8 @@ export class ClaudeCliProvider implements SubagentProvider {
           this.ctx.logger.warn(`subagent-claude: live driver unavailable, using the exec one-shot: ${error.message}`)
         }
       }
-      const effectiveBaseUrl = this.baseUrl ?? process.env.ANTHROPIC_BASE_URL
+      const endpoint = await this.endpoint?.(homeDir)
+      const effectiveBaseUrl = endpoint?.baseUrl
       this.ctx.logger.info(`subagent-claude: resuming via ${effectiveBaseUrl ?? 'claude default endpoint'}`)
       // Member channel: register the resume round (same child session, fresh
       // per-run token) before the spawn.
@@ -524,9 +533,9 @@ export class ClaudeCliProvider implements SubagentProvider {
       try {
         run = await startClaudeCliRun(request, {
           cwd,
-          env: (exec === undefined ? claudeProcessEnv : delegationEnv)({
+          env: delegationEnv({
             CLAUDE_CONFIG_DIR: homeDir,
-            ...this.baseUrl === undefined ? {} : { ANTHROPIC_BASE_URL: this.baseUrl },
+            ...endpointAuthEnv(endpoint),
           }),
           ...exec === undefined ? {} : { exec },
           endpointLabel: effectiveBaseUrl,
@@ -1265,20 +1274,6 @@ export async function startClaudeCliRun(
   const task = textTask(request.prompt)
   if (request.signal.aborted) {
     throw new Error('subagent-claude: request was aborted before the CLI started')
-  }
-  // Credential reconcile before EVERY spawn: claude 2.1.236 reads
-  // .credentials.json at runtime while login/refresh write the keychain, so
-  // the login watch's sync alone leaves a rotated grant stale at spawn time
-  // (the live driver's spawnRuntime does the same). Best-effort: a missing
-  // grant fails the run with the CLI's own auth error, not here.
-  // NOTE the directory: on a container round this is still the HOST scoped
-  // home (the in-container path only replaces it in the `docker exec -e`
-  // forwarding), and the unit is about to read that same file through the
-  // bind mount — which is why the reconcile is newer-wins rather than a
-  // mirror. See `syncClaudeCredentialFile`.
-  const configDir = spec.env['CLAUDE_CONFIG_DIR']
-  if (configDir !== undefined) {
-    await syncClaudeCredentialFile(configDir, message => { spec.ctx?.logger.warn(message) }).catch(() => false)
   }
   const turn = spec.resume?.turn ?? 1
   // The member bridge flags ride every argv variant (skip and normal

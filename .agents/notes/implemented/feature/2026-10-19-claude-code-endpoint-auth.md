@@ -1,0 +1,37 @@
+# Agent Note: Claude Code endpoint-key authentication replaces OAuth
+
+Status: implemented
+
+## Problem
+
+The claude-code harness authenticated through Anthropic's official OAuth web flow: `/claude-code login` spawned `claude auth login` under a pty, the grant landed in the macOS keychain (a path-hashed entry) or `.credentials.json`, and a newer-wins reconcile (`syncClaudeCredentialFile`) bridged the CLI's version-dependent write/read split. Three costs motivated replacing it:
+
+- **Reliability for the primary deployment.** The official endpoint is network-fragile from the deployment's region and OAuth-grant usage patterns risk account action; the operator routes Claude Code through a relay (`ANTHROPIC_BASE_URL` + key) everywhere else and wanted the same here.
+- **Container authorization.** An evaluation round inside a docker unit needed its own authorized scope — and OAuth's single-use refresh-token rotation made a shared grant actively dangerous (the host keychain and the unit's mounted file forked the grant; measured: one rotation invalidated the other side's whole token family).
+- **Complexity.** The keychain enumeration, empty-shell filtering, compact-Zulu timestamp parsing, and the newer-wins two-store reconcile were the package's highest-incident-density code, all of it OAuth-specific.
+
+## Decision
+
+`@khorsheed/dsh-local-agent-claude-code` authenticates by endpoint key only. There is no login flow, no OAuth probe, no keychain access, no credential reconcile.
+
+- The plugin config triple `baseUrl` / `apiKey` / `authToken` is the deployment-level credential. `apiKey` rides as `ANTHROPIC_API_KEY` (`x-api-key`), `authToken` as `ANTHROPIC_AUTH_TOKEN` (`Authorization: Bearer`) — relays differ, so both shapes are accepted; when both are set the CLI's own precedence applies.
+- A scope's own `<scopedHome>/endpoint-auth.json` (mode 0600) overrides the config field by field. The filename deliberately matches the evaluation contract hash's credential denylist (`auth`), so key material never enters a condition fingerprint — not even as a digest input.
+- The provider, the live driver, and the model catalog resolve the merge at every spawn (`resolveEndpointAuth`) and inject the `ANTHROPIC_*` variables through the existing env seam (`delegationEnv`; container rounds through `containerExecSpawn`'s name-only `-e` forwarding, values carried by the docker client's environment — never on an argv). A key rotation takes effect on the next round without a reload.
+- The family's credential grades are untouched: presence (a non-empty key) reads `present-unverified`, a completed round `verified`, a round's 401 `rejected`; the endpoint file's mtime is the `credentialStamp`, so rewriting the file is the recovery gesture, one-to-one with the OAuth era's re-login. The auth-failure signature regex additionally covers relay phrasings (`invalid x-api-key` and friends); the CLI's own 401 text ("Failed to authenticate. API Error: 401 …", `authentication_failed`) already matched.
+- The host process environment is never consulted for routing: `delegationEnv` tombstones ambient `ANTHROPIC_*` variables, and `effectiveSettings.baseUrlSet` mirrors exactly the config-plus-file resolution. The pre-change doc comment claiming a host-env fallback described the log label only; the child never inherited it, and the snapshot now tells that truth.
+- `claudeKeychainEnv` and `process-env.ts` are deleted (the macOS `USER` restoration existed for keychain account matching and has no endpoint-key consumer); `records.ts` keeps only session listing and transcript model read-back; `provision.ts` keeps the directory and the proxy env block; `claudeLogout` is replaced by clearing the scope's endpoint file, and refuses with an explanatory error when the credential comes from the plugin config.
+- Verified against claude 2.1.296: a fresh scoped home with only `ANTHROPIC_BASE_URL` + `ANTHROPIC_API_KEY` runs `claude -p` with no onboarding or key-approval gate (the CLI scaffolds `.claude.json` itself). A dead key costs the CLI's full retry budget (measured ≈8 minutes) before the 401 surfaces — recorded in the README's Known Limitations.
+
+## Alternatives considered
+
+- **Keep OAuth, add endpoint auth as a second mode.** Rejected: it keeps the highest-incident code alive, reintroduces a precedence question (env credential vs stored grant) the CLI answers version-dependently, and the deployment that motivated the work uses no OAuth at all.
+- **Write the credential into the scoped `settings.json` env block** (the `proxyUrl` pattern). Rejected: `settings.json` is not on the evaluation contract hash's credential denylist, so the key would become a condition-fingerprint input — the contract forbids hashing credential content outright. The separate denylist-named file is what makes per-scope keys eval-safe.
+- **Config-only credentials, no per-scope file.** Rejected: a named scope could never carry its own account, and the evaluation's per-condition provisioning would have no place to land a credential.
+- **Keep `credentialStamp` synthesizing a value for config-sourced credentials.** Rejected as dishonest: there is no marker, and the in-memory `rejected` mark already clears on the instance restart that a profile edit accompanies.
+
+## Consequences
+
+- Breaking change: an existing OAuth deployment must configure `baseUrl` + `apiKey`/`authToken` before upgrading, or the upgraded instance reads unauthenticated. The README carries the migration note; the next release line is a major bump.
+- The container credential fork (and its eval-side scope guard's premise) is gone: an API key neither refreshes nor rotates, so host and container rounds share one credential safely. The eval package's `claudeScopeDiagnostics` guard still enforces per-scope container conditions and is scheduled to relax in the follow-up that carries the same model to codex.
+- Lost: the official-subscription (Pro/Max) OAuth path. Users on first-party subscriptions can still reach the official endpoint with a console API key; what disappears is subscription billing, not the endpoint.
+- The login watch, pty declaration, keychain enumeration, and two-store reconcile (~450 lines of `records.ts` plus the pre-spawn sync) are deleted; the core's generic login machinery stays for codex/kimi, which this change does not touch.

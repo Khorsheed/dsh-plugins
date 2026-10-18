@@ -1,18 +1,17 @@
 /**
  * Claude Code harness instantiation of the local-agent family. Registers the
  * `claude-code` harness into the core registry: scoped home under the shared
- * homes root (`CLAUDE_CONFIG_DIR`), login as a manual handoff (claude ≥2.1
- * prints no OAuth URL off a TTY, so `/login` replies with the exact terminal
- * command and the registry watches for the credential), and project-file
- * session records. Delegation mounts through the `claude-local` provider
- * (one-shot `claude -p --output-format json` under the scoped home); the
- * bundle patch's `tool-subagent-claude-code-local` row puts the tool on the
- * profile root, so every agent preset can delegate.
+ * homes root (`CLAUDE_CONFIG_DIR`), endpoint-key authentication (the scope's
+ * `endpoint-auth.json` over the plugin config's `baseUrl`/`apiKey`/
+ * `authToken` triple — no OAuth, no browser flow, nothing to authorize inside
+ * a container), and project-file session records. Delegation mounts through
+ * the `claude-local` provider (one-shot `claude -p` under the scoped home);
+ * the bundle patch's `tool-subagent-claude-code-local` row puts the tool on
+ * the profile root, so every agent preset can delegate.
  *
  * @module @khorsheed/dsh-local-agent-claude-code
  */
 
-import { claudeKeychainEnv } from './process-env.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
@@ -21,13 +20,21 @@ import { settingsFace, vol } from '@khorsheed/dsh-local-agent'
 import type {} from '@khorsheed/dsh-local-agent'
 import { endpointHost } from '@khorsheed/dsh-local-agent/types'
 import { ClaudeCliProvider, claudeCliVersion } from './claude-cli-provider.ts'
+import type { ClaudeEndpointAuth } from './endpoint-auth.ts'
+import {
+  clearEndpointAuth,
+  endpointAuthFileExists,
+  endpointAuthStamp,
+  hasEndpointCredential,
+  resolveEndpointAuth,
+} from './endpoint-auth.ts'
 import { DEFAULT_LIVE_IDLE_MS } from './live-driver.ts'
 import { LiveDriverSwitch } from './live-switch.ts'
 import type { ClaudeLiveSettings } from './live-switch.ts'
 import { ClaudeModelCatalog } from './model-catalog.ts'
 import { ClaudeModelBroker, ClaudeScopedModelMemory } from './model-broker.ts'
-import { claudeAuthenticated, claudeCredentialStamp, listClaudeSessions, readClaudeTranscriptModel, syncClaudeCredentialFile } from './records.ts'
-import { claudeLogout, provisionClaudeHome, readClaudeConfiguredModel } from './provision.ts'
+import { listClaudeSessions, readClaudeTranscriptModel } from './records.ts'
+import { provisionClaudeHome, readClaudeConfiguredModel } from './provision.ts'
 
 /** Stable Cordis plugin name; the bundle patch row id. */
 export const name = 'local-agent-claude-code'
@@ -35,7 +42,7 @@ export const name = 'local-agent-claude-code'
 /** Services required before the harness can register. */
 export const inject = ['localAgent', 'subagents', 'subprocess', 'settings']
 
-/** Plugin config: the permission mode fresh delegations default to, plus the live driver. */
+/** Plugin config: the permission mode fresh delegations default to, the endpoint credential, plus the live driver. */
 export interface Config {
   /**
    * `claude -p` permission handling; `skip` passes
@@ -54,17 +61,32 @@ export interface Config {
    */
   model?: string
   /**
-   * `ANTHROPIC_BASE_URL` for the child CLI; absent inherits the host
-   * process environment (a user-level proxy like `https://proxy.example.com/anthropic`
-   * is typically exported there). Set when delegations must route through a
-   * different endpoint than the login flow used.
+   * The deployment-level endpoint: `ANTHROPIC_BASE_URL` for every delegation
+   * (e.g. a relay like `https://openproxy.to/claude`, or absent for the
+   * official API). A scope's own `endpoint-auth.json` overrides it field by
+   * field. See endpoint-auth.ts for the whole auth model — there is no OAuth
+   * path in this package.
    */
   baseUrl?: string
   /**
-   * HTTP proxy for the child CLI's own traffic (model calls AND OAuth
-   * refresh), provisioned into the scoped `settings.json` env block. Needed
-   * when the host process environment carries no proxy (a supervisor-spawned
-   * instance does not inherit the user's shell exports).
+   * The deployment-level credential, sent as `ANTHROPIC_API_KEY` (the
+   * `x-api-key` header). Keep it in the LOCAL profile row only — never commit
+   * it (the repo hygiene gate blocks credential-shaped strings, but the
+   * profile is not the repo's business).
+   */
+  apiKey?: string
+  /**
+   * The deployment-level credential, sent as `ANTHROPIC_AUTH_TOKEN` (the
+   * `Authorization: Bearer` header) — some relays expect Bearer instead of
+   * `x-api-key`. When both keys are set the CLI's own precedence applies.
+   */
+  authToken?: string
+  /**
+   * HTTP proxy for the child CLI's own traffic, provisioned into the scoped
+   * `settings.json` env block. Needed when the host process environment
+   * carries no proxy (a supervisor-spawned instance does not inherit the
+   * user's shell exports). Distinct from {@link baseUrl}: this is a local
+   * traffic forwarder, not the model endpoint.
    */
   proxyUrl?: string
   /**
@@ -117,6 +139,8 @@ export const Config: z = z.object({
   ]),
   model: volatilize(SETTINGS_FIELDS.model),
   baseUrl: z.string(),
+  apiKey: z.string(),
+  authToken: z.string(),
   proxyUrl: z.string(),
   live: volatilize(SETTINGS_FIELDS.live),
   liveIdleMs: z.number().default(DEFAULT_LIVE_IDLE_MS),
@@ -148,13 +172,23 @@ const CLAUDE_SETTINGS_SCHEMA = z.object(SETTINGS_FIELDS)
 export function apply(ctx: Context, config: Config): void {
   ctx.effect(() => {
     const permissionMode = config.permissionMode ?? DEFAULT_PERMISSION_MODE
-    const baseUrl = config.baseUrl
     const homeDir = ctx.localAgent.homeDir('claude-code')
     // Claude creates the scoped home lazily; create it eagerly so the
     // harness's homeDir contract is uniform with the other harnesses.
     void provisionClaudeHome(homeDir, config.proxyUrl).catch((error: unknown) => {
       ctx.logger.warn(`local-agent-claude-code: scoped home provisioning failed: ${error instanceof Error ? error.message : String(error)}`)
     })
+    // The endpoint credential's deployment level: the plugin config triple,
+    // merged per field UNDER the scope's own endpoint-auth.json at resolve
+    // time. Resolved PER ROUND (and per status probe) against the round's
+    // scoped home — a key rotation lands with the next read, no reload.
+    const endpointConfig: ClaudeEndpointAuth = {
+      ...config.baseUrl === undefined ? {} : { baseUrl: config.baseUrl },
+      ...config.apiKey === undefined ? {} : { apiKey: config.apiKey },
+      ...config.authToken === undefined ? {} : { authToken: config.authToken },
+    }
+    const resolveEndpoint = (scopeHome: string): Promise<ClaudeEndpointAuth> =>
+      resolveEndpointAuth(scopeHome, endpointConfig)
     // The live driver is settings-driven: the settings card's toggle (user
     // layer over the YAML composition base) swaps driver generations without
     // a reload. Toggling OFF drains the retiring generation — new rounds fall
@@ -216,14 +250,15 @@ export function apply(ctx: Context, config: Config): void {
     }
     const liveSwitch = new LiveDriverSwitch(ctx, face, {
       ...config.permissionMode === undefined ? {} : { permissionMode: config.permissionMode },
-      ...config.baseUrl === undefined ? {} : { baseUrl: config.baseUrl },
+      endpoint: resolveEndpoint,
       ...config.liveIdleMs === undefined ? {} : { liveIdleMs: config.liveIdleMs },
       model: effectiveModel,
       provisionModel: (home, model) => scopedModelMemory.provision(home, model),
     })
     const modelCatalog = new ClaudeModelCatalog({
       spawn: spec => ctx.subprocess.spawn(spec),
-      ...config.baseUrl === undefined ? {} : { baseUrl: config.baseUrl },
+      endpoint: resolveEndpoint,
+      ...config.baseUrl === undefined ? {} : { endpointLabel: config.baseUrl },
       warn: message => ctx.logger.warn(message),
     })
     const modelContext = (childSessionId?: string): { home: string; cwd: string | undefined } => {
@@ -258,7 +293,7 @@ export function apply(ctx: Context, config: Config): void {
       // live-settle report.
       transcriptModel: (cliSessionId, childSessionId) => readClaudeTranscriptModel(modelContext(childSessionId).home, cliSessionId),
     })
-    const disposeProvider = ctx.subagents.registerProvider(new ClaudeCliProvider(ctx, permissionMode, baseUrl, liveSwitch.resolve, effectiveModel))
+    const disposeProvider = ctx.subagents.registerProvider(new ClaudeCliProvider(ctx, permissionMode, resolveEndpoint, liveSwitch.resolve, effectiveModel))
     const disposeHarness = ctx.localAgent.register({
       prepareMember: async ({ binding, childSession, configuration, signal }) => {
         const driver = liveSwitch.resolve(binding.childSessionId)
@@ -270,57 +305,49 @@ export function apply(ctx: Context, config: Config): void {
       displayName: 'Claude Code',
       homeEnvVar: 'CLAUDE_CONFIG_DIR',
       delegationProvider: 'claude-local',
-      login: {
-        // claude ≥2.1 (verified 2.1.235+) runs its auth only on a TTY: under
-        // the pty wrapper it auto-opens the user's browser and prints the
-        // OAuth URL as fallback; the page hands back a code the user pastes
-        // via /claude-code code <value>. The relay env is scrubbed and the
-        // scoped home pinned so the credential lands where delegations read
-        // it (the wrapper passes the harness env through).
-        // The argv pins the config directory itself (an `env NAME=VALUE`
-        // assignment outranks the spawn env), so it is built from the
-        // directory being logged in: `/claude-code login --scope <name>`
-        // authorizes THAT scope, not the default one.
-        pty: {
-          command: 'env',
-          args: (scopedHome: string) => ['-u', 'ANTHROPIC_API_KEY', '-u', 'ANTHROPIC_BASE_URL', ...Object.entries(claudeKeychainEnv()).map(([key, value]) => `${key}=${value}`), `CLAUDE_CONFIG_DIR=${scopedHome}`, 'claude', 'auth', 'login'],
-        },
-        // The watch syncs the keychain credential into the runtime-readable
-        // file first (claude 2.1.236 writes keychain but reads the file),
-        // then probes.
-        watch: async (home) => {
-          await syncClaudeCredentialFile(home, message => { ctx.logger.warn(message) })
-          return claudeAuthenticated(home, message => { ctx.logger.warn(message) })
-        },
-      },
+      // No `login` declaration: the harness authenticates by endpoint key
+      // (endpoint-auth.ts), so the core reports the harness as not loginable
+      // and `/claude-code login` answers that there is no login flow — no
+      // browser, no OAuth, nothing to authorize inside a container.
       records: { listSessions: homeDir => listClaudeSessions(homeDir) },
       // A NAMED scope's directory is provisioned through this hook when the
       // registry materializes it — the same eager creation and settings the
       // default scope gets from the apply above.
       provision: scopedHome => provisionClaudeHome(scopedHome, config.proxyUrl).then(() => {}),
-      // The logger is wired here because this probe is the clobber site the
-      // spawn sites do not cover: every status read and every readiness check
-      // reconciles the two credential stores through it.
-      isAuthenticated: home => claudeAuthenticated(home, message => { ctx.logger.warn(message) }),
-      credentialStamp: claudeCredentialStamp,
-      logout: claudeLogout,
+      // Endpoint-key presence: the scope's endpoint-auth.json merged over the
+      // plugin config must carry a non-empty key. The verdict rides the
+      // family's credential grades untouched: presence grades
+      // `present-unverified`, a completed round grades `verified`, a round's
+      // 401 grades `rejected` until the endpoint file's mtime moves past the
+      // mark (editing the file IS the re-login gesture).
+      isAuthenticated: home => resolveEndpoint(home).then(endpoint => hasEndpointCredential(endpoint)),
+      credentialStamp: endpointAuthStamp,
+      // Logout clears the scope's OWN endpoint file. A config-sourced
+      // credential outlives it — said out loud, or the status would flip
+      // right back and read as a failed logout.
+      logout: async (home) => {
+        if (await endpointAuthFileExists(home)) {
+          await clearEndpointAuth(home)
+          return
+        }
+        throw new Error('claude-code has no scoped endpoint-auth.json to clear — the credential comes from the plugin config (baseUrl/apiKey/authToken); edit the profile row instead')
+      },
       // The model surface: the settings card reads the memberless info ("what
       // would a round run with"), the member composer reads and switches a
       // member's session-level override through the same broker.
       modelBroker,
       // The eval snapshot: the permission mode is the plugin config resolved
       // at apply (it selects the spawn flags); the endpoint mirrors the
-      // provider's own resolution order — the config item wins over the host
-      // process environment's ANTHROPIC_BASE_URL. The model follows the
-      // family's fixed order: the plugin config key (it rides every argv)
-      // before the scoped settings.json's own `model`. The CLI's own default
-      // model is never guessed, so neither one configured means no field.
-      // The directory is a PARAMETER, not the apply-time capture: a status
-      // read (or an evaluation snapshot) of a named scope must report the
-      // settings that scope's rounds would run with.
+      // provider's own resolution — the scope's file over the config triple.
+      // The model follows the family's fixed order: the plugin config key (it
+      // rides every argv) before the scoped settings.json's own `model`. The
+      // CLI's own default model is never guessed, so neither one configured
+      // means no field. The directory is a PARAMETER, not the apply-time
+      // capture: a status read (or an evaluation snapshot) of a named scope
+      // must report the settings that scope's rounds would run with.
       effectiveSettings: async (scopedHome) => {
-        const effectiveBaseUrl = baseUrl ?? process.env.ANTHROPIC_BASE_URL
-        const baseUrlHost = effectiveBaseUrl !== undefined ? endpointHost(effectiveBaseUrl) : undefined
+        const endpoint = await resolveEndpoint(scopedHome)
+        const baseUrlHost = endpoint.baseUrl !== undefined ? endpointHost(endpoint.baseUrl) : undefined
         const [scopedModel, cliVersion] = await Promise.all([
           readClaudeConfiguredModel(scopedHome).catch(() => undefined),
           claudeCliVersion(ctx, scopedHome).catch(() => undefined),
@@ -329,7 +356,7 @@ export function apply(ctx: Context, config: Config): void {
         return {
           drive: face.get().live ? 'live' : 'exec',
           permissionMode,
-          baseUrlSet: effectiveBaseUrl !== undefined,
+          baseUrlSet: endpoint.baseUrl !== undefined,
           ...baseUrlHost !== undefined ? { baseUrlHost } : {},
           ...model !== undefined ? { model } : {},
           ...cliVersion !== undefined ? { cliVersion } : {},

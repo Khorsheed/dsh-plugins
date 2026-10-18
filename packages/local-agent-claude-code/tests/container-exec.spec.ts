@@ -5,7 +5,6 @@
  * env forwarding, and the two things a containerized round deliberately gives
  * up (the member channel, and any chance of guessing the scoped home).
  */
-import { claudeKeychainEnv } from '../src/process-env.ts'
 import { Readable } from 'node:stream'
 import { Context } from '@deepseek-ai/cordis'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
@@ -98,8 +97,6 @@ describe('claude container exec target', () => {
       'docker', 'exec', '-w', '/workspace', '-e', 'CLAUDE_CONFIG_DIR', 'dsh-lab-unit',
       'claude', '-p', '--dangerously-skip-permissions', '--verbose', '--output-format', 'stream-json', '回答 2+2',
     ])
-    // Linux claude reads credentials from the DEFAULT home and writes the
-    // scoped dir, so the caller points both at one bind-mounted directory.
     expect(specs[0]?.env?.['CLAUDE_CONFIG_DIR']).toBe('/creds/claude')
     expect(specs[0]?.argv).not.toContain(HOME)
     expect(specs[0]?.argv).not.toContain('USER')
@@ -116,7 +113,7 @@ describe('claude container exec target', () => {
     await run.result
     expect(specs[0]?.argv?.[0]).toBe('claude')
     expect(specs[0]?.env?.['CLAUDE_CONFIG_DIR']).toBe(HOME)
-    expect(specs[0]?.env?.['USER']).toBe(claudeKeychainEnv().USER)
+    expect(specs[0]?.env?.['USER']).toBeUndefined()
     await run.dispose()
   })
 

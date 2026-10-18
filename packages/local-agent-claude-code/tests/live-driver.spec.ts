@@ -5,11 +5,10 @@
  * with hold-back + usage), graceful control interrupt, turn serialization
  * (the stop-then-rephrase gesture), token-granularity partials, and the
  * provider's exec fallback. Auth discipline: the driver only ever injects the
- * scoped CLAUDE_CONFIG_DIR (+ an optional configured base URL) — never the
- * user's global home.
+ * scoped CLAUDE_CONFIG_DIR plus the resolved endpoint credential's
+ * `ANTHROPIC_*` variables — never the user's global home.
  */
 
-import { claudeKeychainEnv } from '../src/process-env.ts'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -388,7 +387,7 @@ describe('claude live driver rounds', () => {
       '--dangerously-skip-permissions',
     ])
     // The auth discipline: exactly the scoped config dir, nothing else.
-    expect(spawn.spec.env).toEqual({ ...claudeKeychainEnv(), CLAUDE_CONFIG_DIR: m.homeDir })
+    expect(spawn.spec.env).toEqual({ CLAUDE_CONFIG_DIR: m.homeDir })
     // Mirroring: prompt + folded lines, usage on the final line; the
     // tool_use folds to a native tool/call (+ tool/result) pair.
     expect(child.snapshotEvents().filter(e => e.type === 'user/message')).toHaveLength(1)
@@ -702,16 +701,16 @@ describe('claude live driver rounds', () => {
     await m.driver.disposeAll()
   })
 
-  it('respects the configured base URL override and nothing more in env', async () => {
-    const m = mount({ config: { permissionMode: 'normal', baseUrl: 'https://proxy.example.com/anthropic' } })
+  it('respects the resolved endpoint credential and nothing more in env', async () => {
+    const m = mount({ config: { permissionMode: 'normal', endpoint: async () => ({ baseUrl: 'https://proxy.example.com/anthropic', apiKey: 'sk-scope' }) } })
     const child = Session.create(SessionId('child-claude-8'))
     m.queueChild(new FakeClaude({ turn: () => ({ events: answerEvents('ok') }) }))
     const run = await m.driver.startRound(request() as never, roundSpec(m, child))
     await run.result
     expect(m.spawns[0]!.spec.env).toEqual({
-      ...claudeKeychainEnv(),
       CLAUDE_CONFIG_DIR: m.homeDir,
       ANTHROPIC_BASE_URL: 'https://proxy.example.com/anthropic',
+      ANTHROPIC_API_KEY: 'sk-scope',
     })
     expect(m.spawns[0]!.spec.argv).not.toContain('--dangerously-skip-permissions')
     await m.driver.disposeAll()

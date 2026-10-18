@@ -1,22 +1,19 @@
 /**
- * Claude Code scoped-home provisioning. Unlike codex (whose credential store
- * must be pinned to a file) and kimi (which needs a provider config),
- * claude's `CLAUDE_CONFIG_DIR` scoped home needs nothing beyond the
- * directory itself: login via `claude auth login` writes `.claude.json`
- * (with the `oauthAccount` record) into it, and the real credential lands in
- * the macOS keychain under a hashed entry or — on Linux, despite upstream
- * bug #47661 — in the default `~/.claude/.credentials.json` while the config
- * stays scoped. Sign-out removes the scoped config so `status` reports not
- * authenticated; the keychain entry on macOS persists until the CLI removes
- * it, which the framework's file-based logout cannot reach.
+ * Claude Code scoped-home provisioning. The harness authenticates by
+ * endpoint key (see endpoint-auth.ts), so a scoped home needs nothing beyond
+ * the directory itself: `claude -p` scaffolds `.claude.json` on its first
+ * run, and the endpoint credential arrives per round through the spawn env
+ * (resolved from the scope's endpoint-auth.json over the plugin config).
+ * When `proxyUrl` is configured, the scoped `settings.json` gains an env
+ * block pointing the CLI's own traffic at it — claude reads proxy settings
+ * from this file, so the child works even when the host process environment
+ * carries no proxy (a supervisor-spawned instance's env is not the user's
+ * shell env).
  * @module @khorsheed/dsh-local-agent-claude-code/provision
  */
 
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-
-/** The scoped config file holding the oauthAccount auth marker. */
-const SCOPED_CONFIG = '.claude.json'
 
 /** The scoped settings file carrying the CLI's env block. */
 const SCOPED_SETTINGS = 'settings.json'
@@ -111,18 +108,4 @@ export async function writeClaudeScopedModel(homeDir: string, model: string | un
     settings['model'] = model
   }
   await writeFile(path, JSON.stringify(settings, undefined, 2) + '\n')
-}
-
-/**
- * Sign out of the scoped account: remove the scoped config file, so
- * `/<name> status` reports not authenticated and the next login authorizes
- * a fresh account. The macOS keychain entry (a hashed
- * `Claude Code-credentials-<sha256(path)[:8]>` record keyed to the scoped
- * home path) is NOT removed — the CLI's `claude auth logout` owns that, and
- * the harness logout contract is file-based; the stale entry is harmless
- * because a fresh login rewrites the same hashed slot.
- * @param homeDir - the `claude-code` harness's scoped home.
- */
-export async function claudeLogout(homeDir: string): Promise<void> {
-  await rm(join(homeDir, SCOPED_CONFIG), { force: true })
 }

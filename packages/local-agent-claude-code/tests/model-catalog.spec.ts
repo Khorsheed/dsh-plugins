@@ -1,4 +1,3 @@
-import { claudeKeychainEnv } from '../src/process-env.ts'
 import { PassThrough } from 'node:stream'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -58,7 +57,7 @@ describe('Claude native directory', () => {
     const m = mount()
     expect((await m.catalog.refresh(m.home)).status).toBe('ready')
     expect(m.spawns[0]?.env?.['CLAUDE_CONFIG_DIR']).toBe(m.home)
-    expect(m.spawns[0]?.env?.['USER']).toBe(claudeKeychainEnv().USER)
+    expect(m.spawns[0]?.env?.['USER']).toBeUndefined()
     expect(m.spawns[0]?.argv).toContain('--no-session-persistence')
     expect(m.spawns[0]?.argv).toContain('--strict-mcp-config')
     expect(m.spawns[0]?.argv).toContain('{"disableAllHooks":true}')

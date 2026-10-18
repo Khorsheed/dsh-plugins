@@ -1,9 +1,11 @@
-import { claudeProcessEnv } from './process-env.ts'
+import { delegationEnv } from '@khorsheed/dsh-local-agent'
 import { dirname, join } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { ModelDirectoryCache, modelDirectoryContextKey } from '@khorsheed/dsh-local-agent'
 import type { LocalAgentModelDirectory, LocalAgentModelDirectoryData, LocalAgentModelEntry } from '@khorsheed/dsh-local-agent/types'
+import type { ClaudeEndpointAuth } from './endpoint-auth.ts'
+import { endpointAuthEnv } from './endpoint-auth.ts'
 import { ClaudeControlRequests } from './control-requests.ts'
 
 type JsonObject = Record<string, unknown>
@@ -31,12 +33,19 @@ export function claudeDirectory(result: JsonObject): LocalAgentModelDirectoryDat
   return { entries: [...entries.values()], complete: true, customInput: true, ...entries.has('default') ? { defaultModel: 'default' } : {} }
 }
 
-/** Scoped native control probe. Never syncs credentials, writes settings or submits a user turn. */
+/** Scoped native control probe. Never writes settings or submits a user turn. */
 export class ClaudeModelCatalog {
   private readonly cache: ModelDirectoryCache
   constructor(private readonly deps: {
     spawn: (spec: SubprocessSpawnSpec) => SubprocessHandle
-    baseUrl?: string
+    /** Per-probe endpoint credential resolver (the scope's file over the plugin config). */
+    endpoint?: (homeDir: string) => Promise<ClaudeEndpointAuth>
+    /**
+     * The cache key's endpoint component: the plugin config's baseUrl. A
+     * scope FILE's baseUrl needs no place here — the file itself is in the
+     * key's fingerprinted file list, so editing it invalidates the cache.
+     */
+    endpointLabel?: string
     cli?: string
     timeoutMs?: number
     ttlMs?: number
@@ -53,12 +62,12 @@ export class ClaudeModelCatalog {
   }
 
   private key(homeDir: string, cwd = homeDir): string {
-    const files = [join(homeDir, 'settings.json'), join(homeDir, '.credentials.json'), join(homeDir, '.claude.json')]
+    const files = [join(homeDir, 'settings.json'), join(homeDir, 'endpoint-auth.json'), join(homeDir, '.claude.json')]
     for (let directory = cwd; ; directory = dirname(directory)) {
       files.push(join(directory, '.claude', 'settings.json'), join(directory, '.claude', 'settings.local.json'))
       if (dirname(directory) === directory) break
     }
-    return modelDirectoryContextKey({ provider: 'claude-code', homeDir, cwd, cli: [this.deps.cli ?? 'claude'], files, ...this.deps.baseUrl === undefined ? {} : { endpoint: this.deps.baseUrl } })
+    return modelDirectoryContextKey({ provider: 'claude-code', homeDir, cwd, cli: [this.deps.cli ?? 'claude'], files, ...this.deps.endpointLabel === undefined ? {} : { endpoint: this.deps.endpointLabel } })
   }
 
   read(homeDir: string, cwd?: string): LocalAgentModelDirectory { return this.cache.read(this.key(homeDir, cwd)) }
@@ -68,11 +77,12 @@ export class ClaudeModelCatalog {
   dispose(): void { this.cache.dispose() }
 
   private async probe(homeDir: string, cwd: string, signal: AbortSignal): Promise<LocalAgentModelDirectoryData> {
+    const endpoint = await this.deps.endpoint?.(homeDir)
     const child = this.deps.spawn({
       argv: [this.deps.cli ?? 'claude', '-p', '--verbose', '--input-format', 'stream-json', '--output-format', 'stream-json',
         '--no-session-persistence', '--settings', '{"disableAllHooks":true}', '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}', '--'],
       cwd, stdio: { stdin: 'pipe', stdout: 'pipe', stderr: 'pipe' }, graceMs: 2_000,
-      env: claudeProcessEnv({ CLAUDE_CONFIG_DIR: homeDir, ...this.deps.baseUrl === undefined ? {} : { ANTHROPIC_BASE_URL: this.deps.baseUrl } }),
+      env: delegationEnv({ CLAUDE_CONFIG_DIR: homeDir, ...endpointAuthEnv(endpoint) }),
     })
     const controls = new ClaudeControlRequests(frame => {
       if (child.stdin === undefined) throw new Error('Claude discovery stdin is unavailable')

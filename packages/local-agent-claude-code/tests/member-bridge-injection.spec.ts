@@ -1,4 +1,3 @@
-import { userInfo } from 'node:os'
 import { Readable } from 'node:stream'
 import { Context } from '@deepseek-ai/cordis'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
@@ -166,14 +165,17 @@ describe('claude-cli-provider member bridge injection', () => {
       'claude', '-p', '--dangerously-skip-permissions', '--verbose', '--output-format', 'stream-json', 'do the task',
     ])
   })
-  it('retains the macOS keychain account while leaving other platforms scrubbed', async () => {
+  it('carries the resolved endpoint credential into the spawn env, login names scrubbed', async () => {
     const registry = memberRegistry()
     const { ctx, envs } = mount(registry)
-    const provider = new ClaudeCliProvider(ctx, 'skip')
+    const provider = new ClaudeCliProvider(ctx, 'skip', async () => ({ baseUrl: 'https://relay.example.com/claude', apiKey: 'sk-scope' }))
     await provider.start(request())
     expect(envs).toHaveLength(1)
-    expect('USER' in envs[0]!).toBe(true)
-    expect(envs[0]!['USER']).toBe(process.platform === 'darwin' ? process.env.USER || userInfo().username : undefined)
+    expect(envs[0]!['ANTHROPIC_BASE_URL']).toBe('https://relay.example.com/claude')
+    expect(envs[0]!['ANTHROPIC_API_KEY']).toBe('sk-scope')
+    // No platform-specific identity is restored: the endpoint key needs no
+    // keychain account, so the ambient USER stays tombstoned.
+    expect(envs[0]!['USER']).toBeUndefined()
     expect(envs[0]!['CLAUDE_CONFIG_DIR']).toBeTruthy()
   })
 })

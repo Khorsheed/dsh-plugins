@@ -1,4 +1,3 @@
-import { claudeKeychainEnv } from '../src/process-env.ts'
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -97,24 +96,11 @@ describe('local-agent-claude-code apply', () => {
       homeEnvVar: 'CLAUDE_CONFIG_DIR',
       delegationProvider: 'claude-local',
     })
-    // The pty login: the CLI runs on a real terminal so it opens the browser
-    // itself; the declaration scrubs the relay env and pins the scoped home
-    // it is HANDED — the argv is built per login, so `--scope` authorizes the
-    // scope's own directory instead of the default one.
-    const login = registered[0]?.login
-    expect(login !== undefined && 'pty' in login).toBe(true)
-    if (login !== undefined && 'pty' in login) {
-      expect(login.pty.command).toBe('env')
-      expect(typeof login.pty.args).toBe('function')
-      const argv = typeof login.pty.args === 'function' ? login.pty.args(home) : login.pty.args
-      expect(argv).toEqual([
-        '-u', 'ANTHROPIC_API_KEY', '-u', 'ANTHROPIC_BASE_URL',
-        ...Object.entries(claudeKeychainEnv()).map(([key, value]) => `${key}=${value}`),
-        `CLAUDE_CONFIG_DIR=${home}`, 'claude', 'auth', 'login',
-      ])
-      const scoped = typeof login.pty.args === 'function' ? login.pty.args(`${home}@eval-b`) : login.pty.args
-      expect(scoped).toContain(`CLAUDE_CONFIG_DIR=${home}@eval-b`)
-    }
+    // No login flow: the harness authenticates by endpoint key
+    // (the scope's endpoint-auth.json over the plugin config triple), so the
+    // core reports the harness as not loginable and `/claude-code login`
+    // answers that there is no login flow.
+    expect(registered[0]?.login).toBeUndefined()
     expect(registered[0]?.records).toBeDefined()
     // The scoped home is provisioned eagerly.
     await new Promise(resolve => setTimeout(resolve, 10))
@@ -174,11 +160,6 @@ describe('local-agent-claude-code apply', () => {
   })
 
   it('snapshots the defaults: exec drive, skip permission mode, no pinned endpoint', async () => {
-    // Hermetic: the snapshot's env fallback is real product behavior (the
-    // child CLI genuinely routes through the host's ANTHROPIC_BASE_URL), so
-    // a host shell that exports it changes the honest answer. The defaults
-    // case pins the env empty; the env-set behavior has its own test below.
-    vi.stubEnv('ANTHROPIC_BASE_URL', undefined)
     const { home, registered } = mount()
     const harness = registered[0]!
     expect(harness.effectiveSettings).toBeTypeOf('function')
@@ -203,10 +184,8 @@ describe('local-agent-claude-code apply', () => {
   it('reports the model configured in the scoped settings.json', async () => {
     // Hermetic: the model reader must only consult the SCOPED home handed out
     // by the registry — the host's CLAUDE_CONFIG_DIR is stubbed to a sentinel
-    // that nothing in the code path may read, and the endpoint env is pinned
-    // empty so the base fields stay deterministic on any host shell.
+    // that nothing in the code path may read.
     vi.stubEnv('CLAUDE_CONFIG_DIR', '/nonexistent-claude-host-config')
-    vi.stubEnv('ANTHROPIC_BASE_URL', undefined)
     const { registered, home } = mount()
     writeFileSync(join(home, 'settings.json'), JSON.stringify({ model: 'claude-opus-5' }, undefined, 2))
     const harness = registered[0]!
@@ -223,7 +202,6 @@ describe('local-agent-claude-code apply', () => {
     // key in the scoped settings, no model field — even though a host
     // CLAUDE_CONFIG_DIR exists (stubbed here to prove it is never consulted).
     vi.stubEnv('CLAUDE_CONFIG_DIR', '/nonexistent-claude-host-config')
-    vi.stubEnv('ANTHROPIC_BASE_URL', undefined)
     const { registered, home } = mount()
     writeFileSync(join(home, 'settings.json'), JSON.stringify({ env: {} }, undefined, 2))
     const harness = registered[0]!
@@ -232,23 +210,35 @@ describe('local-agent-claude-code apply', () => {
     expect('model' in snapshot).toBe(false)
   })
 
-  it('the host environment supplies the endpoint when the config item is absent', async () => {
+  it('never consults the host environment: a shell-exported ANTHROPIC_BASE_URL changes nothing', async () => {
+    // The endpoint comes from the scope's endpoint-auth.json over the plugin
+    // config, full stop — a supervisor-spawned instance does not inherit the
+    // user's shell, and one that does must not route delegations through it
+    // by accident.
     const { home, registered } = mount()
     vi.stubEnv('ANTHROPIC_BASE_URL', 'https://relay.example.com/v1')
     const harness = registered[0]!
     await expect(harness.effectiveSettings!(home)).resolves.toMatchObject({
-      baseUrlSet: true,
-      baseUrlHost: 'relay.example.com',
+      baseUrlSet: false,
     })
   })
 
-  it('the config endpoint wins over the host environment', async () => {
+  it('the config endpoint supplies the snapshot endpoint', async () => {
     const { home, registered } = mount({}, { baseUrl: 'https://config.example.com/v1' })
-    vi.stubEnv('ANTHROPIC_BASE_URL', 'https://env.example.com/v1')
     const harness = registered[0]!
     await expect(harness.effectiveSettings!(home)).resolves.toMatchObject({
       baseUrlSet: true,
       baseUrlHost: 'config.example.com',
+    })
+  })
+
+  it('the scope endpoint file overrides the config endpoint in the snapshot', async () => {
+    const { home, registered } = mount({}, { baseUrl: 'https://config.example.com/v1', apiKey: 'sk-deploy' })
+    writeFileSync(join(home, 'endpoint-auth.json'), JSON.stringify({ baseUrl: 'https://scope.example.com/v1', apiKey: 'sk-scope' }))
+    const harness = registered[0]!
+    await expect(harness.effectiveSettings!(home)).resolves.toMatchObject({
+      baseUrlSet: true,
+      baseUrlHost: 'scope.example.com',
     })
   })
 
@@ -332,5 +322,45 @@ describe('local-agent-claude-code model broker', () => {
       effective: 'model-b',
       source: 'override',
     })
+  })
+})
+
+describe('local-agent-claude-code endpoint auth', () => {
+  it('reports unauthenticated with neither a scope file nor a config key', async () => {
+    const { home, registered } = mount()
+    await expect(registered[0]!.isAuthenticated!(home)).resolves.toBe(false)
+    await expect(registered[0]!.credentialStamp!(home)).resolves.toBeUndefined()
+  })
+
+  it('the config apiKey authenticates every scope (the deployment default)', async () => {
+    const { home, registered } = mount({}, { baseUrl: 'https://relay.example.com', apiKey: 'sk-deploy' })
+    await expect(registered[0]!.isAuthenticated!(home)).resolves.toBe(true)
+  })
+
+  it('the config authToken authenticates too (the Bearer relay shape)', async () => {
+    const { home, registered } = mount({}, { authToken: 'tok-deploy' })
+    await expect(registered[0]!.isAuthenticated!(home)).resolves.toBe(true)
+  })
+
+  it('the scope endpoint file authenticates the scope and moves the stamp', async () => {
+    const { home, registered } = mount()
+    writeFileSync(join(home, 'endpoint-auth.json'), JSON.stringify({ apiKey: 'sk-scope' }))
+    await expect(registered[0]!.isAuthenticated!(home)).resolves.toBe(true)
+    await expect(registered[0]!.credentialStamp!(home)).resolves.toBeTypeOf('number')
+  })
+
+  it('a baseUrl alone is not a credential', async () => {
+    const { home, registered } = mount({}, { baseUrl: 'https://relay.example.com' })
+    await expect(registered[0]!.isAuthenticated!(home)).resolves.toBe(false)
+  })
+
+  it('logout clears the scope file and refuses when only the config carries the credential', async () => {
+    const { home, registered } = mount({}, { apiKey: 'sk-deploy' })
+    writeFileSync(join(home, 'endpoint-auth.json'), JSON.stringify({ apiKey: 'sk-scope' }))
+    await registered[0]!.logout!(home)
+    // The file is gone; the config credential still answers the probe.
+    await expect(registered[0]!.credentialStamp!(home)).resolves.toBeUndefined()
+    await expect(registered[0]!.isAuthenticated!(home)).resolves.toBe(true)
+    await expect(registered[0]!.logout!(home)).rejects.toThrow('plugin config')
   })
 })

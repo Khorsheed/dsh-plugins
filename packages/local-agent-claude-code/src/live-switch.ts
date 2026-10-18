@@ -14,6 +14,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { SettingsFace } from '@khorsheed/dsh-local-agent'
 import type { Config } from './index.ts'
+import type { ClaudeEndpointAuth } from './endpoint-auth.ts'
 import { ClaudeLiveDriver } from './live-driver.ts'
 import type { ClaudeLiveMirrorGranularity } from './live-driver.ts'
 
@@ -28,8 +29,10 @@ export interface ClaudeLiveSettings {
 }
 
 /** The Cordis-config inputs every driver generation shares. */
-type DriverBase = Pick<Config, 'permissionMode' | 'baseUrl'> & {
+type DriverBase = Pick<Config, 'permissionMode'> & {
   liveIdleMs?: number
+  /** Per-spawn endpoint credential resolver, handed to every driver generation. */
+  endpoint?: (homeDir: string) => Promise<ClaudeEndpointAuth>
   /**
    * Per-spawn member model resolver, handed to every driver generation:
    * answers the member's effective model from its session-level override, the

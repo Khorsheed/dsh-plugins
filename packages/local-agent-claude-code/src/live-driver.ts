@@ -1,4 +1,3 @@
-import { claudeProcessEnv } from './process-env.ts'
 import type { LocalAgentResolvedConfiguration } from '@khorsheed/dsh-local-agent/types'
 import { claudeDirectory } from './model-catalog.ts'
 /**
@@ -14,12 +13,10 @@ import { claudeDirectory } from './model-catalog.ts'
  * continuable) and the same-shape push stream folded live per turn.
  *
  * Auth discipline (a hard requirement): the resident process runs under the
- * family's scoped `CLAUDE_CONFIG_DIR` and nothing else — the OAuth marker in
- * the scoped `.claude.json` and the keychain entry hashed to that path are
- * exactly what the exec mode's one-shot processes already use. The driver
- * never touches the user's global `~/.claude`, never runs any `auth` verb,
- * and only adds `ANTHROPIC_BASE_URL` when the plugin config supplies it (the
- * exec path's exact env rule).
+ * family's scoped `CLAUDE_CONFIG_DIR` plus the resolved endpoint credential's
+ * `ANTHROPIC_*` variables (the scope's endpoint-auth.json over the plugin
+ * config — the exec path's exact env rule, resolved per spawn). The driver
+ * never touches the user's global `~/.claude` and never runs any `auth` verb.
  *
  * Protocol facts (all probed): the first stdin `user` message triggers
  * `system/init` carrying the server-assigned session id (EVERY turn emits a
@@ -80,7 +77,7 @@ import {
   type SubagentStopReason,
 } from '@deepseek-ai/dsh-subagent'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
-import { persistChildSession, LiveStreamPublisher, LiveFlush, LIVE_FLUSH_INTERVAL_MS } from '@khorsheed/dsh-local-agent'
+import { delegationEnv, persistChildSession, LiveStreamPublisher, LiveFlush, LIVE_FLUSH_INTERVAL_MS } from '@khorsheed/dsh-local-agent'
 import type { Config } from './index.ts'
 import {
   appendClaudeTranscriptLine,
@@ -93,7 +90,8 @@ import {
   textTask,
   toolCallsOf,
 } from './claude-cli-provider.ts'
-import { syncClaudeCredentialFile } from './records.ts'
+import type { ClaudeEndpointAuth } from './endpoint-auth.ts'
+import { endpointAuthEnv } from './endpoint-auth.ts'
 
 /** Default idle lifetime of an unused resident runtime before reclaim. */
 export const DEFAULT_LIVE_IDLE_MS = 30 * 60_000
@@ -371,7 +369,14 @@ export class ClaudeLiveDriver {
 
   constructor(
     private readonly ctx: Context,
-    private readonly config: Pick<Config, 'permissionMode' | 'baseUrl'> & {
+    private readonly config: Pick<Config, 'permissionMode'> & {
+      /**
+       * Resolver for the spawn's endpoint credential (endpoint-auth.ts: the
+       * member's scoped endpoint-auth.json over the plugin config triple),
+       * read per RUNTIME SPAWN — a key rotation reaches the resident process
+       * at its next respawn. Absent, no `ANTHROPIC_*` variables are set.
+       */
+      endpoint?: (homeDir: string) => Promise<ClaudeEndpointAuth>
       liveIdleMs?: number
       liveMirrorGranularity?: ClaudeLiveMirrorGranularity
       /** Maximum batching wait for incremental streaming messages. */
@@ -532,14 +537,10 @@ export class ClaudeLiveDriver {
     if (this.disposed) {
       throw new LiveChannelUnavailableError('the live driver is disposed')
     }
-    // Keychain→file sync before EVERY spawn: claude 2.1.236 reads
-    // <home>/.credentials.json at runtime while login and the process's own
-    // refresh write the keychain — the file goes stale on every rotation
-    // (single-rotation refresh tokens make a consumed copy poison for the
-    // next spawn). The login watch's sync alone cannot keep a resident
-    // runtime authenticatable across rotations. Best-effort: a missing grant
-    // fails the turn with the CLI's own "Not logged in", not here.
-    await syncClaudeCredentialFile(spec.homeDir, message => { this.ctx.logger.warn(message) }).catch(() => false)
+    // The endpoint credential is resolved per spawn (the scope's
+    // endpoint-auth.json over the plugin config): a key rotation reaches the
+    // resident runtime at its next respawn, with no reload and no reconcile.
+    const endpoint = await this.config.endpoint?.(spec.homeDir)
     // The member bridge rides the spawn argv (`--mcp-config` + `--allowedTools`),
     // exactly as in the exec path; the resident process serves one member, so
     // its token lives with the process.
@@ -573,11 +574,11 @@ export class ClaudeLiveDriver {
       stdio: { stdin: 'pipe', stdout: 'pipe', stderr: 'pipe' },
       graceMs: DEFAULT_DISPOSE_GRACE_MS,
       // The auth discipline: exactly the exec path's env — the scoped config
-      // dir, configured base URL and the macOS keychain account.
-      env: claudeProcessEnv({
+      // dir plus the resolved endpoint credential's `ANTHROPIC_*` variables.
+      env: delegationEnv({
         CLAUDE_CONFIG_DIR: spec.homeDir,
         ...spec.configuration === undefined ? {} : { CLAUDE_CODE_EFFORT_LEVEL: spec.configuration.effort ?? 'auto' },
-        ...this.config.baseUrl === undefined ? {} : { ANTHROPIC_BASE_URL: this.config.baseUrl },
+        ...endpointAuthEnv(endpoint),
       }),
     }
     let child: SubprocessHandle
