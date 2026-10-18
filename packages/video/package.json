@@ -1,0 +1,72 @@
+{
+  "name": "@khorsheed/dsh-video",
+  "description": "Mode bundle 剪辑模式: the dsh-video agent preset plus the video studio it grants — podcast and conversation editing, speakers found in one mixed recording, cut by deleting words — in one install. Thin meta package: a patch carrying the member's canonical row and the mode's preset row, an npm dependency on the member, locale card metadata — no runtime code, no client half.",
+  "version": "0.1.0",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Khorsheed/dsh-plugins.git",
+    "directory": "packages/video"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "locale/*.json"
+  ],
+  "license": "MIT",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "cordis",
+    "bundle"
+  ],
+  "dependencies": {
+    "@khorsheed/dsh-video-studio": "workspace:*"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "tsdown": "^0.22.2",
+    "typescript": "^5.9.0",
+    "vitest": "^3.0.0"
+  },
+  "scripts": {
+    "build": "tsc -b tsconfig.json && tsdown",
+    "test": "vitest run",
+    "typecheck": "tsc -b tsconfig.json --noEmit"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml",
+      "kind": "mode",
+      "mode": "dsh-video",
+      "members": [
+        "@khorsheed/dsh-video-studio"
+      ]
+    },
+    "references": [
+      "@khorsheed/dsh-video-studio"
+    ],
+    "compat": {
+      "minHost": "0.1.7-rc.1",
+      "verifiedHost": "0.2.1-rc.1",
+      "notes": "Pure composition: the bundle mounts the member's canonical row plus the dsh-video preset row and registers nothing of its own. The floor is the higher of the member's (0.1.5-rc.1 — video-studio) and the preset row's floor: an `@deepseek-ai/dsh-agent-preset` declaration exists only on host 0.1.7-rc.1 and later. Member behavior details live in the member's own dsh.compat."
+    }
+  }
+}

@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-10-18-mode-bundle-packs.md
+.agents/notes/implemented/architecture/2026-10-18-mode-bundle-packs.md: 435e9699bdc9b7ade96aeabf3ae96329b8d1ab56
+.agents/notes/implemented/architecture/2026-10-18-mode-bundle-packs.zh.md: f36dbec51472b1535bdaf92caa92e295e3ab5829

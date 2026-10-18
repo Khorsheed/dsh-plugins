@@ -147,6 +147,25 @@ describe('checkProfile rules', () => {
     }
   })
 
+  it('loadPackageIndex treats kind mode as family-like (members recognized)', () => {
+    // A mode bundle (dsh.bundle.kind 'mode') carries its members' canonical
+    // rows exactly like a family bundle — rule 4's exemption must apply or the
+    // real tree (bundle-eval → datasets/…) reports closure-missing-*.
+    const home = mkdtempSync(join(tmpdir(), 'profile-index-'))
+    try {
+      mkdirSync(join(home, 'packages', 'mode-pack'), { recursive: true })
+      writeFileSync(join(home, 'packages', 'mode-pack', 'package.json'), JSON.stringify({
+        name: '@khorsheed/dsh-mode-pack',
+        dependencies: { '@khorsheed/dsh-core': 'workspace:*' },
+        dsh: { bundle: { patch: './cordis.patch.yml', kind: 'mode', mode: 'dsh-demo', members: ['@khorsheed/dsh-core'] } },
+      }))
+      const loaded = loadPackageIndex(home)
+      expect(loaded.get('@khorsheed/dsh-mode-pack')?.familyMembers).toEqual(['@khorsheed/dsh-core'])
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+
   it('rule 5: a preset row must resolve from the profile itself', () => {
     expect(kinds(profile({ rows: ['@khorsheed/dsh-row'] }))).toContain('preset-row-unresolvable')
     expect(kinds(profile({ dependencies: ['@khorsheed/dsh-row'], rows: ['@khorsheed/dsh-row'] })))

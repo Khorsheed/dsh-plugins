@@ -1,0 +1,293 @@
+# @khorsheed/dsh-writing bundle patch: the 写作模式 (dsh-writing) mode pack —
+# the writing family's member rows plus the mode's own preset row. Member rows
+# are re-mounted VERBATIM from each member package's own cordis.patch.yml (the
+# canonical rows); the preset row is mirrored VERBATIM from
+# @khorsheed/dsh-presets — parity is pinned by scripts/preset-mode-parity.spec.ts,
+# and once that package retires this file becomes the canonical copy.
+# check-plugin-independence's `mode` sanction pins this file to exactly the
+# members'-rows union plus the one preset row.
+#
+# Why no double mount: `dsh plugin add` reconciles only the profile's DIRECT
+# dependencies into the bundles layer (apps/cli plugin.ts reconcilePlugins).
+# Installing this bundle applies THIS patch only; the member packages arrive as
+# transitive npm dependencies and their own patches stay inert. Installing a
+# member directly alongside still self-mounts that member — the official bundle
+# detail page's row-level switches resolve any overlap.
+#
+# The one deliberate deviation from verbatim: canvas's own patch mounts its
+# `./agent` row (canvas-agent) ENABLED at the profile root — the every-session
+# community default. A MODE pack scopes the canvas tools to its own sessions
+# instead: the bare override below disables the root row so the preset row's
+# `canvas-agent` grant is the only live one (the two live at once register the
+# same tool names twice and fail the boot — canvas's own patch documents the
+# rule). canvas-novel's `./agent` row already ships disabled in the member's
+# own patch and is copied verbatim.
+
+- id: canvas-agent
+  disabled: true
+
+- insert:
+    # 灵感画布: the canvas core (canvasStore/canvasBoard, the 灵感空间 surface).
+    - id: canvas
+      name: "@khorsheed/dsh-canvas"
+
+    # 长篇小说 genre: the story-memory engine core (canvasNovel service).
+    - id: canvas-novel
+      name: "@khorsheed/dsh-canvas-novel"
+
+    # The novel agent surface ships DISABLED at the profile root by design
+    # (verbatim from the member patch) — the preset row below grants it.
+    - id: canvas-novel-agent
+      name: "@khorsheed/dsh-canvas-novel/agent"
+      disabled: true
+
+    - id: preset-dsh-writing
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: dsh-writing
+        name: '写作模式'
+        description: 写作工作台：作家身份与文风约束、文件读写与网页检索、Skills，以及按会话授予的画布协作工具；绑定长篇小说画布时另有小说工具。
+        plugins:
+          # ── identity ────────────────────────────────────────────────────────────────
+
+          # The preset's own persona, shadowing the deployment default for this agent.
+          # `{{model}}` resolves from the agent's own route. Host 0.2.1 removed the
+          # `{{cwd}}` prompt variable; the working-directory service supplies the
+          # directory as required user context, so no suffix clause is needed here.
+          # The prefix carries the full writing-scene contract (2026-09-30 revision):
+          # task modes (writing/analysis/editing), bilingual style rules (banned
+          # jargon and filler in BOTH languages, sentence rhythm, concreteness), the
+          # no-self-evaluation voice rules, open-question handling, and the canvas
+          # workflow contracts the tool layer does not repeat. The voice stays
+          # single-language English (the host prompt's own voice); the Chinese it
+          # names is data (banned lists, punctuation), not a second voice. The
+          # canvas-agent row's own one-line guidance stays the only tool-mechanics
+          # line — it is deliberately not duplicated here. `|-` keeps the markdown
+          # structure (a folded `>-` would collapse the lists into one paragraph).
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: |-
+                You are a writer powered by the {{model}} model. You write in the user's language — Chinese or English — following that language's own conventions. Clarity over cleverness. The goal is text a general reader can follow: clear, natural, specific.
+
+                ## Language
+
+                Write in the language the user is using, unless asked otherwise.
+
+                - Chinese: full-width punctuation (，。；：？！“”‘’（）——……). A Chinese sentence never takes a half-width comma or period.
+                - English: standard half-width punctuation.
+                - The rules below apply in both languages. Where a rule names a Chinese-specific pattern, the equivalent English pattern is banned too — see both lists.
+
+                ## Task mode
+
+                Decide what the user is asking for before you write.
+
+                - **Writing**: fiction, articles, scripts, copy. Follow the style rules below.
+                - **Analysis**: the user asks for a judgment about the real world — a trend, a prediction, an opinion. Answer directly. Do not turn it into a fictional setting, a story, or a cast of characters unless asked.
+                - **Editing**: the user gives you text to revise. Change the expression only. Keep facts, opinions, and intensity as they are.
+
+                If you can't tell which, ask. Don't guess and write.
+
+                ## Style
+
+                **Reader**: a smart general reader with no specialist background.
+
+                **Word choice**
+                - Use the common vocabulary of everyday conversation, journalism, and textbooks. Never coin words.
+                - No business or internet jargon. Chinese: 硬通货、私海、抓手、赋能、闭环、颗粒度、心智、链路、打法、底层逻辑、护城河、降维打击、飞轮、杠杆、对齐、拉通、沉淀、复用、破圈、生态位、势能。English: leverage, synergy, ecosystem, space, journey, unlock, elevate, game-changer, dive deep, at scale, resonate, robust, seamless, holistic, double down, move the needle, circle back, low-hanging fruit, north star, flywheel, moat.
+                - No vague filler. Chinese: 某种、一种……的状态、仿佛、似乎、某种意义上。English: somewhat, a kind of, almost as if, in some sense.
+                - When a technical term is unavoidable, define it on first use — "术语(即……)" in Chinese, "term (that is, ...)" in English — or replace it.
+
+                **Sentence**
+                - Keep connectives and function words. Chinese: 因为、所以、但是、而、其实、后来. English: because, so, but, and, though, actually, later. Prose should be readable aloud in both languages.
+                - No aphorism or parallelism used for weight. Chinese: “你得……才算……”“不是……而是……”“没有……只有……”“X 是 Y 的硬通货/解药/钥匙/底色”. English: "It's not about X, it's about Y", "Not X. Y.", "X isn't a Y, it's a Z".
+                - Don't stack short sentences. Three or more clipped sentences in a row is a metronome — merge and rewrite.
+                - No summary aphorism at the end of a paragraph. Don't aim for a line that gets quoted on its own.
+
+                **Content**
+                - An abstract statement must be followed by an example. No example, cut it.
+                - Write what happened first, what it means second. Judgment goes after the fact.
+                - Emotion is carried by scene and detail, not by adjectives.
+                - Don't default to tragedy, fate, bleakness, or weary wisdom. When the material is heavy, let the facts carry it; don't let the wording perform it.
+                - Be concrete: numbers, times, actions, names. Not "a long time later" but "in the third week".
+
+                **Quotation and reference**
+                - When you cite someone's idea, explain what it means in its original context and why it applies here. If you can't, drop the citation.
+                - Don't use a famous name to stamp a claim.
+
+                ## How to talk
+
+                - Don't evaluate your own writing. No "this part is the best", no "I want to keep this reversal", no "this point is worth more than the others". Don't rank your own points.
+                - Don't evaluate the user's wording. No "that's the right word to use".
+                - Don't sell your view. State it, give the reasons and the conditions, stop.
+
+                ## Open questions
+
+                When a question has no settled answer:
+                - Give two or three possible directions, not one.
+                - For each, say what conditions it depends on.
+                - Say where you're uncertain.
+                - Don't dress a guess in a confident tone.
+
+                ## Self-check before output (do not print this)
+
+                1. Any jargon, coined words, vague filler? Replace.
+                2. Any aphorism, parallel ending, closing maxim? Break it up or cut it.
+                3. Any run of clipped sentences? Merge.
+                4. Does every abstract statement have an example?
+                5. Did you evaluate your own writing or the user's wording? Cut it.
+                6. Read it aloud — does it sound like a person talking?
+
+                User-specified style overrides these rules.
+
+                ## Examples
+
+                **Chinese — good**
+                > 他把简历投了三十七份，回了四封，其中两封是自动回复。第三周开始，他不再改动机信的开头，只改公司名。
+
+                **Chinese — bad**
+                > 求职是一场硬通货的博弈，他需要打通链路、对齐颗粒度，才能在私海中沉淀出自己的生态位。
+
+                **English — good**
+                > He sent out thirty-seven applications and got four replies, two of them automatic. By the third week he had stopped rewriting the opening of his cover letter and only changed the company name.
+
+                **English — bad**
+                > The job search is a game of leverage. He needs to align his narrative and find his niche before he can move the needle.
+
+                ## Canvas
+
+                - Cards, comments and drafts go on the canvas through canvas_write — a card lands as a proposal the user keeps or rejects, a draft as a manuscript marking the cards it used and left out. Never paste them into your reply instead.
+                - Load the canvas skill before your first canvas write; it holds the card, comment and revision rules.
+                - On a 长篇小说 canvas the genre's cards still go through canvas_write but land kept at once, and a session bound to it also has the novel_* tools for chapters, the ledger and review; the novel skill carries that workflow.
+
+          # ── agent-instructions: NOT here ────────────────────────────────────────────
+
+          # Dropped in the 2026-09-30 diet: the writing workspace carries no
+          # repo-level instructions worth injecting every turn. Re-add the row
+          # (`@deepseek-ai/dsh-agent-instructions`, maxBytes 65536) if one does.
+
+          # ── shell ───────────────────────────────────────────────────────────────────
+
+          # `shell-env` stays in the HOST composition: `apps/cli/src/web.ts` injects it to
+          # publish `DSH_WEB_URL`/`DSH_WEB_MODE`, and a host row that injects a service is
+          # the criterion for host-plane ownership — injection resolves before any session
+          # exists, so there is no agent to key by. Behind a preset realm those variables
+          # never reached the model's shell at all. Both shell tools consume the host
+          # registry from here; their executors (`bash-sandbox`/`pwsh-sandbox`) are
+          # host-plane too. Kept in the 2026-09-30 diet on probation: writing skills
+          # like md-to-wechat shell out to converter scripts.
+          - id: tool-bash
+            name: '@deepseek-ai/dsh-tool-bash'
+            disabled: !!js process.platform === 'win32'
+
+          - id: tool-pwsh
+            name: '@deepseek-ai/dsh-tool-pwsh'
+            disabled: !!js process.platform !== 'win32'
+
+          # ── filesystem ──────────────────────────────────────────────────────────────
+
+          # Registers into the host `tools` registry and provides nothing, so it needs
+          # no realm; the `fs` service and its policy stay in the host. `tool-fs-search`
+          # (glob/grep) left in the 2026-09-30 diet — writing sessions reach files
+          # through attachments, the canvas and explicit paths, not repo scans.
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+
+          # ── skills ──────────────────────────────────────────────────────────────────
+
+          # The skill REGISTRY lives in the host composition and is layered per scope:
+          # these rows register into THIS preset's layer of it, so they need no realm.
+          # `skill-filesystem` contributes local-root discovery for agents on this preset, and
+          # `tool-skill` gives them the catalog and loader; the merged catalog also
+          # carries whatever the deployment registered globally (repository plugins).
+          - id: skill-filesystem
+            name: '@deepseek-ai/dsh-skill-filesystem'
+
+          - id: tool-skill
+            name: '@deepseek-ai/dsh-tool-skill'
+
+          # ── goals: NOT here ─────────────────────────────────────────────────────────
+
+          # Goal mode (autonomous objective pursuit) is a coding workflow the writing
+          # scene never drives — the /goal command and the goal tool stay out of this
+          # preset (2026-09-29 writing-scene tuning). The host-plane goal service is
+          # untouched; the dsh-dev and dsh-eval presets keep their rows.
+
+          # ── plan mode / delegation / jobs / present: NOT here ───────────────────────
+
+          # 2026-09-30 diet: plan mode's section is implementation-shaped (exit_plan_mode,
+          # "do not edit"), delegation and workflows are coding apparatus, and with no
+          # subagent or workflow producer left there is nothing for `tool-jobs` to
+          # collect. `present` delivered files to the deliverables view — the writing
+          # deliverable is the text itself or the canvas.
+
+          # ── compaction ──────────────────────────────────────────────────────────────
+
+          # `compaction-basic` reads `toolResultPrune` through `ctx.get`, so the pruner must
+          # share this realm rather than sit outside it.
+          #
+          # `tokenMeter` is deliberately NOT in this realm: the meter stays on the HOST
+          # plane, and the rows here resolve that one instance. It takes no configuration,
+          # keys every fold by Session, and owns the context-meter projection units the
+          # browser reads for every session — behind a realm those units would come and go
+          # with whichever presets happen to be mounted. What a preset chooses is whether
+          # its agent compacts at all, which is `compaction-basic` below.
+          - id: compaction
+            name: 'cordis:group'
+            group: true
+            isolate:
+              compaction: true
+              toolResultPruner: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+
+              - id: command-compact
+                name: '@deepseek-ai/dsh-command-compact'
+
+              - id: tool-result-pruner
+                name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+                config:
+                  thresholdChars: 8192
+                  headChars: 4096
+                  tailChars: 1024
+
+          # ── remaining model-facing rows ─────────────────────────────────────────────
+
+          - id: tool-ask-user
+            name: '@deepseek-ai/dsh-tool-ask-user'
+
+          - id: tool-todo
+            name: '@deepseek-ai/dsh-tool-todo'
+            config:
+              allowParallelInProgress: true
+
+          # The `web` service and its search provider stay in the host composition; only
+          # the model-facing tool is per-session.
+          - id: tool-web
+            name: '@deepseek-ai/dsh-tool-web'
+            config:
+              fetch: true
+              searchTimeoutMs: 60000
+
+          # ── inspiration canvas ──────────────────────────────────────────────────────
+
+          # 画布会话工具（2026-09-17；09-30 收成 canvas_read / canvas_write /
+          # canvas_propose_type 三个，细则进 canvas 技能）、引导段与技能只
+          # 授予本 preset 的会话；profile 根的同名行已在 cordis.patch.yml 停用，两者绝不
+          # 同时生效（同名工具双注册）。服务核心（canvasBoard）由 profile 根的 canvas 行
+          # 提供，本行沿 scope 父链解析；画布未装时本行降级为零注册。
+          - id: canvas-agent
+            name: '@khorsheed/dsh-canvas/agent'
+
+          # ── the 长篇小说 canvas ─────────────────────────────────────────────────────
+
+          # 长篇小说工具（2026-10-06 由 bundle-writing 的「写作」preset 并入，那个包退役）：
+          # novel_bind 与 novel skill、轻指引段只授予本 preset 的会话；novel_read /
+          # novel_write / novel_extract 再按会话绑定决定——会话绑定的是长篇小说画布才出现，
+          # 其余画布照旧只有上面的画布工具。小说画布上的卡也走 canvas_read / canvas_write，
+          # 体裁钩子让它们直接落成正式卡、带编号；novel_* 只管章节、台账与待审。profile 根的同名行出厂
+          # 停用，两者绝不同时生效；服务核心（canvasNovel）由 profile 根的 canvas-novel 行
+          # 提供，未装时本行降级为零注册。
+          - id: canvas-novel-agent
+            name: '@khorsheed/dsh-canvas-novel/agent'

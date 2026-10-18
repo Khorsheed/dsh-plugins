@@ -28,8 +28,9 @@
  *                       into the profile's direct dependencies *and* bundles
  *                       (the local-agent providers → core case; optional
  *                       peerDependency integrations are deliberately exempt —
- *                       declare-and-degrade stays optional). A family bundle
- *                       (`dsh.bundle.kind: 'family'`) is the sanctioned
+ *                       declare-and-degrade stays optional). A family-like
+ *                       bundle (`dsh.bundle.kind: 'family'` or `'mode'`) is
+ *                       the sanctioned
  *                       exception for its own members: its patch carries the
  *                       members' canonical rows verbatim (check:plugins pins
  *                       that), so installing the bundle mounts them and the
@@ -68,6 +69,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { FAMILY_LIKE_KINDS } from './check-plugin-independence.ts'
 import { RETIRED_PACKAGES } from './retired-packages.ts'
 
 /** Profiles exempt from rule 7 (member currency), with the reason. */
@@ -98,8 +100,9 @@ export interface PackageIndexEntry {
   /** `exports` map keys (`.`, `./tool`, …) — rule 5b's subpath check. */
   readonly exportKeys: readonly string[]
   /**
-   * `dsh.bundle.members` of a family bundle (`dsh.bundle.kind: 'family'`) —
-   * the packages whose canonical rows its own patch mounts (rules 4 and 5).
+   * `dsh.bundle.members` of a family-like bundle (`dsh.bundle.kind` 'family'
+   * or 'mode') — the packages whose canonical rows its own patch mounts
+   * (rules 4 and 5).
    */
   readonly familyMembers?: readonly string[]
 }
@@ -144,7 +147,7 @@ export function loadPackageIndex(repoRoot: string): PackageIndex {
       selfMounting: manifest.dsh?.bundle?.patch !== undefined,
       version: manifest.version,
       exportKeys: Object.keys(manifest.exports ?? {}),
-      ...(manifest.dsh?.bundle?.kind === 'family' ? { familyMembers: manifest.dsh.bundle.members ?? [] } : {}),
+      ...(FAMILY_LIKE_KINDS.includes(manifest.dsh?.bundle?.kind ?? '') ? { familyMembers: manifest.dsh?.bundle?.members ?? [] } : {}),
     })
   }
   return index

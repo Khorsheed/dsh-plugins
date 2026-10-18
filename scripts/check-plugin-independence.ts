@@ -204,6 +204,9 @@ export const ALLOWED_EDGES: Readonly<Record<string, ReadonlyArray<string>>> = {
   // covers only the family's DEPS-ONLY library it also installs (card-less,
   // no patch rows of its own beyond what the members' canonical rows name).
   'bundle-local-agent': ['@khorsheed/dsh-local-agent-dsh-headless'],
+  // dev (the dsh-dev mode bundle) installs the same deps-only library for the
+  // same reason — its local-agent-dsh member provisions the sub-dsh through it.
+  'dev': ['@khorsheed/dsh-local-agent-dsh-headless'],
   // The worktrees and room tool rows folded back into their core packages
   // (worktrees 0.3.0, room 0.2.0) as the `./tool` composition entry (the
   // canvas ./agent pattern) — no cross-package edge remains. Each core used

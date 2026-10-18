@@ -2,13 +2,13 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { parseTopLevelPatchRows, type PatchRow } from '../../../scripts/check-plugin-independence.ts'
-import { FAMILY_MEMBERS } from '../src/index.ts'
+import { FAMILY_MEMBERS, MODE } from '../src/index.ts'
 
 const root = join(import.meta.dirname, '..')
 const patch = readFileSync(join(root, 'cordis.patch.yml'), 'utf8')
 const manifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as {
   dependencies: Record<string, string>
-  dsh: { bundle: { members: string[] }; references: string[] }
+  dsh: { bundle: { kind: string; mode: string; members: string[] }; references: string[] }
 }
 
 /** Repo package name → directory. */
@@ -28,13 +28,18 @@ function memberRows(pkgName: string): PatchRow[] {
 const sameRow = (a: PatchRow, b: PatchRow): boolean => a.id === b.id && a.name === b.name
 
 describe('cordis.patch.yml', () => {
-  it('mounts exactly the members’ canonical rows, verbatim, in member order', () => {
+  it('mounts exactly the members’ canonical rows, in member order, plus the one mode preset row last', () => {
     const rows = parseTopLevelPatchRows(patch)
     const canonical = FAMILY_MEMBERS.flatMap((member) => memberRows(member))
-    expect(rows).toHaveLength(canonical.length)
-    rows.forEach((row, index) => {
+    expect(rows).toHaveLength(canonical.length + 1)
+    rows.slice(0, canonical.length).forEach((row, index) => {
       expect(sameRow(row, canonical[index]!), `row ${row.id ?? '(no id)'} (${row.name ?? 'no name'}) must be member row #${index}`).toBe(true)
     })
+    // The mode row: exactly one agent-preset row, id preset-<mode>, mounted last.
+    const presetRows = rows.filter((row) => row.name === '@deepseek-ai/dsh-agent-preset')
+    expect(presetRows, 'exactly one agent-preset row').toHaveLength(1)
+    expect(presetRows[0]!.id).toBe(`preset-${MODE}`)
+    expect(rows[rows.length - 1]).toEqual(presetRows[0])
     // Every member contributes at least one row.
     for (const member of FAMILY_MEMBERS) {
       const own = memberRows(member)
@@ -42,7 +47,7 @@ describe('cordis.patch.yml', () => {
     }
   })
 
-  it('mounts no tool row — the ./tool entries are preset-granted, never profile-root', () => {
+  it('mounts no profile-root tool row — the ./tool entries are granted inside the preset row', () => {
     const rows = parseTopLevelPatchRows(patch)
     for (const row of rows) {
       expect(row.name ?? '', row.id ?? '').not.toMatch(/\/tool$|-tool$/)
@@ -59,6 +64,11 @@ describe('cordis.patch.yml', () => {
 })
 
 describe('package.json', () => {
+  it('declares the mode kind and the dsh.bundle.mode it carries', () => {
+    expect(manifest.dsh.bundle.kind).toBe('mode')
+    expect(manifest.dsh.bundle.mode).toBe(MODE)
+  })
+
   it('declares dsh.bundle.members matching FAMILY_MEMBERS', () => {
     expect(manifest.dsh.bundle.members).toEqual([...FAMILY_MEMBERS])
   })

@@ -1,8 +1,11 @@
 # @khorsheed/dsh-bundle-eval bundle patch: the evaluation family as one bundle
 # card — the datasets / mission / lab / eval rows, re-mounted VERBATIM from each
-# member package's own cordis.patch.yml (the canonical rows;
-# check-plugin-independence's `family` sanction pins this file to exactly that
-# union — no invented ids, no foreign rows).
+# member package's own cordis.patch.yml (the canonical rows), PLUS the family's
+# mode preset row `preset-dsh-eval` mirrored VERBATIM from
+# @khorsheed/dsh-presets (parity pinned by scripts/preset-mode-parity.spec.ts;
+# once that package retires this file becomes the canonical copy).
+# check-plugin-independence's `mode` sanction pins this file to exactly that
+# union plus the one preset row — no invented ids, no foreign rows).
 #
 # Why no double mount: `dsh plugin add` reconciles only the profile's DIRECT
 # dependencies into the bundles layer (apps/cli plugin.ts reconcilePlugins).
@@ -15,8 +18,9 @@
 # ships its tool row as its own `./tool` composition entry
 # (`@khorsheed/dsh-datasets/tool`, `@khorsheed/dsh-mission/tool`,
 # `@khorsheed/dsh-eval/tool`), which an agent preset names to grant the tools
-# per session — a profile-root row would grant every session. The eval preset's
-# `datasets-tool` / `eval-tool` rows are the grant points.
+# per session — a profile-root row would grant every session. The grant points
+# are the `datasets-tool` / `eval-tool` rows inside this bundle's preset row
+# (`preset-dsh-eval`, appended at the end of the insert list below).
 - insert:
     # Dataset registry, read-only materialization, the 题集 tab.
     - id: datasets
@@ -33,3 +37,238 @@
     # The orchestrator: experiments, conditions, runs, judging, the 实验室 tab.
     - id: eval
       name: '@khorsheed/dsh-eval'
+
+    # ── the mode row: preset-dsh-eval (评测模式) — mirrored verbatim from
+    # @khorsheed/dsh-presets; grants datasets-tool / eval-tool per session.
+    - id: preset-dsh-eval
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: dsh-eval
+        name: '评测模式'
+        description: 评测实例的 Agent：读题库、起草 plan 与 condition、读 bundle 写分析初稿，也把数据整理成题集并提交登记申请；运行与容器归编排器，登记归人。
+        order: 0
+        plugins:
+          # The `eval` agent preset: the evaluation instance's agent. It plans and
+          # analyzes evaluations, and since T102 (2026-10-06) it also organizes data
+          # into dataset repositories — the 题集整理 preset (T90) folded into it.
+          #
+          # FROZEN DECISION 12 as rewritten by T102: the docker socket still belongs to
+          # the orchestrator alone, but this preset no longer guarantees it — it carries
+          # a shell, because organizing runs git and conversion scripts. `lab`
+          # registers no model-visible tool, so container actions stay on the
+          # orchestrator's service face; whether a session reaches for docker or writes
+          # under state/eval / state/mission is watched from session logs, and any guard
+          # is decided after that observation (README「冻结决策 12 的执行点」).
+          #
+          # This file is an AGENT-PLANE composition, mounted once per process under a
+          # standing scope; every session naming this preset joins by scope parentage.
+          # It is derived from the shipped `standard` preset (apps/cli/config/agent-presets/
+          # standard/agent.cordis.yml in the harness), with two classes of row removed:
+          #
+          #   (a) the workflow engine — `tool-workflow` plus the `workflow-ptc` engine
+          #       it needs (a workflow script is MODEL-AUTHORED JavaScript executed in a
+          #       Node worker thread), and `tool-ralph`, which drives the same engine.
+          #       Neither planning nor organizing needs scripted multi-step agents.
+          #   (b) `plan-mode`, whose vocabulary collides with this line's own: its
+          #       prompt plans an IMPLEMENTATION and forbids writing files, while this
+          #       agent's whole output is a `dataseek.plan/1` written to disk and
+          #       approved by a person through the eval flow. Two things called "plan"
+          #       in one session is the confusion, not the missing capability.
+          #
+          # Delegation goes to agents running on THIS preset: an in-process child
+          # inherits its parent's preset (the harness proves it in
+          # subagent-in-process-driver/tests/preset-inheritance.spec.ts), so a child has
+          # exactly this preset's tools — the shell included.
+          #
+          # The family delegation tools `subagent_codex` / `subagent_claude_code` /
+          # `subagent_kimi` are each provider's own `./tool` composition entry, granted
+          # only by a preset that names it; this one names none. `subagent_dsh` is
+          # mounted by local-agent-dsh's settings toggle (off by default), outside any
+          # preset — see the README section 「冻结决策 12 的执行点」.
+          #
+          # A service row here MUST sit inside a group carrying an `isolate` realm;
+          # without one it publishes into the process-global root realm and
+          # `dsh-agent-presets` rejects the mount. Rows that only REGISTER into a host
+          # registry (tools, skills) need no realm.
+
+          # ── identity ────────────────────────────────────────────────────────────────
+
+          # `{{model}}` resolves from the agent's own route. Host 0.2.1 removed the
+          # `{{cwd}}` prompt variable; the working-directory service supplies the
+          # directory as required user context instead.
+          # One persona for both jobs (T102): the evaluation wording stays as it was,
+          # the path rule now offers organizing instead of only refusing, and the
+          # organizing way of working (skill first, original data untouched, dry-run
+          # before the proposal) is its own closing paragraph. The datasets-tool
+          # row's `datasets:organize` prompt section repeats the same rules from the
+          # tool side; the two say the same thing.
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: >-
+                You are the agent of a dsh evaluation instance, powered by the {{model}} model.
+                You plan and analyze evaluations, and you organize data into datasets.
+                Execution belongs to the deterministic orchestrator: you read registered datasets through the datasets_* tools and finished run bundles, draft experiments and conditions for a person to approve, and write analysis drafts. Never start a run or control a container yourself, through the shell or otherwise — ask the person to run what needs running.
+                Registered datasets are exactly what datasets_list returns; never read, glob or grep a registered dataset's directory.
+                When eval_plan_draft says the dataset version is ambiguous, ask with ask_user_question; if the person skips that question, stop and do not draft. Items, reps and the judge have defaults — draft with them and say they can be changed on the 实验设计 page. Exception: a request from the 新建实验 form (「让 Agent 组织」) lists what the person already chose and asks to be walked through the rest — do not re-ask the settled choices, ask each open one with ask_user_question (one at a time, with a suggested default), then draft with eval_plan_draft and stop; never start.
+                A path is not a dataset: when the person gives one to evaluate, check datasets_list, say the path is not registered in this deployment and offer to organize it into a dataset (or point them to the 题集 tab); never map it onto a registered id by name.
+                Experiment drafts are written in this deployment, never into a dataset repository.
+                Organizing — turning local, downloaded or public data into a dataset repository, or reworking a proposal the person returned — is the one job that works in data directories and uses the shell. Load the dataset-authoring skill before anything else and follow it: check git, look at the data, ask every key question in one go, never modify the original data, convert everything, give every file and field a disposition, commit per batch, run datasets_propose_registration with dryRun until it passes, then file the proposal and stop.
+                You never register a dataset; the person confirms your proposal on the 题集 tab.
+
+          - id: agent-instructions
+            name: '@deepseek-ai/dsh-agent-instructions'
+            config:
+              maxBytes: 65536
+
+          # ── shell (T102) ────────────────────────────────────────────────────────────
+
+          # Organizing runs git and conversion scripts. One shell per platform, the
+          # shipped presets' way.
+          - id: tool-bash
+            name: '@deepseek-ai/dsh-tool-bash'
+            disabled: !!js process.platform === 'win32'
+
+          - id: tool-pwsh
+            name: '@deepseek-ai/dsh-tool-pwsh'
+            disabled: !!js process.platform !== 'win32'
+
+          # ── filesystem: read, and draft ─────────────────────────────────────────────
+
+          # Both register into the host `tools` registry and provide nothing, so they
+          # need no realm. `tool-fs` keeps `write`/`edit`: a plan, a condition and an
+          # analysis draft are files, and writing one executes nothing. `glob`/`grep`
+          # spawn the packaged ripgrep binary through `ctx.subprocess` rather than a
+          # shell, and take no command from the model — they are read tools.
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+
+          - id: tool-fs-search
+            name: '@deepseek-ai/dsh-tool-fs-search'
+            config:
+              sampleOverCapGlobResults: false
+
+          # ── background jobs ────────────────────────────────────────────────────────
+
+          # The task REGISTRY stays on the host plane; these are the model-facing
+          # controls only: they collect and stop background shell commands and
+          # continuable `tool-subagent` children.
+          - id: tool-jobs
+            name: '@deepseek-ai/dsh-tool-jobs'
+
+          # ── skills ──────────────────────────────────────────────────────────────────
+
+          # The skill registry is host-plane and layered per scope: these rows register
+          # into THIS preset's layer, and the merged catalog also carries whatever the
+          # profile registered globally. Neither skill of this line is one of those:
+          # `eval-planning` ships inside @khorsheed/dsh-eval and registers from the
+          # eval-tool row (T100), `dataset-authoring` ships inside @khorsheed/dsh-datasets
+          # and registers from the datasets-tool row's organize tier (T90) — so only
+          # sessions of this preset list them.
+          - id: skill-filesystem
+            name: '@deepseek-ai/dsh-skill-filesystem'
+
+          - id: tool-skill
+            name: '@deepseek-ai/dsh-tool-skill'
+
+          # ── goals ───────────────────────────────────────────────────────────────────
+
+          # Only the model-facing tool; the goal service and its `/goal` command stay on
+          # the host plane. Goal state is bookkeeping — it starts nothing.
+          - id: tool-goal
+            name: '@deepseek-ai/dsh-tool-goal'
+
+          # ── compaction ──────────────────────────────────────────────────────────────
+
+          # Reading bundles is long-context work, so this preset compacts. The pruner
+          # shares the realm because `compaction-basic` resolves `toolResultPrune`
+          # through `ctx.get`; the token meter deliberately stays on the host plane.
+          - id: compaction
+            name: 'cordis:group'
+            group: true
+            isolate:
+              compaction: true
+              toolResultPruner: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+
+              - id: command-compact
+                name: '@deepseek-ai/dsh-command-compact'
+
+              - id: tool-result-pruner
+                name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+                config:
+                  thresholdChars: 8192
+                  headChars: 4096
+                  tailChars: 1024
+
+          # ── delegation ──────────────────────────────────────────────────────────────
+
+          # The `subagents` registry and its spawn/fork backends are host-plane
+          # singletons; a preset chooses only which delegation TOOLS its agent sees.
+          # Both backends produce in-process dsh children, and a child runs on its
+          # parent's preset — so a child carries exactly this preset's tools.
+          #
+          # No `workflowEngine` realm here, unlike the shipped `standard` preset: the
+          # rows that needed it are the three this preset drops.
+          - id: tool-subagent-control
+            name: '@deepseek-ai/dsh-tool-subagent-control'
+
+          - id: tool-subagent-list-agents
+            name: '@deepseek-ai/dsh-tool-subagent-control/list-agents'
+
+          - id: tool-subagent
+            name: '@deepseek-ai/dsh-tool-subagent'
+            config:
+              provider: spawn
+              toolName: subagent
+
+          - id: tool-subagent-fork
+            name: '@deepseek-ai/dsh-tool-subagent'
+            config:
+              provider: fork
+              toolName: subagent_fork
+
+          # ── remaining model-facing rows ─────────────────────────────────────────────
+
+          - id: tool-ask-user
+            name: '@deepseek-ai/dsh-tool-ask-user'
+
+          - id: tool-todo
+            name: '@deepseek-ai/dsh-tool-todo'
+            config:
+              allowParallelInProgress: true
+
+          # The `web` service and its search provider stay in the host composition; only
+          # the model-facing tool is per-session. `fetch: true` since T102: organizing
+          # downloads public datasets (the 题集整理 preset's setting, kept).
+          - id: tool-web
+            name: '@deepseek-ai/dsh-tool-web'
+            config:
+              fetch: true
+              searchTimeoutMs: 60000
+
+          # ── 工具按域开放（M4'③：companion 行按域授予）──────────────────────────────
+          # 这两行原先挂在 profile 根并带 tools 配置（profiles/web-eval/cordis.patch.yml）。
+          # 拆包后工具行不再全局：授予点移到这里，tier 原样跟随——eval 预设的会话拿到
+          # 按域裁剪过的两个工具集，同 profile 里其它预设的会话一个都拿不到。
+          #
+          # `mission-tool` 曾是这里的第三行（`tools: read`，四个只读工具）。T46 摘掉：
+          # 界面规格的 R6 定了「评测模式下 mission 这个词不出现」——mission 仍是这条线的
+          # 账本与释放闸，但那是编排器服务面的事，模型侧读进度走 eval 自己的投影
+          # （`eval_cells`，见下一行的 eval-tool）。摘掉这一行还有第二个效果，是同一条
+          # 规则的另一半：宿主的任务 tab 按「当前会话的预设组合里有没有
+          # @khorsheed/dsh-mission/tool 行」自隐（mission 的 preset-visibility），所以
+          # 这一行一走，评测会话的任务 tab 自己就不见了，不必再关一次。
+          # 这一行如今是 mission 包自己的 `./tool` 组合入口（T88 起），随 mission 安装，谁要在自己的覆盖层预设里
+          # 加回这一行都还装得上——钉的是默认值，不是可达集。
+          - id: datasets-tool
+            name: '@khorsheed/dsh-datasets/tool'
+            config:
+              tools: organize       # T102：读类全开 + put_item（出题）+ datasets_propose_registration（只写申请）；挂 dataset-authoring skill；worktree_path 留给服务面
+
+          - id: eval-tool
+            name: '@khorsheed/dsh-eval/tool'
+            config:
+              tools: all            # 四读两写：写只有 eval_plan_draft（部署内实验目录）与 eval_analysis_write（analysis/ 内）

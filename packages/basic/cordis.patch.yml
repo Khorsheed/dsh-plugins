@@ -1,0 +1,85 @@
+# @khorsheed/dsh-basic bundle patch: the everyday-experience family as one
+# bundle card — the eighteen member rows, re-mounted VERBATIM from each member
+# package's own cordis.patch.yml (the canonical rows; check-plugin-independence's
+# `family` sanction pins this file to exactly that union — no invented ids, no
+# foreign rows).
+#
+# Why no double mount: `dsh plugin add` reconciles only the profile's DIRECT
+# dependencies into the bundles layer (apps/cli plugin.ts reconcilePlugins).
+# Installing this bundle applies THIS patch only; the member packages arrive as
+# transitive npm dependencies and their own patches stay inert. Installing a
+# member directly alongside still self-mounts that member — the official bundle
+# detail page's row-level switches resolve any overlap.
+- insert:
+    # 消息工具: edit or withdraw sent messages.
+    - id: message-tools
+      name: '@khorsheed/dsh-client-message-tools'
+
+    # 消息时间轴: jump back to any of your messages.
+    - id: message-timeline
+      name: '@khorsheed/dsh-message-timeline'
+
+    # 标题编辑: rename the current session from the chat header.
+    - id: session-title-edit
+      name: '@khorsheed/dsh-client-session-title-edit'
+
+    # 引用: selected-text quote/copy action menu.
+    - id: quote
+      name: "@khorsheed/dsh-quote"
+
+    # 内联卡片: sandboxed interactive HTML cards inline in the conversation.
+    - id: inline-html-render
+      name: '@khorsheed/dsh-inline-html-render'
+
+    # 上下文守卫: composer compact button past the occupancy threshold.
+    - id: context-guard
+      name: '@khorsheed/dsh-context-guard'
+
+    # 后台任务: dock pills for background jobs and subagents.
+    - id: taskpilot
+      name: "@khorsheed/dsh-taskpilot"
+
+    # 会话产物: preview files the agent wrote or edited.
+    - id: file-preview
+      name: '@khorsheed/dsh-file-preview'
+
+    # 文件列表: browse any local directory with structured previews.
+    - id: local-files
+      name: "@khorsheed/dsh-local-files"
+
+    # 能力目录: every skill and tool with its registration channel.
+    - id: capability-catalog
+      name: '@khorsheed/dsh-capability-catalog'
+
+    # 移动端: mobile layout, conversation library, iOS bridge.
+    - id: mobile
+      name: "@khorsheed/dsh-mobile"
+
+    # 快捷键: rebind keyboard and mouse shortcuts. Row id stays
+    # `khorsheed-ui-shortcuts` — the official panel owns `ui-shortcuts`.
+    - id: khorsheed-ui-shortcuts
+      name: '@khorsheed/dsh-ui-shortcuts'
+
+    # 进度提醒: whale spout animation and completion/blocked chimes.
+    - id: whalesong
+      name: '@khorsheed/dsh-whalesong'
+
+    # 重启守卫: self-modification restarts gated on a green build+test credential.
+    - id: ankh-guard
+      name: "@khorsheed/dsh-ankh-guard"
+
+    # 渲染抓取: headless-Chrome render of JS-heavy pages.
+    - id: capture
+      name: "@khorsheed/dsh-capture"
+
+    # 灵感空间: RSS feeds and saved article links on a card wall (row id `reader`).
+    - id: reader
+      name: "@khorsheed/dsh-reader"
+
+    # 侧边对话: lightweight sidebar chat per context.
+    - id: sidechat
+      name: "@khorsheed/dsh-sidechat"
+
+    # 上下文透镜: per-turn structured breakdown of every model request.
+    - id: context-lens
+      name: "@khorsheed/dsh-context-lens"

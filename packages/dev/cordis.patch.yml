@@ -1,0 +1,271 @@
+# @khorsheed/dsh-dev bundle patch: the 开发模式 (dsh-dev) mode pack — the dev
+# family's member rows plus the mode's own preset row. Member rows (and the two
+# bare overrides) are re-mounted VERBATIM from each member package's own
+# cordis.patch.yml (the canonical rows); the preset row is mirrored VERBATIM
+# from @khorsheed/dsh-presets — parity is pinned by
+# scripts/preset-mode-parity.spec.ts, and once that package retires this file
+# becomes the canonical copy. check-plugin-independence's `mode` sanction pins
+# this file to exactly the members'-rows union plus the one preset row.
+#
+# Why no double mount: `dsh plugin add` reconciles only the profile's DIRECT
+# dependencies into the bundles layer (apps/cli plugin.ts reconcilePlugins).
+# Installing this bundle applies THIS patch only; the member packages arrive as
+# transitive npm dependencies and their own patches stay inert. Installing a
+# member directly alongside still self-mounts that member — the official bundle
+# detail page's row-level switches resolve any overlap.
+#
+# The two bare overrides disable the official preset rows whose model-facing
+# tool names the family takes (subagent_codex / subagent_claude_code) — carried
+# verbatim from the codex / claude-code providers' own patches.
+#
+# The delegation TOOLS are not here by design: each provider ships its tool as
+# its own `./tool` composition entry, which THIS bundle's preset row names to
+# grant the tool per session (its tool-subagent-kimi / tool-subagent-codex-local
+# / tool-subagent-claude-code-local rows, likewise worktrees-tool / room-tool /
+# typesafe-tool) — a profile-root row would grant every session.
+#
+# The deps-only family library (@khorsheed/dsh-local-agent-dsh-headless) is an
+# npm dependency of this bundle but contributes NO row here — card-less by
+# design (same treatment as @khorsheed/dsh-bundle-local-agent).
+
+- id: tool-subagent-codex
+  disabled: true
+
+- id: tool-subagent-claude-code
+  disabled: true
+
+- insert:
+    # The local-agent family core: shared scoped-homes root.
+    - id: local-agent
+      name: '@khorsheed/dsh-local-agent'
+      config:
+        homesRoot: !!js dshHomePath('local-agent')
+
+    # Kimi harness (its `subagent_kimi` tool: the package's ./tool entry).
+    - id: local-agent-kimi
+      name: '@khorsheed/dsh-local-agent-kimi'
+
+    # Codex harness (its `subagent_codex` tool: the package's ./tool entry).
+    - id: local-agent-codex
+      name: '@khorsheed/dsh-local-agent-codex'
+
+    # Claude Code harness (its `subagent_claude_code` tool: the package's ./tool entry).
+    - id: local-agent-claude-code
+      name: '@khorsheed/dsh-local-agent-claude-code'
+
+    # The dsh harness controller (Settings → 本地 Agent switch, default off).
+    - id: local-agent-dsh
+      name: '@khorsheed/dsh-local-agent-dsh'
+
+    # Session worktree badge/tab/service (its model tool: ./tool, preset-granted).
+    - id: worktrees
+      name: "@khorsheed/dsh-worktrees"
+
+    # Room: shared multi-agent conversations (its model tools: ./tool, preset-granted).
+    - id: room
+      name: '@khorsheed/dsh-room'
+
+    # TypeSafe System One service (its judgement tool: ./tool, preset-granted).
+    - id: typesafe
+      name: '@khorsheed/dsh-typesafe'
+
+    - id: preset-dsh-dev
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: dsh-dev
+        name: '开发模式'
+        description: 单实例多模式的开发场景：官方标准模式的全部能力，外加 local-agent 委派工具（kimi/codex/claude）与 worktrees 模型工具，按会话授予。
+        order: 10
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              # Host 0.2.1 removed the {{cwd}} prompt variable (a template
+              # retaining it fails the model request); the working-directory
+              # service supplies the directory as required user context.
+              prefix: You are a coding agent powered by the {{model}} model.
+          - id: agent-instructions
+            name: '@deepseek-ai/dsh-agent-instructions'
+            config:
+              maxBytes: 65536
+          - id: tool-bash
+            name: '@deepseek-ai/dsh-tool-bash'
+            disabled: !!js process.platform === 'win32'
+          - id: tool-pwsh
+            name: '@deepseek-ai/dsh-tool-pwsh'
+            disabled: !!js process.platform !== 'win32'
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+          - id: tool-fs-search
+            name: '@deepseek-ai/dsh-tool-fs-search'
+            config:
+              sampleOverCapGlobResults: false
+          - id: tool-jobs
+            name: '@deepseek-ai/dsh-tool-jobs'
+          - id: skill-filesystem
+            name: '@deepseek-ai/dsh-skill-filesystem'
+          - id: tool-skill
+            name: '@deepseek-ai/dsh-tool-skill'
+          - id: command-goal
+            name: '@deepseek-ai/dsh-command-goal'
+          - id: tool-goal
+            name: '@deepseek-ai/dsh-tool-goal'
+          - id: planning
+            name: 'cordis:group'
+            group: true
+            isolate:
+              planMode: true
+            config:
+              - id: plan-mode
+                name: '@deepseek-ai/dsh-plan-mode'
+                config:
+                  section: |
+                    You are in plan mode. Stay in plan mode until exit_plan_mode succeeds or the user switches the session mode. Imperative language to implement changes means plan the implementation, not execute it. A user's conversational agreement — including an answer confirming something you asked — approves nothing and does not end plan mode; fold the confirmed decision into the plan and submit it through exit_plan_mode.
+
+                    Explore first. Use non-mutating reads, searches, static analysis, and checks to ground the plan in the actual repository. Do not edit or write files, change configuration, run formatters or code generation that rewrites tracked files, commit, or otherwise carry out the plan. Prefer existing functions and patterns over new machinery.
+
+                    The tool catalog stays the same across modes for request-cache stability. These plan-mode rules override any later tool description or guidance that suggests using mutation tools; those tools remain listed to keep the tool catalog unchanged. Do not use todo_write to track this planning phase: it tracks implementation after an approved plan, while the plan itself belongs in exit_plan_mode.
+
+                    Resolve discoverable facts by inspection. Use ask_user_question only for user-owned choices or material ambiguity that inspection cannot answer. Do not ask the user where code lives or how current behavior works when you can find out.
+
+                    Make the plan decision-complete: state the goal and success criteria; group implementation changes by subsystem; identify public API, schema, and data-flow changes; cover edge cases, failure modes, tests, acceptance criteria, and explicit assumptions. Keep it concise enough to review but detailed enough that another engineer can implement it without making design decisions.
+
+                    When ready, call exit_plan_mode with the complete plan markdown, starting with a # title. Make exit_plan_mode the only and final tool call in that assistant response: it presents the plan for approval, and implementation begins only in a later step after approval. Do not paste the final plan as a plain reply or ask "should I proceed?" through prose or ask_user_question. If review rejects it, incorporate the feedback and present again. If the review channel is unavailable or aborted, stay in plan mode and ask the user to switch modes manually; do not proceed with implementation.
+          - id: compaction
+            name: 'cordis:group'
+            group: true
+            isolate:
+              compaction: true
+              toolResultPruner: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+              - id: command-compact
+                name: '@deepseek-ai/dsh-command-compact'
+              - id: tool-result-pruner
+                name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+                config:
+                  thresholdChars: 8192
+                  headChars: 4096
+                  tailChars: 1024
+          - id: delegation
+            name: 'cordis:group'
+            group: true
+            isolate:
+              workflowEngine: true
+            config:
+              - id: tool-subagent-control
+                name: '@deepseek-ai/dsh-tool-subagent-control'
+              - id: tool-subagent-list-agents
+                name: '@deepseek-ai/dsh-tool-subagent-control/list-agents'
+              - id: tool-subagent
+                name: '@deepseek-ai/dsh-tool-subagent'
+                config:
+                  provider: spawn
+                  toolName: subagent
+                  modelSelectionSettings: true
+              - id: tool-subagent-fork
+                name: '@deepseek-ai/dsh-tool-subagent'
+                config:
+                  provider: fork
+                  toolName: subagent_fork
+              - id: tool-subagent-codex
+                name: '@deepseek-ai/dsh-tool-subagent'
+                disabled: true
+                config:
+                  provider: codex
+                  toolName: subagent_codex
+                  maxDepth: provider-managed
+              - id: tool-subagent-claude-code
+                name: '@deepseek-ai/dsh-tool-subagent'
+                disabled: true
+                config:
+                  provider: claude-code
+                  toolName: subagent_claude_code
+                  maxDepth: provider-managed
+              - id: workflow-ptc
+                name: '@deepseek-ai/dsh-workflow-ptc'
+                config:
+                  provider: spawn
+              - id: tool-workflow
+                name: '@deepseek-ai/dsh-tool-workflow'
+              - id: tool-ralph
+                name: '@deepseek-ai/dsh-tool-ralph'
+                disabled: true
+                config:
+                  subagentProvider: spawn
+                  maxRounds: 64
+          - id: tool-ask-user
+            name: '@deepseek-ai/dsh-tool-ask-user'
+          - id: tool-todo
+            name: '@deepseek-ai/dsh-tool-todo'
+            config:
+              allowParallelInProgress: true
+          - id: tool-web
+            name: '@deepseek-ai/dsh-tool-web'
+            config:
+              fetch: true
+              searchTimeoutMs: 60000
+          - id: present
+            name: '@deepseek-ai/dsh-tool-present'
+          - id: tool-plugin-manager
+            name: '@deepseek-ai/dsh-plugin-manager/tools'
+            disabled: true
+
+          # ── dev mode: community tool rows granted per session ────────────────────────
+          # The mode-switcher proposal (2026-08-26) dev mode: community MODEL TOOL rows
+          # live in this preset, never at the profile root — a session gets the tool
+          # exactly when it runs on this preset. Every row below provides no service
+          # (the preset-mount isolate-realm rule) and only registers into the host
+          # tools registry, so they compose bare, the official tool-row shape.
+
+          # The three local-agent delegation tools. Since the family fold each one
+          # ships as its PROVIDER package's `./tool` composition entry (the
+          # worktrees 0.3.0 / room 0.2.0 pattern; the shared
+          # `@khorsheed/dsh-local-agent-tool-subagent` companion is retired) — the
+          # entries carry their own provider/toolName defaults, so the rows need
+          # no config. The row ids are unchanged, so composition state is
+          # unaffected; the provider rows they delegate to mount at the profile
+          # root from each provider package's own bundle patch.
+          - id: tool-subagent-kimi
+            name: '@khorsheed/dsh-local-agent-kimi/tool'
+
+          - id: tool-subagent-codex-local
+            name: '@khorsheed/dsh-local-agent-codex/tool'
+
+          - id: tool-subagent-claude-code-local
+            name: '@khorsheed/dsh-local-agent-claude-code/tool'
+
+          # The worktrees model tool: the core stays global (badge/tab/service), the
+          # tool row is session-granted here. Since worktrees 0.3.0 the row ships
+          # inside the core package as the `./tool` composition entry (the standalone
+          # `@khorsheed/dsh-worktrees-tool` companion is folded away); the row id
+          # stays `worktrees-tool`, so the composition state is unaffected.
+          - id: worktrees-tool
+            name: '@khorsheed/dsh-worktrees/tool'
+
+          # The room model tools (invite/task/message), same split (M4'②): the core
+          # stays global (room service/UI), the tool row is session-granted here.
+          # Since room 0.2.0 the row ships inside the core package as the `./tool`
+          # composition entry (the standalone `@khorsheed/dsh-room-tool` companion is
+          # folded away); the row id stays `room-tool`, so the composition state is
+          # unaffected. No config — the tools read the invitable provider roster from
+          # the global room service at call time.
+          - id: room-tool
+            name: '@khorsheed/dsh-room/tool'
+
+          # The TypeSafe judgement tool (2026-09-20): the core `@khorsheed/dsh-typesafe`
+          # publishes `ctx.typesafe` at the profile root and stays surface-free; this row
+          # grants `typesafe_judge`, its `typesafe:judge` guidance section and the
+          # `typesafe-decide` skill to this preset's sessions only. Since the host-021
+          # wave (2026-10-18) the row ships inside the core package as the `./tool`
+          # composition entry (the T88 evaluation-family fold precedent; the standalone
+          # `@khorsheed/dsh-typesafe-tool` companion is folded away); the row id stays
+          # `typesafe-tool`, so the composition state is unaffected.
+          - id: typesafe-tool
+            name: '@khorsheed/dsh-typesafe/tool'
+
+          # ── 评测三行已挪到 dsh-eval preset（2026-09-18）──────────────────────────────
+          # mission/datasets/eval 的伴生工具行不再挂在本预设：它们的 tab/chip/slash 按
+          # 「组合里有没有行」自隐，本预设带行 = 开发模式会话也显示评测 UI。评测能力归
+          # dsh-eval preset（配方与 web-eval pack 的 eval preset 一致）。
