@@ -136,8 +136,6 @@ export interface TextFixRequest extends ProjectRef {
 export interface ReplaceRequest extends ProjectRef {
   from: string
   to: string
-  /** Also store the rule in the show for later transcripts. */
-  remember: boolean
 }
 
 export interface KeywordCutRequest extends ProjectRef {

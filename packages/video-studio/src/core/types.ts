@@ -27,8 +27,6 @@ export interface Settings {
   speakerPauseThreshold: Record<string, number>
   /** Tokens treated as fillers. */
   fillers: string[]
-  /** Transcription corrections applied to every new transcript (wrong → right). */
-  replacements: Record<string, string>
   /** Shownotes template; {title} {summary} {chapters} placeholders. */
   shownotes: string
 }
