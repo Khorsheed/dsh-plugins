@@ -33,46 +33,51 @@ function ItemFull({ item }: { readonly item: SegmentItem }) {
   </>
 }
 
-/** The list stays dense; only explicitly opened bodies enter the reading flow. */
-function MessageRows({ items, counts, highlight, t }: {
-  readonly items: SegmentItem[]; readonly counts: Map<string, number>; readonly highlight: boolean; readonly t: T
+const itemNumber = (item: SegmentItem) => item.index < 0 ? '—' : String(item.index).padStart(3, '0')
+interface MessageReading {
+  expanded: ReadonlySet<SegmentItem>
+  flash: SegmentItem | null
+  returnTo: SegmentItem | undefined
+  destination: SegmentItem | undefined
+  register: (item: SegmentItem, element: HTMLDetailsElement | null) => void
+  toggle: (item: SegmentItem) => void
+  next: (from: SegmentItem, to: SegmentItem) => void
+  jump: (from: SegmentItem, to: SegmentItem) => void
+  back: (from: SegmentItem) => void
+}
+/** The list stays dense; navigation is shared across system/history/added layers. */
+function MessageRows({ items, groups, highlight, reading, t }: {
+  readonly items: SegmentItem[]; readonly groups: Map<string, SegmentItem[]>; readonly highlight: boolean; readonly reading: MessageReading; readonly t: T
 }) {
-  const [expanded, setExpanded] = useState(new Set<SegmentItem>())
-  const [target, setTarget] = useState<SegmentItem | null>(null)
-  const refs = useRef(new Map<SegmentItem, HTMLDetailsElement>())
-  useLayoutEffect(() => {
-    if (!target) return
-    const row = refs.current.get(target)
-    row?.scrollIntoView?.({ block: 'start', behavior: 'instant' })
-    row?.querySelector('summary')?.focus({ preventScroll: true })
-    setTarget(null)
-  }, [target])
   return <>{items.map((item, i) => {
-    const open = expanded.has(item)
-    const repeats = counts.get(item.full) ?? 0
+    const open = reading.expanded.has(item)
+    const group = groups.get(item.full) ?? []
+    const peers = group.filter(other => other !== item)
     const next = items[i + 1]
-    return <details key={item.index} ref={el => { if (el) refs.current.set(item, el); else refs.current.delete(item) }} className={css.item} open={open} data-highlight={highlight}>
-      <summary className={css.row} title={item.preview} onClick={e => {
-        e.preventDefault()
-        setExpanded(previous => { const changed = new Set(previous); open ? changed.delete(item) : changed.add(item); return changed })
-        if (open) setTarget(item)
-      }}>
-        <span className={css.idx}>{item.index < 0 ? '—' : String(item.index).padStart(3, '0')}</span>
+    return <details key={item.index} ref={el => reading.register(item, el)} className={css.item} open={open} data-highlight={highlight} data-jump={reading.flash === item}>
+      <summary className={css.row} title={item.preview} onClick={e => { e.preventDefault(); reading.toggle(item) }}>
+        <span className={css.idx}>{itemNumber(item)}</span>
         <i className={css.dot} data-cat={item.category} /><span className={css.type}>{t(categoryLabelKey(item.category))}</span>
         <span className={css.preview}>{item.preview}</span>
-        <span className={css.rowBadges}>{repeats > 1 && <span className={css.badge}>×{repeats}</span>}{item.isError && <span className={css.errorNote}>{t('lens.errors')}</span>}</span>
+        <span className={css.rowBadges}>{group.length > 1 && <span className={css.badge}>×{group.length}</span>}{item.isError && <span className={css.errorNote}>{t('lens.errors')}</span>}</span>
         <span className={css.number}>{fmt(item.chars)}</span>
         <IconChevronDownOutlineMedium size={16} className={css.chevron} />
         {open && <span className={css.readActions}><span>{t('lens.collapse')}</span><button type="button" disabled={!next} onClick={e => {
           e.preventDefault(); e.stopPropagation()
-          if (!next) return
-          setExpanded(previous => { const changed = new Set(previous); changed.delete(item); changed.add(next); return changed })
-          setTarget(next)
+          if (next) reading.next(item, next)
         }}>{t('lens.nextItem')} ↓</button></span>}
       </summary>
       {open && <div className={css.full}>
         {item.isError && <div className={css.errorNote}>{t('lens.errors')}</div>}
-        <div className={css.fullLabel}>{item.source}{item.sourceTurn === undefined ? '' : ` · ${t('lens.sourceTurn', { turn: String(item.sourceTurn) })}`}{item.durationMs === undefined ? '' : ` · ${fmtSpan(item.durationMs)}`}</div>
+        <div className={`${css.fullLabel} ${css.messageMeta}`}>
+          <span>{item.source}{item.sourceTurn === undefined ? '' : ` · ${t('lens.sourceTurn', { turn: String(item.sourceTurn) })}`}{item.durationMs === undefined ? '' : ` · ${fmtSpan(item.durationMs)}`}</span>
+          {peers.length > 0 && <span className={css.duplicateLinks}>
+            <span>{t('lens.sameWith')}</span>
+            {peers.map(other => <button key={other.index} type="button" onClick={() => reading.jump(item, other)}>{itemNumber(other)} · {t(categoryLabelKey(other.category))} ↗</button>)}
+            <span>{t('lens.sameFullText')}</span>
+          </span>}
+          {reading.destination === item && reading.returnTo && <button type="button" className={css.returnLink} onClick={() => reading.back(item)}>{t('lens.returnItem', { index: itemNumber(reading.returnTo) })} ↩</button>}
+        </div>
         <ItemFull item={item} />
       </div>}
     </details>
@@ -81,15 +86,44 @@ function MessageRows({ items, counts, highlight, t }: {
 export interface SegmentBlocksProps {
   readonly request: CapturedRequest
   readonly filterCat: CompositionFilter
+  readonly onClearFilter?: () => void
   readonly previousResponseNumber: number | null
   readonly t: T
 }
 
 /** Filtering changes rows only: group counts, bars and sizes keep their full-request meaning. */
-export function SegmentBlocks({ request, filterCat, t }: SegmentBlocksProps) {
+export function SegmentBlocks({ request, filterCat, onClearFilter, t }: SegmentBlocksProps) {
   const { system, tools, history, added } = request.segments
   const [openLayers, setOpenLayers] = useState(new Set(['added']))
   const duplicates = duplicateStats([...system, ...history, ...added])
+  const groups = new Map<string, SegmentItem[]>()
+  for (const item of [...system, ...history, ...added]) {
+    if ((duplicates.counts.get(item.full) ?? 0) > 1) {
+      const group = groups.get(item.full) ?? []
+      group.push(item)
+      groups.set(item.full, group)
+    }
+  }
+  const [expanded, setExpanded] = useState(new Set<SegmentItem>())
+  const [target, setTarget] = useState<SegmentItem | null>(null)
+  const [flash, setFlash] = useState<SegmentItem | null>(null)
+  const [trail, setTrail] = useState<SegmentItem[]>([])
+  const [destination, setDestination] = useState<SegmentItem>()
+  const refs = useRef(new Map<SegmentItem, HTMLDetailsElement>())
+  useLayoutEffect(() => {
+    if (!target) return
+    const row = refs.current.get(target)
+    if (!row) return
+    row.scrollIntoView?.({ block: 'start', behavior: 'instant' })
+    row.querySelector('summary')?.focus({ preventScroll: true })
+    setFlash(target)
+    setTarget(null)
+  }, [target, filterCat])
+  useEffect(() => {
+    if (!flash) return
+    const timer = setTimeout(() => setFlash(null), 1600)
+    return () => clearTimeout(timer)
+  }, [flash])
   const matches = (x: SegmentItem) => filterCat === null || (filterCat === '__dup' ? (duplicates.counts.get(x.full) ?? 0) > 1 : x.category === filterCat)
   useEffect(() => {
     if (filterCat === null) return
@@ -101,6 +135,32 @@ export function SegmentBlocks({ request, filterCat, t }: SegmentBlocksProps) {
       return next
     })
   }, [filterCat, request])
+  const navigate = (from: SegmentItem, to: SegmentItem) => {
+    if (!matches(to)) onClearFilter?.()
+    setOpenLayers(previous => {
+      const next = new Set(previous)
+      for (const id of ['system', 'history', 'added'] as const) if (request.segments[id].includes(to)) next.add(id)
+      return next
+    })
+    setExpanded(previous => { const next = new Set(previous); next.delete(from); next.add(to); return next })
+    setTarget(to)
+  }
+  const reading: MessageReading = {
+    expanded, flash, returnTo: trail.at(-1), destination,
+    register: (item, element) => { if (element) refs.current.set(item, element); else refs.current.delete(item) },
+    toggle: item => {
+      if (expanded.has(item)) setTarget(item)
+      setExpanded(previous => { const next = new Set(previous); next.has(item) ? next.delete(item) : next.add(item); return next })
+      setTrail([]); setDestination(undefined)
+    },
+    next: (from, to) => { setTrail([]); setDestination(undefined); navigate(from, to) },
+    jump: (from, to) => { setTrail(previous => [...previous, from]); setDestination(to); navigate(from, to) },
+    back: from => {
+      const to = trail.at(-1)
+      if (!to) return
+      setTrail(previous => previous.slice(0, -1)); setDestination(to); navigate(from, to)
+    },
+  }
   const layers = [
     { id: 'system', items: system, count: system.length, chars: system.reduce((n, x) => n + x.chars, 0), unit: 'cat.rows' as const },
     { id: 'tools', items: [], count: tools.length, chars: tools.reduce((n, x) => n + x.chars, 0), unit: 'seg.toolsFrom' as const },
@@ -134,7 +194,7 @@ export function SegmentBlocks({ request, filterCat, t }: SegmentBlocksProps) {
       </summary>
       {open && <div className={css.rows}>
         {layer.id === 'tools' ? ((filterCat === null || filterCat === 'tool-definition') && tools.length > 0 ? <ToolCatalog tools={tools} t={t} /> : <div className={css.emptyNote}>{t(filterCat ? 'lens.noMatch' : 'seg.toolsEmpty')}</div>)
-          : rows.length ? <MessageRows items={rows} counts={duplicates.counts} highlight={filterCat === '__dup'} t={t} />
+          : rows.length ? <MessageRows items={rows} groups={groups} highlight={filterCat === '__dup'} reading={reading} t={t} />
           : <div className={css.emptyNote}>{t(filterCat ? 'lens.noMatch' : layer.id === 'system' ? 'seg.systemEmpty' : 'seg.empty')}</div>}
       </div>}
     </details>

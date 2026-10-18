@@ -65,7 +65,7 @@ export function TokenView({ scope, selectedSeq, request, filterCat, previousResp
                   <span className={css.badge}>×N</span>{t('lens.duplicates')}<span>{fmtK(duplicates.extraChars)}</span>
                 </button>}
               </div>
-              <SegmentBlocks key={`${request.scopeId}-${request.seq}`} request={request} filterCat={filterCat} previousResponseNumber={previousResponseNumber} t={t} />
+              <SegmentBlocks key={`${request.scopeId}-${request.seq}`} request={request} filterCat={filterCat} onClearFilter={() => { if (filterCat !== null) onToggleFilter(filterCat) }} previousResponseNumber={previousResponseNumber} t={t} />
             </div>
           </section>
         </>}

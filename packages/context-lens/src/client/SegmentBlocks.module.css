@@ -30,6 +30,12 @@
 .pre { font-family: var(--dsw-font-family-mono,ui-monospace,monospace); font-size: var(--dsh-panel-text-meta,12px); }
 .fullLabel, .emptyNote { color: var(--dsw-alias-label-tertiary); font-size: var(--dsh-panel-text-meta,12px); overflow-wrap: anywhere; }
 .fullLabel { margin-bottom: 8px; }
+.messageMeta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; line-height: 1.6; }
+.duplicateLinks { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 3px 6px; padding-left: 10px; border-left: 1px solid var(--dsw-alias-border-l2); }
+.duplicateLinks button, .returnLink { font: inherit; line-height: inherit; color: var(--dsw-alias-state-business-primary); border: 0; padding: 0; background: transparent; cursor: pointer; text-align: left; }
+.duplicateLinks button:hover, .returnLink:hover { text-decoration: underline; }
+.duplicateLinks button:focus-visible, .returnLink:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 2px; }
+.item[data-jump='true'] > .row { background: color-mix(in srgb,var(--dsw-alias-state-business-primary) 14%,var(--dsw-alias-bg-layer-1)); }
 .full .fullLabel:not(:first-child) { margin-top: 12px; }
 .emptyNote { padding: 8px 12px; }
 .errorNote { color: var(--dsw-alias-state-error-primary); font-size: var(--dsh-panel-text-meta,11px); overflow-wrap: anywhere; }
