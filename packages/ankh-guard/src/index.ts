@@ -364,7 +364,7 @@ function registerRestartSkill(ctx: Context, stateDir: string): void {
       description,
       content,
       source: 'runtime',
-      provider: 'ankh-guard',
+      provider: '@khorsheed/dsh-ankh-guard',
     }))
     writeSkillRegistration(stateDir, { registered: true, at: Date.now() })
   } catch (error) {

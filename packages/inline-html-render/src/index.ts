@@ -71,7 +71,7 @@ function readSkill(
       description,
       content,
       source: 'runtime' as const,
-      provider: 'inline-html-render',
+      provider: '@khorsheed/dsh-inline-html-render',
     }
   } catch (error) {
     ctx.logger.warn(`inline-html-render: shipped SKILL.md unreadable (${String(error)}) — the ${skillName} skill is not registered`)

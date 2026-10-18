@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import {
   checkInjectName,
+  findBareSkillProviders,
   findCrossImports,
   findInjects,
   isAllowedEdge,
@@ -577,6 +578,30 @@ describe('findCrossImports', () => {
 
   it('ignores prose mentions that are not imports', () => {
     expect(findCrossImports('// ships in the bundle @khorsheed/dsh-local-agent patch')).toEqual([])
+  })
+})
+
+describe('findBareSkillProviders', () => {
+  it('flags bare provider literals on runtime skill registrations', () => {
+    const src = [
+      `skills.register({`,
+      `  name,`,
+      `  source: 'runtime',`,
+      `  provider: 'ankh-guard',`,
+      `})`,
+    ].join('\n')
+    expect(findBareSkillProviders(src)).toEqual(['ankh-guard'])
+  })
+
+  it('accepts the full package name and PACKAGE_NAME references', () => {
+    expect(findBareSkillProviders(`skills.register({ source: 'runtime', provider: '@khorsheed/dsh-game' })`)).toEqual([])
+    expect(findBareSkillProviders(`skills.register({ source: 'runtime', provider: PACKAGE_NAME })`)).toEqual([])
+  })
+
+  it('ignores provider literals outside runtime-skill files', () => {
+    // local-agent provider ids (provider: 'kimi-cli' & friends) are not skill
+    // attributions — the gate is the `source: 'runtime'` marker.
+    expect(findBareSkillProviders(`const meta = { provider: 'kimi-cli' }`)).toEqual([])
   })
 })
 

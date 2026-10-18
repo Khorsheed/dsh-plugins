@@ -85,8 +85,9 @@ describe('inline HTML authoring skill registration', () => {
     // scripts/assets). Per the catalog registration protocol it OMITS
     // resourceBase so the catalog renders a virtual single-SKILL.md node — it
     // does NOT point at a directory holding only SKILL.md. Provider is still
-    // reported so the catalog labels the card.
-    expect(reg?.provider).toBe('inline-html-render')
+    // reported so the catalog labels the card — the full package name, which
+    // is the namespace every plugin's skill card shows.
+    expect(reg?.provider).toBe('@khorsheed/dsh-inline-html-render')
     expect(reg?.resourceBase).toBeUndefined()
     const artifact = registrations.find(skill => skill.name === '3d-artifact')
     expect(artifact?.description).toContain('3D')
@@ -94,7 +95,7 @@ describe('inline HTML authoring skill registration', () => {
     expect(artifact?.content).toContain('connect-src')
     expect(artifact?.content).not.toContain('/Users/')
     expect(artifact?.source).toBe('runtime')
-    expect(artifact?.provider).toBe('inline-html-render')
+    expect(artifact?.provider).toBe('@khorsheed/dsh-inline-html-render')
     expect(artifact?.resourceBase).toBeUndefined()
   })
 

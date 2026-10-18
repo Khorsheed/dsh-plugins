@@ -36,6 +36,9 @@
  *   6. publish metadata  non-private packages point `repository` at this
  *                        monorepo with the right `directory`, and carry
  *                        `dsh-plugin` in `keywords`
+ *   7. skill attribution a runtime skill registration's `provider` literal is
+ *                        the full package name (`@khorsheed/dsh-…`) — the
+ *                        capability catalog's skill card shows it verbatim
  *
  * Run by hand (`pnpm check:plugins`); the vitest spec re-runs it against the
  * real tree so `pnpm test:scripts` keeps the tree conformant.
@@ -343,6 +346,27 @@ export function findCrossImports(source: string): string[] {
   let m: RegExpExecArray | null
   while ((m = re.exec(source)) !== null) {
     out.add(m[1])
+  }
+  return [...out]
+}
+
+/**
+ * Bare `provider: '<literal>'` values on runtime skill registrations — only
+ * meaningful in files that register runtime skills (gated on `source:
+ * 'runtime'`, a skill-registration marker no other code in the tree uses).
+ * The capability catalog's skill card shows `provider` verbatim as the source
+ * label, so a bare word reads as another namespace next to every other card's
+ * `@khorsheed/dsh-…` (2026-10-18: ankh-guard and inline-html-render shipped
+ * bare words). A `PACKAGE_NAME` reference needs no literal and never matches.
+ */
+export function findBareSkillProviders(source: string): string[] {
+  if (!source.includes(`source: 'runtime'`)) return []
+  const out = new Set<string>()
+  const re = /provider:\s*'([^']+)'/g
+  let m: RegExpExecArray | null
+  while ((m = re.exec(source)) !== null) {
+    if (m[1]!.startsWith('@khorsheed/dsh-')) continue
+    out.add(m[1]!)
   }
   return [...out]
 }
@@ -678,6 +702,9 @@ export function scanPackage(pkg: Pkg, allNames: ReadonlyArray<string>): Finding[
     for (const svc of findInjects(text)) {
       const why = checkInjectName(dir, svc)
       if (why) add(src.slice(path.length + 1), 'inject', why)
+    }
+    for (const provider of findBareSkillProviders(text)) {
+      add(src.slice(path.length + 1), 'skill attribution', `runtime skill provider '${provider}' — the catalog shows it verbatim; use the full package name (@khorsheed/dsh-…)`)
     }
   }
   for (const field of ['dependencies', 'devDependencies', 'peerDependencies'] as const) {
