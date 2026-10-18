@@ -140,7 +140,7 @@ export class VideoStudioRemoteService extends TypertRemoteService<VideoStudioRem
 
   @Remote('replaceAll')
   async replaceAll(request: ReplaceRequest): Promise<ProjectView> {
-    await this.svc.replaceAll(request.projectId, request.from, request.to, 'user', request.remember)
+    await this.svc.replaceAll(request.projectId, request.from, request.to, 'user')
     return this.svc.view(request.projectId)
   }
 

@@ -18,7 +18,7 @@ import css from './VideoPane.module.css'
 type T = VideoPaneProps['t']
 type Act = (fn: () => Promise<RemoteResult<ProjectView>>) => Promise<void>
 
-type Filter = 'all' | 'pending' | 'user' | 'agent' | 'hits'
+type Filter = 'all' | 'pending' | 'user' | 'agent'
 type Mode = 'edited' | 'original'
 type View = 'final' | 'source'
 const PAGE = 60
@@ -79,12 +79,14 @@ export function TranscriptTab({ p, v, act }: { p: VideoPaneProps; v: ProjectView
   const [finding, setFinding] = useState(false)
   const [query, setQuery] = useState('')
   const [replacement, setReplacement] = useState('')
-  const [remember, setRemember] = useState(true)
+  const [hitIndex, setHitIndex] = useState(0)
+  const [focusTick, setFocusTick] = useState(0)
   const [sel, setSel] = useState<Selection | null>(null)
   const [selPos, setSelPos] = useState<{ x: number; y: number; below: boolean } | null>(null)
-  const [fixDraft, setFixDraft] = useState<string | null>(null)
   const listRef = useRef<HTMLDivElement | null>(null)
   const sentinel = useRef<HTMLDivElement | null>(null)
+  const bubbleRef = useRef<HTMLDivElement | null>(null)
+  const replaceRef = useRef<HTMLInputElement | null>(null)
 
   const edits = project.edits
   const removed = useMemo(() => removedRanges(v.durationSec, edits), [v.durationSec, edits])
@@ -138,8 +140,7 @@ export function TranscriptTab({ p, v, act }: { p: VideoPaneProps; v: ProjectView
   const segs = project.transcript.filter((s) =>
     filter === 'all' ? true
       : filter === 'pending' ? touches(s, proposed)
-        : filter === 'hits' ? hits.some((h) => h.segmentId === s.id)
-          : touches(s, cutsBy(filter)))
+        : touches(s, cutsBy(filter)))
     .filter((s) => view === 'source' || s.tokens.some((tk) => !isRemoved(tk.start, tk.end, removed)))
   const activeIndex = segs.findIndex((s) => now >= s.start && now < s.end)
   const activeId = activeIndex >= 0 ? segs[activeIndex]!.id : null
@@ -185,18 +186,16 @@ export function TranscriptTab({ p, v, act }: { p: VideoPaneProps; v: ProjectView
     })
     if (Number.isFinite(start) && end > start) {
       setSel({ start, end, text })
-      setFixDraft(null)
       const r = s.getRangeAt(0).getBoundingClientRect()
       const lr = root.getBoundingClientRect()
-      const x = Math.min(Math.max(r.left + r.width / 2 - lr.left, 110), lr.width - 110)
-      const y = (r.top < 130 ? r.bottom + 8 : r.top - 10) - lr.top
-      setSelPos({ x, y, below: r.top < 130 })
+      const x = Math.min(Math.max(r.left + r.width / 2 - lr.left, 78), lr.width - 78)
+      const y = (r.top < 160 ? r.bottom + 8 : r.top - 10) - lr.top
+      setSelPos({ x, y, below: r.top < 160 })
     }
   }
   const clearSel = () => {
     setSel(null)
     setSelPos(null)
-    setFixDraft(null)
     window.getSelection()?.removeAllRanges()
   }
 
@@ -214,6 +213,64 @@ export function TranscriptTab({ p, v, act }: { p: VideoPaneProps; v: ProjectView
     setUndo(null)
   }
 
+  // ── find bar: hit navigation ──
+  const current = hits.length ? Math.min(hitIndex, hits.length - 1) : 0
+  const currentHit = finding && hits.length ? (hits[current] ?? null) : null
+  const step = (d: 1 | -1) => {
+    if (hits.length) setHitIndex((current + d + hits.length) % hits.length)
+  }
+  /** Replace only the current hit; the list recomputes, the index stays = next hit. */
+  const replaceOne = () => {
+    if (!currentHit) return
+    void act(() => p.fixText({ projectId: project.id, start: currentHit.start, end: currentHit.end, text: replacement }))
+  }
+  /** 「改字…」: hand the selection to the find bar, aimed at the very occurrence selected. */
+  const startFix = () => {
+    if (!sel) return
+    const all = findOccurrences(project.transcript, edits, sel.text, { includeRemoved: view === 'source' })
+    const at = all.findIndex((h) => h.start < sel.end && h.end > sel.start)
+    setFinding(true)
+    setQuery(sel.text)
+    setReplacement(sel.text)
+    setHitIndex(at >= 0 ? at : 0)
+    setFocusTick((n) => n + 1)
+    clearSel()
+  }
+
+  // a 「改字…」 jump focuses the replacement box with its text selected
+  useEffect(() => {
+    if (!finding || !focusTick) return
+    replaceRef.current?.focus()
+    replaceRef.current?.select()
+  }, [finding, focusTick])
+  // the menu closes on any click outside it
+  useEffect(() => {
+    if (!sel) return
+    const away = (e: MouseEvent) => {
+      if (bubbleRef.current && e.target instanceof Node && !bubbleRef.current.contains(e.target)) clearSel()
+    }
+    document.addEventListener('mousedown', away)
+    return () => document.removeEventListener('mousedown', away)
+  }, [sel])
+  // bring the current hit into view — once per (query, index, hit), not per render
+  const jumpedTo = useRef('')
+  useEffect(() => {
+    if (!currentHit) {
+      jumpedTo.current = ''
+      return
+    }
+    const segIndex = segs.findIndex((s) => s.id === currentHit.segmentId)
+    if (segIndex < 0) return // filtered out of the rendered list
+    if (segIndex >= limit) {
+      setLimit(segIndex + PAGE)
+      return // the effect re-runs once the rows exist
+    }
+    const key = `${query} | ${current} | ${currentHit.segmentId} | ${currentHit.start}`
+    if (jumpedTo.current === key) return
+    jumpedTo.current = key
+    listRef.current?.querySelector(`[data-seg="${currentHit.segmentId}"]`)?.scrollIntoView({ block: 'center' })
+  })
+
   if (!project.transcript.length) return <div className={css.empty}>{t('transcript.empty')}</div>
 
   const userCount = project.transcript.filter((s) => touches(s, cutsBy('user'))).length
@@ -230,21 +287,27 @@ export function TranscriptTab({ p, v, act }: { p: VideoPaneProps; v: ProjectView
           <button type="button" data-on={view === 'source'} onClick={() => setView('source')}>{t('transcript.viewSource')}</button>
         </span>
         <span className={css.stats}>{t('transcript.stats', { duration: formatClock(v.durationSec), output: formatClock(v.outputSec) })}</span>
-        <button type="button" className={css.btn} aria-pressed={finding} onClick={() => { setFinding((f) => !f); if (finding && filter === 'hits') setFilter('all') }}>{t('find.toggle')}</button>
+        <button type="button" className={css.btn} aria-pressed={finding} onClick={() => setFinding((f) => !f)}>{t('find.toggle')}</button>
         <button type="button" className={css.btn} onClick={() => void act(() => p.scan(project.id))}>{t('transcript.scan')}</button>
       </div>
 
       {finding && (
         <div className={css.findBar}>
-          <input id="vs-find" className={css.inlineInput} value={query} placeholder={t('find.placeholder')} onChange={(e) => setQuery(e.target.value)} autoFocus />
-          <span className={css.muted}>{query.trim() ? t('find.count', { count: String(hits.length) }) : ''}</span>
-          <button type="button" className={css.btn} disabled={!hits.length} onClick={() => setFilter('hits')}>{t('find.show')}</button>
+          <input id="vs-find" className={css.inlineInput} value={query} placeholder={t('find.placeholder')} autoFocus
+            onChange={(e) => { setQuery(e.target.value); setHitIndex(0) }}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); step(e.shiftKey ? -1 : 1) } else if (e.key === 'Escape') setFinding(false) }} />
+          <span className={css.muted}>{query.trim() ? (hits.length ? t('find.position', { index: String(current + 1), count: String(hits.length) }) : t('find.count', { count: '0' })) : ''}</span>
+          <button type="button" className={css.btn} disabled={!hits.length} title={t('find.prev')} aria-label={t('find.prev')} onClick={() => step(-1)}>↑</button>
+          <button type="button" className={css.btn} disabled={!hits.length} title={t('find.next')} aria-label={t('find.next')} onClick={() => step(1)}>↓</button>
           <button type="button" className={css.danger} disabled={!hits.length} onClick={() => void act(() => p.cutMatches({ projectId: project.id, needle: query }))}>{t('find.cutAll')}</button>
+          <button type="button" className={css.btn} title={t('find.close')} aria-label={t('find.close')} onClick={() => setFinding(false)}>×</button>
           <div className={css.findRow}>
-            <input id="vs-replace" className={css.inlineInput} value={replacement} placeholder={t('find.replacePlaceholder')} onChange={(e) => setReplacement(e.target.value)} />
-            <label className={css.check}><input id="vs-remember" type="checkbox" checked={remember} disabled={!project.showId} onChange={(e) => setRemember(e.target.checked)} />{t('find.remember')}</label>
-            <button type="button" className={css.btn} disabled={!query.trim() || (!hits.length && !remember)}
-              onClick={() => void act(() => p.replaceAll({ projectId: project.id, from: query, to: replacement, remember: remember && !!project.showId }))}>{t('find.replaceAll')}</button>
+            <input id="vs-replace" ref={replaceRef} className={css.inlineInput} value={replacement} placeholder={t('find.replacePlaceholder')}
+              onChange={(e) => setReplacement(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); step(1) } else if (e.key === 'Escape') setFinding(false) }} />
+            <button type="button" className={css.btn} disabled={!query.trim() || !hits.length} onClick={replaceOne}>{t('find.replaceOne')}</button>
+            <button type="button" className={css.btn} disabled={!query.trim() || !hits.length}
+              onClick={() => void act(() => p.replaceAll({ projectId: project.id, from: query, to: replacement }))}>{t('find.replaceAll')}</button>
           </div>
         </div>
       )}
@@ -274,7 +337,6 @@ export function TranscriptTab({ p, v, act }: { p: VideoPaneProps; v: ProjectView
           { id: 'pending', label: t('transcript.filterPending'), count: pendingCount },
           { id: 'user', label: t('transcript.filterUser'), count: userCount },
           { id: 'agent', label: t('transcript.filterAgent'), count: agentCount },
-          ...(finding && query.trim() ? [{ id: 'hits' as const, label: t('transcript.filterHits'), count: new Set(hits.map((h) => h.segmentId)).size }] : []),
         ]}
       />
       )}
@@ -295,7 +357,7 @@ export function TranscriptTab({ p, v, act }: { p: VideoPaneProps; v: ProjectView
             <Fragment key={seg.id}>
               {seam !== undefined && <div className={css.seam}><span>{t('transcript.seam', { n: String(seams.indexOf(seam) + 2) })}</span></div>}
               <Paragraph t={t} view={view} project={project} seg={seg} sp={speakers.get(seg.speakerId)} removed={removed} appliedCuts={appliedCuts}
-                proposed={proposed} hits={hits} now={now} active={seg.id === activeId} playing={playing} edits={edits}
+                proposed={proposed} hits={hits} currentHit={currentHit} now={now} active={seg.id === activeId} playing={playing} edits={edits}
                 onCut={(start, end, cut) => void act(() => p.setCut({ projectId: project.id, start, end, cut }))}
                 onPlay={(at) => playFrom(at)}
                 onReassign={(speakerId) => void act(() => p.reassignSegment({ projectId: project.id, segmentId: seg.id, speakerId }))} />
@@ -304,27 +366,13 @@ export function TranscriptTab({ p, v, act }: { p: VideoPaneProps; v: ProjectView
         })}
         {segs.length > limit && <div ref={sentinel} className={css.muted}>{t('state.loading')}</div>}
         {sel && selPos && (
-          <div className={css.bubble} style={{ left: selPos.x, top: selPos.y }} data-below={selPos.below || undefined}>
-            {fixDraft === null ? (
-              <>
-                <button type="button" className={css.bubbleBtn} title={t('player.fromHere')} onClick={() => { playFrom(sel.start); clearSel() }}>▶</button>
-                <span className={css.bubbleSep} />
-                <button type="button" className={css.bubbleDanger} onClick={() => { if (view === 'final') cutWithUndo(sel.start, sel.end, sel.text); else void act(() => p.setCut({ projectId: project.id, start: sel.start, end: sel.end, cut: true })); clearSel() }}>{t('select.cut')}</button>
-                {removed.some((r) => r.start < sel.end && r.end > sel.start) && (
-                  <button type="button" className={css.bubbleBtn} onClick={() => { void act(() => p.setCut({ projectId: project.id, start: sel.start, end: sel.end, cut: false })); clearSel() }}>{t('select.restore')}</button>
-                )}
-                <button type="button" className={css.bubbleBtn} onClick={() => setFixDraft(sel.text)}>{t('select.fix')}</button>
-                <button type="button" className={css.bubbleBtn} onClick={() => { const q = sel.text; clearSel(); setFinding(true); setQuery(q) }}>{t('select.findSame')}</button>
-                <span className={css.bubbleSep} />
-                <button type="button" className={css.bubbleBtn} aria-label={t('action.cancel')} onClick={clearSel}>×</button>
-              </>
-            ) : (
-              <form className={css.bubbleFix} onSubmit={(e) => { e.preventDefault(); void act(() => p.fixText({ projectId: project.id, start: sel.start, end: sel.end, text: fixDraft })); clearSel() }}>
-                <input id="vs-fix" className={css.inlineInput} value={fixDraft} onChange={(e) => setFixDraft(e.target.value)} autoFocus />
-                <button type="submit" className={css.primary}>{t('action.save')}</button>
-                <button type="button" className={css.bubbleBtn} onClick={() => setFixDraft(null)}>{t('action.cancel')}</button>
-              </form>
+          <div ref={bubbleRef} className={css.bubble} style={{ left: selPos.x, top: selPos.y }} data-below={selPos.below || undefined}>
+            <button type="button" className={css.bubbleBtn} onClick={() => { playFrom(sel.start); clearSel() }}><span aria-hidden="true">▶</span>{t('player.fromHere')}</button>
+            <button type="button" className={css.bubbleDanger} onClick={() => { if (view === 'final') cutWithUndo(sel.start, sel.end, sel.text); else void act(() => p.setCut({ projectId: project.id, start: sel.start, end: sel.end, cut: true })); clearSel() }}><span aria-hidden="true">✂</span>{t('select.cut')}</button>
+            {removed.some((r) => r.start < sel.end && r.end > sel.start) && (
+              <button type="button" className={css.bubbleBtn} onClick={() => { void act(() => p.setCut({ projectId: project.id, start: sel.start, end: sel.end, cut: false })); clearSel() }}><span aria-hidden="true">↩</span>{t('select.restore')}</button>
             )}
+            <button type="button" className={css.bubbleBtn} title={t('select.fixHint')} onClick={startFix}><span aria-hidden="true">✎</span>{t('select.fix')}</button>
           </div>
         )}
       </div>
@@ -356,9 +404,9 @@ export function TranscriptTab({ p, v, act }: { p: VideoPaneProps; v: ProjectView
   )
 }
 
-function Paragraph({ t, view, project, seg, sp, removed, appliedCuts, proposed, hits, now, active, playing, edits, onCut, onPlay, onReassign }: {
+function Paragraph({ t, view, project, seg, sp, removed, appliedCuts, proposed, hits, currentHit, now, active, playing, edits, onCut, onPlay, onReassign }: {
   t: T; view: View; project: Project; seg: Segment; sp: Speaker | undefined; removed: Range[]; appliedCuts: Edit[]; proposed: Edit[]
-  hits: { start: number; end: number }[]; now: number; active: boolean; playing: boolean; edits: Edit[]
+  hits: { start: number; end: number }[]; currentHit: { start: number; end: number } | null; now: number; active: boolean; playing: boolean; edits: Edit[]
   onCut: (start: number, end: number, cut: boolean) => void; onPlay: (at: number) => void; onReassign: (speakerId: string) => void
 }): ReactNode {
   const [menu, setMenu] = useState(false)
@@ -369,6 +417,7 @@ function Paragraph({ t, view, project, seg, sp, removed, appliedCuts, proposed, 
   const cutBy = (tok: Token): Edit | undefined => appliedCuts.find((e) => e.start <= tok.start + EPS && e.end >= tok.end - EPS && tok.end - tok.start > EPS)
   const inProposal = (tok: Token) => proposed.find((x) => x.kind === 'cut' && x.start <= tok.start + EPS && x.end >= tok.end - EPS && tok.end - tok.start > EPS)
   const isHit = (tok: Token) => hits.some((h) => h.start <= tok.start + EPS && h.end >= tok.end - EPS)
+  const isCurrent = (tok: Token) => currentHit != null && currentHit.start <= tok.start + EPS && currentHit.end >= tok.end - EPS
   const fixed = (tok: Token) => edits.some((e) => e.kind === 'text' && e.state === 'applied' && Math.abs(e.start - tok.start) < EPS && Math.abs(e.end - tok.end) < EPS)
   const pieces: ReactNode[] = []
   phrases.forEach((ph, i) => {
@@ -395,6 +444,7 @@ function Paragraph({ t, view, project, seg, sp, removed, appliedCuts, proposed, 
           return (
             <span key={k} className={css.tok} data-s={tok.start} data-e={tok.end}
               data-cut={cut ? cut.origin : undefined} data-proposed={prop ? true : undefined} data-hit={isHit(tok) || undefined}
+              data-hit-current={isCurrent(tok) || undefined}
               data-now={nowTok || undefined} data-fixed={fixed(tok) || undefined}
               title={cut?.reason ?? prop?.reason ?? (fixed(tok) ? t('select.fixedFrom', { from: edits.find((e) => e.kind === 'text' && e.state === 'applied' && Math.abs(e.start - tok.start) < EPS)?.from ?? '' }) : undefined)}>{tok.text}</span>
           )

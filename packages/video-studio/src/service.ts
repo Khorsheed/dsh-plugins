@@ -614,24 +614,15 @@ export class VideoStudioService {
 
   /**
    * Replace every occurrence of `from` with `to`. The user's replace applies at
-   * once; the model's lands as one proposal group. `remember` also stores the
-   * rule in the show so every later transcript gets it.
+   * once; the model's lands as one proposal group.
    */
-  async replaceAll(projectId: string, from: string, to: string, origin: Origin, remember: boolean): Promise<{ project: Project; count: number; groupId: string | null }> {
+  async replaceAll(projectId: string, from: string, to: string, origin: Origin): Promise<{ project: Project; count: number; groupId: string | null }> {
     let count = 0
     let groupId: string | null = null
-    const project = await this.mutate(projectId, origin, async (p) => {
+    const project = await this.mutate(projectId, origin, (p) => {
       const hits = findOccurrences(p.transcript, p.edits, from)
       count = hits.length
-      if (remember && p.showId && from.trim()) {
-        await this.store.locked(`show:${p.showId}`, async () => {
-          const show = await this.mustShow(p.showId!)
-          show.settings = { ...show.settings, replacements: { ...show.settings.replacements, [from.trim()]: to } }
-          await this.store.saveShow(show)
-        })
-        p.settings = { ...p.settings, replacements: { ...p.settings.replacements, [from.trim()]: to } }
-      }
-      if (!hits.length) return remember ? `替换规则「${from}」→「${to}」存进节目` : undefined
+      if (!hits.length) return
       groupId = newId('g')
       p.groups.push({ id: groupId, title: `改字：「${from}」→「${to}」（${hits.length} 处）`, createdAt: new Date().toISOString() })
       for (const h of hits) {
@@ -979,7 +970,6 @@ export class VideoStudioService {
         tokens: seg.tokens.map((t) => ({ text: t.text, start: t.start, end: t.end, kind: 'word' as const })),
       }))
       q.status = 'editing'
-      applyReplacements(q, 'user')
     })
     // matched voices: bump episode counts
     if (show) {
@@ -1135,18 +1125,6 @@ function originalText(p: Project, start: number, end: number): string {
     for (const t of seg.tokens) if (t.start >= start - 1e-3 && t.end <= end + 1e-3) out += t.text
   }
   return out
-}
-
-/** Apply the project's replacement table to a fresh transcript as applied text edits. */
-function applyReplacements(p: Project, origin: Origin): void {
-  for (const [from, to] of Object.entries(p.settings.replacements ?? {})) {
-    if (!from.trim()) continue
-    const hits = findOccurrences(p.transcript, p.edits, from)
-    if (!hits.length) continue
-    const group = newId('g')
-    p.groups.push({ id: group, title: `节目替换规则「${from}」→「${to}」（${hits.length} 处）`, createdAt: new Date().toISOString() })
-    for (const h of hits) p.edits.push({ id: newId('e'), kind: 'text', start: h.start, end: h.end, text: to, from: h.text, origin, state: 'applied', group })
-  }
 }
 
 export function referenceDuration(p: Project): number {

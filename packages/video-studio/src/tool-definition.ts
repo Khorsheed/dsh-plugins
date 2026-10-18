@@ -185,7 +185,7 @@ export function defineVideoTools(svc: VideoStudioService) {
             const lines: string[] = []
             for (const f of args.fixes ?? []) {
               if (!f.from || f.to === undefined) continue
-              const r = await svc.replaceAll(id, f.from, f.to, 'agent', false)
+              const r = await svc.replaceAll(id, f.from, f.to, 'agent')
               lines.push(r.groupId ? `${r.groupId}「${f.from}」→「${f.to}」${r.count} 处` : `「${f.from}」没有出现`)
             }
             return lines.length ? `已提议改字（等用户确认）：${lines.join('；')}` : 'fix_text 需要 fixes: [{from, to}]'
