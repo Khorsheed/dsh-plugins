@@ -12,7 +12,7 @@
  *      docs/ops.md step 3)
  *   3. refresh the profile manifest (dep → file:<tgz>, version bumps handled)
  *      + family overrides, then a clean profile install. A named FAMILY bundle
- *      (`dsh.bundle.kind: 'family'`) additionally retreats its members: each
+ *      (`dsh.bundle.kind: 'family'` or `'mode'`) additionally retreats its members: each
  *      member leaves the profile's direct dependencies and the bundles roster
  *      (its own patch then never reconciles — reconcilePlugins folds only
  *      DIRECT dsh.bundle dependencies — so the bundle patch mounts the
@@ -263,7 +263,7 @@ try {
     return { dir, pkg, name: pkg.name, version: versionOverride ?? pkg.version }
   })
 
-  // Family member retreat: a named family bundle (`dsh.bundle.kind: 'family'`)
+  // Family member retreat: a named family-like bundle (`kind: 'family' | 'mode'`)
   // takes over its members' canonical rows, so every member leaves the
   // profile's DIRECT dependencies and the bundles roster in step 3. A member
   // update ships by naming the member next to its bundle in ONE call (any
@@ -271,7 +271,7 @@ try {
   // its overrides pin), the bundle registers and retreats it after (step 3).
   const retreat = new Map() // member name → owning family bundle meta
   for (const m of metas) {
-    if (m.pkg.dsh?.bundle?.kind !== 'family') continue
+    if (!(m.pkg.dsh?.bundle?.kind === 'family' || m.pkg.dsh?.bundle?.kind === 'mode')) continue
     for (const member of m.pkg.dsh.bundle.members ?? []) retreat.set(member, m)
   }
 
@@ -436,7 +436,7 @@ try {
     if (m.pkg.dsh?.bundle?.patch && (!installed.dsh?.profile?.bundles?.includes(m.name) || !actual.dsh?.bundle?.patch || !existsSync(join(packageDir, actual.dsh.bundle.patch)))) {
       throw new Error(`${m.name}: installed bundle/patch missing; refusing credential and restart`)
     }
-    if (m.pkg.dsh?.bundle?.kind === 'family') {
+    if ((m.pkg.dsh?.bundle?.kind === 'family' || m.pkg.dsh?.bundle?.kind === 'mode')) {
       for (const member of m.pkg.dsh.bundle.members ?? []) {
         if (metas.some((x) => x.name === member)) continue // co-named members verify on their own pass, with their version
         verifyRetreatedMember(installed, m.name, member)

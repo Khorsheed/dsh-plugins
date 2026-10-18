@@ -551,6 +551,141 @@ describe('family bundles', () => {
   })
 })
 
+describe('mode bundles', () => {
+  // A mode bundle = a family bundle plus exactly one preset row for its
+  // declared dsh.bundle.mode. Fixtures reuse the family vocabulary: one
+  // self-mounting member whose canonical row the bundle re-mounts verbatim.
+  function packagesRoot(specs: Array<{ dir: string; json: Record<string, unknown>; files: Record<string, string> }>) {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-independence-mode-tree-'))
+    for (const s of specs) {
+      const dir = join(root, s.dir)
+      mkdirSync(dir, { recursive: true })
+      writeFileSync(join(dir, 'package.json'), JSON.stringify(s.json))
+      for (const [rel, text] of Object.entries(s.files)) {
+        mkdirSync(dirname(join(dir, rel)), { recursive: true })
+        writeFileSync(join(dir, rel), text)
+      }
+    }
+    return { root, cleanup: () => rmSync(root, { recursive: true, force: true }) }
+  }
+
+  const CARD_MANIFEST = {
+    files: ['lib', 'cordis.patch.yml', 'locale/*.json'],
+    exports: { './locale/*.json': './locale/*.json' },
+  }
+  const member = {
+    dir: 'member',
+    json: {
+      name: '@khorsheed/dsh-member',
+      private: true,
+      ...CARD_MANIFEST,
+      dsh: { bundle: { patch: './cordis.patch.yml' } },
+    },
+    files: {
+      'locale/en.json': `{"meta":{"title":"Member","description":"Demo card."}}`,
+      'locale/zh.json': `{"meta":{"title":"成员","description":"演示卡片。"}}`,
+      'cordis.patch.yml': `- insert:\n    - id: member\n      name: '@khorsheed/dsh-member'\n`,
+    },
+  }
+  const PRESET_ROW = [
+    '    - id: preset-dsh-demo',
+    "      name: '@deepseek-ai/dsh-agent-preset'",
+    '      config:',
+    '        id: dsh-demo',
+    "        name: '演示模式'",
+    '        plugins: []',
+  ].join('\n')
+  const MODE_PATCH = `- insert:\n    - id: member\n      name: '@khorsheed/dsh-member'\n\n${PRESET_ROW}\n`
+  const modeJson = {
+    name: '@khorsheed/dsh-demo',
+    private: true,
+    ...CARD_MANIFEST,
+    dependencies: { '@khorsheed/dsh-member': 'workspace:*' },
+    dsh: {
+      bundle: { patch: './cordis.patch.yml', kind: 'mode', members: ['@khorsheed/dsh-member'], mode: 'dsh-demo' },
+      references: ['@khorsheed/dsh-member'],
+    },
+  }
+  const modeBundle = {
+    dir: 'mode-demo',
+    json: modeJson,
+    files: {
+      'locale/en.json': `{"meta":{"title":"Demo Mode","description":"Demo mode pack."}}`,
+      'locale/zh.json': `{"meta":{"title":"演示模式包","description":"演示模式包。"}}`,
+      'cordis.patch.yml': MODE_PATCH,
+      'src/index.ts': 'export const MODE = 1\n',
+    },
+  }
+
+  it('passes a well-formed mode bundle: verbatim member row plus its one preset row', () => {
+    const { root, cleanup } = packagesRoot([member, modeBundle])
+    try {
+      expect(scanTree(root).findings).toEqual([])
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('requires dsh.bundle.mode matching the preset id, and forbids it on other kinds', () => {
+    const noMode = { ...modeBundle, json: { ...modeJson, dsh: { ...modeJson.dsh, bundle: { patch: './cordis.patch.yml', kind: 'mode', members: ['@khorsheed/dsh-member'] } } } }
+    const { root: rootA, cleanup: cleanA } = packagesRoot([member, noMode])
+    try {
+      expect(scanTree(rootA).findings.some((f) => f.detail.includes('requires dsh.bundle.mode'))).toBe(true)
+    } finally {
+      cleanA()
+    }
+    const familyWithMode = { ...modeBundle, json: { ...modeJson, dsh: { ...modeJson.dsh, bundle: { patch: './cordis.patch.yml', kind: 'family', members: ['@khorsheed/dsh-member'], mode: 'dsh-demo' } } } }
+    const { root: rootB, cleanup: cleanB } = packagesRoot([member, familyWithMode])
+    try {
+      const findings = scanTree(rootB).findings
+      expect(findings.some((f) => f.detail.includes('only mode bundles carry a preset row'))).toBe(true)
+    } finally {
+      cleanB()
+    }
+  })
+
+  it('flags a missing/duplicated preset row and a row id that does not match the mode', () => {
+    const noPreset = { ...modeBundle, files: { ...modeBundle.files, 'cordis.patch.yml': `- insert:\n    - id: member\n      name: '@khorsheed/dsh-member'\n` } }
+    const { root: rootA, cleanup: cleanA } = packagesRoot([member, noPreset])
+    try {
+      expect(scanTree(rootA).findings.some((f) => f.detail.includes('exactly one') && f.detail.includes('preset-dsh-demo'))).toBe(true)
+    } finally {
+      cleanA()
+    }
+    const wrongId = { ...modeBundle, files: { ...modeBundle.files, 'cordis.patch.yml': MODE_PATCH.replace('preset-dsh-demo', 'preset-dsh-other') } }
+    const { root: rootB, cleanup: cleanB } = packagesRoot([member, wrongId])
+    try {
+      expect(scanTree(rootB).findings.some((f) => f.detail.includes('exactly one'))).toBe(true)
+    } finally {
+      cleanB()
+    }
+  })
+
+  it('flags a stray extra row and a second mode bundle claiming the same mode', () => {
+    const stray = {
+      ...modeBundle,
+      files: { ...modeBundle.files, 'cordis.patch.yml': `${MODE_PATCH}\n    - id: stranger\n      name: '@khorsheed/dsh-stranger'\n` },
+    }
+    const { root: rootA, cleanup: cleanA } = packagesRoot([member, stray])
+    try {
+      expect(scanTree(rootA).findings.some((f) => f.kind === 'mode bundle' && f.detail.includes('named @khorsheed/dsh-stranger'))).toBe(true)
+    } finally {
+      cleanA()
+    }
+    const rival = {
+      dir: 'mode-rival',
+      json: { ...modeJson, name: '@khorsheed/dsh-rival' },
+      files: modeBundle.files,
+    }
+    const { root: rootB, cleanup: cleanB } = packagesRoot([member, modeBundle, rival])
+    try {
+      expect(scanTree(rootB).findings.some((f) => f.kind === 'bundle kind' && f.detail.includes('"dsh-demo" is claimed by'))).toBe(true)
+    } finally {
+      cleanB()
+    }
+  })
+})
+
 describe('findInjects', () => {
   it('parses export const inject arrays', () => {
     expect(findInjects(`export const inject = ['localAgent', 'subagents', "subprocess"]`))
