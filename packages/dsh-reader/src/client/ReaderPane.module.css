@@ -759,34 +759,44 @@
   overflow-x: auto;
 }
 
-/* An embed's stand-in (extract-article's embedLink): the live frame or player
-   cannot render here, so the link that opens it sits where it belonged — a
-   bordered block with the embed's own title, not a bare inline citation. */
-.article [data-reader-embed] > a {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 9px 12px;
+/* A kept embed (extract-article's embedElement): the sandboxed frame fills the
+   column at the page's own aspect ratio; the caption link is the way out when
+   the frame cannot load. */
+.article [data-reader-embed] {
+  margin: 0 0 12px;
+}
+
+.article [data-reader-embed] iframe {
+  display: block;
+  width: 100%;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 8px;
-  color: var(--dsw-alias-label-secondary);
-  font-size: 12px;
-  line-height: 17px;
+  background: var(--dsw-alias-bg-layer-1);
 }
 
-.article [data-reader-embed] > a::after {
-  content: "↗";
-  margin-left: auto;
+/* The page gave no aspect box: a readable default height. */
+.article [data-reader-embed] iframe:not([style]) {
+  height: 360px;
 }
 
-.article [data-reader-embed] > a:hover {
-  border-color: var(--dsw-alias-border-l3);
-  color: var(--dsw-alias-label-primary);
-  text-decoration: none;
+.article [data-reader-embed] > a {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
 }
 
 .article video {
+  display: block;
+  max-width: 100%;
   height: auto;
+  margin: 4px 0 12px;
+  border-radius: 8px;
+}
+
+.article audio {
+  width: 100%;
+  margin: 4px 0 12px;
 }
 
 .article h1,

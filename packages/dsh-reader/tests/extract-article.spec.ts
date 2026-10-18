@@ -497,25 +497,31 @@ describe('the lead image outside the text block is grafted in', () => {
 })
 
 /**
- * Embeds: a live frame or player cannot render in the reader, but dropping it
- * left a hole exactly where the prose pointed at it ("see the table below" —
- * Anthropic's self-replicating piece carries 16 iframe charts). A content
- * embed becomes a placeholder link; a tracker stays dropped.
+ * Embeds: a content embed stays IN the body — a sandboxed opaque-origin iframe
+ * (Anthropic's artifact charts render there) or a native controls-only media
+ * element — with a caption link as the way out. A tracker never gets a frame.
  */
-describe('embeds become placeholder links, trackers stay dropped', () => {
-  it('an iframe with a title becomes a link to the artifact', () => {
+describe('embeds render inline, trackers stay dropped', () => {
+  it('an iframe with a title becomes a sandboxed frame plus its caption link', () => {
     const out = normalizeRichText(
-      '<div><iframe src="/artifacts/chart.html" title="Embedded artifact" loading="lazy" sandbox="allow-scripts"></iframe></div>',
+      '<div style="padding-bottom:75%"><iframe src="/artifacts/chart.html" title="Embedded artifact" loading="lazy" sandbox="allow-scripts"></iframe></div>',
       'https://example.com/post/',
     )
-    expect(out).toBe('<p data-reader-embed="iframe"><a href="https://example.com/artifacts/chart.html" rel="noopener noreferrer" target="_blank">Embedded artifact</a></p>')
+    expect(out).toBe(
+      '<div data-reader-embed="iframe">'
+      + '<iframe src="https://example.com/artifacts/chart.html" title="Embedded artifact" sandbox="allow-scripts" loading="lazy" referrerpolicy="no-referrer" style="aspect-ratio: 1.3333"></iframe>'
+      + '<a href="https://example.com/artifacts/chart.html" rel="noopener noreferrer" target="_blank">Embedded artifact</a>'
+      + '</div>',
+    )
   })
 
-  it('a video links its file, from src or from a source child', () => {
-    expect(normalizeRichText('<video src="/media/tour.mp4" controls></video>', 'https://example.com/'))
-      .toBe('<p data-reader-embed="video"><a href="https://example.com/media/tour.mp4" rel="noopener noreferrer" target="_blank">example.com</a></p>')
-    expect(normalizeRichText('<video controls><source src="/media/tour.webm"></video>', 'https://example.com/'))
-      .toBe('<p data-reader-embed="video"><a href="https://example.com/media/tour.webm" rel="noopener noreferrer" target="_blank">example.com</a></p>')
+  it('a video or audio file becomes a native controls player that preloads nothing', () => {
+    expect(normalizeRichText('<video src="/media/tour.mp4" autoplay></video>', 'https://example.com/'))
+      .toBe('<video controls preload="none" src="https://example.com/media/tour.mp4"></video>')
+    expect(normalizeRichText('<video controls poster="/media/poster.png"><source src="/media/tour.webm"></video>', 'https://example.com/'))
+      .toBe('<video controls preload="none" src="https://example.com/media/tour.webm" poster="https://example.com/media/poster.png"></video>')
+    expect(normalizeRichText('<audio src="/media/ep.mp3"></audio>', 'https://example.com/'))
+      .toBe('<audio controls preload="none" src="https://example.com/media/ep.mp3"></audio>')
   })
 
   it('trackers stay dropped: hidden, pixel-sized, or untitled and unsized', () => {
@@ -524,9 +530,11 @@ describe('embeds become placeholder links, trackers stay dropped', () => {
     expect(normalizeRichText('<p>x</p><iframe src="https://t.example.com/px"></iframe>')).toBe('<p>x</p>')
   })
 
-  it('an untitled iframe needs content-sized dimensions', () => {
-    expect(normalizeRichText('<iframe src="https://www.youtube.com/embed/abc" width="560" height="315"></iframe>', 'https://example.com/'))
-      .toBe('<p data-reader-embed="iframe"><a href="https://www.youtube.com/embed/abc" rel="noopener noreferrer" target="_blank">www.youtube.com</a></p>')
+  it('an untitled iframe needs content-sized dimensions, and keeps their ratio', () => {
+    const out = normalizeRichText('<iframe src="https://www.youtube.com/embed/abc" width="560" height="315"></iframe>', 'https://example.com/')
+    expect(out).toContain('sandbox="allow-scripts"')
+    expect(out).toContain('style="aspect-ratio: 560 / 315"')
+    expect(out).toContain('>www.youtube.com</a>')
     expect(normalizeRichText('<iframe src="https://t.example.com/px" width="120" height="60"></iframe>')).toBe('')
   })
 
@@ -542,7 +550,7 @@ describe('embeds become placeholder links, trackers stay dropped', () => {
     expect(result.html).toContain('Figure 3: live.')
   })
 
-  it('a hostile or empty src never becomes a link', () => {
+  it('a hostile or empty src never becomes a frame', () => {
     expect(normalizeRichText('<iframe src="javascript:alert(1)" title="x"></iframe>')).toBe('')
     expect(normalizeRichText('<video><source src=""></video>')).toBe('')
   })

@@ -14,7 +14,10 @@
  * - {@link normalizeRichText} takes markup that is ALREADY known to be a body
  *   (a feed's `content:encoded`, or the block extraction selected) and puts it
  *   through a tag whitelist, so the renderer never sees third-party scripts,
- *   styles, forms or event handlers.
+ *   styles, forms or event handlers. The one sanctioned exception: a content
+ *   embed (`embedElement`) survives as a sandboxed iframe — `allow-scripts`
+ *   without `allow-same-origin`, an opaque origin that cannot see the pane —
+ *   or as a native controls-only media element.
  *
  * Everything runs in the browser because the host runtime has no DOM parser at
  * all; nothing here touches the network.
@@ -59,12 +62,10 @@ const DROP_TAGS = new Set([
   'script', 'style', 'template', 'nav', 'header', 'footer', 'aside',
   'form', 'annotation-xml', 'button', 'select', 'input', 'textarea',
   'canvas', 'embed', 'link', 'meta', 'base', 'title',
-  // iframe/video/audio are NOT here: a fetch cannot run the player's page (and
-  // a cross-origin iframe's document is unreachable even for a rendered
-  // capture), but the embed is content the page published — normalizeNode
-  // turns each into a placeholder link (see embedLink) instead of leaving a
-  // hole in the section. Trackers (hidden, pixel-sized, untitled) stay
-  // dropped there.
+  // iframe/video/audio are NOT here: the embed is content the page published,
+  // and normalizeNode keeps it (see embedElement) — a sandboxed opaque-origin
+  // frame for an iframe, a native controls player for media. Trackers
+  // (hidden, pixel-sized, untitled-and-unsized iframes) stay dropped there.
   // svg is NOT here: capture-rendered pages carry their rescued figures as
   // inline SVG, which normalizeSvg() whitelists per element/attribute. The
   // strip's selector gains the canonical-case members separately (SVG names are
@@ -704,7 +705,7 @@ function normalizeNode(node: Node, baseUrl: string | undefined, inFigure = false
   // cannot PLAY here, but it is content the page published at that spot:
   // leave a link that opens it where it renders, or the section reads as if
   // the picture it discusses never existed.
-  if (tag === 'iframe' || tag === 'video' || tag === 'audio') return embedLink(tag, element, baseUrl)
+  if (tag === 'iframe' || tag === 'video' || tag === 'audio') return embedElement(tag, element, baseUrl)
   // The standard no-JS fallback: a lazy-loading script hides the real image in
   // a <noscript>, and a fetch runs no scripts — so the ONLY copy the static
   // markup holds lives here. Recover that image; drop everything else a
@@ -882,27 +883,34 @@ function objectImg(element: Element, baseUrl: string | undefined): string {
 }
 
 /**
- * An embed's stand-in: a link that opens it where it can render.
+ * An embed, kept: a sandboxed frame or a native media element.
  *
- * The whitelist has no iframe/player (a sandboxed artifact runs the page's own
- * scripts; a video preloads bytes the reader may never watch), but dropping the
- * element leaves a hole exactly where the prose says "see the table below" —
- * the measured report (Anthropic's self-replicating piece, 2026-10-18) had 16
- * interactive charts vanish mid-article. The placeholder is a block link
- * carrying the embed's own title, or its host as the fallback label.
+ * The pane used to drop iframes wholesale, then (2026-10-18, same report)
+ * left a placeholder link — the honest floor. But the framing check says the
+ * embeds readers actually hit (Anthropic's artifact charts, 16 on one page)
+ * carry no X-Frame-Options/frame-ancestors, so they CAN render here — the same
+ * way the source page renders them: sandboxed, `allow-scripts` and never
+ * `allow-same-origin`, so the frame's scripts run on an opaque origin with no
+ * sight of this page, no popups, no top navigation. The caption link stays as
+ * the way out (a frame that fails to load still names itself).
  *
- * The gate is what keeps trackers out: a hidden or pixel-sized frame, or an
- * iframe with no title AND no content-sized dimensions (a 200px floor — every
- * measured content embed clears it, every measured tracker does not), stays
- * dropped. Video/audio qualify on a resolvable source alone: a media file in
- * article markup is never a beacon.
+ * Sizing comes from the page's own layout: the wrapper's aspect box
+ * (`padding-bottom: N%`, the Anthropic/ArtifactEmbed shape), else the frame's
+ * declared dimensions, else the pane's default height.
+ *
+ * The gate is what keeps trackers from ever GETTING a frame: a hidden or
+ * pixel-sized embed, or an iframe with no title AND no content-sized
+ * dimensions (a 200px floor — every measured content embed clears it, every
+ * measured tracker does not), stays dropped. Video/audio become native
+ * `controls` players with `preload="none"` — media elements run no scripts,
+ * and nothing downloads until the reader presses play.
  *
  * @param tag - the embed's tag (`iframe`, `video`, `audio`).
  * @param element - the embed element.
  * @param baseUrl - base for relative URL resolution.
- * @returns the placeholder markup, or an empty string.
+ * @returns the embed markup, or an empty string.
  */
-function embedLink(tag: string, element: Element, baseUrl: string | undefined): string {
+function embedElement(tag: string, element: Element, baseUrl: string | undefined): string {
   const style = element.getAttribute('style') ?? ''
   if (/display\s*:\s*none|visibility\s*:\s*hidden/i.test(style)) return ''
   const width = dimensionAttr(element.getAttribute('width'))
@@ -922,7 +930,21 @@ function embedLink(tag: string, element: Element, baseUrl: string | undefined): 
       return ''
     }
   }
-  return `<p data-reader-embed="${tag}"><a href="${escapeAttribute(src)}" rel="noopener noreferrer" target="_blank">${escapeHtml(label)}</a></p>`
+  if (tag === 'video' || tag === 'audio') {
+    const poster = tag === 'video' ? absolutize(element.getAttribute('poster'), baseUrl) : undefined
+    return `<${tag} controls preload="none" src="${escapeAttribute(src)}"${poster === undefined ? '' : ` poster="${escapeAttribute(poster)}"`}></${tag}>`
+  }
+  let sizing = ''
+  const wrapper = element.parentElement?.getAttribute('style') ?? ''
+  const aspect = /padding-bottom\s*:\s*([\d.]+)%/i.exec(wrapper)
+  if (aspect !== null) {
+    const padding = Number(aspect[1])
+    if (padding > 5 && padding < 2000) sizing = ` style="aspect-ratio: ${(100 / padding).toFixed(4)}"`
+  } else if (width !== undefined && height !== undefined) {
+    sizing = ` style="aspect-ratio: ${width} / ${height}"`
+  }
+  return `<div data-reader-embed="iframe"><iframe src="${escapeAttribute(src)}" title="${escapeAttribute(label)}" sandbox="allow-scripts" loading="lazy" referrerpolicy="no-referrer"${sizing}></iframe>`
+    + `<a href="${escapeAttribute(src)}" rel="noopener noreferrer" target="_blank">${escapeHtml(label)}</a></div>`
 }
 
 /* --------------------------------------------------------- the SVG subset */

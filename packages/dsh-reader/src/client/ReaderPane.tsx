@@ -10,8 +10,10 @@
  *   round trip.
  * - **the detail view** — clicking a card opens it. This is the whole point:
  *   the body renders as DOM text, which is what makes passage quoting work
- *   (the QUOTE plugin's own selection menu sees it), and it is why the pane
- *   never hosts a sandboxed iframe.
+ *   (the QUOTE plugin's own selection menu sees it). The one non-text island:
+ *   an article's content embeds survive as sandboxed iframes (opaque origin,
+ *   no `allow-same-origin`) or controls-only media elements — neither can see
+ *   this page, and neither carries quotable text.
  * - **the add dialog** — an overlay in the members-tab idiom, because adding is
  *   a momentary act and the wall should stay where it was behind it. The host
  *   decides whether a pasted URL is a feed or an article from what comes back
@@ -3967,11 +3969,12 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
           {articleHtml !== null && articleHtml.length > 0 && (
             <div
               // The markup is the output of this package's own whitelist
-              // normalizer (`extract-article`): scripts, styles, forms, live
-              // frames and event attributes are already gone (an iframe/player
-              // survives only as a placeholder LINK), and every URL that
-              // survives has been scheme-checked. Re-sanitizing here would mean
-              // a second implementation of the same policy.
+              // normalizer (`extract-article`): scripts, styles, forms and
+              // event attributes are already gone, every URL that survives has
+              // been scheme-checked, and a kept embed is a sandboxed
+              // opaque-origin iframe or a controls-only media element.
+              // Re-sanitizing here would mean a second implementation of the
+              // same policy.
               //
               // `translate.ts` decorates THIS subtree in place when the reader
               // asks for a translation (text nodes only), so the click handler

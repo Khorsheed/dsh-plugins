@@ -28,3 +28,7 @@ Status: implemented
 - 此修复之前存下的正文维持原样，直到「重新抓取」——`repairStoredBody` 复原不了从未入库的标记。
 - 门槛可能误判两次：既无 title 又无尺寸的内容 iframe 仍会被丢（实测罕见：发布方的嵌入两者必有其一）；带 title 的追踪器则会留下一个无害链接（无脚本、不加载——只有读者点击才会解析这个 URL）。
 - 测试：`tests/extract-article.spec.ts` 钉住占位形态（带 title 的 iframe、经 src 与经 `<source>` 的 video、有尺寸无 title 的 YouTube 式 iframe）、追踪器丢弃（隐藏 / 1×1 / 无 title 无尺寸 / `javascript:` src）、figure 计数排除、行内摘要跳过；既有的「`<iframe>` 绝不幸存」注入断言原样保持绿色。
+
+## Related
+
+当天稍晚作为主要渲染方式被取代：[嵌入件内联渲染](2026-10-18-reader-embeds-inline.md)——响应头的实测表明读者真实遇到的嵌入件就是为被 frame 而供的，于是链接降级为沙箱框架下的题注。本笔记的追踪器门槛与「capture 救不了跨域框架」的论证依然成立并被其继承。

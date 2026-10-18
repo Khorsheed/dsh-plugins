@@ -28,3 +28,7 @@ The surrounding rules moved to match reality: `countScriptFigures` treats a figu
 - Bodies stored before this fix keep their holes until 「重新抓取」 — `repairStoredBody` cannot resurrect markup that was never stored.
 - The gate can misjudge twice: a content iframe with neither title nor size stays dropped (measured rare: publishers' embeds carry one or the other), and a titled tracker would leave a harmless link (no script, no load — the URL only resolves if the reader clicks).
 - Tests: `tests/extract-article.spec.ts` pins the placeholder shape (iframe with title, video via src and via `<source>`, YouTube-sized untitled iframe), the tracker drops (hidden / 1×1 / untitled-unsized / `javascript:` src), the figure-count exclusion, and the inline-summary skip; the pre-existing "no `<iframe>` survives" injection assertion is unchanged and green.
+
+## Related
+
+Superseded as the primary rendering later the same day: [embeds render inline](2026-10-18-reader-embeds-inline.md) — the framing-headers measurement said the embeds readers actually hit are served for framing, so the link became the caption under a sandboxed frame. This note's tracker gate and its capture-impossibility argument still stand and are inherited there.
