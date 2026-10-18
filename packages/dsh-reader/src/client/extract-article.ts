@@ -57,8 +57,14 @@ const KEEP_TAGS = new Set([
  */
 const DROP_TAGS = new Set([
   'script', 'style', 'template', 'nav', 'header', 'footer', 'aside',
-  'form', 'iframe', 'annotation-xml', 'button', 'select', 'input', 'textarea', 'video',
-  'audio', 'canvas', 'embed', 'link', 'meta', 'base', 'title',
+  'form', 'annotation-xml', 'button', 'select', 'input', 'textarea',
+  'canvas', 'embed', 'link', 'meta', 'base', 'title',
+  // iframe/video/audio are NOT here: a fetch cannot run the player's page (and
+  // a cross-origin iframe's document is unreachable even for a rendered
+  // capture), but the embed is content the page published — normalizeNode
+  // turns each into a placeholder link (see embedLink) instead of leaving a
+  // hole in the section. Trackers (hidden, pixel-sized, untitled) stay
+  // dropped there.
   // svg is NOT here: capture-rendered pages carry their rescued figures as
   // inline SVG, which normalizeSvg() whitelists per element/attribute. The
   // strip's selector gains the canonical-case members separately (SVG names are
@@ -340,11 +346,11 @@ function trimLeadingChrome(root: Element, doc: Document): void {
     const tag = node.localName
     const text = normalize(node.textContent ?? '')
     if (ROOT_STOPS.has(tag)) break
-    // A picture stops the walk whether it IS this node or sits inside it — a
-    // bare leading <img> has no img DESCENDANT, and dropping it as "masthead"
-    // is how a text-column-less cover used to vanish.
-    if (tag === 'img' || tag === 'picture' || tag === 'figure') break
-    if (node.querySelector('img, picture, canvas, video, figure') !== null) break
+    // A picture or an embed stops the walk whether it IS this node or sits
+    // inside it — a bare leading <img> has no img DESCENDANT, and dropping it
+    // as "masthead" is how a text-column-less cover used to vanish.
+    if (tag === 'img' || tag === 'picture' || tag === 'figure' || tag === 'video' || tag === 'iframe' || tag === 'audio') break
+    if (node.querySelector('img, picture, canvas, video, figure, iframe, audio') !== null) break
     if (text.length >= 40) break
     node.remove()
     node = next
@@ -454,7 +460,8 @@ function graftLeadingFigures(doc: Document, winner: Element, baseUrl: string | u
  * "No picture" means no `<img>`, `<svg>`, `<canvas>`, `<video>` or `<picture>`
  * anywhere inside: the page renders that illustration at runtime. A `<math>`
  * subtree counts as content — a formula-only figure's picture IS its markup —
- * and so does an image-typed `<object>` (the LaTeXML vector-figure shape).
+ * and so does an image-typed `<object>` (the LaTeXML vector-figure shape) and
+ * an iframe/audio embed, which normalizeNode turns into a link that opens it.
  * A composite of styled containers carries its content as TEXT (a capture-
  * rendered figure is a diagram plus property cards): enough non-caption words
  * means the figure is here, even with no raster or vector island.
@@ -472,7 +479,7 @@ function graftLeadingFigures(doc: Document, winner: Element, baseUrl: string | u
 function countScriptFigures(root: Element): number {
   let count = 0
   for (const figure of Array.from(root.querySelectorAll('figure'))) {
-    if (figure.querySelector('img, svg, canvas, video, picture, math, object[type^="image/"]') !== null) continue
+    if (figure.querySelector('img, svg, canvas, video, picture, math, object[type^="image/"], iframe[src], audio') !== null) continue
     // A composite of styled containers CARRIES its content in the markup (a
     // capture-rendered figure is boxes of text): what is not the caption is
     // the figure's own words, and enough of them means the picture is here.
@@ -692,6 +699,12 @@ function normalizeNode(node: Node, baseUrl: string | undefined, inFigure = false
   // point — the whitelist has no picture/source, so keeping the wrapper would
   // either duplicate the image or lose it.
   if (tag === 'picture') return pictureImg(element, baseUrl)
+  // A video/audio file or an embedded live frame (Anthropic's research posts
+  // carry their charts as sandboxed iframe artifacts — 16 of them on one page)
+  // cannot PLAY here, but it is content the page published at that spot:
+  // leave a link that opens it where it renders, or the section reads as if
+  // the picture it discusses never existed.
+  if (tag === 'iframe' || tag === 'video' || tag === 'audio') return embedLink(tag, element, baseUrl)
   // The standard no-JS fallback: a lazy-loading script hides the real image in
   // a <noscript>, and a fetch runs no scripts — so the ONLY copy the static
   // markup holds lives here. Recover that image; drop everything else a
@@ -866,6 +879,50 @@ function objectImg(element: Element, baseUrl: string | undefined): string {
     ...(width === undefined ? {} : { width }),
     ...(height === undefined ? {} : { height }),
   })
+}
+
+/**
+ * An embed's stand-in: a link that opens it where it can render.
+ *
+ * The whitelist has no iframe/player (a sandboxed artifact runs the page's own
+ * scripts; a video preloads bytes the reader may never watch), but dropping the
+ * element leaves a hole exactly where the prose says "see the table below" —
+ * the measured report (Anthropic's self-replicating piece, 2026-10-18) had 16
+ * interactive charts vanish mid-article. The placeholder is a block link
+ * carrying the embed's own title, or its host as the fallback label.
+ *
+ * The gate is what keeps trackers out: a hidden or pixel-sized frame, or an
+ * iframe with no title AND no content-sized dimensions (a 200px floor — every
+ * measured content embed clears it, every measured tracker does not), stays
+ * dropped. Video/audio qualify on a resolvable source alone: a media file in
+ * article markup is never a beacon.
+ *
+ * @param tag - the embed's tag (`iframe`, `video`, `audio`).
+ * @param element - the embed element.
+ * @param baseUrl - base for relative URL resolution.
+ * @returns the placeholder markup, or an empty string.
+ */
+function embedLink(tag: string, element: Element, baseUrl: string | undefined): string {
+  const style = element.getAttribute('style') ?? ''
+  if (/display\s*:\s*none|visibility\s*:\s*hidden/i.test(style)) return ''
+  const width = dimensionAttr(element.getAttribute('width'))
+  const height = dimensionAttr(element.getAttribute('height'))
+  if ((width !== undefined && Number(width) <= 2) || (height !== undefined && Number(height) <= 2)) return ''
+  const src = absolutize(element.getAttribute('src'), baseUrl)
+    ?? absolutize(element.querySelector('source')?.getAttribute('src') ?? null, baseUrl)
+  if (src === undefined) return ''
+  const title = (element.getAttribute('title') ?? '').trim()
+  if (tag === 'iframe' && title.length === 0
+    && (width === undefined || Number(width) < 200 || height === undefined || Number(height) < 200)) return ''
+  let label = title
+  if (label.length === 0) {
+    try {
+      label = new URL(src).host
+    } catch {
+      return ''
+    }
+  }
+  return `<p data-reader-embed="${tag}"><a href="${escapeAttribute(src)}" rel="noopener noreferrer" target="_blank">${escapeHtml(label)}</a></p>`
 }
 
 /* --------------------------------------------------------- the SVG subset */
@@ -1358,8 +1415,9 @@ function serializeInline(node: Node): string {
     if (DROP_TAGS.has(tag)) continue
     // A noscript's fallback image means nothing in an inline summary; the rest
     // of its content ("please enable JavaScript") was never content at all.
-    // An object's fallback text and a chart's text labels are the same chrome.
-    if (tag === 'noscript' || tag === 'object' || tag === 'svg') continue
+    // An object's fallback text, a chart's text labels and an embed's
+    // placeholder are the same chrome.
+    if (tag === 'noscript' || tag === 'object' || tag === 'svg' || tag === 'iframe' || tag === 'video' || tag === 'audio') continue
     if (tag === 'br') {
       out += ' '
       continue

@@ -759,6 +759,32 @@
   overflow-x: auto;
 }
 
+/* An embed's stand-in (extract-article's embedLink): the live frame or player
+   cannot render here, so the link that opens it sits where it belonged — a
+   bordered block with the embed's own title, not a bare inline citation. */
+.article [data-reader-embed] > a {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 17px;
+}
+
+.article [data-reader-embed] > a::after {
+  content: "↗";
+  margin-left: auto;
+}
+
+.article [data-reader-embed] > a:hover {
+  border-color: var(--dsw-alias-border-l3);
+  color: var(--dsw-alias-label-primary);
+  text-decoration: none;
+}
+
 .article video {
   height: auto;
 }

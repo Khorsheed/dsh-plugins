@@ -497,6 +497,58 @@ describe('the lead image outside the text block is grafted in', () => {
 })
 
 /**
+ * Embeds: a live frame or player cannot render in the reader, but dropping it
+ * left a hole exactly where the prose pointed at it ("see the table below" —
+ * Anthropic's self-replicating piece carries 16 iframe charts). A content
+ * embed becomes a placeholder link; a tracker stays dropped.
+ */
+describe('embeds become placeholder links, trackers stay dropped', () => {
+  it('an iframe with a title becomes a link to the artifact', () => {
+    const out = normalizeRichText(
+      '<div><iframe src="/artifacts/chart.html" title="Embedded artifact" loading="lazy" sandbox="allow-scripts"></iframe></div>',
+      'https://example.com/post/',
+    )
+    expect(out).toBe('<p data-reader-embed="iframe"><a href="https://example.com/artifacts/chart.html" rel="noopener noreferrer" target="_blank">Embedded artifact</a></p>')
+  })
+
+  it('a video links its file, from src or from a source child', () => {
+    expect(normalizeRichText('<video src="/media/tour.mp4" controls></video>', 'https://example.com/'))
+      .toBe('<p data-reader-embed="video"><a href="https://example.com/media/tour.mp4" rel="noopener noreferrer" target="_blank">example.com</a></p>')
+    expect(normalizeRichText('<video controls><source src="/media/tour.webm"></video>', 'https://example.com/'))
+      .toBe('<p data-reader-embed="video"><a href="https://example.com/media/tour.webm" rel="noopener noreferrer" target="_blank">example.com</a></p>')
+  })
+
+  it('trackers stay dropped: hidden, pixel-sized, or untitled and unsized', () => {
+    expect(normalizeRichText('<p>x</p><iframe src="https://t.example.com/px" style="display:none"></iframe>')).toBe('<p>x</p>')
+    expect(normalizeRichText('<p>x</p><iframe src="https://t.example.com/px" width="1" height="1"></iframe>')).toBe('<p>x</p>')
+    expect(normalizeRichText('<p>x</p><iframe src="https://t.example.com/px"></iframe>')).toBe('<p>x</p>')
+  })
+
+  it('an untitled iframe needs content-sized dimensions', () => {
+    expect(normalizeRichText('<iframe src="https://www.youtube.com/embed/abc" width="560" height="315"></iframe>', 'https://example.com/'))
+      .toBe('<p data-reader-embed="iframe"><a href="https://www.youtube.com/embed/abc" rel="noopener noreferrer" target="_blank">www.youtube.com</a></p>')
+    expect(normalizeRichText('<iframe src="https://t.example.com/px" width="120" height="60"></iframe>')).toBe('')
+  })
+
+  it('a figure wrapping an embed is content, not a script-drawn figure', () => {
+    const html = `<html><head><title>T</title></head><body><article><p>${'prose '.repeat(60)}</p>`
+      + '<figure><iframe src="https://assets.example.com/chart.html" title="Embedded artifact"></iframe><figcaption>Figure 3: live.</figcaption></figure>'
+      + '</article></body></html>'
+    const result = extractArticle(html, 'https://example.com/post/')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.scriptFigures).toBeUndefined()
+    expect(result.html).toContain('data-reader-embed="iframe"')
+    expect(result.html).toContain('Figure 3: live.')
+  })
+
+  it('a hostile or empty src never becomes a link', () => {
+    expect(normalizeRichText('<iframe src="javascript:alert(1)" title="x"></iframe>')).toBe('')
+    expect(normalizeRichText('<video><source src=""></video>')).toBe('')
+  })
+})
+
+/**
  * MathML passthrough: arXiv's HTML papers (LaTeXML) carry formulas as
  * `<math alttext="…">`, and the pane's render target (Chromium ≥ 153) renders
  * the presentation subset natively. Dropping it was measured as "the paper's

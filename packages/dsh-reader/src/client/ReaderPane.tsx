@@ -3967,8 +3967,9 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
           {articleHtml !== null && articleHtml.length > 0 && (
             <div
               // The markup is the output of this package's own whitelist
-              // normalizer (`extract-article`): scripts, styles, forms, iframes
-              // and event attributes are already gone, and every URL that
+              // normalizer (`extract-article`): scripts, styles, forms, live
+              // frames and event attributes are already gone (an iframe/player
+              // survives only as a placeholder LINK), and every URL that
               // survives has been scheme-checked. Re-sanitizing here would mean
               // a second implementation of the same policy.
               //
