@@ -42,6 +42,13 @@ describe('deployment link diagnosis', () => {
     expect(scanDependencyLinks([{ path: link }])).toEqual([])
     expect(scanDependencyLinks([{ path: join(root, 'absent') }])[0].code).toBe('ENOENT')
   })
+  it('ignores a live Chrome profile\'s singleton links — locks named by host-pid strings, never dependency links', () => {
+    const home = fixture(), harness = fixture()
+    mkdirSync(join(home, 'state', 'dsh-capture', 'chrome-profile', 'p1'), { recursive: true })
+    symlinkSync('some-host-14103', join(home, 'state', 'dsh-capture', 'chrome-profile', 'p1', 'SingletonLock'))
+    symlinkSync('155.0.8059.84:1', join(home, 'state', 'dsh-capture', 'chrome-profile', 'p1', 'RunningChromeVersion'))
+    expect(() => checkDeploymentLinks(home, harness)).not.toThrow()
+  })
   it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)('reports unreadable directories instead of silently skipping them', () => {
     const root = fixture(), unreadable = join(root, 'unreadable'); mkdirSync(unreadable); chmodSync(unreadable, 0)
     try { expect(scanDependencyLinks([{ path: root }]).map(x => x.code)).toEqual(['EACCES']) }

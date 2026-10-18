@@ -1,5 +1,5 @@
 import { lstatSync, readdirSync, readlinkSync, realpathSync, statSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { join, resolve, sep } from 'node:path'
 
 export interface LinkScanRoot { path: string; exclude?: string[] }
 export interface LinkFinding { path: string; target?: string; code: string }
@@ -38,6 +38,11 @@ export function scanDependencyLinks(roots: LinkScanRoot[]): LinkFinding[] {
 
 export function checkDeploymentLinks(home: string, harness: string): void {
   const findings = scanDependencyLinks([{ path: home, exclude: ['scratch'] }, { path: harness }])
+    // A LIVE Chrome profile's Singleton* / RunningChromeVersion links are locks
+    // whose targets are host-pid strings, not paths — they stat as ENOENT at
+    // their healthiest, and must never block a deploy (2026-10-18). The
+    // exclusion list only reaches top-level names, so the filter is by segment.
+    .filter(finding => !finding.path.split(sep).includes('chrome-profile'))
   if (findings.length) {
     const rows = findings.map(row => `  ${row.code} ${JSON.stringify(row.path)}${row.target === undefined ? '' : ` -> ${JSON.stringify(row.target)}`}`)
     throw new Error(`dependency link check failed (${findings.length} finding(s)):\n${rows.join('\n')}\nNo links were changed. Inspect the owner and target; rebuild/reinstall missing dependencies. Before removing a confirmed stale generated link, back up its path and target. Then rerun deploy:check-links. This check does not replace ankh-guard preflight.`)
