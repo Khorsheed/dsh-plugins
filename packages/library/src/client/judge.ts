@@ -35,9 +35,16 @@ function mathFold(text: string): string {
     .replace(/[{}]/g, '')
 }
 
+/** Superscript / subscript digits as their ^ / _ spelling — NFKC alone would flatten (x-2)² into (x-2)2. */
+const SCRIPTS: Readonly<Record<string, string>> = Object.fromEntries([
+  ...[...'⁰¹²³⁴⁵⁶⁷⁸⁹'].map((char, digit) => [char, `^${digit}`]),
+  ...[...'₀₁₂₃₄₅₆₇₈₉'].map((char, digit) => [char, `_${digit}`]),
+  ['⁻', '^-'], ['ⁿ', '^n'],
+])
+
 /** Compare answers loosely. */
 function norm(text: string): string {
-  return mathFold(text.normalize('NFKC').replace(/\u2044/g, '/')).toLowerCase().replace(/\s+/g, ' ').trim().replace(/[。.!！?？]+$/, '')
+  return mathFold(text.replace(/[⁰¹²³⁴⁵⁶⁷⁸⁹₀₁₂₃₄₅₆₇₈₉⁻ⁿ]/g, char => SCRIPTS[char] ?? char).normalize('NFKC').replace(/\u2044/g, '/')).toLowerCase().replace(/\s+/g, ' ').trim().replace(/[。.!！?？]+$/, '')
 }
 
 /** Looser still: no spaces, one minus sign, no wrapping quotes or trailing clause punctuation. */

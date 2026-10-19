@@ -115,3 +115,12 @@ describe('fill judging on 3080 answers (2026-10-19)', () => {
     expect(fillMatches('(-1, 2)', '[-1,2)')).toBe(false)
   })
 })
+
+describe('superscripts', () => {
+  it('a key written with ² matches an answer typed with ^2, and the reverse', () => {
+    expect(fillMatches('y=(x-2)^2+1', 'y = (x-2)² + 1')).toBe(true)
+    expect(fillMatches('y = (x-2)² + 1', 'y=(x-2)^{2}+1')).toBe(true)
+    expect(fillMatches('x_1', 'x₁')).toBe(true)
+    expect(fillMatches('y=(x-2)2+1', 'y = (x-2)² + 1')).toBe(false)
+  })
+})
