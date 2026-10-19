@@ -436,3 +436,39 @@ describe('local-agent-claude-code /check subcommand', () => {
     vi.unstubAllGlobals()
   })
 })
+
+describe('local-agent-claude-code model list', () => {
+  it('the harness face reads and writes the scope models.json', async () => {
+    const { home, registered } = mount()
+    const face = registered[0]!.modelList!
+    await expect(face.read(home)).resolves.toEqual([])
+    await expect(face.write(home, ['claude-opus-5-5', 'claude-haiku-5-5'])).resolves.toEqual(['claude-opus-5-5', 'claude-haiku-5-5'])
+    await expect(face.read(home)).resolves.toEqual(['claude-opus-5-5', 'claude-haiku-5-5'])
+    await expect(face.write(home, [])).resolves.toEqual([])
+  })
+
+  it('the list\'s first entry is the default model in the eval snapshot, ahead of the settings key', async () => {
+    const { home, registered } = mount({ model: 'settings-model' })
+    writeFileSync(join(home, 'models.json'), JSON.stringify({ models: ['claude-opus-5-5', 'claude-haiku-5-5'] }))
+    await expect(registered[0]!.effectiveSettings!(home)).resolves.toMatchObject({ model: 'claude-opus-5-5' })
+  })
+
+  it('an empty list leaves the settings-key behavior untouched', async () => {
+    const { home, registered } = mount({ model: 'settings-model' })
+    await expect(registered[0]!.effectiveSettings!(home)).resolves.toMatchObject({ model: 'settings-model' })
+  })
+
+  it('the broker\'s memberless surface takes the list as effective and as the whole vocabulary', async () => {
+    const { home, registered } = mount()
+    writeFileSync(join(home, 'models.json'), JSON.stringify({ models: ['claude-opus-5-5', 'claude-haiku-5-5'] }))
+    const info = await registered[0]!.modelBroker!.modelInfo()
+    expect(info).toMatchObject({ effective: 'claude-opus-5-5', source: 'settings', choices: ['claude-opus-5-5', 'claude-haiku-5-5'] })
+  })
+
+  it('the broker\'s round resolver answers the list first for a member with no override', async () => {
+    const { home, resolveModel } = mount()
+    writeFileSync(join(home, 'models.json'), JSON.stringify({ models: ['claude-opus-5-5'] }))
+    expect(resolveModel('child-x')).toBe('claude-opus-5-5')
+    expect(resolveModel('child-x', 'delegation-model')).toBe('delegation-model')
+  })
+})

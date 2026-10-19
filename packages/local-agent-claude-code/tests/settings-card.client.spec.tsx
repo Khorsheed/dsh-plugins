@@ -14,7 +14,7 @@ import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SettingsScopeSnapshot } from '@khorsheed/dsh-local-agent/src/client/settings-scope.ts'
-import type { LocalAgentModelInfo, LocalAgentStatus } from '@khorsheed/dsh-local-agent/types'
+import type { LocalAgentModelDirectory, LocalAgentModelInfo, LocalAgentStatus } from '@khorsheed/dsh-local-agent/types'
 import { zh as coreZh } from '@khorsheed/dsh-local-agent/src/client/locales.ts'
 import {
   ClaudeCodeBundleConfig, ClaudeCodeSettingsCard,
@@ -75,6 +75,11 @@ interface CardOptions {
     read: () => Promise<{ baseUrl?: string; apiKeySet: boolean; authTokenSet: boolean } | null | undefined>
     write: (fields: Record<string, string | null>) => Promise<{ baseUrl?: string; apiKeySet: boolean; authTokenSet: boolean } | null | undefined>
   }
+  modelList?: {
+    read: () => Promise<readonly string[] | null | undefined>
+    write: (models: readonly string[]) => Promise<readonly string[] | null | undefined>
+  }
+  modelDirectory?: (refresh?: boolean) => Promise<LocalAgentModelDirectory | null | undefined>
   modelInfo?: () => Promise<LocalAgentModelInfo | null | undefined>
 }
 
@@ -128,6 +133,8 @@ function makeCardProps(options: CardOptions): { props: Record<string, unknown> }
     auth: { status, runCommand },
     ...options.checkEndpoint === undefined ? {} : { checkEndpoint: options.checkEndpoint },
     ...options.endpointAuth === undefined ? {} : { endpointAuth: options.endpointAuth },
+    ...options.modelList === undefined ? {} : { modelList: options.modelList },
+    ...options.modelDirectory === undefined ? {} : { modelDirectory: options.modelDirectory },
     ...options.modelInfo === undefined ? {} : { modelInfo: options.modelInfo },
     authT,
     t,
@@ -223,261 +230,122 @@ describe('ClaudeCodeSettingsCard', () => {
   })
 })
 
-describe('ClaudeCodeSettingsCard default-model block', () => {
-  it('shows the stored model and saves an edited one as the model key', async () => {
-    const harness = renderCard({ value: { live: false, liveMirrorGranularity: 'event', model: 'model-a' } })
+describe('ClaudeCodeSettingsCard model list editor', () => {
+  const directory: LocalAgentModelDirectory = {
+    entries: [
+      { value: 'claude-opus-5-5', label: 'Claude Opus 5.5', source: 'native' },
+      { value: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5', source: 'native' },
+      { value: 'claude-haiku-5-5', label: 'Claude Haiku 5.5', source: 'native' },
+    ],
+    complete: true,
+    customInput: true,
+    status: 'ready',
+    refreshing: false,
+    revision: 1,
+  }
+
+  /** A reactive modelList face over a mutable ordered list. */
+  function modelListFace(initial: readonly string[]) {
+    let list = [...initial]
+    return {
+      read: vi.fn(async () => list),
+      write: vi.fn(async (next: readonly string[]) => {
+        list = [...next]
+        return list
+      }),
+    }
+  }
+
+  function directoryFace() {
+    return vi.fn(async () => directory)
+  }
+
+  it('renders the rows in order with the default chip on the first; empty shows the fallback hint', async () => {
+    renderCard({ modelList: modelListFace(['claude-opus-5-5', 'claude-haiku-5-5']), modelDirectory: directoryFace() })
     await openCard()
-    const input = screen.getByLabelText(zh['model.title']) as HTMLInputElement
-    expect(input.value).toBe('model-a')
-    fireEvent.change(input, { target: { value: 'model-b' } })
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['model.save'] })) })
-    expect(harness.scope.set).toHaveBeenCalledWith('model', 'model-b')
-    expect(screen.getByText(zh['model.applied'])).toBeTruthy()
+
+    const rows = document.body.querySelectorAll('[draggable="true"]')
+    expect(rows).toHaveLength(2)
+    expect(rows[0]?.textContent).toContain('claude-opus-5-5')
+    expect(rows[0]?.textContent).toContain(zh['models.defaultChip'])
+    expect(rows[1]?.textContent).not.toContain(zh['models.defaultChip'])
+    expect(document.body.textContent).not.toContain(zh['models.empty'])
   })
 
-  it('trims the typed value rather than storing the spaces around it', async () => {
-    const harness = renderCard({})
+  it('shows the fallback hint instead of rows when the list is empty', async () => {
+    renderCard({ modelList: modelListFace([]), modelDirectory: directoryFace() })
     await openCard()
-    fireEvent.change(screen.getByLabelText(zh['model.title']), { target: { value: '  model-b  ' } })
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['model.save'] })) })
-    expect(harness.scope.set).toHaveBeenCalledWith('model', 'model-b')
+    expect(screen.getByText(zh['models.empty'])).toBeTruthy()
   })
 
-  it('clearing the field UNSETS the key, so the YAML base decides again', async () => {
-    const harness = renderCard({ value: { live: false, liveMirrorGranularity: 'event', model: 'model-a' } })
+  it('deletes a row and persists the shortened list', async () => {
+    const modelList = modelListFace(['claude-opus-5-5', 'claude-haiku-5-5'])
+    renderCard({ modelList, modelDirectory: directoryFace() })
     await openCard()
-    fireEvent.change(screen.getByLabelText(zh['model.title']), { target: { value: '' } })
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['model.save'] })) })
-    expect(harness.scope.unset).toHaveBeenCalledWith('model')
-    // An unset must not also write an empty string over the base.
-    expect(harness.scope.set).not.toHaveBeenCalledWith('model', '')
+
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: `${zh['models.delete']}: claude-haiku-5-5` })) })
+    expect(modelList.write).toHaveBeenCalledWith(['claude-opus-5-5'])
+    expect(screen.getByText(zh['models.applied'])).toBeTruthy()
   })
 
-  it('a saved model joins the suggestions most-recent-first, deduplicated', async () => {
-    const harness = renderCard({
-      value: { live: false, liveMirrorGranularity: 'event', recentModels: ['model-a', 'model-b'] },
-    })
+  it('drag & drop reorders and persists the new order', async () => {
+    const modelList = modelListFace(['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5'])
+    renderCard({ modelList, modelDirectory: directoryFace() })
     await openCard()
-    fireEvent.change(screen.getByLabelText(zh['model.title']), { target: { value: 'model-b' } })
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['model.save'] })) })
-    expect(harness.scope.set).toHaveBeenCalledWith('recentModels', ['model-b', 'model-a'])
+
+    const rows = document.body.querySelectorAll('[draggable="true"]')
+    fireEvent.dragStart(rows[2]!)
+    fireEvent.dragOver(rows[0]!)
+    fireEvent.drop(rows[0]!)
+    await act(async () => {})
+    expect(modelList.write).toHaveBeenCalledWith(['claude-haiku-5-5', 'claude-opus-5-5', 'claude-sonnet-5-5'])
   })
 
-  it('offers the saved suggestions through the menu without hardcoding any model catalog', async () => {
-    renderCard({
-      value: { live: false, liveMirrorGranularity: 'event', recentModels: ['model-a', 'model-b'] },
-    })
+  it('the add dialog checks endpoint-served models and appends the selected', async () => {
+    const modelList = modelListFace(['claude-opus-5-5'])
+    renderCard({ modelList, modelDirectory: directoryFace() })
     await openCard()
-    // No datalist anywhere: the chevron menu is the single choice list.
-    expect(document.body.querySelector('datalist')).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: zh['model.menu'] }))
-    expect(screen.getAllByRole('menuitemradio').map(item => item.textContent))
-      .toEqual([zh['model.menuDefault'] + '✓', 'model-a', 'model-b'])
+
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['models.add'] })) })
+    // The already-added model is pre-checked and disabled; the others are selectable.
+    const boxes = document.body.querySelectorAll('input[type="checkbox"]') as NodeListOf<HTMLInputElement>
+    expect(boxes).toHaveLength(3)
+    expect(boxes[0]!.disabled).toBe(true)
+    expect(boxes[0]!.checked).toBe(true)
+    fireEvent.click(boxes[2]!)
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['models.dialog.confirm'] })) })
+    expect(modelList.write).toHaveBeenCalledWith(['claude-opus-5-5', 'claude-haiku-5-5'])
   })
 
-  it('save stays disabled while the field still matches what is stored', async () => {
-    renderCard({ value: { live: false, liveMirrorGranularity: 'event', model: 'model-a' } })
+  it('the dialog search filters the candidates', async () => {
+    renderCard({ modelList: modelListFace([]), modelDirectory: directoryFace() })
     await openCard()
-    const save = screen.getByRole('button', { name: zh['model.save'] }) as HTMLButtonElement
-    expect(save.disabled).toBe(true)
-    fireEvent.change(screen.getByLabelText(zh['model.title']), { target: { value: 'model-b' } })
-    expect((screen.getByRole('button', { name: zh['model.save'] }) as HTMLButtonElement).disabled).toBe(false)
-  })
-})
 
-/** A memberless model surface, as the gateway's harnessModel answers it. */
-function modelSurface(over: Partial<LocalAgentModelInfo> = {}): LocalAgentModelInfo {
-  return { source: 'cli-builtin', choices: [], live: false, switchable: true, ...over }
-}
-
-describe('ClaudeCodeSettingsCard model surface', () => {
-  it('a set field shows the stored model as a real value, not a placeholder', async () => {
-    renderCard({
-      value: { live: false, model: 'model-a' },
-      modelInfo: () => Promise.resolve(modelSurface({ source: 'settings', effective: 'model-a', settings: 'model-a', choices: ['model-a'] })),
-    })
-    await openCard()
-    expect((screen.getByLabelText(zh['model.title']) as HTMLInputElement).value).toBe('model-a')
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['models.add'] })) })
+    fireEvent.change(screen.getByLabelText(zh['models.dialog.search']), { target: { value: 'haiku' } })
+    const boxes = document.body.querySelectorAll('input[type="checkbox"]')
+    expect(boxes).toHaveLength(1)
+    expect(document.body.textContent).toContain('claude-haiku-5-5')
+    expect(document.body.textContent).not.toContain('claude-sonnet-5-5')
   })
 
-  it('an unset field displays the CLI config default dimmed (placeholder), never as a pinned value', async () => {
-    renderCard({
-      modelInfo: () => Promise.resolve(modelSurface({ source: 'cli-config', effective: 'scoped-model', cliDefault: 'scoped-model', choices: ['scoped-model'] })),
-    })
-    await openCard()
-    const input = screen.getByLabelText(zh['model.title']) as HTMLInputElement
-    expect(input.value).toBe('')
-    expect(input.placeholder).toBe('scoped-model')
-  })
-
-  it('keeps the generic placeholder when the broker knows no default', async () => {
-    renderCard({ modelInfo: () => Promise.resolve(modelSurface()) })
-    await openCard()
-    expect((screen.getByLabelText(zh['model.title']) as HTMLInputElement).placeholder)
-      .toBe(zh['model.placeholder'])
-  })
-
-  it('renders no separate effective-model line — the information lives inside the control', async () => {
-    renderCard({
-      modelInfo: () => Promise.resolve(modelSurface({ source: 'cli-config', effective: 'scoped-model', cliDefault: 'scoped-model', choices: ['scoped-model'] })),
-    })
-    await openCard()
-    expect(screen.queryByText(/跟随 CLI/)).toBeNull()
-    expect(screen.queryByText(/当前生效/)).toBeNull()
-  })
-
-  it('the surface choices become the menu vocabulary, ahead of the recent-models memory', async () => {
-    renderCard({
-      value: { live: false, recentModels: ['recent-a'] },
-      modelInfo: () => Promise.resolve(modelSurface({ choices: ['model-a', 'scoped-model'] })),
-    })
-    await openCard()
-    fireEvent.click(screen.getByRole('button', { name: zh['model.menu'] }))
-    expect(screen.getAllByRole('menuitemradio').map(item => item.textContent))
-      .toEqual([zh['model.menuDefault'] + '✓', 'model-a', 'scoped-model'])
-  })
-
-  it('degrades to the bare input when the remote answers null (a brokerless core)', async () => {
-    renderCard({
-      value: { live: false, recentModels: ['recent-a'] },
-      modelInfo: () => Promise.resolve(null),
-    })
-    await openCard()
-    expect(screen.queryByText(/跟随/)).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: zh['model.menu'] }))
-    expect(screen.getAllByRole('menuitemradio').map(item => item.textContent))
-      .toEqual([zh['model.menuDefault'] + '✓', 'recent-a'])
-  })
-
-  it('keeps the bare input when no model surface was injected at all', async () => {
+  it('hides the editor when the face is absent (an older core)', async () => {
     renderCard({})
     await openCard()
-    expect(screen.queryByText(/跟随/)).toBeNull()
-    expect(screen.getByLabelText(zh['model.title'])).toBeTruthy()
-  })
-
-  it('refetches the surface after a save (the settings layer changed)', async () => {
-    const modelInfo = vi.fn(() => Promise.resolve(modelSurface()))
-    const harness = renderCard({ modelInfo })
-    await openCard()
-    expect(modelInfo).toHaveBeenCalledTimes(1)
-    fireEvent.change(screen.getByLabelText(zh['model.title']), { target: { value: 'model-b' } })
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['model.save'] })) })
-    expect(harness.scope.set).toHaveBeenCalledWith('model', 'model-b')
-    expect(modelInfo).toHaveBeenCalledTimes(2)
-  })
-
-  it('shows an always-visible chevron that opens a menu; a pick fills the input as a draft', async () => {
-    renderCard({
-      modelInfo: () => Promise.resolve(modelSurface({ source: 'cli-config', effective: 'scoped-model', cliDefault: 'scoped-model', choices: ['scoped-model', 'discovered/x'] })),
-    })
-    await openCard()
-    const menuButton = screen.getByRole('button', { name: zh['model.menu'] })
-    fireEvent.click(menuButton)
-    const items = screen.getAllByRole('menuitemradio')
-    // The leading item is the follow-default choice, checked while unset.
-    expect(items[0].textContent).toBe('默认（跟随 CLI 配置：scoped-model）✓')
-    expect(items[0].getAttribute('aria-checked')).toBe('true')
-    expect(items.slice(1).map(item => item.textContent)).toEqual(['scoped-model', 'discovered/x'])
-    expect(items[1].getAttribute('aria-checked')).toBe('false')
-    fireEvent.click(screen.getByRole('menuitemradio', { name: 'discovered/x' }))
-    // A pick is exactly a typed value: the menu closes, the draft waits for 保存.
-    expect(screen.queryByRole('menu')).toBeNull()
-    expect((screen.getByLabelText(zh['model.title']) as HTMLInputElement).value).toBe('discovered/x')
-    expect((screen.getByRole('button', { name: zh['model.save'] }) as HTMLButtonElement).disabled).toBe(false)
-  })
-
-  it('the default item clears the draft back to follow-default; a save then unsets the key', async () => {
-    const harness = renderCard({
-      value: { live: false, model: 'model-a' },
-      modelInfo: () => Promise.resolve(modelSurface({ source: 'settings', effective: 'model-a', settings: 'model-a', cliDefault: 'scoped-model', choices: ['model-a', 'scoped-model'] })),
-    })
-    await openCard()
-    fireEvent.click(screen.getByRole('button', { name: zh['model.menu'] }))
-    // The stored model reads checked, the default item does not.
-    expect(screen.getByRole('menuitemradio', { name: 'model-a' }).getAttribute('aria-checked')).toBe('true')
-    fireEvent.click(screen.getByRole('menuitemradio', { name: '默认（跟随 CLI 配置：scoped-model）' }))
-    // The field goes blank (displaying the inherited default again) and 保存 arms.
-    expect((screen.getByLabelText(zh['model.title']) as HTMLInputElement).value).toBe('')
-    expect((screen.getByRole('button', { name: zh['model.save'] }) as HTMLButtonElement).disabled).toBe(false)
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['model.save'] })) })
-    expect(harness.scope.unset).toHaveBeenCalledWith('model')
-  })
-
-  it('the menu default item walks the same chain the old placeholder did', async () => {
-    const openMenu = async (): Promise<void> => {
-      await openCard()
-      fireEvent.click(screen.getByRole('button', { name: zh['model.menu'] }))
-    }
-
-    // Rung 2: a cli-builtin source that still names its default beats the
-    // last-observed annotation.
-    renderCard({
-      modelInfo: () => Promise.resolve(modelSurface({ effective: 'catalog-default', lastObserved: 'observed-model', choices: ['x'] })),
-    })
-    await openMenu()
-    expect(screen.getByRole('menuitemradio', { name: /默认（跟随 CLI 默认：catalog-default）/ })).toBeTruthy()
-    expect((screen.getByLabelText(zh['model.title']) as HTMLInputElement).placeholder).toBe('catalog-default')
-    cleanup()
-    document.body.innerHTML = ''
-
-    // Rung 3: nothing names a model, but the records observed one.
-    renderCard({
-      modelInfo: () => Promise.resolve(modelSurface({ lastObserved: 'observed-model', choices: ['x'] })),
-    })
-    await openMenu()
-    expect(screen.getByRole('menuitemradio', { name: /默认（跟随 CLI 内置默认（最近：observed-model））/ })).toBeTruthy()
-    expect((screen.getByLabelText(zh['model.title']) as HTMLInputElement).placeholder).toBe('observed-model')
-    cleanup()
-    document.body.innerHTML = ''
-
-    // Rung 1: the scoped config's default outranks both.
-    renderCard({
-      modelInfo: () => Promise.resolve(modelSurface({ source: 'cli-config', effective: 'scoped-model', cliDefault: 'scoped-model', lastObserved: 'observed-model', choices: ['scoped-model'] })),
-    })
-    await openMenu()
-    expect(screen.getByRole('menuitemradio', { name: /默认（跟随 CLI 配置：scoped-model）/ })).toBeTruthy()
-    expect((screen.getByLabelText(zh['model.title']) as HTMLInputElement).placeholder).toBe('scoped-model')
-  })
-
-  it('closes the menu on Esc', async () => {
-    renderCard({
-      modelInfo: () => Promise.resolve(modelSurface({ choices: ['scoped-model'] })),
-    })
-    await openCard()
-    fireEvent.click(screen.getByRole('button', { name: zh['model.menu'] }))
-    expect(screen.getByRole('menu')).toBeTruthy()
-    fireEvent.keyDown(document, { key: 'Escape' })
-    expect(screen.queryByRole('menu')).toBeNull()
-  })
-
-  it('opens the menu from the recent-models memory too (broker absent)', async () => {
-    renderCard({
-      value: { live: false, recentModels: ['recent-a', 'recent-b'] },
-      modelInfo: () => Promise.resolve(null),
-    })
-    await openCard()
-    fireEvent.click(screen.getByRole('button', { name: zh['model.menu'] }))
-    expect(screen.getAllByRole('menuitemradio').map(item => item.textContent))
-      .toEqual([zh['model.menuDefault'] + '✓', 'recent-a', 'recent-b'])
-  })
-
-  it('renders no menu affordance when nothing names a model (a fresh install)', async () => {
-    renderCard({ modelInfo: () => Promise.resolve(modelSurface()) })
-    await openCard()
-    expect(screen.queryByRole('button', { name: zh['model.menu'] })).toBeNull()
+    expect(document.body.querySelector('[draggable="true"]')).toBeNull()
+    expect(screen.queryByRole('button', { name: zh['models.add'] })).toBeNull()
   })
 })
 
 describe('ClaudeCodeBundleConfig', () => {
-  it('renders the one-liner alone in the summary view and never reads the model surface', async () => {
-    const modelInfo = vi.fn(() => Promise.resolve(modelSurface()))
-    renderBundleConfig('summary', { modelInfo })
+  it('renders the one-liner alone in the summary view and never reads the model list', async () => {
+    const modelList = { read: vi.fn(async () => []), write: vi.fn(async () => []) }
+    renderBundleConfig('summary', { modelList })
     await act(async () => {})
     expect(document.body.textContent).toContain(zh['card.description'])
     expect(document.body.querySelector('button')).toBeNull()
     expect(document.body.querySelector('input')).toBeNull()
-    expect(modelInfo).not.toHaveBeenCalled()
+    expect(modelList.read).not.toHaveBeenCalled()
   })
 
   it('renders the bare form in the page view without the collapsible chrome and writes the live switch through the scope', async () => {

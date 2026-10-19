@@ -432,3 +432,243 @@
   opacity: 0.5;
   cursor: default;
 }
+
+/* The curated model-list editor. */
+.modelList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.modelRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-primary, transparent);
+  cursor: grab;
+}
+
+.modelRowDragging {
+  opacity: 0.6;
+  cursor: grabbing;
+}
+
+.modelDrag {
+  color: var(--dsw-alias-label-tertiary);
+  cursor: grab;
+  user-select: none;
+}
+
+.modelRowValue {
+  flex: 1;
+  font-size: 13px;
+  font-family: var(--dsw-alias-font-mono, monospace);
+  color: var(--dsw-alias-label-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.modelRowLabel {
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 40%;
+}
+
+.modelDefaultChip {
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--dsw-alias-success, #1a9e54);
+  background: color-mix(in srgb, var(--dsw-alias-success, #1a9e54) 12%, transparent);
+}
+
+.modelDelete {
+  appearance: none;
+  border: 0;
+  background: none;
+  padding: 2px 4px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.modelDelete:hover,
+.modelDelete:focus-visible {
+  color: var(--dsw-alias-label-primary);
+}
+
+.modelAdd {
+  appearance: none;
+  border: 1px dashed var(--dsw-alias-border-l2);
+  background: none;
+  padding: 5px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--dsw-alias-label-secondary, var(--dsw-alias-label-primary));
+  cursor: pointer;
+}
+
+.modelAdd:hover,
+.modelAdd:focus-visible {
+  border-color: var(--dsw-alias-label-tertiary);
+}
+
+/* The add-models dialog. */
+.dialogBackdrop {
+  position: fixed;
+  inset: 0;
+  background: color-mix(in srgb, #000 32%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.dialog {
+  width: min(520px, calc(100vw - 48px));
+  max-height: min(560px, calc(100vh - 96px));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-primary, #1e1f24);
+  border: 1px solid var(--dsw-alias-border-l2);
+  box-shadow: 0 12px 40px rgb(0 0 0 / 0.35);
+}
+
+.dialogHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.dialogTitle {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+
+.dialogClose {
+  appearance: none;
+  border: 0;
+  background: none;
+  padding: 2px 4px;
+  font-size: 13px;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.dialogClose:hover,
+.dialogClose:focus-visible {
+  color: var(--dsw-alias-label-primary);
+}
+
+.dialogHint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.dialogToolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dialogToolbar .modelInput {
+  flex: 1;
+}
+
+.dialogSelectAll {
+  appearance: none;
+  border: 0;
+  background: none;
+  padding: 4px 6px;
+  font-size: 13px;
+  color: var(--dsw-alias-label-secondary, var(--dsw-alias-label-primary));
+  cursor: pointer;
+}
+
+.dialogSelectAll:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.dialogList {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 120px;
+  max-height: 320px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  padding: 6px;
+}
+
+.dialogItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+}
+
+.dialogItem:hover {
+  background: color-mix(in srgb, currentColor 6%, transparent);
+}
+
+.dialogItemAdded {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.dialogItemValue {
+  font-family: var(--dsw-alias-font-mono, monospace);
+}
+
+.dialogItemLabel {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dialogActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.dialogConfirm {
+  appearance: none;
+  border: 0;
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--dsw-alias-bg-primary, #fff);
+  background: var(--dsw-alias-label-primary, #111);
+  cursor: pointer;
+}
+
+.dialogConfirm:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

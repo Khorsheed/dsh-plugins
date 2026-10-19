@@ -1,4 +1,3 @@
-import type { LocalAgentUi } from '@khorsheed/dsh-local-agent/client'
 import { bindSettingsScope } from '@khorsheed/dsh-local-agent/src/client/settings-scope.ts'
 /**
  * Local-agent-claude-code plugin, browser half: the claude-code settings card
@@ -87,15 +86,25 @@ export function apply(ctx: Context): void {
     scope,
     hooks: { settings: scope },
     authT,
-    renderModelPicker: props => (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.renderHarnessModelPicker('claude-code', props),
-    // The model surface read behind the default-model block's effective
-    // line and suggestions. 'claude-code' is the harness name the host
-    // half registers; a core predating the model broker (or an absent
-    // gateway) degrades to the bare free-text input.
-    modelInfo: () => {
+    // The curated model list's read/write faces, over the same Remotes.
+    modelList: {
+      read: () => {
+        const gw = gateway()
+        if (gw === undefined || typeof gw.modelList !== 'function') return Promise.resolve(undefined)
+        return gw.modelList('claude-code').then(result => (result.ok ? result.value : undefined))
+      },
+      write: (models) => {
+        const gw = gateway()
+        if (gw === undefined || typeof gw.configureModelList !== 'function') return Promise.resolve(undefined)
+        return gw.configureModelList('claude-code', models).then(result => (result.ok ? result.value : undefined))
+      },
+    },
+    // The endpoint's served catalog for the add dialog. A core predating
+    // modelDirectory leaves the dialog with its reason.
+    modelDirectory: (refresh) => {
       const gw = gateway()
-      if (gw === undefined || typeof gw.harnessModel !== 'function') return Promise.resolve(undefined)
-      return gw.harnessModel('claude-code').then(result => (result.ok ? result.value : undefined))
+      if (gw === undefined || typeof gw.modelDirectory !== 'function') return Promise.resolve(undefined)
+      return gw.modelDirectory('claude-code', undefined, refresh ?? false).then(result => (result.ok ? result.value : undefined))
     },
     // The verify button's probe, over the session-less gateway Remote. A core
     // predating `checkEndpoint` hides the button (declare-and-degrade).

@@ -432,6 +432,17 @@ export interface LocalAgentHarness {
   endpointAuth?: {
     read(homeDir: string): Promise<LocalAgentEndpointAuthState>
     write(homeDir: string, fields: LocalAgentEndpointAuthFields): Promise<void>
+  }
+  /**
+   * Optional curated model-list face: an ORDERED list of model identifiers
+   * the harness persists in its own store (its first entry is the harness's
+   * default model). The settings card edits it through the session-less
+   * `modelList`/`configureModelList` gateway Remotes. Absent means the card
+   * renders no model-list editor.
+   */
+  modelList?: {
+    read(homeDir: string): Promise<readonly string[]>
+    write(homeDir: string, models: readonly string[]): Promise<readonly string[]>
   }  /**
    * The credential marker's modification stamp (epoch ms), undefined when no
    * credential exists. Two consumers: the manual-login watch requires a stamp

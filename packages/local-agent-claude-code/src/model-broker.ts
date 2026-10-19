@@ -107,8 +107,10 @@ export interface ClaudeModelBrokerDeps {
   /** The registry face for the in-flight check and the delegation record. */
   readonly localAgent: Pick<LocalAgentRegistry, 'isDelegationActive' | 'getDelegation'> & Partial<Pick<LocalAgentRegistry, 'setMemberModel'>>
   readonly configurationContext?: (binding: LocalAgentMemberBinding) => { home: string; directory: (refresh?: boolean) => LocalAgentModelDirectory | Promise<LocalAgentModelDirectory> }
-  /** The settings layer: the plugin-config model, read per call. */
-  readonly settingsModel: () => string | undefined
+  /** The settings layer: the curated list's first entry, else the plugin-config model, read per call. */
+  readonly settingsModel: (scope?: string) => string | undefined
+  /** The scope's curated model list, read per call (empty = the fallback chain decides the vocabulary too). */
+  readonly modelList?: (scope?: string) => readonly string[]
   /** The scoped settings.json's own model, minus live-spawn scratch writes. */
   readonly cliDefault: (childSessionId?: string) => Promise<string | undefined>
   readonly directory?: (childSessionId?: string, refresh?: boolean) => LocalAgentModelDirectory | Promise<LocalAgentModelDirectory>
@@ -143,7 +145,7 @@ export class ClaudeModelBroker implements LocalAgentModelBroker {
       let directory = await context.directory()
       if (directory.status === 'loading') directory = await context.directory(true)
       const model = selection.model.mode === 'value' ? selection.model.value
-        : (selection.model.mode === 'inherit' ? binding.model : undefined) ?? this.deps.settingsModel()
+        : (selection.model.mode === 'inherit' ? binding.model : undefined) ?? this.deps.settingsModel(binding.scope)
           ?? await readClaudeConfiguredModel(context.home) ?? directory.defaultModel
       const entry = directory.entries.find(entry => entry.value === model || entry.resolvedModel === model)
       const effort = (selection.effort.mode === 'value' ? selection.effort.value : selection.effort.mode === 'inherit' ? binding.effort : undefined)
@@ -207,9 +209,10 @@ export class ClaudeModelBroker implements LocalAgentModelBroker {
    * would a round run with" read.
    */
   async modelInfo(childSessionId?: string, delegationModel?: string): Promise<LocalAgentModelInfo> {
+    const record = childSessionId === undefined ? undefined : this.deps.localAgent.getDelegation(childSessionId)
     const override = childSessionId === undefined ? undefined : this.deps.overrides.get(childSessionId)
     const delegation = delegationModel?.trim() === '' ? undefined : delegationModel?.trim()
-    const settings = this.deps.settingsModel()
+    const settings = this.deps.settingsModel(record?.scope)
     const cliDefault = await this.deps.cliDefault(childSessionId)
     const native = await this.deps.directory?.(childSessionId)
     const [effective, source]: [string | undefined, LocalAgentModelSource] = override !== undefined
@@ -221,9 +224,14 @@ export class ClaudeModelBroker implements LocalAgentModelBroker {
           : cliDefault !== undefined
             ? [cliDefault, 'cli-config']
             : [native?.defaultModel, 'cli-builtin']
-    // Native candidates plus labelled configuration and historical suggestions.
-    const choices = [...new Set([settings, cliDefault, ...native?.entries.filter(entry => !entry.hidden).map(entry => entry.value) ?? [], ...this.deps.recentModels()]
-      .filter((value): value is string => value !== undefined))]
+    // The curated list is the whole vocabulary when non-empty — nothing from
+    // outside the endpoint's served catalog sneaks in. Empty falls back to
+    // the pre-list chain (native candidates plus configuration and history).
+    const curated = this.deps.modelList?.(record?.scope) ?? []
+    const choices = curated.length > 0
+      ? [...curated]
+      : [...new Set([settings, cliDefault, ...native?.entries.filter(entry => !entry.hidden).map(entry => entry.value) ?? [], ...this.deps.recentModels()]
+        .filter((value): value is string => value !== undefined))]
     const lastObserved = await this.lastObserved(childSessionId)
     const active = childSessionId !== undefined && this.deps.localAgent.isDelegationActive(childSessionId)
     return {
@@ -265,8 +273,9 @@ export class ClaudeModelBroker implements LocalAgentModelBroker {
     if (next === undefined) this.deps.overrides.delete(childSessionId)
     else this.deps.overrides.set(childSessionId, next)
     // What the next spawn would bind, in the round resolvers' own order.
-    const delegation = this.deps.localAgent.getDelegation(childSessionId)?.model?.trim()
-    const spawnModel = next ?? (delegation === undefined || delegation === '' ? undefined : delegation) ?? this.deps.settingsModel()
+    const record = this.deps.localAgent.getDelegation(childSessionId)
+    const delegation = record?.model?.trim()
+    const spawnModel = next ?? (delegation === undefined || delegation === '' ? undefined : delegation) ?? this.deps.settingsModel(record?.scope)
     const host = this.deps.liveSwitch.hostingDriver(childSessionId)
     if (host !== undefined && host.runtimeModel(childSessionId) !== spawnModel) {
       await host.retireRuntime(childSessionId)

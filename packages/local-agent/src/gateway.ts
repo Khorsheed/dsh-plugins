@@ -307,6 +307,35 @@ export default class LocalAgentGateway extends TypertRemoteService {
   }
 
   /**
+   * The settings card's read of one harness's curated model list — ordered
+   * identifiers, first is the default. Null when the harness is unknown or
+   * declares no list face (the card then hides the editor).
+   * @param name - the harness name.
+   * @returns the ordered list, or null.
+   */
+  @Remote('modelList')
+  async modelList(name: string): Promise<readonly string[] | null> {
+    const harness = this.ctx.localAgent.get(name)
+    if (harness?.modelList === undefined) return null
+    return harness.modelList.read(this.ctx.localAgent.homeDir(name))
+  }
+
+  /**
+   * Replace one harness's curated model list wholesale (reorders, removals
+   * and additions all ride the same write), answering the list as persisted.
+   * Null when the harness is unknown or declares no list face.
+   * @param name - the harness name.
+   * @param models - the new ordered list.
+   * @returns the persisted list, or null.
+   */
+  @Remote('configureModelList')
+  async configureModelList(name: string, models: readonly string[]): Promise<readonly string[] | null> {
+    const harness = this.ctx.localAgent.get(name)
+    if (harness?.modelList === undefined) return null
+    return harness.modelList.write(this.ctx.localAgent.homeDir(name), models)
+  }
+
+  /**
    * The model surface of one member — the composer's picker read. The
    * delegation record's requested model rides in from the core so the broker
    * can rank it between the override and the settings layer; the record's

@@ -52,15 +52,15 @@ bundle 行接受这些可选字段：
 
 > **每个 scope 的覆盖**——`<作用域目录>/endpoint-auth.json`（0600）按字段覆盖，两层生效顺序：**scope 文件 > profile 的 YAML 行**，缺哪个字段就回落到配置值。一个只写 `apiKey` 的文件等于给这个 scope 换 key。设置卡「认证」区编辑的就是默认 scope 的这份文件（经家族 gateway 的 `endpointAuth`/`configureEndpoint` Remote，会话不在场也能读写）。`/claude-code logout` 清除的也是这个文件；凭据完全来自配置行时 logout 会拒绝并提示去改 profile。
 
-### 默认模型（`model`）
+### 可用模型（models.json）
 
-**不写 = 今天的表现。** 没有这个键时，本插件在 argv 上一个模型参数都不加：跑哪个模型由作用域 `settings.json` 的 `model` 决定，它也没有时由 claude 自己的默认决定（本插件从不猜它是什么）。
+设置卡「可用模型」区维护一份**有序模型短名单**：点「添加模型」从端点当前供应的目录（`GET /v1/models`）里勾选加入，所以列表里只会有端点真实供应的模型；拖动行调整顺序。**第一个模型就是默认模型**——每轮委派以它起 CLI（`claude -p --model <模型>`，常驻模式同一个旗标），优先级只低于成员会话级覆盖与委派级指定。列表保存在作用域目录的 `models.json`（每个命名 scope 可各有一份，与端点凭据同一套文件机制），编辑即保存，下一轮委派生效。
 
-**写了 = 每轮委派以它起 CLI。** 新起一轮与续接（resume）、一次性与常驻（`live: true`）四种 argv 都带上 `--model <模型>`，位置在成员通道的 `--allowedTools …--` 之前——那个旗标是变长的，`--` 之后就是任务文本。
+**留空 = 既有行为。** 列表为空时，模型照旧由这些层决定：插件配置或设置的 `model` 键 → 作用域 `settings.json` 的 `model` → CLI 内置默认（本插件从不猜它是什么）。一次性（exec）轮不改写作用域 `settings.json`；常驻（live）spawn 会把生效模型暂写进该文件（`--resume` 重挂认文件不认旗标），绑定空模型的 spawn 前再还原。
 
-一次性（exec）轮不改写作用域 `settings.json`——`--model` 每轮覆盖它，文件仍是你编辑的样子。常驻（live）spawn 会把成员的生效模型暂写进该文件（`--resume` 重挂时 CLI 认文件里的模型而不认 `--model` 旗标），绑定空模型的 spawn 前再还原；状态页与设置卡读到的「CLI 配置」层永远是你自己配的值，不会读到某个成员留下的暂写。
+**评测快照（effectiveSettings）** 的 model 字段同一条解析链：名单第一项 → `model` 键 → 作用域文件；名单进不了快照（它是偏好不是公平性旋钮），回读的 `observedModel` 才是实测证据。run 冻结条件后中途改名单，下一轮的模型回读会发现声明 ≠ 实测并判 misattributed（冻结决策 5）。
 
-设置卡「默认模型」修改后续轮次使用的 provider 配置。共享选择器展示当前作用域的模型目录、发现来源和完整性，并保留按需填写模型 ID 的入口。清空选择后跟随有效配置及默认值链。保存不会打断当前轮次，也无需重载；共享选择器不可用时，卡片保留文本输入兜底。成员级模型和推理强度修改使用下文的持久控制面。
+成员会话里的 composer 模型选择器写入的是**会话级覆盖**——它排在委派模型与名单之前，只存内存、刻意不跨宿主重启、也不写进设置或名单。切换进行中轮次的成员会被拒绝；live 下换到不同模型会退役该成员的常驻 runtime，下一轮以新模型重挂**同一个** CLI 会话（对话不丢），换成相同模型则什么都不发生。成员级模型和推理强度修改使用下文的持久控制面。
 
 模型读面来自**端点实际供应的模型**（`GET <baseUrl>/v1/models`，带已保存的凭据）——选择器列出的就是端点能跑的，凭据无效时列表为空并给出原因，绝不会用本地 CLI 的内置词汇表掩盖一个失效的 key。目录共用 core 缓存和刷新订阅；端点或凭据一变即重探（凭据轮换经短哈希进缓存键，密钥本体不进），传输错误保留上次成功数据并按计划重试。端点返回的 effort 能力会带上可选档位。目录外的模型 id 仍可手动输入。设置卡的「验证端点并获取模型」按钮是同一条探测的显式版本（无会话 Remote，未保存修改时禁用）。运行中选择排到下一完整轮次（含工具续跑）；core 统一持有当前/待生效配置、撤销与重试，冻结评测成员禁止变更。
 
@@ -72,7 +72,7 @@ bundle 行接受这些可选字段：
 
 ⚠️ `skip` 没有 OS 级沙箱——子进程可以写宿主用户能写的任何地方，包括工作区之外；端点凭据会发送给 `baseUrl` 指向的端点。委派需要限制时改用 `normal`；`baseUrl` 只指向你信任的地址。
 
-**评测快照（effectiveSettings）。** 本 harness 向注册表声明一份实时读取的公平性设置快照，供评测条件哈希使用：drive（exec/live）、permissionMode（skip/normal，插件配置）、端点是否固定（按 provider 的解析顺序——scope 的 `endpoint-auth.json` 逐字段覆盖插件配置，只报主机名；key 材料永远不进快照，文件名命中评测契约哈希的凭据拒绝名单，连摘要都不进条件指纹）、已配置模型（先看插件配置的 `model` 键——它每轮覆盖文件；没有才读作用域 `settings.json` 的 `model`；CLI 自身的默认模型由 CLI 决定，绝不猜值，都没有就不给字段）、CLI 版本（`claude --version`，按可执行文件路径+mtime 缓存；探测不到即字段缺位）。`/claude-code status` 与 `LocalAgentStatus` Remote 附带同一份快照。
+**评测快照（effectiveSettings）。** 本 harness 向注册表声明一份实时读取的公平性设置快照，供评测条件哈希使用：drive（exec/live）、permissionMode（skip/normal，插件配置）、端点是否固定（按 provider 的解析顺序——scope 的 `endpoint-auth.json` 逐字段覆盖插件配置，只报主机名；key 材料永远不进快照，文件名命中评测契约哈希的凭据拒绝名单，连摘要都不进条件指纹）、已配置模型（名单第一项 → 插件配置的 `model` 键 → 作用域 `settings.json` 的 `model`；CLI 自身的默认模型由 CLI 决定，绝不猜值，都没有就不给字段）、CLI 版本（`claude --version`，按可执行文件路径+mtime 缓存；探测不到即字段缺位）。`/claude-code status` 与 `LocalAgentStatus` Remote 附带同一份快照。
 
 ## Compatibility
 

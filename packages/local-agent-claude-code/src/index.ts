@@ -36,6 +36,7 @@ import { LiveDriverSwitch } from './live-switch.ts'
 import type { ClaudeLiveSettings } from './live-switch.ts'
 import { ClaudeModelCatalog } from './model-catalog.ts'
 import { ClaudeModelBroker, ClaudeScopedModelMemory } from './model-broker.ts'
+import { firstModelOf, readModelList, readModelListSync, writeModelList } from './model-list.ts'
 import { listClaudeSessions, readClaudeTranscriptModel } from './records.ts'
 import { provisionClaudeHome, readClaudeConfiguredModel } from './provision.ts'
 
@@ -225,15 +226,18 @@ export function apply(ctx: Context, config: Config): void {
     }
     const resolveEndpoint = (scopeHome: string): Promise<ClaudeEndpointAuth> =>
       resolveEndpointAuth(scopeHome, endpointConfig)
-    // The model is read PER ROUND, not captured at apply: the settings card
-    // writes the same namespace field, so a change has to reach the next
-    // delegation without a plugin reload — exactly like the live toggle.
-    // Blank is not a model: a whitespace-only value means "unset", which is
-    // the pre-key argv.
-    const resolveModel = (): string | undefined => {
+    // The memberless model key: the plugin-config/settings `model`, blank = unset.
+    const settingsModelKey = (): string | undefined => {
       const model = face.get().model?.trim()
       return model === undefined || model === '' ? undefined : model
     }
+    // The harness's default model for a scope: the curated model list's
+    // FIRST entry (models.json, edited on the card), ahead of the settings
+    // key; an empty list leaves the pre-existing chain untouched. Read sync
+    // per call — one small file, and a card write always reaches the next
+    // round.
+    const resolveModel = (scope?: string): string | undefined =>
+      firstModelOf(readModelListSync(ctx.localAgent.homeDir('claude-code', scope))) ?? settingsModelKey()
     // The member model layers above the settings key: the session-level
     // override map (the composer's picker writes it through the broker; both
     // round paths and the live spawn read it) and the scoped-settings.json
@@ -252,7 +256,10 @@ export function apply(ctx: Context, config: Config): void {
       if (own !== undefined && own !== '') return own
       const named = delegationModel?.trim()
       if (named !== undefined && named !== '') return named
-      return resolveModel()
+      // The member's scope decides whose list answers: a named scope's rounds
+      // read that scope's models.json, exactly like its endpoint credential.
+      const record = ctx.localAgent.memberBinding?.(childSessionId) ?? ctx.localAgent.getDelegation(childSessionId)
+      return resolveModel(record?.scope)
     }
     const liveSwitch = new LiveDriverSwitch(ctx, face, {
       ...config.permissionMode === undefined ? {} : { permissionMode: config.permissionMode },
@@ -280,6 +287,7 @@ export function apply(ctx: Context, config: Config): void {
         return { home, directory: refresh => refresh ? modelCatalog.refresh(home, binding.cwd) : modelCatalog.read(home, binding.cwd) }
       },
       settingsModel: resolveModel,
+      modelList: scope => readModelListSync(ctx.localAgent.homeDir('claude-code', scope)),
       cliDefault: childSessionId => {
         const context = modelContext(childSessionId)
         return context.home === homeDir ? scopedModelMemory.cliDefault(homeDir) : readClaudeConfiguredModel(context.home)
@@ -374,6 +382,12 @@ export function apply(ctx: Context, config: Config): void {
       // would a round run with"), the member composer reads and switches a
       // member's session-level override through the same broker.
       modelBroker,
+      // The settings card's curated model list (the default scope's
+      // models.json; named scopes carry their own, read per round).
+      modelList: {
+        read: home => readModelList(home),
+        write: (home, models) => writeModelList(home, models),
+      },
       // The eval snapshot: the permission mode is the plugin config resolved
       // at apply (it selects the spawn flags); the endpoint mirrors the
       // provider's own resolution — the scope's file over the config triple.
