@@ -2,11 +2,11 @@
 
 English | [中文](README.md)
 
-The everyday dsh experience in one install: message tools, session artifacts, local files, the reader, context guards, mobile — a single 「基础体验」 card in the inventory instead of eighteen packages to pick one by one.
+The everyday dsh experience in one install: message tools, session artifacts, local files, context guards, mobile — a single 「基础体验」 card in the inventory instead of seventeen packages to pick one by one.
 
 ## Features
 
-- **The whole family in one install** — message tools, message timeline, title edit, quote, inline cards, context guard, background tasks, session artifacts, local files, capability catalog, mobile, shortcuts, whalesong, ankh-guard, capture, reader, sidechat and context-lens, all from a single install.
+- **The whole family in one install** — message tools, message timeline, title edit, quote, inline cards, context guard, background tasks, session artifacts, local files, capability catalog, mobile, shortcuts, whalesong, ankh-guard, capture, sidechat and context-lens, all from a single install. The reader (`@khorsheed/dsh-reader`) ships with the learning and writing modes since 2026-10-19, not in this bundle.
 - **One card in the inventory** — locale card metadata folds the family into a single 「基础体验」 card; the detail page still lists every member row with its own enable switch.
 - **Pure composition, zero runtime** — the package registers no service, tool, slot, or command of its own; the patch reuses the members' canonical rows verbatim and never double-mounts (mechanism in How it works below).
 
@@ -29,13 +29,12 @@ The everyday dsh experience in one install: message tools, session artifacts, lo
 | `@khorsheed/dsh-whalesong` | `whalesong` | whale spout animation with completion and blocked chimes |
 | `@khorsheed/dsh-ankh-guard` | `ankh-guard` | gate self-modification restarts on a green build and test credential |
 | `@khorsheed/dsh-capture` | `capture` | render JS-heavy pages in headless Chrome, returning the static DOM |
-| `@khorsheed/dsh-reader` | `reader` | read RSS feeds and saved article links on a card wall |
 | `@khorsheed/dsh-sidechat` | `sidechat` | a lightweight sidebar chat with a persistent agent per context |
 | `@khorsheed/dsh-context-lens` | `context-lens` | per-turn structured breakdown of every model request: sections, tools, tokens, timing |
 
 ## Install
 
-Paste the package name `@khorsheed/dsh-basic` into the host's add-plugin dialog (or pick it from the marketplace index), confirm, and restart the instance — installing this one package brings all eighteen members along as dependencies, and this bundle's patch mounts their rows.
+Paste the package name `@khorsheed/dsh-basic` into the host's add-plugin dialog (or pick it from the marketplace index), confirm, and restart the instance — installing this one package brings all seventeen members along as dependencies, and this bundle's patch mounts their rows.
 
 The CLI equivalent:
 

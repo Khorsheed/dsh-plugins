@@ -13,8 +13,10 @@ Learning mode is the close-reading coach persona (reading WITH the learner, not 
 | member package | row id | contents |
 | --- | --- | --- |
 | `@khorsheed/dsh-library` | `library` | the library: project-organized deep reading — book ingestion, roadmaps, a vocab book and graded quizzes (the service core and the learning sidebar) |
+| `@khorsheed/dsh-canvas` | `canvas`, `canvas-agent` (granted by this bundle's preset) | the inspiration canvas: put what you read into your own words as cards and drafts (added 2026-10-19) |
+| `@khorsheed/dsh-reader` | `reader`, `reader-tool` (granted by this bundle's preset) | the reader: feeds and articles, notes, discussing them, and 「让Agent考考我」 (added 2026-10-19) |
 
-The library's model face (the tools, the coach guidance section, the library skill) is not a profile-root row: it is the library package's `./tool` composition entry, granted per session by the `library-tool` grant inside this bundle's preset row.
+The library's model face (the tools, the coach guidance section, the library skill) is not a profile-root row: it is the library package's `./tool` composition entry, granted per session by the `library-tool` grant inside this bundle's preset row. The canvas's `./agent` and the reader's `./tool` are granted the same way (`canvas-agent`, `reader-tool`), and both right-Sidebar tabs self-hide on those rows — they appear only in learning- and writing-mode sessions.
 
 ## Install
 

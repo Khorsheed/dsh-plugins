@@ -32,7 +32,7 @@ Interesting papers and articles pile up as browser tabs, and feeding one to the 
 dsh plugin --profile web add @khorsheed/dsh-reader
 ```
 
-Restart the web instance to activate. Uninstall:
+Restart the web instance to activate (installed alone, the tools and the tab reach every session). Usually there is no need to install it alone: the reader ships with the learning mode (`@khorsheed/dsh-learning`) and the writing mode (`@khorsheed/dsh-writing`), and its tools and tab appear only in those modes' sessions. Uninstall:
 
 ```sh
 dsh plugin --profile web remove @khorsheed/dsh-reader
@@ -42,7 +42,7 @@ Exactly one directory is written: `$DSH_HOME/state/dsh-reader/` — `state.json`
 
 ## Compatibility
 
-- npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`): ✅ works, one designed degrade — the `sidebar.right.pane.tab` seat and the `ctx.web.fetch` egress seam are complete on 0.1.5-rc.1; the in-app Sidebar Browser exits (the script-figure notice, a bot-wall card's action) need the `browser` right-Sidebar tab kind from 0.1.6-alpha.2 and fall back to the ordinary external link on a 0.1.5 host. minHost `0.1.5-rc.1`; this package does no preset self-hide (no `pluginInventory` needed).
+- npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`): ✅ works, one designed degrade — the `sidebar.right.pane.tab` seat and the `ctx.web.fetch` egress seam are complete on 0.1.5-rc.1; the in-app Sidebar Browser exits (the script-figure notice, a bot-wall card's action) need the `browser` right-Sidebar tab kind from 0.1.6-alpha.2 and fall back to the ordinary external link on a 0.1.5 host. minHost `0.1.5-rc.1`. The right-Sidebar tab self-hides on the `./tool` row (2026-10-19, the canvas's dual check): with the `reader-tool` row mounted at the root (a standalone install) every session sees it, otherwise only sessions whose preset grants it (learning and writing modes); every unreadable path — no `pluginInventory`, a session with no preset — shows it.
 - source line (deepseek-harness master): ✅ (verifiedHost: 0.2.1-rc.1) — host-021 wave: full build+test green against the 0.2.1-rc.1 tree, no other surface change.
 - Notes (unreleased): highlights use the browser's CSS Custom Highlight API — a browser without it shows no highlight while the notes work as usual; **Take a note** joins the quote menu only when quote loaded first, otherwise the detail view's foot button of the same name is the way in; **Back to the conversation** needs ui-workspace's `openSession` and is absent without it; `reader_read` / `reader_note` need the host's `tools` registry and the `reader` skill its `skills` registry; neither registers without them.
 

@@ -30,6 +30,9 @@ import { extractArticle } from './extract-article.ts'
 import { translationHash } from './translate.ts'
 import { noteTargetForSelection } from './notes.ts'
 import type { CanvasInboxLike } from './canvas-sync.ts'
+import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
+import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
+import { ReaderTabVisibility, RegistrationToggle, type ReaderPluginInventorySnapshot } from './preset-visibility.ts'
 import { READER_TAB_ID, readerDefinition } from './definition.tsx'
 import { ReaderPane } from './ReaderPane.tsx'
 import { createReaderStore } from './store.ts'
@@ -44,6 +47,19 @@ export { READER_KIND, READER_TAB_ID } from './definition.tsx'
  * session scope, and the session id alone is not enough to reach it).
  */
 export const inject = ['slots', 'remote', 'locale', 'sidebarRightTabs', 'sessions']
+
+/**
+ * The session the main view shows (the canvas client's reading: the session a
+ * `mainView` retain holds, else the list's current one).
+ */
+type SessionListCurrent = SessionListState & {
+  current?: SessionId
+  byId: Record<SessionId, { id: SessionId; retainedBy?: Readonly<Record<string, number>> }>
+}
+function mainSessionId(list: SessionListState): SessionId | undefined {
+  const view = list as SessionListCurrent
+  return Object.values(view.byId).find(s => (s.retainedBy?.mainView ?? 0) > 0)?.id ?? view.current
+}
 
 /**
  * Client plugin body: mount the Remote, register the dictionaries and the
@@ -305,7 +321,23 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   // Two-stage right-Sidebar registration: the type into the registry, the body
   // into the keyed pane seat under the type's id. Both ride `ctx.effect` so a
   // reload or unload removes them.
-  ctx.effect(() => ctx.sidebarRightTabs.register(readerDefinition(t)), 'reader: tab type')
+  // The tab type registers exactly while the current session can reach the
+  // reader tools (preset-visibility.ts): a root-mounted `./tool` row (a
+  // standalone install) or the session's preset naming it (the learning and
+  // writing mode packs). Every unreadable path fails open.
+  const pluginInventory = ctx.get('remote.pluginInventory') as {
+    list: () => Promise<RemoteResult<ReaderPluginInventorySnapshot>>
+  } | undefined
+  const tabVisibility = new ReaderTabVisibility(ctx, pluginInventory)
+  ctx.effect(() => {
+    const toggle = new RegistrationToggle(
+      () => ctx.sidebarRightTabs.register(readerDefinition(t)),
+      () => tabVisibility.show(mainSessionId(ctx.sessions.list.getSnapshot())),
+    )
+    toggle.setReady(true)
+    const unsubscribe = tabVisibility.subscribe(() => { toggle.sync() })
+    return () => { unsubscribe(); toggle.setReady(false) }
+  }, 'reader: tab type visibility')
   ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
     name: 'sidebar.right.pane.tab',
     key: READER_TAB_ID,

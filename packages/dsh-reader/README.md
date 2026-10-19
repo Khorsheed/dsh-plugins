@@ -32,7 +32,7 @@ RSS 订阅和随手粘来的文章链接收在同一面墙上——点开就在 
 dsh plugin --profile web add @khorsheed/dsh-reader
 ```
 
-装完重启 web 实例后生效。卸载：
+装完重启 web 实例后生效（单装时工具与页签在所有会话可见）。一般不必单装：灵感空间随学习模式（`@khorsheed/dsh-learning`）与写作模式（`@khorsheed/dsh-writing`）安装，工具与页签只在这两个模式的会话里出现。卸载：
 
 ```sh
 dsh plugin --profile web remove @khorsheed/dsh-reader
@@ -42,7 +42,7 @@ dsh plugin --profile web remove @khorsheed/dsh-reader
 
 ## Compatibility
 
-- npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：✅ 可用，一处设计内降级——`sidebar.right.pane.tab` 座位、`ctx.web.fetch` 出网缝在 0.1.5-rc.1 上完整；应用内 Sidebar Browser 出口（脚本插图提示、反爬卡片的动作）需要 0.1.6-alpha.2+ 的 `browser` 右栏 tab 类型，0.1.5 宿主上退化为普通外部链接。minHost `0.1.5-rc.1`；本插件不做 preset 自隐（不需要 `pluginInventory`）。
+- npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：✅ 可用，一处设计内降级——`sidebar.right.pane.tab` 座位、`ctx.web.fetch` 出网缝在 0.1.5-rc.1 上完整；应用内 Sidebar Browser 出口（脚本插图提示、反爬卡片的动作）需要 0.1.6-alpha.2+ 的 `browser` 右栏 tab 类型，0.1.5 宿主上退化为普通外部链接。minHost `0.1.5-rc.1`。右栏页签按 `./tool` 行双查自隐（2026-10-19，画布同款）：根上挂着 `reader-tool` 行（单装）时所有会话可见，否则只在 preset 授予它的会话里可见（学习模式、写作模式）；读不到 `pluginInventory`、会话没有 preset 等一切读不出的情形一律显示。
 - 源码线（deepseek-harness master）：✅（verifiedHost: 0.2.1-rc.1）——host-021 波对 0.2.1-rc.1 树全量 build+test 绿，无其它表面变化。
 - 笔记（未发布）：正文高亮用浏览器的 CSS 自定义高亮 API，没有这个 API 的浏览器不显示底色、笔记本身照常；「记笔记」挂进 quote 菜单要 quote 先于本插件加载，探测不到时用详情页底栏的同名按钮；「回到会话」需要 ui-workspace 的 `openSession`，没有就不出现；`reader_read` / `reader_note` 需要宿主的 `tools` 注册表、`reader` 技能需要 `skills` 注册表，没有就不注册。
 

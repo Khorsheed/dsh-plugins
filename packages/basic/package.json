@@ -1,6 +1,6 @@
 {
   "name": "@khorsheed/dsh-basic",
-  "description": "Family bundle 基础体验: the everyday dsh experience — message tools, session artifacts, file surfaces, readers, guards and mobile — in one install. Thin meta package: a patch carrying the members' canonical rows, npm dependencies on the members, locale card metadata — no runtime code, no client half.",
+  "description": "Family bundle 基础体验: the everyday dsh experience — message tools, session artifacts, file surfaces, guards and mobile — in one install. Thin meta package: a patch carrying the members' canonical rows, npm dependencies on the members, locale card metadata — no runtime code, no client half.",
   "version": "0.1.0",
   "publishConfig": {
     "access": "public"
@@ -48,7 +48,6 @@
     "@khorsheed/dsh-message-timeline": "workspace:*",
     "@khorsheed/dsh-mobile": "workspace:*",
     "@khorsheed/dsh-quote": "workspace:*",
-    "@khorsheed/dsh-reader": "workspace:*",
     "@khorsheed/dsh-sidechat": "workspace:*",
     "@khorsheed/dsh-taskpilot": "workspace:*",
     "@khorsheed/dsh-ui-shortcuts": "workspace:*",
@@ -88,7 +87,6 @@
         "@khorsheed/dsh-whalesong",
         "@khorsheed/dsh-ankh-guard",
         "@khorsheed/dsh-capture",
-        "@khorsheed/dsh-reader",
         "@khorsheed/dsh-sidechat",
         "@khorsheed/dsh-context-lens"
       ]
@@ -109,7 +107,6 @@
       "@khorsheed/dsh-whalesong",
       "@khorsheed/dsh-ankh-guard",
       "@khorsheed/dsh-capture",
-      "@khorsheed/dsh-reader",
       "@khorsheed/dsh-sidechat",
       "@khorsheed/dsh-context-lens"
     ],

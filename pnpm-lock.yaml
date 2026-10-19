@@ -209,9 +209,6 @@ importers:
       '@khorsheed/dsh-quote':
         specifier: workspace:*
         version: link:../quote
-      '@khorsheed/dsh-reader':
-        specifier: workspace:*
-        version: link:../dsh-reader
       '@khorsheed/dsh-sidechat':
         specifier: workspace:*
         version: link:../sidechat
@@ -939,6 +936,9 @@ importers:
       '@deepseek-ai/dsh-api-remotes':
         specifier: 0.2.1-rc.1
         version: 0.2.1-rc.1(@deepseek-ai/cordis@4.0.4)(@deepseek-ai/dsh-scope@0.2.1-rc.1(@deepseek-ai/cordis@4.0.4))
+      '@deepseek-ai/dsh-api-session-controller':
+        specifier: 0.2.1-rc.1
+        version: 0.2.1-rc.1(3508e54203539fde2bae5471db114e02)
       '@deepseek-ai/dsh-client-locale':
         specifier: 0.2.1-rc.1
         version: 0.2.1-rc.1(@deepseek-ai/cordis@4.0.4)
@@ -1364,9 +1364,15 @@ importers:
 
   packages/learning:
     dependencies:
+      '@khorsheed/dsh-canvas':
+        specifier: workspace:*
+        version: link:../canvas
       '@khorsheed/dsh-library':
         specifier: workspace:*
         version: link:../library
+      '@khorsheed/dsh-reader':
+        specifier: workspace:*
+        version: link:../dsh-reader
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: 4.0.4
@@ -3133,6 +3139,9 @@ importers:
       '@khorsheed/dsh-canvas-novel':
         specifier: workspace:*
         version: link:../canvas-novel
+      '@khorsheed/dsh-reader':
+        specifier: workspace:*
+        version: link:../dsh-reader
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: 4.0.4
