@@ -312,6 +312,18 @@ export class LibraryRemoteService extends TypertRemoteService<LibraryRemoteConfi
   }
 
   /** 「教练最近记下」 across projects. */
+  /** The newest knowledge-point state changes (今日 「最近的变化」). */
+  @Remote('recentChanges')
+  recentChanges(request: { limit?: number }): Promise<{ changes: (LibraryEvent & { projectId: string; projectName: string })[] }> {
+    return this.core.recentChanges(request)
+  }
+
+  /** 订正: a retake paper over a station's open misses (all, or the keys named). */
+  @Remote('createRetake')
+  createRetake(request: { projectId: string; resourceId?: string; nodeId: string; keys?: readonly string[] }): Promise<LibraryOutcome<{ assessment: LibraryAssessment }>> {
+    return this.core.createRetake(request)
+  }
+
   @Remote('recentRecords')
   recentRecords(request: { limit?: number }): Promise<{ records: (LibraryEvent & { projectId: string; projectName: string })[] }> {
     return this.core.recentRecords(request)

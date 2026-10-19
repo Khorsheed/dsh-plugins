@@ -10,6 +10,8 @@
     "src/image-refs.ts",
     "src/remote.ts",
     "src/cards.ts",
+    "src/mastery.ts",
+    "src/profiles.ts",
     "src/service.ts",
     "src/service/core.ts",
     "src/service/rules.ts",

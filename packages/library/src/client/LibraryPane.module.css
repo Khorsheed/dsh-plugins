@@ -2290,6 +2290,102 @@ textarea.input { resize: vertical; font: inherit; line-height: 1.5; }
   padding: 0 14px 6px;
 }
 
+/* 章节考：一条主线的步骤框（作答 / 订正 / 出题） */
+.stepBox {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-md, 12px);
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.stepBoxPlain { background: transparent; }
+
+.stepText {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-width: 180px;
+}
+
+.stepSettings {
+  display: grid;
+  flex-basis: 100%;
+  gap: 4px;
+  padding-top: 8px;
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+}
+
+.earlier {
+  color: var(--dsw-alias-label-secondary);
+  font-size: var(--dsh-panel-text-meta, 12px);
+}
+
+.earlier summary {
+  min-height: 32px;
+  cursor: pointer;
+  line-height: 32px;
+}
+
+/* 考点详情：底部弹出 */
+.scrim[data-sheet='true'] {
+  place-items: end stretch;
+  padding: 0;
+}
+
+.sheet {
+  display: grid;
+  gap: 10px;
+  max-height: 85%;
+  overflow: auto;
+  padding: 16px;
+  border-radius: 16px 16px 0 0;
+  background: var(--dsw-alias-bg-layer-1);
+  box-shadow: 0 -8px 28px color-mix(in srgb, var(--dsw-alias-label-primary) 18%, transparent);
+}
+
+.sheetHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--dsh-panel-text-title, 14px);
+}
+
+.spacer { flex: 1; }
+
+.pointBadge {
+  padding: 0 6px;
+  border-radius: 4px;
+  font-size: var(--dsh-panel-text-meta, 12px);
+  line-height: 18px;
+}
+
+.pointBadge[data-state='weak'] { background: var(--lib-bad-soft); color: var(--lib-bad); }
+.pointBadge[data-state='mastered'] { background: var(--lib-ok-soft); color: var(--lib-ok); }
+.pointBadge[data-state='untested'] { background: color-mix(in srgb, var(--dsw-alias-label-primary) 8%, transparent); color: var(--dsw-alias-label-secondary); }
+
+.pointNote {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--dsw-alias-label-primary) 5%, transparent);
+  font-size: var(--dsh-panel-text-meta, 12px);
+}
+
+.changeDot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  margin: 5px 2px 0;
+  border-radius: 50%;
+  background: var(--dsw-alias-label-tertiary, var(--dsw-alias-label-secondary));
+}
+
+.changeDot[data-state='weak'] { background: var(--lib-bad); }
+.changeDot[data-state='mastered'] { background: var(--lib-ok); }
+
 @container dsh-panel (max-width: 560px) {
   .body { padding: 10px; }
   .hero { padding: 0 0 10px; border-bottom: 1px solid var(--dsw-alias-border-l2); border-radius: 0; background: transparent; }

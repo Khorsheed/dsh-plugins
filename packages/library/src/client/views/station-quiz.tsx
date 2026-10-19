@@ -11,14 +11,13 @@ import { ChipRow, ListRow } from '@khorsheed/dsh-client-ui-panel-kit/src/client/
 import {
   acceptanceLines, coverKind, type LibraryAcceptanceLine, type LibraryAssessment, type LibraryAttempt, type LibraryQuizFocus, type LibraryQuizQuestion, type LibraryVerdict, type RoadmapNode,
 } from '../../types.ts'
-import { collectMissed, collectVoided, type MissedRow } from '../mistakes.ts'
+import { collectVoided, type MissedRow } from '../mistakes.ts'
 import type { LibraryQuizSettings } from '../store.ts'
 import { IconCheckOutlineMedium, IconInfoOutlineMedium } from '../icons.tsx'
-import { StateLine, useLoad, value, when, type ViewProps } from '../ui.tsx'
+import { outcome, StateLine, useLoad, value, when, type ViewProps } from '../ui.tsx'
+import { stationMastery, type LibraryPointMastery } from '../../mastery.ts'
 import { MathText } from '../math.tsx'
 import css from '../LibraryPane.module.css'
-
-/** The zigzag column (0..2) a node at `index` sits in. */
 import { QuizRows, sourceMix } from './book.tsx'
 
 /** The right answer as a row caption: choice questions get their letter. */
@@ -28,7 +27,7 @@ function answerText(question: LibraryQuizQuestion): string {
 }
 
 /** One missed / flagged question row: the mark, the prompt, and where it sits (answer · when · book). */
-function MissRow({ p, row, variant, book }: { p: ViewProps['p']; row: MissedRow; variant: 'missed' | 'voided'; book?: string | undefined }): ReactNode {
+function MissRow({ p, row, variant, book }: { p: ViewProps['p']; row: Pick<MissedRow, 'question' | 'at'>; variant: 'missed' | 'voided'; book?: string | undefined }): ReactNode {
   const { t } = p
   return (
     <div className={css.missRow}>
@@ -44,20 +43,27 @@ function MissRow({ p, row, variant, book }: { p: ViewProps['p']; row: MissedRow;
   )
 }
 
-export function QuizTab({ p, projectId, resourceId, node, passRatio, onPrime, onRetake, onReplace }: {
-  p: ViewProps['p']; projectId: string; resourceId: string | undefined; node: RoadmapNode; passRatio: number; onPrime: (focus: LibraryQuizFocus, context?: { weak?: readonly string[]; points?: readonly string[]; kinds?: readonly LibraryQuizQuestion['kind'][]; count?: number | undefined }) => void; onRetake: (prompts: string[]) => void; onReplace: (prompts: string[]) => void
+/**
+ * 章节考 on a quiz / read station, one line of travel (proposal
+ * 2026-10-19-library-point-mastery): the pass line, the points map (tap a
+ * point for why and what to do), then ONE primary action by state — an
+ * untaken paper → 开始作答; open misses → 开始订正 (a retake paper, judged
+ * here, never counted toward passing); else → 出题, its settings folded into
+ * a one-line summary beside the button. Earlier papers fold at the bottom.
+ * The settings and the pending ask live in the pane store per station.
+ */
+export function QuizTab({ p, projectId, resourceId, node, passRatio, onPrime, onReplace }: {
+  p: ViewProps['p']; projectId: string; resourceId: string | undefined; node: RoadmapNode; passRatio: number; onPrime: (focus: LibraryQuizFocus, context?: { weak?: readonly string[]; points?: readonly string[]; kinds?: readonly LibraryQuizQuestion['kind'][]; count?: number | undefined }) => void; onReplace: (prompts: string[]) => void
 }): ReactNode {
   const { t, actions, useStore } = p
   const rev = useStore(s => s.rev)
-  // The quiz direction: the three focuses. 错题重考 is not a direction — it is
-  // the paper card's primary action once this station has misses.
-  // The station's own misses fold into one card (other stations' never show here — a fresh station must not look already sat).
-  const [showMissed, setShowMissed] = useState(false)
-  // The points grid's explainer hides behind the title's ⓘ (tap to toggle).
+  const [showSettings, setShowSettings] = useState(false)
   const [showPointsHint, setShowPointsHint] = useState(false)
+  const [sheet, setSheet] = useState<string | undefined>()
+  const [retaking, setRetaking] = useState(false)
+  const [error, setError] = useState<string | undefined>()
   // The settings (范围 / 重点 / 题型 / 题量) and the pending ask live in the pane
-  // store per station, so leaving the tab and coming back keeps both. 范围
-  // defaults to 都考; no kinds picked = the coach's mix; 题量 defaults to 10.
+  // store per station, so leaving the tab and coming back keeps both.
   const stationKey = `${projectId}:${resourceId ?? ''}:${node.id}`
   const station = useStore(s => s.quiz[stationKey])
   const settings = station?.settings ?? DEFAULT_SETTINGS
@@ -66,8 +72,6 @@ export function QuizTab({ p, projectId, resourceId, node, passRatio, onPrime, on
   const kinds = settings.kinds
   const countText = settings.countText
   const update = (patch: Partial<LibraryQuizSettings>): void => { actions.setQuizSettings(stationKey, { ...settings, ...patch }) }
-  const setDirection = (focus: LibraryQuizFocus): void => { update({ focus }) }
-  const setCountText = (text: string): void => { update({ countText: text }) }
   // After asking, re-read until the coach has stored the new quiz; past the
   // patience window the card says so instead of silently giving up.
   const watching = station?.ask
@@ -82,12 +86,14 @@ export function QuizTab({ p, projectId, resourceId, node, passRatio, onPrime, on
     }, 4000)
     return () => { clearInterval(timer) }
   }, [watching, stale])
-  // Project-wide read, split below into the station's own quizzes and the ones
-  // gating no station (本书测验 / 自由测验) — else those are invisible from here.
-  const assessments = useLoad(() => value(p.listAssessments(projectId, undefined, undefined, 'quiz')), [projectId, rev, tick])
-  const shown = (assessments.data?.assessments ?? []).filter(quiz =>
-    quiz.scope.nodeId === node.id
-    || (quiz.scope.nodeId === undefined && (resourceId !== undefined ? quiz.scope.resourceId === resourceId : quiz.scope.resourceId === undefined)))
+  // Every assessment of the project (papers, retakes): mastery reads them all.
+  const assessments = useLoad(() => value(p.listAssessments(projectId)), [projectId, rev, tick])
+  const attempts = useLoad(() => value(p.listAttempts(projectId)), [projectId, rev])
+  const mine = useLoad(() => value(p.listCards({ projectId, nodeId: node.id, limit: 5 })), [projectId, node.id, rev])
+  const all = assessments.data?.assessments ?? []
+  const allAttempts = attempts.data?.attempts ?? []
+  const shown = all.filter(quiz => quiz.type === 'quiz'
+    && (quiz.scope.nodeId === node.id || (quiz.scope.nodeId === undefined && (resourceId !== undefined ? quiz.scope.resourceId === resourceId : quiz.scope.resourceId === undefined))))
   const quizCount = shown.length
   // The quiz the learner is waiting for opens itself when it lands.
   useEffect(() => {
@@ -96,212 +102,183 @@ export function QuizTab({ p, projectId, resourceId, node, passRatio, onPrime, on
     const landed = shown.at(-1)
     if (landed !== undefined) actions.push({ view: 'quiz', projectId, ...(landed.scope.resourceId === undefined ? {} : { resourceId: landed.scope.resourceId }), quizId: landed.id })
   }, [quizCount, watching])
-  const mine = useLoad(() => value(p.listCards({ projectId, nodeId: node.id, limit: 5 })), [projectId, node.id, rev])
-  // The station's weak cards drive both the 薄弱 line under the pass rule and the weak list the ask primes carry.
-  const weak = useLoad(() => value(p.listCards({ projectId, nodeId: node.id, weakMin: 1, limit: 5 })), [projectId, node.id, rev])
-  // Every attempt of the project — the paper card's state and the missed lists both read it (through mistakes.ts).
-  const allAttempts = useLoad(() => value(p.listAttempts(projectId)), [projectId, rev])
   const stats = node.quizStats
   const mineCount = mine.data?.total ?? 0
-  // The station's papers, oldest first: the current one is the newest not
-  // superseded; everything superseded (or older than it) is history.
-  const stations = shown.filter(quiz => quiz.scope.nodeId === node.id)
-  const live = stations.filter(quiz => quiz.supersededBy === undefined)
-  const latest = live.at(-1) ?? stations.at(-1)
-  const earlier = stations.filter(quiz => quiz !== latest).reverse()
+  const papers = shown.filter(quiz => quiz.scope.nodeId === node.id)
+  const live = papers.filter(quiz => quiz.supersededBy === undefined)
+  const latest = live.at(-1) ?? papers.at(-1)
   const loose = shown.filter(quiz => quiz.scope.nodeId === undefined)
-  // Every quiz's latest sitting (attempts arrive newest first) drives both the
-  // paper card's state and the missed / flagged lists — one shared collection,
-  // so the station's list, its 其他站 shelf and the project page's entry count
-  // can never disagree (mistakes.ts).
   const latestByQuiz = new Map<string, LibraryAttempt>()
-  for (const attempt of allAttempts.data?.attempts ?? []) {
+  for (const attempt of [...allAttempts].sort((a, b) => b.at.localeCompare(a.at))) {
     if (attempt.assessmentId !== undefined && !latestByQuiz.has(attempt.assessmentId)) latestByQuiz.set(attempt.assessmentId, attempt)
   }
-  const allQuizzes = assessments.data?.assessments ?? []
-  const allMissed = collectMissed(allAttempts.data?.attempts ?? [], allQuizzes)
-  const missed = allMissed.filter(row => row.quiz.scope.nodeId === node.id)
-  const voided = collectVoided(allAttempts.data?.attempts ?? [], latest === undefined ? [] : [latest])
-  // Per-point mastery: the newest verdict (attempts arrive newest first) of any
-  // question probing the point decides — strong, weak, or untested.
-  const points = node.points ?? []
-  const pointStates = new Map<string, 'strong' | 'weak'>()
-  {
-    const quizById = new Map(allQuizzes.map(quiz => [quiz.id, quiz]))
-    for (const attempt of allAttempts.data?.attempts ?? []) {
-      const quiz = quizById.get(attempt.assessmentId ?? '')
-      if (quiz === undefined || quiz.scope.nodeId !== node.id) continue
-      for (const verdict of attempt.verdicts) {
-        if (verdict.void === true) continue
-        const question = quiz.questions?.find(candidate => candidate.id === verdict.task)
-        if (question?.point === undefined || pointStates.has(question.point)) continue
-        pointStates.set(question.point, verdict.pass ? 'strong' : 'weak')
-      }
-    }
-  }
-  const pickedTitles = points.filter(point => picked.includes(point.id)).map(point => point.title)
-  const togglePoint = (pointId: string): void => {
-    update({ picked: picked.includes(pointId) ? picked.filter(candidate => candidate !== pointId) : [...picked, pointId] })
-  }
-  // The paper card's three states: untaken → 开始作答; passed → 再出一套;
-  // failed with misses → 重考错题. The focus chips always configure the ask.
-  const sitting = latest === undefined ? undefined : latestByQuiz.get(latest.id)
-  const taken = sitting !== undefined
-  const passed = taken && sitting.ratio >= passRatio
+  const untaken = latest !== undefined && !latestByQuiz.has(latest.id) ? latest : undefined
+  const mastery = stationMastery(node, all, allAttempts)
+  const open = mastery.open
+  const voided = collectVoided(allAttempts, latest === undefined ? [] : [latest])
+  const weakTitles = mastery.points.filter(point => point.state === 'weak').map(point => point.title)
+  const pickedTitles = mastery.points.filter(point => picked.includes(point.id)).map(point => point.title)
+  const primary: 'answer' | 'retake' | 'ask' = untaken !== undefined ? 'answer' : open.length > 0 ? 'retake' : 'ask'
+
   const openPaper = (quiz: LibraryAssessment): void => {
     actions.push({ view: 'quiz', projectId, ...(quiz.scope.resourceId === undefined ? (resourceId === undefined ? {} : { resourceId }) : { resourceId: quiz.scope.resourceId }), quizId: quiz.id })
   }
-  const ask = (): void => {
+  const parsedCount = (): number => {
     const parsed = Number.parseInt(countText.trim(), 10)
-    const count = Number.isFinite(parsed) ? Math.min(Math.max(parsed, 1), MAX_QUIZ_COUNT) : DEFAULT_QUIZ_COUNT
-    onPrime(direction, { weak: weak.data?.cards.map(card => card.term) ?? [], points: pickedTitles, kinds, count })
-    const summary = [t(`focus.${direction}`), kinds.length === 0 ? t('node.kindsMixed') : kinds.map(kind => t(`kind.${kind}`)).join('、'), t('node.askCount', { count: String(count) }), ...(pickedTitles.length > 0 ? [t('node.askPointsShort', { count: String(pickedTitles.length) })] : [])].join(' · ')
+    return Number.isFinite(parsed) ? Math.min(Math.max(parsed, 1), MAX_QUIZ_COUNT) : DEFAULT_QUIZ_COUNT
+  }
+  const ask = (focusPoints?: readonly string[]): void => {
+    const count = parsedCount()
+    // No picked points: the weak ones are the focus (the coach also reads them every turn).
+    const points = focusPoints ?? (pickedTitles.length > 0 ? pickedTitles : weakTitles)
+    onPrime(direction, { weak: weakTitles, points, kinds, count })
+    const summary = [t(`focus.${direction}`), kinds.length === 0 ? t('node.kindsMixed') : kinds.map(kind => t(`kind.${kind}`)).join('、'), t('node.askCount', { count: String(count) }), ...(points.length > 0 ? [t('node.askFocusPicked', { points: points.join('、') })] : [])].join(' · ')
     actions.setQuizAsk(stationKey, { since: Date.now(), count: quizCount, summary })
     setNow(Date.now())
   }
-  const retake = (): void => {
-    onRetake(missed.map(row => row.question.prompt))
-    actions.setQuizAsk(stationKey, { since: Date.now(), count: quizCount, summary: t('node.retakeCount', { count: String(missed.length) }) })
-    setNow(Date.now())
+  const retake = async (keys?: readonly string[]): Promise<void> => {
+    if (resourceId === undefined || retaking) return
+    setRetaking(true)
+    setError(undefined)
+    try {
+      const created = await outcome(p.createRetake(projectId, resourceId, node.id, keys))
+      setSheet(undefined)
+      actions.push({ view: 'quiz', projectId, resourceId, quizId: created.assessment.id })
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : String(failure))
+    } finally {
+      setRetaking(false)
+    }
   }
   const asking = watching !== undefined && !stale
-  // A picked set of points overrides the default ask (the agreed priority: 选了考点 > 开始作答 > 重考错题 > 再出一套).
-  const askLabel = asking ? t('node.quizWaiting')
-    : pickedTitles.length > 0 ? t('node.askPoints', { count: String(pickedTitles.length) })
-    : t('node.askQuizAgain')
-  const retakeLabel = asking ? t('node.quizWaiting') : t('node.retakeCount', { count: String(missed.length) })
-  const primaryIsRetake = taken && !passed && missed.length > 0 && pickedTitles.length === 0
+  const askSummary = [
+    t(`focus.${direction}`),
+    kinds.length === 0 ? t('node.kindsMixed') : kinds.map(kind => t(`kind.${kind}`)).join('、'),
+    t('node.askCount', { count: String(parsedCount()) }),
+    pickedTitles.length > 0 ? t('node.askFocusPicked', { points: pickedTitles.join('、') }) : weakTitles.length > 0 ? t('node.askFocusWeak') : t('node.askFocusCoach'),
+  ].join(' · ')
+  const openByPoint = mastery.points.filter(point => point.open.length > 0).map(point => `${point.title} ${point.open.length}`)
+  const openLoose = open.filter(miss => miss.question.point === undefined || !mastery.points.some(point => point.id === miss.question.point)).length
+  const sheetPoint = sheet === undefined ? undefined : mastery.points.find(point => point.id === sheet)
+
   return (
     <>
       {node.state === 'locked' && <div className={css.notice}>{t('node.locked')}</div>}
       <div className={css.muted}>
         {t('node.passRule', { percent: String(Math.round(passRatio * 100)) })}
-        {stats !== undefined && stats.attempts > 0 && ` · ${t('node.best', { percent: String(Math.round((stats.bestRatio ?? 0) * 100)), attempts: String(stats.attempts) })}`}
+        {stats !== undefined && stats.attempts > 0 ? ` · ${t('node.best', { percent: String(Math.round((stats.bestRatio ?? 0) * 100)), attempts: String(stats.attempts) })}` : ` · ${t('node.neverSat')}`}
+        {node.state === 'done' ? ` · ${t('node.passedTag')}` : ''}
       </div>
-      {(weak.data?.cards.length ?? 0) > 0 && (
-        <div className={css.muted}>{t('node.weakLine', { terms: weak.data!.cards.map(card => card.term).join('、') })}</div>
-      )}
       <StateLine loaded={assessments} t={t} />
+      {error !== undefined && <div className={css.error}>{error}</div>}
       {watching !== undefined && (
         <section className={css.asking} role="status" data-stale={stale}>
           <span className={css.askingText}>
             <strong>{stale ? t('node.askStale') : t('node.asking')}</strong>
             <span className={css.muted}>{watching.summary} · {t('node.askSince', { minutes: String(Math.max(1, Math.round((now - watching.since) / 60_000))) })}</span>
           </span>
-          {stale
-            ? <button type="button" className={css.secondary} onClick={ask}>{t('node.askAgain')}</button>
-            : null}
+          {stale ? <button type="button" className={css.secondary} onClick={() => { ask() }}>{t('node.askAgain')}</button> : null}
           <button type="button" className={css.textButton} onClick={() => { actions.setQuizAsk(stationKey, undefined) }}>{t('node.askDismiss')}</button>
         </section>
       )}
-      {latest !== undefined && (
-        <section className={css.quizLatest}>
-          <div className={css.quizLatestText}>
-            <strong>{taken ? t(passed ? 'node.paperPassed' : 'node.paperFailed', { percent: String(Math.round(sitting.ratio * 100)) }) : t('node.quizLatest', { count: String(latest.questions?.length ?? 0) })}</strong>
-            <span className={css.muted}>{[t(`focus.${latest.focus ?? 'mixed'}`), sourceMix((latest.questions ?? []).map(question => question.evidence.kind), t), ...(taken ? [when(sitting.at, t)] : [])].join(' · ')}</span>
-          </div>
-          {!taken && <button type="button" className={css.primary} onClick={() => { openPaper(latest) }}>{t('quiz.startNow')}</button>}
-          {taken && primaryIsRetake && <button type="button" className={css.primary} disabled={asking} onClick={retake}>{retakeLabel}</button>}
-          {taken && !primaryIsRetake && <button type="button" className={css.primary} disabled={asking} onClick={ask}>{askLabel}</button>}
-          <div className={css.quizLatestFoot}>
-            {(!taken || primaryIsRetake) && <button type="button" className={css.textButton} disabled={asking} onClick={ask}>{askLabel}</button>}
-            {missed.length > 0 && !primaryIsRetake && <button type="button" className={css.textButton} disabled={asking} onClick={retake}>{retakeLabel}</button>}
-            {taken && <button type="button" className={css.textButton} onClick={() => { openPaper(latest) }}>{t('node.redoSame')}</button>}
-          </div>
-        </section>
-      )}
-      {points.length > 0 && (
+      {mastery.points.length > 0 && (
         <section className={css.section}>
           <h3 className={`${css.sectionTitle} ${css.pointsHead}`}>
             {t('node.pointsTitle')}
-            <button
-              type="button"
-              className={css.infoButton}
-              aria-expanded={showPointsHint}
-              aria-label={t('node.pointsHintLabel')}
-              onClick={() => { setShowPointsHint(value => !value) }}
-            ><IconInfoOutlineMedium size={13} /></button>
+            <button type="button" className={css.infoButton} aria-expanded={showPointsHint} aria-label={t('node.pointsHintLabel')} onClick={() => { setShowPointsHint(shown => !shown) }}><IconInfoOutlineMedium size={13} /></button>
           </h3>
           <div className={css.points}>
-            {points.map(point => {
-              const state = pointStates.get(point.id) ?? 'untested'
-              const on = picked.includes(point.id)
-              return (
-                <button key={point.id} type="button" className={css.point} data-state={state} aria-pressed={on} onClick={() => { togglePoint(point.id) }}>
-                  <span className={css.pointName}>{point.title}</span>
-                  <span className={css.pointState}>{t(`node.pointState.${state}`)}</span>
-                </button>
-              )
-            })}
+            {mastery.points.map(point => (
+              <button key={point.id} type="button" className={css.point} data-state={point.state === 'mastered' ? 'strong' : point.state === 'weak' ? 'weak' : 'untested'} onClick={() => { setSheet(point.id) }}>
+                <span className={css.pointName}>{point.title}</span>
+                <span className={css.pointState}>{t(`point.${point.state}`)}{point.open.length > 0 ? ` · ${t('node.pointOpen', { count: String(point.open.length) })}` : ''}</span>
+              </button>
+            ))}
           </div>
-          {showPointsHint && <div className={css.muted}>{t('node.pointsHint')}</div>}
+          {showPointsHint && <div className={css.muted}>{t('node.pointsRule')}</div>}
         </section>
       )}
-      <section className={css.section}>
-        <h3 className={css.sectionTitle}>{t('node.settingsTitle')}</h3>
-        <div className={css.settingRow}>
-          <span className={css.settingLabel}>{t('node.setting.range')}</span>
-          <div className={css.settingControl}>
-            <ChipRow
-              label={t('node.setting.range')}
-              chips={FOCUSES.map(id => ({ id, label: t(`focus.${id}`), ...(id === 'mine' ? { count: mineCount } : {}) }))}
-              value={direction}
-              onSelect={id => { setDirection(id as LibraryQuizFocus) }}
-            />
-            <div className={css.muted}>
-              {direction === 'mine'
-                ? mineCount === 0 ? t('node.focusMineEmpty') : t('node.focusMineHint', { terms: (mine.data?.cards ?? []).map(card => card.term).join('、') })
-                : t(`node.focusHint.${direction}`)}
+      {untaken !== undefined && (
+        <section className={css.stepBox}>
+          <span className={css.stepText}>
+            <strong>{t('node.untakenBox', { count: String(untaken.questions?.length ?? 0) })}</strong>
+            <span className={css.muted}>{[t(`focus.${untaken.focus ?? 'mixed'}`), sourceMix((untaken.questions ?? []).map(question => question.evidence.kind), t), when(untaken.createdAt, t)].join(' · ')}</span>
+          </span>
+          <button type="button" className={css.primary} onClick={() => { openPaper(untaken) }}>{t('quiz.startNow')}</button>
+        </section>
+      )}
+      {open.length > 0 && (
+        <section className={css.stepBox}>
+          <span className={css.stepText}>
+            <strong>{t('node.retakeBox', { count: String(open.length) })}</strong>
+            <span className={css.muted}>{[...openByPoint, ...(openLoose > 0 ? [t('node.retakeOther', { count: String(openLoose) })] : []), t('node.missedMeta', { when: when(open[0]!.at, t) })].join(' · ')}</span>
+            <span className={css.muted}>{t('node.retakeHint')}</span>
+          </span>
+          <button type="button" className={primary === 'retake' ? css.primary : css.secondary} disabled={retaking || resourceId === undefined} onClick={() => { void retake() }}>{t('node.retakeStart')}</button>
+        </section>
+      )}
+      <section className={`${css.stepBox} ${css.stepBoxPlain}`}>
+        <span className={css.stepText}>
+          <strong>{t('node.askBox')}</strong>
+          <span className={css.muted}>{askSummary}</span>
+        </span>
+        <button type="button" className={css.textButton} aria-expanded={showSettings} onClick={() => { setShowSettings(!showSettings) }}>{showSettings ? t('node.askDone') : t('node.askAdjust')}</button>
+        <button type="button" className={primary === 'ask' ? css.primary : css.secondary} disabled={asking} onClick={() => { ask() }}>{asking ? t('node.quizWaiting') : t('node.askGo')}</button>
+        {showSettings && (
+          <div className={css.stepSettings}>
+            <div className={css.settingRow}>
+              <span className={css.settingLabel}>{t('node.setting.range')}</span>
+              <div className={css.settingControl}>
+                <ChipRow
+                  label={t('node.setting.range')}
+                  chips={FOCUSES.map(id => ({ id, label: t(`focus.${id}`), ...(id === 'mine' ? { count: mineCount } : {}) }))}
+                  value={direction}
+                  onSelect={id => { update({ focus: id as LibraryQuizFocus }) }}
+                />
+                <div className={css.muted}>
+                  {direction === 'mine'
+                    ? mineCount === 0 ? t('node.focusMineEmpty') : t('node.focusMineHint', { terms: (mine.data?.cards ?? []).map(card => card.term).join('、') })
+                    : t(`node.focusHint.${direction}`)}
+                </div>
+              </div>
             </div>
+            <div className={css.settingRow}>
+              <span className={css.settingLabel}>{t('node.kindsTitle')}</span>
+              <ChipRow
+                className={css.settingChips}
+                label={t('node.kindsTitle')}
+                chips={QUIZ_KINDS.map(id => ({ id, label: t(`kind.${id}`) }))}
+                value={kinds}
+                onSelect={id => { update({ kinds: kinds.includes(id) ? kinds.filter(kind => kind !== id) : [...kinds, id] }) }}
+              />
+            </div>
+            <div className={css.settingRow}>
+              <span className={css.settingLabel}>{t('node.countTitle')}</span>
+              <input
+                className={`${css.input} ${css.countInput}`}
+                inputMode="numeric"
+                aria-label={t('node.countTitle')}
+                placeholder={String(DEFAULT_QUIZ_COUNT)}
+                value={countText}
+                onChange={event => { update({ countText: event.target.value }) }}
+                onBlur={() => { update({ countText: String(parsedCount()) }) }}
+              />
+            </div>
+            {mastery.points.length > 0 && (
+              <div className={css.settingRow}>
+                <span className={css.settingLabel}>{t('node.focusPoints')}</span>
+                <ChipRow
+                  className={css.settingChips}
+                  label={t('node.focusPoints')}
+                  chips={mastery.points.map(point => ({ id: point.id, label: point.title }))}
+                  value={picked}
+                  onSelect={id => { update({ picked: picked.includes(id) ? picked.filter(entry => entry !== id) : [...picked, id] }) }}
+                />
+              </div>
+            )}
           </div>
-        </div>
-        <div className={css.settingRow}>
-          <span className={css.settingLabel}>{t('node.kindsTitle')}</span>
-          <ChipRow
-            className={css.settingChips}
-            label={t('node.kindsTitle')}
-            chips={QUIZ_KINDS.map(id => ({ id, label: t(`kind.${id}`) }))}
-            value={kinds}
-            onSelect={id => { update({ kinds: kinds.includes(id) ? kinds.filter(kind => kind !== id) : [...kinds, id] }) }}
-          />
-        </div>
-        <div className={css.settingRow}>
-          <span className={css.settingLabel}>{t('node.countTitle')}</span>
-          <input
-            className={`${css.input} ${css.countInput}`}
-            inputMode="numeric"
-            aria-label={t('node.countTitle')}
-            placeholder={String(DEFAULT_QUIZ_COUNT)}
-            value={countText}
-            onChange={event => { setCountText(event.target.value) }}
-            onBlur={() => {
-              const parsed = Number.parseInt(countText.trim(), 10)
-              setCountText(Number.isFinite(parsed) ? String(Math.min(Math.max(parsed, 1), MAX_QUIZ_COUNT)) : String(DEFAULT_QUIZ_COUNT))
-            }}
-          />
-        </div>
+        )}
       </section>
-      {latest === undefined && (
-        <div className={css.actions}>
-          <button type="button" className={css.primary} disabled={asking} onClick={ask}>{asking ? t('node.quizWaiting') : pickedTitles.length > 0 ? t('node.askPoints', { count: String(pickedTitles.length) }) : t('node.askQuiz')}</button>
-        </div>
-      )}
-      {missed.length > 0 && (
-        <section className={css.mistakeBook}>
-          <button type="button" className={css.mistakeHead} aria-expanded={showMissed} onClick={() => { setShowMissed(!showMissed) }}>
-            <span className={css.mistakeHeadText}>
-              <strong>{t('node.missedTitle', { count: String(missed.length) })}</strong>
-              <span className={css.muted}>{t('node.missedMeta', { when: when(missed[0]!.at, t) })}</span>
-            </span>
-            <span className={css.linkText}>{showMissed ? t('node.missedHide') : t('node.missedShow')}</span>
-          </button>
-          {showMissed && (
-            <div className={css.mistakeRows}>
-              {missed.map(row => <MissRow key={`${row.quiz.id}:${row.question.id}`} p={p} row={row} variant="missed" />)}
-            </div>
-          )}
-        </section>
-      )}
       {voided.length > 0 && (
         <div className={css.muted}>
           {t('node.voidedSummary', { count: String(voided.length) })}
@@ -309,19 +286,22 @@ export function QuizTab({ p, projectId, resourceId, node, passRatio, onPrime, on
           <button type="button" className={css.textButton} onClick={() => { onReplace(voided.map(row => row.question.prompt)) }}>{t('node.voidedReplace')}</button>
         </div>
       )}
-      {earlier.length > 0 && (
-        <section className={css.section}>
-          <h3 className={css.sectionTitle}>{t('node.quizEarlier')}</h3>
-          {earlier.map(quiz => (
-            <ListRow
-              key={quiz.id}
-              title={t('node.quizRow', { count: String(quiz.questions?.length ?? 0) })}
-              meta={[t(`focus.${quiz.focus ?? 'mixed'}`), sourceMix((quiz.questions ?? []).map(question => question.evidence.kind), t)].join(' · ')}
-              trailing={<span className={css.linkText}>{t('quiz.start')}</span>}
-              onSelect={() => { actions.push({ view: 'quiz', projectId, ...(quiz.scope.resourceId === undefined ? (resourceId === undefined ? {} : { resourceId }) : { resourceId: quiz.scope.resourceId }), quizId: quiz.id }) }}
-            />
-          ))}
-        </section>
+      {papers.length > 0 && (
+        <details className={css.earlier}>
+          <summary>{t('node.earlier', { count: String(papers.length) })}</summary>
+          {[...papers].reverse().map(quiz => {
+            const sat = latestByQuiz.get(quiz.id)
+            return (
+              <ListRow
+                key={quiz.id}
+                title={t('node.quizRow', { count: String(quiz.questions?.length ?? 0) })}
+                meta={[sat === undefined ? t('node.paperUntaken') : `${Math.round(sat.ratio * 100)}%`, t(`focus.${quiz.focus ?? 'mixed'}`), when(quiz.createdAt, t)].join(' · ')}
+                trailing={<span className={css.linkText}>{sat === undefined ? t('quiz.start') : t('node.redoSame')}</span>}
+                onSelect={() => { openPaper(quiz) }}
+              />
+            )
+          })}
+        </details>
       )}
       {loose.length > 0 && (
         <section className={css.section}>
@@ -329,7 +309,64 @@ export function QuizTab({ p, projectId, resourceId, node, passRatio, onPrime, on
           <QuizRows p={p} projectId={projectId} quizzes={loose.slice().reverse()} />
         </section>
       )}
+      {sheetPoint !== undefined && (
+        <PointSheet
+          p={p}
+          point={sheetPoint}
+          busy={retaking}
+          onClose={() => { setSheet(undefined) }}
+          onRetake={() => { void retake(sheetPoint.open.map(miss => miss.key)) }}
+          onAsk={() => { setSheet(undefined); ask([sheetPoint.title]) }}
+        />
+      )}
     </>
+  )
+}
+
+/** One point, opened: why it stands where it does, and the two ways forward. */
+function PointSheet({ p, point, busy, onClose, onRetake, onAsk }: {
+  p: ViewProps['p']; point: LibraryPointMastery; busy: boolean; onClose: () => void; onRetake: () => void; onAsk: () => void
+}): ReactNode {
+  const { t } = p
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent): void => { if (event.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => { window.removeEventListener('keydown', onKey) }
+  }, [])
+  return (
+    <div className={css.scrim} data-sheet="true" onClick={event => { if (event.target === event.currentTarget) onClose() }}>
+      <div className={css.sheet} role="dialog" aria-modal="true" aria-label={point.title}>
+        <div className={css.sheetHead}>
+          <strong>{point.title}</strong>
+          <span className={css.pointBadge} data-state={point.state}>{t(`point.${point.state}`)}</span>
+          <span className={css.spacer} />
+          <button type="button" className={css.textButton} onClick={onClose}>{t('point.close')}</button>
+        </div>
+        {point.notes.length > 0 && (
+          <section className={css.section}>
+            <h3 className={css.sectionTitle}>{t('point.notes')}</h3>
+            {[...point.notes].reverse().map(note => (
+              <div key={note.at} className={css.pointNote}><MathText text={note.text} /><span className={css.muted}> · {when(note.at, t)}</span></div>
+            ))}
+          </section>
+        )}
+        {point.open.length > 0 && (
+          <section className={css.section}>
+            <h3 className={css.sectionTitle}>{t('point.open', { count: String(point.open.length) })}</h3>
+            <div className={css.mistakeRows}>
+              {point.open.map(miss => <MissRow key={miss.key} p={p} row={{ question: miss.question, at: miss.at }} variant="missed" />)}
+            </div>
+          </section>
+        )}
+        <div className={css.muted}>
+          {point.lastProbe === undefined ? t('point.never') : t('point.lastProbe', { when: when(point.lastProbe.at, t), result: t(point.lastProbe.pass ? 'point.lastPass' : 'point.lastFail') })}
+        </div>
+        <div className={css.actions}>
+          {point.open.length > 0 && <button type="button" className={css.primary} disabled={busy} onClick={onRetake}>{t('point.retake', { count: String(point.open.length) })}</button>}
+          <button type="button" className={point.open.length > 0 ? css.secondary : css.primary} onClick={onAsk}>{t('point.ask')}</button>
+        </div>
+      </div>
+    </div>
   )
 }
 

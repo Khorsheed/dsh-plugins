@@ -241,6 +241,11 @@ const face = {
   listAttempts: () => ok({ attempts }),
   putAttempt: () => done(resultFixture),
   recentRecords: () => ok({ records: [] }),
+  recentChanges: () => ok({ changes: [
+    { at: iso(-0.02), type: 'point.changed', id: 'reference', nodeId: 't1p2', resourceId: 'r_cam5', title: '指代关系', from: 'untested', to: 'weak', count: 1, projectId: 'p_ielts', projectName: '雅思' },
+    { at: iso(-0.01), type: 'point.changed', id: 'inference', nodeId: 't1p2', resourceId: 'r_cam5', title: '词义推断', from: 'weak', to: 'mastered', count: 0, projectId: 'p_ielts', projectName: '雅思' },
+  ] }),
+  createRetake: () => done({ assessment: { ...quizzes[1]!, id: 'q_retake', type: 'retake' } }),
   latestActivity: () => ok({}),
   boundTarget: () => ok(null), bindTarget: () => done({ binding: null }),
   primeConversation: () => true,

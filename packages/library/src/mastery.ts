@@ -1,0 +1,140 @@
+/**
+ * Knowledge-point mastery — the one rule set the service, the per-turn coach
+ * context and the sidebar all read (proposal 2026-10-19-library-point-mastery).
+ * Pure: no store, no context; give it a station's node, the project's
+ * assessments and attempts.
+ *
+ * - A question is OPEN (待订正) when its newest non-void verdict — on its own
+ *   paper, a re-sitting of that paper, or a retake re-asking it — failed.
+ * - A point is MASTERED when none of its questions is open and its newest
+ *   probe passed; WEAK when a question is open, or a coach note is newer than
+ *   its newest pass; UNTESTED with neither probes nor notes.
+ * - Retakes (type "retake") re-ask open questions; their verdicts move the
+ *   point but never the station's pass record.
+ *
+ * @module @khorsheed/dsh-library/mastery
+ */
+import type {
+  LibraryAssessment,
+  LibraryAttempt,
+  LibraryPointChange,
+  LibraryPointNote,
+  LibraryPointState,
+  LibraryQuizQuestion,
+  RoadmapNode,
+} from './types.ts'
+
+/** One open question: where it came from, the question, when it was missed. */
+export interface LibraryOpenMiss {
+  /** `${assessmentId}:${questionId}` of the ORIGINAL question (retakes resolve to it). */
+  readonly key: string
+  readonly assessmentId: string
+  readonly questionId: string
+  readonly question: LibraryQuizQuestion
+  /** When the newest (failing) verdict landed. */
+  readonly at: string
+}
+
+/** One point's mastery, with what decided it. */
+export interface LibraryPointMastery {
+  readonly id: string
+  readonly title: string
+  readonly state: LibraryPointState
+  readonly open: readonly LibraryOpenMiss[]
+  readonly notes: readonly LibraryPointNote[]
+  /** The newest verdict on any question probing the point. */
+  readonly lastProbe?: { readonly at: string; readonly pass: boolean }
+}
+
+/** A station's mastery: every point, and every open question (pointless ones too). */
+export interface LibraryStationMastery {
+  readonly points: readonly LibraryPointMastery[]
+  readonly open: readonly LibraryOpenMiss[]
+}
+
+interface Probe {
+  readonly key: string
+  readonly assessmentId: string
+  readonly question: LibraryQuizQuestion
+  readonly pass: boolean
+  readonly at: string
+}
+
+/** Whether a verdict passes (partial credit counts at half or more). */
+function passes(verdict: { readonly pass: boolean; readonly ratio?: number }): boolean {
+  return verdict.pass && (verdict.ratio ?? 1) >= 0.5
+}
+
+/**
+ * The station's mastery from the ledger.
+ * @param node - the station (its points and their notes).
+ * @param assessments - the project's assessments (others are ignored).
+ * @param attempts - the project's attempts, any order.
+ */
+export function stationMastery(node: RoadmapNode, assessments: readonly LibraryAssessment[], attempts: readonly LibraryAttempt[]): LibraryStationMastery {
+  const own = new Map(assessments
+    .filter(assessment => assessment.scope.nodeId === node.id && (assessment.type === 'quiz' || assessment.type === 'retake') && assessment.questions !== undefined)
+    .map(assessment => [assessment.id, assessment]))
+  const probes: Probe[] = []
+  for (const attempt of attempts) {
+    const assessment = attempt.assessmentId === undefined ? undefined : own.get(attempt.assessmentId)
+    if (assessment === undefined) continue
+    for (const verdict of attempt.verdicts) {
+      if (verdict.void === true) continue
+      const question = assessment.questions!.find(candidate => candidate.id === verdict.task)
+      if (question === undefined) continue
+      const originId = question.origin?.assessmentId ?? assessment.id
+      const originQuestion = question.origin === undefined
+        ? question
+        : own.get(question.origin.assessmentId)?.questions?.find(candidate => candidate.id === question.origin!.questionId) ?? question
+      probes.push({ key: `${originId}:${question.origin?.questionId ?? question.id}`, assessmentId: originId, question: originQuestion, pass: passes(verdict), at: attempt.at })
+    }
+  }
+  probes.sort((a, b) => a.at.localeCompare(b.at))
+  const newestByKey = new Map<string, Probe>()
+  for (const probe of probes) newestByKey.set(probe.key, probe)
+  const open: LibraryOpenMiss[] = [...newestByKey.values()]
+    .filter(probe => !probe.pass)
+    .map(probe => ({ key: probe.key, assessmentId: probe.assessmentId, questionId: probe.question.id, question: probe.question, at: probe.at }))
+    .sort((a, b) => b.at.localeCompare(a.at))
+  const points = (node.points ?? []).map((point): LibraryPointMastery => {
+    const mine = probes.filter(probe => probe.question.point === point.id)
+    const last = mine.at(-1)
+    const lastPass = [...mine].reverse().find(probe => probe.pass)
+    const pointOpen = open.filter(miss => miss.question.point === point.id)
+    const notes = point.notes ?? []
+    const newestNote = notes.reduce<string | undefined>((latest, note) => latest === undefined || note.at > latest ? note.at : latest, undefined)
+    const noteUnanswered = newestNote !== undefined && (lastPass === undefined || newestNote > lastPass.at)
+    const state: LibraryPointState = last === undefined && notes.length === 0
+      ? 'untested'
+      : pointOpen.length === 0 && last?.pass === true && !noteUnanswered ? 'mastered' : 'weak'
+    return {
+      id: point.id,
+      title: point.title,
+      state,
+      open: pointOpen,
+      notes,
+      ...(last === undefined ? {} : { lastProbe: { at: last.at, pass: last.pass } }),
+    }
+  })
+  return { points, open }
+}
+
+/** The points whose state differs between two readings of the same station. */
+export function masteryChanges(nodeId: string, before: LibraryStationMastery, after: LibraryStationMastery): LibraryPointChange[] {
+  const previous = new Map(before.points.map(point => [point.id, point.state]))
+  return after.points.flatMap(point => {
+    const from = previous.get(point.id) ?? 'untested'
+    return from === point.state ? [] : [{ nodeId, pointId: point.id, title: point.title, from, to: point.state }]
+  })
+}
+
+/** One line on why a point is where it is (event detail, context line). */
+export function masteryReason(point: LibraryPointMastery): string {
+  const parts: string[] = []
+  if (point.open.length > 0) parts.push(`${point.open.length} open miss${point.open.length === 1 ? '' : 'es'}`)
+  const note = point.notes.at(-1)
+  if (note !== undefined) parts.push(`note "${note.term ?? note.text}"`)
+  if (point.state === 'mastered' && point.lastProbe !== undefined) parts.push('newest probe passed')
+  return parts.join('; ')
+}

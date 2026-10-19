@@ -15,7 +15,8 @@
 import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { PanelHeader } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
 import { LEITNER_INTERVAL_DAYS, type LibraryAssessResult, type LibraryCard, type LibraryQuizQuestion, type LibraryReviewRating, type LibraryVerdict } from '../../types.ts'
-import { choiceIndex, choiceOptions, clozeOf, fillMatches, letterMarks, pickMode, spellMatches } from '../judge.ts'
+import { choiceIndex, choiceOptions, clozeOf, judgeFill, letterMarks, pickMode, spellMatches } from '../judge.ts'
+import { profileOf, type LibraryProfile } from '../../profiles.ts'
 import { clearQuizDraft, loadQuizDraft, saveQuizDraft } from '../quiz-drafts.ts'
 import { MathText, Tex } from '../math.tsx'
 import { Highlight, outcome, shortGloss, StateLine, useLoad, value, type ViewProps } from '../ui.tsx'
@@ -46,7 +47,11 @@ export function QuizView({ p, projectId, resourceId, quizId }: ViewProps & { pro
   // Open answers go to the coach through the conversation: once handed over, 交卷 is done — not clickable again.
   const [handedOver, setHandedOver] = useState(false)
   const assessment = loaded.data
-  const quiz = assessment !== undefined && assessment.type === 'quiz' && assessment.questions !== undefined
+  // The project's profile decides how a fill is judged and whether answers preview math.
+  const project = useLoad(() => outcome(p.getProject(projectId)).then(detail => detail.project), [projectId])
+  const profile = profileOf(project.data?.template)
+  const isRetake = assessment?.type === 'retake'
+  const quiz = assessment !== undefined && (assessment.type === 'quiz' || assessment.type === 'retake') && assessment.questions !== undefined
     ? { ...assessment, questions: assessment.questions }
     : undefined
   const total = quiz?.questions.length ?? 0
@@ -110,7 +115,7 @@ export function QuizView({ p, projectId, resourceId, quizId }: ViewProps & { pro
   return (
     <>
       <PanelHeader
-        title={quiz === undefined ? t('node.quiz') : t('quiz.progress', { at: String(done), total: String(total) })}
+        title={quiz === undefined ? t('node.quiz') : t(isRetake ? 'quiz.retakeProgress' : 'quiz.progress', { at: String(done), total: String(total) })}
         onBack={() => { actions.pop() }}
         backLabel={t('action.back')}
         moreLabel={t('action.more')}
@@ -122,6 +127,7 @@ export function QuizView({ p, projectId, resourceId, quizId }: ViewProps & { pro
         )}
         {quiz?.questions.map((question, at) => (
           <QuestionCard
+            profile={profile}
             key={question.id}
             p={p}
             number={at + 1}
@@ -146,8 +152,9 @@ export function QuizView({ p, projectId, resourceId, quizId }: ViewProps & { pro
 }
 
 /** One question on the paper: its number, two tags, the answer control, the feedback. The evidence quote shows only after answering — quoted up front, it often IS the answer. */
-function QuestionCard({ p, question, number, answered, draft, onDraft, onAnswer }: {
+function QuestionCard({ p, profile, question, number, answered, draft, onDraft, onAnswer }: {
   p: ViewProps['p']
+  profile: LibraryProfile
   question: LibraryQuizQuestion
   number: number
   answered: Answered | undefined
@@ -219,14 +226,14 @@ function QuestionCard({ p, question, number, answered, draft, onDraft, onAnswer 
             placeholder={t(question.kind === 'free' ? 'quiz.freePlaceholder' : /\$|\\[a-zA-Z]|[√∫∑∏∂∞±]/.test(question.prompt) ? 'quiz.fillMathPlaceholder' : 'quiz.fillPlaceholder')}
             onChange={event => { onDraft(event.target.value) }}
           />
-          <AnswerPreview text={answered?.given ?? draft} t={t} />
+          {profile.math && <AnswerPreview text={answered?.given ?? draft} t={t} />}
           {answered === undefined && (
             <div className={css.actions}>
               <button
                 type="button"
                 className={css.secondary}
                 disabled={draft.trim() === ''}
-                onClick={() => { onAnswer(question.kind === 'fill' ? { given: draft, pass: fillMatches(draft, question.answer) } : { given: draft }) }}
+                onClick={() => { onAnswer(question.kind === 'fill' ? { given: draft, pass: judgeFill(profile.fill, draft, question.answer) } : { given: draft }) }}
               >{t('quiz.submit')}</button>
             </div>
           )}
@@ -289,18 +296,31 @@ export function ResultView({ p, projectId, resourceId, result }: ViewProps & { p
       : outcome(p.getAssessment(projectId, assessmentId)).then(answer => answer.assessment, () => undefined),
     [projectId, assessmentId],
   )
-  const questions = assessment.data?.type === 'quiz' ? (assessment.data.questions ?? []) : []
-  const missedPrompts = result.attempt.verdicts
-    .filter(verdict => !verdict.pass && verdict.void !== true)
-    .map(verdict => questions.find(question => question.id === verdict.task)?.prompt ?? verdict.criterion)
+  const isRetake = assessment.data?.type === 'retake'
+  const questions = assessment.data?.type === 'quiz' || isRetake ? (assessment.data?.questions ?? []) : []
+  const missedVerdicts = result.attempt.verdicts.filter(verdict => !verdict.pass && verdict.void !== true)
+  // What is still open from this sitting, as retake keys (a retake's question points back at its origin).
+  const missedKeys = missedVerdicts.flatMap(verdict => {
+    const question = questions.find(candidate => candidate.id === verdict.task)
+    if (question === undefined || assessmentId === undefined) return []
+    return [question.origin === undefined ? `${assessmentId}:${question.id}` : `${question.origin.assessmentId}:${question.origin.questionId}`]
+  })
+  const counted = result.attempt.verdicts.filter(verdict => verdict.void !== true)
+  const right = counted.filter(verdict => verdict.pass).length
+  const stationId = assessment.data?.scope.nodeId
+  const [retaking, setRetaking] = useState(false)
 
   const prime = (text: string): void => {
     void p.bindTarget(resourceId === undefined ? { projectId } : { projectId, resourceId })
     setNotice(p.primeConversation(text) ? t('notice.primed') : t('notice.noConversation'))
   }
+  // 订正 in the sidebar: a retake paper over this sitting's misses (no coach needed).
   const retake = (): void => {
-    if (assessmentId === undefined) return
-    prime(t('prime.result.retake', { quiz: assessmentId, count: String(missedPrompts.length), list: missedPrompts.map(prompt => `- ${prompt}`).join('\n') }))
+    if (stationId === undefined || resourceId === undefined || missedKeys.length === 0 || retaking) return
+    setRetaking(true)
+    void outcome(p.createRetake(projectId, resourceId, stationId, missedKeys)).then(created => {
+      actions.replace({ view: 'quiz', projectId, resourceId, quizId: created.assessment.id })
+    }, (failure: unknown) => { setNotice(failure instanceof Error ? failure.message : String(failure)); setRetaking(false) })
   }
   const again = (): void => {
     if (assessmentId === undefined) return
@@ -308,20 +328,41 @@ export function ResultView({ p, projectId, resourceId, result }: ViewProps & { p
   }
 
   const nextId = result.unlocked[0]
-  const retakePrimary = !passed && missedPrompts.length > 0
+  const canRetake = stationId !== undefined && resourceId !== undefined && missedKeys.length > 0
+  const retakePrimary = (isRetake || !passed) && canRetake
   const nextPrimary = passed && nextId !== undefined
   const againPrimary = !retakePrimary && !nextPrimary
   return (
     <>
       <PanelHeader title={t('result.title')} onBack={() => { actions.pop() }} backLabel={t('action.back')} moreLabel={t('action.more')} />
       <div className={css.body}>
-        <section className={css.hero}>
-          <div className={css.heroText}>
-            <span className={css.big}>{percent}%</span>
-            <span className={css.muted}>{t('result.line', { pass: String(Math.round(result.passRatio * 100)) })}</span>
-          </div>
-          <strong className={passed ? css.ok : css.bad}>{passed ? t('result.passed') : t('result.notYet')}</strong>
-        </section>
+        {isRetake ? (
+          <section className={css.hero}>
+            <div className={css.heroText}>
+              <span className={css.big}>{t('result.retakeScore', { right: String(right), total: String(counted.length) })}</span>
+              <span className={css.muted}>{t('result.retakeNote')}</span>
+            </div>
+          </section>
+        ) : (
+          <section className={css.hero}>
+            <div className={css.heroText}>
+              <span className={css.big}>{percent}%</span>
+              <span className={css.muted}>{t('result.line', { pass: String(Math.round(result.passRatio * 100)) })}</span>
+            </div>
+            <strong className={passed ? css.ok : css.bad}>{passed ? t('result.passed') : t('result.notYet')}</strong>
+          </section>
+        )}
+        {(result.pointChanges?.length ?? 0) > 0 && (
+          <section className={css.section}>
+            <h3 className={css.sectionTitle}>{t('result.points')}</h3>
+            {result.pointChanges!.map(change => (
+              <div key={change.pointId} className={css.moveRow}>
+                <span>{t('result.pointTo', { title: change.title, state: t(`point.${change.to}`) })}</span>
+                <span className={change.to === 'mastered' ? css.ok : change.to === 'weak' ? css.bad : css.muted}>{t(`point.${change.from}`)} → {t(`point.${change.to}`)}</span>
+              </div>
+            ))}
+          </section>
+        )}
         {voidedCount > 0 && <div className={css.muted}>{t('result.voided', { count: String(voidedCount) })}</div>}
         {result.cardUpdates.length > 0 && (
           <section className={css.section}>
@@ -341,11 +382,14 @@ export function ResultView({ p, projectId, resourceId, result }: ViewProps & { p
           {nextId !== undefined && resourceId !== undefined && (
             <button type="button" className={nextPrimary ? css.primary : css.secondary} onClick={() => { actions.replace({ view: 'node', projectId, resourceId, nodeId: nextId, tab: 'guide' }) }}>{t('result.next')}</button>
           )}
-          {assessmentId !== undefined && missedPrompts.length > 0 && (
-            <button type="button" className={retakePrimary ? css.primary : css.secondary} onClick={retake}>{t('result.retake', { count: String(missedPrompts.length) })}</button>
+          {canRetake && (
+            <button type="button" className={retakePrimary ? css.primary : css.secondary} disabled={retaking} onClick={retake}>{t(isRetake ? 'result.retakeRest' : 'result.retake', { count: String(missedKeys.length) })}</button>
           )}
-          {assessmentId !== undefined && (
+          {assessmentId !== undefined && !isRetake && (
             <button type="button" className={againPrimary ? css.primary : css.secondary} onClick={again}>{t('result.again')}</button>
+          )}
+          {isRetake && stationId !== undefined && resourceId !== undefined && (
+            <button type="button" className={retakePrimary ? css.secondary : css.primary} onClick={() => { actions.replace({ view: 'node', projectId, resourceId, nodeId: stationId, tab: 'quiz' }) }}>{t('result.toStation')}</button>
           )}
           {resourceId !== undefined && (
             <button type="button" className={css.ghost} onClick={() => { actions.replace({ view: 'resource', projectId, resourceId }) }}>{t('result.toPath')}</button>

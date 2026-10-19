@@ -25,6 +25,8 @@ import type {} from './index.ts'
 import { libraryToolDefinitions } from './tool-definition.ts'
 import type { LibraryService } from './service.ts'
 import { ImageRefCache } from './image-refs.ts'
+import { masteryReason } from './mastery.ts'
+import { profileOf } from './profiles.ts'
 
 const PACKAGE_NAME = '@khorsheed/dsh-library'
 
@@ -97,12 +99,12 @@ How a project runs:
 1. A project is one learning goal (library_project). It has no path of its own.
 2. Textbooks are everything with a contents, shelved in study order (library_resource, seq 1, 2, 3…): the learner's own book; an existing book or digital course you pick (only the chapters the goal needs); or, when nothing fits, one you author (your contents; your 讲义 are its text). A broad goal becomes several textbooks — one per area, in the order to learn them. Verify a real book's edition and contents on the web; never ask for an upload. A link without contents is never a textbook — a station cites it.
 3. Each textbook gets one path (library_roadmap, resource required). You write drafts; the learner adopts them in the sidebar — never ask before drafting, never keep a plan outside the library.
-4. Teach a station; when it settles, write its 讲义 (library_notes). The learner stuck → library_cards right away. A page photo → library_page.
+4. Teach a station; when it settles, write its 讲义 (library_notes). The learner stuck on the material → library_cards right away (subject projects: on the station's knowledge point). Feedback on a question or the tools is never a weak point — a broken question is voided. A page photo → library_page.
 5. Quiz → library_quiz, then one line (the learner answers in the sidebar). Grading is two steps: judge in the conversation, then library_assess — an unassessed judgment never happened.
 
 Binding: project / resource default to the session's binding (the header chip); a write binds an unbound session itself. Unbound, nothing to infer from, and about to write: ask which project (ask_user_question).
 
-The per-turn "Library:" context states the binding and every textbook's real path state — trust it over anything said earlier in the conversation.`
+The per-turn "Library:" context states the binding, every textbook's real path state and the current station's knowledge points (untested / weak / mastered, open misses) — trust it over anything said earlier, and quiz the weak and untested points first.`
 
 /** The bound-context line's order: right after the sandbox / approval snapshots. */
 const CONTEXT_ORDER = 650
@@ -136,7 +138,18 @@ export function renderBindingContext(service: LibraryService, sessionId: string)
       lines.push(` ${textbook.seq ?? '-'}. 《${textbook.title}》 (${textbook.id}) ${state}`)
     }
   }
+  const profile = profileOf(project.template)
+  if (profile.pointsDriven && summary.station !== undefined) {
+    const { station } = summary
+    lines.push(`Current station ${station.title} (${station.id}) — its points:`)
+    for (const point of station.mastery.points) {
+      const reason = masteryReason(point)
+      lines.push(` - ${point.title} (${point.id}): ${point.state}${reason === '' ? '' : ` — ${reason}`}`)
+    }
+    if (station.mastery.open.length > 0) lines.push(`Open misses here: ${station.mastery.open.length} (the learner retakes them in the sidebar; they count for points, not for passing).`)
+  }
   if (weakCards.length > 0) lines.push(`Weak cards: ${weakCards.map(card => `${card.term} [${card.weakness}]`).join('; ')}.`)
+  lines.push(`Subject: ${profile.coachHint}`)
   return lines.join('\n')
 }
 
