@@ -35,6 +35,13 @@ A free OpenRouter model (`thinkingmachines/inkling:free`) ran the journey once a
 
 Sidebar: 章节考's 范围 defaults to 都考; the settings and the pending ask live in the pane store per station, so leaving the tab keeps both, and a 「教练正在出题…」 card (what was asked, how long) stays until the paper lands — after 8 minutes it says none has landed and offers to ask again.
 
+## Follow-up: sidebar polish (2026-10-19 night)
+
+- **Buttons wear the host's Button primitive**: the primary is `--dsw-alias-button-primary-fill` (near-black on light, near-white on dark) with `--dsw-alias-label-primary-foreground`, secondary actions a 0.5px `--dsw-alias-border-l3` outline, `--dsw-radius-md` corners, 36px tall; blue stays for links and state. This departs from docs/panel-design.md's "主按钮用强调色…不用纯黑实心" at the user's request (consistency with the host); the shared rule itself is unchanged and is the user's call.
+- **Buttons know their state**: 交卷 locks as 「已交给教练判」 once open answers are handed to the conversation, shows 「交卷中…」 while ledgering; review ratings take one tap per card; card status changes and 「读完」 disable while in flight.
+- **Mistakes**: a station shows only its own misses, folded into one card (count, latest, 展开 / 收起) with neutral rows; other stations' misses no longer show there (a fresh station looked already sat).
+- **今日**: projects first, each card carrying its goal, progress and its own 继续 (the newest project's is the one solid button); reviews due as one quiet row; 「教练最近记下」 typesets math and clamps to one line. The project page's continue card uses the same row layout.
+
 ## Alternatives considered
 
 - **Keep both homes, fix the derivation** (judge scope by quiz stations only, withdraw sibling drafts): rejected — it shrinks the error but keeps an invisible choice the model can still get wrong.

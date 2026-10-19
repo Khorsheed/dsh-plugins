@@ -43,6 +43,8 @@ export function QuizView({ p, projectId, resourceId, quizId }: ViewProps & { pro
   const [drafts, setDrafts] = useState<Record<string, string>>(() => ({ ...(initialDraft?.drafts ?? {}) }))
   const [notice, setNotice] = useState<string | undefined>()
   const [busy, setBusy] = useState(false)
+  // Open answers go to the coach through the conversation: once handed over, 交卷 is done — not clickable again.
+  const [handedOver, setHandedOver] = useState(false)
   const assessment = loaded.data
   const quiz = assessment !== undefined && assessment.type === 'quiz' && assessment.questions !== undefined
     ? { ...assessment, questions: assessment.questions }
@@ -79,6 +81,7 @@ export function QuizView({ p, projectId, resourceId, quizId }: ViewProps & { pro
       })
       const primed = p.primeConversation(t('prime.grade', { quiz: quiz.id, answers: lines.join('\n') }))
       setNotice(primed ? t('quiz.handedOver') : t('notice.noConversation'))
+      if (primed) setHandedOver(true)
       return
     }
     const verdicts: LibraryVerdict[] = quiz.questions.map(item => {
@@ -132,8 +135,8 @@ export function QuizView({ p, projectId, resourceId, quizId }: ViewProps & { pro
         {notice !== undefined && <div className={css.notice}>{notice}</div>}
         {quiz !== undefined && (
           <div className={css.actions}>
-            <button type="button" className={css.primary} disabled={busy || !allAnswered} onClick={() => { void finish() }}>
-              {allAnswered ? t('quiz.finish') : t('quiz.remaining', { count: String(total - done) })}
+            <button type="button" className={css.primary} disabled={busy || handedOver || !allAnswered} onClick={() => { void finish() }}>
+              {handedOver ? t('quiz.handedOverButton') : busy ? t('quiz.finishing') : allAnswered ? t('quiz.finish') : t('quiz.remaining', { count: String(total - done) })}
             </button>
           </div>
         )}
@@ -399,8 +402,12 @@ export function ReviewView({ p, projectId }: ViewProps & { projectId?: string })
   }, [projectIds.join(',')])
   const glossPool = useMemo(() => [...new Set([...(due ?? []), ...(words.data ?? [])].filter(entry => entry.kind === 'word').map(entry => shortGloss(entry.gloss)))], [due, words.data])
 
+  // One rating per card: a double tap must not rate (and advance) twice.
+  const settling = useRef<number | undefined>()
   const settle = (rating: LibraryReviewRating): void => {
-    if (card === undefined) return
+    // Keyed by the queue position: a stale second tap still carries the old position.
+    if (card === undefined || settling.current === at) return
+    settling.current = at
     const advance = (): void => {
       const right = rating !== 'forgot'
       const nextCombo = right ? combo + 1 : 0
@@ -411,10 +418,11 @@ export function ReviewView({ p, projectId }: ViewProps & { projectId?: string })
     }
     // A practice round (「再练错的」) never moves the schedule.
     if (practice) { advance(); return }
-    void outcome(p.reviewCard(card.projectId, card.id, rating)).then(advance, (failure: unknown) => { setError(String(failure)) })
+    void outcome(p.reviewCard(card.projectId, card.id, rating)).then(advance, (failure: unknown) => { settling.current = undefined; setError(String(failure)) })
   }
 
   const again = (): void => {
+    settling.current = undefined
     const missed = outcomes.filter(entry => entry.rating === 'forgot').map(entry => entry.card)
     setQueue(missed)
     setPractice(true)

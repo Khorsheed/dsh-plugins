@@ -9,13 +9,14 @@
  * @module @khorsheed/dsh-library/client/views/home
  */
 import { useState, type ReactNode } from 'react'
-import { ChipRow, ListRow, PanelHeader } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
+import { ChipRow, PanelHeader } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
 import { isThickResource, LIBRARY_COLORS, LIBRARY_ICONS, type LibraryColor, type LibraryIcon, type LibraryProjectSummary, type LibraryResourceKind, type LibraryResourceProgress, type LibraryTemplate } from '../../types.ts'
 import { colorOf, GlyphStrokes, iconOf, ProjectGlyph, Ring } from '../look.tsx'
 import { collectMissed } from '../mistakes.ts'
 import { QuizRows } from './book.tsx'
 import { IconArticleOutlineMedium, IconCardsOutlineMedium, IconCourseOutlineMedium, IconHardwareOutlineMedium, IconLinkOutlineMedium, IconPenOutlineMedium, IconPlayOutlineMedium, IconPlusOutlineMedium, IconRefreshOutlineMedium, IconRepoOutlineMedium, IconSparkleOutlineMedium, IconToolOutlineMedium, IconTrashOutlineMedium } from '../icons.tsx'
 import { ConfirmDialog, OriginTag, outcome, StateLine, useLoad, value, when, type ViewProps } from '../ui.tsx'
+import { MathText } from '../math.tsx'
 import css from '../LibraryPane.module.css'
 
 /** A project's textbooks (thick rows), in study order. */
@@ -35,16 +36,23 @@ function continueOf(project: LibraryProjectSummary): { textbook: LibraryResource
 function ContinueCard({ p, projectId, label, target }: ViewProps & { projectId: string; label: string; target: NonNullable<ReturnType<typeof continueOf>> }): ReactNode {
   const { t, actions } = p
   return (
-    <section className={css.continue}>
-      <span className={css.continueLabel}>{label}</span>
-      <span className={css.continueTitle}>{target.station.title}</span>
-      <span className={css.muted}>{t('continue.where', { seq: String(target.textbook.seq ?? ''), book: target.textbook.title })}</span>
+    <section className={`${css.continue} ${css.projectNext}`}>
+      <span className={css.projectNextText}>
+        <span className={css.continueLabel}>{label}</span>
+        <span className={css.continueTitle}>{target.station.title}</span>
+        <span className={css.muted}>{t('continue.where', { seq: String(target.textbook.seq ?? ''), book: target.textbook.title })}</span>
+      </span>
       <button type="button" className={css.primary} onClick={() => { actions.push({ view: 'node', projectId, resourceId: target.textbook.id, nodeId: target.station.id, tab: 'guide' }) }}>{t('continue.go')}</button>
     </section>
   )
 }
 
-/** 今日. */
+/**
+ * 今日: the projects first — each card carries its goal, its progress and
+ * where to continue (the newest project's 继续 is the screen's one solid
+ * button) — then the reviews due as one quiet row, then what the coach just
+ * noted (math typeset, one line each).
+ */
 export function TodayView({ p }: ViewProps): ReactNode {
   const { t, actions, useStore } = p
   const rev = useStore(s => s.rev)
@@ -53,11 +61,8 @@ export function TodayView({ p }: ViewProps): ReactNode {
   const records = useLoad(() => value(p.recentRecords()), [rev])
   const list = projects.data?.projects ?? []
   const dueCards = due.data?.cards ?? []
-  // Projects come most-recent first: continue in the newest one with a current station.
-  const resume = list.flatMap(project => {
-    const target = continueOf(project)
-    return target === undefined ? [] : [{ project, target }]
-  })[0]
+  // Projects come most-recent first: the first one with a current station owns the solid 继续.
+  const leadId = list.find(project => continueOf(project) !== undefined)?.id
 
   return (
     <>
@@ -78,39 +83,46 @@ export function TodayView({ p }: ViewProps): ReactNode {
             <button type="button" className={css.primary} onClick={() => { actions.push({ view: 'newProject' }) }}>{t('project.new')}</button>
           </div>
         )}
-        {resume !== undefined && (
-          <ContinueCard p={p} projectId={resume.project.id} label={t('continue.labelIn', { project: resume.project.name })} target={resume.target} />
-        )}
-        {dueCards.length > 0 && (
-          <section className={css.hero}>
-            <div className={css.heroText}>
-              <span className={css.big}>{dueCards.length}</span>
-              <span className={css.muted}>{t('today.dueLine', { minutes: String(Math.max(1, Math.round(dueCards.length / 4))) })}</span>
-            </div>
-            <button type="button" className={css.primary} onClick={() => { actions.push({ view: 'review' }) }}>{t('today.startReview')}</button>
-          </section>
-        )}
         {list.length > 0 && (
           <section className={css.section}>
-            <h3 className={css.sectionTitle}>{t('today.projects')}</h3>
-            <div className={css.projectGrid}>
-              {list.map(project => <ProjectCard key={project.id} p={p} project={project} />)}
-              <button type="button" className={css.projectAdd} onClick={() => { actions.push({ view: 'newProject' }) }}>＋ {t('project.new')}</button>
+            <div className={css.sectionHead}>
+              <h3 className={css.sectionTitle}>{t('today.projects')}</h3>
+              <button type="button" className={css.textButton} onClick={() => { actions.push({ view: 'newProject' }) }}>＋ {t('project.new')}</button>
             </div>
+            <div className={css.projectList}>
+              {list.map(project => <ProjectCard key={project.id} p={p} project={project} lead={project.id === leadId} />)}
+            </div>
+          </section>
+        )}
+        {dueCards.length > 0 && (
+          <section className={css.reviewRow}>
+            <span className={css.big}>{dueCards.length}</span>
+            <span className={css.reviewText}>
+              <span>{t('today.dueTitle')}</span>
+              <span className={css.muted}>{t('today.dueLine', { minutes: String(Math.max(1, Math.round(dueCards.length / 4))) })}</span>
+            </span>
+            <button type="button" className={leadId === undefined ? css.primary : css.secondary} onClick={() => { actions.push({ view: 'review' }) }}>{t('today.startReview')}</button>
           </section>
         )}
         {(records.data?.records.length ?? 0) > 0 && (
           <section className={css.section}>
             <h3 className={css.sectionTitle}>{t('today.recorded')}</h3>
-            {records.data!.records.map(record => (
-              <ListRow
-                key={`${record.projectId}-${record.at}`}
-                icon={<IconSparkleOutlineMedium />}
-                title={record.title ?? ''}
-                meta={`${record.projectName} · ${t(record.source === 'quiz' ? 'source.quiz' : 'source.chat')} · ${when(record.at, t)}`}
-                onSelect={() => { actions.push({ view: 'cards', projectId: record.projectId, filter: record.source === 'quiz' ? 'quiz' : 'chat' }) }}
-              />
-            ))}
+            <div className={css.recordList}>
+              {records.data!.records.map(record => (
+                <button
+                  key={`${record.projectId}-${record.at}`}
+                  type="button"
+                  className={css.record}
+                  onClick={() => { actions.push({ view: 'cards', projectId: record.projectId, filter: record.source === 'quiz' ? 'quiz' : 'chat' }) }}
+                >
+                  <span className={css.recordIcon} aria-hidden="true"><IconSparkleOutlineMedium size={14} /></span>
+                  <span className={css.recordText}>
+                    <span className={css.recordTitle}><MathText text={record.title ?? ''} /></span>
+                    <span className={css.muted}>{record.projectName} · {t(record.source === 'quiz' ? 'source.quiz' : 'source.chat')} · {when(record.at, t)}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
           </section>
         )}
       </div>
@@ -180,27 +192,45 @@ function progressOf(project: LibraryProjectSummary): number {
   return total === 0 ? 0 : Math.round((done / total) * 100)
 }
 
-/** A project card on 今日: its glyph, name, goal, progress, counts, when it was last used. */
-function ProjectCard({ p, project }: ViewProps & { project: LibraryProjectSummary }): ReactNode {
+/** A project card on 今日: glyph, name, goal, progress — and where to continue, with its own button. */
+function ProjectCard({ p, project, lead }: ViewProps & { project: LibraryProjectSummary; lead: boolean }): ReactNode {
   const { t, actions } = p
+  const target = continueOf(project)
+  const textbooks = textbooksOf(project)
+  const drafts = textbooks.filter(row => row.hasDraft).length
+  const open = (): void => { actions.push({ view: 'project', projectId: project.id }) }
   return (
-    <button type="button" className={css.projectCard} data-color={colorOf(project)} onClick={() => { actions.push({ view: 'project', projectId: project.id }) }}>
-      <span className={css.projectTop}>
-        <ProjectGlyph icon={iconOf(project)} />
-        <span className={css.projectText}>
-          <span className={css.projectName}>{project.name}</span>
-          <span className={css.muted}>{t(`template.${project.template}`)} · {when(project.lastActiveAt, t)}</span>
+    <article className={css.projectCard} data-color={colorOf(project)}>
+      <button type="button" className={css.projectOpen} onClick={open}>
+        <span className={css.projectTop}>
+          <ProjectGlyph icon={iconOf(project)} />
+          <span className={css.projectText}>
+            <span className={css.projectName}>{project.name}</span>
+            <span className={css.muted}>{t(`template.${project.template}`)} · {when(project.lastActiveAt, t)}</span>
+          </span>
+          <Ring percent={progressOf(project)} />
         </span>
-        <Ring percent={progressOf(project)} />
-      </span>
-      {project.goal !== undefined && <span className={css.projectGoal}>{project.goal}</span>}
-      <span className={css.projectFoot}>
+        {project.goal !== undefined && <span className={css.projectGoal}>{project.goal}</span>}
         <span className={css.muted}>
-          {t('project.cardMeta', { books: String(textbooksOf(project).length), cards: String(project.cardCount), due: String(project.dueCount) })}
-          {textbooksOf(project).some(row => row.hasDraft) ? ` · ${t('project.draftsWaiting', { count: String(textbooksOf(project).filter(row => row.hasDraft).length) })}` : ''}
+          {t('project.cardMeta', { books: String(textbooks.length), cards: String(project.cardCount), due: String(project.dueCount) })}
+          {drafts > 0 ? ` · ${t('project.draftsWaiting', { count: String(drafts) })}` : ''}
         </span>
-      </span>
-    </button>
+      </button>
+      {target !== undefined && (
+        <div className={css.projectNext}>
+          <span className={css.projectNextText}>
+            <span className={css.continueLabel}>{t('continue.label')}</span>
+            <span className={css.continueTitle}>{target.station.title}</span>
+            <span className={css.muted}>{t('continue.where', { seq: String(target.textbook.seq ?? ''), book: target.textbook.title })}</span>
+          </span>
+          <button
+            type="button"
+            className={lead ? css.primary : css.secondary}
+            onClick={() => { actions.push({ view: 'node', projectId: project.id, resourceId: target.textbook.id, nodeId: target.station.id, tab: 'guide' }) }}
+          >{t('continue.go')}</button>
+        </div>
+      )}
+    </article>
   )
 }
 
