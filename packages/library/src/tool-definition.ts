@@ -125,6 +125,31 @@ function arrival(field: string, value: unknown): string {
   return `${field} arrived as ${Array.isArray(value) ? 'an array' : typeof value} with an unexpected shape`
 }
 
+/**
+ * A contents sent as one text: one row per line. Models also join the rows
+ * with ；/; on a single line, or send literal "\\n" escapes — a single line
+ * holding several separators splits on them (a 30-chapter book once landed
+ * as ONE row, and every station's chapters then fell out of range).
+ */
+export function splitTocText(text: string): string[] {
+  const lines = text.replace(/\\n/g, '\n').split('\n').map(line => line.trim()).filter(line => line !== '')
+  if (lines.length !== 1) return lines
+  const parts = lines[0]!.split(/\s*[；;]\s*/).map(part => part.trim()).filter(part => part !== '')
+  return parts.length >= 3 ? parts : lines
+}
+
+/**
+ * A station's chapters as a locator: row numbers and ranges, whatever the
+ * dash or separator ("15–16", "3-4、7", "第3-4章"); words around them (an
+ * appendix, a part name) come back as `rest` for a topic side reference.
+ */
+export function chaptersLocator(chapters: string): { locator: string; rest?: string } {
+  const normalized = chapters.replace(/[–—~～至到]/g, '-').replace(/[，、；;/]/g, ',')
+  const ranges = [...normalized.matchAll(/(\d+)\s*(?:-\s*(\d+))?/g)].map(match => match[2] === undefined ? match[1]! : `${match[1]}-${match[2]}`)
+  const rest = normalized.replace(/(\d+)\s*(?:-\s*(\d+))?/g, '').replace(/[第章节,+\s-]+/g, ' ').trim()
+  return { locator: ranges.join(','), ...(rest === '' ? {} : { rest }) }
+}
+
 /** The first non-blank string of the candidates (the resource/book alias pairs). */
 function pickString(...values: unknown[]): string | undefined {
   return values.find((value): value is string => typeof value === 'string' && value.trim() !== '')?.trim()
@@ -216,21 +241,21 @@ const LIST_WRAPPER_SCHEMA = { type: 'object', additionalProperties: true, descri
 const NODES_SCHEMA = {
   oneOf: [
     { type: 'array', description: 'The stations, in study order.', items: { type: 'object', additionalProperties: true, properties: {
-      id: { type: 'string', required: true, description: 'Unique station id (letters, digits, . _ -).' },
-      title: { type: 'string', required: true, description: 'What the learner masters here.' },
-      gate: { type: 'string', required: true, enum: ['quiz', 'acceptance', 'read'], description: 'quiz: a level, passed by its chapter quiz; acceptance: a hands-on station judged line by line; read: an optional side stop (读完), never a dependency.' },
-      chapters: { oneOf: [{ type: 'string' }, { type: 'integer' }], description: 'The textbook\'s contents rows this station covers, 1-based: "3-4" | "5" | "1-2,7". Omit only on a station resting on also alone.' },
+      id: { type: 'string', description: 'Required: a unique station id (letters, digits, . _ -).' },
+      title: { type: 'string', description: 'Required: what the learner masters here.' },
+      gate: { type: 'string', enum: ['quiz', 'acceptance', 'read'], description: 'Required. quiz: a level, passed by its chapter quiz; acceptance: a hands-on station judged line by line; read: an optional side stop (读完), never a dependency.' },
+      chapters: { oneOf: [{ type: 'string' }, { type: 'integer' }], description: 'The textbook\'s contents rows this station covers — row numbers as library_read · toc numbers them, 1-based: "3-4" | "5" | "1-2,7". Omit only on a station resting on also alone.' },
       also: { oneOf: [{ type: 'array', items: { type: 'string' } }, { type: 'string' }], description: 'Side references: "https://…" (a web text, a video), "r_…#2" (another shelf entry), "topic: …" (your own teaching beyond the book).' },
       goals: { oneOf: [{ type: 'array', items: { type: 'string' } }, { type: 'string' }], description: 'What the learner can do after it (never acceptance lines).' },
       dependsOn: { type: 'array', items: { type: 'string' }, description: 'Earlier station ids this one waits for.' },
-      points: { type: 'array', description: 'gate=quiz: its 3-6 knowledge points — every question names one; ids are stable slugs, never reworded.', items: { type: 'object', additionalProperties: true, properties: {
-        id: { type: 'string', required: true },
-        title: { type: 'string', required: true, description: 'As the learner reads it (「极限的定义」).' },
+      points: { type: 'array', description: 'gate=quiz only: its 3-6 knowledge points { id, title } — every question names one; ids are stable slugs, never reworded.', items: { type: 'object', additionalProperties: true, properties: {
+        id: { type: 'string' },
+        title: { type: 'string', description: 'As the learner reads it (「极限的定义」).' },
       } } },
       acceptance: { type: 'array', description: 'gate=acceptance: the lines judged one verdict each (ids L1, L2… by order). { line, ref: <quiz id> } passes itself when that quiz passes — compose the quiz first.', items: { oneOf: [
         { type: 'string' },
         { type: 'object', additionalProperties: true, properties: {
-          line: { type: 'string', required: true },
+          line: { type: 'string' },
           ref: { type: 'string' },
         } },
       ] } },
@@ -244,20 +269,20 @@ const NODES_SCHEMA = {
 const QUESTIONS_SCHEMA = {
   oneOf: [
     { type: 'array', items: { type: 'object', additionalProperties: true, properties: {
-      id: { type: 'string', required: true },
-      kind: { type: 'string', required: true, enum: ['choice', 'fill', 'free'] },
-      prompt: { type: 'string', required: true },
+      id: { type: 'string', description: 'Required.' },
+      kind: { type: 'string', enum: ['choice', 'fill', 'free'], description: 'Required.' },
+      prompt: { type: 'string', description: 'Required.' },
       options: { type: 'array', description: 'choice only.', items: { oneOf: [
         { type: 'string', description: 'The option text.' },
-        { type: 'object', additionalProperties: true, properties: { label: { type: 'string', required: true } } },
+        { type: 'object', additionalProperties: true, properties: { label: { type: 'string' } } },
       ] } },
-      answer: { type: 'string', required: true, description: 'choice: the correct option, copied verbatim.' },
+      answer: { type: 'string', description: 'Required on every question; choice: the correct option, copied verbatim.' },
       explanation: { type: 'string', description: 'Why the answer is right.' },
       point: { type: 'string', description: 'The station point it probes (its id).' },
       target: {
         oneOf: [
           { type: 'object', additionalProperties: true, properties: {
-            kind: { type: 'string', required: true, enum: ['marked', 'asked', 'missed', 'topic'] },
+            kind: { type: 'string', enum: ['marked', 'asked', 'missed', 'topic'] },
             cardIds: { type: 'array', items: { type: 'string' } },
           } },
           { type: 'string', enum: ['marked', 'asked', 'missed', 'topic'], description: 'Just the kind.' },
@@ -267,7 +292,7 @@ const QUESTIONS_SCHEMA = {
       evidence: {
         oneOf: [
           { type: 'object', additionalProperties: true, properties: {
-            kind: { type: 'string', required: true, enum: ['photo', 'web', 'knowledge'] },
+            kind: { type: 'string', enum: ['photo', 'web', 'knowledge'] },
             pageId: { type: 'string' },
             url: { type: 'string' },
             quote: { type: 'string', description: 'The passage, verbatim.' },
@@ -605,7 +630,7 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
       // biggest single payload, and the one models mangle most as JSON.
       const tocList = payloadList(args.toc)
       const tocRows = typeof args.toc === 'string' && tocList === undefined
-        ? args.toc.split('\n').map(line => line.trim()).filter(line => line !== '')
+        ? splitTocText(args.toc)
         : (tocList ?? [])
       const thick = tocRows.length > 0 || args.kind === 'book' || args.kind === 'course'
       if (thick) {
@@ -632,7 +657,13 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
           ...(Array.isArray(payloadList(args.extras)) ? { extras: payloadList(args.extras) as { title: string; note?: string; where?: string; when?: 'before' | 'reference' }[] } : {}),
         }))
         await autoBind(exec, { projectId, resourceId: written.resource.id })
-        return written as unknown as JsonValue
+        // A real book with a handful of rows was almost always joined wrong — say so before a path is drafted against it.
+        const rows = written.resource.toc?.length ?? 0
+        return {
+          ...written,
+          contentsRows: rows,
+          ...(rows < 3 ? { warning: `the contents has only ${rows} row(s) — one row per chapter is expected (station chapters count these rows). If the chapters got joined, resend toc with one chapter per line and resourceId ${written.resource.id}` } : {}),
+        } as unknown as JsonValue
       }
       const title = pickString(args.title)
       const url = pickString(args.url)
@@ -675,24 +706,30 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
       const argsAny = args as Record<string, unknown>
       const resourceId = pickString(args.resource, argsAny.book)
       if (resourceId === undefined) throw new Error(`a path belongs to one textbook — pass resource${textbookList(exec) || ' (register the textbook first with library_resource)'}`)
+      const adjusted: string[] = []
       const nodes = (list as Record<string, unknown>[]).map(node => {
-        const { chapters, also, chapterRanges, covers, kind, gate, ...rest } = node
+        const { chapters, also, chapterRanges, covers, kind, gate, points, ...rest } = node
         // gate is the v5 spelling; the old kind still parses (practice → acceptance).
         const gateValue = typeof gate === 'string' ? gate : kind === 'practice' ? 'acceptance' : kind
+        // Points belong to quiz stations; on any other gate they are dropped, not refused.
+        const keepPoints = gateValue === 'quiz' || points === undefined || (Array.isArray(points) && points.length === 0)
+        if (!keepPoints) adjusted.push(`points dropped on ${String(rest.title ?? rest.id)} — a ${String(gateValue)} station has no quiz; what it checks belongs in ${gateValue === 'acceptance' ? 'acceptance lines' : 'goals'}`)
         const main: Record<string, unknown>[] = []
+        const spelled = typeof chapters === 'string' && chapters.trim() !== '' ? chaptersLocator(chapters) : undefined
+        if (spelled?.rest !== undefined) adjusted.push(`${String(rest.title ?? rest.id)}: "${spelled.rest}" in chapters is not a row number — kept as a side reference (topic: ${spelled.rest})`)
         const locator = typeof chapters === 'number' ? String(chapters)
-          : typeof chapters === 'string' && chapters.trim() !== '' ? chapters.trim()
+          : spelled !== undefined ? spelled.locator
             : Array.isArray(chapters) ? (chapters as unknown[]).filter(entry => typeof entry === 'number' || typeof entry === 'string').join(',')
               : Array.isArray(chapterRanges) ? formatLocator((chapterRanges as unknown[]).flatMap(range => {
                 const row = payload(range)
                 return typeof row?.from === 'number' && typeof row.to === 'number' ? [{ from: row.from, to: row.to }] : []
               })) : undefined
         if (locator !== undefined && locator !== '') main.push({ ref: resourceId, locator })
-        const side = [...(Array.isArray(covers) ? covers as unknown[] : []), ...(Array.isArray(also) ? also as unknown[] : typeof also === 'string' ? [also] : [])]
+        const side = [...(Array.isArray(covers) ? covers as unknown[] : []), ...(Array.isArray(also) ? also as unknown[] : typeof also === 'string' ? [also] : []), ...(spelled?.rest === undefined ? [] : [`topic: ${spelled.rest}`])]
           .map(cover => normalizeCoverArg(cover) ?? cover)
         // A station naming neither rows nor references rests on the textbook whole.
         const all = main.length === 0 && side.length === 0 ? [{ ref: resourceId }] : [...main, ...side]
-        return { ...rest, ...(gateValue === undefined ? {} : { gate: gateValue }), covers: all }
+        return { ...rest, ...(gateValue === undefined ? {} : { gate: gateValue }), ...(keepPoints && points !== undefined ? { points } : {}), covers: all }
       })
       const projectId = projectOf(argsAny.project, exec, resourceId)
       const before = unwrap(await service.getProject({ id: projectId }))
@@ -713,6 +750,7 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
         stations: drafted.draft.nodes.length,
         ...(replaced ? { replacedDraft: true } : {}),
         waitingForAdoption: after.project.resources.filter(row => row.hasDraft).map(row => `${row.seq ?? '-'}. 《${row.title}》 ${row.draftTotal ?? 0} stations`),
+        ...(adjusted.length === 0 ? {} : { adjusted }),
         next: 'the learner adopts it on the textbook\'s page (采用) — say so in one line',
       } as unknown as JsonValue
     },
@@ -891,8 +929,12 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
       // the stored form is plain strings (the same tolerance reads them
       // back); the two axes default (topic + knowledge) and take the flat
       // cardIds / quote / url / pageId shorthands.
-      const cleaned = (questions as Record<string, unknown>[]).map(question => {
-        let next = question
+      const cleaned = (questions as Record<string, unknown>[]).map(raw => {
+        // The schema no longer rejects a question missing its id / kind / prompt /
+        // answer (that refusal named no question); blanks reach the service's
+        // per-question check, which names each one.
+        const text = (value: unknown): string => typeof value === 'string' ? value : typeof value === 'number' ? String(value) : ''
+        let next: Record<string, unknown> = { ...raw, id: text(raw.id), kind: text(raw.kind), prompt: text(raw.prompt), answer: text(raw.answer) }
         if (next.options !== undefined) {
           const options = normalizeQuizOptions(next.options)
           if (options !== undefined) next = { ...next, options }
@@ -937,6 +979,12 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
       const resourceId = pickString(body.resource, body.resourceId, body.book, body.bookId, args.resource, (args as Record<string, unknown>).book)
       if (projectId === undefined) {
         throw new Error('binding needs the project: { project, resource? } (library_read · projects lists them); unbind: true to unbind')
+      }
+      // An id the shelf does not hold (a guessed slug before the textbook is
+      // registered) binds the project and says so — not a failed call.
+      if (resourceId !== undefined && !(await service.getResource({ projectId, resourceId })).ok) {
+        const bound = unwrap(await service.setBinding(sessionId, { projectId }))
+        return { ...bound, note: `no resource ${JSON.stringify(resourceId)} in this project — bound the project only. Resource ids are minted (r_…); registering the textbook (library_resource) binds this session to it by itself${textbookList(exec)}` } as unknown as JsonValue
       }
       return unwrap(await service.setBinding(sessionId, { projectId, ...(resourceId === undefined ? {} : { resourceId }) })) as unknown as JsonValue
     },
