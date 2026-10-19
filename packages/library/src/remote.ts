@@ -320,7 +320,7 @@ export class LibraryRemoteService extends TypertRemoteService<LibraryRemoteConfi
 
   /** 订正: a retake paper over a station's open misses (all, or the keys named). */
   @Remote('createRetake')
-  createRetake(request: { projectId: string; resourceId?: string; nodeId: string; keys?: readonly string[] }): Promise<LibraryOutcome<{ assessment: LibraryAssessment }>> {
+  createRetake(request: { projectId: string; resourceId?: string; nodeId?: string; keys?: readonly string[] }): Promise<LibraryOutcome<{ assessment: LibraryAssessment }>> {
     return this.core.createRetake(request)
   }
 

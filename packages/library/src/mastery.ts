@@ -9,8 +9,10 @@
  * - A point is MASTERED when none of its questions is open and its newest
  *   probe passed; WEAK when a question is open, or a coach note is newer than
  *   its newest pass; UNTESTED with neither probes nor notes.
- * - Retakes (type "retake") re-ask open questions; their verdicts move the
- *   point but never the station's pass record.
+ * - Retakes (type "retake") re-ask open questions — one station's, or a
+ *   whole project's (今日复习); each question resolves through its `origin`,
+ *   so a cross-station retake credits every station it touched. Their
+ *   verdicts move the points but never a station's pass record.
  *
  * @module @khorsheed/dsh-library/mastery
  */
@@ -72,9 +74,13 @@ function passes(verdict: { readonly pass: boolean; readonly ratio?: number }): b
  * @param attempts - the project's attempts, any order.
  */
 export function stationMastery(node: RoadmapNode, assessments: readonly LibraryAssessment[], attempts: readonly LibraryAttempt[]): LibraryStationMastery {
-  const own = new Map(assessments
-    .filter(assessment => assessment.scope.nodeId === node.id && (assessment.type === 'quiz' || assessment.type === 'retake') && assessment.questions !== undefined)
+  // The station's papers, plus every retake (a retake counts here only through questions whose origin is one of them).
+  const papers = new Map(assessments
+    .filter(assessment => assessment.scope.nodeId === node.id && assessment.type === 'quiz' && assessment.questions !== undefined)
     .map(assessment => [assessment.id, assessment]))
+  const own = new Map([...papers, ...assessments
+    .filter(assessment => assessment.type === 'retake' && assessment.questions !== undefined)
+    .map(assessment => [assessment.id, assessment] as const)])
   const probes: Probe[] = []
   for (const attempt of attempts) {
     const assessment = attempt.assessmentId === undefined ? undefined : own.get(attempt.assessmentId)
@@ -83,6 +89,7 @@ export function stationMastery(node: RoadmapNode, assessments: readonly LibraryA
       if (verdict.void === true) continue
       const question = assessment.questions!.find(candidate => candidate.id === verdict.task)
       if (question === undefined) continue
+      if (assessment.type === 'retake' && (question.origin === undefined || !papers.has(question.origin.assessmentId))) continue
       const originId = question.origin?.assessmentId ?? assessment.id
       const originQuestion = question.origin === undefined
         ? question

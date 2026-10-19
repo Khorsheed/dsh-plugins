@@ -93,7 +93,7 @@ interface ToolMask {
  * The coach's guidance, registered beside the tools it describes (order 114,
  * the eval line). Per-`what` payloads are in the tool descriptions.
  */
-export const LIBRARY_PROMPT = `The library is this session's memory — projects, textbooks, their paths, the learner's knowledge cards (知识卡片) and quizzes live in the library tools, never in conversation memory. Each tool's description carries its payload and rules; a refusal names exactly what to fix — fix that and resend. A tool call is a function call, never text in the reply; hand payloads to the tools directly, never through a file or the shell.
+export const LIBRARY_PROMPT = `The library is the LEARNER's record, not your notebook — projects, textbooks, their paths, what the learner has mastered or stuck on, and their quizzes live in the library tools, never in conversation memory. Your own slips (a wrong answer key, a quiz you fixed) are never recorded: fix the quiz instead. Each tool's description carries its payload and rules; a refusal names exactly what to fix — fix that and resend. A tool call is a function call, never text in the reply; hand payloads to the tools directly, never through a file or the shell.
 
 How a project runs:
 1. A project is one learning goal (library_project). It has no path of its own.

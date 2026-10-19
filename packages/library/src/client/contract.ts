@@ -79,7 +79,8 @@ export interface LibraryPaneInjected {
   /** The newest knowledge-point state changes (今日 「最近的变化」). */
   recentChanges: () => Promise<RemoteResult<{ changes: (LibraryEvent & { projectId: string; projectName: string })[] }>>
   /** 订正: a retake paper over a station's open misses (all, or the keys named). */
-  createRetake: (projectId: string, resourceId: string, nodeId: string, keys?: readonly string[]) => Answer<{ assessment: LibraryAssessment }>
+  /** No station: the whole project's open misses (今日复习). */
+  createRetake: (projectId: string, resourceId?: string, nodeId?: string, keys?: readonly string[]) => Answer<{ assessment: LibraryAssessment }>
   recentRecords: () => Promise<RemoteResult<{ records: (LibraryEvent & { projectId: string; projectName: string })[] }>>
   /** The newest event's timestamp anywhere — the pane's change poll (host-side writes otherwise surface only on remount). */
   latestActivity: () => Promise<RemoteResult<{ at?: string }>>

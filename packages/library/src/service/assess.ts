@@ -40,7 +40,7 @@ import {
   live,
 } from './core.ts'
 import { titleOf, choiceOptionIndex, unlockReady, coversVerbatimBlocker } from './rules.ts'
-import { masteryChanges, stationMastery, type LibraryPointMastery, type LibraryStationMastery } from '../mastery.ts'
+import { masteryChanges, stationMastery, type LibraryOpenMiss, type LibraryPointMastery, type LibraryStationMastery } from '../mastery.ts'
 import { LibraryServicePages } from './pages.ts'
 
 export class LibraryServiceAssess extends LibraryServicePages {
@@ -333,7 +333,14 @@ export class LibraryServiceAssess extends LibraryServicePages {
     return await this.mutate(project.id, () => {
       const now = new Date()
       const at = now.toISOString()
-      const before = this.stationMasteryOf(project.id, assessment.scope.nodeId, assessment.scope.resourceId)
+      // The stations this sitting can move: its own, or — a project-wide retake — every station its questions came from.
+      const stationIds = assessment.scope.nodeId !== undefined
+        ? [assessment.scope.nodeId]
+        : [...new Set((assessment.questions ?? []).flatMap(question => {
+          const origin = question.origin === undefined ? undefined : this.store.readAssessment(project.id, question.origin.assessmentId)
+          return origin?.scope.nodeId === undefined ? [] : [origin.scope.nodeId]
+        }))]
+      const befores = stationIds.map(stationId => [stationId, this.stationMasteryOf(project.id, stationId, stationId === assessment.scope.nodeId ? assessment.scope.resourceId : undefined)] as const)
       const attempt: LibraryAttempt = { id: mintLibraryId('a'), assessmentId: assessment.id, verdicts, ratio, at }
       this.store.appendAttempt(project.id, attempt)
 
@@ -406,7 +413,7 @@ export class LibraryServiceAssess extends LibraryServicePages {
       }
       const created = [...touched.values()].filter(update => update.created === true)
       const onResource = assessment.scope.resourceId === undefined ? {} : { resourceId: assessment.scope.resourceId }
-      const pointChanges = this.pointChangesSince(project.id, assessment.scope.nodeId, assessment.scope.resourceId, before, at)
+      const pointChanges = befores.flatMap(([stationId, before]) => this.pointChangesSince(project.id, stationId, stationId === assessment.scope.nodeId ? assessment.scope.resourceId : undefined, before, at))
       this.store.appendEvents(project.id, [
         { at, type: 'attempt.assessed', id: assessment.id, ...onResource, ratio },
         ...(created.length === 0 ? [] : [{
@@ -592,6 +599,19 @@ export class LibraryServiceAssess extends LibraryServicePages {
     })
   }
 
+  /** Every open miss across the project's adopted quiz stations, newest first. */
+  protected projectOpenMisses(projectId: string): LibraryOpenMiss[] {
+    const assessments = this.store.listAssessments(projectId)
+    const attempts = this.store.readAttempts(projectId)
+    const open: LibraryOpenMiss[] = []
+    for (const resource of this.store.listResources(projectId)) {
+      for (const node of this.store.readRoadmap(projectId, resource.id)?.nodes ?? []) {
+        if (node.gate === 'quiz') open.push(...stationMastery(node, assessments, attempts).open)
+      }
+    }
+    return open.sort((a, b) => b.at.localeCompare(a.at))
+  }
+
   /** A station's mastery as the ledger stands (undefined off a station, or for a node no adopted path holds). */
   protected stationMasteryOf(projectId: string, nodeId: string | undefined, resourceId?: string): LibraryStationMastery | undefined {
     if (nodeId === undefined) return undefined
@@ -638,21 +658,28 @@ export class LibraryServiceAssess extends LibraryServicePages {
    * named — `${assessmentId}:${questionId}`). Its verdicts move the points,
    * never the station's pass record. No coach needed: the questions exist.
    */
-  async createRetake(request: { projectId: string; resourceId?: string; nodeId: string; keys?: readonly string[] }): Promise<LibraryOutcome<{ assessment: LibraryAssessment }>> {
+  async createRetake(request: { projectId: string; resourceId?: string; nodeId?: string; keys?: readonly string[] }): Promise<LibraryOutcome<{ assessment: LibraryAssessment }>> {
     this.assertAlive('createRetake')
     const project = this.readProjectOrRefusal(request.projectId)
     if ('error' in project) return project
     return await this.mutate(project.value.id, () => {
-      const mastery = this.stationMasteryOf(project.value.id, request.nodeId, request.resourceId)
-      if (mastery === undefined) return refuse('not-found', `no adopted station ${JSON.stringify(request.nodeId)}`)
+      // No station named: every station's open misses (今日复习 / the project's 错题).
+      let open: LibraryOpenMiss[]
+      if (request.nodeId === undefined) {
+        open = this.projectOpenMisses(project.value.id)
+      } else {
+        const mastery = this.stationMasteryOf(project.value.id, request.nodeId, request.resourceId)
+        if (mastery === undefined) return refuse('not-found', `no adopted station ${JSON.stringify(request.nodeId)}`)
+        open = [...mastery.open]
+      }
       const wanted = request.keys === undefined || request.keys.length === 0 ? undefined : new Set(request.keys)
-      const misses = mastery.open.filter(miss => wanted === undefined || wanted.has(miss.key))
-      if (misses.length === 0) return refuse('invalid', 'nothing to retake here — this station has no open misses')
-      const roadmap = this.findNodeRoadmap(project.value.id, request.nodeId, request.resourceId)
+      const misses = open.filter(miss => wanted === undefined || wanted.has(miss.key))
+      if (misses.length === 0) return refuse('invalid', `nothing to retake here — ${request.nodeId === undefined ? 'the project' : 'this station'} has no open misses`)
+      const roadmap = request.nodeId === undefined ? undefined : this.findNodeRoadmap(project.value.id, request.nodeId, request.resourceId)
       const assessment: LibraryAssessment = {
         id: mintLibraryId('q'),
         type: 'retake',
-        scope: { nodeId: request.nodeId, ...(roadmap?.primaryResourceId === undefined ? {} : { resourceId: roadmap.primaryResourceId }) },
+        scope: request.nodeId === undefined ? {} : { nodeId: request.nodeId, ...(roadmap?.primaryResourceId === undefined ? {} : { resourceId: roadmap.primaryResourceId }) },
         questions: misses.map((miss, index) => ({ ...miss.question, id: `r${index + 1}`, origin: { assessmentId: miss.assessmentId, questionId: miss.questionId } })),
         createdAt: new Date().toISOString(),
       }

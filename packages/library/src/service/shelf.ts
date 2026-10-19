@@ -29,6 +29,7 @@ import {
 } from '../types.ts'
 import { mintLibraryId } from '../store.ts'
 import { refuse, storeRefusal, live } from './core.ts'
+import { stationMastery } from '../mastery.ts'
 import { LibraryServiceCore } from './core.ts'
 
 export class LibraryServiceShelf extends LibraryServiceCore {
@@ -63,6 +64,17 @@ export class LibraryServiceShelf extends LibraryServiceCore {
       cardCount: cards.length,
       dueCount: cards.filter(card => card.status === 'active' && card.mastery.dueAt <= now).length,
       lastActiveAt: this.store.readEvents(project.id).at(-1)?.at ?? project.createdAt,
+      openMisses: (() => {
+        const assessments = this.store.listAssessments(project.id)
+        const attempts = this.store.readAttempts(project.id)
+        let count = 0
+        for (const resource of this.store.listResources(project.id)) {
+          for (const node of this.store.readRoadmap(project.id, resource.id)?.nodes ?? []) {
+            if (node.gate === 'quiz') count += stationMastery(node, assessments, attempts).open.length
+          }
+        }
+        return count
+      })(),
     }
   }
 

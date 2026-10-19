@@ -12,7 +12,6 @@ import { useState, type ReactNode } from 'react'
 import { ChipRow, PanelHeader } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
 import { isThickResource, LIBRARY_COLORS, LIBRARY_ICONS, type LibraryColor, type LibraryIcon, type LibraryProjectSummary, type LibraryResourceKind, type LibraryResourceProgress, type LibraryTemplate } from '../../types.ts'
 import { colorOf, GlyphStrokes, iconOf, ProjectGlyph, Ring } from '../look.tsx'
-import { collectMissed } from '../mistakes.ts'
 import { QuizRows } from './book.tsx'
 import { IconArticleOutlineMedium, IconCardsOutlineMedium, IconCourseOutlineMedium, IconHardwareOutlineMedium, IconLinkOutlineMedium, IconPenOutlineMedium, IconPlayOutlineMedium, IconPlusOutlineMedium, IconRefreshOutlineMedium, IconRepoOutlineMedium, IconSparkleOutlineMedium, IconToolOutlineMedium, IconTrashOutlineMedium } from '../icons.tsx'
 import { ConfirmDialog, OriginTag, outcome, StateLine, useLoad, value, when, type ViewProps } from '../ui.tsx'
@@ -67,6 +66,17 @@ export function TodayView({ p }: ViewProps): ReactNode {
   ].sort((a, b) => b.at.localeCompare(a.at)).slice(0, 5)
   const list = projects.data?.projects ?? []
   const dueCards = due.data?.cards ?? []
+  // 今日复习: every project's open misses (one retake paper across its stations), then the due cards.
+  const retakeRows = list.filter(project => (project.openMisses ?? 0) > 0)
+  const [retaking, setRetaking] = useState<string | undefined>()
+  const [retakeError, setRetakeError] = useState<string | undefined>()
+  const startRetake = (projectId: string): void => {
+    setRetaking(projectId)
+    setRetakeError(undefined)
+    void outcome(p.createRetake(projectId)).then(created => {
+      actions.push({ view: 'quiz', projectId, quizId: created.assessment.id })
+    }, (failure: unknown) => { setRetakeError(failure instanceof Error ? failure.message : String(failure)) }).finally(() => { setRetaking(undefined) })
+  }
   // Projects come most-recent first: the first one with a current station owns the solid 继续.
   const leadId = list.find(project => continueOf(project) !== undefined)?.id
 
@@ -100,14 +110,30 @@ export function TodayView({ p }: ViewProps): ReactNode {
             </div>
           </section>
         )}
-        {dueCards.length > 0 && (
-          <section className={css.reviewRow}>
-            <span className={css.big}>{dueCards.length}</span>
-            <span className={css.reviewText}>
-              <span>{t('today.dueTitle')}</span>
-              <span className={css.muted}>{t('today.dueLine', { minutes: String(Math.max(1, Math.round(dueCards.length / 4))) })}</span>
-            </span>
-            <button type="button" className={leadId === undefined ? css.primary : css.secondary} onClick={() => { actions.push({ view: 'review' }) }}>{t('today.startReview')}</button>
+        {(retakeRows.length > 0 || dueCards.length > 0) && (
+          <section className={css.section}>
+            <h3 className={css.sectionTitle}>{t('today.dueTitle')}</h3>
+            {retakeRows.map(project => (
+              <div key={project.id} className={css.reviewRow}>
+                <span className={css.big}>{project.openMisses}</span>
+                <span className={css.reviewText}>
+                  <span>{t('today.retakeLine', { project: project.name })}</span>
+                  <span className={css.muted}>{t('today.retakeHint')}</span>
+                </span>
+                <button type="button" className={leadId === undefined && project === retakeRows[0] ? css.primary : css.secondary} disabled={retaking !== undefined} onClick={() => { startRetake(project.id) }}>{t('node.retakeStart')}</button>
+              </div>
+            ))}
+            {dueCards.length > 0 && (
+              <div className={css.reviewRow}>
+                <span className={css.big}>{dueCards.length}</span>
+                <span className={css.reviewText}>
+                  <span>{t('today.cardsDue')}</span>
+                  <span className={css.muted}>{t('today.dueMinutes', { minutes: String(Math.max(1, Math.round(dueCards.length / 4))) })}</span>
+                </span>
+                <button type="button" className={leadId === undefined && retakeRows.length === 0 ? css.primary : css.secondary} onClick={() => { actions.push({ view: 'review' }) }}>{t('today.startReview')}</button>
+              </div>
+            )}
+            {retakeError !== undefined && <div className={css.error}>{retakeError}</div>}
           </section>
         )}
         {feed.length > 0 && (
@@ -339,7 +365,7 @@ export function ProjectView({ p, projectId }: ViewProps & { projectId: string })
   const assessments = useLoad(() => value(p.listAssessments(projectId, undefined, undefined, 'quiz')), [projectId, rev])
   // The 错题 entry's count and target ride the shared collection (mistakes.ts) — the same rows the station's 章节考 tab lists.
   const attempts = useLoad(() => value(p.listAttempts(projectId)), [projectId, rev])
-  const missedAll = collectMissed(attempts.data?.attempts ?? [], assessments.data?.assessments ?? [])
+  const openMisses = loaded.data?.project.openMisses ?? 0
   const [notice, setNotice] = useState<string | undefined>()
   const [editing, setEditing] = useState(false)
   const [ordering, setOrdering] = useState(false)
@@ -355,17 +381,15 @@ export function ProjectView({ p, projectId }: ViewProps & { projectId: string })
   const resume = project === undefined ? undefined : continueOf(project)
   const freeQuizzes = (assessments.data?.assessments ?? []).filter(quiz => quiz.scope.resourceId === undefined && quiz.scope.nodeId === undefined).sort((a, b) => b.createdAt.localeCompare(a.createdAt))
   // The 错题 entry jumps to wherever the newest miss lives: its station's 章节考 tab, else its textbook page.
+  // The 错题 stat: every station's open misses, retaken in one paper (订正不计分).
   const openMissed = (): void => {
-    const newest = missedAll[0]
-    if (newest === undefined) return
-    const resourceId = newest.quiz.scope.resourceId
-    if (resourceId === undefined) return
-    if (newest.quiz.scope.nodeId !== undefined) {
-      actions.push({ view: 'node', projectId, resourceId, nodeId: newest.quiz.scope.nodeId, tab: 'quiz' })
-    } else {
-      actions.push({ view: 'resource', projectId, resourceId })
-    }
+    if (busy) return
+    setBusy(true)
+    void outcome(p.createRetake(projectId)).then(created => {
+      actions.push({ view: 'quiz', projectId, quizId: created.assessment.id })
+    }, (failure: unknown) => { setNotice(failure instanceof Error ? failure.message : String(failure)) }).finally(() => { setBusy(false) })
   }
+
 
   const prime = (key: 'prime.addBook' | 'prime.addResource' | 'prime.pickTextbooks'): void => {
     if (project === undefined) return
@@ -433,7 +457,7 @@ export function ProjectView({ p, projectId }: ViewProps & { projectId: string })
           <span className={css.bandStats}>
             <button type="button" className={css.bandStat} onClick={() => { actions.push({ view: 'cards', projectId, filter: 'all' }) }}><b>{project.cardCount}</b>{t('cards.title')}</button>
             <button type="button" className={css.bandStat} disabled={project.dueCount === 0} onClick={() => { actions.push({ view: 'review', projectId }) }}><b>{project.dueCount}</b>{t('review.due')}</button>
-            <button type="button" className={css.bandStat} disabled={missedAll.length === 0} onClick={openMissed}><b>{missedAll.length}</b>{t('mistakes.stat')}</button>
+            <button type="button" className={css.bandStat} disabled={openMisses === 0 || busy} onClick={openMissed}><b>{openMisses}</b>{t('mistakes.stat')}</button>
           </span>
         </section>
       )}

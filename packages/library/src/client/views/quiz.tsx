@@ -316,10 +316,11 @@ export function ResultView({ p, projectId, resourceId, result }: ViewProps & { p
   }
   // 订正 in the sidebar: a retake paper over this sitting's misses (no coach needed).
   const retake = (): void => {
-    if (stationId === undefined || resourceId === undefined || missedKeys.length === 0 || retaking) return
+    if (missedKeys.length === 0 || retaking) return
     setRetaking(true)
-    void outcome(p.createRetake(projectId, resourceId, stationId, missedKeys)).then(created => {
-      actions.replace({ view: 'quiz', projectId, resourceId, quizId: created.assessment.id })
+    // A station's paper retakes on its station; a project-wide retake retakes across the project.
+    void outcome(p.createRetake(projectId, stationId === undefined ? undefined : resourceId, stationId, missedKeys)).then(created => {
+      actions.replace({ view: 'quiz', projectId, ...(resourceId === undefined ? {} : { resourceId }), quizId: created.assessment.id })
     }, (failure: unknown) => { setNotice(failure instanceof Error ? failure.message : String(failure)); setRetaking(false) })
   }
   const again = (): void => {
@@ -328,7 +329,7 @@ export function ResultView({ p, projectId, resourceId, result }: ViewProps & { p
   }
 
   const nextId = result.unlocked[0]
-  const canRetake = stationId !== undefined && resourceId !== undefined && missedKeys.length > 0
+  const canRetake = missedKeys.length > 0 && (isRetake || (stationId !== undefined && resourceId !== undefined))
   const retakePrimary = (isRetake || !passed) && canRetake
   const nextPrimary = passed && nextId !== undefined
   const againPrimary = !retakePrimary && !nextPrimary

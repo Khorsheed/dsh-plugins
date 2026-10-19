@@ -104,6 +104,16 @@ export function libraryCardsTool(kit: ToolKit): ToolDefinition {
         noted.push({ point: written.point.title, state: written.point.state, ...(written.changes.length === 0 ? {} : { changed: written.changes.map(change => `${change.title}: ${change.from} → ${change.to}`) }) })
       }
       const rest = cards.filter((_card, index) => !pointed.includes((list as Record<string, unknown>[])[index]!))
+      // In a points-driven project a weak point from the conversation lands on
+      // a knowledge point or nowhere: a free-floating chat card is how the
+      // coach's own slips and the learner's feedback leaked in as 「弱点」.
+      if (profileOf(project.template).pointsDriven) {
+        const loose = rest.filter(card => (card as { source?: { type?: string } }).source?.type === 'chat')
+        if (loose.length > 0) {
+          const points = sessionId === undefined ? [] : (service.bindingSummary(sessionId, 0).station?.mastery.points ?? [])
+          throw new Error(`in a subject project a weak point from the conversation lands on the station's knowledge point — add point (+ node) to: ${loose.map(card => (card as { term?: string }).term ?? '?').join(', ')}${points.length === 0 ? '' : `; this station's points: ${points.map(point => `${point.id} (${point.title})`).join(', ')}`}. Record only what the LEARNER got wrong about the material — never your own slip (a wrong answer key: fix the quiz) and never feedback on a question or the tools. If none of that applies, record nothing.`)
+        }
+      }
       const recorded = rest.length === 0 ? undefined : unwrap(await service.writeCards({
         projectId,
         ...(resource === undefined ? {} : { resourceId: resource }),

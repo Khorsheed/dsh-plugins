@@ -146,7 +146,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     putAttempt: (projectId, assessmentId, verdicts) => remote.putAttempt({ projectId, assessmentId, verdicts }),
     recentRecords: () => remote.recentRecords({ limit: 3 }),
     recentChanges: () => remote.recentChanges({ limit: 5 }),
-    createRetake: (projectId, resourceId, nodeId, keys) => remote.createRetake({ projectId, resourceId, nodeId, ...(keys === undefined ? {} : { keys }) }),
+    createRetake: (projectId, resourceId, nodeId, keys) => remote.createRetake({ projectId, ...(resourceId === undefined ? {} : { resourceId }), ...(nodeId === undefined ? {} : { nodeId }), ...(keys === undefined ? {} : { keys }) }),
     latestActivity: () => remote.latestActivity(),
     boundTarget: () => remote.boundTarget(sessionId),
     bindTarget: binding => remote.bindTarget(sessionId, { binding }),
