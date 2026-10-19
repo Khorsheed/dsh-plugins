@@ -7,12 +7,15 @@
  * The rules that live here and nowhere else (v5 — the six-layer model):
  *
  * - **Resources are registered, never uploaded**: a thick one (toc present —
- *   a book, a course with episodes) carries title, kind, contents and their
- *   source, and can be routed, covered by chapter, quizzed and photographed;
- *   a thin one is a shelf link that enters a path whole.
+ *   a TEXTBOOK: a book, a course with episodes, a coach-authored outline)
+ *   carries title, kind, contents and their source, sits in the project's
+ *   study order (`seq`, gapless from 1), and can be routed, covered by
+ *   chapter, quizzed and photographed; a thin one is a shelf link a station
+ *   cites.
  * - **Roadmaps are drafted by the coach and adopted by the learner**, one
- *   path per scope (`primaryResourceId` = that resource's own path; absent =
- *   the project's own). A draft is free to change; adoption initializes the
+ *   path per textbook (the project carries none — proposal
+ *   2026-10-19-library-book-paths). A draft is free to change and a new one
+ *   replaces the old; adoption initializes the
  *   state machine (roots `current`, the rest `locked`), keeps the progress
  *   of nodes that survive a re-split, and materializes every acceptance
  *   station's rubric as its practice assessment. The adopted path only moves
@@ -40,6 +43,7 @@ import {
   LIBRARY_COLORS,
   LIBRARY_ICONS,
   LIBRARY_RESOURCE_KINDS,
+  LIBRARY_RESOURCE_ORIGINS,
   TEMPLATE_LOOK,
   LEITNER_INTERVAL_DAYS,
   acceptanceLines,
@@ -82,6 +86,7 @@ import {
   type LibraryRefusal,
   type LibraryResource,
   type LibraryResourceKind,
+  type LibraryResourceOrigin,
   type LibraryResourceProgress,
   type LibraryNodeCover,
   type LibraryNodeNotes,
@@ -263,15 +268,19 @@ export class LibraryService {
   private resourceProgress(projectId: string, resource: LibraryResource): LibraryResourceProgress {
     const roadmap = isThickResource(resource) ? this.store.readRoadmap(projectId, resource.id) : undefined
     const current = roadmap?.nodes.find(node => node.state === 'current')
+    const draft = isThickResource(resource) ? this.store.readRoadmap(projectId, resource.id, 'draft') : undefined
     return {
       id: resource.id,
       title: resource.title,
       kind: resource.kind,
+      ...(resource.seq === undefined ? {} : { seq: resource.seq }),
+      ...(resource.origin === undefined ? {} : { origin: resource.origin }),
       ...(roadmap === undefined ? {} : {
         roadmap: { done: roadmap.nodes.filter(node => node.state === 'done').length, total: roadmap.nodes.length },
       }),
       ...(current === undefined ? {} : { current: { id: current.id, title: current.title } }),
-      hasDraft: isThickResource(resource) && this.store.readRoadmap(projectId, resource.id, 'draft') !== undefined,
+      hasDraft: draft !== undefined,
+      ...(draft === undefined ? {} : { draftTotal: draft.nodes.length }),
     }
   }
 
@@ -421,7 +430,9 @@ export class LibraryService {
     kind: LibraryResourceKind
     url?: string
     note?: string
-    addedBy?: 'coach' | 'learner'
+    origin?: LibraryResourceOrigin
+    /** A textbook's place in the study order: inserts there (the rest shift down); omitted, a new textbook queues last. */
+    seq?: number
     toc?: readonly { title: string; part?: string }[]
     tocSource?: LibraryTocSource
     bookKind?: LibraryBookKind
@@ -449,18 +460,27 @@ export class LibraryService {
           return refuse('not-found', `no resource ${JSON.stringify(request.resourceId)} in this project — omit resourceId to clone a fresh one`)
         }
         const now = new Date().toISOString()
+        const { seq: _sourceSeq, ...copied } = source
         const resource: LibraryResource = {
-          ...source,
+          ...copied,
           id: existing?.id ?? mintLibraryId('r'),
+          ...(existing?.seq === undefined ? {} : { seq: existing.seq }),
           createdAt: existing?.createdAt ?? now,
         }
         this.store.writeResource(project.value.id, resource)
+        if (isThickResource(resource)) this.placeTextbook(project.value.id, resource.id, existing?.seq ?? request.seq)
         if (existing === undefined) this.event(project.value.id, 'resource.added', { id: resource.id, title: resource.title, resourceId: resource.id, ...(resource.toc === undefined ? {} : { count: resource.toc.length }) })
         return { ok: true as const, resource }
       })
     }
     const title = request.title?.trim() ?? ''
     if (title === '') return refuse('invalid', 'a resource needs its title — what its own page / cover calls it')
+    if (request.origin !== undefined && !(LIBRARY_RESOURCE_ORIGINS as readonly string[]).includes(request.origin)) {
+      return refuse('invalid', 'origin is learner | picked | authored — learner: the learner\'s own; picked: an existing book / course / link you chose; authored: a textbook you wrote yourself (your contents, your 讲义 are its text)')
+    }
+    if (request.seq !== undefined && !(Number.isInteger(request.seq) && request.seq > 0)) {
+      return refuse('invalid', 'seq is the textbook\'s place in the study order — a whole number from 1')
+    }
     if (!(LIBRARY_RESOURCE_KINDS as readonly string[]).includes(request.kind)) {
       return refuse('invalid', `kind is ${LIBRARY_RESOURCE_KINDS.join(' | ')} — book: a book (contents required); course: a lecture series with episodes (contents required); article | video | repo | tool | hardware: a thin link (url required)`)
     }
@@ -527,7 +547,8 @@ export class LibraryService {
         kind: request.kind,
         ...(request.url === undefined || request.url.trim() === '' ? (existing?.url === undefined ? {} : { url: existing.url }) : { url: request.url.trim() }),
         ...(request.note === undefined || request.note.trim() === '' ? (existing?.note === undefined ? {} : { note: existing.note }) : { note: request.note.trim() }),
-        addedBy: request.addedBy ?? existing?.addedBy ?? 'coach',
+        origin: request.origin ?? existing?.origin ?? 'picked',
+        ...(existing?.seq === undefined || toc.length === 0 ? {} : { seq: existing.seq }),
         ...(toc.length === 0 ? {} : {
           toc: toc.map((entry, index) => ({
             n: index + 1,
@@ -540,12 +561,52 @@ export class LibraryService {
         createdAt: existing?.createdAt ?? now,
       }
       this.store.writeResource(project.value.id, resource)
+      const placed = isThickResource(resource) ? this.placeTextbook(project.value.id, resource.id, request.seq ?? existing?.seq) : resource
       if (existing === undefined) this.event(project.value.id, 'resource.added', { id: resource.id, title: resource.title, resourceId: resource.id, ...(resource.toc === undefined ? {} : { count: resource.toc.length }) })
-      return { ok: true as const, resource }
+      return { ok: true as const, resource: placed }
     })
   }
 
-  /** Remove a shelf entry: its record, roadmaps and pages (cards stay, unhung). */
+  /**
+   * Renumber a project's textbooks gapless from 1 with `resourceId` at
+   * `seq` (clamped; omitted = keep its place, or last when it has none).
+   * Call inside the project lock. Returns the placed resource as stored.
+   */
+  private placeTextbook(projectId: string, resourceId: string, seq: number | undefined): LibraryResource {
+    const textbooks = this.store.listResources(projectId).filter(isThickResource)
+    const moving = textbooks.find(candidate => candidate.id === resourceId)
+    const others = textbooks.filter(candidate => candidate.id !== resourceId)
+    if (moving !== undefined) {
+      const at = seq === undefined
+        ? (moving.seq === undefined ? others.length : Math.min(others.filter(other => (other.seq ?? Infinity) < moving.seq!).length, others.length))
+        : Math.min(Math.max(seq - 1, 0), others.length)
+      others.splice(at, 0, moving)
+    }
+    let placed: LibraryResource | undefined
+    for (const [index, textbook] of others.entries()) {
+      const next = textbook.seq === index + 1 ? textbook : { ...textbook, seq: index + 1 }
+      if (next !== textbook) this.store.writeResource(projectId, next)
+      if (next.id === resourceId) placed = next
+    }
+    return placed ?? this.store.readResource(projectId, resourceId)!
+  }
+
+  /** Move a textbook to another place in the study order (the rest shift). */
+  async moveResource(request: { projectId: string; resourceId: string; seq: number }): Promise<LibraryOutcome<{ resources: LibraryResource[] }>> {
+    this.assertAlive('moveResource')
+    const project = this.readProjectOrRefusal(request.projectId)
+    if ('error' in project) return project
+    if (!(Number.isInteger(request.seq) && request.seq > 0)) return refuse('invalid', 'seq is a place in the study order — a whole number from 1')
+    return await this.mutate(project.value.id, () => {
+      const resource = this.store.readResource(project.value.id, request.resourceId)
+      if (resource === undefined) return refuse('not-found', `no resource ${JSON.stringify(request.resourceId)} in this project — library_read · resources lists them`)
+      if (!isThickResource(resource)) return refuse('invalid', `《${resource.title}》 is a link without contents — only textbooks have a place in the study order`)
+      this.placeTextbook(project.value.id, resource.id, request.seq)
+      return { ok: true as const, resources: this.store.listResources(project.value.id) }
+    })
+  }
+
+  /** Remove a shelf entry: its record, roadmaps and pages (cards stay, unhung); the textbooks behind it move up. */
   async removeResource(request: { projectId: string; resourceId: string }): Promise<LibraryOutcome<{ id: string }>> {
     this.assertAlive('removeResource')
     const project = this.readProjectOrRefusal(request.projectId)
@@ -555,6 +616,7 @@ export class LibraryService {
         return refuse('not-found', `no resource ${JSON.stringify(request.resourceId)} in this project`)
       }
       this.store.removeResource(project.value.id, request.resourceId)
+      this.placeTextbook(project.value.id, request.resourceId, undefined)
       const cards = this.store.readCards(project.value.id)
       if (cards.some(card => card.resourceId === request.resourceId)) {
         this.store.writeCards(project.value.id, cards.map(card => {
@@ -575,7 +637,7 @@ export class LibraryService {
     return { ok: true, resource }
   }
 
-  /** A project's shelf, oldest first. */
+  /** A project's shelf: textbooks in study order, then links oldest first. */
   async listResources(request: { projectId: string }): Promise<{ resources: LibraryResource[] }> {
     this.assertAlive('listResources')
     return { resources: this.store.listResources(request.projectId) }
@@ -592,8 +654,8 @@ export class LibraryService {
 
   /* ------------------------------------------------------------- roadmap */
 
-  /** One scope's adopted roadmap and its pending draft; no resourceId = the project's own path. */
-  async getRoadmap(request: { projectId: string; resourceId?: string }): Promise<{ roadmap?: LibraryRoadmap; draft?: LibraryRoadmap }> {
+  /** One textbook's adopted roadmap and its pending draft. */
+  async getRoadmap(request: { projectId: string; resourceId: string }): Promise<{ roadmap?: LibraryRoadmap; draft?: LibraryRoadmap }> {
     this.assertAlive('getRoadmap')
     const roadmap = this.store.readRoadmap(request.projectId, request.resourceId)
     const draft = this.store.readRoadmap(request.projectId, request.resourceId, 'draft')
@@ -601,16 +663,15 @@ export class LibraryService {
   }
 
   /**
-   * Write the coach's draft — a thick resource's path (resourceId) or the
-   * project's own (no resourceId: the general case, mixing covers freely).
-   * Shape rules: unique ids, a gate, at least one cover per node, references
-   * that exist, locators inside the resource's contents, dependencies
-   * pointing backwards. States are not the coach's to set — adoption
-   * initializes them.
+   * Write the coach's draft of one textbook's path; it replaces the
+   * textbook's previous draft. Shape rules: unique ids, a gate, at least one
+   * cover per node, references that exist, locators inside the resource's
+   * contents, dependencies pointing backwards. States are not the coach's to
+   * set — adoption initializes them.
    */
   async draftRoadmap(request: {
     projectId: string
-    resourceId?: string
+    resourceId: string
     nodes: readonly {
       id: string
       title: string
@@ -628,12 +689,19 @@ export class LibraryService {
     this.assertAlive('draftRoadmap')
     const project = this.readProjectOrRefusal(request.projectId)
     if ('error' in project) return project
-    const primary = request.resourceId === undefined ? undefined : this.store.readResource(project.value.id, request.resourceId)
-    if (request.resourceId !== undefined && primary === undefined) {
-      return refuse('not-found', `no resource ${JSON.stringify(request.resourceId)} in project ${JSON.stringify(project.value.name)} — a resource's roadmap rides the resource; library_read · resources lists them (omit resource for the project's own path)`)
+    const textbooks = this.store.listResources(project.value.id).filter(isThickResource)
+    const shelf = textbooks.length === 0
+      ? 'this project has no textbook yet — register one first (library_resource with a contents: the learner\'s book, one you pick, or one you author)'
+      : `this project's textbooks: ${textbooks.map(textbook => `${textbook.seq ?? '-'}. ${textbook.id} 《${textbook.title}》`).join('; ')}`
+    if (typeof request.resourceId !== 'string' || request.resourceId.trim() === '') {
+      return refuse('invalid', `a path belongs to one textbook — pass resource; ${shelf}`)
     }
-    if (primary !== undefined && !isThickResource(primary)) {
-      return refuse('invalid', `《${primary.title}》 is a thin link (no contents) — only a thick resource (a book, a course with episodes) carries its own roadmap; a thin link enters the PROJECT's path whole (a cover naming it, no locator)`)
+    const primary = isLibraryId(request.resourceId) ? this.store.readResource(project.value.id, request.resourceId) : undefined
+    if (primary === undefined) {
+      return refuse('not-found', `no resource ${JSON.stringify(request.resourceId)} in project ${JSON.stringify(project.value.name)} — ${shelf}`)
+    }
+    if (!isThickResource(primary)) {
+      return refuse('invalid', `《${primary.title}》 is a link without contents — it never carries a path; cite it inside a station of a textbook's path (also: ["${primary.id}"]). ${shelf}`)
     }
     if (request.nodes.length === 0) {
       return refuse('invalid', 'a roadmap needs at least one node — split the material into learning stations; each: { id, title, gate: "quiz"|"acceptance"|"read", goals, covers: ["r_…#1-5" | "https://…" | "topic: …"], dependsOn }; an acceptance station also needs acceptance: [...]')
@@ -671,25 +739,23 @@ export class LibraryService {
       } : {}),
     }))
     const shapeError = validateRoadmapShape(nodes, {
-      ...(primary === undefined ? {} : { resourceId: primary.id }),
+      resourceId: primary.id,
       resource: candidate => this.store.readResource(project.value.id, candidate),
       hasAssessment: candidate => this.store.readAssessment(project.value.id, candidate) !== undefined,
     })
     if (shapeError !== undefined) return refuse('invalid', shapeError)
     return await this.mutate(project.value.id, () => {
-      const draft: LibraryRoadmap = {
-        ...(primary === undefined ? {} : { primaryResourceId: primary.id }),
-        status: 'draft',
+      const draft = {
+        primaryResourceId: primary.id,
+        status: 'draft' as const,
         nodes,
         ...(request.passRatio === undefined ? {} : { passRatio: request.passRatio }),
         ...(request.note === undefined || request.note.trim() === '' ? {} : { note: request.note.trim() }),
         generatedAt: new Date().toISOString(),
       }
       this.store.writeRoadmap(project.value.id, draft)
-      this.event(project.value.id, 'roadmap.drafted', primary === undefined
-        ? { id: project.value.id, title: project.value.name, count: nodes.length }
-        : { id: primary.id, title: primary.title, resourceId: primary.id, count: nodes.length })
-      return { ok: true as const, draft }
+      this.event(project.value.id, 'roadmap.drafted', { id: primary.id, title: primary.title, resourceId: primary.id, count: nodes.length })
+      return { ok: true as const, draft: draft as LibraryRoadmap }
     })
   }
 
@@ -701,7 +767,7 @@ export class LibraryService {
    * assessment (unchanged lines reuse the live one — its history stays put;
    * changed lines supersede it).
    */
-  async adoptRoadmap(request: { projectId: string; resourceId?: string }): Promise<LibraryOutcome<{ roadmap: LibraryRoadmap }>> {
+  async adoptRoadmap(request: { projectId: string; resourceId: string }): Promise<LibraryOutcome<{ roadmap: LibraryRoadmap }>> {
     this.assertAlive('adoptRoadmap')
     const project = this.readProjectOrRefusal(request.projectId)
     if ('error' in project) return project
@@ -724,17 +790,17 @@ export class LibraryService {
         })
       }
       const now = new Date().toISOString()
-      const roadmap: LibraryRoadmap = { ...draft, status: 'adopted', nodes, adoptedAt: now }
+      const roadmap = { ...draft, primaryResourceId: request.resourceId, status: 'adopted' as const, nodes, adoptedAt: now }
       this.store.writeRoadmap(project.value.id, roadmap)
       this.store.removeDraft(project.value.id, request.resourceId)
       // Materialize each acceptance station's rubric as its practice assessment.
       this.materializePracticeAssessments(project.value.id, nodes, now)
-      const primary = request.resourceId === undefined ? undefined : this.store.readResource(project.value.id, request.resourceId)
+      const primary = this.store.readResource(project.value.id, request.resourceId)
       this.event(project.value.id, 'roadmap.adopted', {
         at: now,
-        id: request.resourceId ?? project.value.id,
-        title: primary?.title ?? project.value.name,
-        ...(request.resourceId === undefined ? {} : { resourceId: request.resourceId }),
+        id: request.resourceId,
+        title: primary?.title ?? request.resourceId,
+        resourceId: request.resourceId,
         count: nodes.length,
       })
       return { ok: true as const, roadmap }
@@ -773,14 +839,14 @@ export class LibraryService {
     }
   }
 
-  /** Drop a scope's draft without adopting it. */
-  async discardDraft(request: { projectId: string; resourceId?: string }): Promise<LibraryOutcome<{ resourceId?: string }>> {
+  /** Drop a textbook's draft without adopting it. */
+  async discardDraft(request: { projectId: string; resourceId: string }): Promise<LibraryOutcome<{ resourceId: string }>> {
     this.assertAlive('discardDraft')
     const project = this.readProjectOrRefusal(request.projectId)
     if ('error' in project) return project
     return await this.mutate(project.value.id, () => {
       this.store.removeDraft(project.value.id, request.resourceId)
-      return { ok: true as const, ...(request.resourceId === undefined ? {} : { resourceId: request.resourceId }) }
+      return { ok: true as const, resourceId: request.resourceId }
     })
   }
 
@@ -1307,12 +1373,11 @@ export class LibraryService {
     let gatedNode: RoadmapNode | undefined
     let gatedRoadmap: LibraryRoadmap | undefined
     if (nodeId !== undefined) {
-      // The node resolves on whichever adopted path holds it — the resource's
-      // when scope names one, the project's own path otherwise (and, as a
-      // fallback for a scope-less station quiz, any path in the project).
+      // The node resolves on the scoped textbook's adopted path, or — a
+      // scope-less station quiz — on whichever textbook's path holds it.
       const roadmaps = scope.resourceId !== undefined
         ? [this.store.readRoadmap(project.value.id, scope.resourceId)]
-        : [this.store.readRoadmap(project.value.id), ...this.store.listResources(project.value.id).map(candidate => this.store.readRoadmap(project.value.id, candidate.id))]
+        : this.store.listResources(project.value.id).filter(isThickResource).map(candidate => this.store.readRoadmap(project.value.id, candidate.id))
       for (const roadmap of roadmaps) {
         const node = roadmap?.nodes.find(candidate => candidate.id === nodeId)
         if (node !== undefined) { gatedRoadmap = roadmap; gatedNode = node; break }
@@ -1421,7 +1486,7 @@ export class LibraryService {
               errors.push(`${label} asks about 《${resource.title}》's content from memory — it is a material book (specific text you cannot recall reliably). Quote a photographed page (evidence.kind photo) or a web copy (web, with url), or drill the learner's cards instead`)
             }
           } else {
-            const blocker = coversVerbatimBlocker(gatedNode.covers, candidate => this.store.readResource(project.value.id, candidate))
+            const blocker = coversVerbatimBlocker(gatedNode.covers, candidate => this.store.readResource(project.value.id, candidate), gatedRoadmap?.primaryResourceId)
             if (blocker !== undefined) {
               errors.push(`${label} asks the station's content from memory, but ${blocker}. Quote a photographed page (evidence.kind photo) or the page on the web (web, with url), or drill the learner's cards instead`)
             }
@@ -1498,7 +1563,7 @@ export class LibraryService {
     assessmentId?: string
     quizId?: string
     nodeId?: string
-    /** The resource whose path the acceptance station sits on (omit for the project's own path). */
+    /** The textbook whose path the acceptance station sits on (omitted: the textbook whose path holds the node). */
     resourceId?: string
     verdicts: readonly LibraryVerdict[]
   }): Promise<LibraryOutcome<LibraryAssessResult>> {
@@ -1789,12 +1854,10 @@ export class LibraryService {
     })
   }
 
-  /** The roadmap holding one node: the hinted scope first, then every adopted path of the project. */
+  /** The roadmap holding one node: the hinted textbook's first, then every adopted path of the project. */
   private findNodeRoadmap(projectId: string, nodeId: string, resourceId?: string): LibraryRoadmap | undefined {
     const hinted = this.store.readRoadmap(projectId, resourceId)
     if (hinted?.nodes.some(node => node.id === nodeId)) return hinted
-    const projectPath = this.store.readRoadmap(projectId)
-    if (projectPath?.nodes.some(node => node.id === nodeId)) return projectPath
     for (const resource of this.store.listResources(projectId)) {
       const roadmap = this.store.readRoadmap(projectId, resource.id)
       if (roadmap?.nodes.some(node => node.id === nodeId)) return roadmap
@@ -1888,58 +1951,39 @@ export class LibraryService {
 
   /**
    * The bound session's working set, read synchronously (the per-turn prompt
-   * context renders inside a synchronous callback): the project, the resource,
-   * its current node and draft flag, and the weakest live cards there. A
-   * project-only binding reports the PROJECT path's current station in
-   * `progress` (the resource's when bound to one).
+   * context renders inside a synchronous callback): the project, the bound
+   * resource, every textbook's path state in study order (so the coach reads
+   * what the learner adopted, discarded or reordered in the sidebar, every
+   * turn), and the weakest live cards.
    */
   bindingSummary(sessionId: string, cardLimit: number = 12): {
     binding?: LibraryBinding
     project?: LibraryProject
     resource?: LibraryResource
-    progress?: LibraryResourceProgress
+    textbooks: LibraryResourceProgress[]
     weakCards: LibraryCard[]
   } {
     this.assertAlive('bindingSummary')
     const binding = this.getBinding(sessionId)
-    if (binding === undefined) return { weakCards: [] }
+    if (binding === undefined) return { textbooks: [], weakCards: [] }
     let project: LibraryProject | undefined
     try {
       project = this.store.readProject(binding.projectId)
     } catch {
       project = undefined
     }
-    if (project === undefined) return { binding, weakCards: [] }
+    if (project === undefined) return { binding, textbooks: [], weakCards: [] }
     const resource = binding.resourceId === undefined ? undefined : this.store.readResource(project.id, binding.resourceId)
-    // No bound resource: the progress is the project's own path (current
-    // station, a waiting draft) so the coach sees it every turn.
-    const pathProgress = (): LibraryResourceProgress | undefined => {
-      if (resource !== undefined) return this.resourceProgress(project.id, resource)
-      const roadmap = this.store.readRoadmap(project.id)
-      const draft = this.store.readRoadmap(project.id, undefined, 'draft')
-      if (roadmap === undefined && draft === undefined) return undefined
-      const current = roadmap?.nodes.find(node => node.state === 'current')
-      return {
-        id: project.id,
-        title: project.name,
-        kind: 'book' as const,
-        ...(roadmap === undefined ? {} : {
-          roadmap: { done: roadmap.nodes.filter(node => node.state === 'done').length, total: roadmap.nodes.length },
-        }),
-        ...(current === undefined ? {} : { current: { id: current.id, title: current.title } }),
-        hasDraft: draft !== undefined,
-      }
-    }
+    const textbooks = this.store.listResources(project.id).filter(isThickResource).map(textbook => this.resourceProgress(project.id, textbook))
     const weakCards = this.store.readCards(project.id)
       .filter(card => card.status === 'active' && card.weakness > 0 && (resource === undefined || card.resourceId === resource.id))
       .sort((a, b) => b.weakness - a.weakness || b.updatedAt.localeCompare(a.updatedAt))
       .slice(0, cardLimit)
-    const progress = pathProgress()
     return {
       binding,
       project,
       ...(resource === undefined ? {} : { resource }),
-      ...(progress === undefined ? {} : { progress }),
+      textbooks,
       weakCards,
     }
   }
@@ -2080,8 +2124,8 @@ export function unlockReady(nodes: readonly RoadmapNode[]): { nodes: RoadmapNode
 export function validateRoadmapShape(
   nodes: readonly RoadmapNode[],
   scope: {
-    /** A resource-level draft: the one resource every node's covers must name. */
-    resourceId?: string
+    /** The textbook whose path this is (a cover of it is the station's main source; others ride along). */
+    resourceId: string
     /** Resolve a resource cover (existence + contents length). */
     resource: (resourceId: string) => LibraryResource | undefined
     /** Whether an assessment exists (an acceptance line's ref). */
@@ -2121,9 +2165,6 @@ export function validateRoadmapShape(
     if (!Array.isArray(node.covers) || node.covers.length === 0) {
       errors.push(`nodes[${index}] (${node.id}) needs at least one cover — what the station draws on: "r_…#1-5" (a shelf resource + contents rows) | "https://…" (a web text) | "topic: …" (plain coached teaching)`)
     } else {
-      if (scope.resourceId !== undefined && (node.covers.length !== 1 || coverKind(node.covers[0]!) !== 'resource' || node.covers[0]!.ref !== scope.resourceId)) {
-        errors.push(`nodes[${index}] (${node.id}) draws on more than this one resource — a resource's own path covers that resource only; for a path mixing resources / links / teaching, draft the PROJECT's path (omit resource)`)
-      }
       for (const cover of node.covers as readonly (LibraryNodeCover | null)[]) {
         if (cover === null || typeof cover !== 'object' || typeof cover.ref !== 'string' || cover.ref.trim() === '') {
           errors.push(`nodes[${index}] (${node.id}) has a cover with no ref — "r_…#1-5" | "https://…" | "topic: …"`)
@@ -2177,28 +2218,6 @@ export function validateRoadmapShape(
       if (depIndex >= index) errors.push(`nodes[${index}] (${node.id}) depends on ${JSON.stringify(dep)}, which comes AFTER it — list a node after everything it depends on`)
     }
   }
-  // The mirror of the per-node rule above: a PROJECT path whose stations all
-  // draw on the same single resource is that resource's own path written to
-  // the wrong scope — the two journeys stay distinct. Only checked once the
-  // per-node shape is clean (it reads covers).
-  if (errors.length === 0 && scope.resourceId === undefined && nodes.length > 0) {
-    const resourceIds = new Set<string>()
-    let onlyResourceCovers = true
-    for (const node of nodes) {
-      for (const cover of node.covers) {
-        if (coverKind(cover) !== 'resource') { onlyResourceCovers = false; break }
-        resourceIds.add(cover.ref)
-      }
-      if (!onlyResourceCovers) break
-    }
-    if (onlyResourceCovers && resourceIds.size === 1) {
-      const onlyId = [...resourceIds][0] ?? ''
-      const covered = scope.resource(onlyId)
-      if (covered !== undefined && isThickResource(covered)) {
-        return `every station draws only on 《${covered.title}》 — that is the resource's OWN path: resend with resource: ${JSON.stringify(onlyId)} (its nodes then cover that resource only). The project's own path is for a journey spanning several resources / links / coached teaching`
-      }
-    }
-  }
   if (errors.length === 0) return undefined
   if (errors.length === 1) return errors[0]
   return `${errors.length} shape errors — fix them all, then resend:\n${errors.map(error => `- ${error}`).join('\n')}`
@@ -2208,12 +2227,15 @@ export function validateRoadmapShape(
  * Why a node's covers forbid a memory-backed content question, or undefined
  * when they allow one: only knowledge books and plain coached teaching (topic)
  * may be quizzed from domain knowledge; a material book, a thin link or a
- * bare url among the covers demands a verbatim quote. The evidence-gate's
- * node-level half (a resource-scoped quiz without a node keeps the resource
- * rule).
+ * bare url demands a verbatim quote. When the station covers its own
+ * textbook (`primaryId`), that cover alone decides — a side reference (a
+ * video, an article) never turns a knowledge chapter into a quote-only one.
+ * The evidence-gate's node-level half (a resource-scoped quiz without a node
+ * keeps the resource rule).
  */
-export function coversVerbatimBlocker(covers: readonly LibraryNodeCover[], resource: (resourceId: string) => LibraryResource | undefined): string | undefined {
-  for (const cover of covers) {
+export function coversVerbatimBlocker(covers: readonly LibraryNodeCover[], resource: (resourceId: string) => LibraryResource | undefined, primaryId?: string): string | undefined {
+  const main = primaryId === undefined ? [] : covers.filter(cover => coverKind(cover) === 'resource' && cover.ref === primaryId)
+  for (const cover of main.length > 0 ? main : covers) {
     const kind = coverKind(cover)
     if (kind === 'resource') {
       const covered = resource(cover.ref)

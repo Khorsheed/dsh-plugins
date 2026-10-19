@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-10-17-library-v5-model.md
-.agents/notes/implemented/architecture/2026-10-17-library-v5-model.md: bb55fca3e7497f105052ef162603bbe812efd50b
-.agents/notes/implemented/architecture/2026-10-17-library-v5-model.zh.md: f33fec94bca81118f8ca6be69189b579cf5155d2
+.agents/notes/implemented/architecture/2026-10-17-library-v5-model.md: a220da3c1ada7cdcf60512a32ac088d9eea7d4a0
+.agents/notes/implemented/architecture/2026-10-17-library-v5-model.zh.md: 16f56238f31f278483ae90482c7d63e7134e2ad6

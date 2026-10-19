@@ -10,8 +10,8 @@
  *   project.json                      # { id, name, template, goal?, createdAt }
  *   resources/<resourceId>.json       # shelf entries, thick (toc) and thin
  *   pages/<resourceId>.jsonl          # a thick resource's photographed pages, append-only
- *   roadmaps/<key>.json               # the adopted path; key = resourceId | "project"
- *   roadmaps/<key>.draft.json         # the coach's draft, until 采用
+ *   roadmaps/<resourceId>.json        # a textbook's adopted path
+ *   roadmaps/<resourceId>.draft.json  # its coach's draft, until 采用
  *   assessments/<assessmentId>.json   # quizzes and materialized practice rubrics
  *   cards.jsonl                       # knowledge cards (rewritten whole on update)
  *   attempts.jsonl                    # append-only
@@ -20,8 +20,8 @@
  *
  * **Read-old, write-new (v5).** The v3/v4 layout — `books/<bookId>/book.json`
  * + `roadmap.json` + `pages.jsonl`, `resources.jsonl`, `quizzes/<id>.json`,
- * and the project's root `roadmap.json` — is never written any more but
- * always READ: every reader merges or falls back to the legacy spot, every
+ * — is never written any more but always READ: every reader merges or
+ * falls back to the legacy spot, every
  * normalize* function accepts the legacy field names (`bookId`, node `kind`,
  * cover unions, `quizId`). Legacy files stay in place (a rollback loses
  * nothing); the next write of an entity lands in the new layout. v2 roots
@@ -60,6 +60,7 @@ import {
   LIBRARY_COLORS,
   LIBRARY_ICONS,
   LIBRARY_RESOURCE_KINDS,
+  LIBRARY_RESOURCE_ORIGINS,
   LIBRARY_STATE_VERSION,
   MAX_BOX,
   MAX_WEAKNESS,
@@ -371,8 +372,11 @@ export function normalizeResource(value: unknown): LibraryResource | undefined {
     kind,
     ...opt('url', text(record.url, 1000)),
     ...opt('note', text(record.note, 300)),
-    ...opt('addedBy', record.addedBy === 'learner' ? 'learner' as const : record.addedBy === 'coach' ? 'coach' as const : legacyBook ? 'coach' as const : undefined),
+    // Legacy addedBy: the learner's own stays theirs; the coach's reads as a pick.
+    ...opt('origin', LIBRARY_RESOURCE_ORIGINS.find(origin => origin === record.origin)
+      ?? (record.addedBy === 'learner' ? 'learner' as const : record.addedBy === 'coach' || legacyBook ? 'picked' as const : undefined)),
     ...(toc !== undefined && toc.length > 0 ? { toc } : {}),
+    ...(toc !== undefined && toc.length > 0 ? opt('seq', positiveInt(record.seq)) : {}),
     ...(source === undefined ? {} : {
       tocSource: {
         by: source.by === 'web' || source.by === 'photo' ? source.by : 'model',
@@ -383,6 +387,27 @@ export function normalizeResource(value: unknown): LibraryResource | undefined {
     ...(meta === undefined ? {} : { meta }),
     createdAt: stamp(record.createdAt),
   }
+}
+
+/**
+ * The shelf's reading order: textbooks (thick) before thin links; textbooks
+ * by `seq`, unnumbered ones after the numbered, ties by age; links by age.
+ */
+export function shelfOrder(a: LibraryResource, b: LibraryResource): number {
+  const thickA = a.toc !== undefined && a.toc.length > 0
+  const thickB = b.toc !== undefined && b.toc.length > 0
+  if (thickA !== thickB) return thickA ? -1 : 1
+  if (thickA) {
+    const seqA = a.seq ?? Number.POSITIVE_INFINITY
+    const seqB = b.seq ?? Number.POSITIVE_INFINITY
+    if (seqA !== seqB) return seqA < seqB ? -1 : 1
+  }
+  return a.createdAt.localeCompare(b.createdAt)
+}
+
+/** A positive integer, or undefined. */
+function positiveInt(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : undefined
 }
 
 /** A v2/v3 chapter-ranges list, as ranges. */
@@ -890,22 +915,15 @@ export class LibraryStore {
     return join(this.projectDir(projectId), 'quizzes', `${quizId}.json`)
   }
 
-  /** The roadmap key: the primary resource's id, or 'project' for the project's own path. */
-  private roadmapKey(resourceId: string | undefined): string {
-    if (resourceId !== undefined) assertLibraryId(resourceId, 'resource id')
-    return resourceId ?? 'project'
+  /** The v5 roadmap file, keyed by its textbook. */
+  private roadmapFile(projectId: string, resourceId: string, which: 'adopted' | 'draft'): string {
+    assertLibraryId(resourceId, 'resource id')
+    return join(this.projectDir(projectId), 'roadmaps', which === 'adopted' ? `${resourceId}.json` : `${resourceId}.draft.json`)
   }
 
-  /** The v5 roadmap file. */
-  private roadmapFile(projectId: string, resourceId: string | undefined, which: 'adopted' | 'draft'): string {
-    const key = this.roadmapKey(resourceId)
-    return join(this.projectDir(projectId), 'roadmaps', which === 'adopted' ? `${key}.json` : `${key}.draft.json`)
-  }
-
-  /** The legacy roadmap file (v3/v4 layout — read-only now). */
-  private legacyRoadmapFile(projectId: string, resourceId: string | undefined, which: 'adopted' | 'draft'): string {
-    const file = which === 'adopted' ? 'roadmap.json' : 'roadmap.draft.json'
-    return resourceId === undefined ? join(this.projectDir(projectId), file) : join(this.legacyBookDir(projectId, resourceId), file)
+  /** The legacy per-book roadmap file (v3/v4 layout — read-only now). */
+  private legacyRoadmapFile(projectId: string, resourceId: string, which: 'adopted' | 'draft'): string {
+    return join(this.legacyBookDir(projectId, resourceId), which === 'adopted' ? 'roadmap.json' : 'roadmap.draft.json')
   }
 
   /** The v5 pages ledger of one thick resource. */
@@ -1076,7 +1094,12 @@ export class LibraryStore {
     return this.readJsonlFile(this.legacyResourcesFile(projectId), normalizeResource).find(resource => resource.id === resourceId)
   }
 
-  /** Every shelf entry of one project, oldest first, both layouts merged (a v5 file shadows a legacy twin of the same id). */
+  /**
+   * Every shelf entry of one project, both layouts merged (a v5 file shadows
+   * a legacy twin of the same id): textbooks first in study order (`seq`,
+   * then age — an unnumbered legacy textbook queues behind the numbered
+   * ones), then thin links oldest first.
+   */
   listResources(projectId: string): LibraryResource[] {
     const byId = new Map<string, LibraryResource>()
     const legacyDir = join(this.projectDir(projectId), 'books')
@@ -1098,19 +1121,20 @@ export class LibraryStore {
         if (resource !== undefined) byId.set(resource.id, resource)
       }
     }
-    return [...byId.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+    return [...byId.values()].sort(shelfOrder)
   }
 
   /**
-   * One scope's adopted roadmap, or its draft; no resourceId = the project's
-   * own path. The v5 file wins; the legacy spot (the project's root file or
-   * the book's directory) follows.
+   * One textbook's adopted roadmap, or its draft. The v5 file wins; the
+   * legacy book directory follows. A retired project-level path (no
+   * resource) reads as absent.
    */
-  readRoadmap(projectId: string, resourceId?: string, which: 'adopted' | 'draft' = 'adopted'): LibraryRoadmap | undefined {
+  readRoadmap(projectId: string, resourceId: string | undefined, which: 'adopted' | 'draft' = 'adopted'): LibraryRoadmap | undefined {
+    if (resourceId === undefined) return undefined
     const current = this.readJsonFile(this.roadmapFile(projectId, resourceId, which), normalizeRoadmap)
-    if (current !== undefined) return current
+    if (current !== undefined) return { ...current, primaryResourceId: resourceId }
     const legacy = this.readJsonFile(this.legacyRoadmapFile(projectId, resourceId, which), normalizeRoadmap)
-    return legacy === undefined ? undefined : { ...legacy, ...(resourceId === undefined || legacy.primaryResourceId !== undefined ? {} : { primaryResourceId: resourceId }) }
+    return legacy === undefined ? undefined : { ...legacy, primaryResourceId: resourceId }
   }
 
   /**
@@ -1193,13 +1217,14 @@ export class LibraryStore {
     this.writeJsonFile(this.resourceFile(projectId, resource.id), resource)
   }
 
-  /** Write one scope's adopted roadmap or its draft (call inside `withProjectLock`) — the v5 layout. */
+  /** Write one textbook's adopted roadmap or its draft (call inside `withProjectLock`) — the v5 layout. */
   writeRoadmap(projectId: string, roadmap: LibraryRoadmap): void {
+    if (roadmap.primaryResourceId === undefined) throw new LibraryStoreError('a roadmap is written under its textbook (primaryResourceId)', 'corrupt')
     this.writeJsonFile(this.roadmapFile(projectId, roadmap.primaryResourceId, roadmap.status === 'adopted' ? 'adopted' : 'draft'), roadmap)
   }
 
-  /** Drop one scope's draft (adopted or discarded), in BOTH layouts; no resourceId = the project's. */
-  removeDraft(projectId: string, resourceId?: string): void {
+  /** Drop one textbook's draft (adopted or discarded), in BOTH layouts. */
+  removeDraft(projectId: string, resourceId: string): void {
     rmSync(this.roadmapFile(projectId, resourceId, 'draft'), { force: true })
     rmSync(this.legacyRoadmapFile(projectId, resourceId, 'draft'), { force: true })
   }

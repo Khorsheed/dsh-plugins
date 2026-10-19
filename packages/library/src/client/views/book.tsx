@@ -1,11 +1,10 @@
 /**
- * One shelf resource in the sidebar (a thick one — a book, a course): its
- * roadmap draft waiting for 采用, its adopted path as an S-shaped trail of
- * nodes, and one node's page.
- *
- * The same pieces serve the project's OWN path: NodeView with no resourceId
- * reads the project-level roadmap, and 「我的记录」 exists only when the
- * station covers a thick resource. Every station carries the same four tabs —
+ * One textbook in the sidebar (a book, a course, a coach-authored outline):
+ * its place in the study order and origin, its roadmap draft waiting for
+ * 采用, its adopted path as an S-shaped trail of nodes, the chapters the path
+ * skips, and one node's page. Every path belongs to a textbook — the
+ * project carries none. 「我的记录」 exists only when the station covers
+ * its own textbook. Every station carries the same four tabs —
  * 导读 / 我的记录 / 讲义 / 章节考: the gate tab is the station's quiz on a
  * quiz / read node, and its acceptance sheet (the coach judges the rubric
  * with library_assess) on an acceptance node.
@@ -26,7 +25,7 @@ import type { LibraryNodeTab } from '../store.ts'
 import {
   IconCameraOutlineMedium, IconCheckOutlineMedium, IconInfoOutlineMedium, IconLockOutlineMedium, IconRefreshOutlineMedium, IconSparkleOutlineMedium, IconTrashOutlineMedium,
 } from '../icons.tsx'
-import { outcome, shortGloss, StateLine, useLoad, value, WeaknessBars, when, type ViewProps } from '../ui.tsx'
+import { ConfirmDialog, OriginTag, outcome, shortGloss, StateLine, useLoad, value, WeaknessBars, when, type ViewProps } from '../ui.tsx'
 import { MathText } from '../math.tsx'
 import css from '../LibraryPane.module.css'
 
@@ -62,6 +61,9 @@ export function BookView({ p, projectId, resourceId }: ViewProps & { projectId: 
   const [notice, setNotice] = useState<string | undefined>()
   const [busy, setBusy] = useState(false)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | undefined>()
+  // The delete dialog names the photographed pages that go with the textbook.
+  const pages = useLoad(() => confirmingDelete ? value(p.listPages(projectId, resourceId)) : Promise.resolve(undefined), [projectId, resourceId, confirmingDelete])
   const resource = loaded.data?.resource
   const looseQuizzes = (assessments.data?.assessments ?? []).filter(quiz => quiz.type === 'quiz' && quiz.scope.nodeId === undefined).sort((a, b) => b.createdAt.localeCompare(a.createdAt))
 
@@ -84,12 +86,14 @@ export function BookView({ p, projectId, resourceId }: ViewProps & { projectId: 
 
   const remove = async (): Promise<void> => {
     setBusy(true)
+    setDeleteError(undefined)
     try {
       await outcome(p.removeResource(projectId, resourceId))
+      setConfirmingDelete(false)
       actions.refresh()
       actions.pop()
     } catch (failure) {
-      setNotice(failure instanceof Error ? failure.message : String(failure))
+      setDeleteError(failure instanceof Error ? failure.message : String(failure))
       setBusy(false)
     }
   }
@@ -104,27 +108,18 @@ export function BookView({ p, projectId, resourceId }: ViewProps & { projectId: 
           { id: 'ask', label: t('action.askCoach'), icon: <IconSparkleOutlineMedium />, onSelect: () => { prime(t('prime.readBook', { book: resource.title })) } },
           { id: 'replan', label: t('book.replan'), icon: <IconRefreshOutlineMedium />, onSelect: () => { prime(t('prime.replan', { book: resource.title })) } },
           { id: 'bind', label: t('action.bindBook'), icon: <IconSparkleOutlineMedium />, menuOnly: true, onSelect: () => { void p.bindTarget({ projectId, resourceId }).then(() => { setNotice(t('notice.bound')) }) } },
-          { id: 'delete', label: t('book.delete'), icon: <IconTrashOutlineMedium />, menuOnly: true, onSelect: () => { setConfirmingDelete(true) } },
+          { id: 'delete', label: t('book.delete'), icon: <IconTrashOutlineMedium />, menuOnly: true, onSelect: () => { setDeleteError(undefined); setConfirmingDelete(true) } },
         ]}
         moreLabel={t('action.more')}
       />
       <div className={css.body} data-color={loaded.data?.project === undefined ? undefined : colorOf(loaded.data.project)}>
         <StateLine loaded={loaded} t={t} />
         {notice !== undefined && <div className={css.notice}>{notice}</div>}
-        {confirmingDelete && (
-          <div className={css.notice} role="alert">
-            <span>{t('book.deleteConfirm')}</span>
-            <span className={css.chips}>
-              <button type="button" className={css.danger} disabled={busy} onClick={() => { void remove() }}>{t('action.confirmDelete')}</button>
-              <button type="button" className={css.ghost} onClick={() => { setConfirmingDelete(false) }}>{t('action.cancel')}</button>
-            </span>
-          </div>
-        )}
         {resource !== undefined && (
           <section className={css.bookHead}>
-            <Cover book={coverOf(resource)} shade={loaded.data?.shade ?? 0} size="badge" />
+            {resource.seq !== undefined ? <span className={css.seq}>{resource.seq}</span> : <Cover book={coverOf(resource)} shade={loaded.data?.shade ?? 0} size="badge" />}
             <span className={css.projectText}>
-              <span className={css.projectName}>{resource.title}</span>
+              <span className={css.textbookTitle}>{resource.title}<OriginTag origin={resource.origin} digital={resource.kind === 'course'} t={t} /></span>
               <span className={css.muted}>
                 {[resource.meta?.edition, kindLabelOf(resource, t), loaded.data?.roadmap === undefined ? undefined : t('book.shelfMeta', { done: String(loaded.data.roadmap.nodes.filter(node => node.gate === 'quiz' && node.state === 'done').length), total: String(loaded.data.roadmap.nodes.filter(node => node.gate === 'quiz').length) })].filter(Boolean).join(' · ')}
               </span>
@@ -138,6 +133,7 @@ export function BookView({ p, projectId, resourceId }: ViewProps & { projectId: 
             draft={loaded.data.draft}
             context={{ resources: loaded.data.resources }}
             tocBy={resource.tocSource?.by}
+            skipped={skippedRows(loaded.data.draft, resource)}
             replaces={loaded.data.roadmap !== undefined}
             busy={busy}
             onAdopt={() => { void act(() => outcome(p.adoptRoadmap(projectId, resourceId))) }}
@@ -145,7 +141,10 @@ export function BookView({ p, projectId, resourceId }: ViewProps & { projectId: 
           />
         )}
         {resource !== undefined && loaded.data?.roadmap !== undefined && (
-          <Path p={p} roadmap={loaded.data.roadmap} onOpen={node => { actions.push({ view: 'node', projectId, resourceId, nodeId: node.id, tab: 'guide' }) }} />
+          <>
+            <Path p={p} roadmap={loaded.data.roadmap} onOpen={node => { actions.push({ view: 'node', projectId, resourceId, nodeId: node.id, tab: 'guide' }) }} />
+            <SkippedRows p={p} rows={skippedRows(loaded.data.roadmap, resource)} />
+          </>
         )}
         {resource !== undefined && loaded.data?.roadmap === undefined && loaded.data?.draft === undefined && (
           <div className={css.empty}>
@@ -167,18 +166,69 @@ export function BookView({ p, projectId, resourceId }: ViewProps & { projectId: 
           </div>
         )}
       </div>
+      {confirmingDelete && resource !== undefined && (
+        <ConfirmDialog
+          title={t('book.deleteTitle', { book: resource.title, project: loaded.data?.project.name ?? '' })}
+          lines={[
+            loaded.data?.roadmap !== undefined
+              ? t('book.deletePath', { done: String(loaded.data.roadmap.nodes.filter(node => node.state === 'done').length), total: String(loaded.data.roadmap.nodes.length) })
+              : loaded.data?.draft !== undefined ? t('book.deleteDraft') : undefined,
+            t('book.deletePages', { count: String(pages.data?.pages.length ?? 0) }),
+            (assessments.data?.assessments.length ?? 0) > 0 ? t('book.deleteQuizzes', { count: String(assessments.data!.assessments.length) }) : undefined,
+          ].filter((line): line is string => line !== undefined)}
+          keep={t('book.deleteKeep')}
+          note={resource.seq !== undefined ? t('book.deleteRenumber') : undefined}
+          confirmLabel={t('book.deleteConfirmButton')}
+          cancelLabel={t('action.cancel')}
+          busy={busy}
+          error={deleteError}
+          onConfirm={() => { void remove() }}
+          onCancel={() => { setConfirmingDelete(false) }}
+        />
+      )}
     </>
   )
 }
 
-/** The draft card: what the coach proposes, and the learner's 采用 / 放弃. Shared by the resource page and the project page (no resource = the project's own path). */
-export function DraftCard({ p, draft, context, tocBy, replaces, busy, onAdopt, onDiscard }: {
+/** The textbook's contents rows no station of `roadmap` covers — what this path skips. */
+function skippedRows(roadmap: LibraryRoadmap, resource: LibraryResource): { n: number; title: string }[] {
+  const covered = new Set<number>()
+  let whole = false
+  for (const node of roadmap.nodes) {
+    for (const cover of node.covers) {
+      if (coverKind(cover) !== 'resource' || cover.ref !== resource.id) continue
+      if (cover.locator === undefined) { whole = true; continue }
+      for (const range of parseLocator(cover.locator)) {
+        for (let n = range.from; n <= range.to; n += 1) covered.add(n)
+      }
+    }
+  }
+  if (whole || covered.size === 0) return []
+  return (resource.toc ?? []).filter(row => !covered.has(row.n)).map(row => ({ n: row.n, title: row.title }))
+}
+
+/** 「本路线不学」: the skipped chapters, folded. */
+function SkippedRows({ p, rows }: { p: ViewProps['p']; rows: readonly { n: number; title: string }[] }): ReactNode {
+  const { t } = p
+  if (rows.length === 0) return null
+  return (
+    <details className={css.skipped}>
+      <summary>{t('book.skipped', { count: String(rows.length) })}</summary>
+      <ul>{rows.map(row => <li key={row.n}>{row.title}</li>)}</ul>
+    </details>
+  )
+}
+
+/** The draft card on a textbook's page: what the coach proposes, what it skips, and the learner's 采用 / 放弃. */
+export function DraftCard({ p, draft, context, tocBy, skipped, replaces, busy, onAdopt, onDiscard }: {
   p: ViewProps['p']
   draft: LibraryRoadmap
   /** The project's shelf, for labeling covers. */
   context: CoverContext
-  /** The resource's contents-source badge (a resource's own draft only). */
+  /** The textbook's contents-source badge. */
   tocBy?: 'web' | 'model' | 'photo' | undefined
+  /** The contents rows no station covers. */
+  skipped: readonly { n: number; title: string }[]
   replaces: boolean
   busy: boolean
   onAdopt: () => void
@@ -210,6 +260,7 @@ export function DraftCard({ p, draft, context, tocBy, replaces, busy, onAdopt, o
           </li>
         ))}
       </ol>
+      <SkippedRows p={p} rows={skipped} />
       {replaces && <div className={css.muted}>{t('book.draftReplaces')}</div>}
       <div className={css.actions}>
         <button type="button" className={css.primary} disabled={busy} onClick={onAdopt}>{t('book.adopt')}</button>
@@ -316,37 +367,29 @@ function Path({ p, roadmap, onOpen }: { p: ViewProps['p']; roadmap: LibraryRoadm
 }
 
 /** One node: guide, photographed pages, its 讲义, and the gate tab 章节考 — on every kind of station. */
-export function NodeView({ p, projectId, resourceId, nodeId, tab }: ViewProps & { projectId: string; resourceId: string | undefined; nodeId: string; tab: LibraryNodeTab }): ReactNode {
+export function NodeView({ p, projectId, resourceId, nodeId, tab }: ViewProps & { projectId: string; resourceId: string; nodeId: string; tab: LibraryNodeTab }): ReactNode {
   const { t, actions, useStore } = p
   const rev = useStore(s => s.rev)
   const loaded = useLoad(async () => {
     const [detail, roadmaps] = await Promise.all([outcome(p.getProject(projectId)), value(p.getRoadmap(projectId, resourceId))])
-    const resource = resourceId === undefined ? undefined : detail.resources.find(candidate => candidate.id === resourceId)
+    const resource = detail.resources.find(candidate => candidate.id === resourceId)
     const node = roadmaps.roadmap?.nodes.find(candidate => candidate.id === nodeId)
     return { resource, resources: detail.resources, project: detail.project, node, passRatio: roadmaps.roadmap?.passRatio ?? 0.8 }
   }, [projectId, resourceId, nodeId, rev])
   const [notice, setNotice] = useState<string | undefined>()
   const node = loaded.data?.node
-  // The pages tab rides a thick resource: the route's, else the station's
-  // first thick cover (the learner picks when several).
-  const coveredThick = (node?.covers ?? []).flatMap(cover => {
-    if (coverKind(cover) !== 'resource') return []
-    const resource = loaded.data?.resources.find(candidate => candidate.id === cover.ref)
-    return resource !== undefined && isThickResource(resource) ? [resource.id] : []
-  })
-  const [pickedResource, setPickedResource] = useState<string | undefined>()
-  const pagesResourceId = resourceId ?? pickedResource ?? coveredThick[0]
-  const pagesResource = loaded.data?.resources.find(candidate => candidate.id === pagesResourceId)
+  // The pages tab rides the station's own textbook, when the station covers it.
+  const coversOwn = (node?.covers ?? []).some(cover => coverKind(cover) === 'resource' && cover.ref === resourceId)
   const resource = loaded.data?.resource
 
   const prime = (text: string): void => {
-    void p.bindTarget(resourceId === undefined ? { projectId } : { projectId, resourceId })
+    void p.bindTarget({ projectId, resourceId })
     setNotice(p.primeConversation(text) ? t('notice.primed') : t('notice.noConversation'))
   }
 
   const tabs: { id: LibraryNodeTab; label: string }[] = [
     { id: 'guide', label: t('node.guide') },
-    ...(coveredThick.length > 0 ? [{ id: 'pages' as const, label: t('node.pages') }] : []),
+    ...(coversOwn && resource !== undefined && isThickResource(resource) ? [{ id: 'pages' as const, label: t('node.pages') }] : []),
     { id: 'notes', label: t('node.notes') },
     // Every station ends in 章节考: a quiz / read station's papers, an
     // acceptance station's rubric sheet.
@@ -363,7 +406,7 @@ export function NodeView({ p, projectId, resourceId, nodeId, tab }: ViewProps & 
         onBack={() => { actions.pop() }}
         backLabel={t('action.back')}
         actions={node === undefined ? [] : [
-          { id: 'ask', label: t('action.askCoach'), icon: <IconSparkleOutlineMedium />, onSelect: () => { prime(resource === undefined ? t('prime.nodeOnPath', { node: node.title }) : t('prime.node', { book: resource.title, node: node.title })) } },
+          { id: 'ask', label: t('action.askCoach'), icon: <IconSparkleOutlineMedium />, onSelect: () => { prime(t('prime.node', { book: resource?.title ?? '', node: node.title })) } },
         ]}
         moreLabel={t('action.more')}
       />
@@ -376,7 +419,7 @@ export function NodeView({ p, projectId, resourceId, nodeId, tab }: ViewProps & 
         label={t('node.tabs')}
         tabs={tabs}
         value={activeTab}
-        onChange={next => { actions.replace({ view: 'node', projectId, ...(resourceId === undefined ? {} : { resourceId }), nodeId, tab: next }) }}
+        onChange={next => { actions.replace({ view: 'node', projectId, resourceId, nodeId, tab: next }) }}
       />
       <div className={css.body}>
         <StateLine loaded={loaded} t={t} />
@@ -384,18 +427,8 @@ export function NodeView({ p, projectId, resourceId, nodeId, tab }: ViewProps & 
         {node !== undefined && activeTab === 'guide' && (
           <GuideTab p={p} projectId={projectId} resourceId={resourceId} node={node} resource={resource} coverContext={coverContext} onPrime={prime} />
         )}
-        {node !== undefined && activeTab === 'pages' && pagesResource !== undefined && pagesResourceId !== undefined && (
-          <>
-            {coveredThick.length > 1 && resourceId === undefined && (
-              <ChipRow
-                label={t('node.pagesPick')}
-                chips={coveredThick.map(candidate => ({ id: candidate, label: loaded.data?.resources.find(r => r.id === candidate)?.title ?? candidate }))}
-                value={pagesResourceId}
-                onSelect={setPickedResource}
-              />
-            )}
-            <PagesTab p={p} projectId={projectId} resourceId={pagesResourceId} resourceTitle={pagesResource.title} node={node} onBind={() => { void p.bindTarget({ projectId, resourceId: pagesResourceId }) }} />
-          </>
+        {node !== undefined && activeTab === 'pages' && resource !== undefined && (
+          <PagesTab p={p} projectId={projectId} resourceId={resourceId} resourceTitle={resource.title} node={node} onBind={() => { void p.bindTarget({ projectId, resourceId }) }} />
         )}
         {node !== undefined && activeTab === 'notes' && (
           <NotesTab p={p} node={node} onPrime={prime} />
@@ -412,7 +445,7 @@ export function NodeView({ p, projectId, resourceId, nodeId, tab }: ViewProps & 
             passRatio={loaded.data?.passRatio ?? 0.8}
             resources={loaded.data?.resources ?? []}
             onPrime={(focus, context) => {
-              const base = resource === undefined ? t(`prime.quiz.station.${focus}`, { node: node.title }) : t(`prime.quiz.${focus}`, { book: resource.title, node: node.title })
+              const base = t(`prime.quiz.${focus}`, { book: resource?.title ?? '', node: node.title })
               const weak = context?.weak ?? []
               const points = context?.points ?? []
               const kinds = context?.kinds ?? []
@@ -460,7 +493,7 @@ function GuideTab({ p, projectId, resourceId, node, resource, coverContext, onPr
         </section>
       )}
       <div className={css.actions}>
-        <button type="button" className={css.secondary} onClick={() => { onPrime(resource === undefined ? t('prime.nodeOnPath', { node: node.title }) : t('prime.node', { book: resource.title, node: node.title })) }}>{t('action.askCoach')}</button>
+        <button type="button" className={css.secondary} onClick={() => { onPrime(t('prime.node', { book: resource?.title ?? '', node: node.title })) }}>{t('action.askCoach')}</button>
         {node.gate === 'read' && node.state === 'current' && (
           <button
             type="button"

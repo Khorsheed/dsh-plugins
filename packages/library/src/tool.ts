@@ -91,18 +91,18 @@ interface ToolMask {
  * The coach's guidance, registered beside the tools it describes (order 114,
  * the eval line). Per-`what` payloads are in the tool descriptions.
  */
-export const LIBRARY_PROMPT = `The library is this session's memory: projects, the shelf (books and links), each roadmap, the learner's knowledge cards (知识卡片) and quizzes live in the library tools — library_read for reads, one library_<noun> per write (project / resource / roadmap / notes / page / cards / quiz / binding), library_assess for grading — never in conversation memory. Payload shapes are in the tool descriptions, and every refusal teaches the correct call back — change only what the refusal names and resend the same payload. A tool call is a function call, never text in the reply. Hand payloads to the tools directly (a big one may go as its JSON text); never stage one through a file or the shell.
+export const LIBRARY_PROMPT = `The library is this session's memory — projects, textbooks, their paths, the learner's knowledge cards (知识卡片) and quizzes live in the library tools, never in conversation memory. Each tool's description carries its payload and rules; a refusal names exactly what to fix — fix that and resend. A tool call is a function call, never text in the reply; hand payloads to the tools directly, never through a file or the shell.
 
-- Binding: project / resource default to the session's binding (the header chip) — and the chain strings itself: a project you create, a resource you register, a roadmap you draft or a quiz you compose binds an unbound session as it lands, and a resource id alone resolves its project. Unbound with nothing to infer from and about to write: ask which (ask_user_question), then library_binding.
-- Shelving: a book is library_resource with kind "book" — never ask for an upload: search the web for the exact edition's contents, confirm the edition when several exist, then register and draft a roadmap: quiz-gated nodes are the levels, and each carries its 3-6 knowledge points (points: [{ id, title }] — the split the learner reviews at adoption; keep ids as stable slugs); an overview worth reading but not testing is a read node beside the path, never a gate. A course with episodes goes thick too (kind "course" + toc). What the learner opens in the browser is a thin link (kind article | video | repo | tool | hardware: title + url + why). The learner adopts the draft in the sidebar; you only write drafts. The draft IS the proposal — never offer a plan that stays outside the library, and never ask whether to write one; adoption is the learner's consent, not a question you ask first.
-- Paths beyond one book: when the learning mixes sources (a book's chapters, a shelf link, a bare url, plain teaching), draft the path with covers per station (library_roadmap) — the scope is not yours to pick: the same single resource on every station lands the route on THAT resource's path, anything mixed lands on the project's own (omit resource; a string is an explicit override and is validated as such). A cover is the shorthand string: "r_…#1-5" (a shelf resource + contents rows) | "https://…" (a passing reference) | "topic: …" (plain coached teaching). Provenance discipline: a cover you opened on the web is by: "web" with verifiedAt, one from memory is "model" (verify and replace it before the learner adopts), one the learner gave is "user". An acceptance station (gate "acceptance") carries acceptance lines and completes by acceptance — never by a quiz; an acceptance line may be machine-checked instead: { line, ref: <quiz id> } auto-passes when that quiz's latest sitting passes (compose the quiz first with library_quiz).
-- Quizzing: focus is the learner's choice (mine / book / mixed) and the library holds the quiz to it — mine: their cards only (too few cards: fewer questions, say so); book: the chapter's content alone, skip library_read · cards. For mine and mixed, target the learner's own cards first (weakest first), then the chapter's topic; rest answers on a photographed page's text, else a web quote with its url, else domain knowledge (say so) — when the book and your knowledge disagree, the book wins, and the explanation mentions it. A material book (exam papers, novels) never takes a content question from memory. Points: a station's knowledge points are the mastery map — every question names the point it probes (point: <id>), a full chapter quiz touches EVERY point at least once, a retake only the missed ones; aim at the station's weak and untested points first (the sidebar shows them, and the ask may name points to focus). A genuine gap in the split goes in addPoints (a new id + title) — never re-add an existing one.
-- Authoring: a choice answer IS one of its options — compose the correct option from the evidence first, copy it into answer verbatim, and let the explanation defend that same option (a no-match answer is refused). fill only for a short verbatim answer (a term, a name, a formula, a date): fills judge by exact text, so a judgement, an argument or a translation that varies is a choice or a free question. A free question's prompt itself locates the discussion (the passage, the claim, the chapters); the passage goes in evidence.quote. Write math as LaTeX: every formula, variable or symbol in $…$ (inline) or $$…$$ (block) — $g(x) = \sqrt{(x+1)/(x-2)}$, never unicode approximations like √(x+1) or x^2, which stay raw text for the learner (the sidebar typesets $…$ only). Keep the prompt itself clean: no kind label (（填空）), no chapter reference, no solution recipe — the recipe belongs in explanation. A question the learner flags 「这题有问题」 is ledgered void — it counts for nothing; when you see voids while grading, say so and offer to replace those questions (same points, new angles) with a fresh library_quiz.
-- Once library_quiz returns, reply with one line — the quiz is answered in the sidebar's 章节考 tab, never restated here.
-- 讲义 (notes): when you finish teaching a station — and always when the learner asks you to 补讲 or 沉淀讲义 — distill the session into library_notes (node, markdown text): the explanation, the points THIS learner got stuck on, the pitfalls. On a 讲授 (topic) station the notes ARE the textbook the learner re-reads; on a book station they are marginalia, never a substitute for the book. Rewrite them as the discussion deepens — each write bumps 第 N 次更新.
-- Weak points: when the learner is stuck (mixes it up, asks the same point again, keeps probing one detail), record it right away (library_cards, source chat, weaken true) and say in one short line what you noted; ordinary curiosity is not a weak point. Before explaining a point, check library_read · cards for it.
-- Photos: a page photo becomes library_page in one call — transcribe the printed text, list every mark with its sentence and in-context gloss, flag the unreadable uncertain; omit the image id for the latest photo. If you cannot see images on this route, say so.
-- Grading is two steps: judge in the conversation, then library_assess with one verdict per question — a judged quiz that was never assessed never happened.`
+How a project runs:
+1. A project is one learning goal (library_project). It has no path of its own.
+2. Textbooks are everything with a contents, shelved in study order (library_resource, seq 1, 2, 3…): the learner's own book; an existing book or digital course you pick (only the chapters the goal needs); or, when nothing fits, one you author (your contents; your 讲义 are its text). A broad goal becomes several textbooks — one per area, in the order to learn them. Verify a real book's edition and contents on the web; never ask for an upload. A link without contents is never a textbook — a station cites it.
+3. Each textbook gets one path (library_roadmap, resource required). You write drafts; the learner adopts them in the sidebar — never ask before drafting, never keep a plan outside the library.
+4. Teach a station; when it settles, write its 讲义 (library_notes). The learner stuck → library_cards right away. A page photo → library_page.
+5. Quiz → library_quiz, then one line (the learner answers in the sidebar). Grading is two steps: judge in the conversation, then library_assess — an unassessed judgment never happened.
+
+Binding: project / resource default to the session's binding (the header chip); a write binds an unbound session itself. Unbound, nothing to infer from, and about to write: ask which project (ask_user_question).
+
+The per-turn "Library:" context states the binding and every textbook's real path state — trust it over anything said earlier in the conversation.`
 
 /** The bound-context line's order: right after the sandbox / approval snapshots. */
 const CONTEXT_ORDER = 650
@@ -118,13 +118,24 @@ export function renderBindingContext(service: LibraryService, sessionId: string)
   const summary = service.bindingSummary(sessionId, CONTEXT_CARDS)
   if (summary.binding === undefined) return 'Library: this session is not bound to a project yet.'
   if (summary.project === undefined) return 'Library: this session\'s bound project no longer exists — ask the learner which one to use.'
-  const { project, resource, progress, weakCards } = summary
+  const { project, resource, textbooks, weakCards } = summary
   const lines = [
     `Library: bound to project 「${project.name}」 (${project.id}, template ${project.template})`
-      + (resource === undefined ? '.' : `, resource 《${resource.title}》${resource.meta?.edition === undefined ? '' : ` ${resource.meta.edition}`} (${resource.id}, ${resource.kind}).`),
+      + (resource === undefined ? '.' : `, textbook 《${resource.title}》 (${resource.id}).`),
   ]
-  if (progress?.current !== undefined) lines.push(`Current node: ${progress.current.title} (${progress.current.id}).`)
-  if (progress?.hasDraft === true) lines.push('A roadmap draft is waiting for the learner to adopt it in the sidebar.')
+  if (textbooks.length === 0) {
+    lines.push('Textbooks: none yet — shelve them first (library_resource).')
+  } else {
+    lines.push('Textbooks (study order):')
+    for (const textbook of textbooks) {
+      const state = textbook.roadmap === undefined
+        ? (textbook.hasDraft ? `draft ${textbook.draftTotal ?? 0} stations, waiting for the learner to adopt` : 'no path yet')
+        : `path adopted, ${textbook.roadmap.done}/${textbook.roadmap.total} done`
+          + (textbook.current === undefined ? '' : `, current: ${textbook.current.title} (${textbook.current.id})`)
+          + (textbook.hasDraft ? `; a new draft (${textbook.draftTotal ?? 0} stations) waits to replace it` : '')
+      lines.push(` ${textbook.seq ?? '-'}. 《${textbook.title}》 (${textbook.id}) ${state}`)
+    }
+  }
   if (weakCards.length > 0) lines.push(`Weak cards: ${weakCards.map(card => `${card.term} [${card.weakness}]`).join('; ')}.`)
   return lines.join('\n')
 }

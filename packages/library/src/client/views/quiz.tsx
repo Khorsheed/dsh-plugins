@@ -324,8 +324,8 @@ export function ResultView({ p, projectId, resourceId, result }: ViewProps & { p
         )}
         {notice !== undefined && <div className={css.notice}>{notice}</div>}
         <div className={css.actions}>
-          {nextId !== undefined && (
-            <button type="button" className={nextPrimary ? css.primary : css.secondary} onClick={() => { actions.replace({ view: 'node', projectId, ...(resourceId === undefined ? {} : { resourceId }), nodeId: nextId, tab: 'guide' }) }}>{t('result.next')}</button>
+          {nextId !== undefined && resourceId !== undefined && (
+            <button type="button" className={nextPrimary ? css.primary : css.secondary} onClick={() => { actions.replace({ view: 'node', projectId, resourceId, nodeId: nextId, tab: 'guide' }) }}>{t('result.next')}</button>
           )}
           {assessmentId !== undefined && missedPrompts.length > 0 && (
             <button type="button" className={retakePrimary ? css.primary : css.secondary} onClick={retake}>{t('result.retake', { count: String(missedPrompts.length) })}</button>

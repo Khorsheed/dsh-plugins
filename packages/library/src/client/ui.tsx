@@ -1,13 +1,14 @@
 /**
  * Small shared pieces of the library sidebar: the loading hook every view
  * reads the host through, outcome unwrapping, and the few presentational
- * atoms (state lines, weakness bars, review boxes, the term highlighter).
+ * atoms (state lines, weakness bars, review boxes, the term highlighter,
+ * the origin tag, the destructive-action confirm dialog).
  *
  * @module @khorsheed/dsh-library/client/ui
  */
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
-import type { LibraryOutcome } from '../types.ts'
+import type { LibraryOutcome, LibraryResourceOrigin } from '../types.ts'
 import type { LibraryPaneProps } from './contract.ts'
 import css from './LibraryPane.module.css'
 
@@ -107,4 +108,53 @@ export function shortGloss(gloss: string, max = 18): string {
 /** Days from now until an ISO moment, at least 0. */
 export function daysUntil(at: string): number {
   return Math.max(0, Math.ceil((Date.parse(at) - Date.now()) / 86_400_000))
+}
+
+/** A textbook's origin as a small colored tag (你的书 / 模型选的书 / 电子资料 / 模型自编). */
+export function OriginTag({ origin, digital, t }: { origin: LibraryResourceOrigin | undefined; digital: boolean; t: LibraryPaneProps['t'] }): ReactNode {
+  const key = origin === 'authored' ? 'authored' : origin === 'learner' ? 'learner' : digital ? 'digital' : 'picked'
+  return <span className={css.originTag} data-origin={key}>{t(`origin.${key}`)}</span>
+}
+
+/**
+ * The destructive-action confirm: an overlay over the pane, the consequence
+ * spelled out (what goes, what stays), a red confirm button. Esc and the
+ * scrim cancel; focus starts on 取消 so a stray Enter never deletes.
+ */
+export function ConfirmDialog({ title, lines, keep, note, confirmLabel, cancelLabel, busy, error, onConfirm, onCancel }: {
+  title: string
+  /** What the action removes, one consequence per line. */
+  lines: readonly string[]
+  /** What survives it. */
+  keep?: string | undefined
+  note?: string | undefined
+  confirmLabel: string
+  cancelLabel: string
+  busy: boolean
+  error?: string | undefined
+  onConfirm: () => void
+  onCancel: () => void
+}): ReactNode {
+  const cancelRef = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    cancelRef.current?.focus()
+    const onKey = (event: KeyboardEvent): void => { if (event.key === 'Escape') onCancel() }
+    window.addEventListener('keydown', onKey)
+    return () => { window.removeEventListener('keydown', onKey) }
+  }, [])
+  return (
+    <div className={css.scrim} onClick={event => { if (event.target === event.currentTarget && !busy) onCancel() }}>
+      <div className={css.dialog} role="alertdialog" aria-modal="true" aria-label={title}>
+        <div className={css.dialogTitle}>{title}</div>
+        {lines.length > 0 && <ul className={css.dialogList}>{lines.map(line => <li key={line}>{line}</li>)}</ul>}
+        {keep !== undefined && <div className={css.dialogKeep}>{keep}</div>}
+        {note !== undefined && <div className={css.muted}>{note}</div>}
+        {error !== undefined && <div className={css.error}>{error}</div>}
+        <div className={css.dialogActions}>
+          <button ref={cancelRef} type="button" className={css.ghost} disabled={busy} onClick={onCancel}>{cancelLabel}</button>
+          <button type="button" className={css.danger} disabled={busy} onClick={onConfirm}>{confirmLabel}</button>
+        </div>
+      </div>
+    </div>
+  )
 }

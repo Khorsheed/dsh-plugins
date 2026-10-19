@@ -65,6 +65,20 @@ async function adopt(projectId: string, bookId: string): Promise<void> {
   if (!adopted.ok) throw new Error(adopted.message)
 }
 
+/** A coach-authored textbook in the project: its own outline, no web check. */
+async function authored(projectId: string, title = '强化学习入门（自编）'): Promise<string> {
+  const written = await service.putResource({
+    projectId,
+    kind: 'book',
+    title,
+    origin: 'authored',
+    toc: [{ title: '奖励与回报' }, { title: '策略梯度' }, { title: '实战 CartPole' }],
+    tocSource: { by: 'model' },
+  })
+  if (!written.ok) throw new Error(written.message)
+  return written.resource.id
+}
+
 function question(overrides: Partial<LibraryQuizQuestion> = {}): LibraryQuizQuestion {
   return {
     id: 'q1',
@@ -195,18 +209,18 @@ describe('books and roadmaps', () => {
 describe('resources', () => {
   it('puts a link on the shelf, validates url / kind / title, and refuses a duplicate', async () => {
     const { projectId } = await seed()
-    const noProject = await service.putResource({ projectId: 'p_none', title: 'x', url: 'https://x.example', kind: 'article', addedBy: 'coach' })
+    const noProject = await service.putResource({ projectId: 'p_none', title: 'x', url: 'https://x.example', kind: 'article', origin: 'picked' })
     expect(!noProject.ok && noProject.error).toBe('not-found')
-    const badUrl = await service.putResource({ projectId, title: 'x', url: 'ftp://x.example', kind: 'article', addedBy: 'coach' })
+    const badUrl = await service.putResource({ projectId, title: 'x', url: 'ftp://x.example', kind: 'article', origin: 'picked' })
     expect(!badUrl.ok && badUrl.message).toMatch(/https?:\/\//)
-    const badKind = await service.putResource({ projectId, title: 'x', url: 'https://x.example', kind: 'zine' as never, addedBy: 'coach' })
+    const badKind = await service.putResource({ projectId, title: 'x', url: 'https://x.example', kind: 'zine' as never, origin: 'picked' })
     expect(!badKind.ok && badKind.message).toMatch(/article \| video/)
-    const bare = await service.putResource({ projectId, title: '  ', url: 'https://x.example', kind: 'article', addedBy: 'coach' })
+    const bare = await service.putResource({ projectId, title: '  ', url: 'https://x.example', kind: 'article', origin: 'picked' })
     expect(!bare.ok && bare.message).toMatch(/title/)
-    const added = await service.putResource({ projectId, title: 'NumPy 快速教程', url: 'https://numpy.org/quickstart', kind: 'article', note: '热身站的读物', addedBy: 'coach' })
+    const added = await service.putResource({ projectId, title: 'NumPy 快速教程', url: 'https://numpy.org/quickstart', kind: 'article', note: '热身站的读物', origin: 'picked' })
     if (!added.ok) throw new Error(added.message)
     expect(added.resource.id).toMatch(/^r_/)
-    const dupe = await service.putResource({ projectId, title: 'same link', url: 'https://numpy.org/quickstart', kind: 'video', addedBy: 'learner' })
+    const dupe = await service.putResource({ projectId, title: 'same link', url: 'https://numpy.org/quickstart', kind: 'video', origin: 'learner' })
     expect(!dupe.ok && dupe.error).toBe('exists')
   })
 
@@ -222,10 +236,10 @@ describe('resources', () => {
     const book = await service.getResource({ projectId, resourceId: bookId })
     if (!book.ok) throw new Error(book.message)
     await tickPast(book.resource.createdAt)
-    const first = await service.putResource({ projectId, title: 'MuJoCo', url: 'https://mujoco.org', kind: 'tool', addedBy: 'coach' })
+    const first = await service.putResource({ projectId, title: 'MuJoCo', url: 'https://mujoco.org', kind: 'tool', origin: 'picked' })
     if (!first.ok) throw new Error(first.message)
     await tickPast(first.resource.createdAt)
-    const second = await service.putResource({ projectId, title: 'LeRobot', url: 'https://github.com/huggingface/lerobot', kind: 'repo', addedBy: 'coach' })
+    const second = await service.putResource({ projectId, title: 'LeRobot', url: 'https://github.com/huggingface/lerobot', kind: 'repo', origin: 'picked' })
     if (!second.ok) throw new Error(second.message)
     expect((await service.listResources({ projectId })).resources.map(resource => resource.title)).toEqual(['Principles of Neural Science', 'MuJoCo', 'LeRobot'])
     const events = await service.listEvents({ projectId, types: ['resource.added'] })
@@ -235,71 +249,108 @@ describe('resources', () => {
     expect((await service.removeResource({ projectId, resourceId: first.resource.id })).ok).toBe(true)
     expect((await service.listResources({ projectId })).resources.map(resource => resource.title)).toEqual(['Principles of Neural Science', 'LeRobot'])
   })
+
+  it('numbers textbooks in study order: appended, inserted at seq, moved, and closed up on removal', async () => {
+    const { projectId, bookId } = await seed()
+    const order = async (): Promise<string[]> => (await service.listResources({ projectId })).resources
+      .filter(resource => resource.seq !== undefined).map(resource => `${resource.seq}:${resource.title}`)
+    expect(await order()).toEqual(['1:Principles of Neural Science'])
+    const rl = await authored(projectId)
+    const first = await service.putResource({ projectId, kind: 'book', title: '普林斯顿微积分读本', origin: 'learner', seq: 1, toc: [{ title: '函数' }], tocSource: { by: 'model' } })
+    if (!first.ok) throw new Error(first.message)
+    expect(first.resource).toMatchObject({ seq: 1, origin: 'learner' })
+    expect(await order()).toEqual(['1:普林斯顿微积分读本', '2:Principles of Neural Science', '3:强化学习入门（自编）'])
+    // A link never takes a place in the order.
+    const link = await service.putResource({ projectId, title: 'MuJoCo', url: 'https://mujoco.org', kind: 'tool', seq: 1 })
+    expect(link.ok && link.resource.seq).toBeUndefined()
+    const moved = await service.moveResource({ projectId, resourceId: rl, seq: 1 })
+    expect(moved.ok).toBe(true)
+    expect(await order()).toEqual(['1:强化学习入门（自编）', '2:普林斯顿微积分读本', '3:Principles of Neural Science'])
+    const clamped = await service.moveResource({ projectId, resourceId: rl, seq: 99 })
+    expect(clamped.ok).toBe(true)
+    expect((await order()).at(-1)).toBe('3:强化学习入门（自编）')
+    const linkMove = await service.moveResource({ projectId, resourceId: link.ok ? link.resource.id : '', seq: 1 })
+    expect(!linkMove.ok && linkMove.message).toMatch(/only textbooks/)
+    expect((await service.removeResource({ projectId, resourceId: bookId })).ok).toBe(true)
+    expect(await order()).toEqual(['1:普林斯顿微积分读本', '2:强化学习入门（自编）'])
+    const badOrigin = await service.putResource({ projectId, kind: 'book', title: 'x', origin: 'stolen' as never, toc: [{ title: 'a' }], tocSource: { by: 'model' } })
+    expect(!badOrigin.ok && badOrigin.message).toMatch(/learner \| picked \| authored/)
+  })
 })
 
-describe('project paths', () => {
-  it('drafts, adopts, reads and discards the project\'s own path (no book anywhere)', async () => {
+describe('textbook paths', () => {
+  it('a path always belongs to a textbook: drafts, adopts, reads and discards one; refuses one without', async () => {
     const { projectId, bookId } = await seed()
+    const rl = await authored(projectId)
+    const orphan = await service.draftRoadmap({ projectId, resourceId: '', nodes: [{ id: 's1', title: 'x', gate: 'read', covers: [{ ref: 'topic:x' }] }] })
+    expect(!orphan.ok && orphan.message).toMatch(/belongs to one textbook/)
+    expect(!orphan.ok && orphan.message).toContain(rl)
     const draft = await service.draftRoadmap({
       projectId,
+      resourceId: rl,
       nodes: [
         { id: 's1', title: 'NumPy 热身', gate: 'acceptance', goals: ['能写 50 行脚本'], covers: [{ ref: 'topic:教练带写 RobotArm 类' }], acceptance: ['跑通三关节脚本'] },
-        { id: 's2', title: '快慢回路', gate: 'quiz', covers: [{ ref: bookId, locator: '2' }], dependsOn: ['s1'] },
+        { id: 's2', title: '快慢回路', gate: 'quiz', covers: [{ ref: rl, locator: '1' }, { ref: bookId, locator: '2' }], dependsOn: ['s1'] },
       ],
       note: '每周 2 站',
     })
     if (!draft.ok) throw new Error(draft.message)
-    expect(draft.draft.primaryResourceId).toBeUndefined()
-    const seen = await service.getRoadmap({ projectId })
+    expect(draft.draft.primaryResourceId).toBe(rl)
+    const seen = await service.getRoadmap({ projectId, resourceId: rl })
     expect(seen.draft?.nodes.map(node => node.id)).toEqual(['s1', 's2'])
     expect(seen.roadmap).toBeUndefined()
-    const adopted = await service.adoptRoadmap({ projectId })
+    const adopted = await service.adoptRoadmap({ projectId, resourceId: rl })
     expect(adopted.ok && adopted.roadmap.nodes.map(node => node.state)).toEqual(['current', 'locked'])
-    expect((await service.getRoadmap({ projectId })).draft).toBeUndefined()
-    // The book's own path is a separate scope — untouched by the project's.
+    expect((await service.getRoadmap({ projectId, resourceId: rl })).draft).toBeUndefined()
+    // Another textbook's path is a separate one — untouched.
     expect((await service.getRoadmap({ projectId, resourceId: bookId })).roadmap).toBeUndefined()
-    await service.draftRoadmap({ projectId, nodes: [{ id: 's9', title: 'x', gate: 'read', covers: [{ ref: 'topic:x' }] }] })
-    expect((await service.discardDraft({ projectId })).ok).toBe(true)
-    expect((await service.getRoadmap({ projectId })).draft).toBeUndefined()
+    await service.draftRoadmap({ projectId, resourceId: rl, nodes: [{ id: 's9', title: 'x', gate: 'read', covers: [{ ref: 'topic:x' }] }] })
+    expect((await service.discardDraft({ projectId, resourceId: rl })).ok).toBe(true)
+    expect((await service.getRoadmap({ projectId, resourceId: rl })).draft).toBeUndefined()
   })
 
-  it('a project path whose stations all cover the same single book is sent to the book', async () => {
+  it('a new draft replaces the textbook\'s previous one, and the project page counts it', async () => {
     const { projectId, bookId } = await seed()
-    const cover = { ref: bookId, locator: '1-2' } as const
-    const parked = await service.draftRoadmap({ projectId, nodes: [
-      { id: 's1', title: '极限', gate: 'quiz', covers: [cover] },
-      { id: 's2', title: '微分', gate: 'quiz', covers: [cover], dependsOn: ['s1'] },
+    await service.draftRoadmap({ projectId, resourceId: bookId, nodes: [{ id: 'a', title: 'a', gate: 'quiz', covers: [{ ref: bookId, locator: '1' }] }] })
+    await service.draftRoadmap({ projectId, resourceId: bookId, nodes: [
+      { id: 'b', title: 'b', gate: 'quiz', covers: [{ ref: bookId, locator: '1' }] },
+      { id: 'c', title: 'c', gate: 'quiz', covers: [{ ref: bookId, locator: '2' }], dependsOn: ['b'] },
     ] })
-    expect(!parked.ok && parked.message).toMatch(/resource's OWN path/)
-    expect(!parked.ok && parked.message).toContain(bookId)
-    // A second book or any non-book cover keeps it a genuine project path.
-    const mixed = await service.draftRoadmap({ projectId, nodes: [
-      { id: 's1', title: '极限', gate: 'quiz', covers: [cover] },
-      { id: 's2', title: '串讲', gate: 'quiz', covers: [{ ref: 'topic:讲授' }], dependsOn: ['s1'] },
-    ] })
-    expect(mixed.ok).toBe(true)
+    expect((await service.getRoadmap({ projectId, resourceId: bookId })).draft?.nodes.map(node => node.id)).toEqual(['b', 'c'])
+    const detail = await service.getProject({ id: projectId })
+    expect(detail.ok && detail.project.resources[0]).toMatchObject({ hasDraft: true, draftTotal: 2, seq: 1, origin: 'picked' })
   })
 
-  it('a read node on the project path completes by 读完', async () => {
+  it('a station may carry side references beside its own rows — the path stays on its textbook', async () => {
+    const { projectId, bookId } = await seed()
+    const drafted = await service.draftRoadmap({ projectId, resourceId: bookId, nodes: [
+      { id: 'n1', title: '离子通道', gate: 'quiz', covers: [{ ref: bookId, locator: '1' }, { ref: 'https://video.example/ion', by: 'web' }, { ref: 'topic:补讲 Nernst 方程' }] },
+      { id: 'appx', title: '附录 A 选读', gate: 'read', covers: [{ ref: 'topic:附录 A ε-δ' }] },
+    ] })
+    expect(drafted.ok && drafted.draft.primaryResourceId).toBe(bookId)
+  })
+
+  it('a link without contents never carries a path', async () => {
     const { projectId } = await seed()
-    await service.draftRoadmap({ projectId, nodes: [{ id: 'r1', title: '套件评测', gate: 'read', covers: [{ ref: 'https://so-arm.example', by: 'web' }] }] })
-    await service.adoptRoadmap({ projectId })
-    const read = await service.markNodeRead({ projectId, nodeId: 'r1' })
-    expect(read.ok && read.roadmap.nodes[0]?.state).toBe('done')
+    const link = await service.putResource({ projectId, title: 'MuJoCo', url: 'https://mujoco.org', kind: 'tool' })
+    if (!link.ok) throw new Error(link.message)
+    const refused = await service.draftRoadmap({ projectId, resourceId: link.resource.id, nodes: [{ id: 'n1', title: 'a', gate: 'read', covers: [{ ref: link.resource.id }] }] })
+    expect(!refused.ok && refused.message).toMatch(/never carries a path/)
   })
 
-  it('a book-level draft stays the special case: one cover naming that one book', async () => {
-    const { projectId, bookId } = await seed()
-    const mixed = await service.draftRoadmap({ projectId, resourceId: bookId, nodes: [{ id: 'n1', title: 'a', gate: 'quiz', covers: [{ ref: bookId }, { ref: 'topic:讲授' }] }] })
-    expect(!mixed.ok && mixed.message).toMatch(/PROJECT's path/)
-    const topicOnly = await service.draftRoadmap({ projectId, resourceId: bookId, nodes: [{ id: 'n1', title: 'a', gate: 'quiz', covers: [{ ref: 'topic:讲授' }] }] })
-    expect(!topicOnly.ok && topicOnly.message).toMatch(/PROJECT's path/)
+  it('a read node completes by 读完', async () => {
+    const { projectId } = await seed()
+    const rl = await authored(projectId)
+    await service.draftRoadmap({ projectId, resourceId: rl, nodes: [{ id: 'r1', title: '套件评测', gate: 'read', covers: [{ ref: 'https://so-arm.example', by: 'web' }] }] })
+    await service.adoptRoadmap({ projectId, resourceId: rl })
+    const read = await service.markNodeRead({ projectId, resourceId: rl, nodeId: 'r1' })
+    expect(read.ok && read.roadmap.nodes[0]?.state).toBe('done')
   })
 
   it('validates covers: existing resources, urls, topic text, acceptance rules', async () => {
     const { projectId, bookId } = await seed()
     const draft = (covers: readonly unknown[], gate: 'quiz' | 'read' | 'acceptance' = 'quiz', acceptance?: readonly string[]) =>
-      service.draftRoadmap({ projectId, nodes: [{ id: 's1', title: 'a', gate, covers: covers as never, ...(acceptance === undefined ? {} : { acceptance }) }] })
+      service.draftRoadmap({ projectId, resourceId: bookId, nodes: [{ id: 's1', title: 'a', gate, covers: covers as never, ...(acceptance === undefined ? {} : { acceptance }) }] })
     const badBook = await draft([{ ref: 'b_none' }])
     expect(!badBook.ok && badBook.message).toMatch(/not on the project's shelf/)
     const outOfRange = await draft([{ ref: bookId, locator: '1-99' }])
@@ -320,7 +371,7 @@ describe('project paths', () => {
     const empty = await draft([])
     expect(!empty.ok && empty.message).toMatch(/at least one cover/)
     // A resource cover resolves against the shelf.
-    const added = await service.putResource({ projectId, title: 'Gymnasium 文档', url: 'https://gymnasium.example', kind: 'tool', addedBy: 'coach' })
+    const added = await service.putResource({ projectId, title: 'Gymnasium 文档', url: 'https://gymnasium.example', kind: 'tool', origin: 'picked' })
     if (!added.ok) throw new Error(added.message)
     const ok = await draft([{ ref: added.resource.id }])
     expect(ok.ok).toBe(true)
@@ -347,21 +398,22 @@ describe('station notes (讲义)', () => {
     expect(replanned.roadmap?.nodes[0]?.notes?.revisions).toBe(2)
   })
 
-  it('writes notes on a project-path station too, and teaches the bad calls', async () => {
+  it('writes notes on an authored textbook\'s station (they are its text), and teaches the bad calls', async () => {
     const { projectId, bookId } = await seed()
-    const draft = await service.draftRoadmap({ projectId, nodes: [
-      { id: 's1', title: '极限', gate: 'quiz', covers: [{ ref: bookId, locator: '1' }] },
+    const rl = await authored(projectId)
+    const draft = await service.draftRoadmap({ projectId, resourceId: rl, nodes: [
+      { id: 's1', title: '奖励', gate: 'quiz', covers: [{ ref: rl, locator: '1' }] },
       { id: 's2', title: '串讲', gate: 'quiz', covers: [{ ref: 'topic:讲授' }], dependsOn: ['s1'] },
     ] })
     if (!draft.ok) throw new Error(draft.message)
-    await service.adoptRoadmap({ projectId })
-    const written = await service.putNotes({ projectId, nodeId: 's2', text: '讲授站讲义正文' })
+    await service.adoptRoadmap({ projectId, resourceId: rl })
+    const written = await service.putNotes({ projectId, resourceId: rl, nodeId: 's2', text: '讲授站讲义正文' })
     expect(written.ok).toBe(true)
-    expect((await service.getRoadmap({ projectId })).roadmap?.nodes[1]?.notes?.text).toBe('讲授站讲义正文')
+    expect((await service.getRoadmap({ projectId, resourceId: rl })).roadmap?.nodes[1]?.notes?.text).toBe('讲授站讲义正文')
     // The bad calls teach.
-    const noNode = await service.putNotes({ projectId, nodeId: 's9', text: 'x' })
+    const noNode = await service.putNotes({ projectId, resourceId: rl, nodeId: 's9', text: 'x' })
     expect(!noNode.ok && noNode.message).toMatch(/no node/)
-    const empty = await service.putNotes({ projectId, nodeId: 's2', text: '   ' })
+    const empty = await service.putNotes({ projectId, resourceId: rl, nodeId: 's2', text: '   ' })
     expect(!empty.ok && empty.message).toMatch(/need text/)
     const noPath = await service.putNotes({ projectId, resourceId: bookId, nodeId: 'n1', text: 'x' })
     expect(!noPath.ok && noPath.message).toMatch(/no node/)
@@ -385,20 +437,21 @@ describe('the evidence gate on covers', () => {
     expect(!memory.ok && memory.message).toMatch(/material book/)
   })
 
-  it('a station drawing on knowledge books and teaching allows domain knowledge', async () => {
+  it('a station on its knowledge book allows domain knowledge — a side url or teaching never changes that', async () => {
     const { projectId, bookId } = await seed()
-    const draft = await service.draftRoadmap({ projectId, nodes: [{ id: 's1', title: '一站', gate: 'quiz', covers: [{ ref: bookId, locator: '1' }, { ref: 'topic:讲授' }] }] })
+    const draft = await service.draftRoadmap({ projectId, resourceId: bookId, nodes: [{ id: 's1', title: '一站', gate: 'quiz', covers: [{ ref: bookId, locator: '1' }, { ref: 'topic:讲授' }, { ref: 'https://video.example/ion' }] }] })
     if (!draft.ok) throw new Error(draft.message)
-    await service.adoptRoadmap({ projectId })
+    await service.adoptRoadmap({ projectId, resourceId: bookId })
     const stored = await service.putQuiz({ projectId, quiz: { scope: { nodeId: 's1' }, questions: [question()] } })
     expect(stored.ok).toBe(true)
   })
 
-  it('a station covering a url demands a verbatim quote for content questions', async () => {
+  it('a station resting on a url alone demands a verbatim quote for content questions', async () => {
     const { projectId } = await seed()
-    const draft = await service.draftRoadmap({ projectId, nodes: [{ id: 's1', title: 'RL 直觉', gate: 'quiz', covers: [{ ref: 'https://gymnasium.example', title: 'Gymnasium 文档', by: 'web', verifiedAt: '2026-10-13T00:00:00.000Z' }] }] })
+    const rl = await authored(projectId)
+    const draft = await service.draftRoadmap({ projectId, resourceId: rl, nodes: [{ id: 's1', title: 'RL 直觉', gate: 'quiz', covers: [{ ref: 'https://gymnasium.example', title: 'Gymnasium 文档', by: 'web', verifiedAt: '2026-10-13T00:00:00.000Z' }] }] })
     if (!draft.ok) throw new Error(draft.message)
-    await service.adoptRoadmap({ projectId })
+    await service.adoptRoadmap({ projectId, resourceId: rl })
     const memory = await service.putQuiz({ projectId, quiz: { scope: { nodeId: 's1' }, questions: [question()] } })
     expect(!memory.ok && memory.message).toMatch(/web text/)
     const quoted = await service.putQuiz({ projectId, quiz: { scope: { nodeId: 's1' }, questions: [question({ evidence: { kind: 'web', url: 'https://gymnasium.example', quote: 'a long enough quote' } })] } })
@@ -428,24 +481,26 @@ describe('the evidence gate on covers', () => {
 })
 
 describe('practice acceptance', () => {
-  /** Adopt a project path: s1 acceptance (three rubric lines) → s2 quiz. */
-  async function seedPath(): Promise<{ projectId: string }> {
+  /** Adopt an authored textbook's path: s1 acceptance (three rubric lines) → s2 quiz. */
+  async function seedPath(): Promise<{ projectId: string; rl: string }> {
     const { projectId } = await seed()
+    const rl = await authored(projectId)
     const draft = await service.draftRoadmap({
       projectId,
+      resourceId: rl,
       nodes: [
         { id: 's1', title: 'RL 直觉', gate: 'acceptance', covers: [{ ref: 'topic:奖励 = 行为塑造' }], acceptance: ['跑满 20 万步', '平均奖励 > 475', '说清 reward 谁写的'] },
         { id: 's2', title: '快慢回路', gate: 'quiz', covers: [{ ref: 'topic:讲授' }], dependsOn: ['s1'] },
       ],
     })
     if (!draft.ok) throw new Error(draft.message)
-    const adopted = await service.adoptRoadmap({ projectId })
+    const adopted = await service.adoptRoadmap({ projectId, resourceId: rl })
     if (!adopted.ok) throw new Error(adopted.message)
-    return { projectId }
+    return { projectId, rl }
   }
 
   it('judges one verdict per acceptance line, verbatim; partial credit rides the pass ratio', async () => {
-    const { projectId } = await seedPath()
+    const { projectId, rl } = await seedPath()
     const wrongLine = await service.putAttempt({ projectId, nodeId: 's1', verdicts: [{ task: 's1', criterion: '跑满了', pass: true, evidence: '终端', by: 'llm' }] })
     expect(!wrongLine.ok && wrongLine.message).toMatch(/names no rubric line/)
     // 2 pass + 1 fail = 2/3 ≈ 0.67 < 0.8: no completion, no unlock; the failed line leaves a card.
@@ -462,7 +517,7 @@ describe('practice acceptance', () => {
     expect(first.completed).toBeUndefined()
     expect(first.unlocked).toEqual([])
     expect(first.cardUpdates.find(update => update.created === true)?.term).toBe('CartPole 奖励')
-    expect((await service.getRoadmap({ projectId })).roadmap?.nodes.map(node => node.state)).toEqual(['current', 'locked'])
+    expect((await service.getRoadmap({ projectId, resourceId: rl })).roadmap?.nodes.map(node => node.state)).toEqual(['current', 'locked'])
     // The retake: 2 pass + 1 half credit = (1+1+0.5)/3 ≈ 0.83 ≥ 0.8 — completes, unlocks.
     const second = await service.putAttempt({ projectId, nodeId: 's1', verdicts: [
       { task: 's1', criterion: '跑满 20 万步', pass: true, evidence: '终端输出', by: 'llm' },
@@ -472,7 +527,7 @@ describe('practice acceptance', () => {
     if (!second.ok) throw new Error(second.message)
     expect(second.attempt.ratio).toBeCloseTo(5 / 6)
     expect([second.completed, second.unlocked]).toEqual(['s1', ['s2']])
-    expect((await service.getRoadmap({ projectId })).roadmap?.nodes.map(node => node.state)).toEqual(['done', 'current'])
+    expect((await service.getRoadmap({ projectId, resourceId: rl })).roadmap?.nodes.map(node => node.state)).toEqual(['done', 'current'])
     // The station's history reads back newest first, and the events ledgered.
     const history = await service.listAttempts({ projectId, nodeId: 's1' })
     expect(history.attempts).toHaveLength(2)
@@ -483,18 +538,18 @@ describe('practice acceptance', () => {
   })
 
   it('a ref acceptance line machine-checks against its quiz\'s latest sitting; the coach judges the rest', async () => {
-    const { projectId } = await seedPath()
+    const { projectId, rl } = await seedPath()
     // The quiz must exist before the draft references it.
-    const missing = await service.draftRoadmap({ projectId, nodes: [{ id: 's1', title: 'RL 直觉', gate: 'acceptance', covers: [{ ref: 'topic:讲授' }], acceptance: [{ line: '完成摸底测验', ref: 'q_nope' }] }] })
+    const missing = await service.draftRoadmap({ projectId, resourceId: rl, nodes: [{ id: 's1', title: 'RL 直觉', gate: 'acceptance', covers: [{ ref: 'topic:讲授' }], acceptance: [{ line: '完成摸底测验', ref: 'q_nope' }] }] })
     expect(!missing.ok && missing.message).toMatch(/compose it first/)
     const quiz = await service.putQuiz({ projectId, quiz: { scope: {}, questions: [question()] } })
     if (!quiz.ok) throw new Error(quiz.message)
-    const draft = await service.draftRoadmap({ projectId, nodes: [
+    const draft = await service.draftRoadmap({ projectId, resourceId: rl, nodes: [
       { id: 's1', title: 'RL 直觉', gate: 'acceptance', covers: [{ ref: 'topic:讲授' }], acceptance: [{ line: '完成摸底测验 ≥ 过线', ref: quiz.quiz.id }, '跑满 20 万步'] },
       { id: 's2', title: '快慢回路', gate: 'quiz', covers: [{ ref: 'topic:讲授' }], dependsOn: ['s1'] },
     ] })
     if (!draft.ok) throw new Error(draft.message)
-    const adopted = await service.adoptRoadmap({ projectId })
+    const adopted = await service.adoptRoadmap({ projectId, resourceId: rl })
     if (!adopted.ok) throw new Error(adopted.message)
     // No sitting yet: the ref line auto-fails (1/2 < 0.8 — no completion).
     const cold = await service.putAttempt({ projectId, nodeId: 's1', verdicts: [{ task: 'L2', criterion: '跑满 20 万步', pass: true, evidence: '终端输出', by: 'llm' }] })
@@ -846,22 +901,26 @@ describe('bindings', () => {
     await service.setBinding('s1', { projectId, resourceId: bookId })
     const summary = service.bindingSummary('s1')
     expect(summary.resource?.title).toBe('Principles of Neural Science')
-    expect(summary.progress?.current?.id).toBe('n1')
+    expect(summary.textbooks[0]?.current?.id).toBe('n1')
     expect(summary.weakCards.map(card => card.term)).toEqual(['不应期'])
   })
 
-  it('a project-only binding reports the project path\'s current station', async () => {
+  it('a project-only binding reports every textbook\'s path state in study order', async () => {
     const { projectId } = await seed()
+    const rl = await authored(projectId)
     const draft = await service.draftRoadmap({
       projectId,
+      resourceId: rl,
       nodes: [{ id: 's1', title: 'RL 直觉', gate: 'acceptance', covers: [{ ref: 'topic:讲授' }], acceptance: ['跑通'] }],
     })
     if (!draft.ok) throw new Error(draft.message)
-    await service.adoptRoadmap({ projectId })
+    await service.adoptRoadmap({ projectId, resourceId: rl })
     await service.setBinding('s2', { projectId })
     const summary = service.bindingSummary('s2')
     expect(summary.resource).toBeUndefined()
-    expect(summary.progress?.current?.id).toBe('s1')
-    expect(summary.progress?.current?.title).toBe('RL 直觉')
+    expect(summary.textbooks.map(textbook => [textbook.seq, textbook.title, textbook.current?.title])).toEqual([
+      [1, 'Principles of Neural Science', undefined],
+      [2, '强化学习入门（自编）', 'RL 直觉'],
+    ])
   })
 })

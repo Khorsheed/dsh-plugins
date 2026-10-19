@@ -4,7 +4,8 @@
  *
  * - **今日** — reviews due, where each book stands, what the coach just noted,
  *   the projects;
- * - **项目** — its books (each with its own path), its cards, its reviews;
+ * - **项目** — its textbooks in study order (each with its own path — the
+ *   project carries none), drafts waiting, its cards, its reviews;
  * - **书** — the roadmap draft waiting for 采用, or the adopted S-shaped path;
  * - **这一节** — guide / the pages photographed for it / its chapter quizzes;
  * - **知识卡片** — the learner's own cards, filtered by where they came from;

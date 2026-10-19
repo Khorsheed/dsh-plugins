@@ -17,12 +17,15 @@
  *   that only enters a path whole. Nothing is ever uploaded — a thick
  *   resource registers title, kind and a contents the coach verified on the
  *   web (or took from a photo);
- * - a ROADMAP is one path per scope: `primaryResourceId` present = that thick
- *   resource's own path (every node covers that one resource); absent = the
- *   project's own path (the general case, mixing covers freely). A node draws
- *   on mixed COVERS in one shape — `{ ref, locator? }`, where ref is a
- *   resource id, a bare url, or `topic:…` (plain coached teaching) and
- *   locator counts contents rows ("1-5,7"). The coach writes DRAFTS, the
+ * - a ROADMAP belongs to exactly one thick resource — a TEXTBOOK (proposal
+ *   `2026-10-19-library-book-paths`: the project carries no path of its
+ *   own). Textbooks sit on the shelf in study order (`seq`), and come from
+ *   the learner, from the coach's pick, or from the coach's own pen
+ *   (`origin`). A node draws on COVERS in one shape — `{ ref, locator? }`,
+ *   where ref is a resource id, a bare url, or `topic:…` (plain coached
+ *   teaching) and locator counts contents rows ("1-5,7"); the path's own
+ *   textbook is the main cover, anything else rides along as a side
+ *   reference. A path need not cover the whole contents. The coach writes DRAFTS, the
  *   learner adopts one, and the adopted path's state machine has three edges
  *   only (`locked → current → done`);
  * - a NODE's `gate` says how it completes: `quiz` (an assessed quiz at the
@@ -171,12 +174,18 @@ export interface LibraryResourceProgress {
   readonly id: string
   readonly title: string
   readonly kind: LibraryResourceKind
+  /** A textbook's place in the study order (1-based); absent on a thin link. */
+  readonly seq?: number
+  /** Where the entry came from. */
+  readonly origin?: LibraryResourceOrigin
   /** Adopted-roadmap progress; only a thick resource (toc) can carry one. */
   readonly roadmap?: { readonly done: number; readonly total: number }
   /** The first current node, when one is in progress. */
   readonly current?: { readonly id: string; readonly title: string }
   /** A draft is waiting for the learner's 采用. */
   readonly hasDraft: boolean
+  /** The waiting draft's station count. */
+  readonly draftTotal?: number
 }
 
 /** The project list's row: the project plus its cheap aggregates. */
@@ -243,6 +252,16 @@ export interface LibraryResourceMeta {
   readonly isbn?: string
 }
 
+/**
+ * Where a shelf entry came from: `learner` — the learner's own (a book they
+ * hold, a link they handed over); `picked` — an existing book / course / link
+ * the coach chose; `authored` — a textbook the coach wrote itself (its
+ * contents are the coach's own outline, its 讲义 are the text). Legacy
+ * `addedBy` reads as learner / picked.
+ */
+export const LIBRARY_RESOURCE_ORIGINS = ['learner', 'picked', 'authored'] as const
+export type LibraryResourceOrigin = typeof LIBRARY_RESOURCE_ORIGINS[number]
+
 /** What a shelf entry IS: the shape of the thing it is or points at. */
 export const LIBRARY_RESOURCE_KINDS = ['book', 'article', 'video', 'repo', 'tool', 'course', 'hardware'] as const
 export type LibraryResourceKind = typeof LIBRARY_RESOURCE_KINDS[number]
@@ -262,8 +281,10 @@ export interface LibraryResource {
   readonly url?: string
   /** The coach's one line: why it is on the shelf (「热身站的读物，只看两节」). */
   readonly note?: string
-  /** Who put it there. */
-  readonly addedBy?: 'coach' | 'learner'
+  /** Where it came from. */
+  readonly origin?: LibraryResourceOrigin
+  /** A textbook's place in the project's study order, 1-based and gapless; thin links carry none. */
+  readonly seq?: number
   /** The thick/thin switch: present (and non-empty) = thick. */
   readonly toc?: readonly LibraryTocEntry[]
   readonly tocSource?: LibraryTocSource
@@ -438,7 +459,11 @@ export function acceptanceLines(node: { acceptance?: readonly LibraryAcceptanceI
 
 /** A roadmap — the adopted path (`roadmaps/<key>.json`) or a draft (`roadmaps/<key>.draft.json`). */
 export interface LibraryRoadmap {
-  /** The thick resource whose path this is; absent = the project's own path (the general case). */
+  /**
+   * The textbook whose path this is. Always present on anything written
+   * since the book-paths cut; a legacy project-level path (absent) is never
+   * read back.
+   */
   readonly primaryResourceId?: string
   readonly status: 'draft' | 'adopted'
   readonly nodes: readonly RoadmapNode[]

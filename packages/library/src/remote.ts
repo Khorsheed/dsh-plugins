@@ -41,6 +41,7 @@ import type {
   LibraryProjectSummary,
   LibraryResource,
   LibraryResourceKind,
+  LibraryResourceOrigin,
   LibraryReviewRating,
   LibraryRoadmap,
   LibraryTemplate,
@@ -118,7 +119,7 @@ export class LibraryRemoteService extends TypertRemoteService<LibraryRemoteConfi
     return this.core.getResource(request)
   }
 
-  /** A project's shelf, oldest first. */
+  /** A project's shelf: textbooks in study order, then links oldest first. */
   @Remote('listResources')
   listResources(request: { projectId: string }): Promise<{ resources: LibraryResource[] }> {
     return this.core.listResources(request)
@@ -133,7 +134,8 @@ export class LibraryRemoteService extends TypertRemoteService<LibraryRemoteConfi
     kind: LibraryResourceKind
     url?: string
     note?: string
-    addedBy?: 'coach' | 'learner'
+    origin?: LibraryResourceOrigin
+    seq?: number
     toc?: readonly { title: string; part?: string }[]
     tocSource?: LibraryTocSource
     bookKind?: LibraryBookKind
@@ -147,6 +149,12 @@ export class LibraryRemoteService extends TypertRemoteService<LibraryRemoteConfi
     return this.core.putResource(request)
   }
 
+  /** Move a textbook to another place in the study order. */
+  @Remote('moveResource')
+  moveResource(request: { projectId: string; resourceId: string; seq: number }): Promise<LibraryOutcome<{ resources: LibraryResource[] }>> {
+    return this.core.moveResource(request)
+  }
+
   /** Remove a shelf entry (its cards stay, unhung). */
   @Remote('removeResource')
   removeResource(request: { projectId: string; resourceId: string }): Promise<LibraryOutcome<{ id: string }>> {
@@ -155,21 +163,21 @@ export class LibraryRemoteService extends TypertRemoteService<LibraryRemoteConfi
 
   /* ------------------------------------------------------------- roadmap */
 
-  /** One scope's adopted roadmap and its pending draft; no resourceId = the project's own path. */
+  /** One textbook's adopted roadmap and its pending draft. */
   @Remote('getRoadmap')
-  getRoadmap(request: { projectId: string; resourceId?: string }): Promise<{ roadmap?: LibraryRoadmap; draft?: LibraryRoadmap }> {
+  getRoadmap(request: { projectId: string; resourceId: string }): Promise<{ roadmap?: LibraryRoadmap; draft?: LibraryRoadmap }> {
     return this.core.getRoadmap(request)
   }
 
   /** The learner's 采用. */
   @Remote('adoptRoadmap')
-  adoptRoadmap(request: { projectId: string; resourceId?: string }): Promise<LibraryOutcome<{ roadmap: LibraryRoadmap }>> {
+  adoptRoadmap(request: { projectId: string; resourceId: string }): Promise<LibraryOutcome<{ roadmap: LibraryRoadmap }>> {
     return this.core.adoptRoadmap(request)
   }
 
   /** Drop a draft. */
   @Remote('discardDraft')
-  discardDraft(request: { projectId: string; resourceId?: string }): Promise<LibraryOutcome<{ resourceId?: string }>> {
+  discardDraft(request: { projectId: string; resourceId: string }): Promise<LibraryOutcome<{ resourceId: string }>> {
     return this.core.discardDraft(request)
   }
 

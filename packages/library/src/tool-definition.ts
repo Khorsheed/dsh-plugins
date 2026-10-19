@@ -10,12 +10,14 @@
  * descriptions carry its payload shape, and every refusal teaches the correct
  * call back.
  *
- * v5: the shelf unified — a BOOK is `library_resource` with kind "book" and a
- * toc; every scope parameter is named `resource` (the old `book` spelling
- * still parses). A node's `gate` says how it completes (quiz | acceptance |
- * read; the old `kind: "practice"` reads as acceptance). A cover is one
- * string shorthand — "r_…#1-5" | "https://…" | "topic: …" — or the object
- * `{ ref, locator? }` it expands to.
+ * A path belongs to one TEXTBOOK (a resource with a contents; proposal
+ * 2026-10-19-library-book-paths): `library_roadmap` takes the textbook as a
+ * required `resource`, and a station names that textbook's rows as
+ * `chapters: "3-4"` plus side references in `also` — both expand to the
+ * stored covers (`{ ref, locator? }`). The older spellings still parse
+ * (`covers`, `chapterRanges`, `book`, node `kind`), they are just no longer
+ * advertised. A node's `gate` says how it completes (quiz | acceptance |
+ * read).
  *
  * `project` / `resource` default to the session's binding (the header chip),
  * so a bound session rarely names them; a resource id alone resolves its
@@ -179,28 +181,6 @@ function normalizeCoverArg(value: unknown): Record<string, unknown> | undefined 
 }
 
 /**
- * A roadmap's scope read off its content: the one resource every station's
- * covers name, when they all name exactly that one — anything else (mixed
- * resources, a url / topic among the covers, a coverless node) is the
- * project's own path. Runs on the post-normalize nodes, whose covers all
- * carry `ref`.
- */
-function deriveRoadmapResource(nodes: readonly Record<string, unknown>[]): string | undefined {
-  const ids = new Set<string>()
-  for (const node of nodes) {
-    const covers = node.covers
-    if (!Array.isArray(covers) || covers.length === 0) return undefined
-    for (const cover of covers) {
-      if (cover === null || typeof cover !== 'object' || Array.isArray(cover)) return undefined
-      const ref = (cover as Record<string, unknown>).ref
-      if (typeof ref !== 'string' || ref === '' || ref.startsWith('topic:') || /^https?:\/\//.test(ref)) return undefined
-      ids.add(ref)
-    }
-  }
-  return ids.size === 1 ? [...ids][0] : undefined
-}
-
-/**
  * A question's two axes are optional on the wire: target defaults to the
  * station's topic, evidence to domain knowledge. Flat shorthands fill them in —
  * cardIds imply a marked target; pageId / url imply photo / web evidence; a
@@ -235,31 +215,23 @@ const LIST_WRAPPER_SCHEMA = { type: 'object', additionalProperties: true, descri
 /** The roadmap nodes schema — shared by the parameter declaration and its description. */
 const NODES_SCHEMA = {
   oneOf: [
-    { type: 'array', description: 'The stations, in dependency order.', items: { type: 'object', additionalProperties: true, properties: {
+    { type: 'array', description: 'The stations, in study order.', items: { type: 'object', additionalProperties: true, properties: {
       id: { type: 'string', required: true, description: 'Unique station id (letters, digits, . _ -).' },
       title: { type: 'string', required: true, description: 'What the learner masters here.' },
-      gate: { type: 'string', required: true, enum: ['quiz', 'acceptance', 'read'], description: 'quiz: a level gated by its chapter quiz (depends only on quiz / acceptance nodes); acceptance: a hands-on station gated by acceptance lines; read: an optional side stop (读完 completes it, never gates).' },
-      goals: { oneOf: [{ type: 'array', items: { type: 'string' } }, { type: 'string' }], description: 'What to master / complete here — a quiz / read station\'s completion expectations live HERE, never in acceptance.' },
-      covers: { type: 'array', description: 'What the station draws on (at least one). On a resource\'s own path: exactly one cover naming that resource.', items: { oneOf: [
-        { type: 'string', description: 'The shorthand: "r_…#1-5" (a shelf resource + contents rows) | "https://…" (a bare web text) | "topic: …" (plain coached teaching).' },
-        { type: 'object', additionalProperties: true, properties: {
-          ref: { type: 'string', required: true, description: 'The resource id (r_…), the url, or "topic:…".' },
-          locator: { type: 'string', description: 'A thick resource\'s contents rows, 1-based inclusive: "1-5,7".' },
-          title: { type: 'string', description: 'A url cover\'s short label.' },
-          by: { type: 'string', enum: ['web', 'model', 'user'], description: 'Provenance: "web" once actually opened (+ verifiedAt), "model" straight from memory (verify and replace before the learner adopts), "user" when the learner gave it.' },
-          verifiedAt: { type: 'string', description: 'ISO time of the web check.' },
-        } },
-      ] } },
-      dependsOn: { type: 'array', items: { type: 'string' }, description: 'Earlier station ids this one gates on.' },
-      points: { type: 'array', description: 'gate=quiz only: the station\'s knowledge points (3-6), reviewed by the learner on the draft card. Questions reference them by id (question.point) and mastery aggregates by id — keep ids stable slugs, never reword one.', items: { type: 'object', additionalProperties: true, properties: {
-        id: { type: 'string', required: true, description: 'Stable slug (letters, digits, . _ -).' },
-        title: { type: 'string', required: true, description: 'The point as the learner reads it (「极限的定义」).' },
+      gate: { type: 'string', required: true, enum: ['quiz', 'acceptance', 'read'], description: 'quiz: a level, passed by its chapter quiz; acceptance: a hands-on station judged line by line; read: an optional side stop (读完), never a dependency.' },
+      chapters: { oneOf: [{ type: 'string' }, { type: 'integer' }], description: 'The textbook\'s contents rows this station covers, 1-based: "3-4" | "5" | "1-2,7". Omit only on a station resting on also alone.' },
+      also: { oneOf: [{ type: 'array', items: { type: 'string' } }, { type: 'string' }], description: 'Side references: "https://…" (a web text, a video), "r_…#2" (another shelf entry), "topic: …" (your own teaching beyond the book).' },
+      goals: { oneOf: [{ type: 'array', items: { type: 'string' } }, { type: 'string' }], description: 'What the learner can do after it (never acceptance lines).' },
+      dependsOn: { type: 'array', items: { type: 'string' }, description: 'Earlier station ids this one waits for.' },
+      points: { type: 'array', description: 'gate=quiz: its 3-6 knowledge points — every question names one; ids are stable slugs, never reworded.', items: { type: 'object', additionalProperties: true, properties: {
+        id: { type: 'string', required: true },
+        title: { type: 'string', required: true, description: 'As the learner reads it (「极限的定义」).' },
       } } },
-      acceptance: { type: 'array', description: 'gate=acceptance only: the criteria — judged one verdict per line at assess time (task = the line id L1, L2…, or the line verbatim). A line may be { line, ref: <quiz id> } — machine-checked: it auto-passes when that quiz\'s latest sitting passes; compose the quiz FIRST (library_quiz), then ref it.', items: { oneOf: [
-        { type: 'string', description: 'The criterion line, judged by the coach.' },
+      acceptance: { type: 'array', description: 'gate=acceptance: the lines judged one verdict each (ids L1, L2… by order). { line, ref: <quiz id> } passes itself when that quiz passes — compose the quiz first.', items: { oneOf: [
+        { type: 'string' },
         { type: 'object', additionalProperties: true, properties: {
-          line: { type: 'string', required: true, description: 'The criterion line.' },
-          ref: { type: 'string', description: 'The quiz that machine-checks this line (library_quiz returned its id).' },
+          line: { type: 'string', required: true },
+          ref: { type: 'string' },
         } },
       ] } },
     } } },
@@ -273,41 +245,41 @@ const QUESTIONS_SCHEMA = {
   oneOf: [
     { type: 'array', items: { type: 'object', additionalProperties: true, properties: {
       id: { type: 'string', required: true },
-      kind: { type: 'string', required: true, enum: ['choice', 'fill', 'free'], description: 'choice: the answer IS one of options, verbatim; fill: a short verbatim answer (a term, a formula, a date); free: an open discussion (the prompt locates the passage).' },
+      kind: { type: 'string', required: true, enum: ['choice', 'fill', 'free'] },
       prompt: { type: 'string', required: true },
       options: { type: 'array', description: 'choice only.', items: { oneOf: [
         { type: 'string', description: 'The option text.' },
-        { type: 'object', additionalProperties: true, properties: { label: { type: 'string', required: true, description: 'The option text (the label form is stored as its plain text).' } } },
+        { type: 'object', additionalProperties: true, properties: { label: { type: 'string', required: true } } },
       ] } },
       answer: { type: 'string', required: true, description: 'choice: the correct option, copied verbatim.' },
       explanation: { type: 'string', description: 'Why the answer is right.' },
-      point: { type: 'string', description: 'The gated station\'s point this question probes (an id from the station\'s points — library_read · roadmap lists them). Required once the station carries points; a full chapter quiz touches every point at least once.' },
+      point: { type: 'string', description: 'The station point it probes (its id).' },
       target: {
         oneOf: [
           { type: 'object', additionalProperties: true, properties: {
-            kind: { type: 'string', required: true, enum: ['marked', 'asked', 'missed', 'topic'], description: 'The learner\'s own cards first (marked / asked / missed + cardIds), else the chapter\'s topic.' },
+            kind: { type: 'string', required: true, enum: ['marked', 'asked', 'missed', 'topic'] },
             cardIds: { type: 'array', items: { type: 'string' } },
           } },
           { type: 'string', enum: ['marked', 'asked', 'missed', 'topic'], description: 'Just the kind.' },
         ],
-        description: 'OPTIONAL: what the question probes — omit for the station\'s topic (the default); flat cardIds imply marked.',
+        description: 'Optional — omit for the station\'s topic; flat cardIds imply marked.',
       },
       evidence: {
         oneOf: [
           { type: 'object', additionalProperties: true, properties: {
-            kind: { type: 'string', required: true, enum: ['photo', 'web', 'knowledge'], description: 'photo quotes a recorded page (pageId + quote); web cites url + quote; knowledge only where the station\'s covers allow it.' },
+            kind: { type: 'string', required: true, enum: ['photo', 'web', 'knowledge'] },
             pageId: { type: 'string' },
             url: { type: 'string' },
             quote: { type: 'string', description: 'The passage, verbatim.' },
           } },
           { type: 'string', enum: ['photo', 'web', 'knowledge'], description: 'Just the kind.' },
         ],
-        description: 'OPTIONAL: what the answer rests on — omit for domain knowledge (the default); the flat pageId / url / quote set the kind. The verbatim gate still bites: a material book, a thin link or a url among the covers demands a quote.',
+        description: 'Optional — omit for domain knowledge; flat pageId / url set photo / web.',
       },
-      cardIds: { type: 'array', items: { type: 'string' }, description: 'Shorthand for target.cardIds (kind defaults to marked): live cards from library_read · cards.' },
-      quote: { type: 'string', description: 'Shorthand for evidence.quote (with pageId → photo, with url → web).' },
-      url: { type: 'string', description: 'Shorthand: evidence { kind: "web", url, quote? }.' },
-      pageId: { type: 'string', description: 'Shorthand: evidence { kind: "photo", pageId, quote? } — page ids from library_read · pages.' },
+      cardIds: { type: 'array', items: { type: 'string' }, description: 'The learner\'s cards it probes (library_read · cards).' },
+      quote: { type: 'string', description: 'The passage the answer rests on, verbatim.' },
+      url: { type: 'string', description: 'The web page quoted.' },
+      pageId: { type: 'string', description: 'The photographed page quoted (library_read · pages).' },
     } } },
     { type: 'string', description: 'The same array as its JSON text.' },
     LIST_WRAPPER_SCHEMA,
@@ -351,29 +323,29 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
     await service.setBinding(sessionId, binding)
   }
 
+  /** The textbooks of the bound project, as one teaching line for a refusal. */
+  const textbookList = (exec: Exec | undefined): string => {
+    const summary = sessionIdOf(exec) === undefined ? undefined : service.bindingSummary(sessionIdOf(exec)!, 0)
+    const textbooks = summary?.textbooks ?? []
+    return textbooks.length === 0 ? '' : ` — this project's textbooks: ${textbooks.map(textbook => `${textbook.seq ?? '-'}. ${textbook.id} 《${textbook.title}》`).join('; ')}`
+  }
+
   /** The resource: the argument (either spelling), else the binding's resource, else a lesson. */
   const resourceOf = (args: Record<string, unknown>, exec: Exec | undefined): string => {
     const named = pickString(args.resource, args.book)
     if (named !== undefined) return named
     const bound = bindingOf(exec)?.resourceId
     if (bound !== undefined) return bound
-    throw new Error('no resource: name it (library_read · resources lists the project\'s), or bind this session to one with library_binding')
+    throw new Error(`no textbook named: pass resource${textbookList(exec) || ' (library_read · resources lists them)'}, or bind this session to one (library_binding)`)
   }
 
-  /** A path/quiz scope's resource: a string wins (either spelling), an explicit null means "the project's own path", absent falls back to the binding's resource. */
-  const scopeResourceOf = (args: Record<string, unknown>, exec: Exec | undefined): string | undefined => {
-    if (args.resource === null || args.book === null) return undefined
-    const named = pickString(args.resource, args.book)
-    return named ?? bindingOf(exec)?.resourceId
-  }
-
-  /** The shared scope parameter descriptions (write tools). */
+  /** The shared scope parameters (write tools). */
   const scopeParams = {
-    project: { type: 'string', description: 'The project id (defaults to this session\'s binding; a resource id resolves its owner).' },
+    project: { type: 'string', description: 'Project id (defaults to the binding; a resource id implies its project).' },
   } as const
-  const scopeParamsResource = {
+  const textbookParams = {
     ...scopeParams,
-    resource: { type: 'json', description: 'Defaults to the binding\'s resource; null = the project\'s own path.' },
+    resource: { type: 'string', description: 'The textbook id (defaults to the binding\'s).' },
   } as const
 
   const definitions: ToolDefinition[] = []
@@ -381,21 +353,19 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
   definitions.push(defineTool({
     name: 'library_read',
     description:
-      'Read the learner\'s library (read-only). what: '
-      + '"projects" — every project with its shelf progress and card tallies, plus this session\'s binding; '
-      + '"resources" — a project\'s shelf: every entry with kind (book | course | article | video | repo | tool | hardware), toc presence, and its one-line why; '
-      + '"toc" — one thick resource (title, edition, kind, contents rows numbered n); '
-      + '"roadmap" — the adopted path and any pending draft (resource defaults to the binding\'s resource; pass resource: null for the project\'s own path); '
-      + '"pages" — one thick resource\'s photographed pages (printed text + the learner\'s marks), node narrows; '
-      + '"cards" — the knowledge cards: query searches term, aliases, gloss and sentences; filters resource, node, kind (word|concept), '
-      + 'source (photo|chat|quiz|manual), weakMin (0-3), due; sorted weakest first — check here before teaching a point, '
-      + 'to know where they got stuck before; '
+      'Read the library. what: '
+      + '"projects" — every project with its textbooks\' progress and card tallies, plus this session\'s binding; '
+      + '"resources" — one project\'s shelf: textbooks in study order (seq, origin, path state), then links; '
+      + '"toc" — one textbook\'s contents rows (numbered n); '
+      + '"roadmap" — one textbook\'s adopted path and pending draft; '
+      + '"pages" — a textbook\'s photographed pages (text + the learner\'s marks), node narrows; '
+      + '"cards" — knowledge cards, weakest first: query searches term / gloss / sentences; filters resource, node, kind, source, weakMin (0-3), due — check before teaching a point; '
       + '"quiz" — one quiz whole (quiz id), or the list; '
-      + '"stats" — the whole library\'s tally. project and resource default to this session\'s binding.',
+      + '"stats" — the whole library\'s tally. project and resource default to the binding.',
     parameters: {
       what: { type: 'string', required: true, description: `What to read: ${READ_WHATS.join(' | ')}.` },
       project: { type: 'string', description: 'Project id (defaults to the binding).' },
-      resource: { type: 'json', description: 'Resource id (defaults to the binding\'s resource; null reads the project\'s own roadmap).' },
+      resource: { type: 'string', description: 'Textbook / resource id (defaults to the binding\'s).' },
       node: { type: 'string', description: 'Roadmap node id (pages / cards).' },
       quiz: { type: 'string', description: 'Quiz id (quiz; omit for the list).' },
       query: { type: 'string', description: 'Free-text card search (cards).' },
@@ -423,8 +393,8 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
           return unwrap(await service.getResource({ projectId: projectOf(args.project, exec, resource), resourceId: resource })).resource as unknown as JsonValue
         }
         case 'roadmap': {
-          const resource = scopeResourceOf(args, exec)
-          return (await service.getRoadmap({ projectId: projectOf(args.project, exec, resource), ...(resource === undefined ? {} : { resourceId: resource }) })) as unknown as JsonValue
+          const resource = resourceOf(args, exec)
+          return (await service.getRoadmap({ projectId: projectOf(args.project, exec, resource), resourceId: resource })) as unknown as JsonValue
         }
         case 'pages': {
           const resource = resourceOf(args, exec)
@@ -467,7 +437,7 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
           } as unknown as JsonValue
         }
         case 'quiz': {
-          const resource = scopeResourceOf(args, exec)
+          const resource = pickString(args.resource, (args as Record<string, unknown>).book) ?? bindingOf(exec)?.resourceId
           const project = projectOf(args.project, exec, resource)
           if (args.quiz === undefined || args.quiz.trim() === '') {
             return (await service.listAssessments({ projectId: project, type: 'quiz', ...(resource === undefined ? {} : { resourceId: resource }) })) as unknown as JsonValue
@@ -487,7 +457,7 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
     description:
       'Create a learning project, or edit one (projectId + the fields to change; goal "" clears). '
       + 'template: "language" (marks are words) | "subject" (marks are concepts) | "custom". '
-      + 'Creating or editing binds an unbound session to the project — the onboarding chain is just: create, register a book (library_resource, kind "book"), draft (library_roadmap).',
+      + 'Creating binds an unbound session to it. A project is a goal and carries no path: next, shelve its textbooks (library_resource), then draft each one\'s path (library_roadmap).',
     parameters: {
       projectId: { type: 'string', description: 'Edit this existing project (library_read · projects lists the ids). Omit to CREATE — ids are minted (p_…), never chosen by the caller.' },
       name: { type: 'string', description: 'The project\'s name (required when creating).' },
@@ -539,62 +509,59 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
   definitions.push(defineTool({
     name: 'library_resource',
     description:
-      'Put one entry on the project\'s shelf, or remove one. A THICK entry (kind "book"; a "course" with episodes) registers its contents: web-verify the exact contents first and cite the page (publisher / catalog / retailer — never a full-text copy); the toc may go as ONE newline-joined string of titles, the least mangled form. A THIN link (article | video | repo | tool | hardware) is title + url + one line on why it earns its place. Creating binds an unbound session to the project and the entry. Never ask for an upload.',
+      'Shelve, reorder or remove one entry. A TEXTBOOK is anything with a contents (kind book | course): the learner\'s own (origin learner), an existing book or digital course you pick (picked — only the chapters the goal needs end up in its path), or one you author when nothing fits (authored — your own contents; your 讲义 are its text). Shelve textbooks in study order (seq; omitted = last). Verify a real one\'s exact edition and contents on the web and cite the page (tocSource web + url); never ask for an upload. A LINK (article | video | repo | tool | hardware) is title + url + why — it never carries a path, a station cites it (also).',
     parameters: {
       ...scopeParams,
-      op: { type: 'string', required: true, enum: ['create', 'remove'], description: 'create: shelve a new entry (or correct one with resourceId); remove: take one off (its roadmap and pages go with it).' },
-      resourceId: { type: 'string', description: 'op=remove: the entry id (library_read · resources lists them). op=create: correct this existing entry instead of adding.' },
-      kind: { type: 'string', enum: [...LIBRARY_RESOURCE_KINDS], description: 'What it IS — book: a book (toc required); course: a lecture series with episodes (toc required); article | video | repo | tool | hardware: a thin link (url required).' },
-      title: { type: 'string', description: 'op=create: the exact edition\'s title, or what the link\'s own page calls it.' },
-      url: { type: 'string', description: 'A thin link\'s address (required for one); a book\'s web copy, when one exists.' },
-      note: { type: 'string', description: 'A thin link: one line on why it earns its place.' },
-      addedBy: { type: 'string', enum: ['coach', 'learner'], description: 'Who put it on the shelf (default coach).' },
+      op: { type: 'string', required: true, enum: ['create', 'move', 'remove'], description: 'create: shelve (or correct one, with resourceId); move: put a textbook at seq; remove: take one off (its path and pages go too).' },
+      resourceId: { type: 'string', description: 'The entry to correct / move / remove.' },
+      kind: { type: 'string', enum: [...LIBRARY_RESOURCE_KINDS], description: 'book | course: a textbook (toc required); article | video | repo | tool | hardware: a link (url required).' },
+      origin: { type: 'string', enum: ['learner', 'picked', 'authored'], description: 'Whose it is (default picked).' },
+      seq: { type: 'integer', description: 'A textbook\'s place in the study order, from 1 (the rest shift).' },
+      title: { type: 'string', description: 'The exact edition\'s title, or what the link\'s page calls it.' },
+      url: { type: 'string', description: 'A link\'s address; a digital textbook\'s home page.' },
+      note: { type: 'string', description: 'One line on why it is here.' },
       toc: {
         oneOf: [
-          { type: 'array', description: 'One row per chapter or passage.', items: { oneOf: [
-            { type: 'string', description: 'A bare row title.' },
+          { type: 'string', description: 'The whole contents as ONE newline-joined string of titles (preferred).' },
+          { type: 'array', description: 'One row per chapter.', items: { oneOf: [
+            { type: 'string' },
             { type: 'object', additionalProperties: true, properties: {
-              title: { type: 'string', required: true, description: 'The chapter / passage title.' },
-              part: { type: 'string', description: 'The part heading this row belongs to (a part is never a row of its own).' },
+              title: { type: 'string', required: true },
+              part: { type: 'string', description: 'The part heading it belongs to (a part is never a row).' },
             } },
           ] } },
-          { type: 'string', description: 'The whole contents as ONE newline-joined string of titles (the form least mangled by models).' },
           LIST_WRAPPER_SCHEMA,
         ],
-        description: 'op=create, a thick entry (book / course): the contents — required for one.',
+        description: 'A textbook\'s contents — required for one.',
       },
       tocSource: {
         oneOf: [
           { type: 'object', additionalProperties: true, properties: {
-            by: { type: 'string', required: true, enum: ['web', 'model', 'photo'], description: 'web: you verified it online (cite url); model: from memory; photo: from the learner\'s photo.' },
-            url: { type: 'string', description: 'The page you verified (publisher / catalog / retailer).' },
+            by: { type: 'string', required: true, enum: ['web', 'model', 'photo'], description: 'web: verified online (+ url); model: your own or from memory; photo: the learner\'s photo.' },
+            url: { type: 'string' },
           } },
           { type: 'string', description: 'The same object as its JSON text.' },
         ],
-        description: 'A thick entry: where the contents came from — defaults to { by: "model" }; say web (+ url) once you actually verified.',
+        description: 'Where the contents came from (default { by: "model" }).',
       },
-      bookKind: { type: 'string', enum: ['knowledge', 'material'], description: 'A thick entry: knowledge — the content is domain knowledge (a textbook, popular science; you may quiz from what you know); material — specific text you cannot recall (exam papers, novels; quizzing needs a photo or a web quote).' },
-      short: { type: 'string', description: 'A thick entry: a 2-4 character cover abbreviation (剑5 / PNS).' },
-      author: { type: 'string', description: 'A thick entry: the author.' },
-      edition: { type: 'string', description: 'A thick entry: the edition (e.g. 2020 年 9 月第一版).' },
-      isbn: { type: 'string', description: 'A book: the ISBN.' },
+      bookKind: { type: 'string', enum: ['knowledge', 'material'], description: 'knowledge: domain knowledge you may quiz from memory (textbooks); material: specific text you cannot recall (exam papers, novels — questions need a photo or web quote).' },
+      author: { type: 'string' },
+      edition: { type: 'string', description: 'e.g. 2010 年 8 月第一版.' },
+      isbn: { type: 'string' },
+      short: { type: 'string', description: 'A 2-4 character cover abbreviation (普微 / 剑5).' },
       extras: {
         oneOf: [
           { type: 'array', items: { type: 'object', additionalProperties: true, properties: {
             title: { type: 'string', required: true },
             note: { type: 'string' },
             where: { type: 'string' },
-            when: { type: 'string', required: true, enum: ['before', 'reference'], description: 'before: read before starting; reference: consult when needed.' },
+            when: { type: 'string', required: true, enum: ['before', 'reference'] },
           } } },
           { type: 'string', description: 'The same array as its JSON text.' },
           LIST_WRAPPER_SCHEMA,
         ],
-        description: 'A thick entry: how-to-use pages, answer keys, transcripts, appendices — NOT roadmap nodes.',
+        description: 'How-to-use pages, answer keys, appendices worth knowing about — not stations (before: read first; reference: when needed).',
       },
-      from: { type: 'object', additionalProperties: true, properties: {
-        project: { type: 'string', required: true, description: 'The source project id.' },
-        resource: { type: 'string', required: true, description: 'The source entry id.' },
-      }, description: 'op=create: clone an entry from ANOTHER project (its toc and verification come along) — how a book serves two projects.' },
     },
     output: jsonOutput(),
     isConcurrencySafe: () => false,
@@ -606,11 +573,20 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
         if (namedId === undefined) throw new Error('library_resource · op=remove takes the resourceId field — library_read · resources lists the ids')
         return unwrap(await service.removeResource({ projectId: projectOf(args.project, exec, namedId), resourceId: namedId })) as unknown as JsonValue
       }
-      if (args.op !== 'create') {
-        throw new Error(`library_resource needs op: create | remove — got ${JSON.stringify(args.op)}`)
+      if (args.op === 'move') {
+        if (namedId === undefined || typeof args.seq !== 'number') throw new Error('library_resource · op=move takes resourceId and seq (the textbook\'s new place, from 1)')
+        const moved = unwrap(await service.moveResource({ projectId: projectOf(args.project, exec, namedId), resourceId: namedId, seq: args.seq }))
+        return { order: moved.resources.filter(resource => resource.seq !== undefined).map(resource => `${resource.seq}. ${resource.id} 《${resource.title}》`) } as unknown as JsonValue
       }
+      if (args.op !== 'create') {
+        throw new Error(`library_resource needs op: create | move | remove — got ${JSON.stringify(args.op)}`)
+      }
+      // origin is the v6 field; the older addedBy still parses (coach → picked).
+      const originArg = argsAny.origin ?? (argsAny.addedBy === 'learner' ? 'learner' : argsAny.addedBy === 'coach' ? 'picked' : undefined)
+      const origin = originArg === 'learner' || originArg === 'picked' || originArg === 'authored' ? { origin: originArg } as const : {}
       const projectId = projectOf(args.project, exec, namedId)
-      const from = payload(args.from)
+      // Cloning from another project is no longer advertised but still parses.
+      const from = payload(argsAny.from)
       if (from !== undefined) {
         const fromProject = pickString(from.project, from.projectId)
         const fromResource = pickString(from.resource, from.resourceId, from.book, from.bookId)
@@ -634,7 +610,7 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
       const thick = tocRows.length > 0 || args.kind === 'book' || args.kind === 'course'
       if (thick) {
         if (typeof args.title !== 'string' || args.title.trim() === '' || tocRows.length === 0) {
-          throw new Error(`a thick entry (kind "book" | "course") takes: title, toc ([{ title, part? }] | bare titles | one newline-joined string), tocSource { by, url? } (+ bookKind, short?, author?, edition?, isbn?, extras?, url?, resourceId? to correct) — ${arrival('toc', args.toc)}`)
+          throw new Error(`a textbook (kind "book" | "course") takes: title, toc (one newline-joined string of titles, or [{ title, part? }]), tocSource { by, url? }, origin, seq? (+ bookKind, edition?, author?, isbn?, url?, resourceId? to correct) — ${arrival('toc', args.toc)}`)
         }
         const toc = tocRows.map(row => typeof row === 'string' ? { title: row } : row as { title: string; part?: string })
         const written = unwrap(await service.putResource({
@@ -644,7 +620,8 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
           kind: args.kind === 'course' ? 'course' : 'book',
           ...(typeof args.url === 'string' ? { url: args.url } : {}),
           ...(typeof args.note === 'string' ? { note: args.note } : {}),
-          ...(args.addedBy === 'learner' ? { addedBy: 'learner' as const } : {}),
+          ...origin,
+          ...(typeof args.seq === 'number' ? { seq: args.seq } : {}),
           toc,
           tocSource: (payload(args.tocSource) ?? { by: 'model' }) as { by: 'web' | 'model' | 'photo'; url?: string },
           ...(args.bookKind === 'knowledge' || args.bookKind === 'material' ? { bookKind: args.bookKind } : {}),
@@ -660,7 +637,7 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
       const title = pickString(args.title)
       const url = pickString(args.url)
       if (title === undefined || url === undefined) {
-        throw new Error(`a thin link takes: title, url, kind ("article"|"video"|"repo"|"tool"|"hardware"), note? — got title ${title === undefined ? '✗ MISSING' : '✓'} · url ${url === undefined ? '✗ MISSING' : '✓'} (a book / course goes thick: kind "book" + toc)`)
+        throw new Error(`a link takes: title, url, kind ("article"|"video"|"repo"|"tool"|"hardware"), note? — got title ${title === undefined ? '✗ MISSING' : '✓'} · url ${url === undefined ? '✗ MISSING' : '✓'} (a textbook takes kind "book" | "course" + toc)`)
       }
       const added = unwrap(await service.putResource({
         projectId,
@@ -669,7 +646,7 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
         kind: (LIBRARY_RESOURCE_KINDS as readonly string[]).includes(args.kind ?? '') && args.kind !== 'book' ? args.kind as LibraryResourceKind : 'article',
         url,
         ...(typeof args.note === 'string' ? { note: args.note } : {}),
-        addedBy: args.addedBy === 'learner' ? 'learner' : 'coach',
+        ...origin,
       }))
       await autoBind(exec, { projectId })
       return added as unknown as JsonValue
@@ -679,91 +656,86 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
   definitions.push(defineTool({
     name: 'library_roadmap',
     description:
-      'Write a DRAFT path (nodes) the learner adopts in the sidebar (采用) — you only ever write drafts; adoption is the learner\'s consent. '
-      + 'The scope reads itself off the covers: every station drawing on the same single resource lands on THAT resource\'s path, anything mixed lands on the project\'s own — omit resource (a string is an explicit override, validated as such). '
-      + 'A cover is the shorthand string "r_…#1-5" | "https://…" | "topic: …" (or the object { ref, locator? }). Returns scopeNote saying where the draft landed.',
+      'Write one textbook\'s DRAFT path; it replaces that textbook\'s previous draft. The learner adopts it on the textbook\'s page (采用) — you only write drafts, and never ask before writing one. '
+      + 'A station covers the textbook\'s rows (chapters: "3-4"); also adds side references (a link, another entry\'s rows, topic: your own teaching) without moving the path anywhere. '
+      + 'A path covers what the goal needs — skipping chapters is fine. Returns where it landed and which textbooks still wait for adoption.',
     parameters: {
-      ...scopeParams,
-      resource: { type: 'json', description: 'Usually omit — the scope reads itself off the covers. A string is an explicit override (validated: a resource\'s own path covers that resource only); null forces the project\'s own path.' },
-      nodes: { ...NODES_SCHEMA, required: true, description: 'The stations of the draft.' },
-      passRatio: { type: 'number', description: 'The pass line in (0, 1] — 0.8 means 8 of 10 right (the default).' },
-      note: { type: 'string', description: 'The one-line pacing on the draft card.' },
+      resource: { type: 'string', required: true, description: 'The textbook this path belongs to (library_read · resources lists them).' },
+      nodes: { ...NODES_SCHEMA, required: true, description: 'The stations.' },
+      passRatio: { type: 'number', description: 'The pass line in (0, 1] (default 0.8).' },
+      note: { type: 'string', description: 'One line of pacing for the draft card.' },
     },
     output: jsonOutput(),
     isConcurrencySafe: () => false,
     async execute(args, exec) {
       const list = payloadList(args.nodes)
       if (list === undefined) {
-        throw new Error(`library_roadmap takes the nodes field: nodes: [{ id, title, gate: "quiz"|"acceptance"|"read", goals, covers: ["r_…#1-5" | "https://…" | "topic: …"], dependsOn, acceptance? (acceptance only) }] (+ passRatio?, note?) — ${arrival('nodes', args.nodes)}`)
+        throw new Error(`library_roadmap takes resource and nodes: [{ id, title, gate: "quiz"|"acceptance"|"read", chapters: "3-4", also?, goals, points? (quiz), acceptance? (acceptance), dependsOn }] (+ passRatio?, note?) — ${arrival('nodes', args.nodes)}`)
       }
-      // The scope reads itself off the covers: every station drawing on
-      // the same single resource lands on THAT resource's path, anything
-      // mixed lands on the project's own. `resource` survives as an explicit
-      // override (a string is honored and validated; null forces the
-      // project's own path); the binding's resource is consulted solely by
-      // the chapterRanges sugar.
-      const overrideResource = args.resource === null ? undefined : pickString(args.resource, (args as Record<string, unknown>).book)
-      const sugarResource = overrideResource ?? bindingOf(exec)?.resourceId
+      const argsAny = args as Record<string, unknown>
+      const resourceId = pickString(args.resource, argsAny.book)
+      if (resourceId === undefined) throw new Error(`a path belongs to one textbook — pass resource${textbookList(exec) || ' (register the textbook first with library_resource)'}`)
       const nodes = (list as Record<string, unknown>[]).map(node => {
-        const { chapterRanges, covers, kind, gate, ...rest } = node
+        const { chapters, also, chapterRanges, covers, kind, gate, ...rest } = node
         // gate is the v5 spelling; the old kind still parses (practice → acceptance).
         const gateValue = typeof gate === 'string' ? gate : kind === 'practice' ? 'acceptance' : kind
-        let outCovers: unknown[] | undefined
-        if (Array.isArray(covers)) {
-          outCovers = (covers as unknown[]).map(cover => normalizeCoverArg(cover) ?? cover)
-        } else if (chapterRanges !== undefined) {
-          // Sugar for the single-resource special case: chapterRanges wrap
-          // into the one resource cover a resource's own path allows.
-          if (sugarResource === undefined) {
-            throw new Error('chapterRanges count a resource\'s contents rows — the covers need the resource named: "r_…#1-5" (or bind this session to it first)')
-          }
-          const ranges = Array.isArray(chapterRanges)
-            ? (chapterRanges as unknown[]).flatMap(range => {
-              const row = payload(range)
-              const from = typeof row?.from === 'number' ? row.from : undefined
-              const to = typeof row?.to === 'number' ? row.to : undefined
-              return from === undefined || to === undefined ? [] : [{ from, to }]
-            })
-            : []
-          outCovers = [{ ref: sugarResource, locator: formatLocator(ranges) }]
-        }
-        return { ...rest, ...(gateValue === undefined ? {} : { gate: gateValue }), ...(outCovers === undefined ? {} : { covers: outCovers }) }
+        const main: Record<string, unknown>[] = []
+        const locator = typeof chapters === 'number' ? String(chapters)
+          : typeof chapters === 'string' && chapters.trim() !== '' ? chapters.trim()
+            : Array.isArray(chapters) ? (chapters as unknown[]).filter(entry => typeof entry === 'number' || typeof entry === 'string').join(',')
+              : Array.isArray(chapterRanges) ? formatLocator((chapterRanges as unknown[]).flatMap(range => {
+                const row = payload(range)
+                return typeof row?.from === 'number' && typeof row.to === 'number' ? [{ from: row.from, to: row.to }] : []
+              })) : undefined
+        if (locator !== undefined && locator !== '') main.push({ ref: resourceId, locator })
+        const side = [...(Array.isArray(covers) ? covers as unknown[] : []), ...(Array.isArray(also) ? also as unknown[] : typeof also === 'string' ? [also] : [])]
+          .map(cover => normalizeCoverArg(cover) ?? cover)
+        // A station naming neither rows nor references rests on the textbook whole.
+        const all = main.length === 0 && side.length === 0 ? [{ ref: resourceId }] : [...main, ...side]
+        return { ...rest, ...(gateValue === undefined ? {} : { gate: gateValue }), covers: all }
       })
-      const resourceId = overrideResource ?? deriveRoadmapResource(nodes)
-      const projectId = projectOf(args.project, exec, resourceId)
+      const projectId = projectOf(argsAny.project, exec, resourceId)
+      const before = unwrap(await service.getProject({ id: projectId }))
+      const replaced = before.project.resources.find(row => row.id === resourceId)?.hasDraft === true
       const drafted = unwrap(await service.draftRoadmap({
         projectId,
-        ...(resourceId === undefined ? {} : { resourceId }),
+        resourceId,
         nodes: nodes as unknown as Parameters<LibraryService['draftRoadmap']>[0]['nodes'],
         ...(typeof args.passRatio === 'number' ? { passRatio: args.passRatio } : {}),
         ...(typeof args.note === 'string' ? { note: args.note } : {}),
       }))
-      await autoBind(exec, { projectId, ...(resourceId === undefined ? {} : { resourceId }) })
-      const placedOn = resourceId === undefined
-        ? "the project's own path (the covers mix sources)"
-        : `《${unwrap(await service.getResource({ projectId, resourceId })).resource.title}》's path`
-      return { ...drafted, scopeNote: `draft placed on ${placedOn} — the learner adopts it in the sidebar (采用)` } as unknown as JsonValue
+      await autoBind(exec, { projectId, resourceId })
+      const after = unwrap(await service.getProject({ id: projectId }))
+      const textbook = after.project.resources.find(row => row.id === resourceId)
+      return {
+        ok: true,
+        placedOn: `${textbook?.seq ?? '-'}. 《${textbook?.title ?? resourceId}》 (${resourceId})`,
+        stations: drafted.draft.nodes.length,
+        ...(replaced ? { replacedDraft: true } : {}),
+        waitingForAdoption: after.project.resources.filter(row => row.hasDraft).map(row => `${row.seq ?? '-'}. 《${row.title}》 ${row.draftTotal ?? 0} stations`),
+        next: 'the learner adopts it on the textbook\'s page (采用) — say so in one line',
+      } as unknown as JsonValue
     },
   }))
 
   definitions.push(defineTool({
     name: 'library_notes',
     description:
-      'Write or rewrite a station\'s 讲义 (markdown; math in $…$ / $$…$$ LaTeX renders for the learner): the textbook on a 讲授 (topic) station, marginalia on a book station. Rewrite as 补讲 deepens — each write bumps 第 N 次更新.',
+      'Write or rewrite a station\'s 讲义 (markdown; math in $…$ / $$…$$): when a station\'s teaching settles, and whenever the learner asks to 补讲 / 沉淀讲义 — the explanation, the points THIS learner got stuck on, the pitfalls. On an authored textbook the 讲义 ARE the text; on a real book they are marginalia, never a substitute. Each rewrite bumps 第 N 次更新.',
     parameters: {
-      ...scopeParamsResource,
+      ...textbookParams,
       node: { type: 'string', required: true, description: 'The station id (library_read · roadmap lists them).' },
       text: { type: 'string', required: true, description: 'The station\'s 讲义 in markdown.' },
     },
     output: jsonOutput(),
     isConcurrencySafe: () => false,
     async execute(args, exec) {
-      const resourceId = scopeResourceOf(args, exec)
+      const resourceId = resourceOf(args, exec)
       return unwrap(await service.putNotes({
         projectId: projectOf(args.project, exec, resourceId),
-        ...(resourceId === undefined ? {} : { resourceId }),
-        nodeId: args.node,
-        text: args.text,
+        resourceId,
+        nodeId: String(args.node),
+        text: String(args.text),
       })) as unknown as JsonValue
     },
   }))
@@ -771,10 +743,9 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
   definitions.push(defineTool({
     name: 'library_page',
     description:
-      'Record a photographed page: transcribe the printed text (a photo-backed question quotes it), list every mark — each certain mark is carded at once; flag the unreadable uncertain (kept, never auto-carded). attachment is the image id — omit for the latest photo in this conversation.',
+      'Record a photographed page in ONE call: transcribe the printed text (a photo-backed question quotes it), list every mark with its sentence and in-context gloss — each certain mark becomes a card at once; flag the unreadable uncertain (kept, never carded). Omit attachment for the latest photo. If you cannot see images on this route, say so instead.',
     parameters: {
-      ...scopeParams,
-      resource: { type: 'json', description: 'The resource id (defaults to the binding\'s resource) — pages belong to a thick one (a book).'},
+      ...textbookParams,
       text: { type: 'string', required: true, description: 'The page\'s printed text, as recognized.' },
       marks: {
         oneOf: [
@@ -822,10 +793,10 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
   definitions.push(defineTool({
     name: 'library_cards',
     description:
-      'Record weak points — when the learner is stuck (mixes it up, asks the same point again), each: { kind: word|concept, term, gloss, context?, source: { type: chat, note? }, weaken? }. Say in one short line what you noted; ordinary curiosity is not a weak point. Near-duplicates come back pending with candidates — resend each with mergeInto or asNew.',
+      'Record weak points the moment the learner is stuck (mixes it up, asks the same point again, keeps probing one detail): { kind: word|concept, term, gloss, context?, source: { type: "chat" }, weaken: true }, then say in one short line what you noted. Ordinary curiosity is not a weak point. Near-duplicates come back pending with candidates — resend each with mergeInto or asNew.',
     parameters: {
       ...scopeParams,
-      resource: { type: 'string', description: 'The resource id (defaults to the binding\'s resource; omit for a project-level card).' },
+      resource: { type: 'string', description: 'The textbook it came up in (defaults to the binding\'s).' },
       cards: {
         oneOf: [
           { type: 'array', items: { type: 'object', additionalProperties: true, properties: {
@@ -882,19 +853,27 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
   definitions.push(defineTool({
     name: 'library_quiz',
     description:
-      'Store a composed quiz. node names the quiz-gated station it gates — omit for a resource-level quiz (the resource page\'s 本书测验) or, with resource: null, a free one (the project page\'s 自由测验). focus is the learner\'s choice (mine | book | mixed). A question\'s target defaults to the station\'s topic (flat cardIds imply marked), evidence to domain knowledge (flat pageId / url / quote imply photo / web). A station with knowledge points demands point: <id> on every question, and a full chapter quiz touches every point at least once; a genuine gap in the split goes in addPoints. After it returns, reply with one line — the learner answers in the sidebar, never in the conversation.',
+      'Store a composed quiz; then reply with ONE line — the learner answers in the sidebar\'s 章节考 tab, never in the conversation. '
+      + 'Scope: node = the quiz-gated station it gates; no node = a textbook-level quiz (本书测验); resource null = a free quiz (自由测验). '
+      + 'focus is the learner\'s choice and binds you — mine: only their cards (too few: fewer questions, say so); book: the chapter\'s content only; mixed: their cards first (weakest first), then the chapter. '
+      + 'Points: every question names the station point it probes (point); a full chapter quiz touches every point, a retake only the missed ones; a genuine gap in the split goes in addPoints. '
+      + 'Evidence: a photographed page\'s text, else a web quote + url, else domain knowledge (say so) — the book beats your memory; a material textbook never takes a content question from memory. '
+      + 'Authoring: choice — compose the correct option first and copy it into answer verbatim; fill — only a short verbatim answer (term, name, formula, date), judged by exact text; free — the prompt locates the passage (quote it). '
+      + 'Math only inside $…$ / $$…$$ ($\\sqrt{x+1}$, never √(x+1) or x^2). The prompt stays clean: no kind label, no chapter reference, no recipe (that is explanation). '
+      + 'Questions the learner flagged 「这题有问题」 are void — offer replacements on the same points.',
     parameters: {
-      ...scopeParamsResource,
-      node: { type: 'string', description: 'The quiz-gated station the quiz gates — omit for a resource-level quiz, or with resource: null a free one.' },
+      ...scopeParams,
+      resource: { type: 'json', description: 'The textbook (defaults to the binding\'s); null = a free quiz on no textbook.' },
+      node: { type: 'string', description: 'The quiz-gated station it gates.' },
       focus: { type: 'string', enum: ['mine', 'book', 'mixed'], description: 'The learner\'s choice of source.' },
-      addPoints: { type: 'array', description: 'Append knowledge points to the gated station — only a genuine gap in its split; an existing id is referenced (question.point), never re-added.', items: { type: 'object', additionalProperties: true, properties: {
-        id: { type: 'string', required: true, description: 'New stable slug (letters, digits, . _ -).' },
-        title: { type: 'string', required: true, description: 'The point as the learner reads it.' },
+      addPoints: { type: 'array', description: 'New points for the gated station (a genuine gap only).', items: { type: 'object', additionalProperties: true, properties: {
+        id: { type: 'string', required: true },
+        title: { type: 'string', required: true },
       } } },
       questions: {
         ...QUESTIONS_SCHEMA,
         required: true,
-        description: 'The questions of the composed quiz. Math typesets ONLY inside $…$ (inline) / $$…$$ (block) — write $g(x)=\\sqrt{(x+1)/(x-2)}$, never unicode approximations like √(x+1) or x^2 (they stay raw text for the learner); \\sqrt{3-x} over \\sqrt{(3-x)/(x+2)} is exactly the vinculum difference. The prompt itself stays clean: no kind label (（填空）), no chapter reference, no solution recipe (that is what explanation is for).',
+        description: 'The questions.',
       },
     },
     output: jsonOutput(),
@@ -905,7 +884,9 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
         throw new Error(`library_quiz takes the questions field: questions: [{ id, kind: "choice"|"fill"|"free", prompt, options?, answer, explanation?, target?, evidence? }] (+ node?, focus?) — ${arrival('questions', args.questions)}`)
       }
       const node = typeof args.node === 'string' && args.node !== '' ? args.node : undefined
-      const resourceId = scopeResourceOf(args, exec)
+      // An explicit null is a free quiz on no textbook; absent falls back to the binding's.
+      const argsAny = args as Record<string, unknown>
+      const resourceId = args.resource === null || argsAny.book === null ? undefined : pickString(args.resource, argsAny.book) ?? bindingOf(exec)?.resourceId
       // Options may arrive as { label } objects or a letter-keyed map —
       // the stored form is plain strings (the same tolerance reads them
       // back); the two axes default (topic + knowledge) and take the flat
@@ -936,34 +917,26 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
   definitions.push(defineTool({
     name: 'library_binding',
     description:
-      'Bind this session to a project (and optionally a resource) — the header chip, and every tool\'s defaults. binding: null unbinds. Most writes bind an unbound session by themselves; bind by hand to switch, or when there is nothing to infer from.',
+      'Bind this session to a project (and optionally a textbook) — the header chip, and every tool\'s defaults. Writes bind an unbound session by themselves; bind by hand to switch, or unbind: true.',
     parameters: {
-      binding: {
-        oneOf: [
-          { type: 'object', additionalProperties: true, properties: {
-            project: { type: 'string', required: true, description: 'The project id (library_read · projects lists them).' },
-            resource: { type: 'string', description: 'Optionally the resource within it (a book, to work inside its path).' },
-          } },
-          { type: 'null', description: 'Unbind this session.' },
-        ],
-        description: 'The binding — or null to unbind.',
-      },
-      project: { type: 'string', description: 'Alias for binding.project (both work).' },
-      resource: { type: 'string', description: 'Alias for binding.resource.' },
+      project: { type: 'string', description: 'The project id (library_read · projects lists them).' },
+      resource: { type: 'string', description: 'A textbook within it, to work inside its path.' },
+      unbind: { type: 'boolean', description: 'Unbind this session instead.' },
     },
     output: jsonOutput(),
     isConcurrencySafe: () => false,
     async execute(args, exec) {
       const sessionId = sessionIdOf(exec)
       if (sessionId === undefined) throw new Error('binding needs a session — this call came from none')
-      // Only an explicit null unbinds. A model as often names the target at
-      // the top level as inside binding (live trial) — both bind.
-      if (args.binding === null) return unwrap(await service.setBinding(sessionId, null)) as unknown as JsonValue
-      const body = payload(args.binding) ?? {}
+      // unbind: true (or the older binding: null) unbinds; the older nested
+      // binding { project, resource } still parses.
+      const argsAny = args as Record<string, unknown>
+      if (args.unbind === true || argsAny.binding === null) return unwrap(await service.setBinding(sessionId, null)) as unknown as JsonValue
+      const body = payload(argsAny.binding) ?? {}
       const projectId = pickString(body.project, body.projectId, args.project)
       const resourceId = pickString(body.resource, body.resourceId, body.book, body.bookId, args.resource, (args as Record<string, unknown>).book)
       if (projectId === undefined) {
-        throw new Error('binding needs the project: binding { project, resource? } (library_read · projects lists them); pass binding: null to unbind')
+        throw new Error('binding needs the project: { project, resource? } (library_read · projects lists them); unbind: true to unbind')
       }
       return unwrap(await service.setBinding(sessionId, { projectId, ...(resourceId === undefined ? {} : { resourceId }) })) as unknown as JsonValue
     },
@@ -975,15 +948,13 @@ export function libraryToolDefinitions(service: LibraryService, images: ImageRef
       'Ledger a graded sitting — the ONLY cascading write. Judge the answers in the conversation first (against each question\'s answer and evidence), '
       + 'then record one verdict per question: { task: <question id>, criterion: <what you judged>, pass, ratio?: <partial credit 0..1>, evidence: <what it rests on>, '
       + 'by: "llm"|"self"|"user", void?: true when the learner flagged the question as broken, missedCard?: { term, gloss } for a missed question that targets no card }. '
-      + 'The engine moves every probed card (a pass climbs a review box and eases weakness; a miss resets it to tomorrow and adds weakness), creates a card for a '
-      + 'card-less miss, updates the gated node, and completes it at the pass ratio (default 0.8), unlocking what follows — report what moved and what unlocked. '
-      + 'Acceptance: pass node instead of quiz — the station must be an acceptance node; each verdict\'s task is the rubric line\'s id (L1, L2, …) or the line VERBATIM. '
-      + 'A line carrying ref is machine-checked by that quiz — never judge it. The learner submits the evidence (terminal output, a screenshot, a repo link), you judge each line. Same cascade.',
+      + 'The engine moves every probed card, carding a card-less miss, and completes the gated station at its pass ratio, unlocking what follows — report what moved and what unlocked. '
+      + 'Acceptance: pass node instead of quiz; each verdict\'s task is a rubric line id (L1, L2…) judged against the evidence the learner submitted. A line carrying ref is machine-checked — never judge it.',
     parameters: {
       project: { type: 'string', description: 'Project id (defaults to the binding).' },
       quiz: { type: 'string', description: 'The quiz id library_quiz returned (a quiz sitting).' },
       node: { type: 'string', description: 'Acceptance station id (an acceptance sitting — instead of quiz).' },
-      resource: { type: 'string', description: 'Resource id when the acceptance station sits on a resource\'s path (omit for the project\'s).' },
+      resource: { type: 'string', description: 'The textbook whose path holds the acceptance station (defaults to wherever the node is).' },
       verdicts: {
         type: 'array',
         required: true,

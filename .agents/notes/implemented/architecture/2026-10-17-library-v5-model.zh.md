@@ -11,7 +11,7 @@ v3/v4 两条线攒出了双轨结构，而实盘错误率指向概念本身而�
 按提案（[proposals/active/2026-10-16-library-v5-model.md](../../../proposals/active/2026-10-16-library-v5-model.md)）把存储布局和所有面一次改完：
 
 - **书就是资源**。`LibraryResource.kind` 增加 `'book'`（`'course'` 也能带 toc）；`toc` 是厚薄开关——有目录的资源可建路线、按章节被 cover、可考、可拍照，薄链接只能整体进路线。书的字段（bookKind、extras、short、author、edition、isbn）住进 `meta`。`LibraryBook` 类型删除。
-- **每个作用域一条路线**，键为 `primaryResourceId?`（空 = 项目自己的路线）。存 `roadmaps/<key>.json`——不再有 `books/<b>/roadmap.json` 与项目根 `roadmap.json` 的双轨。
+- **每个作用域一条路线**，键为 `primaryResourceId?`（空 = 项目自己的路线）。存 `roadmaps/<key>.json`——不再有 `books/<b>/roadmap.json` 与项目根 `roadmap.json` 的双轨。已由 [library-book-paths](2026-10-19-library-book-paths.md) 取代：路线只属于教材，项目不带路线（只有 `roadmaps/<resourceId>.json`）。
 - **节点的 `gate`**（`quiz | acceptance | read`）一个字段说完怎么完成；旧的 `kind` × `acceptance` × 侧站组合校验收进它。
 - **cover 统一一个形状**：`{ ref, locator? }`，ref 自描述——书架 id、裸 url、或 `topic:…`；locator 数目录行（"1-5,7"）。工具层另收字符串简写（`"r_…#1-5"`），`normalizeCoverArg` 照读全部 v3/v4 联合成员。
 - **Assessment 成为实体**（`assessments/<id>.json`）：`type: "quiz"` 带题；`type: "practice"` 带验收站物化的 rubric。采用路线时物化每个验收站的 rubric——内容没变就复用现有 assessment（attempt 留在原地），变了就 supersede 旧的。节点的新卷子 supersede 该站的现役卷。**attempt 只认 `assessmentId`**（verdict 的 `task` 是题目 id 或 rubric 行 id）。
