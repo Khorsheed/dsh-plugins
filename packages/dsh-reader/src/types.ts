@@ -888,3 +888,5 @@ export interface ReaderImageResult {
   /** Why the rescue failed, when it did. */
   readonly error?: string
 }
+
+export type * from './notes-types.ts'

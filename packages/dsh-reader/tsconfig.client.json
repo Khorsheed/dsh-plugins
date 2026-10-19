@@ -14,6 +14,7 @@
   "files": [
     "src/css-modules.d.ts",
     "src/types.ts",
+    "src/notes-types.ts",
     "src/client/contract.ts",
     "src/client/definition.tsx",
     "src/client/index.ts",
@@ -26,6 +27,9 @@
     "src/client/selectors.ts",
     "src/client/ReaderPane.tsx",
     "src/client/translate.ts",
-    "src/client/icons.tsx"
+    "src/client/icons.tsx",
+    "src/client/notes.ts",
+    "src/client/NotesView.tsx",
+    "src/client/useNotes.ts"
   ]
 }

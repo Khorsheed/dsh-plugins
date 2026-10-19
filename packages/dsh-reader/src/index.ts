@@ -13,6 +13,7 @@
  */
 import type { Context } from '@deepseek-ai/cordis'
 import { ReaderService } from './service.ts'
+import { ReaderNotesStore } from './notes.ts'
 import { ReaderRemoteService } from './remote.ts'
 
 export { ReaderService, classifyPayload, normalizeUrl } from './service.ts'
@@ -32,6 +33,7 @@ export {
   serializeStateDoc,
 } from './store.ts'
 export type { ReaderStoreRead } from './store.ts'
+export * from './notes.ts'
 export * from './schedule.ts'
 export * from './types.ts'
 
@@ -39,6 +41,8 @@ declare module '@deepseek-ai/cordis' {
   interface Context {
     /** The reader plugin's service core. */
     reader: ReaderService
+    /** The reader's notes, discussions and article snapshots. */
+    readerNotes: ReaderNotesStore
   }
 }
 
@@ -65,5 +69,6 @@ export interface ReaderConfig {
 export function apply(ctx: Context, config: ReaderConfig = {}): void {
   const service = new ReaderService(ctx, config)
   ctx.provide('reader', service)
+  ctx.provide('readerNotes', new ReaderNotesStore(config))
   ctx.plugin(ReaderRemoteService, {})
 }

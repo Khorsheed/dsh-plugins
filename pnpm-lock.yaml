@@ -933,6 +933,9 @@ importers:
       '@deepseek-ai/cordis':
         specifier: 4.0.4
         version: 4.0.4(@deepseek-ai/cordis-plugin-include@1.0.10)(@deepseek-ai/cordis-plugin-loader@1.0.5)
+      '@deepseek-ai/dsh-agent':
+        specifier: 0.2.1-rc.1
+        version: 0.2.1-rc.1(f598be6adbe72360eeefe1e14c07c6ee)
       '@deepseek-ai/dsh-api-remotes':
         specifier: 0.2.1-rc.1
         version: 0.2.1-rc.1(@deepseek-ai/cordis@4.0.4)(@deepseek-ai/dsh-scope@0.2.1-rc.1(@deepseek-ai/cordis@4.0.4))
@@ -960,6 +963,9 @@ importers:
       '@deepseek-ai/dsh-session':
         specifier: 0.2.1-rc.1
         version: 0.2.1-rc.1(@deepseek-ai/cordis@4.0.4)(@deepseek-ai/dsh-scope@0.2.1-rc.1(@deepseek-ai/cordis@4.0.4))
+      '@deepseek-ai/dsh-tools':
+        specifier: 0.2.1-rc.1
+        version: 0.2.1-rc.1(9bbc0b1bdea21a098692d9e3473c6f70)
       '@deepseek-ai/dsh-typert-protocol':
         specifier: 0.2.1-rc.1
         version: 0.2.1-rc.1(@deepseek-ai/cordis@4.0.4)

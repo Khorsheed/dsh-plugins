@@ -28,6 +28,7 @@ import type { ReaderEntryBodyView } from '../types.ts'
 import type { ReaderCaptureRemote, ReaderExtractedMeta, ReaderFetchPhase, ReaderPaneInjected } from './contract.ts'
 import { extractArticle } from './extract-article.ts'
 import { translationHash } from './translate.ts'
+import { noteTargetForSelection } from './notes.ts'
 import { READER_TAB_ID, readerDefinition } from './definition.tsx'
 import { ReaderPane } from './ReaderPane.tsx'
 import { createReaderStore } from './store.ts'
@@ -225,7 +226,29 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       const capture = ctx.get('remote.capture') as ReaderCaptureRemote | undefined
       return typeof capture?.render === 'function' ? capture : undefined
     },
+    entryNotes: entryId => remote.entryNotes({ entryId }),
+    noteCounts: () => remote.noteCounts(),
+    addNote: request => remote.addNote(request),
+    updateNote: request => remote.updateNote(request),
+    deleteNote: request => remote.deleteNote(request),
+    recordDiscussion: request => remote.recordDiscussion(request),
+    snapshotEntry: request => remote.snapshotEntry(request),
+    canOpenSession: () => workspaceNav()?.openSession !== undefined,
+    openSession: target => {
+      try {
+        workspaceNav()?.openSession?.(target as SessionId)
+      } catch (error) {
+        ctx.logger.warn('reader: openSession failed', error)
+      }
+    },
   })
+
+  /**
+   * ui-workspace's navigation face, probed per call (the canvas / datasets
+   * precedent): a composition without it simply has no 「回到会话」.
+   */
+  const workspaceNav = (): { openSession?: (target: SessionId) => void } | undefined =>
+    ctx.get('uiWorkspace') as { openSession?: (target: SessionId) => void } | undefined
 
   /** The conversation input for a session, when the composition has one. */
   const inputFor = (sessionId: SessionId): { state: { getSnapshot(): { draft: string } }, setDraft(value: string): void } | undefined => {
@@ -244,6 +267,28 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   /** Replace the session's draft; a silent no-op without a conversation surface. */
   const setDraft = (sessionId: SessionId, merged: string): void => {
     inputFor(sessionId)?.setDraft(merged)
+  }
+
+  // 「记笔记」in the quote plugin's selection menu (its `ctx.quoteActions`
+  // registry). Probed, never injected: without quote the row simply does not
+  // exist and the pane's own 「记笔记」 button is the way in. The row shows only
+  // while the selection sits inside a reader article; it then opens THAT
+  // pane's note sheet.
+  const quoteActions = ctx.get('quoteActions') as {
+    registerAction(action: {
+      id: string
+      label: () => string
+      available?: () => boolean
+      run: () => void
+    }): () => void
+  } | undefined
+  if (quoteActions !== undefined && typeof quoteActions.registerAction === 'function') {
+    ctx.effect(() => quoteActions.registerAction({
+      id: 'reader.note',
+      label: () => t('notes.take'),
+      available: () => noteTargetForSelection() !== undefined,
+      run: () => { noteTargetForSelection()?.start() },
+    }), 'reader: quote action')
   }
 
   // Two-stage right-Sidebar registration: the type into the registry, the body

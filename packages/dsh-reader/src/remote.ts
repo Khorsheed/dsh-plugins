@@ -12,6 +12,8 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { ReaderService } from './service.ts'
+import type { ReaderNotesStore } from './notes.ts'
+import type { ReaderEntryIdentity, ReaderEntryNotes, ReaderNote, ReaderNoteInput, ReaderNoteOutcome } from './types.ts'
 import type {
   ReaderAddFailure,
   ReaderAddOutcome,
@@ -44,7 +46,7 @@ export interface ReaderRemoteConfig {}
 
 /** The wire namespace is `reader`: the browser calls `remote.reader.*`. */
 export class ReaderRemoteService extends TypertRemoteService<ReaderRemoteConfig> {
-  static inject = ['reader']
+  static inject = ['reader', 'readerNotes']
 
   constructor(ctx: Context, _config: ReaderRemoteConfig = {}) {
     super(ctx, 'readerRemote', { namespace: 'reader' })
@@ -53,6 +55,11 @@ export class ReaderRemoteService extends TypertRemoteService<ReaderRemoteConfig>
   /** The service core this face delegates to. */
   private get core(): ReaderService {
     return this.ctx.reader
+  }
+
+  /** The notes store this face delegates to. */
+  private get notes(): ReaderNotesStore {
+    return this.ctx.readerNotes
   }
 
   /** Capability handshake: what the browser may rely on in this composition. */
@@ -294,6 +301,50 @@ export class ReaderRemoteService extends TypertRemoteService<ReaderRemoteConfig>
     text: string
   }): Promise<'ok' | 'unavailable'> {
     return this.core.quoteToSideChat(request)
+  }
+  /* ------------------------------------------------------------------ notes */
+
+  /** One article's notes and the conversations that discussed it. */
+  @Remote('entryNotes')
+  async entryNotes(request: { entryId: string }): Promise<{ entry?: ReaderEntryNotes }> {
+    const entry = this.notes.entry(request.entryId)
+    return entry === undefined ? {} : { entry }
+  }
+
+  /** How many notes each article carries. */
+  @Remote('noteCounts')
+  async noteCounts(): Promise<{ counts: Record<string, number> }> {
+    return { counts: this.notes.counts() }
+  }
+
+  /** Keep one excerpt (and its comment). */
+  @Remote('addNote')
+  addNote(request: ReaderNoteInput): Promise<ReaderNote | 'empty' | 'full'> {
+    return this.notes.addNote(request)
+  }
+
+  /** Change or clear one note's comment. */
+  @Remote('updateNote')
+  updateNote(request: { entryId: string; noteId: string; comment: string }): Promise<ReaderNoteOutcome> {
+    return this.notes.updateNote(request)
+  }
+
+  /** Delete one note. */
+  @Remote('deleteNote')
+  deleteNote(request: { entryId: string; noteId: string }): Promise<ReaderNoteOutcome> {
+    return this.notes.deleteNote(request)
+  }
+
+  /** Remember that a conversation discussed this article. */
+  @Remote('recordDiscussion')
+  recordDiscussion(request: ReaderEntryIdentity & { sessionId: string; sessionTitle?: string }): Promise<'ok' | 'empty'> {
+    return this.notes.recordSession(request)
+  }
+
+  /** Hand the host the article's original text, block by block, for the model to read. */
+  @Remote('snapshotEntry')
+  snapshotEntry(request: ReaderEntryIdentity & { paragraphs: string[] }): Promise<'ok' | 'empty'> {
+    return this.notes.snapshot(request)
   }
 }
 

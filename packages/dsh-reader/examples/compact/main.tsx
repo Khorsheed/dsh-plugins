@@ -73,7 +73,35 @@ const face = {
   recordRead: () => ok({ entries: 1 }),
   readDraft: () => '', setDraft: () => {}, copyText: () => Promise.resolve(true),
   openExternal: () => true, browserTabAvailable: () => false, openBrowserTab: () => false, captureRemote: () => undefined,
+  // Notes, in memory (the host's notes.json, faked).
+  useSessions: select => select({ byId: { preview: { displayTitle: '位置编码讨论' } } }),
+  entryNotes: entryId => ok(notes[entryId] === undefined ? {} : { entry: notes[entryId] }),
+  noteCounts: () => ok({ counts: Object.fromEntries(Object.entries(notes).map(([id, entry]) => [id, entry.notes.length])) }),
+  addNote: request => {
+    const entry = notes[request.entryId] ?? { entryId: request.entryId, title: request.title, notes: [], sessions: [], nextNote: 1, updatedAt: '' }
+    const note = { id: `n${entry.nextNote}`, anchor: { block: request.block, quote: request.quote, ...(request.translated ? { translated: request.translated } : {}) }, ...(request.comment ? { comment: request.comment } : {}), createdAt: '', updatedAt: '' }
+    notes[request.entryId] = { ...entry, notes: [...entry.notes, note].sort((a, b) => a.anchor.block - b.anchor.block), nextNote: entry.nextNote + 1 }
+    return ok(note)
+  },
+  updateNote: request => {
+    const entry = notes[request.entryId]
+    if (entry) notes[request.entryId] = { ...entry, notes: entry.notes.map(note => note.id === request.noteId ? { ...note, comment: request.comment || undefined } : note) }
+    return ok('ok')
+  },
+  deleteNote: request => {
+    const entry = notes[request.entryId]
+    if (entry) notes[request.entryId] = { ...entry, notes: entry.notes.filter(note => note.id !== request.noteId) }
+    return ok('ok')
+  },
+  recordDiscussion: request => {
+    const entry = notes[request.entryId]
+    if (entry) notes[request.entryId] = { ...entry, sessions: [{ sessionId: request.sessionId, title: request.sessionTitle, lastAt: '' }] }
+    return ok('ok')
+  },
+  snapshotEntry: () => ok('ok'),
+  canOpenSession: () => true, openSession: () => {},
 }
+const notes: Record<string, any> = {}
 // Every other verb the pane may call answers an empty success.
 const quiet = ['addSource', 'refresh', 'removeSource', 'updateSource', 'quoteToSideChat', 'storeEntryBody', 'getRawBody', 'setCachePolicy',
   'clearTranslations', 'createTag', 'tagEntry', 'renameTag', 'deleteTag', 'pruneTags', 'clearRecent', 'rememberSentences', 'fetchEntryBody', 'fetchImage']

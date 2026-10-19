@@ -2780,3 +2780,29 @@
   }
 }
 
+
+/* ------------------------------------------------------------------ notes */
+
+/* The article / notes switch under the detail bar. */
+.detailTabs {
+  flex: none;
+  padding: 0 var(--reader-gutter);
+}
+
+/* Hidden, not unmounted, while the notes face shows (the class must not win
+   over the attribute). */
+.detailBody[hidden] {
+  display: none;
+}
+
+/* Kept excerpts, painted through the CSS Custom Highlight API (notes.ts):
+   ranges over the text on screen, so the body's own DOM is never touched. */
+.article::highlight(reader-note),
+.article ::highlight(reader-note) {
+  background-color: color-mix(in srgb, var(--dsw-alias-state-business-primary) 26%, transparent);
+}
+
+.article::highlight(reader-note-flash),
+.article ::highlight(reader-note-flash) {
+  background-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 34%, transparent);
+}

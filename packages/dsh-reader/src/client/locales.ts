@@ -70,6 +70,13 @@ export type ReaderKey =
   | 'quote.copied' | 'quote.copyFailed' | 'quote.quoted'
   | 'quote.toSideChat' | 'quote.sideChatUnavailable'
   | 'when.justNow' | 'when.minutes' | 'when.hours' | 'when.yesterday' | 'when.days'
+  | 'notes.tabArticle' | 'notes.tabNotes' | 'notes.tabsLabel' | 'notes.take' | 'notes.takeHint'
+  | 'notes.sheetTitle' | 'notes.excerpt' | 'notes.commentPlaceholder' | 'notes.commentOptional'
+  | 'notes.save' | 'notes.saveFailed' | 'notes.empty' | 'notes.excerpts' | 'notes.discussions'
+  | 'notes.noDiscussions' | 'notes.select' | 'notes.selectDone' | 'notes.selected' | 'notes.discuss'
+  | 'notes.discussAll' | 'notes.edit' | 'notes.delete' | 'notes.deleteConfirm' | 'notes.notFound'
+  | 'notes.inTranslation' | 'notes.discussedIn' | 'notes.draftHeading' | 'notes.draftComment'
+  | 'notes.draftHint' | 'notes.untitledSession' | 'notes.badge' | 'notes.filter'
 
 export const en = {
   'tab.label': 'Inspiration',
@@ -278,6 +285,39 @@ export const en = {
   'when.hours': '{count} h ago',
   'when.yesterday': 'yesterday',
   'when.days': '{count} d ago',
+
+  'notes.tabArticle': 'Article',
+  'notes.tabNotes': 'Notes',
+  'notes.tabsLabel': 'Article and notes',
+  'notes.take': 'Take a note',
+  'notes.takeHint': 'Select a passage in the article first',
+  'notes.sheetTitle': 'Take a note',
+  'notes.excerpt': 'Excerpt',
+  'notes.commentPlaceholder': 'What do you make of it? (optional)',
+  'notes.commentOptional': 'The comment is optional — the excerpt alone is kept too',
+  'notes.save': 'Save',
+  'notes.saveFailed': 'Could not save the note',
+  'notes.empty': 'No notes yet. Select a passage and choose “Take a note”.',
+  'notes.excerpts': 'Excerpts · in article order',
+  'notes.discussions': 'Discussed in',
+  'notes.noDiscussions': 'Not discussed yet. Bring your notes to the conversation.',
+  'notes.select': 'Select',
+  'notes.selectDone': 'Done',
+  'notes.selected': '{count} selected',
+  'notes.discuss': 'Discuss',
+  'notes.discussAll': 'Discuss with these notes',
+  'notes.edit': 'Edit comment',
+  'notes.delete': 'Delete',
+  'notes.deleteConfirm': 'Delete this note?',
+  'notes.notFound': 'The article changed — this passage is no longer in it',
+  'notes.inTranslation': 'Translation',
+  'notes.discussedIn': 'Back to the conversation',
+  'notes.draftHeading': 'My notes on this article ({count}):',
+  'notes.draftComment': 'My comment: ',
+  'notes.draftHint': '(article id {id} — reader_read reads the full text)',
+  'notes.untitledSession': 'Conversation',
+  'notes.badge': '{count} notes',
+  'notes.filter': 'Has notes',
 }
 
 export const zh = {
@@ -487,6 +527,39 @@ export const zh = {
   'when.hours': '{count} 小时前',
   'when.yesterday': '昨天',
   'when.days': '{count} 天前',
+
+  'notes.tabArticle': '正文',
+  'notes.tabNotes': '笔记',
+  'notes.tabsLabel': '正文与笔记',
+  'notes.take': '记笔记',
+  'notes.takeHint': '先在正文里选中一段',
+  'notes.sheetTitle': '记笔记',
+  'notes.excerpt': '摘抄',
+  'notes.commentPlaceholder': '写点你的想法（可空）',
+  'notes.commentOptional': '评论可空，只存摘抄也行',
+  'notes.save': '保存',
+  'notes.saveFailed': '笔记没有存上',
+  'notes.empty': '还没有笔记。在正文里选中一段，点「记笔记」。',
+  'notes.excerpts': '摘抄笔记 · 按原文顺序',
+  'notes.discussions': '讨论过这篇的会话',
+  'notes.noDiscussions': '还没有讨论过。带着笔记去会话里聊聊。',
+  'notes.select': '选择',
+  'notes.selectDone': '完成',
+  'notes.selected': '已选 {count} 条',
+  'notes.discuss': '带着讨论',
+  'notes.discussAll': '带着笔记讨论',
+  'notes.edit': '编辑评论',
+  'notes.delete': '删除',
+  'notes.deleteConfirm': '删除这条笔记？',
+  'notes.notFound': '原文已变，找不到这一句',
+  'notes.inTranslation': '译文',
+  'notes.discussedIn': '回到会话',
+  'notes.draftHeading': '我在这篇里的笔记（{count} 条）：',
+  'notes.draftComment': '我的评论：',
+  'notes.draftHint': '（文章 id：{id}，可用 reader_read 读全文）',
+  'notes.untitledSession': '会话',
+  'notes.badge': '笔记 {count}',
+  'notes.filter': '有笔记',
 }
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {

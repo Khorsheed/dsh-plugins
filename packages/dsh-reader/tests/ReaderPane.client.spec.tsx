@@ -27,7 +27,7 @@ import { zh } from '../src/client/locales.ts'
 import { ReaderPane } from '../src/client/ReaderPane.tsx'
 import { forgetSession, forgetTranslators, readSession, rememberReadingPosition } from '../src/client/session.ts'
 import { UNIT_SEPARATOR, clearMemory, translationHash } from '../src/client/translate.ts'
-import type { ReaderBody, ReaderEntryFetchState, ReaderRecentEntry, ReaderSourceSummary } from '../src/types.ts'
+import type { ReaderBody, ReaderEntryFetchState, ReaderEntryNotes, ReaderRecentEntry, ReaderSourceSummary } from '../src/types.ts'
 
 /** A translate over the zh dictionary: its key set is the source of truth. */
 const t = ((key: keyof typeof zh, params?: Record<string, string>): string =>
@@ -156,6 +156,8 @@ function bench(options: BenchOptions = {}) {
     ok: true as const,
     value: { html: `<article><p>${'渲染抓到的正文。'.repeat(30)}</p></article>`, finalUrl: url },
   }))
+  /** The notes the host holds for the open article (a fake of notes.json). */
+  const notesState: { entry?: ReaderEntryNotes } = {}
   const mocks = {
     listSources: vi.fn(async () => ({ ok: true as const, value: { sources: assigned } })),
     getBodies: vi.fn(async (ids: string[]) => ({
@@ -199,6 +201,22 @@ function bench(options: BenchOptions = {}) {
     openBrowserTab: vi.fn(() => options.browserTab ?? false),
     captureRender,
     captureRemote: vi.fn(() => (options.capture === true ? { render: captureRender } : undefined)),
+    entryNotes: vi.fn(async (_entryId: string) => ({ ok: true as const, value: notesState.entry === undefined ? {} : { entry: notesState.entry } })),
+    addNote: vi.fn(async (request: { entryId: string; title: string; block: number; quote: string; comment?: string; translated?: string }) => {
+      const note = {
+        id: `n${String((notesState.entry?.notes.length ?? 0) + 1)}`,
+        anchor: { block: request.block, quote: request.quote, ...(request.translated === undefined ? {} : { translated: request.translated }) },
+        ...(request.comment === undefined ? {} : { comment: request.comment }),
+        createdAt: '', updatedAt: '',
+      }
+      notesState.entry = {
+        entryId: request.entryId, title: request.title, notes: [...(notesState.entry?.notes ?? []), note],
+        sessions: notesState.entry?.sessions ?? [], nextNote: 2, updatedAt: '',
+      }
+      return { ok: true as const, value: note }
+    }),
+    recordDiscussion: vi.fn(async () => ({ ok: true as const, value: 'ok' })),
+    snapshotEntry: vi.fn(async () => ({ ok: true as const, value: 'ok' })),
     setDraft: vi.fn(),
     updateSource: vi.fn(async () => ({ ok: true as const, value: 'ok' as const })),
     refresh: vi.fn(async () => ({ ok: true as const, value: { results: [] } })),
@@ -338,6 +356,16 @@ function bench(options: BenchOptions = {}) {
     browserTabAvailable: mocks.browserTabAvailable,
     openBrowserTab: mocks.openBrowserTab,
     captureRemote: mocks.captureRemote,
+    useSessions: (select: (state: { byId: Record<string, { displayTitle?: string }> }) => unknown) => select({ byId: {} }),
+    entryNotes: mocks.entryNotes,
+    noteCounts: async () => ({ ok: true as const, value: { counts: {} } }),
+    addNote: mocks.addNote,
+    updateNote: async () => ({ ok: true as const, value: 'ok' }),
+    deleteNote: async () => ({ ok: true as const, value: 'ok' }),
+    recordDiscussion: mocks.recordDiscussion,
+    snapshotEntry: mocks.snapshotEntry,
+    canOpenSession: () => false,
+    openSession: () => undefined,
   } as unknown as ReaderPaneProps
 
   const view = render(<ReaderPane {...props} />)
@@ -3878,5 +3906,60 @@ describe('several incomplete sources fold into one line', () => {
     expect(screen.getAllByText(zh['state.incompleteReason'], { exact: false })).toHaveLength(2)
     fireEvent.click(screen.getByText(zh['action.foldList']))
     expect(screen.queryByText(zh['state.incompleteReason'], { exact: false })).toBeNull()
+  })
+})
+
+describe('notes: take one from a selection, find it in the notes face, bring it to the conversation', () => {
+  async function openedArticle() {
+    const ui = bench({
+      sources: [rssSource('hn', { label: 'Hacker News' })],
+      payloads: { hn: feed('hn', [{ title: '位置编码', description: '<p>自注意力不看顺序。</p><p>旋转 query 和 key。</p>' }]) },
+    })
+    await ui.settle()
+    fireEvent.click(await screen.findByText('位置编码'))
+    await screen.findByText(zh['action.quote'])
+    return ui
+  }
+
+  /** Select a whole paragraph of the rendered article. */
+  function selectParagraph(text: string): void {
+    const paragraph = screen.getByText(text)
+    const selection = window.getSelection()!
+    selection.removeAllRanges()
+    const range = document.createRange()
+    range.selectNodeContents(paragraph)
+    selection.addRange(range)
+  }
+
+  it('hands the host the article text once it renders', async () => {
+    const ui = await openedArticle()
+    await waitFor(() => { expect(ui.mocks.snapshotEntry).toHaveBeenCalled() })
+    const request = ui.mocks.snapshotEntry.mock.calls[0]?.[0] as unknown as { paragraphs: string[]; title: string }
+    expect(request.title).toBe('位置编码')
+    expect(request.paragraphs).toEqual(['自注意力不看顺序。', '旋转 query 和 key。'])
+  })
+
+  it('asks for a selection first, then saves the excerpt with its block and comment', async () => {
+    const ui = await openedArticle()
+    fireEvent.click(screen.getByText(zh['notes.take']))
+    expect(screen.getByText(zh['notes.takeHint'])).toBeTruthy()
+    selectParagraph('旋转 query 和 key。')
+    fireEvent.click(screen.getByText(zh['notes.take']))
+    const sheet = await screen.findByRole('dialog', { name: zh['notes.sheetTitle'] })
+    fireEvent.change(within(sheet).getByRole('textbox'), { target: { value: '为什么只看相对距离？' } })
+    fireEvent.click(within(sheet).getByText(`${zh['notes.save']} ⌘⏎`))
+    await waitFor(() => { expect(ui.mocks.addNote).toHaveBeenCalled() })
+    expect(ui.mocks.addNote.mock.calls[0]?.[0]).toMatchObject({ block: 1, quote: '旋转 query 和 key。', comment: '为什么只看相对距离？', title: '位置编码' })
+    await waitFor(() => { expect(screen.queryByRole('dialog')).toBeNull() })
+    // The notes tab now carries the count, and the notes face lists the excerpt.
+    fireEvent.click(await screen.findByRole('tab', { name: /笔记\s*1/ }))
+    expect(await screen.findByText('旋转 query 和 key。', { selector: 'button' })).toBeTruthy()
+    // Bringing the notes to the conversation merges a quote block into the draft
+    // and remembers this conversation on the article.
+    fireEvent.click(screen.getByText(zh['notes.discussAll']))
+    const written = ui.mocks.setDraft.mock.calls.at(-1)?.[0] as string
+    expect(written).toContain('> n1 ¶2「旋转 query 和 key。」')
+    expect(written).toContain('> 我的评论：为什么只看相对距离？')
+    await waitFor(() => { expect(ui.mocks.recordDiscussion).toHaveBeenCalled() })
   })
 })

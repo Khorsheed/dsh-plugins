@@ -10,10 +10,14 @@
     "src/image-fetch.ts",
     "src/index.ts",
     "src/link-resolvers.ts",
+    "src/notes.ts",
+    "src/notes-types.ts",
     "src/remote.ts",
     "src/service.ts",
     "src/schedule.ts",
     "src/store.ts",
+    "src/tool.ts",
+    "src/tools.ts",
     "src/types.ts"
   ]
 }
