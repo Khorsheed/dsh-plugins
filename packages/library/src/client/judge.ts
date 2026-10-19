@@ -1,8 +1,11 @@
 /**
  * Judging the answers the sidebar can judge itself: a choice against its key
  * (a letter, the option text, or a lettered option) and a fill-in against its
- * key (alternatives split on / or |). Width, case, whitespace and trailing
- * punctuation never decide. Open answers are the coach's.
+ * key — the same text loosely (width, case, spaces, LaTeX vs unicode, the
+ * comma's width), or the same NUMBER (1/2 = 0.5 = \frac{1}{2}), part by part
+ * for a multi-blank answer; alternatives are written " / ", "|" or "或". What
+ * still disagrees, the learner may overrule (「我答对了」). Open answers are
+ * the coach's.
  *
  * @module @khorsheed/dsh-library/client/judge
  */
@@ -16,10 +19,17 @@ const MATH_COMMANDS: Readonly<Record<string, string>> = {
   pi: 'π', alpha: 'α', beta: 'β', gamma: 'γ', theta: 'θ', lambda: 'λ', mu: 'μ', sigma: 'σ', phi: 'φ', omega: 'ω',
 }
 
-/** Fold LaTeX notation onto its plain reading: $…$ delimiters, known commands, braces, \!/\, spacing. */
+/** Fold LaTeX notation onto its plain reading: $…$ delimiters, \sqrt / \frac, known commands, braces, \!/\, spacing. */
 function mathFold(text: string): string {
-  return text
-    .replace(/\$+/g, '')
+  let folded = text.replace(/\$+/g, '').replace(/\\left|\\right/g, '')
+  // Innermost first, so \frac{\sqrt{3}}{2} reads as √3/2.
+  for (let pass = 0; pass < 4; pass += 1) {
+    folded = folded
+      .replace(/\\sqrt\s*\{([^{}]*)\}/g, (_raw, body: string) => /^[\w.π]+$/.test(body) ? `√${body}` : `√(${body})`)
+      .replace(/\\[dt]?frac\s*\{([^{}]*)\}\s*\{([^{}]*)\}/g, (_raw, top: string, bottom: string) =>
+        `${/^[\w.π√]+$/.test(top) ? top : `(${top})`}/${/^[\w.π√]+$/.test(bottom) ? bottom : `(${bottom})`}`)
+  }
+  return folded
     .replace(/\\([a-zA-Z]+)/g, (_raw, cmd: string) => MATH_COMMANDS[cmd] ?? cmd)
     .replace(/\\[^a-zA-Z]/g, '')
     .replace(/[{}]/g, '')
@@ -27,7 +37,95 @@ function mathFold(text: string): string {
 
 /** Compare answers loosely. */
 function norm(text: string): string {
-  return mathFold(text.normalize('NFKC')).toLowerCase().replace(/\s+/g, ' ').trim().replace(/[。.!！?？]+$/, '')
+  return mathFold(text.normalize('NFKC').replace(/\u2044/g, '/')).toLowerCase().replace(/\s+/g, ' ').trim().replace(/[。.!！?？]+$/, '')
+}
+
+/** Looser still: no spaces, one minus sign, no wrapping quotes or trailing clause punctuation. */
+function loose(text: string): string {
+  return norm(text)
+    .replace(/\s+/g, '')
+    .replace(/[−–—]/g, '-')
+    .replace(/[×*·]/g, '×')
+    // Wrapping quotes go; brackets stay (an interval's brackets are the answer).
+    .replace(/^[「『“"'‘《]+|[」』”"'’》]+$/g, '')
+    .replace(/[,;:、]+$/, '')
+}
+
+/**
+ * The value of a plain numeric expression — digits, + - × / ^, parentheses,
+ * √, π, a trailing % — or undefined. A tiny recursive-descent parser, never
+ * eval: 1/2, 0.5, √3/2, 2π/3 and 50% all read as numbers.
+ */
+export function numericValue(text: string): number | undefined {
+  const source = loose(text).replace(/^[a-zα-ω]\w*=/, '').replace(/,/g, '')
+  if (source === '' || !/^[\d.+\-×/^()√π%]+$/.test(source) || !/\d|π/.test(source)) return undefined
+  let at = 0
+  const peek = (): string => source[at] ?? ''
+  const expr = (): number => {
+    let value = term()
+    while (peek() === '+' || peek() === '-') value = source[at++] === '+' ? value + term() : value - term()
+    return value
+  }
+  const term = (): number => {
+    let value = power()
+    for (;;) {
+      if (peek() === '×') { at += 1; value *= power() }
+      else if (peek() === '/') { at += 1; value /= power() }
+      else if (/[\d.(√π]/.test(peek())) value *= power() // implicit: 2π, 2√3
+      else return value
+    }
+  }
+  const power = (): number => {
+    const base = unary()
+    if (peek() !== '^') return base
+    at += 1
+    return base ** unary()
+  }
+  const unary = (): number => {
+    if (peek() === '-') { at += 1; return -unary() }
+    if (peek() === '+') { at += 1; return unary() }
+    if (peek() === '√') { at += 1; return Math.sqrt(atom()) }
+    return atom()
+  }
+  const atom = (): number => {
+    if (peek() === '(') {
+      at += 1
+      const value = expr()
+      if (peek() !== ')') throw new Error('unbalanced')
+      at += 1
+      return value
+    }
+    if (peek() === 'π') { at += 1; return Math.PI }
+    const match = /^\d*\.?\d+/.exec(source.slice(at))
+    if (match === null) throw new Error('not a number')
+    at += match[0].length
+    let value = Number(match[0])
+    if (peek() === '%') { at += 1; value /= 100 }
+    return value
+  }
+  try {
+    const value = expr()
+    return at === source.length && Number.isFinite(value) ? value : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** One answer against one key: same text (loosely), or the same number. */
+function sameAtom(given: string, want: string): boolean {
+  if (norm(given) === norm(want) || loose(given) === loose(want)) return true
+  const a = numericValue(given)
+  const b = numericValue(want)
+  return a !== undefined && b !== undefined && Math.abs(a - b) <= 1e-9 * Math.max(1, Math.abs(b))
+}
+
+/** A multi-blank answer ("1/2, √3/2") matches part by part, in order. */
+function sameAnswer(given: string, want: string): boolean {
+  if (sameAtom(given, want)) return true
+  const split = (text: string): string[] => norm(text).split(/\s*[,;、]\s*/).filter(part => part !== '')
+  const parts = split(given)
+  const keys = split(want)
+  return keys.length > 1 && parts.length === keys.length && keys.every((key, index) => sameAtom(parts[index]!, key))
 }
 
 /** The option index an answer key names, or -1. */
@@ -41,10 +139,15 @@ export function choiceIndex(options: readonly string[], answer: string): number 
   return options.findIndex(option => norm(option).includes(key) || key.includes(norm(option)))
 }
 
-/** Whether a fill-in answer matches the key. */
+/**
+ * Whether a fill-in answer matches the key. The whole key is tried first —
+ * "1/2" is a fraction, never two alternatives — then alternatives written
+ * " / " (spaced), "|" or "或".
+ */
 export function fillMatches(input: string, answer: string): boolean {
-  const given = norm(input)
-  return given !== '' && answer.split(/[/|]/).some(alternative => norm(alternative) === given)
+  if (norm(input) === '') return false
+  const alternatives = [answer, ...answer.split(/\s+\/\s+|\s*[|｜]\s*|\s*或\s*/)].filter(alternative => alternative.trim() !== '')
+  return alternatives.some(alternative => sameAnswer(input, alternative))
 }
 
 /* ---------------------------------------------------------------- review */
