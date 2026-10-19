@@ -386,3 +386,29 @@ describe('local-agent-claude-code endpoint auth', () => {
     await expect(registered[0]!.logout!(home)).rejects.toThrow('settings card')
   })
 })
+
+describe('local-agent-claude-code /check subcommand', () => {
+  function invocation(home: string): never {
+    return { agent: { ctx: { localAgent: { homeDir: () => home } } } } as never
+  }
+
+  it('replies with the served model list when the saved credential verifies', async () => {
+    const { home, registered } = mount({ baseUrl: 'https://relay.example.com', apiKey: 'sk-deploy' })
+    vi.stubGlobal('fetch', async () => ({
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({ data: [{ id: 'claude-a' }] }),
+    }))
+    const result = await registered[0]!.subcommand!('check', invocation(home)) as { text: string }
+    expect(result.text).toBe('Endpoint reachable (https://relay.example.com): 1 model(s) served — claude-a')
+    vi.unstubAllGlobals()
+  })
+
+  it('tells the user to configure a credential first when none is saved', async () => {
+    const { home, registered } = mount()
+    vi.stubGlobal('fetch', async () => { throw new Error('must not be called') })
+    const result = await registered[0]!.subcommand!('check', invocation(home)) as { text: string }
+    expect(result.text).toContain('No endpoint credential')
+    vi.unstubAllGlobals()
+  })
+})

@@ -545,3 +545,27 @@ describe('ClaudeCodeSettingsCard endpoint credential block', () => {
     expect(harness.scope.unset).not.toHaveBeenCalledWith('baseUrl')
   })
 })
+
+describe('ClaudeCodeSettingsCard endpoint verify button', () => {
+  it('runs /claude-code check against the saved endpoint and shows the reply', async () => {
+    const runCommand = vi.fn().mockResolvedValue('Endpoint reachable (https://relay.example.com): 2 model(s) served — claude-a, claude-b')
+    renderCard({ runCommand, value: { live: false, liveMirrorGranularity: 'event', baseUrl: 'https://relay.example.com', apiKey: 'sk-stored' } })
+    await openCard()
+
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['endpoint.check'] })) })
+    expect(runCommand).toHaveBeenCalledWith(SESSION, '/claude-code check')
+    expect(screen.getByText(/Endpoint reachable/)).toBeTruthy()
+  })
+
+  it('stays disabled while drafts are unsaved (it verifies the SAVED configuration)', async () => {
+    const runCommand = vi.fn().mockResolvedValue('')
+    renderCard({ runCommand })
+    await openCard()
+
+    const check = screen.getByRole('button', { name: zh['endpoint.check'] }) as HTMLButtonElement
+    expect(check.disabled).toBe(false)
+    fireEvent.change(screen.getByLabelText(zh['endpoint.apiKey']), { target: { value: 'sk-draft' } })
+    expect(check.disabled).toBe(true)
+    expect(runCommand).not.toHaveBeenCalled()
+  })
+})

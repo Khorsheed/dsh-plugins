@@ -22,6 +22,7 @@ import { endpointHost } from '@khorsheed/dsh-local-agent/types'
 import { ClaudeCliProvider, claudeCliVersion } from './claude-cli-provider.ts'
 import type { ClaudeEndpointAuth } from './endpoint-auth.ts'
 import {
+  checkClaudeEndpoint,
   clearEndpointAuth,
   endpointAuthFileExists,
   endpointAuthStamp,
@@ -388,6 +389,15 @@ export function apply(ctx: Context, config: Config): void {
                 ? 'No claude sessions in the scoped home yet.'
                 : records.map(r => `${r.id} ${r.workDir}`).join('\n'),
             }))
+        }
+        // `/claude-code check`: the settings card's verify button — a cheap
+        // token-free probe of the SAVED endpoint (the reply tells the user to
+        // save first when a credential is missing).
+        if (verb === 'check') {
+          const scopeHome = invocation.agent.ctx.localAgent.homeDir('claude-code')
+          return resolveEndpoint(scopeHome)
+            .then(endpoint => checkClaudeEndpoint(endpoint))
+            .then(text => ({ kind: 'success', text }))
         }
         return undefined
       },

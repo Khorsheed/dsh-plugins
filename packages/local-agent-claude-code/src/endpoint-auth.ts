@@ -195,3 +195,65 @@ export async function writeEndpointAuth(homeDir: string, auth: ClaudeEndpointAut
 export async function clearEndpointAuth(homeDir: string): Promise<void> {
   await rm(join(homeDir, ENDPOINT_AUTH_FILE), { force: true })
 }
+
+/** The official endpoint used when no baseUrl is configured anywhere. */
+const OFFICIAL_BASE_URL = 'https://api.anthropic.com'
+
+/** How many served model ids the check reply lists before truncating. */
+const CHECK_MODEL_LIST_LIMIT = 8
+
+/** Bound on the error-body excerpt a failed check reports. */
+const CHECK_ERROR_BODY_LIMIT = 200
+
+/** The subcommand's fetch shape (injected in tests). */
+export type EndpointCheckFetch = (url: string, init: { headers: Record<string, string>; signal: AbortSignal }) => Promise<{ ok: boolean; status: number; text(): Promise<string> }>
+
+/**
+ * Probe the resolved endpoint with a cheap, token-free round-trip: `GET
+ * <baseUrl>/v1/models` with the resolved credential's auth header(s). A 200
+ * proves both reachability and credential validity — the exact evidence a
+ * "verify" button needs — and the served model list rides the reply so the
+ * user sees what the endpoint offers (any id can be typed into the model
+ * field by hand). Never throws: every failure mode folds into the reply
+ * text, since the reply IS the diagnostic.
+ * @param endpoint - the resolved endpoint auth (scope file over settings).
+ * @param fetchImpl - the HTTP fetch; default the host's global fetch.
+ * @param timeoutMs - the whole probe's deadline.
+ * @returns the human-readable verdict for the `/claude-code check` reply.
+ */
+export async function checkClaudeEndpoint(
+  endpoint: ClaudeEndpointAuth,
+  fetchImpl?: EndpointCheckFetch,
+  timeoutMs = 8_000,
+): Promise<string> {
+  if (!hasEndpointCredential(endpoint)) {
+    return 'No endpoint credential configured — fill API Key or Auth Token on the settings card (or the profile row) first.'
+  }
+  const baseUrl = (endpoint.baseUrl ?? OFFICIAL_BASE_URL).replace(/\/+$/, '')
+  const headers: Record<string, string> = { 'anthropic-version': '2023-06-01' }
+  if (endpoint.apiKey !== undefined) headers['x-api-key'] = endpoint.apiKey
+  if (endpoint.authToken !== undefined) headers['authorization'] = `Bearer ${endpoint.authToken}`
+  const fetcher = fetchImpl ?? (globalThis.fetch as unknown as EndpointCheckFetch)
+  let response: { ok: boolean; status: number; text(): Promise<string> }
+  try {
+    response = await fetcher(`${baseUrl}/v1/models`, { headers, signal: AbortSignal.timeout(timeoutMs) })
+  } catch (error) {
+    return `Endpoint unreachable (${baseUrl}): ${error instanceof Error ? error.message : String(error)}`
+  }
+  if (!response.ok) {
+    const body = (await response.text().catch(() => '')).slice(0, CHECK_ERROR_BODY_LIMIT)
+    return `Endpoint answered HTTP ${String(response.status)} (${baseUrl})${body === '' ? '' : `: ${body}`}`
+  }
+  let models: { id?: unknown; display_name?: unknown }[]
+  try {
+    const parsed = JSON.parse(await response.text()) as { data?: unknown }
+    models = Array.isArray(parsed.data) ? parsed.data as typeof models : []
+  } catch {
+    return `Endpoint reachable (${baseUrl}) but the model list did not parse — the credential worked, the reply was not /v1/models-shaped.`
+  }
+  const ids = models.map(model => typeof model.id === 'string' ? model.id : undefined).filter((id): id is string => id !== undefined)
+  if (ids.length === 0) return `Endpoint reachable (${baseUrl}); it serves no models.`
+  const listed = ids.slice(0, CHECK_MODEL_LIST_LIMIT).join(', ')
+  const more = ids.length > CHECK_MODEL_LIST_LIMIT ? `, … +${String(ids.length - CHECK_MODEL_LIST_LIMIT)} more` : ''
+  return `Endpoint reachable (${baseUrl}): ${String(ids.length)} model(s) served — ${listed}${more}`
+}

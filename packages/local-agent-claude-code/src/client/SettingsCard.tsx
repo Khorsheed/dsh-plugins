@@ -2,6 +2,7 @@ import type { HarnessModelPickerInput } from '@khorsheed/dsh-local-agent/client'
 import type { ReactNode } from 'react'
 import { useEffect, useRef, useState } from 'react'
 import type { SettingsScope, SettingsScopeSnapshot } from '@khorsheed/dsh-local-agent/src/client/settings-scope.ts'
+import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: the plugins.item list-slot SlotMap merge.
 import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
@@ -12,6 +13,7 @@ import type { LocalAgentModelInfo } from '@khorsheed/dsh-local-agent/types'
 // sanctioned core/companion edge (the host half already depends on the core);
 // the block carries no runtime identity to share.
 import {
+  mainSessionId,
   ProviderAuthBlock, type ProviderAuthBlockProps, type ProviderAuthInjected,
 } from '@khorsheed/dsh-local-agent/src/client/ProviderAuthBlock.tsx'
 import { AuthStatusDot } from '@khorsheed/dsh-local-agent/src/client/AuthStatusDot.tsx'
@@ -294,6 +296,27 @@ function CardBody({ state, auth, authT, renderModelPicker, useSessions, t }: {
     endpointSaved, endpointError, endpointDirty, saveEndpoint,
     setBaseUrlDraft, setApiKeyDraft, setAuthTokenDraft,
   } = state
+  // The verify button: runs `/claude-code check` against the SAVED endpoint
+  // (unsaved drafts deliberately disable it — what it verifies is the saved
+  // configuration) and shows the command reply inline.
+  const sessionId = useSessions((list: SessionListState) => mainSessionId(list))
+  const [checking, setChecking] = useState(false)
+  const [checkText, setCheckText] = useState<string | null>(null)
+  const runCheck = (): void => {
+    if (sessionId === undefined) return
+    setChecking(true)
+    setCheckText(null)
+    void auth.runCommand(sessionId, '/claude-code check').then(
+      (text) => {
+        setCheckText(text ?? t('endpoint.checkUnavailable'))
+        setChecking(false)
+      },
+      () => {
+        setCheckText(t('endpoint.checkFailed'))
+        setChecking(false)
+      },
+    )
+  }
   // The free-text input, single-sourced for both presentations: bare when no
   // vocabulary exists (a fresh install degrades to exactly the pre-picker
   // field), or inside the select-like field next to its chevron. No datalist:
@@ -326,35 +349,41 @@ function CardBody({ state, auth, authT, renderModelPicker, useSessions, t }: {
           t={authT}
         />
         <div className={css.endpointFields}>
-          <input
-            type="text"
-            className={css.modelInput}
-            value={baseUrlValue}
-            placeholder={t('endpoint.baseUrl.placeholder')}
-            aria-label={t('endpoint.baseUrl')}
-            disabled={!ready}
-            onChange={(event) => { setBaseUrlDraft(event.currentTarget.value) }}
-          />
-          <input
-            type="password"
-            className={css.modelInput}
-            value={apiKeyDraft ?? ''}
-            placeholder={apiKeyConfigured ? t('endpoint.secret.configured') : t('endpoint.secret.placeholder')}
-            aria-label={t('endpoint.apiKey')}
-            autoComplete="off"
-            disabled={!ready}
-            onChange={(event) => { setApiKeyDraft(event.currentTarget.value) }}
-          />
-          <input
-            type="password"
-            className={css.modelInput}
-            value={authTokenDraft ?? ''}
-            placeholder={authTokenConfigured ? t('endpoint.secret.configured') : t('endpoint.secret.placeholder')}
-            aria-label={t('endpoint.authToken')}
-            autoComplete="off"
-            disabled={!ready}
-            onChange={(event) => { setAuthTokenDraft(event.currentTarget.value) }}
-          />
+          <label className={css.endpointField}>
+            <span className={css.endpointLabel}>{t('endpoint.baseUrl')}</span>
+            <input
+              type="text"
+              className={css.modelInput}
+              value={baseUrlValue}
+              placeholder={t('endpoint.baseUrl.placeholder')}
+              disabled={!ready}
+              onChange={(event) => { setBaseUrlDraft(event.currentTarget.value) }}
+            />
+          </label>
+          <label className={css.endpointField}>
+            <span className={css.endpointLabel}>{t('endpoint.apiKey')}</span>
+            <input
+              type="password"
+              className={css.modelInput}
+              value={apiKeyDraft ?? ''}
+              placeholder={apiKeyConfigured ? t('endpoint.secret.configured') : t('endpoint.secret.placeholder')}
+              autoComplete="off"
+              disabled={!ready}
+              onChange={(event) => { setApiKeyDraft(event.currentTarget.value) }}
+            />
+          </label>
+          <label className={css.endpointField}>
+            <span className={css.endpointLabel}>{t('endpoint.authToken')}</span>
+            <input
+              type="password"
+              className={css.modelInput}
+              value={authTokenDraft ?? ''}
+              placeholder={authTokenConfigured ? t('endpoint.secret.configured') : t('endpoint.secret.placeholder')}
+              autoComplete="off"
+              disabled={!ready}
+              onChange={(event) => { setAuthTokenDraft(event.currentTarget.value) }}
+            />
+          </label>
           <div className={css.row}>
             <button
               type="button"
@@ -364,9 +393,19 @@ function CardBody({ state, auth, authT, renderModelPicker, useSessions, t }: {
             >
               {t('endpoint.save')}
             </button>
+            <button
+              type="button"
+              className={css.modelSave}
+              disabled={!ready || endpointDirty || checking || sessionId === undefined}
+              title={endpointDirty ? t('endpoint.checkDirtyHint') : undefined}
+              onClick={() => { runCheck() }}
+            >
+              {checking ? t('endpoint.checking') : t('endpoint.check')}
+            </button>
             {endpointSaved && <span className={css.saved}>{t('endpoint.applied')}</span>}
             {endpointError && <span className={css.errorText}>{t('endpoint.error')}</span>}
           </div>
+          {checkText !== null && <span className={css.hint}>{checkText}</span>}
         </div>
       </section>
       <section className={css.block}>

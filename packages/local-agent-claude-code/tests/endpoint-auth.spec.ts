@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
+  checkClaudeEndpoint,
   clearEndpointAuth,
   ENDPOINT_AUTH_FILE,
   endpointAuthEnv,
@@ -110,5 +111,65 @@ describe('endpointAuthStamp / clearEndpointAuth', () => {
     await clearEndpointAuth(home)
     expect(await endpointAuthFileExists(home)).toBe(false)
     await clearEndpointAuth(home)
+  })
+})
+
+describe('checkClaudeEndpoint', () => {
+  const okFetch = (ids: string[]) => async () => ({
+    ok: true,
+    status: 200,
+    text: async () => JSON.stringify({ data: ids.map(id => ({ id, display_name: id })) }),
+  })
+
+  it('needs no network when no credential is configured', async () => {
+    let called = false
+    const text = await checkClaudeEndpoint({}, (() => { called = true; return okFetch([])() }) as never)
+    expect(called).toBe(false)
+    expect(text).toContain('No endpoint credential')
+  })
+
+  it('GETs <baseUrl>/v1/models with the x-api-key header and lists the served models', async () => {
+    let seen: { url: string; headers: Record<string, string> } | undefined
+    const text = await checkClaudeEndpoint(
+      { baseUrl: 'https://relay.example.com/claude/', apiKey: 'sk-test' },
+      (async (url: string, init: { headers: Record<string, string> }) => {
+        seen = { url, headers: init.headers }
+        return okFetch(['claude-a', 'claude-b'])()
+      }) as never,
+    )
+    expect(seen?.url).toBe('https://relay.example.com/claude/v1/models')
+    expect(seen?.headers['x-api-key']).toBe('sk-test')
+    expect(seen?.headers['anthropic-version']).toBe('2023-06-01')
+    expect(text).toBe('Endpoint reachable (https://relay.example.com/claude): 2 model(s) served — claude-a, claude-b')
+  })
+
+  it('sends the Bearer header for an authToken credential and defaults to the official endpoint', async () => {
+    let seen: { url: string; headers: Record<string, string> } | undefined
+    await checkClaudeEndpoint(
+      { authToken: 'tok' },
+      (async (url: string, init: { headers: Record<string, string> }) => {
+        seen = { url, headers: init.headers }
+        return okFetch(['m'])()
+      }) as never,
+    )
+    expect(seen?.url).toBe('https://api.anthropic.com/v1/models')
+    expect(seen?.headers['authorization']).toBe('Bearer tok')
+  })
+
+  it('reports the HTTP status and a bounded body excerpt on a non-OK reply', async () => {
+    const text = await checkClaudeEndpoint(
+      { apiKey: 'sk-dead' },
+      (async () => ({ ok: false, status: 401, text: async () => 'x'.repeat(500) })) as never,
+    )
+    expect(text).toContain('HTTP 401')
+    expect(text?.length).toBeLessThan(400)
+  })
+
+  it('folds network failures into the reply instead of throwing', async () => {
+    const text = await checkClaudeEndpoint(
+      { baseUrl: 'https://down.example.com', apiKey: 'sk' },
+      (async () => { throw new Error('ECONNREFUSED') }) as never,
+    )
+    expect(text).toBe('Endpoint unreachable (https://down.example.com): ECONNREFUSED')
   })
 })
