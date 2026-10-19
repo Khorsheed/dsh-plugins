@@ -18,6 +18,7 @@ import {
   type LibraryResourceProgress,
 } from '../types.ts'
 import { refuse, storeRefusal } from './core.ts'
+import type { LibraryStationMastery } from '../mastery.ts'
 import { LibraryServiceAssess } from './assess.ts'
 
 export class LibraryService extends LibraryServiceAssess {
@@ -66,6 +67,8 @@ export class LibraryService extends LibraryServiceAssess {
     project?: LibraryProject
     resource?: LibraryResource
     textbooks: LibraryResourceProgress[]
+    /** The bound textbook's current station and its points' mastery (where the coach is teaching now). */
+    station?: { id: string; title: string; mastery: LibraryStationMastery }
     weakCards: LibraryCard[]
   } {
     this.assertAlive('bindingSummary')
@@ -84,11 +87,14 @@ export class LibraryService extends LibraryServiceAssess {
       .filter(card => card.status === 'active' && card.weakness > 0 && (resource === undefined || card.resourceId === resource.id))
       .sort((a, b) => b.weakness - a.weakness || b.updatedAt.localeCompare(a.updatedAt))
       .slice(0, cardLimit)
+    const current = resource === undefined ? undefined : this.store.readRoadmap(project.id, resource.id)?.nodes.find(node => node.state === 'current' && node.gate === 'quiz')
+    const mastery = current === undefined ? undefined : this.stationMasteryOf(project.id, current.id, resource?.id)
     return {
       binding,
       project,
       ...(resource === undefined ? {} : { resource }),
       textbooks,
+      ...(current === undefined || mastery === undefined ? {} : { station: { id: current.id, title: current.title, mastery } }),
       weakCards,
     }
   }
@@ -104,6 +110,19 @@ export class LibraryService extends LibraryServiceAssess {
   }
 
   /** 「教练最近记下」: card recordings from chats and quizzes, across projects, newest first. */
+  /** The newest knowledge-point state changes across projects (今日 「最近的变化」). */
+  async recentChanges(request: { limit?: number }): Promise<{ changes: (LibraryEvent & { projectId: string; projectName: string })[] }> {
+    this.assertAlive('recentChanges')
+    const changes: (LibraryEvent & { projectId: string; projectName: string })[] = []
+    for (const project of this.store.readIndex().projects) {
+      for (const event of this.store.readEvents(project.id)) {
+        if (event.type === 'point.changed') changes.push({ ...event, projectId: project.id, projectName: project.name })
+      }
+    }
+    changes.sort((a, b) => b.at.localeCompare(a.at))
+    return { changes: changes.slice(0, request.limit ?? 10) }
+  }
+
   async recentRecords(request: { limit?: number }): Promise<{ records: (LibraryEvent & { projectId: string; projectName: string })[] }> {
     this.assertAlive('recentRecords')
     const records: (LibraryEvent & { projectId: string; projectName: string })[] = []

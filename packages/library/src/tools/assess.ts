@@ -17,8 +17,8 @@ export function libraryAssessTool(kit: ToolKit): ToolDefinition {
     description:
       'Ledger a graded sitting — the ONLY cascading write. Judge the answers in the conversation first (against each question\'s answer and evidence), '
       + 'then record one verdict per question: { task: <question id>, criterion: <what you judged>, pass, ratio?: <partial credit 0..1>, evidence: <what it rests on>, '
-      + 'by: "llm"|"self"|"user", void?: true when the learner flagged the question as broken, missedCard?: { term, gloss } for a missed question that targets no card }. '
-      + 'The engine moves every probed card, carding a card-less miss, and completes the gated station at its pass ratio, unlocking what follows — report what moved and what unlocked. '
+      + 'by: "llm"|"self"|"user", void?: true when the learner flagged the question as broken, missedCard?: { term, gloss } — only to name a word or concept the learner missed (a subject\'s misses wait in 待订正 on their point; no card is made from the question) }. '
+      + 'The engine moves every probed card, carding a card-less miss, and completes the gated station at its pass ratio, unlocking what follows — report what moved, which knowledge points changed (pointChanges) and what unlocked. '
       + 'Acceptance: pass node instead of quiz; each verdict\'s task is a rubric line id (L1, L2…) judged against the evidence the learner submitted. A line carrying ref is machine-checked — never judge it.',
     parameters: {
       project: { type: 'string', description: 'Project id (defaults to the binding).' },

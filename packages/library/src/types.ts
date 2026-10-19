@@ -394,6 +394,30 @@ export interface LibraryPoint {
   readonly id: string
   /** The point as the learner reads it (「极限的定义」). */
   readonly title: string
+  /** What the coach noticed the learner stuck on here (a subject project's weak point lands on its point, not on a card). */
+  readonly notes?: readonly LibraryPointNote[]
+}
+
+/** One coach note on a knowledge point: the learner stuck on it. */
+export interface LibraryPointNote {
+  readonly text: string
+  /** The short name of the confusion, when the coach gave one (「反函数 vs 倒数」). */
+  readonly term?: string
+  readonly at: string
+  /** The session it came from. */
+  readonly session?: string
+}
+
+/** A knowledge point's state (mastery.ts decides it from the ledger and the notes). */
+export type LibraryPointState = 'untested' | 'weak' | 'mastered'
+
+/** A point whose state moved because of a write. */
+export interface LibraryPointChange {
+  readonly nodeId: string
+  readonly pointId: string
+  readonly title: string
+  readonly from: LibraryPointState
+  readonly to: LibraryPointState
 }
 
 /**
@@ -507,6 +531,8 @@ export interface LibraryQuizQuestion {
   readonly explanation?: string
   /** The gated station's point this question probes (a point id) — required once the station carries points; mastery aggregates by it. */
   readonly point?: string
+  /** retake papers: the question this one re-asks. */
+  readonly origin?: { readonly assessmentId: string; readonly questionId: string }
   readonly target: LibraryQuestionTarget
   readonly evidence: LibraryQuestionEvidence
 }
@@ -529,7 +555,8 @@ export type LibraryQuizFocus = 'mine' | 'book' | 'mixed'
  */
 export interface LibraryAssessment {
   readonly id: string
-  readonly type: 'quiz' | 'practice'
+  /** quiz: a paper; practice: an acceptance rubric; retake: a station's open misses, re-asked (never counts toward passing). */
+  readonly type: 'quiz' | 'practice' | 'retake'
   readonly scope: {
     /** The roadmap node this assessment gates, when it is a node assessment. */
     readonly nodeId?: string
@@ -600,6 +627,8 @@ export interface LibraryAssessResult {
   /** The node this assessment gated, when it completed. */
   readonly completed?: string
   readonly passRatio: number
+  /** Knowledge points whose state this sitting moved. */
+  readonly pointChanges?: readonly LibraryPointChange[]
 }
 
 /* ---------------------------------------------------------------- pages */
@@ -784,6 +813,7 @@ export type LibraryEventType =
   | 'node.completed'
   | 'node.unlocked'
   | 'node.noted'
+  | 'point.changed'
 
 /** One event: a timestamp, a type, and a small summary per type. */
 export interface LibraryEvent {
@@ -804,6 +834,12 @@ export interface LibraryEvent {
   readonly count?: number
   readonly count2?: number
   readonly ratio?: number
+  /** point.changed: the station and the states. */
+  readonly nodeId?: string
+  readonly from?: LibraryPointState
+  readonly to?: LibraryPointState
+  /** point.changed: why, in one line (「2 题待订正」「教练备注：…」). */
+  readonly detail?: string
 }
 
 /** The event vocabulary, for tests and for writers who must not invent types. */
@@ -819,6 +855,7 @@ export const LIBRARY_EVENT_TYPES: readonly LibraryEventType[] = [
   'node.completed',
   'node.unlocked',
   'node.noted',
+  'point.changed',
 ]
 
 /* ------------------------------------------------------------- id minting */

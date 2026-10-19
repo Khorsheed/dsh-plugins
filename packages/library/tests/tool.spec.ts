@@ -573,3 +573,17 @@ describe('live-run failure modes (3080, 2026-10-19)', () => {
     expect(bound.note).toMatch(/bound the project only/)
   })
 })
+
+describe('knowledge points through the tools', () => {
+  it('library_cards with a point lands as a point note in a subject project; the context lists the station\'s points', async () => {
+    const { project, book } = await seed()
+    await call('library_roadmap', { resource: book, nodes: [{ id: 'n1', title: '离子通道', gate: 'quiz', chapters: '1', points: [{ id: 'gate', title: '门控' }] }] })
+    await service.adoptRoadmap({ projectId: project, resourceId: book })
+    const noted = (await call('library_cards', { cards: [{ point: 'gate', term: '失活 vs 关闭', gloss: '把两态混了' }] })) as { pointNotes: { point: string; state: string }[] }
+    expect(noted.pointNotes).toEqual([{ point: '门控', state: 'weak', changed: ['门控: untested → weak'] }])
+    expect((await service.listCards({ projectId: project })).cards).toEqual([])
+    const text = renderBindingContext(service, 's_learn')
+    expect(text).toContain('门控 (gate): weak')
+    expect(text).toContain('Subject:')
+  })
+})

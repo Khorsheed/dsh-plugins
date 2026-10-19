@@ -924,3 +924,63 @@ describe('bindings', () => {
     ])
   })
 })
+
+describe('knowledge-point mastery (proposal 2026-10-19-library-point-mastery)', () => {
+  /** A knowledge-book station with two points, adopted, and a paper on it. */
+  async function station(): Promise<{ projectId: string; bookId: string; quizId: string }> {
+    const { projectId, bookId } = await seed()
+    await service.draftRoadmap({ projectId, resourceId: bookId, nodes: [{ id: 'n1', title: '离子通道', gate: 'quiz', covers: [{ ref: bookId, locator: '1' }], points: [{ id: 'gate', title: '门控' }, { id: 'sel', title: '选择性' }] }] })
+    await service.adoptRoadmap({ projectId, resourceId: bookId })
+    const quiz = await service.putQuiz({ projectId, quiz: { scope: { resourceId: bookId, nodeId: 'n1' }, questions: [
+      question({ id: 'q1', kind: 'fill', answer: '失活', point: 'gate' }),
+      question({ id: 'q2', kind: 'fill', answer: 'K+', point: 'sel' }),
+    ] } })
+    if (!quiz.ok) throw new Error(quiz.message)
+    return { projectId, bookId, quizId: quiz.quiz.id }
+  }
+
+  it('a miss with no named concept leaves no card — it waits to be retaken, and its point turns weak (ledgered)', async () => {
+    const { projectId, quizId } = await station()
+    const assessed = await service.putAttempt({ projectId, quizId, verdicts: [
+      { task: 'q1', criterion: '门控', pass: false, evidence: 'e', by: 'self' },
+      { task: 'q2', criterion: '选择性', pass: true, evidence: 'e', by: 'self' },
+    ] })
+    if (!assessed.ok) throw new Error(assessed.message)
+    expect(assessed.cardUpdates).toEqual([])
+    expect((await service.listCards({ projectId })).cards).toEqual([])
+    expect(assessed.pointChanges?.map(change => [change.pointId, change.from, change.to])).toEqual([['gate', 'untested', 'weak'], ['sel', 'untested', 'mastered']])
+    const events = await service.listEvents({ projectId, types: ['point.changed'] })
+    expect(events.events.map(event => [event.id, event.to, event.count])).toEqual([['sel', 'mastered', 0], ['gate', 'weak', 1]])
+  })
+
+  it('a retake re-asks the open misses, masters the point when right, and never touches the pass record', async () => {
+    const { projectId, bookId, quizId } = await station()
+    await service.putAttempt({ projectId, quizId, verdicts: [
+      { task: 'q1', criterion: '门控', pass: false, evidence: 'e', by: 'self' },
+      { task: 'q2', criterion: '选择性', pass: true, evidence: 'e', by: 'self' },
+    ] })
+    const statsBefore = (await service.getRoadmap({ projectId, resourceId: bookId })).roadmap?.nodes[0]?.quizStats
+    const retake = await service.createRetake({ projectId, resourceId: bookId, nodeId: 'n1' })
+    if (!retake.ok) throw new Error(retake.message)
+    expect(retake.assessment.type).toBe('retake')
+    expect(retake.assessment.questions?.map(item => [item.id, item.origin])).toEqual([['r1', { assessmentId: quizId, questionId: 'q1' }]])
+    const done = await service.putAttempt({ projectId, assessmentId: retake.assessment.id, verdicts: [{ task: 'r1', criterion: '门控', pass: true, evidence: 'e', by: 'self' }] })
+    if (!done.ok) throw new Error(done.message)
+    expect(done.pointChanges?.map(change => [change.pointId, change.to])).toEqual([['gate', 'mastered']])
+    expect(done.completed).toBeUndefined()
+    expect((await service.getRoadmap({ projectId, resourceId: bookId })).roadmap?.nodes[0]?.quizStats).toEqual(statsBefore)
+    const none = await service.createRetake({ projectId, resourceId: bookId, nodeId: 'n1' })
+    expect(!none.ok && none.message).toMatch(/no open misses/)
+  })
+
+  it('a coach note lands on its point and weakens it; an unknown point teaches the station\'s points', async () => {
+    const { projectId, bookId } = await station()
+    const noted = await service.notePoint({ projectId, resourceId: bookId, nodeId: 'n1', pointId: 'gate', text: '把失活和关闭混了', term: '失活 vs 关闭' })
+    if (!noted.ok) throw new Error(noted.message)
+    expect(noted.point.state).toBe('weak')
+    expect(noted.changes.map(change => change.to)).toEqual(['weak'])
+    expect((await service.getRoadmap({ projectId, resourceId: bookId })).roadmap?.nodes[0]?.points?.[0]?.notes?.[0]).toMatchObject({ text: '把失活和关闭混了', term: '失活 vs 关闭' })
+    const bad = await service.notePoint({ projectId, resourceId: bookId, nodeId: 'n1', pointId: 'nope', text: 'x' })
+    expect(!bad.ok && bad.message).toMatch(/gate \(门控\)/)
+  })
+})

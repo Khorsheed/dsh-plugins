@@ -106,7 +106,6 @@ export function NodeView({ p, projectId, resourceId, nodeId, tab }: ViewProps & 
                 + (kinds.length > 0 ? t('prime.quiz.kindsSuffix', { kinds: kinds.map(kind => t(`kind.${kind}`)).join('、') }) : '')
                 + (context?.count !== undefined ? t('prime.quiz.countSuffix', { count: String(context.count) }) : ''))
             }}
-            onRetake={prompts => { prime(t('prime.quiz.retake', { node: node.title, list: prompts.map(prompt => `- ${prompt}`).join('\n') })) }}
             onReplace={prompts => { prime(t('prime.quiz.replace', { node: node.title, list: prompts.map(prompt => `- ${prompt}`).join('\n') })) }}
           />
         )}

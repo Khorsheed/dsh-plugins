@@ -157,6 +157,16 @@ export function fillMatches(input: string, answer: string): boolean {
   return alternatives.some(alternative => sameAnswer(input, alternative))
 }
 
+/**
+ * A fill-in judged by the project's profile: 'math' by text or value
+ * (fillMatches); 'spelling' also forgives a UK/US spelling or a plural.
+ */
+export function judgeFill(fill: 'math' | 'spelling', input: string, answer: string): boolean {
+  if (fillMatches(input, answer)) return true
+  if (fill !== 'spelling') return false
+  return spellMatches(input, answer.split(/\s+\/\s+|\s*[|｜]\s*|\s*或\s*/))
+}
+
 /* ---------------------------------------------------------------- review */
 
 /** How a due card is asked. */

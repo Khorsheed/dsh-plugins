@@ -498,7 +498,15 @@ export function normalizeRoadmap(value: unknown): LibraryRoadmap | undefined {
         const point = asRecord(entry)
         const pointId = point !== undefined ? id(point.id) : undefined
         const pointTitle = text(point?.title, 100)
-        return pointId === undefined || pointTitle === undefined ? [] : [{ id: pointId, title: pointTitle }]
+        if (pointId === undefined || pointTitle === undefined) return []
+        const notes = Array.isArray(point?.notes)
+          ? (point!.notes as unknown[]).flatMap(raw => {
+            const note = asRecord(raw)
+            const noteText = text(note?.text, 1000)
+            return noteText === undefined ? [] : [{ text: noteText, ...opt('term', text(note?.term, 100)), at: stamp(note?.at), ...opt('session', text(note?.session, 200)) }]
+          })
+          : []
+        return [{ id: pointId, title: pointTitle, ...(notes.length === 0 ? {} : { notes }) }]
       })
       : undefined
     nodes.push({
@@ -678,6 +686,12 @@ function normalizeQuizQuestions(value: unknown): LibraryQuizQuestion[] | undefin
       answer: typeof q.answer === 'string' ? q.answer : '',
       ...opt('explanation', text(q.explanation, 2000)),
       ...opt('point', text(q.point, 60)),
+      ...(() => {
+        const origin = asRecord(q.origin)
+        const assessmentId = id(origin?.assessmentId)
+        const questionId = text(origin?.questionId, 60)
+        return assessmentId === undefined || questionId === undefined ? {} : { origin: { assessmentId, questionId } }
+      })(),
       target: { kind: targetKind, ...(Array.isArray(target.cardIds) ? { cardIds: strings(target.cardIds, 100) } : {}) },
       evidence: {
         kind: evidenceKind,
@@ -714,7 +728,7 @@ export function normalizeAssessment(value: unknown): LibraryAssessment | undefin
   if (record === undefined || assessmentId === undefined || scope === undefined) return undefined
   const nodeId = id(scope.nodeId)
   const resourceId = id(scope.resourceId) ?? id(scope.bookId)
-  const type = record.type === 'practice' ? 'practice' as const : 'quiz' as const
+  const type = record.type === 'practice' ? 'practice' as const : record.type === 'retake' ? 'retake' as const : 'quiz' as const
   if (type === 'practice') {
     const rubric = normalizeRubricLines(record.rubric)
     if (rubric === undefined) return undefined
@@ -793,8 +807,14 @@ export function normalizeEvent(value: unknown): LibraryEvent | undefined {
     ...opt('count', count === undefined ? undefined : Math.floor(count)),
     ...opt('count2', count2 === undefined ? undefined : Math.floor(count2)),
     ...opt('ratio', finite(record.ratio)),
+    ...opt('nodeId', id(record.nodeId)),
+    ...opt('from', POINT_STATES.find(state => state === record.from)),
+    ...opt('to', POINT_STATES.find(state => state === record.to)),
+    ...opt('detail', text(record.detail, 300)),
   }
 }
+
+const POINT_STATES = ['untested', 'weak', 'mastered'] as const
 
 /** The bindings map, dropping rows that do not parse. */
 export function normalizeBindings(value: unknown): Map<string, LibraryBinding> {

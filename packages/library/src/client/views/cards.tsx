@@ -12,6 +12,7 @@ import type { LibraryCard, LibraryCardSourceType } from '../../types.ts'
 import type { LibraryCardFilter } from '../store.ts'
 import { IconSearchOutlineMedium, IconSparkleOutlineMedium } from '../icons.tsx'
 import { BoxDots, daysUntil, Highlight, outcome, shortGloss, StateLine, useLoad, value, WeaknessBars, type ViewProps } from '../ui.tsx'
+import { MathText } from '../math.tsx'
 import css from '../LibraryPane.module.css'
 
 const FILTERS: readonly LibraryCardFilter[] = ['all', 'photo', 'chat', 'quiz', 'due']
@@ -98,8 +99,8 @@ function CardRow({ p, projectId, card, bookTitle, open, onToggle }: {
     <article className={css.cardRow} data-open={open ? 'true' : 'false'}>
       <button type="button" className={css.cardMain} onClick={onToggle} aria-expanded={open}>
         <span className={css.cardTop}>
-          <span className={card.kind === 'word' ? css.term : css.concept}>{card.term}</span>
-          <span className={css.cardGloss}>{shortGloss(card.gloss, 24)}</span>
+          <span className={card.kind === 'word' ? css.term : css.concept}><MathText text={card.term} /></span>
+          <span className={css.cardGloss}><MathText text={shortGloss(card.gloss, 24)} /></span>
           <WeaknessBars weakness={card.weakness} label={t('cards.weakness', { level: String(card.weakness) })} />
         </span>
         {card.contexts[0] !== undefined && (
@@ -115,7 +116,7 @@ function CardRow({ p, projectId, card, bookTitle, open, onToggle }: {
       </button>
       {open && (
         <div className={css.cardMore}>
-          <div>{card.gloss}</div>
+          <div><MathText text={card.gloss} /></div>
           {card.userGloss !== undefined && <div>{t('cards.userGloss', { gloss: card.userGloss })}</div>}
           {card.aliases.length > 0 && <div className={css.muted}>{t('cards.aliases', { aliases: card.aliases.join('、') })}</div>}
           {card.contexts.slice(1).map(context => (

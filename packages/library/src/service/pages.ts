@@ -19,6 +19,7 @@ import {
 } from '../types.ts'
 import { mintLibraryId } from '../store.ts'
 import { refuse, type AttachmentsSlice } from './core.ts'
+import { profileOf } from '../profiles.ts'
 import { LibraryServiceRoadmap } from './roadmap.ts'
 
 export class LibraryServicePages extends LibraryServiceRoadmap {
@@ -61,7 +62,7 @@ export class LibraryServicePages extends LibraryServiceRoadmap {
         return refuse('not-found', `no node ${JSON.stringify(nodeId)} on this resource's path — omit nodeId or read the roadmap`)
       }
     }
-    const kind: LibraryCardKind = project.value.template === 'language' ? 'word' : 'concept'
+    const kind: LibraryCardKind = profileOf(project.value.template).markKind
     const inputs: LibraryCardInput[] = marks.filter(mark => mark.uncertain !== true).map(mark => ({
       kind,
       term: mark.text,

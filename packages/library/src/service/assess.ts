@@ -15,6 +15,7 @@ import {
   MAX_BOX,
   type LibraryAcceptanceLine,
   type LibraryAssessResult,
+  type LibraryPointChange,
   type LibraryAssessment,
   type LibraryAttempt,
   type LibraryCard,
@@ -39,6 +40,7 @@ import {
   live,
 } from './core.ts'
 import { titleOf, choiceOptionIndex, unlockReady, coversVerbatimBlocker } from './rules.ts'
+import { masteryChanges, stationMastery, type LibraryPointMastery, type LibraryStationMastery } from '../mastery.ts'
 import { LibraryServicePages } from './pages.ts'
 
 export class LibraryServiceAssess extends LibraryServicePages {
@@ -314,7 +316,7 @@ export class LibraryServiceAssess extends LibraryServicePages {
   /** The quiz path of putAttempt: verdicts judged against a stored quiz's questions. */
   protected async putQuizAttempt(project: LibraryProject, assessmentId: string, verdicts: readonly LibraryVerdict[]): Promise<LibraryOutcome<LibraryAssessResult>> {
     const assessment = this.store.readAssessment(project.id, assessmentId)
-    if (assessment === undefined || assessment.type !== 'quiz' || assessment.questions === undefined) return refuse('not-found', `no quiz ${JSON.stringify(assessmentId)} — store the quiz first (library_quiz), then assess it`)
+    if (assessment === undefined || (assessment.type !== 'quiz' && assessment.type !== 'retake') || assessment.questions === undefined) return refuse('not-found', `no quiz ${JSON.stringify(assessmentId)} — store the quiz first (library_quiz), then assess it`)
     const questionById = new Map(assessment.questions.map(question => [question.id, question]))
     for (const [index, verdict] of verdicts.entries()) {
       if (!questionById.has(verdict.task)) {
@@ -331,6 +333,7 @@ export class LibraryServiceAssess extends LibraryServicePages {
     return await this.mutate(project.id, () => {
       const now = new Date()
       const at = now.toISOString()
+      const before = this.stationMasteryOf(project.id, assessment.scope.nodeId, assessment.scope.resourceId)
       const attempt: LibraryAttempt = { id: mintLibraryId('a'), assessmentId: assessment.id, verdicts, ratio, at }
       this.store.appendAttempt(project.id, attempt)
 
@@ -345,7 +348,10 @@ export class LibraryServiceAssess extends LibraryServicePages {
         const credit = verdict.ratio ?? (verdict.pass ? 1 : 0)
         const passed = verdict.pass && credit >= 0.5
         const cardIds = [...(question.target.cardIds ?? [])]
-        if (cardIds.length === 0 && !passed) {
+        // A card-less miss leaves a card only when the coach named what was
+        // missed (missedCard) — never the question's own text: a subject's
+        // misses wait in 待订正 on their point instead.
+        if (cardIds.length === 0 && !passed && (verdict.missedCard?.term.trim() ?? '') !== '') {
           const created = this.missedCardFor(question, verdict, assessment, resource?.id, project.template, at)
           const existing = exactMatch([...byId.values()], [cardKey(created.term)])
           if (existing === undefined) {
@@ -379,7 +385,8 @@ export class LibraryServiceAssess extends LibraryServicePages {
       const roadmap = assessment.scope.nodeId === undefined ? undefined : this.findNodeRoadmap(project.id, assessment.scope.nodeId, assessment.scope.resourceId)
       const passRatio = roadmap?.passRatio ?? DEFAULT_PASS_RATIO
       const gated = assessment.scope.nodeId === undefined ? undefined : roadmap?.nodes.find(node => node.id === assessment.scope.nodeId)
-      if (roadmap !== undefined && gated !== undefined && gated.gate === 'quiz') {
+      // A retake (订正) never counts toward passing: no stats, no completion.
+      if (roadmap !== undefined && gated !== undefined && gated.gate === 'quiz' && assessment.type === 'quiz') {
         const updated = roadmap.nodes.map(node => {
           if (node.id !== gated.id) return node
           const stats = node.quizStats ?? { attempts: 0 }
@@ -399,6 +406,7 @@ export class LibraryServiceAssess extends LibraryServicePages {
       }
       const created = [...touched.values()].filter(update => update.created === true)
       const onResource = assessment.scope.resourceId === undefined ? {} : { resourceId: assessment.scope.resourceId }
+      const pointChanges = this.pointChangesSince(project.id, assessment.scope.nodeId, assessment.scope.resourceId, before, at)
       this.store.appendEvents(project.id, [
         { at, type: 'attempt.assessed', id: assessment.id, ...onResource, ratio },
         ...(created.length === 0 ? [] : [{
@@ -420,6 +428,7 @@ export class LibraryServiceAssess extends LibraryServicePages {
         unlocked,
         ...(completed === undefined ? {} : { completed }),
         passRatio,
+        ...(pointChanges.length === 0 ? {} : { pointChanges }),
       }
     })
   }
@@ -583,6 +592,110 @@ export class LibraryServiceAssess extends LibraryServicePages {
     })
   }
 
+  /** A station's mastery as the ledger stands (undefined off a station, or for a node no adopted path holds). */
+  protected stationMasteryOf(projectId: string, nodeId: string | undefined, resourceId?: string): LibraryStationMastery | undefined {
+    if (nodeId === undefined) return undefined
+    const node = this.findNodeRoadmap(projectId, nodeId, resourceId)?.nodes.find(candidate => candidate.id === nodeId)
+    if (node === undefined) return undefined
+    return stationMastery(node, this.store.listAssessments(projectId), this.store.readAttempts(projectId))
+  }
+
+  /**
+   * The points a write moved, read against `before`; each change is ledgered
+   * as a `point.changed` event (今日 「最近的变化」). Call inside the lock,
+   * after the write.
+   */
+  protected pointChangesSince(projectId: string, nodeId: string | undefined, resourceId: string | undefined, before: LibraryStationMastery | undefined, at: string): LibraryPointChange[] {
+    if (nodeId === undefined || before === undefined) return []
+    const after = this.stationMasteryOf(projectId, nodeId, resourceId)
+    if (after === undefined) return []
+    const changes = masteryChanges(nodeId, before, after)
+    const roadmap = this.findNodeRoadmap(projectId, nodeId, resourceId)
+    const onResource = roadmap?.primaryResourceId === undefined ? {} : { resourceId: roadmap.primaryResourceId }
+    if (changes.length > 0) {
+      this.store.appendEvents(projectId, changes.map(change => {
+        const point = after.points.find(candidate => candidate.id === change.pointId)
+        const note = point?.notes.at(-1)
+        return {
+          at,
+          type: 'point.changed' as const,
+          id: change.pointId,
+          nodeId,
+          title: change.title,
+          ...onResource,
+          from: change.from,
+          to: change.to,
+          count: point?.open.length ?? 0,
+          ...(change.to === 'weak' && note !== undefined && (point?.open.length ?? 0) === 0 ? { detail: (note.term ?? note.text).slice(0, 300) } : {}),
+        }
+      }))
+    }
+    return changes
+  }
+
+  /**
+   * 订正: a retake paper re-asking a station's open misses (all, or the keys
+   * named — `${assessmentId}:${questionId}`). Its verdicts move the points,
+   * never the station's pass record. No coach needed: the questions exist.
+   */
+  async createRetake(request: { projectId: string; resourceId?: string; nodeId: string; keys?: readonly string[] }): Promise<LibraryOutcome<{ assessment: LibraryAssessment }>> {
+    this.assertAlive('createRetake')
+    const project = this.readProjectOrRefusal(request.projectId)
+    if ('error' in project) return project
+    return await this.mutate(project.value.id, () => {
+      const mastery = this.stationMasteryOf(project.value.id, request.nodeId, request.resourceId)
+      if (mastery === undefined) return refuse('not-found', `no adopted station ${JSON.stringify(request.nodeId)}`)
+      const wanted = request.keys === undefined || request.keys.length === 0 ? undefined : new Set(request.keys)
+      const misses = mastery.open.filter(miss => wanted === undefined || wanted.has(miss.key))
+      if (misses.length === 0) return refuse('invalid', 'nothing to retake here — this station has no open misses')
+      const roadmap = this.findNodeRoadmap(project.value.id, request.nodeId, request.resourceId)
+      const assessment: LibraryAssessment = {
+        id: mintLibraryId('q'),
+        type: 'retake',
+        scope: { nodeId: request.nodeId, ...(roadmap?.primaryResourceId === undefined ? {} : { resourceId: roadmap.primaryResourceId }) },
+        questions: misses.map((miss, index) => ({ ...miss.question, id: `r${index + 1}`, origin: { assessmentId: miss.assessmentId, questionId: miss.questionId } })),
+        createdAt: new Date().toISOString(),
+      }
+      this.store.writeAssessment(project.value.id, assessment)
+      return { ok: true as const, assessment }
+    })
+  }
+
+  /**
+   * A coach note on a knowledge point: the learner stuck on it here. The
+   * point turns weak until a newer probe passes (subject projects — a weak
+   * point lands on its point, not on a card).
+   */
+  async notePoint(request: { projectId: string; resourceId?: string; nodeId: string; pointId: string; text: string; term?: string; session?: string }): Promise<LibraryOutcome<{ point: LibraryPointMastery; changes: LibraryPointChange[] }>> {
+    this.assertAlive('notePoint')
+    const project = this.readProjectOrRefusal(request.projectId)
+    if ('error' in project) return project
+    const text = request.text.trim()
+    if (text === '') return refuse('invalid', 'a point note needs its text — what the learner stuck on, in one line')
+    return await this.mutate(project.value.id, () => {
+      const roadmap = this.findNodeRoadmap(project.value.id, request.nodeId, request.resourceId)
+      const node = roadmap?.nodes.find(candidate => candidate.id === request.nodeId)
+      if (roadmap === undefined || node === undefined) return refuse('not-found', `no adopted station ${JSON.stringify(request.nodeId)} — library_read · roadmap lists them`)
+      const point = node.points?.find(candidate => candidate.id === request.pointId)
+      if (point === undefined) {
+        return refuse('not-found', `station ${node.title} has no point ${JSON.stringify(request.pointId)} — its points: ${(node.points ?? []).map(candidate => `${candidate.id} (${candidate.title})`).join(', ') || 'none'}`)
+      }
+      const before = this.stationMasteryOf(project.value.id, request.nodeId, request.resourceId)
+      const at = new Date().toISOString()
+      const note = { text: text.slice(0, 1000), ...(request.term === undefined || request.term.trim() === '' ? {} : { term: request.term.trim().slice(0, 100) }), at, ...(request.session === undefined ? {} : { session: request.session }) }
+      this.store.writeRoadmap(project.value.id, {
+        ...roadmap,
+        nodes: roadmap.nodes.map(candidate => candidate.id !== node.id ? candidate : {
+          ...candidate,
+          points: (candidate.points ?? []).map(entry => entry.id !== point.id ? entry : { ...entry, notes: [...(entry.notes ?? []), note] }),
+        }),
+      })
+      const changes = this.pointChangesSince(project.value.id, request.nodeId, request.resourceId, before, at)
+      const after = this.stationMasteryOf(project.value.id, request.nodeId, request.resourceId)!.points.find(candidate => candidate.id === point.id)!
+      return { ok: true as const, point: after, changes }
+    })
+  }
+
   /** The roadmap holding one node: the hinted textbook's first, then every adopted path of the project. */
   protected findNodeRoadmap(projectId: string, nodeId: string, resourceId?: string): LibraryRoadmap | undefined {
     const hinted = this.store.readRoadmap(projectId, resourceId)
@@ -603,7 +716,7 @@ export class LibraryServiceAssess extends LibraryServicePages {
     template: LibraryTemplate,
     at: string,
   ): LibraryCard {
-    const term = verdict.missedCard?.term.trim() || question.prompt.trim().slice(0, 80)
+    const term = verdict.missedCard?.term.trim() ?? ''
     const gloss = verdict.missedCard?.gloss.trim() || question.answer.trim()
     return {
       id: mintLibraryId('c'),

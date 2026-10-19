@@ -59,6 +59,12 @@ export function TodayView({ p }: ViewProps): ReactNode {
   const projects = useLoad(() => value(p.listProjects()), [rev])
   const due = useLoad(() => value(p.dueCards()), [rev])
   const records = useLoad(() => value(p.recentRecords()), [rev])
+  const changes = useLoad(() => value(p.recentChanges()), [rev])
+  // 「最近的变化」: knowledge points that moved, and (language projects) the words the coach noted — newest first.
+  const feed = [
+    ...(changes.data?.changes ?? []).map(change => ({ kind: 'point' as const, at: change.at, change })),
+    ...(records.data?.records ?? []).filter(record => record.source === 'chat').map(record => ({ kind: 'card' as const, at: record.at, record })),
+  ].sort((a, b) => b.at.localeCompare(a.at)).slice(0, 5)
   const list = projects.data?.projects ?? []
   const dueCards = due.data?.cards ?? []
   // Projects come most-recent first: the first one with a current station owns the solid 继续.
@@ -104,21 +110,45 @@ export function TodayView({ p }: ViewProps): ReactNode {
             <button type="button" className={leadId === undefined ? css.primary : css.secondary} onClick={() => { actions.push({ view: 'review' }) }}>{t('today.startReview')}</button>
           </section>
         )}
-        {(records.data?.records.length ?? 0) > 0 && (
+        {feed.length > 0 && (
           <section className={css.section}>
-            <h3 className={css.sectionTitle}>{t('today.recorded')}</h3>
+            <h3 className={css.sectionTitle}>{t('today.changes')}</h3>
             <div className={css.recordList}>
-              {records.data!.records.map(record => (
+              {feed.map(entry => entry.kind === 'point' ? (
                 <button
-                  key={`${record.projectId}-${record.at}`}
+                  key={`${entry.change.projectId}-${entry.change.at}-${entry.change.id ?? ''}`}
                   type="button"
                   className={css.record}
-                  onClick={() => { actions.push({ view: 'cards', projectId: record.projectId, filter: record.source === 'quiz' ? 'quiz' : 'chat' }) }}
+                  onClick={() => {
+                    const { change } = entry
+                    if (change.nodeId !== undefined && change.resourceId !== undefined) actions.push({ view: 'node', projectId: change.projectId, resourceId: change.resourceId, nodeId: change.nodeId, tab: 'quiz' })
+                    else actions.push({ view: 'project', projectId: change.projectId })
+                  }}
+                >
+                  <span className={css.changeDot} data-state={entry.change.to} aria-hidden="true" />
+                  <span className={css.recordText}>
+                    <span className={css.recordTitle}>{t(entry.change.to === 'mastered' ? 'today.changeMastered' : entry.change.to === 'weak' ? 'today.changeWeak' : 'today.changeUntested', { title: entry.change.title ?? '' })}</span>
+                    <span className={css.muted}>
+                      {[
+                        ...((entry.change.count ?? 0) > 0 ? [t('today.changeOpen', { count: String(entry.change.count) })] : []),
+                        ...(entry.change.detail === undefined ? [] : [entry.change.detail]),
+                        entry.change.projectName,
+                        when(entry.change.at, t),
+                      ].join(' · ')}
+                    </span>
+                  </span>
+                </button>
+              ) : (
+                <button
+                  key={`${entry.record.projectId}-${entry.record.at}`}
+                  type="button"
+                  className={css.record}
+                  onClick={() => { actions.push({ view: 'cards', projectId: entry.record.projectId, filter: 'chat' }) }}
                 >
                   <span className={css.recordIcon} aria-hidden="true"><IconSparkleOutlineMedium size={14} /></span>
                   <span className={css.recordText}>
-                    <span className={css.recordTitle}><MathText text={record.title ?? ''} /></span>
-                    <span className={css.muted}>{record.projectName} · {t(record.source === 'quiz' ? 'source.quiz' : 'source.chat')} · {when(record.at, t)}</span>
+                    <span className={css.recordTitle}><MathText text={entry.record.title ?? ''} /></span>
+                    <span className={css.muted}>{entry.record.projectName} · {t('source.chat')} · {when(entry.record.at, t)}</span>
                   </span>
                 </button>
               ))}
