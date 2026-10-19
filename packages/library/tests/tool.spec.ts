@@ -105,7 +105,9 @@ describe('binding defaults', () => {
   })
 
   it('a bound session reads and writes without naming project or resource', async () => {
-    await seed()
+    const { project } = await seed()
+    // Free-floating chat cards are a language project's (a subject's land on points).
+    await service.updateProject({ id: project, patch: { template: 'language' } })
     const toc = (await call('library_read', { what: 'toc' })) as { toc: { n: number; title: string }[] }
     expect(toc.toc.map(row => row.n)).toEqual([1, 2])
     const draft = (await call('library_roadmap', { resource: (await service.listResources({ projectId: service.getBinding('s_learn')!.projectId })).resources[0]!.id, nodes: [{ id: 'n1', title: '离子通道', gate: 'quiz', chapters: '1' }] })) as { stations: number }
@@ -258,7 +260,8 @@ describe('textbook paths through the tools', () => {
 
 describe('the question axes default and take shorthands', () => {
   it('a bare question stores topic + knowledge; the flat shorthands fill the axes', async () => {
-    await seed()
+    const { project } = await seed()
+    await service.updateProject({ id: project, patch: { template: 'language' } })
     const cards = (await call('library_cards', { cards: [{ kind: 'concept', term: '垂线检验', gloss: '每条竖线至多交一点', source: { type: 'chat' } }] })) as { added: { id: string }[] }
     const cardId = cards.added[0]!.id
     const stored = (await call('library_quiz', { questions: [
@@ -366,7 +369,8 @@ describe('payload transport', () => {
   })
 
   it('accepts cards as JSON text', async () => {
-    await seed()
+    const { project } = await seed()
+    await service.updateProject({ id: project, patch: { template: 'language' } })
     const cards = [{ kind: 'concept', term: '不应期', gloss: 'Na⁺ 失活', source: { type: 'chat' } }]
     const recorded = (await call('library_cards', { cards: JSON.stringify(cards) })) as { added: { term: string }[] }
     expect(recorded.added[0]?.term).toBe('不应期')
@@ -585,5 +589,16 @@ describe('knowledge points through the tools', () => {
     const text = renderBindingContext(service, 's_learn')
     expect(text).toContain('门控 (gate): weak')
     expect(text).toContain('Subject:')
+  })
+})
+
+describe('the learner\'s record stays the learner\'s (3080, 2026-10-20)', () => {
+  it('a subject project refuses a free-floating chat card and teaches the station\'s points and the coach\'s own slips', async () => {
+    const { project, book } = await seed()
+    await call('library_roadmap', { resource: book, nodes: [{ id: 'n1', title: '离子通道', gate: 'quiz', chapters: '1', points: [{ id: 'gate', title: '门控' }] }] })
+    await service.adoptRoadmap({ projectId: project, resourceId: book })
+    await expect(call('library_cards', { cards: [{ kind: 'concept', term: '单位圆 tan θ（避免答案/解析不一致）', gloss: '出题时答案字段写错', source: { type: 'chat' } }] }))
+      .rejects.toThrow(/lands on the station's knowledge point[\s\S]*gate \(门控\)[\s\S]*never your own slip/)
+    expect((await service.listCards({ projectId: project })).cards).toEqual([])
   })
 })

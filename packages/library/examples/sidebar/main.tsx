@@ -179,6 +179,7 @@ const summary = (partial: Partial<LibraryProjectSummary> & Pick<LibraryProjectSu
 const projects: LibraryProjectSummary[] = [
   summary({
     id: 'p_ielts', name: '雅思', template: 'language', color: 'ember', icon: 'globe', goal: '学术类 7 分，12 月 14 日',
+    openMisses: 2,
     resources: [
       { id: 'r_cam5', title: cam5.title, kind: 'book', seq: 1, origin: 'learner', roadmap: { done: 2, total: 6 }, current: { id: 't1p2', title: 'T1 · P2 Nature or Nurture?' }, hasDraft: false },
       { id: 'r_avu', title: avu.title, kind: 'course', seq: 2, origin: 'picked', roadmap: { done: 0, total: 2 }, current: { id: 'u1', title: 'Unit 1 学习词汇' }, hasDraft: false },

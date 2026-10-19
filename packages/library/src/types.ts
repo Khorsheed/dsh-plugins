@@ -198,6 +198,8 @@ export interface LibraryProjectSummary extends LibraryProject {
   readonly dueCount: number
   /** When anything last happened in the project (its newest event, else its creation) — the list sorts by it. */
   readonly lastActiveAt: string
+  /** Open misses (待订正) across every station of the project's textbooks. */
+  readonly openMisses?: number
 }
 
 /* ------------------------------------------------------------ resources */

@@ -38,6 +38,21 @@ describe('stationMastery', () => {
     expect(m.points[0]?.state).toBe('mastered')
   })
 
+  it('a retake from elsewhere counts here only through questions that came from this station', () => {
+    const other: LibraryAssessment = { id: 'qb', type: 'quiz', scope: { nodeId: 's2' }, questions: [q('x1', 'p1')], createdAt: '2026-10-19T00:00:00.000Z' }
+    const wide: LibraryAssessment = { id: 'rw', type: 'retake', scope: {}, questions: [
+      { ...q('r1', 'p1'), origin: { assessmentId: 'qa', questionId: 'q1' } },
+      { ...q('r2', 'p1'), origin: { assessmentId: 'qb', questionId: 'x1' } },
+    ], createdAt: '2026-10-19T02:00:00.000Z' }
+    const attempts = [
+      sitting('a1', 'qa', '2026-10-19T01:00:00.000Z', [['q1', false]]),
+      sitting('a2', 'rw', '2026-10-19T02:00:00.000Z', [['r1', true], ['r2', false]]),
+    ]
+    const m = stationMastery(node(), [paper, other, wide], attempts)
+    expect(m.open).toEqual([])
+    expect(m.points[0]?.state).toBe('mastered')
+  })
+
   it('a coach note newer than the last right answer keeps the point weak until a newer probe passes', () => {
     const attempts = [sitting('a1', 'qa', '2026-10-19T01:00:00.000Z', [['q1', true], ['q2', true]])]
     expect(stationMastery(node([{ point: 'p1', at: '2026-10-19T03:00:00.000Z' }]), [paper], attempts).points[0]?.state).toBe('weak')

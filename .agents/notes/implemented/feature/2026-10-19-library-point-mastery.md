@@ -21,6 +21,12 @@ Per the proposal ([proposals/active/2026-10-19-library-point-mastery.md](../../.
 - **Fixes**: the card list typesets math in terms and glosses.
 - **Data**: the 3080 project's ten question-text cards and the quality-feedback card were deleted (the user's call, no migration).
 
+## Follow-up (2026-10-20)
+
+- **今日复习 is the open misses** (the user's call, replacing the earlier "not now"): one row per project with open misses opens a project-wide retake (`createRetake` without a station, `scope: {}`); due cards stay as a second row (language words, marked concepts). `LibraryProjectSummary.openMisses` counts every station's open misses and backs both this row and the project page's 错题 stat. A retake's questions credit their own station through `origin`, so `stationMastery` now reads every retake and keeps only questions whose origin is one of the station's papers; a project-wide retake reports point changes for each station it touched.
+- **Stale rows**: `recentRecords` drops recordings whose cards were all deleted (and names only the live ones); `recentChanges` drops changes whose textbook, station or point is gone — a deleted card had stayed in 「最近的变化」 because the event ledger is append-only.
+- **The learner's record, not the coach's notebook**: a coach recorded its own answer-key slip as a chat card *after* the new guidance shipped, so the guard is structural now — in a points-driven project `library_cards` refuses a chat card without `point`, naming the station's points and saying the coach's own slips and feedback on questions are never recorded; the prompt's opening line says the library is the learner's record, not the coach's notebook. That card was deleted on 3080.
+
 ## Alternatives considered
 
 - **Retakes count toward passing**: rejected by the user — retaking the same questions would farm the pass line; passing stays a whole paper's job.

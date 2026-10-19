@@ -116,7 +116,11 @@ export class LibraryService extends LibraryServiceAssess {
     const changes: (LibraryEvent & { projectId: string; projectName: string })[] = []
     for (const project of this.store.readIndex().projects) {
       for (const event of this.store.readEvents(project.id)) {
-        if (event.type === 'point.changed') changes.push({ ...event, projectId: project.id, projectName: project.name })
+        if (event.type !== 'point.changed' || event.nodeId === undefined || event.resourceId === undefined || event.id === undefined) continue
+        // A change about a textbook, station or point that is gone (removed, re-planned away) is not shown.
+        const node = this.store.readRoadmap(project.id, event.resourceId)?.nodes.find(candidate => candidate.id === event.nodeId)
+        if (node?.points?.some(point => point.id === event.id) !== true) continue
+        changes.push({ ...event, projectId: project.id, projectName: project.name })
       }
     }
     changes.sort((a, b) => b.at.localeCompare(a.at))
@@ -127,10 +131,19 @@ export class LibraryService extends LibraryServiceAssess {
     this.assertAlive('recentRecords')
     const records: (LibraryEvent & { projectId: string; projectName: string })[] = []
     for (const project of this.store.readIndex().projects) {
+      // A recording whose cards were all deleted since is not shown; one with
+      // some left names only the live ones.
+      const liveTerms = new Map(this.store.readCards(project.id).filter(card => card.status !== 'deleted').map(card => [card.id, card.term]))
       for (const event of this.store.readEvents(project.id)) {
-        if (event.type === 'cards.recorded' && (event.source === 'chat' || event.source === 'quiz')) {
-          records.push({ ...event, projectId: project.id, projectName: project.name })
-        }
+        if (event.type !== 'cards.recorded' || (event.source !== 'chat' && event.source !== 'quiz')) continue
+        const ids = (event.ids ?? []).filter(cardId => liveTerms.has(cardId))
+        if (event.ids !== undefined && ids.length === 0) continue
+        records.push({
+          ...event,
+          ...(event.ids === undefined ? {} : { ids, title: ids.map(cardId => liveTerms.get(cardId)!).join('、').slice(0, 300) }),
+          projectId: project.id,
+          projectName: project.name,
+        })
       }
     }
     records.sort((a, b) => b.at.localeCompare(a.at))

@@ -984,3 +984,46 @@ describe('knowledge-point mastery (proposal 2026-10-19-library-point-mastery)', 
     expect(!bad.ok && bad.message).toMatch(/gate \(门控\)/)
   })
 })
+
+describe('today: retakes across a project, feeds without stale rows', () => {
+  async function twoStations(): Promise<{ projectId: string; bookId: string; q1: string; q2: string }> {
+    const { projectId, bookId } = await seed()
+    await service.draftRoadmap({ projectId, resourceId: bookId, nodes: [
+      { id: 'n1', title: '离子通道', gate: 'quiz', covers: [{ ref: bookId, locator: '1' }], points: [{ id: 'gate', title: '门控' }] },
+      { id: 'n2', title: '动作电位', gate: 'quiz', covers: [{ ref: bookId, locator: '2' }], points: [{ id: 'phase', title: '时相' }] },
+    ] })
+    await service.adoptRoadmap({ projectId, resourceId: bookId })
+    const ids: string[] = []
+    for (const [node, point] of [['n1', 'gate'], ['n2', 'phase']] as const) {
+      const quiz = await service.putQuiz({ projectId, quiz: { scope: { resourceId: bookId, nodeId: node }, questions: [question({ id: 'q1', kind: 'fill', answer: 'x', point })] } })
+      if (!quiz.ok) throw new Error(quiz.message)
+      await service.putAttempt({ projectId, quizId: quiz.quiz.id, verdicts: [{ task: 'q1', criterion: 'c', pass: false, evidence: 'e', by: 'self' }] })
+      ids.push(quiz.quiz.id)
+    }
+    return { projectId, bookId, q1: ids[0]!, q2: ids[1]! }
+  }
+
+  it('the project summary counts every station\'s open misses; a project-wide retake credits each station it touched', async () => {
+    const { projectId } = await twoStations()
+    expect((await service.listProjects()).projects[0]?.openMisses).toBe(2)
+    const retake = await service.createRetake({ projectId })
+    if (!retake.ok) throw new Error(retake.message)
+    expect(retake.assessment.scope).toEqual({})
+    const done = await service.putAttempt({ projectId, assessmentId: retake.assessment.id, verdicts: retake.assessment.questions!.map(item => ({ task: item.id, criterion: 'c', pass: true, evidence: 'e', by: 'self' as const })) })
+    if (!done.ok) throw new Error(done.message)
+    expect(done.pointChanges?.map(change => [change.nodeId, change.pointId, change.to]).sort()).toEqual([['n1', 'gate', 'mastered'], ['n2', 'phase', 'mastered']])
+    expect((await service.listProjects()).projects[0]?.openMisses).toBe(0)
+  })
+
+  it('recentRecords hides recordings whose cards were deleted; recentChanges hides points that are gone', async () => {
+    const { projectId, bookId } = await twoStations()
+    const noted = await service.writeCards({ projectId, cards: [{ kind: 'concept', term: '不应期', gloss: 'g', source: { type: 'chat' } }] })
+    if (!noted.ok) throw new Error(noted.message)
+    expect((await service.recentRecords({})).records.map(record => record.title)).toContain('不应期')
+    await service.editCard({ projectId, cardId: noted.added[0]!.id, patch: { status: 'deleted' } })
+    expect((await service.recentRecords({})).records).toEqual([])
+    expect((await service.recentChanges({})).changes.length).toBe(2)
+    await service.removeResource({ projectId, resourceId: bookId })
+    expect((await service.recentChanges({})).changes).toEqual([])
+  })
+})
