@@ -10,7 +10,7 @@ import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { LibraryService } from '../src/service.ts'
-import { LIBRARY_TOOL_NAMES, libraryToolDefinitions } from '../src/tool-definition.ts'
+import { chaptersLocator, LIBRARY_TOOL_NAMES, libraryToolDefinitions, splitTocText } from '../src/tool-definition.ts'
 import { ImageRefCache } from '../src/image-refs.ts'
 import { Config, renderBindingContext } from '../src/tool.ts'
 
@@ -520,5 +520,56 @@ describe('the bound context', () => {
     expect(renderBindingContext(service, 's_learn')).toContain('2. 《强化学习入门》')
     expect(renderBindingContext(service, 's_learn')).toContain('draft 1 stations, waiting for the learner to adopt')
     expect(renderBindingContext(service, 's_other')).toMatch(/not bound/)
+  })
+})
+
+describe('live-run failure modes (3080, 2026-10-19)', () => {
+  it('a contents joined on one line with ；/; or literal \\n escapes splits into rows; too few rows warn', async () => {
+    expect(splitTocText('1. 函数；2. 三角；3. 极限；4. 多项式极限')).toEqual(['1. 函数', '2. 三角', '3. 极限', '4. 多项式极限'])
+    expect(splitTocText('Ch1\\nCh2\\nCh3')).toEqual(['Ch1', 'Ch2', 'Ch3'])
+    expect(splitTocText('一个标题；带分号')).toEqual(['一个标题；带分号'])
+    const { project } = await seed()
+    const joined = (await call('library_resource', { op: 'create', project, kind: 'book', title: '普林斯顿微积分读本', toc: '1. 函数；2. 三角；3. 极限', tocSource: { by: 'model' } })) as { contentsRows: number; warning?: string }
+    expect(joined.contentsRows).toBe(3)
+    expect(joined.warning).toBeUndefined()
+    const thin = (await call('library_resource', { op: 'create', project, kind: 'book', title: '只有一行的书', toc: '全书', tocSource: { by: 'model' } })) as { warning?: string }
+    expect(thin.warning).toMatch(/only 1 row/)
+  })
+
+  it('chapters read any dash or separator; words become a topic side reference; stray points on a non-quiz station are dropped with a note', async () => {
+    expect(chaptersLocator('15–16')).toEqual({ locator: '15-16' })
+    expect(chaptersLocator('3-4、7')).toEqual({ locator: '3-4,7' })
+    expect(chaptersLocator('27-30 + 附录A')).toEqual({ locator: '27-30', rest: '附录A' })
+    const { project, book } = await seed()
+    const drafted = (await call('library_roadmap', { resource: book, nodes: [
+      { id: 'n1', title: '离子通道', gate: 'quiz', chapters: '第1章', points: [{ id: 'p1', title: '门控' }] },
+      { id: 'n2', title: '动手', gate: 'acceptance', chapters: '2 + 附录A', acceptance: ['做完实验'], points: [{ id: 'p2', title: 'x' }] },
+    ] })) as { adjusted?: string[] }
+    expect(drafted.adjusted?.join('\n')).toMatch(/points dropped on 动手[\s\S]*附录A/)
+    const draft = (await service.getRoadmap({ projectId: project, resourceId: book })).draft
+    expect(draft?.nodes[0]?.points).toEqual([{ id: 'p1', title: '门控' }])
+    expect(draft?.nodes[1]?.points).toBeUndefined()
+    expect(draft?.nodes[1]?.covers).toEqual([{ ref: book, locator: '2' }, { ref: 'topic: 附录A' }])
+  })
+
+  it('a joined contents earns the out-of-range refusal that says to fix the contents, never drop the chapters', async () => {
+    const { project } = await seed()
+    const one = (await call('library_resource', { op: 'create', project, kind: 'book', title: '只有一行的书', toc: '全书', tocSource: { by: 'model' } })) as { resource: { id: string } }
+    await expect(call('library_roadmap', { resource: one.resource.id, nodes: [{ id: 'n1', title: 'a', gate: 'quiz', chapters: '1-2' }] })).rejects.toThrow(/fix the contents first[\s\S]*never drop the chapters/)
+  })
+
+  it('a question missing its answer is named by the teaching refusal, not an opaque schema branch error', async () => {
+    await seed()
+    await expect(call('library_quiz', { questions: [
+      { id: 'q1', kind: 'free', prompt: 'p1', answer: 'a1' },
+      { id: 'q2', kind: 'free', prompt: 'p2' },
+    ] })).rejects.toThrow(/q2[\s\S]*answer/)
+  })
+
+  it('binding to a resource id the shelf does not hold binds the project and says so', async () => {
+    const { project } = await seed()
+    const bound = (await call('library_binding', { project, resource: 'calculus_lifesaver' })) as { binding: { projectId: string; resourceId?: string }; note: string }
+    expect(bound.binding).toEqual({ projectId: project })
+    expect(bound.note).toMatch(/bound the project only/)
   })
 })

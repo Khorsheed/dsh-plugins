@@ -2195,7 +2195,8 @@ export function validateRoadmapShape(
             }
             for (const range of ranges) {
               if (range.to > (covered.toc?.length ?? 0)) {
-                errors.push(`nodes[${index}] (${node.id}) covers up to row ${range.to}, but 《${covered.title}》's contents has ${covered.toc?.length ?? 0} rows — library_read · toc lists them`)
+                const rows = covered.toc?.length ?? 0
+                errors.push(`nodes[${index}] (${node.id}) covers up to row ${range.to}, but 《${covered.title}》's contents has ${rows} rows — library_read · toc lists them${rows < 3 ? `; a book with ${rows} row(s) was registered with its chapters joined — fix the contents first (library_resource op create, resourceId ${covered.id}, toc one chapter per line), never drop the chapters` : ''}`)
               }
             }
           }

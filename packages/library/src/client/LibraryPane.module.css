@@ -1889,6 +1889,30 @@ textarea.input { resize: vertical; font: inherit; line-height: 1.5; }
   cursor: pointer;
 }
 
+/* 出题中：请求已发出、新卷未到——切走再回来也还在 */
+.asking {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--lib-accent);
+  border-radius: 10px;
+  background: var(--lib-accent-soft);
+}
+
+.asking[data-stale='true'] {
+  border-color: var(--lib-warn);
+  background: var(--lib-warn-soft);
+}
+
+.askingText {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+}
+
 /* 删除确认：盖在面板上的确认框，写清会删掉什么、保留什么 */
 .scrim {
   position: absolute;

@@ -21,7 +21,7 @@ import {
 import { colorOf, Cover, coverOf } from '../look.tsx'
 import { CoverChips, coverLabel, type CoverContext } from '../covers.tsx'
 import { collectMissed, collectVoided, type MissedRow } from '../mistakes.ts'
-import type { LibraryNodeTab } from '../store.ts'
+import type { LibraryNodeTab, LibraryQuizSettings } from '../store.ts'
 import {
   IconCameraOutlineMedium, IconCheckOutlineMedium, IconInfoOutlineMedium, IconLockOutlineMedium, IconRefreshOutlineMedium, IconSparkleOutlineMedium, IconTrashOutlineMedium,
 } from '../icons.tsx'
@@ -718,26 +718,36 @@ function QuizTab({ p, projectId, resourceId, node, passRatio, resources, onPrime
   const rev = useStore(s => s.rev)
   // The quiz direction: the three focuses. 错题重考 is not a direction — it is
   // the paper card's primary action once this station has misses.
-  const [direction, setDirection] = useState<LibraryQuizFocus>('mine')
   const [showOthers, setShowOthers] = useState(false)
   // The points grid's explainer hides behind the title's ⓘ (tap to toggle).
   const [showPointsHint, setShowPointsHint] = useState(false)
-  // The picked points (重点出这些) — empty means the coach picks by weakness.
-  const [picked, setPicked] = useState<readonly string[]>([])
-  // 题型 / 题量: no kinds picked = the coach's mix; 题量 is a number field, default 10.
-  const [kinds, setKinds] = useState<readonly LibraryQuizQuestion['kind'][]>([])
-  const [countText, setCountText] = useState(String(DEFAULT_QUIZ_COUNT))
-  // After asking, re-read until the coach has stored the new quiz (two minutes at most).
-  const [watching, setWatching] = useState<{ since: number; count: number } | undefined>()
+  // The settings (范围 / 重点 / 题型 / 题量) and the pending ask live in the pane
+  // store per station, so leaving the tab and coming back keeps both. 范围
+  // defaults to 都考; no kinds picked = the coach's mix; 题量 defaults to 10.
+  const stationKey = `${projectId}:${resourceId ?? ''}:${node.id}`
+  const station = useStore(s => s.quiz[stationKey])
+  const settings = station?.settings ?? DEFAULT_SETTINGS
+  const direction = settings.focus
+  const picked = settings.picked
+  const kinds = settings.kinds
+  const countText = settings.countText
+  const update = (patch: Partial<LibraryQuizSettings>): void => { actions.setQuizSettings(stationKey, { ...settings, ...patch }) }
+  const setDirection = (focus: LibraryQuizFocus): void => { update({ focus }) }
+  const setCountText = (text: string): void => { update({ countText: text }) }
+  // After asking, re-read until the coach has stored the new quiz; past the
+  // patience window the card says so instead of silently giving up.
+  const watching = station?.ask
+  const [now, setNow] = useState(Date.now())
+  const stale = watching !== undefined && now - watching.since > ASK_PATIENCE_MS
   const [tick, setTick] = useState(0)
   useEffect(() => {
-    if (watching === undefined) return
+    if (watching === undefined || stale) return
     const timer = setInterval(() => {
-      if (Date.now() - watching.since > 120_000) setWatching(undefined)
-      else setTick(current => current + 1)
+      setNow(Date.now())
+      setTick(current => current + 1)
     }, 4000)
     return () => { clearInterval(timer) }
-  }, [watching])
+  }, [watching, stale])
   // Project-wide read, split below into the station's own quizzes and the ones
   // gating no station (本书测验 / 自由测验) — else those are invisible from here.
   const assessments = useLoad(() => value(p.listAssessments(projectId, undefined, undefined, 'quiz')), [projectId, rev, tick])
@@ -747,8 +757,8 @@ function QuizTab({ p, projectId, resourceId, node, passRatio, resources, onPrime
   const quizCount = shown.length
   // The quiz the learner is waiting for opens itself when it lands.
   useEffect(() => {
-    if (watching === undefined || quizCount <= watching.count) return
-    setWatching(undefined)
+    if (watching === undefined || assessments.data === undefined || quizCount <= watching.count) return
+    actions.setQuizAsk(stationKey, undefined)
     const landed = shown.at(-1)
     if (landed !== undefined) actions.push({ view: 'quiz', projectId, ...(landed.scope.resourceId === undefined ? {} : { resourceId: landed.scope.resourceId }), quizId: landed.id })
   }, [quizCount, watching])
@@ -800,7 +810,7 @@ function QuizTab({ p, projectId, resourceId, node, passRatio, resources, onPrime
   }
   const pickedTitles = points.filter(point => picked.includes(point.id)).map(point => point.title)
   const togglePoint = (pointId: string): void => {
-    setPicked(previous => previous.includes(pointId) ? previous.filter(candidate => candidate !== pointId) : [...previous, pointId])
+    update({ picked: picked.includes(pointId) ? picked.filter(candidate => candidate !== pointId) : [...picked, pointId] })
   }
   // The paper card's three states: untaken → 开始作答; passed → 再出一套;
   // failed with misses → 重考错题. The focus chips always configure the ask.
@@ -814,13 +824,16 @@ function QuizTab({ p, projectId, resourceId, node, passRatio, resources, onPrime
     const parsed = Number.parseInt(countText.trim(), 10)
     const count = Number.isFinite(parsed) ? Math.min(Math.max(parsed, 1), MAX_QUIZ_COUNT) : DEFAULT_QUIZ_COUNT
     onPrime(direction, { weak: weak.data?.cards.map(card => card.term) ?? [], points: pickedTitles, kinds, count })
-    setWatching({ since: Date.now(), count: quizCount })
+    const summary = [t(`focus.${direction}`), kinds.length === 0 ? t('node.kindsMixed') : kinds.map(kind => t(`kind.${kind}`)).join('、'), t('node.askCount', { count: String(count) }), ...(pickedTitles.length > 0 ? [t('node.askPointsShort', { count: String(pickedTitles.length) })] : [])].join(' · ')
+    actions.setQuizAsk(stationKey, { since: Date.now(), count: quizCount, summary })
+    setNow(Date.now())
   }
   const retake = (): void => {
     onRetake(missed.map(row => row.question.prompt))
-    setWatching({ since: Date.now(), count: quizCount })
+    actions.setQuizAsk(stationKey, { since: Date.now(), count: quizCount, summary: t('node.retakeCount', { count: String(missed.length) }) })
+    setNow(Date.now())
   }
-  const asking = watching !== undefined
+  const asking = watching !== undefined && !stale
   // A picked set of points overrides the default ask (the agreed priority: 选了考点 > 开始作答 > 重考错题 > 再出一套).
   const askLabel = asking ? t('node.quizWaiting')
     : pickedTitles.length > 0 ? t('node.askPoints', { count: String(pickedTitles.length) })
@@ -838,6 +851,18 @@ function QuizTab({ p, projectId, resourceId, node, passRatio, resources, onPrime
         <div className={css.muted}>{t('node.weakLine', { terms: weak.data!.cards.map(card => card.term).join('、') })}</div>
       )}
       <StateLine loaded={assessments} t={t} />
+      {watching !== undefined && (
+        <section className={css.asking} role="status" data-stale={stale}>
+          <span className={css.askingText}>
+            <strong>{stale ? t('node.askStale') : t('node.asking')}</strong>
+            <span className={css.muted}>{watching.summary} · {t('node.askSince', { minutes: String(Math.max(1, Math.round((now - watching.since) / 60_000))) })}</span>
+          </span>
+          {stale
+            ? <button type="button" className={css.secondary} onClick={ask}>{t('node.askAgain')}</button>
+            : null}
+          <button type="button" className={css.textButton} onClick={() => { actions.setQuizAsk(stationKey, undefined) }}>{t('node.askDismiss')}</button>
+        </section>
+      )}
       {latest !== undefined && (
         <section className={css.quizLatest}>
           <div className={css.quizLatestText}>
@@ -906,7 +931,7 @@ function QuizTab({ p, projectId, resourceId, node, passRatio, resources, onPrime
             label={t('node.kindsTitle')}
             chips={QUIZ_KINDS.map(id => ({ id, label: t(`kind.${id}`) }))}
             value={kinds}
-            onSelect={id => { setKinds(previous => previous.includes(id) ? previous.filter(kind => kind !== id) : [...previous, id]) }}
+            onSelect={id => { update({ kinds: kinds.includes(id) ? kinds.filter(kind => kind !== id) : [...kinds, id] }) }}
           />
         </div>
         <div className={css.settingRow}>
@@ -1062,6 +1087,12 @@ const FOCUSES: readonly LibraryQuizFocus[] = ['mine', 'book', 'mixed']
 const QUIZ_KINDS: readonly LibraryQuizQuestion['kind'][] = ['choice', 'fill', 'free']
 /** 题量 field's default — a chapter quiz's one-sitting size. */
 const DEFAULT_QUIZ_COUNT = 10
+
+/** A station's 章节考 settings before the learner touches them: 都考, the coach's mix of kinds, 10 questions. */
+const DEFAULT_SETTINGS: LibraryQuizSettings = { focus: 'mixed', kinds: [], countText: String(DEFAULT_QUIZ_COUNT), picked: [] }
+
+/** How long the tab waits for an asked quiz before saying it has not landed (a 20-question paper takes minutes). */
+const ASK_PATIENCE_MS = 8 * 60_000
 /** The 题量 field's cap — past this a chapter quiz stops being one sitting. */
 const MAX_QUIZ_COUNT = 20
 

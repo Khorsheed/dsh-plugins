@@ -22,6 +22,17 @@ Per the proposal ([proposals/active/2026-10-19-library-book-paths.md](../../../p
 
 The project page drops the project path card and project draft card; it shows 继续学习 (the first textbook in order with a current station), a banner for waiting drafts, textbooks as a numbered list (origin tag, progress, current station) with a reorder mode, and the links. An empty project offers 我有书 / 帮我选教材. 今日 gains a 继续学习 card across projects. Deleting a project moved from the bottom of the edit form to the page's menu; deleting a project or a textbook opens a confirm dialog listing what goes (textbooks, cards with due count, sittings, links / path progress, pages, quizzes) and what stays. The textbook page shows its number and origin, names the adopt button 「采用为本书路线」, and folds skipped chapters. A station always belongs to a textbook (the route's `resourceId` is required).
 
+## Follow-up: the first live run (3080, 2026-10-19 evening)
+
+A free OpenRouter model (`thinkingmachines/inkling:free`) ran the journey once and hit four refusals; three were the tool layer's fault, not the model's:
+
+- **A contents joined on one line.** The model sent 30 chapters as one `；`-joined string, so the book got one row, every station's `chapters` fell out of range, and the model "fixed" it by dropping chapters (each station then covered the whole book). Now `splitTocText` splits a single line on `；`/`;` (three parts or more) and literal `\n` escapes; the shelving result carries `contentsRows` and a warning under 3 rows; and the out-of-range refusal says to fix the contents with `resourceId`, never drop the chapters.
+- **An opaque schema refusal.** A quiz with 5 of 20 questions missing `answer` was refused as `"questions" must match exactly one oneOf branch` — naming nothing. Nested `required` flags moved out of the question and node item schemas (marked "Required" in descriptions); the tool coerces missing fields to blanks so the service's per-question check names each one.
+- **Points on an acceptance station.** Dropped with an `adjusted` note instead of refused. `chapters` also reads any dash or separator, and words in it ("27-30 + 附录A") become a `topic:` side reference.
+- **Binding to a guessed id** (`calculus_lifesaver`, before registering) now binds the project and returns a note — model behavior, but not worth a red call.
+
+Sidebar: 章节考's 范围 defaults to 都考; the settings and the pending ask live in the pane store per station, so leaving the tab keeps both, and a 「教练正在出题…」 card (what was asked, how long) stays until the paper lands — after 8 minutes it says none has landed and offers to ask again.
+
 ## Alternatives considered
 
 - **Keep both homes, fix the derivation** (judge scope by quiz stations only, withdraw sibling drafts): rejected — it shrinks the error but keeps an invisible choice the model can still get wrong.
