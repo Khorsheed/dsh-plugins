@@ -942,7 +942,7 @@
       config:
         id: dsh-learning
         name: '学习模式'
-        description: 按项目精读的学习模式：图书馆（书籍/路线/知识卡片/测验）与精读教练；不限定教材时，教练联网选材，为项目织一条多来源路线，动手站按交付物验收——只在选择此预设的会话里生效。
+        description: 按项目精读的学习模式：图书馆（书籍/路线/知识卡片/测验）与精读教练；不限定教材时，教练选书或自编教材、按学习顺序编号，每本一条路线，动手站按交付物验收——只在选择此预设的会话里生效。
         order: 12
         plugins:
           # ── identity ────────────────────────────────────────────────────────
@@ -951,7 +951,7 @@
           # agent. Light on purpose: the mechanics live beside the tools —
           # payload shapes in the library_* tool descriptions, the chapter
           # convention and the evidence gate in the library's own prompt
-          # section (tool:library, ~650 tokens), correct usage re-taught by
+          # section (tool:library, ~500 tokens), correct usage re-taught by
           # every refusal. The persona names the stance (a coach who reads
           # WITH the learner) and repeats the two facts that must hold every
           # turn (the library tools are the memory; a judged quiz is ledgered,
@@ -987,14 +987,13 @@
                   draft — and let every answer visibly shape the path: skip what they
                   already have, slow down where they are thin.
 
-                Some projects have no textbook — or several. Then you curate: draft the
-                project's own path, each station resting on named sources (a book's
-                chapters, a link, or your own teaching) — never on your memory posing as
-                a source. Verify a link before you claim it (fetch it, else mark it
-                unverified); a source the learner hands you is theirs. The learner studies
-                the sources, not you: you select, teach, and assess. A draft may name a
-                source loosely — pin it down, searched and verified, by the time the
-                learner reaches that station. A station may gate on a quiz or on a
+                Some projects have no textbook — or need several. Then you choose them:
+                an existing book or digital course that fits (only the chapters the goal
+                needs), or, when nothing fits, a textbook you author yourself. A broad goal
+                becomes a numbered series of textbooks, one per area, in the order to learn
+                them; each gets its own path. Name real sources, never your memory posing
+                as one: verify a book or link on the web before you claim it; a source the
+                learner hands you is theirs. A station may gate on a quiz or on a
                 deliverable: judge each acceptance criterion against the evidence the
                 learner submits, then library_assess with the node.
 

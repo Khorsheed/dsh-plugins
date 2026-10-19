@@ -56,9 +56,11 @@ export interface LibraryPaneInjected {
   deleteProject: (projectId: string) => Answer<{ id: string }>
   /** Remove a shelf entry: its registration, roadmaps and pages go; its cards stay, unhung. */
   removeResource: (projectId: string, resourceId: string) => Answer<{ id: string }>
-  getRoadmap: (projectId: string, resourceId?: string) => Promise<RemoteResult<{ roadmap?: LibraryRoadmap; draft?: LibraryRoadmap }>>
-  adoptRoadmap: (projectId: string, resourceId?: string) => Answer<{ roadmap: LibraryRoadmap }>
-  discardDraft: (projectId: string, resourceId?: string) => Answer<{ resourceId?: string }>
+  /** Move a textbook to another place in the study order (the rest shift). */
+  moveResource: (projectId: string, resourceId: string, seq: number) => Answer<{ resources: LibraryResource[] }>
+  getRoadmap: (projectId: string, resourceId: string) => Promise<RemoteResult<{ roadmap?: LibraryRoadmap; draft?: LibraryRoadmap }>>
+  adoptRoadmap: (projectId: string, resourceId: string) => Answer<{ roadmap: LibraryRoadmap }>
+  discardDraft: (projectId: string, resourceId: string) => Answer<{ resourceId: string }>
   markNodeRead: (projectId: string, resourceId: string | undefined, nodeId: string) => Answer<{ roadmap: LibraryRoadmap; unlocked: string[] }>
   listPages: (projectId: string, resourceId: string, nodeId?: string) => Promise<RemoteResult<{ pages: LibraryPage[] }>>
   readPagePhoto: (projectId: string, pageId: string) => Answer<{ data: string; mediaType: string }>

@@ -45,7 +45,7 @@ const book: LibraryResource = {
   id: 'b_one',
   title: 'Principles of Neural Science',
   kind: 'book',
-  addedBy: 'coach',
+  origin: 'picked',
   toc: [{ n: 1, title: 'The Brain and Behavior', part: 'I' }, { n: 2, title: 'Genes and Behavior', part: 'I' }],
   tocSource: { by: 'web', url: 'https://neurology.mhmedical.com/book.aspx?bookID=3024' },
   meta: { edition: '6th', bookKind: 'knowledge' },
@@ -74,7 +74,7 @@ const link: LibraryResource = {
   url: 'https://numpy.org/doc/stable/user/quickstart.html',
   kind: 'article',
   note: '热身站的读物，只看数组与广播两节',
-  addedBy: 'coach',
+  origin: 'picked',
   createdAt: '2026-10-06T00:00:00.000Z',
 }
 
@@ -221,8 +221,9 @@ describe('the ledgers', () => {
   })
 })
 
-describe('the project-level path', () => {
+describe('textbook paths', () => {
   const projectPath: LibraryRoadmap = {
+    primaryResourceId: book.id,
     status: 'adopted',
     nodes: [
       { id: 's1', title: '热身', gate: 'acceptance', goals: [], dependsOn: [], covers: [{ ref: 'topic:教练带写' }], state: 'current', acceptance: ['跑通脚本'] },
@@ -231,20 +232,32 @@ describe('the project-level path', () => {
     generatedAt: '2026-10-06T00:00:00.000Z',
   }
 
-  it('round-trips a roadmap at the project scope, draft beside it', async () => {
+  it('round-trips a textbook\'s roadmap, draft beside it', async () => {
     await store.withProjectLock(project.id, () => {
       store.writeProject(project)
+      store.writeResource(project.id, book)
       store.writeRoadmap(project.id, projectPath)
       store.writeRoadmap(project.id, { ...projectPath, status: 'draft', note: '每周 2 站' })
     })
-    expect(store.readRoadmap(project.id)?.nodes[0]?.acceptance).toEqual(['跑通脚本'])
-    expect(store.readRoadmap(project.id)?.nodes[0]?.covers).toEqual([{ ref: 'topic:教练带写' }])
-    expect(store.readRoadmap(project.id, undefined, 'draft')?.note).toBe('每周 2 站')
-    // The v5 layout: the project's own path is roadmaps/project.json.
-    expect(existsSync(join(root, 'projects', project.id, 'roadmaps', 'project.json'))).toBe(true)
-    store.removeDraft(project.id)
-    expect(store.readRoadmap(project.id, undefined, 'draft')).toBeUndefined()
-    expect(store.readRoadmap(project.id)?.status).toBe('adopted')
+    expect(store.readRoadmap(project.id, book.id)?.nodes[0]?.acceptance).toEqual(['跑通脚本'])
+    expect(store.readRoadmap(project.id, book.id)?.nodes[0]?.covers).toEqual([{ ref: 'topic:教练带写' }])
+    expect(store.readRoadmap(project.id, book.id, 'draft')?.note).toBe('每周 2 站')
+    expect(existsSync(join(root, 'projects', project.id, 'roadmaps', `${book.id}.json`))).toBe(true)
+    store.removeDraft(project.id, book.id)
+    expect(store.readRoadmap(project.id, book.id, 'draft')).toBeUndefined()
+    expect(store.readRoadmap(project.id, book.id)?.status).toBe('adopted')
+  })
+
+  it('a retired project-level path reads as absent, and a path is never written without its textbook', async () => {
+    const dir = join(root, 'projects', project.id, 'roadmaps')
+    await store.withProjectLock(project.id, () => { store.writeProject(project) })
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'project.json'), JSON.stringify({ ...projectPath, primaryResourceId: undefined }))
+    expect(store.readRoadmap(project.id, undefined)).toBeUndefined()
+    await expect(store.withProjectLock(project.id, () => {
+      const { primaryResourceId: _dropped, ...loose } = projectPath
+      store.writeRoadmap(project.id, loose)
+    })).rejects.toThrow(/under its textbook/)
   })
 
   it('normalizeNodeCover reads the v5 shape and every legacy union member into { ref, locator? }', () => {
@@ -302,7 +315,8 @@ describe('the legacy layout reads (read-old, write-new)', () => {
     expect(resources.map(entry => entry.id)).toEqual(['b_1', 'r_old'])
     expect(resources[0]).toMatchObject({ kind: 'book', meta: { bookKind: 'knowledge', short: 'PNS', edition: '6th' } })
     expect(resources[0]?.toc?.map(row => row.title)).toEqual(['Ion Channels', 'The Action Potential'])
-    expect(resources[1]).toMatchObject({ kind: 'tool', url: 'https://mujoco.org', addedBy: 'learner' })
+    // The legacy addedBy reads as origin.
+    expect(resources[1]).toMatchObject({ kind: 'tool', url: 'https://mujoco.org', origin: 'learner' })
   })
 
   it('reads the legacy roadmap: bookId → primaryResourceId, kind: practice → gate: acceptance, cover unions → { ref, locator }', () => {
@@ -428,7 +442,7 @@ describe('the v2 → covers migration', () => {
 })
 
 describe('the shelf (one resources/<id>.json per entry)', () => {
-  const second: LibraryResource = { id: 'r_two', title: 'MuJoCo', url: 'https://mujoco.org', kind: 'tool', addedBy: 'learner', createdAt: '2026-10-07T00:00:00.000Z' }
+  const second: LibraryResource = { id: 'r_two', title: 'MuJoCo', url: 'https://mujoco.org', kind: 'tool', origin: 'learner', createdAt: '2026-10-07T00:00:00.000Z' }
 
   it('writes, lists and removes a shelf link', async () => {
     await store.withProjectLock(project.id, () => {
@@ -443,7 +457,20 @@ describe('the shelf (one resources/<id>.json per entry)', () => {
     const left = store.listResources(project.id)
     expect(left.map(entry => entry.id)).toEqual(['r_two'])
     expect(left[0]?.note).toBeUndefined()
-    expect(left[0]?.addedBy).toBe('learner')
+    expect(left[0]?.origin).toBe('learner')
+  })
+
+  it('lists textbooks first in study order (seq, unnumbered last), then links by age', async () => {
+    const later: LibraryResource = { ...book, id: 'b_two', title: 'Calculus', seq: 1, createdAt: '2026-10-09T00:00:00.000Z' }
+    const loose: LibraryResource = { ...book, id: 'b_three', title: 'Unnumbered', createdAt: '2026-10-01T00:00:00.000Z' }
+    await store.withProjectLock(project.id, () => {
+      store.writeProject(project)
+      store.writeResource(project.id, link)
+      store.writeResource(project.id, { ...book, seq: 2 })
+      store.writeResource(project.id, later)
+      store.writeResource(project.id, loose)
+    })
+    expect(store.listResources(project.id).map(entry => entry.id)).toEqual(['b_two', 'b_one', 'b_three', 'r_one'])
   })
 
   it('normalizeResource requires id and title (a thin link may omit the url), and defaults a drifted kind', () => {
@@ -452,7 +479,11 @@ describe('the shelf (one resources/<id>.json per entry)', () => {
     expect(normalizeResource({ title: 't', url: 'https://x.example' })).toBeUndefined()
     expect(normalizeResource({ id: '../x', title: 't', url: 'https://x.example' })).toBeUndefined()
     const drifted = normalizeResource({ id: 'r_x', title: 't', url: 'https://x.example', kind: 'zine', addedBy: 'nobody' })
-    expect([drifted?.kind, drifted?.addedBy]).toEqual(['article', undefined])
+    expect([drifted?.kind, drifted?.origin]).toEqual(['article', undefined])
+    // A legacy coach entry reads as a pick; seq rides textbooks only.
+    expect(normalizeResource({ id: 'r_y', title: 't', kind: 'book', addedBy: 'coach', seq: 3, toc: [{ title: 'a' }] })).toMatchObject({ origin: 'picked', seq: 3 })
+    expect(normalizeResource({ id: 'r_z', title: 't', kind: 'article', url: 'https://x.example', seq: 3 })?.seq).toBeUndefined()
+    expect(normalizeResource({ id: 'r_w', title: 't', kind: 'book', origin: 'authored', seq: 0, toc: [{ title: 'a' }] })).toMatchObject({ origin: 'authored' })
   })
 })
 

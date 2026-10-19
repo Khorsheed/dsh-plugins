@@ -22,7 +22,7 @@ const now = Date.now()
 const iso = (days: number) => new Date(now + days * 86_400_000).toISOString()
 
 const cam5: LibraryResource = {
-  id: 'r_cam5', title: '剑桥雅思 5', kind: 'book',
+  id: 'r_cam5', title: '剑桥雅思 5', kind: 'book', seq: 1, origin: 'learner',
   meta: {
     bookKind: 'material', short: '剑5',
     extras: [
@@ -35,20 +35,21 @@ const cam5: LibraryResource = {
   createdAt: iso(-10),
 }
 const avu: LibraryResource = {
-  id: 'r_avu', title: 'Academic Vocabulary in Use', kind: 'book',
+  id: 'r_avu', title: 'Academic Vocabulary in Use', kind: 'course', seq: 2, origin: 'picked',
   meta: { bookKind: 'knowledge' },
   toc: ['Unit 1', 'Unit 2', 'Unit 3', 'Unit 4'].map((title, index) => ({ n: index + 1, title })),
   tocSource: { by: 'web', url: 'https://example.org' },
   createdAt: iso(-5),
 }
 const pns: LibraryResource = {
-  id: 'r_pns', title: 'Principles of Neural Science', kind: 'book',
+  id: 'r_pns', title: 'Principles of Neural Science', kind: 'book', seq: 3, origin: 'authored',
   meta: { bookKind: 'knowledge', short: 'PNS', edition: '6th' },
   toc: ['Ion Channels', 'Membrane Potential', 'Propagated Signaling: The Action Potential', 'Overview of Synaptic Transmission'].map((title, index) => ({ n: index + 1, title })),
   tocSource: { by: 'web', url: 'https://neurology.mhmedical.com/book.aspx?bookID=3024' },
   createdAt: iso(-20),
 }
-const resources: LibraryResource[] = [cam5, avu, pns]
+const link: LibraryResource = { id: 'r_link', title: 'IELTS Liz · Reading Tips', kind: 'article', url: 'https://ieltsliz.com', note: '题型讲解视频，配合 T1 用', origin: 'picked', createdAt: iso(-3) }
+const resources: LibraryResource[] = [cam5, avu, pns, link]
 
 type NodeSpec = { id: string; title: string; gate: 'quiz' | 'read'; state: 'done' | 'current' | 'locked'; locator: string; deps?: string[]; stats?: { attempts: number; lastRatio: number; bestRatio: number }; points?: { id: string; title: string }[]; notes?: string }
 const node = (resourceId: string, spec: NodeSpec) => ({
@@ -179,11 +180,13 @@ const projects: LibraryProjectSummary[] = [
   summary({
     id: 'p_ielts', name: '雅思', template: 'language', color: 'ember', icon: 'globe', goal: '学术类 7 分，12 月 14 日',
     resources: [
-      { id: 'r_cam5', title: cam5.title, kind: 'book', roadmap: { done: 2, total: 6 }, current: { id: 't1p2', title: 'T1 · P2 Nature or Nurture?' }, hasDraft: false },
-      { id: 'r_avu', title: avu.title, kind: 'book', roadmap: { done: 0, total: 2 }, current: { id: 'u1', title: 'Unit 1 学习词汇' }, hasDraft: false },
-      { id: 'r_pns', title: pns.title, kind: 'book', hasDraft: true },
+      { id: 'r_cam5', title: cam5.title, kind: 'book', seq: 1, origin: 'learner', roadmap: { done: 2, total: 6 }, current: { id: 't1p2', title: 'T1 · P2 Nature or Nurture?' }, hasDraft: false },
+      { id: 'r_avu', title: avu.title, kind: 'course', seq: 2, origin: 'picked', roadmap: { done: 0, total: 2 }, current: { id: 'u1', title: 'Unit 1 学习词汇' }, hasDraft: false },
+      { id: 'r_pns', title: pns.title, kind: 'book', seq: 3, origin: 'authored', hasDraft: true, draftTotal: 3 },
+      { id: 'r_link', title: link.title, kind: 'article', origin: 'picked', hasDraft: false },
     ],
   }),
+  summary({ id: 'p_math', name: '数学', template: 'subject', color: 'indigo', icon: 'brain', goal: '系统掌握单变量微积分与概率基础', cardCount: 0, dueCount: 0, lastActiveAt: iso(-2) }),
 ]
 
 const ok = (value: unknown) => Promise.resolve({ ok: true, value })
@@ -204,12 +207,13 @@ const resultFixture: LibraryAssessResult = {
 const face = {
   sessionId: 'preview', useStore, actions: instance.actions, t,
   listProjects: () => ok({ projects }),
-  getProject: (id: string) => done({ project: projects.find(project => project.id === id), resources }),
+  getProject: (id: string) => done({ project: projects.find(project => project.id === id), resources: id === 'p_ielts' ? resources : [] }),
   createProject: () => done({ project: projects[0] }),
   updateProject: () => done({ project: projects[0] }),
   deleteProject: () => done({ id: 'p_ielts' }),
   removeResource: () => done({ id: 'r_avu' }),
-  getRoadmap: (_project: string, resourceId?: string) => ok(resourceId === undefined ? {} : (roadmaps[resourceId] ?? {})),
+  moveResource: () => done({ resources }),
+  getRoadmap: (_project: string, resourceId: string) => ok(roadmaps[resourceId] ?? {}),
   adoptRoadmap: () => done({}), discardDraft: () => done({}), markNodeRead: () => done({ unlocked: [] }),
   listResources: () => ok({ resources }),
   listPages: () => ok({ pages: [] }),
