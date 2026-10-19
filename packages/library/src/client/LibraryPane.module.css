@@ -139,7 +139,11 @@
   font-weight: 600;
 }
 
-/* Buttons: one solid primary per screen, the rest outlined or plain. */
+/* Buttons follow the host's Button primitive (ui-primitives): the primary is
+   the host's neutral fill (--dsw-alias-button-primary-fill — near-black on
+   light, near-white on dark), secondary actions are a 0.5px outline, 12px
+   corners, 36px tall. One solid primary per screen; blue stays for links and
+   state, never for buttons. */
 .primary,
 .secondary,
 .ghost,
@@ -149,52 +153,61 @@
   align-items: center;
   justify-content: center;
   gap: 6px;
-  min-height: 30px;
+  min-height: 36px;
   padding: 0 14px;
-  border-radius: 8px;
+  border-radius: var(--dsw-radius-md, 12px);
   font: inherit;
+  font-size: var(--dsh-panel-text-body, 14px);
   white-space: nowrap;
   cursor: pointer;
+  transition: background var(--ds-transition-duration-fast, 0.1s) ease;
 }
 
 .primary {
-  border: 1px solid var(--lib-accent);
-  background: var(--lib-accent);
-  color: var(--dsw-alias-label-primary-inverted);
+  border: none;
+  background: var(--dsw-alias-button-primary-fill, var(--dsw-alias-label-primary));
+  color: var(--dsw-alias-label-primary-foreground, var(--dsw-alias-label-primary-inverted));
 }
 
-.secondary {
-  border: 1px solid var(--lib-accent);
-  background: transparent;
-  color: var(--lib-accent);
+.primary:hover:not(:disabled) {
+  background: var(--dsw-alias-button-primary-hover, var(--dsw-alias-button-primary-fill));
 }
 
-.ghost {
-  border: 1px solid var(--dsw-alias-border-l2);
+.secondary,
+.ghost,
+.danger {
+  border: 0.5px solid var(--dsw-alias-border-l3, var(--dsw-alias-border-l2));
   background: transparent;
   color: var(--dsw-alias-label-primary);
 }
 
-.danger {
-  border: 1px solid var(--dsw-alias-border-l2);
-  background: transparent;
-  color: var(--lib-bad);
+.danger { color: var(--lib-bad); }
+
+.secondary:hover:not(:disabled),
+.ghost:hover:not(:disabled),
+.danger:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
 }
 
 .textButton {
   min-height: 24px;
   padding: 0;
   border: none;
+  border-radius: 4px;
   background: transparent;
   color: var(--dsw-alias-label-secondary);
   font-size: var(--dsh-panel-text-meta, 12px);
 }
 
+.textButton:hover:not(:disabled) { color: var(--dsw-alias-label-primary); }
+
 .primary:disabled,
 .secondary:disabled,
-.ghost:disabled {
-  opacity: 0.5;
-  cursor: default;
+.ghost:disabled,
+.danger:disabled,
+.textButton:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .primary:focus-visible,
@@ -602,17 +615,12 @@
   flex-direction: column;
   gap: 10px;
   min-width: 0;
-  padding: 12px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 12px;
-  background: var(--dsw-alias-bg-base);
+  padding: 14px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-md, 12px);
+  background: var(--dsw-alias-bg-layer-1);
   color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
 }
-
-.projectCard:hover { background: var(--dsw-alias-interactive-bg-hover); }
 
 .projectGoal {
   display: -webkit-box;
@@ -651,7 +659,6 @@
   cursor: pointer;
 }
 
-.projectCard:focus-visible { outline: 2px solid var(--pc); outline-offset: 2px; }
 
 .projectTop {
   display: flex;
@@ -1810,11 +1817,11 @@ textarea.input { resize: vertical; font: inherit; line-height: 1.5; }
   display: flex;
   gap: 8px;
   align-items: flex-start;
-  padding: 8px 10px;
-  border: 1px solid color-mix(in srgb, var(--lib-bad) 30%, transparent);
-  border-radius: 10px;
-  background: var(--lib-bad-soft);
+  padding: 9px 0;
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
 }
+
+.missRow:first-child { border-top: none; }
 
 .missMark {
   display: inline-flex;
@@ -1966,7 +1973,7 @@ textarea.input { resize: vertical; font: inherit; line-height: 1.5; }
   color: var(--dsw-alias-label-primary-inverted);
 }
 
-.dialogActions .danger:disabled { opacity: 0.5; cursor: default; }
+.dialogActions .danger:hover:not(:disabled) { background: color-mix(in srgb, var(--lib-bad) 88%, var(--dsw-alias-label-primary)); }
 
 /* 教材来源标记 */
 .originTag {
@@ -1985,12 +1992,13 @@ textarea.input { resize: vertical; font: inherit; line-height: 1.5; }
 
 /* 继续学习 */
 .continue {
-  display: grid;
-  gap: 6px;
-  padding: 10px 12px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 10px;
+  padding: 12px 14px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-md, 12px);
+  background: var(--dsw-alias-bg-layer-1);
 }
+
+.continue.projectNext { border-top: 0.5px solid var(--dsw-alias-border-l2); }
 
 .continueLabel {
   color: var(--dsw-alias-label-secondary);
@@ -2143,6 +2151,144 @@ textarea.input { resize: vertical; font: inherit; line-height: 1.5; }
 
 .skipped summary { cursor: pointer; color: var(--dsw-alias-label-primary); }
 .skipped ul { margin: 6px 0 0; padding-left: 18px; }
+
+/* 今日：项目卡（打开项目 + 继续学习）、复习一行、教练最近记下 */
+.projectList {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 10px;
+}
+
+.projectOpen {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.projectOpen:focus-visible { outline: 2px solid var(--lib-accent); outline-offset: 4px; border-radius: 8px; }
+
+.projectNext {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-top: 10px;
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+}
+
+.projectNextText {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+}
+
+.projectNextText > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reviewRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-md, 12px);
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.reviewText {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+}
+
+.recordList {
+  display: flex;
+  flex-direction: column;
+}
+
+.record {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-height: 44px;
+  padding: 8px 0;
+  border: none;
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.record:first-child { border-top: none; }
+.record:hover .recordTitle { color: var(--dsw-alias-label-primary); }
+
+.recordIcon {
+  flex: none;
+  margin-top: 2px;
+  color: var(--dsw-alias-label-tertiary, var(--dsw-alias-label-secondary));
+}
+
+.recordText {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+}
+
+.recordTitle {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+}
+
+/* 这一站的错题：一张可展开的卡 */
+.mistakeBook {
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-md, 12px);
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.mistakeHead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 14px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.mistakeHead:focus-visible { outline: 2px solid var(--lib-accent); outline-offset: -2px; border-radius: var(--dsw-radius-md, 12px); }
+
+.mistakeHeadText {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+}
+
+.mistakeRows {
+  padding: 0 14px 6px;
+}
 
 @container dsh-panel (max-width: 560px) {
   .body { padding: 10px; }

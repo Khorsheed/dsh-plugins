@@ -88,8 +88,11 @@ function CardRow({ p, projectId, card, bookTitle, open, onToggle }: {
   const { t, actions } = p
   const [notice, setNotice] = useState<string | undefined>()
   const due = daysUntil(card.mastery.dueAt)
+  const [busy, setBusy] = useState(false)
   const setStatus = (status: LibraryCard['status']): void => {
-    void outcome(p.editCard(projectId, card.id, { status })).then(() => { actions.refresh() }, (failure: unknown) => { setNotice(String(failure)) })
+    if (busy) return
+    setBusy(true)
+    void outcome(p.editCard(projectId, card.id, { status })).then(() => { actions.refresh() }, (failure: unknown) => { setNotice(String(failure)); setBusy(false) })
   }
   return (
     <article className={css.cardRow} data-open={open ? 'true' : 'false'}>
@@ -128,8 +131,8 @@ function CardRow({ p, projectId, card, bookTitle, open, onToggle }: {
           </div>
           <div className={css.actions}>
             <button type="button" className={css.secondary} onClick={() => { setNotice(p.primeConversation(t('prime.card', { term: card.term })) ? t('notice.primed') : t('notice.noConversation')) }}>{t('action.askCoach')}</button>
-            <button type="button" className={css.ghost} onClick={() => { setStatus('mastered') }}>{t('cards.mastered')}</button>
-            <button type="button" className={css.danger} onClick={() => { setStatus('deleted') }}>{t('cards.delete')}</button>
+            <button type="button" className={css.ghost} disabled={busy} onClick={() => { setStatus('mastered') }}>{t('cards.mastered')}</button>
+            <button type="button" className={css.danger} disabled={busy} onClick={() => { setStatus('deleted') }}>{t('cards.delete')}</button>
           </div>
           {notice !== undefined && <div className={css.notice}>{notice}</div>}
         </div>

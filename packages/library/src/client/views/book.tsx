@@ -443,7 +443,6 @@ export function NodeView({ p, projectId, resourceId, nodeId, tab }: ViewProps & 
             resourceId={resourceId}
             node={node}
             passRatio={loaded.data?.passRatio ?? 0.8}
-            resources={loaded.data?.resources ?? []}
             onPrime={(focus, context) => {
               const base = t(`prime.quiz.${focus}`, { book: resource?.title ?? '', node: node.title })
               const weak = context?.weak ?? []
@@ -456,7 +455,6 @@ export function NodeView({ p, projectId, resourceId, nodeId, tab }: ViewProps & 
                 + (context?.count !== undefined ? t('prime.quiz.countSuffix', { count: String(context.count) }) : ''))
             }}
             onRetake={prompts => { prime(t('prime.quiz.retake', { node: node.title, list: prompts.map(prompt => `- ${prompt}`).join('\n') })) }}
-            onRetakeAll={prompts => { prime(t('prime.quiz.missedAll', { list: prompts.map(prompt => `- ${prompt}`).join('\n') })) }}
             onReplace={prompts => { prime(t('prime.quiz.replace', { node: node.title, list: prompts.map(prompt => `- ${prompt}`).join('\n') })) }}
           />
         )}
@@ -471,6 +469,7 @@ function GuideTab({ p, projectId, resourceId, node, resource, coverContext, onPr
   const { t, actions } = p
   const rows = resource === undefined ? [] : rowsOf(node, resource)
   const [error, setError] = useState<string | undefined>()
+  const [marking, setMarking] = useState(false)
   return (
     <>
       {node.state === 'locked' && <div className={css.notice}>{t('node.locked')}</div>}
@@ -498,7 +497,11 @@ function GuideTab({ p, projectId, resourceId, node, resource, coverContext, onPr
           <button
             type="button"
             className={css.primary}
-            onClick={() => { void outcome(p.markNodeRead(projectId, resourceId, node.id)).then(() => { actions.pop() }, (failure: unknown) => { setError(String(failure)) }) }}
+            disabled={marking}
+            onClick={() => {
+              setMarking(true)
+              void outcome(p.markNodeRead(projectId, resourceId, node.id)).then(() => { actions.pop() }, (failure: unknown) => { setError(String(failure)); setMarking(false) })
+            }}
           >{t('node.markRead')}</button>
         )}
       </div>
@@ -711,14 +714,15 @@ function MissRow({ p, row, variant, book }: { p: ViewProps['p']; row: MissedRow;
   )
 }
 
-function QuizTab({ p, projectId, resourceId, node, passRatio, resources, onPrime, onRetake, onRetakeAll, onReplace }: {
-  p: ViewProps['p']; projectId: string; resourceId: string | undefined; node: RoadmapNode; passRatio: number; resources: readonly LibraryResource[]; onPrime: (focus: LibraryQuizFocus, context?: { weak?: readonly string[]; points?: readonly string[]; kinds?: readonly LibraryQuizQuestion['kind'][]; count?: number | undefined }) => void; onRetake: (prompts: string[]) => void; onRetakeAll: (prompts: string[]) => void; onReplace: (prompts: string[]) => void
+function QuizTab({ p, projectId, resourceId, node, passRatio, onPrime, onRetake, onReplace }: {
+  p: ViewProps['p']; projectId: string; resourceId: string | undefined; node: RoadmapNode; passRatio: number; onPrime: (focus: LibraryQuizFocus, context?: { weak?: readonly string[]; points?: readonly string[]; kinds?: readonly LibraryQuizQuestion['kind'][]; count?: number | undefined }) => void; onRetake: (prompts: string[]) => void; onReplace: (prompts: string[]) => void
 }): ReactNode {
   const { t, actions, useStore } = p
   const rev = useStore(s => s.rev)
   // The quiz direction: the three focuses. 错题重考 is not a direction — it is
   // the paper card's primary action once this station has misses.
-  const [showOthers, setShowOthers] = useState(false)
+  // The station's own misses fold into one card (other stations' never show here — a fresh station must not look already sat).
+  const [showMissed, setShowMissed] = useState(false)
   // The points grid's explainer hides behind the title's ⓘ (tap to toggle).
   const [showPointsHint, setShowPointsHint] = useState(false)
   // The settings (范围 / 重点 / 题型 / 题量) and the pending ask live in the pane
@@ -787,10 +791,7 @@ function QuizTab({ p, projectId, resourceId, node, passRatio, resources, onPrime
   const allQuizzes = assessments.data?.assessments ?? []
   const allMissed = collectMissed(allAttempts.data?.attempts ?? [], allQuizzes)
   const missed = allMissed.filter(row => row.quiz.scope.nodeId === node.id)
-  const others = allMissed.filter(row => row.quiz.scope.nodeId !== node.id)
   const voided = collectVoided(allAttempts.data?.attempts ?? [], latest === undefined ? [] : [latest])
-  const bookOf = (quiz: LibraryAssessment): string | undefined =>
-    quiz.scope.resourceId === undefined ? undefined : resources.find(candidate => candidate.id === quiz.scope.resourceId)?.title
   // Per-point mastery: the newest verdict (attempts arrive newest first) of any
   // question probing the point decides — strong, weak, or untested.
   const points = node.points ?? []
@@ -955,23 +956,19 @@ function QuizTab({ p, projectId, resourceId, node, passRatio, resources, onPrime
           <button type="button" className={css.primary} disabled={asking} onClick={ask}>{asking ? t('node.quizWaiting') : pickedTitles.length > 0 ? t('node.askPoints', { count: String(pickedTitles.length) }) : t('node.askQuiz')}</button>
         </div>
       )}
-      {(missed.length > 0 || others.length > 0) && (
-        <section className={css.section}>
-          <h3 className={css.sectionTitle}>{missed.length > 0 ? t('node.missedTitle', { count: String(missed.length) }) : t('mistakes.title', { count: String(others.length) })}</h3>
-          {missed.map(row => <MissRow key={`${row.quiz.id}:${row.question.id}`} p={p} row={row} variant="missed" />)}
-          {others.length > 0 && missed.length > 0 && !showOthers && (
-            <div className={css.actions}>
-              <button type="button" className={css.textButton} onClick={() => { setShowOthers(true) }}>{t('node.otherMissed', { count: String(others.length) })} ▸</button>
+      {missed.length > 0 && (
+        <section className={css.mistakeBook}>
+          <button type="button" className={css.mistakeHead} aria-expanded={showMissed} onClick={() => { setShowMissed(!showMissed) }}>
+            <span className={css.mistakeHeadText}>
+              <strong>{t('node.missedTitle', { count: String(missed.length) })}</strong>
+              <span className={css.muted}>{t('node.missedMeta', { when: when(missed[0]!.at, t) })}</span>
+            </span>
+            <span className={css.linkText}>{showMissed ? t('node.missedHide') : t('node.missedShow')}</span>
+          </button>
+          {showMissed && (
+            <div className={css.mistakeRows}>
+              {missed.map(row => <MissRow key={`${row.quiz.id}:${row.question.id}`} p={p} row={row} variant="missed" />)}
             </div>
-          )}
-          {others.length > 0 && (missed.length === 0 || showOthers) && (
-            <>
-              {missed.length > 0 && <div className={css.muted}>{t('node.otherMissed', { count: String(others.length) })}</div>}
-              {others.map(row => <MissRow key={`${row.quiz.id}:${row.question.id}`} p={p} row={row} variant="missed" book={bookOf(row.quiz)} />)}
-              <div className={css.actions}>
-                <button type="button" className={css.textButton} onClick={() => { onRetakeAll(others.map(row => row.question.prompt)) }}>{t('mistakes.cta')}</button>
-              </div>
-            </>
           )}
         </section>
       )}
