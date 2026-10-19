@@ -259,9 +259,9 @@ function QuestionCard({ p, question, number, answered, draft, onDraft, onAnswer 
   )
 }
 
-/** The answer box's live math preview: appears once the draft smells like TeX ($…$ or a \command); bare commands preview as one inline formula. */
+/** The answer box's live math preview: appears once the draft smells like math ($…$, a \command, or a plain ^ / _ like (x-2)^2); bare math previews as one inline formula. */
 function AnswerPreview({ text, t }: { text: string; t: ViewProps['p']['t'] }): ReactNode {
-  if (!/\$|\\[a-zA-Z]/.test(text)) return null
+  if (!/\$|\\[a-zA-Z]|[\w)\]}][\^_]\{?[\w-]/.test(text)) return null
   return (
     <div className={css.answerPreview}>
       <span className={css.muted}>{t('quiz.preview')}</span>
