@@ -257,6 +257,22 @@ export default class LocalAgentGateway extends TypertRemoteService {
   }
 
   /**
+   * Verify one harness's saved endpoint from the host — the settings card's
+   * verify button. The answer is the harness's human-readable verdict text.
+   * Session-less by design: the commands channel needs a main agent session,
+   * which a settings card may not have. Null when the harness is unknown or
+   * declares no probe (the card then hides the button — declare-and-degrade).
+   * @param name - the harness name.
+   * @returns the verdict text, or null.
+   */
+  @Remote('checkEndpoint')
+  async checkEndpoint(name: string): Promise<string | null> {
+    const harness = this.ctx.localAgent.get(name)
+    if (typeof harness?.checkEndpoint !== 'function') return null
+    return harness.checkEndpoint(this.ctx.localAgent.homeDir(name))
+  }
+
+  /**
    * The model surface of one member — the composer's picker read. The
    * delegation record's requested model rides in from the core so the broker
    * can rank it between the override and the settings layer; the record's

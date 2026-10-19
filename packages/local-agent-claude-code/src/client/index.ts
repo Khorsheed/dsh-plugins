@@ -97,6 +97,13 @@ export function apply(ctx: Context): void {
       if (gw === undefined || typeof gw.harnessModel !== 'function') return Promise.resolve(undefined)
       return gw.harnessModel('claude-code').then(result => (result.ok ? result.value : undefined))
     },
+    // The verify button's probe, over the session-less gateway Remote. A core
+    // predating `checkEndpoint` hides the button (declare-and-degrade).
+    checkEndpoint: () => {
+      const gw = gateway()
+      if (gw === undefined || typeof gw.checkEndpoint !== 'function') return Promise.resolve(undefined)
+      return gw.checkEndpoint('claude-code').then(result => (result.ok ? result.value : undefined))
+    },
     auth: {
       status: name =>
         // The Remote declares (name, scope?) and the client enforces exact arity:

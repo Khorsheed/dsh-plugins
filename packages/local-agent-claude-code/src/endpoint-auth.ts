@@ -197,7 +197,7 @@ export async function clearEndpointAuth(homeDir: string): Promise<void> {
 }
 
 /** The official endpoint used when no baseUrl is configured anywhere. */
-const OFFICIAL_BASE_URL = 'https://api.anthropic.com'
+export const OFFICIAL_BASE_URL = 'https://api.anthropic.com'
 
 /** How many served model ids the check reply lists before truncating. */
 const CHECK_MODEL_LIST_LIMIT = 8
@@ -207,6 +207,86 @@ const CHECK_ERROR_BODY_LIMIT = 200
 
 /** The subcommand's fetch shape (injected in tests). */
 export type EndpointCheckFetch = (url: string, init: { headers: Record<string, string>; signal: AbortSignal }) => Promise<{ ok: boolean; status: number; text(): Promise<string> }>
+
+/** One model the endpoint serves, from `GET <baseUrl>/v1/models`. */
+export interface EndpointServedModel {
+  readonly id: string
+  readonly displayName?: string
+  /** Reasoning effort levels the endpoint advertises for this model, in ascending order. */
+  readonly efforts?: readonly string[]
+}
+
+/**
+ * The outcome of one `GET <baseUrl>/v1/models`: the parsed model list, the
+ * HTTP status when the endpoint answered, or the transport error's message.
+ * Callers fold it their own way (the check's verdict text, the catalog's
+ * directory); no case throws.
+ */
+export type EndpointModelsResult =
+  | { readonly kind: 'models'; readonly models: readonly EndpointServedModel[] }
+  | { readonly kind: 'http'; readonly status: number; readonly body: string }
+  | { readonly kind: 'unreachable'; readonly message: string }
+  | { readonly kind: 'malformed' }
+
+/** The effort levels one served-model entry advertises, oldest-first. */
+function servedEfforts(effort: unknown): readonly string[] | undefined {
+  if (typeof effort !== 'object' || effort === null) return undefined
+  const levels = ['low', 'medium', 'high', 'xhigh', 'max']
+    .filter(level => (effort as Record<string, { supported?: unknown }>)[level]?.supported === true)
+  return levels.length === 0 ? undefined : levels
+}
+
+/**
+ * `GET <baseUrl>/v1/models` with the resolved credential's auth header(s) —
+ * the token-free endpoint probe shared by the `/claude-code check` verdict
+ * and the model catalog. Anthropic's own API serves this route with
+ * `x-api-key`; relays (openproxy verified) proxy it and answer the same
+ * shape. Never throws: every failure mode folds into the result.
+ * @param endpoint - the resolved endpoint auth (caller checks the credential).
+ * @param fetchImpl - the HTTP fetch; default the host's global fetch.
+ * @param signal - abort for the whole probe (timeout bundled by the caller).
+ * @returns the folded result.
+ */
+export async function fetchEndpointModels(
+  endpoint: ClaudeEndpointAuth & { readonly baseUrl: string } ,
+  fetchImpl?: EndpointCheckFetch,
+  signal?: AbortSignal,
+): Promise<EndpointModelsResult> {
+  const headers: Record<string, string> = { 'anthropic-version': '2023-06-01' }
+  if (endpoint.apiKey !== undefined) headers['x-api-key'] = endpoint.apiKey
+  if (endpoint.authToken !== undefined) headers['authorization'] = `Bearer ${endpoint.authToken}`
+  const fetcher = fetchImpl ?? (globalThis.fetch as unknown as EndpointCheckFetch)
+  const url = `${endpoint.baseUrl.replace(/\/+$/, '')}/v1/models`
+  let response: { ok: boolean; status: number; text(): Promise<string> }
+  try {
+    response = await fetcher(url, { headers, signal: signal ?? AbortSignal.timeout(8_000) })
+  } catch (error) {
+    return { kind: 'unreachable', message: error instanceof Error ? error.message : String(error) }
+  }
+  if (!response.ok) {
+    return { kind: 'http', status: response.status, body: (await response.text().catch(() => '')).slice(0, CHECK_ERROR_BODY_LIMIT) }
+  }
+  let data: unknown
+  try {
+    data = (JSON.parse(await response.text()) as { data?: unknown }).data
+  } catch {
+    return { kind: 'malformed' }
+  }
+  if (!Array.isArray(data)) return { kind: 'malformed' }
+  const models: EndpointServedModel[] = []
+  for (const entry of data) {
+    if (typeof entry !== 'object' || entry === null) continue
+    const record = entry as { id?: unknown; display_name?: unknown; effort?: unknown }
+    if (typeof record.id !== 'string' || record.id === '') continue
+    const efforts = servedEfforts(record.effort)
+    models.push({
+      id: record.id,
+      ...typeof record.display_name === 'string' && record.display_name !== '' ? { displayName: record.display_name } : {},
+      ...efforts === undefined ? {} : { efforts },
+    })
+  }
+  return { kind: 'models', models }
+}
 
 /**
  * Probe the resolved endpoint with a cheap, token-free round-trip: `GET
@@ -230,29 +310,16 @@ export async function checkClaudeEndpoint(
     return 'No endpoint credential configured — fill API Key or Auth Token on the settings card (or the profile row) first.'
   }
   const baseUrl = (endpoint.baseUrl ?? OFFICIAL_BASE_URL).replace(/\/+$/, '')
-  const headers: Record<string, string> = { 'anthropic-version': '2023-06-01' }
-  if (endpoint.apiKey !== undefined) headers['x-api-key'] = endpoint.apiKey
-  if (endpoint.authToken !== undefined) headers['authorization'] = `Bearer ${endpoint.authToken}`
-  const fetcher = fetchImpl ?? (globalThis.fetch as unknown as EndpointCheckFetch)
-  let response: { ok: boolean; status: number; text(): Promise<string> }
-  try {
-    response = await fetcher(`${baseUrl}/v1/models`, { headers, signal: AbortSignal.timeout(timeoutMs) })
-  } catch (error) {
-    return `Endpoint unreachable (${baseUrl}): ${error instanceof Error ? error.message : String(error)}`
+  const result = await fetchEndpointModels({ ...endpoint, baseUrl }, fetchImpl, AbortSignal.timeout(timeoutMs))
+  if (result.kind === 'unreachable') return `Endpoint unreachable (${baseUrl}): ${result.message}`
+  if (result.kind === 'http') {
+    return `Endpoint answered HTTP ${String(result.status)} (${baseUrl})${result.body === '' ? '' : `: ${result.body}`}`
   }
-  if (!response.ok) {
-    const body = (await response.text().catch(() => '')).slice(0, CHECK_ERROR_BODY_LIMIT)
-    return `Endpoint answered HTTP ${String(response.status)} (${baseUrl})${body === '' ? '' : `: ${body}`}`
-  }
-  let models: { id?: unknown; display_name?: unknown }[]
-  try {
-    const parsed = JSON.parse(await response.text()) as { data?: unknown }
-    models = Array.isArray(parsed.data) ? parsed.data as typeof models : []
-  } catch {
+  if (result.kind === 'malformed') {
     return `Endpoint reachable (${baseUrl}) but the model list did not parse — the credential worked, the reply was not /v1/models-shaped.`
   }
-  const ids = models.map(model => typeof model.id === 'string' ? model.id : undefined).filter((id): id is string => id !== undefined)
-  if (ids.length === 0) return `Endpoint reachable (${baseUrl}); it serves no models.`
+  if (result.models.length === 0) return `Endpoint reachable (${baseUrl}); it serves no models.`
+  const ids = result.models.map(model => model.id)
   const listed = ids.slice(0, CHECK_MODEL_LIST_LIMIT).join(', ')
   const more = ids.length > CHECK_MODEL_LIST_LIMIT ? `, … +${String(ids.length - CHECK_MODEL_LIST_LIMIT)} more` : ''
   return `Endpoint reachable (${baseUrl}): ${String(ids.length)} model(s) served — ${listed}${more}`

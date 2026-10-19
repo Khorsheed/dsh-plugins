@@ -409,6 +409,15 @@ export interface LocalAgentHarness {
    */
   isAuthenticated?: (homeDir: string) => Promise<boolean>
   /**
+   * Optional host-side endpoint verification (the settings card's verify
+   * button): a cheap, token-free probe of the SAVED endpoint configuration,
+   * answered as human-readable verdict text. It rides the session-less
+   * gateway Remote (`checkEndpoint`) because a settings card may have no
+   * main agent session to run a slash command through. Absent means the
+   * harness has no such probe and the card must not offer the button.
+   */
+  checkEndpoint?: (homeDir: string) => Promise<string>
+  /**
    * The credential marker's modification stamp (epoch ms), undefined when no
    * credential exists. Two consumers: the manual-login watch requires a stamp
    * NEWER than the watch start (a stale marker must not read as a fresh

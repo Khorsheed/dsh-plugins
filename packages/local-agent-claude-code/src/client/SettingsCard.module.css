@@ -150,9 +150,22 @@
 }
 
 .endpointLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-size: 12px;
   line-height: 1.3;
   color: var(--dsw-alias-label-tertiary);
+}
+
+/* The green "configured" chip beside a credential field's label. */
+.configuredChip {
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--dsw-alias-success, #1a9e54);
+  background: color-mix(in srgb, var(--dsw-alias-success, #1a9e54) 12%, transparent);
 }
 
 .rowLabel {

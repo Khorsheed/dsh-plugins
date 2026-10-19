@@ -13,6 +13,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
+import { createHash } from 'node:crypto'
 import z from '@deepseek-ai/schemastery'
 import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
 import type {} from '@deepseek-ai/dsh-settings'
@@ -273,9 +274,16 @@ export function apply(ctx: Context, config: Config): void {
       provisionModel: (home, model) => scopedModelMemory.provision(home, model),
     })
     const modelCatalog = new ClaudeModelCatalog({
-      spawn: spec => ctx.subprocess.spawn(spec),
       endpoint: resolveEndpoint,
-      endpointLabel: () => face.get().baseUrl,
+      // Re-key on either endpoint field's change: a card write re-probes the
+      // endpoint instead of serving a stale list (the digest covers a key
+      // rotation at an unchanged baseUrl; the scope file covers itself).
+      endpointLabel: () => {
+        const current = face.get()
+        const credential = current.apiKey ?? current.authToken
+        const digest = credential === undefined ? 'no-key' : createHash('sha256').update(credential).digest('hex').slice(0, 8)
+        return `${current.baseUrl ?? ''}#${digest}`
+      },
       warn: message => ctx.logger.warn(message),
     })
     const modelContext = (childSessionId?: string): { home: string; cwd: string | undefined } => {
@@ -338,6 +346,10 @@ export function apply(ctx: Context, config: Config): void {
       // 401 grades `rejected` until the endpoint file's mtime moves past the
       // mark (editing the file IS the re-login gesture).
       isAuthenticated: home => resolveEndpoint(home).then(endpoint => hasEndpointCredential(endpoint)),
+      // The settings card's verify button: a cheap token-free probe of the
+      // SAVED endpoint (the reply tells the user to save first when a
+      // credential is missing). Session-less via the gateway Remote.
+      checkEndpoint: home => resolveEndpoint(home).then(endpoint => checkClaudeEndpoint(endpoint)),
       credentialStamp: endpointAuthStamp,
       // Logout clears the scope's OWN endpoint file. A config-sourced
       // credential outlives it — said out loud, or the status would flip

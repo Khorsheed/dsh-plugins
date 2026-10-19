@@ -70,6 +70,7 @@ interface CardOptions {
   authenticated?: boolean
   authStatus?: LocalAgentStatus | undefined
   runCommand?: (sessionId: SessionId, line: string) => Promise<string | undefined>
+  checkEndpoint?: () => Promise<string | null | undefined>
   modelInfo?: () => Promise<LocalAgentModelInfo | null | undefined>
 }
 
@@ -121,6 +122,7 @@ function makeCardProps(options: CardOptions): { props: Record<string, unknown> }
     useSessions,
     scope,
     auth: { status, runCommand },
+    ...options.checkEndpoint === undefined ? {} : { checkEndpoint: options.checkEndpoint },
     ...options.modelInfo === undefined ? {} : { modelInfo: options.modelInfo },
     authT,
     t,
@@ -547,25 +549,31 @@ describe('ClaudeCodeSettingsCard endpoint credential block', () => {
 })
 
 describe('ClaudeCodeSettingsCard endpoint verify button', () => {
-  it('runs /claude-code check against the saved endpoint and shows the reply', async () => {
-    const runCommand = vi.fn().mockResolvedValue('Endpoint reachable (https://relay.example.com): 2 model(s) served — claude-a, claude-b')
-    renderCard({ runCommand, value: { live: false, liveMirrorGranularity: 'event', baseUrl: 'https://relay.example.com', apiKey: 'sk-stored' } })
+  it('runs the endpoint check against the saved endpoint and shows the verdict', async () => {
+    const checkEndpoint = vi.fn().mockResolvedValue('Endpoint reachable (https://relay.example.com): 2 model(s) served — claude-a, claude-b')
+    renderCard({ checkEndpoint, value: { live: false, liveMirrorGranularity: 'event', baseUrl: 'https://relay.example.com', apiKey: 'sk-stored' } })
     await openCard()
 
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['endpoint.check'] })) })
-    expect(runCommand).toHaveBeenCalledWith(SESSION, '/claude-code check')
+    expect(checkEndpoint).toHaveBeenCalled()
     expect(screen.getByText(/Endpoint reachable/)).toBeTruthy()
   })
 
   it('stays disabled while drafts are unsaved (it verifies the SAVED configuration)', async () => {
-    const runCommand = vi.fn().mockResolvedValue('')
-    renderCard({ runCommand })
+    const checkEndpoint = vi.fn().mockResolvedValue('')
+    renderCard({ checkEndpoint })
     await openCard()
 
     const check = screen.getByRole('button', { name: zh['endpoint.check'] }) as HTMLButtonElement
     expect(check.disabled).toBe(false)
     fireEvent.change(screen.getByLabelText(zh['endpoint.apiKey']), { target: { value: 'sk-draft' } })
     expect(check.disabled).toBe(true)
-    expect(runCommand).not.toHaveBeenCalled()
+    expect(checkEndpoint).not.toHaveBeenCalled()
+  })
+
+  it('hides the button on a core that predates the checkEndpoint Remote', async () => {
+    renderCard({})
+    await openCard()
+    expect(screen.queryByRole('button', { name: zh['endpoint.check'] })).toBeNull()
   })
 })
