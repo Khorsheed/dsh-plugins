@@ -14,8 +14,8 @@ claude-code harness 原先走 Anthropic 官方 OAuth 网页授权：`/claude-cod
 
 `@khorsheed/dsh-local-agent-claude-code` 只按端点凭据认证。没有登录流程、没有 OAuth 探测、没有钥匙串访问、没有凭据协调。
 
-- 端点凭据落在设置层（`baseUrl` / `apiKey` / `authToken` 是 volatile 设置字段）：设置卡「认证」区写用户层，profile 行的 YAML 是基座。`apiKey` 以 `ANTHROPIC_API_KEY`（`x-api-key`）发出，`authToken` 以 `ANTHROPIC_AUTH_TOKEN`（`Authorization: Bearer`）发出——中转两种认法都有，所以两种形态都接受；都配时优先级由 CLI 自己决定。
-- scope 自己的 `<作用域目录>/endpoint-auth.json`（0600）按字段覆盖设置层。优先级因此是 **scope 文件 > 设置卡 > YAML 基座**。文件名刻意命中评测契约哈希的凭据拒绝名单（`auth`），因此 key 材料绝不进入条件指纹——连摘要输入都不算。
+- 部署级凭据是插件配置三元组 `baseUrl` / `apiKey` / `authToken`。`apiKey` 以 `ANTHROPIC_API_KEY`（`x-api-key`）发出，`authToken` 以 `ANTHROPIC_AUTH_TOKEN`（`Authorization: Bearer`）发出——中转两种认法都有，所以两种形态都接受；都配时优先级由 CLI 自己决定。
+- scope 自己的 `<作用域目录>/endpoint-auth.json`（0600）按字段覆盖配置——**scope 文件 > profile 配置**，这就是全部优先级。设置卡的凭据表单编辑的正是默认 scope 的这份文件，走为此新增的两个无会话 gateway Remote（`endpointAuth` 读 / `configureEndpoint` 写）。volatile 行配置通道试过并放弃了：在生产宿主上其写入被宿主侧拒绝且客户端拿不到原因（证据：cordis.patch.yml 的 mtime 证明没有任何一次卡片写入落盘），而且一旦成功反而会把 key 明文写进 profile patch 文档——0600 的 scoped 文件在两个意义上都是正确归宿。文件名也刻意命中评测契约哈希的凭据拒绝名单（`auth`），因此 key 材料绝不进入条件指纹——连摘要输入都不算。
 - provider、长驻驱动与模型目录在每次 spawn 时解析合并（`resolveEndpointAuth`），经现有 env 缝隙注入 `ANTHROPIC_*` 变量（`delegationEnv`；容器轮走 `containerExecSpawn` 的仅名字 `-e` 转发，值由 docker 客户端进程环境携带——永不上 argv）。换 key 下一轮生效，无需重载。
 - 家族的凭据等级不动：存在（非空 key）读 `present-unverified`，完成一轮 `verified`，一轮 401 打 `rejected`；endpoint 文件的 mtime 即 `credentialStamp`，重写该文件就是恢复手势，与 OAuth 时代的重新登录一一对应。auth 失败签名 regex 另覆盖了中转措辞（`invalid x-api-key` 一类）；CLI 自己的 401 文本（"Failed to authenticate. API Error: 401 …"、`authentication_failed`）本来就命中。
 - 宿主进程环境对路由永远不被咨询：`delegationEnv` 把环境里的 `ANTHROPIC_*` 全部 tombstone，`effectiveSettings.baseUrlSet` 严格镜像配置+文件的解析结果。改动前注释里声称的宿主环境回退只描述了日志标签，子进程从未继承过；快照现在说的是真话。

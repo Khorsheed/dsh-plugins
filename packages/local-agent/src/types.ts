@@ -89,6 +89,31 @@ export interface LocalAgentSessionRecord {
  */
 export type LocalAgentCredentialState = 'absent' | 'present-unverified' | 'verified' | 'rejected'
 
+/**
+ * One harness's endpoint state, per field, for the settings card: the
+ * resolved baseUrl verbatim (not a secret) and the two credentials as
+ * presence booleans — secrets never cross this seam. The state is the
+ * RESOLVED view (scope file over the deployment config), which is exactly
+ * what a delegation round would use.
+ */
+export interface LocalAgentEndpointAuthState {
+  readonly baseUrl?: string
+  readonly apiKeySet: boolean
+  readonly authTokenSet: boolean
+}
+
+/**
+ * One endpoint-credential edit: a string SETS the field, `null` (or a blank
+ * string) CLEARS it, and an absent key LEAVES it. Clearing lets the
+ * deployment-config layer answer for that field again (the merge is per
+ * field, file over config).
+ */
+export interface LocalAgentEndpointAuthFields {
+  readonly baseUrl?: string | null
+  readonly apiKey?: string | null
+  readonly authToken?: string | null
+}
+
 /** One harness's auth-status snapshot, shared by the command and Remote channels. */
 export interface LocalAgentStatus {
   /** Harness command prefix. */

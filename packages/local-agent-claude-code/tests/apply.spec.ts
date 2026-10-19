@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, writeFileSync, readFileSync, statSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -171,7 +171,7 @@ describe('local-agent-claude-code apply', () => {
   })
 
   it('reports the configured permission mode, live drive, and pinned endpoint', async () => {
-    const { home, registered } = mount({ live: true, baseUrl: 'https://proxy.example.com/anthropic' }, { permissionMode: 'normal' })
+    const { home, registered } = mount({ live: true }, { permissionMode: 'normal', baseUrl: 'https://proxy.example.com/anthropic' })
     const harness = registered[0]!
     await expect(harness.effectiveSettings!(home)).resolves.toEqual({
       drive: 'live',
@@ -223,8 +223,8 @@ describe('local-agent-claude-code apply', () => {
     })
   })
 
-  it('the settings-layer endpoint supplies the snapshot endpoint (the YAML base reaches it)', async () => {
-    const { home, registered } = mount({ baseUrl: 'https://config.example.com/v1' })
+  it('the config endpoint supplies the snapshot endpoint', async () => {
+    const { home, registered } = mount({}, { baseUrl: 'https://config.example.com/v1' })
     const harness = registered[0]!
     await expect(harness.effectiveSettings!(home)).resolves.toMatchObject({
       baseUrlSet: true,
@@ -232,8 +232,8 @@ describe('local-agent-claude-code apply', () => {
     })
   })
 
-  it('the scope endpoint file overrides the settings layer in the snapshot', async () => {
-    const { home, registered } = mount({ baseUrl: 'https://config.example.com/v1', apiKey: 'sk-deploy' })
+  it('the scope endpoint file overrides the config endpoint in the snapshot', async () => {
+    const { home, registered } = mount({}, { baseUrl: 'https://config.example.com/v1', apiKey: 'sk-deploy' })
     writeFileSync(join(home, 'endpoint-auth.json'), JSON.stringify({ baseUrl: 'https://scope.example.com/v1', apiKey: 'sk-scope' }))
     const harness = registered[0]!
     await expect(harness.effectiveSettings!(home)).resolves.toMatchObject({
@@ -326,32 +326,28 @@ describe('local-agent-claude-code model broker', () => {
 })
 
 describe('local-agent-claude-code endpoint auth', () => {
-  it('reports unauthenticated with neither a scope file nor a settings-layer key', async () => {
+  it('reports unauthenticated with neither a scope file nor a config key', async () => {
     const { home, registered } = mount()
     await expect(registered[0]!.isAuthenticated!(home)).resolves.toBe(false)
     await expect(registered[0]!.credentialStamp!(home)).resolves.toBeUndefined()
   })
 
-  it('carries the YAML endpoint triple into the composition base', () => {
+  it('never carries the credential into the settings composition base', () => {
+    // A secret must not land in the volatile row-config channel at all: the
+    // card writes the scope file through the endpointAuth face, and the
+    // profile row stays the only config-layer home of the deployment triple.
     const { settings } = mount({}, { baseUrl: 'https://relay.example.com', apiKey: 'sk-deploy' })
     const registration = settings.registrations[0] as { options?: { base?: object } }
-    expect(registration.options?.base).toEqual({ baseUrl: 'https://relay.example.com', apiKey: 'sk-deploy' })
+    expect(registration.options?.base ?? {}).not.toMatchObject({ apiKey: expect.anything(), baseUrl: expect.anything() })
   })
 
-  it('the settings-layer apiKey authenticates every scope (the deployment default)', async () => {
-    const { home, registered } = mount({ baseUrl: 'https://relay.example.com', apiKey: 'sk-deploy' })
+  it('the config apiKey authenticates every scope (the deployment default)', async () => {
+    const { home, registered } = mount({}, { baseUrl: 'https://relay.example.com', apiKey: 'sk-deploy' })
     await expect(registered[0]!.isAuthenticated!(home)).resolves.toBe(true)
   })
 
-  it('the settings-layer authToken authenticates too (the Bearer relay shape)', async () => {
-    const { home, registered } = mount({ authToken: 'tok-deploy' })
-    await expect(registered[0]!.isAuthenticated!(home)).resolves.toBe(true)
-  })
-
-  it('a card write reaches the credential resolution without a reload', async () => {
-    const { home, settings, registered } = mount()
-    await expect(registered[0]!.isAuthenticated!(home)).resolves.toBe(false)
-    settings.set({ live: false, liveMirrorGranularity: 'event', apiKey: 'sk-card' })
+  it('the config authToken authenticates too (the Bearer relay shape)', async () => {
+    const { home, registered } = mount({}, { authToken: 'tok-deploy' })
     await expect(registered[0]!.isAuthenticated!(home)).resolves.toBe(true)
   })
 
@@ -362,28 +358,56 @@ describe('local-agent-claude-code endpoint auth', () => {
     await expect(registered[0]!.credentialStamp!(home)).resolves.toBeTypeOf('number')
   })
 
-  it('the scope file outranks the settings layer field by field', async () => {
-    const { home, registered } = mount({ baseUrl: 'https://config.example.com/v1', apiKey: 'sk-deploy' })
+  it('the scope file outranks the config triple field by field', async () => {
+    const { home, registered } = mount({}, { baseUrl: 'https://config.example.com/v1', apiKey: 'sk-deploy' })
     writeFileSync(join(home, 'endpoint-auth.json'), JSON.stringify({ apiKey: 'sk-scope' }))
     // Authenticated by the file; the snapshot still routes the fileless
-    // baseUrl field through the settings layer.
+    // baseUrl field through the config triple.
     await expect(registered[0]!.isAuthenticated!(home)).resolves.toBe(true)
     await expect(registered[0]!.effectiveSettings!(home)).resolves.toMatchObject({ baseUrlHost: 'config.example.com' })
   })
 
   it('a baseUrl alone is not a credential', async () => {
-    const { home, registered } = mount({ baseUrl: 'https://relay.example.com' })
+    const { home, registered } = mount({}, { baseUrl: 'https://relay.example.com' })
     await expect(registered[0]!.isAuthenticated!(home)).resolves.toBe(false)
   })
 
-  it('logout clears the scope file and refuses when only the settings layer carries the credential', async () => {
-    const { home, registered } = mount({ apiKey: 'sk-deploy' })
+  it('logout clears the scope file and refuses when only the config carries the credential', async () => {
+    const { home, registered } = mount({}, { apiKey: 'sk-deploy' })
     writeFileSync(join(home, 'endpoint-auth.json'), JSON.stringify({ apiKey: 'sk-scope' }))
     await registered[0]!.logout!(home)
-    // The file is gone; the settings-layer credential still answers the probe.
+    // The file is gone; the config credential still answers the probe.
     await expect(registered[0]!.credentialStamp!(home)).resolves.toBeUndefined()
     await expect(registered[0]!.isAuthenticated!(home)).resolves.toBe(true)
     await expect(registered[0]!.logout!(home)).rejects.toThrow('settings card')
+  })
+})
+
+describe('local-agent-claude-code endpointAuth face', () => {
+  it('reads the resolved per-field state with secrets as booleans', async () => {
+    const { home, registered } = mount({}, { baseUrl: 'https://relay.example.com', apiKey: 'sk-deploy' })
+    await expect(registered[0]!.endpointAuth!.read(home)).resolves.toEqual({
+      baseUrl: 'https://relay.example.com',
+      apiKeySet: true,
+      authTokenSet: false,
+    })
+  })
+
+  it('writes edits into the scope file (set, leave, clear) and answers the post-write state', async () => {
+    const { home, registered } = mount()
+    const face = registered[0]!.endpointAuth!
+    await face.write(home, { baseUrl: 'https://relay.example.com', apiKey: 'sk-scope' })
+    await expect(face.read(home)).resolves.toEqual({ baseUrl: 'https://relay.example.com', apiKeySet: true, authTokenSet: false })
+    // The file on disk carries the credential (0600), never the profile.
+    const onDisk = JSON.parse(readFileSync(join(home, 'endpoint-auth.json'), 'utf8')) as Record<string, string>
+    expect(onDisk).toEqual({ baseUrl: 'https://relay.example.com', apiKey: 'sk-scope' })
+    expect(statSync(join(home, 'endpoint-auth.json')).mode & 0o777).toBe(0o600)
+    // Leave apiKey, clear baseUrl.
+    await face.write(home, { baseUrl: null })
+    await expect(face.read(home)).resolves.toEqual({ apiKeySet: true, authTokenSet: false })
+    // Clearing the last field removes the file.
+    await face.write(home, { apiKey: null })
+    expect(existsSync(join(home, 'endpoint-auth.json'))).toBe(false)
   })
 })
 
@@ -393,7 +417,7 @@ describe('local-agent-claude-code /check subcommand', () => {
   }
 
   it('replies with the served model list when the saved credential verifies', async () => {
-    const { home, registered } = mount({ baseUrl: 'https://relay.example.com', apiKey: 'sk-deploy' })
+    const { home, registered } = mount({}, { baseUrl: 'https://relay.example.com', apiKey: 'sk-deploy' })
     vi.stubGlobal('fetch', async () => ({
       ok: true,
       status: 200,

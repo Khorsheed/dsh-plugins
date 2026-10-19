@@ -71,6 +71,10 @@ interface CardOptions {
   authStatus?: LocalAgentStatus | undefined
   runCommand?: (sessionId: SessionId, line: string) => Promise<string | undefined>
   checkEndpoint?: () => Promise<string | null | undefined>
+  endpointAuth?: {
+    read: () => Promise<{ baseUrl?: string; apiKeySet: boolean; authTokenSet: boolean } | null | undefined>
+    write: (fields: Record<string, string | null>) => Promise<{ baseUrl?: string; apiKeySet: boolean; authTokenSet: boolean } | null | undefined>
+  }
   modelInfo?: () => Promise<LocalAgentModelInfo | null | undefined>
 }
 
@@ -123,6 +127,7 @@ function makeCardProps(options: CardOptions): { props: Record<string, unknown> }
     scope,
     auth: { status, runCommand },
     ...options.checkEndpoint === undefined ? {} : { checkEndpoint: options.checkEndpoint },
+    ...options.endpointAuth === undefined ? {} : { endpointAuth: options.endpointAuth },
     ...options.modelInfo === undefined ? {} : { modelInfo: options.modelInfo },
     authT,
     t,
@@ -159,7 +164,7 @@ async function openCard(): Promise<void> {
 
 describe('ClaudeCodeSettingsCard', () => {
   it('renders the three states: unauthenticated with live off', async () => {
-    renderCard({})
+    renderCard({ endpointAuth: { read: vi.fn(async () => ({ apiKeySet: false, authTokenSet: false })), write: vi.fn(async () => ({ apiKeySet: false, authTokenSet: false })) } })
     await openCard()
 
     expect(screen.getByText(coreZh['settings.notAuthenticated'])).toBeTruthy()
@@ -487,8 +492,30 @@ describe('ClaudeCodeBundleConfig', () => {
 })
 
 describe('ClaudeCodeSettingsCard endpoint credential block', () => {
-  it('echoes the stored baseUrl but never the secrets (configured shows as a placeholder)', async () => {
-    renderCard({ value: { live: false, liveMirrorGranularity: 'event', baseUrl: 'https://relay.example.com/claude', apiKey: 'sk-stored' } })
+  /** A reactive endpointAuth face over a mutable resolved state. */
+  function endpointFace(initial: { baseUrl?: string; apiKeySet: boolean; authTokenSet: boolean }) {
+    let state = initial
+    const read = vi.fn(async () => state)
+    const write = vi.fn(async (fields: Record<string, string | null>) => {
+      const next = { baseUrl: state.baseUrl, apiKey: state.apiKeySet ? 'set' : undefined as string | undefined, authToken: state.authTokenSet ? 'set' : undefined as string | undefined }
+      for (const [key, value] of Object.entries(fields)) {
+        if (key === 'baseUrl') next.baseUrl = value === null ? undefined : value ?? next.baseUrl
+        if (key === 'apiKey') next.apiKey = value === null ? undefined : value ?? next.apiKey
+        if (key === 'authToken') next.authToken = value === null ? undefined : value ?? next.authToken
+      }
+      state = {
+        ...next.baseUrl === undefined ? {} : { baseUrl: next.baseUrl },
+        apiKeySet: next.apiKey !== undefined,
+        authTokenSet: next.authToken !== undefined,
+      }
+      return state
+    })
+    return { read, write }
+  }
+
+  it('echoes the resolved baseUrl but never the secrets (set shows as a chip and placeholder)', async () => {
+    const endpointAuth = endpointFace({ baseUrl: 'https://relay.example.com/claude', apiKeySet: true, authTokenSet: false })
+    renderCard({ endpointAuth })
     await openCard()
 
     const baseUrl = screen.getByLabelText(zh['endpoint.baseUrl']) as HTMLInputElement
@@ -496,40 +523,42 @@ describe('ClaudeCodeSettingsCard endpoint credential block', () => {
     const apiKey = screen.getByLabelText(zh['endpoint.apiKey']) as HTMLInputElement
     expect(apiKey.value).toBe('')
     expect(apiKey.placeholder).toBe(zh['endpoint.secret.configured'])
+    expect(screen.getAllByText(zh['endpoint.configured'])).not.toHaveLength(0)
     const authToken = screen.getByLabelText(zh['endpoint.authToken']) as HTMLInputElement
     expect(authToken.placeholder).toBe(zh['endpoint.secret.placeholder'])
   })
 
-  it('saves the typed endpoint and key through the scope, clearing drafts', async () => {
-    const harness = renderCard({})
+  it('writes only the dirty fields through the endpointAuth face and shows the post-write state', async () => {
+    const endpointAuth = endpointFace({})
+    renderCard({ endpointAuth })
     await openCard()
 
     fireEvent.change(screen.getByLabelText(zh['endpoint.baseUrl']), { target: { value: ' https://relay.example.com/claude ' } })
     fireEvent.change(screen.getByLabelText(zh['endpoint.apiKey']), { target: { value: ' sk-new ' } })
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['endpoint.save'] })) })
 
-    expect(harness.scope.set).toHaveBeenCalledWith('baseUrl', 'https://relay.example.com/claude')
-    expect(harness.scope.set).toHaveBeenCalledWith('apiKey', 'sk-new')
-    expect(harness.scope.set).not.toHaveBeenCalledWith('authToken', expect.anything())
+    expect(endpointAuth.write).toHaveBeenCalledWith({ baseUrl: 'https://relay.example.com/claude', apiKey: 'sk-new' })
     expect(screen.getByText(zh['endpoint.applied'])).toBeTruthy()
-    // The key draft cleared: the input is back to its placeholder state.
+    // The write's answer flips the chip without a re-read; the draft clears.
     expect((screen.getByLabelText(zh['endpoint.apiKey']) as HTMLInputElement).value).toBe('')
+    expect((screen.getByLabelText(zh['endpoint.apiKey']) as HTMLInputElement).placeholder).toBe(zh['endpoint.secret.configured'])
   })
 
-  it('a blank key write UNSETS the field (the clear gesture)', async () => {
-    const harness = renderCard({ value: { live: false, liveMirrorGranularity: 'event', apiKey: 'sk-stored' } })
+  it('a blank key write clears the field (null, not an empty string)', async () => {
+    const endpointAuth = endpointFace({ apiKeySet: true })
+    renderCard({ endpointAuth })
     await openCard()
 
     const input = screen.getByLabelText(zh['endpoint.apiKey'])
     fireEvent.change(input, { target: { value: 'x' } })
     fireEvent.change(input, { target: { value: '' } })
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['endpoint.save'] })) })
-    expect(harness.scope.unset).toHaveBeenCalledWith('apiKey')
-    expect(harness.scope.set).not.toHaveBeenCalledWith('apiKey', expect.anything())
+    expect(endpointAuth.write).toHaveBeenCalledWith({ apiKey: null })
+    expect((screen.getByLabelText(zh['endpoint.apiKey']) as HTMLInputElement).placeholder).toBe(zh['endpoint.secret.placeholder'])
   })
 
   it('keeps save disabled until a draft exists', async () => {
-    renderCard({})
+    renderCard({ endpointAuth: endpointFace({}) })
     await openCard()
     const save = screen.getByRole('button', { name: zh['endpoint.save'] }) as HTMLButtonElement
     expect(save.disabled).toBe(true)
@@ -538,20 +567,33 @@ describe('ClaudeCodeSettingsCard endpoint credential block', () => {
   })
 
   it('an unchanged baseUrl is not re-written', async () => {
-    const harness = renderCard({ value: { live: false, liveMirrorGranularity: 'event', baseUrl: 'https://relay.example.com' } })
+    const endpointAuth = endpointFace({ baseUrl: 'https://relay.example.com' })
+    renderCard({ endpointAuth })
     await openCard()
     fireEvent.change(screen.getByLabelText(zh['endpoint.apiKey']), { target: { value: 'sk-new' } })
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['endpoint.save'] })) })
-    expect(harness.scope.set).toHaveBeenCalledWith('apiKey', 'sk-new')
-    expect(harness.scope.set).not.toHaveBeenCalledWith('baseUrl', expect.anything())
-    expect(harness.scope.unset).not.toHaveBeenCalledWith('baseUrl')
+    const fields = endpointAuth.write.mock.calls[0]?.[0] as Record<string, unknown>
+    expect('baseUrl' in fields).toBe(false)
+    expect(fields['apiKey']).toBe('sk-new')
+  })
+
+  it('shows the unavailable hint instead of the form on a core without the face', async () => {
+    renderCard({})
+    await openCard()
+    expect(screen.getByText(zh['endpoint.unavailable'])).toBeTruthy()
+    expect(screen.queryByLabelText(zh['endpoint.apiKey'])).toBeNull()
   })
 })
 
 describe('ClaudeCodeSettingsCard endpoint verify button', () => {
+  const face = (): { read: () => Promise<{ apiKeySet: boolean; authTokenSet: boolean }>; write: () => Promise<{ apiKeySet: boolean; authTokenSet: boolean }> } => ({
+    read: vi.fn(async () => ({ apiKeySet: true, authTokenSet: false })),
+    write: vi.fn(async () => ({ apiKeySet: true, authTokenSet: false })),
+  })
+
   it('runs the endpoint check against the saved endpoint and shows the verdict', async () => {
     const checkEndpoint = vi.fn().mockResolvedValue('Endpoint reachable (https://relay.example.com): 2 model(s) served — claude-a, claude-b')
-    renderCard({ checkEndpoint, value: { live: false, liveMirrorGranularity: 'event', baseUrl: 'https://relay.example.com', apiKey: 'sk-stored' } })
+    renderCard({ checkEndpoint, endpointAuth: face() })
     await openCard()
 
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['endpoint.check'] })) })
@@ -561,7 +603,7 @@ describe('ClaudeCodeSettingsCard endpoint verify button', () => {
 
   it('stays disabled while drafts are unsaved (it verifies the SAVED configuration)', async () => {
     const checkEndpoint = vi.fn().mockResolvedValue('')
-    renderCard({ checkEndpoint })
+    renderCard({ checkEndpoint, endpointAuth: face() })
     await openCard()
 
     const check = screen.getByRole('button', { name: zh['endpoint.check'] }) as HTMLButtonElement
@@ -572,7 +614,7 @@ describe('ClaudeCodeSettingsCard endpoint verify button', () => {
   })
 
   it('hides the button on a core that predates the checkEndpoint Remote', async () => {
-    renderCard({})
+    renderCard({ endpointAuth: face() })
     await openCard()
     expect(screen.queryByRole('button', { name: zh['endpoint.check'] })).toBeNull()
   })

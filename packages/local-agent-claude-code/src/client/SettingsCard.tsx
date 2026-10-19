@@ -7,7 +7,7 @@ import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-cli
 import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
 import { Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import { IconChevronDownOutlineMedium } from './icons.tsx'
-import type { LocalAgentModelInfo } from '@khorsheed/dsh-local-agent/types'
+import type { LocalAgentModelInfo, LocalAgentEndpointAuthFields, LocalAgentEndpointAuthState } from '@khorsheed/dsh-local-agent/types'
 // The shared auth block is bundled from the family core's source — the
 // sanctioned core/companion edge (the host half already depends on the core);
 // the block carries no runtime identity to share.
@@ -36,12 +36,6 @@ export interface ClaudeLiveSettings {
   model?: string
   /** Model identifiers saved before; the input's suggestions, capped at five. */
   recentModels?: readonly string[]
-  /** The endpoint (`ANTHROPIC_BASE_URL`); blank/absent = Anthropic's own endpoint. */
-  baseUrl?: string
-  /** The `x-api-key` credential. Never echoed back by the card; a write replaces it, a blank write clears it. */
-  apiKey?: string
-  /** The `Authorization: Bearer` credential. Same no-echo rule as {@link apiKey}. */
-  authToken?: string
 }
 
 /** Injected face of the claude-code settings card. */
@@ -68,6 +62,18 @@ export interface ClaudeCodeSettingsCardInjected {
    * the verify button.
    */
   checkEndpoint?: () => Promise<string | null | undefined>
+  /**
+   * The harness's endpoint credential face (the family gateway's
+   * `endpointAuth`/`configureEndpoint` Remotes): the card's credential form
+   * reads and writes the harness's OWN credential store through it — never
+   * the settings scope, so no key ever lands in the profile patch document.
+   * Absent on a core that predates the Remotes — the card then hides the
+   * form. `write` answers the post-write resolved state.
+   */
+  endpointAuth?: {
+    read(): Promise<LocalAgentEndpointAuthState | null | undefined>
+    write(fields: LocalAgentEndpointAuthFields): Promise<LocalAgentEndpointAuthState | null | undefined>
+  }
   hooks: {
     /** The same scope as a hooks source, so the card reacts to external writes. */
     settings: SettingsScope<ClaudeLiveSettings>
@@ -108,6 +114,7 @@ export type ClaudeCodeBundleConfigProps =
  * @param useSettings - the bound settings hook from the inject hooks compartment.
  * @param scope - the bound settings scope the writes go through.
  * @param modelInfo - the harness's memberless model surface read; absent degrades to the bare input.
+ * @param endpointAuth - the harness's endpoint credential face; absent hides the credential form.
  * @param t - copy.
  */
 function useCardState(
@@ -115,6 +122,7 @@ function useCardState(
   useSettings: ClaudeCodeSettingsCardProps['useSettings'],
   scope: ClaudeCodeSettingsCardProps['scope'],
   modelInfo: ClaudeCodeSettingsCardInjected['modelInfo'],
+  endpointAuth: ClaudeCodeSettingsCardInjected['endpointAuth'],
   t: ClaudeCodeSettingsCardProps['t'],
 ) {
   const snapshot: SettingsScopeSnapshot<ClaudeLiveSettings> = useSettings(value => value)
@@ -131,19 +139,32 @@ function useCardState(
   const [modelSaved, setModelSaved] = useState(false)
   const [modelError, setModelError] = useState(false)
   const modelValue = modelDraft ?? storedModel
-  // The endpoint credential fields: baseUrl echoes (it is not a secret); the
-  // two keys never echo — a configured key shows as a "configured" placeholder
-  // and the input holds only the draft of a REPLACEMENT. A blank key write
-  // clears the field; a blank baseUrl unsets it (the official endpoint).
-  const storedBaseUrl = snapshot.value?.baseUrl ?? ''
-  const apiKeyConfigured = (snapshot.value?.apiKey ?? '').trim() !== ''
-  const authTokenConfigured = (snapshot.value?.authToken ?? '').trim() !== ''
+  // The endpoint credential form talks to the harness's OWN credential store
+  // through the endpointAuth face — never the settings scope, so no key ever
+  // lands in the profile patch document. baseUrl echoes (it is not a
+  // secret); the two keys never do — a set key shows as a "configured"
+  // placeholder and the input holds only the draft of a REPLACEMENT. A blank
+  // write clears the field (the config layer then answers for it again).
+  const [endpointState, setEndpointState] = useState<LocalAgentEndpointAuthState | null | 'unavailable'>(null)
   const [baseUrlDraft, setBaseUrlDraft] = useState<string | null>(null)
   const [apiKeyDraft, setApiKeyDraft] = useState<string | null>(null)
   const [authTokenDraft, setAuthTokenDraft] = useState<string | null>(null)
   const [endpointSaved, setEndpointSaved] = useState(false)
   const [endpointError, setEndpointError] = useState(false)
   const endpointDirty = baseUrlDraft !== null || apiKeyDraft !== null || authTokenDraft !== null
+  const endpointUnavailable = endpointAuth === undefined || endpointState === 'unavailable'
+  const endpointLoading = !endpointUnavailable && endpointState === null
+  const apiKeyConfigured = endpointState !== null && endpointState !== 'unavailable' && endpointState.apiKeySet
+  const authTokenConfigured = endpointState !== null && endpointState !== 'unavailable' && endpointState.authTokenSet
+  useEffect(() => {
+    if (!active || endpointAuth === undefined) return
+    let stale = false
+    void endpointAuth.read().then(
+      (state) => { if (!stale) setEndpointState(state ?? 'unavailable') },
+      () => { if (!stale) setEndpointState('unavailable') },
+    )
+    return () => { stale = true }
+  }, [active, endpointAuth, endpointSaved])
   // The broker's model surface: fetched while the surface is active and after
   // every save (the save changes the settings layer the surface reports). `null`
   // means the gateway answered null (a brokerless core) or the read was
@@ -250,29 +271,22 @@ function useCardState(
         ? t('model.menuDefaultLastObserved', { model: modelSurface.lastObserved })
         : t('model.menuDefault')
 
-  // The endpoint credential save: ordered writes, one field at a time — the
-  // scope fences each write with a namespace revision, so concurrent writes
-  // race and silently lose fields (the same reason saveModel awaits its two
-  // writes in sequence).
+  // The credential save: one `configureEndpoint` call carrying only the
+  // dirty fields (a blank draft clears its field); the answer is the
+  // post-write resolved state, so the chips and the auth probe flip without
+  // a re-read.
   const saveEndpoint = (): void => {
+    if (endpointAuth === undefined) return
     setEndpointSaved(false)
     setEndpointError(false)
-    const writes: Array<() => Promise<unknown>> = []
-    const nextBaseUrl = (baseUrlDraft ?? storedBaseUrl).trim()
-    if (baseUrlDraft !== null && nextBaseUrl !== storedBaseUrl) {
-      writes.push(() => nextBaseUrl === '' ? scope.unset('baseUrl') : scope.set('baseUrl', nextBaseUrl))
+    const fields: LocalAgentEndpointAuthFields = {
+      ...baseUrlDraft !== null ? { baseUrl: baseUrlDraft.trim() === '' ? null : baseUrlDraft.trim() } : {},
+      ...apiKeyDraft !== null ? { apiKey: apiKeyDraft.trim() === '' ? null : apiKeyDraft.trim() } : {},
+      ...authTokenDraft !== null ? { authToken: authTokenDraft.trim() === '' ? null : authTokenDraft.trim() } : {},
     }
-    if (apiKeyDraft !== null) {
-      writes.push(() => apiKeyDraft.trim() === '' ? scope.unset('apiKey') : scope.set('apiKey', apiKeyDraft.trim()))
-    }
-    if (authTokenDraft !== null) {
-      writes.push(() => authTokenDraft.trim() === '' ? scope.unset('authToken') : scope.set('authToken', authTokenDraft.trim()))
-    }
-    void writes.reduce<Promise<unknown>>(
-      (chain, write) => chain.then(() => write()),
-      Promise.resolve(),
-    ).then(
-      () => {
+    void endpointAuth.write(fields).then(
+      (state) => {
+        if (state !== undefined && state !== null) setEndpointState(state)
         setBaseUrlDraft(null)
         setApiKeyDraft(null)
         setAuthTokenDraft(null)
@@ -287,8 +301,10 @@ function useCardState(
     modelError, choices, modelMenuOpen, modelMenuUp, modelFieldRef,
     modelPlaceholder, modelDefaultItem, saveModel, write, toggleModelMenu,
     setModelDraft, setModelMenuOpen,
-    baseUrlValue: baseUrlDraft ?? storedBaseUrl, apiKeyConfigured, authTokenConfigured,
-    apiKeyDraft, authTokenDraft, endpointSaved, endpointError, endpointDirty,
+    endpointState, endpointUnavailable, endpointLoading,
+    baseUrlValue: baseUrlDraft ?? (endpointState !== null && endpointState !== 'unavailable' ? endpointState.baseUrl ?? '' : ''),
+    apiKeyConfigured, authTokenConfigured, apiKeyDraft, authTokenDraft,
+    endpointSaved, endpointError, endpointDirty,
     saveEndpoint, setBaseUrlDraft, setApiKeyDraft, setAuthTokenDraft,
   }
 }
@@ -308,6 +324,7 @@ function CardBody({ state, auth, authT, renderModelPicker, checkEndpoint, useSes
     modelError, choices, modelMenuOpen, modelMenuUp, modelFieldRef,
     modelPlaceholder, modelDefaultItem, saveModel, write, toggleModelMenu,
     setModelDraft, setModelMenuOpen,
+    endpointUnavailable, endpointLoading,
     baseUrlValue, apiKeyConfigured, authTokenConfigured, apiKeyDraft, authTokenDraft,
     endpointSaved, endpointError, endpointDirty, saveEndpoint,
     setBaseUrlDraft, setApiKeyDraft, setAuthTokenDraft,
@@ -364,6 +381,10 @@ function CardBody({ state, auth, authT, renderModelPicker, checkEndpoint, useSes
           runCommand={auth.runCommand}
           t={authT}
         />
+        {endpointUnavailable && (
+          <span className={css.hint}>{t('endpoint.unavailable')}</span>
+        )}
+        {!endpointUnavailable && (
         <div className={css.endpointFields}>
           <label className={css.endpointField}>
             <span className={css.endpointLabel}>{t('endpoint.baseUrl')}</span>
@@ -373,7 +394,7 @@ function CardBody({ state, auth, authT, renderModelPicker, checkEndpoint, useSes
               value={baseUrlValue}
               placeholder={t('endpoint.baseUrl.placeholder')}
               aria-label={t('endpoint.baseUrl')}
-              disabled={!ready}
+              disabled={endpointLoading}
               onChange={(event) => { setBaseUrlDraft(event.currentTarget.value) }}
             />
           </label>
@@ -389,7 +410,7 @@ function CardBody({ state, auth, authT, renderModelPicker, checkEndpoint, useSes
               placeholder={apiKeyConfigured ? t('endpoint.secret.configured') : t('endpoint.secret.placeholder')}
               aria-label={t('endpoint.apiKey')}
               autoComplete="off"
-              disabled={!ready}
+              disabled={endpointLoading}
               onChange={(event) => { setApiKeyDraft(event.currentTarget.value) }}
             />
           </label>
@@ -405,7 +426,7 @@ function CardBody({ state, auth, authT, renderModelPicker, checkEndpoint, useSes
               placeholder={authTokenConfigured ? t('endpoint.secret.configured') : t('endpoint.secret.placeholder')}
               aria-label={t('endpoint.authToken')}
               autoComplete="off"
-              disabled={!ready}
+              disabled={endpointLoading}
               onChange={(event) => { setAuthTokenDraft(event.currentTarget.value) }}
             />
           </label>
@@ -413,7 +434,7 @@ function CardBody({ state, auth, authT, renderModelPicker, checkEndpoint, useSes
             <button
               type="button"
               className={css.modelSave}
-              disabled={!ready || !endpointDirty}
+              disabled={endpointLoading || !endpointDirty}
               onClick={() => { saveEndpoint() }}
             >
               {t('endpoint.save')}
@@ -422,7 +443,7 @@ function CardBody({ state, auth, authT, renderModelPicker, checkEndpoint, useSes
               <button
                 type="button"
                 className={css.modelSave}
-                disabled={!ready || endpointDirty || checking}
+                disabled={endpointLoading || endpointDirty || checking}
                 title={endpointDirty ? t('endpoint.checkDirtyHint') : undefined}
                 onClick={() => { runCheck() }}
               >
@@ -434,6 +455,7 @@ function CardBody({ state, auth, authT, renderModelPicker, checkEndpoint, useSes
           </div>
           {checkText !== null && <span className={css.hint}>{checkText}</span>}
         </div>
+        )}
       </section>
       <section className={css.block}>
         <h3 className={css.blockTitle}>
@@ -548,9 +570,9 @@ function CardBody({ state, auth, authT, renderModelPicker, checkEndpoint, useSes
  * @returns the card.
  */
 export function ClaudeCodeSettingsCard(props: ClaudeCodeSettingsCardProps) {
-  const { useSettings, scope, auth, authT, renderModelPicker, modelInfo, checkEndpoint, useSessions, t } = props
+  const { useSettings, scope, auth, authT, renderModelPicker, modelInfo, checkEndpoint, endpointAuth, useSessions, t } = props
   const [open, setOpen] = useState(false)
-  const state = useCardState(open, useSettings, scope, modelInfo, t)
+  const state = useCardState(open, useSettings, scope, modelInfo, endpointAuth, t)
   // The at-a-glance credential dot in the collapsed header: every mount
   // re-probes (a credential expiring mid-session must flip the dot at the
   // next view); the bus dedupes identical results, so no re-render storm.
@@ -594,8 +616,8 @@ export function ClaudeCodeSettingsCard(props: ClaudeCodeSettingsCardProps) {
  * @param props - the owner view, the injected scope/auth faces, and copy.
  * @returns the entry.
  */
-export function ClaudeCodeBundleConfig({ view, useSettings, scope, auth, authT, renderModelPicker, modelInfo, checkEndpoint, useSessions, t }: ClaudeCodeBundleConfigProps) {
-  const state = useCardState(view === 'page', useSettings, scope, modelInfo, t)
+export function ClaudeCodeBundleConfig({ view, useSettings, scope, auth, authT, renderModelPicker, modelInfo, checkEndpoint, endpointAuth, useSessions, t }: ClaudeCodeBundleConfigProps) {
+  const state = useCardState(view === 'page', useSettings, scope, modelInfo, endpointAuth, t)
   if (view === 'summary') return <span className={css.description}>{t('card.description')}</span>
   return <CardBody state={state} auth={auth} authT={authT} renderModelPicker={renderModelPicker} checkEndpoint={checkEndpoint} useSessions={useSessions} t={t} />
 }

@@ -28,7 +28,7 @@ import type {
   LocalAgentMemberFeedRequest,
   LocalAgentMemberFeedEvent,
 } from './types.ts'
-import type { LocalAgentRosterRow, LocalAgentStatus } from './types.ts'
+import type { LocalAgentRosterRow, LocalAgentStatus, LocalAgentEndpointAuthFields, LocalAgentEndpointAuthState } from './types.ts'
 import { extendModelDirectory } from './model-directory.ts'
 import { mergeMemberFeeds } from './member-feed.ts'
 
@@ -270,6 +270,40 @@ export default class LocalAgentGateway extends TypertRemoteService {
     const harness = this.ctx.localAgent.get(name)
     if (typeof harness?.checkEndpoint !== 'function') return null
     return harness.checkEndpoint(this.ctx.localAgent.homeDir(name))
+  }
+
+  /**
+   * The settings card's read of one harness's resolved endpoint state —
+   * baseUrl verbatim, credentials as presence booleans (secrets never cross).
+   * Session-less like the rest of the gateway. Null when the harness is
+   * unknown or declares no endpoint face (the card then hides the form).
+   * @param name - the harness name.
+   * @returns the resolved per-field state, or null.
+   */
+  @Remote('endpointAuth')
+  async endpointAuth(name: string): Promise<LocalAgentEndpointAuthState | null> {
+    const harness = this.ctx.localAgent.get(name)
+    if (harness?.endpointAuth === undefined) return null
+    return harness.endpointAuth.read(this.ctx.localAgent.homeDir(name))
+  }
+
+  /**
+   * Apply one endpoint-credential edit into the harness's own credential
+   * store (a string sets, null clears, absent leaves), answering the
+   * post-write resolved state so the card can flip immediately. The write
+   * deliberately bypasses the volatile row-config channel — a credential
+   * never lands in the profile patch document. Null when the harness is
+   * unknown or declares no endpoint face.
+   * @param name - the harness name.
+   * @param fields - the field edits.
+   * @returns the post-write resolved state, or null.
+   */
+  @Remote('configureEndpoint')
+  async configureEndpoint(name: string, fields: LocalAgentEndpointAuthFields): Promise<LocalAgentEndpointAuthState | null> {
+    const harness = this.ctx.localAgent.get(name)
+    if (harness?.endpointAuth === undefined) return null
+    await harness.endpointAuth.write(this.ctx.localAgent.homeDir(name), fields)
+    return harness.endpointAuth.read(this.ctx.localAgent.homeDir(name))
   }
 
   /**

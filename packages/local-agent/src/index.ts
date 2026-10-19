@@ -54,6 +54,8 @@ import type {
   LocalAgentDelegationIntent,
   LocalAgentDelegationRecord,
   LocalAgentEffectiveSettings,
+  LocalAgentEndpointAuthFields,
+  LocalAgentEndpointAuthState,
   LocalAgentMemberRun,
   LocalAgentModelBroker,
   LocalAgentMemberBinding,
@@ -418,6 +420,19 @@ export interface LocalAgentHarness {
    */
   checkEndpoint?: (homeDir: string) => Promise<string>
   /**
+   * Optional endpoint-credential face for the settings card: a read of the
+   * resolved per-field state (secrets as booleans, never echoed) and a write
+   * that applies edits into the harness's OWN credential store. The card
+   * talks to it through the session-less gateway Remotes
+   * (`endpointAuth`/`configureEndpoint`) instead of the volatile row-config
+   * channel — a credential never belongs in the profile patch document, and
+   * that channel rejects writes a deployment cannot explain. Absent means
+   * the card renders no endpoint form.
+   */
+  endpointAuth?: {
+    read(homeDir: string): Promise<LocalAgentEndpointAuthState>
+    write(homeDir: string, fields: LocalAgentEndpointAuthFields): Promise<void>
+  }  /**
    * The credential marker's modification stamp (epoch ms), undefined when no
    * credential exists. Two consumers: the manual-login watch requires a stamp
    * NEWER than the watch start (a stale marker must not read as a fresh

@@ -13,7 +13,6 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { createHash } from 'node:crypto'
 import z from '@deepseek-ai/schemastery'
 import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
 import type {} from '@deepseek-ai/dsh-settings'
@@ -28,7 +27,9 @@ import {
   endpointAuthFileExists,
   endpointAuthStamp,
   hasEndpointCredential,
+  readEndpointAuthFile,
   resolveEndpointAuth,
+  writeEndpointAuth,
 } from './endpoint-auth.ts'
 import { DEFAULT_LIVE_IDLE_MS } from './live-driver.ts'
 import { LiveDriverSwitch } from './live-switch.ts'
@@ -65,18 +66,17 @@ export interface Config {
   /**
    * The deployment-level endpoint: `ANTHROPIC_BASE_URL` for every delegation
    * (e.g. a relay like `https://openproxy.to/claude`, or absent for the
-   * official API). Editable on the settings card (the user layer over this
-   * YAML base); a scope's own `endpoint-auth.json` overrides both, field by
-   * field. See endpoint-auth.ts for the whole auth model — there is no OAuth
-   * path in this package.
+   * official API). A scope's own `endpoint-auth.json` overrides it field by
+   * field — the settings card's credential form edits THAT file (never the
+   * profile). See endpoint-auth.ts for the whole auth model — there is no
+   * OAuth path in this package.
    */
   baseUrl?: string
   /**
    * The deployment-level credential, sent as `ANTHROPIC_API_KEY` (the
-   * `x-api-key` header). Editable on the settings card. Keep the YAML value
-   * in the LOCAL profile row only — never commit it (the repo hygiene gate
-   * blocks credential-shaped strings, but the profile is not the repo's
-   * business).
+   * `x-api-key` header). Keep it in the LOCAL profile row only — never commit
+   * it (the repo hygiene gate blocks credential-shaped strings, but the
+   * profile is not the repo's business).
    */
   apiKey?: string
   /**
@@ -127,12 +127,6 @@ const SETTINGS_FIELDS = {
   liveMirrorGranularity: z.union([z.const('event'), z.const('token')]).default('token'),
   model: z.string(),
   recentModels: z.array(z.string()).default([]),
-  // The endpoint credential rides the settings layer so the settings card can
-  // write it without a profile edit; the scope's endpoint-auth.json still
-  // outranks both layers (endpoint-auth.ts).
-  baseUrl: z.string(),
-  apiKey: z.string(),
-  authToken: z.string(),
 }
 
 /** Mark one schema field volatile when the host's schemastery has the method (rc.1), pass it through plain when not (0.1.5). */
@@ -149,9 +143,9 @@ export const Config: z = z.object({
     z.const('normal'),
   ]),
   model: volatilize(SETTINGS_FIELDS.model),
-  baseUrl: volatilize(SETTINGS_FIELDS.baseUrl),
-  apiKey: volatilize(SETTINGS_FIELDS.apiKey),
-  authToken: volatilize(SETTINGS_FIELDS.authToken),
+  baseUrl: z.string(),
+  apiKey: z.string(),
+  authToken: z.string(),
   proxyUrl: z.string(),
   live: volatilize(SETTINGS_FIELDS.live),
   liveIdleMs: z.number().default(DEFAULT_LIVE_IDLE_MS),
@@ -201,21 +195,15 @@ export function apply(ctx: Context, config: Config): void {
     const readSettings = (): ClaudeLiveSettings => {
       const model = vol(config.model)
       const recentModels = vol(config.recentModels)
-      const baseUrl = vol(config.baseUrl)
-      const apiKey = vol(config.apiKey)
-      const authToken = vol(config.authToken)
       return {
         live: vol(config.live) ?? false,
         liveMirrorGranularity: vol(config.liveMirrorGranularity) ?? 'token',
         ...model === undefined ? {} : { model },
         ...recentModels === undefined ? {} : { recentModels },
-        ...baseUrl === undefined ? {} : { baseUrl },
-        ...apiKey === undefined ? {} : { apiKey },
-        ...authToken === undefined ? {} : { authToken },
       }
     }
     const legacyBase: Record<string, unknown> = {}
-    for (const field of ['live', 'liveMirrorGranularity', 'model', 'baseUrl', 'apiKey', 'authToken'] as const) {
+    for (const field of ['live', 'liveMirrorGranularity', 'model'] as const) {
       const value = vol(config[field])
       if (value !== undefined) legacyBase[field] = value
     }
@@ -225,18 +213,18 @@ export function apply(ctx: Context, config: Config): void {
       legacyBase,
       read: readSettings,
     })
-    // The endpoint credential, resolved PER READ: the scope's
-    // endpoint-auth.json merged field by field over the settings layer (the
-    // card's user layer over the profile's YAML base — both reached through
-    // the face, so a card write lands on the next round with no reload).
-    const resolveEndpoint = (scopeHome: string): Promise<ClaudeEndpointAuth> => {
-      const current = face.get()
-      return resolveEndpointAuth(scopeHome, {
-        ...current.baseUrl === undefined ? {} : { baseUrl: current.baseUrl },
-        ...current.apiKey === undefined ? {} : { apiKey: current.apiKey },
-        ...current.authToken === undefined ? {} : { authToken: current.authToken },
-      })
+    // The endpoint credential's deployment level: the plugin config triple,
+    // merged per field UNDER the scope's own endpoint-auth.json at resolve
+    // time. Resolved PER READ against the scope's home — a card write (which
+    // lands in the file through the endpointAuth face) takes effect on the
+    // next round with no reload.
+    const endpointConfig: ClaudeEndpointAuth = {
+      ...config.baseUrl === undefined ? {} : { baseUrl: config.baseUrl },
+      ...config.apiKey === undefined ? {} : { apiKey: config.apiKey },
+      ...config.authToken === undefined ? {} : { authToken: config.authToken },
     }
+    const resolveEndpoint = (scopeHome: string): Promise<ClaudeEndpointAuth> =>
+      resolveEndpointAuth(scopeHome, endpointConfig)
     // The model is read PER ROUND, not captured at apply: the settings card
     // writes the same namespace field, so a change has to reach the next
     // delegation without a plugin reload — exactly like the live toggle.
@@ -275,15 +263,10 @@ export function apply(ctx: Context, config: Config): void {
     })
     const modelCatalog = new ClaudeModelCatalog({
       endpoint: resolveEndpoint,
-      // Re-key on either endpoint field's change: a card write re-probes the
-      // endpoint instead of serving a stale list (the digest covers a key
-      // rotation at an unchanged baseUrl; the scope file covers itself).
-      endpointLabel: () => {
-        const current = face.get()
-        const credential = current.apiKey ?? current.authToken
-        const digest = credential === undefined ? 'no-key' : createHash('sha256').update(credential).digest('hex').slice(0, 8)
-        return `${current.baseUrl ?? ''}#${digest}`
-      },
+      // Re-key on the config baseUrl; the scope file's own edits (the card's
+      // credential writes land there) are covered by its fingerprint in the
+      // key's file list.
+      endpointLabel: () => config.baseUrl,
       warn: message => ctx.logger.warn(message),
     })
     const modelContext = (childSessionId?: string): { home: string; cwd: string | undefined } => {
@@ -350,6 +333,32 @@ export function apply(ctx: Context, config: Config): void {
       // SAVED endpoint (the reply tells the user to save first when a
       // credential is missing). Session-less via the gateway Remote.
       checkEndpoint: home => resolveEndpoint(home).then(endpoint => checkClaudeEndpoint(endpoint)),
+      // The settings card's credential form: read the resolved per-field
+      // state (secrets as booleans), write edits into the scope's own
+      // endpoint-auth.json — the harness's 0600 store, never the profile
+      // patch document. A cleared field falls back to the config triple.
+      endpointAuth: {
+        read: async (home) => {
+          const endpoint = await resolveEndpoint(home)
+          return {
+            ...endpoint.baseUrl === undefined ? {} : { baseUrl: endpoint.baseUrl },
+            apiKeySet: endpoint.apiKey !== undefined,
+            authTokenSet: endpoint.authToken !== undefined,
+          }
+        },
+        write: async (home, fields) => {
+          const current = await readEndpointAuthFile(home) ?? {}
+          const next: Record<string, string> = { ...current }
+          for (const [field, value] of Object.entries(fields)) {
+            if (value === undefined) continue
+            const trimmed = typeof value === 'string' ? value.trim() : ''
+            if (value === null || trimmed === '') delete next[field]
+            else next[field] = trimmed
+          }
+          if (Object.keys(next).length === 0) await clearEndpointAuth(home)
+          else await writeEndpointAuth(home, next)
+        },
+      },
       credentialStamp: endpointAuthStamp,
       // Logout clears the scope's OWN endpoint file. A config-sourced
       // credential outlives it — said out loud, or the status would flip
