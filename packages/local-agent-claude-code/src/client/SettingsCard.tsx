@@ -15,7 +15,7 @@ import {
   ProviderAuthBlock, type ProviderAuthBlockProps, type ProviderAuthInjected,
 } from '@khorsheed/dsh-local-agent/src/client/ProviderAuthBlock.tsx'
 import { AuthStatusDot } from '@khorsheed/dsh-local-agent/src/client/AuthStatusDot.tsx'
-import { useHarnessAuthStatus } from '@khorsheed/dsh-local-agent/src/client/auth-status.ts'
+import { publishAuthStatus, useHarnessAuthStatus } from '@khorsheed/dsh-local-agent/src/client/auth-status.ts'
 import { NS } from './locales.ts'
 import css from './SettingsCard.module.css'
 
@@ -286,7 +286,12 @@ function useCardState(
     }
     void endpointAuth.write(fields).then(
       (state) => {
-        if (state !== undefined && state !== null) setEndpointState(state)
+        if (state !== undefined && state !== null) {
+          setEndpointState(state)
+          // Flip the status dot with the write's own answer — the next
+          // scheduled probe confirms it, but the save reads as done NOW.
+          publishAuthStatus('claude-code', state.apiKeySet || state.authTokenSet ? 'authenticated' : 'anonymous')
+        }
         setBaseUrlDraft(null)
         setApiKeyDraft(null)
         setAuthTokenDraft(null)

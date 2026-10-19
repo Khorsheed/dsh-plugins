@@ -104,7 +104,7 @@ export class ClaudeModelCatalog {
     const result = await fetchEndpointModels(
       { ...endpoint, baseUrl: endpoint.baseUrl ?? OFFICIAL_BASE_URL },
       this.deps.fetchImpl,
-      AbortSignal.any([signal, AbortSignal.timeout(this.deps.timeoutMs ?? 8_000)]),
+      AbortSignal.any([signal, AbortSignal.timeout(this.deps.timeoutMs ?? 20_000)]),
     )
     if (result.kind === 'unreachable') {
       // Not a verdict: the cache keeps the last good list and retries.

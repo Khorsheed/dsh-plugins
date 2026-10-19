@@ -294,23 +294,28 @@ export async function fetchEndpointModels(
  * proves both reachability and credential validity — the exact evidence a
  * "verify" button needs — and the served model list rides the reply so the
  * user sees what the endpoint offers (any id can be typed into the model
- * field by hand). Never throws: every failure mode folds into the reply
- * text, since the reply IS the diagnostic.
+ * field by hand). One transport-level retry rides along: a local proxy
+ * restart (a Surge/clash reload) stalls the first attempt into the timeout
+ * and answers the retry immediately. Never throws: every failure mode folds
+ * into the reply text, since the reply IS the diagnostic.
  * @param endpoint - the resolved endpoint auth (scope file over settings).
  * @param fetchImpl - the HTTP fetch; default the host's global fetch.
- * @param timeoutMs - the whole probe's deadline.
+ * @param timeoutMs - one attempt's deadline (two attempts at most).
  * @returns the human-readable verdict for the `/claude-code check` reply.
  */
 export async function checkClaudeEndpoint(
   endpoint: ClaudeEndpointAuth,
   fetchImpl?: EndpointCheckFetch,
-  timeoutMs = 8_000,
+  timeoutMs = 20_000,
 ): Promise<string> {
   if (!hasEndpointCredential(endpoint)) {
     return 'No endpoint credential configured — fill API Key or Auth Token on the settings card (or the profile row) first.'
   }
   const baseUrl = (endpoint.baseUrl ?? OFFICIAL_BASE_URL).replace(/\/+$/, '')
-  const result = await fetchEndpointModels({ ...endpoint, baseUrl }, fetchImpl, AbortSignal.timeout(timeoutMs))
+  let result = await fetchEndpointModels({ ...endpoint, baseUrl }, fetchImpl, AbortSignal.timeout(timeoutMs))
+  if (result.kind === 'unreachable') {
+    result = await fetchEndpointModels({ ...endpoint, baseUrl }, fetchImpl, AbortSignal.timeout(timeoutMs))
+  }
   if (result.kind === 'unreachable') return `Endpoint unreachable (${baseUrl}): ${result.message}`
   if (result.kind === 'http') {
     return `Endpoint answered HTTP ${String(result.status)} (${baseUrl})${result.body === '' ? '' : `: ${result.body}`}`

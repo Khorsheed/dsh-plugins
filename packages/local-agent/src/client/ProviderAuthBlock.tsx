@@ -7,7 +7,7 @@ import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import { Toast } from '@deepseek-ai/dsh-client-ui-primitives'
 import { IconCheckOutlineMedium } from './icons.tsx'
 import { NS } from './locales.ts'
-import { publishAuthStatus } from './auth-status.ts'
+import { publishAuthStatus, usePublishedAuthStatus } from './auth-status.ts'
 import type { LocalAgentHarnessView } from './LocalAgentRecordsAction.tsx'
 import css from './ProviderAuthBlock.module.css'
 
@@ -203,7 +203,12 @@ export function ProviderAuthBlock({ harness, useSessions, status, runCommand, ac
     })
   }
 
-  const statusKind = view.status
+  // The bus carries the same harness's status from every writer: this
+  // block's own probes publish into it, and so does a sibling surface that
+  // WRITES the credential (the endpoint form's save). Following it keeps the
+  // row truthful without a re-probe; undefined until the first probe lands.
+  const published = usePublishedAuthStatus(harness.id)
+  const statusKind = published ?? view.status
   const authenticated = statusKind === 'authenticated'
   const loginPending = pendingSince !== undefined
   // A harness without a login/logout flow (dsh authenticates through the host

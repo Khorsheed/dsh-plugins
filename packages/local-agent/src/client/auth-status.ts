@@ -39,6 +39,15 @@ export function readAuthStatus(harnessId: string): HarnessAuthStatusKind | undef
 }
 
 /**
+ * Subscribe one harness's published status (no probe of its own): a sibling
+ * surface that WRITES the credential (the endpoint form's save) publishes
+ * through the same bus, and every block showing the status flips at once.
+ */
+export function usePublishedAuthStatus(harnessId: string): HarnessAuthStatusKind | undefined {
+  return useSyncExternalStore(subscribe, () => statuses.get(harnessId))
+}
+
+/**
  * Read one harness's latest known auth status. Every mount probes once and
  * publishes — a published value only snapshots the past (a credential expiring
  * mid-session must flip the dot at the next view, not stay green forever);
