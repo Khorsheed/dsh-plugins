@@ -3,7 +3,7 @@
  * alternatives, and the looseness that must not decide an answer.
  */
 import { describe, expect, it } from 'vitest'
-import { choiceIndex, fillMatches } from '../src/client/judge.ts'
+import { choiceIndex, fillMatches, numericValue } from '../src/client/judge.ts'
 
 const options = ['环绕、包围', '限定、划定界限', '描述、记录', '征服、占领']
 
@@ -77,5 +77,41 @@ describe('review modes', () => {
     const { options, correct } = choiceOptions('举行', ['阁楼', '分期付款', '全盛期', '限定'], () => 0)
     expect(options).toHaveLength(4)
     expect(options[correct]).toBe('举行')
+  })
+})
+
+describe('fill judging on 3080 answers (2026-10-19)', () => {
+  it('a fraction key is one answer, never two alternatives split on its slash', () => {
+    expect(fillMatches('1/2', '1/2')).toBe(true)
+    expect(fillMatches('1', '1/2')).toBe(false)
+    expect(fillMatches('2', '1/2')).toBe(false)
+  })
+
+  it('the same number in another notation matches: decimal, \\frac, ½, percent, √ and π', () => {
+    expect(fillMatches('0.5', '1/2')).toBe(true)
+    expect(fillMatches('\\frac{1}{2}', '1/2')).toBe(true)
+    expect(fillMatches('½', '1/2')).toBe(true)
+    expect(fillMatches('50%', '1/2')).toBe(true)
+    expect(fillMatches('\\frac{\\sqrt{3}}{2}', '√3/2')).toBe(true)
+    expect(fillMatches('2π/3', '\\frac{2\\pi}{3}')).toBe(true)
+    expect(fillMatches('0.51', '1/2')).toBe(false)
+    expect(numericValue('√3/2')).toBeCloseTo(Math.sqrt(3) / 2)
+    expect(numericValue('x=2')).toBe(2)
+    expect(numericValue('北京')).toBeUndefined()
+  })
+
+  it('a multi-blank answer matches part by part, whatever the comma', () => {
+    expect(fillMatches('1/2，\\frac{\\sqrt{3}}{2}', '1/2, √3/2')).toBe(true)
+    expect(fillMatches('0.5; √3/2', '1/2, √3/2')).toBe(true)
+    expect(fillMatches('√3/2, 1/2', '1/2, √3/2')).toBe(false)
+  })
+
+  it('alternatives are written spaced " / ", "|" or "或"; wrapping quotes never decide', () => {
+    expect(fillMatches('Beijing', '北京 / Beijing')).toBe(true)
+    expect(fillMatches('北京', '北京|Beijing')).toBe(true)
+    expect(fillMatches('Peking', '北京 或 Peking')).toBe(true)
+    expect(fillMatches('「不应期」', '不应期')).toBe(true)
+    expect(fillMatches('[-1, 2)', '[-1,2)')).toBe(true)
+    expect(fillMatches('(-1, 2)', '[-1,2)')).toBe(false)
   })
 })

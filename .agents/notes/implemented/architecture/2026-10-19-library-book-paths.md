@@ -31,6 +31,8 @@ A free OpenRouter model (`thinkingmachines/inkling:free`) ran the journey once a
 - **Points on an acceptance station.** Dropped with an `adjusted` note instead of refused. `chapters` also reads any dash or separator, and words in it ("27-30 + 附录A") become a `topic:` side reference.
 - **Binding to a guessed id** (`calculus_lifesaver`, before registering) now binds the project and returns a note — model behavior, but not worth a red call.
 
+- **Fill answers judged wrong when right** (sidebar `judge.ts`): the key was split into alternatives on every `/`, so the key `1/2` became `1` or `2` and no answer could match — a plain bug. The whole key is tried first and alternatives are only `" / "`, `|`, `或`; answers also match by value (a small parser, never eval: fractions, decimals, `\frac`, `½`, `%`, `√`, `π`) and part by part for multi-blank answers whatever the comma. What still disagrees, the learner overrules with 「我答对了」 (ledgered `by: self`, the criterion says so). `library_quiz` now states these conventions.
+
 Sidebar: 章节考's 范围 defaults to 都考; the settings and the pending ask live in the pane store per station, so leaving the tab keeps both, and a 「教练正在出题…」 card (what was asked, how long) stays until the paper lands — after 8 minutes it says none has landed and offers to ask again.
 
 ## Alternatives considered

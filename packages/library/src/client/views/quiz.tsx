@@ -27,6 +27,8 @@ interface Answered {
   /** Judged here: true / false; open questions stay undefined. */
   readonly pass?: boolean
   readonly void?: boolean
+  /** A fill the judge called wrong that the learner overruled (「我答对了」). */
+  readonly overruled?: boolean
 }
 
 /** The quiz screen: the whole paper on one scroll — every question numbered, judged on the spot, 交卷 once all are answered. The in-progress sitting persists locally (quiz-drafts) — leaving the paper never loses an answer. */
@@ -83,7 +85,7 @@ export function QuizView({ p, projectId, resourceId, quizId }: ViewProps & { pro
       const entry = answers[item.id]
       return {
         task: item.id,
-        criterion: item.prompt.slice(0, 120),
+        criterion: entry?.overruled === true ? `${item.prompt.slice(0, 100)}（学员改判：与答案等价）` : item.prompt.slice(0, 120),
         pass: entry?.pass === true,
         evidence: item.evidence.quote ?? item.answer,
         by: 'self',
@@ -229,12 +231,21 @@ function QuestionCard({ p, question, number, answered, draft, onDraft, onAnswer 
       )}
       {answered !== undefined && answered.void !== true && (
         <div className={css.feedback}>
-          {answered.pass === true && <strong className={css.ok}>{t('quiz.right')}</strong>}
+          {answered.pass === true && <strong className={css.ok}>{answered.overruled === true ? t('quiz.overruled') : t('quiz.right')}</strong>}
           {answered.pass === false && <strong className={css.bad}><MathText text={t('quiz.wrong', { answer: correct >= 0 && question.options?.[correct] !== undefined ? `${String.fromCharCode(65 + correct)}. ${question.options[correct]}` : question.answer })} /></strong>}
           {answered.pass === undefined && <strong>{t('quiz.coachJudges')}</strong>}
           {question.explanation !== undefined && <div><MathText text={question.explanation} /></div>}
           {!quoteUpfront && question.evidence.quote !== undefined && <blockquote className={css.quote}>{question.evidence.quote}</blockquote>}
           {question.evidence.url !== undefined && <a className={css.link} href={question.evidence.url} target="_blank" rel="noreferrer">{t('quiz.source')}</a>}
+          {question.kind === 'fill' && (answered.pass === false || answered.overruled === true) && (
+            <div>
+              <button
+                type="button"
+                className={css.textButton}
+                onClick={() => { onAnswer(answered.overruled === true ? { given: answered.given, pass: false } : { given: answered.given, pass: true, overruled: true }) }}
+              >{answered.overruled === true ? t('quiz.overruleUndo') : t('quiz.overrule')}</button>
+            </div>
+          )}
         </div>
       )}
       <div className={css.row}>
