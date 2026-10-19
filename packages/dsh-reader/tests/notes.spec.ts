@@ -265,3 +265,16 @@ describe('reader_note', () => {
     expect(text).toContain('- gap（¶2）')
   })
 })
+
+describe('sync marks', () => {
+  it('remembers which canvas card a note and a discussion note became', async () => {
+    await store.addNote({ ...article, block: 0, quote: 'q' })
+    await store.addDiscussion({ ...article, kind: 'discussion', points: [{ text: 'p' }] })
+    expect(await store.markSynced({ entryId: article.entryId, noteId: 'n1', canvasId: 'c', cardId: 'k1', canvasTitle: 'Board' })).toBe('ok')
+    expect(await store.markSynced({ entryId: article.entryId, discussionId: 'd1', canvasId: 'c', cardId: 'k2', canvasTitle: 'Board' })).toBe('ok')
+    expect(await store.markSynced({ entryId: article.entryId, noteId: 'n5', canvasId: 'c', cardId: 'k', canvasTitle: 'B' })).toBe('not-found')
+    const entry = store.entry(article.entryId)
+    expect(entry?.notes[0]?.syncedTo).toMatchObject([{ canvasId: 'c', cardId: 'k1', canvasTitle: 'Board' }])
+    expect(entry?.discussions?.[0]?.syncedTo).toMatchObject([{ cardId: 'k2' }])
+  })
+})

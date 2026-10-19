@@ -22,6 +22,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useSyncExternalStore } from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { ReaderPaneProps } from '../src/client/contract.ts'
+import type { CanvasInboxLike } from '../src/client/canvas-sync.ts'
 import { createReaderStore, type ReaderState } from '../src/client/store.ts'
 import { zh } from '../src/client/locales.ts'
 import { ReaderPane } from '../src/client/ReaderPane.tsx'
@@ -88,6 +89,8 @@ function feed(id: string, items: readonly FeedItem[]): string {
 
 interface BenchOptions {
   readonly sources?: readonly ReaderSourceSummary[]
+  /** The canvas plugin's inbox, when the bench composes one. */
+  readonly inbox?: CanvasInboxLike
   /** The payload each source id answers with. Sources with no entry answer with their own feed. */
   readonly payloads?: Readonly<Record<string, string>>
   /** Source ids whose payload arrives truncated — how the fetch cap arrives. */
@@ -216,6 +219,7 @@ function bench(options: BenchOptions = {}) {
       return { ok: true as const, value: note }
     }),
     recordDiscussion: vi.fn(async () => ({ ok: true as const, value: 'ok' })),
+    markSynced: vi.fn(async () => ({ ok: true as const, value: 'ok' })),
     snapshotEntry: vi.fn(async () => ({ ok: true as const, value: 'ok' })),
     setDraft: vi.fn(),
     updateSource: vi.fn(async () => ({ ok: true as const, value: 'ok' as const })),
@@ -365,6 +369,8 @@ function bench(options: BenchOptions = {}) {
     addReply: async () => ({ ok: true as const, value: 'ok' }),
     editReply: async () => ({ ok: true as const, value: 'ok' }),
     deleteDiscussion: async () => ({ ok: true as const, value: 'ok' }),
+    markSynced: mocks.markSynced,
+    canvasInbox: () => options.inbox,
     recordDiscussion: mocks.recordDiscussion,
     snapshotEntry: mocks.snapshotEntry,
     canOpenSession: () => false,
@@ -3973,5 +3979,48 @@ describe('notes: take one from a selection, find it in the notes face, bring it 
     expect(written).toContain('考考我：《位置编码》')
     expect(written).toContain('reader_note')
     await waitFor(() => { expect(ui.mocks.recordDiscussion).toHaveBeenCalled() })
+  })
+
+  it('syncs a note to the canvas picked last as a kept card carrying its provenance', async () => {
+    const addCard = vi.fn(async () => ({ ok: true as const, cardId: 'card-9' }))
+    const inbox: CanvasInboxLike = {
+      current: () => null,
+      listCanvases: async () => [{ id: 'cv-a', title: '读书会', cardCount: 3 }, { id: 'cv-b', title: '周报', cardCount: 1 }],
+      addCard,
+      openCard: vi.fn(),
+    }
+    localStorage.setItem('dsh-reader.lastCanvas', 'cv-b')
+    const ui = bench({
+      sources: [rssSource('hn', { label: 'Hacker News' })],
+      payloads: { hn: feed('hn', [{ title: '位置编码', description: '<p>自注意力不看顺序。</p><p>旋转 query 和 key。</p>' }]) },
+      inbox,
+    })
+    await ui.settle()
+    fireEvent.click(await screen.findByText('位置编码'))
+    await screen.findByText(zh['action.quote'])
+    selectParagraph('旋转 query 和 key。')
+    fireEvent.click(screen.getByText(zh['notes.take']))
+    const sheet = await screen.findByRole('dialog', { name: zh['notes.sheetTitle'] })
+    fireEvent.change(within(sheet).getByRole('textbox'), { target: { value: '只看相对距离' } })
+    fireEvent.click(within(sheet).getByText(`${zh['notes.save']} ⌘⏎`))
+    fireEvent.click(await screen.findByRole('tab', { name: /笔记\s*1/ }))
+    fireEvent.click(await screen.findByText(zh['notes.sync']))
+    const picker = await screen.findByRole('dialog', { name: zh['notes.sync'] })
+    // The canvas used last is preselected.
+    await waitFor(() => { expect(within(picker).getByRole('radio', { name: /周报/ }).getAttribute('aria-checked')).toBe('true') })
+    fireEvent.click(within(picker).getByText(zh['notes.syncRun']))
+    await waitFor(() => { expect(addCard).toHaveBeenCalled() })
+    const [, request] = addCard.mock.calls[0] as unknown as [string, { canvasId: string; text: string; source: { ref: string } }]
+    expect(request.canvasId).toBe('cv-b')
+    expect(request.text).toContain('> 旋转 query 和 key。')
+    expect(request.text).toContain('只看相对距离')
+    expect(request.text).toContain('— 《位置编码》 ¶2')
+    await waitFor(() => { expect(ui.mocks.markSynced).toHaveBeenCalledWith(expect.objectContaining({ noteId: 'n1', canvasId: 'cv-b', cardId: 'card-9', canvasTitle: '周报' })) })
+    expect(await screen.findByText('已同步到《周报》')).toBeTruthy()
+  })
+
+  it('offers no sync without the canvas', async () => {
+    await openedArticle()
+    expect(screen.queryByText(zh['notes.sync'])).toBeNull()
   })
 })

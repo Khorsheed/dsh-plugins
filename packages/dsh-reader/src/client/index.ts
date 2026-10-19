@@ -29,6 +29,7 @@ import type { ReaderCaptureRemote, ReaderExtractedMeta, ReaderFetchPhase, Reader
 import { extractArticle } from './extract-article.ts'
 import { translationHash } from './translate.ts'
 import { noteTargetForSelection } from './notes.ts'
+import type { CanvasInboxLike } from './canvas-sync.ts'
 import { READER_TAB_ID, readerDefinition } from './definition.tsx'
 import { ReaderPane } from './ReaderPane.tsx'
 import { createReaderStore } from './store.ts'
@@ -234,6 +235,13 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     addReply: request => remote.addReply(request),
     editReply: request => remote.editReply(request),
     deleteDiscussion: request => remote.deleteDiscussion(request),
+    markSynced: request => remote.markSynced(request),
+    // The canvas's inbox (its client half provides `ctx.canvasInbox`), probed
+    // per gesture: without the canvas the sync gesture simply is not offered.
+    canvasInbox: () => {
+      const inbox = ctx.get('canvasInbox') as CanvasInboxLike | undefined
+      return typeof inbox?.addCard === 'function' && typeof inbox.listCanvases === 'function' ? inbox : undefined
+    },
     recordDiscussion: request => remote.recordDiscussion(request),
     snapshotEntry: request => remote.snapshotEntry(request),
     canOpenSession: () => workspaceNav()?.openSession !== undefined,

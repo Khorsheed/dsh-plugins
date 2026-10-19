@@ -30,6 +30,7 @@
     "src/client/icons.tsx",
     "src/client/notes.ts",
     "src/client/NotesView.tsx",
-    "src/client/useNotes.ts"
+    "src/client/useNotes.ts",
+    "src/client/canvas-sync.ts"
   ]
 }

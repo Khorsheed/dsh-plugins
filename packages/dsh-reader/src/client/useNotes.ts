@@ -18,6 +18,10 @@ import type { BuiltArticle, TranslationView } from './translate.ts'
 import { translationHash } from './translate.ts'
 import { mergedDraft } from './quote.ts'
 import {
+  discussionCardText, lastCanvas, noteCardText, rememberCanvas, sourceOf,
+  type SyncCanvas, type SyncKind, type SyncWords,
+} from './canvas-sync.ts'
+import {
   blockElements, captureSelection, formatNotesDraft, NOTE_FLASH_HIGHLIGHT, NOTE_HIGHLIGHT, noteRanges, paintHighlight,
   paragraphsOf, registerNoteTarget, type NoteSelection,
 } from './notes.ts'
@@ -37,6 +41,40 @@ const HINT_MS = 2600
  * (the canvas board's 4-second precedent).
  */
 const NOTES_POLL_MS = 5000
+
+/** What is being synced to a canvas: some notes, or one discussion note. */
+export type SyncTarget =
+  | { readonly kind: 'notes'; readonly ids: readonly string[] }
+  | { readonly kind: 'discussion'; readonly id: string }
+
+/** The 「同步到画布」 sheet's state and gestures. */
+export interface SyncFace {
+  /** Whether the canvas inbox is there at all (the gesture hides without it). */
+  readonly available: boolean
+  readonly target: SyncTarget | null
+  /** The canvases to pick from; null while loading. */
+  readonly canvases: readonly SyncCanvas[] | null
+  readonly pick: string | null
+  readonly last: string | null
+  readonly withReplies: boolean
+  /** Set when the picked canvas retired 灵感: the categories it takes. */
+  readonly kinds: readonly SyncKind[] | null
+  readonly kind: string | null
+  readonly busy: boolean
+  readonly error: string | null
+  /** The last sync's landing place, shown for a moment with an 打开. */
+  readonly done: { readonly canvasId: string; readonly cardId: string; readonly title: string } | null
+  readonly open: (target: SyncTarget) => void
+  readonly setPick: (canvasId: string) => void
+  readonly setWithReplies: (on: boolean) => void
+  readonly setKind: (kind: string) => void
+  readonly run: () => void
+  readonly cancel: () => void
+  readonly openDone: () => void
+}
+
+/** How long the 「已同步」 line stays. */
+const SYNC_DONE_MS = 5000
 
 /** What the hook reads from the pane. */
 export interface UseNotesInput {
@@ -78,6 +116,7 @@ export interface NotesFace {
   readonly deleteDiscussion: (discussion: ReaderDiscussion) => void
   readonly jumpPara: (para: number) => void
   readonly check: () => void
+  readonly sync: SyncFace
 }
 
 /** True when two sets hold the same ids. */
@@ -314,6 +353,109 @@ export function useNotes(input: UseNotesInput): NotesFace {
     }))
   }, [articleRef])
 
+  /* ------------------------------------------------------- 同步到画布 */
+
+  const [syncTarget, setSyncTarget] = useState<SyncTarget | null>(null)
+  const [canvases, setCanvases] = useState<readonly SyncCanvas[] | null>(null)
+  const [pick, setPick] = useState<string | null>(null)
+  const [withReplies, setWithReplies] = useState(true)
+  const [kinds, setKinds] = useState<readonly SyncKind[] | null>(null)
+  const [kind, setKind] = useState<string | null>(null)
+  const [syncBusy, setSyncBusy] = useState(false)
+  const [syncError, setSyncError] = useState<string | null>(null)
+  const [syncDone, setSyncDone] = useState<SyncFace['done']>(null)
+  const inbox = props.canvasInbox()
+
+  const openSync = useCallback((target: SyncTarget) => {
+    const current = props.canvasInbox()
+    if (current === undefined) return
+    setSyncTarget(target)
+    setCanvases(null)
+    setKinds(null)
+    setKind(null)
+    setSyncError(null)
+    void current.listCanvases().then(list => {
+      setCanvases(list)
+      const remembered = lastCanvas()
+      const showing = current.current()
+      const preferred = [remembered, showing].find(id => id !== null && list.some(item => item.id === id))
+      setPick(preferred ?? list[0]?.id ?? null)
+    }, () => { setCanvases([]) })
+  }, [props])
+
+  const runSync = useCallback(() => {
+    const current = props.canvasInbox()
+    if (current === undefined || syncTarget === null || pick === null || identity === undefined || notes === undefined) return
+    const canvas = canvases?.find(item => item.id === pick)
+    const words: SyncWords = {
+      conclusion: t('notes.syncConclusion'),
+      original: t('notes.syncOriginal'),
+      kindCheck: t('notes.kindCheck'),
+      kindDiscussion: t('notes.kindDiscussion'),
+    }
+    const article = { title: identity.title, ...(identity.url === undefined ? {} : { url: identity.url }) }
+    const items: { text: string; mark: { noteId?: string; discussionId?: string } }[] = syncTarget.kind === 'notes'
+      ? notes.notes.filter(note => syncTarget.ids.includes(note.id))
+        .map(note => ({ text: noteCardText(note, article, words, withReplies), mark: { noteId: note.id } }))
+      : (notes.discussions ?? []).filter(item => item.id === syncTarget.id)
+        .map(item => ({ text: discussionCardText(item, article, words), mark: { discussionId: item.id } }))
+    setSyncBusy(true)
+    setSyncError(null)
+    void (async () => {
+      let landed: { cardId: string } | undefined
+      for (const item of items) {
+        const outcome = await current.addCard(String(sessionId), {
+          canvasId: pick,
+          text: item.text,
+          ...(kind === null ? {} : { kind }),
+          source: sourceOf(article),
+        })
+        if (!outcome.ok) {
+          if (outcome.error === 'needs-kind' && 'kinds' in outcome) {
+            setKinds(outcome.kinds)
+            setKind(outcome.kinds[0]?.id ?? null)
+          } else {
+            setSyncError(outcome.error)
+          }
+          setSyncBusy(false)
+          await reload(identity.entryId)
+          return
+        }
+        landed = { cardId: outcome.cardId }
+        await props.markSynced({ entryId: identity.entryId, ...item.mark, canvasId: pick, cardId: outcome.cardId, canvasTitle: canvas?.title ?? pick })
+      }
+      rememberCanvas(pick)
+      setSyncBusy(false)
+      setSyncTarget(null)
+      await reload(identity.entryId)
+      if (landed !== undefined) {
+        setSyncDone({ canvasId: pick, cardId: landed.cardId, title: canvas?.title ?? pick })
+        setTimeout(() => { setSyncDone(null) }, SYNC_DONE_MS)
+      }
+    })()
+  }, [props, syncTarget, pick, identity, notes, canvases, t, withReplies, kind, sessionId, reload])
+
+  const sync: SyncFace = {
+    available: inbox !== undefined,
+    target: syncTarget,
+    canvases,
+    pick,
+    last: lastCanvas(),
+    withReplies,
+    kinds,
+    kind,
+    busy: syncBusy,
+    error: syncError,
+    done: syncDone,
+    open: openSync,
+    setPick: id => { setPick(id); setKinds(null); setKind(null) },
+    setWithReplies,
+    setKind,
+    run: runSync,
+    cancel: () => { setSyncTarget(null) },
+    openDone: () => { if (syncDone !== null) props.canvasInbox()?.openCard(syncDone.canvasId, syncDone.cardId) },
+  }
+
   // 「让Agent考考我」: the request (with the round's contract, so it works even
   // where the skill is not loaded) goes into the draft; the reader sends it.
   const check = useCallback(() => {
@@ -328,6 +470,7 @@ export function useNotes(input: UseNotesInput): NotesFace {
   }, [identity, notes, t, props, remember])
 
   return {
+    sync,
     addReply,
     editReply,
     deleteDiscussion,

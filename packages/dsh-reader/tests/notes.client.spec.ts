@@ -11,6 +11,7 @@ import {
   blockIndexOf, captureSelection, findText, formatNotesDraft, noteRanges, noteTargetForSelection,
   overlaps, paragraphsOf, registerNoteTarget,
 } from '../src/client/notes.ts'
+import { discussionCardText, noteCardText, sourceOf } from '../src/client/canvas-sync.ts'
 import { applyTranslation, buildArticle, setView, type TranslateClasses } from '../src/client/translate.ts'
 
 const classes: TranslateClasses = { unit: 'u', reveal: 'r', line: 'l' } as TranslateClasses
@@ -141,5 +142,29 @@ describe('the snapshot and the draft', () => {
     dispose()
     expect(started).toBe(1)
     expect(noteTargetForSelection()).toBeUndefined()
+  })
+})
+
+describe('a synced card carries the note and where it came from', () => {
+  const words = { conclusion: '讨论结论：', original: '原文', kindCheck: '考考我', kindDiscussion: '讨论' }
+  const article = { title: 'T', url: 'https://x/a' }
+
+  it('quotes the excerpt, keeps the comment and (on request) the conclusions, and links the original', () => {
+    const synced: ReaderNote = {
+      ...note('n1', 2, 'quoted'), comment: 'why?',
+      replies: [{ by: 'agent', text: 'because', at: '' }, { by: 'user', text: 'mine', at: '' }],
+    }
+    expect(noteCardText(synced, article, words, true)).toBe('> quoted\n\nwhy?\n\n讨论结论：because\n\nmine\n\n— 《T》 ¶3 · [原文](https://x/a)')
+    expect(noteCardText(synced, article, words, false)).not.toContain('because')
+  })
+
+  it('lists a discussion note\'s points with their ¶', () => {
+    const text = discussionCardText({ id: 'd1', kind: 'check', title: '', points: [{ text: 'gap', para: 3 }], aside: '其余 1 题讲到位了', createdAt: '' }, article, words)
+    expect(text).toBe('考考我\n\n- gap（¶3）\n\n其余 1 题讲到位了\n\n— 《T》 · [原文](https://x/a)')
+  })
+
+  it('keeps a structured source for the model', () => {
+    expect(sourceOf(article)).toEqual({ type: 'url', ref: 'https://x/a', title: 'T' })
+    expect(sourceOf({ title: 'T' })).toEqual({ type: 'paste', ref: 'T' })
   })
 })

@@ -37,6 +37,15 @@ export interface ReaderNoteReply {
   readonly at: string
 }
 
+/** A canvas card a note (or discussion note) was synced to. */
+export interface ReaderSyncedCard {
+  readonly canvasId: string
+  readonly cardId: string
+  /** The canvas's title when it was synced (for the 「已在…」 mark). */
+  readonly canvasTitle: string
+  readonly at: string
+}
+
 /** One note: an excerpt and, optionally, what the reader thought of it. */
 export interface ReaderNote {
   /** `n1`, `n2`… per article, never reused — the model cites notes by it. */
@@ -45,6 +54,8 @@ export interface ReaderNote {
   readonly comment?: string
   /** Conclusions and additions, oldest first. */
   readonly replies?: readonly ReaderNoteReply[]
+  /** Canvas cards made from it (a later edit does not reach them). */
+  readonly syncedTo?: readonly ReaderSyncedCard[]
   readonly createdAt: string
   readonly updatedAt: string
 }
@@ -71,6 +82,8 @@ export interface ReaderDiscussion {
   readonly points: readonly ReaderDiscussionPoint[]
   /** One line for what went fine (「其余 2 题讲到位了」). */
   readonly aside?: string
+  /** Canvas cards made from it. */
+  readonly syncedTo?: readonly ReaderSyncedCard[]
   readonly createdAt: string
 }
 

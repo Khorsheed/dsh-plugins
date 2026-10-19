@@ -52,6 +52,8 @@ import {
   CanvasTabVisibility, RegistrationToggle, type CanvasPluginInventorySnapshot,
 } from './preset-visibility.ts'
 import { CanvasSelectionStore } from './space/selection.ts'
+import { createCanvasInbox, type CanvasInboxService } from './inbox.ts'
+import { categoryLabelOf } from './category-label.ts'
 import { ProposeTypeRow, type ProposeTypeRowFace } from './type/ProposeTypeRow.tsx'
 import { OpenCanvasRow, type OpenCanvasRowFace } from './open/OpenCanvasRow.tsx'
 import { CanvasTab } from './tab/CanvasTab.tsx'
@@ -394,6 +396,70 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     },
   }
   ctx.provide('canvasNav', canvasNav)
+
+  // The inbox (inbox.ts): another plugin's way to put a kept card on a canvas
+  // the user chose — the reader's 「同步到画布」. Provided, never pushed: the
+  // consumer probes it and hides its gesture without it.
+  const openCanvasTab = (): void => {
+    try {
+      ctx.sidebarRight.openTab(CANVAS_KIND)
+    } catch (error) {
+      ctx.logger.warn('canvas: openTab failed (tab type not registered?)', error)
+    }
+  }
+  const inbox: CanvasInboxService = createCanvasInbox(
+    () => ({
+      listCanvases: () => requireRemote().listCanvases(),
+      readBoard: request => requireRemote().readBoard(request),
+      putCard: async (sessionId, request) => touchOnSuccess(await requireRemote().putCard(sessionId, request)),
+    }),
+    category => categoryLabelOf(category, t),
+    () => selection.source.getSnapshot().canvasId,
+    (canvasId, cardId) => {
+      openCanvasTab()
+      selection.openCardTab(canvasId, cardId, '')
+    },
+  )
+  ctx.provide('canvasInbox', inbox)
+
+  // 「存为画布卡片」 in the quote plugin's selection menu (its `ctx.quoteActions`
+  // registry, probed — without quote the row does not exist). The card goes to
+  // the canvas the tab shows (or the only canvas there is); with none to pick,
+  // the tab opens so the user can choose one.
+  const quoteActions = ctx.get('quoteActions') as {
+    registerAction(action: {
+      id: string
+      label: () => string
+      available?: (target: { sessionId: SessionId | undefined }) => boolean
+      run: (target: { text: string; label: string; sessionId: SessionId | undefined }) => void
+    }): () => void
+  } | undefined
+  if (quoteActions !== undefined && typeof quoteActions.registerAction === 'function') {
+    ctx.effect(() => quoteActions.registerAction({
+      id: 'canvas.card',
+      label: () => t('inbox.saveCard'),
+      available: target => target.sessionId !== undefined,
+      run: target => {
+        const sessionId = target.sessionId
+        if (sessionId === undefined) return
+        void (async () => {
+          let canvasId = inbox.current()
+          if (canvasId === null) {
+            const canvases = await inbox.listCanvases()
+            if (canvases.length === 1) canvasId = canvases[0]!.id
+          }
+          if (canvasId === null) { openCanvasTab(); return }
+          const outcome = await inbox.addCard(sessionId, {
+            canvasId,
+            text: target.text,
+            source: { type: 'paste', ref: target.label },
+          })
+          if (outcome.ok) inbox.openCard(canvasId, outcome.cardId)
+          else { openCanvasTab(); selection.openCanvas(canvasId) }
+        })()
+      },
+    }), 'canvas: quote action')
+  }
   ctx.effect(() => toolSlots.inject('tool.call.toolview', () => toolSlots.register({
     name: 'tool.call.toolview',
     key: 'canvas_propose_type',

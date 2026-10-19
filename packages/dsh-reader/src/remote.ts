@@ -353,6 +353,12 @@ export class ReaderRemoteService extends TypertRemoteService<ReaderRemoteConfig>
     return this.notes.editReply(request)
   }
 
+  /** Remember that a note or a discussion note became a canvas card. */
+  @Remote('markSynced')
+  markSynced(request: { entryId: string; noteId?: string; discussionId?: string; canvasId: string; cardId: string; canvasTitle: string }): Promise<ReaderNoteOutcome> {
+    return this.notes.markSynced(request)
+  }
+
   /** Delete one discussion note. */
   @Remote('deleteDiscussion')
   deleteDiscussion(request: { entryId: string; discussionId: string }): Promise<ReaderNoteOutcome> {

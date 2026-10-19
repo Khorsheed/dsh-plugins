@@ -81,6 +81,9 @@ export type ReaderKey =
   | 'notes.replyEdit' | 'notes.replyRemove' | 'notes.discussionNotes' | 'notes.kindDiscussion' | 'notes.kindCheck'
   | 'notes.noDiscussionNotes' | 'notes.pointsCheck' | 'notes.pointsDiscussion' | 'notes.check' | 'notes.checkLead'
   | 'notes.checkDraft' | 'notes.checkDraftNotes' | 'notes.backToSession'
+  | 'notes.sync' | 'notes.syncTitle' | 'notes.syncLast' | 'notes.syncCards' | 'notes.syncReplies' | 'notes.syncKind'
+  | 'notes.syncDone' | 'notes.syncOpen' | 'notes.syncFailed' | 'notes.syncedIn' | 'notes.syncNoCanvas'
+  | 'notes.syncConclusion' | 'notes.syncOriginal' | 'notes.syncRun'
 
 export const en = {
   'tab.label': 'Inspiration',
@@ -340,6 +343,20 @@ export const en = {
   'notes.checkDraft': 'Quiz me on “{title}” (article id {id}). I have finished it. Load the reader skill and run a quiz-me round: read the article and my notes with reader_read, play a student who has not read it, ask 3–5 explain-it-to-me questions in one message, and once I answer them all, explain against the article only what I have not got right (with ¶), then keep it with reader_note as a quiz-me note. No score.',
   'notes.checkDraftNotes': 'My notes so far: {count}.',
   'notes.backToSession': 'Back to the conversation',
+  'notes.sync': 'Sync to canvas',
+  'notes.syncTitle': 'Sync to canvas · {count}',
+  'notes.syncLast': 'used last',
+  'notes.syncCards': '{count} cards',
+  'notes.syncReplies': 'Bring the conclusions under them along',
+  'notes.syncKind': 'This canvas has no Fragment category — pick one:',
+  'notes.syncDone': 'Synced to “{canvas}”',
+  'notes.syncOpen': 'Open',
+  'notes.syncFailed': 'The sync did not go through: {reason}',
+  'notes.syncedIn': 'On “{canvas}”',
+  'notes.syncNoCanvas': 'No canvas yet — create one on the canvas tab first.',
+  'notes.syncConclusion': 'Conclusion: ',
+  'notes.syncOriginal': 'original',
+  'notes.syncRun': 'Sync',
 }
 
 export const zh = {
@@ -600,6 +617,20 @@ export const zh = {
   'notes.checkDraft': '考考我：《{title}》（文章 id：{id}）。我读完了，请加载 reader 技能，按「考考我」来：用 reader_read 读这篇和我的笔记，当一个没读过的学生，一次问我 3–5 个「讲给我听」的问题；我一条消息答完后，对照原文只讲我没讲到位的地方（带 ¶），再用 reader_note 记一条考考我笔记。不打分。',
   'notes.checkDraftNotes': '我目前记了 {count} 条笔记。',
   'notes.backToSession': '回到会话',
+  'notes.sync': '同步到画布',
+  'notes.syncTitle': '同步到画布 · {count} 条',
+  'notes.syncLast': '上次用的',
+  'notes.syncCards': '{count} 张卡',
+  'notes.syncReplies': '把下面挂的讨论结论一起带上',
+  'notes.syncKind': '这块画布没有「灵感」分类，选一个：',
+  'notes.syncDone': '已同步到《{canvas}》',
+  'notes.syncOpen': '打开',
+  'notes.syncFailed': '同步没有成功：{reason}',
+  'notes.syncedIn': '已在《{canvas}》',
+  'notes.syncNoCanvas': '还没有画布——先在画布页建一块。',
+  'notes.syncConclusion': '讨论结论：',
+  'notes.syncOriginal': '原文',
+  'notes.syncRun': '同步',
 }
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {

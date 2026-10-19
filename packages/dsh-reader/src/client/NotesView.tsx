@@ -13,6 +13,8 @@ import { useState, type KeyboardEvent, type ReactNode } from 'react'
 import type { ReaderDiscussion, ReaderEntryNotes, ReaderNote, ReaderNoteReply } from '../notes-types.ts'
 import type { ReaderPaneProps } from './contract.ts'
 import type { NoteSelection } from './notes.ts'
+import type { SyncFace } from './useNotes.ts'
+import type { ReaderSyncedCard } from '../notes-types.ts'
 import css from './NotesView.module.css'
 
 type T = ReaderPaneProps['t']
@@ -53,6 +55,12 @@ function LineEditor({ t, initial, onSave, onCancel }: {
   )
 }
 
+/** 「已在《…》」: where an item went last, when it was synced. */
+function SyncedMark({ t, synced }: { t: T; synced: readonly ReaderSyncedCard[] | undefined }): ReactNode {
+  const last = synced?.[synced.length - 1]
+  return last === undefined ? null : <span className={css.synced}>{t('notes.syncedIn', { canvas: last.canvasTitle })}</span>
+}
+
 /** Who wrote a line under a note, as the thread labels it. */
 function replyAuthor(t: T, reply: ReaderNoteReply): string {
   if (reply.by === 'agent') return t('notes.replyAgent')
@@ -60,7 +68,7 @@ function replyAuthor(t: T, reply: ReaderNoteReply): string {
 }
 
 /** One note row: excerpt, comment, the conclusions under it, and the gestures on it. */
-function NoteRow({ t, note, missing, selecting, selected, canOpenSession, onToggle, onJump, onEdit, onDelete, onAddReply, onEditReply, onOpenSession }: {
+function NoteRow({ t, note, missing, selecting, selected, canOpenSession, onToggle, onJump, onEdit, onDelete, onAddReply, onEditReply, onOpenSession, onSync }: {
   t: T
   note: ReaderNote
   missing: boolean
@@ -74,6 +82,8 @@ function NoteRow({ t, note, missing, selecting, selected, canOpenSession, onTogg
   onAddReply: (text: string) => Promise<boolean>
   onEditReply: (index: number, text: string) => Promise<boolean>
   onOpenSession: (sessionId: string) => void
+  /** Absent when no canvas is there to sync to. */
+  onSync: (() => void) | undefined
 }): ReactNode {
   const [adding, setAdding] = useState(false)
   const [rewriting, setRewriting] = useState<number | null>(null)
@@ -157,6 +167,7 @@ function NoteRow({ t, note, missing, selecting, selected, canOpenSession, onTogg
       <div className={css.foot}>
         <span>¶{note.anchor.block + 1}</span>
         {missing && <span className={css.missing}>{t('notes.notFound')}</span>}
+        <SyncedMark t={t} synced={note.syncedTo} />
         <span className={css.spacer} />
         {!selecting && !editing && (
           confirming
@@ -170,6 +181,7 @@ function NoteRow({ t, note, missing, selecting, selected, canOpenSession, onTogg
             : (
               <>
                 <button type="button" className={css.link} onClick={() => { setAdding(true) }}>{t('notes.replyAdd')}</button>
+                {onSync !== undefined && <button type="button" className={css.link} onClick={onSync}>{t('notes.sync')}</button>}
                 <button type="button" className={css.link} onClick={() => { setDraft(note.comment ?? ''); setEditing(true) }}>{t('notes.edit')}</button>
                 <button type="button" className={css.link} onClick={() => { setConfirming(true) }}>{t('notes.delete')}</button>
               </>
@@ -203,16 +215,18 @@ export interface NotesViewProps {
   readonly onJumpPara: (para: number) => void
   /** Put the 「让Agent考考我」 request into the conversation draft. */
   readonly onCheck: () => void
+  readonly sync: SyncFace
 }
 
 /** One discussion note: what a conversation (or a quiz-me round) came to. */
-function DiscussionCard({ t, discussion, canOpenSession, onOpenSession, onJumpPara, onDelete }: {
+function DiscussionCard({ t, discussion, canOpenSession, onOpenSession, onJumpPara, onDelete, onSync }: {
   t: T
   discussion: ReaderDiscussion
   canOpenSession: boolean
   onOpenSession: (sessionId: string) => void
   onJumpPara: (para: number) => void
   onDelete: () => void
+  onSync: (() => void) | undefined
 }): ReactNode {
   const [confirming, setConfirming] = useState(false)
   const check = discussion.kind === 'check'
@@ -239,7 +253,9 @@ function DiscussionCard({ t, discussion, canOpenSession, onOpenSession, onJumpPa
       {discussion.aside !== undefined && <div className={css.aside}>{discussion.aside}</div>}
       <div className={css.foot}>
         <span>{discussion.title !== '' ? discussion.createdAt.slice(0, 10) : ''}</span>
+        <SyncedMark t={t} synced={discussion.syncedTo} />
         <span className={css.spacer} />
+        {!confirming && onSync !== undefined && <button type="button" className={css.link} onClick={onSync}>{t('notes.sync')}</button>}
         {confirming
           ? (
             <>
@@ -300,6 +316,7 @@ export function NotesView(props: NotesViewProps): ReactNode {
             onAddReply={text => props.onAddReply(note, text)}
             onEditReply={(index, text) => props.onEditReply(note, index, text)}
             onOpenSession={props.onOpenSession}
+            onSync={props.sync.available ? () => { props.sync.open({ kind: 'notes', ids: [note.id] }) } : undefined}
           />
         ))}
         <div className={css.section}><span>{t('notes.discussionNotes')}</span></div>
@@ -313,6 +330,7 @@ export function NotesView(props: NotesViewProps): ReactNode {
             onOpenSession={props.onOpenSession}
             onJumpPara={props.onJumpPara}
             onDelete={() => { props.onDeleteDiscussion(discussion) }}
+            onSync={props.sync.available ? () => { props.sync.open({ kind: 'discussion', id: discussion.id }) } : undefined}
           />
         ))}
         <div className={css.section}><span>{t('notes.discussions')}</span></div>
@@ -328,12 +346,37 @@ export function NotesView(props: NotesViewProps): ReactNode {
           </div>
         ))}
       </div>
+      {props.sync.done !== null && (
+        <div className={css.syncDone}>
+          <span>{t('notes.syncDone', { canvas: props.sync.done.title })}</span>
+          <button type="button" className={css.link} onClick={props.sync.openDone}>{t('notes.syncOpen')}</button>
+        </div>
+      )}
+      {props.sync.target !== null && (
+        <SyncSheet
+          t={t}
+          sync={props.sync}
+          count={props.sync.target.kind === 'notes' ? props.sync.target.ids.length : 1}
+          hasReplies={props.sync.target.kind === 'notes'
+            && notes.some(note => (props.sync.target as { ids: readonly string[] }).ids.includes(note.id) && (note.replies ?? []).length > 0)}
+        />
+      )}
       <div className={css.bar}>
         {selecting
           ? (
             <>
               <span>{t('notes.selected', { count: selected.size })}</span>
               <span className={css.spacer} />
+              {props.sync.available && (
+                <button
+                  type="button"
+                  className={css.secondary}
+                  disabled={selected.size === 0}
+                  onClick={() => { props.sync.open({ kind: 'notes', ids: [...selected] }); endSelecting() }}
+                >
+                  {t('notes.sync')}
+                </button>
+              )}
               <button
                 type="button"
                 className={css.primary}
@@ -356,6 +399,60 @@ export function NotesView(props: NotesViewProps): ReactNode {
           )}
       </div>
     </div>
+  )
+}
+
+/** The 「同步到画布」 sheet: which canvas, and whether the conclusions come along. */
+function SyncSheet({ t, sync, count, hasReplies }: { t: T; sync: SyncFace; count: number; hasReplies: boolean }): ReactNode {
+  return (
+    <>
+      <div className={css.scrim} onClick={sync.cancel} />
+      <div className={css.sheet} role="dialog" aria-label={t('notes.sync')}>
+        <div className={css.grab} />
+        <div className={css.sheetHead}><b>{t('notes.syncTitle', { count })}</b></div>
+        {sync.canvases === null && <p className={css.empty}>…</p>}
+        {sync.canvases !== null && sync.canvases.length === 0 && <p className={css.empty}>{t('notes.syncNoCanvas')}</p>}
+        {sync.canvases !== null && sync.canvases.length > 0 && (
+          <div className={css.picker} role="radiogroup" aria-label={t('notes.sync')}>
+            {sync.canvases.map(canvas => (
+              <button
+                key={canvas.id}
+                type="button"
+                role="radio"
+                aria-checked={sync.pick === canvas.id}
+                className={css.option}
+                onClick={() => { sync.setPick(canvas.id) }}
+              >
+                <span className={css.optionTitle}>{canvas.title}</span>
+                <span className={css.optionMeta}>
+                  {canvas.id === sync.last ? `${t('notes.syncLast')} · ` : ''}{t('notes.syncCards', { count: canvas.cardCount })}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+        {sync.target?.kind === 'notes' && hasReplies && (
+          <label className={css.checkRow}>
+            <input type="checkbox" checked={sync.withReplies} onChange={event => { sync.setWithReplies(event.target.checked) }} />
+            {t('notes.syncReplies')}
+          </label>
+        )}
+        {sync.kinds !== null && (
+          <div className={css.kinds}>
+            <span className={css.hint}>{t('notes.syncKind')}</span>
+            <select className={css.select} value={sync.kind ?? ''} onChange={event => { sync.setKind(event.target.value) }}>
+              {sync.kinds.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}
+            </select>
+          </div>
+        )}
+        <div className={css.row}>
+          {sync.error !== null && <span className={css.failed}>{t('notes.syncFailed', { reason: sync.error })}</span>}
+          <span className={css.spacer} />
+          <button type="button" className={css.ghost} onClick={sync.cancel}>{t('action.cancel')}</button>
+          <button type="button" className={css.primary} disabled={sync.busy || sync.pick === null} onClick={sync.run}>{t('notes.syncRun')}</button>
+        </div>
+      </div>
+    </>
   )
 }
 

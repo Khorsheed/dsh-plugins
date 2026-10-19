@@ -33,6 +33,7 @@ import { resolveReaderStateRoot } from './store.ts'
 import type {
   ReaderDiscussion, ReaderDiscussionInput, ReaderDiscussionPoint, ReaderEntryIdentity, ReaderEntryNotes, ReaderEntrySession,
   ReaderEntrySnapshot, ReaderNote, ReaderNoteInput, ReaderNoteOutcome, ReaderNoteReply, ReaderNotesDoc, ReaderSnapshotRecord,
+  ReaderSyncedCard,
 } from './notes-types.ts'
 
 export type * from './notes-types.ts'
@@ -110,9 +111,23 @@ function normalizeNote(value: unknown): ReaderNote | undefined {
     anchor: { block, ...(start === undefined ? {} : { start }), quote, ...(translated === undefined ? {} : { translated }) },
     ...(comment === undefined ? {} : { comment }),
     ...(replies.length === 0 ? {} : { replies }),
+    ...(normalizeSynced(record.syncedTo).length === 0 ? {} : { syncedTo: normalizeSynced(record.syncedTo) }),
     createdAt: stamp(record.createdAt),
     updatedAt: stamp(record.updatedAt ?? record.createdAt),
   }
+}
+
+/** The canvas cards an item was synced to (bounded, malformed rows dropped). */
+function normalizeSynced(value: unknown): ReaderSyncedCard[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap(item => {
+    if (typeof item !== 'object' || item === null) return []
+    const record = item as Record<string, unknown>
+    const canvasId = text(record.canvasId, 200)
+    const cardId = text(record.cardId, 200)
+    if (canvasId === undefined || cardId === undefined) return []
+    return [{ canvasId, cardId, canvasTitle: text(record.canvasTitle, 200) ?? canvasId, at: stamp(record.at) }]
+  }).slice(-20)
 }
 
 /** One line under a note, when it has text. */
@@ -162,6 +177,7 @@ function normalizeDiscussion(value: unknown): ReaderDiscussion | undefined {
     title: text(record.title, 200) ?? '',
     points,
     ...(aside === undefined ? {} : { aside }),
+    ...(normalizeSynced(record.syncedTo).length === 0 ? {} : { syncedTo: normalizeSynced(record.syncedTo) }),
     createdAt: stamp(record.createdAt),
   }
 }
@@ -546,6 +562,28 @@ export class ReaderNotesStore {
         ].slice(0, MAX_SESSIONS_PER_ENTRY)
       const discussions = [discussion, ...(entry.discussions ?? [])].slice(0, MAX_DISCUSSIONS_PER_ENTRY)
       return { doc: withEntry(doc, { ...entry, sessions, discussions, nextDiscussion: number + 1 }), result: discussion }
+    })
+  }
+
+  /**
+   * Remember that a note (or a discussion note) became a canvas card, so the
+   * notes face can say where it went and not offer the same sync twice blindly.
+   */
+  markSynced(request: { entryId: string; noteId?: string; discussionId?: string; canvasId: string; cardId: string; canvasTitle: string }): Promise<ReaderNoteOutcome> {
+    return this.update<ReaderNoteOutcome>(doc => {
+      const entry = doc.entries[request.entryId]
+      if (entry === undefined) return { doc, result: 'not-found' }
+      const now = new Date().toISOString()
+      const card: ReaderSyncedCard = { canvasId: request.canvasId, cardId: request.cardId, canvasTitle: request.canvasTitle.slice(0, 200), at: now }
+      if (request.noteId !== undefined) {
+        if (!entry.notes.some(item => item.id === request.noteId)) return { doc, result: 'not-found' }
+        const notes = entry.notes.map(item => item.id === request.noteId ? { ...item, syncedTo: [...(item.syncedTo ?? []), card].slice(-20) } : item)
+        return { doc: withEntry(doc, { ...entry, notes }), result: 'ok' }
+      }
+      const discussions = entry.discussions ?? []
+      if (request.discussionId === undefined || !discussions.some(item => item.id === request.discussionId)) return { doc, result: 'not-found' }
+      const next = discussions.map(item => item.id === request.discussionId ? { ...item, syncedTo: [...(item.syncedTo ?? []), card].slice(-20) } : item)
+      return { doc: withEntry(doc, { ...entry, discussions: next }), result: 'ok' }
     })
   }
 

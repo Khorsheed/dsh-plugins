@@ -4,7 +4,7 @@ Status: implemented
 
 ## Problem
 
-The reader (灵感空间) let the reader read and quote an article, but nothing they thought about it survived: no excerpt could be kept, no comment written, and a discussion with the model started from whatever text was pasted into the draft. The model itself could not read the article — the host never parses an article (the browser half extracts it), and a feed entry's text never reaches the host at all. This covers phases P1 and P2 of `proposals/active/2026-10-19-reader-notes-feynman.md`: notes and discussing them, the model reading the article, conclusions written back into notes, and the 「让Agent考考我」 (quiz me) check. P3 (syncing notes to the canvas) is separate.
+The reader (灵感空间) let the reader read and quote an article, but nothing they thought about it survived: no excerpt could be kept, no comment written, and a discussion with the model started from whatever text was pasted into the draft. The model itself could not read the article — the host never parses an article (the browser half extracts it), and a feed entry's text never reaches the host at all. This covers phases P1–P3 of `proposals/active/2026-10-19-reader-notes-feynman.md`: notes and discussing them, the model reading the article, conclusions written back into notes, the 「让Agent考考我」 (quiz me) check, and syncing notes to the canvas.
 
 ## Decision
 
@@ -17,6 +17,7 @@ The reader (灵感空间) let the reader read and quote an article, but nothing 
 - **What a discussion came to is written back, never the transcript.** `reader_note` (same `./tool` row): `op=conclusion` adds a line under note `n2`; `op=discussion` adds a discussion note (`d1`, `d2`…, newest first), one point per line with `¶n` citations and a 「其余…」 aside line, `kind=check` for a quiz-me round. With no `entry` it writes to the article this conversation discussed (`sessionEntry`), and refuses rather than guess when there is none. Every argument is a flat string and the text alone also works (`笔记：n2` / `类型：考考我` header lines) — the K3 nested-argument lesson. The model can neither edit nor delete what the reader wrote; the reader can add a line, rewrite a conclusion (it becomes theirs, marked as rewritten from the model's) or remove it, and delete a discussion note. The full conversation stays in the conversation; the article only links back to it.
 - **The quiz-me round is a request, not a mode.** 「让Agent考考我」 (at the article's end and on the notes face) merges a request into the draft that carries the round's contract inline, so it works even where the skill is not loaded; the `reader` skill (registered by the `./tool` row) states it in full: play a student, ask 3–5 explain-it questions in one message, wait for one answer, explain only what was not yet right with its ¶ (no follow-up questions first — the 2026-10-19 decision), write a `kind=check` note; no score, no retake.
 - **The notes face follows the conversation.** While it shows, it re-reads the host every 5 seconds (visible pages only, the canvas board's precedent), so a conclusion the model writes appears without a reload; a discussion point's ¶ jumps back and flashes that paragraph.
+- **Syncing to the canvas is the reader's gesture through the canvas's inbox.** The canvas client provides `ctx.canvasInbox` (`packages/canvas/src/client/inbox.ts`): list live canvases, put one kept card (`putCard`, the ＋新卡 path — never a proposal) on a chosen canvas, open a card. A card lands as 灵感 (`fragment`); a canvas that retired 灵感 answers `needs-kind` with the categories it takes and the reader's sheet asks. The reader probes the inbox per gesture and hides 「同步到画布」 without it — one direction only, reader → canvas, no npm edge either way. The card's text carries the excerpt, comment, optional conclusions and a 「— 《article》 ¶n · [原文](url)」 line, because the canvas renders no card `source`; the structured `source` rides along for the model. The note records where it went (`markSynced` → `syncedTo`), the last canvas is remembered per browser (`localStorage`, a convenience only), and later note edits never reach the card. The canvas also registers 「存为画布卡片」 in the quote menu, so any selection — a discussion note's explanation included — becomes a card on the canvas the tab shows.
 - **Notes' types live in `src/notes-types.ts`**, re-exported through `./types`, because the Typert generator requires Remote boundary types on a public type subpath and the browser half must not import the store's `node:` modules.
 
 ## Alternatives considered
@@ -28,6 +29,8 @@ The reader (灵感空间) let the reader read and quote an article, but nothing 
 **Copy the discussion transcript into the reader.** Rejected (the user's decision): notes are worth rereading only when they hold what was concluded; the transcript stays one click away in its conversation.
 
 **Ask follow-up questions in the quiz-me round before writing it down.** Deferred (the user's decision): a vague answer is called out in the explanation instead; the reader keeps talking when they want more. To be revisited after use.
+
+**A 「原文 ↗」 on the canvas card that opens the reader at the sentence (a `readerNav` service).** Deferred: the canvas renders no card `source` today, so the jump has no seat; the card links the original URL instead. Worth adding when the canvas grows a source line.
 
 **Let the model fetch the article itself (`web_fetch` on the link).** Rejected: it refetches what the reader already has, misses feed-published text and rendered fetches, and cannot number paragraphs the way the notes do.
 
@@ -41,4 +44,5 @@ The reader (灵感空间) let the reader read and quote an article, but nothing 
 - Browsers without the Highlight API show notes without the in-text highlight.
 - 「记笔记」 appears in the quote menu only when quote applied first; otherwise the foot button is the way in.
 - The model writes into notes only on request or at the end of a quiz-me round — the tool description and the skill say so; nothing enforces it beyond that, and the reader can remove any line.
+- A synced card is a snapshot: editing the note afterwards does not update it, and the 「已在…」 mark only says it was synced.
 - New optional peers: `@deepseek-ai/dsh-tools`, `@deepseek-ai/dsh-agent` (the tool row only).

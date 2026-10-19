@@ -99,7 +99,14 @@ const face = {
     return ok('ok')
   },
   snapshotEntry: () => ok('ok'),
-  addReply: () => ok('ok'), editReply: () => ok('ok'), deleteDiscussion: () => ok('ok'),
+  addReply: () => ok('ok'), editReply: () => ok('ok'), deleteDiscussion: () => ok('ok'), markSynced: () => ok('ok'),
+  // &canvas=1 composes a fake canvas inbox (the canvas plugin's ctx.canvasInbox).
+  canvasInbox: () => params.get('canvas') === '1' ? {
+    current: () => null,
+    listCanvases: () => Promise.resolve([{ id: 'a', title: 'Transformer 读书会', cardCount: 23 }, { id: 'b', title: '周报素材', cardCount: 8 }]),
+    addCard: () => Promise.resolve({ ok: true, cardId: 'k1' }),
+    openCard: () => {},
+  } : undefined,
   canOpenSession: () => true, openSession: () => {},
 }
 const notes: Record<string, any> = {}

@@ -38,6 +38,7 @@ import type {
 } from '../types.ts'
 import type { ReaderEntryIdentity, ReaderEntryNotes, ReaderNote, ReaderNoteInput, ReaderNoteOutcome } from '../notes-types.ts'
 import type { createReaderStore } from './store.ts'
+import type { CanvasInboxLike } from './canvas-sync.ts'
 
 export type { RemoteResult }
 
@@ -271,6 +272,10 @@ export interface ReaderPaneInjected {
   addReply: (request: { entryId: string; noteId: string; text: string }) => Promise<RemoteResult<ReaderNoteOutcome>>
   /** Rewrite (or, with empty text, remove) one line under a note. */
   editReply: (request: { entryId: string; noteId: string; index: number; text: string }) => Promise<RemoteResult<ReaderNoteOutcome>>
+  /** Remember that a note or a discussion note became a canvas card. */
+  markSynced: (request: { entryId: string; noteId?: string; discussionId?: string; canvasId: string; cardId: string; canvasTitle: string }) => Promise<RemoteResult<ReaderNoteOutcome>>
+  /** The canvas plugin's inbox, probed live; absent hides 「同步到画布」. */
+  canvasInbox: () => CanvasInboxLike | undefined
   /** Delete one discussion note. */
   deleteDiscussion: (request: { entryId: string; discussionId: string }) => Promise<RemoteResult<ReaderNoteOutcome>>
   /** Remember that this conversation discussed the article. */

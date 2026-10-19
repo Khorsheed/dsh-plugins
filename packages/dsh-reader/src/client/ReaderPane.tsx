@@ -3810,6 +3810,7 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
             onDeleteDiscussion={notesFace.deleteDiscussion}
             onJumpPara={notesFace.jumpPara}
             onCheck={notesFace.check}
+            sync={notesFace.sync}
           />
         )}
         <div
