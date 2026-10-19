@@ -72,7 +72,8 @@
       "@khorsheed/dsh-canvas-novel",
       "@khorsheed/dsh-game",
       "@khorsheed/dsh-video-studio",
-      "@khorsheed/dsh-library"
+      "@khorsheed/dsh-library",
+      "@khorsheed/dsh-reader"
     ],
     "compat": {
       "minHost": "0.1.7-rc.1",

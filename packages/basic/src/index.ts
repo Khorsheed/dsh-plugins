@@ -1,6 +1,6 @@
 /**
  * @khorsheed/dsh-basic — the everyday-experience family (message tools,
- * session artifacts, file surfaces, readers, guards, mobile) as one thin meta
+ * session artifacts, file surfaces, guards, mobile) as one thin meta
  * package. The bundle is composition data: cordis.patch.yml re-mounts the
  * members' canonical rows and package.json carries the members as npm
  * dependencies; this module exists so the package has a buildable `lib/`
@@ -25,7 +25,6 @@ export const FAMILY_MEMBERS = [
   '@khorsheed/dsh-whalesong',
   '@khorsheed/dsh-ankh-guard',
   '@khorsheed/dsh-capture',
-  '@khorsheed/dsh-reader',
   '@khorsheed/dsh-sidechat',
   '@khorsheed/dsh-context-lens',
 ] as const

@@ -17,4 +17,5 @@ export const MODE = 'dsh-writing' as const
 export const FAMILY_MEMBERS = [
   '@khorsheed/dsh-canvas',
   '@khorsheed/dsh-canvas-novel',
+  '@khorsheed/dsh-reader',
 ] as const

@@ -1,5 +1,6 @@
 # @khorsheed/dsh-learning bundle patch: the 学习模式 (dsh-learning) mode pack —
-# the library member row plus the mode's own preset row. The member row is
+# the member rows (library, and since 2026-10-19 the canvas and the reader)
+# plus the mode's own preset row. The member row is
 # re-mounted VERBATIM from the member package's own cordis.patch.yml (the
 # canonical row); the preset row is mirrored VERBATIM from
 # @khorsheed/dsh-presets — parity is pinned by scripts/preset-mode-parity.spec.ts,
@@ -17,11 +18,21 @@
 # The library's MODEL face (library_read / library_assess / the coach prompt
 # section / the library skill) is not a profile-root row by design: it ships as
 # the library package's `./tool` composition entry, granted per session by THIS
-# bundle's preset row (its `library-tool` row).
+# bundle's preset row (its `library-tool` row). The canvas's `./agent` and the
+# reader's `./tool` rows are granted the same way (`canvas-agent`,
+# `reader-tool`), and both right-Sidebar tabs self-hide on those rows.
 - insert:
     # 图书馆: the library service core and the learning sidebar.
     - id: library
       name: "@khorsheed/dsh-library"
+
+    # 灵感画布: the canvas core (canvasStore/canvasBoard).
+    - id: canvas
+      name: "@khorsheed/dsh-canvas"
+
+    # 灵感空间: RSS feeds and saved article links on a card wall (row id `reader`).
+    - id: reader
+      name: "@khorsheed/dsh-reader"
 
     - id: preset-dsh-learning
       name: '@deepseek-ai/dsh-agent-preset'
@@ -177,3 +188,21 @@
                 - 'ui:deliverable-file-references'
               denyTools:
                 - list_capabilities
+
+          # ── the canvas grant ────────────────────────────────────────────────────────
+
+          # 画布会话工具与 canvas 技能（2026-10-19 加入学习模式：读完用自己的话写成卡片与
+          # 成稿，以输出促吸收）只授予本 preset 的会话；画布页签按同一行双查自隐。服务核心
+          # （canvasBoard）由 profile 根的 canvas 行提供，本行沿 scope 父链解析；画布未装时
+          # 本行降级为零注册。
+          - id: canvas-agent
+            name: '@khorsheed/dsh-canvas/agent'
+
+          # ── the reader grant ────────────────────────────────────────────────────────
+
+          # 灵感空间工具（reader_read / reader_note 与 reader 技能，2026-10-19）只授予
+          # 本 preset 的会话；灵感空间页签按同一行双查自隐，只在授予它的会话里出现。
+          # 服务核心（reader / readerNotes）由 profile 根的 reader 行提供，本行沿 scope
+          # 父链解析；灵感空间未装时本行降级为零注册。
+          - id: reader-tool
+            name: '@khorsheed/dsh-reader/tool'

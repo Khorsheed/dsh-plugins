@@ -1,5 +1,5 @@
 # @khorsheed/dsh-basic bundle patch: the everyday-experience family as one
-# bundle card — the eighteen member rows, re-mounted VERBATIM from each member
+# bundle card — the seventeen member rows, re-mounted VERBATIM from each member
 # package's own cordis.patch.yml (the canonical rows; check-plugin-independence's
 # `family` sanction pins this file to exactly that union — no invented ids, no
 # foreign rows).
@@ -71,10 +71,6 @@
     # 渲染抓取: headless-Chrome render of JS-heavy pages.
     - id: capture
       name: "@khorsheed/dsh-capture"
-
-    # 灵感空间: RSS feeds and saved article links on a card wall (row id `reader`).
-    - id: reader
-      name: "@khorsheed/dsh-reader"
 
     # 侧边对话: lightweight sidebar chat per context.
     - id: sidechat

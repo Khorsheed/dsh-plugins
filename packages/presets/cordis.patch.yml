@@ -796,6 +796,15 @@
           - id: canvas-novel-agent
             name: '@khorsheed/dsh-canvas-novel/agent'
 
+          # ── the reader grant ────────────────────────────────────────────────────────
+
+          # 灵感空间工具（reader_read / reader_note 与 reader 技能，2026-10-19）只授予
+          # 本 preset 的会话；灵感空间页签按同一行双查自隐，只在授予它的会话里出现。
+          # 服务核心（reader / readerNotes）由 profile 根的 reader 行提供，本行沿 scope
+          # 父链解析；灵感空间未装时本行降级为零注册。
+          - id: reader-tool
+            name: '@khorsheed/dsh-reader/tool'
+
     # standing scope (same rules as above). 游戏开发模式 (2026-10-09, proposal
     # 2026-10-09-gamedev-mode): a game developer who is also the user's design
     # mentor — one agent, persona + the game skills, no separate designer agent.
@@ -1091,6 +1100,24 @@
                 - 'ui:deliverable-file-references'
               denyTools:
                 - list_capabilities
+
+          # ── the canvas grant ────────────────────────────────────────────────────────
+
+          # 画布会话工具与 canvas 技能（2026-10-19 加入学习模式：读完用自己的话写成卡片与
+          # 成稿，以输出促吸收）只授予本 preset 的会话；画布页签按同一行双查自隐。服务核心
+          # （canvasBoard）由 profile 根的 canvas 行提供，本行沿 scope 父链解析；画布未装时
+          # 本行降级为零注册。
+          - id: canvas-agent
+            name: '@khorsheed/dsh-canvas/agent'
+
+          # ── the reader grant ────────────────────────────────────────────────────────
+
+          # 灵感空间工具（reader_read / reader_note 与 reader 技能，2026-10-19）只授予
+          # 本 preset 的会话；灵感空间页签按同一行双查自隐，只在授予它的会话里出现。
+          # 服务核心（reader / readerNotes）由 profile 根的 reader 行提供，本行沿 scope
+          # 父链解析；灵感空间未装时本行降级为零注册。
+          - id: reader-tool
+            name: '@khorsheed/dsh-reader/tool'
 
     - id: preset-dsh-video
       name: '@deepseek-ai/dsh-agent-preset'

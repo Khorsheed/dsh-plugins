@@ -36,7 +36,8 @@
   ],
   "dependencies": {
     "@khorsheed/dsh-canvas": "workspace:*",
-    "@khorsheed/dsh-canvas-novel": "workspace:*"
+    "@khorsheed/dsh-canvas-novel": "workspace:*",
+    "@khorsheed/dsh-reader": "workspace:*"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1"
@@ -59,12 +60,14 @@
       "mode": "dsh-writing",
       "members": [
         "@khorsheed/dsh-canvas",
-        "@khorsheed/dsh-canvas-novel"
+        "@khorsheed/dsh-canvas-novel",
+        "@khorsheed/dsh-reader"
       ]
     },
     "references": [
       "@khorsheed/dsh-canvas",
-      "@khorsheed/dsh-canvas-novel"
+      "@khorsheed/dsh-canvas-novel",
+      "@khorsheed/dsh-reader"
     ],
     "compat": {
       "minHost": "0.2.0-rc.2",

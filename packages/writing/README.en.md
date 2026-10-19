@@ -14,6 +14,7 @@ Writing mode is a writer identity with the bilingual style contract (task modes,
 | --- | --- | --- |
 | `@khorsheed/dsh-canvas` | `canvas` | the inspiration canvas: cards, links and agent proposals on a topic canvas (the canvasStore/canvasBoard services and UI) |
 | `@khorsheed/dsh-canvas-novel` | `canvas-novel`, `canvas-novel-agent` (granted by this bundle's preset) | the 长篇小说 genre: a story-memory engine for characters, foreshadowing and chapters, the reconciliation gate, and the canvas's pending-review strip and chapter pages |
+| `@khorsheed/dsh-reader` | `reader`, `reader-tool` (granted by this bundle's preset) | the reader: feeds and articles, notes and discussing them; notes sync to canvas cards (added 2026-10-19) |
 
 The canvas tool row (canvas `./agent`) is live for EVERY session in the member's own patch — the community default. The mode pack mounts neither agent row at the profile root and carries no disabling override: the grants live only in the preset composition, and under host 0.2.x a writing-mode session sees the scoped copy shadow the global row — no double registration, no boot failure (pinned by the host's scoped.spec.ts).
 

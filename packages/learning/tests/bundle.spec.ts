@@ -29,10 +29,15 @@ function memberRows(pkgName: string): PatchRow[] {
 
 const sameRow = (a: PatchRow, b: PatchRow): boolean => a.id === b.id && a.name === b.name
 
+/** A companion composition row: a name with a subpath beyond the package (`@khorsheed/dsh-reader/tool`). */
+const isCompanionRow = (row: PatchRow): boolean => row.name !== undefined && /^@khorsheed\/[^/]+\/.+/.test(row.name)
+
 describe('cordis.patch.yml', () => {
-  it('mounts exactly the members’ canonical rows plus the one mode preset row, verbatim', () => {
+  it('mounts exactly the members’ canonical rows minus the companion composition rows, plus the one mode preset row', () => {
     const rows = parseTopLevelPatchRows(patch)
-    const canonical = FAMILY_MEMBERS.flatMap((member) => memberRows(member))
+    // The canvas's ./agent and the reader's ./tool rows are companion
+    // composition rows: granted by the preset row below, never mounted here.
+    const canonical = FAMILY_MEMBERS.flatMap((member) => memberRows(member)).filter((row) => !isCompanionRow(row))
     const presetRows = rows.filter((row) => row.name === AGENT_PRESET)
     expect(presetRows, 'exactly one agent-preset row').toHaveLength(1)
     expect(presetRows[0]!.id).toBe(`preset-${MODE}`)

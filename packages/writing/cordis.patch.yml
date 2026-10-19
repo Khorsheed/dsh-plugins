@@ -34,6 +34,10 @@
     - id: canvas-novel
       name: "@khorsheed/dsh-canvas-novel"
 
+    # 灵感空间: RSS feeds and saved article links on a card wall (row id `reader`).
+    - id: reader
+      name: "@khorsheed/dsh-reader"
+
     - id: preset-dsh-writing
       name: '@deepseek-ai/dsh-agent-preset'
       config:
@@ -286,3 +290,12 @@
           # canvas-novel 行提供，未装时本行降级为零注册。
           - id: canvas-novel-agent
             name: '@khorsheed/dsh-canvas-novel/agent'
+
+          # ── the reader grant ────────────────────────────────────────────────────────
+
+          # 灵感空间工具（reader_read / reader_note 与 reader 技能，2026-10-19）只授予
+          # 本 preset 的会话；灵感空间页签按同一行双查自隐，只在授予它的会话里出现。
+          # 服务核心（reader / readerNotes）由 profile 根的 reader 行提供，本行沿 scope
+          # 父链解析；灵感空间未装时本行降级为零注册。
+          - id: reader-tool
+            name: '@khorsheed/dsh-reader/tool'

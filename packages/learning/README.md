@@ -13,8 +13,10 @@
 | 成员包 | 行 id | 能力 |
 | --- | --- | --- |
 | `@khorsheed/dsh-library` | `library` | 图书馆:按项目组织的精读学习——书籍摄入、路线图、词书与测验判题(服务核心与学习侧栏) |
+| `@khorsheed/dsh-canvas` | `canvas`、`canvas-agent`(由本包 preset 授予) | 灵感画布:读完用自己的话写成卡片与成稿,以输出促吸收(2026-10-19 加入) |
+| `@khorsheed/dsh-reader` | `reader`、`reader-tool`(由本包 preset 授予) | 灵感空间:订阅与文章阅读、记笔记、带着笔记讨论、「让Agent考考我」(2026-10-19 加入) |
 
-图书馆的模型面(工具、教练指引段、library 技能)不是 profile 根行:它是 library 包的 `./tool` 组合入口,由本包 preset 行的 `library-tool` 授予点按会话授予。
+图书馆的模型面(工具、教练指引段、library 技能)不是 profile 根行:它是 library 包的 `./tool` 组合入口,由本包 preset 行的 `library-tool` 授予点按会话授予。画布的 `./agent` 与灵感空间的 `./tool` 同样由 `canvas-agent`、`reader-tool` 授予点按会话授予,两个右栏页签都按这两行自隐——只在学习模式与写作模式的会话里出现。
 
 ## 安装
 
