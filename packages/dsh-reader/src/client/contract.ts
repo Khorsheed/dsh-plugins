@@ -36,7 +36,9 @@ import type {
   ReaderStorageStats,
   ReaderTag,
 } from '../types.ts'
+import type { ReaderEntryIdentity, ReaderEntryNotes, ReaderNote, ReaderNoteInput, ReaderNoteOutcome } from '../notes-types.ts'
 import type { createReaderStore } from './store.ts'
+import type { CanvasInboxLike } from './canvas-sync.ts'
 
 export type { RemoteResult }
 
@@ -254,6 +256,36 @@ export interface ReaderPaneInjected {
    * never cached, never thrown.
    */
   captureRemote: () => ReaderCaptureRemote | undefined
+  /* ------------------------------------------------------------------ notes */
+
+  /** One article's notes and the conversations that discussed it. */
+  entryNotes: (entryId: string) => Promise<RemoteResult<{ entry?: ReaderEntryNotes }>>
+  /** How many notes each article carries. */
+  noteCounts: () => Promise<RemoteResult<{ counts: Record<string, number> }>>
+  /** Keep one excerpt (and its comment). */
+  addNote: (request: ReaderNoteInput) => Promise<RemoteResult<ReaderNote | 'empty' | 'full'>>
+  /** Change or clear one note's comment. */
+  updateNote: (request: { entryId: string; noteId: string; comment: string }) => Promise<RemoteResult<ReaderNoteOutcome>>
+  /** Delete one note. */
+  deleteNote: (request: { entryId: string; noteId: string }) => Promise<RemoteResult<ReaderNoteOutcome>>
+  /** Add the reader's own line under a note. */
+  addReply: (request: { entryId: string; noteId: string; text: string }) => Promise<RemoteResult<ReaderNoteOutcome>>
+  /** Rewrite (or, with empty text, remove) one line under a note. */
+  editReply: (request: { entryId: string; noteId: string; index: number; text: string }) => Promise<RemoteResult<ReaderNoteOutcome>>
+  /** Remember that a note or a discussion note became a canvas card. */
+  markSynced: (request: { entryId: string; noteId?: string; discussionId?: string; canvasId: string; cardId: string; canvasTitle: string }) => Promise<RemoteResult<ReaderNoteOutcome>>
+  /** The canvas plugin's inbox, probed live; absent hides 「同步到画布」. */
+  canvasInbox: () => CanvasInboxLike | undefined
+  /** Delete one discussion note. */
+  deleteDiscussion: (request: { entryId: string; discussionId: string }) => Promise<RemoteResult<ReaderNoteOutcome>>
+  /** Remember that this conversation discussed the article. */
+  recordDiscussion: (request: ReaderEntryIdentity & { sessionId: string; sessionTitle?: string }) => Promise<RemoteResult<'ok' | 'empty'>>
+  /** Hand the host the article's original text for the model. */
+  snapshotEntry: (request: ReaderEntryIdentity & { paragraphs: string[] }) => Promise<RemoteResult<'ok' | 'empty'>>
+  /** Whether a conversation can be opened from the pane (probed live). */
+  canOpenSession: () => boolean
+  /** Open a conversation in the main area; a no-op when the seam is absent. */
+  openSession: (sessionId: string) => void
 }
 
 /** Full props of the reader pane: the seat's session + store + locale + face. */

@@ -8,6 +8,13 @@
 # mount no reader row, so plugin-adding this package is the install path there;
 # a composition that already mounts the id by other means must NOT also add it
 # — a duplicate loader entry id fails boot.
+#
+# The second row mounts the `./tool` composition entry: the model-facing
+# reader_read tool, live for EVERY session for now (the 2026-10-19 decision —
+# a later pass may move the grant into the learning / writing presets). It
+# delegates to the first row's services and registers nothing without them.
 - insert:
     - id: reader
       name: "@khorsheed/dsh-reader"
+    - id: reader-tool
+      name: "@khorsheed/dsh-reader/tool"

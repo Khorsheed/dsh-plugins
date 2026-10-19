@@ -32,7 +32,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { IconChevronDownOutlineMedium, IconChevronLeftOutlineMedium, IconClockOutlineMedium, IconCopyOutlineMedium, IconGlobeOutlineMedium, IconPlusOutlineMedium, IconRefreshOutlineMedium, IconRightUpOutlineMedium, IconSettingsOutlineMedium, IconTrashOutlineMedium } from './icons.tsx'
 import type { ReaderFetchPhase, ReaderPaneProps } from './contract.ts'
-import { ChipRow, PanelHeader, PanelRoot, usePanelCompactContext, type Chip, type PanelAction } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
+import { ChipRow, PanelHeader, PanelRoot, UnderlineTabs, usePanelCompactContext, type Chip, type PanelAction } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
+import { NoteSheet, NotesView } from './NotesView.tsx'
+import { useNotes, type DetailTab } from './useNotes.ts'
 import {
   kindQuery,
   linkEntryId,
@@ -1342,6 +1344,18 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
   }, [allEntries, recent])
 
   const openEntry = openEntryId === null ? undefined : entryById(openEntryId)
+  /** The open article's notes (see useNotes — they read the article, never drive it). */
+  const notesFace = useNotes({
+    props,
+    entry: openEntry,
+    sourceLabel: openEntry === undefined ? '' : presentation.get(openEntry.sourceId)?.label ?? '',
+    articleHtml,
+    articleRef,
+    builtRef,
+    detailRef,
+    paintKey: `${translatePhase}:${String(translateProgress?.done ?? 0)}`,
+    translateView,
+  })
   // The compact bar's title (see `titleScrolledAway`): watch the article's
   // heading leave the body through its top.
   useEffect(() => {
@@ -3769,7 +3783,44 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
           )}
         </div>}
 
-        <div className={css.detailBody} ref={detailRef} onScroll={onDetailScroll}>
+        <UnderlineTabs<DetailTab>
+          className={css.detailTabs}
+          label={t('notes.tabsLabel')}
+          value={notesFace.tab}
+          onChange={notesFace.setTab}
+          tabs={[
+            { id: 'article', label: t('notes.tabArticle') },
+            { id: 'notes', label: t('notes.tabNotes'), ...(notesFace.count > 0 ? { badge: notesFace.count } : {}) },
+          ]}
+        />
+        {notesFace.tab === 'notes' && (
+          <NotesView
+            t={t}
+            entry={notesFace.entry}
+            missing={notesFace.missing}
+            sessionTitle={notesFace.sessionTitle}
+            canOpenSession={notesFace.canOpenSession}
+            onJump={notesFace.jump}
+            onEdit={notesFace.edit}
+            onDelete={notesFace.remove}
+            onDiscuss={notesFace.discuss}
+            onOpenSession={notesFace.openSession}
+            onAddReply={notesFace.addReply}
+            onEditReply={notesFace.editReply}
+            onDeleteDiscussion={notesFace.deleteDiscussion}
+            onJumpPara={notesFace.jumpPara}
+            onCheck={notesFace.check}
+            sync={notesFace.sync}
+          />
+        )}
+        <div
+          className={css.detailBody}
+          ref={detailRef}
+          onScroll={onDetailScroll}
+          // Hidden, not unmounted: the article's segmentation, its translation
+          // and the reading position all live on this subtree.
+          hidden={notesFace.tab === 'notes'}
+        >
           <div className={css.kicker}>
             <span className={css.tile} style={{ background: source?.hue }}>{source?.tile}</span>
             <span>{source?.label}</span>
@@ -4012,6 +4063,14 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
               </button>
             </p>
           )}
+          {/* Reaching the end of a readable body is the moment to check what
+              stuck: the quiz-me request goes into the draft, the reader sends it. */}
+          {articleHtml !== null && articleHtml.length > 0 && (
+            <div className={css.checkEnd}>
+              <span className={css.checkLead}>{t('notes.checkLead')}</span>
+              <button type="button" className={css.checkButton} onClick={notesFace.check}>{t('notes.check')}</button>
+            </div>
+          )}
           <div className={css.tagEdit}>
             <span className={css.tagEditLabel}>{t('tag.title')}</span>
             {tags.filter(tag => (entryTagIds[openEntry.id] ?? []).includes(tag.id)).map(tag => (
@@ -4102,6 +4161,7 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
           )}
         </div>
 
+        {notesFace.tab === 'article' && <>
         <div className={css.composer}>
           <div className={css.composerLabel}>{t('detail.composerLabel')}</div>
           <div className={`${css.composerText} ${draft.length === 0 ? css.composerEmpty : ''}`}>
@@ -4112,6 +4172,12 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
           <button type="button" className={css.incompleteLink} onClick={() => quote()}>
             {t('action.quote')}
           </button>
+          {/* The way in without the quote plugin's menu (and on any host): it
+              reads the same selection the menu would. */}
+          <button type="button" className={css.incompleteLink} onClick={notesFace.startNote}>
+            {t('notes.take')}
+          </button>
+          {notesFace.hint && <span>{t('notes.takeHint')}</span>}
           {sideChatAvailable && openEntry.link !== undefined && (
             <button
               type="button"
@@ -4128,6 +4194,17 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
             </button>
           )}
         </div>
+        </>}
+        {notesFace.sheet !== null && (
+          <NoteSheet
+            t={t}
+            selection={notesFace.sheet}
+            saving={notesFace.saving}
+            failed={notesFace.failed}
+            onSave={notesFace.saveNote}
+            onCancel={notesFace.cancelSheet}
+          />
+        )}
       </div>
     )
   }

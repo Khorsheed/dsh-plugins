@@ -73,7 +73,45 @@ const face = {
   recordRead: () => ok({ entries: 1 }),
   readDraft: () => '', setDraft: () => {}, copyText: () => Promise.resolve(true),
   openExternal: () => true, browserTabAvailable: () => false, openBrowserTab: () => false, captureRemote: () => undefined,
+  // Notes, in memory (the host's notes.json, faked).
+  useSessions: select => select({ byId: { preview: { displayTitle: '位置编码讨论' } } }),
+  entryNotes: entryId => ok(notes[entryId] === undefined ? {} : { entry: notes[entryId] }),
+  noteCounts: () => ok({ counts: Object.fromEntries(Object.entries(notes).map(([id, entry]) => [id, entry.notes.length])) }),
+  addNote: request => {
+    const entry = notes[request.entryId] ?? { entryId: request.entryId, title: request.title, notes: [], sessions: [], nextNote: 1, updatedAt: '' }
+    const note = { id: `n${entry.nextNote}`, anchor: { block: request.block, quote: request.quote, ...(request.translated ? { translated: request.translated } : {}) }, ...(request.comment ? { comment: request.comment } : {}), createdAt: '', updatedAt: '' }
+    notes[request.entryId] = { ...entry, notes: [...entry.notes, note].sort((a, b) => a.anchor.block - b.anchor.block), nextNote: entry.nextNote + 1 }
+    return ok(note)
+  },
+  updateNote: request => {
+    const entry = notes[request.entryId]
+    if (entry) notes[request.entryId] = { ...entry, notes: entry.notes.map(note => note.id === request.noteId ? { ...note, comment: request.comment || undefined } : note) }
+    return ok('ok')
+  },
+  deleteNote: request => {
+    const entry = notes[request.entryId]
+    if (entry) notes[request.entryId] = { ...entry, notes: entry.notes.filter(note => note.id !== request.noteId) }
+    return ok('ok')
+  },
+  recordDiscussion: request => {
+    const entry = notes[request.entryId]
+    if (entry) notes[request.entryId] = { ...entry, sessions: [{ sessionId: request.sessionId, title: request.sessionTitle, lastAt: '' }] }
+    return ok('ok')
+  },
+  snapshotEntry: () => ok('ok'),
+  addReply: () => ok('ok'), editReply: () => ok('ok'), deleteDiscussion: () => ok('ok'), markSynced: () => ok('ok'),
+  // &canvas=1 composes a fake canvas inbox (the canvas plugin's ctx.canvasInbox).
+  canvasInbox: () => params.get('canvas') === '1' ? {
+    current: () => null,
+    listCanvases: () => Promise.resolve([{ id: 'a', title: 'Transformer 读书会', cardCount: 23 }, { id: 'b', title: '周报素材', cardCount: 8 }]),
+    addCard: () => Promise.resolve({ ok: true, cardId: 'k1' }),
+    openCard: () => {},
+  } : undefined,
+  canOpenSession: () => true, openSession: () => {},
 }
+const notes: Record<string, any> = {}
+// The preview's stand-in for the model's reader_note writes (a screenshot driver pokes it).
+;(window as any).__previewNotes = notes
 // Every other verb the pane may call answers an empty success.
 const quiet = ['addSource', 'refresh', 'removeSource', 'updateSource', 'quoteToSideChat', 'storeEntryBody', 'getRawBody', 'setCachePolicy',
   'clearTranslations', 'createTag', 'tagEntry', 'renameTag', 'deleteTag', 'pruneTags', 'clearRecent', 'rememberSentences', 'fetchEntryBody', 'fetchImage']

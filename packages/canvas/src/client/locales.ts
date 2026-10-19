@@ -88,6 +88,7 @@ export const zh = {
   'board.archivedCards': '已归档的卡 ({count})',
 
   'kind.fragment': '灵感',
+  'inbox.saveCard': '存为画布卡片',
   'kind.question': '问题',
   'kind.grounding': '共识',
   'kind.reference': '来源',
@@ -521,6 +522,7 @@ export const en: Record<keyof typeof zh, string> = {
   'board.archivedCards': 'Archived cards ({count})',
 
   'kind.fragment': 'Fragment',
+  'inbox.saveCard': 'Save as canvas card',
   'kind.question': 'Question',
   'kind.grounding': 'Grounding',
   'kind.reference': 'Reference',
