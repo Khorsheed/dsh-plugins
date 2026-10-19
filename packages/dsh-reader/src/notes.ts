@@ -31,8 +31,8 @@ import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node
 import { join } from 'node:path'
 import { resolveReaderStateRoot } from './store.ts'
 import type {
-  ReaderEntryIdentity, ReaderEntryNotes, ReaderEntrySession, ReaderEntrySnapshot, ReaderNote, ReaderNoteInput,
-  ReaderNoteOutcome, ReaderNotesDoc, ReaderSnapshotRecord,
+  ReaderDiscussion, ReaderDiscussionInput, ReaderDiscussionPoint, ReaderEntryIdentity, ReaderEntryNotes, ReaderEntrySession,
+  ReaderEntrySnapshot, ReaderNote, ReaderNoteInput, ReaderNoteOutcome, ReaderNoteReply, ReaderNotesDoc, ReaderSnapshotRecord,
 } from './notes-types.ts'
 
 export type * from './notes-types.ts'
@@ -54,6 +54,18 @@ export const MAX_LOOSE_SNAPSHOTS = 30
 
 /** The cap on one snapshot's total characters (a long paper fits; a book does not). */
 export const MAX_SNAPSHOT_CHARS = 400_000
+
+/** Most lines under one note. */
+export const MAX_REPLIES_PER_NOTE = 50
+
+/** Most discussion notes one article keeps (the oldest go first). */
+export const MAX_DISCUSSIONS_PER_ENTRY = 100
+
+/** Most points in one discussion note. */
+export const MAX_POINTS = 30
+
+/** The cap on one reply or one discussion point. */
+export const MAX_POINT_CHARS = 4_000
 
 /** The cap on one excerpt. */
 export const MAX_QUOTE_CHARS = 2_000
@@ -90,12 +102,67 @@ function normalizeNote(value: unknown): ReaderNote | undefined {
   const start = typeof anchor?.start === 'number' && Number.isInteger(anchor.start) && anchor.start >= 0 ? anchor.start : undefined
   const translated = text(anchor?.translated, MAX_QUOTE_CHARS)
   const comment = text(record.comment, MAX_COMMENT_CHARS)
+  const replies = Array.isArray(record.replies)
+    ? record.replies.map(normalizeReply).filter((reply): reply is ReaderNoteReply => reply !== undefined).slice(-MAX_REPLIES_PER_NOTE)
+    : []
   return {
     id,
     anchor: { block, ...(start === undefined ? {} : { start }), quote, ...(translated === undefined ? {} : { translated }) },
     ...(comment === undefined ? {} : { comment }),
+    ...(replies.length === 0 ? {} : { replies }),
     createdAt: stamp(record.createdAt),
     updatedAt: stamp(record.updatedAt ?? record.createdAt),
+  }
+}
+
+/** One line under a note, when it has text. */
+function normalizeReply(value: unknown): ReaderNoteReply | undefined {
+  if (typeof value !== 'object' || value === null) return undefined
+  const record = value as Record<string, unknown>
+  const body = text(record.text, MAX_POINT_CHARS)
+  if (body === undefined) return undefined
+  const sessionId = text(record.sessionId, 200)
+  return {
+    by: record.by === 'agent' ? 'agent' : 'user',
+    text: body,
+    ...(sessionId === undefined ? {} : { sessionId }),
+    ...(record.editedFrom === 'agent' ? { editedFrom: 'agent' as const } : {}),
+    at: stamp(record.at),
+  }
+}
+
+/** Bound a discussion's points: trimmed, capped, ¶ kept only when it is a positive integer. */
+export function boundPoints(points: readonly unknown[]): ReaderDiscussionPoint[] {
+  const out: ReaderDiscussionPoint[] = []
+  for (const item of points) {
+    if (typeof item !== 'object' || item === null) continue
+    const record = item as Record<string, unknown>
+    const body = text(record.text, MAX_POINT_CHARS)
+    if (body === undefined) continue
+    const para = typeof record.para === 'number' && Number.isInteger(record.para) && record.para > 0 ? record.para : undefined
+    out.push({ text: body, ...(para === undefined ? {} : { para }) })
+    if (out.length >= MAX_POINTS) break
+  }
+  return out
+}
+
+/** One discussion note, when it has an id and at least one point. */
+function normalizeDiscussion(value: unknown): ReaderDiscussion | undefined {
+  if (typeof value !== 'object' || value === null) return undefined
+  const record = value as Record<string, unknown>
+  const id = text(record.id, 20)
+  const points = Array.isArray(record.points) ? boundPoints(record.points) : []
+  if (id === undefined || points.length === 0) return undefined
+  const sessionId = text(record.sessionId, 200)
+  const aside = text(record.aside, 300)
+  return {
+    id,
+    kind: record.kind === 'check' ? 'check' : 'discussion',
+    ...(sessionId === undefined ? {} : { sessionId }),
+    title: text(record.title, 200) ?? '',
+    points,
+    ...(aside === undefined ? {} : { aside }),
+    createdAt: stamp(record.createdAt),
   }
 }
 
@@ -117,11 +184,16 @@ function normalizeEntry(entryId: string, value: unknown): ReaderEntryNotes | und
       return [{ sessionId, ...(sessionTitle === undefined ? {} : { title: sessionTitle }), lastAt: stamp(row.lastAt) }]
     }).slice(0, MAX_SESSIONS_PER_ENTRY)
     : []
-  if (notes.length === 0 && sessions.length === 0) return undefined
-  // The counter can only move forward: a hand-edited document that lowered it
-  // would hand out an id that is already taken.
+  const discussions = Array.isArray(record.discussions)
+    ? record.discussions.map(normalizeDiscussion).filter((item): item is ReaderDiscussion => item !== undefined).slice(0, MAX_DISCUSSIONS_PER_ENTRY)
+    : []
+  if (notes.length === 0 && sessions.length === 0 && discussions.length === 0) return undefined
+  // The counters can only move forward: a hand-edited document that lowered
+  // one would hand out an id that is already taken.
   const highest = notes.reduce((max, note) => Math.max(max, Number(/^n(\d+)$/.exec(note.id)?.[1] ?? 0)), 0)
   const stored = typeof record.nextNote === 'number' && Number.isInteger(record.nextNote) ? record.nextNote : 1
+  const highestDiscussion = discussions.reduce((max, item) => Math.max(max, Number(/^d(\d+)$/.exec(item.id)?.[1] ?? 0)), 0)
+  const storedDiscussion = typeof record.nextDiscussion === 'number' && Number.isInteger(record.nextDiscussion) ? record.nextDiscussion : 1
   const url = text(record.url, 2000)
   const source = text(record.source, 200)
   return {
@@ -131,7 +203,9 @@ function normalizeEntry(entryId: string, value: unknown): ReaderEntryNotes | und
     ...(source === undefined ? {} : { source }),
     notes,
     sessions,
+    ...(discussions.length === 0 ? {} : { discussions }),
     nextNote: Math.max(stored, highest + 1),
+    nextDiscussion: Math.max(storedDiscussion, highestDiscussion + 1),
     updatedAt: stamp(record.updatedAt),
   }
 }
@@ -227,7 +301,9 @@ function entryFor(doc: ReaderNotesDoc, identity: ReaderEntryIdentity, now: strin
     ...(source === undefined || source === '' ? {} : { source }),
     notes: existing?.notes ?? [],
     sessions: existing?.sessions ?? [],
+    ...(existing?.discussions === undefined ? {} : { discussions: existing.discussions }),
     nextNote: existing?.nextNote ?? 1,
+    nextDiscussion: existing?.nextDiscussion ?? 1,
     updatedAt: now,
   }
 }
@@ -235,7 +311,7 @@ function entryFor(doc: ReaderNotesDoc, identity: ReaderEntryIdentity, now: strin
 /** The document with one entry replaced (or removed, when it no longer carries anything). */
 function withEntry(doc: ReaderNotesDoc, entry: ReaderEntryNotes): ReaderNotesDoc {
   const { [entry.entryId]: _previous, ...rest } = doc.entries
-  return entry.notes.length === 0 && entry.sessions.length === 0
+  return entry.notes.length === 0 && entry.sessions.length === 0 && (entry.discussions ?? []).length === 0
     ? { ...doc, entries: rest }
     : { ...doc, entries: { ...rest, [entry.entryId]: entry } }
 }
@@ -378,6 +454,122 @@ export class ReaderNotesStore {
       const notes = entry.notes.filter(item => item.id !== request.noteId)
       return { doc: withEntry(doc, { ...entry, notes, updatedAt: new Date().toISOString() }), result: 'ok' as const }
     })
+  }
+
+  /**
+   * Add one line under a note: a conclusion (by the model, when the reader asked
+   * for it) or the reader's own addition.
+   *
+   * @param request - the article, the note, the line and who wrote it.
+   */
+  addReply(request: { entryId: string; noteId: string; text: string; by: 'agent' | 'user'; sessionId?: string }): Promise<ReaderNoteOutcome> {
+    const body = request.text.trim().slice(0, MAX_POINT_CHARS)
+    if (body.length === 0) return Promise.resolve('empty')
+    return this.update<ReaderNoteOutcome>(doc => {
+      const entry = doc.entries[request.entryId]
+      const note = entry?.notes.find(item => item.id === request.noteId)
+      if (entry === undefined || note === undefined) return { doc, result: 'not-found' }
+      const replies = note.replies ?? []
+      if (replies.length >= MAX_REPLIES_PER_NOTE) return { doc, result: 'full' }
+      const now = new Date().toISOString()
+      const reply: ReaderNoteReply = {
+        by: request.by,
+        text: body,
+        ...(request.sessionId === undefined || request.sessionId === '' ? {} : { sessionId: request.sessionId }),
+        at: now,
+      }
+      const notes = entry.notes.map(item => item.id === note.id ? { ...item, replies: [...replies, reply], updatedAt: now } : item)
+      return { doc: withEntry(doc, { ...entry, notes, updatedAt: now }), result: 'ok' }
+    })
+  }
+
+  /**
+   * Rewrite (or, with empty text, remove) one line under a note. A line the
+   * model wrote becomes the reader's, marked as rewritten from the model's.
+   */
+  editReply(request: { entryId: string; noteId: string; index: number; text: string }): Promise<ReaderNoteOutcome> {
+    return this.update<ReaderNoteOutcome>(doc => {
+      const entry = doc.entries[request.entryId]
+      const note = entry?.notes.find(item => item.id === request.noteId)
+      const replies = note?.replies ?? []
+      const old = replies[request.index]
+      if (entry === undefined || note === undefined || old === undefined) return { doc, result: 'not-found' }
+      const body = request.text.trim().slice(0, MAX_POINT_CHARS)
+      const now = new Date().toISOString()
+      const next: ReaderNoteReply[] = body === ''
+        ? replies.filter((_, index) => index !== request.index)
+        : replies.map((item, index) => index !== request.index ? item : {
+          ...item,
+          by: 'user' as const,
+          text: body,
+          ...(item.by === 'agent' || item.editedFrom === 'agent' ? { editedFrom: 'agent' as const } : {}),
+          at: now,
+        })
+      const { replies: _old, ...rest } = note
+      const notes = entry.notes.map(item => item.id === note.id ? { ...rest, ...(next.length === 0 ? {} : { replies: next }), updatedAt: now } : item)
+      return { doc: withEntry(doc, { ...entry, notes, updatedAt: now }), result: 'ok' }
+    })
+  }
+
+  /**
+   * Keep one discussion note (newest first). The conversation it came from is
+   * remembered on the article too.
+   *
+   * @param input - the article, the kind, the points.
+   * @returns the new discussion note, or why none was kept.
+   */
+  addDiscussion(input: ReaderDiscussionInput): Promise<ReaderDiscussion | 'empty'> {
+    const points = boundPoints(input.points)
+    if (points.length === 0 || input.entryId.length === 0) return Promise.resolve('empty')
+    return this.update<ReaderDiscussion>(doc => {
+      const now = new Date().toISOString()
+      const entry = entryFor(doc, input, now)
+      const number = entry.nextDiscussion ?? 1
+      const aside = input.aside?.trim().slice(0, 300)
+      const sessionId = input.sessionId?.trim()
+      const discussion: ReaderDiscussion = {
+        id: `d${String(number)}`,
+        kind: input.kind === 'check' ? 'check' : 'discussion',
+        ...(sessionId === undefined || sessionId === '' ? {} : { sessionId }),
+        title: input.heading?.trim().slice(0, 200) ?? '',
+        points,
+        ...(aside === undefined || aside === '' ? {} : { aside }),
+        createdAt: now,
+      }
+      const sessions = sessionId === undefined || sessionId === ''
+        ? entry.sessions
+        : [
+          entry.sessions.find(item => item.sessionId === sessionId) === undefined
+            ? { sessionId, lastAt: now }
+            : { ...entry.sessions.find(item => item.sessionId === sessionId)!, lastAt: now },
+          ...entry.sessions.filter(item => item.sessionId !== sessionId),
+        ].slice(0, MAX_SESSIONS_PER_ENTRY)
+      const discussions = [discussion, ...(entry.discussions ?? [])].slice(0, MAX_DISCUSSIONS_PER_ENTRY)
+      return { doc: withEntry(doc, { ...entry, sessions, discussions, nextDiscussion: number + 1 }), result: discussion }
+    })
+  }
+
+  /** Delete one discussion note. */
+  deleteDiscussion(request: { entryId: string; discussionId: string }): Promise<ReaderNoteOutcome> {
+    return this.update<ReaderNoteOutcome>(doc => {
+      const entry = doc.entries[request.entryId]
+      if (entry === undefined || !(entry.discussions ?? []).some(item => item.id === request.discussionId)) return { doc, result: 'not-found' }
+      const discussions = (entry.discussions ?? []).filter(item => item.id !== request.discussionId)
+      return { doc: withEntry(doc, { ...entry, discussions, updatedAt: new Date().toISOString() }), result: 'ok' }
+    })
+  }
+
+  /**
+   * The article this conversation discussed most recently, when there is one —
+   * where a model's write lands when it names no article.
+   */
+  sessionEntry(sessionId: string): string | undefined {
+    let best: { entryId: string; at: string } | undefined
+    for (const entry of Object.values(this.read().entries)) {
+      const row = entry.sessions.find(item => item.sessionId === sessionId)
+      if (row !== undefined && (best === undefined || row.lastAt > best.at)) best = { entryId: entry.entryId, at: row.lastAt }
+    }
+    return best?.entryId
   }
 
   /**

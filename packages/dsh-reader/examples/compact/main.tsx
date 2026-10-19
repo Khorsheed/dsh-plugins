@@ -99,9 +99,12 @@ const face = {
     return ok('ok')
   },
   snapshotEntry: () => ok('ok'),
+  addReply: () => ok('ok'), editReply: () => ok('ok'), deleteDiscussion: () => ok('ok'),
   canOpenSession: () => true, openSession: () => {},
 }
 const notes: Record<string, any> = {}
+// The preview's stand-in for the model's reader_note writes (a screenshot driver pokes it).
+;(window as any).__previewNotes = notes
 // Every other verb the pane may call answers an empty success.
 const quiet = ['addSource', 'refresh', 'removeSource', 'updateSource', 'quoteToSideChat', 'storeEntryBody', 'getRawBody', 'setCachePolicy',
   'clearTranslations', 'createTag', 'tagEntry', 'renameTag', 'deleteTag', 'pruneTags', 'clearRecent', 'rememberSentences', 'fetchEntryBody', 'fetchImage']

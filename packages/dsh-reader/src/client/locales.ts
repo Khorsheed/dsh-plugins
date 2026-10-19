@@ -77,6 +77,10 @@ export type ReaderKey =
   | 'notes.discussAll' | 'notes.edit' | 'notes.delete' | 'notes.deleteConfirm' | 'notes.notFound'
   | 'notes.inTranslation' | 'notes.discussedIn' | 'notes.draftHeading' | 'notes.draftComment'
   | 'notes.draftHint' | 'notes.untitledSession' | 'notes.badge' | 'notes.filter'
+  | 'notes.replyAdd' | 'notes.replyAgent' | 'notes.replyUser' | 'notes.replyEdited' | 'notes.replyPlaceholder'
+  | 'notes.replyEdit' | 'notes.replyRemove' | 'notes.discussionNotes' | 'notes.kindDiscussion' | 'notes.kindCheck'
+  | 'notes.noDiscussionNotes' | 'notes.pointsCheck' | 'notes.pointsDiscussion' | 'notes.check' | 'notes.checkLead'
+  | 'notes.checkDraft' | 'notes.checkDraftNotes' | 'notes.backToSession'
 
 export const en = {
   'tab.label': 'Inspiration',
@@ -318,6 +322,24 @@ export const en = {
   'notes.untitledSession': 'Conversation',
   'notes.badge': '{count} notes',
   'notes.filter': 'Has notes',
+  'notes.replyAdd': '+ Add a line',
+  'notes.replyAgent': 'Conclusion',
+  'notes.replyUser': 'Me',
+  'notes.replyEdited': 'Me (rewritten from a conclusion)',
+  'notes.replyPlaceholder': 'Add to it, or say it your way',
+  'notes.replyEdit': 'Edit',
+  'notes.replyRemove': 'Remove',
+  'notes.discussionNotes': 'Discussion notes · newest first',
+  'notes.kindDiscussion': 'Discussion',
+  'notes.kindCheck': 'Quiz me',
+  'notes.noDiscussionNotes': 'None yet. Ask the agent to “keep the conclusions”, or let it quiz you.',
+  'notes.pointsCheck': 'Not quite there yet',
+  'notes.pointsDiscussion': 'Points',
+  'notes.check': 'Let the agent quiz me',
+  'notes.checkLead': 'Finished? Explaining it in your own words shows best what you have not got yet.',
+  'notes.checkDraft': 'Quiz me on “{title}” (article id {id}). I have finished it. Load the reader skill and run a quiz-me round: read the article and my notes with reader_read, play a student who has not read it, ask 3–5 explain-it-to-me questions in one message, and once I answer them all, explain against the article only what I have not got right (with ¶), then keep it with reader_note as a quiz-me note. No score.',
+  'notes.checkDraftNotes': 'My notes so far: {count}.',
+  'notes.backToSession': 'Back to the conversation',
 }
 
 export const zh = {
@@ -560,6 +582,24 @@ export const zh = {
   'notes.untitledSession': '会话',
   'notes.badge': '笔记 {count}',
   'notes.filter': '有笔记',
+  'notes.replyAdd': '＋ 追加一句',
+  'notes.replyAgent': '讨论结论',
+  'notes.replyUser': '我',
+  'notes.replyEdited': '我（改自讨论结论）',
+  'notes.replyPlaceholder': '补充一句，或换成你自己的说法',
+  'notes.replyEdit': '改',
+  'notes.replyRemove': '删',
+  'notes.discussionNotes': '讨论笔记 · 最近的在前',
+  'notes.kindDiscussion': '讨论',
+  'notes.kindCheck': '考考我',
+  'notes.noDiscussionNotes': '还没有。讨论时说一句「把结论记到笔记」，或者让 Agent 考考你。',
+  'notes.pointsCheck': '没理解到位的',
+  'notes.pointsDiscussion': '要点',
+  'notes.check': '让Agent考考我',
+  'notes.checkLead': '读完了？用自己的话讲一遍，最能看出哪里没懂。',
+  'notes.checkDraft': '考考我：《{title}》（文章 id：{id}）。我读完了，请加载 reader 技能，按「考考我」来：用 reader_read 读这篇和我的笔记，当一个没读过的学生，一次问我 3–5 个「讲给我听」的问题；我一条消息答完后，对照原文只讲我没讲到位的地方（带 ¶），再用 reader_note 记一条考考我笔记。不打分。',
+  'notes.checkDraftNotes': '我目前记了 {count} 条笔记。',
+  'notes.backToSession': '回到会话',
 }
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {

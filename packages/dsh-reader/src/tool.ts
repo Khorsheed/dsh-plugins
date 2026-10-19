@@ -11,7 +11,12 @@
  */
 import type { Context } from '@deepseek-ai/cordis'
 import type { ReaderNotesStore } from './notes.ts'
+import { READER_SKILL_CONTENT, READER_SKILL_DESCRIPTION, READER_SKILL_NAME } from './skill.ts'
 import { readerToolDefinitions, type ReaderToolCore } from './tools.ts'
+
+interface SkillRegistrySlice {
+  register(skill: { name: string; description: string; content: string; source: string; provider?: string }): () => void
+}
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'reader-tool'
@@ -29,7 +34,7 @@ export function apply(ctx: Context): void {
   const notes = ctx.get('readerNotes') as ReaderNotesStore | undefined
   if (core === undefined || notes === undefined) {
     // Degrade, don't explode: the core row is not mounted in this composition.
-    ctx.logger.warn('reader-tool: the reader services are absent — reader_read is not registered')
+    ctx.logger.warn('reader-tool: the reader services are absent — the reader tools are not registered')
     return
   }
   // Deferred, not an apply-time probe: `ctx.get('tools')` races the registry's
@@ -38,5 +43,17 @@ export function apply(ctx: Context): void {
     for (const definition of readerToolDefinitions(core, notes)) {
       toolsCtx.effect(() => toolsCtx.tools.register(definition), `reader-tool: ${definition.name} tool`)
     }
+  })
+  // The skill the descriptions point at rides the same deferred door.
+  ctx.inject(['skills'], (skillCtx) => {
+    const skills = skillCtx.get('skills') as SkillRegistrySlice | undefined
+    if (skills === undefined) return
+    skillCtx.effect(() => skills.register({
+      name: READER_SKILL_NAME,
+      description: READER_SKILL_DESCRIPTION,
+      content: READER_SKILL_CONTENT,
+      source: 'runtime',
+      provider: '@khorsheed/dsh-reader',
+    }), `reader-tool: ${READER_SKILL_NAME} skill`)
   })
 }

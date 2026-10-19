@@ -267,6 +267,12 @@ export interface ReaderPaneInjected {
   updateNote: (request: { entryId: string; noteId: string; comment: string }) => Promise<RemoteResult<ReaderNoteOutcome>>
   /** Delete one note. */
   deleteNote: (request: { entryId: string; noteId: string }) => Promise<RemoteResult<ReaderNoteOutcome>>
+  /** Add the reader's own line under a note. */
+  addReply: (request: { entryId: string; noteId: string; text: string }) => Promise<RemoteResult<ReaderNoteOutcome>>
+  /** Rewrite (or, with empty text, remove) one line under a note. */
+  editReply: (request: { entryId: string; noteId: string; index: number; text: string }) => Promise<RemoteResult<ReaderNoteOutcome>>
+  /** Delete one discussion note. */
+  deleteDiscussion: (request: { entryId: string; discussionId: string }) => Promise<RemoteResult<ReaderNoteOutcome>>
   /** Remember that this conversation discussed the article. */
   recordDiscussion: (request: ReaderEntryIdentity & { sessionId: string; sessionTitle?: string }) => Promise<RemoteResult<'ok' | 'empty'>>
   /** Hand the host the article's original text for the model. */

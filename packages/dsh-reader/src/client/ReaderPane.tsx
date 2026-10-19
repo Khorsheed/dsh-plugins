@@ -3805,6 +3805,11 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
             onDelete={notesFace.remove}
             onDiscuss={notesFace.discuss}
             onOpenSession={notesFace.openSession}
+            onAddReply={notesFace.addReply}
+            onEditReply={notesFace.editReply}
+            onDeleteDiscussion={notesFace.deleteDiscussion}
+            onJumpPara={notesFace.jumpPara}
+            onCheck={notesFace.check}
           />
         )}
         <div
@@ -4056,6 +4061,14 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
                 {t('detail.readOriginal')}
               </button>
             </p>
+          )}
+          {/* Reaching the end of a readable body is the moment to check what
+              stuck: the quiz-me request goes into the draft, the reader sends it. */}
+          {articleHtml !== null && articleHtml.length > 0 && (
+            <div className={css.checkEnd}>
+              <span className={css.checkLead}>{t('notes.checkLead')}</span>
+              <button type="button" className={css.checkButton} onClick={notesFace.check}>{t('notes.check')}</button>
+            </div>
           )}
           <div className={css.tagEdit}>
             <span className={css.tagEditLabel}>{t('tag.title')}</span>

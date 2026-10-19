@@ -11,14 +11,14 @@
  * @module @khorsheed/dsh-reader/client/useNotes
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react'
-import type { ReaderEntryNotes, ReaderNote } from '../notes-types.ts'
+import type { ReaderDiscussion, ReaderEntryNotes, ReaderNote } from '../notes-types.ts'
 import type { ReaderPaneProps } from './contract.ts'
 import type { ReaderEntry } from './parse-rss.ts'
 import type { BuiltArticle, TranslationView } from './translate.ts'
 import { translationHash } from './translate.ts'
 import { mergedDraft } from './quote.ts'
 import {
-  captureSelection, formatNotesDraft, NOTE_FLASH_HIGHLIGHT, NOTE_HIGHLIGHT, noteRanges, paintHighlight,
+  blockElements, captureSelection, formatNotesDraft, NOTE_FLASH_HIGHLIGHT, NOTE_HIGHLIGHT, noteRanges, paintHighlight,
   paragraphsOf, registerNoteTarget, type NoteSelection,
 } from './notes.ts'
 
@@ -30,6 +30,13 @@ const FLASH_MS = 1400
 
 /** How long the "select a passage first" hint stays up. */
 const HINT_MS = 2600
+
+/**
+ * How often the notes face re-reads the host while it shows: the model writes
+ * conclusions from the conversation, and they should appear without a reload
+ * (the canvas board's 4-second precedent).
+ */
+const NOTES_POLL_MS = 5000
 
 /** What the hook reads from the pane. */
 export interface UseNotesInput {
@@ -66,6 +73,11 @@ export interface NotesFace {
   readonly canOpenSession: boolean
   readonly openSession: (sessionId: string) => void
   readonly sessionTitle: (sessionId: string) => string | undefined
+  readonly addReply: (note: ReaderNote, text: string) => Promise<boolean>
+  readonly editReply: (note: ReaderNote, index: number, text: string) => Promise<boolean>
+  readonly deleteDiscussion: (discussion: ReaderDiscussion) => void
+  readonly jumpPara: (para: number) => void
+  readonly check: () => void
 }
 
 /** True when two sets hold the same ids. */
@@ -141,6 +153,16 @@ export function useNotes(input: UseNotesInput): NotesFace {
     const lost = new Set([...found].filter(([, ranges]) => ranges.length === 0).map(([id]) => id))
     setMissing(current => sameSet(current, lost) ? current : lost)
   }, [notes, articleHtml, paintKey, translateView, tab, articleRef, builtRef])
+
+  // While the notes face shows, follow what the conversation writes into it.
+  useEffect(() => {
+    if (tab !== 'notes' || entryId === undefined) return
+    void reload(entryId)
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible') void reload(entryId)
+    }, NOTES_POLL_MS)
+    return () => { clearInterval(timer) }
+  }, [tab, entryId, reload])
 
   // Nothing stays painted once the pane is gone.
   useEffect(() => () => {
@@ -228,6 +250,17 @@ export function useNotes(input: UseNotesInput): NotesFace {
     void props.deleteNote({ entryId, noteId: note.id }).then(() => reload(entryId))
   }, [entryId, props, reload])
 
+  /** The conversation this pane belongs to, remembered on the article. */
+  const remember = useCallback(() => {
+    if (identity === undefined) return
+    const sessionTitle = sessions[sessionId]?.displayTitle
+    void props.recordDiscussion({
+      ...identity,
+      sessionId: String(sessionId),
+      ...(sessionTitle === undefined ? {} : { sessionTitle }),
+    }).then(() => reload(identity.entryId))
+  }, [identity, sessions, sessionId, props, reload])
+
   const discuss = useCallback((noteIds: readonly string[]) => {
     if (identity === undefined || notes === undefined) return
     const chosen = noteIds.length === 0 ? notes.notes : notes.notes.filter(note => noteIds.includes(note.id))
@@ -243,15 +276,63 @@ export function useNotes(input: UseNotesInput): NotesFace {
       hint: id => t('notes.draftHint', { id }),
     })
     props.setDraft(mergedDraft(props.readDraft(), block))
-    const sessionTitle = sessions[sessionId]?.displayTitle
-    void props.recordDiscussion({
-      ...identity,
-      sessionId: String(sessionId),
-      ...(sessionTitle === undefined ? {} : { sessionTitle }),
-    }).then(() => reload(identity.entryId))
-  }, [identity, notes, props, t, sessions, sessionId, reload])
+    remember()
+  }, [identity, notes, props, t, remember])
+
+  const addReply = useCallback(async (note: ReaderNote, text: string): Promise<boolean> => {
+    if (entryId === undefined) return false
+    const result = await props.addReply({ entryId, noteId: note.id, text })
+    if (!result.ok || result.value !== 'ok') return false
+    await reload(entryId)
+    return true
+  }, [entryId, props, reload])
+
+  const editReply = useCallback(async (note: ReaderNote, index: number, text: string): Promise<boolean> => {
+    if (entryId === undefined) return false
+    const result = await props.editReply({ entryId, noteId: note.id, index, text })
+    if (!result.ok || result.value !== 'ok') return false
+    await reload(entryId)
+    return true
+  }, [entryId, props, reload])
+
+  const deleteDiscussion = useCallback((discussion: ReaderDiscussion) => {
+    if (entryId === undefined) return
+    void props.deleteDiscussion({ entryId, discussionId: discussion.id }).then(() => reload(entryId))
+  }, [entryId, props, reload])
+
+  const jumpPara = useCallback((para: number) => {
+    setTab('article')
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      const article = articleRef.current
+      const block = article === null ? undefined : blockElements(article)[para - 1]
+      if (block === undefined) return
+      block.scrollIntoView({ block: 'center' })
+      const range = block.ownerDocument.createRange()
+      range.selectNodeContents(block)
+      paintHighlight(NOTE_FLASH_HIGHLIGHT, [range])
+      setTimeout(() => { paintHighlight(NOTE_FLASH_HIGHLIGHT, []) }, FLASH_MS)
+    }))
+  }, [articleRef])
+
+  // 「让Agent考考我」: the request (with the round's contract, so it works even
+  // where the skill is not loaded) goes into the draft; the reader sends it.
+  const check = useCallback(() => {
+    if (identity === undefined) return
+    const count = notes?.notes.length ?? 0
+    const request = [
+      t('notes.checkDraft', { title: identity.title, id: identity.entryId }),
+      ...(count > 0 ? [t('notes.checkDraftNotes', { count })] : []),
+    ].join('\n')
+    props.setDraft(mergedDraft(props.readDraft(), request))
+    remember()
+  }, [identity, notes, t, props, remember])
 
   return {
+    addReply,
+    editReply,
+    deleteDiscussion,
+    jumpPara,
+    check,
     tab,
     setTab: switchTab,
     entry: notes,

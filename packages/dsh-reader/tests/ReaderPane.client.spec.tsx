@@ -362,6 +362,9 @@ function bench(options: BenchOptions = {}) {
     addNote: mocks.addNote,
     updateNote: async () => ({ ok: true as const, value: 'ok' }),
     deleteNote: async () => ({ ok: true as const, value: 'ok' }),
+    addReply: async () => ({ ok: true as const, value: 'ok' }),
+    editReply: async () => ({ ok: true as const, value: 'ok' }),
+    deleteDiscussion: async () => ({ ok: true as const, value: 'ok' }),
     recordDiscussion: mocks.recordDiscussion,
     snapshotEntry: mocks.snapshotEntry,
     canOpenSession: () => false,
@@ -3960,6 +3963,15 @@ describe('notes: take one from a selection, find it in the notes face, bring it 
     const written = ui.mocks.setDraft.mock.calls.at(-1)?.[0] as string
     expect(written).toContain('> n1 ¶2「旋转 query 和 key。」')
     expect(written).toContain('> 我的评论：为什么只看相对距离？')
+    await waitFor(() => { expect(ui.mocks.recordDiscussion).toHaveBeenCalled() })
+  })
+
+  it('puts the quiz-me request into the draft from the end of the article', async () => {
+    const ui = await openedArticle()
+    fireEvent.click(screen.getByRole('button', { name: zh['notes.check'] }))
+    const written = ui.mocks.setDraft.mock.calls.at(-1)?.[0] as string
+    expect(written).toContain('考考我：《位置编码》')
+    expect(written).toContain('reader_note')
     await waitFor(() => { expect(ui.mocks.recordDiscussion).toHaveBeenCalled() })
   })
 })

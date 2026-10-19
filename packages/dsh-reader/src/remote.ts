@@ -341,6 +341,24 @@ export class ReaderRemoteService extends TypertRemoteService<ReaderRemoteConfig>
     return this.notes.recordSession(request)
   }
 
+  /** Add the reader's own line under a note. */
+  @Remote('addReply')
+  addReply(request: { entryId: string; noteId: string; text: string }): Promise<ReaderNoteOutcome> {
+    return this.notes.addReply({ ...request, by: 'user' })
+  }
+
+  /** Rewrite (or, with empty text, remove) one line under a note. */
+  @Remote('editReply')
+  editReply(request: { entryId: string; noteId: string; index: number; text: string }): Promise<ReaderNoteOutcome> {
+    return this.notes.editReply(request)
+  }
+
+  /** Delete one discussion note. */
+  @Remote('deleteDiscussion')
+  deleteDiscussion(request: { entryId: string; discussionId: string }): Promise<ReaderNoteOutcome> {
+    return this.notes.deleteDiscussion(request)
+  }
+
   /** Hand the host the article's original text, block by block, for the model to read. */
   @Remote('snapshotEntry')
   snapshotEntry(request: ReaderEntryIdentity & { paragraphs: string[] }): Promise<'ok' | 'empty'> {

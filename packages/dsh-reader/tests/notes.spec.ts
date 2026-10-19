@@ -18,7 +18,7 @@ import {
   boundParagraphs,
   normalizeNotesDoc,
 } from '../src/notes.ts'
-import { READ_PAGE_CHARS, readerToolDefinitions, renderArticle, resolveEntry } from '../src/tools.ts'
+import { READ_PAGE_CHARS, headerOf, pointsOf, readerToolDefinitions, renderArticle, resolveEntry } from '../src/tools.ts'
 
 const article = { entryId: 'https://example.com/a', title: 'Positional encoding', url: 'https://example.com/a', source: 'Example' }
 
@@ -195,5 +195,73 @@ describe('reader_read', () => {
     expect(JSON.stringify(answer)).toContain('¶1 Alpha.')
     await new Promise(resolve => setTimeout(resolve, 10))
     expect(store.entry(article.entryId)?.sessions.map(item => item.sessionId)).toEqual(['sess-1'])
+  })
+})
+
+describe('conclusions and discussion notes', () => {
+  it('threads conclusions under a note and turns a rewritten one into the reader\'s', async () => {
+    await store.addNote({ ...article, block: 0, quote: 'q' })
+    expect(await store.addReply({ entryId: article.entryId, noteId: 'n1', text: 'agent says', by: 'agent', sessionId: 's1' })).toBe('ok')
+    expect(await store.addReply({ entryId: article.entryId, noteId: 'n9', text: 'x', by: 'user' })).toBe('not-found')
+    await store.editReply({ entryId: article.entryId, noteId: 'n1', index: 0, text: 'my words' })
+    expect(store.entry(article.entryId)?.notes[0]?.replies).toMatchObject([{ by: 'user', text: 'my words', editedFrom: 'agent', sessionId: 's1' }])
+    await store.editReply({ entryId: article.entryId, noteId: 'n1', index: 0, text: '' })
+    expect(store.entry(article.entryId)?.notes[0]?.replies).toBeUndefined()
+  })
+
+  it('keeps discussion notes newest first, with never-reused ids, and remembers their conversation', async () => {
+    await store.addDiscussion({ ...article, kind: 'discussion', sessionId: 's1', points: [{ text: 'one' }] })
+    const second = await store.addDiscussion({ ...article, kind: 'check', sessionId: 's2', points: [{ text: 'two', para: 3 }], aside: '其余 2 题讲到位了' })
+    expect(second).toMatchObject({ id: 'd2', kind: 'check', points: [{ text: 'two', para: 3 }] })
+    expect(store.entry(article.entryId)?.discussions?.map(item => item.id)).toEqual(['d2', 'd1'])
+    expect(store.sessionEntry('s2')).toBe(article.entryId)
+    await store.deleteDiscussion({ entryId: article.entryId, discussionId: 'd2' })
+    expect((await store.addDiscussion({ ...article, kind: 'discussion', points: [{ text: 'three' }] })) as { id: string }).toMatchObject({ id: 'd3' })
+    expect(await store.addDiscussion({ ...article, kind: 'discussion', points: [] })).toBe('empty')
+  })
+
+  it('reads points one per line, with ¶ citations and the aside', () => {
+    expect(pointsOf('1. RoPE 不加在输入上。原文 ¶3。\n- 外推更长的序列（¶4）\n其余 2 题讲到位了')).toEqual({
+      points: [{ text: 'RoPE 不加在输入上。', para: 3 }, { text: '外推更长的序列', para: 4 }],
+      aside: '其余 2 题讲到位了',
+    })
+    expect(headerOf('笔记：n2\n类型：考考我\n正文')).toEqual({ note: 'n2', kind: 'check', body: '正文' })
+  })
+})
+
+describe('reader_note', () => {
+  const recent = [{ entryId: article.entryId, sourceId: 's', title: article.title, url: article.url, readAt: '' }]
+  const run = async (args: Record<string, unknown>, sessionId = 'sess-1'): Promise<string> => {
+    const tool = readerToolDefinitions({ listRecent: async () => ({ entries: recent }) }, store).find(item => item.name === 'reader_note')!
+    const execute = (tool as unknown as { execute: (args: unknown, exec: unknown) => Promise<unknown> }).execute
+    return JSON.stringify(await execute(args, { agent: { session: { id: sessionId } } }))
+  }
+
+  it('refuses to guess the article when the conversation never discussed one', async () => {
+    await expect(run({ op: 'discussion', text: 'x' })).rejects.toThrow(/还没有讨论过/)
+  })
+
+  it('writes a conclusion under a note, and names the notes that exist when the id is wrong', async () => {
+    await store.addNote({ ...article, block: 0, quote: 'q' })
+    await store.recordSession({ ...article, sessionId: 'sess-1' })
+    expect(await run({ op: 'conclusion', note: 'n1', text: '是和角公式。' })).toContain('笔记 n1')
+    expect(store.entry(article.entryId)?.notes[0]?.replies?.[0]).toMatchObject({ by: 'agent', text: '是和角公式。', sessionId: 'sess-1' })
+    await expect(run({ op: 'conclusion', note: 'n7', text: 'x' })).rejects.toThrow(/现有：n1/)
+  })
+
+  it('takes the text-only form when the flat arguments did not arrive', async () => {
+    await store.recordSession({ ...article, sessionId: 'sess-1' })
+    expect(await run({ text: '类型：考考我\n- RoPE 不加在输入上 ¶3\n其余 2 题讲到位了' })).toContain('考考我笔记 d1')
+    expect(store.entry(article.entryId)?.discussions?.[0]).toMatchObject({ kind: 'check', points: [{ para: 3 }], aside: '其余 2 题讲到位了' })
+  })
+
+  it('shows conclusions and discussion notes to reader_read', async () => {
+    await store.addNote({ ...article, block: 0, quote: 'q' })
+    await store.addReply({ entryId: article.entryId, noteId: 'n1', text: 'concluded', by: 'agent' })
+    await store.addDiscussion({ ...article, kind: 'check', points: [{ text: 'gap', para: 2 }] })
+    const text = renderArticle(article, undefined, store.entry(article.entryId))
+    expect(text).toContain('讨论结论：concluded')
+    expect(text).toContain('d1 考考我')
+    expect(text).toContain('- gap（¶2）')
   })
 })

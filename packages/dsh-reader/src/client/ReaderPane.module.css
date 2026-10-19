@@ -2806,3 +2806,35 @@
 .article ::highlight(reader-note-flash) {
   background-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 34%, transparent);
 }
+
+/* 「让Agent考考我」 at the end of the article. */
+.checkEnd {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 18px;
+  padding-top: 12px;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+}
+
+.checkLead {
+  font-size: var(--dsh-panel-text-meta, 12px);
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.checkButton {
+  padding: 7px 12px;
+  border: 1px solid var(--dsw-alias-brand-primary);
+  border-radius: 8px;
+  background: var(--dsw-alias-brand-primary);
+  font-family: inherit;
+  font-size: var(--dsh-panel-text-body, 12.5px);
+  color: var(--dsw-alias-bg-base);
+  cursor: pointer;
+}
+
+@container dsh-panel (max-width: 560px) {
+  .checkButton {
+    min-height: 40px;
+  }
+}

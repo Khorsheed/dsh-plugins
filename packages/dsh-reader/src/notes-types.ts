@@ -23,14 +23,55 @@ export interface ReaderNoteAnchor {
   readonly translated?: string
 }
 
+/**
+ * One line under a note: a conclusion a discussion reached, or the reader's
+ * own addition. Written by the model only when the reader asks for it.
+ */
+export interface ReaderNoteReply {
+  readonly by: 'agent' | 'user'
+  readonly text: string
+  /** The conversation it came from, so the reader can go back to it. */
+  readonly sessionId?: string
+  /** Set when the reader rewrote a line the model wrote. */
+  readonly editedFrom?: 'agent'
+  readonly at: string
+}
+
 /** One note: an excerpt and, optionally, what the reader thought of it. */
 export interface ReaderNote {
   /** `n1`, `n2`… per article, never reused — the model cites notes by it. */
   readonly id: string
   readonly anchor: ReaderNoteAnchor
   readonly comment?: string
+  /** Conclusions and additions, oldest first. */
+  readonly replies?: readonly ReaderNoteReply[]
   readonly createdAt: string
   readonly updatedAt: string
+}
+
+/** One point of a discussion note, with the paragraph it points back to. */
+export interface ReaderDiscussionPoint {
+  readonly text: string
+  /** ¶ number (1-based), when the point cites the article. */
+  readonly para?: number
+}
+
+/**
+ * A discussion note: what one conversation about the article came to.
+ *
+ * `check` is a 「让Agent考考我」 round — not an exam: no score, no retake; its
+ * points are what the reader had not yet got right, each with the explanation.
+ */
+export interface ReaderDiscussion {
+  /** `d1`, `d2`… per article, never reused. */
+  readonly id: string
+  readonly kind: 'discussion' | 'check'
+  readonly sessionId?: string
+  readonly title: string
+  readonly points: readonly ReaderDiscussionPoint[]
+  /** One line for what went fine (「其余 2 题讲到位了」). */
+  readonly aside?: string
+  readonly createdAt: string
 }
 
 /** One conversation that discussed the article. */
@@ -49,8 +90,12 @@ export interface ReaderEntryNotes {
   readonly source?: string
   readonly notes: readonly ReaderNote[]
   readonly sessions: readonly ReaderEntrySession[]
+  /** Discussion notes, newest first. */
+  readonly discussions?: readonly ReaderDiscussion[]
   /** The next note number; ids are never reused, so a deleted n3 stays deleted. */
   readonly nextNote: number
+  /** The next discussion number, never reused either. */
+  readonly nextDiscussion?: number
   readonly updatedAt: string
 }
 
@@ -98,4 +143,14 @@ export interface ReaderNoteInput extends ReaderEntryIdentity {
   readonly quote: string
   readonly translated?: string
   readonly comment?: string
+}
+
+/** A discussion note's input, before bounding. */
+export interface ReaderDiscussionInput extends ReaderEntryIdentity {
+  readonly kind: 'discussion' | 'check'
+  readonly sessionId?: string
+  /** The discussion note's own short title (`title` is the article's). */
+  readonly heading?: string
+  readonly points: readonly ReaderDiscussionPoint[]
+  readonly aside?: string
 }
