@@ -18,7 +18,7 @@ import { compositionFreshnessRefusal, readCapabilityCompositionShape } from '../
 import { hashConditionDocument } from './hash.ts'
 import { llmDraftCriteria, pickRubricPath, probePaths } from '../judge/judge.ts'
 import { hashPresetTree, scopePresetDir } from '../preset-snapshot.ts'
-import { claudeScopeDiagnostics, conditionUnitDiagnostics, planUnitOf, type ScopedConditionRef } from '../run/unit.ts'
+import { conditionUnitDiagnostics, planUnitOf } from '../run/unit.ts'
 import type { CapabilityCompositionEvidence } from '../faces.ts'
 import {
   CONDITION_ID_RE,
@@ -925,17 +925,6 @@ export async function validatePlan(planPath: string, options: ValidatePlanOption
   // there. Checked HERE, offline, because the alternative is discovering it
   // at the first acquire — with the run created and the ledger already open.
   const planUnit = planUnitOf(plan)
-  // The scope guard needs both sides of the line at once, so each side is
-  // collected as it resolves and the comparison runs after both loops.
-  const inUnits: ScopedConditionRef[] = []
-  const onHost: ScopedConditionRef[] = []
-  const scopeRef = (id: string, document: Record<string, unknown>): ScopedConditionRef => ({
-    id,
-    harnessName: typeof (document['harness'] as { name?: unknown } | undefined)?.name === 'string'
-      ? ((document['harness'] as { name: string }).name)
-      : '',
-    ...(typeof document['scope'] === 'string' ? { scope: document['scope'] } : {}),
-  })
   for (const id of semantics.conditionIds) {
     const readiness = await resolveConditionReadiness(id, conditionsRoot, options)
     const about = (diagnostic: EvalDiagnostic): EvalDiagnostic => ({ ...diagnostic, condition: id })
@@ -945,11 +934,6 @@ export async function validatePlan(planPath: string, options: ValidatePlanOption
     if (readiness.document === null) continue
     if (planUnit !== null) {
       errors.push(...conditionUnitDiagnostics(id, readiness.document).map(about))
-      inUnits.push(scopeRef(id, readiness.document))
-    } else {
-      // No unit segment: every condition runs on the host, so a player is a
-      // host-side claude reader exactly as a judge is.
-      onHost.push(scopeRef(id, readiness.document))
     }
   }
   // The judge conditions are resolved too — they were not before, so a judge
@@ -963,12 +947,7 @@ export async function validatePlan(planPath: string, options: ValidatePlanOption
     warnings.push(...readiness.warnings.map(diagnostic => ({ ...diagnostic, message: `judge ${diagnostic.message}`, condition: id })))
     judges.push(readiness.entry)
     errors.push(...judgeModelDiagnostics(id, readiness.document).map(diagnostic => ({ ...diagnostic, condition: id })))
-    if (readiness.document !== null) onHost.push(scopeRef(id, readiness.document))
   }
-  // Checked here, offline, for the same reason the scoped-home contract is:
-  // the alternative is discovering it when a container round has already
-  // rotated the grant the host was using, which costs a manual re-login.
-  errors.push(...claudeScopeDiagnostics(inUnits, onHost))
   report.ok = errors.length === 0
   return report
 }

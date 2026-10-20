@@ -815,8 +815,6 @@ export type EvalKey =
   | 'readiness.CAPABILITIES_PRESET_MISMATCH'
   | 'readiness.CAPABILITIES_SNAPSHOT_STALE'
   | 'readiness.CAPABILITIES_UNMEASURED'
-  | 'readiness.CLAUDE_CONTAINER_SCOPE_MISSING'
-  | 'readiness.CLAUDE_CONTAINER_SCOPE_SHARED'
   | 'readiness.COMMIT_UNRESOLVED'
   | 'readiness.CONDITION_FILE_MISSING'
   | 'readiness.CONDITION_ID_INVALID'
@@ -1155,7 +1153,6 @@ export type EvalKey =
   | 'readiness.then.HOME_SHA_UNDECLARED'
   | 'readiness.then.HOME_SHA_WRITTEN'
   | 'readiness.then.CAPABILITIES_UNMEASURED'
-  | 'readiness.then.CLAUDE_CONTAINER_SCOPE_SHARED'
   | 'report.criteriaMeta'
   | 'report.criteriaHowRead'
   | 'report.axisNone'
@@ -2020,8 +2017,6 @@ export const en: Record<EvalKey, string> = {
   'readiness.CAPABILITIES_PRESET_MISMATCH': 'Condition {condition}\'s capabilities do not match its preset.',
   'readiness.CAPABILITIES_SNAPSHOT_STALE': 'Condition {condition}\'s capability snapshot is out of date — provision again.',
   'readiness.CAPABILITIES_UNMEASURED': 'Condition {condition}\'s capabilities have not been measured.',
-  'readiness.CLAUDE_CONTAINER_SCOPE_MISSING': 'Condition {condition} runs claude in a container but names no scope.',
-  'readiness.CLAUDE_CONTAINER_SCOPE_SHARED': 'Condition {condition} shares its container scope with another condition.',
   'readiness.COMMIT_UNRESOLVED': 'The dataset commit is not pinned yet; it will be pinned when the run starts.',
   'readiness.CONDITION_FILE_MISSING': 'Condition {condition} has no file under conditions/.',
   'readiness.CONDITION_ID_INVALID': 'A condition id is not valid.',
@@ -2360,7 +2355,6 @@ export const en: Record<EvalKey, string> = {
   'readiness.then.HOME_SHA_UNDECLARED': 'The start records the home fingerprint as it is then.',
   'readiness.then.HOME_SHA_WRITTEN': 'Already corrected; nothing left to do.',
   'readiness.then.CAPABILITIES_UNMEASURED': 'The result will have no capability snapshot of this group to check against.',
-  'readiness.then.CLAUDE_CONTAINER_SCOPE_SHARED': 'The groups share one login home, so memory and settings can leak between them.',
   'report.criteriaMeta': 'click a cell for the verdict evidence behind it',
   'report.criteriaHowRead': 'How to read this table',
   'report.axisNone': 'No dimension declared',
@@ -3215,8 +3209,6 @@ export const zh: Record<EvalKey, string> = {
   'readiness.CAPABILITIES_PRESET_MISMATCH': '对比组 {condition} 的能力与预设不一致。',
   'readiness.CAPABILITIES_SNAPSHOT_STALE': '对比组 {condition} 的能力快照过期了，需要重新 provision。',
   'readiness.CAPABILITIES_UNMEASURED': '对比组 {condition} 的能力还没测过。',
-  'readiness.CLAUDE_CONTAINER_SCOPE_MISSING': '对比组 {condition} 在容器里跑 claude，却没有指定 scope。',
-  'readiness.CLAUDE_CONTAINER_SCOPE_SHARED': '对比组 {condition} 的容器 scope 与别的对比组共用。',
   'readiness.COMMIT_UNRESOLVED': '题库版本还没钉住，启动时才会钉。',
   'readiness.CONDITION_FILE_MISSING': '对比组 {condition} 在 conditions/ 下没有文件。',
   'readiness.CONDITION_ID_INVALID': '有一个对比组的 id 不合法。',
@@ -3555,7 +3547,6 @@ export const zh: Record<EvalKey, string> = {
   'readiness.then.HOME_SHA_UNDECLARED': '启动时记录当时的 home 指纹。',
   'readiness.then.HOME_SHA_WRITTEN': '已经补好，不用再做什么。',
   'readiness.then.CAPABILITIES_UNMEASURED': '结果里没有这组的能力快照可对照。',
-  'readiness.then.CLAUDE_CONTAINER_SCOPE_SHARED': '几组共用一份登录态，记忆和设置可能互相串。',
   'report.criteriaMeta': '点单元格可看对应的判定证据',
   'report.criteriaHowRead': '怎么读这张表',
   'report.axisNone': '未标维度',

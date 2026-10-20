@@ -131,7 +131,7 @@ export interface ReadinessSubject {
    * The condition's named scoped home, when it declares one. The probe runs
    * against the SAME scope the cells will, because that is where the
    * credential it is proving lives: probing the default scope for a
-   * scope-`b` condition would prove another account's login.
+   * scope-`b` condition would prove another scope's key.
    */
   scope?: string
   /** The condition's declared preset, or null / absent for none. */

@@ -282,7 +282,7 @@ One condition = one harness + a model declaration + a permission word + one scop
             "container",
             "var"
           ],
-          "description": "The condition's scoped credential directory as the UNIT sees it. The host side is never written here: the orchestrator mounts the evaluation instance's own scoped home for that harness — the directory /<harness> login writes into, and the one the delegation read-back reads.",
+          "description": "The condition's scoped credential directory as the UNIT sees it. The host side is never written here: the orchestrator mounts the evaluation instance's own scoped home for that harness — the directory holding the harness endpoint credential, and the one the delegation read-back reads.",
           "properties": {
             "container": {
               "type": "string",

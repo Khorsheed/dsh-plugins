@@ -46,7 +46,7 @@ import { checkReadiness, DEFAULT_READINESS_TIMEOUT_MS, type ReadinessRecord, typ
 import { buildDeidentifyRules, pickRubricPath, DEFAULT_JUDGE_SAMPLES, type ResolvedJudge } from '../judge/judge.ts'
 import { checkUnitEgress } from './egress.ts'
 import type { EgressCheckDecl } from './unit.ts'
-import { acquireSpecFor, checkCredentialsDir, claudeScopeDiagnostics, describeAcquireSpec, egressCheckAbsentNote, planScopedHomeMount, planUnitDiagnostics, planUnitOf, resolveCellUnit, unitUid, type CellUnitPlan, type CredentialsCheck } from './unit.ts'
+import { acquireSpecFor, checkCredentialsDir, describeAcquireSpec, egressCheckAbsentNote, planScopedHomeMount, planUnitDiagnostics, planUnitOf, resolveCellUnit, unitUid, type CellUnitPlan, type CredentialsCheck } from './unit.ts'
 import { buildRubricWeightTable, writeRubricWeightTable } from '../judge/weights.ts'
 import { recordExportNoteOn } from '../report/export-note.ts'
 import { writeEvalReport } from '../report/report.ts'
@@ -722,12 +722,12 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
         continue
       }
       // THE fix: the mount source is the harness's own scoped home on this
-      // instance — the directory `/<harness> login` writes into and the
+      // instance — the directory the harness's endpoint credential lives in and the
       // directory the read-back parses. One directory, so a containerized
       // round's rollout lands where the read-back looks.
       // …and, when the condition names a scope, THAT scope's directory: two
       // conditions of one harness then mount two different scoped homes, each
-      // holding its own login, and each round's rollout lands where that
+      // holding its own credential, and each round's rollout lands where that
       // condition's read-back looks.
       // The precondition above refused a facade without homeDir when no port
       // is mounted; the cast is that refusal, narrowed for the compiler (the
@@ -753,25 +753,6 @@ export async function runPlan(planPath: string, options: RunOptions = {}, deps?:
     // that would check nothing. Refused rather than dropped — a run that
     // believes it was checked is the failure this whole change is about.
     problems.push(...planUnitDiagnostics(plan))
-    // claude's two credential stores: a condition running inside a unit must
-    // own its scope, because the unit rotates the grant in the mounted file
-    // while the host rotates the same grant in the keychain and the endpoint
-    // invalidates the family. The judges are the host side here — one
-    // delegates from the orchestrator, so it stays on the host even in a
-    // container run. Refused before any unit is acquired: the damage is a
-    // manual re-login, which no later step can undo.
-    problems.push(...claudeScopeDiagnostics(
-      conditions.map(condition => ({
-        id: condition.id,
-        harnessName: condition.harnessName,
-        ...(condition.scope === undefined ? {} : { scope: condition.scope }),
-      })),
-      judges.map(judge => ({
-        id: judge.id,
-        harnessName: judge.harnessName,
-        ...(judge.scope === undefined ? {} : { scope: judge.scope }),
-      })),
-    ))
     if (problems.length > 0) {
       throw new EvalRunRefused(
         `the plan's unit segment cannot be satisfied for ${problems.length} condition(s) — nothing was executed`,

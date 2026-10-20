@@ -282,7 +282,7 @@ rev12 及以前，`conditions/` 与 `plans/`（以及 `analysis/`）放在题集
             "container",
             "var"
           ],
-          "description": "The condition's scoped credential directory as the UNIT sees it. The host side is never written here: the orchestrator mounts the evaluation instance's own scoped home for that harness — the directory /<harness> login writes into, and the one the delegation read-back reads.",
+          "description": "The condition's scoped credential directory as the UNIT sees it. The host side is never written here: the orchestrator mounts the evaluation instance's own scoped home for that harness — the directory holding the harness endpoint credential, and the one the delegation read-back reads.",
           "properties": {
             "container": {
               "type": "string",
