@@ -99,6 +99,15 @@ describe('TranscribeService', () => {
     expect((await job).single).toBe(false)
   })
 
+  it('keeps segment times absolute for a job resumed partway (fromSec)', async () => {
+    const svc = new TranscribeService({ stateDir: await installedRoot() })
+    const job = svc.run({ input: { wav: '/r.wav' }, fromSec: 100, owner: 'r' })
+    await vi.waitFor(() => { expect(calls).toHaveLength(1) })
+    release.shift()!()
+    // A WAV input is used as is: no offset applies.
+    expect((await job).segments[0]!.start).toBe(0)
+  })
+
   it('reports what is left to download for a request', async () => {
     const root = mkdtempSync(join(tmpdir(), 'transcribe-svc-'))
     const svc = new TranscribeService({ stateDir: root })

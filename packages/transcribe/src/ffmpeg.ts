@@ -40,9 +40,13 @@ export function parseProgressTime(chunk: string): number | null {
  * Decode to a 16 kHz mono 16-bit WAV. Several paths are the legs of one
  * continuous recording, butt-joined.
  */
-export function writeAsrWav(ffmpeg: string, paths: readonly string[], out: string, onProgress?: (sec: number) => void, signal?: AbortSignal): Promise<void> {
+export function writeAsrWav(ffmpeg: string, paths: readonly string[], out: string, onProgress?: (sec: number) => void, signal?: AbortSignal, fromSec = 0): Promise<void> {
   const args = ['-v', 'error', '-stats', '-nostdin', '-y']
-  for (const one of paths) args.push('-i', one)
+  // A resumed job decodes from where it stopped (seeking before the input is fast).
+  for (const one of paths) {
+    if (fromSec > 0 && paths.length === 1) args.push('-ss', String(fromSec))
+    args.push('-i', one)
+  }
   if (paths.length > 1) {
     const legs = paths.map((_, i) => `[${i}:a]aresample=16000,aformat=sample_rates=16000:channel_layouts=mono[l${i}]`).join(';')
     args.push('-filter_complex', `${legs};${paths.map((_, i) => `[l${i}]`).join('')}concat=n=${paths.length}:v=0:a=1[o]`, '-map', '[o]')

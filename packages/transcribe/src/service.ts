@@ -46,8 +46,9 @@ export function segmentText(segment: WorkerSegment): string {
   return segment.tokens.map((t) => t.text).join('').replace(/\s+/g, ' ').trim()
 }
 
-function toSegment(segment: WorkerSegment): TranscribeSegment {
-  return { cluster: segment.cluster, start: segment.start, end: segment.end, text: segmentText(segment), tokens: segment.tokens }
+function toSegment(segment: WorkerSegment, offset = 0): TranscribeSegment {
+  const tokens = offset === 0 ? segment.tokens : segment.tokens.map((t) => ({ ...t, start: t.start + offset, end: t.end + offset }))
+  return { cluster: segment.cluster, start: segment.start + offset, end: segment.end + offset, text: segmentText(segment), tokens }
 }
 
 /** Overall progress bands per stage: [with speakers, without]. */
@@ -240,6 +241,7 @@ export class TranscribeService implements TranscribeApi {
     }
     if (signal?.aborted) throw new Error('已取消')
 
+    const offset = 'files' in request.input && request.input.files.length === 1 ? request.fromSec ?? 0 : 0
     let wav: string
     let temp: string | null = null
     if ('wav' in request.input) wav = request.input.wav
@@ -249,7 +251,7 @@ export class TranscribeService implements TranscribeApi {
       temp = join(this.root, 'tmp', `${randomUUID()}.wav`)
       await mkdir(dirname(temp), { recursive: true })
       band('decode', 0)
-      await writeAsrWav(ffmpeg, request.input.files, temp, () => band('decode', 0.5), signal)
+      await writeAsrWav(ffmpeg, request.input.files, temp, () => band('decode', 0.5), signal, offset)
       wav = temp
     }
     try {
@@ -269,10 +271,10 @@ export class TranscribeService implements TranscribeApi {
         },
         (stage, v) => band(stage, v),
         signal,
-        (segments) => onSegments?.(segments.map(toSegment)),
+        (segments) => onSegments?.(segments.map((s) => toSegment(s, offset))),
       )
       return {
-        segments: result.segments.map(toSegment),
+        segments: result.segments.map((s) => toSegment(s, offset)),
         speakers: result.speakers,
         ...(result.language ? { language: result.language } : {}),
         ...(result.turns ? { turns: result.turns } : {}),
