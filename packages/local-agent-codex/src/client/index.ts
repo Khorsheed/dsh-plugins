@@ -92,6 +92,27 @@ export function apply(ctx: Context): void {
     harnessModel: () =>
       gateway()?.harnessModel('codex').then(result => (result.ok ? result.value : undefined))
         ?? Promise.resolve(undefined),
+    // The verify button's probe, over the session-less gateway Remote. A core
+    // predating `checkEndpoint` hides the button (declare-and-degrade).
+    checkEndpoint: () => {
+      const gw = gateway()
+      if (gw === undefined || typeof gw.checkEndpoint !== 'function') return Promise.resolve(undefined)
+      return gw.checkEndpoint('codex').then(result => (result.ok ? result.value : undefined))
+    },
+    // The credential form's read/write face, over the same session-less
+    // Remotes. Absent on a core that predates them — the card hides the form.
+    endpointAuth: {
+      read: () => {
+        const gw = gateway()
+        if (gw === undefined || typeof gw.endpointAuth !== 'function') return Promise.resolve(undefined)
+        return gw.endpointAuth('codex').then(result => (result.ok ? result.value : undefined))
+      },
+      write: (fields) => {
+        const gw = gateway()
+        if (gw === undefined || typeof gw.configureEndpoint !== 'function') return Promise.resolve(undefined)
+        return gw.configureEndpoint('codex', fields).then(result => (result.ok ? result.value : undefined))
+      },
+    },
     auth: {
       status: name =>
         // The Remote declares (name, scope?) and the client enforces exact arity:

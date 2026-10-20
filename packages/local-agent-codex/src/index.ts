@@ -19,6 +19,17 @@ import { settingsFace, vol } from '@khorsheed/dsh-local-agent'
 import type {} from '@khorsheed/dsh-local-agent'
 import { endpointHost } from '@khorsheed/dsh-local-agent/types'
 import { CodexCliProvider, codexCliVersion } from './codex-cli-provider.ts'
+import {
+  checkCodexEndpoint,
+  clearEndpointAuth,
+  endpointAuthFileExists,
+  endpointAuthStamp,
+  hasEndpointCredential,
+  readEndpointAuthFile,
+  resolveEndpointAuth,
+  writeEndpointAuth,
+  type CodexEndpointAuth,
+} from './endpoint-auth.ts'
 import { DEFAULT_LIVE_IDLE_MS } from './live-driver.ts'
 import { LiveDriverSwitch } from './live-switch.ts'
 import type { CodexLiveSettings } from './live-switch.ts'
@@ -47,6 +58,22 @@ export const inject = ['localAgent', 'subagents', 'subprocess', 'settings']
 export interface Config {
   /** Codex sandbox policy for `codex exec` / app-server threads; defaults to workspace-write. */
   sandbox?: 'read-only' | 'workspace-write' | 'danger-full-access'
+  /**
+   * Deployment-level endpoint credential: the relay's base URL (an
+   * OpenAI-compatible `/v1` root, e.g. a proxy relay). Merged per field UNDER
+   * the scope's own `endpoint-auth.json` (the settings card writes that file
+   * through the endpointAuth face). A scope with an endpoint key
+   * authenticates by endpoint — the round's argv routes at the relay and
+   * auth.json is never consulted; a scope without one falls back to the
+   * device-code/browser login exactly as before.
+   */
+  baseUrl?: string
+  /**
+   * Deployment-level endpoint key (the custom provider's `env_key` value,
+   * sent as `Authorization: Bearer`). See {@link baseUrl} for the merge
+   * order. Absent everywhere = the web-login mode.
+   */
+  apiKey?: string
   /**
    * The model every delegation round starts the CLI with (`codex exec -m
    * <model>`, and `-c model=…` for the resident app-server). Absent — the
@@ -105,6 +132,10 @@ export const Config: z = z.object({
     z.const('workspace-write'),
     z.const('danger-full-access'),
   ]),
+  // The deployment-level endpoint pair is plain config (never volatile): it
+  // is the profile row's business, and the card writes the scope's own file.
+  baseUrl: z.string(),
+  apiKey: z.string(),
   model: volatilize(SETTINGS_FIELDS.model),
   live: volatilize(SETTINGS_FIELDS.live),
   liveIdleMs: z.number().default(DEFAULT_LIVE_IDLE_MS),
@@ -189,9 +220,21 @@ export function apply(ctx: Context, config: Config): void {
     // different model retires that runtime — the next round respawns onto the
     // new model while the codex thread itself resumes.
     const memberModelOverrides = new Map<string, string>()
+    // The endpoint credential's deployment level: the plugin config pair,
+    // merged per field UNDER the scope's own endpoint-auth.json at resolve
+    // time. Resolved PER READ against the scope's home — a card write (which
+    // lands in the file through the endpointAuth face) takes effect on the
+    // next round with no reload.
+    const endpointConfig: CodexEndpointAuth = {
+      ...config.baseUrl === undefined ? {} : { baseUrl: config.baseUrl },
+      ...config.apiKey === undefined ? {} : { apiKey: config.apiKey },
+    }
+    const resolveEndpoint = (scopeHome: string): Promise<CodexEndpointAuth> =>
+      resolveEndpointAuth(scopeHome, endpointConfig)
     const modelCatalog = new CodexModelCatalog({
       spawn: spec => ctx.subprocess.spawn(spec),
       warn: message => ctx.logger.warn(message),
+      endpoint: resolveEndpoint,
     })
     // Eager warmup: kick one background probe of the DEFAULT scoped home
     // shortly after apply completes (never blocking it — read() is the
@@ -208,6 +251,7 @@ export function apply(ctx: Context, config: Config): void {
     const liveSwitch = new LiveDriverSwitch(ctx, face, {
       sandbox,
       model: childSessionId => memberModelOverrides.get(childSessionId) ?? resolveModel(),
+      endpoint: resolveEndpoint,
       ...config.liveIdleMs === undefined ? {} : { liveIdleMs: config.liveIdleMs },
     })
     const modelBroker = new CodexModelBroker({
@@ -233,7 +277,7 @@ export function apply(ctx: Context, config: Config): void {
       catalogDefault: (scopedHome, cwd) => modelCatalog.readDefault(scopedHome, cwd),
     })
     const disposeProvider = ctx.subagents.registerProvider(
-      new CodexCliProvider(ctx, sandbox, liveSwitch.resolve, resolveModel, childSessionId => memberModelOverrides.get(childSessionId)),
+      new CodexCliProvider(ctx, sandbox, liveSwitch.resolve, resolveModel, childSessionId => memberModelOverrides.get(childSessionId), resolveEndpoint),
     )
     const disposeHarness = ctx.localAgent.register({
       prepareMember: async ({ binding, childSession, configuration, signal }) => {
@@ -258,9 +302,67 @@ export function apply(ctx: Context, config: Config): void {
       // default scope gets from the apply above, so a scope's first login
       // lands in its own `auth.json` instead of the macOS keychain.
       provision: scopedHome => provisionCodexConfig(scopedHome).then(() => {}),
-      isAuthenticated: codexAuthenticated,
-      credentialStamp: codexCredentialStamp,
-      logout: codexLogout,
+      // Two auth modes, endpoint first: a scope whose resolved endpoint
+      // carries a key is authenticated by endpoint (the round routes at the
+      // relay and never consults auth.json); otherwise the device-code
+      // login's auth.json answers, exactly as before. The verdict rides the
+      // family's credential grades untouched — a completed round grades
+      // `verified`, a round's 401 grades `rejected` until the credential
+      // marker's mtime moves past the mark.
+      isAuthenticated: async (home) =>
+        hasEndpointCredential(await resolveEndpoint(home)) || codexAuthenticated(home),
+      // The settings card's verify button: a cheap token-free probe of the
+      // SAVED endpoint (the reply tells the user to save first when a
+      // credential is missing). Session-less via the gateway Remote.
+      checkEndpoint: home => resolveEndpoint(home).then(endpoint => checkCodexEndpoint(endpoint)),
+      // The settings card's credential form: read the resolved per-field
+      // state (the key as a boolean), write edits into the scope's own
+      // endpoint-auth.json — the harness's 0600 store, never the profile
+      // patch document. A cleared field falls back to the config pair; the
+      // file-only `wireApi` survives card writes through the merge.
+      endpointAuth: {
+        read: async (home) => {
+          const endpoint = await resolveEndpoint(home)
+          return {
+            ...endpoint.baseUrl === undefined ? {} : { baseUrl: endpoint.baseUrl },
+            apiKeySet: endpoint.apiKey !== undefined,
+            authTokenSet: false,
+          }
+        },
+        write: async (home, fields) => {
+          const current = await readEndpointAuthFile(home) ?? {}
+          const next: Record<string, string> = { ...current }
+          // The card's vocabulary is baseUrl/apiKey; an authToken field never
+          // applies to codex's Bearer key and is refused loudly by the merge
+          // below (ignored here so the shared face stays usable).
+          for (const [field, value] of Object.entries(fields)) {
+            if (field !== 'baseUrl' && field !== 'apiKey') continue
+            if (value === undefined) continue
+            const trimmed = typeof value === 'string' ? value.trim() : ''
+            if (value === null || trimmed === '') delete next[field]
+            else next[field] = trimmed
+          }
+          if (Object.keys(next).length === 0) await clearEndpointAuth(home)
+          else await writeEndpointAuth(home, next)
+        },
+      },
+      // The grade marker: the endpoint file's mtime when the scope has one
+      // (editing it IS the re-login gesture for an endpoint scope), else the
+      // web login's auth.json mtime — a fresh login of either mode rewrites
+      // its marker and recovers a `rejected` grade.
+      credentialStamp: async (home) => (await endpointAuthStamp(home)) ?? codexCredentialStamp(home),
+      // Logout clears whichever scoped credentials exist: the endpoint file
+      // AND the web login's auth.json (a dual-mode scope signs out of both).
+      // A config-sourced endpoint credential outlives the clear — said out
+      // loud, or the status would flip right back and read as a failed logout.
+      logout: async (home) => {
+        const hadEndpoint = await endpointAuthFileExists(home)
+        if (hadEndpoint) await clearEndpointAuth(home)
+        const hadLogin = await codexAuthenticated(home)
+        if (hadLogin) await codexLogout(home)
+        if (hadEndpoint || hadLogin) return
+        throw new Error('codex has no scoped credential to clear — the endpoint credential comes from the settings card or the profile row (baseUrl/apiKey); clear it there instead')
+      },
       // The eval snapshot: the sandbox policy comes from the plugin config
       // (it rides every spawn argv); effort and endpoint are read live from
       // the scoped config, which codex itself reads — a person-edited value
@@ -273,12 +375,18 @@ export function apply(ctx: Context, config: Config): void {
       // config that scope's rounds would run with, which is the config in
       // that scope's own directory.
       effectiveSettings: async (scopedHome) => {
-        const [reasoningEffort, baseUrl, scopedModel, cliVersion] = await Promise.all([
+        const [reasoningEffort, endpoint, scopedModel, cliVersion] = await Promise.all([
           readCodexReasoningEffort(scopedHome).catch(() => undefined),
-          readCodexBaseUrl(scopedHome).catch(() => undefined),
+          resolveEndpoint(scopedHome).catch(() => undefined),
           readCodexModel(scopedHome).catch(() => undefined),
           codexCliVersion(ctx, scopedHome).catch(() => undefined),
         ])
+        // The endpoint in effect: an endpoint credential's own baseUrl (the
+        // relay the rounds route at) wins; with no credential the scoped
+        // config.toml's custom provider answers, as it always did.
+        const baseUrl = hasEndpointCredential(endpoint)
+          ? endpoint.baseUrl
+          : await readCodexBaseUrl(scopedHome).catch(() => undefined)
         const model = resolveModel() ?? scopedModel
         const baseUrlHost = baseUrl !== undefined ? endpointHost(baseUrl) : undefined
         return {

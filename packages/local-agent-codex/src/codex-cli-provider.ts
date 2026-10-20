@@ -51,6 +51,7 @@ import { MEMBER_BRIDGE_SOCKET_ENV, MEMBER_BRIDGE_TOKEN_ENV } from '@khorsheed/ds
 import type { DelegationExecTarget, LocalAgentToolCalls, LocalAgentAppliedConfiguration } from '@khorsheed/dsh-local-agent/types'
 import { LiveChannelUnavailableError } from './live-driver.ts'
 import type { CodexLiveDriver } from './live-driver.ts'
+import { endpointAuthEnv, endpointConfigOverrides, hasEndpointCredential, type CodexEndpointAuth } from './endpoint-auth.ts'
 import { readCodexBaseUrl } from './provision.ts'
 import { codexRolloutRoundFacts, usageFromCodex } from './records.ts'
 
@@ -205,6 +206,11 @@ export class CodexCliProvider implements SubagentProvider {
    *   re-points the next round's `-m`, and on the live path it is the member's
    *   start model — a resident runtime bound to a different model is retired
    *   so the round respawns onto the override.
+   * @param endpoint - resolver for the scope's endpoint credential, read PER
+   *   ROUND so a settings-card write takes effect on the next delegation
+   *   without a reload. A resolution carrying a key wins over the web login:
+   *   the round's argv then routes at the relay (custom `model_providers`
+   *   entry) and the key rides the env, so auth.json is never consulted.
    */
   constructor(
     private readonly ctx: Context,
@@ -212,7 +218,13 @@ export class CodexCliProvider implements SubagentProvider {
     private readonly live?: CodexLiveDriver | ((childSessionId: string) => CodexLiveDriver | undefined),
     private readonly model?: () => string | undefined,
     private readonly overrides?: (childSessionId: string) => string | undefined,
+    private readonly endpoint?: (scopeHome: string) => Promise<CodexEndpointAuth>,
   ) {}
+
+  /** The scope's endpoint credential for this round; absent resolver = never. */
+  private resolveEndpoint(homeDir: string): Promise<CodexEndpointAuth | undefined> {
+    return this.endpoint === undefined ? Promise.resolve(undefined) : this.endpoint(homeDir).catch(() => undefined)
+  }
 
   /** Resolve the live driver for one round's member, if live is on for it. */
   private liveDriver(childSessionId: string): CodexLiveDriver | undefined {
@@ -337,11 +349,17 @@ export class CodexCliProvider implements SubagentProvider {
     } catch (error) {
       this.ctx.logger.warn(`subagent-codex: subagent session record failed: ${error instanceof Error ? error.message : String(error)}`)
     }
-    // Resolve the effective custom endpoint from the scoped config.toml for
-    // diagnostics: codex reads it directly (a user manually editing the
-    // config to route through a custom provider is authoritative). Logged
-    // BEFORE the drive-mode branch so live rounds report their endpoint too.
-    const baseUrl = await readCodexBaseUrl(homeDir).catch(() => undefined)
+    // The round's endpoint: a configured endpoint credential (the scope's
+    // endpoint-auth.json over the plugin config) WINS over the web login —
+    // its baseUrl routes the argv through a custom provider entry and its
+    // key rides the env, so auth.json is never consulted for the round.
+    // With no endpoint credential the scoped config.toml's own custom
+    // provider answers for the diagnostic exactly as before (a user-edited
+    // value is authoritative). Logged BEFORE the drive-mode branch so live
+    // rounds report their endpoint too.
+    const endpoint = await this.resolveEndpoint(homeDir)
+    const routed = hasEndpointCredential(endpoint)
+    const baseUrl = routed ? endpoint.baseUrl : await readCodexBaseUrl(homeDir).catch(() => undefined)
     this.ctx.logger.info(`subagent-codex: delegating via ${baseUrl ?? 'codex default endpoint'}`)
     // Live driver: the round goes to the resident app-server process (one per
     // member). A channel that fails at spawn/handshake falls through to the
@@ -398,9 +416,10 @@ export class CodexCliProvider implements SubagentProvider {
     try {
       const run = await startCodexCliRun(request, {
         cwd,
-        env: delegationEnv({ CODEX_HOME: homeDir }),
+        env: delegationEnv({ CODEX_HOME: homeDir, ...endpointAuthEnv(endpoint) }),
         ...exec === undefined ? {} : { exec },
         endpointLabel: baseUrl,
+        endpointArgv: endpointConfigOverrides(endpoint),
         sandbox: this.sandbox,
         ...(configuration?.resolved ?? resolveRoundModel(this.overrides?.(runId) ?? requestedModel, this.model)),
         disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
@@ -477,7 +496,11 @@ export class CodexCliProvider implements SubagentProvider {
         )
       }
       const nextTurn = childSession.snapshotEvents().filter(event => event.type === 'turn/start').length + 1
-      const baseUrl = await readCodexBaseUrl(homeDir).catch(() => undefined)
+      // Same endpoint precedence as the fresh path: a configured endpoint
+      // credential routes the round at the relay, else the scoped
+      // config.toml's own custom provider answers for the diagnostic.
+      const endpoint = await this.resolveEndpoint(homeDir)
+      const baseUrl = hasEndpointCredential(endpoint) ? endpoint.baseUrl : await readCodexBaseUrl(homeDir).catch(() => undefined)
       // Logged BEFORE the drive-mode branch so live rounds report their endpoint too.
       this.ctx.logger.info(`subagent-codex: resuming via ${baseUrl ?? 'codex default endpoint'}`)
       // Live driver: continue the member's resident app-server thread. Channel
@@ -518,9 +541,10 @@ export class CodexCliProvider implements SubagentProvider {
       try {
         run = await startCodexCliRun(request, {
           cwd,
-          env: delegationEnv({ CODEX_HOME: homeDir }),
+          env: delegationEnv({ CODEX_HOME: homeDir, ...endpointAuthEnv(endpoint) }),
           ...exec === undefined ? {} : { exec },
           endpointLabel: baseUrl,
+          endpointArgv: endpointConfigOverrides(endpoint),
           sandbox: this.sandbox,
           ...(configuration?.resolved ?? resolveRoundModel(this.overrides?.(intent.childSessionId) ?? requestedModel, this.model)),
           disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
@@ -577,6 +601,13 @@ export interface CodexCliRunSpec {
   readonly exec?: DelegationExecTarget | undefined
   /** Resolved endpoint label for diagnostics; absent means the CLI default. */
   readonly endpointLabel?: string | undefined
+  /**
+   * The endpoint credential's `-c` config overrides (a custom
+   * `model_providers` entry plus the provider selection), spliced next to
+   * the member override. Empty when the round authenticates by web login —
+   * the argv is then byte-identical to the pre-endpoint shape.
+   */
+  readonly endpointArgv?: readonly string[] | undefined
   /** Sandbox policy passed to `codex exec --sandbox`. */
   readonly sandbox: CodexSandbox
   /**
@@ -935,7 +966,9 @@ export function startCodexCliRun(
   const turn = spec.resume?.turn ?? 1
   // The member bridge rides a per-process `-c` override placed right after
   // `exec` (the spike-verified position; `codex exec resume` accepts it too).
+  // The endpoint credential's overrides sit next to it — `-c` pairs commute.
   const memberArgv = spec.member === undefined ? [] : ['-c', spec.member.configOverride]
+  const endpointArgv = spec.endpointArgv ?? []
 
   // `--skip-git-repo-check` rides every exec argv. Codex refuses to start
   // outside a Git repository ("Not inside a trusted directory and
@@ -957,8 +990,8 @@ export function startCodexCliRun(
     ...spec.effort === undefined ? [] : ['-c', `model_reasoning_effort=${JSON.stringify(spec.effort)}`],
   ]
   const argv = spec.resume === undefined
-    ? ['codex', 'exec', ...memberArgv, ...modelArgv, '--sandbox', spec.sandbox, '--skip-git-repo-check', '--json', task]
-    : ['codex', 'exec', ...memberArgv, ...modelArgv, '--sandbox', spec.sandbox, '--skip-git-repo-check', '--json', 'resume', spec.resume.cliSessionId, task]
+    ? ['codex', 'exec', ...memberArgv, ...endpointArgv, ...modelArgv, '--sandbox', spec.sandbox, '--skip-git-repo-check', '--json', task]
+    : ['codex', 'exec', ...memberArgv, ...endpointArgv, ...modelArgv, '--sandbox', spec.sandbox, '--skip-git-repo-check', '--json', 'resume', spec.resume.cliSessionId, task]
   // Container target: the same argv, wrapped in `docker exec`. The host cwd
   // still applies — it is the docker CLIENT's working directory now, while
   // the CLI's own is the target's in-container workdir.

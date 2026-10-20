@@ -2,9 +2,9 @@
 
 English | [中文](README.md)
 
-Hand coding tasks to the Codex CLI installed on your own machine — its own login, its own session records, and your `~/.codex` never gets touched.
+Hand coding tasks to the Codex CLI installed on your own machine — an endpoint credential or its own login, its own session records, and your `~/.codex` never gets touched.
 
-dsh agents already get work done, but some tasks you simply want to give to your local Codex CLI: its account, its models, the toolchain you know. This plugin wires Codex in as a dsh local subagent — any agent preset can delegate with one call through the `subagent_codex` tool; delegations run inside a plugin-scoped home (`$DSH_HOME/local-agent/codex`), so your personal config, credentials and sessions are never touched; the process details (reasoning, tool calls, file changes) mirror live into the child session, and the final answer comes back to the parent.
+dsh agents already get work done, but some tasks you simply want to give to your local Codex CLI: its account, its models, the toolchain you know. This plugin wires Codex in as a dsh local subagent — any agent preset can delegate with one call through the `subagent_codex` tool; delegations run inside a plugin-scoped home (`$DSH_HOME/local-agent/codex`), so your personal config, credentials and sessions are never touched; the process details (reasoning, tool calls, file changes) mirror live into the child session, and the final answer comes back to the parent. Two auth modes coexist: an **endpoint credential** (`baseUrl` + `apiKey` — a relay or an official platform key alike; container rounds share the host's credential, nothing is authorized inside the unit) and the **web login** (device-code/browser) — a scope with an endpoint key routes at the endpoint, one without falls back to the web login.
 
 <img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/08-local-agent.png" width="640" alt="the Local Agent · Codex card on the Settings → plugin configuration page, its header status dot showing the auth state at a glance">
 
@@ -12,11 +12,12 @@ dsh agents already get work done, but some tasks you simply want to give to your
 
 - **Per-session delegation grant** — the `subagent_codex` tool is this package's `./tool` composition entry, granted to the sessions of an agent preset that names it (e.g. dev mode); no per-preset setup.
 - **Scoped-home isolation** — all Codex state (config, credentials, rollout session records) lives in `$DSH_HOME/local-agent/codex`, separate from your `~/.codex`.
-- **In-session login** — `/codex login` runs `codex login` on a pseudo-terminal and the authorization page opens in your browser by itself; when the page hands you a code, paste it back with `/codex code <code>`. The settings card shows auth status and offers sign-out.
+- **Endpoint credential (coexists with the web login)** — fill `baseUrl` + `apiKey` on the card's Authentication section (saved as the default scope's `endpoint-auth.json`, mode 0600, local only) or preconfigure the profile row, and the scope is authenticated; every named scope may override the deployment pair field by field with its own `endpoint-auth.json`. A scope with a key routes every round at the endpoint through a custom provider (`wire_api=responses`, verified end-to-end against codex-cli 0.163.0 through a relay) and never consults the web login's `auth.json`; clearing the key falls back to the sign-in below. The host shell's environment is never read.
+- **In-session login (web authorization)** — `/codex login` runs `codex login` on a pseudo-terminal and the authorization page opens in your browser by itself; when the page hands you a code, paste it back with `/codex code <code>`. This is the default with no endpoint credential configured. The settings card shows auth status and offers sign-out (both modes' credentials are cleared).
 - **Resident mode (live)** — one resident `codex app-server` process per member, one turn per round: output streams into the child session in real time, cancel does not kill the process, and a crash resumes the same thread; off — or a channel that cannot come up — means the one-shot `codex exec` path, hot-switched without a reload.
 - **Settings card** — the Codex card on the Plugins detail page (on 0.1.5, Settings → Plugins → 插件配置): sign-in, a default model (blank = follow the CLI default), and the resident switch; a save applies on the next round.
 - **Resume a thread** — pass `resume="<childSessionId>"` to continue the same codex thread in the same dsh child session, even across host restarts.
-- **Custom endpoint** — route Codex's LLM requests through your own router via a scoped `config.toml` provider.
+- **Custom endpoint** — configure the endpoint credential on the card or the profile row to route through your relay; a hand-edited custom provider in the scoped `config.toml` stays authoritative too (never overwritten).
 - **Read-back and per-cell working directory** — every settled round reads the model, CLI version and usage back out of its own rollout into the delegation record; the file is located by thread id, cwd and time window, so concurrent runs each read their own round. Orchestrators pass a `cwd` per cell, and a resume in a different directory is rejected.
 
 <img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-codex-card.png" width="640" alt="the expanded Codex settings card: auth status with sign-in and sign-out, the default model, and the resident-mode switch">
@@ -30,7 +31,7 @@ dsh plugin --profile web add @khorsheed/dsh-local-agent
 dsh plugin --profile web add @khorsheed/dsh-local-agent-codex
 ```
 
-Both packages must be named explicitly — `dsh plugin add` reconciles only direct dependencies, so the family core is never mounted by a transitive dependency. Restart the web instance to activate, then run `/codex login` once from any session to authorize.
+Both packages must be named explicitly — `dsh plugin add` reconciles only direct dependencies, so the family core is never mounted by a transitive dependency. Restart the web instance to activate, then either fill the endpoint and key on the card's Authentication section (Settings → Plugins) or run `/codex login` once from any session for the web authorization — your choice; a configured endpoint key routes at the endpoint.
 
 Uninstall:
 
@@ -48,10 +49,22 @@ Optional, in the profile patch layer:
 - id: local-agent-codex
   config:
     sandbox: workspace-write   # codex exec policy: read-only | workspace-write | danger-full-access
+    baseUrl: https://your-relay.example/openai/v1  # optional: deployment-level endpoint (an OpenAI-compatible /v1 root); absent leaves the scope file or the web login to decide
+    apiKey: sk-...             # optional: deployment-level endpoint key (Bearer); keep it local, never commit it
     model: gpt-5.2             # optional: every delegation round starts the CLI with it; absent passes no model flag at all (below)
     live: false                # live driver: one resident codex app-server process per member, one turn per round (runtime-level graceful interrupt, push-mode mirroring); off — or a channel that cannot come up — means the one-shot exec path
     liveIdleMs: 1800000        # idle lifetime of a resident runtime before reclaim (default 30 min)
 ```
+
+### Endpoint credential (`baseUrl` + `apiKey`)
+
+**A configured key = every round routes at the endpoint.** When the scope's resolution (the scope's own `endpoint-auth.json` merged field by field over the profile row) carries a non-empty key, every delegation injects a custom provider on the argv (`-c model_provider=… -c model_providers.…={base_url, env_key=OPENAI_API_KEY, wire_api=responses}`) and the key travels in the process environment — `config.toml` is never rewritten, `auth.json` never consulted, the web login never participates. The one-shot exec, the resident app-server, and the model-catalog probe all carry the same injection. A key without a `baseUrl` targets OpenAI's own endpoint (an official platform key needs no relay — the built-in provider reads the same variable). Clearing the key (save the field blank on the card) falls back to the web login.
+
+**The card's Authentication section edits the default scope's `endpoint-auth.json`** (mode 0600, local only; through the family gateway's `endpointAuth`/`configureEndpoint` Remotes, so no session is needed) — keys never enter the profile document, and the file's name matches the evaluation contract hash's credential denylist, so it never enters a condition fingerprint either. The "Verify endpoint & list models" button next to it runs a token-free probe against the SAVED endpoint (`GET <baseUrl>/v1/models`, Bearer header) and answers with reachability plus the served model list. The file also accepts a hand-written `"wireApi": "chat"` (the card never edits it and preserves it on save) for relays that only speak chat/completions.
+
+> **A bad key costs retry time** — a dead key makes the CLI retry against the endpoint for minutes before reporting a 401; `/codex status` shows the `rejected` grade only after that round settles. Re-saving the key (rewriting endpoint-auth.json) is the recovery.
+
+**Logout clears both.** `/codex logout` removes the scope's `endpoint-auth.json` AND the web login's `auth.json`; with neither file present (the credential comes entirely from the profile row) logout refuses and names the profile as the place to edit.
 
 **Legacy key migration.** Live runs always consume incremental output: the old `liveMirrorGranularity: event | token` key is accepted for existing profiles but ignored, and changing it never changes a running process. Exec remains available for evaluation; final provider items remain authoritative, including tool history and usage.
 
@@ -80,7 +93,7 @@ The rich directory read now preserves native display labels, hidden candidates a
 
 ## Custom endpoint
 
-Route Codex's LLM requests through your own endpoint by adding a custom provider to the scoped `$DSH_HOME/local-agent/codex/config.toml` (built-in providers can't be overridden, `OPENAI_BASE_URL` is ignored, and provisioning never overwrites an existing config):
+Prefer the endpoint credential above (the card or the profile row — it coexists with the web login and wins). The manual route stays: add a custom provider to the scoped `$DSH_HOME/local-agent/codex/config.toml` (built-in providers can't be overridden, `OPENAI_BASE_URL` is ignored, and provisioning never overwrites an existing config):
 
 ```toml
 [model_providers.dsh-router]
@@ -89,11 +102,11 @@ base_url = "https://your-router.example/v1"
 model_provider = "dsh-router"
 ```
 
-The last line selects the provider for delegations; keep the rest of the file intact.
+The last line selects the provider for delegations; keep the rest of the file intact. How the two routes interact: **an endpoint credential with a key wins** (the argv's provider overrides the file's `model_provider` selection); with no endpoint key the file's selected provider applies, exactly as before this change.
 
-⚠️ **Credential exposure**: the scoped `auth.json` token is sent to whatever endpoint serves the request — only use endpoints you control or trust. Each delegation logs the effective endpoint at info level.
+⚠️ **Credential exposure**: the endpoint key (or the web login's `auth.json` token) is sent to whatever endpoint serves the request — only use endpoints you control or trust. Each delegation logs the effective endpoint at info level.
 
-**Evaluation snapshot (`effectiveSettings`).** The harness declares a live-read snapshot of its fairness-relevant settings for the evaluation condition hash: drive (exec/live), the sandbox policy (plugin config), the reasoning effort (the scoped config's top-level `model_reasoning_effort`), whether a custom endpoint is pinned (read from the scoped config's provider, hostname only), the configured model (the plugin config's `model` key first — it overrules the file on every argv — then the scoped config's top-level `model`; absent when neither names one — never guessed), and the CLI version (`codex --version`, cached against the executable's path + mtime; absent when the CLI cannot be asked). `/codex status` and the `LocalAgentStatus` Remote attach the same snapshot.
+**Evaluation snapshot (`effectiveSettings`).** The harness declares a live-read snapshot of its fairness-relevant settings for the evaluation condition hash: drive (exec/live), the sandbox policy (plugin config), the reasoning effort (the scoped config's top-level `model_reasoning_effort`), whether a custom endpoint is pinned (the endpoint credential first — the scope's `endpoint-auth.json` merged field by field over the plugin config; with no key, the scoped config's custom provider answers; hostname only, key material never enters the snapshot), the configured model (the plugin config's `model` key first — it overrules the file on every argv — then the scoped config's top-level `model`; absent when neither names one — never guessed), and the CLI version (`codex --version`, cached against the executable's path + mtime; absent when the CLI cannot be asked). `/codex status` and the `LocalAgentStatus` Remote attach the same snapshot.
 
 ## Compatibility
 
@@ -102,7 +115,7 @@ The last line selects the provider for delegations; keep the rest of the file in
 
 ## Known Limitations
 
-- **Login needs one browser authorization** — `/codex login` opens the authorization page itself, and when the CLI asks for a code you paste it back with `/codex code <code>`; there is no API-key path.
+- **The web login needs one browser authorization** — choosing the web authorization, `/codex login` opens the authorization page itself, and when the CLI asks for a code you paste it back with `/codex code <code>`; to skip the browser entirely, use the endpoint credential instead (the card or the profile row — an official platform key works as well as a relay key).
 - **`codex exec` is non-interactive** — actions the sandbox policy would approve are denied, not prompted; in resident mode approval-shaped requests are likewise auto-declined unattended (cancel/decline). See the `sandbox` config.
 - **Named scopes are exec-only** — the resident app-server binds the default scoped home, so a scoped delegation never enters live mode.
 - **Headless caveat** — `/codex` commands need a Web session; headless can still delegate via a composition mounting the tool row.
@@ -116,7 +129,7 @@ The last line selects the provider for delegations; keep the rest of the file in
 
 **Bundle composition.** The patch registers the `codex` harness (scoped `CODEX_HOME`, PTY login, rollout-file session records) — exactly one provider row; since the family fold the `subagent_codex` tool is this package's `./tool` composition entry, granted per session by an agent preset that names it (the dev preset's `tool-subagent-codex-local` row), no longer mounted at the profile root. The family keeps the official model-facing name `subagent_codex`: the official preset row of that name already ships `disabled: true`, and the patch disables the profile-root row once more, so a community install can never register two `subagent_codex` tools; a user who deliberately re-enables the official row in their own preset layer gets a loud duplicate-name conflict and must choose one, by design. The `codex-local` provider spawns `codex exec` under that home (the one-shot drive when live is off). The browser half ships with this package's `./client`: the Codex settings card composes the family core's shared `ProviderAuthBlock`, landing on the Plugins page's `plugins.item` entry — mounted through `configForms.whileServed` while the Host serves the `local-agent-codex` namespace, one card for a standalone install, a family bundle, or a mode pack alike; card writes ride the bound settingsScope and hot-apply without a reload. The core itself comes from `@khorsheed/dsh-local-agent`, declared as a dependency.
 
-**Login and credentials.** `/codex login` runs `codex login` on a pseudo-terminal through the host's subprocess seam — the CLI starts its own localhost callback server and opens the browser itself, the first-class flow; the command reply carries the authorization URL captured from the output as a fallback link, and when the CLI asks for a code the user pastes it with `/codex code <code>` (written to the child's stdin). Completion is decided by a credential watch on the scoped home: `auth.json` present with a stamp newer than the watch start — a leftover credential is never mistaken for a fresh login. A browserless remote terminal can still run `codex login --device-auth` by hand with `CODEX_HOME` pointed at the scoped home, landing in the same `auth.json`. First start writes a minimal `config.toml` pinning `cli_auth_credentials_store = "file"` — Codex's default `auto` would resolve to the macOS keychain, leaking credentials outside the scoped home and defeating this package's `auth.json` presence check; an existing config is left untouched. `/codex logout` deletes the scoped `auth.json`, so a later login authorizes a fresh account.
+**Login and credentials.** Two auth modes coexist, **the endpoint credential first**: the scope's `endpoint-auth.json` (mode 0600) merges field by field over the profile row's `baseUrl`/`apiKey`, and when the resolution carries a key, every round injects a custom provider on the argv (`wire_api=responses`, the key in the process environment — verified against codex-cli 0.163.0 on a fresh scope with no login file at all, straight through a relay) and `auth.json` is never read; with no key the web login below serves. Web login: `/codex login` runs `codex login` on a pseudo-terminal through the host's subprocess seam — the CLI starts its own localhost callback server and opens the browser itself, the first-class flow; the command reply carries the authorization URL captured from the output as a fallback link, and when the CLI asks for a code the user pastes it with `/codex code <code>` (written to the child's stdin). Completion is decided by a credential watch on the scoped home: `auth.json` present with a stamp newer than the watch start — a leftover credential is never mistaken for a fresh login. A browserless remote terminal can still run `codex login --device-auth` by hand with `CODEX_HOME` pointed at the scoped home, landing in the same `auth.json`. First start writes a minimal `config.toml` pinning `cli_auth_credentials_store = "file"` — Codex's default `auto` would resolve to the macOS keychain, leaking credentials outside the scoped home and defeating this package's `auth.json` presence check; an existing config is left untouched. `/codex logout` deletes the scoped `endpoint-auth.json` and `auth.json`, so a later configuration or login authorizes a fresh account.
 
 **Session records.** `/codex sessions` lists the scoped home's `sessions/YYYY/MM/DD/rollout-*.jsonl` files — sessions this plugin's delegations created, never your personal ones. The records entry in the session header (provided by the family core's client) narrows the same list to records whose `workDir` matches the session cwd.
 

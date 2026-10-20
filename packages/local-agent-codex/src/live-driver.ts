@@ -51,6 +51,7 @@ import {
   type CodexTranscriptLine,
 } from './codex-cli-provider.ts'
 import { codexRolloutRoundFacts } from './records.ts'
+import { endpointAuthEnv, endpointConfigOverrides, type CodexEndpointAuth } from './endpoint-auth.ts'
 
 /** Default idle lifetime of an unused resident runtime before reclaim. */
 export const DEFAULT_LIVE_IDLE_MS = 30 * 60_000
@@ -513,6 +514,14 @@ export class CodexLiveDriver {
        * argv unchanged.
        */
       model?: (childSessionId: string) => string | undefined
+      /**
+       * Resolver for the scope's endpoint credential, read at each RUNTIME
+       * SPAWN so a settings-card write reaches the next respawn without a
+       * reload. A resolution carrying a key routes the app-server at the
+       * relay (custom `model_providers` `-c` overrides plus the key in the
+       * process env), winning over the web login exactly as on the exec path.
+       */
+      endpoint?: (scopeHome: string) => Promise<CodexEndpointAuth>
     },
     private readonly timeouts: CodexLiveDriverTimeouts = DEFAULT_TIMEOUTS,
   ) {}
@@ -667,10 +676,18 @@ export class CodexLiveDriver {
     const startModel = spec.startModel?.trim()
     const model = spec.configuration !== undefined ? spec.configuration.model
       : startModel !== undefined && startModel !== '' ? startModel : this.config.model?.(key)?.trim()
+    // The endpoint credential routes the resident process too: with a key the
+    // app-server spawns onto the relay's custom provider (the same `-c`
+    // overrides the exec path carries), so a live round never consults
+    // auth.json either. Read per spawn — a card write reaches the next respawn.
+    const endpoint = this.config.endpoint === undefined
+      ? undefined
+      : await this.config.endpoint(spec.homeDir).catch(() => undefined)
     const spawnSpec: SubprocessSpawnSpec = {
       argv: [
         'codex', 'app-server',
         ...member === undefined ? [] : ['-c', member.configOverride],
+        ...endpointConfigOverrides(endpoint),
         ...model === undefined || model === '' ? [] : ['-c', `model=${JSON.stringify(model)}`],
         ...spec.configuration?.effort === undefined ? [] : ['-c', `model_reasoning_effort=${JSON.stringify(spec.configuration.effort)}`],
         '--stdio',
@@ -678,7 +695,7 @@ export class CodexLiveDriver {
       cwd: spec.cwd,
       stdio: { stdin: 'pipe', stdout: 'pipe', stderr: 'pipe' },
       graceMs: DEFAULT_DISPOSE_GRACE_MS,
-      env: delegationEnv({ CODEX_HOME: spec.homeDir }),
+      env: delegationEnv({ CODEX_HOME: spec.homeDir, ...endpointAuthEnv(endpoint) }),
     }
     let child: SubprocessHandle
     try {

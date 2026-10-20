@@ -248,7 +248,11 @@ describe('local-agent-codex model catalog warmup', () => {
       expect(spawns).toHaveLength(0)
 
       await vi.advanceTimersByTimeAsync(CATALOG_WARMUP_DELAY_MS)
-      expect(spawns).toHaveLength(1)
+      // The probe's spawn now sits behind the endpoint-credential read (an
+      // endpoint-authenticated scope probes the relay's catalog): a real fs
+      // miss resolves a tick after the timer flush, so wait the spawn out
+      // instead of asserting on the flush boundary.
+      await vi.waitFor(() => { expect(spawns).toHaveLength(1) })
       expect(spawns[0]?.argv).toEqual(['codex', 'app-server', '--stdio'])
 
       // One warmup per boot: idling past further timers probes nothing again.

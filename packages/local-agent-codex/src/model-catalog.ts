@@ -7,6 +7,7 @@ import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-sub
 import { ModelDirectoryCache, modelDirectoryContextKey, delegationEnv } from '@khorsheed/dsh-local-agent'
 import type { LocalAgentModelDirectory, LocalAgentModelDirectoryData, LocalAgentModelEntry } from '@khorsheed/dsh-local-agent/types'
 import { DEFAULT_DISPOSE_GRACE_MS } from './codex-cli-provider.ts'
+import { ENDPOINT_AUTH_FILE, endpointAuthEnv, endpointConfigOverrides, type CodexEndpointAuth } from './endpoint-auth.ts'
 
 /** Default overall bound for one catalog probe (spawn → model/list answer). */
 export const DEFAULT_CATALOG_PROBE_TIMEOUT_MS = 5_000
@@ -25,6 +26,14 @@ export interface CodexModelCatalogDeps {
   readonly spawn: (spec: SubprocessSpawnSpec) => SubprocessHandle
   /** Diagnostic sink; a degraded probe warns once, never throws. */
   readonly warn?: (message: string) => void
+  /**
+   * The scope's endpoint credential resolver: a probe against an
+   * endpoint-authenticated scope must route at the same relay (custom
+   * provider overrides plus the key in the env), or model/list fails for a
+   * scope that never web-logged-in — and the directory reflects the relay's
+   * own catalog. Absent = the pre-endpoint probe shape.
+   */
+  readonly endpoint?: (scopeHome: string) => Promise<CodexEndpointAuth>
   /** Overall probe bound; tests inject a small value. */
   readonly timeoutMs?: number
   /** Completed-probe cache lifetime; tests inject a small value. */
@@ -87,7 +96,9 @@ export class CodexModelCatalog {
   }
 
   private key(homeDir: string, cwd = homeDir): string {
-    const files = [join(homeDir, 'config.toml'), join(homeDir, 'auth.json')]
+    // endpoint-auth.json re-keys the cache: a card credential write changes
+    // which catalog the probe would answer, so the next read re-probes.
+    const files = [join(homeDir, 'config.toml'), join(homeDir, 'auth.json'), join(homeDir, ENDPOINT_AUTH_FILE)]
     for (let directory = cwd; ; directory = dirname(directory)) {
       files.push(join(directory, '.codex', 'config.toml'))
       if (dirname(directory) === directory) break
@@ -117,12 +128,15 @@ export class CodexModelCatalog {
    * terminate). The overall timeout kills the process on expiry. Failures propagate to the shared cache, which preserves prior data.
    */
   private async probe(homeDir: string, cwd: string, signal: AbortSignal): Promise<LocalAgentModelDirectoryData> {
+    const endpoint = this.deps.endpoint === undefined
+      ? undefined
+      : await this.deps.endpoint(homeDir).catch(() => undefined)
     const spec: SubprocessSpawnSpec = {
-      argv: ['codex', 'app-server', '--stdio'],
+      argv: ['codex', 'app-server', ...endpointConfigOverrides(endpoint), '--stdio'],
       cwd,
       stdio: { stdin: 'pipe', stdout: 'pipe', stderr: 'pipe' },
       graceMs: DEFAULT_DISPOSE_GRACE_MS,
-      env: delegationEnv({ CODEX_HOME: homeDir }),
+      env: delegationEnv({ CODEX_HOME: homeDir, ...endpointAuthEnv(endpoint) }),
     }
     const child: SubprocessHandle = this.deps.spawn(spec)
     const decoder = new StringDecoder('utf8')

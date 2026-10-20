@@ -14,6 +14,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { SettingsFace } from '@khorsheed/dsh-local-agent'
 import type { Config } from './index.ts'
+import type { CodexEndpointAuth } from './endpoint-auth.ts'
 import { CodexLiveDriver } from './live-driver.ts'
 import type { CodexLiveMirrorGranularity } from './live-driver.ts'
 
@@ -46,6 +47,12 @@ export class LiveDriverSwitch {
        * outrank the settings value.
        */
       model?: (childSessionId: string) => string | undefined
+      /**
+       * Per-spawn endpoint credential resolver, handed to every driver
+       * generation: a resolution carrying a key routes the app-server at the
+       * relay (see the driver's own contract).
+       */
+      endpoint?: (scopeHome: string) => Promise<CodexEndpointAuth>
     },
   ) {
     this.apply(face.get())
@@ -97,6 +104,7 @@ export class LiveDriverSwitch {
         ...this.options.sandbox === undefined ? {} : { sandbox: this.options.sandbox },
         ...this.options.liveIdleMs === undefined ? {} : { liveIdleMs: this.options.liveIdleMs },
         ...this.options.model === undefined ? {} : { model: this.options.model },
+        ...this.options.endpoint === undefined ? {} : { endpoint: this.options.endpoint },
       })
       : undefined
     if (retiring !== undefined) {
