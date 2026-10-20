@@ -45,9 +45,9 @@ import { MEMBER_BRIDGE_SOCKET_ENV, MEMBER_BRIDGE_TOKEN_ENV } from '@khorsheed/ds
 import { LiveChannelUnavailableError } from './live-driver.ts'
 import type { KimiAcpLiveDriver } from './live-driver.ts'
 import type { KimiModelBroker } from './model-broker.ts'
-import { guardKimiCredential } from './credential-guard.ts'
 import { injectMemberBridge, memberBridgeServerKey, removeMemberBridge } from './member-bridge-config.ts'
-import { readKimiBaseUrl } from './provision.ts'
+import { ensureKimiEndpointProvider, KIMI_MANAGED_BASE_URL, readKimiBaseUrl } from './provision.ts'
+import { endpointAuthEnv, hasEndpointCredential, type KimiEndpointAuth } from './endpoint-auth.ts'
 import { kimiExecConfiguration } from './model-configuration.ts'
 import { addTokenUsage } from './session-view.ts'
 import { mirrorKimiSessionDelta, type KimiMirrorDelta, type KimiMirrorOptions } from './session-mirror.ts'
@@ -136,7 +136,28 @@ export class KimiCliProvider implements SubagentProvider {
     private readonly live?: KimiAcpLiveDriver | ((childSessionId: string) => KimiAcpLiveDriver | undefined),
     private readonly model?: () => string | undefined,
     private readonly memberModels?: KimiModelBroker,
+    /**
+     * Resolver for the scope's endpoint credential, read PER ROUND so a
+     * settings-card write takes effect on the next delegation without a
+     * reload. A resolution carrying a key authenticates the round through the
+     * managed provider's `api_key_env` indirection (the key rides the child
+     * process's environment); the same resolution's baseUrl is pinned onto
+     * the managed provider by the pre-spawn config surgery.
+     */
+    private readonly endpoint?: (scopeHome: string) => Promise<KimiEndpointAuth>,
   ) {}
+
+  /**
+   * Resolve the scope's endpoint for this round and land its baseUrl on the
+   * managed provider (the surgery writes only on drift), so a hand-edited
+   * endpoint-auth.json applies without a restart.
+   */
+  private async prepareEndpoint(homeDir: string): Promise<KimiEndpointAuth | undefined> {
+    if (this.endpoint === undefined) return undefined
+    const endpoint = await this.endpoint(homeDir).catch(() => undefined)
+    await ensureKimiEndpointProvider(homeDir, hasEndpointCredential(endpoint) ? endpoint.baseUrl ?? KIMI_MANAGED_BASE_URL : undefined).catch(() => false)
+    return endpoint
+  }
 
   /** Resolve the live driver for one round's member, if live is on for it. */
   private liveDriver(childSessionId: string): KimiAcpLiveDriver | undefined {
@@ -310,7 +331,13 @@ export class KimiCliProvider implements SubagentProvider {
     // diagnostics: the CLI reads it directly, and a user-edited value is
     // authoritative. Log it so a failing delegation reports which endpoint
     // it actually used.
-    const baseUrl = await readKimiBaseUrl(homeDir).catch(() => undefined)
+    // The round's endpoint credential: resolved per round (a card write
+    // applies to the next delegation) and pinned onto the managed provider
+    // by the surgery above; the key rides the spawn env under api_key_env.
+    const endpoint = await this.prepareEndpoint(homeDir)
+    const baseUrl = hasEndpointCredential(endpoint)
+      ? endpoint.baseUrl
+      : await readKimiBaseUrl(homeDir).catch(() => undefined)
     this.ctx.logger.info(`subagent-kimi: delegating via ${baseUrl ?? 'kimi default endpoint'}`)
     // Live driver: the round goes to the member's resident `kimi acp` process.
     // A channel that fails at spawn/handshake falls through to the exec
@@ -373,7 +400,7 @@ export class KimiCliProvider implements SubagentProvider {
     try {
       const run = await startKimiCliRun(request, {
         cwd,
-        env: delegationEnv({ KIMI_CODE_HOME: homeDir }),
+        env: delegationEnv({ KIMI_CODE_HOME: homeDir, ...endpointAuthEnv(endpoint) }),
         ...exec === undefined ? {} : { exec },
         endpointLabel: baseUrl,
         // The session-level override (the composer picker) outranks even the
@@ -386,9 +413,6 @@ export class KimiCliProvider implements SubagentProvider {
           this.ctx.logger.warn(`subagent-kimi: child run failed (${stopReason}) via ${baseUrl ?? 'kimi default endpoint'}: ${error instanceof Error ? error.message : String(error)}`)
         },
         onAuthFailure: (detail) => {
-          // The sentinel: an empty-shell wipe restored here makes the
-          // caller's retry (or the next round) succeed.
-          void guardKimiCredential(homeDir, message => { this.ctx.logger.warn(message) })
           this.ctx.localAgent.reportAuthFailure('kimi', detail, scope)
         },
         onAuthSuccess: () => { markCredentialVerified(this.ctx, scope) },
@@ -495,13 +519,18 @@ export class KimiCliProvider implements SubagentProvider {
       const member = exec === undefined && scope === undefined
         ? this.memberRun(intent.childSessionId, request.parent.session.id, homeDir)
         : undefined
-      const baseUrl = await readKimiBaseUrl(homeDir).catch(() => undefined)
+      // Same endpoint handling as the fresh path: resolve per round, pin
+      // the managed provider, inject the key under api_key_env.
+      const endpoint = await this.prepareEndpoint(homeDir)
+      const baseUrl = hasEndpointCredential(endpoint)
+        ? endpoint.baseUrl
+        : await readKimiBaseUrl(homeDir).catch(() => undefined)
       this.ctx.logger.info(`subagent-kimi: resuming via ${baseUrl ?? 'kimi default endpoint'}`)
       let run: SubagentRun
       try {
         run = await startKimiCliRun(request, {
           cwd,
-          env: delegationEnv({ KIMI_CODE_HOME: homeDir }),
+          env: delegationEnv({ KIMI_CODE_HOME: homeDir, ...endpointAuthEnv(endpoint) }),
           ...exec === undefined ? {} : { exec },
           endpointLabel: baseUrl,
           // See the fresh path: the session-level override outranks the
@@ -514,9 +543,6 @@ export class KimiCliProvider implements SubagentProvider {
             this.ctx.logger.warn(`subagent-kimi: child run failed (${stopReason}) via ${baseUrl ?? 'kimi default endpoint'}: ${error instanceof Error ? error.message : String(error)}`)
           },
           onAuthFailure: (detail) => {
-            // The sentinel: an empty-shell wipe restored here makes the
-            // caller's retry (or the next round) succeed.
-            void guardKimiCredential(homeDir, message => { this.ctx.logger.warn(message) })
             this.ctx.localAgent.reportAuthFailure('kimi', detail, scope)
           },
             onAuthSuccess: () => { markCredentialVerified(this.ctx, scope) },

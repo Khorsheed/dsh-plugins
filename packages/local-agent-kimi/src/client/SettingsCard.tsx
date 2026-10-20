@@ -7,7 +7,7 @@ import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-cli
 import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
 import { Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import { IconChevronDownOutlineMedium } from './icons.tsx'
-import type { LocalAgentModelInfo } from '@khorsheed/dsh-local-agent/types'
+import type { LocalAgentEndpointAuthFields, LocalAgentEndpointAuthState, LocalAgentModelInfo } from '@khorsheed/dsh-local-agent/types'
 // The shared auth block is bundled from the family core's source — the
 // sanctioned core/companion edge (the host half already depends on the core);
 // the block carries no runtime identity to share.
@@ -15,7 +15,7 @@ import {
   ProviderAuthBlock, type ProviderAuthBlockProps, type ProviderAuthInjected,
 } from '@khorsheed/dsh-local-agent/src/client/ProviderAuthBlock.tsx'
 import { AuthStatusDot } from '@khorsheed/dsh-local-agent/src/client/AuthStatusDot.tsx'
-import { useHarnessAuthStatus } from '@khorsheed/dsh-local-agent/src/client/auth-status.ts'
+import { publishAuthStatus, useHarnessAuthStatus } from '@khorsheed/dsh-local-agent/src/client/auth-status.ts'
 import { NS } from './locales.ts'
 import css from './SettingsCard.module.css'
 
@@ -54,6 +54,18 @@ export interface KimiSettingsCardInjected {
    * effective-model line and the recent-models suggestions.
    */
   harnessModel: () => Promise<LocalAgentModelInfo | undefined>
+  /**
+   * The harness's endpoint credential face (the family gateway's
+   * `endpointAuth`/`configureEndpoint` Remotes): the card's credential form
+   * reads and writes the harness's OWN credential store through it — never
+   * the settings scope, so no key ever lands in the profile patch document.
+   * Absent on a core that predates the Remotes — the card then hides the
+   * form. `write` answers the post-write resolved state.
+   */
+  endpointAuth?: {
+    read(): Promise<LocalAgentEndpointAuthState | null | undefined>
+    write(fields: LocalAgentEndpointAuthFields): Promise<LocalAgentEndpointAuthState | null | undefined>
+  }
   hooks: {
     /** The same scope as a hooks source, so the card reacts to external writes. */
     settings: SettingsScope<KimiLiveSettings>
@@ -101,6 +113,7 @@ function useCardState(
   useSettings: KimiSettingsCardProps['useSettings'],
   scope: KimiSettingsCardProps['scope'],
   harnessModel: KimiSettingsCardInjected['harnessModel'],
+  endpointAuth: KimiSettingsCardInjected['endpointAuth'],
   t: KimiSettingsCardProps['t'],
 ) {
   const snapshot: SettingsScopeSnapshot<KimiLiveSettings> = useSettings(value => value)
@@ -111,6 +124,57 @@ function useCardState(
   // The model input is a DRAFT until saved: `null` means "showing whatever the
   // scope holds", so an external write (another tab, a YAML reload) still
   // reaches the field while the user is not typing in it.
+  // The endpoint credential form talks to the harness's OWN credential store
+  // through the endpointAuth face — never the settings scope, so no key ever
+  // lands in the profile patch document. baseUrl echoes (it is not a
+  // secret); the key never does — a set key shows as a "configured"
+  // placeholder and the input holds only the draft of a REPLACEMENT. A blank
+  // write clears the field (the config layer then answers for it again).
+  const [endpointState, setEndpointState] = useState<LocalAgentEndpointAuthState | null | 'unavailable'>(null)
+  const [baseUrlDraft, setBaseUrlDraft] = useState<string | null>(null)
+  const [apiKeyDraft, setApiKeyDraft] = useState<string | null>(null)
+  const [endpointSaved, setEndpointSaved] = useState(false)
+  const [endpointError, setEndpointError] = useState(false)
+  const endpointDirty = baseUrlDraft !== null || apiKeyDraft !== null
+  const endpointUnavailable = endpointAuth === undefined || endpointState === 'unavailable'
+  const endpointLoading = !endpointUnavailable && endpointState === null
+  const apiKeyConfigured = endpointState !== null && endpointState !== 'unavailable' && endpointState.apiKeySet
+  useEffect(() => {
+    if (!active || endpointAuth === undefined) return
+    let stale = false
+    void endpointAuth.read().then(
+      (state) => { if (!stale) setEndpointState(state ?? 'unavailable') },
+      () => { if (!stale) setEndpointState('unavailable') },
+    )
+    return () => { stale = true }
+  }, [active, endpointAuth, endpointSaved])
+  // The credential save: one `configureEndpoint` call carrying only the
+  // dirty fields (a blank draft clears its field); the answer is the
+  // post-write resolved state, so the chips and the auth probe flip without
+  // a re-read.
+  const saveEndpoint = (): void => {
+    if (endpointAuth === undefined) return
+    setEndpointSaved(false)
+    setEndpointError(false)
+    const fields: LocalAgentEndpointAuthFields = {
+      ...baseUrlDraft !== null ? { baseUrl: baseUrlDraft.trim() === '' ? null : baseUrlDraft.trim() } : {},
+      ...apiKeyDraft !== null ? { apiKey: apiKeyDraft.trim() === '' ? null : apiKeyDraft.trim() } : {},
+    }
+    void endpointAuth.write(fields).then(
+      (state) => {
+        if (state !== undefined && state !== null) {
+          setEndpointState(state)
+          // Flip the status dot with the write's own answer — only in the
+          // authenticated direction.
+          if (state.apiKeySet) publishAuthStatus('kimi', 'authenticated')
+        }
+        setBaseUrlDraft(null)
+        setApiKeyDraft(null)
+        setEndpointSaved(true)
+      },
+      () => { setEndpointError(true) },
+    )
+  }
   const storedModel = snapshot.value?.model ?? ''
   const recentModels = snapshot.value?.recentModels ?? []
   const [modelDraft, setModelDraft] = useState<string | null>(null)
@@ -221,6 +285,11 @@ function useCardState(
     modelError, choices, modelMenuOpen, modelMenuUp, modelFieldRef,
     modelPlaceholder, modelDefaultItem, saveModel, write, toggleModelMenu,
     setModelDraft, setModelMenuOpen,
+    endpointUnavailable, endpointLoading,
+    baseUrlValue: baseUrlDraft ?? (endpointState !== null && endpointState !== 'unavailable' ? endpointState.baseUrl ?? '' : ''),
+    apiKeyConfigured, apiKeyDraft,
+    endpointSaved, endpointError, endpointDirty,
+    saveEndpoint, setBaseUrlDraft, setApiKeyDraft,
   }
 }
 
@@ -238,6 +307,10 @@ function CardBody({ state, auth, authT, renderModelPicker, useSessions, t }: {
     modelError, choices, modelMenuOpen, modelMenuUp, modelFieldRef,
     modelPlaceholder, modelDefaultItem, saveModel, write, toggleModelMenu,
     setModelDraft, setModelMenuOpen,
+    endpointUnavailable, endpointLoading,
+    baseUrlValue, apiKeyConfigured, apiKeyDraft,
+    endpointSaved, endpointError, endpointDirty, saveEndpoint,
+    setBaseUrlDraft, setApiKeyDraft,
   } = state
   // The free-text input, single-sourced for both presentations: bare when no
   // vocabulary exists (a fresh install degrades to exactly the pre-picker
@@ -257,7 +330,12 @@ function CardBody({ state, auth, authT, renderModelPicker, useSessions, t }: {
   return (
     <div className={css.body}>
       <section className={css.block}>
-        <h3 className={css.blockTitle}>{t('auth.title')}</h3>
+        <h3 className={css.blockTitle}>
+          {t('auth.title')}
+          <Tooltip label={t('endpoint.info')} side="bottom" maxWidth={360}>
+            <button type="button" className={css.info} aria-label={t('endpoint.info.aria')}>ⓘ</button>
+          </Tooltip>
+        </h3>
         <ProviderAuthBlock
           harness={{ id: 'kimi', label: 'Kimi Code' }}
           useSessions={useSessions}
@@ -265,6 +343,53 @@ function CardBody({ state, auth, authT, renderModelPicker, useSessions, t }: {
           runCommand={auth.runCommand}
           t={authT}
         />
+        {endpointUnavailable && (
+          <span className={css.hint}>{t('endpoint.unavailable')}</span>
+        )}
+        {!endpointUnavailable && (
+        <div className={css.endpointFields}>
+          <label className={css.endpointField}>
+            <span className={css.endpointLabel}>{t('endpoint.baseUrl')}</span>
+            <input
+              type="text"
+              className={css.modelInput}
+              value={baseUrlValue}
+              placeholder={t('endpoint.baseUrl.placeholder')}
+              aria-label={t('endpoint.baseUrl')}
+              disabled={endpointLoading}
+              onChange={(event) => { setBaseUrlDraft(event.currentTarget.value) }}
+            />
+          </label>
+          <label className={css.endpointField}>
+            <span className={css.endpointLabel}>
+              {t('endpoint.apiKey')}
+              {apiKeyConfigured && <span className={css.configuredChip}>{t('endpoint.configured')}</span>}
+            </span>
+            <input
+              type="password"
+              className={css.modelInput}
+              value={apiKeyDraft ?? ''}
+              placeholder={apiKeyConfigured ? t('endpoint.secret.configured') : t('endpoint.secret.placeholder')}
+              aria-label={t('endpoint.apiKey')}
+              autoComplete="off"
+              disabled={endpointLoading}
+              onChange={(event) => { setApiKeyDraft(event.currentTarget.value) }}
+            />
+          </label>
+          <div className={css.row}>
+            <button
+              type="button"
+              className={css.modelSave}
+              disabled={endpointLoading || !endpointDirty}
+              onClick={() => { saveEndpoint() }}
+            >
+              {t('endpoint.save')}
+            </button>
+            {endpointSaved && <span className={css.saved}>{t('endpoint.applied')}</span>}
+            {endpointError && <span className={css.errorText}>{t('endpoint.error')}</span>}
+          </div>
+        </div>
+        )}
       </section>
       <section className={css.block}>
         <h3 className={css.blockTitle}>
@@ -378,11 +503,11 @@ function CardBody({ state, auth, authT, renderModelPicker, useSessions, t }: {
  * @returns the card.
  */
 export function KimiSettingsCard(props: KimiSettingsCardProps) {
-  const { useSettings, scope, auth, authT, renderModelPicker, harnessModel, useSessions, t } = props
+  const { useSettings, scope, auth, authT, renderModelPicker, harnessModel, endpointAuth, useSessions, t } = props
   const [open, setOpen] = useState(false)
   // The model surface read is NOT open-gated on this surface (it warms the
   // vocabulary while the card is collapsed), so the 0.1.5 card always reads.
-  const state = useCardState(true, useSettings, scope, harnessModel, t)
+  const state = useCardState(true, useSettings, scope, harnessModel, endpointAuth, t)
   // The at-a-glance credential dot in the collapsed header: every mount
   // re-probes (a credential expiring mid-session must flip the dot at the
   // next view); the bus dedupes identical results, so no re-render storm.
@@ -426,8 +551,8 @@ export function KimiSettingsCard(props: KimiSettingsCardProps) {
  * @param props - the owner view, the injected scope/auth faces, and copy.
  * @returns the entry.
  */
-export function KimiBundleConfig({ view, useSettings, scope, auth, authT, renderModelPicker, harnessModel, useSessions, t }: KimiBundleConfigProps) {
-  const state = useCardState(view === 'page', useSettings, scope, harnessModel, t)
+export function KimiBundleConfig({ view, useSettings, scope, auth, authT, renderModelPicker, harnessModel, endpointAuth, useSessions, t }: KimiBundleConfigProps) {
+  const state = useCardState(view === 'page', useSettings, scope, harnessModel, endpointAuth, t)
   if (view === 'summary') return <span className={css.description}>{t('card.description')}</span>
   return <CardBody state={state} auth={auth} authT={authT} renderModelPicker={renderModelPicker} useSessions={useSessions} t={t} />
 }

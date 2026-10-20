@@ -2,8 +2,8 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { kimiAuthenticated, listKimiSessions } from '../src/records.ts'
-import { kimiLogout, provisionKimiConfig, redactApiKeys } from '../src/provision.ts'
+import { listKimiSessions } from '../src/records.ts'
+import { provisionKimiConfig, redactApiKeys, sweepKimiOauthLeftovers } from '../src/provision.ts'
 
 // The user's real ~/.kimi-code/config.toml must never leak into these tests:
 // the provision mirror path copies it (redacted) whenever it exists, which
@@ -93,26 +93,24 @@ describe('provisionKimiConfig', () => {
   })
 })
 
-describe('kimiLogout', () => {
-  it('removes the credentials and oauth cache so status flips to not authenticated', async () => {
-    const home = tempHome('kimi-logout-')
+describe('sweepKimiOauthLeftovers', () => {
+  it('removes the OAuth-era credentials directory and token cache', async () => {
+    const home = tempHome('kimi-sweep-')
     const credentials = join(home, 'credentials')
     const oauth = join(home, 'oauth', 'kimi-code')
     mkdirSync(credentials, { recursive: true })
     mkdirSync(oauth, { recursive: true })
     writeFileSync(join(credentials, 'kimi-code.json'), '{}')
     writeFileSync(join(oauth, 'token'), '{}')
-    expect(await kimiAuthenticated(home)).toBe(true)
 
-    await kimiLogout(home)
+    await sweepKimiOauthLeftovers(home)
 
-    expect(await kimiAuthenticated(home)).toBe(false)
     expect((await import('node:fs')).existsSync(credentials)).toBe(false)
     expect((await import('node:fs')).existsSync(join(home, 'oauth'))).toBe(false)
   })
 
-  it('is a no-op on a home that never logged in', async () => {
-    const home = tempHome('kimi-logout-empty-')
-    await expect(kimiLogout(home)).resolves.toBeUndefined()
+  it('is a no-op on a home that never had them', async () => {
+    const home = tempHome('kimi-sweep-empty-')
+    await expect(sweepKimiOauthLeftovers(home)).resolves.toBeUndefined()
   })
 })

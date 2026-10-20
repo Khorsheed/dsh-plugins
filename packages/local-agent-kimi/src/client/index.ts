@@ -92,6 +92,20 @@ export function apply(ctx: Context): void {
     harnessModel: () =>
       gateway()?.harnessModel('kimi').then(result => (result.ok ? result.value ?? undefined : undefined))
         ?? Promise.resolve(undefined),
+    // The credential form's read/write face, over the session-less gateway
+    // Remotes. Absent on a core that predates them — the card hides the form.
+    endpointAuth: {
+      read: () => {
+        const gw = gateway()
+        if (gw === undefined || typeof gw.endpointAuth !== 'function') return Promise.resolve(undefined)
+        return gw.endpointAuth('kimi').then(result => (result.ok ? result.value : undefined))
+      },
+      write: (fields) => {
+        const gw = gateway()
+        if (gw === undefined || typeof gw.configureEndpoint !== 'function') return Promise.resolve(undefined)
+        return gw.configureEndpoint('kimi', fields).then(result => (result.ok ? result.value : undefined))
+      },
+    },
     auth: {
       status: name =>
         // The Remote declares (name, scope?) and the client enforces exact arity:

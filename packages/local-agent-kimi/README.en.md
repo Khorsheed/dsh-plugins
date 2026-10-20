@@ -12,7 +12,7 @@ Getting the model to hand a whole chunk of work to another coding agent used to 
 
 - **Per-session delegation grant** — the `subagent_kimi` tool is this package's `./tool` composition entry, granted to the sessions of an agent preset that names it (e.g. dev mode); sessions on other presets never see it.
 - **Scoped home** — config, credentials, and sessions live under `$DSH_HOME/local-agent/kimi`, never in your `~/.kimi-code`.
-- **Device-code login** — `/kimi login` shows the auth URL in the session; `/kimi logout` clears scoped credentials for a fresh account.
+- **Endpoint credential (the only auth mode)** — fill `baseUrl` + `apiKey` on the card's Authentication section (saved as the default scope's `endpoint-auth.json`, mode 0600, local only) or preconfigure the profile row, and the scope is authenticated; every named scope may override the deployment pair field by field with its own `endpoint-auth.json`. The managed provider reads the key through its `api_key_env` indirection from the child process's environment — the key never lands in `config.toml` (an evaluation-condition input). Container rounds share the host's credential; nothing is authorized inside a unit. There is no web login and no device code.
 - **Resumable delegations** — pass back the self-described `resume` handle to continue the same Kimi session, with real per-round usage and timing.
 - **Session records and transcript replay** — `/kimi sessions` lists this harness's delegations (never your personal sessions); `/kimi session <id>` renders the session's wire log as a readable transcript — thinking, tool calls, and results included.
 - **Settings card** — the Plugins-page card (a `plugins.item` entry, mounted while the Host serves the `local-agent-kimi` namespace) shows auth status and the scoped sessions at a glance; login/logout, the default model, and the resident-mode switch all hot-apply, no reload.
@@ -29,13 +29,13 @@ dsh plugin --profile web add @khorsheed/dsh-local-agent
 dsh plugin --profile web add @khorsheed/dsh-local-agent-kimi
 ```
 
-Restart the web instance to activate, then run `/kimi login` once from a session. Uninstall:
+Restart the web instance to activate, then fill the endpoint and key on the card's Authentication section (Settings → Plugins) — or preconfigure the profile row; with neither, the status reads unauthenticated. Uninstall:
 
 ```sh
 dsh plugin --profile web remove @khorsheed/dsh-local-agent-kimi
 ```
 
-The scoped home is kept on purpose so a reinstall needs no fresh login — delete `$DSH_HOME/local-agent/kimi` to remove every trace.
+The scoped home is kept on purpose so a reinstall keeps its credential — delete `$DSH_HOME/local-agent/kimi` to remove every trace.
 
 ## Config
 
@@ -48,7 +48,7 @@ base_url = "https://your-router.example/v1"
 
 Edit **only this key** — provisioning never overwrites an existing config, and the `[services.moonshot_*]` base URLs must stay (they route the built-in search/fetch tools).
 
-⚠️ **OAuth token exposure**: the scoped OAuth token is sent to whatever endpoint serves the request — point `base_url` only at endpoints you control or trust.
+⚠️ **Credential exposure**: the endpoint key is sent to whatever endpoint serves the request — point `baseUrl` only at endpoints you control or trust.
 
 Plugin config of its own (optional, in the profile patch layer):
 
@@ -97,7 +97,7 @@ The rich directory uses native ACP session model/configuration metadata when a l
 
 ## Known Limitations
 
-- **Login is interactive** — device-code only, one login at a time per harness, no API-key path.
+- **No web login** — the endpoint credential is the only auth path (the card or the profile row; a kimi-for-coding platform key or a relay key alike). The kimi-subscription OAuth path is not part of this package.
 - **Process bookkeeping touches the real home** — kimi writes content-free `~/.kimi-code/server/instances/*.json` regardless of `KIMI_CODE_HOME`; config, credentials, and sessions stay scoped.
 - **`/kimi` commands need a Web session** — headless profiles can still delegate through a composition that mounts the tool row.
 
@@ -106,7 +106,7 @@ The rich directory uses native ACP session model/configuration metadata when a l
 <details>
 <summary>Internals (click to expand)</summary>
 
-**Scoped home and login.** Every Kimi process the bundle starts runs with `KIMI_CODE_HOME=$DSH_HOME/local-agent/kimi`. Login is device-code only: `/kimi login` surfaces the authorization URL and code in the session, the CLI polls in the background, and credentials land in the scoped home. `/kimi logout` removes the scoped credentials and OAuth cache (the kimi CLI has no logout command). On first boot the scoped home is provisioned with a `config.toml` — the user's own config with every `api_key` blanked, or a minimal managed config when the user has none — because the CLI refuses to authenticate without provider and model definitions; an existing config is never overwritten.
+**Scoped home and credentials.** Every Kimi process the bundle starts runs with `KIMI_CODE_HOME=$DSH_HOME/local-agent/kimi`. Authentication is endpoint-key only: the scope's `endpoint-auth.json` (mode 0600) merges field by field over the profile row's `baseUrl`/`apiKey`; the managed provider (`managed:kimi-code`) declares `api_key_env = "DSH_KIMI_ENDPOINT_KEY"` in config.toml (the kimi CLI natively reads the key from a named environment variable — mutually exclusive with an inline `api_key`), so the key lives only in endpoint-auth.json and in the child process's environment, and `config.toml` never carries a secret and stays a legitimate evaluation-condition input. The card's Authentication section edits exactly this file for the default scope (through the family gateway's `endpointAuth`/`configureEndpoint` Remotes); saving a baseUrl re-points the managed provider's `base_url` in the same write (clearing it falls back to kimi's own service), and an idempotent pre-spawn pass applies hand-edits just as immediately. The one-shot `kimi -p`, the resident `kimi acp`, and container rounds (`containerExecSpawn`'s name-only env forwarding) share the same injection. On first boot the scoped home is provisioned with a `config.toml` — the user's own config with every `api_key` blanked and migrated onto the env-key shape, or a minimal managed config when the user has none. The OAuth era's `credentials/` and `oauth/` directories are swept on every provision — this package no longer reads them, and keeping them would let a dead grant authenticate while the status reads unauthenticated. `/kimi logout` deletes the scope's `endpoint-auth.json`; when the credential comes entirely from the profile row, logout refuses and names the profile as the place to edit.
 
 **Mounting.** The bundle patch registers the `kimi` harness (exactly one provider row); the `subagent_kimi` tool is this package's `./tool` composition entry (sharing the family core's `./tool-factory` implementation), granted per session by an agent preset that names it — the dev preset's `tool-subagent-kimi` row is the grant point. The `kimi-cli` one-shot provider spawns `kimi -p` under the scoped home. The family core (`local-agent` row, shared scoped-homes root) ships in `@khorsheed/dsh-local-agent`'s own patch, declared here as a dependency. The browser settings card ships with this package's own `./client` half, composing the family core's shared building blocks (the auth block, the model picker): it lands on the Plugins page's `plugins.item` entry, mounted through `configForms.whileServed` while the Host serves the `local-agent-kimi` namespace — one card for a standalone install, a family bundle, or a mode pack alike. The identity triangle stays consistent: the `cordis.patch.yml` row id, the package.json name, and tsdown's `clientBundle('@khorsheed/dsh-local-agent-kimi')`.
 
@@ -122,7 +122,7 @@ The rich directory uses native ACP session model/configuration metadata when a l
 
 **Isolation and accounting.** The child is a fresh session in the delegating session's workspace; the parent receives only the final answer or the exact error — child context, commentary, tool activity, and diffs never cross into the parent session. The provider opens `turn/start` at spawn and closes `turn/end` at settle, including on failure or abort (reason `error`/`aborted`), so durations equal real CLI runtime. Every mirrored step (assistant message, tool call/result) is wrapped in a `step/start`–`step/end` boundary pair at the same (turn, step) — the host's live conversation assembler registers a step only at its boundaries, so without them assistant messages do not render in the real-time view (only a full rebuild recovers them); the token granularity's streaming snapshots and completion folds also land before `turn/end`, boundaries included. Usage is the sum of the round's `usage.record` deltas (each one LLM request, not cumulative), carried on the round's final mirrored assistant message; the mirror filters kimi's auto-permission `<system-reminder>` messages, renders tool calls with arguments, pairs results to their calls, and advances incrementally so earlier messages never duplicate. Aborting settles the tool result immediately (SIGTERM→grace→SIGKILL) and keeps the partial work already mirrored.
 
-**Named scopes.** `/kimi login --scope <name>` opens a second `KIMI_CODE_HOME` at `<homesRoot>/kimi@<name>`; the directory is provisioned with the same two steps in the same order (provider/model config first, then the permission rules — the permission write reads the config file). From then on that scope has its own login, its own wire log and its own transcript mirror. A scoped delegation is exec-only (the resident `kimi acp` is bound per member to the default scoped home) and carries **no member channel**: the bridge declaration is written into a scoped home's `mcp.json` and the socket is a single homes-root one, so a named absence beats a half-wired presence.
+**Named scopes.** a named scope opens a second `KIMI_CODE_HOME` at `<homesRoot>/kimi@<name>`; the directory is provisioned with the same two steps in the same order (provider/model config first, then the permission rules — the permission write reads the config file). From then on that scope has its own endpoint-auth.json, its own wire log and its own transcript mirror. A scoped delegation is exec-only (the resident `kimi acp` is bound per member to the default scoped home) and carries **no member channel**: the bridge declaration is written into a scoped home's `mcp.json` and the socket is a single homes-root one, so a named absence beats a half-wired presence.
 
 **Container delegation.** An orchestrator may run the round inside an **already-acquired container** through the facade's `DelegationCallOptions.exec` (`{ container, workdir, env? }`): the argv becomes `docker exec -w <workdir> [-e NAME…] <container> kimi -p …` and everything else (the wire.jsonl mirror and readback, settle, recording) is byte-for-byte unchanged. `env` must name the in-container `KIMI_CODE_HOME`, and it should be the read-write bind mount of the host scoped home — the transcript mirror and the model readback read the host copy of the wire log. A container round always takes the exec one-shot (the resident `kimi acp` is a host process) and **does not write** the member-bridge entry into `mcp.json`: that declaration names a host node path the unit cannot start, and leaving a broken server in a shared config file is worse than running one round without the member channel.
 

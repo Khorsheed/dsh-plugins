@@ -103,8 +103,9 @@ describe('local-agent-kimi apply', () => {
       displayName: 'Kimi Code',
       homeEnvVar: 'KIMI_CODE_HOME',
       delegationProvider: 'kimi-cli',
-      login: { command: 'kimi', args: ['login'] },
     })
+    // No login declaration: the harness is endpoint-key only.
+    expect(registered[0]?.login).toBeUndefined()
     // The records adapter is exercised end-to-end by the kimi-records spec.
     expect(registered[0]?.records).toBeDefined()
   })
