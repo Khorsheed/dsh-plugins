@@ -127,8 +127,8 @@ export interface TranscribeApi {
   run(request: TranscribeRequest, options?: TranscribeRunOptions): Promise<TranscribeResult>
   /**
    * Who spoke when (queued like `run`). A probe of a couple of dozen windows
-   * settles a one-voice recording in about a second; only several voices pay
-   * for the full diarization.
+   * settles a one-voice recording in about a second; several voices are told
+   * apart by clustering CAM++ voiceprints (minutes for an hour or two).
    */
   speakers(request: SpeakersRequest, options?: Omit<TranscribeRunOptions, 'onSegments'>): Promise<SpeakersResult>
   /** The queue, running job first. */

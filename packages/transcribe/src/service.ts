@@ -218,9 +218,9 @@ export class TranscribeService implements TranscribeApi {
       onProgress?.({ stage, progress: a + (b - a) * Math.max(0, Math.min(1, v)) })
     }
 
-    // A speakers job needs only the speaker models (and the VAD without known speech).
+    // A speakers job needs only the voiceprint model and the VAD (no pyannote).
     const ids: ModelId[] = speakersOnly
-      ? ['segmentation', 'embedding', ...(speakersOnly.speech ? [] : ['vad' as const])]
+      ? ['embedding', 'vad']
       : this.modelsFor(request)
     if (!(await (await this.adoptLegacyModels(), this.manager.ready(ids)))) {
       const watch = setInterval(() => {

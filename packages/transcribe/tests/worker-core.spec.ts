@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { attachPunctuation, consolidate, mergeTurns, planChunks, probeWindows, repairSeam, singleVoice } from '../src/speech-worker-core.ts'
+import { attachPunctuation, consolidate, mergeTurns, planChunks, probeWindows, repairSeam, singleVoice, clusterVoices, unit, windowTurns } from '../src/speech-worker-core.ts'
 
 describe('speaker consolidation', () => {
   it('trims overlaps and drops contained turns', () => {
@@ -117,5 +117,25 @@ describe('the one-voice probe', () => {
     const b = new Float32Array([0, 1])
     expect(singleVoice([a, a2, a, a2])).toBe(true)
     expect(singleVoice([a, a2, b, a])).toBe(false)
+  })
+})
+
+describe('voices from voiceprints', () => {
+  const v = (x: number, y: number) => unit(new Float32Array([x, y]))
+
+  it('merges alike segments into voices and drops a sliver of noise', () => {
+    const prints = [v(1, 0.05), v(1, 0.1), v(0.05, 1), v(0.1, 1), v(-1, 0)]
+    const voices = clusterVoices(prints, [30, 30, 20, 20, 1])
+    expect(voices).toHaveLength(2)
+    expect(voices[0]![0]).toBeGreaterThan(0.9) // the larger voice first
+  })
+
+  it('cuts turns where the nearest voice changes, smoothing a one-window flicker', () => {
+    const voices = [v(1, 0), v(0, 1)]
+    const windows = Array.from({ length: 12 }, (_, i) => ({ start: i * 0.75, end: i * 0.75 + 1.5, v: i === 3 ? voices[1]! : i < 6 ? voices[0]! : voices[1]! }))
+    const turns = windowTurns(windows, voices, 1)
+    expect(turns.map((t) => t.cluster)).toEqual([0, 1])
+    expect(turns[0]!.end).toBeCloseTo(turns[1]!.start)
+    expect(turns[1]!.start).toBeGreaterThan(4)
   })
 })
