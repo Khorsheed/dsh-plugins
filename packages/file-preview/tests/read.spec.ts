@@ -36,6 +36,11 @@ function makeAgent(session: { events: readonly SessionEvent[]; header: { cwd?: s
   return { session: { ...rest, snapshotEvents: () => events } as unknown as Session } as unknown as Agent
 }
 
+/** Let cordis apply sub-fibers (the image route's `ctx.inject` loads async). */
+function tick(): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, 0))
+}
+
 const target = { displayPath: 'notes.md' } as unknown as FsTarget
 const fileInfo: FsInfo = { version: FsVersion('v1'), type: 'file', size: 5 }
 
@@ -142,6 +147,7 @@ describe('FilePreviewService.read', () => {
     const webServer = { register: vi.fn() }
     ctx.provide('webServer', webServer as never)
     const service = new FilePreviewService(ctx)
+    await tick()
     const session = { id: 'session-1', header: { cwd: '/tmp' } } as unknown as Session
     const result = await service.read({ session } as unknown as Agent, 'image.PNG', new AbortController().signal)
     expect(result).toEqual({
@@ -165,9 +171,41 @@ describe('FilePreviewService.read', () => {
     ctx.provide('agents', { get: () => makeAgent({ events: [], header: { cwd: '/tmp' } }) } as never)
     ctx.provide('webServer', { register: vi.fn() } as never)
     const service = new FilePreviewService(ctx)
+    await tick()
     const session = { id: 'session-2', header: { cwd: '/tmp' } } as unknown as Session
     const result = await service.read({ session } as unknown as Agent, 'pic.svg', new AbortController().signal)
     expect(result).toEqual({ path: 'pic.svg', kind: 'image', url: '/file-preview-image/session-2/pic.svg' })
+  })
+
+  it('registers the image route when webServer and agents arrive after the service applies', async () => {
+    const fs: FsDouble = {
+      resolve: vi.fn().mockResolvedValue(target),
+      stat: vi.fn().mockResolvedValue({ version: 'v1', type: 'file', size: 42 }),
+      readByteRange: vi.fn(),
+    }
+    const ctx = new Context()
+    Object.assign(ctx, { fs })
+    const service = new FilePreviewService(ctx)
+    await tick()
+    const session = { id: 'session-3', header: { cwd: '/tmp' } } as unknown as Session
+    const agent = { session } as unknown as Agent
+    expect(await service.read(agent, 'late.svg', new AbortController().signal)).toEqual({ path: 'late.svg', kind: 'binary', size: 42 })
+
+    const unregister = vi.fn()
+    const webServer = { register: vi.fn(() => unregister) }
+    ctx.provide('webServer', webServer as never)
+    const withdrawAgents = ctx.provide('agents', { get: () => agent } as never)
+    await tick()
+    expect(webServer.register).toHaveBeenCalledWith(expect.objectContaining({ kind: 'prefix', path: '/file-preview-image' }))
+    expect(await service.read(agent, 'late.svg', new AbortController().signal)).toEqual({
+      path: 'late.svg', kind: 'image', url: '/file-preview-image/session-3/late.svg', size: 42,
+    })
+
+    // A departing dependency withdraws the route and image reads degrade again.
+    withdrawAgents()
+    await tick()
+    expect(unregister).toHaveBeenCalledTimes(1)
+    expect(await service.read(agent, 'late.svg', new AbortController().signal)).toEqual({ path: 'late.svg', kind: 'binary', size: 42 })
   })
 
   it('treats an image path as binary when no web face is present', async () => {

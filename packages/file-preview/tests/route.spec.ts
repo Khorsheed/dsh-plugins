@@ -34,13 +34,16 @@ function makeRes(): { res: ServerResponse; head: ReturnType<typeof vi.fn>; bytes
   } }
 }
 
-/** Build a route-capable service: webServer + agents provided, fs doubled. */
-function makeRouteService(fs: Partial<FileSystem>, agent: Agent): FilePreviewService {
+/** Build a route-capable service: webServer + agents provided, fs doubled.
+ * Awaits a tick so the route sub-fiber has applied. */
+async function makeRouteService(fs: Partial<FileSystem>, agent: Agent): Promise<FilePreviewService> {
   const ctx = new Context()
   Object.assign(ctx, { fs })
   ctx.provide('agents', { get: () => agent } as never)
   ctx.provide('webServer', { register: vi.fn() } as never)
-  return new FilePreviewService(ctx)
+  const service = new FilePreviewService(ctx)
+  await new Promise(resolve => setTimeout(resolve, 0))
+  return service
 }
 
 const target = { displayPath: 'pic.png' } as unknown as FsTarget
@@ -61,7 +64,7 @@ describe('FilePreviewService image route', () => {
       stat: vi.fn().mockResolvedValue(fileInfo),
       readBytes: vi.fn().mockResolvedValue(new Uint8Array([137, 80, 78, 71])),
     }
-    const service = makeRouteService(fs as unknown as FileSystem, { session: session('s1') } as unknown as Agent)
+    const service = await makeRouteService(fs as unknown as FileSystem, { session: session('s1') } as unknown as Agent)
     const { res, head, bytes } = makeRes()
     await (service as unknown as { serveImage: (req: IncomingMessage, res: ServerResponse) => Promise<void> })
       .serveImage(reqFor('/file-preview-image/s1/pic.png'), res)
@@ -72,7 +75,7 @@ describe('FilePreviewService image route', () => {
 
   it('answers 400 for a malformed URL', async () => {
     const fs: RouteFsDouble = { resolve: vi.fn(), stat: vi.fn(), readBytes: vi.fn() }
-    const service = makeRouteService(fs as unknown as FileSystem, { session: session('s1') } as unknown as Agent)
+    const service = await makeRouteService(fs as unknown as FileSystem, { session: session('s1') } as unknown as Agent)
     const { res, head } = makeRes()
     await (service as unknown as { serveImage: (req: IncomingMessage, res: ServerResponse) => Promise<void> })
       .serveImage(reqFor('/file-preview-image'), res)
@@ -82,7 +85,7 @@ describe('FilePreviewService image route', () => {
 
   it('answers 400 for an undecodable path', async () => {
     const fs: RouteFsDouble = { resolve: vi.fn(), stat: vi.fn(), readBytes: vi.fn() }
-    const service = makeRouteService(fs as unknown as FileSystem, { session: session('s1') } as unknown as Agent)
+    const service = await makeRouteService(fs as unknown as FileSystem, { session: session('s1') } as unknown as Agent)
     const { res, head } = makeRes()
     await (service as unknown as { serveImage: (req: IncomingMessage, res: ServerResponse) => Promise<void> })
       .serveImage(reqFor('/file-preview-image/s1/%zz'), res)
@@ -104,7 +107,7 @@ describe('FilePreviewService image route', () => {
 
   it('answers 400 for a non-image path', async () => {
     const fs: RouteFsDouble = { resolve: vi.fn(), stat: vi.fn(), readBytes: vi.fn() }
-    const service = makeRouteService(fs as unknown as FileSystem, { session: session('s1') } as unknown as Agent)
+    const service = await makeRouteService(fs as unknown as FileSystem, { session: session('s1') } as unknown as Agent)
     const { res, head } = makeRes()
     await (service as unknown as { serveImage: (req: IncomingMessage, res: ServerResponse) => Promise<void> })
       .serveImage(reqFor('/file-preview-image/s1/notes.md'), res)
@@ -117,7 +120,7 @@ describe('FilePreviewService image route', () => {
       stat: vi.fn(),
       readBytes: vi.fn(),
     }
-    const service = makeRouteService(fs as unknown as FileSystem, { session: session('s1') } as unknown as Agent)
+    const service = await makeRouteService(fs as unknown as FileSystem, { session: session('s1') } as unknown as Agent)
     const { res, head } = makeRes()
     await (service as unknown as { serveImage: (req: IncomingMessage, res: ServerResponse) => Promise<void> })
       .serveImage(reqFor('/file-preview-image/s1/pic.png'), res)
@@ -130,7 +133,7 @@ describe('FilePreviewService image route', () => {
       stat: vi.fn().mockRejectedValue(new Error('stat gone')),
       readBytes: vi.fn(),
     }
-    const service = makeRouteService(fs as unknown as FileSystem, { session: session('s1') } as unknown as Agent)
+    const service = await makeRouteService(fs as unknown as FileSystem, { session: session('s1') } as unknown as Agent)
     const { res, head } = makeRes()
     await (service as unknown as { serveImage: (req: IncomingMessage, res: ServerResponse) => Promise<void> })
       .serveImage(reqFor('/file-preview-image/s1/pic.png'), res)
@@ -143,7 +146,7 @@ describe('FilePreviewService image route', () => {
       stat: vi.fn().mockResolvedValue({ version: 'v1', type: 'directory' }),
       readBytes: vi.fn(),
     }
-    const service = makeRouteService(fs as unknown as FileSystem, { session: session('s1') } as unknown as Agent)
+    const service = await makeRouteService(fs as unknown as FileSystem, { session: session('s1') } as unknown as Agent)
     const { res, head } = makeRes()
     await (service as unknown as { serveImage: (req: IncomingMessage, res: ServerResponse) => Promise<void> })
       .serveImage(reqFor('/file-preview-image/s1/pic.png'), res)
@@ -156,12 +159,12 @@ describe('FilePreviewService image route', () => {
       stat: vi.fn().mockResolvedValue(fileInfo),
       readBytes: vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3])),
     }
-    const withCwd = makeRouteService(fs as unknown as FileSystem, { session: session('s1') } as unknown as Agent)
+    const withCwd = await makeRouteService(fs as unknown as FileSystem, { session: session('s1') } as unknown as Agent)
     await (withCwd as unknown as { serveImage: (req: IncomingMessage, res: ServerResponse) => Promise<void> })
       .serveImage(reqFor('/file-preview-image/s1/pic.png'), makeRes().res)
     expect(fs.resolve).toHaveBeenCalledWith('pic.png', { cwd: '/tmp' })
 
-    const noCwd = makeRouteService(fs as unknown as FileSystem, {
+    const noCwd = await makeRouteService(fs as unknown as FileSystem, {
       session: { id: 's2', header: {} } as unknown as Session,
     } as unknown as Agent)
     await (noCwd as unknown as { serveImage: (req: IncomingMessage, res: ServerResponse) => Promise<void> })
@@ -171,7 +174,7 @@ describe('FilePreviewService image route', () => {
 
   it('handles a request whose url is undefined', async () => {
     const fs: RouteFsDouble = { resolve: vi.fn(), stat: vi.fn(), readBytes: vi.fn() }
-    const service = makeRouteService(fs as unknown as FileSystem, { session: session('s1') } as unknown as Agent)
+    const service = await makeRouteService(fs as unknown as FileSystem, { session: session('s1') } as unknown as Agent)
     const { res, head } = makeRes()
     await (service as unknown as { serveImage: (req: IncomingMessage, res: ServerResponse) => Promise<void> })
       .serveImage({} as IncomingMessage, res)
@@ -180,7 +183,7 @@ describe('FilePreviewService image route', () => {
 
   it('handles a query-string-only url', async () => {
     const fs: RouteFsDouble = { resolve: vi.fn(), stat: vi.fn(), readBytes: vi.fn() }
-    const service = makeRouteService(fs as unknown as FileSystem, { session: session('s1') } as unknown as Agent)
+    const service = await makeRouteService(fs as unknown as FileSystem, { session: session('s1') } as unknown as Agent)
     const { res, head } = makeRes()
     await (service as unknown as { serveImage: (req: IncomingMessage, res: ServerResponse) => Promise<void> })
       .serveImage(reqFor('?x=1'), res)
@@ -198,6 +201,7 @@ describe('FilePreviewService image route', () => {
     ctx.provide('agents', { get: () => ({ session: session('s1') }) } as never)
     ctx.provide('webServer', { register: vi.fn() } as never)
     const service = new FilePreviewService(ctx, { maxReadBytes: 100 })
+    await new Promise(resolve => setTimeout(resolve, 0))
     const { res, head } = makeRes()
     await (service as unknown as { serveImage: (req: IncomingMessage, res: ServerResponse) => Promise<void> })
       .serveImage(reqFor('/file-preview-image/s1/pic.png'), res)
@@ -210,7 +214,7 @@ describe('FilePreviewService image route', () => {
       stat: vi.fn().mockResolvedValue(fileInfo),
       readBytes: vi.fn().mockRejectedValue(new Error('io')),
     }
-    const service = makeRouteService(fs as unknown as FileSystem, { session: session('s1') } as unknown as Agent)
+    const service = await makeRouteService(fs as unknown as FileSystem, { session: session('s1') } as unknown as Agent)
     const { res, head } = makeRes()
     await (service as unknown as { serveImage: (req: IncomingMessage, res: ServerResponse) => Promise<void> })
       .serveImage(reqFor('/file-preview-image/s1/pic.png'), res)
