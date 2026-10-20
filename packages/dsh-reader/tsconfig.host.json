@@ -13,6 +13,7 @@
     "src/link-resolvers.ts",
     "src/media.ts",
     "src/media-host.ts",
+    "src/local-transcribe.ts",
     "src/notes.ts",
     "src/notes-types.ts",
     "src/remote.ts",

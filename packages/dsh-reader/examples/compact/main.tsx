@@ -113,6 +113,9 @@ const face = {
     return ok('ok')
   },
   snapshotEntry: () => ok('ok'),
+  startLocalTranscript: request => Promise.resolve({ ok: true, value: { entryId: request.entryId, state: 'unavailable' } }),
+  localTranscript: request => Promise.resolve({ ok: true, value: { entryId: request.entryId, state: 'idle' } }),
+  cancelLocalTranscript: request => Promise.resolve({ ok: true, value: { entryId: request.entryId, state: 'idle' } }),
   mediaTranscript: request => new Promise(resolve => setTimeout(() => resolve({ ok: true, value: { entryId: request.entryId, captions: 'platform', html: transcriptHtml } }), 600)),
   addReply: () => ok('ok'), editReply: () => ok('ok'), deleteDiscussion: () => ok('ok'), markSynced: () => ok('ok'),
   // &canvas=1 composes a fake canvas inbox (the canvas plugin's ctx.canvasInbox).

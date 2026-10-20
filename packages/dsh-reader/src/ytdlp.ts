@@ -9,12 +9,13 @@
  * a path configured by the deployment wins over it. Node — the host's own
  * runtime — is handed to yt-dlp as its JavaScript runtime.
  *
- * Only metadata (`--dump-single-json`) and captions (`--write-subs`) are ever
- * requested, with `--skip-download`.
+ * Metadata (`--dump-single-json`) and captions (`--write-subs`) are requested
+ * with `--skip-download`; the only download is an AUDIO track, for local
+ * transcription of a video without captions, deleted once transcribed.
  *
  * @module @khorsheed/dsh-reader/ytdlp
  */
-import { execFile } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { parseCaptions, type Cue } from './captions.ts'
@@ -115,6 +116,32 @@ function run(file: string, args: readonly string[], timeoutMs: number): Promise<
   })
 }
 
+/**
+ * Run a process to completion, honoring an abort signal and reporting stdout
+ * lines as they come.
+ */
+export function runStreaming(file: string, args: readonly string[], options: { signal?: AbortSignal; onLine?: (line: string) => void; timeoutMs: number }): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(file, [...args], { stdio: ['ignore', 'pipe', 'pipe'], env: process.env, ...(options.signal === undefined ? {} : { signal: options.signal }) })
+    const timer = setTimeout(() => { child.kill('SIGTERM') }, options.timeoutMs)
+    let buffered = ''
+    let stderr = ''
+    child.stdout.on('data', (chunk: Buffer) => {
+      buffered += chunk.toString('utf8')
+      const lines = buffered.split(/\r?\n|\r/)
+      buffered = lines.pop() ?? ''
+      for (const line of lines) options.onLine?.(line)
+    })
+    child.stderr.on('data', (chunk: Buffer) => { stderr = (stderr + chunk.toString('utf8')).slice(-4000) })
+    child.on('error', (error) => { clearTimeout(timer); reject(error) })
+    child.on('close', (code) => {
+      clearTimeout(timer)
+      if (code === 0) resolve()
+      else reject(new Error(stderr.trim().split('\n').filter(line => /ERROR|error:/i.test(line)).slice(-1)[0] ?? `${file.split('/').pop() ?? file} exited with ${String(code)}`))
+    })
+  })
+}
+
 /** The yt-dlp manager. */
 export class YtDlp {
   private readonly binDir: string
@@ -209,6 +236,32 @@ export class YtDlp {
         return thumbnail === undefined ? rest : { ...rest, thumbnail }
       }),
     }
+  }
+
+  /**
+   * A video's audio track, downloaded for local transcription (the smallest
+   * audio-only format; the platform's combined stream when there is none).
+   *
+   * @param url - the video page URL.
+   * @param dir - an empty directory the file lands in.
+   * @param options - abort, and download progress 0–1.
+   * @returns the downloaded file.
+   */
+  async audio(url: string, dir: string, options: { signal?: AbortSignal; onProgress?: (fraction: number) => void } = {}): Promise<string> {
+    await runStreaming(await this.binary(), [
+      '-f', 'wa[acodec!=none]/ba/b', '--no-playlist', '--no-warnings', '--newline', '--no-part',
+      '--js-runtimes', `node:${process.execPath}`, '-o', join(dir, 'audio.%(ext)s'), url,
+    ], {
+      timeoutMs: 30 * 60_000,
+      ...(options.signal === undefined ? {} : { signal: options.signal }),
+      onLine: (line) => {
+        const percent = /^\[download\]\s+([\d.]+)%/.exec(line)?.[1]
+        if (percent !== undefined) options.onProgress?.(Number(percent) / 100)
+      },
+    })
+    const file = readdirSync(dir).find(name => name.startsWith('audio.'))
+    if (file === undefined) throw new Error('yt-dlp: no audio downloaded')
+    return join(dir, file)
   }
 
   /**

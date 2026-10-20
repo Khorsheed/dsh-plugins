@@ -26,7 +26,8 @@ import { chooseCaptionTrack, YtDlp, type YtDlpInfo } from './ytdlp.ts'
 
 /** What a video's captions came to, remembered per entry. */
 export interface CaptionRecord {
-  readonly state: 'platform' | 'none'
+  /** `local`: transcribed on this machine (the platform had no captions). */
+  readonly state: 'platform' | 'none' | 'local'
   readonly language?: string
   readonly checkedAt: string
 }

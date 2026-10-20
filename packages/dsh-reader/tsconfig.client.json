@@ -36,6 +36,7 @@
     "src/client/canvas-sync.ts",
     "src/client/preset-visibility.ts",
     "src/client/MediaPlayer.tsx",
-    "src/client/useMedia.ts"
+    "src/client/useMedia.ts",
+    "src/client/useLocalTranscript.ts"
   ]
 }

@@ -36,6 +36,7 @@ import { ChipRow, PanelHeader, PanelRoot, UnderlineTabs, usePanelCompactContext,
 import { NoteSheet, NotesView } from './NotesView.tsx'
 import { MediaPlayer } from './MediaPlayer.tsx'
 import { useMedia } from './useMedia.ts'
+import { useLocalTranscript } from './useLocalTranscript.ts'
 import { readMediaMeta } from '../media.ts'
 import { formatClock } from '../captions.ts'
 import { MEDIA_QUERIES } from './selectors.ts'
@@ -1373,6 +1374,19 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
   /** The open entry's video / audio (see useMedia — it decorates the transcript, never rewrites it). */
   const mediaFace = useMedia({ entryId: openEntry?.id, media: openEntry?.media, articleHtml, articleRef, detailRef })
   const setTranscriptState = mediaFace.setTranscript
+  // No captions and nothing stored: the open entry transcribes on this machine.
+  const localFace = useLocalTranscript({
+    entry: openEntry,
+    wanted: openEntry?.media !== undefined && mediaFace.transcript === 'none',
+    hidden: mediaFace.hidden,
+    remote: props,
+    onHtml: (entryId, html, partial) => {
+      if (openRequestRef.current !== entryId) return
+      actions.setArticle(html, false, null)
+      if (!partial) setTranscriptState(entryId, 'ready')
+    },
+  })
+  const localActive = localFace.status !== undefined && ['fetching', 'queued', 'transcribing'].includes(localFace.status.state)
   // The compact bar's title (see `titleScrolledAway`): watch the article's
   // heading leave the body through its top.
   useEffect(() => {
@@ -2276,18 +2290,19 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
       // may run for it, or they would crawl YouTube's watch page.
       const shownotes = row.entry.contentHtml ?? ''
       setScriptFigures(0)
-      if (row.entry.media.kind !== 'video' || (row.entry.media.provider !== 'youtube' && row.entry.media.provider !== 'bilibili')) {
-        // Audio: no transcript before the transcription engine (V2); the
-        // shownotes are what there is to read.
-        actions.setArticle(shownotes, false, null)
-        setTranscriptState(row.entry.id, 'none')
-        return
-      }
+      // A stored transcript (platform captions, or a finished local one) is the body.
       const cached = await props.getEntryBody({ entryId: row.entry.id, url: row.entry.link })
       if (openRequestRef.current !== row.entry.id) return
       if (cached.ok && cached.value.cached === true && cached.value.html !== undefined) {
         actions.setArticle(cached.value.html, false, null)
         setTranscriptState(row.entry.id, 'ready')
+        return
+      }
+      if (row.entry.media.kind !== 'video' || (row.entry.media.provider !== 'youtube' && row.entry.media.provider !== 'bilibili')) {
+        // Audio has no platform captions: the shownotes show until the local
+        // transcript (`useLocalTranscript`) replaces them.
+        actions.setArticle(shownotes, false, null)
+        setTranscriptState(row.entry.id, 'none')
         return
       }
       actions.setArticle(shownotes, false, null)
@@ -3862,9 +3877,17 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
         )}
         {mediaFace.media !== undefined && (
           <div className={css.mediaBar}>
-            {(mediaFace.transcript === 'ready' || mediaFace.transcript === 'loading') && (
+            {(mediaFace.transcript === 'ready' || mediaFace.transcript === 'loading' || localActive || (mediaFace.transcript === 'none' && mediaFace.hidden)) && (
               <label className={css.mediaSwitch}>
-                <input type="checkbox" checked={!mediaFace.hidden} onChange={event => { mediaFace.setHidden(!event.target.checked) }} />
+                <input
+                  type="checkbox"
+                  checked={!mediaFace.hidden}
+                  onChange={event => {
+                    mediaFace.setHidden(!event.target.checked)
+                    // Back on with nothing to read: transcribe again.
+                    if (event.target.checked && mediaFace.transcript === 'none' && !localActive) localFace.retry()
+                  }}
+                />
                 {t('media.captions')}
               </label>
             )}
@@ -3875,12 +3898,39 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
               </label>
             )}
             <span className={css.spacer} />
-            <span className={css.mediaSource}>
-              {mediaFace.transcript === 'ready' ? t('media.sourcePlatform')
-                : mediaFace.transcript === 'loading' ? t('media.loading')
-                  : mediaFace.transcript === 'none' ? (mediaFace.media.kind === 'audio' ? t('media.noCaptionsAudio') : t('media.noCaptions'))
-                    : mediaFace.transcript === 'failed' ? t('media.failed') : ''}
-            </span>
+            {mediaFace.transcript !== 'ready' && localFace.status !== undefined && localActive
+              ? (
+                <span className={css.mediaSource}>
+                  {localFace.status.state === 'fetching' ? t('media.localFetching')
+                    : localFace.status.state === 'queued' ? (localFace.status.ahead !== undefined && localFace.status.ahead > 0 ? t('media.localQueuedAhead', { count: localFace.status.ahead }) : t('media.localQueued'))
+                      : t('media.localRunning', { percent: Math.round((localFace.status.progress ?? 0) * 100) })}
+                  {localFace.etaSeconds !== undefined && ` · ${t('media.localEta', { minutes: Math.max(1, Math.round(localFace.etaSeconds / 60)) })}`}
+                  {' '}
+                  <button type="button" className={css.mediaLink} onClick={localFace.stop}>{t('media.localStop')}</button>
+                </span>
+              )
+              : (
+                <span className={css.mediaSource}>
+                  {mediaFace.transcript === 'ready' ? (articleHtml?.includes('data-src="local"') === true ? t('media.sourceLocal') : t('media.sourcePlatform'))
+                    : mediaFace.transcript === 'loading' ? t('media.loading')
+                      : mediaFace.transcript === 'failed' ? t('media.failed')
+                        : mediaFace.transcript === 'none' && !mediaFace.hidden ? (
+                          localFace.status?.state === 'unavailable' ? (mediaFace.media.kind === 'audio' ? t('media.noCaptionsAudio') : t('media.noCaptions'))
+                            : localFace.status?.state === 'failed' ? (
+                              <>{t('media.localFailed', { error: localFace.status.error ?? '' })} <button type="button" className={css.mediaLink} onClick={localFace.retry}>{t('media.localRetry')}</button></>
+                            )
+                              : localFace.status?.state === 'idle' ? (
+                                <>{t('media.localStopped')} <button type="button" className={css.mediaLink} onClick={localFace.retry}>{t('media.localRetry')}</button></>
+                              ) : ''
+                        ) : ''}
+                </span>
+              )}
+          </div>
+        )}
+        {mediaFace.media !== undefined && localFace.status?.state === 'needs-models' && !mediaFace.hidden && (
+          <div className={css.mediaConfirm}>
+            <span>{t('media.localModels', { size: Math.max(1, Math.round((localFace.status.bytes ?? 0) / 1e6)) })}</span>
+            <button type="button" className={css.mediaConfirmButton} onClick={localFace.confirm}>{t('media.localModelsGo')}</button>
           </div>
         )}
         {!(mediaFace.media !== undefined && mediaFace.hidden && mediaFace.transcript === 'ready') && <UnderlineTabs<DetailTab>

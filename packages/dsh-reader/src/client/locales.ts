@@ -83,6 +83,8 @@ export type ReaderKey =
   | 'notes.checkDraft' | 'notes.checkDraftNotes' | 'notes.backToSession'
   | 'media.collapse' | 'media.expand' | 'media.noFollow' | 'media.captions' | 'media.follow' | 'media.sourcePlatform'
   | 'media.loading' | 'media.noCaptions' | 'media.noCaptionsAudio' | 'media.failed' | 'media.kindVideo' | 'media.kindAudio'
+  | 'media.sourceLocal' | 'media.localFetching' | 'media.localQueued' | 'media.localQueuedAhead' | 'media.localRunning' | 'media.localEta'
+  | 'media.localStop' | 'media.localStopped' | 'media.localFailed' | 'media.localRetry' | 'media.localModels' | 'media.localModelsGo'
   | 'notes.sync' | 'notes.syncTitle' | 'notes.syncLast' | 'notes.syncCards' | 'notes.syncReplies' | 'notes.syncKind'
   | 'notes.syncDone' | 'notes.syncOpen' | 'notes.syncFailed' | 'notes.syncedIn' | 'notes.syncNoCanvas'
   | 'notes.syncConclusion' | 'notes.syncOriginal' | 'notes.syncRun'
@@ -352,8 +354,20 @@ export const en = {
   'media.follow': 'Follow',
   'media.sourcePlatform': 'Source: platform captions',
   'media.loading': 'Fetching captions…',
-  'media.noCaptions': 'This video has no captions — local transcription comes with the next version',
-  'media.noCaptionsAudio': 'This audio has no captions — local transcription comes with the next version',
+  'media.noCaptions': 'This video has no captions — install the Local Transcription plugin to transcribe it on this machine',
+  'media.noCaptionsAudio': 'This audio has no captions — install the Local Transcription plugin to transcribe it on this machine',
+  'media.sourceLocal': 'Source: transcribed on this machine',
+  'media.localFetching': 'Getting the audio…',
+  'media.localQueued': 'Waiting to transcribe…',
+  'media.localQueuedAhead': 'Queued — {count} ahead',
+  'media.localRunning': 'Transcribing on this machine · {percent}% — what is done can be read now',
+  'media.localEta': 'about {minutes} min left',
+  'media.localStop': 'Cancel',
+  'media.localStopped': 'Transcription stopped',
+  'media.localFailed': 'Transcription failed: {error}',
+  'media.localRetry': 'Transcribe again',
+  'media.localModels': 'The first local transcription downloads the speech models (about {size} MB, once). After that it runs by itself.',
+  'media.localModelsGo': 'Download and transcribe',
   'media.failed': 'Captions could not be fetched',
   'media.kindVideo': 'Video',
   'media.kindAudio': 'Audio',
@@ -638,8 +652,20 @@ export const zh = {
   'media.follow': '跟随',
   'media.sourcePlatform': '来源：平台字幕',
   'media.loading': '正在获取字幕…',
-  'media.noCaptions': '该视频无字幕（本机转写将在下一版提供）',
-  'media.noCaptionsAudio': '该音频无字幕（本机转写将在下一版提供）',
+  'media.noCaptions': '该视频无字幕；装上「本机转写」插件后可在本机转写',
+  'media.noCaptionsAudio': '该音频无字幕；装上「本机转写」插件后可在本机转写',
+  'media.sourceLocal': '来源：本机转写',
+  'media.localFetching': '正在获取音频…',
+  'media.localQueued': '等待转写…',
+  'media.localQueuedAhead': '排队中 · 前面还有 {count} 个',
+  'media.localRunning': '本机转写中 · {percent}% · 已转写的部分可以先读',
+  'media.localEta': '约还需 {minutes} 分钟',
+  'media.localStop': '取消',
+  'media.localStopped': '已停止转写',
+  'media.localFailed': '转写失败：{error}',
+  'media.localRetry': '重新转写',
+  'media.localModels': '第一次本机转写需要下载语音模型（约 {size} MB，只需一次），之后都自动进行。',
+  'media.localModelsGo': '下载并转写',
   'media.failed': '字幕获取失败',
   'media.kindVideo': '视频',
   'media.kindAudio': '音频',

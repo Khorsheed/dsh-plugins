@@ -35,6 +35,8 @@ import type {
   ReaderSourceSummary,
   ReaderStorageStats,
   ReaderTag,
+  LocalTranscriptStatus,
+  ReaderMedia,
 } from '../types.ts'
 import type { ReaderEntryIdentity, ReaderEntryNotes, ReaderNote, ReaderNoteInput, ReaderNoteOutcome } from '../notes-types.ts'
 import type { createReaderStore } from './store.ts'
@@ -284,6 +286,12 @@ export interface ReaderPaneInjected {
   snapshotEntry: (request: ReaderEntryIdentity & { paragraphs: string[] }) => Promise<RemoteResult<'ok' | 'empty'>>
   /** A video entry's transcript from its platform captions (stored; `none` when it has none). */
   mediaTranscript: (request: { entryId: string; url: string }) => Promise<RemoteResult<{ entryId: string; html?: string; captions: 'platform' | 'none' | 'failed'; language?: string; error?: string }>>
+  /** Start (or rejoin) local transcription of an entry without captions; `unavailable` without the engine, `needs-models` until the first download is confirmed. */
+  startLocalTranscript: (request: { entryId: string; url: string; media: ReaderMedia; title?: string; confirmModels?: boolean }) => Promise<RemoteResult<LocalTranscriptStatus>>
+  /** Where an entry's local transcription stands, with the transcript so far. */
+  localTranscript: (request: { entryId: string }) => Promise<RemoteResult<LocalTranscriptStatus>>
+  /** Leave (withdraws a queued job) or, with `force`, stop an entry's local transcription. */
+  cancelLocalTranscript: (request: { entryId: string; force: boolean }) => Promise<RemoteResult<LocalTranscriptStatus>>
   /** Whether a conversation can be opened from the pane (probed live). */
   canOpenSession: () => boolean
   /** Open a conversation in the main area; a no-op when the seam is absent. */

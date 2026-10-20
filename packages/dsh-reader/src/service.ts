@@ -86,6 +86,8 @@ import { delayUntilNext, isCatchUpDue } from './schedule.ts'
 import { arxivHtmlUrl } from './arxiv.ts'
 import { fetchImageBytes, ImageFetchCache } from './image-fetch.ts'
 import { resolveLink, type LinkResolution, type ResolverFetch } from './link-resolvers.ts'
+import { join } from 'node:path'
+import { LocalTranscriber, type TranscribeEngine } from './local-transcribe.ts'
 import { channelRss, episodePage, ReaderMediaHost, resolveShortLink, syntheticLabel, videoPage } from './media-host.ts'
 import { canonicalMediaUrl, isShortMediaLink, mediaLink } from './media.ts'
 import { podcastPageToRss, readEpisodePage } from './xiaoyuzhou.ts'
@@ -212,6 +214,8 @@ export class ReaderService {
   private readonly store: ReaderStore
   /** Video and audio entries: synthetic pages, channel feeds, transcripts. */
   readonly media: ReaderMediaHost
+  /** Local transcription of entries without captions (the optional `transcribe` engine). */
+  readonly local: LocalTranscriber
   private readonly ctx: Context
   private timer: ReturnType<typeof setTimeout> | undefined
   private disposed = false
@@ -227,9 +231,20 @@ export class ReaderService {
   constructor(ctx: Context, config: { stateRoot?: string; ytdlpPath?: string } = {}) {
     this.ctx = ctx
     this.store = new ReaderStore(config)
-    this.media = new ReaderMediaHost(resolveReaderStateRoot(config.stateRoot), config.ytdlpPath)
+    const stateRoot = resolveReaderStateRoot(config.stateRoot)
+    this.media = new ReaderMediaHost(stateRoot, config.ytdlpPath)
+    this.local = new LocalTranscriber({
+      engine: () => ctx.get('transcribe') as TranscribeEngine | undefined,
+      tmpRoot: join(stateRoot, 'tmp'),
+      videoAudio: (url, dir, options) => this.media.ytdlp.audio(url, dir, options),
+      store: async (entryId, url, html, language) => {
+        await this.storeEntryBody({ entryId, url, html, keep: true })
+        this.media.remember(entryId, { state: 'local', ...(language === undefined ? {} : { language }), checkedAt: new Date().toISOString() })
+      },
+    })
     ctx.effect(() => () => {
       this.disposed = true
+      this.local.dispose()
       if (this.timer !== undefined) clearTimeout(this.timer)
     }, 'reader: daily refresh')
     // The store resolves its own root against the deployment (native fs, not
@@ -1687,7 +1702,8 @@ export class ReaderService {
    */
   async mediaTranscript(request: { entryId: string; url: string }): Promise<{ entryId: string; html?: string; captions: 'platform' | 'none' | 'failed'; language?: string; error?: string }> {
     const known = this.media.captions(request.entryId)
-    if (known?.state === 'none') return { entryId: request.entryId, captions: 'none' }
+    // `local`: the platform had none — the stored body is the local transcript.
+    if (known?.state === 'none' || known?.state === 'local') return { entryId: request.entryId, captions: 'none' }
     const link = mediaLink(request.url)
     if (link?.kind !== 'video' || (link.provider !== 'youtube' && link.provider !== 'bilibili')) {
       return { entryId: request.entryId, captions: 'none' }

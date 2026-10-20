@@ -13,7 +13,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { ReaderService } from './service.ts'
 import type { ReaderNotesStore } from './notes.ts'
-import type { ReaderEntryIdentity, ReaderEntryNotes, ReaderNote, ReaderNoteInput, ReaderNoteOutcome } from './types.ts'
+import type { LocalTranscriptStatus, ReaderEntryIdentity, ReaderEntryNotes, ReaderMedia, ReaderNote, ReaderNoteInput, ReaderNoteOutcome } from './types.ts'
 import type {
   ReaderAddFailure,
   ReaderAddOutcome,
@@ -369,6 +369,28 @@ export class ReaderRemoteService extends TypertRemoteService<ReaderRemoteConfig>
   @Remote('mediaTranscript')
   mediaTranscript(request: { entryId: string; url: string }): Promise<{ entryId: string; html?: string; captions: 'platform' | 'none' | 'failed'; language?: string; error?: string }> {
     return this.core.mediaTranscript(request)
+  }
+
+  /**
+   * Start (or rejoin) local transcription of an entry without captions.
+   * Answers `unavailable` without the transcription plugin and `needs-models`
+   * until the first model download is confirmed.
+   */
+  @Remote('startLocalTranscript')
+  startLocalTranscript(request: { entryId: string; url: string; media: ReaderMedia; title?: string; confirmModels?: boolean }): Promise<LocalTranscriptStatus> {
+    return this.core.local.start(request)
+  }
+
+  /** Where an entry's local transcription stands, with the transcript so far. */
+  @Remote('localTranscript')
+  localTranscript(request: { entryId: string }): Promise<LocalTranscriptStatus> {
+    return Promise.resolve(this.core.local.status(request.entryId))
+  }
+
+  /** Leave (withdraws a queued job) or, with `force`, stop an entry's local transcription. */
+  @Remote('cancelLocalTranscript')
+  cancelLocalTranscript(request: { entryId: string; force: boolean }): Promise<LocalTranscriptStatus> {
+    return Promise.resolve(this.core.local.cancel(request.entryId, request.force))
   }
 
   /** Hand the host the article's original text, block by block, for the model to read. */
