@@ -4,9 +4,8 @@ Status: implemented
 
 ## Problem
 
-The claude-code harness authenticated through Anthropic's official OAuth web flow: `/claude-code login` spawned `claude auth login` under a pty, the grant landed in the macOS keychain (a path-hashed entry) or `.credentials.json`, and a newer-wins reconcile (`syncClaudeCredentialFile`) bridged the CLI's version-dependent write/read split. Three costs motivated replacing it:
+The claude-code harness authenticated through Anthropic's official OAuth web flow: `/claude-code login` spawned `claude auth login` under a pty, the grant landed in the macOS keychain (a path-hashed entry) or `.credentials.json`, and a newer-wins reconcile (`syncClaudeCredentialFile`) bridged the CLI's version-dependent write/read split. Two costs motivated replacing it:
 
-- **Reliability for the primary deployment.** The official endpoint is network-fragile from the deployment's region and OAuth-grant usage patterns risk account action; the operator routes Claude Code through a relay (`ANTHROPIC_BASE_URL` + key) everywhere else and wanted the same here.
 - **Container authorization.** An evaluation round inside a docker unit needed its own authorized scope — and OAuth's single-use refresh-token rotation made a shared grant actively dangerous (the host keychain and the unit's mounted file forked the grant; measured: one rotation invalidated the other side's whole token family).
 - **Complexity.** The keychain enumeration, empty-shell filtering, compact-Zulu timestamp parsing, and the newer-wins two-store reconcile were the package's highest-incident-density code, all of it OAuth-specific.
 
@@ -27,7 +26,7 @@ The claude-code harness authenticated through Anthropic's official OAuth web flo
 
 ## Alternatives considered
 
-- **Keep OAuth, add endpoint auth as a second mode.** Rejected: it keeps the highest-incident code alive, reintroduces a precedence question (env credential vs stored grant) the CLI answers version-dependently, and the deployment that motivated the work uses no OAuth at all.
+- **Keep OAuth, add endpoint auth as a second mode.** Rejected: it keeps the highest-incident code alive and reintroduces a precedence question (env credential vs stored grant) the CLI answers version-dependently. (Whether OAuth returns as an additive mode later is deliberately left open — re-adding it would be additive, not another breaking change.)
 - **Write the credential into the scoped `settings.json` env block** (the `proxyUrl` pattern). Rejected: `settings.json` is not on the evaluation contract hash's credential denylist, so the key would become a condition-fingerprint input — the contract forbids hashing credential content outright. The separate denylist-named file is what makes per-scope keys eval-safe.
 - **Config-only credentials, no per-scope file.** Rejected: a named scope could never carry its own account, and the evaluation's per-condition provisioning would have no place to land a credential.
 - **Keep `credentialStamp` synthesizing a value for config-sourced credentials.** Rejected as dishonest: there is no marker, and the in-memory `rejected` mark already clears on the instance restart that a profile edit accompanies.

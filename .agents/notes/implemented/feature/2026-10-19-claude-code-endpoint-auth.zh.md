@@ -4,9 +4,8 @@ Status: implemented
 
 ## Problem
 
-claude-code harness 原先走 Anthropic 官方 OAuth 网页授权：`/claude-code login` 在 pty 下起 `claude auth login`，授权落进 macOS 钥匙串（按路径哈希的条目）或 `.credentials.json`，再由新者胜协调（`syncClaudeCredentialFile`）弥合 CLI 随版本变化的写/读分裂。换掉它的动机有三：
+claude-code harness 原先走 Anthropic 官方 OAuth 网页授权：`/claude-code login` 在 pty 下起 `claude auth login`，授权落进 macOS 钥匙串（按路径哈希的条目）或 `.credentials.json`，再由新者胜协调（`syncClaudeCredentialFile`）弥合 CLI 随版本变化的写/读分裂。换掉它的动机有二：
 
-- **主部署的可靠性。** 官方端点在部署所在地区网络脆弱，OAuth 授权的使用模式有封号风险；运维侧在其他所有场景都让 Claude Code 走中转（`ANTHROPIC_BASE_URL` + key），这里要同一条链路。
 - **容器授权。** 评测在 docker 单元里跑一轮需要单独授权过的 scope——而 OAuth 的一次性 refresh token 轮换让共享授权主动变得危险（宿主钥匙串与单元挂载的文件会把一份授权劈成两半；实测过：一侧轮换即作废另一侧整个 token family）。
 - **复杂度。** 钥匙串枚举、空壳过滤、紧凑 Zulu 时间戳解析、两存储新者胜协调，是全包事故密度最高的代码，且全部只对 OAuth 存在。
 
@@ -27,7 +26,7 @@ claude-code harness 原先走 Anthropic 官方 OAuth 网页授权：`/claude-cod
 
 ## Alternatives considered
 
-- **保留 OAuth，端点凭据作为第二模式。** 否决：事故密度最高的代码继续存活，还重新引入一个优先级问题（env 凭据 vs 存储授权）而 CLI 的回答随版本变； motivating 这次改造的部署根本不用 OAuth。
+- **保留 OAuth，端点凭据作为第二模式。** 否决：事故密度最高的代码继续存活，还重新引入一个优先级问题（env 凭据 vs 存储授权）而 CLI 的回答随版本变。（OAuth 日后是否以 additive 模式回归刻意留作开放问题——若回归也是加法，不会再是破坏性变更。）
 - **把凭据写进作用域 `settings.json` 的 env 块**（`proxyUrl` 的既有模式）。否决：`settings.json` 不在评测契约哈希的凭据拒绝名单上，key 会变成条件指纹的输入——契约明文禁止哈希凭据内容。独立的、命中拒绝名单命名的文件才让 per-scope key 对评测安全。
 - **只要配置层凭据，不要 per-scope 文件。** 否决：命名 scope 永远无法携带自己的账号，评测按条件 provision 时也没有落凭据的地方。
 - **`credentialStamp` 为配置来源的凭据合成一个值。** 否决，不诚实：标记根本不存在；而内存里的 `rejected` 标记本来就随 profile 编辑所伴随的实例重启清除。
