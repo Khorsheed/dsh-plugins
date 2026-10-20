@@ -17,7 +17,7 @@
  * @module @khorsheed/dsh-reader/local-transcribe
  */
 import { execFile } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readdirSync, rmSync, statSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { mergeCues, renderTranscript, type Cue } from './captions.ts'
 import type { ReaderMedia } from './media.ts'
@@ -28,7 +28,7 @@ export interface TranscribeEngine {
   modelsFor(request: { language?: 'zh' | 'en' | 'auto'; diarize?: false }): string[]
   missingBytes(ids: readonly string[]): Promise<number>
   run(
-    request: { input: { files: string[] }; language: 'zh' | 'en' | 'auto'; diarize: false; owner: string; label?: string },
+    request: { input: { files: string[] }; fromSec?: number; language: 'zh' | 'en' | 'auto'; diarize: false; owner: string; label?: string },
     options: {
       signal?: AbortSignal
       onProgress?: (progress: { stage: string; progress: number; ahead?: number }) => void
@@ -236,6 +236,8 @@ export interface LocalTranscriberDeps {
   readonly tmpRoot: string
   /** Fetch a video's audio track into `dir`. */
   readonly videoAudio: (url: string, dir: string, options: { signal: AbortSignal; onProgress: (fraction: number) => void }) => Promise<string>
+  /** How often a restart checks for the engine before resuming jobs (ms; default 2 s). */
+  readonly resumePollMs?: number
   /** Keep the finished transcript as the entry's body (`speakers`: how many voices, once known). */
   readonly store: (entryId: string, url: string, html: string, language: string | undefined, speakers?: number) => Promise<void>
 }
@@ -246,21 +248,92 @@ const CONFIRM_BYTES = 20_000_000
 /** Share of the progress bar the audio download takes. */
 const FETCH_SHARE = 0.1
 
+/** How often a running job writes its finished segments down (ms). */
+const SAVE_EVERY_MS = 15_000
+
+/** How long a restart waits for the engine to be provided before giving up on resuming (ms). */
+const RESUME_WAIT_MS = 10 * 60_000
+
+/**
+ * A job's record, kept in its temporary directory next to its audio, so a
+ * restart (another plugin's deploy restarts the instance) resumes it instead
+ * of losing an hour of work: `job.json` says what and how far, and
+ * `segments.json` holds the stretches already transcribed.
+ */
+interface JobRecord {
+  readonly entryId: string
+  readonly url: string
+  readonly media: ReaderMedia
+  readonly title?: string
+  /** The downloaded audio, once there. */
+  file?: string
+  /** `transcribe` until the transcript is stored, then `speakers`. */
+  phase: 'transcribe' | 'speakers'
+  language?: string
+}
+
+function readJson<T>(path: string): T | undefined {
+  try {
+    return JSON.parse(readFileSync(path, 'utf8')) as T
+  } catch {
+    return undefined
+  }
+}
+
+function writeJson(path: string, value: unknown): void {
+  try {
+    writeFileSync(`${path}.tmp`, JSON.stringify(value))
+    renameSync(`${path}.tmp`, path)
+  } catch {
+    // A record that cannot be written only costs the resume.
+  }
+}
+
 /** The reader's local transcription jobs, by entry. */
 export class LocalTranscriber {
   private readonly jobs = new Map<string, Job>()
+  /** Jobs a previous process left mid-way, waiting for the engine. */
+  private readonly resumable: { dir: string; record: JobRecord }[] = []
+  private resumeTimer: ReturnType<typeof setInterval> | undefined
+  private disposing = false
 
   constructor(private readonly deps: LocalTranscriberDeps) {
-    // Audio a killed process left behind (an hour of it is tens of MB): gone after a day.
     try {
       const cutoff = Date.now() - 24 * 60 * 60 * 1000
       for (const name of readdirSync(deps.tmpRoot)) {
         if (!name.startsWith('audio-')) continue
-        const path = join(deps.tmpRoot, name)
-        if (statSync(path).mtimeMs < cutoff) rmSync(path, { recursive: true, force: true })
+        const dir = join(deps.tmpRoot, name)
+        // Audio a killed process left behind (an hour of it is tens of MB): gone after a day.
+        if (statSync(dir).mtimeMs < cutoff) {
+          rmSync(dir, { recursive: true, force: true })
+          continue
+        }
+        const record = readJson<JobRecord>(join(dir, 'job.json'))
+        if (record?.entryId !== undefined && record.media !== undefined) this.resumable.push({ dir, record })
+        else rmSync(dir, { recursive: true, force: true })
       }
     } catch {
       // No tmp directory yet.
+    }
+    if (this.resumable.length > 0) {
+      // The engine is another plugin: it may be provided after this one boots.
+      const since = Date.now()
+      this.resumeTimer = setInterval(() => {
+        const engine = this.deps.engine()
+        if (engine === undefined && Date.now() - since < RESUME_WAIT_MS) return
+        clearInterval(this.resumeTimer)
+        this.resumeTimer = undefined
+        for (const { dir, record } of this.resumable.splice(0)) {
+          if (engine === undefined || this.jobs.has(record.entryId)) {
+            rmSync(dir, { recursive: true, force: true })
+            continue
+          }
+          const job: Job = { state: 'queued', progress: FETCH_SHARE, segments: [], rendered: 0, abort: new AbortController() }
+          this.jobs.set(record.entryId, job)
+          void this.execute(record, engine, 'auto', job, dir)
+        }
+      }, this.deps.resumePollMs ?? 2000)
+      this.resumeTimer.unref?.()
     }
   }
 
@@ -299,7 +372,8 @@ export class LocalTranscriber {
     if (bytes > CONFIRM_BYTES && request.confirmModels !== true) return { entryId: request.entryId, state: 'needs-models', bytes }
     const job: Job = { state: 'fetching', progress: 0, segments: [], rendered: 0, abort: new AbortController() }
     this.jobs.set(request.entryId, job)
-    void this.execute(request, engine, language, job)
+    const record: JobRecord = { entryId: request.entryId, url: request.url, media: request.media, ...(request.title === undefined ? {} : { title: request.title }), phase: 'transcribe' }
+    void this.execute(record, engine, language, job)
     return this.status(request.entryId)
   }
 
@@ -324,52 +398,104 @@ export class LocalTranscriber {
     return this.deps.engine() !== undefined
   }
 
-  /** Stop everything (plugin disposal). */
+  /** Stop everything (plugin disposal) — keeping each job's record, so the next process resumes it. */
   dispose(): void {
+    this.disposing = true
+    if (this.resumeTimer !== undefined) clearInterval(this.resumeTimer)
     for (const job of this.jobs.values()) job.abort.abort()
     this.jobs.clear()
   }
 
-  private async execute(request: { entryId: string; url: string; media: ReaderMedia; title?: string }, engine: TranscribeEngine, language: 'auto', job: Job): Promise<void> {
+  /**
+   * Run (or resume) one job: fetch the audio unless the record has it,
+   * transcribe from where the saved segments end, store, then the speakers.
+   *
+   * @param resumeDir - a previous process's directory for this job.
+   */
+  private async execute(record: JobRecord, engine: TranscribeEngine, language: 'auto', job: Job, resumeDir?: string): Promise<void> {
     const signal = job.abort.signal
     mkdirSync(this.deps.tmpRoot, { recursive: true })
-    const dir = mkdtempSync(join(this.deps.tmpRoot, 'audio-'))
+    const dir = resumeDir ?? mkdtempSync(join(this.deps.tmpRoot, 'audio-'))
+    const recordPath = join(dir, 'job.json')
+    const segmentsPath = join(dir, 'segments.json')
+    writeJson(recordPath, record)
+    let lastSave = 0
+    const saveSegments = (force: boolean): void => {
+      if (!force && Date.now() - lastSave < SAVE_EVERY_MS) return
+      lastSave = Date.now()
+      writeJson(segmentsPath, job.segments)
+    }
     try {
-      let file: string
-      if (request.media.kind === 'video') {
-        file = await this.deps.videoAudio(request.url, dir, { signal, onProgress: (fraction) => { job.progress = FETCH_SHARE * fraction } })
+      let file = record.file !== undefined && existsSync(record.file) ? record.file : undefined
+      if (file === undefined) {
+        // No audio yet (or it went): whatever was transcribed from it is not trusted either.
+        job.segments = []
+        if (record.media.kind === 'video') {
+          file = await this.deps.videoAudio(record.url, dir, { signal, onProgress: (fraction) => { job.progress = FETCH_SHARE * fraction } })
+        } else {
+          file = join(dir, 'audio')
+          await curlTo(record.media.ref, file, signal)
+        }
+        record.file = file
+        record.phase = 'transcribe'
+        writeJson(recordPath, record)
       } else {
-        file = join(dir, 'audio')
-        await curlTo(request.media.ref, file, signal)
+        job.segments = readJson<EngineSegment[]>(segmentsPath) ?? []
       }
       job.progress = FETCH_SHARE
-      job.state = 'queued'
-      const result = await engine.run(
-        { input: { files: [file] }, language, diarize: false, owner: '@khorsheed/dsh-reader', ...(request.title === undefined ? {} : { label: request.title }) },
-        {
-          signal,
-          onProgress: (progress) => {
-            if (progress.stage === 'queued') {
-              job.state = 'queued'
-              if (progress.ahead === undefined) delete job.ahead
-              else job.ahead = progress.ahead
-              return
-            }
-            job.state = 'transcribing'
-            delete job.ahead
-            job.progress = FETCH_SHARE + (1 - FETCH_SHARE) * progress.progress
+      let segments: EngineSegment[]
+      let detected = record.language
+      if (record.phase === 'transcribe') {
+        job.state = 'queued'
+        // A resumed job picks up where its saved segments end.
+        const earlier = [...job.segments]
+        const fromSec = earlier[earlier.length - 1]?.end ?? 0
+        const result = await engine.run(
+          {
+            input: { files: [file] },
+            ...(fromSec > 0 ? { fromSec } : {}),
+            language,
+            diarize: false,
+            owner: '@khorsheed/dsh-reader',
+            ...(record.title === undefined ? {} : { label: record.title }),
           },
-          onSegments: (segments) => { job.segments.push(...segments) },
-        },
-      )
-      const html = renderLocalTranscript(result.segments)
+          {
+            signal,
+            onProgress: (progress) => {
+              if (progress.stage === 'queued') {
+                job.state = 'queued'
+                if (progress.ahead === undefined) delete job.ahead
+                else job.ahead = progress.ahead
+                return
+              }
+              job.state = 'transcribing'
+              delete job.ahead
+              job.progress = FETCH_SHARE + (1 - FETCH_SHARE) * progress.progress
+            },
+            onSegments: (more) => {
+              job.segments.push(...more)
+              saveSegments(false)
+            },
+          },
+        )
+        segments = [...earlier, ...result.segments]
+        detected = result.language ?? detected
+      } else {
+        segments = job.segments
+      }
+      const html = renderLocalTranscript(segments)
       if (html === '') throw new Error('没有识别出语音')
-      const detected = result.language
       if (detected !== undefined) job.language = detected
-      await this.deps.store(request.entryId, request.url, html, detected)
+      job.segments = segments
+      saveSegments(true)
+      if (record.phase === 'transcribe') {
+        await this.deps.store(record.entryId, record.url, html, detected)
+        record.phase = 'speakers'
+        if (detected !== undefined) record.language = detected
+        writeJson(recordPath, record)
+      }
       job.html = html
-      job.rendered = result.segments.length
-      job.segments = result.segments
+      job.rendered = segments.length
       job.progress = 1
       // Then who spoke when, on the audio still at hand. The transcript is
       // already stored and readable; this pass only re-cuts its paragraphs.
@@ -379,19 +505,19 @@ export class LocalTranscriber {
           const voices = await engine.speakers(
             {
               input: { files: [file] },
-              speech: result.segments.map(segment => ({ start: segment.start, end: segment.end })),
+              speech: segments.map(segment => ({ start: segment.start, end: segment.end })),
               owner: '@khorsheed/dsh-reader',
-              ...(request.title === undefined ? {} : { label: request.title }),
+              ...(record.title === undefined ? {} : { label: record.title }),
             },
             { signal },
           )
           const count = voices.single ? 1 : new Set(voices.turns.map(turn => turn.cluster)).size
           if (count >= 2) {
-            const split = renderSpeakerTranscript(result.segments, voices.turns)
-            await this.deps.store(request.entryId, request.url, split, detected, count)
+            const split = renderSpeakerTranscript(segments, voices.turns)
+            await this.deps.store(record.entryId, record.url, split, detected, count)
             job.html = split
           } else {
-            await this.deps.store(request.entryId, request.url, html, detected, 1)
+            await this.deps.store(record.entryId, record.url, html, detected, 1)
           }
           job.speakers = count
         } catch (error) {
@@ -406,7 +532,8 @@ export class LocalTranscriber {
       job.state = 'failed'
       job.error = error instanceof Error ? error.message : String(error)
     } finally {
-      rmSync(dir, { recursive: true, force: true })
+      // A shutdown keeps the record for the next process; anything else ends the job.
+      if (!this.disposing) rmSync(dir, { recursive: true, force: true })
     }
   }
 }

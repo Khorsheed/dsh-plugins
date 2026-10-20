@@ -34,6 +34,11 @@ export interface TranscribeRequest {
    * already 16 kHz mono 16-bit, used as is.
    */
   readonly input: { readonly files: readonly string[] } | { readonly wav: string }
+  /**
+   * Start this far into a single file (seconds): a job resumed after a
+   * restart transcribes only what it had not; segment times stay absolute.
+   */
+  readonly fromSec?: number
   /** Default `zh`. */
   readonly language?: TranscribeLanguage
   /** Separate speakers (default: no). */

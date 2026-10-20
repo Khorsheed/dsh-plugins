@@ -1,4 +1,4 @@
-import { mkdtempSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
@@ -184,5 +184,63 @@ describe('the speakers pass', () => {
     await flush()
     expect(local.status('e1')).toMatchObject({ state: 'done', speakers: 1 })
     expect(store).toHaveBeenLastCalledWith('e1', request.url, '<p data-src="local" data-t="0.0">你好。</p>', 'zh', 1)
+  })
+})
+
+describe('resuming after a restart', () => {
+  const media: ReaderMedia = { kind: 'video', provider: 'bilibili', ref: 'BV1xx' }
+  const record = (file: string, phase: 'transcribe' | 'speakers') => ({ entryId: 'e1', url: 'https://www.bilibili.com/video/BV1xx', media, title: 'T', file, phase })
+
+  function leftover(phase: 'transcribe' | 'speakers', segments: unknown[]) {
+    const tmpRoot = mkdtempSync(join(tmpdir(), 'reader-resume-'))
+    const dir = join(tmpRoot, 'audio-old')
+    mkdirSync(dir)
+    const file = join(dir, 'audio.m4a')
+    writeFileSync(file, 'audio')
+    writeFileSync(join(dir, 'job.json'), JSON.stringify(record(file, phase)))
+    writeFileSync(join(dir, 'segments.json'), JSON.stringify(segments))
+    return { tmpRoot, dir, file }
+  }
+
+  it('picks a half-done transcription up where its saved segments end, without downloading again', async () => {
+    const { tmpRoot, dir, file } = leftover('transcribe', [{ start: 0, end: 30, tokens: [tok('早', 0), tok('。', 0.3)] }])
+    const run = vi.fn(async () => ({ segments: [{ start: 30, end: 40, tokens: [tok('好', 30), tok('。', 30.3)] }], language: 'zh' }))
+    const engine = { modelsFor: () => [], missingBytes: async () => 0, run } as unknown as TranscribeEngine
+    const store = vi.fn(async () => {})
+    const videoAudio = vi.fn()
+    const local = new LocalTranscriber({ engine: () => engine, tmpRoot, videoAudio, store, resumePollMs: 5 })
+    await vi.waitFor(() => { expect(store).toHaveBeenCalled() })
+    expect(videoAudio).not.toHaveBeenCalled()
+    expect(run.mock.calls[0]![0]).toMatchObject({ input: { files: [file] }, fromSec: 30 })
+    expect(store.mock.calls[0]![2]).toContain('早。')
+    expect(store.mock.calls[0]![2]).toContain('好。')
+    await vi.waitFor(() => { expect(local.status('e1').state).toBe('done') })
+    expect(existsSync(dir)).toBe(false)
+  })
+
+  it('goes straight to the speakers when the transcript was already stored', async () => {
+    const { tmpRoot } = leftover('speakers', [{ start: 0, end: 10, tokens: [tok('早', 0), tok('。', 0.3)] }])
+    const run = vi.fn()
+    const speakers = vi.fn(async () => ({ single: true, turns: [] }))
+    const engine = { modelsFor: () => [], missingBytes: async () => 0, run, speakers } as unknown as TranscribeEngine
+    const store = vi.fn(async () => {})
+    const local = new LocalTranscriber({ engine: () => engine, tmpRoot, videoAudio: vi.fn(), store, resumePollMs: 5 })
+    await vi.waitFor(() => { expect(local.status('e1')).toMatchObject({ state: 'done', speakers: 1 }) })
+    expect(run).not.toHaveBeenCalled()
+    expect(speakers).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the record when the process shuts down mid-job', async () => {
+    const { engine } = fakeEngine()
+    const tmpRoot = mkdtempSync(join(tmpdir(), 'reader-resume-'))
+    const local = new LocalTranscriber({ engine: () => engine, tmpRoot, videoAudio: async (_url, dir) => { writeFileSync(join(dir, 'audio.m4a'), 'a'); return join(dir, 'audio.m4a') }, store: vi.fn(async () => {}) })
+    await local.start({ entryId: 'e1', url: 'https://www.bilibili.com/video/BV1xx', media, title: 'T' })
+    await flush()
+    local.dispose()
+    await flush()
+    const { readdirSync } = await import('node:fs')
+    const dirs = readdirSync(tmpRoot)
+    expect(dirs).toHaveLength(1)
+    expect(existsSync(join(tmpRoot, dirs[0]!, 'job.json'))).toBe(true)
   })
 })
