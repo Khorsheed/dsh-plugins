@@ -363,6 +363,14 @@ export class ClaudeCliProvider implements SubagentProvider {
     // a resident stream-json process on the HOST, which is the transport the
     // target exists to replace.
     const live = exec === undefined ? this.liveDriver(runId) : undefined
+    // The round's model, computed once: the configuration admission's
+    // resolution wins, else the family's order (session override, the
+    // delegation's own model, the scope's curated list / settings key).
+    // Whatever it is — explicit or followed — the first round STAMPS it into
+    // the delegation record: the member is bound to this model from then on,
+    // and a later edit of the curated list moves the default only for NEW
+    // members, never underneath a conversation (its cache lineage included).
+    const round = configuration?.resolved ?? this.roundModel(runId, requestedModel)
     if (live !== undefined && childSession !== undefined && !live.disabled) {
       // The member-bound live driver receives this exact scoped home.
       try {
@@ -390,9 +398,9 @@ export class ClaudeCliProvider implements SubagentProvider {
               cwd,
               // …and its scoped home anchors the resume-scope check.
               ...scope === undefined ? {} : { scope },
-              // The model this delegation asked for: every resume round reads
-              // it back from here instead of the caller restating it.
-              ...requestedModel === undefined ? {} : { model: requestedModel },
+              // The model the member is BOUND to (see `round` above): every
+              // resume round re-requests it from here.
+              ...round.model === undefined ? {} : { model: round.model },
             })
           },
         })
@@ -417,7 +425,7 @@ export class ClaudeCliProvider implements SubagentProvider {
         ...exec === undefined ? {} : { exec },
         endpointLabel: effectiveBaseUrl,
         permissionMode: this.permissionMode,
-        ...(configuration?.resolved ?? this.roundModel(runId, requestedModel)),
+        ...round,
         ...configuration === undefined ? {} : { controlled: true },
         disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
         spawn: spec => this.ctx.subprocess.spawn(spec),
@@ -444,8 +452,9 @@ export class ClaudeCliProvider implements SubagentProvider {
             cwd,
             // …and its scoped home anchors the resume-scope check.
             ...scope === undefined ? {} : { scope },
-            // The model this delegation asked for (see the live branch).
-            ...requestedModel === undefined ? {} : { model: requestedModel },
+            // The model the member is BOUND to (see `round` above; the exec
+            // spawn below runs this same value).
+            ...round.model === undefined ? {} : { model: round.model },
           })
         },
         // Every settled round reports its observed model and usage through the

@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "Claude 委派",
-    "description": "把编码任务委派给本地 Claude Code，回答实时流回。"
+    "title": "本机 Claude Code 委派",
+    "description": "把编码任务委派给本机的 Claude Code CLI，回答实时流回。"
   }
 }

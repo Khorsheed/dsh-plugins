@@ -243,7 +243,11 @@ export class ClaudeModelBroker implements LocalAgentModelBroker {
       ...cliDefault === undefined ? {} : { cliDefault },
       ...lastObserved === undefined ? {} : { lastObserved },
       choices,
-      ...native === undefined ? {} : { directory: extendModelDirectory(native, [settings, cliDefault], [...this.deps.recentModels(), lastObserved]) },
+      // The picker's extended vocabulary follows the same rule as choices:
+      // a curated list is complete on its own (no history entries sneak in);
+      // settings/cliDefault still extend so the member's CURRENT bound model
+      // stays selectable even when it is not in the list.
+      ...native === undefined ? {} : { directory: extendModelDirectory(native, [settings, cliDefault], curated.length > 0 ? [] : [...this.deps.recentModels(), lastObserved]) },
       live: this.deps.live(),
       switchable: !active,
       ...active

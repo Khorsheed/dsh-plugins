@@ -5,8 +5,8 @@ export const NS = 'local-agent-claude-code'
 
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
-  'card.title': 'Claude 委派',
-  'card.description': 'Claude Code 委派：端点凭据与常驻模式（live）',
+  'card.title': '本机 Claude Code 委派',
+  'card.description': '使用本机安装的 Claude Code CLI 委派：端点凭据与常驻模式（live）',
   'card.expand': '展开',
   'card.collapse': '收起',
   'auth.title': '认证',
@@ -66,8 +66,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 
 /** English dictionary, checked complete against the zh key set. */
 export const en = {
-  'card.title': 'Claude Delegation',
-  'card.description': 'Claude Code delegation: endpoint credential and resident (live) mode',
+  'card.title': 'Local Claude Code Delegation',
+  'card.description': "Delegate through this machine's Claude Code CLI: endpoint credential and resident (live) mode",
   'card.expand': 'Expand',
   'card.collapse': 'Collapse',
   'auth.title': 'Authentication',

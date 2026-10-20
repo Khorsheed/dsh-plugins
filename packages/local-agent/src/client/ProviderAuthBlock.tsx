@@ -60,6 +60,8 @@ interface HarnessView {
   loginUrl?: string
   /** A pty login waits for the user to paste the OAuth code. */
   loginAwaitingCode?: boolean
+  /** The harness CLI's own version, when its effective-settings snapshot names one. */
+  cliVersion?: string
 }
 
 /**
@@ -132,6 +134,7 @@ export function ProviderAuthBlock({ harness, useSessions, status, runCommand, ac
           loginable: probe.loginable ?? true,
           logoutable: probe.logoutable ?? true,
           ...probe.loginAwaitingCode === true ? { loginAwaitingCode: true } : {},
+          ...probe.effectiveSettings?.cliVersion === undefined ? {} : { cliVersion: probe.effectiveSettings.cliVersion },
         }
       setView(prev =>
         // A completed login drops the stale device prompt.
@@ -228,6 +231,7 @@ export function ProviderAuthBlock({ harness, useSessions, status, runCommand, ac
             aria-label={t(authenticated ? 'settings.authenticated' : 'settings.notAuthenticated')}
           />
           <span className={css.rowTag}>{harness.id}</span>
+          {view.cliVersion !== undefined && <span className={css.rowTag}>{view.cliVersion}</span>}
         </span>
         <span className={css.status}>
           {statusKind === 'checking' && t('loading')}

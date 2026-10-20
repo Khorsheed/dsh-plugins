@@ -250,3 +250,28 @@ describe('claude delegation model', () => {
     expect(live.startRound).toHaveBeenCalled()
   })
 })
+
+describe('member model binding (the curated-list stickiness)', () => {
+  it('a fresh round with NO named model stamps the resolved default into the record', async () => {
+    const { provider, recorded } = mount(
+      { kind: 'fresh' },
+      { configModel: () => 'claude-opus-5-5' },
+    )
+    const run = await provider.start(request())
+    await run.result
+    await new Promise(resolve => setTimeout(resolve, 20))
+    // No model was requested, yet the member is bound to what the first round
+    // resolved — a later default change cannot move this member underneath it.
+    expect(recorded[0]).toMatchObject({ model: 'claude-opus-5-5' })
+    await run.dispose()
+  })
+
+  it('a member with no resolvable model records none (the pre-list behavior)', async () => {
+    const { provider, recorded } = mount({ kind: 'fresh' })
+    const run = await provider.start(request())
+    await run.result
+    await new Promise(resolve => setTimeout(resolve, 20))
+    expect(recorded[0]).not.toHaveProperty('model')
+    await run.dispose()
+  })
+})

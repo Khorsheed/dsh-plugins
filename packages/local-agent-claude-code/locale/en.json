@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "Claude Delegation",
-    "description": "Delegate coding tasks to local Claude Code with live answers."
+    "title": "Local Claude Code Delegation",
+    "description": "Delegate coding tasks to this machine's Claude Code CLI with live answers."
   }
 }
