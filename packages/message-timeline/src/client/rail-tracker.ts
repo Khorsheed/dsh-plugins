@@ -166,8 +166,11 @@ export function jumpRow(scrollport: HTMLElement, key: string): boolean {
 export interface RailTracker {
   /** Live rail geometry and active marker for the current session. */
   readonly state: HostObservable<TimelineRailState>
-  /** Scroll the transcript to the message addressed by `key` (no-op while unbound). */
-  jumpTo(key: string): void
+  /**
+   * Scroll the transcript to the message addressed by `key`.
+   * @returns whether the row was found and scrolled (false while unbound).
+   */
+  jumpTo(key: string): boolean
   /** Unbind every listener and observer. */
   dispose(): void
 }
@@ -341,9 +344,7 @@ export function installRailTracker(ctx: Context, includeSteering: boolean): Rail
         return () => { listeners.delete(fn) }
       },
     },
-    jumpTo: (key) => {
-      if (scrollport !== null) jumpRow(scrollport, key)
-    },
+    jumpTo: (key) => scrollport !== null && jumpRow(scrollport, key),
     dispose: () => {
       stopList()
       stopProvide?.()

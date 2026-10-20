@@ -3,11 +3,15 @@
  * official `conversation.session.header.utilities` seat (a right-aligned
  * optional-utility slot) that anchors the plugin into the session scope; the
  * component itself renders only through a body portal: the flat floating
- * timeline panel over the chat scrollport's left edge — one row per loaded
- * user message, no frame, no visible scrollbar. The
- * panel reads the session chat snapshot through the framework `useSession`
- * hook, jumps through the official row anchor attributes, and degrades to a
- * hidden panel when those attributes change — no official code is modified.
+ * timeline panel over the chat scrollport's left edge — one row per user
+ * message of the whole session, no frame, no visible scrollbar. The row list
+ * merges the host `turnOutline` projection (every started turn, served whole)
+ * with the loaded chat window; confirming a not-yet-loaded row pages history
+ * through the session's jump loader (`loadThrough`) before scrolling. When
+ * the projection is absent the panel reads the loaded window alone, paged
+ * through the session conversation service, jumps through the official row
+ * anchor attributes, and degrades to a hidden panel when those attributes
+ * change — no official code is modified.
  * @module @khorsheed/dsh-message-timeline/client
  */
 import type { Context } from '@deepseek-ai/cordis'
@@ -69,12 +73,15 @@ export function apply(ctx: Context, config?: Partial<TimelineConfig>): void {
       if (actx === undefined) throw new Error('message-timeline: session resolved no scope')
       const conversation = actx.get('conversation')
       if (conversation === undefined) throw new Error('message-timeline: conversation service unavailable')
+      const binding = ctx.sessions.binding(sessionId)
+      if (binding === undefined) throw new Error('message-timeline: session resolved no binding')
       return {
         includeSteering: options.includeSteering,
         panelWidth: options.panelWidth,
         initialPages: options.initialPages,
         loadOlder: () => conversation.loadOlder(),
-        jumpTo: (key) => { tracker.jumpTo(key) },
+        loadThrough: seq => binding.session.loadThrough(seq),
+        jumpTo: (key) => tracker.jumpTo(key),
         hooks: { rail: tracker.state },
       }
     },

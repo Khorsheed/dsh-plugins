@@ -26,9 +26,9 @@ afterEach(() => {
 const scrollIntoViewMock = vi.fn()
 Element.prototype.scrollIntoView = scrollIntoViewMock as never
 
-function node(key: string, kind: 'user' | 'steering', text: string): ChatConversationViewNode {
+function node(key: string, kind: 'user' | 'steering', text: string, anchorSeq = 1): ChatConversationViewNode {
   return {
-    key, kind, target: 'chat', anchorSeq: 1,
+    key, kind, target: 'chat', anchorSeq,
     data: { time: 1_700_000_000_000, content: [{ type: 'text', text }] },
   } as unknown as ChatConversationViewNode
 }
@@ -72,22 +72,26 @@ function renderRail(overrides: Partial<TimelineRailProps> = {}) {
   const chatStore = createSnapshotStore(chatSnapshot())
   const sessionStore = createSnapshotStore(sessionSnapshot())
   const railStore = createSnapshotStore(RAIL)
-  const jumpTo = vi.fn()
+  const jumpTo = vi.fn(() => true)
   const loadOlder = vi.fn(() => Promise.resolve())
+  const loadThrough = vi.fn(() => Promise.resolve())
   const props = {
     sessionId: 's1',
     useSession: bindSnapshotSelector(sessionStore),
     useChat: bindSnapshotSelector(chatStore),
     useRail: bindSnapshotSelector(railStore),
+    // No projection seat: the baseline exercises the window-paging fallback.
+    useProjection: () => undefined,
     jumpTo,
     loadOlder,
+    loadThrough,
     includeSteering: true,
     panelWidth: 320,
     initialPages: 5,
     t: (key: keyof typeof en) => en[key],
   } as unknown as TimelineRailProps
   const view = render(<TimelineRail {...{ ...props, ...overrides }} />)
-  return { view, sessionStore, chatStore, railStore, jumpTo, loadOlder }
+  return { view, sessionStore, chatStore, railStore, jumpTo, loadOlder, loadThrough }
 }
 
 function items(): HTMLElement[] {
@@ -633,5 +637,159 @@ describe('hidden conditions', () => {
       useRail: bindSnapshotSelector(createSnapshotStore({ ...RAIL, activeKey: null })),
     })
     expect(items()).toHaveLength(0)
+  })
+})
+
+describe('the turnOutline projection', () => {
+  // Two started turns: turn 0 spans [10, 20), turn 1 [20, ∞). The chat window
+  // fixtures below load only turn 1 (its prompt anchors at seq 25).
+  const OUTLINE = [
+    { turn: 0, seq: 10, prompt: '最早的问题', response: '' },
+    { turn: 1, seq: 20, prompt: '谢谢', response: '好的' },
+    { turn: 2, seq: 30, prompt: '', response: '' },
+  ]
+  const useProjection = (key: string): unknown => (key === 'turnOutline' ? OUTLINE : undefined)
+
+  /** The chat window holding only turn 2's prompt (anchorSeq 35). */
+  function tailWindow() {
+    return createSnapshotStore({
+      order: ['k3'],
+      nodes: nodeStore(node('k3', 'user', '最新的问题', 35)),
+    })
+  }
+
+  function itemIds(): string[] {
+    return items().map(el => el.getAttribute('data-item-key')!)
+  }
+
+  it('lists every turn from the outline without paging history', () => {
+    const sessionStore = createSnapshotStore(sessionSnapshot({ hasMore: true }))
+    const { loadOlder } = renderRail({
+      useProjection,
+      useChat: bindSnapshotSelector(tailWindow()),
+      useSession: bindSnapshotSelector(sessionStore),
+    })
+
+    // The two older turns render as outline rows ahead of the loaded row —
+    // the first message of the session is visible without a single page.
+    expect(itemIds()).toEqual(['turn:0', 'turn:1', 'k3'])
+    expect(panel().textContent).toContain('最早的问题')
+    expect(loadOlder).not.toHaveBeenCalled()
+
+    // Panel-top scrolls stay inert: the list is already complete.
+    fireEvent.scroll(panel())
+    expect(loadOlder).not.toHaveBeenCalled()
+  })
+
+  it('marks outline rows with the neutral tick and keeps loaded rows plain', () => {
+    renderRail({ useProjection, useChat: bindSnapshotSelector(tailWindow()) })
+    expect(item('turn:0').className).toContain('itemOutline')
+    expect(item('k3').className).not.toContain('itemOutline')
+  })
+
+  it('falls back to the empty copy for an outline row whose prompt has no text', () => {
+    // An empty window keeps every turn outline-only, including the textless
+    // turn 2 (an images-only prompt previews as '').
+    renderRail({
+      useProjection,
+      useChat: bindSnapshotSelector(createSnapshotStore({ order: [], nodes: nodeStore() })),
+    })
+    expect(item('turn:2').textContent).toContain(en['rail.empty'])
+  })
+
+  it('pages history through the outline row seq and lands on the loaded row', async () => {
+    const chatStore = tailWindow()
+    let releaseJump: (() => void) | undefined
+    const loadThrough = vi.fn(() => new Promise<void>((resolve) => { releaseJump = resolve }))
+    const { jumpTo } = renderRail({
+      useProjection,
+      loadThrough,
+      useChat: bindSnapshotSelector(chatStore),
+      useSession: bindSnapshotSelector(createSnapshotStore(sessionSnapshot({ hasMore: true }))),
+    })
+
+    fireEvent.click(item('turn:0'))
+
+    // The jump loader pages toward the turn's turn/start seq; the row shows
+    // its paging state while the request is in flight.
+    expect(loadThrough).toHaveBeenCalledWith(10)
+    expect(item('turn:0').getAttribute('aria-busy')).toBe('true')
+    expect(item('turn:0').className).toContain('itemPending')
+
+    // The page arrives: the turn's prompt materializes and takes over the row,
+    // and the rail lands on it without waiting for the loader loop to settle.
+    act(() => {
+      chatStore.set({
+        order: ['k0', 'k3'],
+        nodes: nodeStore(node('k0', 'user', '最早的问题', 12), node('k3', 'user', '最新的问题', 35)),
+      })
+    })
+    expect(jumpTo).toHaveBeenCalledWith('k0')
+    expect(item('k0').getAttribute('aria-busy')).toBeNull()
+
+    // The loader settling afterward is a no-op (the jump already completed).
+    await act(async () => { releaseJump?.() })
+    expect(jumpTo).toHaveBeenCalledTimes(1)
+  })
+
+  it('lands on the nearest later loaded row when the turn never materializes', async () => {
+    // The loader settles without moving the window head (a stalled page): the
+    // rail lands approximately instead of paging forever.
+    const { jumpTo } = renderRail({
+      useProjection,
+      useChat: bindSnapshotSelector(tailWindow()),
+      useSession: bindSnapshotSelector(createSnapshotStore(sessionSnapshot({ hasMore: true }))),
+    })
+
+    fireEvent.click(item('turn:0'))
+    await act(async () => {})
+
+    expect(jumpTo).toHaveBeenCalledWith('k3')
+  })
+
+  it('never pages when history is exhausted and the turn is unreachable', async () => {
+    const loadThrough = vi.fn(() => Promise.resolve())
+    renderRail({
+      useProjection,
+      loadThrough,
+      // An empty window (a session whose first page holds no user message):
+      // the outline alone keeps the list populated.
+      useChat: bindSnapshotSelector(createSnapshotStore({ order: [], nodes: nodeStore() })),
+    })
+    expect(itemIds()).toEqual(['turn:0', 'turn:1', 'turn:2'])
+
+    fireEvent.click(item('turn:0'))
+    await act(async () => {})
+
+    expect(loadThrough).not.toHaveBeenCalled()
+  })
+
+  it('keeps steering rows of a loaded turn beside its prompt', () => {
+    renderRail({
+      useProjection,
+      useChat: bindSnapshotSelector(createSnapshotStore({
+        order: ['k3', 'k2'],
+        nodes: nodeStore(node('k3', 'user', '最新的问题', 35), node('k2', 'steering', '补充一句', 36)),
+      })),
+    })
+    expect(itemIds()).toEqual(['turn:0', 'turn:1', 'k3', 'k2'])
+  })
+
+  it('moves the focus onto outline rows and arms the jump with Enter', () => {
+    const loadThrough = vi.fn(() => Promise.resolve())
+    renderRail({
+      useProjection,
+      loadThrough,
+      useChat: bindSnapshotSelector(tailWindow()),
+      useSession: bindSnapshotSelector(createSnapshotStore(sessionSnapshot({ hasMore: true }))),
+    })
+
+    // The reading position is k3 (the loaded tail row); ArrowUp preselects
+    // the outline row above it, and Enter pages its history in.
+    fireEvent.keyDown(panel(), { key: 'ArrowUp' })
+    expect(item('turn:1').className).toContain('itemFocused')
+    fireEvent.keyDown(panel(), { key: 'Enter' })
+
+    expect(loadThrough).toHaveBeenCalledWith(20)
   })
 })

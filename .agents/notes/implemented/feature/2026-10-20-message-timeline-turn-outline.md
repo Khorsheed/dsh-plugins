@@ -1,0 +1,29 @@
+# Agent Note: Message timeline reads the turnOutline projection
+
+Status: implemented
+
+English | [中文](2026-10-20-message-timeline-turn-outline.zh.md)
+
+## Problem
+
+The rail listed only the loaded chat window: reaching the session's first message meant paging history up page by page (open-time prefetch plus panel-top `loadOlder`), while the official turn rail shows every started turn immediately. Pulling the whole event log into the client window instead was never viable — full pages carry tool results and assistant output, orders of magnitude heavier than the list needs, and they inflate the chat store the transcript renders from.
+
+## Decision
+
+The rail's row list is now a merge of two sources, mirroring the official turn rail's two-tier design (`ui-chat`'s `turn-rail-items.ts`). The host `turnOutline` projection (`@deepseek-ai/dsh-session-turn-outline`, mounted by the official web bundle since 0.1.2-alpha.3) names every started turn — `{ turn, seq, prompt, response }`, the seq being the turn's `turn/start` — and the panel reads it through the `useProjection` session standard prop (available since 0.1.2-alpha.1; both floors sit below the package's 0.1.2-rc.1 minHost, which does not move). The loaded window overlays richer previews, steering rows, and message-tools bubbles for the turns it covers. `src/client/outline.ts` owns the wire narrow (absent or damaged values read as capability-absent); `src/client/rows.ts` owns the single-pass interleave: an outline entry whose seq range holds a loaded row is covered and emits nothing, every other entry emits a neutral-tick outline row, and a loaded row belongs to the last entry whose start it follows (when the window runs ahead of the projection feed, the newest rows read as the last named turn until the feed catches up — suppressing its outline row beats duplicating the turn).
+
+Confirming an outline row arms a component-owned pending jump: the effect pages history through the session jump loader (`ISession.loadThrough`, since 0.1.2-alpha.3, reached via `ctx.sessions.binding(sessionId).session` because the session-scope conversation service exposes only `loadOlder`) and lands the moment the turn's first loaded row materializes — no waiting for the paging loop to settle. A settle that moved the window head re-requests; a stalled head or a covered window with the row still missing (a withdraw-hidden prompt) lands on the nearest loaded row at/after the turn instead, matching the official rail's `scrollToTurnAtOrAfter` fallback. The landing retries the DOM scroll for up to 30 frames because the transcript renders the new page in the same commit or a near frame. The tracker's `jumpTo` now returns whether the row was found, and the inject face gains `loadThrough`.
+
+When the projection value is absent the whole feature degrades to the previous behavior — window rows only, prefetch, and panel-top paging; `initialPages` applies only there. The projection is a type-only dev dependency (`@deepseek-ai/dsh-session-turn-outline/client` merges the `turnOutline` key into `SessionProjectionMap`) plus an optional peer declaration, following the local-agent token-meter precedent; the plugin never runtime-imports it.
+
+## Alternatives considered
+
+**Page the whole history into the client window.** Rejected: event pages carry tool results and assistant output, so a "fetch everything once" list costs orders of magnitude more than the projection feed (at most three pushes per turn, ~600 bytes per turn worst case) and inflates the chat store the transcript renders from.
+
+**A plugin-side host fold (a new remote serving user messages).** Rejected: it duplicates the projection subsystem the host already ships, needs a host-side package and a wire of its own, and the outline's turn-grained first-prompt preview already matches the panel's one-line rows.
+
+**Keep the rail loaded-window-only.** Rejected: that is the status quo the change replaces — the first message stays unreachable without manual paging, which is exactly what the official rail solved with the same projection.
+
+## Consequences
+
+The full user-message list — first message included — renders the moment a session opens, and long sessions cost one whole-value projection feed instead of N page loads. The outline is turn-grained, so steering rows appear only once their turn pages in, and a turn whose first message was withdrawn stays listed (the outline folds the committed log, not the UI's hiding); confirming it lands on the nearest visible row. Both are the official rail's semantics too. Coverage: `outline.client.spec.ts` pins the wire narrow, `rows.client.spec.ts` the merge, and the component spec drives the pending-jump lifecycle (arm, paging indicator, landing, stall fallback, exhausted history); the flat-list note's pagination paragraph now describes the fallback path only.

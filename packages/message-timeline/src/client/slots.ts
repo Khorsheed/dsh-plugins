@@ -4,6 +4,7 @@
  * the `conversation.session.header.utilities` entry.
  */
 import type { ChatConversationViewNode } from '@deepseek-ai/dsh-client-ui-chat/client'
+import type { ISession } from '@deepseek-ai/dsh-api-session-controller/client'
 import type {
   HostObservable, InjectFace, PropsLocale, PropsRuntime,
 } from '@deepseek-ai/dsh-client-ui-slots'
@@ -55,12 +56,24 @@ export interface TimelineRailInjected {
   includeSteering: boolean
   /** Timeline panel width in px (config). */
   panelWidth: number
-  /** History pages to prefetch when the panel opens (config). */
+  /**
+   * History pages to prefetch when the panel opens (config). Applies only to
+   * the window-paging fallback: when the host serves the turnOutline
+   * projection the list starts complete and nothing prefetches.
+   */
   initialPages: number
-  /** Pull one older history page for the rendered session. */
+  /** Pull one older history page for the rendered session (fallback path). */
   loadOlder: () => Promise<void>
-  /** Scroll the transcript to the user message row addressed by `key`. */
-  jumpTo: (key: string) => void
+  /**
+   * Page history back until the window covers `seq` (the session jump
+   * loader): how an outline-only row's turn becomes loaded.
+   */
+  loadThrough: ISession['loadThrough']
+  /**
+   * Scroll the transcript to the user message row addressed by `key`.
+   * @returns whether the row was found and scrolled.
+   */
+  jumpTo: (key: string) => boolean
   hooks: {
     /** Live panel geometry and active marker for the current session. */
     rail: HostObservable<TimelineRailState>

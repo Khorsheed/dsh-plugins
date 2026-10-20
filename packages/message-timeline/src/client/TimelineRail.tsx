@@ -2,14 +2,23 @@
  * Message timeline panel, browser half. One entry in the official
  * conversation.session.header.utilities seat anchors the plugin into the
  * session scope and renders, through a body portal, the flat floating
- * timeline over the left edge of the chat scrollport: one row per loaded
- * user message — a tick plus an ellipsized one-line preview, no frame and no
+ * timeline over the left edge of the chat scrollport: one row per user
+ * message — a tick plus an ellipsized one-line preview, no frame and no
  * visible scrollbar. At rest only the dimmed ticks show, the reading
  * position's tick in blue (the latest message until the tracker answers);
  * hovering or keyboard-focusing the panel reveals the row texts with the
  * blue row on top, and clicking a row jumps the transcript to that message.
  * The panel is always on while the chat view shows; the `enabled` config is
  * the off switch.
+ *
+ * The row list is whole-session from the moment the session opens: the host
+ * `turnOutline` projection names every started turn, and the loaded chat
+ * window overlays richer previews (plus steering rows and message-tools
+ * bubbles) for the turns it covers. A turn outside the window renders as a
+ * dimmed outline row; confirming it pages history back through the turn's
+ * `turn/start` seq (the session jump loader) and lands on the freshly loaded
+ * row. When the host serves no turnOutline value the panel degrades to the
+ * loaded window alone, paged by prefetch and panel-top scrolls.
  */
 import { memo, useEffect, useMemo, useRef, useState, type UIEvent } from 'react'
 import { createPortal } from 'react-dom'
@@ -17,6 +26,8 @@ import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { ChatConversationViewNode } from '@deepseek-ai/dsh-client-ui-chat/client'
 import { PANEL_WIDTH_MIN } from './config.ts'
 import { chatHookOf } from './chat-hook.ts'
+import { outlineEntries } from './outline.ts'
+import { mergeRows, type LoadedRailRow, type OutlineRailRow, type RailRow } from './rows.ts'
 import type { TimelineItem, TimelineRailProps } from './slots.ts'
 import { previewText } from './preview.ts'
 import { foldHiddenSpans, isSeqHidden } from './hidden-spans.ts'
@@ -38,6 +49,32 @@ const PANEL_PADDING_X = 8
 const PANEL_GAP = 16
 /** Degraded width cap (fraction of the scrollport) while the flow probe is unanswered. */
 const DEGRADED_WIDTH_RATIO = 0.4
+/**
+ * Frames an outline jump retries the DOM scroll after its row materializes in
+ * the chat store: the transcript renders the new page in the same commit or a
+ * near frame, and a half-second budget covers the skew without hanging.
+ */
+const JUMP_RETRY_FRAMES = 30
+
+/**
+ * One in-flight outline jump: the turn being paged in before the scroll.
+ * Owned by the component; the session's jump loader runs the shared paging
+ * loop and never rejects into here (a failed or stalled loop resolves, and
+ * the settle path below decides whether to re-request or fall back).
+ */
+interface PendingJump {
+  /** The session the jump started on — a jump never crosses sessions. */
+  readonly sessionId: string
+  readonly turn: number
+  /** The turn's `turn/start` seq (the loadThrough target). */
+  readonly seq: OutlineRailRow['seq']
+  /** A loadThrough request has fired for this jump at least once. */
+  readonly requested: boolean
+  /** A loadThrough request is in flight right now. */
+  readonly awaiting: boolean
+  /** The window head the last request started from (the no-progress guard). */
+  readonly fromHead: number | null
+}
 
 /**
  * The header-utilities entry: the portal timeline panel.
@@ -47,7 +84,7 @@ const DEGRADED_WIDTH_RATIO = 0.4
 export function TimelineRail({
   sessionId,
   includeSteering, panelWidth, initialPages,
-  loadOlder, jumpTo, useRail, t,
+  loadOlder, loadThrough, jumpTo, useRail, t,
   ...standard
 }: TimelineRailProps) {
   const rail = useRail(s => s)
@@ -60,8 +97,12 @@ export function TimelineRail({
   const nodes = useChatSlice(c => c.nodes)
   const hasMore = useSession(s => s.hasMore)
   const loadingOlder = useSession(s => s.loadingOlder)
+  // The host projection seat exists on every supported host; the VALUE is
+  // present only where the assembly mounts the turn-outline unit. Both reads
+  // degrade to undefined, which keeps the window-paging list.
+  const outline = outlineEntries(standard.useProjection?.('turnOutline'))
 
-  const items = useMemo<TimelineItem[]>(() => {
+  const items = useMemo<readonly RailRow[]>(() => {
     // The node store is an in-memory snapshot; take it once so the span fold
     // and the message-tools append read the same snapshot.
     let store: readonly ChatConversationViewNode[] = []
@@ -84,14 +125,14 @@ export function TimelineRail({
     // ordinary session carries no span node, so the fold is empty and every
     // order row still renders: this filter never alters the baseline.
     const hidden = (node: { anchorSeq: number }): boolean => isSeqHidden(spans, node.anchorSeq)
-    const result: TimelineItem[] = []
+    const loaded: TimelineItem[] = []
     const seen = new Set<string>()
     for (const key of order) {
       const node = nodes.get(key)
       if (node === undefined) continue
       if (!isTimelineRowKind(node.kind, includeSteering)) continue
       if (hidden(node)) continue
-      result.push({ key, node })
+      loaded.push({ key, node })
       seen.add(key)
     }
     // After a message-tools in-place edit the replacement materializes as a
@@ -108,7 +149,7 @@ export function TimelineRail({
       if (node.visibility === 'hidden') continue
       if (seen.has(node.key)) continue
       if (hidden(node)) continue
-      result.push({ key: node.key, node })
+      loaded.push({ key: node.key, node })
       seen.add(node.key)
     }
     // The order loop is seq-sorted, but the appended bubbles walked the store
@@ -119,24 +160,87 @@ export function TimelineRail({
     // ordinary session has no appended bubbles, so this never reorders the
     // baseline (which is already seq-sorted). Dropped rows are gone before the
     // sort, so a withdrawn original never resurfaces.
-    result.sort((left, right) => left.node.anchorSeq - right.node.anchorSeq)
-    return result
-  }, [order, nodes, includeSteering])
+    loaded.sort((left, right) => left.node.anchorSeq - right.node.anchorSeq)
+    return mergeRows(loaded, outline)
+  }, [order, nodes, includeSteering, outline])
 
   // The lit row: the hover/arrow preselection while it moves, otherwise the
   // live reading position the tracker publishes, defaulting to the latest
   // message before the tracker answers. ArrowUp/Down or hovering moves a
-  // bold preselection; Enter or a click confirms it and jumps.
+  // bold preselection; Enter or a click confirms it and jumps. Loaded rows
+  // identify by their node key (the tracker's active marker speaks the same
+  // key); outline rows identify as `turn:<n>`.
   const [focusKey, setFocusKey] = useState<string | null>(null)
-  const current = focusKey ?? rail.activeKey ?? items.at(-1)?.key ?? null
+  const current = focusKey ?? rail.activeKey ?? items.at(-1)?.id ?? null
   const panelRef = useRef<HTMLDivElement | null>(null)
+
+  const [pendingJump, setPendingJump] = useState<PendingJump | null>(null)
+  // A jump never crosses sessions; the entry's session identity switches
+  // without a remount when the main view moves.
+  useEffect(() => { setPendingJump(null) }, [sessionId])
+
+  // The window head: the first visible node's anchorSeq (ChatView's firstSeq
+  // derivation), the coverage line for the outline jump's re-request guard.
+  const firstSeq = useMemo(() => {
+    const firstKey = order[0]
+    if (firstKey === undefined) return null
+    return nodes.get(firstKey)?.anchorSeq ?? null
+  }, [order, nodes])
+
+  // The outline-jump state machine. Fire (click) only arms the jump; this
+  // effect owns every loadThrough request, the landing scroll, and the give-
+  // up fallback, re-running as the window, the paging flags, or the jump
+  // itself change. The loop converges because loadThrough pages until the
+  // window covers the target seq (or history runs out), and a settle that
+  // moved nothing falls through to the fallback instead of re-requesting.
+  useEffect(() => {
+    if (pendingJump === null || pendingJump.sessionId !== sessionId) return
+    const landed = items.find((row): row is LoadedRailRow => row.kind === 'loaded' && row.turn === pendingJump.turn)
+    if (landed !== undefined) {
+      // The store shows the turn's row; the transcript DOM renders it in the
+      // same commit or a near frame, so retry briefly before giving up.
+      let cancelled = false
+      let frames = 0
+      const attempt = (): void => {
+        if (cancelled) return
+        frames += 1
+        if (jumpTo(landed.key) || frames >= JUMP_RETRY_FRAMES) {
+          setPendingJump(null)
+          return
+        }
+        (typeof requestAnimationFrame === 'function' ? requestAnimationFrame : setTimeout)(attempt)
+      }
+      attempt()
+      return () => { cancelled = true }
+    }
+    if (pendingJump.awaiting || loadingOlder) return
+    // Settled (or freshly armed) without the row: page again while the window
+    // head still moves and history remains. A covered window with the row
+    // still missing — the turn's prompt is withdraw-hidden — and a stalled
+    // head both land on the nearest loaded row at/after the turn instead.
+    const uncovered = firstSeq === null || firstSeq > pendingJump.seq
+    if (uncovered && hasMore && (!pendingJump.requested || pendingJump.fromHead !== firstSeq)) {
+      const jump = pendingJump
+      setPendingJump({ ...jump, requested: true, awaiting: true, fromHead: firstSeq })
+      void loadThrough(jump.seq).then(() => {
+        setPendingJump(current =>
+          current !== null && current.sessionId === jump.sessionId && current.turn === jump.turn
+            ? { ...current, awaiting: false }
+            : current)
+      })
+      return
+    }
+    const fallback = items.find((row): row is LoadedRailRow => row.kind === 'loaded' && row.anchorSeq >= pendingJump.seq)
+    if (fallback !== undefined) jumpTo(fallback.key)
+    setPendingJump(null)
+  }, [items, pendingJump, sessionId, loadingOlder, hasMore, firstSeq, jumpTo, loadThrough])
 
   // The panel is a chat-view affordance: hide it while the session shows
   // another tab (trajectory etc.), detected through ChatView's data-chat-flow
-  // marker. `active` splits from `visible` so history paging can bootstrap: a
-  // session whose loaded event window holds no user message yet (a huge
-  // assistant turn pushed it past the first page) renders no rows but must
-  // still pull pages until one materializes.
+  // marker. With the outline the list starts whole; without it a session
+  // whose loaded event window holds no user message yet (a huge assistant
+  // turn pushed it past the first page) renders no rows but must still pull
+  // pages until one materializes — hence `active` splits from `visible`.
   const active = rail.chatView && rail.ready && rail.sessionId === sessionId
   const visible = active && items.length > 0
 
@@ -163,32 +267,46 @@ export function TimelineRail({
       ?.scrollIntoView({ block: 'nearest' })
   }, [current])
 
-  // Prefetch history while the panel is on a chat view: keep pulling pages
-  // until the first user message materializes (bootstrap), then until
-  // initialPages pages arrived, so the list starts near-complete. Older
-  // pages load on demand when the panel scrolls to its top.
+  // Fallback mode (no outline) prefetches history while the panel is on a
+  // chat view: keep pulling pages until the first user message materializes
+  // (bootstrap), then until initialPages pages arrived, so the list starts
+  // near-complete. Older pages load on demand when the panel scrolls to its
+  // top. The outline mode skips this entirely — the projection already names
+  // every turn, so no page has to arrive for the list to be complete.
   const prefetchedPagesRef = useRef(0)
   useEffect(() => {
     if (!active) {
       prefetchedPagesRef.current = 0
       return
     }
+    if (outline !== undefined) return
     if (!hasMore || loadingOlder) return
     if (items.length > 0 && prefetchedPagesRef.current >= initialPages) return
     prefetchedPagesRef.current += 1
     void loadOlder()
-  }, [active, hasMore, loadingOlder, items.length, initialPages, loadOlder])
+  }, [active, hasMore, loadingOlder, items.length, initialPages, loadOlder, outline])
 
-  // Older history loads by scrolling the panel to its top; the official chat
-  // view owns the load-older button, so the panel stays chromeless.
+  // Fallback mode loads older history by scrolling the panel to its top; the
+  // official chat view owns the load-older button, so the panel stays
+  // chromeless. The outline mode's list is already complete.
   const onPanelScroll = (event: UIEvent<HTMLDivElement>): void => {
+    if (outline !== undefined) return
     if (!hasMore || loadingOlder) return
     if (event.currentTarget.scrollTop <= 8) void loadOlder()
   }
 
-  const confirm = (key: string): void => {
+  const confirm = (row: RailRow): void => {
     setFocusKey(null)
-    jumpTo(key)
+    if (row.kind === 'loaded') {
+      // A direct jump supersedes any armed outline jump (its landing would
+      // otherwise yank the transcript later).
+      setPendingJump(null)
+      jumpTo(row.key)
+      return
+    }
+    // An outline row arms the jump; the effect above runs the paging and the
+    // landing scroll. Re-clicking another outline row retargets the jump.
+    setPendingJump({ sessionId, turn: row.turn, seq: row.seq, requested: false, awaiting: false, fromHead: null })
   }
 
   if (!visible || tooNarrow) return null
@@ -205,39 +323,48 @@ export function TimelineRail({
       onKeyDown={(event) => {
         if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
           event.preventDefault()
-          const anchor = items.findIndex(item => item.key === current)
+          const anchor = items.findIndex(item => item.id === current)
           const next = event.key === 'ArrowDown'
             ? items[Math.min(anchor + 1, items.length - 1)]
             : items[Math.max(anchor - 1, 0)]
           /* v8 ignore next -- a non-empty item list keeps the clamped index inside bounds */
-          if (next !== undefined) setFocusKey(next.key)
+          if (next !== undefined) setFocusKey(next.id)
         } else if (event.key === 'Enter' || event.key === ' ') {
           event.preventDefault()
-          /* v8 ignore next -- the panel only renders with at least one item, so a current key always exists */
-          if (current !== null) confirm(current)
+          const row = items.find(item => item.id === current)
+          if (row !== undefined) confirm(row)
         }
       }}
       onBlur={() => { setFocusKey(null) }}
     >
-      {items.map((item) => {
-        const isCurrent = item.key === current
-        const isFocused = item.key === focusKey
+      {items.map((row) => {
+        const isCurrent = row.id === current
+        const isFocused = row.id === focusKey
+        const isPending = row.kind === 'outline' && pendingJump !== null && pendingJump.turn === row.turn
         const className = isFocused
           ? `${css.item} ${css.itemFocused}`
           : isCurrent ? `${css.item} ${css.itemCurrent}` : css.item
+        const classNames = row.kind === 'outline'
+          ? `${className} ${isPending ? css.itemPending : css.itemOutline}`
+          : className
         return (
           <button
-            key={item.key}
+            key={row.id}
             type="button"
-            data-item-key={item.key}
+            data-item-key={row.id}
             aria-current={isCurrent || undefined}
-            className={className}
-            onClick={() => { confirm(item.key) }}
-            onMouseEnter={() => { setFocusKey(item.key) }}
-            onMouseLeave={() => { setFocusKey(key => key === item.key ? null : key) }}
+            aria-busy={isPending || undefined}
+            className={classNames}
+            onClick={() => { confirm(row) }}
+            onMouseEnter={() => { setFocusKey(row.id) }}
+            onMouseLeave={() => { setFocusKey(key => key === row.id ? null : key) }}
           >
             <span className={isCurrent ? `${css.tick} ${css.tickCurrent}` : css.tick} aria-hidden="true" />
-            <span className={css.itemText}>{previewText(nodeContent(item.node)) ?? t('rail.empty')}</span>
+            <span className={css.itemText}>
+              {row.kind === 'loaded'
+                ? (previewText(nodeContent(row.node)) ?? t('rail.empty'))
+                : (row.prompt !== '' ? row.prompt : t('rail.empty'))}
+            </span>
           </button>
         )
       })}

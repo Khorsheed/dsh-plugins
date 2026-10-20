@@ -110,3 +110,28 @@
   outline: 1px solid var(--dsw-alias-state-business-primary);
   outline-offset: 1px;
 }
+
+/* An outline row addresses a turn whose events are not loaded: its tick
+   rests neutral (not the loaded rows' blue-grey) so the list reads which
+   rows jump instantly and which page history in first. */
+.itemOutline .tick {
+  background: var(--dsw-alias-label-tertiary);
+}
+
+/* The row being paged in pulses its tick until the jump lands. */
+.itemPending .tick {
+  background: var(--dsw-static-deepseek-400);
+  animation: railPending 1s ease-in-out infinite;
+}
+
+@keyframes railPending {
+  50% {
+    opacity: 0.2;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .itemPending .tick {
+    animation: none;
+  }
+}

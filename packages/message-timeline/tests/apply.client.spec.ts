@@ -8,12 +8,13 @@ import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { apply, inject } from '@khorsheed/dsh-message-timeline/client'
 import type { TimelineRailInjected } from '../src/client/slots.ts'
 
-async function bench(scopeBehavior: 'ok' | 'no-scope' | 'no-conversation' = 'ok') {
+async function bench(scopeBehavior: 'ok' | 'no-scope' | 'no-conversation' | 'no-binding' = 'ok') {
   const ctx = new Context()
   await ctx.plugin(SlotRegistry).await()
   const locale = new LocaleRuntime(ctx)
   ctx.provide('locale', locale)
   const conversation = { loadOlder: vi.fn(() => Promise.resolve()) }
+  const session = { loadThrough: vi.fn(() => Promise.resolve()) }
   // No session on screen: the 0.1.6-alpha.2 shape carries no main-view row.
   const list = createSnapshotStore({ ids: [], byId: {}, phase: 'ready', subagentsByParent: {}, jobsBySession: {} })
   const provideInfo = createSnapshotStore({})
@@ -29,8 +30,12 @@ async function bench(scopeBehavior: 'ok' | 'no-scope' | 'no-conversation' = 'ok'
         },
       }
     },
+    binding: (_sessionId: string) => {
+      if (scopeBehavior === 'no-binding') return undefined
+      return { session }
+    },
   } as never)
-  return { ctx, slots: ctx.get('slots') as SlotRegistry, conversation }
+  return { ctx, slots: ctx.get('slots') as SlotRegistry, conversation, session }
 }
 
 function declareRoot(slots: SlotRegistry): () => void {
@@ -56,7 +61,7 @@ describe('message-timeline apply', () => {
   })
 
   it('injects the rail face: config, jump, paging, and the rail observable', async () => {
-    const { ctx, slots, conversation } = await bench()
+    const { ctx, slots, conversation, session } = await bench()
     declareRoot(slots)
     await ctx.plugin({ inject: [...inject], apply }).await()
 
@@ -76,9 +81,12 @@ describe('message-timeline apply', () => {
     void face.loadOlder()
     expect(conversation.loadOlder).toHaveBeenCalledTimes(1)
 
-    // The jump verb is a bound tracker call; with no bound scrollport it is a
-    // safe no-op.
-    face.jumpTo('k1')
+    void face.loadThrough(41 as never)
+    expect(session.loadThrough).toHaveBeenCalledWith(41)
+
+    // The jump verb is a bound tracker call; with no bound scrollport it
+    // reports the miss instead of throwing.
+    expect(face.jumpTo('k1')).toBe(false)
   })
 
   it('registers into a declaration that arrives after apply', async () => {
@@ -116,6 +124,13 @@ describe('message-timeline apply', () => {
     const entry2 = noConversation.slots.entries('conversation.session.header.utilities')[0]!
     expect(() => (entry2.inject as unknown as (id: string) => unknown)('s1'))
       .toThrow('conversation service unavailable')
+
+    const noBinding = await bench('no-binding')
+    declareRoot(noBinding.slots)
+    await noBinding.ctx.plugin({ inject: [...inject], apply }).await()
+    const entry3 = noBinding.slots.entries('conversation.session.header.utilities')[0]!
+    expect(() => (entry3.inject as unknown as (id: string) => unknown)('s1'))
+      .toThrow('session resolved no binding')
   })
 
   it('registers nothing when disabled by config', async () => {

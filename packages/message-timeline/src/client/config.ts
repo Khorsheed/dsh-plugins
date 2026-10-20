@@ -21,8 +21,11 @@ export interface TimelineConfig {
    */
   panelWidth: number
   /**
-   * History pages to prefetch when the rail opens (50 events each); older
-   * pages load on demand when the rail or the panel is scrolled to its top.
+   * History pages to prefetch when the rail opens (50 events each), in the
+   * window-paging fallback only: when the host serves the turnOutline
+   * projection the list starts whole and nothing prefetches. In the fallback,
+   * older pages load on demand when the rail or the panel is scrolled to its
+   * top.
    */
   initialPages: number
 }

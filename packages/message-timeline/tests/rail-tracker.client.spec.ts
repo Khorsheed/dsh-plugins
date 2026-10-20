@@ -361,7 +361,7 @@ describe('installRailTracker', () => {
     const tracker = installRailTracker(fakeCtx('s1') as unknown as Context, true)
     await frame()
 
-    tracker.jumpTo('u1')
+    expect(tracker.jumpTo('u1')).toBe(true)
     expect(scrollport.scrollTop).toBe(200 - 20 - 16)
 
     tracker.dispose()
@@ -447,9 +447,9 @@ describe('installRailTracker', () => {
     vi.unstubAllGlobals()
   })
 
-  it('jumpTo is a no-op while no scrollport is bound', () => {
+  it('jumpTo reports the miss while no scrollport is bound', () => {
     const tracker = installRailTracker(fakeCtx(undefined) as unknown as Context, true)
-    expect(() => { tracker.jumpTo('k1') }).not.toThrow()
+    expect(tracker.jumpTo('k1')).toBe(false)
     tracker.dispose()
   })
 

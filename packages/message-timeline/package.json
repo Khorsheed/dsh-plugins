@@ -32,6 +32,7 @@
     },
     "compat": {
       "minHost": "0.1.2-rc.1",
+      "notes": "Whole-session list relies on the host turnOutline projection (dsh-session-turn-outline, mounted by the official web bundle since 0.1.2-alpha.3 — below the minHost floor); assemblies without the unit degrade to window paging (prefetch on open plus panel-top loadOlder), fully functional but the first message appears only once paged in.",
       "verifiedHost": "0.2.1-rc.1"
     }
   },
@@ -52,7 +53,13 @@
     "@deepseek-ai/dsh-client-ui-conversation": "^0.1.0-rc.6 || ^0.2.0-rc.1 || ^0.2.1-rc.1",
     "@deepseek-ai/dsh-client-ui-slots": "^0.1.0-rc.6 || ^0.2.0-rc.1 || ^0.2.1-rc.1",
     "@deepseek-ai/dsh-llm": "^0.1.0-rc.6 || ^0.2.0-rc.1 || ^0.2.1-rc.1",
+    "@deepseek-ai/dsh-session-turn-outline": "^0.1.2-alpha.3 || ^0.2.0-rc.1 || ^0.2.1-rc.1",
     "react": "^18.2.0"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-session-turn-outline": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
@@ -67,6 +74,7 @@
     "@deepseek-ai/dsh-client-ui-session": "^0.2.0-rc.1",
     "@deepseek-ai/dsh-client-ui-slots": "^0.2.0-rc.1",
     "@deepseek-ai/dsh-llm": "^0.2.0-rc.1",
+    "@deepseek-ai/dsh-session-turn-outline": "0.2.1-rc.1",
     "@testing-library/react": "^16.1.0",
     "@types/node": "^26.2.0",
     "@types/react": "~18.3.1",
