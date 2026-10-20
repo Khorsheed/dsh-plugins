@@ -411,7 +411,7 @@ export interface LibraryPointNote {
 }
 
 /** A knowledge point's state (mastery.ts decides it from the ledger and the notes). */
-export type LibraryPointState = 'untested' | 'weak' | 'mastered'
+export type LibraryPointState = 'untested' | 'weak' | 'practicing' | 'mastered'
 
 /** A point whose state moved because of a write. */
 export interface LibraryPointChange {

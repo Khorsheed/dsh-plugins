@@ -15,7 +15,7 @@ import { collectVoided, type MissedRow } from '../mistakes.ts'
 import type { LibraryQuizSettings } from '../store.ts'
 import { IconCheckOutlineMedium, IconInfoOutlineMedium } from '../icons.tsx'
 import { outcome, StateLine, useLoad, value, when, type ViewProps } from '../ui.tsx'
-import { stationMastery, type LibraryPointMastery } from '../../mastery.ts'
+import { MASTERY_MIN_RIGHT, MASTERY_MIN_SITTINGS, stationMastery, type LibraryPointMastery } from '../../mastery.ts'
 import { MathText } from '../math.tsx'
 import css from '../LibraryPane.module.css'
 import { QuizRows, sourceMix } from './book.tsx'
@@ -59,7 +59,7 @@ export function QuizTab({ p, projectId, resourceId, node, passRatio, onPrime, on
   const rev = useStore(s => s.rev)
   const [showSettings, setShowSettings] = useState(false)
   const [showPointsHint, setShowPointsHint] = useState(false)
-  const [sheet, setSheet] = useState<string | undefined>()
+  const [expanded, setExpanded] = useState<string | undefined>()
   const [retaking, setRetaking] = useState(false)
   const [error, setError] = useState<string | undefined>()
   // The settings (范围 / 重点 / 题型 / 题量) and the pending ask live in the pane
@@ -142,7 +142,7 @@ export function QuizTab({ p, projectId, resourceId, node, passRatio, onPrime, on
     setError(undefined)
     try {
       const created = await outcome(p.createRetake(projectId, resourceId, node.id, keys))
-      setSheet(undefined)
+      setExpanded(undefined)
       actions.push({ view: 'quiz', projectId, resourceId, quizId: created.assessment.id })
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : String(failure))
@@ -159,7 +159,6 @@ export function QuizTab({ p, projectId, resourceId, node, passRatio, onPrime, on
   ]
   const openByPoint = mastery.points.filter(point => point.open.length > 0).map(point => `${point.title} ${point.open.length}`)
   const openLoose = open.filter(miss => miss.question.point === undefined || !mastery.points.some(point => point.id === miss.question.point)).length
-  const sheetPoint = sheet === undefined ? undefined : mastery.points.find(point => point.id === sheet)
 
   return (
     <>
@@ -188,20 +187,26 @@ export function QuizTab({ p, projectId, resourceId, node, passRatio, onPrime, on
             <button type="button" className={css.infoButton} aria-expanded={showPointsHint} aria-label={t('node.pointsHintLabel')} onClick={() => { setShowPointsHint(shown => !shown) }}><IconInfoOutlineMedium size={13} /></button>
           </h3>
           <div className={css.pointRows}>
-            {mastery.points.map(point => (
-              <button key={point.id} type="button" className={css.pointRow} onClick={() => { setSheet(point.id) }}>
-                <span className={css.pointRowMain}>
-                  <span className={css.pointRowTitle}>{point.title}</span>
-                  <span className={css.muted}>
-                    {point.asked === 0 ? t('point.never') : t('point.counts', { asked: String(point.asked), right: String(point.right) })}
-                    {point.open.length > 0 ? ` · ${t('node.pointOpen', { count: String(point.open.length) })}` : ''}
-                    {point.notes.length > 0 ? ` · ${t('point.noteCount', { count: String(point.notes.length) })}` : ''}
-                  </span>
-                </span>
-                <span className={css.pointBadge} data-state={point.state}>{t(`point.${point.state}`)}</span>
-                <span className={css.chevron} aria-hidden="true">›</span>
-              </button>
-            ))}
+            {mastery.points.map(point => {
+              const isOpen = expanded === point.id
+              return (
+                <div key={point.id} className={css.pointItem} data-open={isOpen}>
+                  <button type="button" className={css.pointRow} aria-expanded={isOpen} onClick={() => { setExpanded(isOpen ? undefined : point.id) }}>
+                    <span className={css.pointRowMain}>
+                      <span className={css.pointRowTitle}>{point.title}</span>
+                      <span className={css.muted}>
+                        {point.asked === 0 ? t('point.never') : t('point.counts', { asked: String(point.asked), right: String(point.right) })}
+                        {point.open.length > 0 ? ` · ${t('node.pointOpen', { count: String(point.open.length) })}` : ''}
+                        {point.notes.length > 0 ? ` · ${t('point.noteCount', { count: String(point.notes.length) })}` : ''}
+                      </span>
+                    </span>
+                    <span className={css.pointBadge} data-state={point.state}>{t(`point.${point.state}`)}</span>
+                    <span className={css.chevron} aria-hidden="true">›</span>
+                  </button>
+                  {isOpen && <PointDetail p={p} point={point} busy={retaking} onRetake={() => { void retake(point.open.map(miss => miss.key)) }} />}
+                </div>
+              )
+            })}
           </div>
           {showPointsHint && <div className={css.muted}>{t('node.pointsRule')}</div>}
         </section>
@@ -330,73 +335,57 @@ export function QuizTab({ p, projectId, resourceId, node, passRatio, onPrime, on
           <QuizRows p={p} projectId={projectId} quizzes={loose.slice().reverse()} />
         </section>
       )}
-      {sheetPoint !== undefined && (
-        <PointSheet
-          p={p}
-          point={sheetPoint}
-          busy={retaking}
-          onClose={() => { setSheet(undefined) }}
-          onRetake={() => { void retake(sheetPoint.open.map(miss => miss.key)) }}
-        />
-      )}
     </>
   )
 }
 
-/** One point, opened: why it stands where it does, and the two ways forward. */
-function PointSheet({ p, point, busy, onClose, onRetake }: {
-  p: ViewProps['p']; point: LibraryPointMastery; busy: boolean; onClose: () => void; onRetake: () => void
+/** One point, expanded under its row: why it stands where it does, and the way forward. */
+function PointDetail({ p, point, busy, onRetake }: {
+  p: ViewProps['p']; point: LibraryPointMastery; busy: boolean; onRetake: () => void
 }): ReactNode {
   const { t } = p
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent): void => { if (event.key === 'Escape') onClose() }
-    window.addEventListener('keydown', onKey)
-    return () => { window.removeEventListener('keydown', onKey) }
-  }, [])
+  const needRight = Math.max(0, MASTERY_MIN_RIGHT - point.right)
+  const needSittings = Math.max(0, MASTERY_MIN_SITTINGS - point.rightSittings)
   return (
-    <div className={css.scrim} data-sheet="true" onClick={event => { if (event.target === event.currentTarget) onClose() }}>
-      <div className={css.sheet} role="dialog" aria-modal="true" aria-label={point.title}>
-        <div className={css.sheetHead}>
-          <strong>{point.title}</strong>
-          <span className={css.pointBadge} data-state={point.state}>{t(`point.${point.state}`)}</span>
-          <span className={css.spacer} />
-          <button type="button" className={css.textButton} onClick={onClose}>{t('point.close')}</button>
+    <div className={css.pointDetail}>
+      <div className={css.muted}>{t(`point.why.${point.state}`, { right: String(needRight), sittings: String(needSittings) })}</div>
+      {point.state === 'practicing' && (
+        <div className={css.pointNeed}>
+          {needRight > 0 && <span>{t('point.needRight', { count: String(needRight) })}</span>}
+          {needSittings > 0 && <span>{t('point.needSitting')}</span>}
         </div>
-        <div className={css.muted}>{point.asked === 0 ? t('point.never') : t('point.counts', { asked: String(point.asked), right: String(point.right) })}</div>
-        {point.history.length > 0 && (
-          <section className={css.section}>
-            <h3 className={css.sectionTitle}>{t('point.history')}</h3>
-            {point.history.map(sitting => (
-              <div key={sitting.at} className={css.moveRow}>
-                <span>{when(sitting.at, t)} · {t(sitting.retake ? 'point.sitRetake' : 'point.sitPaper')}</span>
-                <span className={sitting.right === sitting.total ? css.ok : css.bad}>{t('point.sitScore', { right: String(sitting.right), total: String(sitting.total) })}</span>
-              </div>
-            ))}
-          </section>
-        )}
-        {point.notes.length > 0 && (
-          <section className={css.section}>
-            <h3 className={css.sectionTitle}>{t('point.notes')}</h3>
-            {[...point.notes].reverse().map(note => (
-              <div key={note.at} className={css.pointNote}><MathText text={note.text} /><span className={css.muted}> · {when(note.at, t)}</span></div>
-            ))}
-          </section>
-        )}
-        {point.open.length > 0 && (
-          <section className={css.section}>
-            <h3 className={css.sectionTitle}>{t('point.open', { count: String(point.open.length) })}</h3>
-            <div className={css.mistakeRows}>
-              {point.open.map(miss => <MissRow key={miss.key} p={p} row={{ question: miss.question, at: miss.at }} variant="missed" />)}
+      )}
+      {point.history.length > 0 && (
+        <div className={css.pointBlock}>
+          <h4 className={css.pointBlockTitle}>{t('point.history')}</h4>
+          {point.history.map(sitting => (
+            <div key={sitting.at} className={css.moveRow}>
+              <span>{when(sitting.at, t)} · {t(sitting.retake ? 'point.sitRetake' : 'point.sitPaper')}</span>
+              <span className={sitting.right === sitting.total ? css.ok : css.bad}>{t('point.sitScore', { right: String(sitting.right), total: String(sitting.total) })}</span>
             </div>
-          </section>
-        )}
-        {point.open.length > 0 && (
+          ))}
+        </div>
+      )}
+      {point.notes.length > 0 && (
+        <div className={css.pointBlock}>
+          <h4 className={css.pointBlockTitle}>{t('point.notes')}</h4>
+          {[...point.notes].reverse().map(note => (
+            <div key={note.at} className={css.pointNote}><MathText text={note.text} /><span className={css.muted}> · {when(note.at, t)}</span></div>
+          ))}
+        </div>
+      )}
+      {point.open.length > 0 && (
+        <div className={css.pointBlock}>
+          <h4 className={css.pointBlockTitle}>{t('point.open', { count: String(point.open.length) })}</h4>
+          <div className={css.mistakeRows}>
+            {point.open.map(miss => <MissRow key={miss.key} p={p} row={{ question: miss.question, at: miss.at }} variant="missed" />)}
+          </div>
           <div className={css.actions}>
             <button type="button" className={css.primary} disabled={busy} onClick={onRetake}>{t('point.retake', { count: String(point.open.length) })}</button>
           </div>
-        )}
-        {point.open.length === 0 && <div className={css.muted}>{t('point.askBelow')}</div>}
-      </div>
+        </div>
+      )}
+      {point.open.length === 0 && point.state !== 'mastered' && <div className={css.muted}>{t('point.askBelow')}</div>}
     </div>
   )
 }

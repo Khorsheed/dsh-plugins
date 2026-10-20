@@ -21,14 +21,14 @@ const sitting = (id: string, assessmentId: string, at: string, verdicts: [string
 })
 
 describe('stationMastery', () => {
-  it('a missed question is open and weakens its point; a right one masters its point; no probe is untested', () => {
+  it('a missed question is open and weakens its point; a right one leaves its point practicing; no probe is untested', () => {
     const m = stationMastery(node(), [paper], [sitting('a1', 'qa', '2026-10-19T01:00:00.000Z', [['q1', false], ['q2', true], ['q3', true]])])
     expect(m.open.map(miss => miss.key)).toEqual(['qa:q1'])
-    expect(m.points.map(point => [point.id, point.state, point.open.length])).toEqual([['p1', 'weak', 1], ['p2', 'mastered', 0], ['p3', 'untested', 0]])
+    expect(m.points.map(point => [point.id, point.state, point.open.length])).toEqual([['p1', 'weak', 1], ['p2', 'practicing', 0], ['p3', 'untested', 0]])
     expect(m.points.map(point => [point.asked, point.right, point.history.length])).toEqual([[2, 1, 1], [1, 1, 1], [0, 0, 0]])
   })
 
-  it('a retake that answers the miss right closes it and masters the point; a retake never needs a station', () => {
+  it('a retake that answers the miss right closes it; a second sitting still needs a third right question', () => {
     const retake: LibraryAssessment = { id: 'rt', type: 'retake', scope: { nodeId: 's1' }, questions: [{ ...q('r1', 'p1'), origin: { assessmentId: 'qa', questionId: 'q1' } }], createdAt: '2026-10-19T02:00:00.000Z' }
     const attempts = [
       sitting('a1', 'qa', '2026-10-19T01:00:00.000Z', [['q1', false], ['q2', true]]),
@@ -36,7 +36,8 @@ describe('stationMastery', () => {
     ]
     const m = stationMastery(node(), [paper, retake], attempts)
     expect(m.open).toEqual([])
-    expect(m.points[0]?.state).toBe('mastered')
+    expect(m.points[0]?.state).toBe('practicing')
+    expect(m.points[0]?.rightSittings).toBe(2)
     expect(m.points[0]?.history).toEqual([
       { at: '2026-10-19T02:00:00.000Z', retake: true, total: 1, right: 1 },
       { at: '2026-10-19T01:00:00.000Z', retake: false, total: 2, right: 1 },
@@ -56,13 +57,13 @@ describe('stationMastery', () => {
     ]
     const m = stationMastery(node(), [paper, other, wide], attempts)
     expect(m.open).toEqual([])
-    expect(m.points[0]?.state).toBe('mastered')
+    expect(m.points[0]?.state).toBe('practicing')
   })
 
   it('a coach note newer than the last right answer keeps the point weak until a newer probe passes', () => {
     const attempts = [sitting('a1', 'qa', '2026-10-19T01:00:00.000Z', [['q1', true], ['q2', true]])]
     expect(stationMastery(node([{ point: 'p1', at: '2026-10-19T03:00:00.000Z' }]), [paper], attempts).points[0]?.state).toBe('weak')
-    expect(stationMastery(node([{ point: 'p1', at: '2026-10-19T00:30:00.000Z' }]), [paper], attempts).points[0]?.state).toBe('mastered')
+    expect(stationMastery(node([{ point: 'p1', at: '2026-10-19T00:30:00.000Z' }]), [paper], attempts).points[0]?.state).toBe('practicing')
     // A note alone (never asked) is weak, not untested.
     expect(stationMastery(node([{ point: 'p1', at: '2026-10-19T03:00:00.000Z' }]), [paper], []).points[0]?.state).toBe('weak')
   })
@@ -77,9 +78,21 @@ describe('stationMastery', () => {
     expect(resat.open).toEqual([])
   })
 
+  it('mastery needs 3 distinct questions right across 2 sittings — one perfect paper is not enough', () => {
+    const big: LibraryAssessment = { id: 'qc', type: 'quiz', scope: { nodeId: 's1' }, questions: [q('c1', 'p1'), q('c2', 'p1'), q('c3', 'p1'), q('c4', 'p1')], createdAt: '2026-10-19T00:00:00.000Z' }
+    const once = [sitting('a1', 'qc', '2026-10-19T01:00:00.000Z', [['c1', true], ['c2', true], ['c3', true], ['c4', true]])]
+    const one = stationMastery(node(), [big], once).points[0]
+    expect([one?.state, one?.right, one?.rightSittings]).toEqual(['practicing', 4, 1])
+    const twice = [...once, sitting('a2', 'qc', '2026-10-19T02:00:00.000Z', [['c1', true]])]
+    expect(stationMastery(node(), [big], twice).points[0]?.state).toBe('mastered')
+    // Two sittings but only two distinct questions right: still practicing.
+    const narrow = [sitting('b1', 'qa', '2026-10-19T01:00:00.000Z', [['q1', true]]), sitting('b2', 'qa', '2026-10-19T02:00:00.000Z', [['q2', true]])]
+    expect(stationMastery(node(), [paper], narrow).points[0]?.state).toBe('practicing')
+  })
+
   it('masteryChanges reports only the points that moved', () => {
     const before = stationMastery(node(), [paper], [])
     const after = stationMastery(node(), [paper], [sitting('a1', 'qa', '2026-10-19T01:00:00.000Z', [['q1', false], ['q3', true]])])
-    expect(masteryChanges('s1', before, after).map(change => [change.pointId, change.from, change.to])).toEqual([['p1', 'untested', 'weak'], ['p2', 'untested', 'mastered']])
+    expect(masteryChanges('s1', before, after).map(change => [change.pointId, change.from, change.to])).toEqual([['p1', 'untested', 'weak'], ['p2', 'untested', 'practicing']])
   })
 })

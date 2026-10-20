@@ -948,12 +948,12 @@ describe('knowledge-point mastery (proposal 2026-10-19-library-point-mastery)', 
     if (!assessed.ok) throw new Error(assessed.message)
     expect(assessed.cardUpdates).toEqual([])
     expect((await service.listCards({ projectId })).cards).toEqual([])
-    expect(assessed.pointChanges?.map(change => [change.pointId, change.from, change.to])).toEqual([['gate', 'untested', 'weak'], ['sel', 'untested', 'mastered']])
+    expect(assessed.pointChanges?.map(change => [change.pointId, change.from, change.to])).toEqual([['gate', 'untested', 'weak'], ['sel', 'untested', 'practicing']])
     const events = await service.listEvents({ projectId, types: ['point.changed'] })
-    expect(events.events.map(event => [event.id, event.to, event.count])).toEqual([['sel', 'mastered', 0], ['gate', 'weak', 1]])
+    expect(events.events.map(event => [event.id, event.to, event.count])).toEqual([['sel', 'practicing', 0], ['gate', 'weak', 1]])
   })
 
-  it('a retake re-asks the open misses, masters the point when right, and never touches the pass record', async () => {
+  it('a retake re-asks the open misses, moves the point when right, and never touches the pass record', async () => {
     const { projectId, bookId, quizId } = await station()
     await service.putAttempt({ projectId, quizId, verdicts: [
       { task: 'q1', criterion: '门控', pass: false, evidence: 'e', by: 'self' },
@@ -966,7 +966,7 @@ describe('knowledge-point mastery (proposal 2026-10-19-library-point-mastery)', 
     expect(retake.assessment.questions?.map(item => [item.id, item.origin])).toEqual([['r1', { assessmentId: quizId, questionId: 'q1' }]])
     const done = await service.putAttempt({ projectId, assessmentId: retake.assessment.id, verdicts: [{ task: 'r1', criterion: '门控', pass: true, evidence: 'e', by: 'self' }] })
     if (!done.ok) throw new Error(done.message)
-    expect(done.pointChanges?.map(change => [change.pointId, change.to])).toEqual([['gate', 'mastered']])
+    expect(done.pointChanges?.map(change => [change.pointId, change.to])).toEqual([['gate', 'practicing']])
     expect(done.completed).toBeUndefined()
     expect((await service.getRoadmap({ projectId, resourceId: bookId })).roadmap?.nodes[0]?.quizStats).toEqual(statsBefore)
     const none = await service.createRetake({ projectId, resourceId: bookId, nodeId: 'n1' })
@@ -1011,7 +1011,7 @@ describe('today: retakes across a project, feeds without stale rows', () => {
     expect(retake.assessment.scope).toEqual({})
     const done = await service.putAttempt({ projectId, assessmentId: retake.assessment.id, verdicts: retake.assessment.questions!.map(item => ({ task: item.id, criterion: 'c', pass: true, evidence: 'e', by: 'self' as const })) })
     if (!done.ok) throw new Error(done.message)
-    expect(done.pointChanges?.map(change => [change.nodeId, change.pointId, change.to]).sort()).toEqual([['n1', 'gate', 'mastered'], ['n2', 'phase', 'mastered']])
+    expect(done.pointChanges?.map(change => [change.nodeId, change.pointId, change.to]).sort()).toEqual([['n1', 'gate', 'practicing'], ['n2', 'phase', 'practicing']])
     expect((await service.listProjects()).projects[0]?.openMisses).toBe(0)
   })
 

@@ -153,7 +153,7 @@ export function TodayView({ p }: ViewProps): ReactNode {
                 >
                   <span className={css.changeDot} data-state={entry.change.to} aria-hidden="true" />
                   <span className={css.recordText}>
-                    <span className={css.recordTitle}>{t(entry.change.to === 'mastered' ? 'today.changeMastered' : entry.change.to === 'weak' ? 'today.changeWeak' : 'today.changeUntested', { title: entry.change.title ?? '' })}</span>
+                    <span className={css.recordTitle}>{t(entry.change.to === 'mastered' ? 'today.changeMastered' : entry.change.to === 'weak' ? 'today.changeWeak' : entry.change.to === 'practicing' ? 'today.changePracticing' : 'today.changeUntested', { title: entry.change.title ?? '' })}</span>
                     <span className={css.muted}>
                       {[
                         ...((entry.change.count ?? 0) > 0 ? [t('today.changeOpen', { count: String(entry.change.count) })] : []),
