@@ -81,6 +81,30 @@ export interface TranscribeResult {
   readonly language?: string
 }
 
+/** Who spoke when in a recording, without transcribing it (a transcript already exists). */
+export interface SpeakersRequest {
+  readonly input: TranscribeRequest['input']
+  /** Speech regions already known (seconds) — the transcript's stretches — so the VAD need not run again. */
+  readonly speech?: readonly { readonly start: number; readonly end: number }[]
+  readonly voices?: readonly KnownVoice[]
+  readonly owner: string
+  readonly label?: string
+}
+
+/** One speaker turn. */
+export interface SpeakerTurn {
+  readonly cluster: number
+  readonly start: number
+  readonly end: number
+}
+
+/** A speakers job's answer: one voice (a quick probe settled it), or the turns. */
+export interface SpeakersResult {
+  readonly single: boolean
+  readonly turns: SpeakerTurn[]
+  readonly speakers: WorkerSpeaker[]
+}
+
 /** One row of the queue, for display. */
 export interface TranscribeQueueItem {
   readonly id: string
@@ -101,6 +125,12 @@ export interface TranscribeApi {
   prepare(ids: readonly ModelId[], source?: ModelSourceChoice): Promise<void>
   /** Queue a job (one runs at a time) and resolve with its result. Missing models are downloaded first. */
   run(request: TranscribeRequest, options?: TranscribeRunOptions): Promise<TranscribeResult>
+  /**
+   * Who spoke when (queued like `run`). A probe of a couple of dozen windows
+   * settles a one-voice recording in about a second; only several voices pay
+   * for the full diarization.
+   */
+  speakers(request: SpeakersRequest, options?: Omit<TranscribeRunOptions, 'onSegments'>): Promise<SpeakersResult>
   /** The queue, running job first. */
   queue(): TranscribeQueueItem[]
 }

@@ -88,6 +88,8 @@ export interface UseNotesInput {
   /** Anything whose change means the article's text nodes changed under us. */
   readonly paintKey: unknown
   readonly translateView: TranslationView
+  /** A transcript speaker's display name (with the names that make it, so a rename re-snapshots). */
+  readonly speakerLabel?: (speaker: number) => string
 }
 
 /** What the pane renders from. */
@@ -132,7 +134,7 @@ function sameSet(left: ReadonlySet<string>, right: ReadonlySet<string>): boolean
  * @param input - what the pane already holds.
  */
 export function useNotes(input: UseNotesInput): NotesFace {
-  const { props, entry, sourceLabel, articleHtml, articleRef, builtRef, detailRef, paintKey, translateView } = input
+  const { props, entry, sourceLabel, articleHtml, articleRef, builtRef, detailRef, paintKey, translateView, speakerLabel } = input
   const { t, sessionId } = props
   const entryId = entry?.id
   const [tab, setTab] = useState<DetailTab>('article')
@@ -171,13 +173,13 @@ export function useNotes(input: UseNotesInput): NotesFace {
   // it from there (the host never parses an article itself).
   useEffect(() => {
     if (identity === undefined || articleHtml === null || articleHtml.length === 0) return
-    const key = `${identity.entryId}\n${translationHash(articleHtml)}`
+    const paragraphs = paragraphsOf(articleHtml, speakerLabel)
+    const key = `${identity.entryId}\n${translationHash(paragraphs.join('\n'))}`
     if (snapshotted.current.has(key)) return
     snapshotted.current.add(key)
-    const paragraphs = paragraphsOf(articleHtml)
     if (paragraphs.length === 0) return
     void props.snapshotEntry({ ...identity, paragraphs })
-  }, [identity, articleHtml, props])
+  }, [identity, articleHtml, props, speakerLabel])
 
   // Paint the excerpts on whatever text is on screen now. Recomputed after
   // every rebuild: a translation replaces the text nodes a range points into.

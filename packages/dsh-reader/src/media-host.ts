@@ -30,6 +30,10 @@ export interface CaptionRecord {
   readonly state: 'platform' | 'none' | 'local'
   readonly language?: string
   readonly checkedAt: string
+  /** How many voices a local transcript has (1: the probe heard one; ≥ 2: paragraphs carry `data-spk`). */
+  readonly speakers?: number
+  /** The reader's names for the speakers, by index (`0` → 主持人). */
+  readonly names?: Readonly<Record<string, string>>
 }
 
 /** Escape text for HTML content and attributes. */

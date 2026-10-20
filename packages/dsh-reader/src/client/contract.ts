@@ -291,6 +291,10 @@ export interface ReaderPaneInjected {
   startLocalTranscript: (request: { entryId: string; url: string; media: ReaderMedia; title?: string; confirmModels?: boolean }) => Promise<RemoteResult<LocalTranscriptStatus>>
   /** Where an entry's local transcription stands, with the transcript so far. */
   localTranscript: (request: { entryId: string }) => Promise<RemoteResult<LocalTranscriptStatus>>
+  /** The reader's names for a transcript's speakers, by index. */
+  speakerNames: (request: { entryId: string }) => Promise<RemoteResult<Record<string, string>>>
+  /** Name one speaker (empty: back to the default); answers all the names. */
+  nameSpeaker: (request: { entryId: string; speaker: number; name: string }) => Promise<RemoteResult<Record<string, string>>>
   /** The wall's video / audio cards: what each one's transcript is. */
   mediaStates: (request: { entryIds: string[] }) => Promise<RemoteResult<MediaCardStates>>
   /** Leave (withdraws a queued job) or, with `force`, stop an entry's local transcription. */

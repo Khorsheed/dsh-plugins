@@ -29,6 +29,10 @@ export interface SpeechResult {
   speakers: WorkerSpeaker[]
   /** SenseVoice's dominant detected language. */
   language?: string | undefined
+  /** A speakers job: who spoke when (empty when `single`). */
+  turns?: { cluster: number; start: number; end: number }[] | undefined
+  /** A speakers job found one voice. */
+  single?: boolean | undefined
 }
 
 export type SpeechProgress = (stage: 'load' | 'diarize' | 'transcribe' | 'embed', progress: number) => void
@@ -46,7 +50,10 @@ export function runSpeech(job: SpeechJob, onProgress?: SpeechProgress, signal?: 
     child.on('message', (msg: WorkerMessage) => {
       if (msg.type === 'progress') onProgress?.(msg.stage, msg.progress)
       else if (msg.type === 'segments') onSegments?.(msg.segments)
-      else if (msg.type === 'done') {
+      else if (msg.type === 'speakers-done') {
+        settled = true
+        resolve({ segments: [], speakers: msg.speakers, turns: msg.turns, single: msg.single })
+      } else if (msg.type === 'done') {
         settled = true
         resolve({ segments: msg.segments, speakers: msg.speakers, language: msg.language })
       } else if (msg.type === 'error') {

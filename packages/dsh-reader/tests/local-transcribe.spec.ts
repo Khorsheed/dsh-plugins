@@ -2,7 +2,7 @@ import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
-import { cuesFromSegments, languageFor, LocalTranscriber, renderLocalTranscript, type EngineSegment, type TranscribeEngine } from '../src/local-transcribe.ts'
+import { cuesFromSegments, languageFor, LocalTranscriber, renderLocalTranscript, renderSpeakerTranscript, speakerPerToken, type EngineSegment, type TranscribeEngine } from '../src/local-transcribe.ts'
 import type { ReaderMedia } from '../src/media.ts'
 
 const tok = (text: string, start: number) => ({ text, start, end: start + 0.3 })
@@ -123,5 +123,66 @@ describe('long run-on sentences', () => {
     const tokens = Array.from({ length: 40 }, (_, index) => ({ text: index === 25 ? ' word,' : ' word', start: index, end: index + 0.9 }))
     const cues = cuesFromSegments([{ start: 0, end: 40, tokens }])
     expect(cues.map((cue) => cue.start)).toEqual([0, 26])
+  })
+})
+
+describe('speakers', () => {
+  // two voices: A 0–10 s, B 10–20 s, with a 1 s flicker of B inside A's turn
+  const tokens = Array.from({ length: 20 }, (_, index) => ({ text: index === 9 || index === 19 ? ' end.' : ' word', start: index, end: index + 0.9 }))
+  const segments = [{ start: 0, end: 20, tokens }]
+  const turns = [{ cluster: 7, start: 0, end: 4.8 }, { cluster: 3, start: 4.8, end: 5.6 }, { cluster: 7, start: 5.6, end: 10 }, { cluster: 3, start: 10, end: 20 }]
+
+  it('gives each word its voice, in order of appearance, folding flickers', () => {
+    const voices = speakerPerToken(segments, turns)
+    expect(voices.slice(0, 10)).toEqual(Array(10).fill(0))
+    expect(voices.slice(10)).toEqual(Array(10).fill(1))
+  })
+
+  it('keeps punctuation with the word before it', () => {
+    const words = [{ text: ' yes', start: 0, end: 3 }, { text: ',', start: 3, end: 3 }, { text: ' so', start: 3.1, end: 6 }]
+    const voices = speakerPerToken([{ start: 0, end: 6, tokens: words }], [{ cluster: 0, start: 0, end: 2.99 }, { cluster: 1, start: 2.99, end: 6 }])
+    expect(voices).toEqual([0, 0, 1])
+  })
+
+  it('never lets a paragraph cross a change of voice', () => {
+    const html = renderSpeakerTranscript(segments, turns)
+    expect(html.split('\n')).toEqual([
+      expect.stringContaining('data-spk="0" data-t="0.0"'),
+      expect.stringContaining('data-spk="1" data-t="10.0"'),
+    ])
+  })
+})
+
+describe('the speakers pass', () => {
+  const request = { entryId: 'e1', url: 'https://www.bilibili.com/video/BV1xx', media: video, title: 'T' }
+
+  it('runs after the transcript is stored, and re-stores it cut by speaker', async () => {
+    const { engine, finish } = fakeEngine()
+    let answer: ((value: { single: boolean; turns: { cluster: number; start: number; end: number }[] }) => void) | undefined
+    const withSpeakers = { ...engine, speakers: vi.fn(() => new Promise<{ single: boolean; turns: { cluster: number; start: number; end: number }[] }>((resolve) => { answer = resolve })) }
+    const { local, store } = transcriber(withSpeakers)
+    await local.start(request)
+    await flush()
+    finish()
+    await flush()
+    expect(local.status('e1').state).toBe('speakers')
+    expect(store).toHaveBeenCalledTimes(1)
+    expect(withSpeakers.speakers.mock.calls[0]![0]).toMatchObject({ speech: [{ start: 0, end: 1 }] })
+    answer?.({ single: false, turns: [{ cluster: 0, start: 0, end: 0.4 }, { cluster: 1, start: 0.4, end: 1 }] })
+    await flush()
+    expect(local.status('e1')).toMatchObject({ state: 'done', speakers: 2 })
+    expect(store).toHaveBeenLastCalledWith('e1', request.url, expect.stringContaining('data-spk='), 'zh', 2)
+  })
+
+  it('leaves a one-voice transcript as it is', async () => {
+    const { engine, finish } = fakeEngine()
+    const single = { ...engine, speakers: vi.fn(async () => ({ single: true, turns: [] })) }
+    const { local, store } = transcriber(single)
+    await local.start(request)
+    await flush()
+    finish()
+    await flush()
+    expect(local.status('e1')).toMatchObject({ state: 'done', speakers: 1 })
+    expect(store).toHaveBeenLastCalledWith('e1', request.url, '<p data-src="local" data-t="0.0">你好。</p>', 'zh', 1)
   })
 })

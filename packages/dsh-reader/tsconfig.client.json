@@ -38,6 +38,7 @@
     "src/client/MediaPlayer.tsx",
     "src/client/useMedia.ts",
     "src/client/useLocalTranscript.ts",
-    "src/client/useMediaStates.ts"
+    "src/client/useMediaStates.ts",
+    "src/client/SpeakerLegend.tsx"
   ]
 }

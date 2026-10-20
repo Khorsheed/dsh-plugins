@@ -20,7 +20,7 @@ import type { ReaderPaneProps } from './contract.ts'
 const POLL_MS = 1500
 
 /** States in which the job is alive on the host. */
-const ACTIVE = new Set(['fetching', 'queued', 'transcribing'])
+const ACTIVE = new Set(['fetching', 'queued', 'transcribing', 'speakers'])
 
 /** What the hook reads. */
 export interface UseLocalTranscriptInput {

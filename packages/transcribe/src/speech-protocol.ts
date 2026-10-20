@@ -30,6 +30,13 @@ export interface SpeechJob {
   models: SpeechModelPaths
   /** Separate speakers (needs the segmentation + embedding models). Without it the recording is one speaker, cluster 0. */
   diarize: boolean
+  /**
+   * `speakers`: no recognition — probe how many voices there are and, when
+   * more than one, return who spoke when (turns + one voiceprint per cluster).
+   */
+  mode?: 'transcribe' | 'speakers' | undefined
+  /** Known speech regions (seconds), so a speakers job need not run the VAD again. */
+  speech?: { start: number; end: number }[] | undefined
   voices: KnownVoice[]
   /** -1 = let clustering decide. */
   numSpeakers: number
@@ -66,6 +73,8 @@ export type WorkerMessage =
   /** Segments finished since the last message, in order (the done message repeats them all). */
   | { type: 'segments'; segments: WorkerSegment[] }
   | { type: 'done'; segments: WorkerSegment[]; speakers: WorkerSpeaker[]; language?: string | undefined }
+  /** A speakers job: one voice (no turns), or the turns and the speakers. */
+  | { type: 'speakers-done'; single: boolean; turns: { cluster: number; start: number; end: number }[]; speakers: WorkerSpeaker[] }
   | { type: 'error'; message: string }
 
 export function encodeEmbedding(v: Float32Array): string {

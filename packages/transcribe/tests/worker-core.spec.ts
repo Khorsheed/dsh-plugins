@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { attachPunctuation, consolidate, mergeTurns, planChunks, repairSeam } from '../src/speech-worker-core.ts'
+import { attachPunctuation, consolidate, mergeTurns, planChunks, probeWindows, repairSeam, singleVoice } from '../src/speech-worker-core.ts'
 
 describe('speaker consolidation', () => {
   it('trims overlaps and drops contained turns', () => {
@@ -100,5 +100,22 @@ describe('repairSeam', () => {
     const me = [tok(" I'm")]
     repairSeam(said, me)
     expect(me[0]!.text).toBe(" I'm")
+  })
+})
+
+describe('the one-voice probe', () => {
+  it('spreads its windows over the recording, inside speech long enough to embed', () => {
+    const speech = [{ start: 0, end: 2 }, { start: 10, end: 30 }, { start: 100, end: 140 }, { start: 500, end: 520 }]
+    const windows = probeWindows(speech, 600, 4, 8)
+    // the 2 s stretch is skipped; a stretch nearest to two marks is taken once
+    expect(windows).toEqual([{ start: 116, end: 124 }, { start: 506, end: 514 }])
+  })
+
+  it('hears one voice only when every window is alike', () => {
+    const a = new Float32Array([1, 0.1])
+    const a2 = new Float32Array([0.95, 0.2])
+    const b = new Float32Array([0, 1])
+    expect(singleVoice([a, a2, a, a2])).toBe(true)
+    expect(singleVoice([a, a2, b, a])).toBe(false)
   })
 })

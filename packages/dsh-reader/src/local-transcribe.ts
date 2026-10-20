@@ -35,6 +35,18 @@ export interface TranscribeEngine {
       onSegments?: (segments: readonly EngineSegment[]) => void
     },
   ): Promise<{ segments: EngineSegment[]; language?: string }>
+  /** Who spoke when (an engine older than this has none: transcripts stay one voice). */
+  speakers?(
+    request: { input: { files: string[] }; speech?: { start: number; end: number }[]; owner: string; label?: string },
+    options: { signal?: AbortSignal; onProgress?: (progress: { stage: string; progress: number; ahead?: number }) => void },
+  ): Promise<{ single: boolean; turns: { cluster: number; start: number; end: number }[] }>
+}
+
+/** A speaker turn as the engine reports it. */
+export interface EngineTurn {
+  readonly cluster: number
+  readonly start: number
+  readonly end: number
 }
 
 /** One finished stretch as the engine reports it. */
@@ -63,20 +75,27 @@ const LONGEST_CUE_SEC = 45
  *
  * @param segments - the engine's segments, in order.
  */
-export function cuesFromSegments(segments: readonly EngineSegment[]): Cue[] {
-  const cues: Cue[] = []
+export function cuesFromSegments(segments: readonly EngineSegment[], speakers?: readonly (number | undefined)[]): (Cue & { speaker?: number })[] {
+  const cues: (Cue & { speaker?: number })[] = []
   let text = ''
   let start: number | undefined
   let end = 0
+  let speaker: number | undefined
   const flush = (): void => {
     const trimmed = text.replace(/\s+/g, ' ').trim()
-    if (start !== undefined && trimmed !== '') cues.push({ start, end, text: trimmed })
+    if (start !== undefined && trimmed !== '') cues.push({ start, end, text: trimmed, ...(speaker === undefined ? {} : { speaker }) })
     text = ''
     start = undefined
   }
   const tokens = segments.flatMap(segment => segment.tokens)
   for (let index = 0; index < tokens.length; index++) {
     const token = tokens[index]!
+    // A new voice starts a new cue (and so a new paragraph).
+    const voice = speakers?.[index]
+    if (voice !== undefined && voice !== speaker) {
+      flush()
+      speaker = voice
+    }
     start ??= token.start
     text += token.text
     end = token.end
@@ -89,6 +108,80 @@ export function cuesFromSegments(segments: readonly EngineSegment[]): Cue[] {
   }
   flush()
   return cues
+}
+
+/** A run of one voice shorter than this is the diarizer flickering, not a turn (s). */
+const MIN_TURN_SEC = 2.5
+
+/**
+ * Each token's speaker, as an index in order of first appearance (A, B, …):
+ * the turn covering the token's middle, else the nearest one; then runs of a
+ * voice shorter than {@link MIN_TURN_SEC} are folded into the voice before
+ * them — a diarizer's boundary wobble would otherwise split sentences.
+ *
+ * @param segments - the transcript's segments.
+ * @param turns - the engine's turns.
+ */
+export function speakerPerToken(segments: readonly EngineSegment[], turns: readonly EngineTurn[]): number[] {
+  const sorted = [...turns].sort((a, b) => a.start - b.start)
+  const order = new Map<number, number>()
+  const tokens = segments.flatMap(segment => segment.tokens)
+  const raw = tokens.map(token => {
+    const at = (token.start + token.end) / 2
+    let best: EngineTurn | undefined
+    let distance = Infinity
+    for (const turn of sorted) {
+      const d = at < turn.start ? turn.start - at : at > turn.end ? at - turn.end : 0
+      if (d < distance) { distance = d; best = turn }
+      if (turn.start > at + distance) break
+    }
+    return best?.cluster ?? -1
+  })
+  // Fold flickers: a run shorter than the minimum takes the previous voice.
+  const out = [...raw]
+  let runStart = 0
+  for (let index = 1; index <= out.length; index++) {
+    if (index < out.length && out[index] === out[runStart]) continue
+    const length = (tokens[index - 1]?.end ?? 0) - (tokens[runStart]?.start ?? 0)
+    if (runStart > 0 && length < MIN_TURN_SEC) for (let k = runStart; k < index; k++) out[k] = out[runStart - 1]!
+    runStart = index
+  }
+  // Punctuation belongs to the word before it, never opens the next voice's paragraph.
+  for (let index = 1; index < out.length; index++) {
+    if (/^\s*[\p{P}]+\s*$/u.test(tokens[index]!.text)) out[index] = out[index - 1]!
+  }
+  return out.map(cluster => {
+    if (!order.has(cluster)) order.set(cluster, order.size)
+    return order.get(cluster)!
+  })
+}
+
+/** Escape text for HTML content. */
+function escapeText(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+/**
+ * The transcript with its speakers: paragraphs never cross a change of voice,
+ * and each carries `data-spk` (the speaker's index) beside its `data-t`.
+ */
+export function renderSpeakerTranscript(segments: readonly EngineSegment[], turns: readonly EngineTurn[]): string {
+  const cues = cuesFromSegments(segments, speakerPerToken(segments, turns))
+  const out: string[] = []
+  let run: (Cue & { speaker?: number })[] = []
+  const flush = (): void => {
+    const speaker = run[0]?.speaker
+    for (const paragraph of mergeCues(run)) {
+      out.push(`<p ${LOCAL_MARK} data-spk="${String(speaker ?? 0)}" data-t="${paragraph.start.toFixed(1)}">${escapeText(paragraph.text)}</p>`)
+    }
+    run = []
+  }
+  for (const cue of cues) {
+    if (run.length > 0 && cue.speaker !== run[0]!.speaker) flush()
+    run.push(cue)
+  }
+  flush()
+  return out.join('\n')
 }
 
 /** The marker a locally transcribed paragraph carries (the 来源 line reads it). */
@@ -122,6 +215,8 @@ function curlTo(url: string, file: string, signal: AbortSignal): Promise<void> {
 }
 
 interface Job {
+  speakers?: number
+  speakersError?: string
   state: LocalTranscriptState
   progress: number
   ahead?: number
@@ -141,8 +236,8 @@ export interface LocalTranscriberDeps {
   readonly tmpRoot: string
   /** Fetch a video's audio track into `dir`. */
   readonly videoAudio: (url: string, dir: string, options: { signal: AbortSignal; onProgress: (fraction: number) => void }) => Promise<string>
-  /** Keep the finished transcript as the entry's body. */
-  readonly store: (entryId: string, url: string, html: string, language: string | undefined) => Promise<void>
+  /** Keep the finished transcript as the entry's body (`speakers`: how many voices, once known). */
+  readonly store: (entryId: string, url: string, html: string, language: string | undefined, speakers?: number) => Promise<void>
 }
 
 /** A model download larger than this asks first; a small addition (the 2 MB VAD) just happens. */
@@ -173,6 +268,7 @@ export class LocalTranscriber {
       ...(job.html === undefined ? {} : { html: job.html }),
       ...(job.language === undefined ? {} : { language: job.language }),
       ...(job.error === undefined ? {} : { error: job.error }),
+      ...(job.speakers === undefined ? {} : { speakers: job.speakers }),
     }
   }
 
@@ -202,6 +298,7 @@ export class LocalTranscriber {
   cancel(entryId: string, force: boolean): LocalTranscriptStatus {
     const job = this.jobs.get(entryId)
     if (job === undefined) return { entryId, state: 'idle' }
+    // Leaving during the speakers pass lets it finish too (the transcript is stored already).
     if (force || job.state === 'queued' || job.state === 'fetching') {
       job.abort.abort()
       this.jobs.delete(entryId)
@@ -262,6 +359,35 @@ export class LocalTranscriber {
       job.rendered = result.segments.length
       job.segments = result.segments
       job.progress = 1
+      // Then who spoke when, on the audio still at hand. The transcript is
+      // already stored and readable; this pass only re-cuts its paragraphs.
+      if (engine.speakers !== undefined) {
+        job.state = 'speakers'
+        try {
+          const voices = await engine.speakers(
+            {
+              input: { files: [file] },
+              speech: result.segments.map(segment => ({ start: segment.start, end: segment.end })),
+              owner: '@khorsheed/dsh-reader',
+              ...(request.title === undefined ? {} : { label: request.title }),
+            },
+            { signal },
+          )
+          const count = voices.single ? 1 : new Set(voices.turns.map(turn => turn.cluster)).size
+          if (count >= 2) {
+            const split = renderSpeakerTranscript(result.segments, voices.turns)
+            await this.deps.store(request.entryId, request.url, split, detected, count)
+            job.html = split
+          } else {
+            await this.deps.store(request.entryId, request.url, html, detected, 1)
+          }
+          job.speakers = count
+        } catch (error) {
+          if (signal.aborted) return
+          // The transcript stands; only the speakers are missing.
+          job.speakersError = error instanceof Error ? error.message : String(error)
+        }
+      }
       job.state = 'done'
     } catch (error) {
       if (signal.aborted) return
