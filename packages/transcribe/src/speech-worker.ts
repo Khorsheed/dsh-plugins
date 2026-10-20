@@ -12,7 +12,7 @@
  */
 import { createRequire } from 'node:module'
 import { cosine, decodeEmbedding, encodeEmbedding, type SpeechJob, type WorkerMessage, type WorkerSegment, type WorkerSpeaker, type WorkerToken } from './speech-protocol.ts'
-import { attachPunctuation, consolidate, mergeTurns, planChunks, repairSeam, SEAM_GAP_SEC, type PlannedChunk, type Turn } from './speech-worker-core.ts'
+import { attachPunctuation, consolidate, mergeTurns, planChunks, probeWindows, repairSeam, SEAM_GAP_SEC, singleVoice, type PlannedChunk, type Turn } from './speech-worker-core.ts'
 
 const require = createRequire(import.meta.url)
 
@@ -84,6 +84,25 @@ const PAD_SEC = 0.15
  * pause at all falls back to the quietest-point split (a gap of 0).
  */
 function vadChunks(sherpa: Sherpa, model: string, samples: Float32Array, numThreads: number): PlannedChunk[] {
+  const speech = vadSpeech(sherpa, model, samples, numThreads)
+  const total = samples.length / SAMPLE_RATE
+  const out: PlannedChunk[] = []
+  for (const chunk of planChunks(speech, MAX_CHUNK_SEC)) {
+    const start = Math.max(0, chunk.start - PAD_SEC)
+    const end = Math.min(total, chunk.end + PAD_SEC)
+    if (end - start <= MAX_CHUNK_SEC) {
+      out.push({ start, end, gapBefore: chunk.gapBefore })
+      continue
+    }
+    chunksOf(samples, start, end).forEach(([a, b], index) => {
+      out.push({ start: a / SAMPLE_RATE, end: b / SAMPLE_RATE, gapBefore: index === 0 ? chunk.gapBefore : 0 })
+    })
+  }
+  return out
+}
+
+/** Speech segments (seconds) by Silero VAD. */
+function vadSpeech(sherpa: Sherpa, model: string, samples: Float32Array, numThreads: number): { start: number; end: number }[] {
   const vad = new sherpa.Vad({
     sileroVad: { model, threshold: 0.5, minSilenceDuration: 0.25, minSpeechDuration: 0.25, windowSize: 512, maxSpeechDuration: 60 },
     sampleRate: SAMPLE_RATE,
@@ -104,20 +123,7 @@ function vadChunks(sherpa: Sherpa, model: string, samples: Float32Array, numThre
   }
   vad.flush()
   drain()
-  const total = samples.length / SAMPLE_RATE
-  const out: PlannedChunk[] = []
-  for (const chunk of planChunks(speech, MAX_CHUNK_SEC)) {
-    const start = Math.max(0, chunk.start - PAD_SEC)
-    const end = Math.min(total, chunk.end + PAD_SEC)
-    if (end - start <= MAX_CHUNK_SEC) {
-      out.push({ start, end, gapBefore: chunk.gapBefore })
-      continue
-    }
-    chunksOf(samples, start, end).forEach(([a, b], index) => {
-      out.push({ start: a / SAMPLE_RATE, end: b / SAMPLE_RATE, gapBefore: index === 0 ? chunk.gapBefore : 0 })
-    })
-  }
-  return out
+  return speech
 }
 
 function cleanToken(t: string): string {
@@ -140,15 +146,65 @@ function diarizedTurns(sherpa: Sherpa, job: SpeechJob, samples: Float32Array, em
   return consolidate(mergeTurns(raw.map((r) => ({ cluster: r.speaker, start: r.start, end: r.end }))), embedOf)
 }
 
+/** One embedding per (consolidated) cluster, matched against the known voices. */
+function speakersOf(job: SpeechJob, turns: Turn[], embedOf: (list: Turn[], cluster: number) => Float32Array | null): WorkerSpeaker[] {
+  send({ type: 'progress', stage: 'embed', progress: 0 })
+  const known = job.voices.map((v) => ({ ...v, vec: decodeEmbedding(v.embedding) }))
+  const clusters = [...new Set(turns.map((t) => t.cluster))]
+  const speakers: WorkerSpeaker[] = []
+  for (const cluster of clusters) {
+    const speechSec = turns.filter((t) => t.cluster === cluster).reduce((a, t) => a + (t.end - t.start), 0)
+    const vec = embedOf(turns, cluster)
+    if (!vec) continue
+    let match: { id: string; score: number } | undefined
+    for (const v of known) {
+      const score = cosine(vec, v.vec)
+      if (score >= job.matchThreshold && (!match || score > match.score)) match = { id: v.id, score }
+    }
+    speakers.push({ cluster, speechSec, embedding: encodeEmbedding(vec), ...(match ? { match } : {}) })
+  }
+  // a stored voice can match at most one cluster: keep the best, drop the rest
+  const byVoice = new Map<string, WorkerSpeaker>()
+  for (const s of speakers) {
+    if (!s.match) continue
+    const prev = byVoice.get(s.match.id)
+    if (!prev || prev.match!.score < s.match.score) {
+      if (prev) delete prev.match
+      byVoice.set(s.match.id, s)
+    } else delete s.match
+  }
+  return speakers
+}
+
+/**
+ * Who spoke when, without recognizing a word: a quick probe first (a few
+ * dozen windows' voiceprints — under a second) settles a one-voice recording
+ * without the full diarization, which costs minutes on an hour of audio.
+ */
+function speakersJob(sherpa: Sherpa, job: SpeechJob, samples: Float32Array, embedOf: (list: Turn[], cluster: number) => Float32Array | null): void {
+  send({ type: 'progress', stage: 'diarize', progress: 0 })
+  const speech = job.speech ?? (job.models.vad ? vadSpeech(sherpa, job.models.vad, samples, job.numThreads) : [{ start: 0, end: samples.length / SAMPLE_RATE }])
+  const windows = probeWindows(speech, samples.length / SAMPLE_RATE)
+  const probe = windows.map((w, index) => embedOf([{ cluster: index, start: w.start, end: w.end }], index)).filter((v): v is Float32Array => v !== null)
+  if (probe.length >= 4 && singleVoice(probe)) {
+    finish({ type: 'speakers-done', single: true, turns: [], speakers: [] })
+    return
+  }
+  const turns = diarizedTurns(sherpa, job, samples, embedOf)
+  const speakers = speakersOf(job, turns, embedOf)
+  finish({ type: 'speakers-done', single: speakers.length <= 1, turns, speakers })
+}
+
 async function main(job: SpeechJob): Promise<void> {
   send({ type: 'progress', stage: 'load', progress: 0 })
   const sherpa: Sherpa = require('sherpa-onnx-node')
   const wave = sherpa.readWave(job.wavPath) as { samples: Float32Array; sampleRate: number }
   if (wave.sampleRate !== SAMPLE_RATE) throw new Error(`expected ${SAMPLE_RATE} Hz input, got ${wave.sampleRate}`)
   const samples = wave.samples
-  if (job.diarize && (!job.models.segmentation || !job.models.embedding)) throw new Error('speaker separation needs the segmentation and embedding models')
+  const separating = job.diarize || job.mode === 'speakers'
+  if (separating && (!job.models.segmentation || !job.models.embedding)) throw new Error('speaker separation needs the segmentation and embedding models')
 
-  const extractor = job.diarize ? new sherpa.SpeakerEmbeddingExtractor({ model: job.models.embedding, numThreads: job.numThreads }) : null
+  const extractor = separating ? new sherpa.SpeakerEmbeddingExtractor({ model: job.models.embedding, numThreads: job.numThreads }) : null
   /** One embedding over up to EMBED_MAX_SEC of a cluster's longest turns. */
   const embedOf = (list: Turn[], cluster: number): Float32Array | null => {
     if (!extractor) return null
@@ -163,6 +219,11 @@ async function main(job: SpeechJob): Promise<void> {
     }
     stream.inputFinished()
     return extractor.isReady(stream) ? (extractor.compute(stream, false) as Float32Array) : null
+  }
+
+  if (job.mode === 'speakers') {
+    speakersJob(sherpa, job, samples, embedOf)
+    return
   }
 
   // Without separation the whole recording is one turn; its ≤ 25 s chunks
@@ -277,32 +338,7 @@ async function main(job: SpeechJob): Promise<void> {
     return
   }
 
-  // one embedding per (consolidated) cluster for voiceprint matching
-  send({ type: 'progress', stage: 'embed', progress: 0 })
-  const known = job.voices.map((v) => ({ ...v, vec: decodeEmbedding(v.embedding) }))
-  const clusters = [...new Set(turns.map((t) => t.cluster))]
-  const speakers: WorkerSpeaker[] = []
-  for (const cluster of clusters) {
-    const speechSec = turns.filter((t) => t.cluster === cluster).reduce((a, t) => a + (t.end - t.start), 0)
-    const vec = embedOf(turns, cluster)
-    if (!vec) continue
-    let match: { id: string; score: number } | undefined
-    for (const v of known) {
-      const score = cosine(vec, v.vec)
-      if (score >= job.matchThreshold && (!match || score > match.score)) match = { id: v.id, score }
-    }
-    speakers.push({ cluster, speechSec, embedding: encodeEmbedding(vec), ...(match ? { match } : {}) })
-  }
-  // a stored voice can match at most one cluster: keep the best, drop the rest
-  const byVoice = new Map<string, WorkerSpeaker>()
-  for (const s of speakers) {
-    if (!s.match) continue
-    const prev = byVoice.get(s.match.id)
-    if (!prev || prev.match!.score < s.match.score) {
-      if (prev) delete prev.match
-      byVoice.set(s.match.id, s)
-    } else delete s.match
-  }
+  const speakers = speakersOf(job, turns, embedOf)
   send({ type: 'progress', stage: 'embed', progress: 1 })
   finish({ type: 'done', segments, speakers, language })
 }

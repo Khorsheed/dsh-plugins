@@ -71,6 +71,8 @@ export interface UseMediaInput {
   readonly detailRef: MutableRefObject<HTMLDivElement | null>
   /** A time chip's tooltip, from its clock label. */
   readonly chipTitle: (clock: string) => string
+  /** A speaker's display name, for paragraphs that carry `data-spk`. */
+  readonly speakerLabel: (speaker: number) => string
 }
 
 /** What the pane renders from. */
@@ -104,7 +106,7 @@ export interface MediaFace {
  * @param input - what the pane already holds.
  */
 export function useMedia(input: UseMediaInput): MediaFace {
-  const { entryId, media, articleHtml, articleRef, detailRef, chipTitle } = input
+  const { entryId, media, articleHtml, articleRef, detailRef, chipTitle, speakerLabel } = input
   const [transcriptOf, setTranscriptOf] = useState<{ entryId: string; state: TranscriptState } | undefined>(undefined)
   const transcript = transcriptOf !== undefined && transcriptOf.entryId === entryId ? transcriptOf.state : undefined
   const setTranscript = useCallback((id: string, state: TranscriptState) => { setTranscriptOf({ entryId: id, state }) }, [])
@@ -183,6 +185,36 @@ export function useMedia(input: UseMediaInput): MediaFace {
       block.prepend(chip)
     }
   }, [articleHtml, media, articleRef, chipTitle])
+
+  // Who speaks: a name at the start of the paragraph where the voice changes
+  // (a transcript's habit — not repeated on every paragraph), drawn from CSS
+  // content like the time, so selections and translation never take it; kept
+  // current as the reader renames a speaker.
+  useEffect(() => {
+    const article = articleRef.current
+    if (article === null || media === undefined) return
+    let previous: string | null = null
+    for (const block of blockElements(article)) {
+      const spk = block.getAttribute('data-spk')
+      if (spk === null) continue
+      const changes = spk !== previous
+      previous = spk
+      let label = block.querySelector(':scope > [data-reader-spk]')
+      if (!changes) {
+        label?.remove()
+        continue
+      }
+      if (label === null) {
+        label = article.ownerDocument.createElement('span')
+        label.setAttribute('data-reader-spk', spk)
+        label.setAttribute('data-reader-no-translate', '1')
+        const chip = block.querySelector(':scope > [data-reader-ts]')
+        if (chip !== null) chip.after(label)
+        else block.prepend(label)
+      }
+      label.setAttribute('data-label', speakerLabel(Number(spk)))
+    }
+  }, [articleHtml, media, articleRef, speakerLabel])
 
   const seek = useCallback((seconds: number) => {
     paused.current = false

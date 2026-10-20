@@ -36,7 +36,7 @@ const transcriptHtml = [
   [75, 'the parameters are the weights of the neural network that is the language model, and the run file is the code that runs it'],
   [600, 'now let me switch gears to how we actually obtain these parameters, which is the training stage'],
   [640, 'you can think of it as compressing a large chunk of the internet into the parameters'],
-].map(([t, text]) => `<p data-t="${t}">${text}</p>`).join('')
+].map(([t, text], index) => `<p${params.get('spk') === '1' ? ` data-src="local" data-spk="${index < 2 ? 0 : 1}"` : ''} data-t="${t}">${text}</p>`).join('')
 const sources = [
   source('yt', { label: 'Andrej Karpathy' }),
   source('anthropic', { label: 'Anthropic Research' }),
@@ -118,6 +118,9 @@ const face = {
   localTranscript: request => ok(params.get('local') === '1'
     ? { entryId: request.entryId, state: 'transcribing', progress: 0.42, html: transcriptHtml.split('</p>').slice(0, 3).join('</p>').replace(/<p data-t/g, '<p data-src="local" data-t') + '</p>' }
     : { entryId: request.entryId, state: 'idle' }),
+  // &spk=1: a two-voice local transcript (names kept in memory).
+  speakerNames: () => ok({ ...speakerNames }),
+  nameSpeaker: request => { if (request.name.trim() === '') delete speakerNames[request.speaker]; else speakerNames[request.speaker] = request.name; return ok({ ...speakerNames }) },
   mediaStates: request => ok({ engine: true, states: Object.fromEntries(request.entryIds.map((id, index) => [id, index === 0 ? { state: 'platform' } : { state: 'transcribing', progress: 0.42 }])) }),
   cancelLocalTranscript: request => Promise.resolve({ ok: true, value: { entryId: request.entryId, state: 'idle' } }),
   mediaTranscript: request => new Promise(resolve => setTimeout(() => resolve({ ok: true, value: params.get('local') === '1' ? { entryId: request.entryId, captions: 'none' } : { entryId: request.entryId, captions: 'platform', html: transcriptHtml } }), 600)),
@@ -132,6 +135,7 @@ const face = {
   canOpenSession: () => true, openSession: () => {},
 }
 const notes: Record<string, any> = {}
+const speakerNames: Record<string, string> = { 1: '嘉宾' }
 // The preview's stand-in for the model's reader_note writes (a screenshot driver pokes it).
 ;(window as any).__previewNotes = notes
 // Every other verb the pane may call answers an empty success.

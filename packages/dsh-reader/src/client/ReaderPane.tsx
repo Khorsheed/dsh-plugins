@@ -38,6 +38,7 @@ import { MediaPlayer } from './MediaPlayer.tsx'
 import { useMedia } from './useMedia.ts'
 import { useLocalTranscript } from './useLocalTranscript.ts'
 import { useMediaStates } from './useMediaStates.ts'
+import { SpeakerLegend } from './SpeakerLegend.tsx'
 import { readMediaMeta } from '../media.ts'
 import { formatClock } from '../captions.ts'
 import { MEDIA_QUERIES } from './selectors.ts'
@@ -1403,6 +1404,34 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
 
   const openEntry = openEntryId === null ? undefined : entryById(openEntryId)
   /** The open article's notes (see useNotes — they read the article, never drive it). */
+  // A transcript's speakers: the reader's names for them (host-kept), else 说话人 A, B, ….
+  const hasSpeakers = articleHtml?.includes('data-spk=') === true
+  const [speakerNamesOf, setSpeakerNamesOf] = useState<{ entryId: string; names: Record<string, string> } | undefined>(undefined)
+  const speakerNames = useMemo(
+    () => (speakerNamesOf !== undefined && speakerNamesOf.entryId === openEntry?.id ? speakerNamesOf.names : {}),
+    [speakerNamesOf, openEntry?.id],
+  )
+  useEffect(() => {
+    const id = openEntry?.id
+    if (id === undefined || !hasSpeakers) return
+    void props.speakerNames({ entryId: id }).then(answer => { if (answer.ok) setSpeakerNamesOf({ entryId: id, names: answer.value }) })
+  }, [openEntry?.id, hasSpeakers, props])
+  const speakerLabel = useCallback(
+    (speaker: number) => speakerNames[String(speaker)] ?? t('media.speakerDefault', { letter: String.fromCharCode(65 + speaker) }),
+    [speakerNames, t],
+  )
+  /** How many voices the open transcript has (its highest speaker index + 1). */
+  const speakerCount = useMemo(() => {
+    if (!hasSpeakers || articleHtml === null) return 0
+    let top = -1
+    for (const match of articleHtml.matchAll(/data-spk="(\d+)"/g)) top = Math.max(top, Number(match[1]))
+    return top + 1
+  }, [hasSpeakers, articleHtml])
+  const renameSpeaker = useCallback((speaker: number, name: string) => {
+    const id = openEntry?.id
+    if (id === undefined) return
+    void props.nameSpeaker({ entryId: id, speaker, name }).then(answer => { if (answer.ok) setSpeakerNamesOf({ entryId: id, names: answer.value }) })
+  }, [openEntry?.id, props])
   const notesFace = useNotes({
     props,
     entry: openEntry,
@@ -1413,11 +1442,12 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
     detailRef,
     paintKey: `${translatePhase}:${String(translateProgress?.done ?? 0)}`,
     translateView,
+    ...(hasSpeakers ? { speakerLabel } : {}),
   })
   /** The open entry's video / audio (see useMedia — it decorates the transcript, never rewrites it). */
   const openProvider = openEntry?.media?.provider
   const chipTitle = useCallback((clock: string) => t(openProvider === 'bilibili' ? 'media.chipTitleReload' : 'media.chipTitle', { time: clock }), [t, openProvider])
-  const mediaFace = useMedia({ entryId: openEntry?.id, media: openEntry?.media, articleHtml, articleRef, detailRef, chipTitle })
+  const mediaFace = useMedia({ entryId: openEntry?.id, media: openEntry?.media, articleHtml, articleRef, detailRef, chipTitle, speakerLabel })
   // 转完自动翻译: one global preference, off until the reader ticks it once.
   const [autoTranslate, setAutoTranslate] = useState(() => {
     try {
@@ -4002,7 +4032,9 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
               : (
                 <span className={css.mediaSource}>
                   {mediaFace.transcript === 'ready' ? (articleHtml?.includes('data-src="local"') === true
-                    ? <>{t('media.sourceLocal')} · <button type="button" className={css.mediaLink} onClick={localFace.retry}>{t('media.localRetry')}</button></>
+                    ? localFace.status?.state === 'speakers'
+                      ? <>{t('media.sourceLocal')} · {t('media.speakersRunning')}</>
+                      : <>{t('media.sourceLocal')} · <button type="button" className={css.mediaLink} onClick={localFace.retry}>{t('media.localRetry')}</button></>
                     : t('media.sourcePlatform'))
                     : mediaFace.transcript === 'loading' ? t('media.loading')
                       : mediaFace.transcript === 'failed' ? t('media.failed')
@@ -4017,6 +4049,15 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
                         ) : ''}
                 </span>
               )}
+          />
+        )}
+        {mediaFace.media !== undefined && hasSpeakers && !mediaFace.hidden && !mediaFace.mini && (
+          <SpeakerLegend
+            count={speakerCount}
+            label={speakerLabel}
+            onRename={renameSpeaker}
+            hint={t('media.speakerHint')}
+            renameTitle={t('media.speakerRename')}
           />
         )}
         {mediaFace.media !== undefined && localFace.status?.state === 'needs-models' && !mediaFace.hidden && (

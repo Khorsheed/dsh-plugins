@@ -918,7 +918,7 @@ export interface MediaCardStates {
 }
 
 /** Where an entry's local transcription stands. */
-export type LocalTranscriptState = 'unavailable' | 'needs-models' | 'fetching' | 'queued' | 'transcribing' | 'done' | 'failed' | 'idle'
+export type LocalTranscriptState = 'unavailable' | 'needs-models' | 'fetching' | 'queued' | 'transcribing' | 'speakers' | 'done' | 'failed' | 'idle'
 
 /** What the browser polls. */
 export interface LocalTranscriptStatus {
@@ -934,6 +934,8 @@ export interface LocalTranscriptStatus {
   readonly html?: string
   /** The language the transcript is in, once known. */
   readonly language?: string
+  /** How many voices the transcript has, once the speakers pass settled it. */
+  readonly speakers?: number
   readonly error?: string
 }
 

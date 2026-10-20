@@ -59,15 +59,13 @@ describe('TranscribeService', () => {
     const streamed: string[] = []
     const first = svc.run({ input: { wav: '/a.wav' }, owner: 'a' }, { onSegments: (s) => streamed.push(...s.map((x) => x.text)) })
     const second = svc.run({ input: { wav: '/b.wav' }, language: 'en', owner: 'b' }, { onProgress: (p) => progress.push(p.stage) })
-    await flush()
-    expect(calls.map((c) => c.wavPath)).toEqual(['/a.wav'])
+    await vi.waitFor(() => { expect(calls.map((c) => c.wavPath)).toEqual(['/a.wav']) })
     expect(svc.queue().map((q) => `${q.owner}:${q.state}`)).toEqual(['a:running', 'b:queued'])
     expect(progress).toContain('queued')
     expect(streamed).toEqual(['你好'])
     release.shift()!()
     expect((await first).segments[0]!.text).toBe('你好')
-    await flush()
-    expect(calls.map((c) => c.wavPath)).toEqual(['/a.wav', '/b.wav'])
+    await vi.waitFor(() => { expect(calls.map((c) => c.wavPath)).toEqual(['/a.wav', '/b.wav']) })
     expect(calls[1]!.models.asr.kind).toBe('senseVoice')
     expect(calls[1]!.diarize).toBe(false)
     release.shift()!()
@@ -81,7 +79,7 @@ describe('TranscribeService', () => {
     const waiting = new AbortController()
     const first = svc.run({ input: { wav: '/a.wav' }, owner: 'a' }, { signal: running.signal })
     const second = svc.run({ input: { wav: '/b.wav' }, owner: 'b' }, { signal: waiting.signal })
-    await flush()
+    await vi.waitFor(() => { expect(calls).toHaveLength(1) })
     waiting.abort()
     await expect(second).rejects.toThrow('已取消')
     expect(svc.queue().map((q) => q.owner)).toEqual(['a'])
@@ -89,6 +87,16 @@ describe('TranscribeService', () => {
     await expect(first).rejects.toThrow('aborted')
     expect(svc.queue()).toEqual([])
     expect(calls).toHaveLength(1)
+  })
+
+  it('runs a speakers job through the same queue, with only the speaker models', async () => {
+    const svc = new TranscribeService({ stateDir: await installedRoot() })
+    const job = svc.speakers({ input: { wav: '/s.wav' }, speech: [{ start: 0, end: 30 }], owner: 'r' })
+    await vi.waitFor(() => { expect(calls).toHaveLength(1) })
+    expect(calls[0]!.mode).toBe('speakers')
+    expect(calls[0]!.speech).toEqual([{ start: 0, end: 30 }])
+    release.shift()!()
+    expect((await job).single).toBe(false)
   })
 
   it('reports what is left to download for a request', async () => {

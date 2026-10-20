@@ -17,7 +17,7 @@ import { findBinary, writeAsrWav } from './ffmpeg.ts'
 import { MODELS, ModelManager, modelsFor, speechModelPaths, type ModelId, type ModelSourceChoice, type ModelStatus } from './models.ts'
 import { runSpeech } from './speech.ts'
 import type { WorkerSegment } from './speech-protocol.ts'
-import type { TranscribeApi, TranscribeProgress, TranscribeQueueItem, TranscribeRequest, TranscribeResult, TranscribeRunOptions, TranscribeSegment } from './types.ts'
+import type { SpeakersRequest, SpeakersResult, TranscribeApi, TranscribeProgress, TranscribeQueueItem, TranscribeRequest, TranscribeResult, TranscribeRunOptions, TranscribeSegment } from './types.ts'
 
 /** The engine's configuration. */
 export interface TranscribeConfig {
@@ -176,7 +176,23 @@ export class TranscribeService implements TranscribeApi {
     }
   }
 
-  private async execute(request: TranscribeRequest, options: TranscribeRunOptions): Promise<TranscribeResult> {
+  async speakers(request: SpeakersRequest, options: Omit<TranscribeRunOptions, 'onSegments'> = {}): Promise<SpeakersResult> {
+    const asJob: TranscribeRequest = { input: request.input, owner: request.owner, diarize: { ...(request.voices ? { voices: request.voices } : {}) }, ...(request.label ? { label: request.label } : {}) }
+    const item: Queued = { id: randomUUID(), request: asJob, state: 'queued', wake: () => {} }
+    this.queued.push(item)
+    try {
+      await this.turn(item, options)
+      item.state = 'running'
+      const result = await this.execute(asJob, options, { speech: request.speech })
+      return { single: result.single ?? false, turns: result.turns ?? [], speakers: result.speakers }
+    } finally {
+      this.leave(item)
+    }
+  }
+
+  private async execute(request: TranscribeRequest, options: TranscribeRunOptions): Promise<TranscribeResult>
+  private async execute(request: TranscribeRequest, options: TranscribeRunOptions, speakersOnly: { speech: SpeakersRequest['speech'] }): Promise<TranscribeResult & { turns?: SpeakersResult['turns']; single?: boolean }>
+  private async execute(request: TranscribeRequest, options: TranscribeRunOptions, speakersOnly?: { speech: SpeakersRequest['speech'] }): Promise<TranscribeResult & { turns?: SpeakersResult['turns']; single?: boolean }> {
     const { onProgress, onSegments } = options
     const signal = options.signal ? AbortSignal.any([options.signal, this.stopping.signal]) : this.stopping.signal
     const language = request.language ?? 'zh'
@@ -186,7 +202,10 @@ export class TranscribeService implements TranscribeApi {
       onProgress?.({ stage, progress: a + (b - a) * Math.max(0, Math.min(1, v)) })
     }
 
-    const ids = this.modelsFor(request)
+    // A speakers job needs only the speaker models (and the VAD without known speech).
+    const ids: ModelId[] = speakersOnly
+      ? ['segmentation', 'embedding', ...(speakersOnly.speech ? [] : ['vad' as const])]
+      : this.modelsFor(request)
     if (!(await (await this.adoptLegacyModels(), this.manager.ready(ids)))) {
       const watch = setInterval(() => {
         const rows = this.manager.list().filter((s) => ids.includes(s.id))
@@ -222,8 +241,11 @@ export class TranscribeService implements TranscribeApi {
       const result = await runSpeech(
         {
           wavPath: wav,
-          models: speechModelPaths(this.modelsDir, language, !!diarize),
+          models: speakersOnly
+            ? { ...speechModelPaths(this.modelsDir, language, true), vad: join(this.modelsDir, 'silero_vad.onnx') }
+            : speechModelPaths(this.modelsDir, language, !!diarize),
           diarize: !!diarize,
+          ...(speakersOnly ? { mode: 'speakers' as const, ...(speakersOnly.speech ? { speech: speakersOnly.speech.map((s) => ({ start: s.start, end: s.end })) } : {}) } : {}),
           voices: [...(diarize?.voices ?? [])],
           numSpeakers: diarize?.numSpeakers ?? -1,
           matchThreshold: diarize?.matchThreshold ?? 0.6,
@@ -237,6 +259,8 @@ export class TranscribeService implements TranscribeApi {
         segments: result.segments.map(toSegment),
         speakers: result.speakers,
         ...(result.language ? { language: result.language } : {}),
+        ...(result.turns ? { turns: result.turns } : {}),
+        ...(result.single !== undefined ? { single: result.single } : {}),
       }
     } finally {
       if (temp) await rm(temp, { force: true })

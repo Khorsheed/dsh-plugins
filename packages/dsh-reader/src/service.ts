@@ -239,9 +239,19 @@ export class ReaderService {
       engine: () => ctx.get('transcribe') as TranscribeEngine | undefined,
       tmpRoot: join(stateRoot, 'tmp'),
       videoAudio: (url, dir, options) => this.media.ytdlp.audio(url, dir, options),
-      store: async (entryId, url, html, language) => {
+      store: async (entryId, url, html, language, speakers) => {
         await this.storeEntryBody({ entryId, url, html, keep: true })
-        this.media.remember(entryId, { state: 'local', ...(language === undefined ? {} : { language }), checkedAt: new Date().toISOString() })
+        const before = this.media.captions(entryId)
+        // Names survive a re-transcription that finds the same number of voices.
+        const names = before?.names !== undefined && (speakers === undefined || speakers === before.speakers) ? before.names : undefined
+        const count = speakers ?? before?.speakers
+        this.media.remember(entryId, {
+          state: 'local',
+          ...(language === undefined ? {} : { language }),
+          checkedAt: new Date().toISOString(),
+          ...(count === undefined ? {} : { speakers: count }),
+          ...(names === undefined ? {} : { names }),
+        })
       },
     })
     ctx.effect(() => () => {
@@ -1722,6 +1732,27 @@ export class ReaderService {
     } catch (error) {
       return { entryId: request.entryId, captions: 'failed', error: error instanceof Error ? error.message : String(error) }
     }
+  }
+
+  /** The reader's names for an entry's speakers, by index. */
+  speakerNames(request: { entryId: string }): Record<string, string> {
+    return { ...(this.media.captions(request.entryId)?.names ?? {}) }
+  }
+
+  /**
+   * Name one speaker of an entry's transcript (an empty name restores the default).
+   *
+   * @param request - the entry, the speaker's index, the name.
+   */
+  nameSpeaker(request: { entryId: string; speaker: number; name: string }): Record<string, string> {
+    const record = this.media.captions(request.entryId)
+    if (record === undefined) return {}
+    const names: Record<string, string> = { ...(record.names ?? {}) }
+    const name = request.name.trim().slice(0, 40)
+    if (name === '') delete names[String(request.speaker)]
+    else names[String(request.speaker)] = name
+    this.media.remember(request.entryId, { ...record, names })
+    return names
   }
 
   /**

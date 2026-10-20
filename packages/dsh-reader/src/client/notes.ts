@@ -143,17 +143,20 @@ export function captureSelection(
  * @param html - the article markup the pane renders.
  * @returns the blocks' text (a bare-text body is one block).
  */
-export function paragraphsOf(html: string): string[] {
+export function paragraphsOf(html: string, speakerLabel?: (speaker: number) => string): string[] {
   const doc = new DOMParser().parseFromString(`<div>${html}</div>`, 'text/html')
   const root = doc.body.firstElementChild
   if (root === null) return []
   const children = [...root.children]
   if (children.length === 0) return [normalizeText(root.textContent ?? '')]
-  // A transcript paragraph says when it is: the model reads ¶3 [24:05] ….
+  // A transcript paragraph says when it is, and who spoke it: the model reads
+  // ¶3 [24:05] 嘉宾：… — so a discussion never puts a view in the wrong mouth.
   return children.map(child => {
     const time = timeOf(child)
+    const spk = child.getAttribute('data-spk')
     const text = normalizeText(child.textContent ?? '')
-    return time === undefined || text === '' ? text : `[${formatClock(time)}] ${text}`
+    const who = spk === null || speakerLabel === undefined ? '' : `${speakerLabel(Number(spk))}：`
+    return time === undefined || text === '' ? text : `[${formatClock(time)}] ${who}${text}`
   })
 }
 

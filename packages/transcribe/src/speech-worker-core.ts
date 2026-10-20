@@ -197,3 +197,45 @@ export function repairSeam(prev: WorkerToken[], next: WorkerToken[]): void {
     next[0] = { ...first, text: first.text.slice(0, at) + first.text[at]!.toLowerCase() + first.text.slice(at + 1) }
   }
 }
+
+/** Windows sampled to hear how many voices a recording has. */
+export const PROBE_WINDOWS = 24
+/** Seconds of speech per probe window. */
+export const PROBE_SECONDS = 8
+/** Two windows this similar (CAM++ cosine) are the same voice. */
+export const SAME_VOICE = 0.5
+
+/**
+ * Up to `count` stretches of speech spread evenly over the recording, each at
+ * most `seconds` long, taken from speech segments of at least 3 s (shorter
+ * ones embed poorly). Measured 2026-10-20: one voice scores ≥ 0.65 against
+ * itself across a 40-minute monologue; host and guest of an interview score
+ * 0.27–0.40 — the probe costs under a second.
+ */
+export function probeWindows(speech: readonly { start: number; end: number }[], total: number, count = PROBE_WINDOWS, seconds = PROBE_SECONDS): { start: number; end: number }[] {
+  const long = speech.filter((s) => s.end - s.start >= 3)
+  const picked: { start: number; end: number }[] = []
+  for (let k = 0; k < count; k++) {
+    const at = ((k + 0.5) / count) * total
+    let best: { start: number; end: number } | undefined
+    for (const s of long) {
+      if (!best || Math.abs((s.start + s.end) / 2 - at) < Math.abs((best.start + best.end) / 2 - at)) best = s
+    }
+    if (best && !picked.includes(best)) picked.push(best)
+  }
+  return picked.map((s) => {
+    const mid = (s.start + s.end) / 2
+    const half = Math.min(seconds, s.end - s.start) / 2
+    return { start: mid - half, end: mid + half }
+  })
+}
+
+/** Whether every probe window is the same voice (greedy grouping at `threshold`). */
+export function singleVoice(vecs: readonly Float32Array[], threshold = SAME_VOICE): boolean {
+  const groups: Float32Array[] = []
+  for (const v of vecs) {
+    if (!groups.some((g) => cosine(g, v) >= threshold)) groups.push(v)
+    if (groups.length > 1) return false
+  }
+  return true
+}

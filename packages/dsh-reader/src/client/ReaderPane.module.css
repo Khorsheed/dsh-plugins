@@ -3149,3 +3149,78 @@
 .timeHint span {
   flex: 1;
 }
+
+/* ---- speakers: one colour per voice, on the legend and under each time. */
+.speakerLegend {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  padding: 6px var(--reader-gutter);
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  font-size: var(--dsh-panel-text-meta, 12px);
+}
+
+.speakerChip,
+.speakerInput {
+  height: 24px;
+  padding: 0 9px 0 20px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  background: transparent;
+  font-family: inherit;
+  font-size: var(--dsh-panel-text-meta, 12px);
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+  position: relative;
+}
+
+.speakerInput {
+  width: 120px;
+  cursor: text;
+}
+
+.speakerChip::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 8px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--spk);
+  transform: translateY(-50%);
+}
+
+.speakerHint {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+[data-spk='0'] { --spk: #4a7cf6; } /* panel-check: allow-color */
+[data-spk='1'] { --spk: #e8803c; } /* panel-check: allow-color */
+[data-spk='2'] { --spk: #2f9e64; } /* panel-check: allow-color */
+[data-spk='3'] { --spk: #b45fd6; } /* panel-check: allow-color */
+[data-spk='4'] { --spk: #d4453b; } /* panel-check: allow-color */
+[data-spk='5'] { --spk: #8a8f99; } /* panel-check: allow-color */
+
+/* A speaker's paragraph: a hairline in their colour; where the voice changes,
+   their name opens the paragraph. */
+.article p[data-spk] {
+  border-left: 2px solid color-mix(in srgb, var(--spk) 55%, transparent);
+}
+
+.article [data-reader-spk] {
+  margin-right: 6px;
+  font-weight: 650;
+  color: var(--spk);
+  user-select: none;
+}
+
+.article [data-reader-spk]::before {
+  content: attr(data-label) '：';
+}
+
+.article p[data-spk] > [data-reader-ts] {
+  left: 3px;
+}

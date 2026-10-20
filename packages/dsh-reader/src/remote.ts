@@ -387,6 +387,18 @@ export class ReaderRemoteService extends TypertRemoteService<ReaderRemoteConfig>
     return Promise.resolve(this.core.local.status(request.entryId))
   }
 
+  /** The reader's names for a transcript's speakers, by index. */
+  @Remote('speakerNames')
+  speakerNames(request: { entryId: string }): Promise<Record<string, string>> {
+    return Promise.resolve(this.core.speakerNames(request))
+  }
+
+  /** Name one speaker of a transcript (empty: back to 说话人 A…); answers all the names. */
+  @Remote('nameSpeaker')
+  nameSpeaker(request: { entryId: string; speaker: number; name: string }): Promise<Record<string, string>> {
+    return Promise.resolve(this.core.nameSpeaker(request))
+  }
+
   /** The wall's video / audio cards: what each one's transcript is (captions, local, transcribing…). */
   @Remote('mediaStates')
   mediaStates(request: { entryIds: string[] }): Promise<MediaCardStates> {

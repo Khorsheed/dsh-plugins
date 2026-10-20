@@ -88,6 +88,7 @@ export type ReaderKey =
   | 'media.cardNone' | 'media.cardNoneAuto'
   | 'media.play' | 'media.pause' | 'media.startedAt' | 'media.tabTranscript' | 'media.autoTranslate' | 'media.translateAfter'
   | 'media.chipTitle' | 'media.chipTitleReload' | 'media.timeHint' | 'media.timeHintAudio' | 'media.timeHintOk' | 'media.backToNow'
+  | 'media.speakerDefault' | 'media.speakerHint' | 'media.speakerRename' | 'media.speakersRunning'
   | 'media.localStop' | 'media.localStopped' | 'media.localFailed' | 'media.localRetry' | 'media.localModels' | 'media.localModelsGo'
   | 'notes.sync' | 'notes.syncTitle' | 'notes.syncLast' | 'notes.syncCards' | 'notes.syncReplies' | 'notes.syncKind'
   | 'notes.syncDone' | 'notes.syncOpen' | 'notes.syncFailed' | 'notes.syncedIn' | 'notes.syncNoCanvas'
@@ -368,6 +369,10 @@ export const en = {
   'media.timeHintAudio': 'Click the time before a paragraph to play from there',
   'media.timeHintOk': 'Got it',
   'media.backToNow': 'Back to what is playing',
+  'media.speakerDefault': 'Speaker {letter}',
+  'media.speakerHint': 'Click a name to rename it',
+  'media.speakerRename': 'Rename this speaker (the whole transcript)',
+  'media.speakersRunning': 'telling the speakers apart…',
   'media.cardPlatform': 'Captions',
   'media.cardLocal': 'Transcribed',
   'media.cardQueued': 'Queued',
@@ -681,6 +686,10 @@ export const zh = {
   'media.timeHintAudio': '点段落前的时间，就从那里播放',
   'media.timeHintOk': '知道了',
   'media.backToNow': '回到正在播放',
+  'media.speakerDefault': '说话人 {letter}',
+  'media.speakerHint': '点名字可以改名',
+  'media.speakerRename': '给这位说话人改名（整期替换）',
+  'media.speakersRunning': '正在区分说话人…',
   'media.cardPlatform': '有字幕',
   'media.cardLocal': '本机转写',
   'media.cardQueued': '排队中',
