@@ -344,9 +344,9 @@ export function TimelineRail({
         const className = isFocused
           ? `${css.item} ${css.itemFocused}`
           : isCurrent ? `${css.item} ${css.itemCurrent}` : css.item
-        const classNames = row.kind === 'outline'
-          ? `${className} ${isPending ? css.itemPending : css.itemOutline}`
-          : className
+        // Outline rows share the plain styling; the pending pulse is the only
+        // transient cue that a row pages history in before landing.
+        const classNames = isPending ? `${className} ${css.itemPending}` : className
         return (
           <button
             key={row.id}

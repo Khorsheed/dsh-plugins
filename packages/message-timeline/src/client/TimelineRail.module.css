@@ -58,22 +58,27 @@
   opacity: 1;
 }
 
+/* Every tick rests the same dimmed grey — loaded and outline rows read
+   identically; only the reading position stands out (below). */
 .tick {
   flex: none;
   width: 3px;
   height: 14px;
   border-radius: 2px;
-  background: var(--dsw-static-deepseek-400);
+  background: var(--dsw-alias-label-tertiary);
 }
 
-/* The reading position keeps its blue at rest (dimmed like the list, but
-   visibly above it); on hover every row is lit and the blue stays on top. */
+/* The reading position is the one accent: blue, full-opacity, a lengthened
+   tick (centering keeps the row geometry), and bold text once rows expand.
+   Without a selection it defaults to the latest message. */
 .itemCurrent {
   color: var(--dsw-static-deepseek-500);
-  opacity: 0.75;
+  font-weight: 600;
+  opacity: 1;
 }
 
 .tickCurrent {
+  height: 18px;
   background: var(--dsw-static-deepseek-500);
 }
 
@@ -111,14 +116,9 @@
   outline-offset: 1px;
 }
 
-/* An outline row addresses a turn whose events are not loaded: its tick
-   rests neutral (not the loaded rows' blue-grey) so the list reads which
-   rows jump instantly and which page history in first. */
-.itemOutline .tick {
-  background: var(--dsw-alias-label-tertiary);
-}
-
-/* The row being paged in pulses its tick until the jump lands. */
+/* The row being paged in pulses its tick until the jump lands. Outline rows
+   share the plain grey tick — the pulse is the only transient cue that a row
+   pages history in first. */
 .itemPending .tick {
   background: var(--dsw-static-deepseek-400);
   animation: railPending 1s ease-in-out infinite;

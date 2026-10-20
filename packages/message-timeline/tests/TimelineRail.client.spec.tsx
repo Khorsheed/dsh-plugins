@@ -681,10 +681,13 @@ describe('the turnOutline projection', () => {
     expect(loadOlder).not.toHaveBeenCalled()
   })
 
-  it('marks outline rows with the neutral tick and keeps loaded rows plain', () => {
-    renderRail({ useProjection, useChat: bindSnapshotSelector(tailWindow()) })
-    expect(item('turn:0').className).toContain('itemOutline')
-    expect(item('k3').className).not.toContain('itemOutline')
+  it('styles outline rows like loaded rows at rest — selection alone stands out', () => {
+    // The default window (k1–k3) predates the outline's first turn, so every
+    // outline row renders beside loaded rows; k3 is the reading position.
+    renderRail({ useProjection })
+    expect(item('turn:0').className).toBe(item('k1').className)
+    expect(item('k3').className).toContain('itemCurrent')
+    expect(item('turn:0').className).not.toContain('itemCurrent')
   })
 
   it('falls back to the empty copy for an outline row whose prompt has no text', () => {
