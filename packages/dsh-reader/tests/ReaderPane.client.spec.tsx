@@ -26,7 +26,7 @@ import type { CanvasInboxLike } from '../src/client/canvas-sync.ts'
 import { createReaderStore, type ReaderState } from '../src/client/store.ts'
 import { zh } from '../src/client/locales.ts'
 import { ReaderPane } from '../src/client/ReaderPane.tsx'
-import { forgetSession, forgetTranslators, readSession, rememberReadingPosition } from '../src/client/session.ts'
+import { forgetSession, forgetTranslators, readSession, readWallCache, rememberReadingPosition } from '../src/client/session.ts'
 import { UNIT_SEPARATOR, clearMemory, translationHash } from '../src/client/translate.ts'
 import type { LocalTranscriptStatus, MediaCardStates, ReaderBody, ReaderEntryFetchState, ReaderEntryNotes, ReaderRecentEntry, ReaderSourceSummary } from '../src/types.ts'
 
@@ -408,11 +408,14 @@ function bench(options: BenchOptions = {}) {
     openSession: () => undefined,
   } as unknown as ReaderPaneProps
 
+  // A remount within the page shows the wall it already parsed and re-reads
+  // only changed sources — so it may never call getBodies at all.
+  const remount = readWallCache() !== undefined
   const view = render(<ReaderPane {...props} />)
   /** Wait until the mount round trip has been parsed into rows. */
   const settle = async (): Promise<void> => {
     await waitFor(() => { expect(mocks.listSources).toHaveBeenCalled() })
-    if (assigned.some(item => item.hasBody)) {
+    if (!remount && assigned.some(item => item.hasBody)) {
       await waitFor(() => { expect(mocks.getBodies).toHaveBeenCalled() })
     }
   }
@@ -2786,6 +2789,22 @@ describe('coming back to the pane puts the reader where they were', () => {
       title: 'An English article',
       description: 'First sentence here. Second sentence here.',
     }, { title: 'Another article', description: 'Different text entirely.' }])
+
+  it('shows the wall it already parsed at once, and re-reads only sources that changed', async () => {
+    const first = bench({ sources: [rssSource('hn')], payloads: { hn: english() } })
+    await first.settle()
+    await screen.findByText('An English article')
+    first.unmount()
+    // Same fetch stamp: the wall is back without a body round trip or a 加载中.
+    const second = bench({ sources: [rssSource('hn')], payloads: { hn: english() } })
+    expect(screen.getByText('An English article')).toBeTruthy()
+    await waitFor(() => { expect(second.mocks.listSources).toHaveBeenCalled() })
+    expect(second.mocks.getBodies).not.toHaveBeenCalled()
+    second.unmount()
+    // The host fetched the feed again meanwhile: that source is re-read.
+    const third = bench({ sources: [{ ...rssSource('hn'), fetchedAt: '2026-10-21T08:00:00.000Z' }], payloads: { hn: english() } })
+    await waitFor(() => { expect(third.mocks.getBodies).toHaveBeenCalledWith(['hn']) })
+  })
 
   it('restores the open article and the wall\'s narrowing', async () => {
     const first = bench({ sources: [rssSource('hn')], payloads: { hn: english() } })

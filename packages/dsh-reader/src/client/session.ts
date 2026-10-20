@@ -31,7 +31,8 @@
  *
  * @module @khorsheed/dsh-reader/client/session
  */
-import type { ReaderFilter, ReaderSort, ReaderView } from './store.ts'
+import type { ReaderSourceSummary } from '../types.ts'
+import type { ReaderFilter, ReaderParsedSource, ReaderSort, ReaderView } from './store.ts'
 import type { TranslationView, TranslatorSessionLike } from './translate.ts'
 
 /** One session's worth of "where the reader was". */
@@ -211,9 +212,37 @@ export function patchSession(patch: Patch): void {
   updatePlace(patch)
 }
 
+/**
+ * The parsed wall, for as long as the page is: switching to another sidebar
+ * tab unmounts the pane, and re-parsing every feed on the way back made the
+ * whole wall flash 「加载中」 and rebuild (2026-10-20). A remount shows this at
+ * once and re-reads only the sources whose fetch changed (`stamp`). Memory
+ * only — feed content never goes to storage.
+ */
+export interface WallCache {
+  readonly sources: readonly ReaderSourceSummary[]
+  readonly parsed: ReadonlyMap<string, { readonly stamp: string; readonly parsed: ReaderParsedSource; readonly label?: string }>
+}
+
+let WALL: WallCache | undefined
+
+/** What makes a source's parsed entries stale: its fetch, its body, its kind. */
+export function sourceStamp(source: ReaderSourceSummary): string {
+  return [source.kind, source.url, source.fetchedAt ?? '', source.hasBody, source.status ?? '', source.truncated === true, source.failure?.code ?? ''].join('|')
+}
+
+export function readWallCache(): WallCache | undefined {
+  return WALL
+}
+
+export function writeWallCache(cache: WallCache): void {
+  WALL = cache
+}
+
 /** Drop the snapshot, here and in storage (the specs call this between cases). */
 export function forgetSession(): void {
   PAGE = {}
+  WALL = undefined
   // Back to "not read yet", not to "nothing": the next read must consult storage
   // again (clearing it first, so what it finds is the truth).
   PLACE = null
