@@ -1,9 +1,12 @@
 import type { LocalAgentUi } from '@khorsheed/dsh-local-agent/client'
-import { bindSettingsScope } from '@khorsheed/dsh-local-agent/src/client/settings-scope.ts'
+import { bindSettingsScope, type SettingsScopeSnapshot } from '@khorsheed/dsh-local-agent/src/client/settings-scope.ts'
 /**
- * Local-agent-dsh plugin, browser half: the dsh settings card on the Plugins
- * page — one `plugins.item` entry gated by `configForms.whileServed` on the
- * `local-agent-dsh` namespace (the official companion convention). Every
+ * Local-agent-dsh plugin, browser half: the dsh settings card — a section of
+ * the family core's「本机 Agent 委派」family card on the Plugins page
+ * (registered through the core's `localAgentUi.registerHarnessCard` while the
+ * Host serves the `local-agent-dsh` namespace), or this package's own
+ * `plugins.item` entry when the core predates the family card (the
+ * declare-and-degrade fallback). Every
  * install shape serves the row's volatile Config under the row id —
  * standalone install, family bundle, or mode pack — so the card follows the
  * served namespace rather than any carrier bundle, and a composition without
@@ -20,6 +23,7 @@ import { bindSettingsScope } from '@khorsheed/dsh-local-agent/src/client/setting
  * controls.
  * @module @khorsheed/dsh-local-agent-dsh/client
  */
+import { createElement, useSyncExternalStore } from 'react'
 import type { Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 // Type-only: the typed `ctx.remote` (commands namespace) merge.
@@ -44,12 +48,12 @@ import type {} from '@khorsheed/dsh-local-agent/remote'
 import type { LocalAgentGatewayRemote } from '@khorsheed/dsh-local-agent/client'
 import { en, NS, zh, type LocalAgentDshKey } from './locales.ts'
 import {
-  DshBundleConfig, type DshCardSettings, type DshSettingsCardInjected,
+  DshBundleConfig, DshCardSection, type DshCardSettings, type DshSettingsCardInjected,
 } from './SettingsCard.tsx'
 
-export { DshBundleConfig, DshSettingsCard } from './SettingsCard.tsx'
+export { DshBundleConfig, DshCardSection, DshSettingsCard } from './SettingsCard.tsx'
 export type {
-  DshCardSettings, DshBundleConfigProps, DshSettingsCardInjected, DshSettingsCardProps,
+  DshCardSettings, DshBundleConfigProps, DshCardSectionProps, DshSettingsCardInjected, DshSettingsCardProps,
 } from './SettingsCard.tsx'
 export { en, NS, zh }
 export type { LocalAgentDshKey }
@@ -83,10 +87,11 @@ export function apply(ctx: Context): void {
   // the core client is absent.
   const gateway = (): LocalAgentGatewayRemote | undefined =>
     ctx.get('remote.localAgentGateway') as LocalAgentGatewayRemote | undefined
-  // The settings card injects this face.
-  const cardInject = (): DshSettingsCardInjected => ({
+  // The card's inject face minus the hooks compartment — the family-card
+  // section consumes this verbatim; the standalone card's slot registration
+  // adds the hooks compartment back below.
+  const cardFace = (): Omit<DshSettingsCardInjected, 'hooks'> => ({
     scope,
-    hooks: { settings: scope },
     authT,
     renderModelPicker: props => (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.renderHarnessModelPicker('dsh', props),
     // The harness's memberless model surface; absent gateway/broker
@@ -105,11 +110,20 @@ export function apply(ctx: Context): void {
           .then(result => (result.ok ? result.value?.result.text : undefined)),
     },
   })
-  // One Plugins-page card gated on the SERVED NAMESPACE, never on the install
+  // The settings card injects this face.
+  const cardInject = (): DshSettingsCardInjected => ({ ...cardFace(), hooks: { settings: scope } })
+  // The family-card section render bypasses the slot renderer's inject.hooks
+  // materialization, so bind the scope's selector hook here with the same
+  // semantics (a uSES subscription over the scope's own subscribe/getSnapshot).
+  const subscribeScope = (listener: () => void): (() => void) => scope.subscribe(listener)
+  const readScope = (): SettingsScopeSnapshot<DshCardSettings> => scope.getSnapshot()
+  const useSettings = <S,>(select: (snapshot: SettingsScopeSnapshot<DshCardSettings>) => S): S =>
+    select(useSyncExternalStore(subscribeScope, readScope))
+  // One Plugins-page seat gated on the SERVED NAMESPACE, never on the install
   // shape: whichever composition carries the `local-agent-dsh` row —
   // standalone install, family bundle, or mode pack — serves the row's
   // volatile Config under the row id, and `whileServed` keeps the
-  // `plugins.item` entry alive for exactly that span (the official companion
+  // registration alive for exactly that span (the official companion
   // convention), so a composition without the row shows no trace of the card.
   // This replaces the retired per-shape seats: `plugins.row.config` hardcoded
   // one carrier bundle into its key, and the host deleted
@@ -120,14 +134,34 @@ export function apply(ctx: Context): void {
   ctx.inject(['configForms'], (formsCtx) => {
     const forms = formsCtx.configForms
     if (typeof forms.whileServed !== 'function') return
-    return forms.whileServed(['local-agent-dsh'], () => ctx.slots.inject('plugins.item', () => ctx.slots.register({
-      name: 'plugins.item',
-      id: 'local-agent-dsh',
-      // Community cards sort after the official settings pages (orders 10-40).
-      order: 140,
-      label: () => t('card.title'),
-      locale: NS,
-      inject: cardInject,
-    }, DshBundleConfig)))
+    return forms.whileServed(['local-agent-dsh'], () => {
+      // The family card owns the Plugins-page seat when the core's client
+      // provides it: a core new enough answers registerHarnessCard, and this
+      // package renders as a section of the「本机 Agent 委派」card instead of
+      // its own entry. The probe runs at serve time — a host round-trip past
+      // client plugin boot — so a composed core has already provided the
+      // service; an old or absent core keeps the standalone card below.
+      const ui = ctx.get('localAgentUi') as LocalAgentUi | undefined
+      if (typeof ui?.registerHarnessCard === 'function') {
+        return ui.registerHarnessCard({
+          name: 'dsh',
+          // The retired standalone card's order, kept as the section order.
+          order: 140,
+          locale: NS,
+          label: () => t('card.title'),
+          render: ({ active, useSessions }) =>
+            createElement(DshCardSection, { active, useSessions, ...cardFace(), useSettings, t }),
+        })
+      }
+      return ctx.slots.inject('plugins.item', () => ctx.slots.register({
+        name: 'plugins.item',
+        id: 'local-agent-dsh',
+        // Community cards sort after the official settings pages (orders 10-40).
+        order: 140,
+        label: () => t('card.title'),
+        locale: NS,
+        inject: cardInject,
+      }, DshBundleConfig))
+    })
   })
 }

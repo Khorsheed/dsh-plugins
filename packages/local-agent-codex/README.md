@@ -14,7 +14,7 @@ dsh 的 agent 已经能干活,但有些任务你就是想交给本机的 Codex C
 - **作用域目录隔离**——Codex 的全部状态(config、凭据、rollout 会话记录)留在 `$DSH_HOME/local-agent/codex`,与你的 `~/.codex` 互不干扰。
 - **端点凭据(唯一的认证方式)**——设置卡「认证」区填 `baseUrl` + `apiKey`(保存进默认 scope 的 `endpoint-auth.json`,0600,只存本机)或预配在 profile 配置行即已认证;每个命名 scope 可用自己的 `endpoint-auth.json` 按字段覆盖部署级配置。每轮委派以自定义 provider(`wire_api=responses`,实测 codex-cli 0.163.0 经中转直通)路由到端点,key 经进程环境传递。宿主 shell 的环境变量从不被读取;没有网页登录。
 - **常驻模式(live)**——每成员常驻一个 `codex app-server` 进程,按轮发 turn:输出实时流入子会话、取消不杀进程、崩溃后自动续上原线程;关闭或通道起不来即回一次性 `codex exec`,热切换无需重载。
-- **设置卡片**——Plugins 详情页(0.1.5 为 设置 → 插件 → 插件配置)里的 Codex 卡:登录授权、默认模型(留空 = 跟随 CLI 默认)、常驻开关,保存即于下一轮生效。
+- **设置卡片**——core 的「本机 Agent 委派」家族卡里的一节（Plugins 页；旧版 core 上回落为本包自己的 Plugins 详情页卡）:登录授权、默认模型(留空 = 跟随 CLI 默认)、常驻开关,保存即于下一轮生效。
 - **线程续聊**——传入 `resume="<childSessionId>"` 在同一个 dsh 子会话里继续同一个 codex 线程,宿主重启后也续得上。
 - **自定义端点**——设置卡或 profile 行配好端点凭据即路由到你的中转;也可手改作用域 `config.toml` 的自定义 provider(文件保持权威,不被覆盖)。
 - **回读与独立工作目录**——每轮从本轮 rollout 回读实际模型、CLI 版本与用量写进委派记录;定位按 threadId + cwd + 时间窗,并发跑也读的是自己那一轮。编排器可用 `cwd` 选项给每格独立目录,resume 换目录即拒绝。
@@ -30,7 +30,7 @@ dsh plugin --profile web add @khorsheed/dsh-local-agent
 dsh plugin --profile web add @khorsheed/dsh-local-agent-codex
 ```
 
-两个包必须同时点名——`dsh plugin add` 只调和**直接**依赖,家族 core 不会被传递依赖自动挂载。重启 web 实例后生效,然后在设置 → 插件里本包卡片的「认证」区填端点与 key 即可(也可预配在 profile 的本包配置行);都不配则状态为未认证。
+两个包必须同时点名——`dsh plugin add` 只调和**直接**依赖,家族 core 不会被传递依赖自动挂载。重启 web 实例后生效,然后在「本机 Agent 委派」家族卡（Plugins 页）的 Codex 一节「认证」区填端点与 key 即可(也可预配在 profile 的本包配置行);都不配则状态为未认证。
 
 卸载:
 
@@ -111,7 +111,7 @@ model_provider = "dsh-router"
 
 ## Compatibility
 
-- npm 发布线(`@deepseek-ai/dsh@0.1.5-rc.1`):✅ 公开 API 兼容。生成中的内容走 local-agent 瞬时 Remote 与公开 Conversation 节点;增量耐久检查点负责恢复,最终原生消息保留转写与用量语义。端到端延迟验收由 room 协调者提案跟踪。minHost 0.1.5-rc.1,更旧宿主请停留在旧发布线。设置卡自本版起只挂 0.1.7-alpha.1+ 的 Plugins 页 `plugins.item` 席位(`configForms.whileServed` 随宿主服务的 `local-agent-codex` 命名空间挂载);0.1.5 线不再呈现卡片(宿主删除了 `settings.plugin.item` 席位),其余表面不变。
+- npm 发布线(`@deepseek-ai/dsh@0.1.5-rc.1`):✅ 公开 API 兼容。生成中的内容走 local-agent 瞬时 Remote 与公开 Conversation 节点;增量耐久检查点负责恢复,最终原生消息保留转写与用量语义。端到端延迟验收由 room 协调者提案跟踪。minHost 0.1.5-rc.1,更旧宿主请停留在旧发布线。设置卡渲染为 core「本机 Agent 委派」家族卡的一节（Plugins 页 core 的 `plugins.item` 条目，0.1.7-alpha.1+；旧版 core 上回落为本包自己的 `plugins.item` 卡），`configForms.whileServed` 随宿主服务的 `local-agent-codex` 命名空间挂载;0.1.5 线不再呈现卡片(宿主删除了 `settings.plugin.item` 席位),其余表面不变。
 - 源码线(deepseek-harness master):✅(verifiedHost: 0.2.1-rc.1)——host-021 波对 0.2.1-rc.1 树全量 build+test 绿;委派迁移到 `ctx.subagents.startActivation`(受管 activation),run.id 改为每次执行唯一。
 
 ## 已知限制
@@ -128,7 +128,7 @@ model_provider = "dsh-router"
 
 **命名 scope。** `/codex login --scope <名>` 会在 `<homesRoot>/codex@<名>` 里另开一份作用域目录:目录建立时自动跑同一份 `config.toml` provision(把凭据存储钉在文件而非 macOS keychain),因此该 scope 的登录落在它自己的 `auth.json` 里。带 scope 的委派用它跑 `codex exec`、把 rollout 写进它、从它回读;只走 exec——常驻 app-server 绑的是缺省作用域目录。
 
-**bundle 组成。** patch 注册 `codex` harness(`CODEX_HOME` 作用域目录、PTY 登录、rollout 文件会话记录)——恰好一行 provider 行;`subagent_codex` 工具自家族折叠起是本包的 `./tool` 组合入口,由点名它的 agent 预设按会话授予(dev 预设的 `tool-subagent-codex-local` 行),不再挂 profile 根。家族沿用官方模型名 `subagent_codex`:官方 preset 的同名行本就 `disabled: true`,patch 对 profile 根的同名行再禁一次,社区安装永远不会注册出两个 `subagent_codex`;刻意在自有 preset 层重新启用官方行的用户会得到响亮的重名冲突,按设计必须二选一。`codex-local` provider 在该作用域目录下 spawn `codex exec`(live 未启用时的一次性驱动)。浏览器半部分随本包 `./client` 提供:Codex 设置卡组合家族 core 的共享 `ProviderAuthBlock`,落在 Plugins 页的 `plugins.item` 条目——宿主服务 `local-agent-codex` 命名空间时经 `configForms.whileServed` 挂载,独立安装、家族 bundle、模式包同一张卡;卡片写入经绑定的 settingsScope 热生效,不用重载。core 本身来自声明为依赖的 `@khorsheed/dsh-local-agent`。
+**bundle 组成。** patch 注册 `codex` harness(`CODEX_HOME` 作用域目录、PTY 登录、rollout 文件会话记录)——恰好一行 provider 行;`subagent_codex` 工具自家族折叠起是本包的 `./tool` 组合入口,由点名它的 agent 预设按会话授予(dev 预设的 `tool-subagent-codex-local` 行),不再挂 profile 根。家族沿用官方模型名 `subagent_codex`:官方 preset 的同名行本就 `disabled: true`,patch 对 profile 根的同名行再禁一次,社区安装永远不会注册出两个 `subagent_codex`;刻意在自有 preset 层重新启用官方行的用户会得到响亮的重名冲突,按设计必须二选一。`codex-local` provider 在该作用域目录下 spawn `codex exec`(live 未启用时的一次性驱动)。浏览器半部分随本包 `./client` 提供:Codex 设置卡组合家族 core 的共享 `ProviderAuthBlock`,渲染为 core「本机 Agent 委派」家族卡的一节——宿主服务 `local-agent-codex` 命名空间时经 `configForms.whileServed` 挂载,独立安装、家族 bundle、模式包同一节(旧版 core 上回落为本包自己的 `plugins.item` 卡);卡片写入经绑定的 settingsScope 热生效,不用重载。core 本身来自声明为依赖的 `@khorsheed/dsh-local-agent`。
 
 **凭据。** 端点凭据制,没有登录流程:scope 的 `endpoint-auth.json`(0600)按字段覆盖 profile 配置行的 `baseUrl`/`apiKey`,解析结果带 key 时每轮在 argv 注入自定义 provider(`wire_api=responses`,key 经进程环境传递,实测 codex-cli 0.163.0 全新 scope 下无需任何登录文件直通中转)。首次启动写入一份最小 `config.toml`,固定 `cli_auth_credentials_store = "file"`——Codex 默认的 `auto` 会解析到 macOS keychain,在作用域目录里手跑 `codex login` 会把凭据泄漏到目录之外;已存在的 config 保持不动。每次启动还会清扫网页登录时代残留的 `auth.json`——本包不再读取它,留着只会让一份陈旧授权在状态显示未认证时仍悄悄可用。`/codex logout` 删除作用域 `endpoint-auth.json`,之后重新配置即可换 key。
 

@@ -3,8 +3,11 @@
  * `status(name, scope?)` and the api-gateway client enforces EXACT arity —
  * the card's status probe must pass the default scope explicitly or the call
  * throws and the auth dot reads unavailable (the 0.1.5 prod outage). Plus the
- * settings-card registration: one `plugins.item` entry gated by
- * `configForms.whileServed` on the served `local-agent-dsh` namespace.
+ * settings-card registration: a section of the family core's「本机 Agent
+ * 委派」card through `localAgentUi.registerHarnessCard` when the core's
+ * client provides it, else this package's own `plugins.item` entry — both
+ * gated by `configForms.whileServed` on the served `local-agent-dsh`
+ * namespace.
  */
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
@@ -13,6 +16,15 @@ import { apply } from '../src/client/index.ts'
 /** One injected card face, captured from the fake slot registry. */
 interface InjectedFace {
   auth: { status: (name: string) => Promise<unknown> }
+}
+
+/** One harness-card registration captured from the core's family-card service. */
+interface HarnessCardCall {
+  name: string
+  order: number
+  locale: string
+  label: () => string
+  render: (props: { active: boolean; useSessions: unknown }) => unknown
 }
 
 /** A scope stub the dual-line settings-scope probe can arm without throwing. */
@@ -30,13 +42,21 @@ function stubScope() {
  * registrations. `{ served }` boots a configForms host line whose whileServed
  * gate sees exactly that namespace set; 'legacy' boots the 0.1.5 line
  * (settingsScope only, no configForms — the card track must stay silent).
+ * `core: 'family'` provides a localAgentUi with registerHarnessCard (the
+ * family card exists); `core: 'old'` provides one without it (the pre-family
+ * core — the standalone card must register); absent provides no core client.
  */
-async function bench(status: ReturnType<typeof vi.fn>, line: { served: readonly string[] } | 'legacy'): Promise<{
+async function bench(
+  status: ReturnType<typeof vi.fn>,
+  line: { served: readonly string[]; core?: 'family' | 'old' } | 'legacy',
+): Promise<{
   injectedFaces: InjectedFace[]
   registrations: Array<{ name: string; id: string }>
+  harnessCards: HarnessCardCall[]
 }> {
   const injectedFaces: InjectedFace[] = []
   const registrations: Array<{ name: string; id: string }> = []
+  const harnessCards: HarnessCardCall[] = []
   const ctx = new Context()
   ctx.provide('locale', { bind: () => vi.fn(), register: vi.fn() } as never)
   ctx.provide('slots', {
@@ -55,13 +75,23 @@ async function bench(status: ReturnType<typeof vi.fn>, line: { served: readonly 
       whileServed: (namespaces: readonly string[], register: () => () => void) =>
         namespaces.some(ns => served.has(ns)) ? register() : () => {},
     } as never)
+    if (line.core === 'family') {
+      ctx.provide('localAgentUi' as never, {
+        registerHarnessCard: (entry: HarnessCardCall) => {
+          harnessCards.push(entry)
+          return () => {}
+        },
+      } as never)
+    } else if (line.core === 'old') {
+      ctx.provide('localAgentUi' as never, {} as never)
+    }
   }
   ctx.provide('remote.localAgentGateway' as never, { status } as never)
   apply(ctx)
   // The card track and the scope probe ride deferred ctx.inject fibers, which
   // load past a microtask boundary; give them a macrotask to land.
   await new Promise(resolve => setTimeout(resolve, 0))
-  return { injectedFaces, registrations }
+  return { injectedFaces, registrations, harnessCards }
 }
 
 describe('client apply: gateway call arity', () => {
@@ -74,9 +104,36 @@ describe('client apply: gateway call arity', () => {
   })
 })
 
-describe('client apply: the plugins.item settings card', () => {
-  it('registers the card while the host serves the namespace', async () => {
+describe('client apply: the family-card section', () => {
+  it('registers the harness section with the core while the host serves the namespace', async () => {
+    const { registrations, harnessCards } = await bench(vi.fn(), { served: ['local-agent-dsh'], core: 'family' })
+    expect(registrations).toEqual([])
+    expect(harnessCards.map(entry => ({ name: entry.name, order: entry.order, locale: entry.locale })))
+      .toEqual([{ name: 'dsh', order: 140, locale: 'local-agent-dsh' }])
+  })
+
+  it('the section render builds the card body element from the render props', async () => {
+    const { harnessCards } = await bench(vi.fn(), { served: ['local-agent-dsh'], core: 'family' })
+    const element = harnessCards[0]!.render({ active: true, useSessions: () => ({}) })
+    expect(typeof element).toBe('object')
+    expect(element).toBeTruthy()
+  })
+
+  it('registers no section when the host serves no such namespace (the row is not composed)', async () => {
+    const { registrations, harnessCards } = await bench(vi.fn(), { served: [], core: 'family' })
+    expect(registrations).toEqual([])
+    expect(harnessCards).toEqual([])
+  })
+})
+
+describe('client apply: the plugins.item settings card (the pre-family fallback)', () => {
+  it('registers the standalone card on an absent core', async () => {
     const { registrations } = await bench(vi.fn(), { served: ['local-agent-dsh'] })
+    expect(registrations).toEqual([{ name: 'plugins.item', id: 'local-agent-dsh' }])
+  })
+
+  it('registers the standalone card on a core predating the family card (no registerHarnessCard)', async () => {
+    const { registrations } = await bench(vi.fn(), { served: ['local-agent-dsh'], core: 'old' })
     expect(registrations).toEqual([{ name: 'plugins.item', id: 'local-agent-dsh' }])
   })
 
