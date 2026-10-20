@@ -4,12 +4,17 @@
 
 **一组日常高频的体验插件，让你的 DSH 变得更好用、更自由。** 发出去的消息可以改、可以撤；会话标题一键修改；后台任务一目了然、自由中止；上下文压缩提醒自由配置；聊天过程中随时让 Agent 帮你画预览卡片，明确 UI 效果再动手，避免重复返工；自由管理所有的 Skill 和工具，并配置到不同的 preset；任务完成有提示音；移动端快速接入；开发插件安全重启，从此不怕小鲸鱼自杀……——大多数用户最先想要的那层体验，一次装齐。
 
-每个成员都是独立插件，复制包名到宿主的「添加插件」对话框（0.1.7-rc.2 起：设置 → 插件）即可自由安装；后续如果官方开放自定义 profile 安装，本仓库会支持一行命令直接安装。
-常用的会话插件也可以直接装整合包 `@khorsheed/dsh-bundle-conversation-toolbox` 一次打包七个（见[功能展示](#功能展示)末尾）。
+<img src="docs/screenshots/basic-mode.png" width="1000" alt="dsh-basic 基础体验全景:自由编辑和撤回消息、引用动作、会话产物、文件列表、灵感空间、压缩提醒时机">
 
-<img src="docs/screenshots/basic-mode.png" width="1000" alt="dsh-basic 日常模式全景:自由编辑和撤回消息、引用动作、会话产物、文件列表、灵感空间、压缩提醒时机">
+## 安装
 
-## basic 整合包 - 插件列表
+**整套安装（推荐）**：宿主 ≥ `0.1.7-rc.2` 时，设置 → 插件 → 添加插件，填 `@khorsheed/dsh-basic` 按提示启用；或命令行 `dsh plugin --profile web add @khorsheed/dsh-basic`。套件一次装齐全部 14 个成员，每个成员仍可在 设置 → 插件 里单独开关。发版当天带版本下限 `@khorsheed/dsh-basic@^0.1.0`——pnpm 默认启用 24 小时新版保护（`minimumReleaseAge`），裸名会把当天发布的新版藏起来。
+
+**单装成员**：下表每个成员都是独立插件，复制包名到同一个对话框（或 `dsh plugin add`）即可；套件只是省事的起点，不是绑定。
+
+宿主要求 ≥ `0.1.5-rc.1`；`0.1.2` / `0.1.1` 旧线宿主见文末「给 Agent 的安装指南」。
+
+## 成员插件列表
 
 | 插件 | 包名（复制即可安装） | 能力说明 |
 |---|---|---|
@@ -21,24 +26,24 @@
 | local-files | `@khorsheed/dsh-local-files` | 右栏本地文件浏览器：懒加载文件树 + 结构化预览，任意目录随手翻 |
 | taskpilot | `@khorsheed/dsh-taskpilot` | 后台任务与子 agent 变成聊天框上方的胶囊，一键停止/中断 |
 | context-guard | `@khorsheed/dsh-context-guard` | 上下文溢出拒绝请求之前，压缩按钮先出现 |
+| context-lens | `@khorsheed/dsh-context-lens` | 上下文透镜：按 turn 查看每次模型请求的组成、token 与耗时 |
 | inline-html-render | `@khorsheed/dsh-inline-html-render` | agent 写的 HTML 变成会话内的沙箱交互卡片 |
 | capability-catalog | `@khorsheed/dsh-capability-catalog` | 设置页枚举实例全部 skill 与工具及注册渠道，可在线加 skill |
-| ui-shortcuts | `@khorsheed/dsh-ui-shortcuts` | Esc 暂停、Ctrl/Cmd+S 插队发送、Ctrl/Cmd+O 新会话，键位可改 |
 | whalesong | `@khorsheed/dsh-whalesong` | 任务运行时侧栏鲸鱼喷水；完成时一声提示音 |
 | mobile | `@khorsheed/dsh-mobile` | 手机浏览器上的移动版界面 + iOS 桥 |
 | ankh-guard | `@khorsheed/dsh-ankh-guard` | 运维助手：agent 改完代码想重启时，先验证构建与测试再放行，改坏了自动回滚 |
 
 ### 版本兼容
 
-**宿主 `0.2.0-rc.*`**：复制下表中带 `@^版本` 下限的规格。发版当天不要裸填包名——pnpm 11 默认启用 24 小时新版保护（`minimumReleaseAge`，供应链安全），裸名会把当天发布的新版藏起来、装到只支持 0.1.x 的旧线，再被宿主的兼容性检查拦下；带下限的规格会自动豁免保护期，装到兼容的新版。
+**宿主 `0.2.0-rc.*` 起**：复制下表中带 `@^版本` 下限的规格。发版当天不要裸填包名——pnpm 11 默认启用 24 小时新版保护（`minimumReleaseAge`，供应链安全），裸名会把当天发布的新版藏起来、装到只支持 0.1.x 的旧线，再被宿主的兼容性检查拦下；带下限的规格会自动豁免保护期，装到兼容的新版。
 
 **宿主 `0.1.5-rc.1` ~ `0.1.7.*`**：直接填包名，全部 14 个成员的 latest 可用（旧插件线在 0.1.x 宿主上依然兼容，保护期回退不碍事）。
 
 **宿主 `0.1.2-rc.1` ~ `0.1.4`**：
 
-- **可直接装 latest**：`@khorsheed/dsh-message-timeline`、`@khorsheed/dsh-client-session-title-edit`、`@khorsheed/dsh-context-guard`、`@khorsheed/dsh-ui-shortcuts`、`@khorsheed/dsh-whalesong`、`@khorsheed/dsh-inline-html-render`
+- **可直接装 latest**：`@khorsheed/dsh-message-timeline`、`@khorsheed/dsh-client-session-title-edit`、`@khorsheed/dsh-context-guard`、`@khorsheed/dsh-whalesong`、`@khorsheed/dsh-inline-html-render`
 - **需指定旧线**（复制完整规格）：`@khorsheed/dsh-client-message-tools@^0.2.0`、`@khorsheed/dsh-file-preview@^0.2.0`、`@khorsheed/dsh-client-ui-file-preview@^0.2.0`、`@khorsheed/dsh-taskpilot@^0.2.0`、`@khorsheed/dsh-ankh-guard@^0.2.0`
-- **不支持**：capability-catalog、mobile、quote、local-files（没有这条线的版本）
+- **不支持**：capability-catalog、mobile、quote、local-files、context-lens（没有这条线的版本）
 
 ## 功能展示
 
@@ -241,25 +246,6 @@ agent 在回复里写的 ```` ```dsh-card ```` HTML 块，渲染成会话内的�
 
 </details>
 
-### ui-shortcuts：可自定义键位的快捷键
-
-0.1.7-rc.2之后，官方支持自己的快捷键设置，可直接使用官方能力。
-
-| 宿主版本 | 安装规格（复制到对话框） |
-|---|---|
-| ≥ `0.1.2-rc.1` | `@khorsheed/dsh-ui-shortcuts@^0.2.4` |
-| `0.1.x` | `@khorsheed/dsh-ui-shortcuts@^0.1.0` |
-
-Esc 暂停当前任务、Ctrl/Cmd+S 插队发送草稿、Ctrl/Cmd+O 新建会话。设置里点击键帽即可改键，偏好持久保存。还附带一个动作注册表：任何插件都能注册自己的键盘动作，免费获得设置项与无冲突分发。
-
-
-<details open>
-<summary>功能示意（1 张）</summary>
-
-<img src="docs/screenshots/07-ui-shortcuts.png" width="840" alt="ui-shortcuts:设置里的键位自定义">
-
-</details>
-
 ### whalesong：任务状态氛围
 
 | 宿主版本 | 安装规格（复制到对话框） |
@@ -313,33 +299,22 @@ Esc 暂停当前任务、Ctrl/Cmd+S 插队发送草稿、Ctrl/Cmd+O 新建会话
 
 </details>
 
-### 打包装：bundle-conversation-toolbox（会话工具七件套）
-
-| 宿主版本 | 安装规格（复制到对话框） |
-|---|---|
-| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-bundle-conversation-toolbox@^0.1.2` |
-| 更早 | 无可用版本（成员可按上表逐线单装） |
-
-不想逐个挑？这一个元包把会话工具七件套一次装齐：message-tools、message-timeline、session-title-edit、quote、inline-html-render、context-guard、taskpilot。成员作为 npm 依赖自动带入，元包的 patch 逐字重挂各成员的标准行；装完后每个组件在 设置 → 插件 里仍可单独禁用——打包的是安装，不是绑定。
-
-<details open>
-<summary>功能示意（1 张）</summary>
-
-<img src="docs/screenshots/bundle-conversation-toolbox.png" width="840" alt="bundle-conversation-toolbox:详情页七个组件逐行显示、可独立开关">
-
-</details>
-
 ## 按你的方式调整
 
-- **去掉某个成员**：在 设置 → 插件 里禁用/卸载，或 `dsh plugin --profile <你的 profile> remove <包名>`——其余照常工作。整合包是起点，不是绑定
+- **去掉某个成员**：在 设置 → 插件 里禁用/卸载，或 `dsh plugin --profile <你的 profile> remove <包名>`——其余照常工作。套件是起点，不是绑定
 - **加装**：任何 `@khorsheed/dsh-*` 插件同样复制包名安装
 - **更新**：设置 → 插件 里操作，或 `dsh plugin --profile <你的 profile> update` 拉取范围内最新版本
 
-## 其他整合包
+## 其他套件
 
-| 整合包 | 定位 |
+| 套件 | 定位 |
 |---|---|
-| [dsh-dev](https://github.com/Khorsheed/dsh-dev) | 开发模式：方便开发场景的插件 |
+| [dsh-dev](https://github.com/Khorsheed/dsh-dev) | 开发套件：本地编码 agent 委派、worktree 实况、room 多 agent 协作，自带「开发模式」preset |
+| [dsh-writing](https://github.com/Khorsheed/dsh-writing) | 写作套件：灵感画布 + 长篇小说体裁，自带「写作模式」preset |
+| [dsh-learning](https://github.com/Khorsheed/dsh-learning) | 学习套件：图书馆式项目精读，自带「学习模式」preset |
+| [dsh-video](https://github.com/Khorsheed/dsh-video) | 剪辑套件：混录分人、删字即删音频的剪辑台，自带「剪辑模式」preset |
+| [dsh-gamedev](https://github.com/Khorsheed/dsh-gamedev) | 游戏开发套件：和 agent 一起做小游戏，自带「游戏开发模式」preset |
+| [dsh-web-eval](https://github.com/Khorsheed/dsh-web-eval) | 评测套件：本机 harness 对照评测，自带「评测模式」preset |
 | [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) | 插件 monorepo 主仓：全部插件的能力地图、preset 设计与开发文档 |
 
 ## 变更记录
@@ -353,52 +328,25 @@ Esc 暂停当前任务、Ctrl/Cmd+S 插队发送草稿、Ctrl/Cmd+O 新建会话
 ## 给 Agent 的安装指南
 
 <details>
-<summary><strong>展开：整合包整体安装 + 单包命令行安装</strong>（用户说"帮我装一下"时照此执行）</summary>
+<summary><strong>展开：套件整体安装 + 单包命令行安装</strong>（用户说"帮我装一下"时照此执行）</summary>
 
-### 一、整体安装整合包
+### 一、安装套件（推荐）
 
-整合包整体安装要求宿主 ≥ `0.1.5-rc.1`（capability-catalog、mobile、quote、local-files 与五个成员的最新线都以它为地板）；`0.1.2` 线宿主请停留在 2026-09-27 更名前的档案（`host-0.1.2-line` tag 随下一发布波提供），`0.1.0` / `0.1.1` 宿主用 `host-0.1.1-line` tag 的档案。
-
-**〇、先按宿主版本选线（跳过这步可能装出打不开的插件）**
+宿主 ≥ `0.1.5-rc.1` 即可。命令行：
 
 ```sh
-dsh --version    # 或从运行中实例的启动命令/进程信息里确认宿主版本
+dsh plugin --profile web add @khorsheed/dsh-basic@^0.1.0   # 发版当天带版本下限,豁免 pnpm 新版保护;平时裸名即可
 ```
 
-- 宿主是 `0.1.5` 或更新（含各 rc）→ 用主线（clone 默认分支即可）。
-- 宿主是 `0.1.2-rc.*` ~ `0.1.4` → 停留在旧档案（`host-0.1.2-line` tag）。
-- 宿主是 `0.1.0-rc.*` / `0.1.1-rc.*` → 用旧线：clone 后 `git -C /tmp/dsh-basic checkout host-0.1.1-line`，成员插件停在 0.1.x（功能不再更新）。
+宿主 ≥ `0.1.7-rc.2` 也可以走对话框：设置 → 插件 → 添加插件，填 `@khorsheed/dsh-basic`，按提示启用。
 
-**一、安装与离线自检（不碰运行中的实例）**
+装完重启对应 web 实例，然后让用户**硬刷**页面（Cmd/Ctrl+Shift+R)——产物 tab、任务胶囊等新的 client bundle 要强刷才会加载，普通刷新可能继续跑缓存的旧壳。最后呈上功能清单（即上文「成员插件列表」一表）。
 
-```sh
-git clone https://github.com/Khorsheed/dsh-basic.git /tmp/dsh-basic
-sh /tmp/dsh-basic/scripts/install.sh
-```
-
-install.sh 末尾会打印组合的行数。如需手动复核：`dsh --profile basic --dump-config | grep -c "@khorsheed"` 应为 14（ankh-guard / capability-catalog / context-guard / file-preview / inline-html-render / local-files / message-timeline / message-tools / mobile / quote / session-title-edit / taskpilot / ui-shortcuts / whalesong）。`dsh` 不在 PATH 时用它的完整路径（可用 `ps` 查当前实例的启动命令获得）。
-
-**二、同端口交接（关键一步）**
-
-```sh
-sh /tmp/dsh-basic/scripts/restart-into-basic.sh [端口，默认 3080]
-```
-
-脚本走整合包自带的 ankh-guard 守卫通道：环境探针 → 记录凭证 → 接管当前实例 → watchdog 停旧启新 + canary 验证。**你会随宿主实例一起断开，这是预期**——watchdog 会在原端口拉起 basic；脚本刻意不传 `--initiator`，守卫会从你的环境读取 `$DSH_SESSION_ID`，重启报告才能寻址到你的会话：用户重新打开这个会话时，你会收到「重启完成」的 followup 并继续。注意：中断回合的快照续跑依赖旧实例里已挂载 guard（首次交接不具备），从第二次重启起才完整。
-
-两个前置，缺一会被脚本拒绝并给出原因：
-
-- **会话权限**：如果你运行在沙箱会话里（工作区外写入受限），分离的 watchdog 会在回合结束时被回收——脚本会提前拒绝。请用户切到完全权限模式再跑（或直接给用户这条命令让 TA 在终端跑）。
-- **不要在沙箱里用 `nohup ... &` 或手写 `kill` + 重启代替**：沙箱按进程树回收，nohup 防不住；手写顺序错了实例永远回不来。
-
-**三、交付**
-
-`curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:<端口>/` 为 200 后，让用户**硬刷**页面（Cmd/Ctrl+Shift+R)——产物 tab、任务胶囊等新的 client bundle 要强刷才会加载，普通刷新可能继续跑缓存的旧壳。然后呈上功能清单（即 README「插件列表」一表）。已知边界：纯净 npm 部署里 ankh-guard 的组合 preflight 门禁为降级运行（提示后放行），其余能力完整。
+旧线宿主：`0.1.2` ~ `0.1.4` 停留在 `host-0.1.2-line` tag 的档案；`0.1.0` / `0.1.1` 用 `host-0.1.1-line` tag 的档案。
 
 ### 二、安装单个插件
 
-- **对话框（0.1.7-rc.2 起，推荐）**：设置 → 插件 → 添加插件，填包名（如 `@khorsheed/dsh-whalesong`），按提示启用。旧宿主记得带版本线后缀（见上文「版本兼容」）；`0.2.0-rc.*` 宿主在发版当天也要带（下限见各表）。
+- **对话框（0.1.7-rc.2 起，推荐）**：设置 → 插件 → 添加插件，填包名（如 `@khorsheed/dsh-whalesong`），按提示启用。旧宿主记得带版本线后缀（见上文「版本兼容」）；`0.2.0-rc.*` 起的宿主在发版当天也要带（下限见各表）。
 - **命令行**：`dsh plugin --profile <profile> add <包名>`；卸载 `remove`，更新 `update`。
-- **打包装**：常用会话插件七件套用元包 `dsh plugin --profile <profile> add @khorsheed/dsh-bundle-conversation-toolbox` 一次装齐，成员行仍可在 设置 → 插件 里单独禁用。
 
 </details>

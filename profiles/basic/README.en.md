@@ -4,12 +4,17 @@
 
 **A set of everyday, high-frequency experience plugins that make your DSH nicer — and freer.** Edit or withdraw messages you already sent; rename a session title in one click; background jobs at a glance and stoppable at will; a context-compaction reminder you configure yourself; mid-chat, have the agent sketch a preview card so you agree on the UI before it builds — no more rework loops; manage every skill and tool freely and assign them to different presets; a chime when a task completes; mobile access in a snap; safe restarts for plugin development — never again fear the little whale taking itself down…… The quality-of-life layer most users want first, installed in one go.
 
-Every member is an independent plugin — copy its package name into the host's "Add plugin" dialog (0.1.7-rc.2+: Settings → Plugins) and install freely. If the official host later opens up custom-profile installation, this repo will support one-command install.
-The everyday conversation plugins can also be installed straight as the `@khorsheed/dsh-bundle-conversation-toolbox` bundle — seven at once (see the end of [The tour](#the-tour)).
+<img src="docs/screenshots/basic-mode.png" width="1000" alt="dsh-basic essentials at a glance: edit and withdraw messages, quote actions, session artifacts, the file list, the ideas space, and the compaction-reminder timing">
 
-<img src="docs/screenshots/basic-mode.png" width="1000" alt="dsh-basic everyday mode at a glance: edit and withdraw messages, quote actions, session artifacts, the file list, the ideas space, and the compaction-reminder timing">
+## Install
 
-## The dsh-basic pack — plugin list
+**The whole suite (recommended)**: on hosts ≥ `0.1.7-rc.2`, go to Settings → Plugins → Add plugin and enter `@khorsheed/dsh-basic`; or from the command line, `dsh plugin --profile web add @khorsheed/dsh-basic`. The suite installs all 14 members at once, and every member stays individually toggleable under Settings → Plugins. On release day, include a version floor — `@khorsheed/dsh-basic@^0.1.0`: pnpm hides versions younger than 24 hours by default (`minimumReleaseAge`, a supply-chain guard), so a bare name would miss the just-published version.
+
+**Individual members**: every row in the table below is an independent plugin — copy its package name into the same dialog (or `dsh plugin add`). The suite is a convenient starting point, not a lock-in.
+
+Requires host ≥ `0.1.5-rc.1`; for the older `0.1.2` / `0.1.1` lines see the install guide for agents at the end.
+
+## The dsh-basic suite — plugin list
 
 | Plugin | Package name (copy to install) | What you get |
 |---|---|---|
@@ -21,24 +26,24 @@ The everyday conversation plugins can also be installed straight as the `@khorsh
 | local-files | `@khorsheed/dsh-local-files` | A local file browser in the right sidebar: lazy file tree + structured preview, any directory within reach |
 | taskpilot | `@khorsheed/dsh-taskpilot` | Background jobs and sub-agents become pills above the composer — stop/interrupt in one click |
 | context-guard | `@khorsheed/dsh-context-guard` | A compact button shows up before context overflow starts rejecting requests |
+| context-lens | `@khorsheed/dsh-context-lens` | The context lens: per-turn inspection of each model request — composition, tokens, latency |
 | inline-html-render | `@khorsheed/dsh-inline-html-render` | Agent-written HTML becomes sandboxed interactive cards in the conversation |
 | capability-catalog | `@khorsheed/dsh-capability-catalog` | A settings page enumerating every skill and tool in the instance, with add-a-skill built in |
-| ui-shortcuts | `@khorsheed/dsh-ui-shortcuts` | Esc to pause, Ctrl/Cmd+S to steer-send, Ctrl/Cmd+O for a new session — all rebindable |
 | whalesong | `@khorsheed/dsh-whalesong` | Sidebar whale spouts while tasks run; a chime when they finish |
 | mobile | `@khorsheed/dsh-mobile` | A mobile presentation for phone browsers, plus the iOS bridge |
 | ankh-guard | `@khorsheed/dsh-ankh-guard` | Ops assistant: when the agent wants to restart after changing code, it verifies the build and tests first — and rolls back if the boot fails |
 
 ### Version compatibility
 
-**Host `0.2.0-rc.*`**: copy the specs with an `@^version` floor from the tables below. On release day do not paste a bare package name — pnpm 11 hides versions younger than 24 hours by default (`minimumReleaseAge`, a supply-chain guard), so a bare name resolves to the old 0.1.x-only line and the host compatibility check then rejects it; a floored spec auto-exempts the gate and installs the compatible new version.
+**Host `0.2.0-rc.*` and later**: copy the specs with an `@^version` floor from the tables below. On release day do not paste a bare package name — pnpm 11 hides versions younger than 24 hours by default (`minimumReleaseAge`, a supply-chain guard), so a bare name resolves to the old 0.1.x-only line and the host compatibility check then rejects it; a floored spec auto-exempts the gate and installs the compatible new version.
 
-**Host `0.1.5-rc.1` ~ `0.1.7.*`**: bare package names are fine — every member's latest works (the old plugin lines remain compatible on 0.1.x hosts, so the age-gate fallback is harmless there).
+**Host `0.1.5-rc.1` ~ `0.1.7.*`**: bare package names are fine — every one of the 14 members' latest works (the old plugin lines remain compatible on 0.1.x hosts, so the age-gate fallback is harmless there).
 
 **Host `0.1.2-rc.1` ~ `0.1.4`**:
 
-- **Installable at latest**: `@khorsheed/dsh-message-timeline`, `@khorsheed/dsh-client-session-title-edit`, `@khorsheed/dsh-context-guard`, `@khorsheed/dsh-ui-shortcuts`, `@khorsheed/dsh-whalesong`, `@khorsheed/dsh-inline-html-render`
+- **Installable at latest**: `@khorsheed/dsh-message-timeline`, `@khorsheed/dsh-client-session-title-edit`, `@khorsheed/dsh-context-guard`, `@khorsheed/dsh-whalesong`, `@khorsheed/dsh-inline-html-render`
 - **Pin the older line** (copy the full spec): `@khorsheed/dsh-client-message-tools@^0.2.0`, `@khorsheed/dsh-file-preview@^0.2.0`, `@khorsheed/dsh-client-ui-file-preview@^0.2.0`, `@khorsheed/dsh-taskpilot@^0.2.0`, `@khorsheed/dsh-ankh-guard@^0.2.0`
-- **Not available**: capability-catalog, mobile, quote, local-files (no release for this line)
+- **Not available**: capability-catalog, mobile, quote, local-files, context-lens (no release for this line)
 
 ## The tour
 
@@ -239,24 +244,6 @@ A new Tools & Skills entry in settings: every skill and tool in the running inst
 
 </details>
 
-### ui-shortcuts — rebindable keys
-
-Since 0.1.7-rc.2 the host ships its own shortcut settings — you can use the official capability directly.
-
-| Host version | Install spec (copy into the dialog) |
-|---|---|
-| ≥ `0.1.2-rc.1` | `@khorsheed/dsh-ui-shortcuts@^0.2.4` |
-| `0.1.x` | `@khorsheed/dsh-ui-shortcuts@^0.1.0` |
-
-Esc pauses the current task, Ctrl/Cmd+S steer-sends your draft, Ctrl/Cmd+O starts a new session. Click a keycap in settings to rebind; preferences persist. It also ships an action registry: any plugin can register its own keyboard action and gets a settings entry plus conflict-free dispatch for free.
-
-<details open>
-<summary>Screenshots (1)</summary>
-
-<img src="docs/screenshots/07-ui-shortcuts.png" width="840" alt="ui-shortcuts: rebinding keys in settings">
-
-</details>
-
 ### whalesong — ambient status
 
 | Host version | Install spec (copy into the dialog) |
@@ -310,33 +297,22 @@ Let the agent change its own code and restart its own service without taking it 
 
 </details>
 
-### Bundle install: bundle-conversation-toolbox (the seven-piece conversation toolbox)
-
-| Host version | Install spec (copy into the dialog) |
-|---|---|
-| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-bundle-conversation-toolbox@^0.1.2` |
-| earlier | no release available (install members individually per the tables above) |
-
-Don't want to pick one by one? This single meta package installs the seven conversation tools at once: message-tools, message-timeline, session-title-edit, quote, inline-html-render, context-guard, taskpilot. Members arrive as npm dependencies, and the bundle's patch re-mounts each member's canonical rows verbatim; afterwards every component stays individually disable-able under Settings → Plugins — the bundle packages the install, not your choices.
-
-<details open>
-<summary>Screenshots (1)</summary>
-
-<img src="docs/screenshots/bundle-conversation-toolbox.png" width="840" alt="bundle-conversation-toolbox: the detail page listing seven components, each individually switchable">
-
-</details>
-
 ## Make it yours
 
-- **Remove a member**: disable/uninstall in Settings → Plugins, or `dsh plugin --profile <your profile> remove <package name>` — the rest keep working. The bundle is a starting point, not a lock-in.
+- **Remove a member**: disable/uninstall in Settings → Plugins, or `dsh plugin --profile <your profile> remove <package name>` — the rest keep working. The suite is a starting point, not a lock-in.
 - **Add more**: any `@khorsheed/dsh-*` plugin installs the same way — copy the package name.
 - **Update**: from Settings → Plugins, or `dsh plugin --profile <your profile> update` to pull the newest versions in range.
 
-## Other packs
+## Other suites
 
-| Pack | What it is |
+| Suite | What it is |
 |---|---|
-| [dsh-dev](https://github.com/Khorsheed/dsh-dev) | Development mode: everything in this pack, plus local coding-agent delegation, live worktree state, and room multi-agent collaboration |
+| [dsh-dev](https://github.com/Khorsheed/dsh-dev) | The dev suite: local coding-agent delegation, live worktree state, room multi-agent collaboration — with the dev-mode preset |
+| [dsh-writing](https://github.com/Khorsheed/dsh-writing) | The writing suite: the idea canvas + the novel genre — with the writing-mode preset |
+| [dsh-learning](https://github.com/Khorsheed/dsh-learning) | The learning suite: library-style project close reading — with the learning-mode preset |
+| [dsh-video](https://github.com/Khorsheed/dsh-video) | The video suite: a cutting room with speaker splitting and delete-the-word-deletes-the-audio — with the video-mode preset |
+| [dsh-gamedev](https://github.com/Khorsheed/dsh-gamedev) | The gamedev suite: build small games with the agent — with the gamedev-mode preset |
+| [dsh-web-eval](https://github.com/Khorsheed/dsh-web-eval) | The eval suite: on-machine harness comparison — with the eval-mode preset |
 | [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) | The plugin monorepo: the capability map of every package, the preset designs, and the development docs |
 
 ## Changelog
@@ -350,52 +326,25 @@ Plugins live in [Khorsheed/dsh-plugins](https://github.com/Khorsheed/dsh-plugins
 ## Install guide for agents
 
 <details>
-<summary><strong>Expand: whole-pack install + single-package CLI install</strong> (follow this when the user says "install this for me")</summary>
+<summary><strong>Expand: whole-suite install + single-package CLI install</strong> (follow this when the user says "install this for me")</summary>
 
-### 1. Installing the whole pack
+### 1. Installing the whole suite (recommended)
 
-A whole-pack install requires host ≥ `0.1.5-rc.1` (capability-catalog, mobile, quote, local-files, and the latest lines of five members all floor there); on the `0.1.2` line stay with the pre-rename archive (a `host-0.1.2-line` tag ships with the next publish wave), and on `0.1.0` / `0.1.1` hosts use the `host-0.1.1-line` tag.
-
-**0. Pick the release line by host version first (skipping this can install plugins that won't boot)**
+Works on hosts ≥ `0.1.5-rc.1`. From the command line:
 
 ```sh
-dsh --version    # or read the host version from the running instance's process info
+dsh plugin --profile web add @khorsheed/dsh-basic@^0.1.0   # the floor exempts pnpm's new-release protection on release day; a bare name is fine afterwards
 ```
 
-- Host `0.1.5` or newer (any rc included) → use the main line (clone the default branch).
-- Host `0.1.2-rc.*` ~ `0.1.4` → stay with the older archive (the `host-0.1.2-line` tag).
-- Host `0.1.0-rc.*` / `0.1.1-rc.*` → use the legacy line: after cloning, `git -C /tmp/dsh-basic checkout host-0.1.1-line`; members stay on 0.1.x (no further updates).
+On hosts ≥ `0.1.7-rc.2` the dialog works too: Settings → Plugins → Add plugin, enter `@khorsheed/dsh-basic`, enable as prompted.
 
-**1. Install and self-check offline (do not touch the running instance)**
+Restart the web instance, then ask the user to **hard-refresh** (Cmd/Ctrl+Shift+R) — the new client bundles (the Produced tab, the dock pills, …) only load on a hard refresh; a plain reload may keep serving the cached shell. Then present the feature list (the "plugin list" table above).
 
-```sh
-git clone https://github.com/Khorsheed/dsh-basic.git /tmp/dsh-basic
-sh /tmp/dsh-basic/scripts/install.sh
-```
-
-The installer prints the composed row count. To double-check: `dsh --profile basic --dump-config | grep -c "@khorsheed"` should print 14 (ankh-guard / capability-catalog / context-guard / file-preview / inline-html-render / local-files / message-timeline / message-tools / mobile / quote / session-title-edit / taskpilot / ui-shortcuts / whalesong). If `dsh` is not on PATH, use its absolute path (find it via `ps` from the current instance's command line).
-
-**2. Hand over on the same port (the critical step)**
-
-```sh
-sh /tmp/dsh-basic/scripts/restart-into-basic.sh [port, default 3080]
-```
-
-The script drives the pack's own ankh-guard watchdog: environment probe → record a credential → adopt the current instance → watchdog stops the old one and boots the pack with a canary. **You will disconnect with the host — that is expected**: the watchdog brings basic up on the original port. The script deliberately omits `--initiator` so the guard reads `$DSH_SESSION_ID` from your environment — that is how the restart report finds your session: when the user reopens it, you receive the "restart complete" followup and continue. Note: snapshot-based continuation of interrupted turns needs the guard already mounted in the old instance (absent on a first install); that part exists from the second restart onward.
-
-Two prerequisites — the script refuses early with a reason if either is missing:
-
-- **Session permissions**: in a sandboxed session (writes fenced to the workspace), the detached watchdog gets reaped when the turn ends and the script refuses up front. Ask the user to switch to full-access mode (or hand them the command to run in a plain terminal).
-- **Do NOT substitute `nohup ... &` or a hand-rolled `kill` + restart**: sandboxes reap by process tree, nohup does not protect against that, and a wrong stop/start order never comes back.
-
-**3. Deliver**
-
-Once `curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:<port>/` returns 200, ask the user to **hard-refresh** (Cmd/Ctrl+Shift+R) — the new client bundles (the Produced tab, the dock pills, …) only load on a hard refresh; a plain reload may keep serving the cached shell. Then present the feature list (the README plugin-list table). Known boundary: on a pure-npm deployment ankh-guard's composition preflight runs degraded (it warns and proceeds); everything else is fully functional.
+Older host lines: `0.1.2` ~ `0.1.4` stay with the `host-0.1.2-line` tag archive; `0.1.0` / `0.1.1` use the `host-0.1.1-line` tag.
 
 ### 2. Installing a single plugin
 
-- **Dialog (0.1.7-rc.2+, recommended)**: Settings → Plugins → Add plugin, enter the package name (e.g. `@khorsheed/dsh-whalesong`), enable as prompted. On older hosts remember the release-line suffix (see "Version compatibility" above); on `0.2.0-rc.*` hosts, add the floor on release day too (each table carries it).
+- **Dialog (0.1.7-rc.2+, recommended)**: Settings → Plugins → Add plugin, enter the package name (e.g. `@khorsheed/dsh-whalesong`), enable as prompted. On older hosts remember the release-line suffix (see "Version compatibility" above); on `0.2.0-rc.*` and later, add the floor on release day too (each table carries it).
 - **CLI**: `dsh plugin --profile <profile> add <package name>`; `remove` to uninstall, `update` to upgrade.
-- **Bundle install**: the seven everyday conversation plugins also install in one shot via the meta package — `dsh plugin --profile <profile> add @khorsheed/dsh-bundle-conversation-toolbox`; member rows stay individually disable-able under Settings → Plugins.
 
 </details>

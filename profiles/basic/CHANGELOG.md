@@ -1,5 +1,11 @@
 # 变更记录
 
+## 2026-10-20 —— 套件化:推荐安装路径改为 `@khorsheed/dsh-basic`
+
+- 推荐安装单元从「逐成员安装 / 七件装元包」改为套件 `@khorsheed/dsh-basic`:一次装齐 14 个成员,成员仍可单独开关
+- 成员列表补齐 context-lens(上下文透镜);capture(渲染抓取)移往写作/学习套件;ui-shortcuts 退役(宿主 0.1.7-rc.2 起官方内置快捷键)
+- 会话工具七件装 `@khorsheed/dsh-bundle-conversation-toolbox` 退役,由本套件取代
+
 ## 2026-09-28 —— 五个成员新版本随发布波上架
 
 - taskpilot 0.3.3:后台任务的 ack/通知不再串号（bash-1 不再认领 bash-19);后台任务的轨迹折叠不再丢起始行与输出
