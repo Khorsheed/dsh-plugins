@@ -58,7 +58,7 @@ import {
 import { extractArticle } from './extract-article.ts'
 import { parseFeed, type ReaderEntry } from './parse-rss.ts'
 import type { ReaderParsedSource } from './store.ts'
-import { absoluteDate, clockOf, formatReaderRef, mergedDraft, provenanceOf, relativeWhen } from './quote.ts'
+import { absoluteDate, clockOf, relativeWhen } from './quote.ts'
 import {
   TARGET_CANDIDATES, applyRemembered, buildArticle, createSession, detectSourceLanguage, detectTranslator, isTargetLanguage,
   primeMemory, restoreArticle, runTranslation, segmentAt, segmentsOf, setPairHover, setView, toggleSegment,
@@ -649,7 +649,7 @@ export function ReaderPane(props: ReaderPaneProps): ReactNode {
 
 /** The reader's pages: wall, detail, recent, manage. */
 function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
-  const { sessionId, useStore, actions, t } = props
+  const { useStore, actions, t } = props
   const sources = useStore(s => s.sources)
   const parsed = useStore(s => s.parsed)
   const articleHtml = useStore(s => s.articleHtml)
@@ -813,8 +813,6 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
   /** When the in-flight add began — the dialog's busy line, and the double-submit guard. */
   const [addBusySince, setAddBusySince] = useState<number | null>(null)
   const [verdict, setVerdict] = useState<{ kind: Verdict; label?: string; reason?: string; code?: ReaderPreviewFailureCode; url?: string } | null>(null)
-  const [draft, setDraft] = useState('')
-  const [sideChatAvailable, setSideChatAvailable] = useState(false)
   const [timeOfDay, setTimeOfDay] = useState<string>('10:00')
   const [filterOpen, setFilterOpen] = useState(false)
   /** Compact only: the search row is folded behind the header's search icon until asked for. */
@@ -1173,7 +1171,6 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
   useEffect(() => {
     void props.capabilities().then(result => {
       if (!result.ok) return
-      setSideChatAvailable(result.value.hasSideChat)
       actions.setSchedule(result.value.lastRefreshAt, result.value.nextRefreshAt)
       if (result.value.nextRefreshAt !== undefined) setTimeOfDay(clockOf(result.value.nextRefreshAt))
     })
@@ -3182,19 +3179,6 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
     await toggleTag(entryId, created.value.id, true)
   }, [props, toggleTag])
 
-  /** Quote the open entry (or a selection) into the conversation draft. */
-  const quote = useCallback((explicit?: string) => {
-    if (openEntry === undefined) return
-    const selection = explicit ?? window.getSelection()?.toString() ?? ''
-    const source = presentation.get(openEntry.sourceId)
-    const block = formatReaderRef(selection, provenanceOf(openEntry, {
-      label: source?.label ?? openEntry.title,
-    }))
-    const next = mergedDraft(props.readDraft(), block)
-    props.setDraft(next)
-    setDraft(next)
-  }, [openEntry, presentation, props])
-
   const copyLink = useCallback(async () => {
     if (openEntry?.link === undefined) return
     await props.copyText(openEntry.link)
@@ -3756,8 +3740,10 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
               ? t('action.done')
               : t('action.cancel')}
           </button>
-          <button type="button" className={css.submit} disabled={addBusySince !== null} onClick={() => { void submit() }}>
-            {addBusySince !== null ? t('detail.refetching') : t('action.submit')}
+          {/* Nothing to fetch (an empty box, or the link just saved and cleared)
+              or a fetch under way: the button is visibly off, not a dead click. */}
+          <button type="button" className={css.submit} disabled={addBusySince !== null || draftUrl.trim() === ''} onClick={() => { void submit() }}>
+            {addBusySince !== null ? t('add.fetching') : t('action.submit')}
           </button>
         </div>
       </div>
@@ -4044,6 +4030,10 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
           label={t('notes.tabsLabel')}
           value={notesFace.tab}
           onChange={notesFace.setTab}
+          // 考考我 is always in reach, not only at the end of a long body.
+          trailing={articleHtml !== null && articleHtml.length > 0 && !localActive && (
+            <button type="button" className={css.checkChip} onClick={notesFace.check} title={t('notes.check')}>{t('notes.checkShort')}</button>
+          )}
           tabs={[
             { id: 'article', label: mediaFace.media === undefined ? t('notes.tabArticle') : t('media.tabTranscript') },
             { id: 'notes', label: t('notes.tabNotes'), ...(notesFace.count > 0 ? { badge: notesFace.count } : {}) },
@@ -4340,7 +4330,7 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
           {articleHtml !== null && articleHtml.length > 0 && (
             <div className={css.checkEnd}>
               <span className={css.checkLead}>{t('notes.checkLead')}</span>
-              <button type="button" className={css.checkButton} onClick={notesFace.check}>{t('notes.check')}</button>
+              <button type="button" className={css.checkLink} onClick={notesFace.check}>{t('notes.check')} →</button>
             </div>
           )}
           <div className={css.tagEdit}>
@@ -4439,40 +4429,6 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
           )}
         </div>
 
-        {notesFace.tab === 'article' && <>
-        <div className={css.composer}>
-          <div className={css.composerLabel}>{t('detail.composerLabel')}</div>
-          <div className={`${css.composerText} ${draft.length === 0 ? css.composerEmpty : ''}`}>
-            {draft.length === 0 ? t('detail.composerEmpty') : draft}
-          </div>
-        </div>
-        <div className={css.foot}>
-          <button type="button" className={css.incompleteLink} onClick={() => quote()}>
-            {t('action.quote')}
-          </button>
-          {/* The way in without the quote plugin's menu (and on any host): it
-              reads the same selection the menu would. */}
-          <button type="button" className={css.incompleteLink} onClick={notesFace.startNote}>
-            {t('notes.take')}
-          </button>
-          {notesFace.hint && <span>{t('notes.takeHint')}</span>}
-          {sideChatAvailable && openEntry.link !== undefined && (
-            <button
-              type="button"
-              className={css.incompleteLink}
-              onClick={() => {
-                void props.quoteToSideChat({
-                  contextKey: sessionId,
-                  label: openEntry.title,
-                  text: formatReaderRef('', provenanceOf(openEntry, { label: source?.label ?? '' })),
-                })
-              }}
-            >
-              {t('quote.toSideChat')}
-            </button>
-          )}
-        </div>
-        </>}
         {notesFace.sheet !== null && (
           <NoteSheet
             t={t}
