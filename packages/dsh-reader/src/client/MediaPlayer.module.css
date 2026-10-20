@@ -2,19 +2,31 @@
 
 .player {
   flex: none;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
   border-bottom: 1px solid var(--dsw-alias-border-l2);
   background: var(--dsw-alias-bg-layer-1);
 }
 
-.frameBox {
-  position: relative;
-  width: 100%;
-  aspect-ratio: 16 / 9;
-  background: var(--dsw-alias-label-primary);
+/* The video keeps 16:9 but never takes more than ~40% of the window's
+   height: in a wide sidebar it is centered between dark bands instead of
+   pushing the transcript off screen (2026-10-20). */
+.videoStage {
+  display: flex;
+  justify-content: center;
+  background: #000;
 }
 
-.frameBox[hidden] {
+.videoStage[hidden] {
   display: none;
+}
+
+.frameBox {
+  position: relative;
+  width: min(100%, calc(40vh * 16 / 9));
+  aspect-ratio: 16 / 9;
+  background: #000;
 }
 
 .frame {
@@ -33,6 +45,7 @@
 
 .strip {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 10px;
   min-height: 26px;

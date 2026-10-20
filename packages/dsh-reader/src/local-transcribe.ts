@@ -86,11 +86,15 @@ export function renderLocalTranscript(segments: readonly EngineSegment[]): strin
 }
 
 /**
- * The language to ask for: Bilibili and Xiaoyuzhou are Chinese (Paraformer,
- * the finer timing); anything else lets SenseVoice detect it.
+ * The language to ask for: always detection (SenseVoice). Measured
+ * 2026-10-20: a platform says nothing reliable about the spoken language — a
+ * Bilibili upload of an English interview came out of the Chinese model as
+ * lower-case English with Chinese punctuation — and on Chinese speech
+ * SenseVoice reads about as well as Paraformer (a 90 s sample: each missed
+ * two or three characters the other got right).
  */
-export function languageFor(media: ReaderMedia): 'zh' | 'auto' {
-  return media.provider === 'bilibili' || media.provider === 'xiaoyuzhou' ? 'zh' : 'auto'
+export function languageFor(_media: ReaderMedia): 'auto' {
+  return 'auto'
 }
 
 /** Fetch a URL to a file with curl (it honors the deployment's proxy environment). */
@@ -195,7 +199,7 @@ export class LocalTranscriber {
     this.jobs.clear()
   }
 
-  private async execute(request: { entryId: string; url: string; media: ReaderMedia; title?: string }, engine: TranscribeEngine, language: 'zh' | 'auto', job: Job): Promise<void> {
+  private async execute(request: { entryId: string; url: string; media: ReaderMedia; title?: string }, engine: TranscribeEngine, language: 'auto', job: Job): Promise<void> {
     const signal = job.abort.signal
     mkdirSync(this.deps.tmpRoot, { recursive: true })
     const dir = mkdtempSync(join(this.deps.tmpRoot, 'audio-'))
@@ -229,7 +233,7 @@ export class LocalTranscriber {
       )
       const html = renderLocalTranscript(result.segments)
       if (html === '') throw new Error('没有识别出语音')
-      const detected = result.language ?? (language === 'zh' ? 'zh' : undefined)
+      const detected = result.language
       if (detected !== undefined) job.language = detected
       await this.deps.store(request.entryId, request.url, html, detected)
       job.html = html
