@@ -37,7 +37,8 @@
   "dependencies": {
     "@khorsheed/dsh-canvas": "workspace:*",
     "@khorsheed/dsh-library": "workspace:*",
-    "@khorsheed/dsh-reader": "workspace:*"
+    "@khorsheed/dsh-reader": "workspace:*",
+    "@khorsheed/dsh-transcribe": "workspace:*"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1"
@@ -61,13 +62,15 @@
       "members": [
         "@khorsheed/dsh-library",
         "@khorsheed/dsh-canvas",
-        "@khorsheed/dsh-reader"
+        "@khorsheed/dsh-reader",
+        "@khorsheed/dsh-transcribe"
       ]
     },
     "references": [
       "@khorsheed/dsh-library",
       "@khorsheed/dsh-canvas",
-      "@khorsheed/dsh-reader"
+      "@khorsheed/dsh-reader",
+      "@khorsheed/dsh-transcribe"
     ],
     "compat": {
       "minHost": "0.1.7-rc.1",

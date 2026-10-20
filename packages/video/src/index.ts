@@ -14,4 +14,5 @@ export const MODE = 'dsh-video' as const
 /** Self-mounting member packages whose canonical rows the bundle patch mounts, in cordis.patch.yml row order. */
 export const FAMILY_MEMBERS = [
   '@khorsheed/dsh-video-studio',
+  '@khorsheed/dsh-transcribe',
 ] as const

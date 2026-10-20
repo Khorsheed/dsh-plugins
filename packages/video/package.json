@@ -35,7 +35,8 @@
     "bundle"
   ],
   "dependencies": {
-    "@khorsheed/dsh-video-studio": "workspace:*"
+    "@khorsheed/dsh-video-studio": "workspace:*",
+    "@khorsheed/dsh-transcribe": "workspace:*"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1"
@@ -57,11 +58,13 @@
       "kind": "mode",
       "mode": "dsh-video",
       "members": [
-        "@khorsheed/dsh-video-studio"
+        "@khorsheed/dsh-video-studio",
+        "@khorsheed/dsh-transcribe"
       ]
     },
     "references": [
-      "@khorsheed/dsh-video-studio"
+      "@khorsheed/dsh-video-studio",
+      "@khorsheed/dsh-transcribe"
     ],
     "compat": {
       "minHost": "0.1.7-rc.1",

@@ -4,7 +4,7 @@ import { createServer, type Server } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { CorruptDownloadError, downloadHfFiles, fetchWithResume, ModelManager, MODELS, orderSources } from '../src/media/models.ts'
+import { CorruptDownloadError, downloadHfFiles, fetchWithResume, ModelManager, MODELS, orderSources } from '../src/models.ts'
 
 const servers: Server[] = []
 
@@ -101,7 +101,7 @@ describe('fetchWithResume', () => {
 
 describe('ModelManager partial state', () => {
   it('reports leftover .part bytes as resumable progress after a restart', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'vs-models-'))
+    const dir = mkdtempSync(join(tmpdir(), 'transcribe-models-'))
     const seg = MODELS.find((m) => m.id === 'segmentation')!
     mkdirSync(join(dir, 'sherpa-onnx-pyannote-segmentation-3-0'))
     writeFileSync(join(dir, 'sherpa-onnx-pyannote-segmentation-3-0/model.onnx.part'), sample(1234))

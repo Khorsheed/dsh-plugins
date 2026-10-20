@@ -4,8 +4,8 @@
 
 ## 概览
 
-- 包总数:**48**
-- 自挂载 bundle(`dsh.bundle.patch`):**45**
+- 包总数:**49**
+- 自挂载 bundle(`dsh.bundle.patch`):**46**
 - 组合组件(不自挂载,`dsh.composition.component`):**3** — `source-plane-library` 2、`sub-profile-patch` 1
 - 带浏览器半边(`dsh.client`):**33**
 - 整合 profile(默认安装单元):**3** — `basic`、`dev`、`web-eval`
@@ -56,6 +56,7 @@
 | `@khorsheed/dsh-client-session-title-edit` | `packages/session-title-edit` | 0.2.6 | bundle | — | web | 0.1.2-rc.1 | basic, web-eval |
 | `@khorsheed/dsh-sidechat` | `packages/sidechat` | 0.2.3 | bundle | — | web | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-taskpilot` | `packages/taskpilot` | 0.3.5 | bundle | — | web | 0.1.5-rc.1 | basic, web-eval |
+| `@khorsheed/dsh-transcribe` | `packages/transcribe` | 0.1.0 | bundle | — | — | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-typesafe` | `packages/typesafe` | 0.1.3 | bundle | — | — | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-client-ui-content-preview` | `packages/ui-content-preview` | 0.1.1 | composition | source-plane-library | — | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-client-ui-panel-kit` | `packages/ui-panel-kit` | 0.1.0 | composition | source-plane-library | — | 0.1.5-rc.1 | — |

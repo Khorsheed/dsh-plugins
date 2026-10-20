@@ -13,12 +13,11 @@ import { DEFAULT_SETTINGS } from './core/settings.ts'
 import type { SettingKey, Settings, Show } from './core/types.ts'
 import type { GlobalConfig } from './store.ts'
 import type { Overview, ProjectView, VideoStudioService } from './service.ts'
-import type { ModelSourceChoice, ModelStatus } from './media/models.ts'
 import type {
   BindRequest, ClipRequest, CreateProjectRequest, CreateShowRequest, CutRequest, DecideRequest, ExportRequest,
   GlobalPatchRequest, ImportRequest, JobRef, ListMediaRequest, MediaFile, ProjectRef, ProjectSettingRequest, RenameProjectRequest, SegmentReassignRequest, SessionRef,
   ShowSettingRequest, SpeakerMergeRequest, SpeakerRenameRequest, VoiceprintDeleteRequest,
-  AudioChunk, AudioChunkRequest, KeywordCutRequest, ReplaceRequest, TextFixRequest,
+  AudioChunk, AudioChunkRequest, KeywordCutRequest, ModelStatus, ReplaceRequest, TextFixRequest,
 } from './types.ts'
 import type { Job } from './core/types.ts'
 
@@ -213,14 +212,12 @@ export class VideoStudioRemoteService extends TypertRemoteService<VideoStudioRem
 
   @Remote('models')
   models(): Promise<ModelStatus[]> {
-    return this.svc.models.refresh()
+    return this.svc.speechModels()
   }
 
   /** Start downloading any missing speech models (returns at once). */
   @Remote('downloadModels')
-  async downloadModels(): Promise<ModelStatus[]> {
-    const g = await this.svc.store.global()
-    void this.svc.models.ensure(g.modelSource as ModelSourceChoice)
-    return this.svc.models.list()
+  downloadModels(): Promise<ModelStatus[]> {
+    return this.svc.downloadModels()
   }
 }

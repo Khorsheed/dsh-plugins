@@ -103,8 +103,11 @@ export function attachPunctuation(tokens: WorkerToken[], punctuated: string): Wo
   let ti = 0
   let consumed = '' // characters of tokens[ti] matched so far
   for (const ch of punctuated) {
+    if (/\s/.test(ch)) continue
     if (ti < tokens.length) {
       const tokText = tokens[ti]!.text
+      // a token's own spacing (a Latin word's leading space) is not text to match
+      while (/\s/.test(tokText[consumed.length] ?? '')) consumed += tokText[consumed.length]
       const want = tokText.slice(consumed.length)
       const head = want[0]
       if (head !== undefined && ch.toLowerCase() === head.toLowerCase()) {
@@ -121,7 +124,7 @@ export function attachPunctuation(tokens: WorkerToken[], punctuated: string): Wo
     if (/[\p{P}]/u.test(ch) && prev) {
       out.push({ text: ch, start: prev.end, end: prev.end })
     }
-    // anything else (spaces, case-folded mismatches) is dropped
+    // anything else (case-folded mismatches) is dropped
   }
   while (ti < tokens.length) out.push(tokens[ti++]!)
   return out

@@ -1,0 +1,81 @@
+{
+  "name": "@khorsheed/dsh-transcribe",
+  "description": "Local speech-to-text engine as a host service: long recordings to timed, optionally speaker-separated text on this machine (sherpa-onnx — Paraformer + punctuation for Chinese, SenseVoice for English and mixed speech, pyannote + CAM++ for speakers), one job at a time in a child process, with resumable model downloads. Other plugins probe and call it in code.",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "cordis",
+    "transcribe",
+    "speech-to-text",
+    "asr",
+    "diarization",
+    "service"
+  ],
+  "version": "0.1.0",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Khorsheed/dsh-plugins.git",
+    "directory": "packages/transcribe"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./types": {
+      "types": "./lib/types/types.d.ts",
+      "default": "./lib/types.js"
+    },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "files": [
+    "lib/*.js",
+    "lib/types/**/*.js",
+    "lib/types/**/*.d.ts",
+    "cordis.patch.yml",
+    "locale/*.json"
+  ],
+  "license": "MIT",
+  "engines": {
+    "dsh": ">=0.1.5-rc.1 <0.3.0-0"
+  },
+  "dependencies": {
+    "sherpa-onnx-node": "1.13.8"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@types/node": "^22.0.0",
+    "tsdown": "^0.22.2",
+    "typescript": "^5.9.0",
+    "vitest": "^3.0.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && tsdown",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "compat": {
+      "minHost": "0.1.5-rc.1",
+      "verifiedHost": "0.2.1-rc.1",
+      "notes": "Host service only (`transcribe`), no browser half and no model-facing surface, so it composes at the profile root. Recognition runs in a forked child process through sherpa-onnx-node (prebuilt per-platform addon); a failed addon load fails that job only. ffmpeg is found on PATH or at a configured path; a missing binary fails jobs that need decoding, never the boot. Speech models download on first use into $DSH_HOME/state/transcribe/models (models a previous video-studio install downloaded are moved there once). Consumers (video-studio, dsh-reader) probe `ctx.get('transcribe')` at call time and degrade when it is absent."
+    },
+    "runtimeDependencies": [
+      "sherpa-onnx-node"
+    ]
+  }
+}

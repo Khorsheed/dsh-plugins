@@ -18,10 +18,8 @@ import { formatClock, keptRanges, outputDuration, removedRanges, toOutputTime } 
 import { SCHEMA_VERSION, type Edit, type Job, type JobKind, type JobPayload, type Project, type SettingKey, type Settings, type Show, type Source, type Speaker } from './core/types.ts'
 import { audioGraph, exportAudio, exportVideo, hasFilter, renderClip, videoGraph, windowOf } from './media/export.ts'
 import { MediaError, decodeMono, findBinaries, findBinary, probe, run, versionScore, writeAsrWav } from './media/ffmpeg.ts'
-import { ModelManager, speechModelPaths, type ModelSourceChoice, type ModelStatus } from './media/models.ts'
-import { runSpeech } from './media/speech.ts'
 import { Store, newId, resolveStateRoot, type GlobalConfig } from './store.ts'
-import type { AudioChunk, MediaFile } from './types.ts'
+import type { AudioChunk, MediaFile, ModelStatus } from './types.ts'
 
 export const SPEAKER_COLORS = ['s1', 's2', 's3', 's4', 's5', 's6', 's7', 's8'] as const
 
@@ -51,8 +49,40 @@ export interface Overview {
   projects: ProjectSummary[]
   global: GlobalConfig
   toolchain: Toolchain
+  /** Whether the local transcription plugin (`transcribe`) is installed. */
+  engine: boolean
+  /** The speech models transcription needs (empty without the engine). */
   models: ModelStatus[]
 }
+
+/**
+ * The part of the local transcription engine (`transcribe`, from
+ * @khorsheed/dsh-transcribe) this plugin calls — restated structurally so the
+ * two packages share no code edge; the engine is probed per job.
+ */
+export interface TranscribeEngine {
+  modelsFor(request: { language?: 'zh' | 'en' | 'auto'; diarize?: object | false }): string[]
+  models(): Promise<ModelStatus[]>
+  prepare(ids: readonly string[], source?: 'auto' | 'huggingface' | 'hf-mirror'): Promise<void>
+  run(
+    request: {
+      input: { wav: string }
+      language: 'zh'
+      diarize: { voices: { id: string; name: string; embedding: string }[]; matchThreshold: number }
+      owner: string
+      label?: string
+    },
+    options: { signal?: AbortSignal; onProgress?: (p: { progress: number }) => void },
+  ): Promise<{
+    segments: { cluster: number; start: number; end: number; tokens: readonly { text: string; start: number; end: number }[] }[]
+    speakers: { cluster: number; speechSec: number; embedding: string; match?: { id: string; score: number } }[]
+  }>
+}
+
+type ModelSourceChoice = 'auto' | 'huggingface' | 'hf-mirror'
+
+/** What a 分人与转写 job asks of the engine: Chinese, with speakers. */
+const SPEECH = { language: 'zh', diarize: {} } as const
 
 export interface ProjectView {
   project: Project
@@ -77,7 +107,6 @@ const VIDEO_EXT = new Set(['.mp4', '.mov', '.m4v', '.mkv', '.webm', '.avi'])
 
 export class VideoStudioService {
   readonly store: Store
-  readonly models: ModelManager
   private toolchainCache: Toolchain | null = null
   private jobs: Job[] = []
   private jobsLoaded: Promise<void> | null = null
@@ -88,9 +117,28 @@ export class VideoStudioService {
   constructor(
     stateRoot: string | undefined,
     private readonly logger: Logger = console,
+    /** The `transcribe` service, probed at call time (it may be installed later, or never). */
+    private readonly engine: () => TranscribeEngine | undefined = () => undefined,
   ) {
     this.store = new Store(resolveStateRoot(stateRoot))
-    this.models = new ModelManager(this.store.modelsDir)
+  }
+
+  /** The speech models transcription needs, as the engine reports them (empty without it). */
+  async speechModels(): Promise<ModelStatus[]> {
+    const engine = this.engine()
+    if (!engine) return []
+    const ids = engine.modelsFor(SPEECH)
+    return (await engine.models()).filter((m) => ids.includes(m.id))
+  }
+
+  /** Start downloading any missing speech models (returns at once). */
+  async downloadModels(): Promise<ModelStatus[]> {
+    const engine = this.engine()
+    if (!engine) return []
+    const g = await this.store.global()
+    void engine.prepare(engine.modelsFor(SPEECH), g.modelSource as ModelSourceChoice).catch(() => {})
+    await new Promise((r) => setTimeout(r, 50))
+    return this.speechModels()
   }
 
   dispose(): void {
@@ -167,9 +215,9 @@ export class VideoStudioService {
       this.store.listProjects(),
       this.store.global(),
       this.toolchain(),
-      this.models.refresh(),
+      this.speechModels(),
     ])
-    return { shows, projects: projects.map(summarize), global, toolchain, models }
+    return { shows, projects: projects.map(summarize), global, toolchain, engine: this.engine() !== undefined, models }
   }
 
   async setGlobal(patch: Partial<Omit<GlobalConfig, 'settings'>> & { settings?: Partial<Settings> }): Promise<GlobalConfig> {
@@ -907,20 +955,15 @@ export class VideoStudioService {
   }
 
   private async runTranscribe(projectId: string, progress: (v: number) => void, signal: AbortSignal): Promise<void> {
+    const engine = this.engine()
+    if (!engine) throw new Error('分人与转写需要「本机转写」插件：请先在插件管理里安装 @khorsheed/dsh-transcribe')
     const { ffmpeg } = await this.requireTools()
-    if (!(await this.models.ready())) {
-      progress(0.01)
-      await this.models.ensure((await this.store.global()).modelSource as ModelSourceChoice)
-      if (!(await this.models.ready())) {
-        const failed = this.models.list().find((m) => m.state === 'failed')
-        throw new Error(`语音模型下载失败${failed?.error ? `：${failed.error}` : ''}，可在设置 → 全局里重试`)
-      }
-    }
     const p = await this.mustProject(projectId)
     const parts = referencePartsOf(p)
     if (!parts.length) throw new Error('还没有录音')
     const cache = this.store.cacheDir(projectId)
     await mkdir(cache, { recursive: true })
+    // the 16 kHz WAV is made here, not by the engine: it stays as the panel player's audio proxy
     const wav = join(cache, 'asr.wav')
     const total = partsDuration(parts)
     await writeAsrWav(ffmpeg, parts.map((x) => x.source.path), wav, (sec) => progress(0.05 * Math.min(1, sec / Math.max(1, total))), signal)
@@ -931,14 +974,11 @@ export class VideoStudioService {
       const emb = await this.store.voiceprint(show!.id, v.id)
       if (emb) voices.push({ id: v.id, name: v.name, embedding: emb })
     }
-    const weights = { load: [0.05, 0.08], diarize: [0.08, 0.35], transcribe: [0.35, 0.95], embed: [0.95, 1] } as const
-    const result = await runSpeech(
-      { wavPath: wav, models: speechModelPaths(this.store.modelsDir), voices, numSpeakers: -1, matchThreshold: g.voiceMatchThreshold, numThreads: 4 },
-      (stage, v) => {
-        const [a, b] = weights[stage]
-        progress(a + (b - a) * v)
-      },
-      signal,
+    // a model download (first run) shows as the job holding at its start
+    await engine.prepare(engine.modelsFor(SPEECH), g.modelSource as ModelSourceChoice)
+    const result = await engine.run(
+      { input: { wav }, language: 'zh', diarize: { voices, matchThreshold: g.voiceMatchThreshold }, owner: '@khorsheed/dsh-video-studio', label: p.name },
+      { signal, onProgress: (v) => progress(0.05 + 0.95 * v.progress) },
     )
     // map clusters → speakers
     const embeddings: Record<string, string> = {}
@@ -985,7 +1025,6 @@ export class VideoStudioService {
         await this.store.saveShow(s)
       })
     }
-    // the 16 kHz WAV stays as the panel player's audio proxy (cache, disposable)
   }
 
   async exportDirFor(p: Project): Promise<string> {

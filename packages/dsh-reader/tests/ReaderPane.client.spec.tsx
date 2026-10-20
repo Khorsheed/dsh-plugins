@@ -28,7 +28,7 @@ import { zh } from '../src/client/locales.ts'
 import { ReaderPane } from '../src/client/ReaderPane.tsx'
 import { forgetSession, forgetTranslators, readSession, rememberReadingPosition } from '../src/client/session.ts'
 import { UNIT_SEPARATOR, clearMemory, translationHash } from '../src/client/translate.ts'
-import type { ReaderBody, ReaderEntryFetchState, ReaderEntryNotes, ReaderRecentEntry, ReaderSourceSummary } from '../src/types.ts'
+import type { LocalTranscriptStatus, ReaderBody, ReaderEntryFetchState, ReaderEntryNotes, ReaderRecentEntry, ReaderSourceSummary } from '../src/types.ts'
 
 /** A translate over the zh dictionary: its key set is the source of truth. */
 const t = ((key: keyof typeof zh, params?: Record<string, string>): string =>
@@ -91,6 +91,11 @@ interface BenchOptions {
   readonly sources?: readonly ReaderSourceSummary[]
   /** The transcript the host answers for a video (undefined: the video has no captions). */
   readonly transcript?: string
+  /**
+   * The local transcription engine: absent (`unavailable`, the default), or a
+   * scripted job — the start answer, then what each poll returns in turn.
+   */
+  readonly local?: { readonly start: LocalTranscriptStatus[]; readonly polls: LocalTranscriptStatus[] }
   /** The canvas plugin's inbox, when the bench composes one. */
   readonly inbox?: CanvasInboxLike
   /** The payload each source id answers with. Sources with no entry answer with their own feed. */
@@ -227,6 +232,16 @@ function bench(options: BenchOptions = {}) {
         ? { entryId: request.entryId, captions: 'none' as const }
         : { entryId: request.entryId, captions: 'platform' as const, html: options.transcript },
     })),
+    startLocalTranscript: vi.fn(async (request: { entryId: string; confirmModels?: boolean }) => {
+      const scripted = options.local?.start.shift()
+      return { ok: true as const, value: { ...(scripted ?? { state: 'unavailable' as const }), entryId: request.entryId } }
+    }),
+    localTranscript: vi.fn(async (request: { entryId: string }) => {
+      const polls = options.local?.polls ?? []
+      const next = polls.length > 1 ? polls.shift()! : polls[0]
+      return { ok: true as const, value: { ...(next ?? { state: 'idle' as const }), entryId: request.entryId } }
+    }),
+    cancelLocalTranscript: vi.fn(async (request: { entryId: string }) => ({ ok: true as const, value: { entryId: request.entryId, state: 'idle' as const } })),
     markSynced: vi.fn(async () => ({ ok: true as const, value: 'ok' })),
     snapshotEntry: vi.fn(async () => ({ ok: true as const, value: 'ok' })),
     setDraft: vi.fn(),
@@ -382,6 +397,9 @@ function bench(options: BenchOptions = {}) {
     recordDiscussion: mocks.recordDiscussion,
     snapshotEntry: mocks.snapshotEntry,
     mediaTranscript: mocks.mediaTranscript,
+    startLocalTranscript: mocks.startLocalTranscript,
+    localTranscript: mocks.localTranscript,
+    cancelLocalTranscript: mocks.cancelLocalTranscript,
     canOpenSession: () => false,
     openSession: () => undefined,
   } as unknown as ReaderPaneProps
@@ -4035,6 +4053,9 @@ describe('notes: take one from a selection, find it in the notes face, bring it 
 })
 
 describe('video and audio entries', () => {
+  // The 字幕 switch and positions are remembered per entry in localStorage.
+  beforeEach(() => { localStorage.removeItem('dsh-reader.captionsHidden') })
+
   const videoFeed = `<feed xmlns="http://www.w3.org/2005/Atom" xmlns:media="http://search.yahoo.com/mrss/"><title>Channel</title>
     <entry><id>yt:video:zjkBMFhNj_g</id><title>Intro to LLMs</title><link rel="alternate" href="https://www.youtube.com/watch?v=zjkBMFhNj_g"/>
     <updated>2026-10-19T10:00:00Z</updated><media:group><media:description>A talk.</media:description></media:group></entry>
@@ -4078,7 +4099,50 @@ describe('video and audio entries', () => {
     fireEvent.click(await screen.findByText('Episode 9'))
     await waitFor(() => { expect(document.querySelector('audio')?.getAttribute('src')).toBe('https://cdn.example/ep9.mp3') })
     expect(ui.mocks.mediaTranscript).not.toHaveBeenCalled()
-    expect(screen.getByText(zh['media.noCaptionsAudio'])).toBeTruthy()
+    expect(await screen.findByText(zh['media.noCaptionsAudio'])).toBeTruthy()
+  })
+
+  it('transcribes a caption-less video on open, after one model-download confirmation, showing what is done', async () => {
+    const entryless = { entryId: '' }
+    const ui = bench({
+      sources: [rssSource('yt')],
+      payloads: { yt: videoFeed },
+      local: {
+        start: [
+          { ...entryless, state: 'needs-models', bytes: 323_000_000 },
+          { ...entryless, state: 'fetching', progress: 0 },
+        ],
+        polls: [
+          { ...entryless, state: 'transcribing', progress: 0.42, html: '<p data-src="local" data-t="0.0">大家好，欢迎回到节目。</p>' },
+          { ...entryless, state: 'done', progress: 1, html: '<p data-src="local" data-t="0.0">大家好，欢迎回到节目。</p><p data-src="local" data-t="21.0">今天聊推理。</p>' },
+        ],
+      },
+    })
+    await ui.settle()
+    fireEvent.click(await screen.findByText('Intro to LLMs'))
+    await waitFor(() => { expect(ui.mocks.startLocalTranscript).toHaveBeenCalledTimes(1) })
+    expect(ui.mocks.startLocalTranscript.mock.calls[0]![0]).toMatchObject({ url: 'https://www.youtube.com/watch?v=zjkBMFhNj_g', media: { kind: 'video', provider: 'youtube' } })
+    // First use: one confirmation for the model download.
+    fireEvent.click(await screen.findByRole('button', { name: zh['media.localModelsGo'] }))
+    await waitFor(() => { expect(ui.mocks.startLocalTranscript).toHaveBeenLastCalledWith(expect.objectContaining({ confirmModels: true })) })
+    // The part already transcribed reads at once, then the whole transcript.
+    expect(await screen.findByText('大家好，欢迎回到节目。', {}, { timeout: 4000 })).toBeTruthy()
+    expect(await screen.findByText('今天聊推理。', {}, { timeout: 4000 })).toBeTruthy()
+    expect(await screen.findByText(zh['media.sourceLocal'])).toBeTruthy()
+  })
+
+  it('withdraws a job when leaving and stops it from 取消', async () => {
+    const entryless = { entryId: '' }
+    const ui = bench({
+      sources: [rssSource('yt')],
+      payloads: { yt: videoFeed },
+      local: { start: [{ ...entryless, state: 'transcribing', progress: 0.1 }], polls: [{ ...entryless, state: 'transcribing', progress: 0.2 }] },
+    })
+    await ui.settle()
+    fireEvent.click(await screen.findByText('Intro to LLMs'))
+    fireEvent.click(await screen.findByRole('button', { name: zh['media.localStop'] }))
+    await waitFor(() => { expect(ui.mocks.cancelLocalTranscript).toHaveBeenCalledWith({ entryId: expect.any(String), force: true }) })
+    expect(await screen.findByRole('button', { name: zh['media.localRetry'] })).toBeTruthy()
   })
 })
 

@@ -53,7 +53,6 @@ export class Store {
   readonly showsDir: string
   readonly projectsDir: string
   readonly voiceprintsDir: string
-  readonly modelsDir: string
   private readonly globalPath: string
   private readonly bindingsPath: string
   private readonly jobsPath: string
@@ -63,7 +62,6 @@ export class Store {
     this.showsDir = join(root, 'shows')
     this.projectsDir = join(root, 'projects')
     this.voiceprintsDir = join(root, 'voiceprints')
-    this.modelsDir = join(root, 'models')
     this.globalPath = join(root, 'settings.json')
     this.bindingsPath = join(root, 'bindings.json')
     this.jobsPath = join(root, 'jobs.json')

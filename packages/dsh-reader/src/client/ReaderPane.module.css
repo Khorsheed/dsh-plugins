@@ -2862,6 +2862,43 @@
 
 .mediaSource {
   color: var(--dsw-alias-label-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 取消 / 重新转写 inside the source line. */
+.mediaLink {
+  padding: 0;
+  border: none;
+  background: transparent;
+  font: inherit;
+  color: var(--dsw-alias-link);
+  cursor: pointer;
+}
+
+/* The one-time speech-model download confirmation. */
+.mediaConfirm {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 8px var(--reader-gutter);
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-layer-1);
+  font-size: var(--dsh-panel-text-meta, 12px);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.mediaConfirmButton {
+  flex: none;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-layer-0, transparent);
+  font: inherit;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
 }
 
 /* A transcript paragraph's time chip: the label is CSS content, so a text

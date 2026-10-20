@@ -169,6 +169,7 @@ function Warnings({ t, o, onDownload }: { t: T; o: Overview; onDownload: () => v
   return (
     <>
       {!o.toolchain.ffmpeg && <div className={css.warn}>{t('warn.noFfmpeg')}</div>}
+      {!o.engine && <div className={css.warn}>{t('warn.noEngine')}</div>}
       {missing.length > 0 && (
         <div className={css.warn}>
           <span>{t('warn.models')}</span>
@@ -705,6 +706,7 @@ function GlobalSettings({ p, o, report, onChanged }: { p: VideoPaneProps; o: Ove
           <option value="hf-mirror">{t('settings.modelSourceMirror')}</option>
         </select>
       </div>
+      {!o.engine && <div className={css.meta}>{t('warn.noEngine')}</div>}
       <ModelList t={t} models={o.models} />
       {o.models.some((m) => m.state === 'missing' || m.state === 'failed') && (
         <div className={css.actions}><button type="button" className={css.btn} onClick={() => value(p.downloadModels()).then(onChanged, report)}>{t('warn.modelsDownload')}</button></div>

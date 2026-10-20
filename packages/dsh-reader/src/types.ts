@@ -898,3 +898,24 @@ export interface ReaderImageResult {
 }
 
 export type * from './notes-types.ts'
+
+/** Where an entry's local transcription stands. */
+export type LocalTranscriptState = 'unavailable' | 'needs-models' | 'fetching' | 'queued' | 'transcribing' | 'done' | 'failed' | 'idle'
+
+/** What the browser polls. */
+export interface LocalTranscriptStatus {
+  readonly entryId: string
+  readonly state: LocalTranscriptState
+  /** 0–1 across fetching the audio and transcribing it. */
+  readonly progress?: number
+  /** Jobs ahead in the engine's queue. */
+  readonly ahead?: number
+  /** Bytes of speech models still to download (`needs-models`). */
+  readonly bytes?: number
+  /** The transcript so far (or in full, once `done`). */
+  readonly html?: string
+  /** The language the transcript is in, once known. */
+  readonly language?: string
+  readonly error?: string
+}
+
