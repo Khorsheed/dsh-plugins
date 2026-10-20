@@ -1,12 +1,16 @@
 import { MemberFeeds } from './member-feed.ts'
 /**
  * Local-agent records plugin, browser half: the member composer for delegated
- * CLI sessions, plus the shared settings-card building blocks the provider
- * packages compose (ProviderAuthBlock, the auth-status bus, AuthStatusDot).
- * The per-harness auth/live settings live in each provider's own settings
- * card — a `plugins.item` entry on the Plugins page, registered while the
- * Host serves the provider's namespace; the standalone「本地 Agent」section
- * was retired once the cards carried auth (the live-settings proposal's M3). Roster and status ride the read-only local-agent Remote
+ * CLI sessions, the shared settings-card building blocks the provider
+ * packages compose (ProviderAuthBlock, the auth-status bus, AuthStatusDot),
+ * and the「本机 Agent 委派」family card — ONE `plugins.item` entry on the
+ * Plugins page that renders each harness's settings section, registered by
+ * the provider packages through the localAgentUi service's
+ * `registerHarnessCard` (a provider on a core predating it keeps its own
+ * standalone card; the core predating a provider never sees a section). The
+ * card is gated on the core row's own served namespace
+ * (`configForms.whileServed(['local-agent'])`, the companion convention).
+ * Roster and status ride the read-only local-agent Remote
  * channel (no session events); only the user-initiated login/logout/preset
  * commands go through the commands Remote, whose visible command node is the
  * expected feedback. Delegation records live with the shared subagent
@@ -16,6 +20,8 @@ import { MemberFeeds } from './member-feed.ts'
  */
 import { createElement, type ReactNode } from 'react'
 import { HarnessModelPicker, type HarnessModelPickerProps, type ModelDirectoryFace } from './HarnessModelPicker.tsx'
+import { LocalAgentFamilyCard, type FamilyCardInjected } from './FamilyCard.tsx'
+import { HarnessCardRegistry, type HarnessCardRegistration } from './harness-cards.ts'
 import { MemberConfiguration } from './MemberConfiguration.tsx'
 import { MemberConfigurationStores } from './member-configuration.ts'
 import type { Context } from '@deepseek-ai/cordis'
@@ -43,6 +49,10 @@ export { AuthStatusDot } from './AuthStatusDot.tsx'
 export type { AuthStatusDotProps } from './AuthStatusDot.tsx'
 export { publishAuthStatus, useHarnessAuthStatus, resetAuthStatuses, readAuthStatus } from './auth-status.ts'
 export type { HarnessAuthStatusKind } from './auth-status.ts'
+export { HarnessCardRegistry } from './harness-cards.ts'
+export type { HarnessCardRegistration, HarnessCardRenderProps } from './harness-cards.ts'
+export { LocalAgentFamilyCard } from './FamilyCard.tsx'
+export type { FamilyCardInjected, LocalAgentFamilyCardProps } from './FamilyCard.tsx'
 export type { MemberComposerInjected, MemberComposerMatch, MemberComposerProps } from './MemberComposer.tsx'
 export { selectCliMember } from './MemberComposer.tsx'
 
@@ -58,6 +68,18 @@ export interface LocalAgentUi {
   renderMemberInbox(childSessionId: string): ReactNode
   renderHarnessModelPicker(name: string, props: HarnessModelPickerInput): ReactNode
   renderMemberConfiguration(childSessionId: string): ReactNode
+  /**
+   * Register one harness's section in the family card; returns the
+   * unregister. Optional on the TYPE because a companion may run against a
+   * core that predates the family card: companions probe
+   * `typeof ui.registerHarnessCard === 'function'` and keep their standalone
+   * plugins.item card when it is absent. This core always provides it.
+   */
+  registerHarnessCard?(entry: HarnessCardRegistration): () => void
+  /** The registered harness sections in display order (the family card's reading). */
+  harnessCards?(): readonly HarnessCardRegistration[]
+  /** The registry's useSyncExternalStore subscribe. */
+  subscribeHarnessCards?(listener: () => void): () => void
 }
 declare module '@deepseek-ai/cordis' {
   interface Context { localAgentUi: LocalAgentUi }
@@ -130,11 +152,20 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     return face
   }
   const outputs = new MemberLiveOutputs((id, signal) => feeds.follow(id, 'output', signal))
+  // The family card's section registry: companions register through the
+  // service below, the plugins.item entry reads it reactively. Service-held,
+  // never module-held — each client bundle inlines its own copy of these
+  // sources, so only the cordis service is the shared instance.
+  const harnessCards = new HarnessCardRegistry()
+  const t = ctx.locale.bind(NS)
   const configurationUi: LocalAgentUi = {
     renderMemberOutput: (id, startedAt) => createElement(MemberLiveOutputView, { key: `${id}:${startedAt}`, sessionId: id, startedAt, outputs, t: ctx.locale.bind(NS) }),
     renderMemberInbox: id => createElement(MemberInboxView, { key: id, face: inboxFace(id), t: ctx.locale.bind(NS) }),
     renderHarnessModelPicker: (name, props) => createElement(HarnessModelPicker, { ...props, key: name, face: directoryFace(name), t: ctx.locale.bind(NS) }),
     renderMemberConfiguration: id => createElement(MemberConfiguration, { key: id, store: configurations.get(id), diagnostics: outputs.diagnostics, t: ctx.locale.bind(NS) }),
+    registerHarnessCard: entry => harnessCards.register(entry),
+    harnessCards: () => harnessCards.cards(),
+    subscribeHarnessCards: listener => harnessCards.subscribe(listener),
   }
   ctx.provide('localAgentUi', configurationUi)
   ctx.inject(['uiConversation'], lctx => { lctx.uiConversation.events.register(memberLiveDefinition) })
@@ -169,6 +200,29 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       }),
     }, MemberComposer),
   )
+  // The family card: ONE Plugins-page entry rendering every registered
+  // harness section, gated on the core row's OWN served namespace — the same
+  // whileServed convention the companions' retired standalone cards followed.
+  // The probe rides a deferred inject because configForms exists only on the
+  // alpha.2+ host line; older hosts never fire it and no card mounts.
+  ctx.inject(['configForms'], (formsCtx) => {
+    const forms = formsCtx.configForms
+    if (typeof forms.whileServed !== 'function') return
+    return forms.whileServed(['local-agent'], () => ctx.slots.inject('plugins.item', () => ctx.slots.register({
+      name: 'plugins.item',
+      id: 'local-agent',
+      // Ahead of the harnesses' retired standalone cards (orders 110-140).
+      order: 100,
+      label: () => t('family.title'),
+      locale: NS,
+      inject: (): FamilyCardInjected => ({
+        harnessCards,
+        harnessStatus: name =>
+          gateway?.status(name, undefined).then(result => (result.ok ? result.value : undefined))
+            ?? Promise.resolve(undefined),
+      }),
+    }, LocalAgentFamilyCard)))
+  })
   return async () => {
     for (const dispose of disposers.reverse()) await dispose()
   }
