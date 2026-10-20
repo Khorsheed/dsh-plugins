@@ -17,7 +17,7 @@
  * @module @khorsheed/dsh-reader/local-transcribe
  */
 import { execFile } from 'node:child_process'
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { mergeCues, renderTranscript, type Cue } from './captions.ts'
 import type { ReaderMedia } from './media.ts'
@@ -250,7 +250,19 @@ const FETCH_SHARE = 0.1
 export class LocalTranscriber {
   private readonly jobs = new Map<string, Job>()
 
-  constructor(private readonly deps: LocalTranscriberDeps) {}
+  constructor(private readonly deps: LocalTranscriberDeps) {
+    // Audio a killed process left behind (an hour of it is tens of MB): gone after a day.
+    try {
+      const cutoff = Date.now() - 24 * 60 * 60 * 1000
+      for (const name of readdirSync(deps.tmpRoot)) {
+        if (!name.startsWith('audio-')) continue
+        const path = join(deps.tmpRoot, name)
+        if (statSync(path).mtimeMs < cutoff) rmSync(path, { recursive: true, force: true })
+      }
+    } catch {
+      // No tmp directory yet.
+    }
+  }
 
   /** An entry's job as the browser sees it. */
   status(entryId: string): LocalTranscriptStatus {

@@ -29,6 +29,12 @@ export interface UseLocalTranscriptInput {
   readonly wanted: boolean
   /** The 字幕 switch is off: no transcription. */
   readonly hidden: boolean
+  /**
+   * A stored local transcript is on screen: the host may still be working on
+   * it (the speakers pass runs on after the transcript is stored), so the
+   * pane asks once and follows it.
+   */
+  readonly rejoin?: boolean
   readonly remote: Pick<ReaderPaneProps, 'startLocalTranscript' | 'localTranscript' | 'cancelLocalTranscript'>
   /** The transcript so far (`partial`) or in full. */
   readonly onHtml: (entryId: string, html: string, partial: boolean) => void
@@ -53,7 +59,7 @@ export interface LocalTranscriptFace {
  * @param input - the entry and what the pane knows.
  */
 export function useLocalTranscript(input: UseLocalTranscriptInput): LocalTranscriptFace {
-  const { entry, wanted, hidden, remote, onHtml } = input
+  const { entry, wanted, hidden, rejoin, remote, onHtml } = input
   const [statusOf, setStatusOf] = useState<LocalTranscriptStatus | undefined>(undefined)
   const status = statusOf !== undefined && statusOf.entryId === entry?.id ? statusOf : undefined
   const started = useRef<string | null>(null)
@@ -99,6 +105,20 @@ export function useLocalTranscript(input: UseLocalTranscriptInput): LocalTranscr
     if (entry === undefined || !wanted || hidden || started.current === entry.id) return
     void begin(false)
   }, [entry, wanted, hidden, begin])
+
+  // Reopened onto a stored local transcript: join the host's job if it is still running.
+  const rejoined = useRef<string | null>(null)
+  useEffect(() => {
+    if (entry === undefined || rejoin !== true || rejoined.current === entry.id) return
+    rejoined.current = entry.id
+    const id = entry.id
+    void remoteRef.current.localTranscript({ entryId: id }).then(answer => {
+      if (!answer.ok || !ACTIVE.has(answer.value.state)) return
+      started.current = id
+      lastHtml.current = answer.value.html
+      setStatusOf(answer.value)
+    })
+  }, [entry, rejoin])
 
   // Poll while the host works.
   const active = status !== undefined && ACTIVE.has(status.state)

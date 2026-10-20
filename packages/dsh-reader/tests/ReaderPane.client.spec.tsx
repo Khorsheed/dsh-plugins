@@ -244,6 +244,8 @@ function bench(options: BenchOptions = {}) {
       const next = polls.length > 1 ? polls.shift()! : polls[0]
       return { ok: true as const, value: { ...(next ?? { state: 'idle' as const }), entryId: request.entryId } }
     }),
+    speakerNames: vi.fn(async () => ({ ok: true as const, value: {} as Record<string, string> })),
+    nameSpeaker: vi.fn(async (request: { speaker: number; name: string }) => ({ ok: true as const, value: { [String(request.speaker)]: request.name } as Record<string, string> })),
     mediaStates: vi.fn(async () => ({ ok: true as const, value: options.mediaCards ?? { engine: false, states: {} } })),
     cancelLocalTranscript: vi.fn(async (request: { entryId: string }) => ({ ok: true as const, value: { entryId: request.entryId, state: 'idle' as const } })),
     markSynced: vi.fn(async () => ({ ok: true as const, value: 'ok' })),
@@ -405,6 +407,8 @@ function bench(options: BenchOptions = {}) {
     localTranscript: mocks.localTranscript,
     cancelLocalTranscript: mocks.cancelLocalTranscript,
     mediaStates: mocks.mediaStates,
+    speakerNames: mocks.speakerNames,
+    nameSpeaker: mocks.nameSpeaker,
     canOpenSession: () => false,
     openSession: () => undefined,
   } as unknown as ReaderPaneProps
@@ -4150,6 +4154,39 @@ describe('video and audio entries', () => {
     // 收起视频 turns the player into the mini bar (same frame, still there).
     fireEvent.click(screen.getByRole('button', { name: zh['media.collapse'] }))
     expect(document.querySelector('[data-mini="true"] iframe[src*="youtube.com/embed"]')).not.toBeNull()
+  })
+
+  it('reopened onto a stored local transcript, follows the speakers pass still running on the host', async () => {
+    const stored = '<p data-src="local" data-t="0.0">hi everyone.</p>'
+    const split = '<p data-src="local" data-spk="0" data-t="0.0">hi everyone.</p><p data-src="local" data-spk="1" data-t="5.0">thanks for having me.</p>'
+    const ui = bench({
+      sources: [rssSource('yt')],
+      payloads: { yt: videoFeed },
+      local: { start: [], polls: [{ entryId: '', state: 'speakers', progress: 1, html: stored }, { entryId: '', state: 'done', progress: 1, html: split, speakers: 2 }] },
+    })
+    await ui.settle()
+    ui.mocks.getEntryBody.mockImplementation(async (request: { entryId: string }) => ({ ok: true as const, value: { entryId: request.entryId, cached: true, fresh: true, fromFeed: false, html: stored } }))
+    fireEvent.click(await screen.findByText('Intro to LLMs'))
+    expect(await screen.findByText((_, element) => element?.tagName === 'SPAN' && element.textContent?.includes(zh['media.speakersRunning']) === true)).toBeTruthy()
+    expect(await screen.findByText('thanks for having me.', {}, { timeout: 4000 })).toBeTruthy()
+    expect(ui.mocks.startLocalTranscript).not.toHaveBeenCalled()
+  })
+
+  it('names the speakers where the voice changes, and renames one from the legend', async () => {
+    const split = '<p data-src="local" data-spk="0" data-t="0.0">hi everyone.</p><p data-src="local" data-spk="0" data-t="3.0">welcome back.</p><p data-src="local" data-spk="1" data-t="5.0">thanks for having me.</p>'
+    const ui = bench({ sources: [rssSource('yt')], payloads: { yt: videoFeed } })
+    await ui.settle()
+    ui.mocks.getEntryBody.mockImplementation(async (request: { entryId: string }) => ({ ok: true as const, value: { entryId: request.entryId, cached: true, fresh: true, fromFeed: false, html: split } }))
+    fireEvent.click(await screen.findByText('Intro to LLMs'))
+    await waitFor(() => { expect(document.querySelectorAll('[data-reader-spk]')).toHaveLength(2) })
+    // Only where the voice changes: the second paragraph of speaker A carries no name.
+    expect([...document.querySelectorAll('[data-reader-spk]')].map(label => label.getAttribute('data-label'))).toEqual(['说话人 A', '说话人 B'])
+    fireEvent.click(screen.getByRole('button', { name: '说话人 B' }))
+    const input = screen.getByRole('textbox', { name: zh['media.speakerRename'] })
+    fireEvent.change(input, { target: { value: '嘉宾' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    await waitFor(() => { expect(ui.mocks.nameSpeaker).toHaveBeenCalledWith({ entryId: expect.any(String), speaker: 1, name: '嘉宾' }) })
+    await waitFor(() => { expect(document.querySelectorAll('[data-reader-spk]')[1]?.getAttribute('data-label')).toBe('嘉宾') })
   })
 
   it('withdraws a job when leaving and stops it from 取消', async () => {
