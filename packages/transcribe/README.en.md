@@ -8,6 +8,7 @@ Turns long recordings into **timed, optionally speaker-separated** text on this 
 
 - **Chinese and English** — Chinese goes through Paraformer + CT-Transformer punctuation (finer per-character timing); English and auto-detected speech go through SenseVoice (punctuated and cased on its own, detecting zh / en / ja / ko / yue). Both give per-token timestamps.
 - **Optional speaker separation** — pyannote segmentation + CAM++ voiceprint clustering, then over-split speakers merged back on their voiceprints; known voices can be passed in to be recognized.
+- **Cuts at pauses** — without speaker separation, Silero VAD finds the speech and chunks are cut in the longest pauses (25 s at most); where a cut falls in almost no pause, the period the recognizer invented there is removed, so one sentence is not split in two.
 - **Streams as it goes** — a job advances stretch by stretch, and each finished stretch reaches the caller through `onSegments`, so a long recording does not wait for its end.
 - **One at a time, queued, cancellable** — every consumer shares one queue; aborting the `AbortSignal` withdraws a queued job or stops a running one. Recognition runs in a child process, off the host's event loop.
 - **Models download on first use** — from Hugging Face or the HF-Mirror China mirror (auto probes for the fastest reachable source), resumable, verified against pinned byte sizes and sha256 hashes. Only the models a job needs are fetched.
@@ -77,6 +78,7 @@ const result = await transcribe.run(
 | Paraformer Chinese (int8) | Chinese ASR | 243 MB |
 | CT-Transformer (int8) | Chinese punctuation | 80 MB |
 | SenseVoice 2024-07-17 (int8) | English and auto language | 240 MB |
+| Silero VAD v4 | Cutting at real pauses without speaker separation | 2 MB |
 | pyannote segmentation 3.0 | Speaker separation | 6 MB |
 | CAM++ | Voiceprints | 28 MB |
 

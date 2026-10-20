@@ -8,6 +8,7 @@
 
 - **中英文**——中文走 Paraformer + CT-Transformer 标点（逐字时间更准）；英文与自动判断语种走 SenseVoice（自带标点与大小写，能判出 zh / en / ja / ko / yue）。两者都给逐字（词片）时间戳。
 - **可选分说话人**——pyannote 分段 + CAM++ 声纹聚类，再按声纹合并过度切分的说话人；可传入已知声纹做「认人」。
+- **在停顿处断句**——不分说话人时先用 Silero VAD 找出说话段，在最长的停顿处切块（每块不超过 25 秒），切点停顿很短时去掉识别模型凭空加的句号，避免一句话被拆成两段。
 - **边转边出**——任务按段推进，每转完一段就通过 `onSegments` 交给调用方，长录音不用等到最后。
 - **一次一个、排队、可取消**——所有使用方共用一条队列；中止 `AbortSignal` 会把排队中的任务撤下、把正在跑的停掉。识别在独立子进程里跑，不占宿主事件循环。
 - **模型首次使用时下载**——Hugging Face 或 HF-Mirror 国内镜像（默认自动探测最快可达源），断点续传，按钉死的字节数与 sha256 校验。只下载这次任务要用的模型。
@@ -77,6 +78,7 @@ const result = await transcribe.run(
 | Paraformer 中文（int8） | 中文转写 | 243 MB |
 | CT-Transformer（int8） | 中文标点 | 80 MB |
 | SenseVoice 2024-07-17（int8） | 英文与自动语种 | 240 MB |
+| Silero VAD v4 | 不分说话人时在真实停顿处切块 | 2 MB |
 | pyannote segmentation 3.0 | 分说话人 | 6 MB |
 | CAM++ | 声纹 | 28 MB |
 

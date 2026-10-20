@@ -12,7 +12,7 @@
  */
 import { createRequire } from 'node:module'
 import { cosine, decodeEmbedding, encodeEmbedding, type SpeechJob, type WorkerMessage, type WorkerSegment, type WorkerSpeaker, type WorkerToken } from './speech-protocol.ts'
-import { attachPunctuation, consolidate, mergeTurns, type Turn } from './speech-worker-core.ts'
+import { attachPunctuation, consolidate, mergeTurns, planChunks, repairSeam, SEAM_GAP_SEC, type PlannedChunk, type Turn } from './speech-worker-core.ts'
 
 const require = createRequire(import.meta.url)
 
@@ -71,6 +71,51 @@ function chunksOf(samples: Float32Array, start: number, end: number): [number, n
     const mid = quietestSplit(samples, a, b)
     stack.unshift([mid, b])
     stack.unshift([a, mid])
+  }
+  return out
+}
+
+/** Silence padding kept around a voice-activity chunk (s): the recognizer reads an onset better with a little lead-in. */
+const PAD_SEC = 0.15
+
+/**
+ * Recognizer chunks cut at real pauses: Silero VAD finds the speech, the
+ * planner groups it at the longest pauses, and a stretch of speech with no
+ * pause at all falls back to the quietest-point split (a gap of 0).
+ */
+function vadChunks(sherpa: Sherpa, model: string, samples: Float32Array, numThreads: number): PlannedChunk[] {
+  const vad = new sherpa.Vad({
+    sileroVad: { model, threshold: 0.5, minSilenceDuration: 0.25, minSpeechDuration: 0.25, windowSize: 512, maxSpeechDuration: 60 },
+    sampleRate: SAMPLE_RATE,
+    numThreads,
+    debug: 0,
+  }, 120)
+  const speech: { start: number; end: number }[] = []
+  const drain = (): void => {
+    while (!vad.isEmpty()) {
+      const seg = vad.front(false) as { start: number; samples: Float32Array }
+      speech.push({ start: seg.start / SAMPLE_RATE, end: (seg.start + seg.samples.length) / SAMPLE_RATE })
+      vad.pop()
+    }
+  }
+  for (let i = 0; i + 512 <= samples.length; i += 512) {
+    vad.acceptWaveform(samples.subarray(i, i + 512))
+    drain()
+  }
+  vad.flush()
+  drain()
+  const total = samples.length / SAMPLE_RATE
+  const out: PlannedChunk[] = []
+  for (const chunk of planChunks(speech, MAX_CHUNK_SEC)) {
+    const start = Math.max(0, chunk.start - PAD_SEC)
+    const end = Math.min(total, chunk.end + PAD_SEC)
+    if (end - start <= MAX_CHUNK_SEC) {
+      out.push({ start, end, gapBefore: chunk.gapBefore })
+      continue
+    }
+    chunksOf(samples, start, end).forEach(([a, b], index) => {
+      out.push({ start: a / SAMPLE_RATE, end: b / SAMPLE_RATE, gapBefore: index === 0 ? chunk.gapBefore : 0 })
+    })
   }
   return out
 }
@@ -173,6 +218,37 @@ async function main(job: SpeechJob): Promise<void> {
   const total = turns.reduce((a, t) => a + (t.end - t.start), 0) || 1
   let done = 0
   const segments: WorkerSegment[] = []
+  if (!job.diarize && job.models.vad) {
+    // One recording, cut at real pauses. A segment is sent one chunk late: a
+    // boundary with almost no pause is not a sentence end, and the previous
+    // chunk's invented period is removed before anyone sees it.
+    let pending: WorkerSegment | null = null
+    for (const chunk of vadChunks(sherpa, job.models.vad, samples, job.numThreads)) {
+      const a = Math.floor(chunk.start * SAMPLE_RATE)
+      const b = Math.min(samples.length, Math.floor(chunk.end * SAMPLE_RATE))
+      const tokens = b - a > SAMPLE_RATE * 0.2 ? recognize(a, b) : []
+      done = chunk.end
+      // A chunk's first word has no word-start mark of its own: without a
+      // space it glues onto the previous chunk's last one ("on" + "some").
+      if (pending && tokens[0] && /^[A-Za-z0-9']/.test(tokens[0].text)) tokens[0] = { ...tokens[0], text: ` ${tokens[0].text}` }
+      if (tokens.length) {
+        if (pending && chunk.gapBefore < SEAM_GAP_SEC) repairSeam(pending.tokens, tokens)
+        if (pending) {
+          segments.push(pending)
+          send({ type: 'segments', segments: [pending] })
+        }
+        pending = { cluster: 0, start: chunk.start, end: chunk.end, tokens }
+      }
+      send({ type: 'progress', stage: 'transcribe', progress: Math.min(1, done / total) })
+    }
+    if (pending) {
+      segments.push(pending)
+      send({ type: 'segments', segments: [pending] })
+    }
+    const detected = [...languages.entries()].sort((x, y) => y[1] - x[1])[0]?.[0]
+    finish({ type: 'done', segments, speakers: [], language: detected })
+    return
+  }
   for (const turn of turns) {
     const tokens: WorkerToken[] = []
     for (const [a, b] of chunksOf(samples, turn.start, turn.end)) {

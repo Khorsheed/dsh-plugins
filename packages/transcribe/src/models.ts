@@ -40,7 +40,7 @@ export interface ModelFile {
 }
 
 /** Which model: Chinese ASR + its punctuation, multilingual ASR, and the two speaker models. */
-export type ModelId = 'paraformer' | 'punctuation' | 'senseVoice' | 'segmentation' | 'embedding'
+export type ModelId = 'paraformer' | 'punctuation' | 'senseVoice' | 'vad' | 'segmentation' | 'embedding'
 
 export interface ModelSpec {
   id: ModelId
@@ -95,6 +95,18 @@ export const MODELS: readonly ModelSpec[] = [
       files: [
         { repo: 'model.int8.onnx', path: 'sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/model.int8.onnx', bytes: 239233841, sha256: 'c71f0ce00bec95b07744e116345e33d8cbbe08cef896382cf907bf4b51a2cd51' },
         { repo: 'tokens.txt', path: 'sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/tokens.txt', bytes: 315894, sha256: 'f449eb28dc567533d7fa59be34e2abca8784f771850c78a47fb731a31429a1dc' },
+      ],
+    },
+  },
+  {
+    id: 'vad',
+    label: '断句 · Silero VAD',
+    bytes: 1807522,
+    check: 'silero_vad.onnx',
+    hf: {
+      repo: 'csukuangfj/vad',
+      files: [
+        { repo: 'silero_vad.onnx', path: 'silero_vad.onnx', bytes: 1807522, sha256: 'a35ebf52fd3ce5f1469b2a36158dba761bc47b973ea3382b3186ca15b1f5af28' },
       ],
     },
   },
@@ -261,11 +273,14 @@ export async function downloadHfFiles(
  * The models a job needs: Chinese goes through Paraformer (finer per-character
  * timing) plus the punctuation model; English and auto-detected speech go
  * through SenseVoice, which punctuates on its own; speakers add the two
- * diarization models.
+ * diarization models, and a job without speakers the VAD that cuts it at
+ * real pauses.
  */
 export function modelsFor(language: TranscribeLanguage, diarize: boolean): ModelId[] {
   const asr: ModelId[] = language === 'zh' ? ['paraformer', 'punctuation'] : ['senseVoice']
-  return diarize ? [...asr, 'segmentation', 'embedding'] : asr
+  // Without speakers the recording is cut at real pauses (VAD); with them,
+  // the diarizer's turns already are.
+  return diarize ? [...asr, 'segmentation', 'embedding'] : [...asr, 'vad']
 }
 
 export function speechModelPaths(dir: string, language: TranscribeLanguage = 'zh', diarize: boolean = true): SpeechModelPaths {
@@ -279,6 +294,7 @@ export function speechModelPaths(dir: string, language: TranscribeLanguage = 'zh
         }
       : { kind: 'senseVoice', model: join(dir, sense, 'model.int8.onnx'), tokens: join(dir, sense, 'tokens.txt'), language: language === 'en' ? 'en' : 'auto' },
     punctuation: language === 'zh' ? join(dir, 'sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12-int8/model.int8.onnx') : undefined,
+    ...(diarize ? {} : { vad: join(dir, 'silero_vad.onnx') }),
     ...(diarize
       ? {
           segmentation: join(dir, 'sherpa-onnx-pyannote-segmentation-3-0/model.onnx'),
