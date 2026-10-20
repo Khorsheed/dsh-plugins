@@ -146,6 +146,10 @@ export function speakerPerToken(segments: readonly EngineSegment[], turns: reado
     if (runStart > 0 && length < MIN_TURN_SEC) for (let k = runStart; k < index; k++) out[k] = out[runStart - 1]!
     runStart = index
   }
+  // Punctuation belongs to the word before it, never opens the next voice's paragraph.
+  for (let index = 1; index < out.length; index++) {
+    if (/^\s*[\p{P}]+\s*$/u.test(tokens[index]!.text)) out[index] = out[index - 1]!
+  }
   return out.map(cluster => {
     if (!order.has(cluster)) order.set(cluster, order.size)
     return order.get(cluster)!

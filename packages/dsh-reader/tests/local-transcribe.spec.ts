@@ -138,6 +138,12 @@ describe('speakers', () => {
     expect(voices.slice(10)).toEqual(Array(10).fill(1))
   })
 
+  it('keeps punctuation with the word before it', () => {
+    const words = [{ text: ' yes', start: 0, end: 3 }, { text: ',', start: 3, end: 3 }, { text: ' so', start: 3.1, end: 6 }]
+    const voices = speakerPerToken([{ start: 0, end: 6, tokens: words }], [{ cluster: 0, start: 0, end: 2.99 }, { cluster: 1, start: 2.99, end: 6 }])
+    expect(voices).toEqual([0, 0, 1])
+  })
+
   it('never lets a paragraph cross a change of voice', () => {
     const html = renderSpeakerTranscript(segments, turns)
     expect(html.split('\n')).toEqual([
