@@ -10,7 +10,7 @@
  * @module @khorsheed/dsh-transcribe/service
  */
 import { randomUUID } from 'node:crypto'
-import { mkdir, readdir, rename, rm, rmdir } from 'node:fs/promises'
+import { mkdir, readdir, rename, rm, rmdir, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { findBinary, writeAsrWav } from './ffmpeg.ts'
@@ -82,6 +82,22 @@ export class TranscribeService implements TranscribeApi {
     this.root = config.stateDir || join(dshHome(), 'state', 'transcribe')
     this.modelsDir = join(this.root, 'models')
     this.manager = new ModelManager(this.modelsDir)
+    void this.sweepTemp()
+  }
+
+  /**
+   * Temporary WAVs a killed process left behind (a decoded hour is hundreds
+   * of MB): anything in tmp/ older than a day goes, once per start.
+   */
+  private async sweepTemp(): Promise<void> {
+    const dir = join(this.root, 'tmp')
+    const names = await readdir(dir).catch(() => [] as string[])
+    const cutoff = Date.now() - 24 * 60 * 60 * 1000
+    for (const name of names) {
+      const path = join(dir, name)
+      const info = await stat(path).catch(() => undefined)
+      if (info !== undefined && info.mtimeMs < cutoff) await rm(path, { recursive: true, force: true }).catch(() => undefined)
+    }
   }
 
   /** Stop the running job and turn the queue away. */

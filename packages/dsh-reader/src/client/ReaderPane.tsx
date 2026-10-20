@@ -1471,6 +1471,7 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
     entry: openEntry,
     wanted: openEntry?.media !== undefined && mediaFace.transcript === 'none',
     hidden: mediaFace.hidden,
+    rejoin: openEntry?.media !== undefined && mediaFace.transcript === 'ready' && articleHtml?.includes('data-src="local"') === true,
     remote: props,
     onHtml: (entryId, html, partial) => {
       if (openRequestRef.current !== entryId) return
