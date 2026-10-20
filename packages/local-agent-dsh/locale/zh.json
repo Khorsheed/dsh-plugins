@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "DSH 委派",
-    "description": "把任务委派给独立的本地子 dsh 进程，会话可跨轮续接。"
+    "title": "本机 DSH 委派",
+    "description": "把任务委派给本机独立的子 dsh 进程，会话可跨轮续接。"
   }
 }

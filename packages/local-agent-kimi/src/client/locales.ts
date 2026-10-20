@@ -5,7 +5,7 @@ export const NS = 'local-agent-kimi'
 
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
-  'card.title': 'Kimi 委派',
+  'card.title': '本机 Kimi 委派',
   'card.description': 'Kimi Code 委派：登录授权与常驻模式（live）',
   'card.expand': '展开',
   'card.collapse': '收起',
@@ -42,7 +42,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 
 /** English dictionary, checked complete against the zh key set. */
 export const en = {
-  'card.title': 'Kimi Delegation',
+  'card.title': 'Local Kimi Delegation',
   'card.description': 'Kimi Code delegation: sign-in and resident (live) mode',
   'card.expand': 'Expand',
   'card.collapse': 'Collapse',

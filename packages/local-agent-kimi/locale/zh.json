@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "Kimi 委派",
-    "description": "从任意会话委派任务给 Kimi Code CLI。"
+    "title": "本机 Kimi 委派",
+    "description": "把任务委派给本机的 Kimi Code CLI。"
   }
 }

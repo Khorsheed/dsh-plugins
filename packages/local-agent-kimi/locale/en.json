@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "Kimi Delegation",
-    "description": "Delegate tasks to the Kimi Code CLI from any session."
+    "title": "Local Kimi Delegation",
+    "description": "Delegate tasks to this machine's Kimi Code CLI."
   }
 }

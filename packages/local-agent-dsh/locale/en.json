@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "DSH Delegation",
-    "description": "Delegate to dsh itself as a scoped, resumable local CLI process."
+    "title": "Local DSH Delegation",
+    "description": "Delegate to this machine's scoped, resumable dsh CLI process."
   }
 }
