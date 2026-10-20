@@ -6,8 +6,9 @@ import { MemberFeeds } from './member-feed.ts'
  * and the「本机 Agent 委派」family card — ONE `plugins.item` entry on the
  * Plugins page that renders each harness's settings section, registered by
  * the provider packages through the localAgentUi service's
- * `registerHarnessCard` (a provider on a core predating it keeps its own
- * standalone card; the core predating a provider never sees a section). The
+ * `registerHarnessCard` (a provider on a core predating the family card
+ * keeps its own standalone card; this core alone shows the card with an
+ * empty state). The
  * card is gated on the core row's own served namespace
  * (`configForms.whileServed(['local-agent'])`, the companion convention).
  * Roster and status ride the read-only local-agent Remote
