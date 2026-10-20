@@ -312,7 +312,7 @@ Let the agent change its own code and restart its own service without taking it 
 | [dsh-learning](https://github.com/Khorsheed/dsh-learning) | The learning suite: library-style project close reading — with the learning-mode preset |
 | [dsh-video](https://github.com/Khorsheed/dsh-video) | The video suite: a cutting room with speaker splitting and delete-the-word-deletes-the-audio — with the video-mode preset |
 | [dsh-gamedev](https://github.com/Khorsheed/dsh-gamedev) | The gamedev suite: build small games with the agent — with the gamedev-mode preset |
-| [dsh-web-eval](https://github.com/Khorsheed/dsh-web-eval) | The eval suite: on-machine harness comparison — with the eval-mode preset |
+| [dsh-eval](https://github.com/Khorsheed/dsh-eval) | The eval suite: on-machine harness comparison — with the eval-mode preset |
 | [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) | The plugin monorepo: the capability map of every package, the preset designs, and the development docs |
 
 ## Changelog

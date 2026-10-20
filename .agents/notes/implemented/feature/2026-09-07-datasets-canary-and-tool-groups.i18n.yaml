@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-07-datasets-canary-and-tool-groups.md
-.agents/notes/implemented/feature/2026-09-07-datasets-canary-and-tool-groups.md: e317ddd4f54ccf476335349dc2e4e680776f20dd
-.agents/notes/implemented/feature/2026-09-07-datasets-canary-and-tool-groups.zh.md: 274bdbda87abc05be46fcf4b25c67f0598752e14
+.agents/notes/implemented/feature/2026-09-07-datasets-canary-and-tool-groups.md: d324a34f928c8908b26a75babab2d0be6f95bff2
+.agents/notes/implemented/feature/2026-09-07-datasets-canary-and-tool-groups.zh.md: 154b6fc923616d22ce930be1cd266e96bbfc59fb

@@ -254,7 +254,7 @@
 
     # The `dsh-eval` agent preset (评测模式): the evaluation agent — planning,
     # analysis, and since T102 (2026-10-06) organizing data into datasets. It
-    # mirrors profiles/web-eval/presets' `preset-eval` row (T100: the same agent
+    # mirrors profiles/eval/presets' `preset-eval` row (T100: the same agent
     # under the id 3080's sessions already use), and
     # scripts/eval-preset-parity.spec.ts compares the two parsed `plugins:`
     # lists plus `name` / `description`; the reasoning for each row lives in the
@@ -483,7 +483,7 @@
               searchTimeoutMs: 60000
 
           # ── 工具按域开放（M4'③：companion 行按域授予）──────────────────────────────
-          # 这两行原先挂在 profile 根并带 tools 配置（profiles/web-eval/cordis.patch.yml）。
+          # 这两行原先挂在 profile 根并带 tools 配置（profiles/eval/cordis.patch.yml）。
           # 拆包后工具行不再全局：授予点移到这里，tier 原样跟随——eval 预设的会话拿到
           # 按域裁剪过的两个工具集，同 profile 里其它预设的会话一个都拿不到。
           #

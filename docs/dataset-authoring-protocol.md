@@ -77,7 +77,7 @@ datasets/<id>/
 
 ## 6. 评测契约（condition / plan / verdict）
 
-本节把 web-eval 的三份契约 schema 收进协议，与 `dataseek.verify/1`、`dataseek.rubric/2` 并列。它们由 `@khorsheed/dsh-eval` 校验与哈希（`dsh-eval validate` / `dsh-eval conditions hash`），执行语义归 web-eval 的编排器；`dsh-datasets` 不解释它们。每个 JSON 示例都是校验器夹具，schema 文档与代码常量（`packages/eval/src/contract/schema.ts`）由测试钉住互不漂移——**改这里的 schema 就是改契约**。
+本节把 dsh-eval 的三份契约 schema 收进协议，与 `dataseek.verify/1`、`dataseek.rubric/2` 并列。它们由 `@khorsheed/dsh-eval` 校验与哈希（`dsh-eval validate` / `dsh-eval conditions hash`），执行语义归 dsh-eval 的编排器；`dsh-datasets` 不解释它们。每个 JSON 示例都是校验器夹具，schema 文档与代码常量（`packages/eval/src/contract/schema.ts`）由测试钉住互不漂移——**改这里的 schema 就是改契约**。
 
 ### 6.1 位置：题库只读，评测记录在部署侧（v1-rev13）
 

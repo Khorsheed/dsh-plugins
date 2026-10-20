@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-09-08-web-eval-agent-preset.md
-.agents/notes/implemented/process/2026-09-08-web-eval-agent-preset.md: 2841ddc50e5d8acf34ab23a6fd5be4da9751f500
-.agents/notes/implemented/process/2026-09-08-web-eval-agent-preset.zh.md: 71e4ee088c8fefb07b8193ecdb6a0456606c8db4
+.agents/notes/implemented/process/2026-09-08-web-eval-agent-preset.md: 93fd497fa87fe269476b65b699d2e481556ad4d3
+.agents/notes/implemented/process/2026-09-08-web-eval-agent-preset.zh.md: 6f125d8e79ac2f440c9b2adf53eefb097cf6ebb0

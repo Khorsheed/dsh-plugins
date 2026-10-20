@@ -35,5 +35,5 @@ headless 的处理让 G3 在这条路径上不会发生：宿主的 reconcilePlu
 
 ## Related
 
-- [web-eval 迭代文档](../../../../profiles/web-eval/docs/iterations.md)——T5 任务书与验收线。
+- [web-eval 迭代文档](../../../../profiles/eval/docs/iterations.md)——T5 任务书与验收线。
 - 题库仓库 i1-walk 分支的走通日志，缺口 G5/G6——本笔记关闭的现场观察。

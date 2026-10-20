@@ -314,7 +314,7 @@ agent 在回复里写的 ```` ```dsh-card ```` HTML 块，渲染成会话内的�
 | [dsh-learning](https://github.com/Khorsheed/dsh-learning) | 学习套件：图书馆式项目精读，自带「学习模式」preset |
 | [dsh-video](https://github.com/Khorsheed/dsh-video) | 剪辑套件：混录分人、删字即删音频的剪辑台，自带「剪辑模式」preset |
 | [dsh-gamedev](https://github.com/Khorsheed/dsh-gamedev) | 游戏开发套件：和 agent 一起做小游戏，自带「游戏开发模式」preset |
-| [dsh-web-eval](https://github.com/Khorsheed/dsh-web-eval) | 评测套件：本机 harness 对照评测，自带「评测模式」preset |
+| [dsh-eval](https://github.com/Khorsheed/dsh-eval) | 评测套件：本机 harness 对照评测，自带「评测模式」preset |
 | [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) | 插件 monorepo 主仓：全部插件的能力地图、preset 设计与开发文档 |
 
 ## 变更记录

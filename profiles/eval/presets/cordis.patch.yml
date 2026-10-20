@@ -1,4 +1,4 @@
-# dsh-web-eval 自带的声明式 preset bundle：一行 preset-eval（评测模式，T82 迁入，T102 并入题集整理）。
+# dsh-eval 自带的声明式 preset bundle：一行 preset-eval（评测模式，T82 迁入，T102 并入题集整理）。
 #
 # 宿主 0.2.0 起 agent preset 只有一种形态：`@deepseek-ai/dsh-agent-preset` 的
 # loader 行（agent-preset-registry 不扫目录、不收路径）。0.1.5 时代 install.sh /
@@ -14,7 +14,7 @@
 # （统一缩进 10 格）。T102（2026-10-06）把题集整理并进评测模式，改了组成：挂 shell
 # （tool-bash / tool-pwsh）、tool-web 开 fetch、datasets-tool 换成 organize 档、
 # persona 合并；原先的第二行 preset-dataset-authoring（题集整理，T90）删除。
-# scripts/web-eval-preset-bundle.spec.ts 仍用 sha256 钉住这一块——改组成就是换装置，
+# scripts/eval-preset-bundle.spec.ts 仍用 sha256 钉住这一块——改组成就是换装置，
 # 要有意改摘要并开新 run。
 #
 # 默认 preset 由 profile 的 cordis.patch.yml 钉到 eval（agent-preset-registry 行的
@@ -230,7 +230,7 @@
               searchTimeoutMs: 60000
 
           # ── 工具按域开放（M4'③：companion 行按域授予）──────────────────────────────
-          # 这两行原先挂在 profile 根并带 tools 配置（profiles/web-eval/cordis.patch.yml）。
+          # 这两行原先挂在 profile 根并带 tools 配置（profiles/eval/cordis.patch.yml）。
           # 拆包后工具行不再全局：授予点移到这里，tier 原样跟随——eval 预设的会话拿到
           # 按域裁剪过的两个工具集，同 profile 里其它预设的会话一个都拿不到。
           #

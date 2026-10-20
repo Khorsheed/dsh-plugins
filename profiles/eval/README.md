@@ -1,4 +1,4 @@
-# dsh-web-eval
+# dsh-eval
 
 中文 | [English](README.en.md)
 
@@ -170,7 +170,7 @@ agent 只在规划期与分析期出现，需要的是读与起草；执行期�
 
 委派给**跑在同一个预设上**的 agent：进程内子 agent 继承父 agent 的预设（宿主的 `subagent-in-process-driver/tests/preset-inheritance.spec.ts` 就是这条的证明），所以子 agent 拿到的正好是这个预设的工具，shell 也在内。
 
-**预设归 pack**，理由与 `cordis.patch.yml` 同（见[安装](#安装)）。本 profile 只跑宿主 0.2.0 及以后（T82），0.2.0 的预设是 `@deepseek-ai/dsh-agent-preset` 的声明式行，不再扫预设目录：pack 自带一个声明式 bundle（`presets/`，包名 `@khorsheed/dsh-web-eval-preset`，`dsh.bundle.kind: 'preset-declarations'`，profile 以 `file:presets` 依赖它），`cordis.patch.yml` 把 `agent-preset-registry` 的 `default` 钉成 `eval`。T82 迁移时组成表与 0.1.5 时代的目录版 `presets/eval/agent.cordis.yml` 逐字节相同（按 sha256 核过）；T102 有意改了组成。`scripts/web-eval-preset-bundle.spec.ts` 钉住这一块的摘要——改组成就是换装置，要有意改摘要并开新 run。3080 跑的 dsh-presets 包里的 `preset-dsh-eval` 是它的镜像，`scripts/eval-preset-parity.spec.ts` 钉住两份一致。个人偏好另起一个预设 id，别改这个。
+**预设归 pack**，理由与 `cordis.patch.yml` 同（见[安装](#安装)）。本 profile 只跑宿主 0.2.0 及以后（T82），0.2.0 的预设是 `@deepseek-ai/dsh-agent-preset` 的声明式行，不再扫预设目录：pack 自带一个声明式 bundle（`presets/`，包名 `@khorsheed/dsh-web-eval-preset`，`dsh.bundle.kind: 'preset-declarations'`，profile 以 `file:presets` 依赖它），`cordis.patch.yml` 把 `agent-preset-registry` 的 `default` 钉成 `eval`。T82 迁移时组成表与 0.1.5 时代的目录版 `presets/eval/agent.cordis.yml` 逐字节相同（按 sha256 核过）；T102 有意改了组成。`scripts/eval-preset-bundle.spec.ts` 钉住这一块的摘要——改组成就是换装置，要有意改摘要并开新 run。3080 跑的 dsh-presets 包里的 `preset-dsh-eval` 是它的镜像，`scripts/eval-preset-parity.spec.ts` 钉住两份一致。个人偏好另起一个预设 id，别改这个。
 
 「添加题集 › 让 Agent 整理」开的就是评测会话：没配 `authoringPreset` 时，datasets 按「授予了 datasets 工具行的 `organize` 档」挑预设（本 profile 上是 `eval`，3080 上是 `dsh-eval`），配置里写了 id 就用写的。
 
@@ -332,18 +332,18 @@ CLI 与界面同语义：`dsh-eval conditions | plan validate | run | report`。
 **npm 模式**——成员全部从 npm registry 解析。成员全部上架后（I6）开箱即用；在此之前，未上架成员会在安装时报 registry 404（权威清单见 dsh-plugins 的 [docs/release-status.md](https://github.com/Khorsheed/dsh-plugins/blob/main/docs/release-status.md)）：
 
 ```sh
-git clone https://github.com/Khorsheed/dsh-web-eval.git
-DSH_HOME=~/.dsh-eval sh dsh-web-eval/scripts/install.sh
-DSH_HOME=~/.dsh-eval sh dsh-web-eval/scripts/restart-into-web-eval.sh <端口>
+git clone https://github.com/Khorsheed/dsh-eval.git
+DSH_HOME=~/.dsh-eval sh dsh-eval/scripts/install.sh
+DSH_HOME=~/.dsh-eval sh dsh-eval/scripts/restart-into-web-eval.sh <端口>
 ```
 
 **源码模式**——当前的可用路径。给定一个可构建的 [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) 检出（已 `pnpm install`、按其 AGENTS.md 构建绿；构建与类型解析需要 deepseek-harness 检出），脚本构建全部未上架成员、按 `--family` 打 tarball 进 profile 的 `tarballs/`、写 pnpm overrides 钉住家族边，已上架成员仍走 npm，然后标准安装：
 
 ```sh
-git clone https://github.com/Khorsheed/dsh-web-eval.git
+git clone https://github.com/Khorsheed/dsh-eval.git
 git clone https://github.com/Khorsheed/dsh-plugins.git && pnpm --dir dsh-plugins install
-DSH_HOME=~/.dsh-eval sh dsh-web-eval/scripts/install.sh --source "$PWD/dsh-plugins"
-DSH_HOME=~/.dsh-eval sh dsh-web-eval/scripts/restart-into-web-eval.sh <端口>
+DSH_HOME=~/.dsh-eval sh dsh-eval/scripts/install.sh --source "$PWD/dsh-plugins"
+DSH_HOME=~/.dsh-eval sh dsh-eval/scripts/restart-into-web-eval.sh <端口>
 ```
 
 源码模式的 tarball 落在 profile 目录内：`rm -rf "$DSH_HOME/profiles/web-eval"` 卸载时一并清掉。检出更新后要换新 tarball，重跑时**必须加 `--fresh`**：profile 已装的 `node_modules`、`pnpm-lock.yaml` 与 `tarballs/` 会让新打的 tarball 进不来，实例照旧跑旧构建且没有任何提示；`--fresh` 先清掉这三样再装。不加 `--fresh` 重跑时脚本直接拒绝并把这段原因打出来。
@@ -380,11 +380,11 @@ dsh 条件的受试 CLI 不是条件自己选的：`local-agent-dsh` 的 `cliLau
    ```sh
    PATH=~/.dsh-toolchains/rc-0.2.0-rc.2/node_modules/.bin:$PATH \
    DSH_HARNESS=<0.2.0-rc.2 及以后的 harness 检出> \
-   DSH_HOME=~/.dsh-lab sh profiles/web-eval/scripts/install.sh --source <dsh-plugins 检出> --fresh
+   DSH_HOME=~/.dsh-lab sh profiles/eval/scripts/install.sh --source <dsh-plugins 检出> --fresh
    ```
    原地重装时 `state/` 保持不动；装到新 home 时，把老 home 的 `state/eval`、`state/datasets`、`state/mission` 复制过去（排除 token、cookie、凭据与日志）。
 4. **打开 DeepSeek 委派**：0.1.5 把这个开关存在旧版设置文件里，0.2.0 首次启动只会把 `$DSH_HOME/settings.yaml` 一次性导入行配置（导入后改名 `.imported`）。原地重装时预计会自动导入（T82 未实测，切换后在插件页核一眼）；装到新 home 时，由人在插件页「DSH 委派」卡片里打开「DeepSeek 委派」，或自己把旧设置文件放进新 home 让它导入。
-5. **起实例**：`PATH=~/.dsh-toolchains/rc-0.2.0-rc.2/node_modules/.bin:$PATH DSH_HOME=~/.dsh-lab sh profiles/web-eval/scripts/restart-into-web-eval.sh <端口>`。
+5. **起实例**：`PATH=~/.dsh-toolchains/rc-0.2.0-rc.2/node_modules/.bin:$PATH DSH_HOME=~/.dsh-lab sh profiles/eval/scripts/restart-into-web-eval.sh <端口>`。
 6. **核对**：结果列表 23 行；数据集注册表与老 home 一致；pilot-d 的报告仍是「暂时不能下结论」、4 比 0；「设置 → Agent 预设」默认是评测模式；`dsh --version` 为 0.2.0-rc.2。
 7. **dsh 条件**：导入题库里的 `*-0.2.0-rc.2` 条件并重新 provision；旧条件的锁保留作历史，不再用于新 run。
 8. **可选清理**：`~/.dsh-lab/.agent-presets/eval` 是 0.1.5 的目录预设，0.2.0 不读，可删。

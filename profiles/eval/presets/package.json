@@ -1,6 +1,6 @@
 {
   "name": "@khorsheed/dsh-web-eval-preset",
-  "description": "dsh-web-eval's own agent preset `eval` as a declarative `@deepseek-ai/dsh-agent-preset` bundle row (host 0.2.0 and later). Data only: no runtime code, no client half. Profile-local: installed through the profile's file: dependency, never published.",
+  "description": "dsh-eval's own agent preset `eval` as a declarative `@deepseek-ai/dsh-agent-preset` bundle row (host 0.2.0 and later). Data only: no runtime code, no client half. Profile-local: installed through the profile's file: dependency, never published.",
   "version": "0.1.0",
   "private": true,
   "license": "MIT",

@@ -1,4 +1,4 @@
-# dsh-web-eval 的评测 pin 层：装置配置，不是个人偏好。
+# dsh-eval 的评测 pin 层：装置配置，不是个人偏好。
 #
 # 与 dev 的 cordis.patch.yml 不同，本文件**归 pack**：install.sh 与
 # update.sh 都覆盖它。理由是这里的每一行都是冻结决策的执行点（README 的

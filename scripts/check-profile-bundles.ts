@@ -55,9 +55,9 @@
  *                       older member against compositions written for the new
  *                       one (the same skew class as rule 5b). Only caret
  *                       ranges are judged; exotic pins are deliberate.
- *                       web-eval is exempt: the incubating eval pack pins the
- *                       0.1.x member line against its own older deployment
- *                       host and re-bases with the eval line.
+ *                       The eval pack is exempt: the incubating eval pack
+ *                       pins the 0.1.x member line against its own older
+ *                       deployment host and re-bases with the eval line.
  *
  * Run by hand (`pnpm check:profiles`); the vitest spec re-runs it against the
  * real tree so `pnpm test:scripts` keeps the profiles conformant.
@@ -76,7 +76,7 @@ import { RETIRED_PACKAGES } from './retired-packages.ts'
 const RANGE_RULE_EXEMPT_PROFILES: ReadonlySet<string> = new Set([
   // The incubating eval pack pins the 0.1.x member line against its own older
   // deployment host; its ranges re-base when the eval line does.
-  'web-eval',
+  'eval',
 ])
 
 const RETIRED = new Map(RETIRED_PACKAGES.map(entry => [entry.name, entry]))

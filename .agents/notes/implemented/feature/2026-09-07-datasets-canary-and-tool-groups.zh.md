@@ -10,7 +10,7 @@ Status: implemented
 
 **泄题取证。** 一个评测题库进入某个模型的训练语料的那一刻，它就失效了，而今天没有任何东西告诉作者这件事发生过。Terminal-Bench 的做法是金丝雀：在题集每个可见文件里埋同一个全局唯一串，日后拿它去搜模型输出。机制本身几乎零成本，贵的是纪律——「任何一个可见文件都不许漏埋」，而这恰恰是作者在题库变大之后无法靠肉眼保证的。
 
-**工具按域开放。** 在 [dsh-web-eval](../../../../profiles/web-eval/README.md) 里，agent 只出现在规划期与分析期：读题、起草，凡是执行都属于编排器。因此它不该握有 `datasets_worktree_path`——整层物化是编排器的动作。preset 表达不了这件事：preset 收窄的是某个 scope 能够到什么，而 profile 层注册过的工具对该 profile 里的每个 agent 都存在。唯一能决定的地方是注册本身，也就是插件。
+**工具按域开放。** 在 [dsh-web-eval](../../../../profiles/eval/README.md) 里，agent 只出现在规划期与分析期：读题、起草，凡是执行都属于编排器。因此它不该握有 `datasets_worktree_path`——整层物化是编排器的动作。preset 表达不了这件事：preset 收窄的是某个 scope 能够到什么，而 profile 层注册过的工具对该 profile 里的每个 agent 都存在。唯一能决定的地方是注册本身，也就是插件。
 
 ## Decision
 
@@ -49,4 +49,4 @@ Status: implemented
 ## Cross-references
 
 - [datasets governance and authoring](2026-08-24-datasets-governance-and-authoring.zh.md) —— `validate`、既有三条警告、register 角色模型与本次扩展的协议文档都归它所有。
-- [dsh-web-eval](../../../../profiles/web-eval/README.md) —— 本次为 datasets 实现的就是那张「工具按域开放」表。
+- [dsh-web-eval](../../../../profiles/eval/README.md) —— 本次为 datasets 实现的就是那张「工具按域开放」表。

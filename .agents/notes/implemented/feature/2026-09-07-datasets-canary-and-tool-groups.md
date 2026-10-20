@@ -10,7 +10,7 @@ Two eval-domain needs that the dev domain must not notice.
 
 **Leak forensics.** A benchmark dataset's usefulness ends the moment it enters a model's training corpus, and today nothing tells the authors when that happened. Terminal-Bench's answer is a canary: bury one globally unique string in every visible file of the suite, then search model output for it later. The mechanism costs almost nothing — the expensive part is the discipline of never letting a visible file miss the string, which is exactly what an author cannot verify by hand across a growing suite.
 
-**Tool boundaries per domain.** In [dsh-web-eval](../../../../profiles/web-eval/README.md) an agent exists only during planning and analysis: it reads the suite, it drafts items, and everything that executes is the orchestrator's. It must therefore not hold `datasets_worktree_path` — materializing a whole layer is a step the orchestrator owns. A preset cannot express that: presets narrow what a scope may reach, but a tool the profile registered exists for every agent in that profile. The only place that can decide is the registration itself, which means the plugin.
+**Tool boundaries per domain.** In [dsh-web-eval](../../../../profiles/eval/README.md) an agent exists only during planning and analysis: it reads the suite, it drafts items, and everything that executes is the orchestrator's. It must therefore not hold `datasets_worktree_path` — materializing a whole layer is a step the orchestrator owns. A preset cannot express that: presets narrow what a scope may reach, but a tool the profile registered exists for every agent in that profile. The only place that can decide is the registration itself, which means the plugin.
 
 ## Decision
 
@@ -49,4 +49,4 @@ The service, the `dsh-datasets` CLI, `/datasets` and the session tab are outside
 ## Cross-references
 
 - [datasets governance and authoring](2026-08-24-datasets-governance-and-authoring.md) — owns `validate`, the three existing warnings, the register role model and the protocol document this change extends.
-- [dsh-web-eval](../../../../profiles/web-eval/README.md) — the "tools per domain" table this grouping implements for datasets.
+- [dsh-web-eval](../../../../profiles/eval/README.md) — the "tools per domain" table this grouping implements for datasets.

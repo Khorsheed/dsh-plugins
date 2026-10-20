@@ -16,7 +16,7 @@
 | **学习套件** | `@khorsheed/dsh-learning` | 图书馆:按项目组织的精读学习(书籍摄入、路线图、讲义、测验判题),含画布/灵感空间/转写/渲染抓取,自带「学习模式」preset | [Khorsheed/dsh-learning](https://github.com/Khorsheed/dsh-learning) |
 | **剪辑套件** | `@khorsheed/dsh-video` | 剪辑台:混录自动分人、声纹认人、删字即删音频,导出音频/视频/字幕/shownotes;含本机转写,自带「剪辑模式」preset | [Khorsheed/dsh-video](https://github.com/Khorsheed/dsh-video) |
 | **游戏开发套件** | `@khorsheed/dsh-gamedev` | 和 agent 一起做小游戏:试玩调参、外观编辑、分章节策划、版本与回滚,每轮结束自动检查,自带「游戏开发模式」preset | [Khorsheed/dsh-gamedev](https://github.com/Khorsheed/dsh-gamedev) |
-| **评测套件** | `@khorsheed/dsh-bundle-eval` | 本机 harness 对照评测:题集、任务规划、实验单元、执行与判分,含 local-agent 委派家族,自带「评测模式」preset | [Khorsheed/dsh-web-eval](https://github.com/Khorsheed/dsh-web-eval) |
+| **评测套件** | `@khorsheed/dsh-bundle-eval` | 本机 harness 对照评测:题集、任务规划、实验单元、执行与判分,含 local-agent 委派家族,自带「评测模式」preset | [Khorsheed/dsh-eval](https://github.com/Khorsheed/dsh-eval) |
 
 ![dsh-basic 基础体验:消息编辑与撤回、引用动作、会话产物、文件列表、灵感空间一屏装齐](docs/screenshots/basic-mode.png)
 
@@ -194,7 +194,7 @@ dsh plugin --profile web remove @khorsheed/dsh-<name>
 
 ```
 packages/   一个目录一个可发布插件或套件
-profiles/   套件门面仓的同步源(basic / dev / web-eval / writing / learning / video / gamedev)
+profiles/   套件门面仓的同步源(basic / dev / eval / writing / learning / video / gamedev)
 build/      共享构建/测试预设(tsdown client bundle、vitest 源码面配置)
 scripts/    仓库工具(pack-dist、gen-typert、镜像同步、门禁检查器)
 ```

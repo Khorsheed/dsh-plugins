@@ -1,4 +1,4 @@
-# dsh-web-eval 迭代文档
+# dsh-eval 迭代文档
 
 本文把 [README](../README.md) 的目标架构拆到**插件 × 层**的粒度，标注每一项是已满足、需改还是待建，落在哪个迭代；然后给出逐迭代的任务、依赖与验收。能力与文件的全貌见 [architecture.md](architecture.md)。
 

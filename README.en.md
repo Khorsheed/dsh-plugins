@@ -16,7 +16,7 @@ The recommended install unit is a **suite** (one npm package), not a single plug
 | **学习套件 (Learning)** | `@khorsheed/dsh-learning` | The library: project-organized close reading (book ingestion, roadmaps, lecture notes, quizzes) with canvas/reader/transcribe/capture included — with the 学习模式 preset | [Khorsheed/dsh-learning](https://github.com/Khorsheed/dsh-learning) |
 | **剪辑套件 (Video)** | `@khorsheed/dsh-video` | The cutting room: multi-speaker mixdowns, voiceprint recognition, delete-the-word-deletes-the-audio, audio/video/subtitle/shownotes export; local transcription included — with the 剪辑模式 preset | [Khorsheed/dsh-video](https://github.com/Khorsheed/dsh-video) |
 | **游戏开发套件 (Gamedev)** | `@khorsheed/dsh-gamedev` | Build small games with the agent: playtest tuning, appearance editing, chaptered design docs, versions and rollback, end-of-turn checks — with the 游戏开发模式 preset | [Khorsheed/dsh-gamedev](https://github.com/Khorsheed/dsh-gamedev) |
-| **评测套件 (Eval)** | `@khorsheed/dsh-bundle-eval` | On-machine harness comparison: datasets, mission planning, lab units, execution and judging, plus the local-agent delegation family — with the 评测模式 preset | [Khorsheed/dsh-web-eval](https://github.com/Khorsheed/dsh-web-eval) |
+| **评测套件 (Eval)** | `@khorsheed/dsh-bundle-eval` | On-machine harness comparison: datasets, mission planning, lab units, execution and judging, plus the local-agent delegation family — with the 评测模式 preset | [Khorsheed/dsh-eval](https://github.com/Khorsheed/dsh-eval) |
 
 ![dsh-basic essentials: message edit and withdraw, quote actions, session artifacts, the file list and the ideas space in one screen](docs/screenshots/basic-mode.png)
 
@@ -194,7 +194,7 @@ A standalone pnpm monorepo; every package publishes as `@khorsheed/dsh-*`.
 
 ```
 packages/   one directory per publishable plugin or suite
-profiles/   sync sources of the suite front-door repos (basic / dev / web-eval / writing / learning / video / gamedev)
+profiles/   sync sources of the suite front-door repos (basic / dev / eval / writing / learning / video / gamedev)
 build/      shared build/test presets (tsdown client bundle, vitest source-plane config)
 scripts/    repo tooling (pack-dist, gen-typert, mirror sync, gate checkers)
 ```

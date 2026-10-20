@@ -302,7 +302,7 @@
               searchTimeoutMs: 60000
 
           # ── 工具按域开放（M4'③：companion 行按域授予）──────────────────────────────
-          # 这两行原先挂在 profile 根并带 tools 配置（profiles/web-eval/cordis.patch.yml）。
+          # 这两行原先挂在 profile 根并带 tools 配置（profiles/eval/cordis.patch.yml）。
           # 拆包后工具行不再全局：授予点移到这里，tier 原样跟随——eval 预设的会话拿到
           # 按域裁剪过的两个工具集，同 profile 里其它预设的会话一个都拿不到。
           #

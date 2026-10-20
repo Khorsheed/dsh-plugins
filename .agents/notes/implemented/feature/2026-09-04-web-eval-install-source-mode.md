@@ -35,5 +35,5 @@ The headless handling keeps G3 off this path: the host's reconcilePlugins only i
 
 ## Related
 
-- [web-eval iterations doc](../../../../profiles/web-eval/docs/iterations.md) — the T5 brief and acceptance bar.
+- [web-eval iterations doc](../../../../profiles/eval/docs/iterations.md) — the T5 brief and acceptance bar.
 - The dataseek-eval repo's i1-walk log (i1-walk branch), findings G5/G6 — the field observations this note closes.

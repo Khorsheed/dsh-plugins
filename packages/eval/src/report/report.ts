@@ -36,7 +36,7 @@ import { parseEffortEvidence, type EffortEvidence } from '../frozen-configuratio
  *   proportion is read from the FIELD, never parsed out of `evidence`; a
  *   ratio out of bounds is reported and falls back to the boolean.
  *
- * Shapes the orchestrator writes (I2·T8/T8b contract, profiles/web-eval/docs/
+ * Shapes the orchestrator writes (I2·T8/T8b contract, profiles/eval/docs/
  * iterations.md): run.meta = {planSha, planPath, evalVersion, snapshot,
  * conditions: [{id, sha, condition}, …], order, concurrency, startedAt};
  * orchestrator-ns cell anchors = {kind: 'cell', task, condition,

@@ -1,4 +1,4 @@
-# dsh-web-eval
+# dsh-eval
 
 [中文](README.md) | English
 
@@ -170,7 +170,7 @@ Tool exposure by domain bounds what the *profile layer* registers; the **preset*
 
 Delegation goes to an agent **running on this same preset**: an in-process child runs on its parent's preset (the harness proves it in `subagent-in-process-driver/tests/preset-inheritance.spec.ts`), so a child gets exactly this preset's tools, the shell included.
 
-**The preset belongs to the pack**, for the same reason `cordis.patch.yml` does (see [Install](#install)). This profile runs on host 0.2.0 and later only (T82), where presets are declarative `@deepseek-ai/dsh-agent-preset` rows rather than scanned directories: the pack ships a declarative bundle that mounts exactly one row, `preset-eval` (`presets/`, package `@khorsheed/dsh-web-eval-preset`, `dsh.bundle.kind: 'preset-declarations'`, a `file:presets` dependency of the profile), and `cordis.patch.yml` pins `agent-preset-registry`'s `default` to `eval`. At the T82 migration the composition was byte-identical to the 0.1.5-era directory version `presets/eval/agent.cordis.yml` (sha256-checked); T102 changed it on purpose. `scripts/web-eval-preset-bundle.spec.ts` pins the block's digest — changing the composition changes the apparatus, so update the digest on purpose and open a new run. `preset-dsh-eval` in the dsh-presets package 3080 runs mirrors it, and `scripts/eval-preset-parity.spec.ts` keeps the two equal. Keep personal preferences under a different preset id, not in this one.
+**The preset belongs to the pack**, for the same reason `cordis.patch.yml` does (see [Install](#install)). This profile runs on host 0.2.0 and later only (T82), where presets are declarative `@deepseek-ai/dsh-agent-preset` rows rather than scanned directories: the pack ships a declarative bundle that mounts exactly one row, `preset-eval` (`presets/`, package `@khorsheed/dsh-web-eval-preset`, `dsh.bundle.kind: 'preset-declarations'`, a `file:presets` dependency of the profile), and `cordis.patch.yml` pins `agent-preset-registry`'s `default` to `eval`. At the T82 migration the composition was byte-identical to the 0.1.5-era directory version `presets/eval/agent.cordis.yml` (sha256-checked); T102 changed it on purpose. `scripts/eval-preset-bundle.spec.ts` pins the block's digest — changing the composition changes the apparatus, so update the digest on purpose and open a new run. `preset-dsh-eval` in the dsh-presets package 3080 runs mirrors it, and `scripts/eval-preset-parity.spec.ts` keeps the two equal. Keep personal preferences under a different preset id, not in this one.
 
 «添加题集 › 让 Agent 整理» opens an evaluation session: with `authoringPreset` unset, datasets picks the preset that grants the datasets tool row's `organize` tier (`eval` on this profile, `dsh-eval` on 3080); an id written in the config wins.
 
@@ -357,18 +357,18 @@ that boots fine and only fails on a resume round.
 **npm mode** (no arguments) — every member resolves from the npm registry. It works as-is once every member is published (I6); until then, the unpublished members fail with a registry 404 at install time (the authoritative list is [docs/release-status.md](https://github.com/Khorsheed/dsh-plugins/blob/main/docs/release-status.md) in dsh-plugins):
 
 ```sh
-git clone https://github.com/Khorsheed/dsh-web-eval.git
-DSH_HOME=~/.dsh-eval sh dsh-web-eval/scripts/install.sh
-DSH_HOME=~/.dsh-eval sh dsh-web-eval/scripts/restart-into-web-eval.sh <port>
+git clone https://github.com/Khorsheed/dsh-eval.git
+DSH_HOME=~/.dsh-eval sh dsh-eval/scripts/install.sh
+DSH_HOME=~/.dsh-eval sh dsh-eval/scripts/restart-into-web-eval.sh <port>
 ```
 
 **Source mode** (`--source <dsh-plugins checkout>`) — the working path today. Given a buildable [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) checkout (dependencies installed, building green per its AGENTS.md; building and type resolution need a deepseek-harness checkout), the script builds every unpublished member, packs the tarballs with `--family` into the profile's `tarballs/`, writes pnpm overrides to pin the family edges, leaves published members to npm, and then runs the standard install:
 
 ```sh
-git clone https://github.com/Khorsheed/dsh-web-eval.git
+git clone https://github.com/Khorsheed/dsh-eval.git
 git clone https://github.com/Khorsheed/dsh-plugins.git && pnpm --dir dsh-plugins install
-DSH_HOME=~/.dsh-eval sh dsh-web-eval/scripts/install.sh --source "$PWD/dsh-plugins"
-DSH_HOME=~/.dsh-eval sh dsh-web-eval/scripts/restart-into-web-eval.sh <port>
+DSH_HOME=~/.dsh-eval sh dsh-eval/scripts/install.sh --source "$PWD/dsh-plugins"
+DSH_HOME=~/.dsh-eval sh dsh-eval/scripts/restart-into-web-eval.sh <port>
 ```
 
 Source-mode tarballs live inside the profile directory: uninstalling (`rm -rf "$DSH_HOME/profiles/web-eval"`) removes them too. To swap in fresh tarballs after the checkout moves, re-run **with `--fresh`**: an installed profile's `node_modules`, `pnpm-lock.yaml` and `tarballs/` would otherwise keep the newly packed tarballs out and the instance would keep running the old build with no sign of it. `--fresh` removes all three first, and a re-run without it is refused with exactly that reason printed.
@@ -405,11 +405,11 @@ For an old instance on the 0.1.5 toolchain (3171 on `~/.dsh-lab`, for example). 
    ```sh
    PATH=~/.dsh-toolchains/rc-0.2.0-rc.2/node_modules/.bin:$PATH \
    DSH_HARNESS=<a harness checkout at 0.2.0-rc.2 or later> \
-   DSH_HOME=~/.dsh-lab sh profiles/web-eval/scripts/install.sh --source <dsh-plugins checkout> --fresh
+   DSH_HOME=~/.dsh-lab sh profiles/eval/scripts/install.sh --source <dsh-plugins checkout> --fresh
    ```
    An in-place reinstall leaves `state/` alone; for a new home, copy the old home's `state/eval`, `state/datasets` and `state/mission` across (excluding tokens, cookies, credentials and logs).
 4. **Turn on DeepSeek delegation.** 0.1.5 kept that switch in the legacy settings file; 0.2.0 does a one-shot import of `$DSH_HOME/settings.yaml` into row config on first boot (renaming it `.imported`). In place this is expected to happen on its own (not measured by T82 — glance at the plugin page after the switch); for a new home, a person turns on 「DeepSeek 委派」 in the plugin page's DSH 委派 card, or places the old settings file in the new home to have it imported.
-5. **Boot**: `PATH=~/.dsh-toolchains/rc-0.2.0-rc.2/node_modules/.bin:$PATH DSH_HOME=~/.dsh-lab sh profiles/web-eval/scripts/restart-into-web-eval.sh <port>`.
+5. **Boot**: `PATH=~/.dsh-toolchains/rc-0.2.0-rc.2/node_modules/.bin:$PATH DSH_HOME=~/.dsh-lab sh profiles/eval/scripts/restart-into-web-eval.sh <port>`.
 6. **Verify**: 23 result rows; the dataset registry matches the old home; pilot-d's report still reads 「暂时不能下结论」, 4 to 0; Settings → Agent presets defaults to 评测模式; `dsh --version` is 0.2.0-rc.2.
 7. **dsh conditions**: import the dataset's `*-0.2.0-rc.2` conditions and provision them again; the old conditions' locks stay as history and are not used for new runs.
 8. **Optional cleanup**: `~/.dsh-lab/.agent-presets/eval` is the 0.1.5 directory preset; 0.2.0 never reads it.

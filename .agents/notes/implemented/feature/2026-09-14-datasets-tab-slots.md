@@ -8,7 +8,7 @@ English | [中文](2026-09-14-datasets-tab-slots.zh.md)
 
 The old datasets tab was a binding bar, a tree keyed by layer name, and a preview. A layer name (`visible` / `verify` / `grading`) is **one dataset's authoring convention**, while the person opening this tab is always judging something else: does the player see this file. "The user cannot read it" was accurate feedback.
 
-The UI spec ([ui-spec](../../../../profiles/web-eval/docs/ui-spec.md) §三 §四) fixed the shape: label files by who sees them, show slots as task statement / acceptance standards / reference answer / grading rubric / check scripts / other files; one row per dataset on a list page; a detail page with the tree, the preview, a slot filter, «what the player will see», judgeability and the answer record; creation is a skeleton plus an import, and the tab owns no body editor.
+The UI spec ([ui-spec](../../../../profiles/eval/docs/ui-spec.md) §三 §四) fixed the shape: label files by who sees them, show slots as task statement / acceptance standards / reference answer / grading rubric / check scripts / other files; one row per dataset on a list page; a detail page with the tree, the preview, a slot filter, «what the player will see», judgeability and the answer record; creation is a skeleton plus an import, and the tab owns no body editor.
 
 ## Decision
 

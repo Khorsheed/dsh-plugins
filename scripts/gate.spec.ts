@@ -102,14 +102,14 @@ describe('resolveScope', () => {
   })
 
   it("refuses to scope when a profile's scripts change — they build and pack every member", () => {
-    for (const path of ['profiles/web-eval/scripts/install.sh', 'profiles/basic/scripts/update.sh']) {
+    for (const path of ['profiles/eval/scripts/install.sh', 'profiles/basic/scripts/update.sh']) {
       const scope = resolveScope(stub({ 'git diff --name-only': ok(path), 'git status --porcelain': ok('') }), base)
       expect(scope.filter, `${path} must force a whole-repo run`).toBeUndefined()
       expect(scope.why).toContain(path)
     }
     // The rest of a profile is that profile's own business and still scopes.
-    expect(isGlobalPath('profiles/web-eval/cordis.patch.yml')).toBe(false)
-    expect(isGlobalPath('profiles/web-eval/docs/README.md')).toBe(false)
+    expect(isGlobalPath('profiles/eval/cordis.patch.yml')).toBe(false)
+    expect(isGlobalPath('profiles/eval/docs/README.md')).toBe(false)
     // And the pattern is anchored: a package path that merely mentions the
     // segments is not a profile script.
     expect(isGlobalPath('packages/eval/profiles/x/scripts/a.sh')).toBe(false)
@@ -121,7 +121,7 @@ describe('resolveScope', () => {
     // space, `slice(3)` dropped a character, the path matched no shared layer
     // and the gate reported scope NONE — skipping build, test and pack on a
     // change to the scripts every package runs (T51).
-    for (const path of ['scripts/gate.mts', 'profiles/web-eval/scripts/update.sh']) {
+    for (const path of ['scripts/gate.mts', 'profiles/eval/scripts/update.sh']) {
       const scope = resolveScope(stub({
         'git diff --name-only': ok(''),
         'git status --porcelain': ok(trimTrailingNewlines(` M ${path}\n`)),

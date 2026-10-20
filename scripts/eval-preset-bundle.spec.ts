@@ -1,5 +1,5 @@
 /**
- * dsh-web-eval's profile-local preset bundle (T82, host 0.2.0 and later).
+ * dsh-eval's profile-local preset bundle (T82, host 0.2.0 and later).
  *
  * The `eval` agent preset is frozen decision 12's execution point, so its
  * composition is apparatus. T82 required the evaluation agent to carry no
@@ -19,7 +19,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
-const PROFILE = join(import.meta.dirname, '..', 'profiles', 'web-eval')
+const PROFILE = join(import.meta.dirname, '..', 'profiles', 'eval')
 const BUNDLE_DIR = join(PROFILE, 'presets')
 
 /**
@@ -48,8 +48,11 @@ const BUNDLE_DIR = join(PROFILE, 'presets')
  * activations are the only delegation mode). Same apparatus, new host line.
  * Moved again 2026-10-18: the persona prefix dropped its `{{cwd}}` sentence —
  * 0.2.1 removed that prompt variable (strict references fail the model request).
+ * Moved again 2026-10-20, COMMENT LINES ONLY: the pack's directory and mirror
+ * repo renamed (profiles/web-eval → profiles/eval, dsh-web-eval → dsh-eval);
+ * one provenance comment inside the block carries the path. Same composition.
  */
-const DIRECTORY_COMPOSITION_SHA = 'f8f3b3ba314189bd266c05d59104b7cbc64787d337ba8d8bcc6e18549dfa7736'
+const DIRECTORY_COMPOSITION_SHA = '0cc96f84cf6430fc3386dbd2810c866316cd3b3c2ca05acf0f93b54f6b9ea3a4'
 
 /**
  * The preset-eval row's `plugins:` block, de-indented back to the directory
@@ -68,7 +71,7 @@ function pluginsBlock(patch: string, row = 'preset-eval'): string {
   return lines.slice(at + 1, end).map(line => (line === '' ? '' : line.replace(/^ {10}/, ''))).join('\n')
 }
 
-describe('web-eval preset bundle', () => {
+describe('eval preset bundle', () => {
   const manifest = JSON.parse(readFileSync(join(BUNDLE_DIR, 'package.json'), 'utf8')) as {
     name: string
     private?: boolean

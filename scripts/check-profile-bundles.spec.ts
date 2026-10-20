@@ -219,7 +219,7 @@ describe('checkProfile rules', () => {
     }))).toEqual([])
     // web-eval pins its own member line while the eval family incubates.
     expect(kinds(profile({
-      path: 'profiles/web-eval/package.json',
+      path: 'profiles/eval/package.json',
       dependencies: ['@khorsheed/dsh-core'],
       bundles: ['@khorsheed/dsh-core'],
       dependencyRanges: { '@khorsheed/dsh-core': '^0.1.0' },
@@ -257,7 +257,7 @@ describe('the real tree', () => {
     expect(profiles.map(p => p.path).sort()).toEqual([
       'profiles/basic/package.json',
       'profiles/dev/package.json',
-      'profiles/web-eval/package.json',
+      'profiles/eval/package.json',
     ])
   })
 

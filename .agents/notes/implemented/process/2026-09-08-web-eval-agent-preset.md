@@ -4,7 +4,7 @@ Status: implemented
 
 ## Problem
 
-[Frozen decision 12](../../../../profiles/web-eval/README.md#冻结决策) says the evaluation apparatus has a single destroy path: only the orchestrator holds the docker socket, and the evaluation instance's agent preset carries no Bash and no docker. Through I2 the decision existed only as a sentence. The instance ran on the shipped `standard` preset — the full coding agent, shell included — because that is what `@deepseek-ai/dsh-web-app` pins as the roster default.
+[Frozen decision 12](../../../../profiles/eval/README.md#冻结决策) says the evaluation apparatus has a single destroy path: only the orchestrator holds the docker socket, and the evaluation instance's agent preset carries no Bash and no docker. Through I2 the decision existed only as a sentence. The instance ran on the shipped `standard` preset — the full coding agent, shell included — because that is what `@deepseek-ai/dsh-web-app` pins as the roster default.
 
 I2 ran on the host with no container boundary, so nothing was at stake beyond a real home directory. I3 hands the orchestrator a docker socket and puts every unit behind `lab`'s release gate, and at that point a shell in the agent's catalog is a second door into the same room: one `docker rm` mid-run, or one write into an archived unit, and the gate's guarantee — no unit is released without a passing file-check — is no longer a property of the apparatus, just of the agent's restraint.
 
@@ -42,7 +42,7 @@ A patch's `config` override is a whole-value **replace**, not a deep merge (`ven
 
 ### What this preset cannot subtract
 
-A preset filters only the rows it mounts itself. Four delegation tools are inserted at the **profile root** by the providers' own bundle patches (`tool-subagent-kimi`, `tool-subagent-codex-local`, and their claude-code and dsh siblings, each an instance of `@khorsheed/dsh-local-agent-tool-subagent`), and they are execution-class by construction: each starts a vendor CLI on the host under the sandbox tier [frozen decision 3](../../../../profiles/web-eval/README.md#冻结决策) opens up. A fresh instance shows three of them — `subagent_codex`, `subagent_claude_code`, `subagent_kimi`; `subagent_dsh` appears only after the DeepSeek switch in Settings → 本地 Agent is turned on, which is off by default.
+A preset filters only the rows it mounts itself. Four delegation tools are inserted at the **profile root** by the providers' own bundle patches (`tool-subagent-kimi`, `tool-subagent-codex-local`, and their claude-code and dsh siblings, each an instance of `@khorsheed/dsh-local-agent-tool-subagent`), and they are execution-class by construction: each starts a vendor CLI on the host under the sandbox tier [frozen decision 3](../../../../profiles/eval/README.md#冻结决策) opens up. A fresh instance shows three of them — `subagent_codex`, `subagent_claude_code`, `subagent_kimi`; `subagent_dsh` appears only after the DeepSeek switch in Settings → 本地 Agent is turned on, which is off by default.
 
 Three ways to close that, none taken in this change:
 
@@ -93,5 +93,5 @@ A fresh source-mode install into a throwaway `$DSH_HOME` (`install.sh --source <
 
 - [The web-eval evaluation pins belong to the pack](2026-09-07-web-eval-pins-belong-to-the-pack.md) — the same ownership argument, one layer down.
 - [web-eval install source mode](../feature/2026-09-04-web-eval-install-source-mode.md) — the installer this change extends.
-- [profiles/web-eval/README.md](../../../../profiles/web-eval/README.md#冻结决策-12-的执行点eval-预设) — the operator-facing section, including how to confirm a running instance is on this preset.
-- [web-eval iteration plan](../../../../profiles/web-eval/docs/iterations.md) — I3 · T21.
+- [profiles/eval/README.md](../../../../profiles/eval/README.md#冻结决策-12-的执行点eval-预设) — the operator-facing section, including how to confirm a running instance is on this preset.
+- [web-eval iteration plan](../../../../profiles/eval/docs/iterations.md) — I3 · T21.

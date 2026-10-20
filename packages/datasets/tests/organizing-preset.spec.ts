@@ -57,7 +57,7 @@ function registryOf(patchFile: string, defaultId: string, broken: string[] = [])
 
 describe('the organizing preset is picked by grant (T102)', () => {
   it('web-eval pack: the evaluation mode `eval` (also the pinned default)', async () => {
-    expect(await resolveOrganizingPreset(registryOf('profiles/web-eval/presets/cordis.patch.yml', 'eval'))).toBe('eval')
+    expect(await resolveOrganizingPreset(registryOf('profiles/eval/presets/cordis.patch.yml', 'eval'))).toBe('eval')
   })
 
   it('dsh-presets (3080): `dsh-eval`, although the default is 开发模式', async () => {

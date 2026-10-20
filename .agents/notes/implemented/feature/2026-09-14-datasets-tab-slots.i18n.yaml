@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-14-datasets-tab-slots.md
-.agents/notes/implemented/feature/2026-09-14-datasets-tab-slots.md: 80fd660470e3940a7ea19a28df4500d3bc375d09
-.agents/notes/implemented/feature/2026-09-14-datasets-tab-slots.zh.md: 136c33e5fda797f343372231b0adef7964d97906
+.agents/notes/implemented/feature/2026-09-14-datasets-tab-slots.md: 4542231162639c70766aefc790bc313a97fe890a
+.agents/notes/implemented/feature/2026-09-14-datasets-tab-slots.zh.md: 25ecde1b19c4b719b4ac0946457f95316f11f249

@@ -1,5 +1,5 @@
 #!/bin/sh
-# dsh-web-eval updater: refresh the profile template in $DSH_HOME after members change.
+# dsh-eval updater: refresh the profile template in $DSH_HOME after members change.
 set -eu
 
 DSH_HOME="${DSH_HOME:-$HOME/.dsh}"
@@ -44,9 +44,9 @@ retire_legacy_skill() {
   _fm=$(sed -n '1,12p' "$LEGACY_SKILL_DIR/SKILL.md")
   if printf '%s\n' "$_fm" | grep -qx 'name: eval-planning' && printf '%s\n' "$_fm" | grep -qx '  iteration: I5'; then
     rm -rf "$LEGACY_SKILL_DIR"
-    echo "dsh-web-eval: removed the old pack copy of the eval-planning skill from $DSH_HOME/skills — @khorsheed/dsh-eval now ships it to evaluation sessions only"
+    echo "dsh-eval: removed the old pack copy of the eval-planning skill from $DSH_HOME/skills — @khorsheed/dsh-eval now ships it to evaluation sessions only"
   else
-    echo "dsh-web-eval: note — $LEGACY_SKILL_DIR is not the pack's copy, so it was left alone. It shows in every session that scans $DSH_HOME/skills and duplicates the eval-planning skill @khorsheed/dsh-eval registers; rename or remove it."
+    echo "dsh-eval: note — $LEGACY_SKILL_DIR is not the pack's copy, so it was left alone. It shows in every session that scans $DSH_HOME/skills and duplicates the eval-planning skill @khorsheed/dsh-eval registers; rename or remove it."
   fi
 }
 
@@ -56,7 +56,7 @@ retire_legacy_skill() {
 # at the very bottom. A machine missing its preconditions must find out while
 # the installed profile is still the one that works.
 preflight_fail() {
-  echo "dsh-web-eval: preflight failed — nothing has been written." >&2
+  echo "dsh-eval: preflight failed — nothing has been written." >&2
   echo "$1" >&2
   exit 2
 }
@@ -93,7 +93,7 @@ NODE
 )
 case "$HOST_CMP" in
   0|1) ;;
-  *) preflight_fail "  the \`dsh\` on PATH is ${HOST_VERSION:-unreadable}; dsh-web-eval supports host $MIN_HOST and later only.
+  *) preflight_fail "  the \`dsh\` on PATH is ${HOST_VERSION:-unreadable}; dsh-eval supports host $MIN_HOST and later only.
   Put a matching toolchain first on PATH and re-run, e.g.:
     PATH=$MIN_HOST_TOOLCHAIN/node_modules/.bin:\$PATH sh $0" ;;
 esac
@@ -107,7 +107,7 @@ if [ -n "$HEADLESS_PIN" ] && [ ! -e "$HEADLESS_PIN" ]; then
 fi
 
 if [ ! -d "$DEST" ]; then
-  echo "dsh-web-eval: $DEST not found — run install.sh first" >&2
+  echo "dsh-eval: $DEST not found — run install.sh first" >&2
   exit 1
 fi
 
@@ -117,7 +117,7 @@ fi
 # replacement and `dsh plugin install` left a half-updated profile with
 # nothing on screen about it.
 UPDATE_BACKUP="$DEST/.web-eval-update-backup.$$"
-trap 'echo "dsh-web-eval: update failed — $DEST may be half-updated" >&2
+trap 'echo "dsh-eval: update failed — $DEST may be half-updated" >&2
   if [ -d "$UPDATE_BACKUP" ]; then
     echo "  the previous template files are at $UPDATE_BACKUP (restore with cp -R $UPDATE_BACKUP/. $DEST/)" >&2
   fi' 0
@@ -136,5 +136,5 @@ ROWS=$(dsh --profile web-eval --dump-config 2>/dev/null | grep -c '^- id: ' || t
 trap - 0
 rm -rf "$UPDATE_BACKUP"
 retire_legacy_skill
-echo "dsh-web-eval: updated $DEST — $ROWS loader rows composed"
+echo "dsh-eval: updated $DEST — $ROWS loader rows composed"
 echo "next: sh $(cd "$(dirname "$0")/.." && pwd)/scripts/restart-into-web-eval.sh   # restart to pick up the new members"

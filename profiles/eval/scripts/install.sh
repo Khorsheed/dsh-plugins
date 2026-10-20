@@ -1,5 +1,5 @@
 #!/bin/sh
-# dsh-web-eval installer: drop the profile template into $DSH_HOME and install it.
+# dsh-eval installer: drop the profile template into $DSH_HOME and install it.
 #
 # Two install paths:
 #   npm mode (no arguments) — every member resolves from the npm registry.
@@ -71,9 +71,9 @@ retire_legacy_skill() {
   _fm=$(sed -n '1,12p' "$LEGACY_SKILL_DIR/SKILL.md")
   if printf '%s\n' "$_fm" | grep -qx 'name: eval-planning' && printf '%s\n' "$_fm" | grep -qx '  iteration: I5'; then
     rm -rf "$LEGACY_SKILL_DIR"
-    echo "dsh-web-eval: removed the old pack copy of the eval-planning skill from $DSH_HOME/skills — @khorsheed/dsh-eval now ships it to evaluation sessions only"
+    echo "dsh-eval: removed the old pack copy of the eval-planning skill from $DSH_HOME/skills — @khorsheed/dsh-eval now ships it to evaluation sessions only"
   else
-    echo "dsh-web-eval: note — $LEGACY_SKILL_DIR is not the pack's copy, so it was left alone. It shows in every session that scans $DSH_HOME/skills and duplicates the eval-planning skill @khorsheed/dsh-eval registers; rename or remove it."
+    echo "dsh-eval: note — $LEGACY_SKILL_DIR is not the pack's copy, so it was left alone. It shows in every session that scans $DSH_HOME/skills and duplicates the eval-planning skill @khorsheed/dsh-eval registers; rename or remove it."
   fi
 }
 
@@ -117,20 +117,20 @@ FRESH=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --source)
-      [ $# -ge 2 ] || { echo "dsh-web-eval: --source needs a dsh-plugins checkout path" >&2; exit 2; }
+      [ $# -ge 2 ] || { echo "dsh-eval: --source needs a dsh-plugins checkout path" >&2; exit 2; }
       SOURCE="$2"; shift 2 ;;
     --source=*) SOURCE="${1#--source=}"; shift ;;
     --fresh) FRESH=1; shift ;;
-    *) echo "dsh-web-eval: unknown argument $1 (usage: install.sh [--source <dsh-plugins checkout>] [--fresh])" >&2; exit 2 ;;
+    *) echo "dsh-eval: unknown argument $1 (usage: install.sh [--source <dsh-plugins checkout>] [--fresh])" >&2; exit 2 ;;
   esac
 done
 
 if [ -n "$SOURCE" ]; then
-  SOURCE_ABS="$(cd "$SOURCE" 2>/dev/null && pwd)" || { echo "dsh-web-eval: no dsh-plugins checkout at $SOURCE" >&2; exit 2; }
+  SOURCE_ABS="$(cd "$SOURCE" 2>/dev/null && pwd)" || { echo "dsh-eval: no dsh-plugins checkout at $SOURCE" >&2; exit 2; }
   SOURCE="$SOURCE_ABS"
   for d in $UNPUBLISHED_DIRS; do
     if [ ! -f "$SOURCE/packages/$d/package.json" ]; then
-      echo "dsh-web-eval: $SOURCE is missing packages/$d — pass the dsh-plugins repo root" >&2
+      echo "dsh-eval: $SOURCE is missing packages/$d — pass the dsh-plugins repo root" >&2
       exit 2
     fi
   done
@@ -144,7 +144,7 @@ fi
 # told you to remove $DEST. Everything this checks is a precondition of the
 # machine, not of the install, so it is checked while nothing has changed yet.
 preflight_fail() {
-  echo "dsh-web-eval: preflight failed — nothing has been written." >&2
+  echo "dsh-eval: preflight failed — nothing has been written." >&2
   echo "$1" >&2
   exit 2
 }
@@ -191,13 +191,13 @@ NODE
 }
 case "$(semver_cmp "$HOST_VERSION" "$MIN_HOST")" in
   0|1) ;;
-  -1) preflight_fail "  the \`dsh\` on PATH is $HOST_VERSION; dsh-web-eval supports host $MIN_HOST and later only.
+  -1) preflight_fail "  the \`dsh\` on PATH is $HOST_VERSION; dsh-eval supports host $MIN_HOST and later only.
   Older hosts cannot load this pack's agent preset (a declarative bundle row since
   0.2.0), so the instance would boot without its \`eval\` preset. Put a matching
   toolchain first on PATH and re-run, e.g.:
     PATH=$MIN_HOST_TOOLCHAIN/node_modules/.bin:\$PATH sh $0 ..." ;;
   *) preflight_fail "  could not read a host version from \`dsh --version\` (got: \"$HOST_VERSION\").
-  dsh-web-eval supports host $MIN_HOST and later only; run \`dsh --version\` by hand." ;;
+  dsh-eval supports host $MIN_HOST and later only; run \`dsh --version\` by hand." ;;
 esac
 
 # The host LINE, checked against what the members declare they need. A host
@@ -263,7 +263,7 @@ if [ -n "$SOURCE" ]; then
   host $MIN_HOST or later (e.g. a dsh-v$MIN_HOST worktree) and re-run."
   HARNESS_VERSION=$(node -p "require('$HARNESS_DIR/apps/cli/package.json').version" 2>/dev/null || true)
   case "$(semver_cmp "$HARNESS_VERSION" "$MIN_HOST")" in
-    0|1) echo "dsh-web-eval: host $HOST_VERSION; typert generated from DSH_HARNESS=$HARNESS_DIR ($HARNESS_VERSION)" ;;
+    0|1) echo "dsh-eval: host $HOST_VERSION; typert generated from DSH_HARNESS=$HARNESS_DIR ($HARNESS_VERSION)" ;;
     *) preflight_fail "  DSH_HARNESS=$HARNESS_DIR is host $HARNESS_VERSION, below $MIN_HOST.
   Its generated remote types would target an older API than the host you install
   on. Point DSH_HARNESS at a checkout of $MIN_HOST or later and re-run." ;;
@@ -288,7 +288,7 @@ fi
 
 if [ -d "$DEST" ]; then
   if [ -z "$FRESH" ]; then
-    echo "dsh-web-eval: $DEST already exists — re-run with --fresh to reinstall over it." >&2
+    echo "dsh-eval: $DEST already exists — re-run with --fresh to reinstall over it." >&2
     if [ -d "$DEST/node_modules" ]; then
       echo "  It carries an installed node_modules: a re-run would resolve against it and the" >&2
       echo "  existing pnpm-lock.yaml, so newly packed source tarballs would NOT reach the" >&2
@@ -297,12 +297,12 @@ if [ -d "$DEST" ]; then
     fi
     exit 1
   fi
-  echo "dsh-web-eval: --fresh — removing node_modules, pnpm-lock.yaml and tarballs/ under $DEST"
+  echo "dsh-eval: --fresh — removing node_modules, pnpm-lock.yaml and tarballs/ under $DEST"
   rm -rf "$DEST/node_modules" "$DEST/pnpm-lock.yaml" "$DEST/tarballs"
 fi
 
 mkdir -p "$DEST"
-trap 'echo "dsh-web-eval: install failed — $DEST is half-installed; remove it before re-running" >&2' 0
+trap 'echo "dsh-eval: install failed — $DEST is half-installed; remove it before re-running" >&2' 0
 for f in $PROFILE_FILES; do
   if [ -e "$SRC/$f" ]; then rm -rf "$DEST/$f"; cp -R "$SRC/$f" "$DEST/$f"; fi
 done
@@ -368,7 +368,7 @@ NODE
     cd "$SOURCE"
     for d in $UNPUBLISHED_DIRS; do
       name=$(node -p "require('$SOURCE/packages/$d/package.json').name")
-      echo "dsh-web-eval: building $name"
+      echo "dsh-eval: building $name"
       pnpm --filter "$name" build
     done
     for d in $UNPUBLISHED_DIRS; do
@@ -386,11 +386,11 @@ NODE
       family=""
       for n in $members; do
         v=$(printf '%s\n' "$PKG_VERSIONS" | sed -n "s|^$n=||p")
-        [ -n "$v" ] || echo "dsh-web-eval: warn — no version for family member $n under $SOURCE/packages; passing it bare" >&2
+        [ -n "$v" ] || echo "dsh-eval: warn — no version for family member $n under $SOURCE/packages; passing it bare" >&2
         family="$family,$n${v:+=$v}"
       done
       family="${family#,}"
-      echo "dsh-web-eval: packing $name@$version${family:+ (family $family)}"
+      echo "dsh-eval: packing $name@$version${family:+ (family $family)}"
       if [ -n "$family" ]; then
         npx tsx scripts/pack-dist.ts --package "packages/$d" --scope @khorsheed --version "$version" --out "$TARBALLS" --family "$family"
       else
@@ -422,7 +422,7 @@ NODE
     const wsPath = `${dest}/pnpm-workspace.yaml`
     const ws = fs.readFileSync(wsPath, 'utf8')
     if (/^overrides:/m.test(ws)) {
-      process.stderr.write('dsh-web-eval: the template pnpm-workspace.yaml now carries overrides — merge the source-mode block by hand\n')
+      process.stderr.write('dsh-eval: the template pnpm-workspace.yaml now carries overrides — merge the source-mode block by hand\n')
       process.exit(1)
     }
     fs.writeFileSync(wsPath, ws.trimEnd() + '\n\noverrides:\n' + overrides.join('\n') + '\n')
@@ -463,23 +463,23 @@ ROWS=$(printf '%s\n' "$DUMP" | grep -c '^- id: ' || true)
 DEFAULT_PRESET=$(printf '%s\n' "$DUMP" | awk '/^- id: agent-preset-registry$/{f=1;next} f&&/^- id: /{f=0} f&&/^[[:space:]]+default:/{print $2; exit}')
 trap - 0
 retire_legacy_skill
-echo "dsh-web-eval: installed into $DEST — $MEMBERS @khorsheed members, $ROWS patch rows composed"
+echo "dsh-eval: installed into $DEST — $MEMBERS @khorsheed members, $ROWS patch rows composed"
 if [ "$DEFAULT_PRESET" = "eval" ]; then
-  echo "dsh-web-eval: default agent preset: eval (pinned by cordis.patch.yml; a default chosen in 设置 → Agent 预设 overrides it for new sessions)"
+  echo "dsh-eval: default agent preset: eval (pinned by cordis.patch.yml; a default chosen in 设置 → Agent 预设 overrides it for new sessions)"
 else
-  echo "dsh-web-eval: WARNING — the composed default agent preset is \"${DEFAULT_PRESET:-unknown}\", not eval." >&2
+  echo "dsh-eval: WARNING — the composed default agent preset is \"${DEFAULT_PRESET:-unknown}\", not eval." >&2
   echo "  Open 设置 → Agent 预设 and set 评测模式 (eval) as the default before starting a session." >&2
 fi
 if [ -d "$DSH_HOME/.agent-presets/eval" ]; then
-  echo "dsh-web-eval: note — $DSH_HOME/.agent-presets/eval is the 0.1.5-era directory preset; host 0.2.0 never reads it. Remove it when convenient (rm -rf \"$DSH_HOME/.agent-presets/eval\")."
+  echo "dsh-eval: note — $DSH_HOME/.agent-presets/eval is the 0.1.5-era directory preset; host 0.2.0 never reads it. Remove it when convenient (rm -rf \"$DSH_HOME/.agent-presets/eval\")."
 fi
 # Datasets (T90): every dataset is a git repository the 「题集整理」 agent
 # builds and a person confirms on the 题集 tab. git is not an install
 # precondition — the organizing agent checks for it and offers to install it
 # with consent — so a missing git is a note, never a failure.
 if command -v git >/dev/null 2>&1; then
-  echo "dsh-web-eval: datasets — open the 题集 tab and use 添加题集; an Agent organizes the data and you confirm the registration"
+  echo "dsh-eval: datasets — open the 题集 tab and use 添加题集; an Agent organizes the data and you confirm the registration"
 else
-  echo "dsh-web-eval: datasets need git (every dataset version is kept in a git repository); it is not installed here — the 题集整理 agent will offer to install it, or install it yourself first"
+  echo "dsh-eval: datasets need git (every dataset version is kept in a git repository); it is not installed here — the 题集整理 agent will offer to install it, or install it yourself first"
 fi
 echo "next: sh $(cd "$(dirname "$0")/.." && pwd)/scripts/restart-into-web-eval.sh   # hand the running instance over to web-eval on the same port"

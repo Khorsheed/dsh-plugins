@@ -4,7 +4,7 @@ Status: implemented
 
 ## Problem
 
-[冻结决策 12](../../../../profiles/web-eval/README.md#冻结决策) 说评测装置的销毁路径唯一：只有编排器持有 docker socket，评测实例的 agent 预设不挂 Bash 与 docker。到 I2 为止，这条决策只是一句话。实例跑的是随发行版的 `standard` 预设——功能完整的编码 Agent，Bash 在内——因为那是 `@deepseek-ai/dsh-web-app` 钉的名册默认值。
+[冻结决策 12](../../../../profiles/eval/README.md#冻结决策) 说评测装置的销毁路径唯一：只有编排器持有 docker socket，评测实例的 agent 预设不挂 Bash 与 docker。到 I2 为止，这条决策只是一句话。实例跑的是随发行版的 `standard` 预设——功能完整的编码 Agent，Bash 在内——因为那是 `@deepseek-ai/dsh-web-app` 钉的名册默认值。
 
 I2 在宿主上直跑，没有容器边界，风险到此为止：顶多弄脏一个真实 home。I3 把 docker socket 交给编排器，每个单元都进 `lab` 的释放闸，这时 agent 目录里的一个 shell 就是同一个房间的第二扇门：跑到一半 `docker rm` 一下，或者往已归档的单元里写一笔，「没有单元能绕过 file-check 被释放」就不再是装置的性质，只是 agent 的自觉。
 
@@ -42,7 +42,7 @@ patch 的 `config` 覆盖是整值**替换**而不是深合并（`vendor/include
 
 ### 这个预设够不到的
 
-预设只能过滤自己挂的行。四个委派工具由各 provider 自己的 bundle patch 装在 **profile 根**上（`tool-subagent-kimi`、`tool-subagent-codex-local` 以及 claude-code 与 dsh 的同款，都是 `@khorsheed/dsh-local-agent-tool-subagent` 的实例），而它们按构造就是执行类：每一个都在宿主上起一家 CLI，沙箱档位按[冻结决策](../../../../profiles/web-eval/README.md#冻结决策) 3 放开。新装实例里看得到三个——`subagent_codex`、`subagent_claude_code`、`subagent_kimi`；`subagent_dsh` 要在「设置 → 本地 Agent」里打开 DeepSeek 开关才出现，默认是关的。
+预设只能过滤自己挂的行。四个委派工具由各 provider 自己的 bundle patch 装在 **profile 根**上（`tool-subagent-kimi`、`tool-subagent-codex-local` 以及 claude-code 与 dsh 的同款，都是 `@khorsheed/dsh-local-agent-tool-subagent` 的实例），而它们按构造就是执行类：每一个都在宿主上起一家 CLI，沙箱档位按[冻结决策](../../../../profiles/eval/README.md#冻结决策) 3 放开。新装实例里看得到三个——`subagent_codex`、`subagent_claude_code`、`subagent_kimi`；`subagent_dsh` 要在「设置 → 本地 Agent」里打开 DeepSeek 开关才出现，默认是关的。
 
 三条可选路径，本次都没走：
 
@@ -93,5 +93,5 @@ patch 的 `config` 覆盖是整值**替换**而不是深合并（`vendor/include
 
 - [web-eval 的评测 pin 归 pack](2026-09-07-web-eval-pins-belong-to-the-pack.zh.md)——同一条归属论证，低一层。
 - [web-eval 安装的源码模式](../feature/2026-09-04-web-eval-install-source-mode.zh.md)——本次扩展的那个安装器。
-- [profiles/web-eval/README.md](../../../../profiles/web-eval/README.md#冻结决策-12-的执行点eval-预设)——面向操作者的一节，含怎样确认运行中的实例正在用这个预设。
-- [web-eval 迭代计划](../../../../profiles/web-eval/docs/iterations.md)——I3 · T21。
+- [profiles/eval/README.md](../../../../profiles/eval/README.md#冻结决策-12-的执行点eval-预设)——面向操作者的一节，含怎样确认运行中的实例正在用这个预设。
+- [web-eval 迭代计划](../../../../profiles/eval/docs/iterations.md)——I3 · T21。

@@ -6,7 +6,7 @@
  * product form (one install = the family plus the mode). While both exist the
  * two copies must not drift: this spec compares each mode bundle's preset row
  * against the presets bundle's — the parsed `plugins:` composition plus the
- * display fields `name` / `description` / `order` (unlike the web-eval parity
+ * display fields `name` / `description` / `order` (unlike the eval-pack parity
  * spec, `order` must match here: both copies ride the SAME deployment's chip
  * list). It compares COMPOSITION, not bytes — the copies differ on purpose in
  * comments (provenance notes) and quoting (both facts YAML-equivalent).

@@ -25,7 +25,7 @@ import { dirname, join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 const REPO = resolve(import.meta.dirname, '..')
-const PROFILE = join(REPO, 'profiles/web-eval')
+const PROFILE = join(REPO, 'profiles/eval')
 
 /** A `$DSH_HOME` with an installed-looking preset the scripts would replace. */
 function stageHome(): { home: string; marker: string } {
