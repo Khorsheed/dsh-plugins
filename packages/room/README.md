@@ -19,7 +19,7 @@
 - **成员保留原生会话**——成员页记录名称、provider、角色、工作目录覆盖（留空继承 Room 目录）、有效配置与会话入口；面包屑与任务入口能进入成员自己的会话，查看工具、耗时与 token 用量。Room 原生会话的统计不是所有成员消耗的总和。
 - **共享模型/强度控制**——协调者与成员输入栏共用同一套 core 模型/effort 控制；运行中选择新配置会排到下一完整轮次（工具续跑沿用本轮配置），冻结的评测成员拒绝变更。原生 DSH 主会话仍使用宿主模型选择器及其语义——它不是 local-agent 成员控制器。
 - **实时输出与定向停止**——成员把原生正文与推理增量同时呈现在自己的会话和 Room 中；最终消息与工具记录仍是权威内容。定向停止只中断该成员，非空部分输出带明确的停止/失败标记、耗时与会话入口保留；长回答可从紧凑预览展开。
-- **入口随 preset 授权显隐、失败放行**——「邀请 agent」chip 与「成员」tab 只在当前会话的 preset 组合授予 `@khorsheed/dsh-room/tool` 行时出现；读不到组合时保持可见（fail-open）；已是 Room 的会话始终保留界面。
+- **入口随 preset 授权显隐、失败放行**——「邀请 agent」chip 与「成员」tab 只在当前会话的 preset 组合授予 `@khorsheed/dsh-room/tool` 行时出现；读不到组合时保持可见（fail-open）；已是 Room 的会话始终保留界面。注册/注销的切换延后到下一帧生效（requestAnimationFrame），不在会话切换的同步刷新里改注册——避开宿主 ui-conversation `refreshViews` 对已释放会话的滞留绑定抛 uncaught 的窗口期（上游修复提案 docs/upstream-proposals/2026-10-20-refreshviews-stale-binding-robustness.md）。
 
 <img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/room-invite.png" width="640" alt="成员标签页：空态的「把会话变成多 agent 协作间」与会话头部的「邀请 agent」入口">
 

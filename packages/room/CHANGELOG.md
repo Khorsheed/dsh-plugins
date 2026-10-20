@@ -1,5 +1,9 @@
 # 变更记录
 
+## 未发布
+
+- 自隐 tab（成员 tab 等 `conversation.view` 条目）的注册/注销切换延后到下一帧（requestAnimationFrame），避开宿主 ui-conversation `refreshViews` 对已释放会话滞留绑定的 uncaught throw 窗口期——上游修复提案见 docs/upstream-proposals/2026-10-20-refreshviews-stale-binding-robustness.md。
+
 ## 0.2.1（2026-09-30）
 
 无功能变更。加宽 `@deepseek-ai/dsh-*` peer 区间以覆盖宿主 0.2.0（0.2.0 的兼容闸会禁用 peer 区间不覆盖宿主版本的已装插件）。

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /** The browser half's apply: Remote mount, the slot entries, store wiring, teardown. */
-import { describe, expect, it, vi, afterEach } from 'vitest'
+import { describe, expect, it, vi, afterEach, beforeEach } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
@@ -13,7 +13,21 @@ import type { RoomState } from '../src/types.ts'
 
 afterEach(() => {
   cleanup()
+  vi.unstubAllGlobals()
 })
+
+// The preset-visibility toggles apply register/unregister on the next
+// animation frame; in the spec a frame is a zero timeout, so `settled()`
+// flushes it.
+beforeEach(() => {
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => setTimeout(() => callback(0), 0) as unknown as number)
+  vi.stubGlobal('cancelAnimationFrame', (id: number) => { clearTimeout(id) })
+})
+
+/** Flush the visibility controller's inventory fetch and the toggle's scheduled frame. */
+async function settled(): Promise<void> {
+  await new Promise(resolve => setTimeout(resolve, 0))
+}
 
 /** An empty room state as the host's getState returns it. */
 export const EMPTY_ROOM: RoomState = { members: [], relays: [], tasks: [], runs: [] }
@@ -91,6 +105,7 @@ describe('room client apply', () => {
   it('mounts the Remote, registers the five Definitions and the slot entries with the right shapes', async () => {
     const { ctx, slots, remoteService, conversationEvents } = await bench()
     await ctx.plugin({ inject: [...inject], apply }).await()
+    await settled()
     expect(remoteService.$mount).toHaveBeenCalledTimes(1)
     expect(conversationEvents.register).toHaveBeenCalledTimes(5)
 
@@ -123,6 +138,7 @@ describe('room client apply', () => {
   it('still registers every surface when the Remote mount fails (already mounted elsewhere)', async () => {
     const { ctx, slots } = await bench({ mountFails: true })
     await ctx.plugin({ inject: [...inject], apply }).await()
+    await settled()
     expect(slots.entries('conversation.session.header.actions')).toHaveLength(1)
     expect(slots.entries('conversation.composer')).toHaveLength(1)
     expect(slots.entries('conversation.view')).toHaveLength(1)
@@ -184,6 +200,7 @@ describe('room client apply', () => {
     ctx.provide('sidebarRightTabs', { register } as never)
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
+    await settled()
     expect(register).toHaveBeenCalledWith(expect.objectContaining({ id: '@khorsheed/dsh-room/plan', kind: 'room-plan' }))
     expect(slots.entries('sidebar.right.pane.tab').map(entry => entry.options.key)).toContain('@khorsheed/dsh-room/plan')
     const composer = slots.entries('conversation.composer')[0]!

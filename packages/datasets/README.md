@@ -191,7 +191,7 @@ dsh-datasets import-bindings [--state-root DIR]
 
 ## 题集 tab（web）
 
-web profile 下插件向会话的视图环贡献 **`datasets` tab**（标签「题集 / Datasets」，与 chat、trajectory 并列）。两页一壳，形状按 [web-eval 界面规格](../../profiles/web-eval/docs/ui-spec.md) §三 §四。
+web profile 下插件向会话的视图环贡献 **`datasets` tab**（标签「题集 / Datasets」，与 chat、trajectory 并列）。两页一壳，形状按 [web-eval 界面规格](../../profiles/eval/docs/ui-spec.md) §三 §四。
 
 **槽位词汇**。文件按**谁看得到**标注，不按层名——层名是一个题集内部的作者约定，看 tab 的人要判断的是可见性。每个文件恰好落一个**角色**（由 `dataset.json` 的 `layers` + `register` 算出，是机制事实）：选手看得到（`modelFacing` 层）、只有判官（`grading`）、只有探针（`verify`）、不发给选手（其他敏感层）、所有人可读（透传区）。角色之上再给一个**槽位**显示名（题干 / 验收标准 / 参考答案 / 评估标准 / 检查脚本 / 其他文件），由基名启发式给出：`oracle/` 下的一律是参考答案，`task.md` 与 `prompts/` 下的是题干，`rubric*` 与 `standards-notes*` 是评估标准，`standards*` 是验收标准，`checks/` 与 `probes/` 下的是检查脚本；接着是只看角色才成立的两条（T98）：选手看得到的文件，层名或目录名是 `prompt` / `prompts` / `task`、或基名以 `prompt`、`problem_statement` 开头的是题干（HumanEval、MMLU、SWE-bench Lite 整理出来的形状），只有判官看得到的文件，基名以 `canonical_solution`、`solution`、`answer`、`gold`、`patch` 开头的是参考答案；都不匹配时按角色兜底（verify 层归检查脚本，grading 层归评估标准，选手可见层归其他文件——可见层里也有代码仓快照、数据文件，不默认算题干）。协议的两种布局因此得到同一个答案：register 形态的 `answers/rubric.yml` 与约定形态的 `rubric.yml` 都是「评估标准 · 只有判官」。启发式与角色计算都在 `src/slots.ts` 一处，宿主与浏览器共用同一个函数——协议没有槽位字段，为一个显示名分叉 descriptor 格式不值得；题集自定义槽位名是后话。
 
@@ -242,7 +242,7 @@ tab 的数据面是一个 Typert Remote 服务（`datasetsRemote`，线 namespac
 - 「让 Agent 整理」挑预设（T102）：没配 `authoringPreset` 时由宿主侧经 ctx.get 读宿主 0.2.0 的 `agentPresets` 注册表（`list`、`readDocument`、`defaultId`），按 datasets 工具行的 `organize` 档挑；注册表或其中任何一个成员缺失时留默认预设，请求里照常点名 skill。
 - 全局「题集」面板（T97）用宿主 0.2.0 的 `main` 与 `sidebar.panellist` 两个槽，经 `slots.inject` 注册；宿主没有这两个槽时不出现，不报错。T97 起 Remote 的方法都不带会话参数，所以新版客户端不能和 T97 之前的服务端混用（反过来也一样）。两半来自同一个包，正常安装不会出现这种情况。审阅页的校验事实按提交号缓存在状态根的提案库下（插件内部）。
 - 题库登记与只读物化（T73）同样是插件内部的：登记是状态根下一个 JSON 文件，物化只用 `git archive` + `tar`，不需要新的宿主能力；原生目录选择器沿用已有的宿主探测，探不到就只留路径输入。
-- ⚠️ 降级：slash 依赖交互式 UI adapter（web/TUI profile）；headless profile 下 `/datasets` 不可用，CLI 不受影响（模型工具由工具行提供）。题集 tab 自隐：只有当当前会话的 preset 组合引用了 `@khorsheed/dsh-datasets/tool` 行时它才注册，判据取自官方 `pluginInventory` Remote，任何读不出的路径一律 fail-open（保持可见）。**「当前会话的 preset」沿父链取第一个**（I5·T60 · web-eval T39 · G13）：成员子会话自己没有 preset，单看它就失败开放，于是每个受判据管的 tab 都出现在选手的子会话里。工具行随本包一起安装（T88 评测家族折叠前它是独立伴生包 `@khorsheed/dsh-datasets-tool`，已退役）；行解析失败只让该 preset 组合报 broken，实例 boot 不受影响。会话 tab 是 web 端面——TUI 没有 tab 机制；headless profile 提供 Remote 数据面但没有浏览器消费方。
+- ⚠️ 降级：slash 依赖交互式 UI adapter（web/TUI profile）；headless profile 下 `/datasets` 不可用，CLI 不受影响（模型工具由工具行提供）。题集 tab 自隐：只有当当前会话的 preset 组合引用了 `@khorsheed/dsh-datasets/tool` 行时它才注册，判据取自官方 `pluginInventory` Remote，任何读不出的路径一律 fail-open（保持可见）。注册/注销的切换延后到下一帧生效（requestAnimationFrame），不在会话切换的同步刷新里改注册——避开宿主 ui-conversation `refreshViews` 对已释放会话的滞留绑定抛 uncaught 的窗口期（上游修复提案 docs/upstream-proposals/2026-10-20-refreshviews-stale-binding-robustness.md）。**「当前会话的 preset」沿父链取第一个**（I5·T60 · web-eval T39 · G13）：成员子会话自己没有 preset，单看它就失败开放，于是每个受判据管的 tab 都出现在选手的子会话里。工具行随本包一起安装（T88 评测家族折叠前它是独立伴生包 `@khorsheed/dsh-datasets-tool`，已退役）；行解析失败只让该 preset 组合报 broken，实例 boot 不受影响。会话 tab 是 web 端面——TUI 没有 tab 机制；headless profile 提供 Remote 数据面但没有浏览器消费方。
 
 本节与 package.json 的 `dsh.compat` 字段互为镜像，同步更新。
 

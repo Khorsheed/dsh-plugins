@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /** The browser half's apply: Remote mount, the conversation.view entry (registered exactly while the current session's preset composition grants the mission tool row), the injected face, teardown. */
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
@@ -33,10 +33,18 @@ const DEV: MissionPluginInventorySnapshot = {
   ],
 }
 
-/** Flush the visibility controller's inventory fetch. */
+/** Flush the visibility controller's inventory fetch and the toggle's scheduled frame. */
 async function settled(): Promise<void> {
   await new Promise(resolve => setTimeout(resolve, 0))
 }
+
+// The preset-visibility toggle applies register/unregister on the next
+// animation frame; in the spec a frame is a zero timeout, so `settled()`
+// flushes it.
+beforeEach(() => {
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => setTimeout(() => callback(0), 0) as unknown as number)
+  vi.stubGlobal('cancelAnimationFrame', (id: number) => { clearTimeout(id) })
+})
 
 /** Real cordis composition with the slot registry, locale runtime, a session list, and stub remotes. */
 async function bench(options: {
@@ -87,11 +95,11 @@ async function bench(options: {
     name: 'root',
     children: { 'conversation.view': { kind: 'list', scope: 'session' } },
   } as never, () => null)
-  return { ctx, slots, remote, remoteService }
+  return { ctx, slots, remote, remoteService, list }
 }
 
 describe('mission client apply', () => {
-  afterEach(() => { document.head.innerHTML = '' })
+  afterEach(() => { document.head.innerHTML = ''; vi.unstubAllGlobals() })
 
   it('declares the services it uses', () => {
     expect(inject).toEqual(['slots', 'remote', 'locale', 'sessions'])
@@ -100,6 +108,7 @@ describe('mission client apply', () => {
   it('mounts the Remote and registers the missions view entry', async () => {
     const { ctx, slots, remoteService } = await bench()
     await ctx.plugin({ inject: [...inject], apply }).await()
+    await settled()
 
     expect(remoteService.$mount).toHaveBeenCalledTimes(1)
     const entries = slots.entries('conversation.view')
@@ -111,12 +120,14 @@ describe('mission client apply', () => {
   it('still registers the view when the Remote mount fails (already mounted elsewhere)', async () => {
     const { ctx, slots } = await bench({ mountFails: true })
     await ctx.plugin({ inject: [...inject], apply }).await()
+    await settled()
     expect(slots.entries('conversation.view')).toHaveLength(1)
   })
 
   it('registers the tab on a 0.1.5-shaped list (legacy current fallback)', async () => {
     const { ctx, slots } = await bench({ legacyCurrent: true })
     await ctx.plugin({ inject: [...inject], apply }).await()
+    await settled()
     expect(slots.entries('conversation.view')).toHaveLength(1)
   })
 
@@ -130,6 +141,40 @@ describe('mission client apply', () => {
   it('drops the tab registration in a session whose preset grants no mission tools', async () => {
     const { ctx, slots } = await bench({ preset: 'standard', composition: DEV })
     await ctx.plugin({ inject: [...inject], apply }).await()
+    await settled()
+    expect(slots.entries('conversation.view')).toHaveLength(0)
+  })
+
+  // The 2026-10-20 mitigation: a session switch drives the toggle's sync
+  // INSIDE the session-list flush, and a synchronous re-registration there is
+  // what tripped the host's refreshViews stale-binding throw. The toggle now
+  // steps out of the flush: the switch only schedules the change, the next
+  // frame applies it (upstream proposal
+  // docs/upstream-proposals/2026-10-20-refreshviews-stale-binding-robustness.md).
+  it('a session switch unregisters on the NEXT frame, never inside the list flush', async () => {
+    const { ctx, slots, list } = await bench({
+      composition: DEV,
+      rows: {
+        s1: { projectionValues: { agentPreset: 'dev' } },
+        s2: { projectionValues: { agentPreset: 'standard' } },
+      },
+    })
+    await ctx.plugin({ inject: [...inject], apply }).await()
+    await settled()
+    expect(slots.entries('conversation.view')).toHaveLength(1)
+
+    // The main view moves to a session whose preset grants no mission tools.
+    list.set({
+      ids: ['s1', 's2'],
+      byId: {
+        s1: { id: 's1' as SessionId, projectionValues: { agentPreset: 'dev' } },
+        s2: { id: 's2' as SessionId, retainedBy: { mainView: 1 }, projectionValues: { agentPreset: 'standard' } },
+      },
+      phase: 'ready', subagentsByParent: {}, jobsBySession: {},
+    })
+    // …and the entry is STILL registered synchronously after the flush…
+    expect(slots.entries('conversation.view')).toHaveLength(1)
+    // …until the next frame applies the latest criterion.
     await settled()
     expect(slots.entries('conversation.view')).toHaveLength(0)
   })
@@ -168,6 +213,7 @@ describe('mission client apply', () => {
   it('the injected face binds every verb to the Remote namespace with the session id', async () => {
     const { ctx, slots, remote } = await bench()
     await ctx.plugin({ inject: [...inject], apply }).await()
+    await settled()
     const entry = slots.entries('conversation.view')[0]!
     const face = (entry.inject as unknown as (sessionId: string) => MissionsViewInjected)('s1')
 
@@ -198,6 +244,7 @@ describe('mission client apply', () => {
     const { ctx, slots } = await bench()
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
+    await settled()
     expect(slots.entries('conversation.view')).toHaveLength(1)
 
     await fiber.dispose()

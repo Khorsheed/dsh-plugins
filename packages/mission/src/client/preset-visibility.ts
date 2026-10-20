@@ -161,6 +161,28 @@ export class MissionPresetVisibility implements MissionChromeVisibility {
 }
 
 /**
+ * The register/unregister beat: the NEXT animation frame (a zero timeout
+ * where no rAF exists — headless tests), cancellable.
+ *
+ * Why not synchronous: every change of a `conversation.view` registration
+ * re-triggers ui-conversation's `refreshViews`, which re-reads every mounted
+ * session binding and throws UNCAUGHT on one whose session record is already
+ * released — the window a session switch opens, and this toggle's sync() rides
+ * exactly that flush (upstream proposal
+ * docs/upstream-proposals/2026-10-20-refreshviews-stale-binding-robustness.md;
+ * the production incident killed the message timeline, which shared the
+ * aborted flush). One frame later the flush has settled.
+ */
+function nextFrame(callback: () => void): () => void {
+  if (typeof requestAnimationFrame === 'function') {
+    const id = requestAnimationFrame(callback)
+    return () => { cancelAnimationFrame(id) }
+  }
+  const id = setTimeout(callback, 0)
+  return () => { clearTimeout(id) }
+}
+
+/**
  * The 任务 tab's registration toggle: the `conversation.view` tab strip's
  * BUTTONS enumerate the slot's registrations (ui-conversation's `viewTabs()`
  * has no per-session predicate), so a hidden tab means NO registration — a
@@ -168,14 +190,22 @@ export class MissionPresetVisibility implements MissionChromeVisibility {
  * toggle registers exactly while the criterion passes for the current
  * session and disposes otherwise; the slot's own subscription re-renders the
  * strip (the same re-registration mechanism the room members tab uses).
+ *
+ * Criterion-driven switches apply on the NEXT frame (see {@link nextFrame}),
+ * coalesced — repeated syncs collapse into the one scheduled frame, which
+ * reads the LATEST decision. The readiness gate's teardown arm is the
+ * exception: setReady(false) cancels a pending frame and unmounts a live
+ * registration SYNCHRONOUSLY, so nothing can register after it.
  */
 export class RegistrationToggle {
   private dispose: (() => void) | undefined
   private ready = false
+  /** The coalesced pending re-evaluation's canceler; undefined when no frame is scheduled. */
+  private pending: (() => void) | undefined
 
   /**
    * @param register - mounts the entry and returns its disposer.
-   * @param show - the current decision (re-read on every sync).
+   * @param show - the current decision (re-read when the scheduled frame runs).
    */
   constructor(
     private readonly register: () => () => void,
@@ -185,21 +215,30 @@ export class RegistrationToggle {
   /** The slot declaration appeared (slots.inject's arm) — decisions may register now. */
   setReady(ready: boolean): void {
     this.ready = ready
-    if (!ready && this.dispose !== undefined) {
-      this.dispose()
-      this.dispose = undefined
+    if (!ready) {
+      this.pending?.()
+      this.pending = undefined
+      if (this.dispose !== undefined) {
+        this.dispose()
+        this.dispose = undefined
+      }
+      return
     }
     this.sync()
   }
 
-  /** Re-evaluate: register while shown and ready, dispose otherwise. */
+  /** Re-evaluate on the next frame: register while shown and ready, dispose otherwise. */
   sync(): void {
-    if (!this.ready) return
-    if (this.show()) {
-      this.dispose ??= this.register()
-    } else if (this.dispose !== undefined) {
-      this.dispose()
-      this.dispose = undefined
-    }
+    if (!this.ready || this.pending !== undefined) return
+    this.pending = nextFrame(() => {
+      this.pending = undefined
+      if (!this.ready) return
+      if (this.show()) {
+        this.dispose ??= this.register()
+      } else if (this.dispose !== undefined) {
+        this.dispose()
+        this.dispose = undefined
+      }
+    })
   }
 }

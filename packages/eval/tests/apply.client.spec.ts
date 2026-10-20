@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /** The browser half's apply: Remote mount, the conversation.view entry (registered exactly while the current session's preset composition grants the eval tool row), the injected face, teardown. */
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
@@ -38,10 +38,18 @@ const PRESETS: EvalPluginInventorySnapshot = {
   ],
 }
 
-/** Flush the visibility controller's inventory fetch. */
+/** Flush the visibility controller's inventory fetch and the toggle's scheduled frame. */
 async function settled(): Promise<void> {
   await new Promise(resolve => setTimeout(resolve, 0))
 }
+
+// The preset-visibility toggles apply register/unregister on the next
+// animation frame; in the spec a frame is a zero timeout, so `settled()`
+// flushes it.
+beforeEach(() => {
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => setTimeout(() => callback(0), 0) as unknown as number)
+  vi.stubGlobal('cancelAnimationFrame', (id: number) => { clearTimeout(id) })
+})
 
 /** Real cordis composition with the slot registry, locale runtime, a session list, and stub remotes. */
 async function bench(options: {
@@ -102,11 +110,11 @@ async function bench(options: {
         : {}),
     },
   } as never, () => null)
-  return { ctx, slots, remote, remoteService }
+  return { ctx, slots, remote, remoteService, list }
 }
 
 describe('eval client apply', () => {
-  afterEach(() => { document.head.innerHTML = '' })
+  afterEach(() => { document.head.innerHTML = ''; vi.unstubAllGlobals() })
 
   it('declares the services it uses', () => {
     expect(inject).toEqual(['slots', 'remote', 'locale', 'sessions'])
@@ -118,6 +126,7 @@ describe('eval client apply', () => {
   it('registers the eval_plan_draft card once the host declares tool.call.toolview', async () => {
     const { ctx, slots, remote } = await bench()
     await ctx.plugin({ inject: [...inject], apply }).await()
+    await settled()
     expect(slots.entries('tool.call.toolview' as never)).toHaveLength(0)
     // Declared the way ui-tool does it: by an entry that owns the child slot.
     slots.register({
@@ -147,6 +156,7 @@ describe('eval client apply', () => {
   it('mounts the Remote and registers the lab view entry at order 40', async () => {
     const { ctx, slots, remoteService } = await bench()
     await ctx.plugin({ inject: [...inject], apply }).await()
+    await settled()
 
     expect(remoteService.$mount).toHaveBeenCalledTimes(1)
     const entries = slots.entries('conversation.view')
@@ -158,12 +168,14 @@ describe('eval client apply', () => {
   it('still registers the view when the Remote mount fails (already mounted elsewhere)', async () => {
     const { ctx, slots } = await bench({ mountFails: true })
     await ctx.plugin({ inject: [...inject], apply }).await()
+    await settled()
     expect(slots.entries('conversation.view')).toHaveLength(1)
   })
 
   it('registers the tab on a 0.1.5-shaped list (legacy current fallback)', async () => {
     const { ctx, slots } = await bench({ legacyCurrent: true })
     await ctx.plugin({ inject: [...inject], apply }).await()
+    await settled()
     expect(slots.entries('conversation.view')).toHaveLength(1)
   })
 
@@ -177,6 +189,40 @@ describe('eval client apply', () => {
   it('drops the tab registration in a session whose preset grants no eval tools', async () => {
     const { ctx, slots } = await bench({ preset: 'standard', composition: PRESETS })
     await ctx.plugin({ inject: [...inject], apply }).await()
+    await settled()
+    expect(slots.entries('conversation.view')).toHaveLength(0)
+  })
+
+  // The 2026-10-20 mitigation: a session switch drives the toggle's sync
+  // INSIDE the session-list flush, and a synchronous re-registration there is
+  // what tripped the host's refreshViews stale-binding throw. The toggle now
+  // steps out of the flush: the switch only schedules the change, the next
+  // frame applies it (upstream proposal
+  // docs/upstream-proposals/2026-10-20-refreshviews-stale-binding-robustness.md).
+  it('a session switch unregisters on the NEXT frame, never inside the list flush', async () => {
+    const { ctx, slots, list } = await bench({
+      composition: PRESETS,
+      rows: {
+        s1: { projectionValues: { agentPreset: 'eval' } },
+        s2: { projectionValues: { agentPreset: 'standard' } },
+      },
+    })
+    await ctx.plugin({ inject: [...inject], apply }).await()
+    await settled()
+    expect(slots.entries('conversation.view')).toHaveLength(1)
+
+    // The main view moves to a session whose preset grants no eval tools.
+    list.set({
+      ids: ['s1', 's2'],
+      byId: {
+        s1: { id: 's1' as SessionId, projectionValues: { agentPreset: 'eval' } },
+        s2: { id: 's2' as SessionId, retainedBy: { mainView: 1 }, projectionValues: { agentPreset: 'standard' } },
+      },
+      phase: 'ready', subagentsByParent: {}, jobsBySession: {},
+    })
+    // …and the entry is STILL registered synchronously after the flush…
+    expect(slots.entries('conversation.view')).toHaveLength(1)
+    // …until the next frame applies the latest criterion.
     await settled()
     expect(slots.entries('conversation.view')).toHaveLength(0)
   })
@@ -234,6 +280,7 @@ describe('eval client apply', () => {
   it('the injected face binds every verb to the session-less Remote; approve alone takes the session (T97)', async () => {
     const { ctx, slots, remote } = await bench()
     await ctx.plugin({ inject: [...inject], apply }).await()
+    await settled()
     const entry = slots.entries('conversation.view')[0]!
     const face = (entry.inject as unknown as (sessionId: string) => LabViewInjected)('s1')
 
@@ -286,6 +333,7 @@ describe('eval client apply', () => {
   it('every session-less verb takes exactly one request object', async () => {
     const { ctx, slots, remote } = await bench()
     await ctx.plugin({ inject: [...inject], apply }).await()
+    await settled()
     const entry = slots.entries('conversation.view')[0]!
     const face = (entry.inject as unknown as (sessionId: string) => LabViewInjected)('s1')
 
@@ -299,6 +347,7 @@ describe('eval client apply', () => {
   it('the job-log verb is session-LESS — it is the CI face\'s own runOutput', async () => {
     const { ctx, slots, remote } = await bench()
     await ctx.plugin({ inject: [...inject], apply }).await()
+    await settled()
     const entry = slots.entries('conversation.view')[0]!
     const face = (entry.inject as unknown as (sessionId: string) => LabViewInjected)('s1')
 
@@ -313,6 +362,7 @@ describe('eval client apply', () => {
     const { ctx, slots } = await bench()
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
+    await settled()
     expect(slots.entries('conversation.view')).toHaveLength(1)
 
     await fiber.dispose()
@@ -345,6 +395,7 @@ describe('eval client apply', () => {
     it('answers false without the sidebar, so the lab keeps its own Sheet', async () => {
       const { ctx, slots } = await bench()
       await ctx.plugin({ inject: [...inject], apply }).await()
+      await settled()
       expect(faceOf(slots).openInspect?.('s1' as SessionId, target)).toBe(false)
     })
 
@@ -352,6 +403,7 @@ describe('eval client apply', () => {
       const { ctx, slots } = await bench()
       const { types, right } = sidebar(ctx)
       await ctx.plugin({ inject: [...inject], apply }).await()
+      await settled()
       expect(types).toHaveLength(1)
       expect(types[0]).toMatchObject({ id: '@khorsheed/dsh-eval:inspect', kind: 'eval-inspect' })
       expect(faceOf(slots).openInspect?.('s1' as SessionId, target)).toBe(true)
@@ -362,6 +414,7 @@ describe('eval client apply', () => {
       const { ctx, slots } = await bench()
       sidebar(ctx, () => { throw new Error('no seat') })
       await ctx.plugin({ inject: [...inject], apply }).await()
+      await settled()
       expect(faceOf(slots).openInspect?.('s1' as SessionId, target)).toBe(false)
     })
 
@@ -438,6 +491,7 @@ describe('eval client apply', () => {
     it('registers neither without the slots (an older host): no entry, no error', async () => {
       const { ctx, slots } = await bench()
       await ctx.plugin({ inject: [...inject], apply }).await()
+      await settled()
       expect(slots.entries('conversation.view')).toHaveLength(1)
       expect(slots.entries('sidebar.panellist' as never)).toHaveLength(0)
       expect(slots.entries('main' as never)).toHaveLength(0)

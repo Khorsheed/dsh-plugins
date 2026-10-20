@@ -20,7 +20,7 @@ import {
   type RoomPluginInventorySnapshot,
 } from '../src/client/preset-visibility.ts'
 
-afterEach(() => { cleanup() })
+afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
 const DEV: RoomPluginInventorySnapshot = {
   agentPresets: [
@@ -132,33 +132,100 @@ describe('RoomPresetVisibility.show', () => {
 })
 
 describe('RegistrationToggle (the members tab hide level)', () => {
-  it('registers only while shown, disposes when hidden, and defers until the slot is ready', () => {
+  /**
+   * A deterministic animation frame: scheduled callbacks queue until flush().
+   * The production toggle defers to rAF so a criterion switch never re-registers
+   * inside the session-list flush (the host's refreshViews stale-binding window).
+   */
+  function fakeFrames() {
+    const queue = new Map<number, FrameRequestCallback>()
+    let nextId = 1
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      const id = nextId++
+      queue.set(id, callback)
+      return id
+    })
+    vi.stubGlobal('cancelAnimationFrame', (id: number) => { queue.delete(id) })
+    return {
+      get pending() { return queue.size },
+      flush() {
+        const callbacks = [...queue.values()]
+        queue.clear()
+        for (const callback of callbacks) callback(0)
+      },
+    }
+  }
+
+  it('registers only while shown, disposes when hidden — each switch applied on the NEXT frame', () => {
+    const frames = fakeFrames()
     const dispose = vi.fn()
     const register = vi.fn(() => dispose)
     let shown = false
     const toggle = new RegistrationToggle(register, () => shown)
 
-    // Not ready yet: a passing criterion registers nothing.
+    // Not ready yet: a passing criterion schedules nothing.
     shown = true
     toggle.sync()
     expect(register).not.toHaveBeenCalled()
+    expect(frames.pending).toBe(0)
 
+    // Ready: the registration itself waits for the frame.
     toggle.setReady(true)
+    expect(register).not.toHaveBeenCalled()
+    frames.flush()
     expect(register).toHaveBeenCalledTimes(1)
 
-    // Criterion fails (a switch to a non-granted session): the entry leaves.
+    // Criterion fails (a switch to a non-granted session): the entry leaves
+    // on the NEXT frame, not synchronously inside the session-list flush.
     shown = false
     toggle.sync()
+    expect(dispose).not.toHaveBeenCalled()
+    frames.flush()
     expect(dispose).toHaveBeenCalledTimes(1)
 
-    // And returns when the criterion passes again.
+    // And returns on a frame when the criterion passes again.
     shown = true
     toggle.sync()
+    expect(register).toHaveBeenCalledTimes(1)
+    frames.flush()
     expect(register).toHaveBeenCalledTimes(2)
 
-    // Slot teardown disposes a live registration.
+    // Slot teardown disposes a live registration SYNCHRONOUSLY.
     toggle.setReady(false)
     expect(dispose).toHaveBeenCalledTimes(2)
+  })
+
+  it('coalesces a burst of session-switch syncs into one frame that reads the LATEST criterion', () => {
+    const frames = fakeFrames()
+    const register = vi.fn(() => vi.fn())
+    let shown = true
+    const toggle = new RegistrationToggle(register, () => shown)
+    toggle.setReady(true)
+    // Several switches land before the frame runs: still one scheduled frame.
+    toggle.sync()
+    shown = false
+    toggle.sync()
+    expect(frames.pending).toBe(1)
+    frames.flush()
+    // The frame read the latest decision (hidden): nothing ever registered.
+    expect(register).not.toHaveBeenCalled()
+  })
+
+  it('cancels a pending frame on teardown and never registers after setReady(false)', () => {
+    const frames = fakeFrames()
+    const register = vi.fn(() => vi.fn())
+    const toggle = new RegistrationToggle(register, () => true)
+    toggle.setReady(true)
+    expect(frames.pending).toBe(1)
+    toggle.setReady(false)
+    expect(frames.pending).toBe(0)
+    frames.flush()
+    expect(register).not.toHaveBeenCalled()
+    // A sync while not ready schedules nothing.
+    toggle.sync()
+    expect(frames.pending).toBe(0)
+    frames.flush()
+    expect(register).not.toHaveBeenCalled()
   })
 })
 

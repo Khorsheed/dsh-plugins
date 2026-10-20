@@ -6,7 +6,7 @@
 
 「模式可见性」的混乱大多源于混用了两个概念：
 
-- **profile（部署级）**：`basic` / `dev` / `web-eval` 是部署组合，决定插件**装不装、挂不挂**。一个实例只跑一个 profile。**运行时拿不到 profile 名**——host 和 client 的 ctx 上都没有 profile 标志，profile-boot 也不设环境变量。所以不存在「运行时判断当前 profile」这条路。
+- **profile（部署级）**：`basic` / `dev` / `eval` 是部署组合，决定插件**装不装、挂不挂**。一个实例只跑一个 profile。**运行时拿不到 profile 名**——host 和 client 的 ctx 上都没有 profile 标志，profile-boot 也不设环境变量。所以不存在「运行时判断当前 profile」这条路。
 - **preset（会话级）**：agent preset 是同实例内按会话授予的能力组合，**建会话时绑定并锁定**（存量会话永远保持创建时的 preset）；preset 的唯一选择点是建会话时的官方 chip——**不发起会话就不存在 preset 输入**。判据可读：会话的 preset id 从 `ctx.sessions.list` 投影读，preset 组合从官方 `pluginInventory` Remote 读。
 
 推论：**「按模式自隐」= 按会话 preset 自隐，且只对内容或配套能力绑定会话的 surface 成立**（见「判据轴」）。
@@ -60,7 +60,7 @@ host 没有声明式可见性：右栏 tab 注册表只有静态字段——0.1.
 - keyed tab 槽（`conversation.view`）的按钮枚举的是**注册**而非组件，隐藏 = 不注册：用 `RegistrationToggle` 随判据注册/注销；组件 `return null` 会留一个空壳按钮。list 槽（如 `conversation.session.header.utilities`）组件级 `return null` 即可。
 - **右栏 tab 类型同款 toggle**，host 语义天然适配（harness `ui-sidebar-right` 复核，0.1.5）：guide 页枚举注册表，注销即从类型选择页消失、`openTab` 不再解析；已打开的 tab **按会话存储**（`closeTab(sessionId, …)`），未授予会话的布局里本就没有它，切会话不残留；万一残留（类型已注销的打开 tab），body 渲染 `tab.unavailable` fallback——host 注释明写「a kind with no registrant is a real state, not a defect」，不崩溃不留空壳。
   - **0.1.7-rc.1 的差别**（T86 复核）：布局改为按会话落 `localStorage`（`persistence.ts`，键 `<sidebarPersistence>.<sessionId>`），刷新后已打开的 tab 还在，但 **tab 的 `navigation.params` 不随布局保存**——带参打开的页型 tab 刷新后拿到空参数。需要刷新后还原内容的插件自己按会话记住（eval 的 `dsh-eval.inspect.<sessionId>` 是样板，见 `.agents/notes/implemented/feature/2026-09-27-t86-eval-lab-sidebar.md`）；参数持久化的上游提案记为后续项。注销语义与 `tab.unavailable` fallback 不变。
-- 判据驱动重评估：订阅 `ctx.sessions.list`（会话切换）+ 自己的 inventory 应答。
+- 判据驱动重评估：订阅 `ctx.sessions.list`（会话切换）+ 自己的 inventory 应答；注册/注销**延后到下一帧生效**（requestAnimationFrame，无 rAF 回退零延时 setTimeout），绝不在会话列表的同步 flush 里改 `conversation.view` 注册——宿主 ui-conversation `refreshViews` 对已释放会话的滞留绑定抛 uncaught（2026-10-20 生产实证：同 flush 后排的 message-timeline 被连坐），上游修复提案见 docs/upstream-proposals/2026-10-20-refreshviews-stale-binding-robustness.md。例外是拆除臂：`setReady(false)` 同步取消挂起帧并当场摘掉注册。
 - 逃生门：若 surface 对应的真实对象存在（如 room 会话本身），永远显示——判据只过滤「没授予却展示入口」的情形。
 - 纯 UI 包在组合里没有任何行可 keyed 时：放一个工具行进 preset，或退回手配 `visiblePresets` 名单（config 须经 host → Remote 送达 client，worktrees `badgeConfig` 先例）。
 
