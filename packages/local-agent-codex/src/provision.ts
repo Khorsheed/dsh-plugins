@@ -1,35 +1,39 @@
 /**
- * Codex scoped-home provisioning: pin file-based credential storage so the
- * device-code login writes `auth.json` inside the scoped home. Codex's
- * `cli_auth_credentials_store` defaults to `auto` — on macOS that resolves
- * to the keychain, which would both leak credentials outside the scoped
- * home and defeat the `auth.json` presence check this package's records
- * adapter uses for authentication. An existing config is respected
- * untouched; sign-out removes the credential file.
+ * Codex scoped-home provisioning: a working `config.toml` (a person may edit
+ * it — custom providers, model, effort) plus the one-way sweep of the web
+ * login's leftover `auth.json`. The harness is endpoint-key only: a stale
+ * grant sitting next to an endpoint credential would keep authenticating the
+ * built-in provider while the status reads "unauthenticated", so provisioning
+ * deletes it on every boot (claude-code's OAuth-remnant sweep, same idea).
  * @module @khorsheed/dsh-local-agent-codex/provision
  */
 
-import { readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
-/** Credential file inside the scoped home; its presence marks auth. */
-const AUTH_FILE = 'auth.json'
-
-/** Minimal scoped config: keep credentials in the scoped home. */
+/** Minimal scoped config: keep any hand-run login's credentials in the scoped home. */
 const SCOPED_CONFIG = `# Written by dsh-local-agent-codex: keep the device-code
 # credentials inside the scoped home (auth.json) instead of the OS keychain.
 cli_auth_credentials_store = "file"
 `
 
+/** The web login's credential file, swept on every boot (endpoint-key only now). */
+const LEGACY_AUTH_FILE = 'auth.json'
+
 /**
- * Provision `<homeDir>/config.toml` unless one already exists. A present
- * config is respected untouched (a person may have edited it); otherwise a
- * minimal config pinning file-based credential storage is written so login
- * lands in the scoped home's `auth.json`.
+ * Provision the scoped home: ensure a `config.toml` exists (a minimal one —
+ * codex reads it for custom providers, model, and effort; the historical
+ * `cli_auth_credentials_store = "file"` pin stays so a hand-run `codex login`
+ * under the scoped home can never spill into the macOS keychain), and sweep
+ * the web login's leftover `auth.json` (the harness no longer consults it —
+ * endpoint key or nothing).
  * @param homeDir - the `codex` harness's scoped home.
  * @returns true when a config was written, false when one already existed.
  */
 export async function provisionCodexConfig(homeDir: string): Promise<boolean> {
+  // The sweep runs even when the config already exists: a leftover grant from
+  // the web-login era must not keep working past the upgrade.
+  await rm(join(homeDir, LEGACY_AUTH_FILE), { force: true })
   try {
     await readFile(join(homeDir, 'config.toml'))
     return false
@@ -182,28 +186,3 @@ export async function listCodexConfigModels(homeDir: string): Promise<string[]> 
   return found
 }
 
-/**
- * The credential file's modification stamp (epoch ms), undefined when absent.
- * A completed device-code login rewrites `auth.json`, so the stamp
- * distinguishes a fresh login from a leftover (possibly revoked) credential.
- * @param homeDir - the `codex` harness's scoped home.
- * @returns the marker's mtime, or undefined when no credential exists.
- */
-export async function codexCredentialStamp(homeDir: string): Promise<number | undefined> {
-  try {
-    return (await stat(join(homeDir, AUTH_FILE))).mtimeMs
-  } catch {
-    return undefined
-  }
-}
-
-/**
- * Sign out of the scoped account: remove the credential file, so `/<name>
- * status` reports not authenticated and the next login authorizes a fresh
- * account. With `cli_auth_credentials_store = "file"` the credentials live
- * solely in `auth.json`, so removing it is the logout path.
- * @param homeDir - the `codex` harness's scoped home.
- */
-export async function codexLogout(homeDir: string): Promise<void> {
-  await rm(join(homeDir, AUTH_FILE), { force: true })
-}

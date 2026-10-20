@@ -14,6 +14,7 @@
 import type { KimiNativeConfiguration } from './model-catalog.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import type { SettingsFace } from '@khorsheed/dsh-local-agent'
+import type { KimiEndpointAuth } from './endpoint-auth.ts'
 import { KimiAcpLiveDriver } from './live-driver.ts'
 import type { KimiLiveMirrorGranularity } from './live-driver.ts'
 
@@ -43,6 +44,13 @@ export class LiveDriverSwitch {
      * the driver's runtime binds whatever the member's layers resolve to.
      */
     private readonly model?: (childSessionId: string) => string | undefined,
+    /**
+     * Per-spawn endpoint credential resolver, handed to every driver
+     * generation: a resolution carrying a key authenticates the runtime
+     * through the managed provider's `api_key_env` indirection (the key rides
+     * the process env; the baseUrl is pinned by the pre-spawn surgery).
+     */
+    private readonly endpoint?: (scopeHome: string) => Promise<KimiEndpointAuth>,
   ) {
     this.apply(face.get())
     this.unwatch = face.watch((next) => { this.apply(next) })
@@ -73,6 +81,7 @@ export class LiveDriverSwitch {
       ? new KimiAcpLiveDriver(this.ctx, {
         ...this.liveIdleMs === undefined ? {} : { liveIdleMs: this.liveIdleMs },
         ...this.model === undefined ? {} : { model: this.model },
+        ...this.endpoint === undefined ? {} : { endpoint: this.endpoint },
       })
       : undefined
     if (retiring !== undefined) {

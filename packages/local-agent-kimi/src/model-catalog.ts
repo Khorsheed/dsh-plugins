@@ -81,7 +81,7 @@ export class KimiModelCatalog {
 
   private key(childSessionId?: string): string {
     const context = this.context(childSessionId)
-    const stamp = modelDirectoryContextKey({ provider: 'kimi', homeDir: context.homeDir, cwd: context.cwd ?? context.homeDir, cli: ['kimi'], files: [join(context.homeDir, 'config.toml'), join(context.homeDir, 'credentials', 'kimi-code.json')] })
+    const stamp = modelDirectoryContextKey({ provider: 'kimi', homeDir: context.homeDir, cwd: context.cwd ?? context.homeDir, cli: ['kimi'], files: [join(context.homeDir, 'config.toml'), join(context.homeDir, 'endpoint-auth.json')] })
     return JSON.stringify({ homeDir: context.homeDir, stamp, childSessionId, ...context.native === undefined ? {} : { native: context.native.directory } })
   }
 

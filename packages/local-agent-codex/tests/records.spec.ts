@@ -3,7 +3,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
-  codexAuthenticated,
   codexRolloutRoundFacts,
   codexRolloutTokenUsage,
   listCodexSessions,
@@ -78,14 +77,6 @@ describe('codex records', () => {
 
   it('returns [] when no sessions exist yet', async () => {
     expect(await listCodexSessions(tempHome('codex-empty-'))).toEqual([])
-  })
-
-  it('treats auth.json presence as authenticated', async () => {
-    const authed = tempHome('codex-auth-ok-')
-    writeFileSync(join(authed, 'auth.json'), '{}')
-    expect(await codexAuthenticated(authed)).toBe(true)
-    const notAuthed = tempHome('codex-auth-none-')
-    expect(await codexAuthenticated(notAuthed)).toBe(false)
   })
 })
 

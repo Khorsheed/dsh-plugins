@@ -103,8 +103,9 @@ describe('local-agent-codex apply', () => {
       displayName: 'Codex',
       homeEnvVar: 'CODEX_HOME',
       delegationProvider: 'codex-local',
-      login: { pty: { command: 'codex', args: ['login'] } },
     })
+    // No login declaration: the harness is endpoint-key only.
+    expect(registered[0]?.login).toBeUndefined()
     // The records adapter is exercised end-to-end by the records spec.
     expect(registered[0]?.records).toBeDefined()
     // The scoped home is provisioned with the file-credential config.

@@ -12,7 +12,7 @@
  * @module @khorsheed/dsh-local-agent-codex/records
  */
 
-import { open, readFile, readdir } from 'node:fs/promises'
+import { open, readdir } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import type { TokenUsage } from '@deepseek-ai/dsh-llm'
 import type { LocalAgentSessionRecord } from '@khorsheed/dsh-local-agent'
@@ -37,23 +37,6 @@ const ROLLOUT_WINDOW_SLACK_MS = 5 * 60_000
 
 /** Extra future slack for the window end (file timestamps may skew ahead). */
 const ROLLOUT_WINDOW_FUTURE_MS = 60_000
-
-/**
- * Whether the scoped home holds usable Codex credentials: the `auth.json`
- * file exists. Absent means the device-code flow has not completed.
- * @param homeDir - the `codex` harness's scoped home.
- * @returns true when credentials are present.
- */
-export async function codexAuthenticated(homeDir: string): Promise<boolean> {
-  try {
-    await readFile(join(homeDir, 'auth.json'))
-    return true
-  } catch (error) {
-    // No auth file yet: not authenticated.
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false
-    throw error
-  }
-}
 
 /** The head of one rollout file: the `session_meta` payload's fields we list. */
 interface SessionMeta {

@@ -1,8 +1,10 @@
 /**
  * Kimi Code harness instantiation of the local-agent family. Registers the
  * `kimi` harness into the core registry: scoped home under the shared homes
- * root (`KIMI_CODE_HOME`), device-code login through `kimi login`, and the
- * `session_index.jsonl` records adapter. Delegation mounts through the
+ * root (`KIMI_CODE_HOME`), endpoint-key authentication (endpoint-auth.ts —
+ * the managed provider reads the key from the `api_key_env` environment
+ * indirection; no OAuth anywhere), and the `session_index.jsonl` records
+ * adapter. Delegation mounts through the
  * `kimi-cli` provider (one-shot `kimi -p` under the scoped home); the
  * bundle patch's `tool-subagent-kimi` row puts the `subagent_kimi` tool on
  * the profile root, so every agent preset can delegate without variants.
@@ -23,12 +25,12 @@ import { LiveDriverSwitch } from './live-switch.ts'
 import type { KimiLiveSettings } from './live-switch.ts'
 import { KimiModelCatalog } from './model-catalog.ts'
 import { KimiModelBroker } from './model-broker.ts'
-import { kimiAuthenticated, kimiCredentialStamp, listKimiSessions } from './records.ts'
+import { listKimiSessions } from './records.ts'
 import { removeLegacyVariants } from './preset-tools.ts'
 import {
   DEFAULT_THINKING_EFFORT,
+  ensureKimiEndpointProvider,
   ensureKimiPermissions,
-  kimiLogout,
   KIMI_MANAGED_BASE_URL,
   provisionKimiConfig,
   readKimiAutoApprove,
@@ -36,6 +38,16 @@ import {
   readKimiDefaultModel,
   readKimiReasoningEffort,
 } from './provision.ts'
+import {
+  clearEndpointAuth,
+  endpointAuthFileExists,
+  endpointAuthStamp,
+  hasEndpointCredential,
+  readEndpointAuthFile,
+  resolveEndpointAuth,
+  writeEndpointAuth,
+  type KimiEndpointAuth,
+} from './endpoint-auth.ts'
 import { findKimiSessionDir, readKimiTranscript, renderTranscript } from './session-view.ts'
 
 /** Stable Cordis plugin name; the bundle patch row id. */
@@ -69,6 +81,21 @@ export interface Config {
    * so the default changes nothing.
    */
   thinkingEffort?: 'low' | 'high' | 'max'
+  /**
+   * Deployment-level endpoint credential: the managed provider's base URL
+   * (kimi's own coding service is the default; a kimi-protocol relay goes
+   * here). Merged per field UNDER the scope's own `endpoint-auth.json` (the
+   * settings card writes that file through the endpointAuth face). A scope
+   * without a key anywhere is unauthenticated — there is no login flow.
+   */
+  baseUrl?: string
+  /**
+   * Deployment-level endpoint key (a kimi-for-coding platform key). Rides
+   * the child process's environment through the managed provider's
+   * `api_key_env` indirection — `config.toml` never holds the secret. See
+   * {@link baseUrl} for the merge order.
+   */
+  apiKey?: string
   /**
    * Live driver: keep one resident `kimi acp` process per member and drive
    * turns over ACP (runtime-level graceful cancel, push-triggered mirroring)
@@ -115,6 +142,10 @@ function volatilize<S extends { volatile?: unknown }>(field: S): S {
 export const Config: z = z.object({
   model: volatilize(SETTINGS_FIELDS.model),
   thinkingEffort: z.union([z.const('low'), z.const('high'), z.const('max')]),
+  // The deployment-level endpoint pair is plain config (never volatile): it
+  // is the profile row's business, and the card writes the scope's own file.
+  baseUrl: z.string(),
+  apiKey: z.string(),
   live: volatilize(SETTINGS_FIELDS.live),
   liveIdleMs: z.number().default(DEFAULT_LIVE_IDLE_MS),
   liveMirrorGranularity: volatilize(SETTINGS_FIELDS.liveMirrorGranularity),
@@ -179,6 +210,17 @@ export function apply(ctx: Context, config: Config): void {
     // provision a redacted config once so the scoped home stands alone. The
     // reasoning effort rides the same provisioning (fresh homes only).
     const thinkingEffort = config.thinkingEffort ?? DEFAULT_THINKING_EFFORT
+    // The endpoint credential's deployment level: the plugin config pair,
+    // merged per field UNDER the scope's own endpoint-auth.json at resolve
+    // time. Resolved PER READ against the scope's home — a card write (which
+    // lands in the file through the endpointAuth face) takes effect on the
+    // next round with no reload.
+    const endpointConfig: KimiEndpointAuth = {
+      ...config.baseUrl === undefined ? {} : { baseUrl: config.baseUrl },
+      ...config.apiKey === undefined ? {} : { apiKey: config.apiKey },
+    }
+    const resolveEndpoint = (scopeHome: string): Promise<KimiEndpointAuth> =>
+      resolveEndpointAuth(scopeHome, endpointConfig)
     // Earlier versions bootstrapped <base>-kimi preset variants; the tool row
     // now mounts at the profile root, so remove the leftovers once.
     void removeLegacyVariants(ctx).catch((error: unknown) => {
@@ -190,7 +232,7 @@ export function apply(ctx: Context, config: Config): void {
     // bootstrap raced the config write — on a fresh home it could read
     // ENOENT and return early, leaving the Bash(*) allow rule unwritten
     // until the next boot (first-boot delegations answered without tools).
-    void provisionKimiConfig(homeDir, vol(config.model) ?? 'kimi-code/k3', thinkingEffort)
+    void provisionKimiConfig(homeDir, vol(config.model) ?? 'kimi-code/k3', thinkingEffort, config.baseUrl)
       .then(() => ensureKimiPermissions(homeDir))
       .catch((error: unknown) => {
         ctx.logger.warn(`local-agent-kimi: config provisioning failed: ${error instanceof Error ? error.message : String(error)}`)
@@ -240,7 +282,7 @@ export function apply(ctx: Context, config: Config): void {
     // the switch (a switch retires runtimes through it) — the circularity is
     // construction-order only, and no round can run before both exist.
     let broker: KimiModelBroker
-    const liveSwitch = new LiveDriverSwitch(ctx, face, config.liveIdleMs, child => broker.spawnModel(child))
+    const liveSwitch = new LiveDriverSwitch(ctx, face, config.liveIdleMs, child => broker.spawnModel(child), resolveEndpoint)
     const modelCatalog = new KimiModelCatalog(childSessionId => {
       const record = childSessionId === undefined ? undefined : ctx.localAgent.memberBinding?.(childSessionId) ?? ctx.localAgent.getDelegation(childSessionId)
       const native = childSessionId === undefined ? undefined : liveSwitch.memberRuntimeConfiguration(childSessionId)
@@ -258,7 +300,7 @@ export function apply(ctx: Context, config: Config): void {
       isLive: () => face.get().live,
       liveSwitch,
     })
-    const disposeProvider = ctx.subagents.registerProvider(new KimiCliProvider(ctx, liveSwitch.resolve, resolveModel, broker))
+    const disposeProvider = ctx.subagents.registerProvider(new KimiCliProvider(ctx, liveSwitch.resolve, resolveModel, broker, resolveEndpoint))
     const disposeHarness = ctx.localAgent.register({
       prepareMember: async ({ binding, childSession, configuration, signal }) => {
         const driver = liveSwitch.resolve(binding.childSessionId)
@@ -270,19 +312,77 @@ export function apply(ctx: Context, config: Config): void {
       displayName: 'Kimi Code',
       homeEnvVar: 'KIMI_CODE_HOME',
       delegationProvider: 'kimi-cli',
-      login: { command: 'kimi', args: ['login'] },
+      // No `login` declaration: the harness authenticates by endpoint key
+      // (endpoint-auth.ts), so the core reports the harness as not loginable
+      // and `/kimi login` answers that there is no login flow — no browser,
+      // no device code, nothing to authorize inside a container.
       records: { listSessions: homeDir => listKimiSessions(homeDir) },
       // A NAMED scope's directory is provisioned through this hook when the
       // registry materializes it — the same provider/model config and
       // permission bootstrap the default scope gets from the apply above, in
       // the same order (the permission write reads the config file).
       provision: async (scopedHome) => {
-        await provisionKimiConfig(scopedHome, vol(config.model) ?? 'kimi-code/k3', thinkingEffort)
+        await provisionKimiConfig(scopedHome, vol(config.model) ?? 'kimi-code/k3', thinkingEffort, config.baseUrl)
         await ensureKimiPermissions(scopedHome)
       },
-      isAuthenticated: kimiAuthenticated,
-      credentialStamp: kimiCredentialStamp,
-      logout: kimiLogout,
+      // Endpoint-key presence: the scope's endpoint-auth.json merged over the
+      // plugin config must carry a non-empty key. The verdict rides the
+      // family's credential grades untouched: presence grades
+      // `present-unverified`, a completed round grades `verified`, a round's
+      // 401 grades `rejected` until the endpoint file's mtime moves past the
+      // mark (editing the file IS the re-login gesture).
+      isAuthenticated: async (home) => hasEndpointCredential(await resolveEndpoint(home)),
+      // The settings card's credential form: read the resolved per-field
+      // state (the key as a boolean), write edits into the scope's own
+      // endpoint-auth.json — the harness's 0600 store, never the profile
+      // patch document. A cleared field falls back to the config pair. The
+      // managed provider's base_url follows the resolved endpoint through the
+      // config surgery, so a baseUrl edit re-points the CLI at once.
+      endpointAuth: {
+        read: async (home) => {
+          const endpoint = await resolveEndpoint(home)
+          return {
+            ...endpoint.baseUrl === undefined ? {} : { baseUrl: endpoint.baseUrl },
+            apiKeySet: endpoint.apiKey !== undefined,
+            authTokenSet: false,
+          }
+        },
+        write: async (home, fields) => {
+          const current = await readEndpointAuthFile(home) ?? {}
+          const next: Record<string, string> = { ...current }
+          // The card's vocabulary is baseUrl/apiKey; an authToken field never
+          // applies to kimi's key and is ignored here so the shared face
+          // stays usable.
+          for (const [field, value] of Object.entries(fields)) {
+            if (field !== 'baseUrl' && field !== 'apiKey') continue
+            if (value === undefined) continue
+            const trimmed = typeof value === 'string' ? value.trim() : ''
+            if (value === null || trimmed === '') delete next[field]
+            else next[field] = trimmed
+          }
+          if (Object.keys(next).length === 0) await clearEndpointAuth(home)
+          else await writeEndpointAuth(home, next)
+          // Re-point the managed provider immediately: with a key in force
+          // the resolved baseUrl (absent = kimi's own service) is
+          // authoritative; without one the file is left alone.
+          const resolved = await resolveEndpoint(home)
+          await ensureKimiEndpointProvider(home, hasEndpointCredential(resolved) ? resolved.baseUrl ?? KIMI_MANAGED_BASE_URL : undefined)
+        },
+      },
+      // The grade marker is the endpoint file's mtime (editing it IS the
+      // re-login gesture); a config-sourced credential has no marker, and a
+      // host restart clears the in-memory `rejected` mark.
+      credentialStamp: endpointAuthStamp,
+      // Logout clears the scope's OWN endpoint file. A config-sourced
+      // credential outlives it — said out loud, or the status would flip
+      // right back and read as a failed logout.
+      logout: async (home) => {
+        if (await endpointAuthFileExists(home)) {
+          await clearEndpointAuth(home)
+          return
+        }
+        throw new Error('kimi has no scoped endpoint-auth.json to clear — the credential comes from the settings card or the profile row (baseUrl/apiKey); clear it there instead')
+      },
       subcommand: handleSubcommand,
       // The model surface: the settings card reads the memberless info, the
       // member composer reads/switches per member. Registered unconditionally —
@@ -299,13 +399,19 @@ export function apply(ctx: Context, config: Config): void {
       // read (or an evaluation snapshot) of a named scope must report the
       // config that scope's rounds would run with.
       effectiveSettings: async (scopedHome) => {
-        const [reasoningEffort, baseUrl, autoApprove, defaultModel, cliVersion] = await Promise.all([
+        const [reasoningEffort, endpoint, autoApprove, defaultModel, cliVersion] = await Promise.all([
           readKimiReasoningEffort(scopedHome).catch(() => undefined),
-          readKimiBaseUrl(scopedHome).catch(() => undefined),
+          resolveEndpoint(scopedHome).catch(() => undefined),
           readKimiAutoApprove(scopedHome).catch(() => false),
           readKimiDefaultModel(scopedHome).catch(() => undefined),
           kimiCliVersion(ctx, scopedHome).catch(() => undefined),
         ])
+        // The endpoint in effect: an endpoint credential's own baseUrl (the
+        // relay the rounds route at) wins; otherwise the scoped config's
+        // managed provider answers, exactly as it always did.
+        const baseUrl = hasEndpointCredential(endpoint)
+          ? endpoint.baseUrl ?? KIMI_MANAGED_BASE_URL
+          : await readKimiBaseUrl(scopedHome).catch(() => undefined)
         // The managed endpoint IS kimi's own service — routing through it is
         // the default, not a pinned custom route.
         const custom = baseUrl !== undefined && baseUrl !== KIMI_MANAGED_BASE_URL

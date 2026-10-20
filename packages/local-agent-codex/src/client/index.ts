@@ -9,7 +9,8 @@ import { bindSettingsScope } from '@khorsheed/dsh-local-agent/src/client/setting
  * served namespace rather than any carrier bundle, and a composition without
  * the row shows no trace of it. The card carries the family core's shared
  * ProviderAuthBlock (login/logout/device-code, backed by the core's
- * localAgentGateway Remote and the commands channel) plus the resident-mode
+ * localAgentGateway Remote and the commands channel — endpoint-key only, no
+ * login flow) plus the resident-mode
  * block (live switch) and the default-model block (free-text input, the
  * broker's effective-model line and suggestion vocabulary), whose writes ride
  * the bound settingsScope — the host watcher hot-applies them, no reload.

@@ -208,9 +208,9 @@ export class CodexCliProvider implements SubagentProvider {
    *   so the round respawns onto the override.
    * @param endpoint - resolver for the scope's endpoint credential, read PER
    *   ROUND so a settings-card write takes effect on the next delegation
-   *   without a reload. A resolution carrying a key wins over the web login:
-   *   the round's argv then routes at the relay (custom `model_providers`
-   *   entry) and the key rides the env, so auth.json is never consulted.
+   *   without a reload. A resolution carrying a key routes the round at the
+   *   relay (a custom `model_providers` entry on the argv, the key in the
+   *   env); with no key the spawn carries no credential at all.
    */
   constructor(
     private readonly ctx: Context,
@@ -350,13 +350,11 @@ export class CodexCliProvider implements SubagentProvider {
       this.ctx.logger.warn(`subagent-codex: subagent session record failed: ${error instanceof Error ? error.message : String(error)}`)
     }
     // The round's endpoint: a configured endpoint credential (the scope's
-    // endpoint-auth.json over the plugin config) WINS over the web login —
-    // its baseUrl routes the argv through a custom provider entry and its
-    // key rides the env, so auth.json is never consulted for the round.
-    // With no endpoint credential the scoped config.toml's own custom
-    // provider answers for the diagnostic exactly as before (a user-edited
-    // value is authoritative). Logged BEFORE the drive-mode branch so live
-    // rounds report their endpoint too.
+    // endpoint-auth.json over the plugin config) routes the argv through a
+    // custom provider entry and its key rides the env. With no credential the
+    // scoped config.toml's own custom provider answers for the diagnostic
+    // exactly as before (a user-edited value is authoritative). Logged BEFORE
+    // the drive-mode branch so live rounds report their endpoint too.
     const endpoint = await this.resolveEndpoint(homeDir)
     const routed = hasEndpointCredential(endpoint)
     const baseUrl = routed ? endpoint.baseUrl : await readCodexBaseUrl(homeDir).catch(() => undefined)
@@ -604,8 +602,8 @@ export interface CodexCliRunSpec {
   /**
    * The endpoint credential's `-c` config overrides (a custom
    * `model_providers` entry plus the provider selection), spliced next to
-   * the member override. Empty when the round authenticates by web login —
-   * the argv is then byte-identical to the pre-endpoint shape.
+   * the member override. Empty when the round carries no endpoint
+   * credential — the argv is then byte-identical to the pre-endpoint shape.
    */
   readonly endpointArgv?: readonly string[] | undefined
   /** Sandbox policy passed to `codex exec --sandbox`. */

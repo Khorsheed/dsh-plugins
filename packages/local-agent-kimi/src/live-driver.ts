@@ -55,6 +55,8 @@ import {
 } from '@deepseek-ai/dsh-subagent'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { delegationEnv, persistChildSession, LiveStreamPublisher, LiveFlush, LIVE_FLUSH_INTERVAL_MS } from '@khorsheed/dsh-local-agent'
+import { endpointAuthEnv, hasEndpointCredential, type KimiEndpointAuth } from './endpoint-auth.ts'
+import { ensureKimiEndpointProvider, KIMI_MANAGED_BASE_URL } from './provision.ts'
 import { MEMBER_BRIDGE_SOCKET_ENV, MEMBER_BRIDGE_TOKEN_ENV } from '@khorsheed/dsh-local-agent/types'
 import {
   DEFAULT_DISPOSE_GRACE_MS,
@@ -64,7 +66,6 @@ import {
 import { assistantEvent, nextKimiSessionStep } from './session-mirror.ts'
 import type { KimiMirrorDelta, KimiMirrorOptions, KimiMirrorStreams } from './session-mirror.ts'
 import { addTokenUsage } from './session-view.ts'
-import { guardKimiCredential } from './credential-guard.ts'
 import { writeKimiDefaultModel } from './provision.ts'
 
 /** Default idle lifetime of an unused resident runtime before reclaim. */
@@ -465,6 +466,14 @@ export class KimiAcpLiveDriver {
        * retired and respawned onto the new one.
        */
       model?: (childSessionId: string) => string | undefined
+      /**
+       * Resolver for the scope's endpoint credential, read at each RUNTIME
+       * SPAWN so a settings-card write reaches the next respawn without a
+       * reload. A resolution carrying a key authenticates the runtime through
+       * the managed provider's `api_key_env` indirection (the key rides the
+       * process env; the baseUrl is pinned by the pre-spawn surgery).
+       */
+      endpoint?: (scopeHome: string) => Promise<KimiEndpointAuth>
     } = {},
     private readonly timeouts: KimiLiveDriverTimeouts = DEFAULT_TIMEOUTS,
   ) {}
@@ -649,12 +658,21 @@ export class KimiAcpLiveDriver {
         return false
       })
     }
+    // The endpoint credential authenticates the resident process too: the
+    // resolved key rides the env under the managed provider's api_key_env
+    // name, and the provider's base_url is pinned by the same pre-spawn
+    // surgery the exec path runs. Read per spawn — a card write reaches the
+    // next respawn.
+    const endpoint = this.config.endpoint === undefined
+      ? undefined
+      : await this.config.endpoint(spec.homeDir).catch(() => undefined)
+    await ensureKimiEndpointProvider(spec.homeDir, hasEndpointCredential(endpoint) ? endpoint.baseUrl ?? KIMI_MANAGED_BASE_URL : undefined).catch(() => false)
     const spawnSpec: SubprocessSpawnSpec = {
       argv: ['kimi', ...spec.configuration?.model === undefined ? [] : ['--model', spec.configuration.model], 'acp'],
       cwd: spec.cwd,
       stdio: { stdin: 'pipe', stdout: 'pipe', stderr: 'pipe' },
       graceMs: DEFAULT_DISPOSE_GRACE_MS,
-      env: delegationEnv({ KIMI_CODE_HOME: spec.homeDir }),
+      env: delegationEnv({ KIMI_CODE_HOME: spec.homeDir, ...endpointAuthEnv(endpoint) }),
     }
     let child: SubprocessHandle
     try {
@@ -733,13 +751,8 @@ export class KimiAcpLiveDriver {
    * never exits: the match runs against the settled error instead). Degrades
    * silently on a core predating reportAuthFailure.
    */
-  private reportAuthIfShaped(error: Error, homeDir?: string): void {
+  private reportAuthIfShaped(error: Error): void {
     if (!KIMI_LIVE_AUTH_FAILURE.test(error.message)) return
-    // The sentinel: if the credential file was wiped into an empty shell, a
-    // restore here makes the caller's retry (or the next round) succeed.
-    if (homeDir !== undefined) {
-      void guardKimiCredential(homeDir, message => { this.ctx.logger.warn(message) })
-    }
     // Duck-typed: the method lands with the auth-truthfulness core; older
     // cores simply skip the mark.
     const registry = this.ctx.localAgent as unknown as {
@@ -1346,7 +1359,7 @@ export class KimiAcpLiveDriver {
         const diagnostics = runtime?.diagnostics ?? ''
         const suffix = diagnostics === '' ? '' : `; ${diagnostics}`
         this.ctx.logger.warn(`subagent-kimi: live round failed (${stopReason}): ${error.message}${suffix}`)
-        this.reportAuthIfShaped(error, spec.homeDir)
+        this.reportAuthIfShaped(error)
       },
       signal: request.signal,
       onAbort,

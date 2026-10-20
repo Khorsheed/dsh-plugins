@@ -12,7 +12,7 @@
 
 - **按会话授予的委派**——`subagent_kimi` 工具是本包的 `./tool` 组合入口，由点名它的 agent 预设（如开发模式）授予该预设的会话；其余预设的会话看不到它。
 - **作用域目录**——config、凭据、会话全部留在 `$DSH_HOME/local-agent/kimi`，与你自己的 `~/.kimi-code` 互不干扰。
-- **device-code 登录**——`/kimi login` 把授权 URL 呈现在会话中；`/kimi logout` 清除作用域凭据，换账号即重新登录。
+- **端点凭据（唯一的认证方式）**——设置卡「认证」区填 `baseUrl` + `apiKey`（保存进默认 scope 的 `endpoint-auth.json`，0600，只存本机）或预配在 profile 配置行即已认证；每个命名 scope 可用自己的 `endpoint-auth.json` 按字段覆盖部署级配置。managed provider 经 `api_key_env` 从子进程环境读 key——密钥不落 `config.toml`（它要进评测条件指纹）。容器轮与宿主轮用同一套凭据，容器里不需要再授权一次。没有网页登录、没有 device-code。
 - **可续聊的委派**——把结果自述的 `resume` 句柄传回，即继续同一个 Kimi 会话，并按轮记录真实用量与耗时。
 - **会话记录与转写回放**——`/kimi sessions` 列出本 harness 的委派记录（绝不含你的私人会话）；`/kimi session <id>` 把该会话的 wire 日志渲染成可读转写——思考、工具调用与结果一目了然。
 - **设置卡片**——Plugins 页的卡片（`plugins.item` 条目，宿主服务 `local-agent-kimi` 命名空间时挂载）一眼看清认证状态与作用域会话，登录/退出、默认模型、常驻模式开关全部热生效，无需重载。
@@ -21,7 +21,7 @@
 
 ## 安装
 
-需要一个可运行的 dsh profile，且 `PATH` 上有 Kimi Code CLI（`kimi`）——插件既不替你安装，也不替你登录。
+需要一个可运行的 dsh profile，且 `PATH` 上有 Kimi Code CLI（`kimi`）——插件既不替你安装，也不替你准备凭据。
 
 ```sh
 # 两个都得点名：`dsh plugin add` 只调和直接依赖。
@@ -29,13 +29,13 @@ dsh plugin --profile web add @khorsheed/dsh-local-agent
 dsh plugin --profile web add @khorsheed/dsh-local-agent-kimi
 ```
 
-重启 web 实例后生效，然后在会话里执行一次 `/kimi login`。卸载：
+重启 web 实例后生效，然后在设置 → 插件里本包卡片的「认证」区填端点与 key 即可（也可预配在 profile 的本包配置行）；都不配则状态为未认证。卸载：
 
 ```sh
 dsh plugin --profile web remove @khorsheed/dsh-local-agent-kimi
 ```
 
-作用域目录会被刻意保留，重装后无需重新登录——删除 `$DSH_HOME/local-agent/kimi` 即可清除全部痕迹。
+作用域目录会被刻意保留，重装后凭据仍在——删除 `$DSH_HOME/local-agent/kimi` 即可清除全部痕迹。
 
 ## 配置
 
@@ -48,7 +48,7 @@ base_url = "https://your-router.example/v1"
 
 **只改写这一个键**——预置逻辑从不覆盖已存在的 config，且 `[services.moonshot_*]` 的 base_url 必须保留（它们路由内置的搜索/抓取工具）。
 
-⚠️ **OAuth token 暴露**：作用域登录的 OAuth token 会发送给处理请求的端点——`base_url` 只指向你控制或信任的端点。
+⚠️ **凭据暴露**：端点 key 会发送给处理请求的端点——`baseUrl` 只指向你控制或信任的端点。
 
 插件自身配置（可选，写在 profile patch 层）：
 
@@ -97,7 +97,7 @@ base_url = "https://your-router.example/v1"
 
 ## 已知限制
 
-- **登录需要一次交互**——仅 device-code，每个 harness 同一时间只允许一次登录，没有 API key 路径。
+- **没有网页登录**——认证只有端点凭据一条路（设置卡/profile 行，kimi-for-coding 平台 key 或中转 key 均可）；kimi 会员的 OAuth 路径不在本包。
 - **进程簿记会写真实 home**——无论 `KIMI_CODE_HOME` 如何，kimi 都会写入无实质内容的 `~/.kimi-code/server/instances/*.json`；config、凭据、会话仍在作用域内。
 - **`/kimi` 命令需要 Web 会话**——headless profile 仍可通过挂载工具行的组合进行委派。
 
@@ -106,7 +106,7 @@ base_url = "https://your-router.example/v1"
 <details>
 <summary>内部结构（点击展开）</summary>
 
-**作用域目录与登录。** 本包启动的每个 Kimi 进程都以 `KIMI_CODE_HOME=$DSH_HOME/local-agent/kimi` 运行。登录只走 device-code：`/kimi login` 把授权 URL 和验证码呈现在会话中，CLI 在后台轮询，凭据写入作用域目录。`/kimi logout` 删除作用域内的凭据与 OAuth 缓存（kimi CLI 没有 logout 命令）。首次启动时作用域目录会被预置一份 `config.toml`——把用户自己的 config 中所有 `api_key` 抹空后复制，用户没有 config 时则写入最小 managed config——因为没有 provider 与 model 定义 CLI 就拒绝认证；已存在的 config 永不覆盖。
+**作用域目录与凭据。** 本包启动的每个 Kimi 进程都以 `KIMI_CODE_HOME=$DSH_HOME/local-agent/kimi` 运行。认证是端点凭据制：scope 的 `endpoint-auth.json`（0600）按字段覆盖 profile 配置行的 `baseUrl`/`apiKey`；managed provider（`managed:kimi-code`）在 config.toml 里声明的是 `api_key_env = "DSH_KIMI_ENDPOINT_KEY"`（kimi CLI 原生支持从指定环境变量读 key，与内联 `api_key` 互斥），key 只存在于 endpoint-auth.json 和子进程环境里，`config.toml` 永不携带秘密、可以安全进入评测条件哈希。设置卡「认证」区编辑的就是默认 scope 的 endpoint-auth.json（经家族 gateway 的 `endpointAuth`/`configureEndpoint` Remote）；保存 baseUrl 时同一次写入会把 managed provider 的 `base_url` 重指过去（清空即回落到 kimi 官方服务），每轮 spawn 前还有一次幂等校准，手改文件同样即时生效。一次性 `kimi -p`、常驻 `kimi acp`、容器轮（`containerExecSpawn` 按名字转发环境变量）三条路共用同一套注入。首次启动时作用域目录会被预置一份 `config.toml`——把用户自己的 config 中所有 `api_key` 抹空后复制并迁移到 env-key 形态，用户没有 config 时则写入最小 managed config。OAuth 时代的 `credentials/` 与 `oauth/` 目录在每次 provision 时被清扫——本包不再读取它们，留着只会让一份失效授权在状态显示未认证时仍悄悄可用。`/kimi logout` 删除 scope 的 `endpoint-auth.json`；凭据完全来自 profile 配置行时 logout 拒绝并提示去改 profile。
 
 **挂载。** bundle patch 注册 `kimi` harness（恰好一行 provider 行）；`subagent_kimi` 工具是本包的 `./tool` 组合入口（实现共享自家族核的 `./tool-factory` 导出），由点名它的 agent 预设按会话授予——dev 预设的 `tool-subagent-kimi` 行是授予点。`kimi-cli` 一次性 provider 在作用域目录下 spawn `kimi -p`。家族 core（`local-agent` 行，共享作用域目录根）随 `@khorsheed/dsh-local-agent` 自己的 patch 提供，本包把它声明为依赖。浏览器设置卡片由本包的 `./client` 半提供，复用家族 core 的共享构件（认证块、模型选择器）：落在 Plugins 页的 `plugins.item` 条目，宿主服务 `local-agent-kimi` 命名空间时经 `configForms.whileServed` 挂载——独立安装、家族 bundle、模式包都是同一张卡。身份三角保持一致：`cordis.patch.yml` 的行 id、package.json 的 name、tsdown 的 `clientBundle('@khorsheed/dsh-local-agent-kimi')`。
 
@@ -122,7 +122,7 @@ base_url = "https://your-router.example/v1"
 
 **隔离与记账。** 子会话是委派会话工作区内一个全新会话；父级只收到最终回答或精确错误——子会话的上下文、评论、工具活动与 diff 永不跨入父级会话。provider 在 spawn 时开 `turn/start`、settle 时关 `turn/end`，失败或被中止也会关（reason `error`/`aborted`），因此耗时等于真实 CLI 运行时长。每个镜像 step（assistant 消息、工具调用/结果）都包在同 (turn, step) 的 `step/start`–`step/end` 边界对里——宿主会话的实时装配只在边界上登记 step，缺了边界 assistant 消息在实时视图里不渲染（整页刷新重建时才补回）；token 粒度的流式快照与收尾折叠也在 `turn/end` 之前落地并带边界。用量是该轮 delta 内所有 `usage.record` 之和（每条是一次 LLM 请求的口径、非累计），挂在当轮最后一条镜像的 assistant 消息上；镜像过滤 kimi 自动权限模式的 `<system-reminder>` 消息、工具调用带参数渲染、结果按调用配对，并增量推进，早期消息绝不重复。中止会让工具结果立即 settle（SIGTERM→grace→SIGKILL），并保留已镜像的部分成果。
 
-**命名 scope。** `/kimi login --scope <名>` 在 `<homesRoot>/kimi@<名>` 里另开一份 `KIMI_CODE_HOME`：目录建立时跑同一份 provision（provider/model 配置，然后是权限规则——顺序不能反，权限写入要读配置文件），之后该 scope 各自登录、各自 wire 日志、各自转写镜像。带 scope 的委派只走 exec（常驻 `kimi acp` 按成员绑缺省目录），且**不带成员通道**：成员桥声明写在作用域目录的 `mcp.json` 里、socket 又是 homes 根级单例，与其半接上不如这一轮明确不要。
+**命名 scope。** `/kimi login --scope <名>` 在 `<homesRoot>/kimi@<名>` 里另开一份 `KIMI_CODE_HOME`：目录建立时跑同一份 provision（provider/model 配置，然后是权限规则——顺序不能反，权限写入要读配置文件），之后该 scope 各自的 endpoint-auth.json、各自 wire 日志、各自转写镜像。带 scope 的委派只走 exec（常驻 `kimi acp` 按成员绑缺省目录），且**不带成员通道**：成员桥声明写在作用域目录的 `mcp.json` 里、socket 又是 homes 根级单例，与其半接上不如这一轮明确不要。
 
 **容器内委派。** 编排器可以经门面 `DelegationCallOptions.exec`（`{ container, workdir, env? }`）让本轮跑在一个**已取得的容器**里：argv 变成 `docker exec -w <workdir> [-e NAME…] <container> kimi -p …`，其余（wire.jsonl 镜像与回读、settle、记录）逐字节不变。`env` 必须给出容器内的 `KIMI_CODE_HOME`，且它应当是宿主作用域目录的 rw bind 挂载点——转写镜像与模型回读读的是宿主那份 wire 日志。容器轮固定走 exec 一次性驱动（常驻 `kimi acp` 是宿主进程），且**不写** `mcp.json` 的成员桥条目：那条声明带着宿主 node 路径，容器里起不来，与其在共享配置文件里留一个坏 server，不如这一轮不要成员通道。
 
