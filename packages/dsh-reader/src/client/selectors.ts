@@ -12,6 +12,9 @@ import type { ReaderEntry } from './parse-rss.ts'
 import type { ReaderFilter, ReaderSort } from './store.ts'
 import { kindQuery, READER_SOURCE_KINDS, type ReaderEntryFetchState, type ReaderSourceKind } from '../types.ts'
 
+/** The queries that select video / audio entries (source ids never collide: they are `<kind>-<hash>`). */
+export const MEDIA_QUERIES = { video: '#video', audio: '#audio' } as const
+
 /** How many entries the pane will show before it stops rendering cards. */
 export const LIST_RENDER_LIMIT = 300
 
@@ -230,6 +233,8 @@ function matches(
   query: string,
   tags: Readonly<Record<string, readonly string[]>>,
 ): boolean {
+  // The media kinds (an entry's own kind, decided per item — media.ts).
+  if (query === MEDIA_QUERIES.video || query === MEDIA_QUERIES.audio) return entry.media?.kind === query.slice(1)
   if (query.startsWith('#')) {
     const selector = query.slice(1)
     // A kind selector first: source ids are always `<kind>-<hash>`, so

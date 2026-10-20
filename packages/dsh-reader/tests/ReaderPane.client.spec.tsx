@@ -89,6 +89,8 @@ function feed(id: string, items: readonly FeedItem[]): string {
 
 interface BenchOptions {
   readonly sources?: readonly ReaderSourceSummary[]
+  /** The transcript the host answers for a video (undefined: the video has no captions). */
+  readonly transcript?: string
   /** The canvas plugin's inbox, when the bench composes one. */
   readonly inbox?: CanvasInboxLike
   /** The payload each source id answers with. Sources with no entry answer with their own feed. */
@@ -219,6 +221,12 @@ function bench(options: BenchOptions = {}) {
       return { ok: true as const, value: note }
     }),
     recordDiscussion: vi.fn(async () => ({ ok: true as const, value: 'ok' })),
+    mediaTranscript: vi.fn(async (request: { entryId: string; url: string }) => ({
+      ok: true as const,
+      value: options.transcript === undefined
+        ? { entryId: request.entryId, captions: 'none' as const }
+        : { entryId: request.entryId, captions: 'platform' as const, html: options.transcript },
+    })),
     markSynced: vi.fn(async () => ({ ok: true as const, value: 'ok' })),
     snapshotEntry: vi.fn(async () => ({ ok: true as const, value: 'ok' })),
     setDraft: vi.fn(),
@@ -373,6 +381,7 @@ function bench(options: BenchOptions = {}) {
     canvasInbox: () => options.inbox,
     recordDiscussion: mocks.recordDiscussion,
     snapshotEntry: mocks.snapshotEntry,
+    mediaTranscript: mocks.mediaTranscript,
     canOpenSession: () => false,
     openSession: () => undefined,
   } as unknown as ReaderPaneProps
@@ -4024,3 +4033,52 @@ describe('notes: take one from a selection, find it in the notes face, bring it 
     expect(screen.queryByText(zh['notes.sync'])).toBeNull()
   })
 })
+
+describe('video and audio entries', () => {
+  const videoFeed = `<feed xmlns="http://www.w3.org/2005/Atom" xmlns:media="http://search.yahoo.com/mrss/"><title>Channel</title>
+    <entry><id>yt:video:zjkBMFhNj_g</id><title>Intro to LLMs</title><link rel="alternate" href="https://www.youtube.com/watch?v=zjkBMFhNj_g"/>
+    <updated>2026-10-19T10:00:00Z</updated><media:group><media:description>A talk.</media:description></media:group></entry>
+    <entry><id>ep</id><title>Episode 9</title><link rel="alternate" href="https://pod.example/ep9"/><updated>2026-10-19T09:00:00Z</updated>
+    <link rel="enclosure" href="https://cdn.example/ep9.mp3" type="audio/mpeg"/><summary>Shownotes.</summary></entry></feed>`
+
+  it('plays the video and reads its platform captions as a timed transcript', async () => {
+    const ui = bench({
+      sources: [rssSource('yt')],
+      payloads: { yt: videoFeed },
+      transcript: '<p data-t="0.2">hi everyone.</p><p data-t="38.5">so the model is two files.</p>',
+    })
+    await ui.settle()
+    expect(await screen.findByText(/▶ 视频/)).toBeTruthy()
+    fireEvent.click(await screen.findByText('Intro to LLMs'))
+    await waitFor(() => { expect(ui.mocks.mediaTranscript).toHaveBeenCalledWith({ entryId: expect.any(String), url: 'https://www.youtube.com/watch?v=zjkBMFhNj_g' }) })
+    const frame = document.querySelector('iframe[src*="youtube.com/embed/zjkBMFhNj_g"]')
+    expect(frame?.getAttribute('src')).toContain('enablejsapi=1')
+    expect(await screen.findByText('so the model is two files.')).toBeTruthy()
+    // Each paragraph carries its time chip (a CSS label, so selections skip it).
+    await waitFor(() => { expect(document.querySelector('[data-reader-ts="38.5"]')?.getAttribute('data-label')).toBe('0:38') })
+    expect(screen.getByText(zh['media.sourcePlatform'])).toBeTruthy()
+    // The page behind the link is never fetched as an article.
+    expect(ui.mocks.fetchEntryBody).not.toHaveBeenCalled()
+    // 字幕 off: just the video.
+    fireEvent.click(screen.getByRole('checkbox', { name: zh['media.captions'] }))
+    expect(screen.getByText('so the model is two files.').closest('[hidden]')).not.toBeNull()
+    expect(document.querySelector('iframe[src*="youtube.com/embed"]')).not.toBeNull()
+  })
+
+  it('says a video without captions has none, and keeps its description', async () => {
+    const ui = bench({ sources: [rssSource('yt')], payloads: { yt: videoFeed } })
+    await ui.settle()
+    fireEvent.click(await screen.findByText('Intro to LLMs'))
+    expect(await screen.findByText(zh['media.noCaptions'])).toBeTruthy()
+  })
+
+  it('plays audio from its enclosure without asking for captions', async () => {
+    const ui = bench({ sources: [rssSource('yt')], payloads: { yt: videoFeed } })
+    await ui.settle()
+    fireEvent.click(await screen.findByText('Episode 9'))
+    await waitFor(() => { expect(document.querySelector('audio')?.getAttribute('src')).toBe('https://cdn.example/ep9.mp3') })
+    expect(ui.mocks.mediaTranscript).not.toHaveBeenCalled()
+    expect(screen.getByText(zh['media.noCaptionsAudio'])).toBeTruthy()
+  })
+})
+

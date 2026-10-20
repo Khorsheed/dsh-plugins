@@ -21,6 +21,8 @@ export interface ReaderNoteAnchor {
   readonly quote: string
   /** The translated text, when the selection was made in the translated view. */
   readonly translated?: string
+  /** A video / audio transcript paragraph's start (seconds): where ▶ plays from. */
+  readonly time?: number
 }
 
 /**
@@ -156,6 +158,7 @@ export interface ReaderNoteInput extends ReaderEntryIdentity {
   readonly quote: string
   readonly translated?: string
   readonly comment?: string
+  readonly time?: number
 }
 
 /** A discussion note's input, before bounding. */

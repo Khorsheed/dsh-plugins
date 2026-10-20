@@ -125,20 +125,49 @@ export function episodePage(episode: XiaoyuzhouEpisode): string {
   })
 }
 
+/** Escape text for XML. */
+function xml(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
+
 /**
- * The channel feed a YouTube channel page links to.
+ * A YouTube channel's newest videos as an RSS document (YouTube's own channel
+ * feed answers 404 — measured 2026-10-20). Each item links the watch page, so
+ * the browser half reads it as a video; the thumbnail rides `media:thumbnail`.
  *
- * Channel pages carry `<link rel="alternate" type="application/rss+xml">` to
- * `feeds/videos.xml?channel_id=…`; the page's own `channelId` is the fallback.
- *
- * @param html - the channel page.
+ * @param channel - the yt-dlp flat listing.
+ * @param pageUrl - the channel URL.
  */
-export function youtubeChannelFeed(html: string): string | undefined {
-  const alternate = /<link[^>]+type="application\/rss\+xml"[^>]+href="([^"]+)"/.exec(html)
-    ?? /<link[^>]+href="([^"]+)"[^>]+type="application\/rss\+xml"/.exec(html)
-  if (alternate !== null) return alternate[1]!.replace(/&amp;/g, '&')
-  const id = /"(?:channelId|externalId)":"(UC[\w-]{20,})"/.exec(html)
-  return id === null ? undefined : `https://www.youtube.com/feeds/videos.xml?channel_id=${id[1]!}`
+export function channelRss(channel: { title?: string; entries: readonly YtDlpInfo[] }, pageUrl: string): string {
+  const items = channel.entries.flatMap(entry => {
+    if (entry.id === undefined || entry.title === undefined) return []
+    const published = publishedOf(entry)
+    return [[
+      '<item>',
+      `<title>${xml(entry.title)}</title>`,
+      `<link>https://www.youtube.com/watch?v=${xml(entry.id)}</link>`,
+      `<guid isPermaLink="false">yt:video:${xml(entry.id)}</guid>`,
+      published === undefined ? '' : `<pubDate>${new Date(published).toUTCString()}</pubDate>`,
+      entry.thumbnail === undefined ? '' : `<media:thumbnail url="${xml(entry.thumbnail)}"/>`,
+      '</item>',
+    ].filter(line => line !== '').join('')]
+  })
+  return [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<rss version="2.0" xmlns:media="http://search.yahoo.com/mrss/"><channel>',
+    `<title>${xml(channel.title ?? pageUrl)}</title>`,
+    `<link>${xml(pageUrl)}</link>`,
+    ...items,
+    '</channel></rss>',
+  ].join('\n')
+}
+
+/** A synthetic page's display name for the source: its author (the channel / podcast), else its title. */
+export function syntheticLabel(raw: string): string | undefined {
+  const author = /<meta name="author" content="([^"]*)"/.exec(raw)?.[1]
+  const title = /<title>([^<]*)<\/title>/.exec(raw)?.[1]
+  const value = author ?? title
+  return value === undefined ? undefined : value.replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')
 }
 
 /** The host's media helper: yt-dlp plus the caption record. */

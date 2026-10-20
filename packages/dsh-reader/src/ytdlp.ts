@@ -182,6 +182,36 @@ export class YtDlp {
   }
 
   /**
+   * A channel's newest videos (a flat listing: no video is opened).
+   *
+   * YouTube's own channel feed (`feeds/videos.xml`) answers 404 (measured
+   * 2026-10-20), so the listing is yt-dlp's; `approximate_date` gives each
+   * entry a day-precision date.
+   *
+   * @param url - the channel URL.
+   * @param limit - how many of the newest videos.
+   */
+  async channel(url: string, limit: number = 15): Promise<{ title?: string; entries: YtDlpInfo[] }> {
+    const listing = /\/(videos|streams|shorts)\/?$/.test(url) ? url : `${url.replace(/\/+$/, '')}/videos`
+    const out = await run(await this.binary(), [
+      '--flat-playlist', '--dump-single-json', '--playlist-end', String(limit), '--no-warnings',
+      '--extractor-args', 'youtubetab:approximate_date', '--js-runtimes', `node:${process.execPath}`, listing,
+    ], 180_000)
+    const line = out.trim().split('\n').filter(item => item.startsWith('{')).pop()
+    if (line === undefined) throw new Error('yt-dlp: no channel listing')
+    const data = JSON.parse(line) as { title?: string; channel?: string; uploader?: string; entries?: (YtDlpInfo & { thumbnails?: { url?: string }[] })[] }
+    const title = data.channel ?? data.uploader ?? data.title?.replace(/ - Videos$/, '')
+    return {
+      ...(title === undefined ? {} : { title }),
+      entries: (data.entries ?? []).map(entry => {
+        const { thumbnails, ...rest } = entry
+        const thumbnail = entry.thumbnail ?? thumbnails?.[thumbnails.length - 1]?.url
+        return thumbnail === undefined ? rest : { ...rest, thumbnail }
+      }),
+    }
+  }
+
+  /**
    * One caption track's cues.
    *
    * @param url - the video page URL.

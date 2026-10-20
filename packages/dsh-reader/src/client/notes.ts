@@ -18,6 +18,7 @@
  */
 import type { ReaderNote, ReaderNoteAnchor } from '../notes-types.ts'
 import type { BuiltArticle } from './translate.ts'
+import { formatClock } from '../captions.ts'
 
 type BuiltBlock = BuiltArticle['blocks'][number]
 type BuiltSegment = BuiltBlock['segments'][number]
@@ -64,6 +65,16 @@ export interface NoteSelection {
   readonly start?: number
   readonly quote: string
   readonly translated?: string
+  /** A transcript paragraph's start (seconds), when the article is a transcript. */
+  readonly time?: number
+}
+
+/** A transcript paragraph's start (`data-t`), when the block is one. */
+function timeOf(element: Element | undefined): number | undefined {
+  const value = element?.getAttribute('data-t')
+  if (value === null || value === undefined) return undefined
+  const seconds = Number(value)
+  return Number.isFinite(seconds) ? seconds : undefined
 }
 
 /** The segments a range touches whose span shows a TRANSLATION right now. */
@@ -104,13 +115,15 @@ export function captureSelection(
   const shown = normalizeText(selection.toString())
   if (shown.length === 0) return null
   const block = blockIndexOf(article, range.startContainer)
+  const element = blockElements(article)[block]
+  const time = timeOf(element)
+  const timed = time === undefined ? {} : { time }
   if (built !== null) {
     const segments = translatedSegmentsIn(built, range)
     if (segments.length > 0) {
-      return { block, quote: normalizeText(segments.map(segment => segment.original).join(' ')), translated: shown }
+      return { block, quote: normalizeText(segments.map(segment => segment.original).join(' ')), translated: shown, ...timed }
     }
   }
-  const element = blockElements(article)[block]
   let start: number | undefined
   if (element !== undefined && element.contains(range.startContainer)) {
     const before = element.ownerDocument.createRange()
@@ -118,7 +131,7 @@ export function captureSelection(
     before.setEnd(range.startContainer, range.startOffset)
     start = normalizeText(before.toString()).length
   }
-  return { block, ...(start === undefined ? {} : { start }), quote: shown }
+  return { block, ...(start === undefined ? {} : { start }), quote: shown, ...timed }
 }
 
 /**
@@ -136,7 +149,12 @@ export function paragraphsOf(html: string): string[] {
   if (root === null) return []
   const children = [...root.children]
   if (children.length === 0) return [normalizeText(root.textContent ?? '')]
-  return children.map(child => normalizeText(child.textContent ?? ''))
+  // A transcript paragraph says when it is: the model reads ¶3 [24:05] ….
+  return children.map(child => {
+    const time = timeOf(child)
+    const text = normalizeText(child.textContent ?? '')
+    return time === undefined || text === '' ? text : `[${formatClock(time)}] ${text}`
+  })
 }
 
 /** One text position, for mapping a normalized offset back into the DOM. */
@@ -323,7 +341,7 @@ export interface NotesDraftWords {
 export function formatNotesDraft(source: NotesDraftSource, notes: readonly ReaderNote[], words: NotesDraftWords): string {
   const lines: string[] = [words.heading(notes.length), '']
   for (const note of notes) {
-    lines.push(`> ${note.id} ¶${String(note.anchor.block + 1)}「${note.anchor.quote}」`)
+    lines.push(`> ${note.id} ¶${String(note.anchor.block + 1)}${note.anchor.time === undefined ? '' : ` [${formatClock(note.anchor.time)}]`}「${note.anchor.quote}」`)
     if (note.anchor.translated !== undefined) lines.push(`> （${note.anchor.translated}）`)
     if (note.comment !== undefined) {
       for (const [index, line] of note.comment.split('\n').entries()) {

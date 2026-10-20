@@ -18,6 +18,9 @@
 
 /* ------------------------------------------------------------------ sources */
 
+import type { ReaderMedia } from './media.ts'
+export type { ReaderMedia } from './media.ts'
+
 /** What a source is: a syndication feed, or one manually saved article link. */
 export type ReaderSourceKind = 'rss' | 'link'
 
@@ -442,6 +445,11 @@ export interface ReaderEntry {
    * text is real but stops where the cap landed. The detail view says so.
    */
   readonly partial?: boolean
+  /**
+   * The video or audio this entry plays, decided per ITEM (media.ts): a feed
+   * enclosure, a recognized video link, or a saved link's synthetic page.
+   */
+  readonly media?: ReaderMedia
 }
 
 /* ------------------------------------------------------------------ wire payloads */

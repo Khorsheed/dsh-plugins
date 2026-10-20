@@ -86,7 +86,7 @@ import { delayUntilNext, isCatchUpDue } from './schedule.ts'
 import { arxivHtmlUrl } from './arxiv.ts'
 import { fetchImageBytes, ImageFetchCache } from './image-fetch.ts'
 import { resolveLink, type LinkResolution, type ResolverFetch } from './link-resolvers.ts'
-import { episodePage, ReaderMediaHost, videoPage, youtubeChannelFeed } from './media-host.ts'
+import { channelRss, episodePage, ReaderMediaHost, syntheticLabel, videoPage } from './media-host.ts'
 import { mediaLink } from './media.ts'
 import { podcastPageToRss, readEpisodePage } from './xiaoyuzhou.ts'
 
@@ -351,7 +351,10 @@ export class ReaderService {
       }
     }
 
-    const label = request.label ?? (resolution?.kind === 'arxiv' ? resolution.title : undefined) ?? defaultSourceLabel(fetched.url)
+    const label = request.label
+      ?? (resolution?.kind === 'arxiv' ? resolution.title : undefined)
+      ?? (fetched.media === true ? syntheticLabel(fetched.raw) : undefined)
+      ?? defaultSourceLabel(fetched.url)
     const source: ReaderSource = {
       id: `${feed ? 'rss' : 'link'}-${hash(fetched.url)}`,
       kind: feed ? 'rss' : 'link',
@@ -1646,10 +1649,7 @@ export class ReaderService {
     const link = mediaLink(url)
     if (link === undefined) return this.fetchFollowing(url)
     if (link.provider === 'youtube' && link.kind === 'channel') {
-      const page = await this.fetchFollowing(url)
-      const feed = youtubeChannelFeed(page.raw)
-      if (feed === undefined) throw new UnsupportedContent('the channel page names no feed')
-      return this.fetchFollowing(feed)
+      return { url, raw: channelRss(await this.media.ytdlp.channel(url), url), truncated: false }
     }
     if (link.provider === 'xiaoyuzhou') {
       const page = await this.fetchFollowing(url)

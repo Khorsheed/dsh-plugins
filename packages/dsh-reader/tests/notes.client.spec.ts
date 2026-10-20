@@ -109,6 +109,16 @@ describe('excerpts are found again', () => {
 })
 
 describe('the snapshot and the draft', () => {
+  it('prefixes a transcript paragraph with its time, for the model', () => {
+    expect(paragraphsOf('<p data-t="5.2">Hello there.</p><p data-t="65">Next.</p>')).toEqual(['[0:05] Hello there.', '[1:05] Next.'])
+  })
+
+  it('records a transcript paragraph\'s time on the excerpt', () => {
+    const article = mount('<p data-t="12.5">Alpha beta.</p><p data-t="40">Gamma delta.</p>')
+    const text = article.children[1]!.firstChild!
+    expect(captureSelection(article, null, select(text, 0, text, 5))).toEqual({ block: 1, start: 0, quote: 'Gamma', time: 40 })
+  })
+
   it('numbers top-level blocks like the pane, from the markup not the screen', () => {
     expect(paragraphsOf('<p>A  b</p><ul><li>x</li><li>y</li></ul><p></p>')).toEqual(['A b', 'xy', ''])
     expect(paragraphsOf('bare text only')).toEqual(['bare text only'])

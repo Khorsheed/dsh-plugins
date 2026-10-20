@@ -256,3 +256,29 @@ describe('a feed that publishes only a summary', () => {
     expect(entry?.summaryOnly).toBeUndefined()
   })
 })
+
+describe('parseFeed — video and audio items', () => {
+  it('reads a podcast enclosure, its iTunes duration and artwork as audio media', () => {
+    const raw = `<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"><channel><title>Pod</title>
+      <item><title>Ep 1</title><link>https://pod.example/ep1</link><guid>ep1</guid>
+        <enclosure url="https://cdn.example/ep1.mp3" type="audio/mpeg" length="0"/>
+        <itunes:duration>1:02:05</itunes:duration><itunes:image href="https://cdn.example/ep1.jpg"/></item>
+      <item><title>Post</title><link>https://pod.example/post</link></item>
+    </channel></rss>`
+    const result = parseFeed(raw, 's')
+    if (!result.ok) throw new Error(result.error)
+    expect(result.feed.entries[0]!.media).toEqual({ kind: 'audio', provider: 'enclosure', ref: 'https://cdn.example/ep1.mp3', durationSec: 3725, thumbnail: 'https://cdn.example/ep1.jpg' })
+    expect(result.feed.entries[1]!.media).toBeUndefined()
+  })
+
+  it('reads a YouTube channel feed entry as a video with its thumbnail', () => {
+    const raw = `<feed xmlns="http://www.w3.org/2005/Atom" xmlns:media="http://search.yahoo.com/mrss/" xmlns:yt="http://www.youtube.com/xml/schemas/2015">
+      <title>Channel</title><entry><id>yt:video:zjkBMFhNj_g</id><title>Intro to LLMs</title>
+      <link rel="alternate" href="https://www.youtube.com/watch?v=zjkBMFhNj_g"/>
+      <media:group><media:thumbnail url="https://i.ytimg.com/vi/zjkBMFhNj_g/hqdefault.jpg" width="480" height="360"/><media:description>talk</media:description></media:group>
+      </entry></feed>`
+    const result = parseFeed(raw, 's')
+    if (!result.ok) throw new Error(result.error)
+    expect(result.feed.entries[0]!.media).toEqual({ kind: 'video', provider: 'youtube', ref: 'zjkBMFhNj_g', thumbnail: 'https://i.ytimg.com/vi/zjkBMFhNj_g/hqdefault.jpg' })
+  })
+})

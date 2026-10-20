@@ -19,6 +19,7 @@ import { defineTool, type ToolDefinition } from '@deepseek-ai/dsh-tools'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ReaderDiscussionPoint, ReaderEntryNotes, ReaderEntrySnapshot, ReaderNotesStore } from './notes.ts'
 import type { ReaderRecentEntry } from './types.ts'
+import { formatClock } from './captions.ts'
 
 /** The package name the tools are tagged with. */
 export const READER_PACKAGE_NAME = '@khorsheed/dsh-reader'
@@ -147,7 +148,7 @@ export function renderArticle(
   if (notes.length > 0) {
     lines.push('---', '读者笔记（摘抄是原文；在译文里划的另附译文）：')
     for (const note of notes) {
-      lines.push(`${note.id} ¶${String(note.anchor.block + 1)}「${note.anchor.quote}」`)
+      lines.push(`${note.id} ¶${String(note.anchor.block + 1)}${note.anchor.time === undefined ? '' : ` [${formatClock(note.anchor.time)}]`}「${note.anchor.quote}」`)
       if (note.anchor.translated !== undefined) lines.push(`    译文：${note.anchor.translated}`)
       if (note.comment !== undefined) lines.push(`    评论：${note.comment}`)
       for (const reply of note.replies ?? []) lines.push(`    ${reply.by === 'agent' ? '讨论结论' : '读者补充'}：${reply.text}`)

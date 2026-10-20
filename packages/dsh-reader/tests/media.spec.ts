@@ -10,7 +10,7 @@ import {
   MERGE, formatClock, mergeCues, parseBiliJson, parseCaptions, parseJson3, parseSrt, parseVtt, renderTranscript, type Cue,
 } from '../src/captions.ts'
 import { embedUrl, enclosureKind, entryMedia, linkAt, mediaLink, readMediaMeta } from '../src/media.ts'
-import { episodePage, videoPage, youtubeChannelFeed } from '../src/media-host.ts'
+import { channelRss, episodePage, syntheticLabel, videoPage } from '../src/media-host.ts'
 import { podcastPageToRss, readEpisodePage } from '../src/xiaoyuzhou.ts'
 import { chooseCaptionTrack, releaseAsset } from '../src/ytdlp.ts'
 
@@ -115,11 +115,13 @@ describe('the synthetic page a media link is stored as', () => {
     expect(readMediaMeta('<html><head></head></html>')).toBeUndefined()
   })
 
-  it('finds a channel\'s feed from its page', () => {
-    expect(youtubeChannelFeed('<link rel="alternate" type="application/rss+xml" title="RSS" href="https://www.youtube.com/feeds/videos.xml?channel_id=UCXUPKJO5MZQN11PqgIvyuvQ">'))
-      .toBe('https://www.youtube.com/feeds/videos.xml?channel_id=UCXUPKJO5MZQN11PqgIvyuvQ')
-    expect(youtubeChannelFeed('{"externalId":"UCXUPKJO5MZQN11PqgIvyuvQ"}')).toContain('channel_id=UCXUPKJO5MZQN11PqgIvyuvQ')
-    expect(youtubeChannelFeed('<html></html>')).toBeUndefined()
+  it('names the source after the channel, and lists a channel as RSS of watch links', () => {
+    expect(syntheticLabel(videoPage({ title: 'T', uploader: 'Andrej &amp; co' }, 'youtube', 'x'))).toBe('Andrej &amp; co')
+    const rss = channelRss({ title: 'AK', entries: [{ id: 'EWvNQjAaOHw', title: 'How I use LLMs', timestamp: 1760918400, thumbnail: 'https://i.ytimg.com/a.jpg' }, { title: 'no id' }] }, 'https://www.youtube.com/@AK')
+    expect(rss).toContain('<link>https://www.youtube.com/watch?v=EWvNQjAaOHw</link>')
+    expect(rss).toContain('<media:thumbnail url="https://i.ytimg.com/a.jpg"/>')
+    expect(rss).toContain('<pubDate>')
+    expect(rss.match(/<item>/g)).toHaveLength(1)
   })
 })
 

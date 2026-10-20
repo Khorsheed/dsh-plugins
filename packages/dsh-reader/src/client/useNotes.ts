@@ -236,6 +236,7 @@ export function useNotes(input: UseNotesInput): NotesFace {
       ...(sheet.start === undefined ? {} : { start: sheet.start }),
       quote: sheet.quote,
       ...(sheet.translated === undefined ? {} : { translated: sheet.translated }),
+      ...(sheet.time === undefined ? {} : { time: sheet.time }),
       ...(comment.trim() === '' ? {} : { comment }),
     }).then(async result => {
       setSaving(false)

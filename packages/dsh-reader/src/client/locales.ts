@@ -81,6 +81,8 @@ export type ReaderKey =
   | 'notes.replyEdit' | 'notes.replyRemove' | 'notes.discussionNotes' | 'notes.kindDiscussion' | 'notes.kindCheck'
   | 'notes.noDiscussionNotes' | 'notes.pointsCheck' | 'notes.pointsDiscussion' | 'notes.check' | 'notes.checkLead'
   | 'notes.checkDraft' | 'notes.checkDraftNotes' | 'notes.backToSession'
+  | 'media.collapse' | 'media.expand' | 'media.noFollow' | 'media.captions' | 'media.follow' | 'media.sourcePlatform'
+  | 'media.loading' | 'media.noCaptions' | 'media.noCaptionsAudio' | 'media.failed' | 'media.kindVideo' | 'media.kindAudio'
   | 'notes.sync' | 'notes.syncTitle' | 'notes.syncLast' | 'notes.syncCards' | 'notes.syncReplies' | 'notes.syncKind'
   | 'notes.syncDone' | 'notes.syncOpen' | 'notes.syncFailed' | 'notes.syncedIn' | 'notes.syncNoCanvas'
   | 'notes.syncConclusion' | 'notes.syncOriginal' | 'notes.syncRun'
@@ -343,6 +345,18 @@ export const en = {
   'notes.checkDraft': 'Quiz me on “{title}” (article id {id}). I have finished it. Load the reader skill and run a quiz-me round: read the article and my notes with reader_read, play a student who has not read it, ask 3–5 explain-it-to-me questions in one message, and once I answer them all, explain against the article only what I have not got right (with ¶), then keep it with reader_note as a quiz-me note. No score.',
   'notes.checkDraftNotes': 'My notes so far: {count}.',
   'notes.backToSession': 'Back to the conversation',
+  'media.collapse': 'Collapse video',
+  'media.expand': 'Show video',
+  'media.noFollow': 'Bilibili reports no playback time: a jump reloads the player',
+  'media.captions': 'Captions',
+  'media.follow': 'Follow',
+  'media.sourcePlatform': 'Source: platform captions',
+  'media.loading': 'Fetching captions…',
+  'media.noCaptions': 'This video has no captions — local transcription comes with the next version',
+  'media.noCaptionsAudio': 'This audio has no captions — local transcription comes with the next version',
+  'media.failed': 'Captions could not be fetched',
+  'media.kindVideo': 'Video',
+  'media.kindAudio': 'Audio',
   'notes.sync': 'Sync to canvas',
   'notes.syncTitle': 'Sync to canvas · {count}',
   'notes.syncLast': 'used last',
@@ -617,6 +631,18 @@ export const zh = {
   'notes.checkDraft': '考考我：《{title}》（文章 id：{id}）。我读完了，请加载 reader 技能，按「考考我」来：用 reader_read 读这篇和我的笔记，当一个没读过的学生，一次问我 3–5 个「讲给我听」的问题；我一条消息答完后，对照原文只讲我没讲到位的地方（带 ¶），再用 reader_note 记一条考考我笔记。不打分。',
   'notes.checkDraftNotes': '我目前记了 {count} 条笔记。',
   'notes.backToSession': '回到会话',
+  'media.collapse': '收起视频',
+  'media.expand': '展开视频',
+  'media.noFollow': 'B 站播放器不报告播放时间：跳转会重新加载播放器',
+  'media.captions': '字幕',
+  'media.follow': '跟随',
+  'media.sourcePlatform': '来源：平台字幕',
+  'media.loading': '正在获取字幕…',
+  'media.noCaptions': '该视频无字幕（本机转写将在下一版提供）',
+  'media.noCaptionsAudio': '该音频无字幕（本机转写将在下一版提供）',
+  'media.failed': '字幕获取失败',
+  'media.kindVideo': '视频',
+  'media.kindAudio': '音频',
   'notes.sync': '同步到画布',
   'notes.syncTitle': '同步到画布 · {count} 条',
   'notes.syncLast': '上次用的',

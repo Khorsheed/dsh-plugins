@@ -102,13 +102,14 @@ function normalizeNote(value: unknown): ReaderNote | undefined {
   const block = typeof anchor?.block === 'number' && Number.isInteger(anchor.block) && anchor.block >= 0 ? anchor.block : 0
   const start = typeof anchor?.start === 'number' && Number.isInteger(anchor.start) && anchor.start >= 0 ? anchor.start : undefined
   const translated = text(anchor?.translated, MAX_QUOTE_CHARS)
+  const time = typeof anchor?.time === 'number' && Number.isFinite(anchor.time) && anchor.time >= 0 ? anchor.time : undefined
   const comment = text(record.comment, MAX_COMMENT_CHARS)
   const replies = Array.isArray(record.replies)
     ? record.replies.map(normalizeReply).filter((reply): reply is ReaderNoteReply => reply !== undefined).slice(-MAX_REPLIES_PER_NOTE)
     : []
   return {
     id,
-    anchor: { block, ...(start === undefined ? {} : { start }), quote, ...(translated === undefined ? {} : { translated }) },
+    anchor: { block, ...(start === undefined ? {} : { start }), quote, ...(translated === undefined ? {} : { translated }), ...(time === undefined ? {} : { time }) },
     ...(comment === undefined ? {} : { comment }),
     ...(replies.length === 0 ? {} : { replies }),
     ...(normalizeSynced(record.syncedTo).length === 0 ? {} : { syncedTo: normalizeSynced(record.syncedTo) }),
@@ -436,6 +437,7 @@ export class ReaderNotesStore {
           ...(input.start !== undefined && Number.isInteger(input.start) && input.start >= 0 ? { start: input.start } : {}),
           quote,
           ...(translated === undefined || translated === '' ? {} : { translated }),
+          ...(input.time !== undefined && Number.isFinite(input.time) && input.time >= 0 ? { time: input.time } : {}),
         },
         ...(comment === undefined || comment === '' ? {} : { comment }),
         createdAt: now,
