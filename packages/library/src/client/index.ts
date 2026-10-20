@@ -128,6 +128,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     deleteProject: projectId => remote.deleteProject({ id: projectId }),
     removeResource: (projectId, resourceId) => remote.removeResource({ projectId, resourceId }),
     moveResource: (projectId, resourceId, seq) => remote.moveResource({ projectId, resourceId, seq }),
+    setBookKind: (projectId, resourceId, bookKind) => remote.setBookKind({ projectId, resourceId, bookKind }),
     getRoadmap: (projectId, resourceId) => remote.getRoadmap({ projectId, resourceId }),
     adoptRoadmap: (projectId, resourceId) => remote.adoptRoadmap({ projectId, resourceId }),
     discardDraft: (projectId, resourceId) => remote.discardDraft({ projectId, resourceId }),

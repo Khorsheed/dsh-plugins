@@ -122,6 +122,20 @@ export function BookView({ p, projectId, resourceId }: ViewProps & { projectId: 
             </span>
           </section>
         )}
+        {resource !== undefined && isThickResource(resource) && (
+          <section className={css.kindRow}>
+            <span className={css.kindRowText}>
+              <span>{t('book.kindLine', { kind: t(`bookKind.${resource.meta?.bookKind ?? 'knowledge'}`) })}</span>
+              <span className={css.muted}>{t(`book.kindHint.${resource.meta?.bookKind ?? 'knowledge'}`)}</span>
+            </span>
+            <button
+              type="button"
+              className={css.ghost}
+              disabled={busy}
+              onClick={() => { void act(() => outcome(p.setBookKind(projectId, resourceId, resource.meta?.bookKind === 'material' ? 'knowledge' : 'material'))) }}
+            >{t(resource.meta?.bookKind === 'material' ? 'book.kindToKnowledge' : 'book.kindToMaterial')}</button>
+          </section>
+        )}
         {resource?.meta?.extras !== undefined && resource.meta.extras.length > 0 && <Extras p={p} resource={resource} />}
         {resource !== undefined && loaded.data?.draft !== undefined && (
           <DraftCard

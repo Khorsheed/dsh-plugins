@@ -214,6 +214,7 @@ const face = {
   deleteProject: () => done({ id: 'p_ielts' }),
   removeResource: () => done({ id: 'r_avu' }),
   moveResource: () => done({ resources }),
+  setBookKind: () => done({ resource: cam5 }),
   getRoadmap: (_project: string, resourceId: string) => ok(roadmaps[resourceId] ?? {}),
   adoptRoadmap: () => done({}), discardDraft: () => done({}), markNodeRead: () => done({ unlocked: [] }),
   listResources: () => ok({ resources }),

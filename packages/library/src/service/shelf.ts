@@ -303,7 +303,11 @@ export class LibraryServiceShelf extends LibraryServiceCore {
       const now = new Date().toISOString()
       const meta = (() => {
         const merged = {
-          ...(request.bookKind === undefined ? (existing?.meta?.bookKind === undefined ? {} : { bookKind: existing.meta.bookKind }) : { bookKind: request.bookKind }),
+          // A textbook is knowledge unless said otherwise — material is the rare case whose exact text is tested.
+          ...(() => {
+            const bookKind = request.bookKind ?? existing?.meta?.bookKind ?? (toc.length > 0 ? 'knowledge' as const : undefined)
+            return bookKind === undefined ? {} : { bookKind }
+          })(),
           ...(request.short === undefined || request.short.trim() === ''
             ? (existing?.meta?.short === undefined ? {} : { short: existing.meta.short })
             : { short: request.short.trim().slice(0, 8) }),
@@ -371,6 +375,21 @@ export class LibraryServiceShelf extends LibraryServiceCore {
       if (next.id === resourceId) placed = next
     }
     return placed ?? this.store.readResource(projectId, resourceId)!
+  }
+
+  /** Switch a textbook between 知识型 (knowledge) and 材料型 (material) — the learner's call on the textbook page. */
+  async setBookKind(request: { projectId: string; resourceId: string; bookKind: LibraryBookKind }): Promise<LibraryOutcome<{ resource: LibraryResource }>> {
+    this.assertAlive('setBookKind')
+    const project = this.readProjectOrRefusal(request.projectId)
+    if ('error' in project) return project
+    if (request.bookKind !== 'knowledge' && request.bookKind !== 'material') return refuse('invalid', 'bookKind is knowledge | material')
+    return await this.mutate(project.value.id, () => {
+      const resource = this.store.readResource(project.value.id, request.resourceId)
+      if (resource === undefined || !isThickResource(resource)) return refuse('not-found', `no textbook ${JSON.stringify(request.resourceId)} in this project`)
+      const next: LibraryResource = { ...resource, meta: { ...resource.meta, bookKind: request.bookKind } }
+      this.store.writeResource(project.value.id, next)
+      return { ok: true as const, resource: next }
+    })
   }
 
   /** Move a textbook to another place in the study order (the rest shift). */

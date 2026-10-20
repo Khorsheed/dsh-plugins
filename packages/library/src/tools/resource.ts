@@ -60,7 +60,7 @@ export function libraryResourceTool(kit: ToolKit): ToolDefinition {
         ],
         description: 'Where the contents came from (default { by: "model" }).',
       },
-      bookKind: { type: 'string', enum: ['knowledge', 'material'], description: 'knowledge: domain knowledge you may quiz from memory (textbooks); material: specific text you cannot recall (exam papers, novels — questions need a photo or web quote).' },
+      bookKind: { type: 'string', enum: ['knowledge', 'material'], description: 'knowledge (the default): a textbook of domain knowledge — quiz the knowledge; material: ONLY when the exact text itself is what is tested (exam papers, literature, readers) — every content question then quotes a photographed page. Whose book it is (origin learner) says nothing about this.' },
       author: { type: 'string' },
       edition: { type: 'string', description: 'e.g. 2010 年 8 月第一版.' },
       isbn: { type: 'string' },

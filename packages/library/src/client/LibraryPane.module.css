@@ -2479,6 +2479,23 @@ textarea.input { resize: vertical; font: inherit; line-height: 1.5; }
 .pickState[data-state='weak'] { color: var(--lib-bad); }
 .pickState[data-state='mastered'] { color: var(--lib-ok); }
 
+.kindRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-md, 12px);
+}
+
+.kindRowText {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-width: 180px;
+}
+
 @container dsh-panel (max-width: 560px) {
   .body { padding: 10px; }
   .hero { padding: 0 0 10px; border-bottom: 1px solid var(--dsw-alias-border-l2); border-radius: 0; background: transparent; }

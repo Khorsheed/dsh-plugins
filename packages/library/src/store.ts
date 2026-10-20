@@ -825,7 +825,7 @@ export function normalizeBindings(value: unknown): Map<string, LibraryBinding> {
     const binding = asRecord(raw)
     const projectId = id(binding?.projectId)
     if (sessionId === '' || projectId === undefined) continue
-    out.set(sessionId, { projectId, ...opt('resourceId', id(binding?.resourceId) ?? id(binding?.bookId)) })
+    out.set(sessionId, { projectId, ...opt('resourceId', id(binding?.resourceId) ?? id(binding?.bookId)), ...opt('previousProjectId', id(binding?.previousProjectId)) })
   }
   return out
 }

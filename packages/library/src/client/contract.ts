@@ -56,6 +56,8 @@ export interface LibraryPaneInjected {
   deleteProject: (projectId: string) => Answer<{ id: string }>
   /** Remove a shelf entry: its registration, roadmaps and pages go; its cards stay, unhung. */
   removeResource: (projectId: string, resourceId: string) => Answer<{ id: string }>
+  /** Switch a textbook between 知识型 and 材料型. */
+  setBookKind: (projectId: string, resourceId: string, bookKind: 'knowledge' | 'material') => Answer<{ resource: LibraryResource }>
   /** Move a textbook to another place in the study order (the rest shift). */
   moveResource: (projectId: string, resourceId: string, seq: number) => Answer<{ resources: LibraryResource[] }>
   getRoadmap: (projectId: string, resourceId: string) => Promise<RemoteResult<{ roadmap?: LibraryRoadmap; draft?: LibraryRoadmap }>>

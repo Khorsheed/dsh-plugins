@@ -149,6 +149,12 @@ export class LibraryRemoteService extends TypertRemoteService<LibraryRemoteConfi
     return this.core.putResource(request)
   }
 
+  /** Switch a textbook between 知识型 and 材料型. */
+  @Remote('setBookKind')
+  setBookKind(request: { projectId: string; resourceId: string; bookKind: 'knowledge' | 'material' }): Promise<LibraryOutcome<{ resource: LibraryResource }>> {
+    return this.core.setBookKind(request)
+  }
+
   /** Move a textbook to another place in the study order. */
   @Remote('moveResource')
   moveResource(request: { projectId: string; resourceId: string; seq: number }): Promise<LibraryOutcome<{ resources: LibraryResource[] }>> {
