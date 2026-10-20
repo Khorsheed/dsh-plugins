@@ -13,7 +13,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { ReaderService } from './service.ts'
 import type { ReaderNotesStore } from './notes.ts'
-import type { LocalTranscriptStatus, ReaderEntryIdentity, ReaderEntryNotes, ReaderMedia, ReaderNote, ReaderNoteInput, ReaderNoteOutcome } from './types.ts'
+import type { LocalTranscriptStatus, MediaCardStates, ReaderEntryIdentity, ReaderEntryNotes, ReaderMedia, ReaderNote, ReaderNoteInput, ReaderNoteOutcome } from './types.ts'
 import type {
   ReaderAddFailure,
   ReaderAddOutcome,
@@ -385,6 +385,12 @@ export class ReaderRemoteService extends TypertRemoteService<ReaderRemoteConfig>
   @Remote('localTranscript')
   localTranscript(request: { entryId: string }): Promise<LocalTranscriptStatus> {
     return Promise.resolve(this.core.local.status(request.entryId))
+  }
+
+  /** The wall's video / audio cards: what each one's transcript is (captions, local, transcribing…). */
+  @Remote('mediaStates')
+  mediaStates(request: { entryIds: string[] }): Promise<MediaCardStates> {
+    return Promise.resolve(this.core.mediaStates(request))
   }
 
   /** Leave (withdraws a queued job) or, with `force`, stop an entry's local transcription. */

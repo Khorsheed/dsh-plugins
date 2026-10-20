@@ -899,6 +899,24 @@ export interface ReaderImageResult {
 
 export type * from './notes-types.ts'
 
+/** What a video / audio card says about its transcript. */
+export type MediaCardState = 'platform' | 'local' | 'none' | 'fetching' | 'queued' | 'transcribing' | 'failed'
+
+/** One media card's transcript state (absent: never opened, nothing known). */
+export interface MediaCardStatus {
+  readonly state: MediaCardState
+  /** 0–1, while transcribing. */
+  readonly progress?: number
+  /** Jobs ahead in the engine's queue, while queued. */
+  readonly ahead?: number
+}
+
+/** The wall's media cards, plus whether local transcription is installed. */
+export interface MediaCardStates {
+  readonly engine: boolean
+  readonly states: Readonly<Record<string, MediaCardStatus>>
+}
+
 /** Where an entry's local transcription stands. */
 export type LocalTranscriptState = 'unavailable' | 'needs-models' | 'fetching' | 'queued' | 'transcribing' | 'done' | 'failed' | 'idle'
 

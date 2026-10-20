@@ -36,6 +36,7 @@ import type {
   ReaderStorageStats,
   ReaderTag,
   LocalTranscriptStatus,
+  MediaCardStates,
   ReaderMedia,
 } from '../types.ts'
 import type { ReaderEntryIdentity, ReaderEntryNotes, ReaderNote, ReaderNoteInput, ReaderNoteOutcome } from '../notes-types.ts'
@@ -290,6 +291,8 @@ export interface ReaderPaneInjected {
   startLocalTranscript: (request: { entryId: string; url: string; media: ReaderMedia; title?: string; confirmModels?: boolean }) => Promise<RemoteResult<LocalTranscriptStatus>>
   /** Where an entry's local transcription stands, with the transcript so far. */
   localTranscript: (request: { entryId: string }) => Promise<RemoteResult<LocalTranscriptStatus>>
+  /** The wall's video / audio cards: what each one's transcript is. */
+  mediaStates: (request: { entryIds: string[] }) => Promise<RemoteResult<MediaCardStates>>
   /** Leave (withdraws a queued job) or, with `force`, stop an entry's local transcription. */
   cancelLocalTranscript: (request: { entryId: string; force: boolean }) => Promise<RemoteResult<LocalTranscriptStatus>>
   /** Whether a conversation can be opened from the pane (probed live). */

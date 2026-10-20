@@ -193,6 +193,11 @@ export class LocalTranscriber {
     return this.status(entryId)
   }
 
+  /** Whether the engine is installed right now. */
+  engineAvailable(): boolean {
+    return this.deps.engine() !== undefined
+  }
+
   /** Stop everything (plugin disposal). */
   dispose(): void {
     for (const job of this.jobs.values()) job.abort.abort()
