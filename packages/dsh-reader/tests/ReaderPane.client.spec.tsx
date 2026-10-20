@@ -29,7 +29,7 @@ import { ReaderPane } from '../src/client/ReaderPane.tsx'
 import { noteTargetForSelection } from '../src/client/notes.ts'
 import { forgetSession, forgetTranslators, readSession, readWallCache, rememberReadingPosition } from '../src/client/session.ts'
 import { UNIT_SEPARATOR, clearMemory, translationHash } from '../src/client/translate.ts'
-import type { LocalTranscriptStatus, MediaCardStates, ReaderBody, ReaderEntryFetchState, ReaderEntryNotes, ReaderRecentEntry, ReaderSourceSummary } from '../src/types.ts'
+import type { LocalTranscriptStatus, MediaCardStates, ReaderBody, ReaderPolishView, ReaderEntryFetchState, ReaderEntryNotes, ReaderRecentEntry, ReaderSourceSummary } from '../src/types.ts'
 
 /** A translate over the zh dictionary: its key set is the source of truth. */
 const t = ((key: keyof typeof zh, params?: Record<string, string>): string =>
@@ -99,6 +99,8 @@ interface BenchOptions {
   readonly local?: { readonly start: LocalTranscriptStatus[]; readonly polls: LocalTranscriptStatus[] }
   /** The wall's media pills (`mediaStates`). */
   readonly mediaCards?: MediaCardStates
+  /** The 润色 layer the host answers (`polish`). */
+  readonly polish?: ReaderPolishView
   /** The canvas plugin's inbox, when the bench composes one. */
   readonly inbox?: CanvasInboxLike
   /** The payload each source id answers with. Sources with no entry answer with their own feed. */
@@ -244,6 +246,8 @@ function bench(options: BenchOptions = {}) {
       const next = polls.length > 1 ? polls.shift()! : polls[0]
       return { ok: true as const, value: { ...(next ?? { state: 'idle' as const }), entryId: request.entryId } }
     }),
+    polish: vi.fn(async () => ({ ok: true as const, value: options.polish ?? null })),
+    setPolishOff: vi.fn(async (request: { paragraph: number }) => ({ ok: true as const, value: options.polish === undefined ? null : { ...options.polish, off: [request.paragraph] } })),
     speakerNames: vi.fn(async () => ({ ok: true as const, value: {} as Record<string, string> })),
     nameSpeaker: vi.fn(async (request: { speaker: number; name: string }) => ({ ok: true as const, value: { [String(request.speaker)]: request.name } as Record<string, string> })),
     mediaStates: vi.fn(async () => ({ ok: true as const, value: options.mediaCards ?? { engine: false, states: {} } })),
@@ -408,6 +412,8 @@ function bench(options: BenchOptions = {}) {
     cancelLocalTranscript: mocks.cancelLocalTranscript,
     mediaStates: mocks.mediaStates,
     speakerNames: mocks.speakerNames,
+    polish: mocks.polish,
+    setPolishOff: mocks.setPolishOff,
     nameSpeaker: mocks.nameSpeaker,
     canOpenSession: () => false,
     openSession: () => undefined,
@@ -4187,6 +4193,38 @@ describe('video and audio entries', () => {
     fireEvent.keyDown(input, { key: 'Enter' })
     await waitFor(() => { expect(ui.mocks.nameSpeaker).toHaveBeenCalledWith({ entryId: expect.any(String), speaker: 1, name: '嘉宾' }) })
     await waitFor(() => { expect(document.querySelectorAll('[data-reader-spk]')[1]?.getAttribute('data-label')).toBe('嘉宾') })
+  })
+
+  it('shows the agent\'s 润色 in place of the paragraph, over the original, and back on 「看机翻」', async () => {
+    const body = '<p data-t="0.2">hi everyone.</p><p data-t="38.5">so the model is two files.</p>'
+    const ui = bench({
+      sources: [rssSource('yt')],
+      payloads: { yt: videoFeed },
+      transcript: body,
+      polish: { total: 2, done: 1, paragraphs: { 2: '所以模型其实就是两个文件。' }, off: [], updatedAt: new Date().toISOString(), complete: false },
+    })
+    await ui.settle()
+    fireEvent.click(await screen.findByText('Intro to LLMs'))
+    const polished = await screen.findByText('所以模型其实就是两个文件。')
+    const article = polished.closest('[data-polish-view]')!
+    expect(article.getAttribute('data-polish-view')).toBe('both')
+    // The paragraph's own text is still in the DOM (notes, translation), just not shown.
+    expect(polished.closest('p')?.querySelector('[data-reader-orig-run]')?.textContent).toBe('so the model is two files.')
+    expect(screen.getByText(zh['polish.running'].replace('{done}', '1').replace('{total}', '2'))).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: zh['polish.showMachine'] }))
+    expect(article.getAttribute('data-polish-view')).toBeNull()
+  })
+
+  it('puts the 润色 request into the draft from the bar when the globe is not offered', async () => {
+    const ui = bench({ sources: [rssSource('yt')], payloads: { yt: videoFeed }, transcript: '<p data-t="0.2">hi everyone.</p>' })
+    await ui.settle()
+    fireEvent.click(await screen.findByText('Intro to LLMs'))
+    await screen.findByText('hi everyone.')
+    fireEvent.click(screen.getByTitle(zh['polish.action']))
+    const written = ui.mocks.setDraft.mock.calls.at(-1)?.[0] as string
+    expect(written).toContain('reader_translate')
+    expect(written).toContain('共 1 段')
+    expect(await screen.findByText(zh['polish.awaiting'])).toBeTruthy()
   })
 
   it('withdraws a job when leaving and stops it from 取消', async () => {

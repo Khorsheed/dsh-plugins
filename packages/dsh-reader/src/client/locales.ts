@@ -69,6 +69,8 @@ export type ReaderKey =
   | 'foot.refreshing' | 'foot.deduped'
   | 'quote.copied' | 'quote.copyFailed' | 'quote.quoted'
   | 'add.fetching' | 'notes.checkShort'
+  | 'polish.action' | 'polish.draft' | 'polish.continueDraft' | 'polish.tag' | 'polish.tagTitle' | 'polish.running' | 'polish.stalled' | 'polish.continue'
+  | 'polish.done' | 'polish.showMachine' | 'polish.showPolish' | 'polish.awaiting'
   | 'when.justNow' | 'when.minutes' | 'when.hours' | 'when.yesterday' | 'when.days'
   | 'notes.tabArticle' | 'notes.tabNotes' | 'notes.tabsLabel' | 'notes.take'
   | 'notes.sheetTitle' | 'notes.excerpt' | 'notes.commentPlaceholder' | 'notes.commentOptional'
@@ -292,6 +294,18 @@ export const en = {
   'quote.quoted': 'Quoted {count} characters',
   'add.fetching': 'Fetching…',
   'notes.checkShort': 'Quiz me',
+  'polish.action': '✦ Let the agent polish the translation',
+  'polish.draft': 'Polish the Chinese translation of “{title}” (article id {id}, {count} paragraphs). Load the reader skill, read the original with reader_read batch by batch, translate whole paragraphs from the original and write each batch back with reader_translate, until every paragraph is done. Faithful, natural Chinese; names, terms and speakers consistent.\nMy wishes: ',
+  'polish.continueDraft': 'Continue polishing the Chinese translation of “{title}” (article id {id}, {count} paragraphs) from ¶{from}: read with reader_read from={from}, write back with reader_translate, until every paragraph is done.',
+  'polish.tag': 'polished',
+  'polish.tagTitle': 'Show the machine translation for this paragraph',
+  'polish.running': 'The agent is polishing · {done} / {total} paragraphs',
+  'polish.stalled': 'Polished {done} / {total}',
+  'polish.continue': 'Polish the remaining {count}',
+  'polish.done': '✦ Polished by the agent · {done} paragraphs',
+  'polish.showMachine': 'Show the machine translation',
+  'polish.showPolish': 'Show the polished one',
+  'polish.awaiting': 'The polish request is in the input box — send it and progress shows here',
 
   'when.justNow': 'just now',
   'when.minutes': '{count} min ago',
@@ -609,6 +623,18 @@ export const zh = {
   'quote.quoted': '已引用 {count} 字',
   'add.fetching': '抓取中…',
   'notes.checkShort': '考考我',
+  'polish.action': '✦ 让 Agent 润色译文',
+  'polish.draft': '请润色《{title}》（文章 id {id}，共 {count} 段）的中文译文：加载 reader 技能，用 reader_read 分批读原文，从原文整段翻译，每批用 reader_translate 写回，直到全部写完。忠实原意、读起来像中文；专名、术语和说话人前后一致。\n我的要求：',
+  'polish.continueDraft': '请从 ¶{from} 接着润色《{title}》（文章 id {id}，共 {count} 段）的中文译文：用 reader_read from={from} 读，用 reader_translate 写回，直到全部写完。',
+  'polish.tag': '润色',
+  'polish.tagTitle': '这一段改回机翻',
+  'polish.running': 'Agent 润色中 · 已润色 {done} / {total} 段',
+  'polish.stalled': '已润色 {done} / {total} 段',
+  'polish.continue': '继续润色剩下的 {count} 段',
+  'polish.done': '✦ 已由 Agent 润色 {done} 段',
+  'polish.showMachine': '看机翻',
+  'polish.showPolish': '看润色版',
+  'polish.awaiting': '润色请求已放进输入框，发送后这里会显示进度',
 
   'when.justNow': '刚刚',
   'when.minutes': '{count} 分钟前',

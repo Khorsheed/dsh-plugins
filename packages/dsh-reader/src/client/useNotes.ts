@@ -118,6 +118,8 @@ export interface NotesFace {
   readonly deleteDiscussion: (discussion: ReaderDiscussion) => void
   readonly jumpPara: (para: number) => void
   readonly check: () => void
+  /** Put a 润色 (re-translate) request into the draft: the whole article, or continuing at ¶`from`. */
+  readonly polish: (total: number, from?: number) => void
   readonly sync: SyncFace
 }
 
@@ -472,7 +474,18 @@ export function useNotes(input: UseNotesInput): NotesFace {
     remember()
   }, [identity, notes, t, props, remember])
 
+  // 让Agent润色译文: the request into the draft, like 考考我 (the reader adds a wish and sends it).
+  const polish = useCallback((total: number, from?: number) => {
+    if (identity === undefined) return
+    const request = from === undefined
+      ? t('polish.draft', { title: identity.title, id: identity.entryId, count: total })
+      : t('polish.continueDraft', { title: identity.title, id: identity.entryId, count: total, from })
+    props.setDraft(mergedDraft(props.readDraft(), request))
+    remember()
+  }, [identity, t, props, remember])
+
   return {
+    polish,
     sync,
     addReply,
     editReply,

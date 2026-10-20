@@ -38,6 +38,7 @@ import type {
   LocalTranscriptStatus,
   MediaCardStates,
   ReaderMedia,
+  ReaderPolishView,
 } from '../types.ts'
 import type { ReaderEntryIdentity, ReaderEntryNotes, ReaderNote, ReaderNoteInput, ReaderNoteOutcome } from '../notes-types.ts'
 import type { createReaderStore } from './store.ts'
@@ -291,6 +292,10 @@ export interface ReaderPaneInjected {
   startLocalTranscript: (request: { entryId: string; url: string; media: ReaderMedia; title?: string; confirmModels?: boolean }) => Promise<RemoteResult<LocalTranscriptStatus>>
   /** Where an entry's local transcription stands, with the transcript so far. */
   localTranscript: (request: { entryId: string }) => Promise<RemoteResult<LocalTranscriptStatus>>
+  /** The article's 润色 layer, when there is one for its current text. */
+  polish: (request: { entryId: string }) => Promise<RemoteResult<ReaderPolishView | null>>
+  /** Show one paragraph's machine translation instead of the 润色 (or back). */
+  setPolishOff: (request: { entryId: string; paragraph: number; off: boolean }) => Promise<RemoteResult<ReaderPolishView | null>>
   /** The reader's names for a transcript's speakers, by index. */
   speakerNames: (request: { entryId: string }) => Promise<RemoteResult<Record<string, string>>>
   /** Name one speaker (empty: back to the default); answers all the names. */

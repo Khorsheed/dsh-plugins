@@ -39,6 +39,7 @@
     "src/client/useMedia.ts",
     "src/client/useLocalTranscript.ts",
     "src/client/useMediaStates.ts",
-    "src/client/SpeakerLegend.tsx"
+    "src/client/SpeakerLegend.tsx",
+    "src/client/usePolish.ts"
   ]
 }
