@@ -57,11 +57,10 @@ export class FilePreviewService extends TypertRemoteService {
   static readonly IMAGE_ROUTE = '/file-preview-image'
 
   private readonly resolved: Required<FilePreviewConfig>
-  /** Whether a web server is present to host the image route; image reads
-   * answer `binary` without it (the headless face has no browser to serve). */
-  private readonly imageRoute: boolean
-  /** The agents service when present (image route only; null headless). */
-  private readonly agents: AgentRegistry | undefined
+  /** The agents service while the image route is registered; undefined
+   * otherwise (headless faces, or before `webServer`/`agents` arrive), and
+   * image reads then answer `binary` (no browser to serve). */
+  private agents: AgentRegistry | undefined
   /** Native reveal runner; a constructor seam for deterministic tests. */
   private readonly revealNative: (path: string, signal: AbortSignal) => Promise<void>
   /** Native open-in-app runner; a constructor seam for deterministic tests. */
@@ -73,7 +72,8 @@ export class FilePreviewService extends TypertRemoteService {
 
   /**
    * @param ctx - owning Cordis Context carrying `fs`; `webServer` and `agents`
-   *   are optional (the image route needs them, headless faces lack both).
+   *   are optional (the image route registers whenever both are up, headless
+   *   faces lack both).
    * @param config - optional deployment tuning; defaults cap reads and lists,
    *   and enable the bash-write collector.
    * @param deps - test seam for the native reveal dispatch.
@@ -104,22 +104,30 @@ export class FilePreviewService extends TypertRemoteService {
     } else {
       this.collector = undefined
     }
-    const webServer = ctx.get('webServer') as ImageRouteHost | undefined
-    this.agents = ctx.get('agents')
-    this.imageRoute = webServer !== undefined && this.agents !== undefined
-    if (this.imageRoute && webServer !== undefined) {
-      ctx.effect(
-        () => webServer.register({
+    // Optional services through a sub-fiber, never an apply-time `ctx.get`:
+    // a one-shot probe loses the route for good whenever this service applies
+    // before `webServer`/`agents` (load order is not guaranteed), and every
+    // image then reads as `binary`. The sub-fiber registers the route once
+    // both are up and withdraws it when either leaves.
+    ctx.inject(['webServer', 'agents'], (routeCtx) => {
+      const webServer = routeCtx.get('webServer') as ImageRouteHost
+      const agents = routeCtx.get('agents')
+      routeCtx.effect(() => {
+        const unregister = webServer.register({
           kind: 'prefix',
           path: FilePreviewService.IMAGE_ROUTE,
           /* v8 ignore next 2 -- the handler body is the request path; the
              unit tests drive serveImage directly, the real server reaches it
              through this registration */
           handler: (req: IncomingMessage, res: ServerResponse) => { void this.serveImage(req, res) },
-        }),
-        'file-preview: image route',
-      )
-    }
+        })
+        this.agents = agents
+        return () => {
+          this.agents = undefined
+          unregister()
+        }
+      }, 'file-preview: image route')
+    })
   }
 
   /** Zero-session availability handshake for browser companions. */
@@ -285,7 +293,7 @@ export class FilePreviewService extends TypertRemoteService {
         htmlMaxReadBytes: this.resolved.htmlMaxReadBytes,
         // The web face's image route is the local deployment's issuer; a
         // headless composition has none and image reads answer `binary`.
-        imageUrl: this.imageRoute
+        imageUrl: this.agents !== undefined
           ? (display: string) => `${FilePreviewService.IMAGE_ROUTE}/${session.id}/${encodeURIComponent(display)}`
           : undefined,
       },

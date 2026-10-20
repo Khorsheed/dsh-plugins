@@ -1,0 +1,10 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-10-20-file-preview-image-route-load-order.md
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-10-20-file-preview-image-route-load-order.md
+.agents/notes/implemented/bug-fix/2026-10-20-file-preview-image-route-load-order.md: a194f73a50a45ef98a510610339e15730818157a
+.agents/notes/implemented/bug-fix/2026-10-20-file-preview-image-route-load-order.zh.md: 0b729c70e28019c072bd4858aaec0c77a9220978
