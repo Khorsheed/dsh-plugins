@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest'
 import {
   MERGE, formatClock, mergeCues, parseBiliJson, parseCaptions, parseJson3, parseSrt, parseVtt, renderTranscript, type Cue,
 } from '../src/captions.ts'
-import { embedUrl, enclosureKind, entryMedia, linkAt, mediaLink, readMediaMeta } from '../src/media.ts'
+import { canonicalMediaUrl, embedUrl, enclosureKind, entryMedia, isShortMediaLink, linkAt, mediaLink, readMediaMeta } from '../src/media.ts'
 import { channelRss, episodePage, syntheticLabel, videoPage } from '../src/media-host.ts'
 import { podcastPageToRss, readEpisodePage } from '../src/xiaoyuzhou.ts'
 import { chooseCaptionTrack, releaseAsset } from '../src/ytdlp.ts'
@@ -86,6 +86,15 @@ describe('media links', () => {
     expect(mediaLink('https://www.xiaoyuzhoufm.com/episode/61dc343d98304da3caa6c4ae')).toMatchObject({ provider: 'xiaoyuzhou', kind: 'audio' })
     expect(mediaLink('https://www.xiaoyuzhoufm.com/podcast/5e93287b418a84a04661a12e')).toMatchObject({ kind: 'podcast' })
     expect(mediaLink('https://example.com/watch?v=abcdefg')).toBeUndefined()
+  })
+
+  it('resolves share short links to a clean canonical page', () => {
+    expect(isShortMediaLink('https://b23.tv/t414KUa')).toBe(true)
+    expect(isShortMediaLink('https://www.bilibili.com/video/BV1omhd6iEQQ')).toBe(false)
+    expect(canonicalMediaUrl('https://www.bilibili.com/video/BV1omhd6iEQQ/?buvid=YB43&share_from=ugc&p=1&unique_k=t414KUa')).toBe('https://www.bilibili.com/video/BV1omhd6iEQQ/')
+    expect(canonicalMediaUrl('https://www.bilibili.com/video/BV1omhd6iEQQ/?p=3&x=1')).toBe('https://www.bilibili.com/video/BV1omhd6iEQQ/?p=3')
+    expect(canonicalMediaUrl('https://youtu.be/zjkBMFhNj_g?si=abc')).toBe('https://www.youtube.com/watch?v=zjkBMFhNj_g')
+    expect(canonicalMediaUrl('https://example.com/a')).toBeUndefined()
   })
 
   it('decides an entry\'s kind per item: the link first, then the enclosure', () => {

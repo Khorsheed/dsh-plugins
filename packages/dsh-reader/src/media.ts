@@ -76,6 +76,34 @@ export function mediaLink(input: string): MediaLink | undefined {
   return undefined
 }
 
+/** Hosts whose links are only redirects to a media page (Bilibili's share links). */
+const SHORT_LINK_HOSTS = new Set(['b23.tv', 'bili2233.cn'])
+
+/** True for a share short link that must be resolved before it can be recognized. */
+export function isShortMediaLink(input: string): boolean {
+  try {
+    return SHORT_LINK_HOSTS.has(new URL(input).hostname.replace(/^www\./, ''))
+  } catch {
+    return false
+  }
+}
+
+/**
+ * The clean address of a recognized video link: the platform's canonical page,
+ * without the share-tracking parameters a resolved short link drags along.
+ *
+ * @param input - a video URL.
+ */
+export function canonicalMediaUrl(input: string): string | undefined {
+  const link = mediaLink(input)
+  if (link?.provider === 'bilibili' && link.kind === 'video') {
+    const page = new URL(input).searchParams.get('p')
+    return `https://www.bilibili.com/video/${link.id}/${page !== null && page !== '1' ? `?p=${encodeURIComponent(page)}` : ''}`
+  }
+  if (link?.provider === 'youtube' && link.kind === 'video') return `https://www.youtube.com/watch?v=${link.id}`
+  return undefined
+}
+
 /**
  * The media kind of a feed enclosure, from its MIME type (or, when a feed
  * omits it, from the file extension).

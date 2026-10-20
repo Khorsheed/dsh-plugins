@@ -86,8 +86,8 @@ import { delayUntilNext, isCatchUpDue } from './schedule.ts'
 import { arxivHtmlUrl } from './arxiv.ts'
 import { fetchImageBytes, ImageFetchCache } from './image-fetch.ts'
 import { resolveLink, type LinkResolution, type ResolverFetch } from './link-resolvers.ts'
-import { channelRss, episodePage, ReaderMediaHost, syntheticLabel, videoPage } from './media-host.ts'
-import { mediaLink } from './media.ts'
+import { channelRss, episodePage, ReaderMediaHost, resolveShortLink, syntheticLabel, videoPage } from './media-host.ts'
+import { canonicalMediaUrl, isShortMediaLink, mediaLink } from './media.ts'
 import { podcastPageToRss, readEpisodePage } from './xiaoyuzhou.ts'
 
 /**
@@ -1646,6 +1646,13 @@ export class ReaderService {
    * @param url - the source URL.
    */
   private async fetchSource(url: string): Promise<FetchOutcome> {
+    // A share short link (b23.tv) is a cross-site redirect the ordinary fetch
+    // refuses by design: resolve it first, then treat the page it names.
+    if (isShortMediaLink(url)) {
+      const target = await resolveShortLink(url)
+      if (target === '' || isShortMediaLink(target)) throw new UnsupportedContent('the short link leads nowhere')
+      return this.fetchSource(canonicalMediaUrl(target) ?? target)
+    }
     const link = mediaLink(url)
     if (link === undefined) return this.fetchFollowing(url)
     if (link.provider === 'youtube' && link.kind === 'channel') {
@@ -1663,8 +1670,9 @@ export class ReaderService {
       return { url, raw: episodePage(episode), truncated: false, media: true }
     }
     if (link.kind === 'video' && (link.provider === 'youtube' || link.provider === 'bilibili')) {
-      const info = await this.media.ytdlp.info(url)
-      return { url, raw: videoPage(info, link.provider, link.id), truncated: false, media: true }
+      const clean = canonicalMediaUrl(url) ?? url
+      const info = await this.media.ytdlp.info(clean)
+      return { url: clean, raw: videoPage(info, link.provider, link.id), truncated: false, media: true }
     }
     return this.fetchFollowing(url)
   }
