@@ -50,12 +50,14 @@ import {
   type ReaderRecentEntry,
   type ReaderSentenceLearn,
   type ReaderSourceKind,
+  type ReaderSourceSummary,
   type ReaderStorageStats,
   type ReaderTag,
   isCookieHandshake,
 } from '../types.ts'
 import { extractArticle } from './extract-article.ts'
 import { parseFeed, type ReaderEntry } from './parse-rss.ts'
+import type { ReaderParsedSource } from './store.ts'
 import { absoluteDate, clockOf, formatReaderRef, mergedDraft, provenanceOf, relativeWhen } from './quote.ts'
 import {
   TARGET_CANDIDATES, applyRemembered, buildArticle, createSession, detectSourceLanguage, detectTranslator, isTargetLanguage,
@@ -88,6 +90,9 @@ import {
   rememberTranslation,
   rememberWallScroll,
   rememberTranslator,
+  readWallCache,
+  sourceStamp,
+  writeWallCache,
   type ReaderReadingAnchor,
   type ReaderSessionSnapshot,
 } from './session.ts'
@@ -903,6 +908,9 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
   const [cardTranslations, setCardTranslations] = useState<Record<string, { title?: string; summary?: string }>>(
     () => ({ ...snapshot.cardTranslations }),
   )
+  /** The card texts as the wall pass sees them (it runs outside render). */
+  const cardTranslationsRef = useRef(cardTranslations)
+  cardTranslationsRef.current = cardTranslations
   const [wallProgress, setWallProgress] = useState<{ done: number; total: number } | null>(null)
   /**
    * The translated FIELD under the pointer, in the translation-only view.
@@ -973,23 +981,49 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
     [],
   )
 
+  /** This mount has not loaded yet (the cached wall is shown once, on the first load). */
+  const firstLoadRef = useRef(true)
   /** Load the source list and parse whatever payloads the host is holding. */
   const load = useCallback(async () => {
-    actions.setLoading(true)
+    // A remount (the reader came back from another sidebar tab) shows the wall
+    // it already parsed at once, and only re-reads what changed meanwhile.
+    const cached = readWallCache()
+    const restored = cached !== undefined && firstLoadRef.current
+    firstLoadRef.current = false
+    if (restored) {
+      actions.setSources([...cached.sources])
+      for (const { parsed: entry, label } of cached.parsed.values()) {
+        actions.setParsed(entry)
+        if (label !== undefined) actions.setSourceLabel(entry.id, label)
+      }
+    }
+    if (cached === undefined) actions.setLoading(true)
+    const fresh = new Map(cached?.parsed ?? [])
+    const labels = new Map<string, string>()
+    let stampOf = new Map<string, string>()
+    const put = (parsed: ReaderParsedSource): void => {
+      actions.setParsed(parsed)
+      const stamp = stampOf.get(parsed.id)
+      if (stamp !== undefined) fresh.set(parsed.id, { stamp, parsed, ...(labels.has(parsed.id) ? { label: labels.get(parsed.id)! } : {}) })
+    }
+    let known: ReaderSourceSummary[] = []
     try {
       const listed = await props.listSources()
       if (!listed.ok) {
         actions.setError(listed.error.message)
         return
       }
-      const known = listed.value.sources
+      known = [...listed.value.sources]
       actions.setSources(known)
+      stampOf = new Map(known.map(source => [source.id, sourceStamp(source)]))
       // Sources whose payload is wanted: the ones that have a body, PLUS every
       // saved link — a link with no body is still a card the reader must see,
       // and the host answers that request with the reason instead of a payload.
       // (Asking only for sources with bodies made an unreadable link vanish from
       // the wall entirely, which is a worse answer than "link only".)
-      const wanted = known.filter(source => source.hasBody || source.kind === 'link')
+      // Unchanged since the cached parse: nothing to fetch (the wall already shows it).
+      // (Only on that restore: a refresh or an add re-reads everything, as before.)
+      const wanted = known.filter(source => (source.hasBody || source.kind === 'link') && (!restored || fresh.get(source.id)?.stamp !== stampOf.get(source.id)))
       if (wanted.length === 0) return
       const bodies = await props.getBodies(wanted.map(source => source.id))
       if (!bodies.ok) {
@@ -1008,9 +1042,9 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
         const cut = body.truncated === true
         if (body.raw === undefined) {
           if (source.kind === 'rss') {
-            actions.setParsed({ id: source.id, entries: [], error: body.error ?? t('detail.extractFailed') })
+            put({ id: source.id, entries: [], error: body.error ?? t('detail.extractFailed') })
           } else {
-            actions.setParsed({
+            put({
               id: source.id,
               entries: [{
                 id: linkEntryId(source.id),
@@ -1040,8 +1074,9 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
           // parse a feed — it has no XML parser), so the parsed title wins.
           if (result.ok && result.feed.title !== undefined) {
             actions.setSourceLabel(source.id, result.feed.title)
+            labels.set(source.id, result.feed.title)
           }
-          actions.setParsed(result.ok
+          put(result.ok
             ? {
               id: source.id,
               entries: result.feed.entries.map(entry => cut ? { ...entry, truncated: true } : entry),
@@ -1059,7 +1094,7 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
           const extractedTitle = extracted.ok ? extracted.title : undefined
           const extractedExcerpt = extracted.ok ? extracted.excerpt : undefined
           const excerpt = extractedExcerpt ?? body.excerpt
-          actions.setParsed({
+          put({
             id: source.id,
             entries: [{
               id: linkEntryId(source.id),
@@ -1084,6 +1119,10 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
       }
     } finally {
       actions.setLoading(false)
+      if (known.length > 0) {
+        const ids = new Set(known.map(source => source.id))
+        writeWallCache({ sources: known, parsed: new Map([...fresh].filter(([id]) => ids.has(id))) })
+      }
     }
   }, [actions, props, t])
 
@@ -2016,9 +2055,11 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
           if (row === undefined) continue
           // Chinese cards (and Chinese fields inside a mixed card) are left
           // exactly as they are: translating them to Chinese is not a feature.
-          if (!isTargetLanguage(row.entry.title)) fields.push({ id, field: 'title', text: row.entry.title })
+          // Already translated (this visit, or before a remount): nothing to do.
+          const done = cardTranslationsRef.current[id]
+          if (!isTargetLanguage(row.entry.title) && done?.title === undefined) fields.push({ id, field: 'title', text: row.entry.title })
           const summary = row.entry.summary
-          if (summary !== undefined && summary.length > 0 && !isTargetLanguage(summary)) {
+          if (summary !== undefined && summary.length > 0 && !isTargetLanguage(summary) && done?.summary === undefined) {
             fields.push({ id, field: 'summary', text: summary })
           }
         }
