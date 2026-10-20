@@ -42,6 +42,10 @@
     - id: transcribe
       name: '@khorsheed/dsh-transcribe'
 
+    # 渲染抓取: headless-Chrome render of JS-heavy pages, for the reader's 渲染抓取.
+    - id: capture
+      name: "@khorsheed/dsh-capture"
+
     - id: preset-dsh-writing
       name: '@deepseek-ai/dsh-agent-preset'
       config:

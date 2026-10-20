@@ -19,4 +19,5 @@ export const FAMILY_MEMBERS = [
   '@khorsheed/dsh-canvas-novel',
   '@khorsheed/dsh-reader',
   '@khorsheed/dsh-transcribe',
+  '@khorsheed/dsh-capture',
 ] as const
