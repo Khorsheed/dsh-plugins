@@ -81,9 +81,13 @@ export type ReaderKey =
   | 'notes.replyEdit' | 'notes.replyRemove' | 'notes.discussionNotes' | 'notes.kindDiscussion' | 'notes.kindCheck'
   | 'notes.noDiscussionNotes' | 'notes.pointsCheck' | 'notes.pointsDiscussion' | 'notes.check' | 'notes.checkLead'
   | 'notes.checkDraft' | 'notes.checkDraftNotes' | 'notes.backToSession'
-  | 'media.collapse' | 'media.expand' | 'media.noFollow' | 'media.captions' | 'media.follow' | 'media.sourcePlatform'
+  | 'media.collapse' | 'media.expand' | 'media.noFollow' | 'media.captions' | 'media.sourcePlatform'
   | 'media.loading' | 'media.noCaptions' | 'media.noCaptionsAudio' | 'media.failed' | 'media.kindVideo' | 'media.kindAudio'
   | 'media.sourceLocal' | 'media.localFetching' | 'media.localQueued' | 'media.localQueuedAhead' | 'media.localRunning' | 'media.localEta'
+  | 'media.cardPlatform' | 'media.cardLocal' | 'media.cardQueued' | 'media.cardQueuedAhead' | 'media.cardRunning' | 'media.cardFailed'
+  | 'media.cardNone' | 'media.cardNoneAuto'
+  | 'media.play' | 'media.pause' | 'media.startedAt' | 'media.tabTranscript' | 'media.autoTranslate' | 'media.translateAfter'
+  | 'media.chipTitle' | 'media.chipTitleReload' | 'media.timeHint' | 'media.timeHintAudio' | 'media.timeHintOk' | 'media.backToNow'
   | 'media.localStop' | 'media.localStopped' | 'media.localFailed' | 'media.localRetry' | 'media.localModels' | 'media.localModelsGo'
   | 'notes.sync' | 'notes.syncTitle' | 'notes.syncLast' | 'notes.syncCards' | 'notes.syncReplies' | 'notes.syncKind'
   | 'notes.syncDone' | 'notes.syncOpen' | 'notes.syncFailed' | 'notes.syncedIn' | 'notes.syncNoCanvas'
@@ -348,15 +352,34 @@ export const en = {
   'notes.checkDraftNotes': 'My notes so far: {count}.',
   'notes.backToSession': 'Back to the conversation',
   'media.collapse': 'Collapse video',
+  'media.noFollow': 'Bilibili\'s player reports no playback time: a time plays from there by reloading the player, and the transcript does not follow playback',
   'media.expand': 'Show video',
-  'media.noFollow': 'Bilibili reports no playback time: a jump reloads the player',
   'media.captions': 'Captions',
-  'media.follow': 'Follow',
   'media.sourcePlatform': 'Source: platform captions',
   'media.loading': 'Fetching captions…',
   'media.noCaptions': 'This video has no captions — install the Local Transcription plugin to transcribe it on this machine',
   'media.noCaptionsAudio': 'This audio has no captions — install the Local Transcription plugin to transcribe it on this machine',
   'media.sourceLocal': 'Source: transcribed on this machine',
+  'media.play': 'Play',
+  'media.pause': 'Pause',
+  'media.startedAt': 'Played from {time}',
+  'media.tabTranscript': 'Transcript',
+  'media.autoTranslate': 'Translate when transcribed',
+  'media.translateAfter': 'Translation opens once the transcript is complete',
+  'media.chipTitle': 'Play from {time}',
+  'media.chipTitleReload': 'Play from {time} (the player reloads)',
+  'media.timeHint': 'Click the time before a paragraph to play the video from there',
+  'media.timeHintAudio': 'Click the time before a paragraph to play from there',
+  'media.timeHintOk': 'Got it',
+  'media.backToNow': 'Back to what is playing',
+  'media.cardPlatform': 'Captions',
+  'media.cardLocal': 'Transcribed',
+  'media.cardQueued': 'Queued',
+  'media.cardQueuedAhead': 'Queued #{count}',
+  'media.cardRunning': 'Transcribing {percent}%',
+  'media.cardFailed': 'Transcription failed',
+  'media.cardNone': 'No captions',
+  'media.cardNoneAuto': 'No captions · transcribes on open',
   'media.localFetching': 'Getting the audio…',
   'media.localQueued': 'Waiting to transcribe…',
   'media.localQueuedAhead': 'Queued — {count} ahead',
@@ -646,15 +669,34 @@ export const zh = {
   'notes.checkDraftNotes': '我目前记了 {count} 条笔记。',
   'notes.backToSession': '回到会话',
   'media.collapse': '收起视频',
+  'media.noFollow': 'B 站播放器不报告播放时间：点时间会重新加载播放器、从那里播放，播放时转写稿不会自动跟随',
   'media.expand': '展开视频',
-  'media.noFollow': 'B 站播放器不报告播放时间：跳转会重新加载播放器',
   'media.captions': '字幕',
-  'media.follow': '跟随',
   'media.sourcePlatform': '来源：平台字幕',
   'media.loading': '正在获取字幕…',
   'media.noCaptions': '该视频无字幕；装上「本机转写」插件后可在本机转写',
   'media.noCaptionsAudio': '该音频无字幕；装上「本机转写」插件后可在本机转写',
   'media.sourceLocal': '来源：本机转写',
+  'media.play': '播放',
+  'media.pause': '暂停',
+  'media.startedAt': '从 {time} 播放',
+  'media.tabTranscript': '转写稿',
+  'media.autoTranslate': '转完自动翻译',
+  'media.translateAfter': '转写完成后可以翻译',
+  'media.chipTitle': '从 {time} 开始播放',
+  'media.chipTitleReload': '从 {time} 开始播放（会重新加载播放器）',
+  'media.timeHint': '点段落前的时间，视频就从那里播放',
+  'media.timeHintAudio': '点段落前的时间，就从那里播放',
+  'media.timeHintOk': '知道了',
+  'media.backToNow': '回到正在播放',
+  'media.cardPlatform': '有字幕',
+  'media.cardLocal': '本机转写',
+  'media.cardQueued': '排队中',
+  'media.cardQueuedAhead': '排队第 {count}',
+  'media.cardRunning': '转写中 {percent}%',
+  'media.cardFailed': '转写失败',
+  'media.cardNone': '无字幕',
+  'media.cardNoneAuto': '无字幕 · 打开时转写',
   'media.localFetching': '正在获取音频…',
   'media.localQueued': '等待转写…',
   'media.localQueuedAhead': '排队中 · 前面还有 {count} 个',

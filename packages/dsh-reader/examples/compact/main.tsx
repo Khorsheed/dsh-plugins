@@ -29,7 +29,7 @@ const ytFeed = `<feed xmlns="http://www.w3.org/2005/Atom" xmlns:media="http://se
   <entry><id>yt:video:zjkBMFhNj_g</id><title>[1hr Talk] Intro to Large Language Models</title><link rel="alternate" href="https://www.youtube.com/watch?v=zjkBMFhNj_g"/>
   <updated>${new Date(now.getTime() - 5 * 3_600_000).toISOString()}</updated><media:group><media:thumbnail url="https://i.ytimg.com/vi/zjkBMFhNj_g/hqdefault.jpg"/><media:description>A general-audience introduction to large language models.</media:description></media:group></entry>
   <entry><id>ep214</id><title>Ep. 214 — On scaling and taste</title><link rel="alternate" href="https://pod.example/ep214"/><updated>${new Date(now.getTime() - 30 * 3_600_000).toISOString()}</updated>
-  <link rel="enclosure" href="https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3" type="audio/mpeg"/><summary>In this episode we talk about whether taste can scale. 00:00 intro · 06:12 taste as refusal</summary></entry></feed>`
+  <link rel="enclosure" href="https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3" type="audio/mpeg"/><media:thumbnail url="https://picsum.photos/seed/pod/300/300"/><summary>In this episode we talk about whether taste can scale. 00:00 intro · 06:12 taste as refusal</summary></entry></feed>`
 const transcriptHtml = [
   [0.2, 'hi everyone so recently I gave a 30-minute talk on large language models just kind of like an intro talk'],
   [38.5, 'so the Llama 2 70b model is really just two files on your file system: the parameters file and the run file'],
@@ -118,6 +118,7 @@ const face = {
   localTranscript: request => ok(params.get('local') === '1'
     ? { entryId: request.entryId, state: 'transcribing', progress: 0.42, html: transcriptHtml.split('</p>').slice(0, 3).join('</p>').replace(/<p data-t/g, '<p data-src="local" data-t') + '</p>' }
     : { entryId: request.entryId, state: 'idle' }),
+  mediaStates: request => ok({ engine: true, states: Object.fromEntries(request.entryIds.map((id, index) => [id, index === 0 ? { state: 'platform' } : { state: 'transcribing', progress: 0.42 }])) }),
   cancelLocalTranscript: request => Promise.resolve({ ok: true, value: { entryId: request.entryId, state: 'idle' } }),
   mediaTranscript: request => new Promise(resolve => setTimeout(() => resolve({ ok: true, value: params.get('local') === '1' ? { entryId: request.entryId, captions: 'none' } : { entryId: request.entryId, captions: 'platform', html: transcriptHtml } }), 600)),
   addReply: () => ok('ok'), editReply: () => ok('ok'), deleteDiscussion: () => ok('ok'), markSynced: () => ok('ok'),

@@ -81,6 +81,8 @@ import {
   type ReaderTranslationMemoryEntry,
   type ReaderTranslationMemoryTable,
   isCookieHandshake,
+  type MediaCardStates,
+  type MediaCardStatus,
 } from './types.ts'
 import { delayUntilNext, isCatchUpDue } from './schedule.ts'
 import { arxivHtmlUrl } from './arxiv.ts'
@@ -1720,6 +1722,30 @@ export class ReaderService {
     } catch (error) {
       return { entryId: request.entryId, captions: 'failed', error: error instanceof Error ? error.message : String(error) }
     }
+  }
+
+  /**
+   * The wall's media cards: a live local job first, else what the captions
+   * record says (platform captions, a stored local transcript, none).
+   *
+   * @param request - the card ids on screen.
+   */
+  mediaStates(request: { entryIds: readonly string[] }): MediaCardStates {
+    const states: Record<string, MediaCardStatus> = {}
+    for (const entryId of request.entryIds) {
+      const job = this.local.status(entryId)
+      if (job.state === 'fetching' || job.state === 'queued' || job.state === 'transcribing') {
+        states[entryId] = { state: job.state, ...(job.progress === undefined ? {} : { progress: job.progress }), ...(job.ahead === undefined ? {} : { ahead: job.ahead }) }
+        continue
+      }
+      if (job.state === 'failed') {
+        states[entryId] = { state: 'failed' }
+        continue
+      }
+      const record = this.media.captions(entryId)
+      if (record !== undefined) states[entryId] = { state: record.state }
+    }
+    return { engine: this.local.engineAvailable(), states }
   }
 
   /** Arm (or re-arm) the daily refresh timer against the current document. */

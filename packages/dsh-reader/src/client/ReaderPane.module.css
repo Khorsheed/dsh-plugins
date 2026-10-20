@@ -2841,23 +2841,7 @@
 
 /* ------------------------------------------------------- video and audio */
 
-/* The 「字幕」 / 「跟随」 row under the player. */
-.mediaBar {
-  display: flex;
-  flex: none;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 12px;
-  /* A long status line wraps; it must never widen the detail column (the
-     video is 100% wide and was cut off on the right, 2026-10-20). */
-  min-width: 0;
-  max-width: 100%;
-  padding: 4px var(--reader-gutter);
-  border-bottom: 1px solid var(--dsw-alias-border-l2);
-  font-size: var(--dsh-panel-text-meta, 11.5px);
-  color: var(--dsw-alias-label-secondary);
-}
-
+/* The 「字幕」 switch and the 「转完自动翻译」 box in the player's control row. */
 .mediaSwitch {
   display: inline-flex;
   flex: none;
@@ -2913,21 +2897,69 @@
 /* A transcript paragraph's time chip: the label is CSS content, so a text
    selection (a note's excerpt) never picks it up. */
 .article [data-reader-ts] {
-  margin-right: 8px;
+  position: absolute;
+  top: 0.3em;
+  left: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 19px;
   padding: 0 5px;
   border: none;
   border-radius: 5px;
-  background: color-mix(in srgb, var(--dsw-alias-brand-primary) 12%, transparent);
+  background: transparent;
   font-family: var(--dsw-font-family-mono, ui-monospace, monospace);
   font-size: var(--dsh-panel-text-meta, 11px);
   color: var(--dsw-alias-brand-primary);
-  vertical-align: 1px;
   cursor: pointer;
   user-select: none;
 }
 
+/* A small ▶ before the time says "this plays"; it firms up on hover. */
+.article [data-reader-ts]::after {
+  content: '';
+  order: -1;
+  width: 0;
+  height: 0;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  border-left: 6px solid currentColor;
+  opacity: 0.5;
+}
+
+.article [data-reader-ts]:hover {
+  background: color-mix(in srgb, var(--dsw-alias-brand-primary) 12%, transparent);
+}
+
+.article [data-reader-ts]:hover::after {
+  opacity: 1;
+}
+
 .article [data-reader-ts]::before {
   content: attr(data-label);
+}
+
+/* Transcript paragraphs keep their times in a left column, so the text is one
+   left edge and an hour-long clock never pushes a first line sideways. */
+.article p[data-t] {
+  position: relative;
+  padding-left: 72px;
+}
+
+.article p[data-t] + [data-reader-reveal] {
+  padding-left: 72px;
+}
+
+@container dsh-panel (max-width: 560px) {
+  .article p[data-t],
+  .article p[data-t] + [data-reader-reveal] {
+    padding-left: 62px;
+  }
+
+  .article [data-reader-ts] {
+    padding: 0 3px;
+    font-size: var(--dsh-panel-text-meta, 12px);
+  }
 }
 
 /* The paragraph playing now. */
@@ -2951,5 +2983,184 @@
 }
 
 .mediaFill {
+  flex: 1;
+}
+
+/* A video / audio card with a cover: the cover sits beside the title where the
+   summary would be (rows 2–3), so the card is exactly as tall as an article
+   card and the wall's grid keeps its rhythm (2026-10-20). */
+.card[data-thumb] .title {
+  grid-column: 2;
+}
+
+.cardThumbSpacer {
+  grid-column: 2;
+  min-height: 32px;
+  margin-top: 3px;
+}
+
+.cardThumb {
+  position: relative;
+  grid-column: 3;
+  grid-row: 2 / span 2;
+  align-self: start;
+  width: 112px;
+  aspect-ratio: 16 / 9;
+  margin-top: 2px;
+  overflow: hidden;
+  border-radius: 7px;
+  background: var(--dsw-alias-interactive-bg-active);
+}
+
+.cardThumb[data-kind='audio'] {
+  width: 63px;
+  aspect-ratio: 1;
+}
+
+.cardThumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.cardThumbTime {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.72); /* panel-check: allow-color */
+  font-family: var(--dsw-font-family-mono, ui-monospace, monospace);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: #fff; /* panel-check: allow-color */
+}
+
+.cardThumbPlay {
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  width: 0;
+  height: 0;
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+  border-left: 8px solid #fff; /* panel-check: allow-color */
+  filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.6)); /* panel-check: allow-color */
+}
+
+.cardThumbGlyph {
+  position: absolute;
+  top: 4px;
+  left: 6px;
+  font-size: 13px;
+  color: #fff; /* panel-check: allow-color */
+  text-shadow: 0 0 3px rgba(0, 0, 0, 0.6); /* panel-check: allow-color */
+}
+
+/* The transcript pill shares the fetch pill's metric and tones, without its button role. */
+.mediaPill {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  height: 18px;
+  padding: 0 7px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+@container dsh-panel (max-width: 560px) {
+  /* Rows: the cover stands at the right of meta + title, the pills run below. */
+  .card[data-thumb] {
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: 12px;
+  }
+
+  .card[data-thumb] .meta,
+  .card[data-thumb] .title {
+    grid-column: 1;
+  }
+
+  .card[data-thumb] .tags {
+    grid-column: 1 / -1;
+  }
+
+  .cardThumbSpacer {
+    display: none;
+  }
+
+  .cardThumb {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    width: 96px;
+    margin-top: 0;
+  }
+
+  .cardThumb[data-kind='audio'] {
+    width: 54px;
+  }
+}
+.card[data-thumb] .chevron { justify-self: end; }
+
+.mediaPill.fetchPill_fetching {
+  border-color: var(--dsw-alias-state-business-primary, #4a7cf6);
+  color: var(--dsw-alias-state-business-primary, #4a7cf6);
+}
+
+.mediaPill.fetchPill_ready {
+  border-color: var(--dsw-static-green-600, #2f9e44);
+  color: var(--dsw-static-green-600, #2f9e44);
+}
+
+.mediaPill.fetchPill_failed {
+  border-color: var(--dsw-static-red-600, #d54941);
+  color: var(--dsw-static-red-600, #d54941);
+}
+
+/* 「回到正在播放」: pinned to the bottom of the scrolling transcript. */
+.followDock {
+  position: sticky;
+  bottom: 12px;
+  height: 0;
+  display: flex;
+  justify-content: flex-end;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.followButton {
+  height: 30px;
+  margin-top: -30px;
+  padding: 0 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-base, #fff);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12); /* panel-check: allow-color */
+  font: inherit;
+  font-size: var(--dsh-panel-text-meta, 12px);
+  color: var(--dsw-alias-brand-primary);
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+/* The one-time 「点时间可以跳转」 hint above a transcript. */
+.timeHint {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 12px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--dsw-alias-brand-primary) 9%, transparent);
+  font-size: var(--dsh-panel-text-meta, 12px);
+  color: var(--dsw-alias-brand-primary);
+}
+
+.timeHint span {
   flex: 1;
 }

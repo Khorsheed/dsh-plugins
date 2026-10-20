@@ -37,6 +37,7 @@ import { NoteSheet, NotesView } from './NotesView.tsx'
 import { MediaPlayer } from './MediaPlayer.tsx'
 import { useMedia } from './useMedia.ts'
 import { useLocalTranscript } from './useLocalTranscript.ts'
+import { useMediaStates } from './useMediaStates.ts'
 import { readMediaMeta } from '../media.ts'
 import { formatClock } from '../captions.ts'
 import { MEDIA_QUERIES } from './selectors.ts'
@@ -123,6 +124,9 @@ function BusyLine({ t, label, since }: {
 /**
  * One in-flight fetch's kind, for the verdict message. */
 type Verdict = 'subscribed' | 'savedLink' | 'savedLinkNoPreview' | 'duplicate' | 'invalidUrl' | 'unsupportedContent' | 'fetchFailed'
+
+/** The global 「转完自动翻译」 preference (a per-browser convenience). */
+const AUTO_TRANSLATE_KEY = 'dsh-reader.autoTranslateTranscripts'
 
 /** A tiny stroke glyph set for the chrome the host has no icon for. */
 const STROKE: Readonly<Record<string, string>> = {
@@ -1186,6 +1190,9 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
     for (const entry of allEntries) if (entry.media !== undefined) counts[entry.media.kind] += 1
     return counts
   }, [allEntries])
+  /** The wall's video / audio cards, for their transcript pills. */
+  const mediaEntryIds = useMemo(() => allEntries.filter(entry => entry.media !== undefined).slice(0, LIST_RENDER_LIMIT).map(entry => entry.id), [allEntries])
+  const mediaCards = useMediaStates(mediaEntryIds, view === 'list', props)
   /** One sweep at a time: the wall can re-render while an extraction runs. */
   const sweepRunning = useRef(false)
 
@@ -1372,7 +1379,26 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
     translateView,
   })
   /** The open entry's video / audio (see useMedia — it decorates the transcript, never rewrites it). */
-  const mediaFace = useMedia({ entryId: openEntry?.id, media: openEntry?.media, articleHtml, articleRef, detailRef })
+  const openProvider = openEntry?.media?.provider
+  const chipTitle = useCallback((clock: string) => t(openProvider === 'bilibili' ? 'media.chipTitleReload' : 'media.chipTitle', { time: clock }), [t, openProvider])
+  const mediaFace = useMedia({ entryId: openEntry?.id, media: openEntry?.media, articleHtml, articleRef, detailRef, chipTitle })
+  // 转完自动翻译: one global preference, off until the reader ticks it once.
+  const [autoTranslate, setAutoTranslate] = useState(() => {
+    try {
+      return globalThis.localStorage?.getItem(AUTO_TRANSLATE_KEY) === '1'
+    } catch {
+      return false
+    }
+  })
+  const setAutoTranslatePref = useCallback((on: boolean) => {
+    setAutoTranslate(on)
+    try {
+      if (on) globalThis.localStorage?.setItem(AUTO_TRANSLATE_KEY, '1')
+      else globalThis.localStorage?.removeItem(AUTO_TRANSLATE_KEY)
+    } catch {
+      // Remembered for this page only.
+    }
+  }, [])
   const setTranscriptState = mediaFace.setTranscript
   // No captions and nothing stored: the open entry transcribes on this machine.
   const localFace = useLocalTranscript({
@@ -2772,6 +2798,23 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
     void startTranslation(wanted, source)
   }, [view, openEntryId, articleHtml, translatePhase, translationSource, translator, storedPair, startTranslation])
 
+  /**
+   * 转完自动翻译: a whole transcript (platform captions, or a finished local
+   * one) in another language opens translated, side by side, when the reader
+   * ticked the preference. Only when the pair is already on the device:
+   * building a session that must download needs a click (user activation),
+   * and an automatic start must never fail at the reader.
+   */
+  const autoTranslatedRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!autoTranslate || view !== 'detail' || openEntry?.media === undefined || openEntryId === null) return
+    if (mediaFace.transcript !== 'ready' || localActive || !translationOffered || translatePhase !== 'idle') return
+    if (translator !== null && translateAvailability !== 'available') return
+    if (autoTranslatedRef.current === openEntryId) return
+    autoTranslatedRef.current = openEntryId
+    void startTranslation('both')
+  }, [autoTranslate, view, openEntry, openEntryId, mediaFace.transcript, localActive, translationOffered, translatePhase, translator, translateAvailability, startTranslation])
+
   /** Submit the add form and report the host's verdict. */
   const submit = useCallback(async () => {
     const url = draftUrl.trim()
@@ -3742,7 +3785,15 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
      * of this body), the pair is unavailable, or the body is already Chinese:
      * an offer that cannot work is worse than no offer.
      */
-    const detailTranslate: ReactNode = translationOffered && (
+    const detailTranslate: ReactNode = translationOffered && localActive ? (
+      // A transcript still arriving is rewritten every poll: a translation
+      // would be wiped, so the globe waits for the whole transcript.
+      <span className={css.translateWrap}>
+        <button type="button" className={css.tool} disabled aria-disabled="true" title={t('media.translateAfter')}>
+          <IconGlobeOutlineMedium size={15} />
+        </button>
+      </span>
+    ) : translationOffered && (
       <span className={css.translateWrap}>
         <button
           type="button"
@@ -3778,6 +3829,18 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
                 <span className={css.translateMenuLabel}>{t(item.key)}</span>
               </button>
             ))}
+            {openEntry.media !== undefined && (
+              <button
+                type="button"
+                role="menuitemcheckbox"
+                aria-checked={autoTranslate}
+                className={css.translateMenuItem}
+                onClick={() => { setAutoTranslatePref(!autoTranslate) }}
+              >
+                <span className={css.translateCheck}>{autoTranslate ? '✓' : ''}</span>
+                <span className={css.translateMenuLabel}>{t('media.autoTranslate')}</span>
+              </button>
+            )}
             {/* Retranslating needs the on-device model: a page viewing a
                 stored translation has none to ask. */}
             {translator !== null && (translatePhase === 'ready' || translatePhase === 'failed') && (
@@ -3872,12 +3935,13 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
             title={openEntry.title}
             startAt={mediaFace.startAt}
             onTime={mediaFace.onTime}
-            labels={{ collapse: t('media.collapse'), expand: t('media.expand'), noFollow: t('media.noFollow') }}
-          />
-        )}
-        {mediaFace.media !== undefined && (
-          <div className={css.mediaBar}>
-            {(mediaFace.transcript === 'ready' || mediaFace.transcript === 'loading' || localActive || (mediaFace.transcript === 'none' && mediaFace.hidden)) && (
+            mini={mediaFace.mini}
+            onMini={mediaFace.setMini}
+            labels={{
+              collapse: t('media.collapse'), expand: t('media.expand'), noFollow: t('media.noFollow'),
+              play: t('media.play'), pause: t('media.pause'), startedAt: t('media.startedAt'),
+            }}
+            leading={(mediaFace.transcript === 'ready' || mediaFace.transcript === 'loading' || localActive || (mediaFace.transcript === 'none' && mediaFace.hidden)) && (
               <label className={css.mediaSwitch}>
                 <input
                   type="checkbox"
@@ -3891,28 +3955,27 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
                 {t('media.captions')}
               </label>
             )}
-            {!mediaFace.hidden && mediaFace.transcript === 'ready' && mediaFace.media.provider === 'youtube' && (
-              <label className={css.mediaSwitch}>
-                <input type="checkbox" checked={mediaFace.follow} onChange={event => { mediaFace.setFollow(event.target.checked) }} />
-                {t('media.follow')}
-              </label>
-            )}
-            <span className={css.spacer} />
-            {localFace.status !== undefined && localActive
+            trailing={localFace.status !== undefined && localActive
               ? (
-                <span className={css.mediaSource}>
-                  {localFace.status.state === 'fetching' ? t('media.localFetching')
-                    : localFace.status.state === 'queued' ? (localFace.status.ahead !== undefined && localFace.status.ahead > 0 ? t('media.localQueuedAhead', { count: localFace.status.ahead }) : t('media.localQueued'))
-                      : t('media.localRunning', { percent: Math.round((localFace.status.progress ?? 0) * 100) })}
-                  {localFace.etaSeconds !== undefined && ` · ${t('media.localEta', { minutes: Math.max(1, Math.round(localFace.etaSeconds / 60)) })}`}
-                  {' '}
-                  <button type="button" className={css.mediaLink} onClick={localFace.stop}>{t('media.localStop')}</button>
-                </span>
+                <>
+                  <span className={css.mediaSource}>
+                    {localFace.status.state === 'fetching' ? t('media.localFetching')
+                      : localFace.status.state === 'queued' ? (localFace.status.ahead !== undefined && localFace.status.ahead > 0 ? t('media.localQueuedAhead', { count: localFace.status.ahead }) : t('media.localQueued'))
+                        : t('media.localRunning', { percent: Math.round((localFace.status.progress ?? 0) * 100) })}
+                    {localFace.etaSeconds !== undefined && ` · ${t('media.localEta', { minutes: Math.max(1, Math.round(localFace.etaSeconds / 60)) })}`}
+                    {' '}
+                    <button type="button" className={css.mediaLink} onClick={localFace.stop}>{t('media.localStop')}</button>
+                  </span>
+                  <label className={css.mediaSwitch}>
+                    <input type="checkbox" checked={autoTranslate} onChange={event => { setAutoTranslatePref(event.target.checked) }} />
+                    {t('media.autoTranslate')}
+                  </label>
+                </>
               )
               : (
                 <span className={css.mediaSource}>
                   {mediaFace.transcript === 'ready' ? (articleHtml?.includes('data-src="local"') === true
-                    ? <>{t('media.sourceLocal')} <button type="button" className={css.mediaLink} onClick={localFace.retry}>{t('media.localRetry')}</button></>
+                    ? <>{t('media.sourceLocal')} · <button type="button" className={css.mediaLink} onClick={localFace.retry}>{t('media.localRetry')}</button></>
                     : t('media.sourcePlatform'))
                     : mediaFace.transcript === 'loading' ? t('media.loading')
                       : mediaFace.transcript === 'failed' ? t('media.failed')
@@ -3927,7 +3990,7 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
                         ) : ''}
                 </span>
               )}
-          </div>
+          />
         )}
         {mediaFace.media !== undefined && localFace.status?.state === 'needs-models' && !mediaFace.hidden && (
           <div className={css.mediaConfirm}>
@@ -3941,7 +4004,7 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
           value={notesFace.tab}
           onChange={notesFace.setTab}
           tabs={[
-            { id: 'article', label: t('notes.tabArticle') },
+            { id: 'article', label: mediaFace.media === undefined ? t('notes.tabArticle') : t('media.tabTranscript') },
             { id: 'notes', label: t('notes.tabNotes'), ...(notesFace.count > 0 ? { badge: notesFace.count } : {}) },
           ]}
         />}
@@ -4033,6 +4096,13 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
             </div>
           )}
           <div className={css.rule} />
+          {/* Once: the time before a paragraph is a control, and it says so. */}
+          {mediaFace.media !== undefined && mediaFace.hintOwed && articleHtml?.includes('data-t=') === true && (
+            <div className={css.timeHint}>
+              <span>{t(mediaFace.media.kind === 'video' ? 'media.timeHint' : 'media.timeHintAudio')}</span>
+              <button type="button" className={css.mediaLink} onClick={mediaFace.dismissHint}>{t('media.timeHintOk')}</button>
+            </div>
+          )}
           {/* One line while the browser prepares or translates, with the cancel
               it needs; it disappears the moment the text is fully translated. */}
           {(translatePhase === 'pack' || translatePhase === 'working') && (
@@ -4318,6 +4388,12 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
                   </span>
                 </button>
               ))}
+            </div>
+          )}
+          {/* Following stopped by a hand scroll: one tap goes back to the playing paragraph. */}
+          {mediaFace.followPaused && (
+            <div className={css.followDock}>
+              <button type="button" className={css.followButton} onClick={mediaFace.resumeFollow}>↓ {t('media.backToNow')}</button>
             </div>
           )}
         </div>
@@ -4824,6 +4900,12 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
               // The duplicates this card stands for, when the wall's dedupe
               // folded them behind it (a badge, never a deletion).
               const dupes = dupesBy.get(row.entry.id) ?? []
+              // A video / audio card with a cover: the cover takes the summary's
+              // place beside the title, so the card stays as tall as an article's.
+              const media = row.entry.media
+              // YouTube's 16:9 still (mqdefault) beats a feed's 4:3 one with bars.
+              const thumb = media?.provider === 'youtube' ? `https://i.ytimg.com/vi/${media.ref}/mqdefault.jpg`
+                : media?.thumbnail === undefined ? undefined : media.thumbnail.replace(/^http:\/\//, 'https://')
               // Only a field that actually has a translation can be peeked: an
               // untranslated (or Chinese) card keeps its ordinary hover.
               const peekable = (field: 'title' | 'summary'): boolean => wallOn && !wallBoth && card?.[field] !== undefined
@@ -4844,6 +4926,7 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
                 // step quieter than unread ones: that hierarchy is what makes a
                 // wall of cards scannable, and it is the feed-reader habit.
                 data-unread={row.unread || undefined}
+                data-thumb={thumb === undefined ? undefined : media?.kind}
                 role="button"
                 tabIndex={0}
                 onClick={() => { if (cardMenu !== null || cardTag !== null) { setCardMenu(null); setCardTag(null); return } void open(row) }}
@@ -4871,7 +4954,16 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
                 </span>
                 <span className={css.title} {...hoverProps('title')}>{titleText}</span>
                 {originalTitle !== null && <span className={css.cardOrigTitle}>{originalTitle}</span>}
-                {summary !== undefined && <span className={css.summary} {...hoverProps('summary')}>{summaryText}</span>}
+                {thumb !== undefined && media !== undefined && (
+                  <span className={css.cardThumb} data-kind={media.kind}>
+                    <img src={thumb} alt="" loading="lazy" referrerPolicy="no-referrer" onError={event => { event.currentTarget.style.visibility = 'hidden' }} />
+                    {media.kind === 'video' ? <span className={css.cardThumbPlay} /> : <span className={css.cardThumbGlyph}>♪</span>}
+                    {media.durationSec !== undefined && <span className={css.cardThumbTime}>{formatClock(media.durationSec)}</span>}
+                  </span>
+                )}
+                {thumb !== undefined
+                  ? <span className={css.cardThumbSpacer} />
+                  : summary !== undefined && <span className={css.summary} {...hoverProps('summary')}>{summaryText}</span>}
                 {originalSummary !== null && <span className={css.cardOrigSummary}>{originalSummary}</span>}
                 <span className={css.tags}>
                   {(row.entry.tags ?? []).slice(0, 2).map(tag => <span key={tag} className={css.tag}>{tag}</span>)}
@@ -4879,12 +4971,27 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
                   {backfilled[row.entry.id] === true && (
                     <span className={css.tagOwned} title={t('detail.filledIn')}>{t('detail.filledInBadge')}</span>
                   )}
-                  {row.entry.media !== undefined && (
+                  {media !== undefined && thumb === undefined && (
                     <span className={css.tagMedia}>
-                      {row.entry.media.kind === 'video' ? '▶ ' : '♪ '}{t(row.entry.media.kind === 'video' ? 'media.kindVideo' : 'media.kindAudio')}
-                      {row.entry.media.durationSec === undefined ? '' : ` · ${formatClock(row.entry.media.durationSec)}`}
+                      {media.kind === 'video' ? '▶ ' : '♪ '}{t(media.kind === 'video' ? 'media.kindVideo' : 'media.kindAudio')}
+                      {media.durationSec === undefined ? '' : ` · ${formatClock(media.durationSec)}`}
                     </span>
                   )}
+                  {media !== undefined && (() => {
+                    // The transcript pill: where this card's transcript stands.
+                    const status = mediaCards?.states[row.entry.id]
+                    const engine = mediaCards?.engine === true
+                    const state = status?.state ?? (media.kind === 'audio' ? 'none' : undefined)
+                    if (state === undefined) return null
+                    const label = state === 'platform' ? t('media.cardPlatform')
+                      : state === 'local' ? t('media.cardLocal')
+                        : state === 'queued' ? (status?.ahead !== undefined && status.ahead > 0 ? t('media.cardQueuedAhead', { count: status.ahead + 1 }) : t('media.cardQueued'))
+                          : state === 'fetching' || state === 'transcribing' ? t('media.cardRunning', { percent: Math.round((status?.progress ?? 0) * 100) })
+                            : state === 'failed' ? t('media.cardFailed')
+                              : engine ? t('media.cardNoneAuto') : t('media.cardNone')
+                    const tone = state === 'platform' || state === 'local' ? 'ready' : state === 'failed' ? 'failed' : state === 'none' ? 'none' : 'fetching'
+                    return <span className={`${css.mediaPill} ${css[`fetchPill_${tone}`] ?? ''}`}>{label}</span>
+                  })()}
                   {linkOnly && (
                     <span className={css.tagLinkOnly} title={linkOnlyReason}>{t('detail.linkOnlyBadge')}</span>
                   )}

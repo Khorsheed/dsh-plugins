@@ -28,7 +28,7 @@ import { zh } from '../src/client/locales.ts'
 import { ReaderPane } from '../src/client/ReaderPane.tsx'
 import { forgetSession, forgetTranslators, readSession, rememberReadingPosition } from '../src/client/session.ts'
 import { UNIT_SEPARATOR, clearMemory, translationHash } from '../src/client/translate.ts'
-import type { LocalTranscriptStatus, ReaderBody, ReaderEntryFetchState, ReaderEntryNotes, ReaderRecentEntry, ReaderSourceSummary } from '../src/types.ts'
+import type { LocalTranscriptStatus, MediaCardStates, ReaderBody, ReaderEntryFetchState, ReaderEntryNotes, ReaderRecentEntry, ReaderSourceSummary } from '../src/types.ts'
 
 /** A translate over the zh dictionary: its key set is the source of truth. */
 const t = ((key: keyof typeof zh, params?: Record<string, string>): string =>
@@ -96,6 +96,8 @@ interface BenchOptions {
    * scripted job — the start answer, then what each poll returns in turn.
    */
   readonly local?: { readonly start: LocalTranscriptStatus[]; readonly polls: LocalTranscriptStatus[] }
+  /** The wall's media pills (`mediaStates`). */
+  readonly mediaCards?: MediaCardStates
   /** The canvas plugin's inbox, when the bench composes one. */
   readonly inbox?: CanvasInboxLike
   /** The payload each source id answers with. Sources with no entry answer with their own feed. */
@@ -241,6 +243,7 @@ function bench(options: BenchOptions = {}) {
       const next = polls.length > 1 ? polls.shift()! : polls[0]
       return { ok: true as const, value: { ...(next ?? { state: 'idle' as const }), entryId: request.entryId } }
     }),
+    mediaStates: vi.fn(async () => ({ ok: true as const, value: options.mediaCards ?? { engine: false, states: {} } })),
     cancelLocalTranscript: vi.fn(async (request: { entryId: string }) => ({ ok: true as const, value: { entryId: request.entryId, state: 'idle' as const } })),
     markSynced: vi.fn(async () => ({ ok: true as const, value: 'ok' })),
     snapshotEntry: vi.fn(async () => ({ ok: true as const, value: 'ok' })),
@@ -400,6 +403,7 @@ function bench(options: BenchOptions = {}) {
     startLocalTranscript: mocks.startLocalTranscript,
     localTranscript: mocks.localTranscript,
     cancelLocalTranscript: mocks.cancelLocalTranscript,
+    mediaStates: mocks.mediaStates,
     canOpenSession: () => false,
     openSession: () => undefined,
   } as unknown as ReaderPaneProps
@@ -4069,7 +4073,7 @@ describe('video and audio entries', () => {
       transcript: '<p data-t="0.2">hi everyone.</p><p data-t="38.5">so the model is two files.</p>',
     })
     await ui.settle()
-    expect(await screen.findByText(/▶ 视频/)).toBeTruthy()
+    expect((await screen.findByText('Intro to LLMs')).closest('[data-reader-entry]')?.getAttribute('data-thumb')).toBe('video')
     fireEvent.click(await screen.findByText('Intro to LLMs'))
     await waitFor(() => { expect(ui.mocks.mediaTranscript).toHaveBeenCalledWith({ entryId: expect.any(String), url: 'https://www.youtube.com/watch?v=zjkBMFhNj_g' }) })
     const frame = document.querySelector('iframe[src*="youtube.com/embed/zjkBMFhNj_g"]')
@@ -4128,7 +4132,37 @@ describe('video and audio entries', () => {
     // The part already transcribed reads at once, then the whole transcript.
     expect(await screen.findByText('大家好，欢迎回到节目。', {}, { timeout: 4000 })).toBeTruthy()
     expect(await screen.findByText('今天聊推理。', {}, { timeout: 4000 })).toBeTruthy()
-    expect(await screen.findByText(zh['media.sourceLocal'])).toBeTruthy()
+    expect(await screen.findByText((_, element) => element?.textContent?.startsWith(zh['media.sourceLocal']) === true && element.tagName === 'SPAN')).toBeTruthy()
+  })
+
+  it('dresses a video card with its cover and says where its transcript stands', async () => {
+    const ui = bench({ sources: [rssSource('yt')], payloads: { yt: videoFeed }, mediaCards: { engine: true, states: {} } })
+    await ui.settle()
+    const card = (await screen.findByText('Intro to LLMs')).closest('[data-reader-entry]')!
+    expect(card.getAttribute('data-thumb')).toBe('video')
+    expect(card.querySelector('img')?.getAttribute('src')).toBe('https://i.ytimg.com/vi/zjkBMFhNj_g/mqdefault.jpg')
+    expect(card.querySelector('img')?.getAttribute('referrerpolicy')).toBe('no-referrer')
+    await waitFor(() => { expect(ui.mocks.mediaStates).toHaveBeenCalled() })
+    const ids = ui.mocks.mediaStates.mock.calls[0]![0].entryIds as string[]
+    expect(ids).toHaveLength(2)
+    // An audio entry with nothing known yet transcribes on open (the engine is installed).
+    const audio = (await screen.findByText('Episode 9')).closest('[data-reader-entry]')!
+    expect(audio.textContent).toContain(zh['media.cardNoneAuto'])
+  })
+
+  it('calls the body 转写稿 and labels each time as a play control', async () => {
+    const ui = bench({
+      sources: [rssSource('yt')],
+      payloads: { yt: videoFeed },
+      transcript: '<p data-t="0.2">hi everyone.</p><p data-t="38.5">so the model is two files.</p>',
+    })
+    await ui.settle()
+    fireEvent.click(await screen.findByText('Intro to LLMs'))
+    expect(await screen.findByRole('tab', { name: zh['media.tabTranscript'] })).toBeTruthy()
+    await waitFor(() => { expect(document.querySelector('[data-reader-ts="38.5"]')?.getAttribute('title')).toBe('从 0:38 开始播放') })
+    // 收起视频 turns the player into the mini bar (same frame, still there).
+    fireEvent.click(screen.getByRole('button', { name: zh['media.collapse'] }))
+    expect(document.querySelector('[data-mini="true"] iframe[src*="youtube.com/embed"]')).not.toBeNull()
   })
 
   it('withdraws a job when leaving and stops it from 取消', async () => {
