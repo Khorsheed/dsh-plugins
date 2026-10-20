@@ -34,6 +34,11 @@ import { IconChevronDownOutlineMedium, IconChevronLeftOutlineMedium, IconClockOu
 import type { ReaderFetchPhase, ReaderPaneProps } from './contract.ts'
 import { ChipRow, PanelHeader, PanelRoot, UnderlineTabs, usePanelCompactContext, type Chip, type PanelAction } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
 import { NoteSheet, NotesView } from './NotesView.tsx'
+import { MediaPlayer } from './MediaPlayer.tsx'
+import { useMedia } from './useMedia.ts'
+import { readMediaMeta } from '../media.ts'
+import { formatClock } from '../captions.ts'
+import { MEDIA_QUERIES } from './selectors.ts'
 import { useNotes, type DetailTab } from './useNotes.ts'
 import {
   kindQuery,
@@ -1041,6 +1046,8 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
             : { id: source.id, entries: [], error: result.error, ...(fetchedAt === undefined ? {} : { fetchedAt }) })
         } else {
           const extracted = extractArticle(body.raw, source.url)
+          // A video / episode link's synthetic page carries its media (media-host.ts).
+          const linkMedia = readMediaMeta(body.raw)
           // The card's title/excerpt: the article's own when THIS extraction
           // read one, else the captured ones from an earlier extraction, else
           // the URL-derived label — a saved link's card names the paper.
@@ -1065,6 +1072,7 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
               // Incompleteness comes from the FETCH, not from extraction: the
               // seam truncated the page, so whatever we extracted is partial.
               ...(cut ? { truncated: true } : {}),
+              ...(linkMedia === undefined ? {} : { media: linkMedia }),
             }],
           })
         }
@@ -1171,6 +1179,12 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
     }
     return counts
   }, [allEntries, presentation])
+  /** How many video / audio entries the wall holds, for the type filter. */
+  const mediaCounts = useMemo(() => {
+    const counts = { video: 0, audio: 0 }
+    for (const entry of allEntries) if (entry.media !== undefined) counts[entry.media.kind] += 1
+    return counts
+  }, [allEntries])
   /** One sweep at a time: the wall can re-render while an extraction runs. */
   const sweepRunning = useRef(false)
 
@@ -1356,6 +1370,9 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
     paintKey: `${translatePhase}:${String(translateProgress?.done ?? 0)}`,
     translateView,
   })
+  /** The open entry's video / audio (see useMedia — it decorates the transcript, never rewrites it). */
+  const mediaFace = useMedia({ entryId: openEntry?.id, media: openEntry?.media, articleHtml, articleRef, detailRef })
+  const setTranscriptState = mediaFace.setTranscript
   // The compact bar's title (see `titleScrolledAway`): watch the article's
   // heading leave the body through its top.
   useEffect(() => {
@@ -2253,6 +2270,39 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
     // A cached fetch outlives the feed's own payload, so the host is the one
     // that knows whether there is full text: it returns the fresh cache, else
     // the feed's body, else nothing plus the reason a previous fetch failed.
+    if (row.entry.link !== undefined && row.entry.media !== undefined) {
+      // A video or audio entry: its text is a TRANSCRIPT, never the page behind
+      // the link — none of the article paths below (fetch, backfill, persist)
+      // may run for it, or they would crawl YouTube's watch page.
+      const shownotes = row.entry.contentHtml ?? ''
+      setScriptFigures(0)
+      if (row.entry.media.kind !== 'video' || (row.entry.media.provider !== 'youtube' && row.entry.media.provider !== 'bilibili')) {
+        // Audio: no transcript before the transcription engine (V2); the
+        // shownotes are what there is to read.
+        actions.setArticle(shownotes, false, null)
+        setTranscriptState(row.entry.id, 'none')
+        return
+      }
+      const cached = await props.getEntryBody({ entryId: row.entry.id, url: row.entry.link })
+      if (openRequestRef.current !== row.entry.id) return
+      if (cached.ok && cached.value.cached === true && cached.value.html !== undefined) {
+        actions.setArticle(cached.value.html, false, null)
+        setTranscriptState(row.entry.id, 'ready')
+        return
+      }
+      actions.setArticle(shownotes, false, null)
+      setTranscriptState(row.entry.id, 'loading')
+      const fetched = await props.mediaTranscript({ entryId: row.entry.id, url: row.entry.link })
+      if (openRequestRef.current !== row.entry.id) return
+      if (fetched.ok && fetched.value.html !== undefined) {
+        actions.setArticle(fetched.value.html, false, null)
+        setTranscriptState(row.entry.id, 'ready')
+        void syncFetchState(row.entry.id)
+      } else {
+        setTranscriptState(row.entry.id, fetched.ok && fetched.value.captions === 'none' ? 'none' : 'failed')
+      }
+      return
+    }
     if (row.entry.link !== undefined) {
       // A feed that published only a summary still owes the reader an article,
       // whichever branch below supplies the text on screen (the host answers
@@ -2369,7 +2419,7 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
       setScriptFigures(count)
       maybeAutoRender(row.entry.id, row.entry.link, count > 0)
     } else actions.setArticle('', truncated, extracted.error)
-  }, [actions, props, t, fetchThenMaybeRender, persistFeedBody, recent, fetchStates, syncFetchState, maybeAutoRender])
+  }, [actions, props, t, fetchThenMaybeRender, persistFeedBody, recent, fetchStates, syncFetchState, maybeAutoRender, setTranscriptState])
 
   /* ------------------------------ coming back to where the reader already was */
 
@@ -3218,6 +3268,18 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
               <span className={css.filterCount}>{kindCounts[kind]}</span>
             </button>
           ))}
+          {(['video', 'audio'] as const).filter(kind => mediaCounts[kind] > 0).map(kind => (
+            <button
+              key={kind}
+              type="button"
+              className={css.filterRow}
+              onClick={() => { actions.setQuery(MEDIA_QUERIES[kind]); setFilterOpen(false) }}
+            >
+              <span className={css.filterCheck}>{query.trim() === MEDIA_QUERIES[kind] ? '✓' : ''}</span>
+              <span className={css.filterLabel}>{t(kind === 'video' ? 'media.kindVideo' : 'media.kindAudio')}</span>
+              <span className={css.filterCount}>{mediaCounts[kind]}</span>
+            </button>
+          ))}
           {tags.length > 0 && <div className={css.filterSection}>{t('filter.byTag')}</div>}
           {tags.map(tag => (
             <div key={tag.id} className={css.filterTagRow}>
@@ -3313,6 +3375,8 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
     { id: 'all', label: t('filter.all'), count: allEntries.length },
     { id: 'unread', label: t('chip.unread') },
     ...READER_SOURCE_KINDS.map(kind => ({ id: `kind:${kind}`, label: t(kind === 'link' ? 'sources.kindLink' : 'sources.kindRss'), count: kindCounts[kind] })),
+    ...(['video', 'audio'] as const).filter(kind => mediaCounts[kind] > 0)
+      .map(kind => ({ id: `media:${kind}`, label: t(kind === 'video' ? 'media.kindVideo' : 'media.kindAudio'), count: mediaCounts[kind] })),
     ...tags.map(tag => ({ id: `tag:${tag.id}`, label: tag.name, count: tagCounts[tag.id] ?? 0 })),
     { id: 'more', label: activeSource === null ? t('chip.more') : `${t('chip.more')} · ${activeSourceLabel ?? ''}` },
   ]
@@ -3320,6 +3384,7 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
     ...(query.trim() === '' && !unreadOnly ? ['all'] : []),
     ...(unreadOnly ? ['unread'] : []),
     ...(activeKind === null ? [] : [`kind:${activeKind}`]),
+    ...(['video', 'audio'] as const).filter(kind => query.trim() === MEDIA_QUERIES[kind]).map(kind => `media:${kind}`),
     ...tags.filter(tag => query.trim() === tagQuery(tag.id)).map(tag => `tag:${tag.id}`),
     ...(activeSource === null ? [] : ['more']),
   ]
@@ -3332,7 +3397,8 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
       setFilterOpen(!filterOpen)
       return
     }
-    const next = id.startsWith('kind:') ? kindQuery(id.slice('kind:'.length) as (typeof READER_SOURCE_KINDS)[number]) : tagQuery(id.slice('tag:'.length))
+    const next = id.startsWith('media:') ? MEDIA_QUERIES[id.slice('media:'.length) as 'video' | 'audio']
+      : id.startsWith('kind:') ? kindQuery(id.slice('kind:'.length) as (typeof READER_SOURCE_KINDS)[number]) : tagQuery(id.slice('tag:'.length))
     actions.setQuery(query.trim() === next ? '' : next)
   }
 
@@ -3783,7 +3849,41 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
           )}
         </div>}
 
-        <UnderlineTabs<DetailTab>
+        {mediaFace.media !== undefined && (
+          <MediaPlayer
+            key={openEntry.id}
+            ref={mediaFace.playerRef}
+            media={mediaFace.media}
+            title={openEntry.title}
+            startAt={mediaFace.startAt}
+            onTime={mediaFace.onTime}
+            labels={{ collapse: t('media.collapse'), expand: t('media.expand'), noFollow: t('media.noFollow') }}
+          />
+        )}
+        {mediaFace.media !== undefined && (
+          <div className={css.mediaBar}>
+            {(mediaFace.transcript === 'ready' || mediaFace.transcript === 'loading') && (
+              <label className={css.mediaSwitch}>
+                <input type="checkbox" checked={!mediaFace.hidden} onChange={event => { mediaFace.setHidden(!event.target.checked) }} />
+                {t('media.captions')}
+              </label>
+            )}
+            {!mediaFace.hidden && mediaFace.transcript === 'ready' && mediaFace.media.provider === 'youtube' && (
+              <label className={css.mediaSwitch}>
+                <input type="checkbox" checked={mediaFace.follow} onChange={event => { mediaFace.setFollow(event.target.checked) }} />
+                {t('media.follow')}
+              </label>
+            )}
+            <span className={css.spacer} />
+            <span className={css.mediaSource}>
+              {mediaFace.transcript === 'ready' ? t('media.sourcePlatform')
+                : mediaFace.transcript === 'loading' ? t('media.loading')
+                  : mediaFace.transcript === 'none' ? (mediaFace.media.kind === 'audio' ? t('media.noCaptionsAudio') : t('media.noCaptions'))
+                    : mediaFace.transcript === 'failed' ? t('media.failed') : ''}
+            </span>
+          </div>
+        )}
+        {!(mediaFace.media !== undefined && mediaFace.hidden && mediaFace.transcript === 'ready') && <UnderlineTabs<DetailTab>
           className={css.detailTabs}
           label={t('notes.tabsLabel')}
           value={notesFace.tab}
@@ -3792,8 +3892,10 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
             { id: 'article', label: t('notes.tabArticle') },
             { id: 'notes', label: t('notes.tabNotes'), ...(notesFace.count > 0 ? { badge: notesFace.count } : {}) },
           ]}
-        />
-        {notesFace.tab === 'notes' && (
+        />}
+        {/* 字幕 off: the body is hidden; this keeps the composer at the bottom. */}
+        {mediaFace.media !== undefined && mediaFace.hidden && mediaFace.transcript === 'ready' && <div className={css.mediaFill} />}
+        {notesFace.tab === 'notes' && !(mediaFace.media !== undefined && mediaFace.hidden && mediaFace.transcript === 'ready') && (
           <NotesView
             t={t}
             entry={notesFace.entry}
@@ -3811,6 +3913,12 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
             onJumpPara={notesFace.jumpPara}
             onCheck={notesFace.check}
             sync={notesFace.sync}
+            {...(mediaFace.media === undefined ? {} : {
+              onPlay: (note: { anchor: { time?: number } } & Parameters<typeof notesFace.jump>[0]) => {
+                notesFace.jump(note)
+                if (note.anchor.time !== undefined) mediaFace.seek(note.anchor.time)
+              },
+            })}
           />
         )}
         <div
@@ -3818,8 +3926,9 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
           ref={detailRef}
           onScroll={onDetailScroll}
           // Hidden, not unmounted: the article's segmentation, its translation
-          // and the reading position all live on this subtree.
-          hidden={notesFace.tab === 'notes'}
+          // and the reading position all live on this subtree. The 「字幕」
+          // switch hides it the same way (just the video, no transcript).
+          hidden={notesFace.tab === 'notes' || (mediaFace.media !== undefined && mediaFace.hidden && mediaFace.transcript === 'ready')}
         >
           <div className={css.kicker}>
             <span className={css.tile} style={{ background: source?.hue }}>{source?.tile}</span>
@@ -3854,7 +3963,7 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
           {((openEntry.tags ?? []).length > 0 || openEntry.link !== undefined) && (
             <div className={css.tagRow}>
               {(openEntry.tags ?? []).map(tag => <span key={tag} className={css.tag}>{tag}</span>)}
-              {openEntry.link !== undefined && (
+              {openEntry.link !== undefined && openEntry.media === undefined && (
                 <button
                   type="button"
                   className={css.refetch}
@@ -4014,7 +4123,7 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
               summary, and the full text is being fetched (the line above says
               so while it runs). Once the article arrives this notice goes
               away by itself, because the body is no longer the feed's. */}
-          {openEntry.summaryOnly === true && articleHtml !== null && articleHtml === openEntry.contentHtml && (
+          {openEntry.summaryOnly === true && openEntry.media === undefined && articleHtml !== null && articleHtml === openEntry.contentHtml && (
             <p className={css.incomplete}>{t('detail.summaryOnly')}</p>
           )}
           {articleHtml !== null && articleHtml.length > 0 && (
@@ -4718,6 +4827,12 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
                   {backfilled[row.entry.id] === true && (
                     <span className={css.tagOwned} title={t('detail.filledIn')}>{t('detail.filledInBadge')}</span>
                   )}
+                  {row.entry.media !== undefined && (
+                    <span className={css.tagMedia}>
+                      {row.entry.media.kind === 'video' ? '▶ ' : '♪ '}{t(row.entry.media.kind === 'video' ? 'media.kindVideo' : 'media.kindAudio')}
+                      {row.entry.media.durationSec === undefined ? '' : ` · ${formatClock(row.entry.media.durationSec)}`}
+                    </span>
+                  )}
                   {linkOnly && (
                     <span className={css.tagLinkOnly} title={linkOnlyReason}>{t('detail.linkOnlyBadge')}</span>
                   )}
@@ -4741,7 +4856,7 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
                       opens the reason popover (reason + the cause's action):
                       the reason must be one tap away, but the card stays one
                       line tall — an inline reason line broke the wall's grid. */}
-                  {row.entry.link !== undefined && (() => {
+                  {row.entry.link !== undefined && row.entry.media === undefined && (() => {
                     const fetchState = fetchStateOf(fetchStates, row.entry.id)
                     const state = fetchState.state
                     const labelKey = state === 'none' ? 'fetch.none'

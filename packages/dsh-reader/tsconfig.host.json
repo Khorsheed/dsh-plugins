@@ -7,9 +7,12 @@
   },
   "files": [
     "src/arxiv.ts",
+    "src/captions.ts",
     "src/image-fetch.ts",
     "src/index.ts",
     "src/link-resolvers.ts",
+    "src/media.ts",
+    "src/media-host.ts",
     "src/notes.ts",
     "src/notes-types.ts",
     "src/remote.ts",
@@ -19,6 +22,8 @@
     "src/store.ts",
     "src/tool.ts",
     "src/tools.ts",
-    "src/types.ts"
+    "src/types.ts",
+    "src/xiaoyuzhou.ts",
+    "src/ytdlp.ts"
   ]
 }

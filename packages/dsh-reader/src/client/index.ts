@@ -260,6 +260,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     },
     recordDiscussion: request => remote.recordDiscussion(request),
     snapshotEntry: request => remote.snapshotEntry(request),
+    mediaTranscript: request => remote.mediaTranscript(request),
     canOpenSession: () => workspaceNav()?.openSession !== undefined,
     openSession: target => {
       try {

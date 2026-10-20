@@ -23,6 +23,7 @@ import {
 // parsed entry without also importing the wire vocabulary module.
 export type { ReaderEntry }
 import { normalizeRichText } from './extract-article.ts'
+import { entryMedia } from '../media.ts'
 
 /** A parsed feed: its own metadata plus one entry per item. */
 export interface ParsedFeed {
@@ -182,6 +183,7 @@ function readEntry(element: Element, sourceId: string): ReaderEntry | undefined 
   })
   const tags = readTags(element)
   const author = readAuthor(element)
+  const media = entryMedia({ ...(link === undefined ? {} : { link }), ...present('enclosure', readEnclosure(element)) })
 
   return {
     id,
@@ -194,7 +196,45 @@ function readEntry(element: Element, sourceId: string): ReaderEntry | undefined 
     ...present('summary', summarize(summary, 320)),
     ...present('contentHtml', body),
     ...(summaryOnly ? { summaryOnly: true } : {}),
+    ...(media === undefined ? {} : { media }),
   }
+}
+
+/**
+ * A podcast / media enclosure: `<enclosure url type>`, with the iTunes
+ * duration and artwork, or YouTube's `<media:group>` thumbnail.
+ *
+ * @param element - the `<item>` / `<entry>`.
+ */
+function readEnclosure(element: Element): { url: string; type?: string; durationSec?: number; image?: string } | undefined {
+  // RSS `<enclosure url type>`, or Atom's `<link rel="enclosure" href type>`.
+  const enclosure = child(element, 'enclosure')
+    ?? [...element.children].find(node => node.localName === 'link' && node.getAttribute('rel') === 'enclosure') ?? null
+  const url = enclosure?.getAttribute('url') ?? enclosure?.getAttribute('href') ?? undefined
+  const image = [...element.getElementsByTagName('*')]
+    .map(node => node.localName === 'image' ? node.getAttribute('href') : node.localName === 'thumbnail' ? node.getAttribute('url') : null)
+    .find((value): value is string => typeof value === 'string' && value !== '')
+  if (url === undefined || url === '') {
+    // No enclosure (a YouTube channel feed): the thumbnail alone still dresses
+    // the card when the link is a recognized video.
+    return image === undefined ? undefined : { url: '', image }
+  }
+  const type = enclosure?.getAttribute('type') ?? undefined
+  return {
+    url,
+    ...(type === undefined || type === '' ? {} : { type }),
+    ...present('durationSec', parseDuration(elementText(child(element, 'duration')))),
+    ...(image === undefined ? {} : { image }),
+  }
+}
+
+/** `3725`, `62:05` or `1:02:05` → seconds. */
+function parseDuration(value: string | undefined): number | undefined {
+  if (value === undefined) return undefined
+  const parts = value.trim().split(':').map(Number)
+  if (parts.length === 0 || parts.some(part => !Number.isFinite(part))) return undefined
+  const seconds = parts.reduce((total, part) => total * 60 + part, 0)
+  return seconds > 0 ? Math.round(seconds) : undefined
 }
 
 /**

@@ -16,6 +16,7 @@ import type { NoteSelection } from './notes.ts'
 import type { SyncFace } from './useNotes.ts'
 import type { ReaderSyncedCard } from '../notes-types.ts'
 import css from './NotesView.module.css'
+import { formatClock } from '../captions.ts'
 
 type T = ReaderPaneProps['t']
 
@@ -68,7 +69,7 @@ function replyAuthor(t: T, reply: ReaderNoteReply): string {
 }
 
 /** One note row: excerpt, comment, the conclusions under it, and the gestures on it. */
-function NoteRow({ t, note, missing, selecting, selected, canOpenSession, onToggle, onJump, onEdit, onDelete, onAddReply, onEditReply, onOpenSession, onSync }: {
+function NoteRow({ t, note, missing, selecting, selected, canOpenSession, onToggle, onJump, onEdit, onDelete, onAddReply, onEditReply, onOpenSession, onSync, onPlay }: {
   t: T
   note: ReaderNote
   missing: boolean
@@ -84,6 +85,8 @@ function NoteRow({ t, note, missing, selecting, selected, canOpenSession, onTogg
   onOpenSession: (sessionId: string) => void
   /** Absent when no canvas is there to sync to. */
   onSync: (() => void) | undefined
+  /** Play from the note's moment (video / audio entries only). */
+  onPlay: (() => void) | undefined
 }): ReactNode {
   const [adding, setAdding] = useState(false)
   const [rewriting, setRewriting] = useState<number | null>(null)
@@ -165,6 +168,9 @@ function NoteRow({ t, note, missing, selecting, selected, canOpenSession, onTogg
         </div>
       )}
       <div className={css.foot}>
+        {note.anchor.time !== undefined && onPlay !== undefined && (
+          <button type="button" className={css.play} onClick={onPlay}>▶ {formatClock(note.anchor.time)}</button>
+        )}
         <span>¶{note.anchor.block + 1}</span>
         {missing && <span className={css.missing}>{t('notes.notFound')}</span>}
         <SyncedMark t={t} synced={note.syncedTo} />
@@ -216,6 +222,8 @@ export interface NotesViewProps {
   /** Put the 「让Agent考考我」 request into the conversation draft. */
   readonly onCheck: () => void
   readonly sync: SyncFace
+  /** Play a note's moment; absent for articles. */
+  readonly onPlay?: (note: ReaderNote) => void
 }
 
 /** One discussion note: what a conversation (or a quiz-me round) came to. */
@@ -317,6 +325,7 @@ export function NotesView(props: NotesViewProps): ReactNode {
             onEditReply={(index, text) => props.onEditReply(note, index, text)}
             onOpenSession={props.onOpenSession}
             onSync={props.sync.available ? () => { props.sync.open({ kind: 'notes', ids: [note.id] }) } : undefined}
+            onPlay={props.onPlay === undefined ? undefined : () => { props.onPlay?.(note) }}
           />
         ))}
         <div className={css.section}><span>{t('notes.discussionNotes')}</span></div>

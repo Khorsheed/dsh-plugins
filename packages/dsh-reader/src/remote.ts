@@ -365,6 +365,12 @@ export class ReaderRemoteService extends TypertRemoteService<ReaderRemoteConfig>
     return this.notes.deleteDiscussion(request)
   }
 
+  /** A video entry's transcript from its platform captions (stored; `none` when it has none). */
+  @Remote('mediaTranscript')
+  mediaTranscript(request: { entryId: string; url: string }): Promise<{ entryId: string; html?: string; captions: 'platform' | 'none' | 'failed'; language?: string; error?: string }> {
+    return this.core.mediaTranscript(request)
+  }
+
   /** Hand the host the article's original text, block by block, for the model to read. */
   @Remote('snapshotEntry')
   snapshotEntry(request: ReaderEntryIdentity & { paragraphs: string[] }): Promise<'ok' | 'empty'> {

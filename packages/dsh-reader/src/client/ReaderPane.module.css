@@ -2838,3 +2838,72 @@
     min-height: 40px;
   }
 }
+
+/* ------------------------------------------------------- video and audio */
+
+/* The 「字幕」 / 「跟随」 row under the player. */
+.mediaBar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 12px;
+  padding: 4px var(--reader-gutter);
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  font-size: var(--dsh-panel-text-meta, 11.5px);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.mediaSwitch {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.mediaSource {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* A transcript paragraph's time chip: the label is CSS content, so a text
+   selection (a note's excerpt) never picks it up. */
+.article [data-reader-ts] {
+  margin-right: 8px;
+  padding: 0 5px;
+  border: none;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--dsw-alias-brand-primary) 12%, transparent);
+  font-family: var(--dsw-font-family-mono, ui-monospace, monospace);
+  font-size: var(--dsh-panel-text-meta, 11px);
+  color: var(--dsw-alias-brand-primary);
+  vertical-align: 1px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.article [data-reader-ts]::before {
+  content: attr(data-label);
+}
+
+/* The paragraph playing now. */
+.article p[data-now] {
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--dsw-alias-brand-primary) 8%, transparent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--dsw-alias-brand-primary) 8%, transparent);
+}
+
+/* A video / audio card's kind and length. */
+.tagMedia {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  height: 18px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--dsw-alias-brand-primary) 12%, transparent);
+  font-variant-numeric: tabular-nums;
+  color: var(--dsw-alias-brand-primary);
+}
+
+.mediaFill {
+  flex: 1;
+}

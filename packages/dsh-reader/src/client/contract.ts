@@ -282,6 +282,8 @@ export interface ReaderPaneInjected {
   recordDiscussion: (request: ReaderEntryIdentity & { sessionId: string; sessionTitle?: string }) => Promise<RemoteResult<'ok' | 'empty'>>
   /** Hand the host the article's original text for the model. */
   snapshotEntry: (request: ReaderEntryIdentity & { paragraphs: string[] }) => Promise<RemoteResult<'ok' | 'empty'>>
+  /** A video entry's transcript from its platform captions (stored; `none` when it has none). */
+  mediaTranscript: (request: { entryId: string; url: string }) => Promise<RemoteResult<{ entryId: string; html?: string; captions: 'platform' | 'none' | 'failed'; language?: string; error?: string }>>
   /** Whether a conversation can be opened from the pane (probed live). */
   canOpenSession: () => boolean
   /** Open a conversation in the main area; a no-op when the seam is absent. */

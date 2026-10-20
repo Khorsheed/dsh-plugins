@@ -53,6 +53,8 @@ export const name = 'reader'
 export interface ReaderConfig {
   /** Directory holding `state.json`; defaults to `$DSH_HOME/state/dsh-reader`. */
   readonly stateRoot?: string
+  /** A yt-dlp binary to use instead of the reader's managed copy (video metadata and captions). */
+  readonly ytdlpPath?: string
 }
 
 /**
