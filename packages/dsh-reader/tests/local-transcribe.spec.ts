@@ -29,10 +29,9 @@ describe('local transcript markup', () => {
     expect(html).toBe('<p data-src="local" data-t="0.5">好。</p>')
   })
 
-  it('asks for Chinese on Bilibili and Xiaoyuzhou, detection elsewhere', () => {
-    expect(languageFor(video)).toBe('zh')
-    expect(languageFor({ kind: 'audio', provider: 'xiaoyuzhou', ref: 'https://x/a.m4a' })).toBe('zh')
-    expect(languageFor({ kind: 'video', provider: 'youtube', ref: 'abc' })).toBe('auto')
+  it('always lets the engine detect the language', () => {
+    expect(languageFor(video)).toBe('auto')
+    expect(languageFor({ kind: 'audio', provider: 'xiaoyuzhou', ref: 'https://x/a.m4a' })).toBe('auto')
   })
 })
 
@@ -50,7 +49,7 @@ function fakeEngine(missing = 0) {
         options.onProgress?.({ stage: 'transcribe', progress: 0.5 })
         options.onSegments?.([{ start: 0, end: 1, tokens: [tok('你', 0), tok('好', 0.3), tok('。', 0.6)] }])
       }
-      finish = () => resolve({ segments: [{ start: 0, end: 1, tokens: [tok('你', 0), tok('好', 0.3), tok('。', 0.6)] }] })
+      finish = () => resolve({ segments: [{ start: 0, end: 1, tokens: [tok('你', 0), tok('好', 0.3), tok('。', 0.6)] }], language: 'zh' })
     })),
   }
   return { engine, advance: () => queued?.(), finish: () => finish?.() }
@@ -86,7 +85,7 @@ describe('LocalTranscriber', () => {
     await local.start(request)
     await flush()
     expect(videoAudio).toHaveBeenCalledWith(request.url, expect.any(String), expect.anything())
-    expect(engine.run.mock.calls[0]![0]).toMatchObject({ language: 'zh', diarize: false, owner: '@khorsheed/dsh-reader' })
+    expect(engine.run.mock.calls[0]![0]).toMatchObject({ language: 'auto', diarize: false, owner: '@khorsheed/dsh-reader' })
     expect(local.status('e1')).toMatchObject({ state: 'queued', ahead: 1 })
     advance()
     expect(local.status('e1')).toMatchObject({ state: 'transcribing', html: '<p data-src="local" data-t="0.0">你好。</p>' })

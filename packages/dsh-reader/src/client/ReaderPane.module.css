@@ -2845,8 +2845,13 @@
 .mediaBar {
   display: flex;
   flex: none;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
+  gap: 4px 12px;
+  /* A long status line wraps; it must never widen the detail column (the
+     video is 100% wide and was cut off on the right, 2026-10-20). */
+  min-width: 0;
+  max-width: 100%;
   padding: 4px var(--reader-gutter);
   border-bottom: 1px solid var(--dsw-alias-border-l2);
   font-size: var(--dsh-panel-text-meta, 11.5px);
@@ -2855,12 +2860,16 @@
 
 .mediaSwitch {
   display: inline-flex;
+  flex: none;
+  white-space: nowrap;
   align-items: center;
   gap: 4px;
   cursor: pointer;
 }
 
 .mediaSource {
+  min-width: 0;
+  overflow-wrap: anywhere;
   color: var(--dsw-alias-label-tertiary);
   font-variant-numeric: tabular-nums;
 }

@@ -145,6 +145,8 @@ async function main(job: SpeechJob): Promise<void> {
     const toks = res.tokens ?? []
     const ts = res.timestamps ?? []
     const tokens: WorkerToken[] = []
+    // SenseVoice marks word starts itself (`▁`); only Paraformer needs the spacing rule
+    const paraformer = job.models.asr.kind === 'paraformer'
     let inWord = false
     for (let i = 0; i < toks.length; i++) {
       const piece = toks[i] ?? ''
@@ -153,7 +155,7 @@ async function main(job: SpeechJob): Promise<void> {
       // Paraformer spells English as BPE pieces (`lar@@ ge`) with no spaces:
       // a piece that starts a Latin word gets one, unless it opens the chunk.
       const latin = /^[A-Za-z0-9']/.test(text)
-      if (latin && !inWord && tokens.length && !/\s$/.test(tokens[tokens.length - 1]!.text)) text = ` ${text}`
+      if (paraformer && latin && !inWord && tokens.length && !/\s$/.test(tokens[tokens.length - 1]!.text)) text = ` ${text}`
       inWord = latin && piece.endsWith('@@')
       const start = offset + (ts[i] ?? 0)
       const dur = res.durations?.[i]

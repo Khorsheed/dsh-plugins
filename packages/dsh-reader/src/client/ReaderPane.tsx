@@ -3898,7 +3898,7 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
               </label>
             )}
             <span className={css.spacer} />
-            {mediaFace.transcript !== 'ready' && localFace.status !== undefined && localActive
+            {localFace.status !== undefined && localActive
               ? (
                 <span className={css.mediaSource}>
                   {localFace.status.state === 'fetching' ? t('media.localFetching')
@@ -3911,7 +3911,9 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
               )
               : (
                 <span className={css.mediaSource}>
-                  {mediaFace.transcript === 'ready' ? (articleHtml?.includes('data-src="local"') === true ? t('media.sourceLocal') : t('media.sourcePlatform'))
+                  {mediaFace.transcript === 'ready' ? (articleHtml?.includes('data-src="local"') === true
+                    ? <>{t('media.sourceLocal')} <button type="button" className={css.mediaLink} onClick={localFace.retry}>{t('media.localRetry')}</button></>
+                    : t('media.sourcePlatform'))
                     : mediaFace.transcript === 'loading' ? t('media.loading')
                       : mediaFace.transcript === 'failed' ? t('media.failed')
                         : mediaFace.transcript === 'none' && !mediaFace.hidden ? (

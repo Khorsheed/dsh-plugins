@@ -113,10 +113,13 @@ const face = {
     return ok('ok')
   },
   snapshotEntry: () => ok('ok'),
-  startLocalTranscript: request => Promise.resolve({ ok: true, value: { entryId: request.entryId, state: 'unavailable' } }),
-  localTranscript: request => Promise.resolve({ ok: true, value: { entryId: request.entryId, state: 'idle' } }),
+  // &local=1: a caption-less video transcribing on this machine (40% done, the first paragraphs in).
+  startLocalTranscript: request => ok({ entryId: request.entryId, state: params.get('local') === '1' ? 'transcribing' : 'unavailable', progress: 0.3 }),
+  localTranscript: request => ok(params.get('local') === '1'
+    ? { entryId: request.entryId, state: 'transcribing', progress: 0.42, html: transcriptHtml.split('</p>').slice(0, 3).join('</p>').replace(/<p data-t/g, '<p data-src="local" data-t') + '</p>' }
+    : { entryId: request.entryId, state: 'idle' }),
   cancelLocalTranscript: request => Promise.resolve({ ok: true, value: { entryId: request.entryId, state: 'idle' } }),
-  mediaTranscript: request => new Promise(resolve => setTimeout(() => resolve({ ok: true, value: { entryId: request.entryId, captions: 'platform', html: transcriptHtml } }), 600)),
+  mediaTranscript: request => new Promise(resolve => setTimeout(() => resolve({ ok: true, value: params.get('local') === '1' ? { entryId: request.entryId, captions: 'none' } : { entryId: request.entryId, captions: 'platform', html: transcriptHtml } }), 600)),
   addReply: () => ok('ok'), editReply: () => ok('ok'), deleteDiscussion: () => ok('ok'), markSynced: () => ok('ok'),
   // &canvas=1 composes a fake canvas inbox (the canvas plugin's ctx.canvasInbox).
   canvasInbox: () => params.get('canvas') === '1' ? {

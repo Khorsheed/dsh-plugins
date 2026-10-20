@@ -96,7 +96,8 @@ export const MediaPlayer = forwardRef<MediaPlayerHandle, MediaPlayerProps>(funct
   return (
     <div className={css.player} data-collapsed={collapsed ? 'true' : undefined}>
       {video && (
-        <div className={css.frameBox} hidden={collapsed}>
+        <div className={css.videoStage} hidden={collapsed}>
+        <div className={css.frameBox}>
           {media.provider === 'youtube'
             ? (
               <iframe
@@ -121,6 +122,7 @@ export const MediaPlayer = forwardRef<MediaPlayerHandle, MediaPlayerProps>(funct
                 referrerPolicy="strict-origin-when-cross-origin"
               />
             )}
+        </div>
         </div>
       )}
       {!video && (
