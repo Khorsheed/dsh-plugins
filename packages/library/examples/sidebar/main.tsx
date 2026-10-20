@@ -78,7 +78,7 @@ const cam5Path: LibraryRoadmap = {
       '你上次卡在「指代关系」：it/this 往前找最近的**名词**，别找句子。',
     ].join('\n') }),
     node('r_cam5', { id: 'r1', title: '阅读题型总览', gate: 'read', state: 'done', locator: '1' }),
-    node('r_cam5', { id: 't1p2', title: 'T1 · P2 Nature or Nurture?', gate: 'quiz', state: 'current', locator: '2', deps: ['t1p1'], stats: { attempts: 1, lastRatio: 0.5, bestRatio: 0.5 }, points: [{ id: 'inference', title: '词义推断' }, { id: 'reference', title: '指代关系' }, { id: 'attitude', title: '作者态度' }] }),
+    node('r_cam5', { id: 't1p2', title: 'T1 · P2 Nature or Nurture?', gate: 'quiz', state: 'current', locator: '2', deps: ['t1p1'], stats: { attempts: 1, lastRatio: 0.5, bestRatio: 0.5 }, points: [{ id: 'inference', title: '词义推断' }, { id: 'reference', title: '指代关系' }, { id: 'attitude', title: '作者态度与论证结构（因果 / 让步 / 对比）' }] }),
     node('r_cam5', { id: 't1p3', title: 'T1 · P3 The Truth about the Environment', gate: 'quiz', state: 'locked', locator: '3', deps: ['t1p2'] }),
     node('r_cam5', { id: 't2p1', title: 'T2 · P1 Bakelite', gate: 'quiz', state: 'locked', locator: '4', deps: ['t1p3'] }),
     node('r_cam5', { id: 't2p2', title: 'T2 · P2 What\'s so funny?', gate: 'quiz', state: 'locked', locator: '5', deps: ['t2p1'] }),

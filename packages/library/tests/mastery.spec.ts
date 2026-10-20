@@ -25,6 +25,7 @@ describe('stationMastery', () => {
     const m = stationMastery(node(), [paper], [sitting('a1', 'qa', '2026-10-19T01:00:00.000Z', [['q1', false], ['q2', true], ['q3', true]])])
     expect(m.open.map(miss => miss.key)).toEqual(['qa:q1'])
     expect(m.points.map(point => [point.id, point.state, point.open.length])).toEqual([['p1', 'weak', 1], ['p2', 'mastered', 0], ['p3', 'untested', 0]])
+    expect(m.points.map(point => [point.asked, point.right, point.history.length])).toEqual([[2, 1, 1], [1, 1, 1], [0, 0, 0]])
   })
 
   it('a retake that answers the miss right closes it and masters the point; a retake never needs a station', () => {
@@ -36,6 +37,11 @@ describe('stationMastery', () => {
     const m = stationMastery(node(), [paper, retake], attempts)
     expect(m.open).toEqual([])
     expect(m.points[0]?.state).toBe('mastered')
+    expect(m.points[0]?.history).toEqual([
+      { at: '2026-10-19T02:00:00.000Z', retake: true, total: 1, right: 1 },
+      { at: '2026-10-19T01:00:00.000Z', retake: false, total: 2, right: 1 },
+    ])
+    expect([m.points[0]?.asked, m.points[0]?.right]).toEqual([2, 2])
   })
 
   it('a retake from elsewhere counts here only through questions that came from this station', () => {

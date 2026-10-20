@@ -2386,6 +2386,99 @@ textarea.input { resize: vertical; font: inherit; line-height: 1.5; }
 .changeDot[data-state='weak'] { background: var(--lib-bad); }
 .changeDot[data-state='mastered'] { background: var(--lib-ok); }
 
+/* 考点：一行一个，带考过几题、对几题 */
+.pointRows {
+  display: flex;
+  flex-direction: column;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-md, 12px);
+}
+
+.pointRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 8px 12px;
+  border: none;
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pointRow:first-child { border-top: none; }
+.pointRow:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.pointRow:focus-visible { outline: 2px solid var(--lib-accent); outline-offset: -2px; }
+
+.pointRowMain {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+}
+
+.pointRowTitle { font-weight: 500; }
+
+.chevron {
+  color: var(--dsw-alias-label-tertiary, var(--dsw-alias-label-secondary));
+}
+
+/* 出题摘要：分项 */
+.askParts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-size: var(--dsh-panel-text-meta, 12px);
+}
+
+.askPart {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.askActions {
+  display: flex;
+  flex-basis: 100%;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* 重点考点：可换行的多选 */
+.pickWrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  min-height: 32px;
+  padding: 4px 10px;
+  border: 0.5px solid var(--dsw-alias-border-l3, var(--dsw-alias-border-l2));
+  border-radius: 999px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: var(--dsh-panel-text-meta, 12px);
+  text-align: left;
+  cursor: pointer;
+}
+
+.pick[aria-pressed='true'] {
+  border-color: var(--lib-accent);
+  background: var(--lib-accent-soft);
+}
+
+.pickState { color: var(--dsw-alias-label-secondary); }
+.pickState[data-state='weak'] { color: var(--lib-bad); }
+.pickState[data-state='mastered'] { color: var(--lib-ok); }
+
 @container dsh-panel (max-width: 560px) {
   .body { padding: 10px; }
   .hero { padding: 0 0 10px; border-bottom: 1px solid var(--dsw-alias-border-l2); border-radius: 0; background: transparent; }
