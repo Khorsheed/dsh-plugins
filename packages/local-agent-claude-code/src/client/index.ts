@@ -1,9 +1,13 @@
-import { bindSettingsScope } from '@khorsheed/dsh-local-agent/src/client/settings-scope.ts'
+import { bindSettingsScope, type SettingsScopeSnapshot } from '@khorsheed/dsh-local-agent/src/client/settings-scope.ts'
+import type { LocalAgentUi } from '@khorsheed/dsh-local-agent/client'
 /**
  * Local-agent-claude-code plugin, browser half: the claude-code settings card
- * on the Plugins page — one `plugins.item` entry gated by
- * `configForms.whileServed` on the `local-agent-claude-code` namespace (the
- * official companion convention). Every install shape serves the row's
+ * — a section of the family core's「本机 Agent 委派」family card on the
+ * Plugins page (registered through the core's
+ * `localAgentUi.registerHarnessCard` while the Host serves the
+ * `local-agent-claude-code` namespace), or this package's own `plugins.item`
+ * entry when the core predates the family card (the declare-and-degrade
+ * fallback). Every install shape serves the row's
  * volatile Config under the row id — standalone install, family bundle, or
  * mode pack — so the card follows the served namespace rather than any
  * carrier bundle, and a composition without the row shows no trace of it. The
@@ -18,6 +22,7 @@ import { bindSettingsScope } from '@khorsheed/dsh-local-agent/src/client/setting
  * controls.
  * @module @khorsheed/dsh-local-agent-claude-code/client
  */
+import { createElement, useSyncExternalStore } from 'react'
 import type { Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 // Type-only: the typed `ctx.remote` (commands namespace) merge.
@@ -42,12 +47,12 @@ import type {} from '@khorsheed/dsh-local-agent/remote'
 import type { LocalAgentGatewayRemote } from '@khorsheed/dsh-local-agent/client'
 import { en, NS, zh, type LocalAgentClaudeCodeKey } from './locales.ts'
 import {
-  ClaudeCodeBundleConfig, type ClaudeLiveSettings, type ClaudeCodeSettingsCardInjected,
+  ClaudeCodeBundleConfig, ClaudeCodeCardSection, type ClaudeLiveSettings, type ClaudeCodeSettingsCardInjected,
 } from './SettingsCard.tsx'
 
-export { ClaudeCodeBundleConfig, ClaudeCodeSettingsCard } from './SettingsCard.tsx'
+export { ClaudeCodeBundleConfig, ClaudeCodeCardSection, ClaudeCodeSettingsCard } from './SettingsCard.tsx'
 export type {
-  ClaudeLiveSettings, ClaudeCodeBundleConfigProps, ClaudeCodeSettingsCardInjected, ClaudeCodeSettingsCardProps,
+  ClaudeLiveSettings, ClaudeCodeBundleConfigProps, ClaudeCodeCardSectionProps, ClaudeCodeSettingsCardInjected, ClaudeCodeSettingsCardProps,
 } from './SettingsCard.tsx'
 export { en, NS, zh }
 export type { LocalAgentClaudeCodeKey }
@@ -81,10 +86,11 @@ export function apply(ctx: Context): void {
   // the core client is absent.
   const gateway = (): LocalAgentGatewayRemote | undefined =>
     ctx.get('remote.localAgentGateway') as LocalAgentGatewayRemote | undefined
-  // The settings card injects this face.
-  const cardInject = (): ClaudeCodeSettingsCardInjected => ({
+  // The card's inject face minus the hooks compartment — the family-card
+  // section consumes this verbatim; the standalone card's slot registration
+  // adds the hooks compartment back below.
+  const cardFace = (): Omit<ClaudeCodeSettingsCardInjected, 'hooks'> => ({
     scope,
-    hooks: { settings: scope },
     authT,
     // The curated model list's read/write faces, over the same Remotes.
     modelList: {
@@ -138,11 +144,20 @@ export function apply(ctx: Context): void {
           .then(result => (result.ok ? result.value?.result.text : undefined)),
     },
   })
-  // One Plugins-page card gated on the SERVED NAMESPACE, never on the install
+  // The settings card injects this face.
+  const cardInject = (): ClaudeCodeSettingsCardInjected => ({ ...cardFace(), hooks: { settings: scope } })
+  // The family-card section render bypasses the slot renderer's inject.hooks
+  // materialization, so bind the scope's selector hook here with the same
+  // semantics (a uSES subscription over the scope's own subscribe/getSnapshot).
+  const subscribeScope = (listener: () => void): (() => void) => scope.subscribe(listener)
+  const readScope = (): SettingsScopeSnapshot<ClaudeLiveSettings> => scope.getSnapshot()
+  const useSettings = <S,>(select: (snapshot: SettingsScopeSnapshot<ClaudeLiveSettings>) => S): S =>
+    select(useSyncExternalStore(subscribeScope, readScope))
+  // One Plugins-page seat gated on the SERVED NAMESPACE, never on the install
   // shape: whichever composition carries the `local-agent-claude-code` row —
   // standalone install, family bundle, or mode pack — serves the row's
   // volatile Config under the row id, and `whileServed` keeps the
-  // `plugins.item` entry alive for exactly that span (the official companion
+  // registration alive for exactly that span (the official companion
   // convention), so a composition without the row shows no trace of the card.
   // This replaces the retired per-shape seats: `plugins.row.config` hardcoded
   // one carrier bundle into its key, and the host deleted
@@ -153,14 +168,34 @@ export function apply(ctx: Context): void {
   ctx.inject(['configForms'], (formsCtx) => {
     const forms = formsCtx.configForms
     if (typeof forms.whileServed !== 'function') return
-    return forms.whileServed(['local-agent-claude-code'], () => ctx.slots.inject('plugins.item', () => ctx.slots.register({
-      name: 'plugins.item',
-      id: 'local-agent-claude-code',
-      // Community cards sort after the official settings pages (orders 10-40).
-      order: 130,
-      label: () => t('card.title'),
-      locale: NS,
-      inject: cardInject,
-    }, ClaudeCodeBundleConfig)))
+    return forms.whileServed(['local-agent-claude-code'], () => {
+      // The family card owns the Plugins-page seat when the core's client
+      // provides it: a core new enough answers registerHarnessCard, and this
+      // package renders as a section of the「本机 Agent 委派」card instead of
+      // its own entry. The probe runs at serve time — a host round-trip past
+      // client plugin boot — so a composed core has already provided the
+      // service; an old or absent core keeps the standalone card below.
+      const ui = ctx.get('localAgentUi') as LocalAgentUi | undefined
+      if (typeof ui?.registerHarnessCard === 'function') {
+        return ui.registerHarnessCard({
+          name: 'claude-code',
+          // The retired standalone card's order, kept as the section order.
+          order: 130,
+          locale: NS,
+          label: () => t('card.title'),
+          render: ({ active, useSessions }) =>
+            createElement(ClaudeCodeCardSection, { active, useSessions, ...cardFace(), useSettings, t }),
+        })
+      }
+      return ctx.slots.inject('plugins.item', () => ctx.slots.register({
+        name: 'plugins.item',
+        id: 'local-agent-claude-code',
+        // Community cards sort after the official settings pages (orders 10-40).
+        order: 130,
+        label: () => t('card.title'),
+        locale: NS,
+        inject: cardInject,
+      }, ClaudeCodeBundleConfig))
+    })
   })
 }

@@ -107,6 +107,23 @@ export type ClaudeCodeBundleConfigProps =
   & PropsLocale<typeof NS>
 
 /**
+ * Full props of the harness's section inside the core's「本机 Agent 委派」
+ * family card: the same inject face minus the slot-owner share, plus the one
+ * global seat the body consumes, forwarded by the family card (the section
+ * render bypasses the slot runtime, so its remaining standard seats are not
+ * fabricable here and are deliberately absent).
+ */
+export type ClaudeCodeCardSectionProps =
+  InjectFace<ClaudeCodeSettingsCardInjected>
+  & PropsLocale<typeof NS>
+  & {
+    /** Whether the section is currently expanded (the family card mounts the body only while it is). */
+    readonly active: boolean
+    /** The standing root-scope global seat (ui-session's merge), forwarded by the family card. */
+    readonly useSessions: ProviderAuthBlockProps['useSessions']
+  }
+
+/**
  * The staged card state both settings surfaces share: the resident-mode and
  * model edits write through the bound settingsScope immediately
  * (revision-fenced), so a flip takes effect on the next delegation round
@@ -474,7 +491,8 @@ export function ClaudeCodeSettingsCard(props: ClaudeCodeSettingsCardProps) {
 
 /**
  * The provider's card on the Plugins page (the `plugins.item` entry
- * client/index.ts registers while the Host serves the namespace): the page
+ * client/index.ts registers while the Host serves the namespace AND the core
+ * predates the family card): the page
  * draws the title, the icon, and the crumb itself, so the entry renders the
  * one-liner for the `summary` view and the bare form — with its own save
  * control — for `page`.
@@ -484,5 +502,17 @@ export function ClaudeCodeSettingsCard(props: ClaudeCodeSettingsCardProps) {
 export function ClaudeCodeBundleConfig({ view, useSettings, scope, auth, authT, modelList, modelDirectory, checkEndpoint, endpointAuth, useSessions, t }: ClaudeCodeBundleConfigProps) {
   const state = useCardState(view === 'page', useSettings, scope, modelList, modelDirectory, endpointAuth)
   if (view === 'summary') return <span className={css.description}>{t('card.description')}</span>
+  return <CardBody state={state} auth={auth} authT={authT} checkEndpoint={checkEndpoint} useSessions={useSessions} t={t} />
+}
+
+/**
+ * The harness's section inside the core's「本机 Agent 委派」family card: the
+ * same useCardState + CardBody the plugins.item page view renders — the
+ * collapsible chrome belongs to the family card now.
+ * @param props - the injected scope/auth faces, the forwarded session seat, and copy.
+ * @returns the section body.
+ */
+export function ClaudeCodeCardSection({ active, useSettings, scope, auth, authT, modelList, modelDirectory, checkEndpoint, endpointAuth, useSessions, t }: ClaudeCodeCardSectionProps) {
+  const state = useCardState(active, useSettings, scope, modelList, modelDirectory, endpointAuth)
   return <CardBody state={state} auth={auth} authT={authT} checkEndpoint={checkEndpoint} useSessions={useSessions} t={t} />
 }

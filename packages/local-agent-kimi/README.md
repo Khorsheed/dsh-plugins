@@ -15,7 +15,7 @@
 - **端点凭据（唯一的认证方式）**——设置卡「认证」区填 `baseUrl` + `apiKey`（保存进默认 scope 的 `endpoint-auth.json`，0600，只存本机）或预配在 profile 配置行即已认证；每个命名 scope 可用自己的 `endpoint-auth.json` 按字段覆盖部署级配置。managed provider 经 `api_key_env` 从子进程环境读 key——密钥不落 `config.toml`（它要进评测条件指纹）。容器轮与宿主轮用同一套凭据，容器里不需要再授权一次。没有网页登录、没有 device-code。
 - **可续聊的委派**——把结果自述的 `resume` 句柄传回，即继续同一个 Kimi 会话，并按轮记录真实用量与耗时。
 - **会话记录与转写回放**——`/kimi sessions` 列出本 harness 的委派记录（绝不含你的私人会话）；`/kimi session <id>` 把该会话的 wire 日志渲染成可读转写——思考、工具调用与结果一目了然。
-- **设置卡片**——Plugins 页的卡片（`plugins.item` 条目，宿主服务 `local-agent-kimi` 命名空间时挂载）一眼看清认证状态与作用域会话，登录/退出、默认模型、常驻模式开关全部热生效，无需重载。
+- **设置卡片**——core 的「本机 Agent 委派」家族卡里的一节（Plugins 页；旧版 core 上回落为本包自己的 `plugins.item` 卡，宿主服务 `local-agent-kimi` 命名空间时挂载）一眼看清认证状态与作用域会话，登录/退出、默认模型、常驻模式开关全部热生效，无需重载。
 - **模型回读与独立工作目录**——每轮从 wire.jsonl 的 usage/request 记录回读实际模型，写进委派记录；编排器可用 `cwd` 选项给每格独立目录，resume 换目录即拒绝。
 - **常驻驱动（可选）**——`live: true` 让每个成员常驻一个 `kimi acp` 进程，按轮 `session/prompt`，支持运行时级优雅取消；关闭或通道不可用即回一次性 `kimi -p`。
 
@@ -29,7 +29,7 @@ dsh plugin --profile web add @khorsheed/dsh-local-agent
 dsh plugin --profile web add @khorsheed/dsh-local-agent-kimi
 ```
 
-重启 web 实例后生效，然后在设置 → 插件里本包卡片的「认证」区填端点与 key 即可（也可预配在 profile 的本包配置行）；都不配则状态为未认证。卸载：
+重启 web 实例后生效，然后在「本机 Agent 委派」家族卡（Plugins 页）的 Kimi 一节「认证」区填端点与 key 即可（也可预配在 profile 的本包配置行）；都不配则状态为未认证。卸载：
 
 ```sh
 dsh plugin --profile web remove @khorsheed/dsh-local-agent-kimi
@@ -92,7 +92,7 @@ base_url = "https://your-router.example/v1"
 
 ## Compatibility
 
-- npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：✅ 公开 API 兼容——生成中的内容走 local-agent 瞬时 Remote 与公开 Conversation 节点；后缀检查点负责恢复，最终原生消息保留转写与用量语义。minHost 为 0.1.5-rc.1，更旧宿主请停留在旧发布线。0.1.5 退役了 per-chunk 会话事件：token 粒度的增量不再落进子会话日志——改走 run-progress 通道，轮次 settle 为一条合并的 assistant/message（最终文本一致）；晚到的 usage 若其载体消息已经镜像，则带一条 warn 丢弃（宿主没有 usage 回填事件可挂）。设置卡自本版起只挂 0.1.7-alpha.1+ 的 Plugins 页 `plugins.item` 席位（`configForms.whileServed` 随宿主服务的 `local-agent-kimi` 命名空间挂载）；0.1.5 线不再呈现卡片（宿主删除了 `settings.plugin.item` 席位），其余表面不变。
+- npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：✅ 公开 API 兼容——生成中的内容走 local-agent 瞬时 Remote 与公开 Conversation 节点；后缀检查点负责恢复，最终原生消息保留转写与用量语义。minHost 为 0.1.5-rc.1，更旧宿主请停留在旧发布线。0.1.5 退役了 per-chunk 会话事件：token 粒度的增量不再落进子会话日志——改走 run-progress 通道，轮次 settle 为一条合并的 assistant/message（最终文本一致）；晚到的 usage 若其载体消息已经镜像，则带一条 warn 丢弃（宿主没有 usage 回填事件可挂）。设置卡渲染为 core「本机 Agent 委派」家族卡的一节（Plugins 页 core 的 `plugins.item` 条目，0.1.7-alpha.1+；旧版 core 上回落为本包自己的 `plugins.item` 卡），`configForms.whileServed` 随宿主服务的 `local-agent-kimi` 命名空间挂载；0.1.5 线不再呈现卡片（宿主删除了 `settings.plugin.item` 席位），其余表面不变。
 - 源码线（deepseek-harness master）：✅（verifiedHost: 0.2.1-rc.1）——host-021 波对 0.2.1-rc.1 树全量 build+test 绿；委派迁移到 `ctx.subagents.startActivation`（受管 activation），run.id 改为每次执行唯一。`thinkingEffort` 配置项（默认 high、仅预置期生效）与 `effectiveSettings` 评测快照均为插件级实现：只读写作用域文件，在两条宿主线上都不依赖宿主 API。
 
 ## 已知限制
@@ -108,7 +108,7 @@ base_url = "https://your-router.example/v1"
 
 **作用域目录与凭据。** 本包启动的每个 Kimi 进程都以 `KIMI_CODE_HOME=$DSH_HOME/local-agent/kimi` 运行。认证是端点凭据制：scope 的 `endpoint-auth.json`（0600）按字段覆盖 profile 配置行的 `baseUrl`/`apiKey`；managed provider（`managed:kimi-code`）在 config.toml 里声明的是 `api_key_env = "DSH_KIMI_ENDPOINT_KEY"`（kimi CLI 原生支持从指定环境变量读 key，与内联 `api_key` 互斥），key 只存在于 endpoint-auth.json 和子进程环境里，`config.toml` 永不携带秘密、可以安全进入评测条件哈希。设置卡「认证」区编辑的就是默认 scope 的 endpoint-auth.json（经家族 gateway 的 `endpointAuth`/`configureEndpoint` Remote）；保存 baseUrl 时同一次写入会把 managed provider 的 `base_url` 重指过去（清空即回落到 kimi 官方服务），每轮 spawn 前还有一次幂等校准，手改文件同样即时生效。一次性 `kimi -p`、常驻 `kimi acp`、容器轮（`containerExecSpawn` 按名字转发环境变量）三条路共用同一套注入。首次启动时作用域目录会被预置一份 `config.toml`——把用户自己的 config 中所有 `api_key` 抹空后复制并迁移到 env-key 形态，用户没有 config 时则写入最小 managed config。OAuth 时代的 `credentials/` 与 `oauth/` 目录在每次 provision 时被清扫——本包不再读取它们，留着只会让一份失效授权在状态显示未认证时仍悄悄可用。`/kimi logout` 删除 scope 的 `endpoint-auth.json`；凭据完全来自 profile 配置行时 logout 拒绝并提示去改 profile。
 
-**挂载。** bundle patch 注册 `kimi` harness（恰好一行 provider 行）；`subagent_kimi` 工具是本包的 `./tool` 组合入口（实现共享自家族核的 `./tool-factory` 导出），由点名它的 agent 预设按会话授予——dev 预设的 `tool-subagent-kimi` 行是授予点。`kimi-cli` 一次性 provider 在作用域目录下 spawn `kimi -p`。家族 core（`local-agent` 行，共享作用域目录根）随 `@khorsheed/dsh-local-agent` 自己的 patch 提供，本包把它声明为依赖。浏览器设置卡片由本包的 `./client` 半提供，复用家族 core 的共享构件（认证块、模型选择器）：落在 Plugins 页的 `plugins.item` 条目，宿主服务 `local-agent-kimi` 命名空间时经 `configForms.whileServed` 挂载——独立安装、家族 bundle、模式包都是同一张卡。身份三角保持一致：`cordis.patch.yml` 的行 id、package.json 的 name、tsdown 的 `clientBundle('@khorsheed/dsh-local-agent-kimi')`。
+**挂载。** bundle patch 注册 `kimi` harness（恰好一行 provider 行）；`subagent_kimi` 工具是本包的 `./tool` 组合入口（实现共享自家族核的 `./tool-factory` 导出），由点名它的 agent 预设按会话授予——dev 预设的 `tool-subagent-kimi` 行是授予点。`kimi-cli` 一次性 provider 在作用域目录下 spawn `kimi -p`。家族 core（`local-agent` 行，共享作用域目录根）随 `@khorsheed/dsh-local-agent` 自己的 patch 提供，本包把它声明为依赖。浏览器设置卡片由本包的 `./client` 半提供，复用家族 core 的共享构件（认证块、模型选择器）：渲染为 core「本机 Agent 委派」家族卡的一节，宿主服务 `local-agent-kimi` 命名空间时经 `configForms.whileServed` 挂载——独立安装、家族 bundle、模式包都是同一节（旧版 core 上回落为本包自己的 `plugins.item` 卡）。身份三角保持一致：`cordis.patch.yml` 的行 id、package.json 的 name、tsdown 的 `clientBundle('@khorsheed/dsh-local-agent-kimi')`。
 
 **会话记录与转写。** `/kimi sessions` 列出作用域目录下的 `session_index.jsonl`——本 harness 的委派，绝不是用户的私人会话。`/kimi session <id>` 读取该会话的 `wire.jsonl` 渲染成可读转写：用户提示、思考与助手回复逐行标注 wire 轮次号（1 起，与子会话 `turn/start` 编号一致），工具调用带参数渲染、结果按调用配对（文件编辑类调用渲染成 patch 形态，不认识的内容类型保留可见标记），kimi 自动权限模式的 `<system-reminder>` 消息被过滤。设置卡片呈现认证状态与收窄到当前工作区的作用域会话；登录进行中时状态会持续重新探测，直到凭据落地。
 
