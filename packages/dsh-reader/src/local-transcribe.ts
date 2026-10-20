@@ -47,10 +47,19 @@ export interface EngineSegment {
 /** Sentence ends in either script. */
 const SENTENCE_END = /[。！？!?…]$|[^.\d]\.$/
 
+/** A run-on sentence (SenseVoice punctuates English sparsely) closes at a comma past this long (s)… */
+const LONG_AT_COMMA_SEC = 20
+/** …at a pause between words past this long… */
+const LONG_AT_PAUSE_SEC = 30
+/** …and in any case by this. */
+const LONGEST_CUE_SEC = 45
+
 /**
  * Engine stretches as caption-like cues: one per sentence (the engine's
- * stretches are cut at quiet points, not sentence ends), so the transcript
- * merges into the same paragraphs platform captions do.
+ * stretches are cut at pauses, not sentence ends), so the transcript merges
+ * into the same paragraphs platform captions do. A sentence that runs on
+ * without a period is closed at a comma or a pause once it is long, or a
+ * single cue would make a minute-and-a-half paragraph (measured 2026-10-20).
  *
  * @param segments - the engine's segments, in order.
  */
@@ -65,13 +74,18 @@ export function cuesFromSegments(segments: readonly EngineSegment[]): Cue[] {
     text = ''
     start = undefined
   }
-  for (const segment of segments) {
-    for (const token of segment.tokens) {
-      start ??= token.start
-      text += token.text
-      end = token.end
-      if (SENTENCE_END.test(text.trimEnd())) flush()
-    }
+  const tokens = segments.flatMap(segment => segment.tokens)
+  for (let index = 0; index < tokens.length; index++) {
+    const token = tokens[index]!
+    start ??= token.start
+    text += token.text
+    end = token.end
+    const length = end - start
+    const next = tokens[index + 1]
+    if (SENTENCE_END.test(text.trimEnd())
+      || (length >= LONG_AT_COMMA_SEC && /[,，、;；]$/.test(token.text.trim()))
+      || (length >= LONG_AT_PAUSE_SEC && next !== undefined && next.start - token.end >= 0.4)
+      || length >= LONGEST_CUE_SEC) flush()
   }
   flush()
   return cues
@@ -131,6 +145,9 @@ export interface LocalTranscriberDeps {
   readonly store: (entryId: string, url: string, html: string, language: string | undefined) => Promise<void>
 }
 
+/** A model download larger than this asks first; a small addition (the 2 MB VAD) just happens. */
+const CONFIRM_BYTES = 20_000_000
+
 /** Share of the progress bar the audio download takes. */
 const FETCH_SHARE = 0.1
 
@@ -171,7 +188,7 @@ export class LocalTranscriber {
     if (engine === undefined) return { entryId: request.entryId, state: 'unavailable' }
     const language = languageFor(request.media)
     const bytes = await engine.missingBytes(engine.modelsFor({ language, diarize: false }))
-    if (bytes > 0 && request.confirmModels !== true) return { entryId: request.entryId, state: 'needs-models', bytes }
+    if (bytes > CONFIRM_BYTES && request.confirmModels !== true) return { entryId: request.entryId, state: 'needs-models', bytes }
     const job: Job = { state: 'fetching', progress: 0, segments: [], rendered: 0, abort: new AbortController() }
     this.jobs.set(request.entryId, job)
     void this.execute(request, engine, language, job)

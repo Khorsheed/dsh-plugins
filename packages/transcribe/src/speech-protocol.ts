@@ -11,6 +11,8 @@ export interface SpeechModelPaths {
   /** The diarization models — only when the job separates speakers. */
   segmentation?: string | undefined
   embedding?: string | undefined
+  /** Silero VAD: without speaker separation, chunks are cut at real pauses (else at the quietest point). */
+  vad?: string | undefined
   /** Optional punctuation model (paraformer emits none of its own). */
   punctuation?: string | undefined
 }

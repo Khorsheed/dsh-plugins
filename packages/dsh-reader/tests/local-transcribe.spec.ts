@@ -116,3 +116,12 @@ describe('LocalTranscriber', () => {
     expect(second.store).not.toHaveBeenCalled()
   })
 })
+
+describe('long run-on sentences', () => {
+  it('close at a comma once they are long, so paragraphs stay readable', () => {
+    // 40 one-second words, a comma at 25 s, no period at all
+    const tokens = Array.from({ length: 40 }, (_, index) => ({ text: index === 25 ? ' word,' : ' word', start: index, end: index + 0.9 }))
+    const cues = cuesFromSegments([{ start: 0, end: 40, tokens }])
+    expect(cues.map((cue) => cue.start)).toEqual([0, 26])
+  })
+})

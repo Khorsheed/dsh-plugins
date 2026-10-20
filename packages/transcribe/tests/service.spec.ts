@@ -46,8 +46,8 @@ afterEach(() => {
 
 describe('modelsFor', () => {
   it('routes Chinese to Paraformer + punctuation and everything else to SenseVoice', () => {
-    expect(modelsFor('zh', false)).toEqual(['paraformer', 'punctuation'])
-    expect(modelsFor('en', false)).toEqual(['senseVoice'])
+    expect(modelsFor('zh', false)).toEqual(['paraformer', 'punctuation', 'vad'])
+    expect(modelsFor('en', false)).toEqual(['senseVoice', 'vad'])
     expect(modelsFor('auto', true)).toEqual(['senseVoice', 'segmentation', 'embedding'])
   })
 })
@@ -96,9 +96,12 @@ describe('TranscribeService', () => {
     const svc = new TranscribeService({ stateDir: root })
     const { MODELS } = await import('../src/models.ts')
     const sense = MODELS.find((m) => m.id === 'senseVoice')!
-    expect(await svc.missingBytes(svc.modelsFor({ language: 'en' }))).toBe(sense.bytes)
-    mkdirSync(join(root, 'models', sense.check, '..'), { recursive: true })
-    writeFileSync(join(root, 'models', sense.check), 'x')
+    const vad = MODELS.find((m) => m.id === 'vad')!
+    expect(await svc.missingBytes(svc.modelsFor({ language: 'en' }))).toBe(sense.bytes + vad.bytes)
+    for (const m of [sense, vad]) {
+      mkdirSync(join(root, 'models', m.check, '..'), { recursive: true })
+      writeFileSync(join(root, 'models', m.check), 'x')
+    }
     expect(await svc.missingBytes(svc.modelsFor({ language: 'en' }))).toBe(0)
   })
 

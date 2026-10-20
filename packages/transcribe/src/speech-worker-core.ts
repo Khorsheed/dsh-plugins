@@ -129,3 +129,71 @@ export function attachPunctuation(tokens: WorkerToken[], punctuated: string): Wo
   while (ti < tokens.length) out.push(tokens[ti++]!)
   return out
 }
+
+/** A stretch handed to the recognizer (seconds), and the pause before it. */
+export interface PlannedChunk {
+  start: number
+  end: number
+  /** Silence between the previous chunk's speech and this one's (0 for a cut inside speech). */
+  gapBefore: number
+}
+
+/**
+ * Group voice-activity segments into recognizer chunks of at most `maxSec`,
+ * cutting in the LONGEST pause that leaves a chunk of at least `minSec` — a
+ * long pause is where a sentence most likely ended. A chunk cut mid-speech
+ * makes the recognizer close a sentence that did not end (SenseVoice puts a
+ * period at every chunk end), so where to cut matters more than how evenly.
+ * A single segment longer than `maxSec` comes back as one over-long chunk;
+ * the caller splits it.
+ */
+export function planChunks(speech: readonly { start: number; end: number }[], maxSec = 25, minSec = 8): PlannedChunk[] {
+  const out: PlannedChunk[] = []
+  let group: { start: number; end: number }[] = []
+  let gapBefore = 0
+  for (const seg of speech) {
+    while (group.length > 0 && seg.end - group[0]!.start > maxSec) {
+      let cut = group.length - 1
+      let widest = -1
+      for (let k = 0; k < group.length; k++) {
+        const next = k + 1 < group.length ? group[k + 1]!.start : seg.start
+        const gap = next - group[k]!.end
+        if (group[k]!.end - group[0]!.start >= minSec && gap >= widest) {
+          widest = gap
+          cut = k
+        }
+      }
+      const next = cut + 1 < group.length ? group[cut + 1]!.start : seg.start
+      out.push({ start: group[0]!.start, end: group[cut]!.end, gapBefore })
+      gapBefore = next - group[cut]!.end
+      group = group.slice(cut + 1)
+    }
+    group.push(seg)
+  }
+  if (group.length > 0) out.push({ start: group[0]!.start, end: group[group.length - 1]!.end, gapBefore })
+  return out
+}
+
+/** Below this pause a chunk boundary is not a sentence end. */
+export const SEAM_GAP_SEC = 0.35
+
+/**
+ * Undo the sentence end a recognizer invented at a chunk boundary: the
+ * previous chunk's closing period goes, and the next chunk's capital (a
+ * sentence start, as far as the recognizer knew) is lowered — "another." +
+ * "Entity is…" reads "another entity is…" again. Only periods: a question
+ * mark is the speaker's, not the boundary's. Mutates both lists.
+ */
+export function repairSeam(prev: WorkerToken[], next: WorkerToken[]): void {
+  const last = prev[prev.length - 1]
+  if (!last) return
+  if (/^\s*[.。]$/.test(last.text)) prev.pop()
+  else if (/[^.\s][.。]$/.test(last.text)) prev[prev.length - 1] = { ...last, text: last.text.slice(0, -1) }
+  else return
+  const first = next[0]
+  // "I", "I'm" and acronyms keep their capitals.
+  if (first && /^\s?[A-Z][a-z]/.test(first.text) && !/^\s?I'/.test(first.text)) {
+    const at = first.text.search(/[A-Z]/)
+    next[0] = { ...first, text: first.text.slice(0, at) + first.text[at]!.toLowerCase() + first.text.slice(at + 1) }
+  }
+}

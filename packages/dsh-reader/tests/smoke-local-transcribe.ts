@@ -3,14 +3,15 @@
  * the reader's own yt-dlp (downloaded on first use), the transcription engine
  * from the sibling package's SOURCE, the reader's job runner. Not part of
  * `test`: it downloads audio and runs the models.
- *   pnpm exec tsx packages/dsh-reader/tests/smoke-local-transcribe.ts <state-root> <url> [video|audio]
+ *   pnpm exec tsx packages/dsh-reader/tests/smoke-local-transcribe.ts <state-root> <url> [video|audio] [out.html]
  */
+import { writeFileSync } from 'node:fs'
 import { TranscribeService } from '../../transcribe/src/service.ts'
 import { LocalTranscriber, type TranscribeEngine } from '../src/local-transcribe.ts'
 import { mediaLink } from '../src/media.ts'
 import { YtDlp } from '../src/ytdlp.ts'
 
-const [stateRoot, url, kind = 'video'] = process.argv.slice(2)
+const [stateRoot, url, kind = 'video', out] = process.argv.slice(2)
 if (!stateRoot || !url) throw new Error('usage: smoke-local-transcribe.ts <state-root> <url> [video|audio]')
 const media = kind === 'audio' ? { kind: 'audio' as const, provider: 'enclosure' as const, ref: url } : mediaLink(url)
 if (media === undefined) throw new Error(`not a media link: ${url}`)
@@ -21,7 +22,10 @@ const local = new LocalTranscriber({
   engine: () => engine as unknown as TranscribeEngine,
   tmpRoot: `${stateRoot}/tmp`,
   videoAudio: (u, dir, options) => ytdlp.audio(u, dir, options),
-  store: async (_id, _url, html, language) => { console.log(`stored ${html.length} chars · ${language ?? '-'}`) },
+  store: async (_id, _url, html, language) => {
+    console.log(`stored ${html.length} chars · ${language ?? '-'}`)
+    if (out !== undefined) writeFileSync(out, html)
+  },
 })
 console.log(await local.start({ entryId: 'smoke', url, media: { ...media, kind: media.kind } as never, confirmModels: true }))
 for (;;) {
