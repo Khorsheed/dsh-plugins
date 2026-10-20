@@ -16,6 +16,7 @@
  *
  * @module @khorsheed/dsh-reader/media-host
  */
+import { execFile } from 'node:child_process'
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { mergeCues, renderTranscript } from './captions.ts'
@@ -168,6 +169,21 @@ export function syntheticLabel(raw: string): string | undefined {
   const title = /<title>([^<]*)<\/title>/.exec(raw)?.[1]
   const value = author ?? title
   return value === undefined ? undefined : value.replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')
+}
+
+/**
+ * Where a share short link leads (b23.tv → bilibili.com/video/BV…). curl
+ * follows the redirect chain and honors the deployment's proxy environment.
+ *
+ * @param url - the short link.
+ */
+export function resolveShortLink(url: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile('curl', ['-sL', '-m', '20', '-A', 'Mozilla/5.0', '-o', '/dev/null', '-w', '%{url_effective}', url], { timeout: 30_000, env: process.env }, (error, stdout) => {
+      if (error !== null) { reject(error); return }
+      resolve(String(stdout).trim())
+    })
+  })
 }
 
 /** The host's media helper: yt-dlp plus the caption record. */
