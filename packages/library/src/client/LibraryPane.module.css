@@ -2330,30 +2330,6 @@ textarea.input { resize: vertical; font: inherit; line-height: 1.5; }
   line-height: 32px;
 }
 
-/* 考点详情：底部弹出 */
-.scrim[data-sheet='true'] {
-  place-items: end stretch;
-  padding: 0;
-}
-
-.sheet {
-  display: grid;
-  gap: 10px;
-  max-height: 85%;
-  overflow: auto;
-  padding: 16px;
-  border-radius: 16px 16px 0 0;
-  background: var(--dsw-alias-bg-layer-1);
-  box-shadow: 0 -8px 28px color-mix(in srgb, var(--dsw-alias-label-primary) 18%, transparent);
-}
-
-.sheetHead {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: var(--dsh-panel-text-title, 14px);
-}
-
 .spacer { flex: 1; }
 
 .pointBadge {
@@ -2365,6 +2341,7 @@ textarea.input { resize: vertical; font: inherit; line-height: 1.5; }
 
 .pointBadge[data-state='weak'] { background: var(--lib-bad-soft); color: var(--lib-bad); }
 .pointBadge[data-state='mastered'] { background: var(--lib-ok-soft); color: var(--lib-ok); }
+.pointBadge[data-state='practicing'] { background: color-mix(in srgb, var(--lib-accent) 12%, transparent); color: var(--lib-accent); }
 .pointBadge[data-state='untested'] { background: color-mix(in srgb, var(--dsw-alias-label-primary) 8%, transparent); color: var(--dsw-alias-label-secondary); }
 
 .pointNote {
@@ -2385,23 +2362,28 @@ textarea.input { resize: vertical; font: inherit; line-height: 1.5; }
 
 .changeDot[data-state='weak'] { background: var(--lib-bad); }
 .changeDot[data-state='mastered'] { background: var(--lib-ok); }
+.changeDot[data-state='practicing'] { background: var(--lib-accent); }
 
 /* 考点：一行一个，带考过几题、对几题 */
 .pointRows {
   display: flex;
   flex-direction: column;
+  overflow: hidden;
   border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: var(--dsw-radius-md, 12px);
 }
+
+.pointItem { border-top: 0.5px solid var(--dsw-alias-border-l2); }
+.pointItem:first-child { border-top: none; }
 
 .pointRow {
   display: flex;
   align-items: center;
   gap: 10px;
+  width: 100%;
   min-height: 48px;
   padding: 8px 12px;
   border: none;
-  border-top: 0.5px solid var(--dsw-alias-border-l2);
   background: transparent;
   color: inherit;
   font: inherit;
@@ -2409,7 +2391,41 @@ textarea.input { resize: vertical; font: inherit; line-height: 1.5; }
   cursor: pointer;
 }
 
-.pointRow:first-child { border-top: none; }
+.pointItem[data-open='true'] { background: color-mix(in srgb, var(--dsw-alias-label-primary) 3%, transparent); }
+.pointItem[data-open='true'] .chevron { transform: rotate(90deg); }
+
+/* 考点展开：在行下面，不遮挡 */
+.pointDetail {
+  display: grid;
+  gap: 10px;
+  padding: 2px 12px 12px;
+}
+
+.pointNeed {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pointNeed span {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--lib-accent) 10%, transparent);
+  color: var(--lib-accent);
+  font-size: var(--dsh-panel-text-meta, 12px);
+}
+
+.pointBlock {
+  display: grid;
+  gap: 6px;
+}
+
+.pointBlockTitle {
+  margin: 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: var(--dsh-panel-text-meta, 12px);
+  font-weight: 500;
+}
 .pointRow:hover { background: var(--dsw-alias-interactive-bg-hover); }
 .pointRow:focus-visible { outline: 2px solid var(--lib-accent); outline-offset: -2px; }
 
@@ -2424,6 +2440,7 @@ textarea.input { resize: vertical; font: inherit; line-height: 1.5; }
 
 .chevron {
   color: var(--dsw-alias-label-tertiary, var(--dsw-alias-label-secondary));
+  transition: transform 0.15s;
 }
 
 /* 出题摘要：分项 */
@@ -2478,6 +2495,7 @@ textarea.input { resize: vertical; font: inherit; line-height: 1.5; }
 .pickState { color: var(--dsw-alias-label-secondary); }
 .pickState[data-state='weak'] { color: var(--lib-bad); }
 .pickState[data-state='mastered'] { color: var(--lib-ok); }
+.pickState[data-state='practicing'] { color: var(--lib-accent); }
 
 .kindRow {
   display: flex;

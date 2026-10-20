@@ -32,7 +32,7 @@ const SUBJECT: LibraryProfile = {
   pointsDriven: true,
   fill: 'math',
   math: true,
-  coachHint: 'Quiz the weak and untested points first; every question names its point; math in $…$; a fill key is a value (1/2), several blanks comma-separated.',
+  coachHint: 'Quiz the weak and untested points first, then the practicing ones; every question names its point; math in $…$; a fill key is a value (1/2), several blanks comma-separated.',
 }
 
 /** Every template's profile; custom follows the subject profile. */

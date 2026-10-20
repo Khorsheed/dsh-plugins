@@ -814,7 +814,7 @@ export function normalizeEvent(value: unknown): LibraryEvent | undefined {
   }
 }
 
-const POINT_STATES = ['untested', 'weak', 'mastered'] as const
+const POINT_STATES = ['untested', 'weak', 'practicing', 'mastered'] as const
 
 /** The bindings map, dropping rows that do not parse. */
 export function normalizeBindings(value: unknown): Map<string, LibraryBinding> {

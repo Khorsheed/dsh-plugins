@@ -6,9 +6,12 @@
  *
  * - A question is OPEN (待订正) when its newest non-void verdict — on its own
  *   paper, a re-sitting of that paper, or a retake re-asking it — failed.
- * - A point is MASTERED when none of its questions is open and its newest
- *   probe passed; WEAK when a question is open, or a coach note is newer than
- *   its newest pass; UNTESTED with neither probes nor notes.
+ * - A point is WEAK when a question is open, or a coach note is newer than
+ *   its newest pass; UNTESTED with neither probes nor notes. Otherwise (none
+ *   open, newest probe passed) it is MASTERED once enough evidence stands —
+ *   at least MASTERY_MIN_RIGHT distinct questions right now, across at least
+ *   MASTERY_MIN_SITTINGS sittings with a right answer — and PRACTICING (巩固中)
+ *   until then: one lucky paper never masters a point.
  * - Retakes (type "retake") re-ask open questions — one station's, or a
  *   whole project's (今日复习); each question resolves through its `origin`,
  *   so a cross-station retake credits every station it touched. Their
@@ -25,6 +28,11 @@ import type {
   LibraryQuizQuestion,
   RoadmapNode,
 } from './types.ts'
+
+/** Distinct questions that must stand right before a point counts as mastered. */
+export const MASTERY_MIN_RIGHT = 3
+/** Separate sittings (papers or retakes) that must each have answered the point right. */
+export const MASTERY_MIN_SITTINGS = 2
 
 /** One open question: where it came from, the question, when it was missed. */
 export interface LibraryOpenMiss {
@@ -49,6 +57,8 @@ export interface LibraryPointMastery {
   /** Distinct questions ever asked on the point, and how many of them stand right now (newest verdict passed). */
   readonly asked: number
   readonly right: number
+  /** Sittings in which at least one question on the point was answered right. */
+  readonly rightSittings: number
   /** Every sitting that touched the point, newest first: how many of its questions, how many right. */
   readonly history: readonly LibraryPointSitting[]
 }
@@ -128,11 +138,15 @@ export function stationMastery(node: RoadmapNode, assessments: readonly LibraryA
     const notes = point.notes ?? []
     const newestNote = notes.reduce<string | undefined>((latest, note) => latest === undefined || note.at > latest ? note.at : latest, undefined)
     const noteUnanswered = newestNote !== undefined && (lastPass === undefined || newestNote > lastPass.at)
-    const state: LibraryPointState = last === undefined && notes.length === 0
-      ? 'untested'
-      : pointOpen.length === 0 && last?.pass === true && !noteUnanswered ? 'mastered' : 'weak'
     const newest = new Map<string, Probe>()
     for (const probe of mine) newest.set(probe.key, probe)
+    const right = [...newest.values()].filter(probe => probe.pass).length
+    const rightSittings = new Set(mine.filter(probe => probe.pass).map(probe => probe.attemptId)).size
+    const state: LibraryPointState = last === undefined && notes.length === 0
+      ? 'untested'
+      : pointOpen.length > 0 || last?.pass !== true || noteUnanswered
+        ? 'weak'
+        : right >= MASTERY_MIN_RIGHT && rightSittings >= MASTERY_MIN_SITTINGS ? 'mastered' : 'practicing'
     const sittings = new Map<string, { at: string; retake: boolean; total: number; right: number }>()
     for (const probe of mine) {
       const sitting = sittings.get(probe.attemptId) ?? { at: probe.at, retake: probe.retake, total: 0, right: 0 }
@@ -146,7 +160,8 @@ export function stationMastery(node: RoadmapNode, assessments: readonly LibraryA
       notes,
       ...(last === undefined ? {} : { lastProbe: { at: last.at, pass: last.pass } }),
       asked: newest.size,
-      right: [...newest.values()].filter(probe => probe.pass).length,
+      right,
+      rightSittings,
       history: [...sittings.values()].sort((a, b) => b.at.localeCompare(a.at)),
     }
   })
@@ -168,6 +183,7 @@ export function masteryReason(point: LibraryPointMastery): string {
   if (point.open.length > 0) parts.push(`${point.open.length} open miss${point.open.length === 1 ? '' : 'es'}`)
   const note = point.notes.at(-1)
   if (note !== undefined) parts.push(`note "${note.term ?? note.text}"`)
-  if (point.state === 'mastered' && point.lastProbe !== undefined) parts.push('newest probe passed')
+  if (point.state === 'mastered' && point.lastProbe !== undefined) parts.push(`${point.right} right across ${point.rightSittings} sittings`)
+  if (point.state === 'practicing') parts.push(`${point.right} right across ${point.rightSittings} sitting${point.rightSittings === 1 ? '' : 's'}; mastered at ${MASTERY_MIN_RIGHT} across ${MASTERY_MIN_SITTINGS}`)
   return parts.join('; ')
 }

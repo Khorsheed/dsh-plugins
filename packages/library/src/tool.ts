@@ -104,7 +104,7 @@ How a project runs:
 
 Binding: project / resource default to the session's binding (the header chip); a write binds an unbound session itself. Unbound, nothing to infer from, and about to write: ask which project (ask_user_question).
 
-The per-turn "Library:" context states the binding, every textbook's real path state and the current station's knowledge points (untested / weak / mastered, open misses) — trust it over anything said earlier, and quiz the weak and untested points first.`
+The per-turn "Library:" context states the binding, every textbook's real path state and the current station's knowledge points (untested / weak / practicing / mastered, open misses; practicing = right so far but not yet 3 questions across 2 sittings) — trust it over anything said earlier, and quiz the weak and untested points first, then the practicing ones.`
 
 /** The bound-context line's order: right after the sandbox / approval snapshots. */
 const CONTEXT_ORDER = 650

@@ -47,3 +47,9 @@ Per the proposal ([proposals/active/2026-10-19-library-point-mastery.md](../../.
 ## Testing
 
 172/172 green: `tests/mastery.spec.ts` pins the rules (open / resolved by retake / note newer than a pass / void / re-sitting / changes); service.spec covers no card from a nameless miss, `point.changed` events, retake not touching stats, the no-open-misses refusal and point notes; tool.spec covers `library_cards` with `point` landing as a note and the context listing the station's points. Screens checked in the sidebar fixture (章节考 with open misses, the point sheet, the settings expanded in dark, 今日 「最近的变化」).
+
+## Follow-up (2026-10-20): a mastery bar, and points expand in place
+
+- 3080: one paper with 4 right on a point showed 掌握, and every point tested once read 掌握 after a single right answer. The user: one question is too easy. New state **practicing** (巩固中) between weak and mastered: none open and newest probe passed, but fewer than `MASTERY_MIN_RIGHT` (3) distinct questions right now, or fewer than `MASTERY_MIN_SITTINGS` (2) sittings with a right answer — one lucky paper never masters a point. Both constants live in `mastery.ts`; `LibraryPointMastery.rightSittings` is the new evidence field. Weak/untested rules are unchanged. The context and coach hint ask practicing points after weak and untested ones.
+- The point detail was a bottom sheet over a scrim; on a wide pane it read as a long flat strip. It now expands under its row (accordion, one open at a time), showing why the point stands where it does, what is still missing for 掌握, the sittings, notes and open misses with the retake button. No overlay, no close step, same on phone and desktop.
+- Stored `point.changed` events read `practicing` back; older roots hold only the three old states.
