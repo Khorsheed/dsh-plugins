@@ -46,6 +46,20 @@ export interface LibraryPointMastery {
   readonly notes: readonly LibraryPointNote[]
   /** The newest verdict on any question probing the point. */
   readonly lastProbe?: { readonly at: string; readonly pass: boolean }
+  /** Distinct questions ever asked on the point, and how many of them stand right now (newest verdict passed). */
+  readonly asked: number
+  readonly right: number
+  /** Every sitting that touched the point, newest first: how many of its questions, how many right. */
+  readonly history: readonly LibraryPointSitting[]
+}
+
+/** One sitting's share of a point. */
+export interface LibraryPointSitting {
+  readonly at: string
+  /** A retake (订正) rather than a paper. */
+  readonly retake: boolean
+  readonly total: number
+  readonly right: number
 }
 
 /** A station's mastery: every point, and every open question (pointless ones too). */
@@ -55,6 +69,8 @@ export interface LibraryStationMastery {
 }
 
 interface Probe {
+  readonly attemptId: string
+  readonly retake: boolean
   readonly key: string
   readonly assessmentId: string
   readonly question: LibraryQuizQuestion
@@ -94,7 +110,7 @@ export function stationMastery(node: RoadmapNode, assessments: readonly LibraryA
       const originQuestion = question.origin === undefined
         ? question
         : own.get(question.origin.assessmentId)?.questions?.find(candidate => candidate.id === question.origin!.questionId) ?? question
-      probes.push({ key: `${originId}:${question.origin?.questionId ?? question.id}`, assessmentId: originId, question: originQuestion, pass: passes(verdict), at: attempt.at })
+      probes.push({ attemptId: attempt.id, retake: assessment.type === 'retake', key: `${originId}:${question.origin?.questionId ?? question.id}`, assessmentId: originId, question: originQuestion, pass: passes(verdict), at: attempt.at })
     }
   }
   probes.sort((a, b) => a.at.localeCompare(b.at))
@@ -115,6 +131,13 @@ export function stationMastery(node: RoadmapNode, assessments: readonly LibraryA
     const state: LibraryPointState = last === undefined && notes.length === 0
       ? 'untested'
       : pointOpen.length === 0 && last?.pass === true && !noteUnanswered ? 'mastered' : 'weak'
+    const newest = new Map<string, Probe>()
+    for (const probe of mine) newest.set(probe.key, probe)
+    const sittings = new Map<string, { at: string; retake: boolean; total: number; right: number }>()
+    for (const probe of mine) {
+      const sitting = sittings.get(probe.attemptId) ?? { at: probe.at, retake: probe.retake, total: 0, right: 0 }
+      sittings.set(probe.attemptId, { ...sitting, total: sitting.total + 1, right: sitting.right + (probe.pass ? 1 : 0) })
+    }
     return {
       id: point.id,
       title: point.title,
@@ -122,6 +145,9 @@ export function stationMastery(node: RoadmapNode, assessments: readonly LibraryA
       open: pointOpen,
       notes,
       ...(last === undefined ? {} : { lastProbe: { at: last.at, pass: last.pass } }),
+      asked: newest.size,
+      right: [...newest.values()].filter(probe => probe.pass).length,
+      history: [...sittings.values()].sort((a, b) => b.at.localeCompare(a.at)),
     }
   })
   return { points, open }

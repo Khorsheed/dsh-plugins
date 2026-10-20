@@ -27,6 +27,8 @@ Per the proposal ([proposals/active/2026-10-19-library-point-mastery.md](../../.
 - **Stale rows**: `recentRecords` drops recordings whose cards were all deleted (and names only the live ones); `recentChanges` drops changes whose textbook, station or point is gone — a deleted card had stayed in 「最近的变化」 because the event ledger is append-only.
 - **The learner's record, not the coach's notebook**: a coach recorded its own answer-key slip as a chat card *after* the new guidance shipped, so the guard is structural now — in a points-driven project `library_cards` refuses a chat card without `point`, naming the station's points and saying the coach's own slips and feedback on questions are never recorded; the prompt's opening line says the library is the learner's record, not the coach's notebook. That card was deleted on 3080.
 
+- **One way to ask, points as a ledger** (2026-10-20, from the user's walk-through): the point sheet's 「围绕它出一套」 duplicated the ask box and muddied the line of travel — removed; focusing a point happens only under 出一套新题 → 调整设置 → 重点考点. Points render as rows with what they hold — `asked` (distinct questions) and `right` (standing right now), open count, note count — and the sheet adds `history` (each sitting's share: paper or retake, right/total). The ask summary is labeled parts (范围 / 题型 / 题量 / 重点考点) with the buttons on their own row; range, kind and focus choices are wrapping toggles (the horizontal chip rows clipped long point titles).
+
 ## Alternatives considered
 
 - **Retakes count toward passing**: rejected by the user — retaking the same questions would farm the pass line; passing stays a whole paper's job.
