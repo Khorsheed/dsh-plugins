@@ -1,5 +1,5 @@
 # @khorsheed/dsh-basic bundle patch: the everyday-experience family as one
-# bundle card — the seventeen member rows, re-mounted VERBATIM from each member
+# bundle card — the fourteen member rows, re-mounted VERBATIM from each member
 # package's own cordis.patch.yml (the canonical rows; check-plugin-independence's
 # `family` sanction pins this file to exactly that union — no invented ids, no
 # foreign rows).
@@ -55,11 +55,6 @@
     - id: mobile
       name: "@khorsheed/dsh-mobile"
 
-    # 快捷键: rebind keyboard and mouse shortcuts. Row id stays
-    # `khorsheed-ui-shortcuts` — the official panel owns `ui-shortcuts`.
-    - id: khorsheed-ui-shortcuts
-      name: '@khorsheed/dsh-ui-shortcuts'
-
     # 进度提醒: whale spout animation and completion/blocked chimes.
     - id: whalesong
       name: '@khorsheed/dsh-whalesong'
@@ -67,10 +62,6 @@
     # 重启守卫: self-modification restarts gated on a green build+test credential.
     - id: ankh-guard
       name: "@khorsheed/dsh-ankh-guard"
-
-    # 侧边对话: lightweight sidebar chat per context.
-    - id: sidechat
-      name: "@khorsheed/dsh-sidechat"
 
     # 上下文透镜: per-turn structured breakdown of every model request.
     - id: context-lens

@@ -206,15 +206,9 @@ importers:
       '@khorsheed/dsh-quote':
         specifier: workspace:*
         version: link:../quote
-      '@khorsheed/dsh-sidechat':
-        specifier: workspace:*
-        version: link:../sidechat
       '@khorsheed/dsh-taskpilot':
         specifier: workspace:*
         version: link:../taskpilot
-      '@khorsheed/dsh-ui-shortcuts':
-        specifier: workspace:*
-        version: link:../ui-shortcuts
       '@khorsheed/dsh-whalesong':
         specifier: workspace:*
         version: link:../whalesong

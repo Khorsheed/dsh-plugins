@@ -2,11 +2,11 @@
 
 [English](README.en.md) | 中文
 
-日常使用的 dsh 体验,一个包装齐:消息工具、会话产物、文件列表、上下文守卫、移动端……清单里只多一张「基础体验」卡片,不用在十七个插件之间逐包挑选。
+日常使用的 dsh 体验,一个包装齐:消息工具、会话产物、文件列表、上下文守卫、移动端……清单里只多一张「基础体验」卡片,不用在十四个插件之间逐包挑选。
 
 ## 特性
 
-- **一次装齐一族**——消息工具、消息时间轴、标题编辑、引用、内联卡片、上下文守卫、后台任务、会话产物、文件列表、能力目录、移动端、快捷键、进度提醒、重启守卫、侧边对话、上下文透镜,一条安装全部就位。灵感空间（`@khorsheed/dsh-reader`）2026-10-19 起随学习模式与写作模式安装，不在本合集里；它的渲染抓取（`@khorsheed/dsh-capture`）2026-10-20 起也一起移过去了。
+- **一次装齐一族**——消息工具、消息时间轴、标题编辑、引用、内联卡片、上下文守卫、后台任务、会话产物、文件列表、能力目录、移动端、进度提醒、重启守卫、上下文透镜,一条安装全部就位。灵感空间（`@khorsheed/dsh-reader`）2026-10-19 起随学习模式与写作模式安装，不在本合集里；它的渲染抓取（`@khorsheed/dsh-capture`）2026-10-20 起也一起移过去了。侧边对话（`@khorsheed/dsh-sidechat`）同日移出（未随合集发布）；快捷键（`@khorsheed/dsh-ui-shortcuts`）退役——宿主 0.1.7-rc.2 起官方内置快捷键设置。
 - **清单里只有一张卡**——locale 卡面元数据把整族归成一张「基础体验」卡;详情页里仍是逐行成员,带行级启停开关。
 - **纯组合,零运行时**——本包不注册任何服务/工具/槽位/命令;patch 逐字复用成员的规范行,装我不双挂(机制见文末实现原理)。
 
@@ -25,15 +25,13 @@
 | `@khorsheed/dsh-local-files` | `local-files` | 浏览任意本地目录,预览 HTML、Markdown、JSON、CSV 和图片 |
 | `@khorsheed/dsh-capability-catalog` | `capability-catalog` | 列出实例中所有技能与工具,标注各自的注册渠道 |
 | `@khorsheed/dsh-mobile` | `mobile` | 移动布局、会话首页和 iOS 客户端桥接 |
-| `@khorsheed/dsh-ui-shortcuts` | `khorsheed-ui-shortcuts` | 自定义暂停、插队发送等动作的键盘与鼠标键位 |
 | `@khorsheed/dsh-whalesong` | `whalesong` | 任务运行时鲸鱼喷水动画,完成或阻塞时播放提示音 |
 | `@khorsheed/dsh-ankh-guard` | `ankh-guard` | 先证明构建与测试通过,才放行自我修改的重启 |
-| `@khorsheed/dsh-sidechat` | `sidechat` | 围绕当前上下文的随身 Agent 对话,支持消息引用提问 |
 | `@khorsheed/dsh-context-lens` | `context-lens` | 按 turn 查看每次模型请求的完整组成:system 分段归因、工具定义、token 与耗时分布 |
 
 ## 安装
 
-在宿主界面「添加插件」对话框里粘贴包名 `@khorsheed/dsh-basic`(或从市场索引里选它),确认后重启实例——装这一个,十七个成员随依赖一起到达,行由本包的 patch 统一挂载。
+在宿主界面「添加插件」对话框里粘贴包名 `@khorsheed/dsh-basic`(或从市场索引里选它),确认后重启实例——装这一个,十四个成员随依赖一起到达,行由本包的 patch 统一挂载。
 
 命令行等价:
 

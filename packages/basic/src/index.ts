@@ -21,9 +21,7 @@ export const FAMILY_MEMBERS = [
   '@khorsheed/dsh-local-files',
   '@khorsheed/dsh-capability-catalog',
   '@khorsheed/dsh-mobile',
-  '@khorsheed/dsh-ui-shortcuts',
   '@khorsheed/dsh-whalesong',
   '@khorsheed/dsh-ankh-guard',
-  '@khorsheed/dsh-sidechat',
   '@khorsheed/dsh-context-lens',
 ] as const

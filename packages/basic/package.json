@@ -47,9 +47,7 @@
     "@khorsheed/dsh-message-timeline": "workspace:*",
     "@khorsheed/dsh-mobile": "workspace:*",
     "@khorsheed/dsh-quote": "workspace:*",
-    "@khorsheed/dsh-sidechat": "workspace:*",
     "@khorsheed/dsh-taskpilot": "workspace:*",
-    "@khorsheed/dsh-ui-shortcuts": "workspace:*",
     "@khorsheed/dsh-whalesong": "workspace:*"
   },
   "peerDependencies": {
@@ -82,10 +80,8 @@
         "@khorsheed/dsh-local-files",
         "@khorsheed/dsh-capability-catalog",
         "@khorsheed/dsh-mobile",
-        "@khorsheed/dsh-ui-shortcuts",
         "@khorsheed/dsh-whalesong",
         "@khorsheed/dsh-ankh-guard",
-        "@khorsheed/dsh-sidechat",
         "@khorsheed/dsh-context-lens"
       ]
     },
@@ -101,10 +97,8 @@
       "@khorsheed/dsh-local-files",
       "@khorsheed/dsh-capability-catalog",
       "@khorsheed/dsh-mobile",
-      "@khorsheed/dsh-ui-shortcuts",
       "@khorsheed/dsh-whalesong",
       "@khorsheed/dsh-ankh-guard",
-      "@khorsheed/dsh-sidechat",
       "@khorsheed/dsh-context-lens"
     ],
     "compat": {
