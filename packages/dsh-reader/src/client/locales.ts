@@ -30,7 +30,7 @@ export type ReaderKey =
   | 'search.placeholder'
   | 'sort.title' | 'sort.newest' | 'sort.oldest' | 'sort.source'
   | 'action.refresh' | 'action.refreshOne' | 'action.add' | 'action.back'
-  | 'action.copyLink' | 'action.openExternal' | 'action.quote' | 'action.manage'
+  | 'action.copyLink' | 'action.openExternal' | 'action.manage'
   | 'action.recent' | 'recent.title' | 'recent.help' | 'recent.empty'
   | 'recent.clearTitle' | 'recent.sourceGone'
   | 'action.remove' | 'action.submit' | 'action.done' | 'action.cancel' | 'action.clearSearch'
@@ -64,13 +64,13 @@ export type ReaderKey =
   | 'state.backfilling' | 'detail.filledIn' | 'detail.filledInBadge' | 'action.pause' | 'action.resume'
   | 'detail.incomplete' | 'detail.readOriginal' | 'detail.extractFailed'
   | 'detail.summaryOnly' | 'detail.resolvedFrom'
-  | 'detail.alsoFrom' | 'detail.composerLabel' | 'detail.composerEmpty'
+  | 'detail.alsoFrom'
   | 'foot.refreshedAt' | 'foot.scheduled' | 'foot.never' | 'foot.unread'
   | 'foot.refreshing' | 'foot.deduped'
   | 'quote.copied' | 'quote.copyFailed' | 'quote.quoted'
-  | 'quote.toSideChat' | 'quote.sideChatUnavailable'
+  | 'add.fetching' | 'notes.checkShort'
   | 'when.justNow' | 'when.minutes' | 'when.hours' | 'when.yesterday' | 'when.days'
-  | 'notes.tabArticle' | 'notes.tabNotes' | 'notes.tabsLabel' | 'notes.take' | 'notes.takeHint'
+  | 'notes.tabArticle' | 'notes.tabNotes' | 'notes.tabsLabel' | 'notes.take'
   | 'notes.sheetTitle' | 'notes.excerpt' | 'notes.commentPlaceholder' | 'notes.commentOptional'
   | 'notes.save' | 'notes.saveFailed' | 'notes.empty' | 'notes.excerpts' | 'notes.discussions'
   | 'notes.noDiscussions' | 'notes.select' | 'notes.selectDone' | 'notes.selected' | 'notes.discuss'
@@ -156,7 +156,6 @@ export const en = {
   'action.back': 'Back',
   'action.copyLink': 'Copy link',
   'action.openExternal': 'Open in browser',
-  'action.quote': 'Quote',
   'action.manage': 'Manage subscriptions',
   'action.recent': 'Recently read',
   'recent.title': 'Recently read',
@@ -261,8 +260,6 @@ export const en = {
   'detail.summaryOnly': 'This feed publishes only a summary for this entry — the full text lives on the original page.',
   'detail.resolvedFrom': 'Resolved from the link you pasted ({url}) — click to open it',
   'detail.alsoFrom': 'Also from this source',
-  'detail.composerLabel': 'Current conversation draft',
-  'detail.composerEmpty': '(empty)',
 
   'foot.refreshedAt': 'Refreshed {when}',
   'foot.scheduled': 'daily {time}',
@@ -292,8 +289,8 @@ export const en = {
   'quote.copied': 'Copied',
   'quote.copyFailed': 'Could not reach the clipboard',
   'quote.quoted': 'Quoted {count} characters',
-  'quote.toSideChat': 'Sent to side chat',
-  'quote.sideChatUnavailable': 'No side chat in this composition',
+  'add.fetching': 'Fetching…',
+  'notes.checkShort': 'Quiz me',
 
   'when.justNow': 'just now',
   'when.minutes': '{count} min ago',
@@ -305,7 +302,6 @@ export const en = {
   'notes.tabNotes': 'Notes',
   'notes.tabsLabel': 'Article and notes',
   'notes.take': 'Take a note',
-  'notes.takeHint': 'Select a passage in the article first',
   'notes.sheetTitle': 'Take a note',
   'notes.excerpt': 'Excerpt',
   'notes.commentPlaceholder': 'What do you make of it? (optional)',
@@ -473,7 +469,6 @@ export const zh = {
   'action.back': '返回',
   'action.copyLink': '复制链接',
   'action.openExternal': '在浏览器打开原文',
-  'action.quote': '引用',
   'action.manage': '订阅管理',
   'action.recent': '最近阅读',
   'recent.title': '最近阅读',
@@ -578,8 +573,6 @@ export const zh = {
   'detail.summaryOnly': '这条订阅源只发布了摘要 —— 全文在原文页面上。',
   'detail.resolvedFrom': '这条由粘贴的链接（{url}）解析而来 —— 点击打开原链接',
   'detail.alsoFrom': '同一来源',
-  'detail.composerLabel': '当前会话草稿',
-  'detail.composerEmpty': '（空）',
 
   'foot.refreshedAt': '刷出于 {when}',
   'foot.scheduled': '每日 {time}',
@@ -609,8 +602,8 @@ export const zh = {
   'quote.copied': '已复制',
   'quote.copyFailed': '剪贴板不可用',
   'quote.quoted': '已引用 {count} 字',
-  'quote.toSideChat': '已发送到侧边对话',
-  'quote.sideChatUnavailable': '当前组合里没有侧边对话',
+  'add.fetching': '抓取中…',
+  'notes.checkShort': '考考我',
 
   'when.justNow': '刚刚',
   'when.minutes': '{count} 分钟前',
@@ -622,7 +615,6 @@ export const zh = {
   'notes.tabNotes': '笔记',
   'notes.tabsLabel': '正文与笔记',
   'notes.take': '记笔记',
-  'notes.takeHint': '先在正文里选中一段',
   'notes.sheetTitle': '记笔记',
   'notes.excerpt': '摘抄',
   'notes.commentPlaceholder': '写点你的想法（可空）',

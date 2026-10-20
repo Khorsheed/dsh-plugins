@@ -542,6 +542,11 @@
   opacity: 0.88;
 }
 
+.submit:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
 .verdict {
   margin-top: 12px;
   padding: 9px 11px;
@@ -873,7 +878,7 @@
 }
 
 .article a {
-  color: var(--dsw-alias-link);
+  color: var(--dsw-alias-link, var(--dsw-alias-brand-primary));
   text-decoration: none;
 }
 
@@ -966,7 +971,7 @@
   background: transparent;
   font-family: inherit;
   font-size: inherit;
-  color: var(--dsw-alias-link);
+  color: var(--dsw-alias-link, var(--dsw-alias-brand-primary));
   cursor: pointer;
 }
 
@@ -1013,47 +1018,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-/* -------------------------------------------------------- composer + footer */
-
-.composer {
-  flex: none;
-  padding: 7px 10px;
-  border-top: 1px solid var(--dsw-alias-border-l2);
-  background: var(--dsw-alias-bg-layer-1);
-}
-
-.composerLabel {
-  margin-bottom: 4px;
-  font-size: 10px;
-  color: var(--dsw-alias-label-tertiary);
-}
-
-.composerText {
-  max-height: 52px;
-  overflow-y: auto;
-  font-size: 11px;
-  line-height: 16px;
-  color: var(--dsw-alias-label-secondary);
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.composerEmpty {
-  color: var(--dsw-alias-label-tertiary);
-}
-
-.foot {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
-  border-top: 1px solid var(--dsw-alias-border-l2);
-  background: var(--dsw-alias-bg-layer-1);
-  font-size: 10.5px;
-  color: var(--dsw-alias-label-tertiary);
 }
 
 /* ------------------------------------------------------------------ menus */
@@ -2810,8 +2774,9 @@
 /* 「让Agent考考我」 at the end of the article. */
 .checkEnd {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
   margin-top: 18px;
   padding-top: 12px;
   border-top: 1px solid var(--dsw-alias-border-l2);
@@ -2822,20 +2787,40 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-.checkButton {
-  padding: 7px 12px;
-  border: 1px solid var(--dsw-alias-brand-primary);
-  border-radius: 8px;
-  background: var(--dsw-alias-brand-primary);
+/* The end-of-body offer is one quiet line: a link, not a full-width slab. */
+.checkLink {
+  padding: 0;
+  border: none;
+  background: transparent;
   font-family: inherit;
-  font-size: var(--dsh-panel-text-body, 12.5px);
-  color: var(--dsw-alias-bg-base);
+  font-size: var(--dsh-panel-text-meta, 12px);
+  color: var(--dsw-alias-link, var(--dsw-alias-brand-primary));
   cursor: pointer;
 }
 
+/* The always-visible one, at the end of the tab row. */
+.checkChip {
+  height: 24px;
+  margin-bottom: 4px;
+  padding: 0 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  background: transparent;
+  font-family: inherit;
+  font-size: var(--dsh-panel-text-meta, 12px);
+  color: var(--dsw-alias-label-secondary);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.checkChip:hover {
+  border-color: var(--dsw-alias-brand-primary);
+  color: var(--dsw-alias-brand-primary);
+}
+
 @container dsh-panel (max-width: 560px) {
-  .checkButton {
-    min-height: 40px;
+  .checkChip {
+    height: 30px;
   }
 }
 
@@ -2864,7 +2849,7 @@
   border: none;
   background: transparent;
   font: inherit;
-  color: var(--dsw-alias-link);
+  color: var(--dsw-alias-link, var(--dsw-alias-brand-primary));
   cursor: pointer;
 }
 

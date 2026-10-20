@@ -26,6 +26,7 @@ import type { CanvasInboxLike } from '../src/client/canvas-sync.ts'
 import { createReaderStore, type ReaderState } from '../src/client/store.ts'
 import { zh } from '../src/client/locales.ts'
 import { ReaderPane } from '../src/client/ReaderPane.tsx'
+import { noteTargetForSelection } from '../src/client/notes.ts'
 import { forgetSession, forgetTranslators, readSession, readWallCache, rememberReadingPosition } from '../src/client/session.ts'
 import { UNIT_SEPARATOR, clearMemory, translationHash } from '../src/client/translate.ts'
 import type { LocalTranscriptStatus, MediaCardStates, ReaderBody, ReaderEntryFetchState, ReaderEntryNotes, ReaderRecentEntry, ReaderSourceSummary } from '../src/types.ts'
@@ -528,7 +529,7 @@ describe('pointing (option B): the card opens the detail, the detail owns the br
     })
     await ui.settle()
     fireEvent.click(await screen.findByText('一篇长文'))
-    expect(await screen.findByText(zh['detail.composerLabel'])).toBeTruthy()
+    expect(await screen.findByTitle(zh['action.back'])).toBeTruthy()
     await waitFor(() => { expect(ui.container.querySelector('[class*="article"]')?.textContent).toContain('正文段落') })
     // The click must not have opened a tab: the browser is a detail action.
     expect(ui.mocks.openExternal).not.toHaveBeenCalled()
@@ -722,11 +723,13 @@ describe('the add form reports the host verdict', () => {
     fireEvent.click(screen.getByText(zh['action.submit']))
     expect(await screen.findByText(zh['add.busy'])).toBeTruthy()
     expect((input as HTMLInputElement).disabled).toBe(true)
-    fireEvent.click(screen.getByText(zh['detail.refetching']))
+    fireEvent.click(screen.getByText(zh['add.fetching']))
     expect(ui.mocks.addSource).toHaveBeenCalledTimes(1)
     release?.({ ok: true, value: { outcome: 'subscribed', kind: 'rss', id: 'new', label: '新源' } })
     expect(await screen.findByText(zh['verdict.subscribed'].replace('{label}', '新源'))).toBeTruthy()
     expect(screen.queryByText(zh['add.busy'])).toBeNull()
+    // The box is cleared once the link is saved: 抓取 has nothing to fetch, and says so.
+    expect((screen.getByText(zh['action.submit']) as HTMLButtonElement).disabled).toBe(true)
   })
 
   it('maps each refusal onto its own sentence', async () => {
@@ -828,7 +831,7 @@ describe('every page that leaves the wall carries the way back', () => {
     })
     await ui.settle()
     fireEvent.click(await screen.findByText('一篇长文'))
-    expect(await screen.findByText(zh['detail.composerLabel'])).toBeTruthy()
+    expect(await screen.findByTitle(zh['action.back'])).toBeTruthy()
     fireEvent.click(screen.getByTitle(zh['action.back']))
     // The placeholder is an attribute, not text: point at the input itself.
     expect(await screen.findByPlaceholderText(zh['search.placeholder'])).toBeTruthy()
@@ -869,43 +872,6 @@ describe('a subscription whose entries are not from today', () => {
     // button is off (no source selected, not unread-only), which is what "all"
     // means now that the filter lives in a popover.
     expect(screen.getByTitle(zh['action.filter']).className).not.toContain('toolOn')
-  })
-})
-
-describe('quoting needs a body, and the side-chat gesture needs a composition', () => {
-  /** The bench every quote test shares: one readable entry, opened. */
-  async function openedArticle(hasSideChat: boolean) {
-    const ui = bench({
-      sources: [rssSource('hn', { label: 'Hacker News' })],
-      payloads: { hn: feed('hn', [{ title: '可引用', description: `<p>${'正文。'.repeat(40)}</p>` }]) },
-      hasSideChat,
-    })
-    await ui.settle()
-    fireEvent.click(await screen.findByText('可引用'))
-    await screen.findByText(zh['action.quote'])
-    return ui
-  }
-
-  it('writes the source-tagged block into the conversation draft', async () => {
-    const ui = await openedArticle(false)
-    vi.spyOn(window, 'getSelection').mockReturnValue({ toString: () => '选中的一段' } as unknown as Selection)
-    fireEvent.click(screen.getByText(zh['action.quote']))
-    const written = ui.mocks.setDraft.mock.calls[0]?.[0] as string | undefined
-    expect(written).toContain('选中的一段')
-    // The provenance names the FEED (the fixture's channel title is `hn`), not
-    // the host's URL-derived label: a feed declares its own name.
-    expect(written).toContain('hn')
-  })
-
-  it('hides the side-chat action when no side chat is composed', async () => {
-    await openedArticle(false)
-    expect(screen.queryByText(zh['quote.toSideChat'])).toBeNull()
-  })
-
-  it('offers it, and uses it, once the handshake says a side chat exists', async () => {
-    const ui = await openedArticle(true)
-    fireEvent.click(await screen.findByText(zh['quote.toSideChat']))
-    expect(ui.mocks.quoteToSideChat).toHaveBeenCalledWith(expect.objectContaining({ contextKey: 's1' }))
   })
 })
 
@@ -1000,7 +966,7 @@ describe('the wall hides republished duplicates behind one card', () => {
     const card = (await screen.findAllByText('An Alien Mind'))[0]!.closest('[data-reader-entry]') as HTMLElement
     expect(card.getAttribute('data-unread')).not.toBeNull()
     fireEvent.click(card)
-    await screen.findByText(zh['action.quote'])
+    await screen.findByTitle(zh['action.back'])
     fireEvent.click(screen.getByTitle(zh['action.back']))
     await waitFor(() => {
       const again = screen.getAllByText('An Alien Mind')[0]!.closest('[data-reader-entry]') as HTMLElement
@@ -1032,7 +998,7 @@ describe('the wall hides republished duplicates behind one card', () => {
     // The read-merge rides the shared id for free — this pin exists so nobody
     // "fixes" the id collision without reading the dedupe note.
     fireEvent.click(screen.getAllByText('An Alien Mind')[0]!.closest('[data-reader-entry]') as HTMLElement)
-    await screen.findByText(zh['action.quote'])
+    await screen.findByTitle(zh['action.back'])
     fireEvent.click(screen.getByTitle(zh['action.back']))
     await waitFor(() => {
       const card = screen.getAllByText('An Alien Mind')[0]!.closest('[data-reader-entry]') as HTMLElement
@@ -1467,7 +1433,7 @@ describe('read state is visible without hiding anything', () => {
     expect(card.hasAttribute('data-unread')).toBe(true)
     expect(card.querySelector('[class*="unread"]')).not.toBeNull()
     fireEvent.click(screen.getByText('一条'))
-    await screen.findByText(zh['detail.composerLabel'])
+    await screen.findByTitle(zh['action.back'])
     fireEvent.click(screen.getByTitle(zh['action.back']))
     await waitFor(() => {
       const back = ui.container.querySelector('[data-reader-entry]') as HTMLElement
@@ -1553,7 +1519,7 @@ describe('on-device translation', () => {
     })
     await ui.settle()
     fireEvent.click(await screen.findByText('一篇长文'))
-    await screen.findByText(zh['action.quote'])
+    await screen.findByTitle(zh['action.back'])
     return ui
   }
 
@@ -2020,7 +1986,7 @@ describe('a slower answer never lands under a newer entry\'s title', () => {
     })
     await ui.settle()
     fireEvent.click((await screen.findAllByRole('button', { name: /First article/ }))[0] as HTMLElement)
-    await screen.findByText(zh['action.quote'])
+    await screen.findByTitle(zh['action.back'])
     fireEvent.click(screen.getByTitle(zh['action.back']))
     fireEvent.click((await screen.findAllByRole('button', { name: /Second article/ }))[0] as HTMLElement)
     await screen.findByText('Second body here, long enough to read.')
@@ -2052,7 +2018,7 @@ describe('a slower answer never lands under a newer entry\'s title', () => {
     await ui.settle()
     // Opening the summary-only entry shows the feed's text and owes one fetch.
     fireEvent.click((await screen.findAllByRole('button', { name: /Summary paper/ }))[0] as HTMLElement)
-    await screen.findByText(zh['action.quote'])
+    await screen.findByTitle(zh['action.back'])
     await waitFor(() => { expect(ui.mocks.fetchEntryBody).toHaveBeenCalledTimes(1) })
     fireEvent.click(screen.getByTitle(zh['action.back']))
     fireEvent.click((await screen.findAllByRole('button', { name: /Full paper/ }))[0] as HTMLElement)
@@ -2812,7 +2778,7 @@ describe('coming back to the pane puts the reader where they were', () => {
     const search = screen.getByPlaceholderText(zh['search.placeholder']) as HTMLInputElement
     fireEvent.change(search, { target: { value: 'An English article' } })
     fireEvent.click((await screen.findAllByRole('button', { name: /An English article/ }))[0] as HTMLElement)
-    await screen.findByText(zh['action.quote'])
+    await screen.findByTitle(zh['action.back'])
     first.unmount()
 
     // The pane is gone and comes back: no state crosses over except this
@@ -2820,7 +2786,7 @@ describe('coming back to the pane puts the reader where they were', () => {
     const second = bench({ sources: [rssSource('hn')], payloads: { hn: english() } })
     await second.settle()
     // The ARTICLE is back — not just the id, and not the wall.
-    await waitFor(() => { expect(screen.queryByText(zh['action.quote'])).not.toBeNull() })
+    await waitFor(() => { expect(screen.queryByTitle(zh['action.back'])).not.toBeNull() })
     // …and so is the search that narrowed the wall behind it. The box lives on
     // the wall, so it takes the back button to see it.
     fireEvent.click(screen.getByTitle(zh['action.back']))
@@ -2953,7 +2919,7 @@ describe('coming back to the pane puts the reader where they were', () => {
     await first.settle()
     fireEvent.change(screen.getByPlaceholderText(zh['search.placeholder']), { target: { value: '#hn' } })
     fireEvent.click((await screen.findAllByRole('button', { name: /甲源的条目/ }))[0] as HTMLElement)
-    await screen.findByText(zh['action.quote'])
+    await screen.findByTitle(zh['action.back'])
     first.unmount()
 
     const second = bench({
@@ -2964,7 +2930,7 @@ describe('coming back to the pane puts the reader where they were', () => {
       },
     })
     await second.settle()
-    await waitFor(() => { expect(screen.queryByText(zh['action.quote'])).not.toBeNull() })
+    await waitFor(() => { expect(screen.queryByTitle(zh['action.back'])).not.toBeNull() })
     fireEvent.click(screen.getByTitle(zh['action.back']))
     await waitFor(() => {
       expect((screen.getByPlaceholderText(zh['search.placeholder']) as HTMLInputElement).value).toBe('#hn')
@@ -2978,7 +2944,7 @@ describe('coming back to the pane puts the reader where they were', () => {
     const first = bench({ sources: [rssSource('hn')], payloads: { hn: english() } })
     await first.settle()
     fireEvent.click((await screen.findAllByRole('button', { name: /An English article/ }))[0] as HTMLElement)
-    await screen.findByText(zh['action.quote'])
+    await screen.findByTitle(zh['action.back'])
     fireEvent.click(await screen.findByTitle(zh['action.translate']))
     await waitFor(() => {
       expect(first.container.querySelector('[class*="article"]')?.textContent).toContain('译：First sentence here.')
@@ -3000,12 +2966,12 @@ describe('coming back to the pane puts the reader where they were', () => {
     const first = bench({ sources: [rssSource('hn')], payloads: { hn: english() } })
     await first.settle()
     fireEvent.click((await screen.findAllByRole('button', { name: /An English article/ }))[0] as HTMLElement)
-    await screen.findByText(zh['action.quote'])
+    await screen.findByTitle(zh['action.back'])
     first.unmount()
 
     const second = bench({ sources: [rssSource('hn')], payloads: { hn: english() } })
     await second.settle()
-    await waitFor(() => { expect(screen.queryByText(zh['action.quote'])).not.toBeNull() })
+    await waitFor(() => { expect(screen.queryByTitle(zh['action.back'])).not.toBeNull() })
     // The feed published the text itself (`contentHtml`), so the restore costs
     // no network call at all.
     expect(second.mocks.fetchEntryBody).not.toHaveBeenCalled()
@@ -3020,7 +2986,7 @@ describe('coming back to the pane puts the reader where they were', () => {
     const ui = bench({ sources: [rssSource('hn')], payloads: { hn: english() } })
     await ui.settle()
     fireEvent.click((await screen.findAllByRole('button', { name: /An English article/ }))[0] as HTMLElement)
-    await screen.findByText(zh['action.quote'])
+    await screen.findByTitle(zh['action.back'])
     fireEvent.click(await screen.findByTitle(zh['action.translate']))
     await waitFor(() => {
       expect(ui.container.querySelector('[class*="article"]')?.textContent).toContain('译：First sentence here.')
@@ -3044,7 +3010,7 @@ describe('coming back to the pane puts the reader where they were', () => {
     const first = bench({ sessionId: 'session-a', sources: [rssSource('hn')], payloads: { hn: english() } })
     await first.settle()
     fireEvent.click((await screen.findAllByRole('button', { name: /An English article/ }))[0] as HTMLElement)
-    await screen.findByText(zh['action.quote'])
+    await screen.findByTitle(zh['action.back'])
     fireEvent.click(await screen.findByTitle(zh['action.translate']))
     await waitFor(() => {
       expect(first.container.querySelector('[class*="article"]')?.textContent).toContain('译：First sentence here.')
@@ -3055,7 +3021,7 @@ describe('coming back to the pane puts the reader where they were', () => {
     // globe is already on, with neither being clicked this time.
     const second = bench({ sessionId: 'session-b', sources: [rssSource('hn')], payloads: { hn: english() } })
     await second.settle()
-    await waitFor(() => { expect(screen.queryByText(zh['action.quote'])).not.toBeNull() })
+    await waitFor(() => { expect(screen.queryByTitle(zh['action.back'])).not.toBeNull() })
     await waitFor(() => {
       expect(second.container.querySelector('[class*="article"]')?.textContent).toContain('译：First sentence here.')
     })
@@ -3117,7 +3083,7 @@ describe('the translation memory survives a reload', () => {
   /** Open the article and turn the globe on, with the translation on screen. */
   const openAndTranslate = async (ui: ReturnType<typeof bench>): Promise<void> => {
     fireEvent.click((await screen.findAllByRole('button', { name: /An English article/ }))[0] as HTMLElement)
-    await screen.findByText(zh['action.quote'])
+    await screen.findByTitle(zh['action.back'])
     fireEvent.click(await screen.findByTitle(zh['action.translate']))
     await waitFor(() => {
       expect(ui.container.querySelector('[class*="article"]')?.textContent).toContain('译：First sentence here.')
@@ -3160,7 +3126,7 @@ describe('the translation memory survives a reload', () => {
   /** Open the article with no Translator API on the page (iOS, Safari, Firefox). */
   const openWithoutApi = async (): Promise<void> => {
     fireEvent.click((await screen.findAllByRole('button', { name: /An English article/ }))[0] as HTMLElement)
-    await screen.findByText(zh['action.quote'])
+    await screen.findByTitle(zh['action.back'])
   }
 
   it('shows a stored translation on a page with no Translator API', async () => {
@@ -3289,7 +3255,7 @@ describe('the translation memory survives a reload', () => {
     const second = bench({ sources: [rssSource('hn')], payloads: { hn: page() } })
     wire(second)
     await second.settle()
-    await waitFor(() => { expect(screen.queryByText(zh['action.quote'])).not.toBeNull() })
+    await waitFor(() => { expect(screen.queryByTitle(zh['action.back'])).not.toBeNull() })
     fireEvent.click(await screen.findByTitle(zh['action.translate']))
     await waitFor(() => {
       expect(second.container.querySelector('[class*="article"]')?.textContent).toContain('译：First sentence here.')
@@ -3344,7 +3310,7 @@ describe('the 最近阅读 page', () => {
     expect(screen.getByText('更早读过的一篇')).toBeTruthy()
     // …and the second one, whose entry the feed still publishes, opens again.
     fireEvent.click(screen.getByText('第二条'))
-    await waitFor(() => { expect(screen.queryByText(zh['action.quote'])).not.toBeNull() })
+    await waitFor(() => { expect(screen.queryByTitle(zh['action.back'])).not.toBeNull() })
     expect(ui.mocks.recordRead).toHaveBeenCalledWith(expect.objectContaining({ title: '第二条' }))
   })
 
@@ -3360,7 +3326,7 @@ describe('the 最近阅读 page', () => {
     fireEvent.click(screen.getByTitle(zh['action.recent']))
     expect(await screen.findByText('已经滚出订阅窗口的一篇')).toBeTruthy()
     fireEvent.click(screen.getByText('已经滚出订阅窗口的一篇'))
-    await waitFor(() => { expect(screen.queryByText(zh['action.quote'])).not.toBeNull() })
+    await waitFor(() => { expect(screen.queryByTitle(zh['action.back'])).not.toBeNull() })
   })
 
   it('cannot reopen an entry whose source was deleted, and says why', async () => {
@@ -3503,7 +3469,7 @@ const settleFrame = async (): Promise<void> => {
     const ui = bench({ sources: [rssSource('hn')], payloads: { hn: longFeed() } })
     await ui.settle()
     fireEvent.click((await screen.findAllByRole('button', { name: /An English article/ }))[0] as HTMLElement)
-    await screen.findByText(zh['action.quote'])
+    await screen.findByTitle(zh['action.back'])
     const scroller = ui.container.querySelector('[class*="detailBody"]') as HTMLElement
     // The wheel is the gesture that makes the scroll the reader's (a bare
     // scroll event is programmatic as far as the pane is concerned).
@@ -3533,10 +3499,10 @@ const settleFrame = async (): Promise<void> => {
     const ui = bench({ sources: [rssSource('hn')], payloads: { hn: longFeed() } })
     await ui.settle()
     fireEvent.click((await screen.findAllByRole('button', { name: /An English article/ }))[0] as HTMLElement)
-    await screen.findByText(zh['action.quote'])
+    await screen.findByTitle(zh['action.back'])
     const scroller = ui.container.querySelector('[class*="detailBody"]') as HTMLElement
     // Block 1 starts 300px into the article, 50px into it: 350.
-    await waitFor(() => { expect(screen.queryByText(zh['action.quote'])).not.toBeNull() })
+    await waitFor(() => { expect(screen.queryByTitle(zh['action.back'])).not.toBeNull() })
     vi.restoreAllMocks()
   })
 
@@ -3545,7 +3511,7 @@ const settleFrame = async (): Promise<void> => {
     const ui = bench({ sources: [rssSource('hn')], payloads: { hn: longFeed() } })
     await ui.settle()
     fireEvent.click((await screen.findAllByRole('button', { name: /An English article/ }))[0] as HTMLElement)
-    await screen.findByText(zh['action.quote'])
+    await screen.findByTitle(zh['action.back'])
     await settleFrame()
     const scroller = ui.container.querySelector('[class*="detailBody"]') as HTMLElement
     fireEvent.wheel(scroller)
@@ -3578,7 +3544,7 @@ const settleFrame = async (): Promise<void> => {
     const ui = bench({ sources: [rssSource('hn')], payloads: { hn: longFeed() } })
     await ui.settle()
     // No click on a card, no memory: the place alone brings it back.
-    await waitFor(() => { expect(screen.queryByText(zh['action.quote'])).not.toBeNull() })
+    await waitFor(() => { expect(screen.queryByTitle(zh['action.back'])).not.toBeNull() })
     // The id the pane's own parser gives this entry: the place has to name the
     // same entry, or nothing is found and the article opens at the top.
     expect((ui.mocks.recordRead.mock.calls[0]?.[0] as { entryId: string }).entryId).toBe(entryId)
@@ -3597,7 +3563,7 @@ const settleFrame = async (): Promise<void> => {
     const first = bench({ sources: [rssSource('hn')], payloads: { hn: longFeed() } })
     await first.settle()
     fireEvent.click((await screen.findAllByRole('button', { name: /An English article/ }))[0] as HTMLElement)
-    await screen.findByText(zh['action.quote'])
+    await screen.findByTitle(zh['action.back'])
     await settleFrame()
     const scroller1 = first.container.querySelector('[class*="detailBody"]') as HTMLElement
     fireEvent.wheel(scroller1)
@@ -3611,7 +3577,7 @@ const settleFrame = async (): Promise<void> => {
 
     const second = bench({ sources: [rssSource('hn')], payloads: { hn: longFeed() } })
     await second.settle()
-    await waitFor(() => { expect(screen.queryByText(zh['action.quote'])).not.toBeNull() })
+    await waitFor(() => { expect(screen.queryByTitle(zh['action.back'])).not.toBeNull() })
     await settleFrame()
     const scroller2 = second.container.querySelector('[class*="detailBody"]') as HTMLElement
     // The point: NOT the top. jsdom has no Range geometry, so the text-offset
@@ -3634,7 +3600,7 @@ const settleFrame = async (): Promise<void> => {
     const first = bench({ sources: [rssSource('hn')], payloads: { hn: longFeed() } })
     await first.settle()
     fireEvent.click((await screen.findAllByRole('button', { name: /An English article/ }))[0] as HTMLElement)
-    await screen.findByText(zh['action.quote'])
+    await screen.findByTitle(zh['action.back'])
     fireEvent.click(await screen.findByTitle(zh['action.translate']))
     await waitFor(() => {
       expect(first.container.querySelector('[class*="article"]')?.textContent).toContain('译：First sentence here.')
@@ -3659,7 +3625,7 @@ const settleFrame = async (): Promise<void> => {
 
     const second = bench({ sources: [rssSource('hn')], payloads: { hn: longFeed() } })
     await second.settle()
-    await waitFor(() => { expect(screen.queryByText(zh['action.quote'])).not.toBeNull() })
+    await waitFor(() => { expect(screen.queryByTitle(zh['action.back'])).not.toBeNull() })
     // The translation comes back by itself (the page's session cache), then the
     // position must land on the same sentence in the SAME translated geometry.
     await waitFor(() => {
@@ -3703,7 +3669,7 @@ const settleFrame = async (): Promise<void> => {
     const ui = bench({ sources: [rssSource('hn')], payloads: { hn: longFeed() } })
     await ui.settle()
     fireEvent.click((await screen.findAllByRole('button', { name: /An English article/ }))[0] as HTMLElement)
-    await screen.findByText(zh['action.quote'])
+    await screen.findByTitle(zh['action.back'])
     await settleFrame()
     const scroller = ui.container.querySelector('[class*="detailBody"]') as HTMLElement
     fireEvent.wheel(scroller)
@@ -3759,7 +3725,7 @@ const settleFrame = async (): Promise<void> => {
     const ui = bench({ sources: [rssSource('hn')], payloads: { hn: longFeed() } })
     await ui.settle()
     fireEvent.click((await screen.findAllByRole('button', { name: /An English article/ }))[0] as HTMLElement)
-    await screen.findByText(zh['action.quote'])
+    await screen.findByTitle(zh['action.back'])
     await settleFrame()
     const scroller = ui.container.querySelector('[class*="detailBody"]') as HTMLElement
     // Block 0 is 42 chars (420px); 500px in is block 1 ("Another paragraph
@@ -3872,7 +3838,7 @@ describe('the compact panel (panel-responsive-spec P2)', () => {
     })
     await ui.settle()
     fireEvent.click(await screen.findByText('一篇长文'))
-    expect(await screen.findByText(zh['detail.composerLabel'])).toBeTruthy()
+    expect(await screen.findByTitle(zh['action.back'])).toBeTruthy()
     // The bar carries no title: the article's heading below is the one place it reads.
     expect(screen.getAllByText('一篇长文')).toHaveLength(1)
     expect(screen.queryByRole('button', { name: zh['action.copyLink'] })).toBeNull()
@@ -3920,7 +3886,7 @@ describe('the compact detail bar takes the title once the heading scrolls away',
     })
     await ui.settle()
     fireEvent.click(await screen.findByText('一篇长文'))
-    expect(await screen.findByText(zh['detail.composerLabel'])).toBeTruthy()
+    expect(await screen.findByTitle(zh['action.back'])).toBeTruthy()
     const heading = screen.getByRole('heading', { level: 1, name: '一篇长文' })
     expect(screen.getAllByText('一篇长文')).toHaveLength(1)
     // Below the fold (a restored position mid-render) is not "scrolled past".
@@ -3976,7 +3942,7 @@ describe('notes: take one from a selection, find it in the notes face, bring it 
     })
     await ui.settle()
     fireEvent.click(await screen.findByText('位置编码'))
-    await screen.findByText(zh['action.quote'])
+    await screen.findByTitle(zh['action.back'])
     return ui
   }
 
@@ -4000,10 +3966,11 @@ describe('notes: take one from a selection, find it in the notes face, bring it 
 
   it('asks for a selection first, then saves the excerpt with its block and comment', async () => {
     const ui = await openedArticle()
-    fireEvent.click(screen.getByText(zh['notes.take']))
-    expect(screen.getByText(zh['notes.takeHint'])).toBeTruthy()
+    // The way in is the quote plugin's selection menu, which asks this target;
+    // nothing is selected yet, so the menu has no 记笔记 to offer.
+    expect(noteTargetForSelection()).toBeUndefined()
     selectParagraph('旋转 query 和 key。')
-    fireEvent.click(screen.getByText(zh['notes.take']))
+    act(() => { noteTargetForSelection()?.start() })
     const sheet = await screen.findByRole('dialog', { name: zh['notes.sheetTitle'] })
     fireEvent.change(within(sheet).getByRole('textbox'), { target: { value: '为什么只看相对距离？' } })
     fireEvent.click(within(sheet).getByText(`${zh['notes.save']} ⌘⏎`))
@@ -4022,9 +3989,10 @@ describe('notes: take one from a selection, find it in the notes face, bring it 
     await waitFor(() => { expect(ui.mocks.recordDiscussion).toHaveBeenCalled() })
   })
 
-  it('puts the quiz-me request into the draft from the end of the article', async () => {
+  it('puts the quiz-me request into the draft from the tab row (and the end of the article)', async () => {
     const ui = await openedArticle()
-    fireEvent.click(screen.getByRole('button', { name: zh['notes.check'] }))
+    expect(screen.getByRole('button', { name: `${zh['notes.check']} →` })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: zh['notes.checkShort'] }))
     const written = ui.mocks.setDraft.mock.calls.at(-1)?.[0] as string
     expect(written).toContain('考考我：《位置编码》')
     expect(written).toContain('reader_note')
@@ -4047,9 +4015,9 @@ describe('notes: take one from a selection, find it in the notes face, bring it 
     })
     await ui.settle()
     fireEvent.click(await screen.findByText('位置编码'))
-    await screen.findByText(zh['action.quote'])
+    await screen.findByTitle(zh['action.back'])
     selectParagraph('旋转 query 和 key。')
-    fireEvent.click(screen.getByText(zh['notes.take']))
+    act(() => { noteTargetForSelection()?.start() })
     const sheet = await screen.findByRole('dialog', { name: zh['notes.sheetTitle'] })
     fireEvent.change(within(sheet).getByRole('textbox'), { target: { value: '只看相对距离' } })
     fireEvent.click(within(sheet).getByText(`${zh['notes.save']} ⌘⏎`))
