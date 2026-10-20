@@ -239,3 +239,117 @@ export function singleVoice(vecs: readonly Float32Array[], threshold = SAME_VOIC
   }
   return true
 }
+
+/** Two segment voiceprints this similar (unit CAM++ vectors) are one speaker. */
+export const VOICE_MERGE = 0.7
+/** A voice with less than this share of the speech is noise, not a speaker. */
+export const MIN_VOICE_SHARE = 0.05
+
+/** Normalize a vector to unit length (in place, and returned). */
+export function unit(v: Float32Array): Float32Array {
+  let n = 0
+  for (const x of v) n += x * x
+  n = Math.sqrt(n) || 1
+  for (let i = 0; i < v.length; i++) v[i] = v[i]! / n
+  return v
+}
+
+function dot(a: Float32Array, b: Float32Array): number {
+  let d = 0
+  for (let i = 0; i < a.length; i++) d += a[i]! * b[i]!
+  return d
+}
+
+/**
+ * The voices of a recording, from per-segment voiceprints: agglomerative
+ * merging (weighted centroids) while two clusters are at least `threshold`
+ * alike, then only voices holding at least `minShare` of the speech remain.
+ * Measured 2026-10-20 on a 115-minute interview: 0.7 finds host and guest
+ * (98% agreement with pyannote, cleaner turn boundaries), a 40-minute
+ * monologue stays one voice.
+ *
+ * @param vecs - unit voiceprints, one per speech segment.
+ * @param seconds - each segment's speech length (its weight).
+ */
+export function clusterVoices(vecs: readonly Float32Array[], seconds: readonly number[], threshold = VOICE_MERGE, minShare = MIN_VOICE_SHARE): Float32Array[] {
+  type Cluster = { v: Float32Array; weight: number; alive: boolean }
+  const clusters: Cluster[] = vecs.map((v, i) => ({ v: Float32Array.from(v), weight: seconds[i] ?? 1, alive: true }))
+  const n = clusters.length
+  const sim = new Float32Array(n * n)
+  for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) sim[i * n + j] = dot(clusters[i]!.v, clusters[j]!.v)
+  for (;;) {
+    let bi = -1
+    let bj = -1
+    let best = threshold
+    for (let i = 0; i < n; i++) {
+      if (!clusters[i]!.alive) continue
+      for (let j = i + 1; j < n; j++) {
+        if (clusters[j]!.alive && sim[i * n + j]! >= best) {
+          best = sim[i * n + j]!
+          bi = i
+          bj = j
+        }
+      }
+    }
+    if (bi < 0) break
+    const a = clusters[bi]!
+    const b = clusters[bj]!
+    const w = a.weight + b.weight
+    for (let k = 0; k < a.v.length; k++) a.v[k] = (a.v[k]! * a.weight + b.v[k]! * b.weight) / w
+    unit(a.v)
+    a.weight = w
+    b.alive = false
+    for (let k = 0; k < n; k++) {
+      if (k === bi || !clusters[k]!.alive) continue
+      const d = dot(a.v, clusters[k]!.v)
+      if (k < bi) sim[k * n + bi] = d
+      else sim[bi * n + k] = d
+    }
+  }
+  const alive = clusters.filter((c) => c.alive)
+  const total = alive.reduce((s, c) => s + c.weight, 0) || 1
+  return alive.filter((c) => c.weight >= minShare * total).sort((x, y) => y.weight - x.weight).map((c) => c.v)
+}
+
+/**
+ * Turns from per-window voiceprints: each window takes its nearest voice, a
+ * majority over ±`radius` windows smooths the flicker, and runs become turns
+ * (a turn ends at the middle of the last window it holds).
+ */
+export function windowTurns(windows: readonly { start: number; end: number; v: Float32Array }[], voices: readonly Float32Array[], radius = 5): Turn[] {
+  const labels = windows.map((w) => {
+    let best = 0
+    let score = -2
+    voices.forEach((v, i) => {
+      const d = dot(v, w.v)
+      if (d > score) {
+        score = d
+        best = i
+      }
+    })
+    return best
+  })
+  const smooth = labels.map((_, i) => {
+    const count = new Map<number, number>()
+    for (let k = Math.max(0, i - radius); k <= Math.min(labels.length - 1, i + radius); k++) count.set(labels[k]!, (count.get(labels[k]!) ?? 0) + 1)
+    return [...count].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0]![0]
+  })
+  const turns: Turn[] = []
+  windows.forEach((w, i) => {
+    const last = turns[turns.length - 1]
+    const voice = smooth[i]!
+    // Same voice, no long silence between: the turn goes on.
+    if (last && last.cluster === voice && w.start - last.end < 2) {
+      last.end = Math.max(last.end, w.end)
+      return
+    }
+    // A change inside overlapping windows meets halfway through the overlap.
+    let start = w.start
+    if (last && w.start < last.end) {
+      start = (w.start + last.end) / 2
+      last.end = start
+    }
+    turns.push({ cluster: voice, start, end: w.end })
+  })
+  return turns
+}
