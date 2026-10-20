@@ -74,6 +74,29 @@ export function QuizView({ p, projectId, resourceId, quizId }: ViewProps & { pro
     })
   }
 
+  // 讲讲这题: a draft in the conversation input naming the question — before
+  // answering it asks for the approach (not the answer), after it asks why.
+  const explain = (question: LibraryQuizQuestion, number: number): boolean => {
+    if (quiz === undefined) return false
+    void p.bindTarget(resourceId === undefined ? { projectId } : { projectId, resourceId })
+    const entry = answers[question.id]
+    const key = question.kind === 'choice'
+      ? (question.options ?? []).map((option, at) => `${String.fromCharCode(65 + at)}. ${option}`).join('  ')
+      : ''
+    const text = entry === undefined || entry.void === true
+      ? t('prime.explainHint', { quiz: quiz.id, number: String(number), prompt: question.prompt, options: key })
+      : t('prime.explainAfter', {
+        quiz: quiz.id,
+        number: String(number),
+        prompt: question.prompt,
+        options: key,
+        given: entry.given === '' ? t('quiz.explainBlank') : entry.given,
+        answer: question.answer,
+        verdict: entry.pass === true ? t('quiz.explainRight') : entry.pass === false ? t('quiz.explainWrong') : t('quiz.explainOpen'),
+      })
+    return p.primeConversation(text.replace(/\n\n+/g, '\n'))
+  }
+
   const finish = async (): Promise<void> => {
     if (quiz === undefined) return
     const open = quiz.questions.filter(item => answers[item.id]?.void !== true && answers[item.id]?.pass === undefined)
@@ -136,6 +159,7 @@ export function QuizView({ p, projectId, resourceId, quizId }: ViewProps & { pro
             draft={drafts[question.id] ?? ''}
             onDraft={text => { recordDraft(question.id, text) }}
             onAnswer={entry => { record(question.id, entry) }}
+            onExplain={() => explain(question, at + 1)}
           />
         ))}
         {notice !== undefined && <div className={css.notice}>{notice}</div>}
@@ -152,7 +176,7 @@ export function QuizView({ p, projectId, resourceId, quizId }: ViewProps & { pro
 }
 
 /** One question on the paper: its number, two tags, the answer control, the feedback. The evidence quote shows only after answering — quoted up front, it often IS the answer. */
-function QuestionCard({ p, profile, question, number, answered, draft, onDraft, onAnswer }: {
+function QuestionCard({ p, profile, question, number, answered, draft, onDraft, onAnswer, onExplain }: {
   p: ViewProps['p']
   profile: LibraryProfile
   question: LibraryQuizQuestion
@@ -161,8 +185,11 @@ function QuestionCard({ p, profile, question, number, answered, draft, onDraft, 
   draft: string
   onDraft: (value: string) => void
   onAnswer: (entry: Answered) => void
+  /** Put a 讲讲这题 draft into the conversation input; false without a conversation. */
+  onExplain: () => boolean
 }): ReactNode {
   const { t } = p
+  const [explainNotice, setExplainNotice] = useState<string | undefined>()
   const correct = question.kind === 'choice' ? choiceIndex(question.options ?? [], question.answer) : -1
   const evidenceTone = question.evidence.kind === 'photo' ? 'photo' : question.evidence.kind === 'web' ? 'web' : 'know'
   // A choice or fill quote often IS the answer, so it waits for the feedback.
@@ -262,9 +289,15 @@ function QuestionCard({ p, profile, question, number, answered, draft, onDraft, 
         <button
           type="button"
           className={css.textButton}
+          onClick={() => { setExplainNotice(onExplain() ? t('quiz.explainPrimed') : t('notice.noConversation')) }}
+        >{answered === undefined || answered.void === true ? t('quiz.explainBefore') : t('quiz.explain')}</button>
+        <button
+          type="button"
+          className={css.textButton}
           onClick={() => { onAnswer({ given: answered?.given ?? '', void: answered?.void !== true }) }}
         >{answered?.void === true ? t('quiz.unvoid') : t('quiz.void')}</button>
       </div>
+      {explainNotice !== undefined && <div className={css.muted}>{explainNotice}</div>}
     </section>
   )
 }
