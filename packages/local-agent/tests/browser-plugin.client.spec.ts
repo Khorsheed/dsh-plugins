@@ -1,10 +1,14 @@
 /**
- * ui-kimi plugin halves: the browser entry's dictionary and header-slot
- * registrations against the real SlotRegistry (with fiber teardown proving
- * removal — HMR safety), the inert node entry, and the「本机 Agent 委派」
- * family card: one `plugins.item` entry gated on the core row's own served
- * namespace, with the harness-card registry exposed on the localAgentUi
- * service.
+ * ui-local-agent browser half: the browser entry's dictionary and
+ * header-slot registrations against the real SlotRegistry (with fiber
+ * teardown proving removal — HMR safety), the member composer, and
+ * the「本机 Agent 委派」family card: one `plugins.item` entry registered
+ * with the client bundle itself, with the harness-card registry exposed on
+ * the localAgentUi service. The card carries NO served-namespace gate: the
+ * settings describe answer only lists namespaces whose Config schema has a
+ * volatile field, this core's Config has none, so gating on it meant the
+ * card never mounted (and companions on the new core had already given up
+ * their standalone seats — no local-agent card rendered at all).
  */
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
@@ -32,11 +36,10 @@ function pluginItemIds(ctx: Context): (string | undefined)[] {
 
 /**
  * Boot the browser half over a real slot tree that declares the header list
- * and the plugins.item list. `served` names the namespaces the configForms
- * stub's whileServed gate sees; 'legacy' boots without configForms at all
- * (the pre-alpha.2 line — the family card must stay silent there).
+ * and the plugins.item list. No configForms service on purpose: the family
+ * card must register on every host line the bundle loads on.
  */
-async function bench(line: { served: readonly string[] } | 'legacy' = { served: ['local-agent'] }): Promise<{ ctx: Context; fiber: ReturnType<Context['plugin']> }> {
+async function bench(): Promise<{ ctx: Context; fiber: ReturnType<Context['plugin']> }> {
   const ctx = new Context()
   await ctx.plugin(SlotRegistry).await()
   ctx.slots.register({
@@ -57,14 +60,6 @@ async function bench(line: { served: readonly string[] } | 'legacy' = { served: 
   ctx.provide('remote', { commands: commandsRemote, localAgentGateway })
   ctx.provide('remote.commands', commandsRemote)
   ctx.provide('remote.localAgentGateway', localAgentGateway)
-  if (line !== 'legacy') {
-    const served = new Set(line.served)
-    ctx.provide('configForms', {
-      get: () => { throw new Error('unused') },
-      whileServed: (namespaces: readonly string[], register: () => () => void) =>
-        namespaces.some(ns => served.has(ns)) ? register() : () => {},
-    } as never)
-  }
   ctx.provide('locale', new LocaleRuntime(ctx))
   const fiber = ctx.plugin({ inject: [...inject], apply })
   await fiber.await()
@@ -103,18 +98,11 @@ describe('ui-local-agent browser half', () => {
     expect(Object.keys(en).sort()).toEqual(Object.keys(zh).sort())
   })
 
-  it('registers the「本机 Agent 委派」family card on the Plugins page while the core row is served, and fiber teardown removes it', async () => {
-    const { ctx, fiber } = await bench({ served: ['local-agent'] })
+  it('registers the「本机 Agent 委派」family card on the Plugins page unconditionally — no configForms service needed — and fiber teardown removes it', async () => {
+    const { ctx, fiber } = await bench()
     expect(pluginItemIds(ctx)).toContain('local-agent')
     await fiber.dispose()
     expect(pluginItemIds(ctx)).not.toContain('local-agent')
-  })
-
-  it('registers no family card when the core row is not served, nor on the pre-configForms line', async () => {
-    const { ctx } = await bench({ served: [] })
-    expect(pluginItemIds(ctx)).toEqual([])
-    const legacy = await bench('legacy')
-    expect(pluginItemIds(legacy.ctx)).toEqual([])
   })
 
   it('exposes the harness-card registry on the localAgentUi service', async () => {
