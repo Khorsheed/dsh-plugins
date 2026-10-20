@@ -266,6 +266,8 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     cancelLocalTranscript: request => remote.cancelLocalTranscript(request),
     mediaStates: request => remote.mediaStates(request),
     speakerNames: request => remote.speakerNames(request),
+    polish: request => remote.polish(request),
+    setPolishOff: request => remote.setPolishOff(request),
     nameSpeaker: request => remote.nameSpeaker(request),
     canOpenSession: () => workspaceNav()?.openSession !== undefined,
     openSession: target => {

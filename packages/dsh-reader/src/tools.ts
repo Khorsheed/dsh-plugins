@@ -15,6 +15,7 @@
  *
  * @module @khorsheed/dsh-reader/tools
  */
+import { parsePolish, sourceKey } from './polish.ts'
 import { defineTool, type ToolDefinition } from '@deepseek-ai/dsh-tools'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ReaderDiscussionPoint, ReaderEntryNotes, ReaderEntrySnapshot, ReaderNotesStore } from './notes.ts'
@@ -337,5 +338,54 @@ export function readerToolDefinitions(core: ReaderToolCore, notes: ReaderNotesSt
       return `完成：《${target.title}》新增${kind === 'check' ? '考考我' : '讨论'}笔记 ${created.id}，${String(points.length)} 点。`
     },
   })
-  return [tagOrigin(read), tagOrigin(write)]
+  const translate = defineTool({
+    name: 'reader_translate',
+    description:
+      'Write your Chinese translation of an article back into the user\'s reader (灵感空间), paragraph by paragraph — ONLY when the user asked you to 润色译文. '
+      + 'Read the original with reader_read (from=…), translate whole paragraphs from the original (faithful, natural Chinese; names, terms and speakers consistent), '
+      + 'then send them here as lines 「¶12：译文」 (one paragraph per line, the ¶ numbers reader_read showed). Repeat batch by batch until the answer says everything is done.',
+    parameters: {
+      text: { type: 'string', required: true, description: 'Lines 「¶12：译文」, one paragraph each. An 「文章：<id>」 first line also names the article.' },
+      entry: { type: 'string', description: 'The article (id, link or title); default: the one this conversation discussed.' },
+    },
+    output: {
+      schema: { type: 'string' },
+      render: (_args, value) => [{ type: 'text', text: String(value) }],
+    },
+    execute: async (args: { text?: string; entry?: string }, exec: { agent?: Agent }): Promise<string> => {
+      const raw = args.text ?? ''
+      const named = /^\s*文章\s*[：:]\s*(.+)$/m.exec(raw)?.[1]?.trim()
+      const sessionId = exec.agent?.session?.id === undefined ? undefined : String(exec.agent.session.id)
+      const { entries: recent } = await core.listRecent()
+      const candidates = candidatesOf(recent, notes.entries(), notes)
+      const wanted = (args.entry ?? named ?? '').trim()
+      let target: Candidate | undefined
+      if (wanted !== '') {
+        const matches = resolveEntry(wanted, candidates)
+        if (matches.length !== 1) throw new ReaderToolError(matches.length === 0 ? `失败：没有找到文章「${wanted}」。` : `失败：「${wanted}」对应多篇，请用 id。`)
+        target = matches[0]
+      } else {
+        const discussed = sessionId === undefined ? undefined : notes.sessionEntry(sessionId)
+        target = candidates.find(item => item.entryId === discussed)
+        if (target === undefined) throw new ReaderToolError('失败：这个会话还没有读过哪篇文章——先用 reader_read 读它，或用 entry 指明。')
+      }
+      if (target === undefined) throw new ReaderToolError('失败：没有找到文章。')
+      const snapshot = notes.readSnapshot(target.entryId)
+      if (snapshot === undefined) throw new ReaderToolError(`失败：《${target.title}》还没有原文快照——请读者在灵感空间里打开它一次。`)
+      const updates = parsePolish(raw)
+      if (updates.size === 0) throw new ReaderToolError('失败：没有读到译文——每行写成「¶12：译文」。')
+      const total = snapshot.paragraphs.length
+      const outside = [...updates.keys()].filter(index => index < 1 || index > total)
+      const view = notes.polish.write(target.entryId, sourceKey(snapshot.paragraphs), total, updates)
+      const missing: number[] = []
+      for (let index = 1; index <= total; index++) if (view.paragraphs[String(index)] === undefined && snapshot.paragraphs[index - 1] !== '') missing.push(index)
+      const lines = [`完成：写回 ${String(updates.size - outside.length)} 段，《${target.title}》已润色 ${String(view.done)} / ${String(total)} 段。`]
+      if (outside.length > 0) lines.push(`忽略了不存在的段落：${outside.map(index => `¶${String(index)}`).join('、')}（全文共 ${String(total)} 段）。`)
+      lines.push(missing.length === 0
+        ? '全部段落都已润色，读者那边已经换成你的译文。'
+        : `还剩 ${String(missing.length)} 段，下一批从 ¶${String(missing[0])} 开始：reader_read from=${String(missing[0])}。`)
+      return lines.join('\n')
+    },
+  })
+  return [tagOrigin(read), tagOrigin(write), tagOrigin(translate)]
 }

@@ -15,6 +15,7 @@
     "src/media-host.ts",
     "src/local-transcribe.ts",
     "src/notes.ts",
+    "src/polish.ts",
     "src/notes-types.ts",
     "src/remote.ts",
     "src/service.ts",

@@ -18,7 +18,7 @@ export const READER_SKILL_NAME = 'reader'
 /** The one catalog line the model sees before loading it. */
 export const READER_SKILL_DESCRIPTION =
   'How to work with the user\'s reader (灵感空间) articles and notes: reading with reader_read, when and how to write '
-  + 'conclusions and discussion notes with reader_note, and how a 「让Agent考考我」 (quiz me) round runs. Load before reader_note.'
+  + 'conclusions and discussion notes with reader_note, how a 「让Agent考考我」 (quiz me) round runs, and how to 润色 (re-translate) an article with reader_translate. Load before reader_note or reader_translate.'
 
 /** The skill body. */
 export const READER_SKILL_CONTENT = `# reader — discussing an article and keeping what it came to
@@ -64,4 +64,19 @@ The user finished the article and wants to see what they really understood by ex
    right, each with its explanation and ¶; a last line 「其余 N 题讲到位了」 when some were fine.
 
 No score, no grade, no "retake": another round is simply another discussion note.
+
+## 让Agent润色译文 — reader_translate
+
+The user asked for a better Chinese translation of the whole article than the browser's machine translation.
+
+1. Read the original with reader_read, a batch at a time (\`from\`). Translate from the ORIGINAL, whole paragraphs,
+   with the paragraphs around them in mind: faithful, natural Chinese, not word for word. Keep names, terms and how
+   each speaker is rendered consistent across batches. Do not add notes or explanations inside the translation.
+   A transcript paragraph starts with \`[mm:ss] 名字：\` — translate only the speech after it.
+2. Send each batch with reader_translate: \`text\` = lines \`¶12：译文\`, one paragraph per line, the ¶ numbers
+   reader_read showed. Its answer says how many are done and where the next batch starts.
+3. Keep going batch after batch in the same turn until it says every paragraph is done. Do not stop to ask. Follow
+   any wish the user added to the request (「口语一点」…).
+4. Finish with one line to the user: done, and anything you could not render well. Do not paste the translation
+   into the conversation — it is in the reader.
 `

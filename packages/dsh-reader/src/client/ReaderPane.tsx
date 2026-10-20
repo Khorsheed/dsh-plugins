@@ -39,6 +39,8 @@ import { useMedia } from './useMedia.ts'
 import { useLocalTranscript } from './useLocalTranscript.ts'
 import { useMediaStates } from './useMediaStates.ts'
 import { SpeakerLegend } from './SpeakerLegend.tsx'
+import { usePolish } from './usePolish.ts'
+import { blockElements } from './notes.ts'
 import { readMediaMeta } from '../media.ts'
 import { formatClock } from '../captions.ts'
 import { MEDIA_QUERIES } from './selectors.ts'
@@ -1480,6 +1482,24 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
     },
   })
   const localActive = localFace.status !== undefined && ['fetching', 'queued', 'transcribing'].includes(localFace.status.state)
+  // 润色: the agent's translation layer over the body.
+  const polishFace = usePolish({
+    entryId: openEntry?.id,
+    articleHtml,
+    articleRef,
+    translating: translatePhase === 'ready' || translatePhase === 'working',
+    translateView,
+    remote: props,
+    tagLabel: t('polish.tag'),
+    tagTitle: t('polish.tagTitle'),
+  })
+  /** Ask the agent to polish the whole article (or continue at a paragraph). */
+  const requestPolish = useCallback((from?: number) => {
+    const article = articleRef.current
+    const total = polishFace.view?.total ?? (article === null ? 0 : blockElements(article).length)
+    notesFace.polish(total, from)
+    polishFace.requested()
+  }, [polishFace, notesFace])
   // The compact bar's title (see `titleScrolledAway`): watch the article's
   // heading leave the body through its top.
   useEffect(() => {
@@ -3887,6 +3907,15 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
                 <span className={css.translateMenuLabel}>{t(item.key)}</span>
               </button>
             ))}
+            <button
+              type="button"
+              role="menuitem"
+              className={css.translateMenuItem}
+              onClick={() => { setTranslateMenu(false); requestPolish() }}
+            >
+              <span className={css.translateCheck} />
+              <span className={css.translateMenuLabel}>{t('polish.action')}</span>
+            </button>
             {openEntry.media !== undefined && (
               <button
                 type="button"
@@ -3922,7 +3951,13 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
       </span>
     )
     /** The detail's ordinary actions: inline in the wide bar, in ⋯ on a compact one. */
+    /** A foreign body the globe does not offer (no on-device translator): the agent needs none. */
+    const polishOutsideGlobe = !translationOffered && articleHtml !== null && articleHtml.length > 0 && !isTargetLanguage(articleHtml.slice(0, 2000))
     const detailActions: PanelAction[] = [
+      // Also here, for a body the globe does not offer (no on-device translator): the agent needs none.
+      ...(polishOutsideGlobe
+        ? [{ id: 'polish', label: t('polish.action'), icon: <IconGlobeOutlineMedium size={16} />, menuOnly: true as const, onSelect: () => { requestPolish() } }]
+        : []),
       { id: 'copy', label: t('action.copyLink'), icon: <IconCopyOutlineMedium size={16} />, menuOnly: true, onSelect: () => { void copyLink() } },
       {
         id: 'open', label: t('action.openExternal'), icon: <IconRightUpOutlineMedium size={16} />, menuOnly: true,
@@ -3959,6 +3994,11 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
           <span className={css.barLabel}>{openEntry.title}</span>
           <span className={css.spacer} />
           {detailTranslate}
+          {polishOutsideGlobe && (
+            <button type="button" className={css.tool} title={t('polish.action')} onClick={() => { requestPolish() }}>
+              <IconGlobeOutlineMedium size={15} />
+            </button>
+          )}
           <button type="button" className={css.tool} title={t('action.copyLink')} onClick={() => { void copyLink() }}>
             <IconCopyOutlineMedium size={15} />
           </button>
@@ -4175,6 +4215,34 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
               <span>{t(mediaFace.media.kind === 'video' ? 'media.timeHint' : 'media.timeHintAudio')}</span>
               <button type="button" className={css.mediaLink} onClick={mediaFace.dismissHint}>{t('media.timeHintOk')}</button>
             </div>
+          )}
+          {/* The 润色 layer: progress while the agent writes, then a switch back to the machine translation. */}
+          {polishFace.view !== undefined ? (
+            <div className={`${css.polishStatus} ${polishFace.view.complete ? css.polishDone : ''}`}>
+              <span className={css.polishText}>
+                {polishFace.view.complete ? t('polish.done', { done: polishFace.view.done })
+                  : polishFace.stalled ? t('polish.stalled', { done: polishFace.view.done, total: polishFace.view.total })
+                    : t('polish.running', { done: polishFace.view.done, total: polishFace.view.total })}
+              </span>
+              {!polishFace.view.complete && !polishFace.stalled && (
+                <span className={css.translateBar}><i style={{ width: `${String(Math.round((polishFace.view.done / Math.max(1, polishFace.view.total)) * 100))}%` }} /></span>
+              )}
+              {polishFace.stalled && (() => {
+                const view = polishFace.view
+                let from = 1
+                while (from <= view.total && view.paragraphs[String(from)] !== undefined) from += 1
+                return (
+                  <button type="button" className={css.incompleteLink} onClick={() => { requestPolish(from) }}>
+                    {t('polish.continue', { count: view.total - view.done })}
+                  </button>
+                )
+              })()}
+              <button type="button" className={css.incompleteLink} onClick={() => { polishFace.setHidden(!polishFace.hidden) }}>
+                {polishFace.hidden ? t('polish.showPolish') : t('polish.showMachine')}
+              </button>
+            </div>
+          ) : polishFace.awaiting && (
+            <div className={css.polishStatus}><span className={css.polishText}>{t('polish.awaiting')}</span></div>
           )}
           {/* One line while the browser prepares or translates, with the cancel
               it needs; it disappears the moment the text is fully translated. */}

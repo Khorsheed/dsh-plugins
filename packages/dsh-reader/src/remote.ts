@@ -13,7 +13,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { ReaderService } from './service.ts'
 import type { ReaderNotesStore } from './notes.ts'
-import type { LocalTranscriptStatus, MediaCardStates, ReaderEntryIdentity, ReaderEntryNotes, ReaderMedia, ReaderNote, ReaderNoteInput, ReaderNoteOutcome } from './types.ts'
+import type { LocalTranscriptStatus, MediaCardStates, ReaderEntryIdentity, ReaderPolishView, ReaderEntryNotes, ReaderMedia, ReaderNote, ReaderNoteInput, ReaderNoteOutcome } from './types.ts'
 import type {
   ReaderAddFailure,
   ReaderAddOutcome,
@@ -409,6 +409,18 @@ export class ReaderRemoteService extends TypertRemoteService<ReaderRemoteConfig>
   @Remote('cancelLocalTranscript')
   cancelLocalTranscript(request: { entryId: string; force: boolean }): Promise<LocalTranscriptStatus> {
     return Promise.resolve(this.core.local.cancel(request.entryId, request.force))
+  }
+
+  /** The article's 润色 layer (the agent's translation), when there is one for its current text. */
+  @Remote('polish')
+  polish(request: { entryId: string }): Promise<ReaderPolishView | null> {
+    return Promise.resolve(this.notes.polishView(request.entryId) ?? null)
+  }
+
+  /** Show one paragraph's machine translation instead of the 润色 (or back). */
+  @Remote('setPolishOff')
+  setPolishOff(request: { entryId: string; paragraph: number; off: boolean }): Promise<ReaderPolishView | null> {
+    return Promise.resolve(this.notes.setPolishOff(request.entryId, request.paragraph, request.off) ?? null)
   }
 
   /** Hand the host the article's original text, block by block, for the model to read. */

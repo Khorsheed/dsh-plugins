@@ -118,6 +118,11 @@ const face = {
   localTranscript: request => ok(params.get('local') === '1'
     ? { entryId: request.entryId, state: 'transcribing', progress: 0.42, html: transcriptHtml.split('</p>').slice(0, 3).join('</p>').replace(/<p data-t/g, '<p data-src="local" data-t') + '</p>' }
     : { entryId: request.entryId, state: 'idle' }),
+  // &polish=1: the agent has polished two of the five transcript paragraphs.
+  polish: () => ok(params.get('polish') === '1'
+    ? { total: 5, done: 2, paragraphs: { 1: '大家好，最近我做了一场三十分钟的大语言模型讲座，算是一次入门介绍。', 2: '所以 Llama 2 70B 模型说白了就是你文件系统里的两个文件：参数文件和运行文件。' }, off: [], updatedAt: new Date().toISOString(), complete: false }
+    : null),
+  setPolishOff: () => ok(null),
   // &spk=1: a two-voice local transcript (names kept in memory).
   speakerNames: () => ok({ ...speakerNames }),
   nameSpeaker: request => { if (request.name.trim() === '') delete speakerNames[request.speaker]; else speakerNames[request.speaker] = request.name; return ok({ ...speakerNames }) },

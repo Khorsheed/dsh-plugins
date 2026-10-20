@@ -26,6 +26,8 @@
  *
  * @module @khorsheed/dsh-reader/notes
  */
+import { ReaderPolishStore, sourceKey } from './polish.ts'
+import type { ReaderPolishView } from './types.ts'
 import { createHash } from 'node:crypto'
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -345,6 +347,8 @@ export class ReaderNotesStore {
   private readonly memorySnapshots = new Map<string, ReaderEntrySnapshot>()
   /** The write queue: every mutation runs after the previous one settled. */
   private queue: Promise<unknown> = Promise.resolve()
+  /** The agent's 润色 translations, per article (keyed to the snapshot's text). */
+  readonly polish: ReaderPolishStore
 
   /**
    * @param config - the same state-root override the reader's main store takes.
@@ -353,6 +357,19 @@ export class ReaderNotesStore {
     this.root = resolveReaderStateRoot(config.stateRoot)
     this.file = join(this.root, READER_NOTES_FILE_NAME)
     this.snapshotsDir = join(this.root, READER_SNAPSHOTS_DIR)
+    this.polish = new ReaderPolishStore(this.root)
+  }
+
+  /** An article's 润色 layer, when it belongs to the text captured now. */
+  polishView(entryId: string): ReaderPolishView | undefined {
+    const snapshot = this.readSnapshot(entryId)
+    return this.polish.view(entryId, snapshot === undefined ? undefined : sourceKey(snapshot.paragraphs))
+  }
+
+  /** Turn one paragraph back to the machine translation, or to the 润色 again. */
+  setPolishOff(entryId: string, paragraph: number, off: boolean): ReaderPolishView | undefined {
+    const snapshot = this.readSnapshot(entryId)
+    return this.polish.setOff(entryId, snapshot === undefined ? undefined : sourceKey(snapshot.paragraphs), paragraph, off)
   }
 
   /** Whether the notes persist (false means memory-only, for this process). */

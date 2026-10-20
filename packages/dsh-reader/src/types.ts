@@ -899,6 +899,19 @@ export interface ReaderImageResult {
 
 export type * from './notes-types.ts'
 
+/** An article's 润色 layer as the browser shows it. */
+export interface ReaderPolishView {
+  /** Paragraphs in the article (the ¶ numbering the model read). */
+  readonly total: number
+  readonly done: number
+  /** ¶ number (1-based, as a string key) → the agent's translation. */
+  readonly paragraphs: Readonly<Record<string, string>>
+  /** Paragraphs the reader turned back to the machine translation. */
+  readonly off: readonly number[]
+  readonly updatedAt: string
+  readonly complete: boolean
+}
+
 /** What a video / audio card says about its transcript. */
 export type MediaCardState = 'platform' | 'local' | 'none' | 'fetching' | 'queued' | 'transcribing' | 'failed'
 

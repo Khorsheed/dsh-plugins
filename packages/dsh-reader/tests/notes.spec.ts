@@ -18,6 +18,7 @@ import {
   boundParagraphs,
   normalizeNotesDoc,
 } from '../src/notes.ts'
+import { parsePolish, sourceKey } from '../src/polish.ts'
 import { READ_PAGE_CHARS, headerOf, pointsOf, readerToolDefinitions, renderArticle, resolveEntry } from '../src/tools.ts'
 
 const article = { entryId: 'https://example.com/a', title: 'Positional encoding', url: 'https://example.com/a', source: 'Example' }
@@ -276,5 +277,45 @@ describe('sync marks', () => {
     const entry = store.entry(article.entryId)
     expect(entry?.notes[0]?.syncedTo).toMatchObject([{ canvasId: 'c', cardId: 'k1', canvasTitle: 'Board' }])
     expect(entry?.discussions?.[0]?.syncedTo).toMatchObject([{ cardId: 'k2' }])
+  })
+})
+
+describe('reader_translate and the 润色 layer', () => {
+  const recent = [{ entryId: article.entryId, sourceId: 's', title: article.title, url: article.url, readAt: '' }]
+  const run = async (args: Record<string, unknown>): Promise<string> => {
+    const tool = readerToolDefinitions({ listRecent: async () => ({ entries: recent }) }, store).find(item => item.name === 'reader_translate')!
+    const execute = (tool as unknown as { execute: (args: unknown, exec: unknown) => Promise<unknown> }).execute
+    return JSON.stringify(await execute(args, { agent: { session: { id: 'sess-1' } } }))
+  }
+
+  it('parses 「¶n：译文」 lines, a line without ¶ continuing the one before', () => {
+    expect([...parsePolish('¶1：第一段。\n¶2: 第二段，\n接着说。\n\n¶3：')]).toEqual([[1, '第一段。'], [2, '第二段，接着说。']])
+  })
+
+  it('stores the translations batch by batch and says where to go on', async () => {
+    await store.snapshot({ ...article, paragraphs: ['[0:00] A：One.', '[0:05] B：Two.', '[0:09] A：Three.'] })
+    const first = await run({ entry: article.entryId, text: '¶1：一。\n¶2：二。\n¶7：不存在' })
+    expect(first).toContain('已润色 2 / 3 段')
+    expect(first).toContain('¶7')
+    expect(first).toContain('reader_read from=3')
+    const second = await run({ entry: article.entryId, text: '¶3：三。' })
+    expect(second).toContain('全部段落都已润色')
+    expect(store.polishView(article.entryId)).toMatchObject({ total: 3, done: 3, complete: true, paragraphs: { 1: '一。', 3: '三。' } })
+  })
+
+  it('belongs to the text: a speaker rename keeps it, a re-transcription drops it', async () => {
+    await store.snapshot({ ...article, paragraphs: ['[0:00] A：One.', '[0:05] B：Two.'] })
+    await run({ entry: article.entryId, text: '¶1：一。' })
+    await store.snapshot({ ...article, paragraphs: ['[0:00] 主持人：One.', '[0:05] 嘉宾：Two.'] })
+    expect(store.polishView(article.entryId)?.done).toBe(1)
+    await store.snapshot({ ...article, paragraphs: ['[0:00] A：Something else.'] })
+    expect(store.polishView(article.entryId)).toBeUndefined()
+    expect(sourceKey(['[1:02:03] 嘉宾：x'])).toBe(sourceKey(['[1:02:03] 说话人 B：x']))
+  })
+
+  it('turns one paragraph back to the machine translation', async () => {
+    await store.snapshot({ ...article, paragraphs: ['One.', 'Two.'] })
+    await run({ entry: article.entryId, text: '¶1：一。\n¶2：二。' })
+    expect(store.setPolishOff(article.entryId, 2, true)?.off).toEqual([2])
   })
 })

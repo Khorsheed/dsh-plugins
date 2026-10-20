@@ -3224,3 +3224,73 @@
 .article p[data-spk] > [data-reader-ts] {
   left: 3px;
 }
+
+/* ---- the 润色 layer: the agent's translation over a paragraph. */
+.polishStatus {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  margin: 0 0 12px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--dsw-alias-brand-primary) 9%, transparent);
+  font-size: var(--dsh-panel-text-meta, 12px);
+  color: var(--dsw-alias-brand-primary);
+}
+
+.polishDone {
+  background: color-mix(in srgb, var(--dsw-static-green-600, #2f9e44) 10%, transparent);
+  color: var(--dsw-static-green-600, #2f9e44);
+}
+
+.polishText {
+  flex: 1;
+  min-width: 0;
+}
+
+.article [data-reader-polish],
+.article [data-reader-polish-orig] {
+  display: none;
+}
+
+.article[data-polish-view] [data-polished] > [data-reader-orig-run] {
+  display: none;
+}
+
+.article[data-polish-view] [data-polished] > [data-reader-polish] {
+  display: block;
+}
+
+.article[data-polish-view='both'] [data-polished] > [data-reader-polish-orig] {
+  display: block;
+  margin-top: 4px;
+  padding-left: 10px;
+  border-left: 2px solid var(--dsw-alias-border-l2);
+  font-size: 0.93em;
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* The machine translation's own original lines would repeat the original. */
+.article[data-polish-view] [data-polished] + [data-reader-reveal] {
+  display: none;
+}
+
+.article [data-reader-polish-tag] {
+  margin-left: 6px;
+  padding: 0 6px;
+  border: none;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--dsw-alias-brand-primary) 10%, transparent);
+  font-family: inherit;
+  font-size: var(--dsh-panel-text-meta, 11px);
+  line-height: 18px;
+  color: var(--dsw-alias-brand-primary);
+  vertical-align: 1px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.article [data-reader-polish-tag]::before {
+  content: '✦ ' attr(data-label);
+}
