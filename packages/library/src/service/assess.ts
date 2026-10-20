@@ -214,12 +214,12 @@ export class LibraryServiceAssess extends LibraryServicePages {
           // a verbatim quote. No node in scope = the resource-level rule.
           if (gatedNode === undefined) {
             if (resource !== undefined && isThickResource(resource) && resource.meta?.bookKind === 'material') {
-              errors.push(`${label} asks about 《${resource.title}》's content from memory — it is a material book (specific text you cannot recall reliably). Quote a photographed page (evidence.kind photo) or a web copy (web, with url), or drill the learner's cards instead`)
+              errors.push(`${label} asks about 《${resource.title}》's content from memory — it is a material book (its exact text is what is tested). Ask the learner to photograph the page and quote it (evidence.kind photo); a web quote only from the SAME edition's text, verbatim — never your own words as a quote. If the book is really a textbook of domain knowledge, it is mis-typed: the learner switches it to 知识型 on the textbook page`)
             }
           } else {
             const blocker = coversVerbatimBlocker(gatedNode.covers, candidate => this.store.readResource(project.value.id, candidate), gatedRoadmap?.primaryResourceId)
             if (blocker !== undefined) {
-              errors.push(`${label} asks the station's content from memory, but ${blocker}. Quote a photographed page (evidence.kind photo) or the page on the web (web, with url), or drill the learner's cards instead`)
+              errors.push(`${label} asks the station's content from memory, but ${blocker}. Ask the learner to photograph the page and quote it (evidence.kind photo); a web quote only from the same text, verbatim — never your own words as a quote, never material from another project`)
             }
           }
         }

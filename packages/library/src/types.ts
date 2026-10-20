@@ -798,6 +798,8 @@ export type LibraryReviewRating = 'forgot' | 'fuzzy' | 'recalled'
 export interface LibraryBinding {
   readonly projectId: string
   readonly resourceId?: string
+  /** The project this session was bound to before a switch — what was said there is not this project's material. */
+  readonly previousProjectId?: string
 }
 
 /* --------------------------------------------------------------- events */

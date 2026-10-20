@@ -44,8 +44,13 @@ export class LibraryService extends LibraryServiceAssess {
     try {
       await this.store.withBindingsLock(() => {
         const bindings = new Map(this.store.readBindings())
+        // A switch to another project remembers where the session came from
+        // (the coach is told every turn that the earlier talk is not this
+        // project's material — a reused session once quizzed 数学 inside 神经科学).
+        const before = bindings.get(sessionId)
+        const previous = before === undefined ? undefined : before.projectId !== binding?.projectId ? before.projectId : before.previousProjectId
         if (binding === null) bindings.delete(sessionId)
-        else bindings.set(sessionId, { projectId: binding.projectId, ...(binding.resourceId === undefined ? {} : { resourceId: binding.resourceId }) })
+        else bindings.set(sessionId, { projectId: binding.projectId, ...(binding.resourceId === undefined ? {} : { resourceId: binding.resourceId }), ...(previous === undefined ? {} : { previousProjectId: previous }) })
         this.store.writeBindings(bindings)
       })
       if (binding !== null) this.changed(binding.projectId)
@@ -110,6 +115,15 @@ export class LibraryService extends LibraryServiceAssess {
   }
 
   /** 「教练最近记下」: card recordings from chats and quizzes, across projects, newest first. */
+  /** A project's name, when it exists (synchronous — the per-turn context reads it). */
+  projectName(projectId: string): string | undefined {
+    try {
+      return this.store.readProject(projectId)?.name
+    } catch {
+      return undefined
+    }
+  }
+
   /** The newest knowledge-point state changes across projects (今日 「最近的变化」). */
   async recentChanges(request: { limit?: number }): Promise<{ changes: (LibraryEvent & { projectId: string; projectName: string })[] }> {
     this.assertAlive('recentChanges')

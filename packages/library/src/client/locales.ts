@@ -76,6 +76,11 @@ export const zh = {
 
   'bookKind.knowledge': '知识型',
   'bookKind.material': '材料型',
+  'book.kindLine': '类型：{kind}',
+  'book.kindHint.knowledge': '考的是知识本身：教练可以按领域知识出题（教科书、科普书）。',
+  'book.kindHint.material': '考的就是原文：每道内容题都要引用你拍的书页（真题、文学、读本）。',
+  'book.kindToMaterial': '改为材料型',
+  'book.kindToKnowledge': '改为知识型',
   'tocSource.web': '目录已联网核对',
   'tocSource.model': '目录来自模型知识，未核对',
   'tocSource.photo': '目录来自照片',
@@ -553,6 +558,11 @@ export const en: Record<LibraryKey, string> = {
 
   'bookKind.knowledge': 'knowledge',
   'bookKind.material': 'material',
+  'book.kindLine': 'Type: {kind}',
+  'book.kindHint.knowledge': 'The knowledge is what is tested: the coach may quiz from domain knowledge (textbooks, popular science).',
+  'book.kindHint.material': 'The exact text is what is tested: every content question quotes a page you photographed (exam papers, literature, readers).',
+  'book.kindToMaterial': 'Make it material',
+  'book.kindToKnowledge': 'Make it knowledge',
   'tocSource.web': 'Contents verified on the web',
   'tocSource.model': 'Contents from model knowledge, unverified',
   'tocSource.photo': 'Contents from a photo',

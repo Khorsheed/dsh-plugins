@@ -125,6 +125,10 @@ export function renderBindingContext(service: LibraryService, sessionId: string)
     `Library: bound to project 「${project.name}」 (${project.id}, template ${project.template})`
       + (resource === undefined ? '.' : `, textbook 《${resource.title}》 (${resource.id}).`),
   ]
+  if (summary.binding.previousProjectId !== undefined && summary.binding.previousProjectId !== project.id) {
+    const previous = service.projectName(summary.binding.previousProjectId)
+    lines.push(`This session worked on another project${previous === undefined ? '' : ` 「${previous}」`} before switching here: nothing said about it is 「${project.name}」's material — never quiz, teach or note from it here.`)
+  }
   if (textbooks.length === 0) {
     lines.push('Textbooks: none yet — shelve them first (library_resource).')
   } else {

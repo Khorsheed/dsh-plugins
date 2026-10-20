@@ -602,3 +602,21 @@ describe('the learner\'s record stays the learner\'s (3080, 2026-10-20)', () => 
     expect((await service.listCards({ projectId: project })).cards).toEqual([])
   })
 })
+
+describe('a reused session and the book type (3080, 2026-10-20)', () => {
+  it('switching a session to another project tells the coach the earlier talk is not this project\'s material', async () => {
+    const { project } = await seed()
+    const other = (await call('library_project', { name: '数学', template: 'subject' })) as { project: { id: string } }
+    await call('library_binding', { project: other.project.id })
+    expect(service.getBinding('s_learn')).toMatchObject({ projectId: other.project.id, previousProjectId: project })
+    expect(renderBindingContext(service, 's_learn')).toMatch(/worked on another project 「神经科学」[\s\S]*never quiz, teach or note from it here/)
+  })
+
+  it('a textbook is knowledge unless said otherwise; the learner switches it', async () => {
+    const { project } = await seed()
+    const added = (await call('library_resource', { op: 'create', kind: 'book', title: '认知神经科学', origin: 'learner', toc: '简史\n细胞\n解剖', tocSource: { by: 'model' } })) as { resource: { id: string; meta?: { bookKind?: string } } }
+    expect(added.resource.meta?.bookKind).toBe('knowledge')
+    const flipped = await service.setBookKind({ projectId: project, resourceId: added.resource.id, bookKind: 'material' })
+    expect(flipped.ok && flipped.resource.meta?.bookKind).toBe('material')
+  })
+})

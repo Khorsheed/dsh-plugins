@@ -29,6 +29,8 @@ Per the proposal ([proposals/active/2026-10-19-library-point-mastery.md](../../.
 
 - **One way to ask, points as a ledger** (2026-10-20, from the user's walk-through): the point sheet's 「围绕它出一套」 duplicated the ask box and muddied the line of travel — removed; focusing a point happens only under 出一套新题 → 调整设置 → 重点考点. Points render as rows with what they hold — `asked` (distinct questions) and `right` (standing right now), open count, note count — and the sheet adds `history` (each sitting's share: paper or retake, right/total). The ask summary is labeled parts (范围 / 题型 / 题量 / 重点考点) with the buttons on their own row; range, kind and focus choices are wrapping toggles (the horizontal chip rows clipped long point titles).
 
+- **Book type and reused sessions** (2026-10-20): a coach typed 《认知神经科学》 (a domain textbook the learner owns) as `material`, so every question needed a verbatim quote — and, in a session reused from the 数学 project, it padded one with odd-function content and an invented "web quote". Now a thick resource defaults to `bookKind: 'knowledge'`; the tool says material is only for text whose exact wording is tested and that whose book it is says nothing about it; the material refusal asks for a photographed page and forbids the coach's own words as a quote; the textbook page shows 类型 with a one-line explanation and a switch (`setBookKind`). A binding switched to another project keeps `previousProjectId`, and the per-turn context warns that the earlier talk is not this project's material.
+
 ## Alternatives considered
 
 - **Retakes count toward passing**: rejected by the user — retaking the same questions would farm the pass line; passing stays a whole paper's job.

@@ -190,7 +190,7 @@ export function coversVerbatimBlocker(covers: readonly LibraryNodeCover[], resou
       const covered = resource(cover.ref)
       if (covered === undefined) continue
       if (isThickResource(covered)) {
-        if (covered.meta?.bookKind === 'material') return `《${covered.title}》 is a material book (specific text you cannot recall reliably)`
+        if (covered.meta?.bookKind === 'material') return `《${covered.title}》 is a material book (its exact text is what is tested)`
       } else {
         return `the station draws on 《${covered.title}》, a thin link (a linked text you cannot recall reliably)`
       }
