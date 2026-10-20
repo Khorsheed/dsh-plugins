@@ -42,6 +42,7 @@ import {
   boundTranslations,
   emptyStateDoc,
   memoryTableChars,
+  resolveReaderStateRoot,
   TRANSLATION_MEMORY_FILE,
 } from './store.ts'
 import {
@@ -85,6 +86,9 @@ import { delayUntilNext, isCatchUpDue } from './schedule.ts'
 import { arxivHtmlUrl } from './arxiv.ts'
 import { fetchImageBytes, ImageFetchCache } from './image-fetch.ts'
 import { resolveLink, type LinkResolution, type ResolverFetch } from './link-resolvers.ts'
+import { episodePage, ReaderMediaHost, videoPage, youtubeChannelFeed } from './media-host.ts'
+import { mediaLink } from './media.ts'
+import { podcastPageToRss, readEpisodePage } from './xiaoyuzhou.ts'
 
 /**
  * How many entries one automatic backfill run may fetch.
@@ -150,6 +154,8 @@ interface FetchOutcome {
   readonly url: string
   readonly raw: string
   readonly truncated: boolean
+  /** True for a media link's synthetic page (media-host.ts): no preview inspection applies. */
+  readonly media?: boolean
 }
 
 /** Thrown when a payload cannot become a source. */
@@ -204,6 +210,8 @@ export function classifyPayload(raw: string): 'feed' | 'page' {
 /** The reader service. */
 export class ReaderService {
   private readonly store: ReaderStore
+  /** Video and audio entries: synthetic pages, channel feeds, transcripts. */
+  readonly media: ReaderMediaHost
   private readonly ctx: Context
   private timer: ReturnType<typeof setTimeout> | undefined
   private disposed = false
@@ -216,9 +224,10 @@ export class ReaderService {
    * @param ctx - owning context.
    * @param config - optional state-root override.
    */
-  constructor(ctx: Context, config: { stateRoot?: string } = {}) {
+  constructor(ctx: Context, config: { stateRoot?: string; ytdlpPath?: string } = {}) {
     this.ctx = ctx
     this.store = new ReaderStore(config)
+    this.media = new ReaderMediaHost(resolveReaderStateRoot(config.stateRoot), config.ytdlpPath)
     ctx.effect(() => () => {
       this.disposed = true
       if (this.timer !== undefined) clearTimeout(this.timer)
@@ -293,7 +302,7 @@ export class ReaderService {
     if (upgrade !== undefined && doc.sources.some(source => sameTarget(source.url, upgrade))) return 'duplicate'
     let fetched: FetchOutcome
     try {
-      fetched = await this.fetchFollowing(upgrade ?? url)
+      fetched = await this.fetchSource(upgrade ?? url)
     } catch (error) {
       if (upgrade !== undefined && isNoHtmlVersion(error)) {
         // The paper has no HTML version (the endpoint answers a bare 404). The
@@ -318,7 +327,7 @@ export class ReaderService {
     }
 
     const feed = classifyPayload(fetched.raw) === 'feed'
-    if (!feed) {
+    if (!feed && fetched.media !== true) {
       // A page that fetched fine can still have nothing to read: a bot
       // challenge, a login interstitial, an empty shell. Classify BEFORE the
       // payload is stored, so a challenge page never becomes the card's body —
@@ -514,11 +523,11 @@ export class ReaderService {
         if (source === undefined) return
         const fetchedAt = new Date().toISOString()
         try {
-          const fetched = await this.fetchFollowing(source.url)
+          const fetched = await this.fetchSource(source.url)
           // The same classification the add performs: a refresh that comes back
           // with a challenge page or a PDF must not replace a good body with it,
           // and must record why there is nothing to read.
-          const problem = source.kind === 'link' ? inspectPreview(fetched.raw, fetched.url, source.url) : undefined
+          const problem = source.kind === 'link' && fetched.media !== true ? inspectPreview(fetched.raw, fetched.url, source.url) : undefined
           if (problem !== undefined) {
             const failure: ReaderPreviewFailure = { code: problem.code, message: problem.message, at: fetchedAt }
             patches.set(source.id, {
@@ -907,6 +916,8 @@ export class ReaderService {
     title?: string
     /** A short excerpt (abstract / first paragraph), with the title. */
     excerpt?: string
+    /** Keep regardless of the cache TTL (a transcript costs a yt-dlp run, not a page fetch). */
+    keep?: boolean
   }): Promise<ReaderEntryBodyView> {
     const html = request.html.trim()
     if (html.length === 0) {
@@ -925,7 +936,7 @@ export class ReaderService {
       fetchedAt: now.toISOString(),
       // 0 = keep until the budget evicts it; a far-future date keeps the
       // freshness check a single comparison instead of a special case.
-      expiresAt: ttlHours === 0
+      expiresAt: ttlHours === 0 || request.keep === true
         ? new Date(now.getTime() + 100 * 365 * 24 * 60 * 60 * 1000).toISOString()
         : new Date(now.getTime() + ttlHours * 60 * 60 * 1000).toISOString(),
       url: request.url,
@@ -1007,6 +1018,8 @@ export class ReaderService {
     for (const entry of request.entries) {
       if (entry.url === '') continue
       if (entry.hasBody) continue
+      // A video or podcast page is not an article: its text is the transcript.
+      if (mediaLink(entry.url) !== undefined) continue
       // A reason that will answer the same way forever — a bot wall, a login
       // wall, a PDF, a 404 — is not retried on a timer: that is a crawler with
       // a grudge, not a reader. The manual refresh in the subscription page
@@ -1617,6 +1630,72 @@ export class ReaderService {
       }
     }
     throw new UnsupportedContent(`more than ${MAX_REDIRECT_HOPS} cross-origin redirects`)
+  }
+
+  /**
+   * Fetch a source's payload, media-aware (media-host.ts).
+   *
+   * A YouTube channel is fetched as YouTube's own channel feed; a Xiaoyuzhou
+   * podcast page as the RSS document it is turned into; a single video or
+   * Xiaoyuzhou episode as a synthetic page carrying its media description.
+   * Everything else is the ordinary {@link fetchFollowing}.
+   *
+   * @param url - the source URL.
+   */
+  private async fetchSource(url: string): Promise<FetchOutcome> {
+    const link = mediaLink(url)
+    if (link === undefined) return this.fetchFollowing(url)
+    if (link.provider === 'youtube' && link.kind === 'channel') {
+      const page = await this.fetchFollowing(url)
+      const feed = youtubeChannelFeed(page.raw)
+      if (feed === undefined) throw new UnsupportedContent('the channel page names no feed')
+      return this.fetchFollowing(feed)
+    }
+    if (link.provider === 'xiaoyuzhou') {
+      const page = await this.fetchFollowing(url)
+      if (link.kind === 'podcast') {
+        const rss = podcastPageToRss(page.raw, url)
+        if (rss === undefined) throw new UnsupportedContent('the podcast page carries no episodes')
+        return { url, raw: rss, truncated: false }
+      }
+      const episode = readEpisodePage(page.raw)
+      if (episode === undefined) throw new UnsupportedContent('the episode page carries no audio')
+      return { url, raw: episodePage(episode), truncated: false, media: true }
+    }
+    if (link.kind === 'video' && (link.provider === 'youtube' || link.provider === 'bilibili')) {
+      const info = await this.media.ytdlp.info(url)
+      return { url, raw: videoPage(info, link.provider, link.id), truncated: false, media: true }
+    }
+    return this.fetchFollowing(url)
+  }
+
+  /**
+   * A video entry's transcript: the stored one, else the platform captions
+   * fetched now and kept (no TTL — it costs a yt-dlp run). A video known to
+   * have no captions answers so without running yt-dlp again.
+   *
+   * @param request - the entry and its video page URL.
+   * @returns the transcript markup, `none`, or why it failed.
+   */
+  async mediaTranscript(request: { entryId: string; url: string }): Promise<{ entryId: string; html?: string; captions: 'platform' | 'none' | 'failed'; language?: string; error?: string }> {
+    const known = this.media.captions(request.entryId)
+    if (known?.state === 'none') return { entryId: request.entryId, captions: 'none' }
+    const link = mediaLink(request.url)
+    if (link?.kind !== 'video' || (link.provider !== 'youtube' && link.provider !== 'bilibili')) {
+      return { entryId: request.entryId, captions: 'none' }
+    }
+    try {
+      const transcript = await this.media.transcript(request.url)
+      if (transcript === 'none') {
+        this.media.remember(request.entryId, { state: 'none', checkedAt: new Date().toISOString() })
+        return { entryId: request.entryId, captions: 'none' }
+      }
+      const stored = await this.storeEntryBody({ entryId: request.entryId, url: request.url, html: transcript.html, keep: true })
+      this.media.remember(request.entryId, { state: 'platform', language: transcript.language, checkedAt: new Date().toISOString() })
+      return { entryId: request.entryId, captions: 'platform', language: transcript.language, ...(stored.html === undefined ? {} : { html: stored.html }) }
+    } catch (error) {
+      return { entryId: request.entryId, captions: 'failed', error: error instanceof Error ? error.message : String(error) }
+    }
   }
 
   /** Arm (or re-arm) the daily refresh timer against the current document. */
