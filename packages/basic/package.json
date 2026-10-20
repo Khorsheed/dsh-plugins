@@ -37,7 +37,6 @@
   "dependencies": {
     "@khorsheed/dsh-ankh-guard": "workspace:*",
     "@khorsheed/dsh-capability-catalog": "workspace:*",
-    "@khorsheed/dsh-capture": "workspace:*",
     "@khorsheed/dsh-client-message-tools": "workspace:*",
     "@khorsheed/dsh-client-session-title-edit": "workspace:*",
     "@khorsheed/dsh-context-guard": "workspace:*",
@@ -86,7 +85,6 @@
         "@khorsheed/dsh-ui-shortcuts",
         "@khorsheed/dsh-whalesong",
         "@khorsheed/dsh-ankh-guard",
-        "@khorsheed/dsh-capture",
         "@khorsheed/dsh-sidechat",
         "@khorsheed/dsh-context-lens"
       ]
@@ -106,7 +104,6 @@
       "@khorsheed/dsh-ui-shortcuts",
       "@khorsheed/dsh-whalesong",
       "@khorsheed/dsh-ankh-guard",
-      "@khorsheed/dsh-capture",
       "@khorsheed/dsh-sidechat",
       "@khorsheed/dsh-context-lens"
     ],

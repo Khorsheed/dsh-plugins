@@ -68,10 +68,6 @@
     - id: ankh-guard
       name: "@khorsheed/dsh-ankh-guard"
 
-    # 渲染抓取: headless-Chrome render of JS-heavy pages.
-    - id: capture
-      name: "@khorsheed/dsh-capture"
-
     # 侧边对话: lightweight sidebar chat per context.
     - id: sidechat
       name: "@khorsheed/dsh-sidechat"

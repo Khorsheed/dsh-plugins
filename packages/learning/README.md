@@ -16,6 +16,7 @@
 | `@khorsheed/dsh-canvas` | `canvas`、`canvas-agent`(由本包 preset 授予) | 灵感画布:读完用自己的话写成卡片与成稿,以输出促吸收(2026-10-19 加入) |
 | `@khorsheed/dsh-reader` | `reader`、`reader-tool`(由本包 preset 授予) | 灵感空间:订阅与文章阅读、记笔记、带着笔记讨论、「让Agent考考我」(2026-10-19 加入) |
 | `@khorsheed/dsh-transcribe` | `transcribe` | 本机转写:灵感空间里没有字幕的视频、播客在本机转成文字(2026-10-20 加入) |
+| `@khorsheed/dsh-capture` | `capture` | 渲染抓取:用后台 Chrome 渲染依赖脚本的页面,供灵感空间抽取正文(2026-10-20 从基础合集移来) |
 
 图书馆的模型面(工具、教练指引段、library 技能)不是 profile 根行:它是 library 包的 `./tool` 组合入口,由本包 preset 行的 `library-tool` 授予点按会话授予。画布的 `./agent` 与灵感空间的 `./tool` 同样由 `canvas-agent`、`reader-tool` 授予点按会话授予,两个右栏页签都按这两行自隐——只在学习模式与写作模式的会话里出现。
 

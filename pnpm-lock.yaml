@@ -176,9 +176,6 @@ importers:
       '@khorsheed/dsh-capability-catalog':
         specifier: workspace:*
         version: link:../capability-catalog
-      '@khorsheed/dsh-capture':
-        specifier: workspace:*
-        version: link:../capture
       '@khorsheed/dsh-client-message-tools':
         specifier: workspace:*
         version: link:../message-tools
@@ -1367,6 +1364,9 @@ importers:
       '@khorsheed/dsh-canvas':
         specifier: workspace:*
         version: link:../canvas
+      '@khorsheed/dsh-capture':
+        specifier: workspace:*
+        version: link:../capture
       '@khorsheed/dsh-library':
         specifier: workspace:*
         version: link:../library
@@ -3167,6 +3167,9 @@ importers:
       '@khorsheed/dsh-canvas-novel':
         specifier: workspace:*
         version: link:../canvas-novel
+      '@khorsheed/dsh-capture':
+        specifier: workspace:*
+        version: link:../capture
       '@khorsheed/dsh-reader':
         specifier: workspace:*
         version: link:../dsh-reader
