@@ -6,9 +6,11 @@
  */
 
 export interface SpeechModelPaths {
-  asr: { kind: 'paraformer' | 'senseVoice'; model: string; tokens: string }
-  segmentation: string
-  embedding: string
+  /** SenseVoice takes a language hint (`auto` lets it detect). */
+  asr: { kind: 'paraformer' | 'senseVoice'; model: string; tokens: string; language?: string | undefined }
+  /** The diarization models — only when the job separates speakers. */
+  segmentation?: string | undefined
+  embedding?: string | undefined
   /** Optional punctuation model (paraformer emits none of its own). */
   punctuation?: string | undefined
 }
@@ -24,6 +26,8 @@ export interface SpeechJob {
   /** 16 kHz mono 16-bit WAV. */
   wavPath: string
   models: SpeechModelPaths
+  /** Separate speakers (needs the segmentation + embedding models). Without it the recording is one speaker, cluster 0. */
+  diarize: boolean
   voices: KnownVoice[]
   /** -1 = let clustering decide. */
   numSpeakers: number
@@ -57,7 +61,9 @@ export interface WorkerSpeaker {
 
 export type WorkerMessage =
   | { type: 'progress'; stage: 'load' | 'diarize' | 'transcribe' | 'embed'; progress: number }
-  | { type: 'done'; segments: WorkerSegment[]; speakers: WorkerSpeaker[] }
+  /** Segments finished since the last message, in order (the done message repeats them all). */
+  | { type: 'segments'; segments: WorkerSegment[] }
+  | { type: 'done'; segments: WorkerSegment[]; speakers: WorkerSpeaker[]; language?: string | undefined }
   | { type: 'error'; message: string }
 
 export function encodeEmbedding(v: Float32Array): string {

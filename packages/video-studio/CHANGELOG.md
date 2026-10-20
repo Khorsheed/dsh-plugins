@@ -2,6 +2,8 @@
 
 ## 0.1.0（未发布）
 
+语音管线搬进公共插件「本机转写」（`@khorsheed/dsh-transcribe`，见 `2026-10-20-transcribe-engine`）：分人与转写改为调用它的 `transcribe` 服务（每次转写时探测，没装时面板提示），模型目录随之移到 `$DSH_HOME/state/transcribe/models/`（已下载的自动挪过去）；本插件不再依赖 `sherpa-onnx-node`。英文单词在转写稿里恢复空格。
+
 首个版本——剪辑台 M1：节目与工程、设置三层、按路径导入、画面按声音对齐、本机分人与声纹认人、Paraformer 转写与标点、文稿粗剪（点句剪切、语气词/停顿/重复扫描提议）、导出 MP3 / MP4 / SRT / TXT；右栏「剪辑」面板（素材 / 文稿 / 导出 / 设置）与 `./tool` 入口的 `video_*` 工具和 `video-studio` 技能。设计见 Agent Note `2026-10-06-video-studio-podcast-editing`。
 
 文稿 tab 的边听边剪：底部播放器按剪后成片或原声无缝播放（Web Audio 调度宿主按需回读的 PCM），当前段落与词跟随高亮、滚动自动加载；剪切按来源区分（我剪的 / 模型剪的，可过滤）；拖选任意几个字可剪掉或改字，查找栏可逐处或全文替换；模型的 `fix_text` / `cut_keyword` 改字与关键词剪切一律作为提议组等 ✓。改字只影响文字与字幕，不动音频。见 Agent Note `2026-10-10-video-studio-listen-and-correct`。

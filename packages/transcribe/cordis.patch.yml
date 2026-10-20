@@ -1,0 +1,7 @@
+# transcribe bundle patch: inserts the engine row into the composing profile.
+# Host half only — the `transcribe` service other plugins (video-studio,
+# dsh-reader) probe and call in code; no browser half, no model-facing tool.
+# Note: the @-prefixed name must stay quoted — it is a YAML reserved character.
+- insert:
+    - id: transcribe
+      name: '@khorsheed/dsh-transcribe'

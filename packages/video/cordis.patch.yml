@@ -23,6 +23,10 @@
     - id: video-studio
       name: "@khorsheed/dsh-video-studio"
 
+    # 本机转写: the `transcribe` service (local ASR) the members probe for.
+    - id: transcribe
+      name: '@khorsheed/dsh-transcribe'
+
     - id: preset-dsh-video
       name: '@deepseek-ai/dsh-agent-preset'
       config:

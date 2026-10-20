@@ -27,7 +27,7 @@ dsh plugin --profile web add @khorsheed/dsh-video-studio
 dsh plugin --profile web add @khorsheed/dsh-presets   # editing mode (dsh-video)
 ```
 
-Needs `ffmpeg` / `ffprobe` on the host (on PATH, or set in the panel under Settings → Global). The speech models (about 360 MB: Paraformer Chinese ASR, CT-Transformer punctuation, pyannote segmentation, CAM++ voiceprints) download automatically on the first transcription into `$DSH_HOME/state/video-studio/models/`, or by hand from Settings. The download source is selectable under Settings → Global (auto / Hugging Face / HF-Mirror China mirror; auto probes for the fastest reachable source). Downloads resume from the bytes already on disk (a restart or network drop never re-downloads them) and are verified against pinned byte sizes and sha256 hashes on completion.
+Needs `ffmpeg` / `ffprobe` on the host (on PATH, or set in the panel under Settings → Global). Speaker separation and transcription run on the Local Transcription plugin ([`@khorsheed/dsh-transcribe`](../transcribe/)), installed alongside; without it the panel says so and editing and export still work. Its speech models (about 360 MB: Paraformer Chinese ASR, CT-Transformer punctuation, pyannote segmentation, CAM++ voiceprints) download automatically on the first transcription into `$DSH_HOME/state/transcribe/models/` (models an earlier video-studio downloaded are moved there), or by hand from Settings. The download source is selectable under Settings → Global (auto / Hugging Face / HF-Mirror China mirror; auto probes for the fastest reachable source). Downloads resume from the bytes already on disk (a restart or network drop never re-downloads them) and are verified against pinned byte sizes and sha256 hashes on completion.
 
 Uninstall:
 
@@ -39,7 +39,7 @@ dsh plugin --profile web remove @khorsheed/dsh-video-studio
 
 - npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`): ⚠️ the panel and host service work (page-type right-sidebar tabs since 0.1.5), but the editing-mode preset row needs the 0.1.7-rc.1+ preset mechanism, so on 0.1.5 the panel is only usable from general sessions.
 - Source line (deepseek-harness master): ✅ (verifiedHost: 0.2.1-rc.1) — host-021 wave: full build+test green against the 0.2.1-rc.1 tree, no other surface changes.
-- **Native dependency**: `sherpa-onnx-node` ships prebuilt per-platform addons (about 34 MB on darwin-arm64). Speech jobs run in a child process, so an addon that fails to load fails the transcription job only, never boot.
+- **The transcription engine is an optional plugin**: speaker separation and transcription run on Local Transcription (the `transcribe` service), probed per job; without it the panel says so and transcription jobs fail with that message, while editing and export work. The native `sherpa-onnx-node` dependency travels with it, no longer with this plugin.
 - **ffmpeg version**: only filters present since 4.2 are used (atrim / concat / loudnorm / afftdn). An ffmpeg without libass (the `subtitles` filter) gets a switchable subtitle track in the video instead, and the panel says so.
 - **Web surface**: the right-sidebar tab is a browser surface; a headless profile gets only the host service and tools.
 

@@ -8,10 +8,27 @@ export type {
 } from './core/types.ts'
 export type { EffectiveSetting, SettingSource } from './core/settings.ts'
 export type { GlobalConfig } from './store.ts'
-export type { ModelState, ModelStatus } from './media/models.ts'
 export type { Overview, ProjectSummary, ProjectView, Toolchain } from './service.ts'
 
 import type { SettingValue } from './core/types.ts'
+
+export type ModelState = 'missing' | 'downloading' | 'installed' | 'failed'
+
+/**
+ * One speech model as the transcription engine reports it — the same shape as
+ * `@khorsheed/dsh-transcribe`'s `ModelStatus`, restated here so the panel's
+ * wire types stand on their own (the engine is optional).
+ */
+export interface ModelStatus {
+  id: string
+  label: string
+  bytes: number
+  state: ModelState
+  progress: number
+  /** Bytes of resumable partial downloads left on disk (only when not installed). */
+  partial?: number | undefined
+  error?: string | undefined
+}
 
 export interface ProjectRef {
   projectId: string

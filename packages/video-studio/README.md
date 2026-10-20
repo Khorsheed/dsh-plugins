@@ -27,7 +27,7 @@ dsh plugin --profile web add @khorsheed/dsh-video-studio
 dsh plugin --profile web add @khorsheed/dsh-presets   # 剪辑模式（dsh-video）
 ```
 
-需要本机有 `ffmpeg` / `ffprobe`（在 PATH 上，或在面板「设置 → 全局」里填路径）。语音模型（约 360 MB：Paraformer 中文转写、CT-Transformer 标点、pyannote 分段、CAM++ 声纹）在第一次转写时自动下载到 `$DSH_HOME/state/video-studio/models/`，也可以在设置里手动下载。下载源可在「设置 → 全局」选择（自动选择 / Hugging Face / HF-Mirror 国内镜像，默认自动探测最快可达源），支持断点续传：进程重启或网络中断不丢已下载的字节，完成后按钉死的字节数与 sha256 校验。
+需要本机有 `ffmpeg` / `ffprobe`（在 PATH 上，或在面板「设置 → 全局」里填路径）。分人与转写由「本机转写」插件（[`@khorsheed/dsh-transcribe`](../transcribe/)）完成，需要一起安装；没装时面板会提示，剪辑与导出照常可用。语音模型（约 360 MB：Paraformer 中文转写、CT-Transformer 标点、pyannote 分段、CAM++ 声纹）由它在第一次转写时自动下载到 `$DSH_HOME/state/transcribe/models/`（以前剪辑插件下载过的模型会自动挪过去），也可以在设置里手动下载。下载源可在「设置 → 全局」选择（自动选择 / Hugging Face / HF-Mirror 国内镜像，默认自动探测最快可达源），支持断点续传：进程重启或网络中断不丢已下载的字节，完成后按钉死的字节数与 sha256 校验。
 
 卸载：
 
@@ -39,7 +39,7 @@ dsh plugin --profile web remove @khorsheed/dsh-video-studio
 
 - npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：⚠️ 面板与宿主服务可用（右栏页型 tab 自 0.1.5 起），但剪辑模式 preset 行需要 0.1.7-rc.1 起的 preset 机制，0.1.5 上只能在通用会话里用面板。
 - 源码线（deepseek-harness master）：✅（verifiedHost: 0.2.1-rc.1）——host-021 波对 0.2.1-rc.1 树全量 build+test 绿，无其它表面变化。
-- **原生依赖**：`sherpa-onnx-node` 按平台带预编译原生插件（darwin-arm64 约 34 MB）。语音任务在独立子进程里跑，原生插件加载失败只让转写任务失败，不影响启动。
+- **转写引擎是可选插件**：分人与转写跑在「本机转写」插件（`transcribe` 服务）上，每次转写时探测；没装时面板提示、转写任务报这一句，剪辑与导出不受影响。原生依赖 `sherpa-onnx-node` 跟着它走，本插件不再带。
 - **ffmpeg 版本**：只用 4.2 起就有的滤镜（atrim / concat / loudnorm / afftdn）。没有 libass（`subtitles` 滤镜）的 ffmpeg 导出视频时改为可开关字幕轨，面板会提示。
 - **Web 表面**：右栏 tab 是浏览器表面；headless profile 上只有宿主服务和工具。
 

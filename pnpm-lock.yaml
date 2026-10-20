@@ -1373,6 +1373,9 @@ importers:
       '@khorsheed/dsh-reader':
         specifier: workspace:*
         version: link:../dsh-reader
+      '@khorsheed/dsh-transcribe':
+        specifier: workspace:*
+        version: link:../transcribe
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: 4.0.4
@@ -2769,6 +2772,28 @@ importers:
         specifier: ^4.1.8
         version: 4.1.11(@types/node@26.6.3)(jsdom@30.1.1)(vite@7.3.6(@types/node@26.6.3)(lightningcss@1.33.0)(tsx@4.23.15)(yaml@2.9.1))
 
+  packages/transcribe:
+    dependencies:
+      sherpa-onnx-node:
+        specifier: 1.13.8
+        version: 1.13.8
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: 4.0.4
+        version: 4.0.4(@deepseek-ai/cordis-plugin-include@1.0.10)(@deepseek-ai/cordis-plugin-loader@1.0.5)
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.20.4
+      tsdown:
+        specifier: ^0.22.2
+        version: 0.22.14(tsx@4.23.15)(typescript@5.9.3)
+      typescript:
+        specifier: ^5.9.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.7(@types/node@22.20.4)(jsdom@29.1.1)(lightningcss@1.33.0)(tsx@4.23.15)(yaml@2.9.1)
+
   packages/typesafe:
     devDependencies:
       '@deepseek-ai/cordis':
@@ -2910,6 +2935,9 @@ importers:
 
   packages/video:
     dependencies:
+      '@khorsheed/dsh-transcribe':
+        specifier: workspace:*
+        version: link:../transcribe
       '@khorsheed/dsh-video-studio':
         specifier: workspace:*
         version: link:../video-studio
@@ -2929,9 +2957,6 @@ importers:
 
   packages/video-studio:
     dependencies:
-      sherpa-onnx-node:
-        specifier: 1.13.8
-        version: 1.13.8
       zod:
         specifier: ^4.4.3
         version: 4.6.5
@@ -3142,6 +3167,9 @@ importers:
       '@khorsheed/dsh-reader':
         specifier: workspace:*
         version: link:../dsh-reader
+      '@khorsheed/dsh-transcribe':
+        specifier: workspace:*
+        version: link:../transcribe
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: 4.0.4

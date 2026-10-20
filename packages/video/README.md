@@ -13,6 +13,7 @@
 | 成员包 | 行 id | 能力 |
 | --- | --- | --- |
 | `@khorsheed/dsh-video-studio` | `video-studio` | 剪辑台:项目库与媒体任务的服务核心,右栏「剪辑」面板 |
+| `@khorsheed/dsh-transcribe` | `transcribe` | 本机转写:剪辑台的分人与转写引擎(2026-10-20 从剪辑台抽出) |
 
 `video_*` 工具与 `video-studio` 技能不是 profile 根行:它们是 video-studio 包的 `./tool` 组合入口,由本包 preset 行的 `video-studio-tool` 授予点按会话授予。
 

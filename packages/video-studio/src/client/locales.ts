@@ -49,6 +49,7 @@ export const zh = {
   'warn.noFfmpeg': '本机没有找到 ffmpeg：导入和导出不可用。安装 ffmpeg，或在设置 → 全局里填写路径。',
   'warn.models': '语音模型还没下载（约 360 MB，只需一次）。导入素材时会自动下载，也可以现在下载。',
   'warn.modelsDownload': '下载模型',
+  'warn.noEngine': '分人与转写需要「本机转写」插件（@khorsheed/dsh-transcribe）。在插件管理里装上它之后就能转写；剪辑、导出不受影响。',
   'warn.noSubtitleBurn': '本机 ffmpeg 不支持字幕烧录（缺 libass），视频里会是一条可开关的字幕轨。',
 
   'tabs.label': '剪辑面板',
@@ -255,6 +256,7 @@ export const en: Record<VideoStudioKey, string> = {
   'warn.noFfmpeg': 'ffmpeg was not found: import and export are unavailable. Install ffmpeg or set its path in Settings → Global.',
   'warn.models': 'The speech models are not downloaded yet (about 360 MB, once). They download on first import, or now.',
   'warn.modelsDownload': 'Download models',
+  'warn.noEngine': 'Speaker separation and transcription need the Local Transcription plugin (@khorsheed/dsh-transcribe). Install it from the plugin manager; editing and export work without it.',
   'warn.noSubtitleBurn': 'This ffmpeg cannot burn subtitles (no libass); the video gets a switchable subtitle track instead.',
 
   'tabs.label': 'Studio panel',

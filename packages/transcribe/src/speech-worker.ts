@@ -1,12 +1,14 @@
 /**
  * Speech worker: runs as its own Node process (child_process.fork) so the
  * synchronous native diarization/ASR work never blocks the host. Receives one
- * SpeechJob over IPC, replies with progress messages and one done/error.
+ * SpeechJob over IPC, replies with progress and segment messages and one
+ * done/error.
  *
- * Pipeline: diarize the whole recording → merge same-speaker turns → split
- * long turns into ≤ 25 s chunks at the quietest point → ASR each chunk with
- * token timestamps → restore punctuation and re-attach it to tokens → one
- * embedding per cluster for voiceprint matching.
+ * Pipeline: (with speaker separation) diarize the whole recording → merge
+ * same-speaker turns → split long turns into ≤ 25 s chunks at the quietest
+ * point → ASR each chunk with token timestamps → restore punctuation and
+ * re-attach it to tokens → (with separation) one embedding per cluster for
+ * voiceprint matching.
  */
 import { createRequire } from 'node:module'
 import { cosine, decodeEmbedding, encodeEmbedding, type SpeechJob, type WorkerMessage, type WorkerSegment, type WorkerSpeaker, type WorkerToken } from './speech-protocol.ts'
@@ -78,13 +80,8 @@ function cleanToken(t: string): string {
   return t.replace(/▁/g, ' ').replace(/@@$/, '').replace(/^<\|.*\|>$/, '')
 }
 
-async function main(job: SpeechJob): Promise<void> {
-  send({ type: 'progress', stage: 'load', progress: 0 })
-  const sherpa: Sherpa = require('sherpa-onnx-node')
-  const wave = sherpa.readWave(job.wavPath) as { samples: Float32Array; sampleRate: number }
-  if (wave.sampleRate !== SAMPLE_RATE) throw new Error(`expected ${SAMPLE_RATE} Hz input, got ${wave.sampleRate}`)
-  const samples = wave.samples
-
+/** Separated turns: diarize, merge, consolidate on embeddings. */
+function diarizedTurns(sherpa: Sherpa, job: SpeechJob, samples: Float32Array, embedOf: (list: Turn[], cluster: number) => Float32Array | null): Turn[] {
   const diar = new sherpa.OfflineSpeakerDiarization({
     segmentation: { pyannote: { model: job.models.segmentation }, numThreads: job.numThreads },
     embedding: { model: job.models.embedding, numThreads: job.numThreads },
@@ -95,10 +92,21 @@ async function main(job: SpeechJob): Promise<void> {
   send({ type: 'progress', stage: 'diarize', progress: 0 })
   const raw = (diar.process(samples) as { start: number; end: number; speaker: number }[]).sort((a, b) => a.start - b.start)
   send({ type: 'progress', stage: 'diarize', progress: 1 })
+  return consolidate(mergeTurns(raw.map((r) => ({ cluster: r.speaker, start: r.start, end: r.end }))), embedOf)
+}
 
-  const extractor = new sherpa.SpeakerEmbeddingExtractor({ model: job.models.embedding, numThreads: job.numThreads })
+async function main(job: SpeechJob): Promise<void> {
+  send({ type: 'progress', stage: 'load', progress: 0 })
+  const sherpa: Sherpa = require('sherpa-onnx-node')
+  const wave = sherpa.readWave(job.wavPath) as { samples: Float32Array; sampleRate: number }
+  if (wave.sampleRate !== SAMPLE_RATE) throw new Error(`expected ${SAMPLE_RATE} Hz input, got ${wave.sampleRate}`)
+  const samples = wave.samples
+  if (job.diarize && (!job.models.segmentation || !job.models.embedding)) throw new Error('speaker separation needs the segmentation and embedding models')
+
+  const extractor = job.diarize ? new sherpa.SpeakerEmbeddingExtractor({ model: job.models.embedding, numThreads: job.numThreads }) : null
   /** One embedding over up to EMBED_MAX_SEC of a cluster's longest turns. */
   const embedOf = (list: Turn[], cluster: number): Float32Array | null => {
+    if (!extractor) return null
     const longest = list.filter((t) => t.cluster === cluster).sort((x, y) => y.end - y.start - (x.end - x.start))
     const stream = extractor.createStream()
     let fed = 0
@@ -112,14 +120,53 @@ async function main(job: SpeechJob): Promise<void> {
     return extractor.isReady(stream) ? (extractor.compute(stream, false) as Float32Array) : null
   }
 
-  let turns = mergeTurns(raw.map((r) => ({ cluster: r.speaker, start: r.start, end: r.end })))
-  turns = consolidate(turns, embedOf)
+  // Without separation the whole recording is one turn; its ≤ 25 s chunks
+  // are each reported as a segment, so a long recording reads as it goes.
+  const turns: Turn[] = job.diarize ? diarizedTurns(sherpa, job, samples, embedOf) : [{ cluster: 0, start: 0, end: samples.length / SAMPLE_RATE }]
 
   const modelConfig: Record<string, unknown> = { tokens: job.models.asr.tokens, numThreads: job.numThreads, provider: 'cpu', debug: 0 }
   if (job.models.asr.kind === 'paraformer') modelConfig.paraformer = { model: job.models.asr.model }
-  else modelConfig.senseVoice = { model: job.models.asr.model, language: 'zh', useInverseTextNormalization: 1 }
+  else modelConfig.senseVoice = { model: job.models.asr.model, language: job.models.asr.language ?? 'auto', useInverseTextNormalization: 1 }
   const recognizer = new sherpa.OfflineRecognizer({ featConfig: { sampleRate: SAMPLE_RATE, featureDim: 80 }, modelConfig, decodingMethod: 'greedy_search' })
   const punct = job.models.punctuation ? new sherpa.OfflinePunctuation({ model: { ctTransformer: job.models.punctuation, numThreads: job.numThreads } }) : null
+  /** Seconds of speech per detected language (SenseVoice tags each chunk). */
+  const languages = new Map<string, number>()
+
+  /** Recognize one stretch: timed tokens, punctuated. */
+  const recognize = (a: number, b: number): WorkerToken[] => {
+    const stream = recognizer.createStream()
+    stream.acceptWaveform({ samples: samples.subarray(a, b), sampleRate: SAMPLE_RATE })
+    recognizer.decode(stream)
+    const res = recognizer.getResult(stream) as { text: string; lang?: string; tokens?: string[]; timestamps?: number[]; durations?: number[] }
+    const lang = /^<\|(\w+)\|>$/.exec(res.lang ?? '')?.[1]
+    if (lang) languages.set(lang, (languages.get(lang) ?? 0) + (b - a) / SAMPLE_RATE)
+    const offset = a / SAMPLE_RATE
+    const chunkEnd = b / SAMPLE_RATE
+    const toks = res.tokens ?? []
+    const ts = res.timestamps ?? []
+    const tokens: WorkerToken[] = []
+    let inWord = false
+    for (let i = 0; i < toks.length; i++) {
+      const piece = toks[i] ?? ''
+      let text = cleanToken(piece)
+      if (!text.trim()) continue
+      // Paraformer spells English as BPE pieces (`lar@@ ge`) with no spaces:
+      // a piece that starts a Latin word gets one, unless it opens the chunk.
+      const latin = /^[A-Za-z0-9']/.test(text)
+      if (latin && !inWord && tokens.length && !/\s$/.test(tokens[tokens.length - 1]!.text)) text = ` ${text}`
+      inWord = latin && piece.endsWith('@@')
+      const start = offset + (ts[i] ?? 0)
+      const dur = res.durations?.[i]
+      const nextTs = ts[i + 1]
+      const next = nextTs !== undefined ? offset + nextTs : chunkEnd
+      const end = Math.min(next, dur ? start + dur : Math.min(start + 0.4, next))
+      tokens.push({ text, start, end: Math.max(end, start + 0.02) })
+    }
+    // Paraformer emits no punctuation: the CT-Transformer restores it.
+    // SenseVoice's own tokens already carry punctuation and casing.
+    if (!tokens.length || !punct) return tokens
+    return attachPunctuation(tokens, punct.addPunct(tokens.map((t) => t.text).join('')) as string)
+  }
 
   const total = turns.reduce((a, t) => a + (t.end - t.start), 0) || 1
   let done = 0
@@ -127,35 +174,29 @@ async function main(job: SpeechJob): Promise<void> {
   for (const turn of turns) {
     const tokens: WorkerToken[] = []
     for (const [a, b] of chunksOf(samples, turn.start, turn.end)) {
-      const stream = recognizer.createStream()
-      stream.acceptWaveform({ samples: samples.subarray(a, b), sampleRate: SAMPLE_RATE })
-      recognizer.decode(stream)
-      const res = recognizer.getResult(stream) as { text: string; tokens?: string[]; timestamps?: number[]; durations?: number[] }
-      const offset = a / SAMPLE_RATE
-      const chunkEnd = b / SAMPLE_RATE
-      const toks = res.tokens ?? []
-      const ts = res.timestamps ?? []
-      for (let i = 0; i < toks.length; i++) {
-        const text = cleanToken(toks[i] ?? '')
-        if (!text.trim()) continue
-        const start = offset + (ts[i] ?? 0)
-        const dur = res.durations?.[i]
-        const nextTs = ts[i + 1]
-        const next = nextTs !== undefined ? offset + nextTs : chunkEnd
-        const end = Math.min(next, dur ? start + dur : Math.min(start + 0.4, next))
-        tokens.push({ text, start, end: Math.max(end, start + 0.02) })
-      }
+      const chunk = recognize(a, b)
+      if (!job.diarize) {
+        done += (b - a) / SAMPLE_RATE
+        if (chunk.length) {
+          const segment = { cluster: 0, start: a / SAMPLE_RATE, end: b / SAMPLE_RATE, tokens: chunk }
+          segments.push(segment)
+          send({ type: 'segments', segments: [segment] })
+        }
+        send({ type: 'progress', stage: 'transcribe', progress: done / total })
+      } else tokens.push(...chunk)
     }
+    if (!job.diarize) continue
     done += turn.end - turn.start
     send({ type: 'progress', stage: 'transcribe', progress: done / total })
     if (!tokens.length) continue
-    let final = tokens
-    if (punct) {
-      const plain = tokens.map((t) => t.text).join('')
-      const punctuated = punct.addPunct(plain) as string
-      final = attachPunctuation(tokens, punctuated)
-    }
-    segments.push({ cluster: turn.cluster, start: turn.start, end: turn.end, tokens: final })
+    const segment = { cluster: turn.cluster, start: turn.start, end: turn.end, tokens }
+    segments.push(segment)
+    send({ type: 'segments', segments: [segment] })
+  }
+  const language = [...languages.entries()].sort((x, y) => y[1] - x[1])[0]?.[0]
+  if (!job.diarize) {
+    finish({ type: 'done', segments, speakers: [], language })
+    return
   }
 
   // one embedding per (consolidated) cluster for voiceprint matching
@@ -185,7 +226,7 @@ async function main(job: SpeechJob): Promise<void> {
     } else delete s.match
   }
   send({ type: 'progress', stage: 'embed', progress: 1 })
-  finish({ type: 'done', segments, speakers })
+  finish({ type: 'done', segments, speakers, language })
 }
 
 process.once('message', (job: SpeechJob) => {

@@ -5,10 +5,11 @@ import { dirname, join } from 'node:path'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import type { SpeechModelPaths } from './speech-protocol.ts'
+import type { TranscribeLanguage } from './types.ts'
 
 /**
  * The speech models — open-source models (FunASR Paraformer / CT-Transformer,
- * pyannote, 3D-Speaker CAM++) as packaged by the sherpa-onnx project —
+ * SenseVoice, pyannote, 3D-Speaker CAM++) as packaged by the sherpa-onnx project —
  * downloaded on first use from HuggingFace repos (csukuangfj is the k2-fsa
  * maintainer; the int8 punctuation repo is a community re-upload, pinned all
  * the same). Every file is verified against a pinned sha256 taken from the HF
@@ -38,8 +39,11 @@ export interface ModelFile {
   sha256: string
 }
 
+/** Which model: Chinese ASR + its punctuation, multilingual ASR, and the two speaker models. */
+export type ModelId = 'paraformer' | 'punctuation' | 'senseVoice' | 'segmentation' | 'embedding'
+
 export interface ModelSpec {
-  id: 'asr' | 'punctuation' | 'segmentation' | 'embedding'
+  id: ModelId
   label: string
   /** Display size — total bytes across the model's files. */
   bytes: number
@@ -51,7 +55,7 @@ export interface ModelSpec {
 
 export const MODELS: readonly ModelSpec[] = [
   {
-    id: 'asr',
+    id: 'paraformer',
     label: '语音转写 · Paraformer 中文',
     bytes: 243446974,
     check: 'sherpa-onnx-paraformer-zh-2023-09-14/model.int8.onnx',
@@ -74,6 +78,23 @@ export const MODELS: readonly ModelSpec[] = [
       files: [
         { repo: 'model.int8.onnx', path: 'sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12-int8/model.int8.onnx', bytes: 75519198, sha256: '65a3fb9f5ad7bfb96bf69e0dc4481df97f6ee60513c1d94ce981ba6effd524b1' },
         { repo: 'tokens.json', path: 'sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12-int8/tokens.json', bytes: 4207480, sha256: 'c960ab87bccea4aa15cf49a59f71973c2c330b46668048cd8da253749ec71ee3' },
+      ],
+    },
+  },
+  {
+    id: 'senseVoice',
+    label: '语音转写 · SenseVoice 中英文',
+    // The 2024-07-17 release, not the 2025-09-09 int8 one: measured 2026-10-20
+    // the newer one returns upper-case letters, no punctuation and a `yue`
+    // language tag for English speech; this one cases, punctuates and tags
+    // correctly, with per-token timestamps either way.
+    bytes: 239549735,
+    check: 'sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/model.int8.onnx',
+    hf: {
+      repo: 'csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17',
+      files: [
+        { repo: 'model.int8.onnx', path: 'sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/model.int8.onnx', bytes: 239233841, sha256: 'c71f0ce00bec95b07744e116345e33d8cbbe08cef896382cf907bf4b51a2cd51' },
+        { repo: 'tokens.txt', path: 'sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/tokens.txt', bytes: 315894, sha256: 'f449eb28dc567533d7fa59be34e2abca8784f771850c78a47fb731a31429a1dc' },
       ],
     },
   },
@@ -106,7 +127,7 @@ export const MODELS: readonly ModelSpec[] = [
 export type ModelState = 'missing' | 'downloading' | 'installed' | 'failed'
 
 export interface ModelStatus {
-  id: ModelSpec['id']
+  id: ModelId
   label: string
   bytes: number
   state: ModelState
@@ -236,16 +257,34 @@ export async function downloadHfFiles(
   }
 }
 
-export function speechModelPaths(dir: string): SpeechModelPaths {
+/**
+ * The models a job needs: Chinese goes through Paraformer (finer per-character
+ * timing) plus the punctuation model; English and auto-detected speech go
+ * through SenseVoice, which punctuates on its own; speakers add the two
+ * diarization models.
+ */
+export function modelsFor(language: TranscribeLanguage, diarize: boolean): ModelId[] {
+  const asr: ModelId[] = language === 'zh' ? ['paraformer', 'punctuation'] : ['senseVoice']
+  return diarize ? [...asr, 'segmentation', 'embedding'] : asr
+}
+
+export function speechModelPaths(dir: string, language: TranscribeLanguage = 'zh', diarize: boolean = true): SpeechModelPaths {
+  const sense = 'sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17'
   return {
-    asr: {
-      kind: 'paraformer',
-      model: join(dir, 'sherpa-onnx-paraformer-zh-2023-09-14/model.int8.onnx'),
-      tokens: join(dir, 'sherpa-onnx-paraformer-zh-2023-09-14/tokens.txt'),
-    },
-    punctuation: join(dir, 'sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12-int8/model.int8.onnx'),
-    segmentation: join(dir, 'sherpa-onnx-pyannote-segmentation-3-0/model.onnx'),
-    embedding: join(dir, '3dspeaker_speech_campplus_sv_zh-cn_16k-common.onnx'),
+    asr: language === 'zh'
+      ? {
+          kind: 'paraformer',
+          model: join(dir, 'sherpa-onnx-paraformer-zh-2023-09-14/model.int8.onnx'),
+          tokens: join(dir, 'sherpa-onnx-paraformer-zh-2023-09-14/tokens.txt'),
+        }
+      : { kind: 'senseVoice', model: join(dir, sense, 'model.int8.onnx'), tokens: join(dir, sense, 'tokens.txt'), language: language === 'en' ? 'en' : 'auto' },
+    punctuation: language === 'zh' ? join(dir, 'sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12-int8/model.int8.onnx') : undefined,
+    ...(diarize
+      ? {
+          segmentation: join(dir, 'sherpa-onnx-pyannote-segmentation-3-0/model.onnx'),
+          embedding: join(dir, '3dspeaker_speech_campplus_sv_zh-cn_16k-common.onnx'),
+        }
+      : {}),
   }
 }
 
@@ -260,7 +299,7 @@ async function exists(path: string): Promise<boolean> {
 
 /** Downloads models one at a time; status is in memory and re-derived from disk at start. */
 export class ModelManager {
-  private readonly status = new Map<ModelSpec['id'], ModelStatus>()
+  private readonly status = new Map<ModelId, ModelStatus>()
   private running: Promise<void> | null = null
 
   constructor(readonly dir: string) {
@@ -286,29 +325,34 @@ export class ModelManager {
     return MODELS.map((m) => ({ ...this.status.get(m.id)! }))
   }
 
-  async ready(): Promise<boolean> {
-    return (await this.refresh()).every((s) => s.state === 'installed')
+  /** Whether every model in `ids` (default: all) is installed. */
+  async ready(ids: readonly ModelId[] = MODELS.map((m) => m.id)): Promise<boolean> {
+    return (await this.refresh()).filter((s) => ids.includes(s.id)).every((s) => s.state === 'installed')
   }
 
-  /** Start (or join) downloading every missing model. */
-  ensure(choice: ModelSourceChoice = 'auto'): Promise<void> {
-    if (!this.running) {
-      const source = MODEL_SOURCE_CHOICES.includes(choice) ? choice : 'auto'
-      this.running = this.downloadMissing(source).finally(() => {
-        this.running = null
-      })
-    }
-    return this.running
+  /**
+   * Start (or join) downloading the missing models among `ids` (default: all).
+   * A call for models outside the running download starts its own pass once
+   * that one finishes.
+   */
+  ensure(choice: ModelSourceChoice = 'auto', ids: readonly ModelId[] = MODELS.map((m) => m.id)): Promise<void> {
+    const source = MODEL_SOURCE_CHOICES.includes(choice) ? choice : 'auto'
+    const pass = (this.running ?? Promise.resolve()).then(() => this.downloadMissing(source, ids))
+    const tail = pass.finally(() => {
+      if (this.running === tail) this.running = null
+    })
+    this.running = tail
+    return tail
   }
 
-  private async downloadMissing(choice: ModelSourceChoice): Promise<void> {
+  private async downloadMissing(choice: ModelSourceChoice, ids: readonly ModelId[]): Promise<void> {
     await mkdir(this.dir, { recursive: true })
     // Legacy GitHub-channel archive partials can never be resumed — drop them.
     for (const f of await readdir(this.dir)) if (f.endsWith('.tar.bz2.part')) await rm(join(this.dir, f), { force: true })
     await this.refresh()
     for (const m of MODELS) {
       const s = this.status.get(m.id)!
-      if (s.state === 'installed') continue
+      if (s.state === 'installed' || !ids.includes(m.id)) continue
       Object.assign(s, { state: 'downloading', progress: 0, error: undefined, partial: undefined })
       try {
         await this.download(m, choice, (p) => {

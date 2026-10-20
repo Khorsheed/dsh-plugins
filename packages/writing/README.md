@@ -15,6 +15,7 @@
 | `@khorsheed/dsh-canvas` | `canvas` | 灵感画布:卡片、连线与模型提议的主题画布(canvasStore/canvasBoard 服务与界面) |
 | `@khorsheed/dsh-canvas-novel` | `canvas-novel`、`canvas-novel-agent`(由本包 preset 授予) | 「长篇小说」体裁:人物/伏笔/章节的作品记忆引擎、对账闸门、画布里的待审条与章节页 |
 | `@khorsheed/dsh-reader` | `reader`、`reader-tool`(由本包 preset 授予) | 灵感空间:订阅与文章阅读、记笔记、带着笔记讨论,笔记可同步成画布卡片(2026-10-19 加入) |
+| `@khorsheed/dsh-transcribe` | `transcribe` | 本机转写:灵感空间里没有字幕的视频、播客在本机转成文字(2026-10-20 加入) |
 
 画布工具行(canvas `./agent`)在成员自己的 patch 里默认对**所有**会话开放;模式包不在 profile 根挂这两个 agent 行、也不再覆写停用——授予只活在 preset 组合里,宿主 0.2.x 下写作模式会话见 scoped 副本遮蔽全局行,不再双注册崩 boot(宿主 scoped.spec.ts 钉死)。
 

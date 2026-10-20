@@ -13,6 +13,7 @@ Editing mode is the editing-partner persona plus the editing workflow: you discu
 | member package | row id | contents |
 | --- | --- | --- |
 | `@khorsheed/dsh-video-studio` | `video-studio` | the studio: the project store and media jobs service core, plus the 剪辑 right-sidebar panel |
+| `@khorsheed/dsh-transcribe` | `transcribe` | local transcription: the studio's speaker separation and ASR engine (split out of the studio 2026-10-20) |
 
 The `video_*` tools and the `video-studio` skill are not a profile-root row: they ship as the video-studio package's `./tool` composition entry, granted per session by the `video-studio-tool` grant inside this bundle's preset row.
 
