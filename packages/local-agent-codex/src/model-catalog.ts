@@ -30,8 +30,8 @@ export interface CodexModelCatalogDeps {
    * The scope's endpoint credential resolver: a probe against an
    * endpoint-authenticated scope must route at the same relay (custom
    * provider overrides plus the key in the env), or model/list fails for a
-   * scope that never web-logged-in — and the directory reflects the relay's
-   * own catalog. Absent = the pre-endpoint probe shape.
+   * scope that has no other credential — and the directory reflects the
+   * relay's own catalog. Absent = the pre-endpoint probe shape.
    */
   readonly endpoint?: (scopeHome: string) => Promise<CodexEndpointAuth>
   /** Overall probe bound; tests inject a small value. */

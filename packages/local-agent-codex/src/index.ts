@@ -1,8 +1,8 @@
 /**
  * Codex harness instantiation of the local-agent family. Registers the
  * `codex` harness into the core registry: scoped home under the shared homes
- * root (`CODEX_HOME`), device-code login through `codex login --device-auth`
- * (prompt captured from stdout), and rollout-file session records.
+ * root (`CODEX_HOME`), endpoint-key authentication (endpoint-auth.ts — no web
+ * login anywhere), and rollout-file session records.
  * Delegation mounts through the `codex-local` provider (one-shot
  * `codex exec` under the scoped home); the bundle patch's
  * `tool-subagent-codex-local` row puts the tool on the profile root, so
@@ -35,8 +35,8 @@ import { LiveDriverSwitch } from './live-switch.ts'
 import type { CodexLiveSettings } from './live-switch.ts'
 import { CodexModelBroker } from './model-broker.ts'
 import { CodexModelCatalog } from './model-catalog.ts'
-import { codexAuthenticated, listCodexSessions } from './records.ts'
-import { codexCredentialStamp, codexLogout, provisionCodexConfig, readCodexBaseUrl, readCodexModel, readCodexReasoningEffort } from './provision.ts'
+import { listCodexSessions } from './records.ts'
+import { provisionCodexConfig, readCodexBaseUrl, readCodexModel, readCodexReasoningEffort } from './provision.ts'
 
 /** Stable Cordis plugin name; the bundle patch row id. */
 export const name = 'local-agent-codex'
@@ -63,15 +63,14 @@ export interface Config {
    * OpenAI-compatible `/v1` root, e.g. a proxy relay). Merged per field UNDER
    * the scope's own `endpoint-auth.json` (the settings card writes that file
    * through the endpointAuth face). A scope with an endpoint key
-   * authenticates by endpoint — the round's argv routes at the relay and
-   * auth.json is never consulted; a scope without one falls back to the
-   * device-code/browser login exactly as before.
+   * authenticates by endpoint — the round's argv routes at the relay; a scope
+   * without one is unauthenticated (there is no login flow).
    */
   baseUrl?: string
   /**
    * Deployment-level endpoint key (the custom provider's `env_key` value,
    * sent as `Authorization: Bearer`). See {@link baseUrl} for the merge
-   * order. Absent everywhere = the web-login mode.
+   * order. Absent everywhere = unauthenticated.
    */
   apiKey?: string
   /**
@@ -168,8 +167,8 @@ export function apply(ctx: Context, config: Config): void {
   ctx.effect(() => {
     const sandbox = config.sandbox ?? DEFAULT_SANDBOX
     const homeDir = ctx.localAgent.homeDir('codex')
-    // Codex's default credential store on macOS is the keychain; pin
-    // file-based storage so login lands in the scoped home's auth.json.
+    // Provision the scoped config (and sweep the web-login era's leftover
+    // auth.json — the harness no longer consults it).
     void provisionCodexConfig(homeDir).catch((error: unknown) => {
       ctx.logger.warn(`local-agent-codex: config.toml provisioning failed: ${error instanceof Error ? error.message : String(error)}`)
     })
@@ -291,26 +290,23 @@ export function apply(ctx: Context, config: Config): void {
       homeEnvVar: 'CODEX_HOME',
       delegationProvider: 'codex-local',
       modelBroker,
-      // A PTY run of plain `codex login` starts a localhost callback server
-      // (no device code, no paste) and opens the browser itself — the
-      // first-class flow. `--device-auth` remains the documented headless
-      // fallback for remote terminals.
-      login: { pty: { command: 'codex', args: ['login'] } },
+      // No `login` declaration: the harness authenticates by endpoint key
+      // (endpoint-auth.ts), so the core reports the harness as not loginable
+      // and `/codex login` answers that there is no login flow — no browser,
+      // no device code, nothing to authorize inside a container.
       records: { listSessions: homeDir => listCodexSessions(homeDir) },
       // A NAMED scope's directory is provisioned through this hook when the
       // registry materializes it — the same `config.toml` storage pin the
-      // default scope gets from the apply above, so a scope's first login
-      // lands in its own `auth.json` instead of the macOS keychain.
+      // default scope gets from the apply above.
       provision: scopedHome => provisionCodexConfig(scopedHome).then(() => {}),
-      // Two auth modes, endpoint first: a scope whose resolved endpoint
-      // carries a key is authenticated by endpoint (the round routes at the
-      // relay and never consults auth.json); otherwise the device-code
-      // login's auth.json answers, exactly as before. The verdict rides the
-      // family's credential grades untouched — a completed round grades
-      // `verified`, a round's 401 grades `rejected` until the credential
-      // marker's mtime moves past the mark.
-      isAuthenticated: async (home) =>
-        hasEndpointCredential(await resolveEndpoint(home)) || codexAuthenticated(home),
+      // Endpoint-key only: a scope is authenticated when its resolved
+      // endpoint (scope file over plugin config) carries a non-empty key.
+      // The web login is gone — provisioning sweeps its leftover auth.json,
+      // so a stale grant can never keep a round alive past the upgrade.
+      // The verdict rides the family's credential grades untouched — a
+      // completed round grades `verified`, a round's 401 grades `rejected`
+      // until the credential marker's mtime moves past the mark.
+      isAuthenticated: async (home) => hasEndpointCredential(await resolveEndpoint(home)),
       // The settings card's verify button: a cheap token-free probe of the
       // SAVED endpoint (the reply tells the user to save first when a
       // credential is missing). Session-less via the gateway Remote.
@@ -346,22 +342,19 @@ export function apply(ctx: Context, config: Config): void {
           else await writeEndpointAuth(home, next)
         },
       },
-      // The grade marker: the endpoint file's mtime when the scope has one
-      // (editing it IS the re-login gesture for an endpoint scope), else the
-      // web login's auth.json mtime — a fresh login of either mode rewrites
-      // its marker and recovers a `rejected` grade.
-      credentialStamp: async (home) => (await endpointAuthStamp(home)) ?? codexCredentialStamp(home),
-      // Logout clears whichever scoped credentials exist: the endpoint file
-      // AND the web login's auth.json (a dual-mode scope signs out of both).
-      // A config-sourced endpoint credential outlives the clear — said out
-      // loud, or the status would flip right back and read as a failed logout.
+      // The grade marker is the endpoint file's mtime (editing it IS the
+      // re-login gesture); a config-sourced credential has no marker, and a
+      // host restart clears the in-memory `rejected` mark.
+      credentialStamp: endpointAuthStamp,
+      // Logout clears the scope's OWN endpoint file. A config-sourced
+      // credential outlives it — said out loud, or the status would flip
+      // right back and read as a failed logout.
       logout: async (home) => {
-        const hadEndpoint = await endpointAuthFileExists(home)
-        if (hadEndpoint) await clearEndpointAuth(home)
-        const hadLogin = await codexAuthenticated(home)
-        if (hadLogin) await codexLogout(home)
-        if (hadEndpoint || hadLogin) return
-        throw new Error('codex has no scoped credential to clear — the endpoint credential comes from the settings card or the profile row (baseUrl/apiKey); clear it there instead')
+        if (await endpointAuthFileExists(home)) {
+          await clearEndpointAuth(home)
+          return
+        }
+        throw new Error('codex has no scoped endpoint-auth.json to clear — the credential comes from the settings card or the profile row (baseUrl/apiKey); clear it there instead')
       },
       // The eval snapshot: the sandbox policy comes from the plugin config
       // (it rides every spawn argv); effort and endpoint are read live from

@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { codexLogout, provisionCodexConfig, readCodexBaseUrl, readCodexModel, readCodexReasoningEffort } from '../src/provision.ts'
+import { provisionCodexConfig, readCodexBaseUrl, readCodexModel, readCodexReasoningEffort } from '../src/provision.ts'
 
 function tempHome(): string {
   return mkdtempSync(join(tmpdir(), 'codex-provision-'))
@@ -77,12 +77,12 @@ describe('codex scoped-home provisioning', () => {
     await expect(readFile(join(home, 'config.toml'), 'utf8')).resolves.toBe('model_provider = "custom"\n')
   })
 
-  it('removes only the credential file on logout', async () => {
+  it('sweeps a leftover web-login auth.json, even beside an existing config', async () => {
     const home = tempHome()
     mkdirSync(home, { recursive: true })
     writeFileSync(join(home, 'auth.json'), '{"token":"secret"}')
     writeFileSync(join(home, 'config.toml'), 'cli_auth_credentials_store = "file"\n')
-    await codexLogout(home)
+    expect(await provisionCodexConfig(home)).toBe(false)
     const { readFile, access } = await import('node:fs/promises')
     await expect(access(join(home, 'auth.json'))).rejects.toMatchObject({ code: 'ENOENT' })
     await expect(readFile(join(home, 'config.toml'), 'utf8')).resolves.toContain('cli_auth_credentials_store')

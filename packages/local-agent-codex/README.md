@@ -4,7 +4,7 @@
 
 把编码任务甩给你本机装好的 Codex CLI 跑——端点凭据或它自己的登录、自己的会话记录,你的 `~/.codex` 一根手指都不碰。
 
-dsh 的 agent 已经能干活,但有些任务你就是想交给本机的 Codex CLI:它的账号、它的模型、你熟悉的工具链。这个插件把 Codex 接成 dsh 的本地子代理——任意 agent preset 都能经 `subagent_codex` 工具一句话委派;委派跑在插件隔离的作用域目录(`$DSH_HOME/local-agent/codex`)里,你的个人 config、凭据、会话完全不被触碰;过程细节(推理、工具调用、文件改动)实时镜像在子会话里,最终回答回到父会话。认证有两种方式:**端点凭据**(`baseUrl` + `apiKey`,中转/官方平台 key 均可,容器轮与宿主轮用同一套凭据,容器里不需要再授权)与**网页登录**(设备码/浏览器授权)——配了端点 key 即走端点,没配则回到网页登录,两者可并存。
+dsh 的 agent 已经能干活,但有些任务你就是想交给本机的 Codex CLI:它的账号、它的模型、你熟悉的工具链。这个插件把 Codex 接成 dsh 的本地子代理——任意 agent preset 都能经 `subagent_codex` 工具一句话委派;委派跑在插件隔离的作用域目录(`$DSH_HOME/local-agent/codex`)里,你的个人 config、凭据、会话完全不被触碰;过程细节(推理、工具调用、文件改动)实时镜像在子会话里,最终回答回到父会话。认证是端点凭据制(`baseUrl` + `apiKey`,中转/官方平台 key 均可):容器轮与宿主轮用同一套凭据,容器里不需要再授权一次。没有网页登录、没有设备码,OAuth 流程在本包不存在。
 
 <img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/08-local-agent.png" width="640" alt="设置 → 插件配置页里的 Local Agent · Codex 卡片,卡头状态点一眼可见授权状态">
 
@@ -12,8 +12,7 @@ dsh 的 agent 已经能干活,但有些任务你就是想交给本机的 Codex C
 
 - **按会话授予的委派**——`subagent_codex` 工具是本包的 `./tool` 组合入口,由点名它的 agent 预设(如开发模式)授予该预设的会话,无需逐 preset 配置。
 - **作用域目录隔离**——Codex 的全部状态(config、凭据、rollout 会话记录)留在 `$DSH_HOME/local-agent/codex`,与你的 `~/.codex` 互不干扰。
-- **端点凭据(可与网页登录并存)**——设置卡「认证」区填 `baseUrl` + `apiKey`(保存进默认 scope 的 `endpoint-auth.json`,0600,只存本机)或预配在 profile 配置行即已认证;每个命名 scope 可用自己的 `endpoint-auth.json` 按字段覆盖部署级配置。配了 key 的 scope 每轮以自定义 provider(`wire_api=responses`,实测 codex-cli 0.163.0 经中转直通)路由到端点,网页登录的 `auth.json` 不再被读取;清掉 key 即回落到登录授权。宿主 shell 的环境变量从不被读取。
-- **会话内登录(网页授权)**——`/codex login` 在伪终端里跑 `codex login`,授权页自动在浏览器打开;页面给出 code 时用 `/codex code <code>` 粘贴回来。未配端点凭据时这是默认方式;设置卡片显示认证状态并提供退出登录(两种方式的凭据一并清除)。
+- **端点凭据(唯一的认证方式)**——设置卡「认证」区填 `baseUrl` + `apiKey`(保存进默认 scope 的 `endpoint-auth.json`,0600,只存本机)或预配在 profile 配置行即已认证;每个命名 scope 可用自己的 `endpoint-auth.json` 按字段覆盖部署级配置。每轮委派以自定义 provider(`wire_api=responses`,实测 codex-cli 0.163.0 经中转直通)路由到端点,key 经进程环境传递。宿主 shell 的环境变量从不被读取;没有网页登录。
 - **常驻模式(live)**——每成员常驻一个 `codex app-server` 进程,按轮发 turn:输出实时流入子会话、取消不杀进程、崩溃后自动续上原线程;关闭或通道起不来即回一次性 `codex exec`,热切换无需重载。
 - **设置卡片**——Plugins 详情页(0.1.5 为 设置 → 插件 → 插件配置)里的 Codex 卡:登录授权、默认模型(留空 = 跟随 CLI 默认)、常驻开关,保存即于下一轮生效。
 - **线程续聊**——传入 `resume="<childSessionId>"` 在同一个 dsh 子会话里继续同一个 codex 线程,宿主重启后也续得上。
@@ -31,7 +30,7 @@ dsh plugin --profile web add @khorsheed/dsh-local-agent
 dsh plugin --profile web add @khorsheed/dsh-local-agent-codex
 ```
 
-两个包必须同时点名——`dsh plugin add` 只调和**直接**依赖,家族 core 不会被传递依赖自动挂载。重启 web 实例后生效,然后在设置 → 插件里本包卡片的「认证」区填端点与 key,或在任意会话里跑一次 `/codex login` 完成网页授权(两者任选;配了端点 key 即走端点)。
+两个包必须同时点名——`dsh plugin add` 只调和**直接**依赖,家族 core 不会被传递依赖自动挂载。重启 web 实例后生效,然后在设置 → 插件里本包卡片的「认证」区填端点与 key 即可(也可预配在 profile 的本包配置行);都不配则状态为未认证。
 
 卸载:
 
@@ -58,13 +57,15 @@ dsh plugin --profile web remove @khorsheed/dsh-local-agent-codex
 
 ### 端点凭据(`baseUrl` + `apiKey`)
 
-**配了 key = 每轮走端点。**scope 的解析结果(`<作用域目录>/endpoint-auth.json` 按字段覆盖 profile 配置行)带着非空 key 时,每轮委派在 argv 上注入一个自定义 provider(`-c model_provider=… -c model_providers.…={base_url, env_key=OPENAI_API_KEY, wire_api=responses}`),key 经进程环境传递——不写 `config.toml`、不读 `auth.json`,网页登录完全不参与;一次性 exec、常驻 app-server、模型目录探测三条路同一套注入。key 不带 `baseUrl` 时用 OpenAI 官方端点(官方平台 key 不需要中转,内置 provider 读同一个环境变量)。清掉 key(设置卡留空保存)即回落到网页登录。
+**配了 key = 每轮走端点。**scope 的解析结果(`<作用域目录>/endpoint-auth.json` 按字段覆盖 profile 配置行)带着非空 key 时,每轮委派在 argv 上注入一个自定义 provider(`-c model_provider=… -c model_providers.…={base_url, env_key=OPENAI_API_KEY, wire_api=responses}`),key 经进程环境传递——不写 `config.toml`、不读 `auth.json`,网页登录完全不参与;一次性 exec、常驻 app-server、模型目录探测三条路同一套注入。key 不带 `baseUrl` 时用 OpenAI 官方端点(官方平台 key 不需要中转,内置 provider 读同一个环境变量)。清掉 key(设置卡留空保存)即未认证。
 
 **设置卡「认证」区编辑的就是默认 scope 的 `endpoint-auth.json`**(0600,只存本机;经家族 gateway 的 `endpointAuth`/`configureEndpoint` Remote,会话不在场也能读写),密钥绝不写进 profile 文件,文件名也命中评测契约哈希的凭据拒绝名单、不进条件指纹。旁边的「验证端点并获取模型」按钮对**已保存**的端点跑一次无 token 探测(`GET <baseUrl>/v1/models`,Bearer 头),返回可达性与端点供应的模型列表。文件里还可手写 `"wireApi": "chat"`(卡片不编辑它,保存时保留)适配只支持 chat/completions 的中转。
 
 > **凭据错误的代价是重试时长**——一把失效的 key 会让 CLI 在端点前重试数分钟才报出 401;`/codex status` 的 `rejected` 等级在那一轮 settle 后才出现。重存 key(重写 endpoint-auth.json)即恢复。
 
-**logout 清两边。**`/codex logout` 同时删除 scope 的 `endpoint-auth.json` 与网页登录的 `auth.json`;凭据完全来自 profile 配置行(两边文件都不存在)时 logout 拒绝并提示去改 profile。
+> **迁移说明(下一发布线,破坏性变更)**——网页登录整体移除:`/codex login` 不再存在,设备码/浏览器授权随之删除;升级后首次启动会清扫作用域目录里残留的 `auth.json`,避免一份陈旧授权在状态显示未认证时仍悄悄可用。升级前先在设置卡或 profile 行配好 `baseUrl` + `apiKey`(官方平台 key 同样可用),否则升级即未认证。
+>
+> **logout 只清 scope 自己的文件**——`/codex logout` 删除 scope 的 `endpoint-auth.json`;凭据完全来自 profile 配置行时 logout 拒绝并提示去改 profile。
 
 **旧键迁移。** live 轮次统一消费增量输出:旧 `liveMirrorGranularity: event | token` 配置继续兼容读取,但不再影响行为,也不会改变运行中的进程。评测继续保留 exec 驱动;最终内容仍以 provider 完成项为准,包括工具记录和用量。
 
@@ -93,7 +94,7 @@ dsh plugin --profile web remove @khorsheed/dsh-local-agent-codex
 
 ## 自定义端点
 
-首选上文的端点凭据(设置卡/profile 行,与网页登录并存且优先)。仍保留手工路线:在作用域 `$DSH_HOME/local-agent/codex/config.toml` 里**新增自定义 provider**(内置 provider 不可覆盖、`OPENAI_BASE_URL` 不生效、预置逻辑从不覆盖已存在的 config):
+端点凭据(设置卡/profile 行)是唯一带凭据的路线。仍可在作用域 `$DSH_HOME/local-agent/codex/config.toml` 里**新增自定义 provider**(内置 provider 不可覆盖、`OPENAI_BASE_URL` 不生效、预置逻辑从不覆盖已存在的 config),但它的 `env_key` 读的是子进程环境——宿主 shell 的同名变量会被清洗,只有端点凭据的 key 会随行,所以手工 provider 实际只对**不需要认证**的端点(如本地路由器)有用:
 
 ```toml
 [model_providers.dsh-router]
@@ -102,9 +103,9 @@ base_url = "https://your-router.example/v1"
 model_provider = "dsh-router"
 ```
 
-最后一行为委派选择该 provider;文件其余内容必须保留。手工 provider 与端点凭据的关系:**端点凭据带 key 时以它为准**(argv 上的 provider 覆盖文件的 `model_provider` 选择);没有端点 key 时文件里选择的手工 provider 生效,与本次改造前一致。
+最后一行为委派选择该 provider;文件其余内容必须保留。端点凭据带 key 时以它为准(argv 上的 provider 覆盖文件的 `model_provider` 选择)。
 
-⚠️ **凭据暴露**:端点 key(或网页登录的 `auth.json` token)会发送给处理请求的端点——只使用你控制或信任的端点。每次委派在 info 级别记录生效的端点。
+⚠️ **凭据暴露**:端点 key 会发送给处理请求的端点——只使用你控制或信任的端点。每次委派在 info 级别记录生效的端点。
 
 **评测快照(effectiveSettings)。** 本 harness 向注册表声明一份实时读取的公平性设置快照,供评测条件哈希使用:drive(exec/live)、sandbox 策略(插件配置)、推理强度(读作用域 config 的顶层 `model_reasoning_effort`)、端点是否固定(端点凭据优先——scope 的 `endpoint-auth.json` 逐字段覆盖插件配置;没有 key 才读作用域 config 的自定义 provider;只报主机名,key 材料永远不进快照)、已配置模型(先看插件配置的 `model` 键——它每轮覆盖文件;没有才读作用域 config 的顶层 `model`;都没有就不给字段)、CLI 版本(`codex --version`,按可执行文件路径+mtime 缓存;探测不到即字段缺位)。`/codex status` 与 `LocalAgentStatus` Remote 附带同一份快照。
 
@@ -115,7 +116,7 @@ model_provider = "dsh-router"
 
 ## 已知限制
 
-- **网页登录需要一次浏览器授权**——选择网页授权方式时,`/codex login` 自动打开授权页,CLI 追问 code 时以 `/codex code <code>` 粘贴回来;不想开浏览器就改用端点凭据(设置卡/profile 行,官方平台 key 与中转 key 均可)。
+- **没有网页登录**——认证只有端点凭据一条路(设置卡/profile 行,官方平台 key 与中转 key 均可);ChatGPT 订阅的 OAuth 路径不在本包。
 - **`codex exec` 非交互运行**——沙箱策略本需审批的动作会被拒绝而非弹提示;常驻模式下审批类请求同样按无人值守策略自动谢绝(cancel/decline)。见 `sandbox` 配置。
 - **命名 scope 只走一次性 exec**——常驻 app-server 绑定缺省作用域目录,带 scope 的委派不进 live。
 - **headless 注意**——`/codex` 命令需要 Web 会话;headless 仍可通过挂载工具行的组合进行委派。
@@ -129,7 +130,7 @@ model_provider = "dsh-router"
 
 **bundle 组成。** patch 注册 `codex` harness(`CODEX_HOME` 作用域目录、PTY 登录、rollout 文件会话记录)——恰好一行 provider 行;`subagent_codex` 工具自家族折叠起是本包的 `./tool` 组合入口,由点名它的 agent 预设按会话授予(dev 预设的 `tool-subagent-codex-local` 行),不再挂 profile 根。家族沿用官方模型名 `subagent_codex`:官方 preset 的同名行本就 `disabled: true`,patch 对 profile 根的同名行再禁一次,社区安装永远不会注册出两个 `subagent_codex`;刻意在自有 preset 层重新启用官方行的用户会得到响亮的重名冲突,按设计必须二选一。`codex-local` provider 在该作用域目录下 spawn `codex exec`(live 未启用时的一次性驱动)。浏览器半部分随本包 `./client` 提供:Codex 设置卡组合家族 core 的共享 `ProviderAuthBlock`,落在 Plugins 页的 `plugins.item` 条目——宿主服务 `local-agent-codex` 命名空间时经 `configForms.whileServed` 挂载,独立安装、家族 bundle、模式包同一张卡;卡片写入经绑定的 settingsScope 热生效,不用重载。core 本身来自声明为依赖的 `@khorsheed/dsh-local-agent`。
 
-**登录与凭据。** 两种认证方式并存,**端点凭据优先**:scope 的 `endpoint-auth.json`(0600)按字段覆盖 profile 配置行的 `baseUrl`/`apiKey`,解析结果带 key 时每轮在 argv 注入自定义 provider(`wire_api=responses`,key 经进程环境传递,实测 codex-cli 0.163.0 全新 scope 下无需任何登录文件直通中转),`auth.json` 不被读取;不带 key 则走网页登录。网页登录:`/codex login` 经宿主 subprocess seam 在伪终端里跑 `codex login`——CLI 自己起 localhost 回调服务并打开浏览器,这是第一类流程;命令回复附带从输出里抓取的授权 URL 作兜底链接,CLI 追问 code 时用户以 `/codex code <code>` 粘贴(写入子进程 stdin)。完成由监听作用域目录的凭证 watch 判定:`auth.json` 出现且时间戳新于 watch 起点——残留的旧凭证不会被误认成新登录。无浏览器的远程终端可以手动以 `CODEX_HOME` 指向作用域目录跑 `codex login --device-auth`,凭据落在同一份 `auth.json`。首次启动写入一份最小 `config.toml`,固定 `cli_auth_credentials_store = "file"`——Codex 默认的 `auto` 会解析到 macOS keychain,把凭据泄漏到作用域目录之外并使本包的 `auth.json` 存在性检查失效;已存在的 config 保持不动。`/codex logout` 删除作用域 `endpoint-auth.json` 与 `auth.json`,之后重新配置或登录即可换账号。
+**凭据。** 端点凭据制,没有登录流程:scope 的 `endpoint-auth.json`(0600)按字段覆盖 profile 配置行的 `baseUrl`/`apiKey`,解析结果带 key 时每轮在 argv 注入自定义 provider(`wire_api=responses`,key 经进程环境传递,实测 codex-cli 0.163.0 全新 scope 下无需任何登录文件直通中转)。首次启动写入一份最小 `config.toml`,固定 `cli_auth_credentials_store = "file"`——Codex 默认的 `auto` 会解析到 macOS keychain,在作用域目录里手跑 `codex login` 会把凭据泄漏到目录之外;已存在的 config 保持不动。每次启动还会清扫网页登录时代残留的 `auth.json`——本包不再读取它,留着只会让一份陈旧授权在状态显示未认证时仍悄悄可用。`/codex logout` 删除作用域 `endpoint-auth.json`,之后重新配置即可换 key。
 
 **会话记录。** `/codex sessions` 列出作用域目录的 `sessions/YYYY/MM/DD/rollout-*.jsonl` 文件——仅本插件委派产生的会话,绝不含你的私人会话。会话头部的记录入口(家族 core 的客户端提供)把同一份列表收窄到 `workDir` 与当前会话 cwd 一致的记录。
 

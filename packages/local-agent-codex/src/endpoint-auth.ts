@@ -1,12 +1,12 @@
 /**
- * Endpoint-key authentication — one of the codex harness's TWO auth modes,
- * alongside the device-code/browser login (auth.json). Both stay available;
- * the resolved endpoint credential simply WINS at spawn when it carries a
- * key: the round's argv then names a custom `model_providers` entry pointing
- * at the relay and the key travels as `OPENAI_API_KEY` in the process
- * environment, so codex never consults auth.json for that round. With no
- * endpoint credential the spawn is byte-identical to the pre-endpoint shape
- * and the web login serves exactly as before.
+ * Endpoint-key authentication — the codex harness's ONLY auth mode. There is
+ * no web login anywhere in this package: a delegation round reaches its
+ * endpoint with a custom `model_providers` entry on the argv pointing at the
+ * relay and the key traveling as `OPENAI_API_KEY` in the process environment
+ * (verified against codex-cli 0.163.0: a fresh scoped home with only these
+ * runs `codex exec` with no login file at all). With no credential the spawn
+ * carries no auth at all — it fails loudly at the endpoint, exactly the
+ * honest reading the status shows.
  *
  * Verified against codex-cli 0.163.0 (2026-10-20): a fresh scoped home with
  * only `OPENAI_API_KEY` plus the two `-c` overrides below runs

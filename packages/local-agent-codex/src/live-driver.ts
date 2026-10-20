@@ -519,7 +519,7 @@ export class CodexLiveDriver {
        * SPAWN so a settings-card write reaches the next respawn without a
        * reload. A resolution carrying a key routes the app-server at the
        * relay (custom `model_providers` `-c` overrides plus the key in the
-       * process env), winning over the web login exactly as on the exec path.
+       * process env), exactly as on the exec path.
        */
       endpoint?: (scopeHome: string) => Promise<CodexEndpointAuth>
     },

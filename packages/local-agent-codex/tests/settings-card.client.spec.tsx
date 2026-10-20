@@ -48,7 +48,9 @@ function makeSnapshot(
 }
 
 function codexStatus(authenticated: boolean): LocalAgentStatus {
-  return { name: 'codex', displayName: 'Codex', authenticated, homeDir: '/h' }
+  // Endpoint-key only: the harness declares no login flow, so the status
+  // reports not-loginable and the auth block renders no login button.
+  return { name: 'codex', displayName: 'Codex', authenticated, homeDir: '/h', loginable: false }
 }
 
 interface CardHarness {
@@ -67,6 +69,11 @@ interface CardOptions {
   authStatus?: LocalAgentStatus | undefined
   runCommand?: (sessionId: SessionId, line: string) => Promise<string | undefined>
   harnessModel?: () => Promise<LocalAgentModelInfo | null | undefined>
+  endpointAuth?: {
+    read: () => Promise<{ baseUrl?: string; apiKeySet: boolean; authTokenSet: boolean }>
+    write: (fields: Record<string, string | null>) => Promise<{ baseUrl?: string; apiKeySet: boolean; authTokenSet: boolean }>
+  }
+  checkEndpoint?: () => Promise<string | null | undefined>
 }
 
 /** The card props over a scope whose writes update the snapshot reactively. */
@@ -120,6 +127,8 @@ function makeCardProps(options: CardOptions): { props: Record<string, unknown> }
     auth: { status, runCommand },
     authT,
     harnessModel,
+    ...options.endpointAuth === undefined ? {} : { endpointAuth: options.endpointAuth },
+    ...options.checkEndpoint === undefined ? {} : { checkEndpoint: options.checkEndpoint },
     t,
   }
   return { props, scope: { set, unset } }
@@ -153,12 +162,13 @@ async function openCard(): Promise<void> {
 }
 
 describe('CodexSettingsCard', () => {
-  it('renders the three states: unauthenticated with live off', async () => {
+  it('renders the three states: unauthenticated with live off, and no login affordance', async () => {
     renderCard({})
     await openCard()
 
     expect(screen.getByText(coreZh['settings.notAuthenticated'])).toBeTruthy()
-    expect(screen.getByRole('button', { name: coreZh['settings.login'] })).toBeTruthy()
+    // Endpoint-key only: no login button anywhere (loginable: false).
+    expect(screen.queryByRole('button', { name: coreZh['settings.login'] })).toBeNull()
     const toggle = screen.getByRole('switch', { name: zh['live.title'] })
     expect(toggle.getAttribute('aria-checked')).toBe('false')
   })
@@ -201,17 +211,82 @@ describe('CodexSettingsCard', () => {
     expect(screen.getByText(zh['live.unavailable'])).toBeTruthy()
   })
 
-  it('runs the auth login flow from the card (device-code prompt + open page link)', async () => {
-    const runCommand = vi.fn().mockResolvedValue('Device login started.\nhttps://auth.openai.com/codex/device?user_code=ABCD\nComplete in the browser.')
-    renderCard({ runCommand })
+  it('verifies the saved endpoint from the card and shows the verdict', async () => {
+    const checkEndpoint = vi.fn().mockResolvedValue('Endpoint reachable (https://relay.example.com/openai/v1): 3 model(s) served — gpt-a, gpt-b, gpt-c')
+    const endpointAuth = { read: vi.fn(async () => ({ apiKeySet: true, authTokenSet: false })), write: vi.fn() }
+    renderCard({ checkEndpoint, endpointAuth })
+    await openCard()
+    // The card's own mount read of the endpoint state lands before the button.
+    await act(async () => {})
+
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['endpoint.check'] })) })
+    expect(checkEndpoint).toHaveBeenCalledTimes(1)
+    expect(screen.getByText(/Endpoint reachable/)).toBeTruthy()
+  })
+})
+
+describe('CodexSettingsCard endpoint credential block', () => {
+  /** A reactive endpointAuth face over a mutable resolved state. */
+  function endpointFace(initial: { baseUrl?: string; apiKeySet: boolean }) {
+    let state = { authTokenSet: false, ...initial }
+    const read = vi.fn(async () => state)
+    const write = vi.fn(async (fields: Record<string, string | null>) => {
+      const next = { baseUrl: state.baseUrl, apiKey: state.apiKeySet ? 'set' : undefined as string | undefined }
+      for (const [key, value] of Object.entries(fields)) {
+        if (key === 'baseUrl') next.baseUrl = value === null ? undefined : value ?? next.baseUrl
+        if (key === 'apiKey') next.apiKey = value === null ? undefined : value ?? next.apiKey
+      }
+      state = {
+        ...next.baseUrl === undefined ? {} : { baseUrl: next.baseUrl },
+        apiKeySet: next.apiKey !== undefined,
+        authTokenSet: false,
+      }
+      return state
+    })
+    return { read, write }
+  }
+
+  it('echoes the resolved baseUrl but never the key (set shows as a chip and placeholder)', async () => {
+    const endpointAuth = endpointFace({ baseUrl: 'https://relay.example.com/openai/v1', apiKeySet: true })
+    renderCard({ endpointAuth })
     await openCard()
 
-    fireEvent.click(screen.getByRole('button', { name: coreZh['settings.login'] }))
-    await act(async () => {})
-    expect(runCommand).toHaveBeenCalledWith(SESSION, '/codex login')
-    const link = screen.getByRole('link', { name: coreZh['settings.openPage'] })
-    expect(link.getAttribute('href')).toBe('https://auth.openai.com/codex/device?user_code=ABCD')
-    // (Full login/poll/toast parity is pinned by the core package's block spec.)
+    const baseUrl = screen.getByLabelText(zh['endpoint.baseUrl']) as HTMLInputElement
+    expect(baseUrl.value).toBe('https://relay.example.com/openai/v1')
+    const apiKey = screen.getByLabelText(zh['endpoint.apiKey']) as HTMLInputElement
+    expect(apiKey.value).toBe('')
+    expect(apiKey.placeholder).toBe(zh['endpoint.secret.configured'])
+    expect(screen.getAllByText(zh['endpoint.configured'])).not.toHaveLength(0)
+  })
+
+  it('writes only the dirty fields through the endpointAuth face and shows the post-write state', async () => {
+    const endpointAuth = endpointFace({ apiKeySet: false })
+    renderCard({ endpointAuth })
+    await openCard()
+
+    fireEvent.change(screen.getByLabelText(zh['endpoint.baseUrl']), { target: { value: ' https://relay.example.com/openai/v1 ' } })
+    fireEvent.change(screen.getByLabelText(zh['endpoint.apiKey']), { target: { value: ' sk-new ' } })
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['endpoint.save'] })) })
+
+    expect(endpointAuth.write).toHaveBeenCalledWith({ baseUrl: 'https://relay.example.com/openai/v1', apiKey: 'sk-new' })
+    expect(screen.getByText(zh['endpoint.applied'])).toBeTruthy()
+    // The write's answer flips the chip without a re-read; the draft clears.
+    expect((screen.getByLabelText(zh['endpoint.apiKey']) as HTMLInputElement).value).toBe('')
+    expect((screen.getByLabelText(zh['endpoint.apiKey']) as HTMLInputElement).placeholder).toBe(zh['endpoint.secret.configured'])
+  })
+
+  it('a blank key write clears the field (null, not an empty string)', async () => {
+    const endpointAuth = endpointFace({ apiKeySet: true })
+    renderCard({ endpointAuth })
+    await openCard()
+
+    const input = screen.getByLabelText(zh['endpoint.apiKey'])
+    // The draft starts at the configured placeholder; typing a space and
+    // clearing leaves an empty draft, which the save maps to null.
+    fireEvent.change(input, { target: { value: ' ' } })
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['endpoint.save'] })) })
+    expect(endpointAuth.write).toHaveBeenCalledWith({ apiKey: null })
+    expect((screen.getByLabelText(zh['endpoint.apiKey']) as HTMLInputElement).placeholder).toBe(zh['endpoint.secret.placeholder'])
   })
 })
 
