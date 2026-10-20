@@ -12,7 +12,7 @@
 
 - **每个 CLI 一个作用域目录**——共享 homes 根下的隔离凭据/会话目录，以 0700 创建；你的本地 CLI 安装绝不被动到。
 - **斜杠命令族**——`/<harness> login|sessions|status|logout`，device-code 登录 URL 通过命令回复呈现；另有家族命令 `/local-agent list`（已注册 harness 花名册）与 `/local-agent stop <childSessionId>`（取消在飞委派）。
-- **一张「本机 Agent 委派」家族设置卡**——落在 Plugins 页（core 的一个 `plugins.item` 条目，宿主服务 core 行命名空间时经 `configForms.whileServed` 挂载）：每家 provider 的卡体渲染为卡内一节（认证状态、端点凭据、默认模型、常驻模式热切开关），节头带认证状态点与「未检测到 CLI」灰标签；provider 包经 core client 的 `localAgentUi.registerHarnessCard` 注册各自的节（旧版 core 上各家仍回落为自己的 `plugins.item` 卡）。卡体直接复用本包 client 面的共享 `ProviderAuthBlock`。
+- **一张「本机 Agent 委派」家族设置卡**——落在 Plugins 页（core 的一个 `plugins.item` 条目，随 core 的 client bundle 挂载，无命名空间门控——core 的 Config 无 volatile 字段，命名空间不出现在 settings describe 里，不能照 companion 的 `whileServed` 惯例走）：每家 provider 的卡体渲染为卡内一节（认证状态、端点凭据、默认模型、常驻模式热切开关），节头带认证状态点与「未检测到 CLI」灰标签；provider 包经 core client 的 `localAgentUi.registerHarnessCard` 注册各自的节（旧版 core 上各家仍回落为自己的 `plugins.item` 卡）。卡体直接复用本包 client 面的共享 `ProviderAuthBlock`。
 - **子 agent 委派与续跑**——把会话工作交给本机 CLI 并在之后 resume，宿主重启也能续上；委派记录按 harness 持久化在作用域目录的 `delegations.jsonl`。
 - **成员会话保持可写**——委派的子会话不是只读回放：MemberComposer 让它继续接受输入（发送即 resume），实时输出流式呈现，模型与推理强度可在成员输入栏切换；运行中选择排到下一完整轮次生效，冻结的评测成员拒绝变更。
 - **成员会话侧栏续写（宿主 0.1.6 起）**——官方 subagent 目录每行新增「在侧边栏打开」入口：成员会话本就是 one-shot subagent，侧栏内本家族 MemberComposer 自动当选为可写 composer，本包零改动受益；0.1.5 宿主没有该入口，行为不变。
@@ -50,7 +50,7 @@ dsh plugin --profile web remove @khorsheed/dsh-local-agent
 
 ## Compatibility
 
-- npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：✅ 完整——适配 0.1.5-rc.1（format v2/v3；handle 制 sessionPersistence），全量构建测试通过；minHost 前移至 0.1.5-rc.1，旧宿主请停留在旧发布线。家族设置卡「本机 Agent 委派」只挂 0.1.7-alpha.1+ 的 Plugins 页 `plugins.item` 席位（`configForms.whileServed` 随宿主服务的 `local-agent` 命名空间挂载）；更旧的宿主不呈现该卡，各 companion 卡也不受影响。
+- npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：✅ 完整——适配 0.1.5-rc.1（format v2/v3；handle 制 sessionPersistence），全量构建测试通过；minHost 前移至 0.1.5-rc.1，旧宿主请停留在旧发布线。家族设置卡「本机 Agent 委派」随 core 的 client bundle 挂到 0.1.7-alpha.1+ 的 Plugins 页 `plugins.item` 席位（无 `configForms.whileServed` 门控——core 的 Config 无 volatile 字段，其命名空间不进 settings describe）；更旧的宿主没有该席位，不呈现该卡，各 companion 卡也不受影响。
 - 源码线（deepseek-harness master）：✅（verifiedHost: 0.2.1-rc.1）——host-021 波对 0.2.1-rc.1 树全量 build+test 绿；委派迁移到 `ctx.subagents.startActivation`（受管 activation），run.id 改为每次执行唯一。
 
 ## 已知限制

@@ -8,9 +8,11 @@ import { MemberFeeds } from './member-feed.ts'
  * the provider packages through the localAgentUi service's
  * `registerHarnessCard` (a provider on a core predating the family card
  * keeps its own standalone card; this core alone shows the card with an
- * empty state). The
- * card is gated on the core row's own served namespace
- * (`configForms.whileServed(['local-agent'])`, the companion convention).
+ * empty state). The card registers with the core client bundle itself —
+ * no served-namespace gate: the whileServed convention only lists
+ * namespaces whose Config has a volatile field, and this core's Config
+ * has none, so its namespace never serves (the companions' sections keep
+ * their own namespace gates).
  * Roster and status ride the read-only local-agent Remote
  * channel (no session events); only the user-initiated login/logout/preset
  * commands go through the commands Remote, whose visible command node is the
@@ -30,7 +32,6 @@ import type { Context } from '@deepseek-ai/cordis'
 // locale Context merge.
 import type {} from '@khorsheed/dsh-local-agent/remote'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
-import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 // Type-only: the ctx.slots service merge (renderer-owned slot registry).
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // Type-only: the 'conversation.composer' SlotMap merge (chain registration).
@@ -202,28 +203,29 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     }, MemberComposer),
   )
   // The family card: ONE Plugins-page entry rendering every registered
-  // harness section, gated on the core row's OWN served namespace — the same
-  // whileServed convention the companions' retired standalone cards followed.
-  // The probe rides a deferred inject because configForms exists only on the
-  // alpha.2+ host line; older hosts never fire it and no card mounts.
-  ctx.inject(['configForms'], (formsCtx) => {
-    const forms = formsCtx.configForms
-    if (typeof forms.whileServed !== 'function') return
-    return forms.whileServed(['local-agent'], () => ctx.slots.inject('plugins.item', () => ctx.slots.register({
-      name: 'plugins.item',
-      id: 'local-agent',
-      // Ahead of the harnesses' retired standalone cards (orders 110-140).
-      order: 100,
-      label: () => t('family.title'),
-      locale: NS,
-      inject: (): FamilyCardInjected => ({
-        harnessCards,
-        harnessStatus: name =>
-          gateway?.status(name, undefined).then(result => (result.ok ? result.value : undefined))
-            ?? Promise.resolve(undefined),
-      }),
-    }, LocalAgentFamilyCard)))
-  })
+  // harness section. Registered UNCONDITIONALLY, not gated on the core row's
+  // served namespace like the companions' retired standalone cards: the
+  // whileServed list only carries namespaces whose Config schema has a
+  // volatile field, and this core's Config has none — gating on it meant the
+  // card never mounted (and the new-core companions had already given up
+  // their standalone seats, so no local-agent card rendered at all). The
+  // client bundle loads only with the core row in the composition, so the
+  // bundle's presence is the gate; a core whose server half failed simply
+  // renders the sections' degraded states.
+  ctx.slots.inject('plugins.item', () => ctx.slots.register({
+    name: 'plugins.item',
+    id: 'local-agent',
+    // Ahead of the harnesses' retired standalone cards (orders 110-140).
+    order: 100,
+    label: () => t('family.title'),
+    locale: NS,
+    inject: (): FamilyCardInjected => ({
+      harnessCards,
+      harnessStatus: name =>
+        gateway?.status(name, undefined).then(result => (result.ok ? result.value : undefined))
+          ?? Promise.resolve(undefined),
+    }),
+  }, LocalAgentFamilyCard))
   return async () => {
     for (const dispose of disposers.reverse()) await dispose()
   }
