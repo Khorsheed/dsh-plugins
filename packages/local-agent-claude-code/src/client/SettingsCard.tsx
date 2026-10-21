@@ -14,7 +14,7 @@ import {
 } from '@khorsheed/dsh-local-agent/src/client/ProviderAuthBlock.tsx'
 import { AuthStatusDot } from '@khorsheed/dsh-local-agent/src/client/AuthStatusDot.tsx'
 import { publishAuthStatus, useHarnessAuthStatus } from '@khorsheed/dsh-local-agent/src/client/auth-status.ts'
-import { ModelListEditor } from './ModelListEditor.tsx'
+import { ModelListSection } from '@khorsheed/dsh-local-agent/src/client/ModelListSection.tsx'
 import { NS } from './locales.ts'
 import css from './SettingsCard.module.css'
 
@@ -141,8 +141,6 @@ function useCardState(
   active: boolean,
   useSettings: ClaudeCodeSettingsCardProps['useSettings'],
   scope: ClaudeCodeSettingsCardProps['scope'],
-  modelList: ClaudeCodeSettingsCardInjected['modelList'],
-  modelDirectory: ClaudeCodeSettingsCardInjected['modelDirectory'],
   endpointAuth: ClaudeCodeSettingsCardInjected['endpointAuth'],
 ) {
   const snapshot: SettingsScopeSnapshot<ClaudeLiveSettings> = useSettings(value => value)
@@ -176,47 +174,6 @@ function useCardState(
     )
     return () => { stale = true }
   }, [active, endpointAuth, endpointSaved])
-  // The curated model list (models.json through the gateway Remotes): the
-  // FIRST entry is the default model; every edit writes immediately and the
-  // answer replaces the local state. Absent face → the editor stays hidden.
-  const modelsUnavailable = modelList === undefined
-  const [models, setModels] = useState<readonly string[]>([])
-  const [modelsSaved, setModelsSaved] = useState(false)
-  const [modelsError, setModelsError] = useState(false)
-  useEffect(() => {
-    if (!active || modelList === undefined) return
-    let stale = false
-    void modelList.read().then(
-      (list) => { if (!stale) setModels(list ?? []) },
-      () => { if (!stale) setModels([]) },
-    )
-    return () => { stale = true }
-  }, [active, modelList])
-  const saveModels = (next: readonly string[]): void => {
-    if (modelList === undefined) return
-    setModelsSaved(false)
-    setModelsError(false)
-    void modelList.write(next).then(
-      (written) => {
-        setModels(written ?? next)
-        setModelsSaved(true)
-      },
-      () => { setModelsError(true) },
-    )
-  }
-  // The endpoint's served catalog: the add dialog's candidate vocabulary.
-  // Refreshed while the surface is active and after every credential save
-  // (a fresh credential's models belong in the dialog now).
-  const [directory, setDirectory] = useState<LocalAgentModelDirectory | null>(null)
-  useEffect(() => {
-    if (!active || modelDirectory === undefined) return
-    let stale = false
-    void modelDirectory(true).then(
-      (result) => { if (!stale) setDirectory(result ?? null) },
-      () => { if (!stale) setDirectory(null) },
-    )
-    return () => { stale = true }
-  }, [active, modelDirectory, endpointSaved])
   const write = (field: string, value: unknown): void => {
     setSaved(false)
     setError(false)
@@ -255,7 +212,6 @@ function useCardState(
 
   return {
     snapshot, saved, error, ready, live, write,
-    models, modelsUnavailable, modelsSaved, modelsError, directory, saveModels,
     endpointState, endpointUnavailable, endpointLoading,
     baseUrlValue: baseUrlDraft ?? (endpointState !== null && endpointState !== 'unavailable' ? endpointState.baseUrl ?? '' : ''),
     apiKeyConfigured, authTokenConfigured, apiKeyDraft, authTokenDraft,
@@ -264,18 +220,20 @@ function useCardState(
   }
 }
 
-/** The card body both settings surfaces share: the auth block, the default-model block, and the resident-mode block. */
-function CardBody({ state, auth, authT, checkEndpoint, useSessions, t }: {
+/** The card body both settings surfaces share: the auth block, the model-list section, and the resident-mode block. */
+function CardBody({ state, active, auth, authT, modelList, modelDirectory, checkEndpoint, useSessions, t }: {
   readonly state: ReturnType<typeof useCardState>
+  readonly active: boolean
   readonly auth: ClaudeCodeSettingsCardInjected['auth']
   readonly authT: ClaudeCodeSettingsCardInjected['authT']
+  readonly modelList: ClaudeCodeSettingsCardInjected['modelList']
+  readonly modelDirectory: ClaudeCodeSettingsCardInjected['modelDirectory']
   readonly checkEndpoint: ClaudeCodeSettingsCardInjected['checkEndpoint']
   readonly useSessions: ClaudeCodeSettingsCardProps['useSessions']
   readonly t: ClaudeCodeSettingsCardProps['t']
 }) {
   const {
     snapshot, saved, error, ready, live, write,
-    models, modelsUnavailable, modelsSaved, modelsError, directory, saveModels,
     endpointUnavailable, endpointLoading,
     baseUrlValue, apiKeyConfigured, authTokenConfigured, apiKeyDraft, authTokenDraft,
     endpointSaved, endpointError, endpointDirty, saveEndpoint,
@@ -394,21 +352,13 @@ function CardBody({ state, auth, authT, checkEndpoint, useSessions, t }: {
         </div>
         )}
       </section>
-      <section className={css.block}>
-        <h3 className={css.blockTitle}>
-          {t('models.title')}
-          <Tooltip label={t('models.info')} side="bottom" maxWidth={360}>
-            <button type="button" className={css.info} aria-label={t('models.info.aria')}>ⓘ</button>
-          </Tooltip>
-        </h3>
-        {!modelsUnavailable && (
-          <>
-            <ModelListEditor models={models} directory={directory} onChange={saveModels} t={t} />
-            {modelsSaved && <span className={css.saved}>{t('models.applied')}</span>}
-            {modelsError && <span className={css.errorText}>{t('models.error')}</span>}
-          </>
-        )}
-      </section>
+      <ModelListSection
+        active={active}
+        modelList={modelList}
+        modelDirectory={modelDirectory}
+        directoryRefresh={endpointSaved}
+        t={authT}
+      />
       <section className={css.block}>
         <div className={css.row}>
           <span className={css.rowLabel}>
@@ -454,7 +404,7 @@ function CardBody({ state, auth, authT, checkEndpoint, useSessions, t }: {
 export function ClaudeCodeSettingsCard(props: ClaudeCodeSettingsCardProps) {
   const { useSettings, scope, auth, authT, modelList, modelDirectory, checkEndpoint, endpointAuth, useSessions, t } = props
   const [open, setOpen] = useState(false)
-  const state = useCardState(open, useSettings, scope, modelList, modelDirectory, endpointAuth)
+  const state = useCardState(open, useSettings, scope, endpointAuth)
   // The at-a-glance credential dot in the collapsed header: every mount
   // re-probes (a credential expiring mid-session must flip the dot at the
   // next view); the bus dedupes identical results, so no re-render storm.
@@ -484,7 +434,7 @@ export function ClaudeCodeSettingsCard(props: ClaudeCodeSettingsCardProps) {
         </span>
         <IconChevronDownOutlineMedium className={open ? `${css.chevron} ${css.chevronOpen}` : css.chevron} />
       </button>
-      {open && <CardBody state={state} auth={auth} authT={authT} checkEndpoint={checkEndpoint} useSessions={useSessions} t={t} />}
+      {open && <CardBody state={state} active={open} auth={auth} authT={authT} modelList={modelList} modelDirectory={modelDirectory} checkEndpoint={checkEndpoint} useSessions={useSessions} t={t} />}
     </li>
   )
 }
@@ -500,9 +450,9 @@ export function ClaudeCodeSettingsCard(props: ClaudeCodeSettingsCardProps) {
  * @returns the entry.
  */
 export function ClaudeCodeBundleConfig({ view, useSettings, scope, auth, authT, modelList, modelDirectory, checkEndpoint, endpointAuth, useSessions, t }: ClaudeCodeBundleConfigProps) {
-  const state = useCardState(view === 'page', useSettings, scope, modelList, modelDirectory, endpointAuth)
+  const state = useCardState(view === 'page', useSettings, scope, endpointAuth)
   if (view === 'summary') return <span className={css.description}>{t('card.description')}</span>
-  return <CardBody state={state} auth={auth} authT={authT} checkEndpoint={checkEndpoint} useSessions={useSessions} t={t} />
+  return <CardBody state={state} active={view === 'page'} auth={auth} authT={authT} modelList={modelList} modelDirectory={modelDirectory} checkEndpoint={checkEndpoint} useSessions={useSessions} t={t} />
 }
 
 /**
@@ -513,6 +463,6 @@ export function ClaudeCodeBundleConfig({ view, useSettings, scope, auth, authT, 
  * @returns the section body.
  */
 export function ClaudeCodeCardSection({ active, useSettings, scope, auth, authT, modelList, modelDirectory, checkEndpoint, endpointAuth, useSessions, t }: ClaudeCodeCardSectionProps) {
-  const state = useCardState(active, useSettings, scope, modelList, modelDirectory, endpointAuth)
-  return <CardBody state={state} auth={auth} authT={authT} checkEndpoint={checkEndpoint} useSessions={useSessions} t={t} />
+  const state = useCardState(active, useSettings, scope, endpointAuth)
+  return <CardBody state={state} active={active} auth={auth} authT={authT} modelList={modelList} modelDirectory={modelDirectory} checkEndpoint={checkEndpoint} useSessions={useSessions} t={t} />
 }

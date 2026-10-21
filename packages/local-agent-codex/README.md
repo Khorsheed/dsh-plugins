@@ -14,7 +14,7 @@ dsh 的 agent 已经能干活,但有些任务你就是想交给本机的 Codex C
 - **作用域目录隔离**——Codex 的全部状态(config、凭据、rollout 会话记录)留在 `$DSH_HOME/local-agent/codex`,与你的 `~/.codex` 互不干扰。
 - **端点凭据(唯一的认证方式)**——设置卡「认证」区填 `baseUrl` + `apiKey`(保存进默认 scope 的 `endpoint-auth.json`,0600,只存本机)或预配在 profile 配置行即已认证;每个命名 scope 可用自己的 `endpoint-auth.json` 按字段覆盖部署级配置。每轮委派以自定义 provider(`wire_api=responses`,实测 codex-cli 0.163.0 经中转直通)路由到端点,key 经进程环境传递。宿主 shell 的环境变量从不被读取;没有网页登录。
 - **常驻模式(live)**——每成员常驻一个 `codex app-server` 进程,按轮发 turn:输出实时流入子会话、取消不杀进程、崩溃后自动续上原线程;关闭或通道起不来即回一次性 `codex exec`,热切换无需重载。
-- **设置卡片**——core 的「本机 Agent 委派」家族卡里的一节（Plugins 页；旧版 core 上回落为本包自己的 Plugins 详情页卡）:登录授权、默认模型(留空 = 跟随 CLI 默认)、常驻开关,保存即于下一轮生效。
+- **设置卡片**——core 的「本机 Agent 委派」家族卡里的一节（Plugins 页；旧版 core 上回落为本包自己的 Plugins 详情页卡）:登录授权、可用模型（有序短名单，第一个为默认；留空 = 跟随旧链）、常驻开关,保存即于下一轮生效。
 - **线程续聊**——传入 `resume="<childSessionId>"` 在同一个 dsh 子会话里继续同一个 codex 线程,宿主重启后也续得上。
 - **自定义端点**——设置卡或 profile 行配好端点凭据即路由到你的中转;也可手改作用域 `config.toml` 的自定义 provider(文件保持权威,不被覆盖)。
 - **回读与独立工作目录**——每轮从本轮 rollout 回读实际模型、CLI 版本与用量写进委派记录;定位按 threadId + cwd + 时间窗,并发跑也读的是自己那一轮。编排器可用 `cwd` 选项给每格独立目录,resume 换目录即拒绝。
@@ -82,11 +82,11 @@ dsh plugin --profile web remove @khorsheed/dsh-local-agent-codex
 
 作用域 `config.toml` 不会被改写——`-m` 每轮覆盖它,文件仍是你编辑的样子。
 
-设置卡「默认模型」修改后续轮次使用的 provider 配置。共享选择器展示当前作用域的模型目录、发现来源和完整性,并保留按需填写模型 ID 的入口。清空选择后跟随有效配置及默认值链。保存不会打断当前轮次,也无需重载;共享选择器不可用时,卡片保留文本输入兜底。成员级模型和推理强度修改使用下文的持久控制面。
+设置卡「可用模型」区维护一份**有序模型短名单**:点「添加模型」从端点当前供应的目录里勾选加入,列表里只会有端点真实供应的模型;拖动行调整顺序。**第一个模型就是默认模型**——每轮委派以它起 CLI(一次性 `codex exec -m`,常驻 app-server 的 `-c model=…`),优先级只低于成员会话级覆盖与委派级指定。列表保存在作用域目录的 `models.json`(每个命名 scope 可各有一份,与端点凭据同一套文件机制),编辑即保存,下一轮委派生效。**留空 = 回退旧链**(下面的 `model` 键 → 作用域 `config.toml` → CLI 内置)。成员级模型和推理强度修改使用下文的持久控制面。
 
 丰富目录读面现已保留原生显示名、隐藏候选和推理选项,遍历分页,并接入 core 缓存与刷新订阅。查询上下文跟随成员的 scope 和 cwd。刷新失败保留最后成功快照并标为过期;配置项和历史建议保留来源标识。共用模型菜单和成员 effort 控制已接入。运行中选择排到下一完整轮次(含工具续跑);core 统一持有当前/待生效配置、撤销与重试,冻结评测成员禁止变更。原生目录候选不等于账号权限证明。
 
-**委派级的模型优先。**编排器可以经门面 `DelegationCallOptions.model` 给**某一次委派**点名模型,它排在这个键之前(固定顺序:会话覆盖 > 委派记录 > 本键 > 作用域 config > CLI 内置)。首轮请求的值记进委派记录,resume 轮照它重发——resume 不接受 model 参数。常驻模式下带模型的轮次不再被拒绝:它成为该成员的**起始模型**,在 app-server 起进程时绑定;若该成员的常驻 runtime 绑定的是另一个模型,先回收重生(同一 codex 线程经 thread/resume 续上),再以所点模型起新一轮。
+**委派级的模型优先。**编排器可以经门面 `DelegationCallOptions.model` 给**某一次委派**点名模型,它排在这个键之前(固定顺序:会话覆盖 > 委派记录 > 可用模型首项 > 本键 > 作用域 config > CLI 内置)。首轮请求的值记进委派记录,resume 轮照它重发——resume 不接受 model 参数。常驻模式下带模型的轮次不再被拒绝:它成为该成员的**起始模型**,在 app-server 起进程时绑定;若该成员的常驻 runtime 绑定的是另一个模型,先回收重生(同一 codex 线程经 thread/resume 续上),再以所点模型起新一轮。
 
 **成员级切换(作曲器模型选择器)。**成员会话里可以按会话切换模型:一个内存中的会话级覆盖,优先级最高,宿主重启即失。切换在有轮次进行中时被拒绝;空闲时若成员有常驻 runtime 且绑定模型不同,切换即回收该 runtime——下一轮以新模型重生,CLI 会话(rollout)本身延续。一次性(exec)驱动下没有常驻进程,覆盖直接决定下一轮的 `-m`。
 
@@ -107,7 +107,7 @@ model_provider = "dsh-router"
 
 ⚠️ **凭据暴露**:端点 key 会发送给处理请求的端点——只使用你控制或信任的端点。每次委派在 info 级别记录生效的端点。
 
-**评测快照(effectiveSettings)。** 本 harness 向注册表声明一份实时读取的公平性设置快照,供评测条件哈希使用:drive(exec/live)、sandbox 策略(插件配置)、推理强度(读作用域 config 的顶层 `model_reasoning_effort`)、端点是否固定(端点凭据优先——scope 的 `endpoint-auth.json` 逐字段覆盖插件配置;没有 key 才读作用域 config 的自定义 provider;只报主机名,key 材料永远不进快照)、已配置模型(先看插件配置的 `model` 键——它每轮覆盖文件;没有才读作用域 config 的顶层 `model`;都没有就不给字段)、CLI 版本(`codex --version`,按可执行文件路径+mtime 缓存;探测不到即字段缺位)。`/codex status` 与 `LocalAgentStatus` Remote 附带同一份快照。
+**评测快照(effectiveSettings)。** 本 harness 向注册表声明一份实时读取的公平性设置快照,供评测条件哈希使用:drive(exec/live)、sandbox 策略(插件配置)、推理强度(读作用域 config 的顶层 `model_reasoning_effort`)、端点是否固定(端点凭据优先——scope 的 `endpoint-auth.json` 逐字段覆盖插件配置;没有 key 才读作用域 config 的自定义 provider;只报主机名,key 材料永远不进快照)、已配置模型(先看作用域 `models.json` 的首项,没有才看插件配置的 `model` 键——它每轮覆盖文件;再没有才读作用域 config 的顶层 `model`;都没有就不给字段)、CLI 版本(`codex --version`,按可执行文件路径+mtime 缓存;探测不到即字段缺位)。`/codex status` 与 `LocalAgentStatus` Remote 附带同一份快照。
 
 ## Compatibility
 

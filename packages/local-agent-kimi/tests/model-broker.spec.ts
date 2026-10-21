@@ -24,7 +24,7 @@ interface Mount {
   }
 }
 
-function mount(over: { settingsModel?: string; live?: boolean; recent?: string[]; config?: string } = {}): Mount {
+function mount(over: { settingsModel?: string; live?: boolean; recent?: string[]; config?: string; modelList?: string[] } = {}): Mount {
   const home = mkdtempSync(join(tmpdir(), 'kimi-broker-'))
   if (over.config !== undefined) writeFileSync(join(home, 'config.toml'), over.config)
   const active: string[] = []
@@ -41,6 +41,7 @@ function mount(over: { settingsModel?: string; live?: boolean; recent?: string[]
   const broker = new KimiModelBroker(ctx, {
     homeDir: () => home,
     settingsModel: () => settings.model,
+    modelList: () => over.modelList ?? [],
     recentModels: () => settings.recent,
     isLive: () => settings.live,
     liveSwitch: liveSwitch as unknown as LiveDriverSwitch,
@@ -97,6 +98,21 @@ describe('kimi model broker resolution', () => {
     const { broker } = mount({ settingsModel: 'card-model', config: CONFIG, recent: ['recent/y', 'cli-model'] })
     const info = await broker.modelInfo()
     expect(info.choices).toEqual(['card-model', 'cli-model', 'discovered/x', 'recent/y'])
+  })
+
+  it('a non-empty curated list is the COMPLETE choice vocabulary — settings, discoveries and history stay out', async () => {
+    const { broker } = mount({ settingsModel: 'card-model', config: CONFIG, recent: ['recent/y'], modelList: ['kimi-for-coding', 'k3'] })
+    const info = await broker.modelInfo()
+    expect(info.choices).toEqual(['kimi-for-coding', 'k3'])
+    // The settings layer itself is unaffected (the list fold lives in the
+    // wiring's settingsModel answer, not the broker).
+    expect(info.settings).toBe('card-model')
+  })
+
+  it('an empty curated list leaves the pre-list vocabulary untouched', async () => {
+    const { broker } = mount({ settingsModel: 'card-model', recent: ['recent/y'], modelList: [] })
+    const info = await broker.modelInfo()
+    expect(info.choices).toEqual(['card-model', 'recent/y'])
   })
 
   it('reports the live toggle and stays switchable without an in-flight round', async () => {

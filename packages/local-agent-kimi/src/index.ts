@@ -16,7 +16,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
 import type {} from '@deepseek-ai/dsh-settings'
-import { settingsFace, vol } from '@khorsheed/dsh-local-agent'
+import { firstModelOf, readModelList, readModelListSync, settingsFace, vol, writeModelList } from '@khorsheed/dsh-local-agent'
 import type {} from '@khorsheed/dsh-local-agent'
 import { endpointHost } from '@khorsheed/dsh-local-agent/types'
 import { KimiCliProvider, kimiCliVersion } from './kimi-cli-provider.ts'
@@ -272,10 +272,18 @@ export function apply(ctx: Context, config: Config): void {
     // delegation without a plugin reload — exactly like the live toggle.
     // Blank is not a model: a whitespace-only value means "unset", which is
     // the pre-key argv.
-    const resolveModel = (): string | undefined => {
+    const resolveModelKey = (): string | undefined => {
       const model = face.get().model?.trim()
       return model === undefined || model === '' ? undefined : model
     }
+    // The settings layer for one scoped home: the curated model list's FIRST
+    // entry (models.json, edited on the card), ahead of the settings key; an
+    // empty list leaves the pre-existing chain untouched. Read sync per call
+    // — one small file, and a card write always reaches the next round.
+    const resolveModelFor = (homeDir: string): string | undefined =>
+      firstModelOf(readModelListSync(homeDir)) ?? resolveModelKey()
+    const resolveModel = (scope?: string): string | undefined =>
+      resolveModelFor(ctx.localAgent.homeDir('kimi', scope))
     // The model broker owns the per-member state (session-level overrides,
     // start models) and the gateway-facing surface. The live driver's spawn
     // resolver defers to it through a closure because the broker itself needs
@@ -295,7 +303,8 @@ export function apply(ctx: Context, config: Config): void {
     broker = new KimiModelBroker(ctx, {
       homeDir: childSessionId => ctx.localAgent.homeDir('kimi', childSessionId === undefined ? undefined : (ctx.localAgent.memberBinding?.(childSessionId) ?? ctx.localAgent.getDelegation(childSessionId))?.scope),
       catalog: modelCatalog,
-      settingsModel: resolveModel,
+      settingsModel: resolveModelFor,
+      modelList: homeDir => readModelListSync(homeDir),
       recentModels: () => face.get().recentModels ?? [],
       isLive: () => face.get().live,
       liveSwitch,
@@ -388,6 +397,12 @@ export function apply(ctx: Context, config: Config): void {
       // member composer reads/switches per member. Registered unconditionally —
       // the gateway answers null only for harnesses WITHOUT one.
       modelBroker: broker,
+      // The settings card's curated model list (the default scope's
+      // models.json; named scopes carry their own, read per round).
+      modelList: {
+        read: home => readModelList(home),
+        write: (home, models) => writeModelList(home, models),
+      },
       // The eval snapshot reads the scoped config as-is — it is authoritative
       // once provisioned, so a person-edited (or user-mirrored) effort and
       // endpoint report what actually applies, not what the config item
@@ -416,7 +431,7 @@ export function apply(ctx: Context, config: Config): void {
         // the default, not a pinned custom route.
         const custom = baseUrl !== undefined && baseUrl !== KIMI_MANAGED_BASE_URL
         const baseUrlHost = custom ? endpointHost(baseUrl) : undefined
-        const model = resolveModel() ?? defaultModel
+        const model = resolveModelFor(scopedHome) ?? defaultModel
         return {
           drive: face.get().live ? 'live' : 'exec',
           autoApprove,

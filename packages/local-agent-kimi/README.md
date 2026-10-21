@@ -15,7 +15,7 @@
 - **端点凭据（唯一的认证方式）**——设置卡「认证」区填 `baseUrl` + `apiKey`（保存进默认 scope 的 `endpoint-auth.json`，0600，只存本机）或预配在 profile 配置行即已认证；每个命名 scope 可用自己的 `endpoint-auth.json` 按字段覆盖部署级配置。managed provider 经 `api_key_env` 从子进程环境读 key——密钥不落 `config.toml`（它要进评测条件指纹）。容器轮与宿主轮用同一套凭据，容器里不需要再授权一次。没有网页登录、没有 device-code。
 - **可续聊的委派**——把结果自述的 `resume` 句柄传回，即继续同一个 Kimi 会话，并按轮记录真实用量与耗时。
 - **会话记录与转写回放**——`/kimi sessions` 列出本 harness 的委派记录（绝不含你的私人会话）；`/kimi session <id>` 把该会话的 wire 日志渲染成可读转写——思考、工具调用与结果一目了然。
-- **设置卡片**——core 的「本机 Agent 委派」家族卡里的一节（Plugins 页；旧版 core 上回落为本包自己的 `plugins.item` 卡，宿主服务 `local-agent-kimi` 命名空间时挂载）一眼看清认证状态与作用域会话，登录/退出、默认模型、常驻模式开关全部热生效，无需重载。
+- **设置卡片**——core 的「本机 Agent 委派」家族卡里的一节（Plugins 页；旧版 core 上回落为本包自己的 `plugins.item` 卡，宿主服务 `local-agent-kimi` 命名空间时挂载）一眼看清认证状态与作用域会话，登录/退出、可用模型（有序短名单，第一个为默认；留空 = 跟随旧链）、常驻模式开关全部热生效，无需重载。
 - **模型回读与独立工作目录**——每轮从 wire.jsonl 的 usage/request 记录回读实际模型，写进委派记录；编排器可用 `cwd` 选项给每格独立目录，resume 换目录即拒绝。
 - **常驻驱动（可选）**——`live: true` 让每个成员常驻一个 `kimi acp` 进程，按轮 `session/prompt`，支持运行时级优雅取消；关闭或通道不可用即回一次性 `kimi -p`。
 
@@ -78,7 +78,7 @@ base_url = "https://your-router.example/v1"
 
 也就是说：一次性驱动不碰你的 `config.toml`，常驻驱动会改写其中的 `default_model` 一行。
 
-设置卡「默认模型」修改后续轮次使用的 provider 配置。共享选择器展示当前作用域的模型目录、发现来源和完整性，并保留按需填写模型 ID 的入口。清空选择后跟随有效配置及默认值链。保存不会打断当前轮次，也无需重载；共享选择器不可用时，卡片保留文本输入兜底。成员级模型和推理强度修改使用下文的持久控制面。
+设置卡「可用模型」区维护一份**有序模型短名单**：点「添加模型」从端点当前供应的目录里勾选加入，列表里只会有端点真实供应的模型；拖动行调整顺序。**第一个模型就是默认模型**——每轮委派以它起 CLI（一次性 argv 旗标，常驻模式起进程前改写作用域 `default_model`），优先级只低于成员会话级覆盖与委派级指定。列表保存在作用域目录的 `models.json`（每个命名 scope 可各有一份，与端点凭据同一套文件机制），编辑即保存，下一轮委派生效。**留空 = 回退旧链**（`model` 键 → 作用域 `config.toml` 的顶层 `default_model` → CLI 内置）。成员级模型和推理强度修改使用下文的持久控制面。
 
 丰富目录优先使用常驻成员提供的 ACP 原生模型和配置元数据，保留显示名及当前模型的推理选项。此前显示该成员 scoped 配置候选，并明确标为配置来源、不完整。查询不创建临时 ACP 会话。目录刷新与订阅共用 core 缓存，共用模型菜单和成员 effort 控制已接入。运行中选择排到下一完整轮次（含工具续跑）；core 统一持有当前/待生效配置、撤销与重试，冻结评测成员禁止变更。
 
@@ -88,7 +88,7 @@ base_url = "https://your-router.example/v1"
 
 **这不是评测的缺口。** 评测 run 的条件在建立时冻结：run 跑到一半改这个键，下一轮的模型回读会发现声明模型 ≠ 实测模型，run 直接判为 misattributed 而失败（冻结决策 5）。
 
-**评测快照（effectiveSettings）。** 本 harness 向注册表声明一份实时读取的公平性设置快照，供评测条件哈希使用：drive（exec/live，随 live 偏好）、推理强度（读作用域 config 的 `[thinking] effort`，缺则回模型 `default_effort`）、是否自动批准（作用域 config 是否带 `Bash(*)` 放行规则）、端点是否固定（只报主机名；managed 端点不算固定）、已配置模型（先看插件配置的 `model` 键——它每轮覆盖；没有才读作用域 config 的顶层 `default_model`；都没有就不给字段）、CLI 版本（`kimi --version`，按可执行文件路径+mtime 缓存；探测不到即字段缺位）。`/kimi status` 与 `LocalAgentStatus` Remote 附带同一份快照。web-eval 冻结决策 2 到 4 的显式化即由此读取。
+**评测快照（effectiveSettings）。** 本 harness 向注册表声明一份实时读取的公平性设置快照，供评测条件哈希使用：drive（exec/live，随 live 偏好）、推理强度（读作用域 config 的 `[thinking] effort`，缺则回模型 `default_effort`）、是否自动批准（作用域 config 是否带 `Bash(*)` 放行规则）、端点是否固定（只报主机名；managed 端点不算固定）、已配置模型（先看作用域 `models.json` 的首项，没有才看插件配置的 `model` 键——它每轮覆盖；再没有才读作用域 config 的顶层 `default_model`；都没有就不给字段）、CLI 版本（`kimi --version`，按可执行文件路径+mtime 缓存；探测不到即字段缺位）。`/kimi status` 与 `LocalAgentStatus` Remote 附带同一份快照。web-eval 冻结决策 2 到 4 的显式化即由此读取。
 
 ## Compatibility
 
@@ -114,7 +114,7 @@ base_url = "https://your-router.example/v1"
 
 **模型回读与 cwd 覆盖。** 每轮 settle 后，provider 把 wire.jsonl 里 `usage.record`（次选 `llm.request`）事件 `model` 字段的实际模型（最后一个为准——resume 会话后续轮次追加在文件尾部）随 `settled` 进度事件上报，并合并进 `delegations.jsonl` 的 `observedModel` 字段；取不到即缺位，绝不猜测。编排器还可以经门面 `DelegationCallOptions.cwd` 给本轮指定工作目录（记录进 `cwd` 字段）；resume 轮解析出的目录若与首轮记录不一致，进程启动前即 fail loud——CLI 会话延续的是首轮所在目录的上下文。
 
-**Model broker。** 本 harness 向注册表声明 `modelBroker`：设置卡读无成员的 `modelInfo`（生效层 + 候选），成员 composer 经 gateway 读写成员级 override。解析顺序固定：override → 委派记录模型 → 插件 `model` 键 → 作用域 `default_model` → CLI 内置默认（不指名任何模型）。候选 = 本键 + 作用域默认 + config 的 `[models."…"]` 表 + 最近存值，去重。override 与起始模型账本都在内存（重启即清）；`setMemberModel` 在成员有进行中轮次时抛错，否则在常驻 runtime 绑定模型 ≠ 新生效值时将其退役（同模型是 no-op），下一轮懒重起。
+**Model broker。** 本 harness 向注册表声明 `modelBroker`：设置卡读无成员的 `modelInfo`（生效层 + 候选），成员 composer 经 gateway 读写成员级 override。解析顺序固定：override → 委派记录模型 → 作用域 `models.json` 首项 → 插件 `model` 键 → 作用域 `default_model` → CLI 内置默认（不指名任何模型）。候选：作用域 `models.json` 非空时它就是**全部**词汇（端点目录外的一个也不混入）；为空时回退旧链 = 本键 + 作用域默认 + config 的 `[models."…"]` 表 + 最近存值，去重。override 与起始模型账本都在内存（重启即清）；`setMemberModel` 在成员有进行中轮次时抛错，否则在常驻 runtime 绑定模型 ≠ 新生效值时将其退役（同模型是 no-op），下一轮懒重起。
 
 **工具调用计数。** 每轮 settle 时，provider 顺带数出本轮的工具调用，随 `settled` 进度事件上报（`toolCalls: { count, byName }`）。数的是 transcript 里**本轮 turn** 的 `tool.call` 行——刻意不按镜像窗口数：常驻模式下 settle 那一遍的 delta 可能已被 live 轮询清空，而 resume 轮也不该把前几轮的调用算进来。`byName` 的键是 wire 给出的工具名，原样保留。本轮一份，绝不累计；一次都没调用就整个字段缺位（缺席 ≠ 0）。
 

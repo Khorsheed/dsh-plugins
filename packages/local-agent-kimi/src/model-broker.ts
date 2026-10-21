@@ -69,8 +69,18 @@ export class KimiModelBroker implements LocalAgentModelBroker {
       /** The default scope's scoped home (cliDefault + discovery reads). */
       homeDir: (childSessionId?: string) => string
       catalog?: KimiModelCatalog
-      /** The plugin-config `model` key, resolved per read. */
-      settingsModel: () => string | undefined
+      /**
+       * The settings-layer model for one scoped home: the curated model
+       * list's FIRST entry (models.json, edited on the card), then the
+       * plugin-config `model` key — blank reads unset.
+       */
+      settingsModel: (homeDir: string) => string | undefined
+      /**
+       * The scope's curated model list (models.json) for the choice
+       * vocabulary: non-empty it is the COMPLETE vocabulary; empty falls
+       * back to the pre-list chain.
+       */
+      modelList?: (homeDir: string) => readonly string[]
       /** The settings card's recently saved identifiers (choices memory). */
       recentModels: () => readonly string[]
       /** Whether the live driver is currently on. */
@@ -84,7 +94,7 @@ export class KimiModelBroker implements LocalAgentModelBroker {
     const home = this.ctx.localAgent.homeDir('kimi', binding.scope)
     const resolve = async (selection: LocalAgentMemberConfiguration): Promise<LocalAgentResolvedConfiguration> => {
       const model = selection.model.mode === 'value' ? selection.model.value
-        : (selection.model.mode === 'inherit' ? binding.model : undefined) ?? this.deps.settingsModel() ?? await readKimiDefaultModel(home)
+        : (selection.model.mode === 'inherit' ? binding.model : undefined) ?? this.deps.settingsModel(home) ?? await readKimiDefaultModel(home)
       const configured = await readKimiModelConfiguration(home, model)
       const native = this.deps.liveSwitch.memberRuntimeConfiguration(binding.childSessionId)
       const entry = native?.directory.entries.find(entry => entry.value === model)
@@ -148,7 +158,7 @@ export class KimiModelBroker implements LocalAgentModelBroker {
   readonly spawnModel = (childSessionId: string): string | undefined =>
     this.overrideFor(childSessionId)
     ?? this.startModels.get(childSessionId)
-    ?? this.deps.settingsModel()
+    ?? this.deps.settingsModel(this.deps.homeDir(childSessionId))
 
   /**
    * Read the model surface. With no member this is the harness default (the
@@ -160,14 +170,18 @@ export class KimiModelBroker implements LocalAgentModelBroker {
     const delegation = childSessionId === undefined
       ? undefined
       : delegationModel ?? this.startModels.get(childSessionId)
-    const settings = this.deps.settingsModel()
     const homeDir = this.deps.homeDir(childSessionId)
+    const settings = this.deps.settingsModel(homeDir)
     const native = this.deps.catalog?.read(childSessionId)
     const [cliDefault, discovered] = await Promise.all([
       readKimiDefaultModel(homeDir).catch(() => undefined),
       listKimiConfigModels(homeDir).catch(() => [] as string[]),
     ])
-    const choices = dedupe([settings, cliDefault, ...discovered, ...(native?.entries.filter(entry => !entry.hidden).map(entry => entry.value) ?? []), ...this.deps.recentModels()])
+    // The curated list is the whole vocabulary when non-empty — nothing from
+    // outside the endpoint's served catalog sneaks in. Empty falls back to
+    // the pre-list chain (native candidates plus configuration and history).
+    const curated = this.deps.modelList?.(homeDir) ?? []
+    const choices = curated.length > 0 ? [...curated] : dedupe([settings, cliDefault, ...discovered, ...(native?.entries.filter(entry => !entry.hidden).map(entry => entry.value) ?? []), ...this.deps.recentModels()])
     const [effective, source] = override !== undefined ? [override, 'override' as const]
       : delegation !== undefined ? [delegation, 'delegation' as const]
         : settings !== undefined ? [settings, 'settings' as const]
@@ -183,7 +197,7 @@ export class KimiModelBroker implements LocalAgentModelBroker {
       ...settings === undefined ? {} : { settings },
       ...cliDefault === undefined ? {} : { cliDefault },
       choices,
-      ...native === undefined ? {} : { directory: extendModelDirectory(native, [settings, cliDefault, ...discovered], this.deps.recentModels()) },
+      ...native === undefined ? {} : { directory: extendModelDirectory(native, [settings, cliDefault, ...discovered], curated.length > 0 ? [] : this.deps.recentModels()) },
       live: this.deps.isLive(),
       switchable: !inFlight,
       ...inFlight ? { reason: SWITCH_IN_FLIGHT_REASON } : {},

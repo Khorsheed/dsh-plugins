@@ -12,12 +12,14 @@ import { bindSettingsScope, type SettingsScopeSnapshot } from '@khorsheed/dsh-lo
  * served namespace rather than any carrier bundle, and a composition without
  * the row shows no trace of it. The card carries the family core's shared
  * ProviderAuthBlock (login/logout/device-code, backed by the core's
- * localAgentGateway Remote and the commands channel), the default-model block
- * (free-text field, the broker-fed effective-model line and choices), and the
+ * localAgentGateway Remote and the commands channel), the endpoint credential
+ * form, the family core's shared ModelListSection (the curated ordered
+ * shortlist — first entry is the default model — edited through the
+ * gateway's modelList/configureModelList Remotes), and the
  * resident-mode switch, whose writes ride the bound settingsScope — the host
  * watcher hot-applies them, no reload. Every read degrades: an absent gateway
- * renders the auth block's 'unavailable' state and drops the effective-model
- * line, an unregistered namespace disables the live controls.
+ * renders the auth block's 'unavailable' state and drops the model surfaces,
+ * an unregistered namespace disables the live controls.
  * @module @khorsheed/dsh-local-agent-kimi/client
  */
 import { createElement, useSyncExternalStore } from 'react'
@@ -90,13 +92,26 @@ export function apply(ctx: Context): void {
   const cardFace = (): Omit<KimiSettingsCardInjected, 'hooks'> => ({
     scope,
     authT,
-    renderModelPicker: props => (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.renderHarnessModelPicker('kimi', props),
-    // The broker's memberless surface (effective model + pickable
-    // vocabulary). Null — a core without a model broker — degrades to the
-    // pre-broker card: the free-text field alone, no effective-model line.
-    harnessModel: () =>
-      gateway()?.harnessModel('kimi').then(result => (result.ok ? result.value ?? undefined : undefined))
-        ?? Promise.resolve(undefined),
+    // The curated model list's read/write faces, over the same Remotes.
+    modelList: {
+      read: () => {
+        const gw = gateway()
+        if (gw === undefined || typeof gw.modelList !== 'function') return Promise.resolve(undefined)
+        return gw.modelList('kimi').then(result => (result.ok ? result.value : undefined))
+      },
+      write: (models) => {
+        const gw = gateway()
+        if (gw === undefined || typeof gw.configureModelList !== 'function') return Promise.resolve(undefined)
+        return gw.configureModelList('kimi', models).then(result => (result.ok ? result.value : undefined))
+      },
+    },
+    // The endpoint's served catalog for the add dialog. A core predating
+    // modelDirectory leaves the dialog with its reason.
+    modelDirectory: (refresh) => {
+      const gw = gateway()
+      if (gw === undefined || typeof gw.modelDirectory !== 'function') return Promise.resolve(undefined)
+      return gw.modelDirectory('kimi', undefined, refresh ?? false).then(result => (result.ok ? result.value : undefined))
+    },
     // The credential form's read/write face, over the session-less gateway
     // Remotes. Absent on a core that predates them — the card hides the form.
     endpointAuth: {

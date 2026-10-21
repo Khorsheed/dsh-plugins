@@ -114,6 +114,7 @@ export type {
 
 export { delegationEnv } from './env.ts'
 export { ModelDirectoryCache, extendModelDirectory, modelDirectoryContextKey } from './model-directory.ts'
+export { MODEL_LIST_FILE, firstModelOf, normalizeModelList, readModelList, readModelListSync, writeModelList } from './model-list.ts'
 export { MemberConfigurationController } from './member-control.ts'
 export type { MemberConfigurationAdapter, MemberControlStorage, MemberControlRecord } from './member-control.ts'
 export { FileMemberControlStorage } from './member-control-storage.ts'

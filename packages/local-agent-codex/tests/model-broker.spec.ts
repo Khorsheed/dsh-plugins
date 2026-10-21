@@ -18,6 +18,7 @@ function mount(options: {
   configToml?: string
   settingsModel?: string
   recentModels?: readonly string[]
+  modelList?: readonly string[]
   catalog?: readonly string[]
   catalogDefault?: string
   live?: boolean
@@ -29,6 +30,7 @@ function mount(options: {
   broker: CodexModelBroker
   overrides: Map<string, string>
   retireRuntime: ReturnType<typeof vi.fn>
+  settingsModel: ReturnType<typeof vi.fn>
 } {
   const homeDir = mkdtempSync(join(tmpdir(), 'codex-broker-'))
   if (options.configToml !== undefined) writeFileSync(join(homeDir, 'config.toml'), options.configToml)
@@ -40,9 +42,11 @@ function mount(options: {
   ctx.provide('logger', { warn: () => {} } as never)
   const overrides = new Map(Object.entries(options.overrides ?? {}))
   const retireRuntime = vi.fn(async () => {})
+  const settingsModel = vi.fn(() => options.settingsModel)
   const deps: CodexModelBrokerDeps = {
     ctx,
-    settingsModel: () => options.settingsModel,
+    settingsModel,
+    modelList: () => options.modelList ?? [],
     recentModels: () => options.recentModels ?? [],
     catalog: () => options.catalog ?? [],
     catalogDefault: () => options.catalogDefault,
@@ -52,7 +56,7 @@ function mount(options: {
     liveBoundModel: () => options.boundModel === undefined ? null : options.boundModel,
     retireRuntime,
   }
-  return { broker: new CodexModelBroker(deps), overrides, retireRuntime }
+  return { broker: new CodexModelBroker(deps), overrides, retireRuntime, settingsModel }
 }
 
 const CHILD = 'child-1'
@@ -129,6 +133,29 @@ describe('codex model broker resolution order', () => {
     const info = await broker.modelInfo()
     // The provider table names an endpoint, not a model — never a choice.
     expect(info.choices).toEqual(['config-model', 'gpt-5.2', 'gpt-5.1', 'recent-model'])
+  })
+
+  it('a non-empty curated list is the COMPLETE choice vocabulary — settings, discoveries and history stay out', async () => {
+    const { broker, settingsModel } = mount({
+      configToml: 'model = "gpt-5.2"\n',
+      settingsModel: 'config-model',
+      recentModels: ['recent-model'],
+      catalog: ['catalog-model'],
+      modelList: ['gpt-5.3-codex', 'gpt-5.2-codex'],
+    })
+    const info = await broker.modelInfo()
+    expect(info.choices).toEqual(['gpt-5.3-codex', 'gpt-5.2-codex'])
+    // The settings layer itself is unaffected (the list fold lives in the
+    // wiring's settingsModel answer, not the broker), and the broker passes
+    // the scope's home to it.
+    expect(info.settings).toBe('config-model')
+    expect(settingsModel).toHaveBeenCalledWith(expect.stringContaining('codex-broker-'))
+  })
+
+  it('an empty curated list leaves the pre-list vocabulary untouched', async () => {
+    const { broker } = mount({ settingsModel: 'config-model', recentModels: ['recent-model'], modelList: [] })
+    const info = await broker.modelInfo()
+    expect(info.choices).toEqual(['config-model', 'recent-model'])
   })
 
   it('choices rank the probed account catalog ahead of recent models, deduped', async () => {

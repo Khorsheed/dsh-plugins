@@ -36,7 +36,7 @@ import { LiveDriverSwitch } from './live-switch.ts'
 import type { ClaudeLiveSettings } from './live-switch.ts'
 import { ClaudeModelCatalog } from './model-catalog.ts'
 import { ClaudeModelBroker, ClaudeScopedModelMemory } from './model-broker.ts'
-import { firstModelOf, readModelList, readModelListSync, writeModelList } from './model-list.ts'
+import { firstModelOf, readModelList, readModelListSync, writeModelList } from '@khorsheed/dsh-local-agent'
 import { listClaudeSessions, readClaudeTranscriptModel } from './records.ts'
 import { provisionClaudeHome, readClaudeConfiguredModel } from './provision.ts'
 

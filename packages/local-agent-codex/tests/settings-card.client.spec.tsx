@@ -3,9 +3,9 @@
  * The codex settings surfaces: the 0.1.5 plugin-configuration-tab card
  * (collapsible chrome, the family core's shared ProviderAuthBlock embedded
  * for the auth states, the resident-mode block (live switch) writing through
- * the bound settingsScope, and the default-model block reading the harness's
- * broker surface with a bare-input degrade) and the plugins.item entry (the
- * summary one-liner, the bare page form).
+ * the bound settingsScope, the endpoint credential form, and the family
+ * core's shared ModelListSection wired over the injected faces) and the
+ * plugins.item entry (the summary one-liner, the bare page form).
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
@@ -13,7 +13,7 @@ import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SettingsScopeSnapshot } from '@khorsheed/dsh-local-agent/src/client/settings-scope.ts'
-import type { LocalAgentModelInfo, LocalAgentStatus } from '@khorsheed/dsh-local-agent/types'
+import type { LocalAgentStatus } from '@khorsheed/dsh-local-agent/types'
 import { zh as coreZh } from '@khorsheed/dsh-local-agent/src/client/locales.ts'
 import {
   CodexBundleConfig, CodexSettingsCard,
@@ -68,7 +68,11 @@ interface CardOptions {
   authenticated?: boolean
   authStatus?: LocalAgentStatus | undefined
   runCommand?: (sessionId: SessionId, line: string) => Promise<string | undefined>
-  harnessModel?: () => Promise<LocalAgentModelInfo | null | undefined>
+  modelList?: {
+    read: () => Promise<readonly string[] | null | undefined>
+    write: (models: readonly string[]) => Promise<readonly string[] | null | undefined>
+  }
+  modelDirectory?: (refresh?: boolean) => Promise<null>
   endpointAuth?: {
     read: () => Promise<{ baseUrl?: string; apiKeySet: boolean; authTokenSet: boolean }>
     write: (fields: Record<string, string | null>) => Promise<{ baseUrl?: string; apiKeySet: boolean; authTokenSet: boolean }>
@@ -119,14 +123,14 @@ function makeCardProps(options: CardOptions): { props: Record<string, unknown> }
     'authStatus' in options ? options.authStatus : codexStatus(options.authenticated ?? false),
   )
   const runCommand = vi.fn(options.runCommand ?? (() => Promise.resolve('')))
-  const harnessModel = vi.fn(options.harnessModel ?? (() => Promise.resolve(null)))
   const props = {
     useSettings: <T,>(select: (value: SettingsScopeSnapshot<CodexLiveSettings>) => T): T => select(snapshot),
     useSessions,
     scope,
     auth: { status, runCommand },
     authT,
-    harnessModel,
+    ...options.modelList === undefined ? {} : { modelList: options.modelList },
+    ...options.modelDirectory === undefined ? {} : { modelDirectory: options.modelDirectory },
     ...options.endpointAuth === undefined ? {} : { endpointAuth: options.endpointAuth },
     ...options.checkEndpoint === undefined ? {} : { checkEndpoint: options.checkEndpoint },
     t,
@@ -207,7 +211,6 @@ describe('CodexSettingsCard', () => {
     await openCard()
 
     expect((screen.getByRole('switch', { name: zh['live.title'] }) as HTMLButtonElement).disabled).toBe(true)
-    expect((screen.getByLabelText(zh['model.title']) as HTMLInputElement).disabled).toBe(true)
     expect(screen.getByText(zh['live.unavailable'])).toBeTruthy()
   })
 
@@ -290,264 +293,34 @@ describe('CodexSettingsCard endpoint credential block', () => {
   })
 })
 
-describe('CodexSettingsCard default-model block', () => {
-  it('shows the stored model and saves an edited one as the model key', async () => {
-    const harness = renderCard({ value: { live: false, model: 'model-a' } })
+describe('CodexSettingsCard model list section', () => {
+  // The section's behavior (rows, delete, drag, the add dialog) is pinned by
+  // the family core's own ModelListSection spec; here only the wiring: the
+  // card renders the core section over the injected faces.
+  it('renders the family core\'s model-list section over the injected faces (rows with the default chip on the first)', async () => {
+    const modelList = {
+      read: vi.fn(async () => ['gpt-5.3-codex', 'gpt-5.2-codex'] as const),
+      write: vi.fn(async (next: readonly string[]) => next),
+    }
+    renderCard({ modelList, modelDirectory: vi.fn(async () => null) })
     await openCard()
-    const input = screen.getByLabelText(zh['model.title']) as HTMLInputElement
-    expect(input.value).toBe('model-a')
-    fireEvent.change(input, { target: { value: 'model-b' } })
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['model.save'] })) })
-    expect(harness.scope.set).toHaveBeenCalledWith('model', 'model-b')
-    expect(screen.getByText(zh['model.applied'])).toBeTruthy()
-  })
-
-  it('trims the typed value rather than storing the spaces around it', async () => {
-    const harness = renderCard({})
-    await openCard()
-    fireEvent.change(screen.getByLabelText(zh['model.title']), { target: { value: '  model-b  ' } })
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['model.save'] })) })
-    expect(harness.scope.set).toHaveBeenCalledWith('model', 'model-b')
-  })
-
-  it('clearing the field UNSETS the key, so the YAML base decides again', async () => {
-    const harness = renderCard({ value: { live: false, model: 'model-a' } })
-    await openCard()
-    fireEvent.change(screen.getByLabelText(zh['model.title']), { target: { value: '' } })
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['model.save'] })) })
-    expect(harness.scope.unset).toHaveBeenCalledWith('model')
-    // An unset must not also write an empty string over the base.
-    expect(harness.scope.set).not.toHaveBeenCalledWith('model', '')
-  })
-
-  it('a saved model joins the suggestions most-recent-first, deduplicated', async () => {
-    const harness = renderCard({
-      value: { live: false, recentModels: ['model-a', 'model-b'] },
-    })
-    await openCard()
-    fireEvent.change(screen.getByLabelText(zh['model.title']), { target: { value: 'model-b' } })
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['model.save'] })) })
-    expect(harness.scope.set).toHaveBeenCalledWith('recentModels', ['model-b', 'model-a'])
-  })
-
-  it('offers the saved suggestions through the menu without hardcoding any model catalog', async () => {
-    renderCard({
-      value: { live: false, recentModels: ['model-a', 'model-b'] },
-    })
-    await openCard()
-    // No datalist anywhere: the chevron menu is the single choice list.
-    expect(document.body.querySelector('datalist')).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: zh['model.menu'] }))
-    expect(screen.getAllByRole('menuitemradio').map(item => item.textContent))
-      .toEqual([zh['model.menuDefault'] + '✓', 'model-a', 'model-b'])
-  })
-
-  it('save stays disabled while the field still matches what is stored', async () => {
-    renderCard({ value: { live: false, model: 'model-a' } })
-    await openCard()
-    const save = screen.getByRole('button', { name: zh['model.save'] }) as HTMLButtonElement
-    expect(save.disabled).toBe(true)
-    fireEvent.change(screen.getByLabelText(zh['model.title']), { target: { value: 'model-b' } })
-    expect((screen.getByRole('button', { name: zh['model.save'] }) as HTMLButtonElement).disabled).toBe(false)
+    const rows = document.body.querySelectorAll('[draggable="true"]')
+    expect(rows).toHaveLength(2)
+    expect(rows[0]?.textContent).toContain('gpt-5.3-codex')
+    expect(rows[0]?.textContent).toContain(coreZh['models.defaultChip'])
   })
 })
 
-describe('CodexSettingsCard model surface (harness broker)', () => {
-  /** One broker answer, with every layer overridable. */
-  function info(over: Partial<LocalAgentModelInfo> = {}): LocalAgentModelInfo {
-    return {
-      source: 'cli-builtin',
-      choices: [],
-      live: false,
-      switchable: true,
-      ...over,
-    }
-  }
-
-  it('a set field shows the stored model as a real value, not a placeholder', async () => {
-    renderCard({
-      value: { live: false, model: 'model-a' },
-      harnessModel: () => Promise.resolve(info({ effective: 'model-a', source: 'settings', settings: 'model-a', choices: ['model-a'] })),
-    })
-    await openCard()
-    expect((screen.getByLabelText(zh['model.title']) as HTMLInputElement).value).toBe('model-a')
-  })
-
-  it('an unset field displays the CLI config default dimmed (placeholder), never as a pinned value', async () => {
-    renderCard({
-      harnessModel: () => Promise.resolve(info({ effective: 'gpt-5.2', source: 'cli-config', cliDefault: 'gpt-5.2', choices: ['gpt-5.2'] })),
-    })
-    await openCard()
-    const input = screen.getByLabelText(zh['model.title']) as HTMLInputElement
-    expect(input.value).toBe('')
-    expect(input.placeholder).toBe('gpt-5.2')
-  })
-
-  it('an unset field displays the catalog default when cli-builtin carries an effective model', async () => {
-    renderCard({
-      harnessModel: () => Promise.resolve(info({
-        effective: 'gpt-5.6-sol', source: 'cli-builtin', choices: ['gpt-5.6-sol'],
-      })),
-    })
-    await openCard()
-    const input = screen.getByLabelText(zh['model.title']) as HTMLInputElement
-    expect(input.placeholder).toBe('gpt-5.6-sol')
-  })
-
-  it('an unset field displays the last observed model when nothing names one', async () => {
-    renderCard({
-      harnessModel: () => Promise.resolve(info({ lastObserved: 'gpt-5.5' })),
-    })
-    await openCard()
-    expect((screen.getByLabelText(zh['model.title']) as HTMLInputElement).placeholder).toBe('gpt-5.5')
-  })
-
-  it('keeps the generic placeholder when the broker knows no default', async () => {
-    renderCard({ harnessModel: () => Promise.resolve(info()) })
-    await openCard()
-    expect((screen.getByLabelText(zh['model.title']) as HTMLInputElement).placeholder)
-      .toBe(zh['model.placeholder'])
-  })
-
-  it('renders no separate effective-model line — the information lives inside the control', async () => {
-    renderCard({
-      harnessModel: () => Promise.resolve(info({ effective: 'gpt-5.2', source: 'cli-config', cliDefault: 'gpt-5.2', choices: ['gpt-5.2'] })),
-    })
-    await openCard()
-    expect(screen.queryByText(/跟随 CLI/)).toBeNull()
-    expect(screen.queryByText(/当前生效/)).toBeNull()
-  })
-
-  it('the menu vocabulary is the broker choices, not only the recent memory', async () => {
-    renderCard({
-      value: { live: false, recentModels: ['model-a'] },
-      harnessModel: () => Promise.resolve(info({ choices: ['gpt-5.2', 'gpt-5.1', 'model-a'] })),
-    })
-    await openCard()
-    fireEvent.click(screen.getByRole('button', { name: zh['model.menu'] }))
-    expect(screen.getAllByRole('menuitemradio').map(item => item.textContent))
-      .toEqual([zh['model.menuDefault'] + '✓', 'gpt-5.2', 'gpt-5.1', 'model-a'])
-  })
-
-  it('degrades to the bare input when the gateway answers null (recent models stay)', async () => {
-    renderCard({
-      value: { live: false, recentModels: ['model-a'] },
-      harnessModel: () => Promise.resolve(null),
-    })
-    await openCard()
-    expect(screen.queryByText(/跟随/)).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: zh['model.menu'] }))
-    expect(screen.getAllByRole('menuitemradio').map(item => item.textContent))
-      .toEqual([zh['model.menuDefault'] + '✓', 'model-a'])
-  })
-
-  it('shows an always-visible chevron that opens a menu; a pick fills the input as a draft', async () => {
-    renderCard({
-      harnessModel: () => Promise.resolve(info({ effective: 'gpt-5.2', source: 'cli-config', cliDefault: 'gpt-5.2', choices: ['gpt-5.2', 'gpt-5.1'] })),
-    })
-    await openCard()
-    const menuButton = screen.getByRole('button', { name: zh['model.menu'] })
-    fireEvent.click(menuButton)
-    const items = screen.getAllByRole('menuitemradio')
-    // The leading item is the follow-default choice, checked while unset.
-    expect(items[0].textContent).toBe('默认（跟随 CLI 配置：gpt-5.2）✓')
-    expect(items[0].getAttribute('aria-checked')).toBe('true')
-    expect(items.slice(1).map(item => item.textContent)).toEqual(['gpt-5.2', 'gpt-5.1'])
-    expect(items[1].getAttribute('aria-checked')).toBe('false')
-    fireEvent.click(screen.getByRole('menuitemradio', { name: 'gpt-5.1' }))
-    // A pick is exactly a typed value: the menu closes, the draft waits for 保存.
-    expect(screen.queryByRole('menu')).toBeNull()
-    expect((screen.getByLabelText(zh['model.title']) as HTMLInputElement).value).toBe('gpt-5.1')
-    expect((screen.getByRole('button', { name: zh['model.save'] }) as HTMLButtonElement).disabled).toBe(false)
-  })
-
-  it('the default item clears the draft back to follow-default; a save then unsets the key', async () => {
-    const harness = renderCard({
-      value: { live: false, model: 'gpt-5.1' },
-      harnessModel: () => Promise.resolve(info({ effective: 'gpt-5.1', source: 'settings', settings: 'gpt-5.1', cliDefault: 'gpt-5.2', choices: ['gpt-5.2', 'gpt-5.1'] })),
-    })
-    await openCard()
-    fireEvent.click(screen.getByRole('button', { name: zh['model.menu'] }))
-    // The stored model reads checked, the default item does not.
-    expect(screen.getByRole('menuitemradio', { name: 'gpt-5.1' }).getAttribute('aria-checked')).toBe('true')
-    fireEvent.click(screen.getByRole('menuitemradio', { name: '默认（跟随 CLI 配置：gpt-5.2）' }))
-    // The field goes blank (displaying the inherited default again) and 保存 arms.
-    expect((screen.getByLabelText(zh['model.title']) as HTMLInputElement).value).toBe('')
-    expect((screen.getByRole('button', { name: zh['model.save'] }) as HTMLButtonElement).disabled).toBe(false)
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['model.save'] })) })
-    expect(harness.scope.unset).toHaveBeenCalledWith('model')
-  })
-
-  it('the menu default item walks the same chain the old placeholder did', async () => {
-    const openMenu = async (): Promise<void> => {
-      await openCard()
-      fireEvent.click(screen.getByRole('button', { name: zh['model.menu'] }))
-    }
-
-    // Rung 2: the catalog's cli-builtin default beats the last-observed one.
-    renderCard({
-      harnessModel: () => Promise.resolve(info({ effective: 'gpt-5.6-sol', lastObserved: 'gpt-5.5', choices: ['x'] })),
-    })
-    await openMenu()
-    expect(screen.getByRole('menuitemradio', { name: /默认（跟随 CLI 默认：gpt-5.6-sol）/ })).toBeTruthy()
-    cleanup()
-    document.body.innerHTML = ''
-
-    // Rung 3: nothing names a model, but the records observed one.
-    renderCard({
-      harnessModel: () => Promise.resolve(info({ lastObserved: 'gpt-5.5', choices: ['x'] })),
-    })
-    await openMenu()
-    expect(screen.getByRole('menuitemradio', { name: /默认（跟随 CLI 内置默认（最近：gpt-5.5））/ })).toBeTruthy()
-    cleanup()
-    document.body.innerHTML = ''
-
-    // Rung 1: the scoped config's default outranks both.
-    renderCard({
-      harnessModel: () => Promise.resolve(info({ effective: 'gpt-5.2', source: 'cli-config', cliDefault: 'gpt-5.2', lastObserved: 'gpt-5.5', choices: ['gpt-5.2'] })),
-    })
-    await openMenu()
-    expect(screen.getByRole('menuitemradio', { name: /默认（跟随 CLI 配置：gpt-5.2）/ })).toBeTruthy()
-  })
-
-  it('closes the menu on Esc', async () => {
-    renderCard({
-      harnessModel: () => Promise.resolve(info({ choices: ['gpt-5.2'] })),
-    })
-    await openCard()
-    fireEvent.click(screen.getByRole('button', { name: zh['model.menu'] }))
-    expect(screen.getByRole('menu')).toBeTruthy()
-    fireEvent.keyDown(document, { key: 'Escape' })
-    expect(screen.queryByRole('menu')).toBeNull()
-  })
-
-  it('opens the menu from the recent-models memory too (broker absent)', async () => {
-    renderCard({
-      value: { live: false, recentModels: ['model-a', 'model-b'] },
-      harnessModel: () => Promise.resolve(null),
-    })
-    await openCard()
-    fireEvent.click(screen.getByRole('button', { name: zh['model.menu'] }))
-    expect(screen.getAllByRole('menuitemradio').map(item => item.textContent))
-      .toEqual([zh['model.menuDefault'] + '✓', 'model-a', 'model-b'])
-  })
-
-  it('renders no menu affordance when nothing names a model (a fresh install)', async () => {
-    renderCard({ harnessModel: () => Promise.resolve(info()) })
-    await openCard()
-    expect(screen.queryByRole('button', { name: zh['model.menu'] })).toBeNull()
-  })
-})
 
 describe('CodexBundleConfig', () => {
-  it('renders the one-liner alone in the summary view and never reads the model surface', async () => {
-    const harnessModel = vi.fn(() => Promise.resolve(null))
-    renderBundleConfig('summary', { harnessModel })
+  it('renders the one-liner alone in the summary view and never reads the model list', async () => {
+    const modelList = { read: vi.fn(async () => []), write: vi.fn(async () => []) }
+    renderBundleConfig('summary', { modelList })
     await act(async () => {})
     expect(document.body.textContent).toContain(zh['card.description'])
     expect(document.body.querySelector('button')).toBeNull()
     expect(document.body.querySelector('input')).toBeNull()
-    expect(harnessModel).not.toHaveBeenCalled()
+    expect(modelList.read).not.toHaveBeenCalled()
   })
 
   it('renders the bare form in the page view without the collapsible chrome and writes the live switch through the scope', async () => {

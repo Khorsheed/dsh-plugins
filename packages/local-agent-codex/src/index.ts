@@ -15,7 +15,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
 import type {} from '@deepseek-ai/dsh-settings'
-import { settingsFace, vol } from '@khorsheed/dsh-local-agent'
+import { firstModelOf, readModelList, readModelListSync, settingsFace, vol, writeModelList } from '@khorsheed/dsh-local-agent'
 import type {} from '@khorsheed/dsh-local-agent'
 import { endpointHost } from '@khorsheed/dsh-local-agent/types'
 import { CodexCliProvider, codexCliVersion } from './codex-cli-provider.ts'
@@ -207,10 +207,18 @@ export function apply(ctx: Context, config: Config): void {
     // delegation without a plugin reload — exactly like the live toggle.
     // Blank is not a model: a whitespace-only value means "unset", which is
     // the pre-key argv.
-    const resolveModel = (): string | undefined => {
+    const resolveModelKey = (): string | undefined => {
       const model = face.get().model?.trim()
       return model === undefined || model === '' ? undefined : model
     }
+    // The settings layer for one scoped home: the curated model list's FIRST
+    // entry (models.json, edited on the card), ahead of the settings key; an
+    // empty list leaves the pre-existing chain untouched. Read sync per call
+    // — one small file, and a card write always reaches the next round.
+    const resolveModelFor = (homeDir: string): string | undefined =>
+      firstModelOf(readModelListSync(homeDir)) ?? resolveModelKey()
+    const resolveModel = (scope?: string): string | undefined =>
+      resolveModelFor(ctx.localAgent.homeDir('codex', scope))
     // The member-level model surface: the composer picker's session-level
     // overrides (in-memory, deliberately lost on a host restart), shared by
     // reference with the broker (which writes them), the exec provider (which
@@ -249,13 +257,18 @@ export function apply(ctx: Context, config: Config): void {
     warmup.unref()
     const liveSwitch = new LiveDriverSwitch(ctx, face, {
       sandbox,
-      model: childSessionId => memberModelOverrides.get(childSessionId) ?? resolveModel(),
+      // The member's scope decides whose list answers: a named scope's
+      // rounds read that scope's models.json, exactly like its endpoint
+      // credential.
+      model: childSessionId => memberModelOverrides.get(childSessionId)
+        ?? resolveModel((ctx.localAgent.memberBinding?.(childSessionId) ?? ctx.localAgent.getDelegation(childSessionId))?.scope),
       endpoint: resolveEndpoint,
       ...config.liveIdleMs === undefined ? {} : { liveIdleMs: config.liveIdleMs },
     })
     const modelBroker = new CodexModelBroker({
       ctx,
-      settingsModel: resolveModel,
+      settingsModel: resolveModelFor,
+      modelList: homeDir => readModelListSync(homeDir),
       recentModels: () => face.get().recentModels ?? [],
       homeDir: childSessionId => ctx.localAgent.homeDir('codex', childSessionId === undefined ? undefined : (ctx.localAgent.memberBinding?.(childSessionId) ?? ctx.localAgent.getDelegation(childSessionId))?.scope),
       cwd: childSessionId => childSessionId === undefined ? undefined : (ctx.localAgent.memberBinding?.(childSessionId) ?? ctx.localAgent.getDelegation(childSessionId))?.cwd,
@@ -290,6 +303,12 @@ export function apply(ctx: Context, config: Config): void {
       homeEnvVar: 'CODEX_HOME',
       delegationProvider: 'codex-local',
       modelBroker,
+      // The settings card's curated model list (the default scope's
+      // models.json; named scopes carry their own, read per round).
+      modelList: {
+        read: home => readModelList(home),
+        write: (home, models) => writeModelList(home, models),
+      },
       // No `login` declaration: the harness authenticates by endpoint key
       // (endpoint-auth.ts), so the core reports the harness as not loginable
       // and `/codex login` answers that there is no login flow — no browser,
@@ -360,9 +379,9 @@ export function apply(ctx: Context, config: Config): void {
       // (it rides every spawn argv); effort and endpoint are read live from
       // the scoped config, which codex itself reads — a person-edited value
       // is exactly what the rounds run with. The model follows the family's
-      // fixed order: the plugin config key (it overrides the file on every
-      // argv) before the scoped config's own `model`, absent when neither
-      // names one.
+      // fixed order: the scope's curated list (its first entry) before the
+      // plugin config key before the scoped config's own `model`, absent
+      // when none names one.
       // The directory is a PARAMETER, not the apply-time capture: a status
       // read (or an evaluation snapshot) of a named scope must report the
       // config that scope's rounds would run with, which is the config in
@@ -380,7 +399,7 @@ export function apply(ctx: Context, config: Config): void {
         const baseUrl = hasEndpointCredential(endpoint)
           ? endpoint.baseUrl
           : await readCodexBaseUrl(scopedHome).catch(() => undefined)
-        const model = resolveModel() ?? scopedModel
+        const model = resolveModelFor(scopedHome) ?? scopedModel
         const baseUrlHost = baseUrl !== undefined ? endpointHost(baseUrl) : undefined
         return {
           drive: face.get().live ? 'live' : 'exec',
