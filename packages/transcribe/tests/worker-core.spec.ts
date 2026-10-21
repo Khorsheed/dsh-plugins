@@ -118,6 +118,14 @@ describe('the one-voice probe', () => {
     expect(singleVoice([a, a2, a, a2])).toBe(true)
     expect(singleVoice([a, a2, b, a])).toBe(false)
   })
+
+  it('does not call two voices one because each resembles the first window', () => {
+    // x and z are each ≥ 0.5 alike to y, but not to each other: two voices.
+    const x = unit(new Float32Array([1, 0]))
+    const y = unit(new Float32Array([1, 1]))
+    const z = unit(new Float32Array([0, 1]))
+    expect(singleVoice([y, x, z])).toBe(false)
+  })
 })
 
 describe('voices from voiceprints', () => {
