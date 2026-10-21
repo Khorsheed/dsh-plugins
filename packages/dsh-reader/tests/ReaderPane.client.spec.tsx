@@ -27,7 +27,7 @@ import { createReaderStore, type ReaderState } from '../src/client/store.ts'
 import { zh } from '../src/client/locales.ts'
 import { ReaderPane } from '../src/client/ReaderPane.tsx'
 import { noteTargetForSelection } from '../src/client/notes.ts'
-import { forgetSession, forgetTranslators, readSession, readWallCache, rememberReadingPosition } from '../src/client/session.ts'
+import { forgetSession, forgetTranslators, readSession, readWallCache, rememberReadingPosition, rememberTranslation } from '../src/client/session.ts'
 import { UNIT_SEPARATOR, clearMemory, translationHash } from '../src/client/translate.ts'
 import type { LocalTranscriptStatus, MediaCardStates, ReaderBody, ReaderPolishView, ReaderEntryFetchState, ReaderEntryNotes, ReaderRecentEntry, ReaderSourceSummary } from '../src/types.ts'
 
@@ -4225,6 +4225,39 @@ describe('video and audio entries', () => {
     expect(written).toContain('reader_translate')
     expect(written).toContain('共 1 段')
     expect(await screen.findByText(zh['polish.awaiting'])).toBeTruthy()
+  })
+
+  it('does not re-translate a transcript while it is still arriving, and restores the translation once it is done', async () => {
+    installTranslator()
+    const part = (n: number) => Array.from({ length: n }, (_, i) => `<p data-src="local" data-t="${String(i * 10)}.0">Sentence number ${String(i + 1)} here.</p>`).join('')
+    const ui = bench({
+      sources: [rssSource('hn'), rssSource('yt')],
+      payloads: { hn: feed('hn', [{ title: 'An English article', description: 'First sentence here.' }]), yt: videoFeed },
+      local: {
+        start: [{ entryId: '', state: 'transcribing', progress: 0.2 }],
+        polls: [
+          { entryId: '', state: 'transcribing', progress: 0.3, html: part(1) },
+          { entryId: '', state: 'transcribing', progress: 0.5, html: part(2) },
+          { entryId: '', state: 'done', progress: 1, html: part(3) },
+        ],
+      },
+    })
+    await ui.settle()
+    // This page already built an English → Chinese session (the reader translated another article).
+    fireEvent.click((await screen.findAllByRole('button', { name: /An English article/ }))[0] as HTMLElement)
+    fireEvent.click(await screen.findByTitle(zh['action.translate']))
+    await waitFor(() => { expect(ui.container.querySelector('[class*="article"]')?.textContent).toContain('译：First sentence here.') })
+    fireEvent.click(screen.getByTitle(zh['action.back']))
+    fireEvent.click(await screen.findByText('Intro to LLMs'))
+    await waitFor(() => { expect(ui.mocks.startLocalTranscript).toHaveBeenCalled() })
+    // The reader had this entry translated before re-transcribing it.
+    rememberTranslation(String(ui.mocks.startLocalTranscript.mock.calls[0]![0].entryId), 'trans', 'en')
+    expect(await screen.findByText('Sentence number 2 here.', {}, { timeout: 4000 })).toBeTruthy()
+    expect(ui.container.querySelector('[class*="article"]')?.textContent).not.toContain('译：')
+    await waitFor(() => {
+      expect(ui.container.querySelector('[class*="article"]')?.textContent).toContain('译：Sentence number 3 here.')
+    }, { timeout: 5000 })
+    delete (globalThis as unknown as { Translator?: unknown }).Translator
   })
 
   it('withdraws a job when leaving and stops it from 取消', async () => {

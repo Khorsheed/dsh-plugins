@@ -2876,6 +2876,10 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
     if (view !== 'detail' || openEntryId === null) return
     if (articleHtml === null || articleHtml.length === 0) return
     if (translatePhase !== 'idle') return
+    // A transcript still arriving replaces the body every poll: restoring on
+    // each would re-translate (and re-raise its bar) over and over. The
+    // record stays; the finished transcript gets it once.
+    if (localActive) return
     if (restoredTranslationRef.current === openEntryId) return
     const wanted = readSession().translationView?.[openEntryId]
     if (wanted === undefined) return
@@ -2885,7 +2889,7 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
     if (translator === null ? storedPair === null : cachedTranslator(sources, TARGET_CANDIDATES) === undefined) return
     restoredTranslationRef.current = openEntryId
     void startTranslation(wanted, source)
-  }, [view, openEntryId, articleHtml, translatePhase, translationSource, translator, storedPair, startTranslation])
+  }, [view, openEntryId, articleHtml, translatePhase, translationSource, translator, storedPair, startTranslation, localActive])
 
   /**
    * 转完自动翻译: a whole transcript (platform captions, or a finished local
