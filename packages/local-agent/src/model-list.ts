@@ -1,12 +1,15 @@
 /**
- * The claude-code harness's curated model list: `<scopedHome>/models.json`
- * holds an ORDERED array of model identifiers the user picked from the
- * endpoint's served catalog (`GET /v1/models`). The list's FIRST entry is
- * the harness's default model — it answers wherever the plugin-config
- * `model` key answered before (round resolution, the broker's settings
- * layer, the eval snapshot's model field), ahead of that key; an absent or
- * empty list leaves the pre-existing chain untouched (settings key →
- * scoped settings.json → the CLI's own default).
+ * A harness's curated model list: `<scopedHome>/models.json` holds an
+ * ORDERED array of model identifiers the user picked from the endpoint's
+ * served catalog. The list's FIRST entry is the harness's default model —
+ * it answers wherever the plugin-config `model` key answered before (round
+ * resolution, the broker's settings layer, the eval snapshot's model
+ * field), ahead of that key; an absent or empty list leaves the
+ * pre-existing chain untouched (settings key → the scoped config file →
+ * the CLI's own default). One store shape serves every harness in the
+ * family (claude-code, codex, kimi): the file is keyed by the scoped home
+ * alone, so a scope carries its own list exactly like its own endpoint
+ * credential.
  *
  * Why a file and not the settings channel: the credential form's
  * endpoint-auth.json proved the pattern — the harness owns the store, the
@@ -15,7 +18,7 @@
  * card edits the default scope's file through the gateway's
  * `modelList`/`configureModelList` Remotes; nothing here is secret (0600 is
  * for uniformity with the credential file, not necessity).
- * @module @khorsheed/dsh-local-agent-claude-code/model-list
+ * @module @khorsheed/dsh-local-agent/model-list
  */
 
 import { readFileSync } from 'node:fs'
@@ -49,7 +52,7 @@ function fold(parsed: unknown): readonly string[] {
  * Read the scope's model list. Absent, unreadable, or malformed content all
  * read as an empty list — the fallback chain then decides, exactly as
  * before the file existed.
- * @param homeDir - the `claude-code` harness's scoped home.
+ * @param homeDir - the harness's scoped home.
  * @returns the ordered model identifiers.
  */
 export async function readModelList(homeDir: string): Promise<readonly string[]> {

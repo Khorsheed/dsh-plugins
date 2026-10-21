@@ -35,8 +35,18 @@ import { listCodexConfigModels, readCodexModel, readCodexReasoningEffort } from 
 export interface CodexModelBrokerDeps {
   /** Host context carrying the family registry (in-flight reads, delegation records). */
   readonly ctx: Context
-  /** The plugin-config `model` resolver — the settings layer, blank reads unset. */
-  readonly settingsModel: () => string | undefined
+  /**
+   * The settings-layer model for one scoped home: the curated model list's
+   * FIRST entry (models.json, edited on the card), then the plugin-config
+   * `model` key — blank reads unset.
+   */
+  readonly settingsModel: (homeDir: string) => string | undefined
+  /**
+   * The scope's curated model list (models.json) for the choice vocabulary:
+   * non-empty it is the COMPLETE vocabulary (nothing outside the endpoint's
+   * served catalog sneaks in); empty falls back to the pre-list chain.
+   */
+  readonly modelList?: (homeDir: string) => readonly string[]
   /** The card's recent-model memory (the suggestion vocabulary's tail). */
   readonly recentModels: () => readonly string[]
   /**
@@ -103,7 +113,7 @@ export class CodexModelBroker implements LocalAgentModelBroker {
       }
       const model = selection.model.mode === 'value' ? selection.model.value
         : (selection.model.mode === 'inherit' ? binding.model : undefined)
-          ?? this.deps.settingsModel() ?? await readCodexModel(home)
+          ?? this.deps.settingsModel(home) ?? await readCodexModel(home)
           ?? this.deps.catalogDefault(home, binding.cwd)
       const entry = directory?.entries.find(entry => entry.value === model)
       const explicitEffort = selection.effort.mode === 'value' ? selection.effort.value
@@ -161,7 +171,7 @@ export class CodexModelBroker implements LocalAgentModelBroker {
     const record = this.deps.ctx.localAgent.getDelegation(childSessionId)
     const recorded = record?.model?.trim()
     if (recorded !== undefined && recorded !== '') return recorded
-    return this.deps.settingsModel()
+    return this.deps.settingsModel(this.deps.homeDir(childSessionId))
   }
 
   /**
@@ -173,8 +183,8 @@ export class CodexModelBroker implements LocalAgentModelBroker {
    * re-fetches on open, so it never blocks on a CLI boot).
    */
   async modelInfo(childSessionId?: string, delegationModel?: string): Promise<LocalAgentModelInfo> {
-    const settings = this.deps.settingsModel()
     const homeDir = this.deps.homeDir(childSessionId)
+    const settings = this.deps.settingsModel(homeDir)
     const [cliDefault, discovered] = await Promise.all([
       readCodexModel(homeDir).catch(() => undefined),
       listCodexConfigModels(homeDir).catch(() => [] as string[]),
@@ -193,6 +203,10 @@ export class CodexModelBroker implements LocalAgentModelBroker {
         : settings !== undefined ? 'settings'
           : cliDefault !== undefined ? 'cli-config' : 'cli-builtin'
     const inFlight = childSessionId !== undefined && this.activeDelegations().includes(childSessionId)
+    // The curated list is the whole vocabulary when non-empty — nothing from
+    // outside the endpoint's served catalog sneaks in. Empty falls back to
+    // the pre-list chain (native candidates plus configuration and history).
+    const curated = this.deps.modelList?.(homeDir) ?? []
     return {
       ...effective === undefined ? {} : { effective },
       source,
@@ -200,8 +214,8 @@ export class CodexModelBroker implements LocalAgentModelBroker {
       ...delegation === undefined ? {} : { delegation },
       ...settings === undefined ? {} : { settings },
       ...cliDefault === undefined ? {} : { cliDefault },
-      ...this.deps.directory === undefined ? {} : { directory: extendModelDirectory(this.deps.directory(homeDir, this.deps.cwd?.(childSessionId)), [settings, cliDefault, ...discovered], this.deps.recentModels()) },
-      choices: dedupeChoices([settings, cliDefault, ...discovered, ...this.deps.catalog(homeDir, this.deps.cwd?.(childSessionId)), ...this.deps.recentModels()]),
+      ...this.deps.directory === undefined ? {} : { directory: extendModelDirectory(this.deps.directory(homeDir, this.deps.cwd?.(childSessionId)), [settings, cliDefault, ...discovered], curated.length > 0 ? [] : this.deps.recentModels()) },
+      choices: curated.length > 0 ? [...curated] : dedupeChoices([settings, cliDefault, ...discovered, ...this.deps.catalog(homeDir, this.deps.cwd?.(childSessionId)), ...this.deps.recentModels()]),
       live: this.deps.live(),
       switchable: !inFlight,
       ...inFlight ? { reason: '成员有进行中的委派轮次，等其完成后再切换模型' } : {},

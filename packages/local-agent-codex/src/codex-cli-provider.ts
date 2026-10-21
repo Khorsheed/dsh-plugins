@@ -197,9 +197,10 @@ export class CodexCliProvider implements SubagentProvider {
    *   while a retiring generation still hosts it).
    * @param model - resolver for the configured model, read PER ROUND so a
    *   settings-card write takes effect on the next delegation without a
-   *   reload. Undefined (the resolver absent, or returning undefined) leaves
-   *   the argv exactly as it was before the key existed — the scoped
-   *   config.toml's own `model` then decides, as it always did.
+   *   reload; it receives the round's scope (a named scope's curated list
+   *   answers first). Undefined (the resolver absent, or returning
+   *   undefined) leaves the argv exactly as it was before the key existed —
+   *   the scoped config.toml's own `model` then decides, as it always did.
    * @param overrides - resolver for the member's session-level model override
    *   (the composer picker, owned by the model broker). It outranks BOTH the
    *   delegation's recorded model and the configured one: on the exec path it
@@ -216,7 +217,7 @@ export class CodexCliProvider implements SubagentProvider {
     private readonly ctx: Context,
     private readonly sandbox: CodexSandbox = 'workspace-write',
     private readonly live?: CodexLiveDriver | ((childSessionId: string) => CodexLiveDriver | undefined),
-    private readonly model?: () => string | undefined,
+    private readonly model?: (scope?: string) => string | undefined,
     private readonly overrides?: (childSessionId: string) => string | undefined,
     private readonly endpoint?: (scopeHome: string) => Promise<CodexEndpointAuth>,
   ) {}
@@ -419,7 +420,7 @@ export class CodexCliProvider implements SubagentProvider {
         endpointLabel: baseUrl,
         endpointArgv: endpointConfigOverrides(endpoint),
         sandbox: this.sandbox,
-        ...(configuration?.resolved ?? resolveRoundModel(this.overrides?.(runId) ?? requestedModel, this.model)),
+        ...(configuration?.resolved ?? resolveRoundModel(this.overrides?.(runId) ?? requestedModel, () => this.model?.(scope))),
         disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
         spawn: spec => this.ctx.subprocess.spawn(spec),
         onError: (error: unknown, stopReason) => {
@@ -544,7 +545,7 @@ export class CodexCliProvider implements SubagentProvider {
           endpointLabel: baseUrl,
           endpointArgv: endpointConfigOverrides(endpoint),
           sandbox: this.sandbox,
-          ...(configuration?.resolved ?? resolveRoundModel(this.overrides?.(intent.childSessionId) ?? requestedModel, this.model)),
+          ...(configuration?.resolved ?? resolveRoundModel(this.overrides?.(intent.childSessionId) ?? requestedModel, () => this.model?.(scope))),
           disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
           spawn: spec => this.ctx.subprocess.spawn(spec),
           onError: (error: unknown, stopReason) => {

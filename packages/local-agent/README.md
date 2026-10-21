@@ -12,7 +12,7 @@
 
 - **每个 CLI 一个作用域目录**——共享 homes 根下的隔离凭据/会话目录，以 0700 创建；你的本地 CLI 安装绝不被动到。
 - **斜杠命令族**——`/<harness> login|sessions|status|logout`，device-code 登录 URL 通过命令回复呈现；另有家族命令 `/local-agent list`（已注册 harness 花名册）与 `/local-agent stop <childSessionId>`（取消在飞委派）。
-- **一张「本机 Agent 委派」家族设置卡**——落在 Plugins 页（core 的一个 `plugins.item` 条目，随 core 的 client bundle 挂载，无命名空间门控——core 的 Config 无 volatile 字段，命名空间不出现在 settings describe 里，不能照 companion 的 `whileServed` 惯例走）：每家 provider 的卡体渲染为卡内一节（认证状态、端点凭据、默认模型、常驻模式热切开关），节头带认证状态点与「未检测到 CLI」灰标签；provider 包经 core client 的 `localAgentUi.registerHarnessCard` 注册各自的节（旧版 core 上各家仍回落为自己的 `plugins.item` 卡）。卡体直接复用本包 client 面的共享 `ProviderAuthBlock`。
+- **一张「本机 Agent 委派」家族设置卡**——落在 Plugins 页（core 的一个 `plugins.item` 条目，随 core 的 client bundle 挂载，无命名空间门控——core 的 Config 无 volatile 字段，命名空间不出现在 settings describe 里，不能照 companion 的 `whileServed` 惯例走）：每家 provider 的卡体渲染为卡内一节（认证状态、端点凭据、可用模型、常驻模式热切开关），节头带认证状态点与「未检测到 CLI」灰标签；provider 包经 core client 的 `localAgentUi.registerHarnessCard` 注册各自的节（旧版 core 上各家仍回落为自己的 `plugins.item` 卡）。卡体直接复用本包 client 面的共享 `ProviderAuthBlock` 与 `ModelListSection`（「可用模型」区：有序短名单，第一个为默认模型，经 gateway 的 `modelList`/`configureModelList` Remote 编辑；宿主侧的 `models.json` 读写助手从本包根导出，名单首项在各家解析链里排在 `model` 配置键之前）。
 - **子 agent 委派与续跑**——把会话工作交给本机 CLI 并在之后 resume，宿主重启也能续上；委派记录按 harness 持久化在作用域目录的 `delegations.jsonl`。
 - **成员会话保持可写**——委派的子会话不是只读回放：MemberComposer 让它继续接受输入（发送即 resume），实时输出流式呈现，模型与推理强度可在成员输入栏切换；运行中选择排到下一完整轮次生效，冻结的评测成员拒绝变更。
 - **成员会话侧栏续写（宿主 0.1.6 起）**——官方 subagent 目录每行新增「在侧边栏打开」入口：成员会话本就是 one-shot subagent，侧栏内本家族 MemberComposer 自动当选为可写 composer，本包零改动受益；0.1.5 宿主没有该入口，行为不变。
@@ -78,7 +78,7 @@ dsh plugin --profile web remove @khorsheed/dsh-local-agent
 
 **凭证只说知道的（credentialState）。** `LocalAgentStatus` 除 `authenticated` 布尔外还带一档 `credentialState`：`absent`（作用域家目录里没有凭证记录）、`present-unverified`（有记录，但本宿主进程里还没有任何一轮委派碰过它——一份过期且刷不动的凭证和一份能用的凭证形状完全一样，说不知道正是这一档的意义）、`verified`（自上次登录/登出以来有一轮委派真的打通了端点并完成）、`rejected`（某轮的端点拒了这份凭证，且此后没有新登录重写凭证标记）。`authenticated` 保持不变，恒等于 `verified || present-unverified`，所以设置卡片与既有客户端读到的还是原来那个布尔。这一档是每宿主进程的：重启后一份在场的凭证回到 `present-unverified`，因为那才是当下真正知道的；开跑前的主动活性探测不归这个字段。provider 在一轮 settle 成 completed 时调 `reportAuthSuccess`，与既有的 `reportAuthFailure` 对称。
 
-**浏览器半身随本包提供。** `./client` 导出通过本包的 `dsh.client` manifest 自动挂载：成员 composer（委派的子会话可继续对话）、共享设置卡片构件（`ProviderAuthBlock`、认证状态总线、`AuthStatusDot`），以及「本机 Agent 委派」家族卡——Plugins 页上的唯一条目，按节渲染各 provider 注册来的卡体，UI 保持 provider 无关（只消费 `/<harness>` 命令族和只读 gateway）。
+**浏览器半身随本包提供。** `./client` 导出通过本包的 `dsh.client` manifest 自动挂载：成员 composer（委派的子会话可继续对话）、共享设置卡片构件（`ProviderAuthBlock`、`ModelListSection`、认证状态总线、`AuthStatusDot`），以及「本机 Agent 委派」家族卡——Plugins 页上的唯一条目，按节渲染各 provider 注册来的卡体，UI 保持 provider 无关（只消费 `/<harness>` 命令族和只读 gateway）。
 
 ### 新增一个 harness
 

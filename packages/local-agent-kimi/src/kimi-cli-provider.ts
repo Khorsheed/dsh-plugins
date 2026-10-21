@@ -123,9 +123,11 @@ export class KimiCliProvider implements SubagentProvider {
    *   while a retiring generation still hosts it).
    * @param model - resolver for the configured model, read PER ROUND so a
    *   settings-card write takes effect on the next delegation without a
-   *   reload. Undefined (the resolver absent, or returning undefined) leaves
-   *   the argv exactly as it was before the key rode every round — the scoped
-   *   config.toml's `default_model` then decides, as it always did.
+   *   reload; it receives the round's scope (a named scope's curated list
+   *   answers first). Undefined (the resolver absent, or returning
+   *   undefined) leaves the argv exactly as it was before the key rode every
+   *   round — the scoped config.toml's `default_model` then decides, as it
+   *   always did.
    * @param memberModels - the broker's member-model ledger: the provider
    *   records each delegation's start model here (the live driver's spawn
    *   resolver binds it) and reads the session-level override as the exec
@@ -134,7 +136,7 @@ export class KimiCliProvider implements SubagentProvider {
   constructor(
     private readonly ctx: Context,
     private readonly live?: KimiAcpLiveDriver | ((childSessionId: string) => KimiAcpLiveDriver | undefined),
-    private readonly model?: () => string | undefined,
+    private readonly model?: (scope?: string) => string | undefined,
     private readonly memberModels?: KimiModelBroker,
     /**
      * Resolver for the scope's endpoint credential, read PER ROUND so a
@@ -405,7 +407,7 @@ export class KimiCliProvider implements SubagentProvider {
         endpointLabel: baseUrl,
         // The session-level override (the composer picker) outranks even the
         // delegation's own model — the family order puts it first.
-        ...(configuration?.resolved ?? resolveRoundModel(this.memberModels?.overrideFor(runId) ?? requestedModel, this.model)),
+        ...(configuration?.resolved ?? resolveRoundModel(this.memberModels?.overrideFor(runId) ?? requestedModel, () => this.model?.(scope))),
         ...configuration === undefined ? {} : { controlled: true },
         disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
         spawn: spec => this.ctx.subprocess.spawn(spec),
@@ -535,7 +537,7 @@ export class KimiCliProvider implements SubagentProvider {
           endpointLabel: baseUrl,
           // See the fresh path: the session-level override outranks the
           // delegation's recorded model on the exec path too.
-          ...(configuration?.resolved ?? resolveRoundModel(this.memberModels?.overrideFor(intent.childSessionId) ?? requestedModel, this.model)),
+          ...(configuration?.resolved ?? resolveRoundModel(this.memberModels?.overrideFor(intent.childSessionId) ?? requestedModel, () => this.model?.(scope))),
         ...configuration === undefined ? {} : { controlled: true },
           disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
           spawn: spec => this.ctx.subprocess.spawn(spec),

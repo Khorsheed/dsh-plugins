@@ -13,12 +13,14 @@ import { bindSettingsScope, type SettingsScopeSnapshot } from '@khorsheed/dsh-lo
  * the row shows no trace of it. The card carries the family core's shared
  * ProviderAuthBlock (login/logout/device-code, backed by the core's
  * localAgentGateway Remote and the commands channel — endpoint-key only, no
- * login flow) plus the resident-mode
- * block (live switch) and the default-model block (free-text input, the
- * broker's effective-model line and suggestion vocabulary), whose writes ride
+ * login flow), the endpoint credential form, the family core's shared
+ * ModelListSection (the curated ordered shortlist — first entry is the
+ * default model — edited through the gateway's modelList/configureModelList
+ * Remotes, the add dialog fed by modelDirectory), and the resident-mode
+ * block (live switch), whose writes ride
  * the bound settingsScope — the host watcher hot-applies them, no reload.
  * Every read degrades: an absent gateway renders the auth block's
- * 'unavailable' state and drops the model surface to the bare input, an
+ * 'unavailable' state and drops the model surfaces, an
  * unregistered namespace disables the live controls.
  * @module @khorsheed/dsh-local-agent-codex/client
  */
@@ -92,12 +94,26 @@ export function apply(ctx: Context): void {
   const cardFace = (): Omit<CodexSettingsCardInjected, 'hooks'> => ({
     scope,
     authT,
-    renderModelPicker: props => (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.renderHarnessModelPicker('codex', props),
-    // The harness's memberless model surface; absent gateway/broker
-    // degrades to the bare input with its recent-models suggestions.
-    harnessModel: () =>
-      gateway()?.harnessModel('codex').then(result => (result.ok ? result.value : undefined))
-        ?? Promise.resolve(undefined),
+    // The curated model list's read/write faces, over the same Remotes.
+    modelList: {
+      read: () => {
+        const gw = gateway()
+        if (gw === undefined || typeof gw.modelList !== 'function') return Promise.resolve(undefined)
+        return gw.modelList('codex').then(result => (result.ok ? result.value : undefined))
+      },
+      write: (models) => {
+        const gw = gateway()
+        if (gw === undefined || typeof gw.configureModelList !== 'function') return Promise.resolve(undefined)
+        return gw.configureModelList('codex', models).then(result => (result.ok ? result.value : undefined))
+      },
+    },
+    // The endpoint's served catalog for the add dialog. A core predating
+    // modelDirectory leaves the dialog with its reason.
+    modelDirectory: (refresh) => {
+      const gw = gateway()
+      if (gw === undefined || typeof gw.modelDirectory !== 'function') return Promise.resolve(undefined)
+      return gw.modelDirectory('codex', undefined, refresh ?? false).then(result => (result.ok ? result.value : undefined))
+    },
     // The verify button's probe, over the session-less gateway Remote. A core
     // predating `checkEndpoint` hides the button (declare-and-degrade).
     checkEndpoint: () => {
