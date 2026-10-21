@@ -208,9 +208,7 @@ export const SAME_VOICE = 0.5
 /**
  * Up to `count` stretches of speech spread evenly over the recording, each at
  * most `seconds` long, taken from speech segments of at least 3 s (shorter
- * ones embed poorly). Measured 2026-10-20: one voice scores ≥ 0.65 against
- * itself across a 40-minute monologue; host and guest of an interview score
- * 0.27–0.40 — the probe costs under a second.
+ * ones embed poorly). The probe costs under a second.
  */
 export function probeWindows(speech: readonly { start: number; end: number }[], total: number, count = PROBE_WINDOWS, seconds = PROBE_SECONDS): { start: number; end: number }[] {
   const long = speech.filter((s) => s.end - s.start >= 3)
@@ -230,12 +228,18 @@ export function probeWindows(speech: readonly { start: number; end: number }[], 
   })
 }
 
-/** Whether every probe window is the same voice (greedy grouping at `threshold`). */
+/**
+ * Whether every probe window is the same voice: EVERY pair at least
+ * `threshold` alike. Measured 2026-10-21 with 24 windows: a monologue's
+ * lowest pair scored 0.72; two interviews' lowest pairs 0.21 and 0.28. (A
+ * greedy grouping against each group's first window had called the second
+ * interview one voice: every window was ≥ 0.5 against the first.)
+ */
 export function singleVoice(vecs: readonly Float32Array[], threshold = SAME_VOICE): boolean {
-  const groups: Float32Array[] = []
-  for (const v of vecs) {
-    if (!groups.some((g) => cosine(g, v) >= threshold)) groups.push(v)
-    if (groups.length > 1) return false
+  for (let i = 0; i < vecs.length; i++) {
+    for (let j = i + 1; j < vecs.length; j++) {
+      if (cosine(vecs[i]!, vecs[j]!) < threshold) return false
+    }
   }
   return true
 }
