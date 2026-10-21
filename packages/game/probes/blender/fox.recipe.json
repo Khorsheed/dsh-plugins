@@ -1,0 +1,13 @@
+{
+  "id": "jiuweihu",
+  "name": "九尾狐",
+  "source": "《南山经》：青丘之山……有兽焉，其状如狐而九尾。",
+  "base": "quadruped",
+  "proportions": { "bodyLength": 1.0, "bodyHeight": 0.45, "legLength": 0.35, "headSize": 0.32, "snout": 0.18 },
+  "parts": [
+    { "type": "ear", "count": 2, "size": 0.14 },
+    { "type": "tail", "count": 9, "length": 0.9, "fan": 140, "thickness": 0.09 }
+  ],
+  "palette": { "body": "#e9dfcc", "accent": "#b8442f", "eye": "#1d1d1f" },
+  "motion": { "tailSway": { "amplitude": 18, "period": 1.6 }, "breath": { "amplitude": 0.02, "period": 2.4 } }
+}
