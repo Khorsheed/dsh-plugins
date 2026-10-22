@@ -62,6 +62,16 @@ import { codexRolloutRoundFacts, usageFromCodex } from './records.ts'
 // source then compiles against both lines.
 type ToolCallEventCallId = SessionEventMap['tool/call']['callId']
 type ToolResultCallId = Parameters<typeof createToolResultMessage>[0]['callId']
+type ToolCallBlockId = Extract<ContentBlock, { type: 'tool-call' }>['id']
+
+/**
+ * The synthesized result for a call whose result the stream never recorded
+ * (a killed run, or a result-less item type like web_search_call). The
+ * released-log contract resolves every advertised call before its step
+ * closes, so an interrupted call folds with this error result. Same text as
+ * the kimi provider's placeholder, for family consistency.
+ */
+export const CODEX_INTERRUPTED_TOOL_RESULT = '（工具调用被中断，未能记录返回结果）'
 
 /** Quote one TOML basic string for the `-c` config override. */
 function tomlString(value: string): string {
@@ -1147,26 +1157,11 @@ export function startCodexCliRun(
     signal: request.signal,
     onAbort,
   }).then((settled) => {
-    // Every terminal path closes the turn so the timing window never stays
-    // open on a failed or cancelled run: success settles 'completed', a
-    // non-zero exit 'error', and a locally cancelled run 'aborted'. The
-    // turn/end timestamp is the real settle moment.
     // A completed round proves the scoped credential is live — the endpoint
     // answered. Reported here rather than from the mirror so it lands whether
-    // or not the round is session-backed.
+    // or not the round is session-backed. The turn boundary itself is the
+    // post-exit chain's job (it must follow the settle mirror).
     if (settled.stopReason === 'completed') spec.onAuthSuccess?.()
-    if (spec.childSession !== undefined) {
-      if (settled.stopReason === 'completed') {
-        spec.childSession.append('turn/end', { turn, reason: { kind: 'completed' } })
-      } else if (settled.stopReason === 'aborted') {
-        spec.childSession.append('turn/end', { turn, reason: { kind: 'aborted', reason: { kind: 'parent' } } })
-      } else {
-        spec.childSession.append('turn/end', {
-          turn,
-          reason: { kind: 'error', error: { message: `codex exec exited with code ${String(exitCode)}`, code: 'UNKNOWN' } },
-        })
-      }
-    }
     return settled
   })
 
@@ -1175,10 +1170,14 @@ export function startCodexCliRun(
   // subagent session, so a cancelled round still preserves its partial work
   // (reasoning, commands, replies) and real token usage. The thread id is
   // recorded even on abort so the partial thread stays resumable. Waits for
-  // the settle chain first (so turn/end is already appended) AND for the
-  // process to actually exit (so stdout is drained before parsing).
+  // the settle chain first AND for the process to actually exit (so stdout is
+  // drained before parsing). The turn closes AFTER the settle mirror, still
+  // serialized behind the live mirror's queue: every mirrored step must land
+  // before turn/end — the released-log reader rejects a step outside an open
+  // turn on every cold read. The run's result still settles at the real
+  // moment (abort latency unchanged); only the boundary event moves.
   void result.then(() => child.done).then(
-    () => {
+    async () => {
       if (spec.onAuthFailure !== undefined) {
         // The seam's collected buffers are complete at process exit; the
         // streamed variables can lag `done` by a tick.
@@ -1189,7 +1188,28 @@ export function startCodexCliRun(
           spec.onAuthFailure(authDetail.split('\n').find(line => line.trim() !== '') ?? 'auth failure')
         }
       }
-      return mirrorCodexAfterExit(spec, task, turn, output, liveMirror, startedAtMs)
+      await mirrorCodexAfterExit(spec, task, turn, output, liveMirror, startedAtMs)
+      // Every terminal path closes the turn so the timing window never stays
+      // open on a failed or cancelled run: success settles 'completed', a
+      // non-zero exit 'error', and a locally cancelled run 'aborted'.
+      if (spec.childSession !== undefined) {
+        const settled = await result
+        if (settled.stopReason === 'completed') {
+          spec.childSession.append('turn/end', { turn, reason: { kind: 'completed' } })
+        } else if (settled.stopReason === 'aborted') {
+          spec.childSession.append('turn/end', { turn, reason: { kind: 'aborted', reason: { kind: 'parent' } } })
+        } else {
+          spec.childSession.append('turn/end', {
+            turn,
+            reason: { kind: 'error', error: { message: `codex exec exited with code ${String(exitCode)}`, code: 'UNKNOWN' } },
+          })
+        }
+        if (spec.ctx !== undefined) {
+          await persistChildSession(spec.ctx, spec.childSession).catch((error: unknown) => {
+            spec.ctx?.logger.warn(`subagent-codex: turn/end persistence failed: ${thrown(error).message}`)
+          })
+        }
+      }
     },
     () => { /* child.done rejects only on infra faults; nothing to mirror */ },
   )
@@ -1223,8 +1243,17 @@ export function codexAssistantEvent(blocks: readonly ContentBlock[]) {
  * assembler requires: without a boundary the step never enters the location
  * index, the line's assistant message resolves to a turn-level location, and
  * the real-time view renders nothing (only a full rebuild, which mints step
- * drafts from the explicit coordinates, recovers it). Tool cards escape that
- * fate only because their definition does not consult the step location.
+ * drafts from the explicit coordinates, recovers it).
+ *
+ * A tool line folds the NATIVE lifecycle inside its one step: an assistant
+ * message advertising the tool-call block, the `tool/call`, then its
+ * `tool/result` — the released-log reader pairs call and result against the
+ * advertisement and resolves every advertised call before the step closes.
+ * Every fold sees a COMPLETED item (the exec live mirror holds the volatile
+ * last line; the live driver folds at item/completed), so a result the
+ * stream has not recorded by fold time will never arrive — the call folds
+ * with the synthesized interrupted result instead of leaving the step
+ * unresolvable.
  * @returns whether the line folded (false when the options skipped it).
  */
 export function appendCodexTranscriptLine(
@@ -1236,28 +1265,32 @@ export function appendCodexTranscriptLine(
 ): boolean {
   childSession.append('step/start', { turn, step })
   if (line.kind === 'tool') {
-    // Native tool card: the call event now, the result event when the stream
-    // already carries it. Tool lines never carry the round's usage — the
-    // callers attach usage to the round's final line, which is an agent
-    // message on every well-formed stream.
+    // Tool lines never carry the round's usage — the callers attach usage to
+    // the round's final line, which is an agent message on every well-formed
+    // stream.
+    const args = line.args ?? ''
+    childSession.append('assistant/message', {
+      turn,
+      step,
+      message: codexAssistantEvent([{ type: 'tool-call', id: line.id as ToolCallBlockId, name: line.name, arguments: args }]),
+      stream: [],
+    }, { surfaceOp: 'append' })
     const call = childSession.append('tool/call', {
       turn,
       step,
       callId: line.id as ToolCallEventCallId,
       name: line.name,
-      arguments: line.args ?? '',
+      arguments: args,
     })
-    if (line.result !== undefined) {
-      childSession.append('tool/result', {
-        turn,
-        step,
-        message: createToolResultMessage({
-          callId: line.id as ToolResultCallId,
-          content: [{ type: 'text', text: line.result }],
-          isError: false,
-        }),
-      }, { surfaceOp: 'append', sourceEventSeqs: [call.seq] })
-    }
+    childSession.append('tool/result', {
+      turn,
+      step,
+      message: createToolResultMessage({
+        callId: line.id as ToolResultCallId,
+        content: [{ type: 'text', text: line.result ?? CODEX_INTERRUPTED_TOOL_RESULT }],
+        isError: line.result === undefined,
+      }),
+    }, { surfaceOp: 'append', sourceEventSeqs: [call.seq] })
     childSession.append('step/end', { turn, step })
     return true
   }

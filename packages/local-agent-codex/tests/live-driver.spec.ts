@@ -18,6 +18,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { LocalAgentStreams } from '@khorsheed/dsh-local-agent'
 import { CodexCliProvider } from '../src/codex-cli-provider.ts'
 import { CodexLiveDriver, codexAppServerItemToLine } from '../src/live-driver.ts'
+import { expectValidReleasedLog } from './expect-valid-log.ts'
 
 /** One scripted turn: items to complete, optional deltas, terminal status. */
 interface FakeTurn {
@@ -372,6 +373,8 @@ describe('codex live driver rounds', () => {
     expect((await run.result).stopReason).toBe('completed')
     expect(durable.at(-1)?.type).toBe('turn/end')
     expect(durable).toEqual(child.snapshotEvents())
+    // …and the whole log passes the released-log read path.
+    expectValidReleasedLog(child)
     await m.driver.disposeAll()
   })
 
@@ -398,12 +401,14 @@ describe('codex live driver rounds', () => {
     })
     // Mirroring: the prompt plus the items, with the round's usage on the
     // final assistant line (the hold-back rule); the commandExecution item
-    // mirrors as a native tool/call + tool/result pair.
+    // mirrors as the native lifecycle — an assistant/message advertising the
+    // tool-call block, then the tool/call + tool/result pair.
     expect(child.snapshotEvents().filter(e => e.type === 'user/message')).toHaveLength(1)
     const assistant = child.snapshotEvents().filter(e => e.type === 'assistant/message')
-    expect(assistant).toHaveLength(2)
+    expect(assistant).toHaveLength(3)
     expect(assistant[0]?.data).toMatchObject({ message: { content: [{ type: 'reasoning' }] } })
-    expect(assistant[1]?.data).toMatchObject({ usage: { inputTokens: 4, outputTokens: 4, cacheReadTokens: 6 } })
+    expect(assistant[1]?.data).toMatchObject({ message: { content: [{ type: 'tool-call', name: 'Bash', arguments: 'ls' }] } })
+    expect(assistant[2]?.data).toMatchObject({ usage: { inputTokens: 4, outputTokens: 4, cacheReadTokens: 6 } })
     const calls = child.snapshotEvents().filter(e => e.type === 'tool/call')
     expect(calls).toHaveLength(1)
     expect(calls[0]?.data).toMatchObject({ name: 'Bash', arguments: 'ls' })
@@ -416,6 +421,8 @@ describe('codex live driver rounds', () => {
     expect(child.snapshotEvents().find(e => e.type === 'turn/end')?.data).toMatchObject({ turn: 1, reason: { kind: 'completed' } })
     expect(m.reports.some(r => r.progress.kind === 'delta' && r.progress.text === '第一条回复')).toBe(true)
     await vi.waitFor(() => { expect(m.reports.some(r => r.progress.kind === 'mirror')).toBe(true) })
+    // The whole round's log passes the released-log read path.
+    expectValidReleasedLog(child)
     await m.driver.disposeAll()
     expect(m.driver.liveCount).toBe(0)
   })
@@ -459,6 +466,7 @@ describe('codex live driver rounds', () => {
       cliVersion: '0.144.0',
       usage: { inputTokens: 4, outputTokens: 4, cacheReadTokens: 6 },
     })
+    expectValidReleasedLog(child)
     await m.driver.disposeAll()
   })
 
@@ -477,7 +485,6 @@ describe('codex live driver rounds', () => {
   it('reuses the resident runtime and thread for the resume round', async () => {
     const m = mount()
     const child = Session.create(SessionId('child-codex-2'))
-    child.append('turn/start', { turn: 1 })
     m.queueChild(new FakeAppServer({
       turn: params => ({
         items: [{ type: 'agentMessage', text: `第${String((params['input'] as unknown[]).length)}条`, phase: 'final_answer' }],
@@ -493,13 +500,14 @@ describe('codex live driver rounds', () => {
     expect(methods).toEqual(['initialize', 'thread/start', 'turn/start', 'turn/start'])
     expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(2)
     expect(child.snapshotEvents().filter(e => e.type === 'turn/end').at(-1)?.data).toMatchObject({ turn: 2, reason: { kind: 'completed' } })
+    // Both turns' logs pass the released-log read path.
+    expectValidReleasedLog(child)
     await m.driver.disposeAll()
   })
 
   it('re-spawns and thread/resumes the recorded thread after a crash', async () => {
     const m = mount()
     const child = Session.create(SessionId('child-codex-3'))
-    child.append('turn/start', { turn: 1 })
     const first = new FakeAppServer({ turn: () => ({ items: answerItems('第一条') }) })
     m.queueChild(first)
     const firstRun = await m.driver.startRound(request() as never, roundSpec(m, child, { onThreadId: () => {} }))
@@ -513,6 +521,7 @@ describe('codex live driver rounds', () => {
     expect(m.spawns).toHaveLength(2)
     expect(second.requests.map(r => r.method)).toEqual(['initialize', 'thread/resume', 'turn/start'])
     expect(second.requests[1]?.params).toMatchObject({ threadId: 'thread-1' })
+    expectValidReleasedLog(child)
     await m.driver.disposeAll()
   })
 
@@ -532,6 +541,8 @@ describe('codex live driver rounds', () => {
       turn: 1,
       reason: { kind: 'aborted', reason: { kind: 'parent' } },
     })
+    // The aborted round's bracket is a valid log (turn/start, prompt, turn/end).
+    expectValidReleasedLog(child)
     await m.driver.disposeAll()
   })
 
@@ -554,7 +565,6 @@ describe('codex live driver rounds', () => {
   it('stop-then-rephrase: the cancelled turn’s late completion never settles the resumed round', async () => {
     const m = mount()
     const child = Session.create(SessionId('child-codex-6'))
-    child.append('turn/start', { turn: 1 })
     const fake = new FakeAppServer({ turn: () => ({ hang: true }) })
     m.queueChild(fake)
     const controller = new AbortController()
@@ -573,6 +583,8 @@ describe('codex live driver rounds', () => {
     expect((await second.result).stopReason).toBe('completed')
     expect((await second.result).output).toEqual([{ type: 'text', text: '第二条' }])
     expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(1)
+    // The aborted first turn plus the rephrased second turn read as a valid log.
+    expectValidReleasedLog(child)
     await m.driver.disposeAll()
   })
 
@@ -617,6 +629,9 @@ describe('codex live driver rounds', () => {
     const count = child.snapshotEvents().length
     await new Promise(resolve => setTimeout(resolve, 80))
     expect(child.snapshotEvents()).toHaveLength(count)
+    // The durable log (snapshots ride the constraint-free local-agent/stream
+    // channel; the final fold closes the step) passes the released-log reader.
+    expectValidReleasedLog(child)
     await m.driver.disposeAll()
     liveStreams.dispose()
   })
@@ -709,6 +724,9 @@ describe('codex live driver rounds', () => {
     const final = child.snapshotEvents().find(e => e.type === 'assistant/message')!
     expect(final.data).toMatchObject({ turn: 1, step: 1, interrupted: true })
     expect((final.data as { message: { content: unknown[] } }).message.content).toEqual([{ type: 'text', text: '写到一半' }])
+    // The interrupted stream's step still opened and closed exactly once,
+    // inside the turn window.
+    expectValidReleasedLog(child)
     await m.driver.disposeAll()
   })
 
@@ -732,12 +750,15 @@ describe('codex live driver rounds', () => {
     })
     fake.notify('turn/completed', { threadId: 'thread-1', turn: { id: 'turn-1', status: 'completed' } })
     expect((await run.result).stopReason).toBe('completed')
-    await vi.waitFor(() => { expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(1) }, { timeout: 5_000 })
+    // Each tool fold now includes its advertising assistant message: the three
+    // tool cards plus the streamed answer make four assistant messages.
+    await vi.waitFor(() => { expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(4) }, { timeout: 5_000 })
 
     // Chronological steps: t1=1, t2=2, the stream=3, the late tool shifts to 4.
     const toolSteps = child.snapshotEvents().filter(e => e.type === 'tool/call').map(e => (e.data as { step: number }).step)
     expect(toolSteps).toEqual([1, 2, 4])
-    const final = child.snapshotEvents().find(e => e.type === 'assistant/message')!
+    const final = child.snapshotEvents().find(e => e.type === 'assistant/message'
+      && (e.data as { step?: number }).step === 3)!
     expect(final.data).toMatchObject({ turn: 1, step: 3, usage: { inputTokens: 5, outputTokens: 2 } })
     await m.driver.disposeAll()
   })
@@ -749,15 +770,18 @@ describe('codex live driver rounds', () => {
     m.queueChild(new FakeAppServer({ turn: () => ({ items: answerItems('静默答案') }) }))
     const run = await m.driver.startRound(request() as never, roundSpec(m, child))
     expect((await run.result).stopReason).toBe('completed')
-    await vi.waitFor(() => { expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(2) }, { timeout: 5_000 })
+    // reasoning at step 1, the tool card's advertisement at step 2, the answer
+    // at step 3.
+    await vi.waitFor(() => { expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(3) }, { timeout: 5_000 })
 
     // Faithful per-item fold: reasoning at step 1, the tool card at step 2,
     // the answer at step 3 — nothing withheld for a combined message.
     const toolSteps = child.snapshotEvents().filter(e => e.type === 'tool/call').map(e => (e.data as { step: number }).step)
     expect(toolSteps).toEqual([2])
     const assistant = child.snapshotEvents().filter(e => e.type === 'assistant/message')
-    expect(assistant.map(e => (e.data as { step: number }).step)).toEqual([1, 3])
-    expect((assistant[1]!.data as { message: { content: unknown[] } }).message.content).toEqual([{ type: 'text', text: '静默答案' }])
+    expect(assistant.map(e => (e.data as { step: number }).step)).toEqual([1, 2, 3])
+    expect((assistant[2]!.data as { message: { content: unknown[] } }).message.content).toEqual([{ type: 'text', text: '静默答案' }])
+    expectValidReleasedLog(child)
     await m.driver.disposeAll()
   })
 })
@@ -882,6 +906,8 @@ describe('codex live driver review fixes', () => {
       message: { content: [{ type: 'text', text: '半截回复' }] },
       usage: { inputTokens: 6, outputTokens: 3, cacheReadTokens: 2 },
     })
+    // The partial work sits inside the closed turn — a valid log on cold read.
+    expectValidReleasedLog(child)
     await m.driver.disposeAll()
   })
 
