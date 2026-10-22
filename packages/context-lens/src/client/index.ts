@@ -119,7 +119,13 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   // counts), so the trailing filter arg is always passed explicitly.
   const remote = (): InspectorRemote => ctx.get('remote.requestInspector') as InspectorRemote
   const wire = (): InspectorTabInjected => inspectorWire(remote())
-  const tabFace = (): InspectorTabInjected => wire()
+  const tabFace = (): InspectorTabInjected => ({
+    ...wire(),
+    loadThrough: async (sessionId, seq) => {
+      const binding = ctx.sessions.binding(sessionId)
+      if (binding !== undefined) await binding.session.loadThrough(seq as Parameters<typeof binding.session.loadThrough>[0])
+    },
+  })
 
   /** Open the inspector tab; a kind hidden by the criterion throws, degrade to a log. */
   const openTab = (turnSeq: number | undefined): void => {

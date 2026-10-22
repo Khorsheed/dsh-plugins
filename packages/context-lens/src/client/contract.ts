@@ -36,6 +36,12 @@ export interface InspectorTabInjected {
   getSessionTrend?: (sessionId: SessionId) => Promise<RemoteResult<SessionTrend>>
   /** Light turn list of one session plus its backfill watermark, newest last. */
   listTurns: (sessionId: SessionId) => Promise<RemoteResult<ListTurnsResult>>
+  /**
+   * Page the chat's loaded history back until it covers log `seq` (the
+   * session's own jump loader, the one message-timeline uses). Absent on a
+   * host without a session binding; a jump then only scrolls what is loaded.
+   */
+  loadThrough?: (sessionId: SessionId, seq: number) => Promise<void>
   /** Move the loaded window to the turns ending at `end` (latest when null); answers the new list. */
   loadTurns?: (sessionId: SessionId, end: number | null) => Promise<RemoteResult<ListTurnsResult>>
   /** One turn's scope/request overview — the left column, no segments. */

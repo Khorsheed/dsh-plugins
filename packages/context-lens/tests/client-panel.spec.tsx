@@ -171,6 +171,8 @@ interface BenchOptions {
   readonly requests?: Record<number, CapturedRequest> | undefined
   /** The log's host-turn range (turns outside the list are not loaded). */
   readonly range?: { first: number; last: number } | undefined
+  /** Runs when the panel asks the session to page history back. */
+  readonly onLoadThrough?: (() => void) | undefined
 }
 
 function bench(opts: BenchOptions = {}) {
@@ -189,6 +191,7 @@ function bench(opts: BenchOptions = {}) {
       }
       return { ok: true, value: { turns: opts.turns ?? TURNS, backfill: opts.backfill ?? { state: 'complete' }, ...opts.range === undefined ? {} : { range: opts.range } } }
     }),
+    loadThrough: vi.fn(async (_sessionId: string, _seq: number): Promise<void> => { opts.onLoadThrough?.() }),
     loadTurns: vi.fn(async (): Promise<Result<ListTurnsResult>> => ({ ok: true, value: { turns: opts.turns ?? TURNS, backfill: { state: 'complete' }, ...opts.range === undefined ? {} : { range: opts.range } } })),
     getTurn: vi.fn(async (_sessionId: string, turnSeq: number): Promise<Result<TurnOverview | undefined>> => ({
       ok: true,
@@ -519,6 +522,22 @@ describe('InspectorPanel · scroll-sync + 最新', () => {
     await waitFor(() => expect(screen.getByText('第一条 query')).toBeTruthy())
     expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' })
     expect(scrollIntoView.mock.instances[0]).toBe(port?.querySelector('[data-chat-turn="1"]'))
+  })
+
+  it('pages the chat history back before landing on a turn it has not rendered', async () => {
+    mountConversation([2])
+    const turns = [{ ...TURNS[0]!, startSeq: 5 }, TURNS[1]!]
+    const { mocks } = bench({ turns, onLoadThrough: () => {
+      // The session's loader renders the older turn above the loaded one.
+      const row = document.createElement('div')
+      row.setAttribute('data-chat-turn', '1')
+      port?.prepend(row)
+    } })
+    await waitFor(() => expect(screen.getByText('第二条 query')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: zh['turn.switch'] }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /turn 1/ }))
+    await waitFor(() => expect(mocks.loadThrough).toHaveBeenCalledWith('s1', 5))
+    await waitFor(() => expect(scrollIntoView.mock.instances.at(-1)).toBe(port?.querySelector('[data-chat-turn="1"]')))
   })
 
   it('opening from the action row scroll-syncs to the navigated turn', async () => {

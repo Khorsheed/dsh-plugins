@@ -192,6 +192,8 @@ export interface TurnRecord {
   query: string
   /** First non-human message of the turn (see LogTurn.trigger). */
   trigger?: { source: string; text: string }
+  /** The `turn/start` event's log seq. */
+  startSeq?: number
   startedAt: number
   endedAt?: number
   closingMessageId?: string
@@ -691,7 +693,8 @@ export class InspectorStore {
   }
 
   /** turn/start on a root session (child sessions route their events to the parent instead). */
-  turnStart(sessionId: string, hostTurn: number, at: number): void {
+  /** @param seq - the `turn/start` event's log seq (the chat's history-jump target). */
+  turnStart(sessionId: string, hostTurn: number, at: number, seq?: number): void {
     const rootId = this.rootOf(sessionId)
     const session = this.session(rootId)
     const scopeId = sessionId === rootId ? 'main' : sessionId
@@ -704,9 +707,11 @@ export class InspectorStore {
     const existing = session.turns.find(turn => turn.hostTurn === hostTurn && turn.purpose === undefined)
     if (existing !== undefined) {
       session.openTurn = existing
+      if (seq !== undefined) existing.startSeq = seq
       return
     }
     session.openTurn = this.mintTurn(session, at, { hostTurn, turnSeq: hostTurn, liveContent: true, liveStartObserved: true })
+    if (seq !== undefined) session.openTurn.startSeq = seq
   }
 
   /** turn/end: close the open turn, resolve its main scope, sweep abandoned streams. */
@@ -1078,6 +1083,7 @@ export class InspectorStore {
       query: logTurn.query,
     })
     if (logTurn.trigger !== undefined) turn.trigger = logTurn.trigger
+    if (logTurn.startSeq !== undefined) turn.startSeq = logTurn.startSeq
     if (logTurn.closingMessageId !== undefined) turn.closingMessageId = logTurn.closingMessageId
     const lastSettled = logTurn.requests.reduce<number | undefined>(
       (latest, request) => request.settledAt !== undefined && (latest === undefined || request.settledAt > latest)
@@ -1228,6 +1234,7 @@ export class InspectorStore {
       ...turn.hostTurn === undefined ? {} : { hostTurn: turn.hostTurn },
       query: turn.query,
       ...turn.query === '' && turn.trigger !== undefined ? { trigger: turn.trigger } : {},
+      ...turn.startSeq === undefined ? {} : { startSeq: turn.startSeq },
       startedAt: turn.startedAt,
       ...turn.endedAt === undefined ? {} : { endedAt: turn.endedAt },
       requestCount,

@@ -136,7 +136,7 @@ export type BuiltLogRequest = Omit<StoredRequest, 'seq' | 'sessionId' | 'scopeId
 
 /** Optional fold hooks beyond the request rows (the backfill driver uses them all). */
 export interface FoldSink {
-  turnStart?(hostTurn: number, at: number | undefined): void
+  turnStart?(hostTurn: number, at: number | undefined, seq?: number): void
   turnEnd?(hostTurn: number, reason: { kind: string; error?: { message?: string } }, at: number | undefined): void
   /** The turn's first human user message (the turn list's query preview). */
   queryText?(hostTurn: number | undefined, text: string, at: number | undefined): void
@@ -197,7 +197,7 @@ export function foldLogRows(
         cursor.turnHost = hostTurn
         cursor.turnQuerySeen = false
         cursor.turnTriggerSeen = false
-        if (hostTurn !== undefined) sink.turnStart?.(hostTurn, row.time)
+        if (hostTurn !== undefined) sink.turnStart?.(hostTurn, row.time, row.seq)
         break
       }
       case 'turn/end': {
@@ -476,7 +476,10 @@ export function reconstructSession(rows: readonly SessionLogRow[], materialize?:
     return turn
   }
   foldLogRows(cursor, rows, {
-    turnStart: (hostTurn, at) => void turnFor(hostTurn, at),
+    turnStart: (hostTurn, at, seq) => {
+      const turn = turnFor(hostTurn, at)
+      if (turn !== undefined && seq !== undefined && turn.startSeq === undefined) turn.startSeq = seq
+    },
     turnEnd: (hostTurn, reason, at) => {
       const turn = turnFor(hostTurn, at)
       if (turn === undefined) return
@@ -519,6 +522,8 @@ export interface LogTurn {
   query: string
   /** First non-human message of the turn: who started it when no human did. */
   trigger?: { source: string; text: string }
+  /** The `turn/start` row's seq (the chat's history-jump target). */
+  startSeq?: number
   startedAt: number
   endedAt?: number
   closingMessageId?: string
