@@ -13,8 +13,15 @@ import { createAssistantMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import { zstdCompressSync } from 'node:zlib'
 import { describe, expect, it } from 'vitest'
-import { mirrorDshLiveEvent, mirrorDshSession, readSubDshEvents } from '../src/session-mirror.ts'
+import {
+  closeMirroredOpenStep,
+  DSH_INTERRUPTED_TOOL_RESULT,
+  mirrorDshLiveEvent,
+  mirrorDshSession,
+  readSubDshEvents,
+} from '../src/session-mirror.ts'
 import { parseDshSessionLogFilename } from '../src/session-log.ts'
+import { expectValidReleasedLog } from './expect-valid-log.ts'
 import { fakeSessionPersistence } from './fake-persistence.ts'
 
 /** A context whose sessionPersistence is absent (the mirror tolerates it). */
@@ -483,13 +490,14 @@ describe('mirrorDshLiveEvent', () => {
     expect(child.snapshotEvents().filter(event => event.type === 'turn/start' || event.type === 'turn/end')).toHaveLength(0)
   })
 
-  it('mirrors an interrupted step as an OPEN pair (start without end — nothing synthesized)', () => {
+  it('mirrors an interrupted step as an OPEN pair (start without end — mid-round, nothing synthesized yet)', () => {
     const child = Session.create(SessionId('child-live-open-step'))
     mirrorDshLiveEvent(child, stepLine('step/start', 1, 1) as never)
     mirrorDshLiveEvent(child, assistantLine(1, '被打断的回复') as never)
     // The sub-dsh was interrupted before step/end: the open step crosses
-    // as-is (its location still resolves to the step, so the reply renders)
-    // and no closing boundary is invented.
+    // as-is mid-round (its location still resolves to the step, so the reply
+    // renders — the sub may yet write its end). The closing synthesis is the
+    // settle flow's job (closeMirroredOpenStep), never the transport's.
     expect(child.snapshotEvents().filter(event => event.type === 'step/start')).toHaveLength(1)
     expect(child.snapshotEvents().filter(event => event.type === 'step/end')).toHaveLength(0)
   })
@@ -544,6 +552,162 @@ describe('mirrorDshLiveEvent', () => {
     // no duplicated step/start for the same (turn, step).
     expectStepBoundaries(child)
     expect(child.snapshotEvents().filter(event => event.type === 'step/start')).toHaveLength(2)
+    // The mid-round tail (turn still open, every step closed) passes the
+    // released-log reader — an open turn at EOF is a legal interrupted tail.
+    expectValidReleasedLog(child)
+  })
+})
+
+// --- the copied interrupted tail vs the released-log reader -------------------
+
+/** One assistant/message advertising tool-call blocks, as the sub-dsh records it. */
+function advertisingLine(turn: number, step: number, calls: readonly { id: string; name: string; arguments: string }[]): object {
+  return {
+    type: 'assistant/message',
+    seq: 0,
+    time: 1,
+    data: {
+      turn,
+      step,
+      message: createAssistantMessage({
+        content: calls.map(call => ({ type: 'tool-call' as const, id: call.id, name: call.name, arguments: call.arguments })),
+        source: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+      }),
+    },
+  }
+}
+
+/** One tool/call event line, as the sub-dsh records it. */
+function toolCallLine(turn: number, step: number, callId: string, name: string, args: string): object {
+  return { type: 'tool/call', seq: 0, time: 1, data: { turn, step, callId, name, arguments: args } }
+}
+
+/** A child session the provider left mid-round: its current turn still open. */
+function childWithOpenTurn(id: string, turn: number): Session {
+  const child = Session.create(SessionId(id))
+  for (let done = 1; done < turn; done += 1) {
+    child.append('turn/start', { turn: done })
+    child.append('turn/end', { turn: done, reason: { kind: 'completed' } })
+  }
+  child.append('turn/start', { turn })
+  return child
+}
+
+describe('the mirrored interrupted tail (released-log validity)', () => {
+  // The sub-dsh killed mid-step: the step and its advertised tool call stay
+  // open (no result, no step/end, no turn/end in its log).
+  const interruptedToolLines = (): object[] => [
+    { type: 'session', version: 0, id: 'x' },
+    { type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } },
+    userLine('干活', 'user'),
+    stepLine('step/start', 1, 1),
+    advertisingLine(1, 1, [
+      { id: 'call_1', name: 'Bash', arguments: '{"command":"ls"}' },
+      { id: 'call_2', name: 'Read', arguments: '{"path":"a.ts"}' },
+    ]),
+    // call_1 recorded its start; the kill landed before call_2 started and
+    // before either result.
+    toolCallLine(1, 1, 'call_1', 'Bash', '{"command":"ls"}'),
+  ]
+
+  it('documents the contract the settle closure meets: the provider\'s turn/end over a copied open step fails the cold read', async () => {
+    const home = tempHome()
+    writeSubDshSession(home, 'child-open-tail', interruptedToolLines())
+    const child = childWithOpenTurn('child-open-tail', 1)
+    await mirrorDshSession(fakeCtx(), child, home, 'child-open-tail')
+    child.append('turn/end', { turn: 1, reason: { kind: 'aborted', reason: { kind: 'parent' } } })
+    // The in-the-wild reload failure, verbatim.
+    expect(() => expectValidReleasedLog(child)).toThrow(/turn\/end does not match the open turn/)
+  })
+
+  it('closes the copied open tail: an interrupted result per unresolved call, then the step/end — turn/end lands after', async () => {
+    const home = tempHome()
+    writeSubDshSession(home, 'child-close-tail', interruptedToolLines())
+    const child = childWithOpenTurn('child-close-tail', 1)
+    await mirrorDshSession(fakeCtx(), child, home, 'child-close-tail')
+    const closure = closeMirroredOpenStep(child)
+    expect(closure).toEqual({ step: { turn: 1, step: 1 }, repairedCalls: ['call_1', 'call_2'] })
+    child.append('turn/end', { turn: 1, reason: { kind: 'aborted', reason: { kind: 'parent' } } })
+    expectValidReleasedLog(child)
+    const events = child.snapshotEvents()
+    const results = events.filter(event => event.type === 'tool/result')
+    expect(results).toHaveLength(2)
+    // The started call's result carries the family's shared interrupted
+    // placeholder and pairs with the child's copied call event.
+    const [started, notStarted] = results
+    expect(JSON.stringify(started?.data)).toContain(DSH_INTERRUPTED_TOOL_RESULT)
+    expect(started?.data).toMatchObject({ turn: 1, step: 1, error: { code: 'TOOL_OUTCOME_UNKNOWN' } })
+    expect(started?.sourceEventSeqs).toEqual([events.find(event => event.type === 'tool/call')!.seq])
+    // The never-started call resolves as the validator's exact
+    // TOOL_NOT_STARTED repair shape — no sourceEventSeqs, the prescribed text.
+    expect(notStarted?.data).toMatchObject({ turn: 1, step: 1, error: { name: 'ToolNotStartedError', code: 'TOOL_NOT_STARTED' } })
+    expect(notStarted?.sourceEventSeqs).toBeUndefined()
+    const types = events.map(event => event.type)
+    // Both results precede the synthesized step/end, which precedes turn/end.
+    expect(types.lastIndexOf('tool/result')).toBeLessThan(types.indexOf('step/end'))
+    expect(types.indexOf('step/end')).toBeLessThan(types.indexOf('turn/end'))
+    expect(types.at(-1)).toBe('turn/end')
+  })
+
+  it('closes an open step that advertised nothing with just the step/end', async () => {
+    const home = tempHome()
+    writeSubDshSession(home, 'child-open-plain', [
+      { type: 'session', version: 0, id: 'x' },
+      { type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } },
+      userLine('任务', 'user'),
+      stepLine('step/start', 1, 1),
+      assistantLine(1, '写到一半'),
+    ])
+    const child = childWithOpenTurn('child-open-plain', 1)
+    await mirrorDshSession(fakeCtx(), child, home, 'child-open-plain')
+    const closure = closeMirroredOpenStep(child)
+    expect(closure).toEqual({ step: { turn: 1, step: 1 }, repairedCalls: [] })
+    child.append('turn/end', { turn: 1, reason: { kind: 'aborted', reason: { kind: 'parent' } } })
+    expectValidReleasedLog(child)
+  })
+
+  it('is a no-op when the copied round is complete, and a clean round stays valid through turn/end', async () => {
+    const home = tempHome()
+    writeSubDshSession(home, 'child-clean', twoRoundLines())
+    const child = childWithOpenTurn('child-clean', 1)
+    await mirrorDshSession(fakeCtx(), child, home, 'child-clean')
+    expect(closeMirroredOpenStep(child)).toBeUndefined()
+    child.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    expectValidReleasedLog(child)
+  })
+
+  it('closes the interrupted RESUME round the same way (earlier turns stay intact)', async () => {
+    const home = tempHome()
+    writeSubDshSession(home, 'child-resume-tail', [
+      { type: 'session', version: 0, id: 'x' },
+      { type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } },
+      userLine('第一轮任务', 'user'),
+      stepLine('step/start', 1, 1),
+      assistantLine(1, '第一轮回答'),
+      stepLine('step/end', 1, 1),
+      { type: 'turn/end', seq: 0, time: 1, data: { turn: 1, reason: { kind: 'completed' } } },
+      { type: 'turn/start', seq: 0, time: 1, data: { turn: 2 } },
+      userLine('第二轮任务', 'user'),
+      stepLine('step/start', 2, 1),
+      advertisingLine(2, 1, [{ id: 'call_r', name: 'Bash', arguments: '{"command":"pwd"}' }]),
+      toolCallLine(2, 1, 'call_r', 'Bash', '{"command":"pwd"}'),
+    ])
+    // The child carries round 1 complete (as the first delegation left it);
+    // the resume round's turn is open.
+    const child = Session.create(SessionId('child-resume-tail'))
+    child.append('turn/start', { turn: 1 })
+    await mirrorDshSession(fakeCtx(), child, home, 'child-resume-tail')
+    // Round 1 mirrored clean — nothing open, nothing to close.
+    expect(closeMirroredOpenStep(child)).toBeUndefined()
+    child.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    child.append('turn/start', { turn: 2 })
+    await mirrorDshSession(fakeCtx(), child, home, 'child-resume-tail')
+    const closure = closeMirroredOpenStep(child)
+    expect(closure).toEqual({ step: { turn: 2, step: 1 }, repairedCalls: ['call_r'] })
+    child.append('turn/end', { turn: 2, reason: { kind: 'aborted', reason: { kind: 'parent' } } })
+    expectValidReleasedLog(child)
+    // Round 1's real boundary pair is untouched — exactly one step/end each.
+    expect(child.snapshotEvents().filter(event => event.type === 'step/end')).toHaveLength(2)
   })
 })
 

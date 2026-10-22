@@ -9,11 +9,14 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Readable } from 'node:stream'
 import { Context } from '@deepseek-ai/cordis'
+import { createAssistantMessage } from '@deepseek-ai/dsh-llm'
 import { Session, SESSION_FORMAT_VERSION, SessionId } from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle } from '@deepseek-ai/dsh-subprocess'
 import type { LocalAgentDelegationIntent } from '@khorsheed/dsh-local-agent'
 import { describe, expect, it, vi } from 'vitest'
 import { DshCliProvider, dshLaunchArgv, startDshCliRun } from '../src/dsh-cli-provider.ts'
+import { DSH_INTERRUPTED_TOOL_RESULT } from '../src/session-mirror.ts'
+import { expectValidReleasedLog } from './expect-valid-log.ts'
 
 /** A stub child that prints the final answer, then exits 0. */
 function stubChild(): { handle: SubprocessHandle; done: Promise<unknown> } {
@@ -255,7 +258,7 @@ describe('dsh-cli-provider fresh run', () => {
       JSON.stringify({ type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } }),
       JSON.stringify({ type: 'user/message', seq: 1, time: 2, data: { content: [{ type: 'text', text: '建个文件' }], source: { kind: 'user' }, role: 'user' } }),
       JSON.stringify({ type: 'step/start', seq: 2, time: 3, data: { turn: 1, step: 1 } }),
-      JSON.stringify({ type: 'assistant/message', seq: 3, time: 4, data: { turn: 1, step: 1, message: { content: [{ type: 'text', text: '第一条回复' }], source: { provider: 'deepseek-official', model: 'm' } } } }),
+      JSON.stringify({ type: 'assistant/message', seq: 3, time: 4, data: { turn: 1, step: 1, message: { content: [{ type: 'text', text: '第一条回复' }], source: { kind: 'model', provider: 'deepseek-official', model: 'm' } } } }),
       JSON.stringify({ type: 'step/end', seq: 4, time: 5, data: { turn: 1, step: 1 } }),
     ].join('\n') + '\n')
 
@@ -279,7 +282,69 @@ describe('dsh-cli-provider fresh run', () => {
     // both sides, so the settle pass did not re-append it.
     expect(child.snapshotEvents().filter(event => event.type === 'step/start')).toHaveLength(1)
     expect(child.snapshotEvents().filter(event => event.type === 'step/end')).toHaveLength(1)
+    // turn/end lands last, after the settle mirror, and the stored log passes
+    // the released-log reader's cold read.
+    await vi.waitFor(() => {
+      expect(child.snapshotEvents().at(-1)?.type).toBe('turn/end')
+    })
+    expectValidReleasedLog(child)
     await done
+  })
+
+  it('closes the copied open tail of an interrupted sub-session before turn/end (the in-the-wild reload failure)', async () => {
+    const homeDir = mkdtempSync(join(tmpdir(), 'dsh-interrupted-'))
+    const child = Session.create(SessionId('child-interrupted-dsh'))
+    const ctx = new Context()
+    ctx.provide('credentials', { resolve: async () => ({ value: 'sk-test', source: 'env' }) })
+    ctx.provide('localAgent', { recordRoundSettled: () => {}, reportRunProgress: () => {} } as never)
+    ctx.provide('subprocess', { spawn: () => stubChild().handle })
+    // The sub-dsh died mid-step: the step is open, call_1 started and never
+    // resolved, call_2 was advertised but never started.
+    const dir = join(homeDir, 'sessions', 'wd_test', 'sub-interrupted-1')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'session.jsonl'), [
+      JSON.stringify({ type: 'session', version: 0, id: 'sub-interrupted-1' }),
+      JSON.stringify({ type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } }),
+      JSON.stringify({ type: 'user/message', seq: 1, time: 2, data: { content: [{ type: 'text', text: '干活' }], source: { kind: 'user' }, role: 'user' } }),
+      JSON.stringify({ type: 'step/start', seq: 2, time: 3, data: { turn: 1, step: 1 } }),
+      JSON.stringify({
+        type: 'assistant/message', seq: 3, time: 4,
+        data: {
+          turn: 1, step: 1,
+          message: createAssistantMessage({
+            content: [
+              { type: 'tool-call', id: 'call_1', name: 'Bash', arguments: '{"command":"ls"}' },
+              { type: 'tool-call', id: 'call_2', name: 'Read', arguments: '{"path":"a.ts"}' },
+            ],
+            source: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+          }),
+        },
+      }),
+      JSON.stringify({ type: 'tool/call', seq: 4, time: 5, data: { turn: 1, step: 1, callId: 'call_1', name: 'Bash', arguments: '{"command":"ls"}' } }),
+    ].join('\n') + '\n')
+    const run = await startDshCliRun(request() as never, {
+      cwd: '/tmp',
+      homeDir,
+      childSession: child,
+      sessionId: 'sub-interrupted-1',
+      config: {},
+      ctx,
+    })
+    expect((await run.result).stopReason).toBe('completed')
+    // turn/end lands last: the settle mirror copied the open tail, then the
+    // closure resolved every advertised call and ended the step.
+    await vi.waitFor(() => {
+      expect(child.snapshotEvents().at(-1)?.type).toBe('turn/end')
+    })
+    const events = child.snapshotEvents()
+    const results = events.filter(event => event.type === 'tool/result')
+    expect(results).toHaveLength(2)
+    expect(JSON.stringify(results[0]?.data)).toContain(DSH_INTERRUPTED_TOOL_RESULT)
+    expect(results[1]?.data).toMatchObject({ error: { code: 'TOOL_NOT_STARTED' } })
+    expect(events.filter(event => event.type === 'step/end')).toHaveLength(1)
+    expect(events.map(event => event.type).at(-1)).toBe('turn/end')
+    expect((events.at(-1)?.data as { reason?: { kind?: string } }).reason?.kind).toBe('completed')
+    expectValidReleasedLog(child)
   })
 
   it('rejects a parent session with no working directory', async () => {
@@ -349,7 +414,10 @@ describe('dsh-cli-provider fresh run', () => {
 describe('dsh-cli-provider resume run', () => {
   it('spawns --resume with the recorded sub-dsh id, locks the child, and closes the next turn', async () => {
     const liveChild = Session.create(SessionId('child-1'))
+    // Round 1 as the provider left it: a closed turn (the resume round opens
+    // turn 2 over it — an open round-1 tail would fail the cold read first).
     liveChild.append('turn/start', { turn: 1 })
+    liveChild.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
     const { ctx, capture, locks, homeDir } = mount({
       key: 'sk-test',
       intent: { kind: 'resume', childSessionId: 'child-1', cliSessionId: 'child-1' },
@@ -369,10 +437,17 @@ describe('dsh-cli-provider resume run', () => {
     await vi.waitFor(() => {
       expect(locks.released).toEqual(['child-1'])
     })
-    const turnEnd = liveChild.snapshotEvents().find(event => event.type === 'turn/end')
-    const endData = turnEnd?.data as { turn?: number; reason?: { kind?: string } } | undefined
-    expect(endData?.turn).toBe(2)
-    expect(endData?.reason?.kind).toBe('completed')
+    // turn/end lands after the post-exit settle mirror (mirrored content must
+    // precede it in the stored log), so wait the mirror queue out.
+    await vi.waitFor(() => {
+      const turnEnd = liveChild.snapshotEvents().find(event => event.type === 'turn/end' && (event.data as { turn?: number }).turn === 2)
+      const endData = turnEnd?.data as { turn?: number; reason?: { kind?: string } } | undefined
+      expect(endData?.turn).toBe(2)
+      expect(endData?.reason?.kind).toBe('completed')
+    })
+    // The two-round log (round 1 closed, round 2 settled empty) passes the
+    // released-log reader.
+    expectValidReleasedLog(liveChild)
     await run.dispose()
   })
 

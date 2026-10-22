@@ -54,7 +54,7 @@ import {
 } from './dsh-cli-provider.ts'
 import { localModelLaunch, type LocalModelLaunch } from './model-launch.ts'
 import { DEFAULT_SUB_PROFILE_NAME, provisionDshScope } from './provision.ts'
-import { mirrorDshLiveEvent, mirrorDshSession, type DshLiveMirrorGranularity } from './session-mirror.ts'
+import { mirrorDshLiveEvent, mirrorDshSession, closeMirroredOpenStep, mirroredOpenStep, type DshLiveMirrorGranularity } from './session-mirror.ts'
 
 type AssistantStreamFrame = LiveAssistantStreamParams['frame']
 
@@ -877,7 +877,13 @@ export class DshLiveDriver {
     }).then(async (settled) => {
       roundSettled = true
       liveFlush.dispose()
-      if (turnOpened && streaming !== undefined && streamPublisher !== undefined) {
+      // The interrupted stream's partial content folds durably only while its
+      // step is still OPEN: a graceful sub-dsh unwind writes its own
+      // interrupted assistant/message and step/end (both crossed the wire),
+      // and an append at the closed step would fail the released-log reader.
+      const openStep = turnOpened ? mirroredOpenStep(childSession) : undefined
+      if (turnOpened && streaming !== undefined && streamPublisher !== undefined
+        && openStep !== undefined && openStep.step === streaming.step) {
         const blocks = streaming.assembler.interruptedBlocks()
         if (blocks.length > 0) {
           childSession.append('assistant/message', {
@@ -890,20 +896,6 @@ export class DshLiveDriver {
         }
       }
       streamPublisher?.dispose()
-      // Identical turn/end bookkeeping to the exec path — but only for a turn
-      // that actually opened (a pre-accept cancel records no turn at all).
-      if (turnOpened) {
-        if (settled.stopReason === 'completed') {
-          childSession.append('turn/end', { turn, reason: { kind: 'completed' } })
-        } else if (settled.stopReason === 'aborted') {
-          childSession.append('turn/end', { turn, reason: { kind: 'aborted', reason: { kind: 'parent' } } })
-        } else {
-          childSession.append('turn/end', {
-            turn,
-            reason: { kind: 'error', error: nativeFailure ?? { message: 'the live round did not complete', code: 'UNKNOWN' } },
-          })
-        }
-      }
       // Settlement clears the round's handlers: a late notification drops at
       // the runtime frame instead of landing in a dead closure.
       if (runtime !== undefined) {
@@ -911,25 +903,18 @@ export class DshLiveDriver {
         runtime.onEvent = undefined
         runtime.onIdle = undefined
       }
-      // A completed answer is not a durable turn until its final boundary
-      // and any closing stream checkpoints have reached the child store.
       if (turnOpened) {
-        persist()
-        await persistQueue
-      }
-      return settled
-    })
-
-    // Settle reconciliation: the file-based mirror pass (the serve side flushed
-    // before its idle notification) dedupes against the live-mirrored prefix
-    // and catches anything the wire dropped; the final mirror progress report
-    // is authoritative, exactly as in the exec path. Then re-arm the reaper. A
-    // round that never opened owns no span — skip the pass entirely (it would
-    // re-scan the previous round or, under exec fallback, fight its polling).
-    void result.then(async () => {
-      try {
-        if (turnOpened) {
-          await persistQueue
+        // Settle reconciliation IN-CHAIN: the file-based mirror pass (the serve
+        // side flushed before its idle notification) dedupes against the
+        // live-mirrored prefix and catches anything the wire dropped; the
+        // final mirror progress report is authoritative, exactly as in the
+        // exec path. It runs before turn/end so every mirrored event lands
+        // inside the turn window — the released-log reader rejects content
+        // outside an open turn on every cold read — and inside the result
+        // chain so the round serializer (and a resume round's turn/start)
+        // never overtakes the boundary. A mirror fault degrades to a warn;
+        // the boundary still closes.
+        try {
           if (mirroredMessages > 0) persist()
           await persistQueue.catch(() => {})
           const delta = await mirrorDshSession(this.ctx, childSession, spec.homeDir, spec.sessionId)
@@ -952,12 +937,33 @@ export class DshLiveDriver {
             const registry = localAgent as unknown as { recordRoundSettled?: (id: string, r: typeof round) => void } | undefined
             registry?.recordRoundSettled?.(childSession.id, round)
           }
+        } catch (error) {
+          this.ctx.logger.warn(`subagent-dsh: live settle mirror failed: ${thrown(error).message}`)
         }
-      } catch (error) {
-        this.ctx.logger.warn(`subagent-dsh: live settle mirror failed: ${thrown(error).message}`)
-      } finally {
-        this.armIdleTimer(spec.sessionId)
+        // The copied tail's open step (an interrupted round leaves it open —
+        // the reader rejects a turn/end over it) receives its closure first.
+        closeMirroredOpenStep(childSession)
+        // Identical turn/end bookkeeping to the exec path — a completed,
+        // interrupted, or failed round each closes its window.
+        if (settled.stopReason === 'completed') {
+          childSession.append('turn/end', { turn, reason: { kind: 'completed' } })
+        } else if (settled.stopReason === 'aborted') {
+          childSession.append('turn/end', { turn, reason: { kind: 'aborted', reason: { kind: 'parent' } } })
+        } else {
+          childSession.append('turn/end', {
+            turn,
+            reason: { kind: 'error', error: nativeFailure ?? { message: 'the live round did not complete', code: 'UNKNOWN' } },
+          })
+        }
+        // A completed answer is not a durable turn until its final boundary
+        // and any closing stream checkpoints have reached the child store.
+        persist()
+        await persistQueue
       }
+      // Re-arm the idle reaper for every settled round — including one that
+      // never opened its turn (the runtime is up and must not leak).
+      this.armIdleTimer(spec.sessionId)
+      return settled
     })
 
     // Publication gate: hold start() until the turn is accepted (channel

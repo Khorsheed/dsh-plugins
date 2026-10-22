@@ -29,6 +29,19 @@
  * passes never duplicate an identical snapshot and the child's `todos`
  * projection (and the official TodoPanel in non-takeover views) reads the
  * member's task list for free.
+ *
+ * Interrupted-tail closure: a sub-dsh that dies mid-step (the exec kill
+ * ladder, a live-runtime crash) leaves its log's step — and any advertised
+ * tool calls — OPEN, and the verbatim copy carries that open tail into the
+ * child session. The released-log reader (harness
+ * session-format-v3-to-v4/relationships.ts) rejects a `turn/end` over an open
+ * step on every cold read, so the provider's settle flow calls
+ * {@link closeMirroredOpenStep} after the settle mirror pass and before its
+ * own `turn/end`: each advertised-but-unresolved call receives a synthesized
+ * interrupted `tool/result` (the family's shared placeholder for a started
+ * call, the validator's exact TOOL_NOT_STARTED repair for one that never
+ * started) and the copied step receives its `step/end`. Mid-round the open
+ * pair still crosses as-is — the sub-dsh may yet write its end.
  * @module @khorsheed/dsh-local-agent-dsh/session-mirror
  */
 
@@ -315,7 +328,9 @@ function appendMirroredToolEvent(childSession: Session, event: SessionEvent): st
  * index registers the same step the sub-dsh wrote. Shared by the file
  * mirror's span loop and the live driver's per-event mirror. An interrupted
  * step crosses as an OPEN pair (start without end): the location resolves to
- * the step either way, and no boundary is ever synthesized.
+ * the step either way, and mid-round no boundary is synthesized — the sub-dsh
+ * may yet write its end. At settle the provider closes the copied tail with
+ * {@link closeMirroredOpenStep} before its own `turn/end`.
  */
 function appendMirroredStepBoundary(childSession: Session, event: SessionEvent): void {
   if (event.type === 'step/start') {
@@ -340,6 +355,144 @@ function appendMirroredMessageEvent(childSession: Session, event: SessionEvent):
     childSession.append('assistant/message', event.data, { surfaceOp: 'append' })
   }
   return mirroredEventText(event)
+}
+
+/**
+ * The placeholder text of the synthesized result for a tool call the sub-dsh
+ * started but never resolved (its process died between `tool/call` and
+ * `tool/result`). Shared verbatim with the kimi family's fold.
+ */
+export const DSH_INTERRUPTED_TOOL_RESULT = '（工具调用被中断，未能记录返回结果）'
+
+/**
+ * The released-log reader's exact repair text for a call that was advertised
+ * but never recorded as started: relationships.ts's notStartedRepair admits
+ * only that shape (the `interrupted-tool-result-<callId>-<n>` id, the
+ * ToolNotStartedError/TOOL_NOT_STARTED error, no sourceEventSeqs, and this
+ * single text block) — no other wording resolves the call.
+ */
+const TOOL_NOT_STARTED_REPAIR_TEXT = 'The tool call was interrupted before the Harness recorded it as started. Retry it if it is still needed.'
+
+/** What {@link closeMirroredOpenStep} synthesized, when it closed anything. */
+export interface DshMirrorTailClosure {
+  /** The copied open step this closure ended. */
+  readonly step: { turn: number; step: number }
+  /** The advertised calls that received a synthesized interrupted result, in advertisement order. */
+  readonly repairedCalls: readonly string[]
+}
+
+/**
+ * The child session's currently-open copied step: the (turn, step) of a
+ * `step/start` whose `step/end` has not crossed, inside a turn the provider
+ * has not closed. Undefined when nothing is open. The live driver's
+ * interrupted-stream fold consults it: the fold's assistant/message may land
+ * only while its step is still open (a graceful sub-dsh unwind writes its own
+ * message and step/end, and the fold must not append at the closed step).
+ */
+export function mirroredOpenStep(childSession: Session): { turn: number; step: number } | undefined {
+  const events = childSession.snapshotEvents()
+  // Backward: the latest boundary event says the state — a step/start opens,
+  // a step/end or any turn boundary closes the question.
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const type = events[index]?.type
+    if (type === 'step/start') return events[index]?.data as { turn: number; step: number }
+    if (type === 'step/end' || type === 'turn/start' || type === 'turn/end') return undefined
+  }
+  return undefined
+}
+
+/**
+ * Close the copied open tail of the child session's current turn at settle,
+ * before the provider's `turn/end`: the released-log reader rejects a
+ * `turn/end` over an open step ('turn/end does not match the open turn with
+ * no open step') and a step/end leaving an advertised call unresolved, so an
+ * interrupted sub-dsh's open step is ended here — each advertised-but-
+ * unresolved tool call first receiving its synthesized interrupted result
+ * (the family's placeholder for a started call; the validator's exact
+ * TOOL_NOT_STARTED repair for one that never started). Mid-round transports
+ * never call this: the sub-dsh may yet write its own end, and a synthesized
+ * step/end would collide with it on a later pass. Returns what it
+ * synthesized, or undefined when the copied tail was already balanced.
+ */
+export function closeMirroredOpenStep(childSession: Session): DshMirrorTailClosure | undefined {
+  const events = childSession.snapshotEvents()
+  // Only the current (last) turn can hold the copied open tail: an earlier
+  // turn closed with the provider's turn/end, which no valid prefix crossed
+  // with open state.
+  let turnStart = -1
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const type = events[index]?.type
+    if (type === 'turn/end') return undefined
+    if (type === 'turn/start') {
+      turnStart = index
+      break
+    }
+  }
+  if (turnStart < 0) return undefined
+  let openStep: { turn: number; step: number } | undefined
+  // The turn's tool-call ledger: an assistant/message's tool-call blocks
+  // advertise, a tool/call starts, a tool/result resolves — its message names
+  // the call at the top level (the V4 tool-role shape) or in its single
+  // content block (the pre-V4 user-role shape); read both, a mirrored log may
+  // predate the upgrade.
+  const advertised = new Set<string>()
+  const started = new Map<string, SessionSeq>()
+  const resolved = new Set<string>()
+  for (const event of events.slice(turnStart + 1)) {
+    if (event.type === 'step/start') {
+      openStep = event.data as { turn: number; step: number }
+    } else if (event.type === 'step/end') {
+      openStep = undefined
+    } else if (event.type === 'assistant/message') {
+      const content = (event.data as { message?: { content?: readonly { type?: string; id?: unknown }[] } }).message?.content ?? []
+      for (const block of content) {
+        if (block?.type === 'tool-call' && typeof block.id === 'string') advertised.add(block.id)
+      }
+    } else if (event.type === 'tool/call') {
+      const callId = (event.data as { callId?: unknown }).callId
+      if (typeof callId === 'string') started.set(callId, event.seq)
+    } else if (event.type === 'tool/result') {
+      const message = (event.data as { message?: { toolCallId?: unknown; content?: readonly { toolCallId?: unknown }[] } }).message
+      const id = message?.toolCallId ?? message?.content?.[0]?.toolCallId
+      if (typeof id === 'string') resolved.add(id)
+    }
+  }
+  if (openStep === undefined) return undefined
+  const step = openStep
+  const repaired: string[] = []
+  // The seq the next appended event occupies (seq == log length), so the
+  // synthesized ids carry the harness's repair-id convention.
+  let nextSeq = events.length
+  for (const callId of advertised) {
+    if (resolved.has(callId)) continue
+    const callSeq = started.get(callId)
+    const message = {
+      id: `interrupted-tool-result-${callId}-${nextSeq}`,
+      role: 'tool',
+      toolCallId: callId,
+      isError: true,
+      source: { kind: 'tool', callId },
+      content: [{ type: 'text', text: callSeq === undefined ? TOOL_NOT_STARTED_REPAIR_TEXT : DSH_INTERRUPTED_TOOL_RESULT }],
+    } as unknown as SessionEventMap['tool/result']['message']
+    nextSeq += 1
+    childSession.append('tool/result', {
+      turn: step.turn,
+      step: step.step,
+      message,
+      error: callSeq === undefined
+        ? { name: 'ToolNotStartedError', code: 'TOOL_NOT_STARTED' }
+        : { name: 'ToolOutcomeUnknownError', code: 'TOOL_OUTCOME_UNKNOWN' },
+    }, {
+      surfaceOp: 'append',
+      // The not-started repair must carry NO sourceEventSeqs (the reader
+      // admits exactly that shape); the started repair pairs with the copied
+      // call event, exactly as a real mirrored result does.
+      ...callSeq === undefined ? {} : { sourceEventSeqs: [callSeq] },
+    })
+    repaired.push(callId)
+  }
+  childSession.append('step/end', { turn: step.turn, step: step.step })
+  return { step, repairedCalls: repaired }
 }
 
 /**
