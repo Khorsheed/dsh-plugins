@@ -337,7 +337,7 @@ export class LibraryRemoteService extends TypertRemoteService<LibraryRemoteConfi
 
   /** The newest event's timestamp anywhere — the pane polls it to re-read (no push channel). */
   @Remote('latestActivity')
-  latestActivity(): Promise<{ at?: string }> {
+  latestActivity(): Promise<{ at?: string; session?: { id: string; at: string } }> {
     return this.core.latestActivity()
   }
 

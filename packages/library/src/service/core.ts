@@ -107,6 +107,10 @@ export class LibraryServiceCore {
   readonly store: LibraryStore
   /** Listeners told after every project mutation (the tab's live refresh, the context cache). */
   protected readonly listeners = new Set<(projectId: string) => void>()
+  /** When this instance last wrote anything (a project created, an index edit — writes that log no event). */
+  protected lastChangeAt: string | undefined
+  /** The newest session-made write (a library tool from a session): the client's cue to reveal the sidebar. */
+  protected lastSessionWrite: { readonly session: string; readonly at: string } | undefined
   /** Set by {@link dispose} (explicit, or the borrowed Context's teardown); every public verb refuses afterwards. */
   protected disposed = false
 
@@ -167,6 +171,7 @@ export class LibraryServiceCore {
   }
 
   protected changed(projectId: string): void {
+    this.lastChangeAt = new Date().toISOString()
     for (const listener of this.listeners) {
       try {
         listener(projectId)
@@ -190,6 +195,11 @@ export class LibraryServiceCore {
     } catch (error) {
       return storeRefusal(error)
     }
+  }
+
+  /** A library tool from this session just wrote (kit.autoBind calls it after every successful write). */
+  noteSessionWrite(session: string): void {
+    this.lastSessionWrite = { session, at: new Date().toISOString() }
   }
 
   protected event(projectId: string, type: LibraryEventType, fields: Omit<LibraryEvent, 'type' | 'at'> & { at?: string } = {}): void {

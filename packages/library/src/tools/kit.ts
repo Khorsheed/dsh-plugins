@@ -283,6 +283,7 @@ export function createToolKit(service: LibraryService, images: ImageRefCache) {
   const autoBind = async (exec: Exec | undefined, binding: LibraryBinding): Promise<void> => {
     const sessionId = sessionIdOf(exec)
     if (sessionId === undefined) return
+    service.noteSessionWrite(sessionId)
     const current = bindingOf(exec)
     if (current !== undefined && (current.projectId !== binding.projectId || current.resourceId !== undefined)) return
     if (current !== undefined && binding.resourceId === undefined) return

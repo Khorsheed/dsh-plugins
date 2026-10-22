@@ -884,6 +884,19 @@ describe('activity', () => {
   })
 })
 
+describe('activity: writes without events', () => {
+  it('creating a project moves the activity stamp; a session write is named', async () => {
+    expect(await service.latestActivity()).toEqual({})
+    const created = await service.createProject({ name: '神经科学' })
+    expect(created.ok).toBe(true)
+    const after = await service.latestActivity()
+    expect(after.at).toBeDefined()
+    expect(after.session).toBeUndefined()
+    service.noteSessionWrite('s9')
+    expect((await service.latestActivity()).session?.id).toBe('s9')
+  })
+})
+
 describe('bindings', () => {
   it('binds a session to a project and book, and refuses a missing book', async () => {
     const { projectId, bookId } = await seed()
