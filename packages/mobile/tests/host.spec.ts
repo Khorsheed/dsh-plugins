@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { HostConnectionService } from '@deepseek-ai/dsh-client-connection/src/rpc-host'
 import type { BrowserAuth } from '@deepseek-ai/dsh-client-connection/src/browser-auth'
 import * as mobile from '../src/index.ts'
-import { CONNECT_PATH, DIRECTORY_PATH, HANDSHAKE_PATH } from '../src/protocol.ts'
+import { CONNECT_PATH, DIRECTORY_PATH, HANDSHAKE_PATH, TUNNEL_PATH } from '../src/protocol.ts'
 
 describe('mobile plugin on the official Connection registry', () => {
   it('unloads only its route and can reinstall without a duplicate registration', async () => {
@@ -45,5 +45,30 @@ describe('mobile plugin on the official Connection registry', () => {
     const fiber = ctx.plugin(mobile)
     await fiber.await()
     await fiber.dispose()
+  })
+  it('exposes the tunnel endpoint behind the same registry, guards its actions and drops it on unload', async () => {
+    const ctx = new Context()
+    const connectionFiber = ctx.plugin(c => { new HostConnectionService(c, [], {} as BrowserAuth) })
+    await connectionFiber.await()
+    const connection = ctx.get('connection') as HostConnectionService
+    const carrier = connection.createSharedFetchHandler('/api')
+    const peer = connection.createPeer({ principal: { kind: 'owner' } })
+    const fiber = ctx.plugin(mobile)
+    await fiber.await()
+    await new Promise(resolve => setTimeout(resolve, 0))
+    // Bare context: no profile/configEditor/webServer — the supervisor degrades.
+    const status = await carrier.fetch(new Request(`http://localhost${TUNNEL_PATH}`), peer)
+    expect(status.status).toBe(200)
+    expect(await status.json()).toMatchObject({ state: 'unsupported', reason: 'no-profile' })
+    const cross = await carrier.fetch(new Request(`http://localhost${TUNNEL_PATH}`, { method: 'POST',
+      headers: { host: 'localhost', origin: 'https://other.example.test', 'content-type': 'application/json' }, body: '{"action":"enable"}' }), peer)
+    expect(cross.status).toBe(403)
+    const enable = await carrier.fetch(new Request(`http://localhost${TUNNEL_PATH}`, { method: 'POST',
+      headers: { host: 'localhost', origin: 'http://localhost', 'content-type': 'application/json' }, body: '{"action":"enable"}' }), peer)
+    expect(enable.status).toBe(200)
+    expect(await enable.json()).toMatchObject({ state: 'unsupported' })
+    await fiber.dispose()
+    expect((await carrier.fetch(new Request(`http://localhost${TUNNEL_PATH}`), peer)).status).toBe(404)
+    await connectionFiber.dispose()
   })
 })

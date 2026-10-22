@@ -24,6 +24,19 @@ export function connectInfo(connection: HostConnectionHandle, configured?: strin
   return { state: 'ready', origin: url.origin }
 }
 
+/** Explicit same-origin action guard. The official HTTP bridge uses an
+ * internal Request URL; compare the preserved Host/Origin headers, as the
+ * official trust fence does, so an HTTPS reverse proxy does not turn a valid
+ * action into a false 403. A navigation/form must never reveal a login URL. */
+export function sameOriginAction(request: Request): boolean {
+  try {
+    const origin = new URL(request.headers.get('origin') ?? '')
+    const host = request.headers.get('host')
+    return !!host && ['http:', 'https:'].includes(origin.protocol) && origin.host === new URL(`http://${host}`).host
+  } catch { /* opaque or absent origin */ }
+  return false
+}
+
 /** Called only behind the official authenticated Fetch registry. The origin
  * getter is re-read on every request: a managed tunnel can rotate the
  * advertised origin without re-applying this plugin. */
@@ -33,18 +46,7 @@ export function connectResponse(connection: HostConnectionHandle, configured: ()
     const checked = async (): Promise<MobileConnectInfo> => info.state === 'ready' && info.origin && !await reachable(info.origin)
       ? { ...info, state: 'unreachable' } : info
     if (request.method === 'GET') return Response.json(await checked(), { headers })
-    // Explicit same-origin action; a navigation/form must never reveal a login URL.
-    // The official HTTP bridge uses an internal Request URL. Compare the
-    // preserved Host/Origin headers, as the official trust fence does, so an
-    // HTTPS reverse proxy does not turn a valid action into a false 403.
-    let sameOrigin = false
-    try {
-      const origin = new URL(request.headers.get('origin') ?? '')
-      const host = request.headers.get('host')
-      sameOrigin = !!host && ['http:', 'https:'].includes(origin.protocol)
-        && origin.host === new URL(`http://${host}`).host
-    } catch { /* opaque or absent origin */ }
-    if (!sameOrigin || request.headers.get('content-type') !== 'application/json') {
+    if (!sameOriginAction(request) || request.headers.get('content-type') !== 'application/json') {
       return Response.json({ error: 'forbidden' }, { status: 403, headers })
     }
     if (info.state !== 'ready' || !info.origin) return Response.json(info, { status: 409, headers })

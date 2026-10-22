@@ -27,3 +27,12 @@ export interface MobileDirectoryListing {
   entries: { name: string; path: string; hidden: boolean }[]
   truncated: boolean
 }
+
+export const TUNNEL_PATH = '/api/mobile/tunnel'
+export type MobileTunnelState = 'off' | 'starting' | 'ready' | 'recovering' | 'error' | 'unsupported'
+export type MobileTunnelReason = 'no-profile' | 'no-config-editor' | 'no-web-server' | 'tls-host' | 'no-cloudflared' | 'start-failed'
+export interface MobileTunnelStatus {
+  state: MobileTunnelState
+  origin: string | null
+  reason?: MobileTunnelReason
+}

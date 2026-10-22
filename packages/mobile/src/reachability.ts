@@ -9,3 +9,15 @@ export async function publicOriginReachable(origin: string, request: typeof fetc
     return response.status === 401 || response.ok
   } catch { return false }
 }
+
+/** Pre-bind edge readiness for a freshly allocated Quick Tunnel: the domain
+ * was just assigned to our own process, so a fence 403 (authority not yet
+ * trusted) also proves the edge forwards to this host. 530/000 does not. */
+export async function edgeReady(origin: string, request: typeof fetch = fetch): Promise<boolean> {
+  try {
+    const response = await request(`${origin}/`, { method: 'GET', redirect: 'manual', signal: AbortSignal.timeout(6000),
+      headers: { 'cache-control': 'no-cache' } })
+    await response.body?.cancel()
+    return response.status === 401 || response.status === 403 || response.ok
+  } catch { return false }
+}
