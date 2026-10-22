@@ -292,7 +292,10 @@ export const ALLOWED_EDGES: Readonly<Record<string, ReadonlyArray<string>>> = {
 export const COMMUNITY_SERVICE_INJECTORS: Readonly<Record<string, RegExp>> = {
   localAgent: /^local-agent/,
   localAgentDshHeadlessStartup: /^local-agent-dsh-headless$/,
-  shortcuts: /^ui-shortcuts$/,
+  // `shortcuts` had one entry (/^ui-shortcuts$/) until the package retired
+  // 2026-10-22: the host ships the official shortcuts service (resident in the
+  // web-app bundle) under the same key since 0.1.7-rc.2, so the name is an
+  // official service now and needs no community-owner row.
   // The preset-composed tool rows inject their owning core: a one-shot
   // apply-time probe lost the rc.1 boot-order race (the standing scope mounts
   // before the profile's later bundle rows provide the core), so the row

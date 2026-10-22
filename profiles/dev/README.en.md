@@ -10,7 +10,7 @@ Every member is an independent plugin — copy its package name into the host's 
 
 ## The dsh-dev pack — plugin list
 
-This pack contains the 8 plugins specific to dev mode (see the table below). Beyond that, we also recommend installing the everyday-experience plugins from [dsh-basic](https://github.com/Khorsheed/dsh-basic) (message edit/withdraw, timeline, title editing, quote, artifact preview, local file browsing, task pills, compaction reminder, inline cards, capability catalog, shortcuts, ambience, mobile) — copy the package names one by one, or install the common conversation pieces in one shot with the `@khorsheed/dsh-bundle-conversation-toolbox` meta package; per-plugin intros and screenshots live in dsh-basic.
+This pack contains the 8 plugins specific to dev mode (see the table below). Beyond that, we also recommend installing the everyday-experience plugins from [dsh-basic](https://github.com/Khorsheed/dsh-basic) (message edit/withdraw, timeline, title editing, quote, artifact preview, local file browsing, task pills, compaction reminder, inline cards, capability catalog, ambience, mobile) — copy the package names one by one, or install the common conversation pieces in one shot with the `@khorsheed/dsh-bundle-conversation-toolbox` meta package; per-plugin intros and screenshots live in dsh-basic.
 
 | Plugin | Package name (copy to install) | What you get |
 |---|---|---|

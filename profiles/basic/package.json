@@ -14,7 +14,6 @@
     "@khorsheed/dsh-mobile": "^0.1.1",
     "@khorsheed/dsh-quote": "^0.1.1",
     "@khorsheed/dsh-taskpilot": "^0.3.2",
-    "@khorsheed/dsh-ui-shortcuts": "^0.2.3",
     "@khorsheed/dsh-whalesong": "^0.2.3"
   },
   "dsh": {
@@ -33,7 +32,6 @@
         "@khorsheed/dsh-capability-catalog",
         "@khorsheed/dsh-mobile",
         "@khorsheed/dsh-taskpilot",
-        "@khorsheed/dsh-ui-shortcuts",
         "@khorsheed/dsh-whalesong",
         "@khorsheed/dsh-ankh-guard"
       ]

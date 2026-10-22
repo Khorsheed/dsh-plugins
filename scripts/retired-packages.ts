@@ -84,4 +84,9 @@ export const RETIRED_PACKAGES: readonly RetiredPackage[] = [
     replacement: '@khorsheed/dsh-reader (>= 0.3.0)',
     note: 'rewritten and renamed to dsh-reader; never published to npm — cleanup is profile-side only (a stale overrides pin survived until the host-021 wave)',
   },
+  {
+    name: '@khorsheed/dsh-ui-shortcuts',
+    replacement: "the host's built-in rebindable shortcut settings (>= 0.1.7-rc.1 line; no package replacement)",
+    note: 'superseded by the built-in shortcut settings the host ships since 0.1.7-rc.2 (retired 2026-10-22); the npm name is deprecated at 0.2.4',
+  },
 ]
