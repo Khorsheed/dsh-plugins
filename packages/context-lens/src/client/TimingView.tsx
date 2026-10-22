@@ -74,7 +74,11 @@ export function TimingView({
             data.exec,
             `${t('lens.calls')} ${rows.reduce((n, r) => n + r.calls, 0)} · ${t('lens.errors')} ${rows.reduce((n, r) => n + r.errors, 0)}`,
           ],
-          [t('lens.other'), data.gaps, t('lens.gaps')],
+          [t('lens.other'), data.gaps, [
+            ...data.gapsHead >= 50 ? [`${t('lens.gapsHead')} ${fmtSpan(data.gapsHead)}`] : [],
+            ...data.gapsBetween >= 50 ? [`${t('lens.gaps')} ${fmtSpan(data.gapsBetween)}`] : [],
+            ...data.gapsTail >= 50 ? [`${t('lens.gapsTail')} ${fmtSpan(data.gapsTail)}`] : [],
+          ].join(' · ') || t('lens.gaps')],
         ].map(([label, value, sub]) => (
           <div className={css.cell} key={String(label)}>
             <div className={css.k}>{label}</div>

@@ -68,6 +68,8 @@ describe('elapsed-time accounting', () => {
     expect(data.model).toBe(410)
     expect(data.exec).toBe(400)
     expect(data.gaps).toBe(190)
+    // All idle time here follows the last activity (810 → 1000): the turn closed after its final request.
+    expect([data.gapsHead, data.gapsBetween, data.gapsTail]).toEqual([0, 0, 190])
     expect(data.tools[0]).toMatchObject({
       calls: 1,
       errors: 1,

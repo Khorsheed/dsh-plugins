@@ -388,6 +388,17 @@ describe('InspectorPanel · timing tab', () => {
     expect(screen.getByRole('button', { name: zh['view.token'] }).getAttribute('aria-pressed')).toBe('true')
   })
 
+  it('the session map switches turns without leaving the timing view', async () => {
+    bench()
+    await waitFor(() => expect(screen.getByText('#101 · read:a.ts')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: zh['view.time'] }))
+    await waitFor(() => expect(screen.getByText(zh['time.total'])).toBeTruthy())
+    const bars = screen.getAllByRole('button', { name: /^turn 1 #/ })
+    fireEvent.click(bars[0]!)
+    await waitFor(() => expect(screen.getByText('第一条 query')).toBeTruthy())
+    expect(screen.getByRole('button', { name: zh['view.time'] }).getAttribute('aria-pressed')).toBe('true')
+  })
+
   it('filters the timing view to the selected delegation run', async () => {
     const { container } = bench()
     await waitFor(() => expect(screen.getByText('#101 · read:a.ts')).toBeTruthy())
