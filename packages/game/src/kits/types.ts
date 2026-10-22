@@ -7,10 +7,10 @@
  * assuming 2D canvas.
  * @module @khorsheed/dsh-game
  */
-import type { ArtStyle, BundleFile, ElementLook } from '../types.ts'
+import type { AnyLook, ArtStyle, BundleFile } from '../types.ts'
 
 /** The kits this build ships. */
-export type KitId = '2d-canvas'
+export type KitId = '2d-canvas' | '3d-three'
 
 /** A project's pinned runtime (`game.json` `runtime`); absent means `2d-canvas` version 1. */
 export interface KitRef {
@@ -40,7 +40,7 @@ export interface RuntimeKit {
    */
   runtimeFiles(): Readonly<Record<string, BundleFile>>
   /** Normalize an element's `look`; null when unusable. */
-  normalizeLook(raw: unknown): ElementLook | null
+  normalizeLook(raw: unknown): AnyLook | null
   /** What a usable look needs, worded for the model when one fails. */
   readonly lookHint: string
   /**

@@ -32,7 +32,7 @@ const RUNTIME = `(function(){
 })();`
 
 /** Blank when the first canvas, scaled to 32×32 through a 2D context, holds one color. */
-const BLANK_PROBE = `(() => {
+export const BLANK_PROBE = `(() => {
   const c = document.querySelector('canvas');
   if (!c || c.width <= 0 || c.height <= 0) return null;
   const probe = document.createElement('canvas'); probe.width = 32; probe.height = 32;

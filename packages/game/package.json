@@ -45,6 +45,7 @@
   },
   "files": [
     "lib",
+    "runtime",
     "lib/typert.host.d.ts",
     "lib/typert.host.js",
     "lib/typert.remote-client.d.ts",
@@ -58,6 +59,7 @@
   },
   "dependencies": {
     "puppeteer-core": "^25.11.0",
+    "three": "0.170.0",
     "zod": "^4.4.3"
   },
   "peerDependencies": {

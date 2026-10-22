@@ -36,7 +36,7 @@ import {
 } from './project.ts'
 import {
   CHAPTERS, MANIFEST_FILE, PANEL_CHANGES_MARK, STATE_DIR,
-  type ChapterView, type CheckFailure, type CheckRecord, type ElementLook, type GameManifest, type GameResult,
+  type AnyLook, type ChapterView, type CheckFailure, type CheckRecord, type GameManifest, type GameResult,
   type LogEntry, type LookProposal, type PendingChange, type PlayBundle, type ProjectCard, type ProjectRow, type ProjectView, type TurnReport,
   type SessionGameState, type VersionDiff, type VersionRecord, type VersionRow,
 } from './types.ts'
@@ -952,7 +952,7 @@ export class GameService {
     const view = await this.view(row.id)
     const element = view?.elements.find(e => e.id === elementId)
     if (element === undefined) return { ok: false, error: `没有 id 为「${elementId}」的元素` }
-    const clean: { label: string; note: string; look: ElementLook }[] = []
+    const clean: { label: string; note: string; look: AnyLook }[] = []
     const bad: number[] = []
     const kit = await this.kitFor(row.root)
     variants.slice(0, 3).forEach((v, i) => {

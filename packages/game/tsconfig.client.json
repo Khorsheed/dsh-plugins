@@ -36,6 +36,7 @@
     "src/client/VersionsView.tsx",
     "src/client/TurnCard.tsx",
     "src/kits/ids.ts",
-    "src/kits/types.ts"
+    "src/kits/types.ts",
+    "src/look3d.ts"
   ]
 }

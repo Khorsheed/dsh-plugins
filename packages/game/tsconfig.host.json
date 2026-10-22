@@ -21,6 +21,8 @@
     "src/kits/canvas2d.ts",
     "src/kits/ids.ts",
     "src/kits/index.ts",
-    "src/kits/types.ts"
+    "src/kits/types.ts",
+    "src/look3d.ts",
+    "src/kits/three3d.ts"
   ]
 }

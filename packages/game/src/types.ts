@@ -55,6 +55,22 @@ export const ART_STYLES: readonly ArtStyle[] = [
   },
 ]
 
+/**
+ * The 3D example styles (the 3d-three kit, proposal 2026-10-21-game-3d G8):
+ * toon shading with an ink outline over a paper ground. The ids are what
+ * `dsh3d.createWorld({ style })` takes.
+ */
+export const ART_STYLES_3D: readonly ArtStyle[] = [
+  {
+    id: 'ink', label: '水墨', look: '低多边形 + 墨线描边 + 宣纸底与远雾，留白多',
+    palette: ['#2a2622', '#efe7d6', '#e9dfcc', '#b8442f', '#8f897b', '#4c5747', '#a7bab4', '#46698a'],
+  },
+  {
+    id: 'qinglv', label: '青绿山水', look: '石青石绿的山、赭色描边、暖纸底，色块鲜明',
+    palette: ['#4f3b28', '#f1e8cf', '#3c8a78', '#3a6f93', '#d9d9b0', '#2c6a57', '#77a9bb', '#b8442f'],
+  },
+]
+
 /** The project manifest (`game.json`). Everything but id/title is the agent's to fill over time. */
 export interface GameManifest {
   readonly schema: 1
@@ -98,6 +114,75 @@ export interface GameParam {
 export interface ElementLook {
   readonly palette: readonly string[]
   readonly states: Readonly<Record<string, readonly string[]>>
+}
+
+/** Body archetypes a `parts3d` look builds on. */
+export const BODY_BASES = ['quadruped', 'bird', 'fish', 'serpent', 'humanoid'] as const
+export type BodyBase = typeof BODY_BASES[number]
+
+/** Parts a `parts3d` look can attach to its body. */
+export const PART_TYPES = ['ear', 'horn', 'tail', 'wing', 'fin', 'eye', 'face'] as const
+export type PartType = typeof PART_TYPES[number]
+
+/** One part of a `parts3d` look; sizes are in body units (body length ≈ 1). */
+export interface PartSpec {
+  readonly type: PartType
+  readonly count?: number
+  readonly size?: number
+  readonly length?: number
+  /** Spread of a multi-part fan (tails, wings), degrees. */
+  readonly fan?: number
+  readonly thickness?: number
+  /** A `palette` key or a `#rrggbb` color. */
+  readonly color?: string
+  /** `face` only: `human` gives a 人面. */
+  readonly style?: string
+}
+
+/** One procedural motion: amplitude (degrees, or a fraction for breath/bob) and period (seconds). */
+export interface MotionSpec {
+  readonly amplitude?: number
+  readonly period?: number
+}
+
+/**
+ * A 3D look built from a parts recipe (山海经「其状如 X 而 Y」): a body
+ * archetype, its proportions, attached parts, a named palette and procedural
+ * motions. The 3d-three kit's `dsh3d.build` turns it into a model.
+ */
+export interface Parts3DLook {
+  readonly kind: 'parts3d'
+  readonly base: BodyBase
+  readonly proportions: Readonly<Record<string, number>>
+  readonly parts: readonly PartSpec[]
+  /** Named colors: `body`, `accent`, `eye`, `belly`… */
+  readonly palette: Readonly<Record<string, string>>
+  /** `tailSway`, `breath`, `flap`, `swim`, `bob`. */
+  readonly motion: Readonly<Record<string, MotionSpec>>
+  /** Overall size in world units (default 1). */
+  readonly scale?: number
+  /** Refine-path (Blender) knobs; ignored by the live builder. */
+  readonly refine?: Readonly<Record<string, number>>
+}
+
+/** A 3D look loaded from a project glTF file; `recipe` keeps the parts it was baked from. */
+export interface GltfLook {
+  readonly kind: 'gltf'
+  /** Project-relative path to a `.glb` / `.gltf`. */
+  readonly src: string
+  readonly scale?: number
+  readonly recipe?: Parts3DLook
+}
+
+/** Any 3D look. */
+export type Look3D = Parts3DLook | GltfLook
+
+/** Any look a kit may accept: 2D pixel rows or a 3D look. */
+export type AnyLook = ElementLook | Look3D
+
+/** Whether a look is the 2D pixel-row kind. */
+export function isPixelLook(look: AnyLook): look is ElementLook {
+  return !('kind' in look)
 }
 
 /** The characters a look row may use, in palette-index order. */
@@ -147,7 +232,10 @@ export interface ElementView {
   readonly name: string
   /** Every other top-level scalar, for the numbers table and the field editor. */
   readonly stats: Readonly<Record<string, string | number | boolean>>
+  /** The 2D pixel look, if the element has one. */
   readonly look: ElementLook | null
+  /** The 3D look, if the element has one (3d-three projects). */
+  readonly look3d: Look3D | null
 }
 
 /** One appearance proposal set from `game_propose`: up to 3 variants, the user picks one. */
@@ -155,7 +243,7 @@ export interface LookProposal {
   readonly elementId: string
   readonly at: string
   readonly request: string
-  readonly variants: readonly { readonly label: string; readonly note: string; readonly look: ElementLook }[]
+  readonly variants: readonly { readonly label: string; readonly note: string; readonly look: AnyLook }[]
   /** Index the user picked, once picked. */
   readonly picked?: number
 }
