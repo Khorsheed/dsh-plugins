@@ -217,6 +217,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       case 'configuration-owned-by-core': return t('coordinator.configuration')
       case 'duplicate-name': return t('invite.error.duplicate')
       case 'invalid-name': return t('invite.error.invalid')
+      case 'role-too-long': return t('invite.error.roleTooLong')
       case 'local-agent-unavailable': return t('invite.error.unavailable')
       case 'unknown-provider':
         return t('invite.error.unknownProvider', {
@@ -318,9 +319,17 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     },
     modelDirectory: modelDirectoryFor(sessionId),
     openSession,
-    removeMember: async (member) => {
+    removeMember: async (member, transferPendingTo) => {
       if (remote === undefined) return { ok: false, message: t('invite.error.generic') }
-      const carried = await remote.removeMember({ sessionId, name: member })
+      const carried = await remote.removeMember({ sessionId, name: member, ...transferPendingTo === undefined ? {} : { transferPendingTo } })
+      if (!carried.ok) return { ok: false, message: t('invite.error.generic') }
+      if (!carried.value.ok) return { ok: false, message: failureText(carried.value.error) }
+      void roomStore.refresh(sessionId)
+      return { ok: true, value: carried.value.value }
+    },
+    restoreMember: async (member) => {
+      if (remote === undefined) return { ok: false, message: t('invite.error.generic') }
+      const carried = await remote.restoreMember({ sessionId, name: member })
       if (!carried.ok) return { ok: false, message: t('invite.error.generic') }
       if (!carried.value.ok) return { ok: false, message: failureText(carried.value.error) }
       void roomStore.refresh(sessionId)
@@ -333,6 +342,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
         name: member,
         ...patch.rename === undefined ? {} : { rename: patch.rename },
         ...patch.instructions === undefined ? {} : { instructions: patch.instructions },
+        ...patch.role === undefined ? {} : { role: patch.role },
         ...patch.cwd === undefined ? {} : { cwd: patch.cwd },
         ...patch.model === undefined ? {} : { model: patch.model },
       })

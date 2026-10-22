@@ -98,11 +98,13 @@ describe('DispatchEngine (real composition)', () => {
     expect(parentId).toBe(bench.sessionId)
     expect(provider).toBe('kimi')
     const text = textOf(prompt)
-    // First dispatch: role instructions open the prompt, the roster carries
-    // the notification protocol, the task is the tail.
-    expect(text).toContain('你的角色指令：后端')
-    expect(text).toContain('【成员名册】')
-    expect(text).toContain('通知协议')
+    // First dispatch: one briefing (identity, private instructions, the
+    // tool-based contract), the task is the tail.
+    expect(text).toContain('【房间简报】')
+    expect(text).toContain('你是协作间成员「ada」')
+    expect(text).toContain('你的指令：后端')
+    expect(text).toContain('member_message')
+    expect(text).not.toContain('通知协议')
     expect(text).toContain('搭骨架')
 
     const state = await bench.service.getState({ sessionId: bench.sessionId })
@@ -148,13 +150,21 @@ describe('DispatchEngine (real composition)', () => {
     expect(result).toMatchObject({ ok: true, value: { executions: [{ state: 'done', model: 'observed-model', effort: 'high', tokens: 42, childSessionId: 'child-usage' }] } })
   })
 
-  it('the roster lists the other members with one-line roles; the prompt carries NO running log', async () => {
+  it('the briefing lists the other members by public role only; later prompts carry NO running log', async () => {
     const bench = await bootRoom()
     bench.facade.start.mockImplementation(async () => settledRun('child-1', '方案 A'))
     bench.facade.resume.mockImplementation(async () => settledRun('child-1', '按方案 A 实现完毕'))
-    await bench.service.invite({ sessionId: bench.sessionId, provider: 'kimi', name: 'ada', instructions: '后端工程师\n负责 API', firstTask: '出方案' })
-    await bench.service.invite({ sessionId: bench.sessionId, provider: 'codex', name: 'bill', instructions: '前端', firstTask: '搭页面' })
+    await bench.service.invite({ sessionId: bench.sessionId, provider: 'codex', name: 'bill', role: '前端', instructions: '你负责页面。被要求打招呼时自我介绍。' })
+    await bench.service.invite({ sessionId: bench.sessionId, provider: 'kimi', name: 'ada', role: '后端', instructions: '后端工程师\n负责 API', firstTask: '出方案' })
     await bench.service.engine.idle()
+    const first = textOf(bench.facade.start.mock.calls[0]![2] as ContentBlock[])
+    // Others appear by name, public role and provider — never by their
+    // private instructions (which read like orders to the reader).
+    expect(first).toContain('- bill（前端 · codex）')
+    expect(first).toContain('- dsh（协调者 · 原生 DSH）')
+    expect(first).not.toContain('你负责页面')
+    expect(first).not.toContain('打招呼')
+    expect(first).toContain('职责：后端')
 
     await bench.service.postMessage({ sessionId: bench.sessionId, text: '@ada 按方案 A 实现' })
     await bench.service.engine.idle()
@@ -163,66 +173,44 @@ describe('DispatchEngine (real composition)', () => {
     const [parentId, provider, childSessionId, prompt] = bench.facade.resume.mock.calls[0] as [string, string, string, ContentBlock[]]
     expect([parentId, provider, childSessionId]).toEqual([bench.sessionId, 'kimi', 'child-1'])
     const text = textOf(prompt)
-    // The roster: the OTHER members (self excluded), one-line roles, protocol.
-    expect(text).toContain('- bill（codex）：前端')
-    expect(text).toContain('- dsh（原生 DSH）')
-    expect(text).not.toContain('- ada')
-    // No blackboard: nothing replays ada's earlier dispatch, bill's task,
-    // ada's own speech, or the initial instructions again; the dispatch text
-    // rides the tail exactly once.
-    expect(text).not.toContain('黑板')
-    expect(text).not.toContain('搭页面')
+    // Nothing the member has seen comes back: no briefing, no earlier task,
+    // no own speech; the dispatch text rides the tail exactly once.
+    expect(text).not.toContain('【房间简报】')
     expect(text).not.toContain('出方案')
     expect(text).not.toContain('[ada]')
-    expect(text).not.toContain('你的角色指令')
+    expect(text).not.toContain('你的指令')
     expect(text.split('按方案 A 实现')).toHaveLength(2)
   })
 
-  it('the goal line rides every dispatch; the roster rides only a stale one', async () => {
+  it('later dispatches carry one-line room changes instead of the roster or the goal again', async () => {
     const bench = await bootRoom()
     bench.facade.start.mockImplementation(async () => settledRun('child-1', 'done'))
     bench.facade.resume.mockImplementation(async () => settledRun('child-1', 'done'))
+    await bench.service.setGoal({ sessionId: bench.sessionId, text: '插件 API v2 上线' })
     await bench.service.invite({ sessionId: bench.sessionId, provider: 'kimi', name: 'ada', firstTask: '出方案' })
     await bench.service.engine.idle()
     const first = textOf(bench.facade.start.mock.calls[0]![2] as ContentBlock[])
-    // First dispatch: the roster (with the protocol) opens the member's world;
-    // no goal line while unset.
-    expect(first).toContain('【成员名册】')
-    expect(first).not.toContain('本房间的目标')
+    expect(first).toContain('房间目标：插件 API v2 上线')
 
-    await bench.service.setGoal({ sessionId: bench.sessionId, text: '插件 API v2 上线' })
     await bench.service.postMessage({ sessionId: bench.sessionId, text: '@ada 继续' })
     await bench.service.engine.idle()
     const second = textOf(bench.facade.resume.mock.calls[0]![3] as ContentBlock[])
-    // The roster is unchanged since ada's last dispatch: omitted (the member's
-    // own session holds it). The goal still orients every dispatch.
-    expect(second).toContain('本房间的目标：插件 API v2 上线')
-    expect(second).not.toContain('【成员名册】')
-    expect(second).not.toContain('通知协议')
+    // Nothing changed: no goal, no roster, no change notes.
+    expect(second).not.toContain('插件 API v2')
+    expect(second).not.toContain('【房间变动】')
+    expect(second.trim()).toBe('继续')
 
-    // A roster change (bill joins) re-carries the roster on the next dispatch.
-    await bench.service.invite({ sessionId: bench.sessionId, provider: 'codex', name: 'bill' })
+    await bench.service.invite({ sessionId: bench.sessionId, provider: 'codex', name: 'bill', role: '前端' })
+    await bench.service.updateMember({ sessionId: bench.sessionId, name: 'ada', role: '后端' })
+    await bench.service.setGoal({ sessionId: bench.sessionId, text: '插件 API v3 上线' })
     await bench.service.postMessage({ sessionId: bench.sessionId, text: '@ada 再继续' })
     await bench.service.engine.idle()
     const third = textOf(bench.facade.resume.mock.calls[1]![3] as ContentBlock[])
-    expect(third).toContain('【成员名册】')
-    expect(third).toContain('- bill（codex）')
-    expect(third).toContain('本房间的目标：插件 API v2 上线')
-  })
-
-  it('a roster-invisible update (the journaled childSessionId handle) does not re-carry the roster', async () => {
-    const bench = await bootRoom()
-    bench.facade.start.mockImplementation(async () => settledRun('child-1', 'done'))
-    bench.facade.resume.mockImplementation(async () => settledRun('child-1', 'done'))
-    await bench.service.invite({ sessionId: bench.sessionId, provider: 'kimi', name: 'ada', firstTask: '出方案' })
-    await bench.service.engine.idle()
-    // The first run journaled member-updated { childSessionId } AFTER ada's
-    // dispatch: roster-invisible, so the next dispatch stays lean.
-    await bench.service.postMessage({ sessionId: bench.sessionId, text: '@ada 继续' })
-    await bench.service.engine.idle()
-    const second = textOf(bench.facade.resume.mock.calls[0]![3] as ContentBlock[])
-    expect(second).not.toContain('【成员名册】')
-    expect(second).toContain('继续')
+    expect(third).toContain('【房间变动】')
+    expect(third).toContain('- bill 加入（前端 · codex）')
+    expect(third).toContain('- 你的职责改为：后端')
+    expect(third).toContain('- 房间目标更新为：插件 API v3 上线')
+    expect(third).not.toContain('【房间简报】')
   })
 
   it('an instructions edit rides the next dispatch as an update notice', async () => {
@@ -236,10 +224,10 @@ describe('DispatchEngine (real composition)', () => {
     await bench.service.engine.idle()
 
     const prompt = bench.facade.resume.mock.calls[0]![3] as ContentBlock[]
-    expect(textOf(prompt)).toContain('你的角色指令更新为：后端 + 接口评审')
+    expect(textOf(prompt)).toContain('你的指令更新为：后端 + 接口评审')
   })
 
-  it('a reply whose trailing own line is `@name <content>` becomes a pending relay (fallback channel)', async () => {
+  it('a reply ending in an `@name` line is plain speech, never a relay', async () => {
     const bench = await bootRoom()
     bench.facade.start.mockImplementation(async () => settledRun('child-1', '方案已定。\n@bill 接口定稿了，请评审'))
     await bench.service.invite({ sessionId: bench.sessionId, provider: 'kimi', name: 'ada', firstTask: '出方案' })
@@ -247,12 +235,56 @@ describe('DispatchEngine (real composition)', () => {
     await bench.service.engine.idle()
 
     const state = await bench.service.getState({ sessionId: bench.sessionId })
-    expect(state).toMatchObject({
-      ok: true,
-      value: {
-        relays: [{ from: 'ada', to: 'bill', content: '接口定稿了，请评审', state: 'pending' }],
-      },
+    expect(state).toMatchObject({ ok: true, value: { relays: [] } })
+  })
+
+  it('removing a busy member stops it, cancels its queue, tells the waiting coordinator, and can be undone', async () => {
+    const bench = await bootRoom()
+    const flight = deferred<SubagentResult>()
+    bench.facade.start.mockImplementation(async () => ({
+      id: SessionId('child-ada'), localAgent: undefined, result: flight.promise, dispose: async () => {},
+    }))
+    bench.facade.cancel.mockImplementation(() => {
+      flight.resolve({ output: [{ type: 'text', text: '写了一半' }], stopReason: 'aborted' })
+      return true
     })
+    await bench.service.invite({ sessionId: bench.sessionId, provider: 'kimi', name: 'ada', role: '实现', instructions: '后端' })
+    await bench.service.messageMember({ sessionId: bench.sessionId, member: 'ada', text: '补迁移脚本' })
+    await vi.waitFor(() => expect(bench.facade.start).toHaveBeenCalledOnce())
+    await tick()
+    await bench.service.messageMember({ sessionId: bench.sessionId, member: 'ada', text: '再对一下接口' })
+    await bench.service.addTask({ sessionId: bench.sessionId, member: 'ada', title: '写文档' })
+
+    const removal = await bench.service.removeMember({ sessionId: bench.sessionId, name: 'ada', transferPendingTo: 'dsh' })
+    expect(removal).toEqual({ ok: true, value: {
+      name: 'ada', stopped: true, cancelledDeliveries: 1, cancelledTasks: 1, transferredTasks: 1, notified: ['dsh'],
+    } })
+    await bench.service.engine.idle()
+    const state = await bench.service.getState({ sessionId: bench.sessionId })
+    if (!state.ok) throw new Error('room unavailable')
+    expect(state.value.members.map(member => member.name)).toEqual(['dsh'])
+    expect(state.value.tasks.map(task => [task.member, task.title, task.status])).toEqual([
+      ['ada', '补迁移脚本', 'cancelled'], ['ada', '再对一下接口', 'cancelled'], ['dsh', '写文档', 'pending'],
+    ])
+    // The queued message never runs, and the coordinator heard about it.
+    expect(bench.facade.resume).not.toHaveBeenCalled()
+    const followups = bench.agent!.followup.mock.calls.map(call => textOf((call[0] as UserMessage).content))
+    expect(followups.some(text => text.includes('(ada) cancelled') && text.includes('ada 已被移除'))).toBe(true)
+
+    // Undo: ada rejoins on its own session; the cancelled work stays cancelled.
+    expect(await bench.service.restoreMember({ sessionId: bench.sessionId, name: 'ada' })).toEqual({ ok: true, value: { name: 'ada' } })
+    await bench.service.engine.idle()
+    const restored = await bench.service.getState({ sessionId: bench.sessionId })
+    if (!restored.ok) throw new Error('room unavailable')
+    expect(restored.value.members.find(member => member.name === 'ada')).toMatchObject({ role: '实现', instructions: '后端', childSessionId: 'child-ada' })
+    expect(bench.facade.resume).not.toHaveBeenCalled()
+    expect(await bench.service.restoreMember({ sessionId: bench.sessionId, name: 'ada' })).toEqual({ ok: false, error: { code: 'duplicate-name' } })
+  })
+
+  it('rejects a public role longer than 30 characters', async () => {
+    const bench = await bootRoom()
+    const result = await bench.service.invite({ sessionId: bench.sessionId, provider: 'kimi', name: 'ada', role: '很'.repeat(31) })
+    expect(result).toEqual({ ok: false, error: { code: 'role-too-long' } })
   })
 
   it('a confirmed relay delivers as a continuation and is marked sent; a later dispatch re-carries an undelivered one', async () => {
@@ -353,7 +385,9 @@ describe('DispatchEngine (real composition)', () => {
     expect(message.source).toEqual({ kind: ROOM_KIND })
     const text = textOf(message.content)
     expect(text).toContain('总结一下进度')
-    expect(text).toContain('【成员名册】')
+    // The room's own agent sends with room_message, not the CLI bridge tool.
+    expect(text).toContain('【房间简报】')
+    expect(text).toContain('room_message')
 
     const state = await bench.service.getState({ sessionId: bench.sessionId })
     expect(state).toMatchObject({

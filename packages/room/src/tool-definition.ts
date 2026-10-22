@@ -60,8 +60,9 @@ export function roomInviteTool(backend: RoomInviteToolBackend) {
       + 'name (no whitespace, no "@", e.g. ada/bill/cathy) — it is the addressing name, decoupled '
       + 'from the provider so two instances of one provider can coexist; prefer a function-style '
       + 'name (e.g. design-review / restart-test) when the member has a standing role, so the human '
-      + 'and the other members can tell what it is for. The instructions are the '
-      + 'member\'s role briefing, prepended to its first dispatch and persisted in its own CLI '
+      + 'and the other members can tell what it is for. Give a short public role (what everyone '
+      + 'else sees) and private instructions: the instructions are the member\'s own briefing, '
+      + 'prepended to its first dispatch and persisted in its own CLI '
       + 'session from then on. Give a firstTask to put the member to work immediately, or omit it '
       + 'to have the member join idle. A member keeps its own CLI session and accumulates context '
       + 'across rounds, so prefer inviting over a one-shot subagent_* delegation whenever the work '
@@ -83,10 +84,14 @@ export function roomInviteTool(backend: RoomInviteToolBackend) {
         required: true,
         description: 'The member\'s @-addressing name: unique in this room, no whitespace, no "@".',
       },
+      role: {
+        type: 'string',
+        description: 'Short public role (≤30 chars, e.g. 代码审查 / 实现 / 测试): what the other members and the human see. Keep it a phrase; details go in instructions.',
+      },
       instructions: {
         type: 'string',
         required: true,
-        description: 'The member\'s role instructions (responsibilities, constraints, output expectations).',
+        description: 'The member\'s private instructions (responsibilities, constraints, output expectations). Only this member ever reads them.',
       },
       firstTask: {
         type: 'string',
@@ -119,6 +124,7 @@ export function roomInviteTool(backend: RoomInviteToolBackend) {
         provider: args.provider,
         name: args.name,
         instructions: args.instructions,
+        ...args.role === undefined ? {} : { role: args.role },
         ...args.firstTask === undefined ? {} : { firstTask: args.firstTask },
         ...args.cwd === undefined ? {} : { cwd: args.cwd },
       }, 'agent')
@@ -127,6 +133,8 @@ export function roomInviteTool(backend: RoomInviteToolBackend) {
           ? ' Pick a different name and retry.'
           : result.error.code === 'invalid-name'
             ? ' Names must be non-empty and free of whitespace and "@"; retry with a valid name.'
+            : result.error.code === 'role-too-long'
+              ? ' The role must be at most 30 characters; shorten it and move details into instructions.'
             : result.error.code === 'local-agent-unavailable'
               ? ' The local-agent delegation facade is not mounted; CLI members cannot join right now.'
               : result.error.code === 'unknown-provider'

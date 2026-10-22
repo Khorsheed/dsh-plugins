@@ -13,7 +13,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 // Type-only: pulls this plugin's LocaleNamespaceMap merge.
 import type {} from './locales.ts'
-import type { RoomProviderList } from '../types.ts'
+import type { RoomProviderList, RoomRemoval } from '../types.ts'
 import type { LocalAgentModelInfo, LocalAgentPromptResult } from '@khorsheed/dsh-local-agent/types'
 import type { RoomChromeVisibility } from './preset-visibility.ts'
 import type { RoomStore } from './room-store.ts'
@@ -21,6 +21,11 @@ import type { RoomStore } from './room-store.ts'
 /** A mutation outcome with a localized failure message. */
 export type RoomMutationOutcome =
   | { readonly ok: true }
+  | { readonly ok: false; readonly message: string }
+
+/** A removal's outcome: what it did (for the undo line), or the failure copy. */
+export type RoomRemovalOutcome =
+  | { readonly ok: true; readonly value: RoomRemoval }
   | { readonly ok: false; readonly message: string }
 
 /** Injected action face of the session-header 邀请 agent action. */
@@ -234,6 +239,8 @@ export type MembersViewProps =
 export interface RoomInviteValues {
   readonly provider: string
   readonly name: string
+  /** Short public role (omitted = none). */
+  readonly role?: string
   readonly instructions?: string
   /** Member-level working directory (omitted = inherits the room session's cwd). */
   readonly cwd?: string
@@ -256,7 +263,9 @@ export interface RoomMembersInjected extends RoomInviteInjected {
   readonly openSession: (sessionId: SessionId) => void
   /** Remove the named member from the roster. */
   readonly setCoordinator?: ((memberId: string, expectedRevision: number) => Promise<RoomMutationOutcome>) | undefined
-  readonly removeMember: (member: string) => Promise<RoomMutationOutcome>
+  readonly removeMember: (member: string, transferPendingTo?: string) => Promise<RoomRemovalOutcome>
+  /** Undo a removal: the member rejoins on its own session. */
+  readonly restoreMember: (member: string) => Promise<RoomMutationOutcome>
   /**
    * Edit the named member: rename, cwd override (null clears back to
    * inheriting the room cwd), role instructions (null clears them), intended
@@ -292,6 +301,8 @@ export interface RoomMemberPatch {
   readonly rename?: string
   /** New role instructions; null clears them. */
   readonly instructions?: string | null
+  /** New public role; null clears it. */
+  readonly role?: string | null
   /** New cwd override; null clears back to inheriting the room cwd. */
   readonly cwd?: string | null
   /** New intended model; null clears back to the harness default. */

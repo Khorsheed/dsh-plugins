@@ -336,7 +336,7 @@ describe('RoomService Remote surface (real composition)', () => {
   it('removeMember drops the member from the roster and validates its inputs', async () => {
     const { service, sessionId } = await bootRoom()
     await service.invite({ sessionId, provider: 'kimi', name: 'ada' })
-    expect(await service.removeMember({ sessionId, name: 'ada' })).toEqual({ ok: true, value: { name: 'ada' } })
+    expect(await service.removeMember({ sessionId, name: 'ada' })).toEqual({ ok: true, value: { name: 'ada', stopped: false, cancelledDeliveries: 0, cancelledTasks: 0, transferredTasks: 0, notified: [] } })
     expect(await service.getState({ sessionId })).toMatchObject({ ok: true, value: { members: [MAIN_MEMBER] } })
     expect(await service.removeMember({ sessionId, name: 'ada' }))
       .toEqual({ ok: false, error: { code: 'member-not-found' } })

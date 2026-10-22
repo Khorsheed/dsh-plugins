@@ -48,7 +48,7 @@ const ROOM_TOOLS = [
     inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
   { name: 'room_invite', description: 'Coordinator only: invite a member. An optional firstTask starts in the background and returns its result to you automatically.',
     inputSchema: { type: 'object', properties: {
-      provider: { type: 'string' }, name: { type: 'string' }, instructions: { type: 'string' },
+      provider: { type: 'string' }, name: { type: 'string' }, role: { type: 'string', description: 'Short public role (≤30 chars) the other members see, e.g. 代码审查.' }, instructions: { type: 'string', description: 'Private instructions only this member reads.' },
       cwd: { type: 'string' }, model: { type: 'string' }, firstTask: { type: 'string' },
     }, required: ['provider', 'name'], additionalProperties: false } },
   { name: 'room_message', description: 'Coordinator only: dispatch background work to a room member by name. Returns acceptance immediately; completion arrives as a correlated report. Do not poll.',

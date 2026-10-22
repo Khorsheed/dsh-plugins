@@ -14,8 +14,10 @@ import css from './MembersView.module.css'
 
 /** One roster card: identity, avatar block, role, status chip, actions. */
 export function MemberCard({
-  member, run, elapsedMs, openSession, onEdit, onRemove, t, modelHint, coordinator = false, onPromote, preview = false,
+  member, run, elapsedMs, openSession, onEdit, onRemove, t, modelHint, coordinator = false, onPromote, preview = false, removal,
 }: {
+  /** The open removal confirmation, rendered inside the card. */
+  readonly removal?: ReactNode
   readonly coordinator?: boolean
   readonly onPromote?: (() => void) | undefined
   readonly member: RoomMember
@@ -62,7 +64,11 @@ export function MemberCard({
           {member.name.slice(0, 1).toUpperCase()}
         </span>
         <span className={css.identity}>
-          <span className={css.name}>{member.name}</span>{coordinator && <span className={css.hint}>{t('coordinator.label')}</span>}
+          <span className={css.nameRow}>
+            <span className={css.name}>{member.name}</span>
+            {member.role !== undefined && <span className={css.role}>{member.role}</span>}
+          </span>
+          {coordinator && <span className={css.hint}>{t('coordinator.label')}</span>}
           <span className={css.hint}>
             {member.kind === 'main-agent' ? t('member.kind.main') : member.provider ?? ''}
             {modelHint !== undefined && modelHint !== '' && <>{' · '}{modelHint}</>}
@@ -124,13 +130,19 @@ export function MemberCard({
               <button type="button" className={css.action} onClick={onEdit}>
                 {t('members.edit')}
               </button>
-              <button type="button" className={css.action} disabled={coordinator} onClick={onRemove}>
+              <button
+                type="button"
+                className={removal === undefined ? css.action : `${css.action} ${css.removeOpen}`}
+                aria-expanded={removal !== undefined}
+                onClick={onRemove}
+              >
                 {t('members.remove')}
               </button>
             </span>
           )}
         </div>
       )}
+      {removal}
     </div>
   )
 }

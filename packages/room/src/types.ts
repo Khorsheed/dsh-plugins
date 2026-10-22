@@ -41,6 +41,12 @@ export interface RoomMemberAddedEvent {
   readonly provider?: string
   /** Role instructions, prepended to the member's first dispatch. */
   readonly instructions?: string
+  /**
+   * The member's short public role (≤ 30 chars — journal `ROOM_ROLE_MAX` — e.g.
+   * 「代码审查」): what the roster, the cards and the team view show to
+   * everyone else. The instructions stay private to the member.
+   */
+  readonly role?: string
   readonly invitedBy: 'human' | 'agent'
   /**
    * The member's own working directory (empty = inherits the room session's
@@ -72,6 +78,8 @@ export interface RoomMemberUpdatedEvent {
   readonly rename?: string
   /** New role instructions; null CLEARS them (later dispatches inject none). */
   readonly instructions?: string | null
+  /** New public role; null CLEARS it. */
+  readonly role?: string | null
   /**
    * New member-level cwd (roster-recorded; the delegation facade's per-call
    * override is the family's open R2). null CLEARS the override — the member
@@ -247,6 +255,8 @@ export interface RoomTaskEditedEvent {
   readonly title?: string
   /** New blocking member; explicit null clears the wait. */
   readonly blockedBy?: string | null
+  /** Hand the task to another member's lane (a removal's transfer). */
+  readonly member?: string
 }
 
 declare module '@deepseek-ai/dsh-session/types' {
@@ -292,6 +302,8 @@ export interface RoomMember {
   readonly kind: 'main-agent' | 'cli'
   readonly provider?: string
   readonly instructions?: string
+  /** Short public role shown to the other members (see {@link RoomMemberAddedEvent.role}). */
+  readonly role?: string
   readonly invitedBy: 'human' | 'agent'
   /** Member-level working directory (roster record; not yet passed to the facade). */
   readonly cwd?: string
@@ -398,6 +410,8 @@ export type RoomFailure =
   | { readonly code: 'empty-provider' }
   | { readonly code: 'member-not-found' }
   | { readonly code: 'empty-text' }
+  /** The public role is longer than 30 characters. */
+  | { readonly code: 'role-too-long' }
   | { readonly code: 'nothing-to-update' }
   | { readonly code: 'local-agent-unavailable' }
   /**
@@ -466,6 +480,8 @@ export interface RoomInviteRequest {
   readonly name: string
   /** Role instructions, prepended to the member's first dispatch. */
   readonly instructions?: string
+  /** Short public role (≤ 30 chars); blank/omitted = none. */
+  readonly role?: string
   /**
    * Member-level working directory (empty/omitted = inherits the room
    * session's cwd). Recorded on the roster; not yet passed to the delegation
@@ -505,6 +521,8 @@ export interface RoomUpdateMemberRequest {
   readonly rename?: string
   /** New role instructions; null (or a blank string) CLEARS them. */
   readonly instructions?: string | null
+  /** New public role; null (or a blank string) CLEARS it. */
+  readonly role?: string | null
   /** New member-level cwd; null (or a blank string) CLEARS the override back to inheriting the room cwd. */
   readonly cwd?: string | null
   /**
@@ -526,10 +544,42 @@ export interface RoomRemoveMemberRequest {
   readonly sessionId: SessionId
   /** Member to remove. */
   readonly name: string
+  /**
+   * Hand the member's not-yet-started (pending) board tasks to this member
+   * instead of cancelling them. In-progress tasks always close with the
+   * member's work.
+   */
+  readonly transferPendingTo?: string
+}
+
+/** What a removal actually did, for the undo toast and the room record. */
+export interface RoomRemoval {
+  readonly name: string
+  /** True when a running round was stopped first. */
+  readonly stopped: boolean
+  /** Queued messages that will never be delivered. */
+  readonly cancelledDeliveries: number
+  /** Board tasks closed as cancelled. */
+  readonly cancelledTasks: number
+  /** Pending board tasks handed to another member. */
+  readonly transferredTasks: number
+  /** Members that were waiting for a report and were told instead. */
+  readonly notified: readonly string[]
+}
+
+/** restoreMember request: undo a removal (the member rejoins with its own session). */
+export interface RoomRestoreMemberRequest {
+  readonly sessionId: SessionId
+  readonly name: string
 }
 
 /** removeMember outcome. */
 export type RoomRemoveMemberResult =
+  | { readonly ok: true; readonly value: RoomRemoval }
+  | { readonly ok: false; readonly error: RoomFailure }
+
+/** restoreMember outcome. */
+export type RoomRestoreMemberResult =
   | { readonly ok: true; readonly value: { readonly name: string } }
   | { readonly ok: false; readonly error: RoomFailure }
 
@@ -760,6 +810,8 @@ export interface RoomDelivery {
   readonly memberId: string
   readonly status: 'queued' | RoomDeliveryStateEvent['state']
   readonly origin: NonNullable<RoomDispatchEvent['origin']>
+  /** The member id this delivery's outcome is reported to, when any. */
+  readonly replyTo?: string
   readonly text: string
   readonly error?: string
   readonly plan?: RoomDispatchEvent['plan']

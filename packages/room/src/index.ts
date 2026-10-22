@@ -55,7 +55,7 @@ import type {} from './types.ts'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { probeLocalAgent, probeLocalAgentRoster } from './adapter.ts'
 import { DispatchEngine, isRoomSource } from './dispatch.ts'
-import { coordinatorMember, memberId, isRoomLog, MAIN_AGENT_MEMBER, parseMentions, replay, ROOM_EVENT_TYPES } from './journal.ts'
+import { coordinatorMember, memberId, isRoomLog, MAIN_AGENT_MEMBER, parseMentions, replay, ROOM_EVENT_TYPES, ROOM_ROLE_MAX } from './journal.ts'
 import type {
   RoomAddTaskRequest, RoomAddTaskResult,
   RoomCancelRequest, RoomCancelResult,
@@ -71,7 +71,7 @@ import type {
   RoomPostMessageRequest, RoomPostMessageResult,
   RoomProviderInfo, RoomProviderList,
   RoomRelayResolveRequest, RoomRelayResolveResult,
-  RoomRemoveMemberRequest, RoomRemoveMemberResult,
+  RoomRemoveMemberRequest, RoomRemoveMemberResult, RoomRestoreMemberRequest, RoomRestoreMemberResult,
   RoomSetGoalRequest, RoomSetGoalResult,
   RoomState, RoomUpdateMemberRequest, RoomUpdateMemberResult,
   RoomUpdateTaskRequest, RoomUpdateTaskResult,
@@ -388,6 +388,9 @@ export class RoomService extends TypertRemoteService {
     if (request.firstTask !== undefined && request.firstTask.trim() === '') {
       return { ok: false, error: { code: 'empty-text' } }
     }
+    if (request.role !== undefined && request.role.trim().length > ROOM_ROLE_MAX) {
+      return { ok: false, error: { code: 'role-too-long' } }
+    }
     if (request.model !== undefined && request.model.trim() === '') {
       return { ok: false, error: { code: 'empty-text' } }
     }
@@ -418,6 +421,7 @@ export class RoomService extends TypertRemoteService {
       provider: request.provider,
       invitedBy,
       ...request.instructions === undefined ? {} : { instructions: request.instructions },
+      ...request.role === undefined || request.role.trim() === '' ? {} : { role: request.role.trim() },
       ...request.cwd === undefined || request.cwd.trim() === '' ? {} : { cwd: request.cwd.trim() },
       ...request.model === undefined || request.model.trim() === '' ? {} : { model: request.model.trim() },
     })
@@ -480,7 +484,7 @@ export class RoomService extends TypertRemoteService {
     }
     if (request.cwd !== undefined && (member.childSessionId !== undefined || this.engine.hasPending(loaded.session, member.name))) return { ok: false, error: { code: 'member-cwd-bound' } }
     if (request.model !== undefined && member.childSessionId !== undefined) return { ok: false, error: { code: 'configuration-owned-by-core' } }
-    if (request.rename === undefined && request.instructions === undefined
+    if (request.rename === undefined && request.instructions === undefined && request.role === undefined
       && request.cwd === undefined && request.model === undefined) {
       return { ok: false, error: { code: 'nothing-to-update' } }
     }
@@ -496,6 +500,10 @@ export class RoomService extends TypertRemoteService {
     const instructions = typeof request.instructions === 'string' && request.instructions.trim() === ''
       ? null
       : request.instructions
+    const role = typeof request.role === 'string'
+      ? (request.role.trim() === '' ? null : request.role.trim())
+      : request.role
+    if (typeof role === 'string' && role.length > ROOM_ROLE_MAX) return { ok: false, error: { code: 'role-too-long' } }
     const cwd = typeof request.cwd === 'string'
       ? (request.cwd.trim() === '' ? null : request.cwd.trim())
       : request.cwd
@@ -506,6 +514,7 @@ export class RoomService extends TypertRemoteService {
       name: request.name,
       ...request.rename === undefined ? {} : { rename: request.rename },
       ...instructions === undefined ? {} : { instructions },
+      ...role === undefined ? {} : { role },
       ...cwd === undefined ? {} : { cwd },
       ...model === undefined ? {} : { model },
     })
@@ -622,24 +631,95 @@ export class RoomService extends TypertRemoteService {
   }
 
   /**
-   * Remove a member from the roster. An in-flight run is NOT interrupted
-   * here — cancel() first when the member is running.
-   * @param request - room session, member name.
-   * @returns the removal receipt, or a rejection.
+   * Remove a member and settle everything that depended on it, so the
+   * confirmation's promises hold: a running round is stopped first (the same
+   * cancel the stop button uses), queued messages to it are cancelled, every
+   * member waiting for one of its reports is told it will not come, its open
+   * board tasks close as cancelled (pending ones may instead move to
+   * `transferPendingTo`), and only then does it leave the roster. Its own
+   * session and history stay; {@link restoreMember} brings it back onto them.
+   * @param request - room session, member name, optional pending-task heir.
+   * @returns what the removal did, or a rejection.
    */
   @Remote('removeMember')
   async removeMember(request: RoomRemoveMemberRequest): Promise<RoomRemoveMemberResult> {
     const loaded = await this.ensureLive(request.sessionId)
     if (!loaded.ok) return { ok: false, error: loaded.error }
     if (this.handoffs.has(request.sessionId)) return { ok: false, error: { code: 'coordinator-busy' } }
-    if (!loaded.state.members.some(member => member.name === request.name)) {
+    const member = loaded.state.members.find(entry => entry.name === request.name)
+    if (member === undefined) return { ok: false, error: { code: 'member-not-found' } }
+    if (coordinatorMember(loaded.state, loaded.session.snapshotEvents())?.name === request.name) return { ok: false, error: { code: 'active-coordinator' } }
+    if (member.kind === 'main-agent') return { ok: false, error: { code: 'main-member' } }
+    const heir = request.transferPendingTo
+    if (heir !== undefined && (heir === request.name || !loaded.state.members.some(entry => entry.name === heir))) {
       return { ok: false, error: { code: 'member-not-found' } }
     }
-    if (coordinatorMember(loaded.state, loaded.session.snapshotEvents())?.name === request.name) return { ok: false, error: { code: 'active-coordinator' } }
-    if (loaded.state.members.find(member => member.name === request.name)?.kind === 'main-agent') return { ok: false, error: { code: 'main-member' } }
-    loaded.session.append('room/member-removed', { name: request.name })
+    const stopped = loaded.state.runs.some(run => run.member === request.name && run.state === 'running')
+      && (await this.cancel({ sessionId: request.sessionId, name: request.name })).ok
+    const session = loaded.session
+    const events = session.snapshotEvents()
+    const id = memberId(events, member)
+    const queued = replay(events).deliveries?.filter(row => row.memberId === id && row.status === 'queued') ?? []
+    for (const row of queued) {
+      session.append('room/delivery-state', { id: row.id, dispatchSeq: row.dispatchSeq, memberId: id, state: 'cancelled', error: `${request.name} 已被移除` })
+    }
+    let cancelledTasks = 0
+    let transferredTasks = 0
+    for (const task of replay(session.snapshotEvents()).tasks) {
+      if (task.member !== request.name || ['done', 'cancelled', 'failed'].includes(task.status)) continue
+      if (task.status === 'pending' && heir !== undefined) {
+        session.append('room/task-edited', { id: task.id, member: heir })
+        transferredTasks++
+      } else {
+        session.append('room/task-updated', { id: task.id, status: 'cancelled' })
+        cancelledTasks++
+      }
+    }
+    session.append('room/member-removed', { name: request.name })
+    await this.ctx.sessions.flush(session)
+    // Tell whoever waits on a cancelled delivery, now that the roster no
+    // longer holds the member (the report reads its last known name).
+    const before = session.snapshotEvents().filter(event => event.type === 'room/dispatch').length
+    for (const row of queued) {
+      await this.engine.reportOutcome(session, row.dispatchSeq, row.id, id, 'cancelled', `${request.name} 已被移除，这条没有执行。`)
+    }
+    const reports = session.snapshotEvents().filter(event => event.type === 'room/dispatch').slice(before)
+    const notified = [...new Set(reports.flatMap(event => event.type === 'room/dispatch' ? event.data.targets : []))]
+    return { ok: true, value: { name: request.name, stopped, cancelledDeliveries: queued.length, cancelledTasks, transferredTasks, notified } }
+  }
+
+  /**
+   * Undo a removal: the member rejoins under its old identity, provider,
+   * role, instructions and native session, so its memory carries on. Work
+   * the removal cancelled stays cancelled. Rejected when the name was taken
+   * in between or the member was never removed.
+   * @param request - room session, the removed member's name.
+   * @returns the restored name, or a rejection.
+   */
+  @Remote('restoreMember')
+  async restoreMember(request: RoomRestoreMemberRequest): Promise<RoomRestoreMemberResult> {
+    const loaded = await this.ensureLive(request.sessionId)
+    if (!loaded.ok) return { ok: false, error: loaded.error }
+    if (loaded.state.members.some(entry => entry.name === request.name)) return { ok: false, error: { code: 'duplicate-name' } }
+    const events = loaded.session.snapshotEvents()
+    const removal = events.findLast(event => event.type === 'room/member-removed' && event.data.name === request.name)
+    if (removal === undefined) return { ok: false, error: { code: 'member-not-found' } }
+    const member = replay(events.filter(event => event.seq < removal.seq)).members.find(entry => entry.name === request.name)
+    if (member === undefined) return { ok: false, error: { code: 'member-not-found' } }
+    loaded.session.append('room/member-added', {
+      id: memberId(events, member),
+      name: member.name,
+      kind: member.kind,
+      invitedBy: member.invitedBy,
+      ...member.provider === undefined ? {} : { provider: member.provider },
+      ...member.instructions === undefined ? {} : { instructions: member.instructions },
+      ...member.role === undefined ? {} : { role: member.role },
+      ...member.cwd === undefined ? {} : { cwd: member.cwd },
+      ...member.model === undefined ? {} : { model: member.model },
+      ...member.childSessionId === undefined ? {} : { childSessionId: member.childSessionId },
+    })
     await this.ctx.sessions.flush(loaded.session)
-    return { ok: true, value: { name: request.name } }
+    return { ok: true, value: { name: member.name } }
   }
 
   /**
@@ -820,7 +900,7 @@ export class RoomService extends TypertRemoteService {
       if (sender === undefined) return { ok: false, error: 'The authenticated member is not in this room roster' }
       if (command === null || typeof command !== 'object' || command.arguments === null || typeof command.arguments !== 'object' || Array.isArray(command.arguments)) return { ok: false, error: 'Malformed room command' }
       const args = command.arguments
-      const allowed: Record<string, readonly string[]> = { room_plan: ['command'], room_read: [], room_invite: ['provider', 'name', 'instructions', 'cwd', 'model', 'firstTask'], room_message: ['member', 'text'] }
+      const allowed: Record<string, readonly string[]> = { room_plan: ['command'], room_read: [], room_invite: ['provider', 'name', 'role', 'instructions', 'cwd', 'model', 'firstTask'], room_message: ['member', 'text'] }
       const keys = allowed[command.name]
       if (keys === undefined || Object.keys(args).some(key => !keys.includes(key))) return { ok: false, error: 'Unknown room command or argument; room and actor identity are host-owned' }
       const required = (key: string): string => {
@@ -836,6 +916,7 @@ export class RoomService extends TypertRemoteService {
       if (!this.isCurrentCoordinator(loaded.session, actor.childSessionId)) return { ok: false, error: 'Only the current coordinator may invite members or dispatch work' }
       const result = command.name === 'room_invite'
         ? await this.inviteMember({ sessionId: loaded.session.id, provider: required('provider'), name: required('name'),
+          ...optional('role') === undefined ? {} : { role: optional('role')! },
           ...optional('instructions') === undefined ? {} : { instructions: optional('instructions')! },
           ...optional('cwd') === undefined ? {} : { cwd: optional('cwd')! },
           ...optional('model') === undefined ? {} : { model: optional('model')! },

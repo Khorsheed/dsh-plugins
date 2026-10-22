@@ -36,12 +36,15 @@ import type { LocalAgentModelInfo } from '@khorsheed/dsh-local-agent/types'
 import { IconChevronDownOutlineMedium } from './icons.tsx'
 import { MemberCard } from './MemberCard.tsx'
 import { rollName } from './name-pool.ts'
+import { ROOM_ROLE_MAX } from '../journal.ts'
 import css from './InviteDialog.module.css'
 
 /** The dialog's submit values (edit mode carries name/cwd/instructions/model). */
 export interface InviteDialogSubmit {
   readonly provider: string
   readonly name: string
+  /** Short public role ('' = none). */
+  readonly role: string
   readonly instructions: string
   readonly cwd: string
   readonly firstTask: string
@@ -106,6 +109,7 @@ export function InviteDialog({
 }: InviteDialogProps): ReactNode {
   const [provider, setProvider] = useState('')
   const [name, setName] = useState(member?.name ?? '')
+  const [role, setRole] = useState(member?.role ?? '')
   const [instructions, setInstructions] = useState(member?.instructions ?? '')
   const [cwd, setCwd] = useState(member?.cwd ?? '')
   const [firstTask, setFirstTask] = useState('')
@@ -286,6 +290,7 @@ export function InviteDialog({
     invitedBy: 'human',
     ...previewProvider === undefined || previewProvider === '' ? {} : { provider: previewProvider },
     ...instructions.trim() === '' ? {} : { instructions: instructions.trim() },
+    ...role.trim() === '' ? {} : { role: role.trim() },
   }
 
   const rollDice = (): void => {
@@ -319,7 +324,7 @@ export function InviteDialog({
     setError(null)
     try {
       const outcome = await onSubmit({
-        provider: chosen, name, instructions: instructions.trim(), cwd: cwd.trim(), firstTask: firstTask.trim(),
+        provider: chosen, name, role: role.trim(), instructions: instructions.trim(), cwd: cwd.trim(), firstTask: firstTask.trim(),
         model: model.trim(), modelBaseline,
       })
       if (!outcome.ok) {
@@ -392,6 +397,17 @@ export function InviteDialog({
                 </button>
               </span>
               <span className={css.hint}>{t('invite.nameHint')}</span>
+            </label>
+            <label className={css.field}>
+              <span className={css.label}>{t('invite.role')}</span>
+              <input
+                className={css.input}
+                value={role}
+                maxLength={ROOM_ROLE_MAX}
+                placeholder={t('invite.rolePlaceholder')}
+                onChange={event => { setRole(event.target.value) }}
+              />
+              <span className={css.hint}>{t('invite.roleHint')}</span>
             </label>
             {mode === 'invite' && (
               <label className={css.field}>

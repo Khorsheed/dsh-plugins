@@ -15,7 +15,8 @@ import { coordinatorMember } from '../journal.ts'
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import { IconAgentPresetOutlineMedium } from './icons.tsx'
-import type { RoomMember } from '../types.ts'
+import type { RoomMember, RoomRemoval } from '../types.ts'
+import { RemoveMemberConfirm, removalImpact } from './RemoveMemberConfirm.tsx'
 import { MemberCard } from './MemberCard.tsx'
 import { InviteDialog, type InviteDialogSubmit } from './InviteDialog.tsx'
 import type { MembersViewProps, RoomModelDirectory } from './slots.ts'
@@ -43,7 +44,7 @@ function MainAgentModelHint({ directory }: { readonly directory: RoomModelDirect
 
 /** The members tab. */
 export function MembersView({
-  sessionId, roomStore, roomCwd, openSession, removeMember, updateMember, invite, listProviders, browseDirectory,
+  sessionId, roomStore, roomCwd, openSession, removeMember, restoreMember, updateMember, invite, listProviders, browseDirectory,
   modelSurface, renderHarnessModelPicker, memberModel, setMemberModel, renderMemberConfiguration, modelDirectory, setCoordinator, t,
 }: MembersViewProps): ReactNode {
   // Entering the tab pulls the freshest state once.
@@ -53,6 +54,15 @@ export function MembersView({
   const [providers, setProviders] = useState<RoomProviderList | undefined>(undefined)
   const [notice, setNotice] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  /** The card whose removal confirmation is open. */
+  const [removing, setRemoving] = useState<string | null>(null)
+  /** The last removal, offered for undo for a few seconds. */
+  const [removed, setRemoved] = useState<RoomRemoval | null>(null)
+  useEffect(() => {
+    if (removed === null) return undefined
+    const timer = setTimeout(() => { setRemoved(null) }, 5000)
+    return () => { clearTimeout(timer) }
+  }, [removed])
   /** The CLI members' effective models, keyed by member name (the cards' hints). */
   const [memberModels, setMemberModels] = useState<ReadonlyMap<string, string>>(new Map())
   const anyRunning = state?.runs.some(run => run.state === 'running') ?? false
@@ -107,6 +117,7 @@ export function MembersView({
       const name = values.name.trim()
       const cwd = values.cwd.trim()
       const instructions = values.instructions.trim()
+      const role = values.role.trim()
       const model = values.model.trim()
       const modelChanged = model !== values.modelBaseline.trim() && !(member.childSessionId !== undefined && renderMemberConfiguration !== undefined)
       if (modelChanged && member.childSessionId !== undefined) {
@@ -123,6 +134,7 @@ export function MembersView({
         ...instructions !== (member.instructions ?? '')
           ? { instructions: instructions === '' ? null : instructions }
           : {},
+        ...role !== (member.role ?? '') ? { role: role === '' ? null : role } : {},
         // The journaled intent: the first dispatch binds it for a never-
         // started member (the broker call above is a no-op there — no
         // delegation record — so this value alone carries the edit).
@@ -136,6 +148,7 @@ export function MembersView({
       // Blank instructions are omitted, not sent: the host rejects a
       // present-but-blank role, and an absent one simply carries no preset.
       ...values.instructions === '' ? {} : { instructions: values.instructions },
+      ...values.role === '' ? {} : { role: values.role },
       ...values.cwd === '' ? {} : { cwd: values.cwd },
       ...values.firstTask === '' ? {} : { firstTask: values.firstTask },
       ...values.model === '' ? {} : { model: values.model },
@@ -148,11 +161,34 @@ export function MembersView({
     return outcome
   }
 
-  const remove = async (member: RoomMember): Promise<void> => {
-    if (!window.confirm(t('members.removeConfirm', { member: member.name }))) return
-    const outcome = await removeMember(member.name)
+  const remove = async (member: RoomMember, transferPendingTo: string | undefined): Promise<void> => {
+    const outcome = await removeMember(member.name, transferPendingTo)
+    setRemoving(null)
+    if (!outcome.ok) {
+      setError(outcome.message)
+      return
+    }
+    setError(null)
+    setRemoved(outcome.value)
+  }
+
+  const undo = async (): Promise<void> => {
+    if (removed === null) return
+    const name = removed.name
+    setRemoved(null)
+    const outcome = await restoreMember(name)
     if (!outcome.ok) setError(outcome.message)
   }
+
+  /** The undo line: what the removal did, in one sentence. */
+  const removedSummary = (value: RoomRemoval): string => [
+    t('remove.done', { member: value.name }),
+    ...value.stopped ? [t('remove.done.stopped')] : [],
+    ...value.cancelledDeliveries > 0 ? [t('remove.done.queued', { count: value.cancelledDeliveries })] : [],
+    ...value.cancelledTasks > 0 ? [t('remove.done.tasks', { count: value.cancelledTasks })] : [],
+    ...value.transferredTasks > 0 ? [t('remove.done.transferred', { count: value.transferredTasks })] : [],
+    ...value.notified.length > 0 ? [t('remove.done.notified', { members: value.notified.join('、') })] : [],
+  ].join(t('remove.done.sep'))
 
   const dialogNode = dialog !== null && (
     <InviteDialog
@@ -212,7 +248,18 @@ export function MembersView({
               elapsedMs={running ? Date.now() - (run?.startedAt ?? Date.now()) : undefined}
               openSession={openSession}
               onEdit={() => { setDialog({ mode: 'edit', member }) }}
-              onRemove={() => { void remove(member) }}
+              onRemove={() => { setRemoving(current => current === member.name ? null : member.name) }}
+              removal={removing === member.name ? (
+                <RemoveMemberConfirm
+                  member={member}
+                  impact={removalImpact(state, member)}
+                  coordinator={coordinatorMember(state)?.name === member.name}
+                  heirs={state.members.filter(entry => entry.name !== member.name).map(entry => entry.name)}
+                  onConfirm={transferPendingTo => remove(member, transferPendingTo)}
+                  onCancel={() => { setRemoving(null) }}
+                  t={t}
+                />
+              ) : undefined}
               modelHint={member.kind === 'main-agent'
                 ? (modelDirectory !== undefined ? <MainAgentModelHint directory={modelDirectory} /> : undefined)
                 : memberModels.get(member.name)}
@@ -224,6 +271,12 @@ export function MembersView({
           {t('members.invite')}
         </button>
       </div>
+      {removed !== null && (
+        <div className={css.undo} role="status">
+          <span>{removedSummary(removed)}</span>
+          <button type="button" onClick={() => { void undo() }}>{t('remove.undo')}</button>
+        </div>
+      )}
       {notice !== null && <div className={css.notice} role="status">{notice}</div>}
       {error !== null && <div className={css.error} role="alert">{error}</div>}
       {dialogNode}

@@ -271,7 +271,7 @@ describe('V4 durable producer source (real JSONL persistence)', () => {
       // The shape runMainAgent's followup carries; the agent runtime appends
       // it to the session log in production — here the append is direct.
       session.append('user/message', createUserMessage({
-        content: [{ type: 'text', text: '【成员名册】…' }],
+        content: [{ type: 'text', text: '【房间简报】…' }],
         source: roomSource(),
       }), { surfaceOp: 'append' })
       await fix.ctx.sessions.flush(session)
