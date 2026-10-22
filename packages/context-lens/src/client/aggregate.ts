@@ -48,6 +48,26 @@ export function latestTurnSeq(turns: readonly TurnListItem[]): number | undefine
   return turns[turns.length - 1]?.turnSeq
 }
 
+/** Turns per backfill window (the store's default `maxTurnsPerSession`). */
+export const WINDOW_TURNS = 30
+
+/** A run of host turns the log holds but the panel has not loaded. */
+export interface TurnGap { from: number; to: number }
+
+/** The runs of turns in the log's range that the loaded list lacks, oldest first. */
+export function unloadedGaps(range: { first: number; last: number } | undefined, turns: readonly TurnListItem[]): TurnGap[] {
+  if (range === undefined) return []
+  const loaded = new Set(turns.map(turn => turn.hostTurn).filter((n): n is number => n !== undefined))
+  const gaps: TurnGap[] = []
+  for (let n = range.first; n <= range.last; n += 1) {
+    if (loaded.has(n)) continue
+    const last = gaps.at(-1)
+    if (last !== undefined && last.to === n - 1) last.to = n
+    else gaps.push({ from: n, to: n })
+  }
+  return gaps
+}
+
 /** Total input = uncached + cache-read (the host's usage fields are disjoint). */
 export function inputTotal(usage: RequestUsage): number {
   return usage.inputTokens + (usage.cacheReadTokens ?? 0)

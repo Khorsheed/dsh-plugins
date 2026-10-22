@@ -49,3 +49,5 @@
   font-family: var(--dsw-font-family-mono, ui-monospace, monospace);
   font-variant-numeric: tabular-nums;
 }
+
+.gapRow { color: var(--dsw-alias-brand-primary, #3b5bdb); font-size: var(--dsh-panel-text-meta, 12px); }

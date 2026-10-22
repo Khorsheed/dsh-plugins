@@ -44,6 +44,12 @@ export class RequestInspectorRemoteService extends TypertRemoteService<RequestIn
     return this.core.listTurns(sessionId, filter)
   }
 
+  /** Move the backfill window to the turns ending at `end` (latest when null); answers the new turn list. */
+  @Remote('loadTurns')
+  loadTurns(sessionId: string, end: number | null, filter?: ScopeFilter): Promise<ListTurnsResult> {
+    return this.core.loadTurns(sessionId, end, filter)
+  }
+
   /** One turn's scope/request overview — the left column, no segments. */
   @Remote('getTurn')
   getTurn(sessionId: string, turnSeq: number, filter?: ScopeFilter): Promise<TurnOverview | undefined> {

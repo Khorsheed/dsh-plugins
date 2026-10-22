@@ -28,8 +28,8 @@ import { countToolCalls } from './tool-summary.ts'
 import type { RequestConfig, RequestUsage, ResponseSummary } from './types.ts'
 import type { CapturedResponse } from './types.ts'
 import { responseFromSpans, type BlockSpan, type StoredRequest } from './store.ts'
-import { splitRequest, type ScopeFingerprint } from './segmenter.ts'
-import { AMBIENT_SOURCES, fromLogMessage, lastParagraph, previewLine, serializeMessage, type CapturedMessage } from './messages.ts'
+import { contentHash, splitRequest, type ScopeFingerprint } from './segmenter.ts'
+import { AMBIENT_SOURCES, fromLogMessage, lastParagraph, messageKey, previewLine, serializeMessage, type CapturedMessage } from './messages.ts'
 
 /** The structural minimum of one decoded session-log row (untrusted JSON). */
 export interface SessionLogRow {
@@ -119,6 +119,16 @@ export interface SessionLogCursor {
   pendingDelegations: Map<string, LogDelegation>
   /** Set once a read failed this cursor; the lane stops hammering a bad log. */
   broken: string | undefined
+  /**
+   * Whether a request of this host turn keeps its full segments. Every
+   * request carries its whole context, so materializing a long log at once
+   * grows with the square of its length; the backfill materializes only its
+   * window and records the rest as bodiless rows. Absent: materialize all.
+   */
+  materialize?: (hostTurn: number | undefined) => boolean
+  /** The last request's messages when it was not materialized (the next full one diffs against them). */
+  previousMessages?: CapturedMessage[]
+  previousToolNames?: string[]
 }
 
 /** A request row built from the log, before the store assigns its sequence. */
@@ -414,6 +424,8 @@ function buildCompaction(cursor: SessionLogCursor, row: SessionLogRow, data: Rec
   const summary = fromLogMessage({ role: 'assistant', content: data['summary'] })
   if (!summary) return undefined
   const temp = openCursor()
+  if (cursor.materialize !== undefined) temp.materialize = cursor.materialize
+  temp.turnHost = start?.hostTurn
   // The summarize call replays the conversation prefix: the system head at
   // surface node 0, the header's tools, then the region (compaction-basic
   // buildSummarizationInput). Only its trailing instruction lives in host
@@ -440,8 +452,9 @@ function buildCompaction(cursor: SessionLogCursor, row: SessionLogRow, data: Rec
  * carry it; a torn bracket falls back to the fold's open-turn state). Turns
  * never closed by a turn/end (a crash) come out with `endReasonKind` unset.
  */
-export function reconstructSession(rows: readonly SessionLogRow[]): LogTurn[] {
+export function reconstructSession(rows: readonly SessionLogRow[], materialize?: (hostTurn: number | undefined) => boolean): LogTurn[] {
   const cursor = openCursor()
+  if (materialize !== undefined) cursor.materialize = materialize
   const turns: LogTurn[] = []
   const byHostTurn = new Map<number, LogTurn>()
   const turnFor = (hostTurn: number | undefined, at: number | undefined): LogTurn | undefined => {
@@ -552,17 +565,32 @@ function buildRequest(
   const stream = Array.isArray(data['stream']) ? data['stream'] : []
   const streamFacts = readStream(stream)
   const usage = readUsage(data['usage'])
-  const segments = splitRequest({
-    messages: cursor.messages.map(folded => folded.message),
-    ...cursor.tools === undefined ? {} : { tools: cursor.tools },
-    context: {
-      ...cursor.previous === undefined ? {} : { previous: cursor.previous },
-      assemblies: [],
-      resolveToolName: callId => cursor.callNames.get(callId),
-      durationFor: messageId => cursor.messageDurations.get(messageId),
-    },
-  })
-  cursor.previous = segments.fingerprint
+  const hostTurn = typeof data['turn'] === 'number' ? data['turn'] : cursor.turnHost
+  const messages = cursor.messages.map(folded => folded.message)
+  let segments: ReturnType<typeof splitRequest>
+  if (cursor.materialize?.(hostTurn) === false) {
+    // Outside the window: keep the structure, not the copied context.
+    cursor.previousMessages = messages
+    cursor.previousToolNames = (cursor.tools ?? []).map(tool => tool.name)
+    cursor.previous = undefined
+    segments = { system: [], tools: [], history: [], added: [], totalChars: 0, fingerprint: { messageKeys: [], toolNames: [] } }
+  } else {
+    if (cursor.previous === undefined && cursor.previousMessages !== undefined) {
+      cursor.previous = { messageKeys: cursor.previousMessages.map(message => messageKey(message, contentHash)), toolNames: cursor.previousToolNames ?? [] }
+    }
+    delete cursor.previousMessages
+    segments = splitRequest({
+      messages,
+      ...cursor.tools === undefined ? {} : { tools: cursor.tools },
+      context: {
+        ...cursor.previous === undefined ? {} : { previous: cursor.previous },
+        assemblies: [],
+        resolveToolName: callId => cursor.callNames.get(callId),
+        durationFor: messageId => cursor.messageDurations.get(messageId),
+      },
+    })
+    cursor.previous = segments.fingerprint
+  }
 
   const message = failed ? undefined : fromLogMessage(data['message'])
   const blocks = message !== undefined

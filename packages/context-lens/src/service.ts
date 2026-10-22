@@ -404,7 +404,12 @@ export class InspectorService {
       const handle = await reader.open(sessionId, 'read')
       try {
         const { events } = await handle.read(0)
-        this.store.insertLogTurns(sessionId, reconstructSession(events))
+        // Materialize only the window's requests: every request carries its
+        // whole context, so a long log rebuilt at once grows quadratically.
+        const hosts = events.filter(row => row.type === 'turn/start')
+          .map(row => (row.data as { turn?: unknown } | undefined)?.turn).filter((turn): turn is number => typeof turn === 'number')
+        const keep = this.store.windowHosts(sessionId, hosts)
+        this.store.insertLogTurns(sessionId, reconstructSession(events, host => host === undefined || keep.has(host)))
         for (const fact of replacementFactsOf(events)) this.store.noteReplacement(sessionId, fact)
         await this.resolveParent(sessionId, events, reader)
       } finally {
@@ -463,6 +468,18 @@ export class InspectorService {
     await this.backfillMainSession(sessionId)
     await this.refreshChildren(sessionId, filter)
     return this.store.listTurns(sessionId, filter)
+  }
+
+  /**
+   * Move the session's backfill window to the turns ending at `end` (the
+   * latest turns when null) and answer the refreshed turn list. Live turns
+   * stay; the window refills from the log in the same call.
+   */
+  async loadTurns(sessionId: string, end: number | null, filter?: ScopeFilter): Promise<ListTurnsResult> {
+    const pending = this.refreshing.get(`main:${sessionId}`)
+    if (pending !== undefined) await pending
+    this.store.setWindow(sessionId, end ?? undefined)
+    return this.listTurns(sessionId, filter)
   }
 
   /** One turn's scope/request overview, without segments. */

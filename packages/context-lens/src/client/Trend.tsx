@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { SessionTrend } from '../types.ts'
 import type { InspectorTabProps } from './contract.ts'
-import { requestNumberText, cachePct, inputTotal } from './aggregate.ts'
+import { requestNumberText, cachePct, inputTotal, type TurnGap } from './aggregate.ts'
 import css from './InspectorPanel.module.css'
 
 type TrendRequest = SessionTrend['requests'][number]
@@ -21,7 +21,9 @@ function fitWidth(box: number, requests: number, turns: number): number {
  * The session map: the main conversation's requests across turns, filling
  * the panel width on one baseline. Each turn is a cell (wider when it holds
  * more requests); the current turn is a tinted band with its number in
- * bold. A dashed line marks where a compaction happened and opens it; the
+ * bold. A run of turns not loaded shows as a narrow cell with its range;
+ * clicking it loads 30 turns in that direction. A dashed line marks where a
+ * compaction happened and opens it; the
  * turn's other participants show as tabs below the map, not on it.
  */
 export function Trend({
@@ -31,6 +33,8 @@ export function Trend({
   scopeId,
   scopeLabel,
   onSelect,
+  gaps = [],
+  onLoadGap,
   t,
 }: {
   readonly data: SessionTrend
@@ -39,6 +43,9 @@ export function Trend({
   readonly scopeId: string
   readonly scopeLabel: string
   readonly onSelect: (turnSeq: number, seq: number, scopeId: string) => void
+  /** Runs of turns the log holds but the panel has not loaded. */
+  readonly gaps?: readonly TurnGap[]
+  readonly onLoadGap?: ((gap: TurnGap) => void) | undefined
   readonly t: InspectorTabProps['t']
 }) {
   const ref = useRef<HTMLDivElement>(null)
@@ -70,6 +77,17 @@ export function Trend({
     compactions.filter(c => c.turnSeq === turn
       && (previous === undefined || c.startedAt >= previous.startedAt)
       && (next === undefined || c.startedAt < next.startedAt))
+  const firstLoaded = Math.min(...turns.map(turn => turn.hostTurn ?? Number.POSITIVE_INFINITY))
+  const gapCell = (gap: TurnGap) => {
+    const label = t(gap.to < firstLoaded ? 'trend.loadOlder' : 'trend.loadNewer', { from: String(gap.from), to: String(gap.to) })
+    return <button key={`gap-${gap.from}`} type="button" className={css.trendGap} title={label} aria-label={label} onClick={() => onLoadGap?.(gap)}>
+      <span className={css.trendGapBars} aria-hidden="true">⋯</span>
+      <span className={css.trendTurn}>{gap.from === gap.to ? gap.from : `${gap.from}–${gap.to}`}</span>
+    </button>
+  }
+  /** Gap cells that sit before a turn (all gaps ending before its number). */
+  const placed = new Set<number>()
+  const gapsBefore = (host: number | undefined) => host === undefined ? [] : gaps.filter(gap => !placed.has(gap.from) && gap.to < host).map(gap => { placed.add(gap.from); return gapCell(gap) })
   const divider = (turn: number, c: TrendRequest) => <button key={c.seq} type="button" className={css.trendCompaction} title={t('trend.compaction')} aria-label={t('trend.compaction')} onClick={() => onSelect(turn, c.seq, c.scopeId)} />
 
   return (
@@ -78,7 +96,8 @@ export function Trend({
         {turns.map((turn) => {
           const rows = requests.filter(r => r.turnSeq === turn.turnSeq)
           const minWidth = Math.max(MIN_CELL, rows.length * (barWidth + 3) + 8)
-          return (
+          return [
+            ...gapsBefore(turn.hostTurn),
             <div key={turn.turnSeq} className={css.trendGroup} data-current={turnSeq === turn.turnSeq}
               style={{ flex: `${Math.max(1, rows.length / CELL_SHARE)} 1 ${minWidth}px`, minWidth }}>
               <div className={css.trendBars}>
@@ -106,9 +125,10 @@ export function Trend({
                 {dividersBefore(turn.turnSeq, undefined, rows.at(-1)).map(c => divider(turn.turnSeq, c))}
               </div>
               <span className={css.trendTurn}>{turn.hostTurn ?? '·'}</span>
-            </div>
-          )
+            </div>,
+          ]
         })}
+        {gaps.filter(gap => !placed.has(gap.from)).map(gapCell)}
       </div>
       {requests.length === 0 && <span className={css.trendLabel}>{t('lens.trendEmpty')}</span>}
     </section>

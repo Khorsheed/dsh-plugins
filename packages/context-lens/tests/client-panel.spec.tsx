@@ -169,6 +169,8 @@ interface BenchOptions {
   readonly overview?: ((turnSeq: number) => TurnOverview | undefined) | undefined
   /** Per-test getRequest override (merged over the fixture routing). */
   readonly requests?: Record<number, CapturedRequest> | undefined
+  /** The log's host-turn range (turns outside the list are not loaded). */
+  readonly range?: { first: number; last: number } | undefined
 }
 
 function bench(opts: BenchOptions = {}) {
@@ -185,8 +187,9 @@ function bench(opts: BenchOptions = {}) {
       if (opts.listError === true || (opts.listFailFirst !== undefined && attempt === 0)) {
         return { ok: false, error: { code: 'x', message: 'boom' } }
       }
-      return { ok: true, value: { turns: opts.turns ?? TURNS, backfill: opts.backfill ?? { state: 'complete' } } }
+      return { ok: true, value: { turns: opts.turns ?? TURNS, backfill: opts.backfill ?? { state: 'complete' }, ...opts.range === undefined ? {} : { range: opts.range } } }
     }),
+    loadTurns: vi.fn(async (): Promise<Result<ListTurnsResult>> => ({ ok: true, value: { turns: opts.turns ?? TURNS, backfill: { state: 'complete' }, ...opts.range === undefined ? {} : { range: opts.range } } })),
     getTurn: vi.fn(async (_sessionId: string, turnSeq: number): Promise<Result<TurnOverview | undefined>> => ({
       ok: true,
       value: opts.overview !== undefined
@@ -429,10 +432,15 @@ describe('InspectorPanel · empty and error states', () => {
     expect(screen.queryByText(zh['state.noTurns'])).toBeNull()
   })
 
-  it('notes a budget-truncated history beside turn navigation', async () => {
-    bench({ backfill: { state: 'partial' } })
+  it('shows turns the log holds but the panel has not loaded as a cell that loads them', async () => {
+    const { mocks } = bench({ range: { first: 1, last: 40 } })
     await waitFor(() => expect(screen.getByText('#101 · read:a.ts')).toBeTruthy())
-    expect(screen.getByText(zh['hint.backfillTruncated'])).toBeTruthy()
+    const cell = await screen.findByRole('button', { name: '第 3–40 轮未载入 · 载入更新 30 轮' })
+    fireEvent.click(cell)
+    // A newer run loads the 30 turns starting at its first turn.
+    await waitFor(() => expect(mocks.loadTurns).toHaveBeenCalledWith('s1', 32))
+    // The switcher counts against the whole log.
+    expect(screen.getByRole('button', { name: zh['turn.switch'] }).textContent).toContain('/ 40')
   })
 
   it('reports a listTurns failure', async () => {
