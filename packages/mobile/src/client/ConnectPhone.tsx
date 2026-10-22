@@ -95,9 +95,10 @@ export function ConnectPhone({ t }: PropsLocale<'mobile'>) {
     return () => { controller.abort(); clearInterval(poll) }
   }, [login])
   const managed = !!tunnel && tunnel.state !== 'off' && tunnel.state !== 'unsupported'
-  // Offer the one-click entry when nothing is configured, or when the
-  // configured address is down — enabling managed mode is also the recovery.
-  const offerTunnel = managed || info?.state === 'not-configured' || info?.state === 'unreachable'
+  // Offer the one-click entry whenever the static path is not working —
+  // enabling managed mode is also the recovery for a dead, untrusted or
+  // missing static origin. A healthy static deployment sees no new chrome.
+  const offerTunnel = managed || (info !== undefined && info.state !== 'ready')
   return <section data-mobile-connect>
     <style>{styles}</style>
     <h2>{t('connectPhone')}</h2><p>{t('connectIntro')}</p>

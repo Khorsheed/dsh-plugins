@@ -123,3 +123,12 @@ it('offers the one-click entry as recovery when the configured address is unreac
   await screen.findByText(en.connectUnreachable)
   expect(screen.getByRole('button', { name: en.tunnelEnable })).toBeTruthy()
 })
+it('offers the one-click entry as recovery when the configured address is untrusted', async () => {
+  const connect = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ state: 'untrusted-origin', origin: 'https://dead-one-two-three.trycloudflare.com' }) })
+  const tunnel = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ state: 'off', origin: null }) })
+  const fetcher = vi.fn((url: unknown, options?: unknown) => String(url).includes(TUNNEL_PATH) ? tunnel(url, options) : connect(url, options))
+  vi.stubGlobal('fetch', fetcher)
+  render(<ConnectPhone t={t}/>)
+  await screen.findByText(en.connectUntrusted)
+  expect(screen.getByRole('button', { name: en.tunnelEnable })).toBeTruthy()
+})
