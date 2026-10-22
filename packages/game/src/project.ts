@@ -285,7 +285,7 @@ export function pillarNotes(text: string, manifest: Pick<GameManifest, 'title' |
 function scalarStats(r: Record<string, unknown>): Record<string, string | number | boolean> {
   const out: Record<string, string | number | boolean> = {}
   for (const [key, value] of Object.entries(r)) {
-    if (key === 'id' || key === 'type' || key === 'name' || key === 'look') continue
+    if (key === 'id' || key === 'type' || key === 'name' || key === 'look' || key === 'lore') continue
     if (typeof value === 'number' || typeof value === 'boolean' || (typeof value === 'string' && value.length <= 40)) out[key] = value
   }
   return out
@@ -345,6 +345,7 @@ export function validateElements(
           file, index: Array.isArray(raw) ? index : -1, id, type, name, stats: scalarStats(r),
           look: look !== null && isPixelLook(look) ? look : null,
           look3d: look !== null && !isPixelLook(look) ? look : null,
+          lore: typeof r.lore === 'string' ? r.lore.trim() : '',
         })
       }
     })
@@ -364,6 +365,21 @@ export function elementsChapter(elements: readonly ElementView[], elementTypes: 
     lines.push(`## ${type}`, '', `| 名称 | id | ${keys.join(' | ')} |`.replace(/ \|  \|$/, ' |'), `|${' --- |'.repeat(2 + keys.length)}`)
     for (const e of rows) lines.push(`| ${e.name} | ${e.id} | ${keys.map(k => String(e.stats[k] ?? '')).join(' | ')} |`.replace(/ \|  \|$/, ' |'))
     lines.push('')
+  }
+  return lines.join('\n')
+}
+
+/** The generated 元素设定 chapter: every element's 设定 by type (elements without one are left out). */
+export function loreChapter(elements: readonly ElementView[], elementTypes: readonly string[]): string {
+  const written = elements.filter(e => e.lore !== '')
+  if (written.length === 0) return ''
+  const types = [...elementTypes, ...written.map(e => e.type).filter(t => !elementTypes.includes(t))]
+  const lines = ['# 元素设定', '', '（由元素文件里的设定自动汇总，在「元素」里打开一个元素就能改。）', '']
+  for (const type of types) {
+    const rows = written.filter(e => e.type === type)
+    if (rows.length === 0) continue
+    lines.push(`## ${type}`, '')
+    for (const e of rows) lines.push(`### ${e.name}`, '', e.lore, '')
   }
   return lines.join('\n')
 }

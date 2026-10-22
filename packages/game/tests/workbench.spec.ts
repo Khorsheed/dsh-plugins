@@ -77,16 +77,50 @@ describe('the user layer', () => {
     expect((await store.view(p.id))?.pending.map(x => x.key)).toEqual(['design:core-loop'])
   })
 
-  it('edits an element in the working file and in the live version, and records it', async () => {
+  it('edits an element in the working file only, until the user commits it as a version', async () => {
     const p = await project()
     await store.checkTurn(session, 0, 2)
-    const edited = await store.editElement(p.id, 'fog', { look: { ...LOOK, palette: ['#000000', '#ff3864'] }, fields: { speed: 9 } }, session)
+    const edited = await store.editElement(p.id, 'fog', { look: { ...LOOK, palette: ['#000000', '#ff3864'] }, fields: { speed: 9, lore: '雾里生的怪，怕光' } }, session)
     expect(edited.ok).toBe(true)
-    const working = JSON.parse(await readFile(join(p.root, 'elements/units.json'), 'utf8')) as { speed: number; look: { palette: string[] } }[]
-    expect(working[0]).toMatchObject({ speed: 9, look: { palette: ['#000000', '#ff3864'] } })
+    const working = JSON.parse(await readFile(join(p.root, 'elements/units.json'), 'utf8')) as { speed: number; lore: string; look: { palette: string[] } }[]
+    expect(working[0]).toMatchObject({ speed: 9, lore: '雾里生的怪，怕光', look: { palette: ['#000000', '#ff3864'] } })
+    // The play area keeps its version until the commit.
     const live = JSON.parse(await readFile(join(p.root, '.game/versions/1/elements/units.json'), 'utf8')) as { speed: number }[]
-    expect(live[0]?.speed).toBe(9)
-    expect((await store.view(p.id))?.pending.map(x => x.key).sort()).toEqual(['fields:fog', 'look:fog'])
+    expect(live[0]?.speed).not.toBe(9)
+    let view = await store.view(p.id)
+    expect(view?.pending.map(x => x.key).sort()).toEqual(['fields:fog', 'look:fog', 'lore:fog'])
+    expect(view?.uncommitted.map(x => x.text)).toEqual(['雾怪的外观', '雾怪的设定', '雾怪的speed'])
+    expect(view?.elements[0]).toMatchObject({ lore: '雾里生的怪，怕光' })
+    expect(view?.elements[0]?.stats).not.toHaveProperty('lore')
+    expect(view?.chapters.find(c => c.id === 'lore')?.text).toContain('### 雾怪\n\n雾里生的怪，怕光')
+
+    expect(await store.commit(p.id, session)).toEqual({ ok: true, kind: 'deployed', version: 2 })
+    view = await store.view(p.id)
+    expect(view?.current?.note).toBe('面板修改：雾怪的外观、雾怪的设定、雾怪的speed')
+    expect(view?.uncommitted).toEqual([])
+    const committed = JSON.parse(await readFile(join(p.root, '.game/versions/2/elements/units.json'), 'utf8')) as { speed: number }[]
+    expect(committed[0]?.speed).toBe(9)
+    // Nothing left to commit; the agent reads the pending list once.
+    expect(await store.commit(p.id, session)).toEqual({ ok: true, kind: 'unchanged' })
+    await store.clearPending(p.id)
+    expect((await store.view(p.id))?.pending).toEqual([])
+  })
+
+  it('folds uncommitted panel edits into whichever version comes next, and keeps them on a failed commit', async () => {
+    const failing = { failures: [{ where: 'smoke', message: '运行报错' }], passed: 0 }
+    let next: { failures: { where: string; message: string }[]; passed: number } = { failures: [], passed: 1 }
+    store = new GameService({ fs: { sandboxMode: undefined }, get: () => undefined } as unknown as Context, { stateRoot: join(dir, 'state') },
+      { checker: { run: async () => next, dispose: async () => {} }, writer: put })
+    const p = await project()
+    await store.checkTurn(session, 0, 2)
+    await store.editElement(p.id, 'fog', { fields: { speed: 3 } }, session)
+    next = failing
+    expect(await store.commit(p.id, session)).toEqual({ ok: true, kind: 'failed', failures: [{ where: 'smoke', message: '运行报错' }] })
+    expect((await store.view(p.id))?.uncommitted).toHaveLength(1)
+    next = { failures: [], passed: 1 }
+    // The agent's next version carries them.
+    expect(await store.checkTurn(session, 0, 2)).toMatchObject({ kind: 'pass', deployed: { version: 2, note: '面板修改：雾怪的speed' } })
+    expect((await store.view(p.id))?.uncommitted).toEqual([])
   })
 
   it('stores up to 3 look proposals and applies the picked one', async () => {
@@ -104,6 +138,7 @@ describe('the user layer', () => {
     expect(view?.elements[0]?.look?.palette).toEqual(['#ffffff'])
     expect(view?.proposals[0]?.picked).toBe(1)
     expect(view?.pending.find(x => x.key === 'look:fog')?.text).toContain('选了「B」')
+    expect(view?.uncommitted.map(x => x.key)).toEqual(['look:fog'])
   })
 
   it('rejects candidates, rolls back, diffs versions, and forces a candidate after a restyle request', async () => {

@@ -1,7 +1,8 @@
 /**
  * The game tab body — the game-design workbench beside the conversation.
  * With a project bound: a header (title, style, live version, the
- * auto-confirm switch) over four views — 试玩 (stage + parameter drawer),
+ * auto-confirm switch), the commit bar while panel edits wait to become a
+ * version, and four views — 试玩 (stage + parameter drawer),
  * 元素 (cards, look editor, proposals), 策划 (one-pager, pillars, chapters)
  * and 版本 (checks, timeline, log, export). Without one: how to start, the
  * style gallery, and the existing projects.
@@ -12,10 +13,9 @@ import {
 } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
 import { Switch, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
 import { artStyleLabel } from '../project.ts'
-import { PANEL_CHANGES_MARK } from '../types.ts'
-import type { ProjectView, SessionGameState } from '../types.ts'
+import type { CommitResult, ProjectView, SessionGameState } from '../types.ts'
 import { exportHtml } from '../vfs.ts'
-import type { GameTabProps, NavTarget, ViewProps } from './contract.ts'
+import { failureOf, type GameTabProps, type NavTarget, type ViewProps } from './contract.ts'
 import { DesignView } from './DesignView.tsx'
 import { ElementsView } from './ElementsView.tsx'
 import { PlayView } from './PlayView.tsx'
@@ -25,23 +25,6 @@ import { VersionsView } from './VersionsView.tsx'
 import css from './GameTab.module.css'
 
 type View = 'play' | 'elements' | 'design' | 'versions'
-
-/** Per-viewer: offer to tell the agent after a change (default on). */
-const ASK_KEY = 'dsh-game:ask-send'
-function readAsk(): boolean {
-  try {
-    return localStorage.getItem(ASK_KEY) !== 'off'
-  } catch {
-    return true
-  }
-}
-function writeAsk(on: boolean): void {
-  try {
-    localStorage.setItem(ASK_KEY, on ? 'on' : 'off')
-  } catch {
-    // Per-viewer convenience only.
-  }
-}
 
 const RefreshIcon = <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.6-3.7M13 3v2.6h-2.6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" /></svg>
 const SwitchIcon = <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 5h9l-2-2M13 11H4l2 2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" /></svg>
@@ -59,11 +42,8 @@ export function GameTab(props: GameTabProps): ReactNode {
   const [picking, setPicking] = useState(false)
   const [styling, setStyling] = useState(false)
   const [openElement, setOpenElement] = useState<string | null>(null)
-  const [liveElement, setLiveElement] = useState<Record<string, unknown> | null>(null)
   const [toastText, setToastText] = useState<string | null>(null)
   const [openChapter, setOpenChapter] = useState<string | null>(null)
-  const [nudge, setNudge] = useState<{ key: string; title: string } | null>(null)
-  const [ask, setAsk] = useState(readAsk)
   const toastTimer = useRef<ReturnType<typeof setTimeout>>()
 
   const refresh = useCallback(() => { touch(sessionId) }, [touch, sessionId])
@@ -99,7 +79,6 @@ export function GameTab(props: GameTabProps): ReactNode {
 
   const viewProps: ViewProps = {
     t, sessionId, api, refresh, toast, insertDraft: text => insertDraft(sessionId, text), insertRef: ref => props.insertRef(sessionId, ref),
-    changed: (key, title) => { if (ask) setNudge({ key, title }) },
   }
   const project = state?.bound ?? null
   const choose = (projectId: string | null): void => {
@@ -154,28 +133,10 @@ export function GameTab(props: GameTabProps): ReactNode {
     </PanelRoot>
   }
 
-  const nudgeItem = nudge === null ? undefined : project.pending.find(x => x.key === nudge.key)
-  const nudgeBar = nudge !== null && nudgeItem !== undefined && <div className={css.nudge} role="status">
-    <span className={css.nudgeText}><strong>{nudge.title}</strong>{t('nudge.ask')}</span>
-    <span className={css.nudgeActions}>
-      <button type="button" className={css.primary} onClick={() => {
-        if (insertDraft(sessionId, [`${PANEL_CHANGES_MARK}${t('dock.draftLead')}`, `- ${nudgeItem.text}`, '', ''].join('\n'))) toast(t('nudge.written'))
-        setNudge(null)
-      }}>{t('nudge.write')}</button>
-      <button type="button" className={css.ghost} onClick={() => {
-        void api.dropPending(sessionId, project.id, nudge.key).then(refresh)
-        setNudge(null)
-      }}>{t('nudge.skip')}</button>
-      <button type="button" className={css.link} onClick={() => { setNudge(null) }}>{t('nudge.later')}</button>
-    </span>
-    <button type="button" className={css.nudgeOff} onClick={() => { writeAsk(false); setAsk(false); setNudge(null); toast(t('nudge.offToast')) }}>{t('nudge.off')}</button>
-  </div>
-
   return <ProjectWorkbench {...viewProps} project={project} view={view} setView={v => { setView(v); if (v !== 'elements') setOpenElement(null); if (v !== 'design') setOpenChapter(null) }}
-    nudgeBar={nudgeBar} openChapter={openChapter} setOpenChapter={setOpenChapter}
-    ask={ask} toggleAsk={() => { writeAsk(!ask); setAsk(!ask); toast(ask ? t('nudge.offToast') : t('nudge.onToast')) }}
+    openChapter={openChapter} setOpenChapter={setOpenChapter}
     styling={styling} setStyling={setStyling} openElement={openElement} setOpenElement={setOpenElement}
-    liveElement={liveElement} setLiveElement={setLiveElement} onPickProject={() => { setPicking(true) }} foot={foot} />
+    onPickProject={() => { setPicking(true) }} foot={foot} />
 }
 
 /** The bound-project workbench. */
@@ -187,15 +148,10 @@ function ProjectWorkbench(p: ViewProps & {
   setStyling: (on: boolean) => void
   openElement: string | null
   setOpenElement: (id: string | null) => void
-  liveElement: Record<string, unknown> | null
-  setLiveElement: (el: Record<string, unknown>) => void
   onPickProject: () => void
   foot: ReactNode
-  nudgeBar: ReactNode
   openChapter: string | null
   setOpenChapter: (id: string | null) => void
-  ask: boolean
-  toggleAsk: () => void
 }): ReactNode {
   const { t, sessionId, api, project, view, setView, styling, setStyling, refresh, toast, insertDraft } = p
   const autoConfirm = project.manifest?.autoConfirm ?? true
@@ -232,17 +188,12 @@ function ProjectWorkbench(p: ViewProps & {
       meta={<span className={css.headMeta}>
         {style !== undefined && <Tag tone="quiet">{artStyleLabel(style)}</Tag>}
         <Tag tone="quiet">{project.current === null ? t('meta.noVersion') : t('meta.version', { version: project.current.version })}</Tag>
-        {project.pending.length > 0 && <Tag tone="outline">{t('meta.pending', { count: project.pending.length })}</Tag>}
       </span>}
       extra={<span className={css.switches}>
         <span className={css.switch} title={autoConfirm ? t('autoConfirm.onHint') : t('autoConfirm.offHint')}>
           <Switch checked={autoConfirm} label={t('autoConfirm.label')}
             onChange={next => { void api.setAutoConfirm(sessionId, project.id, next).then(() => { toast(next ? t('toast.autoOn') : t('toast.autoOff')); refresh() }) }} />
           <span className={css.switchLabel}>{t('autoConfirm.label')}</span>
-        </span>
-        <span className={css.switch} title={t('nudge.switchHint')}>
-          <Switch checked={p.ask} label={t('nudge.switch')} onChange={() => { p.toggleAsk() }} />
-          <span className={css.switchLabel}>{t('nudge.switch')}</span>
         </span>
       </span>}
       actions={actions}
@@ -275,12 +226,64 @@ function ProjectWorkbench(p: ViewProps & {
         })
       }} />
     </div>}
-    {p.nudgeBar}
-    {view === 'play' && <PlayView {...p} liveElement={p.liveElement}
+    <CommitBar {...p} project={project} onOpenVersions={() => { setView('versions') }} />
+    {view === 'play' && <PlayView {...p}
       onOpenElement={id => { p.setOpenElement(id); setView('elements') }} onOpenVersions={() => { setView('versions') }} />}
-    {view === 'elements' && <ElementsView {...p} openId={p.openElement} onOpen={p.setOpenElement} onLiveElement={p.setLiveElement} />}
+    {view === 'elements' && <ElementsView {...p} openId={p.openElement} onOpen={p.setOpenElement} />}
     {view === 'design' && <DesignView {...p} openChapter={p.openChapter} onOpenChapter={p.setOpenChapter} onStyle={() => { setStyling(true) }} />}
     {view === 'versions' && <VersionsView {...p} />}
     {p.foot}
   </PanelRoot>
+}
+
+/**
+ * 提交为新版本: panel edits change the working files only; this bar lists
+ * them and cuts a version from them (the same checks a turn runs). A failure
+ * stays in the bar with a way to hand it to the agent.
+ */
+function CommitBar({ t, sessionId, api, project, refresh, toast, insertDraft, onOpenVersions }: ViewProps & {
+  project: ProjectView
+  onOpenVersions: () => void
+}): ReactNode {
+  const [busy, setBusy] = useState(false)
+  const [failed, setFailed] = useState<Extract<CommitResult, { kind: 'failed' }>['failures'] | null>(null)
+  const edits = project.uncommitted
+  useEffect(() => { setFailed(null) }, [project.id])
+  if (edits.length === 0 && failed === null) return null
+  const commit = (): void => {
+    setBusy(true)
+    setFailed(null)
+    void api.commit(sessionId, project.id).then(r => {
+      setBusy(false)
+      const code = failureOf(r)
+      if (code !== undefined || !r.ok || !r.value.ok) { toast(t('commit.error', { error: code ?? 'io' })); return }
+      const result = r.value
+      if (result.kind === 'deployed') toast(t('commit.deployed', { version: result.version }))
+      else if (result.kind === 'candidate') toast(t('commit.candidate', { version: result.version }))
+      else if (result.kind === 'unchanged') toast(t('commit.unchanged'))
+      else if (result.kind === 'no-entry') toast(t('commit.noEntry'))
+      else if (result.kind === 'failed') setFailed(result.failures)
+      refresh()
+    })
+  }
+  const shown = edits.slice(0, 3).map(e => e.text).join('、') + (edits.length > 3 ? t('commit.more', { count: edits.length - 3 }) : '')
+  return <div className={css.commitBar} data-state={failed === null ? 'ready' : 'failed'} role="status">
+    {failed === null
+      ? <span className={css.commitText}><strong>{t('commit.count', { count: edits.length })}</strong><span className={css.commitList}>{shown}</span></span>
+      : <span className={css.commitText}>
+          <strong>{t('commit.failed')}</strong>
+          <span className={css.commitList}>{failed.slice(0, 2).map(f => `${f.where}：${f.message}`).join('；')}</span>
+        </span>}
+    <span className={css.commitActions}>
+      {failed !== null && <>
+        <button type="button" className={css.link} onClick={onOpenVersions}>{t('commit.details')}</button>
+        <button type="button" className={css.ghost} onClick={() => {
+          if (insertDraft(t('draft.commitFailed', { list: failed.map(f => `- ${f.where}：${f.message}`).join('\n') }))) toast(t('toast.drafted'))
+        }}>{t('commit.toAgent')}</button>
+      </>}
+      {edits.length > 0 && <button type="button" className={css.primary} disabled={busy} onClick={commit}>
+        {busy ? t('commit.busy') : failed === null ? t('commit.go') : t('commit.retry')}
+      </button>}
+    </span>
+  </div>
 }

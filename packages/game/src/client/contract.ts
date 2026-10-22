@@ -9,10 +9,8 @@ import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 // Type-only: pulls the right-Sidebar SlotMap seats ('sidebar.right.pane.tab').
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
-// Type-only: pulls ui-conversation's SlotMap merge ('conversation.input.dock').
-import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from './locales.ts'
-import type { DeleteProjectResult, GameResult, PlayBundle, ProjectCard, SessionGameState, TurnReport, VersionDiff } from '../types.ts'
+import type { CommitResult, DeleteProjectResult, GameResult, PlayBundle, ProjectCard, SessionGameState, TurnReport, VersionDiff } from '../types.ts'
 
 type R<T> = Promise<RemoteResult<T>>
 type Ok<T extends object = object> = GameResult<{ readonly ok: true } & T>
@@ -27,6 +25,7 @@ export interface GameApi {
   bundle: (projectId: string, which: 'current' | 'candidate') => R<Ok<{ readonly bundle: PlayBundle }>>
   versionBundle: (projectId: string, version: number) => R<Ok<{ readonly bundle: PlayBundle }>>
   confirm: (sid: SessionId, projectId: string) => R<Ok<{ readonly version: number }>>
+  commit: (sid: SessionId, projectId: string) => R<GameResult<CommitResult>>
   reject: (sid: SessionId, projectId: string, reason: string) => R<Ok>
   rollback: (sid: SessionId, projectId: string, version: number) => R<Ok>
   diff: (projectId: string, from: number, to: number) => R<Ok<{ readonly diff: VersionDiff }>>
@@ -51,7 +50,7 @@ export interface NavTarget {
   readonly chapterId?: string
 }
 
-/** What the tab body and the dock get from the plugin. */
+/** What the tab body gets from the plugin. */
 export interface GameTabInjected {
   /** Open the game tab at a place (the turn card's 查看). */
   openAt: (target: NavTarget) => void
@@ -80,12 +79,6 @@ export type GameTabProps =
   & InjectFace<GameTabInjected>
   & PropsLocale<'game'>
 
-/** Full props of the composer dock (将附上). */
-export type GameDockProps =
-  PropsRuntime<'conversation.input.dock'>
-  & InjectFace<GameTabInjected>
-  & PropsLocale<'game'>
-
 /** What every view inside the tab receives. */
 export interface ViewProps {
   readonly t: GameTabProps['t']
@@ -94,12 +87,10 @@ export interface ViewProps {
   readonly insertDraft: (text: string) => boolean
   /** Insert a reference chip into the composer (see `GameTabInjected.insertRef`). */
   readonly insertRef: (ref: { readonly label: string; readonly text: string }) => boolean
-  /** Re-read the state after a mutation (and tell the dock). */
+  /** Re-read the state after a mutation (and tell the other game surfaces). */
   readonly refresh: () => void
   /** Show a short confirmation line at the panel's foot. */
   readonly toast: (text: string) => void
-  /** A change landed that the agent may want to hear about: offer to send it (pending key + a short title). */
-  readonly changed: (key: string, title: string) => void
 }
 
 /** A Remote call's game-level failure code, or undefined on success. */

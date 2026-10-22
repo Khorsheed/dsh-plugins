@@ -105,7 +105,7 @@ export function DesignView(props: DesignViewProps): ReactNode {
 
 /** The one-pager (game.json): pitch, element types, style, pillars — read, or edited in place. */
 function OnePager(props: DesignViewProps): ReactNode {
-  const { t, sessionId, api, project, onStyle, refresh, changed } = props
+  const { t, sessionId, api, project, onStyle, refresh } = props
   const manifest = project.manifest
   const [editing, setEditing] = useState(false)
   const [pitch, setPitch] = useState('')
@@ -144,7 +144,6 @@ function OnePager(props: DesignViewProps): ReactNode {
               void api.setOnePager(sessionId, project.id, { pitch, elementTypes: types, pillars }).then(r => {
                 if (failureOf(r) !== undefined) { setError(t('design.onePagerInvalid')); return }
                 setEditing(false)
-                changed('onepager', t('nudge.onePager'))
                 refresh()
               })
             }}>{t('common.save')}</button>
@@ -180,7 +179,6 @@ function ChapterBody(props: DesignViewProps & { chapter: ChapterView }): ReactNo
           void api.writeChapter(sessionId, project.id, chapter.id, text).then(r => {
             if (failureOf(r) === undefined) {
               setEditing(false)
-              props.changed(`design:${chapter.id}`, t('nudge.chapter', { title: chapter.title }))
               refresh()
             }
           })

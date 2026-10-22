@@ -21,7 +21,6 @@
     "src/client/definition.tsx",
     "src/client/DesignView.tsx",
     "src/client/ElementsView.tsx",
-    "src/client/GameDock.tsx",
     "src/client/GameTab.tsx",
     "src/client/index.ts",
     "src/client/locales.ts",

@@ -17,8 +17,6 @@ import css from './GameTab.module.css'
 /** Props of the play view. */
 export interface PlayViewProps extends ViewProps {
   readonly project: ProjectView
-  /** The element edit the elements view made last (pushed into the frame). */
-  readonly liveElement: Record<string, unknown> | null
   readonly onOpenElement: (id: string) => void
   readonly onOpenVersions: () => void
 }
@@ -37,7 +35,7 @@ function fmt(value: number, step: number): string {
 
 /** The play view. */
 export function PlayView(props: PlayViewProps): ReactNode {
-  const { t, sessionId, api, project, refresh, toast, insertDraft, insertRef, liveElement, onOpenElement, onOpenVersions, changed } = props
+  const { t, sessionId, api, project, refresh, toast, insertDraft, insertRef, onOpenElement, onOpenVersions } = props
   const [which, setWhich] = useState<'current' | 'candidate'>('current')
   const [bundle, setBundle] = useState<PlayBundle | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -158,7 +156,7 @@ export function PlayView(props: PlayViewProps): ReactNode {
                 <span className={css.posterPlay}><span className={css.posterIcon} aria-hidden="true">▶</span>{t('play.start', { version })}</span>
               </button>
           : bundle !== null && <PlayFrame projectId={project.id} version={bundle.version} files={bundle.files} run={run}
-              params={values} element={liveElement} picking={picking} label={`${project.title} v${bundle.version}`}
+              params={values} picking={picking} label={`${project.title} v${bundle.version}`}
               onPicked={onPicked} hoverLabel={ref => chipOf(ref).label} highlight={highlight} onErrors={setErrors} onReport={report} />}
       </div>
       {project.candidate !== null && <div className={css.candBar} data-tone="warn">
@@ -182,7 +180,7 @@ export function PlayView(props: PlayViewProps): ReactNode {
             const rejected = project.candidate?.version
             void api.reject(sessionId, project.id, reason).then(() => {
               setRejecting(false); setReason(''); setWhich('current')
-              if (rejected !== undefined) changed(`reject:${rejected}`, t('nudge.rejected', { version: rejected }))
+              if (rejected !== undefined) toast(t('nudge.rejected', { version: rejected }))
               refresh()
             })
           }}>{t('play.rejectGo')}</button>
@@ -210,7 +208,15 @@ export function PlayView(props: PlayViewProps): ReactNode {
           if (insertDraft(`${PANEL_CHANGES_MARK}${t('params.tellLead', { list })}\n\n`)) toast(t('toast.drafted'))
         }}>{t('params.tell')}</button>
         <button type="button" className={css.ghost} disabled={tuned.length === 0} onClick={() => {
-          void api.finalizeParams(sessionId, project.id).then(() => { changed('params-final', t('nudge.finalized')); refresh() })
+          // 定稿 writes the defaults into game.json and commits at once: the play area moves to a version that has them.
+          void api.finalizeParams(sessionId, project.id).then(() => api.commit(sessionId, project.id)).then(r => {
+            setLocal({})
+            const result = failureOf(r) === undefined && r.ok && r.value.ok ? r.value : undefined
+            toast(result?.kind === 'deployed' ? t('commit.deployed', { version: result.version })
+              : result?.kind === 'candidate' ? t('commit.candidate', { version: result.version })
+              : result?.kind === 'failed' ? t('commit.failedToast') : t('nudge.finalized'))
+            refresh()
+          })
         }}>{t('params.finalize')}</button>
       </header>
       {params.map(p => {

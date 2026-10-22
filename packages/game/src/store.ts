@@ -32,12 +32,12 @@ import { kitOf, withKitRuntime, type RuntimeKit } from './kits/index.ts'
 import { systemTrash, type TrashMover } from './trash.ts'
 import { bundleOf, fingerprintOf, inside, readJson, readText, walk, writeAtomic, type WalkedFile } from './fsutil.ts'
 import {
-  artStyleLabel, chapterStatus, elementsChapter, gate, isBuildFile, parseManifest,
+  artStyleLabel, chapterStatus, elementsChapter, gate, loreChapter, isBuildFile, parseManifest,
   patchElementText, listOf, pillarNotes, resolveArtStyle, serializeManifest, slugOf, validateElements, type CreateRequest,
 } from './project.ts'
 import {
-  CHAPTERS, MANIFEST_FILE, PANEL_CHANGES_MARK, STATE_DIR,
-  type AnyLook, type ChapterView, type DeleteProjectResult, type CheckFailure, type CheckRecord, type GameManifest, type GameResult,
+  CHAPTERS, LORE_MAX, MANIFEST_FILE, PANEL_CHANGES_MARK, STATE_DIR,
+  type AnyLook, type ChapterView, type CommitResult, type DeleteProjectResult, type CheckFailure, type CheckRecord, type GameManifest, type GameResult,
   type LogEntry, type LookProposal, type PendingChange, type PlayBundle, type ProjectCard, type ProjectRow, type ProjectView, type TurnReport,
   type SessionGameState, type VersionDiff, type VersionRecord, type VersionRow,
 } from './types.ts'
@@ -73,7 +73,10 @@ interface Registry {
 /** The user layer (`.game/user.json`): slider overrides, changes waiting for the next send, a pending restyle. */
 interface UserLayer {
   params: Record<string, number>
+  /** Panel changes the agent has not seen yet (it reads them in `game_read`). */
   pending: PendingChange[]
+  /** Panel edits in the working files that no version carries yet (the user commits them). */
+  edits: PendingChange[]
   restyleTo?: string
 }
 
@@ -467,10 +470,11 @@ export class GameService {
     for (const spec of CHAPTERS) {
       const text = spec.id === 'elements'
         ? elementsChapter(elements, manifest?.elementTypes ?? [])
+        : spec.id === 'lore' ? loreChapter(elements, manifest?.elementTypes ?? [])
         : spec.id === 'playtest' ? playtest
         : spec.id === 'pillars' ? pillarNotes((await readText(join(row.root, spec.file))) ?? '', manifest)
         : (await readText(join(row.root, spec.file))) ?? ''
-      const source = spec.id === 'playtest' ? join(row.root, STATE_DIR, 'playtest-log.jsonl') : spec.id === 'elements' ? join(row.root, 'elements') : join(row.root, spec.file)
+      const source = spec.id === 'playtest' ? join(row.root, STATE_DIR, 'playtest-log.jsonl') : spec.id === 'elements' || spec.id === 'lore' ? join(row.root, 'elements') : join(row.root, spec.file)
       const mtime = await stat(source).then(info => info.mtimeMs, () => 0)
       chapters.push({
         id: spec.id, title: spec.title, file: spec.file, text, generated: spec.generated === true, mtime,
@@ -499,6 +503,7 @@ export class GameService {
       hasEntry: await stat(join(row.root, 'index.html')).then(() => true, () => false),
       paramOverrides,
       pending: user.pending,
+      uncommitted: user.edits,
       proposals: await this.proposals(row.root),
       versions: await this.versionRows(row.root),
       log: await this.logEntries(row.root),
@@ -585,6 +590,37 @@ export class GameService {
   async checkTurn(session: Session, attempt: number, cap: number): Promise<TurnCheckOutcome> {
     const row = await this.boundProject(session.id)
     if (row === undefined) return { kind: 'skip' }
+    return this.checkRow(row, session, attempt, cap)
+  }
+
+  /**
+   * 提交为新版本: the user commits the panel edits sitting in the working
+   * files. Runs the same checks as the end of a turn (no fix cap — nothing
+   * is steered); a pass cuts the version, whose note lists the edits.
+   */
+  async commit(projectId: string, session: Session | undefined): Promise<GameResult<CommitResult>> {
+    const row = await this.row(projectId)
+    if (row === undefined) return { ok: false, error: 'not-found' }
+    if (!this.writable(session)) return { ok: false, error: 'denied' }
+    const outcome = await this.checkRow(row, session, 0, Number.POSITIVE_INFINITY)
+    this.notify(projectId)
+    if (outcome.kind === 'fail') return { ok: true, kind: 'failed', failures: outcome.record.failures.slice(0, 8).map(f => ({ where: f.where, message: f.message.slice(0, 300) })) }
+    if (outcome.kind === 'pass') {
+      if (outcome.deployed !== null) return { ok: true, kind: 'deployed', version: outcome.deployed.version }
+      if (outcome.candidate !== null) return { ok: true, kind: 'candidate', version: outcome.candidate.version }
+      return { ok: false, error: 'denied' }
+    }
+    if (!await stat(join(row.root, 'index.html')).then(() => true, () => false)) return { ok: true, kind: 'no-entry' }
+    // Same build as the last check: a passed one already carries the edits (edited back, say); a given-up one still fails.
+    const last = await readJson<CheckRecord>(join(row.root, STATE_DIR, 'checks.json'))
+    if (last !== undefined && !last.ok) return { ok: true, kind: 'failed', failures: last.failures.slice(0, 8).map(f => ({ where: f.where, message: f.message.slice(0, 300) })) }
+    const user = await this.userLayer(row.root)
+    user.edits = []
+    await this.saveUserLayer(row.root, user)
+    return { ok: true, kind: 'unchanged' }
+  }
+
+  private async checkRow(row: ProjectRow, session: Session | undefined, attempt: number, cap: number): Promise<TurnCheckOutcome> {
     const root = row.root
     if (!await stat(join(root, 'index.html')).then(() => true, () => false)) return { kind: 'skip' }
     const { build, tests, fingerprint } = await this.snapshot(root)
@@ -632,15 +668,20 @@ export class GameService {
     if (browser.screenshot !== undefined) await writeAtomic(join(root, STATE_DIR, 'shots', `${version}.webp`), Buffer.from(browser.screenshot, 'base64'))
     const user = await this.userLayer(root)
     const restyle = user.restyleTo
+    // Every version carries whatever panel edits sit in the working files, whoever cut it.
+    const edits = user.edits.map(e => e.text)
     const versionRecord: VersionRecord = {
       version, at: record.at, fingerprint,
-      note: restyle !== undefined ? `换成「${artStyleLabel(restyle)}」风格` : browser.passed > 0 ? `通过检查（${browser.passed} 个用例）` : '通过检查',
+      note: restyle !== undefined ? `换成「${artStyleLabel(restyle)}」风格`
+        : edits.length > 0 ? `面板修改：${edits.join('、')}`
+        : browser.passed > 0 ? `通过检查（${browser.passed} 个用例）` : '通过检查',
     }
     await this.appendVersion(root, { ...versionRecord, passed: browser.passed })
     // A restyle always lands as a candidate, whatever auto-confirm says.
     const autoConfirm = (parsed?.ok === true ? parsed.manifest.autoConfirm : true) && restyle === undefined
-    if (restyle !== undefined) {
+    if (restyle !== undefined || edits.length > 0) {
       delete user.restyleTo
+      user.edits = []
       await this.saveUserLayer(root, user)
     }
     if (autoConfirm) {
@@ -780,6 +821,7 @@ export class GameService {
       params: raw?.params !== null && typeof raw?.params === 'object' ? { ...raw.params } : {},
       // `param:` entries came from the retired slider auto-pending (a slider is a trial now).
       pending: Array.isArray(raw?.pending) ? raw.pending.filter(p => typeof p?.key === 'string' && typeof p.text === 'string' && !p.key.startsWith('param:')) : [],
+      edits: Array.isArray(raw?.edits) ? raw.edits.filter(p => typeof p?.key === 'string' && typeof p.text === 'string') : [],
       ...(typeof raw?.restyleTo === 'string' ? { restyleTo: raw.restyleTo } : {}),
     }
   }
@@ -794,6 +836,23 @@ export class GameService {
     user.pending = user.pending.filter(p => p.key !== change.key)
     if (change.text !== '') user.pending.push(change)
     await this.saveUserLayer(root, user)
+  }
+
+  /** Add (or replace by key) one uncommitted panel edit. */
+  private async addEdit(root: string, change: PendingChange): Promise<void> {
+    const user = await this.userLayer(root)
+    user.edits = [...user.edits.filter(p => p.key !== change.key), change]
+    await this.saveUserLayer(root, user)
+  }
+
+  /** The agent has read the pending list (`game_read`): it is no longer news. */
+  async clearPending(projectId: string): Promise<void> {
+    const row = await this.row(projectId)
+    if (row === undefined) return
+    const user = await this.userLayer(row.root)
+    if (user.pending.length === 0) return
+    user.pending = []
+    await this.saveUserLayer(row.root, user)
   }
 
   /** Drop one pending change by key (the dock's ×). */
@@ -870,6 +929,7 @@ export class GameService {
     user.params = {}
     user.pending = user.pending.filter(p => !p.key.startsWith('param:'))
     user.pending.push({ key: 'params-final', text: `定稿参数：${summary}（已写进 game.json）` })
+    user.edits = [...user.edits.filter(e => e.key !== 'params'), { key: 'params', text: `参数定稿 ${summary}` }]
     await this.saveUserLayer(row.root, user)
     await this.log(row.root, true, `定稿参数：${summary}`)
     await this.touch(projectId)
@@ -890,9 +950,10 @@ export class GameService {
   }
 
   /**
-   * Edit one element in place — its look, or scalar fields. The edit lands
-   * in the working file AND in the version on the play area, so it shows at
-   * once; it rides the next send as a pending change.
+   * Edit one element in the working files — its look, or scalar fields
+   * (`lore`, the 设定 text, included). The play area keeps its version until
+   * the user commits (`commit`); the edit is listed as uncommitted, and as
+   * pending for the agent.
    */
   async editElement(
     projectId: string,
@@ -913,32 +974,30 @@ export class GameService {
     }
     for (const [key, value] of Object.entries(patch.fields ?? {})) {
       if (key === 'id' || key === 'look' || key.length > 40) continue
-      changes[key] = value === null ? undefined : value
+      changes[key] = value === null ? undefined : key === 'lore' && typeof value === 'string' ? value.slice(0, LORE_MAX) : value
     }
     for (const f of files) {
       const next = patchElementText(f.data.toString('utf8'), elementId, changes)
       if (next === undefined) continue
-      const rel = `elements/${f.path}`
-      await writeAtomic(join(row.root, rel), next)
-      const current = await readJson<VersionRecord>(join(row.root, STATE_DIR, 'current.json'))
-      if (current !== undefined) {
-        const copy = join(row.root, STATE_DIR, 'versions', String(current.version), rel)
-        const copied = await readText(copy)
-        const patched = copied === undefined ? undefined : patchElementText(copied, elementId, changes)
-        if (patched !== undefined) await writeAtomic(copy, patched)
-      }
+      await writeAtomic(join(row.root, 'elements', f.path), next)
       const parsed = JSON.parse(next) as unknown
       const element = (Array.isArray(parsed) ? parsed : [parsed]).find(e => (e as { id?: unknown }).id === elementId) as Record<string, unknown>
       const name = typeof element.name === 'string' ? element.name : elementId
       if (changes.look !== undefined) {
         await this.addPending(row.root, { key: `look:${elementId}`, text: note ?? `改了「${name}」的外观（elements 文件里的 look 已更新）` })
+        await this.addEdit(row.root, { key: `look:${elementId}`, text: `${name}的外观` })
       }
-      const fieldKeys = Object.keys(changes).filter(k => k !== 'look')
+      if ('lore' in changes) {
+        await this.addPending(row.root, { key: `lore:${elementId}`, text: `改了「${name}」的设定（elements 文件里的 lore），按新设定调整它的行为和文案` })
+        await this.addEdit(row.root, { key: `lore:${elementId}`, text: `${name}的设定` })
+      }
+      const fieldKeys = Object.keys(changes).filter(k => k !== 'look' && k !== 'lore')
       if (fieldKeys.length > 0) {
         await this.addPending(row.root, {
           key: `fields:${elementId}`,
           text: `改了「${name}」的字段：${fieldKeys.map(k => `${k}=${changes[k] === undefined ? '（删除）' : String(changes[k])}`).join('、')}`,
         })
+        await this.addEdit(row.root, { key: `fields:${elementId}`, text: `${name}的${fieldKeys.join('、')}` })
       }
       await this.log(row.root, true, note ?? `用户编辑了元素「${name}」`)
       await this.touch(projectId)
@@ -1046,7 +1105,7 @@ export class GameService {
     const variant = proposal?.variants[index]
     if (proposal === undefined || variant === undefined) return { ok: false, error: 'not-found' }
     const edited = await this.editElement(projectId, elementId, { look: variant.look }, session,
-      `外观方案：用户选了「${variant.label}」${variant.note === '' ? '' : `（${variant.note}）`}，已替换进游戏`)
+      `外观方案：用户选了「${variant.label}」${variant.note === '' ? '' : `（${variant.note}）`}，已写进元素文件`)
     if (!edited.ok) return edited
     await writeAtomic(join(row.root, STATE_DIR, 'proposals.json'),
       `${JSON.stringify(list.map(p => (p === proposal ? { ...p, picked: index } : p)), null, 2)}\n`)

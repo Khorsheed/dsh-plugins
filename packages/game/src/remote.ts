@@ -9,7 +9,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { Context } from '@deepseek-ai/cordis'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { GameService } from './store.ts'
-import type { DeleteProjectResult, GameResult, PlayBundle, ProjectCard, SessionGameState, TurnReport, VersionDiff } from './types.ts'
+import type { CommitResult, DeleteProjectResult, GameResult, PlayBundle, ProjectCard, SessionGameState, TurnReport, VersionDiff } from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -77,6 +77,12 @@ export class GameRemoteService extends TypertRemoteService<GameRemoteConfig> {
   @Remote('confirm')
   confirm(agent: Agent, request: { projectId: string }): Promise<GameResult<{ readonly ok: true; readonly version: number }>> {
     return this.store.confirm(request.projectId, agent.session)
+  }
+
+  /** 提交为新版本: check the working files and cut a version carrying the panel edits. */
+  @Remote('commit')
+  commit(agent: Agent, request: { projectId: string }): Promise<GameResult<CommitResult>> {
+    return this.store.commit(request.projectId, agent.session)
   }
 
   /** Switch the project's auto-confirm. */
