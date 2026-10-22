@@ -1,7 +1,7 @@
 {
   "name": "@khorsheed/dsh-mission",
   "description": "Generic task management: runs of missions with template-declared state machines, deterministic guards, plan data (dependencies / schedules), attempts and checkpoints, append-only annotations, a releasable-state gate for irreversible resources, and gated run-bundle export",
-  "version": "0.2.0-rc.1",
+  "version": "0.3.0-rc.1",
   "publishConfig": {
     "access": "public"
   },
