@@ -48,14 +48,15 @@ const catalogSpecifier = ['@deepseek-ai/dsh-session', 'src', 'known-event-types'
 const catalogModule = await import(catalogSpecifier)
   .catch(() => import('@deepseek-ai/dsh-session')) as { KNOWN_SESSION_EVENT_TYPES: Set<string> }
 for (const type of ROOM_EVENT_TYPES) catalogModule.KNOWN_SESSION_EVENT_TYPES.add(type)
-import { composeRoomAgent, deriveSessionPreset, inspectCold, preloadPresetDerivationHost, presetDerivationHost, roomSessionPreset } from './agent-setup.ts'
+import { composeRoomAgent, deriveSessionPreset, probeAgentPresets, inspectCold, preloadPresetDerivationHost, presetDerivationHost, roomSessionPreset } from './agent-setup.ts'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 // Type-only: pulls the `room/*` SessionEventMap merges.
 import type {} from './types.ts'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { probeLocalAgent, probeLocalAgentRoster } from './adapter.ts'
 import { DispatchEngine, isRoomSource } from './dispatch.ts'
-import { coordinatorMember, memberId, isRoomLog, MAIN_AGENT_MEMBER, parseMentions, replay, ROOM_EVENT_TYPES } from './journal.ts'
+import { coordinatorMember, DEFAULT_ROOM_SETTINGS, memberId, isRoomLog, MAIN_AGENT_MEMBER, parseMentions, replay, ROOM_EVENT_TYPES, ROOM_ROLE_MAX } from './journal.ts'
+import { messageId, parseMessageRef, releaseIntent, sendOrHold, workingHop } from './messaging.ts'
 import type {
   RoomAddTaskRequest, RoomAddTaskResult,
   RoomCancelRequest, RoomCancelResult,
@@ -67,11 +68,11 @@ import type {
   RoomIsRoomRequest,
   RoomListProvidersRequest,
   RoomMemberMessage, RoomMemberMessageReceipt,
-  RoomMessageRequest, RoomMessageResult,
+  RoomMessageReceipt, RoomMessageRequest, RoomMessageResult, RoomRelay, RoomSetSettingsRequest, RoomSetSettingsResult,
   RoomPostMessageRequest, RoomPostMessageResult,
-  RoomProviderInfo, RoomProviderList,
+  RoomPresetInfo, RoomProviderInfo, RoomProviderList,
   RoomRelayResolveRequest, RoomRelayResolveResult,
-  RoomRemoveMemberRequest, RoomRemoveMemberResult,
+  RoomRemoveMemberRequest, RoomRemoveMemberResult, RoomRestoreMemberRequest, RoomRestoreMemberResult,
   RoomSetGoalRequest, RoomSetGoalResult,
   RoomState, RoomUpdateMemberRequest, RoomUpdateMemberResult,
   RoomUpdateTaskRequest, RoomUpdateTaskResult,
@@ -108,6 +109,22 @@ function validName(name: string): boolean {
 }
 
 /** A task title is the dispatch text's first line, truncated. */
+/**
+ * The receipt a sending model reads back: the message id and what happens
+ * next, or why it waits.
+ */
+function messageReceipt(receipt: RoomMessageReceipt, kind: 'task' | 'notify'): RoomMemberMessageReceipt {
+  if (receipt.held !== undefined) {
+    const why = receipt.held === 'paused' ? '房间已暂停，恢复后自动投递'
+      : receipt.held === 'hop-limit' ? '这条消息链已到跳数上限，等房间主人决定是否继续'
+        : '房间设置为成员间消息需房间主人确认'
+    return `pending-confirm （${why}）`
+  }
+  return kind === 'notify'
+    ? `sent #${receipt.messageId}（知会，不会回报）`
+    : `sent #${receipt.messageId}（${receipt.member} 做完后结果会自动回报给你，不用轮询）`
+}
+
 function taskTitle(text: string): string {
   const first = text.trim().split('\n', 1)[0] ?? ''
   return first.length > 60 ? `${first.slice(0, 60)}…` : first
@@ -320,8 +337,9 @@ export class RoomService extends TypertRemoteService {
   @Remote('listProviders')
   async listProviders(_request: RoomListProvidersRequest): Promise<RoomProviderList> {
     const localAgentAvailable = probeLocalAgent(this.ctx) !== undefined
+    const presets = await this.listPresets()
     const roster = probeLocalAgentRoster(this.ctx)
-    if (roster === undefined) return { localAgentAvailable, providers: [] }
+    if (roster === undefined) return { localAgentAvailable, providers: [], ...presets === undefined ? {} : { presets } }
     const providers: RoomProviderInfo[] = []
     for (const row of roster.roster()) {
       const status = await roster.statusOf(row.name)
@@ -336,7 +354,40 @@ export class RoomService extends TypertRemoteService {
         authenticated: status.authenticated,
       })
     }
-    return { localAgentAvailable, providers }
+    return { localAgentAvailable, providers, ...presets === undefined ? {} : { presets } }
+  }
+
+  /** The host's agent presets for a native member, or undefined without a registry. */
+  private async listPresets(): Promise<readonly RoomPresetInfo[] | undefined> {
+    const presets = probeAgentPresets(this.ctx)
+    if (presets?.list === undefined) return undefined
+    try {
+      const fallback = (await presets.resolve()).id
+      return (await presets.list()).map(row => ({
+        id: row.id, isDefault: row.id === fallback,
+        ...row.name === undefined ? {} : { name: row.name },
+        ...row.description === undefined ? {} : { description: row.description },
+        ...row.broken === undefined ? {} : { broken: row.broken },
+      }))
+    } catch { return undefined }
+  }
+
+  /**
+   * A native member's own session calling a room tool: the tools see the
+   * child session, so route to its room with the child as the authenticated
+   * actor instead of promoting the child into a room of its own.
+   * @param sessionId - the calling agent's session.
+   * @returns the room and actor, or undefined when the caller is no native member.
+   */
+  nativeRoute(sessionId: string): { readonly roomId: SessionId; readonly actor: string } | undefined {
+    const parent = this.ctx.sessions.get(SessionId(sessionId))?.header.parentSession
+    const room = parent === undefined ? undefined : this.ctx.sessions.get(parent)
+    if (room === undefined || parent === undefined) return undefined
+    const events = room.snapshotEvents()
+    if (!isRoomLog(events)) return undefined
+    return replay(events).members.some(member => member.kind === 'native' && member.childSessionId === sessionId)
+      ? { roomId: parent, actor: sessionId }
+      : undefined
   }
 
   /**
@@ -372,6 +423,8 @@ export class RoomService extends TypertRemoteService {
    * @returns the invitation receipt, or a rejection.
    */
   async inviteMember(request: RoomInviteRequest, invitedBy: 'human' | 'agent', actorChildSessionId?: string): Promise<RoomInviteResult> {
+    const routed = invitedBy === 'agent' && actorChildSessionId === undefined ? this.nativeRoute(request.sessionId) : undefined
+    if (routed !== undefined) return this.inviteMember({ ...request, sessionId: routed.roomId }, invitedBy, routed.actor)
     // Invite PROMOTES: inviting an agent into a plain session makes it a room.
     const loaded = await this.ensureRoom(request.sessionId)
     if (!loaded.ok) return { ok: false, error: loaded.error }
@@ -388,13 +441,28 @@ export class RoomService extends TypertRemoteService {
     if (request.firstTask !== undefined && request.firstTask.trim() === '') {
       return { ok: false, error: { code: 'empty-text' } }
     }
+    if (request.role !== undefined && request.role.trim().length > ROOM_ROLE_MAX) {
+      return { ok: false, error: { code: 'role-too-long' } }
+    }
     if (request.model !== undefined && request.model.trim() === '') {
       return { ok: false, error: { code: 'empty-text' } }
     }
-    if (probeLocalAgent(this.ctx) === undefined) {
+    const native = request.kind === 'native'
+    if (native && request.preset !== undefined) {
+      // A native member composes a host preset; reject an id the host does
+      // not declare instead of failing at the member's first round.
+      const presets = probeAgentPresets(this.ctx)
+      if (presets !== undefined) {
+        try { await presets.resolve(request.preset) } catch {
+          const available = (await presets.list?.())?.map(row => row.id) ?? []
+          return { ok: false, error: { code: 'unknown-preset', preset: request.preset, available } }
+        }
+      }
+    }
+    if (!native && probeLocalAgent(this.ctx) === undefined) {
       return { ok: false, error: { code: 'local-agent-unavailable' } }
     }
-    const roster = probeLocalAgentRoster(this.ctx)
+    const roster = native ? undefined : probeLocalAgentRoster(this.ctx)
     if (roster !== undefined) {
       // The same delegationProvider set listProviders serves: invite accepts
       // exactly what dispatch can resolve, and the rejection carries the
@@ -414,10 +482,12 @@ export class RoomService extends TypertRemoteService {
     loaded.session.append('room/member-added', {
       id: randomUUID(),
       name: request.name,
-      kind: 'cli',
-      provider: request.provider,
+      kind: native ? 'native' : 'cli',
+      provider: native ? 'dsh' : request.provider,
+      ...native && request.preset !== undefined ? { preset: request.preset } : {},
       invitedBy,
       ...request.instructions === undefined ? {} : { instructions: request.instructions },
+      ...request.role === undefined || request.role.trim() === '' ? {} : { role: request.role.trim() },
       ...request.cwd === undefined || request.cwd.trim() === '' ? {} : { cwd: request.cwd.trim() },
       ...request.model === undefined || request.model.trim() === '' ? {} : { model: request.model.trim() },
     })
@@ -480,7 +550,7 @@ export class RoomService extends TypertRemoteService {
     }
     if (request.cwd !== undefined && (member.childSessionId !== undefined || this.engine.hasPending(loaded.session, member.name))) return { ok: false, error: { code: 'member-cwd-bound' } }
     if (request.model !== undefined && member.childSessionId !== undefined) return { ok: false, error: { code: 'configuration-owned-by-core' } }
-    if (request.rename === undefined && request.instructions === undefined
+    if (request.rename === undefined && request.instructions === undefined && request.role === undefined
       && request.cwd === undefined && request.model === undefined) {
       return { ok: false, error: { code: 'nothing-to-update' } }
     }
@@ -496,6 +566,10 @@ export class RoomService extends TypertRemoteService {
     const instructions = typeof request.instructions === 'string' && request.instructions.trim() === ''
       ? null
       : request.instructions
+    const role = typeof request.role === 'string'
+      ? (request.role.trim() === '' ? null : request.role.trim())
+      : request.role
+    if (typeof role === 'string' && role.length > ROOM_ROLE_MAX) return { ok: false, error: { code: 'role-too-long' } }
     const cwd = typeof request.cwd === 'string'
       ? (request.cwd.trim() === '' ? null : request.cwd.trim())
       : request.cwd
@@ -506,6 +580,7 @@ export class RoomService extends TypertRemoteService {
       name: request.name,
       ...request.rename === undefined ? {} : { rename: request.rename },
       ...instructions === undefined ? {} : { instructions },
+      ...role === undefined ? {} : { role },
       ...cwd === undefined ? {} : { cwd },
       ...model === undefined ? {} : { model },
     })
@@ -568,6 +643,9 @@ export class RoomService extends TypertRemoteService {
       let candidate = loaded.state.members.find(member => memberId(events, member) === request.memberId)
       const previous = coordinatorMember(loaded.state, events)
       if (candidate === undefined || previous === undefined) return { ok: false, error: { code: 'member-not-found' } }
+      // A native member answers inside this host already; making it the
+      // external coordinator would need the CLI coordination contract it does not speak.
+      if (candidate.kind === 'native') return { ok: false, error: { code: 'coordinator-not-ready', message: 'A native DSH member cannot coordinate yet; promote the room\'s own dsh or a CLI member' } }
       if ((loaded.state.coordinator?.revision ?? 0) !== request.expectedRevision) return { ok: false, error: { code: 'coordinator-conflict' } }
       const agent = this.ctx.agents.get(request.sessionId)
       if (agent?.status === 'running' || (agent?.inbox?.nextTurn.length ?? 0) > 0 || (agent?.inbox?.nextStep.length ?? 0) > 0 || this.engine.hasPending(loaded.session, previous.name) || this.engine.hasPending(loaded.session, candidate.name)) {
@@ -622,24 +700,96 @@ export class RoomService extends TypertRemoteService {
   }
 
   /**
-   * Remove a member from the roster. An in-flight run is NOT interrupted
-   * here — cancel() first when the member is running.
-   * @param request - room session, member name.
-   * @returns the removal receipt, or a rejection.
+   * Remove a member and settle everything that depended on it, so the
+   * confirmation's promises hold: a running round is stopped first (the same
+   * cancel the stop button uses), queued messages to it are cancelled, every
+   * member waiting for one of its reports is told it will not come, its open
+   * board tasks close as cancelled (pending ones may instead move to
+   * `transferPendingTo`), and only then does it leave the roster. Its own
+   * session and history stay; {@link restoreMember} brings it back onto them.
+   * @param request - room session, member name, optional pending-task heir.
+   * @returns what the removal did, or a rejection.
    */
   @Remote('removeMember')
   async removeMember(request: RoomRemoveMemberRequest): Promise<RoomRemoveMemberResult> {
     const loaded = await this.ensureLive(request.sessionId)
     if (!loaded.ok) return { ok: false, error: loaded.error }
     if (this.handoffs.has(request.sessionId)) return { ok: false, error: { code: 'coordinator-busy' } }
-    if (!loaded.state.members.some(member => member.name === request.name)) {
+    const member = loaded.state.members.find(entry => entry.name === request.name)
+    if (member === undefined) return { ok: false, error: { code: 'member-not-found' } }
+    if (coordinatorMember(loaded.state, loaded.session.snapshotEvents())?.name === request.name) return { ok: false, error: { code: 'active-coordinator' } }
+    if (member.kind === 'main-agent') return { ok: false, error: { code: 'main-member' } }
+    const heir = request.transferPendingTo
+    if (heir !== undefined && (heir === request.name || !loaded.state.members.some(entry => entry.name === heir))) {
       return { ok: false, error: { code: 'member-not-found' } }
     }
-    if (coordinatorMember(loaded.state, loaded.session.snapshotEvents())?.name === request.name) return { ok: false, error: { code: 'active-coordinator' } }
-    if (loaded.state.members.find(member => member.name === request.name)?.kind === 'main-agent') return { ok: false, error: { code: 'main-member' } }
-    loaded.session.append('room/member-removed', { name: request.name })
+    const stopped = loaded.state.runs.some(run => run.member === request.name && run.state === 'running')
+      && (await this.cancel({ sessionId: request.sessionId, name: request.name })).ok
+    const session = loaded.session
+    const events = session.snapshotEvents()
+    const id = memberId(events, member)
+    const queued = replay(events).deliveries?.filter(row => row.memberId === id && row.status === 'queued') ?? []
+    for (const row of queued) {
+      session.append('room/delivery-state', { id: row.id, dispatchSeq: row.dispatchSeq, memberId: id, state: 'cancelled', error: `${request.name} 已被移除` })
+    }
+    let cancelledTasks = 0
+    let transferredTasks = 0
+    for (const task of replay(session.snapshotEvents()).tasks) {
+      if (task.member !== request.name || ['done', 'cancelled', 'failed'].includes(task.status)) continue
+      if (task.status === 'pending' && heir !== undefined) {
+        session.append('room/task-edited', { id: task.id, member: heir })
+        transferredTasks++
+      } else {
+        session.append('room/task-updated', { id: task.id, status: 'cancelled' })
+        cancelledTasks++
+      }
+    }
+    session.append('room/member-removed', { name: request.name })
+    await this.ctx.sessions.flush(session)
+    // Tell whoever waits on a cancelled delivery, now that the roster no
+    // longer holds the member (the report reads its last known name).
+    const before = session.snapshotEvents().filter(event => event.type === 'room/dispatch').length
+    for (const row of queued) {
+      await this.engine.reportOutcome(session, row.dispatchSeq, row.id, id, 'cancelled', `${request.name} 已被移除，这条没有执行。`)
+    }
+    const reports = session.snapshotEvents().filter(event => event.type === 'room/dispatch').slice(before)
+    const notified = [...new Set(reports.flatMap(event => event.type === 'room/dispatch' ? event.data.targets : []))]
+    return { ok: true, value: { name: request.name, stopped, cancelledDeliveries: queued.length, cancelledTasks, transferredTasks, notified } }
+  }
+
+  /**
+   * Undo a removal: the member rejoins under its old identity, provider,
+   * role, instructions and native session, so its memory carries on. Work
+   * the removal cancelled stays cancelled. Rejected when the name was taken
+   * in between or the member was never removed.
+   * @param request - room session, the removed member's name.
+   * @returns the restored name, or a rejection.
+   */
+  @Remote('restoreMember')
+  async restoreMember(request: RoomRestoreMemberRequest): Promise<RoomRestoreMemberResult> {
+    const loaded = await this.ensureLive(request.sessionId)
+    if (!loaded.ok) return { ok: false, error: loaded.error }
+    if (loaded.state.members.some(entry => entry.name === request.name)) return { ok: false, error: { code: 'duplicate-name' } }
+    const events = loaded.session.snapshotEvents()
+    const removal = events.findLast(event => event.type === 'room/member-removed' && event.data.name === request.name)
+    if (removal === undefined) return { ok: false, error: { code: 'member-not-found' } }
+    const member = replay(events.filter(event => event.seq < removal.seq)).members.find(entry => entry.name === request.name)
+    if (member === undefined) return { ok: false, error: { code: 'member-not-found' } }
+    loaded.session.append('room/member-added', {
+      id: memberId(events, member),
+      name: member.name,
+      kind: member.kind,
+      invitedBy: member.invitedBy,
+      ...member.provider === undefined ? {} : { provider: member.provider },
+      ...member.instructions === undefined ? {} : { instructions: member.instructions },
+      ...member.role === undefined ? {} : { role: member.role },
+      ...member.preset === undefined ? {} : { preset: member.preset },
+      ...member.cwd === undefined ? {} : { cwd: member.cwd },
+      ...member.model === undefined ? {} : { model: member.model },
+      ...member.childSessionId === undefined ? {} : { childSessionId: member.childSessionId },
+    })
     await this.ctx.sessions.flush(loaded.session)
-    return { ok: true, value: { name: request.name } }
+    return { ok: true, value: { name: member.name } }
   }
 
   /**
@@ -729,41 +879,50 @@ export class RoomService extends TypertRemoteService {
   }
 
   /**
-   * Dispatch one message to one member (host-only — the `room_message` tool's
-   * path; the model-facing equivalent of the human's `@member text`). Same
-   * dispatch internals as postMessage minus the user/message bubble: the
-   * caller is the room's own main agent, so the text must NOT wear the human
-   * bubble (source kind 'user' would misattribute it). The dispatch record
-   * and the auto-opened in_progress task journal as usual.
-   * @param request - room session, addressee, text.
-   * @returns the dispatch receipt, or a rejection.
+   * Send one message from a member to another (host-only — the `room_message`
+   * tool and the bridge's `member_message`/`room_message` land here; the
+   * human's path is postMessage). Any member may message any other: the
+   * coordinator's sends journal as `coordinator` dispatches, everyone else's
+   * as `member` ones. A `task` (default) has the recipient's final reply
+   * reported back to the sender; a `notify` is FYI. The room's settings may
+   * hold the message for the human instead (see messaging.ts).
+   * @param request - room session, addressee, text, kind, optional reply reference.
+   * @param actorChildSessionId - the authenticated CLI sender; absent = the room's own agent.
+   * @returns the delivery receipt (with its `m<seq>` id) or the hold, or a rejection.
    */
   async messageMember(request: RoomMessageRequest, actorChildSessionId?: string): Promise<RoomMessageResult> {
+    const routed = actorChildSessionId === undefined ? this.nativeRoute(request.sessionId) : undefined
+    if (routed !== undefined) return this.messageMember({ ...request, sessionId: routed.roomId }, routed.actor)
     // Messaging PROMOTES too (the room_message tool's gate): the main agent
     // answering "把 kimi 拉进来问一下…" promotes its own session, then the
     // roster check runs against the promoted state.
     const loaded = await this.ensureRoom(request.sessionId)
     if (!loaded.ok) return { ok: false, error: loaded.error }
-    if (!this.isCurrentCoordinator(loaded.session, actorChildSessionId)) return { ok: false, error: { code: 'not-coordinator' } }
     if (this.handoffs.has(request.sessionId)) return { ok: false, error: { code: 'coordinator-busy' } }
-    if (!loaded.state.members.some(member => member.name === request.member)) {
-      return { ok: false, error: { code: 'member-not-found' } }
-    }
+    const events = loaded.session.snapshotEvents()
+    const sender = loaded.state.members.find(member => actorChildSessionId === undefined ? member.kind === 'main-agent' : member.childSessionId === actorChildSessionId)
+    if (sender === undefined) return { ok: false, error: { code: 'member-not-found' } }
+    const target = loaded.state.members.find(member => member.name === request.member || (member.childSessionId !== undefined && member.childSessionId === request.member))
+    if (target === undefined) return { ok: false, error: { code: 'member-not-found' } }
     const text = request.text.trim()
     if (text === '') return { ok: false, error: { code: 'empty-text' } }
-    const coordinator = coordinatorMember(loaded.state, loaded.session.snapshotEvents())
-    const target = loaded.state.members.find(member => member.name === request.member)!
-    const dispatch = loaded.session.append('room/dispatch', {
-      id: randomUUID(), targets: [request.member], targetIds: [memberId(loaded.session.snapshotEvents(), target)], text, origin: 'coordinator',
-      ...coordinator === undefined || coordinator.name === request.member ? {} : { replyTo: memberId(loaded.session.snapshotEvents(), coordinator) },
-    })
-    loaded.session.append('room/task-added', {
-      id: randomUUID(), member: request.member, title: taskTitle(text), status: 'in_progress',
-      deliveryId: `${dispatch.seq}:${memberId(loaded.session.snapshotEvents(), target)}`,
+    if (target.name === sender.name) return { ok: false, error: { code: 'self-message' } }
+    const senderId = memberId(events, sender)
+    const kind = request.kind ?? 'task'
+    const inReplyTo = parseMessageRef(request.inReplyTo)
+    const sent = sendOrHold(loaded.session, {
+      to: target, text, fromName: sender.name,
+      intent: {
+        origin: this.isCurrentCoordinator(loaded.session, actorChildSessionId) ? 'coordinator' : 'member',
+        from: senderId, kind, hop: workingHop(events, loaded.state, sender) + 1,
+        ...kind === 'task' ? { replyTo: senderId } : {},
+        ...inReplyTo === undefined ? {} : { inReplyTo },
+      },
     })
     await this.ctx.sessions.flush(loaded.session)
-    this.engine.dispatch(loaded.session, request.member, text, { dispatchSeq: dispatch.seq })
-    return { ok: true, value: { member: request.member } }
+    if (!sent.delivered) return { ok: true, value: { member: target.name, held: sent.reason } }
+    this.engine.dispatch(loaded.session, target.name, text, { dispatchSeq: sent.seq })
+    return { ok: true, value: { member: target.name, messageId: messageId(sent.seq) } }
   }
 
   /** Host-authenticated actor; model tool arguments never provide the room or sender. */
@@ -775,6 +934,11 @@ export class RoomService extends TypertRemoteService {
 
   /** Bounded shared room context for native and external model tools; reading never wakes an agent. */
   async readRoomContext(sessionId: string): Promise<string> {
+    const routed = this.nativeRoute(sessionId)
+    if (routed !== undefined) {
+      const self = replay(this.ctx.sessions.get(routed.roomId)!.snapshotEvents()).members.find(member => member.childSessionId === routed.actor)?.name
+      return JSON.stringify({ self, ...JSON.parse(await this.readRoomContext(routed.roomId)) })
+    }
     const state = await this.getState({ sessionId: SessionId(sessionId) })
     if (!state.ok) throw new Error(`Room unavailable: ${state.error.code}`)
     const events = this.ctx.sessions.get(SessionId(sessionId))?.snapshotEvents() ?? []
@@ -798,6 +962,8 @@ export class RoomService extends TypertRemoteService {
 
   /** The actor is derived from the calling native agent or authenticated bridge. */
   async commandPlan(sessionId: string, command: string, actorChildSessionId?: string): Promise<string> {
+    const routed = actorChildSessionId === undefined ? this.nativeRoute(sessionId) : undefined
+    if (routed !== undefined) return this.commandPlan(routed.roomId, command, routed.actor)
     const loaded = await this.ensureLive(SessionId(sessionId))
     if (!loaded.ok) throw new Error(loaded.error.code)
     if (this.handoffs.has(sessionId)) throw new Error('Coordinator handoff is in progress')
@@ -820,7 +986,7 @@ export class RoomService extends TypertRemoteService {
       if (sender === undefined) return { ok: false, error: 'The authenticated member is not in this room roster' }
       if (command === null || typeof command !== 'object' || command.arguments === null || typeof command.arguments !== 'object' || Array.isArray(command.arguments)) return { ok: false, error: 'Malformed room command' }
       const args = command.arguments
-      const allowed: Record<string, readonly string[]> = { room_plan: ['command'], room_read: [], room_invite: ['provider', 'name', 'instructions', 'cwd', 'model', 'firstTask'], room_message: ['member', 'text'] }
+      const allowed: Record<string, readonly string[]> = { room_plan: ['command'], room_read: [], room_invite: ['provider', 'name', 'role', 'instructions', 'cwd', 'model', 'firstTask'], room_message: ['member', 'text', 'kind', 'inReplyTo'] }
       const keys = allowed[command.name]
       if (keys === undefined || Object.keys(args).some(key => !keys.includes(key))) return { ok: false, error: 'Unknown room command or argument; room and actor identity are host-owned' }
       const required = (key: string): string => {
@@ -833,34 +999,38 @@ export class RoomService extends TypertRemoteService {
         return { ok: true, receipt: JSON.stringify({ self: sender.name, ...JSON.parse(await this.readRoomContext(loaded.session.id)) }) }
       }
       if (command.name === 'room_plan') return { ok: true, receipt: await this.commandPlan(loaded.session.id, required('command'), actor.childSessionId) }
-      if (!this.isCurrentCoordinator(loaded.session, actor.childSessionId)) return { ok: false, error: 'Only the current coordinator may invite members or dispatch work' }
-      const result = command.name === 'room_invite'
-        ? await this.inviteMember({ sessionId: loaded.session.id, provider: required('provider'), name: required('name'),
+      if (command.name === 'room_message') {
+        const kind = optional('kind')
+        if (kind !== undefined && kind !== 'task' && kind !== 'notify') return { ok: false, error: 'kind must be "task" or "notify"' }
+        const sent = await this.messageMember({ sessionId: loaded.session.id, member: required('member'), text: required('text'),
+          ...kind === undefined ? {} : { kind }, ...optional('inReplyTo') === undefined ? {} : { inReplyTo: optional('inReplyTo')! } }, actor.childSessionId)
+        return sent.ok ? { ok: true, receipt: messageReceipt(sent.value, kind ?? 'task') } : { ok: false, error: sent.error.code }
+      }
+      if (!this.isCurrentCoordinator(loaded.session, actor.childSessionId)) return { ok: false, error: 'Only the current coordinator may invite members' }
+      const result = await this.inviteMember({ sessionId: loaded.session.id, provider: required('provider'), name: required('name'),
+          ...optional('role') === undefined ? {} : { role: optional('role')! },
           ...optional('instructions') === undefined ? {} : { instructions: optional('instructions')! },
           ...optional('cwd') === undefined ? {} : { cwd: optional('cwd')! },
           ...optional('model') === undefined ? {} : { model: optional('model')! },
           ...optional('firstTask') === undefined ? {} : { firstTask: optional('firstTask')! },
         }, 'agent', actor.childSessionId)
-        : await this.messageMember({ sessionId: loaded.session.id, member: required('member'), text: required('text') }, actor.childSessionId)
       return result.ok ? { ok: true, receipt: JSON.stringify(result.value) } : { ok: false, error: result.error.code }
     } catch (error) { return { ok: false, error: String(error) } }
   }
 
   /**
-   * The notification gate entry, verbatim-frozen contract for the local-agent
-   * family bridge (`ctx.get('room')` + duck-typed call). The call crosses an
-   * untyped package boundary, so the message shape is validated at runtime:
-   * a malformed message throws (the bridge treats a rejection as "room does
+   * The bridge's `member_message` entry (contract shared with the local-agent
+   * family: `ctx.get('room')` + duck-typed call). The call crosses an untyped
+   * package boundary, so the message shape is validated at runtime: a
+   * malformed message throws (the bridge treats a rejection as "room does
    * not claim this" and delivers directly) instead of poisoning the journal.
-   * `from`/`to` arrive as roster names OR member child session ids (the
-   * bridge cannot speak names for the sender — only room owns the roster);
-   * both are normalized to roster names when resolvable, so the pending card
-   * and the delivery text (`{from} 给你的通知: …`) read as names. Phase 1's
-   * gate is ALWAYS human confirmation: the relay is journaled pending and
-   * the sender receives 'pending-confirm' (never 'sent' — the bridge keeps
-   * the member's conclusion honest). A non-room parent session throws.
-   * @param request - sender, recipient, content, the shared parent session, provenance.
-   * @returns the gate receipt.
+   * A roster sender (resolved by child session id + provider, never
+   * self-reported) goes through {@link messageMember}: delivered at once or
+   * held by the room's settings. The receipt tells the model what happened
+   * (`sent #m12 …` / `pending-confirm …`). A sender the roster does not know
+   * keeps the legacy pending relay.
+   * @param request - sender, recipient, content, the shared parent session, provenance, kind.
+   * @returns the receipt quoted back to the sending model.
    */
   async receiveMemberMessage(request: RoomMemberMessage): Promise<RoomMemberMessageReceipt> {
     if (typeof request?.from !== 'string' || typeof request.to !== 'string'
@@ -870,12 +1040,12 @@ export class RoomService extends TypertRemoteService {
     const loaded = await this.ensureLive(request.parentSessionId)
     if (!loaded.ok) throw new Error(`room: not a room session (${loaded.error.code})`)
     const sender = loaded.state.members.find(member => member.childSessionId === request.from && member.provider === request.provenance?.provider)
-    if (sender !== undefined && this.isCurrentCoordinator(loaded.session, request.from)) {
-      const target = loaded.state.members.find(member => member.name === request.to || member.childSessionId === request.to)
-      if (target === undefined) throw new Error('Unknown room member')
-      const result = await this.messageMember({ sessionId: loaded.session.id, member: target.name, text: request.content }, request.from)
+    if (sender !== undefined) {
+      const kind = request.kind === 'notify' ? 'notify' : 'task'
+      const result = await this.messageMember({ sessionId: loaded.session.id, member: request.to, text: request.content, kind,
+        ...typeof request.inReplyTo === 'string' ? { inReplyTo: request.inReplyTo } : {} }, request.from)
       if (!result.ok) throw new Error(result.error.code)
-      return 'sent'
+      return messageReceipt(result.value, kind)
     }
     const resolveName = (endpoint: string): string => {
       const byName = loaded.state.members.find(member => member.name === endpoint)
@@ -911,12 +1081,66 @@ export class RoomService extends TypertRemoteService {
     if (!loaded.state.members.some(member => member.name === relay.to)) {
       return { ok: false, error: { code: 'member-not-found' } }
     }
+    if (relay.intent !== undefined) {
+      this.release(loaded.session, relay, true)
+      await this.ctx.sessions.flush(loaded.session)
+      return { ok: true, value: { relayId: relay.id } }
+    }
     loaded.session.append('room/relay-resolved', { id: relay.id, state: 'confirmed' })
     await this.ctx.sessions.flush(loaded.session)
     this.engine.dispatch(loaded.session, relay.to, `${relay.from} 给你的通知: ${relay.content}`, {
       relayIds: [relay.id],
     })
     return { ok: true, value: { relayId: relay.id } }
+  }
+
+  /**
+   * Deliver a held message as the dispatch it would have been. `force`
+   * (the human's confirm) skips the hold rules; otherwise (resuming a paused
+   * room) they are re-checked, so a message may be held again for another
+   * reason — the old hold is then superseded (dismissed) by the new one.
+   * The caller flushes.
+   */
+  private release(session: Session, relay: RoomRelay, force: boolean): void {
+    const intent = releaseIntent(relay)
+    const target = replay(session.snapshotEvents()).members.find(member => member.name === relay.to)
+    if (intent === undefined || target === undefined) return
+    const sent = sendOrHold(session, { to: target, text: relay.content, fromName: relay.from, intent }, force)
+    session.append('room/relay-resolved', { id: relay.id, state: sent.delivered ? 'sent' : 'dismissed' })
+    if (sent.delivered) this.engine.dispatch(session, target.name, relay.content, { dispatchSeq: sent.seq })
+  }
+
+  /**
+   * Change the room's collaboration settings (any subset). Resuming a paused
+   * room releases everything the pause held, in order.
+   * @param request - room session and the fields to change.
+   * @returns the settings after the change, or a rejection.
+   */
+  @Remote('setSettings')
+  async setSettings(request: RoomSetSettingsRequest): Promise<RoomSetSettingsResult> {
+    const loaded = await this.ensureLive(request.sessionId)
+    if (!loaded.ok) return { ok: false, error: loaded.error }
+    if (request.hopLimit !== undefined && (!Number.isInteger(request.hopLimit) || request.hopLimit < 2 || request.hopLimit > 50)) {
+      return { ok: false, error: { code: 'invalid-settings' } }
+    }
+    if (request.memberMessages !== undefined && request.memberMessages !== 'free' && request.memberMessages !== 'confirm') {
+      return { ok: false, error: { code: 'invalid-settings' } }
+    }
+    const change = {
+      ...request.memberMessages === undefined ? {} : { memberMessages: request.memberMessages },
+      ...request.hopLimit === undefined ? {} : { hopLimit: request.hopLimit },
+      ...request.paused === undefined ? {} : { paused: request.paused },
+    }
+    if (Object.keys(change).length === 0) return { ok: false, error: { code: 'nothing-to-update' } }
+    const wasPaused = loaded.state.settings?.paused === true
+    loaded.session.append('room/settings', change)
+    if (wasPaused && request.paused === false) {
+      for (const relay of loaded.state.relays) {
+        if (relay.state === 'pending' && relay.reason === 'paused') this.release(loaded.session, relay, false)
+      }
+    }
+    await this.ctx.sessions.flush(loaded.session)
+    return { ok: true, value: replay(loaded.session.snapshotEvents()).settings ?? DEFAULT_ROOM_SETTINGS }
   }
 
   /**
@@ -1061,7 +1285,9 @@ export class RoomService extends TypertRemoteService {
       return { ok: true, value: { cancelled: false } }
     }
     const facade = probeLocalAgent(this.ctx)
-    const native = member.kind === 'main-agent' && expected !== undefined ? this.ctx.agents.get(loaded.session.id) : undefined
+    const native = expected === undefined ? undefined
+      : member.kind === 'main-agent' ? this.ctx.agents.get(loaded.session.id)
+        : member.kind === 'native' && member.childSessionId !== undefined ? this.ctx.agents.get(member.childSessionId) : undefined
     if (native !== undefined) native.cancel({ kind: 'user' })
     const hit = native !== undefined || (facade !== undefined && member.childSessionId !== undefined
       ? facade.cancel(member.childSessionId)

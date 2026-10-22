@@ -8,26 +8,29 @@
  * the exact dispatch history — but speech/dispatch events are UI projection
  * and replay ONLY: no prompt ever consumes the room's running log.
  *
- * The prompt every member receives is uniform (the design note's roster +
- * notifications contract): role instructions (first dispatch, or an edit
- * carried as an update) + the room goal (one line, every dispatch — cheap,
- * and it orients the task) + the roster (who exists, with the notification
- * protocol) ONLY when the member has never seen it or it changed since their
- * last dispatch ({@link rosterStaleSince}) + the member's
- * confirmed-undelivered notifications + this dispatch's text. The member's
- * own CLI session (resume chain) holds its working memory; room never
- * resends what it has seen.
+ * The prompt every member receives is uniform: the member's FIRST dispatch
+ * opens with one room briefing (identity, public role, private instructions,
+ * goal, roster of public roles, the tool-based collaboration contract);
+ * every later dispatch carries only what changed since the member's previous
+ * one — an instructions edit, one-line room changes ({@link roomChangesSince}),
+ * a coordinator handoff — plus the member's confirmed-undelivered
+ * notifications and this dispatch's text. The member's own session (resume
+ * chain) holds its working memory; room never resends what it has seen, and
+ * no member ever receives another member's private instructions.
  * @module @khorsheed/dsh-room/dispatch
  */
 import { replayDeliveries } from './deliveries.ts'
 import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
-import type { Session } from '@deepseek-ai/dsh-session'
+import { SessionId, type Session } from '@deepseek-ai/dsh-session'
+import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 // Type-only: pulls the `agents` registry merge onto Context.
-import type {} from '@deepseek-ai/dsh-agent'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import { createUserMessage, type ContextFormed, type MessageSource } from '@deepseek-ai/dsh-llm'
 import { probeLocalAgent, runOutputText } from './adapter.ts'
-import { coordinatorMember, memberId, parseRelayDirective, pendingInstructions, previousCursor, replay, rosterStaleSince } from './journal.ts'
+import { composeRoomAgent } from './agent-setup.ts'
+import { coordinatorMember, memberId, pendingInstructions, previousCursor, replay, roomChangesSince } from './journal.ts'
+import { envelopeLine, sendOrHold } from './messaging.ts'
 import type { RoomMember, RoomRelay, RoomState } from './types.ts'
 
 /**
@@ -89,27 +92,37 @@ export interface DispatchOptions {
 }
 
 /**
- * The roster section: one line per OTHER member (name, provider, one-line
- * role) plus the notification protocol — the fallback channel's trailing
- * own-line `@name <content>` format lives here so a member can reach others
- * without any bridge tooling. Carried only when the member has never seen
- * the roster or it changed since their last dispatch ({@link rosterStaleSince});
- * the member's own session holds it in between. The room GOAL is NOT part of
- * this section: it rides every dispatch on its own line (cheap, and it
- * orients the task).
+ * The member's first-dispatch briefing: who it is (name + public role), its
+ * private instructions, the goal, everyone else by PUBLIC role only (never
+ * their instructions — those read like orders addressed to the reader), and
+ * the collaboration contract. Members reach each other through tools —
+ * `member_message` on the local-agent bridge for CLI members, `room_message`
+ * for the room's own agent — and read the live roster with `room_read`; a
+ * trailing `@name` line in a reply is plain text and reaches nobody.
  */
-function rosterSection(state: { readonly members: readonly RoomMember[] }, self: string): string {
-  const lines = state.members
-    .filter(member => member.name !== self)
-    .map((member) => {
-      const provider = member.kind === 'main-agent' ? '原生 DSH' : member.provider ?? ''
-      const role = member.instructions?.split('\n', 1)[0]?.trim()
-      return `- ${member.name}（${provider}）${role === undefined || role === '' ? '' : `：${role}`}`
+function briefingSection(state: RoomState, member: RoomMember, instructions: string | undefined, coordinator: RoomMember | undefined): string {
+  const others = state.members
+    .filter(entry => entry.name !== member.name)
+    .map((entry) => {
+      const facts = [
+        ...coordinator?.name === entry.name ? ['协调者'] : [],
+        ...entry.role === undefined ? [] : [entry.role],
+        entry.kind === 'main-agent' ? '原生 DSH' : entry.kind === 'native' ? `原生 DSH${entry.preset === undefined ? '' : ` · ${entry.preset}`}` : entry.provider ?? '',
+      ].filter(Boolean)
+      return `- ${entry.name}（${facts.join(' · ')}）`
     })
+  const send = member.kind === 'cli' ? 'member_message 工具（to 填成员名）' : 'room_message 工具（member 填成员名）'
   return [
-    '【成员名册】',
-    ...lines,
-    '通知协议：要通知某个成员，在回复末尾独占一行写 `@名字 <内容>`；该行会被转交给对方（一阶段需房间主人确认）。',
+    '【房间简报】',
+    `你是协作间成员「${member.name}」${member.role === undefined ? '' : `，职责：${member.role}`}${coordinator?.name === member.name ? '，也是本房间的协调者' : ''}。`,
+    ...instructions === undefined ? [] : [`你的指令：${instructions}`],
+    ...state.goal === undefined ? [] : [`房间目标：${state.goal}`],
+    ...others.length === 0 ? [] : ['其他成员：', ...others],
+    '协作方式：',
+    `- 要联系其他成员，用 ${send}。默认是派活（kind: "task"）：对方做完，它的最终回复会自动回报给你，不用轮询；只是告知一声用 kind: "notify"，不会回报。在回复里写「@名字」不会转交给任何人。`,
+    '- 收到的每条消息开头都标明来自谁和消息编号（#m12）；派给你的活，你这一轮的最终回复会自动回报给派活人，不用另外回复。',
+    '- 想看房间里现在有谁、各自职责和进展，用 room_read。',
+    ...coordinator?.name === member.name ? ['- 作为协调者：普通对话直接回答；小任务用工具在后台派给成员；只在确有需要时建立正式目标计划。委派结果会自动回报给你，等待时不要轮询。'] : [],
   ].join('\n')
 }
 
@@ -119,10 +132,11 @@ function notificationsSection(relays: readonly RoomRelay[]): string {
 }
 
 /**
- * Assemble the uniform member prompt: role-instructions carry, then the room
- * goal (every dispatch), then the roster (only when stale for this member),
- * then the member's confirmed-undelivered notifications (except the ones
- * this dispatch's own text already delivers), then this dispatch's text.
+ * Assemble the uniform member prompt: the briefing on the member's first
+ * dispatch, otherwise only what changed since its previous one (handoff,
+ * instructions edit, room changes); then the member's confirmed-undelivered
+ * notifications (except the ones this dispatch's own text already delivers),
+ * then this dispatch's text.
  */
 function assemblePrompt(
   room: Session,
@@ -130,22 +144,47 @@ function assemblePrompt(
   cursor: number | undefined,
   text: string,
   relayIds: readonly string[],
+  dispatchSeq: number | undefined,
 ): { readonly prompt: string; readonly carried: readonly RoomRelay[] } {
   const state = replay(room.snapshotEvents())
   const carried = state.relays.filter(relay =>
     relay.state === 'confirmed' && relay.to === member.name && !relayIds.includes(relay.id))
   const sections: string[] = []
-  const handoff = room.snapshotEvents().filter(event => event.type === 'room/coordinator' && event.data.memberId === memberId(room.snapshotEvents(), member)).at(-1)
-  if (handoff?.type === 'room/coordinator' && (cursor === undefined || handoff.seq > cursor)) sections.push(handoff.data.handoff)
-  if (coordinatorMember(state, room.snapshotEvents())?.name === member.name) sections.push('You are the room coordinator. Handle ordinary chat directly; delegate small work in the background using room tools. Establish a goal plan only when useful for the requested execution. Delegate results arrive as correlated reports; do not poll while waiting.')
-  const pending = pendingInstructions(room.snapshotEvents(), member.name, cursor)
-  if (pending?.kind === 'initial') sections.push(`你的角色指令：${pending.instructions}`)
-  if (pending?.kind === 'update') sections.push(`你的角色指令更新为：${pending.instructions}`)
-  if (state.goal !== undefined) sections.push(`本房间的目标：${state.goal}`)
-  if (rosterStaleSince(room.snapshotEvents(), cursor)) sections.push(rosterSection(state, member.name))
+  const events = room.snapshotEvents()
+  const coordinator = coordinatorMember(state, events)
+  const handoff = events.filter(event => event.type === 'room/coordinator' && event.data.memberId === memberId(events, member)).at(-1)
+  const pending = pendingInstructions(events, member.name, cursor)
+  if (cursor === undefined) {
+    sections.push(briefingSection(state, member, pending?.instructions, coordinator))
+    if (handoff?.type === 'room/coordinator') sections.push(handoff.data.handoff)
+  } else {
+    if (handoff?.type === 'room/coordinator' && handoff.seq > cursor) sections.push(`你现在是本房间的协调者。\n${handoff.data.handoff}`)
+    if (pending?.kind === 'update') sections.push(`你的指令更新为：${pending.instructions}`)
+    const changes = roomChangesSince(events, cursor, member.name)
+    if (changes.length > 0) sections.push(['【房间变动】', ...changes.map(change => `- ${change}`)].join('\n'))
+  }
   if (carried.length > 0) sections.push(notificationsSection(carried))
-  sections.push(text)
+  const envelope = dispatchSeq === undefined ? undefined : envelopeLine(events, dispatchSeq)
+  sections.push(envelope === undefined ? text : `${envelope}\n${text}`)
   return { prompt: sections.join('\n\n'), carried }
+}
+
+/** The text of the last assistant message after `afterSeq` ('' when none). */
+function lastAssistantText(events: readonly SessionEvent[], afterSeq: number): string {
+  const reply = events.filter(event => event.seq > afterSeq && event.type === 'assistant/message').at(-1)
+  return reply?.type === 'assistant/message'
+    ? reply.data.message.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n')
+    : ''
+}
+
+/** Who a delivery of this dispatch reports to (the coordinator for plan work), if anyone. */
+function reportRecipient(events: readonly SessionEvent[], dispatchSeq: number): RoomMember | undefined {
+  const source = events.find(event => event.seq === dispatchSeq)
+  if (source?.type !== 'room/dispatch' || source.data.replyTo === undefined) return undefined
+  const state = replay(events)
+  return source.data.plan === undefined
+    ? state.members.find(member => memberId(events, member) === source.data.replyTo)
+    : coordinatorMember(state, events)
 }
 
 /** The human-readable reason a run failed (Error message, else String()). */
@@ -276,9 +315,9 @@ export class DispatchEngine {
               if (run?.state === 'running' && (run.runId === undefined || run.runId === id)) room.append('room/run-state', { member: target.name, state: 'failed', startedAt: run.startedAt, ...run.runId === undefined ? {} : { runId: run.runId }, error: 'Execution outcome is unknown after restart; reconcile before retrying' })
             }
             await this.ctx.sessions.flush(room)
-            await this.report(room, dispatch.seq, id, targetId, 'uncertain', 'Execution outcome is unknown after restart; reconcile before retrying')
+            await this.reportOutcome(room, dispatch.seq, id, targetId, 'uncertain', 'Execution outcome is unknown after restart; reconcile before retrying')
           } else {
-            await this.report(room, dispatch.seq, id, targetId, last.data.state, last.data.text ?? last.data.error ?? '')
+            await this.reportOutcome(room, dispatch.seq, id, targetId, last.data.state, last.data.text ?? last.data.error ?? '')
           }
           continue
         }
@@ -300,6 +339,9 @@ export class DispatchEngine {
     memberName = member.name
     const identity = memberId(room.snapshotEvents(), member)
     const deliveryId = options.dispatchSeq === undefined ? undefined : `${options.dispatchSeq}:${identity}`
+    // Settled while it waited in the queue (a removal cancels queued work;
+    // an undo must not resurrect it).
+    if (deliveryId !== undefined && state.deliveries?.some(delivery => delivery.id === deliveryId && delivery.status !== 'queued')) return
     const runId = deliveryId ?? randomUUID()
     const cursor = previousCursor(room.snapshotEvents(), memberName, options.dispatchSeq ?? Number.MAX_SAFE_INTEGER)
     let startedAt: number | undefined
@@ -318,8 +360,10 @@ export class DispatchEngine {
     let outcome: RunOutcome
     try {
       outcome = member.kind === 'main-agent'
-        ? await this.runMainAgent(room, member, cursor, text, await admitted(), options.relayIds ?? [])
-        : await this.runCliMember(room, member, cursor, text, admitted, options.relayIds ?? [], submitted, runId)
+        ? await this.runMainAgent(room, member, cursor, text, await admitted(), options.relayIds ?? [], options.dispatchSeq)
+        : member.kind === 'native'
+          ? await this.runNativeMember(room, member, cursor, text, admitted, options.relayIds ?? [], options.dispatchSeq)
+          : await this.runCliMember(room, member, cursor, text, admitted, options.relayIds ?? [], submitted, runId, options.dispatchSeq)
     } catch (error: unknown) {
       this.ctx.logger.warn(`room: dispatch to "${memberName}" failed: ${String(error)}`)
       outcome = { state: 'failed', error: faultMessage(error) }
@@ -330,27 +374,40 @@ export class DispatchEngine {
       room.append('room/delivery-state', { id: deliveryId, dispatchSeq: options.dispatchSeq!, memberId: identity, state: outcome.state,
         ...outcome.text === undefined ? {} : { text: outcome.text }, ...outcome.error === undefined ? {} : { error: outcome.error } })
       await this.ctx.sessions.flush(room)
-      await this.report(room, options.dispatchSeq!, deliveryId, identity, outcome.state, outcome.text ?? outcome.error ?? '')
+      await this.reportOutcome(room, options.dispatchSeq!, deliveryId, identity, outcome.state, outcome.text ?? outcome.error ?? '')
     }
   }
 
-  private async report(room: Session, dispatchSeq: number, deliveryId: string, fromId: string, outcome: string, text: string): Promise<void> {
+  /**
+   * Report one delivery's outcome to whoever is waiting on it (the
+   * coordinator for plan work, else the dispatch's `replyTo`), at most once
+   * per delivery. Public so a removal can settle the waits it breaks.
+   */
+  async reportOutcome(room: Session, dispatchSeq: number, deliveryId: string, fromId: string, outcome: string, text: string): Promise<void> {
     const events = room.snapshotEvents()
     const source = events.find(event => event.seq === dispatchSeq)
-    if (source?.type !== 'room/dispatch' || source.data.origin !== 'coordinator' || source.data.replyTo === undefined) return
+    if (source?.type !== 'room/dispatch' || (source.data.origin !== 'coordinator' && source.data.origin !== 'member') || source.data.replyTo === undefined) return
     if (events.some(event => event.type === 'room/dispatch' && event.data.reportFor === deliveryId)) return
+    if (events.some(event => event.type === 'room/relay' && event.data.intent?.reportFor === deliveryId)) return
     const state = replay(events)
     if (closedGoal(state, source.data.plan?.goalId)) return
     const recipient = source.data.plan === undefined ? state.members.find(member => memberId(events, member) === source.data.replyTo) : coordinatorMember(state, events)
-    const sender = state.members.find(member => memberId(events, member) === fromId)
     if (recipient === undefined) return
-    const reportText = `Delegation ${deliveryId} (${sender?.name ?? fromId}) ${outcome}.\n${text.slice(0, 32000)}`
-    const report = room.append('room/dispatch', { id: randomUUID(), origin: 'report', reportFor: deliveryId,
-      targets: [recipient.name], targetIds: [memberId(events, recipient)], text: reportText,
-      ...source.data.plan === undefined ? {} : { plan: { goalId: source.data.plan.goalId } } })
+    // A removed sender is no longer on the roster: read its last known name.
+    const senderName = state.members.find(member => memberId(events, member) === fromId)?.name
+      ?? events.reduce<string | undefined>((name, event) => event.type === 'room/member-added' && event.data.id === fromId ? event.data.name : name, undefined)
+    // The envelope (`【#m12 的回报 · 来自 ada · 完成】`) carries who and how;
+    // the text is the member's own conclusion.
+    const reportText = text.trim() === '' ? `（${outcome === 'done' ? '没有文字输出' : outcome}）` : text.slice(0, 32000)
+    const sent = sendOrHold(room, {
+      to: recipient, text: reportText, fromName: senderName ?? fromId,
+      intent: { origin: 'report', hop: (source.data.hop ?? 1) + 1, reportFor: deliveryId,
+        ...source.data.plan === undefined ? {} : { plan: { goalId: source.data.plan.goalId } } },
+    })
     await this.ctx.sessions.flush(room)
-    if (this.hooks.allows?.(room, report.seq) !== false) this.dispatch(room, recipient.name, reportText, { dispatchSeq: report.seq, targetId: memberId(events, recipient) })
+    if (sent.delivered && this.hooks.allows?.(room, sent.seq) !== false) this.dispatch(room, recipient.name, reportText, { dispatchSeq: sent.seq, targetId: memberId(events, recipient) })
   }
+
 
   /**
    * Mark the relays this run delivered as sent. Delivery = the member's own
@@ -367,14 +424,15 @@ export class DispatchEngine {
   /** Main-agent member turn: a producer-sourced followup on the room's own agent. */
   private async runMainAgent(
     room: Session, member: RoomMember, cursor: number | undefined,
-    text: string, _startedAt: number, relayIds: readonly string[],
+    text: string, _startedAt: number, relayIds: readonly string[], dispatchSeq: number | undefined,
   ): Promise<RunOutcome> {
     const agent = this.ctx.agents.get(room.id)
     if (agent === undefined) {
       // Fail loud: the room's own agent is not live, the message goes nowhere.
       return { state: 'failed', error: 'the room session has no live agent' }
     }
-    const { prompt, carried } = assemblePrompt(room, member, cursor, text, relayIds)
+    const { prompt, carried } = assemblePrompt(room, member, cursor, text, relayIds, dispatchSeq)
+    const before = room.snapshotEvents().at(-1)?.seq ?? -1
     agent.followup(createUserMessage({
       content: [{ type: 'text', text: prompt }],
       source: roomSource(),
@@ -383,17 +441,84 @@ export class DispatchEngine {
       ...carried,
       ...replay(room.snapshotEvents()).relays.filter(relay => relayIds.includes(relay.id)),
     ])
-    // Phase-1 simplicity: the followup's own turn converging to idle IS the
-    // run; the main agent's reply is its ordinary assistant speech (no
-    // room/speech projection — speech mirrors CLI members only).
+    // The followup's own turn converging to idle IS the run; the main agent's
+    // reply is its ordinary assistant speech (no room/speech projection —
+    // speech mirrors CLI members only). Its last assistant text is the
+    // outcome a waiting sender's report quotes.
     await agent.whenIdle()
-    return { state: 'done' }
+    const output = lastAssistantText(room.snapshotEvents(), before)
+    return { state: 'done', ...output === '' ? {} : { text: output } }
+  }
+
+  /**
+   * The native member's agent: live, resumed from its session after a
+   * restart, or created on its first round — a child session + agent in this
+   * host process (owned by the room's agent when live), composing the
+   * member's preset at creation. The handle is journaled before any prompt.
+   */
+  private async nativeAgent(room: Session, member: RoomMember): Promise<Agent> {
+    if (member.childSessionId !== undefined) {
+      const live = this.ctx.agents.get(member.childSessionId)
+      if (live !== undefined) return live
+      const composition = await composeRoomAgent(this.ctx, member.preset)
+      const handle = await this.ctx.agents.resume({
+        resumeSessionId: member.childSessionId,
+        ...composition.setup === undefined ? {} : { setup: composition.setup },
+      })
+      return handle.agent
+    }
+    const composition = await composeRoomAgent(this.ctx, member.preset)
+    const parent = this.ctx.agents.get(room.id)
+    const sessionId = SessionId(randomUUID())
+    const cwd = member.cwd ?? room.header.cwd
+    const handle = await this.ctx.agents.create({
+      sessionId,
+      ...parent === undefined ? {} : { parentAgent: parent },
+      meta: {
+        parentSession: room.id, origin: 'subagent', delegationDepth: (room.header.delegationDepth ?? 0) + 1,
+        ...cwd === undefined ? {} : { cwd },
+        ...composition.agentPreset === undefined ? {} : { agentPreset: composition.agentPreset },
+      },
+      ...composition.setup === undefined ? {} : { setup: composition.setup },
+    })
+    room.append('room/member-updated', { name: replay(room.snapshotEvents()).members.find(entry => entry.id === member.id)?.name ?? member.name, childSessionId: sessionId })
+    await this.ctx.sessions.flush(room)
+    return handle.agent
+  }
+
+  /**
+   * Native member turn: a room-sourced followup on the member's own agent,
+   * mirrored into the room as speech like a CLI member's reply.
+   */
+  private async runNativeMember(
+    room: Session, member: RoomMember, cursor: number | undefined,
+    text: string, admitted: () => Promise<number>, relayIds: readonly string[], dispatchSeq: number | undefined,
+  ): Promise<RunOutcome> {
+    const agent = await this.nativeAgent(room, member)
+    const startedAt = await admitted()
+    const { prompt, carried } = assemblePrompt(room, member, cursor, text, relayIds, dispatchSeq)
+    const before = agent.session.snapshotEvents().at(-1)?.seq ?? -1
+    agent.followup(createUserMessage({ content: [{ type: 'text', text: prompt }], source: roomSource() }))
+    await this.markSent(room, [
+      ...carried,
+      ...replay(room.snapshotEvents()).relays.filter(relay => relayIds.includes(relay.id)),
+    ])
+    await agent.whenIdle()
+    const output = lastAssistantText(agent.session.snapshotEvents(), before)
+    const reportedTo = dispatchSeq === undefined ? undefined : reportRecipient(room.snapshotEvents(), dispatchSeq)?.name
+    room.append('room/speech', {
+      member: replay(room.snapshotEvents()).members.find(entry => entry.id === member.id)?.name ?? member.name,
+      text: output, childSessionId: agent.session.id, durationMs: Date.now() - startedAt,
+      ...reportedTo === undefined ? {} : { reportedTo },
+    })
+    await this.ctx.sessions.flush(room)
+    return { state: 'done', ...output === '' ? {} : { text: output } }
   }
 
   /** CLI member turn: facade start (first round) or resume, then the speech mirror. */
   private async runCliMember(
     room: Session, member: RoomMember, cursor: number | undefined,
-    text: string, admitted: () => Promise<number>, relayIds: readonly string[], submitted: () => void, runId: string,
+    text: string, admitted: () => Promise<number>, relayIds: readonly string[], submitted: () => void, runId: string, dispatchSeq: number | undefined,
   ): Promise<RunOutcome> {
     const facade = probeLocalAgent(this.ctx)
     if (facade === undefined) {
@@ -422,7 +547,7 @@ export class DispatchEngine {
       },
     }
     if (!controlled) startedAt = await admitted()
-    const { prompt, carried } = assemblePrompt(room, member, cursor, text, relayIds)
+    const { prompt, carried } = assemblePrompt(room, member, cursor, text, relayIds, dispatchSeq)
     const prepared = member.childSessionId !== undefined && facade.isPreparedMember?.(member.childSessionId) === true
     const pendingRun = prepared
       ? facade.start(room.id, provider, [{ type: 'text', text: prompt }], { preparedMemberId: member.childSessionId!, ...admission })
@@ -462,31 +587,17 @@ export class DispatchEngine {
     const output = runOutputText(result.output)
     const interrupted = result.stopReason === 'completed' ? undefined
       : result.stopReason === 'aborted' ? 'cancelled' as const : 'failed' as const
+    const reportedTo = dispatchSeq === undefined ? undefined : reportRecipient(room.snapshotEvents(), dispatchSeq)?.name
     const speech = output !== '' || interrupted === undefined ? room.append('room/speech', {
       member: replay(room.snapshotEvents()).members.find(entry => entry.id === member.id)?.name ?? member.name,
       text: output,
       childSessionId: run.id,
       durationMs: Date.now() - startedAt,
       ...interrupted === undefined ? {} : { interrupted },
+      ...reportedTo === undefined ? {} : { reportedTo },
     }) : undefined
     if (speech !== undefined) await this.ctx.sessions.flush(room)
     if (result.stopReason === 'completed') {
-      // The fallback notification channel: a reply whose trailing own line is
-      // `@name <content>` (the roster-taught format) becomes a pending relay
-      // at the gate — the same shape the family bridge's member_message
-      // produces, so downstream handling is identical.
-      const directive = parseRelayDirective(runOutputText(result.output))
-      const roster = replay(room.snapshotEvents()).members
-      if (directive !== undefined && directive.to !== member.name
-        && roster.some(entry => entry.name === directive.to)) {
-        room.append('room/relay', {
-          id: randomUUID(),
-          from: member.name,
-          to: directive.to,
-          content: directive.content,
-          provenance: { kind: 'speech-fallback', speechSeq: speech!.seq },
-        })
-      }
       await this.ctx.sessions.flush(room)
       return { state: 'done', text: runOutputText(result.output) }
     } else if (result.stopReason === 'aborted') {

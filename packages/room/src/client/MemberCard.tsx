@@ -14,8 +14,12 @@ import css from './MembersView.module.css'
 
 /** One roster card: identity, avatar block, role, status chip, actions. */
 export function MemberCard({
-  member, run, elapsedMs, openSession, onEdit, onRemove, t, modelHint, coordinator = false, onPromote, preview = false,
+  member, run, elapsedMs, openSession, onEdit, onRemove, t, modelHint, coordinator = false, onPromote, preview = false, removal, onLocate,
 }: {
+  /** Reveal this member in the team page. */
+  readonly onLocate?: (() => void) | undefined
+  /** The open removal confirmation, rendered inside the card. */
+  readonly removal?: ReactNode
   readonly coordinator?: boolean
   readonly onPromote?: (() => void) | undefined
   readonly member: RoomMember
@@ -62,9 +66,13 @@ export function MemberCard({
           {member.name.slice(0, 1).toUpperCase()}
         </span>
         <span className={css.identity}>
-          <span className={css.name}>{member.name}</span>{coordinator && <span className={css.hint}>{t('coordinator.label')}</span>}
+          <span className={css.nameRow}>
+            <span className={css.name}>{member.name}</span>
+            {member.role !== undefined && <span className={css.role}>{member.role}</span>}
+          </span>
+          {coordinator && <span className={css.hint}>{t('coordinator.label')}</span>}
           <span className={css.hint}>
-            {member.kind === 'main-agent' ? t('member.kind.main') : member.provider ?? ''}
+            {member.kind === 'main-agent' ? t('member.kind.main') : member.kind === 'native' ? t('member.kind.native', { preset: member.preset ?? t('member.kind.defaultPreset') }) : member.provider ?? ''}
             {modelHint !== undefined && modelHint !== '' && <>{' · '}{modelHint}</>}
           </span>
         </span>
@@ -84,7 +92,7 @@ export function MemberCard({
           </span>
         )}
       </div>
-      {member.kind === 'cli' && (
+      {member.kind !== 'main-agent' && (
         member.instructions === undefined ? (
           <p className={css.instructionsEmpty}>{t('members.instructions.empty')}</p>
         ) : (
@@ -111,8 +119,14 @@ export function MemberCard({
       {!preview && (
         <div className={css.foot}>
           {!coordinator && onPromote !== undefined && <button type="button" className={css.action} disabled={running} onClick={onPromote}>{t('coordinator.promote')}</button>}
-          {member.kind === 'cli' && (
+          {member.kind === 'main-agent' && onLocate !== undefined && (
             <span className={css.actions}>
+              <button type="button" className={css.action} onClick={onLocate}>{t('team.locate')}</button>
+            </span>
+          )}
+          {member.kind !== 'main-agent' && (
+            <span className={css.actions}>
+              {onLocate !== undefined && <button type="button" className={css.action} onClick={onLocate}>{t('team.locate')}</button>}
               <button
                 type="button"
                 className={css.action}
@@ -124,13 +138,19 @@ export function MemberCard({
               <button type="button" className={css.action} onClick={onEdit}>
                 {t('members.edit')}
               </button>
-              <button type="button" className={css.action} disabled={coordinator} onClick={onRemove}>
+              <button
+                type="button"
+                className={removal === undefined ? css.action : `${css.action} ${css.removeOpen}`}
+                aria-expanded={removal !== undefined}
+                onClick={onRemove}
+              >
                 {t('members.remove')}
               </button>
             </span>
           )}
         </div>
       )}
+      {removal}
     </div>
   )
 }

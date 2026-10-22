@@ -123,6 +123,7 @@ describe('room journal persistence', () => {
       session.append('room/task-updated', { id: 't1', status: 'done' })
       session.append('room/task-edited', { id: 't1', title: '出方案 v2' })
       session.append('room/speech', { member: 'ada', text: '方案 A' })
+      session.append('room/settings', { hopLimit: 6 })
       session.append('room/relay', { id: 'r1', from: 'ada', to: 'bill', content: '接口定稿' })
       session.append('room/relay-resolved', { id: 'r1', state: 'sent' })
       session.append('room/run-state', { member: 'ada', runId: 'a', state: 'done', startedAt: 1, elapsedMs: 2 })
@@ -271,7 +272,7 @@ describe('V4 durable producer source (real JSONL persistence)', () => {
       // The shape runMainAgent's followup carries; the agent runtime appends
       // it to the session log in production — here the append is direct.
       session.append('user/message', createUserMessage({
-        content: [{ type: 'text', text: '【成员名册】…' }],
+        content: [{ type: 'text', text: '【房间简报】…' }],
         source: roomSource(),
       }), { surfaceOp: 'append' })
       await fix.ctx.sessions.flush(session)

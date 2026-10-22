@@ -26,16 +26,20 @@ import { MEMBER_BRIDGE_SOCKET_ENV, MEMBER_BRIDGE_TOKEN_ENV } from './types.ts'
 export const MEMBER_MESSAGE_TOOL = 'member_message'
 
 const TOOL_DESCRIPTION = [
-  'Notify another CLI member of this room/session group (member-to-member message).',
-  '`to` is the target member\'s dsh child session id (or a member name when a room manages the group).',
-  'The delivery receipt is returned verbatim: sent / pending-confirm / busy / an error reason.',
+  'Send a message to another member of this room/session group.',
+  '`to` is the member name (or its dsh child session id).',
+  'kind "task" (default) hands it work: in a room, its final reply is reported back to you automatically, citing the message id — do not poll.',
+  'kind "notify" is an FYI and is never reported back. Pass inReplyTo (e.g. m12) when answering a message.',
+  'The receipt is returned verbatim: sent #m<id> … / pending-confirm … / busy / an error reason.',
 ].join(' ')
 
 const TOOL_SCHEMA = {
   type: 'object',
   properties: {
     to: { type: 'string', description: 'The target member\'s child session id (or room-roster name).' },
-    text: { type: 'string', description: 'The notification text, delivered with your provenance.' },
+    text: { type: 'string', description: 'The message text, delivered with your provenance.' },
+    kind: { type: 'string', enum: ['task', 'notify'], description: 'task (default): the reply is reported back to you; notify: FYI only.' },
+    inReplyTo: { type: 'string', description: 'Optional id of the message this answers, e.g. m12.' },
   },
   required: ['to', 'text'],
   additionalProperties: false,
@@ -48,11 +52,11 @@ const ROOM_TOOLS = [
     inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
   { name: 'room_invite', description: 'Coordinator only: invite a member. An optional firstTask starts in the background and returns its result to you automatically.',
     inputSchema: { type: 'object', properties: {
-      provider: { type: 'string' }, name: { type: 'string' }, instructions: { type: 'string' },
+      provider: { type: 'string' }, name: { type: 'string' }, role: { type: 'string', description: 'Short public role (≤30 chars) the other members see, e.g. 代码审查.' }, instructions: { type: 'string', description: 'Private instructions only this member reads.' },
       cwd: { type: 'string' }, model: { type: 'string' }, firstTask: { type: 'string' },
     }, required: ['provider', 'name'], additionalProperties: false } },
-  { name: 'room_message', description: 'Coordinator only: dispatch background work to a room member by name. Returns acceptance immediately; completion arrives as a correlated report. Do not poll.',
-    inputSchema: { type: 'object', properties: { member: { type: 'string' }, text: { type: 'string' } }, required: ['member', 'text'], additionalProperties: false } },
+  { name: 'room_message', description: 'Send a room member a message by name (same as member_message). kind "task" (default): its reply comes back to you as a report citing the message id; kind "notify": FYI only. Do not poll.',
+    inputSchema: { type: 'object', properties: { member: { type: 'string' }, text: { type: 'string' }, kind: { type: 'string', enum: ['task', 'notify'] }, inReplyTo: { type: 'string' } }, required: ['member', 'text'], additionalProperties: false } },
 ] as const
 
 export async function callRoomCommand(env: MemberBridgeEnv, name: MemberRoomCommandName, args: unknown): Promise<Record<string, unknown>> {
@@ -117,7 +121,7 @@ function toolText(text: string, isError = false): Record<string, unknown> {
  */
 export async function callMemberMessage(
   env: MemberBridgeEnv,
-  args: { to?: unknown; text?: unknown },
+  args: { to?: unknown; text?: unknown; kind?: unknown; inReplyTo?: unknown },
 ): Promise<Record<string, unknown>> {
   if (env.socket === undefined || env.token === undefined) {
     return toolText('member channel is not configured for this run (missing socket/token environment)', true)
@@ -130,6 +134,8 @@ export async function callMemberMessage(
       token: env.token,
       to: args.to,
       text: args.text,
+      ...args.kind === 'task' || args.kind === 'notify' ? { kind: args.kind } : {},
+      ...typeof args.inReplyTo === 'string' ? { inReplyTo: args.inReplyTo } : {},
     })
     if (outcome.ok) return toolText(outcome.receipt ?? 'sent')
     return toolText(outcome.error ?? 'member channel rejected the message', true)

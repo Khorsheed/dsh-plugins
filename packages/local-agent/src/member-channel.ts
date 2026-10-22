@@ -47,6 +47,10 @@ export interface MemberBridgeRequest {
   to: string
   /** The notification text. */
   text: string
+  /** `task` (default) or `notify`; passed to a claiming room. */
+  kind?: 'task' | 'notify'
+  /** The message id this one answers (e.g. `m12`); passed to a claiming room. */
+  inReplyTo?: string
 }
 
 export interface MemberCommandBridgeRequest {
@@ -223,6 +227,8 @@ export class MemberChannel {
       to: request.to,
       content: request.text,
       parentSessionId: from.parentSessionId,
+      ...request.kind === 'task' || request.kind === 'notify' ? { kind: request.kind } : {},
+      ...typeof request.inReplyTo === 'string' ? { inReplyTo: request.inReplyTo } : {},
       provenance: {
         childSessionId: from.childSessionId,
         provider: from.provider,

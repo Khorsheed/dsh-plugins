@@ -36,11 +36,23 @@ export interface RoomMemberAddedEvent {
   /** Stable identity; older journals derive it from their original join event. */
   readonly id?: string
   readonly name: string
-  readonly kind: 'main-agent' | 'cli'
-  /** CLI provider id; present exactly on `kind: 'cli'` members. */
+  readonly kind: 'main-agent' | 'cli' | 'native'
+  /** CLI provider id on `kind: 'cli'` members; `dsh` on native ones. */
   readonly provider?: string
+  /**
+   * The host agent preset a native DSH member composes (`kind: 'native'`):
+   * a child session + agent in this host process, mounted with that preset
+   * at creation and locked from then on. Absent = the host's default preset.
+   */
+  readonly preset?: string
   /** Role instructions, prepended to the member's first dispatch. */
   readonly instructions?: string
+  /**
+   * The member's short public role (≤ 30 chars — journal `ROOM_ROLE_MAX` — e.g.
+   * 「代码审查」): what the roster, the cards and the team view show to
+   * everyone else. The instructions stay private to the member.
+   */
+  readonly role?: string
   readonly invitedBy: 'human' | 'agent'
   /**
    * The member's own working directory (empty = inherits the room session's
@@ -72,6 +84,8 @@ export interface RoomMemberUpdatedEvent {
   readonly rename?: string
   /** New role instructions; null CLEARS them (later dispatches inject none). */
   readonly instructions?: string | null
+  /** New public role; null CLEARS it. */
+  readonly role?: string | null
   /**
    * New member-level cwd (roster-recorded; the delegation facade's per-call
    * override is the family's open R2). null CLEARS the override — the member
@@ -116,7 +130,28 @@ export interface RoomDispatchEvent {
   /** Caller retry identity, persisted before accepting input. */
   readonly id?: string
   readonly targetIds?: readonly string[]
-  readonly origin?: 'human' | 'coordinator' | 'report' | 'relay'
+  /**
+   * Who sent it: the human, the coordinator, any other member (`member`,
+   * free member-to-member messaging), a delivery's report, or a legacy
+   * confirmed relay.
+   */
+  readonly origin?: 'human' | 'coordinator' | 'member' | 'report' | 'relay'
+  /** The sending member's id (coordinator/member origins). */
+  readonly from?: string
+  /**
+   * `task` (default for member sends): the recipient's final reply is reported
+   * back to the sender. `notify`: an FYI, never reported.
+   */
+  readonly kind?: 'task' | 'notify'
+  /**
+   * Position in its causal chain: 1 for a human message (or a send outside
+   * any room round), the sender's own delivery hop + 1 otherwise; reports
+   * count too. A send past the room's hop limit is held for the human.
+   */
+  readonly hop?: number
+  /** The message this one answers (`#m<seq>` of an earlier dispatch). */
+  readonly inReplyTo?: number
+  /** The member id this delivery's outcome is reported to. */
   readonly replyTo?: string
   /** Completion report deduplication key (one source delivery). */
   readonly reportFor?: string
@@ -132,6 +167,8 @@ export interface RoomDispatchEvent {
 export interface RoomSpeechEvent {
   /** Partial output from a stopped or failed run; never a completed answer. */
   readonly interrupted?: 'cancelled' | 'failed'
+  /** The member this reply was also reported to (the delivery's sender), by name. */
+  readonly reportedTo?: string
   readonly member: string
   readonly text: string
   readonly childSessionId?: SessionId
@@ -184,6 +221,49 @@ export interface RoomRelayEvent {
   readonly to: string
   readonly content: string
   readonly provenance?: Record<string, RoomJsonValue>
+  /**
+   * Why the message waits for the human: the room asks for confirmation of
+   * member messages, the chain reached the hop limit, or the room is paused
+   * (released automatically on resume). Absent on legacy relays.
+   */
+  readonly reason?: RoomHoldReason
+  /** The dispatch to create once released (absent on legacy relays). */
+  readonly intent?: RoomHeldDispatch
+}
+
+/** Why a member message is held at the gate. */
+export type RoomHoldReason = 'confirm' | 'hop-limit' | 'paused'
+
+/** A held message's would-be dispatch. */
+export interface RoomHeldDispatch {
+  readonly origin: 'coordinator' | 'member' | 'report'
+  readonly from?: string
+  readonly kind?: 'task' | 'notify'
+  readonly hop: number
+  readonly inReplyTo?: number
+  readonly replyTo?: string
+  readonly reportFor?: string
+  readonly plan?: { readonly goalId: string }
+}
+
+/**
+ * The room's collaboration settings (latest event wins per field). Members
+ * message each other freely by default; `confirm` holds every non-coordinator
+ * member message for the human. `hopLimit` caps a causal chain (each delivery
+ * and report is one hop) before the room stops relaying automatically.
+ * `paused` holds every agent-originated message until resumed.
+ */
+export interface RoomSettingsEvent {
+  readonly memberMessages?: 'free' | 'confirm'
+  readonly hopLimit?: number
+  readonly paused?: boolean
+}
+
+/** The folded settings with defaults applied. */
+export interface RoomSettings {
+  readonly memberMessages: 'free' | 'confirm'
+  readonly hopLimit: number
+  readonly paused: boolean
 }
 
 /** A relay left the pending state (confirmed, dismissed, or delivered). */
@@ -247,6 +327,8 @@ export interface RoomTaskEditedEvent {
   readonly title?: string
   /** New blocking member; explicit null clears the wait. */
   readonly blockedBy?: string | null
+  /** Hand the task to another member's lane (a removal's transfer). */
+  readonly member?: string
 }
 
 declare module '@deepseek-ai/dsh-session/types' {
@@ -282,6 +364,8 @@ declare module '@deepseek-ai/dsh-session/types' {
     'room/task-edited': RoomTaskEditedEvent
     /** Goal: the room's goal was set (or cleared). */
     'room/goal': RoomGoalEvent
+    /** Collaboration settings changed. */
+    'room/settings': RoomSettingsEvent
   }
 }
 
@@ -289,9 +373,13 @@ declare module '@deepseek-ai/dsh-session/types' {
 export interface RoomMember {
   readonly id?: string
   readonly name: string
-  readonly kind: 'main-agent' | 'cli'
+  readonly kind: 'main-agent' | 'cli' | 'native'
   readonly provider?: string
   readonly instructions?: string
+  /** Short public role shown to the other members (see {@link RoomMemberAddedEvent.role}). */
+  readonly role?: string
+  /** Native members: the host agent preset (see {@link RoomMemberAddedEvent.preset}). */
+  readonly preset?: string
   readonly invitedBy: 'human' | 'agent'
   /** Member-level working directory (roster record; not yet passed to the facade). */
   readonly cwd?: string
@@ -308,6 +396,8 @@ export interface RoomRelay {
   readonly content: string
   readonly provenance?: Record<string, RoomJsonValue>
   readonly state: RoomRelayState
+  readonly reason?: RoomHoldReason
+  readonly intent?: RoomHeldDispatch
 }
 
 /** One task-board task, as folded by the journal replay. */
@@ -367,6 +457,8 @@ export interface RoomState {
   readonly runs: readonly RoomMemberRun[]
   /** The current goal text (the latest `room/goal` event), undefined when unset. */
   readonly goal?: string
+  /** Collaboration settings (defaults when never set). */
+  readonly settings?: RoomSettings
 }
 
 /**
@@ -398,6 +490,14 @@ export type RoomFailure =
   | { readonly code: 'empty-provider' }
   | { readonly code: 'member-not-found' }
   | { readonly code: 'empty-text' }
+  /** The public role is longer than 30 characters. */
+  | { readonly code: 'role-too-long' }
+  /** A settings value is out of range (hop limit 2–50). */
+  | { readonly code: 'invalid-settings' }
+  /** A member cannot message itself. */
+  | { readonly code: 'self-message' }
+  /** The preset is not one the host declares (carries the declared ids). */
+  | { readonly code: 'unknown-preset'; readonly preset: string; readonly available: readonly string[] }
   | { readonly code: 'nothing-to-update' }
   | { readonly code: 'local-agent-unavailable' }
   /**
@@ -434,10 +534,18 @@ export interface RoomMemberMessage {
   readonly content: string
   readonly parentSessionId: SessionId
   readonly provenance?: Record<string, RoomJsonValue>
+  /** `task` (default): the reply is reported back; `notify`: FYI only. */
+  readonly kind?: 'task' | 'notify'
+  /** `m<seq>` (or the bare seq) of the message being answered. */
+  readonly inReplyTo?: string
 }
 
-/** The gate receipt handed back to the sending member through the bridge. */
-export type RoomMemberMessageReceipt = 'sent' | 'pending-confirm' | 'busy'
+/**
+ * The gate receipt handed back to the sending member through the bridge,
+ * quoted verbatim to the model: `sent #m<seq>…` or `pending-confirm …` with a
+ * short explanation (the bare legacy words remain valid).
+ */
+export type RoomMemberMessageReceipt = 'sent' | 'pending-confirm' | 'busy' | `sent ${string}` | `pending-confirm ${string}`
 
 /** isRoom probe: does this session carry the room marker? */
 export interface RoomIsRoomRequest {
@@ -460,12 +568,21 @@ export type RoomGetStateResult =
 export interface RoomInviteRequest {
   /** Room session. */
   readonly sessionId: SessionId
+  /**
+   * `cli` (default): an external CLI through the local-agent family.
+   * `native`: a DSH child agent in this host process, composing `preset`.
+   */
+  readonly kind?: 'cli' | 'native'
+  /** Native members only: the host agent preset id (omitted = the host default). */
+  readonly preset?: string
   /** CLI provider id (non-blank). */
   readonly provider: string
   /** Addressing/display name: unique in the room, no whitespace, no `@`. */
   readonly name: string
   /** Role instructions, prepended to the member's first dispatch. */
   readonly instructions?: string
+  /** Short public role (≤ 30 chars); blank/omitted = none. */
+  readonly role?: string
   /**
    * Member-level working directory (empty/omitted = inherits the room
    * session's cwd). Recorded on the roster; not yet passed to the delegation
@@ -505,6 +622,8 @@ export interface RoomUpdateMemberRequest {
   readonly rename?: string
   /** New role instructions; null (or a blank string) CLEARS them. */
   readonly instructions?: string | null
+  /** New public role; null (or a blank string) CLEARS it. */
+  readonly role?: string | null
   /** New member-level cwd; null (or a blank string) CLEARS the override back to inheriting the room cwd. */
   readonly cwd?: string | null
   /**
@@ -526,10 +645,42 @@ export interface RoomRemoveMemberRequest {
   readonly sessionId: SessionId
   /** Member to remove. */
   readonly name: string
+  /**
+   * Hand the member's not-yet-started (pending) board tasks to this member
+   * instead of cancelling them. In-progress tasks always close with the
+   * member's work.
+   */
+  readonly transferPendingTo?: string
+}
+
+/** What a removal actually did, for the undo toast and the room record. */
+export interface RoomRemoval {
+  readonly name: string
+  /** True when a running round was stopped first. */
+  readonly stopped: boolean
+  /** Queued messages that will never be delivered. */
+  readonly cancelledDeliveries: number
+  /** Board tasks closed as cancelled. */
+  readonly cancelledTasks: number
+  /** Pending board tasks handed to another member. */
+  readonly transferredTasks: number
+  /** Members that were waiting for a report and were told instead. */
+  readonly notified: readonly string[]
+}
+
+/** restoreMember request: undo a removal (the member rejoins with its own session). */
+export interface RoomRestoreMemberRequest {
+  readonly sessionId: SessionId
+  readonly name: string
 }
 
 /** removeMember outcome. */
 export type RoomRemoveMemberResult =
+  | { readonly ok: true; readonly value: RoomRemoval }
+  | { readonly ok: false; readonly error: RoomFailure }
+
+/** restoreMember outcome. */
+export type RoomRestoreMemberResult =
   | { readonly ok: true; readonly value: { readonly name: string } }
   | { readonly ok: false; readonly error: RoomFailure }
 
@@ -577,11 +728,38 @@ export interface RoomMessageRequest {
   readonly member: string
   /** The message text. */
   readonly text: string
+  /** `task` (default): the reply is reported back to the sender; `notify`: FYI only. */
+  readonly kind?: 'task' | 'notify'
+  /** `m<seq>` (or the bare seq) of the message being answered. */
+  readonly inReplyTo?: string
+}
+
+/** What happened to one member message. */
+export interface RoomMessageReceipt {
+  readonly member: string
+  /** `m<seq>`: the message id the report will cite (absent while held). */
+  readonly messageId?: string
+  /** Set when the message waits for the human instead of being delivered. */
+  readonly held?: RoomHoldReason
 }
 
 /** messageMember outcome. */
 export type RoomMessageResult =
-  | { readonly ok: true; readonly value: { readonly member: string } }
+  | { readonly ok: true; readonly value: RoomMessageReceipt }
+  | { readonly ok: false; readonly error: RoomFailure }
+
+/** setSettings request: change any subset of the collaboration settings. */
+export interface RoomSetSettingsRequest {
+  readonly sessionId: SessionId
+  readonly memberMessages?: 'free' | 'confirm'
+  /** 2–50. */
+  readonly hopLimit?: number
+  readonly paused?: boolean
+}
+
+/** setSettings outcome: the folded settings after the change. */
+export type RoomSetSettingsResult =
+  | { readonly ok: true; readonly value: RoomSettings }
   | { readonly ok: false; readonly error: RoomFailure }
 
 /** postMessage outcome. */
@@ -716,6 +894,22 @@ export interface RoomProviderList {
   /** False when the local-agent delegation facade is absent (CLI members undispatchable). */
   readonly localAgentAvailable: boolean
   readonly providers: readonly RoomProviderInfo[]
+  /**
+   * The host's agent presets a native DSH member may compose; absent when
+   * the composition mounts no preset registry (native members then run the
+   * plain composition).
+   */
+  readonly presets?: readonly RoomPresetInfo[]
+}
+
+/** One host agent preset, as the invite dialog lists it. */
+export interface RoomPresetInfo {
+  readonly id: string
+  readonly name?: string
+  readonly description?: string
+  readonly isDefault: boolean
+  /** Why the preset cannot be composed right now. */
+  readonly broken?: string
 }
 
 /** Durable role change. Handoff is bounded context, never native history migration. */
@@ -760,6 +954,12 @@ export interface RoomDelivery {
   readonly memberId: string
   readonly status: 'queued' | RoomDeliveryStateEvent['state']
   readonly origin: NonNullable<RoomDispatchEvent['origin']>
+  /** The member id this delivery's outcome is reported to, when any. */
+  readonly replyTo?: string
+  /** The sending member's id (coordinator/member origins). */
+  readonly from?: string
+  /** `task` or `notify` (member sends); absent on human and legacy dispatches. */
+  readonly kind?: 'task' | 'notify'
   readonly text: string
   readonly error?: string
   readonly plan?: RoomDispatchEvent['plan']

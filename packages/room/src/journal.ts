@@ -13,7 +13,7 @@
 import { replayDeliveries } from './deliveries.ts'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import type {
-  RoomExecution, RoomMember, RoomMemberRun, RoomRelay, RoomState, RoomTask, RoomTaskProgress,
+  RoomExecution, RoomMember, RoomMemberRun, RoomRelay, RoomSettings, RoomState, RoomTask, RoomTaskProgress,
 } from './types.ts'
 
 /**
@@ -22,6 +22,9 @@ import type {
  * Existing journals retain their recorded names, including legacy main.
  */
 export const MAIN_AGENT_MEMBER = 'dsh'
+
+/** Longest accepted public member role (`RoomMember.role`), in characters. */
+export const ROOM_ROLE_MAX = 30
 
 /**
  * Every `room/*` session-event type this package introduces. Room registers
@@ -53,7 +56,11 @@ export const ROOM_EVENT_TYPES = [
   'room/task-updated',
   'room/task-edited',
   'room/goal',
+  'room/settings',
 ] as const
+
+/** Collaboration settings of a room that never changed them. */
+export const DEFAULT_ROOM_SETTINGS: RoomSettings = { memberMessages: 'free', hopLimit: 10, paused: false }
 
 /** Whether an event log carries the room identity marker. */
 export function isRoomLog(events: readonly SessionEvent[]): boolean {
@@ -81,25 +88,6 @@ export function parseMentions(raw: string): { readonly targets: readonly string[
 }
 
 /**
- * The fallback notification channel: a member reply's TRAILING own line of
- * the form `@name <content>` (the format the roster injection teaches).
- * Only the last line counts — an `@name` inside prose is a mention, not a
- * notification. Leading whitespace on that line is tolerated (models indent
- * under their own bullet/list style). The caller checks the target against
- * the roster.
- * @param text - the member's reply text.
- * @returns the parsed directive, or undefined.
- */
-export function parseRelayDirective(text: string): { readonly to: string; readonly content: string } | undefined {
-  const trimmed = text.trimEnd()
-  if (trimmed === '') return undefined
-  const last = trimmed.slice(trimmed.lastIndexOf('\n') + 1).trimStart()
-  const match = /^@(\S+)\s+(\S[\s\S]*)$/.exec(last)
-  if (match === null) return undefined
-  return { to: match[1]!, content: match[2]!.trim() }
-}
-
-/**
  * Fold a session's event log into the room state.
  *
  * Write-side invariants (invite/update/remove validate before appending) are
@@ -123,6 +111,7 @@ export function replay(events: readonly SessionEvent[]): RoomState {
   const runs = new Map<string, RoomMemberRun>()
   const executions = new Map<string, RoomExecution>()
   let goal: string | undefined
+  let settings = DEFAULT_ROOM_SETTINGS
   let coordinator: RoomState['coordinator']
   for (const event of events) {
     switch (event.type) {
@@ -139,6 +128,8 @@ export function replay(events: readonly SessionEvent[]): RoomState {
           invitedBy: event.data.invitedBy,
           ...event.data.provider === undefined ? {} : { provider: event.data.provider },
           ...event.data.instructions === undefined ? {} : { instructions: event.data.instructions },
+          ...event.data.role === undefined ? {} : { role: event.data.role },
+          ...event.data.preset === undefined ? {} : { preset: event.data.preset },
           ...event.data.cwd === undefined ? {} : { cwd: event.data.cwd },
           ...event.data.model === undefined ? {} : { model: event.data.model },
           ...event.data.childSessionId === undefined ? {} : { childSessionId: event.data.childSessionId },
@@ -155,9 +146,12 @@ export function replay(events: readonly SessionEvent[]): RoomState {
         const withoutInstructions: RoomMember = event.data.instructions === null
           ? (({ instructions: _cleared, ...rest }: RoomMember): RoomMember => rest)(member)
           : { ...member, ...event.data.instructions === undefined ? {} : { instructions: event.data.instructions } }
+        const withoutRole: RoomMember = event.data.role === null
+          ? (({ role: _cleared, ...rest }: RoomMember): RoomMember => rest)(withoutInstructions)
+          : { ...withoutInstructions, ...event.data.role === undefined ? {} : { role: event.data.role } }
         const withoutCwd: RoomMember = event.data.cwd === null
-          ? (({ cwd: _cleared, ...rest }: RoomMember): RoomMember => rest)(withoutInstructions)
-          : { ...withoutInstructions, ...event.data.cwd === undefined ? {} : { cwd: event.data.cwd } }
+          ? (({ cwd: _cleared, ...rest }: RoomMember): RoomMember => rest)(withoutRole)
+          : { ...withoutRole, ...event.data.cwd === undefined ? {} : { cwd: event.data.cwd } }
         const withoutModel: RoomMember = event.data.model === null
           ? (({ model: _cleared, ...rest }: RoomMember): RoomMember => rest)(withoutCwd)
           : { ...withoutCwd, ...event.data.model === undefined ? {} : { model: event.data.model } }
@@ -232,6 +226,8 @@ export function replay(events: readonly SessionEvent[]): RoomState {
           content: event.data.content,
           state: 'pending',
           ...event.data.provenance === undefined ? {} : { provenance: event.data.provenance },
+          ...event.data.reason === undefined ? {} : { reason: event.data.reason },
+          ...event.data.intent === undefined ? {} : { intent: event.data.intent },
         }
         relayById.set(relay.id, relay)
         relays.push(relay)
@@ -279,10 +275,19 @@ export function replay(events: readonly SessionEvent[]): RoomState {
         const edited: RoomTask = {
           ...base,
           ...event.data.title === undefined ? {} : { title: event.data.title },
+          ...event.data.member === undefined ? {} : { member: event.data.member },
           updatedAt: event.time,
         }
         taskById.set(edited.id, edited)
         tasks[tasks.indexOf(task)] = edited
+        break
+      }
+      case 'room/settings': {
+        settings = {
+          memberMessages: event.data.memberMessages ?? settings.memberMessages,
+          hopLimit: event.data.hopLimit ?? settings.hopLimit,
+          paused: event.data.paused ?? settings.paused,
+        }
         break
       }
       case 'room/goal': {
@@ -330,7 +335,7 @@ export function replay(events: readonly SessionEvent[]): RoomState {
   const planEvent = events.filter(event => event.type === 'room/plan-state').at(-1)
   const plan = planEvent?.type === 'room/plan-state' ? (({ requests: _requests, ...view }) => view)(planEvent.data) : undefined
   const deliveries = replayDeliveries(events)
-  return { members, relays, tasks, ...executions.size === 0 ? {} : { executions: [...executions.values()] }, ...plan === undefined ? {} : { plan }, ...deliveries.length === 0 ? {} : { deliveries }, runs: [...runs.values()], ...coordinator === undefined ? {} : { coordinator }, ...goal === undefined ? {} : { goal } }
+  return { members, relays, tasks, ...executions.size === 0 ? {} : { executions: [...executions.values()] }, ...plan === undefined ? {} : { plan }, ...deliveries.length === 0 ? {} : { deliveries }, runs: [...runs.values()], ...coordinator === undefined ? {} : { coordinator }, ...goal === undefined ? {} : { goal }, settings }
 }
 
 /**
@@ -369,31 +374,47 @@ export function previousCursor(
 }
 
 /**
- * Whether the roster a member was last told about is stale: any roster-visible
- * change with a seq past their dispatch cursor — a member-added or
- * member-removed, or a member-updated that touches what the roster section
- * shows (instructions = the one-line role, rename = the addressing name). A
- * childSessionId/cwd/model-only update is NOT roster-visible (the delegation
- * handle is journaled right after a first run; counting it would re-send the
- * roster on every member's next dispatch for nothing — the model intent never
- * enters any prompt either). A member with no cursor has
- * never seen the roster, so their first dispatch always counts as stale.
+ * What changed in the room since a member's last dispatch, as one-line
+ * notes for the next prompt: other members joining or leaving, renames, role
+ * changes, the member's own role change, and a goal change. The full roster
+ * rides only the first dispatch's briefing; later dispatches carry these
+ * deltas instead (the member's own session holds the rest), and a member who
+ * wants the whole picture calls `room_read`. Model, cwd and delegation-handle
+ * updates never reach a prompt. A member with no cursor gets no deltas — the
+ * briefing already covers everything.
  * @param events - the session's event log.
  * @param cursor - the member's pre-dispatch cursor ({@link previousCursor}).
- * @returns true when the next dispatch must carry the roster section.
+ * @param self - the member's CURRENT name (its own rename is not news to it).
+ * @returns the change notes (empty when nothing changed).
  */
-export function rosterStaleSince(
+export function roomChangesSince(
   events: readonly SessionEvent[],
   cursor: number | undefined,
-): boolean {
-  if (cursor === undefined) return true
+  self: string,
+): readonly string[] {
+  if (cursor === undefined) return []
+  const notes: string[] = []
+  let goal: { readonly text: string } | undefined
   for (const event of events) {
     if (event.seq <= cursor) continue
-    if (event.type === 'room/member-added' || event.type === 'room/member-removed') return true
-    if (event.type === 'room/member-updated'
-      && (event.data.instructions !== undefined || event.data.rename !== undefined)) return true
+    if (event.type === 'room/member-added' && event.data.name !== self && event.data.kind !== 'main-agent') {
+      const detail = [event.data.role, event.data.provider].filter(Boolean).join(' · ')
+      notes.push(`${event.data.name} 加入${detail === '' ? '' : `（${detail}）`}`)
+    } else if (event.type === 'room/member-removed' && event.data.name !== self) {
+      notes.push(`${event.data.name} 离开`)
+    } else if (event.type === 'room/member-updated') {
+      if (event.data.rename !== undefined && event.data.rename !== self) notes.push(`${event.data.name} 改名为 ${event.data.rename}`)
+      if (event.data.role !== undefined) {
+        const who = event.data.rename ?? event.data.name
+        const subject = who === self ? '你的职责' : `${who} 的职责`
+        notes.push(event.data.role === null ? `${subject}已清除` : `${subject}改为：${event.data.role}`)
+      }
+    } else if (event.type === 'room/goal') {
+      goal = { text: event.data.text.trim() }
+    }
   }
-  return false
+  if (goal !== undefined) notes.push(goal.text === '' ? '房间目标已清除' : `房间目标更新为：${goal.text}`)
+  return notes
 }
 
 /**

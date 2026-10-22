@@ -70,7 +70,7 @@ describe('RoomService Remote surface (real composition)', () => {
   it('getState replays a fresh room (main agent seated), and rejects plain/unknown sessions', async () => {
     const { ctx, service, sessionId } = await bootRoom()
     const state = await service.getState({ sessionId })
-    expect(state).toEqual({ ok: true, value: { members: [MAIN_MEMBER], relays: [], tasks: [], runs: [] } })
+    expect(state).toEqual({ ok: true, value: { members: [MAIN_MEMBER], relays: [], tasks: [], runs: [], settings: { memberMessages: 'free', hopLimit: 10, paused: false } } })
 
     const plain = ctx.sessions.create(SessionId('plain'), { meta: {} })
     expect(await service.getState({ sessionId: plain.id }))
@@ -93,7 +93,7 @@ describe('RoomService Remote surface (real composition)', () => {
     expect(session.snapshotEvents().filter(event => event.type.startsWith('room/')).map(event => event.type))
       .toEqual(['room/created', 'room/member-added'])
     const state = await service.getState({ sessionId })
-    expect(state).toEqual({ ok: true, value: { members: [MAIN_MEMBER], relays: [], tasks: [], runs: [] } })
+    expect(state).toEqual({ ok: true, value: { members: [MAIN_MEMBER], relays: [], tasks: [], runs: [], settings: { memberMessages: 'free', hopLimit: 10, paused: false } } })
 
     // Idempotent: a second promotion journals nothing more.
     const again = await service.ensureRoom(sessionId)
@@ -336,7 +336,7 @@ describe('RoomService Remote surface (real composition)', () => {
   it('removeMember drops the member from the roster and validates its inputs', async () => {
     const { service, sessionId } = await bootRoom()
     await service.invite({ sessionId, provider: 'kimi', name: 'ada' })
-    expect(await service.removeMember({ sessionId, name: 'ada' })).toEqual({ ok: true, value: { name: 'ada' } })
+    expect(await service.removeMember({ sessionId, name: 'ada' })).toEqual({ ok: true, value: { name: 'ada', stopped: false, cancelledDeliveries: 0, cancelledTasks: 0, transferredTasks: 0, notified: [] } })
     expect(await service.getState({ sessionId })).toMatchObject({ ok: true, value: { members: [MAIN_MEMBER] } })
     expect(await service.removeMember({ sessionId, name: 'ada' }))
       .toEqual({ ok: false, error: { code: 'member-not-found' } })

@@ -22,6 +22,7 @@ export function RoomRelayView({ node, confirmRelay, dismissRelay, t }: RoomRelay
   return (
     <div className={css.row} data-state={data.state}>
       <span className={css.text}>
+        {data.reason !== undefined && data.state === 'pending' && <span className={css.reason}>{t(`relay.reason.${data.reason}`)}</span>}
         {t('relay.line', { from: data.from, to: data.to, content: data.content })}
         {suffix === '' ? '' : ` ${suffix}`}
       </span>
@@ -32,14 +33,14 @@ export function RoomRelayView({ node, confirmRelay, dismissRelay, t }: RoomRelay
             className={css.action}
             onClick={() => { void confirmRelay(data.relayId) }}
           >
-            {t('relay.confirm')}
+            {data.reason === 'hop-limit' ? t('relay.continue') : t('relay.confirm')}
           </button>
           <button
             type="button"
             className={css.action}
             onClick={() => { void dismissRelay(data.relayId) }}
           >
-            {t('relay.dismiss')}
+            {data.reason === 'hop-limit' ? t('relay.stop') : t('relay.dismiss')}
           </button>
         </>
       )}

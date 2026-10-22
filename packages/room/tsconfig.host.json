@@ -16,6 +16,7 @@
     "src/types.ts",
     "src/plan.ts",
     "src/plan-service.ts",
-    "src/deliveries.ts"
+    "src/deliveries.ts",
+    "src/messaging.ts"
   ]
 }

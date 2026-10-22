@@ -60,8 +60,9 @@ export function roomInviteTool(backend: RoomInviteToolBackend) {
       + 'name (no whitespace, no "@", e.g. ada/bill/cathy) — it is the addressing name, decoupled '
       + 'from the provider so two instances of one provider can coexist; prefer a function-style '
       + 'name (e.g. design-review / restart-test) when the member has a standing role, so the human '
-      + 'and the other members can tell what it is for. The instructions are the '
-      + 'member\'s role briefing, prepended to its first dispatch and persisted in its own CLI '
+      + 'and the other members can tell what it is for. Give a short public role (what everyone '
+      + 'else sees) and private instructions: the instructions are the member\'s own briefing, '
+      + 'prepended to its first dispatch and persisted in its own CLI '
       + 'session from then on. Give a firstTask to put the member to work immediately, or omit it '
       + 'to have the member join idle. A member keeps its own CLI session and accumulates context '
       + 'across rounds, so prefer inviting over a one-shot subagent_* delegation whenever the work '
@@ -83,10 +84,14 @@ export function roomInviteTool(backend: RoomInviteToolBackend) {
         required: true,
         description: 'The member\'s @-addressing name: unique in this room, no whitespace, no "@".',
       },
+      role: {
+        type: 'string',
+        description: 'Short public role (≤30 chars, e.g. 代码审查 / 实现 / 测试): what the other members and the human see. Keep it a phrase; details go in instructions.',
+      },
       instructions: {
         type: 'string',
         required: true,
-        description: 'The member\'s role instructions (responsibilities, constraints, output expectations).',
+        description: 'The member\'s private instructions (responsibilities, constraints, output expectations). Only this member ever reads them.',
       },
       firstTask: {
         type: 'string',
@@ -119,6 +124,7 @@ export function roomInviteTool(backend: RoomInviteToolBackend) {
         provider: args.provider,
         name: args.name,
         instructions: args.instructions,
+        ...args.role === undefined ? {} : { role: args.role },
         ...args.firstTask === undefined ? {} : { firstTask: args.firstTask },
         ...args.cwd === undefined ? {} : { cwd: args.cwd },
       }, 'agent')
@@ -127,6 +133,8 @@ export function roomInviteTool(backend: RoomInviteToolBackend) {
           ? ' Pick a different name and retry.'
           : result.error.code === 'invalid-name'
             ? ' Names must be non-empty and free of whitespace and "@"; retry with a valid name.'
+            : result.error.code === 'role-too-long'
+              ? ' The role must be at most 30 characters; shorten it and move details into instructions.'
             : result.error.code === 'local-agent-unavailable'
               ? ' The local-agent delegation facade is not mounted; CLI members cannot join right now.'
               : result.error.code === 'unknown-provider'
@@ -325,14 +333,14 @@ export function roomMessageTool(backend: RoomMessageToolBackend) {
   return defineTool({
     name: 'room_message',
     description:
-      'Dispatch a message to a member of the current room (works in any session — it promotes the '
+      'Send a message to another member of the current room (works in any session — it promotes the '
       + 'session into a room if it is not one yet). '
-      + 'A member is an independent CLI session: the message runs asynchronously, and the member\'s '
-      + 'reply appears in the room as member speech (the human sees it; you read it through the '
-      + 'room\'s flow). Use this to ask a member something or hand it work — the equivalent of the '
-      + 'human typing "@member <text>" in the room composer. The member argument is a roster name '
-      + '(read room_read for current names); an unknown name is rejected with the live roster, so retry with one '
-      + 'of those.',
+      + 'A member is an independent session: the message runs asynchronously in its own session. '
+      + 'kind "task" (default) hands it work — its final reply is reported back to you automatically, '
+      + 'quoting the message id, so do not poll; kind "notify" is an FYI that is never reported back. '
+      + 'Pass inReplyTo with a message id (e.g. m12) when answering one. The member argument is a '
+      + 'roster name (read room_read for current names); an unknown name is rejected with the live '
+      + 'roster, so retry with one of those.',
     parameters: {
       member: {
         type: 'string',
@@ -342,7 +350,16 @@ export function roomMessageTool(backend: RoomMessageToolBackend) {
       text: {
         type: 'string',
         required: true,
-        description: 'The message text the member receives as its task.',
+        description: 'The message text the member receives.',
+      },
+      kind: {
+        type: 'string',
+        enum: ['task', 'notify'],
+        description: 'task (default): its reply is reported back to you. notify: FYI, no report.',
+      },
+      inReplyTo: {
+        type: 'string',
+        description: 'Optional id of the message this answers (e.g. m12).',
       },
     },
     output: {
@@ -363,7 +380,9 @@ export function roomMessageTool(backend: RoomMessageToolBackend) {
       if (agent === undefined) return { text: 'room_message requires a calling agent (exec.agent was undefined).' }
       // No room gate: messageMember PROMOTES the calling session into a room.
       const sessionId = agent.session.id
-      const result = await backend.messageMember({ sessionId, member: args.member, text: args.text })
+      const result = await backend.messageMember({ sessionId, member: args.member, text: args.text,
+        ...args.kind === undefined ? {} : { kind: args.kind as 'task' | 'notify' },
+        ...args.inReplyTo === undefined ? {} : { inReplyTo: args.inReplyTo } })
       if (!result.ok) {
         if (result.error.code === 'member-not-found') {
           const state = await backend.getState({ sessionId })
@@ -371,14 +390,25 @@ export function roomMessageTool(backend: RoomMessageToolBackend) {
           const hint = names.length === 0 ? '' : ` The room roster is: ${names.join(', ')}. Retry with one of these names.`
           return { text: `Could not message "${args.member}": unknown member.${hint}` }
         }
+        if (result.error.code === 'self-message') return { text: 'You cannot message yourself; pick another member.' }
         if (result.error.code === 'empty-text') {
           return { text: 'The message text must be non-blank; retry with real content.' }
         }
         return { text: `Could not message "${args.member}": ${result.error.code}.` }
       }
+      const value = result.value
+      if (value.held !== undefined) {
+        return { text: value.held === 'paused'
+          ? `Held: the room is paused; the message to ${value.member} is delivered when the human resumes it.`
+          : value.held === 'hop-limit'
+            ? `Held: this chain of messages reached the room's hop limit; the human decides whether ${value.member} gets it.`
+            : `Held: the room asks the human to confirm member messages; ${value.member} gets it once confirmed.` }
+      }
       return {
-        text: `Dispatched to ${result.value.member} — the member runs it asynchronously and its reply `
-          + 'appears in the room as member speech. Do not wait on it; the human watches the room.',
+        text: args.kind === 'notify'
+          ? `Sent ${value.messageId} to ${value.member} as an FYI; no report will come back.`
+          : `Sent ${value.messageId} to ${value.member}. It runs asynchronously; its final reply comes back to you `
+            + 'automatically as a report citing this id. Do not wait or poll.',
       }
     },
   })

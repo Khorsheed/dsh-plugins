@@ -38,6 +38,7 @@ import { InviteAgentAction } from './InviteAgentAction.tsx'
 import { MembersView } from './MembersView.tsx'
 import { RoomComposer, selectRoomComposer } from './RoomComposer.tsx'
 import { ROOM_PLAN_KIND, ROOM_PLAN_TAB_ID, RoomPlanTab } from './RoomPlanTab.tsx'
+import { ROOM_TEAM_KIND, ROOM_TEAM_TAB_ID, RoomTeamTab, type RoomTeamInjected } from './TeamTab.tsx'
 import { RoomSpeechView } from './RoomSpeechView.tsx'
 import { RoomRunView } from './RoomRunView.tsx'
 import { RoomEventView } from './RoomEventView.tsx'
@@ -217,6 +218,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       case 'configuration-owned-by-core': return t('coordinator.configuration')
       case 'duplicate-name': return t('invite.error.duplicate')
       case 'invalid-name': return t('invite.error.invalid')
+      case 'role-too-long': return t('invite.error.roleTooLong')
       case 'local-agent-unavailable': return t('invite.error.unavailable')
       case 'unknown-provider':
         return t('invite.error.unknownProvider', {
@@ -278,8 +280,12 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     },
     roomChrome,
   })
+  // The team page lives in the right sidebar; without it the members tab
+  // simply shows no 团队 entry.
+  const teamSidebar = ctx.get('sidebarRightTabs') === undefined ? undefined : ctx.get('sidebarRight')
   const membersFace = (sessionId: SessionId): RoomMembersInjected => ({
     roomStore,
+    ...teamSidebar === undefined ? {} : { openTeam: (member?: string) => { teamSidebar.openTab(ROOM_TEAM_KIND, { params: member === undefined ? {} : { member } }) } },
     setCoordinator: async (memberId, expectedRevision) => {
       if (remote === undefined) return { ok: false, message: t('invite.error.generic') }
       const carried = await remote.setCoordinator({ sessionId, memberId, expectedRevision })
@@ -318,9 +324,25 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     },
     modelDirectory: modelDirectoryFor(sessionId),
     openSession,
-    removeMember: async (member) => {
+    removeMember: async (member, transferPendingTo) => {
       if (remote === undefined) return { ok: false, message: t('invite.error.generic') }
-      const carried = await remote.removeMember({ sessionId, name: member })
+      const carried = await remote.removeMember({ sessionId, name: member, ...transferPendingTo === undefined ? {} : { transferPendingTo } })
+      if (!carried.ok) return { ok: false, message: t('invite.error.generic') }
+      if (!carried.value.ok) return { ok: false, message: failureText(carried.value.error) }
+      void roomStore.refresh(sessionId)
+      return { ok: true, value: carried.value.value }
+    },
+    setSettings: async (patch) => {
+      if (remote === undefined) return { ok: false, message: t('invite.error.generic') }
+      const carried = await remote.setSettings({ sessionId, ...patch })
+      if (!carried.ok) return { ok: false, message: t('invite.error.generic') }
+      if (!carried.value.ok) return { ok: false, message: failureText(carried.value.error) }
+      void roomStore.refresh(sessionId)
+      return { ok: true }
+    },
+    restoreMember: async (member) => {
+      if (remote === undefined) return { ok: false, message: t('invite.error.generic') }
+      const carried = await remote.restoreMember({ sessionId, name: member })
       if (!carried.ok) return { ok: false, message: t('invite.error.generic') }
       if (!carried.value.ok) return { ok: false, message: failureText(carried.value.error) }
       void roomStore.refresh(sessionId)
@@ -333,6 +355,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
         name: member,
         ...patch.rename === undefined ? {} : { rename: patch.rename },
         ...patch.instructions === undefined ? {} : { instructions: patch.instructions },
+        ...patch.role === undefined ? {} : { role: patch.role },
         ...patch.cwd === undefined ? {} : { cwd: patch.cwd },
         ...patch.model === undefined ? {} : { model: patch.model },
       })
@@ -444,6 +467,17 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     planToggle.setReady(true)
     const unsubscribe = roomChrome.subscribe(() => planToggle.sync())
     disposers.push(async () => { unsubscribe(); planToggle.setReady(false) })
+    const teamToggle = new RegistrationToggle(
+      () => sidebarTabs.register({ id: ROOM_TEAM_TAB_ID, kind: ROOM_TEAM_KIND, title: () => t('team.title') }),
+      () => roomChrome.show(mainSessionId(ctx.sessions.list.getSnapshot())),
+    )
+    teamToggle.setReady(true)
+    const unsubscribeTeam = roomChrome.subscribe(() => teamToggle.sync())
+    disposers.push(async () => { unsubscribeTeam(); teamToggle.setReady(false) })
+    ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
+      name: 'sidebar.right.pane.tab', key: ROOM_TEAM_TAB_ID, locale: NS,
+      inject: (_sessionId: SessionId): RoomTeamInjected => ({ roomStore, openSession }),
+    }, RoomTeamTab))
     ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
       name: 'sidebar.right.pane.tab', key: ROOM_PLAN_TAB_ID, locale: NS,
       inject: (sessionId: SessionId) => {

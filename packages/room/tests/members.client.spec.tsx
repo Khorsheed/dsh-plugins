@@ -5,7 +5,7 @@ import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MembersView } from '../src/client/MembersView.tsx'
 import { RoomStore, type RoomGateway } from '../src/client/room-store.ts'
 import { zh } from '../src/client/locales.ts'
@@ -48,6 +48,7 @@ interface Bench {
   face: RoomMembersInjected & {
     openSession: ReturnType<typeof vi.fn>
     removeMember: ReturnType<typeof vi.fn>
+    restoreMember: ReturnType<typeof vi.fn>
     updateMember: ReturnType<typeof vi.fn>
     invite: ReturnType<typeof vi.fn>
     listProviders: ReturnType<typeof vi.fn>
@@ -90,7 +91,7 @@ function modelDirectory(): RoomModelDirectory {
 
 /** The member card carrying the given name. */
 function cardOf(name: string): HTMLElement {
-  return screen.getByText(name, { selector: 'span' }).closest('[data-member]') as HTMLElement
+  return document.querySelector(`[data-member="${name}"]`) as HTMLElement
 }
 
 /** The edit dialog's model input (the edit-mode placeholder). */
@@ -122,7 +123,8 @@ async function bench(options: {
     roomStore,
     roomCwd: '/home/user/room',
     openSession: vi.fn(),
-    removeMember: vi.fn(async () => ({ ok: true as const })),
+    removeMember: vi.fn(async (name: string) => ({ ok: true as const, value: { name, stopped: false, cancelledDeliveries: 0, cancelledTasks: 1, transferredTasks: 0, notified: [] } })),
+    restoreMember: vi.fn(async () => ({ ok: true as const })),
     updateMember: vi.fn(async () => ({ ok: true as const })),
     invite: vi.fn(async () => ({ ok: true as const, pendingFirstTask: false })),
     listProviders: vi.fn(async () => options.providers ?? PROVIDERS),
@@ -206,17 +208,31 @@ describe('MembersView', () => {
     await screen.findByRole('dialog')
   })
 
-  it('remove asks for confirmation first', async () => {
+  it('remove opens an in-card confirmation that states the consequences; cancel removes nothing', async () => {
     const { face } = await bench()
-    vi.stubGlobal('confirm', vi.fn(() => false))
-    const adaCard = cardOf('ada')
-    const removeButton = Array.from(adaCard.querySelectorAll('button')).find(b => b.textContent === '移除')!
+    const confirm = vi.fn(() => true)
+    vi.stubGlobal('confirm', confirm)
+    const removeButton = Array.from(cardOf('ada').querySelectorAll('button')).find(b => b.textContent === '移除')!
     fireEvent.click(removeButton)
+    const layer = within(cardOf('ada')).getByRole('dialog', { name: '移除 ada？' })
+    // Never the browser's native dialog.
+    expect(confirm).not.toHaveBeenCalled()
+    // Focus opens on cancel: a stray Enter removes nobody.
+    expect(document.activeElement?.textContent).toBe('取消')
+    fireEvent.click(within(layer).getByRole('button', { name: '取消' }))
+    expect(within(cardOf('ada')).queryByRole('dialog')).toBeNull()
     expect(face.removeMember).not.toHaveBeenCalled()
+  })
 
-    vi.stubGlobal('confirm', vi.fn(() => true))
-    fireEvent.click(removeButton)
-    await waitFor(() => { expect(face.removeMember).toHaveBeenCalledWith('ada') })
+  it('confirming removes, then offers a one-line summary with undo', async () => {
+    const { face } = await bench()
+    fireEvent.click(Array.from(cardOf('ada').querySelectorAll('button')).find(b => b.textContent === '移除')!)
+    const layer = within(cardOf('ada')).getByRole('dialog')
+    fireEvent.click(within(layer).getByRole('button', { name: '移除' }))
+    await waitFor(() => { expect(face.removeMember).toHaveBeenCalledWith('ada', undefined) })
+    await screen.findByText('已移除 ada，关闭 1 个任务')
+    fireEvent.click(screen.getByRole('button', { name: '撤销' }))
+    await waitFor(() => { expect(face.restoreMember).toHaveBeenCalledWith('ada') })
   })
 
   it('the edit dialog saves instructions through updateMember', async () => {
@@ -400,12 +416,14 @@ describe('MembersView', () => {
     expect((screen.getByRole('button', { name: '邀请入队' }) as HTMLButtonElement).disabled).toBe(true)
   })
 
-  it('the instructions field carries the first-task-message copy and an example placeholder', async () => {
+  it('the dialog separates the public role from the private instructions', async () => {
     await bench()
     fireEvent.click(screen.getByRole('button', { name: '＋ 邀请成员' }))
     const dialog = await screen.findByRole('dialog')
-    expect(dialog.textContent).toContain('角色指令')
-    expect(dialog.textContent).toContain('第一条任务消息最前面')
+    expect(dialog.textContent).toContain('职责')
+    expect(dialog.textContent).toContain('其他成员和团队视图只看到这一项')
+    expect(dialog.textContent).toContain('指令（只给它自己）')
+    expect(dialog.textContent).toContain('其他成员看不到')
     expect(screen.getByPlaceholderText(/你是这个 room 的后端工程师/)).toBeDefined()
   })
 
@@ -418,6 +436,25 @@ describe('MembersView', () => {
     fireEvent.click(screen.getByRole('button', { name: '邀请入队' }))
     await waitFor(() => {
       expect(face.invite).toHaveBeenCalledWith({ provider: 'kimi', name: 'cathy' })
+    })
+  })
+
+  it('a native dsh member picks a host preset instead of a model, and invites with kind native', async () => {
+    const { face } = await bench({ providers: { ...PROVIDERS, presets: [
+      { id: 'standard', name: '标准模式', isDefault: true },
+      { id: 'review', name: '审查模式', description: '只读', isDefault: false },
+    ] } })
+    fireEvent.click(screen.getByRole('button', { name: '＋ 邀请成员' }))
+    await screen.findByRole('dialog')
+    await screen.findByText('Kimi Code', { selector: 'option' })
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: '__native__' } })
+    const presets = screen.getByRole('radiogroup', { name: '预设' })
+    expect(within(presets).getByRole('radio', { name: /标准模式/ }).getAttribute('aria-checked')).toBe('true')
+    fireEvent.click(within(presets).getByRole('radio', { name: /审查模式/ }))
+    fireEvent.change(screen.getByPlaceholderText('ada'), { target: { value: 'rev' } })
+    fireEvent.click(screen.getByRole('button', { name: '邀请入队' }))
+    await waitFor(() => {
+      expect(face.invite).toHaveBeenCalledWith({ provider: 'dsh', name: 'rev', kind: 'native', preset: 'review' })
     })
   })
 

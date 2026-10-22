@@ -4,7 +4,7 @@ import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import RoomService from '../src/index.ts'
 import {
-  isRoomLog, parseMentions, parseRelayDirective, pendingInstructions, previousCursor, replay, rosterStaleSince, taskProgress,
+  isRoomLog, parseMentions, pendingInstructions, previousCursor, replay, roomChangesSince, taskProgress,
 } from '../src/journal.ts'
 import { stubAgents } from './agents-stub.ts'
 import { createRoom } from './promote.ts'
@@ -284,48 +284,53 @@ describe('pendingInstructions', () => {
   })
 })
 
-describe('rosterStaleSince', () => {
-  it('is stale for a never-dispatched member, fresh right after a dispatch', () => {
+describe('roomChangesSince', () => {
+  it('has nothing to say on a first dispatch (the briefing covers it) or when nothing changed', () => {
     resetSeq()
     const events = [
       ev('room/member-added', { name: 'ada', kind: 'cli', provider: 'kimi', invitedBy: 'human' }), // 0
       ev('room/dispatch', { targets: ['ada'], text: '干活' }),                                      // 1
     ]
-    expect(rosterStaleSince(events, undefined)).toBe(true)
-    expect(rosterStaleSince(events, 1)).toBe(false)
-    // Changes AT the cursor were already carried by that dispatch.
-    expect(rosterStaleSince(events, 0)).toBe(false)
+    expect(roomChangesSince(events, undefined, 'ada')).toEqual([])
+    expect(roomChangesSince(events, 1, 'ada')).toEqual([])
   })
 
-  it('goes stale on a member add/remove or a roster-visible update past the cursor', () => {
+  it('notes joins, leaves, renames, role and goal changes past the cursor', () => {
     resetSeq()
-    const base = [
-      ev('room/member-added', { name: 'ada', kind: 'cli', provider: 'kimi', invitedBy: 'human' }), // 0
-      ev('room/dispatch', { targets: ['ada'], text: '干活' }),                                      // 1
+    const events = [
+      ev('room/member-added', { name: 'ada', kind: 'cli', provider: 'kimi', invitedBy: 'human' }),                 // 0
+      ev('room/dispatch', { targets: ['ada'], text: '干活' }),                                                      // 1
+      ev('room/member-added', { name: 'bill', kind: 'cli', provider: 'codex', role: '前端', invitedBy: 'human' }),  // 2
+      ev('room/member-updated', { name: 'bill', rename: 'bob' }),                                                   // 3
+      ev('room/member-updated', { name: 'bob', role: '测试' }),                                                     // 4
+      ev('room/member-updated', { name: 'ada', role: '后端' }),                                                     // 5
+      ev('room/goal', { text: '旧目标' }),                                                                          // 6
+      ev('room/goal', { text: '新目标' }),                                                                          // 7
+      ev('room/member-added', { name: 'cat', kind: 'cli', provider: 'kimi', invitedBy: 'human' }),                 // 8
+      ev('room/member-removed', { name: 'cat' }),                                                                   // 9
     ]
-    const added = [...base, ev('room/member-added', { name: 'bill', kind: 'cli', provider: 'codex', invitedBy: 'human' })] // 2
-    expect(rosterStaleSince(added, 1)).toBe(true)
-    const removed = [...base, ev('room/member-removed', { name: 'ada' })]
-    expect(rosterStaleSince(removed, 1)).toBe(true)
-    const role = [...base, ev('room/member-updated', { name: 'bill', instructions: '前端' })]
-    expect(rosterStaleSince(role, 1)).toBe(true)
-    const cleared = [...base, ev('room/member-updated', { name: 'bill', instructions: null })]
-    expect(rosterStaleSince(cleared, 1)).toBe(true)
-    const renamed = [...base, ev('room/member-updated', { name: 'ada', rename: 'ada2' })]
-    expect(rosterStaleSince(renamed, 1)).toBe(true)
+    expect(roomChangesSince(events, 1, 'ada')).toEqual([
+      'bill 加入（前端 · codex）',
+      'bill 改名为 bob',
+      'bob 的职责改为：测试',
+      '你的职责改为：后端',
+      'cat 加入（kimi）',
+      'cat 离开',
+      '房间目标更新为：新目标',
+    ])
   })
 
-  it('ignores roster-invisible updates (the childSessionId handle, cwd) and older changes', () => {
+  it('ignores roster-invisible updates (the childSessionId handle, cwd, instructions) and older changes', () => {
     resetSeq()
     const events = [
       ev('room/member-added', { name: 'ada', kind: 'cli', provider: 'kimi', invitedBy: 'human' }), // 0
       ev('room/dispatch', { targets: ['ada'], text: '干活' }),                                      // 1
       ev('room/member-updated', { name: 'ada', childSessionId: 'child-1' }),                       // 2
       ev('room/member-updated', { name: 'ada', cwd: '/home/user/api' }),                           // 3
+      ev('room/member-updated', { name: 'bill', instructions: '前端' }),                           // 4
     ]
-    expect(rosterStaleSince(events, 1)).toBe(false)
-    // Everything at or under the cursor was already carried.
-    expect(rosterStaleSince(events, 3)).toBe(false)
+    expect(roomChangesSince(events, 1, 'ada')).toEqual([])
+    expect(roomChangesSince([...events, ev('room/goal', { text: '' })], 4, 'ada')).toEqual(['房间目标已清除'])
   })
 })
 
@@ -346,25 +351,3 @@ describe('parseMentions', () => {
   })
 })
 
-describe('parseRelayDirective (the fallback notification channel)', () => {
-  it('parses a trailing own-line @name directive', () => {
-    expect(parseRelayDirective('方案已完成。\n@bill 接口定稿了，请评审'))
-      .toEqual({ to: 'bill', content: '接口定稿了，请评审' })
-  })
-
-  it('ignores mentions inside prose and non-final lines', () => {
-    expect(parseRelayDirective('我问过 @bill 了，他没问题')).toBeUndefined()
-    expect(parseRelayDirective('@bill 先说这个\n后来又聊了别的')).toBeUndefined()
-    expect(parseRelayDirective('@bill')).toBeUndefined()
-    expect(parseRelayDirective('')).toBeUndefined()
-    expect(parseRelayDirective('   ')).toBeUndefined()
-  })
-
-  it('tolerates trailing blank lines after the directive', () => {
-    expect(parseRelayDirective('做完了。\n@bill 请接手\n\n')).toEqual({ to: 'bill', content: '请接手' })
-  })
-
-  it('tolerates an indented trailing line (models indent under their own list style)', () => {
-    expect(parseRelayDirective('• 收到通知。\n\n  @ada 收到，请把接口文档发我')).toEqual({ to: 'ada', content: '收到，请把接口文档发我' })
-  })
-})
