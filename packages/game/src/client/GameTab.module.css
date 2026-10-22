@@ -80,6 +80,26 @@
 }
 .projectCard[aria-current='true'] { border-color: var(--g-accent); box-shadow: 0 0 0 1px var(--g-accent); }
 .projectCard[data-loading='true'] { padding: 16px; cursor: default; }
+/* A card with its delete affordance in the corner (always visible: touch has no hover). */
+.projectCardWrap { position: relative; display: flex; flex-direction: column; }
+.projectCardWrap > .projectCard { flex: 1; }
+.projectDelete {
+  position: absolute; top: 6px; right: 6px; width: 26px; height: 26px; border-radius: 13px; border: 0; cursor: pointer;
+  display: grid; place-items: center; font: inherit; font-size: 16px; line-height: 1;
+  background: color-mix(in srgb, var(--g-screen) 70%, transparent); color: var(--g-screen-fg);
+}
+.projectDelete:hover { background: var(--dsw-alias-state-error-primary); color: var(--dsw-alias-label-primary-inverted); }
+.projectDelete:focus-visible { outline: 2px solid var(--g-accent); outline-offset: 1px; }
+.projectCard[data-confirm='true'] { cursor: default; border-color: var(--dsw-alias-state-error-primary); }
+.deleteActions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.deleteError { font-size: var(--dsh-panel-text-meta, 12px); color: var(--dsw-alias-state-error-primary); }
+.danger {
+  box-sizing: border-box; font: inherit; font-size: var(--dsh-panel-text-meta, 12px); line-height: 18px; cursor: pointer; min-height: 28px;
+  padding: 0 10px; border-radius: var(--dsw-radius-sm, 6px); border: 0;
+  background: var(--dsw-alias-state-error-primary); color: var(--dsw-alias-label-primary-inverted);
+}
+.danger:disabled { opacity: .4; cursor: not-allowed; }
+.danger:focus-visible { outline: 2px solid var(--g-accent); outline-offset: 1px; }
 .projectCard:focus-visible, .newCard:focus-visible { outline: 2px solid var(--g-accent); outline-offset: 1px; }
 .projectThumb { position: relative; display: grid; place-items: center; aspect-ratio: 16 / 9; background: var(--g-screen); overflow: hidden; }
 .projectThumb img { width: 100%; height: 100%; object-fit: cover; image-rendering: pixelated; }

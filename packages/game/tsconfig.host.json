@@ -23,6 +23,7 @@
     "src/kits/index.ts",
     "src/kits/types.ts",
     "src/look3d.ts",
-    "src/kits/three3d.ts"
+    "src/kits/three3d.ts",
+    "src/trash.ts"
   ]
 }
