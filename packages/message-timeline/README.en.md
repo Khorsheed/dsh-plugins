@@ -11,6 +11,7 @@ Once a session gets long, finding that requirement you mentioned three messages 
 ## Features
 
 - **One row per user message, the whole session listed from the first one** — tick plus ellipsized one-line preview; the host `turnOutline` projection names every started turn directly, no paging required. Clicking a not-yet-loaded older message pages history back to that turn before landing (its tick pulses while paging). Steering messages count too (configurable off), and message-tools edited/restored bubbles keep a row. Withdrawn originals are not listed (their transcript row is hidden, so a click could never reach them).
+- **Textless messages leave no row** — image/attachment/command-only inputs have no useful preview and are filtered out instead of rendering placeholder rows; every listed row previews and jumps.
 - **Ambient rest state** — only dimmed grey ticks show until you hover the strip or focus the list.
 - **Reading position tracking** — the current position's tick stays blue and lengthened with bold text (defaulting to the latest message while nothing is selected); every other row rests grey. A long answer anchors the lit tick to the user message it replies to.
 - **Click to jump** — a loaded row scrolls the transcript straight to it; an outline row goes through the session's jump loader and lands on the freshly loaded message.

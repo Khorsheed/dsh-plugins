@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-10-20-message-timeline-turn-outline.md
-.agents/notes/implemented/feature/2026-10-20-message-timeline-turn-outline.md: aa3494968ef4b71870de34c3faa934ba7367056d
-.agents/notes/implemented/feature/2026-10-20-message-timeline-turn-outline.zh.md: 5e09819aeba08f92d2a27fc564979339d17430a4
+.agents/notes/implemented/feature/2026-10-20-message-timeline-turn-outline.md: 3fa5193697c1bfc08e56aa9f2a697abed4abb2a2
+.agents/notes/implemented/feature/2026-10-20-message-timeline-turn-outline.zh.md: 4ff315e84add222f10177d1b75c98f2cd2fd2c6e

@@ -40,6 +40,18 @@ function nodeContent(node: { data: unknown }): readonly ContentBlock[] {
 }
 
 /**
+ * One row's display text: the loaded row's joined text blocks, or the outline
+ * entry's bounded first-prompt preview. `null` means the message carries no
+ * text (an image, attachment, or command-only input) — such rows are filtered
+ * out of the list entirely rather than rendered as empty placeholders.
+ */
+function rowPreview(row: RailRow): string | null {
+  return row.kind === 'loaded'
+    ? previewText(nodeContent(row.node))
+    : (row.prompt !== '' ? row.prompt : null)
+}
+
+/**
  * Horizontal panel padding, matching `.panel`'s `padding: 4px 8px`: the text
  * band sits this far inside the box, so the width budget must give it back
  * for {@link PANEL_GAP} to be the visible gap to the message flow.
@@ -161,7 +173,11 @@ export function TimelineRail({
     // baseline (which is already seq-sorted). Dropped rows are gone before the
     // sort, so a withdrawn original never resurfaces.
     loaded.sort((left, right) => left.node.anchorSeq - right.node.anchorSeq)
-    return mergeRows(loaded, outline)
+    // Textless messages (image/attachment/command-only inputs) are dropped:
+    // a row without a preview is a dead placeholder, and a command-only turn
+    // may have no transcript row to jump to at all. An all-textless session
+    // ends up with no rows, which hides the panel.
+    return mergeRows(loaded, outline).filter(row => rowPreview(row) !== null)
   }, [order, nodes, includeSteering, outline])
 
   // The lit row: the hover/arrow preselection while it moves, otherwise the
@@ -361,9 +377,7 @@ export function TimelineRail({
           >
             <span className={isCurrent ? `${css.tick} ${css.tickCurrent}` : css.tick} aria-hidden="true" />
             <span className={css.itemText}>
-              {row.kind === 'loaded'
-                ? (previewText(nodeContent(row.node)) ?? t('rail.empty'))
-                : (row.prompt !== '' ? row.prompt : t('rail.empty'))}
+              {rowPreview(row)}
             </span>
           </button>
         )

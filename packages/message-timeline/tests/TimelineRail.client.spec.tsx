@@ -439,7 +439,22 @@ describe('the flat timeline panel', () => {
     expect(items()).toHaveLength(2)
   })
 
-  it('falls back to the empty copy when a message has no text', () => {
+  it('filters out a loaded message with no text instead of showing a placeholder', () => {
+    const contentless = node('kc', 'user', '')
+    ;(contentless.data as { content?: unknown }).content = undefined
+    renderRail({
+      useChat: bindSnapshotSelector(createSnapshotStore({
+        order: ['k1', 'kc', 'k3'],
+        nodes: { get: (key: string) => (key === 'kc' ? contentless : NODES[key]) },
+      })),
+    })
+    // The image/attachment-only message leaves no row; the text rows stay.
+    expect(items()).toHaveLength(2)
+    expect(panel().textContent).toContain('你好')
+    expect(panel().textContent).toContain('谢谢')
+  })
+
+  it('hides the panel entirely when every message is textless', () => {
     const contentless = node('kc', 'user', '')
     ;(contentless.data as { content?: unknown }).content = undefined
     renderRail({
@@ -448,7 +463,8 @@ describe('the flat timeline panel', () => {
         nodes: { get: (key: string) => (key === 'kc' ? contentless : undefined) },
       })),
     })
-    expect(panel().textContent).toContain(en['rail.empty'])
+    expect(items()).toHaveLength(0)
+    expect(document.body.querySelector('[data-timeline-panel]')).toBeNull()
   })
 
   it('renders no load-more chrome: older history pages on scroll alone', () => {
@@ -690,14 +706,14 @@ describe('the turnOutline projection', () => {
     expect(item('turn:0').className).not.toContain('itemCurrent')
   })
 
-  it('falls back to the empty copy for an outline row whose prompt has no text', () => {
-    // An empty window keeps every turn outline-only, including the textless
-    // turn 2 (an images-only prompt previews as '').
+  it('filters out outline turns whose prompt has no text', () => {
+    // An empty window keeps every turn outline-only; turn 2's prompt is ''
+    // (an images-only or command-only turn), so it leaves no row.
     renderRail({
       useProjection,
       useChat: bindSnapshotSelector(createSnapshotStore({ order: [], nodes: nodeStore() })),
     })
-    expect(item('turn:2').textContent).toContain(en['rail.empty'])
+    expect(itemIds()).toEqual(['turn:0', 'turn:1'])
   })
 
   it('pages history through the outline row seq and lands on the loaded row', async () => {
@@ -756,10 +772,11 @@ describe('the turnOutline projection', () => {
       useProjection,
       loadThrough,
       // An empty window (a session whose first page holds no user message):
-      // the outline alone keeps the list populated.
+      // the outline alone keeps the list populated (textless turn 2 is
+      // filtered out).
       useChat: bindSnapshotSelector(createSnapshotStore({ order: [], nodes: nodeStore() })),
     })
-    expect(itemIds()).toEqual(['turn:0', 'turn:1', 'turn:2'])
+    expect(itemIds()).toEqual(['turn:0', 'turn:1'])
 
     fireEvent.click(item('turn:0'))
     await act(async () => {})
