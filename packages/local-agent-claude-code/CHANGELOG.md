@@ -2,7 +2,7 @@
 
 ## 0.2.0-rc.3（2026-10-22）
 
-（版本号说明：家族的 dsh-headless 包 0.2.0-rc.2 曾被发布后又撤回，npm 永久烧掉该版本号；为守住家族「同一版本线」纪律（check:release-groups），本波家族整体上移 rc.3，内容即 rc.2 计划稿。）
+（版本号说明：家族的 dsh-headless 包 0.2.0-rc.2 版本号已被 npm 发布流水线占用（重复利用被 409 拒绝：「Cannot stage previously published version」——曾发布后被撤回或曾被暂存，外部无法区分，结果相同：该号不可复用）；为守住家族「同一版本线」纪律（check:release-groups），本波家族整体上移 rc.3，内容即 rc.2 计划稿。）
 
 - **BREAKING：OAuth 网页授权整体移除，端点凭据成为唯一认证方式**。部署级凭据为插件配置 `baseUrl` / `apiKey` / `authToken` 三元组（`apiKey` 以 `ANTHROPIC_API_KEY`、`authToken` 以 `ANTHROPIC_AUTH_TOKEN` 发出，中转的两种认法都兼容）；每个作用域可再以 `<作用域目录>/endpoint-auth.json`（0600）按字段覆盖——优先级就是「scope 文件 > profile 配置」。**升级前必须配好端点凭据**，否则升级后读作未认证（README 带迁移说明）；官方订阅（Pro/Max）的 OAuth 路径随之消失，失效 OAuth 残留由 provision 启动时清扫，换 key 下一轮生效、无需重载。
 - **设置卡新增端点凭据表单与「验证端点并获取模型」按钮**：卡片编辑的正是默认 scope 的 endpoint-auth.json；验证即带解析出的凭据探测 `GET <baseUrl>/v1/models`，保存成功翻转认证状态点。凭据等级语义不变：key 在场读 present-unverified，跑通一轮升 verified，一轮 401 打 rejected，重写凭据文件即恢复手势。

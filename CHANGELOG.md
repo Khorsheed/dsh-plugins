@@ -5,7 +5,7 @@ monorepo 级别的发布摘要；各包的完整变更见 `packages/<包>/CHANGE
 ## Unreleased —— 2026-10-22 发布波：dsh-basic / dsh-dev 首发 + 24 包版本前移
 
 - **首发三包**：`@khorsheed/dsh-basic` 0.1.0（基础体验整合包，14 成员）、`@khorsheed/dsh-dev` 0.1.0（开发模式包）、`@khorsheed/dsh-context-lens` 0.1.0（上下文透镜：请求/耗时双视角，自 request-inspector 更名）
-- **local-agent 家族七包**：core / dsh-headless / claude-code / codex / kimi / dsh 同版 0.2.0-rc.3（dsh-headless 的 rc.2 曾被发布后撤回、npm 烧号，家族同版线整体上移），bundle-local-agent 0.3.0（成员侧认证破坏性变更，按 0.x 语义 minor 进位）——认证统一为端点凭据（OAuth/网页登录全删）、可用模型名单统一且目录改端点取词、设置面整合为「本机 Agent 委派」家族卡、宿主 0.2.1 的 startActivation 迁移
+- **local-agent 家族七包**：core / dsh-headless / claude-code / codex / kimi / dsh 同版 0.2.0-rc.3（dsh-headless 的 rc.2 版本号被 npm 发布流水线占用、409 拒绝复用，家族同版线整体上移 rc.3），bundle-local-agent 0.3.0（成员侧认证破坏性变更，按 0.x 语义 minor 进位）——认证统一为端点凭据（OAuth/网页登录全删）、可用模型名单统一且目录改端点取词、设置面整合为「本机 Agent 委派」家族卡、宿主 0.2.1 的 startActivation 迁移
 - **dsh-basic 成员**：ankh-guard 0.4.3（启动环境 scrub 扩到 NODE_PATH/NODE_OPTIONS 等）、capability-catalog 0.1.99（preset 生效范围编辑、read_skill_file）、client-message-tools 0.3.4（影子渲染跟随宿主字号轴，修复社区 issue #1）、session-title-edit 0.2.6、context-guard 0.2.5（设置卡回归插件页）、file-preview 0.4.2（图片路由修复 + 免 Agent 读取面）、inline-html-render 0.1.16、local-files 0.1.3（文件树搜索）、message-timeline 0.2.5（turn 大纲一等行）、mobile 0.1.4（全宽移动面板整编）、quote 0.1.3（结构化引用 chip）、taskpilot 0.3.5、whalesong 0.2.5
 - **dsh-dev 成员**：room 0.2.2（输入条草稿接入官方 input machine）、typesafe 0.1.3（typesafe-tool 折进 `./tool`）、worktrees 0.3.2（9 个 agent-free 查询动词；核心 cordis 键改名 `worktreesCore`，程序消费方注意）
 - **全波共性**：适配宿主 0.2.1 线（peer 区间追加 `^0.2.1-rc.1`、invariant 伴随件退役改 `engines.dsh` 声明、verifiedHost 前移）
