@@ -150,6 +150,7 @@ export function MembersView({
       // present-but-blank role, and an absent one simply carries no preset.
       ...values.instructions === '' ? {} : { instructions: values.instructions },
       ...values.role === '' ? {} : { role: values.role },
+      ...values.kind === 'native' ? { kind: 'native' as const, ...values.preset === '' ? {} : { preset: values.preset } } : {},
       ...values.cwd === '' ? {} : { cwd: values.cwd },
       ...values.firstTask === '' ? {} : { firstTask: values.firstTask },
       ...values.model === '' ? {} : { model: values.model },
@@ -196,6 +197,7 @@ export function MembersView({
       mode={dialog.mode}
       member={dialog.mode === 'edit' ? dialog.member : undefined}
       providers={providers?.providers}
+      presets={providers?.presets}
       localAgentAvailable={providers?.localAgentAvailable ?? true}
       inheritedCwd={roomCwd}
       existingNames={(state?.members ?? []).map(entry => entry.name)}

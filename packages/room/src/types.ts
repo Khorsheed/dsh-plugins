@@ -36,9 +36,15 @@ export interface RoomMemberAddedEvent {
   /** Stable identity; older journals derive it from their original join event. */
   readonly id?: string
   readonly name: string
-  readonly kind: 'main-agent' | 'cli'
-  /** CLI provider id; present exactly on `kind: 'cli'` members. */
+  readonly kind: 'main-agent' | 'cli' | 'native'
+  /** CLI provider id on `kind: 'cli'` members; `dsh` on native ones. */
   readonly provider?: string
+  /**
+   * The host agent preset a native DSH member composes (`kind: 'native'`):
+   * a child session + agent in this host process, mounted with that preset
+   * at creation and locked from then on. Absent = the host's default preset.
+   */
+  readonly preset?: string
   /** Role instructions, prepended to the member's first dispatch. */
   readonly instructions?: string
   /**
@@ -367,11 +373,13 @@ declare module '@deepseek-ai/dsh-session/types' {
 export interface RoomMember {
   readonly id?: string
   readonly name: string
-  readonly kind: 'main-agent' | 'cli'
+  readonly kind: 'main-agent' | 'cli' | 'native'
   readonly provider?: string
   readonly instructions?: string
   /** Short public role shown to the other members (see {@link RoomMemberAddedEvent.role}). */
   readonly role?: string
+  /** Native members: the host agent preset (see {@link RoomMemberAddedEvent.preset}). */
+  readonly preset?: string
   readonly invitedBy: 'human' | 'agent'
   /** Member-level working directory (roster record; not yet passed to the facade). */
   readonly cwd?: string
@@ -488,6 +496,8 @@ export type RoomFailure =
   | { readonly code: 'invalid-settings' }
   /** A member cannot message itself. */
   | { readonly code: 'self-message' }
+  /** The preset is not one the host declares (carries the declared ids). */
+  | { readonly code: 'unknown-preset'; readonly preset: string; readonly available: readonly string[] }
   | { readonly code: 'nothing-to-update' }
   | { readonly code: 'local-agent-unavailable' }
   /**
@@ -558,6 +568,13 @@ export type RoomGetStateResult =
 export interface RoomInviteRequest {
   /** Room session. */
   readonly sessionId: SessionId
+  /**
+   * `cli` (default): an external CLI through the local-agent family.
+   * `native`: a DSH child agent in this host process, composing `preset`.
+   */
+  readonly kind?: 'cli' | 'native'
+  /** Native members only: the host agent preset id (omitted = the host default). */
+  readonly preset?: string
   /** CLI provider id (non-blank). */
   readonly provider: string
   /** Addressing/display name: unique in the room, no whitespace, no `@`. */
@@ -877,6 +894,22 @@ export interface RoomProviderList {
   /** False when the local-agent delegation facade is absent (CLI members undispatchable). */
   readonly localAgentAvailable: boolean
   readonly providers: readonly RoomProviderInfo[]
+  /**
+   * The host's agent presets a native DSH member may compose; absent when
+   * the composition mounts no preset registry (native members then run the
+   * plain composition).
+   */
+  readonly presets?: readonly RoomPresetInfo[]
+}
+
+/** One host agent preset, as the invite dialog lists it. */
+export interface RoomPresetInfo {
+  readonly id: string
+  readonly name?: string
+  readonly description?: string
+  readonly isDefault: boolean
+  /** Why the preset cannot be composed right now. */
+  readonly broken?: string
 }
 
 /** Durable role change. Handoff is bounded context, never native history migration. */

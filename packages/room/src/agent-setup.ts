@@ -109,7 +109,7 @@ export function resetPresetRegistryProbeForTest(): void {
 }
 
 /** The agentPresets face this package consumes (probed, never injected). */
-export type AgentPresetsProbe = Pick<AgentPresets, 'resolve' | 'mount'>
+export type AgentPresetsProbe = Pick<AgentPresets, 'resolve' | 'mount'> & Partial<Pick<AgentPresets, 'list'>>
 
 /**
  * Probe the agent-presets roster.

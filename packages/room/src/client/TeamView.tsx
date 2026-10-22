@@ -38,7 +38,9 @@ function Avatar({ node }: { readonly node: TeamNode }): ReactNode {
 
 /** Provider · model line. */
 function configLine(node: TeamNode, t: T): string {
-  const provider = node.member.kind === 'main-agent' ? t('member.kind.main') : node.member.provider ?? ''
+  const provider = node.member.kind === 'main-agent' ? t('member.kind.main')
+    : node.member.kind === 'native' ? t('member.kind.native', { preset: node.member.preset ?? t('member.kind.defaultPreset') })
+      : node.member.provider ?? ''
   return [provider, node.model].filter(Boolean).join(' · ')
 }
 

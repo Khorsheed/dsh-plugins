@@ -31,7 +31,10 @@ import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 
 import type {
   MembersViewProps, RoomInviteOutcome, RoomMutationOutcome,
 } from './slots.ts'
-import type { RoomMember, RoomProviderInfo } from '../types.ts'
+import type { RoomMember, RoomPresetInfo, RoomProviderInfo } from '../types.ts'
+
+/** The provider select's value for a native DSH member (never a delegation provider id). */
+const NATIVE = '__native__'
 import type { LocalAgentModelInfo } from '@khorsheed/dsh-local-agent/types'
 import { IconChevronDownOutlineMedium } from './icons.tsx'
 import { MemberCard } from './MemberCard.tsx'
@@ -43,6 +46,10 @@ import css from './InviteDialog.module.css'
 export interface InviteDialogSubmit {
   readonly provider: string
   readonly name: string
+  /** `native`: a DSH child agent composing `preset`; otherwise a CLI member of `provider`. */
+  readonly kind: 'cli' | 'native'
+  /** Native only: the chosen host preset ('' = the host default). */
+  readonly preset: string
   /** Short public role ('' = none). */
   readonly role: string
   readonly instructions: string
@@ -66,6 +73,8 @@ export interface InviteDialogProps {
   readonly member?: RoomMember | undefined
   /** The invitable providers; undefined while loading (invite mode). */
   readonly providers?: readonly RoomProviderInfo[] | undefined
+  /** Host agent presets a native DSH member may compose; absent = no native option. */
+  readonly presets?: readonly RoomPresetInfo[] | undefined
   /** False = the delegation facade is absent (invite mode). */
   readonly localAgentAvailable: boolean
   /** The room session's cwd (the empty-cwd placeholder, invite mode). */
@@ -104,7 +113,7 @@ function validName(name: string): boolean {
 
 /** The invite/edit modal card. */
 export function InviteDialog({
-  mode, member, providers, localAgentAvailable, inheritedCwd, existingNames,
+  mode, member, providers, presets, localAgentAvailable, inheritedCwd, existingNames,
   browseDirectory, modelSurface, renderHarnessModelPicker, memberModel, memberConfiguration, onSubmit, onClose, t,
 }: InviteDialogProps): ReactNode {
   const [provider, setProvider] = useState('')
@@ -154,7 +163,11 @@ export function InviteDialog({
   }, [modelMenuOpen])
 
   const authenticated = (providers ?? []).filter(entry => entry.authenticated)
-  const chosen = provider === '' ? (authenticated[0]?.provider ?? '') : provider
+  const nativeAvailable = presets !== undefined
+  const chosen = provider === '' ? (authenticated[0]?.provider ?? (nativeAvailable ? NATIVE : '')) : provider
+  const native = chosen === NATIVE
+  const [preset, setPreset] = useState('')
+  const chosenPreset = preset === '' ? presets?.find(entry => entry.isDefault)?.id ?? '' : preset
   const someLoggedOut = (providers ?? []).some(entry => !entry.authenticated)
   /** The chosen provider's roster harness name (the harnessModel lookup key). */
   const chosenHarness = (providers ?? []).find(entry => entry.provider === chosen)?.harness
@@ -196,7 +209,7 @@ export function InviteDialog({
   // is the only hard requirement.
   const canSubmit = mode === 'edit'
     ? validName(name)
-    : localAgentAvailable && chosen !== '' && validName(name)
+    : (native || localAgentAvailable) && chosen !== '' && validName(name)
 
   // The model row: the same control the provider settings cards use. An unset
   // field DISPLAYS the provider's current default dimmed (inherited, never
@@ -283,10 +296,11 @@ export function InviteDialog({
   const previewName = name.trim() === '' ? t('invite.previewName') : name.trim()
   const previewProvider = mode === 'edit'
     ? member?.provider
-    : (providers ?? []).find(entry => entry.provider === chosen)?.displayName ?? chosen
+    : native ? 'dsh' : (providers ?? []).find(entry => entry.provider === chosen)?.displayName ?? chosen
   const previewMember: RoomMember = {
     name: previewName,
-    kind: 'cli',
+    kind: native ? 'native' : 'cli',
+    ...native && chosenPreset !== '' ? { preset: chosenPreset } : {},
     invitedBy: 'human',
     ...previewProvider === undefined || previewProvider === '' ? {} : { provider: previewProvider },
     ...instructions.trim() === '' ? {} : { instructions: instructions.trim() },
@@ -324,7 +338,7 @@ export function InviteDialog({
     setError(null)
     try {
       const outcome = await onSubmit({
-        provider: chosen, name, role: role.trim(), instructions: instructions.trim(), cwd: cwd.trim(), firstTask: firstTask.trim(),
+        provider: native ? 'dsh' : chosen, kind: native ? 'native' : 'cli', preset: native ? chosenPreset : '', name, role: role.trim(), instructions: instructions.trim(), cwd: cwd.trim(), firstTask: firstTask.trim(),
         model: model.trim(), modelBaseline,
       })
       if (!outcome.ok) {
@@ -356,7 +370,7 @@ export function InviteDialog({
         <div className={css.body}>
           <div className={css.form}>
             {mode === 'invite' && (
-              !localAgentAvailable ? (
+              !localAgentAvailable && !nativeAvailable ? (
                 <div className={css.hint} role="status">{t('invite.facadeMissing')}</div>
               ) : (
                 <label className={css.field}>
@@ -366,17 +380,42 @@ export function InviteDialog({
                     value={chosen}
                     onChange={event => { setProvider(event.target.value); setModel('') }}
                   >
-                    {(providers ?? []).map(entry => (
+                    {nativeAvailable && <option value={NATIVE}>{t('invite.native')}</option>}
+                    {localAgentAvailable && (providers ?? []).map(entry => (
                       <option key={entry.provider} value={entry.provider} disabled={!entry.authenticated}>
                         {entry.displayName}{entry.authenticated ? '' : t('invite.loggedOut')}
                       </option>
                     ))}
                   </select>
-                  {someLoggedOut && <span className={css.hint}>{t('invite.loginHint')}</span>}
+                  {!native && someLoggedOut && <span className={css.hint}>{t('invite.loginHint')}</span>}
+                  {native && <span className={css.hint}>{t('invite.nativeHint')}</span>}
                 </label>
               )
             )}
-            {memberConfiguration ?? (chosenHarness !== undefined && (modelSurface === undefined || surface !== undefined) ? renderHarnessModelPicker?.(chosenHarness, { value: model, onChange: setModel, disabled: busy }) : undefined) ?? modelField}
+            {mode === 'invite' && native && (
+              <div className={css.field} role="radiogroup" aria-label={t('invite.preset')}>
+                <span className={css.label}>{t('invite.preset')}</span>
+                <span className={css.presets}>
+                  {(presets ?? []).map(entry => (
+                    <button
+                      key={entry.id}
+                      type="button"
+                      role="radio"
+                      aria-checked={chosenPreset === entry.id}
+                      disabled={entry.broken !== undefined}
+                      title={entry.broken ?? entry.description}
+                      className={chosenPreset === entry.id ? css.presetOn : css.presetOff}
+                      onClick={() => { setPreset(entry.id) }}
+                    >
+                      {entry.name ?? entry.id}
+                      {entry.description !== undefined && <small>{entry.description}</small>}
+                    </button>
+                  ))}
+                </span>
+                <span className={css.hint}>{t('invite.presetHint')}</span>
+              </div>
+            )}
+            {native ? null : memberConfiguration ?? (chosenHarness !== undefined && (modelSurface === undefined || surface !== undefined) ? renderHarnessModelPicker?.(chosenHarness, { value: model, onChange: setModel, disabled: busy }) : undefined) ?? modelField}
             <label className={css.field}>
               <span className={css.label}>{t('invite.name')}</span>
               <span className={css.nameRow}>

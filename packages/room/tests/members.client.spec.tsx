@@ -439,6 +439,25 @@ describe('MembersView', () => {
     })
   })
 
+  it('a native dsh member picks a host preset instead of a model, and invites with kind native', async () => {
+    const { face } = await bench({ providers: { ...PROVIDERS, presets: [
+      { id: 'standard', name: '标准模式', isDefault: true },
+      { id: 'review', name: '审查模式', description: '只读', isDefault: false },
+    ] } })
+    fireEvent.click(screen.getByRole('button', { name: '＋ 邀请成员' }))
+    await screen.findByRole('dialog')
+    await screen.findByText('Kimi Code', { selector: 'option' })
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: '__native__' } })
+    const presets = screen.getByRole('radiogroup', { name: '预设' })
+    expect(within(presets).getByRole('radio', { name: /标准模式/ }).getAttribute('aria-checked')).toBe('true')
+    fireEvent.click(within(presets).getByRole('radio', { name: /审查模式/ }))
+    fireEvent.change(screen.getByPlaceholderText('ada'), { target: { value: 'rev' } })
+    fireEvent.click(screen.getByRole('button', { name: '邀请入队' }))
+    await waitFor(() => {
+      expect(face.invite).toHaveBeenCalledWith({ provider: 'dsh', name: 'rev', kind: 'native', preset: 'review' })
+    })
+  })
+
   it('a failed browse keeps the field and explains the miss inline', async () => {
     const { face } = await bench()
     face.browseDirectory.mockRejectedValue(new Error('no native capability'))
