@@ -12,6 +12,7 @@
  * @module @khorsheed/dsh-game/agent
  */
 import { CANVAS_2D } from './kits/canvas2d.ts'
+import { THREE_3D } from './kits/three3d.ts'
 
 /** One skill as the registry takes it. */
 export interface GameSkill {
@@ -39,7 +40,10 @@ export const GAMEDEV_SKILL: GameSkill = {
   - \`.game/\` 插件自己的状态，别动
 - game_read 看项目现状：章节状态、元素、最近一次检查、当前版本。
 
+先看 game.json 的 runtime：没写或是 2d-canvas 用 2D 套件，3d-three 用 3D 套件。只按对应那一节写。
+
 ${CANVAS_2D.skillSection}
+${THREE_3D.skillSection}
 ## 参数、元素与外观（面板能直接调的部分）
 - **参数**：值得边玩边调的数（速度、间隔、伤害、难度系数）声明在 game.json 的 \`params\`：
   \`[{ "key": "speed", "label": "移动速度", "min": 20, "max": 120, "step": 1, "value": 60, "unit": "px/s" }]\`。

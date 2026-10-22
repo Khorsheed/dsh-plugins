@@ -5,6 +5,7 @@
  */
 import type { BundleFile } from '../types.ts'
 import { CANVAS_2D } from './canvas2d.ts'
+import { THREE_3D } from './three3d.ts'
 import { isKitId } from './ids.ts'
 import type { KitId, KitRef, RuntimeKit } from './types.ts'
 
@@ -15,6 +16,7 @@ export * from './types.ts'
 /** Every shipped kit, by id. */
 export const KITS: Readonly<Record<KitId, RuntimeKit>> = {
   '2d-canvas': CANVAS_2D,
+  '3d-three': THREE_3D,
 }
 
 /** The kit a project without a `runtime` field runs on. */

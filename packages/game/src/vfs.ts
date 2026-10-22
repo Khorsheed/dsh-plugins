@@ -62,14 +62,20 @@ const BRIDGE = `(function(){
       dispatchEvent(new CustomEvent('dshelements', { detail: d.element }));
     }
     if (d.gamedev === 'pick') {
-      var cv = document.querySelector('canvas'), id = null, cx = 0, cy = 0;
+      var cv = document.querySelector('canvas'), id = null, ref = null, cx = 0, cy = 0;
       if (cv) {
         var rect = cv.getBoundingClientRect(), px = d.x * innerWidth, py = d.y * innerHeight;
         cx = (px - rect.left) * cv.width / rect.width; cy = (py - rect.top) * cv.height / rect.height;
-        if (g && typeof g.pick === 'function' && cx >= 0 && cy >= 0 && cx <= cv.width && cy <= cv.height) { try { id = g.pick(cx, cy) || null } catch (err) { report('error', 'pick: ' + err.message) } }
+        if (g && typeof g.pick === 'function' && cx >= 0 && cy >= 0 && cx <= cv.width && cy <= cv.height) {
+          try { var got = g.pick(cx, cy); if (got && typeof got === 'object') { ref = got; id = got.id || null } else id = got || null } catch (err) { report('error', 'pick: ' + err.message) }
+        }
       }
-      post({ gamedev: 'picked', id: id, supported: !!(g && typeof g.pick === 'function'), x: d.x, y: d.y });
+      // A string id (2D games) or a structured reference (dsh3d: id, inst, name, state, point, region).
+      post({ gamedev: 'picked', id: id, ref: ref, supported: !!(g && typeof g.pick === 'function'), x: d.x, y: d.y });
     }
+    // The panel's 「指一下」 freezes the game; a candidate's changes get ringed. Both optional on the game side.
+    if (d.gamedev === 'pause' && g && typeof g.pause === 'function') { try { g.pause(!!d.on) } catch (err) { report('error', 'pause: ' + err.message) } }
+    if (d.gamedev === 'highlight' && g && typeof g.highlight === 'function') { try { g.highlight(Array.isArray(d.list) ? d.list : []) } catch (err) { report('error', 'highlight: ' + err.message) } }
   });
 })();`
 
@@ -184,7 +190,18 @@ export type FrameMessage =
   | { readonly gamedev: 'error'; readonly kind: string; readonly msg: string }
   | { readonly gamedev: 'save'; readonly saves: Readonly<Record<string, string>> }
   | { readonly gamedev: 'inspect'; readonly ready: boolean; readonly state: unknown; readonly errors: readonly { kind: string; msg: string }[] }
-  | { readonly gamedev: 'picked'; readonly id: string | null; readonly supported: boolean; readonly x: number; readonly y: number }
+  | { readonly gamedev: 'picked'; readonly id: string | null; readonly ref: PickRef | null; readonly supported: boolean; readonly x: number; readonly y: number }
+
+/** What a game's `pick` may return beyond a bare id (dsh3d returns this). */
+export interface PickRef {
+  readonly id: string | null
+  readonly inst?: string | null
+  readonly name?: string | null
+  readonly state?: string | null
+  readonly ground?: boolean
+  readonly point?: { readonly x: number; readonly y: number; readonly z: number }
+  readonly region?: string | null
+}
 
 /**
  * A single self-contained HTML file for a build (decision: sharing starts as

@@ -46,7 +46,7 @@ The package's `cordis.patch.yml` inserts two rows: `game` (service core, Remote,
 
 ## Known Limitations
 
-- 2D only (native canvas plus an HTML UI layer); the sandbox CSP blocks every outside request, so all code and assets live in the project.
+- Two runtimes: 2D (native canvas plus an HTML UI layer, the default) and 3D (`runtime: 3d` when `game_open` creates the project: bundled three.js 0.170 plus the thin dsh3d runtime — creatures assembled from parts recipes, ink and 青绿 styles, a 45° overhead camera). The sandbox CSP blocks every outside request, so all code and assets live in the project. A 3D glTF look shows a placeholder block for now (the loader comes with the refine milestone).
 - The host has no image generation: everything is drawn in code, and the art styles offered are the ones code draws well.
 - No sharing with other players yet (single-file export and itch.io are later milestones; leaderboards and multiplayer need a server and come after that).
 - The plugin's conversation row ("checks failed n/2") is folded by the host into the turn's step groups: once a turn ends, expand "Done in …" and the step group to see them (the host's list of standalone node kinds is not open to plugins). The same information shows above the composer and under Versions.

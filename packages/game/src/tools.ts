@@ -14,7 +14,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import { defineTool, type ToolDefinition } from '@deepseek-ai/dsh-tools'
 import { artStyleLabel, lookText } from './project.ts'
 import type { GameService } from './store.ts'
-import { ART_STYLES, CHAPTERS, type ProjectView } from './types.ts'
+import { ART_STYLES, ART_STYLES_3D, CHAPTERS, type ProjectView } from './types.ts'
 
 /** The community tool-origin tag. */
 function tagOrigin<T extends object>(definition: T): T {
@@ -31,7 +31,7 @@ export function renderProject(view: ProjectView): string {
   else {
     lines.push(
       `pitch：${view.manifest.pitch}`,
-      `元素类型：${view.manifest.elementTypes.join('、')}　美术风格：${artStyleLabel(view.manifest.artStyle)}　自动确认：${view.manifest.autoConfirm ? '开' : '关'}`,
+      `运行时：${view.manifest.runtime?.kit === '3d-three' ? '3D（3d-three 套件，用 dsh3d）' : '2D 画布'}　元素类型：${view.manifest.elementTypes.join('、')}　美术风格：${artStyleLabel(view.manifest.artStyle)}　自动确认：${view.manifest.autoConfirm ? '开' : '关'}`,
     )
     if (view.manifest.pillars.length > 0) lines.push(`支柱：${view.manifest.pillars.join('；')}`)
     if (view.manifest.params.length > 0) {
@@ -45,7 +45,7 @@ export function renderProject(view: ProjectView): string {
   lines.push(`策划：${view.chapters.map(c => `${c.title}${c.generated ? '' : `(${STATUS_LABEL[c.status]})`}`).join('、')}`)
   const byType = new Map<string, number>()
   for (const e of view.elements) byType.set(e.type, (byType.get(e.type) ?? 0) + 1)
-  lines.push(`元素：${view.elements.length === 0 ? '还没有' : [...byType].map(([t, n]) => `${t} ${n}`).join('、')}${view.elements.length === 0 ? '' : `（${view.elements.map(e => `${e.name}=${e.id}${e.look === null ? '' : '·有外观'}`).join('、')}）`}`)
+  lines.push(`元素：${view.elements.length === 0 ? '还没有' : [...byType].map(([t, n]) => `${t} ${n}`).join('、')}${view.elements.length === 0 ? '' : `（${view.elements.map(e => `${e.name}=${e.id}${e.look === null && e.look3d === null ? '' : '·有外观'}`).join('、')}）`}`)
   if (view.pending.length > 0) {
     lines.push(`用户在面板里改了、还没发给你的（已经生效，别改回去）：${view.pending.map(p => p.text).join('；')}`)
   }
@@ -76,7 +76,8 @@ export function gameToolDefinitions(store: GameService): ToolDefinition[] {
     const lines = projects.length === 0
       ? ['还没有游戏项目。']
       : ['游戏项目：', ...projects.map(p => `- ${p.id}《${p.title}》${p.id === bound?.id ? '（本会话）' : ''} ${p.root}`)]
-    lines.push('', `美术风格示例（让用户挑）：${ART_STYLES.map(s => `${s.id}=${s.label}（${s.look}）`).join('；')}；或 custom:描述。`)
+    lines.push('', `2D 美术风格示例（让用户挑）：${ART_STYLES.map(s => `${s.id}=${s.label}（${s.look}）`).join('；')}；或 custom:描述。`)
+    lines.push(`3D 美术风格示例（runtime=3d 时）：${ART_STYLES_3D.map(s => `${s.id}=${s.label}（${s.look}）`).join('；')}；或 custom:描述。`)
     return lines.join('\n')
   }
 
@@ -85,14 +86,16 @@ export function gameToolDefinitions(store: GameService): ToolDefinition[] {
     description:
       'Choose this session\'s game project. No arguments: list projects and the art-style examples. project: switch to '
       + 'one (title or id). create: make a new project in the session workspace — requires title, pitch, elementTypes and '
-      + 'artStyle the user agreed to (the answer lists what is missing). path: adopt an existing folder with a game.json. '
+      + 'artStyle the user agreed to (the answer lists what is missing); runtime: 3d makes a three.js project (default 2d). '
+      + 'path: adopt an existing folder with a game.json. '
       + 'The right-sidebar game tab follows. Load the gamedev skill before writing game code.',
     parameters: {
       project: { type: 'string', description: 'Project title or id to switch to.' },
       create: { type: 'string', description: 'Title of a new project.' },
       pitch: { type: 'string', description: 'create: one sentence — what the player does and why it is fun.' },
       elementTypes: { type: 'string', description: 'create: element categories, separated by 、 (e.g. 角色、敌人、道具).' },
-      artStyle: { type: 'string', description: 'create: an art-style id from the list, or custom:<description>.' },
+      artStyle: { type: 'string', description: 'create: an art-style id from the list (2D or 3D list to match runtime), or custom:<description>.' },
+      runtime: { type: 'string', description: 'create: 2d (default) or 3d — 3d pins the three.js kit (dsh3d runtime).' },
       pillars: { type: 'string', description: 'create: optional design pillars, separated by ；.' },
       path: { type: 'string', description: 'Adopt this existing project folder (absolute, or relative to the workspace).' },
     },
@@ -101,7 +104,7 @@ export function gameToolDefinitions(store: GameService): ToolDefinition[] {
       render: (_args, value) => [{ type: 'text', text: String(value) }],
     },
     execute: async (
-      args: { project?: string; create?: string; pitch?: string; elementTypes?: string; artStyle?: string; pillars?: string; path?: string },
+      args: { project?: string; create?: string; pitch?: string; elementTypes?: string; artStyle?: string; runtime?: string; pillars?: string; path?: string },
       exec: { agent?: Agent },
     ): Promise<string> => {
       const session = exec.agent?.session
@@ -113,7 +116,7 @@ export function gameToolDefinitions(store: GameService): ToolDefinition[] {
 
       if (create !== '') {
         const created = await store.create({
-          title: create, pitch: args.pitch, elementTypes: args.elementTypes, artStyle: args.artStyle, pillars: args.pillars?.split(/[；;\n]/),
+          title: create, pitch: args.pitch, elementTypes: args.elementTypes, artStyle: args.artStyle, runtime: args.runtime, pillars: args.pillars?.split(/[；;\n]/),
         }, session)
         if (!created.ok) {
           return 'missing' in created
@@ -173,7 +176,8 @@ export function gameToolDefinitions(store: GameService): ToolDefinition[] {
         if (element === undefined) return `没有元素「${elementId}」。有：${view.elements.map(e => `${e.id}（${e.name}）`).join('、') || '（无）'}`
         const lines = [`元素「${element.name}」id=${element.id} type=${element.type} 文件 ${element.file}`,
           `字段：${Object.entries(element.stats).map(([k, v]) => `${k}=${String(v)}`).join('、') || '（无）'}`]
-        lines.push(element.look === null ? '外观：还没有 look（画面里是代码画的或色块）。' : `外观（look）：\n${lookText(element.look)}`)
+        lines.push(element.look3d !== null ? `外观（3D look）：${JSON.stringify(element.look3d)}`
+          : element.look === null ? '外观：还没有 look（画面里是代码画的或色块）。' : `外观（look）：\n${lookText(element.look)}`)
         const proposal = view.proposals.find(p => p.elementId === element.id)
         if (proposal !== undefined) lines.push(proposal.picked === undefined ? `有 ${proposal.variants.length} 个外观方案等用户挑。` : `用户上次挑了方案「${proposal.variants[proposal.picked]?.label ?? ''}」。`)
         return lines.join('\n')

@@ -6,7 +6,7 @@
 import type { KitId } from './types.ts'
 
 /** Every kit id this build ships. */
-export const KIT_IDS: readonly KitId[] = ['2d-canvas']
+export const KIT_IDS: readonly KitId[] = ['2d-canvas', '3d-three']
 
 /** Whether a value names a shipped kit. */
 export function isKitId(value: unknown): value is KitId {

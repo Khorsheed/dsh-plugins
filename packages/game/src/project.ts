@@ -5,14 +5,16 @@
  * @module @khorsheed/dsh-game
  */
 import { isKitId } from './kits/ids.ts'
-import type { KitRef, RuntimeKit } from './kits/types.ts'
+import type { KitId, KitRef, RuntimeKit } from './kits/types.ts'
 import {
-  ART_STYLES, LOOK_CHARS, MANIFEST_FILE, STATE_DIR,
-  type ChapterStatus, type CheckFailure, type ElementLook, type ElementView, type GameManifest, type GameParam,
+  ART_STYLES, ART_STYLES_3D, isPixelLook, LOOK_CHARS, MANIFEST_FILE, STATE_DIR,
+  type ArtStyle, type ChapterStatus, type CheckFailure, type ElementLook, type ElementView, type GameManifest, type GameParam,
 } from './types.ts'
 
 /** What `game_open create` must carry before a project exists (the light gate, decision D2). */
 export interface CreateRequest {
+  /** `2d` (default) or `3d`; the kit the project is pinned to. */
+  readonly runtime?: string | undefined
   readonly title?: string | undefined
   readonly pitch?: string | undefined
   readonly elementTypes?: readonly string[] | string | undefined
@@ -42,10 +44,10 @@ export function listOf(value: readonly string[] | string | undefined): string[] 
  * @param value - what the model passed.
  * @returns the stored spelling, or undefined when it names no style.
  */
-export function resolveArtStyle(value: string | undefined): string | undefined {
+export function resolveArtStyle(value: string | undefined, styles: readonly ArtStyle[] = ART_STYLES): string | undefined {
   const wanted = (value ?? '').trim()
   if (wanted === '') return undefined
-  const known = ART_STYLES.find(style => style.id === wanted || style.label === wanted)
+  const known = styles.find(style => style.id === wanted || style.label === wanted)
   if (known !== undefined) return known.id
   if (/^custom[:：]\s*\S/.test(wanted)) return `custom:${wanted.replace(/^custom[:：]\s*/, '')}`
   return undefined
@@ -54,7 +56,17 @@ export function resolveArtStyle(value: string | undefined): string | undefined {
 /** The style's human label (`custom:` keeps the user's own words). */
 export function artStyleLabel(id: string): string {
   if (id.startsWith('custom:')) return id.slice('custom:'.length)
-  return ART_STYLES.find(style => style.id === id)?.label ?? id
+  return [...ART_STYLES, ...ART_STYLES_3D].find(style => style.id === id)?.label ?? id
+}
+
+/** The kit a create request asks for: `3d` / `3d-three` → 3D, anything else 2D. */
+export function requestedKit(runtime: string | undefined): KitId {
+  return /^3d/i.test((runtime ?? '').trim()) ? '3d-three' : '2d-canvas'
+}
+
+/** The example styles a kit offers. */
+export function stylesFor(kit: KitId): readonly ArtStyle[] {
+  return kit === '3d-three' ? ART_STYLES_3D : ART_STYLES
 }
 
 /**
@@ -69,12 +81,14 @@ export function gate(request: CreateRequest): GateVerdict {
   const title = (request.title ?? '').trim().slice(0, 60)
   const pitch = (request.pitch ?? '').trim().slice(0, 400)
   const elementTypes = listOf(request.elementTypes).slice(0, 12)
-  const artStyle = resolveArtStyle(request.artStyle)
+  const kit = requestedKit(request.runtime)
+  const styles = stylesFor(kit)
+  const artStyle = resolveArtStyle(request.artStyle, styles)
   if (title === '') missing.push('title（游戏名）')
   if (pitch === '') missing.push('pitch（一句话：玩家做什么、为什么好玩）')
   if (elementTypes.length === 0) missing.push('elementTypes（游戏里有哪几类元素，如 角色、敌人、道具）')
   if (artStyle === undefined) {
-    missing.push(`artStyle（用户从示例里选的美术风格：${ART_STYLES.map(s => `${s.id}=${s.label}`).join('、')}，或 custom:描述）`)
+    missing.push(`artStyle（用户从示例里选的美术风格：${styles.map(s => `${s.id}=${s.label}`).join('、')}，或 custom:描述）`)
   }
   if (missing.length > 0) return { ok: false, missing }
   return {
@@ -89,13 +103,15 @@ export function gate(request: CreateRequest): GateVerdict {
       autoConfirm: true,
       params: [],
       palette: stylePalette(artStyle!),
+      // 2D projects keep the pre-kit manifest shape (no runtime key).
+      ...(kit === '2d-canvas' ? {} : { runtime: { kit, version: 1 } }),
     },
   }
 }
 
 /** A style's palette; custom styles start from the pixel palette (the agent may set its own in game.json). */
 export function stylePalette(styleId: string): string[] {
-  return [...(ART_STYLES.find(style => style.id === styleId) ?? ART_STYLES[0]!).palette]
+  return [...([...ART_STYLES, ...ART_STYLES_3D].find(style => style.id === styleId) ?? ART_STYLES[0]!).palette]
 }
 
 const HEX = /^#[0-9a-f]{6}$/i
@@ -300,7 +316,12 @@ export function validateElements(
       }
       if (r.look !== undefined && looks.normalizeLook(r.look) === null) failures.push({ where: at, message: looks.lookHint })
       if (id !== '' && name !== '' && type !== '') {
-        elements.push({ file, index: Array.isArray(raw) ? index : -1, id, type, name, stats: scalarStats(r), look: looks.normalizeLook(r.look) })
+        const look = looks.normalizeLook(r.look)
+        elements.push({
+          file, index: Array.isArray(raw) ? index : -1, id, type, name, stats: scalarStats(r),
+          look: look !== null && isPixelLook(look) ? look : null,
+          look3d: look !== null && !isPixelLook(look) ? look : null,
+        })
       }
     })
   }

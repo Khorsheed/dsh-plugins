@@ -39,7 +39,7 @@ Status: implemented
 ## Consequences
 
 - 2D 项目行为不变；唯一可见的差别是 bundle 里多了一项 `_dsh/runtime.js`，导出的单文件 HTML 也带着它。
-- `gamedev` 技能目前仍静态嵌入 2D 套件那一段。加第二个套件时，这一段要跟随会话绑定项目的套件（按套件拆技能，或者由 `game_read` 说明用的是哪个套件及其说明）。
+- `gamedev` 技能嵌入所有套件的说明段，每段标明适用的 `runtime`；`game_read` 会写出绑定项目用的是哪个运行时，模型按对应那段写（见 [3D 套件的 note](../feature/2026-10-22-game-3d-kit.zh.md)）。
 - 裸模块名映射是通用机制：任何套件都能内置 ES 模块，游戏不需要知道它们在 bundle 里的路径。
 
 ## Testing

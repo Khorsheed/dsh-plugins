@@ -39,7 +39,7 @@ The existing behavior moved, unchanged, into the `2d-canvas` kit (`src/kits/canv
 ## Consequences
 
 - 2D projects behave as before; the only visible difference is an extra `_dsh/runtime.js` entry in a bundle, which the exported single-file HTML also carries.
-- The `gamedev` skill still embeds the 2D kit's section statically. When a second kit lands, the kit section has to follow the bound project's kit (a per-kit skill, or `game_read` naming the kit and its section).
+- The `gamedev` skill embeds every kit's section, each headed with the `runtime` it applies to, and `game_read` names the bound project's runtime; the model reads the section that matches (see [the 3D kit note](../feature/2026-10-22-game-3d-kit.md)).
 - Bare-import mapping is generic: any kit can vendor ES modules without the game knowing their bundle paths.
 
 ## Testing

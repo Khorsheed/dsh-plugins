@@ -8,7 +8,7 @@
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ChipRow } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
-import { LOOK_CHARS, type ElementLook, type ElementView, type LookProposal, type ProjectView } from '../types.ts'
+import { isPixelLook, LOOK_CHARS, type AnyLook, type ElementLook, type ElementView, type LookProposal, type ProjectView } from '../types.ts'
 import { failureOf, type ViewProps } from './contract.ts'
 import { blankLook, ensureColor, LookCanvas, recolor, setCell } from './looks.tsx'
 import css from './GameTab.module.css'
@@ -109,8 +109,8 @@ function ElementDetail({ t, sessionId, api, project, element, onBack, insertDraf
 
   useEffect(() => { setLook(element.look) }, [element.id, element.look])
 
-  const save = (next: ElementLook): void => {
-    setLook(next)
+  const save = (next: AnyLook): void => {
+    if (isPixelLook(next)) setLook(next)
     setSaving('saving')
     clearTimeout(saveTimer.current)
     saveTimer.current = setTimeout(() => {
@@ -207,7 +207,7 @@ function ElementDetail({ t, sessionId, api, project, element, onBack, insertDraf
         <p className={css.metaLine}>{t('look.proposalsFor', { request: openProposal.request || '—' })}</p>
         <div className={css.proposalGrid}>
           {openProposal.variants.map((v, i) => <div key={i} className={css.proposalCard}>
-            <div className={css.proposalArt}><LookCanvas look={v.look} box={84} /></div>
+            <div className={css.proposalArt}>{isPixelLook(v.look) ? <LookCanvas look={v.look} box={84} /> : <span className={css.metaLine}>{t('look.model3d')}</span>}</div>
             <strong>{v.label}</strong>
             <span className={css.metaLine}>{v.note}</span>
             <button type="button" className={css.primary} onClick={() => {
@@ -223,7 +223,7 @@ function ElementDetail({ t, sessionId, api, project, element, onBack, insertDraf
         <summary>{t('look.history', { count: history.length })}</summary>
         {history.map(p => <div key={p.at} className={css.historyRow}>
           {p.variants.map((v, i) => <span key={i} className={css.historyItem} data-picked={i === p.picked ? 'true' : 'false'}>
-            <LookCanvas look={v.look} box={32} />
+            {isPixelLook(v.look) ? <LookCanvas look={v.look} box={32} /> : <span className={css.metaLine}>{t('look.model3d')}</span>}
             <button type="button" className={css.link} onClick={() => { save(v.look) }}>{t('look.useAgain', { label: v.label })}</button>
           </span>)}
         </div>)}
