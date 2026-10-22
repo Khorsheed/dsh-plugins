@@ -2,8 +2,8 @@
  * The play frame: one version in a `sandbox="allow-scripts"` iframe (an
  * opaque origin — no cookies, no host storage, no network by the frame's own
  * CSP), fed by postMessage through the shared loader. Saves live in this
- * browser's localStorage per project; slider values and element edits are
- * pushed in live; the pick overlay asks the game what is under a click.
+ * browser's localStorage per project; slider values are pushed in live
+ * (element edits wait for a committed version); the pick overlay asks the game what is under a click.
  * When a play session ends (version change, restart, unmount) its length and
  * errors go to the playtest log.
  */
@@ -69,8 +69,6 @@ export interface PlayFrameProps {
   readonly run: number
   /** Live slider values (key → value), pushed on every change. */
   readonly params: Readonly<Record<string, number>>
-  /** The last edited element, pushed in when it changes. */
-  readonly element: Record<string, unknown> | null
   readonly picking: boolean
   readonly onPicked: (answer: PickAnswer) => void
   /** The hover hint's text for what is under the pointer while picking. */
@@ -83,7 +81,7 @@ export interface PlayFrameProps {
 }
 
 /** The sandboxed frame with a pick overlay. */
-export function PlayFrame({ projectId, version, files, run, params, element, picking, onPicked, hoverLabel, highlight, onErrors, onReport, label }: PlayFrameProps): ReactNode {
+export function PlayFrame({ projectId, version, files, run, params, picking, onPicked, hoverLabel, highlight, onErrors, onReport, label }: PlayFrameProps): ReactNode {
   const frame = useRef<HTMLIFrameElement>(null)
   const shell = useMemo(() => shellHtml(), [])
   const report = useRef(onReport)
@@ -132,7 +130,6 @@ export function PlayFrame({ projectId, version, files, run, params, element, pic
   const post = (message: unknown): void => { frame.current?.contentWindow?.postMessage(message, '*') }
 
   useEffect(() => { if (booted) post({ gamedev: 'params', values: params }) }, [params, booted])
-  useEffect(() => { if (booted && element !== null) post({ gamedev: 'element', element }) }, [element, booted])
   // 「指一下」 freezes the game (games that implement pause); leaving it resumes.
   useEffect(() => { if (booted) post({ gamedev: 'pause', on: picking }) ; if (!picking) setHover(null) }, [picking, booted])
   const highlightKey = JSON.stringify(highlight)

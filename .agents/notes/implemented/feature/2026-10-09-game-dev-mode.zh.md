@@ -28,7 +28,7 @@ Status: implemented
   - 策划：一页纸与支柱置顶，章节就地展开、可直接改，元素数值自动成表画对比条。一页纸只有一个来源 `game.json`，在卡片上编辑。`design/pillars.md` 只作「支柱说明」：建项目时不生成，`pillarNotes` 会滤掉复述一页纸的行，因为早先的项目里有一份副本。
   - 版本：三层检查结论与无头截图、时间线（切回、对比）、单文件导出、试玩记录。首页与换风格共用一个美术风格画廊。
 - **面板改动依赖的运行时约定。** 加载器在游戏启动前把 `game.json` 的 `params` 放进 `window.dshParams`、所有元素放进 `window.dshElements`；面板改动经 postMessage（`params`、`element`）热替换，游戏每帧读就即时生效。加载器另提供 `dshDraw`/`dshLookSize` 画像素行格式的 `look`；`dshGame.pick(x, y)` 支持点选。
-- **用户层，显式发送。** `.game/user.json` 存滑块试玩值（定稿写进 `game.json`）、还没告诉 agent 的改动、换风格请求。元素编辑同时写进工作文件和线上版本快照，所以立刻生效。改动攒在 `conversation.input.dock` 的「面板改动」里，可逐项去掉。「写进对话」把它们以 `【面板改动】` 开头写进对话框，用户补一句意图再发送。`agent/pre-step` 遇到带这个标记的批次，只清掉其中列到的改动，批次本身不动。没发的改动会出现在 `game_read` 总览里，agent 不会把它们改回去。
+- **用户层，显式发送**（2026-10-22 已被取代：面板修改改为提交成版本，改动条已删除，见 [面板提交](2026-10-22-game-panel-commit.zh.md)）。 `.game/user.json` 存滑块试玩值（定稿写进 `game.json`）、还没告诉 agent 的改动、换风格请求。元素编辑同时写进工作文件和线上版本快照，所以立刻生效。改动攒在 `conversation.input.dock` 的「面板改动」里，可逐项去掉。「写进对话」把它们以 `【面板改动】` 开头写进对话框，用户补一句意图再发送。`agent/pre-step` 遇到带这个标记的批次，只清掉其中列到的改动，批次本身不动。没发的改动会出现在 `game_read` 总览里，agent 不会把它们改回去。
 - **外观方案。** `game_propose` 存最多 3 个规范化方案（`.game/proposals.json`）；用户挑中即替换外观并记为待附上改动。换风格请求会让下一个通过的版本强制成为候选。
 - **本轮改动卡片。** 核心在 `turn/start` 给绑定项目拍快照（文件哈希、元素、参数、版本），在 `turn/end` 对比并把 `TurnReport` 存到 `$DSH_HOME/state/game/turns/<session>.json`。前端用 `uiConversation.events` 的 Definition 跟踪轮次，在 `conversation.chat.turnTail` 里渲染（回复末尾、不随折叠，canvas-novel 的先例），每行可跳到右栏对应位置（`openAt` → 元素页、策划章节、试玩、版本）。
 - **询问而不是推送。** 滑块只是试玩，不进待发送队列。会进队列的改动（策划、外观、字段、挑方案、定稿参数、退回、切回）之后，面板询问是否告诉 agent：写进对话（发前可改）、不发这次（丢掉）、稍后、关闭提醒（按浏览器记；标题栏「自动上线」旁的「改完提醒」开关随时可开关）。

@@ -1,14 +1,15 @@
 /**
  * 元素: every element of the game as a card grid (look, name, key numbers),
  * filtered by type, multi-selectable to hand to the model as references.
- * One card opens the element: its look large and editable (pen / recolor,
- * colors from the style's palette, states), its fields, a box to ask the
- * model for a new look, and the model's A/B/C proposals — picking one is
- * the confirmation (it replaces the look in the game at once).
+ * One card opens the element: its look large (a 3D turntable, or the pixel
+ * editor), right under it a box to ask the model for a new look and the
+ * model's A/B/C proposals, its 设定 (lore), the 3D recipe's fine-tuning
+ * folded away, and its fields. Every edit lands in the working files; the
+ * tab's commit bar turns them into a version for the play area.
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ChipRow, PanelHeader } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
-import { isPixelLook, LOOK_CHARS, type AnyLook, type ElementLook, type ElementView, type Look3D, type LookProposal, type ProjectView } from '../types.ts'
+import { isPixelLook, LOOK_CHARS, LORE_MAX, type AnyLook, type ElementLook, type ElementView, type Look3D, type LookProposal, type ProjectView } from '../types.ts'
 import { failureOf, type ViewProps } from './contract.ts'
 import { blankLook, ensureColor, LookCanvas, recolor, setCell } from './looks.tsx'
 import { Preview3D } from './Preview3D.tsx'
@@ -20,7 +21,6 @@ export interface ElementsViewProps extends ViewProps {
   readonly project: ProjectView
   readonly openId: string | null
   readonly onOpen: (id: string | null) => void
-  readonly onLiveElement: (element: Record<string, unknown>) => void
 }
 
 /** A 3D look's main color, for its card's placeholder while the still renders (or without a live version). */
@@ -103,7 +103,7 @@ export function ElementsView(props: ElementsViewProps): ReactNode {
 type Tool = 'pen' | 'recolor'
 
 /** One element, open. */
-function ElementDetail({ t, sessionId, api, project, element, onBack, insertDraft, toast, refresh, onLiveElement, types, changed }: ElementsViewProps & {
+function ElementDetail({ t, sessionId, api, project, element, onBack, insertDraft, toast, refresh, types }: ElementsViewProps & {
   element: ElementView
   onBack: () => void
   types: readonly string[]
@@ -131,8 +131,6 @@ function ElementDetail({ t, sessionId, api, project, element, onBack, insertDraf
       void api.editElement(sessionId, project.id, element.id, { look: JSON.stringify(next) }).then(result => {
         if (failureOf(result) !== undefined) { setSaving('failed'); return }
         setSaving('saved')
-        if (result.ok && result.value.ok) onLiveElement(JSON.parse(result.value.elementJson) as Record<string, unknown>)
-        changed(`look:${element.id}`, t('nudge.look', { name: element.name }))
         refresh()
       })
     }, 450)
@@ -149,11 +147,7 @@ function ElementDetail({ t, sessionId, api, project, element, onBack, insertDraf
     const value = kind === 'number' ? Number(raw) : kind === 'boolean' ? raw === 'true' : raw
     if (kind === 'number' && !Number.isFinite(value as number)) return
     if (element.stats[key] === value) return
-    void api.editElement(sessionId, project.id, element.id, { fields: JSON.stringify({ [key]: value }) }).then(result => {
-      if (result.ok && result.value.ok) onLiveElement(JSON.parse(result.value.elementJson) as Record<string, unknown>)
-      changed(`fields:${element.id}`, t('nudge.fields', { name: element.name }))
-      refresh()
-    })
+    void api.editElement(sessionId, project.id, element.id, { fields: JSON.stringify({ [key]: value }) }).then(refresh)
   }
 
   const proposals = project.proposals.filter(p => p.elementId === element.id)
@@ -174,7 +168,6 @@ function ElementDetail({ t, sessionId, api, project, element, onBack, insertDraf
         <span className={css.spacer} />
         <span className={css.saveState} data-state={saving}>{saving === 'idle' ? '' : t(`look.${saving}`)}</span>
       </div>
-      {look3d.kind === 'parts3d' && <Recipe3DEditor t={t} look={look3d} onChange={save} />}
     </section> : <section className={css.lookPanel}>
       <div className={css.lookMain}>
         {look !== null
@@ -233,7 +226,7 @@ function ElementDetail({ t, sessionId, api, project, element, onBack, insertDraf
             <span className={css.metaLine}>{v.note}</span>
             <button type="button" className={css.primary} onClick={() => {
               void api.pickProposal(sessionId, project.id, element.id, openProposal.at, i).then(r => {
-                if (failureOf(r) === undefined) changed(`look:${element.id}`, t('nudge.picked', { name: element.name, label: v.label }))
+                if (failureOf(r) === undefined) toast(t('nudge.picked', { name: element.name, label: v.label }))
                 refresh()
               })
             }}>{t('look.pickThis')}</button>
@@ -251,6 +244,15 @@ function ElementDetail({ t, sessionId, api, project, element, onBack, insertDraf
       </details>}
     </section>
 
+    <LoreCard t={t} element={element} onSave={lore => {
+      void api.editElement(sessionId, project.id, element.id, { fields: JSON.stringify({ lore: lore === '' ? null : lore }) }).then(refresh)
+    }} />
+
+    {look3d?.kind === 'parts3d' && <details className={css.fold}>
+      <summary>{t('look.fineTune')}</summary>
+      <Recipe3DEditor t={t} look={look3d} onChange={save} />
+    </details>}
+
     <section className={css.block}>
       <h4 className={css.blockTitle}>{t('fields.title')}</h4>
       {fields.length === 0 && <p className={css.metaLine}>{t('fields.none')}</p>}
@@ -267,4 +269,18 @@ function ElementDetail({ t, sessionId, api, project, element, onBack, insertDraf
       <p className={css.metaLine}>{t('fields.note')}</p>
     </section>
   </div>
+}
+
+/** 设定: who the element is — free text the agent follows for its behavior and wording. Saved on blur. */
+function LoreCard({ t, element, onSave }: { t: ElementsViewProps['t']; element: ElementView; onSave: (lore: string) => void }): ReactNode {
+  const [text, setText] = useState(element.lore)
+  useEffect(() => { setText(element.lore) }, [element.id, element.lore])
+  return <section className={css.block}>
+    <h4 className={css.blockTitle}>{t('lore.title')}</h4>
+    <textarea className={css.textarea} rows={element.lore === '' ? 3 : 5} maxLength={LORE_MAX} value={text}
+      placeholder={t('lore.placeholder')} aria-label={t('lore.title')}
+      onChange={e => { setText(e.target.value) }}
+      onBlur={() => { if (text.trim() !== element.lore) onSave(text.trim()) }} />
+    <p className={css.metaLine}>{t('lore.note')}</p>
+  </section>
 }

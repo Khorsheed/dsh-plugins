@@ -51,7 +51,10 @@ export function renderProject(view: ProjectView): string {
   for (const e of view.elements) byType.set(e.type, (byType.get(e.type) ?? 0) + 1)
   lines.push(`元素：${view.elements.length === 0 ? '还没有' : [...byType].map(([t, n]) => `${t} ${n}`).join('、')}${view.elements.length === 0 ? '' : `（${view.elements.map(e => `${e.name}=${e.id}${e.look === null && e.look3d === null ? '' : '·有外观'}`).join('、')}）`}`)
   if (view.pending.length > 0) {
-    lines.push(`用户在面板里改了、还没发给你的（已经生效，别改回去）：${view.pending.map(p => p.text).join('；')}`)
+    lines.push(`用户在面板里改了（已写进项目文件，以文件为准，别改回去）：${view.pending.map(p => p.text).join('；')}`)
+  }
+  if (view.uncommitted.length > 0) {
+    lines.push(`其中还没提交成版本的（试玩区仍是旧版，用户会在面板里提交；你发版时会一起带上）：${view.uncommitted.map(p => p.text).join('、')}`)
   }
   const open = view.proposals.filter(p => p.picked === undefined)
   if (open.length > 0) lines.push(`等用户挑选的外观方案：${open.map(p => `${p.elementId}（${p.variants.length} 个）`).join('、')}`)
@@ -179,7 +182,8 @@ export function gameToolDefinitions(store: GameService): ToolDefinition[] {
         const element = view.elements.find(e => e.id === elementId || e.name === elementId)
         if (element === undefined) return `没有元素「${elementId}」。有：${view.elements.map(e => `${e.id}（${e.name}）`).join('、') || '（无）'}`
         const lines = [`元素「${element.name}」id=${element.id} type=${element.type} 文件 ${element.file}`,
-          `字段：${Object.entries(element.stats).map(([k, v]) => `${k}=${String(v)}`).join('、') || '（无）'}`]
+          `字段：${Object.entries(element.stats).map(([k, v]) => `${k}=${String(v)}`).join('、') || '（无）'}`,
+          element.lore === '' ? '设定：还没写（lore 字段）。' : `设定（lore）：${element.lore}`]
         lines.push(element.look3d !== null ? `外观（3D look）：${JSON.stringify(element.look3d)}`
           : element.look === null ? '外观：还没有 look（画面里是代码画的或色块）。' : `外观（look）：\n${lookText(element.look)}`)
         const proposal = view.proposals.find(p => p.elementId === element.id)
@@ -187,7 +191,11 @@ export function gameToolDefinitions(store: GameService): ToolDefinition[] {
         return lines.join('\n')
       }
       const wanted = args.chapter?.trim() ?? ''
-      if (wanted === '') return renderProject(view)
+      if (wanted === '') {
+        // The overview shows the pending panel changes once; after that they are not news.
+        await store.clearPending(row.id)
+        return renderProject(view)
+      }
       const chapter = view.chapters.find(c => c.id === wanted || c.title === wanted)
       if (chapter === undefined) return `没有章节「${wanted}」。可选：${view.chapters.map(c => `${c.id}（${c.title}）`).join('、')}`
       if (chapter.text === '') return `「${chapter.title}」还是空的${chapter.generated ? '（自动生成的章节）' : `，写在 ${join(view.root, chapter.file)}`}。`

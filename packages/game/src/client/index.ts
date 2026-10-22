@@ -22,7 +22,6 @@ import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 import { GAME_CHAT_KIND, GameChatRow, gameMessageDefinition } from './chat-node.tsx'
 import type { GameApi, GameTabInjected, NavTarget } from './contract.ts'
 import { gameTurnDefinition, GameTurnCard } from './TurnCard.tsx'
-import { GameDock } from './GameDock.tsx'
 import { encodeGameRef, GAME_REF_SOURCE, gameRefCodec } from './refs.ts'
 import { GAME_KIND, GAME_TAB_ID, gameDefinition } from './definition.tsx'
 import { GameTab } from './GameTab.tsx'
@@ -98,6 +97,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     bundle: (projectId, which) => remote.bundle({ projectId, which }),
     versionBundle: (projectId, version) => remote.versionBundle({ projectId, version }),
     confirm: (sid, projectId) => remote.confirm(sid, { projectId }),
+    commit: (sid, projectId) => remote.commit(sid, { projectId }),
     reject: (sid, projectId, reason) => remote.reject(sid, { projectId, reason }),
     rollback: (sid, projectId, version) => remote.rollback(sid, { projectId, version }),
     diff: (projectId, from, to) => remote.diff({ projectId, from, to }),
@@ -227,15 +227,6 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     locale: NS,
     inject: (): GameTabInjected => face,
   }, GameTab)), 'game: tab body')
-
-  // 将附上: the dock above the composer (only renders for a bound session with pending changes).
-  ctx.effect(() => ctx.slots.inject('conversation.input.dock', () => ctx.slots.register({
-    name: 'conversation.input.dock',
-    id: 'dsh-game-pending',
-    order: 45,
-    locale: NS,
-    inject: (): GameTabInjected => face,
-  }, GameDock)), 'game: pending dock')
 
   // The turn card: what each agent turn changed in the game, beneath the
   // turn's closing prose (outside the fold), with jumps into the tab. The

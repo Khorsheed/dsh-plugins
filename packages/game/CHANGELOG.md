@@ -2,6 +2,8 @@
 
 ## 0.1.0 (unreleased)
 
+- Panel edits (looks, fields, lore, picked variants, finalized params) change the working files; a bar commits them as a new version through the checks. The composer dock, the post-change nudge and its switch are gone; `game_read` shows the agent what changed once.
+- Element lore (`lore`): a 设定 card on the element page and a generated 元素设定 chapter. The element page puts "ask the agent for a new look" under the preview and folds the 3D recipe.
 - Element cards show a 3D element's model as a still (two render at a time; the color swatch stands in meanwhile). The open element's title row is the panel kit's header — a real back button, pinned while the detail scrolls.
 - `game_publish`: run the checks and cut a version mid-turn. A question does not end the turn, so the skill and the mode persona require a green publish before the agent asks the user to play.
 

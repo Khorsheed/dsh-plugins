@@ -230,6 +230,7 @@ export const CHAPTERS: readonly ChapterSpec[] = [
   { id: 'pillars', title: '支柱说明', file: 'design/pillars.md' },
   { id: 'core-loop', title: '核心循环', file: 'design/core-loop.md' },
   { id: 'mechanics', title: '机制与规则', file: 'design/mechanics.md' },
+  { id: 'lore', title: '元素设定', file: 'design/lore.md', generated: true },
   { id: 'elements', title: '元素与数值', file: 'design/elements.md', generated: true },
   { id: 'levels', title: '关卡与节奏', file: 'design/levels.md' },
   { id: 'art-audio', title: '美术与音效', file: 'design/art-audio.md' },
@@ -265,7 +266,18 @@ export interface ElementView {
   readonly look: ElementLook | null
   /** The 3D look, if the element has one (3d-three projects). */
   readonly look3d: Look3D | null
+  /** The 设定 text (the element's `lore` field): who it is, its temper, how it meets the player. '' when unwritten. */
+  readonly lore: string
 }
+
+/** Longest 设定 the panel saves. */
+export const LORE_MAX = 2000
+
+/** What 提交为新版本 did. */
+export type CommitResult =
+  | { readonly ok: true; readonly kind: 'deployed' | 'candidate'; readonly version: number }
+  | { readonly ok: true; readonly kind: 'failed'; readonly failures: readonly { readonly where: string; readonly message: string }[] }
+  | { readonly ok: true; readonly kind: 'unchanged' | 'no-entry' }
 
 /** One appearance proposal set from `game_propose`: up to 3 variants, the user picks one. */
 export interface LookProposal {
@@ -412,8 +424,10 @@ export interface ProjectView {
   readonly hasEntry: boolean
   /** The user's slider values that differ from the finalized defaults. */
   readonly paramOverrides: Readonly<Record<string, number>>
-  /** Changes waiting to ride the next send. */
+  /** Panel changes the agent has not read yet (`game_read` shows, then clears them). */
   readonly pending: readonly PendingChange[]
+  /** Panel edits in the working files that no version carries yet — the panel's 提交为新版本. */
+  readonly uncommitted: readonly PendingChange[]
   /** Open (unpicked) and recent appearance proposals, newest first. */
   readonly proposals: readonly LookProposal[]
   readonly versions: readonly VersionRow[]
