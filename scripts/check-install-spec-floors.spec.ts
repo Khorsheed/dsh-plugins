@@ -40,10 +40,10 @@ describe('caretIncludes (0.x caret: same major+minor, patch ≥ floor)', () => {
 
 describe('findInstallSpecs', () => {
   it('reads floored specs, ignores bare names and old-line pins are still specs', () => {
-    const text = '装 `@khorsheed/dsh-quote`，旧线用 `@khorsheed/dsh-quote@^0.1.2`，英文同款 `@khorsheed/dsh-ui-shortcuts@^0.2.4`。'
+    const text = '装 `@khorsheed/dsh-quote`，旧线用 `@khorsheed/dsh-quote@^0.1.2`，英文同款 `@khorsheed/dsh-whalesong@^0.2.4`。'
     expect(findInstallSpecs(text)).toEqual([
       { name: '@khorsheed/dsh-quote', floor: '0.1.2' },
-      { name: '@khorsheed/dsh-ui-shortcuts', floor: '0.2.4' },
+      { name: '@khorsheed/dsh-whalesong', floor: '0.2.4' },
     ])
   })
 })

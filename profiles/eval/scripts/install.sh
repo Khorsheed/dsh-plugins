@@ -87,8 +87,8 @@ retire_legacy_skill() {
 #      0.2.0 wave (host 0.1.2-rc.1); this profile boots on host 0.2.0-rc.2
 #      and later only (T82), and a plugin built against an older line fails
 #      at import with a missing export (measured on 0.1.5: `@deepseek-ai/
-#      dsh-settings` has no `settingsNamespace`, which context-guard /
-#      ui-shortcuts 0.2.0 import). Their host-aligned releases are cut in the
+#      dsh-settings` has no `settingsNamespace`, which context-guard 0.2.0
+#      imports). Their host-aligned releases are cut in the
 #      repo but not on npm yet (the publish freeze), so until that wave lands
 #      they are packed from source like group 1. Remove a member from this
 #      list the moment its host-aligned version is ON npm.
@@ -109,7 +109,7 @@ UNPUBLISHED_DIRS="local-agent local-agent-dsh-headless \
 local-agent-kimi local-agent-codex local-agent-claude-code local-agent-dsh \
 capability-catalog datasets eval inline-html-render lab local-files mission \
 ankh-guard context-guard file-preview message-timeline message-tools taskpilot \
-ui-shortcuts session-title-edit whalesong \
+session-title-edit whalesong \
 bundle-eval"
 
 SOURCE=""
@@ -437,14 +437,14 @@ DUMP=$(dsh --profile web-eval --dump-config 2>/dev/null || true)
 # Three counts, each composed differently (measured on a 0.2.0-rc.2 temp
 # instance after T88 switched the evaluation family to its bundle) — a drop in
 # any of them is the symptom this line exists to surface:
-#   23  tarballs packed above, one per UNPUBLISHED_DIRS entry (the four
+#   22  tarballs packed above, one per UNPUBLISHED_DIRS entry (the four
 #       evaluation members AND bundle-eval each pack one);
-#   19  @khorsheed dependencies in the profile's own package.json — every
+#   18  @khorsheed dependencies in the profile's own package.json — every
 #       tarball except local-agent-dsh-headless (local-agent-dsh pulls it in
 #       transitively and the overrides pin it, never a direct dependency) and
 #       the four evaluation members (bundle-eval hard-depends on them), plus
 #       the profile-local preset bundle (`file:presets`, T82);
-#   24  distinct names in the dump: the 19 @khorsheed bundles (bundle-eval and
+#   23  distinct names in the dump: the 18 @khorsheed bundles (bundle-eval and
 #       the preset bundle among them), the four evaluation members whose rows
 #       bundle-eval's patch carries verbatim, and local-agent-dsh-headless (no
 #       row at all — it is the sub-dsh's headless bundle). The eval preset row

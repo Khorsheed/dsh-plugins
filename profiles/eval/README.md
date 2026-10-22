@@ -127,11 +127,11 @@ plan 的 `conditions` 与 `judge.conditions` 写**条件 id**（不写 sha；sha
 
 ## 依赖插件
 
-22 个成员（19 个直接依赖：评测机制四个成员经整合包 `@khorsheed/dsh-bundle-eval` 一起装），三组：
+21 个成员（18 个直接依赖：评测机制四个成员经整合包 `@khorsheed/dsh-bundle-eval` 一起装），三组：
 
 | 组 | 成员 | 状态 | 为本 profile 需要的改动 |
 |---|---|---|---|
-| 基础体验 | 与 dev 相同的 12 个（`ankh-guard` 在其中） | ✅ / 🔶 | 无；评测实例用自己的 `$DSH_HOME`，切换与看护归 `ankh-guard` |
+| 基础体验 | 与 dev 相同的 11 个（`ankh-guard` 在其中） | ✅ / 🔶 | 无；评测实例用自己的 `$DSH_HOME`，切换与看护归 `ankh-guard` |
 | 本地 Agent 家族 | 5 个：`local-agent` + kimi / codex / claude-code / dsh 四个 provider（第六个共享工具包 `tool-subagent` 已随 2026-09-30 家族折叠退役，委派工具收进各 provider 的 `./tool` 入口） | 🔶 | I1：评测 pin 配置（全 exec、codex 容器内 full-access、claude 与 kimi 的推理强度显式）与 effectiveSettings 快照（含已配置模型）。I2：模型回读，记录实际使用的模型。I3：容器内 exec 包装已落地（T17：`exec: {container, workdir, env}`，值不上 argv）；「CLI 驱动抽成独立包」推迟到出现第二个消费者；`cliVersion` 与 `credentialState` 填实（T25）。I4：每条件的模型参数（首轮指定、成员内固定、resume 不换）与 scoped home 覆盖，provider 设置卡加「默认模型」 |
 | 评测机制 | 4 个：`datasets` / `mission` / `lab` / `eval`，经家族整合包 `@khorsheed/dsh-bundle-eval` 一起装（T88；模型工具行是 datasets / mission / eval 各自的 `./tool` 入口，归预设——M4'③ 拆出的三个伴生包随 T88 折回核心包并退役） | 🔶 rc | `mission`：retry 带 reason；ns 报告带 writtenBy。`lab`：复合指纹（镜像 + 资源限制 + 挂载布局 + env 键）。`datasets`：金丝雀字段；item 级外部源指针。`eval`：run 循环的判官（T9）、报告（T10）、只读工具（T14）与完整就绪检查 |
 
@@ -327,7 +327,7 @@ CLI 与界面同语义：`dsh-eval conditions | plan validate | run | report`。
 
 源码模式的前置检查另有两条。**成员宿主线核对**：脚本读每个待打包成员 `package.json` 的 `dsh.compat.minHost`，与 `dsh --version` 比一次，低于任一成员就逐行列出谁要求什么版本（评测家族 datasets / mission / lab / eval 与整合包 bundle-eval 的 `minHost` 与 `verifiedHost` 自 T88 起都是 0.2.0-rc.2）。**typert 宿主核对**：typert 生成读 `DSH_HARNESS`（默认 `~/code/deepseek-harness`）指的检出，它低于 0.2.0-rc.2 时同样退出。这些检查挡的是一种到不了安装期的失败：宿主偏低不会在装的时候报错，而是在**起实例时**从某个插件的 import 里抛一个缺失导出，或者更晚——装完能起、跑到 resume 轮才报错。
 
-`install.sh` 有两条路径，结尾都打印组合统计；`dsh --profile web-eval --dump-config | grep -o "@khorsheed/[a-z0-9-]*" | sort -u | wc -l` 应为 24（去重名字数——dump 里每个成员出现多次：层头加条目行。24 = 19 个 bundle（含整合包 `bundle-eval` 与本 profile 的 preset bundle）+ 整合包的 patch 逐字带进来的 4 个成员名（`datasets` / `mission` / `lab` / `eval`；eval 预设行点名的 `@khorsheed/dsh-datasets/tool` 与 `@khorsheed/dsh-eval/tool` 被这个 grep 截在斜杠前，并进同名核心）+ `local-agent-dsh-headless`（没有行，只是 headlessBundleDir 路径））。T82 在 0.2.0-rc.2 临时实例上实装：25 个名字、205 行、默认预设 eval；T88 改依赖整合包后在新临时 home 上 `--source --fresh` 重装：24 个名字、205 行（行集合不变，只是来源层从四个成员换成 `bundle-eval`），205 个顶层行 id 各出现一次。家族折叠后各 provider 的 `./tool` 委派入口不进 dump：它们是按预设点名的行，本 profile 的 eval 预设不点名。
+`install.sh` 有两条路径，结尾都打印组合统计；`dsh --profile web-eval --dump-config | grep -o "@khorsheed/[a-z0-9-]*" | sort -u | wc -l` 应为 23（去重名字数——dump 里每个成员出现多次：层头加条目行。23 = 18 个 bundle（含整合包 `bundle-eval` 与本 profile 的 preset bundle）+ 整合包的 patch 逐字带进来的 4 个成员名（`datasets` / `mission` / `lab` / `eval`；eval 预设行点名的 `@khorsheed/dsh-datasets/tool` 与 `@khorsheed/dsh-eval/tool` 被这个 grep 截在斜杠前，并进同名核心）+ `local-agent-dsh-headless`（没有行，只是 headlessBundleDir 路径））。T82 在 0.2.0-rc.2 临时实例上实装：25 个名字、205 行、默认预设 eval；T88 改依赖整合包后在新临时 home 上 `--source --fresh` 重装：24 个名字、205 行（行集合不变，只是来源层从四个成员换成 `bundle-eval`），205 个顶层行 id 各出现一次。家族折叠后各 provider 的 `./tool` 委派入口不进 dump：它们是按预设点名的行，本 profile 的 eval 预设不点名。
 
 **npm 模式**——成员全部从 npm registry 解析。成员全部上架后（I6）开箱即用；在此之前，未上架成员会在安装时报 registry 404（权威清单见 dsh-plugins 的 [docs/release-status.md](https://github.com/Khorsheed/dsh-plugins/blob/main/docs/release-status.md)）：
 

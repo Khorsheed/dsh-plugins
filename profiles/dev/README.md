@@ -10,7 +10,7 @@
 
 ## dev 整合包 - 插件列表
 
-本整合包包含开发模式单独的 8 个插件（见下表）。除此之外，也推荐安装 [dsh-basic](https://github.com/Khorsheed/dsh-basic) 的基础体验优化插件（消息编辑/撤回、时间轴、标题编辑、引用、产物预览、本地文件浏览、任务胶囊、压缩提醒、内联卡片、能力目录、快捷键、提示音、移动端）——复制包名逐个装，或用元包 `@khorsheed/dsh-bundle-conversation-toolbox` 一次装齐常用会话组件；逐插件介绍与截图见 dsh-basic。
+本整合包包含开发模式单独的 8 个插件（见下表）。除此之外，也推荐安装 [dsh-basic](https://github.com/Khorsheed/dsh-basic) 的基础体验优化插件（消息编辑/撤回、时间轴、标题编辑、引用、产物预览、本地文件浏览、任务胶囊、压缩提醒、内联卡片、能力目录、提示音、移动端）——复制包名逐个装，或用元包 `@khorsheed/dsh-bundle-conversation-toolbox` 一次装齐常用会话组件；逐插件介绍与截图见 dsh-basic。
 
 | 插件 | 包名（复制即可安装） | 你得到 |
 |---|---|---|
