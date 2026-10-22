@@ -21,6 +21,7 @@ function mount(options: {
   modelList?: readonly string[]
   catalog?: readonly string[]
   catalogDefault?: string
+  directory?: import('@khorsheed/dsh-local-agent/types').LocalAgentModelDirectory
   live?: boolean
   overrides?: Readonly<Record<string, string>>
   records?: Readonly<Record<string, { model?: string }>>
@@ -49,6 +50,10 @@ function mount(options: {
     modelList: () => options.modelList ?? [],
     recentModels: () => options.recentModels ?? [],
     catalog: () => options.catalog ?? [],
+    ...options.directory === undefined ? {} : {
+      directory: () => options.directory!,
+      refreshDirectory: async () => options.directory!,
+    },
     catalogDefault: () => options.catalogDefault,
     homeDir: () => homeDir,
     live: () => options.live ?? false,
@@ -225,5 +230,34 @@ describe('codex model broker member switching', () => {
     const { broker, retireRuntime } = mount({ boundModel: undefined })
     await broker.setMemberModel(CHILD, 'model-b')
     expect(retireRuntime).not.toHaveBeenCalled()
+  })
+})
+
+describe('codex model broker directory scoping (the member dialog vs the card add dialog)', () => {
+  const SERVED = {
+    entries: [
+      { value: 'gpt-6.1-sol', label: 'GPT-6.1 Sol', source: 'native' as const },
+      { value: 'gpt-6-astra', label: 'GPT-6 Astra', source: 'native' as const },
+      { value: 'gpt-5.1-codex', label: 'GPT-5.1 Codex', source: 'native' as const },
+    ],
+    complete: true, customInput: true, status: 'ready' as const, refreshing: false, revision: 1,
+  }
+
+  it('memberless reads are the endpoint-served catalog only — configuration extras never become add candidates', async () => {
+    const { broker } = mount({ settingsModel: 'gpt-6.1-sol', directory: SERVED, modelList: ['gpt-6.1-sol', 'gpt-6-astra'] })
+    const directory = await broker.modelDirectory()
+    expect(directory.entries.map(entry => entry.value)).toEqual(['gpt-6.1-sol', 'gpt-6-astra', 'gpt-5.1-codex'])
+  })
+
+  it('a member with a curated list sees exactly the list in list order — an out-of-list current model stays visible', async () => {
+    const { broker } = mount({ settingsModel: 'gpt-6.1-sol', directory: SERVED, modelList: ['gpt-6-astra', 'gpt-6.1-sol'] })
+    const directory = await broker.modelDirectory(CHILD)
+    expect(directory.entries.map(entry => entry.value)).toEqual(['gpt-6-astra', 'gpt-6.1-sol'])
+  })
+
+  it('a member without a curated list keeps the legacy extended vocabulary (settings extended in)', async () => {
+    const { broker } = mount({ settingsModel: 'config-model', directory: SERVED })
+    const directory = await broker.modelDirectory(CHILD)
+    expect(directory.entries.map(entry => entry.value)).toContain('config-model')
   })
 })
