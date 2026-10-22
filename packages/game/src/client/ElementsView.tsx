@@ -7,7 +7,7 @@
  * the confirmation (it replaces the look in the game at once).
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { ChipRow } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
+import { ChipRow, PanelHeader } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
 import { isPixelLook, LOOK_CHARS, type AnyLook, type ElementLook, type ElementView, type Look3D, type LookProposal, type ProjectView } from '../types.ts'
 import { failureOf, type ViewProps } from './contract.ts'
 import { blankLook, ensureColor, LookCanvas, recolor, setCell } from './looks.tsx'
@@ -23,7 +23,7 @@ export interface ElementsViewProps extends ViewProps {
   readonly onLiveElement: (element: Record<string, unknown>) => void
 }
 
-/** A 3D look's main color, for its card (a live preview per card would cost a WebGL context each). */
+/** A 3D look's main color, for its card's placeholder while the still renders (or without a live version). */
 function bodyColor(look: Look3D): string | undefined {
   const recipe = look.kind === 'parts3d' ? look : look.recipe
   return recipe?.palette.body ?? Object.values(recipe?.palette ?? {})[0]
@@ -70,7 +70,8 @@ export function ElementsView(props: ElementsViewProps): ReactNode {
                 <button type="button" className={css.elOpen} onClick={() => { onOpen(e.id) }} aria-label={t('elements.open', { name: e.name })}>
                   <span className={css.elArt} data-tone={typeTone(types, e.type)}>
                     {e.look !== null ? <LookCanvas look={e.look} box={56} />
-                      : e.look3d !== null ? <span className={css.elInitial} style={{ background: bodyColor(e.look3d) }} data-model="3d">{e.name.slice(0, 1)}</span>
+                      : e.look3d !== null ? <Preview3D api={props.api} projectId={project.id} version={project.current?.version} look={e.look3d} mode="still"
+                          className={css.elArt3d} emptyLabel="" placeholder={<span className={css.elInitial} style={{ background: bodyColor(e.look3d) }} data-model="3d">{e.name.slice(0, 1)}</span>} />
                       : <span className={css.elInitial}>{e.name.slice(0, 1)}</span>}
                   </span>
                   <span className={css.elName}>{e.name}</span>
@@ -162,11 +163,8 @@ function ElementDetail({ t, sessionId, api, project, element, onBack, insertDraf
   const fields = Object.entries(element.stats)
 
   return <div className={css.scroll}>
-    <div className={css.crumbs}>
-      <button type="button" className={css.link} onClick={onBack}>‹ {t('elements.back')}</button>
-      <span className={css.metaLine}>{element.type} · {element.id} · {element.file}</span>
-    </div>
-    <h3 className={css.detailTitle}>{element.name}</h3>
+    <PanelHeader className={css.detailHead} title={element.name} meta={<span title={`${element.id} · ${element.file}`}>{element.type}</span>}
+      onBack={onBack} backLabel={t('elements.back')} moreLabel={t('more')} />
 
     {look3d !== null ? <section className={css.lookPanel}>
       <Preview3D api={api} projectId={project.id} version={project.current?.version} look={look3d} mode="spin"

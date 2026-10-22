@@ -2,6 +2,7 @@
 
 ## 0.1.0 (unreleased)
 
+- Element cards show a 3D element's model as a still (two render at a time; the color swatch stands in meanwhile). The open element's title row is the panel kit's header — a real back button, pinned while the detail scrolls.
 - `game_publish`: run the checks and cut a version mid-turn. A question does not end the turn, so the skill and the mode persona require a green publish before the agent asks the user to play.
 
 - The one-pager has one source (`game.json`), edited on the design card; `design/pillars.md` becomes 支柱说明 (pillar notes only), lines restating the one-pager are filtered out.

@@ -270,8 +270,8 @@ button.strip { cursor: pointer; }
   background: var(--dsw-alias-bg-base); border: 1px solid var(--g-accent); font-size: var(--dsh-panel-text-body, 13px);
   box-shadow: 0 6px 20px color-mix(in srgb, var(--dsw-alias-label-primary) 12%, transparent);
 }
-.crumbs { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.detailTitle { margin: -4px 0 0; font-size: var(--dsh-panel-text-title, 14px); font-weight: 600; }
+/* The open element's title row: the kit's header (same back button and insets as the panel's own title row), pinned while the detail scrolls. */
+.detailHead { position: sticky; top: -12px; z-index: 2; margin: -12px -14px 0; background: var(--dsw-alias-bg-base); border-bottom: 1px solid var(--g-line); }
 .lookPanel { display: flex; flex-direction: column; gap: 10px; padding: 12px; border-radius: 12px; background: var(--g-card); border: 1px solid var(--g-line); }
 .lookMain { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; }
 .look { display: block; image-rendering: pixelated; max-width: 100%; height: auto; }
@@ -447,9 +447,12 @@ button.strip { cursor: pointer; }
 .preview3d { position: relative; display: grid; place-items: center; overflow: hidden; border-radius: 10px; background: var(--g-screen); }
 .preview3d img { display: block; width: 100%; height: 100%; object-fit: contain; }
 .preview3dFrame { position: absolute; inset: 0; display: block; width: 100%; height: 100%; border: 0; }
+/* A still renders out of sight; its placeholder shows until the image replaces both. */
+.preview3dFrame[data-mode='still'] { opacity: 0; pointer-events: none; }
 .preview3dNote { padding: 12px; text-align: center; color: var(--g-screen-dim); font-size: var(--dsh-panel-text-meta, 12px); }
 .turntable { width: 100%; aspect-ratio: 16 / 10; max-height: 300px; }
 .proposal3d { width: 120px; height: 96px; }
+.elArt3d { width: 100%; height: 100%; border-radius: 8px; background: transparent; }
 /* The recipe editor: groups of sliders and color wells generated from the recipe. */
 .recipe { display: flex; flex-direction: column; gap: 4px; }
 .recipeGroup { display: flex; flex-direction: column; gap: 2px; padding-top: 6px; border-top: 1px solid var(--g-line); }
