@@ -18,6 +18,8 @@ import { describe, expect, it, vi } from 'vitest'
 import { LocalAgentStreams } from '@khorsheed/dsh-local-agent'
 import { DshCliProvider } from '../src/dsh-cli-provider.ts'
 import { DshLiveDriver } from '../src/live-driver.ts'
+import { DSH_INTERRUPTED_TOOL_RESULT } from '../src/session-mirror.ts'
+import { expectValidReleasedLog } from './expect-valid-log.ts'
 
 /** One scripted turn: the events to push and the closing idle reason. */
 interface FakeTurn {
@@ -202,7 +204,7 @@ function answerEvents(turn: number, task: string, answer: string): Partial<Sessi
     { type: 'turn/start', data: { turn } },
     { type: 'user/message', data: { content: [{ type: 'text', text: task }], source: { kind: 'user' }, role: 'user' } },
     { type: 'step/start', data: { turn, step: 1 } },
-    { type: 'assistant/message', data: { turn, step: 1, message: { content: [{ type: 'text', text: answer }], source: { provider: 'deepseek-official', model: 'm' } } } },
+    { type: 'assistant/message', data: { turn, step: 1, message: { content: [{ type: 'text', text: answer }], source: { kind: 'model', provider: 'deepseek-official', model: 'm' } } } },
     { type: 'step/end', data: { turn, step: 1 } },
     { type: 'turn/end', data: { turn, reason: { kind: 'completed' } } },
   ]
@@ -363,6 +365,8 @@ describe('dsh live driver rounds', () => {
     expect((await run.result).stopReason).toBe('completed')
     expect(durable.at(-1)?.type).toBe('turn/end')
     expect(durable).toEqual(child.snapshotEvents())
+    // The settled round's stored log passes the released-log reader's cold read.
+    expectValidReleasedLog(child)
     await m.driver.disposeAll()
   })
 
@@ -389,8 +393,52 @@ describe('dsh live driver rounds', () => {
     expect((await run.result).stopReason).toBe('aborted')
     const final = child.snapshotEvents().find(event => event.type === 'assistant/message')
     expect(final?.data).toMatchObject({ interrupted: true, message: { content: [{ type: 'reasoning', text: '推理片段' }, { type: 'text', text: '部分内容' }] } })
+    // The fold landed inside the still-open copied step; the settle closure
+    // ended the step and the turn — the stored log passes the cold read.
+    expect(child.snapshotEvents().filter(event => event.type === 'step/end')).toHaveLength(1)
+    expect(child.snapshotEvents().at(-1)?.type).toBe('turn/end')
+    expectValidReleasedLog(child)
     await m.driver.disposeAll()
     liveStreams.dispose()
+  })
+
+  it('closes the copied open tail of an interrupted round: advertised tool calls resolve before the step and turn close', async () => {
+    // The runtime dies (or the interrupt outran the wire) mid-step: the
+    // sub-dsh's step crossed open with an advertised call started and a second
+    // one never started, and no step/end ever arrives.
+    const m = mount()
+    const child = Session.create(SessionId('child-dsh-interrupted-tail'))
+    const fake = new FakeServeChild({ turn: () => ({ reason: null }) })
+    m.queueChild(fake)
+    const controller = new AbortController()
+    const run = await m.driver.startRound(request({ signal: controller.signal }) as never, roundSpec(m, child))
+    fake.pushEvent(String(child.id), 1, { type: 'step/start', data: { turn: 1, step: 1 } })
+    fake.pushEvent(String(child.id), 1, {
+      type: 'assistant/message',
+      data: {
+        turn: 1, step: 1,
+        message: {
+          content: [
+            { type: 'tool-call', id: 'call_1', name: 'Bash', arguments: '{"command":"ls"}' },
+            { type: 'tool-call', id: 'call_2', name: 'Read', arguments: '{"path":"a.ts"}' },
+          ],
+          source: { kind: 'model', provider: 'deepseek-official', model: 'm' },
+        },
+      },
+    })
+    fake.pushEvent(String(child.id), 1, { type: 'tool/call', data: { turn: 1, step: 1, callId: 'call_1', name: 'Bash', arguments: '{"command":"ls"}' } })
+    controller.abort()
+    expect((await run.result).stopReason).toBe('aborted')
+    const events = child.snapshotEvents()
+    const results = events.filter(event => event.type === 'tool/result')
+    expect(results).toHaveLength(2)
+    expect(JSON.stringify(results[0]?.data)).toContain(DSH_INTERRUPTED_TOOL_RESULT)
+    expect(results[1]?.data).toMatchObject({ error: { code: 'TOOL_NOT_STARTED' } })
+    expect(events.filter(event => event.type === 'step/end')).toHaveLength(1)
+    expect(events.at(-1)?.type).toBe('turn/end')
+    expect(events.at(-1)?.data).toMatchObject({ turn: 1, reason: { kind: 'aborted' } })
+    expectValidReleasedLog(child)
+    await m.driver.disposeAll()
   })
 
   it('spawns the resident serve process, drives a fresh turn, and mirrors events live', async () => {
@@ -421,6 +469,9 @@ describe('dsh live driver rounds', () => {
     await vi.waitFor(() => {
       expect(m.reports.some(r => r.progress.kind === 'mirror')).toBe(true)
     })
+    // The settle chain closed the turn after the reconciliation mirror — the
+    // stored log passes the released-log reader.
+    expectValidReleasedLog(child)
     await run.dispose()
     await m.driver.disposeAll()
     expect(m.driver.liveCount).toBe(0)
@@ -533,6 +584,8 @@ describe('dsh live driver rounds', () => {
     expect(starts[1]?.params).toMatchObject({ sessionId: 'child-live-2', text: '继续', resume: true })
     expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(2)
     expect(child.snapshotEvents().filter(e => e.type === 'turn/end').at(-1)?.data).toMatchObject({ turn: 2, reason: { kind: 'completed' } })
+    // The resumed two-round log passes the released-log reader end to end.
+    expectValidReleasedLog(child)
     await m.driver.disposeAll()
   })
 
@@ -556,6 +609,7 @@ describe('dsh live driver rounds', () => {
       turn: 1,
       reason: { kind: 'aborted', reason: { kind: 'parent' } },
     })
+    expectValidReleasedLog(child)
     await m.driver.disposeAll()
   })
 
@@ -568,6 +622,7 @@ describe('dsh live driver rounds', () => {
     const run = await m.driver.startRound(request() as never, roundSpec(m, child))
     expect((await run.result).stopReason).toBe('error')
     expect(child.snapshotEvents().filter(e => e.type === 'turn/end').at(-1)?.data).toMatchObject({ reason: { kind: 'error', error: { code: 'SERVER', message: 'provider down' } } })
+    expectValidReleasedLog(child)
     await m.driver.disposeAll()
   })
 

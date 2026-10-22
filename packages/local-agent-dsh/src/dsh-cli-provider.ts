@@ -40,6 +40,7 @@ import {
   containerScopedHome,
   delegationEnv,
   establishSubagentCatalogChild,
+  persistChildSession,
   probeCliVersion,
   resolveChildCwd,
   subagentDelegationLabel,
@@ -50,7 +51,7 @@ import type { LocalAgentDshConfig } from './index.ts'
 import { LiveChannelUnavailableError } from './live-driver.ts'
 import type { DshLiveDriver } from './live-driver.ts'
 import { DEFAULT_SUB_PROFILE_NAME, provisionDshScope, unitSubProfileName } from './provision.ts'
-import { mirrorDshSession } from './session-mirror.ts'
+import { closeMirroredOpenStep, mirrorDshSession } from './session-mirror.ts'
 
 /**
  * Spawn-env name carrying the bridge entry path into the sub-dsh process,
@@ -840,22 +841,10 @@ export async function startDshCliRun(
     // A completed round proves the resolved credential is live — the sub-dsh
     // reached its endpoint and produced an answer.
     if (settled.stopReason === 'completed') markCredentialVerified(ctx, spec.scope)
-    // The turn closes at the real settle moment, so the timing projection's
-    // duration equals the actual CLI runtime. Every terminal path closes the
-    // window — a failed or cancelled run settles 'error'/'aborted' instead of
-    // leaving the turn open with a distorted tiny duration.
-    if (spec.childSession !== undefined) {
-      if (settled.stopReason === 'completed') {
-        spec.childSession.append('turn/end', { turn, reason: { kind: 'completed' } })
-      } else if (settled.stopReason === 'aborted') {
-        spec.childSession.append('turn/end', { turn, reason: { kind: 'aborted', reason: { kind: 'parent' } } })
-      } else {
-        spec.childSession.append('turn/end', {
-          turn,
-          reason: { kind: 'error', error: { message: 'dsh exited before the run completed', code: 'UNKNOWN' } },
-        })
-      }
-    }
+    // The turn does NOT close here: turn/end lands in the mirror queue after
+    // the settle pass (see below), so every mirrored event precedes it in the
+    // stored log — the released-log reader rejects content outside an open
+    // turn on every cold read.
     return settled
   })
 
@@ -863,16 +852,49 @@ export async function startDshCliRun(
   // crashed) — mirror whatever the sub-dsh session already produced into the
   // dsh subagent session, so every round preserves its conversation and real
   // token usage instead of showing turn boundaries only. Waits for the settle
-  // chain first (so turn/end is already appended) AND for the process to
-  // actually exit (the sub-dsh flushed its session before exiting) before
-  // reading.
+  // chain first AND for the process to actually exit (the sub-dsh flushed its
+  // session before exiting) before reading. The turn closes INSIDE the mirror
+  // queue, after the settle pass: the copied tail's open step first receives
+  // its closure (an interrupted sub-dsh leaves its step — and any advertised
+  // tool calls — open, and the released-log reader rejects a turn/end over
+  // it), then turn/end lands and is persisted explicitly (the mirror's own
+  // persist skips a no-op pass, which is exactly the case that needs the
+  // boundary written). Every terminal path closes the window — a failed or
+  // cancelled run settles 'error'/'aborted' instead of leaving the turn open.
   void result.then(() => child.done).then(
     () => {
       if (spec.childSession !== undefined) {
         const childSession = spec.childSession
         // The settle pass reports the final mirror count even when polling
         // already covered the round (empty delta): it is authoritative.
-        return enqueueMirror(() => mirrorAndReport(childSession, true))
+        return enqueueMirror(async () => {
+          const settled = await result
+          try {
+            await mirrorAndReport(childSession, true)
+          } catch (error: unknown) {
+            // The mirror degrades to a warn; the turn boundary still closes —
+            // an open turn at EOF reads as an interrupted tail only until the
+            // next resume round tries to open its turn over it.
+            ctx.logger.warn(`subagent-dsh: settle mirror failed: ${error instanceof Error ? error.message : String(error)}`)
+          }
+          closeMirroredOpenStep(childSession)
+          // The turn closes at the real settle moment (plus the settle-mirror
+          // quiescence), so the timing projection's duration equals the actual
+          // CLI runtime.
+          if (settled.stopReason === 'completed') {
+            childSession.append('turn/end', { turn, reason: { kind: 'completed' } })
+          } else if (settled.stopReason === 'aborted') {
+            childSession.append('turn/end', { turn, reason: { kind: 'aborted', reason: { kind: 'parent' } } })
+          } else {
+            childSession.append('turn/end', {
+              turn,
+              reason: { kind: 'error', error: { message: 'dsh exited before the run completed', code: 'UNKNOWN' } },
+            })
+          }
+          await persistChildSession(ctx, childSession).catch((error: unknown) => {
+            ctx.logger.warn(`subagent-dsh: turn/end persistence failed: ${error instanceof Error ? error.message : String(error)}`)
+          })
+        })
       }
       return undefined
     },

@@ -14,7 +14,7 @@ Status: implemented
 
 - **codex / claude-code**——`appendCodexTranscriptLine` / `appendClaudeTranscriptLine` 在每条折叠的 transcript line 前后写边界对；被 options 跳过的 line 不写边界。
 - **kimi**——`mirrorKimiSessionDelta` 同样逐行包边界。（部分内容已被取代：本决定认可的迟到结果裸 backfill 在 released-log 读取端同样非法，现已不存在——工具行会拦住 fold 直到结果到达，整个原生生命周期在一个 step 内 fold；见 [kimi released-log 合法性](2026-10-22-kimi-mirror-released-log-validity.zh.md)。）
-- **dsh**——镜像把 sub-dsh 会话真实的 `step/start`/`step/end` 事件逐字拷贝过河，不再当脚手架过滤掉（sub 会话的 turn 编号与父侧设计上对齐）。skip 前缀对齐在两侧同时计入边界，重复 poll 不会重拷一对。被 interrupt 而没有 end 的 step 以开口形态过河；绝不合成边界。
+- **dsh**——镜像把 sub-dsh 会话真实的 `step/start`/`step/end` 事件逐字拷贝过河，不再当脚手架过滤掉（sub 会话的 turn 编号与父侧设计上对齐）。skip 前缀对齐在两侧同时计入边界，重复 poll 不会重拷一对。被 interrupt 而没有 end 的 step 在轮次中途仍以开口形态过河。（settle 处已被取代："绝不合成边界" 一直成立到 released-log 读取端拒绝 provider 的 `turn/end` 压在该开口 step 上——settle 流程现在在边界落地之前先关闭拷贝来的尾巴；见 [dsh 镜像中断尾巴关闭](2026-10-22-dsh-mirror-interrupted-tail-closure.zh.md)。）
 - **token 粒度合并最终消息**（codex / kimi / claude live 驱动）——从 detached 的 settle 后链（`turn/end` 之后）挪进 settle 链里、`turn/end` **之前**，并包边界对，使其在 turn 窗口内、footer 之上渲染。kimi 的窗口内写入先跑一遍有界的 settle 静默镜像（3 次稳定读 × 300ms，3s 上限），保证消息仍携带该轮 usage。
 
 ## Alternatives considered
@@ -33,4 +33,4 @@ Status: implemented
 
 ## Testing
 
-各 provider 的测试都带 `expectStepBoundaries` 帮助函数，断言每条镜像的 `assistant/message`、`tool/call`、`tool/result` 都落在同坐标边界对内；token 粒度套件另外断言合并最终消息先于 `turn/end`、其坐标的事件序恰为 `step/start → assistant/message → step/end`；dsh 套件断言 poll → settle 不会重拷边界对。kimi 的套件还会把发射出的日志送进 harness 的 released-log 校验器回放（`expectValidReleasedLog`）。
+各 provider 的测试都带 `expectStepBoundaries` 帮助函数，断言每条镜像的 `assistant/message`、`tool/call`、`tool/result` 都落在同坐标边界对内；token 粒度套件另外断言合并最终消息先于 `turn/end`、其坐标的事件序恰为 `step/start → assistant/message → step/end`；dsh 套件断言 poll → settle 不会重拷边界对。kimi 与 dsh 的套件还会把发射出的日志送进 harness 的 released-log 校验器回放（`expectValidReleasedLog`）。
