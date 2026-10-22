@@ -18,8 +18,9 @@ import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { LocalAgentStreams } from '@khorsheed/dsh-local-agent'
 import { describe, expect, it, vi } from 'vitest'
-import { ClaudeCliProvider } from '../src/claude-cli-provider.ts'
+import { CLAUDE_INTERRUPTED_TOOL_RESULT, ClaudeCliProvider } from '../src/claude-cli-provider.ts'
 import { ClaudeLiveDriver } from '../src/live-driver.ts'
+import { expectValidReleasedLog } from './expect-valid-log.ts'
 
 /** One scripted turn: assistant events, the terminal result, or a hang. */
 interface FakeTurn {
@@ -314,6 +315,7 @@ describe('claude live driver rounds', () => {
     expect((await run.result).stopReason).toBe('completed')
     expect(durable.at(-1)?.type).toBe('turn/end')
     expect(durable).toEqual(child.snapshotEvents())
+    expectValidReleasedLog(child)
     await m.driver.disposeAll()
   })
 
@@ -389,18 +391,23 @@ describe('claude live driver rounds', () => {
     // The auth discipline: exactly the scoped config dir, nothing else.
     expect(spawn.spec.env).toEqual({ CLAUDE_CONFIG_DIR: m.homeDir })
     // Mirroring: prompt + folded lines, usage on the final line; the
-    // tool_use folds to a native tool/call (+ tool/result) pair.
+    // tool_use folds as the native lifecycle (the advertising
+    // assistant/message, then the tool/call + tool/result pair).
     expect(child.snapshotEvents().filter(e => e.type === 'user/message')).toHaveLength(1)
     const assistant = child.snapshotEvents().filter(e => e.type === 'assistant/message')
-    expect(assistant).toHaveLength(2)
+    expect(assistant).toHaveLength(3)
     expect(assistant[0]?.data).toMatchObject({ message: { content: [{ type: 'reasoning' }] } })
-    expect(assistant[1]?.data).toMatchObject({ message: { content: [{ type: 'text', text: '第一条回复' }] } })
+    expect(assistant[1]?.data).toMatchObject({ message: { content: [{ type: 'tool-call', name: 'Bash', arguments: 'ls' }] } })
+    expect(assistant[2]?.data).toMatchObject({ message: { content: [{ type: 'text', text: '第一条回复' }] } })
     expect(child.snapshotEvents().filter(e => e.type === 'tool/call')).toHaveLength(1)
+    expect(child.snapshotEvents().filter(e => e.type === 'tool/result')).toHaveLength(1)
     expect(child.snapshotEvents().find(e => e.type === 'turn/end')?.data).toMatchObject({ turn: 1, reason: { kind: 'completed' } })
     expect(m.reports.some(r => r.progress.kind === 'delta' && r.progress.text === '第一条回复')).toBe(true)
     await vi.waitFor(() => { expect(m.reports.some(r => r.progress.kind === 'mirror')).toBe(true) })
-    // Event granularity: every folded step is wrapped in its boundary pair.
+    // Event granularity: every folded step is wrapped in its boundary pair,
+    // and the whole log passes the released-log reader's cold-read validation.
     expectStepBoundaries(child)
+    expectValidReleasedLog(child)
     await m.driver.disposeAll()
     expect(m.driver.liveCount).toBe(0)
   })
@@ -492,6 +499,82 @@ describe('claude live driver rounds', () => {
       turn: 1,
       reason: { kind: 'aborted', reason: { kind: 'parent' } },
     })
+    expectValidReleasedLog(child)
+    await m.driver.disposeAll()
+  })
+
+  it('holds an unresulted tool line until its result merges — no bare tool/call reaches the log', async () => {
+    // Regression for the in-the-wild corruption: a tool line that stops being
+    // the volatile last line BEFORE its tool_result arrives must not fold a
+    // bare tool/call (the released-log reader pairs every call against an
+    // advertised, resolved lifecycle). The fold holds at the line; the result
+    // merges into it in place, and the next pass folds the whole lifecycle.
+    const m = mount()
+    const child = Session.create(SessionId('child-claude-live-hold'))
+    const fake = new FakeClaude({ turn: () => ({ hang: true }) })
+    m.queueChild(fake)
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    // The tool call arrives, then a text line BEFORE its result: the tool
+    // line stops being the volatile last line, yet nothing of it may fold.
+    fake.emit({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', id: 'tu-hold', name: 'Bash', input: { command: 'ls' } }] } })
+    fake.emit({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: '看一下输出' }] } })
+    await new Promise(resolve => setTimeout(resolve, 30))
+    expect(child.snapshotEvents().filter(e => e.type === 'tool/call')).toHaveLength(0)
+    expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(0)
+    // The result merges into the held line in place; the next pass folds the
+    // whole lifecycle in one step.
+    fake.emit({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'tu-hold', content: 'a.txt' }] } })
+    await vi.waitFor(() => { expect(child.snapshotEvents().filter(e => e.type === 'tool/result')).toHaveLength(1) })
+    fake.emit({ type: 'result', is_error: false, session_id: 'claude-session-1', usage: { input_tokens: 5, cache_read_input_tokens: 0, output_tokens: 2 } })
+    expect((await run.result).stopReason).toBe('completed')
+    const calls = child.snapshotEvents().filter(e => e.type === 'tool/call')
+    expect(calls).toHaveLength(1)
+    expect(calls[0]!.data).toMatchObject({ callId: 'tu-hold', name: 'Bash', arguments: 'ls' })
+    const advertised = child.snapshotEvents().filter(e => e.type === 'assistant/message')
+      .map(e => (e.data as { message: { content: { type: string }[] } }).message.content[0])
+    expect(advertised).toContainEqual({ type: 'tool-call', id: 'tu-hold', name: 'Bash', arguments: 'ls' })
+    expectStepBoundaries(child)
+    expectValidReleasedLog(child)
+    await m.driver.disposeAll()
+  })
+
+  it('a cancelled round folds an unresulted tool call with the interrupted placeholder', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-claude-tool-abort'))
+    const fake = new FakeClaude({
+      turn: () => ({
+        hang: true,
+        events: [
+          { type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', id: 'tu-stuck', name: 'Bash', input: { command: 'sleep 99' } }] } },
+        ],
+      }),
+    })
+    m.queueChild(fake)
+    const controller = new AbortController()
+    const run = await m.driver.startRound(request({ signal: controller.signal }) as never, roundSpec(m, child))
+    // The call is in flight, its result never recorded: the fold holds, so
+    // nothing of the tool lifecycle is durable mid-round.
+    await new Promise(resolve => setTimeout(resolve, 30))
+    expect(child.snapshotEvents().filter(e => e.type === 'tool/call')).toHaveLength(0)
+    controller.abort()
+    expect((await run.result).stopReason).toBe('aborted')
+    // Settle folds the interrupted lifecycle in one step: the advertising
+    // message, the call, and the synthesized interrupted result.
+    const calls = child.snapshotEvents().filter(e => e.type === 'tool/call')
+    expect(calls).toHaveLength(1)
+    expect(calls[0]!.data).toMatchObject({ callId: 'tu-stuck', name: 'Bash', arguments: 'sleep 99' })
+    const results = child.snapshotEvents().filter(e => e.type === 'tool/result')
+    expect(results).toHaveLength(1)
+    expect(results[0]!.data.message).toMatchObject({
+      toolCallId: 'tu-stuck',
+      content: [{ type: 'text', text: CLAUDE_INTERRUPTED_TOOL_RESULT }],
+      isError: true,
+    })
+    expect(child.snapshotEvents().find(e => e.type === 'turn/end')?.data).toMatchObject({ turn: 1, reason: { kind: 'aborted' } })
+    expectStepBoundaries(child)
+    expectValidReleasedLog(child)
+    // The interrupt unwinds the hung turn; its result lands so the chain converges.
+    fake.emit({ type: 'result', is_error: false, session_id: 'claude-session-1' })
     await m.driver.disposeAll()
   })
 
@@ -531,6 +614,7 @@ describe('claude live driver rounds', () => {
     expect(child.snapshotEvents().find(e => e.type === 'turn/end')?.data).toMatchObject({ reason: { kind: 'error' } })
     // The folded partial work is still mirrored.
     expect(child.snapshotEvents().filter(e => e.type === 'assistant/message').length).toBeGreaterThan(0)
+    expectValidReleasedLog(child)
     await m.driver.disposeAll()
   })
 
@@ -646,6 +730,7 @@ describe('claude live driver rounds', () => {
     const final = child.snapshotEvents().find(e => e.type === 'assistant/message')!
     expect(final.data).toMatchObject({ turn: 1, step: 1, interrupted: true })
     expect((final.data as { message: { content: unknown[] } }).message.content).toEqual([{ type: 'text', text: '写到一半' }])
+    expectValidReleasedLog(child)
     // The interrupt unwinds the hung turn; its result lands so the chain converges.
     fake.emit({ type: 'result', is_error: false, session_id: 'claude-session-1' })
     await m.driver.disposeAll()
@@ -666,12 +751,22 @@ describe('claude live driver rounds', () => {
     fake.emit({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: '结论' }] } })
     fake.emit({ type: 'result', is_error: false, session_id: 'claude-session-1', usage: { input_tokens: 5, cache_read_input_tokens: 0, output_tokens: 2 } })
     expect((await run.result).stopReason).toBe('completed')
-    await vi.waitFor(() => { expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(1) }, { timeout: 5_000 })
+    // The tool calls' results never arrived: their lifecycles fold at settle
+    // with the interrupted placeholder — one advertising assistant/message
+    // each — and the answer is the round's one text message.
+    await vi.waitFor(() => { expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(4) }, { timeout: 5_000 })
 
     // Chronological steps: tool=1, tool=2, the stream=3, the late tool shifts to 4.
     const toolSteps = child.snapshotEvents().filter(e => e.type === 'tool/call').map(e => (e.data as { step: number }).step)
     expect(toolSteps).toEqual([1, 2, 4])
-    const final = child.snapshotEvents().find(e => e.type === 'assistant/message')!
+    const interrupted = child.snapshotEvents().filter(e => e.type === 'tool/result')
+      .map(e => (e.data as { message: { isError?: boolean; content: { text: string }[] } }).message)
+    expect(interrupted).toHaveLength(3)
+    for (const message of interrupted) {
+      expect(message.isError).toBe(true)
+      expect(message.content[0]?.text).toBe(CLAUDE_INTERRUPTED_TOOL_RESULT)
+    }
+    const final = child.snapshotEvents().filter(e => e.type === 'assistant/message').at(-1)!
     expect(final.data).toMatchObject({ turn: 1, step: 3, usage: { inputTokens: 5, outputTokens: 2 } })
     // The shifted tool steps carry their own boundary pairs too.
     expectStepBoundaries(child)
@@ -687,17 +782,19 @@ describe('claude live driver rounds', () => {
     }))
     const run = await m.driver.startRound(request() as never, roundSpec(m, child))
     expect((await run.result).stopReason).toBe('completed')
-    await vi.waitFor(() => { expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(2) }, { timeout: 5_000 })
+    await vi.waitFor(() => { expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(3) }, { timeout: 5_000 })
 
-    // Faithful per-line fold: thinking at step 1, the tool card at step 2,
-    // the answer at step 3 — nothing withheld for a combined message.
+    // Faithful per-line fold: thinking at step 1, the tool card at step 2
+    // (its advertising assistant/message, call, and result in one step), the
+    // answer at step 3 — nothing withheld for a combined message.
     const toolSteps = child.snapshotEvents().filter(e => e.type === 'tool/call').map(e => (e.data as { step: number }).step)
     expect(toolSteps).toEqual([2])
     const assistant = child.snapshotEvents().filter(e => e.type === 'assistant/message')
-    expect(assistant.map(e => (e.data as { step: number }).step)).toEqual([1, 3])
-    expect((assistant[1]!.data as { message: { content: unknown[] } }).message.content).toEqual([{ type: 'text', text: '静默答案' }])
-    expect(assistant[1]?.data).toMatchObject({ usage: { inputTokens: 5, outputTokens: 2 } })
+    expect(assistant.map(e => (e.data as { step: number }).step)).toEqual([1, 2, 3])
+    expect((assistant[2]!.data as { message: { content: unknown[] } }).message.content).toEqual([{ type: 'text', text: '静默答案' }])
+    expect(assistant[2]?.data).toMatchObject({ usage: { inputTokens: 5, outputTokens: 2 } })
     expectStepBoundaries(child)
+    expectValidReleasedLog(child)
     await m.driver.disposeAll()
   })
 
@@ -864,8 +961,10 @@ describe('claude live driver drain (settings handoff)', () => {
     await second.result
     // Token granularity folds every line too; the streamed answer finalizes
     // at its stream's reserved step 1 (its deltas arrived before any line).
+    // The tool step adds its advertising assistant/message: the think, the
+    // advertisement, and the answer — three messages in turn 2.
     await vi.waitFor(() => {
-      expect(child.snapshotEvents().filter(e => e.type === 'assistant/message' && (e.data as { turn?: number }).turn === 2)).toHaveLength(2)
+      expect(child.snapshotEvents().filter(e => e.type === 'assistant/message' && (e.data as { turn?: number }).turn === 2)).toHaveLength(3)
     }, { timeout: 5_000 })
     const final = child.snapshotEvents().filter(e => e.type === 'assistant/message' && (e.data as { turn?: number }).turn === 2)
       .find(e => (e.data as { step?: number }).step === 1)!

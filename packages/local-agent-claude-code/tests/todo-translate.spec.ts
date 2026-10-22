@@ -11,6 +11,7 @@ import type { SubprocessHandle } from '@deepseek-ai/dsh-subprocess'
 import type { SubagentStartRequest } from '@deepseek-ai/dsh-subagent'
 import { describe, expect, it, vi } from 'vitest'
 import { fakeSessionPersistence } from './fake-persistence.ts'
+import { expectValidReleasedLog } from './expect-valid-log.ts'
 import { tasksContributor } from '@khorsheed/dsh-local-agent/src/client/member-dock.ts'
 import { parseClaudeStreamJson, startClaudeCliRun, todosFromTodoWrite } from '../src/claude-cli-provider.ts'
 
@@ -192,13 +193,15 @@ describe('todo/write mirroring into the member child session', () => {
         { content: '跑测试', status: 'pending' },
       ],
     })
-    // The transcript still carries the task, the Bash fold (as a native
-    // tool/call + tool/result pair), and the reply.
-    expect(child.snapshotEvents().filter(event => event.type === 'assistant/message')).toHaveLength(1)
+    // The transcript still carries the task, the Bash fold (as the native
+    // lifecycle: the advertising assistant/message, then tool/call +
+    // tool/result), and the reply.
+    expect(child.snapshotEvents().filter(event => event.type === 'assistant/message')).toHaveLength(2)
     const calls = child.snapshotEvents().filter(event => event.type === 'tool/call')
     expect(calls).toHaveLength(1)
     expect(calls[0]?.data).toMatchObject({ name: 'Bash', arguments: 'pnpm test' })
     expect(JSON.stringify(child.snapshotEvents())).not.toContain('TodoWrite')
+    expectValidReleasedLog(child)
   })
 
   it('multi-round: round 2 TodoWrite replaces the list; an unchanged list re-appends nothing', async () => {
