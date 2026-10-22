@@ -7,7 +7,9 @@
  */
 import { useEffect, useState, type ReactNode } from 'react'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
-import type { TurnReport } from '../types.ts'
+import type { Look3D, TurnReport } from '../types.ts'
+import { normalizeLook3d } from '../look3d.ts'
+import { Preview3D } from './Preview3D.tsx'
 import type { GameTabInjected, NavTarget } from './contract.ts'
 import css from './TurnCard.module.css'
 
@@ -69,6 +71,27 @@ function Row({ icon, tone, children, go, t, onGo }: {
   </li>
 }
 
+/** A 3D look's change as two stills side by side (rendered lazily in the sandbox, then cached as images). */
+function BeforeAfter({ t, api, projectId, version, looks }: {
+  t: TranslateNS<'game'>
+  api: GameTabInjected['api']
+  projectId: string
+  version: number
+  looks: { readonly before: string | null; readonly after: string }
+}): ReactNode {
+  const parse = (json: string | null): Look3D | null => {
+    if (json === null) return null
+    try { return normalizeLook3d(JSON.parse(json)) } catch { return null }
+  }
+  const before = parse(looks.before), after = parse(looks.after)
+  if (after === null) return null
+  return <span className={css.beforeAfter}>
+    {before !== null && <figure><Preview3D api={api} projectId={projectId} version={version} look={before} mode="still" className={css.still} emptyLabel="" /><figcaption>{t('turn.lookBefore')}</figcaption></figure>}
+    {before !== null && <span className={css.arrow} aria-hidden="true">→</span>}
+    <figure><Preview3D api={api} projectId={projectId} version={version} look={after} mode="still" className={css.still} emptyLabel="" /><figcaption>{t('turn.lookAfter')}</figcaption></figure>
+  </span>
+}
+
 /** The card. Renders nothing until the turn ended and only when it changed something. */
 export function GameTurnCard(props: GameTurnCardProps): ReactNode {
   const { t, api, sessionId, openAt, subscribeSessionEvents } = props
@@ -114,6 +137,7 @@ export function GameTurnCard(props: GameTurnCardProps): ReactNode {
       </Row>}
       {looks.map(e => <Row key={`l${e.id}`} t={t} onGo={openAt} icon="◇" go={{ view: 'elements', elementId: e.id }}>
         {e.what === 'new' ? t('turn.elementNew', { name: e.name }) : t('turn.elementLook', { name: e.name })}
+        {e.looks !== undefined && <BeforeAfter t={t} api={api} projectId={report.projectId} version={report.version?.version ?? 0} looks={e.looks} />}
       </Row>)}
       {fieldOnly.length > 0 && fieldOnly.map(e => <Row key={`f${e.id}`} t={t} onGo={openAt} icon="◇" go={{ view: 'elements', elementId: e.id }}>
         {t('turn.elementFields', { name: e.name, fields: (e.fields ?? []).slice(0, 4).join('、') })}

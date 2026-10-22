@@ -21,3 +21,7 @@
 .text { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; gap: 2px 8px; color: var(--dsw-alias-label-primary); }
 .meta { color: var(--dsw-alias-label-tertiary); font-size: 12px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .go { color: var(--dsw-alias-brand-primary); flex: none; }
+.beforeAfter { display: flex; align-items: center; gap: 6px; width: 100%; margin-top: 4px; }
+.beforeAfter figure { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 11px; color: var(--dsw-alias-label-tertiary); }
+.still { width: 84px; height: 84px; }
+.arrow { color: var(--dsw-alias-label-tertiary); }

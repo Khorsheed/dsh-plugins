@@ -8,9 +8,11 @@
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ChipRow } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
-import { isPixelLook, LOOK_CHARS, type AnyLook, type ElementLook, type ElementView, type LookProposal, type ProjectView } from '../types.ts'
+import { isPixelLook, LOOK_CHARS, type AnyLook, type ElementLook, type ElementView, type Look3D, type LookProposal, type ProjectView } from '../types.ts'
 import { failureOf, type ViewProps } from './contract.ts'
 import { blankLook, ensureColor, LookCanvas, recolor, setCell } from './looks.tsx'
+import { Preview3D } from './Preview3D.tsx'
+import { Recipe3DEditor } from './Recipe3DEditor.tsx'
 import css from './GameTab.module.css'
 
 /** Props of the elements view. */
@@ -19,6 +21,12 @@ export interface ElementsViewProps extends ViewProps {
   readonly openId: string | null
   readonly onOpen: (id: string | null) => void
   readonly onLiveElement: (element: Record<string, unknown>) => void
+}
+
+/** A 3D look's main color, for its card (a live preview per card would cost a WebGL context each). */
+function bodyColor(look: Look3D): string | undefined {
+  const recipe = look.kind === 'parts3d' ? look : look.recipe
+  return recipe?.palette.body ?? Object.values(recipe?.palette ?? {})[0]
 }
 
 /** A stable per-type hue index for cards without a look. */
@@ -61,7 +69,9 @@ export function ElementsView(props: ElementsViewProps): ReactNode {
               return <div key={e.id} className={css.elCard} data-selected={isSel ? 'true' : 'false'}>
                 <button type="button" className={css.elOpen} onClick={() => { onOpen(e.id) }} aria-label={t('elements.open', { name: e.name })}>
                   <span className={css.elArt} data-tone={typeTone(types, e.type)}>
-                    {e.look !== null ? <LookCanvas look={e.look} box={56} /> : <span className={css.elInitial}>{e.name.slice(0, 1)}</span>}
+                    {e.look !== null ? <LookCanvas look={e.look} box={56} />
+                      : e.look3d !== null ? <span className={css.elInitial} style={{ background: bodyColor(e.look3d) }} data-model="3d">{e.name.slice(0, 1)}</span>
+                      : <span className={css.elInitial}>{e.name.slice(0, 1)}</span>}
                   </span>
                   <span className={css.elName}>{e.name}</span>
                   <span className={css.elMeta}>{e.type}{stats.length > 0 ? ` · ${stats.map(([k, v]) => `${k} ${String(v)}`).join(' · ')}` : ''}</span>
@@ -108,9 +118,12 @@ function ElementDetail({ t, sessionId, api, project, element, onBack, insertDraf
   const saveTimer = useRef<ReturnType<typeof setTimeout>>()
 
   useEffect(() => { setLook(element.look) }, [element.id, element.look])
+  const [look3d, setLook3d] = useState<Look3D | null>(element.look3d)
+  useEffect(() => { setLook3d(element.look3d) }, [element.id, element.look3d])
 
   const save = (next: AnyLook): void => {
     if (isPixelLook(next)) setLook(next)
+    else setLook3d(next)
     setSaving('saving')
     clearTimeout(saveTimer.current)
     saveTimer.current = setTimeout(() => {
@@ -155,7 +168,16 @@ function ElementDetail({ t, sessionId, api, project, element, onBack, insertDraf
     </div>
     <h3 className={css.detailTitle}>{element.name}</h3>
 
-    <section className={css.lookPanel}>
+    {look3d !== null ? <section className={css.lookPanel}>
+      <Preview3D api={api} projectId={project.id} version={project.current?.version} look={look3d} mode="spin"
+        className={css.turntable} emptyLabel={t('look.preview3dEmpty')} />
+      <div className={css.toolRow}>
+        <span className={css.metaLine}>{t('look.drag3d')}</span>
+        <span className={css.spacer} />
+        <span className={css.saveState} data-state={saving}>{saving === 'idle' ? '' : t(`look.${saving}`)}</span>
+      </div>
+      {look3d.kind === 'parts3d' && <Recipe3DEditor t={t} look={look3d} onChange={save} />}
+    </section> : <section className={css.lookPanel}>
       <div className={css.lookMain}>
         {look !== null
           ? <LookCanvas look={look} state={state} box={208} grid onPaint={paint} className={css.lookEditor} />
@@ -193,7 +215,7 @@ function ElementDetail({ t, sessionId, api, project, element, onBack, insertDraf
         </div>
         <p className={css.metaLine}>{t('look.paletteNote')}</p>
       </>}
-    </section>
+    </section>}
 
     <section className={css.block}>
       <h4 className={css.blockTitle}>{t('look.askTitle')}</h4>
@@ -207,7 +229,8 @@ function ElementDetail({ t, sessionId, api, project, element, onBack, insertDraf
         <p className={css.metaLine}>{t('look.proposalsFor', { request: openProposal.request || '—' })}</p>
         <div className={css.proposalGrid}>
           {openProposal.variants.map((v, i) => <div key={i} className={css.proposalCard}>
-            <div className={css.proposalArt}>{isPixelLook(v.look) ? <LookCanvas look={v.look} box={84} /> : <span className={css.metaLine}>{t('look.model3d')}</span>}</div>
+            <div className={css.proposalArt}>{isPixelLook(v.look) ? <LookCanvas look={v.look} box={84} />
+              : <Preview3D api={api} projectId={project.id} version={project.current?.version} look={v.look} mode="still" className={css.proposal3d} emptyLabel={t('look.model3d')} />}</div>
             <strong>{v.label}</strong>
             <span className={css.metaLine}>{v.note}</span>
             <button type="button" className={css.primary} onClick={() => {

@@ -62,6 +62,16 @@ describe.skipIf(chrome === undefined)('3d-three kit in headless Chrome', () => {
         test('a creature stays inside the triangle budget', () => {
           assert(game.state().tris < 150000, '场景面数 ' + game.state().tris)
         })
+        test('a highlight sent before the game exists is applied once it appears', async () => {
+          const game0 = window.dshGame, seen = []
+          delete window.dshGame
+          window.postMessage({ gamedev: 'highlight', list: [{ id: 'jiuweihu', tone: 'added' }] }, '*')
+          await new Promise(r => setTimeout(r, 50))
+          window.dshGame = { ...game0, highlight: list => { seen.push(list); game0.highlight(list) } }
+          await new Promise(r => setTimeout(r, 400))
+          assert.equal(seen.length, 1, '游戏出现后应补上一次 highlight')
+          assert.equal(seen[0][0].tone, 'added')
+        })
         test('pause freezes time; step still drives tests', () => {
           game.pause(true); assert.equal(game.state().paused, true)
           const t0 = game.state().t; step(10); assert(game.state().t > t0, 'step 仍推进')
@@ -70,8 +80,38 @@ describe.skipIf(chrome === undefined)('3d-three kit in headless Chrome', () => {
     }, { blankProbe: THREE_3D.blankProbe })
     expect(result.skipped).toBeUndefined()
     expect(result.failures).toEqual([])
-    expect(result.passed).toBe(3)
+    expect(result.passed).toBe(4)
     expect(result.screenshot?.length).toBeGreaterThan(100)
+  }, 90_000)
+
+  it('takes its style from game.json and builds project-defined bodies and parts', async () => {
+    const result = await checker.run(withKitRuntime({
+      ...files,
+      'game.json': text(JSON.stringify({ id: 'g', runtime: { kit: '3d-three', version: 1 }, artStyle: 'custom:霓虹', style3d: { preset: 'ink', bg: '#0b0b1a', outlineWidth: 0, shades: 2 } }), 'application/json'),
+      'elements/fox.json': text(JSON.stringify({ id: 'bot', name: '机器人', type: '角色', look: { kind: 'parts3d', base: 'robot', parts: [{ type: 'antenna', length: 0.5 }], palette: { body: '#22d3ee' }, motion: {} } }), 'application/json'),
+      'src/main.js': text(`import { createWorld, build, defineBase, definePart } from 'dsh3d'
+        defineBase('robot', (look, kit) => { const g = new kit.THREE.Group(), body = new kit.THREE.Group(); g.add(body)
+          const box = kit.ink(new kit.THREE.BoxGeometry(0.8, 0.8, 0.6), kit.toon(kit.color('body', '#888888'))); box.position.y = 0.4; body.add(box); return { g, body } })
+        let wiggles = 0
+        definePart('antenna', ({ spec, anchors, kit }) => { const a = kit.ink(new kit.THREE.CylinderGeometry(0.03, 0.03, spec.length), kit.toon('#ff00aa')); a.position.y = 1; anchors.body.add(a); return { update: () => { wiggles++ } } })
+        const world = createWorld()
+        const bot = world.add(world.place(build('bot'), 0, 0), { id: 'bot' })
+        world.follow(bot)
+        let missing = null
+        try { build({ kind: 'parts3d', base: 'ufo', parts: [], palette: {}, motion: {} }) } catch (e) { missing = e.message }
+        window.dshGame = { ready: true, step: dt => world.step(dt), input() {}, state: () => ({ bg: '#' + world.scene.background.getHexString(), outline: world.style.outlineWidth, wiggles, missing }) }`),
+    }, THREE_3D), {
+      'tests/style.test.js': `test('style3d and custom parts', () => {
+        step(5)
+        const s = game.state()
+        assert.equal(s.bg, '#0b0b1a', '背景应来自 style3d')
+        assert.equal(s.outline, 0, 'outlineWidth 0 关掉描边')
+        assert(s.wiggles >= 5, '自定义部件的动效应每帧运行')
+        assert(s.missing && s.missing.includes('defineBase'), '未注册的身体应给出能看懂的错误：' + s.missing)
+      })`,
+    }, { blankProbe: THREE_3D.blankProbe })
+    expect(result.failures).toEqual([])
+    expect(result.passed).toBe(1)
   }, 90_000)
 
   it('flags a 3D game that never draws', async () => {

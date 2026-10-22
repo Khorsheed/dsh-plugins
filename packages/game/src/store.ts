@@ -247,7 +247,12 @@ export class GameService {
       if (before === undefined) { elements.push({ id, name: e.name, what: 'new' }); continue }
       if (before.json === e.json) continue
       const fields = [...new Set([...Object.keys(e.fields), ...Object.keys(before.fields)])].filter(k => e.fields[k] !== before.fields[k])
-      if (before.look !== e.look) elements.push({ id, name: e.name, what: 'look', ...(fields.length > 0 ? { fields } : {}) })
+      if (before.look !== e.look) {
+        // 3D looks ride along (bounded) so the card can show both side by side; pixel looks have their own preview.
+        const is3d = /"kind":"(parts3d|gltf)"/.test(e.look)
+        const looks = is3d && e.look.length < 8000 && before.look.length < 8000 ? { looks: { before: before.look === 'null' ? null : before.look, after: e.look } } : {}
+        elements.push({ id, name: e.name, what: 'look', ...(fields.length > 0 ? { fields } : {}), ...looks })
+      }
       else elements.push({ id, name: e.name, what: 'fields', fields })
     }
     for (const [id, e] of base.elements) if (!elementsNow.has(id)) elements.push({ id, name: e.name, what: 'removed' })
@@ -457,7 +462,24 @@ export class GameService {
       versions: await this.versionRows(row.root),
       log: await this.logEntries(row.root),
       ...(user.restyleTo === undefined ? {} : { restyleTo: user.restyleTo }),
+      candidateDiff: await this.candidateDiff(row.root),
     }
+  }
+
+  /** Elements the waiting candidate changed or added against the live version (null without both). */
+  private async candidateDiff(root: string): Promise<ProjectView['candidateDiff']> {
+    const current = await readJson<VersionRecord>(join(root, STATE_DIR, 'current.json'))
+    const candidate = await readJson<VersionRecord>(join(root, STATE_DIR, 'candidate.json'))
+    if (current === undefined || candidate === undefined) return null
+    const before = await this.elementIndex(join(root, STATE_DIR, 'versions', String(current.version)))
+    const after = await this.elementIndex(join(root, STATE_DIR, 'versions', String(candidate.version)))
+    const changed: string[] = [], added: string[] = []
+    for (const [id, e] of after) {
+      const was = before.get(id)
+      if (was === undefined) added.push(id)
+      else if (was.json !== e.json) changed.push(id)
+    }
+    return { changed, added }
   }
 
   /** The tab's state for one session. */
@@ -565,6 +587,8 @@ export class GameService {
     if (!writable) return { kind: 'pass', record, deployed: null, candidate: null }
     const version = await this.nextVersion(root)
     await this.copyVersion(root, build, version)
+    // Each version keeps its own poster: the play area shows the version it plays, never a later or failed build.
+    if (browser.screenshot !== undefined) await writeAtomic(join(root, STATE_DIR, 'shots', `${version}.webp`), Buffer.from(browser.screenshot, 'base64'))
     const user = await this.userLayer(root)
     const restyle = user.restyleTo
     const versionRecord: VersionRecord = {
@@ -617,7 +641,9 @@ export class GameService {
       if (r !== undefined) pinned.add(r.version)
     }
     for (const n of names.slice(KEEP_VERSIONS)) {
-      if (!pinned.has(n)) await rm(join(versionsDir, String(n)), { recursive: true, force: true })
+      if (pinned.has(n)) continue
+      await rm(join(versionsDir, String(n)), { recursive: true, force: true })
+      await rm(join(root, STATE_DIR, 'shots', `${n}.webp`), { force: true })
     }
   }
 
@@ -1016,10 +1042,12 @@ export class GameService {
   }
 
   /** The last check's screenshot (webp, base64), if any. */
-  async checkShot(projectId: string): Promise<GameResult<{ readonly ok: true; readonly webp: string }>> {
+  async checkShot(projectId: string, version?: number): Promise<GameResult<{ readonly ok: true; readonly webp: string }>> {
     const row = await this.row(projectId)
     if (row === undefined) return { ok: false, error: 'not-found' }
-    const data = await readFile(join(row.root, STATE_DIR, 'last-check.webp')).catch(() => undefined)
+    // A version's own poster; without a version, the last check's (projects made before per-version posters).
+    const own = version === undefined ? undefined : await readFile(join(row.root, STATE_DIR, 'shots', `${Math.floor(version)}.webp`)).catch(() => undefined)
+    const data = own ?? (version === undefined ? await readFile(join(row.root, STATE_DIR, 'last-check.webp')).catch(() => undefined) : undefined)
     return data === undefined ? { ok: false, error: 'no-version' } : { ok: true, webp: data.toString('base64') }
   }
 

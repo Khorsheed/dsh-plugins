@@ -111,6 +111,19 @@ describe('GameService', () => {
     expect((await store.view(project.id))?.current?.version).toBe(1)
   })
 
+  it('keeps a poster per version, never another build\'s', async () => {
+    const project = await created()
+    await put(join(project.root, 'index.html'), '<p>v1</p>')
+    checker.next = { failures: [], passed: 1, screenshot: Buffer.from('poster-one').toString('base64') }
+    await store.checkTurn(session(), 0, 2)
+    await put(join(project.root, 'index.html'), '<p>broken</p>')
+    checker.next = { failures: [{ where: 'smoke', message: 'boom' }], passed: 0, screenshot: Buffer.from('broken').toString('base64') }
+    await store.checkTurn(session(), 0, 2)
+    const one = await store.checkShot(project.id, 1)
+    expect(one.ok && Buffer.from(one.webp, 'base64').toString()).toBe('poster-one')
+    expect((await store.checkShot(project.id, 2)).ok).toBe(false)
+  })
+
   it('leaves a candidate when auto-confirm is off, and confirm promotes it', async () => {
     const project = await created()
     expect(await store.setAutoConfirm(project.id, false, session())).toEqual({ ok: true })
@@ -119,6 +132,32 @@ describe('GameService', () => {
     expect((await store.bundle(project.id)).ok).toBe(false)
     expect(await store.confirm(project.id, session())).toEqual({ ok: true, version: 1 })
     expect((await store.view(project.id))).toMatchObject({ current: { version: 1 }, candidate: null })
+  })
+
+  it('names the elements a candidate changed and added against the live version', async () => {
+    const made = await store.create({ runtime: '3d', title: 'Hills', pitch: '在山里找东西', elementTypes: '角色、敌人', artStyle: 'ink' }, session())
+    if (!made.ok) throw new Error(JSON.stringify(made))
+    const project = made.project
+    await put(join(project.root, 'index.html'), '<p>hi</p>')
+    const fox = (look: object) => JSON.stringify([{ id: 'fox', name: '狐', type: '角色', look }, { id: 'tree', name: '树', type: '敌人' }])
+    const recipe = { kind: 'parts3d', base: 'quadruped', parts: [{ type: 'tail', count: 1 }], palette: {}, motion: {} }
+    await put(join(project.root, 'elements/a.json'), fox(recipe))
+    await store.checkTurn(session(), 0, 2)
+    expect((await store.view(project.id))?.candidateDiff).toBeNull()
+
+    expect(await store.setAutoConfirm(project.id, false, session())).toEqual({ ok: true })
+    const base = await store.turnBaseline('s1')
+    await put(join(project.root, 'elements/a.json'), fox({ ...recipe, parts: [{ type: 'tail', count: 9 }] }))
+    await put(join(project.root, 'elements/b.json'), JSON.stringify({ id: 'rock', name: '石', type: '敌人' }))
+    expect(await store.checkTurn(session(), 0, 2)).toMatchObject({ kind: 'pass', candidate: { version: 2 } })
+    expect((await store.view(project.id))?.candidateDiff).toEqual({ changed: ['fox'], added: ['rock'] })
+
+    // The turn report carries the 3D look before and after, for the card's side-by-side.
+    const report = await store.recordTurn('s1', 4, base!)
+    const fx = report?.elements.find(e => e.id === 'fox')
+    expect(fx?.what).toBe('look')
+    expect(JSON.parse(fx!.looks!.after).parts[0].count).toBe(9)
+    expect(JSON.parse(fx!.looks!.before!).parts[0].count).toBe(1)
   })
 
   it('adopts an existing folder and logs play sessions', async () => {

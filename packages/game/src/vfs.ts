@@ -71,11 +71,28 @@ const BRIDGE = `(function(){
         }
       }
       // A string id (2D games) or a structured reference (dsh3d: id, inst, name, state, point, region).
-      post({ gamedev: 'picked', id: id, ref: ref, supported: !!(g && typeof g.pick === 'function'), x: d.x, y: d.y });
+      post({ gamedev: 'picked', id: id, ref: ref, hover: !!d.hover, supported: !!(g && typeof g.pick === 'function'), x: d.x, y: d.y });
     }
-    // The panel's 「指一下」 freezes the game; a candidate's changes get ringed. Both optional on the game side.
-    if (d.gamedev === 'pause' && g && typeof g.pause === 'function') { try { g.pause(!!d.on) } catch (err) { report('error', 'pause: ' + err.message) } }
-    if (d.gamedev === 'highlight' && g && typeof g.highlight === 'function') { try { g.highlight(Array.isArray(d.list) ? d.list : []) } catch (err) { report('error', 'highlight: ' + err.message) } }
+    // The panel's pick mode freezes the game; a candidate's changes get ringed. Both optional on the game side.
+    // The panel sends them as soon as the files are posted, often before the game's modules ran: the latest
+    // of each is kept and applied once window.dshGame appears (polled briefly; installs share one record).
+    if (d.gamedev === 'pause' || d.gamedev === 'highlight') {
+      var pend = window.__gdPend || (window.__gdPend = {});
+      pend[d.gamedev] = d;
+      var apply = function () {
+        var game = window.dshGame;
+        if (!game) return false;
+        var p = window.__gdPend || {};
+        if (p.pause && typeof game.pause === 'function') { try { game.pause(!!p.pause.on) } catch (err) { report('error', 'pause: ' + err.message) } }
+        if (p.highlight && typeof game.highlight === 'function') { try { game.highlight(Array.isArray(p.highlight.list) ? p.highlight.list : []) } catch (err) { report('error', 'highlight: ' + err.message) } }
+        window.__gdPend = {};
+        return true;
+      };
+      if (!apply() && !window.__gdPendTimer) {
+        var tries = 0;
+        window.__gdPendTimer = setInterval(function () { if (apply() || ++tries > 150) { clearInterval(window.__gdPendTimer); window.__gdPendTimer = 0 } }, 100);
+      }
+    }
   });
 })();`
 
@@ -138,6 +155,7 @@ const LOADER = `window.__boot = function (files) {
   if (!files['index.html']) { document.body.textContent = '这个版本没有 index.html'; return }
   try {
     var manifest = files['game.json'] ? JSON.parse(text('game.json')) : {};
+    window.dshManifest = manifest;
     (manifest.params || []).forEach(function (p) { if (p && p.key && !(p.key in window.dshParams)) window.dshParams[p.key] = Number(p.value) });
   } catch (e) {}
   Object.keys(files).forEach(function (p) {
@@ -190,7 +208,8 @@ export type FrameMessage =
   | { readonly gamedev: 'error'; readonly kind: string; readonly msg: string }
   | { readonly gamedev: 'save'; readonly saves: Readonly<Record<string, string>> }
   | { readonly gamedev: 'inspect'; readonly ready: boolean; readonly state: unknown; readonly errors: readonly { kind: string; msg: string }[] }
-  | { readonly gamedev: 'picked'; readonly id: string | null; readonly ref: PickRef | null; readonly supported: boolean; readonly x: number; readonly y: number }
+  | { readonly gamedev: 'picked'; readonly id: string | null; readonly ref: PickRef | null; readonly hover: boolean; readonly supported: boolean; readonly x: number; readonly y: number }
+  | { readonly gamedev: 'preview'; readonly png: string }
 
 /** What a game's `pick` may return beyond a bare id (dsh3d returns this). */
 export interface PickRef {

@@ -1,0 +1,149 @@
+/**
+ * 3D look previews in the panel: the element turntable, the proposal cards
+ * and the turn card's before/after. Every preview runs in the same sandbox as
+ * the play area, on the project's live version bundle (kit files and the
+ * project's own `src/looks.js` registrations included) with a preview entry
+ * swapped in — so the panel never carries a second copy of the builder, and
+ * what it shows is exactly what the game builds.
+ *
+ * `spin` keeps a live, draggable turntable that follows look edits; `still`
+ * renders once, posts a PNG back and is replaced by that image (cached per
+ * look, so a scrolled-back card costs nothing).
+ */
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import type { BundleFile, Look3D } from '../types.ts'
+import { shellHtml, type FrameMessage } from '../vfs.ts'
+import type { GameApi } from './contract.ts'
+import { failureOf } from './contract.ts'
+import css from './GameTab.module.css'
+
+/** The id the previewed look rides under in `window.dshElements`. */
+const PREVIEW_ID = '__preview'
+
+/** The preview entry: build the look, fit it, spin or snapshot. Kept as a string (it runs in the frame). */
+const PREVIEW_MAIN = `
+const { createWorld, build, THREE } = await import('dsh3d')
+try { await import('../src/looks.js') } catch (e) {}
+const mode = (await (await fetch('_preview/mode.json')).json()).mode
+const world = createWorld({ canvas: document.querySelector('canvas') })
+let model = null, angle = 0.5, drag = null
+function fit() {
+  if (model) world.remove(model)
+  // From the look object, not the id: the world's own rebuild-by-element must not touch the preview.
+  model = build(window.dshElements['${PREVIEW_ID}'].look)
+  world.add(model, { id: '${PREVIEW_ID}' })
+  const box = new THREE.Box3().setFromObject(model), size = box.getSize(new THREE.Vector3()), center = box.getCenter(new THREE.Vector3())
+  model.position.set(-center.x, -box.min.y - size.y / 2, -center.z)
+  world.setZoom(6.2 / Math.max(0.6, Math.max(size.x, size.y, size.z) * 0.85))
+}
+fit()
+addEventListener('dshelements', () => { setTimeout(fit) })
+const canvas = world.canvas
+canvas.addEventListener('pointerdown', e => { drag = e.clientX; canvas.setPointerCapture(e.pointerId) })
+canvas.addEventListener('pointermove', e => { if (drag !== null) { angle += (e.clientX - drag) * 0.012; drag = e.clientX } })
+canvas.addEventListener('pointerup', () => { drag = null })
+world.onUpdate(dt => { if (mode === 'spin' && drag === null) angle += dt * 0.5; if (model) model.rotation.y = angle })
+if (mode === 'still') {
+  world.step(0.4)
+  parent.postMessage({ gamedev: 'preview', png: canvas.toDataURL('image/png') }, '*')
+} else world.start()
+`
+
+const PREVIEW_HTML = '<style>html,body{margin:0;height:100%;overflow:hidden}canvas{width:100%;height:100%;display:block;touch-action:none}</style>'
+  + '<canvas></canvas><script type="module" src="_preview/main.js"></script>'
+
+/** Live version bundles per project, fetched once per version (three.js rides in them). */
+const bundles = new Map<string, Promise<Readonly<Record<string, BundleFile>> | null>>()
+function liveBundle(api: GameApi, projectId: string, version: number): Promise<Readonly<Record<string, BundleFile>> | null> {
+  const key = `${projectId}:${version}`
+  let pending = bundles.get(key)
+  if (pending === undefined) {
+    pending = api.bundle(projectId, 'current').then(r => (failureOf(r) === undefined && r.ok && r.value.ok ? r.value.bundle.files : null))
+    bundles.set(key, pending)
+  }
+  return pending
+}
+
+/** Still images per look (and project version, whose style and registrations shape it). */
+const stills = new Map<string, string>()
+
+/** Props of {@link Preview3D}. */
+export interface Preview3DProps {
+  readonly api: GameApi
+  readonly projectId: string
+  /** The live version; previews need one to run (kit files and project registrations ride in it). */
+  readonly version: number | undefined
+  readonly look: Look3D
+  readonly mode: 'spin' | 'still'
+  readonly className?: string | undefined
+  /** Shown while there is no live version yet. */
+  readonly emptyLabel: string
+}
+
+/** One 3D look preview. */
+export function Preview3D({ api, projectId, version, look, mode, className, emptyLabel }: Preview3DProps): ReactNode {
+  const lookJson = JSON.stringify(look)
+  const stillKey = `${projectId}:${version}:${lookJson}`
+  const [files, setFiles] = useState<Readonly<Record<string, BundleFile>> | null>(null)
+  const [image, setImage] = useState<string | null>(mode === 'still' ? stills.get(stillKey) ?? null : null)
+  const [visible, setVisible] = useState(mode === 'spin')
+  const box = useRef<HTMLDivElement>(null)
+  const frame = useRef<HTMLIFrameElement>(null)
+  const booted = useRef(false)
+  const shell = useMemo(() => shellHtml(), [])
+
+  // Stills wait until they scroll into view: a long chat history costs nothing until read.
+  useEffect(() => {
+    if (visible || box.current === null) return
+    const io = new IntersectionObserver(entries => { if (entries.some(e => e.isIntersecting)) setVisible(true) })
+    io.observe(box.current)
+    return () => { io.disconnect() }
+  }, [visible])
+
+  useEffect(() => {
+    if (version === undefined || !visible || image !== null) return
+    let live = true
+    void liveBundle(api, projectId, version).then(f => { if (live) setFiles(f) })
+    return () => { live = false }
+  }, [api, projectId, version, visible, image])
+
+  useEffect(() => {
+    const onMessage = (event: MessageEvent): void => {
+      if (event.source !== frame.current?.contentWindow) return
+      const data = event.data as FrameMessage | undefined
+      if (data?.gamedev === 'preview' && mode === 'still') {
+        stills.set(stillKey, data.png)
+        setImage(data.png)
+      }
+    }
+    window.addEventListener('message', onMessage)
+    return () => { window.removeEventListener('message', onMessage) }
+  }, [mode, stillKey])
+
+  // A spinning preview follows look edits live (the same element message the play area gets).
+  useEffect(() => {
+    if (mode !== 'spin' || !booted.current) return
+    frame.current?.contentWindow?.postMessage({ gamedev: 'element', element: { id: PREVIEW_ID, name: PREVIEW_ID, type: 'preview', look } }, '*')
+  }, [lookJson, mode]) // eslint-disable-line react-hooks/exhaustive-deps -- lookJson stands for look
+
+  const boot = (): void => {
+    if (files === null || booted.current) return
+    const previewFiles: Record<string, BundleFile> = {
+      ...files,
+      'index.html': { type: 'text/html', text: PREVIEW_HTML },
+      '_preview/main.js': { type: 'text/javascript', text: PREVIEW_MAIN },
+      '_preview/mode.json': { type: 'application/json', text: JSON.stringify({ mode }) },
+      [`elements/${PREVIEW_ID}.json`]: { type: 'application/json', text: JSON.stringify({ id: PREVIEW_ID, name: PREVIEW_ID, type: 'preview', look }) },
+    }
+    frame.current?.contentWindow?.postMessage({ gamedev: 'files', files: previewFiles, saves: {}, params: {} }, '*')
+    booted.current = true
+  }
+
+  return <div ref={box} className={[css.preview3d, className].filter(Boolean).join(' ')}>
+    {version === undefined
+      ? <span className={css.preview3dNote}>{emptyLabel}</span>
+      : image !== null
+        ? <img src={image} alt="" />
+        : files !== null && <iframe ref={frame} className={css.preview3dFrame} title="preview" sandbox="allow-scripts" srcDoc={shell} onLoad={boot} />}
+  </div>
+}
