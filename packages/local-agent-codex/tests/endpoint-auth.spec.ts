@@ -10,6 +10,7 @@ import {
   endpointAuthFileExists,
   endpointAuthStamp,
   endpointConfigOverrides,
+  fetchEndpointModels,
   hasEndpointCredential,
   readEndpointAuthFile,
   resolveEndpointAuth,
@@ -186,5 +187,32 @@ describe('checkCodexEndpoint', () => {
       (async () => { throw new Error('ECONNREFUSED') }) as never,
     )
     expect(text).toBe('Endpoint unreachable (https://down.example.com): ECONNREFUSED')
+  })
+})
+
+describe('fetchEndpointModels', () => {
+  it('extracts string ids only — non-object entries and blank ids drop out', async () => {
+    const result = await fetchEndpointModels(
+      { baseUrl: 'https://relay.example.com/openai/v1', apiKey: 'sk-test' },
+      (async () => ({
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ object: 'list', data: [{ id: 'gpt-a', object: 'model' }, { id: 42 }, { id: '' }, 'gpt-b', null] }),
+      })) as never,
+    )
+    expect(result).toEqual({ kind: 'models', models: ['gpt-a'] })
+  })
+
+  it('folds a non-JSON body and a non-array data into malformed', async () => {
+    const notJson = await fetchEndpointModels(
+      { baseUrl: 'https://relay.example.com/openai/v1', apiKey: 'sk-test' },
+      (async () => ({ ok: true, status: 200, text: async () => '<html>not json</html>' })) as never,
+    )
+    expect(notJson).toEqual({ kind: 'malformed' })
+    const notList = await fetchEndpointModels(
+      { baseUrl: 'https://relay.example.com/openai/v1', apiKey: 'sk-test' },
+      (async () => ({ ok: true, status: 200, text: async () => JSON.stringify({ data: { id: 'gpt-a' } }) })) as never,
+    )
+    expect(notList).toEqual({ kind: 'malformed' })
   })
 })

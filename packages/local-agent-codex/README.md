@@ -57,7 +57,7 @@ dsh plugin --profile web remove @khorsheed/dsh-local-agent-codex
 
 ### 端点凭据(`baseUrl` + `apiKey`)
 
-**配了 key = 每轮走端点。**scope 的解析结果(`<作用域目录>/endpoint-auth.json` 按字段覆盖 profile 配置行)带着非空 key 时,每轮委派在 argv 上注入一个自定义 provider(`-c model_provider=… -c model_providers.…={base_url, env_key=OPENAI_API_KEY, wire_api=responses}`),key 经进程环境传递——不写 `config.toml`、不读 `auth.json`,网页登录完全不参与;一次性 exec、常驻 app-server、模型目录探测三条路同一套注入。key 不带 `baseUrl` 时用 OpenAI 官方端点(官方平台 key 不需要中转,内置 provider 读同一个环境变量)。清掉 key(设置卡留空保存)即未认证。
+**配了 key = 每轮走端点。**scope 的解析结果(`<作用域目录>/endpoint-auth.json` 按字段覆盖 profile 配置行)带着非空 key 时,每轮委派在 argv 上注入一个自定义 provider(`-c model_provider=… -c model_providers.…={base_url, env_key=OPENAI_API_KEY, wire_api=responses}`),key 经进程环境传递——不写 `config.toml`、不读 `auth.json`,网页登录完全不参与;一次性 exec、常驻 app-server、模型目录探测同一套凭据。key 不带 `baseUrl` 时用 OpenAI 官方端点(官方平台 key 不需要中转,内置 provider 读同一个环境变量)。清掉 key(设置卡留空保存)即未认证。
 
 **设置卡「认证」区编辑的就是默认 scope 的 `endpoint-auth.json`**(0600,只存本机;经家族 gateway 的 `endpointAuth`/`configureEndpoint` Remote,会话不在场也能读写),密钥绝不写进 profile 文件,文件名也命中评测契约哈希的凭据拒绝名单、不进条件指纹。旁边的「验证端点并获取模型」按钮对**已保存**的端点跑一次无 token 探测(`GET <baseUrl>/v1/models`,Bearer 头),返回可达性与端点供应的模型列表。文件里还可手写 `"wireApi": "chat"`(卡片不编辑它,保存时保留)适配只支持 chat/completions 的中转。
 
@@ -84,7 +84,7 @@ dsh plugin --profile web remove @khorsheed/dsh-local-agent-codex
 
 设置卡「可用模型」区维护一份**有序模型短名单**:点「添加模型」从端点当前供应的目录里勾选加入,列表里只会有端点真实供应的模型;拖动行调整顺序。**第一个模型就是默认模型**——每轮委派以它起 CLI(一次性 `codex exec -m`,常驻 app-server 的 `-c model=…`),优先级只低于成员会话级覆盖与委派级指定。列表保存在作用域目录的 `models.json`(每个命名 scope 可各有一份,与端点凭据同一套文件机制),编辑即保存,下一轮委派生效。**留空 = 回退旧链**(下面的 `model` 键 → 作用域 `config.toml` → CLI 内置)。成员级模型和推理强度修改使用下文的持久控制面。
 
-丰富目录读面现已保留原生显示名、隐藏候选和推理选项,遍历分页,并接入 core 缓存与刷新订阅。查询上下文跟随成员的 scope 和 cwd。刷新失败保留最后成功快照并标为过期;配置项和历史建议保留来源标识。共用模型菜单和成员 effort 控制已接入。运行中选择排到下一完整轮次(含工具续跑);core 统一持有当前/待生效配置、撤销与重试,冻结评测成员禁止变更。原生目录候选不等于账号权限证明。
+丰富目录的词汇来自端点本身(`GET <baseUrl>/v1/models`,与「验证端点并获取模型」按钮同一次探测)——本地注册表证明不了端点供应什么,失效的 key 再也不能躲在 CLI 本地列表后面。原生 app-server 的 `model/list` 探测降级为元数据补全,与端点探测并发:它独占显示名、隐藏候选、推理档位与 `isDefault` 编译默认,端点供应的 id 命中注册表即带走这些元数据,只被端点供应的 id 以裸条目列出;原生探测失败只警告一次,端点数据独自成完整答案。端点无凭据、拒绝凭据、状态异常或答非 `/v1/models` 形态时目录带原因空载;传输故障抛错,缓存保留最后一次成功快照并标过期重试(实测 openproxy 短暂 500 后自愈,正是这条语义)。查询上下文跟随成员的 scope 和 cwd。共用模型菜单和成员 effort 控制已接入。运行中选择排到下一完整轮次(含工具续跑);core 统一持有当前/待生效配置、撤销与重试,冻结评测成员禁止变更。原生目录候选不等于账号权限证明。
 
 **委派级的模型优先。**编排器可以经门面 `DelegationCallOptions.model` 给**某一次委派**点名模型,它排在这个键之前(固定顺序:会话覆盖 > 委派记录 > 可用模型首项 > 本键 > 作用域 config > CLI 内置)。首轮请求的值记进委派记录,resume 轮照它重发——resume 不接受 model 参数。常驻模式下带模型的轮次不再被拒绝:它成为该成员的**起始模型**,在 app-server 起进程时绑定;若该成员的常驻 runtime 绑定的是另一个模型,先回收重生(同一 codex 线程经 thread/resume 续上),再以所点模型起新一轮。
 

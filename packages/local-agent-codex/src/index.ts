@@ -43,7 +43,8 @@ export const name = 'local-agent-codex'
 
 /**
  * Boot delay before the model catalog's eager warmup probe fires. The probe
- * spawns a `codex app-server` — cheap, but not free — so it waits out the
+ * fetches the endpoint's served model list AND spawns a `codex app-server`
+ * (the native metadata side) — cheap, but not free — so it waits out the
  * boot storm instead of competing with it, and the FIRST settings-card open
  * usually hits a warm cache. A card opened before the timer fires simply
  * triggers the probe itself (the read path's lazy kick), so the delay never
