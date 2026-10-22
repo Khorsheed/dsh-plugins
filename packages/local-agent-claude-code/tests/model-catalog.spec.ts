@@ -80,6 +80,24 @@ describe('ClaudeModelCatalog (the endpoint-served directory)', () => {
     m.catalog.dispose()
   })
 
+  it('reads the effort block from capabilities.effort when the endpoint nests it (the relayed shape)', async () => {
+    const m = mount({ baseUrl: 'https://relay.example.com/claude', apiKey: 'sk-test' })
+    // The shape openproxy actually proxies (verified 2026-10-22): no top-level
+    // `effort`; the per-level map lives at capabilities.effort.
+    m.respond(200, JSON.stringify({ data: [
+      { id: 'claude-sonnet-5-5', display_name: 'Claude Sonnet 5.5', capabilities: { effort: { supported: true, low: { supported: true }, medium: { supported: true }, high: { supported: true }, xhigh: { supported: true }, max: { supported: true } } } },
+      { id: 'claude-fable-5-1', display_name: 'Claude Fable 5.1', capabilities: { thinking: { supported: true } } },
+    ] }))
+    const directory = await m.catalog.refresh(m.home)
+    expect(directory.status).toBe('ready')
+    expect(directory.entries).toMatchObject([
+      { value: 'claude-sonnet-5-5', reasoning: { options: [{ value: 'low' }, { value: 'medium' }, { value: 'high' }, { value: 'xhigh' }, { value: 'max' }] } },
+      { value: 'claude-fable-5-1' },
+    ])
+    expect(directory.entries[1]?.reasoning).toBeUndefined()
+    m.catalog.dispose()
+  })
+
   it('answers unsupported with a configure-first reason when no credential resolves', async () => {
     const m = mount({ baseUrl: 'https://relay.example.com' })
     const directory = await m.catalog.refresh(m.home)

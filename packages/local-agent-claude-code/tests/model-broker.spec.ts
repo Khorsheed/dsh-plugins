@@ -33,6 +33,7 @@ function mount(options: {
   hosting?: boolean
   boundModel?: string
   transcriptModel?: (cliSessionId?: string) => Promise<string | undefined>
+  modelList?: readonly string[]
 } = {}): Mount {
   const homeDir = mkdtempSync(join(tmpdir(), 'claude-broker-'))
   const overrides = new Map<string, string>()
@@ -49,6 +50,7 @@ function mount(options: {
     settingsModel: () => settings.model?.trim() === '' ? undefined : settings.model?.trim(),
     cliDefault: () => new ClaudeScopedModelMemory().cliDefault(homeDir),
     recentModels: () => settings.recent,
+    ...options.modelList === undefined ? {} : { modelList: () => options.modelList! },
     live: () => settings.live,
     overrides,
     liveSwitch: {
@@ -285,5 +287,33 @@ describe('claude scoped-model memory', () => {
     await memory.provision(homeDir, undefined)
     const file = JSON.parse(readFileSync(join(homeDir, 'settings.json'), 'utf8')) as Record<string, unknown>
     expect(file['model']).toBe('edited-model')
+  })
+})
+
+describe('claude model broker directory scoping (the member dialog vs the card add dialog)', () => {
+  const SERVED = {
+    entries: [
+      { value: 'claude-opus-5-5', label: 'Claude Opus 5.5', source: 'native' as const },
+      { value: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5', source: 'native' as const },
+    ],
+    complete: true, customInput: true, status: 'ready' as const, refreshing: false, revision: 1,
+  }
+
+  it('memberless reads are the endpoint-served catalog only — history extras never become add candidates', async () => {
+    const { broker } = mount({ directory: () => SERVED, recent: ['old-model'], modelList: ['claude-opus-5-5'] })
+    const directory = await broker.modelDirectory()
+    expect(directory.entries.map(entry => entry.value)).toEqual(['claude-opus-5-5', 'claude-sonnet-5-5'])
+  })
+
+  it('a member with a curated list sees exactly the list — an out-of-list bound model stays visible as a bare entry', async () => {
+    const { broker } = mount({ directory: () => SERVED, record: { model: 'legacy-opus' }, modelList: ['claude-opus-5-5', 'claude-sonnet-5-5'] })
+    const directory = await broker.modelDirectory('child-1')
+    expect(directory.entries.map(entry => entry.value)).toEqual(['claude-opus-5-5', 'claude-sonnet-5-5', 'legacy-opus'])
+  })
+
+  it('a member without a curated list keeps the legacy extended vocabulary', async () => {
+    const { broker } = mount({ directory: () => SERVED, recent: ['old-model'] })
+    const directory = await broker.modelDirectory('child-1')
+    expect(directory.entries.map(entry => entry.value)).toContain('old-model')
   })
 })

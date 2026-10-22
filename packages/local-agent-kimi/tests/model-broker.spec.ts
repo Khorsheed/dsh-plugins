@@ -24,7 +24,7 @@ interface Mount {
   }
 }
 
-function mount(over: { settingsModel?: string; live?: boolean; recent?: string[]; config?: string; modelList?: string[] } = {}): Mount {
+function mount(over: { settingsModel?: string; live?: boolean; recent?: string[]; config?: string; modelList?: string[]; catalog?: object } = {}): Mount {
   const home = mkdtempSync(join(tmpdir(), 'kimi-broker-'))
   if (over.config !== undefined) writeFileSync(join(home, 'config.toml'), over.config)
   const active: string[] = []
@@ -45,6 +45,7 @@ function mount(over: { settingsModel?: string; live?: boolean; recent?: string[]
     recentModels: () => settings.recent,
     isLive: () => settings.live,
     liveSwitch: liveSwitch as unknown as LiveDriverSwitch,
+    ...over.catalog === undefined ? {} : { catalog: over.catalog as never },
   })
   return { broker, home, active, settings, liveSwitch }
 }
@@ -189,5 +190,43 @@ describe('kimi model broker setMemberModel', () => {
     settings.model = undefined
     await broker.setMemberModel('child-1', undefined)
     expect(broker.spawnModel('child-1')).toBe('start-model')
+  })
+})
+
+describe('kimi model broker directory scoping (the member dialog vs the card add dialog)', () => {
+  // The endpoint-served catalog as the card feeds it; the broker's info layer
+  // extends it with settings/cliDefault/discovered for status display.
+  const SERVED = {
+    entries: [
+      { value: 'kimi-code/k3', label: 'K3', source: 'native' as const },
+      { value: 'kimi-code/k3-256k', label: 'K3-256k', source: 'native' as const },
+      { value: 'kimi-code/kimi-for-coding', label: 'K2.8 Preview', source: 'native' as const },
+    ],
+    complete: true, customInput: false, status: 'ready' as const, refreshing: false, revision: 1,
+  }
+  const catalog = { read: () => SERVED, refresh: async () => SERVED }
+
+  it('memberless reads are the endpoint-served catalog only — configuration extras never become add candidates', async () => {
+    const { broker } = mount({ settingsModel: 'kimi-code/k3', config: CONFIG, modelList: ['kimi-code/k3-256k', 'kimi-code/k3'], catalog })
+    const directory = await broker.modelDirectory()
+    expect(directory.entries.map(entry => entry.value)).toEqual(['kimi-code/k3', 'kimi-code/k3-256k', 'kimi-code/kimi-for-coding'])
+  })
+
+  it('a member with a curated list sees exactly the list — an out-of-list current model stays visible as a bare entry', async () => {
+    const { broker } = mount({ settingsModel: 'kimi-code/k3-256k', config: CONFIG, modelList: ['kimi-code/k3-256k', 'kimi-code/k3'], catalog })
+    const directory = await broker.modelDirectory('child-1')
+    expect(directory.entries.map(entry => entry.value)).toEqual(['kimi-code/k3-256k', 'kimi-code/k3'])
+    // A pre-list binding outside the list keeps its label row instead of blanking.
+    await broker.setMemberModel('child-1', 'legacy-model')
+    const bound = await broker.modelDirectory('child-1')
+    expect(bound.entries.map(entry => entry.value)).toEqual(['kimi-code/k3-256k', 'kimi-code/k3', 'legacy-model'])
+    expect(bound.entries[2]).toMatchObject({ label: 'legacy-model', source: 'configuration' })
+  })
+
+  it('a member without a curated list keeps the legacy extended vocabulary', async () => {
+    const { broker } = mount({ settingsModel: 'cli-model', config: CONFIG, catalog })
+    const directory = await broker.modelDirectory('child-1')
+    // native served entries + the settings/cliDefault/discovered configuration extras
+    expect(directory.entries.map(entry => entry.value)).toEqual(['kimi-code/k3', 'kimi-code/k3-256k', 'kimi-code/kimi-for-coding', 'cli-model', 'discovered/x'])
   })
 })

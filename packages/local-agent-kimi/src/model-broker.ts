@@ -45,6 +45,44 @@ function dedupe(candidates: readonly (string | undefined)[]): string[] {
 }
 
 /**
+ * Scope the served directory to the surface asking for it (the same helper
+ * lives in each provider's broker — fold into the family core when the
+ * directory faces next evolve):
+ *
+ * - memberless (the card's add-model dialog, the invite picker): the
+ *   endpoint's served catalog only — the configuration/history extras the
+ *   broker's info extension adds for STATUS display (a config-defined model
+ *   the endpoint does not serve) must never become add candidates;
+ * - a member whose harness has a curated list: the list IS the vocabulary,
+ *   in the list's own order (the same rule `choices` already follows) — a
+ *   curated value the endpoint no longer serves stays as a bare row (the
+ *   card shows it the same way), and the member's current effective model is
+ *   kept visible as a bare entry when it sits outside the list, so a pre-list
+ *   binding never renders blank;
+ * - a member without a curated list: the legacy extended vocabulary.
+ */
+function scopeServedDirectory(
+  directory: LocalAgentModelDirectory,
+  opts: { member: boolean; curated: readonly string[]; current?: string | undefined },
+): LocalAgentModelDirectory {
+  if (opts.member && opts.curated.length === 0) return directory
+  const served = directory.entries.filter(entry => entry.source === 'native')
+  if (!opts.member) return { ...directory, entries: served }
+  const byValue = new Map(served.flatMap(entry => entry.resolvedModel === undefined
+    ? [[entry.value, entry]] as const
+    : [[entry.value, entry] as const, [entry.resolvedModel, entry] as const]))
+  // Curated ORDER leads (the card's first row is the default); a curated value
+  // the endpoint no longer serves stays listed as a bare row, exactly like the
+  // card shows it.
+  const entries = opts.curated.map(value => byValue.get(value) ?? { value, label: value, source: 'configuration' as const })
+  const current = opts.current?.trim()
+  if (current !== undefined && current !== '' && !entries.some(entry => entry.value === current || entry.resolvedModel === current)) {
+    entries.push({ value: current, label: current, source: 'configuration' as const })
+  }
+  return { ...directory, entries }
+}
+
+/**
  * The kimi harness's {@link LocalAgentModelBroker}. Also the provider-facing
  * member-model ledger: the provider records each delegation's start model
  * here and reads the session-level override for its exec-path resolution, so
@@ -122,7 +160,12 @@ export class KimiModelBroker implements LocalAgentModelBroker {
   async modelDirectory(childSessionId?: string, refresh = false): Promise<LocalAgentModelDirectory> {
     if (refresh) await this.deps.catalog?.refresh(childSessionId)
     const info = await this.modelInfo(childSessionId)
-    return info.directory ?? { entries: [], complete: false, customInput: true, status: 'unsupported', refreshing: false, revision: 0 }
+    const directory = info.directory ?? { entries: [], complete: false, customInput: true, status: 'unsupported', refreshing: false, revision: 0 }
+    return scopeServedDirectory(directory, {
+      member: childSessionId !== undefined,
+      curated: this.deps.modelList?.(this.deps.homeDir(childSessionId)) ?? [],
+      current: info.effective,
+    })
   }
 
   async *followModelDirectory(childSessionId: string | undefined, signal: AbortSignal): AsyncIterable<LocalAgentModelDirectory> {

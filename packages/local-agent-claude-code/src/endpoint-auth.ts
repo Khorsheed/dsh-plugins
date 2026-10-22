@@ -237,6 +237,21 @@ function servedEfforts(effort: unknown): readonly string[] | undefined {
 }
 
 /**
+ * The effort block's home in a served-model entry. Anthropic's current
+ * /v1/models shape nests it under `capabilities.effort` (verified against the
+ * openproxy relay 2026-10-22: `capabilities.effort.<level>.supported`); the
+ * flat top-level `effort` the parser was written against still wins when
+ * present, so either shape answers.
+ */
+function servedEffortsOf(record: Record<string, unknown>): readonly string[] | undefined {
+  const direct = servedEfforts(record['effort'])
+  if (direct !== undefined) return direct
+  const capabilities = record['capabilities']
+  if (typeof capabilities !== 'object' || capabilities === null) return undefined
+  return servedEfforts((capabilities as Record<string, unknown>)['effort'])
+}
+
+/**
  * `GET <baseUrl>/v1/models` with the resolved credential's auth header(s) —
  * the token-free endpoint probe shared by the `/claude-code check` verdict
  * and the model catalog. Anthropic's own API serves this route with
@@ -276,9 +291,9 @@ export async function fetchEndpointModels(
   const models: EndpointServedModel[] = []
   for (const entry of data) {
     if (typeof entry !== 'object' || entry === null) continue
-    const record = entry as { id?: unknown; display_name?: unknown; effort?: unknown }
+    const record = entry as { id?: unknown; display_name?: unknown; effort?: unknown; capabilities?: unknown }
     if (typeof record.id !== 'string' || record.id === '') continue
-    const efforts = servedEfforts(record.effort)
+    const efforts = servedEffortsOf(record as Record<string, unknown>)
     models.push({
       id: record.id,
       ...typeof record.display_name === 'string' && record.display_name !== '' ? { displayName: record.display_name } : {},
