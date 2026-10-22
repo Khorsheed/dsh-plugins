@@ -2,7 +2,13 @@
  * its authority into the host trust fence at runtime through the official
  * config editor — no host restart, no wildcard trust, no token in probes.
  * Everything here is probed and degrades to `unsupported`; the static
- * publicOrigin deployment path is untouched. */
+ * publicOrigin deployment path is untouched.
+ *
+ * Host services are located LAZILY: a strict `ctx.get` during composition
+ * boot returns undefined for a fiber that is provided but not yet ACTIVE, so
+ * a one-shot probe at apply time would bake a false "unsupported" forever.
+ * Support is re-evaluated on every status/enable/start, and a persisted
+ * enablement retries through the boot window instead of giving up. */
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
 import { accessSync, constants, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -19,11 +25,16 @@ export interface ConfigEditorLike {
 export interface WebStartupLike { trustedHosts?: unknown }
 export interface WebServerLike { port?: number; protocol?: string }
 
+/** Fresh reads of the optional host capabilities; called on every decision. */
+export interface TunnelLocate {
+  configEditor: () => ConfigEditorLike | undefined
+  webStartup: () => WebStartupLike | undefined
+  webServer: () => WebServerLike | undefined
+  profileHome: () => string | undefined
+}
+
 export interface TunnelDeps {
-  configEditor?: ConfigEditorLike | undefined
-  webStartup?: WebStartupLike | undefined
-  webServer?: WebServerLike | undefined
-  profileHome?: string | undefined
+  locate: TunnelLocate
   cloudflaredPath?: string | undefined
   stateFile?: string | undefined
   spawnProcess?: typeof spawn
@@ -34,6 +45,8 @@ export interface TunnelDeps {
   now?: (() => number) | undefined
   healthIntervalMs?: number | undefined
   recoveryCooldownMs?: number | undefined
+  bootProbeMs?: number | undefined
+  bootAttempts?: number | undefined
 }
 
 export interface TunnelSupervisor {
@@ -105,6 +118,8 @@ function writePersisted(file: string, state: PersistedState): void {
   renameSync(tmp, file)
 }
 
+type Lifecycle = 'off' | 'starting' | 'ready' | 'recovering' | 'error'
+
 export function createTunnelSupervisor(deps: TunnelDeps): TunnelSupervisor {
   const now = deps.now ?? Date.now
   const sleep = deps.sleep ?? ((ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms)))
@@ -114,21 +129,33 @@ export function createTunnelSupervisor(deps: TunnelDeps): TunnelSupervisor {
   const findBinary = deps.findBinary ?? findCloudflared
   const healthIntervalMs = deps.healthIntervalMs ?? 45_000
   const recoveryCooldownMs = deps.recoveryCooldownMs ?? 10 * 60 * 1000
-  const stateFile = deps.stateFile ?? (deps.profileHome ? join(deps.profileHome, 'state', 'mobile-quick-tunnel.json') : undefined)
-  const binary = findBinary(deps.cloudflaredPath)
+  const bootProbeMs = deps.bootProbeMs ?? 5_000
+  const bootAttempts = deps.bootAttempts ?? 24
+  const locate = deps.locate
 
-  const unsupportedReason: MobileTunnelReason | undefined = !stateFile ? 'no-profile'
-    : !deps.configEditor ? 'no-config-editor'
-    : !deps.webServer ? 'no-web-server'
-    : deps.webServer.protocol !== undefined && deps.webServer.protocol !== 'http:' ? 'tls-host'
-    : !binary ? 'no-cloudflared'
-    : undefined
+  const stateFile = (): string | undefined => deps.stateFile ?? (locate.profileHome() ? join(locate.profileHome()!, 'state', 'mobile-quick-tunnel.json') : undefined)
+  // Binary discovery hits the filesystem (and a `which` fallback), so it is
+  // cached for a minute instead of blocking every status poll.
+  let binaryCache: { at: number; value: string | undefined } | undefined
+  const binary = (): string | undefined => {
+    if (!binaryCache || now() - binaryCache.at > 60_000) binaryCache = { at: now(), value: findBinary(deps.cloudflaredPath) }
+    return binaryCache.value
+  }
+  const supportReason = (): MobileTunnelReason | undefined => {
+    const webServer = locate.webServer()
+    return !stateFile() ? 'no-profile'
+      : !locate.configEditor() ? 'no-config-editor'
+      : !webServer ? 'no-web-server'
+      : webServer.protocol !== undefined && webServer.protocol !== 'http:' ? 'tls-host'
+      : !binary() ? 'no-cloudflared'
+      : undefined
+  }
 
-  const persisted = stateFile ? readPersisted(stateFile) : { enabled: false, origin: null, updatedAt: '' }
+  const file = stateFile()
+  const persisted = file ? readPersisted(file) : { enabled: false, origin: null, updatedAt: '' }
   let enabled = persisted.enabled
   let origin = persisted.origin
-  let state: MobileTunnelStatus['state'] = unsupportedReason ? 'unsupported' : 'off'
-  let startFailure = false
+  let lifecycle: Lifecycle = 'off'
   let child: ChildProcess | undefined
   let intentionalKill = false
   let disposed = false
@@ -139,27 +166,29 @@ export function createTunnelSupervisor(deps: TunnelDeps): TunnelSupervisor {
   let healthTimer: ReturnType<typeof setInterval> | undefined
   let retryTimer: ReturnType<typeof setTimeout> | undefined
 
-  const status = (): MobileTunnelStatus => ({
-    state,
-    origin,
-    ...(state === 'unsupported' && unsupportedReason ? { reason: unsupportedReason } : {}),
-    ...(state === 'error' && startFailure ? { reason: 'start-failed' as const } : {}),
-  })
+  const status = (): MobileTunnelStatus => {
+    if (lifecycle === 'off') {
+      const reason = supportReason()
+      return reason ? { state: 'unsupported', origin, reason } : { state: 'off', origin }
+    }
+    return { state: lifecycle, origin, ...(lifecycle === 'error' ? { reason: 'start-failed' as const } : {}) }
+  }
 
   function persist(): void {
-    if (!stateFile) return
-    try { writePersisted(stateFile, { enabled, origin, updatedAt: new Date().toISOString() }) } catch { /* state is a convenience, never a hard failure */ }
+    const file = stateFile()
+    if (!file) return
+    try { writePersisted(file, { enabled, origin, updatedAt: new Date().toISOString() }) } catch { /* state is a convenience, never a hard failure */ }
   }
 
   async function bind(nextHost?: string): Promise<void> {
-    const editor = deps.configEditor
+    const editor = locate.configEditor()
     if (!editor) throw new Error('no-config-editor')
     const entry = editor.entries().find(candidate => candidate.options?.id === CONNECTION_ROW.id && candidate.options?.name === CONNECTION_ROW.name)
     if (!entry) throw new Error('no-connection-entry')
     await editor.edit(entry, (current) => {
       const stored = current.trustedHosts
       const base = Array.isArray(stored) ? stored
-        : Array.isArray(deps.webStartup?.trustedHosts) ? deps.webStartup.trustedHosts as unknown[]
+        : Array.isArray(locate.webStartup()?.trustedHosts) ? locate.webStartup()!.trustedHosts as unknown[]
         : []
       return { ...current, trustedHosts: rotateTrustedHosts(base, nextHost) }
     })
@@ -175,7 +204,7 @@ export function createTunnelSupervisor(deps: TunnelDeps): TunnelSupervisor {
   async function waitForPort(timeoutMs: number): Promise<number> {
     const deadline = now() + timeoutMs
     for (;;) {
-      const port = deps.webServer?.port
+      const port = locate.webServer()?.port
       if (typeof port === 'number' && port > 0) return port
       if (now() >= deadline) throw new Error('port-timeout')
       await sleep(1000)
@@ -186,7 +215,7 @@ export function createTunnelSupervisor(deps: TunnelDeps): TunnelSupervisor {
     return new Promise<string>((resolve, reject) => {
       let proc: ChildProcess
       try {
-        proc = spawnProcess(binary!, ['tunnel', '--url', `http://127.0.0.1:${port}`, '--protocol', 'http2', '--no-autoupdate'], { stdio: ['ignore', 'pipe', 'pipe'] })
+        proc = spawnProcess(binary()!, ['tunnel', '--url', `http://127.0.0.1:${port}`, '--protocol', 'http2', '--no-autoupdate'], { stdio: ['ignore', 'pipe', 'pipe'] })
       } catch (error) { reject(error); return }
       child = proc
       intentionalKill = false
@@ -221,9 +250,10 @@ export function createTunnelSupervisor(deps: TunnelDeps): TunnelSupervisor {
   }
 
   async function start(): Promise<void> {
-    if (disposed || starting || unsupportedReason || !enabled) return
+    if (disposed || starting || !enabled) return
+    if (supportReason()) return
     starting = true
-    state = origin ? 'recovering' : 'starting'
+    lifecycle = origin ? 'recovering' : 'starting'
     try {
       const port = await waitForPort(60_000)
       const host = await spawnTunnel(port, 60_000)
@@ -234,15 +264,14 @@ export function createTunnelSupervisor(deps: TunnelDeps): TunnelSupervisor {
       origin = next
       failures = 0
       startFailures = 0
-      startFailure = false
       persist()
-      state = 'ready'
+      lifecycle = 'ready'
       armHealth()
     } catch {
       killChild()
       startFailures += 1
-      if (startFailures >= 3) { startFailure = true; state = 'error' }
-      else { state = 'recovering'; scheduleRecovery() }
+      if (startFailures >= 3) lifecycle = 'error'
+      else { lifecycle = 'recovering'; scheduleRecovery() }
     } finally {
       starting = false
     }
@@ -257,7 +286,7 @@ export function createTunnelSupervisor(deps: TunnelDeps): TunnelSupervisor {
 
   async function recover(): Promise<void> {
     if (disposed || starting || !enabled) return
-    state = 'recovering'
+    lifecycle = 'recovering'
     killChild()
     if (now() - lastRecovery >= recoveryCooldownMs) { lastRecovery = now(); void start() }
     else scheduleRecovery()
@@ -266,7 +295,7 @@ export function createTunnelSupervisor(deps: TunnelDeps): TunnelSupervisor {
   function armHealth(): void {
     clearInterval(healthTimer)
     healthTimer = setInterval(() => {
-      if (disposed || state !== 'ready' || !origin || starting) return
+      if (disposed || lifecycle !== 'ready' || !origin || starting) return
       void (async () => {
         if (await probe(origin!)) { failures = 0; return }
         failures += 1
@@ -276,11 +305,22 @@ export function createTunnelSupervisor(deps: TunnelDeps): TunnelSupervisor {
     healthTimer.unref?.()
   }
 
+  /** A persisted enablement boots while services may still be starting; retry
+   * through the boot window instead of baking a false `unsupported`. */
+  async function bootStart(): Promise<void> {
+    for (let attempt = 0; attempt < bootAttempts; attempt++) {
+      if (disposed || !enabled) return
+      if (!supportReason()) { void start(); return }
+      await sleep(bootProbeMs)
+    }
+  }
+
   async function enableNow(): Promise<MobileTunnelStatus> {
-    if (unsupportedReason) return status()
+    const reason = supportReason()
+    if (reason) return status()
     enabled = true
     persist()
-    if (state === 'off' || state === 'error') { startFailures = 0; startFailure = false; lastRecovery = 0; void start() }
+    if (lifecycle === 'off' || lifecycle === 'error') { startFailures = 0; lastRecovery = 0; void start() }
     return status()
   }
 
@@ -292,14 +332,14 @@ export function createTunnelSupervisor(deps: TunnelDeps): TunnelSupervisor {
     clearInterval(healthTimer)
     killChild()
     persist()
-    if (!unsupportedReason) {
+    if (!supportReason()) {
       try { await bind(undefined) } catch { /* a dead grant is inert; the next bind prunes it */ }
     }
-    state = unsupportedReason ? 'unsupported' : 'off'
+    lifecycle = 'off'
     return status()
   }
 
-  if (enabled && !unsupportedReason) void start()
+  if (enabled) void bootStart()
 
   return {
     status,

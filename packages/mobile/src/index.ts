@@ -18,10 +18,12 @@ export function apply(ctx: Context, config: { publicOrigin?: string; cloudflared
   // hot-rebind re-applies the connection row, which would dispose anything
   // registered inside the callback — including the re-binder itself.
   const tunnel = createTunnelSupervisor({
-    configEditor: ctx.get('configEditor') as ConfigEditorLike | undefined,
-    webStartup: ctx.get('webStartup') as WebStartupLike | undefined,
-    webServer: ctx.get('webServer') as WebServerLike | undefined,
-    profileHome: (ctx.get('profileContext') as ProfileContextLike | undefined)?.home,
+    locate: {
+      configEditor: () => ctx.get('configEditor') as ConfigEditorLike | undefined,
+      webStartup: () => ctx.get('webStartup') as WebStartupLike | undefined,
+      webServer: () => ctx.get('webServer') as WebServerLike | undefined,
+      profileHome: () => (ctx.get('profileContext') as ProfileContextLike | undefined)?.home,
+    },
     cloudflaredPath: config.cloudflaredPath,
   })
   ctx.effect(() => () => tunnel.dispose())

@@ -1,9 +1,9 @@
 import { EventEmitter } from 'node:events'
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createTunnelSupervisor, findCloudflared, rotateTrustedHosts, tunnelResponse, type TunnelDeps, type TunnelSupervisor } from '../src/tunnel.ts'
+import { createTunnelSupervisor, findCloudflared, rotateTrustedHosts, tunnelResponse, type TunnelDeps, type TunnelLocate, type TunnelSupervisor } from '../src/tunnel.ts'
 
 class FakeChild extends EventEmitter {
   stdout = new EventEmitter()
@@ -37,17 +37,20 @@ function fakeEditor(stored: Record<string, unknown> = { trustedHosts: { __jsExpr
   }
 }
 
-function makeDeps(overrides: Partial<TunnelDeps> & { domains?: string[] } = {}) {
-  const { domains = ['alpha-beta-gamma-delta.trycloudflare.com'], ...rest } = overrides
+function makeDeps(overrides: Partial<TunnelDeps> & { domains?: string[]; locate?: Partial<TunnelLocate> } = {}) {
+  const { domains = ['alpha-beta-gamma-delta.trycloudflare.com'], locate: locateOverrides, ...rest } = overrides
   const queue = [...domains]
   const dir = mkdtempSync(join(tmpdir(), 'dsh-mobile-tunnel-'))
   const editor = fakeEditor()
   const children: FakeChild[] = []
   const deps: TunnelDeps = {
-    configEditor: editor,
-    webStartup: { trustedHosts: ['launch.internal'] },
-    webServer: { port: 3080, protocol: 'http:' },
-    profileHome: dir,
+    locate: {
+      configEditor: () => editor,
+      webStartup: () => ({ trustedHosts: ['launch.internal'] }),
+      webServer: () => ({ port: 3080, protocol: 'http:' }),
+      profileHome: () => dir,
+      ...locateOverrides,
+    },
     findBinary: () => '/fake/cloudflared',
     spawnProcess: ((..._args: unknown[]) => {
       const child = new FakeChild()
@@ -136,11 +139,28 @@ describe('tunnelResponse', () => {
 
 describe('quick tunnel supervisor', () => {
   it('reports unsupported with a reason when a capability is missing', () => {
-    expect(createTunnelSupervisor(makeDeps({ profileHome: undefined }).deps).status()).toMatchObject({ state: 'unsupported', reason: 'no-profile' })
-    expect(createTunnelSupervisor(makeDeps({ configEditor: undefined }).deps).status()).toMatchObject({ state: 'unsupported', reason: 'no-config-editor' })
-    expect(createTunnelSupervisor(makeDeps({ webServer: undefined }).deps).status()).toMatchObject({ state: 'unsupported', reason: 'no-web-server' })
-    expect(createTunnelSupervisor(makeDeps({ webServer: { port: 3080, protocol: 'https:' } }).deps).status()).toMatchObject({ state: 'unsupported', reason: 'tls-host' })
+    expect(createTunnelSupervisor(makeDeps({ locate: { profileHome: () => undefined } }).deps).status()).toMatchObject({ state: 'unsupported', reason: 'no-profile' })
+    expect(createTunnelSupervisor(makeDeps({ locate: { configEditor: () => undefined } }).deps).status()).toMatchObject({ state: 'unsupported', reason: 'no-config-editor' })
+    expect(createTunnelSupervisor(makeDeps({ locate: { webServer: () => undefined } }).deps).status()).toMatchObject({ state: 'unsupported', reason: 'no-web-server' })
+    expect(createTunnelSupervisor(makeDeps({ locate: { webServer: () => ({ port: 3080, protocol: 'https:' }) } }).deps).status()).toMatchObject({ state: 'unsupported', reason: 'tls-host' })
     expect(createTunnelSupervisor(makeDeps({ findBinary: () => undefined }).deps).status()).toMatchObject({ state: 'unsupported', reason: 'no-cloudflared' })
+  })
+
+  it('starts through the boot window once late services activate instead of baking unsupported', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-mobile-tunnel-'))
+    dirs.push(dir)
+    mkdirSync(join(dir, 'state'), { recursive: true })
+    writeFileSync(join(dir, 'state', 'mobile-quick-tunnel.json'), JSON.stringify({ enabled: true, origin: null, updatedAt: '' }))
+    const built = makeDeps({ bootProbeMs: 1, bootAttempts: 10_000 })
+    dirs.push(built.dir)
+    let available = false
+    built.deps.locate = { ...built.deps.locate, profileHome: () => dir, configEditor: () => (available ? built.editor : undefined) }
+    const tunnel = createTunnelSupervisor(built.deps)
+    expect(tunnel.status()).toMatchObject({ state: 'unsupported', reason: 'no-config-editor' })
+    setTimeout(() => { available = true }, 50)
+    await vi.waitFor(() => expect(tunnel.status().state).toBe('ready'), { timeout: 3000, interval: 5 })
+    expect(built.children).toHaveLength(1)
+    tunnel.dispose()
   })
 
   it('starts disabled and idle when nothing was persisted', () => {
@@ -213,7 +233,7 @@ describe('quick tunnel supervisor', () => {
   it('enters error after three consecutive failed starts', async () => {
     const editor = fakeEditor()
     editor.edit.mockRejectedValue(new Error('edit-refused'))
-    const { deps, dir } = makeDeps({ configEditor: editor, recoveryCooldownMs: 0 })
+    const { deps, dir } = makeDeps({ locate: { configEditor: () => editor }, recoveryCooldownMs: 0 })
     dirs.push(dir)
     const tunnel = createTunnelSupervisor(deps)
     await tunnel.enable()
@@ -243,7 +263,7 @@ describe('quick tunnel supervisor', () => {
     await tunnel.enable()
     await vi.waitFor(() => expect(tunnel.status().state).toBe('ready'), { timeout: 2000, interval: 5 })
     tunnel.dispose()
-    const second = makeDeps({ profileHome: first.dir, domains: ['second-live-domain-one.trycloudflare.com'] })
+    const second = makeDeps({ locate: { profileHome: () => first.dir }, domains: ['second-live-domain-one.trycloudflare.com'] })
     dirs.push(second.dir)
     const again = createTunnelSupervisor(second.deps)
     await vi.waitFor(() => expect(again.status().state).toBe('ready'), { timeout: 2000, interval: 5 })
@@ -258,7 +278,7 @@ describe('quick tunnel supervisor', () => {
     const tunnel = createTunnelSupervisor(deps)
     await tunnel.enable()
     tunnel.dispose()
-    const degraded = createTunnelSupervisor({ ...deps, configEditor: undefined })
+    const degraded = createTunnelSupervisor({ ...deps, locate: { ...deps.locate, configEditor: () => undefined } })
     expect(degraded.status()).toMatchObject({ state: 'unsupported', reason: 'no-config-editor' })
     expect(children).toHaveLength(1)
     degraded.dispose()
