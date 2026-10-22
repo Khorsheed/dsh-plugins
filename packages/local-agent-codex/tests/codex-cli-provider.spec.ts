@@ -10,7 +10,8 @@ import type { SubprocessHandle } from '@deepseek-ai/dsh-subprocess'
 import type { SubagentStartRequest } from '@deepseek-ai/dsh-subagent'
 import { describe, expect, it, vi } from 'vitest'
 import { fakeSessionPersistence } from './fake-persistence.ts'
-import { parseCodexJsonStream, CodexCliProvider, startCodexCliRun } from '../src/codex-cli-provider.ts'
+import { expectValidReleasedLog } from './expect-valid-log.ts'
+import { CODEX_INTERRUPTED_TOOL_RESULT, appendCodexTranscriptLine, parseCodexJsonStream, CodexCliProvider, startCodexCliRun } from '../src/codex-cli-provider.ts'
 
 /** The NDJSON event stream a real `codex exec --json` emits for one run. */
 const jsonStream = [
@@ -50,7 +51,9 @@ function stubChild(): { handle: SubprocessHandle; done: Promise<unknown> } {
 /**
  * The live conversation assembler only materializes an assistant/tool event
  * whose step is opened by a step/start boundary — the mirror must wrap every
- * folded line in the pair, or the real-time subsession view drops it.
+ * folded line in the pair, or the real-time subsession view drops it. The
+ * released-log reader's harder contract (dense sequential steps, advertised
+ * and resolved tool calls) is covered separately by expectValidReleasedLog.
  */
 function expectStepBoundaries(child: Session): void {
   const events = child.snapshotEvents()
@@ -136,6 +139,50 @@ describe('codex json stream parsing', () => {
   })
 })
 
+describe('codex transcript fold (released-log contract)', () => {
+  it('a tool line folds the native lifecycle in one step — advertisement, call, result', () => {
+    const child = Session.create(SessionId('child-fold-tool'))
+    child.append('turn/start', { turn: 1 })
+    appendCodexTranscriptLine(child, 1, 1, { kind: 'tool', id: 'call-1', name: 'Bash', args: 'ls -la', result: 'a.txt' }, undefined)
+    expect(child.snapshotEvents().map(event => event.type)).toEqual([
+      'turn/start', 'step/start', 'assistant/message', 'tool/call', 'tool/result', 'step/end',
+    ])
+    // The advertising message the released-log reader pairs the lifecycle
+    // against: same id, name, and arguments as the call event.
+    const assistant = child.snapshotEvents().filter(event => event.type === 'assistant/message')
+    expect(assistant[0]!.data.message.content).toEqual([
+      { type: 'tool-call', id: 'call-1', name: 'Bash', arguments: 'ls -la' },
+    ])
+    const call = child.snapshotEvents().find(event => event.type === 'tool/call')!
+    expect(call.data).toMatchObject({ turn: 1, step: 1, callId: 'call-1', name: 'Bash', arguments: 'ls -la' })
+    const result = child.snapshotEvents().find(event => event.type === 'tool/result')!
+    expect(result.data.message).toMatchObject({
+      role: 'tool',
+      toolCallId: 'call-1',
+      isError: false,
+      content: [{ type: 'text', text: 'a.txt' }],
+    })
+    expect(result.sourceEventSeqs).toEqual([call.seq])
+    expectValidReleasedLog(child)
+  })
+
+  it('a tool line whose result never arrived folds the synthesized interrupted result', () => {
+    const child = Session.create(SessionId('child-fold-interrupted'))
+    child.append('turn/start', { turn: 1 })
+    appendCodexTranscriptLine(child, 1, 1, { kind: 'tool', id: 'call-2', name: 'WebSearch' }, undefined)
+    const result = child.snapshotEvents().find(event => event.type === 'tool/result')!
+    // The step still resolves the advertised call: the placeholder is an
+    // error result (same text as the kimi provider's, family-wide).
+    expect(result.data.message).toMatchObject({
+      role: 'tool',
+      toolCallId: 'call-2',
+      isError: true,
+      content: [{ type: 'text', text: CODEX_INTERRUPTED_TOOL_RESULT }],
+    })
+    expectValidReleasedLog(child)
+  })
+})
+
 describe('codex-cli-provider run settlement', () => {
   it('settles completed, closes the turn, and appends the response with usage', async () => {
     const child = Session.create(SessionId('child-run-1'))
@@ -172,12 +219,18 @@ describe('codex-cli-provider run settlement', () => {
     const assistant = child.snapshotEvents().filter(event => event.type === 'assistant/message')
     expect(assistant[0]!.data.message.content).toEqual([{ type: 'text', text: 'Task complete.' }])
     expect(assistant[0]!.data.usage).toEqual({ inputTokens: 4, outputTokens: 4, cacheReadTokens: 6 })
-    // the turn opened at spawn and closed at settle, bracketing the run
-    const turns = child.snapshotEvents().filter(event => event.type === 'turn/start' || event.type === 'turn/end')
-    expect(turns.map(event => event.type)).toEqual(['turn/start', 'turn/end'])
-    expect(turns[1]!.data).toEqual({ turn: 1, reason: { kind: 'completed' } })
+    // the turn opened at spawn and closed at settle, bracketing the run;
+    // turn/end lands after the post-exit mirror (mirrored steps must precede
+    // it in the stored log), so wait the mirror queue out.
+    await vi.waitFor(() => {
+      const turns = child.snapshotEvents().filter(event => event.type === 'turn/start' || event.type === 'turn/end')
+      expect(turns.map(event => event.type)).toEqual(['turn/start', 'turn/end'])
+      expect(turns[1]!.data).toEqual({ turn: 1, reason: { kind: 'completed' } })
+    })
     // every mirrored event sits inside its step boundary pair (live-render contract)
     expectStepBoundaries(child)
+    // …and the whole log passes the released-log read path.
+    expectValidReleasedLog(child)
     // The live mirror persists during the run; the settle mirror persists the
     // final event set (with turn/end) after exit — wait for that last write.
     await vi.waitFor(() => {
@@ -244,6 +297,11 @@ describe('codex-cli-provider run settlement', () => {
     const stored = persistence.stored.get(child.id) as { type: string }[]
     expect(stored.filter(event => event.type === 'assistant/message')).toHaveLength(1)
     expect(stored.filter(event => event.type === 'user/message')).toHaveLength(1)
+    // turn/end lands after the post-exit mirror — wait the mirror queue out.
+    await vi.waitFor(() => {
+      expect(child.snapshotEvents().some(event => event.type === 'turn/end')).toBe(true)
+    })
+    expectValidReleasedLog(child)
     await done
   })
 
@@ -321,11 +379,19 @@ describe('codex-cli-provider run settlement', () => {
       { type: 'item.completed', item: { id: 'item_2', type: 'agent_message', text: 'Task complete.' } },
       { type: 'turn.completed', usage: { input_tokens: 10, cached_input_tokens: 6, output_tokens: 4 } },
     )
+    // The tool fold now includes its advertising assistant message: text at
+    // step 1, the advertisement at step 2, the final reply at step 3.
     await vi.waitFor(() => {
-      expect(child.snapshotEvents().filter(event => event.type === 'assistant/message')).toHaveLength(2)
+      expect(child.snapshotEvents().filter(event => event.type === 'assistant/message')).toHaveLength(3)
     })
-    // The command_execution item mirrors as a native tool/call + tool/result
-    // pair, paired by the stream item id.
+    // The command_execution item mirrors as the native lifecycle — the
+    // advertising assistant/message, then tool/call + tool/result paired by
+    // the stream item id.
+    const advertisement = child.snapshotEvents()
+      .filter(event => event.type === 'assistant/message')
+      .map(event => (event.data as { message: { content: unknown } }).message.content)
+      .find(content => JSON.stringify(content).includes('tool-call'))
+    expect(advertisement).toEqual([{ type: 'tool-call', id: 'item_1', name: 'Bash', arguments: 'ls' }])
     const calls = child.snapshotEvents().filter(event => event.type === 'tool/call')
     expect(calls).toHaveLength(1)
     expect((calls[0]!.data as { callId: string; name: string; arguments: string }))
@@ -337,6 +403,7 @@ describe('codex-cli-provider run settlement', () => {
     // pre-V4 shape wrapped everything in one content block).
     expect((results[0]!.data as { message: { toolCallId: string; content: unknown } }).message)
       .toMatchObject({ role: 'tool', toolCallId: 'item_1', content: [{ type: 'text', text: 'a.txt' }] })
+    expect(results[0]!.sourceEventSeqs).toEqual([calls[0]!.seq])
 
     // Settle: the live mirror already covered the stream — no duplicates.
     finish({ exitCode: 0, signal: null })
@@ -349,9 +416,15 @@ describe('codex-cli-provider run settlement', () => {
     expect(new Set(texts).size).toBe(texts.length)
     expect(child.snapshotEvents().filter(event => event.type === 'user/message')).toHaveLength(1)
     expect(child.snapshotEvents().filter(event => event.type === 'tool/call')).toHaveLength(1)
-    expect((assistant[1]!.data as { usage?: unknown }).usage).toEqual({ inputTokens: 4, outputTokens: 4, cacheReadTokens: 6 })
+    expect((assistant[2]!.data as { usage?: unknown }).usage).toEqual({ inputTokens: 4, outputTokens: 4, cacheReadTokens: 6 })
+    // turn/end lands after the post-exit mirror — wait the mirror queue out.
+    await vi.waitFor(() => {
+      expect(child.snapshotEvents().some(event => event.type === 'turn/end')).toBe(true)
+    })
     // every mirrored event sits inside its step boundary pair (live-render contract)
     expectStepBoundaries(child)
+    // …and the whole log passes the released-log read path.
+    expectValidReleasedLog(child)
     await done
   })
 
@@ -381,12 +454,18 @@ describe('codex-cli-provider run settlement', () => {
     expect(result.diagnostic).toContain('codex exec exited with code 1')
     expect(result.diagnostic).toContain('rollout 目录: /tmp/codex-home/sessions/')
     // The timing window must close even on failure, with an error reason.
-    const turnEnd = child.snapshotEvents().find(event => event.type === 'turn/end')
-    const endData = turnEnd?.data as { turn?: number; reason?: { kind?: string; error?: { message?: string; code?: string } } } | undefined
-    expect(endData?.turn).toBe(1)
-    expect(endData?.reason?.kind).toBe('error')
-    expect(endData?.reason?.error?.message).toContain('exited with code 1')
-    expect(endData?.reason?.error?.code).toBe('UNKNOWN')
+    // turn/end lands after the post-exit mirror (mirrored steps must precede
+    // it in the stored log), so wait the mirror queue out.
+    await vi.waitFor(() => {
+      const turnEnd = child.snapshotEvents().find(event => event.type === 'turn/end')
+      const endData = turnEnd?.data as { turn?: number; reason?: { kind?: string; error?: { message?: string; code?: string } } } | undefined
+      expect(endData?.turn).toBe(1)
+      expect(endData?.reason?.kind).toBe('error')
+      expect(endData?.reason?.error?.message).toContain('exited with code 1')
+      expect(endData?.reason?.error?.code).toBe('UNKNOWN')
+    })
+    // Nothing streamed: the log is just the turn bracket, still valid on a cold read.
+    expectValidReleasedLog(child)
     await done
   })
 
@@ -475,13 +554,17 @@ describe('codex-cli-provider run settlement', () => {
     // A zero exit with no parsed answer is an ERROR, never an empty success.
     expect(result.stopReason).toBe('error')
     expect(result.output).toEqual([])
-    const turnEnd = child.snapshotEvents().find(event => event.type === 'turn/end')
-    const endData = turnEnd?.data as { reason?: { kind?: string; error?: { message?: string } } } | undefined
-    expect(endData?.reason?.kind).toBe('error')
+    // turn/end lands after the post-exit mirror — wait the mirror queue out.
+    await vi.waitFor(() => {
+      const turnEnd = child.snapshotEvents().find(event => event.type === 'turn/end')
+      const endData = turnEnd?.data as { reason?: { kind?: string; error?: { message?: string } } } | undefined
+      expect(endData?.reason?.kind).toBe('error')
+    })
     // The format-drift warning fired exactly once for the whole run, and the
     // empty-answer throw separately flattened through onError.
     expect(errors.filter(message => message.includes('parsed no codex events'))).toHaveLength(1)
     expect(errors.filter(message => message.includes('produced no answer'))).toHaveLength(1)
+    expectValidReleasedLog(child)
     await done
   })
 })
@@ -611,12 +694,18 @@ describe('codex-cli-provider resume round', () => {
     // Host 0.2.1: a fresh PER-EXECUTION run id; the SAME child session is
     // pinned by the argv and the turn counts below, not by the run id.
     expect(run.id).not.toBe(SessionId('child-run-1'))
-    const turnStarts = child.snapshotEvents().filter(event => event.type === 'turn/start')
-    const turnEnds = child.snapshotEvents().filter(event => event.type === 'turn/end')
-    expect(turnStarts).toHaveLength(2)
-    expect(turnEnds).toHaveLength(2)
-    expect((turnStarts[1]?.data as { turn?: number }).turn).toBe(2)
-    expect((turnEnds[1]?.data as { turn?: number }).turn).toBe(2)
+    // turn/end lands after the post-exit mirror — wait the mirror queue out.
+    await vi.waitFor(() => {
+      const turnStarts = child.snapshotEvents().filter(event => event.type === 'turn/start')
+      const turnEnds = child.snapshotEvents().filter(event => event.type === 'turn/end')
+      expect(turnStarts).toHaveLength(2)
+      expect(turnEnds).toHaveLength(2)
+      expect((turnStarts[1]?.data as { turn?: number }).turn).toBe(2)
+      expect((turnEnds[1]?.data as { turn?: number }).turn).toBe(2)
+    })
+    // The resumed round's full log (the seeded first turn plus this round)
+    // passes the released-log read path.
+    expectValidReleasedLog(child)
     await run.dispose()
   })
 
@@ -856,21 +945,40 @@ describe('codex-cli-provider abort path', () => {
     expect(hanging.terminated()).toBe(true)
     await expect(run.dispose()).resolves.toBeUndefined()
 
-    const turnEnd = child.snapshotEvents().find(event => event.type === 'turn/end')
-    expect(turnEnd?.data).toEqual({ turn: 1, reason: { kind: 'aborted', reason: { kind: 'parent' } } })
+    // The aborted round's turn/end records the parent cancellation — after
+    // the post-exit mirror (mirrored steps must precede it in the log).
+    await vi.waitFor(() => {
+      const turnEnd = child.snapshotEvents().find(event => event.type === 'turn/end')
+      expect(turnEnd?.data).toEqual({ turn: 1, reason: { kind: 'aborted', reason: { kind: 'parent' } } })
+    })
 
     // The partial stream (reply text + command) is mirrored after the kill.
+    // The trailing command's fold carries its whole native lifecycle; the
+    // kill landed before any result, so the call resolves with the
+    // synthesized interrupted one.
     await vi.waitFor(() => {
-      expect(child.snapshotEvents().filter(event => event.type === 'assistant/message')).toHaveLength(1)
-      // The killed stream's trailing command mirrors as a native tool/call
-      // (no result — the kill landed first).
+      expect(child.snapshotEvents().filter(event => event.type === 'assistant/message')).toHaveLength(2)
       expect(child.snapshotEvents().filter(event => event.type === 'tool/call')).toHaveLength(1)
     })
     const assistant = child.snapshotEvents().filter(event => event.type === 'assistant/message')
     expect(assistant[0]!.data.message.content).toEqual([{ type: 'text', text: '我先创建一个文件。' }])
+    // The advertising message the released-log reader pairs the call against.
+    expect(assistant[1]!.data.message.content).toEqual([
+      { type: 'tool-call', id: 'item_1', name: 'Bash', arguments: 'echo hi > hi.txt' },
+    ])
     const calls = child.snapshotEvents().filter(event => event.type === 'tool/call')
     expect((calls[0]!.data as { name: string; arguments: string }))
       .toMatchObject({ name: 'Bash', arguments: 'echo hi > hi.txt' })
+    const toolResults = child.snapshotEvents().filter(event => event.type === 'tool/result')
+    expect(toolResults).toHaveLength(1)
+    expect((toolResults[0]!.data as { message: unknown }).message).toMatchObject({
+      role: 'tool',
+      toolCallId: 'item_1',
+      isError: true,
+      content: [{ type: 'text', text: CODEX_INTERRUPTED_TOOL_RESULT }],
+    })
+    expectStepBoundaries(child)
+    expectValidReleasedLog(child)
     await hanging.done
   })
 
@@ -909,13 +1017,18 @@ describe('codex-cli-provider abort path', () => {
     // uncached) has nowhere to land in host 0.1.5 — the per-chunk event is
     // retired and an appended message is immutable — so the carrier message
     // (already mirrored live before the usage was knowable) goes out without
-    // it and the drop is logged.
+    // it and the drop is logged. The trailing command folds at settle with
+    // its advertising message and the interrupted placeholder result.
     await vi.waitFor(() => {
       const assistant = child.snapshotEvents().filter(event => event.type === 'assistant/message')
-      expect(assistant).toHaveLength(1)
+      expect(assistant).toHaveLength(2)
     })
     expect((child.snapshotEvents().find(e => e.type === 'assistant/message')!.data as { usage?: unknown }).usage)
       .toBeUndefined()
+    await vi.waitFor(() => {
+      expect(child.snapshotEvents().some(event => event.type === 'turn/end')).toBe(true)
+    })
+    expectValidReleasedLog(child)
     await hanging.done
   })
 
@@ -959,6 +1072,10 @@ describe('codex-cli-provider abort path', () => {
       expect(assistant).toHaveLength(1)
       expect(assistant[0]!.data.usage).toEqual({ inputTokens: 60, outputTokens: 25, cacheReadTokens: 40 })
     })
+    await vi.waitFor(() => {
+      expect(child.snapshotEvents().some(event => event.type === 'turn/end')).toBe(true)
+    })
+    expectValidReleasedLog(child)
     await hanging.done
   })
 })
