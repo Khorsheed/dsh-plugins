@@ -60,3 +60,9 @@ v5 让路线有两处归属：厚资源自己的路线（`primaryResourceId`）�
 ## 测试
 
 包内 153/153 全绿。store.spec.ts 钉住按教材存路线、退役的项目路线读作不存在且拒写、origin / seq 的规范化（旧 `addedBy`）与书架顺序。service.spec.ts 覆盖必须带教材的草稿（拒收信息列出书架）、一本教材一份草稿、站内附带引用不挪动路线、链接不能有路线、seq 的插队 / 调序 / 越界 / 删除后前移，以及绑定摘要的教材列表。tool.spec.ts 覆盖 `chapters` / `also` 展开、必填的 `resource`、`replacedDraft` 与 `waitingForAdoption`、`op: "move"`、带 `unbind` 的扁平绑定，以及每轮上下文列出另一本教材的待采用草稿。界面在侧栏 fixture（`examples/sidebar`）里按手机宽度明暗两套核对过；本包 `check:panels` 无问题。
+
+## 后续（2026-10-22）：哪个对话开始用图书馆，侧栏就在它旁边出现
+
+- 3080：模型建好了「神经科学」，但已打开的侧栏只显示数学。建项目不写事件，而侧栏轮询只看事件。现在服务的每次写入也会更新 `latestActivity`。
+- 用户希望侧栏自动打开。`kit.autoBind`（每次项目、教材、路线、测验写入成功后都会调用）记下最近一次由会话发起的写入。客户端轮询它：写入来自当前屏幕上的会话时，调用 `sidebarRight.openTab('library')`。每个会话、每次页面加载只打开一次，用户关掉后不会再弹。页面加载前的写入不会触发打开。没有侧栏或缺服务端时什么也不做。
+- 同一次运行因 "DeepSeek Messages stream: tool input is invalid JSON" 中断：7 KB 的 `library_roadmap` 参数里，字符串内有未转义的英文双引号 `"心—脑"`。宿主严格解析工具参数且不重试，插件只能预防。现在提示词要求教练在任何文本里用「」引用。

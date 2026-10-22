@@ -85,7 +85,7 @@ export interface LibraryPaneInjected {
   createRetake: (projectId: string, resourceId?: string, nodeId?: string, keys?: readonly string[]) => Answer<{ assessment: LibraryAssessment }>
   recentRecords: () => Promise<RemoteResult<{ records: (LibraryEvent & { projectId: string; projectName: string })[] }>>
   /** The newest event's timestamp anywhere — the pane's change poll (host-side writes otherwise surface only on remount). */
-  latestActivity: () => Promise<RemoteResult<{ at?: string }>>
+  latestActivity: () => Promise<RemoteResult<{ at?: string; session?: { id: string; at: string } }>>
   /** The session's binding, when it has one. */
   boundTarget: () => Promise<RemoteResult<LibraryBinding | null>>
   /** Bind the session (null unbinds). */

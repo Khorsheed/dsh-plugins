@@ -27,7 +27,7 @@ import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/c
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import libraryRemote from '@khorsheed/dsh-library/remote'
 import type { LibraryPaneInjected } from './contract.ts'
-import { LIBRARY_TAB_ID, libraryDefinition } from './definition.tsx'
+import { LIBRARY_KIND, LIBRARY_TAB_ID, libraryDefinition } from './definition.tsx'
 import { LibraryPane } from './LibraryPane.tsx'
 import { LibraryBindChip, type LibraryBindInjected } from './bind/BindChip.tsx'
 import { createLibraryStore } from './store.ts'
@@ -205,6 +205,43 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     const unsubscribe = tabVisibility.subscribe(() => { toggle.sync() })
     return () => { unsubscribe(); toggle.setReady(false) }
   }, 'library: tab type visibility')
+
+  // Reveal the library beside the conversation that just started using it: a
+  // library tool from the on-screen session wrote (a project created, a book
+  // shelved, a path drafted) → open the 图书馆 tab, once per session per page
+  // load, so closing it again sticks. The first read is the baseline (writes
+  // from before this page loaded never open anything). Degrades to nothing
+  // without the sidebar surface or the host half.
+  ctx.effect(() => {
+    const revealed = new Set<string>()
+    let baseline: string | undefined
+    let primed = false
+    const poll = (): void => {
+      if (remote === undefined || document.visibilityState !== 'visible') return
+      void remote.latestActivity().then((result: RemoteResult<{ at?: string; session?: { id: string; at: string } }>) => {
+        if (!result.ok) return
+        const write = result.value.session
+        if (!primed) {
+          primed = true
+          baseline = write?.at
+          return
+        }
+        if (write === undefined || (baseline !== undefined && write.at <= baseline)) return
+        baseline = write.at
+        const main = mainSessionId(ctx.sessions.list.getSnapshot())
+        if (main === undefined || String(main) !== write.id || revealed.has(write.id) || !tabVisibility.show(main)) return
+        revealed.add(write.id)
+        try {
+          (ctx.get('sidebarRight') as { openTab?: (kind: string) => void } | undefined)?.openTab?.(LIBRARY_KIND)
+        } catch {
+          // No on-screen sidebar surface: nothing to reveal.
+        }
+      }, () => {})
+    }
+    poll()
+    const timer = setInterval(poll, 5000)
+    return () => { clearInterval(timer) }
+  }, 'library: reveal on first write')
 
   // Stage two: the tab body, under this package's id in the keyed pane seat.
   ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({

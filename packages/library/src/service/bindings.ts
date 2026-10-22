@@ -168,16 +168,21 @@ export class LibraryService extends LibraryServiceAssess {
    * The newest event's timestamp across the library — the pane's change poll.
    * The Remote face is request/response (no push), so the sidebar learns
    * host-side writes (a landed quiz, a recorded page) by polling this and
-   * re-reading when it moves.
+   * re-reading when it moves. Writes that log no event (creating a project)
+   * move it too. `session` names the newest session-made write, so the client
+   * can reveal the library next to the conversation that just started using it.
    */
-  async latestActivity(): Promise<{ at?: string }> {
+  async latestActivity(): Promise<{ at?: string; session?: { id: string; at: string } }> {
     this.assertAlive('latestActivity')
-    let latest: string | undefined
+    let latest = this.lastChangeAt
     for (const project of this.store.readIndex().projects) {
       const at = this.store.readEvents(project.id).at(-1)?.at
       if (at !== undefined && (latest === undefined || at > latest)) latest = at
     }
-    return latest === undefined ? {} : { at: latest }
+    return {
+      ...(latest === undefined ? {} : { at: latest }),
+      ...(this.lastSessionWrite === undefined ? {} : { session: { id: this.lastSessionWrite.session, at: this.lastSessionWrite.at } }),
+    }
   }
 
   /* --------------------------------------------------------------- stats */
