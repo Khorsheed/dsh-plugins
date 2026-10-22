@@ -4,9 +4,10 @@
  * alike) and the turn's compactions. Nothing that did not take part shows.
  * Past four participants beside the main conversation, three stay visible
  * (the selected one always among them) and the rest fold into "+N", which
- * lists them all in the order they started. The line below holds facts with
- * a jump: the request that delegated the view, a compaction's position, a
- * failure.
+ * lists them all in the order they started. A note at the row's end holds
+ * facts with a jump — the request that delegated the view, a compaction's
+ * position — so the tabs keep the header's bottom edge. A failure shows as
+ * the tab's ✗ and the failure card below, nowhere else.
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { AgentScopeOverview, ListTurnsResult, RequestLink } from '../types.ts'
@@ -33,7 +34,7 @@ function labelOf(scope: AgentScopeOverview, t: T): string {
 }
 
 function Mark({ scope }: { readonly scope: AgentScopeOverview }): ReactNode {
-  if (scope.status === 'ok' && scope.kind === 'subagent') return <span className={css.ok} aria-hidden="true">✓</span>
+  // Success is the norm; only a failure earns a mark.
   if (scope.status === 'failed') return <span className={css.bad} aria-hidden="true">✗</span>
   return null
 }
@@ -86,7 +87,6 @@ function Relation({ scope, onOpenRequest, t }: { readonly scope: AgentScopeOverv
   } else if (scope.delegatedBy) {
     parts.push(<span key="by">{t('rel.delegatedBy', { seq: requestNumberText(scope.delegatedBy) })}</span>, <span key="b">{back(scope.delegatedBy)}</span>)
   }
-  if (scope.status === 'failed' && scope.error) parts.push(<span key="f" className={css.bad} title={scope.error}>{t('rel.failed')}</span>)
   return parts.length === 0 ? null : <div className={css.relation}>{parts}</div>
 }
 
@@ -107,8 +107,8 @@ export function AgentTabs({ scopes, value, onSelect, onOpenRequest, t }: AgentTa
     <div className={css.row} role="tablist" aria-label={t('tab.title')}>
       {[...main, ...shown].map(scope => <Tab key={scope.scopeId} scope={scope} selected={scope.scopeId === selected?.scopeId} onSelect={onSelect} t={t} />)}
       {shown.length < others.length && <Overflow hidden={others.length - shown.length} items={others} value={value} onSelect={onSelect} t={t} />}
+      {selected && <Relation scope={selected} onOpenRequest={onOpenRequest} t={t} />}
     </div>
-    {selected && <Relation scope={selected} onOpenRequest={onOpenRequest} t={t} />}
   </div>
 }
 

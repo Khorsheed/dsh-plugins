@@ -415,14 +415,15 @@ export function InspectorPanel({
             />
           </div>
         </div>
-        {turn !== undefined && (turn.query !== '' || turn.trigger !== undefined) && <div className={css.query}>
-          {turn.query === '' && turn.trigger !== undefined && <code className={css.querySource}>{turn.trigger.source}</code>}
-          <b>{turn.hostTurn === undefined && turn.query === 'compaction' ? t('compaction.title') : turn.query !== '' ? turn.query : turn.trigger!.text}</b>
-        </div>}
         {backfill?.state === 'partial' && <div className={css.stateNote}>{t('hint.backfillTruncated')}</div>}
         {parent && <ParentLine parent={parent} t={t} />}
         {/* The trend is the session map: always the main conversation, it picks the turn. */}
-        {trend && <Trend data={trend} turnSeq={turnSeq} selectedSeq={effectiveScope?.kind === 'main' ? selectedRequestSeq : null} scopeId="main" scopeLabel={t('scope.mainName')} t={t} onSelect={(next, seq, targetScope) => { onSelectTurn(next); onOpenRequest(seq, targetScope) }} onSelectScope={(next, targetScope) => { onSelectTurn(next); onSelectScope(targetScope) }} />}
+        {trend && <Trend data={trend} turnSeq={turnSeq} selectedSeq={effectiveScope?.kind === 'main' ? selectedRequestSeq : null} scopeId="main" scopeLabel={t('scope.mainName')} t={t} onSelect={(next, seq, targetScope) => { onSelectTurn(next); onOpenRequest(seq, targetScope) }} />}
+        {turn !== undefined && (turn.query !== '' || turn.trigger !== undefined) && <div className={css.query}>
+          {turn.hostTurn !== undefined && <span className={css.queryTurn}>{t('query.turn', { turn: String(turn.hostTurn) })}</span>}
+          {turn.query === '' && turn.trigger !== undefined && <code className={css.querySource}>{turn.trigger.source}</code>}
+          <b title={turn.query !== '' ? turn.query : turn.trigger?.text}>{turn.hostTurn === undefined && turn.query === 'compaction' ? t('compaction.title') : turn.query !== '' ? turn.query : turn.trigger!.text}</b>
+        </div>}
         {/* Below it, the selected turn's participants: nothing that did not take part. */}
         {scopes.length > 0 && (
           <AgentTabs
