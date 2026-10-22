@@ -10,7 +10,7 @@ import type {
 import { WINDOW_TURNS, fmtSpan, latestTurnSeq, unloadedGaps, type CompositionFilter, type TurnGap } from './aggregate.ts'
 import type { InspectorTabProps } from './contract.ts'
 import type { RequestInspectorTabParams } from './definition.tsx'
-import { scrollConversationToBottom, scrollConversationToTurn } from './scroll-sync.ts'
+import { hasTurnAnchor, scrollConversationToBottom, scrollConversationToTurn } from './scroll-sync.ts'
 import { SegCtl } from './SegCtl.tsx'
 import { TimingView } from './TimingView.tsx'
 import { TokenView } from './TokenView.tsx'
@@ -44,10 +44,12 @@ function FailureCard({ scope, t }: { readonly scope: AgentScopeOverview; readonl
 /** The tab body. */
 export function InspectorPanel({
   sessionId, useTabInfo, t,
-  listTurns, loadTurns, getTurn, getRequest, getTurnTiming, getSessionTrend,
+  listTurns, loadTurns, loadThrough, getTurn, getRequest, getTurnTiming, getSessionTrend,
 }: InspectorTabProps): ReactNode {
   const { tab } = useTabInfo()
   const [trend, setTrend] = useState<SessionTrend | null>(null)
+  /** The latest conversation jump; an older one still waiting for history gives up. */
+  const jumpToken = useRef(0)
   /** Bumped when the loaded window moves, so the session map refetches. */
   const [trendKey, setTrendKey] = useState(0)
   useEffect(() => {
@@ -276,12 +278,30 @@ export function InspectorPanel({
   }
 
   /** Scroll the conversation to one selected turn (real turns only; pseudo-turns never scroll). */
-  const syncScrollToTurn = (seq: number): void => {
-    const target = turns?.find(candidate => candidate.turnSeq === seq)
+  const syncScrollToTurn = (seq: number, list: readonly TurnListItem[] | null = turns): void => {
+    const target = list?.find(candidate => candidate.turnSeq === seq)
     // Real turns key on the host's turn number (M5), so a positive seq is the
     // anchor even before the list resolves (the navigation-params path).
     const hostTurn = target?.hostTurn ?? (seq > 0 ? seq : undefined)
-    if (hostTurn !== undefined) scrollConversationToTurn(hostTurn)
+    if (hostTurn === undefined) return
+    const jump = ++jumpToken.current
+    if (hasTurnAnchor(hostTurn) || !loadThrough || target?.startSeq === undefined) {
+      scrollConversationToTurn(hostTurn)
+      return
+    }
+    // The chat has not rendered that turn yet: page its history back to the
+    // turn's start (the session's own loader), then land once the row mounts.
+    // A newer jump supersedes this one; no progress falls back to the nearest row.
+    void loadThrough(sessionId, target.startSeq).catch(() => undefined).then(() => {
+      let frames = 0
+      const land = (): void => {
+        if (jump !== jumpToken.current) return
+        if (hasTurnAnchor(hostTurn) || frames >= 60) { scrollConversationToTurn(hostTurn); return }
+        frames += 1
+        requestAnimationFrame(land)
+      }
+      land()
+    })
   }
 
   const onSelectTurn = (next: number): void => {
@@ -305,7 +325,7 @@ export function InspectorPanel({
       setRange(result.value.range)
       setTrendKey(key => key + 1)
       const target = select !== undefined && result.value.turns.some(turn => turn.turnSeq === select) ? select : latestTurnSeq(result.value.turns)
-      if (target !== undefined) { selectTurnState(target); syncScrollToTurn(target) }
+      if (target !== undefined) { selectTurnState(target); syncScrollToTurn(target, result.value.turns) }
     }).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)))
   }
   /** A run of unloaded turns: older runs load the 30 ending at its end, newer runs the 30 starting at its start. */

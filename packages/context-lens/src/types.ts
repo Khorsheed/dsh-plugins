@@ -351,6 +351,8 @@ export interface TurnListItem {
   query: string
   /** No human message this turn: the producer and text of the first message that started it. */
   trigger?: { source: string; text: string }
+  /** The `turn/start` event's log seq — the target the chat pages history back to before a jump. */
+  startSeq?: number
   startedAt: number
   endedAt?: number
   requestCount: number

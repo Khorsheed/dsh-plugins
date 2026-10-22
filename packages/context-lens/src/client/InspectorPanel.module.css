@@ -258,7 +258,9 @@
 .stepper { display: flex; align-items: center; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; overflow: hidden; }
 .stepper > button { border: 0; background: transparent; color: inherit; padding: 3px 7px; cursor: pointer; }
 .stepper > button:disabled { opacity: .3; }
-.latestText { border: 0; border-radius: 12px; padding: 3px 8px; color: var(--dsw-alias-state-business-primary); background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 8%, transparent); font-size: var(--dsh-panel-text-meta, 11px); cursor: pointer; }
+.latestText { display: inline-flex; align-items: center; gap: 4px; height: 26px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; padding: 0 10px; color: var(--dsw-alias-label-secondary); background: transparent; font: inherit; font-size: var(--dsh-panel-text-meta, 12px); white-space: nowrap; cursor: pointer; }
+.latestText:hover { color: var(--dsw-alias-label-primary); border-color: var(--dsw-alias-label-tertiary); }
+.latestText:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary, #3b5bdb); outline-offset: 1px; }
 @container dsh-panel (max-width: 560px) {
   .r1 { flex-wrap: wrap; }
   .title { display: none; }

@@ -44,6 +44,15 @@ function scrollport(root: ParentNode): Element | null {
   }
 }
 
+/** Whether the chat has rendered this host turn's anchor row (a jump can land on it). */
+export function hasTurnAnchor(hostTurn: number, root: ParentNode = document): boolean {
+  try {
+    return (scrollport(root) ?? root).querySelector(`[data-chat-turn="${hostTurn}"]:not([hidden]):not([hidden] *)`) !== null
+  } catch {
+    return false
+  }
+}
+
 /**
  * Scroll the conversation so one host turn's anchor row leads the viewport:
  * the exact `[data-chat-turn="<turn>"]` row first; a paged-out turn lands on

@@ -198,7 +198,7 @@ export const zh = {
   "lens.sourceTurn": "来源轮次 {turn}",
   "lens.previous": "上一轮",
   "lens.next": "下一轮",
-  "lens.latest": "最新",
+  "lens.latest": "回到最新",
   "lens.reasoning": "思考",
 
   'tab.title': 'Context Lens',
@@ -535,7 +535,7 @@ export const en: Record<keyof typeof zh, string> = {
   "lens.sourceTurn": "Source turn {turn}",
   "lens.previous": "Previous turn",
   "lens.next": "Next turn",
-  "lens.latest": "Latest",
+  "lens.latest": "Back to latest",
   "lens.reasoning": "Reasoning",
 
   'tab.title': 'Context Lens',

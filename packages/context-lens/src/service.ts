@@ -208,7 +208,7 @@ export class InspectorService {
 
     switch (event.type) {
       case 'turn/start':
-        this.store.turnStart(sessionId, event.data.turn, at)
+        this.store.turnStart(sessionId, event.data.turn, at, event.seq)
         return
       case 'turn/end':
         this.store.turnEnd(sessionId, event.data.turn, event.data.reason, at)
