@@ -1,6 +1,8 @@
 # 变更记录
 
-## 0.2.0-rc.2（2026-10-22）
+## 0.2.0-rc.3（2026-10-22）
+
+（版本号说明：家族的 dsh-headless 包 0.2.0-rc.2 曾被发布后又撤回，npm 永久烧掉该版本号；为守住家族「同一版本线」纪律（check:release-groups），本波家族整体上移 rc.3，内容即 rc.2 计划稿。）
 
 - **本机 DSH 委派继承父实例所选模型路线**：子 dsh 的模型目录与默认选择本就来自父实例，但此前独立 headless profile 只收到 DeepSeek 凭据——父实例选中 Kimi 等官方 pi-ai 路线时以 `NO_ADAPTER` 失败，live 镜像又把原生错误改写成 `UNKNOWN` 掩盖原因。现在本地 exec 与常驻启动经公开 settings 服务快照所选路线的有效配置（原生 DeepSeek，以及显式配置了 API-key 引用的 pi-ai 路线），只复制选中的路线、只解析它声明的凭据；凭据经启动环境传递，不进 argv 与 profile 文件。模型目录隐藏没有继承合同的适配器并标记目录不完整；原生失败保留原始错误码与消息。配置或 key 变化下一轮即生效，无需重启父实例。
 - **设置面并入「本机 Agent 委派」家族卡**：家族核提供 `localAgentUi` 注册表时，本包设置界面作为家族卡的一节渲染（Plugins 页从四张 per-harness 卡收拢为一张）；旧 core 或无 core 时回落为本包独立的 `plugins.item` 卡，行为不变。独立卡本身从家族折叠后失效的 keyed 席位改挂 `plugins.item`、按宿主服务的命名空间门控——设置卡在 0.1.7-alpha.1+ 宿主的各种安装形态（独立安装、家族 bundle、模式包）下恢复且一致，0.1.5 与 0.1.6-alpha.2 不再渲染（已记入 README Compatibility 与 `dsh.compat.notes`）。插件管理器与设置卡标题统一为「本机 DSH 委派 / Local DSH Delegation」。

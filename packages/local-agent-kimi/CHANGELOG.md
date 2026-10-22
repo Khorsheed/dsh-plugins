@@ -1,6 +1,8 @@
 # 变更记录
 
-## 0.2.0-rc.2（2026-10-22）
+## 0.2.0-rc.3（2026-10-22）
+
+（版本号说明：家族的 dsh-headless 包 0.2.0-rc.2 曾被发布后又撤回，npm 永久烧掉该版本号；为守住家族「同一版本线」纪律（check:release-groups），本波家族整体上移 rc.3，内容即 rc.2 计划稿。）
 
 - **BREAKING：OAuth 移除，端点 key 成为唯一认证方式**。注入用 kimi-cli ≥2.1 的原生 `api_key_env`：作用域 `config.toml` 的 managed provider 声明从环境变量读 key，key 只存在于 `<scopedHome>/endpoint-auth.json`（0600）与子进程环境，`config.toml` 无秘密；一把幂等迁移把既有 config 改到该形态（摘 OAuth 子表、替换内联 `api_key`、钉住 `base_url`）。**升级前必须配好 `baseUrl` + `apiKey`**，否则升级后读作未认证（README 带迁移说明）；`credentials/` 与 `oauth/` 残留由 provision 清扫，credential-guard 哨兵随 OAuth 一并删除。
 - **设置卡端点凭据表单，并补上「验证端点并获取模型」按钮**：表单与家族其他卡一致（编辑默认 scope 的 endpoint-auth.json）；验证探测已保存端点的 `/v1/models`（kimi 服务没有已确认的无 token 探测，故探测带凭据进行）。

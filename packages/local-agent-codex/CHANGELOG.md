@@ -1,6 +1,8 @@
 # 变更记录
 
-## 0.2.0-rc.2（2026-10-22）
+## 0.2.0-rc.3（2026-10-22）
+
+（版本号说明：家族的 dsh-headless 包 0.2.0-rc.2 曾被发布后又撤回，npm 永久烧掉该版本号；为守住家族「同一版本线」纪律（check:release-groups），本波家族整体上移 rc.3，内容即 rc.2 计划稿。）
 
 - **BREAKING：网页登录移除，端点 key 成为唯一认证方式**。部署级凭据为插件配置 `baseUrl` / `apiKey`；每个作用域可再以 `<scopedHome>/endpoint-auth.json`（0600）按字段覆盖——「scope 文件 > profile 配置」。spawn 时注入为自定义 provider 覆盖片段加进程环境变量，`config.toml` 不被改写；key 不带 `baseUrl` 时直连 OpenAI 官方端点。**升级前必须配好端点凭据**，否则升级后读作未认证（README 带迁移说明）；残留的 `auth.json` 由 provision 每次启动清扫，`/codex login` 不再存在。
 - **设置卡新增端点凭据表单与「验证端点并获取模型」按钮**：卡片编辑默认 scope 的 endpoint-auth.json；验证探测 `GET <baseUrl>/v1/models`（兼容带不带 `/v1` 后缀的 baseUrl），不可达 / HTTP 状态 / 形状不符各失败形态折进判定文本。
