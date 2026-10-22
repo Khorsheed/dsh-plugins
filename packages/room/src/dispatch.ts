@@ -30,8 +30,9 @@ import { createUserMessage, type ContextFormed, type MessageSource } from '@deep
 import { probeLocalAgent, runOutputText } from './adapter.ts'
 import { composeRoomAgent } from './agent-setup.ts'
 import { coordinatorMember, memberId, pendingInstructions, previousCursor, replay, roomChangesSince } from './journal.ts'
-import { envelopeLine, sendOrHold } from './messaging.ts'
-import type { RoomMember, RoomRelay, RoomState } from './types.ts'
+import { envelopeLine, messageId, sendOrHold } from './messaging.ts'
+import { gateState, judgeReport, outstandingFor, REPORT_HOLD_MS, type GateVerdict } from './report-gate.ts'
+import type { RoomHeldDispatch, RoomMember, RoomRelay, RoomState } from './types.ts'
 
 /**
  * The room producer's durable identity in its two historical forms: the
@@ -121,6 +122,8 @@ function briefingSection(state: RoomState, member: RoomMember, instructions: str
     '协作方式：',
     `- 要联系其他成员，用 ${send}。默认是派活（kind: "task"）：对方做完，它的最终回复会自动回报给你，不用轮询；只是告知一声用 kind: "notify"，不会回报。在回复里写「@名字」不会转交给任何人。`,
     '- 收到的每条消息开头都标明来自谁和消息编号（#m12）；派给你的活，你这一轮的最终回复会自动回报给派活人，不用另外回复。',
+    '- 派完活就结束这一轮，不要 sleep 等待，也不要用 room_read 轮询结果；回报会自己送到。派活时可以用 note 说明你要等什么再处理（例如「三位都打完招呼再一起跟用户说」「做完就交给 claude 审」），房间据此决定什么时候把回报交给你。',
+    '- 成员的回复用户已经在房间里看到了，收到回报时不要复述原话或再做汇总表；需要推进就推进，否则一两句话即可。',
     '- 想看房间里现在有谁、各自职责和进展，用 room_read。',
     ...coordinator?.name === member.name ? ['- 作为协调者：普通对话直接回答；小任务用工具在后台派给成员；只在确有需要时建立正式目标计划。委派结果会自动回报给你，等待时不要轮询。'] : [],
   ].join('\n')
@@ -145,7 +148,7 @@ function assemblePrompt(
   text: string,
   relayIds: readonly string[],
   dispatchSeq: number | undefined,
-): { readonly prompt: string; readonly carried: readonly RoomRelay[] } {
+): { readonly prompt: string; readonly carried: readonly RoomRelay[]; readonly heldCarried: readonly number[] } {
   const state = replay(room.snapshotEvents())
   const carried = state.relays.filter(relay =>
     relay.state === 'confirmed' && relay.to === member.name && !relayIds.includes(relay.id))
@@ -164,9 +167,32 @@ function assemblePrompt(
     if (changes.length > 0) sections.push(['【房间变动】', ...changes.map(change => `- ${change}`)].join('\n'))
   }
   if (carried.length > 0) sections.push(notificationsSection(carried))
+  // Reports the gate held for this member and no inbox took: they ride this round.
+  const held = (state.deliveries ?? []).filter(row => row.memberId === memberId(events, member) && row.status === 'held' && row.dispatchSeq !== dispatchSeq)
+  for (const row of held) sections.push(`${envelopeLine(events, row.dispatchSeq) ?? ''}\n${row.text}`.trim())
   const envelope = dispatchSeq === undefined ? undefined : envelopeLine(events, dispatchSeq)
   sections.push(envelope === undefined ? text : `${envelope}\n${text}`)
-  return { prompt: sections.join('\n\n'), carried }
+  return { prompt: sections.join('\n\n'), carried, heldCarried: held.map(row => row.dispatchSeq) }
+}
+
+/**
+ * Reports held for a member that it has not yet seen in a round: hold
+ * verdicts without a later release. The room's own agent also counts as
+ * having seen them once it spoke after the hold (the human woke it directly).
+ */
+export function pendingHolds(events: readonly SessionEvent[], recipientId: string): readonly number[] {
+  const open = new Map<number, number>()
+  for (const event of events) {
+    if (event.type !== 'room/report-gate' || event.data.memberId !== recipientId) continue
+    if (event.data.verdict === 'hold') open.set(event.data.dispatchSeq, event.seq)
+    else if (event.data.verdict === 'release') open.delete(event.data.dispatchSeq)
+  }
+  const state = replay(events)
+  const recipient = state.members.find(member => memberId(events, member) === recipientId)
+  if (recipient?.kind === 'main-agent') {
+    for (const [seq, at] of open) if (events.some(event => event.type === 'assistant/message' && event.seq > at)) open.delete(seq)
+  }
+  return [...open.keys()]
 }
 
 /** The text of the last assistant message after `afterSeq` ('' when none). */
@@ -214,6 +240,8 @@ export class DispatchEngine {
   private readonly queues = new Map<string, Promise<void>>()
   private readonly scheduled = new Set<string>()
   private readonly inFlight = new Map<Promise<void>, string>()
+  /** room + recipient → the wake-anyway timer for its held reports. */
+  private readonly holdTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
   /**
    * @param ctx - host context carrying the session store and agents registry.
@@ -295,7 +323,7 @@ export class DispatchEngine {
     const events = room.snapshotEvents()
     const state = replay(events)
     for (const dispatch of events) {
-      if (dispatch.type !== 'room/dispatch' || dispatch.data.targetIds === undefined) continue
+      if (dispatch.type !== 'room/dispatch' || dispatch.data.targetIds === undefined || dispatch.data.held === true) continue
       for (const targetId of dispatch.data.targetIds) {
         const id = `${dispatch.seq}:${targetId}`
         if (this.scheduled.has(`${room.id}:${id}`)) continue
@@ -324,6 +352,12 @@ export class DispatchEngine {
         const target = state.members.find(member => memberId(events, member) === targetId)
         if (target !== undefined && !state.deliveries?.some(row => row.memberId === targetId && (row.status === 'running' || row.status === 'uncertain'))) this.dispatch(room, target.name, dispatch.data.text, { dispatchSeq: dispatch.seq, targetId })
       }
+    }
+    // recover() runs on every live access; only holds whose wake timer this
+    // process does not own (a restart lost it) are handed over now.
+    for (const member of state.members) {
+      const id = memberId(events, member)
+      if (!this.holdTimers.has(this.holdKey(room.id, id)) && pendingHolds(events, id).length > 0) await this.releaseHeld(room, id, 'restart')
     }
   }
 
@@ -399,11 +433,34 @@ export class DispatchEngine {
     // The envelope (`【#m12 的回报 · 来自 ada · 完成】`) carries who and how;
     // the text is the member's own conclusion.
     const reportText = text.trim() === '' ? `（${outcome === 'done' ? '没有文字输出' : outcome}）` : text.slice(0, 32000)
-    const sent = sendOrHold(room, {
-      to: recipient, text: reportText, fromName: senderName ?? fromId,
-      intent: { origin: 'report', hop: (source.data.hop ?? 1) + 1, reportFor: deliveryId,
-        ...source.data.plan === undefined ? {} : { plan: { goalId: source.data.plan.goalId } } },
-    })
+    const intent: RoomHeldDispatch = { origin: 'report', hop: (source.data.hop ?? 1) + 1, reportFor: deliveryId,
+      ...source.data.plan === undefined ? {} : { plan: { goalId: source.data.plan.goalId } } }
+    // The gate decides WHEN the recipient gets it; plan work keeps its own cadence.
+    const recipientId = memberId(events, recipient)
+    const deliveries = state.deliveries ?? []
+    const verdict = source.data.plan !== undefined
+      ? { hold: false, reason: 'plan' }
+      : await judgeReport(this.ctx, {
+        timing: state.settings?.reportTiming ?? 'judge',
+        outcome,
+        outstanding: outstandingFor(deliveries, recipientId, deliveryId).length,
+        state: () => gateState(room.snapshotEvents(), recipient, [
+          ...deliveries.filter(row => row.memberId === recipientId && row.origin === 'report' && pendingHolds(events, recipientId).includes(row.dispatchSeq))
+            .map(row => ({ from: '', outcome: '', text: row.text })),
+          { from: senderName ?? fromId, outcome, text: reportText },
+        ], Date.now()),
+      })
+    // The judgement awaited: a concurrent path may have reported meanwhile.
+    if (room.snapshotEvents().some(event => event.type === 'room/dispatch' && event.data.reportFor === deliveryId)) return
+    if (verdict.hold) {
+      await this.holdReport(room, recipient, reportText, intent, verdict)
+      return
+    }
+    const sent = sendOrHold(room, { to: recipient, text: reportText, fromName: senderName ?? fromId, intent })
+    if (sent.delivered) {
+      room.append('room/report-gate', { dispatchSeq: sent.seq, memberId: recipientId, member: recipient.name, verdict: 'deliver', reason: verdict.reason,
+        ...verdict.probability === undefined ? {} : { probability: verdict.probability } })
+    }
     await this.ctx.sessions.flush(room)
     if (sent.delivered && this.hooks.allows?.(room, sent.seq) !== false) this.dispatch(room, recipient.name, reportText, { dispatchSeq: sent.seq, targetId: memberId(events, recipient) })
   }
@@ -415,6 +472,88 @@ export class DispatchEngine {
    * started): the text lives in the member's private context from then on,
    * so a later run failure cannot un-deliver it.
    */
+  /**
+   * A round of this member started: every report held for it is now in its
+   * context — carried by this prompt (`seqs`) or already in its inbox — so
+   * close those holds and drop the member's wake timer.
+   */
+  private async markHeldReleased(room: Session, member: RoomMember, seqs: readonly number[]): Promise<void> {
+    const events = room.snapshotEvents()
+    const id = memberId(events, member)
+    for (const seq of seqs) room.append('room/delivery-state', { id: `${seq}:${id}`, dispatchSeq: seq, memberId: id, state: 'done', text: 'carried' })
+    const open = pendingHolds(events, id)
+    for (const seq of new Set([...seqs, ...open])) room.append('room/report-gate', { dispatchSeq: seq, memberId: id, member: member.name, verdict: 'release', reason: 'carried' })
+    this.clearHoldTimer(room.id, id)
+    if (seqs.length > 0 || open.length > 0) await this.ctx.sessions.flush(room)
+  }
+
+  private holdKey(roomId: string, recipientId: string): string { return `${roomId} ${recipientId}` }
+
+  private clearHoldTimer(roomId: string, recipientId: string): void {
+    const key = this.holdKey(roomId, recipientId)
+    const timer = this.holdTimers.get(key)
+    if (timer !== undefined) clearTimeout(timer)
+    this.holdTimers.delete(key)
+  }
+
+  /**
+   * Keep a report for later: journal it as a held dispatch, put it straight
+   * into a live native agent's inbox (no wake — it is in context whenever the
+   * agent next runs, whoever wakes it), and arm the wake-anyway timer.
+   */
+  private async holdReport(room: Session, recipient: RoomMember, text: string, intent: RoomHeldDispatch, verdict: GateVerdict): Promise<void> {
+    const events = room.snapshotEvents()
+    const recipientId = memberId(events, recipient)
+    const dispatch = room.append('room/dispatch', {
+      id: randomUUID(), origin: 'report', targets: [recipient.name], targetIds: [recipientId], text, held: true,
+      hop: intent.hop, ...intent.reportFor === undefined ? {} : { reportFor: intent.reportFor },
+      ...intent.plan === undefined ? {} : { plan: intent.plan },
+    })
+    room.append('room/report-gate', { dispatchSeq: dispatch.seq, memberId: recipientId, member: recipient.name, verdict: 'hold', reason: verdict.reason,
+      ...verdict.probability === undefined ? {} : { probability: verdict.probability } })
+    const agent = recipient.kind === 'main-agent' ? this.ctx.agents.get(room.id)
+      : recipient.kind === 'native' && recipient.childSessionId !== undefined ? this.ctx.agents.get(recipient.childSessionId) : undefined
+    if (agent !== undefined) {
+      const envelope = envelopeLine(room.snapshotEvents(), dispatch.seq)
+      agent.send(createUserMessage({ content: [{ type: 'text', text: `${envelope ?? ''}\n${text}`.trim() }], source: roomSource() }), 'next-turn', false)
+      room.append('room/delivery-state', { id: `${dispatch.seq}:${recipientId}`, dispatchSeq: dispatch.seq, memberId: recipientId, state: 'done', text: 'inbox' })
+    }
+    // Armed before the flush yields: a concurrent recover() must see this
+    // process owns the hold.
+    const key = this.holdKey(room.id, recipientId)
+    if (!this.holdTimers.has(key)) {
+      const timer = setTimeout(() => {
+        this.holdTimers.delete(key)
+        void this.releaseHeld(room, recipientId, 'timeout').catch(error => this.ctx.logger.warn(`room: held report release failed: ${String(error)}`))
+      }, REPORT_HOLD_MS)
+      timer.unref?.()
+      this.holdTimers.set(key, timer)
+    }
+    await this.ctx.sessions.flush(room)
+  }
+
+  /**
+   * Wake a member for the reports held for it (the hold timeout, a human's
+   * 「现在交给」, or a restart). One short release round: an inbox already
+   * holds the reports; a CLI member gets them carried by the round's prompt.
+   * A no-op when nothing is held any more.
+   * @returns whether a release round was dispatched.
+   */
+  async releaseHeld(room: Session, recipientId: string, reason: string): Promise<boolean> {
+    this.clearHoldTimer(room.id, recipientId)
+    const events = room.snapshotEvents()
+    const open = pendingHolds(events, recipientId)
+    const recipient = replay(events).members.find(member => memberId(events, member) === recipientId)
+    if (open.length === 0 || recipient === undefined) return false
+    const ids = open.map(seq => `#${messageId(seq)}`).join('、')
+    const text = `（${open.length} 条回报一直等着交给你：${ids}${reason === 'timeout' ? '，已经等了一段时间' : ''}。内容${recipient.kind === 'cli' ? '附在上面' : '已在你的上下文里'}，用户也已在房间里看到，不要复述。）`
+    for (const seq of open) room.append('room/report-gate', { dispatchSeq: seq, memberId: recipientId, member: recipient.name, verdict: 'release', reason })
+    const release = room.append('room/dispatch', { id: randomUUID(), origin: 'report', targets: [recipient.name], targetIds: [recipientId], text, releases: open, hop: 1 })
+    await this.ctx.sessions.flush(room)
+    this.dispatch(room, recipient.name, text, { dispatchSeq: release.seq, targetId: recipientId })
+    return true
+  }
+
   private async markSent(room: Session, relays: readonly RoomRelay[]): Promise<void> {
     if (relays.length === 0) return
     for (const relay of relays) room.append('room/relay-resolved', { id: relay.id, state: 'sent' })
@@ -431,12 +570,13 @@ export class DispatchEngine {
       // Fail loud: the room's own agent is not live, the message goes nowhere.
       return { state: 'failed', error: 'the room session has no live agent' }
     }
-    const { prompt, carried } = assemblePrompt(room, member, cursor, text, relayIds, dispatchSeq)
+    const { prompt, carried, heldCarried } = assemblePrompt(room, member, cursor, text, relayIds, dispatchSeq)
     const before = room.snapshotEvents().at(-1)?.seq ?? -1
     agent.followup(createUserMessage({
       content: [{ type: 'text', text: prompt }],
       source: roomSource(),
     }))
+    await this.markHeldReleased(room, member, heldCarried)
     await this.markSent(room, [
       ...carried,
       ...replay(room.snapshotEvents()).relays.filter(relay => relayIds.includes(relay.id)),
@@ -496,9 +636,10 @@ export class DispatchEngine {
   ): Promise<RunOutcome> {
     const agent = await this.nativeAgent(room, member)
     const startedAt = await admitted()
-    const { prompt, carried } = assemblePrompt(room, member, cursor, text, relayIds, dispatchSeq)
+    const { prompt, carried, heldCarried } = assemblePrompt(room, member, cursor, text, relayIds, dispatchSeq)
     const before = agent.session.snapshotEvents().at(-1)?.seq ?? -1
     agent.followup(createUserMessage({ content: [{ type: 'text', text: prompt }], source: roomSource() }))
+    await this.markHeldReleased(room, member, heldCarried)
     await this.markSent(room, [
       ...carried,
       ...replay(room.snapshotEvents()).relays.filter(relay => relayIds.includes(relay.id)),
@@ -547,7 +688,7 @@ export class DispatchEngine {
       },
     }
     if (!controlled) startedAt = await admitted()
-    const { prompt, carried } = assemblePrompt(room, member, cursor, text, relayIds, dispatchSeq)
+    const { prompt, carried, heldCarried } = assemblePrompt(room, member, cursor, text, relayIds, dispatchSeq)
     const prepared = member.childSessionId !== undefined && facade.isPreparedMember?.(member.childSessionId) === true
     const pendingRun = prepared
       ? facade.start(room.id, provider, [{ type: 'text', text: prompt }], { preparedMemberId: member.childSessionId!, ...admission })
@@ -575,6 +716,7 @@ export class DispatchEngine {
         ...carried,
         ...replay(room.snapshotEvents()).relays.filter(relay => relayIds.includes(relay.id)),
       ])
+      await this.markHeldReleased(room, member, heldCarried)
       await this.ctx.sessions.flush(room)
     } catch (error) {
       // Native work already exists. Never claim a terminal room outcome while

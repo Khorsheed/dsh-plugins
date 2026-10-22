@@ -17,6 +17,7 @@
     "src/client/MemberCard.tsx",
     "src/client/RemoveMemberConfirm.tsx",
     "src/client/RoomSettingsView.tsx",
+    "src/client/RoomInboxView.tsx",
     "src/client/team.ts",
     "src/client/TeamView.tsx",
     "src/client/TeamTab.tsx",

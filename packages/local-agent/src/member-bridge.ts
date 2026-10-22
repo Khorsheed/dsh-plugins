@@ -30,6 +30,7 @@ const TOOL_DESCRIPTION = [
   '`to` is the member name (or its dsh child session id).',
   'kind "task" (default) hands it work: in a room, its final reply is reported back to you automatically, citing the message id — do not poll.',
   'kind "notify" is an FYI and is never reported back. Pass inReplyTo (e.g. m12) when answering a message.',
+  'Never sleep or poll for the result: end your turn, the report arrives on its own.',
   'The receipt is returned verbatim: sent #m<id> … / pending-confirm … / busy / an error reason.',
 ].join(' ')
 
@@ -40,6 +41,7 @@ const TOOL_SCHEMA = {
     text: { type: 'string', description: 'The message text, delivered with your provenance.' },
     kind: { type: 'string', enum: ['task', 'notify'], description: 'task (default): the reply is reported back to you; notify: FYI only.' },
     inReplyTo: { type: 'string', description: 'Optional id of the message this answers, e.g. m12.' },
+    note: { type: 'string', description: 'Optional: what you will wait for before acting on the result (the room uses it to decide when to hand you the report).' },
   },
   required: ['to', 'text'],
   additionalProperties: false,
@@ -52,11 +54,11 @@ const ROOM_TOOLS = [
     inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
   { name: 'room_invite', description: 'Coordinator only: invite a member. An optional firstTask starts in the background and returns its result to you automatically.',
     inputSchema: { type: 'object', properties: {
-      provider: { type: 'string' }, name: { type: 'string' }, role: { type: 'string', description: 'Short public role (≤30 chars) the other members see, e.g. 代码审查.' }, instructions: { type: 'string', description: 'Private instructions only this member reads.' },
+      provider: { type: 'string' }, name: { type: 'string' }, note: { type: 'string', description: 'What you will wait for before acting on the first task result.' }, role: { type: 'string', description: 'Short public role (≤30 chars) the other members see, e.g. 代码审查.' }, instructions: { type: 'string', description: 'Private instructions only this member reads.' },
       cwd: { type: 'string' }, model: { type: 'string' }, firstTask: { type: 'string' },
     }, required: ['provider', 'name'], additionalProperties: false } },
   { name: 'room_message', description: 'Send a room member a message by name (same as member_message). kind "task" (default): its reply comes back to you as a report citing the message id; kind "notify": FYI only. Do not poll.',
-    inputSchema: { type: 'object', properties: { member: { type: 'string' }, text: { type: 'string' }, kind: { type: 'string', enum: ['task', 'notify'] }, inReplyTo: { type: 'string' } }, required: ['member', 'text'], additionalProperties: false } },
+    inputSchema: { type: 'object', properties: { member: { type: 'string' }, text: { type: 'string' }, kind: { type: 'string', enum: ['task', 'notify'] }, inReplyTo: { type: 'string' }, note: { type: 'string', description: 'What you will wait for before acting on the result.' } }, required: ['member', 'text'], additionalProperties: false } },
 ] as const
 
 export async function callRoomCommand(env: MemberBridgeEnv, name: MemberRoomCommandName, args: unknown): Promise<Record<string, unknown>> {
@@ -121,7 +123,7 @@ function toolText(text: string, isError = false): Record<string, unknown> {
  */
 export async function callMemberMessage(
   env: MemberBridgeEnv,
-  args: { to?: unknown; text?: unknown; kind?: unknown; inReplyTo?: unknown },
+  args: { to?: unknown; text?: unknown; kind?: unknown; inReplyTo?: unknown; note?: unknown },
 ): Promise<Record<string, unknown>> {
   if (env.socket === undefined || env.token === undefined) {
     return toolText('member channel is not configured for this run (missing socket/token environment)', true)
@@ -136,6 +138,7 @@ export async function callMemberMessage(
       text: args.text,
       ...args.kind === 'task' || args.kind === 'notify' ? { kind: args.kind } : {},
       ...typeof args.inReplyTo === 'string' ? { inReplyTo: args.inReplyTo } : {},
+      ...typeof args.note === 'string' ? { note: args.note } : {},
     })
     if (outcome.ok) return toolText(outcome.receipt ?? 'sent')
     return toolText(outcome.error ?? 'member channel rejected the message', true)

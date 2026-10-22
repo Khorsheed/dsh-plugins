@@ -352,7 +352,7 @@ describe('DispatchEngine (real composition)', () => {
     expect(await bench.service.confirmRelay({ sessionId: bench.sessionId, relayId: relay.id })).toMatchObject({ ok: true })
     await bench.service.engine.idle()
     expect(bench.facade.resume.mock.calls.length).toBe(resumesBefore + 1)
-    expect(textOf(bench.facade.resume.mock.calls.at(-1)![3] as ContentBlock[])).toMatch(/【#m\d+ 的回报 · 来自 bill · 完成】\n测试写好了/)
+    expect(textOf(bench.facade.resume.mock.calls.at(-1)![3] as ContentBlock[])).toMatch(/【#m\d+ 的回报 · 来自 bill · 完成】（这条回复用户已在房间里看到，不要复述）\n测试写好了/)
   })
 
   it('a paused room holds agent messages and delivers them in order on resume; confirm mode holds member messages only', async () => {

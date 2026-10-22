@@ -68,7 +68,7 @@ import type {
   RoomIsRoomRequest,
   RoomListProvidersRequest,
   RoomMemberMessage, RoomMemberMessageReceipt,
-  RoomMessageReceipt, RoomMessageRequest, RoomMessageResult, RoomRelay, RoomSetSettingsRequest, RoomSetSettingsResult,
+  RoomMessageReceipt, RoomMessageRequest, RoomReleaseReportsRequest, RoomReleaseReportsResult, RoomMessageResult, RoomRelay, RoomSetSettingsRequest, RoomSetSettingsResult,
   RoomPostMessageRequest, RoomPostMessageResult,
   RoomPresetInfo, RoomProviderInfo, RoomProviderList,
   RoomRelayResolveRequest, RoomRelayResolveResult,
@@ -122,7 +122,7 @@ function messageReceipt(receipt: RoomMessageReceipt, kind: 'task' | 'notify'): R
   }
   return kind === 'notify'
     ? `sent #${receipt.messageId}（知会，不会回报）`
-    : `sent #${receipt.messageId}（${receipt.member} 做完后结果会自动回报给你，不用轮询）`
+    : `sent #${receipt.messageId}（${receipt.member} 做完后结果会自动回报给你；不要 sleep 等待，也不要用 room_read 轮询）`
 }
 
 function taskTitle(text: string): string {
@@ -496,6 +496,7 @@ export class RoomService extends TypertRemoteService {
       firstTaskSeq = loaded.session.append('room/dispatch', {
         id: randomUUID(), origin: invitedBy === 'human' ? 'human' : 'coordinator',
         ...invitedBy === 'human' ? {} : { replyTo: memberId(loaded.session.snapshotEvents(), coordinatorMember(replay(loaded.session.snapshotEvents()), loaded.session.snapshotEvents())!) },
+        ...request.note === undefined || request.note.trim() === '' ? {} : { note: request.note.trim().slice(0, 500) },
         targetIds: [memberId(loaded.session.snapshotEvents(), replay(loaded.session.snapshotEvents()).members.find(member => member.name === request.name)!)],
         targets: [request.name], text: request.firstTask,
       }).seq
@@ -917,6 +918,7 @@ export class RoomService extends TypertRemoteService {
         from: senderId, kind, hop: workingHop(events, loaded.state, sender) + 1,
         ...kind === 'task' ? { replyTo: senderId } : {},
         ...inReplyTo === undefined ? {} : { inReplyTo },
+        ...request.note === undefined || request.note.trim() === '' ? {} : { note: request.note.trim().slice(0, 500) },
       },
     })
     await this.ctx.sessions.flush(loaded.session)
@@ -986,7 +988,7 @@ export class RoomService extends TypertRemoteService {
       if (sender === undefined) return { ok: false, error: 'The authenticated member is not in this room roster' }
       if (command === null || typeof command !== 'object' || command.arguments === null || typeof command.arguments !== 'object' || Array.isArray(command.arguments)) return { ok: false, error: 'Malformed room command' }
       const args = command.arguments
-      const allowed: Record<string, readonly string[]> = { room_plan: ['command'], room_read: [], room_invite: ['provider', 'name', 'role', 'instructions', 'cwd', 'model', 'firstTask'], room_message: ['member', 'text', 'kind', 'inReplyTo'] }
+      const allowed: Record<string, readonly string[]> = { room_plan: ['command'], room_read: [], room_invite: ['provider', 'name', 'role', 'instructions', 'cwd', 'model', 'firstTask', 'note'], room_message: ['member', 'text', 'kind', 'inReplyTo', 'note'] }
       const keys = allowed[command.name]
       if (keys === undefined || Object.keys(args).some(key => !keys.includes(key))) return { ok: false, error: 'Unknown room command or argument; room and actor identity are host-owned' }
       const required = (key: string): string => {
@@ -1003,7 +1005,8 @@ export class RoomService extends TypertRemoteService {
         const kind = optional('kind')
         if (kind !== undefined && kind !== 'task' && kind !== 'notify') return { ok: false, error: 'kind must be "task" or "notify"' }
         const sent = await this.messageMember({ sessionId: loaded.session.id, member: required('member'), text: required('text'),
-          ...kind === undefined ? {} : { kind }, ...optional('inReplyTo') === undefined ? {} : { inReplyTo: optional('inReplyTo')! } }, actor.childSessionId)
+          ...kind === undefined ? {} : { kind }, ...optional('inReplyTo') === undefined ? {} : { inReplyTo: optional('inReplyTo')! },
+          ...optional('note') === undefined ? {} : { note: optional('note')! } }, actor.childSessionId)
         return sent.ok ? { ok: true, receipt: messageReceipt(sent.value, kind ?? 'task') } : { ok: false, error: sent.error.code }
       }
       if (!this.isCurrentCoordinator(loaded.session, actor.childSessionId)) return { ok: false, error: 'Only the current coordinator may invite members' }
@@ -1013,6 +1016,7 @@ export class RoomService extends TypertRemoteService {
           ...optional('cwd') === undefined ? {} : { cwd: optional('cwd')! },
           ...optional('model') === undefined ? {} : { model: optional('model')! },
           ...optional('firstTask') === undefined ? {} : { firstTask: optional('firstTask')! },
+          ...optional('note') === undefined ? {} : { note: optional('note')! },
         }, 'agent', actor.childSessionId)
       return result.ok ? { ok: true, receipt: JSON.stringify(result.value) } : { ok: false, error: result.error.code }
     } catch (error) { return { ok: false, error: String(error) } }
@@ -1043,7 +1047,8 @@ export class RoomService extends TypertRemoteService {
     if (sender !== undefined) {
       const kind = request.kind === 'notify' ? 'notify' : 'task'
       const result = await this.messageMember({ sessionId: loaded.session.id, member: request.to, text: request.content, kind,
-        ...typeof request.inReplyTo === 'string' ? { inReplyTo: request.inReplyTo } : {} }, request.from)
+        ...typeof request.inReplyTo === 'string' ? { inReplyTo: request.inReplyTo } : {},
+        ...typeof request.note === 'string' ? { note: request.note } : {} }, request.from)
       if (!result.ok) throw new Error(result.error.code)
       return messageReceipt(result.value, kind)
     }
@@ -1111,6 +1116,22 @@ export class RoomService extends TypertRemoteService {
   }
 
   /**
+   * Hand a member the reports the gate holds for it now (the room's
+   * 「现在交给」 button).
+   * @param request - room session, member name.
+   * @returns whether anything was held.
+   */
+  @Remote('releaseReports')
+  async releaseReports(request: RoomReleaseReportsRequest): Promise<RoomReleaseReportsResult> {
+    const loaded = await this.ensureLive(request.sessionId)
+    if (!loaded.ok) return { ok: false, error: loaded.error }
+    const member = loaded.state.members.find(entry => entry.name === request.name)
+    if (member === undefined) return { ok: false, error: { code: 'member-not-found' } }
+    const released = await this.engine.releaseHeld(loaded.session, memberId(loaded.session.snapshotEvents(), member), 'manual')
+    return { ok: true, value: { released } }
+  }
+
+  /**
    * Change the room's collaboration settings (any subset). Resuming a paused
    * room releases everything the pause held, in order.
    * @param request - room session and the fields to change.
@@ -1126,10 +1147,14 @@ export class RoomService extends TypertRemoteService {
     if (request.memberMessages !== undefined && request.memberMessages !== 'free' && request.memberMessages !== 'confirm') {
       return { ok: false, error: { code: 'invalid-settings' } }
     }
+    if (request.reportTiming !== undefined && request.reportTiming !== 'judge' && request.reportTiming !== 'each') {
+      return { ok: false, error: { code: 'invalid-settings' } }
+    }
     const change = {
       ...request.memberMessages === undefined ? {} : { memberMessages: request.memberMessages },
       ...request.hopLimit === undefined ? {} : { hopLimit: request.hopLimit },
       ...request.paused === undefined ? {} : { paused: request.paused },
+      ...request.reportTiming === undefined ? {} : { reportTiming: request.reportTiming },
     }
     if (Object.keys(change).length === 0) return { ok: false, error: { code: 'nothing-to-update' } }
     const wasPaused = loaded.state.settings?.paused === true

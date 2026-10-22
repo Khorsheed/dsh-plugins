@@ -81,6 +81,18 @@ export interface RoomRelayData {
   readonly reason?: 'confirm' | 'hop-limit' | 'paused'
 }
 
+/** Chat node data of the held-reports line for one member. */
+export interface RoomInboxData {
+  /** Seq of the latest hold (the line sits there). */
+  readonly seq: number
+  readonly time: number
+  readonly member: string
+  /** Held dispatch seqs not yet released. */
+  readonly held: readonly number[]
+  /** The model's yes-probability on the latest hold, when it answered. */
+  readonly probability?: number
+}
+
 /** Chat node data of one task-advance line (the dim "✓ ada 完成了「…」" row). */
 export interface RoomTaskLineData {
   /** Seq of the task's LATEST journal event (add or the closing update). */
@@ -91,6 +103,8 @@ export interface RoomTaskLineData {
   readonly member: string
   readonly title: string
   readonly status: 'pending' | 'in_progress' | 'done' | 'cancelled' | 'failed'
+  /** Opened by a dispatched message (its reply card stands for the completion). */
+  readonly fromMessage?: true
 }
 
 declare module '@deepseek-ai/dsh-client-ui-chat/client' {
@@ -103,6 +117,8 @@ declare module '@deepseek-ai/dsh-client-ui-chat/client' {
     'room-event': RoomEventData
     /** room: a member-to-member notification relay (gate row). */
     'room-relay': RoomRelayData
+    /** room: reports the gate holds in a member's inbox. */
+    'room-inbox': RoomInboxData
     /** room: a task closure's advance line (visible only once done). */
     'room-task-line': RoomTaskLineData
   }
@@ -291,6 +307,9 @@ export const roomRelayDefinition: ConversationNodeDefinition<RoomRelayData> = {
  * at the moment of completion — only when the task closes done: the dim
  * advance line `✓ ada 完成了「API 定稿」── 目标进度 2/5`. (The goal progress
  * suffix is computed by the renderer from the room store, not folded here.)
+ * A task a message opened (it carries a `deliveryId`) never shows the line:
+ * the member's reply card already says the work is done, and the line only
+ * repeated the whole request.
  */
 export const roomTaskLineDefinition: ConversationNodeDefinition<RoomTaskLineData> = {
   kind: 'room-task-line',
@@ -315,6 +334,7 @@ export const roomTaskLineDefinition: ConversationNodeDefinition<RoomTaskLineData
       member: event.data.member,
       title: event.data.title,
       status: event.data.status,
+      ...event.data.deliveryId === undefined ? {} : { fromMessage: true },
     }
   },
   update: (context, match) => {
@@ -323,5 +343,40 @@ export const roomTaskLineDefinition: ConversationNodeDefinition<RoomTaskLineData
     return { ...context.state, seq: event.seq, time: event.time, status: event.data.status }
   },
   buildViewNode: context => viewNode(context, 'room-task-line',
-    context.state !== undefined && context.state.status === 'done' ? 'visible' : 'hidden'),
+    context.state !== undefined && context.state.status === 'done' && context.state.fromMessage !== true ? 'visible' : 'hidden'),
+}
+
+/**
+ * The held-reports line: one Context per member (its gate verdicts), visible
+ * while the gate holds reports for it — 「📥 dsh 的收件箱里有 2 条回报，先攒着」
+ * with a 现在交给 button — and hidden once they are released. It moves to the
+ * latest hold, so it always sits after the reply that was held.
+ */
+export const roomInboxDefinition: ConversationNodeDefinition<RoomInboxData> = {
+  kind: 'room-inbox',
+  target: 'chat',
+  match: (event) => {
+    if (event.type !== 'room/report-gate' || event.data.verdict === 'deliver') return null
+    return { id: event.data.memberId, role: event.data.verdict === 'hold' ? 'start' as const : 'update' as const }
+  },
+  start: (context, match) => {
+    const event = match.event
+    if (event.type !== 'room/report-gate') throw new Error('room-inbox requires a room/report-gate event')
+    const previous = context.state?.held ?? []
+    return {
+      seq: event.seq, time: event.time, member: event.data.member,
+      held: [...previous.filter(seq => seq !== event.data.dispatchSeq), event.data.dispatchSeq],
+      ...event.data.probability === undefined ? {} : { probability: event.data.probability },
+    }
+  },
+  update: (context, match) => {
+    const event = match.event
+    if (event.type !== 'room/report-gate' || context.state === undefined) return context.state
+    if (event.data.verdict === 'hold') {
+      return { ...context.state, seq: event.seq, time: event.time, held: [...context.state.held.filter(seq => seq !== event.data.dispatchSeq), event.data.dispatchSeq],
+        ...event.data.probability === undefined ? {} : { probability: event.data.probability } }
+    }
+    return { ...context.state, held: context.state.held.filter(seq => seq !== event.data.dispatchSeq) }
+  },
+  buildViewNode: context => viewNode(context, 'room-inbox', context.state !== undefined && context.state.held.length > 0 ? 'visible' : 'hidden'),
 }

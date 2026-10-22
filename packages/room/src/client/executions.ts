@@ -79,7 +79,8 @@ export function executionRows(state: RoomState): ExecutionRow[] {
     const terminal = delivery.status === 'done' && attempt !== undefined
       ? attempt.status === 'accepted' ? 'accepted' : attempt.status === 'submitted' ? 'submitted' : 'done'
       : delivery.status
-    const status = execution?.state === 'failed' && delivery.status === 'running' ? 'uncertain' : terminal
+    // A held report is waiting in its recipient's inbox: queued as far as the dock is concerned.
+    const status = execution?.state === 'failed' && delivery.status === 'running' ? 'uncertain' : terminal === 'held' ? 'queued' : terminal
     const title = task?.title ?? state.tasks.find(task => task.deliveryId === delivery.id)?.title ?? delivery.text
     rows.push({ title: title.replace(/\s+/g, ' ').trim(),
       ...member?.provider === undefined ? {} : { provider: member.provider },

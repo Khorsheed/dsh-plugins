@@ -124,6 +124,7 @@ describe('room journal persistence', () => {
       session.append('room/task-edited', { id: 't1', title: '出方案 v2' })
       session.append('room/speech', { member: 'ada', text: '方案 A' })
       session.append('room/settings', { hopLimit: 6 })
+      session.append('room/report-gate', { dispatchSeq: 3, memberId: 'm', member: 'ada', verdict: 'hold', reason: 'model', probability: 0.1 })
       session.append('room/relay', { id: 'r1', from: 'ada', to: 'bill', content: '接口定稿' })
       session.append('room/relay-resolved', { id: 'r1', state: 'sent' })
       session.append('room/run-state', { member: 'ada', runId: 'a', state: 'done', startedAt: 1, elapsedMs: 2 })

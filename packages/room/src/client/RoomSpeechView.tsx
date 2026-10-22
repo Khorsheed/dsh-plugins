@@ -1,9 +1,10 @@
 /**
- * Member speech node ('room-speech' keyed renderer): a 2px member-color rail
- * bands the whole block (identity row: 16px member-color dot + refChip-styled
- * name capsule + provider in tertiary grey; the unframed full-column markdown
- * body — the official MarkdownText, typographically identical to main-agent
- * speech; and the action row), so one glance tells WHOSE paragraph it is. A
+ * Member speech node ('room-speech' keyed renderer): a conversation entry —
+ * the member's color avatar beside a light card that blocks off one member's
+ * turn (several agents take turns in a room, so each turn reads as its own
+ * block): a header (name, public role, provider, time), the markdown body —
+ * the official MarkdownText, typographically identical to main-agent speech —
+ * and a quiet footer row. A
  * body past {@link COLLAPSE_CHARS} starts clamped to ~10 lines under a
  * bg-base fade with an expand/collapse toggle. The action row replicates the
  * official MessageIconActions chrome: copy, child-session jump (when the
@@ -11,7 +12,7 @@
  * Deliberately absent: branch (forking the room session has undefined
  * roster/blackboard semantics) and TPS/TTFT (a CLI run has no token stream).
  */
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react'
 import { MarkdownText, Tooltip, writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
 import { IconCheckOutlineMedium, IconCopyOutlineMedium, IconLinkOutlineMedium } from './icons.tsx'
 import type { MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -62,17 +63,17 @@ export function RoomSpeechView({ node, sessionId, roomStore, openSession, t }: R
     })
   }
 
+  const color = memberColor(data.member)
   return (
-    <div
-      className={css.speech}
-      data-time-hover-root=""
-      style={{ borderLeft: `2px solid ${memberColor(data.member)}` }}
-    >
+    <div className={css.speech} data-time-hover-root="" style={{ '--member-color': color } as CSSProperties}>
+      <span className={css.avatar} aria-hidden>{data.member.slice(0, 1).toUpperCase()}</span>
+      <div className={css.card}>
       <div className={css.identity}>
-        <span className={css.dot} style={{ background: memberColor(data.member) }} aria-hidden />
-        <span className={css.chip}>{data.member}</span>
+        <span className={css.name}>{data.member}</span>
+        {member?.role !== undefined && <span className={css.role}>{member.role}</span>}
         {provider !== undefined && provider !== '' && <span className={css.provider}>{provider}</span>}
-        {data.interrupted !== undefined && <span className={css.meta}>{t(data.interrupted === 'cancelled' ? 'speech.stopped' : 'speech.failed')}</span>}
+        {data.interrupted !== undefined && <span className={css.interrupted}>{t(data.interrupted === 'cancelled' ? 'speech.stopped' : 'speech.failed')}</span>}
+        <span className={css.clock}>{formatClock(data.time)}</span>
       </div>
       <div className={clamped ? `${css.body} ${css.clamped}` : css.body}>
         <MarkdownText text={data.text} labels={labels} />
@@ -114,9 +115,9 @@ export function RoomSpeechView({ node, sessionId, roomStore, openSession, t }: R
           <span className={css.meta}>{formatDurationMs(data.durationMs)}</span>
         )}
         {data.reportedTo !== undefined && (
-          <span className={css.meta}>{t('speech.reportedTo', { member: data.reportedTo })}</span>
+          <span className={css.reported}>{t('speech.reportedTo', { member: data.reportedTo })}</span>
         )}
-        <span className={css.time}>{formatClock(data.time)}</span>
+      </div>
       </div>
     </div>
   )

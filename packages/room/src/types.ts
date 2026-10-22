@@ -151,6 +151,18 @@ export interface RoomDispatchEvent {
   readonly hop?: number
   /** The message this one answers (`#m<seq>` of an earlier dispatch). */
   readonly inReplyTo?: number
+  /**
+   * The sender's own words on what it is waiting for ("三位都打完招呼再一起跟
+   * 用户说"): read by the report gate when this delivery's report arrives.
+   */
+  readonly note?: string
+  /**
+   * A report the gate HELD: not run as its own round. A native recipient has
+   * it in its inbox already; a CLI recipient gets it carried by its next round.
+   */
+  readonly held?: true
+  /** A release round: wakes the recipient for the reports it holds (these dispatch seqs). */
+  readonly releases?: readonly number[]
   /** The member id this delivery's outcome is reported to. */
   readonly replyTo?: string
   /** Completion report deduplication key (one source delivery). */
@@ -244,6 +256,7 @@ export interface RoomHeldDispatch {
   readonly replyTo?: string
   readonly reportFor?: string
   readonly plan?: { readonly goalId: string }
+  readonly note?: string
 }
 
 /**
@@ -257,6 +270,12 @@ export interface RoomSettingsEvent {
   readonly memberMessages?: 'free' | 'confirm'
   readonly hopLimit?: number
   readonly paused?: boolean
+  /**
+   * When a report reaches the member waiting on it: `judge` (default) asks
+   * the decision model whether to hand it over now or hold it in the
+   * recipient's inbox; `each` hands every report over at once.
+   */
+  readonly reportTiming?: 'judge' | 'each'
 }
 
 /** The folded settings with defaults applied. */
@@ -264,6 +283,25 @@ export interface RoomSettings {
   readonly memberMessages: 'free' | 'confirm'
   readonly hopLimit: number
   readonly paused: boolean
+  readonly reportTiming: 'judge' | 'each'
+}
+
+/** The report gate's verdict on one arrived report (journal record, UI line). */
+export interface RoomReportGateEvent {
+  /** The report dispatch the verdict is about. */
+  readonly dispatchSeq: number
+  /** The member the report is for. */
+  readonly memberId: string
+  /** Its name when the verdict was written (the room line's label). */
+  readonly member: string
+  readonly verdict: 'deliver' | 'hold' | 'release'
+  /**
+   * Why: a rule (`failure`, `last`, `question`, `setting`, `unavailable`,
+   * `timeout`, `manual`, `carried`) or the model (`model`).
+   */
+  readonly reason: string
+  /** The model's yes-probability for "hand it over now", when asked. */
+  readonly probability?: number
 }
 
 /** A relay left the pending state (confirmed, dismissed, or delivered). */
@@ -366,6 +404,8 @@ declare module '@deepseek-ai/dsh-session/types' {
     'room/goal': RoomGoalEvent
     /** Collaboration settings changed. */
     'room/settings': RoomSettingsEvent
+    /** The report gate decided on an arrived report. */
+    'room/report-gate': RoomReportGateEvent
   }
 }
 
@@ -538,6 +578,8 @@ export interface RoomMemberMessage {
   readonly kind?: 'task' | 'notify'
   /** `m<seq>` (or the bare seq) of the message being answered. */
   readonly inReplyTo?: string
+  /** What the sender waits for before acting on the result. */
+  readonly note?: string
 }
 
 /**
@@ -591,6 +633,8 @@ export interface RoomInviteRequest {
   readonly cwd?: string
   /** Optional first task, dispatched to the member as soon as it joins. */
   readonly firstTask?: string
+  /** What the inviter waits for when the first task reports (see RoomDispatchEvent.note). */
+  readonly note?: string
   /**
    * The delegation's model (blank/omitted = follow the harness default).
    * Applies to local-agent harness providers only: it lands as the facade
@@ -732,6 +776,8 @@ export interface RoomMessageRequest {
   readonly kind?: 'task' | 'notify'
   /** `m<seq>` (or the bare seq) of the message being answered. */
   readonly inReplyTo?: string
+  /** What the sender is waiting for, for the report gate (see RoomDispatchEvent.note). */
+  readonly note?: string
 }
 
 /** What happened to one member message. */
@@ -748,9 +794,21 @@ export type RoomMessageResult =
   | { readonly ok: true; readonly value: RoomMessageReceipt }
   | { readonly ok: false; readonly error: RoomFailure }
 
+/** releaseReports request: hand a member its held reports now. */
+export interface RoomReleaseReportsRequest {
+  readonly sessionId: SessionId
+  readonly name: string
+}
+
+/** releaseReports outcome: whether anything was held. */
+export type RoomReleaseReportsResult =
+  | { readonly ok: true; readonly value: { readonly released: boolean } }
+  | { readonly ok: false; readonly error: RoomFailure }
+
 /** setSettings request: change any subset of the collaboration settings. */
 export interface RoomSetSettingsRequest {
   readonly sessionId: SessionId
+  readonly reportTiming?: 'judge' | 'each'
   readonly memberMessages?: 'free' | 'confirm'
   /** 2–50. */
   readonly hopLimit?: number
@@ -952,7 +1010,8 @@ export interface RoomDelivery {
   readonly id: string
   readonly dispatchSeq: number
   readonly memberId: string
-  readonly status: 'queued' | RoomDeliveryStateEvent['state']
+  /** `held`: a report the gate keeps for a later round (never run on its own). */
+  readonly status: 'queued' | 'held' | RoomDeliveryStateEvent['state']
   readonly origin: NonNullable<RoomDispatchEvent['origin']>
   /** The member id this delivery's outcome is reported to, when any. */
   readonly replyTo?: string

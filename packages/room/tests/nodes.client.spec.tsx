@@ -11,7 +11,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import {
-  roomEventDefinition, roomRelayDefinition, roomRunDefinition, roomSpeechDefinition, roomTaskLineDefinition,
+  roomEventDefinition, roomInboxDefinition, roomRelayDefinition, roomRunDefinition, roomSpeechDefinition, roomTaskLineDefinition,
   type RoomEventData, type RoomRelayData, type RoomRunData, type RoomSpeechData, type RoomTaskLineData,
 } from '../src/client/nodes.ts'
 import { RoomSpeechView } from '../src/client/RoomSpeechView.tsx'
@@ -240,6 +240,31 @@ describe('room node Definitions', () => {
     expect(roomRelayDefinition.buildViewNode!(contextOf(updated))).toMatchObject({ data: { state: 'sent' } })
   })
 
+  it('room-task-line stays hidden for a task a message opened (its reply card stands for it)', () => {
+    const added = ev('room/task-added', 3, { id: 't1', member: 'ada', title: '打招呼', status: 'in_progress', deliveryId: '2:m-ada' })
+    const started = roomTaskLineDefinition.start(contextOf(undefined), matchOf(added), undefined as never)
+    const done = roomTaskLineDefinition.update(contextOf(started) as never,
+      { event: ev('room/task-updated', 4, { id: 't1', status: 'done' }), role: 'update', location: { kind: 'unresolved' } } as never)
+    expect(roomTaskLineDefinition.buildViewNode!(contextOf(done))).toMatchObject({ visibility: 'hidden' })
+  })
+
+  it('room-inbox shows while the gate holds reports for a member and hides once they are released', () => {
+    const hold = (seq: number, dispatchSeq: number) => ev('room/report-gate', seq, { dispatchSeq, memberId: 'm-dsh', member: 'dsh', verdict: 'hold', reason: 'model', probability: 0.12 })
+    expect(roomInboxDefinition.match(hold(10, 9))).toEqual({ id: 'm-dsh', role: 'start' })
+    expect(roomInboxDefinition.match(ev('room/report-gate', 11, { dispatchSeq: 9, memberId: 'm-dsh', member: 'dsh', verdict: 'deliver', reason: 'last' }))).toBeNull()
+    const one = roomInboxDefinition.start(contextOf(undefined), matchOf(hold(10, 9)), undefined as never)
+    expect(one).toEqual({ seq: 10, time: 1010, member: 'dsh', held: [9], probability: 0.12 })
+    const two = roomInboxDefinition.update(contextOf(one) as never, { event: hold(13, 12), role: 'start', location: { kind: 'unresolved' } } as never)
+    expect(two).toMatchObject({ seq: 13, held: [9, 12] })
+    expect(roomInboxDefinition.buildViewNode!(contextOf(two))).toMatchObject({ kind: 'room-inbox', visibility: 'visible', anchorSeq: 13 })
+    let released = two
+    for (const [seq, dispatchSeq] of [[14, 9], [15, 12]] as const) {
+      released = roomInboxDefinition.update(contextOf(released) as never,
+        { event: ev('room/report-gate', seq, { dispatchSeq, memberId: 'm-dsh', member: 'dsh', verdict: 'release', reason: 'carried' }), role: 'update', location: { kind: 'unresolved' } } as never)!
+    }
+    expect(roomInboxDefinition.buildViewNode!(contextOf(released))).toMatchObject({ visibility: 'hidden' })
+  })
+
   it('room-task-line keys on the task id: hidden while open, materializes at the done edge', () => {
     const added = ev('room/task-added', 3, { id: 't1', member: 'ada', title: 'API 定稿', status: 'in_progress' })
     const progressed = ev('room/task-updated', 4, { id: 't1', status: 'done' })
@@ -301,16 +326,15 @@ describe('RoomSpeechView', () => {
     expect(screen.getByText('1.2s')).toBeDefined()
   })
 
-  it('bands the whole speech with the member-color rail', async () => {
+  it('reads as a conversation entry: a member-color avatar beside one card holding header, body and actions', async () => {
     const { container } = await bench()
     const root = container.firstElementChild as HTMLElement
-    // jsdom normalizes the hex to rgb(); compare on that form.
-    const [r, g, b] = [1, 3, 5].map(i => parseInt(memberColor('ada').slice(i, i + 2), 16))
-    expect(root.style.borderLeft).toBe(`2px solid rgb(${r}, ${g}, ${b})`)
-    // The rail anchors the whole block: identity row, body, and action row
-    // all live under it.
-    expect(root.contains(screen.getByText('ada'))).toBe(true)
-    expect(root.contains(screen.getByRole('button', { name: '复制' }))).toBe(true)
+    expect(root.style.getPropertyValue('--member-color')).toBe(memberColor('ada'))
+    const [avatar, card] = [...root.children] as HTMLElement[]
+    expect(avatar!.textContent).toBe('A')
+    expect(card!.contains(screen.getByText('ada'))).toBe(true)
+    expect(card!.contains(screen.getByText('方案 A 如下'))).toBe(true)
+    expect(card!.contains(screen.getByRole('button', { name: '复制' }))).toBe(true)
   })
 
   it('a short speech renders in full with no expand toggle', async () => {

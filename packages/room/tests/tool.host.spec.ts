@@ -58,7 +58,7 @@ describe('room_invite tool (real composition)', () => {
     expect(tool.name).toBe('room_invite')
     expect(tool.description).toContain('room')
     const parameters = tool.parameters as { properties: Record<string, unknown> }
-    expect(Object.keys(parameters.properties)).toEqual(['provider', 'name', 'role', 'instructions', 'firstTask', 'cwd'])
+    expect(Object.keys(parameters.properties)).toEqual(['provider', 'name', 'role', 'instructions', 'firstTask', 'note', 'cwd'])
   })
 
   it('rejects a non-agent caller, and PROMOTES a plain session on invite', async () => {
