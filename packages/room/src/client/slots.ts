@@ -266,6 +266,8 @@ export interface RoomMembersInjected extends RoomInviteInjected {
   readonly removeMember: (member: string, transferPendingTo?: string) => Promise<RoomRemovalOutcome>
   /** Undo a removal: the member rejoins on its own session. */
   readonly restoreMember: (member: string) => Promise<RoomMutationOutcome>
+  /** Open the team page in the right sidebar, optionally revealing one member. Absent without a sidebar. */
+  readonly openTeam?: ((member?: string) => void) | undefined
   /** Change the room's collaboration settings. */
   readonly setSettings: (patch: Partial<RoomSettings>) => Promise<RoomMutationOutcome>
   /**

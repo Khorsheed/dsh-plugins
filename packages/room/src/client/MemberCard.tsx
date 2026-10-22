@@ -14,8 +14,10 @@ import css from './MembersView.module.css'
 
 /** One roster card: identity, avatar block, role, status chip, actions. */
 export function MemberCard({
-  member, run, elapsedMs, openSession, onEdit, onRemove, t, modelHint, coordinator = false, onPromote, preview = false, removal,
+  member, run, elapsedMs, openSession, onEdit, onRemove, t, modelHint, coordinator = false, onPromote, preview = false, removal, onLocate,
 }: {
+  /** Reveal this member in the team page. */
+  readonly onLocate?: (() => void) | undefined
   /** The open removal confirmation, rendered inside the card. */
   readonly removal?: ReactNode
   readonly coordinator?: boolean
@@ -117,8 +119,14 @@ export function MemberCard({
       {!preview && (
         <div className={css.foot}>
           {!coordinator && onPromote !== undefined && <button type="button" className={css.action} disabled={running} onClick={onPromote}>{t('coordinator.promote')}</button>}
+          {member.kind !== 'cli' && onLocate !== undefined && (
+            <span className={css.actions}>
+              <button type="button" className={css.action} onClick={onLocate}>{t('team.locate')}</button>
+            </span>
+          )}
           {member.kind === 'cli' && (
             <span className={css.actions}>
+              {onLocate !== undefined && <button type="button" className={css.action} onClick={onLocate}>{t('team.locate')}</button>}
               <button
                 type="button"
                 className={css.action}

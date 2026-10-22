@@ -85,7 +85,7 @@
 .danger {
   border: 1px solid var(--dsw-alias-text-error, #d9363e);
   background: var(--dsw-alias-text-error, #d9363e);
-  color: #fff;
+  color: #fff; /* panel-check: allow-color */
 }
 
 .danger:disabled {

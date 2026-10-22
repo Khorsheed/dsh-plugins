@@ -12,6 +12,35 @@
   padding: 12px 16px;
 }
 
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.count {
+  color: var(--dsw-alias-label-primary, #1f2329);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.teamButton {
+  margin-left: auto;
+  padding: 3px 12px;
+  border: 1px solid var(--dsw-alias-border-l2-darkmode-thin, rgba(0, 0, 0, 0.16));
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary, #1f2329);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.teamButton:hover {
+  background: var(--dsw-alias-bg-layer-2, rgba(0, 0, 0, 0.05));
+}
+
 /* Two columns when the tab is wide, one when narrow. */
 .grid {
   display: grid;

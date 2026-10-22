@@ -45,7 +45,7 @@ function MainAgentModelHint({ directory }: { readonly directory: RoomModelDirect
 
 /** The members tab. */
 export function MembersView({
-  sessionId, roomStore, roomCwd, openSession, removeMember, restoreMember, setSettings, updateMember, invite, listProviders, browseDirectory,
+  sessionId, roomStore, roomCwd, openSession, removeMember, restoreMember, setSettings, openTeam, updateMember, invite, listProviders, browseDirectory,
   modelSurface, renderHarnessModelPicker, memberModel, setMemberModel, renderMemberConfiguration, modelDirectory, setCoordinator, t,
 }: MembersViewProps): ReactNode {
   // Entering the tab pulls the freshest state once.
@@ -234,6 +234,15 @@ export function MembersView({
   return (
     <div className={css.members}>
       <RoomSettingsView settings={state.settings ?? DEFAULT_ROOM_SETTINGS} onChange={setSettings} t={t} />
+      <div className={css.toolbar}>
+        <span className={css.count}>{t('members.count', { count: state.members.length })}</span>
+        {state.runs.some(run => run.state === 'running') && (
+          <span className={css.hint}>{t('members.runningCount', { count: state.runs.filter(run => run.state === 'running').length })}</span>
+        )}
+        {openTeam !== undefined && (
+          <button type="button" className={css.teamButton} onClick={() => { openTeam() }}>{t('team.open')}</button>
+        )}
+      </div>
       <div className={css.grid}>
         {state.members.map((member) => {
           const run = state.runs.find(entry => entry.member === member.name)
@@ -250,6 +259,7 @@ export function MembersView({
               elapsedMs={running ? Date.now() - (run?.startedAt ?? Date.now()) : undefined}
               openSession={openSession}
               onEdit={() => { setDialog({ mode: 'edit', member }) }}
+              onLocate={openTeam === undefined ? undefined : () => { openTeam(member.name) }}
               onRemove={() => { setRemoving(current => current === member.name ? null : member.name) }}
               removal={removing === member.name ? (
                 <RemoveMemberConfirm

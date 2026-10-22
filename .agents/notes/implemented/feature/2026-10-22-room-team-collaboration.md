@@ -8,7 +8,7 @@ Room member prompts were one user message that stacked everything: role instruct
 
 ## Decision
 
-Delivered in steps against the plan the owner approved on 2026-10-22 (the team view, presets and permissions follow in later commits of the same line).
+Delivered in steps against the plan the owner approved on 2026-10-22 (presets and permissions follow in a later commit of the same line).
 
 **Prompt slimming.** A member's FIRST dispatch opens with one 【房间简报】: its name and public role, its private instructions, the goal, the other members by name + public role + provider (never their instructions), and the tool contract (`member_message` for CLI members, `room_message` for the room's own agent, `room_read` for the live roster; a written `@name` reaches nobody). Coordinator duties ride the briefing or the handoff, no longer every dispatch. Every later dispatch carries only deltas since the member's previous one: an instructions edit, a handoff, and one-line 【房间变动】 notes from `roomChangesSince` (joins with role/provider, leaves, renames, role changes, goal changes). The goal no longer rides every dispatch. The trailing-`@name` fallback parser is removed entirely: nothing teaches it any more, and a reply ending in a mention must not become a relay.
 
@@ -19,6 +19,8 @@ Delivered in steps against the plan the owner approved on 2026-10-22 (the team v
 **Free member messaging with reports.** Every agent-originated message — the coordinator's delegations, any member's `room_message` / bridge `member_message`, delivery reports — goes through one path (`messaging.ts` `sendOrHold`). Any member may message any other; the coordinator-only restriction on `room_message` is gone (inviting members and board edits stay coordinator-only). A message is `kind: 'task'` by default — the recipient's final reply is reported back to the sender (`replyTo`), which generalizes the coordinator's report to every sender — or `notify`, an FYI that is never reported. Each dispatch records `from`, `kind`, `hop` and optional `inReplyTo`, and is delivered with an envelope line: `【来自 claude · #m12 · 派活】（你这一轮的最终回复会自动回报给对方…）`, `【来自 kimi · #m13 · 知会】`, `【#m12 的回报 · 来自 codex · 完成】` followed by the member's own conclusion. A sender reads back `sent #m12（… 做完后结果会自动回报给你，不用轮询）`. The room's own agent's report quotes its last assistant text from that turn. A CLI member's speech row records `reportedTo`, shown as 「→ 已汇报给 X」.
 
 **Holds and settings.** A new `room/settings` event (members tab 协作设置) carries `memberMessages` (`free` default / `confirm`), `hopLimit` (default 10, 2–50) and `paused`. `hop` is 1 for a human message (or a send outside any room round) and the sender's running delivery's hop + 1 otherwise; reports count. A message is held as a pending relay carrying its would-be dispatch (`reason` + `intent`) when the room is paused, the hop exceeds the limit, or — for non-coordinator member messages only — the room asks for confirmation. Confirming releases exactly that dispatch (a hop-limit release restarts the budget: 「继续这条链」); resuming a paused room releases its holds in order, re-checking the other rules. Legacy relays keep the old confirm path.
+
+**Team view.** The members tab gains a 团队 button (and 在团队中定位 on each card) that opens a right-sidebar page (`room-team`, registered like the plan page and shown under the same room-chrome toggle). `teamOf` projects the replayed state into a tree: each member sits under whoever handed it the most tasks (walked from the human, so it is always a tree; untasked members sit under the coordinator), edges count tasks, returned reports and FYIs, and each node sums its rounds, time and observed tokens and lists the deliveries it received. One layout adapts to its own width: below 600px an indented tree whose nodes expand into their deliveries and a session link; wider, the same tree drawn top-down with SVG edges (solid tasks, green return path for reports, dashed FYIs off the tree) and the selected member's details below. A `member` navigation param selects and reveals that member on every navigation. The optional context-composition bar from context-lens is not wired yet; cost is not shown (no pricing data).
 
 ## Alternatives considered
 
@@ -31,6 +33,10 @@ Delivered in steps against the plan the owner approved on 2026-10-22 (the team v
 **Promise "the resident process is reclaimed" in the removal layer.** Dropped: the facade has no reclaim entry; live runtimes are already reclaimed by their idle timeout, so the layer does not claim it.
 
 **Count hops only between the same pair of members.** Considered to stop ping-pong without limiting long relays; the owner kept whole-chain counting with a default of 10 (a normal implement → review → test → report relay is about 7 hops).
+
+**One node per delivery, like the reference screenshot.** Rejected: room members are standing, so a few rounds would spread dozens of nodes; members are nodes and deliveries hang under them.
+
+**A separate conversation tab for the team.** The owner chose an entry on the members tab opening a sidebar page, which keeps the main area for the conversation.
 
 **Confirm every member message by default.** The previous phase-1 behavior; the owner decided members talk freely and confirmation becomes a setting.
 
