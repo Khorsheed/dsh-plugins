@@ -3,7 +3,7 @@
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
   'rail.panel': '消息导览',
-  'rail.empty': '暂无用户消息',
+  'rail.empty': '无文本预览',
 } satisfies Record<string, string>
 
 /** The message-timeline namespace key union. */
@@ -19,5 +19,5 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 /** English dictionary, checked complete against the zh key set. */
 export const en = {
   'rail.panel': 'Message timeline',
-  'rail.empty': 'No user messages',
+  'rail.empty': 'No text preview',
 } satisfies Record<TimelineKey, string>
