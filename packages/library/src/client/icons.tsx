@@ -187,3 +187,17 @@ export const IconHardwareOutlineMedium = ({ size = 16, className }: IconProps) =
     <path d="M6.4 2V4.4M9.6 2V4.4M6.4 11.6V14M9.6 11.6V14M2 6.4H4.4M2 9.6H4.4M11.6 6.4H14M11.6 9.6H14" stroke="currentColor" strokeLinecap="round" />
   </svg>
 )
+
+/** A speech bubble — ask the coach about a question. */
+export const IconChatOutlineMedium = ({ size = 16, className }: IconProps) => (
+  <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" strokeWidth={1.3}>
+    <path d="M3 3.5C3 2.9 3.4 2.5 4 2.5H12C12.6 2.5 13 2.9 13 3.5V9.5C13 10.1 12.6 10.5 12 10.5H7L4.5 13V10.5H4C3.4 10.5 3 10.1 3 9.5V3.5Z" stroke="currentColor" strokeLinejoin="round" />
+  </svg>
+)
+
+/** A flag — report a broken question. */
+export const IconFlagOutlineMedium = ({ size = 16, className }: IconProps) => (
+  <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" strokeWidth={1.3}>
+    <path d="M4 14V2.5M4 3H12L10.5 6L12 9H4" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+)
