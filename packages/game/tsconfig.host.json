@@ -16,6 +16,11 @@
     "src/store.ts",
     "src/tools.ts",
     "src/types.ts",
-    "src/vfs.ts"
+    "src/vfs.ts",
+    "src/fsutil.ts",
+    "src/kits/canvas2d.ts",
+    "src/kits/ids.ts",
+    "src/kits/index.ts",
+    "src/kits/types.ts"
   ]
 }

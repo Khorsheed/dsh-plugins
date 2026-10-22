@@ -1,11 +1,18 @@
 import { afterAll, describe, expect, it } from 'vitest'
 import { ChromeChecker, findChrome } from '../src/checks.ts'
+import { CANVAS_2D } from '../src/kits/canvas2d.ts'
+import { withKitRuntime } from '../src/kits/index.ts'
 import type { BundleFile } from '../src/types.ts'
 
 /** Real headless runs: skipped on a machine without Chrome. */
 const chrome = findChrome()
-const checker = new ChromeChecker()
-afterAll(async () => { await checker.dispose() })
+const chromeChecker = new ChromeChecker()
+afterAll(async () => { await chromeChecker.dispose() })
+/** Run a build the way the store does: with the 2D kit's runtime and blank probe. */
+const checker = {
+  run: (build: Record<string, BundleFile>, tests: Record<string, string>) =>
+    chromeChecker.run(withKitRuntime(build, CANVAS_2D), tests, { blankProbe: CANVAS_2D.blankProbe }),
+}
 
 const text = (t: string): BundleFile => ({ type: t.startsWith('<') ? 'text/html' : 'text/javascript', text: t })
 const GAME = `
@@ -51,6 +58,19 @@ describe.skipIf(chrome === undefined)('headless checks', () => {
     expect(result.failures).toEqual([])
     expect(result.passed).toBe(1)
     expect(result.screenshot?.length).toBeGreaterThan(100)
+  }, 60_000)
+
+  it('maps a kit\'s bare module names onto its vendored files', async () => {
+    const result = await checker.run({
+      ...files,
+      'src/rules.js': text("export { SPEED } from 'kit-lib'"),
+      '_dsh/imports.json': { type: 'application/json', text: JSON.stringify({ 'kit-lib': '_dsh/kit-lib.js' }) },
+      '_dsh/kit-lib.js': text('export const SPEED = 60'),
+    }, {
+      'tests/move.test.js': `test('the vendored module loaded', () => { game.input('ArrowRight', true); step(60); assert.near(game.state().x, 60, 1) })`,
+    })
+    expect(result.failures).toEqual([])
+    expect(result.passed).toBe(1)
   }, 60_000)
 
   it('reports failing cases, runtime errors and a game that never gets ready', async () => {

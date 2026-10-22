@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { kitOf } from '../src/kits/index.ts'
 import {
   pillarNotes,
   chapterStatus, elementsChapter, gate, isBuildFile, listOf, parseManifest, resolveArtStyle, slugOf, validateElements,
@@ -31,6 +32,18 @@ describe('manifest and chapters', () => {
     expect(parsed).toMatchObject({ ok: true, manifest: { id: 'g_1', autoConfirm: true, pillars: [] } })
     expect(parseManifest('{').ok).toBe(false)
     expect(parseManifest('{"title":"x"}')).toMatchObject({ ok: false })
+  })
+
+  it('pins a shipped runtime kit and ignores an unknown one', () => {
+    const pinned = parseManifest('{"id":"g","runtime":{"kit":"2d-canvas","version":1}}')
+    expect(pinned.ok && pinned.manifest.runtime).toEqual({ kit: '2d-canvas', version: 1 })
+    const unknown = parseManifest('{"id":"g","runtime":{"kit":"voxel","version":3}}')
+    expect(unknown.ok && 'runtime' in unknown.manifest).toBe(false)
+    // A manifest from before kits stays exactly as it was: no runtime key is added.
+    const legacy = parseManifest('{"id":"g"}')
+    expect(legacy.ok && 'runtime' in legacy.manifest).toBe(false)
+    expect(kitOf(undefined).id).toBe('2d-canvas')
+    expect(kitOf({ kit: 'voxel' as never, version: 1 }).id).toBe('2d-canvas')
   })
 
   it('reads chapter status from the text', () => {

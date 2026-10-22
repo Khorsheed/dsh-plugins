@@ -78,10 +78,10 @@ describe('GameService', () => {
     await put(join(project.root, 'design/core-loop.md'), '# loop')
     const outcome = await store.checkTurn(session(), 0, 2)
     expect(outcome).toMatchObject({ kind: 'pass', deployed: { version: 1 } })
-    expect(checker.runs[0]).toEqual({ files: ['game.json', 'index.html', 'src/main.js'], tests: ['tests/move.test.js'] })
+    expect(checker.runs[0]).toEqual({ files: ['_dsh/runtime.js', 'game.json', 'index.html', 'src/main.js'], tests: ['tests/move.test.js'] })
 
     const bundle = await store.bundle(project.id)
-    expect(bundle.ok && Object.keys(bundle.bundle.files).sort()).toEqual(['game.json', 'index.html', 'src/main.js'])
+    expect(bundle.ok && Object.keys(bundle.bundle.files).sort()).toEqual(['_dsh/runtime.js', 'game.json', 'index.html', 'src/main.js'])
     expect((await store.view(project.id))?.chapters.find(c => c.id === 'playtest')?.text).toContain('v1 通过检查')
 
     // A design-doc edit is not a build change.

@@ -32,9 +32,15 @@ export interface BrowserCheckResult {
   readonly screenshot?: string
 }
 
+/** Per-run inputs that come from the project's runtime kit. */
+export interface BrowserCheckOptions {
+  /** The kit's blank-screen expression (see `RuntimeKit.blankProbe`). */
+  readonly blankProbe: string
+}
+
 /** The browser-check seam (specs stand in a fake). */
 export interface BrowserChecker {
-  run(files: Readonly<Record<string, BundleFile>>, tests: Readonly<Record<string, string>>): Promise<BrowserCheckResult>
+  run(files: Readonly<Record<string, BundleFile>>, tests: Readonly<Record<string, string>>, options: BrowserCheckOptions): Promise<BrowserCheckResult>
   dispose(): Promise<void>
 }
 
@@ -94,22 +100,20 @@ const WAIT_READY = `(async () => {
   return false;
 })()`
 
-/** The in-page smoke run: 2 s of game time, then a blank-canvas probe. */
-const SMOKE = `(async () => {
+/**
+ * The in-page smoke run: 2 s of game time, then the kit's blank-screen probe.
+ * @param blankProbe - the kit's expression (true blank, false drawn, null no canvas).
+ */
+function smokeExpression(blankProbe: string): string {
+  return `(async () => {
   const g = window.dshGame;
   const out = { stepped: false, blank: null };
   if (g && typeof g.step === 'function') { for (let i = 0; i < 120; i++) g.step(1 / 60); out.stepped = true; }
   await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-  const c = document.querySelector('canvas');
-  if (c && c.width > 0 && c.height > 0) {
-    const probe = document.createElement('canvas'); probe.width = 32; probe.height = 32;
-    const p = probe.getContext('2d'); p.drawImage(c, 0, 0, 32, 32);
-    const d = p.getImageData(0, 0, 32, 32).data; let distinct = new Set();
-    for (let i = 0; i < d.length; i += 4) { distinct.add(d[i] + ',' + d[i + 1] + ',' + d[i + 2]); if (distinct.size > 1) break; }
-    out.blank = distinct.size <= 1;
-  }
+  out.blank = ${blankProbe};
   return out;
 })()`
+}
 
 /**
  * The in-page test harness for one file. The body is spliced in as the
@@ -210,7 +214,7 @@ export class ChromeChecker implements BrowserChecker {
     return { page, ready }
   }
 
-  async run(files: Readonly<Record<string, BundleFile>>, tests: Readonly<Record<string, string>>): Promise<BrowserCheckResult> {
+  async run(files: Readonly<Record<string, BundleFile>>, tests: Readonly<Record<string, string>>, options: BrowserCheckOptions): Promise<BrowserCheckResult> {
     const executablePath = findChrome(this.chromePath)
     if (executablePath === undefined) return { failures: [], passed: 0, skipped: '没找到 Chrome，只跑了数据校验' }
     const failures: CheckFailure[] = []
@@ -222,7 +226,7 @@ export class ChromeChecker implements BrowserChecker {
         if (!ready) {
           failures.push({ where: 'smoke', message: `游戏没在 ${READY_TIMEOUT_MS / 1000} 秒内就绪：window.dshGame.ready 一直不是 true` })
         } else {
-          const smoke = await within(5000, page.evaluate(SMOKE) as Promise<{ stepped: boolean; blank: boolean | null }>, '冒烟运行')
+          const smoke = await within(5000, page.evaluate(smokeExpression(options.blankProbe)) as Promise<{ stepped: boolean; blank: boolean | null }>, '冒烟运行')
           if (!smoke.stepped) failures.push({ where: 'smoke', message: 'window.dshGame.step 不是函数，测试没法推进游戏时间' })
           if (smoke.blank === true) failures.push({ where: 'smoke', message: '跑了 2 秒后画布仍是同一种颜色（什么都没画出来）' })
         }

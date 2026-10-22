@@ -11,7 +11,7 @@
  * The `./agent` entry registers both beside the tools.
  * @module @khorsheed/dsh-game/agent
  */
-import { ART_STYLES } from './types.ts'
+import { CANVAS_2D } from './kits/canvas2d.ts'
 
 /** One skill as the registry takes it. */
 export interface GameSkill {
@@ -19,8 +19,6 @@ export interface GameSkill {
   readonly description: string
   readonly content: string
 }
-
-const STYLE_LINES = ART_STYLES.map(s => `- \`${s.id}\` ${s.label}：${s.look}`).join('\n')
 
 /** The mechanics skill. */
 export const GAMEDEV_SKILL: GameSkill = {
@@ -41,18 +39,13 @@ export const GAMEDEV_SKILL: GameSkill = {
   - \`.game/\` 插件自己的状态，别动
 - game_read 看项目现状：章节状态、元素、最近一次检查、当前版本。
 
-## 运行环境
-- 只有 2D：原生 canvas 加 HTML/CSS 做界面。不能联网、不能引外部 CDN（沙箱 CSP 全拦），所有代码和资源都放项目里。
-- 存档用 \`localStorage\`（面板替你保存在用户浏览器里）。
-- 没有文生图：画面全部用代码画（canvas 绘制、像素数组、SVG）。严格按 game.json 的 artStyle 画：
-${STYLE_LINES}
-
+${CANVAS_2D.skillSection}
 ## 参数、元素与外观（面板能直接调的部分）
 - **参数**：值得边玩边调的数（速度、间隔、伤害、难度系数）声明在 game.json 的 \`params\`：
   \`[{ "key": "speed", "label": "移动速度", "min": 20, "max": 120, "step": 1, "value": 60, "unit": "px/s" }]\`。
   代码**每帧**从 \`window.dshParams.speed\` 读，不要缓存到变量里——用户在右栏拖滑块时值会被直接改掉。参数控制在 3–8 个。
 - **元素**：运行时从 \`window.dshElements[id]\` 读（加载器已把 elements/*.json 全部放进去），同样每帧读，用户在面板改了外观或数值会热替换。
-- **外观 look**：\`{ "palette": ["#1a1c2c", "#ffcd75", …], "states": { "idle": ["..00..", ".0110.", …], "move": [...] } }\`。每行一个字符串，\`.\` 透明，\`0-9a-z\` 是 palette 下标；同一状态各行等宽，常用 16×16。颜色优先取 game.json 的 \`palette\`（来自美术风格）。画的时候用 \`dshDraw(ctx2d, 元素id或look, 状态名, x, y, 放大倍数)\`，尺寸用 \`dshLookSize(元素id)\`。主角、敌人、道具都尽量给 look，用户才能在面板里改样子。
+- **外观 look**：格式和画法见上面「运行环境」一节。主角、敌人、道具都尽量给 look，用户才能在面板里改样子。
 - 用户要你改某个元素的样子时，用 **game_propose** 一次给 3 个方案（看得出差别：轮廓、配色、细节各不同），让用户在右栏挑；挑中的会自动替换进游戏，你别再自己写 look。
 - 美术风格要换时（右栏会附上「换风格」请求）：重画所有 look，更新 game.json 的 \`artStyle\` 与 \`palette\`；那个版本会作为候选等用户确认。
 

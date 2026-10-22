@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-10-22-game-runtime-kits.md
+.agents/notes/implemented/architecture/2026-10-22-game-runtime-kits.md: 35c917f31fb8fe170d37b7902fd5bb65c552179d
+.agents/notes/implemented/architecture/2026-10-22-game-runtime-kits.zh.md: 3e76b2cff52a35c8cc5acee3856ebbf97ccfda67
