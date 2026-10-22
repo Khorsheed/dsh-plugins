@@ -16,7 +16,7 @@ Once a session gets long, finding that requirement you mentioned three messages 
 - **Reading position tracking** — the current position's tick stays blue and lengthened with bold text (defaulting to the latest message while nothing is selected); every other row rests grey. A long answer anchors the lit tick to the user message it replies to.
 - **Click to jump** — a loaded row scrolls the transcript straight to it; an outline row goes through the session's jump loader and lands on the freshly loaded message.
 - **Long-history friendly** — a short list centers vertically; a long one scrolls, its bottom-most row flush with the chat input box; goal/todo dock cards never push the timeline up. Assemblies without the turn-outline unit fall back to window paging: a few pages prefetch on open, and older history loads when the panel is scrolled to its top.
-- **Never covers the message flow** — the panel's width is capped by the scrollport's left gutter; a gutter too small for the minimum width hides it rather than overlapping the transcript.
+- **Width adapts to the layout** — on wide layouts the panel's width is capped by the scrollport's left gutter; on narrow ones (a right sidebar or a small window, e.g. a Room's member panel open) it degrades to a tick strip in the flow's left padding and expands into a solid-background overlay on hover/focus instead of hiding.
 
 <img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-timeline2.png" width="640" alt="the timeline at rest: a strip of dimmed ticks that stays out of the way, expanding on hover">
 

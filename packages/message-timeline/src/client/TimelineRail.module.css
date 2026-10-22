@@ -135,3 +135,20 @@
     animation: none;
   }
 }
+
+/* Narrow layout (a right sidebar or a small window leaves no left gutter):
+   the rail rests as a tick strip in the flow's left padding instead of
+   hiding, and expands over the flow on hover/focus with a solid background.
+   The strip never covers message text at rest; only the hover overlay does,
+   deliberately and with a background for readability. */
+.panelNarrow {
+  z-index: 101;
+}
+
+.panelNarrow:hover,
+.panelNarrow:focus-within {
+  width: var(--panel-wide) !important;
+  background: var(--dsw-alias-bg-layer-1);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.18);
+}

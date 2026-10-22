@@ -14,7 +14,7 @@ The panel width adapts to the measured left gutter, and the panel hides when the
 
 - The rail tracker now publishes the scrollport width and the message flow's left edge (`flowLeftX`: the first `[data-chat-flow-kind]` row's rect.left, which sits flush in the centered column) alongside the existing geometry (`rail-tracker.ts`, `TimelineRailState`).
 - The component caps the width at `min(panelWidth, flowLeft - rail.left - 24px)` — a 16px visible breathing gap plus the panel's 8px right padding (`PANEL_PADDING_X`) — so the timeline text never crosses the message flow.
-- When the gutter cannot hold the minimum usable width (`PANEL_WIDTH_MIN`, 120px, exported from `config.ts`), the panel hides entirely instead of rendering a sliver that only intercepts the transcript.
+- When the gutter cannot hold the minimum usable width (`PANEL_WIDTH_MIN`, 120px, exported from `config.ts`), the panel hides entirely instead of rendering a sliver that only intercepts the transcript. (Superseded by [the narrow-layout note](2026-10-23-message-timeline-narrow-layout-tick-strip.md): it now degrades to a tick strip with a hover overlay instead of hiding.)
 - When the flow probe is unanswered (official structure change), the width degrades to `min(panelWidth, max(120, scrollportWidth × 0.4))` — never throws, never covers more than the fallback.
 
 ## Verification

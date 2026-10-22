@@ -630,10 +630,14 @@ describe('width policy', () => {
     expect(panel().style.width).toBe('120px')
   })
 
-  it('hides entirely when the gutter cannot hold the minimum width', () => {
-    // flowLeft 153 would leave 119px — one pixel below the floor.
+  it('degrades to a tick strip instead of hiding when the gutter cannot hold the minimum width', () => {
+    // flowLeft 153 would leave 119px — one pixel below the floor. The rail
+    // must not disappear: it rests as a narrow strip and expands on hover.
     renderWith({ flowLeft: 153 })
-    expect(document.body.querySelector('[data-timeline-panel]')).toBeNull()
+    const el = panel()
+    expect(el.className).toContain('panelNarrow')
+    expect(el.style.width).toBe('24px')
+    expect(el.style.getPropertyValue('--panel-wide')).not.toBe('')
   })
 
   it('degrades to a scrollport fraction while the flow probe is unanswered', () => {

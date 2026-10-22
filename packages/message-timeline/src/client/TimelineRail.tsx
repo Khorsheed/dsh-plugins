@@ -20,7 +20,7 @@
  * row. When the host serves no turnOutline value the panel degrades to the
  * loaded window alone, paged by prefetch and panel-top scrolls.
  */
-import { memo, useEffect, useMemo, useRef, useState, type UIEvent } from 'react'
+import { memo, useEffect, useMemo, useRef, useState, type CSSProperties, type UIEvent } from 'react'
 import { createPortal } from 'react-dom'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { ChatConversationViewNode } from '@deepseek-ai/dsh-client-ui-chat/client'
@@ -77,6 +77,10 @@ const PANEL_PADDING_X = 8
 const PANEL_GAP = 16
 /** Degraded width cap (fraction of the scrollport) while the flow probe is unanswered. */
 const DEGRADED_WIDTH_RATIO = 0.4
+/** Rest width of the narrow-layout tick strip (px) — fits the flow's left padding. */
+const PANEL_NARROW_REST_WIDTH = 24
+/** Expanded width of the narrow-layout hover overlay (fraction of the scrollport). */
+const NARROW_WIDE_RATIO = 0.6
 /**
  * Frames an outline jump retries the DOM scroll after its row materializes in
  * the chat store: the transcript renders the new page in the same commit or a
@@ -282,20 +286,21 @@ export function TimelineRail({
   const active = rail.chatView && rail.ready && rail.sessionId === sessionId
   const visible = active && items.length > 0
 
-  // The panel must never cover the message flow: its width is the configured
-  // preferred width capped by the scrollport's left gutter — the message
-  // flow's left edge minus the panel's left edge, less the panel's right
-  // padding and the visible breathing gap. A gutter too small for the minimum
-  // usable width hides the panel entirely (the timeline is an overlay
-  // affordance; squeezed into nothing it only intercepts the transcript).
-  // When the flow probe is unanswered (official structure change), the width
-  // degrades to a fraction of the scrollport instead — never throws, never
-  // covers more than the fallback.
+  // The panel must never cover the message flow AT REST: its width is the
+  // configured preferred width capped by the scrollport's left gutter — the
+  // message flow's left edge minus the panel's left edge, less the panel's
+  // right padding and the visible breathing gap. A gutter too small for the
+  // minimum width no longer hides the panel: it degrades to a tick strip in
+  // the flow's left padding and expands over the flow on hover/focus with a
+  // solid background (right sidebars and narrow windows keep the rail
+  // usable). When the flow probe is unanswered (official structure change),
+  // the width degrades to a fraction of the scrollport instead.
   const gutter = rail.flowLeft === null ? null : rail.flowLeft - rail.left - PANEL_PADDING_X - PANEL_GAP
+  const narrow = gutter !== null && gutter < PANEL_WIDTH_MIN
   const width = gutter === null
     ? Math.min(panelWidth, Math.max(PANEL_WIDTH_MIN, rail.scrollportWidth * DEGRADED_WIDTH_RATIO))
-    : Math.min(panelWidth, Math.max(0, gutter))
-  const tooNarrow = gutter !== null && width < PANEL_WIDTH_MIN
+    : narrow ? PANEL_NARROW_REST_WIDTH : Math.min(panelWidth, gutter)
+  const wideWidth = Math.min(panelWidth, Math.max(PANEL_WIDTH_MIN, rail.scrollportWidth * NARROW_WIDE_RATIO))
 
   // Keep the lit row in view: the panel follows the reading position (a new
   // message scrolls its row in), and mouse browsing is never yanked because
@@ -347,16 +352,22 @@ export function TimelineRail({
     setPendingJump({ sessionId, turn: row.turn, seq: row.seq, requested: false, awaiting: false, fromHead: null })
   }
 
-  if (!visible || tooNarrow) return null
+  if (!visible) return null
   return createPortal(
     <div
       ref={panelRef}
-      className={css.panel}
+      className={`${css.panel} ${narrow ? css.panelNarrow : ''}`}
       role="navigation"
       aria-label={t('rail.panel')}
       tabIndex={0}
       data-timeline-panel=""
-      style={{ left: rail.left, top: rail.top, height: rail.height, width }}
+      style={{
+        left: rail.left,
+        top: rail.top,
+        height: rail.height,
+        width,
+        ...(narrow ? { '--panel-wide': `${wideWidth}px` } : {}),
+      } as CSSProperties}
       onScroll={onPanelScroll}
       onKeyDown={(event) => {
         if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
