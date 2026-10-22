@@ -226,6 +226,29 @@ describe('CodexSettingsCard', () => {
     expect(checkEndpoint).toHaveBeenCalledTimes(1)
     expect(screen.getByText(/Endpoint reachable/)).toBeTruthy()
   })
+
+  it('stays disabled while drafts are unsaved (it verifies the SAVED configuration)', async () => {
+    const checkEndpoint = vi.fn().mockResolvedValue('')
+    const endpointAuth = { read: vi.fn(async () => ({ apiKeySet: true, authTokenSet: false })), write: vi.fn() }
+    renderCard({ checkEndpoint, endpointAuth })
+    await openCard()
+    await act(async () => {})
+
+    const check = screen.getByRole('button', { name: zh['endpoint.check'] }) as HTMLButtonElement
+    expect(check.disabled).toBe(false)
+    fireEvent.change(screen.getByLabelText(zh['endpoint.apiKey']), { target: { value: 'sk-draft' } })
+    expect(check.disabled).toBe(true)
+    expect(check.title).toBe(zh['endpoint.checkDirtyHint'])
+    expect(checkEndpoint).not.toHaveBeenCalled()
+  })
+
+  it('hides the button on a core that predates the checkEndpoint Remote', async () => {
+    const endpointAuth = { read: vi.fn(async () => ({ apiKeySet: true, authTokenSet: false })), write: vi.fn() }
+    renderCard({ endpointAuth })
+    await openCard()
+    await act(async () => {})
+    expect(screen.queryByRole('button', { name: zh['endpoint.check'] })).toBeNull()
+  })
 })
 
 describe('CodexSettingsCard endpoint credential block', () => {

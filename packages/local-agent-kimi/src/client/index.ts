@@ -112,6 +112,13 @@ export function apply(ctx: Context): void {
       if (gw === undefined || typeof gw.modelDirectory !== 'function') return Promise.resolve(undefined)
       return gw.modelDirectory('kimi', undefined, refresh ?? false).then(result => (result.ok ? result.value : undefined))
     },
+    // The verify button's probe, over the session-less gateway Remote. A core
+    // predating `checkEndpoint` hides the button (declare-and-degrade).
+    checkEndpoint: () => {
+      const gw = gateway()
+      if (gw === undefined || typeof gw.checkEndpoint !== 'function') return Promise.resolve(undefined)
+      return gw.checkEndpoint('kimi').then(result => (result.ok ? result.value : undefined))
+    },
     // The credential form's read/write face, over the session-less gateway
     // Remotes. Absent on a core that predates them — the card hides the form.
     endpointAuth: {

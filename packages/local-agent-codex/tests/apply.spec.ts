@@ -241,25 +241,35 @@ describe('local-agent-codex apply', () => {
 describe('local-agent-codex model catalog warmup', () => {
   it('kicks exactly one background probe of the default scoped home after boot, with no modelInfo call', async () => {
     vi.useFakeTimers()
+    // The probe is endpoint-primary: the endpoint side is an HTTP fetch (the
+    // host's global fetch, stubbed here), the native side the app-server spawn
+    // — both need a credential to run at all, so this mount carries one.
+    const fetches: string[] = []
+    vi.stubGlobal('fetch', async (url: string | URL | Request) => {
+      fetches.push(String(url))
+      return new Response(JSON.stringify({ object: 'list', data: [{ id: 'gpt-a', object: 'model' }] }), { status: 200 })
+    })
     try {
-      const { registered, spawns } = mount()
-      // Apply itself spawns nothing: the warmup is a post-boot timer, and the
+      const { registered, spawns } = mount({}, { apiKey: 'sk-test' })
+      // Apply itself probes nothing: the warmup is a post-boot timer, and the
       // broker's read path (the only other probe trigger) was never called.
       expect(registered[0]?.modelBroker).toBeDefined()
       expect(spawns).toHaveLength(0)
 
       await vi.advanceTimersByTimeAsync(CATALOG_WARMUP_DELAY_MS)
-      // The probe's spawn now sits behind the endpoint-credential read (an
-      // endpoint-authenticated scope probes the relay's catalog): a real fs
-      // miss resolves a tick after the timer flush, so wait the spawn out
-      // instead of asserting on the flush boundary.
+      // The spawn sits behind the endpoint-credential read (a real fs miss
+      // resolves a tick after the timer flush), so wait the probe out instead
+      // of asserting on the flush boundary.
       await vi.waitFor(() => { expect(spawns).toHaveLength(1) })
       expect(spawns[0]?.argv).toEqual(['codex', 'app-server', '--stdio'])
+      expect(fetches).toEqual(['https://api.openai.com/v1/models'])
 
       // One warmup per boot: idling past further timers probes nothing again.
       await vi.advanceTimersByTimeAsync(CATALOG_WARMUP_DELAY_MS * 4)
       expect(spawns).toHaveLength(1)
+      expect(fetches).toHaveLength(1)
     } finally {
+      vi.unstubAllGlobals()
       vi.useRealTimers()
     }
   })

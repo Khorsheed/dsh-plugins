@@ -1,5 +1,17 @@
-/** Native app-server model/list discovery. Shared core cache owns refresh,
- * stale data and subscriptions; this provider owns protocol and pagination. */
+/**
+ * The codex model directory: the VOCABULARY comes from the configured
+ * endpoint (`GET <baseUrl>/v1/models` with the resolved credential — the same
+ * probe the settings card's verify button runs), never from the CLI's local
+ * registry: a local list cannot prove what the endpoint serves, and showing
+ * it made a credential that does not work look valid. The native app-server
+ * `model/list` probe survives as METADATA ENRICHMENT only — it alone carries
+ * the display names, the hidden candidates, the reasoning-effort options and
+ * the `isDefault` slug (the CLI's compiled default), so it still runs
+ * CONCURRENTLY and folds into the entries whose ids the endpoint serves; its
+ * failure warns once and the endpoint data stands alone.
+ * Shared core cache owns refresh, stale data and subscriptions; this provider
+ * owns protocol and pagination (the native side).
+ */
 
 import { dirname, join } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
@@ -7,9 +19,12 @@ import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-sub
 import { ModelDirectoryCache, modelDirectoryContextKey, delegationEnv } from '@khorsheed/dsh-local-agent'
 import type { LocalAgentModelDirectory, LocalAgentModelDirectoryData, LocalAgentModelEntry } from '@khorsheed/dsh-local-agent/types'
 import { DEFAULT_DISPOSE_GRACE_MS } from './codex-cli-provider.ts'
-import { ENDPOINT_AUTH_FILE, endpointAuthEnv, endpointConfigOverrides, type CodexEndpointAuth } from './endpoint-auth.ts'
+import {
+  ENDPOINT_AUTH_FILE, endpointAuthEnv, endpointConfigOverrides, fetchEndpointModels, hasEndpointCredential, OFFICIAL_BASE_URL,
+  type CodexEndpointAuth, type EndpointCheckFetch,
+} from './endpoint-auth.ts'
 
-/** Default overall bound for one catalog probe (spawn → model/list answer). */
+/** Default overall bound for one NATIVE catalog probe (spawn → model/list answer). */
 export const DEFAULT_CATALOG_PROBE_TIMEOUT_MS = 5_000
 
 /** Default lifetime of a completed probe's cached answer, per scoped home. */
@@ -27,19 +42,26 @@ export interface CodexModelCatalogDeps {
   /** Diagnostic sink; a degraded probe warns once, never throws. */
   readonly warn?: (message: string) => void
   /**
-   * The scope's endpoint credential resolver: a probe against an
-   * endpoint-authenticated scope must route at the same relay (custom
-   * provider overrides plus the key in the env), or model/list fails for a
-   * scope that has no other credential — and the directory reflects the
-   * relay's own catalog. Absent = the pre-endpoint probe shape.
+   * The scope's endpoint credential resolver: the endpoint probe (the
+   * directory's vocabulary) reads the credential through it, and the native
+   * probe routes its spawn at the same relay (custom provider overrides plus
+   * the key in the env), or model/list fails for a scope that has no other
+   * credential. Absent = the pre-endpoint probe shape.
    */
   readonly endpoint?: (scopeHome: string) => Promise<CodexEndpointAuth>
-  /** Overall probe bound; tests inject a small value. */
+  /** The HTTP fetch for the endpoint probe (injected in tests). */
+  readonly fetchImpl?: EndpointCheckFetch
+  /** The native probe's overall bound; when set it also bounds the endpoint fetch (unset, the fetch gets 4× the native default — 20s, mirroring claude's catalog timeout). Tests inject a small value. */
   readonly timeoutMs?: number
   /** Completed-probe cache lifetime; tests inject a small value. */
   readonly ttlMs?: number
   /** Clock, injectable for the TTL assertions. */
   readonly now?: () => number
+}
+
+/** One directory answer that names why it is empty. */
+function unsupported(reason: string): LocalAgentModelDirectoryData {
+  return { entries: [], complete: false, customInput: true, unsupported: true, reason }
 }
 
 /** Preserve native metadata, including hidden candidates; reject malformed pages. */
@@ -87,7 +109,7 @@ export class CodexModelCatalog {
     this.cache = new ModelDirectoryCache({
       load: (key, signal) => {
         const context = JSON.parse(key) as { homeDir: string; cwd: string }
-        return this.probe(context.homeDir, context.cwd, signal)
+        return this.load(context.homeDir, context.cwd, signal)
       },
       ttlMs: deps.ttlMs ?? DEFAULT_CATALOG_TTL_MS,
       ...deps.now === undefined ? {} : { now: deps.now },
@@ -122,12 +144,74 @@ export class CodexModelCatalog {
   }
 
   /**
-   * One bounded probe: spawn the app-server against the scoped home, answer
-   * the initialize handshake exactly as the live driver shapes it, ask
-   * `model/list`, then tear the process down (stdin EOF → grace →
-   * terminate). The overall timeout kills the process on expiry. Failures propagate to the shared cache, which preserves prior data.
+   * One directory load: the endpoint's served id list is the vocabulary (the
+   * card's add dialog can only offer what the endpoint answers), folded
+   * CONCURRENTLY with the native app-server probe's metadata. The endpoint
+   * answers are deliberate:
+   *
+   * - no credential resolved → empty with a "save a key first" reason;
+   * - 401/403 → empty with the rejection (definitive — cached as data);
+   * - another HTTP status → empty with it (the relay serves no model route);
+   * - a transport failure THROWS, so the cache keeps the last good list and
+   *   retries on schedule instead of blanking a momentarily-down endpoint
+   *   (the openproxy relay once 500'd and recovered — 2026-10-22).
+   *
+   * The native probe's failure never fails the load: endpoint data alone is
+   * complete (it warns once via the deps sink). The endpoint fetch gets a
+   * 20s ceiling by default (mirrors claude's catalog timeout); the native
+   * probe keeps its own tighter bound internally.
    */
-  private async probe(homeDir: string, cwd: string, signal: AbortSignal): Promise<LocalAgentModelDirectoryData> {
+  private async load(homeDir: string, cwd: string, signal: AbortSignal): Promise<LocalAgentModelDirectoryData> {
+    const endpoint = this.deps.endpoint === undefined
+      ? undefined
+      : await this.deps.endpoint(homeDir).catch(() => undefined)
+    if (!hasEndpointCredential(endpoint)) {
+      return unsupported('No endpoint credential configured — the model list loads from the endpoint once an API Key is saved')
+    }
+    const combined = AbortSignal.any([signal, AbortSignal.timeout(this.deps.timeoutMs ?? DEFAULT_CATALOG_PROBE_TIMEOUT_MS * 4)])
+    const [result, native] = await Promise.all([
+      fetchEndpointModels({ ...endpoint, baseUrl: endpoint.baseUrl ?? OFFICIAL_BASE_URL }, this.deps.fetchImpl, combined),
+      this.probeNative(homeDir, cwd, combined).catch((error: unknown) => {
+        this.deps.warn?.(`local-agent-codex: the native model/list probe failed (metadata only — the endpoint's list stands): ${error instanceof Error ? error.message : String(error)}`)
+        return undefined
+      }),
+    ])
+    if (result.kind === 'unreachable') {
+      // Not a verdict: the cache keeps the last good list and retries.
+      throw new Error(`endpoint unreachable: ${result.message}`)
+    }
+    if (result.kind === 'malformed') return unsupported('The endpoint answered but the model list did not parse (not /v1/models-shaped)')
+    if (result.kind === 'http') {
+      if (result.status === 401 || result.status === 403) {
+        return unsupported(`The endpoint rejected the credential (HTTP ${String(result.status)}) — the list loads once a valid key is saved`)
+      }
+      return unsupported(`The endpoint does not serve a model list (HTTP ${String(result.status)})`)
+    }
+    if (result.models.length === 0) return unsupported('The endpoint serves no models')
+    const nativeByValue = new Map((native?.entries ?? []).map(entry => [entry.value, entry]))
+    // Served ids the native registry also knows carry its metadata over
+    // (label, description, hidden, reasoning — source stays 'native', which
+    // they are: the harness's own vocabulary, just read from the endpoint in
+    // force); ids only the endpoint serves are plain.
+    const entries: LocalAgentModelEntry[] = result.models.map(id =>
+      nativeByValue.get(id) ?? { value: id, label: id, source: 'native' },
+    )
+    const defaultModel = native?.defaultModel
+    return {
+      entries, complete: true, customInput: true,
+      ...defaultModel === undefined ? {} : { defaultModel },
+    }
+  }
+
+  /**
+   * One bounded NATIVE probe — the metadata-enrichment side of {@link load}:
+   * spawn the app-server against the scoped home, answer the initialize
+   * handshake exactly as the live driver shapes it, ask `model/list`, then
+   * tear the process down (stdin EOF → grace → terminate). The overall
+   * timeout kills the process on expiry. Failures propagate to the caller
+   * (load demotes them to a warn).
+   */
+  private async probeNative(homeDir: string, cwd: string, signal: AbortSignal): Promise<LocalAgentModelDirectoryData> {
     const endpoint = this.deps.endpoint === undefined
       ? undefined
       : await this.deps.endpoint(homeDir).catch(() => undefined)

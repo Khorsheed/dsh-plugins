@@ -30,6 +30,7 @@ import { removeLegacyVariants } from './preset-tools.ts'
 import {
   DEFAULT_THINKING_EFFORT,
   ensureKimiEndpointProvider,
+  ensureKimiModelTables,
   ensureKimiPermissions,
   KIMI_MANAGED_BASE_URL,
   provisionKimiConfig,
@@ -39,6 +40,7 @@ import {
   readKimiReasoningEffort,
 } from './provision.ts'
 import {
+  checkKimiEndpoint,
   clearEndpointAuth,
   endpointAuthFileExists,
   endpointAuthStamp,
@@ -291,15 +293,20 @@ export function apply(ctx: Context, config: Config): void {
     // construction-order only, and no round can run before both exist.
     let broker: KimiModelBroker
     const liveSwitch = new LiveDriverSwitch(ctx, face, config.liveIdleMs, child => broker.spawnModel(child), resolveEndpoint)
-    const modelCatalog = new KimiModelCatalog(childSessionId => {
-      const record = childSessionId === undefined ? undefined : ctx.localAgent.memberBinding?.(childSessionId) ?? ctx.localAgent.getDelegation(childSessionId)
-      const native = childSessionId === undefined ? undefined : liveSwitch.memberRuntimeConfiguration(childSessionId)
-      return {
-        homeDir: ctx.localAgent.homeDir('kimi', record?.scope),
-        ...record?.cwd === undefined ? {} : { cwd: record.cwd },
-        ...native === undefined ? {} : { native },
-      }
-    })
+    const modelCatalog = new KimiModelCatalog(
+      childSessionId => {
+        const record = childSessionId === undefined ? undefined : ctx.localAgent.memberBinding?.(childSessionId) ?? ctx.localAgent.getDelegation(childSessionId)
+        const native = childSessionId === undefined ? undefined : liveSwitch.memberRuntimeConfiguration(childSessionId)
+        return {
+          homeDir: ctx.localAgent.homeDir('kimi', record?.scope),
+          ...record?.cwd === undefined ? {} : { cwd: record.cwd },
+          ...native === undefined ? {} : { native },
+        }
+      },
+      // The catalog's vocabulary comes from the endpoint (never the scoped
+      // config alone); a degraded probe warns once, never throws.
+      { endpoint: resolveEndpoint, warn: message => ctx.logger.warn(message) },
+    )
     broker = new KimiModelBroker(ctx, {
       homeDir: childSessionId => ctx.localAgent.homeDir('kimi', childSessionId === undefined ? undefined : (ctx.localAgent.memberBinding?.(childSessionId) ?? ctx.localAgent.getDelegation(childSessionId))?.scope),
       catalog: modelCatalog,
@@ -341,6 +348,10 @@ export function apply(ctx: Context, config: Config): void {
       // 401 grades `rejected` until the endpoint file's mtime moves past the
       // mark (editing the file IS the re-login gesture).
       isAuthenticated: async (home) => hasEndpointCredential(await resolveEndpoint(home)),
+      // The settings card's verify button: a cheap token-free probe of the
+      // SAVED endpoint (the reply tells the user to save first when a
+      // credential is missing). Session-less via the gateway Remote.
+      checkEndpoint: home => resolveEndpoint(home).then(endpoint => checkKimiEndpoint(endpoint)),
       // The settings card's credential form: read the resolved per-field
       // state (the key as a boolean), write edits into the scope's own
       // endpoint-auth.json — the harness's 0600 store, never the profile
@@ -398,10 +409,30 @@ export function apply(ctx: Context, config: Config): void {
       // the gateway answers null only for harnesses WITHOUT one.
       modelBroker: broker,
       // The settings card's curated model list (the default scope's
-      // models.json; named scopes carry their own, read per round).
+      // models.json; named scopes carry their own, read per round). The write
+      // also provisions a `[models.…]` table for every listed value the
+      // scoped config does not key yet: kimi-cli resolves `-m` against those
+      // tables (verified 2.1.1 — a bare endpoint id is not runnable), so an
+      // endpoint-served id the user adds must gain its managed table in the
+      // same write. The table's metadata rides the catalog's home-keyed read
+      // — sync and warm by then (the add dialog's read probed first); a cold
+      // read yields metadata-less minimal tables, still runnable.
       modelList: {
         read: home => readModelList(home),
-        write: (home, models) => writeModelList(home, models),
+        write: async (home, models) => {
+          const written = await writeModelList(home, models)
+          await ensureKimiModelTables(home, written, (value) => {
+            const entry = modelCatalog.readHome(home).entries.find(candidate => candidate.value === value)
+            return entry === undefined ? undefined : {
+              label: entry.label,
+              ...entry.reasoning === undefined ? {} : {
+                efforts: entry.reasoning.options.map(option => option.value),
+                ...entry.reasoning.default === undefined ? {} : { defaultEffort: entry.reasoning.default },
+              },
+            }
+          })
+          return written
+        },
       },
       // The eval snapshot reads the scoped config as-is — it is authoritative
       // once provisioned, so a person-edited (or user-mirrored) effort and

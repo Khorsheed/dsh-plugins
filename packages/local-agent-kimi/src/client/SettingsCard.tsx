@@ -59,6 +59,13 @@ export interface KimiSettingsCardInjected {
    */
   modelDirectory?: (refresh?: boolean) => Promise<LocalAgentModelDirectory | null | undefined>
   /**
+   * The harness's endpoint verification (the family gateway's `checkEndpoint`
+   * Remote): a token-free probe of the SAVED endpoint, answered as verdict
+   * text. Absent on a core that predates the Remote — the card then hides
+   * the verify button.
+   */
+  checkEndpoint?: () => Promise<string | null | undefined>
+  /**
    * The harness's endpoint credential face (the family gateway's
    * `endpointAuth`/`configureEndpoint` Remotes): the card's credential form
    * reads and writes the harness's OWN credential store through it — never
@@ -208,13 +215,14 @@ function useCardState(
 }
 
 /** The card body both settings surfaces share: the auth block, the model-list section, and the resident-mode block. */
-function CardBody({ state, active, auth, authT, modelList, modelDirectory, useSessions, t }: {
+function CardBody({ state, active, auth, authT, modelList, modelDirectory, checkEndpoint, useSessions, t }: {
   readonly state: ReturnType<typeof useCardState>
   readonly active: boolean
   readonly auth: KimiSettingsCardInjected['auth']
   readonly authT: KimiSettingsCardInjected['authT']
   readonly modelList: KimiSettingsCardInjected['modelList']
   readonly modelDirectory: KimiSettingsCardInjected['modelDirectory']
+  readonly checkEndpoint: KimiSettingsCardInjected['checkEndpoint']
   readonly useSessions: KimiSettingsCardProps['useSessions']
   readonly t: KimiSettingsCardProps['t']
 }) {
@@ -225,6 +233,27 @@ function CardBody({ state, active, auth, authT, modelList, modelDirectory, useSe
     endpointSaved, endpointError, endpointDirty, saveEndpoint,
     setBaseUrlDraft, setApiKeyDraft,
   } = state
+  // The verify button: runs the gateway's `checkEndpoint` Remote against the
+  // SAVED endpoint (unsaved drafts deliberately disable it — what it verifies
+  // is the saved configuration) and shows the verdict inline. Session-less:
+  // a settings card may have no main agent session to run a slash command.
+  const [checking, setChecking] = useState(false)
+  const [checkText, setCheckText] = useState<string | null>(null)
+  const runCheck = (): void => {
+    if (checkEndpoint === undefined) return
+    setChecking(true)
+    setCheckText(null)
+    void checkEndpoint().then(
+      (text) => {
+        setCheckText(text ?? t('endpoint.checkUnavailable'))
+        setChecking(false)
+      },
+      () => {
+        setCheckText(t('endpoint.checkFailed'))
+        setChecking(false)
+      },
+    )
+  }
   return (
     <div className={css.body}>
       <section className={css.block}>
@@ -283,9 +312,21 @@ function CardBody({ state, active, auth, authT, modelList, modelDirectory, useSe
             >
               {t('endpoint.save')}
             </button>
+            {checkEndpoint !== undefined && (
+              <button
+                type="button"
+                className={css.modelSave}
+                disabled={endpointLoading || endpointDirty || checking}
+                title={endpointDirty ? t('endpoint.checkDirtyHint') : undefined}
+                onClick={() => { runCheck() }}
+              >
+                {checking ? t('endpoint.checking') : t('endpoint.check')}
+              </button>
+            )}
             {endpointSaved && <span className={css.saved}>{t('endpoint.applied')}</span>}
             {endpointError && <span className={css.errorText}>{t('endpoint.error')}</span>}
           </div>
+          {checkText !== null && <span className={css.hint}>{checkText}</span>}
         </div>
         )}
       </section>
@@ -338,7 +379,7 @@ function CardBody({ state, active, auth, authT, modelList, modelDirectory, useSe
  * @returns the card.
  */
 export function KimiSettingsCard(props: KimiSettingsCardProps) {
-  const { useSettings, scope, auth, authT, modelList, modelDirectory, endpointAuth, useSessions, t } = props
+  const { useSettings, scope, auth, authT, modelList, modelDirectory, checkEndpoint, endpointAuth, useSessions, t } = props
   const [open, setOpen] = useState(false)
   const state = useCardState(open, useSettings, scope, endpointAuth)
   // The at-a-glance credential dot in the collapsed header: every mount
@@ -370,7 +411,7 @@ export function KimiSettingsCard(props: KimiSettingsCardProps) {
         </span>
         <IconChevronDownOutlineMedium className={open ? `${css.chevron} ${css.chevronOpen}` : css.chevron} />
       </button>
-      {open && <CardBody state={state} active={open} auth={auth} authT={authT} modelList={modelList} modelDirectory={modelDirectory} useSessions={useSessions} t={t} />}
+      {open && <CardBody state={state} active={open} auth={auth} authT={authT} modelList={modelList} modelDirectory={modelDirectory} checkEndpoint={checkEndpoint} useSessions={useSessions} t={t} />}
     </li>
   )
 }
@@ -385,10 +426,10 @@ export function KimiSettingsCard(props: KimiSettingsCardProps) {
  * @param props - the owner view, the injected scope/auth faces, and copy.
  * @returns the entry.
  */
-export function KimiBundleConfig({ view, useSettings, scope, auth, authT, modelList, modelDirectory, endpointAuth, useSessions, t }: KimiBundleConfigProps) {
+export function KimiBundleConfig({ view, useSettings, scope, auth, authT, modelList, modelDirectory, checkEndpoint, endpointAuth, useSessions, t }: KimiBundleConfigProps) {
   const state = useCardState(view === 'page', useSettings, scope, endpointAuth)
   if (view === 'summary') return <span className={css.description}>{t('card.description')}</span>
-  return <CardBody state={state} active={view === 'page'} auth={auth} authT={authT} modelList={modelList} modelDirectory={modelDirectory} useSessions={useSessions} t={t} />
+  return <CardBody state={state} active={view === 'page'} auth={auth} authT={authT} modelList={modelList} modelDirectory={modelDirectory} checkEndpoint={checkEndpoint} useSessions={useSessions} t={t} />
 }
 
 /**
@@ -398,7 +439,7 @@ export function KimiBundleConfig({ view, useSettings, scope, auth, authT, modelL
  * @param props - the injected scope/auth faces, the forwarded session seat, and copy.
  * @returns the section body.
  */
-export function KimiCardSection({ active, useSettings, scope, auth, authT, modelList, modelDirectory, endpointAuth, useSessions, t }: KimiCardSectionProps) {
+export function KimiCardSection({ active, useSettings, scope, auth, authT, modelList, modelDirectory, checkEndpoint, endpointAuth, useSessions, t }: KimiCardSectionProps) {
   const state = useCardState(active, useSettings, scope, endpointAuth)
-  return <CardBody state={state} active={active} auth={auth} authT={authT} modelList={modelList} modelDirectory={modelDirectory} useSessions={useSessions} t={t} />
+  return <CardBody state={state} active={active} auth={auth} authT={authT} modelList={modelList} modelDirectory={modelDirectory} checkEndpoint={checkEndpoint} useSessions={useSessions} t={t} />
 }

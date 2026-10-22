@@ -17,7 +17,13 @@
 import { readFile, rm, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { ENDPOINT_ENV_KEY } from './endpoint-auth.ts'
+import { ENDPOINT_ENV_KEY, KIMI_MANAGED_BASE_URL } from './endpoint-auth.ts'
+
+// The managed endpoint's definition home is endpoint-auth.ts (the check and
+// the catalog need it without a cycle); provision re-exports it so the
+// existing importers (index.ts, live-driver.ts, kimi-cli-provider.ts) are
+// untouched.
+export { KIMI_MANAGED_BASE_URL } from './endpoint-auth.ts'
 
 const REAL_CONFIG = join(homedir(), '.kimi-code', 'config.toml')
 
@@ -28,18 +34,23 @@ const CREDENTIALS_DIR = 'credentials'
 const OAUTH_DIR = 'oauth'
 
 /**
- * The managed provider's endpoint, written into a fresh scoped config and the
- * baseline the eval snapshot compares against: a scoped config still pointing
- * here routes through kimi's own service, i.e. no custom endpoint is in force.
- */
-export const KIMI_MANAGED_BASE_URL = 'https://api.kimi.com/coding/v1'
-
-/**
  * The reasoning effort a fresh scoped config gets when the plugin config does
  * not override it — the value the pre-config-item provisioning hardcoded, so
  * the default is behavior-preserving.
  */
 export const DEFAULT_THINKING_EFFORT = 'high'
+
+/**
+ * The capability list every managed model table carries — the minimal
+ * config's own, hoisted so the write face's on-add table provisioning
+ * ({@link ensureKimiModelTables}) stamps the same shape.
+ */
+const KIMI_MODEL_CAPABILITIES = 'capabilities = [ "thinking", "always_thinking", "image_in", "video_in", "tool_use" ]'
+
+/** Quote one TOML basic string (model ids take backslash escapes). */
+function tomlString(value: string): string {
+  return `"${value.replace(/\\/gu, '\\\\').replace(/"/gu, '\\"')}"`
+}
 
 /** Minimal managed config for a fresh home with no user config to mirror. */
 function minimalConfig(model: string, thinkingEffort: string): string {
@@ -58,7 +69,7 @@ api_key_env = "${ENDPOINT_ENV_KEY}"
 provider = "managed:kimi-code"
 model = "${model.split('/').pop()}"
 max_context_size = 1048576
-capabilities = [ "thinking", "always_thinking", "image_in", "video_in", "tool_use" ]
+${KIMI_MODEL_CAPABILITIES}
 display_name = "${model}"
 support_efforts = [ "low", "high", "max" ]
 default_effort = "${thinkingEffort}"
@@ -333,6 +344,92 @@ export async function listKimiConfigModels(homeDir: string): Promise<string[]> {
     if (name !== undefined && name !== '' && !models.includes(name)) models.push(name)
   }
   return models
+}
+
+/**
+ * The header scan's one table key: a quoted `models."…"` key (unescaped — the
+ * writer escapes, so the reader must fold back) or a bare `models.x` one.
+ */
+function modelTableKey(header: string): string | undefined {
+  const table = /^models\.(?:"((?:[^"\\]|\\.)*)"|([\w-]+))$/.exec(header)
+  const raw = table?.[1]
+  if (raw !== undefined) return raw.replace(/\\(["\\])/gu, '$1')
+  return table?.[2]
+}
+
+/** Whether the config text already keys a `[models.…]` table for `value`. */
+function hasModelTable(text: string, value: string): boolean {
+  for (const rawLine of text.split('\n')) {
+    const header = /^\[+([^\]]+)\]+$/.exec(rawLine.trim())
+    if (header !== null && modelTableKey(header[1]!) === value) return true
+  }
+  return false
+}
+
+/**
+ * Give every listed model value a `[models."<value>"]` table in the scoped
+ * config — the runnable name `-m` resolves against. kimi-cli ≥2.1 REQUIRES
+ * the table: `kimi -m k3` fails with `Model "k3" is not configured in
+ * config.toml` when only `[models."kimi-code/k3"]` (carrying `model = "k3"`)
+ * exists (verified against kimi-cli 2.1.1), so an endpoint-served id the
+ * catalog lists is not directly runnable until its table exists. The model
+ * list's write face calls this after each save so an added endpoint id is
+ * runnable from that round on.
+ *
+ * Only MISSING values get a table: an existing key (quoted or bare) is the
+ * user's own definition and stays untouched. The appended table mirrors the
+ * minimal config's managed shape — `provider = "managed:kimi-code"`, `model`
+ * = the value, `max_context_size` (the metadata's endpoint-reported size,
+ * else 1048576 — the minimal template's value), the shared capabilities
+ * list, `display_name` (the metadata's label, else the value), and
+ * `support_efforts`/`default_effort` when the metadata carries them. An
+ * absent or unreadable config yields [] (provisioning owns creation;
+ * inventing a whole config here would hide a broken home). Idempotent: all
+ * values already keyed → no write, [].
+ * @param homeDir - the `kimi` harness's scoped home.
+ * @param models - the model values that must be runnable (already normalized).
+ * @param metadata - per-value lookup of the catalog's endpoint/table facts.
+ * @returns the table keys this call created, in the order listed.
+ */
+export async function ensureKimiModelTables(
+  homeDir: string,
+  models: readonly string[],
+  metadata?: (value: string) => {
+    readonly label?: string
+    readonly contextSize?: number
+    readonly efforts?: readonly string[]
+    readonly defaultEffort?: string
+  } | undefined,
+): Promise<string[]> {
+  const path = join(homeDir, 'config.toml')
+  let text: string
+  try {
+    text = await readFile(path, 'utf8')
+  } catch {
+    return []
+  }
+  const created: string[] = []
+  let fragment = ''
+  for (const value of models) {
+    if (value === '' || hasModelTable(text, value) || created.includes(value)) continue
+    const facts = metadata?.(value)
+    // TOML basic strings take backslash escapes; a model id with a quote or a
+    // backslash would otherwise produce a config kimi cannot parse.
+    fragment += `\n[models.${tomlString(value)}]\n`
+      + 'provider = "managed:kimi-code"\n'
+      + `model = ${tomlString(value)}\n`
+      + `max_context_size = ${String(facts?.contextSize ?? 1048576)}\n`
+      + `${KIMI_MODEL_CAPABILITIES}\n`
+      + `display_name = ${tomlString(facts?.label ?? value)}\n`
+      + (facts?.efforts === undefined || facts.efforts.length === 0
+        ? ''
+        : `support_efforts = [ ${facts.efforts.map(tomlString).join(', ')} ]\n`)
+      + (facts?.defaultEffort === undefined ? '' : `default_effort = ${tomlString(facts.defaultEffort)}\n`)
+    created.push(value)
+  }
+  if (created.length === 0) return []
+  await writeFile(path, `${text.trimEnd()}\n${fragment}`, 'utf8')
+  return created
 }
 
 /**
