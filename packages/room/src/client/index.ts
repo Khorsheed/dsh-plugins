@@ -42,14 +42,15 @@ import { ROOM_TEAM_KIND, ROOM_TEAM_TAB_ID, RoomTeamTab, type RoomTeamInjected } 
 import { RoomSpeechView } from './RoomSpeechView.tsx'
 import { RoomRunView } from './RoomRunView.tsx'
 import { RoomEventView } from './RoomEventView.tsx'
-import { roomEventDefinition, roomRelayDefinition, roomRunDefinition, roomSpeechDefinition, roomTaskLineDefinition } from './nodes.ts'
+import { roomEventDefinition, roomRelayDefinition, roomInboxDefinition, roomRunDefinition, roomSpeechDefinition, roomTaskLineDefinition } from './nodes.ts'
 import { mainSessionId, RoomStore } from './room-store.ts'
 import { RoomPresetVisibility, RegistrationToggle } from './preset-visibility.ts'
 import { RoomRelayView } from './RoomRelayView.tsx'
+import { RoomInboxView } from './RoomInboxView.tsx'
 import { RoomTaskLineView } from './RoomTaskLineView.tsx'
 import type {
   InviteAgentInjected, RoomComposerInjected, RoomComposerMatch, RoomInviteInjected, RoomMembersInjected, RoomModelDirectory, RoomMutationOutcome,
-  RoomRelayInjected, RoomRunInjected, RoomSpeechInjected, RoomTaskLineInjected, RoomTasksInjected,
+  RoomRelayInjected, RoomInboxInjected, RoomRunInjected, RoomSpeechInjected, RoomTaskLineInjected, RoomTasksInjected,
 } from './slots.ts'
 import type { RoomFailure } from '../types.ts'
 
@@ -375,6 +376,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     lctx.uiConversation.events.register(roomRunDefinition)
     lctx.uiConversation.events.register(roomEventDefinition)
     lctx.uiConversation.events.register(roomRelayDefinition)
+    lctx.uiConversation.events.register(roomInboxDefinition)
     lctx.uiConversation.events.register(roomTaskLineDefinition)
   })
 
@@ -563,6 +565,21 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       inject: (sessionId: SessionId): RoomRelayInjected => relayFace(sessionId),
     },
     RoomRelayView,
+  ))
+  ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(
+    {
+      name: 'conversation.chat.node',
+      key: 'room-inbox',
+      locale: NS,
+      inject: (sessionId: SessionId): RoomInboxInjected => ({
+        releaseReports: async (member) => {
+          if (remote === undefined) return
+          const carried = await remote.releaseReports({ sessionId, name: member })
+          if (carried.ok) void roomStore.refresh(sessionId)
+        },
+      }),
+    },
+    RoomInboxView,
   ))
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(
     {

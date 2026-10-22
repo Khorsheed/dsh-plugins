@@ -57,10 +57,11 @@ export const ROOM_EVENT_TYPES = [
   'room/task-edited',
   'room/goal',
   'room/settings',
+  'room/report-gate',
 ] as const
 
 /** Collaboration settings of a room that never changed them. */
-export const DEFAULT_ROOM_SETTINGS: RoomSettings = { memberMessages: 'free', hopLimit: 10, paused: false }
+export const DEFAULT_ROOM_SETTINGS: RoomSettings = { memberMessages: 'free', hopLimit: 10, paused: false, reportTiming: 'judge' }
 
 /** Whether an event log carries the room identity marker. */
 export function isRoomLog(events: readonly SessionEvent[]): boolean {
@@ -287,6 +288,7 @@ export function replay(events: readonly SessionEvent[]): RoomState {
           memberMessages: event.data.memberMessages ?? settings.memberMessages,
           hopLimit: event.data.hopLimit ?? settings.hopLimit,
           paused: event.data.paused ?? settings.paused,
+          reportTiming: event.data.reportTiming ?? settings.reportTiming,
         }
         break
       }

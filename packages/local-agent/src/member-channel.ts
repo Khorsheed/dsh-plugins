@@ -51,6 +51,8 @@ export interface MemberBridgeRequest {
   kind?: 'task' | 'notify'
   /** The message id this one answers (e.g. `m12`); passed to a claiming room. */
   inReplyTo?: string
+  /** What the sender waits for before acting on the result; passed to a claiming room. */
+  note?: string
 }
 
 export interface MemberCommandBridgeRequest {
@@ -229,6 +231,7 @@ export class MemberChannel {
       parentSessionId: from.parentSessionId,
       ...request.kind === 'task' || request.kind === 'notify' ? { kind: request.kind } : {},
       ...typeof request.inReplyTo === 'string' ? { inReplyTo: request.inReplyTo } : {},
+      ...typeof request.note === 'string' ? { note: request.note } : {},
       provenance: {
         childSessionId: from.childSessionId,
         provider: from.provider,

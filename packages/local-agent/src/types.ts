@@ -666,6 +666,8 @@ export interface LocalAgentMemberMessage {
   kind?: 'task' | 'notify'
   /** The message id this one answers (e.g. `m12`). */
   inReplyTo?: string
+  /** What the sender waits for before acting on the result (a claiming room's report gate reads it). */
+  note?: string
 }
 
 /**

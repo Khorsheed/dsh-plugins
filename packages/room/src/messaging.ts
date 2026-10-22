@@ -104,6 +104,7 @@ export function sendOrHold(session: Session, message: OutgoingMessage, skipHold 
     ...intent.from === undefined ? {} : { from: intent.from },
     ...intent.kind === undefined ? {} : { kind: intent.kind },
     ...intent.inReplyTo === undefined ? {} : { inReplyTo: intent.inReplyTo },
+    ...intent.note === undefined ? {} : { note: intent.note },
     ...intent.replyTo === undefined ? {} : { replyTo: intent.replyTo },
     ...intent.reportFor === undefined ? {} : { reportFor: intent.reportFor },
     ...intent.plan === undefined ? {} : { plan: intent.plan },
@@ -159,7 +160,7 @@ export function envelopeLine(events: readonly SessionEvent[], seq: number): stri
       const sender = nameOf(dispatch.reportFor?.split(':').slice(1).join(':'))
       const outcome = events.filter(row => row.type === 'room/delivery-state' && row.data.id === dispatch.reportFor).at(-1)
       const label = outcome?.type === 'room/delivery-state' ? OUTCOME_LABEL[outcome.data.state] ?? outcome.data.state : ''
-      return `【#${messageId(source)} 的回报${sender === undefined ? '' : ` · 来自 ${sender}`}${label === '' ? '' : ` · ${label}`}】`
+      return `【#${messageId(source)} 的回报${sender === undefined ? '' : ` · 来自 ${sender}`}${label === '' ? '' : ` · ${label}`}】（这条回复用户已在房间里看到，不要复述）`
     }
     case 'relay':
       return undefined

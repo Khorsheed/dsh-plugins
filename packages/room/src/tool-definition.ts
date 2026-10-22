@@ -95,7 +95,11 @@ export function roomInviteTool(backend: RoomInviteToolBackend) {
       },
       firstTask: {
         type: 'string',
-        description: 'Optional first task, dispatched to the member as soon as it joins.',
+        description: 'Optional first task, dispatched to the member as soon as it joins. Its result is reported back to you automatically — do not sleep or poll room_read for it.',
+      },
+      note: {
+        type: 'string',
+        description: 'Optional: what you will wait for before acting on the first task\'s result (e.g. "wait until every invited member greeted"). The room uses it to decide when to hand you the report.',
       },
       cwd: {
         type: 'string',
@@ -126,6 +130,7 @@ export function roomInviteTool(backend: RoomInviteToolBackend) {
         instructions: args.instructions,
         ...args.role === undefined ? {} : { role: args.role },
         ...args.firstTask === undefined ? {} : { firstTask: args.firstTask },
+        ...args.note === undefined ? {} : { note: args.note },
         ...args.cwd === undefined ? {} : { cwd: args.cwd },
       }, 'agent')
       if (!result.ok) {
@@ -361,6 +366,10 @@ export function roomMessageTool(backend: RoomMessageToolBackend) {
         type: 'string',
         description: 'Optional id of the message this answers (e.g. m12).',
       },
+      note: {
+        type: 'string',
+        description: 'Optional: what you will wait for before acting on this result, in your own words (e.g. "wait until all three greeted, then tell the user once" / "hand it to claude for review as soon as it is done"). The room uses it to decide when to hand you the report.',
+      },
     },
     output: {
       schema: {
@@ -382,7 +391,8 @@ export function roomMessageTool(backend: RoomMessageToolBackend) {
       const sessionId = agent.session.id
       const result = await backend.messageMember({ sessionId, member: args.member, text: args.text,
         ...args.kind === undefined ? {} : { kind: args.kind as 'task' | 'notify' },
-        ...args.inReplyTo === undefined ? {} : { inReplyTo: args.inReplyTo } })
+        ...args.inReplyTo === undefined ? {} : { inReplyTo: args.inReplyTo },
+        ...args.note === undefined ? {} : { note: args.note } })
       if (!result.ok) {
         if (result.error.code === 'member-not-found') {
           const state = await backend.getState({ sessionId })
@@ -408,7 +418,8 @@ export function roomMessageTool(backend: RoomMessageToolBackend) {
         text: args.kind === 'notify'
           ? `Sent ${value.messageId} to ${value.member} as an FYI; no report will come back.`
           : `Sent ${value.messageId} to ${value.member}. It runs asynchronously; its final reply comes back to you `
-            + 'automatically as a report citing this id. Do not wait or poll.',
+            + 'automatically as a report citing this id. Do not sleep, wait, or poll room_read for it — end your turn; '
+            + 'the human already sees the member\'s reply in the room, so do not repeat it when the report arrives.',
       }
     },
   })

@@ -369,6 +369,18 @@ export type RoomRelayViewProps =
   & InjectFace<RoomRelayInjected>
   & PropsLocale<'room'>
 
+/** Injected face of the held-reports line. */
+export interface RoomInboxInjected {
+  /** Hand the named member its held reports now. */
+  readonly releaseReports: (member: string) => Promise<void>
+}
+
+/** Full props of the 'room-inbox' chat-node renderer. */
+export type RoomInboxViewProps =
+  PropsRuntime<'conversation.chat.node', 'room-inbox'>
+  & InjectFace<RoomInboxInjected>
+  & PropsLocale<'room'>
+
 /** Injected face of the task-advance chat node. */
 export interface RoomTaskLineInjected {
   /** The client-side room state store (the goal-progress suffix). */
