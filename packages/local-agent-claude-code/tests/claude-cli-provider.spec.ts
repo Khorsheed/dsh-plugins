@@ -7,7 +7,8 @@ import type { SubprocessHandle } from '@deepseek-ai/dsh-subprocess'
 import type { SubagentStartRequest } from '@deepseek-ai/dsh-subagent'
 import { describe, expect, it, vi } from 'vitest'
 import { fakeSessionPersistence } from './fake-persistence.ts'
-import { claudeVersionFromInit, parseClaudeStreamJson, startClaudeCliRun, ClaudeCliProvider, REDACTED_THINKING_TEXT } from '../src/claude-cli-provider.ts'
+import { expectValidReleasedLog } from './expect-valid-log.ts'
+import { claudeVersionFromInit, CLAUDE_INTERRUPTED_TOOL_RESULT, parseClaudeStreamJson, startClaudeCliRun, ClaudeCliProvider, REDACTED_THINKING_TEXT } from '../src/claude-cli-provider.ts'
 
 /** The stream a real `claude -p --verbose --output-format stream-json` emits. */
 const streamJson = [
@@ -262,13 +263,15 @@ describe('claude-cli-provider run settlement', () => {
     // The mirror runs after the child exits (fire-and-forget), so let it
     // finish before asserting the transcript was appended.
     await vi.waitFor(() => {
-      expect(child.snapshotEvents().filter(event => event.type === 'assistant/message')).toHaveLength(1)
+      expect(child.snapshotEvents().filter(event => event.type === 'assistant/message')).toHaveLength(2)
     })
     const assistant = child.snapshotEvents().filter(event => event.type === 'assistant/message')
-    // The stream transcript mirrors the tool call as a native
+    // The stream transcript mirrors the tool call as the native lifecycle:
+    // an assistant/message advertising the tool-call block, then the
     // tool/call + tool/result pair; usage rides the final text message.
-    expect(assistant[0]!.data.message.content).toEqual([{ type: 'text', text: 'Task complete.' }])
-    expect(assistant[0]!.data.usage).toEqual({ inputTokens: 2, outputTokens: 5, cacheReadTokens: 6, cacheWriteTokens: 7 })
+    expect(assistant[0]!.data.message.content).toEqual([{ type: 'tool-call', id: 'tu1', name: 'Bash', arguments: 'echo hi' }])
+    expect(assistant[1]!.data.message.content).toEqual([{ type: 'text', text: 'Task complete.' }])
+    expect(assistant[1]!.data.usage).toEqual({ inputTokens: 2, outputTokens: 5, cacheReadTokens: 6, cacheWriteTokens: 7 })
     const calls = child.snapshotEvents().filter(event => event.type === 'tool/call')
     expect(calls).toHaveLength(1)
     expect(calls[0]!.data).toMatchObject({ callId: 'tu1', name: 'Bash', arguments: 'echo hi' })
@@ -283,10 +286,16 @@ describe('claude-cli-provider run settlement', () => {
       content: [{ type: 'text', text: 'hi' }],
       isError: false,
     })
-    const turns = child.snapshotEvents().filter(event => event.type === 'turn/start' || event.type === 'turn/end')
-    expect(turns.map(event => event.type)).toEqual(['turn/start', 'turn/end'])
+    // turn/end lands after the settle mirror (mirrored steps must precede it
+    // in the stored log), so wait the mirror queue out.
+    await vi.waitFor(() => {
+      const turns = child.snapshotEvents().filter(event => event.type === 'turn/start' || event.type === 'turn/end')
+      expect(turns.map(event => event.type)).toEqual(['turn/start', 'turn/end'])
+    })
     // Every mirrored step is wrapped in its step/start–step/end pair.
     expectStepBoundaries(child)
+    // …and the whole log passes the released-log reader's cold-read validation.
+    expectValidReleasedLog(child)
     // The live mirror persists during the run; the settle mirror persists the
     // final event set (with turn/end) after exit — wait for that last write.
     await vi.waitFor(() => {
@@ -356,7 +365,9 @@ describe('claude-cli-provider run settlement', () => {
     emit({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'tu1', content: 'hi' }] } })
 
     // The next line un-holds the merged tool line: the user prompt and the
-    // tool step mirror while the process is STILL running.
+    // tool step mirror while the process is STILL running. The tool step is
+    // the native lifecycle: an assistant/message advertising the tool-call
+    // block, then the call and its result.
     emit({ type: 'assistant', message: { content: [{ type: 'text', text: 'Task complete.' }] } })
     await vi.waitFor(() => {
       expect(child.snapshotEvents().filter(event => event.type === 'tool/result')).toHaveLength(1)
@@ -364,14 +375,16 @@ describe('claude-cli-provider run settlement', () => {
     const liveCalls = child.snapshotEvents().filter(event => event.type === 'tool/call')
     expect(liveCalls).toHaveLength(1)
     expect(liveCalls[0]!.data).toMatchObject({ callId: 'tu1', name: 'Bash', arguments: 'echo hi' })
-    expect(child.snapshotEvents().filter(event => event.type === 'assistant/message')).toHaveLength(0)
+    const liveAssistant = child.snapshotEvents().filter(event => event.type === 'assistant/message')
+    expect(liveAssistant).toHaveLength(1)
+    expect(liveAssistant[0]!.data.message.content).toEqual([{ type: 'tool-call', id: 'tu1', name: 'Bash', arguments: 'echo hi' }])
     expect(child.snapshotEvents().filter(event => event.type === 'user/message')).toHaveLength(1)
     expect(reports.some(report => report.progress.kind === 'delta')).toBe(true)
 
     // The terminal result flushes the held text line with the round's usage.
     emit({ type: 'result', is_error: false, session_id: 's1', usage: { input_tokens: 2, output_tokens: 5 } })
     await vi.waitFor(() => {
-      expect(child.snapshotEvents().filter(event => event.type === 'assistant/message')).toHaveLength(1)
+      expect(child.snapshotEvents().filter(event => event.type === 'assistant/message')).toHaveLength(2)
     })
 
     // Settle: the live mirror already covered the stream — no duplicates.
@@ -381,11 +394,91 @@ describe('claude-cli-provider run settlement', () => {
       expect(reports.some(report => report.progress.kind === 'mirror' && report.progress.mirroredLines === 2)).toBe(true)
     })
     const assistant = child.snapshotEvents().filter(event => event.type === 'assistant/message')
-    expect(assistant).toHaveLength(1)
+    expect(assistant).toHaveLength(2)
     expect(child.snapshotEvents().filter(event => event.type === 'user/message')).toHaveLength(1)
     expect(child.snapshotEvents().filter(event => event.type === 'tool/call')).toHaveLength(1)
-    expect((assistant[0]!.data as { usage?: unknown }).usage).toEqual({ inputTokens: 2, outputTokens: 5 })
+    expect((assistant[1]!.data as { usage?: unknown }).usage).toEqual({ inputTokens: 2, outputTokens: 5 })
     expectStepBoundaries(child)
+    expectValidReleasedLog(child)
+    await done
+  })
+
+  it('holds an unresulted tool line until its result merges — no bare tool/call reaches the log', async () => {
+    // Regression for the in-the-wild corruption: a tool line that stops being
+    // the volatile last line BEFORE its tool_result arrives must not fold a
+    // bare tool/call (the released-log reader pairs every call against an
+    // advertised, resolved lifecycle). The fold holds at the line; the result
+    // merges into it in place, and the next pass folds the whole lifecycle.
+    const child = Session.create(SessionId('child-live-claude-hold'))
+    const ctx = new Context()
+    ctx.provide('sessionPersistence', fakeSessionPersistence())
+    ctx.provide('localAgent', { reportRunProgress: () => {} } as never)
+
+    const stdout = new Readable({ read() {} })
+    const stderr = new Readable({ read() {} })
+    let finish!: (outcome: { exitCode: number; signal: null }) => void
+    const done = new Promise<{ exitCode: number; signal: null }>((resolve) => { finish = resolve })
+    const handle: SubprocessHandle = {
+      pid: 4248,
+      stdin: undefined,
+      stdout,
+      stderr,
+      collected: {
+        stdout: { readFrom: () => ({ text: '', nextOffset: 0, lossy: false }) },
+        stderr: { readFrom: () => ({ text: '', nextOffset: 0, lossy: false }) },
+      },
+      done,
+      terminate: () => undefined,
+      waitForExit: async () => true,
+    }
+    const request = {
+      prompt: [{ type: 'text', text: 'do the task' }],
+      parent: { session: { header: { cwd: '/tmp' } } },
+      signal: new AbortController().signal,
+    } as unknown as SubagentStartRequest
+    const run = await startClaudeCliRun(request, {
+      cwd: '/tmp',
+      env: {},
+      permissionMode: 'skip',
+      disposeGraceMs: 3_000,
+      spawn: () => handle,
+      childSession: child,
+      ctx,
+    })
+    const emit = (...events: unknown[]): void => {
+      stdout.push(events.map(event => JSON.stringify(event)).join('\n') + '\n')
+    }
+    // A text line lands behind the still-unresulted tool call: the tool line
+    // stops being the volatile last line, yet nothing of it may fold. The
+    // flush that ran (its user/message landed) is the one that would have
+    // folded the bare call.
+    emit(
+      { type: 'system', subtype: 'init', session_id: 's1' },
+      { type: 'assistant', message: { content: [{ type: 'tool_use', id: 'tu1', name: 'Bash', input: { command: 'echo hi' } }] } },
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'working on it' }] } },
+    )
+    await vi.waitFor(() => {
+      expect(child.snapshotEvents().filter(event => event.type === 'user/message')).toHaveLength(1)
+    })
+    expect(child.snapshotEvents().filter(event => event.type === 'tool/call')).toHaveLength(0)
+    expect(child.snapshotEvents().filter(event => event.type === 'assistant/message')).toHaveLength(0)
+
+    // The result merges into the held line in place; the next push folds the
+    // whole lifecycle in one step.
+    emit({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'tu1', content: 'hi' }] } })
+    await vi.waitFor(() => {
+      expect(child.snapshotEvents().filter(event => event.type === 'tool/result')).toHaveLength(1)
+    })
+    expect(child.snapshotEvents().filter(event => event.type === 'tool/call')).toHaveLength(1)
+
+    emit({ type: 'result', is_error: false, session_id: 's1', usage: { input_tokens: 2, output_tokens: 5 } })
+    finish({ exitCode: 0, signal: null })
+    expect((await run.result).stopReason).toBe('completed')
+    await vi.waitFor(() => {
+      expect(child.snapshotEvents().some(event => event.type === 'turn/end')).toBe(true)
+    })
+    expectStepBoundaries(child)
+    expectValidReleasedLog(child)
     await done
   })
 
@@ -411,11 +504,15 @@ describe('claude-cli-provider run settlement', () => {
     )
     const result = await run.result
     expect(result.stopReason).toBe('error')
-    const turnEnd = child.snapshotEvents().find(event => event.type === 'turn/end')
-    const endData = turnEnd?.data as { turn?: number; reason?: { kind?: string; error?: { message?: string; code?: string } } } | undefined
-    expect(endData?.turn).toBe(1)
-    expect(endData?.reason?.kind).toBe('error')
-    expect(endData?.reason?.error?.message).toContain('exited with code 1')
+    // turn/end lands after the post-exit mirror (mirrored steps must precede
+    // it in the stored log), so wait the mirror queue out.
+    await vi.waitFor(() => {
+      const turnEnd = child.snapshotEvents().find(event => event.type === 'turn/end')
+      const endData = turnEnd?.data as { turn?: number; reason?: { kind?: string; error?: { message?: string; code?: string } } } | undefined
+      expect(endData?.turn).toBe(1)
+      expect(endData?.reason?.kind).toBe('error')
+      expect(endData?.reason?.error?.message).toContain('exited with code 1')
+    })
     await done
   })
 
@@ -479,9 +576,12 @@ describe('claude-cli-provider run settlement', () => {
     // A zero exit with no parsed answer is an ERROR, never an empty success.
     expect(result.stopReason).toBe('error')
     expect(result.output).toEqual([])
-    const turnEnd = child.snapshotEvents().find(event => event.type === 'turn/end')
-    const endData = turnEnd?.data as { reason?: { kind?: string; error?: { message?: string } } } | undefined
-    expect(endData?.reason?.kind).toBe('error')
+    // turn/end lands after the post-exit mirror — wait the mirror queue out.
+    await vi.waitFor(() => {
+      const turnEnd = child.snapshotEvents().find(event => event.type === 'turn/end')
+      const endData = turnEnd?.data as { reason?: { kind?: string; error?: { message?: string } } } | undefined
+      expect(endData?.reason?.kind).toBe('error')
+    })
     await done
   })
 })
@@ -569,6 +669,7 @@ describe('claude-cli-provider resume round', () => {
       recordDelegation: () => {},
       getDelegation: () => undefined,
       recordRoundSettled: () => {},
+      reportRunProgress: () => {},
       acquireResumeLock: () => true,
       releaseResumeLock: () => {},
     } as never)
@@ -597,12 +698,19 @@ describe('claude-cli-provider resume round', () => {
     // Host 0.2.1: a fresh PER-EXECUTION run id; the SAME child session is
     // pinned by the argv and the turn counts below, not by the run id.
     expect(run.id).not.toBe(SessionId('child-run-1'))
+    // turn/end lands after the post-exit settle mirror — wait the mirror
+    // queue out before counting the boundaries.
+    await vi.waitFor(() => {
+      const turnEnds = child.snapshotEvents().filter(event => event.type === 'turn/end')
+      expect(turnEnds).toHaveLength(2)
+      expect((turnEnds[1]?.data as { turn?: number }).turn).toBe(2)
+    })
     const turnStarts = child.snapshotEvents().filter(event => event.type === 'turn/start')
-    const turnEnds = child.snapshotEvents().filter(event => event.type === 'turn/end')
     expect(turnStarts).toHaveLength(2)
-    expect(turnEnds).toHaveLength(2)
     expect((turnStarts[1]?.data as { turn?: number }).turn).toBe(2)
-    expect((turnEnds[1]?.data as { turn?: number }).turn).toBe(2)
+    // Both turns — the seeded first round and this resume round's mirror —
+    // pass the released-log reader's cold-read validation.
+    expectValidReleasedLog(child)
     await run.dispose()
   })
 
@@ -661,6 +769,7 @@ describe('claude-cli-provider resume lock', () => {
       recordDelegation: () => {},
       getDelegation: () => undefined,
       recordRoundSettled: () => {},
+      reportRunProgress: () => {},
       acquireResumeLock: (childSessionId: string) => {
         if (locked !== undefined) return false
         locked = childSessionId
@@ -801,23 +910,38 @@ describe('claude-cli-provider abort path', () => {
     expect(hanging.terminated()).toBe(true)
     await expect(run.dispose()).resolves.toBeUndefined()
 
+    // The partial stream (thinking + tool call) is mirrored after the kill,
+    // and the turn closes after the mirror (mirrored steps must precede
+    // turn/end in the stored log) — wait the mirror queue out.
+    await vi.waitFor(() => {
+      expect(child.snapshotEvents().filter(event => event.type === 'assistant/message')).toHaveLength(2)
+      expect(child.snapshotEvents().filter(event => event.type === 'tool/call')).toHaveLength(1)
+      expect(child.snapshotEvents().some(event => event.type === 'turn/end')).toBe(true)
+    })
     const turnEnd = child.snapshotEvents().find(event => event.type === 'turn/end')
     expect(turnEnd?.data).toEqual({ turn: 1, reason: { kind: 'aborted', reason: { kind: 'parent' } } })
-
-    // The partial stream (thinking + tool call) is mirrored after the kill.
-    await vi.waitFor(() => {
-      expect(child.snapshotEvents().filter(event => event.type === 'assistant/message')).toHaveLength(1)
-      expect(child.snapshotEvents().filter(event => event.type === 'tool/call')).toHaveLength(1)
-    })
     const assistant = child.snapshotEvents().filter(event => event.type === 'assistant/message')
     expect(assistant[0]!.data.message.content).toEqual([{ type: 'reasoning', text: '先想想怎么做。' }])
-    // The killed stream's tool_use mirrors as a native call (no result — the
-    // kill landed first).
-    expect(child.snapshotEvents().filter(event => event.type === 'tool/result')).toHaveLength(0)
+    // The killed stream's tool_use mirrors as the native lifecycle: the
+    // advertising message (the id-less block gets the fold's synthesized id),
+    // the call, and — the kill landed before any result — the synthesized
+    // interrupted result, marked isError.
+    expect(assistant[1]!.data.message.content).toEqual([
+      { type: 'tool-call', id: 'claude-tool-1', name: 'Bash', arguments: 'echo hi' },
+    ])
     const calls = child.snapshotEvents().filter(event => event.type === 'tool/call')
-    expect(calls[0]!.data).toMatchObject({ name: 'Bash', arguments: 'echo hi' })
-    // The preserved partial work carries its step boundaries too.
+    expect(calls[0]!.data).toMatchObject({ callId: 'claude-tool-1', name: 'Bash', arguments: 'echo hi' })
+    const toolResults = child.snapshotEvents().filter(event => event.type === 'tool/result')
+    expect(toolResults).toHaveLength(1)
+    expect(toolResults[0]!.data.message).toMatchObject({
+      toolCallId: calls[0]!.data.callId,
+      content: [{ type: 'text', text: CLAUDE_INTERRUPTED_TOOL_RESULT }],
+      isError: true,
+    })
+    // The preserved partial work carries its step boundaries too, and the
+    // whole interrupted log passes the released-log reader's cold read.
     expectStepBoundaries(child)
+    expectValidReleasedLog(child)
     await hanging.done
   })
 })
@@ -887,6 +1011,7 @@ describe('claude-cli-provider observed model and cwd', () => {
       recordDelegation: records,
       getDelegation: () => options.recorded,
       recordRoundSettled: settled,
+      reportRunProgress: () => {},
       acquireResumeLock: () => true,
       releaseResumeLock: () => {},
       setKimiMirroredLines: () => {},

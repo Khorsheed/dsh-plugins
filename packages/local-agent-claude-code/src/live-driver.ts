@@ -29,8 +29,9 @@ import { claudeDirectory } from './model-catalog.ts'
  * Fold: the resident stream speaks the exec path's exact event vocabulary
  * (`system`/`assistant`/`user`/`result`), so each turn folds through the
  * shared `ClaudeStreamParser` with the exec live mirror's hold-back rule (the
- * volatile last line waits for `result`, which carries the round's usage).
- * Every line folds 1:1. The always-enabled
+ * volatile last line waits for `result`, which carries the round's usage, and
+ * an unresulted tool line holds the fold until its result merges in place —
+ * the native lifecycle folds as one closed step). Every line folds 1:1. The always-enabled
  * `--include-partial-messages` adds incremental output on top: each `stream_event` partial accumulates into its kind's
  * stream (native message id + block index, with ordered legacy fallback),
  * which reserves a (turn, step) at its first delta and
@@ -865,8 +866,18 @@ export class ClaudeLiveDriver {
       return step
     }
 
-    /** Mirror folded lines [mirrored, upto); the last line is held back until `result`. */
-    const mirrorUpTo = (upto: number, withUsage: boolean): void => {
+    /**
+     * Mirror folded lines [mirrored, upto); the last line is held back until
+     * `result`. A tool line whose result the stream has not recorded yet HOLDS
+     * the fold mid-round: the fold writes the native lifecycle as one closed
+     * step (the released-log reader resolves every advertised call before
+     * step/end), and the result merges into the call's line in place, so a
+     * later pass retries from here and sees it. The settle flushes
+     * (`settle: true` — the turn's result event, or the final flush after a
+     * cancel/failure) never hold: the round is over, and a result that will
+     * never arrive folds as the interrupted placeholder.
+     */
+    const mirrorUpTo = (upto: number, withUsage: boolean, settle = false): void => {
       // The usage rides the last NON-tool line (tool events carry no usage
       // slot, and a kill mid-command ends the transcript with a tool line).
       // A carrier mirrored in an earlier flush (before the usage was knowable)
@@ -881,6 +892,7 @@ export class ClaudeLiveDriver {
       for (let index = mirrored; index < upto; index += 1) {
         const line = parser.lines[index]
         if (line === undefined) continue
+        if (!settle && line.kind === 'tool' && line.result === undefined) break
         const lineUsage = withUsage && index === usageIndex ? parser.usage : undefined
         if (lineUsage !== undefined) usageCarried = true
         const stream = line.kind === 'tool' ? undefined
@@ -941,9 +953,11 @@ export class ClaudeLiveDriver {
         // The turn closes: fold the result event itself (it carries the
         // round's usage — the fold's usage carrier rule needs it in both
         // granularities), then flush the held-back last line WITH the usage.
+        // Settle semantics: a tool call whose result never arrived folds with
+        // the interrupted placeholder — the turn is over, so it never will.
         awaitingResult = false
         parser.push(JSON.stringify(event) + '\n')
-        mirrorUpTo(parser.lines.length, true)
+        mirrorUpTo(parser.lines.length, true, true)
         resolveResult(event)
         return
       }
@@ -1091,7 +1105,7 @@ export class ClaudeLiveDriver {
         // An aborted or failed turn never sees the result event, so its
         // held-back line (and the usage already observed) would be lost —
         // flush it now (the exec settle-mirror's partial-work contract).
-        if (mirrored < parser.lines.length) mirrorUpTo(parser.lines.length, true)
+        if (mirrored < parser.lines.length) mirrorUpTo(parser.lines.length, true, true)
         // Streams whose completion never arrived (abort, or the turn ended
         // mid-message) still finalize INSIDE the turn window: one forced
         // snapshot each — interrupted on a non-completed round, the LAST one

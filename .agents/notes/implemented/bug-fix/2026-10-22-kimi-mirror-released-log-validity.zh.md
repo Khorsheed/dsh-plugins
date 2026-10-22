@@ -39,7 +39,7 @@ kimi 子会话只发射 released-log 读取端承认的日志形状，规则只�
 - 进行中的工具不再渲染 durable 卡片：卡片在 wire 记录结果时 fold（或在 settle 时以中断占位）。text/think 的实时流不受影响。
 - 顺序保真以"live 到达序"而非 wire 序为准：从未流式的条目会排在先到达的流式条目之后 fold（reservation 建立时 wire 上那行还不可见）。若该静默条目的 fold 恰好丢弃了本轮 usage 载体，账目改由本轮 settle 观测承载而非消息——恰好一次保持，载体尽力而为。
 - 工具结果的 `arguments`/`name` 保真度不变（沿用 wire 的渲染摘要）；本次改变的只是生命周期的合法性。
-- 留给兄弟包 owner 的跟进项（附真实环境证据）：claude-code/codex 的 mirror 发射没有通告消息的裸 `tool/call`（已有一个损坏的 claude 子会话在案），dsh 镜像可能把子会话被中断的打开 step 带过 `turn/end`。它们的 reservation 时序让并发 step 违规不太可能而非不可能——两次快照落盘之间的崩溃即可复现。
+- 留给兄弟包 owner 的跟进项（附真实环境证据）：claude-code/codex 的 mirror 发射没有通告消息的裸 `tool/call`（已有一个损坏的 claude 子会话在案），dsh 镜像可能把子会话被中断的打开 step 带过 `turn/end`。它们的 reservation 时序让并发 step 违规不太可能而非不可能——两次快照落盘之间的崩溃即可复现。claude-code 那一半已落地：[claude-code 工具生命周期笔记](2026-10-22-claude-code-mirror-tool-lifecycle.md)。
 
 ## Testing
 

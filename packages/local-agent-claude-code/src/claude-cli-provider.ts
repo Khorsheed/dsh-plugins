@@ -63,6 +63,16 @@ import { endpointAuthEnv } from './endpoint-auth.ts'
 // source then compiles against both lines.
 type ToolCallEventCallId = SessionEventMap['tool/call']['callId']
 type ToolResultCallId = Parameters<typeof createToolResultMessage>[0]['callId']
+type ToolCallBlockId = Extract<ContentBlock, { type: 'tool-call' }>['id']
+
+/**
+ * The synthesized result for a call whose result the stream never recorded
+ * (a settle-pass fold after a kill or a truncated stream). The released-log
+ * contract resolves every advertised call before its step closes, so an
+ * interrupted call folds with this error result. Shared verbatim with the
+ * kimi provider (`KIMI_INTERRUPTED_TOOL_RESULT`) so the family reads one text.
+ */
+export const CLAUDE_INTERRUPTED_TOOL_RESULT = '（工具调用被中断，未能记录返回结果）'
 
 /** Default POSIX grace between subprocess termination tiers. */
 export const DEFAULT_DISPOSE_GRACE_MS = 3_000
@@ -1426,31 +1436,10 @@ export async function startClaudeCliRun(
   }).then((settled) => {
     // A completed round proves the scoped credential is live — the endpoint
     // answered. Reported here rather than from the mirror so it lands whether
-    // or not the round is session-backed.
+    // or not the round is session-backed. The turn boundary is NOT appended
+    // here: it lands after the post-exit settle mirror (below), so every
+    // mirrored step precedes turn/end in the stored log.
     if (settled.stopReason === 'completed') spec.onAuthSuccess?.()
-    // Every terminal path closes the turn so the timing window never stays
-    // open on a failed or cancelled run. The turn/end timestamp is the real
-    // settle moment; an in-stream error result or a non-zero exit settles
-    // 'error', a locally cancelled run 'aborted'.
-    if (spec.childSession !== undefined) {
-      if (settled.stopReason === 'completed') {
-        spec.childSession.append('turn/end', { turn, reason: { kind: 'completed' } })
-      } else if (settled.stopReason === 'aborted') {
-        spec.childSession.append('turn/end', { turn, reason: { kind: 'aborted', reason: { kind: 'parent' } } })
-      } else {
-        const parsed = parseClaudeStreamJson(output)
-        spec.childSession.append('turn/end', {
-          turn,
-          reason: {
-            kind: 'error',
-            error: {
-              message: parsed.error ?? `claude -p exited with code ${String(exitCode)}`,
-              code: 'UNKNOWN',
-            },
-          },
-        })
-      }
-    }
     return settled
   })
 
@@ -1459,23 +1448,60 @@ export async function startClaudeCliRun(
   // subagent session, so a cancelled round still preserves its partial work
   // (thinking, tool calls with results, replies) and real token usage. The
   // session id is recorded even on abort so the partial session stays
-  // resumable. Waits for the settle chain first (so turn/end is already
-  // appended) AND for the process to actually exit (so stdout is drained).
+  // resumable. Waits for the settle chain first AND for the process to
+  // actually exit (so stdout is drained). The turn closes AFTER the settle
+  // mirror, still behind the mirror queue: every mirrored step must land
+  // before turn/end — the released-log reader rejects a step outside an open
+  // turn on every cold read. The run's `result` still settles at its own
+  // moment (abort latency unchanged); only the boundary moved.
   void result.then(() => child.done).then(
-    () => {
+    async () => {
+      // The seam's collected buffers are complete at process exit; the
+      // streamed variables can lag `done` by a tick.
+      const drainedStdout = child.collected.stdout?.readFrom(0).text || output
       // Auth detection runs post-exit: streams are drained by then, so a fast
       // failure's output is complete (a settle-time read could race the flush).
       if (spec.onAuthFailure !== undefined) {
-        // The seam's collected buffers are complete at process exit; the
-        // streamed variables can lag `done` by a tick.
         const drainedStderr = child.collected.stderr?.readFrom(0).text || stderr
-        const drainedStdout = child.collected.stdout?.readFrom(0).text || output
         const authDetail = `${parseClaudeStreamJson(drainedStdout).error ?? ''}\n${drainedStderr}`
         if (CLAUDE_AUTH_FAILURE.test(authDetail)) {
           spec.onAuthFailure(authDetail.split('\n').find(line => line.trim() !== '') ?? 'auth failure')
         }
       }
-      return mirrorClaudeAfterExit(spec, task, turn, output, liveMirror)
+      await mirrorClaudeAfterExit(spec, task, turn, drainedStdout, liveMirror)
+      const closeTurn = async (): Promise<void> => {
+        if (spec.childSession === undefined) return
+        const childSession = spec.childSession
+        const settled = await result
+        // Every terminal path closes the turn so the timing window never stays
+        // open on a failed or cancelled run. An in-stream error result or a
+        // non-zero exit settles 'error', a locally cancelled run 'aborted'.
+        if (settled.stopReason === 'completed') {
+          childSession.append('turn/end', { turn, reason: { kind: 'completed' } })
+        } else if (settled.stopReason === 'aborted') {
+          childSession.append('turn/end', { turn, reason: { kind: 'aborted', reason: { kind: 'parent' } } })
+        } else {
+          childSession.append('turn/end', {
+            turn,
+            reason: {
+              kind: 'error',
+              error: {
+                message: parseClaudeStreamJson(drainedStdout).error ?? `claude -p exited with code ${String(exitCode)}`,
+                code: 'UNKNOWN',
+              },
+            },
+          })
+        }
+        if (spec.ctx !== undefined) {
+          await persistChildSession(spec.ctx, childSession).catch((error: unknown) => {
+            spec.ctx?.logger.warn(`subagent-claude: turn/end persistence failed: ${thrown(error).message}`)
+          })
+        }
+      }
+      // Behind the live mirror's queue so a flush in flight cannot interleave
+      // (mirrorClaudeAfterExit already enqueued its own pass there).
+      if (liveMirror === undefined) await closeTurn()
+      else await liveMirror.enqueue(closeTurn)
     },
     () => { /* child.done rejects only on infra faults; nothing to mirror */ },
   )
@@ -1511,6 +1537,15 @@ export function assistantEvent(blocks: readonly ContentBlock[]) {
  * the real-time view renders nothing (only a full rebuild, which mints step
  * drafts from the explicit coordinates, recovers it). Tool cards escape that
  * fate only because their definition does not consult the step location.
+ *
+ * A tool line folds the native lifecycle inside its one step: an assistant
+ * message advertising the tool-call block, the `tool/call`, and its
+ * `tool/result` — the released-log reader pairs call and result against the
+ * advertisement and resolves every advertised call before the step closes, so
+ * a line whose result the stream has not recorded yet must NOT reach this
+ * fold mid-round (the callers hold there; the result merges into the call's
+ * line in place, so a later pass sees it). A line still unresulted at settle
+ * folds with the interrupted placeholder ({@link CLAUDE_INTERRUPTED_TOOL_RESULT}).
  */
 export function appendClaudeTranscriptLine(
   childSession: Session,
@@ -1521,27 +1556,31 @@ export function appendClaudeTranscriptLine(
 ): void {
   childSession.append('step/start', { turn, step })
   if (line.kind === 'tool') {
-    // Native tool card: the call event now, the result event when the stream
-    // already carries it. Tool lines never carry the round's usage — the
-    // callers attach usage to the round's last non-tool line.
+    // Tool lines never carry the round's usage — the callers attach usage to
+    // the round's last non-tool line.
+    const args = line.args ?? ''
+    childSession.append('assistant/message', {
+      turn,
+      step,
+      message: assistantEvent([{ type: 'tool-call', id: line.id as ToolCallBlockId, name: line.name, arguments: args }]),
+      stream: [],
+    }, { surfaceOp: 'append' })
     const call = childSession.append('tool/call', {
       turn,
       step,
       callId: line.id as ToolCallEventCallId,
       name: line.name,
-      arguments: line.args ?? '',
+      arguments: args,
     })
-    if (line.result !== undefined) {
-      childSession.append('tool/result', {
-        turn,
-        step,
-        message: createToolResultMessage({
-          callId: line.id as ToolResultCallId,
-          content: [{ type: 'text', text: line.result }],
-          isError: false,
-        }),
-      }, { surfaceOp: 'append', sourceEventSeqs: [call.seq] })
-    }
+    childSession.append('tool/result', {
+      turn,
+      step,
+      message: createToolResultMessage({
+        callId: line.id as ToolResultCallId,
+        content: [{ type: 'text', text: line.result ?? CLAUDE_INTERRUPTED_TOOL_RESULT }],
+        isError: line.result === undefined,
+      }),
+    }, { surfaceOp: 'append', sourceEventSeqs: [call.seq] })
     childSession.append('step/end', { turn, step })
     return
   }
@@ -1586,9 +1625,12 @@ export function claudeLineText(line: ClaudeTranscriptLine): string {
  * settle. The LAST line is held back until the stream's terminal `result`
  * event: it may still merge a trailing `tool_result`, and it is the round's
  * usage carrier (the settle fold attaches usage to the final line — same
- * placement here). The counters are the settle path's offset: the final
- * mirror resumes from them and is a no-op when live mirroring kept up.
- * Failures are diagnostic-only and never kill the run.
+ * placement here). A tool line whose result the stream has not recorded yet
+ * also holds the pass (its lifecycle folds as one closed step; the result
+ * merges into the line in place, so a later push sees it). The counters are
+ * the settle path's offset: the final mirror resumes from them and is a
+ * no-op when live mirroring kept up. Failures are diagnostic-only and never
+ * kill the run.
  */
 interface ClaudeLiveMirror {
   /** Fold one stdout chunk and mirror the newly completed lines. */
@@ -1616,7 +1658,11 @@ function createClaudeLiveMirror(spec: ClaudeCliRunSpec, task: string, turn: numb
     get mirroredLines() { return mirrored },
     get userMirrored() { return userMirrored },
     enqueue(task) {
-      queue = queue.then(task)
+      // A failed task must not poison the queue for the passes that still owe
+      // writes (the settle mirror, the turn boundary): heal the tail before
+      // chaining. The returned promise still carries THIS task's rejection to
+      // its own caller.
+      queue = queue.catch(() => {}).then(task)
       return queue
     },
     push(chunk) {
@@ -1634,8 +1680,25 @@ function createClaudeLiveMirror(spec: ClaudeCliRunSpec, task: string, turn: numb
         todoSkewWarned = true
         ctx.logger.warn('subagent-claude: a TodoWrite call missed the documented input shape; folded as a plain tool line')
       }
-      const upto = parser.completed ? parser.lines.length : parser.lines.length - 1
-      if (upto <= mirrored) return
+      // The fold window: every line but the volatile last one — plus a HOLD
+      // at the first tool line whose result the stream has not recorded yet.
+      // The fold writes the native lifecycle as one closed step (the
+      // released-log reader resolves every advertised call before step/end),
+      // and the result merges into the call's line in place, so the next push
+      // retries from here and sees it. A completed parser (the terminal
+      // `result` event folded) never holds: the round is over, and a result
+      // that will never arrive folds as the interrupted placeholder.
+      let upto = parser.completed ? parser.lines.length : parser.lines.length - 1
+      if (!parser.completed) {
+        for (let scan = mirrored; scan < upto; scan += 1) {
+          const heldLine = parser.lines[scan]
+          if (heldLine?.kind === 'tool' && heldLine.result === undefined) {
+            upto = scan
+            break
+          }
+        }
+      }
+      if (upto <= mirrored && userMirrored) return
       void mirror.enqueue(async () => {
         try {
           const localAgent = ctx.get('localAgent')
