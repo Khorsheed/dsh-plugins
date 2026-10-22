@@ -1,6 +1,6 @@
 import type { SessionTrend } from '../types.ts'
 import { Trend } from './Trend.tsx'
-import { AgentTabs, ParentLine, agentKeyOf, withAbsentAgents } from './AgentTabs.tsx'
+import { AgentTabs, ParentLine } from './AgentTabs.tsx'
 /** Session/turn/scope navigation; request detail owns its JSON toggle. */
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { PanelRoot } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
@@ -65,8 +65,6 @@ export function InspectorPanel({
   const [filterCat, setFilterCat] = useState<CompositionFilter>(null)
   const [requestTrail, setRequestTrail] = useState<{ turnSeq: number; scopeId: string; seq: number }[]>([])
   const [scopeId, setScopeId] = useState<string>('main')
-  /** The external agent the user is following across turns (provider + label), if any. */
-  const [agentKey, setAgentKey] = useState<string | null>(null)
   const [selectedSeq, setSelectedSeq] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [turnMissing, setTurnMissing] = useState(false)
@@ -162,13 +160,7 @@ export function InspectorPanel({
     return () => { cancelled = true }
   }, [sessionId, turnSeq, getTurn, tab.signal])
 
-  const scopes = withAbsentAgents(overview?.scopes ?? [], overview?.agents)
-  useEffect(() => {
-    if (agentKey === null || overview === null) return
-    const follow = scopes.find(candidate => agentKeyOf(candidate) === agentKey)
-    if (follow !== undefined && follow.scopeId !== scopeId) setScopeId(follow.scopeId)
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-run per loaded turn only
-  }, [overview, agentKey])
+  const scopes = overview?.scopes ?? []
   const scope = scopes.find(candidate => candidate.scopeId === scopeId)
     ?? scopes.find(candidate => candidate.kind === 'main')
     ?? scopes[0]
@@ -303,8 +295,6 @@ export function InspectorPanel({
   }
 
   const onSelectScope = (next: string): void => {
-    const target = scopes.find(candidate => candidate.scopeId === next)
-    setAgentKey(target === undefined ? null : agentKeyOf(target) ?? null)
     if (next === effectiveScope?.scopeId) return
     setScopeId(next)
     setSelectedSeq(null)
@@ -431,19 +421,18 @@ export function InspectorPanel({
         </div>}
         {backfill?.state === 'partial' && <div className={css.stateNote}>{t('hint.backfillTruncated')}</div>}
         {parent && <ParentLine parent={parent} t={t} />}
+        {/* The trend is the session map: always the main conversation, it picks the turn. */}
+        {trend && <Trend data={trend} turnSeq={turnSeq} selectedSeq={effectiveScope?.kind === 'main' ? selectedRequestSeq : null} scopeId="main" scopeLabel={t('scope.mainName')} t={t} onSelect={(next, seq, targetScope) => { onSelectTurn(next); onOpenRequest(seq, targetScope) }} onSelectScope={(next, targetScope) => { onSelectTurn(next); onSelectScope(targetScope) }} />}
+        {/* Below it, the selected turn's participants: nothing that did not take part. */}
         {scopes.length > 0 && (
           <AgentTabs
             scopes={scopes}
-            agents={overview?.agents}
-            turnSeq={turnSeq}
-            onOpenTurn={next => onSelectTurn(next)}
             value={effectiveScope?.scopeId ?? 'main'}
             onSelect={onSelectScope}
             onOpenRequest={link => { setTurnSeq(link.turnSeq); onOpenRequest(link.seq, link.scopeId) }}
             t={t}
           />
         )}
-        {trend && effectiveScope && <Trend data={trend} turnSeq={turnSeq} selectedSeq={selectedRequestSeq} scopeId={effectiveScope.scopeId} scopeIds={(() => { const key = agentKeyOf(effectiveScope); return key === undefined ? undefined : overview?.agents?.find(agent => agent.key === key)?.runs.map(run => run.scopeId) })()} scopeLabel={effectiveScope.kind === 'main' ? t('scope.mainName') : `#${effectiveScope.scopeSeq} ${effectiveScope.label ?? effectiveScope.scopeId}`} t={t} onSelect={(next, seq, targetScope) => { onSelectTurn(next); onOpenRequest(seq, targetScope) }} onSelectScope={(next, targetScope) => { onSelectTurn(next); onSelectScope(targetScope) }} />}
       </div>
       <div className={css.body}>{body}</div>
     </PanelRoot>

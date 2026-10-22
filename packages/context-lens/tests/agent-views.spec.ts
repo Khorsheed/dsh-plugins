@@ -100,7 +100,7 @@ describe('agent views', () => {
     expect(store.listTurns('child').parent).toEqual({ sessionId: 'session-room', title: '邀请Claude、Kimi和Codex打招呼', hostTurn: 1, label: 'Codex' })
   })
 
-  it('lists each external agent once across turns, and names what started a turn no human did', () => {
+  it('lists only the agents that ran in a turn, and names what started a turn no human did', () => {
     const rows = log()
     // Turn 2 starts from a room delivery instead of a human message, and calls Codex again.
     rows.splice(12, 1, { type: 'user/message', seq: 12, time: 1200, surfaceOp: 'append', data: { id: 'room1', role: 'user', content: [{ type: 'text', text: '收到执行请求' }], source: { kind: 'room' } } })
@@ -112,8 +112,7 @@ describe('agent views', () => {
     store.noteChildProvider('child-codex', 'codex-local')
     store.noteChildProvider('child-codex-2', 'codex-local')
     expect(store.listTurns('s').turns.find(t => t.hostTurn === 2)?.trigger).toEqual({ source: 'room', text: '收到执行请求' })
-    expect(store.getTurn('s', 2)!.agents).toEqual([{ key: 'codex-local\u0000Codex', label: 'Codex', provider: 'codex-local', runs: [
-      { turnSeq: 1, hostTurn: 1, scopeId: 'child-codex' }, { turnSeq: 2, hostTurn: 2, scopeId: 'child-codex-2' },
-    ] }])
+    // Each turn lists only the agents that ran in it.
+    expect(store.getTurn('s', 2)!.scopes.filter(sc => sc.kind === 'subagent').map(sc => sc.scopeId)).toEqual(['child-codex-2'])
   })
 })

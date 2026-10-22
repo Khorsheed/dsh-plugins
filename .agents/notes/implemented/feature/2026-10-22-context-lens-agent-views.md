@@ -13,25 +13,26 @@ A turn's work can spread over the main conversation, dsh subagents, external age
 
 ## Decision
 
-- **One row of grouped views per turn.** Groups are main, external agents, subagents, and compaction (`AgentTabs.tsx`, the "B" grouped-capsule design from the local, untracked design prototype). A group with more than three entries shows two (the selected one always among them) and folds the rest behind "+N". "+N" opens the whole group in delegation order, with the delegating request number and the request count. A relation line under the row says how the selected view relates to the main conversation, with a jump back where a link exists.
-- **External agents persist across turns.** `TurnOverview.agents` lists every external agent seen in the session, keyed by provider + label, with each turn view it ran in. A turn where an agent did not run still shows its tab: dimmed, with 0 requests and an empty state. Selecting one follows that agent when the turn changes, and its trend shows its requests across every turn. Subagents (one task each) and compactions stay per turn.
-- **The relation line holds only facts with a jump**: the delegating request, the turns an external agent ran in, and failure. It carries no provider names or "not started by a tool call" explanations.
+- **The session map first, the turn's participants under it.** The trend sits above the tabs and always shows the main conversation; it picks the turn. A turn where another agent ran carries a mark on its label. Under it, one flat row (`AgentTabs.tsx`) lists the main conversation and every participant of the selected turn: external agents, subagents, and compactions, with no grouping and nothing that did not take part. Past four participants beside the main conversation, three stay visible (the selected one always among them) and the rest fold behind "+N". "+N" lists them all in start order, with the delegating request number and request count. The main conversation is selected by default.
+- **The relation line holds only facts with a jump**: the delegating request, a compaction's position, and failure. It carries no provider names or explanations, and the main conversation has none.
 - **A turn no human started names its trigger.** When a turn has no human message, its first message from a non-ambient producer becomes `TurnListItem.trigger`. Ambient producers are runtime context, skills, reminders, and checkpoints. The panel shows the trigger's source tag and last paragraph instead of an empty query line. Injected triggers lead with standing instructions and end with this turn's delivery, so the last paragraph is the part that differs between turns.
-- **External vs subagent** comes from the child's `subagent/descriptor` provider. `dsh*` means subagent; anything else (`codex-local`, …) is an external agent. The provider is read live from the child's session events and, on the log lane, from the child log.
+- **External vs subagent** comes from the child's `subagent/descriptor` provider. `dsh*` means subagent; anything else (`codex-local`, …) is an external agent. The provider is read live from the child's session events and, on the log lane, from the child log. The tab row does not group by it; it stays on the view for consumers that need the distinction.
 - **Catalog-only children are views.** A `subagent/catalog` row that no pending delegation call claims becomes a delegation with `callId: ''`. Its status is `ok`, since the absence of a tool result is not evidence of failure, and it has no `delegatedBy`.
 - **Delegation provenance.** A child view bound to a tool call carries `delegatedBy`, the main request whose response issued that call. Main requests carry `delegates` (the child views their calls started), which the trend draws as a dot.
 - **Compactions attach to their turn.** A compaction pseudo-turn attaches to the turn named by `compaction/start`. Without a turn (between turns), it attaches to the next turn to begin. It disappears from the turn list and appears as that turn's `compaction:<pseudo turnSeq>` view, with `replacedCount` and the main request it followed. Every link to a compaction request — composition provenance, change-list jumps, the request view's own `scopeId` — goes through one `addressOf`, so navigation lands on the new address. The trend draws a dashed divider where it happened.
 - **Compaction replay** prepends the surface-node-0 system message and the latest header's tools to the compacted region, matching compaction-basic's `buildSummarizationInput`. Only the trailing instruction, which lives in host code, stays missing; it is labelled as not recorded, and the request keeps `inputPartial`.
 - **Parent link.** On backfill, a session whose log header names `parentSession` reads the parent log once for its title, the turn whose catalog row started it, and the catalog label. `ListTurnsResult.parent` carries these, and the panel prints them above the views.
-- **Trend.** Bar width fits the panel: available width ÷ request count, clamped to 2–7px; below 2px the strip scrolls. Turns are separated and labelled at their start. The current turn is outlined rather than filled. The hit-ratio encoding is unchanged.
+- **Trend.** Bar width fits the panel: available width ÷ request count, clamped to 2–7px; below 2px the strip scrolls. Turns are separated and labelled at their start. The current turn is outlined rather than filled. The hit-ratio encoding is unchanged. A dot under a main request marks the child views its tool calls started, and a dashed line marks a compaction; both switch to that view.
 
 ## Alternatives considered
 
-**Underline tabs (design "A").** They are lighter, but lose the grouping between external agents and subagents, and scroll sideways when many children exist. The user picked the grouped capsules.
+**Grouped capsules with external agents kept in every turn.** This shipped first: groups for main, external agents, subagents, and compaction above the trend, and every external agent's tab kept in every turn, dimmed where it did not run. In use it inverted the reading order (the trend sits under a view selector it also depended on) and left many tabs that opened onto nothing. Putting the turn map first and listing only the turn's participants removed both, at the cost of following one agent across turns from its tab; the turn marks on the map show where other agents ran.
+
+**Underline tabs (design "A").** They are lighter, but scroll sideways when many children exist.
 
 **A session-wide compaction tab on the far right.** It would detach compactions from the turn stepper and from the trend divider that marks where each happened. Attaching to the turn keeps the three in agreement.
 
-**Keeping every child's tab in every turn.** Subagents are one-off tasks with distinct names, so persisting them would pile up dim tabs. Only external agents, which are the same agent called again, persist.
+**Keeping every child's tab in every turn.** It leaves tabs that open onto nothing. Only the selected turn's participants are listed.
 
 **Previewing a trigger by its opening text or by its difference from the previous trigger.** Room deliveries open with an identical coordinator prompt and roster. A common-prefix cut breaks as soon as the roster changes. The last paragraph matched the delivery in every turn of the real room session.
 
@@ -55,7 +56,7 @@ A turn's work can spread over the main conversation, dsh subagents, external age
 - compaction attachment and link readdressing, including the trend;
 - the parent link.
 
-`tests/client-agent-tabs.spec.tsx` covers grouping, the "+N" overflow with the selected entry kept visible, the relation lines, and the parent line. Existing panel and compaction specs were updated for tab roles and the new turn list.
+`tests/client-agent-tabs.spec.tsx` covers the flat participant row, the "+N" overflow with the selected entry kept visible, the relation lines, and the parent line. Existing panel and compaction specs were updated for tab roles and the new turn list.
 
 A run over 3080 logs gave these results:
 - The room session "邀请Claude、Kimi和Codex打招呼" now shows Kimi Code, Codex, and Claude Code views in turn 1; before this change it showed none.

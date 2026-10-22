@@ -237,6 +237,7 @@
 .trendBar i { width: 100%; background: var(--dsw-alias-state-success-primary); }
 .trendGroup[data-current="true"] .trendBar { opacity: 1; }
 .trendTurn { font-family: var(--dsw-font-family-mono, ui-monospace, monospace); font-size: var(--dsh-panel-text-meta, 10px); color: var(--dsw-alias-label-tertiary); text-align: left; padding-left: 1px; }
+.trendAgents { display: inline-block; width: 5px; height: 5px; margin-left: 3px; border-radius: 50%; background: var(--dsw-alias-state-warning-primary, #e8590c); vertical-align: middle; }
 .trendGroup[data-current="true"] .trendTurn { color: var(--dsw-alias-state-business-primary); }
 /* Delegation dot under the request that started a child view; compaction as a dashed divider. */
 .trendDot { position: absolute; left: 50%; bottom: 0; width: 6px; height: 6px; transform: translateX(-50%); padding: 0; border: 0; border-radius: 50%; background: var(--dsw-alias-state-business-primary, #0c8599); cursor: pointer; }

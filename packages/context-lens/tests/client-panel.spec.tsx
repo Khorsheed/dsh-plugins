@@ -641,16 +641,17 @@ describe('InspectorPanel · 新增 provenance label', () => {
 })
 
 describe('Context Lens session trend', () => {
-  it('selects a child request through the session map and preserves its scope', async () => {
+  it('keeps the session map on the main conversation while a participant is selected', async () => {
     bench()
     await screen.findByText('#101 · read:a.ts')
-    expect(screen.queryByRole('button', { name: 'turn 2 #201 · 0%' })).toBeNull()
+    const mainBars = () => screen.getAllByRole('button', { name: /^turn \d+ #\d+ · / }).map(bar => bar.getAttribute('aria-label'))
+    const before = mainBars()
+    expect(before).not.toContain('turn 2 #201 · 0%')
     fireEvent.click(screen.getByRole('tab', { name: /提取 JSON/ }))
-    const bar = await screen.findByRole('button', { name: 'turn 2 #201 · 0%' })
-    expect(screen.queryByRole('button', { name: /turn 2 #101/ })).toBeNull()
-    fireEvent.click(bar)
-    await waitFor(() => expect(screen.getByText('#201 · 助手回复', { selector: 'b' })).toBeTruthy())
-    expect(screen.getByRole('tab', { name: /提取 JSON/ }).getAttribute('aria-selected')).toBe('true')
+    await waitFor(() => expect(screen.getByRole('tab', { name: /提取 JSON/ }).getAttribute('aria-selected')).toBe('true'))
+    // The map does not switch to the participant; the tabs below do.
+    expect(mainBars()).toEqual(before)
+    expect(screen.queryByRole('button', { name: 'turn 2 #201 · 0%' })).toBeNull()
   })
 })
 

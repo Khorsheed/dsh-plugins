@@ -26,7 +26,6 @@ export function Trend({
   turnSeq,
   selectedSeq,
   scopeId,
-  scopeIds,
   scopeLabel,
   onSelect,
   onSelectScope,
@@ -36,8 +35,6 @@ export function Trend({
   readonly turnSeq: number | null
   readonly selectedSeq: number | null
   readonly scopeId: string
-  /** Every view of the same agent across turns (an external agent followed through the session). */
-  readonly scopeIds?: readonly string[] | undefined
   readonly scopeLabel: string
   readonly onSelect: (turnSeq: number, seq: number, scopeId: string) => void
   readonly onSelectScope?: ((turnSeq: number, scopeId: string) => void) | undefined
@@ -61,10 +58,11 @@ export function Trend({
       el.scrollLeft = current.offsetLeft - el.clientWidth / 2 + current.offsetWidth / 2
   }, [turnSeq, scopeId, data])
 
-  const shown = new Set(scopeIds ?? [scopeId])
-  const requests = data.requests.filter(r => shown.has(r.scopeId))
+  const requests = data.requests.filter(r => r.scopeId === scopeId)
   const main = scopeId === 'main'
   const compactions = main ? data.requests.filter(r => isCompaction(r.scopeId)) : []
+  /** Turns where some other agent ran: their label carries a mark, so the map shows where to look. */
+  const withAgents = new Set(main ? data.requests.filter(r => r.scopeId !== 'main' && !isCompaction(r.scopeId)).map(r => r.turnSeq) : [])
   const turns = data.turns.filter(turn => requests.some(r => r.turnSeq === turn.turnSeq))
   const max = Math.max(1, ...requests.map(r => (r.usage ? inputTotal(r.usage) : 0)))
   const barWidth = fitWidth(width, requests.length, turns.length)
@@ -108,7 +106,7 @@ export function Trend({
                 })}
                 {dividersBefore(turn.turnSeq, undefined, rows.at(-1)).map(c => <button key={c.seq} type="button" className={css.trendCompaction} title={t('trend.compaction')} aria-label={t('trend.compaction')} onClick={() => onSelect(turn.turnSeq, c.seq, c.scopeId)} />)}
               </div>
-              <span className={css.trendTurn}>{turn.hostTurn ?? '·'}</span>
+              <span className={css.trendTurn}>{turn.hostTurn ?? '·'}{withAgents.has(turn.turnSeq) && <i className={css.trendAgents} title={t('trend.agents')} aria-label={t('trend.agents')} />}</span>
             </div>
           )
         })}
