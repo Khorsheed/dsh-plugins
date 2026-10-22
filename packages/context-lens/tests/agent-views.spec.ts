@@ -68,7 +68,7 @@ describe('agent views', () => {
     const main = scopes.find(s => s.kind === 'main')!
     expect(scopes.find(s => s.scopeId === 'child-dsh')).toMatchObject({ provider: 'dsh-cli', delegatedBy: { turnSeq: 1, scopeId: 'main', requestNumber: 1 } })
     expect(scopes.find(s => s.scopeId === 'child-codex')?.provider).toBe('codex-local')
-    expect(main.requests[0]?.delegates).toEqual([{ scopeId: 'child-dsh', external: false }])
+    expect(main.requests[0]?.requestNumber).toBe(1)
   })
 
   it('attaches a compaction to the turn it happened in and readdresses every link to it', () => {

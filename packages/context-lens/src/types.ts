@@ -513,8 +513,6 @@ export interface RequestListItem {
   /** 请求体总字符数（明细头右上）。 */
   totalChars: number
   toolErrors?: number
-  /** Main requests: the child views this request's tool calls started. */
-  delegates?: { scopeId: string; external: boolean }[]
 }
 
 /** One turn's whole-turn timing view (the 耗时分布 tab). */

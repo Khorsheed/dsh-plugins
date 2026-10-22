@@ -1245,19 +1245,8 @@ export class InspectorStore {
         ...request.compaction?.inputPartial ? { timingApproximate: true } : {},
         totalChars: request.totalChars,
         toolErrors: request.execs.filter(exec => exec.isError).length,
-        ...scope.scopeId === 'main' && host === undefined ? this.delegatesOf(turn, request) : {},
       })),
     }
-  }
-
-  /** The child views one main request's tool calls opened (the trend's delegation dots). */
-  private delegatesOf(turn: TurnRecord, request: StoredRequest): Pick<RequestListItem, 'delegates'> {
-    const calls = new Set((request.response?.toolCalls ?? []).map(call => call.callId).filter(Boolean))
-    if (calls.size === 0) return {}
-    const delegates = [...turn.scopes.values()]
-      .filter(scope => scope.callId !== undefined && calls.has(scope.callId))
-      .map(scope => ({ scopeId: scope.scopeId, external: isExternal(scope.provider) }))
-    return delegates.length === 0 ? {} : { delegates }
   }
 
   /** Record the child's provider from its `subagent/descriptor` (live child events or its log). */
@@ -1740,9 +1729,4 @@ function executionSize(request: Pick<StoredRequest, 'execs'>): number {
 function responseSize(response: CapturedResponse | undefined): number {
   return (response?.reasoning?.length ?? 0) + (response?.text?.length ?? 0)
     + (response?.toolCalls.reduce((n, call) => n + call.name.length + call.arguments.length, 0) ?? 0)
-}
-
-/** A child run by another agent product (Claude Code, Codex, Kimi…) rather than a dsh subagent. */
-export function isExternal(provider: string | undefined): boolean {
-  return provider !== undefined && !provider.startsWith('dsh')
 }

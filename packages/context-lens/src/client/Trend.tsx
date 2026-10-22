@@ -6,20 +6,23 @@ import css from './InspectorPanel.module.css'
 
 type TrendRequest = SessionTrend['requests'][number]
 const isCompaction = (scopeId: string) => scopeId.startsWith('compaction:')
+/** Smallest cell a turn may shrink to (one label); below it the map scrolls. */
+const MIN_CELL = 22
+/** A turn's cell grows with its request count past this many. */
+const CELL_SHARE = 3
 
-/** Bar width that fits every request in the box (2–7px); below 2px the strip scrolls instead. */
-function fitWidth(box: number, requests: number, groups: number): number {
-  if (requests === 0 || box === 0) return 7
-  const perBar = Math.floor((box - groups * 10) / requests) - 1
-  return Math.max(2, Math.min(7, perBar))
+/** Bar width that fits every request across the map (2–6px). */
+function fitWidth(box: number, requests: number, turns: number): number {
+  if (requests === 0 || box === 0) return 6
+  return Math.max(2, Math.min(6, Math.floor((box - turns * 8) / requests) - 2))
 }
 
 /**
- * A body-free map of one view's requests across the session's turns. Bars fit
- * the panel width; turns are separated and labelled at their start; the
- * current turn is outlined. On the main conversation, a dot under a request
- * marks the child views its tool calls started, and a dashed line marks where
- * a compaction happened — both switch to that view.
+ * The session map: the main conversation's requests across turns, filling
+ * the panel width on one baseline. Each turn is a cell (wider when it holds
+ * more requests); the current turn is a tinted band with its number in
+ * bold. A dashed line marks where a compaction happened and opens it; the
+ * turn's other participants show as tabs below the map, not on it.
  */
 export function Trend({
   data,
@@ -28,7 +31,6 @@ export function Trend({
   scopeId,
   scopeLabel,
   onSelect,
-  onSelectScope,
   t,
 }: {
   readonly data: SessionTrend
@@ -37,7 +39,6 @@ export function Trend({
   readonly scopeId: string
   readonly scopeLabel: string
   readonly onSelect: (turnSeq: number, seq: number, scopeId: string) => void
-  readonly onSelectScope?: ((turnSeq: number, scopeId: string) => void) | undefined
   readonly t: InspectorTabProps['t']
 }) {
   const ref = useRef<HTMLDivElement>(null)
@@ -56,13 +57,11 @@ export function Trend({
       current = el?.querySelector<HTMLElement>('[data-current="true"]')
     if (el && current && el.scrollWidth > el.clientWidth)
       el.scrollLeft = current.offsetLeft - el.clientWidth / 2 + current.offsetWidth / 2
-  }, [turnSeq, scopeId, data])
+  }, [turnSeq, scopeId, data, width])
 
   const requests = data.requests.filter(r => r.scopeId === scopeId)
   const main = scopeId === 'main'
   const compactions = main ? data.requests.filter(r => isCompaction(r.scopeId)) : []
-  /** Turns where some other agent ran: their label carries a mark, so the map shows where to look. */
-  const withAgents = new Set(main ? data.requests.filter(r => r.scopeId !== 'main' && !isCompaction(r.scopeId)).map(r => r.turnSeq) : [])
   const turns = data.turns.filter(turn => requests.some(r => r.turnSeq === turn.turnSeq))
   const max = Math.max(1, ...requests.map(r => (r.usage ? inputTotal(r.usage) : 0)))
   const barWidth = fitWidth(width, requests.length, turns.length)
@@ -71,22 +70,25 @@ export function Trend({
     compactions.filter(c => c.turnSeq === turn
       && (previous === undefined || c.startedAt >= previous.startedAt)
       && (next === undefined || c.startedAt < next.startedAt))
+  const divider = (turn: number, c: TrendRequest) => <button key={c.seq} type="button" className={css.trendCompaction} title={t('trend.compaction')} aria-label={t('trend.compaction')} onClick={() => onSelect(turn, c.seq, c.scopeId)} />
 
   return (
     <section aria-label={t('lens.trendScope', { scope: scopeLabel })}>
       <div ref={ref} className={css.trend} style={{ ['--trend-bar' as string]: `${barWidth}px` }}>
         {turns.map((turn) => {
           const rows = requests.filter(r => r.turnSeq === turn.turnSeq)
+          const minWidth = Math.max(MIN_CELL, rows.length * (barWidth + 3) + 8)
           return (
-            <div key={turn.turnSeq} className={css.trendGroup} data-current={turnSeq === turn.turnSeq}>
+            <div key={turn.turnSeq} className={css.trendGroup} data-current={turnSeq === turn.turnSeq}
+              style={{ flex: `${Math.max(1, rows.length / CELL_SHARE)} 1 ${minWidth}px`, minWidth }}>
               <div className={css.trendBars}>
                 {rows.map((r, i) => {
                   const total = r.usage ? inputTotal(r.usage) : 0,
                     hit = r.usage ? cachePct(r.usage) : null
-                  const divider = dividersBefore(turn.turnSeq, r, rows[i - 1])
-                  return <span key={r.seq} className={css.trendCell}>
-                    {divider.map(c => <button key={c.seq} type="button" className={css.trendCompaction} title={t('trend.compaction')} aria-label={t('trend.compaction')} onClick={() => onSelect(turn.turnSeq, c.seq, c.scopeId)} />)}
+                  return [
+                    ...dividersBefore(turn.turnSeq, r, rows[i - 1]).map(c => divider(turn.turnSeq, c)),
                     <button
+                      key={r.seq}
                       type="button"
                       className={css.trendTarget}
                       data-selected={r.seq === selectedSeq}
@@ -98,15 +100,12 @@ export function Trend({
                       <span className={css.trendBar} aria-hidden="true" style={{ height: `${Math.max(3, (total / max) * 40)}px` }}>
                         <i style={{ height: `${hit ?? 0}%` }} />
                       </span>
-                    </button>
-                    {r.delegates && r.delegates.length > 0 && <button type="button" className={css.trendDot} data-external={r.delegates.some(d => d.external)}
-                      title={t('trend.delegates', { count: String(r.delegates.length) })} aria-label={t('trend.delegates', { count: String(r.delegates.length) })}
-                      onClick={() => onSelectScope?.(turn.turnSeq, r.delegates![0]!.scopeId)} />}
-                  </span>
+                    </button>,
+                  ]
                 })}
-                {dividersBefore(turn.turnSeq, undefined, rows.at(-1)).map(c => <button key={c.seq} type="button" className={css.trendCompaction} title={t('trend.compaction')} aria-label={t('trend.compaction')} onClick={() => onSelect(turn.turnSeq, c.seq, c.scopeId)} />)}
+                {dividersBefore(turn.turnSeq, undefined, rows.at(-1)).map(c => divider(turn.turnSeq, c))}
               </div>
-              <span className={css.trendTurn}>{turn.hostTurn ?? '·'}{withAgents.has(turn.turnSeq) && <i className={css.trendAgents} title={t('trend.agents')} aria-label={t('trend.agents')} />}</span>
+              <span className={css.trendTurn}>{turn.hostTurn ?? '·'}</span>
             </div>
           )
         })}
