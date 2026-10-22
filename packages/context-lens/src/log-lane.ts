@@ -29,7 +29,7 @@ import type { RequestConfig, RequestUsage, ResponseSummary } from './types.ts'
 import type { CapturedResponse } from './types.ts'
 import { responseFromSpans, type BlockSpan, type StoredRequest } from './store.ts'
 import { splitRequest, type ScopeFingerprint } from './segmenter.ts'
-import { fromLogMessage, previewLine, serializeMessage, type CapturedMessage } from './messages.ts'
+import { AMBIENT_SOURCES, fromLogMessage, lastParagraph, previewLine, serializeMessage, type CapturedMessage } from './messages.ts'
 
 /** The structural minimum of one decoded session-log row (untrusted JSON). */
 export interface SessionLogRow {
@@ -113,6 +113,8 @@ export interface SessionLogCursor {
   turnHost: number | undefined
   /** Whether the current turn already contributed its query preview. */
   turnQuerySeen: boolean
+  /** Whether the current turn already named the non-human message that started it. */
+  turnTriggerSeen: boolean
   /** Delegation calls awaiting their catalog/result. */
   pendingDelegations: Map<string, LogDelegation>
   /** Set once a read failed this cursor; the lane stops hammering a bad log. */
@@ -128,6 +130,8 @@ export interface FoldSink {
   turnEnd?(hostTurn: number, reason: { kind: string; error?: { message?: string } }, at: number | undefined): void
   /** The turn's first human user message (the turn list's query preview). */
   queryText?(hostTurn: number | undefined, text: string, at: number | undefined): void
+  /** The turn's first message from a non-human producer (the turn's trigger when no human spoke). */
+  triggerText?(hostTurn: number | undefined, source: string, text: string): void
   /** Each committed assistant message id; the last one of a turn is its closing message. */
   closingMessage?(hostTurn: number | undefined, messageId: string): void
   /** One completed request, tagged with its host turn when the log scopes it. */
@@ -154,6 +158,7 @@ export function openCursor(): SessionLogCursor {
     requests: [],
     turnHost: undefined,
     turnQuerySeen: false,
+    turnTriggerSeen: false,
     pendingDelegations: new Map(),
     broken: undefined,
   }
@@ -181,6 +186,7 @@ export function foldLogRows(
         const hostTurn = typeof data['turn'] === 'number' ? data['turn'] : undefined
         cursor.turnHost = hostTurn
         cursor.turnQuerySeen = false
+        cursor.turnTriggerSeen = false
         if (hostTurn !== undefined) sink.turnStart?.(hostTurn, row.time)
         break
       }
@@ -234,6 +240,9 @@ export function foldLogRows(
           if (!cursor.turnQuerySeen && message.sourceKind === 'user') {
             cursor.turnQuerySeen = true
             sink.queryText?.(cursor.turnHost, collapseQuery(serializeMessage(message)), row.time)
+          } else if (!cursor.turnTriggerSeen && (row.surfaceOp === undefined || row.surfaceOp === 'append') && !AMBIENT_SOURCES.has(message.sourceKind)) {
+            cursor.turnTriggerSeen = true
+            sink.triggerText?.(cursor.turnHost, message.sourceKind, lastParagraph(serializeMessage(message)))
           }
         }
         break
@@ -466,6 +475,10 @@ export function reconstructSession(rows: readonly SessionLogRow[]): LogTurn[] {
       const turn = turnFor(hostTurn, at)
       if (turn !== undefined && turn.query === '') turn.query = text
     },
+    triggerText: (hostTurn, source, text) => {
+      const turn = turnFor(hostTurn, undefined)
+      if (turn !== undefined && turn.trigger === undefined) turn.trigger = { source, text }
+    },
     closingMessage: (hostTurn, messageId) => {
       const turn = turnFor(hostTurn, undefined)
       if (turn !== undefined) turn.closingMessageId = messageId
@@ -491,6 +504,8 @@ export interface LogTurn {
   hostTurn: number
   purpose?: string
   query: string
+  /** First non-human message of the turn: who started it when no human did. */
+  trigger?: { source: string; text: string }
   startedAt: number
   endedAt?: number
   closingMessageId?: string

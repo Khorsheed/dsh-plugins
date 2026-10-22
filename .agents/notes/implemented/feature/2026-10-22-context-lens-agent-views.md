@@ -14,6 +14,9 @@ A turn's work can spread over the main conversation, dsh subagents, external age
 ## Decision
 
 - **One row of grouped views per turn.** Groups are main, external agents, subagents, and compaction (`AgentTabs.tsx`, the "B" grouped-capsule design from the local, untracked design prototype). A group with more than three entries shows two (the selected one always among them) and folds the rest behind "+N". "+N" opens the whole group in delegation order, with the delegating request number and the request count. A relation line under the row says how the selected view relates to the main conversation, with a jump back where a link exists.
+- **External agents persist across turns.** `TurnOverview.agents` lists every external agent seen in the session, keyed by provider + label, with each turn view it ran in. A turn where an agent did not run still shows its tab: dimmed, with 0 requests and an empty state. Selecting one follows that agent when the turn changes, and its trend shows its requests across every turn. Subagents (one task each) and compactions stay per turn.
+- **The relation line holds only facts with a jump**: the delegating request, the turns an external agent ran in, and failure. It carries no provider names or "not started by a tool call" explanations.
+- **A turn no human started names its trigger.** When a turn has no human message, its first message from a non-ambient producer becomes `TurnListItem.trigger`. Ambient producers are runtime context, skills, reminders, and checkpoints. The panel shows the trigger's source tag and last paragraph instead of an empty query line. Injected triggers lead with standing instructions and end with this turn's delivery, so the last paragraph is the part that differs between turns.
 - **External vs subagent** comes from the child's `subagent/descriptor` provider. `dsh*` means subagent; anything else (`codex-local`, …) is an external agent. The provider is read live from the child's session events and, on the log lane, from the child log.
 - **Catalog-only children are views.** A `subagent/catalog` row that no pending delegation call claims becomes a delegation with `callId: ''`. Its status is `ok`, since the absence of a tool result is not evidence of failure, and it has no `delegatedBy`.
 - **Delegation provenance.** A child view bound to a tool call carries `delegatedBy`, the main request whose response issued that call. Main requests carry `delegates` (the child views their calls started), which the trend draws as a dot.
@@ -27,6 +30,10 @@ A turn's work can spread over the main conversation, dsh subagents, external age
 **Underline tabs (design "A").** They are lighter, but lose the grouping between external agents and subagents, and scroll sideways when many children exist. The user picked the grouped capsules.
 
 **A session-wide compaction tab on the far right.** It would detach compactions from the turn stepper and from the trend divider that marks where each happened. Attaching to the turn keeps the three in agreement.
+
+**Keeping every child's tab in every turn.** Subagents are one-off tasks with distinct names, so persisting them would pile up dim tabs. Only external agents, which are the same agent called again, persist.
+
+**Previewing a trigger by its opening text or by its difference from the previous trigger.** Room deliveries open with an identical coordinator prompt and roster. A common-prefix cut breaks as soon as the roster changes. The last paragraph matched the delivery in every turn of the real room session.
 
 **Classifying external agents by "no tool call".** A provider may start a child from a tool call too. The descriptor's provider is the recorded fact.
 

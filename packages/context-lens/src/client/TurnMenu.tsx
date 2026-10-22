@@ -23,7 +23,7 @@ type T = InspectorTabProps['t']
 export function turnTitle(turn: TurnListItem, t: T): string {
   return turn.hostTurn === undefined
     ? turn.query === 'compaction' ? t('compaction.title') : turn.query
-    : `${t('turn.label', { seq: String(turn.hostTurn) })} · ${turn.query}`
+    : `${t('turn.label', { seq: String(turn.hostTurn) })} · ${turn.query !== '' ? turn.query : turn.trigger !== undefined ? `[${turn.trigger.source}] ${turn.trigger.text}` : ''}`
 }
 
 /** One menu row: the title line, then request count + token totals. */

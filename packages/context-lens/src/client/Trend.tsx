@@ -26,6 +26,7 @@ export function Trend({
   turnSeq,
   selectedSeq,
   scopeId,
+  scopeIds,
   scopeLabel,
   onSelect,
   onSelectScope,
@@ -35,6 +36,8 @@ export function Trend({
   readonly turnSeq: number | null
   readonly selectedSeq: number | null
   readonly scopeId: string
+  /** Every view of the same agent across turns (an external agent followed through the session). */
+  readonly scopeIds?: readonly string[] | undefined
   readonly scopeLabel: string
   readonly onSelect: (turnSeq: number, seq: number, scopeId: string) => void
   readonly onSelectScope?: ((turnSeq: number, scopeId: string) => void) | undefined
@@ -58,7 +61,8 @@ export function Trend({
       el.scrollLeft = current.offsetLeft - el.clientWidth / 2 + current.offsetWidth / 2
   }, [turnSeq, scopeId, data])
 
-  const requests = data.requests.filter(r => r.scopeId === scopeId)
+  const shown = new Set(scopeIds ?? [scopeId])
+  const requests = data.requests.filter(r => shown.has(r.scopeId))
   const main = scopeId === 'main'
   const compactions = main ? data.requests.filter(r => isCompaction(r.scopeId)) : []
   const turns = data.turns.filter(turn => requests.some(r => r.turnSeq === turn.turnSeq))

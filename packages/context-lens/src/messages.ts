@@ -48,6 +48,23 @@ export interface CapturedMessage {
   isError?: boolean
 }
 
+/**
+ * User-role producers that ride along every turn rather than start one: a
+ * turn with no human message is attributed to its first message from any
+ * other producer (a room delivery, a schedule, a plugin trigger).
+ */
+export const AMBIENT_SOURCES: ReadonlySet<string> = new Set(['user', 'runtime-context', 'skill-catalog', 'skill-invocation', 'repeat-tool-reminder', 'compact-checkpoint'])
+
+/**
+ * The trigger preview: injected triggers lead with standing instructions and
+ * end with what this turn delivers (a report, a forwarded message), so the
+ * last paragraph is the part that differs turn to turn.
+ */
+export function lastParagraph(text: string): string {
+  const paragraphs = text.split(/\n\s*\n/).map(p => p.trim()).filter(p => p.length > 0)
+  return previewLine(paragraphs.at(-1) ?? text, 120)
+}
+
 /** Collapse whitespace for the single-line preview, capped at `max` chars. */
 export function previewLine(text: string, max = 80): string {
   const collapsed = text.replace(/\s+/g, ' ').trim()
