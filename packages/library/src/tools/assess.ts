@@ -15,7 +15,7 @@ export function libraryAssessTool(kit: ToolKit): ToolDefinition {
   return defineTool({
     name: 'library_assess',
     description:
-      'Ledger a graded sitting — the ONLY cascading write. Judge the answers in the conversation first (against each question\'s answer and evidence), '
+      'Ledger a graded sitting — the ONLY cascading write. Judge the answers in the conversation first (against each question\'s answer and evidence — the stored answer can be wrong: judge by the question itself, and when the key was wrong, say so and pass an equivalent answer), '
       + 'then record one verdict per question: { task: <question id>, criterion: <what you judged>, pass, ratio?: <partial credit 0..1>, evidence: <what it rests on>, '
       + 'by: "llm"|"self"|"user", void?: true when the learner flagged the question as broken, missedCard?: { term, gloss } — only to name a word or concept the learner missed (a subject\'s misses wait in 待订正 on their point; no card is made from the question) }. '
       + 'The engine moves every probed card, carding a card-less miss, and completes the gated station at its pass ratio, unlocking what follows — report what moved, which knowledge points changed (pointChanges) and what unlocked. '

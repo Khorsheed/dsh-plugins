@@ -20,6 +20,7 @@ import { profileOf, type LibraryProfile } from '../../profiles.ts'
 import { clearQuizDraft, loadQuizDraft, saveQuizDraft } from '../quiz-drafts.ts'
 import { MathText, Tex } from '../math.tsx'
 import { Highlight, outcome, shortGloss, StateLine, useLoad, value, type ViewProps } from '../ui.tsx'
+import { IconChatOutlineMedium, IconCheckOutlineMedium, IconFlagOutlineMedium } from '../icons.tsx'
 import css from '../LibraryPane.module.css'
 
 /** One question's state in the sitting. */
@@ -30,6 +31,18 @@ interface Answered {
   readonly void?: boolean
   /** A fill the judge called wrong that the learner overruled (「我答对了」). */
   readonly overruled?: boolean
+  /**
+   * A subject fill the judge could not match: never marked wrong here (the
+   * key or the notation may be off) — the coach decides at 交卷, told the key
+   * may be wrong. Spelling fills stay strict: the spelling is the point.
+   */
+  readonly unsure?: boolean
+}
+
+/** Judge a fill: a match is right; a miss is wrong only where the spelling is the point, otherwise the coach confirms. */
+function judgeFillAnswer(profile: LibraryProfile, given: string, key: string): Answered {
+  if (judgeFill(profile.fill, given, key)) return { given, pass: true }
+  return profile.fill === 'spelling' ? { given, pass: false } : { given, unsure: true }
 }
 
 /** The quiz screen: the whole paper on one scroll — every question numbered, judged on the spot, 交卷 once all are answered. The in-progress sitting persists locally (quiz-drafts) — leaving the paper never loses an answer. */
@@ -104,7 +117,7 @@ export function QuizView({ p, projectId, resourceId, quizId }: ViewProps & { pro
       // Open answers need the coach: hand over the whole sitting.
       const lines = quiz.questions.map(item => {
         const entry = answers[item.id]
-        const mark = entry?.void === true ? t('quiz.handVoid') : entry?.pass === true ? '✓' : entry?.pass === false ? '✗' : t('quiz.handOpen')
+        const mark = entry?.void === true ? t('quiz.handVoid') : entry?.pass === true ? '✓' : entry?.pass === false ? '✗' : entry?.unsure === true ? t('quiz.handUnsure', { key: item.answer }) : t('quiz.handOpen')
         return `- ${item.id}：${entry?.given ?? ''}（${mark}）`
       })
       const primed = p.primeConversation(t('prime.grade', { quiz: quiz.id, answers: lines.join('\n') }))
@@ -189,7 +202,7 @@ function QuestionCard({ p, profile, question, number, answered, draft, onDraft, 
   onExplain: () => boolean
 }): ReactNode {
   const { t } = p
-  const [explainNotice, setExplainNotice] = useState<string | undefined>()
+  const [explained, setExplained] = useState<'primed' | 'failed' | undefined>()
   const correct = question.kind === 'choice' ? choiceIndex(question.options ?? [], question.answer) : -1
   const evidenceTone = question.evidence.kind === 'photo' ? 'photo' : question.evidence.kind === 'web' ? 'web' : 'know'
   // A choice or fill quote often IS the answer, so it waits for the feedback.
@@ -254,50 +267,66 @@ function QuestionCard({ p, profile, question, number, answered, draft, onDraft, 
             onChange={event => { onDraft(event.target.value) }}
           />
           {profile.math && <AnswerPreview text={answered?.given ?? draft} t={t} />}
-          {answered === undefined && (
-            <div className={css.actions}>
-              <button
-                type="button"
-                className={css.secondary}
-                disabled={draft.trim() === ''}
-                onClick={() => { onAnswer(question.kind === 'fill' ? { given: draft, pass: judgeFill(profile.fill, draft, question.answer) } : { given: draft }) }}
-              >{t('quiz.submit')}</button>
-            </div>
-          )}
         </>
       )}
       {answered !== undefined && answered.void !== true && (
         <div className={css.feedback}>
           {answered.pass === true && <strong className={css.ok}>{answered.overruled === true ? t('quiz.overruled') : t('quiz.right')}</strong>}
           {answered.pass === false && <strong className={css.bad}><MathText text={t('quiz.wrong', { answer: correct >= 0 && question.options?.[correct] !== undefined ? `${String.fromCharCode(65 + correct)}. ${question.options[correct]}` : question.answer })} /></strong>}
-          {answered.pass === undefined && <strong>{t('quiz.coachJudges')}</strong>}
+          {answered.pass === undefined && answered.unsure === true && (
+            <>
+              <strong>{t('quiz.unsure')}</strong>
+              <div className={css.muted}><MathText text={t('quiz.unsureKey', { answer: question.answer })} /></div>
+            </>
+          )}
+          {answered.pass === undefined && answered.unsure !== true && <strong>{t('quiz.coachJudges')}</strong>}
           {question.explanation !== undefined && <div><MathText text={question.explanation} /></div>}
           {!quoteUpfront && question.evidence.quote !== undefined && <blockquote className={css.quote}>{question.evidence.quote}</blockquote>}
           {question.evidence.url !== undefined && <a className={css.link} href={question.evidence.url} target="_blank" rel="noreferrer">{t('quiz.source')}</a>}
-          {question.kind === 'fill' && (answered.pass === false || answered.overruled === true) && (
+          {question.kind === 'fill' && (answered.pass === false || answered.unsure === true || answered.overruled === true) && (
             <div>
               <button
                 type="button"
                 className={css.textButton}
-                onClick={() => { onAnswer(answered.overruled === true ? { given: answered.given, pass: false } : { given: answered.given, pass: true, overruled: true }) }}
+                onClick={() => { onAnswer(answered.overruled === true ? (profile.fill === 'spelling' ? { given: answered.given, pass: false } : { given: answered.given, unsure: true }) : { given: answered.given, pass: true, overruled: true }) }}
               >{answered.overruled === true ? t('quiz.overruleUndo') : t('quiz.overrule')}</button>
             </div>
           )}
         </div>
       )}
-      <div className={css.row}>
+      <div className={css.questionTools}>
+        {question.kind !== 'choice' && answered === undefined && (
+          <button
+            type="button"
+            className={css.secondary}
+            disabled={draft.trim() === ''}
+            onClick={() => { onAnswer(question.kind === 'fill' ? judgeFillAnswer(profile, draft, question.answer) : { given: draft }) }}
+          >{t('quiz.submit')}</button>
+        )}
+        <span className={css.spacer} />
         <button
           type="button"
-          className={css.textButton}
-          onClick={() => { setExplainNotice(onExplain() ? t('quiz.explainPrimed') : t('notice.noConversation')) }}
-        >{answered === undefined || answered.void === true ? t('quiz.explainBefore') : t('quiz.explain')}</button>
+          className={css.toolChip}
+          data-done={explained === 'primed'}
+          title={t(answered === undefined || answered.void === true ? 'quiz.explainBeforeHint' : 'quiz.explainHint')}
+          onClick={() => { setExplained(onExplain() ? 'primed' : 'failed') }}
+        >
+          {explained === 'primed' ? <IconCheckOutlineMedium size={14} /> : <IconChatOutlineMedium size={14} />}
+          {explained === 'primed' ? t('quiz.explainPrimed') : answered === undefined || answered.void === true ? t('quiz.explainBefore') : t('quiz.explain')}
+        </button>
         <button
           type="button"
-          className={css.textButton}
+          className={css.toolChip}
+          data-on={answered?.void === true}
+          aria-pressed={answered?.void === true}
+          title={t('quiz.voidHint')}
           onClick={() => { onAnswer({ given: answered?.given ?? '', void: answered?.void !== true }) }}
-        >{answered?.void === true ? t('quiz.unvoid') : t('quiz.void')}</button>
+        >
+          <IconFlagOutlineMedium size={14} />
+          {answered?.void === true ? t('quiz.unvoid') : t('quiz.void')}
+        </button>
       </div>
-      {explainNotice !== undefined && <div className={css.muted}>{explainNotice}</div>}
+      {explained === 'failed' && <div className={css.muted}>{t('notice.noConversation')}</div>}
     </section>
   )
 }

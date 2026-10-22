@@ -2528,3 +2528,33 @@ textarea.input { resize: vertical; font: inherit; line-height: 1.5; }
   .textButton { min-height: 40px; }
   .order button { width: 36px; height: 30px; }
 }
+
+/* 每题的工具行：提交在左，「讲讲思路」「题有问题」两个小胶囊在右 */
+.questionTools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.toolChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 28px;
+  padding: 0 10px;
+  border: 0.5px solid var(--dsw-alias-border-l3);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: var(--dsh-panel-text-meta, 12px);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--ds-transition-duration-fast, 0.1s) ease, color var(--ds-transition-duration-fast, 0.1s) ease;
+}
+
+.toolChip:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+.toolChip:focus-visible { outline: 2px solid var(--lib-accent); outline-offset: 1px; }
+.toolChip[data-done='true'] { border-color: transparent; background: var(--lib-ok-soft); color: var(--lib-ok); }
+.toolChip[data-on='true'] { border-color: transparent; background: var(--lib-bad-soft); color: var(--lib-bad); }
