@@ -1,9 +1,11 @@
-.root { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-.groups { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.root { display: flex; flex-direction: column; gap: 4px; min-width: 0; margin-top: 8px; }
+.groups { display: flex; flex-wrap: wrap; gap: 8px 10px; min-width: 0; }
 .group { position: relative; display: inline-flex; align-items: center; gap: 2px; padding: 2px; border-radius: 9px; background: var(--dsw-alias-bg-layer-3); min-width: 0; max-width: 100%; }
 .groupLabel { padding: 0 6px 0 8px; font-size: var(--dsh-panel-text-meta, 11px); color: var(--dsw-alias-label-tertiary); white-space: nowrap; }
 .tab { display: inline-flex; align-items: center; gap: 6px; min-width: 0; padding: 4px 10px; border: 0; border-radius: 7px; background: transparent; color: var(--dsw-alias-label-secondary); font: inherit; font-size: var(--dsh-panel-text-body, 12.5px); cursor: pointer; }
 .tab:hover { color: var(--dsw-alias-label-primary); }
+.tab[data-absent="true"] { opacity: .5; }
+.tab[data-absent="true"][aria-selected="true"] { opacity: 1; }
 .tab[aria-selected="true"] { background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); font-weight: 600; box-shadow: 0 1px 2px color-mix(in srgb, var(--dsw-alias-label-primary) 14%, transparent); }
 .tab:focus-visible, .more:focus-visible, .popRow:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary, currentColor); outline-offset: -2px; }
 .label { min-width: 0; max-width: 16em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -32,6 +34,8 @@
 .relation { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; font-size: var(--dsh-panel-text-meta, 12px); color: var(--dsw-alias-label-tertiary); }
 .relation button { padding: 0; border: 0; background: none; font: inherit; color: var(--dsw-alias-brand-primary, currentColor); cursor: pointer; }
 .relation button:hover { text-decoration: underline; }
+.runs { display: inline-flex; flex-wrap: wrap; gap: 2px 8px; }
+.runs b { color: var(--dsw-alias-label-secondary); font-weight: 600; }
 .parent { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 6px; padding: 6px 10px; border-radius: 8px; background: var(--dsw-alias-bg-layer-2); font-size: var(--dsh-panel-text-meta, 12px); color: var(--dsw-alias-label-secondary); }
 .parent b { color: var(--dsw-alias-label-primary); font-weight: 600; }
 .muted { color: var(--dsw-alias-label-tertiary); }

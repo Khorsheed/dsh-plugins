@@ -40,6 +40,7 @@ import type {
   ScopeFilter,
   RequestLink,
   ScopedRefusal,
+  ExternalAgent,
   SegmentItem,
   TimingLane,
   ToolTiming,
@@ -48,7 +49,7 @@ import type {
   TurnTiming,
 } from './types.ts'
 import { splitRequest, rebaseSegments, type CapturedToolSchema, type ScopeFingerprint, type AssemblyRecord } from './segmenter.ts'
-import { previewLine, type CapturedMessage } from './messages.ts'
+import { AMBIENT_SOURCES, lastParagraph, previewLine, type CapturedMessage } from './messages.ts'
 import type { LogTurn } from './log-lane.ts'
 import { prefixTextChange } from './prefix-diff.ts'
 import { diffRequests, type FactLookup, type ReplacementFact } from './changes.ts'
@@ -190,6 +191,8 @@ export interface TurnRecord {
   /** Capture observed the turn opening, so this turn’s live request order is complete. */
   liveStartObserved?: boolean
   query: string
+  /** First non-human message of the turn (see LogTurn.trigger). */
+  trigger?: { source: string; text: string }
   startedAt: number
   endedAt?: number
   closingMessageId?: string
@@ -755,7 +758,10 @@ export class InspectorStore {
     if (this.isChild(sessionId)) return
     const turn = this.sessions.get(sessionId)?.openTurn
     if (turn === undefined || turn.query !== '') return
-    if (sourceKind !== 'user') return
+    if (sourceKind !== 'user') {
+      if (turn.trigger === undefined && !AMBIENT_SOURCES.has(sourceKind)) turn.trigger = { source: sourceKind, text: lastParagraph(text) }
+      return
+    }
     turn.query = text.replace(/\s+/g, ' ').trim().slice(0, 120)
   }
 
@@ -993,6 +999,7 @@ export class InspectorStore {
       turnSeq: logTurn.purpose === undefined ? logTurn.hostTurn : session.nextBucketSeq--,
       query: logTurn.query,
     })
+    if (logTurn.trigger !== undefined) turn.trigger = logTurn.trigger
     if (logTurn.closingMessageId !== undefined) turn.closingMessageId = logTurn.closingMessageId
     const lastSettled = logTurn.requests.reduce<number | undefined>(
       (latest, request) => request.settledAt !== undefined && (latest === undefined || request.settledAt > latest)
@@ -1140,6 +1147,7 @@ export class InspectorStore {
       turnSeq: turn.turnSeq,
       ...turn.hostTurn === undefined ? {} : { hostTurn: turn.hostTurn },
       query: turn.query,
+      ...turn.query === '' && turn.trigger !== undefined ? { trigger: turn.trigger } : {},
       startedAt: turn.startedAt,
       ...turn.endedAt === undefined ? {} : { endedAt: turn.endedAt },
       requestCount,
@@ -1168,9 +1176,11 @@ export class InspectorStore {
         for (const scope of pseudo.scopes.values()) scopes.push(this.scopeOverview(session, pseudo, scope))
       }
     }
+    const agents = this.externalAgents(session, filter)
     return {
       turn: item,
       scopes,
+      ...agents.length === 0 ? {} : { agents },
       generation: this.generation,
       ...filter?.scopes === undefined ? {} : { authorizedScopes: scopes.map(scope => scope.scopeId) },
     }
@@ -1251,6 +1261,23 @@ export class InspectorStore {
       .filter(scope => scope.callId !== undefined && calls.has(scope.callId))
       .map(scope => ({ scopeId: scope.scopeId, external: isExternal(scope.provider) }))
     return delegates.length === 0 ? {} : { delegates }
+  }
+
+  /** External agents across the session, keyed by provider + label, with every turn view they ran in. */
+  private externalAgents(session: SessionRecord, filter?: ScopeFilter): ExternalAgent[] {
+    const byKey = new Map<string, ExternalAgent>()
+    const turns = session.turns.filter(turn => turn.hostTurn !== undefined).sort((a, b) => a.startedAt - b.startedAt || a.turnSeq - b.turnSeq)
+    for (const turn of turns) {
+      for (const scope of [...turn.scopes.values()].sort((a, b) => a.startedAt - b.startedAt)) {
+        if (scope.kind !== 'subagent' || !isExternal(scope.provider) || !scopeAuthorized(scope.scopeId, filter)) continue
+        const label = scope.label ?? scope.scopeId
+        const key = `${scope.provider}\u0000${label}`
+        const agent = byKey.get(key) ?? { key, label, provider: scope.provider!, runs: [] }
+        agent.runs.push({ turnSeq: turn.turnSeq, ...turn.hostTurn === undefined ? {} : { hostTurn: turn.hostTurn }, scopeId: scope.scopeId })
+        byKey.set(key, agent)
+      }
+    }
+    return [...byKey.values()]
   }
 
   /** Record the child's provider from its `subagent/descriptor` (live child events or its log). */

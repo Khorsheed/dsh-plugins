@@ -1,6 +1,6 @@
 import type { SessionTrend } from '../types.ts'
 import { Trend } from './Trend.tsx'
-import { AgentTabs, ParentLine } from './AgentTabs.tsx'
+import { AgentTabs, ParentLine, agentKeyOf, withAbsentAgents } from './AgentTabs.tsx'
 /** Session/turn/scope navigation; request detail owns its JSON toggle. */
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { PanelRoot } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
@@ -65,6 +65,8 @@ export function InspectorPanel({
   const [filterCat, setFilterCat] = useState<CompositionFilter>(null)
   const [requestTrail, setRequestTrail] = useState<{ turnSeq: number; scopeId: string; seq: number }[]>([])
   const [scopeId, setScopeId] = useState<string>('main')
+  /** The external agent the user is following across turns (provider + label), if any. */
+  const [agentKey, setAgentKey] = useState<string | null>(null)
   const [selectedSeq, setSelectedSeq] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [turnMissing, setTurnMissing] = useState(false)
@@ -160,7 +162,13 @@ export function InspectorPanel({
     return () => { cancelled = true }
   }, [sessionId, turnSeq, getTurn, tab.signal])
 
-  const scopes = overview?.scopes ?? []
+  const scopes = withAbsentAgents(overview?.scopes ?? [], overview?.agents)
+  useEffect(() => {
+    if (agentKey === null || overview === null) return
+    const follow = scopes.find(candidate => agentKeyOf(candidate) === agentKey)
+    if (follow !== undefined && follow.scopeId !== scopeId) setScopeId(follow.scopeId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-run per loaded turn only
+  }, [overview, agentKey])
   const scope = scopes.find(candidate => candidate.scopeId === scopeId)
     ?? scopes.find(candidate => candidate.kind === 'main')
     ?? scopes[0]
@@ -295,6 +303,8 @@ export function InspectorPanel({
   }
 
   const onSelectScope = (next: string): void => {
+    const target = scopes.find(candidate => candidate.scopeId === next)
+    setAgentKey(target === undefined ? null : agentKeyOf(target) ?? null)
     if (next === effectiveScope?.scopeId) return
     setScopeId(next)
     setSelectedSeq(null)
@@ -341,6 +351,8 @@ export function InspectorPanel({
     body = <div className={css.stateNote} role="status">{t('state.loading')}</div>
   } else if (effectiveScope === undefined) {
     body = <div className={css.stateNote} role="status">{t('state.emptyScope')}</div>
+  } else if (effectiveScope.requests.length === 0 && effectiveScope.status !== 'failed') {
+    body = <div className={css.stateNote} role="status">{t('state.noRequests')}</div>
   } else if (effectiveScope.status === 'failed' && effectiveScope.requests.length === 0) {
     body = (
       <div className={css.scrollBody}>
@@ -413,19 +425,25 @@ export function InspectorPanel({
             />
           </div>
         </div>
-        {turn !== undefined && <div className={css.query}><b>{turn.hostTurn === undefined && turn.query === 'compaction' ? t('compaction.title') : turn.query}</b></div>}
+        {turn !== undefined && (turn.query !== '' || turn.trigger !== undefined) && <div className={css.query}>
+          {turn.query === '' && turn.trigger !== undefined && <code className={css.querySource}>{turn.trigger.source}</code>}
+          <b>{turn.hostTurn === undefined && turn.query === 'compaction' ? t('compaction.title') : turn.query !== '' ? turn.query : turn.trigger!.text}</b>
+        </div>}
         {backfill?.state === 'partial' && <div className={css.stateNote}>{t('hint.backfillTruncated')}</div>}
         {parent && <ParentLine parent={parent} t={t} />}
         {scopes.length > 0 && (
           <AgentTabs
             scopes={scopes}
+            agents={overview?.agents}
+            turnSeq={turnSeq}
+            onOpenTurn={next => onSelectTurn(next)}
             value={effectiveScope?.scopeId ?? 'main'}
             onSelect={onSelectScope}
             onOpenRequest={link => { setTurnSeq(link.turnSeq); onOpenRequest(link.seq, link.scopeId) }}
             t={t}
           />
         )}
-        {trend && effectiveScope && <Trend data={trend} turnSeq={turnSeq} selectedSeq={selectedRequestSeq} scopeId={effectiveScope.scopeId} scopeLabel={effectiveScope.kind === 'main' ? t('scope.mainName') : `#${effectiveScope.scopeSeq} ${effectiveScope.label ?? effectiveScope.scopeId}`} t={t} onSelect={(next, seq, targetScope) => { onSelectTurn(next); onOpenRequest(seq, targetScope) }} onSelectScope={(next, targetScope) => { onSelectTurn(next); onSelectScope(targetScope) }} />}
+        {trend && effectiveScope && <Trend data={trend} turnSeq={turnSeq} selectedSeq={selectedRequestSeq} scopeId={effectiveScope.scopeId} scopeIds={(() => { const key = agentKeyOf(effectiveScope); return key === undefined ? undefined : overview?.agents?.find(agent => agent.key === key)?.runs.map(run => run.scopeId) })()} scopeLabel={effectiveScope.kind === 'main' ? t('scope.mainName') : `#${effectiveScope.scopeSeq} ${effectiveScope.label ?? effectiveScope.scopeId}`} t={t} onSelect={(next, seq, targetScope) => { onSelectTurn(next); onOpenRequest(seq, targetScope) }} onSelectScope={(next, targetScope) => { onSelectTurn(next); onSelectScope(targetScope) }} />}
       </div>
       <div className={css.body}>{body}</div>
     </PanelRoot>

@@ -60,6 +60,7 @@
   max-width: 100%;
 }
 
+.querySource { flex: none; margin-right: 6px; padding: 0 5px; border-radius: 4px; background: var(--dsw-alias-bg-layer-3); color: var(--dsw-alias-label-secondary); font-family: var(--dsw-font-family-mono, ui-monospace, monospace); font-size: var(--dsh-panel-text-meta, 11px); font-weight: 400; }
 .querySep {
   color: var(--dsw-alias-label-tertiary);
 }

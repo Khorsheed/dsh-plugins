@@ -7,7 +7,7 @@
  * view relates to the main conversation, with a jump back where one exists.
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import type { AgentScopeOverview, ListTurnsResult, RequestLink } from '../types.ts'
+import type { AgentScopeOverview, ExternalAgent, ListTurnsResult, RequestLink } from '../types.ts'
 import { requestNumberText } from './aggregate.ts'
 import type { InspectorTabProps } from './contract.ts'
 import css from './AgentTabs.module.css'
@@ -15,6 +15,32 @@ type T = InspectorTabProps['t']
 type Group = 'main' | 'external' | 'subagent' | 'compaction'
 
 const isExternal = (scope: AgentScopeOverview) => scope.kind === 'subagent' && scope.provider !== undefined && !scope.provider.startsWith('dsh')
+const ABSENT = 'agent:'
+
+/** An external agent's identity across turns. */
+export function agentKeyOf(scope: AgentScopeOverview): string | undefined {
+  if (scope.scopeId.startsWith(ABSENT)) return scope.scopeId.slice(ABSENT.length)
+  return isExternal(scope) ? `${scope.provider}\u0000${scope.label ?? scope.scopeId}` : undefined
+}
+
+/**
+ * The turn's views plus one empty stand-in for every external agent seen
+ * elsewhere in the session but not in this turn, so the agent's tab stays put.
+ */
+export function withAbsentAgents(scopes: readonly AgentScopeOverview[], agents: readonly ExternalAgent[] | undefined): AgentScopeOverview[] {
+  if (agents === undefined || agents.length === 0) return [...scopes]
+  const present = new Set(scopes.map(agentKeyOf).filter(Boolean))
+  const absent = agents.filter(agent => !present.has(agent.key)).map((agent): AgentScopeOverview => ({
+    scopeId: `${ABSENT}${agent.key}`, scopeSeq: 0, kind: 'subagent', label: agent.label, provider: agent.provider,
+    status: 'ok', config: {}, startedAt: 0, requests: [],
+  }))
+  // Keep the session's agent order: present runs and stand-ins interleave by first appearance.
+  const order = new Map(agents.map((agent, i) => [agent.key, i]))
+  const rank = (scope: AgentScopeOverview) => order.get(agentKeyOf(scope) ?? '') ?? -1
+  const externals = [...scopes.filter(isExternal), ...absent].sort((a, b) => rank(a) - rank(b))
+  const rest = scopes.filter(scope => !isExternal(scope))
+  return [...rest.filter(scope => scope.kind === 'main'), ...externals, ...rest.filter(scope => scope.kind !== 'main')]
+}
 function groupOf(scope: AgentScopeOverview): Group {
   if (scope.kind === 'main' || scope.kind === 'compaction') return scope.kind
   return isExternal(scope) ? 'external' : 'subagent'
@@ -22,10 +48,14 @@ function groupOf(scope: AgentScopeOverview): Group {
 const GROUPS: Group[] = ['main', 'external', 'subagent', 'compaction']
 
 export interface AgentTabsProps {
+  /** The turn's views, absent external agents included (see {@link withAbsentAgents}). */
   readonly scopes: readonly AgentScopeOverview[]
+  readonly agents?: readonly ExternalAgent[] | undefined
+  readonly turnSeq: number | null
   readonly value: string
   readonly onSelect: (scopeId: string) => void
   readonly onOpenRequest: (link: RequestLink) => void
+  readonly onOpenTurn: (turnSeq: number) => void
   readonly t: T
 }
 
@@ -43,7 +73,7 @@ function Mark({ scope }: { readonly scope: AgentScopeOverview }): ReactNode {
 
 function Tab({ scope, selected, onSelect, t }: { readonly scope: AgentScopeOverview; readonly selected: boolean; readonly onSelect: (id: string) => void; readonly t: T }): ReactNode {
   const group = groupOf(scope)
-  return <button type="button" role="tab" aria-selected={selected} className={css.tab} onClick={() => onSelect(scope.scopeId)} title={labelOf(scope, t)}>
+  return <button type="button" role="tab" aria-selected={selected} className={css.tab} data-absent={scope.scopeId.startsWith(ABSENT)} onClick={() => onSelect(scope.scopeId)} title={labelOf(scope, t)}>
     {group !== 'main' && <i className={css.dot} data-group={group} />}
     <span className={css.label}>{labelOf(scope, t)}</span>
     <Mark scope={scope} />
@@ -80,15 +110,15 @@ function Overflow({ group, items, value, onSelect, t }: { readonly group: Group;
   </div>
 }
 
-/** How the selected view relates to the main conversation. */
-function Relation({ scope, scopes, onOpenRequest, t }: { readonly scope: AgentScopeOverview; readonly scopes: readonly AgentScopeOverview[]; readonly onOpenRequest: (link: RequestLink) => void; readonly t: T }): ReactNode {
+/** How the selected view relates to the main conversation: facts with a jump, no explanations. */
+function Relation({ scope, scopes, agents, turnSeq, onOpenRequest, onOpenTurn, t }: { readonly scope: AgentScopeOverview; readonly scopes: readonly AgentScopeOverview[]; readonly agents?: readonly ExternalAgent[] | undefined; readonly turnSeq: number | null; readonly onOpenRequest: (link: RequestLink) => void; readonly onOpenTurn: (turnSeq: number) => void; readonly t: T }): ReactNode {
   const back = (link: RequestLink) => <button type="button" onClick={() => onOpenRequest(link)}>{t('rel.back', { seq: requestNumberText(link) })}</button>
   if (scope.kind === 'main') {
-    const delegations = scopes.filter(s => s.kind === 'subagent').length
+    const children = scopes.filter(s => s.kind === 'subagent' && !s.scopeId.startsWith(ABSENT)).length
     const compactions = scopes.filter(s => s.kind === 'compaction').length
     return <div className={css.relation}>{[
       t('rel.main', { count: String(scope.requests.length) }),
-      ...delegations > 0 ? [t('rel.delegations', { count: String(delegations) })] : [],
+      ...children > 0 ? [t('rel.delegations', { count: String(children) })] : [],
       ...compactions > 0 ? [t('rel.compactions', { count: String(compactions) })] : [],
     ].join(' · ')}</div>
   }
@@ -100,14 +130,19 @@ function Relation({ scope, scopes, onOpenRequest, t }: { readonly scope: AgentSc
       {c?.after && back(c.after)}
     </div>
   }
-  return <div className={css.relation}>
-    <span>{isExternal(scope) ? t('rel.external', { provider: scope.provider ?? '' }) : t('rel.subagent')}</span>
-    {scope.delegatedBy ? <><span>{t('rel.delegatedBy', { seq: requestNumberText(scope.delegatedBy) })}</span>{back(scope.delegatedBy)}</> : <span>{t('rel.noCall')}</span>}
-    {scope.status === 'failed' && scope.error && <span className={css.bad} title={scope.error}>{t('rel.failed')}</span>}
-  </div>
+  const key = agentKeyOf(scope)
+  const runs = key === undefined ? [] : agents?.find(agent => agent.key === key)?.runs ?? []
+  const turnsSeen = [...new Map(runs.map(run => [run.turnSeq, run])).values()]
+  const parts: ReactNode[] = []
+  if (scope.delegatedBy) parts.push(<span key="by">{t('rel.delegatedBy', { seq: requestNumberText(scope.delegatedBy) })}</span>, <span key="back">{back(scope.delegatedBy)}</span>)
+  if (turnsSeen.length > 0) parts.push(<span key="runs" className={css.runs}>{turnsSeen.map(run => run.turnSeq === turnSeq
+    ? <b key={run.turnSeq}>{t('rel.turn', { turn: String(run.hostTurn ?? run.turnSeq) })}</b>
+    : <button key={run.turnSeq} type="button" onClick={() => onOpenTurn(run.turnSeq)}>{t('rel.turn', { turn: String(run.hostTurn ?? run.turnSeq) })}</button>)}</span>)
+  if (scope.status === 'failed' && scope.error) parts.push(<span key="failed" className={css.bad} title={scope.error}>{t('rel.failed')}</span>)
+  return parts.length === 0 ? null : <div className={css.relation}>{parts}</div>
 }
 
-export function AgentTabs({ scopes, value, onSelect, onOpenRequest, t }: AgentTabsProps): ReactNode {
+export function AgentTabs({ scopes, agents, turnSeq, value, onSelect, onOpenRequest, onOpenTurn, t }: AgentTabsProps): ReactNode {
   const selected = scopes.find(scope => scope.scopeId === value) ?? scopes[0]
   return <div className={css.root}>
     <div className={css.groups} role="tablist" aria-label={t('tab.title')}>
@@ -127,7 +162,7 @@ export function AgentTabs({ scopes, value, onSelect, onOpenRequest, t }: AgentTa
         </div>
       })}
     </div>
-    {selected && <Relation scope={selected} scopes={scopes} onOpenRequest={onOpenRequest} t={t} />}
+    {selected && <Relation scope={selected} scopes={scopes} agents={agents} turnSeq={turnSeq} onOpenRequest={onOpenRequest} onOpenTurn={onOpenTurn} t={t} />}
   </div>
 }
 
