@@ -2,7 +2,7 @@
 
 English | [中文](README.md)
 
-The game dev mode in one install: the `dsh-gamedev` agent preset plus the game workbench — build a small 2D web game together with the agent: the conversation decides what the game is, and the right-sidebar 游戏 tab shows the chaptered design doc and plays the latest version that passed the end-of-turn checks. One 「游戏开发模式」 card in the inventory; a session switched to this mode gets the `game_open` / `game_read` tools and the game skills automatically.
+The game dev mode in one install: the `dsh-gamedev` agent preset plus the game workbench — build a small 2D web game together with the agent: the conversation decides what the game is, and the right-sidebar 游戏 tab shows the chaptered design doc and plays the latest version that passed the end-of-turn checks. One 「游戏开发模式」 card in the inventory; a session switched to this mode gets the `game_open` / `game_read` / `game_publish` tools and the game skills automatically.
 
 ## What the mode is
 

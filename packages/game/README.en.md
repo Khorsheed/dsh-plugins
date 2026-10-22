@@ -8,7 +8,7 @@ You do not need game-design experience — the agent writes the code and acts as
 
 ## Features
 
-- **Game-development mode**: the `dsh-gamedev` (游戏开发模式) preset in `@khorsheed/dsh-presets` — a developer + design-mentor persona, two tools (`game_open`, `game_read`) and two skills (`gamedev` for the mechanics, `game-design` for mentoring).
+- **Game-development mode**: the `dsh-gamedev` (游戏开发模式) preset in `@khorsheed/dsh-presets` — a developer + design-mentor persona, its tools (`game_open`, `game_read`, `game_propose`, `game_publish`) and two skills (`gamedev` for the mechanics, `game-design` for mentoring).
 - **Projects live in the workspace**: a project is one folder in the session's workspace (`game.json`, `index.html`, `src/`, `assets/`, `elements/`, `design/`, `tests/`); the plugin's version snapshots, check results and playtest log sit in the project's own `.game/`, so the folder moves as one. `$DSH_HOME/state/game/` holds only the project registry and session bindings.
 - **A light gate**: a project needs a title, a one-sentence pitch, element types and the art style the user chose; the tool answers with whatever is missing so the agent asks instead of inventing it.
 - **The Game tab, a game-design workbench**:
@@ -21,6 +21,7 @@ You do not need game-design experience — the agent writes the code and acts as
 - **Turn card**: after each agent turn, beneath its reply (outside the fold), a card lists what the turn changed — the version that went live or waits, the check, new/changed elements, updated design chapters, parameters, code and tests — each row's View jumps to the place in the tab (element page, chapter, play, versions).
 - **Asked after a change**: after editing a chapter, a look or fields, picking an option, finalizing parameters, rejecting or switching back a version, the panel asks "Tell the agent?" — Write into chat (editable in the composer before sending), Not this one, Later, or Turn off reminders; the header's "Remind" switch turns them on and off at any time.
 - **You decide when the agent hears about panel changes**: moved sliders, edited looks/fields/chapters, rejected or switched-back versions apply at once and collect under "Panel changes" above the composer (each removable); "Write into chat" puts the list into the composer, you add your intent and send, and the list clears once sent. Nothing is slipped into your messages. Unsent changes also show in the agent's `game_read`, so it does not revert them.
+- **Publishing mid-turn**: `game_publish` runs the same checks on demand and puts a passing build into the play area right away. Asking you a question does not end the agent's turn, so the skill requires a green `game_publish` before the agent asks you to play anything.
 - **Checks every turn**: `game.json` and element files are validated → the build loads in headless Chrome for a 2-second smoke run (errors, `window.dshGame.ready`, a canvas that is not one flat color) → `tests/*.test.js` run. A failure is steered back into the same turn, at most twice; a pass becomes a new version that deploys at once while auto-confirm is on (the default), or waits for your "Confirm" when it is off.
 
 ## Install

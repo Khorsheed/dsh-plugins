@@ -832,7 +832,7 @@
 
                 ## How you work with the user
 
-                - The conversation decides what the game is; the right-sidebar game tab shows the chaptered design doc and plays the latest version that passed the end-of-turn checks.
+                - The conversation decides what the game is; the right-sidebar game tab shows the chaptered design doc and plays the latest version that passed the checks.
                 - Lead with concrete options. When something is open (the pitch, a mechanic, an element's look or numbers), give two or three specific choices with one-line reasons, ask at most two questions at a time, and let the user decide. Never invent the user's decisions.
                 - Get to something playable early: once the pitch, element types and art style are settled and the core loop is sketched, build the smallest version that can be played, then iterate from what the user feels while playing.
                 - Change one or two things per round, say what changed, and record decisions in the matching design chapter.
@@ -840,7 +840,8 @@
                 ## Turn contract
 
                 - Use game_open to pick or create the session's project (it enforces the light gate) and game_read to see its state. Write project files with the ordinary file tools.
-                - Write test scripts together with the code (tests/*.test.js, rules in the gamedev skill). Do not try to run or deploy the game yourself: when your turn ends, the plugin checks the project and, if a check fails, sends you the findings so you can fix them in the same turn.
+                - Write test scripts together with the code (tests/*.test.js, rules in the gamedev skill). Do not run or deploy the game yourself; game_publish runs the plugin's checks and puts a passing build into the play area.
+                - Before you ask the user to play or try anything, call game_publish and make sure it passed. Asking a question does not end your turn, so without it the play area still shows the previous version (or nothing). The plugin also checks the project when your turn ends and sends back any findings to fix in the same turn.
                 - Load the game-design skill before shaping the game with the user, and the gamedev skill before writing game code.
 
           # ── shell ───────────────────────────────────────────────────────────────────

@@ -6,6 +6,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { BrowserCheckResult, BrowserChecker } from '../src/checks.ts'
 import { GameService } from '../src/store.ts'
+import { gameToolDefinitions } from '../src/tools.ts'
 
 /** A checker that answers whatever the spec queued, recording what it saw. */
 class FakeChecker implements BrowserChecker {
@@ -211,5 +212,40 @@ describe('GameService', () => {
     expect(await store.adopt(join(workspace, 'none'))).toEqual({ ok: false, error: 'not-found' })
     await store.logPlay('g_old', { version: 2, seconds: 40, errors: ['boom'] }, session())
     expect((await store.view('g_old'))?.chapters.find(c => c.id === 'playtest')?.text).toContain('试玩 v2 40 秒，报错 1 次：boom')
+  })
+})
+
+describe('game_publish', () => {
+  const publish = async (id = 's1'): Promise<string> => {
+    const tool = gameToolDefinitions(store).find(d => d.name === 'game_publish')!
+    const run = tool.execute as unknown as (args: object, exec: object) => Promise<string>
+    return run({}, { agent: { session: session(id) } })
+  }
+
+  it('cuts a version mid-turn, and never gives a failing build up', async () => {
+    expect(await publish()).toContain('还没有游戏项目')
+    const project = await created()
+    expect(await publish()).toContain('还没有 index.html')
+
+    await put(join(project.root, 'index.html'), '<p>hi</p>')
+    expect(await publish()).toContain('v1 通过检查（1 个用例），已进试玩区')
+    expect((await store.view(project.id))?.current?.version).toBe(1)
+    expect(await publish()).toContain('没有新改动：这一版已经检查过，试玩区是 v1')
+    expect(checker.runs).toHaveLength(1)
+
+    await put(join(project.root, 'index.html'), '<p>broken</p>')
+    checker.next = { failures: [{ where: 'smoke', message: '运行报错' }], passed: 0 }
+    const failed = await publish()
+    expect(failed).toContain('没通过检查，没有发版（试玩区仍是 v1）')
+    expect(failed).toContain('- smoke：运行报错')
+    // An explicit publish has no fix cap: the end-of-turn loop still gets to check this build.
+    expect((await store.checkTurn(session(), 0, 2)).kind).toBe('fail')
+  })
+
+  it('reports a candidate when auto-confirm is off', async () => {
+    const project = await created()
+    await store.setAutoConfirm(project.id, false, session())
+    await put(join(project.root, 'index.html'), '<p>hi</p>')
+    expect(await publish()).toContain('v1 通过检查，作为候选等用户在右栏确认')
   })
 })

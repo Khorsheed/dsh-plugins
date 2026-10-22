@@ -1,9 +1,13 @@
 /**
  * The game mode's model tools, registered by the `./agent` entry:
  * `game_open` (list, switch to, create or adopt a project — the light gate
- * lives here) and `game_read` (the bound project's state). There is no write
- * tool and no test tool: the agent writes project files with the ordinary fs
- * tools, and the checks run by themselves at the end of every turn.
+ * lives here), `game_read` (the bound project's state), `game_propose` (look
+ * variants) and `game_publish` (run the checks now and put a passing build
+ * into the play area). There is no write tool: the agent writes project files
+ * with the ordinary fs tools. The checks also run by themselves at the end of
+ * every turn — but a turn can stay open for a long time (asking the user a
+ * question does not close it), so `game_publish` is how a build reaches the
+ * play area before the agent hands the user something to play.
  *
  * Origin-tagged with the community `Symbol.for('dsh.tool.origin')` key (the
  * catalog's documented no-import path).
@@ -226,5 +230,56 @@ export function gameToolDefinitions(store: GameService): ToolDefinition[] {
     },
   })
 
-  return [tagOrigin(open), tagOrigin(read), tagOrigin(propose)]
+  const publish = defineTool({
+    name: 'game_publish',
+    description:
+      'Run the checks on this session\'s game project now (data validation → load and a 2-second smoke run → tests/) and, '
+      + 'when they pass, cut a new version into the play area (or a candidate when auto-confirm is off). Call it whenever a '
+      + 'playable build is ready and ALWAYS before asking the user to play or try something: asking a question does not end '
+      + 'the turn, so without it the play area still shows the previous version. A failure lists what to fix.',
+    parameters: {},
+    output: {
+      schema: { type: 'string' },
+      render: (_args, value) => [{ type: 'text', text: String(value) }],
+    },
+    execute: async (_args: Record<string, never>, exec: { agent?: Agent }): Promise<string> => {
+      const session = exec.agent?.session
+      if (session === undefined) return '失败：这次调用没有会话。'
+      const row = await store.boundProject(session.id)
+      if (row === undefined) return '本会话还没有游戏项目。用 game_open 选一个或新建。'
+      // No fix-round cap here: an explicit publish never marks a build as given up.
+      const outcome = await store.checkTurn(session, 0, Number.POSITIVE_INFINITY)
+      const view = await store.view(row.id)
+      const liveVersion = view?.current?.version
+      const live = liveVersion === undefined ? '试玩区还没有版本' : `试玩区仍是 v${liveVersion}`
+      if (outcome.kind === 'fail') {
+        const failures = outcome.record.failures
+        return [
+          `没通过检查，没有发版（${live}）：`,
+          ...failures.slice(0, 8).map(f => `- ${f.where}：${f.message}`),
+          ...(failures.length > 8 ? [`- ……另有 ${failures.length - 8} 项`] : []),
+          ...(outcome.record.skipped === undefined ? [] : [`（${outcome.record.skipped}）`]),
+          '修好再调用 game_publish；别为了过检查删测试。修好之前不要请用户试玩。',
+        ].join('\n')
+      }
+      if (outcome.kind === 'pass') {
+        const tail = outcome.record.skipped === undefined ? '' : `（${outcome.record.skipped}）`
+        if (outcome.deployed !== null) return `完成：v${outcome.deployed.version} 通过检查${outcome.record.passed > 0 ? `（${outcome.record.passed} 个用例）` : ''}，已进试玩区，可以请用户试玩了。${tail}`
+        if (outcome.candidate !== null) return `完成：v${outcome.candidate.version} 通过检查，作为候选等用户在右栏确认（自动上线关着或是换风格的版本）；确认后才进试玩区。${tail}`
+        return `检查通过，但这个会话是只读模式，没有生成版本。${tail}`
+      }
+      // Skipped: no entry yet, or the build is the one already checked.
+      if (view === undefined) return '失败：项目登记丢了，用 game_open 重新选。'
+      if (!view.hasEntry) return '还没有 index.html，没东西可发。写好入口和 window.dshGame（并写 tests/）再调用。'
+      const check = view.lastCheck
+      if (check !== null && !check.ok) {
+        return [`这一版和上次检查时一模一样，上次没通过（${live}）：`,
+          ...check.failures.slice(0, 8).map(f => `- ${f.where}：${f.message}`), '修好再调用 game_publish。'].join('\n')
+      }
+      const pending = view.candidate === null ? '' : `；候选 v${view.candidate.version} 等用户确认`
+      return `没有新改动：这一版已经检查过，${liveVersion === undefined ? '试玩区还没有版本' : `试玩区是 v${liveVersion}`}${pending}。`
+    },
+  })
+
+  return [tagOrigin(open), tagOrigin(read), tagOrigin(propose), tagOrigin(publish)]
 }
