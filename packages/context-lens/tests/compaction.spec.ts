@@ -78,9 +78,10 @@ describe('surface reconstruction and compression', () => {
     const turns = reconstructSession(compressionLog())
     store.insertLogTurns('s',turns)
     const list = store.listTurns('s').turns
-    expect(list).toHaveLength(2)
-    expect(list.find(x=>x.query==='compaction')?.hostTurn).toBeUndefined()
+    // The compaction is a view inside turn 1, not a turn of its own.
+    expect(list.map(x=>x.hostTurn)).toEqual([1])
     const main = store.getTurn('s',1)!
+    expect(main.scopes.map(x=>x.kind)).toEqual(['main','compaction'])
     const last = main.scopes[0]!.requests.at(-1)!
     const detail = store.getRequest('s',last.seq)!
     if ('refused' in detail) throw Error('unexpected refusal')

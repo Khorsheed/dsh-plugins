@@ -69,6 +69,7 @@ interface FoldedMessage {
 export interface LogDelegation {
   /** The host turn that ran the delegation, when the log scopes it. */
   hostTurn?: number
+  /** The delegating tool call; '' for a catalog-only child (an external agent no tool call started). */
   callId: string
   name: string
   at: number
@@ -295,12 +296,26 @@ export function foldLogRows(
         const childId = typeof data['childId'] === 'string' ? data['childId'] : undefined
         if (childId !== undefined && childId.length > 0) {
           // FIFO bind: the catalog belongs to the oldest unbound delegation call.
+          let bound = false
           for (const pending of cursor.pendingDelegations.values()) {
             if (pending.childId === undefined) {
               pending.childId = childId
               if (typeof data['label'] === 'string' && data['label'].length > 0) pending.catalogLabel = data['label']
+              bound = true
               break
             }
+          }
+          // A child no tool call started (an external agent a provider or the
+          // user brought in) still is a child of this turn: surface it as-is.
+          if (!bound) {
+            sink.delegation?.({
+              ...cursor.turnHost === undefined ? {} : { hostTurn: cursor.turnHost },
+              callId: '',
+              name: 'subagent/catalog',
+              at: row.time ?? 0,
+              childId,
+              ...typeof data['label'] === 'string' && data['label'].length > 0 ? { catalogLabel: data['label'] } : {},
+            })
           }
         }
         break
@@ -390,7 +405,13 @@ function buildCompaction(cursor: SessionLogCursor, row: SessionLogRow, data: Rec
   const summary = fromLogMessage({ role: 'assistant', content: data['summary'] })
   if (!summary) return undefined
   const temp = openCursor()
-  temp.messages = region
+  // The summarize call replays the conversation prefix: the system head at
+  // surface node 0, the header's tools, then the region (compaction-basic
+  // buildSummarizationInput). Only its trailing instruction lives in host
+  // code rather than the log, so the request stays inputPartial.
+  const head = cursor.messages[0]
+  temp.messages = head !== undefined && head.message.role === 'system' && !selected.has(head.seq) ? [head, ...region] : region
+  if (cursor.tools !== undefined) temp.tools = cursor.tools
   temp.stepStartAt = start?.startedAt ?? row.time
   temp.config = {
     ...typeof data['provider'] === 'string' ? { provider: data['provider'] } : {},

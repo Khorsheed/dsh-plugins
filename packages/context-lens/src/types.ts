@@ -437,6 +437,12 @@ export interface ListTurnsResult {
    */
   evictedTurnCount?: number
   /**
+   * This session is another session's child (its log header names a
+   * `parentSession`): the parent's title, the turn that started it, and the
+   * label it was catalogued under.
+   */
+  parent?: { sessionId: string; title?: string; hostTurn?: number; label?: string }
+  /**
    * Present exactly when the query carried a {@link ScopeFilter}: the
    * authorized scopes that exist in the session. An empty array is the
    * explicit zero-authorized-content signal — distinct from the field's
@@ -465,8 +471,15 @@ export interface AgentScopeOverview {
   scopeId: string
   /** Per-session 1-based ordinal in scope-creation order (the chip's `#N`). */
   scopeSeq: number
-  kind: 'main' | 'subagent'
+  /** `compaction`: a compaction call shown inside the turn it happened in (scopeId `compaction:<pseudo turnSeq>`). */
+  kind: 'main' | 'subagent' | 'compaction'
   label?: string
+  /** The child's `subagent/descriptor` provider; anything not `dsh*` is an external agent. */
+  provider?: string
+  /** The main request whose tool call started this child, when one did. */
+  delegatedBy?: RequestLink
+  /** Compaction views: how many messages it replaced, and the main request it followed. */
+  compaction?: { replacedCount?: number; after?: RequestLink; betweenTurns?: true }
   status: 'running' | 'ok' | 'failed'
   error?: string
   config: RequestConfig
@@ -498,6 +511,8 @@ export interface RequestListItem {
   /** 请求体总字符数（明细头右上）。 */
   totalChars: number
   toolErrors?: number
+  /** Main requests: the child views this request's tool calls started. */
+  delegates?: { scopeId: string; external: boolean }[]
 }
 
 /** One turn's whole-turn timing view (the 耗时分布 tab). */

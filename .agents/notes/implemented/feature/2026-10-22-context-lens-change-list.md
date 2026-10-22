@@ -26,7 +26,7 @@ The panel (`ChangeList.tsx`) shows one break line, then cards. The break card is
 
 ## Alternatives considered
 
-**A ruler diagram of both requests with the break drawn through it.** It was prototyped in three rounds (`proposals/prototypes/context-lens-cache-explain.html`). It tried to show both where the break is and what changed. The block widths need per-segment token counts the provider never reports, and the tool position relative to messages is provider-internal. The user found it hard to read without prose. It lost to one break line plus a list.
+**A ruler diagram of both requests with the break drawn through it.** It was prototyped in three rounds as local, untracked design pages. It tried to show both where the break is and what changed. The block widths need per-segment token counts the provider never reports, and the tool position relative to messages is provider-internal. The user found it hard to read without prose. It lost to one break line plus a list.
 
 **Interpretive change types (`moved`, `modified`, "edit trigger").** These were in an earlier prototype round. The host emits two independent replacements for a consolidation and a new id for every replacement, so "moved" and "modified" are conclusions, not data. The list names event kinds and shows producer fields verbatim; equalities stand in for conclusions.
 

@@ -1,10 +1,11 @@
 import type { SessionTrend } from '../types.ts'
 import { Trend } from './Trend.tsx'
+import { AgentTabs, ParentLine } from './AgentTabs.tsx'
 /** Session/turn/scope navigation; request detail owns its JSON toggle. */
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { ChipRow, PanelRoot } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
+import { PanelRoot } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
 import type {
-  AgentScopeOverview, BackfillInfo, CapturedRequest, TurnListItem, TurnOverview, TurnTiming,
+  AgentScopeOverview, BackfillInfo, CapturedRequest, ListTurnsResult, TurnListItem, TurnOverview, TurnTiming,
 } from '../types.ts'
 import { fmtSpan, latestTurnSeq, type CompositionFilter } from './aggregate.ts'
 import type { InspectorTabProps } from './contract.ts'
@@ -40,18 +41,6 @@ function FailureCard({ scope, t }: { readonly scope: AgentScopeOverview; readonl
   )
 }
 
-/** One delegation run's chip label: ▸ #scopeSeq label ✓/✗ (never merged, never grouped). */
-function scopeChipLabel(scope: AgentScopeOverview): ReactNode {
-  const label = scope.label ?? scope.scopeId
-  return (
-    <>
-      ▸ {`#${scope.scopeSeq} `}{label}
-      {scope.status === 'ok' && <span className={css.okMark}> ✓</span>}
-      {scope.status === 'failed' && <span className={css.failMark}> ✗</span>}
-    </>
-  )
-}
-
 /** The tab body. */
 export function InspectorPanel({
   sessionId, useTabInfo, t,
@@ -67,6 +56,7 @@ export function InspectorPanel({
   }, [sessionId, getSessionTrend, tab.navigation.revision])
   const [turns, setTurns] = useState<readonly TurnListItem[] | null>(null)
   const [backfill, setBackfill] = useState<BackfillInfo | null>(null)
+  const [parent, setParent] = useState<ListTurnsResult['parent'] | null>(null)
   const [turnSeq, setTurnSeq] = useState<number | null>(null)
   const [overview, setOverview] = useState<TurnOverview | null>(null)
   const [timing, setTiming] = useState<TurnTiming | null>(null)
@@ -125,6 +115,7 @@ export function InspectorPanel({
       }
       setTurns(result.value.turns)
       setBackfill(result.value.backfill)
+      setParent(result.value.parent ?? null)
       setTurnSeq(previous => previous !== null && result.value.turns.some(turn => turn.turnSeq === previous)
         ? previous
         : latestTurnSeq(result.value.turns) ?? null)
@@ -322,12 +313,6 @@ export function InspectorPanel({
     setFilterCat(null)
   }
 
-  const chips = scopes.map(candidate => ({
-    id: candidate.scopeId,
-    label: candidate.kind === 'main'
-      ? t('scope.main', { count: String(candidate.requests.length) })
-      : scopeChipLabel(candidate),
-  }))
 
   // A load failure (refusal, disconnect, a call rejected before any network
   // traffic) is an explicit state with a retry — loading shows only while no
@@ -430,16 +415,17 @@ export function InspectorPanel({
         </div>
         {turn !== undefined && <div className={css.query}><b>{turn.hostTurn === undefined && turn.query === 'compaction' ? t('compaction.title') : turn.query}</b></div>}
         {backfill?.state === 'partial' && <div className={css.stateNote}>{t('hint.backfillTruncated')}</div>}
-        {chips.length > 0 && (
-          <ChipRow
-            className={css.agentNav}
-            chips={chips}
+        {parent && <ParentLine parent={parent} t={t} />}
+        {scopes.length > 0 && (
+          <AgentTabs
+            scopes={scopes}
             value={effectiveScope?.scopeId ?? 'main'}
             onSelect={onSelectScope}
-            label={t('tab.title')}
+            onOpenRequest={link => { setTurnSeq(link.turnSeq); onOpenRequest(link.seq, link.scopeId) }}
+            t={t}
           />
         )}
-        {trend && effectiveScope && <Trend data={trend} turnSeq={turnSeq} selectedSeq={selectedRequestSeq} scopeId={effectiveScope.scopeId} scopeLabel={effectiveScope.kind === 'main' ? t('scope.mainName') : `#${effectiveScope.scopeSeq} ${effectiveScope.label ?? effectiveScope.scopeId}`} t={t} onSelect={(next, seq, targetScope) => { onSelectTurn(next); onOpenRequest(seq, targetScope) }} />}
+        {trend && effectiveScope && <Trend data={trend} turnSeq={turnSeq} selectedSeq={selectedRequestSeq} scopeId={effectiveScope.scopeId} scopeLabel={effectiveScope.kind === 'main' ? t('scope.mainName') : `#${effectiveScope.scopeSeq} ${effectiveScope.label ?? effectiveScope.scopeId}`} t={t} onSelect={(next, seq, targetScope) => { onSelectTurn(next); onOpenRequest(seq, targetScope) }} onSelectScope={(next, targetScope) => { onSelectTurn(next); onSelectScope(targetScope) }} />}
       </div>
       <div className={css.body}>{body}</div>
     </PanelRoot>
