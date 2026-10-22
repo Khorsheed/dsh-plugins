@@ -138,6 +138,7 @@ const LOADER = `window.__boot = function (files) {
   if (!files['index.html']) { document.body.textContent = '这个版本没有 index.html'; return }
   try {
     var manifest = files['game.json'] ? JSON.parse(text('game.json')) : {};
+    window.dshManifest = manifest;
     (manifest.params || []).forEach(function (p) { if (p && p.key && !(p.key in window.dshParams)) window.dshParams[p.key] = Number(p.value) });
   } catch (e) {}
   Object.keys(files).forEach(function (p) {

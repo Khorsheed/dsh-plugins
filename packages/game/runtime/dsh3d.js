@@ -6,8 +6,12 @@
  * three.js and gives a game four things:
  *
  * - `build(look)`: a `parts3d` recipe → a model with procedural motion.
- * - Styles: toon shading + inverted-hull ink outline + paper background and
- *   fog (`ink` 水墨, `qinglv` 青绿山水). A restyle swaps only this.
+ * - Styles as data: toon shading bands, an inverted-hull outline, background,
+ *   ground and fog colors. `ink` and `qinglv` are starting presets; a game's
+ *   own `game.json` `style3d` (written from the user's description) overrides
+ *   any key. A restyle swaps only this.
+ * - Open vocabulary: `defineBase(name, fn)` / `definePart(type, fn)` let a
+ *   project add bodies and parts the built-ins do not cover.
  * - `createWorld()`: the 45° orthographic camera, the loop (`step(dt)` for
  *   tests, `start()` for play), terrain, entity registry.
  * - The workbench hooks: `pick(x, y)` returns a structured reference for the
@@ -24,7 +28,7 @@ export { THREE }
 
 /* ------------------------------------------------------------------ styles */
 
-/** The built-in 3D art styles. Colors are sRGB hex. */
+/** The preset 3D styles (starting points, not the full set). Colors are sRGB hex. */
 export const STYLES = {
   ink: {
     label: '水墨', bg: '#efe7d6', fog: [26, 62], ground: '#e5dbc5', ground2: '#d6c9ac', water: '#a7bab4',
@@ -40,20 +44,49 @@ let style = STYLES.ink
 const materials = new Map()
 let outlineMaterial = null
 
-const gradient = (() => {
-  const t = new THREE.DataTexture(new Uint8Array([105, 105, 105, 255, 185, 185, 185, 255, 255, 255, 255, 255]), 3, 1)
-  t.minFilter = t.magFilter = THREE.NearestFilter
-  t.needsUpdate = true
-  return t
-})()
+const gradients = new Map()
+/** A toon ramp with `shades` bands (2 = hard cel … 5 = soft). */
+function gradientFor(shades) {
+  const n = Math.min(5, Math.max(2, Math.round(shades || 3)))
+  if (!gradients.has(n)) {
+    const data = new Uint8Array(n * 4)
+    for (let i = 0; i < n; i++) { const v = Math.round(105 + 150 * i / (n - 1)); data.set([v, v, v, 255], i * 4) }
+    const t = new THREE.DataTexture(data, n, 1)
+    t.minFilter = t.magFilter = THREE.NearestFilter
+    t.needsUpdate = true
+    gradients.set(n, t)
+  }
+  return gradients.get(n)
+}
+
+/**
+ * Resolve a style: a preset name, or an object of overrides on a preset
+ * (`{ preset: 'ink', bg: '#…', outline: '#…', outlineWidth, shades, fog: [near, far], light }`).
+ */
+export function resolveStyle(input) {
+  const spec = typeof input === 'string' ? { preset: input } : (input ?? {})
+  const base = STYLES[spec.preset] ?? STYLES.ink
+  const out = { ...base }
+  for (const key of ['bg', 'ground', 'ground2', 'water', 'outline', 'outlineWidth', 'shades']) if (spec[key] !== undefined) out[key] = spec[key]
+  if (Array.isArray(spec.fog) && spec.fog.length === 2) out.fog = spec.fog
+  if (typeof spec.light === 'number') out.sun = spec.light
+  return out
+}
 
 /** Switch the active style (call before building; `createWorld` does it for you). */
-export function useStyle(id) {
-  style = STYLES[id] ?? STYLES.ink
+export function useStyle(input) {
+  style = resolveStyle(input)
   materials.clear()
   outlineMaterial?.dispose()
   outlineMaterial = null
   return style
+}
+
+/** The style a game asked for in game.json: its `style3d`, else a preset named by `artStyle`, else ink. */
+function manifestStyle() {
+  const m = window.dshManifest ?? {}
+  if (m.style3d && typeof m.style3d === 'object') return m.style3d
+  return typeof m.artStyle === 'string' && STYLES[m.artStyle] ? m.artStyle : 'ink'
 }
 
 /** The active style. */
@@ -62,7 +95,7 @@ export function currentStyle() { return style }
 /** Toon-shaded material for a color (cached). */
 export function toon(color, extra) {
   const key = `t${color}${extra ? JSON.stringify(extra) : ''}`
-  if (!materials.has(key)) materials.set(key, new THREE.MeshToonMaterial({ color, gradientMap: gradient, ...extra }))
+  if (!materials.has(key)) materials.set(key, new THREE.MeshToonMaterial({ color, gradientMap: gradientFor(style.shades), ...extra }))
   return materials.get(key)
 }
 
@@ -89,7 +122,7 @@ function outline() {
  */
 export function ink(geometry, material, withOutline = true) {
   const mesh = new THREE.Mesh(geometry, material)
-  if (withOutline) {
+  if (withOutline && style.outlineWidth > 0) {
     const hull = new THREE.Mesh(geometry, outline())
     hull.raycast = () => {}
     hull.userData.outline = true
@@ -167,7 +200,7 @@ function addWings(anchor, look, spec, bodyColor, span = 0.55) {
   return wings
 }
 
-/** Eyes across the front of a head (山海经 一目 / 三目 included). */
+/** Eyes across the front of a head (one, two, three or more). */
 function addEyes(head, look, r, count) {
   const mat = toon(colorOf(look, 'eye', '#1d1d1f'))
   const n = Math.max(1, count)
@@ -179,7 +212,7 @@ function addEyes(head, look, r, count) {
   }
 }
 
-/** A 人面: a pale face disc with eyes, nose and mouth on the front of a head. */
+/** A human face: a pale disc with eyes and a mouth on the front of a head. */
 function addHumanFace(head, look, r) {
   const skin = toon(colorOf(look, 'face', '#f0d6bd')), dark = toon(colorOf(look, 'eye', '#1d1d1f'))
   const face = ink(sphere(r * 0.62, 12), skin)
@@ -286,7 +319,7 @@ function quadruped(look) {
   back.position.set(0, bodyY + ry * 0.8, 0)
   body.add(back)
   const wings = partsOf(look, 'wing').flatMap(spec => addWings(back, look, spec, bodyColor))
-  return { g, body, heads, tails, wings }
+  return { g, body, heads, tails, wings, tailRoot, back }
 }
 
 function bird(look) {
@@ -320,7 +353,7 @@ function bird(look) {
   const tails = tailSpecs.flatMap(spec => addTails(tailRoot, look, spec, bodyColor))
   const wingSpecs = partsOf(look, 'wing')
   const wings = (wingSpecs.length === 0 ? [{ type: 'wing', count: 2 }] : wingSpecs).flatMap(spec => addWings(body, look, spec, colorOf(look, 'wing', '#6f6352')))
-  return { g, body, heads, tails, wings }
+  return { g, body, heads, tails, wings, tailRoot, back: body }
 }
 
 function fish(look) {
@@ -353,7 +386,7 @@ function fish(look) {
       body.add(f)
     }
   }
-  return { g, body, heads: [head], tails: [], wings: [], swimmer: tailRoot }
+  return { g, body, heads: [head], tails: [], wings: [], swimmer: tailRoot, tailRoot, back: body }
 }
 
 function serpent(look) {
@@ -375,7 +408,7 @@ function serpent(look) {
   const headR = thick * 1.25
   const heads = addHeads(body, look, new THREE.Vector3(headR * 0.9, headR * 1.1, 0), headR, bodyColor, headR * 0.6)
   const wings = partsOf(look, 'wing').flatMap(spec => addWings(segs[Math.min(2, n - 1)], look, spec, bodyColor, 0.45))
-  return { g, body, heads, tails: [], wings, slither: segs }
+  return { g, body, heads, tails: [], wings, slither: segs, tailRoot: segs[n - 1], back: segs[Math.min(2, n - 1)] }
 }
 
 function humanoid(look) {
@@ -403,10 +436,41 @@ function humanoid(look) {
   back.position.set(-h * 0.1, h * 0.65, 0)
   body.add(back)
   const wings = partsOf(look, 'wing').flatMap(spec => addWings(back, look, spec, bodyColor))
-  return { g, body, heads, tails, wings }
+  return { g, body, heads, tails, wings, tailRoot, back }
 }
 
 const BASES = { quadruped, bird, fish, serpent, humanoid }
+const BUILTIN_PARTS = new Set(['ear', 'horn', 'tail', 'wing', 'fin', 'eye', 'face'])
+const PARTS = {}
+
+/** Helpers a project's own bodies and parts build with. */
+function kitFor(look) {
+  return {
+    THREE, ink, toon, flat,
+    color: (key, fallback) => colorOf(look, key, fallback),
+    sphere,
+    addTails: (anchor, spec, bodyColor) => addTails(anchor, look, spec, bodyColor),
+    addWings: (anchor, spec, bodyColor) => addWings(anchor, look, spec, bodyColor),
+    addHeads: (parent, at, r, bodyColor, snout = 0) => addHeads(parent, look, at, r, bodyColor, snout),
+  }
+}
+
+/**
+ * Register a body the built-ins do not cover (a robot, a slime, a cart…).
+ * `make(look, kit)` returns `{ g, body, heads?, tails?, wings?, tailRoot?, back? }`:
+ * `g` is the model root, `body` breathes, the rest are what parts attach to
+ * and motions drive. `kit` carries `THREE`, `ink`, `toon`, `flat`, `color`,
+ * `sphere`, `addTails`, `addWings`, `addHeads`.
+ */
+export function defineBase(name, make) { BASES[name] = make }
+
+/**
+ * Register a part type. `make({ look, spec, anchors, kit })` adds meshes to
+ * `anchors.body` / `anchors.heads[i]` / `anchors.tailRoot` / `anchors.back`
+ * and may return `{ update(t) }` for its own motion. `spec.extra` carries the
+ * part's own parameters from the recipe.
+ */
+export function definePart(type, make) { PARTS[type] = make }
 
 /** A gltf look until the loader lands (the refine milestone): a labeled stand-in, never a crash. */
 function gltfStandIn(look) {
@@ -428,8 +492,20 @@ export function build(lookOrId) {
   if (!look || typeof look !== 'object') throw new Error(`dsh3d.build：没有可用的 look（${String(lookOrId)}）`)
   if (look.kind === 'gltf') return look.recipe ? build(look.recipe) : gltfStandIn(look)
   const make = BASES[look.base]
-  if (!make) throw new Error(`dsh3d.build：未知的 base「${look.base}」`)
-  const { g, body, heads, tails, wings, swimmer, slither } = make(look)
+  if (!make) throw new Error(`dsh3d.build：base「${look.base}」没有注册（内置 ${Object.keys(BASES).join('、')}；自己的身体用 defineBase 注册）`)
+  const kit = kitFor(look)
+  const built = make(look, kit)
+  const { g, body, swimmer, slither } = built
+  const heads = built.heads ?? [], tails = built.tails ?? [], wings = built.wings ?? []
+  const anchors = { body, heads, tailRoot: built.tailRoot ?? body, back: built.back ?? body }
+  const partMotions = []
+  for (const spec of look.parts ?? []) {
+    if (BUILTIN_PARTS.has(spec.type)) continue
+    const part = PARTS[spec.type]
+    if (!part) throw new Error(`dsh3d.build：part「${spec.type}」没有注册（自己的部件用 definePart 注册）`)
+    const motion = part({ look, spec, anchors, kit })
+    if (motion && typeof motion.update === 'function') partMotions.push(motion)
+  }
   const m = look.motion ?? {}
   const sway = m.tailSway, breath = m.breath, flap = m.flap, swim = m.swim, bob = m.bob
   g.scale.setScalar(num(look.scale, 1))
@@ -444,7 +520,8 @@ export function build(lookOrId) {
     }
     if (swimmer) swimmer.rotation.y = deg(num(swim?.amplitude, 28)) * Math.sin(t * 2 * Math.PI / num(swim?.period, 0.9))
     if (slither) slither.forEach((s, i) => { s.position.z = Math.sin(t * 2 * Math.PI / num(swim?.period, 1.6) - i * 0.7) * deg(num(swim?.amplitude, 20)) * 0.25 })
-    if (bob) g.children[0].position.y = num(bob.amplitude, 0.1) * Math.sin(t * 2 * Math.PI / num(bob.period, 2))
+    if (bob) body.position.y = num(bob.amplitude, 0.1) * Math.sin(t * 2 * Math.PI / num(bob.period, 2))
+    for (const m of partMotions) m.update(t)
   }
   return g
 }
@@ -465,10 +542,11 @@ const CAMERA_OFFSET = new THREE.Vector3(12, 13.5, 12)
 /**
  * The game world: renderer, 45° orthographic camera, loop, terrain and the
  * entity registry the workbench hooks read.
- * @param {{ canvas?: HTMLCanvasElement, style?: 'ink'|'qinglv', view?: number, region?: (x:number, z:number) => string }} options
+ * @param {{ canvas?: HTMLCanvasElement, style?: string|object, view?: number, region?: (x:number, z:number) => string }} options
+ *   `style` defaults to game.json's `style3d` (or the preset its `artStyle` names).
  */
 export function createWorld(options = {}) {
-  const s = useStyle(options.style ?? 'ink')
+  const s = useStyle(options.style ?? manifestStyle())
   const canvas = options.canvas ?? document.querySelector('canvas') ?? document.body.appendChild(document.createElement('canvas'))
   // preserveDrawingBuffer: the workbench's blank-screen probe and screenshots read the canvas.
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true })

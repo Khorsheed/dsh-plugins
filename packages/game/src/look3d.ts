@@ -21,7 +21,7 @@ const COUNTS: Readonly<Record<string, readonly [number, number]>> = { legs: [0, 
 
 /** What a usable 3D look needs, worded for the model. */
 export const LOOK3D_HINT = 'look 不可用：3D 外观要么是 { kind: "parts3d", base: '
-  + `${BODY_BASES.map(b => `"${b}"`).join(' / ')}, proportions, parts, palette, motion }，`
+  + `${BODY_BASES.map(b => `"${b}"`).join(' / ')} 或项目里 defineBase 注册的名字, proportions, parts, palette, motion }，`
   + '要么是 { kind: "gltf", src: "assets/….glb" }（路径在项目里）'
 
 function clamp(value: unknown, min: number, max: number): number | undefined {
@@ -32,9 +32,13 @@ function record(raw: unknown): Record<string, unknown> | undefined {
   return raw !== null && typeof raw === 'object' && !Array.isArray(raw) ? raw as Record<string, unknown> : undefined
 }
 
+/** A name a project may register with `defineBase` / `definePart`: lowercase identifier. */
+const NAME = /^[a-z][\w-]{0,31}$/
+
 function part(raw: unknown): PartSpec | undefined {
   const r = record(raw)
-  if (r === undefined || !(PART_TYPES as readonly unknown[]).includes(r.type)) return undefined
+  // Built-in part types, or a name the project registers in its own code (dsh3d.definePart).
+  if (r === undefined || typeof r.type !== 'string' || !NAME.test(r.type)) return undefined
   const out: { -readonly [K in keyof PartSpec]: PartSpec[K] } = { type: r.type as PartType }
   const count = clamp(r.count, 1, 12)
   if (count !== undefined) out.count = Math.round(count)
@@ -44,11 +48,23 @@ function part(raw: unknown): PartSpec | undefined {
   }
   if (typeof r.color === 'string' && r.color.length <= 24) out.color = r.color
   if (typeof r.style === 'string' && r.style.length <= 24) out.style = r.style
+  if (!(PART_TYPES as readonly unknown[]).includes(r.type)) {
+    // A project-defined part keeps its own extra numbers and short strings.
+    const extra: Record<string, number | string> = {}
+    for (const [k, v] of Object.entries(r).slice(0, 16)) {
+      if (k in out || k === 'type' || !NAME.test(k)) continue
+      if (typeof v === 'number' && Number.isFinite(v)) extra[k] = Math.min(1000, Math.max(-1000, v))
+      else if (typeof v === 'string' && v.length <= 40) extra[k] = v
+    }
+    if (Object.keys(extra).length > 0) out.extra = extra
+  }
   return out
 }
 
 function parts3d(r: Record<string, unknown>): Parts3DLook | null {
-  if (!(BODY_BASES as readonly unknown[]).includes(r.base)) return null
+  // A built-in body, or one the project registers (dsh3d.defineBase); an
+  // unregistered name fails loudly at build time, which the smoke check reports.
+  if (typeof r.base !== 'string' || !NAME.test(r.base)) return null
   const proportions: Record<string, number> = {}
   for (const [k, v] of Object.entries(record(r.proportions) ?? {}).slice(0, 16)) {
     const count = COUNTS[k]

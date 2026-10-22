@@ -71,6 +71,29 @@ export const ART_STYLES_3D: readonly ArtStyle[] = [
   },
 ]
 
+/**
+ * A 3D project's rendering style as data (`game.json` `style3d`): the model
+ * writes it from the user's own description; `preset` names the built-in
+ * starting point (`ink` / `qinglv`) the other keys override. dsh3d applies
+ * it at `createWorld`.
+ */
+export interface Style3D {
+  readonly preset?: string
+  readonly bg?: string
+  readonly ground?: string
+  readonly ground2?: string
+  readonly water?: string
+  readonly outline?: string
+  /** Outline thickness in world units; 0 turns the ink line off. */
+  readonly outlineWidth?: number
+  /** Toon shading bands (2 = hard cel, 5 = soft). */
+  readonly shades?: number
+  /** Fog start and end distance. */
+  readonly fog?: readonly [number, number]
+  /** Sun intensity. */
+  readonly light?: number
+}
+
 /** The project manifest (`game.json`). Everything but id/title is the agent's to fill over time. */
 export interface GameManifest {
   readonly schema: 1
@@ -93,6 +116,8 @@ export interface GameManifest {
   readonly createdAt: string
   /** The runtime kit the project is pinned to; absent = `2d-canvas` v1 (projects made before kits). */
   readonly runtime?: KitRef
+  /** 3D projects: the rendering style as data (see {@link Style3D}). */
+  readonly style3d?: Style3D
 }
 
 /** One tunable number (`game.json` `params[]`); the game reads it from `window.dshParams[key]` every frame. */
@@ -120,13 +145,13 @@ export interface ElementLook {
 export const BODY_BASES = ['quadruped', 'bird', 'fish', 'serpent', 'humanoid'] as const
 export type BodyBase = typeof BODY_BASES[number]
 
-/** Parts a `parts3d` look can attach to its body. */
+/** Built-in parts a `parts3d` look can attach; a project can register more with `dsh3d.definePart`. */
 export const PART_TYPES = ['ear', 'horn', 'tail', 'wing', 'fin', 'eye', 'face'] as const
 export type PartType = typeof PART_TYPES[number]
 
 /** One part of a `parts3d` look; sizes are in body units (body length ≈ 1). */
 export interface PartSpec {
-  readonly type: PartType
+  readonly type: PartType | (string & {})
   readonly count?: number
   readonly size?: number
   readonly length?: number
@@ -135,8 +160,10 @@ export interface PartSpec {
   readonly thickness?: number
   /** A `palette` key or a `#rrggbb` color. */
   readonly color?: string
-  /** `face` only: `human` gives a 人面. */
+  /** `face` only: `human` gives a human face. */
   readonly style?: string
+  /** A project-defined part's own parameters (anything beyond the shared keys). */
+  readonly extra?: Readonly<Record<string, number | string>>
 }
 
 /** One procedural motion: amplitude (degrees, or a fraction for breath/bob) and period (seconds). */
@@ -146,13 +173,15 @@ export interface MotionSpec {
 }
 
 /**
- * A 3D look built from a parts recipe (山海经「其状如 X 而 Y」): a body
- * archetype, its proportions, attached parts, a named palette and procedural
- * motions. The 3d-three kit's `dsh3d.build` turns it into a model.
+ * A 3D look built from a parts recipe: a body archetype, its proportions,
+ * attached parts, a named palette and procedural motions. The 3d-three kit's
+ * `dsh3d.build` turns it into a model; bodies and parts are an open set (a
+ * project registers its own with `defineBase` / `definePart`).
  */
 export interface Parts3DLook {
   readonly kind: 'parts3d'
-  readonly base: BodyBase
+  /** A built-in {@link BodyBase} or a body the project registers with `dsh3d.defineBase`. */
+  readonly base: BodyBase | (string & {})
   readonly proportions: Readonly<Record<string, number>>
   readonly parts: readonly PartSpec[]
   /** Named colors: `body`, `accent`, `eye`, `belly`… */
