@@ -353,7 +353,7 @@ function logTurnFixture(hostTurn: number, startedAt: number, requests: number, c
 }
 
 describe('backfill budgets and the watermark', () => {
-  it('skips one oversized turn without aborting the older ones', () => {
+  it('keeps the loaded turns contiguous: the first turn that does not fit ends the fill', () => {
     const at = clock()
     const store = new InspectorStore({ maxBackfillRequestsPerSession: 3 }, { now: at.now })
     const inserted = store.insertLogTurns('s1', [
@@ -361,10 +361,18 @@ describe('backfill budgets and the watermark', () => {
       logTurnFixture(2, at.tick(1), 5, 100), // oversized: 5 > the cap
       logTurnFixture(3, at.tick(1), 2, 100),
     ])
-    expect(inserted).toBe(2)
-    expect(store.listTurns('s1').turns.map(item => item.turnSeq)).toEqual([1, 3])
+    // T1 would fit, but loading it would leave a hole at T2 that paging could never fill.
+    expect(inserted).toBe(1)
+    expect(store.listTurns('s1').turns.map(item => item.turnSeq)).toEqual([3])
     // The drop keeps the watermark retryable (not 'complete').
     expect(store.listTurns('s1').backfill.state).toBe('partial')
+  })
+
+  it('skips an oversized newest turn so the window cannot get stuck on it', () => {
+    const at = clock()
+    const store = new InspectorStore({ maxBackfillRequestsPerSession: 3 }, { now: at.now })
+    store.insertLogTurns('s1', [logTurnFixture(1, at.tick(1), 1, 100), logTurnFixture(2, at.tick(1), 2, 100), logTurnFixture(3, at.tick(1), 5, 100)])
+    expect(store.listTurns('s1').turns.map(item => item.turnSeq)).toEqual([1, 2])
   })
 
   it('marks complete only when every candidate fit', () => {
@@ -405,5 +413,40 @@ describe('backfill budgets and the watermark', () => {
     expect(store.insertLogTurns('s1', logTurns)).toBe(1)
     expect(store.listTurns('s1').turns.map(item => item.turnSeq)).toEqual([2, 4])
     expect(store.listTurns('s1').backfill.state).toBe('partial')
+  })
+
+  it('loads a window of turns ending where asked, and back to the latest', () => {
+    const at = clock()
+    const store = new InspectorStore({ maxTurnsPerSession: 3 }, { now: at.now })
+    const logTurns = Array.from({ length: 8 }, (_, i) => logTurnFixture(i + 1, at.tick(1), 1, 10))
+    store.insertLogTurns('s1', logTurns)
+    expect(store.listTurns('s1').turns.map(item => item.hostTurn)).toEqual([6, 7, 8])
+    expect(store.listTurns('s1').range).toEqual({ first: 1, last: 8 })
+    store.setWindow('s1', 4)
+    expect(store.listTurns('s1').turns).toEqual([])
+    store.insertLogTurns('s1', logTurns)
+    expect(store.listTurns('s1').turns.map(item => item.hostTurn)).toEqual([2, 3, 4])
+    expect(store.listTurns('s1').backfill.state).toBe('complete')
+    expect(store.listTurns('s1').evictedTurnCount).toBeUndefined()
+    store.setWindow('s1', undefined)
+    store.insertLogTurns('s1', logTurns)
+    expect(store.listTurns('s1').turns.map(item => item.hostTurn)).toEqual([6, 7, 8])
+  })
+
+  it('takes room from the least recently read session instead of loading nothing', () => {
+    const at = clock()
+    const store = new InspectorStore({ maxStoredCharsTotal: 250 }, { now: at.now })
+    store.insertLogTurns('old', [logTurnFixture(1, at.tick(1), 1, 100), logTurnFixture(2, at.tick(1), 1, 100)])
+    at.tick(10)
+    store.insertLogTurns('read', [logTurnFixture(1, at.tick(1), 1, 20)])
+    at.tick(10)
+    // A third session's turns do not fit in the free room; the least recently
+    // read session ('old') yields its oldest backfilled turn, not 'read'.
+    expect(store.insertLogTurns('new', [logTurnFixture(1, at.tick(1), 1, 100)])).toBe(1)
+    expect(store.listTurns('new').turns.map(item => item.hostTurn)).toEqual([1])
+    expect(store.listTurns('read').turns.map(item => item.hostTurn)).toEqual([1])
+    expect(store.listTurns('old').turns.map(item => item.hostTurn)).toEqual([2])
+    // 'old' lost backfill, so it refills when read again.
+    expect(store.listTurns('old').backfill.state).toBe('partial')
   })
 })

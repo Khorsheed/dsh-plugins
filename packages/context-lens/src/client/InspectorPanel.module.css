@@ -245,6 +245,10 @@
 .trendGroup[data-current="true"] .trendBar { opacity: 1; }
 .trendTurn { text-align: center; padding-top: 4px; font-family: var(--dsw-font-family-mono, ui-monospace, monospace); font-size: var(--dsh-panel-text-meta, 10.5px); color: var(--dsw-alias-label-tertiary); }
 .trendGroup[data-current="true"] .trendTurn { color: var(--dsw-alias-brand-primary, #3b5bdb); font-weight: 700; }
+.trendGap { flex: none; display: flex; flex-direction: column; min-width: 34px; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.trendGapBars { display: flex; align-items: flex-end; justify-content: center; height: 54px; padding-bottom: 6px; border-bottom: 1px dashed var(--dsw-alias-border-l2); color: var(--dsw-alias-label-tertiary); letter-spacing: 1px; }
+.trendGap:hover .trendGapBars, .trendGap:focus-visible .trendGapBars { color: var(--dsw-alias-brand-primary, #3b5bdb); background: color-mix(in srgb, var(--dsw-alias-brand-primary, #3b5bdb) 8%, transparent); border-radius: 6px 6px 0 0; }
+.trendGap .trendTurn { white-space: nowrap; padding-left: 4px; padding-right: 4px; }
 .trendCompaction { flex: none; align-self: stretch; width: 6px; margin: 0 1px; padding: 0; border: 0; background: repeating-linear-gradient(to bottom, var(--dsw-alias-brand-primary, #7048e8) 0 4px, transparent 4px 7px) center / 2px 100% no-repeat; cursor: pointer; }
 .trendCompaction:hover { background-size: 3px 100%; }
 @media (pointer: coarse) {

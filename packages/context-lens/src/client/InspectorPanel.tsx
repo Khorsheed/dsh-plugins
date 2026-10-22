@@ -7,7 +7,7 @@ import { PanelRoot } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.t
 import type {
   AgentScopeOverview, BackfillInfo, CapturedRequest, ListTurnsResult, TurnListItem, TurnOverview, TurnTiming,
 } from '../types.ts'
-import { fmtSpan, latestTurnSeq, type CompositionFilter } from './aggregate.ts'
+import { WINDOW_TURNS, fmtSpan, latestTurnSeq, unloadedGaps, type CompositionFilter, type TurnGap } from './aggregate.ts'
 import type { InspectorTabProps } from './contract.ts'
 import type { RequestInspectorTabParams } from './definition.tsx'
 import { scrollConversationToBottom, scrollConversationToTurn } from './scroll-sync.ts'
@@ -44,19 +44,22 @@ function FailureCard({ scope, t }: { readonly scope: AgentScopeOverview; readonl
 /** The tab body. */
 export function InspectorPanel({
   sessionId, useTabInfo, t,
-  listTurns, getTurn, getRequest, getTurnTiming, getSessionTrend,
+  listTurns, loadTurns, getTurn, getRequest, getTurnTiming, getSessionTrend,
 }: InspectorTabProps): ReactNode {
   const { tab } = useTabInfo()
   const [trend, setTrend] = useState<SessionTrend | null>(null)
+  /** Bumped when the loaded window moves, so the session map refetches. */
+  const [trendKey, setTrendKey] = useState(0)
   useEffect(() => {
     let cancelled = false
     setTrend(null)
     if (getSessionTrend) void getSessionTrend(sessionId).then(r => { if (!cancelled && r.ok) setTrend(r.value) }).catch(() => {})
     return () => { cancelled = true }
-  }, [sessionId, getSessionTrend, tab.navigation.revision])
+  }, [sessionId, getSessionTrend, tab.navigation.revision, trendKey])
   const [turns, setTurns] = useState<readonly TurnListItem[] | null>(null)
   const [backfill, setBackfill] = useState<BackfillInfo | null>(null)
   const [parent, setParent] = useState<ListTurnsResult['parent'] | null>(null)
+  const [range, setRange] = useState<ListTurnsResult['range'] | undefined>(undefined)
   const [turnSeq, setTurnSeq] = useState<number | null>(null)
   const [overview, setOverview] = useState<TurnOverview | null>(null)
   const [timing, setTiming] = useState<TurnTiming | null>(null)
@@ -116,6 +119,7 @@ export function InspectorPanel({
       setTurns(result.value.turns)
       setBackfill(result.value.backfill)
       setParent(result.value.parent ?? null)
+      setRange(result.value.range)
       setTurnSeq(previous => previous !== null && result.value.turns.some(turn => turn.turnSeq === previous)
         ? previous
         : latestTurnSeq(result.value.turns) ?? null)
@@ -288,10 +292,49 @@ export function InspectorPanel({
 
   /** The latest REAL turn — the 最新 button's target (pseudo-turns have no conversation anchor). */
   const latestRealTurn = (turns ?? []).filter(candidate => candidate.hostTurn !== undefined).at(-1)
+  const gaps = unloadedGaps(range, turns ?? [])
+  const latestUnloaded = range !== undefined && latestRealTurn?.hostTurn !== undefined && range.last > latestRealTurn.hostTurn
+
+  /** Move the loaded window (latest when `end` is null), then select `select` or the newest loaded turn. */
+  const loadWindow = (end: number | null, select?: number): void => {
+    if (!loadTurns) return
+    void loadTurns(sessionId, end).then(result => {
+      if (!result.ok) { setError(result.error.message); return }
+      setTurns(result.value.turns)
+      setBackfill(result.value.backfill)
+      setRange(result.value.range)
+      setTrendKey(key => key + 1)
+      const target = select !== undefined && result.value.turns.some(turn => turn.turnSeq === select) ? select : latestTurnSeq(result.value.turns)
+      if (target !== undefined) { selectTurnState(target); syncScrollToTurn(target) }
+    }).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)))
+  }
+  /** A run of unloaded turns: older runs load the 30 ending at its end, newer runs the 30 starting at its start. */
+  const onLoadGap = (gap: TurnGap): void => {
+    const firstLoaded = Math.min(...(turns ?? []).map(turn => turn.hostTurn ?? Number.POSITIVE_INFINITY))
+    if (gap.to < firstLoaded) loadWindow(gap.to, gap.to)
+    else loadWindow(Math.min(gap.from + WINDOW_TURNS - 1, range?.last ?? gap.to), gap.from)
+  }
   const onLatest = (): void => {
+    if (latestUnloaded) { loadWindow(null); scrollConversationToBottom(); return }
     if (latestRealTurn === undefined) return
     if (turnSeq !== latestRealTurn.turnSeq) selectTurnState(latestRealTurn.turnSeq)
     scrollConversationToBottom()
+  }
+  /** Step one turn; at the loaded window's edge, load the adjacent window and keep going. */
+  const onStep = (delta: -1 | 1): void => {
+    const list = turns ?? []
+    const i = list.findIndex(v => v.turnSeq === turnSeq)
+    const next = list[i + delta]
+    const host = list[i]?.hostTurn
+    const gap = host === undefined ? undefined : gaps.find(g => delta < 0 ? g.to === host - 1 : g.from === host + 1)
+    if (gap !== undefined) onLoadGap(gap)
+    else if (next) onSelectTurn(next.turnSeq)
+  }
+  const stepIndex = (turns ?? []).findIndex(v => v.turnSeq === turnSeq)
+  const canStep = (delta: -1 | 1): boolean => {
+    const host = (turns ?? [])[stepIndex]?.hostTurn
+    if (host !== undefined && gaps.some(g => delta < 0 ? g.to === host - 1 : g.from === host + 1)) return true
+    return stepIndex >= 0 && stepIndex + delta >= 0 && stepIndex + delta < (turns ?? []).length
   }
 
   const onSelectScope = (next: string): void => {
@@ -397,11 +440,11 @@ export function InspectorPanel({
         <div className={css.r1}>
           <span className={css.title}>{t('tab.title')}</span>
           <div className={css.stepper}>
-            <button type="button" aria-label={t('lens.previous')} disabled={!turns || turns.findIndex(v => v.turnSeq === turnSeq) <= 0} onClick={() => { const i = turns?.findIndex(v => v.turnSeq === turnSeq) ?? -1; const next = turns?.[i - 1]; if (next) onSelectTurn(next.turnSeq) }}>‹</button>
-            <TurnMenu turns={turns ?? []} turnSeq={turnSeq} onSelect={onSelectTurn} t={t} />
-            <button type="button" aria-label={t('lens.next')} disabled={!turns || turns.findIndex(v => v.turnSeq === turnSeq) >= turns.length - 1} onClick={() => { const i = turns?.findIndex(v => v.turnSeq === turnSeq) ?? -1; const next = turns?.[i + 1]; if (next) onSelectTurn(next.turnSeq) }}>›</button>
+            <button type="button" aria-label={t('lens.previous')} disabled={!canStep(-1)} onClick={() => onStep(-1)}>‹</button>
+            <TurnMenu turns={turns ?? []} turnSeq={turnSeq} onSelect={onSelectTurn} gaps={loadTurns ? gaps : []} lastTurn={range?.last} onLoad={onLoadGap} t={t} />
+            <button type="button" aria-label={t('lens.next')} disabled={!canStep(1)} onClick={() => onStep(1)}>›</button>
           </div>
-          {latestRealTurn && turnSeq !== latestRealTurn.turnSeq && <button type="button" className={css.latestText} aria-label={t('turn.latest')} onClick={onLatest}>{t('lens.latest')}</button>}
+          {latestRealTurn && (turnSeq !== latestRealTurn.turnSeq || (latestUnloaded && loadTurns)) && <button type="button" className={css.latestText} aria-label={t('turn.latest')} onClick={onLatest}>{t('lens.latest')}</button>}
           <div className={css.headTabs}>
             <SegCtl
               mini
@@ -415,10 +458,9 @@ export function InspectorPanel({
             />
           </div>
         </div>
-        {backfill?.state === 'partial' && <div className={css.stateNote}>{t('hint.backfillTruncated')}</div>}
         {parent && <ParentLine parent={parent} t={t} />}
         {/* The trend is the session map: always the main conversation, it picks the turn. */}
-        {trend && <Trend data={trend} turnSeq={turnSeq} selectedSeq={effectiveScope?.kind === 'main' ? selectedRequestSeq : null} scopeId="main" scopeLabel={t('scope.mainName')} t={t} onSelect={(next, seq, targetScope) => { onSelectTurn(next); onOpenRequest(seq, targetScope) }} />}
+        {trend && <Trend data={trend} turnSeq={turnSeq} selectedSeq={effectiveScope?.kind === 'main' ? selectedRequestSeq : null} scopeId="main" scopeLabel={t('scope.mainName')} gaps={loadTurns ? gaps : []} onLoadGap={onLoadGap} t={t} onSelect={(next, seq, targetScope) => { onSelectTurn(next); onOpenRequest(seq, targetScope) }} />}
         {turn !== undefined && (turn.query !== '' || turn.trigger !== undefined) && <div className={css.query}>
           {turn.hostTurn !== undefined && <span className={css.queryTurn}>{t('query.turn', { turn: String(turn.hostTurn) })}</span>}
           {turn.query === '' && turn.trigger !== undefined && <code className={css.querySource}>{turn.trigger.source}</code>}

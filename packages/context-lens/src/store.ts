@@ -234,6 +234,12 @@ interface SessionRecord {
   evictedTurns: number
   /** Agent-local next ordinal, retained independently of body eviction. */
   nextRequestNumbers: Map<string, number>
+  /** When a panel last read this session — the least recently read yields its backfill first. */
+  lastAccess: number
+  /** The backfill window's newest host turn; absent means the latest turns. */
+  windowEnd?: number
+  /** First and last host turn the session's log holds (known after a backfill). */
+  logRange?: { first: number; last: number }
 }
 
 /** Snapshot one request needs at dispatch — the normalized GenerateOptions face. */
@@ -332,6 +338,7 @@ export class InspectorStore {
         activeCompactions: new Map(),
         prunings: new Map(),
         replacements: new Map(),
+        lastAccess: this.now(),
         replacedBy: new Map(),
         openTurn: undefined,
         buckets: new Map(),
@@ -926,33 +933,54 @@ export class InspectorStore {
    */
   insertLogTurns(sessionId: string, logTurns: readonly LogTurn[]): number {
     const session = this.session(sessionId)
+    session.lastAccess = this.now()
     this.reconcileRequestNumbers(session, logTurns)
+    const hosts = logTurns.filter(turn => turn.purpose === undefined).map(turn => turn.hostTurn)
+    if (hosts.length > 0) session.logRange = { first: Math.min(...hosts), last: Math.max(...hosts) }
     if (session.backfillState === 'complete' || session.backfillState === 'broken') return 0
-    const liveCount = session.turns.filter(turn => turn.liveContent).length
-    const candidates = logTurns.filter(logTurn =>
+    const keep = this.windowOf(session, hosts)
+    const window = logTurns.filter(turn => turn.purpose === undefined && keep.has(turn.hostTurn))
+    if (window.length === 0) {
+      session.backfillState = 'complete'
+      return 0
+    }
+    const lo = Math.min(...window.map(turn => turn.hostTurn)), hi = Math.max(...window.map(turn => turn.hostTurn))
+    const startAt = window.find(turn => turn.hostTurn === lo)!.startedAt
+    const nextAfter = logTurns.filter(turn => turn.purpose === undefined && turn.hostTurn > hi).sort((x, y) => x.hostTurn - y.hostTurn)[0]?.startedAt ?? Number.POSITIVE_INFINITY
+    // Purpose calls (compactions) ride with the window's turns: by their host turn, else by time.
+    const inWindow = (turn: LogTurn): boolean => {
+      if (turn.purpose === undefined) return turn.hostTurn >= lo && turn.hostTurn <= hi
+      const host = turn.requests[0]?.compaction?.hostTurn
+      return host !== undefined ? host >= lo && host <= hi : turn.startedAt >= startAt && turn.startedAt < nextAfter
+    }
+    const candidates = logTurns.filter(logTurn => inWindow(logTurn) &&
       !session.turns.some(turn => logTurn.purpose === undefined
         ? turn.purpose === undefined && turn.hostTurn === logTurn.hostTurn
         : [...turn.scopes.values()].some(scope => scope.requests.some(request => request.compaction?.id === logTurn.requests[0]?.compaction?.id))))
     let dropped = 0
     let inserted = 0
-    // Newest-first; every constraint skips (never aborts the older candidates).
+    // Newest-first. The loaded turns stay one contiguous run, so the unloaded
+    // ones are always older and paging back makes progress: the first turn
+    // that does not fit ends the fill — unless nothing fit yet, when it is
+    // skipped so one oversized turn cannot pin the window.
+    const stop = (i: number): boolean => {
+      if (inserted === 0) { dropped += 1; return false }
+      dropped += i + 1
+      return true
+    }
     for (let i = candidates.length - 1; i >= 0; i -= 1) {
       const candidate = candidates[i] as LogTurn
       const candidateChars = candidate.requests.reduce((n, request) => n + request.totalChars + executionSize(request) + responseSize(request.response), 0)
-      // Backfilled turns share the per-session window behind live content.
-      if (session.turns.filter(turn => !turn.liveContent).length >= this.maxTurnsPerSession - liveCount) {
-        dropped += 1
-        continue
-      }
       if (candidate.requests.length > this.maxBackfillRequestsPerSession - session.backfilledRequests) {
-        dropped += 1
+        if (stop(i)) break
         continue
       }
-      // Char room must be FREE: a candidate never displaces a present turn
-      // (it's older than anything already inserted, by the fill order). Live
-      // pressure evicts backfilled turns through enforceCaps instead.
+      // Within a session a candidate never displaces a present turn (it is
+      // older than anything already inserted). Across sessions, the backfill
+      // of the least recently read session yields its room first.
+      if (this.totalChars + candidateChars > this.maxStoredCharsTotal) this.freeChars(session, candidateChars)
       if (this.totalChars + candidateChars > this.maxStoredCharsTotal) {
-        dropped += 1
+        if (stop(i)) break
         continue
       }
       this.insertLogTurn(session, candidate)
@@ -961,6 +989,57 @@ export class InspectorStore {
     session.backfillState = dropped > 0 ? 'partial' : 'complete'
     if (inserted > 0) this.renumberScopes(session)
     return inserted
+  }
+
+  /**
+   * The backfill window over a log's host turns: the newest
+   * `maxTurnsPerSession` at or before the window's end. At the latest, live
+   * turns the log does not hold yet take window slots too. The log lane
+   * materializes only these turns' requests.
+   */
+  windowHosts(sessionId: string, hosts: readonly number[]): Set<number> {
+    return this.windowOf(this.session(sessionId), hosts)
+  }
+
+  private windowOf(session: SessionRecord, hosts: readonly number[]): Set<number> {
+    const end = session.windowEnd ?? Number.POSITIVE_INFINITY
+    const logged = new Set(hosts)
+    const liveAhead = session.windowEnd === undefined
+      ? session.turns.filter(turn => turn.liveContent && turn.hostTurn !== undefined && !logged.has(turn.hostTurn)).length : 0
+    return new Set([...logged].filter(host => host <= end).sort((x, y) => y - x).slice(0, Math.max(0, this.maxTurnsPerSession - liveAhead)))
+  }
+
+  /**
+   * Make room for `needed` chars by evicting other sessions' backfilled
+   * turns, least recently read session first, oldest turn first. Live
+   * content never yields. A session that lost backfill re-reads it when next
+   * read (its state drops back to partial).
+   */
+  private freeChars(current: SessionRecord, needed: number): void {
+    const others = [...this.sessions.values()].filter(other => other !== current).sort((x, y) => x.lastAccess - y.lastAccess)
+    for (const other of others) {
+      const victims = other.turns.filter(turn => !turn.liveContent && !this.turnIsLive(turn)).sort((x, y) => x.startedAt - y.startedAt)
+      for (const victim of victims) {
+        if (this.totalChars + needed <= this.maxStoredCharsTotal) return
+        this.evictTurn(other, victim, false)
+        if (other.backfillState === 'complete') other.backfillState = 'partial'
+      }
+    }
+  }
+
+  /**
+   * Move a session's backfill window: drop its backfilled turns (live turns
+   * stay) and let the next read refill the window ending at `end` (the
+   * latest turns when absent).
+   */
+  setWindow(sessionId: string, end: number | undefined): void {
+    const session = this.session(sessionId)
+    if (end === undefined) delete session.windowEnd
+    else session.windowEnd = end
+    for (const turn of [...session.turns]) {
+      if (!turn.liveContent && !this.turnIsLive(turn)) this.evictTurn(session, turn, false)
+    }
+    if (session.backfillState !== 'broken') session.backfillState = 'none'
   }
 
   /** A complete log can anchor live turns without retaining old request bodies. */
@@ -1093,6 +1172,7 @@ export class InspectorStore {
    */
   listTurns(sessionId: string, filter?: ScopeFilter): ListTurnsResult {
     const session = this.sessions.get(sessionId)
+    if (session !== undefined) session.lastAccess = this.now()
     const backfill: BackfillInfo = session === undefined
       ? { state: 'none' }
       : {
@@ -1108,6 +1188,7 @@ export class InspectorStore {
       backfill,
       generation: this.generation,
       ...this.parents.has(sessionId) ? { parent: this.parents.get(sessionId)! } : {},
+      ...session.logRange === undefined ? {} : { range: session.logRange },
       ...session.evictedTurns === 0 ? {} : { evictedTurnCount: session.evictedTurns },
       ...filter?.scopes === undefined ? {} : { authorizedScopes: this.authorizedScopes(session, filter) },
     }
@@ -1162,6 +1243,7 @@ export class InspectorStore {
   /** One turn's scope/request overview, without segments. */
   getTurn(sessionId: string, turnSeq: number, filter?: ScopeFilter): TurnOverview | undefined {
     const session = this.sessions.get(sessionId)
+    if (session !== undefined) session.lastAccess = this.now()
     const turn = session?.turns.find(candidate => candidate.turnSeq === turnSeq)
     if (session === undefined || turn === undefined) return undefined
     const item = this.turnItem(sessionId, turn, filter)
@@ -1454,9 +1536,10 @@ export class InspectorStore {
 
   // ---------- eviction ----------
 
-  private evictTurn(session: SessionRecord, turn: TurnRecord): void {
+  /** @param counted - false for a window move or cross-session room, which the "collected then dropped" signal does not report. */
+  private evictTurn(session: SessionRecord, turn: TurnRecord, counted = true): void {
     session.turns = session.turns.filter(candidate => candidate !== turn)
-    session.evictedTurns += 1
+    if (counted) session.evictedTurns += 1
     for (const [purpose, bucket] of session.buckets) {
       if (bucket === turn) session.buckets.delete(purpose)
     }
@@ -1481,8 +1564,9 @@ export class InspectorStore {
       if (pending.at >= turn.startedAt && pending.at <= end) session.pendingCalls.delete(callId)
     }
     this.onTurnEvicted?.(session.id, turn)
-    // A session with nothing left releases its slot (and its child links).
-    if (session.turns.length === 0) {
+    // A session with nothing left releases its slot (and its child links) —
+    // unless its backfill is only moving (window, cross-session room).
+    if (session.turns.length === 0 && counted) {
       this.sessions.delete(session.id)
       for (const [childId, parentId] of this.childToParent) {
         if (parentId === session.id) this.childToParent.delete(childId)
@@ -1512,11 +1596,17 @@ export class InspectorStore {
 
   private enforceCaps(): void {
     for (const session of this.sessions.values()) {
-      while (session.turns.length > this.maxTurnsPerSession) {
-        // Backfilled (non-live) history ages out before any live-captured turn.
-        const victim = session.turns.find(turn => !this.turnIsLive(turn) && !turn.liveContent)
-          ?? session.turns.find(turn => !this.turnIsLive(turn))
-        if (victim === undefined) return
+      // Live-captured turns and the backfill window are capped separately, so
+      // a window moved to older turns never pushes out the live ones (or vice versa).
+      const real = (live: boolean) => session.turns.filter(turn => turn.hostTurn !== undefined && turn.liveContent === live)
+      while (real(true).length > this.maxTurnsPerSession) {
+        const victim = real(true).sort((x, y) => x.startedAt - y.startedAt).find(turn => !this.turnIsLive(turn))
+        if (victim === undefined) break
+        this.evictTurn(session, victim)
+      }
+      while (real(false).length > this.maxTurnsPerSession) {
+        const victim = real(false).sort((x, y) => x.startedAt - y.startedAt)[0]
+        if (victim === undefined) break
         this.evictTurn(session, victim)
       }
     }
@@ -1526,6 +1616,8 @@ export class InspectorStore {
       const victim = this.oldestBackfilledTurn()
       if (victim === undefined) return
       this.evictTurn(victim.session, victim.turn)
+      // Its window has a hole now: the next read refills it.
+      if (victim.session.backfillState === 'complete') victim.session.backfillState = 'partial'
     }
     // Turn-less residue (a stray tool/call before any turn/start) frees its slot.
     for (const session of [...this.sessions.values()]) {

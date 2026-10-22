@@ -11,7 +11,7 @@
 import { useState, type ReactNode } from 'react'
 import { Menu } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TurnListItem } from '../types.ts'
-import { fmtK } from './aggregate.ts'
+import { fmtK, type TurnGap } from './aggregate.ts'
 import type { InspectorTabProps } from './contract.ts'
 import { IconChevronDownOutlineMedium } from './icons.tsx'
 import css from './TurnMenu.module.css'
@@ -49,11 +49,16 @@ export interface TurnMenuProps {
   readonly turnSeq: number | null
   /** Row activation: select that turn. */
   readonly onSelect: (turnSeq: number) => void
+  /** Runs of turns not loaded; each becomes a row that loads it. */
+  readonly gaps?: readonly TurnGap[]
+  /** The log's last host turn, for the `N / total` label. */
+  readonly lastTurn?: number | undefined
+  readonly onLoad?: (gap: TurnGap) => void
   readonly t: T
 }
 
 /** The turn switcher menu. */
-export function TurnMenu({ turns, turnSeq, onSelect, t }: TurnMenuProps): ReactNode {
+export function TurnMenu({ turns, turnSeq, onSelect, gaps = [], lastTurn, onLoad, t }: TurnMenuProps): ReactNode {
   const [open, setOpen] = useState(false)
   const current = turns.find(candidate => candidate.turnSeq === turnSeq)
   return (
@@ -63,12 +68,17 @@ export function TurnMenu({ turns, turnSeq, onSelect, t }: TurnMenuProps): ReactN
       compact
       selectedId={turnSeq === null ? undefined : String(turnSeq)}
       // Newest first: the overwhelmingly common destination is a recent turn.
-      items={[...turns].reverse().map(candidate => ({
-        id: String(candidate.turnSeq),
-        label: <TurnRow turn={candidate} t={t} />,
-      }))}
+      items={[
+        ...[...turns].reverse().map(candidate => ({ key: candidate.hostTurn ?? Number.NEGATIVE_INFINITY, id: String(candidate.turnSeq), label: <TurnRow turn={candidate} t={t} /> })),
+        ...gaps.map(gap => ({ key: gap.to, id: `gap:${gap.from}:${gap.to}`, label: <span className={css.gapRow}>{t('turn.loadRange', { from: String(gap.from), to: String(gap.to) })}</span> })),
+      ].sort((x, y) => y.key - x.key).map(({ id, label }) => ({ id, label }))}
       onSelect={id => {
         setOpen(false)
+        if (id.startsWith('gap:')) {
+          const [, from, to] = id.split(':')
+          onLoad?.({ from: Number(from), to: Number(to) })
+          return
+        }
         onSelect(Number(id))
       }}
       onClose={() => { setOpen(false) }}
@@ -81,7 +91,7 @@ export function TurnMenu({ turns, turnSeq, onSelect, t }: TurnMenuProps): ReactN
           aria-label={t('turn.switch')}
           onClick={() => { setOpen(value => !value) }}
         >
-          <span className={css.triggerLabel}>{current === undefined ? t('turn.switch') : `${current.hostTurn ?? (current.query === 'compaction' ? t('compaction.title') : current.query)} / ${turns.at(-1)?.hostTurn ?? turns.length}`}</span>
+          <span className={css.triggerLabel}>{current === undefined ? t('turn.switch') : `${current.hostTurn ?? (current.query === 'compaction' ? t('compaction.title') : current.query)} / ${lastTurn ?? turns.at(-1)?.hostTurn ?? turns.length}`}</span>
           <IconChevronDownOutlineMedium />
         </button>
       )}

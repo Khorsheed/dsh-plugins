@@ -444,6 +444,8 @@ export interface ListTurnsResult {
    * label it was catalogued under.
    */
   parent?: { sessionId: string; title?: string; hostTurn?: number; label?: string }
+  /** First and last host turn the session's log holds; turns between them that `turns` lacks are not loaded. */
+  range?: { first: number; last: number }
   /**
    * Present exactly when the query carried a {@link ScopeFilter}: the
    * authorized scopes that exist in the session. An empty array is the

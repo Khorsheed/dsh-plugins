@@ -14,6 +14,7 @@ export function inspectorWire(remote: InspectorRemote): InspectorTabInjected {
   return {
     getSessionTrend: sessionId => remote.getSessionTrend(sessionId, undefined),
     listTurns: sessionId => remote.listTurns(sessionId, undefined),
+    loadTurns: (sessionId, end) => remote.loadTurns(sessionId, end, undefined),
     getTurn: (sessionId, turnSeq) => remote.getTurn(sessionId, turnSeq, undefined),
     getRequest: (sessionId, seq) => remote.getRequest(sessionId, seq, undefined),
     getTurnTiming: (sessionId, turnSeq) => remote.getTurnTiming(sessionId, turnSeq, undefined),

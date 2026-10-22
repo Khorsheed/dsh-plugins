@@ -14,7 +14,7 @@ import TYPERT_REMOTE from '@khorsheed/dsh-context-lens/remote'
 import { inspectorWire } from '../src/client/wire.ts'
 import type { InspectorRemote } from '../src/client/contract.ts'
 
-const VERBS = ['getRequest', 'getSessionTrend', 'getTurn', 'getTurnTiming', 'listTurns'] as const
+const VERBS = ['getRequest', 'getSessionTrend', 'getTurn', 'getTurnTiming', 'listTurns', 'loadTurns'] as const
 
 interface VerbDescriptor {
   method: string
@@ -54,6 +54,7 @@ describe('client wire arity (the gateway runtime’s exact-parameter-count gate)
     const wire = inspectorWire(face)
     await wire.getSessionTrend!('s1' as never)
     await wire.listTurns('s1' as never)
+    await wire.loadTurns!('s1' as never, 40)
     await wire.getTurn('s1' as never, 1)
     await wire.getRequest('s1' as never, 2)
     await wire.getTurnTiming('s1' as never, 1)
