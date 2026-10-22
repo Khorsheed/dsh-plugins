@@ -50,4 +50,31 @@ describe('cache comparison explanation', () => {
     expect(container.querySelector('ins')).toBeNull()
     expect(screen.getByText(/变更范围从第 21 个字符开始/)).toBeTruthy()
   })
+  it('lists the changes with the break card open and jumps to the owning module', () => {
+    const text = prefixTextChange('Use the tools.', 'Use the tools. Quote with 「」.')
+    const row = (index: number, category: 'system' | 'user' | 'plugin-injection', source: string, preview: string) => ({ index, category, source, preview, chars: preview.length })
+    const request = { ...r, prefix: { previousSeq: 0, previousRequestNumber: 15, gapMs: 0, toolsChanged: true, changed: { index: 0, before: '', after: '', afterCategory: 'system' as const, text },
+      changes: [
+        { kind: 'replace' as const, system: true as const, isBreak: true as const, removed: [row(0, 'system', 'system-prompt', 'old'), row(38, 'system', 'system-prompt', 'update')], added: [row(0, 'system', 'system-prompt', 'new')], source: { kind: 'system-prompt' }, text, sameAs: row(38, 'system', 'system-prompt', 'update'),
+          parts: [{ kind: 'replace' as const, removed: [], added: [row(0, 'system', 'system-prompt', 'new')], eventSeq: 152, replacedSeqs: [8] }] },
+        { kind: 'replace' as const, removed: [row(39, 'user', 'user', '1')], added: [row(39, 'plugin-injection', 'message-tools', '我主要想结合LLM')], source: { kind: 'message-tools', op: 'edit' }, eventSeq: 146, replacedSeqs: [140, 142] },
+      ],
+      toolChanges: [{ name: 'library_assess', change: 'modified' as const, description: prefixTextChange('judge', 'judge carefully'), owner: '@khorsheed/dsh-library' }],
+      tail: { count: 2, sources: ['message-tools', 'runtime-context'] } } }
+    const show = vi.fn()
+    const { container } = render(<CacheFacts request={request} onShowCategory={show} t={t} />)
+    expect(screen.getByText('断点 · 消息 000 · 系统提示词')).toBeTruthy()
+    expect(screen.getByText('第 15 字')).toBeTruthy()
+    expect(screen.getByText('新开头与 #15 的消息 038 全文相同')).toBeTruthy()
+    expect(container.querySelector('ins')?.textContent).toBe(' Quote with 「」.')
+    expect(screen.getByText('message-tools · edit')).toBeTruthy()
+    expect(screen.getByText('@khorsheed/dsh-library')).toBeTruthy()
+    expect(screen.getByText(/末尾新增 2 条：message-tools、runtime-context/)).toBeTruthy()
+    // Only the break card opens by default.
+    expect(screen.queryByText('换掉')).toBeNull()
+    fireEvent.click(screen.getByText('在构成中查看系统提示'))
+    expect(show).toHaveBeenCalledWith('system')
+    fireEvent.click(screen.getByText('1 条 → 1 条'))
+    expect(screen.getByText('换掉')).toBeTruthy()
+  })
 })

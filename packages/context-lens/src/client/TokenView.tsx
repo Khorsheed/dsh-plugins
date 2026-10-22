@@ -58,7 +58,7 @@ export function TokenView({ scope, selectedSeq, request, filterCat, previousResp
             {request.compaction.inputPartial && <span title={t('compaction.partial')}>{t('compaction.partialShort')} ⓘ</span>}
             {request.compaction.before && onOpenRequest && <button type="button" className={css.jsonToggle} onClick={() => onOpenRequest(request.compaction!.before!)}>{t('compaction.before')} ↗</button>}
           </div>}
-          <CacheFacts request={request} t={t} />
+          <CacheFacts request={request} onOpenRequest={onOpenRequest} onShowCategory={category => { if (filterCat !== category) onToggleFilter(category) }} t={t} />
           <Exchange key={`${request.scopeId}-${request.seq}`} request={request} previousResponseNumber={previousResponseNumber} onOpenRequest={onOpenRequest} t={t} />
           <section aria-label={t('lens.composition')}>
             <div className={css.sectionTitle}><h3>{t(request.compaction?.inputPartial ? 'compaction.region' : 'lens.composition')}</h3><span>{t('chain.chars', { count: fmt(totalChars) })}</span><abbr className={css.info} title={t('lens.compositionHint')}>i</abbr></div>

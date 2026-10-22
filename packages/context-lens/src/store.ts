@@ -38,6 +38,7 @@ import type {
   RequestUsage,
   ResponseSummary,
   ScopeFilter,
+  RequestLink,
   ScopedRefusal,
   SegmentItem,
   TimingLane,
@@ -50,6 +51,10 @@ import { splitRequest, rebaseSegments, type CapturedToolSchema, type ScopeFinger
 import { previewLine, type CapturedMessage } from './messages.ts'
 import type { LogTurn } from './log-lane.ts'
 import { prefixTextChange } from './prefix-diff.ts'
+import { diffRequests, type FactLookup, type ReplacementFact } from './changes.ts'
+
+/** Replacement facts kept per session; older facts only matter for requests long evicted. */
+const REPLACEMENT_CAP = 2048
 
 /** Retention knobs (InspectorConfig in the service mirrors these). */
 export interface StoreConfig {
@@ -196,6 +201,9 @@ interface SessionRecord {
   id: string
   activeCompactions: Map<string, { id: string; hostTurn?: number }>
   prunings: Map<string, { beforeChars: number; afterChars: number }>
+  /** Surface replacement facts by replacing id, and by each shadowed id (bounded). */
+  replacements: Map<string, ReplacementFact>
+  replacedBy: Map<string, ReplacementFact>
   turns: TurnRecord[]
   /** The bracket currently open; cleared (not deleted) at turn/end. */
   openTurn: TurnRecord | undefined
@@ -317,6 +325,8 @@ export class InspectorStore {
         turns: [],
         activeCompactions: new Map(),
         prunings: new Map(),
+        replacements: new Map(),
+        replacedBy: new Map(),
         openTurn: undefined,
         buckets: new Map(),
         nextBucketSeq: -1,
@@ -391,6 +401,15 @@ export class InspectorStore {
     if (afterChars >= beforeChars && !state.has(key)) return
     state.set(key, { beforeChars: state.get(key)?.beforeChars ?? beforeChars, afterChars })
     if (state.size > 512) state.delete(state.keys().next().value!)
+  }
+
+  /** Record one host surface replacement (live event or log backfill) for the change list. */
+  noteReplacement(sessionId: string, fact: ReplacementFact): void {
+    const session = this.session(this.rootOf(sessionId))
+    session.replacements.set(fact.newId, fact)
+    for (const id of fact.replacedIds) if (id !== fact.newId) session.replacedBy.set(id, fact)
+    while (session.replacements.size > REPLACEMENT_CAP) session.replacements.delete(session.replacements.keys().next().value!)
+    while (session.replacedBy.size > REPLACEMENT_CAP * 4) session.replacedBy.delete(session.replacedBy.keys().next().value!)
   }
 
   /**
@@ -1191,10 +1210,24 @@ export class InspectorStore {
           .flatMap(s => s.requests)
           .filter(r => r.purpose === request.purpose && (r.startedAt < request.startedAt || (r.startedAt === request.startedAt && r.seq < request.seq)))
           .sort((a, b) => b.startedAt - a.startedAt || b.seq - a.seq)[0]
-        return { ...this.requestView(request), ...previous === undefined || request.compaction?.inputPartial || previous.compaction?.inputPartial ? {} : { prefix: comparePrefix(previous, request) } }
+        return { ...this.requestView(request), ...previous === undefined || request.compaction?.inputPartial || previous.compaction?.inputPartial ? {} : { prefix: this.withLinks(session, request, previous, comparePrefix(previous, request, factLookup(session))) } }
       }
     }
     return undefined
+  }
+
+  /** Resolve change entries to retained requests: the compaction call, and the request that still held un-pruned text. */
+  private withLinks(session: SessionRecord, request: StoredRequest, previous: StoredRequest, prefix: NonNullable<CapturedRequest['prefix']>): NonNullable<CapturedRequest['prefix']> {
+    if (prefix.changes === undefined) return prefix
+    const link = (r: StoredRequest): RequestLink => ({ turnSeq: r.turnSeq, scopeId: r.scopeId, seq: r.seq, ...r.requestNumber === undefined ? {} : { requestNumber: r.requestNumber } })
+    const retained = session.turns.flatMap(turn => [...turn.scopes.values()]).flatMap(scope => scope.requests)
+    return { ...prefix, changes: prefix.changes.map(change => {
+      if (change.kind === 'compaction' && change.compactionId !== undefined) {
+        const target = retained.find(r => r.compaction?.id === change.compactionId && r.seq !== request.seq)
+        return target === undefined ? change : { ...change, compactionRequest: link(target) }
+      }
+      return change.kind === 'prune' ? { ...change, pruneBefore: link(previous) } : change
+    }) }
   }
 
   private previousRequest(session: SessionRecord, scopeId: string, at: number, seq: number): StoredRequest | undefined {
@@ -1579,7 +1612,16 @@ function delegationLabel(args: string): { label?: string } {
 }
 
 /** Content comparison is independent of durable message identity and provider cache behavior. */
-function comparePrefix(previous: StoredRequest, current: StoredRequest): NonNullable<CapturedRequest['prefix']> {
+/** `provider/model`, or '' when the capture recorded neither. */
+function configKey(config: RequestConfig): string {
+  return config.provider === undefined && config.model === undefined ? '' : `${config.provider ?? '?'}/${config.model ?? '?'}`
+}
+
+function factLookup(session: SessionRecord): FactLookup {
+  return { byNewId: id => session.replacements.get(id), byReplacedId: id => session.replacedBy.get(id) }
+}
+
+function comparePrefix(previous: StoredRequest, current: StoredRequest, facts: FactLookup): NonNullable<CapturedRequest['prefix']> {
   const rows = (request: StoredRequest) => [...request.segments.system, ...request.segments.history, ...request.segments.added]
     .sort((a, b) => a.index - b.index)
   const a = rows(previous), b = rows(current)
@@ -1595,7 +1637,10 @@ function comparePrefix(previous: StoredRequest, current: StoredRequest): NonNull
     ...b[i] === undefined ? {} : { afterCategory: b[i]!.category },
     text,
   }
+  const listed = diffRequests({ rows: a, tools: previous.segments.tools }, { rows: b, tools: current.segments.tools }, facts, changed === undefined ? undefined : changed.index)
   return { previousSeq: previous.seq, ...previous.requestNumber === undefined ? {} : { previousRequestNumber: previous.requestNumber }, gapMs: Math.max(0, current.startedAt - (previous.settledAt ?? previous.startedAt)),
+    changes: listed.changes, toolChanges: listed.tools, ...listed.tail === undefined ? {} : { tail: listed.tail },
+    ...configKey(previous.config) === configKey(current.config) || configKey(previous.config) === '' || configKey(current.config) === '' ? {} : { configChanged: { from: configKey(previous.config), to: configKey(current.config) } },
     toolsChanged: JSON.stringify(previous.segments.tools.map(({ added, ...tool }) => tool)) !== JSON.stringify(current.segments.tools.map(({ added, ...tool }) => tool)),
     ...changed === undefined ? {} : { changed } }
 }

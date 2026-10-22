@@ -188,6 +188,63 @@ export interface PrefixTextChange {
   addedChars: number
 }
 
+/** One message as a change entry shows it. */
+export interface ChangeRow {
+  /** Wire position in its own request (removed rows: the previous request). */
+  index: number
+  messageId?: string
+  category: SegmentCategory
+  source: string
+  /** Whitespace-collapsed, at most 120 characters. */
+  preview: string
+  chars: number
+}
+
+/**
+ * One change between consecutive requests. `kind` names the host fact behind
+ * it: a surface replacement (`replace`), one metered by `compaction/summary`
+ * (`compaction`) or `compaction/prune` (`prune`), or — with no event to pair
+ * them — a bare id-level `remove` / `add`.
+ */
+export interface RequestChange {
+  kind: 'replace' | 'compaction' | 'prune' | 'remove' | 'add'
+  /** All rows are system messages; constituent events are listed in `parts`. */
+  system?: true
+  removed: ChangeRow[]
+  added: ChangeRow[]
+  /** The replacing message's producer, verbatim (`kind · op`). */
+  source?: { kind: string; op?: string }
+  /** Host log seq of the replacement event and of what it shadowed. */
+  eventSeq?: number
+  replacedSeqs?: number[]
+  compactionId?: string
+  /** Retained compaction request, when this change is a compaction. */
+  compactionRequest?: RequestLink
+  /** Retained request that still carried the un-pruned text. */
+  pruneBefore?: RequestLink
+  /** Character diff when one text became another (system: head against head). */
+  text?: PrefixTextChange
+  /** Assemble section holding the diff start, when the live lane attributed it. */
+  section?: string
+  /** A removed row whose full text equals the new head — a checkable equality, not a claim. */
+  sameAs?: ChangeRow
+  parts?: { kind: RequestChange['kind']; removed: ChangeRow[]; added: ChangeRow[]; eventSeq?: number; replacedSeqs?: number[] }[]
+  /** The cache prefix first differs inside this change. */
+  isBreak?: true
+}
+
+/** One tool definition difference, paired by name. */
+export interface ToolChange {
+  name: string
+  change: 'added' | 'removed' | 'modified'
+  description?: PrefixTextChange
+  parameters?: PrefixTextChange
+  /** Declaring package from the tool's host-side origin tag, when tagged. */
+  owner?: string
+  /** The message prefix is unchanged and this is the first differing tool. */
+  isBreak?: true
+}
+
 /** One model call, fully captured. */
 export interface CapturedRequest {
   /** Stable 1-based request ordinal within this agent’s history; absent when the beginning is unknown. */
@@ -222,7 +279,19 @@ export interface CapturedRequest {
    */
   response?: CapturedResponse
   /** Exact comparison with the preceding retained request in this scope. */
-  prefix?: { previousSeq: number; previousRequestNumber?: number; gapMs: number; changed?: { index: number; before: string; after: string; beforeCategory?: SegmentCategory; afterCategory?: SegmentCategory; text?: PrefixTextChange }; toolsChanged: boolean }
+  prefix?: {
+    previousSeq: number; previousRequestNumber?: number; gapMs: number
+    changed?: { index: number; before: string; after: string; beforeCategory?: SegmentCategory; afterCategory?: SegmentCategory; text?: PrefixTextChange }
+    toolsChanged: boolean
+    /** Every message-level change since the previous request (tail appends excluded). */
+    changes?: RequestChange[]
+    /** Tool definitions added, removed, or rewritten, by name. */
+    toolChanges?: ToolChange[]
+    /** The ordinary tail append: how many messages, from which producers. */
+    tail?: { count: number; sources: string[] }
+    /** Provider or model differs from the previous request (caches never cross models). */
+    configChanged?: { from: string; to: string }
+  }
   segments: {
     /** systemPrompt 组装原文；source 为 assemble section 名。 */
     system: SegmentItem[]

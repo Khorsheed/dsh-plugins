@@ -33,6 +33,7 @@ import type { CapturedRequest, ListTurnsResult, ScopeFilter, ScopedRefusal, Turn
 import { InspectorStore, scopeAuthorized, type EvictedTurn, type RequestSnapshot, type StoredRequest, type StoreConfig } from './store.ts'
 import { recordAssembly } from './segmenter.ts'
 import { fromRequestMessage, serializeMessage } from './messages.ts'
+import { messageOfRow, meterOf, replacementFact, replacementFactsOf, type PendingMeter, type ReplacementRow } from './changes.ts'
 import {
   foldLogRows,
   isSessionLogReader,
@@ -79,6 +80,8 @@ export class InspectorService {
   private readonly cursors = new Map<string, SessionLogCursor>()
   /** In-flight refresh per childId — concurrent panel queries share one read. */
   private readonly refreshing = new Map<string, Promise<void>>()
+  /** sessionId → the metering event (`compaction/summary` | `compaction/prune`) just seen; the host appends its replacement next. */
+  private readonly meters = new Map<string, PendingMeter>()
   private readonly now: () => number
   private readonly logWarn: (message: string) => void
   private readonly persistenceOverride?: SessionLogReader | undefined
@@ -189,6 +192,7 @@ export class InspectorService {
     const sessionId: string = session.id
     const at = event.time
     const eventType: string = event.type
+    this.noteReplacement(session, event as unknown as ReplacementRow)
     if (eventType.startsWith('compaction/')) this.store.noteCompaction(sessionId, eventType, event.data as unknown as Record<string, unknown>)
     if (event.type === 'tool/result' && event.surfaceOp !== 'append') {
       const original = session.eventAt(event.surfaceOp.startSeq)
@@ -355,6 +359,19 @@ export class InspectorService {
    * live ones. A not-yet-materialized log is transient (retry next query); any
    * other read failure marks the session broken and stops hammering it.
    */
+  /** Pair a surface replacement with what it shadowed, typed by the metering event right before it. */
+  private noteReplacement(session: Session, row: ReplacementRow): void {
+    const meter = this.meters.get(session.id)
+    this.meters.delete(session.id)
+    const next = meterOf(row)
+    if (next !== undefined) this.meters.set(session.id, next)
+    const fact = replacementFact(row, seq => {
+      const shadowed = session.eventAt(seq as Parameters<Session['eventAt']>[0])
+      return shadowed === undefined ? undefined : messageOfRow(shadowed as unknown as ReplacementRow)?.id
+    }, meter)
+    if (fact !== undefined) this.store.noteReplacement(session.id, fact)
+  }
+
   private async backfillMainSession(sessionId: string): Promise<void> {
     const reader = this.reader()
     if (reader === undefined) return
@@ -379,6 +396,7 @@ export class InspectorService {
       try {
         const { events } = await handle.read(0)
         this.store.insertLogTurns(sessionId, reconstructSession(events))
+        for (const fact of replacementFactsOf(events)) this.store.noteReplacement(sessionId, fact)
       } finally {
         void handle.close().catch(() => undefined)
       }
@@ -414,7 +432,26 @@ export class InspectorService {
   async getRequest(sessionId: string, seq: number, filter?: ScopeFilter): Promise<CapturedRequest | ScopedRefusal | undefined> {
     await this.backfillMainSession(sessionId)
     await this.refreshChildren(sessionId, filter)
-    return this.store.getRequest(sessionId, seq, filter)
+    const request = this.store.getRequest(sessionId, seq, filter)
+    const tools = request !== undefined && 'prefix' in request ? request.prefix?.toolChanges : undefined
+    if (tools === undefined || tools.length === 0) return request
+    return { ...request as CapturedRequest, prefix: { ...(request as CapturedRequest).prefix!, toolChanges: tools.map(tool => {
+      const owner = this.toolOwner(tool.name)
+      return owner === undefined ? tool : { ...tool, owner }
+    }) } }
+  }
+
+  /** The declaring package from a registered tool's host-side origin tag (capability-catalog convention); absent when untagged. */
+  private toolOwner(name: string): string | undefined {
+    try {
+      const registry = this.ctx.get('tools' as never) as { get?: (name: string) => unknown } | undefined
+      const definition = registry?.get?.(name)
+      if (typeof definition !== 'object' || definition === null) return undefined
+      const origin = (definition as Record<symbol, unknown>)[Symbol.for('dsh.tool.origin')] as { owner?: unknown } | undefined
+      return typeof origin?.owner === 'string' ? origin.owner : undefined
+    } catch {
+      return undefined
+    }
   }
 
   /** Read the session map through the same backfill and scope-filtered path. */
