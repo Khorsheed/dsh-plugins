@@ -62,7 +62,7 @@
     },
     "compat": {
       "minHost": "0.1.5-rc.1",
-      "notes": "Mobile layout and iOS shell under validation; Safari live-reply resume on Host 0.1.5-rc.1 requires the opt-in bundled ingress adapter. Device pairing and push are not provided."
+      "notes": "Mobile layout and iOS shell under validation; Safari live-reply resume on Host 0.1.5-rc.1 requires the opt-in bundled ingress adapter. Device pairing and push are not provided. The one-click Quick Tunnel entry (self-healing public access) requires host >=0.1.7 (configEditor) and a local cloudflared binary; older hosts fall back to static-origin configuration."
     }
   },
   "peerDependencies": {

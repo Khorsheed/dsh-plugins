@@ -157,9 +157,11 @@ pnpm deploy:check-links
 
 ## 移动端公网入口恢复
 
-公网连通性检查只提供状态和二维码可用性反馈，不能触发隧道重建、部署或 3080 重启。电脑端恢复可用地址后，用户从 Web「设置 → 连接手机」重新扫码。
+首选插件托管的一键入口：Web「设置 → 连接手机 → 启用公网入口（临时域名）」。插件自持 cloudflared 子进程并经官方 `configEditor` 运行时热绑信任域名——断线自动换新域名重绑，宿主不重启、不经 deploy 流程；每次换域名手机重新扫码。启用状态持久化于 `$DSH_HOME/state/mobile-quick-tunnel.json`，宿主重启自动恢复。需要宿主 ≥ 0.1.7 与本机 cloudflared。注意：`configEditor` 会把 connection 行的字面量 `trustedHosts` 持久化进 `profiles/web/cordis.patch.yml`；deploy:3080 重新生成 profile 后该行回到 bundle 表达式，supervisor 启动重绑会自动校正，无需手工干预。
 
-需要手动轮换已配置的 Quick Tunnel 时，部署者在明确安排重启后使用 `pnpm deploy:3080 --package packages/mobile --mobile-origin https://new-link.trycloudflare.com`，沿用构建、测试及受控 `reconfigure` 流程。该命令会重启宿主，不能由后台健康检查调用。
+静态部署（自有域名/命名隧道）沿用原路径：公网连通性检查只提供状态和二维码可用性反馈，不能触发隧道重建、部署或 3080 重启。电脑端恢复可用地址后，用户从 Web「设置 → 连接手机」重新扫码。
+
+静态模式下需要手动轮换已配置的 Quick Tunnel 时，部署者在明确安排重启后使用 `pnpm deploy:3080 --package packages/mobile --mobile-origin https://new-link.trycloudflare.com`，沿用构建、测试及受控 `reconfigure` 流程。该命令会重启宿主，不能由后台健康检查调用。
 
 已移除 `mobile:tunnel` 常驻管理器。曾安装的机器须卸载 `com.dsh.mobile-tunnel` LaunchAgent 并删除其 plist，检查并停止遗留管理器及其部署子进程。管理器持有的公网隧道和转发也可能随停用而停止，必须核对电脑入口与公网入口各自的状态；不得为了恢复扫码擅自重启宿主。诊断日志可保留供排查。
 
