@@ -52,6 +52,26 @@ const IDLE: TimelineRailState = {
 }
 
 /**
+ * The rect of the first laid-out chat input card in the scrollport. A
+ * business composer (the Room composer) takes the `conversation.composer`
+ * chain as an overlay: the official input bar stays mounted under a
+ * `display: none` fallback wrapper, so its card is still the first marker in
+ * the DOM but measures as a zero rect at y=0 — ending the box there collapses
+ * the panel to zero height. Unlaid-out cards are skipped, so such a layout
+ * falls through to the seat top.
+ * @param scrollport - the official conversation scrollport element.
+ * @returns the card's rect, or null when no laid-out card is rendered.
+ */
+function laidOutCard(scrollport: HTMLElement): DOMRect | null {
+  for (const card of scrollport.querySelectorAll<HTMLElement>('[data-composer-card]')) {
+    const rect = card.getBoundingClientRect()
+    if (rect.width === 0 && rect.height === 0) continue
+    return rect
+  }
+  return null
+}
+
+/**
  * Measure the panel's viewport box from one scrollport: its rect inset by the
  * panel padding, minus the chat input card at the bottom and the conversation
  * tab strip at the top. The tabs render just above the scrollport, but
@@ -61,7 +81,7 @@ const IDLE: TimelineRailState = {
  * whole `[data-composer-seat]` top: dock cards (goal/todo/queue) sit above
  * the input inside the seat, and counting them would push the timeline up off
  * the conversation. Falls back to the seat top, then the column bottom, when
- * the markers are absent.
+ * no laid-out card is rendered (see {@link laidOutCard}).
  * The scrollport's own width rides along for the width-cap fallback when the
  * message-flow probe is unanswered.
  * @param scrollport - the official conversation scrollport element.
@@ -80,10 +100,10 @@ export function measureGeometry(scrollport: HTMLElement): { left: number; top: n
       break
     }
   }
-  const card = scrollport.querySelector<HTMLElement>('[data-composer-card]')
+  const card = laidOutCard(scrollport)
   const seat = scrollport.querySelector<HTMLElement>('[data-composer-seat]')
   const bottom = card !== null
-    ? card.getBoundingClientRect().top - RAIL_VERTICAL_PADDING
+    ? card.top - RAIL_VERTICAL_PADDING
     : seat !== null
       ? seat.getBoundingClientRect().top - RAIL_VERTICAL_PADDING
       : rect.bottom - RAIL_VERTICAL_PADDING

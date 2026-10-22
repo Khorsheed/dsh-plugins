@@ -57,6 +57,23 @@ describe('measureGeometry', () => {
     expect(measureGeometry(scrollport)).toEqual({ left: 16, top: 28, height: 204, width: 400 })
   })
 
+  it('skips an input card hidden under an overlay composer and ends at the seat top', () => {
+    // The Room composer elects over the official bar: the bar's card stays in
+    // the DOM under a display:none wrapper and measures as a zero rect at y=0.
+    const scrollport = document.createElement('div')
+    rect(scrollport, { top: 20, left: 10, width: 400, height: 300 })
+    const seat = document.createElement('div')
+    seat.setAttribute('data-composer-seat', '')
+    rect(seat, { top: 240, left: 0, width: 400, height: 60 })
+    const hidden = document.createElement('div')
+    hidden.setAttribute('data-composer-card', '')
+    rect(hidden, { top: 0, left: 0, width: 0, height: 0 })
+    seat.appendChild(hidden)
+    scrollport.appendChild(seat)
+
+    expect(measureGeometry(scrollport)).toEqual({ left: 16, top: 28, height: 204, width: 400 })
+  })
+
   it('falls back to the column bottom when no composer marker exists', () => {
     const scrollport = document.createElement('div')
     rect(scrollport, { top: 20, left: 10, width: 400, height: 300 })
