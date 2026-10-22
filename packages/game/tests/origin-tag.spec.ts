@@ -11,7 +11,7 @@ const ORIGIN = Symbol.for('dsh.tool.origin')
 describe('tool origin tagging', () => {
   it('tags every game tool with this package as its owner', () => {
     const definitions = gameToolDefinitions({} as GameService)
-    expect(definitions.map(definition => definition.name)).toEqual(['game_open', 'game_read', 'game_propose'])
+    expect(definitions.map(definition => definition.name)).toEqual(['game_open', 'game_read', 'game_propose', 'game_publish'])
     for (const definition of definitions) {
       expect((definition as Record<symbol, unknown>)[ORIGIN]).toEqual({ channel: 'plugin', owner: '@khorsheed/dsh-game' })
     }
