@@ -49,6 +49,35 @@ export interface OutlineRailRow {
 export type RailRow = LoadedRailRow | OutlineRailRow
 
 /**
+ * The first visible loaded row of a turn, of any node kind: the landing
+ * target for a turn with no user-kind row (an automated turn renders a
+ * `turn-trigger` card, not a user bubble), mirroring the official rail's
+ * `user ?? loaded[0]` anchor. Only nodes in the host's visible `order`
+ * qualify — a store-only or hidden node is not a jump target.
+ * @param order - visible chat node keys in render order.
+ * @param nodes - the live node store.
+ * @param seq - the turn's `turn/start` seq (inclusive).
+ * @param end - the next turn's start seq (exclusive), or Infinity for the last turn.
+ * @returns the anchor key, or null when the turn has no visible loaded row.
+ */
+export function firstVisibleKeyInTurn(
+  order: readonly string[],
+  nodes: { get(key: string): ChatConversationViewNode | undefined },
+  seq: number,
+  end: number,
+): string | null {
+  for (const key of order) {
+    const node = nodes.get(key)
+    if (node === undefined) continue
+    if (node.anchorSeq < seq) continue
+    if (node.anchorSeq >= end) break
+    if (node.visibility === 'hidden') continue
+    return key
+  }
+  return null
+}
+
+/**
  * Wrap one loaded item as a rail row.
  * @param item - the window row.
  * @param turn - its owning outline turn, or undefined.

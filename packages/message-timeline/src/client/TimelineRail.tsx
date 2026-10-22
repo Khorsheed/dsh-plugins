@@ -27,7 +27,7 @@ import type { ChatConversationViewNode } from '@deepseek-ai/dsh-client-ui-chat/c
 import { PANEL_WIDTH_MIN } from './config.ts'
 import { chatHookOf } from './chat-hook.ts'
 import { outlineEntries } from './outline.ts'
-import { mergeRows, type LoadedRailRow, type OutlineRailRow, type RailRow } from './rows.ts'
+import { mergeRows, firstVisibleKeyInTurn, type LoadedRailRow, type OutlineRailRow, type RailRow } from './rows.ts'
 import type { TimelineItem, TimelineRailProps } from './slots.ts'
 import { previewText } from './preview.ts'
 import { foldHiddenSpans, isSeqHidden } from './hidden-spans.ts'
@@ -42,8 +42,8 @@ function nodeContent(node: { data: unknown }): readonly ContentBlock[] {
 /**
  * One row's display text: the loaded row's joined text blocks, or the outline
  * entry's bounded first-prompt preview. `null` means the message carries no
- * text (an image, attachment, or command-only input) — such rows are filtered
- * out of the list entirely rather than rendered as empty placeholders.
+ * text (an image/attachment-only input, or an automated turn with no human
+ * prompt) — the row renders the `rail.empty` label instead.
  */
 function rowPreview(row: RailRow): string | null {
   return row.kind === 'loaded'
@@ -111,8 +111,11 @@ export function TimelineRail({
   const loadingOlder = useSession(s => s.loadingOlder)
   // The host projection seat exists on every supported host; the VALUE is
   // present only where the assembly mounts the turn-outline unit. Both reads
-  // degrade to undefined, which keeps the window-paging list.
-  const outline = outlineEntries(standard.useProjection?.('turnOutline'))
+  // degrade to undefined, which keeps the window-paging list. The narrow is
+  // memoized on the projection's reference-stable value so unrelated renders
+  // do not churn the merged list (or re-run the jump effect).
+  const outlineValue = standard.useProjection?.('turnOutline')
+  const outline = useMemo(() => outlineEntries(outlineValue), [outlineValue])
 
   const items = useMemo<readonly RailRow[]>(() => {
     // The node store is an in-memory snapshot; take it once so the span fold
@@ -173,11 +176,7 @@ export function TimelineRail({
     // baseline (which is already seq-sorted). Dropped rows are gone before the
     // sort, so a withdrawn original never resurfaces.
     loaded.sort((left, right) => left.node.anchorSeq - right.node.anchorSeq)
-    // Textless messages (image/attachment/command-only inputs) are dropped:
-    // a row without a preview is a dead placeholder, and a command-only turn
-    // may have no transcript row to jump to at all. An all-textless session
-    // ends up with no rows, which hides the panel.
-    return mergeRows(loaded, outline).filter(row => rowPreview(row) !== null)
+    return mergeRows(loaded, outline)
   }, [order, nodes, includeSteering, outline])
 
   // The lit row: the hover/arrow preselection while it moves, otherwise the
@@ -211,16 +210,15 @@ export function TimelineRail({
   // moved nothing falls through to the fallback instead of re-requesting.
   useEffect(() => {
     if (pendingJump === null || pendingJump.sessionId !== sessionId) return
-    const landed = items.find((row): row is LoadedRailRow => row.kind === 'loaded' && row.turn === pendingJump.turn)
-    if (landed !== undefined) {
-      // The store shows the turn's row; the transcript DOM renders it in the
-      // same commit or a near frame, so retry briefly before giving up.
+    // Scroll to a key once its transcript row renders (the same commit or a
+    // near frame); the returned cleanup cancels the retries.
+    const landOn = (key: string): (() => void) => {
       let cancelled = false
       let frames = 0
       const attempt = (): void => {
         if (cancelled) return
         frames += 1
-        if (jumpTo(landed.key) || frames >= JUMP_RETRY_FRAMES) {
+        if (jumpTo(key) || frames >= JUMP_RETRY_FRAMES) {
           setPendingJump(null)
           return
         }
@@ -229,11 +227,19 @@ export function TimelineRail({
       attempt()
       return () => { cancelled = true }
     }
+    const landed = items.find((row): row is LoadedRailRow => row.kind === 'loaded' && row.turn === pendingJump.turn)
+    if (landed !== undefined) return landOn(landed.key)
+    // No user-kind row for the turn: an automated turn (a restart/scheduled
+    // trigger renders as `turn-trigger`, not a user row) or a withdraw-hidden
+    // prompt. Land on the turn's first visible loaded node of any kind — the
+    // official rail's `user ?? loaded[0]` anchor.
+    const end = outline?.find(entry => entry.turn > pendingJump.turn)?.seq ?? Number.POSITIVE_INFINITY
+    const anyKey = firstVisibleKeyInTurn(order, nodes, pendingJump.seq, end)
+    if (anyKey !== null) return landOn(anyKey)
     if (pendingJump.awaiting || loadingOlder) return
-    // Settled (or freshly armed) without the row: page again while the window
-    // head still moves and history remains. A covered window with the row
-    // still missing — the turn's prompt is withdraw-hidden — and a stalled
-    // head both land on the nearest loaded row at/after the turn instead.
+    // Settled (or freshly armed) without any visible row for the turn: page
+    // again while the window head still moves and history remains; a stalled
+    // head lands on the nearest loaded row at/after the turn instead.
     const uncovered = firstSeq === null || firstSeq > pendingJump.seq
     if (uncovered && hasMore && (!pendingJump.requested || pendingJump.fromHead !== firstSeq)) {
       const jump = pendingJump
@@ -249,7 +255,7 @@ export function TimelineRail({
     const fallback = items.find((row): row is LoadedRailRow => row.kind === 'loaded' && row.anchorSeq >= pendingJump.seq)
     if (fallback !== undefined) jumpTo(fallback.key)
     setPendingJump(null)
-  }, [items, pendingJump, sessionId, loadingOlder, hasMore, firstSeq, jumpTo, loadThrough])
+  }, [items, pendingJump, sessionId, loadingOlder, hasMore, firstSeq, jumpTo, loadThrough, order, nodes, outline])
 
   // The panel is a chat-view affordance: hide it while the session shows
   // another tab (trajectory etc.), detected through ChatView's data-chat-flow
@@ -377,7 +383,7 @@ export function TimelineRail({
           >
             <span className={isCurrent ? `${css.tick} ${css.tickCurrent}` : css.tick} aria-hidden="true" />
             <span className={css.itemText}>
-              {rowPreview(row)}
+              {rowPreview(row) ?? t('rail.empty')}
             </span>
           </button>
         )

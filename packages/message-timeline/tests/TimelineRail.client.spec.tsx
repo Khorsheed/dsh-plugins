@@ -439,22 +439,24 @@ describe('the flat timeline panel', () => {
     expect(items()).toHaveLength(2)
   })
 
-  it('filters out a loaded message with no text instead of showing a placeholder', () => {
+  it('shows a textless loaded message with the empty-preview label and keeps it jumpable', () => {
     const contentless = node('kc', 'user', '')
     ;(contentless.data as { content?: unknown }).content = undefined
-    renderRail({
+    const { jumpTo } = renderRail({
       useChat: bindSnapshotSelector(createSnapshotStore({
         order: ['k1', 'kc', 'k3'],
         nodes: { get: (key: string) => (key === 'kc' ? contentless : NODES[key]) },
       })),
     })
-    // The image/attachment-only message leaves no row; the text rows stay.
-    expect(items()).toHaveLength(2)
-    expect(panel().textContent).toContain('你好')
-    expect(panel().textContent).toContain('谢谢')
+    // An image/attachment-only message still gets a row (labelled, not a
+    // phantom empty one) and clicking it jumps like any other loaded row.
+    expect(items()).toHaveLength(3)
+    expect(item('kc').textContent).toContain(en['rail.empty'])
+    fireEvent.click(item('kc'))
+    expect(jumpTo).toHaveBeenCalledWith('kc')
   })
 
-  it('hides the panel entirely when every message is textless', () => {
+  it('keeps a lone textless message listed (no panel-wide hiding)', () => {
     const contentless = node('kc', 'user', '')
     ;(contentless.data as { content?: unknown }).content = undefined
     renderRail({
@@ -463,8 +465,8 @@ describe('the flat timeline panel', () => {
         nodes: { get: (key: string) => (key === 'kc' ? contentless : undefined) },
       })),
     })
-    expect(items()).toHaveLength(0)
-    expect(document.body.querySelector('[data-timeline-panel]')).toBeNull()
+    expect(items()).toHaveLength(1)
+    expect(item('kc').textContent).toContain(en['rail.empty'])
   })
 
   it('renders no load-more chrome: older history pages on scroll alone', () => {
@@ -706,14 +708,37 @@ describe('the turnOutline projection', () => {
     expect(item('turn:0').className).not.toContain('itemCurrent')
   })
 
-  it('filters out outline turns whose prompt has no text', () => {
+  it('labels outline turns whose prompt has no text instead of filtering them', () => {
     // An empty window keeps every turn outline-only; turn 2's prompt is ''
-    // (an images-only or command-only turn), so it leaves no row.
+    // (an images-only or automated turn) and renders the empty-preview label.
     renderRail({
       useProjection,
       useChat: bindSnapshotSelector(createSnapshotStore({ order: [], nodes: nodeStore() })),
     })
-    expect(itemIds()).toEqual(['turn:0', 'turn:1'])
+    expect(itemIds()).toEqual(['turn:0', 'turn:1', 'turn:2'])
+    expect(item('turn:2').textContent).toContain(en['rail.empty'])
+  })
+
+  it('lands on the turn-trigger card when an automated turn has no user row', () => {
+    // A watchdog-restart turn renders a `turn-trigger` card, not a user row,
+    // and its outline prompt is ''. Clicking its outline row must land on the
+    // trigger card — the official `user ?? loaded[0]` anchor — not on a later
+    // user row (which used to read as "click does nothing").
+    const trigger = {
+      key: 'kt', kind: 'turn-trigger', target: 'chat', anchorSeq: 12, visibility: 'visible',
+      data: { content: [{ type: 'text', text: '[ankh-guard] 服务于…重启…' }] },
+    } as unknown as ChatConversationViewNode
+    const { jumpTo } = renderRail({
+      useProjection,
+      useChat: bindSnapshotSelector(createSnapshotStore({
+        order: ['kt', 'k3'],
+        nodes: nodeStore(trigger, node('k3', 'user', '最新的问题', 35)),
+      })),
+    })
+
+    fireEvent.click(item('turn:0'))
+
+    expect(jumpTo).toHaveBeenCalledWith('kt')
   })
 
   it('pages history through the outline row seq and lands on the loaded row', async () => {
@@ -772,11 +797,10 @@ describe('the turnOutline projection', () => {
       useProjection,
       loadThrough,
       // An empty window (a session whose first page holds no user message):
-      // the outline alone keeps the list populated (textless turn 2 is
-      // filtered out).
+      // the outline alone keeps the list populated.
       useChat: bindSnapshotSelector(createSnapshotStore({ order: [], nodes: nodeStore() })),
     })
-    expect(itemIds()).toEqual(['turn:0', 'turn:1'])
+    expect(itemIds()).toEqual(['turn:0', 'turn:1', 'turn:2'])
 
     fireEvent.click(item('turn:0'))
     await act(async () => {})

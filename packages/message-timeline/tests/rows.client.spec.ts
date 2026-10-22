@@ -6,7 +6,7 @@
 import { describe, expect, it } from 'vitest'
 import type { ChatConversationViewNode } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type { TurnOutlineEntry } from '../src/client/outline.ts'
-import { mergeRows, type RailRow } from '../src/client/rows.ts'
+import { mergeRows, firstVisibleKeyInTurn, type RailRow } from '../src/client/rows.ts'
 import type { TimelineItem } from '../src/client/slots.ts'
 
 /** One loaded-window row stub: only the key and anchorSeq matter to the merge. */
@@ -82,5 +82,42 @@ describe('mergeRows', () => {
     const rows = mergeRows([item('k0', 5)], [entry(0, 10)])
     expect(ids(rows)).toEqual(['k0', 'turn:0'])
     expect(rows[0]).toMatchObject({ kind: 'loaded', turn: undefined })
+  })
+})
+
+describe('firstVisibleKeyInTurn', () => {
+  /** A node-store stub over the given (key, anchorSeq, visibility) triples. */
+  function store(list: readonly { key: string; anchorSeq: number; visibility?: string }[]) {
+    const byKey = new Map(list.map(n => [n.key, n]))
+    return {
+      get: (key: string) => byKey.get(key) as unknown as ChatConversationViewNode | undefined,
+    }
+  }
+
+  it('returns the first visible row of any kind inside the turn range', () => {
+    const nodes = store([
+      { key: 'kt', anchorSeq: 12 },
+      { key: 'k3', anchorSeq: 25 },
+    ])
+    // A turn-trigger card (kind is irrelevant to the lookup) lands the jump.
+    expect(firstVisibleKeyInTurn(['kt', 'k3'], nodes, 10, 20)).toBe('kt')
+  })
+
+  it('skips hidden rows and rows before the turn start', () => {
+    const nodes = store([
+      { key: 'k0', anchorSeq: 5 },
+      { key: 'kh', anchorSeq: 12, visibility: 'hidden' },
+      { key: 'kv', anchorSeq: 14 },
+    ])
+    expect(firstVisibleKeyInTurn(['k0', 'kh', 'kv'], nodes, 10, 20)).toBe('kv')
+  })
+
+  it('stops at the next turn boundary and returns null when nothing is visible', () => {
+    const nodes = store([
+      { key: 'kh', anchorSeq: 12, visibility: 'hidden' },
+      { key: 'k3', anchorSeq: 25 },
+    ])
+    expect(firstVisibleKeyInTurn(['kh', 'k3'], nodes, 10, 20)).toBeNull()
+    expect(firstVisibleKeyInTurn([], nodes, 10, 20)).toBeNull()
   })
 })
