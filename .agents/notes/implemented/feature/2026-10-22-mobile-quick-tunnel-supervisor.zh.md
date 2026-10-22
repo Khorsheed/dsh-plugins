@@ -11,7 +11,7 @@ Status: implemented
 mobile 插件现在可选地接管 Quick Tunnel 全生命周期，并**通过官方 `configEditor` 服务在运行时重绑域名**（宿主 ≥ 0.1.7）——零上游改动、零宿主重启、零通配信任：
 
 - `GET/POST /api/mobile/tunnel` 与 connect 同级挂在官方受认证的 Connection 注册表后。GET 只读状态；POST 是同源 JSON 的显式启停动作，守卫与二维码签发完全一致。
-- 启用后插件自持一个 cloudflared 子进程（`--protocol http2 --no-autoupdate`），从进程输出解析分配到的 `*.trycloudflare.com` 域名，等待边缘匿名探测（401/403/2xx——域名刚分配给本进程，围栏 403 同样证明转发），然后对 `connection` 行调用 `configEditor.edit`，把 `trustedHosts` 替换为「启动值与操作者条目 + 当前域名」。每次编辑剔除全部陈旧 trycloudflare 授权；bundle 行的 `!!js ctx.webStartup.trustedHosts` 表达式经 `webStartup` 服务求值；未触碰的配置键保留原表达式（`...current`）。绑后严格探测（401/2xx）通过才出示地址。
+- 启用后插件自持一个 cloudflared 子进程（`--protocol http2 --no-autoupdate`），从进程输出解析分配到的 `*.trycloudflare.com` 域名，等待边缘匿名探测（401/403/2xx——域名刚分配给本进程，围栏 403 同样证明转发），然后对 `connection` 行调用 `configEditor.edit`，把 `trustedHosts` 替换为「启动值与操作者条目 + 当前域名」。每次编辑只剔除 supervisor 自己管理的旧域名——启动参数里的静态回落域名在轮换和停用后都保留（首版按后缀剔除，恰好打掉了这个回落，已修并补回归测试）；bundle 行的 `!!js ctx.webStartup.trustedHosts` 表达式经 `webStartup` 服务求值；未触碰的配置键保留原表达式（`...current`）。绑后严格探测（401/2xx）通过才出示地址。
 - 健康循环每 45 秒匿名复查；连续 3 次失败或子进程退出即换新域名重绑，恢复冷却 ≥10 分钟（域名翻腾 = 全部客户端 WebSocket 断连重连 + 手机重扫，故刻意节流）。连续 3 次启动失败进入 `error` 等人工处理。
 - 启用状态与当前域名持久化在 `$DSH_HOME/state/mobile-quick-tunnel.json`；插件 apply 时若持久化为 `enabled: true` 立即重启隧道，因此公网入口跨宿主重启、跨 `deploy:3080` profile 重新生成都能自愈（edit 会把字面量列表持久化进 `profiles/web/cordis.patch.yml`；deploy 重新生成 profile 回到 bundle 表达式后，启动重绑在数秒内校正）。
 - 出示地址经每请求 getter 读取，优先级：托管 > `publicOrigin` > `DSH_MOBILE_PUBLIC_ORIGIN`；静态配置的部署行为不变、界面不变。

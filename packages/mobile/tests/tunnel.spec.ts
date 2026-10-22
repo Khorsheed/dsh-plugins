@@ -75,17 +75,18 @@ const dirs: string[] = []
 afterEach(() => { while (dirs.length) rmSync(dirs.pop()!, { recursive: true, force: true }) })
 
 describe('rotateTrustedHosts', () => {
-  it('drops every stale quick-tunnel grant, keeps launch and operator authorities, appends the live one', () => {
-    expect(rotateTrustedHosts(['launch.internal', 'dead-one-two-three.trycloudflare.com', 'operator.example.test:8443', 'launch.internal'],
-      'live-four-five-six.trycloudflare.com'))
-      .toEqual(['launch.internal', 'operator.example.test:8443', 'live-four-five-six.trycloudflare.com'])
+  it('prunes only the managed host, keeps launch and operator authorities — even stale quick-tunnel ones — and appends the live one', () => {
+    expect(rotateTrustedHosts(['launch.internal', 'dead-launch-one-two.trycloudflare.com', 'managed-prev-one.trycloudflare.com', 'operator.example.test:8443', 'launch.internal'],
+      'live-four-five-six.trycloudflare.com', 'managed-prev-one.trycloudflare.com'))
+      .toEqual(['launch.internal', 'dead-launch-one-two.trycloudflare.com', 'operator.example.test:8443', 'live-four-five-six.trycloudflare.com'])
   })
-  it('prunes without appending when no live host is given', () => {
-    expect(rotateTrustedHosts(['dead-one-two-three.trycloudflare.com', 'launch.internal'])).toEqual(['launch.internal'])
+  it('prunes without appending when no live host is given, and a launch-flag quick domain survives disable', () => {
+    expect(rotateTrustedHosts(['managed-prev-one.trycloudflare.com', 'launch.internal'], undefined, 'managed-prev-one.trycloudflare.com')).toEqual(['launch.internal'])
+    expect(rotateTrustedHosts(['dead-launch-one-two.trycloudflare.com', 'launch.internal'])).toEqual(['dead-launch-one-two.trycloudflare.com', 'launch.internal'])
   })
-  it('ignores non-string entries and never matches lookalike domains', () => {
-    expect(rotateTrustedHosts([42, 'trycloudflare.com', 'evil-trycloudflare.com.evil.test', 'ok.trycloudflare.com.evil.test'], 'a-b-c-d.trycloudflare.com'))
-      .toEqual(['trycloudflare.com', 'evil-trycloudflare.com.evil.test', 'ok.trycloudflare.com.evil.test', 'a-b-c-d.trycloudflare.com'])
+  it('matches the managed host through ports and ignores non-string entries', () => {
+    expect(rotateTrustedHosts(['managed-one-two.trycloudflare.com:8443', 42, 'ok.trycloudflare.com.evil.test'], undefined, 'managed-one-two.trycloudflare.com'))
+      .toEqual(['ok.trycloudflare.com.evil.test'])
   })
 })
 
@@ -237,7 +238,20 @@ describe('quick tunnel supervisor', () => {
     dirs.push(dir)
     const tunnel = createTunnelSupervisor(deps)
     await tunnel.enable()
-    await vi.waitFor(() => expect(tunnel.status()).toMatchObject({ state: 'error', reason: 'start-failed' }), { timeout: 2000, interval: 5 })
+    await vi.waitFor(() => expect(tunnel.status()).toMatchObject({ state: 'error', reason: 'start-failed', detail: 'edit-refused' }), { timeout: 2000, interval: 5 })
+    expect(JSON.parse(readFileSync(join(dir, 'state', 'mobile-quick-tunnel.json'), 'utf8'))).toMatchObject({ enabled: true, lastError: 'edit-refused' })
+    tunnel.dispose()
+  })
+
+  it('keeps a launch-flag static quick-tunnel domain across rotation and disable', async () => {
+    const { deps, editor, dir } = makeDeps({ locate: { webStartup: () => ({ trustedHosts: ['dead-launch-one-two.trycloudflare.com'] }) } })
+    dirs.push(dir)
+    const tunnel = createTunnelSupervisor(deps)
+    await tunnel.enable()
+    await vi.waitFor(() => expect(tunnel.status().state).toBe('ready'), { timeout: 2000, interval: 5 })
+    expect(editor.stored.trustedHosts).toEqual(['dead-launch-one-two.trycloudflare.com', 'alpha-beta-gamma-delta.trycloudflare.com'])
+    await tunnel.disable()
+    expect(editor.stored.trustedHosts).toEqual(['dead-launch-one-two.trycloudflare.com'])
     tunnel.dispose()
   })
 

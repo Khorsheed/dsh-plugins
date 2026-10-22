@@ -71,11 +71,14 @@ function authorityHost(authority: string): string {
   return colon > 0 ? authority.slice(0, colon) : authority
 }
 
-/** The trust list for a rotation: keep launch and operator authorities, drop
- * every stale Quick Tunnel grant (a managed supervisor owns them all), and
- * append the live one. Exact authorities only — wildcards stay impossible. */
-export function rotateTrustedHosts(base: readonly unknown[], nextHost?: string): string[] {
-  const kept = base.filter((entry): entry is string => typeof entry === 'string' && !QUICK_HOST.test(authorityHost(entry)))
+/** The trust list for a rotation: launch values and operator entries are
+ * always kept (the bundle row documents exactly this shape), only the
+ * supervisor's own previous domain is replaced. A static fallback domain —
+ * even a quick-tunnel one from the launch command — must survive both
+ * rotation and disable. Exact authorities only — wildcards stay impossible. */
+export function rotateTrustedHosts(base: readonly unknown[], nextHost?: string, managedHost?: string): string[] {
+  const kept = base.filter((entry): entry is string => typeof entry === 'string'
+    && (!managedHost || authorityHost(entry) !== managedHost))
   return [...new Set(nextHost ? [...kept, nextHost] : kept)]
 }
 
@@ -92,7 +95,7 @@ export function findCloudflared(configured?: string): string | undefined {
   } catch { return undefined }
 }
 
-interface PersistedState { enabled: boolean; origin: string | null; updatedAt: string }
+interface PersistedState { enabled: boolean; origin: string | null; updatedAt: string; lastError?: string }
 
 function cleanOrigin(value: unknown): string | null {
   if (typeof value !== 'string') return null
@@ -107,7 +110,8 @@ function readPersisted(file: string): PersistedState {
   try {
     const parsed = JSON.parse(readFileSync(file, 'utf8')) as Partial<PersistedState>
     return { enabled: parsed.enabled === true, origin: cleanOrigin(parsed.origin),
-      updatedAt: typeof parsed.updatedAt === 'string' ? parsed.updatedAt : '' }
+      updatedAt: typeof parsed.updatedAt === 'string' ? parsed.updatedAt : '',
+      ...(typeof parsed.lastError === 'string' ? { lastError: parsed.lastError } : {}) }
   } catch { return { enabled: false, origin: null, updatedAt: '' } }
 }
 
@@ -156,6 +160,7 @@ export function createTunnelSupervisor(deps: TunnelDeps): TunnelSupervisor {
   let enabled = persisted.enabled
   let origin = persisted.origin
   let lifecycle: Lifecycle = 'off'
+  let lastError: string | undefined
   let child: ChildProcess | undefined
   let intentionalKill = false
   let disposed = false
@@ -171,13 +176,14 @@ export function createTunnelSupervisor(deps: TunnelDeps): TunnelSupervisor {
       const reason = supportReason()
       return reason ? { state: 'unsupported', origin, reason } : { state: 'off', origin }
     }
-    return { state: lifecycle, origin, ...(lifecycle === 'error' ? { reason: 'start-failed' as const } : {}) }
+    return { state: lifecycle, origin, ...(lifecycle === 'error' ? { reason: 'start-failed' as const, ...(lastError ? { detail: lastError } : {}) } : {}) }
   }
 
   function persist(): void {
     const file = stateFile()
     if (!file) return
-    try { writePersisted(file, { enabled, origin, updatedAt: new Date().toISOString() }) } catch { /* state is a convenience, never a hard failure */ }
+    const state: PersistedState = { enabled, origin, updatedAt: new Date().toISOString(), ...(lastError ? { lastError } : {}) }
+    try { writePersisted(file, state) } catch { /* state is a convenience, never a hard failure */ }
   }
 
   async function bind(nextHost?: string): Promise<void> {
@@ -185,12 +191,16 @@ export function createTunnelSupervisor(deps: TunnelDeps): TunnelSupervisor {
     if (!editor) throw new Error('no-config-editor')
     const entry = editor.entries().find(candidate => candidate.options?.id === CONNECTION_ROW.id && candidate.options?.name === CONNECTION_ROW.name)
     if (!entry) throw new Error('no-connection-entry')
+    const managed = origin ? new URL(origin).host : undefined
     await editor.edit(entry, (current) => {
       const stored = current.trustedHosts
-      const base = Array.isArray(stored) ? stored
-        : Array.isArray(locate.webStartup()?.trustedHosts) ? locate.webStartup()!.trustedHosts as unknown[]
-        : []
-      return { ...current, trustedHosts: rotateTrustedHosts(base, nextHost) }
+      // Launch flags come first (a persisted literal may have masked the
+      // bundle's !!js expression), then whatever the operator added since.
+      const base = [
+        ...(Array.isArray(locate.webStartup()?.trustedHosts) ? locate.webStartup()!.trustedHosts as unknown[] : []),
+        ...(Array.isArray(stored) ? stored : []),
+      ]
+      return { ...current, trustedHosts: rotateTrustedHosts(base, nextHost, managed) }
     })
   }
 
@@ -264,12 +274,20 @@ export function createTunnelSupervisor(deps: TunnelDeps): TunnelSupervisor {
       origin = next
       failures = 0
       startFailures = 0
+      lastError = undefined
       persist()
       lifecycle = 'ready'
       armHealth()
-    } catch {
+    } catch (error) {
       killChild()
       startFailures += 1
+      // Coded detail for ops: our own lowercase-hyphen causes pass through,
+      // anything external collapses to its constructor name. Never log or
+      // persist a provider message — it could carry a secret.
+      lastError = error instanceof Error && /^[a-z][a-z0-9-]*$/.test(error.message) ? error.message
+        : error instanceof Error ? error.name : 'unknown'
+      console.error(`[mobile] quick-tunnel start cycle ${startFailures} failed: ${lastError}`)
+      persist()
       if (startFailures >= 3) lifecycle = 'error'
       else { lifecycle = 'recovering'; scheduleRecovery() }
     } finally {
@@ -319,6 +337,7 @@ export function createTunnelSupervisor(deps: TunnelDeps): TunnelSupervisor {
     const reason = supportReason()
     if (reason) return status()
     enabled = true
+    lastError = undefined
     persist()
     if (lifecycle === 'off' || lifecycle === 'error') { startFailures = 0; lastRecovery = 0; void start() }
     return status()
@@ -326,15 +345,18 @@ export function createTunnelSupervisor(deps: TunnelDeps): TunnelSupervisor {
 
   async function disableNow(): Promise<MobileTunnelStatus> {
     enabled = false
-    origin = null
     failures = 0
+    lastError = undefined
     clearTimeout(retryTimer)
     clearInterval(healthTimer)
     killChild()
-    persist()
     if (!supportReason()) {
+      // bind() prunes the managed host read from `origin`, so it must run
+      // before origin is cleared; a static fallback domain is never touched.
       try { await bind(undefined) } catch { /* a dead grant is inert; the next bind prunes it */ }
     }
+    origin = null
+    persist()
     lifecycle = 'off'
     return status()
   }
