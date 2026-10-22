@@ -110,6 +110,15 @@ describe('local-agent-kimi apply', () => {
     expect(registered[0]?.records).toBeDefined()
   })
 
+  it('declares the endpoint check the card’s verify button rides (session-less via the gateway)', async () => {
+    const { home, registered } = mount()
+    const checkEndpoint = registered[0]?.checkEndpoint
+    expect(checkEndpoint).toBeTypeOf('function')
+    // No credential anywhere: the verdict says save a key first, and no
+    // network is touched (a fetch would throw in this test's sandbox anyway).
+    await expect(checkEndpoint!(home)).resolves.toContain('No endpoint credential configured')
+  })
+
   it('registers the settings namespace with the YAML config as the composition base', () => {
     const { settings } = mount()
     expect(settings.registrations).toHaveLength(1)

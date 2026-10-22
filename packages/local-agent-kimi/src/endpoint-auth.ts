@@ -189,3 +189,157 @@ export async function writeEndpointAuth(homeDir: string, auth: KimiEndpointAuth)
 export async function clearEndpointAuth(homeDir: string): Promise<void> {
   await rm(join(homeDir, ENDPOINT_AUTH_FILE), { force: true })
 }
+
+/**
+ * The managed provider's endpoint, written into a fresh scoped config and the
+ * baseline the eval snapshot compares against: a scoped config still pointing
+ * here routes through kimi's own service, i.e. no custom endpoint is in force.
+ * It lives in THIS module (not provision.ts) because the endpoint check and
+ * the model catalog need it without a cycle — provision.ts already imports
+ * {@link ENDPOINT_ENV_KEY} from here.
+ */
+export const KIMI_MANAGED_BASE_URL = 'https://api.kimi.com/coding/v1'
+
+/** How many served model ids the check reply lists before truncating. */
+const CHECK_MODEL_LIST_LIMIT = 8
+
+/** Bound on the error-body excerpt a failed check reports. */
+const CHECK_ERROR_BODY_LIMIT = 200
+
+/** The probe's fetch shape (injected in tests). */
+export type EndpointCheckFetch = (url: string, init: { headers: Record<string, string>; signal: AbortSignal }) => Promise<{ ok: boolean; status: number; text(): Promise<string> }>
+
+/** One model the endpoint serves, from `GET <baseUrl>/v1/models`. */
+export interface EndpointServedModel {
+  readonly id: string
+  readonly displayName?: string
+  /** Reasoning effort levels the endpoint advertises for this model (`think_efforts.valid_efforts`). */
+  readonly efforts?: readonly string[]
+  /** The effort the endpoint applies when a round names none (`think_efforts.default_effort`). */
+  readonly defaultEffort?: string
+  /** The served context window (`context_length`). */
+  readonly contextSize?: number
+}
+
+/**
+ * The outcome of one `GET <baseUrl>/v1/models`: the parsed model list, the
+ * HTTP status when the endpoint answered, or the transport error's message.
+ * Callers fold it their own way (the check's verdict text, the catalog's
+ * directory); no case throws.
+ */
+export type EndpointModelsResult =
+  | { readonly kind: 'models'; readonly models: readonly EndpointServedModel[] }
+  | { readonly kind: 'http'; readonly status: number; readonly body: string }
+  | { readonly kind: 'unreachable'; readonly message: string }
+  | { readonly kind: 'malformed' }
+
+/**
+ * `GET <baseUrl>/v1/models` with `Authorization: Bearer <key>` — the
+ * token-free endpoint probe shared by the settings card's verify button
+ * (`checkEndpoint`) and the model catalog. Kimi's own coding service answers
+ * it with the managed key (verified 2026-10-22 against
+ * `https://api.kimi.com/coding/v1`: 200 with Bearer — the sibling x-api-key
+ * header also works, but Bearer is the one convention this package sends).
+ * The reply carries kimi's own fields — `display_name`,
+ * `think_efforts.valid_efforts`/`default_effort` (a sibling
+ * `reasoning.effort.valid`/`default` carries the same data; `think_efforts`
+ * is the field this reads), `context_length` — while a generic
+ * OpenAI-shaped relay answers ids only, so every optional field tolerates
+ * absence. Never throws: every failure mode folds into the result.
+ * @param endpoint - the resolved endpoint auth (caller checks the credential).
+ * @param fetchImpl - the HTTP fetch; default the host's global fetch.
+ * @param signal - abort for the whole probe (timeout bundled by the caller).
+ * @returns the folded result.
+ */
+export async function fetchEndpointModels(
+  endpoint: KimiEndpointAuth & { readonly baseUrl: string },
+  fetchImpl?: EndpointCheckFetch,
+  signal?: AbortSignal,
+): Promise<EndpointModelsResult> {
+  const headers: Record<string, string> = {}
+  if (endpoint.apiKey !== undefined) headers['authorization'] = `Bearer ${endpoint.apiKey}`
+  const fetcher = fetchImpl ?? (globalThis.fetch as unknown as EndpointCheckFetch)
+  // The managed base URL already ends in `/v1`; a relay base may omit it —
+  // accept both instead of doubling the segment.
+  const root = endpoint.baseUrl.replace(/\/+$/, '')
+  const url = `${root}${root.endsWith('/v1') ? '' : '/v1'}/models`
+  let response: { ok: boolean; status: number; text(): Promise<string> }
+  try {
+    response = await fetcher(url, { headers, signal: signal ?? AbortSignal.timeout(8_000) })
+  } catch (error) {
+    return { kind: 'unreachable', message: error instanceof Error ? error.message : String(error) }
+  }
+  if (!response.ok) {
+    return { kind: 'http', status: response.status, body: (await response.text().catch(() => '')).slice(0, CHECK_ERROR_BODY_LIMIT) }
+  }
+  let data: unknown
+  try {
+    data = (JSON.parse(await response.text()) as { data?: unknown }).data
+  } catch {
+    return { kind: 'malformed' }
+  }
+  if (!Array.isArray(data)) return { kind: 'malformed' }
+  const models: EndpointServedModel[] = []
+  for (const entry of data) {
+    if (typeof entry !== 'object' || entry === null) continue
+    const record = entry as {
+      id?: unknown
+      display_name?: unknown
+      context_length?: unknown
+      think_efforts?: { valid_efforts?: unknown; default_effort?: unknown }
+    }
+    if (typeof record.id !== 'string' || record.id === '') continue
+    const thinkEfforts = typeof record.think_efforts === 'object' && record.think_efforts !== null ? record.think_efforts : undefined
+    const efforts = thinkEfforts?.valid_efforts
+    models.push({
+      id: record.id,
+      ...typeof record.display_name === 'string' && record.display_name !== '' ? { displayName: record.display_name } : {},
+      ...Array.isArray(efforts) && efforts.some(effort => typeof effort === 'string' && effort !== '')
+        ? { efforts: efforts.filter((effort): effort is string => typeof effort === 'string' && effort !== '') } : {},
+      ...typeof thinkEfforts?.default_effort === 'string' && thinkEfforts.default_effort !== '' ? { defaultEffort: thinkEfforts.default_effort } : {},
+      ...typeof record.context_length === 'number' && Number.isFinite(record.context_length) ? { contextSize: record.context_length } : {},
+    })
+  }
+  return { kind: 'models', models }
+}
+
+/**
+ * Probe the resolved endpoint with a cheap, token-free round-trip: `GET
+ * <baseUrl>/v1/models` with the resolved credential's Bearer header. A 200
+ * proves both reachability and credential validity — the exact evidence a
+ * "verify" button needs — and the served model list rides the reply so the
+ * user sees what the endpoint offers. One transport-level retry rides along:
+ * a local proxy restart (a Surge/clash reload) stalls the first attempt into
+ * the timeout and answers the retry immediately. Never throws: every failure
+ * mode folds into the reply text, since the reply IS the diagnostic.
+ * @param endpoint - the resolved endpoint auth (scope file over settings).
+ * @param fetchImpl - the HTTP fetch; default the host's global fetch.
+ * @param timeoutMs - one attempt's deadline (two attempts at most).
+ * @returns the human-readable verdict for the check reply.
+ */
+export async function checkKimiEndpoint(
+  endpoint: KimiEndpointAuth,
+  fetchImpl?: EndpointCheckFetch,
+  timeoutMs = 20_000,
+): Promise<string> {
+  if (!hasEndpointCredential(endpoint)) {
+    return 'No endpoint credential configured — fill API Key on the settings card (or the profile row) first.'
+  }
+  const baseUrl = (endpoint.baseUrl ?? KIMI_MANAGED_BASE_URL).replace(/\/+$/, '')
+  let result = await fetchEndpointModels({ ...endpoint, baseUrl }, fetchImpl, AbortSignal.timeout(timeoutMs))
+  if (result.kind === 'unreachable') {
+    result = await fetchEndpointModels({ ...endpoint, baseUrl }, fetchImpl, AbortSignal.timeout(timeoutMs))
+  }
+  if (result.kind === 'unreachable') return `Endpoint unreachable (${baseUrl}): ${result.message}`
+  if (result.kind === 'http') {
+    return `Endpoint answered HTTP ${String(result.status)} (${baseUrl})${result.body === '' ? '' : `: ${result.body}`}`
+  }
+  if (result.kind === 'malformed') {
+    return `Endpoint reachable (${baseUrl}) but the model list did not parse — the credential worked, the reply was not /v1/models-shaped.`
+  }
+  if (result.models.length === 0) return `Endpoint reachable (${baseUrl}); it serves no models.`
+  const ids = result.models.map(model => model.id)
+  const listed = ids.slice(0, CHECK_MODEL_LIST_LIMIT).join(', ')
+  const more = ids.length > CHECK_MODEL_LIST_LIMIT ? `, … +${String(ids.length - CHECK_MODEL_LIST_LIMIT)} more` : ''
+  return `Endpoint reachable (${baseUrl}): ${String(ids.length)} model(s) served — ${listed}${more}`
+}

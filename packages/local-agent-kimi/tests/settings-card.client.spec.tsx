@@ -73,6 +73,11 @@ interface CardOptions {
     write: (models: readonly string[]) => Promise<readonly string[] | null | undefined>
   }
   modelDirectory?: (refresh?: boolean) => Promise<null>
+  endpointAuth?: {
+    read: () => Promise<{ baseUrl?: string; apiKeySet: boolean; authTokenSet: boolean }>
+    write: (fields: Record<string, string | null>) => Promise<{ baseUrl?: string; apiKeySet: boolean; authTokenSet: boolean }>
+  }
+  checkEndpoint?: () => Promise<string | null | undefined>
 }
 
 /** The card props over a scope whose writes update the snapshot reactively. */
@@ -126,6 +131,8 @@ function makeCardProps(options: CardOptions): { props: Record<string, unknown> }
     authT,
     ...options.modelList === undefined ? {} : { modelList: options.modelList },
     ...options.modelDirectory === undefined ? {} : { modelDirectory: options.modelDirectory },
+    ...options.endpointAuth === undefined ? {} : { endpointAuth: options.endpointAuth },
+    ...options.checkEndpoint === undefined ? {} : { checkEndpoint: options.checkEndpoint },
     t,
   }
   return { props, scope: { set, unset } }
@@ -252,6 +259,47 @@ describe('KimiSettingsCard model list section', () => {
     expect(rows).toHaveLength(2)
     expect(rows[0]?.textContent).toContain('kimi-for-coding')
     expect(rows[0]?.textContent).toContain(coreZh['models.defaultChip'])
+  })
+})
+
+describe('KimiSettingsCard endpoint verify button', () => {
+  /** A settled endpointAuth face (credential saved), so the form renders. */
+  const face = (): { read: () => Promise<{ apiKeySet: boolean; authTokenSet: boolean }>; write: () => Promise<{ apiKeySet: boolean; authTokenSet: boolean }> } => ({
+    read: vi.fn(async () => ({ apiKeySet: true, authTokenSet: false })),
+    write: vi.fn(async () => ({ apiKeySet: true, authTokenSet: false })),
+  })
+
+  it('runs the endpoint check against the saved endpoint and shows the verdict', async () => {
+    const checkEndpoint = vi.fn().mockResolvedValue('Endpoint reachable (https://api.kimi.com/coding/v1): 2 model(s) served — kimi-for-coding, k3')
+    renderCard({ checkEndpoint, endpointAuth: face() })
+    await openCard()
+    // The card's own mount read of the endpoint state lands before the button.
+    await act(async () => {})
+
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['endpoint.check'] })) })
+    expect(checkEndpoint).toHaveBeenCalledTimes(1)
+    expect(screen.getByText(/Endpoint reachable/)).toBeTruthy()
+  })
+
+  it('stays disabled while drafts are unsaved (it verifies the SAVED configuration)', async () => {
+    const checkEndpoint = vi.fn().mockResolvedValue('')
+    renderCard({ checkEndpoint, endpointAuth: face() })
+    await openCard()
+    await act(async () => {})
+
+    const check = screen.getByRole('button', { name: zh['endpoint.check'] }) as HTMLButtonElement
+    expect(check.disabled).toBe(false)
+    fireEvent.change(screen.getByLabelText(zh['endpoint.apiKey']), { target: { value: 'sk-draft' } })
+    expect(check.disabled).toBe(true)
+    expect(check.title).toBe(zh['endpoint.checkDirtyHint'])
+    expect(checkEndpoint).not.toHaveBeenCalled()
+  })
+
+  it('hides the button on a core that predates the checkEndpoint Remote', async () => {
+    renderCard({ endpointAuth: face() })
+    await openCard()
+    await act(async () => {})
+    expect(screen.queryByRole('button', { name: zh['endpoint.check'] })).toBeNull()
   })
 })
 
