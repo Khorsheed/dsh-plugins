@@ -95,12 +95,15 @@ export function ConnectPhone({ t }: PropsLocale<'mobile'>) {
     return () => { controller.abort(); clearInterval(poll) }
   }, [login])
   const managed = !!tunnel && tunnel.state !== 'off' && tunnel.state !== 'unsupported'
+  // Offer the one-click entry when nothing is configured, or when the
+  // configured address is down — enabling managed mode is also the recovery.
+  const offerTunnel = managed || info?.state === 'not-configured' || info?.state === 'unreachable'
   return <section data-mobile-connect>
     <style>{styles}</style>
     <h2>{t('connectPhone')}</h2><p>{t('connectIntro')}</p>
     {info?.origin && <div data-connect-host><span>{t('server')}</span><strong>{new URL(info.origin).host}</strong></div>}
     {info && info.state !== 'ready' && <div role="status"><p>{t(info.state === 'unreachable' ? 'connectUnreachable' : info.state === 'untrusted-origin' ? 'connectUntrusted' : info.state === 'unsupported' ? 'connectUnsupported' : 'connectSetup')}</p></div>}
-    {tunnel && (managed || info?.state === 'not-configured') && <div data-connect-tunnel>
+    {tunnel && offerTunnel && <div data-connect-tunnel>
       {tunnel.state === 'off' && <>
         <p data-connect-note>{t('tunnelExplainer')}</p>
         <button type="button" disabled={busy} onClick={() => { void act('enable') }}>{t('tunnelEnable')}</button>

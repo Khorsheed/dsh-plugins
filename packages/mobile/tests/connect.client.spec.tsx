@@ -114,3 +114,12 @@ it('explains a missing cloudflared when the one-click entry is unsupported', asy
   expect(screen.getByText(en.connectSetup)).toBeTruthy()
   expect(screen.queryByRole('button', { name: en.tunnelEnable })).toBeNull()
 })
+it('offers the one-click entry as recovery when the configured address is unreachable', async () => {
+  const connect = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ state: 'unreachable', origin: 'https://dead-one-two-three.trycloudflare.com' }) })
+  const tunnel = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ state: 'off', origin: null }) })
+  const fetcher = vi.fn((url: unknown, options?: unknown) => String(url).includes(TUNNEL_PATH) ? tunnel(url, options) : connect(url, options))
+  vi.stubGlobal('fetch', fetcher)
+  render(<ConnectPhone t={t}/>)
+  await screen.findByText(en.connectUnreachable)
+  expect(screen.getByRole('button', { name: en.tunnelEnable })).toBeTruthy()
+})
