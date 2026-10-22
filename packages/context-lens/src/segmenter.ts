@@ -278,6 +278,7 @@ function attributeSystem(
   }
   return [{
     index,
+    ...message.id === undefined ? {} : { messageId: message.id },
     category: 'system',
     source: message.sourceKind,
     preview: previewLine(full),

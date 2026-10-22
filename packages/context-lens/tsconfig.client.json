@@ -37,6 +37,7 @@
     "src/client/timing.ts",
     "src/client/Trend.tsx",
     "src/client/RequestFacts.tsx",
+    "src/client/ChangeList.tsx",
     "src/client/ConfigFacts.tsx"
   ]
 }

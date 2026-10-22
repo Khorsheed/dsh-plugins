@@ -1,4 +1,5 @@
-import type { CapturedRequest } from '../types.ts'
+import type { CapturedRequest, RequestLink, SegmentCategory } from '../types.ts'
+import { ChangeList } from './ChangeList.tsx'
 import { requestNumberText, aggregateCategories, cachePct, fmt, fmtK, fmtSpan, inputTotal, summaryText } from './aggregate.ts'
 import type { InspectorTabProps } from './contract.ts'
 import css from './TokenView.module.css'
@@ -34,7 +35,12 @@ export function RequestFacts({ request: r, t, raw = false, onToggleRaw }: {
 }
 
 /** Provider usage and exact prefix comparison are distinct facts. */
-export function CacheFacts({ request: r, t }: { readonly request: CapturedRequest; readonly t: T }) {
+export function CacheFacts({ request: r, onOpenRequest, onShowCategory, t }: {
+  readonly request: CapturedRequest
+  readonly onOpenRequest?: ((link: RequestLink) => void) | undefined
+  readonly onShowCategory?: ((category: SegmentCategory) => void) | undefined
+  readonly t: T
+}) {
   const u = r.usage, prefix = r.prefix
   return <section>
     <h3 className={css.sectionTitle}>{t('lens.cache')}</h3>
@@ -43,13 +49,23 @@ export function CacheFacts({ request: r, t }: { readonly request: CapturedReques
         <div className={css.cacheStrip}><i style={{ width: `${cachePct(u) ?? 0}%` }} /></div>
         <div className={css.cacheLegend}><span><i />{t('lens.hit')} {fmt(u.cacheReadTokens ?? 0)}</span><span><i />{t('lens.miss')} {fmt(u.inputTokens)}</span></div>
       </>}
-      {prefix === undefined ? <span title={t('lens.prefixBaselineHint')}>{t(r.compaction?.inputPartial ? 'compaction.noPrefix' : 'lens.prefixUnknown')}</span> : prefix.changed ? <>
-        <span>{t('lens.prefixChanged', { index: String(prefix.changed.index).padStart(3, '0'), seq: requestNumberText({ requestNumber: prefix.previousRequestNumber }) })}</span>
-        <PrefixDifference changed={prefix.changed} t={t} />
-      </> : <span>{t('lens.prefixSame', { seq: requestNumberText({ requestNumber: prefix.previousRequestNumber }), gap: fmtSpan(prefix.gapMs) })}</span>}
-      {prefix?.toolsChanged && <div>{t('lens.toolsChanged')}</div>}
+      {prefix === undefined
+        ? <span title={t('lens.prefixBaselineHint')}>{t(r.compaction?.inputPartial ? 'compaction.noPrefix' : 'lens.prefixUnknown')}</span>
+        : prefix.changes === undefined ? <LegacyPrefix prefix={prefix} t={t} />
+          : <ChangeList request={r} prefix={prefix} onOpenRequest={onOpenRequest} onShowCategory={onShowCategory} t={t} />}
     </div>
   </section>
+}
+
+/** A capture from before the change list existed keeps its first-difference view. */
+function LegacyPrefix({ prefix, t }: { readonly prefix: NonNullable<CapturedRequest['prefix']>; readonly t: T }) {
+  return <>
+    {prefix.changed ? <>
+      <span>{t('lens.prefixChanged', { index: String(prefix.changed.index).padStart(3, '0'), seq: requestNumberText({ requestNumber: prefix.previousRequestNumber }) })}</span>
+      <PrefixDifference changed={prefix.changed} t={t} />
+    </> : <span>{t('lens.prefixSame', { seq: requestNumberText({ requestNumber: prefix.previousRequestNumber }), gap: fmtSpan(prefix.gapMs) })}</span>}
+    {prefix.toolsChanged && <div>{t('lens.toolsChanged')}</div>}
+  </>
 }
 
 function PrefixDifference({ changed, t }: { changed: NonNullable<NonNullable<CapturedRequest['prefix']>['changed']>; t: T }) {
