@@ -457,12 +457,6 @@ export interface ListTurnsResult {
 export interface TurnOverview {
   turn: TurnListItem
   scopes: AgentScopeOverview[]
-  /**
-   * Every external agent seen anywhere in the session, by identity
-   * (provider + label), in first-appearance order, with each turn view it
-   * ran in — so the panel keeps one stable tab per agent across turns.
-   */
-  agents?: ExternalAgent[]
   /** The answering instance's epoch — see {@link ListTurnsResult.generation}. */
   generation?: string
   /**
@@ -472,15 +466,6 @@ export interface TurnOverview {
    * session-level metadata and still answer).
    */
   authorizedScopes?: readonly string[]
-}
-
-/** One external agent across the session: every child view that ran it. */
-export interface ExternalAgent {
-  /** `provider` + U+0000 + `label`. */
-  key: string
-  label: string
-  provider: string
-  runs: { turnSeq: number; hostTurn?: number; scopeId: string }[]
 }
 
 /** Scope with light request rows (the left request list). */

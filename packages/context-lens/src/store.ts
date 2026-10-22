@@ -40,7 +40,6 @@ import type {
   ScopeFilter,
   RequestLink,
   ScopedRefusal,
-  ExternalAgent,
   SegmentItem,
   TimingLane,
   ToolTiming,
@@ -1176,11 +1175,9 @@ export class InspectorStore {
         for (const scope of pseudo.scopes.values()) scopes.push(this.scopeOverview(session, pseudo, scope))
       }
     }
-    const agents = this.externalAgents(session, filter)
     return {
       turn: item,
       scopes,
-      ...agents.length === 0 ? {} : { agents },
       generation: this.generation,
       ...filter?.scopes === undefined ? {} : { authorizedScopes: scopes.map(scope => scope.scopeId) },
     }
@@ -1261,23 +1258,6 @@ export class InspectorStore {
       .filter(scope => scope.callId !== undefined && calls.has(scope.callId))
       .map(scope => ({ scopeId: scope.scopeId, external: isExternal(scope.provider) }))
     return delegates.length === 0 ? {} : { delegates }
-  }
-
-  /** External agents across the session, keyed by provider + label, with every turn view they ran in. */
-  private externalAgents(session: SessionRecord, filter?: ScopeFilter): ExternalAgent[] {
-    const byKey = new Map<string, ExternalAgent>()
-    const turns = session.turns.filter(turn => turn.hostTurn !== undefined).sort((a, b) => a.startedAt - b.startedAt || a.turnSeq - b.turnSeq)
-    for (const turn of turns) {
-      for (const scope of [...turn.scopes.values()].sort((a, b) => a.startedAt - b.startedAt)) {
-        if (scope.kind !== 'subagent' || !isExternal(scope.provider) || !scopeAuthorized(scope.scopeId, filter)) continue
-        const label = scope.label ?? scope.scopeId
-        const key = `${scope.provider}\u0000${label}`
-        const agent = byKey.get(key) ?? { key, label, provider: scope.provider!, runs: [] }
-        agent.runs.push({ turnSeq: turn.turnSeq, ...turn.hostTurn === undefined ? {} : { hostTurn: turn.hostTurn }, scopeId: scope.scopeId })
-        byKey.set(key, agent)
-      }
-    }
-    return [...byKey.values()]
   }
 
   /** Record the child's provider from its `subagent/descriptor` (live child events or its log). */
