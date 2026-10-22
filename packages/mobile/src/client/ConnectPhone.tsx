@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import qrcode from 'qrcode-generator'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
-import { CONNECT_PATH, type MobileConnectInfo } from '../protocol.ts'
+import { CONNECT_PATH, TUNNEL_PATH, type MobileConnectInfo, type MobileTunnelStatus } from '../protocol.ts'
 
 /** Encode entirely in this browser; the login credential never visits a QR service. */
 export function LoginQR({ value, label }: { value: string; label: string }) {
@@ -14,12 +14,23 @@ export function LoginQR({ value, label }: { value: string; label: string }) {
   return <svg role="img" aria-label={label} viewBox={`0 0 ${size} ${size}`} width="256" height="256" shapeRendering="crispEdges"><rect width={size} height={size} fill="white"/><path d={path} fill="black"/></svg>
 }
 
+const TUNNEL_STATES = new Set(['off', 'starting', 'ready', 'recovering', 'error', 'unsupported'])
+
 /** Settings owns this page's lifetime; no credential is persisted or put in the URL. */
 export function ConnectPhone({ t }: PropsLocale<'mobile'>) {
   const [info, setInfo] = useState<MobileConnectInfo>(), [login, setLogin] = useState<string>()
+  const [tunnel, setTunnel] = useState<MobileTunnelStatus>()
   const [busy, setBusy] = useState(false), [failed, setFailed] = useState(false)
   const request = useRef<AbortController>(), timer = useRef<ReturnType<typeof setTimeout>>()
   const hide = () => { request.current?.abort(); clearTimeout(timer.current); setLogin(undefined); setBusy(false) }
+  const loadTunnel = async (signal?: AbortSignal) => {
+    try {
+      const response = await fetch(TUNNEL_PATH, { credentials: 'same-origin', cache: 'no-store', ...(signal ? { signal } : {}) })
+      if (signal?.aborted) return
+      const result = await response.json().catch(() => undefined) as MobileTunnelStatus | undefined
+      setTunnel(response.ok && result && TUNNEL_STATES.has(result.state) ? result : undefined)
+    } catch { if (!signal?.aborted) setTunnel(undefined) }
+  }
   const load = async (generate = false) => {
     hide(); setFailed(false); setBusy(true)
     const controller = new AbortController(); request.current = controller
@@ -41,12 +52,28 @@ export function ConnectPhone({ t }: PropsLocale<'mobile'>) {
     } catch { if (!controller.signal.aborted) setFailed(true) }
     finally { if (!controller.signal.aborted) setBusy(false) }
   }
+  const act = async (action: 'enable' | 'disable') => {
+    hide(); setFailed(false); setBusy(true)
+    try {
+      const response = await fetch(TUNNEL_PATH, { method: 'POST', credentials: 'same-origin', cache: 'no-store',
+        headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action }) })
+      if (!response.ok) throw new Error('unavailable')
+      const result = await response.json().catch(() => undefined) as MobileTunnelStatus | undefined
+      if (result && TUNNEL_STATES.has(result.state)) setTunnel(result)
+    } catch { setFailed(true); setBusy(false); return }
+    await load()
+  }
   useEffect(() => {
-    void load()
+    void load(); void loadTunnel()
     const conceal = () => { if (document.visibilityState === 'hidden') hide() }
     document.addEventListener('visibilitychange', conceal); window.addEventListener('pagehide', hide)
     return () => { request.current?.abort(); clearTimeout(timer.current); document.removeEventListener('visibilitychange', conceal); window.removeEventListener('pagehide', hide) }
   }, [])
+  useEffect(() => {
+    if (tunnel?.state !== 'starting' && tunnel?.state !== 'recovering') return
+    const poll = setInterval(() => { void loadTunnel(); void load() }, 5_000)
+    return () => clearInterval(poll)
+  }, [tunnel?.state])
   useEffect(() => {
     if (!login) return
     const controller = new AbortController()
@@ -60,17 +87,30 @@ export function ConnectPhone({ t }: PropsLocale<'mobile'>) {
         const next: MobileConnectInfo = await response.json()
         if (controller.signal.aborted) return
         setInfo(next)
+        void loadTunnel(controller.signal)
         if (next.state !== 'ready' || next.origin !== new URL(login).origin) hide()
       } catch { if (!controller.signal.aborted) { hide(); setFailed(true) } }
       finally { checking = false }
     }, 15_000)
     return () => { controller.abort(); clearInterval(poll) }
   }, [login])
+  const managed = !!tunnel && tunnel.state !== 'off' && tunnel.state !== 'unsupported'
   return <section data-mobile-connect>
     <style>{styles}</style>
     <h2>{t('connectPhone')}</h2><p>{t('connectIntro')}</p>
     {info?.origin && <div data-connect-host><span>{t('server')}</span><strong>{new URL(info.origin).host}</strong></div>}
     {info && info.state !== 'ready' && <div role="status"><p>{t(info.state === 'unreachable' ? 'connectUnreachable' : info.state === 'untrusted-origin' ? 'connectUntrusted' : info.state === 'unsupported' ? 'connectUnsupported' : 'connectSetup')}</p></div>}
+    {tunnel && (managed || info?.state === 'not-configured') && <div data-connect-tunnel>
+      {tunnel.state === 'off' && <>
+        <p data-connect-note>{t('tunnelExplainer')}</p>
+        <button type="button" disabled={busy} onClick={() => { void act('enable') }}>{t('tunnelEnable')}</button>
+      </>}
+      {tunnel.state === 'starting' && <p role="status">{t('tunnelStarting')}</p>}
+      {tunnel.state === 'recovering' && <p role="status">{t('tunnelRecovering')}</p>}
+      {tunnel.state === 'error' && <p role="status">{t('tunnelError')}</p>}
+      {tunnel.state === 'unsupported' && <p>{t(tunnel.reason === 'no-cloudflared' ? 'tunnelNoCloudflared' : 'tunnelUnsupportedHost')}</p>}
+      {managed && <button type="button" disabled={busy} onClick={() => { void act('disable') }}>{t('tunnelDisable')}</button>}
+    </div>}
     {failed && <p role="alert">{t('connectError')}</p>}
     {busy && <p role="status">{t('connectLoading')}</p>}
     {login ? <div data-connect-code><LoginQR value={login} label={t('connectQR')}/><p>{t('connectConceal')}</p><button type="button" onClick={hide}>{t('connectHide')}</button></div>
@@ -85,12 +125,13 @@ const styles = `
 [data-mobile-connect] h2{font-size:20px;margin:0 0 12px}
 [data-mobile-connect] p{margin:12px 0}
 [data-connect-host]{display:flex;gap:16px;justify-content:space-between;flex-wrap:wrap;padding:16px 0;margin:16px 0;border-block:1px solid var(--dsw-alias-border-l2)}
-[data-connect-host] strong{overflow-wrap:anywhere;font-weight:500}
 [data-mobile-connect] button{font:inherit;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-fill-secondary,transparent);border:1px solid var(--dsw-alias-border-l2);border-radius:12px;padding:10px 18px;min-height:44px;cursor:pointer}
 [data-mobile-connect] button:disabled{opacity:.5;cursor:default}
 [data-mobile-connect] button:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,#527cff);outline-offset:3px}
 [data-connect-code]{display:flex;align-items:center;flex-direction:column;gap:8px;padding:24px 0}
 [data-connect-code] svg{max-width:100%;height:auto;border:12px solid white;border-radius:12px;box-sizing:content-box}
+[data-connect-tunnel]{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:16px 0;margin:16px 0;border-block:1px solid var(--dsw-alias-border-l2)}
+[data-connect-tunnel] p{margin:0;flex:1 1 320px}
 [data-mobile-connect] ol{padding-left:24px;margin:24px 0}[data-mobile-connect] li{padding:5px 0}
 [data-connect-note]{font-size:13px;color:var(--dsw-alias-label-secondary)}
 `

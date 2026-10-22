@@ -3,21 +3,24 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { afterEach, expect, it, vi } from 'vitest'
 import { ConnectPhone } from '../src/client/ConnectPhone.tsx'
 import { en } from '../src/client/locales.ts'
+import { TUNNEL_PATH } from '../src/protocol.ts'
 const t = (key: keyof typeof en) => en[key]
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.useRealTimers(); vi.restoreAllMocks() })
 function fixture() {
-  const fetcher = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => ({ state: 'ready', origin: 'https://phone.example.test' }) })
+  const connect = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => ({ state: 'ready', origin: 'https://phone.example.test' }) })
     .mockResolvedValue({ ok: true, json: async () => ({ loginUrl: 'https://phone.example.test/?token=private', origin: 'https://phone.example.test' }) })
+  const tunnel = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ state: 'off', origin: null }) })
+  const fetcher = vi.fn((url: unknown, options?: unknown) => String(url).includes(TUNNEL_PATH) ? tunnel(url, options) : connect(url, options))
   vi.stubGlobal('fetch', fetcher)
-  const view = render(<ConnectPhone t={t}/>); return { fetcher, view }
+  const view = render(<ConnectPhone t={t}/>); return { fetcher, connect, tunnel, view }
 }
 it('waits for a user action, renders locally, and clears the QR on hide and page background', async () => {
   const f = fixture()
   await screen.findByRole('button', { name: en.connectGenerate })
-  expect(f.fetcher).toHaveBeenCalledTimes(1); expect(screen.queryByRole('img')).toBeNull()
+  expect(f.connect).toHaveBeenCalledTimes(1); expect(screen.queryByRole('img')).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: en.connectGenerate }))
   await screen.findByRole('img', { name: en.connectQR })
-  expect(f.fetcher.mock.calls[1]?.[1]).toMatchObject({ method: 'POST', credentials: 'same-origin', cache: 'no-store' })
+  expect(f.connect.mock.calls[1]?.[1]).toMatchObject({ method: 'POST', credentials: 'same-origin', cache: 'no-store' })
   expect(document.body.textContent).not.toContain('token=private')
   expect(localStorage.length).toBe(0)
   fireEvent.click(screen.getByRole('button', { name: en.connectHide }))
@@ -38,7 +41,7 @@ it('hides after two minutes without claiming the bearer credential has expired',
 it('aborts pending generation when leaving, so a late response cannot redisplay a secret', async () => {
   const f = fixture(); await screen.findByRole('button', { name: en.connectGenerate })
   let resolve!: (value: unknown) => void
-  f.fetcher.mockImplementationOnce(() => new Promise(done => { resolve = done }))
+  f.connect.mockImplementationOnce(() => new Promise(done => { resolve = done }))
   fireEvent.click(screen.getByRole('button', { name: en.connectGenerate }))
   act(() => { window.dispatchEvent(new Event('pagehide')) })
   await act(async () => { resolve({ ok: true, json: async () => ({ loginUrl: 'https://phone.example.test/?token=late' }) }) })
@@ -58,15 +61,56 @@ it('checks an exposed QR again and removes it when the public path fails', async
   vi.useFakeTimers()
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: en.connectGenerate })) })
   expect(screen.getByRole('img')).toBeTruthy()
-  f.fetcher.mockResolvedValue({ ok: true, json: async () => ({ state: 'unreachable', origin: 'https://phone.example.test' }) })
+  f.connect.mockResolvedValue({ ok: true, json: async () => ({ state: 'unreachable', origin: 'https://phone.example.test' }) })
   await act(async () => { await vi.advanceTimersByTimeAsync(15_000) })
   expect(screen.queryByRole('img')).toBeNull()
   expect(screen.getByText(en.connectUnreachable)).toBeTruthy()
 })
 it('explains a failed reachability check at generation time without rendering a QR', async () => {
   const f = fixture(); await screen.findByRole('button', { name: en.connectGenerate })
-  f.fetcher.mockResolvedValue({ ok: false, json: async () => ({ state: 'unreachable', origin: 'https://phone.example.test' }) })
+  f.connect.mockResolvedValue({ ok: false, json: async () => ({ state: 'unreachable', origin: 'https://phone.example.test' }) })
   fireEvent.click(screen.getByRole('button', { name: en.connectGenerate }))
   await screen.findByText(en.connectUnreachable)
   expect(screen.queryByRole('img')).toBeNull()
+})
+it('offers the one-click public entry when nothing is configured and follows it to ready', async () => {
+  const connect = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => ({ state: 'not-configured', origin: null }) })
+    .mockResolvedValue({ ok: true, json: async () => ({ state: 'ready', origin: 'https://live-one-two-three.trycloudflare.com' }) })
+  const tunnel = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => ({ state: 'off', origin: null }) })
+    .mockResolvedValueOnce({ ok: true, json: async () => ({ state: 'starting', origin: null }) })
+    .mockResolvedValue({ ok: true, json: async () => ({ state: 'ready', origin: 'https://live-one-two-three.trycloudflare.com' }) })
+  const fetcher = vi.fn((url: unknown, options?: unknown) => String(url).includes(TUNNEL_PATH) ? tunnel(url, options) : connect(url, options))
+  vi.stubGlobal('fetch', fetcher)
+  render(<ConnectPhone t={t}/>)
+  fireEvent.click(await screen.findByRole('button', { name: en.tunnelEnable }))
+  await waitFor(() => expect(tunnel).toHaveBeenCalledTimes(2))
+  expect(tunnel.mock.calls[1]?.[1]).toMatchObject({ method: 'POST', body: JSON.stringify({ action: 'enable' }) })
+  vi.useFakeTimers()
+  await act(async () => { await vi.advanceTimersByTimeAsync(5_000) })
+  expect(screen.getByRole('button', { name: en.connectGenerate })).toBeTruthy()
+  expect(screen.getByRole('button', { name: en.tunnelDisable })).toBeTruthy()
+})
+it('shows recovery status and disables the public entry', async () => {
+  const connect = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => ({ state: 'ready', origin: 'https://live-one-two-three.trycloudflare.com' }) })
+    .mockResolvedValue({ ok: true, json: async () => ({ state: 'not-configured', origin: null }) })
+  const tunnel = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => ({ state: 'recovering', origin: 'https://live-one-two-three.trycloudflare.com' }) })
+    .mockResolvedValue({ ok: true, json: async () => ({ state: 'off', origin: null }) })
+  const fetcher = vi.fn((url: unknown, options?: unknown) => String(url).includes(TUNNEL_PATH) ? tunnel(url, options) : connect(url, options))
+  vi.stubGlobal('fetch', fetcher)
+  render(<ConnectPhone t={t}/>)
+  await screen.findByText(en.tunnelRecovering)
+  fireEvent.click(screen.getByRole('button', { name: en.tunnelDisable }))
+  await waitFor(() => expect(tunnel).toHaveBeenCalledTimes(2))
+  expect(tunnel.mock.calls[1]?.[1]).toMatchObject({ method: 'POST', body: JSON.stringify({ action: 'disable' }) })
+  await screen.findByRole('button', { name: en.tunnelEnable })
+})
+it('explains a missing cloudflared when the one-click entry is unsupported', async () => {
+  const connect = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ state: 'not-configured', origin: null }) })
+  const tunnel = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ state: 'unsupported', origin: null, reason: 'no-cloudflared' }) })
+  const fetcher = vi.fn((url: unknown, options?: unknown) => String(url).includes(TUNNEL_PATH) ? tunnel(url, options) : connect(url, options))
+  vi.stubGlobal('fetch', fetcher)
+  render(<ConnectPhone t={t}/>)
+  await screen.findByText(en.tunnelNoCloudflared)
+  expect(screen.getByText(en.connectSetup)).toBeTruthy()
+  expect(screen.queryByRole('button', { name: en.tunnelEnable })).toBeNull()
 })
