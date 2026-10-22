@@ -24,10 +24,12 @@ export function connectInfo(connection: HostConnectionHandle, configured?: strin
   return { state: 'ready', origin: url.origin }
 }
 
-/** Called only behind the official authenticated Fetch registry. */
-export function connectResponse(connection: HostConnectionHandle, configured?: string, reachable: (origin: string) => Promise<boolean> = publicOriginReachable) {
+/** Called only behind the official authenticated Fetch registry. The origin
+ * getter is re-read on every request: a managed tunnel can rotate the
+ * advertised origin without re-applying this plugin. */
+export function connectResponse(connection: HostConnectionHandle, configured: () => string | undefined, reachable: (origin: string) => Promise<boolean> = publicOriginReachable) {
   return async (request: Request): Promise<Response> => {
-    const info = connectInfo(connection, configured)
+    const info = connectInfo(connection, configured())
     const checked = async (): Promise<MobileConnectInfo> => info.state === 'ready' && info.origin && !await reachable(info.origin)
       ? { ...info, state: 'unreachable' } : info
     if (request.method === 'GET') return Response.json(await checked(), { headers })

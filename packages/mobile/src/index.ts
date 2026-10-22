@@ -13,7 +13,7 @@ export const inject: string[] = []
 export function apply(ctx: Context, config: { publicOrigin?: string } = {}): void {
   ctx.inject(['connection'], (web) => {
     web.connection.fetch.register({ path: CONNECT_PATH, methods: ['GET', 'POST'], requestBody: 'buffered',
-      fetch: connectResponse(web.connection, config.publicOrigin ?? process.env.DSH_MOBILE_PUBLIC_ORIGIN) })
+      fetch: connectResponse(web.connection, () => config.publicOrigin ?? process.env.DSH_MOBILE_PUBLIC_ORIGIN) })
     web.connection.fetch.register({ path: DIRECTORY_PATH, methods: ['GET'], requestBody: 'buffered', fetch: directoryResponse })
     web.connection.fetch.register({
       path: HANDSHAKE_PATH,
