@@ -702,13 +702,18 @@ function summarizeMessage(message: CapturedMessage): ResponseSummary {
     }
   }
   const hasText = message.content.some(block => block.type === 'text' && (block.text ?? '').trim().length > 0)
-  return hasText ? { kind: 'text' } : { kind: 'none' }
+  if (hasText) return { kind: 'text' }
+  const hasReasoning = message.content.some(block => block.type === 'reasoning' && (block.text ?? '').trim().length > 0)
+  return hasReasoning ? { kind: 'reasoning' } : { kind: 'none' }
 }
 
 /** The response summary when only stream spans survived (an attempt). */
 function summarizeBlocks(blocks: readonly BlockSpan[]): ResponseSummary {
   const calls = blocks.filter(block => block.kind === 'tool-call' && block.toolName !== undefined)
-  if (calls.length === 0) return blocks.some(block => block.kind === 'text') ? { kind: 'text' } : { kind: 'none' }
+  if (calls.length === 0) {
+    if (blocks.some(block => block.kind === 'text')) return { kind: 'text' }
+    return blocks.some(block => block.kind === 'reasoning') ? { kind: 'reasoning' } : { kind: 'none' }
+  }
   const first = calls[0] as BlockSpan
   const hint = hintFromArgs(first.args)
   return {
@@ -837,5 +842,6 @@ function readUsage(raw: unknown): RequestUsage | undefined {
     outputTokens: value['outputTokens'],
     ...typeof value['totalTokens'] === 'number' ? { totalTokens: value['totalTokens'] } : {},
     ...typeof value['cacheReadTokens'] === 'number' ? { cacheReadTokens: value['cacheReadTokens'] } : {},
+    ...typeof value['cacheWriteTokens'] === 'number' ? { cacheWriteTokens: value['cacheWriteTokens'] } : {},
   }
 }

@@ -8,7 +8,7 @@ import { duplicateStats } from '../src/client/aggregate.ts'
 import { describe, expect, it } from 'vitest'
 import type { CapturedRequest, TimingLane, TurnListItem } from '../src/types.ts'
 import {
-  aggregateCategories, cachePct, fmtDur, fmtK, fmtSpan, inputTotal, latestTurnSeq, resolveTurnSeq, summarizeLanes, summaryText,
+  aggregateCategories, cachePct, fmtDur, fmtK, fmtSpan, inputMiss, inputTotal, latestTurnSeq, resolveTurnSeq, summarizeLanes, summaryText,
 } from '../src/client/aggregate.ts'
 
 const turn = (over: Partial<TurnListItem>): TurnListItem => ({
@@ -93,6 +93,16 @@ describe('aggregateCategories', () => {
     const usage = requestFixture().usage
     expect(usage === undefined ? 0 : inputTotal(usage)).toBe(10_000)
     expect(usage === undefined ? null : cachePct(usage)).toBe(80)
+    expect(usage === undefined ? 0 : inputMiss(usage)).toBe(2_000)
+  })
+
+  it('counts cache writes as input processed in full (the third disjoint bucket)', () => {
+    // A first-turn Claude-style request: the whole prompt lands in cache
+    // creation, so inputTokens alone would report an input of 2.
+    const usage = { inputTokens: 2, outputTokens: 131, cacheReadTokens: 0, cacheWriteTokens: 9_500 }
+    expect(inputTotal(usage)).toBe(9_502)
+    expect(inputMiss(usage)).toBe(9_502)
+    expect(cachePct(usage)).toBe(0)
   })
 })
 
@@ -186,6 +196,7 @@ describe('summaryText', () => {
     expect(summaryText({ kind: 'tool', name: 'read', hint: 'a.ts', more: 2 }, '助手回复')).toBe('read:a.ts +2')
     expect(summaryText({ kind: 'text' }, '助手回复')).toBe('助手回复')
     expect(summaryText({ kind: 'text' }, 'Assistant reply')).toBe('Assistant reply')
+    expect(summaryText({ kind: 'reasoning' }, '助手回复', 'Compaction', '思考')).toBe('思考')
     expect(summaryText({ kind: 'none' }, '助手回复')).toBe('—')
   })
 })

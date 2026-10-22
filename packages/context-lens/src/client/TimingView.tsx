@@ -257,7 +257,7 @@ export function TimingView({
                               <span>
                                 {summaryText(
                                   r.responseSummary,
-                                  t('resp.directAnswer'), t('compaction.title'),
+                                  t('resp.directAnswer'), t('compaction.title'), t('resp.thinking'),
                                 )}
                               </span>
                               {k === 'wait' && (

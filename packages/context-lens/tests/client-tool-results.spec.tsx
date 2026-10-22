@@ -59,4 +59,17 @@ describe('tool execution detail', () => {
     expect(screen.queryByText('报错 1')).toBeNull()
     expect(screen.queryByText('请求失败')).toBeNull()
   })
+  it('never labels a settled row without usage as failed — only a failed status earns the label', () => {
+    // A mirrored pure-thinking segment carries no usage; calling it 请求失败 is a false alarm.
+    render(<TokenView scope={{ scopeId: 'main', scopeSeq: 1, kind: 'main', status: 'ok', config: {}, startedAt: 0,
+      requests: [
+        { seq: 1, requestNumber: 1, scopeId: 'main', status: 'ok', responseSummary: { kind: 'reasoning' }, startedAt: 0, totalChars: 0 },
+        { seq: 2, requestNumber: 2, scopeId: 'main', status: 'failed', responseSummary: { kind: 'none' }, startedAt: 0, totalChars: 0 },
+      ],
+    }} request={null} selectedSeq={1} filterCat={null} previousResponseNumber={null} onSelect={() => {}} onToggleFilter={() => {}} t={t} />)
+    const thinkingRow = screen.getByRole('button', { name: '#1 · 思考' })
+    expect(thinkingRow.textContent).not.toContain('请求失败')
+    expect(thinkingRow.textContent).toContain('—')
+    expect(screen.getByRole('button', { name: '#2 · —' }).textContent).toContain('请求失败')
+  })
 })
