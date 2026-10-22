@@ -1224,7 +1224,10 @@ export class InspectorStore {
       requestCount += scope.requests.length
       if (scope.status === 'failed') failedScopeCount += 1
       for (const request of scope.requests) {
-        totalInputTokens += request.usage?.inputTokens ?? 0
+        // The usage buckets are disjoint: the turn total counts all three.
+        totalInputTokens += (request.usage?.inputTokens ?? 0)
+          + (request.usage?.cacheReadTokens ?? 0)
+          + (request.usage?.cacheWriteTokens ?? 0)
         totalOutputTokens += request.usage?.outputTokens ?? 0
       }
     }
@@ -1713,7 +1716,7 @@ export function responseFromSpans(blocks: readonly BlockSpan[]): CapturedRespons
   }
 }
 
-/** 明细头锚点（结构化）：响应流里的工具调用 → `{kind:'tool', name, hint?, more?}`；纯文本 → `{kind:'text'}`；空响应 → `{kind:'none'}`。 */
+/** 明细头锚点（结构化）：响应流里的工具调用 → `{kind:'tool', name, hint?, more?}`；纯文本 → `{kind:'text'}`；纯思考 → `{kind:'reasoning'}`；空响应 → `{kind:'none'}`。 */
 function summarizeResponse(request: StoredRequest): ResponseSummary {
   const calls = request.blocks.filter(block => block.kind === 'tool-call' && block.toolName !== undefined)
   if (calls.length > 0) {
@@ -1727,7 +1730,8 @@ function summarizeResponse(request: StoredRequest): ResponseSummary {
     }
   }
   const hasText = request.blocks.some(block => block.kind === 'text')
-  return hasText ? { kind: 'text' } : { kind: 'none' }
+  if (hasText) return { kind: 'text' }
+  return request.blocks.some(block => block.kind === 'reasoning') ? { kind: 'reasoning' } : { kind: 'none' }
 }
 
 /**

@@ -12,9 +12,10 @@ import type {
 /**
  * Render one {@link ResponseSummary} for the card title / anchor header:
  * the tool case groups repeated names as `name ×N` (single calls keep hints), the text case is the
- * caller's localized assistant reply, an empty response is the plain dash.
+ * caller's localized assistant reply, the reasoning case is a pure thinking response, an empty
+ * response is the plain dash.
  */
-export function summaryText(summary: ResponseSummary, assistantReply: string, compaction = 'Compaction'): string {
+export function summaryText(summary: ResponseSummary, assistantReply: string, compaction = 'Compaction', thinking = 'Thinking'): string {
   switch (summary.kind) {
     case 'compaction':
       return compaction
@@ -24,6 +25,8 @@ export function summaryText(summary: ResponseSummary, assistantReply: string, co
       return `${summary.name}${summary.hint === undefined ? '' : `:${summary.hint}`}${summary.more === undefined ? '' : ` +${summary.more}`}`
     case 'text':
       return assistantReply
+    case 'reasoning':
+      return thinking
     case 'none':
       return '—'
   }
@@ -68,9 +71,14 @@ export function unloadedGaps(range: { first: number; last: number } | undefined,
   return gaps
 }
 
-/** Total input = uncached + cache-read (the host's usage fields are disjoint). */
+/** Total input = uncached + cache-read + cache-write (the host's usage fields are disjoint). */
 export function inputTotal(usage: RequestUsage): number {
-  return usage.inputTokens + (usage.cacheReadTokens ?? 0)
+  return usage.inputTokens + (usage.cacheReadTokens ?? 0) + (usage.cacheWriteTokens ?? 0)
+}
+
+/** Input NOT served from cache = uncached + cache-write (a cache write was processed in full too). */
+export function inputMiss(usage: RequestUsage): number {
+  return usage.inputTokens + (usage.cacheWriteTokens ?? 0)
 }
 
 /** Cache-hit percentage of the total input, one decimal; null when nothing was read. */

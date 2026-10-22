@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-10-23-context-lens-usage-buckets-and-no-usage-rows.md
+.agents/notes/implemented/bug-fix/2026-10-23-context-lens-usage-buckets-and-no-usage-rows.md: 771c15be6c8e38c2b3cd635720863e890f0898c5
+.agents/notes/implemented/bug-fix/2026-10-23-context-lens-usage-buckets-and-no-usage-rows.zh.md: 3632d73ad751aa818aa396c71cbfc37edd51269a

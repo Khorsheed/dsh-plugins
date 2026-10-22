@@ -181,3 +181,30 @@ describe('response tool counts', () => {
     }
   })
 })
+
+describe('reasoning-only summary', () => {
+  it('labels a pure-thinking response as reasoning across live, settled log and failed-attempt capture', () => {
+    const at = clock()
+    const store = new InspectorStore({}, { now: at.now })
+    store.turnStart('s1', 1, at.tick(1))
+    const chunks: Parameters<InspectorStore['observeChunk']>[1][] = [
+      { type: 'block-start', index: 0, blockType: 'reasoning' },
+      { type: 'block-end', index: 0, block: { type: 'reasoning', text: '先想一下' } },
+      { type: 'finish', reason: { kind: 'stop' } },
+    ]
+    const live = drive(store, at, chunks)!
+    expect(live.responseSummary).toEqual({ kind: 'reasoning' })
+    for (const failed of [false, true]) {
+      const turns = reconstructSession([
+        { type: 'turn/start', time: 1, data: { turn: 1 } },
+        { type: 'step/start', time: 2, data: { turn: 1, step: 1 } },
+        { type: failed ? 'assistant/attempt' : 'assistant/message', time: 20, data: {
+          turn: 1, step: 1,
+          ...failed ? {} : { message: { role: 'assistant', content: [{ type: 'reasoning', text: '先想一下' }] } },
+          stream: chunks.map((chunk, index) => ({ type: 'chunk', time: 3 + index, chunk })),
+        } },
+      ])
+      expect(turns[0]?.requests[0]?.responseSummary).toEqual(live.responseSummary)
+    }
+  })
+})

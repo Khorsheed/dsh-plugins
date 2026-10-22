@@ -114,6 +114,13 @@ export interface RequestUsage {
   totalTokens?: number
   /** Measured cache hits — the cache column's only source of truth. */
   cacheReadTokens?: number
+  /**
+   * Cache-write input (Anthropic `cache_creation_input_tokens` et al.). The
+   * host usage contract's buckets are disjoint, so a request's full input is
+   * `inputTokens + cacheReadTokens + cacheWriteTokens` — dropping this bucket
+   * shows a cache-writing (first) request as almost input-free.
+   */
+  cacheWriteTokens?: number
 }
 
 /** The six-way timing split of one request (same vocabulary as the host product). */
@@ -155,6 +162,8 @@ export type ResponseSummary =
   | { kind: 'tool'; name: string; hint?: string; more?: number; toolCounts?: { name: string; count: number }[] }
   /** 助手回复（有可见文本、无工具调用）。 */
   | { kind: 'text' }
+  /** 纯思考响应（只有 reasoning、无可见文本也无工具调用——思考段落独占一条记录时落这里）。 */
+  | { kind: 'reasoning' }
   /** 空响应（无文本也无工具调用——失败/中断的响应落这里）。 */
   | { kind: 'none' }
 

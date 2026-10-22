@@ -63,7 +63,7 @@ function runRequest(
     store.observeChunk(request, { type: 'block-start', index: 1, blockType: 'text' }, at.tick(20))
     store.observeChunk(request, { type: 'block-end', index: 1, block: { type: 'text' } }, at.tick(200))
   }
-  store.observeChunk(request, { type: 'usage', usage: { inputTokens: 100, outputTokens: 20, cacheReadTokens: 500 } }, at.tick(5))
+  store.observeChunk(request, { type: 'usage', usage: { inputTokens: 100, outputTokens: 20, cacheReadTokens: 500, cacheWriteTokens: 50 } }, at.tick(5))
   store.observeChunk(request, { type: 'finish', reason: { kind: script.kind === 'tool' ? 'tool-calls' : 'stop' } }, at.tick(5))
   store.settleRequest(request, at.tick(5))
   return request
@@ -99,7 +99,7 @@ describe('turn correlation', () => {
       requestCount: 2,
       scopeCount: 1,
       failedScopeCount: 0,
-      totalInputTokens: 200,
+      totalInputTokens: 1300,
       totalOutputTokens: 40,
       closingMessageId: 'a1',
     })
@@ -119,7 +119,7 @@ describe('turn correlation', () => {
       totalMs: 385,
     })
     expect(full?.responseSummary).toEqual({ kind: 'tool', name: 'read', hint: 'a.md' })
-    expect(full?.usage).toEqual({ inputTokens: 100, outputTokens: 20, cacheReadTokens: 500 })
+    expect(full?.usage).toEqual({ inputTokens: 100, outputTokens: 20, cacheReadTokens: 500, cacheWriteTokens: 50 })
     // The second request splits history (sys, u1) from added (a1, t1).
     const second = store.getRequest('s1', r2.seq)
     expect(second?.segments.history.map(item => item.index)).toEqual([1])

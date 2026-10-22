@@ -1,6 +1,6 @@
 import type { CapturedRequest, RequestLink, SegmentCategory } from '../types.ts'
 import { ChangeList } from './ChangeList.tsx'
-import { requestNumberText, aggregateCategories, cachePct, fmt, fmtK, fmtSpan, inputTotal, summaryText } from './aggregate.ts'
+import { requestNumberText, aggregateCategories, cachePct, fmt, fmtK, fmtSpan, inputMiss, inputTotal, summaryText } from './aggregate.ts'
 import type { InspectorTabProps } from './contract.ts'
 import css from './TokenView.module.css'
 import { ConfigFacts } from './ConfigFacts.tsx'
@@ -19,12 +19,12 @@ export function RequestFacts({ request: r, t, raw = false, onToggleRaw }: {
   const metrics = [
     { label: t('req.input'), value: u ? fmt(inputTotal(u)) : '—', unit: 'tok', sub: t(r.compaction?.inputPartial ? 'compaction.recoveredChars' : 'chain.chars', { count: fmt(chars) }) },
     { label: t('lens.hit'), value: u ? (cachePct(u)?.toFixed(1) ?? '—') : '—', unit: '%', sub: u ? `${fmt(u.cacheReadTokens ?? 0)} tok` : '—' },
-    { label: t('lens.miss'), value: u ? fmt(u.inputTokens) : '—', unit: 'tok', sub: r.config.maxTokens === undefined ? '' : t('lens.outputLimit', { count: fmtK(r.config.maxTokens) }) },
+    { label: t('lens.miss'), value: u ? fmt(inputMiss(u)) : '—', unit: 'tok', sub: r.config.maxTokens === undefined ? '' : t('lens.outputLimit', { count: fmtK(r.config.maxTokens) }) },
     { label: t(r.compaction?.inputPartial ? 'compaction.interval' : 'lens.duration'), value: duration(r.timing.totalMs), unit: '', sub: `${t('req.output')} ${u ? fmt(u.outputTokens) : '—'} tok · ${t('lens.firstToken', { duration: duration(r.timing.waitMs) })}` },
   ]
   return <>
     <div className={css.detailHead}>
-      <b title={r.requestNumber === undefined && r.purpose !== 'compaction' ? t('req.numberUnknown') : undefined}>{r.purpose !== 'compaction' && <>#{requestNumberText(r)} · </>}{summaryText(r.responseSummary, t('resp.directAnswer'), t('compaction.title'))}</b>
+      <b title={r.requestNumber === undefined && r.purpose !== 'compaction' ? t('req.numberUnknown') : undefined}>{r.purpose !== 'compaction' && <>#{requestNumberText(r)} · </>}{summaryText(r.responseSummary, t('resp.directAnswer'), t('compaction.title'), t('resp.thinking'))}</b>
       {onToggleRaw && <button type="button" className={css.jsonToggle} aria-label={t('view.raw')} title={t('view.raw')} aria-pressed={raw} onClick={onToggleRaw}>{'{ }'}</button>}
     </div>
     <ConfigFacts config={r.config} t={t} />
@@ -47,7 +47,7 @@ export function CacheFacts({ request: r, onOpenRequest, onShowCategory, t }: {
     <div className={css.prefix}>
       {u && <>
         <div className={css.cacheStrip}><i style={{ width: `${cachePct(u) ?? 0}%` }} /></div>
-        <div className={css.cacheLegend}><span><i />{t('lens.hit')} {fmt(u.cacheReadTokens ?? 0)}</span><span><i />{t('lens.miss')} {fmt(u.inputTokens)}</span></div>
+        <div className={css.cacheLegend}><span><i />{t('lens.hit')} {fmt(u.cacheReadTokens ?? 0)}</span><span><i />{t('lens.miss')} {fmt(inputMiss(u))}</span></div>
       </>}
       {prefix === undefined
         ? <span title={t('lens.prefixBaselineHint')}>{t(r.compaction?.inputPartial ? 'compaction.noPrefix' : 'lens.prefixUnknown')}</span>

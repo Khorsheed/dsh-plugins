@@ -260,6 +260,7 @@ export const zh = {
   'req.streaming': '流式中',
   'req.failed': '请求失败',
   'resp.directAnswer': '助手回复',
+  'resp.thinking': '思考',
 
   'detail.anchor': '本次响应',
   'detail.config': 'config',
@@ -599,6 +600,7 @@ export const en: Record<keyof typeof zh, string> = {
   'req.streaming': 'streaming',
   'req.failed': 'Request failed',
   'resp.directAnswer': 'Assistant reply',
+  'resp.thinking': 'Thinking',
 
   'detail.anchor': 'Response',
   'detail.config': 'config',

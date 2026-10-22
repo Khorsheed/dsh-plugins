@@ -14,10 +14,11 @@ function RequestCard({ request: r, selected, onSelect, t }: {
   readonly onSelect: (seq: number) => void; readonly t: T
 }) {
   const pct = r.usage === undefined ? null : cachePct(r.usage)
-  return <button type="button" className={selected ? css.reqItemSel : css.reqItem} title={r.requestNumber === undefined && r.responseSummary.kind !== 'compaction' ? t('req.numberUnknown') : undefined} aria-label={`${r.responseSummary.kind === 'compaction' ? '' : `#${requestNumberText(r)} · `}${summaryText(r.responseSummary, t('resp.directAnswer'), t('compaction.title'))}`} aria-pressed={selected} onClick={() => onSelect(r.seq)}>
-    <span className={css.reqName}>{r.responseSummary.kind !== 'compaction' && <span>#{requestNumberText(r)} · </span>}{summaryText(r.responseSummary, t('resp.directAnswer'), t('compaction.title'))}</span>
+  return <button type="button" className={selected ? css.reqItemSel : css.reqItem} title={r.requestNumber === undefined && r.responseSummary.kind !== 'compaction' ? t('req.numberUnknown') : undefined} aria-label={`${r.responseSummary.kind === 'compaction' ? '' : `#${requestNumberText(r)} · `}${summaryText(r.responseSummary, t('resp.directAnswer'), t('compaction.title'), t('resp.thinking'))}`} aria-pressed={selected} onClick={() => onSelect(r.seq)}>
+    <span className={css.reqName}>{r.responseSummary.kind !== 'compaction' && <span>#{requestNumberText(r)} · </span>}{summaryText(r.responseSummary, t('resp.directAnswer'), t('compaction.title'), t('resp.thinking'))}</span>
     <span className={css.reqHit} data-low={pct === 0}>{pct === null ? '—' : `${pct.toFixed(1)}%`}</span>
-    <span className={css.reqIo}>{r.usage ? `${fmtK(inputTotal(r.usage))} → ${fmtK(r.usage.outputTokens)}` : t(r.status === 'streaming' ? 'req.streaming' : 'req.failed')}</span>
+    {/* No usage on a settled ok row is a mirror fold (e.g. a pure-thinking segment), not a failure — only an actual failed status earns the label. */}
+    <span className={css.reqIo}>{r.usage ? `${fmtK(inputTotal(r.usage))} → ${fmtK(r.usage.outputTokens)}` : r.status === 'streaming' ? t('req.streaming') : r.status === 'failed' ? t('req.failed') : '—'}</span>
     <span className={css.reqTime}>{r.totalMs === undefined ? '—' : fmtSpan(r.totalMs)}</span>
     {(r.toolErrors ?? 0) > 0 && <span className={css.reqFlag}>{t('tool.failures')} {r.toolErrors}</span>}
     {r.status === 'failed' && <span className={css.reqFlag}>{t('req.failed')}</span>}
