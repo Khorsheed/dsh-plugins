@@ -241,9 +241,9 @@ describe('InspectorPanel · token tab', () => {
     expect(screen.getByText('第二条 query')).toBeTruthy()
     // Scope chips: 主对话 + one per delegation run (never merged), anchored by
     // the per-session scope ordinal — the failed 0-request run gets its #N too.
-    expect(screen.getByRole('button', { name: /主对话 · 2 请求/ })).toBeTruthy()
-    expect(screen.getByRole('button', { name: /#2 提取 JSON/ })).toBeTruthy()
-    expect(screen.getByRole('button', { name: /#3 失败的提取/ })).toBeTruthy()
+    expect(screen.getByRole('tab', { name: /主对话\s*2/ })).toBeTruthy()
+    expect(screen.getByRole('tab', { name: /提取 JSON/ })).toBeTruthy()
+    expect(screen.getByRole('tab', { name: /失败的提取/ })).toBeTruthy()
     // The detail anchor + the four blocks.
     expect(screen.getByRole('region', { name: zh['lens.exchange'] })).toBeTruthy()
     // The anchor names the response; the selected card's title repeats it.
@@ -342,8 +342,8 @@ describe('InspectorPanel · turn switcher / navigation params', () => {
 describe('InspectorPanel · scope chips', () => {
   it('shows the failure state page for a failed run with 0 requests', async () => {
     bench()
-    await waitFor(() => expect(screen.getByRole('button', { name: /失败的提取/ })).toBeTruthy())
-    fireEvent.click(screen.getByRole('button', { name: /失败的提取/ }))
+    await waitFor(() => expect(screen.getByRole('tab', { name: /失败的提取/ })).toBeTruthy())
+    fireEvent.click(screen.getByRole('tab', { name: /失败的提取/ }))
     await waitFor(() => expect(screen.getByText(zh['run.failed'])).toBeTruthy())
     expect(screen.getByText('provider timeout')).toBeTruthy()
     expect(screen.getByText(/0 次模型调用/)).toBeTruthy()
@@ -351,8 +351,8 @@ describe('InspectorPanel · scope chips', () => {
 
   it('switches to a delegation run and renders its (honestly empty) system/tools', async () => {
     bench()
-    await waitFor(() => expect(screen.getByRole('button', { name: /#2 提取 JSON/ })).toBeTruthy())
-    fireEvent.click(screen.getByRole('button', { name: /#2 提取 JSON/ }))
+    await waitFor(() => expect(screen.getByRole('tab', { name: /提取 JSON/ })).toBeTruthy())
+    fireEvent.click(screen.getByRole('tab', { name: /提取 JSON/ }))
     await waitFor(() => expect(screen.getByText('#201 · 助手回复')).toBeTruthy())
     // The child-lane scope has no captured system/tools: the blocks render the empty states.
     openDetails(zh['lens.layerSystem'])
@@ -385,7 +385,7 @@ describe('InspectorPanel · timing tab', () => {
   it('filters the timing view to the selected delegation run', async () => {
     const { container } = bench()
     await waitFor(() => expect(screen.getByText('#101 · read:a.ts')).toBeTruthy())
-    fireEvent.click(screen.getByRole('button', { name: /#2 提取 JSON/ }))
+    fireEvent.click(screen.getByRole('tab', { name: /提取 JSON/ }))
     fireEvent.click(screen.getByRole('button', { name: zh['view.time'] }))
     await waitFor(() => expect(screen.getByText(zh['time.totalScope'])).toBeTruthy())
     // Non-tool details contain only this run, while the shared timeline keeps all scopes.
@@ -645,12 +645,12 @@ describe('Context Lens session trend', () => {
     bench()
     await screen.findByText('#101 · read:a.ts')
     expect(screen.queryByRole('button', { name: 'turn 2 #201 · 0%' })).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: /#2 提取 JSON/ }))
+    fireEvent.click(screen.getByRole('tab', { name: /提取 JSON/ }))
     const bar = await screen.findByRole('button', { name: 'turn 2 #201 · 0%' })
     expect(screen.queryByRole('button', { name: /turn 2 #101/ })).toBeNull()
     fireEvent.click(bar)
     await waitFor(() => expect(screen.getByText('#201 · 助手回复', { selector: 'b' })).toBeTruthy())
-    expect(screen.getByRole('button', { name: /#2 提取 JSON/ }).getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByRole('tab', { name: /提取 JSON/ }).getAttribute('aria-selected')).toBe('true')
   })
 })
 
@@ -725,7 +725,7 @@ describe('compression provenance navigation', () => {
     const source: CapturedRequest = { ...REQ101, segments: { ...REQ101.segments, added: [{ index: 5, category: 'compaction', source: 'compact-checkpoint', full: 'Summary body', preview: 'Summary body', chars: 12, freshness: 'new', compactionId: 'c', compactionRequest: { turnSeq: -1, scopeId: 'main', seq: 301 } }] } }
     bench({ turns: [TURNS[0]!, auxiliaryTurn, TURNS[1]!], requests: { 101: source, 301: auxiliary }, overview: seq => seq === -1 ? { turn: auxiliaryTurn, scopes: [{ ...OVERVIEW1.scopes[0]!, requests: [{ ...OVERVIEW1.scopes[0]!.requests[0]!, seq: 301, requestNumber: undefined, responseSummary: { kind: 'compaction' } }] }] } : seq === 1 ? OVERVIEW1 : OVERVIEW2 })
     fireEvent.click(await screen.findByRole('button', { name: '查看压缩调用及原历史 ↗' }))
-    await screen.findByText('日志恢复 · 输入仅含被压缩历史 ⓘ')
+    await screen.findByText('日志恢复 · 压缩指令未记录 ⓘ')
     expect(screen.getByText('记录间隔')).toBeTruthy()
     expect(screen.getByText('日志未保留完整输入，不比较缓存前缀。')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: '← 返回来源请求' }))

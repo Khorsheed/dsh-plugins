@@ -40,6 +40,7 @@ import {
   openCursor,
   reconstructSession,
   type SessionLogCursor,
+  type SessionLogRow,
   type SessionLogHandle,
   type SessionLogReader,
 } from './log-lane.ts'
@@ -245,6 +246,11 @@ export class InspectorService {
     // merge — read structurally so this plugin neither depends on that package
     // nor breaks when the composition lacks it.
     const type: string = event.type
+    if (type === 'subagent/descriptor') {
+      const provider = (event.data as Record<string, unknown>)['provider']
+      if (typeof provider === 'string') this.store.noteChildProvider(sessionId, provider)
+      return
+    }
     if (type === 'subagent/catalog') {
       const data = event.data as Record<string, unknown>
       const childId = data['childId']
@@ -322,6 +328,9 @@ export class InspectorService {
         this.handles.set(childId, handle)
       }
       const { events } = await handle.read(cursor.consumed)
+      const descriptor = events.find(row => row.type === 'subagent/descriptor')
+      const provider = (descriptor?.data as Record<string, unknown> | undefined)?.['provider']
+      if (typeof provider === 'string') this.store.noteChildProvider(childId, provider)
       for (const request of foldLogRows(cursor, events)) {
         this.store.appendLogRequest(rootSessionId, childId, request)
       }
@@ -397,6 +406,7 @@ export class InspectorService {
         const { events } = await handle.read(0)
         this.store.insertLogTurns(sessionId, reconstructSession(events))
         for (const fact of replacementFactsOf(events)) this.store.noteReplacement(sessionId, fact)
+        await this.resolveParent(sessionId, events, reader)
       } finally {
         void handle.close().catch(() => undefined)
       }
@@ -406,6 +416,40 @@ export class InspectorService {
       this.store.markBackfillBroken(sessionId, reason)
       this.logWarn(`context-lens: session "${sessionId}" log unreadable, history backfill skipped (${reason})`)
     }
+  }
+
+  /**
+   * A session opened on its own whose log header names a `parentSession`:
+   * read the parent's log once for its title, the turn whose catalog row
+   * started this child, and that row's label. Best effort — an unreadable
+   * parent leaves just its id.
+   */
+  private async resolveParent(sessionId: string, events: readonly SessionLogRow[], reader: SessionLogReader): Promise<void> {
+    const header = events[0]
+    const parentId = header?.type === 'session' ? (header as unknown as { parentSession?: unknown }).parentSession : undefined
+    if (typeof parentId !== 'string' || parentId.length === 0 || this.store.hasParent(sessionId)) return
+    const parent: { sessionId: string; title?: string; hostTurn?: number; label?: string } = { sessionId: parentId }
+    try {
+      const handle = await reader.open(parentId, 'read')
+      try {
+        const { events: rows } = await handle.read(0)
+        let turn: number | undefined
+        for (const row of rows) {
+          const data = (row.data ?? {}) as Record<string, unknown>
+          if (row.type === 'turn/start' && typeof data['turn'] === 'number') turn = data['turn']
+          if (row.type === 'session/title' && typeof data['title'] === 'string') parent.title = data['title']
+          if (row.type === 'subagent/catalog' && data['childId'] === sessionId) {
+            if (turn !== undefined) parent.hostTurn = turn
+            if (typeof data['label'] === 'string') parent.label = data['label']
+          }
+        }
+      } finally {
+        void handle.close().catch(() => undefined)
+      }
+    } catch {
+      // The id alone still says whose child this is.
+    }
+    this.store.noteParent(sessionId, parent)
   }
 
   // ---------- queries (the Remote face delegates here) ----------

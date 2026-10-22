@@ -167,6 +167,8 @@ export interface ScopeRecord {
   logFilled: boolean
   /** The delegation call this scope answers, when bound. */
   callId?: string
+  /** The child's `subagent/descriptor` provider (`dsh-cli`, `codex-local`, …), once seen. */
+  provider?: string
 }
 
 /** One turn row's internal record (exported for the eviction hook's signature). */
@@ -271,6 +273,8 @@ function scopeOrigin(scope: ScopeRecord): CaptureOrigin | undefined {
 export class InspectorStore {
   private readonly sessions = new Map<string, SessionRecord>()
   private readonly childToParent = new Map<string, string>()
+  /** A session opened on its own that its log header names as a child (`parentSession`). */
+  private readonly parents = new Map<string, NonNullable<ListTurnsResult['parent']>>()
   /** callId → the request whose response issued the call (exec attribution). */
   private readonly callOwners = new Map<string, StoredRequest>()
   private readonly callNames = new Map<string, string>()
@@ -1044,17 +1048,18 @@ export class InspectorStore {
         scopeSeq: 0,
         kind: 'subagent',
         ...label === undefined ? {} : { label },
-        status: delegation.isError === true || delegation.resultAt === undefined ? 'failed' : 'ok',
+        // A catalog-only child has no tool/result to judge it by; no evidence of failure is not failure.
+        status: delegation.callId === '' ? 'ok' : delegation.isError === true || delegation.resultAt === undefined ? 'failed' : 'ok',
         ...delegation.isError === true && delegation.errorPreview !== undefined
           ? { error: delegation.errorPreview }
-          : delegation.resultAt === undefined ? { error: 'no tool/result in the log' } : {},
+          : delegation.resultAt === undefined && delegation.callId !== '' ? { error: 'no tool/result in the log' } : {},
         config: {},
         requests: [],
         startedAt: delegation.at,
         ...delegation.resultAt === undefined ? {} : { endedAt: delegation.resultAt },
         live: false,
         logFilled: false,
-        callId: delegation.callId,
+        ...delegation.callId === '' ? {} : { callId: delegation.callId },
       }
       turn.scopes.set(scopeId, scope)
     }
@@ -1088,13 +1093,15 @@ export class InspectorStore {
         state: session.backfillState,
         ...session.backfillReason === undefined ? {} : { reason: session.backfillReason },
       }
-    if (session === undefined) return { turns: [], backfill, generation: this.generation }
+    if (session === undefined) return { turns: [], backfill, generation: this.generation, ...this.parents.has(sessionId) ? { parent: this.parents.get(sessionId)! } : {} }
     return {
       turns: [...session.turns]
+        .filter(turn => this.attachedTurn(session, turn) === undefined)
         .sort((a, b) => a.startedAt - b.startedAt || a.turnSeq - b.turnSeq)
         .map(turn => this.turnItem(sessionId, turn, filter)),
       backfill,
       generation: this.generation,
+      ...this.parents.has(sessionId) ? { parent: this.parents.get(sessionId)! } : {},
       ...session.evictedTurns === 0 ? {} : { evictedTurnCount: session.evictedTurns },
       ...filter?.scopes === undefined ? {} : { authorizedScopes: this.authorizedScopes(session, filter) },
     }
@@ -1153,41 +1160,115 @@ export class InspectorStore {
     const item = this.turnItem(sessionId, turn, filter)
     const scopes: AgentScopeOverview[] = [...turn.scopes.values()]
       .filter(scope => scopeAuthorized(scope.scopeId, filter))
-      .map(scope => {
-        const origin = scopeOrigin(scope)
-        return {
-          scopeId: scope.scopeId,
-          scopeSeq: scope.scopeSeq,
-          kind: scope.kind,
-          ...scope.label === undefined ? {} : { label: scope.label },
-          status: scope.status,
-          ...scope.error === undefined ? {} : { error: scope.error },
-          config: scope.config,
-          startedAt: scope.startedAt,
-          ...scope.endedAt === undefined ? {} : { endedAt: scope.endedAt },
-          ...origin === undefined ? {} : { origin },
-          requests: scope.requests.map((request): RequestListItem => ({
-            seq: request.seq,
-            ...request.requestNumber === undefined ? {} : { requestNumber: request.requestNumber },
-            scopeId: request.scopeId,
-            status: request.status,
-            config: request.config,
-            responseSummary: request.responseSummary,
-            startedAt: request.startedAt,
-            ...request.usage === undefined ? {} : { usage: request.usage },
-            ...request.settledAt === undefined ? {} : { totalMs: request.settledAt - request.startedAt },
-            ...request.compaction?.inputPartial ? { timingApproximate: true } : {},
-            totalChars: request.totalChars,
-            toolErrors: request.execs.filter(exec => exec.isError).length,
-          })),
-        }
-      })
+      .map(scope => this.scopeOverview(session, turn, scope))
+    // Compactions attach to the turn they happened in, as one more view beside the agents.
+    if (turn.hostTurn !== undefined && scopeAuthorized('main', filter)) {
+      for (const pseudo of session.turns) {
+        if (this.attachedTurn(session, pseudo) !== turn) continue
+        for (const scope of pseudo.scopes.values()) scopes.push(this.scopeOverview(session, pseudo, scope))
+      }
+    }
     return {
       turn: item,
       scopes,
       generation: this.generation,
       ...filter?.scopes === undefined ? {} : { authorizedScopes: scopes.map(scope => scope.scopeId) },
     }
+  }
+
+  /** A compaction pseudo-turn's host turn: the one it started in, else the next turn to begin; undefined for any other turn. */
+  private attachedTurn(session: SessionRecord, turn: TurnRecord): TurnRecord | undefined {
+    if (turn.purpose !== 'compaction') return undefined
+    const real = session.turns.filter(t => t.hostTurn !== undefined).sort((a, b) => a.startedAt - b.startedAt)
+    const hostTurn = [...turn.scopes.values()].flatMap(scope => scope.requests).find(r => r.compaction?.hostTurn !== undefined)?.compaction?.hostTurn
+    return (hostTurn === undefined ? undefined : real.find(t => t.hostTurn === hostTurn))
+      ?? real.find(t => t.startedAt >= turn.startedAt) ?? real.at(-1)
+  }
+
+  /** Where the panel addresses a request: compaction requests live in their host turn's `compaction:` view. */
+  private addressOf(session: SessionRecord, request: StoredRequest): RequestLink {
+    const pseudo = session.turns.find(t => t.turnSeq === request.turnSeq)
+    const host = pseudo === undefined ? undefined : this.attachedTurn(session, pseudo)
+    return {
+      turnSeq: host?.turnSeq ?? request.turnSeq,
+      scopeId: host === undefined ? request.scopeId : `compaction:${request.turnSeq}`,
+      seq: request.seq,
+      ...request.requestNumber === undefined ? {} : { requestNumber: request.requestNumber },
+    }
+  }
+
+  private scopeOverview(session: SessionRecord, turn: TurnRecord, scope: ScopeRecord): AgentScopeOverview {
+    const origin = scopeOrigin(scope)
+    const host = this.attachedTurn(session, turn)
+    const scopeId = host === undefined ? scope.scopeId : `compaction:${turn.turnSeq}`
+    const main = turn.scopes.get('main')
+    const delegator = scope.callId === undefined ? undefined
+      : main?.requests.find(r => r.response?.toolCalls.some(call => call.callId === scope.callId))
+    const compaction = host === undefined ? undefined : scope.requests.find(r => r.compaction !== undefined)?.compaction
+    const after = host === undefined ? undefined : host.scopes.get('main')?.requests
+      .filter(r => r.startedAt <= turn.startedAt).sort((a, b) => b.startedAt - a.startedAt)[0]
+    return {
+      scopeId,
+      scopeSeq: scope.scopeSeq,
+      kind: host !== undefined ? 'compaction' : scope.kind,
+      ...scope.label === undefined ? {} : { label: scope.label },
+      ...scope.provider === undefined ? {} : { provider: scope.provider },
+      ...delegator === undefined ? {} : { delegatedBy: this.addressOf(session, delegator) },
+      ...compaction === undefined ? {} : { compaction: {
+        ...compaction.replacedCount === undefined ? {} : { replacedCount: compaction.replacedCount },
+        ...after === undefined ? {} : { after: this.addressOf(session, after) },
+        ...compaction.hostTurn === undefined ? { betweenTurns: true } : {},
+      } },
+      status: scope.status,
+      ...scope.error === undefined ? {} : { error: scope.error },
+      config: scope.config,
+      startedAt: scope.startedAt,
+      ...scope.endedAt === undefined ? {} : { endedAt: scope.endedAt },
+      ...origin === undefined ? {} : { origin },
+      requests: scope.requests.map((request): RequestListItem => ({
+        seq: request.seq,
+        ...request.requestNumber === undefined ? {} : { requestNumber: request.requestNumber },
+        scopeId,
+        status: request.status,
+        config: request.config,
+        responseSummary: request.responseSummary,
+        startedAt: request.startedAt,
+        ...request.usage === undefined ? {} : { usage: request.usage },
+        ...request.settledAt === undefined ? {} : { totalMs: request.settledAt - request.startedAt },
+        ...request.compaction?.inputPartial ? { timingApproximate: true } : {},
+        totalChars: request.totalChars,
+        toolErrors: request.execs.filter(exec => exec.isError).length,
+        ...scope.scopeId === 'main' && host === undefined ? this.delegatesOf(turn, request) : {},
+      })),
+    }
+  }
+
+  /** The child views one main request's tool calls opened (the trend's delegation dots). */
+  private delegatesOf(turn: TurnRecord, request: StoredRequest): Pick<RequestListItem, 'delegates'> {
+    const calls = new Set((request.response?.toolCalls ?? []).map(call => call.callId).filter(Boolean))
+    if (calls.size === 0) return {}
+    const delegates = [...turn.scopes.values()]
+      .filter(scope => scope.callId !== undefined && calls.has(scope.callId))
+      .map(scope => ({ scopeId: scope.scopeId, external: isExternal(scope.provider) }))
+    return delegates.length === 0 ? {} : { delegates }
+  }
+
+  /** Record the child's provider from its `subagent/descriptor` (live child events or its log). */
+  noteChildProvider(childId: string, provider: string): void {
+    const root = this.childToParent.get(childId)
+    const session = root === undefined ? undefined : this.sessions.get(root)
+    const found = session === undefined ? undefined : this.findScope(session, childId)
+    if (found !== undefined) found.scope.provider = provider
+  }
+
+  /** A session opened on its own that is some other session's child. */
+  noteParent(sessionId: string, parent: NonNullable<ListTurnsResult['parent']>): void {
+    this.parents.set(sessionId, parent)
+  }
+
+  /** Whether a child's parent link is already known (the service resolves it once). */
+  hasParent(sessionId: string): boolean {
+    return this.parents.has(sessionId)
   }
 
   /**
@@ -1219,7 +1300,7 @@ export class InspectorStore {
   /** Resolve change entries to retained requests: the compaction call, and the request that still held un-pruned text. */
   private withLinks(session: SessionRecord, request: StoredRequest, previous: StoredRequest, prefix: NonNullable<CapturedRequest['prefix']>): NonNullable<CapturedRequest['prefix']> {
     if (prefix.changes === undefined) return prefix
-    const link = (r: StoredRequest): RequestLink => ({ turnSeq: r.turnSeq, scopeId: r.scopeId, seq: r.seq, ...r.requestNumber === undefined ? {} : { requestNumber: r.requestNumber } })
+    const link = (r: StoredRequest): RequestLink => this.addressOf(session, r)
     const retained = session.turns.flatMap(turn => [...turn.scopes.values()]).flatMap(scope => scope.requests)
     return { ...prefix, changes: prefix.changes.map(change => {
       if (change.kind === 'compaction' && change.compactionId !== undefined) {
@@ -1251,7 +1332,7 @@ export class InspectorStore {
       }
     }
     const retained = (this.sessions.get(request.sessionId)?.turns ?? []).flatMap(turn => turn.scopes.get(request.scopeId)?.requests ?? [])
-    const link = (r: StoredRequest) => ({ turnSeq: r.turnSeq, scopeId: r.scopeId, seq: r.seq, ...r.requestNumber === undefined ? {} : { requestNumber: r.requestNumber } })
+    const link = (r: StoredRequest): RequestLink => session === undefined ? { turnSeq: r.turnSeq, scopeId: r.scopeId, seq: r.seq } : this.addressOf(session, r)
     const before = retained.filter(r => r.purpose === undefined && r.startedAt < request.startedAt).sort((a, b) => b.startedAt - a.startedAt)[0]
     const provenance = (items: SegmentItem[]) => items.map(item => {
       const number = item.toolCallId === undefined ? undefined : owners.get(item.toolCallId)
@@ -1273,7 +1354,7 @@ export class InspectorStore {
     return {
       seq: request.seq,
       ...request.requestNumber === undefined ? {} : { requestNumber: request.requestNumber },
-      scopeId: request.scopeId,
+      scopeId: session === undefined ? request.scopeId : this.addressOf(session, request).scopeId,
       sessionId: request.sessionId,
       ...request.purpose === undefined ? {} : { purpose: request.purpose },
       ...request.compaction === undefined ? {} : { compaction: { ...request.compaction, ...before === undefined ? {} : { before: link(before) } } },
@@ -1652,4 +1733,9 @@ function executionSize(request: Pick<StoredRequest, 'execs'>): number {
 function responseSize(response: CapturedResponse | undefined): number {
   return (response?.reasoning?.length ?? 0) + (response?.text?.length ?? 0)
     + (response?.toolCalls.reduce((n, call) => n + call.name.length + call.arguments.length, 0) ?? 0)
+}
+
+/** A child run by another agent product (Claude Code, Codex, Kimi…) rather than a dsh subagent. */
+export function isExternal(provider: string | undefined): boolean {
+  return provider !== undefined && !provider.startsWith('dsh')
 }

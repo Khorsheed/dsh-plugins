@@ -222,20 +222,29 @@
 
 }
 .trendLabel { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: var(--dsh-panel-text-meta, 11px); color: var(--dsw-alias-label-tertiary); }
-.trend { position: relative; display: flex; gap: 4px; overflow-x: auto; user-select: none; touch-action: pan-x; cursor: grab; padding: 3px 0; scrollbar-width: thin; }
-.trendGroup { flex: none; padding: 2px 3px; border-radius: 5px; text-align: center; font-family: var(--dsw-font-family-mono, ui-monospace, monospace); font-size: var(--dsh-panel-text-meta, 10px); color: var(--dsw-alias-label-tertiary); }
-.trendGroup[data-current="true"] { background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 10%, transparent); }
-.trendBars { display: flex; align-items: end; height: 44px; }
+.trend { position: relative; display: flex; gap: 10px; overflow-x: auto; padding: 3px 0 2px; scrollbar-width: thin; }
+/* A turn: its bars, then its number at the start. The current turn is outlined, not filled. */
+.trendGroup { flex: none; display: flex; flex-direction: column; gap: 2px; padding: 2px 3px; border-radius: 5px; box-shadow: inset 0 0 0 1px transparent; }
+.trendGroup[data-current="true"] { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--dsw-alias-state-business-primary) 70%, transparent); }
+.trendBars { display: flex; align-items: end; gap: 1px; height: 52px; }
+.trendCell { position: relative; display: flex; align-items: end; height: 100%; }
 /* Keep the hit column independent of token height, including zero/unknown usage. */
-.trendTarget { flex: none; width: 16px; height: 44px; border: 0; padding: 2px 0; display: flex; justify-content: center; align-items: end; background: transparent; border-radius: 4px; cursor: pointer; }
-.trendTarget:hover, .trendTarget[data-selected="true"] { background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 16%, transparent); }
-.trendTarget:focus-visible, .trendTarget[data-selected="true"] { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: -1px; }
-@media (pointer: coarse) {
-  .trendTarget { width: 40px; }
-}
-.trendBar { width: 7px; flex: none; display: flex; align-items: end; background: var(--dsw-alias-state-error-primary); border-radius: 2px; overflow: hidden; cursor: pointer; opacity: .6; }
+.trendTarget { flex: none; width: calc(var(--trend-bar, 7px) + 2px); height: 44px; margin-bottom: 8px; border: 0; padding: 2px 1px; display: flex; justify-content: center; align-items: end; background: transparent; border-radius: 2px; cursor: pointer; }
+.trendTarget:hover { background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 16%, transparent); }
+.trendTarget:focus-visible, .trendTarget[data-selected="true"] { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 0; }
+.trendBar { width: var(--trend-bar, 7px); flex: none; display: flex; align-items: end; background: var(--dsw-alias-state-error-primary); border-radius: 1px; overflow: hidden; opacity: .6; }
 .trendBar i { width: 100%; background: var(--dsw-alias-state-success-primary); }
 .trendGroup[data-current="true"] .trendBar { opacity: 1; }
+.trendTurn { font-family: var(--dsw-font-family-mono, ui-monospace, monospace); font-size: var(--dsh-panel-text-meta, 10px); color: var(--dsw-alias-label-tertiary); text-align: left; padding-left: 1px; }
+.trendGroup[data-current="true"] .trendTurn { color: var(--dsw-alias-state-business-primary); }
+/* Delegation dot under the request that started a child view; compaction as a dashed divider. */
+.trendDot { position: absolute; left: 50%; bottom: 0; width: 6px; height: 6px; transform: translateX(-50%); padding: 0; border: 0; border-radius: 50%; background: var(--dsw-alias-state-business-primary, #0c8599); cursor: pointer; }
+.trendDot[data-external="true"] { background: var(--dsw-alias-state-warning-primary, #e8590c); }
+.trendCompaction { flex: none; width: 6px; height: 44px; margin: 0 1px 8px; padding: 0; border: 0; background: repeating-linear-gradient(to bottom, var(--dsw-alias-brand-primary, #7048e8) 0 4px, transparent 4px 7px) center / 2px 100% no-repeat; cursor: pointer; }
+.trendCompaction:hover { background-size: 3px 100%; }
+@media (pointer: coarse) {
+  .trendTarget { width: max(calc(var(--trend-bar, 7px) + 2px), 14px); }
+}
 .trendLabel > span { font-size: var(--dsh-panel-text-meta, 11px); }
 .stepper { display: flex; align-items: center; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; overflow: hidden; }
 .stepper > button { border: 0; background: transparent; color: inherit; padding: 3px 7px; cursor: pointer; }
