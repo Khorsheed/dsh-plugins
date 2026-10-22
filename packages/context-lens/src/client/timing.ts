@@ -29,13 +29,24 @@ export function scopeTiming(timing: TurnTiming, scope: AgentScopeOverview) {
   const amounts = new Map<TimingLane, number>()
   let gaps = 0,
     overlap = 0
+  // Idle time splits by where it sits: before the first activity, between
+  // activities, or after the last one (a turn the host closed long after its
+  // final request reads very differently from slow tools).
+  const firstAt = lanes.length ? Math.min(...lanes.map((l) => l.startedAt)) : end
+  const lastAt = lanes.length ? Math.max(...lanes.map((l) => l.startedAt + l.durationMs)) : start
+  let gapsHead = 0,
+    gapsTail = 0
   for (let i = 1; i < points.length; i++) {
     const a = points[i - 1]!,
       b = points[i]!
     const active = lanes.filter(
       (l) => l.startedAt < b && l.startedAt + l.durationMs > a,
     )
-    if (!active.length) gaps += b - a
+    if (!active.length) {
+      gaps += b - a
+      if (b <= firstAt) gapsHead += b - a
+      else if (a >= lastAt) gapsTail += b - a
+    }
     if (active.length > 1) overlap += b - a
     for (const lane of active)
       amounts.set(lane, (amounts.get(lane) ?? 0) + (b - a) / active.length)
@@ -119,6 +130,9 @@ export function scopeTiming(timing: TurnTiming, scope: AgentScopeOverview) {
     exec,
     think,
     gaps,
+    gapsHead,
+    gapsBetween: Math.max(0, gaps - gapsHead - gapsTail),
+    gapsTail,
     overlap,
     tools: [...tools.values()],
     non,

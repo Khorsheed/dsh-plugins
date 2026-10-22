@@ -327,3 +327,9 @@
 @container dsh-panel (max-width: 560px) {
   .scroll { padding: 12px 10px 24px; }
 }
+
+/* The scale's 0 sits under the bars' left edge, not under the lane names. */
+.tlScale { margin-left: calc(95px + 8px); }
+@container dsh-panel (max-width: 560px) {
+  .tlScale { margin-left: calc(65px + 8px); }
+}

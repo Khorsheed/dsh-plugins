@@ -480,7 +480,11 @@ export function InspectorPanel({
         </div>
         {parent && <ParentLine parent={parent} t={t} />}
         {/* The trend is the session map: always the main conversation, it picks the turn. */}
-        {trend && <Trend data={trend} turnSeq={turnSeq} selectedSeq={effectiveScope?.kind === 'main' ? selectedRequestSeq : null} scopeId="main" scopeLabel={t('scope.mainName')} gaps={loadTurns ? gaps : []} onLoadGap={onLoadGap} t={t} onSelect={(next, seq, targetScope) => { onSelectTurn(next); onOpenRequest(seq, targetScope) }} />}
+        {trend && <Trend data={trend} turnSeq={turnSeq} selectedSeq={effectiveScope?.kind === 'main' ? selectedRequestSeq : null} scopeId="main" scopeLabel={t('scope.mainName')} gaps={loadTurns ? gaps : []} onLoadGap={onLoadGap} t={t} onSelect={(next, seq, targetScope) => {
+          // On the timing view the map picks the turn and stays there; on the request view it opens the request.
+          onSelectTurn(next)
+          if (mainTab !== 'time') onOpenRequest(seq, targetScope)
+        }} />}
         {turn !== undefined && (turn.query !== '' || turn.trigger !== undefined) && <div className={css.query}>
           {turn.hostTurn !== undefined && <span className={css.queryTurn}>{t('query.turn', { turn: String(turn.hostTurn) })}</span>}
           {turn.query === '' && turn.trigger !== undefined && <code className={css.querySource}>{turn.trigger.source}</code>}

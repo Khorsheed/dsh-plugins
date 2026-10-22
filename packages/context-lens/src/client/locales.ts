@@ -3,7 +3,7 @@
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
   "lens.outputLimit": "输出上限 {count}",
-  "lens.duration": "耗时",
+  "lens.duration": "请求耗时",
   "lens.firstToken": "首字 {duration}",
   "lens.compositionHint": "构成按字符精确统计；tok 来自模型真实 usage，两者不能直接换算。重复为本请求内全文逐字相同（至少 40 字符）的条目，重复字符数不含首次出现。",
   "lens.layerSystem": "系统",
@@ -89,6 +89,8 @@ export const zh = {
   "lens.tools": "工具调用",
   "lens.other": "其他",
   "lens.gaps": "请求间隙",
+  "lens.gapsHead": "首次请求前",
+  "lens.gapsTail": "最后请求后",
   "lens.overlap": "并行区间按同时进行的活动分摊；各项合计为实际经过时间。",
   "lens.nested": "子 agent 的运行已包含在主对话的委派工具执行中；切换 agent 查看各自拆分。",
   "lens.timeline": "时间线",
@@ -340,7 +342,7 @@ export const zh = {
 /** English dictionary (same key set). */
 export const en: Record<keyof typeof zh, string> = {
   "lens.outputLimit": "Output limit {count}",
-  "lens.duration": "Duration",
+  "lens.duration": "Request time",
   "lens.firstToken": "First token {duration}",
   "lens.compositionHint": "Composition uses exact characters; tokens come from provider usage and cannot be converted directly. Duplicates match full text of at least 40 characters within this request; excess characters exclude the first occurrence.",
   "lens.layerSystem": "System",
@@ -426,6 +428,8 @@ export const en: Record<keyof typeof zh, string> = {
   "lens.tools": "Tool calls",
   "lens.other": "Other",
   "lens.gaps": "Between requests",
+  "lens.gapsHead": "Before the first request",
+  "lens.gapsTail": "After the last request",
   "lens.overlap": "Concurrent intervals are shared across active spans; totals equal elapsed time.",
   "lens.nested": "Child runs are included in the parent delegation tool. Select an agent for its own breakdown.",
   "lens.timeline": "Timeline",
