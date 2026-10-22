@@ -51,8 +51,11 @@ const BUNDLE_DIR = join(PROFILE, 'presets')
  * Moved again 2026-10-20, COMMENT LINES ONLY: the pack's directory and mirror
  * repo renamed (profiles/web-eval → profiles/eval, dsh-web-eval → dsh-eval);
  * one provenance comment inside the block carries the path. Same composition.
+ * Moved again 2026-10-23, COMMENT LINES ONLY: 82813fc4 retired the mission
+ * session tab and rewrote one provenance comment inside the block to say so.
+ * Same composition (eval-preset-parity.spec.ts compares comments dropped).
  */
-const DIRECTORY_COMPOSITION_SHA = '0cc96f84cf6430fc3386dbd2810c866316cd3b3c2ca05acf0f93b54f6b9ea3a4'
+const DIRECTORY_COMPOSITION_SHA = '0846cfd9ca1b2351476e8427c76986f9c029e0c4953aeee5b2bd8c2cee641a3c'
 
 /**
  * The preset-eval row's `plugins:` block, de-indented back to the directory
