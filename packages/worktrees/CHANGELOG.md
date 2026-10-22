@@ -1,5 +1,16 @@
 # 变更记录
 
+## 0.3.2（2026-10-22）
+
+- **Remote 新增 agent-free 查询动词**：`summaryAt` / `changesAt` / `repoFilesAt` / `listWorktreesAt` / `commitLogAt` / `commitFilesAt` / `fileDiffAt` / `readFileAt` / `readRepoImageAt`——按路径（`{ at }`，目标仓库/worktree 内任意绝对路径，走既有安全校验）直接读仓库状态，不经 agent 查找（宿主的统一 agent 查找可能唤醒离线会话，代表成员发起的查询绝不能触发它）。与本地文件动词同理：授权/圈禁是可信调用方的职责，本面不做准入。
+- **受控切换 `switchWorktreeControlled` 与绑定持久化**：新动词收 `(sessionId, { path, expected? })`，返回类型化回执联合（`switched` / `conflict`（携带实际当前绑定）/ `not-a-repo` / `no-worktree` / `invalid-request` / `persistence-failed`）而非抛错谱系；给 `expected` 即 compare-and-swap，绝不静默 last-write-wins（单进程语义）。override 绑定写穿到状态根的 `bindings.json`（tmp+rename、挂载时加载、先持久化再改内存；文件损坏降级纯内存且绝不重写，回执诚实带 `persisted: false`）——宿主重启后徽标跟随持久化绑定，README 里「仅内存」的旧已知限制退役。配套新增 getter `worktreeBinding(sessionId)` 与 cordis 事件 `worktrees/switched`（`{ sessionId, path }`，v1 清除绑定不发事件）。agent 绑定动词与原生 UI 逐字节不动；既有执行的工作目录锚定在自己的执行记录上，新绑定只对新成员/新执行生效。
+- **BREAKING（程序消费方）**：核心 cordis 服务键 `worktrees` 改名 `worktreesCore`——宿主 0.2.1 的 experimental worktree 包占用了 `ctx.worktrees`，两边同挂会 duplicate-provide 炸穿 boot。wire 命名空间（`remote.worktrees.*`）、工具名、patch 行 id、Remote 自身键 `worktreesRemote` 均不变；注入 `ctx.worktrees` 的消费方需同步改键名。
+- **窄容器（≤560px/手机）详情视图改主从单栏**：选中条目打开详情、返回不清空选择或已拉取内容，重复选择幂等（不再误清已获取数据）；根目录/工作树切换仍分别重置详情导航。窄屏标题操作组加大触控区域、为文件名让位。
+- **详情面板集约化**：标题行并入 ui-panel-kit 的 PanelHeader，档位/形态切换统一为一行下划线 tab；紧凑宽度下路径、复制、打开手势收进 ⋯ 溢出菜单，正文读 `--dsh-panel-*` 阅读令牌。
+- **非本机浏览器隐藏宿主机手势**：经隧道访问的手机上「在文件夹中显示 / 打开此文件夹 / 在 IDE 打开 / 选择工作区」此前点了无反应，现在按 `browserOnHost()` 探测隐藏；命名统一为「打开所在文件夹」（文件）/「打开此文件夹」（目录）。
+- 「显示隐藏文件」tooltip 语病修正为「隐藏文件可见 / 不可见」（描述当前状态而非动作），英文同步。
+- 适配宿主 0.2.1 线：peer 区间加宽覆盖 0.2.1，声明 `engines.dsh`；`./tool` 子路径行 locale 重定向到包根，宿主设置清单页显示插件卡片标题而非裸模块名；退役 load 期 invariant 伴生探针。
+
 ## 0.3.1（2026-09-30）
 
 - 补发以带齐宿主 0.2.0 兼容：npm 上的 `0.3.0` tarball 早于 peer 区间加宽（`|| ^0.2.0-rc.1`），宿主 0.2.0-rc.* 的兼容性检查会拒绝它。无功能变更。

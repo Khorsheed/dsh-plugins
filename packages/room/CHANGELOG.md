@@ -1,8 +1,10 @@
 # 变更记录
 
-## 未发布
+## 0.2.2（2026-10-22）
 
+- **房间输入条草稿接入官方 input machine**：草稿不再存组件本地 state，房间接管条与官方回退输入条共享同一份草稿——「引用到当前会话」等外部写入立即在房间里可见（此前写入成功却只渲染在隐藏的回退条里，看似失效）；草稿随机器持久化，跨导航/重挂存活；首次拉取窗口期在回退条打的字在接管当选后保留。发送路径不变：仍走房间自己的 `remote.room.postMessage` 派发，`inputActions.submit` 永不调用，机器忙碌准入不会串行化并行成员派发。引用 chip 在纯 textarea 投影为剪贴板文本、编辑即摊平（接受的房间侧降级）。
 - 自隐 tab（成员 tab 等 `conversation.view` 条目）的注册/注销切换延后到下一帧（requestAnimationFrame），避开宿主 ui-conversation `refreshViews` 对已释放会话滞留绑定的 uncaught throw 窗口期——上游修复提案见 docs/upstream-proposals/2026-10-20-refreshviews-stale-binding-robustness.md。
+- 适配宿主 0.2.1 线：peer 区间加宽覆盖 0.2.1；`./tool` 子路径行 locale 重定向到包根，宿主设置清单页显示插件卡片标题而非裸模块名；退役 load 期 invariant 伴生探针并声明 `engines.dsh`。
 
 ## 0.2.1（2026-09-30）
 

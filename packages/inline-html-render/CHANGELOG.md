@@ -1,5 +1,10 @@
 # 变更记录
 
+## 0.1.16（2026-10-22）
+
+- **技能卡来源归一为包全名**：随包注册的两个作者 skill（`inline-html-card`、`3d-artifact`）的 `provider` 从裸词 `inline-html-render` 改为 `@khorsheed/dsh-inline-html-render`——能力目录的技能卡与其他插件一样显示包全名；行为与 skill 内容不变
+- 适配宿主 0.2.1 线：退役 invariant 伴生并声明 `engines.dsh`（`>=0.1.2-rc.1 <0.3.0-0`）；peer 区间加 `|| ^0.2.1-rc.1`（严格解析路径下 `^0.2.0-rc.1` 不覆盖 0.2.1）；verifiedHost 前移 0.2.1-rc.1
+
 ## 0.1.15（2026-09-30）
 
 无功能变更。加宽 `@deepseek-ai/dsh-*` peer 区间以覆盖宿主 0.2.0（0.2.0 的兼容闸会禁用 peer 区间不覆盖宿主版本的已装插件）。

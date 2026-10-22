@@ -1,5 +1,14 @@
 # 变更记录
 
+## 0.1.3（2026-10-22）
+
+- **「引用到当前会话」升级为结构化引用 chip**：宿主具备 inputTriggers 缝时，插入的是 composer 行内 chip 而非裸 `> ` 文本——chip 载荷自含完整剪贴板文本，模型逐字收到用户在 composer 看到的内容；插入不再走 `setDraft`，草稿里已有的 chip 不会被抹掉。无该缝或插入被拒时逐级回退到原纯文本合并，旧宿主行为不变。
+- **发出的引用渲染为样式卡片**：新增 `quote-block` 用户文本规则与 keyed `conversation.user.text.node` 渲染器，把发出消息里的 `> ` 引用块渲染为行内卡片（去掉 wire 前缀的正文，外加按当前语言重渲染的来源行）；宿主没有 userText 缝时消息保持原始 wire 文本。
+- **点击 chip 在点击处浮出全文预览卡**：宿主把 chip 单击路由给来源的 `openReference`，预览卡锚定在点击处（无坐标时居中于 composer 上方）。
+- **修复 chip 与引用卡片在部分组合里静默退化为纯文本**：客户端插件挂载顺序不受约束，apply 时的一次性能力探测会与服务赛跑落败（3080 部署后实机抓获）——chip codec 与 user-text 规则改经延迟 `ctx.inject` 臂注册。
+- **选择菜单忽略界面控件内的文字选择**（按钮、菜单、工具栏；2026-10-03 移动波捎带）。
+- **适配宿主 0.2.1 线**：`@deepseek-ai/dsh-*` peer 区间追加 `^0.2.1-rc.1`（`^0.2.0-rc.1` 在 npm/pnpm 严格解析下不覆盖 0.2.1 预发布三元组）；宿主 0.2.1 移除 invariants 体系，随包 invariant 伴生（引用词表 round-trip 自检）退役、兼容判定改由 package.json `engines.dsh` 声明；`dsh.compat.verifiedHost` 前移至 `0.2.1-rc.1`（全量构建+测试在该树通过）。
+
 ## 0.1.2（2026-09-30）
 
 无功能变更。加宽 `@deepseek-ai/dsh-*` peer 区间以覆盖宿主 0.2.0（0.2.0 的兼容闸会禁用 peer 区间不覆盖宿主版本的已装插件）。

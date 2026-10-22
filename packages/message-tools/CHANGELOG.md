@@ -1,5 +1,13 @@
 # 变更记录
 
+## 0.3.4（2026-10-22）
+
+适配宿主 0.2.1 线：verifiedHost 前移至 0.2.1-rc.1，`@deepseek-ai/dsh-*` peer 区间加宽覆盖 0.2.1 并声明 `engines.dsh`（`>=0.1.5-rc.1 <0.3.0-0`）；退役 load 期 invariant 伴生探针（本包为空仪式，无行为变化）。
+
+- **shadow 渲染跟随宿主字号轴**（修复 [Khorsheed/dsh-plugins#1](https://github.com/Khorsheed/dsh-plugins/issues/1)，841ab4c0）：shadow 用户气泡与撤回分隔线此前硬编码字号行高（气泡 16px/24px，是官方气泡迁 token 前的旧克隆）——非默认 `ui-theme.fontSize` 下 shadow 气泡比官方面大约 23%，默认字号下也是 16px 对官方 14px。现在气泡、分隔线标题、回放条目的字号行高全部镜像官方（ui-chat MessageItem）并跟随 body 发布的字号轴，标记与前导几何随轴缩放；模型 chip 属 composer chrome 保持固定
+- **用户消息图片改经 0.2.1 官方图片工厂渲染**：0.2.1-alpha.3 移除 `renderMessageImages`、官方图廊迁到 ui-attachment 的 `conversation.images.content` 工厂；shadow 的两个视图在自身渲染里就地调用该工厂（与官方槽位条目同一渲染路径，像素一致），旧宿主优先走 legacy prop——0.1.5 至 0.2.1-alpha.2 行为不变，组合里没有 ui-attachment 时按官方同款语义省略不渲染、工厂后到即自愈。minHost 不变。见 [Agent Note](../../.agents/notes/implemented/architecture/2026-10-18-host-021-message-tools-images-factory.md)
+- **修复编辑/撤回后「已调用工具」折叠头残留**：宿主 ≥0.1.7-alpha.1 把一轮的过程行包进按组键盖章的容器，此前的隐藏规则只按节点键逐行生效——成员行藏了，折叠头容器还亮着，被撤回的内容看似「只剩工具行」。现在组成员关系读官方类型化分组契约（而非 DOM），全部成员隐藏的组容器一并隐藏，部分隐藏的组保留其头。见 [Agent Note](../../.agents/notes/implemented/bug-fix/2026-10-14-message-tools-group-row-hiding.md)
+
 ## 0.3.3（2026-09-30）
 
 无功能变更。加宽 `@deepseek-ai/dsh-*` peer 区间以覆盖宿主 0.2.0（0.2.0 的兼容闸会禁用 peer 区间不覆盖宿主版本的已装插件）。

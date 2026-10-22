@@ -1,5 +1,12 @@
 # 变更记录
 
+## 0.4.2（2026-10-22）
+
+- **修复图片预览路由受插件加载顺序影响而静默缺席**：此前构造时一次性探测 `webServer`/`agents`，Cordis 加载顺序不保证——先应用就永不注册路由，3080 生产实证（2026-10-20）所有会话产物图片读成「二进制文件」。路由改挂 `ctx.inject(['webServer', 'agents'])` 子 fiber：两服务到齐（任意顺序）即注册、任一离开即卸载，宿主 web server 或 agent 注册表重启后自动恢复；headless 组合行为不变（无 webServer 时图片仍读 `binary`）
+- **面板紧凑化（面板规范 P1）**：预览标题行换成 panel-kit 的 PanelHeader，内容/改动记录、预览/源码、HTML 分级开关共用一条下划线 tab 行；紧凑面板（≤560px）把路径/复制/打开手势收进 ⋯、搜索收进图标、结构化文档去掉格式横幅框；markdown 正文改读 `--dsh-panel-*` 阅读字级，移动端触摸字号终于到达预览。「打开所在文件夹 / 在 IDE 打开」等拉起宿主本机程序的手势在非本机浏览器（手机经隧道）上隐藏
+- **新增免 Agent 读取面 `createFilePreviewReadSurface`**（包根导出）：list/turnFiles/read 核心抽为按事件源/cwd/fs 参数化的自由函数，Remote 方法改调同一核心（奇偶由构造保证），供已自行授权的可信服务端调用方（如协作插件）消费——不构造、不解析、不唤醒会话运行时对象。Remote 面不加动词、不改 wire，不消费该接缝的部署零行为变化
+- 适配宿主 0.2.1 线：退役 invariant 伴生（上游 0.2.1-rc.1 删除 `@deepseek-ai/dsh-invariants` 与全部 `./invariant` 导出）并声明 `engines.dsh`（`>=0.1.5-rc.1 <0.3.0-0`，0.2.1-alpha.3 起其在场即唯一兼容判据）；peer 区间加 `|| ^0.2.1-rc.1`（semver 预发布比较符 `^0.2.0-rc.1` 在严格 npm/pnpm 解析路径不覆盖 0.2.1）；verifiedHost 前移 0.2.1-rc.1
+
 ## 0.4.1（2026-09-30）
 
 - **适配宿主 0.2.0 的 `runNativeCommand` 第四参**（`'hidden' | 'visible'`，Windows 启动可见性，其余平台忽略——0.2.0 起必填）：GUI 启动器（`open -a`、`open -R`、`explorer /select`、nautilus/dolphin/nemo `--select`）传 `'visible'`，wslpath 翻译工具传 `'hidden'`

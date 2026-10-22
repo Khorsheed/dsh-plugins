@@ -1,8 +1,11 @@
 # 变更记录
 
-## 0.4.3（未发布）
+## 0.4.3（2026-10-22）
 
 - **启动环境 scrub 扩展到 NODE_PATH / NODE_OPTIONS**：看门狗 `launch_instance`、CLI 的 bare-restart spawn 与 supervisor spawn 三处在清 `WD_*` 之外同步清 `NODE_PATH` / `NODE_OPTIONS`。从 tsx 等工具包裹的 shell 拉起看门狗时，tsx 会把 `NODE_PATH` 钉到自己的 pnpm 仓；不清掉的话它遗传给每一代实例，bundle 解析被劫持到那个检出的 workspace——组合默默地服务那个检出的内容而不是 profile 里装的版本（3080，2026-10-12：presets 被解析到主检出的 workspace 副本，新部署的 preset 行整天不可见，逐字节排查复现 9 vs 10 才定位）
+- **已结束的切换不再引发快速请求循环**：启动切换完成后，新标签页对该 cutoverId 没有匹配的注册记录，可选链把「记录不存在」误判为「尚未确认」，长轮询立即结束、客户端立刻重询；且每次所有权校验在 macOS 上同步起进程探针，阻塞其它 HTTP 响应。现在仅注册记录存在且尚未确认时才唤醒轮询；处理器在启动代际通道与回执通道之间复用自身进程身份缓存（回执、注册、认证、canary 检查仍实时执行，身份不可用时拒绝授权）；浏览器收到 `idle` 后至少等 250ms 再发起下一次 poll
+- 适配宿主 0.2.1 线：`@deepseek-ai/dsh-*` peer 区间加宽覆盖 0.2.1，声明 `engines.dsh`；退役 load 期 invariant 伴生探针（guard 状态文件损坏仍在 gate 读取时 fail-loud，契约不变）
+- 能力目录的 skill 卡片 provider 从裸词 `ankh-guard` 归一到全名 `@khorsheed/dsh-ankh-guard`，与其它卡片一致
 
 ## 0.4.2（2026-09-30）
 

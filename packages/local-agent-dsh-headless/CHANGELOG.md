@@ -1,5 +1,10 @@
 # 变更记录
 
+## 0.2.0-rc.2（2026-10-22）
+
+- **persona 行适配宿主 0.2.1**：子 dsh patch 的 system-prompt 行不再引用 `{{cwd}}`——0.2.1 删除了该 prompt 变量，严格引用直接让模型请求失败（prod 3080 切到 0.2.1-rc.1 后的轮次失败即此）；工作目录改由宿主 working-directory 服务作为必需用户上下文提供，该条款随之删除。合并的 `persona` 字段按 0.2.1 的拆分改写为 `personaPrefix`/`personaSuffix`。
+- **适配宿主 0.2.1（host-021）**：`engines.dsh` 声明为 `>=0.1.5-rc.1 <0.3.0-0`（声明即独占兼容裁决，未验证的宿主线安装期 fail-closed）；invariant 伴随件随官方删除 invariants 体系退役。运行时与 peer 区间加宽——`@deepseek-ai/dsh-cmdline`、`@deepseek-ai/dsh-ptc-runtime-node` 等补齐 0.2.0 与 0.2.1 分支（semver 预发布只覆盖比较子点名的三元组，原 `^0.1.x-rc.x` 区间在严格 npm/pnpm 解析下不覆盖 0.2.x 宿主）。`dsh.compat.verifiedHost` 前移至 0.2.1-rc.1（host-021 波对 0.2.1-rc.1 树全量构建+测试绿）。
+
 ## 0.2.0-rc.1（2026-09-30）
 
 家族同版联动：家族折叠（委派工具收进各 provider 的 `./tool` 入口，`local-agent-tool-subagent` 退役）随 0.2.0-rc.1 线发布。无功能变更。
