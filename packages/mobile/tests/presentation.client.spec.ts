@@ -50,6 +50,14 @@ describe('mobile presentation ownership', () => {
     expect(document.querySelector('[data-mobile-owned]')).toBeNull()
     expect(document.documentElement.style.getPropertyValue('--mobile-height')).toBe('')
   })
+  it('injects home-screen affordances only while the mobile layout is active', () => {
+    const p = mount(true)
+    expect(document.head.querySelector('link[rel="manifest"]')).not.toBeNull()
+    expect(document.head.querySelector('meta[name="apple-mobile-web-app-title"]')).not.toBeNull()
+    p.dispose()
+    expect(document.head.querySelector('link[rel="manifest"]')).toBeNull()
+    expect(document.head.querySelector('[data-mobile-owned]')).toBeNull()
+  })
   it('falls back when the official frame is unavailable, and recovers after late mount', async () => {
     document.body.innerHTML = '<main>Unrelated client</main>'
     const p = mount(true)

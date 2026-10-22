@@ -1,5 +1,6 @@
 import { MobilePickers } from './pickers.ts'
 import { MobileViewport } from './viewport.ts'
+import { MobileHomescreen } from './homescreen.ts'
 import { MOBILE_CSS } from './styles.ts'
 import { MobileSurface } from './surface.ts'
 import { ComposerFocus } from './composerFocus.ts'
@@ -21,6 +22,7 @@ export class MobilePresentation {
   private readonly composerFocus: ComposerFocus
   private readonly pickers: MobilePickers
   private readonly viewport: MobileViewport
+  private readonly homescreen: MobileHomescreen
   readonly surface: MobileSurface
 
   constructor(private readonly win: Window, private readonly shell: boolean) {
@@ -32,6 +34,7 @@ export class MobilePresentation {
     this.snapshot = { mode, active: false, drawer: false, supported: false }
     this.surface = new MobileSurface(win.document)
     this.viewport = new MobileViewport(win)
+    this.homescreen = new MobileHomescreen(win.document)
     this.pickers = new MobilePickers(win.document)
     this.composerFocus = new ComposerFocus(win.document, () => this.snapshot.active)
     this.media = win.matchMedia('(max-width: 760px) and (pointer: coarse)')
@@ -101,6 +104,7 @@ export class MobilePresentation {
     if (!active) doc.documentElement.removeAttribute('data-mobile-input')
     this.surface.sync(active ? frame : undefined)
     this.viewport.sync(active ? frame : undefined)
+    this.homescreen.sync(active)
     this.pickers.sync(active)
     const drawer = active && !frame?.hasAttribute('data-sidebar-collapsed')
     if (force || active !== this.snapshot.active || drawer !== this.snapshot.drawer || !!frame !== this.snapshot.supported) {
@@ -116,6 +120,7 @@ export class MobilePresentation {
     this.composerFocus.dispose()
     this.surface.dispose()
     this.viewport.dispose()
+    this.homescreen.dispose()
     this.pickers.dispose()
     this.win.removeEventListener('dsh-mobile-display', this.display)
     this.win.document.removeEventListener('pointerdown', this.pointer, true)
