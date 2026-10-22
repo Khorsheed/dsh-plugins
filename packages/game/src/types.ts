@@ -366,7 +366,14 @@ export interface TurnReport {
   readonly version: { readonly kind: 'deployed' | 'candidate'; readonly version: number } | null
   /** The turn's end-of-turn check, when one ran. */
   readonly check: { readonly ok: boolean; readonly fixes: number; readonly gaveUp: boolean; readonly passed: number; readonly failures: number } | null
-  readonly elements: readonly { readonly id: string; readonly name: string; readonly what: 'new' | 'removed' | 'look' | 'fields'; readonly fields?: readonly string[] }[]
+  readonly elements: readonly {
+    readonly id: string
+    readonly name: string
+    readonly what: 'new' | 'removed' | 'look' | 'fields'
+    readonly fields?: readonly string[]
+    /** 3D looks before and after the turn (JSON), for the card's side-by-side previews. */
+    readonly looks?: { readonly before: string | null; readonly after: string }
+  }[]
   readonly chapters: readonly { readonly id: string; readonly title: string }[]
   readonly params: readonly { readonly key: string; readonly label: string; readonly from?: number; readonly to: number }[]
   /** Other changed source files (code, assets, index.html). */
@@ -413,6 +420,8 @@ export interface ProjectView {
   readonly log: readonly LogEntry[]
   /** Set while a style change waits for its candidate (decision: a restyle always goes through a candidate). */
   readonly restyleTo?: string
+  /** What the waiting candidate changed against the live version, by element id (the play area's diff rings). */
+  readonly candidateDiff: { readonly changed: readonly string[]; readonly added: readonly string[] } | null
 }
 
 /** What the tab needs to render a session: its bound project (if any) plus the list to pick from. */

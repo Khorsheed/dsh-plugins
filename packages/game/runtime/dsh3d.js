@@ -488,9 +488,14 @@ function gltfStandIn(look) {
  * The model's `userData.update(t)` runs its procedural motion.
  */
 export function build(lookOrId) {
-  const look = typeof lookOrId === 'string' ? window.dshElements?.[lookOrId]?.look : lookOrId
+  const model = buildLook(typeof lookOrId === 'string' ? window.dshElements?.[lookOrId]?.look : lookOrId, lookOrId)
+  if (typeof lookOrId === 'string') model.userData.builtFrom = lookOrId
+  return model
+}
+
+function buildLook(look, lookOrId) {
   if (!look || typeof look !== 'object') throw new Error(`dsh3d.build：没有可用的 look（${String(lookOrId)}）`)
-  if (look.kind === 'gltf') return look.recipe ? build(look.recipe) : gltfStandIn(look)
+  if (look.kind === 'gltf') return look.recipe ? buildLook(look.recipe, lookOrId) : gltfStandIn(look)
   const make = BASES[look.base]
   if (!make) throw new Error(`dsh3d.build：base「${look.base}」没有注册（内置 ${Object.keys(BASES).join('、')}；自己的身体用 defineBase 注册）`)
   const kit = kitFor(look)
@@ -630,7 +635,7 @@ export function createWorld(options = {}) {
     follow(object) { followed = object },
     /** Swing the camera to an object for a few seconds. */
     focus(object, seconds = 3) { target.copy(object.position); focusUntil = time + seconds },
-    setZoom(z) { zoom = Math.min(3, Math.max(0.4, z)); resize() },
+    setZoom(z) { zoom = Math.min(12, Math.max(0.2, z)); resize() },
     get time() { return time },
     get paused() { return paused },
     /** Advance `dt` seconds: game logic, motion, camera, render. Tests drive this. */
@@ -709,6 +714,27 @@ export function createWorld(options = {}) {
     /** Triangles on screen (for the budget check). */
     stats() { return { triangles: triangles(scene), entities: entities.length } },
   }
+  // The panel's element edits arrive as `dshelements` events (the bridge
+  // updates window.dshElements first): rebuild every model built from that
+  // element in place, keeping its position, facing and entity registration.
+  addEventListener('dshelements', event => {
+    const id = event.detail?.id
+    if (typeof id !== 'string') return
+    for (const old of [...entities]) {
+      if (old.userData.builtFrom !== id) continue
+      let fresh
+      try { fresh = build(id) } catch (error) { console.error(error); continue }
+      fresh.position.copy(old.position)
+      fresh.rotation.copy(old.rotation)
+      fresh.userData.entity = old.userData.entity
+      scene.remove(old)
+      scene.add(fresh)
+      entities[entities.indexOf(old)] = fresh
+      if (followed === old) followed = fresh
+      for (const r of rings.children) if (r.userData.follow === old) r.userData.follow = fresh
+    }
+    world.render()
+  })
   window.dsh3dWorld = world
   return world
 }

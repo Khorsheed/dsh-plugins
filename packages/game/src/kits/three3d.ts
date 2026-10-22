@@ -91,7 +91,7 @@ ${STYLE_LINES}
   - 内置身体 base：${BODY_BASES.join(' / ')}（四足、禽、鱼、蛇形、人形）。比例：bodyLength、bodyHeight、legLength、headSize、snout、legs（足数）、heads（头数）；禽另有 beak；蛇形是 length、thickness、segments；人形是 height。
   - 内置部件 parts：ear、horn、tail（count/length/fan/thickness）、wing（count/size）、fin、eye（count）、face（style: "human"）。color 写 palette 的键或 #rrggbb。
   - palette 的键：body、accent、eye，另可 belly、horn、wing、beak、face、skin。motion：tailSway、breath、flap、swim、bob（amplitude 角度，breath/bob 是比例；period 秒）。
-  - **内置的不够就自己注册**（机器人、史莱姆、车、建筑……），在入口代码里、build 之前：
+  - **内置的不够就自己注册**（机器人、史莱姆、车、建筑……）。注册代码一律放 \`src/looks.js\`（入口先 \`import './looks.js'\` 再 build）——右栏的外观预览只加载这个文件，写在别处面板就拼不出来：
     \`defineBase('robot', (look, kit) => { const g = new kit.THREE.Group(), body = new kit.THREE.Group(); g.add(body); body.add(kit.ink(new kit.THREE.BoxGeometry(0.8, 0.6, 0.5), kit.toon(kit.color('body', '#888888')))); return { g, body } })\`
     \`definePart('antenna', ({ spec, anchors, kit }) => { const a = kit.ink(new kit.THREE.CylinderGeometry(0.02, 0.02, spec.length ?? 0.4), kit.toon(kit.color(spec.color ?? 'accent', '#ff0000'))); a.position.y = 0.5; anchors.body.add(a); return { update: t => { a.rotation.z = 0.2 * Math.sin(t * 3) } } })\`
     之后配方里就能写 \`"base": "robot"\`、\`{ "type": "antenna", "length": 0.5 }\`（自定义部件的其他参数在 spec.extra 里）。注册过的名字用户在面板里同样能调。

@@ -23,6 +23,7 @@ import { GAME_CHAT_KIND, GameChatRow, gameMessageDefinition } from './chat-node.
 import type { GameApi, GameTabInjected, NavTarget } from './contract.ts'
 import { gameTurnDefinition, GameTurnCard } from './TurnCard.tsx'
 import { GameDock } from './GameDock.tsx'
+import { encodeGameRef, GAME_REF_SOURCE, gameRefCodec } from './refs.ts'
 import { GAME_KIND, GAME_TAB_ID, gameDefinition } from './definition.tsx'
 import { GameTab } from './GameTab.tsx'
 import { en, NS, zh } from './locales.ts'
@@ -113,9 +114,38 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     dropPending: (sid, projectId, key) => remote.dropPending(sid, { projectId, key }),
   }
 
+  // Reference chips (the quote precedent): a headless trigger source carries
+  // the codec the submit-time serializer resolves by source name; the chip
+  // itself rides the scoped `slash/input-insert-reference` bail event. The
+  // source registers on a deferred inject arm (mount order is unconstrained);
+  // without the service, or when the host declines, the reference falls back
+  // to plain draft text.
+  let chipsReady = false
+  ctx.inject(['inputTriggers'], (lctx) => {
+    lctx.effect(() => {
+      try {
+        const service = lctx.get('inputTriggers') as { registerSource(source: unknown): () => void } | undefined
+        if (service === undefined) return () => {}
+        const dispose = service.registerSource({
+          trigger: '@',
+          name: GAME_REF_SOURCE,
+          candidates: async (): Promise<readonly never[]> => [],
+          onPick: (): undefined => undefined,
+          codec: gameRefCodec,
+          openReference: () => false,
+        })
+        chipsReady = true
+        return () => { chipsReady = false; dispose() }
+      } catch (error) {
+        ctx.logger.error(error)
+        return () => {}
+      }
+    }, 'game: reference chips')
+  })
+
   /** The session's composer, structurally (the quote/canvas precedent; a composition may have none). */
   interface ConversationInput {
-    readonly state: { getSnapshot(): { draft: string } }
+    readonly state: { getSnapshot(): { draft: string; draftRev?: number; occurrences?: readonly { readonly length: number }[] } }
     setDraft(value: string): void
     focus?: () => void
   }
@@ -157,6 +187,30 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       const kept = input.state.getSnapshot().draft.replace(/\s+$/, '')
       input.setDraft(kept.length === 0 ? text : `${kept}\n\n${text}`)
       if (typeof input.focus === 'function') input.focus()
+      return true
+    },
+    insertRef: (sessionId, ref) => {
+      const scope = (ctx.get('sessions') as { scope?: (id: SessionId) => unknown } | undefined)?.scope?.(sessionId) as
+        { bail?: (self: unknown, event: string, payload: unknown) => unknown } | undefined
+      const input = inputFor(sessionId)
+      if (input === undefined) return false
+      if (chipsReady && scope?.bail !== undefined) {
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+          const snapshot = input.state.getSnapshot()
+          if (typeof snapshot.draftRev !== 'number') break
+          // The span speaks the detect projection: each existing chip folds to one character.
+          const folded = (snapshot.occurrences ?? []).reduce((extra, o) => extra + o.length - 1, 0)
+          const end = snapshot.draft.length - folded
+          const applied = scope.bail(scope, 'slash/input-insert-reference', {
+            reference: { source: GAME_REF_SOURCE, ref: encodeGameRef(ref), label: ref.label, clipboardText: ref.text },
+            span: { start: end, end, draftRev: snapshot.draftRev },
+          }) === true
+          if (applied) { input.focus?.(); return true }
+        }
+      }
+      const kept = input.state.getSnapshot().draft.replace(/\s+$/, '')
+      input.setDraft(kept.length === 0 ? `${ref.text} ` : `${kept} ${ref.text} `)
+      input.focus?.()
       return true
     },
     subscribeSessionEvents: (listener) => {

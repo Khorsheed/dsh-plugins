@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-10-22-game-panel-3d-loop.md
+.agents/notes/implemented/feature/2026-10-22-game-panel-3d-loop.md: fcc7c84b6169a06114a01204f6aa4b3dc8a99036
+.agents/notes/implemented/feature/2026-10-22-game-panel-3d-loop.zh.md: 34f7b571c998f472e253d4574b557b78e679da93

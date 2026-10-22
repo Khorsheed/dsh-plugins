@@ -71,7 +71,7 @@ const BRIDGE = `(function(){
         }
       }
       // A string id (2D games) or a structured reference (dsh3d: id, inst, name, state, point, region).
-      post({ gamedev: 'picked', id: id, ref: ref, supported: !!(g && typeof g.pick === 'function'), x: d.x, y: d.y });
+      post({ gamedev: 'picked', id: id, ref: ref, hover: !!d.hover, supported: !!(g && typeof g.pick === 'function'), x: d.x, y: d.y });
     }
     // The panel's 「指一下」 freezes the game; a candidate's changes get ringed. Both optional on the game side.
     if (d.gamedev === 'pause' && g && typeof g.pause === 'function') { try { g.pause(!!d.on) } catch (err) { report('error', 'pause: ' + err.message) } }
@@ -191,7 +191,8 @@ export type FrameMessage =
   | { readonly gamedev: 'error'; readonly kind: string; readonly msg: string }
   | { readonly gamedev: 'save'; readonly saves: Readonly<Record<string, string>> }
   | { readonly gamedev: 'inspect'; readonly ready: boolean; readonly state: unknown; readonly errors: readonly { kind: string; msg: string }[] }
-  | { readonly gamedev: 'picked'; readonly id: string | null; readonly ref: PickRef | null; readonly supported: boolean; readonly x: number; readonly y: number }
+  | { readonly gamedev: 'picked'; readonly id: string | null; readonly ref: PickRef | null; readonly hover: boolean; readonly supported: boolean; readonly x: number; readonly y: number }
+  | { readonly gamedev: 'preview'; readonly png: string }
 
 /** What a game's `pick` may return beyond a bare id (dsh3d returns this). */
 export interface PickRef {

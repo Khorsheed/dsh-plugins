@@ -61,6 +61,12 @@ export interface GameTabInjected {
   api: GameApi
   /** Put text into the session's composer draft (appended; never sent). False when there is no composer. */
   insertDraft: (sessionId: SessionId, text: string) => boolean
+  /**
+   * Put a reference into the session's composer as one chip (`label` shown,
+   * `text` what the model receives); falls back to appending `text` as plain
+   * draft text where the host has no chip seam. Never sends.
+   */
+  insertRef: (sessionId: SessionId, ref: { readonly label: string; readonly text: string }) => boolean
   /** Turn-boundary pushes, plus the panel's own mutations, per session id. */
   subscribeSessionEvents: (listener: (sessionId: string) => void) => () => void
   /** Tell every game surface of this page that a session's state moved. */
@@ -85,6 +91,8 @@ export interface ViewProps {
   readonly sessionId: GameTabProps['sessionId']
   readonly api: GameApi
   readonly insertDraft: (text: string) => boolean
+  /** Insert a reference chip into the composer (see `GameTabInjected.insertRef`). */
+  readonly insertRef: (ref: { readonly label: string; readonly text: string }) => boolean
   /** Re-read the state after a mutation (and tell the dock). */
   readonly refresh: () => void
   /** Show a short confirmation line at the panel's foot. */

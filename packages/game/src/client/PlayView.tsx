@@ -9,7 +9,9 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { PANEL_CHANGES_MARK, type ElementView, type GameParam, type PlayBundle, type ProjectView } from '../types.ts'
 import { failureOf, type ViewProps } from './contract.ts'
 import { LookCanvas } from './looks.tsx'
-import { clearSaves, PlayFrame, type PlayReport } from './PlayFrame.tsx'
+import { clearSaves, PlayFrame, type HighlightList, type PickAnswer, type PlayReport } from './PlayFrame.tsx'
+import { pickChip } from './refs.ts'
+import type { PickRef } from '../vfs.ts'
 import css from './GameTab.module.css'
 
 /** Props of the play view. */
@@ -29,14 +31,15 @@ function fmt(value: number, step: number): string {
 
 /** The play view. */
 export function PlayView(props: PlayViewProps): ReactNode {
-  const { t, sessionId, api, project, refresh, toast, insertDraft, liveElement, onOpenElement, onOpenVersions, changed } = props
+  const { t, sessionId, api, project, refresh, toast, insertDraft, insertRef, liveElement, onOpenElement, onOpenVersions, changed } = props
   const [which, setWhich] = useState<'current' | 'candidate'>('current')
   const [bundle, setBundle] = useState<PlayBundle | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [run, setRun] = useState(0)
   const [errors, setErrors] = useState<readonly string[]>([])
   const [picking, setPicking] = useState(false)
-  const [picked, setPicked] = useState<{ id: string | null; supported: boolean } | null>(null)
+  const [picked, setPicked] = useState<{ id: string | null; label: string } | null>(null)
+  const [diffOn, setDiffOn] = useState(true)
   const [rejecting, setRejecting] = useState(false)
   const [reason, setReason] = useState('')
   const record = which === 'candidate' ? project.candidate : project.current
@@ -90,37 +93,25 @@ export function PlayView(props: PlayViewProps): ReactNode {
 
   const report = (r: PlayReport): void => { void api.logPlay(sessionId, { projectId: project.id, ...r }) }
   const pickedElement: ElementView | undefined = picked?.id ? project.elements.find(e => e.id === picked.id) : undefined
+  const nameOf = (id: string | null): string | undefined => (id === null ? undefined : project.elements.find(e => e.id === id)?.name)
+  const chipOf = (ref: PickRef): { label: string; text: string } => pickChip(ref, nameOf(ref.id), t('play.ground'))
+  // A pick goes straight into the composer as a chip (G5); Shift keeps picking for a second reference.
+  const onPicked = (answer: PickAnswer): void => {
+    if (!answer.supported) { toast(t('play.pickUnsupported')); return }
+    if (answer.ref === null) { toast(t('play.pickNothing')); return }
+    const chip = chipOf(answer.ref)
+    if (insertRef(chip)) toast(t('play.inserted', { label: chip.label }))
+    setPicked({ id: answer.ref.ground === true ? null : answer.ref.id, label: chip.label })
+    if (!answer.shift) setPicking(false)
+  }
+  const diff = project.candidateDiff
+  const diffCount = diff === null ? 0 : diff.changed.length + diff.added.length
+  const highlight: HighlightList | null = which === 'candidate' && diffOn && diff !== null
+    ? [...diff.changed.map(id => ({ id, tone: 'changed' as const })), ...diff.added.map(id => ({ id, tone: 'added' as const }))]
+    : null
   const check = project.lastCheck
 
   return <div className={css.scroll}>
-    {project.candidate !== null && <div className={css.banner} data-tone="warn">
-      <div className={css.bannerText}>
-        <strong>{t('play.candidateTitle', { version: project.candidate.version })}</strong>
-        <span>{project.candidate.note ?? t('play.candidate')}</span>
-      </div>
-      <div className={css.bannerActions}>
-        <button type="button" className={css.ghost} aria-pressed={which === 'candidate'}
-          onClick={() => { setWhich(w => (w === 'candidate' ? 'current' : 'candidate')) }}>
-          {which === 'candidate' ? t('play.backToCurrent') : t('play.tryCandidate')}
-        </button>
-        <button type="button" className={css.ghost} onClick={() => { setRejecting(r => !r) }}>{t('play.reject')}</button>
-        <button type="button" className={css.primary} onClick={() => {
-          void api.confirm(sessionId, project.id).then(r => { if (!failureOf(r)) toast(t('toast.confirmed', { version: project.candidate!.version })); setWhich('current'); refresh() })
-        }}>{t('play.confirm')}</button>
-      </div>
-      {rejecting && <div className={css.rejectRow}>
-        <input className={css.input} value={reason} placeholder={t('play.rejectReason')} onChange={e => { setReason(e.target.value) }} />
-        <button type="button" className={css.ghost} onClick={() => {
-          const rejected = project.candidate?.version
-          void api.reject(sessionId, project.id, reason).then(() => {
-            setRejecting(false); setReason(''); setWhich('current')
-            if (rejected !== undefined) changed(`reject:${rejected}`, t('nudge.rejected', { version: rejected }))
-            refresh()
-          })
-        }}>{t('play.rejectGo')}</button>
-      </div>}
-    </div>}
-
     {check !== null && !check.ok && <button type="button" className={css.strip} data-tone={check.gaveUp ? 'warn' : 'error'} onClick={onOpenVersions}>
       <span className={css.stripDot} aria-hidden="true" />
       <span>{check.gaveUp ? t('play.checkGaveUp') : t('play.checkFailed')}</span>
@@ -141,6 +132,8 @@ export function PlayView(props: PlayViewProps): ReactNode {
         <span className={css.stageHint}>{!playing ? t('play.idleHint') : picking ? t('play.pickHint') : t('play.focus')}</span>
         {errors.length > 0 && <span className={css.errorPill} title={errors.slice(0, 5).join('\n')}>{t('play.errors', { count: errors.length })}</span>}
         <span className={css.spacer} />
+        {playing && bundle !== null && which === 'candidate' && diffCount > 0 && <button type="button" className={css.stageBtn} aria-pressed={diffOn}
+          title={t('play.diffHint')} onClick={() => { setDiffOn(on => !on) }}>{t('play.diff')}</button>}
         {playing && bundle !== null && <button type="button" className={css.stageBtn} aria-pressed={picking} onClick={() => { setPicking(p => !p); setPicked(null) }}>{t('play.pick')}</button>}
         {playing && bundle !== null && <button type="button" className={css.stageBtn} onClick={() => { setRun(n => n + 1) }}>{t('play.restart')}</button>}
         {playing && <button type="button" className={css.stageBtn} onClick={() => { setPlaying(false); setPicking(false); setPicked(null) }}>{t('play.stop')}</button>}
@@ -159,19 +152,40 @@ export function PlayView(props: PlayViewProps): ReactNode {
               </button>
           : bundle !== null && <PlayFrame projectId={project.id} version={bundle.version} files={bundle.files} run={run}
               params={values} element={liveElement} picking={picking} label={`${project.title} v${bundle.version}`}
-              onPicked={(id, supported) => { setPicked({ id, supported }) }} onErrors={setErrors} onReport={report} />}
+              onPicked={onPicked} hoverLabel={ref => chipOf(ref).label} highlight={highlight} onErrors={setErrors} onReport={report} />}
       </div>
+      {project.candidate !== null && <div className={css.candBar} data-tone="warn">
+        <div className={css.bannerText}>
+          <strong>{t('play.candidateTitle', { version: project.candidate.version })}</strong>
+          <span>{project.candidate.note ?? t('play.candidate')}</span>
+        </div>
+        <div className={css.bannerActions}>
+          <button type="button" className={css.ghost} aria-pressed={which === 'candidate'}
+            onClick={() => { setWhich(w => (w === 'candidate' ? 'current' : 'candidate')) }}>
+            {which === 'candidate' ? t('play.backToCurrent') : t('play.tryCandidate')}
+          </button>
+          <button type="button" className={css.ghost} onClick={() => { setRejecting(r => !r) }}>{t('play.reject')}</button>
+          <button type="button" className={css.primary} onClick={() => {
+            void api.confirm(sessionId, project.id).then(r => { if (!failureOf(r)) toast(t('toast.confirmed', { version: project.candidate!.version })); setWhich('current'); refresh() })
+          }}>{t('play.confirm')}</button>
+        </div>
+        {rejecting && <div className={css.rejectRow}>
+          <input className={css.input} value={reason} placeholder={t('play.rejectReason')} onChange={e => { setReason(e.target.value) }} />
+          <button type="button" className={css.ghost} onClick={() => {
+            const rejected = project.candidate?.version
+            void api.reject(sessionId, project.id, reason).then(() => {
+              setRejecting(false); setReason(''); setWhich('current')
+              if (rejected !== undefined) changed(`reject:${rejected}`, t('nudge.rejected', { version: rejected }))
+              refresh()
+            })
+          }}>{t('play.rejectGo')}</button>
+        </div>}
+      </div>}
+
       {picked !== null && <div className={css.pickCard}>
-        {pickedElement !== undefined
-          ? <>
-              {pickedElement.look !== null ? <LookCanvas look={pickedElement.look} box={32} /> : <span className={css.swatch} />}
-              <span className={css.pickName}><strong>{pickedElement.name}</strong><span className={css.metaLine}>{pickedElement.type} · {pickedElement.id}</span></span>
-              <button type="button" className={css.ghost} onClick={() => { onOpenElement(pickedElement.id) }}>{t('play.openElement')}</button>
-              <button type="button" className={css.primary} onClick={() => {
-                if (insertDraft(t('draft.elementRef', { name: pickedElement.name, id: pickedElement.id }))) toast(t('toast.drafted'))
-              }}>{t('play.refElement')}</button>
-            </>
-          : <span className={css.metaLine}>{picked.supported ? t('play.pickNothing') : t('play.pickUnsupported')}</span>}
+        {pickedElement !== undefined && pickedElement.look !== null ? <LookCanvas look={pickedElement.look} box={32} /> : <span className={css.swatch} />}
+        <span className={css.pickName}><strong>{picked.label}</strong><span className={css.metaLine}>{t('play.pickedNote')}</span></span>
+        {pickedElement !== undefined && <button type="button" className={css.ghost} onClick={() => { onOpenElement(pickedElement.id) }}>{t('play.openElement')}</button>}
       </div>}
     </section>
 

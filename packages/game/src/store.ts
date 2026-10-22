@@ -247,7 +247,12 @@ export class GameService {
       if (before === undefined) { elements.push({ id, name: e.name, what: 'new' }); continue }
       if (before.json === e.json) continue
       const fields = [...new Set([...Object.keys(e.fields), ...Object.keys(before.fields)])].filter(k => e.fields[k] !== before.fields[k])
-      if (before.look !== e.look) elements.push({ id, name: e.name, what: 'look', ...(fields.length > 0 ? { fields } : {}) })
+      if (before.look !== e.look) {
+        // 3D looks ride along (bounded) so the card can show both side by side; pixel looks have their own preview.
+        const is3d = /"kind":"(parts3d|gltf)"/.test(e.look)
+        const looks = is3d && e.look.length < 8000 && before.look.length < 8000 ? { looks: { before: before.look === 'null' ? null : before.look, after: e.look } } : {}
+        elements.push({ id, name: e.name, what: 'look', ...(fields.length > 0 ? { fields } : {}), ...looks })
+      }
       else elements.push({ id, name: e.name, what: 'fields', fields })
     }
     for (const [id, e] of base.elements) if (!elementsNow.has(id)) elements.push({ id, name: e.name, what: 'removed' })
@@ -457,7 +462,24 @@ export class GameService {
       versions: await this.versionRows(row.root),
       log: await this.logEntries(row.root),
       ...(user.restyleTo === undefined ? {} : { restyleTo: user.restyleTo }),
+      candidateDiff: await this.candidateDiff(row.root),
     }
+  }
+
+  /** Elements the waiting candidate changed or added against the live version (null without both). */
+  private async candidateDiff(root: string): Promise<ProjectView['candidateDiff']> {
+    const current = await readJson<VersionRecord>(join(root, STATE_DIR, 'current.json'))
+    const candidate = await readJson<VersionRecord>(join(root, STATE_DIR, 'candidate.json'))
+    if (current === undefined || candidate === undefined) return null
+    const before = await this.elementIndex(join(root, STATE_DIR, 'versions', String(current.version)))
+    const after = await this.elementIndex(join(root, STATE_DIR, 'versions', String(candidate.version)))
+    const changed: string[] = [], added: string[] = []
+    for (const [id, e] of after) {
+      const was = before.get(id)
+      if (was === undefined) added.push(id)
+      else if (was.json !== e.json) changed.push(id)
+    }
+    return { changed, added }
   }
 
   /** The tab's state for one session. */

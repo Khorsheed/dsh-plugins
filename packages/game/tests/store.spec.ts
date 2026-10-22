@@ -121,6 +121,32 @@ describe('GameService', () => {
     expect((await store.view(project.id))).toMatchObject({ current: { version: 1 }, candidate: null })
   })
 
+  it('names the elements a candidate changed and added against the live version', async () => {
+    const made = await store.create({ runtime: '3d', title: 'Hills', pitch: '在山里找东西', elementTypes: '角色、敌人', artStyle: 'ink' }, session())
+    if (!made.ok) throw new Error(JSON.stringify(made))
+    const project = made.project
+    await put(join(project.root, 'index.html'), '<p>hi</p>')
+    const fox = (look: object) => JSON.stringify([{ id: 'fox', name: '狐', type: '角色', look }, { id: 'tree', name: '树', type: '敌人' }])
+    const recipe = { kind: 'parts3d', base: 'quadruped', parts: [{ type: 'tail', count: 1 }], palette: {}, motion: {} }
+    await put(join(project.root, 'elements/a.json'), fox(recipe))
+    await store.checkTurn(session(), 0, 2)
+    expect((await store.view(project.id))?.candidateDiff).toBeNull()
+
+    expect(await store.setAutoConfirm(project.id, false, session())).toEqual({ ok: true })
+    const base = await store.turnBaseline('s1')
+    await put(join(project.root, 'elements/a.json'), fox({ ...recipe, parts: [{ type: 'tail', count: 9 }] }))
+    await put(join(project.root, 'elements/b.json'), JSON.stringify({ id: 'rock', name: '石', type: '敌人' }))
+    expect(await store.checkTurn(session(), 0, 2)).toMatchObject({ kind: 'pass', candidate: { version: 2 } })
+    expect((await store.view(project.id))?.candidateDiff).toEqual({ changed: ['fox'], added: ['rock'] })
+
+    // The turn report carries the 3D look before and after, for the card's side-by-side.
+    const report = await store.recordTurn('s1', 4, base!)
+    const fx = report?.elements.find(e => e.id === 'fox')
+    expect(fx?.what).toBe('look')
+    expect(JSON.parse(fx!.looks!.after).parts[0].count).toBe(9)
+    expect(JSON.parse(fx!.looks!.before!).parts[0].count).toBe(1)
+  })
+
   it('adopts an existing folder and logs play sessions', async () => {
     const root = join(workspace, 'old')
     await put(join(root, 'game.json'), JSON.stringify({ id: 'g_old', title: '旧游戏' }))

@@ -98,7 +98,7 @@ export function GameTab(props: GameTabProps): ReactNode {
   }, [api, sessionId, rev])
 
   const viewProps: ViewProps = {
-    t, sessionId, api, refresh, toast, insertDraft: text => insertDraft(sessionId, text),
+    t, sessionId, api, refresh, toast, insertDraft: text => insertDraft(sessionId, text), insertRef: ref => props.insertRef(sessionId, ref),
     changed: (key, title) => { if (ask) setNudge({ key, title }) },
   }
   const project = state?.bound ?? null

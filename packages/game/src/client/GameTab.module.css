@@ -412,7 +412,36 @@ button.strip { cursor: pointer; }
   background: var(--dsw-alias-label-primary); color: var(--dsw-alias-label-primary-inverted); box-shadow: 0 6px 18px color-mix(in srgb, var(--dsw-alias-label-primary) 25%, transparent);
 }
 
+/* The candidate bar sits under the screen, beside what it compares (3D proposal §6.4). */
+.candBar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 9px 12px;
+  background: color-mix(in srgb, var(--g-warn) 10%, var(--g-card)); border-top: 1px solid color-mix(in srgb, var(--g-warn) 35%, var(--g-line));
+}
+/* What a click would pick, under the pointer while 指一下 is on. */
+.pickHover {
+  position: absolute; z-index: 2; pointer-events: none; transform: translate(12px, 12px); white-space: nowrap;
+  padding: 3px 8px; border-radius: 6px; font-size: var(--dsh-panel-text-meta, 12px);
+  background: var(--g-screen-bar); color: var(--g-screen-fg); border: 1px solid var(--g-screen-line);
+}
+/* 3D previews: a sandboxed frame, replaced by its image once a still is rendered. */
+.preview3d { position: relative; display: grid; place-items: center; overflow: hidden; border-radius: 10px; background: var(--g-screen); }
+.preview3d img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.preview3dFrame { display: block; width: 100%; height: 100%; border: 0; }
+.preview3dNote { padding: 12px; text-align: center; color: var(--g-screen-dim); font-size: var(--dsh-panel-text-meta, 12px); }
+.turntable { width: 100%; aspect-ratio: 16 / 10; max-height: 300px; }
+.proposal3d { width: 120px; height: 96px; }
+/* The recipe editor: groups of sliders and color wells generated from the recipe. */
+.recipe { display: flex; flex-direction: column; gap: 4px; }
+.recipeGroup { display: flex; flex-direction: column; gap: 2px; padding-top: 6px; border-top: 1px solid var(--g-line); }
+.recipePart { display: flex; flex-direction: column; gap: 2px; padding: 4px 0 6px; }
+.recipePartName { font-size: var(--dsh-panel-text-meta, 12px); color: var(--dsw-alias-label-secondary); font-weight: 600; }
+.recipeColors { display: flex; flex-wrap: wrap; gap: 8px 14px; }
+.recipeColor { display: inline-flex; align-items: center; gap: 6px; font-size: var(--dsh-panel-text-meta, 12px); color: var(--dsw-alias-label-secondary); }
+.recipeColor input { width: 32px; height: 22px; padding: 0; border: 1px solid var(--g-line); border-radius: 6px; background: none; }
+
 @container dsh-panel (max-width: 560px) {
+  .turntable { max-height: 220px; }
+  .proposal3d { width: 96px; height: 80px; }
   .scroll { padding: 10px 12px 56px; }
   .steps { grid-template-columns: minmax(0, 1fr); }
   .primary, .ghost, .seg { min-height: 36px; }
