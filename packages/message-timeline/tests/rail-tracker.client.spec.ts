@@ -205,6 +205,18 @@ describe('activeRowKey', () => {
     expect(activeRowKey(scrollport, true)).toBe('e1')
   })
 
+  it('anchors the reading position to a turn-trigger card, not the next user row', () => {
+    // Landing on an automated turn's trigger card must keep the selection on
+    // that turn; without the trigger kind the tracker would attribute the
+    // position to the next user row.
+    const scrollport = document.createElement('div')
+    rect(scrollport, { top: 50, left: 0, width: 400, height: 300 })
+    row(scrollport, 'kt', 'turn-trigger', 60)  // the card just landed at the top
+    row(scrollport, 'u2', 'user', 200)         // the next user message below
+
+    expect(activeRowKey(scrollport, true)).toBe('kt')
+  })
+
   it('returns null with no visible user row', () => {
     const scrollport = document.createElement('div')
     rect(scrollport, { top: 0, left: 0, width: 400, height: 300 })

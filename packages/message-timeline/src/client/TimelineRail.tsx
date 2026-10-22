@@ -32,6 +32,7 @@ import type { TimelineItem, TimelineRailProps } from './slots.ts'
 import { previewText } from './preview.ts'
 import { foldHiddenSpans, isSeqHidden } from './hidden-spans.ts'
 import { isTimelineRowKind, EDIT_KIND, RESTORED_KIND } from './timeline-kinds.ts'
+import type { TimelineKey } from './locales.ts'
 import css from './TimelineRail.module.css'
 
 /** Extract the preview blocks of one user/steering node (kind-checked by the caller). */
@@ -49,6 +50,21 @@ function rowPreview(row: RailRow): string | null {
   return row.kind === 'loaded'
     ? previewText(nodeContent(row.node))
     : (row.prompt !== '' ? row.prompt : null)
+}
+
+/**
+ * The row's display label: the text preview when there is one, else a
+ * kind-aware fallback — the turn number for an outline-only turn, and an
+ * image/attachment label for a loaded message with no text blocks.
+ */
+function rowLabel(row: RailRow, t: (key: TimelineKey, params?: Record<string, unknown>) => string): string {
+  const preview = rowPreview(row)
+  if (preview !== null) return preview
+  if (row.kind === 'outline') return t('rail.turn', { turn: row.turn })
+  const types = new Set(nodeContent(row.node).map(block => block.type))
+  if (types.has('image')) return t('rail.image')
+  if (types.has('file')) return t('rail.attachment')
+  return t('rail.empty')
 }
 
 /**
@@ -383,7 +399,7 @@ export function TimelineRail({
           >
             <span className={isCurrent ? `${css.tick} ${css.tickCurrent}` : css.tick} aria-hidden="true" />
             <span className={css.itemText}>
-              {rowPreview(row) ?? t('rail.empty')}
+              {rowLabel(row, t)}
             </span>
           </button>
         )

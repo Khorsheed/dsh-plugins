@@ -13,18 +13,23 @@
 export const EDIT_KIND = 'message-tools-edited'
 /** A message-tools restored row (a withdrawn message replayed at the tail). */
 export const RESTORED_KIND = 'message-tools-restored'
+/** An automated turn's trigger card (restart recovery, scheduled job, …). */
+export const TRIGGER_KIND = 'turn-trigger'
 
 /**
  * Whether a node kind renders as a timeline row. The rail lists user messages
- * (and optionally steering), plus the message-tools edited/restored bubbles
- * that the host `order` does not always surface.
+ * (and optionally steering), the message-tools edited/restored bubbles that
+ * the host `order` does not always surface, and automated-turn trigger cards
+ * (whose turns have no human prompt but real transcript content). The same
+ * set drives the reading-position anchor, so landing on a trigger card keeps
+ * the selection on its turn instead of moving to the next user row.
  * @param kind - the node's kind string.
  * @param includeSteering - whether steering rows count as user messages.
  * @returns true when the kind belongs on the timeline.
  */
 export function isTimelineRowKind(kind: string, includeSteering: boolean): boolean {
   return kind === 'user' || (includeSteering && kind === 'steering')
-    || kind === EDIT_KIND || kind === RESTORED_KIND
+    || kind === EDIT_KIND || kind === RESTORED_KIND || kind === TRIGGER_KIND
 }
 
 /**

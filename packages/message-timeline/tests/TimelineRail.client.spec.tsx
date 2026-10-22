@@ -88,7 +88,9 @@ function renderRail(overrides: Partial<TimelineRailProps> = {}) {
     includeSteering: true,
     panelWidth: 320,
     initialPages: 5,
-    t: (key: keyof typeof en) => en[key],
+    t: (key: keyof typeof en, params?: Record<string, unknown>) =>
+      String(en[key]).replace(/\{(\w+)\}/g, (match, name) =>
+        params !== undefined && name in params ? String(params[name]) : match),
   } as unknown as TimelineRailProps
   const view = render(<TimelineRail {...{ ...props, ...overrides }} />)
   return { view, sessionStore, chatStore, railStore, jumpTo, loadOlder, loadThrough }
@@ -456,6 +458,25 @@ describe('the flat timeline panel', () => {
     expect(jumpTo).toHaveBeenCalledWith('kc')
   })
 
+  it('labels an image-only message as an image message and a file-only one as an attachment', () => {
+    const image = {
+      key: 'ki', kind: 'user', target: 'chat', anchorSeq: 12, visibility: 'visible',
+      data: { content: [{ type: 'image', url: 'data:image/png;base64,x' }] },
+    } as unknown as ChatConversationViewNode
+    const file = {
+      key: 'kf', kind: 'user', target: 'chat', anchorSeq: 25, visibility: 'visible',
+      data: { content: [{ type: 'file', name: 'notes.pdf' }] },
+    } as unknown as ChatConversationViewNode
+    renderRail({
+      useChat: bindSnapshotSelector(createSnapshotStore({
+        order: ['ki', 'kf'],
+        nodes: nodeStore(image, file),
+      })),
+    })
+    expect(item('ki').textContent).toBe(en['rail.image'])
+    expect(item('kf').textContent).toBe(en['rail.attachment'])
+  })
+
   it('keeps a lone textless message listed (no panel-wide hiding)', () => {
     const contentless = node('kc', 'user', '')
     ;(contentless.data as { content?: unknown }).content = undefined
@@ -710,20 +731,19 @@ describe('the turnOutline projection', () => {
 
   it('labels outline turns whose prompt has no text instead of filtering them', () => {
     // An empty window keeps every turn outline-only; turn 2's prompt is ''
-    // (an images-only or automated turn) and renders the empty-preview label.
+    // (an images-only or automated turn) and is labelled by its turn number.
     renderRail({
       useProjection,
       useChat: bindSnapshotSelector(createSnapshotStore({ order: [], nodes: nodeStore() })),
     })
     expect(itemIds()).toEqual(['turn:0', 'turn:1', 'turn:2'])
-    expect(item('turn:2').textContent).toContain(en['rail.empty'])
+    expect(item('turn:2').textContent).toBe('Turn 2')
   })
 
-  it('lands on the turn-trigger card when an automated turn has no user row', () => {
-    // A watchdog-restart turn renders a `turn-trigger` card, not a user row,
-    // and its outline prompt is ''. Clicking its outline row must land on the
-    // trigger card — the official `user ?? loaded[0]` anchor — not on a later
-    // user row (which used to read as "click does nothing").
+  it('shows an automated turn as a first-class row with its trigger text and jumps to it', () => {
+    // A watchdog-restart turn renders a `turn-trigger` card. It is now a
+    // first-class loaded row (trigger text as the preview), so clicking jumps
+    // straight to the card — no pending jump, no fallback to a later row.
     const trigger = {
       key: 'kt', kind: 'turn-trigger', target: 'chat', anchorSeq: 12, visibility: 'visible',
       data: { content: [{ type: 'text', text: '[ankh-guard] 服务于…重启…' }] },
@@ -736,8 +756,8 @@ describe('the turnOutline projection', () => {
       })),
     })
 
-    fireEvent.click(item('turn:0'))
-
+    expect(item('kt').textContent).toContain('[ankh-guard] 服务于…重启…')
+    fireEvent.click(item('kt'))
     expect(jumpTo).toHaveBeenCalledWith('kt')
   })
 

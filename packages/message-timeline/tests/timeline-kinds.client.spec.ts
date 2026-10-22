@@ -23,6 +23,11 @@ describe('isTimelineRowKind', () => {
     expect(isTimelineRowKind('message-tools-edited', true)).toBe(true)
   })
 
+  it('accepts automated-turn trigger cards regardless of includeSteering', () => {
+    expect(isTimelineRowKind('turn-trigger', false)).toBe(true)
+    expect(isTimelineRowKind('turn-trigger', true)).toBe(true)
+  })
+
   it('rejects non-timeline kinds', () => {
     expect(isTimelineRowKind('assistant', true)).toBe(false)
     expect(isTimelineRowKind('assistant-step', true)).toBe(false)
