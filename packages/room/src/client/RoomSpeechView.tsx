@@ -113,6 +113,9 @@ export function RoomSpeechView({ node, sessionId, roomStore, openSession, t }: R
         {data.durationMs !== undefined && (
           <span className={css.meta}>{formatDurationMs(data.durationMs)}</span>
         )}
+        {data.reportedTo !== undefined && (
+          <span className={css.meta}>{t('speech.reportedTo', { member: data.reportedTo })}</span>
+        )}
         <span className={css.time}>{formatClock(data.time)}</span>
       </div>
     </div>

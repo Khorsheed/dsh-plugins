@@ -333,14 +333,14 @@ export function roomMessageTool(backend: RoomMessageToolBackend) {
   return defineTool({
     name: 'room_message',
     description:
-      'Dispatch a message to a member of the current room (works in any session — it promotes the '
+      'Send a message to another member of the current room (works in any session — it promotes the '
       + 'session into a room if it is not one yet). '
-      + 'A member is an independent CLI session: the message runs asynchronously, and the member\'s '
-      + 'reply appears in the room as member speech (the human sees it; you read it through the '
-      + 'room\'s flow). Use this to ask a member something or hand it work — the equivalent of the '
-      + 'human typing "@member <text>" in the room composer. The member argument is a roster name '
-      + '(read room_read for current names); an unknown name is rejected with the live roster, so retry with one '
-      + 'of those.',
+      + 'A member is an independent session: the message runs asynchronously in its own session. '
+      + 'kind "task" (default) hands it work — its final reply is reported back to you automatically, '
+      + 'quoting the message id, so do not poll; kind "notify" is an FYI that is never reported back. '
+      + 'Pass inReplyTo with a message id (e.g. m12) when answering one. The member argument is a '
+      + 'roster name (read room_read for current names); an unknown name is rejected with the live '
+      + 'roster, so retry with one of those.',
     parameters: {
       member: {
         type: 'string',
@@ -350,7 +350,16 @@ export function roomMessageTool(backend: RoomMessageToolBackend) {
       text: {
         type: 'string',
         required: true,
-        description: 'The message text the member receives as its task.',
+        description: 'The message text the member receives.',
+      },
+      kind: {
+        type: 'string',
+        enum: ['task', 'notify'],
+        description: 'task (default): its reply is reported back to you. notify: FYI, no report.',
+      },
+      inReplyTo: {
+        type: 'string',
+        description: 'Optional id of the message this answers (e.g. m12).',
       },
     },
     output: {
@@ -371,7 +380,9 @@ export function roomMessageTool(backend: RoomMessageToolBackend) {
       if (agent === undefined) return { text: 'room_message requires a calling agent (exec.agent was undefined).' }
       // No room gate: messageMember PROMOTES the calling session into a room.
       const sessionId = agent.session.id
-      const result = await backend.messageMember({ sessionId, member: args.member, text: args.text })
+      const result = await backend.messageMember({ sessionId, member: args.member, text: args.text,
+        ...args.kind === undefined ? {} : { kind: args.kind as 'task' | 'notify' },
+        ...args.inReplyTo === undefined ? {} : { inReplyTo: args.inReplyTo } })
       if (!result.ok) {
         if (result.error.code === 'member-not-found') {
           const state = await backend.getState({ sessionId })
@@ -379,14 +390,25 @@ export function roomMessageTool(backend: RoomMessageToolBackend) {
           const hint = names.length === 0 ? '' : ` The room roster is: ${names.join(', ')}. Retry with one of these names.`
           return { text: `Could not message "${args.member}": unknown member.${hint}` }
         }
+        if (result.error.code === 'self-message') return { text: 'You cannot message yourself; pick another member.' }
         if (result.error.code === 'empty-text') {
           return { text: 'The message text must be non-blank; retry with real content.' }
         }
         return { text: `Could not message "${args.member}": ${result.error.code}.` }
       }
+      const value = result.value
+      if (value.held !== undefined) {
+        return { text: value.held === 'paused'
+          ? `Held: the room is paused; the message to ${value.member} is delivered when the human resumes it.`
+          : value.held === 'hop-limit'
+            ? `Held: this chain of messages reached the room's hop limit; the human decides whether ${value.member} gets it.`
+            : `Held: the room asks the human to confirm member messages; ${value.member} gets it once confirmed.` }
+      }
       return {
-        text: `Dispatched to ${result.value.member} — the member runs it asynchronously and its reply `
-          + 'appears in the room as member speech. Do not wait on it; the human watches the room.',
+        text: args.kind === 'notify'
+          ? `Sent ${value.messageId} to ${value.member} as an FYI; no report will come back.`
+          : `Sent ${value.messageId} to ${value.member}. It runs asynchronously; its final reply comes back to you `
+            + 'automatically as a report citing this id. Do not wait or poll.',
       }
     },
   })

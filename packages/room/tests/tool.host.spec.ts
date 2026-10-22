@@ -248,7 +248,7 @@ describe('room_message tool (real composition)', () => {
     await service.invite({ sessionId, provider: 'kimi-cli', name: 'ada' })
 
     const text = await call(messageTool, { member: 'ada', text: '看看接口定义' }, execFor(room))
-    expect(text).toContain('Dispatched to ada')
+    expect(text).toMatch(/^Sent m\d+ to ada/)
     expect(text).toContain('asynchronously')
 
     const events = room.snapshotEvents()
@@ -280,17 +280,18 @@ describe('room_message tool (real composition)', () => {
       .toContain('requires a calling agent')
 
     // The promotion gate: messaging from a plain session turns it into a room
-    // (main is seated by the promotion, so addressing main lands).
+    // (main is seated by the promotion — it is the sender, so addressing
+    // itself is refused, but the promotion stands).
     const plain = ctx.sessions.create(SessionId('plain'), { meta: {} })
     const text = await call(messageTool, { member: 'dsh', text: '给自己记一笔' }, execFor(plain))
-    expect(text).toContain('Dispatched to dsh')
+    expect(text).toContain('cannot message yourself')
     expect(plain.snapshotEvents().some(event => event.type === 'room/created')).toBe(true)
   })
 })
 
 
 describe('room coordinator tool ownership', () => {
-  it('shares the context reader and denies former native coordinator mutations after handoff', async () => {
+  it('shares the context reader and denies former native coordinator invites and board edits after handoff', async () => {
     const { ctx, service, tool, taskTool, messageTool } = await boot()
     const sessionId = await createRoom(ctx, service)
     const room = ctx.sessions.get(sessionId)!
@@ -301,8 +302,9 @@ describe('room coordinator tool ownership', () => {
     room.append('room/coordinator', { version: 1, memberId: planner.id!, revision: 1, previousMemberId: 'legacy:1', handoff: 'handoff' })
     expect(JSON.parse(await call(roomReadTool(service), {}, execFor(room)))).toMatchObject({ coordinator: 'planner', state: { members: [{ name: 'dsh' }, { name: 'planner' }] } })
     expect(await call(tool, { provider: 'kimi-cli', name: 'forbidden', instructions: 'work' }, execFor(room))).toContain('not-coordinator')
-    expect(await call(messageTool, { member: 'planner', text: 'work' }, execFor(room))).toContain('not-coordinator')
     expect(await call(taskTool, { action: 'add', member: 'planner', title: 'work' }, execFor(room))).toContain('Only the current coordinator')
     expect((await service.getState({ sessionId }))).toMatchObject({ ok: true, value: { tasks: [] } })
+    // Messaging is free between members: the former coordinator sends as a member.
+    expect(await call(messageTool, { member: 'planner', text: 'work' }, execFor(room))).toMatch(/^Sent m\d+ to planner/)
   })
 })

@@ -662,6 +662,10 @@ export interface LocalAgentMemberMessage {
   parentSessionId: string
   /** The sender's delegation view, recorded as the delivery's provenance. */
   provenance: Record<string, string>
+  /** `task` (default): a claiming room reports the reply back; `notify`: FYI only. */
+  kind?: 'task' | 'notify'
+  /** The message id this one answers (e.g. `m12`). */
+  inReplyTo?: string
 }
 
 /**
@@ -671,7 +675,7 @@ export interface LocalAgentMemberMessage {
  * DECLINE is not a value: the gate throws (the parent session is not a room
  * this instance manages) and the family direct-sends.
  */
-export type RoomMemberMessageReceipt = 'sent' | 'pending-confirm' | 'busy'
+export type RoomMemberMessageReceipt = 'sent' | 'pending-confirm' | 'busy' | `sent ${string}` | `pending-confirm ${string}`
 
 /**
  * Duck-typed shape of the room service's member-message gate, probed via

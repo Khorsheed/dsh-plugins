@@ -21,6 +21,8 @@ import type {
 export interface RoomSpeechData {
   /** Partial output from a stopped or failed run; never a completed answer. */
   readonly interrupted?: 'cancelled' | 'failed'
+  /** The member this reply was also reported to. */
+  readonly reportedTo?: string
   /** Seq of the room/speech event. */
   readonly seq: number
   /** Unix epoch ms from the event. */
@@ -75,6 +77,8 @@ export interface RoomRelayData {
   readonly to: string
   readonly content: string
   readonly state: 'pending' | 'confirmed' | 'dismissed' | 'sent'
+  /** Why the message waits (absent on legacy relays). */
+  readonly reason?: 'confirm' | 'hop-limit' | 'paused'
 }
 
 /** Chat node data of one task-advance line (the dim "✓ ada 完成了「…」" row). */
@@ -142,6 +146,7 @@ export const roomSpeechDefinition: ConversationNodeDefinition<RoomSpeechData> = 
       member: event.data.member,
       text: event.data.text,
       ...event.data.interrupted === undefined ? {} : { interrupted: event.data.interrupted },
+      ...event.data.reportedTo === undefined ? {} : { reportedTo: event.data.reportedTo },
       ...event.data.childSessionId === undefined ? {} : { childSessionId: event.data.childSessionId },
       ...event.data.durationMs === undefined ? {} : { durationMs: event.data.durationMs },
     }
@@ -266,6 +271,7 @@ export const roomRelayDefinition: ConversationNodeDefinition<RoomRelayData> = {
       from: event.data.from,
       to: event.data.to,
       content: event.data.content,
+      ...event.data.reason === undefined ? {} : { reason: event.data.reason },
       state: 'pending',
     }
   },

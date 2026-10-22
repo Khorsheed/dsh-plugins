@@ -13,7 +13,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 // Type-only: pulls this plugin's LocaleNamespaceMap merge.
 import type {} from './locales.ts'
-import type { RoomProviderList, RoomRemoval } from '../types.ts'
+import type { RoomProviderList, RoomRemoval, RoomSettings } from '../types.ts'
 import type { LocalAgentModelInfo, LocalAgentPromptResult } from '@khorsheed/dsh-local-agent/types'
 import type { RoomChromeVisibility } from './preset-visibility.ts'
 import type { RoomStore } from './room-store.ts'
@@ -266,6 +266,8 @@ export interface RoomMembersInjected extends RoomInviteInjected {
   readonly removeMember: (member: string, transferPendingTo?: string) => Promise<RoomRemovalOutcome>
   /** Undo a removal: the member rejoins on its own session. */
   readonly restoreMember: (member: string) => Promise<RoomMutationOutcome>
+  /** Change the room's collaboration settings. */
+  readonly setSettings: (patch: Partial<RoomSettings>) => Promise<RoomMutationOutcome>
   /**
    * Edit the named member: rename, cwd override (null clears back to
    * inheriting the room cwd), role instructions (null clears them), intended

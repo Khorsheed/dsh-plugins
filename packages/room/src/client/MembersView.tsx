@@ -11,7 +11,8 @@
  * elapsed honest). The main-agent member takes no instructions and cannot be
  * removed — it is the room itself.
  */
-import { coordinatorMember } from '../journal.ts'
+import { coordinatorMember, DEFAULT_ROOM_SETTINGS } from '../journal.ts'
+import { RoomSettingsView } from './RoomSettingsView.tsx'
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import { IconAgentPresetOutlineMedium } from './icons.tsx'
@@ -44,7 +45,7 @@ function MainAgentModelHint({ directory }: { readonly directory: RoomModelDirect
 
 /** The members tab. */
 export function MembersView({
-  sessionId, roomStore, roomCwd, openSession, removeMember, restoreMember, updateMember, invite, listProviders, browseDirectory,
+  sessionId, roomStore, roomCwd, openSession, removeMember, restoreMember, setSettings, updateMember, invite, listProviders, browseDirectory,
   modelSurface, renderHarnessModelPicker, memberModel, setMemberModel, renderMemberConfiguration, modelDirectory, setCoordinator, t,
 }: MembersViewProps): ReactNode {
   // Entering the tab pulls the freshest state once.
@@ -232,6 +233,7 @@ export function MembersView({
 
   return (
     <div className={css.members}>
+      <RoomSettingsView settings={state.settings ?? DEFAULT_ROOM_SETTINGS} onChange={setSettings} t={t} />
       <div className={css.grid}>
         {state.members.map((member) => {
           const run = state.runs.find(entry => entry.member === member.name)

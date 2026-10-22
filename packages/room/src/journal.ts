@@ -13,7 +13,7 @@
 import { replayDeliveries } from './deliveries.ts'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import type {
-  RoomExecution, RoomMember, RoomMemberRun, RoomRelay, RoomState, RoomTask, RoomTaskProgress,
+  RoomExecution, RoomMember, RoomMemberRun, RoomRelay, RoomSettings, RoomState, RoomTask, RoomTaskProgress,
 } from './types.ts'
 
 /**
@@ -56,7 +56,11 @@ export const ROOM_EVENT_TYPES = [
   'room/task-updated',
   'room/task-edited',
   'room/goal',
+  'room/settings',
 ] as const
+
+/** Collaboration settings of a room that never changed them. */
+export const DEFAULT_ROOM_SETTINGS: RoomSettings = { memberMessages: 'free', hopLimit: 10, paused: false }
 
 /** Whether an event log carries the room identity marker. */
 export function isRoomLog(events: readonly SessionEvent[]): boolean {
@@ -107,6 +111,7 @@ export function replay(events: readonly SessionEvent[]): RoomState {
   const runs = new Map<string, RoomMemberRun>()
   const executions = new Map<string, RoomExecution>()
   let goal: string | undefined
+  let settings = DEFAULT_ROOM_SETTINGS
   let coordinator: RoomState['coordinator']
   for (const event of events) {
     switch (event.type) {
@@ -220,6 +225,8 @@ export function replay(events: readonly SessionEvent[]): RoomState {
           content: event.data.content,
           state: 'pending',
           ...event.data.provenance === undefined ? {} : { provenance: event.data.provenance },
+          ...event.data.reason === undefined ? {} : { reason: event.data.reason },
+          ...event.data.intent === undefined ? {} : { intent: event.data.intent },
         }
         relayById.set(relay.id, relay)
         relays.push(relay)
@@ -274,6 +281,14 @@ export function replay(events: readonly SessionEvent[]): RoomState {
         tasks[tasks.indexOf(task)] = edited
         break
       }
+      case 'room/settings': {
+        settings = {
+          memberMessages: event.data.memberMessages ?? settings.memberMessages,
+          hopLimit: event.data.hopLimit ?? settings.hopLimit,
+          paused: event.data.paused ?? settings.paused,
+        }
+        break
+      }
       case 'room/goal': {
         // Latest goal event wins; a blank text clears the goal.
         const text = event.data.text.trim()
@@ -319,7 +334,7 @@ export function replay(events: readonly SessionEvent[]): RoomState {
   const planEvent = events.filter(event => event.type === 'room/plan-state').at(-1)
   const plan = planEvent?.type === 'room/plan-state' ? (({ requests: _requests, ...view }) => view)(planEvent.data) : undefined
   const deliveries = replayDeliveries(events)
-  return { members, relays, tasks, ...executions.size === 0 ? {} : { executions: [...executions.values()] }, ...plan === undefined ? {} : { plan }, ...deliveries.length === 0 ? {} : { deliveries }, runs: [...runs.values()], ...coordinator === undefined ? {} : { coordinator }, ...goal === undefined ? {} : { goal } }
+  return { members, relays, tasks, ...executions.size === 0 ? {} : { executions: [...executions.values()] }, ...plan === undefined ? {} : { plan }, ...deliveries.length === 0 ? {} : { deliveries }, runs: [...runs.values()], ...coordinator === undefined ? {} : { coordinator }, ...goal === undefined ? {} : { goal }, settings }
 }
 
 /**

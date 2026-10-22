@@ -124,7 +124,28 @@ export interface RoomDispatchEvent {
   /** Caller retry identity, persisted before accepting input. */
   readonly id?: string
   readonly targetIds?: readonly string[]
-  readonly origin?: 'human' | 'coordinator' | 'report' | 'relay'
+  /**
+   * Who sent it: the human, the coordinator, any other member (`member`,
+   * free member-to-member messaging), a delivery's report, or a legacy
+   * confirmed relay.
+   */
+  readonly origin?: 'human' | 'coordinator' | 'member' | 'report' | 'relay'
+  /** The sending member's id (coordinator/member origins). */
+  readonly from?: string
+  /**
+   * `task` (default for member sends): the recipient's final reply is reported
+   * back to the sender. `notify`: an FYI, never reported.
+   */
+  readonly kind?: 'task' | 'notify'
+  /**
+   * Position in its causal chain: 1 for a human message (or a send outside
+   * any room round), the sender's own delivery hop + 1 otherwise; reports
+   * count too. A send past the room's hop limit is held for the human.
+   */
+  readonly hop?: number
+  /** The message this one answers (`#m<seq>` of an earlier dispatch). */
+  readonly inReplyTo?: number
+  /** The member id this delivery's outcome is reported to. */
   readonly replyTo?: string
   /** Completion report deduplication key (one source delivery). */
   readonly reportFor?: string
@@ -140,6 +161,8 @@ export interface RoomDispatchEvent {
 export interface RoomSpeechEvent {
   /** Partial output from a stopped or failed run; never a completed answer. */
   readonly interrupted?: 'cancelled' | 'failed'
+  /** The member this reply was also reported to (the delivery's sender), by name. */
+  readonly reportedTo?: string
   readonly member: string
   readonly text: string
   readonly childSessionId?: SessionId
@@ -192,6 +215,49 @@ export interface RoomRelayEvent {
   readonly to: string
   readonly content: string
   readonly provenance?: Record<string, RoomJsonValue>
+  /**
+   * Why the message waits for the human: the room asks for confirmation of
+   * member messages, the chain reached the hop limit, or the room is paused
+   * (released automatically on resume). Absent on legacy relays.
+   */
+  readonly reason?: RoomHoldReason
+  /** The dispatch to create once released (absent on legacy relays). */
+  readonly intent?: RoomHeldDispatch
+}
+
+/** Why a member message is held at the gate. */
+export type RoomHoldReason = 'confirm' | 'hop-limit' | 'paused'
+
+/** A held message's would-be dispatch. */
+export interface RoomHeldDispatch {
+  readonly origin: 'coordinator' | 'member' | 'report'
+  readonly from?: string
+  readonly kind?: 'task' | 'notify'
+  readonly hop: number
+  readonly inReplyTo?: number
+  readonly replyTo?: string
+  readonly reportFor?: string
+  readonly plan?: { readonly goalId: string }
+}
+
+/**
+ * The room's collaboration settings (latest event wins per field). Members
+ * message each other freely by default; `confirm` holds every non-coordinator
+ * member message for the human. `hopLimit` caps a causal chain (each delivery
+ * and report is one hop) before the room stops relaying automatically.
+ * `paused` holds every agent-originated message until resumed.
+ */
+export interface RoomSettingsEvent {
+  readonly memberMessages?: 'free' | 'confirm'
+  readonly hopLimit?: number
+  readonly paused?: boolean
+}
+
+/** The folded settings with defaults applied. */
+export interface RoomSettings {
+  readonly memberMessages: 'free' | 'confirm'
+  readonly hopLimit: number
+  readonly paused: boolean
 }
 
 /** A relay left the pending state (confirmed, dismissed, or delivered). */
@@ -292,6 +358,8 @@ declare module '@deepseek-ai/dsh-session/types' {
     'room/task-edited': RoomTaskEditedEvent
     /** Goal: the room's goal was set (or cleared). */
     'room/goal': RoomGoalEvent
+    /** Collaboration settings changed. */
+    'room/settings': RoomSettingsEvent
   }
 }
 
@@ -320,6 +388,8 @@ export interface RoomRelay {
   readonly content: string
   readonly provenance?: Record<string, RoomJsonValue>
   readonly state: RoomRelayState
+  readonly reason?: RoomHoldReason
+  readonly intent?: RoomHeldDispatch
 }
 
 /** One task-board task, as folded by the journal replay. */
@@ -379,6 +449,8 @@ export interface RoomState {
   readonly runs: readonly RoomMemberRun[]
   /** The current goal text (the latest `room/goal` event), undefined when unset. */
   readonly goal?: string
+  /** Collaboration settings (defaults when never set). */
+  readonly settings?: RoomSettings
 }
 
 /**
@@ -412,6 +484,10 @@ export type RoomFailure =
   | { readonly code: 'empty-text' }
   /** The public role is longer than 30 characters. */
   | { readonly code: 'role-too-long' }
+  /** A settings value is out of range (hop limit 2–50). */
+  | { readonly code: 'invalid-settings' }
+  /** A member cannot message itself. */
+  | { readonly code: 'self-message' }
   | { readonly code: 'nothing-to-update' }
   | { readonly code: 'local-agent-unavailable' }
   /**
@@ -448,10 +524,18 @@ export interface RoomMemberMessage {
   readonly content: string
   readonly parentSessionId: SessionId
   readonly provenance?: Record<string, RoomJsonValue>
+  /** `task` (default): the reply is reported back; `notify`: FYI only. */
+  readonly kind?: 'task' | 'notify'
+  /** `m<seq>` (or the bare seq) of the message being answered. */
+  readonly inReplyTo?: string
 }
 
-/** The gate receipt handed back to the sending member through the bridge. */
-export type RoomMemberMessageReceipt = 'sent' | 'pending-confirm' | 'busy'
+/**
+ * The gate receipt handed back to the sending member through the bridge,
+ * quoted verbatim to the model: `sent #m<seq>…` or `pending-confirm …` with a
+ * short explanation (the bare legacy words remain valid).
+ */
+export type RoomMemberMessageReceipt = 'sent' | 'pending-confirm' | 'busy' | `sent ${string}` | `pending-confirm ${string}`
 
 /** isRoom probe: does this session carry the room marker? */
 export interface RoomIsRoomRequest {
@@ -627,11 +711,38 @@ export interface RoomMessageRequest {
   readonly member: string
   /** The message text. */
   readonly text: string
+  /** `task` (default): the reply is reported back to the sender; `notify`: FYI only. */
+  readonly kind?: 'task' | 'notify'
+  /** `m<seq>` (or the bare seq) of the message being answered. */
+  readonly inReplyTo?: string
+}
+
+/** What happened to one member message. */
+export interface RoomMessageReceipt {
+  readonly member: string
+  /** `m<seq>`: the message id the report will cite (absent while held). */
+  readonly messageId?: string
+  /** Set when the message waits for the human instead of being delivered. */
+  readonly held?: RoomHoldReason
 }
 
 /** messageMember outcome. */
 export type RoomMessageResult =
-  | { readonly ok: true; readonly value: { readonly member: string } }
+  | { readonly ok: true; readonly value: RoomMessageReceipt }
+  | { readonly ok: false; readonly error: RoomFailure }
+
+/** setSettings request: change any subset of the collaboration settings. */
+export interface RoomSetSettingsRequest {
+  readonly sessionId: SessionId
+  readonly memberMessages?: 'free' | 'confirm'
+  /** 2–50. */
+  readonly hopLimit?: number
+  readonly paused?: boolean
+}
+
+/** setSettings outcome: the folded settings after the change. */
+export type RoomSetSettingsResult =
+  | { readonly ok: true; readonly value: RoomSettings }
   | { readonly ok: false; readonly error: RoomFailure }
 
 /** postMessage outcome. */
@@ -812,6 +923,10 @@ export interface RoomDelivery {
   readonly origin: NonNullable<RoomDispatchEvent['origin']>
   /** The member id this delivery's outcome is reported to, when any. */
   readonly replyTo?: string
+  /** The sending member's id (coordinator/member origins). */
+  readonly from?: string
+  /** `task` or `notify` (member sends); absent on human and legacy dispatches. */
+  readonly kind?: 'task' | 'notify'
   readonly text: string
   readonly error?: string
   readonly plan?: RoomDispatchEvent['plan']

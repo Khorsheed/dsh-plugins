@@ -327,6 +327,14 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       void roomStore.refresh(sessionId)
       return { ok: true, value: carried.value.value }
     },
+    setSettings: async (patch) => {
+      if (remote === undefined) return { ok: false, message: t('invite.error.generic') }
+      const carried = await remote.setSettings({ sessionId, ...patch })
+      if (!carried.ok) return { ok: false, message: t('invite.error.generic') }
+      if (!carried.value.ok) return { ok: false, message: failureText(carried.value.error) }
+      void roomStore.refresh(sessionId)
+      return { ok: true }
+    },
     restoreMember: async (member) => {
       if (remote === undefined) return { ok: false, message: t('invite.error.generic') }
       const carried = await remote.restoreMember({ sessionId, name: member })

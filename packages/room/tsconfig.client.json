@@ -16,6 +16,7 @@
     "src/client/InviteDialog.tsx",
     "src/client/MemberCard.tsx",
     "src/client/RemoveMemberConfirm.tsx",
+    "src/client/RoomSettingsView.tsx",
     "src/client/MembersView.tsx",
     "src/client/RoomComposer.tsx",
     "src/client/RoomDockCapsules.tsx",

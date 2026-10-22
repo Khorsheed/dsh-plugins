@@ -28,6 +28,7 @@ import type {} from '@deepseek-ai/dsh-agent'
 import { createUserMessage, type ContextFormed, type MessageSource } from '@deepseek-ai/dsh-llm'
 import { probeLocalAgent, runOutputText } from './adapter.ts'
 import { coordinatorMember, memberId, pendingInstructions, previousCursor, replay, roomChangesSince } from './journal.ts'
+import { envelopeLine, sendOrHold } from './messaging.ts'
 import type { RoomMember, RoomRelay, RoomState } from './types.ts'
 
 /**
@@ -116,7 +117,8 @@ function briefingSection(state: RoomState, member: RoomMember, instructions: str
     ...state.goal === undefined ? [] : [`房间目标：${state.goal}`],
     ...others.length === 0 ? [] : ['其他成员：', ...others],
     '协作方式：',
-    `- 要联系其他成员，用 ${send}。在回复里写「@名字」不会转交给任何人。`,
+    `- 要联系其他成员，用 ${send}。默认是派活（kind: "task"）：对方做完，它的最终回复会自动回报给你，不用轮询；只是告知一声用 kind: "notify"，不会回报。在回复里写「@名字」不会转交给任何人。`,
+    '- 收到的每条消息开头都标明来自谁和消息编号（#m12）；派给你的活，你这一轮的最终回复会自动回报给派活人，不用另外回复。',
     '- 想看房间里现在有谁、各自职责和进展，用 room_read。',
     ...coordinator?.name === member.name ? ['- 作为协调者：普通对话直接回答；小任务用工具在后台派给成员；只在确有需要时建立正式目标计划。委派结果会自动回报给你，等待时不要轮询。'] : [],
   ].join('\n')
@@ -140,6 +142,7 @@ function assemblePrompt(
   cursor: number | undefined,
   text: string,
   relayIds: readonly string[],
+  dispatchSeq: number | undefined,
 ): { readonly prompt: string; readonly carried: readonly RoomRelay[] } {
   const state = replay(room.snapshotEvents())
   const carried = state.relays.filter(relay =>
@@ -159,8 +162,19 @@ function assemblePrompt(
     if (changes.length > 0) sections.push(['【房间变动】', ...changes.map(change => `- ${change}`)].join('\n'))
   }
   if (carried.length > 0) sections.push(notificationsSection(carried))
-  sections.push(text)
+  const envelope = dispatchSeq === undefined ? undefined : envelopeLine(events, dispatchSeq)
+  sections.push(envelope === undefined ? text : `${envelope}\n${text}`)
   return { prompt: sections.join('\n\n'), carried }
+}
+
+/** Who a delivery of this dispatch reports to (the coordinator for plan work), if anyone. */
+function reportRecipient(events: readonly import('@deepseek-ai/dsh-session/types').SessionEvent[], dispatchSeq: number): RoomMember | undefined {
+  const source = events.find(event => event.seq === dispatchSeq)
+  if (source?.type !== 'room/dispatch' || source.data.replyTo === undefined) return undefined
+  const state = replay(events)
+  return source.data.plan === undefined
+    ? state.members.find(member => memberId(events, member) === source.data.replyTo)
+    : coordinatorMember(state, events)
 }
 
 /** The human-readable reason a run failed (Error message, else String()). */
@@ -336,8 +350,8 @@ export class DispatchEngine {
     let outcome: RunOutcome
     try {
       outcome = member.kind === 'main-agent'
-        ? await this.runMainAgent(room, member, cursor, text, await admitted(), options.relayIds ?? [])
-        : await this.runCliMember(room, member, cursor, text, admitted, options.relayIds ?? [], submitted, runId)
+        ? await this.runMainAgent(room, member, cursor, text, await admitted(), options.relayIds ?? [], options.dispatchSeq)
+        : await this.runCliMember(room, member, cursor, text, admitted, options.relayIds ?? [], submitted, runId, options.dispatchSeq)
     } catch (error: unknown) {
       this.ctx.logger.warn(`room: dispatch to "${memberName}" failed: ${String(error)}`)
       outcome = { state: 'failed', error: faultMessage(error) }
@@ -360,22 +374,28 @@ export class DispatchEngine {
   async reportOutcome(room: Session, dispatchSeq: number, deliveryId: string, fromId: string, outcome: string, text: string): Promise<void> {
     const events = room.snapshotEvents()
     const source = events.find(event => event.seq === dispatchSeq)
-    if (source?.type !== 'room/dispatch' || source.data.origin !== 'coordinator' || source.data.replyTo === undefined) return
+    if (source?.type !== 'room/dispatch' || (source.data.origin !== 'coordinator' && source.data.origin !== 'member') || source.data.replyTo === undefined) return
     if (events.some(event => event.type === 'room/dispatch' && event.data.reportFor === deliveryId)) return
+    if (events.some(event => event.type === 'room/relay' && event.data.intent?.reportFor === deliveryId)) return
     const state = replay(events)
     if (closedGoal(state, source.data.plan?.goalId)) return
     const recipient = source.data.plan === undefined ? state.members.find(member => memberId(events, member) === source.data.replyTo) : coordinatorMember(state, events)
+    if (recipient === undefined) return
     // A removed sender is no longer on the roster: read its last known name.
     const senderName = state.members.find(member => memberId(events, member) === fromId)?.name
       ?? events.reduce<string | undefined>((name, event) => event.type === 'room/member-added' && event.data.id === fromId ? event.data.name : name, undefined)
-    if (recipient === undefined) return
-    const reportText = `Delegation ${deliveryId} (${senderName ?? fromId}) ${outcome}.\n${text.slice(0, 32000)}`
-    const report = room.append('room/dispatch', { id: randomUUID(), origin: 'report', reportFor: deliveryId,
-      targets: [recipient.name], targetIds: [memberId(events, recipient)], text: reportText,
-      ...source.data.plan === undefined ? {} : { plan: { goalId: source.data.plan.goalId } } })
+    // The envelope (`【#m12 的回报 · 来自 ada · 完成】`) carries who and how;
+    // the text is the member's own conclusion.
+    const reportText = text.trim() === '' ? `（${outcome === 'done' ? '没有文字输出' : outcome}）` : text.slice(0, 32000)
+    const sent = sendOrHold(room, {
+      to: recipient, text: reportText, fromName: senderName ?? fromId,
+      intent: { origin: 'report', hop: (source.data.hop ?? 1) + 1, reportFor: deliveryId,
+        ...source.data.plan === undefined ? {} : { plan: { goalId: source.data.plan.goalId } } },
+    })
     await this.ctx.sessions.flush(room)
-    if (this.hooks.allows?.(room, report.seq) !== false) this.dispatch(room, recipient.name, reportText, { dispatchSeq: report.seq, targetId: memberId(events, recipient) })
+    if (sent.delivered && this.hooks.allows?.(room, sent.seq) !== false) this.dispatch(room, recipient.name, reportText, { dispatchSeq: sent.seq, targetId: memberId(events, recipient) })
   }
+
 
   /**
    * Mark the relays this run delivered as sent. Delivery = the member's own
@@ -392,14 +412,15 @@ export class DispatchEngine {
   /** Main-agent member turn: a producer-sourced followup on the room's own agent. */
   private async runMainAgent(
     room: Session, member: RoomMember, cursor: number | undefined,
-    text: string, _startedAt: number, relayIds: readonly string[],
+    text: string, _startedAt: number, relayIds: readonly string[], dispatchSeq: number | undefined,
   ): Promise<RunOutcome> {
     const agent = this.ctx.agents.get(room.id)
     if (agent === undefined) {
       // Fail loud: the room's own agent is not live, the message goes nowhere.
       return { state: 'failed', error: 'the room session has no live agent' }
     }
-    const { prompt, carried } = assemblePrompt(room, member, cursor, text, relayIds)
+    const { prompt, carried } = assemblePrompt(room, member, cursor, text, relayIds, dispatchSeq)
+    const before = room.snapshotEvents().at(-1)?.seq ?? -1
     agent.followup(createUserMessage({
       content: [{ type: 'text', text: prompt }],
       source: roomSource(),
@@ -408,17 +429,22 @@ export class DispatchEngine {
       ...carried,
       ...replay(room.snapshotEvents()).relays.filter(relay => relayIds.includes(relay.id)),
     ])
-    // Phase-1 simplicity: the followup's own turn converging to idle IS the
-    // run; the main agent's reply is its ordinary assistant speech (no
-    // room/speech projection — speech mirrors CLI members only).
+    // The followup's own turn converging to idle IS the run; the main agent's
+    // reply is its ordinary assistant speech (no room/speech projection —
+    // speech mirrors CLI members only). Its last assistant text is the
+    // outcome a waiting sender's report quotes.
     await agent.whenIdle()
-    return { state: 'done' }
+    const reply = room.snapshotEvents().filter(event => event.seq > before && event.type === 'assistant/message').at(-1)
+    const output = reply?.type === 'assistant/message'
+      ? reply.data.message.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n')
+      : ''
+    return { state: 'done', ...output === '' ? {} : { text: output } }
   }
 
   /** CLI member turn: facade start (first round) or resume, then the speech mirror. */
   private async runCliMember(
     room: Session, member: RoomMember, cursor: number | undefined,
-    text: string, admitted: () => Promise<number>, relayIds: readonly string[], submitted: () => void, runId: string,
+    text: string, admitted: () => Promise<number>, relayIds: readonly string[], submitted: () => void, runId: string, dispatchSeq: number | undefined,
   ): Promise<RunOutcome> {
     const facade = probeLocalAgent(this.ctx)
     if (facade === undefined) {
@@ -447,7 +473,7 @@ export class DispatchEngine {
       },
     }
     if (!controlled) startedAt = await admitted()
-    const { prompt, carried } = assemblePrompt(room, member, cursor, text, relayIds)
+    const { prompt, carried } = assemblePrompt(room, member, cursor, text, relayIds, dispatchSeq)
     const prepared = member.childSessionId !== undefined && facade.isPreparedMember?.(member.childSessionId) === true
     const pendingRun = prepared
       ? facade.start(room.id, provider, [{ type: 'text', text: prompt }], { preparedMemberId: member.childSessionId!, ...admission })
@@ -487,12 +513,14 @@ export class DispatchEngine {
     const output = runOutputText(result.output)
     const interrupted = result.stopReason === 'completed' ? undefined
       : result.stopReason === 'aborted' ? 'cancelled' as const : 'failed' as const
+    const reportedTo = dispatchSeq === undefined ? undefined : reportRecipient(room.snapshotEvents(), dispatchSeq)?.name
     const speech = output !== '' || interrupted === undefined ? room.append('room/speech', {
       member: replay(room.snapshotEvents()).members.find(entry => entry.id === member.id)?.name ?? member.name,
       text: output,
       childSessionId: run.id,
       durationMs: Date.now() - startedAt,
       ...interrupted === undefined ? {} : { interrupted },
+      ...reportedTo === undefined ? {} : { reportedTo },
     }) : undefined
     if (speech !== undefined) await this.ctx.sessions.flush(room)
     if (result.stopReason === 'completed') {
