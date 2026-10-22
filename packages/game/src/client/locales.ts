@@ -327,6 +327,18 @@ export const zh = {
   'recipe.key.scale': '整体大小',
   'play.ground': '地面',
   'play.pickedNote': '已插入对话框，接着写想法、自己发送',
+  'switcher.delete': '删除「{title}」',
+  'switcher.deleteTitle': '删除「{title}」？',
+  'switcher.deleteBody': '移到废纸篓：从这里消失、绑定它的会话都解绑，文件夹 {folder} 进系统废纸篓，删错了还能从废纸篓找回。只从列表移除：文件夹原样留着，以后可以让模型用 game_open 的 path 重新登记。',
+  'switcher.deleteTrash': '移到废纸篓',
+  'switcher.deleteForget': '只从列表移除',
+  'switcher.deleteCancel': '取消',
+  'switcher.deletedTrash': '已删除「{title}」，文件夹在废纸篓里',
+  'switcher.deletedForget': '已从列表移除「{title}」，文件夹还在原处',
+  'switcher.deleteTrashFailed': '没能移到废纸篓：{reason}。什么都没改，可以改用「只从列表移除」。',
+  'switcher.deleteNotProject': '这个文件夹里已经不是这个项目了（game.json 不见或换了），不会去动它。可以「只从列表移除」。',
+  'switcher.deleteIsWorkspace': '这个项目就是本会话的工作区本身，不能移到废纸篓。可以「只从列表移除」。',
+  'switcher.deleteDenied': '这个会话是只读的，不能删除项目。',
 }
 
 /** English dictionary. */
@@ -645,6 +657,18 @@ export const en: Record<keyof typeof zh, string> = {
   'recipe.key.scale': "Overall size",
   'play.ground': 'Ground',
   'play.pickedNote': 'Added to the composer — write what you think and send it yourself',
+  'switcher.delete': 'Delete “{title}”',
+  'switcher.deleteTitle': 'Delete “{title}”?',
+  'switcher.deleteBody': 'Move to trash: it disappears here, sessions bound to it are unbound, and the folder {folder} goes to the system trash, where you can still recover it. Remove from list only: the folder stays as it is; the model can register it again later with game_open path.',
+  'switcher.deleteTrash': 'Move to trash',
+  'switcher.deleteForget': 'Remove from list only',
+  'switcher.deleteCancel': 'Cancel',
+  'switcher.deletedTrash': 'Deleted “{title}” — the folder is in the trash',
+  'switcher.deletedForget': 'Removed “{title}” from the list — the folder is still there',
+  'switcher.deleteTrashFailed': 'Could not move it to the trash: {reason}. Nothing changed; you can remove it from the list instead.',
+  'switcher.deleteNotProject': 'That folder no longer holds this project (its game.json is gone or different), so it is left alone. You can remove it from the list.',
+  'switcher.deleteIsWorkspace': 'This project is the session’s workspace itself and cannot go to the trash. You can remove it from the list.',
+  'switcher.deleteDenied': 'This session is read-only and cannot delete projects.',
 }
 
 /** The dictionary namespace this view binds. */

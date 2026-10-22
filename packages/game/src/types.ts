@@ -444,6 +444,13 @@ export interface PlayBundle {
 
 /** Failure codes the Remote face answers with. */
 export type GameError = 'not-found' | 'unbound' | 'denied' | 'invalid' | 'no-version' | 'io'
+  /** Project deletion: the folder no longer holds this project's game.json / is the session's own workspace / the trash move failed. */
+  | 'not-a-project' | 'is-workspace' | 'trash-failed'
+
+/** A project deletion's answer: done (with where the folder went), or a failure; a failed trash move says why. */
+export type DeleteProjectResult =
+  | { readonly ok: true; readonly trashedTo?: string }
+  | { readonly ok: false; readonly error: GameError; readonly reason?: string }
 
 /** A Remote call's failure. */
 export interface GameFailure {

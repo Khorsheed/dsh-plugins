@@ -29,6 +29,7 @@ import type { SandboxPolicyService } from '@deepseek-ai/dsh-sandbox-policy'
 import type { Session } from '@deepseek-ai/dsh-session'
 import { ChromeChecker, type BrowserChecker } from './checks.ts'
 import { kitOf, withKitRuntime, type RuntimeKit } from './kits/index.ts'
+import { systemTrash, type TrashMover } from './trash.ts'
 import { bundleOf, fingerprintOf, inside, readJson, readText, walk, writeAtomic, type WalkedFile } from './fsutil.ts'
 import {
   artStyleLabel, chapterStatus, elementsChapter, gate, isBuildFile, parseManifest,
@@ -36,7 +37,7 @@ import {
 } from './project.ts'
 import {
   CHAPTERS, MANIFEST_FILE, PANEL_CHANGES_MARK, STATE_DIR,
-  type AnyLook, type ChapterView, type CheckFailure, type CheckRecord, type GameManifest, type GameResult,
+  type AnyLook, type ChapterView, type DeleteProjectResult, type CheckFailure, type CheckRecord, type GameManifest, type GameResult,
   type LogEntry, type LookProposal, type PendingChange, type PlayBundle, type ProjectCard, type ProjectRow, type ProjectView, type TurnReport,
   type SessionGameState, type VersionDiff, type VersionRecord, type VersionRow,
 } from './types.ts'
@@ -126,13 +127,17 @@ export class GameService {
   constructor(
     private readonly ctx: Context,
     config: GameConfig = {},
-    deps: { checker?: BrowserChecker; writer?: FenceWriter } = {},
+    deps: { checker?: BrowserChecker; writer?: FenceWriter; trash?: TrashMover } = {},
   ) {
     this.stateRoot = resolveGameStateRoot(config.stateRoot)
     this.sandboxPolicy = ctx.fs?.sandboxMode === undefined ? undefined : ctx.get('sandboxPolicy') as SandboxPolicyService | undefined
     this.checker = deps.checker ?? new ChromeChecker(config.chromePath)
     if (deps.writer !== undefined) this.writeFenced = deps.writer
+    this.trash = deps.trash ?? systemTrash()
   }
+
+  /** Where a deleted project folder goes (the system trash; specs swap a fake). */
+  private readonly trash: TrashMover
 
   /** Release the checker's browser. */
   async dispose(): Promise<void> {
@@ -354,6 +359,42 @@ export class GameService {
       registry.projects.push(row)
       return { ok: true, project: row } as const
     })
+  }
+
+  /**
+   * Delete a project from the panel. `trash` takes it out of the plugin
+   * (registry row and every session binding) AND moves its folder to the
+   * system trash — complete, yet recoverable; `forget` only takes it out of
+   * the plugin and leaves the folder (re-adopt with `game_open path`).
+   *
+   * Guards, checked before anything changes: the folder must still hold the
+   * project's own `game.json` (never trash an arbitrary directory a registry
+   * row happens to point at), must not be the calling session's workspace
+   * itself, and a read-only session may do neither. A failed move changes
+   * nothing, so the panel can offer `forget` instead.
+   */
+  async deleteProject(projectId: string, mode: 'trash' | 'forget', session: Session | undefined): Promise<DeleteProjectResult> {
+    const row = await this.row(projectId)
+    if (row === undefined) return { ok: false, error: 'not-found' }
+    if (!this.writable(session)) return { ok: false, error: 'denied' }
+    let trashedTo: string | undefined
+    if (mode === 'trash') {
+      const manifest = await this.manifestOf(row.root)
+      const cwd = session?.header?.cwd
+      if (manifest === undefined || manifest.id !== projectId) return { ok: false, error: 'not-a-project' }
+      if (cwd !== undefined && resolve(cwd) === resolve(row.root)) return { ok: false, error: 'is-workspace' }
+      try {
+        trashedTo = await this.trash(row.root)
+      } catch (error) {
+        return { ok: false, error: 'trash-failed', reason: (error as Error).message.split('\n')[0] ?? '' }
+      }
+    }
+    await this.updateRegistry(registry => {
+      registry.projects = registry.projects.filter(p => p.id !== projectId)
+      for (const [sid, bound] of Object.entries(registry.bindings)) if (bound === projectId) delete registry.bindings[sid]
+    })
+    this.notify(projectId)
+    return { ok: true, ...(trashedTo === undefined ? {} : { trashedTo }) }
   }
 
   // ---------------------------------------------------------------- create

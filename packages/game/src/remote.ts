@@ -9,7 +9,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { Context } from '@deepseek-ai/cordis'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { GameService } from './store.ts'
-import type { GameResult, PlayBundle, ProjectCard, SessionGameState, TurnReport, VersionDiff } from './types.ts'
+import type { DeleteProjectResult, GameResult, PlayBundle, ProjectCard, SessionGameState, TurnReport, VersionDiff } from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -53,6 +53,12 @@ export class GameRemoteService extends TypertRemoteService<GameRemoteConfig> {
   @Remote('projectCards')
   projectCards(): Promise<ProjectCard[]> {
     return this.store.projectCards()
+  }
+
+  /** Delete a project: `trash` moves its folder to the system trash, `forget` only removes it from the plugin. */
+  @Remote('deleteProject')
+  deleteProject(agent: Agent, request: { projectId: string; mode: 'trash' | 'forget' }): Promise<DeleteProjectResult> {
+    return this.store.deleteProject(request.projectId, request.mode === 'forget' ? 'forget' : 'trash', agent.session)
   }
 
   /** Bind the session to a project, or unbind with `projectId: null`. */

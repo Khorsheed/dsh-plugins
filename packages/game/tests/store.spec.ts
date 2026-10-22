@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -22,6 +22,8 @@ let dir: string
 let workspace: string
 let checker: FakeChecker
 let store: GameService
+let trashed: string[]
+let failTrash = false
 const session = (id = 's1'): Session => ({ id, header: { cwd: workspace } }) as unknown as Session
 
 async function put(path: string, text: string): Promise<void> {
@@ -35,7 +37,15 @@ beforeEach(async () => {
   await mkdir(workspace)
   checker = new FakeChecker()
   const ctx = { fs: { sandboxMode: undefined }, get: () => undefined } as unknown as Context
-  store = new GameService(ctx, { stateRoot: join(dir, 'state') }, { checker, writer: put })
+  trashed = []
+  store = new GameService(ctx, { stateRoot: join(dir, 'state') }, { checker, writer: put, trash: async folder => {
+    if (failTrash) throw new Error('磁盘不同')
+    const to = join(dir, 'trash', String(trashed.length))
+    await mkdir(join(dir, 'trash'), { recursive: true })
+    await rename(folder, to)
+    trashed.push(folder)
+    return to
+  } })
 })
 
 afterEach(async () => {
@@ -158,6 +168,39 @@ describe('GameService', () => {
     expect(fx?.what).toBe('look')
     expect(JSON.parse(fx!.looks!.after).parts[0].count).toBe(9)
     expect(JSON.parse(fx!.looks!.before!).parts[0].count).toBe(1)
+  })
+
+  it('deletes a project to the trash or only from the list, behind its guards', async () => {
+    const exists = (p: string) => stat(p).then(() => true, () => false)
+    const one = await created()
+    // Only from the list: the folder stays, the row and the binding go.
+    expect(await store.deleteProject(one.id, 'forget', session())).toEqual({ ok: true })
+    expect(await exists(join(one.root, 'game.json'))).toBe(true)
+    expect(await store.boundProject('s1')).toBeUndefined()
+    expect((await store.listProjects()).some(p => p.id === one.id)).toBe(false)
+
+    const two = await created()
+    await store.bind('s2', two.id)
+    // A folder that no longer holds this project is never trashed.
+    const manifest = await readFile(join(two.root, 'game.json'), 'utf8')
+    await writeFile(join(two.root, 'game.json'), manifest.replace(two.id, 'g_other'))
+    expect(await store.deleteProject(two.id, 'trash', session())).toEqual({ ok: false, error: 'not-a-project' })
+    await writeFile(join(two.root, 'game.json'), manifest)
+    // Nor the calling session's own workspace.
+    expect(await store.deleteProject(two.id, 'trash', ({ id: 's1', header: { cwd: two.root } }) as unknown as Session)).toEqual({ ok: false, error: 'is-workspace' })
+    // A failed move changes nothing.
+    failTrash = true
+    expect(await store.deleteProject(two.id, 'trash', session())).toEqual({ ok: false, error: 'trash-failed', reason: '磁盘不同' })
+    failTrash = false
+    expect((await store.listProjects()).some(p => p.id === two.id)).toBe(true)
+    // To the trash: folder moved, row and every binding gone.
+    const done = await store.deleteProject(two.id, 'trash', session())
+    expect(done).toMatchObject({ ok: true, trashedTo: join(dir, 'trash', '0') })
+    expect(trashed).toEqual([two.root])
+    expect(await exists(two.root)).toBe(false)
+    expect(await store.boundProject('s1')).toBeUndefined()
+    expect(await store.boundProject('s2')).toBeUndefined()
+    expect(await store.deleteProject(two.id, 'trash', session())).toEqual({ ok: false, error: 'not-found' })
   })
 
   it('adopts an existing folder and logs play sessions', async () => {
