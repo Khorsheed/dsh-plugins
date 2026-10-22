@@ -6,6 +6,8 @@
  */
 
 /** The project manifest's file name, at the project root. */
+import type { KitRef } from './kits/types.ts'
+
 export const MANIFEST_FILE = 'game.json'
 
 /** The plugin's own directory inside a project (snapshots, check results, logs). */
@@ -73,6 +75,8 @@ export interface GameManifest {
   /** The palette element looks draw from (the style's, unless the agent set its own). */
   readonly palette: readonly string[]
   readonly createdAt: string
+  /** The runtime kit the project is pinned to; absent = `2d-canvas` v1 (projects made before kits). */
+  readonly runtime?: KitRef
 }
 
 /** One tunable number (`game.json` `params[]`); the game reads it from `window.dshParams[key]` every frame. */

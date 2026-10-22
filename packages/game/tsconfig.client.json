@@ -34,6 +34,8 @@
     "src/client/style-samples.ts",
     "src/client/StyleGallery.tsx",
     "src/client/VersionsView.tsx",
-    "src/client/TurnCard.tsx"
+    "src/client/TurnCard.tsx",
+    "src/kits/ids.ts",
+    "src/kits/types.ts"
   ]
 }

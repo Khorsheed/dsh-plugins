@@ -20,21 +20,23 @@
  * @module @khorsheed/dsh-game
  */
 import { createHash, randomBytes } from 'node:crypto'
-import { appendFile, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { appendFile, mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { dirname, join, resolve } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 // Type-only: pulls the ctx.fs service merge.
 import type {} from '@deepseek-ai/dsh-fs'
 import type { SandboxPolicyService } from '@deepseek-ai/dsh-sandbox-policy'
 import type { Session } from '@deepseek-ai/dsh-session'
 import { ChromeChecker, type BrowserChecker } from './checks.ts'
+import { kitOf, withKitRuntime, type RuntimeKit } from './kits/index.ts'
+import { bundleOf, fingerprintOf, inside, readJson, readText, walk, writeAtomic, type WalkedFile } from './fsutil.ts'
 import {
-  artStyleLabel, chapterStatus, elementsChapter, gate, isBuildFile, isTextFile, mimeOf, normalizeLook, parseManifest,
+  artStyleLabel, chapterStatus, elementsChapter, gate, isBuildFile, parseManifest,
   patchElementText, listOf, pillarNotes, resolveArtStyle, serializeManifest, slugOf, validateElements, type CreateRequest,
 } from './project.ts'
 import {
   CHAPTERS, MANIFEST_FILE, PANEL_CHANGES_MARK, STATE_DIR,
-  type BundleFile, type ChapterView, type CheckFailure, type CheckRecord, type ElementLook, type GameManifest, type GameResult,
+  type ChapterView, type CheckFailure, type CheckRecord, type ElementLook, type GameManifest, type GameResult,
   type LogEntry, type LookProposal, type PendingChange, type PlayBundle, type ProjectCard, type ProjectRow, type ProjectView, type TurnReport,
   type SessionGameState, type VersionDiff, type VersionRecord, type VersionRow,
 } from './types.ts'
@@ -49,10 +51,6 @@ export interface GameConfig {
 
 /** Versions kept under `.game/versions/`; older ones are pruned. */
 const KEEP_VERSIONS = 10
-/** Walk limits for one project read: enough for a small game, bounded for a stray huge folder. */
-const MAX_FILES = 600
-const MAX_FILE_BYTES = 8 * 1024 * 1024
-const MAX_TOTAL_BYTES = 48 * 1024 * 1024
 
 /**
  * Resolve the registry root: explicit value, then `$DSH_HOME/state/game`,
@@ -69,103 +67,6 @@ export function resolveGameStateRoot(configured: string | undefined): string {
 interface Registry {
   projects: ProjectRow[]
   bindings: Record<string, string>
-}
-
-/** Whether `child` is `parent` or inside it. */
-function inside(parent: string, child: string): boolean {
-  const rel = relative(parent, child)
-  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))
-}
-
-/** Write a file atomically (tmp + rename), creating its directory. */
-async function writeAtomic(path: string, data: string | Uint8Array): Promise<void> {
-  await mkdir(dirname(path), { recursive: true })
-  const tmp = `${path}.${randomBytes(4).toString('hex')}.tmp`
-  await writeFile(tmp, data)
-  await rename(tmp, path)
-}
-
-/** Read a text file, undefined when absent or unreadable. */
-async function readText(path: string): Promise<string | undefined> {
-  try {
-    return await readFile(path, 'utf8')
-  } catch {
-    return undefined
-  }
-}
-
-/** Read JSON, undefined when absent or broken. */
-async function readJson<T>(path: string): Promise<T | undefined> {
-  const text = await readText(path)
-  if (text === undefined) return undefined
-  try {
-    return JSON.parse(text) as T
-  } catch {
-    return undefined
-  }
-}
-
-/** One walked file: project-relative POSIX path plus its bytes. */
-interface WalkedFile {
-  readonly path: string
-  readonly data: Buffer
-}
-
-/**
- * Walk a directory (dot-entries skipped), bounded by the walk limits.
- * @param root - directory to walk.
- * @param keep - project-relative path filter.
- * @returns the files, sorted by path.
- */
-async function walk(root: string, keep: (path: string) => boolean): Promise<WalkedFile[]> {
-  const out: WalkedFile[] = []
-  let total = 0
-  const visit = async (dir: string): Promise<void> => {
-    let entries
-    try {
-      entries = await readdir(dir, { withFileTypes: true })
-    } catch {
-      return
-    }
-    for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
-      if (out.length >= MAX_FILES || entry.name.startsWith('.') || entry.name === 'node_modules') continue
-      const full = join(dir, entry.name)
-      const rel = relative(root, full).split(sep).join('/')
-      if (entry.isDirectory()) {
-        await visit(full)
-        continue
-      }
-      if (!entry.isFile() || !keep(rel)) continue
-      const info = await stat(full).catch(() => undefined)
-      if (info === undefined || info.size > MAX_FILE_BYTES || total + info.size > MAX_TOTAL_BYTES) continue
-      total += info.size
-      out.push({ path: rel, data: await readFile(full) })
-    }
-  }
-  await visit(root)
-  return out
-}
-
-/** The sandbox bundle form of walked files. */
-function bundleOf(files: readonly WalkedFile[]): Record<string, BundleFile> {
-  const out: Record<string, BundleFile> = {}
-  for (const f of files) {
-    out[f.path] = isTextFile(f.path)
-      ? { type: mimeOf(f.path), text: f.data.toString('utf8') }
-      : { type: mimeOf(f.path), b64: f.data.toString('base64') }
-  }
-  return out
-}
-
-/** A content fingerprint over (path, bytes) pairs. */
-function fingerprintOf(files: readonly WalkedFile[]): string {
-  const hash = createHash('sha1')
-  for (const f of files) {
-    hash.update(f.path)
-    hash.update('\0')
-    hash.update(createHash('sha1').update(f.data).digest())
-  }
-  return hash.digest('hex').slice(0, 16)
 }
 
 /** The user layer (`.game/user.json`): slider overrides, changes waiting for the next send, a pending restyle. */
@@ -392,7 +293,7 @@ export class GameService {
       const manifest = await this.manifestOf(row.root)
       const current = await readJson<VersionRecord>(join(row.root, STATE_DIR, 'current.json'))
       const elementFiles = await walk(join(row.root, 'elements'), p => p.endsWith('.json'))
-      const { elements } = validateElements(Object.fromEntries(elementFiles.map(f => [`elements/${f.path}`, f.data.toString('utf8')])), [])
+      const { elements } = validateElements(Object.fromEntries(elementFiles.map(f => [`elements/${f.path}`, f.data.toString('utf8')])), [], kitOf(manifest?.runtime))
       const thumb = await readFile(join(row.root, STATE_DIR, 'last-check.webp')).catch(() => undefined)
       cards.push({
         id: row.id, title: manifest?.title ?? row.title, root: row.root, updatedAt: row.updatedAt,
@@ -513,6 +414,7 @@ export class GameService {
     const { elements, failures } = validateElements(
       Object.fromEntries(elementFiles.map(f => [`elements/${f.path}`, f.data.toString('utf8')])),
       manifest?.elementTypes ?? [],
+      kitOf(manifest?.runtime),
     )
     const playtest = await this.playtestText(row.root)
     const chapters: ChapterView[] = []
@@ -575,7 +477,7 @@ export class GameService {
     if (record === undefined) return { ok: false, error: 'no-version' }
     const files = await walk(join(row.root, STATE_DIR, 'versions', String(record.version)), () => true)
     if (files.length === 0) return { ok: false, error: 'no-version' }
-    return { ok: true, bundle: { projectId, version: record.version, files: bundleOf(files) } }
+    return { ok: true, bundle: { projectId, version: record.version, files: withKitRuntime(bundleOf(files), this.snapshotKit(files)) } }
   }
 
   /** One specific version's files. */
@@ -584,7 +486,19 @@ export class GameService {
     if (row === undefined) return { ok: false, error: 'not-found' }
     const files = await walk(join(row.root, STATE_DIR, 'versions', String(Math.floor(version))), () => true)
     if (files.length === 0) return { ok: false, error: 'no-version' }
-    return { ok: true, bundle: { projectId, version, files: bundleOf(files) } }
+    return { ok: true, bundle: { projectId, version, files: withKitRuntime(bundleOf(files), this.snapshotKit(files)) } }
+  }
+
+  /** The kit a snapshot was built for: its own `game.json`'s runtime. */
+  private snapshotKit(files: readonly WalkedFile[]): RuntimeKit {
+    const manifest = files.find(f => f.path === MANIFEST_FILE)
+    const parsed = manifest === undefined ? undefined : parseManifest(manifest.data.toString('utf8'))
+    return kitOf(parsed?.ok === true ? parsed.manifest.runtime : undefined)
+  }
+
+  /** The kit a project runs on now (its working `game.json`). */
+  private async kitFor(root: string): Promise<RuntimeKit> {
+    return kitOf((await this.manifestOf(root))?.runtime)
   }
 
   // ---------------------------------------------------------------- checks
@@ -619,12 +533,18 @@ export class GameService {
     const parsed = manifestText === undefined ? undefined : parseManifest(manifestText)
     if (parsed === undefined) failures.push({ where: 'data', message: `${MANIFEST_FILE} 不见了` })
     else if (!parsed.ok) failures.push({ where: 'data', message: parsed.error })
+    const kit = kitOf(parsed?.ok === true ? parsed.manifest.runtime : undefined)
     const elementFiles = build.filter(f => f.path.startsWith('elements/') && f.path.endsWith('.json'))
     failures.push(...validateElements(
       Object.fromEntries(elementFiles.map(f => [f.path, f.data.toString('utf8')])),
       parsed?.ok === true ? parsed.manifest.elementTypes : [],
+      kit,
     ).failures)
-    const browser = await this.checker.run(bundleOf(build), Object.fromEntries(tests.map(t => [`tests/${t.path}`, t.data.toString('utf8')])))
+    const browser = await this.checker.run(
+      withKitRuntime(bundleOf(build), kit),
+      Object.fromEntries(tests.map(t => [`tests/${t.path}`, t.data.toString('utf8')])),
+      { blankProbe: kit.blankProbe },
+    )
     failures.push(...browser.failures)
     const ok = failures.length === 0
     const record: CheckRecord = {
@@ -920,7 +840,7 @@ export class GameService {
     const files = await walk(join(row.root, 'elements'), p => p.endsWith('.json'))
     const changes: Record<string, unknown> = {}
     if (patch.look !== undefined) {
-      const look = normalizeLook(patch.look)
+      const look = (await this.kitFor(row.root)).normalizeLook(patch.look)
       if (look === null) return { ok: false, error: 'invalid' }
       changes.look = look
     }
@@ -1034,12 +954,13 @@ export class GameService {
     if (element === undefined) return { ok: false, error: `没有 id 为「${elementId}」的元素` }
     const clean: { label: string; note: string; look: ElementLook }[] = []
     const bad: number[] = []
+    const kit = await this.kitFor(row.root)
     variants.slice(0, 3).forEach((v, i) => {
-      const look = normalizeLook(v.look)
+      const look = kit.normalizeLook(v.look)
       if (look === null) bad.push(i + 1)
       else clean.push({ label: (v.label ?? '').trim().slice(0, 20) || 'ABC'[i]!, note: (v.note ?? '').trim().slice(0, 120), look })
     })
-    if (clean.length === 0) return { ok: false, error: `方案都不可用（第 ${bad.join('、')} 个）：look 需要 palette（#rrggbb 数组）和 states（状态名 → 等长像素行）` }
+    if (clean.length === 0) return { ok: false, error: `方案都不可用（第 ${bad.join('、')} 个）：${kit.lookHint}` }
     const all = await readJson<LookProposal[]>(join(row.root, STATE_DIR, 'proposals.json'))
     const list = (Array.isArray(all) ? all : []).filter(p => !(p.elementId === elementId && p.picked === undefined))
     list.push({ elementId, at: new Date().toISOString(), request: request.trim().slice(0, 200), variants: clean })

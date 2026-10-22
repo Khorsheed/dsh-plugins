@@ -48,27 +48,8 @@ const BRIDGE = `(function(){
     };
     try { Object.defineProperty(window, 'localStorage', { configurable: true, get: function(){ return store } }) } catch (e) {}
   }
-  var CH = '0123456789abcdefghijklmnopqrstuvwxyz';
   window.dshParams = window.dshParams || {};
   window.dshElements = window.dshElements || {};
-  window.dshDraw = function(g, look, state, x, y, scale){
-    if (typeof look === 'string') { var el = window.dshElements[look]; look = el && el.look }
-    if (!look || !look.states || !look.palette) return false;
-    var names = Object.keys(look.states), rows = look.states[state] || look.states[names[0]];
-    if (!rows) return false;
-    scale = scale || 1;
-    for (var r = 0; r < rows.length; r++) for (var c = 0; c < rows[r].length; c++) {
-      var col = look.palette[CH.indexOf(rows[r].charAt(c))];
-      if (!col) continue;
-      g.fillStyle = col; g.fillRect(Math.round(x + c * scale), Math.round(y + r * scale), Math.ceil(scale), Math.ceil(scale));
-    }
-    return true;
-  };
-  window.dshLookSize = function(look){
-    if (typeof look === 'string') { var el = window.dshElements[look]; look = el && el.look }
-    var rows = look && look.states && look.states[Object.keys(look.states)[0]];
-    return rows ? { w: rows[0].length, h: rows.length } : { w: 0, h: 0 };
-  };
   addEventListener('message', function(e){
     var d = e.data || {}, g = window.dshGame;
     if (d.gamedev === 'inspect') post({ gamedev: 'inspect', ready: !!(g && g.ready), state: g && g.state ? g.state() : null, errors: errors });
@@ -120,8 +101,9 @@ const LOADER = `window.__boot = function (files) {
     if (urls[p]) return urls[p];
     if (busy[p]) throw new Error('module cycle at ' + p);
     busy[p] = 1;
-    var src = text(p).replace(/(\\bimport\\s*\\(\\s*|\\bfrom\\s*|\\bimport\\s+)(['"])(\\.{0,2}\\/[^'"]+)\\2/g, function (m, pre, q, spec) {
-      var r = norm(dir(p), spec); return r && files[r] ? pre + q + modUrl(r) + q : m;
+    var src = text(p).replace(/(\\bimport\\s*\\(\\s*|\\bfrom\\s*|\\bimport\\s+)(['"])([^'"]+)\\2/g, function (m, pre, q, spec) {
+      var r = /^\\.{0,2}\\//.test(spec) ? norm(dir(p), spec) : bare[spec];
+      return r && files[r] ? pre + q + modUrl(r) + q : m;
     });
     delete busy[p];
     return (urls[p] = mint(src, 'text/javascript'));
@@ -144,6 +126,9 @@ const LOADER = `window.__boot = function (files) {
     var d = Object.getOwnPropertyDescriptor(pair[0], pair[1]);
     Object.defineProperty(pair[0], pair[1], { configurable: true, enumerable: d.enumerable, get: function () { return d.get.call(this) }, set: function (v) { d.set.call(this, rel(v) || v) } });
   });
+  // The kit's bare module map (e.g. 'three' → '_dsh/three.module.js').
+  var bare = {};
+  try { if (files['_dsh/imports.json']) bare = JSON.parse(text('_dsh/imports.json')) || {} } catch (e) {}
   if (!files['index.html']) { document.body.textContent = '这个版本没有 index.html'; return }
   try {
     var manifest = files['game.json'] ? JSON.parse(text('game.json')) : {};
@@ -160,6 +145,8 @@ const LOADER = `window.__boot = function (files) {
   var meta = doc.createElement('meta'); meta.httpEquiv = 'Content-Security-Policy'; meta.content = window.__GD_CSP;
   var bridge = doc.createElement('script'); bridge.textContent = window.__GD_BRIDGE;
   doc.head.prepend(meta, bridge);
+  // The kit runtime runs right after the bridge, before any of the game's own scripts.
+  if (files['_dsh/runtime.js']) { var kit = doc.createElement('script'); kit.src = urlFor('_dsh/runtime.js'); bridge.after(kit) }
   document.open(); document.write('<!doctype html>' + doc.documentElement.outerHTML); document.close();
 };`
 

@@ -4,6 +4,8 @@
  * the store feeds it file contents, the specs feed it strings.
  * @module @khorsheed/dsh-game
  */
+import { isKitId } from './kits/ids.ts'
+import type { KitRef, RuntimeKit } from './kits/types.ts'
 import {
   ART_STYLES, LOOK_CHARS, MANIFEST_FILE, STATE_DIR,
   type ChapterStatus, type CheckFailure, type ElementLook, type ElementView, type GameManifest, type GameParam,
@@ -118,6 +120,9 @@ export function parseParams(raw: unknown): GameParam[] {
   return out.slice(0, 24)
 }
 
+/** What a usable pixel look needs, worded for the model. */
+export const PIXEL_LOOK_HINT = 'look 不可用：需要 palette（#rrggbb 数组）和 states（状态名 → 像素行数组）'
+
 /**
  * Normalize an element's `look`: a palette of `#rrggbb` colors and pixel
  * rows per state, every row padded/cut to the widest row, characters outside
@@ -182,8 +187,18 @@ export function parseManifest(text: string): { ok: true; manifest: GameManifest 
         ? r.palette.filter((c): c is string => typeof c === 'string' && HEX.test(c))
         : stylePalette(str(r.artStyle)),
       createdAt: str(r.createdAt),
+      ...(runtimeOf(r.runtime) ?? {}),
     },
   }
+}
+
+/** The manifest's `runtime` when it names a shipped kit with a positive integer version. */
+function runtimeOf(raw: unknown): { runtime: KitRef } | undefined {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return undefined
+  const r = raw as Record<string, unknown>
+  if (!isKitId(r.kit)) return undefined
+  const version = typeof r.version === 'number' && Number.isInteger(r.version) && r.version > 0 ? r.version : 1
+  return { runtime: { kit: r.kit, version } }
 }
 
 /** Serialize a manifest the way the plugin writes it. */
@@ -242,11 +257,13 @@ function scalarStats(r: Record<string, unknown>): Record<string, string | number
  * are unique across files.
  * @param files - project-relative path → contents, only `elements/*.json`.
  * @param elementTypes - the manifest's declared types (empty = accept any).
+ * @param looks - how the project's kit normalizes a `look` (default: 2D pixel rows).
  * @returns the elements that parsed, and one failure per problem.
  */
 export function validateElements(
   files: Readonly<Record<string, string>>,
   elementTypes: readonly string[],
+  looks: Pick<RuntimeKit, 'normalizeLook' | 'lookHint'> = { normalizeLook, lookHint: PIXEL_LOOK_HINT },
 ): { elements: ElementView[]; failures: CheckFailure[] } {
   const elements: ElementView[] = []
   const failures: CheckFailure[] = []
@@ -281,9 +298,9 @@ export function validateElements(
         if (earlier !== undefined) failures.push({ where: at, message: `id「${id}」和 ${earlier} 重复` })
         else seen.set(id, at)
       }
-      if (r.look !== undefined && normalizeLook(r.look) === null) failures.push({ where: at, message: 'look 不可用：需要 palette（#rrggbb 数组）和 states（状态名 → 像素行数组）' })
+      if (r.look !== undefined && looks.normalizeLook(r.look) === null) failures.push({ where: at, message: looks.lookHint })
       if (id !== '' && name !== '' && type !== '') {
-        elements.push({ file, index: Array.isArray(raw) ? index : -1, id, type, name, stats: scalarStats(r), look: normalizeLook(r.look) })
+        elements.push({ file, index: Array.isArray(raw) ? index : -1, id, type, name, stats: scalarStats(r), look: looks.normalizeLook(r.look) })
       }
     })
   }
