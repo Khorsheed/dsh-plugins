@@ -33,7 +33,6 @@ describe('scan (real tree)', () => {
     expect(byPkg.get('worktrees')).toMatchObject({ wire: 'worktrees', serviceKey: 'worktreesRemote' })
     // The two neither survey covered — they are not dev members.
     expect(byPkg.get('datasets')?.split).toBe(true)
-    expect(byPkg.get('mission')?.split).toBe(true)
     // The coincident ones still resolve to a wire name.
     expect(byPkg.get('file-preview')).toMatchObject({ wire: 'filePreview', split: false })
     expect(byPkg.get('local-agent')).toMatchObject({ wire: 'localAgentGateway', split: false })
@@ -41,7 +40,7 @@ describe('scan (real tree)', () => {
 
   it('every package exporting ./remote appears', () => {
     const pkgs = new Set(scan().map((r) => r.pkg))
-    for (const expected of ['capability-catalog', 'datasets', 'file-preview', 'local-agent', 'local-files', 'message-tools', 'mission', 'room', 'worktrees']) {
+    for (const expected of ['capability-catalog', 'datasets', 'file-preview', 'local-agent', 'local-files', 'message-tools', 'room', 'worktrees']) {
       expect(pkgs, `${expected} has a ./remote export but no extracted namespace`).toContain(expected)
     }
   })

@@ -1,11 +1,11 @@
-/** The core's remaining faces after the tool-row split (M4'③) and the
- * preset-visibility rollout (A3): the service and the Remote data face. The
- * model tools, the `tool:mission` prompt section, and the `/mission` slash
- * registration moved to the `./tool` composition row `@khorsheed/dsh-mission/tool`, so
- * mounting this core must touch NEITHER the tool registry NOR the
- * system-prompt assembly NOR the command registry — the ctx below supplies
- * none of them, so a stray registration would throw instead of passing
- * silently. */
+/** The core's remaining faces after the tool-row split (M4'③), the
+ * preset-visibility rollout (A3), and the tab/Remote retirement: the service
+ * alone. The model tools, the `tool:mission` prompt section, and the
+ * `/mission` slash registration live in the `./tool` composition row
+ * `@khorsheed/dsh-mission/tool`, so mounting this core must touch NEITHER
+ * the tool registry NOR the system-prompt assembly NOR the command registry
+ * NOR the plugin loader — the ctx below supplies none of them, so a stray
+ * registration would throw instead of passing silently. */
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -18,7 +18,7 @@ afterEach(() => {
 })
 
 describe('mission core faces', () => {
-  it('mounts the service and the Remote face, and registers NO slash command (A3: it moved to the companion row)', () => {
+  it('mounts the service only, and registers NO slash command (A3: it lives in the companion row)', () => {
     const root = mkdtempSync(join(tmpdir(), 'dsh-mission-core-'))
     roots.push(root)
     let slash = 0
@@ -32,7 +32,7 @@ describe('mission core faces', () => {
     apply(ctx as never, { dataDir: root })
     expect(provided).toBe('mission')
     expect(slash).toBe(0)
-    expect(pluginMounts).toBe(1)
+    expect(pluginMounts).toBe(0)
   })
 
   it('installs the datasets-backed layer probe on the service (the gated export\'s input), looked up per call', async () => {
@@ -42,7 +42,6 @@ describe('mission core faces', () => {
     let datasets: unknown
     const ctx = {
       provide: (_name: string, value: never) => { service = value },
-      plugin: () => {},
       get: (name: string) => (name === 'datasets' ? datasets : undefined),
     }
     apply(ctx as never, { dataDir: root })

@@ -7,7 +7,7 @@
 - 包总数:**48**
 - 自挂载 bundle(`dsh.bundle.patch`):**45**
 - 组合组件(不自挂载,`dsh.composition.component`):**3** — `source-plane-library` 2、`sub-profile-patch` 1
-- 带浏览器半边(`dsh.client`):**32**
+- 带浏览器半边(`dsh.client`):**31**
 - 整合 profile(默认安装单元):**3** — `basic`、`dev`、`eval`
 
 **安装单元是 profile,不是单包。** 单包安装是高级路径:自挂载包 `dsh plugin add <pkg>` 即可,
@@ -48,7 +48,7 @@
 | `@khorsheed/dsh-local-files` | `packages/local-files` | 0.1.3 | bundle | — | web | 0.1.5-rc.1 | basic, eval |
 | `@khorsheed/dsh-message-timeline` | `packages/message-timeline` | 0.2.5 | bundle | — | web | 0.1.2-rc.1 | basic, eval |
 | `@khorsheed/dsh-client-message-tools` | `packages/message-tools` | 0.3.4 | bundle | — | web | 0.1.5-rc.1 | basic, eval |
-| `@khorsheed/dsh-mission` | `packages/mission` | 0.2.0-rc.1 | bundle | — | web | 0.2.0-rc.2 | — |
+| `@khorsheed/dsh-mission` | `packages/mission` | 0.2.0-rc.1 | bundle | — | — | 0.2.0-rc.2 | — |
 | `@khorsheed/dsh-mobile` | `packages/mobile` | 0.1.4 | bundle | — | web | 0.1.5-rc.1 | basic |
 | `@khorsheed/dsh-presets` | `packages/presets` | 0.3.2 | bundle | — | — | 0.1.7-rc.1 | — |
 | `@khorsheed/dsh-quote` | `packages/quote` | 0.1.3 | bundle | — | web | 0.1.5-rc.1 | basic |

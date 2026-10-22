@@ -8,7 +8,7 @@
 
 ## 特性
 
-- **一次装齐两族**——datasets（题集登记与只读物化、题集 tab）、mission（运行与尝试的账本、释放闸、任务 tab）、lab（Docker 容器单元）、eval（编排器、实验室 tab）四个评测成员，外加 local-agent 委派家族（核心 + kimi / codex / claude-code / dsh 四家提供方）与评测模式 preset 行，一条 `dsh plugin add` 全部就位。
+- **一次装齐两族**——datasets（题集登记与只读物化、题集 tab）、mission（运行与尝试的账本、释放闸）、lab（Docker 容器单元）、eval（编排器、实验室 tab）四个评测成员，外加 local-agent 委派家族（核心 + kimi / codex / claude-code / dsh 四家提供方）与评测模式 preset 行，一条 `dsh plugin add` 全部就位。
 - **模型工具按会话授予**——`datasets_*`、`mission_*`、`eval_*` 工具不挂在 profile 根，而是各成员包自己的 `./tool` 组合入口（`@khorsheed/dsh-datasets/tool` 等），由 agent 预设点名授予；本包携带的 `preset-dsh-eval` 行就是评测模式的授予点（`datasets-tool` / `eval-tool`），没点名的预设一个都拿不到。
 - **清单里只有一张卡**——locale 卡面元数据把整族归成一张「评测套件」卡。
 - **纯组合，零运行时**——本包不注册任何服务/工具/槽位/命令；patch 逐字复用成员的规范行，装我不双挂（机制见文末实现原理）。

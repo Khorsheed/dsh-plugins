@@ -6,12 +6,9 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { Context } from '@deepseek-ai/cordis'
-import type { Agent } from '@deepseek-ai/dsh-agent'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { GET_SCHEMA, LIST_SCHEMA, runCli, type CliIo } from '../src/cli-core.ts'
 import { datasetsLayerProbe } from '../src/gate.ts'
-import { MissionRemoteService } from '../src/remote.ts'
 import { MissionService } from '../src/service.ts'
 
 let dir: string
@@ -35,8 +32,6 @@ function capture(): { io: CliIo; out: () => string; err: () => string } {
   }
 }
 
-const agent = { session: { id: 's1' } } as unknown as Agent
-
 describe('attemptDataDir', () => {
   it('is the store layout, pure, and refuses unsafe ids', async () => {
     await service.create({ id: 'm' })
@@ -44,15 +39,6 @@ describe('attemptDataDir', () => {
     expect(path).toBe(join(dir, 'runs', 'default', 'data', 'm', 'attempt-2'))
     expect(existsSync(path)).toBe(false)
     expect(() => service.attemptDataDir('../x', 'm', 1)).toThrow(/not a usable id/)
-  })
-
-  it('rides the Remote face too', async () => {
-    const ctx = new Context()
-    ctx.provide('mission', service)
-    await ctx.plugin(MissionRemoteService).await()
-    const remote = ctx.get('missionRemote') as MissionRemoteService
-    expect(remote.attemptDataDir(agent, { runId: 'default', missionId: 'm', attempt: 1 }))
-      .toEqual({ dir: join(dir, 'runs', 'default', 'data', 'm', 'attempt-1') })
   })
 })
 

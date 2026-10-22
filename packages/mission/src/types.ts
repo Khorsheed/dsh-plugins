@@ -239,83 +239,7 @@ export interface MissionView {
   enteredCurrentAt: number
 }
 
-/** The Remote wire contracts (the missions tab’s data face) live here so the
- * Typert boundary types sit on the public `./types` subpath. */
-
-/** `queue` request: the bucket chips (multi-select), the run scope, the all-runs toggle. */
-export interface MissionQueueRequest {
-  /** Restrict to these projection buckets; absent = all five. */
-  buckets?: string[]
-  /** One run only; absent = the scope toggle decides. */
-  runId?: string
-  /** true = every run; absent/false = only runs this session originated. */
-  all?: boolean
-}
-
-/** One run's section of the queue payload. */
-export interface MissionQueueRun {
-  run: RunSummary
-  rows: MissionView[]
-}
-
-/** The queue payload: run sections in run order, plus the caller's session id. */
-export interface MissionQueueResult {
-  sessionId: string
-  runs: MissionQueueRun[]
-}
-
-/** `get` request: one mission's full detail. */
-export interface MissionGetRequest {
-  missionId: string
-  runId?: string
-}
-
-/** AttemptRecord on the wire: the Remote boundary constrains the submission payload to JSON. */
-export type MissionAttemptWire = Omit<AttemptRecord, 'submission'> & {
-  submission?: { json?: JsonValue; at: number; by: string }
-}
-
-/** AnnotationRecord on the wire: the Remote boundary constrains the payload to JSON. */
-export type MissionAnnotationWire = Omit<AnnotationRecord, 'payload'> & { payload: JsonValue }
-
-/** RunAnnotationRecord on the wire: the Remote boundary constrains the payload to JSON. */
-export type MissionRunAnnotationWire = Omit<RunAnnotationRecord, 'payload'> & { payload: JsonValue }
-
-/** `runAnnotations` request: one run's notes, optionally one namespace. */
-export interface MissionRunAnnotationsRequest {
-  runId: string
-  ns?: string
-}
-
-/** `attemptDataDir` request: which attempt's run-data directory. */
-export interface MissionAttemptDataDirRequest {
-  runId: string
-  missionId: string
-  attempt: number
-}
-
-/** One mission's detail for the tab's row panel. */
-export interface MissionDetail {
-  runId: string
-  view: MissionView
-  title?: string
-  attempts: MissionAttemptWire[]
-  annotations: MissionAnnotationWire[]
-}
-
-/** `retry` / `isReleasable` request. */
-export interface MissionRefRequest {
-  missionId: string
-  runId?: string
-}
-
-/** `retry` request: every fresh attempt must carry an auditable reason. */
-export interface MissionRetryRequest extends MissionRefRequest {
-  reason: string
-  category: RetryCategory
-}
-
-/** `exportPlan` request: what the export dialog needs before confirming. */
+/** `exportPlan` request: what a caller needs before confirming. */
 export interface MissionExportPlanRequest {
   runId: string
   outDir: string
@@ -329,11 +253,11 @@ export interface MissionExportPlanRequest {
 
 /** `exportRun` request: the confirmed export. */
 export interface MissionExportRequest extends MissionExportPlanRequest {
-  /** The guarded layers the human confirmed in the dialog — re-checked against a fresh plan. */
+  /** The guarded layers the human confirmed — re-checked against a fresh plan. */
   confirmed: string[]
 }
 
-/** The plan view the dialog renders (guarded list + expected ns + target path). */
+/** The plan view (guarded list + expected ns + target path). */
 export interface MissionExportPlanView {
   bundleDir: string
   guardedLayers: string[]
@@ -348,11 +272,9 @@ export interface MissionExportResultView {
   files: number
 }
 
-// Named re-exports so every type the Remote boundary references (directly or
-// nested) is reachable from the public `./types` subpath (the Typert
-// generator's boundary-type rule); the imports give this module local bindings.
-import type { JsonValue } from '@deepseek-ai/dsh-util-values'
-import type { RunSummary } from './service.ts'
+// Named re-exports so every type the service face's export verbs reference
+// (directly or nested) is reachable from the public `./types` subpath; the
+// import gives this module a local binding.
 import type { SnapshotRef } from './export.ts'
 export type { RunSummary } from './service.ts'
 export type { ExportLayer, SnapshotRef } from './export.ts'

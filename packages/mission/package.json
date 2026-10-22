@@ -1,6 +1,6 @@
 {
   "name": "@khorsheed/dsh-mission",
-  "description": "Generic task management: runs of missions with template-declared state machines, deterministic guards, plan data (dependencies / schedules), attempts and checkpoints, append-only annotations, a releasable-state gate for irreversible resources, gated run-bundle export, and a web session tab over a Typert Remote data face",
+  "description": "Generic task management: runs of missions with template-declared state machines, deterministic guards, plan data (dependencies / schedules), attempts and checkpoints, append-only annotations, a releasable-state gate for irreversible resources, and gated run-bundle export",
   "version": "0.2.0-rc.1",
   "publishConfig": {
     "access": "public"
@@ -33,18 +33,6 @@
       "types": "./lib/types/tool.d.ts",
       "default": "./lib/tool.js"
     },
-    "./client": {
-      "types": "./lib/types/client/index.d.ts",
-      "default": "./lib/client.js"
-    },
-    "./typert": {
-      "types": "./lib/typert.host.d.ts",
-      "default": "./lib/typert.host.js"
-    },
-    "./remote": {
-      "types": "./lib/typert.remote-client.d.ts",
-      "default": "./lib/typert.remote-client.js"
-    },
     "./src/*": "./src/*",
     "./package.json": "./package.json",
     "./locale/*.json": "./locale/*.json",
@@ -52,10 +40,6 @@
   },
   "files": [
     "lib",
-    "lib/typert.host.d.ts",
-    "lib/typert.host.js",
-    "lib/typert.remote-client.d.ts",
-    "lib/typert.remote-client.js",
     "cordis.patch.yml",
     "locale/*.json"
   ],
@@ -65,76 +49,23 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
-    "@deepseek-ai/dsh-agent": "^0.1.0-rc.6 || ^0.2.0-rc.1 || ^0.2.1-rc.1",
-    "@deepseek-ai/dsh-api-remotes": "^0.1.0-rc.6 || ^0.2.0-rc.1 || ^0.2.1-rc.1",
-    "@deepseek-ai/dsh-client-connection": "^0.1.0-rc.6 || ^0.2.0-rc.1 || ^0.2.1-rc.1",
-    "@deepseek-ai/dsh-client-locale": "^0.1.0-rc.6 || ^0.2.0-rc.1 || ^0.2.1-rc.1",
-    "@deepseek-ai/dsh-client-ui-conversation": "^0.1.0-rc.6 || ^0.2.0-rc.1 || ^0.2.1-rc.1",
-    "@deepseek-ai/dsh-client-ui-layout": "^0.1.0-rc.6 || ^0.2.0-rc.1 || ^0.2.1-rc.1",
-    "@deepseek-ai/dsh-client-ui-primitives": "^0.1.0-rc.6 || ^0.2.0-rc.1 || ^0.2.1-rc.1",
-    "@deepseek-ai/dsh-client-ui-slots": "^0.1.0-rc.6 || ^0.2.0-rc.1 || ^0.2.1-rc.1",
     "@deepseek-ai/dsh-commands": "^0.1.0-rc.6 || ^0.2.0-rc.1 || ^0.2.1-rc.1",
-    "@deepseek-ai/dsh-session": "^0.1.0-rc.6 || ^0.2.0-rc.1 || ^0.2.1-rc.1",
     "@deepseek-ai/dsh-tools": "^0.1.0-rc.6 || ^0.2.0-rc.1 || ^0.2.1-rc.1",
-    "@deepseek-ai/dsh-typert-protocol": "^0.1.0-rc.6 || ^0.2.0-rc.1 || ^0.2.1-rc.1",
-    "@deepseek-ai/schemastery": "^3.18.1",
-    "react": "^18.2.0"
-  },
-  "peerDependenciesMeta": {
-    "@deepseek-ai/dsh-api-remotes": {
-      "optional": true
-    },
-    "@deepseek-ai/dsh-client-connection": {
-      "optional": true
-    },
-    "@deepseek-ai/dsh-client-locale": {
-      "optional": true
-    },
-    "@deepseek-ai/dsh-client-ui-conversation": {
-      "optional": true
-    },
-    "@deepseek-ai/dsh-client-ui-layout": {
-      "optional": true
-    },
-    "@deepseek-ai/dsh-client-ui-primitives": {
-      "optional": true
-    },
-    "@deepseek-ai/dsh-client-ui-slots": {
-      "optional": true
-    },
-    "react": {
-      "optional": true
-    }
+    "@deepseek-ai/schemastery": "^3.18.1"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
-    "@deepseek-ai/cordis-plugin-loader": "^1.0.2",
-    "@deepseek-ai/dsh-agent": "^0.2.0-rc.1",
-    "@deepseek-ai/dsh-api-remotes": "^0.2.0-rc.1",
-    "@deepseek-ai/dsh-api-session-controller": "^0.2.0-rc.1",
-    "@deepseek-ai/dsh-client-locale": "^0.2.0-rc.1",
-    "@deepseek-ai/dsh-client-store": "^0.2.0-rc.1",
-    "@deepseek-ai/dsh-client-ui-conversation": "^0.2.0-rc.1",
-    "@deepseek-ai/dsh-client-ui-primitives": "^0.2.0-rc.1",
-    "@deepseek-ai/dsh-client-ui-renderer": "^0.2.0-rc.1",
-    "@deepseek-ai/dsh-client-ui-slots": "^0.2.0-rc.1",
     "@deepseek-ai/dsh-commands": "^0.2.0-rc.1",
-    "@deepseek-ai/dsh-session": "^0.2.0-rc.1",
     "@deepseek-ai/dsh-tools": "^0.2.0-rc.1",
-    "@deepseek-ai/dsh-typert-protocol": "^0.2.0-rc.1",
     "@deepseek-ai/dsh-util-values": "^0.2.0-rc.1",
     "@deepseek-ai/schemastery": "^3.18.1",
-    "@testing-library/react": "^16.1.0",
     "@types/node": "^22.0.0",
-    "@types/react": "~18.3.1",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
     "tsdown": "^0.22.2",
     "typescript": "^5.9.0",
     "vitest": "^3.0.0"
   },
   "scripts": {
-    "build": "tsx ../../scripts/gen-typert.mts && tsc -b tsconfig.json && tsdown",
+    "build": "tsc -b tsconfig.json && tsdown",
     "test": "vitest run",
     "typecheck": "tsc -b tsconfig.json --noEmit"
   },
@@ -150,19 +81,9 @@
     "bundle": {
       "patch": "./cordis.patch.yml"
     },
-    "client": {
-      "inject": [
-        "@deepseek-ai/dsh-client-connection",
-        "@deepseek-ai/dsh-api-remotes",
-        "@deepseek-ai/dsh-client-locale",
-        "@deepseek-ai/dsh-client-ui-conversation",
-        "@deepseek-ai/dsh-client-ui-layout"
-      ],
-      "platform": "web"
-    },
     "compat": {
       "minHost": "0.2.0-rc.2",
-      "notes": "slash commands need an interactive UI adapter (web/TUI profile); on headless profiles they are unavailable while the service surface and the CLI stay fully functional. The model-tool face is NOT registered by this package any more: this package's `./tool` composition entry (`@khorsheed/dsh-mission/tool`) owns it, and an agent preset grants it per session (`tools`: all / read / none on that row) — the core row's service surface, CLI, slash command, and tab are unaffected by that choice. The 任务 tab self-hides in sessions whose preset composition names no `@khorsheed/dsh-mission/tool` row (fail-open on every unreadable path). The session tab is a web surface — TUI has no tab mechanism; headless profiles serve the Remote data face without a browser consumer. The tab is live-smoke-tested on the 0.2.0-rc.2 web-eval profile (T88). The session-granted tool row folded back from the standalone `@khorsheed/dsh-mission-tool` companion into this package at 0.2.0-rc.1 (T88, the evaluation-family fold) as the `./tool` composition entry — the preset row id `mission-tool` is unchanged, so a preset's composition state is unaffected once its row name points at `@khorsheed/dsh-mission/tool`; the old package name is retired.",
+      "notes": "slash commands need an interactive UI adapter (web/TUI profile); on headless profiles they are unavailable while the service surface and the CLI stay fully functional. The model-tool face is NOT registered by this package any more: this package's `./tool` composition entry (`@khorsheed/dsh-mission/tool`) owns it, and an agent preset grants it per session (`tools`: all / read / none on that row) — the core row's service surface, CLI, and slash command are unaffected by that choice. The 任务 session tab and its Typert Remote data face (wire namespace `mission`, the `./client` / `./remote` / `./typert` exports) are retired: the human gestures they carried (retry, release check, the gated-export dialog) live on in the eval family's 实验室 surface through eval's own Remote and this package's service face, and the default evaluation preset never showed the tab (ui-spec R6). The session-granted tool row folded back from the standalone `@khorsheed/dsh-mission-tool` companion into this package at 0.2.0-rc.1 (T88, the evaluation-family fold) as the `./tool` composition entry — the preset row id `mission-tool` is unchanged, so a preset's composition state is unaffected once its row name points at `@khorsheed/dsh-mission/tool`; the old package name is retired.",
       "verifiedHost": "0.2.1-rc.1"
     }
   },

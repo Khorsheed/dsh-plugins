@@ -100,11 +100,6 @@ export const TYPERT_PACKAGES: readonly TypertPackage[] = [
     hostConfigs: ['tsconfig.host.json'],
   },
   {
-    dir: 'packages/mission',
-    name: '@khorsheed/dsh-mission',
-    hostConfigs: ['tsconfig.host.json'],
-  },
-  {
     dir: 'packages/local-agent',
     name: '@khorsheed/dsh-local-agent',
     hostConfigs: ['tsconfig.host.json'],

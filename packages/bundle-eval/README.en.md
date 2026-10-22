@@ -8,7 +8,7 @@ A dataset is registered as a read-only source, an experiment expands "which task
 
 ## Features
 
-- **Two families in one install** — datasets (dataset registry and read-only materialization, the 题集 tab), mission (the run and attempt ledger, the release gate, the 任务 tab), lab (Docker container units), and eval (the orchestrator, the 实验室 tab), plus the local-agent delegation family (the core and the kimi / codex / claude-code / dsh providers) and the evaluation-mode preset row, all from a single `dsh plugin add`.
+- **Two families in one install** — datasets (dataset registry and read-only materialization, the 题集 tab), mission (the run and attempt ledger, the release gate), lab (Docker container units), and eval (the orchestrator, the 实验室 tab), plus the local-agent delegation family (the core and the kimi / codex / claude-code / dsh providers) and the evaluation-mode preset row, all from a single `dsh plugin add`.
 - **Model tools granted per session** — the `datasets_*`, `mission_*`, and `eval_*` tools are not mounted at the profile root: each is its member package's own `./tool` composition entry (`@khorsheed/dsh-datasets/tool` and so on), granted by the agent presets that name it; the `preset-dsh-eval` row this bundle carries is the evaluation mode's grant point (`datasets-tool` / `eval-tool`), and a preset that does not name it gets none.
 - **One card in the inventory** — locale card metadata folds the family into a single 「评测套件」 card.
 - **Pure composition, zero runtime** — the package registers no service, tool, slot, or command of its own; the patch reuses the members' canonical rows verbatim and never double-mounts (mechanism in How it works below).

@@ -151,7 +151,7 @@ agent 只在规划期与分析期出现，需要的是读与起草；执行期�
 | eval | 四读 `eval_conditions` `eval_plan_validate` `eval_run_status` `eval_cells` + 两写 `eval_plan_draft`（部署内实验目录）`eval_analysis_write`（只写 `analysis/`）；不开 run | 内核 | 批准、run、report |
 | 委派工具（`subagent_codex` / `subagent_claude_code` / `subagent_kimi` / `subagent_dsh`） | 不开——家族折叠后工具是各 provider 的 `./tool` 组合入口，按预设点名授予，eval 预设不点名即缺席；第四家 `subagent_dsh` 由控制器在开关 ON 时动态挂载，默认 OFF | 经 local-agent 门面委派选手 | `/codex login`、`/kimi status` 等 provider 动词 |
 
-**M4'③ 起这三个机制插件把核心行与工具行分开**：profile 根只挂核心行（服务 / CLI / slash / 标签页），模型工具行与工具提示词段落归工具行（T88 起是各核心包的 `./tool` 组合入口，此前是三个独立伴生包），所以上表的按域 tier 由 pack 的 `eval` 预设的工具行授予——`datasets-tool: organize`（T102 前是 `authoring`）、`eval-tool: all`（见[冻结决策 12 的执行点](#冻结决策-12-的执行点eval-预设)）——不再是 profile 根的 `tools` 配置；同 profile 里走别的预设的会话这两套工具一个都拿不到，服务 / CLI / slash 仍全局，任务 / 数据集两个标签页另按同一组合判据自隐（判据读不到时 fail-open）。**`mission-tool` 曾是第三行（`tools: read`），I5·T46 摘掉**：界面规格的 R6 定了「评测模式下 mission 这个词不出现」，逐格细节改由 `eval_cells` 从 eval 自己的投影读（数据仍经结构面算 mission 的账本，但算在服务端）；同一条自隐规则的另一半随之生效——任务 tab 判的就是预设里有没有这一行，所以它一走，评测会话的任务 tab 自己就不见了。包照装，谁要在自己的覆盖层预设里加回这一行（`name: '@khorsheed/dsh-mission/tool'`）都还在。工具行随核心包安装，核心包随整合包 `@khorsheed/dsh-bundle-eval` 安装：`package.json` 只依赖整合包，源码模式的 `UNPUBLISHED_DIRS` 负责从检出构建四个成员与整合包并打成 tarball（`autoInstallPeers: false`，peer 不会被自动装上）。
+**M4'③ 起这三个机制插件把核心行与工具行分开**：profile 根只挂核心行（服务 / CLI / slash / 标签页），模型工具行与工具提示词段落归工具行（T88 起是各核心包的 `./tool` 组合入口，此前是三个独立伴生包），所以上表的按域 tier 由 pack 的 `eval` 预设的工具行授予——`datasets-tool: organize`（T102 前是 `authoring`）、`eval-tool: all`（见[冻结决策 12 的执行点](#冻结决策-12-的执行点eval-预设)）——不再是 profile 根的 `tools` 配置；同 profile 里走别的预设的会话这两套工具一个都拿不到，服务 / CLI / slash 仍全局，数据集标签页另按同一组合判据自隐（判据读不到时 fail-open；任务 tab 曾同规则自隐，现已随其 Remote 数据面整体退役，mission 不再携带浏览器半边）。**`mission-tool` 曾是第三行（`tools: read`），I5·T46 摘掉**：界面规格的 R6 定了「评测模式下 mission 这个词不出现」，逐格细节改由 `eval_cells` 从 eval 自己的投影读（数据仍经结构面算 mission 的账本，但算在服务端）。包照装，谁要在自己的覆盖层预设里加回这一行（`name: '@khorsheed/dsh-mission/tool'`）都还在。工具行随核心包安装，核心包随整合包 `@khorsheed/dsh-bundle-eval` 安装：`package.json` 只依赖整合包，源码模式的 `UNPUBLISHED_DIRS` 负责从检出构建四个成员与整合包并打成 tarball（`autoInstallPeers: false`，peer 不会被自动装上）。
 
 能力全貌、自然语言到实现的逐步轨迹与生成文件清单见 [docs/architecture.md](docs/architecture.md)。
 
@@ -247,7 +247,7 @@ pending → ws-ready → stage-1 → stage-2 → iterating ⇄ checkpoint-N → 
 
 ## 最终 UI
 
-评测模式下人有三个面：**会话**、**题集 tab**、**实验室 tab**（口径正本是 [docs/ui-spec.md](docs/ui-spec.md)，2026-09-13 定稿）。两个 tab 同形——列表 + 新建 + 详情，实验详情再分子页。**missions tab 隐藏**：mission 仍是评测的账本与释放闸，但这个词不进界面，逐格细节由 `eval_cells` 从 eval 自己的投影读（ui-spec R6）。
+评测模式下人有三个面：**会话**、**题集 tab**、**实验室 tab**（口径正本是 [docs/ui-spec.md](docs/ui-spec.md)，2026-09-13 定稿）。两个 tab 同形——列表 + 新建 + 详情，实验详情再分子页。**missions tab 不出现**：I5·T46 起它按预设组合自隐，现已随其 Remote 数据面整体退役；mission 仍是评测的账本与释放闸，但这个词不进界面，逐格细节由 `eval_cells` 从 eval 自己的投影读（ui-spec R6）。
 
 | 面 | 作用 | 状态 |
 |---|---|---|

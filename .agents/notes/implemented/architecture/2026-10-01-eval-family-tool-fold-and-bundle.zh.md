@@ -21,7 +21,7 @@ T88 只做形态整理，分六步，不在包之间挪任何能力。
      - `tools:` 分层配置，原样不动。
    - 工具来源 owner 改成核心包名。
    - 伴生包的测试迁到各核心包的 `tests/tool-row.spec.ts`。
-2. **组合改指，行 id 不变。** `packages/presets` 与 `profiles/web-eval/presets` 两处的 eval 预设保留 `datasets-tool`、`eval-tool` 两个 id，只把 `name` 改成 `@khorsheed/dsh-datasets/tool`、`@khorsheed/dsh-eval/tool`。mission 任务 tab 的判据（`MISSION_TOOL_ROW_MODULE`）和 datasets、eval 客户端 preset-visibility 的常量都换成子路径名。行为不变：eval 预设仍不点名 mission 的工具行，所以评测会话里任务 tab 照旧隐藏。
+2. **组合改指，行 id 不变。** `packages/presets` 与 `profiles/web-eval/presets` 两处的 eval 预设保留 `datasets-tool`、`eval-tool` 两个 id，只把 `name` 改成 `@khorsheed/dsh-datasets/tool`、`@khorsheed/dsh-eval/tool`。mission 任务 tab 的判据（`MISSION_TOOL_ROW_MODULE`）和 datasets、eval 客户端 preset-visibility 的常量都换成子路径名。行为不变：eval 预设仍不点名 mission 的工具行，所以评测会话里任务 tab 照旧隐藏。（任务 tab 与其 Remote 数据面后来整体退役——见[退役 note](../simplification/2026-10-23-mission-tab-remote-retirement.md)；上述行 id 改指不受影响。）
 3. **三个伴生包退役。**
    - 删除目录，名字写进 `scripts/retired-packages.ts`。
    - check-plugin-independence 从边与注入方名册里删掉它们，check-release-groups 从家族名册里删掉它们。两者 spec 的夹具都改到折叠后的形态。

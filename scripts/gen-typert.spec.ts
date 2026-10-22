@@ -117,7 +117,7 @@ describe('unselected sibling type resolution', () => {
     // The selected package keeps its source-plane mapping and is absent here.
     expect(paths['@khorsheed/dsh-capability-catalog']).toBeUndefined()
     // A sibling without a built lib/types is skipped.
-    expect(paths['@khorsheed/dsh-mission']).toBeUndefined()
+    expect(paths['@khorsheed/dsh-datasets']).toBeUndefined()
   })
 
   it('copies only unselected siblings\' lib/types into the overlay', () => {
@@ -142,7 +142,7 @@ describe('typert freshness cache', () => {
   function fakeRepo(): { root: string, script: string } {
     const root = mkdtempSync(join(tmpdir(), 'dsh-typert-cache-'))
     temporaryRoots.push(root)
-    const pkg = TYPERT_PACKAGES.find(pkg => pkg.dir === 'packages/mission')!
+    const pkg = TYPERT_PACKAGES.find(pkg => pkg.dir === 'packages/datasets')!
     mkdirSync(join(root, pkg.dir, 'src'), { recursive: true })
     writeFileSync(join(root, pkg.dir, 'src', 'index.ts'), 'export const v = 1\n')
     writeFileSync(join(root, pkg.dir, 'package.json'), JSON.stringify({ name: pkg.name }))
@@ -151,21 +151,21 @@ describe('typert freshness cache', () => {
     writeFileSync(script, '// generator\n')
     return { root, script }
   }
-  const mission = TYPERT_PACKAGES.find(pkg => pkg.dir === 'packages/mission')!
+  const fixture = TYPERT_PACKAGES.find(pkg => pkg.dir === 'packages/datasets')!
 
   it('hashes every generator input: src edits move the key, unrelated files do not matter', () => {
     const { root, script } = fakeRepo()
-    const before = typertInputHash(root, [mission], script)
-    expect(typertInputHash(root, [mission], script)).toBe(before)
-    writeFileSync(join(root, mission.dir, 'src', 'index.ts'), 'export const v = 2\n')
-    expect(typertInputHash(root, [mission], script)).not.toBe(before)
+    const before = typertInputHash(root, [fixture], script)
+    expect(typertInputHash(root, [fixture], script)).toBe(before)
+    writeFileSync(join(root, fixture.dir, 'src', 'index.ts'), 'export const v = 2\n')
+    expect(typertInputHash(root, [fixture], script)).not.toBe(before)
   })
 
   it('accepts a stamp whose key and recorded outputs are intact, rejects any drift', () => {
     const { root } = fakeRepo()
     const cachePath = join(root, 'scratch', 'typert-cache.json')
-    const outRel = join(mission.dir, 'lib', 'typert.host.d.ts')
-    mkdirSync(join(root, mission.dir, 'lib'), { recursive: true })
+    const outRel = join(fixture.dir, 'lib', 'typert.host.d.ts')
+    mkdirSync(join(root, fixture.dir, 'lib'), { recursive: true })
     writeFileSync(join(root, outRel), 'declare const face: 1\n')
     writeTypertCache(cachePath, 'key-1', { [outRel]: typertFileHash(join(root, outRel)) })
 

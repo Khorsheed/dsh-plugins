@@ -64,7 +64,7 @@ host 没有声明式可见性：右栏 tab 注册表只有静态字段——0.1.
 - 逃生门：若 surface 对应的真实对象存在（如 room 会话本身），永远显示——判据只过滤「没授予却展示入口」的情形。
 - 纯 UI 包在组合里没有任何行可 keyed 时：放一个工具行进 preset，或退回手配 `visiblePresets` 名单（config 须经 host → Remote 送达 client，worktrees `badgeConfig` 先例）。
 
-**模板**：`packages/room/src/client/preset-visibility.ts`（判据类 + `RegistrationToggle`，约 160 行），现有 eval / mission / datasets / room 四份内联拷贝 + worktrees 徽标变体。**保持各包内联拷贝，不抽 helper**——mode-switcher 提案 M3' 已拍板：第 5 个消费者出现时再决定归属。
+**模板**：`packages/room/src/client/preset-visibility.ts`（判据类 + `RegistrationToggle`，约 160 行），现有 eval / datasets / room 三份内联拷贝 + worktrees 徽标变体（mission 的一份曾随任务 tab 一并退役）。**保持各包内联拷贝，不抽 helper**——mode-switcher 提案 M3' 已拍板：第 5 个消费者出现时再决定归属。
 
 ## 第三层：实例 config 开关
 

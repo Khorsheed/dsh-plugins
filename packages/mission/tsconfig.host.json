@@ -13,7 +13,6 @@
     "src/gate.ts",
     "src/index.ts",
     "src/projection.ts",
-    "src/remote.ts",
     "src/schema.ts",
     "src/service.ts",
     "src/slash.ts",

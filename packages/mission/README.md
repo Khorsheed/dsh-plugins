@@ -4,7 +4,7 @@
 
 dsh 生态的通用任务管理：**mission** 是一个工作项——状态、标签、计划数据（依赖 / 一次性定时）、attempt、不透明资源引用、产物索引、append-only 命名空间注解；**run** 是从模板批量创建的一批 mission。模板声明状态机，run 创建时冻结它，每个 mission 强制它：声明即强制——未声明的转移一律 fail loud，guard 是确定性的，且任何代码路径都不做自动转移。
 
-M1 交付：store、带三种内置 guard 的状态机、run 模板 lint、五桶投影、服务面（`ctx.mission`）、十二个模型工具、`dsh-mission` CLI；**那十二个工具自 M4'③ 起不由核心行注册**——定义仍在本包（`src/tool.ts`），注册与 `tool:mission` 提示词段归本包的 `./tool` 组合入口（工具行 `@khorsheed/dsh-mission/tool`），由 agent preset 按会话授予（见[模型工具](#模型工具)）；M2 补上 `/mission` slash 面与带闸的 bundle 导出（slash 的**注册**自 preset 可见性收口起归工具行——落进 preset scope 层，只有授予会话可见；handler 与定义留在本包）；M4 补上 Typert Remote 数据面驱动的 web 会话 tab。
+M1 交付：store、带三种内置 guard 的状态机、run 模板 lint、五桶投影、服务面（`ctx.mission`）、十二个模型工具、`dsh-mission` CLI；**那十二个工具自 M4'③ 起不由核心行注册**——定义仍在本包（`src/tool.ts`），注册与 `tool:mission` 提示词段归本包的 `./tool` 组合入口（工具行 `@khorsheed/dsh-mission/tool`），由 agent preset 按会话授予（见[模型工具](#模型工具)）；M2 补上 `/mission` slash 面与带闸的 bundle 导出（slash 的**注册**自 preset 可见性收口起归工具行——落进 preset scope 层，只有授予会话可见；handler 与定义留在本包）；M4 补上 Typert Remote 数据面驱动的 web 会话 tab——**任务 tab 与其 Remote 数据面已退役**：评估会话的默认预设自 I5·T46 起就不显示它（界面规格 R6），它携带的人操作（重试、释放检查、带闸导出对话框）由 eval 家族的实验室面经 eval 自己的 Remote 与本包服务面承接。
 
 ## 工作方式
 
@@ -73,9 +73,9 @@ dsh plugin --profile web add @khorsheed/dsh-mission     # 本插件
 
 ## 模型工具
 
-**核心行不注册任何模型工具**：工具与 `tool:mission` 提示词段归本包的 `./tool` 组合入口（工具行 `@khorsheed/dsh-mission/tool`），由 agent preset 按会话授予。授予方式：在目标 preset 的 `agent.cordis.yml` 里加两行——`- id: mission-tool` 与 `  name: '@khorsheed/dsh-mission/tool'`（该行可带 `config: { tools: read }`）。下面的清单、分组表与行为描述自此描述的是**工具行**的工具面；服务面、CLI、slash 与 tab 仍归本包。
+**核心行不注册任何模型工具**：工具与 `tool:mission` 提示词段归本包的 `./tool` 组合入口（工具行 `@khorsheed/dsh-mission/tool`），由 agent preset 按会话授予。授予方式：在目标 preset 的 `agent.cordis.yml` 里加两行——`- id: mission-tool` 与 `  name: '@khorsheed/dsh-mission/tool'`（该行可带 `config: { tools: read }`）。下面的清单、分组表与行为描述自此描述的是**工具行**的工具面；服务面、CLI 与 slash 仍归本包。
 
-`mission_run_create` / `mission_run_list` / `mission_run_status` / `mission_create` / `mission_list` / `mission_get` / `mission_transition` / `mission_submit` / `mission_annotate` / `mission_attest` / `mission_retry` / `mission_is_releasable`。`mission_submit.to` 与服务面的意向边语义一致；`mission_retry` 必须带 `reason` 与 `category`。写工具走标准 `tools/pre-execute` 审批管线；调用方会话 id 以 `tool:<sessionId>` 记入 history。配套系统提示词段（`tool:mission`）向模型简述用法。**export 刻意不做成工具**——分享 run bundle 是发起类人决定（仅 CLI/slash/tab，带泄题闸）。
+`mission_run_create` / `mission_run_list` / `mission_run_status` / `mission_create` / `mission_list` / `mission_get` / `mission_transition` / `mission_submit` / `mission_annotate` / `mission_attest` / `mission_retry` / `mission_is_releasable`。`mission_submit.to` 与服务面的意向边语义一致；`mission_retry` 必须带 `reason` 与 `category`。写工具走标准 `tools/pre-execute` 审批管线；调用方会话 id 以 `tool:<sessionId>` 记入 history。配套系统提示词段（`tool:mission`）向模型简述用法。**export 刻意不做成工具**——分享 run bundle 是发起类人决定（仅 CLI/slash 与 eval 实验室面的确认式对话框，带泄题闸）。
 
 **工具按组注册**——挂载时用 `tools` 选一组，因为 preset 只能在已注册的工具里挑，挑不掉 profile 层注册的工具；写不写得动，必须在注册处决定。
 
@@ -85,15 +85,15 @@ dsh plugin --profile web add @khorsheed/dsh-mission     # 本插件
 | `read` | `mission_run_list` / `mission_run_status` / `mission_list` / `mission_get` |
 | `none` | 无 |
 
-`read` 是给「写由别人做」的挂载用的：run 由服务面的调用方、CLI 或 tab 前的人推动，模型只读队列。`mission_is_releasable` 虽然只读，仍留在 `all`——它回答的是「持有的资源可否销毁」，属于持有资源的那一侧，而 `read` 挂载按定义不是那一侧。系统提示词段（`tool:mission`）按档位走：`all` 用原文案，`read` 换成只讲这四个工具、并说明写由谁做的文案，`none` 干脆不注册这一段。服务面、CLI、slash、tab 三档都不受影响——工具面是唯一被裁的面。
+`read` 是给「写由别人做」的挂载用的：run 由服务面的调用方或 CLI 前的人推动，模型只读队列。`mission_is_releasable` 虽然只读，仍留在 `all`——它回答的是「持有的资源可否销毁」，属于持有资源的那一侧，而 `read` 挂载按定义不是那一侧。系统提示词段（`tool:mission`）按档位走：`all` 用原文案，`read` 换成只讲这四个工具、并说明写由谁做的文案，`none` 干脆不注册这一段。服务面、CLI、slash 三档都不受影响——工具面是唯一被裁的面。
 
 ## 服务面
 
 其他插件经 `ctx.get('mission')` 消费——进程内合约，绝不为子进程或手写 JSON 文件。除工具对应的全部方法外，细粒度方法有 `setRefs`（资源标识 / 环境指纹 / sessions）、`addArtifact`、`addCheckpoint`（`ref` 只由资源持有方填；它与 `submit` 登记的同名无 ref checkpoint **合并**——绝不产生重复条目）、`annotate`、`isReleasable`。另有三组供其他插件衔接的动词：
 
-- `attemptDataDir(runId, missionId, attempt)`——某个 attempt 的运行数据目录路径（纯计算，不建目录）。消费方用它代替自己拼 `runs/<id>/data/...`，存储布局只在 mission 一处。Remote 面同名动词给浏览器侧。
+- `attemptDataDir(runId, missionId, attempt)`——某个 attempt 的运行数据目录路径（纯计算，不建目录）。消费方用它代替自己拼 `runs/<id>/data/...`，存储布局只在 mission 一处。
 - `annotateRun(runId, ns, payload, { by? })` / `runAnnotations(runId, ns?)`——**run 级注解**：与 mission 级注解同样只追加、按 ns 隔离，同 ns 同 payload 重复写是 no-op；存在 run 文件的 `annotations` 字段里（旧 run 没有该字段，读作空），export 时随 `run.json` 带出。用于「整次运行」层面的记号（收口、导出记录等），不必再借第一个 mission 落脚。
-- `exportPlanGated(request)` / `exportRunGated(request)`——**带泄题闸的导出**，与 Remote 面导出对话框走同一套闸（`gate.ts`：datasets 探测 + 显式声明，确认清单须覆盖新鲜计划的全部 guarded 层，fail-closed）。其他插件要做确认式导出就调这两个，不必绕到 Remote 面伪造 `agent` 参数。不带闸的 `exportRun` 照旧供 CLI/slash 使用，它们各有自己的闸。
+- `exportPlanGated(request)` / `exportRunGated(request)`——**带泄题闸的导出**，闸即 `gate.ts`：datasets 探测 + 显式声明，确认清单须覆盖新鲜计划的全部 guarded 层，fail-closed。其他插件要做确认式导出就调这两个——eval 的实验室界面即经此面导出（它自己的 Remote 转发到这里）。不带闸的 `exportRun` 照旧供 CLI/slash 使用，它们各有自己的闸。
 
 ## CLI
 
@@ -146,16 +146,16 @@ dsh-mission export RUN_ID --out DIR [--snapshot-dir DIR] [--snapshot-repo R --sn
 
 **expectedNs**：run meta 声明 `expectedNs` 时，`run status` 与 export 输出每个 attempt 的 ns 清单（键名来自评测编排方写入的 run meta，mission 只把它当不透明的 ns 列表）——缺失如实标缺失（绝不用其他 ns 顶替），全部注解都在 `expectedNs` 之外的 attempt 在报告与 manifest 里标「只有未列 ns」。每个 ns 的 `writtenBy` 是其当前 attempt 全部注解写入者前缀的去重集合（例如 `tool:`、`cli`、`service`、`slash:`）；若某个 expected ns 只有 `tool:` 写入，报告只如实展示，不作质量判断。
 
-## 会话 tab
+## 会话 tab（已退役）
 
-会话 tab 环上的 `missions` 入口（web profile）：五桶筛选 chip（多选）、run 范围选择器（默认本会话、全部 run、单个 run）、任务表——# / 标题 / 状态（桶）/ 模板状态 / 计划阻塞 / 时长——每个 run 段带未释放资源警示。选中行打开详情面板（attempt / 检查点 / 注解计数）与人操作：填写原因与类别后重跑（新开 attempt）、释放检查、导出 bundle。导出对话框先检查（plan），收录 guarded（`modelFacing: false`）层时逐层列出，逐项勾选后导出才可用——与 CLI 的 TTY 确认同一个闸，宿主侧复核。数据走 `mission` Typert Remote 命名空间（宿主侧 `MissionRemoteService`，`ctx.mission` 的薄适配器）。
+web 会话 tab 环上的 `missions` 入口（五桶队列表、重试、释放检查、导出对话框）与其 Typert Remote 数据面（wire 命名空间 `mission`，`./client` / `./remote` / `./typert` 出口）已整体退役：评估会话的默认预设自 I5·T46 起就不挂载它（界面规格 R6「评测模式下 mission 这个词不出现」），而它携带的三个人手操作——带原因与类别重试、释放闸询问、逐层确认的导出对话框——由 eval 家族的实验室面（运行记录抽屉）经 eval 自己的 Remote 与本包的服务面闸原样承接。CLI 与 slash 面不受影响。
 
 ## Compatibility
 
 - npm release line（`@deepseek-ai/dsh@0.2.0-rc.2`）：✅——store、状态机与 guard、lint、五桶投影、服务面、CLI、slash 命令在发布版宿主上全部可用（模型工具经本包的工具行 `@khorsheed/dsh-mission/tool` 提供，见下）。T88 起评测家族一起把 minHost 抬到 0.2.0-rc.2，0.1.x 宿主请停留在旧发布线。
 - source line（deepseek-harness master，fork 或 upstream）：✅——同上（verifiedHost: 0.2.1-rc.1；host-021 波对 0.2.1-rc.1 树全量 build+test 绿，无其它表面变化）。
 
-降级 / 缺席项（与 package.json 的 `dsh.compat` 同步）：slash 命令需要交互式 UI adapter（web/TUI）——headless profile 没有 command adapter，`/mission` 在那里不可用，工具、服务面、CLI 不受影响。模型工具的分组（`tools: 'read'` / `'none'`）现在是**工具行** `@khorsheed/dsh-mission/tool` 上的选择，不是本行的配置——按上表裁掉模型工具不是宿主能力缺失，而是挂载方的选择；服务面、CLI、slash、tab 照常。任务 tab 自隐：只有当当前会话的 preset 组合引用了 `@khorsheed/dsh-mission/tool` 行时它才注册，判据取自官方 `pluginInventory` Remote，任何读不出的路径一律 fail-open（保持可见）。注册/注销的切换延后到下一帧生效（requestAnimationFrame），不在会话切换的同步刷新里改注册——避开宿主 ui-conversation `refreshViews` 对已释放会话的滞留绑定抛 uncaught 的窗口期（上游修复提案 docs/upstream-proposals/2026-10-20-refreshviews-stale-binding-robustness.md）。**「当前会话的 preset」沿父链取第一个**（I5·T60 · web-eval T39 · G13）：成员子会话自己没有 preset，单看它就失败开放，于是评测会话里 mission 明明该隐身，任务 tab 却出现在选手的子会话里。工具行随本包一起安装（T88 评测家族折叠前它是独立伴生包 `@khorsheed/dsh-mission-tool`，已退役）；行解析失败只让该 preset 组合报 broken，实例 boot 不受影响。会话 tab 是 web 面；TUI 没有 tab 机制，headless profile 只提供 Remote 数据面而没有浏览器消费者。tab 已在 `0.1.0-rc.8` web profile 做 live smoke；更早发布线共享同一 gateway 约定，但未做 smoke。
+降级 / 缺席项（与 package.json 的 `dsh.compat` 同步）：slash 命令需要交互式 UI adapter（web/TUI）——headless profile 没有 command adapter，`/mission` 在那里不可用，工具、服务面、CLI 不受影响。模型工具的分组（`tools: 'read'` / `'none'`）现在是**工具行** `@khorsheed/dsh-mission/tool` 上的选择，不是本行的配置——按上表裁掉模型工具不是宿主能力缺失，而是挂载方的选择；服务面、CLI、slash 照常。任务 tab 与其 Typert Remote 数据面已退役（见[会话 tab（已退役）](#会话-tab已退役)）——本包不再携带浏览器半边，web/TUI/headless 三类 profile 上剩余的只是 slash 适配器差异。工具行随本包一起安装（T88 评测家族折叠前它是独立伴生包 `@khorsheed/dsh-mission-tool`，已退役）；行解析失败只让该 preset 组合报 broken，实例 boot 不受影响。
 
 ## Known Limitations and Deferred Work
 
@@ -163,4 +163,3 @@ dsh-mission export RUN_ID --out DIR [--snapshot-dir DIR] [--snapshot-repo R --sn
 - **`retry` 天然不幂等**——每次带原因的调用都真实新开一个 attempt；相同 reason/category 重复调用也会再开一次。其余所有写操作幂等（相同参数重复提交 = no-op）。
 - **锁对 pid 复用是尽力而为**——stale 锁在 pid 已死或锁龄超 60 秒时回收；窗口内 pid 被复用最多等到 10 秒锁超时。在预期写密度下足够；存储层可换 sqlite 而不动数据模型。
 - **每个模板恰一个初始态**——mission 的起点必须无歧义；终态数量任意。
-- **tab 没有提交产出按钮**——提交产出需要 Remote 面不具备的产物上传管线；`mission_submit`（工具）与 `dsh-mission submit`（CLI）覆盖。导出对话框的确认是泄题闸的 web 形态：guarded 层逐项勾选才放行，宿主侧用全新 plan 复核确认清单。

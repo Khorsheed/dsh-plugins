@@ -237,10 +237,10 @@
           # `mission-tool` 曾是这里的第三行（`tools: read`，四个只读工具）。T46 摘掉：
           # 界面规格的 R6 定了「评测模式下 mission 这个词不出现」——mission 仍是这条线的
           # 账本与释放闸，但那是编排器服务面的事，模型侧读进度走 eval 自己的投影
-          # （`eval_cells`，见下一行的 eval-tool）。摘掉这一行还有第二个效果，是同一条
-          # 规则的另一半：宿主的任务 tab 按「当前会话的预设组合里有没有
-          # @khorsheed/dsh-mission/tool 行」自隐（mission 的 preset-visibility），所以
-          # 这一行一走，评测会话的任务 tab 自己就不见了，不必再关一次。
+          # （`eval_cells`，见下一行的 eval-tool）。当年摘掉这一行还有第二个效果，是同一条
+          # 规则的另一半：任务 tab 按「当前会话的预设组合里有没有 @khorsheed/dsh-mission/tool
+          # 行」自隐，这一行一走 tab 就不见了——该 tab 与其 Typert Remote 数据面现已整体
+          # 退役（mission 不再携带浏览器半边），这里的注释只留历史脉络。
           # 这一行如今是 mission 包自己的 `./tool` 组合入口（T88 起），随 mission 安装，谁要在自己的覆盖层预设里
           # 加回这一行都还装得上——钉的是默认值，不是可达集。
           - id: datasets-tool

@@ -6,18 +6,22 @@
  * declaration IS enforcement: undeclared transitions fail loud, guards are
  * deterministic, and nothing ever transitions automatically.
  *
- * Four faces share one service kernel ({@link MissionService} over a locked,
+ * Three faces share one service kernel ({@link MissionService} over a locked,
  * atomically-written JSON store): the service face `ctx.mission` (the
  * in-process cross-package contract other plugins consume via `ctx.get`),
- * the `dsh-mission` CLI (scripts), the `/mission` slash command (humans),
- * and the Typert Remote data face behind the web session tab — of which only
- * the service, the CLI and the Remote face mount HERE: the slash command's
- * registration moved to the `./tool` composition row `@khorsheed/dsh-mission/tool`
- * (preset-visibility rollout A3), which an agent preset mounts per session so
- * only granted sessions see it; the handler and definition stay in
- * `./slash.ts` for the companion to register. The model-tool
- * face lives in the same companion.
+ * the `dsh-mission` CLI (scripts), and the `/mission` slash command
+ * (humans) — of which only the service and the CLI mount HERE: the slash
+ * command's registration lives in the `./tool` composition row
+ * `@khorsheed/dsh-mission/tool` (preset-visibility rollout A3), which an
+ * agent preset mounts per session so only granted sessions see it; the
+ * handler and definition stay in `./slash.ts` for the companion to register.
+ * The model-tool face lives in the same companion.
  * Export is deliberately NOT a model tool.
+ *
+ * The web session tab and its Typert Remote data face are retired: the eval
+ * family's 实验室 surface carries the human gestures (retry, release gate,
+ * gated export) through eval's own Remote, and the default preset never
+ * showed the tab (R6).
  *
  * @module @khorsheed/dsh-mission
  */
@@ -25,7 +29,6 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { resolveDataDir } from './defaults.ts'
 import { datasetsLayerProbe } from './gate.ts'
-import { MissionRemoteService } from './remote.ts'
 import { MissionService } from './service.ts'
 
 /** Plugin configuration. */
@@ -48,17 +51,17 @@ declare module '@deepseek-ai/cordis' {
 export const name = 'mission'
 
 /**
- * No required services: the `/mission` slash face moved to the companion
+ * No required services: the `/mission` slash face lives in the companion
  * `@khorsheed/dsh-mission/tool` row (its registration is what needed the
- * command registry), and everything still here — the service, the Remote
- * face — mounts unconditionally.
+ * command registry), and the only thing still here — the service — mounts
+ * unconditionally.
  */
 export const inject = []
 
 /**
- * Mount the mission service and the Remote data face. The `/mission` slash
- * command and the model tools are deliberately NOT registered here: both
- * moved to the `./tool` composition row `@khorsheed/dsh-mission/tool`, which an agent preset
+ * Mount the mission service. The `/mission` slash command and the model
+ * tools are deliberately NOT registered here: both live in the `./tool`
+ * composition row `@khorsheed/dsh-mission/tool`, which an agent preset
  * composes per session — the companion also carries the tool-guidance prompt
  * section.
  * @param ctx - plugin context.
@@ -70,12 +73,9 @@ export function apply(ctx: Context, config: MissionConfig): void {
   // per call (duck-typed, optional — absent means explicit declarations only).
   service.setLayerProbe(datasetsLayerProbe(() => ctx.get('datasets')))
   ctx.provide('mission', service)
-  // The Typert Remote data face (wire namespace `mission`) behind the web tab.
-  ctx.plugin(MissionRemoteService)
 }
 
 export { MissionService } from './service.ts'
-export { MissionRemoteService } from './remote.ts'
 export { MissionStore } from './store.ts'
 export { assertConfirmed, datasetsLayerProbe, resolveLayers, type LayerProbe } from './gate.ts'
 export { handleMissionCommand, registerMissionSlash } from './slash.ts'

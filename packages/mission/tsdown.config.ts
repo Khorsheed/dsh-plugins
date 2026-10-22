@@ -1,9 +1,19 @@
 /**
- * Package-local tsdown config via the shared helper: the host lib half
- * (index/cli/tool entries — `tool` is the definition factory the
- * companion row imports) plus the browser client bundle (lib/client.js, the
- * missions tab) through clientBundle — never hand-rolled.
+ * Package-local tsdown config: host-side package (no client half since the
+ * tab/Remote retirement). The Client pass emits nothing for this package.
  */
-import { clientBundle } from '../../build/tsdown.client.ts'
+import { defineConfig } from 'tsdown'
 
-export default clientBundle('@khorsheed/dsh-mission', ['lib/types/index.js', 'lib/types/cli.js', 'lib/types/tool.js'])
+export default defineConfig(({ env }) => {
+  const client = env?.DSH_BUILD_FACE === 'client'
+  return {
+    entry: client ? '' : ['lib/types/{index,cli,tool}.js'],
+    outDir: 'lib',
+    format: ['esm'],
+    platform: 'node',
+    target: 'es2024',
+    fixedExtension: false,
+    dts: false,
+    clean: false,
+  }
+})

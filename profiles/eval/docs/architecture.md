@@ -11,7 +11,7 @@
 | 插件 | 服务面（编排器用） | agent 工具（eval 域开放） | CLI（人与脚本） | UI | 备注 |
 |---|---|---|---|---|---|
 | **datasets** | `snapshot` / `worktreePath`（按钉住的 commit 物化）/ `read`（显式层，operator scope） | 读类：`list` `show` `describe` `read` `validate` `snapshot`；作者：`put_item` | `dsh-datasets` 全动词（`register` / `registry` 登记；`bind` 已退役） | datasets tab：登记表、层树、预览 | 判官要的 verify / grading 层由编排器经服务面显式取，绝不经会话白名单 |
-| **mission** | 全部写方法：`runCreate` `transition` `submit` `annotate` `attest` `retry` `setRefs` `addArtifact` `addCheckpoint`；读：`get` `runStatus` `isReleasable` | 不开——eval 预设不挂 `mission-tool`（I5·T46）；逐格投影改由 eval 的 `eval_cells` 给 | `dsh-mission` 全动词，`export` 带 TTY 泄题闸 | missions tab：五桶队列、详情、重跑、释放检查、导出对话框 | 写工具在 eval 域关闭（工具分组配置，I2） |
+| **mission** | 全部写方法：`runCreate` `transition` `submit` `annotate` `attest` `retry` `setRefs` `addArtifact` `addCheckpoint`；读：`get` `runStatus` `isReleasable` | 不开——eval 预设不挂 `mission-tool`（I5·T46）；逐格投影改由 eval 的 `eval_cells` 给 | `dsh-mission` 全动词，`export` 带 TTY 泄题闸 | 无——missions tab 与其 Remote 数据面已退役，人操作（重跑、释放检查、导出对话框）由实验室的运行记录抽屉承接 | 写工具在 eval 域关闭（工具分组配置，I2） |
 | **lab** | 全部：`acquire` `populate` `collect` `checkpoint` `verify` `archive` `release` `status` | 无（刻意） | `dsh-lab` 全动词，`status` 进度表 | 无自有 UI；单元状态进实验台（I5） | 只记录不判断；`release` 是闸的执行点 |
 | **local-agent 家族** | `start` / `resume` / `cancel` 门面；`effectiveSettings`（I1）；每条件 home 覆盖（I4） | 不开——codex / claude-code / kimi 三行 `tools: none`，dsh 那家默认不挂（I3·T27）；选手与判官的委派都由编排器经门面发起 | slash：`status` `login` `records` | 设置卡、成员 dock、成员续聊 | 委派记录 `delegations.jsonl`、transcript 镜像、用量归一 |
 | **capability-catalog** | 按 preset scope 读注册表 | `list_capabilities` | 无 | catalog tab | I4 输出可哈希的能力清单，作为 condition 的取证 |
@@ -81,7 +81,7 @@ flowchart LR
 | 18 | 失败重跑 | 编排器 | `mission.service.retry(reason)` | 新 attempt；原 attempt 不动 | I1 加 reason，I2 策略 |
 | 19 | 判官盲评 | 编排器 | 去指纹产物 + `datasets.service.read`（grading 层）→ `localAgent.service.start`（判官条件）→ 解析 verdict → `mission.service.annotate(llm-draft)` | `attempt-N/verdicts/llm-draft-<k>.json`；llm-draft ns | I2 |
 | 20 | 人终评 | 人 | 判官台或 `dsh-mission annotate --ns human-final` | human-final ns | I2 CLI，I5 判官台 |
-| 21 | 导出 bundle | 人 | `dsh-mission export`（TTY 泄题闸）或 missions tab 导出对话框 | `exports/RUN-bundle/`：manifest.json、run.json、missions/、dataset/、methodology.md 占位 | ✅ 已有 |
+| 21 | 导出 bundle | 人 | `dsh-mission export`（TTY 泄题闸）或实验室运行记录的导出对话框 | `exports/RUN-bundle/`：manifest.json、run.json、missions/、dataset/、methodology.md 占位 | ✅ 已有 |
 | 22 | 出报告 | 编排器 | `eval.cli.report` 读 bundle；因子由 condition diff 推出，本例四个条件只在 harness 一项不同，因子列即 harness | `exports/RUN-bundle/report/results.jsonl`（每行 = 条件 × 题 × rep × 判据）、`summary.md`（配对差值、n、置信区间、判官一致性）、`pareto.svg` | I2 表，I5 图与界面 |
 | 23 | 写分析初稿 | agent | 读 bundle 与 report | `methodology.md` 草稿 | I5 由 skill 引导，I2 起可手工让 agent 读 |
 | 24 | 定稿、决定分享 | 人 | 编辑；`export` 已过闸 | `methodology.md` 定稿 | — |
