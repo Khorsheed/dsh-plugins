@@ -36,6 +36,7 @@ import {
   containerScopedHome,
   delegationEnv,
   establishSubagentCatalogChild,
+  persistChildSession,
   probeCliVersion,
   resolveChildCwd,
   subagentDelegationLabel,
@@ -771,8 +772,11 @@ async function mirrorKimiAfterExit(
     // The round's turn selects which transcript lines the tool-call accounting
     // belongs to — the mirror window would under-count a settle pass a live
     // poll already drained, and over-count a resume round's earlier turns.
+    // Settle mode: calls whose result never reached the wire fold with a
+    // synthesized interrupted result instead of holding the offset forever.
     const delta = await mirrorKimiDelta(spec.ctx, spec.childSession, spec.homeDir, kimiSessionId, {
       turn: spec.resume?.turn ?? 1,
+      settle: true,
     })
     // Report the final mirrored-line count even when the live mirror already
     // advanced the offset (empty delta): the settle report is authoritative.
@@ -982,22 +986,6 @@ export async function startKimiCliRun(
     // answered. Reported here rather than from the mirror so it lands whether
     // or not the round is session-backed.
     if (settled.stopReason === 'completed') spec.onAuthSuccess?.()
-    // The turn closes at the real settle moment, so the timing projection's
-    // duration equals the actual CLI runtime. Every terminal path closes the
-    // window — a failed or cancelled run settles 'error'/'aborted' instead of
-    // leaving the turn open with a distorted tiny duration.
-    if (spec.childSession !== undefined) {
-      if (settled.stopReason === 'completed') {
-        spec.childSession.append('turn/end', { turn, reason: { kind: 'completed' } })
-      } else if (settled.stopReason === 'aborted') {
-        spec.childSession.append('turn/end', { turn, reason: { kind: 'aborted', reason: { kind: 'parent' } } })
-      } else {
-        spec.childSession.append('turn/end', {
-          turn,
-          reason: { kind: 'error', error: { message: 'kimi -p exited before the run completed', code: 'UNKNOWN' } },
-        })
-      }
-    }
     return settled
   })
 
@@ -1006,9 +994,12 @@ export async function startKimiCliRun(
   // subagent session, so a cancelled round still preserves its partial work
   // and real token usage instead of leaving the child blank. The mirror reads
   // the wire file, so it only reflects what kimi flushed before the kill.
-  // Waits for the settle chain first (so turn/end is already appended) AND for
-  // the process to actually exit (so the wire file is complete) before
-  // reading it. Enqueued behind any in-flight live poll on the mirror queue.
+  // Waits for the settle chain first AND for the process to actually exit (so
+  // the wire file is complete) before reading it. Enqueued behind any
+  // in-flight live poll on the mirror queue. The turn closes AFTER the settle
+  // mirror, still inside the mirror queue: every mirrored step must land
+  // before turn/end — the released-log reader rejects a step outside an open
+  // turn on every cold read.
   void result.then(() => child.done).then(
     () => {
       // Auth detection runs post-exit: streams are drained by then, so a fast
@@ -1027,16 +1018,39 @@ export async function startKimiCliRun(
       // usage into the round total, then reports the round's settled
       // observation — the wire's model plus the round's accumulated usage.
       enqueueMirror(async () => {
-        const settled = await mirrorKimiAfterExit(spec, stderr)
-        addRoundUsage(settled?.usage)
+        const settled = await result
+        const mirrored = await mirrorKimiAfterExit(spec, stderr)
+        addRoundUsage(mirrored?.usage)
+        // The turn closes at the real settle moment, so the timing
+        // projection's duration equals the actual CLI runtime (plus the
+        // settle-mirror quiescence). Every terminal path closes the window —
+        // a failed or cancelled run settles 'error'/'aborted' instead of
+        // leaving the turn open with a distorted tiny duration.
+        if (spec.childSession !== undefined) {
+          if (settled.stopReason === 'completed') {
+            spec.childSession.append('turn/end', { turn, reason: { kind: 'completed' } })
+          } else if (settled.stopReason === 'aborted') {
+            spec.childSession.append('turn/end', { turn, reason: { kind: 'aborted', reason: { kind: 'parent' } } })
+          } else {
+            spec.childSession.append('turn/end', {
+              turn,
+              reason: { kind: 'error', error: { message: 'kimi -p exited before the run completed', code: 'UNKNOWN' } },
+            })
+          }
+          if (spec.ctx !== undefined) {
+            await persistChildSession(spec.ctx, spec.childSession).catch((error: unknown) => {
+              spec.ctx?.logger.warn(`subagent-kimi: turn/end persistence failed: ${thrown(error).message}`)
+            })
+          }
+        }
         // The wire log names the model but never the CLI build, so the version
         // is the executable's own answer, probed once per binary.
         const cliVersion = await spec.cliVersion?.()
         spec.onRoundSettled?.({
-          ...settled?.model === undefined ? {} : { observedModel: settled.model },
+          ...mirrored?.model === undefined ? {} : { observedModel: mirrored.model },
           ...cliVersion === undefined ? {} : { cliVersion },
           ...roundUsage === undefined ? {} : { usage: roundUsage },
-          ...settled?.toolCalls === undefined ? {} : { toolCalls: settled.toolCalls },
+          ...mirrored?.toolCalls === undefined ? {} : { toolCalls: mirrored.toolCalls },
         })
       })
     },

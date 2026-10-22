@@ -20,6 +20,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { KimiCliProvider } from '../src/kimi-cli-provider.ts'
 import { acpStopReasonToHarness, KimiAcpLiveDriver } from '../src/live-driver.ts'
 import { readKimiDefaultModel } from '../src/provision.ts'
+import { expectValidReleasedLog } from './expect-valid-log.ts'
 
 /** One scripted turn: streamed chunks, the terminal stop reason, or a hang. */
 interface FakeTurn {
@@ -474,12 +475,20 @@ describe('kimi live driver rounds', () => {
     fake.resolvePrompt({ stopReason: 'end_turn' })
     expect((await run.result).stopReason).toBe('completed')
     const events = child.snapshotEvents()
+    // The text messages fold at their reserved steps; the tool's native
+    // lifecycle (advertisement, call, result) folds between them at its own
+    // reserved step.
     const messages = events.filter(event => event.type === 'assistant/message')
-    expect(messages.map(event => event.data.message.content)).toEqual([[{ type: 'text', text: 'before' }], [{ type: 'text', text: 'after' }]])
-    expect(messages.map(event => event.data.step)).toEqual([1, 3])
+    expect(messages.map(event => event.data.message.content)).toEqual([
+      [{ type: 'text', text: 'before' }],
+      [{ type: 'tool-call', id: 'tool-one', name: 'Read', arguments: '' }],
+      [{ type: 'text', text: 'after' }],
+    ])
+    expect(messages.map(event => event.data.step)).toEqual([1, 2, 3])
     expect(events.find(event => event.type === 'tool/call')?.data).toMatchObject({ step: 2, callId: 'tool-one' })
     expect(events.filter(event => event.type === 'step/start').map(event => event.data.step)).toEqual([1, 2, 3])
     expectStepBoundaries(child)
+    expectValidReleasedLog(child)
     await m.driver.disposeAll()
     liveStreams.dispose()
   })
@@ -547,8 +556,9 @@ describe('kimi live driver rounds', () => {
     expect(assistant?.data).toMatchObject({ usage: { inputTokens: 10, outputTokens: 4 } })
     expect(m.mirrorOffsets.get('child-kimi-2')).toBe(2)
     // Event granularity: the settle fold wraps each mirrored step in its
-    // boundary pair, even landing after turn/end.
+    // boundary pair, inside the turn window.
     expectStepBoundaries(child)
+    expectValidReleasedLog(child)
     await m.driver.disposeAll()
   })
 
@@ -706,6 +716,8 @@ describe('kimi live driver rounds', () => {
   it('token granularity streams throttled snapshots into the session log at the stream\'s step', async () => {
     // Zero thresholds: every delta lands a snapshot immediately.
     const on = mount({ config: { liveMirrorGranularity: 'token', snapshotMinIntervalMs: 0, snapshotMinChars: 0 } })
+    const onStreams = new LocalAgentStreams()
+    Object.assign(on.ctx.localAgent, { liveStreams: onStreams })
     const onChild = Session.create(SessionId('child-kimi-8b'))
     const fake = new FakeAcpServer({ turn: () => ({ hang: true }) })
     on.queueChild(fake)
@@ -715,23 +727,24 @@ describe('kimi live driver rounds', () => {
     writeKimiWire(on.homeDir, 'acp-session-1', '建个文件', 'hello')
     fake.resolvePrompt({ stopReason: 'end_turn' })
     expect((await onRun.result).stopReason).toBe('completed')
-    await vi.waitFor(() => {
-      expect(onChild.snapshotEvents().filter(e => e.type === 'assistant/message').length).toBeGreaterThanOrEqual(3)
-    }, { timeout: 5_000 })
-    // The stream reserved step 1 (deltas arrived before any fold): snapshots
-    // grew the message live, and the completion fold landed last at the same
-    // (turn, step) — the host's repeated-settle merge keeps the newest.
+    // The stream reserved step 1 (deltas arrived before any fold): live
+    // updates rode the stream channel, and the completion fold landed ONE
+    // atomic step triple at the same (turn, step) — durable steps never hold
+    // open across snapshots (the released-log reader rejects that).
     const atStep = onChild.snapshotEvents().filter(e => (e.data as { turn?: number; step?: number }).turn === 1
       && (e.data as { turn?: number; step?: number }).step === 1)
-    expect(atStep.map(e => e.type)).toEqual(['step/start', 'assistant/message', 'assistant/message', 'assistant/message', 'step/end'])
-    const texts = atStep.filter(e => e.type === 'assistant/message')
-      .map(e => (e.data as { message: { content: { text: string }[] } }).message.content[0]?.text)
-    expect(texts).toEqual(['hel', 'hello', 'hello'])
+    expect(atStep.filter(e => e.type !== 'local-agent/stream').map(e => e.type))
+      .toEqual(['step/start', 'assistant/message', 'step/end'])
+    expect(atStep.filter(e => e.type === 'local-agent/stream').length).toBeGreaterThanOrEqual(1)
+    const final = atStep.find(e => e.type === 'assistant/message')!
+    expect((final.data as { message: { content: unknown[] } }).message.content).toEqual([{ type: 'text', text: 'hello' }])
+    expectValidReleasedLog(onChild)
     // The delta still rides the run-progress channel.
     const deltas = on.reports.filter(r => r.progress.kind === 'delta').map(r => r.progress.text)
     expect(deltas).toContain('hel')
     expect(deltas).toContain('lo')
     await on.driver.disposeAll()
+    onStreams.dispose()
   })
 
   it('token granularity: each streamed item finalizes at its own reserved step (no duplicate fold)', async () => {
@@ -755,14 +768,17 @@ describe('kimi live driver rounds', () => {
     ].join('\n') + '\n')
     fake.resolvePrompt({ stopReason: 'end_turn' })
     expect((await run.result).stopReason).toBe('completed')
-    await vi.waitFor(() => { expect(child.snapshotEvents().filter(e => e.type === 'assistant/message').length).toBeGreaterThanOrEqual(5) }, { timeout: 5_000 })
     const events = child.snapshotEvents()
     const assistant = events.filter(e => e.type === 'assistant/message')
-    // The thought stream finalizes at its reserved step 1 (one snapshot + the
-    // completion fold; no duplicated content).
+    // Each item's durable content is ONE atomic step triple at its reserved
+    // step: the thought at step 1, the answer at step 2 (live updates rode
+    // the stream channel meanwhile).
     const atThink = events.filter(e => (e.data as { turn?: number; step?: number }).turn === 1
       && (e.data as { turn?: number; step?: number }).step === 1)
-    expect(atThink.map(e => e.type)).toEqual(['step/start', 'assistant/message', 'assistant/message', 'step/end'])
+    expect(atThink.filter(e => e.type !== 'local-agent/stream').map(e => e.type))
+      .toEqual(['step/start', 'assistant/message', 'step/end'])
+    expect((atThink.find(e => e.type === 'assistant/message')!.data as { message: { content: unknown[] } }).message.content)
+      .toEqual([{ type: 'reasoning', text: '想一下' }])
     // The answer stream finalizes at its reserved step 2, the fold carrying
     // the usage and no dangling interrupted badge — inside the turn window.
     const final = assistant.at(-1)!
@@ -775,7 +791,9 @@ describe('kimi live driver rounds', () => {
     expect(final.seq).toBeLessThan(turnEnd.seq)
     const atStep = events.filter(e => (e.data as { turn?: number; step?: number }).turn === 1
       && (e.data as { turn?: number; step?: number }).step === 2)
-    expect(atStep.map(e => e.type)).toEqual(['step/start', 'assistant/message', 'assistant/message', 'assistant/message', 'step/end'])
+    expect(atStep.filter(e => e.type !== 'local-agent/stream').map(e => e.type))
+      .toEqual(['step/start', 'assistant/message', 'step/end'])
+    expectValidReleasedLog(child)
     await m.driver.disposeAll()
   })
 
@@ -795,6 +813,7 @@ describe('kimi live driver rounds', () => {
     const final = child.snapshotEvents().find(e => e.type === 'assistant/message')!
     expect(final.data).toMatchObject({ turn: 1, step: 1, interrupted: true })
     expect((final.data as { message: { content: unknown[] } }).message.content).toEqual([{ type: 'text', text: '写到一半' }])
+    expectValidReleasedLog(child)
     await m.driver.disposeAll()
   })
 
@@ -808,7 +827,9 @@ describe('kimi live driver rounds', () => {
     mkdirSync(wireDir, { recursive: true })
     const fake = new FakeAcpServer({
       turn: () => {
-        // The wire already carries a completed tool call when the turn starts.
+        // The wire already carries the tool call when the turn starts — but
+        // no result yet: its fold HOLDS mid-round (the native lifecycle
+        // writes call and result in one closed step).
         writeFileSync(join(wireDir, 'wire.jsonl'), [
           JSON.stringify({ type: 'turn.prompt', input: [{ type: 'text', text: '建个文件' }], origin: { kind: 'user' } }),
           JSON.stringify({ type: 'context.append_loop_event', event: { type: 'tool.call', turnId: 0, toolCallId: 'call-1', toolCall: { name: 'Bash', args: { command: 'ls' } } } }),
@@ -818,10 +839,11 @@ describe('kimi live driver rounds', () => {
     })
     m.queueChild(fake)
     const run = await m.driver.startRound(request() as never, roundSpec(m, child))
-    // A mid-run update triggers a mirror pass that folds the tool card FIRST.
-    fake.update('session_acp-session-1', { sessionUpdate: 'tool_call', content: {} })
-    await vi.waitFor(() => { expect(child.snapshotEvents().filter(e => e.type === 'tool/call')).toHaveLength(1) })
-    // Text streams after the tool card folded; the wire gains the completed
+    // The ACP notification reserves the tool's chronological step (nothing
+    // durable yet — the reservation is what keeps the tool card above the
+    // answer when the fold lands).
+    fake.update('session_acp-session-1', { sessionUpdate: 'tool_call', toolCallId: 'call-1', title: 'Bash', status: 'in_progress' })
+    // Text streams after the tool's reservation; the wire gains the completed
     // answer (and the round's usage) by turn end.
     fake.update('session_acp-session-1', { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '文件建好了' } })
     writeFileSync(join(wireDir, 'wire.jsonl'), [
@@ -832,18 +854,19 @@ describe('kimi live driver rounds', () => {
     ].join('\n') + '\n')
     fake.resolvePrompt({ stopReason: 'end_turn' })
     expect((await run.result).stopReason).toBe('completed')
-    await vi.waitFor(() => { expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(1) }, { timeout: 5_000 })
 
-    // The tool card folded at step 1; the stream reserved the step after it,
-    // and the answer's completion fold landed at that same step, carrying the
-    // round's usage (the chunk stayed under the default throttle, so no
-    // snapshot ever landed).
+    // The tool card folded at its reserved step 1 — its result never reached
+    // the wire, so the settle fold synthesized the interrupted one; the
+    // answer's completion fold landed at the stream's reserved step 2,
+    // carrying the round's usage.
     expect((child.snapshotEvents().find(e => e.type === 'tool/call')!.data as { step: number }).step).toBe(1)
-    const final = child.snapshotEvents().find(e => e.type === 'assistant/message')!
+    expect((child.snapshotEvents().find(e => e.type === 'tool/result')!.data as { message: { isError?: boolean } }).message.isError).toBe(true)
+    const final = child.snapshotEvents().filter(e => e.type === 'assistant/message')
+      .find(e => JSON.stringify((e.data as { message: { content?: unknown[] } }).message.content).includes('文件建好了'))!
     expect(final.data).toMatchObject({ turn: 1, step: 2, usage: { inputTokens: 5, outputTokens: 2 } })
-    // Both the mid-run tool fold and the stream's completion fold carry their
-    // boundary pairs.
+    // Both folds carry their boundary pairs, and the log passes cold reads.
     expectStepBoundaries(child)
+    expectValidReleasedLog(child)
     await m.driver.disposeAll()
   })
 
@@ -867,20 +890,21 @@ describe('kimi live driver rounds', () => {
     m.queueChild(fake)
     const run = await m.driver.startRound(request() as never, roundSpec(m, child))
     expect((await run.result).stopReason).toBe('completed')
-    await vi.waitFor(() => { expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(2) }, { timeout: 5_000 })
 
-    // Faithful per-item fold: exactly one message per content item, nothing
-    // withheld for a combined message — the think line folds sequentially
-    // (no thought chunks streamed), the answer completes its stream at the
-    // reserved step (no snapshot ever landed under the default throttle).
+    // Faithful per-item fold: exactly one durable message per content item,
+    // nothing duplicated. The think item never streamed a delta, so the text
+    // stream's reservation came first and the fold keeps that live arrival
+    // order (answer at 1, reasoning at 2, the tool's lifecycle at 3); the
+    // sealed stream's completing wire line drops instead of duplicating.
     const events = child.snapshotEvents()
     const assistant = events.filter(e => e.type === 'assistant/message')
     expect(assistant.map(e => (e.data as { message: { content: { type: string }[] } }).message.content[0]?.type))
-      .toEqual(['reasoning', 'text'])
-    expect(assistant[1]!.data).toMatchObject({ usage: { inputTokens: 7, outputTokens: 3 } })
-    expect((assistant[1]!.data as { message: { content: unknown[] } }).message.content).toEqual([{ type: 'text', text: '静默答案' }])
+      .toEqual(['text', 'reasoning', 'tool-call'])
+    expect((assistant[0]!.data as { message: { content: unknown[] } }).message.content).toEqual([{ type: 'text', text: '静默答案' }])
+    expect((assistant[1]!.data as { message: { content: unknown[] } }).message.content).toEqual([{ type: 'reasoning', text: '想一下' }])
     expect(events.filter(e => e.type === 'tool/call')).toHaveLength(1)
     expectStepBoundaries(child)
+    expectValidReleasedLog(child)
     await m.driver.disposeAll()
   })
 

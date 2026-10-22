@@ -7,6 +7,7 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import { describe, expect, it, vi } from 'vitest'
 import { mirrorKimiSession, mirrorKimiSessionDelta } from '../src/session-mirror.ts'
+import { expectValidReleasedLog } from './expect-valid-log.ts'
 import { fakeSessionPersistence } from './fake-persistence.ts'
 
 function tempHome(prefix: string): string {
@@ -16,10 +17,9 @@ function tempHome(prefix: string): string {
 /**
  * Every mirrored content event sits inside a step/start–step/end pair at its
  * own (turn, step) — the boundary the live conversation assembler needs to
- * materialize the step (without it the real-time view renders nothing). The
- * one sanctioned exception is a backfilled late tool/result: it reuses its
- * call's already-closed coordinates BARE, because a second step/start for the
- * same context throws in the live assembler.
+ * materialize the step (without it the real-time view renders nothing), and
+ * the atomic-triple shape the released-log reader requires (dense, strictly
+ * sequential steps, one open at a time).
  */
 function expectStepBoundaries(child: Session): void {
   const events = child.snapshotEvents()
@@ -37,8 +37,6 @@ function expectStepBoundaries(child: Session): void {
       at.some(boundary => boundary.type === 'step/start' && boundary.seq < event.seq),
       `step/start for ${event.type} at ${turn}:${step}`,
     ).toBe(true)
-    const closedBefore = at.some(boundary => boundary.type === 'step/end' && boundary.seq < event.seq)
-    if (closedBefore && event.type === 'tool/result') continue // bare backfill, by design
     expect(
       at.some(boundary => boundary.type === 'step/end' && boundary.seq > event.seq),
       `step/end for ${event.type} at ${turn}:${step}`,
@@ -92,6 +90,9 @@ describe('session-mirror', () => {
     const persistence = fakeSessionPersistence()
     const append = persistence.append
     ctx.provide('sessionPersistence', persistence)
+    // The provider owns the turn boundary in production; the released-log
+    // reader admits steps only inside an open turn.
+    child.append('turn/start', { turn: 1 })
 
     await mirrorKimiSession(ctx, child, home)
 
@@ -103,6 +104,9 @@ describe('session-mirror', () => {
     expect(assistant.map(event => event.data.message.content)).toEqual([
       [{ type: 'reasoning', text: 'Simple task.' }],
       [{ type: 'text', text: '我开始了。' }],
+      // The native lifecycle: the call is advertised by an assistant message
+      // (the released-log reader pairs call and result against it).
+      [{ type: 'tool-call', id: 'kimi-tool-3', name: 'Write', arguments: '' }],
       [{ type: 'text', text: '任务完成。' }],
     ])
     // Tool activity mirrors as a native tool/call + tool/result pair (the
@@ -127,11 +131,13 @@ describe('session-mirror', () => {
     expect(assistant[0]!.data.message.source).toEqual({ kind: 'model', provider: 'kimi-cli', model: 'unobserved' })
     // every folded step carries its step/start–step/end boundary pair
     expectStepBoundaries(child)
+    // …and the whole log passes the released-log read path.
+    expectValidReleasedLog(child)
     // the mirrored batch reaches persistence
     expect(append).toHaveBeenCalledWith(child.id, events)
   })
 
-  it('backfills a tool result that lands after its call was mirrored', async () => {
+  it('holds a tool call whose result the wire has not recorded yet, folding the whole lifecycle when it lands', async () => {
     const pendingWire = [
       { type: 'turn.prompt', input: [{ type: 'text', text: '建个文件' }] },
       { type: 'context.append_loop_event', event: { type: 'tool.call', toolCall: { name: 'Write', args: { path: '/tmp/a.txt' } }, toolCallId: 'tc1' } },
@@ -140,34 +146,68 @@ describe('session-mirror', () => {
     const child = Session.create(SessionId('child-late'))
     const ctx = new Context()
     ctx.provide('sessionPersistence', fakeSessionPersistence())
+    child.append('turn/start', { turn: 1 })
 
+    // Mid-round pass: the unresulted call cannot close its step (the
+    // released-log contract resolves every advertised call before step/end),
+    // so the fold HOLDS — the offset stops before the line and nothing of it
+    // is mirrored yet.
     let total = await mirrorKimiSession(ctx, child, home, 's1')
-    expect(child.snapshotEvents().filter(event => event.type === 'tool/call')).toHaveLength(1)
-    expect(child.snapshotEvents().filter(event => event.type === 'tool/result')).toHaveLength(0)
+    expect(total).toBe(1) // only the user prompt folded
+    expect(child.snapshotEvents().filter(event => event.type === 'tool/call')).toHaveLength(0)
 
-    // The result lands in the wire later; the next delta pass pairs it with
-    // the already-mirrored call instead of dropping or duplicating it.
+    // The result lands in the wire later (merging into the call's line in
+    // place); the next pass folds the whole native lifecycle — advertisement,
+    // call, result — in one atomic step.
     appendFileSync(
       join(dir, 'agents', 'main', 'wire.jsonl'),
       '\n' + JSON.stringify({ type: 'context.append_loop_event', event: { type: 'tool.result', toolCallId: 'tc1', result: { output: 'Wrote 10 bytes' } } }),
     )
     total = await mirrorKimiSession(ctx, child, home, 's1', total)
+    expect(total).toBe(2)
+    const calls = child.snapshotEvents().filter(event => event.type === 'tool/call')
+    expect(calls).toHaveLength(1)
     const results = child.snapshotEvents().filter(event => event.type === 'tool/result')
     expect(results).toHaveLength(1)
     expect(results[0]!.data.message).toMatchObject({
       role: 'tool',
       toolCallId: 'tc1',
       content: [{ type: 'text', text: 'Wrote 10 bytes' }],
+      isError: false,
     })
-    // The backfilled result reuses its call's coordinates BARE — no second
-    // step/start at the same (turn, step), which the live assembler rejects
-    // as a duplicate start match.
-    const starts = child.snapshotEvents().filter(event => event.type === 'step/start')
-    expect(starts).toHaveLength(1)
+    expect(results[0]!.sourceEventSeqs).toEqual([calls[0]!.seq])
+    // The advertisement the released-log reader pairs the lifecycle against.
+    const assistant = child.snapshotEvents().filter(event => event.type === 'assistant/message')
+    expect(assistant).toHaveLength(1)
+    expect(assistant[0]!.data.message.content).toEqual([{ type: 'tool-call', id: 'tc1', name: 'Write', arguments: '/tmp/a.txt' }])
     expectStepBoundaries(child)
-    // A third pass is a no-op (no duplicate result).
+    expectValidReleasedLog(child)
+    // A third pass is a no-op (no duplicate fold).
     await mirrorKimiSession(ctx, child, home, 's1', total)
     expect(child.snapshotEvents().filter(event => event.type === 'tool/result')).toHaveLength(1)
+  })
+
+  it('the settle pass folds a never-answered call with an interrupted placeholder result', async () => {
+    const pendingWire = [
+      { type: 'turn.prompt', input: [{ type: 'text', text: '建个文件' }] },
+      { type: 'context.append_loop_event', event: { type: 'tool.call', toolCall: { name: 'Write' }, toolCallId: 'tc2' } },
+    ]
+    const { home } = wireHome('s2', pendingWire)
+    const child = Session.create(SessionId('child-interrupted-tool'))
+    const ctx = new Context()
+    ctx.provide('sessionPersistence', fakeSessionPersistence())
+    child.append('turn/start', { turn: 1 })
+
+    // The round is over and the result never came: the settle pass folds the
+    // call with the synthesized interrupted result instead of holding forever.
+    const delta = await mirrorKimiSessionDelta(ctx, child, home, 's2', 0, { settle: true })
+    expect(delta.total).toBe(2)
+    const results = child.snapshotEvents().filter(event => event.type === 'tool/result')
+    expect(results).toHaveLength(1)
+    expect(results[0]!.data.message).toMatchObject({ role: 'tool', toolCallId: 'tc2', isError: true })
+    expect(JSON.stringify(results[0]!.data.message.content)).toContain('中断')
+    expectStepBoundaries(child)
+    expectValidReleasedLog(child)
   })
 
   it('attaches the wire usage record to the final assistant message', async () => {
@@ -179,6 +219,7 @@ describe('session-mirror', () => {
     ]
     const { home } = wireHome('usage', wire)
     const child = Session.create(SessionId('child-usage'))
+    child.append('turn/start', { turn: 1 })
     await mirrorKimiSession(new Context(), child, home)
 
     const assistant = child.snapshotEvents().filter(event => event.type === 'assistant/message')
@@ -186,6 +227,7 @@ describe('session-mirror', () => {
     // Only the last assistant message carries the usage; earlier steps omit it.
     expect(assistant[0]!.data.usage).toBeUndefined()
     expect(assistant[1]!.data.usage).toEqual({ inputTokens: 100, outputTokens: 25, cacheReadTokens: 40 })
+    expectValidReleasedLog(child)
   })
 
   it('mirrors the most recent session across workspaces', async () => {
@@ -317,7 +359,9 @@ describe('session-mirror resume deltas', () => {
     const afterRound1 = child.snapshotEvents().length
 
     // Round 2 (resume): the full wire is now on disk; the offset must slice
-    // ONLY the delta, so no round-1 message is duplicated.
+    // ONLY the delta, so no round-1 message is duplicated. The provider
+    // closes round 1's turn before opening the next one (production order).
+    child.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
     child.append('turn/start', { turn: 2 })
     writeFileSync(wirePath, fixtureWire)
     const round2Total = await mirrorKimiSession(ctx, child, home, 'resume', round1Total)
@@ -346,6 +390,7 @@ describe('session-mirror resume deltas', () => {
       .filter(event => event.turn === 2 && event.usage !== undefined)
     expect(round2Usage.length).toBe(1)
     expect(round2Usage[0]!.usage?.inputTokens).toBe(15817 + 8360 + 1160 + 5698 + 5268)
+    expectValidReleasedLog(child)
   })
 
   it('tracks the mirror offset independently of a delegation record', async () => {

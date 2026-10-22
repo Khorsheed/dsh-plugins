@@ -246,12 +246,16 @@ describe('kimi-cli-provider run settlement', () => {
     const result = await run.result
     expect(result.stopReason).toBe('error')
     // The timing window must close even on failure, with an error reason.
-    const turnEnd = child.snapshotEvents().find(event => event.type === 'turn/end')
-    const endData = turnEnd?.data as { turn?: number; reason?: { kind?: string; error?: { message?: string; code?: string } } } | undefined
-    expect(endData?.turn).toBe(1)
-    expect(endData?.reason?.kind).toBe('error')
-    expect(endData?.reason?.error?.message).toBeTruthy()
-    expect(endData?.reason?.error?.code).toBe('UNKNOWN')
+    // turn/end lands after the post-exit mirror (mirrored steps must precede
+    // it in the stored log), so wait the mirror queue out.
+    await vi.waitFor(() => {
+      const turnEnd = child.snapshotEvents().find(event => event.type === 'turn/end')
+      const endData = turnEnd?.data as { turn?: number; reason?: { kind?: string; error?: { message?: string; code?: string } } } | undefined
+      expect(endData?.turn).toBe(1)
+      expect(endData?.reason?.kind).toBe('error')
+      expect(endData?.reason?.error?.message).toBeTruthy()
+      expect(endData?.reason?.error?.code).toBe('UNKNOWN')
+    })
     await done
   })
 
@@ -310,9 +314,12 @@ describe('kimi-cli-provider run settlement', () => {
     // A zero exit with no printed answer is an ERROR, never an empty success.
     expect(result.stopReason).toBe('error')
     expect(result.output).toEqual([])
-    const turnEnd = child.snapshotEvents().find(event => event.type === 'turn/end')
-    const endData = turnEnd?.data as { reason?: { kind?: string; error?: { message?: string } } } | undefined
-    expect(endData?.reason?.kind).toBe('error')
+    // turn/end lands after the post-exit mirror — wait the mirror queue out.
+    await vi.waitFor(() => {
+      const turnEnd = child.snapshotEvents().find(event => event.type === 'turn/end')
+      const endData = turnEnd?.data as { reason?: { kind?: string; error?: { message?: string } } } | undefined
+      expect(endData?.reason?.kind).toBe('error')
+    })
     // The turn/end error message is a generic diagnostic; the real error text
     // (the empty-answer reason) settles through run.result instead.
     await done
@@ -496,12 +503,15 @@ describe('kimi-cli-provider resume round', () => {
     // discovery fact lands once, with the descriptor, on the fresh round.
     expect(parent.snapshotEvents().filter(event => event.type === 'subagent/catalog')).toHaveLength(0)
     // Round 2 opens and closes its own turn (turn numbering increments).
-    const turnStarts = child.snapshotEvents().filter(event => event.type === 'turn/start')
-    const turnEnds = child.snapshotEvents().filter(event => event.type === 'turn/end')
-    expect(turnStarts).toHaveLength(2)
-    expect(turnEnds).toHaveLength(2)
-    expect((turnStarts[1]?.data as { turn?: number }).turn).toBe(2)
-    expect((turnEnds[1]?.data as { turn?: number }).turn).toBe(2)
+    // turn/end lands after the post-exit mirror — wait the mirror queue out.
+    await vi.waitFor(() => {
+      const turnStarts = child.snapshotEvents().filter(event => event.type === 'turn/start')
+      const turnEnds = child.snapshotEvents().filter(event => event.type === 'turn/end')
+      expect(turnStarts).toHaveLength(2)
+      expect(turnEnds).toHaveLength(2)
+      expect((turnStarts[1]?.data as { turn?: number }).turn).toBe(2)
+      expect((turnEnds[1]?.data as { turn?: number }).turn).toBe(2)
+    })
     await run.dispose()
   })
 
@@ -823,9 +833,12 @@ describe('kimi-cli-provider abort path', () => {
     // dispose is idempotent: a second call must not throw or re-kill.
     await expect(run.dispose()).resolves.toBeUndefined()
 
-    // The aborted round's turn/end records the parent cancellation.
-    const turnEnd = child.snapshotEvents().find(event => event.type === 'turn/end')
-    expect(turnEnd?.data).toEqual({ turn: 1, reason: { kind: 'aborted', reason: { kind: 'parent' } } })
+    // The aborted round's turn/end records the parent cancellation — after
+    // the post-exit mirror (mirrored steps must precede it in the log).
+    await vi.waitFor(() => {
+      const turnEnd = child.snapshotEvents().find(event => event.type === 'turn/end')
+      expect(turnEnd?.data).toEqual({ turn: 1, reason: { kind: 'aborted', reason: { kind: 'parent' } } })
+    })
 
     // Once the child has exited, the partial content is mirrored into the
     // child session (with its usage) instead of leaving it blank.

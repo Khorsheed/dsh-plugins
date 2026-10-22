@@ -16,11 +16,14 @@
  * throttled `mirrorKimiDelta` passes and the settle pass stays authoritative
  * (one fold, one offset, zero divergence between the two drivers). Every
  * transcript item folds 1:1 into the child session log.
- * Live output also mirrors the in-flight item: chunk
- * deltas accumulate per streaming item and append throttled snapshot
- * assistant/messages at the item's reserved (turn, step) — the host folds
- * repeated settles at one coordinate into one live-updating chat node — and
- * the wire line completing the item folds at the same step, finalizing it.
+ * Live output rides the `local-agent/stream` channel: chunk deltas
+ * accumulate per streaming item and publish throttled updates at the item's
+ * reserved (turn, step) — the member live node renders them as-is — while
+ * the item's durable content lands as ONE atomic step/start→…→step/end
+ * triple at that step, written by the completing wire line's fold or at
+ * settle. Durable steps stay dense and strictly sequential (the released-log
+ * reader validates exactly that on every cold open); snapshots never hold a
+ * step open across appends.
  *
  * Lifecycle mirrors the dsh/codex live drivers' discipline: lazy spawn with an
  * initialize handshake (loadSession capability required — crash recovery is
@@ -41,9 +44,9 @@ import { StringDecoder } from 'node:string_decoder'
 import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { TokenUsage } from '@deepseek-ai/dsh-llm'
-import type { Session } from '@deepseek-ai/dsh-session'
+import type { Session, SessionEventMap } from '@deepseek-ai/dsh-session'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import {
   settleRunResult,
@@ -63,7 +66,7 @@ import {
   mirrorKimiDelta,
   textTask,
 } from './kimi-cli-provider.ts'
-import { assistantEvent, nextKimiSessionStep } from './session-mirror.ts'
+import { assistantEvent, KIMI_INTERRUPTED_TOOL_RESULT, nextKimiSessionStep } from './session-mirror.ts'
 import type { KimiMirrorDelta, KimiMirrorOptions, KimiMirrorStreams } from './session-mirror.ts'
 import { addTokenUsage } from './session-view.ts'
 import { writeKimiDefaultModel } from './provision.ts'
@@ -157,6 +160,13 @@ export interface KimiLiveRoundSpec {
 }
 
 type JsonObject = Record<string, unknown>
+
+// The host renamed its tool-call id brand between lines; the runtime value
+// is a plain string, so the field types come from the consuming APIs (the
+// session-mirror module's brand note applies here too).
+type ToolCallEventCallId = SessionEventMap['tool/call']['callId']
+type ToolResultCallId = Parameters<typeof createToolResultMessage>[0]['callId']
+type ToolCallBlockId = Extract<ContentBlock, { type: 'tool-call' }>['id']
 
 function thrown(value: unknown): Error {
   return value instanceof Error ? value : new Error(String(value))
@@ -933,25 +943,28 @@ export class KimiAcpLiveDriver {
      */
     const reservedSteps: number[] = []
     /**
-     * The streaming items seen this round . kimi's ACP
+     * The streaming items seen this round. kimi's ACP
      * chunks carry no item id, so the stream key is synthetic per kind per
      * round (the codex live driver's fallback shape): thought chunks share
-     * one stream, message chunks another. Deltas accumulate into throttled
-     * snapshot assistant/messages appended at the stream's reserved
-     * (turn, step) — the host folds repeated settles at one coordinate into
-     * one live-updating chat node. The wire line that completes the stream's
-     * kind folds at the same step and finalizes it; an entry whose completion
-     * never folds is force-finalized at settle.
+     * one stream, message chunks another. Deltas accumulate and publish
+     * through the live-stream channel at the stream's reserved (turn, step) —
+     * NEVER as durable mid-round messages: the released-log contract admits
+     * only dense, strictly sequential steps, so a stream's durable content
+     * lands as ONE atomic step/start→assistant/message→step/end triple,
+     * written by its completing wire line's fold, by a gap fill
+     * (`finalizeBefore`), or at settle. A `sealed` entry's triple is already
+     * durable; its completing wire line pairs and drops instead of folding
+     * the content a second time.
      */
-    const streams = new Map<string, {
+    interface StreamEntry {
       readonly kind: 'think' | 'text'
       readonly step: number
       text: string
-      lastSnapshotAt: number
       lastSnapshotLen: number
-      /** step/start already emitted for this reservation. */
-      opened: boolean
-    }>()
+      /** The durable triple already landed (a gap fill sealed it). */
+      sealed?: boolean
+    }
+    const streams = new Map<string, StreamEntry>()
     /** The stream the latest delta accumulated into (a kind switch force-snapshots it). */
     let activeStream: string | undefined
     /**
@@ -980,7 +993,14 @@ export class KimiAcpLiveDriver {
     /** A stream's synthetic key: kimi's ACP deltas carry no item id, so kind + turn pairs them. */
     let generation = 0
     const seenToolCalls = new Set<string>()
-    const toolSteps = new Map<string, number>()
+    /**
+     * ACP tool_call notifications' chronological reservations (call id →
+     * step, plus the notification's display title). No durable event lands at
+     * notification time: the native lifecycle (advertisement, call, result in
+     * one closed step) is written by the wire line's fold, or at settle with
+     * an interrupted placeholder when kimi never logged the call.
+     */
+    const toolSteps = new Map<string, { step: number; title?: string }>()
     const streamKey = (kind: 'think' | 'text'): string => `kimi-stream-${kind}-${turn}-${generation}`
     /** The plan stream's key: a snapshot stream beside the think/text delta streams. */
     const planKey = `kimi-stream-plan-${turn}`
@@ -998,7 +1018,7 @@ export class KimiAcpLiveDriver {
       const stream = streams.get(key)
       if (stream !== undefined) {
         stream.text += text
-        appendStreamSnapshot(stream, false, false)
+        publishStreamSnapshot(stream, false)
       }
       localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text })
     }
@@ -1022,23 +1042,20 @@ export class KimiAcpLiveDriver {
       const plan = renderPlan(update)
       if (plan === '') return
       // The plan's own snapshot stream (think-styled): every update replaces
-      // the text and lands a snapshot at the reserved (turn, step); the
-      // stream force-finalizes at settle (the wire carries no plan line
-      // that could complete it).
+      // the text and publishes at the reserved (turn, step); the stream
+      // finalizes at settle (the wire carries no plan line that could
+      // complete it) — or early, when a fold needs its step closed.
       reserveStream(planKey, 'think')
       const stream = streams.get(planKey)
       if (stream !== undefined && stream.text !== plan) {
         stream.text = plan
-        appendStreamSnapshot(stream, true, false)
+        publishStreamSnapshot(stream, true)
       }
     }
 
     /**
-     * Append one snapshot of a streaming item at its reserved (turn, step).
-     * Batched per stream on a bounded deadline unless `force`; the forced
-     * final snapshot carries `interrupted` (a cancelled turn reads 已停止
-     * legitimately) and, when `withUsage`, the round's uncarried usage. An
-     * empty stream leaves no boundary at all.
+     * The live-output channel. Snapshots ride `local-agent/stream` events
+     * only — durable step content lands once per stream, at finalization.
      */
     const streamPublisher = localAgent?.liveStreams === undefined ? undefined
       : new LiveStreamPublisher(localAgent.liveStreams, childSession, turn, persist,
@@ -1049,37 +1066,38 @@ export class KimiAcpLiveDriver {
     )
 
     const pendingStreamArrival = new Map<number, number>()
-    const appendStreamSnapshot = (
-      stream: { readonly step: number; kind: 'think' | 'text'; text: string; lastSnapshotAt: number; lastSnapshotLen: number; opened: boolean },
-      force: boolean,
-      interrupted: boolean,
-      withUsage = false,
-      final = false,
-    ): void => {
-      if (stream.text.trim() === '') return
+    /**
+     * Publish one snapshot of a streaming item at its reserved (turn, step)
+     * through the live channel. Batched per stream on a bounded deadline
+     * unless `force`. Never writes durable content.
+     */
+    const publishStreamSnapshot = (stream: StreamEntry, force: boolean): void => {
+      if (stream.text.trim() === '' || stream.sealed === true) return
       const now = Date.now()
       if (!force) {
         if (!pendingStreamArrival.has(stream.step)) pendingStreamArrival.set(stream.step, now)
-        liveFlush.schedule(stream.step, () => appendStreamSnapshot(stream, true, interrupted, withUsage))
+        liveFlush.schedule(stream.step, () => publishStreamSnapshot(stream, true))
         return
       }
       liveFlush.cancel(stream.step)
       const receivedAt = pendingStreamArrival.get(stream.step) ?? now
       pendingStreamArrival.delete(stream.step)
-      if (streamPublisher !== undefined && !final) {
-        if (!stream.opened) {
-          childSession.append('step/start', { turn, step: stream.step })
-          stream.opened = true
-        }
-        streamPublisher.update(stream.step, stream.kind, stream.text, { receivedAt })
-        stream.lastSnapshotAt = now
-        stream.lastSnapshotLen = stream.text.length
-        return
-      }
-      if (!stream.opened) {
-        childSession.append('step/start', { turn, step: stream.step })
-        stream.opened = true
-      }
+      streamPublisher?.update(stream.step, stream.kind, stream.text, { receivedAt })
+      stream.lastSnapshotLen = stream.text.length
+    }
+
+    /**
+     * Write the stream's durable content as ONE atomic
+     * step/start→assistant/message→step/end triple at its reserved step and
+     * seal the reservation (its completing wire line, when one exists, pairs
+     * and drops). `interrupted` marks a non-completed round's partial (a
+     * cancelled turn reads 已停止 legitimately); `withUsage` attaches the
+     * round's uncarried usage.
+     */
+    const finalizeStream = (key: string, stream: StreamEntry, interrupted: boolean, withUsage: boolean): void => {
+      liveFlush.cancel(stream.step)
+      pendingStreamArrival.delete(stream.step)
+      childSession.append('step/start', { turn, step: stream.step })
       childSession.append('assistant/message', {
         turn,
         step: stream.step,
@@ -1093,52 +1111,121 @@ export class KimiAcpLiveDriver {
         ...interrupted ? { interrupted: true } : {},
       }, { surfaceOp: 'append' })
       if (withUsage) roundUsage = undefined
-      stream.lastSnapshotAt = now
-      stream.lastSnapshotLen = stream.text.length
+      streamPublisher?.finish(stream.step)
+      childSession.append('step/end', { turn, step: stream.step })
+      stream.sealed = true
+      if (activeStream === key) activeStream = undefined
       persist()
+    }
+
+    /**
+     * Write the durable step for an ACP tool call kimi never logged to the
+     * wire (a crash between the notification and the wire flush): the
+     * notification's title stands in for the name and the result is the
+     * shared interrupted placeholder — the native lifecycle in one step.
+     */
+    const finalizeOrphanTool = (id: string, entry: { step: number; title?: string }): void => {
+      const name = entry.title ?? 'tool'
+      childSession.append('step/start', { turn, step: entry.step })
+      childSession.append('assistant/message', {
+        turn,
+        step: entry.step,
+        message: assistantEvent([{ type: 'tool-call', id: id as ToolCallBlockId, name, arguments: '' }],
+          runtime?.modelConfiguration?.currentModel ?? roundModel),
+        stream: [],
+      }, { surfaceOp: 'append' })
+      const call = childSession.append('tool/call', {
+        turn,
+        step: entry.step,
+        callId: id as ToolCallEventCallId,
+        name,
+        arguments: '',
+      })
+      childSession.append('tool/result', {
+        turn,
+        step: entry.step,
+        message: createToolResultMessage({
+          callId: id as ToolResultCallId,
+          content: [{ type: 'text', text: KIMI_INTERRUPTED_TOOL_RESULT }],
+          isError: true,
+        }),
+      }, { surfaceOp: 'append', sourceEventSeqs: [call.seq] })
+      childSession.append('step/end', { turn, step: entry.step })
+    }
+
+    /**
+     * The fold's gap fill: a fold about to write at `step` first finalizes
+     * every live stream reserved below it (ascending), so the stored log's
+     * steps land dense and strictly sequential. Only streams can sit in the
+     * gap: an unresulted tool line holds its fold instead (session-mirror).
+     */
+    const finalizeBefore = (targetTurn: number, step: number): void => {
+      if (targetTurn !== turn) return
+      const pending = [...streams.entries()]
+        .filter(([, stream]) => stream.sealed !== true && stream.step < step)
+        .sort((a, b) => a[1].step - b[1].step)
+      for (const [key, stream] of pending) finalizeStream(key, stream, false, false)
     }
 
     /**
      * Reserve the step one streaming item will occupy — past every folded
      * line (the session's own event ledger: the file fold writes events
-     * synchronously) and every earlier reservation. A kind switch forces one
-     * freshness snapshot of the current stream (skipped when its text has not
-     * grown since the last one); its completion still folds at its own
-     * reserved step when the wire line lands.
+     * synchronously) and every earlier reservation. A kind switch publishes
+     * one freshness snapshot of the current stream (skipped when its text has
+     * not grown since the last one); its durable triple still lands at its
+     * own reserved step when the wire line folds or the round settles.
      */
     const reserveStream = (key: string, kind: 'think' | 'text'): void => {
       if (activeStream !== undefined && activeStream !== key) {
         const previous = streams.get(activeStream)
         if (previous !== undefined && previous.text.length !== previous.lastSnapshotLen) {
-          appendStreamSnapshot(previous, true, false)
+          publishStreamSnapshot(previous, true)
         }
         activeStream = undefined
       }
       let stream = streams.get(key)
+      // A sealed entry's durable triple already landed: later deltas (a plan
+      // rewriting itself after a gap fill, a same-generation think resuming)
+      // open a FRESH reservation instead of growing a closed step.
+      if (stream?.sealed === true) {
+        streams.delete(key)
+        stream = undefined
+      }
       if (stream === undefined) {
         let step = nextKimiSessionStep(childSession, turn)
         for (const reserved of reservedSteps) step = Math.max(step, reserved + 1)
         reservedSteps.push(step)
-        stream = { kind, step, text: '', lastSnapshotAt: 0, lastSnapshotLen: 0, opened: false }
+        stream = { kind, step, text: '', lastSnapshotLen: 0 }
         streams.set(key, stream)
       }
       activeStream = key
     }
 
     /**
-     * The fold-pass coordination surface : the file
-     * fold skips reserved steps for sequential folds and pairs a completed
-     * think/assistant line with its stream — scoped to THIS round's turn, so
-     * an earlier round's leftover lines never consume this round's stream.
+     * The fold-pass coordination surface: the file
+     * fold skips reserved steps for sequential folds, pairs a completed
+     * think/assistant line with its stream (a sealed pairing drops the line —
+     * the gap fill already made its content durable), and closes every
+     * reservation below each fold step first (finalizeBefore) — scoped to
+     * THIS round's turn, so an earlier round's leftover lines never consume
+     * this round's stream.
      */
     const mirrorStreams: KimiMirrorStreams = {
       reservedSteps: t => t === turn ? reservedSteps : [],
+      finalizeBefore,
+      peekStream: (line) => {
+        if (line.turn !== turn) return undefined
+        const kind = line.kind === 'think' ? 'think' : 'text'
+        const entry = [...streams.entries()].find(([key, stream]) => key !== planKey && stream.kind === kind)
+        if (entry === undefined) return undefined
+        return { step: entry[1].step, sealed: entry[1].sealed === true }
+      },
       completeTool: (line) => {
         if (line.turn !== turn) return undefined
-        const step = toolSteps.get(line.id)
-        if (step === undefined) return undefined
+        const entry = toolSteps.get(line.id)
+        if (entry === undefined) return undefined
         toolSteps.delete(line.id)
-        return { step, opened: true }
+        return { step: entry.step }
       },
       completeStream: (line) => {
         if (line.turn !== turn) return undefined
@@ -1146,14 +1233,15 @@ export class KimiAcpLiveDriver {
         const entry = [...streams.entries()].find(([key, stream]) => key !== planKey && stream.kind === kind)
         if (entry === undefined) return undefined
         const [key, stream] = entry
-        liveFlush.cancel(stream.step)
-        streamPublisher?.finish(stream.step)
         streams.delete(key)
         if (activeStream === key) activeStream = undefined
-        return { step: stream.step, opened: stream.opened }
+        if (stream.sealed === true) return { step: stream.step, sealed: true }
+        liveFlush.cancel(stream.step)
+        streamPublisher?.finish(stream.step)
+        return { step: stream.step, sealed: false }
       },
     }
-    const mirrorOptions = (): KimiMirrorOptions => ({ streams: mirrorStreams })
+    const mirrorOptions = (settle = false): KimiMirrorOptions => ({ streams: mirrorStreams, ...settle ? { settle: true } : {} })
 
     /**
      * Observation accounting across mirror passes: a pass whose window
@@ -1226,7 +1314,7 @@ export class KimiAcpLiveDriver {
           const stream = streams.get(key)
           if (stream !== undefined) {
             stream.text += text
-            appendStreamSnapshot(stream, false, false)
+            publishStreamSnapshot(stream, false)
           }
         }
       } else if (kind === 'tool_call') {
@@ -1234,12 +1322,17 @@ export class KimiAcpLiveDriver {
         if (id === undefined || !seenToolCalls.has(id)) {
           if (id !== undefined) {
             seenToolCalls.add(id)
+            // Reserve the chronological step only — nothing durable lands at
+            // notification time. The wire line's fold writes the whole native
+            // lifecycle in one step; a call kimi never logs finalizes as an
+            // interrupted placeholder at settle.
             let step = nextKimiSessionStep(childSession, turn)
             for (const reserved of reservedSteps) step = Math.max(step, reserved + 1)
             reservedSteps.push(step)
-            toolSteps.set(id, step)
-            childSession.append('step/start', { turn, step })
-            persist()
+            toolSteps.set(id, {
+              step,
+              ...typeof update['title'] === 'string' ? { title: update['title'] } : {},
+            })
           }
           // ACP has no text-item ids. A new tool call separates generation
           // segments; late file folds consume same-kind segments in order.
@@ -1340,7 +1433,7 @@ export class KimiAcpLiveDriver {
       let stableReads = 0
       const deadline = Date.now() + SETTLE_MIRROR_QUIESCE_MS
       for (;;) {
-        const delta = await mirrorKimiDelta(this.ctx, childSession, spec.homeDir, sessionId, mirrorOptions())
+        const delta = await mirrorKimiDelta(this.ctx, childSession, spec.homeDir, sessionId, mirrorOptions(true))
         noteMirrorUsage(delta)
         localAgent?.reportRunProgress(childSession.id, { kind: 'mirror', mirroredLines: delta.total })
         stableReads = delta.total === lastTotal ? stableReads + 1 : 0
@@ -1370,30 +1463,39 @@ export class KimiAcpLiveDriver {
       if (turnOpened) {
         // Reconcile the file fold INSIDE the turn window
         // (bounded quiescence — the price of the wire flush race; a mirror
-        // failure never fails the round), so every streamed item's completion
-        // fold lands at its reserved step before turn/end. Streams whose
-        // completing wire line never folded (abort, or a flush outlasting the
-        // quiescence window) then finalize in place: one forced snapshot each
-        // — interrupted on a non-completed round, the LAST one carrying the
-        // round's uncarried usage — then step/end.
+        // failure never fails the round), then finalize every reservation
+        // the fold left behind in ASCENDING step order, so the stored log's
+        // steps stay dense and strictly sequential — the contract the
+        // released-log reader validates on every cold open:
+        //   - a stream whose completing wire line never folded (abort, or a
+        //     flush outlasting the quiescence window) finalizes from its
+        //     accumulated text — interrupted on a non-completed round, the
+        //     LAST stream carrying the round's uncarried usage;
+        //   - a tool reservation kimi never logged to the wire finalizes as
+        //     an interrupted placeholder step.
         try {
           await settleMirror()
         } catch (error) {
           this.ctx.logger.warn(`subagent-kimi: live settle mirror failed: ${thrown(error).message}`)
         }
-        if (streams.size > 0) {
-          const remaining = [...streams.values()]
-          for (const [position, stream] of remaining.entries()) {
-            appendStreamSnapshot(stream, true, settled.stopReason !== 'completed', position === remaining.length - 1, true)
-            streamPublisher?.finish(stream.step)
-            if (stream.opened) childSession.append('step/end', { turn, step: stream.step })
-          }
-          streams.clear()
-          activeStream = undefined
-          persist()
-        }
-        for (const step of toolSteps.values()) childSession.append('step/end', { turn, step })
+        const pending: (
+          | { step: number; streamKey: string; stream: StreamEntry }
+          | { step: number; toolId: string; tool: { step: number; title?: string } }
+        )[] = [
+          ...[...streams.entries()]
+            .filter(([, stream]) => stream.sealed !== true)
+            .map(([streamKey, stream]) => ({ step: stream.step, streamKey, stream })),
+          ...[...toolSteps.entries()].map(([toolId, tool]) => ({ step: tool.step, toolId, tool })),
+        ].sort((a, b) => a.step - b.step)
+        const lastStream = pending.map((entry, index) => 'stream' in entry ? index : -1).filter(index => index >= 0).at(-1)
+        pending.forEach((entry, index) => {
+          if ('stream' in entry) finalizeStream(entry.streamKey, entry.stream, settled.stopReason !== 'completed', index === lastStream)
+          else finalizeOrphanTool(entry.toolId, entry.tool)
+        })
+        streams.clear()
         toolSteps.clear()
+        activeStream = undefined
+        if (pending.length > 0) persist()
         if (settled.stopReason === 'completed') {
           childSession.append('turn/end', { turn, reason: { kind: 'completed' } })
         } else if (settled.stopReason === 'aborted') {

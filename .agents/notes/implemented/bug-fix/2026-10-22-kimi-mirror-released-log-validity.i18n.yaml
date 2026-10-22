@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-10-22-kimi-mirror-released-log-validity.md
+.agents/notes/implemented/bug-fix/2026-10-22-kimi-mirror-released-log-validity.md: 19c0a2ab148a456f2e128e00cbff9fb9a20249f2
+.agents/notes/implemented/bug-fix/2026-10-22-kimi-mirror-released-log-validity.zh.md: 10198a8d4448a28d951a487b5d5e7b5f21c65b24
