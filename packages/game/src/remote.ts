@@ -170,8 +170,8 @@ export class GameRemoteService extends TypertRemoteService<GameRemoteConfig> {
 
   /** The last check's screenshot. */
   @Remote('checkShot')
-  checkShot(request: { projectId: string }): Promise<GameResult<{ readonly ok: true; readonly webp: string }>> {
-    return this.store.checkShot(request.projectId)
+  checkShot(request: { projectId: string; version?: number }): Promise<GameResult<{ readonly ok: true; readonly webp: string }>> {
+    return this.store.checkShot(request.projectId, request.version)
   }
 
   /** A specific version's files (rollback preview, export). */

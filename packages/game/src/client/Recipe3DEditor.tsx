@@ -18,6 +18,12 @@ const PART_RANGE: Readonly<Record<string, readonly [number, number, number]>> = 
   size: [0.05, 3, 0.01], length: [0.05, 3, 0.01], fan: [0, 360, 5], thickness: [0.01, 0.5, 0.005],
 }
 
+/** The controls each built-in part always gets, with the value dsh3d uses when the recipe leaves it out. */
+const PART_DEFAULTS: Readonly<Record<string, Readonly<Record<string, number>>>> = {
+  ear: { count: 2, size: 0.15 }, horn: { count: 2, length: 0.25 }, tail: { count: 1, length: 0.9, fan: 0, thickness: 0.09 },
+  wing: { count: 2, size: 1 }, fin: { count: 2, size: 1 }, eye: { count: 2 },
+}
+
 /** A label for a recipe key: the dictionary's when it has one, else the key itself. */
 function labelOf(t: TranslateNS<'game'>, key: string): string {
   const k = `recipe.key.${key}`
@@ -70,10 +76,11 @@ export function Recipe3DEditor({ t, look, onChange }: Recipe3DEditorProps): Reac
       <h4 className={css.blockTitle}>{t('recipe.parts')}</h4>
       {look.parts.map((part, index) => <div key={index} className={css.recipePart}>
         <strong className={css.recipePartName}>{labelOf(t, part.type)}</strong>
-        {part.count !== undefined && <Slider label={labelOf(t, 'count')} value={part.count} min={1} max={12} step={1} onChange={v => { setPart(index, { count: v }) }} />}
-        {(['size', 'length', 'fan', 'thickness'] as const).filter(k => part[k] !== undefined).map(k => {
+        {(part.count !== undefined || PART_DEFAULTS[part.type]?.count !== undefined) && <Slider label={labelOf(t, 'count')}
+          value={part.count ?? PART_DEFAULTS[part.type]!.count!} min={1} max={12} step={1} onChange={v => { setPart(index, { count: v }) }} />}
+        {(['size', 'length', 'fan', 'thickness'] as const).filter(k => part[k] !== undefined || PART_DEFAULTS[part.type]?.[k] !== undefined).map(k => {
           const [min, max, step] = PART_RANGE[k]!
-          return <Slider key={k} label={labelOf(t, k)} value={part[k]!} min={min} max={max} step={step} onChange={v => { setPart(index, { [k]: v }) }} />
+          return <Slider key={k} label={labelOf(t, k)} value={part[k] ?? PART_DEFAULTS[part.type]![k]!} min={min} max={max} step={step} onChange={v => { setPart(index, { [k]: v }) }} />
         })}
         {Object.entries(part.extra ?? {}).filter((e): e is [string, number] => typeof e[1] === 'number').map(([k, v]) => {
           const span = Math.max(1, Math.abs(v) * 2)

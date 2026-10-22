@@ -29,7 +29,7 @@ export interface GameApi {
   reject: (sid: SessionId, projectId: string, reason: string) => R<Ok>
   rollback: (sid: SessionId, projectId: string, version: number) => R<Ok>
   diff: (projectId: string, from: number, to: number) => R<Ok<{ readonly diff: VersionDiff }>>
-  checkShot: (projectId: string) => R<Ok<{ readonly webp: string }>>
+  checkShot: (projectId: string, version?: number) => R<Ok<{ readonly webp: string }>>
   setAutoConfirm: (sid: SessionId, projectId: string, on: boolean) => R<Ok>
   logPlay: (sid: SessionId, entry: { projectId: string; version: number; seconds: number; errors: string[] }) => R<Ok>
   setParam: (sid: SessionId, projectId: string, key: string, value: number) => R<Ok>

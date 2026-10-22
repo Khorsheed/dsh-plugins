@@ -62,6 +62,16 @@ describe.skipIf(chrome === undefined)('3d-three kit in headless Chrome', () => {
         test('a creature stays inside the triangle budget', () => {
           assert(game.state().tris < 150000, '场景面数 ' + game.state().tris)
         })
+        test('a highlight sent before the game exists is applied once it appears', async () => {
+          const game0 = window.dshGame, seen = []
+          delete window.dshGame
+          window.postMessage({ gamedev: 'highlight', list: [{ id: 'jiuweihu', tone: 'added' }] }, '*')
+          await new Promise(r => setTimeout(r, 50))
+          window.dshGame = { ...game0, highlight: list => { seen.push(list); game0.highlight(list) } }
+          await new Promise(r => setTimeout(r, 400))
+          assert.equal(seen.length, 1, '游戏出现后应补上一次 highlight')
+          assert.equal(seen[0][0].tone, 'added')
+        })
         test('pause freezes time; step still drives tests', () => {
           game.pause(true); assert.equal(game.state().paused, true)
           const t0 = game.state().t; step(10); assert(game.state().t > t0, 'step 仍推进')
@@ -70,7 +80,7 @@ describe.skipIf(chrome === undefined)('3d-three kit in headless Chrome', () => {
     }, { blankProbe: THREE_3D.blankProbe })
     expect(result.skipped).toBeUndefined()
     expect(result.failures).toEqual([])
-    expect(result.passed).toBe(3)
+    expect(result.passed).toBe(4)
     expect(result.screenshot?.length).toBeGreaterThan(100)
   }, 90_000)
 

@@ -386,7 +386,9 @@ function fish(look) {
       body.add(f)
     }
   }
-  return { g, body, heads: [head], tails: [], wings: [], swimmer: tailRoot, tailRoot, back: body }
+  // Wings on a fish are pectoral wings (a flying fish).
+  const wings = partsOf(look, 'wing').flatMap(spec => addWings(body, look, spec, bodyColor, 0.45))
+  return { g, body, heads: [head], tails: [], wings, swimmer: tailRoot, tailRoot, back: body }
 }
 
 function serpent(look) {
@@ -702,8 +704,10 @@ export function createWorld(options = {}) {
           if (e.id !== id && e.inst !== id) continue
           const box = new THREE.Box3().setFromObject(o), r = Math.max(0.5, box.getSize(new THREE.Vector3()).x * 0.6)
           const ring = new THREE.Mesh(new THREE.RingGeometry(r, r + 0.14, 48),
-            new THREE.MeshBasicMaterial({ color: tone === 'added' ? '#1f9a55' : '#2f6fe0', transparent: true, opacity: 0.85, depthWrite: false, side: THREE.DoubleSide }))
+            new THREE.MeshBasicMaterial({ color: tone === 'added' ? '#1f9a55' : '#2f6fe0', transparent: true, opacity: 0.85, depthWrite: false, depthTest: false, side: THREE.DoubleSide }))
           ring.rotation.x = -Math.PI / 2
+          // Drawn over the terrain: on a slope the ground would otherwise cut the ring in half.
+          ring.renderOrder = 10
           ring.userData.follow = o
           ring.raycast = () => {}
           rings.add(ring)

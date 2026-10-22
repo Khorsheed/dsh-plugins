@@ -587,6 +587,8 @@ export class GameService {
     if (!writable) return { kind: 'pass', record, deployed: null, candidate: null }
     const version = await this.nextVersion(root)
     await this.copyVersion(root, build, version)
+    // Each version keeps its own poster: the play area shows the version it plays, never a later or failed build.
+    if (browser.screenshot !== undefined) await writeAtomic(join(root, STATE_DIR, 'shots', `${version}.webp`), Buffer.from(browser.screenshot, 'base64'))
     const user = await this.userLayer(root)
     const restyle = user.restyleTo
     const versionRecord: VersionRecord = {
@@ -639,7 +641,9 @@ export class GameService {
       if (r !== undefined) pinned.add(r.version)
     }
     for (const n of names.slice(KEEP_VERSIONS)) {
-      if (!pinned.has(n)) await rm(join(versionsDir, String(n)), { recursive: true, force: true })
+      if (pinned.has(n)) continue
+      await rm(join(versionsDir, String(n)), { recursive: true, force: true })
+      await rm(join(root, STATE_DIR, 'shots', `${n}.webp`), { force: true })
     }
   }
 
@@ -1038,10 +1042,12 @@ export class GameService {
   }
 
   /** The last check's screenshot (webp, base64), if any. */
-  async checkShot(projectId: string): Promise<GameResult<{ readonly ok: true; readonly webp: string }>> {
+  async checkShot(projectId: string, version?: number): Promise<GameResult<{ readonly ok: true; readonly webp: string }>> {
     const row = await this.row(projectId)
     if (row === undefined) return { ok: false, error: 'not-found' }
-    const data = await readFile(join(row.root, STATE_DIR, 'last-check.webp')).catch(() => undefined)
+    // A version's own poster; without a version, the last check's (projects made before per-version posters).
+    const own = version === undefined ? undefined : await readFile(join(row.root, STATE_DIR, 'shots', `${Math.floor(version)}.webp`)).catch(() => undefined)
+    const data = own ?? (version === undefined ? await readFile(join(row.root, STATE_DIR, 'last-check.webp')).catch(() => undefined) : undefined)
     return data === undefined ? { ok: false, error: 'no-version' } : { ok: true, webp: data.toString('base64') }
   }
 

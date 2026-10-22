@@ -6,7 +6,7 @@
  * amber where they differ from the finalized value (定稿 / 还原).
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { PANEL_CHANGES_MARK, type ElementView, type GameParam, type PlayBundle, type ProjectView } from '../types.ts'
+import { PANEL_CHANGES_MARK, type ElementView, type Look3D, type GameParam, type PlayBundle, type ProjectView } from '../types.ts'
 import { failureOf, type ViewProps } from './contract.ts'
 import { LookCanvas } from './looks.tsx'
 import { clearSaves, PlayFrame, type HighlightList, type PickAnswer, type PlayReport } from './PlayFrame.tsx'
@@ -21,6 +21,12 @@ export interface PlayViewProps extends ViewProps {
   readonly liveElement: Record<string, unknown> | null
   readonly onOpenElement: (id: string) => void
   readonly onOpenVersions: () => void
+}
+
+/** A 3D look's main color, for the small swatch beside a pick. */
+function look3dColor(look: Look3D): string | undefined {
+  const recipe = look.kind === 'parts3d' ? look : look.recipe
+  return recipe?.palette.body ?? Object.values(recipe?.palette ?? {})[0]
 }
 
 /** Round a slider value to its step for display. */
@@ -52,9 +58,10 @@ export function PlayView(props: PlayViewProps): ReactNode {
   useEffect(() => { setPlaying(false); setPicking(false); setPicked(null) }, [version, which])
   useEffect(() => {
     let live = true
-    void api.checkShot(project.id).then(r => { if (live) setPoster(r.ok && r.value.ok ? r.value.webp : null) })
+    // The poster of the version on screen (a version without its own shows none, never another build's).
+    void api.checkShot(project.id, version).then(r => { if (live) setPoster(r.ok && r.value.ok ? r.value.webp : null) })
     return () => { live = false }
-  }, [api, project.id, project.lastCheck?.at])
+  }, [api, project.id, version, project.lastCheck?.at])
 
   useEffect(() => { if (project.candidate === null && which === 'candidate') setWhich('current') }, [project.candidate, which])
 
@@ -183,7 +190,8 @@ export function PlayView(props: PlayViewProps): ReactNode {
       </div>}
 
       {picked !== null && <div className={css.pickCard}>
-        {pickedElement !== undefined && pickedElement.look !== null ? <LookCanvas look={pickedElement.look} box={32} /> : <span className={css.swatch} />}
+        {pickedElement !== undefined && pickedElement.look !== null ? <LookCanvas look={pickedElement.look} box={32} />
+          : <span className={css.swatch} style={pickedElement?.look3d != null ? { background: look3dColor(pickedElement.look3d) } : undefined} />}
         <span className={css.pickName}><strong>{picked.label}</strong><span className={css.metaLine}>{t('play.pickedNote')}</span></span>
         {pickedElement !== undefined && <button type="button" className={css.ghost} onClick={() => { onOpenElement(pickedElement.id) }}>{t('play.openElement')}</button>}
       </div>}

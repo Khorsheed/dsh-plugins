@@ -100,7 +100,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     reject: (sid, projectId, reason) => remote.reject(sid, { projectId, reason }),
     rollback: (sid, projectId, version) => remote.rollback(sid, { projectId, version }),
     diff: (projectId, from, to) => remote.diff({ projectId, from, to }),
-    checkShot: projectId => remote.checkShot({ projectId }),
+    checkShot: (projectId, version) => remote.checkShot({ projectId, ...(version === undefined ? {} : { version }) }),
     setAutoConfirm: (sid, projectId, on) => remote.setAutoConfirm(sid, { projectId, on }),
     logPlay: (sid, entry) => remote.logPlay(sid, entry),
     setParam: (sid, projectId, key, value) => remote.setParam(sid, { projectId, key, value }),

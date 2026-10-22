@@ -111,6 +111,19 @@ describe('GameService', () => {
     expect((await store.view(project.id))?.current?.version).toBe(1)
   })
 
+  it('keeps a poster per version, never another build\'s', async () => {
+    const project = await created()
+    await put(join(project.root, 'index.html'), '<p>v1</p>')
+    checker.next = { failures: [], passed: 1, screenshot: Buffer.from('poster-one').toString('base64') }
+    await store.checkTurn(session(), 0, 2)
+    await put(join(project.root, 'index.html'), '<p>broken</p>')
+    checker.next = { failures: [{ where: 'smoke', message: 'boom' }], passed: 0, screenshot: Buffer.from('broken').toString('base64') }
+    await store.checkTurn(session(), 0, 2)
+    const one = await store.checkShot(project.id, 1)
+    expect(one.ok && Buffer.from(one.webp, 'base64').toString()).toBe('poster-one')
+    expect((await store.checkShot(project.id, 2)).ok).toBe(false)
+  })
+
   it('leaves a candidate when auto-confirm is off, and confirm promotes it', async () => {
     const project = await created()
     expect(await store.setAutoConfirm(project.id, false, session())).toEqual({ ok: true })
