@@ -54,7 +54,7 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type {} from './types.ts'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { probeLocalAgent, probeLocalAgentRoster } from './adapter.ts'
-import { DispatchEngine, isRoomSource } from './dispatch.ts'
+import { DispatchEngine, heldReportsText, isRoomSource, roomSource } from './dispatch.ts'
 import { coordinatorMember, DEFAULT_ROOM_SETTINGS, memberId, isRoomLog, MAIN_AGENT_MEMBER, parseMentions, replay, ROOM_EVENT_TYPES, ROOM_ROLE_MAX } from './journal.ts'
 import { messageId, parseMessageRef, releaseIntent, sendOrHold, workingHop } from './messaging.ts'
 import type {
@@ -67,7 +67,7 @@ import type {
   RoomInviteRequest, RoomInviteResult,
   RoomIsRoomRequest,
   RoomListProvidersRequest,
-  RoomMemberMessage, RoomMemberMessageReceipt,
+  RoomMember, RoomMemberMessage, RoomMemberMessageReceipt,
   RoomMessageReceipt, RoomMessageRequest, RoomReleaseReportsRequest, RoomReleaseReportsResult, RoomMessageResult, RoomRelay, RoomSetSettingsRequest, RoomSetSettingsResult,
   RoomPostMessageRequest, RoomPostMessageResult,
   RoomPresetInfo, RoomProviderInfo, RoomProviderList,
@@ -178,6 +178,20 @@ export class RoomService extends TypertRemoteService {
       settled: (room, seq, outcome) => this.plans.settled(room, seq, outcome),
     })
     ctx.effect(() => () => this.plans.dispose())
+    // A turn the room did not start (the human talking to the room's agent or
+    // to a native member directly) still carries the reports the gate holds
+    // for that agent: one extra message on the turn's first step, so the
+    // agent never answers without results that already arrived.
+    ctx.on('agent/pre-step', async ({ agent, step }, next) => {
+      const decision = await next()
+      if (step !== 1 || decision.kind !== 'enter' || decision.messages.some(message => isRoomSource(message.source))) return decision
+      const target = this.heldTarget(agent.session.id)
+      if (target === undefined) return decision
+      const held = heldReportsText(target.room.snapshotEvents(), memberId(target.room.snapshotEvents(), target.member))
+      if (held === undefined) return decision
+      await this.engine.markHeldReleased(target.room, target.member, held.seqs)
+      return { ...decision, messages: [createUserMessage({ content: [{ type: 'text', text: held.text }], source: roomSource() }), ...decision.messages] }
+    })
     // A stale client or another official input surface must not wake a DSH
     // model behind an external coordinator. Public pre-step admits an empty
     // initial step without a model call after room has durably accepted it.
@@ -370,6 +384,19 @@ export class RoomService extends TypertRemoteService {
         ...row.broken === undefined ? {} : { broken: row.broken },
       }))
     } catch { return undefined }
+  }
+
+  /** The room and member whose held reports a session's agent should carry. */
+  private heldTarget(sessionId: string): { readonly room: Session; readonly member: RoomMember } | undefined {
+    const own = this.ctx.sessions.get(SessionId(sessionId))
+    if (own !== undefined && isRoomLog(own.snapshotEvents())) {
+      const member = replay(own.snapshotEvents()).members.find(entry => entry.kind === 'main-agent')
+      return member === undefined ? undefined : { room: own, member }
+    }
+    const routed = this.nativeRoute(sessionId)
+    const room = routed === undefined ? undefined : this.ctx.sessions.get(routed.roomId)
+    const member = room === undefined ? undefined : replay(room.snapshotEvents()).members.find(entry => entry.childSessionId === routed!.actor)
+    return room === undefined || member === undefined ? undefined : { room, member }
   }
 
   /**
