@@ -139,7 +139,17 @@ export interface RequestTiming {
   totalMs?: number
 }
 
-/** The request's model configuration snapshot — scopes may differ. */
+/**
+ * The request's model configuration snapshot — scopes may differ.
+ *
+ * Read from the session log's `request/header` events, the latest one
+ * applying to every later request: a round without a header means
+ * "unchanged from the previous header"; a session without any header means
+ * unrecorded (then only provider and model come from the assistant message's
+ * source). External agents' children write headers too — per wire step for
+ * kimi, per round for claude-code/codex — under that same semantics
+ * (.agents/notes/implemented/feature/2026-10-23-external-agent-request-headers.md).
+ */
 export interface RequestConfig {
   provider?: string
   model?: string
