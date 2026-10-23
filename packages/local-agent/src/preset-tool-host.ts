@@ -1,21 +1,25 @@
 /**
  * Preset tool host: lets an external CLI member use the plugin tools of a
- * host agent preset (a mode), through its member bridge. For each member with
- * a mode, the host keeps one dsh agent composed with that preset that never
- * runs a model turn — it exists so the preset's plugin tools have their scope
- * (the tool registry keys scoped tools by agent) and an executing identity.
- * The bridge lists the preset's PLUGIN tools (those tagged with
- * `Symbol.for('dsh.tool.origin')` channel `plugin`; the CLI brings its own
- * shell, files and todo) and forwards calls to the registry's normal
- * execution pipeline, policies and approvals included.
+ * host agent preset (a mode), through its member bridge, ON THE MEMBER'S OWN
+ * SESSION. The tool registry keys scoped tools by an agent identity, and
+ * plugin tools read only `agent.id` and `agent.session` from it — so the
+ * member gets a model-less stand-in: `{ id, session }` over its own child
+ * session, given a scope (`createScope`) with the preset mounted. Calls run
+ * through the registry's normal pipeline (policies, approvals, timeouts) as
+ * that stand-in, so plugin state (a video project) belongs to the member's
+ * session and the mode's panels show there; the session also records the mode
+ * (`agent-preset/selected`), so per-session plugin visibility follows it.
+ * Only PLUGIN tools are offered (`Symbol.for('dsh.tool.origin')` channel
+ * `plugin`; the CLI brings its own shell, files and todo).
  *
- * Everything host-side is probed, never injected: without `agents`,
+ * Everything host-side is probed, never injected: without `sessions`,
  * `agentPresets` or `tools` the member simply gets no extra tools.
  * @module @khorsheed/dsh-local-agent/preset-tool-host
  */
 import { randomUUID } from 'node:crypto'
 import { appendFileSync } from 'node:fs'
 import type { Context } from '@deepseek-ai/cordis'
+import { createScope } from '@deepseek-ai/dsh-scope'
 import { SessionId } from '@deepseek-ai/dsh-session'
 
 /** One plugin tool as the bridge lists it (MCP `tools/list` shape). */
@@ -40,7 +44,14 @@ const SETTLE_STEP_MS = 150
 
 const ORIGIN = Symbol.for('dsh.tool.origin')
 
-interface AgentLike { readonly id: string }
+interface SessionLike {
+  readonly id: string
+  readonly header: { readonly agentPreset?: string | null }
+  snapshotEvents(): readonly { readonly type: string; readonly data?: unknown }[]
+  append(type: 'agent-preset/selected', data: { agentPreset: string }): unknown
+}
+/** The model-less stand-in a member's mode tools run as. */
+interface AgentLike { readonly id: string; readonly session: SessionLike; ctx?: Context }
 interface ToolsLike {
   schemas(scope?: object): readonly { readonly name: string; readonly description?: string; readonly parameters?: unknown }[]
   get(name: string, scope?: object): object | undefined
@@ -50,8 +61,17 @@ interface PresetsLike {
   resolve(id?: string): Promise<{ readonly id: string }>
   mount(ctx: Context, id?: string): Promise<unknown>
 }
-interface AgentsLike {
-  create(options: Record<string, unknown>): Promise<{ readonly agent: AgentLike; dispose(): Promise<void> }>
+interface SessionsLike {
+  get(id: ReturnType<typeof SessionId>): SessionLike | undefined
+}
+
+/** The mode a session records: its header, overridden by the latest selection. */
+function sessionPreset(session: SessionLike): string | undefined {
+  let preset = session.header.agentPreset ?? undefined
+  for (const event of session.snapshotEvents()) {
+    if (event.type === 'agent-preset/selected') preset = (event.data as { agentPreset?: string } | undefined)?.agentPreset ?? preset
+  }
+  return preset
 }
 
 /** Whether a definition is a plugin tool the bridge may forward. */
@@ -89,23 +109,34 @@ export class PresetToolHost {
     return (this.ctx.get as (key: string) => unknown).call(this.ctx, name) as T | undefined
   }
 
-  /** The member's preset agent, created on first use (and recreated when its preset changed). */
-  private async agentFor(childSessionId: string, preset: string, cwd: string | undefined): Promise<AgentLike | undefined> {
-    const agents = this.probe<AgentsLike>('agents')
+  /** The member's stand-in, scoped with its preset on first use (and re-scoped when the preset changed). */
+  private async agentFor(childSessionId: string, preset: string, _cwd: string | undefined): Promise<AgentLike | undefined> {
+    const sessions = this.probe<SessionsLike>('sessions')
     const presets = this.probe<PresetsLike>('agentPresets')
-    if (agents?.create === undefined || presets?.mount === undefined) return undefined
+    const session = sessions?.get(SessionId(childSessionId))
+    if (presets?.mount === undefined || session === undefined) return undefined
     const current = this.hosts.get(childSessionId)
-    if (current !== undefined && current.preset === preset) return (await current.agent).agent
+    if (current !== undefined && current.preset === preset && (await current.agent).agent.session === session) return (await current.agent).agent
     if (current !== undefined) {
       this.hosts.delete(childSessionId)
       void current.agent.then(handle => handle.dispose()).catch(() => {})
     }
-    const resolved = await presets.resolve(preset)
-    const agent = agents.create({
-      sessionId: SessionId(randomUUID()),
-      meta: { origin: 'subagent', agentPreset: resolved.id, ...cwd === undefined ? {} : { cwd } },
-      setup: async (agentCtx: Context) => { await presets.mount(agentCtx, resolved.id) },
-    })
+    const agent = (async () => {
+      const resolved = await presets.resolve(preset)
+      const member: AgentLike = { id: childSessionId, session }
+      const scope = createScope(this.ctx, member)
+      member.ctx = scope.ctx
+      try {
+        await presets.mount(scope.ctx, resolved.id)
+      } catch (error) {
+        await scope.dispose()
+        throw error
+      }
+      // The member's session runs this mode now: the host's per-session
+      // plugin visibility reads it from here.
+      if (sessionPreset(session) !== resolved.id) session.append('agent-preset/selected', { agentPreset: resolved.id })
+      return { agent: member, dispose: () => scope.dispose() }
+    })()
     this.hosts.set(childSessionId, { preset, agent })
     try {
       return (await agent).agent
