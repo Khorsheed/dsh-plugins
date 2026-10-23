@@ -32,6 +32,7 @@ Each external-agent child session now logs the host-native `request/header` even
 
 - New child sessions show provider/model/思考强度/输出上限 in Context Lens with real values. Old logs are unchanged (they carry no headers; the lens's source fallback still covers them).
 - kimi headers are per wire step (its config can genuinely change per request); claude/codex headers are per round (their config is fixed at launch). A config change mid-session logs a `change` header and the lane tracks it.
+- Reading semantics, stated for consumers: **a round without a header means "unchanged from the previous header"; a session without any header means unrecorded.** The residual ambiguity (a round whose model changed but was not observed reads as the previous config) needs a prior known header AND an unknown-model round AND an unobserved switch to misfire — family members pin a default model, so the window is accepted, not widened by a contract-bending placeholder header.
 - `reasoningEffort` values cross the session boundary as the branded `ReasoningEffortId`; the cast happens at the extraction point (wire words / launch config), never re-validated downstream.
 
 ## Testing

@@ -32,6 +32,7 @@ Context Lens 里外部 agent(kimi / claude-code / codex）子会话的配置卡�
 
 - 新子会话在 Context Lens 里显示真实的 provider/model/思考强度/输出上限。旧日志不变（没有 header;lane 的 source 回退继续兜底）。
 - kimi 的 header 按 wire step 记（它的配置确实可能逐请求变）;claude/codex 按轮记（配置启动时固定）。会话中途改配置会记一条 `change`,lane 随之更新。
+- 读取语义，写给消费方：**某一轮没有 header = 沿用上一 header；整个会话一条 header 都没有 = 未记录**。残余歧义（某轮换了 model 但没观测到时，面板会沿用上一轮的配置）需要「同会话先前已有已知 header」且「本轮 model 未知」且「确实换了却没观测到」三重叠加才触发——家族成员默认钉 model，此窗口接受存在，不为它写一个破坏契约的占位 header。
 - `reasoningEffort` 以带品牌的 `ReasoningEffortId` 越过会话边界；cast 发生在提取点（wire 原文 / 启动配置），下游不再重复校验。
 
 ## Testing
