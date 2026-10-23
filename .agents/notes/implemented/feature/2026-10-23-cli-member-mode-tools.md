@@ -16,6 +16,8 @@ local-agent's `PresetToolHost` gives each member with a mode a model-less stand-
 
 The member bridge asks the host for those tools on `tools/list` (`{ modeTools: { list: true } }`) and forwards any other tool name as a mode-tool call (`{ modeTools: { call } }`); the member channel authenticates the run token, asks room for the mode and lets the tool host answer. No mode, no room, no host capability, or an unreachable host all degrade to no extra tools.
 
+**Mode skills, the CLI's own way.** The skills a mode contributes — visible in the member's scope, absent from the global skill view (e.g. the 剪辑 mode's `video-studio`) — are written into the member's harness home on each tool listing as `skills/dsh-<name>/SKILL.md` (frontmatter `name`, `description`), the layout Codex (`$CODEX_HOME`) and Claude Code (`$CLAUDE_CONFIG_DIR`) load; an unchanged file is not rewritten. A harness home is shared by every member of that CLI, so the description says the skill applies only alongside the mode's tools. Kimi gets none until its skill directory is confirmed. Installation is best-effort and never affects the listing.
+
 ## Alternatives considered
 
 **Route plugin work to a native DSH member.** Works today but adds a hop and a second session; the owner preferred the CLI owning the work.
@@ -28,4 +30,6 @@ The member bridge asks the host for those tools on `tools/list` (`{ modeTools: {
 
 - Verified end to end on prod 3080 with the first slice (a Codex member listed and called the 剪辑 mode's `video_*` tools); the member-session stand-in replaced it.
 - `tools/list` now waits for one socket round trip to the host.
+- A skill written during a run's first listing may only be picked up from the CLI's next turn, depending on when the CLI scans its skill directory.
+- Plugin tools that need the human's approval go through the host's native approval on the member's session (the released-log reader does not require an open step for approval events); surfacing that approval in the room is not done yet.
 - Tests cover listing only plugin tools from one preset agent per member, running a call as that agent and refusing non-plugin names, the channel answering per the room's mode, the bridge degrading without a host, and room recording a CLI member's mode.

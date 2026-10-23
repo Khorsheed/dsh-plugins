@@ -8,6 +8,10 @@ import { Context } from '@deepseek-ai/cordis'
 import { MemberChannel } from '../src/member-channel.ts'
 import { PresetToolHost } from '../src/preset-tool-host.ts'
 import { listModeTools, callModeTool } from '../src/member-bridge.ts'
+import { mkdtempSync, readFileSync, statSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { harnessSkillsDir, installModeSkills } from '../src/mode-skills.ts'
 
 const ORIGIN = Symbol.for('dsh.tool.origin')
 const tagged = (name: string, owner: string, channel = 'plugin') => ({ name, [ORIGIN]: { channel, owner } })
@@ -79,6 +83,31 @@ describe('PresetToolHost', () => {
   it('a host without presets, or a member whose session is not live, offers nothing', async () => {
     expect(await new PresetToolHost(new Context()).list('child', 'dsh-video')).toEqual([])
     expect(await new PresetToolHost(host().ctx).list('child-gone', 'dsh-video')).toEqual([])
+  })
+})
+
+describe('mode skills', () => {
+  it('finds the skills the mode contributes (scope minus global) and installs them the CLI\'s way', async () => {
+    const h = host()
+    const skills = [{ name: 'video-studio', description: '剪辑工作流', content: '先 video_project open' }]
+    h.ctx.provide('skills' as never, {
+      list: async (options?: { scope?: { session?: unknown } }) => options?.scope?.session === h.session
+        ? [{ name: 'global-one', description: 'g' }, ...skills] : [{ name: 'global-one', description: 'g' }],
+      get: async (name: string) => skills.find(skill => skill.name === name),
+    } as never)
+    const found = await new PresetToolHost(h.ctx).skills('child-codex', 'dsh-video')
+    expect(found).toEqual(skills)
+
+    const home = mkdtempSync(join(tmpdir(), 'mode-skills-'))
+    const dir = harnessSkillsDir('codex', home)!
+    expect(installModeSkills(dir, 'dsh-video', found)).toEqual(['dsh-video-studio'])
+    const file = join(dir, 'dsh-video-studio', 'SKILL.md')
+    const text = readFileSync(file, 'utf8')
+    expect(text).toMatch(/^---\nname: dsh-video-studio\ndescription: ".*dsh mode \\"dsh-video\\".*"\n---\n\n先 video_project open\n$/)
+    const written = statSync(file).mtimeMs
+    installModeSkills(dir, 'dsh-video', found)
+    expect(statSync(file).mtimeMs).toBe(written)
+    expect(harnessSkillsDir('kimi', home)).toBeUndefined()
   })
 })
 

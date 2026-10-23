@@ -61,6 +61,18 @@ interface PresetsLike {
   resolve(id?: string): Promise<{ readonly id: string }>
   mount(ctx: Context, id?: string): Promise<unknown>
 }
+interface SkillsLike {
+  list(options?: { scope?: object }): Promise<readonly { readonly name: string; readonly description: string }[]>
+  get(name: string, options?: { scope?: object }): Promise<{ readonly name: string; readonly description: string; readonly content: string } | undefined>
+}
+
+/** One skill the mode itself contributes (absent from the global view). */
+export interface ModeSkill {
+  readonly name: string
+  readonly description: string
+  readonly content: string
+}
+
 interface SessionsLike {
   get(id: ReturnType<typeof SessionId>): SessionLike | undefined
 }
@@ -203,6 +215,23 @@ export class PresetToolHost {
     if (!isPluginTool(tools.get(name, agent))) return { content: [{ type: 'text', text: `Unknown tool ${name} in mode ${preset}` }], isError: true }
     const result = await tools.execute({ callId: `bridge-${randomUUID()}` as never, name, arguments: args, agent, signal })
     return { content: mcpContent(result.content), isError: result.isError }
+  }
+
+  /**
+   * The skills the member's mode contributes: visible in its scope, absent
+   * from the global view (installed skills every CLI already sees stay out).
+   * @param childSessionId - the member's child session.
+   * @param preset - the member's mode.
+   * @returns the mode's skills with their content; empty without a skill registry.
+   */
+  async skills(childSessionId: string, preset: string): Promise<ModeSkill[]> {
+    const registry = this.probe<SkillsLike>('skills')
+    const agent = await this.agentFor(childSessionId, preset, undefined)
+    if (registry?.list === undefined || agent === undefined) return []
+    const global = new Set((await registry.list()).map(skill => skill.name))
+    const own = (await registry.list({ scope: agent })).filter(skill => !global.has(skill.name))
+    const loaded = await Promise.all(own.map(skill => registry.get(skill.name, { scope: agent })))
+    return loaded.flatMap(skill => skill === undefined ? [] : [{ name: skill.name, description: skill.description, content: skill.content }])
   }
 
   /** Dispose every preset agent. */

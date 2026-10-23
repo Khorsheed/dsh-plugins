@@ -32,6 +32,7 @@ import { dirname } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type { LocalAgentRegistry } from './index.ts'
 import type { BridgedTool, BridgedToolResult, PresetToolHost } from './preset-tool-host.ts'
+import { harnessSkillsDir, installModeSkills } from './mode-skills.ts'
 import type {
   LocalAgentDelegationView,
   MemberRoomCommand,
@@ -239,7 +240,9 @@ export class MemberChannel {
     if ('list' in request.modeTools) {
       if (mode === undefined) return { ok: true, tools: [] }
       try {
-        return { ok: true, tools: await this.modeTools!.list(run.childSessionId, mode.preset, mode.cwd) }
+        const tools = await this.modeTools!.list(run.childSessionId, mode.preset, mode.cwd)
+        await this.installSkills(run, mode.preset)
+        return { ok: true, tools }
       } catch (error) {
         this.ctx.logger.warn(`localAgent: mode tools for ${run.childSessionId} unavailable: ${String(error)}`)
         return { ok: true, tools: [] }
@@ -250,6 +253,18 @@ export class MemberChannel {
     try {
       return { ok: true, result: await this.modeTools!.call(run.childSessionId, mode.preset, name, args ?? {}, AbortSignal.timeout(MODE_TOOL_TIMEOUT_MS), mode.cwd) }
     } catch (error) { return { ok: false, error: String(error) } }
+  }
+
+  /** Install the mode's skills into the member's harness skill directory (best-effort). */
+  private async installSkills(run: { readonly childSessionId: string; readonly provider: string }, preset: string): Promise<void> {
+    try {
+      const harness = this.registry.list().map(name => this.registry.get(name)).find(candidate => candidate?.delegationProvider === run.provider)
+      const dir = harness === undefined ? undefined : harnessSkillsDir(harness.name, this.registry.homeDir(harness.name))
+      if (dir === undefined) return
+      installModeSkills(dir, preset, await this.modeTools!.skills(run.childSessionId, preset))
+    } catch (error) {
+      this.ctx.logger.warn(`localAgent: mode skills for ${run.childSessionId} not installed: ${String(error)}`)
+    }
   }
 
   /** Probe the optional room gate without importing any room package. */
