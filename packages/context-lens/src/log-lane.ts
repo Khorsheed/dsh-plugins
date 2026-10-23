@@ -558,6 +558,19 @@ function collapseQuery(text: string): string {
   return text.replace(/\s+/g, ' ').trim().slice(0, 120)
 }
 
+/**
+ * A log without request headers (an external agent's child: its CLI owns the
+ * request) still names who answered on the assistant message's source; the
+ * rest of the request config was never recorded and stays absent.
+ */
+function configFromSource(raw: unknown): RequestConfig {
+  const source = (typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>)['source'] : undefined) as Record<string, unknown> | undefined
+  return {
+    ...typeof source?.['provider'] === 'string' ? { provider: source['provider'] } : {},
+    ...typeof source?.['model'] === 'string' ? { model: source['model'] } : {},
+  }
+}
+
 /** One settled request out of its assistant event: stream timing, usage, and the segment split. */
 function buildRequest(
   cursor: SessionLogCursor,
@@ -617,7 +630,7 @@ function buildRequest(
     startedAt,
     status: failed ? 'failed' : 'ok',
     ...error === undefined ? {} : { error },
-    config: cursor.config ?? {},
+    config: cursor.config ?? configFromSource(data['message']),
     ...usage === undefined ? {} : { usage },
     responseSummary: message !== undefined ? summarizeMessage(message) : summarizeBlocks(streamFacts.blocks),
     ...response === undefined ? {} : { response },

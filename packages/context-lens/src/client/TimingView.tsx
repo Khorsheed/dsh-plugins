@@ -120,7 +120,7 @@ export function TimingView({
           <div
             key={s.scopeId}
             className={css.lane}
-            data-dim={s.scopeId !== scope.scopeId}
+            data-dim={scopes.length > 1 ? String(s.scopeId !== scope.scopeId) : undefined}
           >
             <button
               type="button"
@@ -165,7 +165,7 @@ export function TimingView({
         </div>
       </section>
       <section>
-        <h3 title={t('lens.attribution')}>{t('lens.toolTime')} ⓘ</h3>
+        <h3 className={css.titleRow}>{t('lens.toolTime')}<abbr className={css.info} title={t('lens.attribution')}>i</abbr></h3>
         <div className={css.tableScroll}>
           <table className={css.table}>
             <thead>
@@ -299,12 +299,17 @@ export function TimingView({
                 </Fragment>
               )
             })}
-            <tr>
-              <td>{t('lens.gaps')}</td>
-              <td>—</td>
-              <td>—</td>
-              <td>{fmtSpan(data.gaps)}</td>
-            </tr>
+            {/* Idle time, split by where it sits (rows only when present). */}
+            {([['lens.gapsHead', data.gapsHead], ['lens.gaps', data.gapsBetween], ['lens.gapsTail', data.gapsTail]] as const)
+              .filter(([, ms]) => ms >= 50)
+              .map(([key, ms]) => (
+                <tr key={key}>
+                  <td>{t(key)}</td>
+                  <td>—</td>
+                  <td>—</td>
+                  <td>{fmtSpan(ms)}</td>
+                </tr>
+              ))}
           </tbody>
           <tfoot>
             <tr>
