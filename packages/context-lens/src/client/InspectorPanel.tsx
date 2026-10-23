@@ -7,7 +7,7 @@ import { PanelRoot } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.t
 import type {
   AgentScopeOverview, BackfillInfo, CapturedRequest, ListTurnsResult, TurnListItem, TurnOverview, TurnTiming,
 } from '../types.ts'
-import { WINDOW_TURNS, fmtSpan, latestTurnSeq, unloadedGaps, type CompositionFilter, type TurnGap } from './aggregate.ts'
+import { WINDOW_TURNS, fmtSpan, gapShown, latestTurnSeq, turnGaps, turnNumber, type CompositionFilter, type TurnGap } from './aggregate.ts'
 import type { InspectorTabProps } from './contract.ts'
 import type { RequestInspectorTabParams } from './definition.tsx'
 import { hasTurnAnchor, scrollConversationToBottom, scrollConversationToTurn } from './scroll-sync.ts'
@@ -42,6 +42,10 @@ function FailureCard({ scope, t }: { readonly scope: AgentScopeOverview; readonl
 }
 
 /** The tab body. */
+/** The list's window facts the panel keeps beside its turns. */
+const listMetaOf = ({ range, unloaded, total }: ListTurnsResult): Pick<ListTurnsResult, 'range' | 'unloaded' | 'total'> =>
+  ({ ...range === undefined ? {} : { range }, ...unloaded === undefined ? {} : { unloaded }, ...total === undefined ? {} : { total } })
+
 export function InspectorPanel({
   sessionId, useTabInfo, t,
   listTurns, loadTurns, loadThrough, getTurn, getRequest, getTurnTiming, getSessionTrend,
@@ -61,7 +65,8 @@ export function InspectorPanel({
   const [turns, setTurns] = useState<readonly TurnListItem[] | null>(null)
   const [backfill, setBackfill] = useState<BackfillInfo | null>(null)
   const [parent, setParent] = useState<ListTurnsResult['parent'] | null>(null)
-  const [range, setRange] = useState<ListTurnsResult['range'] | undefined>(undefined)
+  const [listMeta, setListMeta] = useState<Pick<ListTurnsResult, 'range' | 'unloaded' | 'total'>>({})
+  const range = listMeta.range
   const [turnSeq, setTurnSeq] = useState<number | null>(null)
   const [overview, setOverview] = useState<TurnOverview | null>(null)
   const [timing, setTiming] = useState<TurnTiming | null>(null)
@@ -121,7 +126,7 @@ export function InspectorPanel({
       setTurns(result.value.turns)
       setBackfill(result.value.backfill)
       setParent(result.value.parent ?? null)
-      setRange(result.value.range)
+      setListMeta(listMetaOf(result.value))
       setTurnSeq(previous => previous !== null && result.value.turns.some(turn => turn.turnSeq === previous)
         ? previous
         : latestTurnSeq(result.value.turns) ?? null)
@@ -310,10 +315,11 @@ export function InspectorPanel({
     syncScrollToTurn(next)
   }
 
-  /** The latest REAL turn — the 最新 button's target (pseudo-turns have no conversation anchor). */
-  const latestRealTurn = (turns ?? []).filter(candidate => candidate.hostTurn !== undefined).at(-1)
-  const gaps = unloadedGaps(range, turns ?? [])
-  const latestUnloaded = range !== undefined && latestRealTurn?.hostTurn !== undefined && range.last > latestRealTurn.hostTurn
+  /** The latest REAL turn or room round — the 最新 button's target (pseudo-turns have no conversation anchor). */
+  const latestRealTurn = (turns ?? []).filter(candidate => candidate.hostTurn !== undefined || candidate.room !== undefined).at(-1)
+  const latestMainTurn = (turns ?? []).filter(candidate => candidate.hostTurn !== undefined).at(-1)
+  const gaps = turnGaps(listMeta, turns ?? [])
+  const latestUnloaded = range !== undefined && latestMainTurn?.hostTurn !== undefined && range.last > latestMainTurn.hostTurn
 
   /** Move the loaded window (latest when `end` is null), then select `select` or the newest loaded turn. */
   const loadWindow = (end: number | null, select?: number): void => {
@@ -322,7 +328,7 @@ export function InspectorPanel({
       if (!result.ok) { setError(result.error.message); return }
       setTurns(result.value.turns)
       setBackfill(result.value.backfill)
-      setRange(result.value.range)
+      setListMeta(listMetaOf(result.value))
       setTrendKey(key => key + 1)
       const target = select !== undefined && result.value.turns.some(turn => turn.turnSeq === select) ? select : latestTurnSeq(result.value.turns)
       if (target !== undefined) { selectTurnState(target); syncScrollToTurn(target, result.value.turns) }
@@ -340,20 +346,23 @@ export function InspectorPanel({
     if (turnSeq !== latestRealTurn.turnSeq) selectTurnState(latestRealTurn.turnSeq)
     scrollConversationToBottom()
   }
+  /** The unloaded run right next to a turn, in the session's turn numbering. */
+  const adjacentGap = (turn: TurnListItem | undefined, delta: -1 | 1): TurnGap | undefined => {
+    const n = turn === undefined ? undefined : turnNumber(turn)
+    return n === undefined ? undefined : gaps.find(g => delta < 0 ? gapShown(g).to === n - 1 : gapShown(g).from === n + 1)
+  }
   /** Step one turn; at the loaded window's edge, load the adjacent window and keep going. */
   const onStep = (delta: -1 | 1): void => {
     const list = turns ?? []
     const i = list.findIndex(v => v.turnSeq === turnSeq)
     const next = list[i + delta]
-    const host = list[i]?.hostTurn
-    const gap = host === undefined ? undefined : gaps.find(g => delta < 0 ? g.to === host - 1 : g.from === host + 1)
+    const gap = adjacentGap(list[i], delta)
     if (gap !== undefined) onLoadGap(gap)
     else if (next) onSelectTurn(next.turnSeq)
   }
   const stepIndex = (turns ?? []).findIndex(v => v.turnSeq === turnSeq)
   const canStep = (delta: -1 | 1): boolean => {
-    const host = (turns ?? [])[stepIndex]?.hostTurn
-    if (host !== undefined && gaps.some(g => delta < 0 ? g.to === host - 1 : g.from === host + 1)) return true
+    if (adjacentGap((turns ?? [])[stepIndex], delta) !== undefined) return true
     return stepIndex >= 0 && stepIndex + delta >= 0 && stepIndex + delta < (turns ?? []).length
   }
 
@@ -461,7 +470,7 @@ export function InspectorPanel({
           <span className={css.title}>{t('tab.title')}</span>
           <div className={css.stepper}>
             <button type="button" aria-label={t('lens.previous')} disabled={!canStep(-1)} onClick={() => onStep(-1)}>‹</button>
-            <TurnMenu turns={turns ?? []} turnSeq={turnSeq} onSelect={onSelectTurn} gaps={loadTurns ? gaps : []} lastTurn={range?.last} onLoad={onLoadGap} t={t} />
+            <TurnMenu turns={turns ?? []} turnSeq={turnSeq} onSelect={onSelectTurn} gaps={loadTurns ? gaps : []} lastTurn={listMeta.total ?? range?.last} onLoad={onLoadGap} t={t} />
             <button type="button" aria-label={t('lens.next')} disabled={!canStep(1)} onClick={() => onStep(1)}>›</button>
           </div>
           {latestRealTurn && (turnSeq !== latestRealTurn.turnSeq || (latestUnloaded && loadTurns)) && <button type="button" className={css.latestText} aria-label={t('turn.latest')} onClick={onLatest}>{t('lens.latest')}</button>}
@@ -486,7 +495,8 @@ export function InspectorPanel({
           if (mainTab !== 'time') onOpenRequest(seq, targetScope)
         }} />}
         {turn !== undefined && (turn.query !== '' || turn.trigger !== undefined) && <div className={css.query}>
-          {turn.hostTurn !== undefined && <span className={css.queryTurn}>{t('query.turn', { turn: String(turn.hostTurn) })}</span>}
+          {turnNumber(turn) !== undefined && <span className={css.queryTurn}>{t('query.turn', { turn: String(turnNumber(turn)) })}</span>}
+          {turn.room !== undefined && <code className={css.querySource}>{t('query.room')}{turn.room.targets.length > 0 ? ` → ${turn.room.targets.join('、')}` : ''}</code>}
           {turn.query === '' && turn.trigger !== undefined && <code className={css.querySource}>{turn.trigger.source}</code>}
           <b title={turn.query !== '' ? turn.query : turn.trigger?.text}>{turn.hostTurn === undefined && turn.query === 'compaction' ? t('compaction.title') : turn.query !== '' ? turn.query : turn.trigger!.text}</b>
         </div>}

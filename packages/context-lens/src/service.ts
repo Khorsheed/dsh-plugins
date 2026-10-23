@@ -195,6 +195,10 @@ export class InspectorService {
     const eventType: string = event.type
     this.noteReplacement(session, event as unknown as ReplacementRow)
     if (eventType.startsWith('compaction/')) this.store.noteCompaction(sessionId, eventType, event.data as unknown as Record<string, unknown>)
+    if (eventType.startsWith('room/')) {
+      this.store.noteRoomEvent(sessionId, eventType, event.data, event.seq, at)
+      return
+    }
     if (event.type === 'tool/result' && event.surfaceOp !== 'append') {
       const original = session.eventAt(event.surfaceOp.startSeq)
       if (original?.type === 'tool/result') {
@@ -411,6 +415,9 @@ export class InspectorService {
         const keep = this.store.windowHosts(sessionId, hosts)
         this.store.insertLogTurns(sessionId, reconstructSession(events, host => host === undefined || keep.has(host)))
         for (const fact of replacementFactsOf(events)) this.store.noteReplacement(sessionId, fact)
+        for (const row of events) {
+          if (row.type.startsWith('room/')) this.store.noteRoomEvent(sessionId, row.type, row.data, row.seq, row.time)
+        }
         await this.resolveParent(sessionId, events, reader)
       } finally {
         void handle.close().catch(() => undefined)

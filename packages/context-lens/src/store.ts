@@ -52,6 +52,7 @@ import { AMBIENT_SOURCES, lastParagraph, previewLine, type CapturedMessage } fro
 import type { LogTurn } from './log-lane.ts'
 import { prefixTextChange } from './prefix-diff.ts'
 import { diffRequests, type FactLookup, type ReplacementFact } from './changes.ts'
+import { applyRoomEvent, emptyRoom, roomTurnSeq, runsOf, type RoomRun, type RoomState } from './room.ts'
 
 /** Replacement facts kept per session; older facts only matter for requests long evicted. */
 const REPLACEMENT_CAP = 2048
@@ -105,6 +106,8 @@ export interface ToolExecSpan {
 /** A request row as the store keeps it — the wire shapes assemble on query. */
 export interface StoredRequest {
   requestNumber?: number
+  /** The request's own session turn (log lane): a member child's run is one of these. */
+  hostTurn?: number
   seq: number
   sessionId: string
   scopeId: string
@@ -190,6 +193,8 @@ export interface TurnRecord {
   /** Capture observed the turn opening, so this turn’s live request order is complete. */
   liveStartObserved?: boolean
   query: string
+  /** A room round: the dispatch's targets (see room.ts). */
+  room?: { targets: string[] }
   /** First non-human message of the turn (see LogTurn.trigger). */
   trigger?: { source: string; text: string }
   /** The `turn/start` event's log seq. */
@@ -242,6 +247,10 @@ interface SessionRecord {
   windowEnd?: number
   /** First and last host turn the session's log holds (known after a backfill). */
   logRange?: { first: number; last: number }
+  /** Every main turn's span, loaded or not (log + live): orders rounds and finds the time outside turns. */
+  turnSpans: Map<number, { start: number; end?: number }>
+  /** The room plugin's events, read structurally (room.ts). */
+  room?: RoomState
 }
 
 /** Snapshot one request needs at dispatch — the normalized GenerateOptions face. */
@@ -341,6 +350,7 @@ export class InspectorStore {
         prunings: new Map(),
         replacements: new Map(),
         lastAccess: this.now(),
+        turnSpans: new Map(),
         replacedBy: new Map(),
         openTurn: undefined,
         buckets: new Map(),
@@ -700,6 +710,7 @@ export class InspectorStore {
     const scopeId = sessionId === rootId ? 'main' : sessionId
     if (hostTurn === 1 && !session.nextRequestNumbers.has(scopeId)) session.nextRequestNumbers.set(scopeId, 1)
     if (this.isChild(sessionId)) return
+    if (!session.turnSpans.has(hostTurn)) session.turnSpans.set(hostTurn, { start: at })
     if (session.openTurn !== undefined) return
     // The host turn number is the canonical address: a turn the log lane
     // already reconstructed reopens here rather than duplicating (defensive —
@@ -717,6 +728,8 @@ export class InspectorStore {
   /** turn/end: close the open turn, resolve its main scope, sweep abandoned streams. */
   turnEnd(sessionId: string, hostTurn: number, reason: { kind: string; error?: { message: string } }, at: number): void {
     if (this.isChild(sessionId)) return
+    const span = this.sessions.get(sessionId)?.turnSpans.get(hostTurn)
+    if (span !== undefined) span.end = at
     const session = this.sessions.get(sessionId)
     if (session === undefined) return
     let turn = session.openTurn
@@ -871,8 +884,9 @@ export class InspectorStore {
   ): ScopeRecord | undefined {
     const existing = this.findScope(session, scopeId)
     if (existing !== undefined) return existing.scope
-    const turn = session.openTurn ?? session.turns[session.turns.length - 1]
-    if (turn === undefined) return undefined
+    // A child started outside any turn (a room member a human addressed) has
+    // no turn of its own: it waits in the hidden holder, read by room rounds.
+    const turn = session.openTurn ?? this.holderTurn(session, at)
     const scope: ScopeRecord = {
       scopeId,
       scopeSeq: session.nextScopeSeq,
@@ -942,6 +956,16 @@ export class InspectorStore {
     this.reconcileRequestNumbers(session, logTurns)
     const hosts = logTurns.filter(turn => turn.purpose === undefined).map(turn => turn.hostTurn)
     if (hosts.length > 0) session.logRange = { first: Math.min(...hosts), last: Math.max(...hosts) }
+    for (const turn of logTurns) {
+      if (turn.purpose === undefined) session.turnSpans.set(turn.hostTurn, { start: turn.startedAt, ...turn.endedAt === undefined ? {} : { end: turn.endedAt } })
+    }
+    // Children started outside any turn always load: room rounds read them whatever the window.
+    for (const holder of logTurns.filter(turn => turn.purpose === 'room-members')) {
+      const target = this.holderTurn(session, holder.startedAt)
+      for (const delegation of holder.delegations) {
+        if (delegation.childId === undefined || this.findScope(session, delegation.childId) === undefined) this.addDelegationScope(session, target, delegation)
+      }
+    }
     if (session.backfillState === 'complete' || session.backfillState === 'broken') return 0
     const keep = this.windowOf(session, hosts)
     const window = logTurns.filter(turn => turn.purpose === undefined && keep.has(turn.hostTurn))
@@ -954,6 +978,7 @@ export class InspectorStore {
     const nextAfter = logTurns.filter(turn => turn.purpose === undefined && turn.hostTurn > hi).sort((x, y) => x.hostTurn - y.hostTurn)[0]?.startedAt ?? Number.POSITIVE_INFINITY
     // Purpose calls (compactions) ride with the window's turns: by their host turn, else by time.
     const inWindow = (turn: LogTurn): boolean => {
+      if (turn.purpose === 'room-members') return false
       if (turn.purpose === undefined) return turn.hostTurn >= lo && turn.hostTurn <= hi
       const host = turn.requests[0]?.compaction?.hostTurn
       return host !== undefined ? host >= lo && host <= hi : turn.startedAt >= startAt && turn.startedAt < nextAfter
@@ -1130,30 +1155,42 @@ export class InspectorStore {
       this.attachResponse(request, built.response)
       this.accountExecutionResults(request)
     }
-    for (const delegation of logTurn.delegations) {
-      const scopeId = delegation.childId ?? `call:${delegation.callId}`
-      if (delegation.childId !== undefined) this.childToParent.set(delegation.childId, session.id)
-      const label = delegation.catalogLabel ?? delegation.label
-      const scope: ScopeRecord = {
-        scopeId,
-        scopeSeq: 0,
-        kind: 'subagent',
-        ...label === undefined ? {} : { label },
-        // A catalog-only child has no tool/result to judge it by; no evidence of failure is not failure.
-        status: delegation.callId === '' ? 'ok' : delegation.isError === true || delegation.resultAt === undefined ? 'failed' : 'ok',
-        ...delegation.isError === true && delegation.errorPreview !== undefined
-          ? { error: delegation.errorPreview }
-          : delegation.resultAt === undefined && delegation.callId !== '' ? { error: 'no tool/result in the log' } : {},
-        config: {},
-        requests: [],
-        startedAt: delegation.at,
-        ...delegation.resultAt === undefined ? {} : { endedAt: delegation.resultAt },
-        live: false,
-        logFilled: false,
-        ...delegation.callId === '' ? {} : { callId: delegation.callId },
-      }
-      turn.scopes.set(scopeId, scope)
+    for (const delegation of logTurn.delegations) this.addDelegationScope(session, turn, delegation)
+  }
+
+  /** One reconstructed delegation → its child scope on `turn`. */
+  private addDelegationScope(session: SessionRecord, turn: TurnRecord, delegation: LogTurn['delegations'][number]): void {
+    const scopeId = delegation.childId ?? `call:${delegation.callId}`
+    if (delegation.childId !== undefined) this.childToParent.set(delegation.childId, session.id)
+    const label = delegation.catalogLabel ?? delegation.label
+    const scope: ScopeRecord = {
+      scopeId,
+      scopeSeq: 0,
+      kind: 'subagent',
+      ...label === undefined ? {} : { label },
+      // A catalog-only child has no tool/result to judge it by; no evidence of failure is not failure.
+      status: delegation.callId === '' ? 'ok' : delegation.isError === true || delegation.resultAt === undefined ? 'failed' : 'ok',
+      ...delegation.isError === true && delegation.errorPreview !== undefined
+        ? { error: delegation.errorPreview }
+        : delegation.resultAt === undefined && delegation.callId !== '' ? { error: 'no tool/result in the log' } : {},
+      config: {},
+      requests: [],
+      startedAt: delegation.at,
+      ...delegation.resultAt === undefined ? {} : { endedAt: delegation.resultAt },
+      live: false,
+      logFilled: false,
+      ...delegation.callId === '' ? {} : { callId: delegation.callId },
     }
+    turn.scopes.set(scopeId, scope)
+  }
+
+  /** The hidden turn holding children started outside any turn (never listed; room rounds read it). */
+  private holderTurn(session: SessionRecord, at: number): TurnRecord {
+    const found = session.turns.find(turn => turn.purpose === 'room-members')
+    if (found !== undefined) return found
+    const turn = this.mintTurn(session, at, { purpose: 'room-members', query: '', turnSeq: session.nextBucketSeq })
+    session.nextBucketSeq -= 1
+    return turn
   }
 
   /** Renumber one session's scope ordinals chronologically (turn order, then creation order). */
@@ -1186,12 +1223,21 @@ export class InspectorStore {
         ...session.backfillReason === undefined ? {} : { reason: session.backfillReason },
       }
     if (session === undefined) return { turns: [], backfill, generation: this.generation, ...this.parents.has(sessionId) ? { parent: this.parents.get(sessionId)! } : {} }
+    const ordinals = this.ordinals(session)
+    const listed = [...session.turns, ...this.roomTurns(session, filter)]
+      .filter(turn => turn.purpose !== 'room-members' && this.attachedTurn(session, turn) === undefined)
+      .sort((a, b) => a.startedAt - b.startedAt || a.turnSeq - b.turnSeq)
+    const handoffs = (session.room?.handoffs ?? []).map(h => ({ at: h.at, name: session.room!.members.get(h.memberId) ?? h.memberId }))
     return {
-      turns: [...session.turns]
-        .filter(turn => this.attachedTurn(session, turn) === undefined)
-        .sort((a, b) => a.startedAt - b.startedAt || a.turnSeq - b.turnSeq)
-        .map(turn => this.turnItem(sessionId, turn, filter)),
+      turns: listed.map(turn => {
+        const item = this.turnItem(sessionId, turn, filter)
+        const ordinal = ordinals.get(turn.hostTurn !== undefined ? `h${turn.hostTurn}` : `t${turn.turnSeq}`)
+        return ordinal === undefined ? item : { ...item, ordinal }
+      }),
       backfill,
+      total: ordinals.size,
+      unloaded: this.unloadedRuns(session, ordinals),
+      ...handoffs.length === 0 ? {} : { handoffs },
       generation: this.generation,
       ...this.parents.has(sessionId) ? { parent: this.parents.get(sessionId)! } : {},
       ...session.logRange === undefined ? {} : { range: session.logRange },
@@ -1237,6 +1283,7 @@ export class InspectorStore {
       ...turn.hostTurn === undefined ? {} : { hostTurn: turn.hostTurn },
       query: turn.query,
       ...turn.query === '' && turn.trigger !== undefined ? { trigger: turn.trigger } : {},
+      ...turn.room === undefined ? {} : { room: turn.room },
       ...turn.startSeq === undefined ? {} : { startSeq: turn.startSeq },
       startedAt: turn.startedAt,
       ...turn.endedAt === undefined ? {} : { endedAt: turn.endedAt },
@@ -1254,7 +1301,7 @@ export class InspectorStore {
   getTurn(sessionId: string, turnSeq: number, filter?: ScopeFilter): TurnOverview | undefined {
     const session = this.sessions.get(sessionId)
     if (session !== undefined) session.lastAccess = this.now()
-    const turn = session?.turns.find(candidate => candidate.turnSeq === turnSeq)
+    const turn = session === undefined ? undefined : this.findTurn(session, turnSeq, filter)
     if (session === undefined || turn === undefined) return undefined
     const item = this.turnItem(sessionId, turn, filter)
     const scopes: AgentScopeOverview[] = [...turn.scopes.values()]
@@ -1273,6 +1320,124 @@ export class InspectorStore {
       generation: this.generation,
       ...filter?.scopes === undefined ? {} : { authorizedScopes: scopes.map(scope => scope.scopeId) },
     }
+  }
+
+  /** Record one `room/*` event of a main session (log backfill or live). */
+  noteRoomEvent(sessionId: string, type: string, data: unknown, seq: number | undefined, at: number | undefined): void {
+    if (this.isChild(sessionId) || !type.startsWith('room/')) return
+    const session = this.session(sessionId)
+    session.room ??= emptyRoom()
+    applyRoomEvent(session.room, type, data, seq, at)
+  }
+
+  /** A listed turn or a room round, by its panel address. */
+  private findTurn(session: SessionRecord, turnSeq: number, filter?: ScopeFilter): TurnRecord | undefined {
+    return session.turns.find(candidate => candidate.turnSeq === turnSeq)
+      ?? (turnSeq < -999_999 ? this.roomTurns(session, filter).find(candidate => candidate.turnSeq === turnSeq) : undefined)
+  }
+
+  /** Whether a moment falls inside some main turn (loaded or not). */
+  private insideMainTurn(session: SessionRecord, at: number): boolean {
+    for (const span of session.turnSpans.values()) {
+      if (at >= span.start && at <= (span.end ?? Number.POSITIVE_INFINITY)) return true
+    }
+    return false
+  }
+
+  /**
+   * Every human room dispatch made outside a main turn, as a round: the
+   * dispatch's message, and per member run the child session's requests of
+   * that run (its recorded child turn, else the run's time span). Built on
+   * read from the room state and the children's scopes; nothing is stored.
+   */
+  private roomTurns(session: SessionRecord, filter?: ScopeFilter): TurnRecord[] {
+    const room = session.room
+    if (room === undefined) return []
+    return room.dispatches.filter(dispatch => !this.insideMainTurn(session, dispatch.at)).map((dispatch): TurnRecord => {
+      const scopes = new Map<string, ScopeRecord>()
+      const runs = runsOf(room, dispatch.seq)
+      for (const run of runs) {
+        const child = this.childOfRun(session, run)
+        if (child !== undefined && !scopeAuthorized(child.scopeId, filter)) continue
+        // The child's own scope id: its requests open by that id from any view.
+        const scopeId = child?.scopeId ?? `room:${dispatch.seq}:${run.memberId}`
+        const from = (run.startedAt ?? dispatch.at) - 2000, to = (run.endedAt ?? this.now()) + 2000
+        const requests = (child?.requests ?? []).filter(request => run.childTurn !== undefined && request.hostTurn !== undefined
+          ? request.hostTurn === run.childTurn
+          : request.startedAt >= from && request.startedAt <= to)
+        scopes.set(scopeId, {
+          scopeId,
+          scopeSeq: child?.scopeSeq ?? 0,
+          kind: 'subagent',
+          label: run.member ?? room.members.get(run.memberId) ?? child?.label ?? run.memberId,
+          ...child?.provider === undefined ? {} : { provider: child.provider },
+          status: run.state === 'failed' ? 'failed' : run.state === 'done' ? 'ok' : 'running',
+          config: child?.config ?? {},
+          requests,
+          startedAt: run.startedAt ?? dispatch.at,
+          ...run.endedAt === undefined ? {} : { endedAt: run.endedAt },
+          live: false,
+          logFilled: true,
+        })
+      }
+      const ends = runs.map(run => run.endedAt).filter((end): end is number => end !== undefined)
+      return {
+        turnSeq: roomTurnSeq(dispatch.seq),
+        purpose: 'room',
+        query: dispatch.text,
+        room: { targets: dispatch.targets },
+        startedAt: dispatch.at,
+        ...ends.length === 0 ? {} : { endedAt: Math.max(...ends) },
+        liveContent: false,
+        scopes,
+      }
+    })
+  }
+
+  /** The child session a run went to: named by the run, else the child catalogued closest to the run's start. */
+  private childOfRun(session: SessionRecord, run: RoomRun): ScopeRecord | undefined {
+    if (run.childSessionId !== undefined) {
+      const named = this.findScope(session, run.childSessionId)?.scope
+      if (named !== undefined) return named
+    }
+    if (run.startedAt === undefined) return undefined
+    let best: ScopeRecord | undefined
+    for (const turn of session.turns) for (const scope of turn.scopes.values()) {
+      if (scope.kind !== 'subagent' || Math.abs(scope.startedAt - run.startedAt) > 10_000) continue
+      if (best === undefined || Math.abs(scope.startedAt - run.startedAt) < Math.abs(best.startedAt - run.startedAt)) best = scope
+    }
+    return best
+  }
+
+  /**
+   * One numbering for the whole session, by time: every main turn (loaded or
+   * not) and every room round. Keys: `h<hostTurn>` for main turns,
+   * `t<turnSeq>` for room rounds.
+   */
+  private ordinals(session: SessionRecord): Map<string, number> {
+    const units: { key: string; at: number; host: number }[] = []
+    const hosts = new Set<number>()
+    for (const [host, span] of session.turnSpans) { units.push({ key: `h${host}`, at: span.start, host }); hosts.add(host) }
+    for (const turn of session.turns) {
+      if (turn.hostTurn !== undefined && !hosts.has(turn.hostTurn)) units.push({ key: `h${turn.hostTurn}`, at: turn.startedAt, host: turn.hostTurn })
+    }
+    for (const round of this.roomTurns(session)) units.push({ key: `t${round.turnSeq}`, at: round.startedAt, host: Number.POSITIVE_INFINITY })
+    units.sort((a, b) => a.at - b.at || a.host - b.host)
+    return new Map(units.map((unit, i) => [unit.key, i + 1]))
+  }
+
+  /** Runs of main turns the log holds but the store has not loaded, in ordinals, with their host-turn ends. */
+  private unloadedRuns(session: SessionRecord, ordinals: Map<string, number>): NonNullable<ListTurnsResult['unloaded']> {
+    const loaded = new Set(session.turns.filter(turn => turn.hostTurn !== undefined).map(turn => turn.hostTurn!))
+    const missing = [...session.turnSpans.keys()].filter(host => !loaded.has(host))
+      .map(host => ({ host, ordinal: ordinals.get(`h${host}`)! })).sort((a, b) => a.ordinal - b.ordinal)
+    const out: NonNullable<ListTurnsResult['unloaded']> = []
+    for (const { host, ordinal } of missing) {
+      const last = out.at(-1)
+      if (last !== undefined && last.to === ordinal - 1) { last.to = ordinal; last.lastHost = host }
+      else out.push({ from: ordinal, to: ordinal, firstHost: host, lastHost: host })
+    }
+    return out
   }
 
   /** A compaction pseudo-turn's host turn: the one it started in, else the next turn to begin; undefined for any other turn. */
@@ -1462,7 +1627,7 @@ export class InspectorStore {
   /** One turn's whole-turn timing aggregation, filtered to the authorized scopes. */
   getTurnTiming(sessionId: string, turnSeq: number, filter?: ScopeFilter): TurnTiming | undefined {
     const session = this.sessions.get(sessionId)
-    const turn = session?.turns.find(candidate => candidate.turnSeq === turnSeq)
+    const turn = session === undefined ? undefined : this.findTurn(session, turnSeq, filter)
     if (session === undefined || turn === undefined) return undefined
     const lanes: TimingLane[] = []
     const tools = new Map<string, ToolTiming>()

@@ -54,8 +54,19 @@ export function latestTurnSeq(turns: readonly TurnListItem[]): number | undefine
 /** Turns per backfill window (the store's default `maxTurnsPerSession`). */
 export const WINDOW_TURNS = 30
 
-/** A run of host turns the log holds but the panel has not loaded. */
-export interface TurnGap { from: number; to: number }
+/** A run of host turns the log holds but the panel has not loaded; `shown` is its span in the session's turn numbering. */
+export interface TurnGap { from: number; to: number; shown?: { from: number; to: number } }
+
+/** The unloaded runs: the store's (numbered with room rounds), else derived from the log's host-turn range. */
+export function turnGaps(list: { range?: { first: number; last: number }; unloaded?: { from: number; to: number; firstHost: number; lastHost: number }[] } | undefined, turns: readonly TurnListItem[]): TurnGap[] {
+  if (list?.unloaded !== undefined) return list.unloaded.map(run => ({ from: run.firstHost, to: run.lastHost, shown: { from: run.from, to: run.to } }))
+  return unloadedGaps(list?.range, turns)
+}
+
+/** A gap's displayed span. */
+export const gapShown = (gap: TurnGap): { from: number; to: number } => gap.shown ?? gap
+/** A turn's displayed number: its place in the session's numbering, else its host turn. */
+export const turnNumber = (turn: TurnListItem): number | undefined => turn.ordinal ?? turn.hostTurn
 
 /** The runs of turns in the log's range that the loaded list lacks, oldest first. */
 export function unloadedGaps(range: { first: number; last: number } | undefined, turns: readonly TurnListItem[]): TurnGap[] {
@@ -84,7 +95,8 @@ export function inputMiss(usage: RequestUsage): number {
 /** Cache-hit percentage of the total input, one decimal; null when nothing was read. */
 export function cachePct(usage: RequestUsage): number | null {
   const total = inputTotal(usage)
-  if (total === 0) return null
+  // A provider that does not report cache reads: unknown, not 0%.
+  if (total === 0 || usage.cacheReadTokens === undefined) return null
   return Math.round(((usage.cacheReadTokens ?? 0) / total) * 1000) / 10
 }
 
