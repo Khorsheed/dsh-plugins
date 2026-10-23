@@ -637,7 +637,12 @@ describe('coordinator routing and durable deliveries', () => {
     await bench.service.engine.idle()
     expect(bench.facade.resume).toHaveBeenCalledTimes(1)
     expect(bench.agent!.followup).not.toHaveBeenCalled()
-    expect(textOf(bench.facade.resume.mock.calls[0]![3])).toContain('Coordinator handoff')
+    expect(textOf(bench.facade.resume.mock.calls[0]![3])).toContain('【协调者交接】dsh 把协调者交给了你（ada）')
+    // Sent once: the next bare message carries no handoff.
+    bench.facade.resume.mockImplementation(async () => settledRun('child-ada', 'again'))
+    await bench.service.postMessage({ sessionId: bench.sessionId, text: 'again', requestId: 'input-2' })
+    await bench.service.engine.idle()
+    expect(textOf(bench.facade.resume.mock.calls[1]![3])).not.toContain('协调者交接')
     await bench.service.postMessage({ sessionId: bench.sessionId, text: '@dsh hello' })
     await bench.service.engine.idle()
     expect(bench.agent!.followup).toHaveBeenCalledTimes(1)

@@ -147,6 +147,12 @@ export function RoomComposer({
       `@name` sits (see the module header); cleared with the draft on send. */
   const [picked, setPicked] = useState<readonly string[]>([])
   const areaRef = useRef<HTMLTextAreaElement | null>(null)
+  // IME composition (the official ui-primitives observeComposition rule):
+  // Enter while composing, or the one that closes a composition (Safari
+  // fires compositionend before its keydown), commits the candidate — it
+  // never sends. keyCode 229 covers engines without isComposing.
+  const composing = useRef(false)
+  const justComposed = useRef(false)
   const members = state?.members ?? []
   const candidates = mention === null
     ? []
@@ -170,6 +176,16 @@ export function RoomComposer({
       .filter(row => row.placement === 'queued')
       .map(row => ({ id: String(row.id), preview: row.preview }))
     : nextTurn.map(row => ({ id: String(row.id), preview: previewOf(row.content) }))
+
+  // The coordinator's own room deliveries: a round a restart interrupted
+  // blocks the ones after it until the human reconciles or stops its task —
+  // say so, instead of a silent queue.
+  const coordinatorRows = (state?.deliveries ?? []).filter(row => row.memberId === coordinator?.id && (row.status === 'queued' || row.status === 'uncertain'))
+  const blocked = coordinatorRows.some(row => row.status === 'uncertain')
+  const coordinatorQueue: readonly RoomQueueItem[] = coordinatorRows.map(row => ({
+    id: row.id,
+    preview: row.status === 'uncertain' ? t('job.queueUncertain', { text: row.text }) : blocked ? t('job.queueBlocked', { text: row.text }) : row.text,
+  }))
 
   const resize = (area: HTMLTextAreaElement): void => {
     area.style.height = 'auto'
@@ -241,6 +257,10 @@ export function RoomComposer({
   }
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>): void => {
+    // oxlint-disable-next-line typescript/no-deprecated -- IME 229 covers engines without isComposing.
+    const ime = composing.current || justComposed.current || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229
+    justComposed.current = false
+    if (ime) return
     if (mention !== null) {
       if (event.key === 'Escape') {
         event.preventDefault()
@@ -294,7 +314,7 @@ export function RoomComposer({
           t={t}
         />}
         <RoomQueueStrip
-          items={[...external ? [] : queued, ...(state?.deliveries ?? []).filter(row => row.memberId === coordinator?.id && (row.status === 'queued' || row.status === 'uncertain')).map(row => ({ id: row.id, preview: row.status === 'uncertain' ? `${row.error ?? 'Outcome unknown'}: ${row.text}` : row.text }))]}
+          items={[...external ? [] : queued, ...coordinatorQueue]}
           t={t}
         />
       </div>
@@ -348,6 +368,10 @@ export function RoomComposer({
           placeholder={tag === undefined ? t('composer.placeholder') : tag.task === 'new' ? t('job.tagPlaceholderNew') : t('job.tagPlaceholder', { label: tag.label })}
           onChange={onChange}
           onKeyDown={onKeyDown}
+          onCompositionStart={() => { composing.current = true }}
+          onCompositionEnd={() => { composing.current = false; justComposed.current = true }}
+          onKeyUp={() => { justComposed.current = false }}
+          onBlur={() => { composing.current = false; justComposed.current = false }}
         />
         <div className={css.row}>
           {/* The main agent's model seat: the official per-session directory's
