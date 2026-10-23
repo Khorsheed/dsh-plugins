@@ -66,6 +66,17 @@ export interface RoomEventData {
 }
 
 /** Chat node data of one member-to-member notification relay row. */
+/** Chat node data of a member's tool approval (the 允许 / 拒绝 line). */
+export interface RoomApprovalData {
+  readonly seq: number
+  readonly time: number
+  readonly approvalId: string
+  readonly member: string
+  readonly tool: string
+  readonly reason?: string
+  readonly state: 'pending' | 'allowed-once' | 'rejected' | 'cancelled'
+}
+
 export interface RoomRelayData {
   /** Seq of the relay's latest journal event. */
   readonly seq: number
@@ -103,6 +114,8 @@ declare module '@deepseek-ai/dsh-client-ui-chat/client' {
     'room-event': RoomEventData
     /** room: a member-to-member notification relay (gate row). */
     'room-relay': RoomRelayData
+    /** room: a member's mode tool waiting for the human's approval. */
+    'room-approval': RoomApprovalData
     /** room: reports the gate holds in a member's inbox. */
     'room-inbox': RoomInboxData
   }
@@ -241,6 +254,40 @@ export const roomEventDefinition: ConversationNodeDefinition<RoomEventData> = {
   },
   update: context => context.state,
   buildViewNode: context => viewNode(context, 'room-event'),
+}
+
+/**
+ * A member's tool approval: one Context per approval, started by
+ * `room/approval` and settled in place by `room/approval-resolved`.
+ */
+export const roomApprovalDefinition: ConversationNodeDefinition<RoomApprovalData> = {
+  kind: 'room-approval',
+  target: 'chat',
+  match: (event) => {
+    switch (event.type) {
+      case 'room/approval':
+        return { id: event.data.id, role: 'start' as const }
+      case 'room/approval-resolved':
+        return { id: event.data.id, role: 'update' as const }
+      default:
+        return null
+    }
+  },
+  start: (_context, match) => {
+    const event = match.event
+    if (event.type !== 'room/approval') throw new Error('room-approval start requires a room/approval event')
+    return {
+      seq: event.seq, time: event.time, approvalId: event.data.id, member: event.data.member, tool: event.data.tool,
+      ...event.data.reason === undefined ? {} : { reason: event.data.reason },
+      state: 'pending',
+    }
+  },
+  update: (context, match) => {
+    const event = match.event
+    if (event.type !== 'room/approval-resolved') return context.state
+    return { ...context.state, state: event.data.outcome }
+  },
+  buildViewNode: context => viewNode(context, 'room-approval'),
 }
 
 /**

@@ -76,7 +76,7 @@ import type {
   RoomRelayResolveRequest, RoomRelayResolveResult,
   RoomRemoveMemberRequest, RoomRemoveMemberResult, RoomRestoreMemberRequest, RoomRestoreMemberResult,
   RoomSetGoalRequest, RoomSetGoalResult,
-  RoomState, RoomUpdateMemberRequest, RoomUpdateMemberResult,
+  RoomState, RoomUpdateMemberRequest, RoomUpdateMemberResult, RoomAnswerApprovalRequest, RoomAnswerApprovalResult,
 } from './types.ts'
 
 export type * from './types.ts'
@@ -339,6 +339,7 @@ export class RoomService extends TypertRemoteService {
     if (hit.ok) return (async () => {
       await this.plans.recover(hit.session)
       await this.engine.recover(hit.session)
+      this.expireApprovals(hit.session)
       return this.load(sessionId)
     })()
     if (hit.error.code !== 'session-not-found') return Promise.resolve(hit)
@@ -364,8 +365,8 @@ export class RoomService extends TypertRemoteService {
       return { ok: false, error: { code: 'resume-failed', message: String(error) } }
     }
     const loaded = this.load(sessionId)
-    if (loaded.ok) { await this.plans.recover(loaded.session); await this.engine.recover(loaded.session) }
-    return loaded
+    if (loaded.ok) { await this.plans.recover(loaded.session); await this.engine.recover(loaded.session); this.expireApprovals(loaded.session) }
+    return this.load(sessionId)
   }
 
   /**
@@ -1265,6 +1266,67 @@ export class RoomService extends TypertRemoteService {
     if (member?.preset === undefined) return undefined
     const cwd = member.cwd ?? loaded.session.header.cwd
     return { preset: member.preset, ...cwd === undefined ? {} : { cwd } }
+  }
+
+  /** Pending member tool approvals this process can still answer: approval id → its waiting call. */
+  private readonly approvalWaiters = new Map<string, (outcome: 'allowed-once' | 'rejected' | 'cancelled') => void>()
+
+  /** Close approvals no waiting call stands behind any more (a restart lost it). */
+  private expireApprovals(session: Session): void {
+    for (const approval of replay(session.snapshotEvents()).approvals ?? []) {
+      if (!this.approvalWaiters.has(approval.id)) session.append('room/approval-resolved', { id: approval.id, outcome: 'cancelled' })
+    }
+  }
+
+  /**
+   * A CLI member's mode tool needs the human's approval: ask in the room's
+   * conversation (a 允许 / 拒绝 line) and resolve when the human answers,
+   * the call is cancelled, or the room is gone. Host method for the member
+   * channel (local-agent's approval hook), never a Remote.
+   * @param actor - the authenticated member run.
+   * @param request - the tool, an optional reason, and the call's signal.
+   * @returns the approval outcome the tool registry expects.
+   */
+  async askMemberApproval(actor: LocalAgentMemberRun, request: { readonly toolName: string; readonly reason?: string; readonly signal?: AbortSignal }): Promise<'allowed-once' | 'rejected' | 'cancelled' | 'unavailable'> {
+    const loaded = await this.ensureLive(SessionId(actor.parentSessionId))
+    if (!loaded.ok) return 'unavailable'
+    const events = loaded.session.snapshotEvents()
+    const member = loaded.state.members.find(entry => entry.childSessionId === actor.childSessionId && entry.provider === actor.provider)
+    if (member === undefined) return 'unavailable'
+    if (request.signal?.aborted === true) return 'cancelled'
+    const id = randomUUID()
+    const session = loaded.session
+    const answered = new Promise<'allowed-once' | 'rejected' | 'cancelled'>((resolve) => {
+      this.approvalWaiters.set(id, resolve)
+      request.signal?.addEventListener('abort', () => { resolve('cancelled') }, { once: true })
+    })
+    session.append('room/approval', { id, member: member.name, memberId: memberId(events, member), tool: request.toolName,
+      ...request.reason === undefined || request.reason.trim() === '' ? {} : { reason: request.reason.trim().slice(0, 500) } })
+    await this.ctx.sessions.flush(session)
+    const outcome = await answered
+    this.approvalWaiters.delete(id)
+    if (replay(session.snapshotEvents()).approvals?.some(entry => entry.id === id) === true) {
+      session.append('room/approval-resolved', { id, outcome })
+      await this.ctx.sessions.flush(session)
+    }
+    return outcome
+  }
+
+  /**
+   * The human answers a member's tool approval from the room.
+   * @param request - room session, approval id, allow once or reject.
+   * @returns ok, or `approval-not-pending` when it already ended.
+   */
+  @Remote('answerApproval')
+  async answerApproval(request: RoomAnswerApprovalRequest): Promise<RoomAnswerApprovalResult> {
+    const loaded = await this.ensureLive(request.sessionId)
+    if (!loaded.ok) return { ok: false, error: loaded.error }
+    const waiter = this.approvalWaiters.get(request.id)
+    if (waiter === undefined || loaded.state.approvals?.some(entry => entry.id === request.id) !== true) return { ok: false, error: { code: 'approval-not-pending' } }
+    loaded.session.append('room/approval-resolved', { id: request.id, outcome: request.outcome })
+    await this.ctx.sessions.flush(loaded.session)
+    waiter(request.outcome)
+    return { ok: true }
   }
 
   /** Shared backend for external MCP room tools. Not exposed as a browser Remote. */

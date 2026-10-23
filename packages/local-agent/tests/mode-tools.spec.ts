@@ -69,6 +69,9 @@ describe('PresetToolHost', () => {
     // As the member itself: plugin state lands on its own session.
     expect(h.execute).toHaveBeenCalledWith(expect.objectContaining({ name: 'video_read', arguments: { project: 'p' }, signal }))
     expect(h.execute.mock.calls[0]![0].agent).toMatchObject({ id: 'child-codex', session: h.session })
+    // The stand-in is how an approval its call raises finds the member (and the room asks).
+    expect(tools.memberOf(h.execute.mock.calls[0]![0].agent)).toBe('child-codex')
+    expect(tools.memberOf({ id: 'child-codex', session: h.session })).toBeUndefined()
     expect(await tools.call('child-codex', 'dsh-video', 'bash', {}, signal)).toMatchObject({ isError: true })
     expect(h.execute).toHaveBeenCalledOnce()
   })

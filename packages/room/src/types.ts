@@ -337,6 +337,47 @@ export interface RoomReportGateEvent {
   readonly probability?: number
 }
 
+/**
+ * A CLI member's mode tool (a host preset's plugin tool reached through its
+ * bridge) needs the human's approval before it runs; the room asks in the
+ * conversation instead of the member's own session.
+ */
+export interface RoomApprovalEvent {
+  readonly id: string
+  readonly member: string
+  readonly memberId: string
+  readonly tool: string
+  readonly reason?: string
+}
+
+/** How a member's tool approval ended. */
+export interface RoomApprovalResolvedEvent {
+  readonly id: string
+  /** `cancelled`: the call ended, or the host restarted, before an answer. */
+  readonly outcome: 'allowed-once' | 'rejected' | 'cancelled'
+}
+
+/** A member's tool approval still waiting for the human. */
+export interface RoomApproval {
+  readonly id: string
+  readonly member: string
+  readonly tool: string
+  readonly reason?: string
+  readonly time: number
+}
+
+/** answerApproval request: the human's answer to a pending approval. */
+export interface RoomAnswerApprovalRequest {
+  readonly sessionId: SessionId
+  readonly id: string
+  readonly outcome: 'allowed-once' | 'rejected'
+}
+
+/** answerApproval outcome. */
+export type RoomAnswerApprovalResult =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly error: RoomFailure }
+
 /** A relay left the pending state (confirmed, dismissed, or delivered). */
 export interface RoomRelayResolvedEvent {
   readonly id: string
@@ -431,6 +472,10 @@ declare module '@deepseek-ai/dsh-session/types' {
     'room/relay': RoomRelayEvent
     /** Notification gate: a relay was confirmed, dismissed, or delivered. */
     'room/relay-resolved': RoomRelayResolvedEvent
+    /** A CLI member's mode tool waits for the human's approval. */
+    'room/approval': RoomApprovalEvent
+    /** That approval was answered, or expired with its call. */
+    'room/approval-resolved': RoomApprovalResolvedEvent
     /** Task board: a task was added. */
     'room/task-added': RoomTaskAddedEvent
     /** Task board: a task changed status. */
@@ -534,6 +579,8 @@ export interface RoomState {
   readonly coordinator?: RoomCoordinatorEvent
   readonly members: readonly RoomMember[]
   readonly relays: readonly RoomRelay[]
+  /** Members' tool approvals still waiting for the human. */
+  readonly approvals?: readonly RoomApproval[]
   readonly tasks: readonly RoomTask[]
   readonly runs: readonly RoomMemberRun[]
   /** The current goal text (the latest `room/goal` event), undefined when unset. */
@@ -598,6 +645,7 @@ export type RoomFailure =
   | { readonly code: 'relay-not-found' }
   /** The relay exists but already left the pending state. */
   | { readonly code: 'relay-not-pending' }
+  | { readonly code: 'approval-not-pending' }
   /** The main agent is the room itself: it cannot be renamed. */
   | { readonly code: 'main-member' }
   | { readonly code: 'task-not-found' }
