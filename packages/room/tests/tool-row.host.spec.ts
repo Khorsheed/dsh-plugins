@@ -3,7 +3,7 @@
  * entry, folded back from the standalone `@khorsheed/dsh-room-tool` companion
  * at 0.2.0): the row must mount cleanly in every composition (no hard
  * injects), skip registration when the global room service is absent
- * (degrade, never explode), and register all three room tools with THIS
+ * (degrade, never explode), and register the room tools with THIS
  * package as their origin owner when the service is present.
  */
 import { describe, expect, it, vi } from 'vitest'
@@ -40,12 +40,12 @@ describe('room ./tool composition entry', () => {
     expect(logger.info).toHaveBeenCalledOnce()
   })
 
-  it('registers all three room tools with this package as origin owner when the service is present', () => {
+  it('registers the room tools with this package as origin owner when the service is present', () => {
     const { ctx, tools } = makeCtx({ service: {} })
     apply(ctx)
-    expect(tools.register).toHaveBeenCalledTimes(3)
+    expect(tools.register).toHaveBeenCalledTimes(2)
     const names = tools.register.mock.calls.map(call => (call[0] as { name: string }).name)
-    expect(names).toEqual(['room_invite', 'room_task', 'room_message'])
+    expect(names).toEqual(['room_invite', 'room_message'])
     for (const call of tools.register.mock.calls) {
       const definition = call[0] as Record<symbol, unknown>
       expect(definition[TOOL_ORIGIN]).toEqual({ channel: 'plugin', owner: '@khorsheed/dsh-room' })
@@ -55,14 +55,14 @@ describe('room ./tool composition entry', () => {
   it('adds the shared context reader on a capable core and tags its origin', () => {
     const { ctx, tools } = makeCtx({ service: { readRoomContext: vi.fn() } })
     apply(ctx)
-    expect(tools.register.mock.calls.map(call => call[0].name)).toEqual(['room_read', 'room_invite', 'room_task', 'room_message'])
+    expect(tools.register.mock.calls.map(call => call[0].name)).toEqual(['room_read', 'room_invite', 'room_message'])
     expect(tools.register.mock.calls[0]![0][TOOL_ORIGIN]).toEqual({ channel: 'plugin', owner: '@khorsheed/dsh-room' })
   })
 
   it('registers formal planning only when the core exposes the shared backend', () => {
     const { ctx, tools } = makeCtx({ service: { commandPlan: vi.fn(), readRoomContext: vi.fn() } })
     apply(ctx)
-    expect(tools.register.mock.calls.map(call => call[0].name)).toEqual(['room_plan', 'room_read', 'room_invite', 'room_task', 'room_message'])
+    expect(tools.register.mock.calls.map(call => call[0].name)).toEqual(['room_plan', 'room_read', 'room_invite', 'room_message'])
     expect(tools.register.mock.calls[0]![0][TOOL_ORIGIN]).toEqual({ channel: 'plugin', owner: '@khorsheed/dsh-room' })
   })
 

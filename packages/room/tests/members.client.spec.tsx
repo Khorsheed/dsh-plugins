@@ -123,7 +123,7 @@ async function bench(options: {
     roomStore,
     roomCwd: '/home/user/room',
     openSession: vi.fn(),
-    removeMember: vi.fn(async (name: string) => ({ ok: true as const, value: { name, stopped: false, cancelledDeliveries: 0, cancelledTasks: 1, transferredTasks: 0, notified: [] } })),
+    removeMember: vi.fn(async (name: string) => ({ ok: true as const, value: { name, stopped: false, cancelledDeliveries: 1, notified: [] } })),
     restoreMember: vi.fn(async () => ({ ok: true as const })),
     updateMember: vi.fn(async () => ({ ok: true as const })),
     invite: vi.fn(async () => ({ ok: true as const, pendingFirstTask: false })),
@@ -229,8 +229,8 @@ describe('MembersView', () => {
     fireEvent.click(Array.from(cardOf('ada').querySelectorAll('button')).find(b => b.textContent === '移除')!)
     const layer = within(cardOf('ada')).getByRole('dialog')
     fireEvent.click(within(layer).getByRole('button', { name: '移除' }))
-    await waitFor(() => { expect(face.removeMember).toHaveBeenCalledWith('ada', undefined) })
-    await screen.findByText('已移除 ada，关闭 1 个任务')
+    await waitFor(() => { expect(face.removeMember).toHaveBeenCalledWith('ada') })
+    await screen.findByText('已移除 ada，取消 1 条排队消息')
     fireEvent.click(screen.getByRole('button', { name: '撤销' }))
     await waitFor(() => { expect(face.restoreMember).toHaveBeenCalledWith('ada') })
   })

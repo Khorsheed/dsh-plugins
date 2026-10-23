@@ -125,6 +125,8 @@ describe('room journal persistence', () => {
       session.append('room/speech', { member: 'ada', text: '方案 A' })
       session.append('room/settings', { hopLimit: 6 })
       session.append('room/report-gate', { dispatchSeq: 3, memberId: 'm', member: 'ada', verdict: 'hold', reason: 'model', probability: 0.1 })
+      session.append('room/task-link', { message: 'msg-2', task: 'msg-1', by: 'model', probability: 0.8 })
+      session.append('room/job-stopped', { task: 'msg-1' })
       session.append('room/relay', { id: 'r1', from: 'ada', to: 'bill', content: '接口定稿' })
       session.append('room/relay-resolved', { id: 'r1', state: 'sent' })
       session.append('room/run-state', { member: 'ada', runId: 'a', state: 'done', startedAt: 1, elapsedMs: 2 })
@@ -213,7 +215,7 @@ describe('room journal persistence', () => {
         expect(agents.resume).not.toHaveBeenCalled()
 
         // The first mutation cold-resumes the agent, republishing the session.
-        const added = await serviceB.addTask({ sessionId, member: 'dsh', title: '重启后的第一条' })
+        const added = await serviceB.setGoal({ sessionId, text: '重启后的目标' })
         expect(added.ok).toBe(true)
         expect(agents.resume).toHaveBeenCalledTimes(1)
         expect(agents.resume).toHaveBeenCalledWith(
@@ -222,15 +224,10 @@ describe('room journal persistence', () => {
         expect(ctxB.sessions.get(sessionId)).toBeDefined()
         expect(await serviceB.getState({ sessionId })).toMatchObject({
           ok: true,
-          value: {
-            tasks: [
-              { id: 't1', title: '积压' },
-              { title: '重启后的第一条', status: 'pending' },
-            ],
-          },
+          value: { tasks: [{ id: 't1', title: '积压' }], goal: '重启后的目标' },
         })
         // A second mutation reuses the live session (no second resume).
-        await serviceB.addTask({ sessionId, member: 'dsh', title: '又一条' })
+        await serviceB.setGoal({ sessionId, text: '又一个目标' })
         expect(agents.resume).toHaveBeenCalledTimes(1)
       } finally {
         await fiberB.dispose()

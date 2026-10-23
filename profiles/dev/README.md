@@ -20,7 +20,7 @@
 | local-agent-claude-code | `@khorsheed/dsh-local-agent-claude-code` | Claude Code 委派（`claude -p`）、续聊、记账；委派工具 `subagent_claude_code` 随包内 `./tool` 子路径行由开发模式 preset 按会话授予 |
 | local-agent-dsh | `@khorsheed/dsh-local-agent-dsh` | dsh 自委派：把 dsh 自己当本地 CLI 用 |
 | worktrees | `@khorsheed/dsh-worktrees` | 会话头部 repo/worktree 徽标 + 改动抽屉（只读 git 事实）；模型工具随 `@khorsheed/dsh-worktrees/tool` 子路径行由开发模式 preset 按会话授予 |
-| room | `@khorsheed/dsh-room` | 多 agent 同会话协作：成员名册、@ 派发、任务板；模型工具 `room_invite / room_task / room_message` 随包内 `./tool` 子路径行由开发模式 preset 按会话授予 |
+| room | `@khorsheed/dsh-room` | 多 agent 同会话协作：成员名册、@ 派发、任务；模型工具 `room_invite / room_message / room_read / room_plan` 随包内 `./tool` 子路径行由开发模式 preset 按会话授予 |
 
 ### 版本兼容
 
@@ -95,7 +95,7 @@
 
 pack 自带一个**开发模式** preset（`presets/dev`）。它存在的意义是让开发模式的工具与 UI 不污染其它模式：模型工具行只挂在本 preset 的组合里、不进 profile 根；会话绑定的 UI（worktree 徽标、room 成员名册等）跟随 preset 授予显隐——选了这个 preset 的会话才拿得到工具、才看得见入口。于是同一个实例可以在多个模式之间来回切换：写代码的会话选「开发模式」，日常会话留在「标准模式」，互不干扰。
 
-组合以官方「标准模式」逐字重基，只在末尾追加社区工具行：三家 local-agent 委派工具（`subagent_kimi` / `subagent_codex` / `subagent_claude_code`）、worktrees 模型工具与 room 工具三件套（`room_invite` / `room_task` / `room_message`），全部**按会话授予**；伴生 core 缺席时该行 pending，不炸宿主。
+组合以官方「标准模式」逐字重基，只在末尾追加社区工具行：三家 local-agent 委派工具（`subagent_kimi` / `subagent_codex` / `subagent_claude_code`）、worktrees 模型工具与 room 工具（`room_invite` / `room_message` / `room_read` / `room_plan`），全部**按会话授予**；伴生 core 缺席时该行 pending，不炸宿主。
 
 | 宿主版本 | 安装规格（复制到对话框） |
 |---|---|

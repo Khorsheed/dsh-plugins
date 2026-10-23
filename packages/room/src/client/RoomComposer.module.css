@@ -207,3 +207,44 @@
   line-height: 18px;
   color: var(--dsw-alias-label-secondary, #81858c);
 }
+
+/* The task tag from the task page (「任务 N」 / 「新任务」): a removable chip
+   over the text area. Blue files the message under that task, green starts
+   a new one. */
+.tagRow {
+  display: flex;
+  padding: 0 12px 0 16px;
+  margin-bottom: -8px;
+}
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 4px 0 7px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--dsw-alias-state-business-primary, rgb(65, 118, 230)) 12%, transparent);
+  color: var(--dsw-alias-state-business-primary, rgb(65, 118, 230));
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.tag[data-new] {
+  background: color-mix(in srgb, var(--dsw-alias-state-success, #1f9a55) 12%, transparent);
+  color: var(--dsw-alias-state-success, #1f9a55);
+}
+
+.tagRemove {
+  padding: 0 3px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.tagRemove:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(38, 49, 72, 0.06));
+}

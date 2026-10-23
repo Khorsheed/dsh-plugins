@@ -48,25 +48,34 @@ function statsLine(node: TeamNode, t: T): string {
   return t('team.stats', { tokens: formatTokens(node.tokens), time: formatDurationMs(node.elapsedMs), rounds: node.rounds })
 }
 
-/** The flow into a node from its parent: "派活 3 · 回报 2". */
-function inboundLine(team: Team, node: TeamNode, t: T): string | undefined {
-  const row = team.edges.find(edge => edge.from === node.parent && edge.to === node.id)
-  if (row === undefined || row.tasks === 0) return undefined
-  return row.reports > 0 ? t('team.inboundReports', { tasks: row.tasks, reports: row.reports }) : t('team.inbound', { tasks: row.tasks })
+/** What flowed into a node: tasks and returned reports from its parent, FYIs, and work from elsewhere. */
+function flowOf(team: Team, node: TeamNode, t: T): { readonly tasks: number; readonly reports: number; readonly notifies: number; readonly others: string | undefined } {
+  const name = (id: string): string => id === TEAM_ROOT ? t('team.you') : team.nodes.find(entry => entry.id === id)?.member.name ?? id
+  const into = team.edges.filter(edge => edge.to === node.id)
+  const fromParent = into.find(edge => edge.from === node.parent)
+  const others = into.filter(edge => edge.from !== node.parent && edge.tasks > 0)
+    .map(edge => t('team.crossTask', { from: name(edge.from), count: edge.tasks }))
+  return {
+    tasks: fromParent?.tasks ?? 0,
+    reports: fromParent?.reports ?? 0,
+    notifies: into.reduce((sum, edge) => sum + edge.notifies, 0),
+    others: others.length === 0 ? undefined : others.join(' · '),
+  }
 }
 
-/** FYIs and tasks that are not tree edges, as one line per node. */
-function crossLine(team: Team, node: TeamNode, t: T): string | undefined {
-  const name = (id: string): string => id === TEAM_ROOT ? t('team.you') : team.nodes.find(entry => entry.id === id)?.member.name ?? id
-  const parts = team.edges
-    .filter(edge => edge.to === node.id && edge.from !== node.parent)
-    .flatMap(edge => [
-      ...edge.tasks > 0 ? [t('team.crossTask', { from: name(edge.from), count: edge.tasks })] : [],
-      ...edge.notifies > 0 ? [t('team.crossNotify', { from: name(edge.from), count: edge.notifies })] : [],
-    ])
-  const notifiesFromParent = team.edges.find(edge => edge.from === node.parent && edge.to === node.id)?.notifies ?? 0
-  if (notifiesFromParent > 0) parts.push(t('team.crossNotify', { from: name(node.parent), count: notifiesFromParent }))
-  return parts.length === 0 ? undefined : parts.join(' · ')
+/** The counts pill: 「派 3 · 回 2 · 知会 1」, other sources in its tooltip. */
+function FlowPill({ team, node, t, floating }: { readonly team: Team; readonly node: TeamNode; readonly t: T; readonly floating: boolean }): ReactNode {
+  if (node.parent === TEAM_ROOT && node.coordinator) return null
+  const flow = flowOf(team, node, t)
+  if (flow.tasks === 0 && flow.notifies === 0 && flow.others === undefined) return null
+  return (
+    <span className={floating ? css.pillFloat : css.pill} title={flow.others === undefined ? undefined : t('team.alsoFrom', { list: flow.others })}>
+      {t('team.pillTasks', { count: flow.tasks })}
+      {flow.reports > 0 && <span className={css.pillReport}>{t('team.pillReports', { count: flow.reports })}</span>}
+      {flow.notifies > 0 && <span className={css.pillNotify}>{t('team.pillNotify', { count: flow.notifies })}</span>}
+      {flow.others !== undefined && <span>…</span>}
+    </span>
+  )
 }
 
 function Deliveries({ node, t }: { readonly node: TeamNode; readonly t: T }): ReactNode {
@@ -91,10 +100,9 @@ function NodeCard({ team, node, selected, onSelect, t, compact }: {
   readonly team: Team; readonly node: TeamNode; readonly selected: boolean
   readonly onSelect: () => void; readonly t: T; readonly compact: boolean
 }): ReactNode {
-  const inbound = inboundLine(team, node, t)
-  const cross = crossLine(team, node, t)
   return (
     <button type="button" className={css.node} data-selected={selected} data-team-node={node.id} onClick={onSelect} aria-expanded={compact ? selected : undefined}>
+      {!compact && <FlowPill team={team} node={node} t={t} floating />}
       <span className={css.nodeHead}>
         <Avatar node={node} />
         <span className={css.nodeName}>{node.member.name}</span>
@@ -104,11 +112,10 @@ function NodeCard({ team, node, selected, onSelect, t, compact }: {
       </span>
       <span className={css.line}>{configLine(node, t)}</span>
       <span className={css.line}>
-        {inbound !== undefined && <span className={css.inbound}>{inbound}</span>}
+        {compact && <FlowPill team={team} node={node} t={t} floating={false} />}
         <span>{statsLine(node, t)}</span>
       </span>
       {node.current !== undefined && <span className={css.current}>▶ {node.current}</span>}
-      {cross !== undefined && <span className={css.cross}>{cross}</span>}
     </button>
   )
 }
@@ -151,17 +158,30 @@ function levels(team: Team): string[][] {
   return rows
 }
 
+/** Node width plus gap in the wide layout (matches the stylesheet). */
+const SLOT = 210 + 16
+
+/**
+ * The wide layout: one row per depth, connected trunk-and-branch — a trunk
+ * down from each parent, one horizontal bus over its children, a short drop
+ * to each child — so lines never cross and carry no text; the counts ride
+ * each node's pill. A row wider than the panel folds its tail into 「+N」.
+ */
 function Graph({ team, selected, onSelect, t }: {
   readonly team: Team; readonly selected: string | undefined
   readonly onSelect: (id: string) => void; readonly t: T
 }): ReactNode {
   const ref = useRef<HTMLDivElement | null>(null)
-  const [paths, setPaths] = useState<readonly { d: string; kind: 'task' | 'report' | 'notify'; label?: { x: number; y: number; text: string } }[]>([])
+  const [paths, setPaths] = useState<readonly { readonly d: string; readonly drop: boolean }[]>([])
+  const [width, setWidth] = useState(0)
+  const [unfolded, setUnfolded] = useState<ReadonlySet<number>>(new Set())
   const rows = useMemo(() => levels(team), [team])
+  const perRow = Math.max(2, Math.floor((width + 16) / SLOT))
   useLayoutEffect(() => {
     const root = ref.current
     if (root === null) return undefined
     const draw = (): void => {
+      setWidth(root.clientWidth)
       const base = root.getBoundingClientRect()
       const box = (id: string) => {
         const element = nodeElement(root, id)
@@ -169,34 +189,24 @@ function Graph({ team, selected, onSelect, t }: {
         const rect = element.getBoundingClientRect()
         return { x: rect.left - base.left, y: rect.top - base.top, w: rect.width, h: rect.height }
       }
-      const next: { d: string; kind: 'task' | 'report' | 'notify'; label?: { x: number; y: number; text: string } }[] = []
-      for (const node of team.nodes) {
-        const from = box(node.parent)
-        const to = box(node.id)
-        if (from === undefined || to === undefined) continue
-        const x1 = from.x + from.w / 2 - 5
-        const y1 = from.y + from.h
-        const x2 = to.x + to.w / 2 - 5
-        const y2 = to.y
-        const mid = (y1 + y2) / 2
-        const inbound = inboundLine(team, node, t)
-        next.push({ d: `M${x1},${y1} C${x1},${mid} ${x2},${mid} ${x2},${y2}`, kind: 'task',
-          ...inbound === undefined ? {} : { label: { x: (x1 + x2) / 2 + 8, y: mid - 3, text: inbound } } })
-        const row = team.edges.find(edge => edge.from === node.parent && edge.to === node.id)
-        if ((row?.reports ?? 0) > 0) next.push({ d: `M${x2 + 10},${y2} C${x2 + 10},${mid} ${x1 + 10},${mid} ${x1 + 10},${y1}`, kind: 'report' })
-      }
-      for (const edge of team.edges) {
-        const tree = team.nodes.some(node => node.id === edge.to && node.parent === edge.from)
-        if (tree && edge.notifies === 0) continue
-        if (tree && edge.tasks > 0) continue
-        const from = box(edge.from)
-        const to = box(edge.to)
-        if (from === undefined || to === undefined) continue
-        const x1 = from.x + from.w
-        const y1 = from.y + from.h / 2
-        const x2 = to.x
-        const y2 = to.y + to.h / 2
-        next.push({ d: `M${x1},${y1} C${x1 + 40},${y1} ${x2 - 40},${y2} ${x2},${y2}`, kind: 'notify' })
+      const next: { d: string; drop: boolean }[] = []
+      const parents = new Set(team.nodes.map(node => node.parent))
+      for (const parent of parents) {
+        const from = box(parent)
+        const kids = team.nodes.filter(node => node.parent === parent).map(node => box(node.id)).filter(entry => entry !== undefined)
+        const more = nodeElement(root, `more:${parent}`)
+        if (more !== undefined) {
+          const rect = more.getBoundingClientRect()
+          kids.push({ x: rect.left - base.left, y: rect.top - base.top, w: rect.width, h: rect.height })
+        }
+        if (from === undefined || kids.length === 0) continue
+        const top = Math.min(...kids.map(kid => kid.y))
+        const bus = top - 16
+        const px = from.x + from.w / 2
+        next.push({ d: `M${px},${from.y + from.h} V${bus}`, drop: false })
+        const xs = kids.map(kid => kid.x + kid.w / 2)
+        next.push({ d: `M${Math.min(px, ...xs)},${bus} H${Math.max(px, ...xs)}`, drop: false })
+        for (const [index, kid] of kids.entries()) next.push({ d: `M${xs[index]},${bus} V${kid.y - 2}`, drop: true })
       }
       setPaths(next)
     }
@@ -204,31 +214,36 @@ function Graph({ team, selected, onSelect, t }: {
     const observer = new ResizeObserver(draw)
     observer.observe(root)
     return () => { observer.disconnect() }
-  }, [team, t])
+  }, [team, unfolded, perRow])
   return (
     <div className={css.graph} ref={ref}>
       <svg className={css.edges} aria-hidden>
         <defs>
           <marker id="room-team-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L8,4 L0,8 z" className={css.arrow} /></marker>
-          <marker id="room-team-arrow-report" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L8,4 L0,8 z" className={css.arrowReport} /></marker>
         </defs>
-        {paths.map((path, index) => (
-          <g key={index}>
-            <path d={path.d} className={path.kind === 'task' ? css.edgeTask : path.kind === 'report' ? css.edgeReport : css.edgeNotify}
-              markerEnd={path.kind === 'notify' ? undefined : path.kind === 'report' ? 'url(#room-team-arrow-report)' : 'url(#room-team-arrow)'} />
-            {path.label !== undefined && <text x={path.label.x} y={path.label.y} className={css.edgeLabel}>{path.label.text}</text>}
-          </g>
-        ))}
+        {paths.map((path, index) => <path key={index} d={path.d} className={css.edgeTask} markerEnd={path.drop ? 'url(#room-team-arrow)' : undefined} />)}
       </svg>
-      {rows.map((row, index) => (
-        <div key={index} className={css.level}>
-          {row.map(id => {
-            if (id === TEAM_ROOT) return <span key={id} className={css.root} data-team-node={TEAM_ROOT}>{t('team.you')}</span>
-            const node = team.nodes.find(entry => entry.id === id)!
-            return <NodeCard key={id} team={team} node={node} selected={selected === id} compact={false} onSelect={() => { onSelect(id) }} t={t} />
-          })}
-        </div>
-      ))}
+      {rows.map((row, index) => {
+        const folds = row.length > perRow && !unfolded.has(index)
+        const shown = folds ? row.slice(0, perRow - 1) : row
+        // One 「+N」 per row, attached to the parent of the first hidden node (the bus already spans it).
+        const hidden = folds ? row.slice(perRow - 1) : []
+        const parentOfHidden = hidden.length === 0 ? undefined : team.nodes.find(node => node.id === hidden[0])?.parent
+        return (
+          <div key={index} className={css.level}>
+            {shown.map((id) => {
+              if (id === TEAM_ROOT) return <span key={id} className={css.root} data-team-node={TEAM_ROOT}>{t('team.you')}</span>
+              const node = team.nodes.find(entry => entry.id === id)!
+              return <NodeCard key={id} team={team} node={node} selected={selected === id} compact={false} onSelect={() => { onSelect(id) }} t={t} />
+            })}
+            {hidden.length > 0 && (
+              <button type="button" className={css.more} data-team-node={`more:${parentOfHidden}`} onClick={() => { setUnfolded(current => new Set([...current, index])) }}>
+                {t('team.more', { count: hidden.length })}
+              </button>
+            )}
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -275,9 +290,7 @@ export function TeamView({ state, focus, openSession, t }: {
         })}
       </p>
       <p className={css.legend}>
-        <span><i className={css.legendTask} />{t('team.legend.task')}</span>
-        <span><i className={css.legendReport} />{t('team.legend.report')}</span>
-        <span><i className={css.legendNotify} />{t('team.legend.notify')}</span>
+        <span>{t('team.legend.pill')}</span>
       </p>
       {wide ? (
         <>

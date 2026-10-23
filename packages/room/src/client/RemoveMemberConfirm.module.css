@@ -39,23 +39,6 @@
   margin-top: 2px;
 }
 
-.pendingRow {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-}
-
-.select {
-  max-width: 100%;
-  padding: 1px 4px;
-  border: 1px solid var(--dsw-alias-border-l2-darkmode-thin, rgba(127, 127, 127, 0.3));
-  border-radius: 6px;
-  background: var(--dsw-alias-bg-layer-1, #ffffff);
-  color: inherit;
-  font: inherit;
-}
-
 .note {
   margin: 8px 0 0;
   color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));

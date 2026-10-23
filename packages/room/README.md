@@ -10,14 +10,14 @@
 
 ## 特性
 
-- **折叠执行与计划胶囊**——输入框上沿的「后台 Agent」默认只显示名称，有执行时图标变为绿点。展开后按执行查看状态、耗时、已报告的单轮 token、中止与真实会话入口；原生后代会话累计值单独标注。正式计划先展示简短进度，完整验收与运行限制按需进入侧栏；缺少侧栏时原位展开。
+- **任务页**——你的一条消息加上它引发的所有派活（成员再派出去的也算）就是一个任务。输入框上方只留一个胶囊：「● N 个任务进行中」，有要你处理的（结果不确定、等你放行的消息）时多一个琥珀色「⚠ N 件需要处理」；点开是右侧栏的任务页：顶部是房间目标，按进行中 / 需要处理 / 已完成 / 全部筛选，每个任务能看到你说过的话（补充的话是谁归进来的）、子任务树（谁派给谁、各自排队与执行用时、token）、成员泳道时间线，以及所属的正式目标。可以就地确认后停止整个任务，也可以单独停一个子任务。任务页不放输入框：「追问」和「＋ 新任务」都会在主输入框带上「任务 N」/「新任务」标签，发出的消息就归到那里；删掉标签则交给 dsh 判断（装了 `typesafe` 时决策模型给建议）。原来的任务板、`room_task` 工具和单独的计划页已下掉。
 - **邀请即升级**——没有单独的「创建房间」步骤：在任意会话里邀请第一位成员，它就变成 Room；原生 DSH agent 入座初始协调者（新 Room 命名为 `dsh`，已有 Room 保留日志里记录的寻址名）。
 - **@ 寻址与并行派发**——开头的 `@name` 指向已有成员，多个名字并行派发；从补全菜单选中的提及即使位于句中也明确寻址，手写在正文里的提及则不算（菜单永不创建成员）。同一成员的轮次共用一条队列，不同成员并发执行；请求带持久化身份，重试不会重复已接受的工作。
 - **协调者交接**——任何准备好的成员（DSH、Codex、Claude Code、Kimi）都可以在成员页「设为协调者」；交接记录携带目标、计划状态、未结任务和最近上下文。协调者运行中时，必须等当前轮次落定才能替换。
 - **后台委派、回报自动对账**——普通聊天不必建立正式计划：协调者用 `room_message` 派发小型后台任务，在轮次边界自动收到带关联标识的成果回报。成员之间也可以自由互发消息（`member_message` / `room_message`）：派活的最终回复会带着消息编号回报给发送人；`notify` 只是知会。回答末尾写的 `@name` 只是普通文本。
 - **协作设置**——成员页可以设置成员间消息先等你确认；一条消息链（含回报）到跳数上限（默认 10）就停下问你是否继续；还可以暂停房间（agent 发出的消息先排队，恢复后按顺序投递）。
 - **回报在合适的时候交给协调者**——成员的结果要么立刻交给等它的人，要么先放进对方收件箱，等更多结果再一起交；装了可选的 `typesafe` 服务时，由决策模型根据派活时写的 `note`、你等了多久和这一批的进度决定时机（失败、最后一个结果、没有模型时一律立刻交）。攒着的回报不会丢，房间里有一行虚线提示和「现在交给」按钮；回报会提醒协调者你已经看过原话，不要复述。
-- **团队视图**——成员页的「团队」按钮在右侧栏打开房间的组织关系：你 → 协调者 → 成员，每个成员挂在给它派活最多的人下面；连线上标派活、回报、知会次数，节点上有轮数、耗时、token 和当前任务，展开可看它收到的每条消息。侧栏窄时是缩进树，拖宽后画成关系图；卡片上的「在团队中定位」直接跳到该成员。
+- **团队视图**——成员页的「团队」按钮在右侧栏打开房间的组织关系：你 → 协调者 → 成员，每个成员挂在给它派活最多的人下面；连线画成主干加分支，节点上方的小标签写着收到几次派活、回报几次、知会几次，节点上还有轮数、耗时、token 和当前在做的事，展开可看它收到的每条消息。侧栏窄时是缩进树，拖宽后画成关系图；卡片上的「在团队中定位」直接跳到该成员。
 - **带 preset 的原生 dsh 成员**——除了外部 CLI，还可以邀请原生 dsh 成员：在本宿主里开一个独立的 dsh 会话，组合你选的宿主 agent preset（标准、评测、画布……），带上该 preset 的全部插件能力。它像其他成员一样加入房间，以自己的身份使用 room 工具；preset 邀请后锁定。
 - **耐久目标计划与证据验收**——较大工作建立正式目标：阶段、层级任务、依赖、执行尝试、提交的证据，以及明确的验收或返工。生成结束不等于验收通过；前置任务验收后，后续任务才有资格执行。预算约束整个目标的并发数、总执行次数、每项任务执行次数和目标推进时长（不含暂停时间）；暂停、继续、调整预算、取消与完成都是人的指令。重启后未确定的执行标记为待核对、计划暂停——核对必须提供证据，绝不盲目重跑。
 - **成员保留原生会话**——成员页记录名称、provider、角色、工作目录覆盖（留空继承 Room 目录）、有效配置与会话入口；面包屑与任务入口能进入成员自己的会话，查看工具、耗时与 token 用量。Room 原生会话的统计不是所有成员消耗的总和。
@@ -35,7 +35,7 @@
 dsh plugin --profile web add @khorsheed/dsh-room
 ```
 
-本包自行挂载 loader 行与浏览器贡献；重启 web 实例后生效。需要外部 CLI 成员时，同时安装 local-agent core 和所需 provider——没有它们，Room 仍可与原生 DSH 协调者正常协作。面向模型的工具（`room_invite` / `room_task` / `room_message`）0.2.0 起随本包自带：工具行是包内 `./tool` 组合入口，由 agent preset 按会话授予（preset 组合里引 `@khorsheed/dsh-room/tool`，行 id `room-tool`；0.1.x 的独立伴生包 `@khorsheed/dsh-room-tool` 已退役）。
+本包自行挂载 loader 行与浏览器贡献；重启 web 实例后生效。需要外部 CLI 成员时，同时安装 local-agent core 和所需 provider——没有它们，Room 仍可与原生 DSH 协调者正常协作。面向模型的工具（`room_invite` / `room_message` / `room_read` / `room_plan`）0.2.0 起随本包自带：工具行是包内 `./tool` 组合入口，由 agent preset 按会话授予（preset 组合里引 `@khorsheed/dsh-room/tool`，行 id `room-tool`；0.1.x 的独立伴生包 `@khorsheed/dsh-room-tool` 已退役）。
 
 ```sh
 dsh plugin --profile web remove @khorsheed/dsh-room
@@ -62,13 +62,13 @@ dsh plugin --profile web remove @khorsheed/dsh-room
 <details>
 <summary>内部结构（点击展开）</summary>
 
-**架构。** 宿主半部分是 `RoomService`——一个 Typert Remote 服务（以 `room` 提供），掌管升级、名册管理、人类 @ 入口、通知闸门、任务板与运行取消；派发记录与首个任务由 `DispatchEngine` 执行，耐久目标由 `PlanService` 负责（每个房间一条串行写者）。房间的全部状态就是会话的 `room/*` 自定义事件日志——纯日志事件：持久化与重载回放免费获得，模型永远看不到，未挂载本插件的宿主也能安全回放该会话。每次读取把日志经纯函数回放折出状态，每次写入追加并落盘。冷读取（`isRoom`/`getState`）经持久化检视回答，不唤醒 agent；对冷房间的写入先按日志记录的 preset 冷恢复 agent。`agent/pre-step` 守卫防止过期的客户端或其他输入面在外部协调者背后唤醒 DSH 模型：原生轮次必须携带明确的 room 来源派发，用户输入改走房间入口路由，无法无损转发时直接拒绝。
+**架构。** 宿主半部分是 `RoomService`——一个 Typert Remote 服务（以 `room` 提供），掌管升级、名册管理、人类 @ 入口、通知闸门、任务归属与运行取消；派发记录与首个任务由 `DispatchEngine` 执行，耐久目标由 `PlanService` 负责（每个房间一条串行写者）。房间的全部状态就是会话的 `room/*` 自定义事件日志——纯日志事件：持久化与重载回放免费获得，模型永远看不到，未挂载本插件的宿主也能安全回放该会话。每次读取把日志经纯函数回放折出状态，每次写入追加并落盘。冷读取（`isRoom`/`getState`）经持久化检视回答，不唤醒 agent；对冷房间的写入先按日志记录的 preset 冷恢复 agent。`agent/pre-step` 守卫防止过期的客户端或其他输入面在外部协调者背后唤醒 DSH 模型：原生轮次必须携带明确的 room 来源派发，用户输入改走房间入口路由，无法无损转发时直接拒绝。
 
 **事件词汇 seam。** 插件在 apply 时把 `room/*` 类型注册进会话持久化的事件目录。注册必须落在工具链的模块实例里——profile 安装的插件否则会解析出第二份目录副本，重启后读路径会拒读 room 日志——因此 specifier 在运行时拼出并解析，顶层 await 让插件加载器阻塞 boot 直到注册完成。这是等待官方事件注册 API 的临时 seam。
 
-**客户端。** 浏览器半经 `ctx.remote.$mount` 挂载生成的 Remote，注册 zh/en 词典，并驱动客户端 `RoomStore`。槽位条目：会话头部「邀请 agent」动作（`conversation.session.header.actions`，order 30）、「成员」`conversation.view` tab（order 20；隐藏发生在注册层——隐藏的 tab 是注销而非空体）、`conversation.composer` 接管（priority -10：只认领缓存判定为 Room 的会话，对挂起的审批交互让位；dock 胶囊与统计行由它自行渲染，因为它们的官方座位随被藏起的回退树一起消失），以及五个 `conversation.chat.node` 渲染器（`room-speech` / `room-run` / `room-event` / `room-relay` / `room-task-line`）。
+**客户端。** 浏览器半经 `ctx.remote.$mount` 挂载生成的 Remote，注册 zh/en 词典，并驱动客户端 `RoomStore`。槽位条目：会话头部「邀请 agent」动作（`conversation.session.header.actions`，order 30）、「成员」`conversation.view` tab（order 20；隐藏发生在注册层——隐藏的 tab 是注销而非空体）、`conversation.composer` 接管（priority -10：只认领缓存判定为 Room 的会话，对挂起的审批交互让位；任务胶囊与统计行由它自行渲染，因为它们的官方座位随被藏起的回退树一起消失），右侧栏的「任务」与「团队」两页（`sidebar.right.pane.tab`），以及五个 `conversation.chat.node` 渲染器（`room-speech` / `room-run` / `room-event` / `room-relay` / `room-inbox`）。
 
-**工具行（M4' 拆分，0.2.0 回并）。** core 不在 profile 根注册任何面向模型的工具：`room_invite` / `room_task` / `room_message` 的工厂留在内部模块 `./tool-definition.ts`（不进 exports 面）且不带 origin 标签；可挂载行是本包的 `./tool` 组合入口（`name` / `inject = ['room']` / `apply`，零 `ctx.provide`——preset 挂载面的 isolate-realm 规则只拒服务行，工具行可裸放 preset），由各 agent preset 的 `agent.cordis.yml` 按名引用（`name: '@khorsheed/dsh-room/tool'`，行 id `room-tool`），按会话授予并打上归本包的 origin 标签。0.1.x 时该行是独立伴生包 `@khorsheed/dsh-room-tool`，0.2.0 起回并（canvas `./agent` 先例），旧 npm 名退役。`room_invite` 与 `room_message` 会把调用所在会话升级为 Room；`room_task` 与胶囊 UI 走同一组宿主函数写共享任务板。外部成员经认证家族桥（`receiveMemberCommand`）使用 `room_read` / `room_invite` / `room_message` / `room_plan`——房间与调用者身份由宿主持有，绝不出现在工具参数里。
+**工具行（M4' 拆分，0.2.0 回并）。** core 不在 profile 根注册任何面向模型的工具：`room_invite` / `room_message` / `room_read` / `room_plan` 的工厂留在内部模块 `./tool-definition.ts`（不进 exports 面）且不带 origin 标签；可挂载行是本包的 `./tool` 组合入口（`name` / `inject = ['room']` / `apply`，零 `ctx.provide`——preset 挂载面的 isolate-realm 规则只拒服务行，工具行可裸放 preset），由各 agent preset 的 `agent.cordis.yml` 按名引用（`name: '@khorsheed/dsh-room/tool'`，行 id `room-tool`），按会话授予并打上归本包的 origin 标签。0.1.x 时该行是独立伴生包 `@khorsheed/dsh-room-tool`，0.2.0 起回并（canvas `./agent` 先例），旧 npm 名退役。`room_invite` 与 `room_message` 会把调用所在会话升级为 Room。原来的 `room_task` 任务板工具已下掉：派活就是 `room_message`，每次派活都归到某个任务下。外部成员经认证家族桥（`receiveMemberCommand`）使用 `room_read` / `room_invite` / `room_message` / `room_plan`——房间与调用者身份由宿主持有，绝不出现在工具参数里。
 
 **家族耦合。** 与 local-agent 家族唯一的耦合是探测式门面——`ctx.get('localAgent')` 加方法存在性鸭子类型判断，类型仅作 type-only 导入、编译期漂移检查。门面缺席时 CLI 成员降级（邀请返回结构化 `local-agent-unavailable`，派发落 `failed` 运行记录），绝不影响 boot。通知闸门的 `receiveMemberMessage` 由家族桥鸭子调用，跨无类型包边界做运行时校验。
 

@@ -4,7 +4,7 @@ import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import RoomService from '../src/index.ts'
-import { roomInviteTool, roomMessageTool, roomTaskTool, roomReadTool } from '../src/tool-definition.ts'
+import { roomInviteTool, roomMessageTool, roomReadTool } from '../src/tool-definition.ts'
 import { stubAgents } from './agents-stub.ts'
 import { createRoom } from './promote.ts'
 
@@ -36,9 +36,8 @@ async function boot() {
   // now (its own spec covers registration and the origin tag).
   expect(tools.register).not.toHaveBeenCalled()
   const tool = roomInviteTool(service)
-  const taskTool = roomTaskTool(service)
   const messageTool = roomMessageTool(service)
-  return { ctx, service, tool, taskTool, messageTool }
+  return { ctx, service, tool, messageTool }
 }
 
 /** A minimal exec context: the calling agent driving `session`. */
@@ -123,123 +122,6 @@ describe('room_invite tool (real composition)', () => {
   })
 })
 
-describe('room_task tool (real composition)', () => {
-  /** Boot a room with ada on the roster; return the board ids as they appear. */
-  async function bootRoom() {
-    const { ctx, service, taskTool } = await boot()
-    const sessionId = await createRoom(ctx, service)
-    const room = ctx.sessions.get(sessionId)!
-    await service.invite({ sessionId, provider: 'kimi-cli', name: 'ada' })
-    return { ctx, service, taskTool, sessionId, room }
-  }
-
-  it('registers with the model-facing name, the action enum, and the shared-board wording', async () => {
-    const { taskTool } = await boot()
-    expect(taskTool.name).toBe('room_task')
-    // The description teaches the public/private split: the board is shared,
-    // the agent's own todo tool stays the private plan.
-    expect(taskTool.description).toContain('SHARED')
-    expect(taskTool.description).toContain('todo')
-    const parameters = taskTool.parameters as {
-      properties: Record<string, { enum?: readonly string[] }>
-    }
-    expect(Object.keys(parameters.properties)).toEqual(['action', 'title', 'member', 'taskId', 'blockedBy'])
-    expect(parameters.properties['action']!.enum).toEqual(['add', 'close', 'update'])
-  })
-
-  it('rejects a non-agent caller and a non-room session with readable text', async () => {
-    const { ctx, taskTool } = await boot()
-    expect(await call(taskTool, { action: 'add', title: 'x', member: 'dsh' }, execFor(undefined)))
-      .toContain('requires a calling agent')
-    const plain = ctx.sessions.create(SessionId('plain'), { meta: {} })
-    expect(await call(taskTool, { action: 'add', title: 'x', member: 'dsh' }, execFor(plain)))
-      .toContain('not a room')
-  })
-
-  it('add lands a pending task through the same host function as the UI, and returns the id', async () => {
-    const { service, taskTool, sessionId, room } = await bootRoom()
-    const text = await call(taskTool, { action: 'add', title: '写发布稿', member: 'dsh', blockedBy: 'ada' }, execFor(room))
-    expect(text).toContain('写发布稿')
-    expect(text).toContain('dsh')
-    const id = /id: ([0-9a-f-]{36})/.exec(text)?.[1]
-    expect(id).toBeDefined()
-    const state = await service.getState({ sessionId })
-    expect(state).toMatchObject({
-      ok: true,
-      value: { tasks: [{ id, member: 'dsh', title: '写发布稿', status: 'pending', blockedBy: 'ada' }] },
-    })
-  })
-
-  it('add requires title+member and rejects off-roster names with the roster to retry with', async () => {
-    const { taskTool, room } = await bootRoom()
-    expect(await call(taskTool, { action: 'add', member: 'dsh' }, execFor(room)))
-      .toContain('requires both title and member')
-    const unknown = await call(taskTool, { action: 'add', title: 'x', member: 'cathy' }, execFor(room))
-    expect(unknown).toContain('member-not-found')
-    expect(unknown).toContain('dsh')
-    expect(unknown).toContain('ada')
-    expect(unknown).toContain('Retry')
-    const blockedBy = await call(taskTool, { action: 'add', title: 'x', member: 'dsh', blockedBy: 'cathy' }, execFor(room))
-    expect(blockedBy).toContain('member-not-found')
-    expect(blockedBy).toContain('ada')
-  })
-
-  it('close marks an open task done and refuses unknown/closed ids with self-correcting text', async () => {
-    const { service, taskTool, sessionId, room } = await bootRoom()
-    const added = await service.addTask({ sessionId, member: 'ada', title: '补测试' })
-    if (!added.ok) throw new Error('addTask failed')
-    const text = await call(taskTool, { action: 'close', taskId: added.value.id }, execFor(room))
-    expect(text).toContain('done')
-    const state = await service.getState({ sessionId })
-    expect(state).toMatchObject({ ok: true, value: { tasks: [{ id: added.value.id, status: 'done' }] } })
-
-    const again = await call(taskTool, { action: 'close', taskId: added.value.id }, execFor(room))
-    expect(again).toContain('task-closed')
-    expect(again).toContain('already closed')
-
-    const open = await service.addTask({ sessionId, member: 'dsh', title: '出方案' })
-    if (!open.ok) throw new Error('addTask failed')
-    const missing = await call(taskTool, { action: 'close', taskId: 'no-such-id' }, execFor(room))
-    expect(missing).toContain('task-not-found')
-    // The open-task list lets the model retry with a real id.
-    expect(missing).toContain(open.value.id)
-    expect(missing).toContain('出方案')
-    expect(missing).toContain('Retry')
-  })
-
-  it('update renames, re-targets and clears blockedBy, and rejects empty edits', async () => {
-    const { service, taskTool, sessionId, room } = await bootRoom()
-    const added = await service.addTask({ sessionId, member: 'ada', title: '旧标题' })
-    if (!added.ok) throw new Error('addTask failed')
-
-    const renamed = await call(taskTool, {
-      action: 'update', taskId: added.value.id, title: '新标题', blockedBy: 'dsh',
-    }, execFor(room))
-    expect(renamed).toContain('updated')
-    let state = await service.getState({ sessionId })
-    expect(state).toMatchObject({
-      ok: true,
-      value: { tasks: [{ id: added.value.id, title: '新标题', blockedBy: 'dsh', status: 'pending' }] },
-    })
-
-    // null clears the wait.
-    await call(taskTool, { action: 'update', taskId: added.value.id, blockedBy: null }, execFor(room))
-    state = await service.getState({ sessionId })
-    expect(state).toMatchObject({ ok: true, value: { tasks: [{ id: added.value.id }] } })
-    expect((state as { value: { tasks: { blockedBy?: string }[] } }).value.tasks[0]!.blockedBy).toBeUndefined()
-
-    const nothing = await call(taskTool, { action: 'update', taskId: added.value.id }, execFor(room))
-    expect(nothing).toContain('nothing-to-update')
-    const blank = await call(taskTool, { action: 'update', taskId: added.value.id, title: '  ' }, execFor(room))
-    expect(blank).toContain('empty-text')
-
-    // A closed task takes no edits.
-    await service.closeTask({ sessionId, taskId: added.value.id })
-    const closed = await call(taskTool, { action: 'update', taskId: added.value.id, title: '再改' }, execFor(room))
-    expect(closed).toContain('task-closed')
-  })
-})
-
 describe('room_message tool (real composition)', () => {
   it('dispatches to the member like a human @-message, minus the user bubble', async () => {
     const { ctx, service, messageTool } = await boot()
@@ -252,16 +134,13 @@ describe('room_message tool (real composition)', () => {
     expect(text).toContain('asynchronously')
 
     const events = room.snapshotEvents()
-    // The dispatch record and the auto-opened task journal as usual; the
-    // caller is the main agent, so NO human user/message bubble is appended.
+    // The dispatch record journals as usual; the caller is the main agent,
+    // so NO human user/message bubble is appended.
     expect(events.filter(event => event.type === 'room/dispatch').map(event => event.data))
       .toMatchObject([{ targets: ['ada'], text: '看看接口定义', origin: 'coordinator', replyTo: 'legacy:1' }])
     expect(events.some(event => event.type === 'user/message')).toBe(false)
     const state = await service.getState({ sessionId })
-    expect(state).toMatchObject({
-      ok: true,
-      value: { tasks: [{ member: 'ada', title: '看看接口定义', status: 'in_progress' }] },
-    })
+    expect(state).toMatchObject({ ok: true, value: { jobs: [{ number: 1, title: '看看接口定义' }] } })
   })
 
   it('rejects an unknown member with the live roster, a blank text, and a non-agent caller; a plain session promotes', async () => {
@@ -291,8 +170,8 @@ describe('room_message tool (real composition)', () => {
 
 
 describe('room coordinator tool ownership', () => {
-  it('shares the context reader and denies former native coordinator invites and board edits after handoff', async () => {
-    const { ctx, service, tool, taskTool, messageTool } = await boot()
+  it('shares the context reader and denies former native coordinator invites after handoff', async () => {
+    const { ctx, service, tool, messageTool } = await boot()
     const sessionId = await createRoom(ctx, service)
     const room = ctx.sessions.get(sessionId)!
     await service.invite({ sessionId, provider: 'kimi-cli', name: 'planner' })
@@ -302,8 +181,6 @@ describe('room coordinator tool ownership', () => {
     room.append('room/coordinator', { version: 1, memberId: planner.id!, revision: 1, previousMemberId: 'legacy:1', handoff: 'handoff' })
     expect(JSON.parse(await call(roomReadTool(service), {}, execFor(room)))).toMatchObject({ coordinator: 'planner', state: { members: [{ name: 'dsh' }, { name: 'planner' }] } })
     expect(await call(tool, { provider: 'kimi-cli', name: 'forbidden', instructions: 'work' }, execFor(room))).toContain('not-coordinator')
-    expect(await call(taskTool, { action: 'add', member: 'planner', title: 'work' }, execFor(room))).toContain('Only the current coordinator')
-    expect((await service.getState({ sessionId }))).toMatchObject({ ok: true, value: { tasks: [] } })
     // Messaging is free between members: the former coordinator sends as a member.
     expect(await call(messageTool, { member: 'planner', text: 'work' }, execFor(room))).toMatch(/^Sent m\d+ to planner/)
   })

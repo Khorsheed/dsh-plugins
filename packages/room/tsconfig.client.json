@@ -23,7 +23,6 @@
     "src/client/TeamTab.tsx",
     "src/client/MembersView.tsx",
     "src/client/RoomComposer.tsx",
-    "src/client/RoomDockCapsules.tsx",
     "src/client/RoomEventView.tsx",
     "src/client/RoomModelPicker.tsx",
     "src/client/RoomQueueStrip.tsx",
@@ -33,7 +32,6 @@
     "src/client/RoomRunView.tsx",
     "src/client/RoomSpeechView.tsx",
     "src/client/RoomStatsLine.tsx",
-    "src/client/RoomTaskLineView.tsx",
     "src/client/RoomTodoStrip.tsx",
     "src/client/format.ts",
     "src/client/index.ts",
@@ -50,9 +48,13 @@
     "src/types.ts",
     "src/plan.ts",
     "src/deliveries.ts",
+    "src/jobs.ts",
     "src/client/icons.tsx",
-    "src/client/RoomActivityDock.tsx",
-    "src/client/RoomPlanTab.tsx",
-    "src/client/executions.ts"
+    "src/client/executions.ts",
+    "src/client/tasks.ts",
+    "src/client/task-tag.ts",
+    "src/client/TasksView.tsx",
+    "src/client/TasksTab.tsx",
+    "src/client/RoomTaskCapsule.tsx"
   ]
 }

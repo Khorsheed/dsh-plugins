@@ -1,6 +1,6 @@
 {
   "name": "@khorsheed/dsh-room",
-  "description": "Room conversations with native or external coordinators, background delegation, durable goal plans and evidence review, shared member controls, live output and session navigation; the session-granted room model tools (`room_invite` / `room_task` / `room_message`) ship as the package's `./tool` composition entry",
+  "description": "Room conversations with native or external coordinators, background delegation, durable goal plans and evidence review, shared member controls, live output and session navigation; the session-granted room model tools (`room_invite` / `room_message` / `room_read` / `room_plan`) ship as the package's `./tool` composition entry",
   "keywords": [
     "dsh",
     "dsh-plugin",

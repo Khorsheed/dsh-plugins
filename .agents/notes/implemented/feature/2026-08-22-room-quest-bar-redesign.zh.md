@@ -4,6 +4,8 @@ Status: implemented
 
 [English](2026-08-22-room-quest-bar-redesign.md) | 中文
 
+> 已被 [Room 任务](2026-10-23-room-tasks.zh.md) 取代：目标胶囊和任务胶囊换成了一个任务胶囊加侧栏任务页，房间目标在任务页顶部编辑。
+
 ## Problem
 
 双胶囊 A/B 方案（见 [chrome-variants 笔记](2026-08-20-room-capsule-chrome-variants.zh.md)）没有定案：用户两个候选都不满意。变体 A 的胶囊读起来是两个匿名 chip 配 unicode ◐/▦ 占位符；变体 B 的文本行把 goal——dock 里最重要的信息——扔进了 tertiary 灰。重设计的要求：goal 的进度环必须是折叠行唯一的视觉焦点，任务胶囊必须带真正的 checklist 图标和谁在跑，任务面板必须读起来像 Linear（色点筛选胶囊、small-caps 分组头、着色状态图标、成员 chip、右对齐灰 meta）。

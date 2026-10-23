@@ -37,19 +37,11 @@ export type InviteAgentActionProps =
   & InjectFace<InviteAgentInjected>
   & PropsLocale<'room'>
 
-/** Injected face of the dock capsules (goal capsule + task capsule). */
-export interface RoomTasksInjected {
-  /** The client-side room state store (tasks and the goal ride the replayed state). */
+/** The room goal action (the task page's goal line). */
+export interface RoomGoalInjected {
+  /** The room store the views read. */
   readonly roomStore: RoomStore
-  /** Add a pending task to a member's lane, optionally waiting on another member. */
-  readonly addTask: (member: string, title: string, blockedBy?: string) => Promise<RoomMutationOutcome>
-  /**
-   * Close an open task. The status is the closing state: 'done' by default;
-   * the failed row's [关闭] passes 'cancelled' — the failure already speaks
-   * for itself, and a failed task must not count as goal progress.
-   */
-  readonly closeTask: (taskId: string, status?: 'done' | 'cancelled') => Promise<RoomMutationOutcome>
-  /** Set (or, with a blank text, clear) the room's goal. */
+  /** Set (or, with a blank text, clear) the room goal. */
   readonly setGoal: (text: string) => Promise<RoomMutationOutcome>
 }
 
@@ -173,24 +165,23 @@ export interface RoomModelDirectory {
 
 /**
  * Injected face of the composer takeover entry: the dispatch submit plus the
- * task-board actions (sessionId binds at inject time), because the takeover
- * renders the task board itself — the `conversation.input.dock` seat rides
- * the hidden official fallback. The takeover also inherits the official bar's
+ * task capsule's entry to the task page and the composer's task tag
+ * (sessionId binds at inject time), because the takeover renders the dock
+ * itself — the `conversation.input.dock` seat rides the hidden official
+ * fallback. The takeover also inherits the official bar's
  * Stop duty: the fallback's Stop button hides with it, so `stop` re-homes the
  * main agent's turn cancel (the runtime session face's `cancel()`). The
- * invite share rides along for the fresh-room dock's invite capsule.
+ * invite share rides along for the fresh-room invite capsule.
  * `modelDirectory` is the official per-session model directory for the room's
  * own main agent (bare messages ARE its turns); undefined on a host without
  * ui-model-selection — the picker simply does not render.
  */
-export interface RoomComposerInjected extends RoomTasksInjected, RoomInviteInjected {
-  readonly backgroundSessions?: import('./executions.ts').BackgroundSessionsStore | undefined
-  readonly activeChildren?: (() => Promise<readonly string[] | undefined>) | undefined
-  readonly stopChild?: ((childSessionId: string) => Promise<RoomMutationOutcome>) | undefined
-  readonly openPlan?: (() => void) | undefined
-  readonly stopExecution?: ((name: string, run: import('../types.ts').RoomMemberRun) => Promise<RoomMutationOutcome>) | undefined
+export interface RoomComposerInjected extends RoomGoalInjected, RoomInviteInjected {
+  /** Open the task page (at one task); absent without the right sidebar. */
+  readonly openTasks?: ((task?: string) => void) | undefined
+  /** The composer's task tag store (see task-tag.ts). */
+  readonly taskTags?: import('./task-tag.ts').RoomTaskTags | undefined
   readonly reconcileDelivery?: ((deliveryId: string, outcome: 'done' | 'cancelled', evidence: string) => Promise<RoomMutationOutcome>) | undefined
-  readonly planCommand?: ((command: string) => Promise<RoomMutationOutcome>) | undefined
   readonly openPlanSession?: ((sessionId: string) => void) | undefined
   readonly renderMemberInbox?: LocalAgentUi['renderMemberInbox'] | undefined
   readonly renderMemberConfiguration?: LocalAgentUi['renderMemberConfiguration'] | undefined
@@ -204,8 +195,10 @@ export interface RoomComposerInjected extends RoomTasksInjected, RoomInviteInjec
    * the dispatch engine runs in parallel). `targets` carries the
    * mention-menu picks (explicit addressing wherever the `@name` sits in
    * the sentence); the host unions them with the parsed leading tokens.
+   * `task` is the composer's tag (`new` or a task root id): it files the
+   * message under that task instead of letting dsh decide.
    */
-  readonly submit: (sessionId: SessionId, text: string, targets?: readonly string[]) => Promise<RoomMutationOutcome>
+  readonly submit: (sessionId: SessionId, text: string, targets?: readonly string[], task?: string) => Promise<RoomMutationOutcome>
   /** Interrupt the room's own main-agent turn (the hidden official bar's Stop). */
   readonly stop: () => void
   /**
@@ -267,7 +260,7 @@ export interface RoomMembersInjected extends RoomInviteInjected {
   readonly openSession: (sessionId: SessionId) => void
   /** Remove the named member from the roster. */
   readonly setCoordinator?: ((memberId: string, expectedRevision: number) => Promise<RoomMutationOutcome>) | undefined
-  readonly removeMember: (member: string, transferPendingTo?: string) => Promise<RoomRemovalOutcome>
+  readonly removeMember: (member: string) => Promise<RoomRemovalOutcome>
   /** Undo a removal: the member rejoins on its own session. */
   readonly restoreMember: (member: string) => Promise<RoomMutationOutcome>
   /** Open the team page in the right sidebar, optionally revealing one member. Absent without a sidebar. */
@@ -379,31 +372,4 @@ export interface RoomInboxInjected {
 export type RoomInboxViewProps =
   PropsRuntime<'conversation.chat.node', 'room-inbox'>
   & InjectFace<RoomInboxInjected>
-  & PropsLocale<'room'>
-
-/** Injected face of the task-advance chat node. */
-export interface RoomTaskLineInjected {
-  /** The client-side room state store (the goal-progress suffix). */
-  readonly roomStore: RoomStore
-}
-
-/** Full props of the 'room-task-line' chat-node renderer. */
-export type RoomTaskLineViewProps =
-  PropsRuntime<'conversation.chat.node', 'room-task-line'>
-  & InjectFace<RoomTaskLineInjected>
-  & PropsLocale<'room'>
-
-/**
- * Props of the dock capsules (goal capsule + task capsule), rendered by the
- * RoomComposer itself above the input card — NOT a slot entry:
- * `conversation.input.dock` lives inside the official composer fallback,
- * which the takeover hides. The invite share serves the fresh-room state:
- * a room with neither a goal nor any task renders a single 「＋ 邀请成员」
- * capsule instead of the pair, opening the invite dialog straight from the
- * dock.
- */
-export type RoomDockCapsulesProps =
-  { readonly sessionId: SessionId; readonly formalPlans?: boolean }
-  & RoomTasksInjected
-  & RoomInviteInjected
   & PropsLocale<'room'>

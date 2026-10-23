@@ -113,8 +113,8 @@ describe('DispatchEngine (real composition)', () => {
       value: {
         // The delegation handle is journaled (reload reattaches the member).
         members: [{ name: 'dsh' }, { name: 'ada', childSessionId: 'child-1' }],
-        // The dispatch auto-opened the task; the settle (speech) closed it.
-        tasks: [{ member: 'ada', title: '搭骨架', status: 'done' }],
+        // The first task is a task of its own; the settle (speech) finished it.
+        jobs: [{ title: '搭骨架', status: 'done' }],
         runs: [{ member: 'ada', state: 'done' }],
       },
     })
@@ -253,18 +253,17 @@ describe('DispatchEngine (real composition)', () => {
     await vi.waitFor(() => expect(bench.facade.start).toHaveBeenCalledOnce())
     await tick()
     await bench.service.messageMember({ sessionId: bench.sessionId, member: 'ada', text: '再对一下接口' })
-    await bench.service.addTask({ sessionId: bench.sessionId, member: 'ada', title: '写文档' })
 
-    const removal = await bench.service.removeMember({ sessionId: bench.sessionId, name: 'ada', transferPendingTo: 'dsh' })
+    const removal = await bench.service.removeMember({ sessionId: bench.sessionId, name: 'ada' })
     expect(removal).toEqual({ ok: true, value: {
-      name: 'ada', stopped: true, cancelledDeliveries: 1, cancelledTasks: 1, transferredTasks: 1, notified: ['dsh'],
+      name: 'ada', stopped: true, cancelledDeliveries: 1, notified: ['dsh'],
     } })
     await bench.service.engine.idle()
     const state = await bench.service.getState({ sessionId: bench.sessionId })
     if (!state.ok) throw new Error('room unavailable')
     expect(state.value.members.map(member => member.name)).toEqual(['dsh'])
-    expect(state.value.tasks.map(task => [task.member, task.title, task.status])).toEqual([
-      ['ada', '补迁移脚本', 'cancelled'], ['ada', '再对一下接口', 'cancelled'], ['dsh', '写文档', 'pending'],
+    expect(state.value.deliveries?.filter(row => row.origin !== 'report').map(row => [row.text, row.status])).toEqual([
+      ['补迁移脚本', 'cancelled'], ['再对一下接口', 'cancelled'],
     ])
     // The queued message never runs, and the coordinator heard about it.
     expect(bench.facade.resume).not.toHaveBeenCalled()
@@ -492,7 +491,7 @@ describe('DispatchEngine (real composition)', () => {
     expect(state).toMatchObject({
       ok: true,
       value: {
-        tasks: [{ member: 'dsh', title: '总结一下进度', status: 'done' }],
+        jobs: [{ title: '总结一下进度', status: 'done' }],
         runs: [{ member: 'dsh', state: 'done' }],
       },
     })
@@ -509,29 +508,8 @@ describe('DispatchEngine (real composition)', () => {
       ok: true,
       value: { runs: [{ member: 'dsh', state: 'failed', error: 'the room session has no live agent' }] },
     })
-    // A failed run closes the auto-opened task as failed — the board shows
-    // the failed row for the human (never a stranded spinning in_progress).
-    expect(state).toMatchObject({ ok: true, value: { tasks: [{ member: 'dsh', status: 'failed' }] } })
-  })
-
-  it('a failed task stays human-actionable: closeTask dismisses it to cancelled', async () => {
-    const bench = await bootRoom({ liveAgent: false })
-    await bench.service.postMessage({ sessionId: bench.sessionId, text: '@dsh 在吗' })
-    await bench.service.engine.idle()
-    const before = await bench.service.getState({ sessionId: bench.sessionId })
-    if (!before.ok) throw new Error('narrowing')
-    const task = before.value.tasks[0]!
-    expect(task.status).toBe('failed')
-    // The board's [关闭]: a failed task is NOT task-closed — it closes to cancelled.
-    expect(await bench.service.closeTask({ sessionId: bench.sessionId, taskId: task.id, status: 'cancelled' }))
-      .toEqual({ ok: true, value: { id: task.id } })
-    expect(await bench.service.getState({ sessionId: bench.sessionId })).toMatchObject({
-      ok: true,
-      value: { tasks: [{ id: task.id, status: 'cancelled' }] },
-    })
-    // Closed for real now: a second close is the usual task-closed rejection.
-    expect(await bench.service.closeTask({ sessionId: bench.sessionId, taskId: task.id }))
-      .toEqual({ ok: false, error: { code: 'task-closed' } })
+    // A failed run settles its delivery as failed (never a stranded running row).
+    expect(state).toMatchObject({ ok: true, value: { deliveries: [{ status: 'failed' }], jobs: [{ status: 'done' }] } })
   })
 
   it('fails the run when the facade vanishes mid-flight', async () => {
@@ -547,7 +525,7 @@ describe('DispatchEngine (real composition)', () => {
       ok: true,
       value: {
         runs: [{ member: 'ada', state: 'failed', error: 'the local-agent delegation facade is unavailable' }],
-        tasks: [{ member: 'ada', status: 'failed' }],
+        deliveries: [{ status: 'failed' }],
       },
     })
   })
@@ -628,9 +606,9 @@ describe('DispatchEngine (real composition)', () => {
     // Exactly running + cancelled: the engine's settle saw the cancel edge and no-oped.
     expect(edges.map(event => (event.data as { state: string }).state)).toEqual(['running', 'cancelled'])
     expect(session.snapshotEvents().some(event => event.type === 'room/speech')).toBe(false)
-    // The cancelled run closed the auto-opened task as cancelled.
+    // The cancelled run settled its delivery as cancelled.
     const state = await bench.service.getState({ sessionId: bench.sessionId })
-    expect(state).toMatchObject({ ok: true, value: { tasks: [{ member: 'ada', status: 'cancelled' }] } })
+    expect(state).toMatchObject({ ok: true, value: { deliveries: [{ status: 'cancelled' }] } })
   })
 })
 import { createRoom } from './promote.ts'
@@ -838,7 +816,7 @@ describe('coordinator routing and durable deliveries', () => {
       // Stop may cancel independent member work, but it must not cancel this waiting room delivery/task.
       bench.facade.cancel.mockReturnValue(true)
       expect(await bench.service.cancel({ sessionId: bench.sessionId, name: 'ada' })).toMatchObject({ ok: true, value: { cancelled: true } })
-      expect(await bench.service.getState({ sessionId: bench.sessionId })).toMatchObject({ ok: true, value: { runs: [], tasks: [{ status: 'in_progress' }] } })
+      expect(await bench.service.getState({ sessionId: bench.sessionId })).toMatchObject({ ok: true, value: { runs: [], deliveries: [{ status: 'queued' }] } })
       clock.mockReturnValue(4000)
       admit.resolve()
       await tick()
@@ -922,7 +900,6 @@ describe('coordinator routing and durable deliveries', () => {
     const settled = await bench.service.getState({ sessionId: bench.sessionId })
     expect(settled).toMatchObject({ ok: true, value: {
       runs: [{ state: 'running', runId: secondRunId }],
-      tasks: [{ status: 'done' }, { status: 'in_progress' }],
       deliveries: [{ status: 'done' }, { status: 'running' }],
     } })
     expect(bench.service.engine.hasPending(session, 'ada')).toBe(true)
@@ -931,7 +908,7 @@ describe('coordinator routing and durable deliveries', () => {
     second.resolve({ output: [], stopReason: 'aborted' })
     await bench.service.engine.idle()
     expect(await bench.service.getState({ sessionId: bench.sessionId })).toMatchObject({ ok: true, value: {
-      tasks: [{ status: 'done' }, { status: 'cancelled' }], deliveries: [{ status: 'done' }, { status: 'cancelled' }],
+      deliveries: [{ status: 'done' }, { status: 'cancelled' }],
     } })
     const outcomes = session.snapshotEvents().filter(event => event.type === 'room/delivery-state' && event.data.state === 'done')
     expect(outcomes[0]?.data).toMatchObject({ text: 'first own output' })

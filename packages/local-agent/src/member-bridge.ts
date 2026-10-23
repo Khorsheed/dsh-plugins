@@ -42,6 +42,7 @@ const TOOL_SCHEMA = {
     kind: { type: 'string', enum: ['task', 'notify'], description: 'task (default): the reply is reported back to you; notify: FYI only.' },
     inReplyTo: { type: 'string', description: 'Optional id of the message this answers, e.g. m12.' },
     note: { type: 'string', description: 'Optional: what you will wait for before acting on the result (the room uses it to decide when to hand you the report).' },
+    task: { type: 'string', description: 'Optional: "new" or a task number from room_read; omit to stay in the task you are working on.' },
   },
   required: ['to', 'text'],
   additionalProperties: false,
@@ -58,7 +59,7 @@ const ROOM_TOOLS = [
       cwd: { type: 'string' }, model: { type: 'string' }, firstTask: { type: 'string' },
     }, required: ['provider', 'name'], additionalProperties: false } },
   { name: 'room_message', description: 'Send a room member a message by name (same as member_message). kind "task" (default): its reply comes back to you as a report citing the message id; kind "notify": FYI only. Do not poll.',
-    inputSchema: { type: 'object', properties: { member: { type: 'string' }, text: { type: 'string' }, kind: { type: 'string', enum: ['task', 'notify'] }, inReplyTo: { type: 'string' }, note: { type: 'string', description: 'What you will wait for before acting on the result.' } }, required: ['member', 'text'], additionalProperties: false } },
+    inputSchema: { type: 'object', properties: { member: { type: 'string' }, text: { type: 'string' }, kind: { type: 'string', enum: ['task', 'notify'] }, inReplyTo: { type: 'string' }, note: { type: 'string', description: 'What you will wait for before acting on the result.' }, task: { type: 'string', description: '"new" or a task number; omit to stay in your current task.' } }, required: ['member', 'text'], additionalProperties: false } },
 ] as const
 
 export async function callRoomCommand(env: MemberBridgeEnv, name: MemberRoomCommandName, args: unknown): Promise<Record<string, unknown>> {
@@ -123,7 +124,7 @@ function toolText(text: string, isError = false): Record<string, unknown> {
  */
 export async function callMemberMessage(
   env: MemberBridgeEnv,
-  args: { to?: unknown; text?: unknown; kind?: unknown; inReplyTo?: unknown; note?: unknown },
+  args: { to?: unknown; text?: unknown; kind?: unknown; inReplyTo?: unknown; note?: unknown; task?: unknown },
 ): Promise<Record<string, unknown>> {
   if (env.socket === undefined || env.token === undefined) {
     return toolText('member channel is not configured for this run (missing socket/token environment)', true)
@@ -139,6 +140,7 @@ export async function callMemberMessage(
       ...args.kind === 'task' || args.kind === 'notify' ? { kind: args.kind } : {},
       ...typeof args.inReplyTo === 'string' ? { inReplyTo: args.inReplyTo } : {},
       ...typeof args.note === 'string' ? { note: args.note } : {},
+      ...typeof args.task === 'string' ? { task: args.task } : {},
     })
     if (outcome.ok) return toolText(outcome.receipt ?? 'sent')
     return toolText(outcome.error ?? 'member channel rejected the message', true)
