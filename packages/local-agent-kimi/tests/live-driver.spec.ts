@@ -797,6 +797,45 @@ describe('kimi live driver rounds', () => {
     await m.driver.disposeAll()
   })
 
+  it('token granularity: a step-tagged wire folds think + answer into ONE durable step', async () => {
+    const m = mount({ config: { liveMirrorGranularity: 'token', snapshotMinIntervalMs: 0, snapshotMinChars: 0 } })
+    const child = Session.create(SessionId('child-kimi-token-grouped'))
+    const fake = new FakeAcpServer({ turn: () => ({ hang: true }) })
+    m.queueChild(fake)
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    fake.update('session_acp-session-1', { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: '想一下' } })
+    fake.update('session_acp-session-1', { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '文件建好了' } })
+    const wireDir = join(m.homeDir, 'sessions', 'wd_test', 'session_acp-session-1', 'agents', 'main')
+    mkdirSync(wireDir, { recursive: true })
+    writeFileSync(join(wireDir, 'wire.jsonl'), [
+      JSON.stringify({ type: 'turn.prompt', input: [{ type: 'text', text: '建个文件' }] }),
+      JSON.stringify({ type: 'usage.record', usage: { inputOther: 10, output: 4 } }),
+      JSON.stringify({ type: 'context.append_loop_event', event: { type: 'step.begin', turnId: 0, step: 1 } }),
+      JSON.stringify({ type: 'context.append_loop_event', event: { type: 'content.part', turnId: 0, step: 1, part: { type: 'think', think: '想一下' } } }),
+      JSON.stringify({ type: 'context.append_loop_event', event: { type: 'content.part', turnId: 0, step: 1, part: { type: 'text', text: '文件建好了' } } }),
+      JSON.stringify({ type: 'context.append_loop_event', event: { type: 'step.end', turnId: 0, step: 1 } }),
+    ].join('\n') + '\n')
+    fake.resolvePrompt({ stopReason: 'end_turn' })
+    expect((await run.result).stopReason).toBe('completed')
+    const events = child.snapshotEvents()
+    const assistant = events.filter(e => e.type === 'assistant/message')
+    // ONE durable step carries the whole wire step: the reasoning and the
+    // answer in one message, with the round's usage — the host session's own
+    // shape. (The live channel rendered both streams meanwhile.)
+    expect(assistant).toHaveLength(1)
+    expect(assistant[0]!.data).toMatchObject({ turn: 1, step: 1, usage: { inputTokens: 10, outputTokens: 4 } })
+    expect((assistant[0]!.data as { message: { content: unknown[] } }).message.content).toEqual([
+      { type: 'reasoning', text: '想一下' },
+      { type: 'text', text: '文件建好了' },
+    ])
+    // The text stream's released reservation leaves no step-2 events behind.
+    const atStep2 = events.filter(e => (e.data as { turn?: number; step?: number }).turn === 1
+      && (e.data as { turn?: number; step?: number }).step === 2)
+    expect(atStep2.filter(e => e.type !== 'local-agent/stream')).toEqual([])
+    expectValidReleasedLog(child)
+    await m.driver.disposeAll()
+  })
+
   it('token granularity: a cancelled round completes the stream as interrupted (legitimate 已停止)', async () => {
     const m = mount({ config: { liveMirrorGranularity: 'token' } })
     const child = Session.create(SessionId('child-kimi-token-abort'))

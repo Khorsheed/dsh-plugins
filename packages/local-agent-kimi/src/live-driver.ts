@@ -934,12 +934,15 @@ export class KimiAcpLiveDriver {
     /** The round's accumulated assistant text (the run output — chunks are the only source). */
     let roundText = ''
     /**
-     * The step ledger: every step a stream reservation consumed this round
-     * (in increasing order — permanently, whether the stream later completes
-     * or stays an orphan snapshot). The file fold skips these steps for its
-     * sequential folds, so a tool card folded mid-stream lands ABOVE the
-     * stream's step and the projection renders the round's chronological
-     * order.
+     * The step ledger: the steps in-flight reservations currently hold this
+     * round. A reservation's durable content lands at the fold that consumes
+     * it (possibly carrying several reservations' kinds in one message — the
+     * wire step's fold), which RELEASES the other consumed coordinates for
+     * later folds; only a reservation kimi never completes (a plan stream, an
+     * unwired tool notification) stays held until its settle-time finalize.
+     * The file fold skips held steps for its sequential folds, so a tool card
+     * folded mid-stream lands ABOVE the stream's step and the projection
+     * renders the round's chronological order.
      */
     const reservedSteps: number[] = []
     /**
@@ -951,10 +954,10 @@ export class KimiAcpLiveDriver {
      * NEVER as durable mid-round messages: the released-log contract admits
      * only dense, strictly sequential steps, so a stream's durable content
      * lands as ONE atomic step/start→assistant/message→step/end triple,
-     * written by its completing wire line's fold, by a gap fill
-     * (`finalizeBefore`), or at settle. A `sealed` entry's triple is already
-     * durable; its completing wire line pairs and drops instead of folding
-     * the content a second time.
+     * written by its completing wire STEP's fold (which may carry both kinds
+     * in one message), by a gap fill (`finalizeBefore`), or at settle. A
+     * `sealed` entry's triple is already durable; its completing wire step
+     * pairs and keeps that kind's content out of the fold.
      */
     interface StreamEntry {
       readonly kind: 'think' | 'text'
@@ -1193,7 +1196,7 @@ export class KimiAcpLiveDriver {
       }
       if (stream === undefined) {
         let step = nextKimiSessionStep(childSession, turn)
-        for (const reserved of reservedSteps) step = Math.max(step, reserved + 1)
+        while (reservedSteps.includes(step)) step += 1
         reservedSteps.push(step)
         stream = { kind, step, text: '', lastSnapshotLen: 0 }
         streams.set(key, stream)
@@ -1203,9 +1206,9 @@ export class KimiAcpLiveDriver {
 
     /**
      * The fold-pass coordination surface: the file
-     * fold skips reserved steps for sequential folds, pairs a completed
-     * think/assistant line with its stream (a sealed pairing drops the line —
-     * the gap fill already made its content durable), and closes every
+     * fold skips reserved steps for sequential folds, pairs one fold with the
+     * round's in-flight streams of the fold's kinds (consuming both — a wire
+     * step's think and text ride ONE durable step), and closes every
      * reservation below each fold step first (finalizeBefore) — scoped to
      * THIS round's turn, so an earlier round's leftover lines never consume
      * this round's stream.
@@ -1213,32 +1216,48 @@ export class KimiAcpLiveDriver {
     const mirrorStreams: KimiMirrorStreams = {
       reservedSteps: t => t === turn ? reservedSteps : [],
       finalizeBefore,
-      peekStream: (line) => {
-        if (line.turn !== turn) return undefined
-        const kind = line.kind === 'think' ? 'think' : 'text'
-        const entry = [...streams.entries()].find(([key, stream]) => key !== planKey && stream.kind === kind)
-        if (entry === undefined) return undefined
-        return { step: entry[1].step, sealed: entry[1].sealed === true }
-      },
-      completeTool: (line) => {
-        if (line.turn !== turn) return undefined
+      releaseTool: (line) => {
+        if (line.turn !== turn) return
         const entry = toolSteps.get(line.id)
-        if (entry === undefined) return undefined
+        if (entry === undefined) return
         toolSteps.delete(line.id)
-        return { step: entry.step }
+        // The fold's step carries the whole lifecycle; the coordinate frees.
+        const index = reservedSteps.indexOf(entry.step)
+        if (index >= 0) reservedSteps.splice(index, 1)
       },
-      completeStream: (line) => {
-        if (line.turn !== turn) return undefined
-        const kind = line.kind === 'think' ? 'think' : 'text'
-        const entry = [...streams.entries()].find(([key, stream]) => key !== planKey && stream.kind === kind)
-        if (entry === undefined) return undefined
-        const [key, stream] = entry
-        streams.delete(key)
-        if (activeStream === key) activeStream = undefined
-        if (stream.sealed === true) return { step: stream.step, sealed: true }
-        liveFlush.cancel(stream.step)
-        streamPublisher?.finish(stream.step)
-        return { step: stream.step, sealed: false }
+      completeStreams: (t, kinds) => {
+        if (t !== turn) return undefined
+        const picked: [string, StreamEntry][] = []
+        for (const kind of kinds) {
+          const entry = [...streams.entries()].find(([key, stream]) => key !== planKey && stream.kind === kind)
+          if (entry !== undefined) picked.push(entry)
+        }
+        if (picked.length === 0) return undefined
+        const sealed: ('think' | 'text')[] = []
+        for (const [key, stream] of picked) {
+          streams.delete(key)
+          if (activeStream === key) activeStream = undefined
+          // A sealed entry's durable triple already landed: its content stays
+          // out of the fold, and its coordinate keeps its (durable) place.
+          if (stream.sealed === true) { sealed.push(stream.kind); continue }
+          liveFlush.cancel(stream.step)
+          streamPublisher?.finish(stream.step)
+        }
+        const open = picked.filter(([, stream]) => stream.sealed !== true)
+        if (open.length === 0) return { sealed }
+        // The reservations whose content rides this fold free their own.
+        for (const [, stream] of open) {
+          const index = reservedSteps.indexOf(stream.step)
+          if (index >= 0) reservedSteps.splice(index, 1)
+        }
+        // The fold's coordinate: the earliest consumed reservation — or a
+        // lower step an earlier release freed, so the stored log stays dense.
+        // In the common case they agree and the ephemeral live node morphs in
+        // place.
+        let free = nextKimiSessionStep(childSession, turn)
+        while (reservedSteps.includes(free)) free += 1
+        const step = Math.min(Math.min(...open.map(([, stream]) => stream.step)), free)
+        return { step, sealed }
       },
     }
     const mirrorOptions = (settle = false): KimiMirrorOptions => ({ streams: mirrorStreams, ...settle ? { settle: true } : {} })
@@ -1251,8 +1270,8 @@ export class KimiAcpLiveDriver {
      * the latest.
      */
     const noteMirrorUsage = (delta: KimiMirrorDelta): void => {
-      if (delta.usage !== undefined && delta.usageAttached !== true) {
-        roundUsage = addTokenUsage(roundUsage, delta.usage)
+      if (delta.usageUnattached !== undefined) {
+        roundUsage = addTokenUsage(roundUsage, delta.usageUnattached)
       }
       if (delta.model !== undefined) roundModel = delta.model
     }
@@ -1327,7 +1346,7 @@ export class KimiAcpLiveDriver {
             // lifecycle in one step; a call kimi never logs finalizes as an
             // interrupted placeholder at settle.
             let step = nextKimiSessionStep(childSession, turn)
-            for (const reserved of reservedSteps) step = Math.max(step, reserved + 1)
+            while (reservedSteps.includes(step)) step += 1
             reservedSteps.push(step)
             toolSteps.set(id, {
               step,

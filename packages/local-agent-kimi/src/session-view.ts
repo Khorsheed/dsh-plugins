@@ -23,15 +23,15 @@ import type { TokenUsage } from '@deepseek-ai/dsh-llm'
 /** One rendered transcript line. */
 export type KimiTranscriptLine = (
   | { kind: 'user'; text: string; turn: number }
-  | { kind: 'assistant'; text: string; turn: number }
-  | { kind: 'think'; text: string; turn: number }
+  | { kind: 'assistant'; text: string; turn: number; wireStep?: number }
+  | { kind: 'think'; text: string; turn: number; wireStep?: number }
   /**
    * Tool activity: one call with its (possibly still pending) result. `id`
    * is the wire's toolCallId/uuid when present, else a synthesized
    * position-based id — stable across mirror passes either way, so the
    * child session's `tool/call`/`tool/result` events pair by it.
    */
-  | { kind: 'tool'; id: string; name: string; args?: string; result?: string; turn: number }
+  | { kind: 'tool'; id: string; name: string; args?: string; result?: string; turn: number; wireStep?: number }
 ) & { model?: string }
 
 /** A parsed transcript of one kimi session. */
@@ -47,6 +47,13 @@ export interface KimiSessionTranscript {
    * whose position falls inside the delta it appends.
    */
   usageRecords: readonly { readonly line: number; readonly usage: TokenUsage }[]
+  /**
+   * Wire steps (`${turn}:${wireStep}`, turn 1-based) whose `step.end` the wire
+   * recorded — a closed step's content is complete, so a mirror may fold it
+   * without waiting for the next step to begin. Older wires carry no step
+   * markers; their lines simply never appear here.
+   */
+  closedSteps: ReadonlySet<string>
   /**
    * The model identifier the wire named: the `model` field of a `usage.record`
    * or `llm.request` event, LAST one seen (a resumed session's later rounds
@@ -183,6 +190,7 @@ export async function readKimiTranscript(sessionDir: string): Promise<KimiSessio
   const sessionId = sessionDir.split('session_').pop() ?? sessionDir
   const lines: KimiTranscriptLine[] = []
   const usageRecords: { line: number; usage: TokenUsage }[] = []
+  const closedSteps = new Set<string>()
   let model: string | undefined
   let modelTurn: number | undefined
   let lineModel: string | undefined
@@ -203,7 +211,7 @@ export async function readKimiTranscript(sessionDir: string): Promise<KimiSessio
     text = await readFile(wirePath(sessionDir), 'utf8')
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      return { sessionId, lines, usageRecords }
+      return { sessionId, lines, usageRecords, closedSteps }
     }
     throw error
   }
@@ -275,12 +283,17 @@ export async function readKimiTranscript(sessionDir: string): Promise<KimiSessio
         turn = Math.max(turn, loopTurn)
         turnSeen = true
       }
+      // The wire's own 1-based step within the turn: one loop step is one LLM
+      // request (its think/text parts and tool calls share it), so the mirror
+      // folds per wire step. Older wires omit it — their lines fold singly.
+      const wireStep = typeof loop.step === 'number' ? loop.step : undefined
       const part = loop.part as { type?: string; text?: string; think?: string } | undefined
       const lineTurn = turn === 0 ? 1 : turn
+      if (loop.type === 'step.end' && wireStep !== undefined) closedSteps.add(`${lineTurn}:${wireStep}`)
       if (part?.type === 'text' && part.text !== undefined && part.text.trim() !== '') {
-        push({ kind: 'assistant', text: part.text, turn: lineTurn })
+        push({ kind: 'assistant', text: part.text, turn: lineTurn, ...wireStep === undefined ? {} : { wireStep } })
       } else if (part?.type === 'think' && part.think !== undefined && part.think.trim() !== '') {
-        push({ kind: 'think', text: part.think, turn: lineTurn })
+        push({ kind: 'think', text: part.think, turn: lineTurn, ...wireStep === undefined ? {} : { wireStep } })
       } else if (loop.type === 'tool.call') {
         const call = loop as {
           toolCall?: { name?: string; args?: unknown }
@@ -300,6 +313,7 @@ export async function readKimiTranscript(sessionDir: string): Promise<KimiSessio
           name,
           ...args === undefined ? {} : { args },
           turn: lineTurn,
+          ...wireStep === undefined ? {} : { wireStep },
         })
         if (typeof call.uuid === 'string') callsByUuid.set(call.uuid, lineIndex)
         if (typeof call.toolCallId === 'string') callsByToolCallId.set(call.toolCallId, lineIndex)
@@ -345,7 +359,7 @@ export async function readKimiTranscript(sessionDir: string): Promise<KimiSessio
       }
     }
   }
-  return { sessionId, lines, usageRecords, ...model === undefined ? {} : { model }, ...modelTurn === undefined ? {} : { modelTurn } }
+  return { sessionId, lines, usageRecords, closedSteps, ...model === undefined ? {} : { model }, ...modelTurn === undefined ? {} : { modelTurn } }
 }
 
 /**

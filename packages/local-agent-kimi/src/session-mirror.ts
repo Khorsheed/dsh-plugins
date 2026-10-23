@@ -15,7 +15,7 @@ import type { ContentBlock, TokenUsage } from '@deepseek-ai/dsh-llm'
 import type { Session, SessionEventMap } from '@deepseek-ai/dsh-session'
 import type { LocalAgentToolCalls } from '@khorsheed/dsh-local-agent/types'
 import { persistChildSession } from '@khorsheed/dsh-local-agent'
-import { readKimiTranscript, sumUsageRecords, type KimiTranscriptLine } from './session-view.ts'
+import { addTokenUsage, readKimiTranscript, sumUsageRecords, type KimiTranscriptLine } from './session-view.ts'
 
 // The host renamed its tool-call id brand between lines (`CallId` on the npm
 // rc line, a new name on 0.1.2-alpha). A brand is compile-time-only and the
@@ -48,38 +48,25 @@ export function assistantEvent(blocks: readonly ContentBlock[], model?: string) 
 }
 
 /**
- * The step the next fold pass would assign in one turn (the max existing
- * step + 1). The token-granularity live
- * driver reserves its stream merge key here LAZILY at the first delta, so
- * tool cards folded before the stream started keep their chronological
- * place below it instead of the stream squatting on step 1.
+ * The step the next fold pass would assign in one turn: the smallest step
+ * nothing holds (never written, never reserved at call time — callers skip
+ * their own reservations on top). Filling the smallest free step keeps the
+ * stored log dense: the released-log reader admits only dense, strictly
+ * sequential steps, and a reservation released mid-round (its content rode an
+ * earlier fold) leaves a gap only the next first-free write fills.
  * @param childSession - the run's child session.
  * @param turn - the round's turn number.
- * @returns the next free step in the turn.
+ * @returns the smallest free step in the turn.
  */
 export function nextKimiSessionStep(childSession: Session, turn: number): number {
-  let next = 1
+  const taken = new Set<number>()
   for (const event of childSession.snapshotEvents()) {
     const data = event.data as { turn?: number; step?: number }
-    if (data.turn === turn && typeof data.step === 'number') next = Math.max(next, data.step + 1)
+    if (data.turn === turn && typeof data.step === 'number') taken.add(data.step)
   }
+  let next = 1
+  while (taken.has(next)) next += 1
   return next
-}
-
-/**
- * Fold one non-tool transcript line into message blocks. Thinking maps to
- * the native `reasoning` block so the standard conversation renders it as
- * thinking rather than a `[思考]` text prefix; reply text stays text (content
- * is never filtered — kimi's own injections remain visible). Tool lines are
- * NOT folded here: they become native `tool/call`/`tool/result` event pairs
- * (see the mirror loop), so the standard conversation renders them as tool
- * cards instead of `[工具 X]` text.
- */
-function lineBlocks(line: KimiTranscriptLine & { kind: 'assistant' | 'think' }): ContentBlock[] {
-  if (line.kind === 'think') {
-    return [{ type: 'reasoning', text: line.text }]
-  }
-  return [{ type: 'text', text: line.text }]
 }
 
 /** The run-progress delta text for one transcript line (any kind). */
@@ -93,8 +80,8 @@ export function kimiLineProgressText(line: KimiTranscriptLine): string {
 export interface KimiMirrorDelta {
   /**
    * The new mirror offset (transcript lines folded so far). An unresulted
-   * tool line HOLDS a mid-round pass: the offset stops before it and the
-   * next pass retries from there.
+   * tool line (or a wire step the wire has not closed yet) HOLDS a mid-round
+   * pass: the offset stops before it and the next pass retries from there.
    */
   total: number
   /**
@@ -105,17 +92,24 @@ export interface KimiMirrorDelta {
    */
   texts: string[]
   /**
-   * The usage this pass computed for its window. Attached to the window's
-   * last folded assistant message when one exists (see `usageAttached`);
-   * otherwise returned unattached, so the caller (the token-granularity live
-   * driver) can carry it on the stream's final snapshot instead.
+   * The usage this pass computed for its window. Attached per wire step: the
+   * records whose line position falls inside a folded unit's span ride THAT
+   * unit's message (one usage.record per LLM request, matching the host
+   * session's own shape); anything no fold carried comes back as
+   * `usageUnattached` for the caller to carry.
    */
   usage?: TokenUsage
   /**
-   * True when this pass's usage rode a folded assistant message — the caller
+   * True when this pass's usage rode folded assistant messages — the caller
    * must never attach that accounting a second time.
    */
   usageAttached?: boolean
+  /**
+   * The window's accounting that NO fold carried (a pass with only held or
+   * fully-sealed folds): the token-granularity live driver sums it into the
+   * round's uncarried remainder, which the settle's final snapshot carries.
+   */
+  usageUnattached?: TokenUsage
   /**
    * The model identifier the wire named (a `usage.record` or `llm.request`
    * `model` field, last one seen) — the delegation's observed-model source.
@@ -156,26 +150,28 @@ export interface KimiMirrorStreams {
    * never sits inside the gap.
    */
   finalizeBefore?(turn: number, step: number): void
-  /** Consume the ACP tool notification's chronological reservation for this wire line. */
-  completeTool?(line: KimiTranscriptLine & { kind: 'tool' }): { readonly step: number } | undefined
   /**
-   * The pairing completeStream WOULD commit for this line, without consuming
-   * it. The fold consults it to keep usage off a line that will drop (a
-   * sealed pairing) — the usage then rides the pass's last folding assistant
-   * message instead.
+   * Release the ACP tool notification's chronological reservation for this
+   * wire line WITHOUT writing: the line's fold carries the whole native
+   * lifecycle inside its step, so the reserved coordinate frees for a later
+   * fold. (A reservation kimi never logs to the wire stays reserved and
+   * finalizes as the driver's settle-time orphan fold.)
    */
-  peekStream?(line: KimiTranscriptLine & { kind: 'assistant' | 'think' }): { readonly step: number; readonly sealed: boolean } | undefined
+  releaseTool?(line: KimiTranscriptLine & { kind: 'tool' }): void
   /**
-   * Pair one completed think/assistant transcript line with its in-flight
-   * stream, consuming the pairing. `sealed: false` folds the line at the
-   * reserved step (one atomic triple); `sealed: true` means finalizeBefore
-   * already wrote the stream's triple (its line never reached the wire in
-   * order) — the caller drops the line rather than duplicate the content.
-   * Undefined folds the line sequentially.
+   * Consume the round's in-flight content streams of the given kinds, pairing
+   * them with one fold: `step` is the fold coordinate (the earliest consumed
+   * reservation still needing one — absent when every consumed kind was
+   * already sealed, so the fold goes sequential), and `sealed` lists the
+   * kinds already durable (a gap fill wrote their triples — the fold must
+   * EXCLUDE their content). Reservations whose content rides this fold are
+   * released, so a later sequential fold may take their steps. Undefined when
+   * no stream pairs — the fold goes sequential.
    */
-  completeStream(
-    line: KimiTranscriptLine & { kind: 'assistant' | 'think' },
-  ): { readonly step: number; readonly sealed: boolean } | undefined
+  completeStreams(
+    turn: number,
+    kinds: readonly ('think' | 'text')[],
+  ): { readonly step?: number; readonly sealed: readonly ('think' | 'text')[] } | undefined
 }
 
 /** Mirror behavior switches shared by the exec and live paths. */
@@ -203,10 +199,14 @@ export interface KimiMirrorOptions {
 }
 
 /**
- * Mirror one kimi session's transcript into the dsh subagent session: each
- * user prompt becomes a `user/message`, each assistant reply (including
- * folded thinking and tool activity) an `assistant/message`, then the events
- * are appended to persistence so the child session is viewable.
+ * Mirror one kimi session's transcript into a dsh subagent session: each
+ * user prompt becomes a `user/message`, and each WIRE STEP (one LLM request:
+ * its thinking, reply text and tool calls share the wire's own step number)
+ * folds into one dsh step whose `assistant/message` carries the reasoning,
+ * text and tool-call blocks together — the host session's own shape, so the
+ * standard surfaces (conversation, Context Lens) read one request per LLM
+ * call. Then the events are appended to persistence so the child session is
+ * viewable.
  *
  * A resumed round (or a live poll) passes the already-mirrored
  * transcript-line count so only the delta is appended — re-mirroring earlier
@@ -221,26 +221,24 @@ export interface KimiMirrorOptions {
  * strictly sequential steps (one open at a time — a second `step/start`
  * while another step is open fails the session's reload validation), and the
  * live conversation assembler needs the boundary to materialize the step at
- * all. A think/assistant line that completes an in-flight stream folds at
- * the stream's reserved step (see {@link KimiMirrorStreams}), after
- * `finalizeBefore` has closed every stream reservation below it; a
- * sequential fold never takes a step a stream reserved.
- *
- * A tool line folds the native lifecycle inside one step: an assistant
- * message advertising the tool-call block, the `tool/call`, and its
- * `tool/result` — the reader resolves every advertised call before the step
- * closes, so a line whose result the wire has not recorded yet HOLDS the
- * pass (the result merges into the call's line in place, so a later pass
- * sees it; the offset stops before the held line). The settle pass folds the
- * remainder with a synthesized interrupted result.
+ * all. A fold paired with in-flight streams lands at the earliest consumed
+ * reservation (see {@link KimiMirrorStreams}), after `finalizeBefore` has
+ * closed every stream reservation below it; a sequential fold never takes a
+ * step a stream reserved. Mid-round, a wire step the wire has not CLOSED yet
+ * (no `step.end`) holds the pass — its parts may still arrive — and so does
+ * an unresulted tool call (the reader resolves every advertised call before
+ * the step closes; the result merges into the call's line in place, so the
+ * next pass sees it). The settle pass folds the remainder with a synthesized
+ * interrupted result. Lines the wire never step-tagged (older kimi) fold one
+ * by one, immediately, as before.
  *
  * Usage accounting is exactly-once ACROSS passes: each `usage.record` is
- * tagged with the transcript position it occurred at, and a pass attaches the
- * records between the old offset and its own consumed end — the records that
- * trail THIS pass's lines — summed onto the delta's final assistant message.
- * (A record flushed only after its line was already mirrored belongs to no
- * later pass and is dropped; kimi flushes content and usage together per
- * request, so this window is a flush race, not the norm.)
+ * tagged with the transcript position it occurred at, a pass owns the records
+ * between the old offset and its own consumed end, and inside the window each
+ * record rides the unit whose line span encloses it — one record per wire
+ * step, landing on its own step's message. (A record raced PAST its content
+ * encloses into the next unit instead: attribution off by one in a flush
+ * race, totals still exact.)
  * @param ctx - host context carrying the session persistence service.
  * @param childSession - the dsh subagent session created for this delegation.
  * @param homeDir - the `kimi` harness's scoped home.
@@ -249,8 +247,8 @@ export interface KimiMirrorOptions {
  * @param fromLines - transcript lines already mirrored into the child session
  *   (0 for the first round); only lines after this offset are appended.
  * @returns the new mirror offset and the newly mirrored lines' texts. A held
- *   unresulted tool line stops the offset before itself; the next pass
- *   retries from there.
+ *   unit (open wire step or unresulted tool) stops the offset before itself;
+ *   the next pass retries from there.
  */
 export async function mirrorKimiSessionDelta(
   ctx: Context,
@@ -321,108 +319,201 @@ export async function mirrorKimiSessionDelta(
   // whose delta a live poll already drained still owes the round its real
   // count, and a resume round must not inherit the earlier rounds' calls.
   const toolCalls = roundToolCalls(transcript.lines, options?.turn)
-  // A tool line whose result the wire has not recorded yet cannot close its
-  // step (the released-log contract resolves every advertised call before
-  // step/end), so a mid-round pass HOLDS there: the offset stops before the
-  // line and the fold retries once the wire records the result (it merges
-  // into the call's line in place, same transcript position). The settle
-  // pass never holds — a result that will never arrive folds as a
-  // synthesized interrupted one.
-  const holdIndex = options?.settle === true
-    ? -1
-    : delta.findIndex(line => line?.kind === 'tool' && line.result === undefined)
-  const folded = holdIndex < 0 ? delta : delta.slice(0, holdIndex)
-  const consumedTotal = fromLines + folded.length
-  // The pass attaches the usage records whose content ITS lines carry. kimi
-  // writes a request's `usage.record` BEFORE the content parts it accounts
-  // for, so a record sitting exactly on the delta boundary (its content is
-  // entirely inside this pass) must attach here — otherwise incremental
-  // folds (live mid-run + settle) lose the round's accounting entirely. The
-  // window closes at the held line: records past it belong to a later pass.
+  // Fold units: contiguous think/assistant/tool lines sharing one wire step
+  // fold as ONE dsh step — one LLM request's full shape (reasoning, reply
+  // text and the tool lifecycle in a single step), the host session's own
+  // shape. Lines the wire did not step-tag (older kimi) fold one by one.
+  type ContentLine = KimiTranscriptLine & { kind: 'assistant' | 'think' | 'tool' }
+  const units: KimiTranscriptLine[][] = []
+  for (const line of delta) {
+    if (line === undefined) continue
+    const last = units.at(-1)
+    const head = last?.[0]
+    if (
+      last !== undefined && head !== undefined
+      && line.kind !== 'user' && head.kind !== 'user'
+      && line.wireStep !== undefined && line.wireStep === (head as ContentLine).wireStep
+      && line.turn === head.turn
+    ) {
+      last.push(line)
+      continue
+    }
+    units.push([line])
+  }
+  // Mid-round, a unit that may still grow HOLDS the pass: a wire-step group
+  // whose step the wire has not closed yet, or a unit whose tool call lacks
+  // its result (the released-log contract resolves every advertised call
+  // before its step closes; the result merges into the call's line in place,
+  // so the next pass sees it). The offset stops before the first such unit
+  // and the fold retries once the wire completes it. The settle pass never
+  // holds — a result that will never arrive folds as a synthesized
+  // interrupted one.
+  let holdAt = -1
+  if (options?.settle !== true) {
+    for (let index = 0; index < units.length; index += 1) {
+      const unit = units[index] as KimiTranscriptLine[]
+      const head = unit[0] as KimiTranscriptLine
+      const openGroup = head.kind !== 'user'
+        && (head as ContentLine).wireStep !== undefined
+        && !transcript.closedSteps.has(`${head.turn}:${(head as ContentLine).wireStep}`)
+      if (openGroup || unit.some(line => line.kind === 'tool' && line.result === undefined)) {
+        holdAt = index
+        break
+      }
+    }
+  }
+  const foldedUnits = holdAt < 0 ? units : units.slice(0, holdAt)
+  const consumedTotal = fromLines + foldedUnits.reduce((n, unit) => n + unit.length, 0)
+  // Usage is exactly-once across passes: a pass owns the records at positions
+  // [fromLines, consumedTotal] (the boundary included — a record flushed right
+  // after its content otherwise falls out of every span). kimi's norm is one
+  // usage.record per wire step, right BEFORE the step's content, so a
+  // step-tagged unit claims its own line span's records; records no tagged
+  // unit claims (untagged spans on older wires, or the boundary) sum onto the
+  // pass's last folded content unit — the pre-tagging shape.
+  const unitUsage: (TokenUsage | undefined)[] = []
+  const claimed: { from: number; to: number }[] = []
+  let unitStart = fromLines
+  for (const unit of foldedUnits) {
+    const start = unitStart
+    unitStart += unit.length
+    const head = unit[0] as KimiTranscriptLine
+    if (head.kind !== 'user' && (head as ContentLine).wireStep !== undefined) {
+      claimed.push({ from: start, to: unitStart })
+      unitUsage.push(sumUsageRecords(
+        transcript.usageRecords.filter(record => record.line >= start && record.line < unitStart),
+      ))
+    } else {
+      unitUsage.push(undefined)
+    }
+  }
+  const unclaimedUsage = sumUsageRecords(
+    transcript.usageRecords.filter(record =>
+      record.line >= fromLines && record.line <= consumedTotal
+      && !claimed.some(span => record.line >= span.from && record.line < span.to)),
+  )
   const deltaUsage = sumUsageRecords(
     transcript.usageRecords.filter(record => record.line >= fromLines && record.line <= consumedTotal),
   )
-  // Attach the summed usage to the delta's LAST assistant message (text or
-  // think both carry the round's accounting; tool lines do not). A line whose
-  // stream was already sealed by a gap fill DROPS instead of folding, so it
-  // cannot carry the usage — the carrier is the last line that folds.
-  let lastAssistant = -1
-  for (let index = 0; index < folded.length; index += 1) {
-    const line = folded[index]
-    if (line === undefined || line.kind === 'user' || line.kind === 'tool') continue
-    if (options?.streams?.peekStream?.(line)?.sealed === true) continue
-    lastAssistant = index
-  }
-  // Continue step numbering from the steps already mirrored (assistant
-  // messages AND tool events both consume steps), so a round mirrored across
-  // several live polls keeps 1, 2, 3… instead of restarting per poll.
-  const steps = new Map<number, number>()
+  // The steps a fold may NOT take: every step already written (the session's
+  // own event ledger), consulted per turn. A round mirrored across several
+  // live polls keeps its earlier writes, so later polls never reuse them.
+  const takenSteps = new Map<number, Set<number>>()
   for (const event of childSession.snapshotEvents()) {
     const data = event.data as { turn?: number; step?: number }
     if (typeof data.turn === 'number' && typeof data.step === 'number') {
-      steps.set(data.turn, Math.max(steps.get(data.turn) ?? 0, data.step + 1))
+      const taken = takenSteps.get(data.turn) ?? new Set<number>()
+      taken.add(data.step)
+      takenSteps.set(data.turn, taken)
     }
   }
   /**
-   * The next sequential fold step in one turn: the running counter, shifted
-   * past every step an in-flight stream reserved (the stream's completion
-   * fold lands at its reserved coordinate — a sequential fold taking it
-   * would collide with the reservation).
+   * The fold's coordinate: the smallest step of the turn that nothing holds
+   * — neither written nor currently reserved. Filling the smallest free step
+   * keeps the stored log dense even when a stream reservation below was
+   * released mid-round (its content rode an earlier fold's step).
    */
   const nextFoldStep = (turn: number): number => {
-    let step = steps.get(turn) ?? 1
-    const reserved = options?.streams?.reservedSteps(turn)
-    if (reserved !== undefined && reserved.length > 0) {
-      const skip = new Set(reserved)
-      while (skip.has(step)) step += 1
-    }
-    steps.set(turn, step + 1)
+    const taken = new Set(takenSteps.get(turn))
+    for (const reserved of options?.streams?.reservedSteps(turn) ?? []) taken.add(reserved)
+    let step = 1
+    while (taken.has(step)) step += 1
+    const written = takenSteps.get(turn) ?? new Set<number>()
+    written.add(step)
+    takenSteps.set(turn, written)
     return step
   }
-  /** Whether this pass attached its window's usage to a folded message. */
-  let usageAttached = false
+  /** Record a fold's coordinate chosen by a stream pairing. */
+  const markTaken = (turn: number, step: number): void => {
+    const written = takenSteps.get(turn) ?? new Set<number>()
+    written.add(step)
+    takenSteps.set(turn, written)
+  }
+  /** The window's accounting that no fold carried (dropped units' sums). */
+  let carryUsage: TokenUsage | undefined
+  // The pass's last content unit carries the records no tagged unit claimed.
+  let lastContentUnit = -1
+  for (let index = foldedUnits.length - 1; index >= 0; index -= 1) {
+    if ((foldedUnits[index] as KimiTranscriptLine[])[0]?.kind !== 'user') {
+      lastContentUnit = index
+      break
+    }
+  }
   const texts: string[] = []
-  for (let index = 0; index < folded.length; index += 1) {
-    const line = folded[index]
-    if (line === undefined) continue
+  for (let unitIndex = 0; unitIndex < foldedUnits.length; unitIndex += 1) {
+    const unit = foldedUnits[unitIndex] as KimiTranscriptLine[]
+    const head = unit[0] as KimiTranscriptLine
+    // The unit's own records plus whatever a dropped unit handed forward.
+    let usage = addTokenUsage(carryUsage, unitUsage[unitIndex])
+    carryUsage = undefined
+    if (unitIndex === lastContentUnit) usage = addTokenUsage(usage, unclaimedUsage)
     // The wire's turn number (1-based, matching the provider's turn/start
     // numbering) is the dsh round; no offset is needed because both count the
     // same rounds.
-    const turn = line.turn
-    if (line.kind === 'user') {
+    const turn = head.turn
+    if (head.kind === 'user') {
       // The live driver appends the round's user/message at turn start (so the
       // question renders before the streamed think/text instead of after it).
       // Skip the wire's copy of the same prompt — scoped to THIS turn so two
       // rounds with identical prompts still fold independently.
-      if (userAlreadyAppended(childSession, turn, line.text)) continue
-      steps.set(turn, 1)
-      childSession.append('user/message', userEvent(line.text), { surfaceOp: 'append' })
-      texts.push(line.text)
-    } else if (line.kind === 'tool') {
-      // The native tool lifecycle inside one step: an assistant message
-      // advertising the tool-call block, the call, then its result — the
-      // released-log reader pairs call and result against the advertisement
-      // and resolves every advertised call before the step closes.
-      const reserved = options?.streams?.completeTool?.(line)
-      const step = reserved?.step ?? nextFoldStep(turn)
-      // Close every stream reservation below the fold step first: stored
-      // steps must land dense and strictly sequential.
-      options?.streams?.finalizeBefore?.(turn, step)
-      steps.set(turn, Math.max(steps.get(turn) ?? 1, step + 1))
-      const args = line.args ?? ''
-      childSession.append('step/start', { turn, step })
-      childSession.append('assistant/message', {
-        turn,
-        step,
-        message: assistantEvent([{ type: 'tool-call', id: line.id as ToolCallBlockId, name: line.name, arguments: args }], line.model),
-        stream: [],
-      }, { surfaceOp: 'append' })
+      if (userAlreadyAppended(childSession, turn, head.text)) continue
+      childSession.append('user/message', userEvent(head.text), { surfaceOp: 'append' })
+      texts.push(head.text)
+      carryUsage = usage
+      continue
+    }
+    const toolLines = unit.filter((line): line is KimiTranscriptLine & { kind: 'tool' } => line.kind === 'tool')
+    const reasoning = unit.filter(line => line.kind === 'think').map(line => line.text).join('')
+    const text = unit.filter(line => line.kind === 'assistant').map(line => line.text).join('')
+    const kinds: ('think' | 'text')[] = [
+      ...reasoning.trim() === '' ? [] : ['think' as const],
+      ...text.trim() === '' ? [] : ['text' as const],
+    ]
+    // Pair the fold with the round's in-flight streams, consuming the kinds
+    // present: the fold lands at the earliest consumed reservation, and a
+    // kind already gap-sealed keeps its durable triple — its content stays
+    // out of this message.
+    const pairing = kinds.length === 0 ? undefined : options?.streams?.completeStreams(turn, kinds)
+    const sealed = new Set(pairing?.sealed ?? [])
+    const blocks: ContentBlock[] = []
+    if (reasoning.trim() !== '' && !sealed.has('think')) blocks.push({ type: 'reasoning', text: reasoning })
+    if (text.trim() !== '' && !sealed.has('text')) blocks.push({ type: 'text', text })
+    for (const line of toolLines) {
+      blocks.push({ type: 'tool-call', id: line.id as ToolCallBlockId, name: line.name, arguments: line.args ?? '' })
+    }
+    for (const line of unit) texts.push(kimiLineProgressText(line))
+    if (blocks.length === 0) {
+      // Every content kind already durable via a gap fill and no tool
+      // lifecycle to fold: the unit drops; its usage rides the next fold.
+      carryUsage = usage
+      continue
+    }
+    // A tool reservation only pins chronological order — the fold's step
+    // carries the whole lifecycle, so the reserved coordinate frees.
+    for (const line of toolLines) options?.streams?.releaseTool?.(line)
+    const step = pairing?.step ?? nextFoldStep(turn)
+    markTaken(turn, step)
+    // Close every stream reservation below the fold step first: stored steps
+    // must land dense and strictly sequential.
+    options?.streams?.finalizeBefore?.(turn, step)
+    const model = [...unit].reverse().find(line => line.model !== undefined)?.model
+    childSession.append('step/start', { turn, step })
+    childSession.append('assistant/message', {
+      turn,
+      step,
+      message: assistantEvent(blocks, model),
+      stream: [],
+      ...usage === undefined ? {} : { usage },
+    }, { surfaceOp: 'append' })
+    // The native tool lifecycle inside the same step: the message advertises
+    // every call, then each call resolves before the step closes.
+    for (const line of toolLines) {
       const call = childSession.append('tool/call', {
         turn,
         step,
         callId: line.id as ToolCallEventCallId,
         name: line.name,
-        arguments: args,
+        arguments: line.args ?? '',
       })
       childSession.append('tool/result', {
         turn,
@@ -433,56 +524,19 @@ export async function mirrorKimiSessionDelta(
           isError: line.result === undefined,
         }),
       }, { surfaceOp: 'append', sourceEventSeqs: [call.seq] })
-      childSession.append('step/end', { turn, step })
-      texts.push(kimiLineProgressText(line))
-    } else {
-      // A completed think/assistant line pairs with its in-flight stream when
-      // one is live (the token granularity's per-kind stream): the fold lands
-      // at the stream's reserved step as one atomic triple. A sealed pairing
-      // drops the line instead — finalizeBefore already wrote the stream's
-      // durable triple, so folding the line would duplicate the content.
-      const completion = options?.streams?.completeStream(line)
-      if (completion?.sealed === true) {
-        texts.push(kimiLineProgressText(line))
-        continue
-      }
-      if (completion !== undefined) {
-        options?.streams?.finalizeBefore?.(turn, completion.step)
-        steps.set(turn, Math.max(steps.get(turn) ?? 1, completion.step + 1))
-        childSession.append('step/start', { turn, step: completion.step })
-        if (index === lastAssistant && deltaUsage !== undefined) usageAttached = true
-        childSession.append('assistant/message', {
-          turn,
-          step: completion.step,
-          message: assistantEvent(lineBlocks(line), line.model),
-          stream: [],
-          ...index === lastAssistant && deltaUsage !== undefined ? { usage: deltaUsage } : {},
-        }, { surfaceOp: 'append' })
-        childSession.append('step/end', { turn, step: completion.step })
-        texts.push(kimiLineProgressText(line))
-        continue
-      }
-      const step = nextFoldStep(turn)
-      options?.streams?.finalizeBefore?.(turn, step)
-      childSession.append('step/start', { turn, step })
-      if (index === lastAssistant && deltaUsage !== undefined) usageAttached = true
-      childSession.append('assistant/message', {
-        turn,
-        step,
-        message: assistantEvent(lineBlocks(line), line.model),
-        stream: [],
-        ...index === lastAssistant && deltaUsage !== undefined ? { usage: deltaUsage } : {},
-      }, { surfaceOp: 'append' })
-      childSession.append('step/end', { turn, step })
-      texts.push(kimiLineProgressText(line))
     }
+    childSession.append('step/end', { turn, step })
   }
   await persistChildSession(ctx, childSession)
+  // The window's accounting that folded nowhere: dropped units' carry plus the
+  // unclaimed sum when no content unit folded at all.
+  const remainder = addTokenUsage(carryUsage, lastContentUnit === -1 ? unclaimedUsage : undefined)
   return {
     total: consumedTotal,
     texts,
     ...deltaUsage !== undefined ? { usage: deltaUsage } : {},
-    ...usageAttached ? { usageAttached: true } : {},
+    ...deltaUsage !== undefined && remainder === undefined ? { usageAttached: true } : {},
+    ...remainder !== undefined ? { usageUnattached: remainder } : {},
     ...observedModel !== undefined ? { model: observedModel } : {},
     ...toolCalls !== undefined ? { toolCalls } : {},
   }
