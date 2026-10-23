@@ -175,6 +175,8 @@ export function roomMessageTool(backend: RoomMessageToolBackend) {
       + 'A member is an independent session: the message runs asynchronously in its own session. '
       + 'kind "task" (default) hands it work — its final reply is reported back to you automatically, '
       + 'quoting the message id, so do not poll; kind "notify" is an FYI that is never reported back. '
+      + 'After sending, end your turn: never sleep or poll for the result (room_read included) — the '
+      + 'report arrives on its own. Writing "@name" in a reply reaches nobody; only this tool does. '
       + 'Pass inReplyTo with a message id (e.g. m12) when answering one. The member argument is a '
       + 'roster name (read room_read for current names); an unknown name is rejected with the live '
       + 'roster, so retry with one of those.',
@@ -267,7 +269,7 @@ export function roomMessageTool(backend: RoomMessageToolBackend) {
 export function roomReadTool(backend: { readRoomContext(sessionId: string): Promise<string> }) {
   return defineTool({
     name: 'room_read',
-    description: 'Read the current room roster, coordinator, deliveries, recent outcomes and available harness providers. Reading does not wake any member.',
+    description: 'Read the current room: roster with each member\'s role, the coordinator, the tasks with their numbers (for the task parameter), deliveries, recent outcomes and available harness providers. Reading does not wake any member. Use it to look around, not to wait for a result — reports arrive on their own.',
     parameters: {},
     output: { schema: { type: 'object', additionalProperties: false, properties: { text: { type: 'string', required: true } } },
       render: (_args, value) => [{ type: 'text', text: value.text }] },

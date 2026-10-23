@@ -30,7 +30,9 @@ const TOOL_DESCRIPTION = [
   '`to` is the member name (or its dsh child session id).',
   'kind "task" (default) hands it work: in a room, its final reply is reported back to you automatically, citing the message id — do not poll.',
   'kind "notify" is an FYI and is never reported back. Pass inReplyTo (e.g. m12) when answering a message.',
-  'Never sleep or poll for the result: end your turn, the report arrives on its own.',
+  'Never sleep or poll for the result (room_read included): end your turn, the report arrives on its own.',
+  'Writing "@name" in a reply reaches nobody; only this tool does.',
+  'Optional note: what you will wait for before acting on the result; optional task: "new" or a task number from room_read.',
   'The receipt is returned verbatim: sent #m<id> … / pending-confirm … / busy / an error reason.',
 ].join(' ')
 
@@ -51,7 +53,7 @@ const TOOL_SCHEMA = {
 const ROOM_TOOLS = [
   { name: 'room_plan', description: 'Manage a formal goal with stages, dependent tasks and evidence review. Read room_read for plan state and the command contract. Ordinary small work uses room_message. Workers may submit only their own current attempt.',
     inputSchema: { type: 'object', properties: { command: { type: 'string', description: 'JSON command with action, requestId and expectedRevision; see room_read planCommands.' } }, required: ['command'], additionalProperties: false } },
-  { name: 'room_read', description: 'Read your room roster, coordinator, deliveries, recent outcomes and available harness providers. Identity comes from the host.',
+  { name: 'room_read', description: 'Read your room: roster with roles, coordinator, tasks with their numbers, deliveries, recent outcomes and available harness providers. Identity comes from the host. Use it to look around, not to wait for a result.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
   { name: 'room_invite', description: 'Coordinator only: invite a member. An optional firstTask starts in the background and returns its result to you automatically.',
     inputSchema: { type: 'object', properties: {
