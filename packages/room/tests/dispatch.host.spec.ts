@@ -94,9 +94,11 @@ describe('DispatchEngine (real composition)', () => {
     await bench.service.engine.idle()
 
     expect(bench.facade.start).toHaveBeenCalledTimes(1)
-    const [parentId, provider, prompt] = bench.facade.start.mock.calls[0] as [string, string, ContentBlock[]]
+    const [parentId, provider, prompt, options] = bench.facade.start.mock.calls[0] as [string, string, ContentBlock[], { label?: string }]
     expect(parentId).toBe(bench.sessionId)
     expect(provider).toBe('kimi')
+    // The member's name labels its child in the host's subagent list.
+    expect(options.label).toBe('ada')
     const text = textOf(prompt)
     // First dispatch: one briefing (identity, private instructions, the
     // tool-based contract), the task is the tail.

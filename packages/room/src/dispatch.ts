@@ -706,13 +706,14 @@ export class DispatchEngine {
     const { prompt, carried, heldCarried } = assemblePrompt(room, member, cursor, text, relayIds, dispatchSeq)
     const prepared = member.childSessionId !== undefined && facade.isPreparedMember?.(member.childSessionId) === true
     const pendingRun = prepared
-      ? facade.start(room.id, provider, [{ type: 'text', text: prompt }], { preparedMemberId: member.childSessionId!, ...admission })
+      ? facade.start(room.id, provider, [{ type: 'text', text: prompt }], { preparedMemberId: member.childSessionId!, label: member.name, ...admission })
       : member.childSessionId === undefined
       // The invite-time model lands as the delegation's own model: the facade
       // records it with the first start and every later resume re-requests it
       // (providers bind it at spawn for exec and live alike).
       ? facade.start(room.id, provider, [{ type: 'text' as const, text: prompt }],
-          { ...admission, ...member.model === undefined ? {} : { model: member.model }, ...member.cwd === undefined ? {} : { cwd: member.cwd } })
+          // The member's name labels its child session in the host's subagent list.
+          { ...admission, label: member.name, ...member.model === undefined ? {} : { model: member.model }, ...member.cwd === undefined ? {} : { cwd: member.cwd } })
       : facade.resume(room.id, provider, member.childSessionId, [{ type: 'text' as const, text: prompt }], { ...admission, ...member.cwd === undefined ? {} : { cwd: member.cwd } })
     // Existing members can enter core's queue immediately. A fresh/prepared
     // identity must publish its first handle before the next submission resumes it.
