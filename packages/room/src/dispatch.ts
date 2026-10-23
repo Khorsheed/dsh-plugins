@@ -177,8 +177,7 @@ function assemblePrompt(
 
 /**
  * Reports held for a member that it has not yet seen in a round: hold
- * verdicts without a later release. The room's own agent also counts as
- * having seen them once it spoke after the hold (the human woke it directly).
+ * verdicts without a later release.
  */
 export function pendingHolds(events: readonly SessionEvent[], recipientId: string): readonly number[] {
   const open = new Map<number, number>()
@@ -187,12 +186,21 @@ export function pendingHolds(events: readonly SessionEvent[], recipientId: strin
     if (event.data.verdict === 'hold') open.set(event.data.dispatchSeq, event.seq)
     else if (event.data.verdict === 'release') open.delete(event.data.dispatchSeq)
   }
-  const state = replay(events)
-  const recipient = state.members.find(member => memberId(events, member) === recipientId)
-  if (recipient?.kind === 'main-agent') {
-    for (const [seq, at] of open) if (events.some(event => event.type === 'assistant/message' && event.seq > at)) open.delete(seq)
-  }
   return [...open.keys()]
+}
+
+/**
+ * The held reports of a member as one prompt section (their envelopes and
+ * texts), or undefined when nothing is held — what a turn the room did not
+ * start (a human waking the agent directly) must still carry.
+ */
+export function heldReportsText(events: readonly SessionEvent[], recipientId: string): { readonly text: string; readonly seqs: readonly number[] } | undefined {
+  const held = (replay(events).deliveries ?? []).filter(row => row.memberId === recipientId && row.status === 'held')
+  if (held.length === 0) return undefined
+  return {
+    text: held.map(row => `${envelopeLine(events, row.dispatchSeq) ?? ''}\n${row.text}`.trim()).join('\n\n'),
+    seqs: held.map(row => row.dispatchSeq),
+  }
 }
 
 /** The text of the last assistant message after `afterSeq` ('' when none). */
@@ -477,7 +485,7 @@ export class DispatchEngine {
    * context — carried by this prompt (`seqs`) or already in its inbox — so
    * close those holds and drop the member's wake timer.
    */
-  private async markHeldReleased(room: Session, member: RoomMember, seqs: readonly number[]): Promise<void> {
+  async markHeldReleased(room: Session, member: RoomMember, seqs: readonly number[]): Promise<void> {
     const events = room.snapshotEvents()
     const id = memberId(events, member)
     for (const seq of seqs) room.append('room/delivery-state', { id: `${seq}:${id}`, dispatchSeq: seq, memberId: id, state: 'done', text: 'carried' })
@@ -497,9 +505,12 @@ export class DispatchEngine {
   }
 
   /**
-   * Keep a report for later: journal it as a held dispatch, put it straight
-   * into a live native agent's inbox (no wake — it is in context whenever the
-   * agent next runs, whoever wakes it), and arm the wake-anyway timer.
+   * Keep a report for later: journal it as a held dispatch and arm the
+   * wake-anyway timer. It is NOT pushed into an agent inbox: the host runs
+   * one turn per queued inbox message, so held reports would each wake their
+   * own turn. They ride the recipient's next round instead — the room's own
+   * prompt, or (a human waking a native agent directly) the turn's first step
+   * through {@link heldReportsMessage}.
    */
   private async holdReport(room: Session, recipient: RoomMember, text: string, intent: RoomHeldDispatch, verdict: GateVerdict): Promise<void> {
     const events = room.snapshotEvents()
@@ -511,13 +522,6 @@ export class DispatchEngine {
     })
     room.append('room/report-gate', { dispatchSeq: dispatch.seq, memberId: recipientId, member: recipient.name, verdict: 'hold', reason: verdict.reason,
       ...verdict.probability === undefined ? {} : { probability: verdict.probability } })
-    const agent = recipient.kind === 'main-agent' ? this.ctx.agents.get(room.id)
-      : recipient.kind === 'native' && recipient.childSessionId !== undefined ? this.ctx.agents.get(recipient.childSessionId) : undefined
-    if (agent !== undefined) {
-      const envelope = envelopeLine(room.snapshotEvents(), dispatch.seq)
-      agent.send(createUserMessage({ content: [{ type: 'text', text: `${envelope ?? ''}\n${text}`.trim() }], source: roomSource() }), 'next-turn', false)
-      room.append('room/delivery-state', { id: `${dispatch.seq}:${recipientId}`, dispatchSeq: dispatch.seq, memberId: recipientId, state: 'done', text: 'inbox' })
-    }
     // Armed before the flush yields: a concurrent recover() must see this
     // process owns the hold.
     const key = this.holdKey(room.id, recipientId)
@@ -546,8 +550,7 @@ export class DispatchEngine {
     const recipient = replay(events).members.find(member => memberId(events, member) === recipientId)
     if (open.length === 0 || recipient === undefined) return false
     const ids = open.map(seq => `#${messageId(seq)}`).join('、')
-    const text = `（${open.length} 条回报一直等着交给你：${ids}${reason === 'timeout' ? '，已经等了一段时间' : ''}。内容${recipient.kind === 'cli' ? '附在上面' : '已在你的上下文里'}，用户也已在房间里看到，不要复述。）`
-    for (const seq of open) room.append('room/report-gate', { dispatchSeq: seq, memberId: recipientId, member: recipient.name, verdict: 'release', reason })
+    const text = `（以上 ${open.length} 条回报一直等着交给你：${ids}${reason === 'timeout' ? '，已经等了一段时间' : ''}。用户也已在房间里看到，不要复述。）`
     const release = room.append('room/dispatch', { id: randomUUID(), origin: 'report', targets: [recipient.name], targetIds: [recipientId], text, releases: open, hop: 1 })
     await this.ctx.sessions.flush(room)
     this.dispatch(room, recipient.name, text, { dispatchSeq: release.seq, targetId: recipientId })

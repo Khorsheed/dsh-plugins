@@ -6,7 +6,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
-import type { ContentBlock, UserMessage } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, type ContentBlock, type UserMessage } from '@deepseek-ai/dsh-llm'
+import { agentEvents, type Agent } from '@deepseek-ai/dsh-agent'
 import type { SubagentResult, SubagentRun } from '@deepseek-ai/dsh-subagent'
 import RoomService from '../src/index.ts'
 import { judgeReport } from '../src/report-gate.ts'
@@ -82,7 +83,7 @@ const finish = (text: string): SubagentResult => ({ output: [{ type: 'text', tex
 const tick = () => new Promise(resolve => setTimeout(resolve, 0))
 
 describe('report gate in the room', () => {
-  it('holds an early result in the coordinator\'s inbox and hands everything over with the last one', async () => {
+  it('holds an early result without waking the coordinator and hands everything over in ONE round with the last one', async () => {
     const bench = await boot(0.1)
     await bench.service.invite({ sessionId: bench.sessionId, provider: 'kimi', name: 'ada' })
     await bench.service.invite({ sessionId: bench.sessionId, provider: 'codex', name: 'bill' })
@@ -91,12 +92,10 @@ describe('report gate in the room', () => {
     await vi.waitFor(() => expect(bench.facade.start).toHaveBeenCalledTimes(2))
 
     bench.flights.get('kimi')!.resolve(finish('我是 ada'))
-    await vi.waitFor(() => expect(bench.agent.send).toHaveBeenCalledOnce())
-    // Held: in the inbox without waking (no followup), judged with the note.
-    const [held, target, wakeup] = bench.agent.send.mock.calls[0]! as [UserMessage, string, boolean]
-    expect([target, wakeup]).toEqual(['next-turn', false])
-    expect(textOf(held.content)).toMatch(/【#m\d+ 的回报 · 来自 ada · 完成】.*不要复述/)
-    expect(textOf(held.content)).toContain('我是 ada')
+    await vi.waitFor(() => expect(bench.judge).toHaveBeenCalledOnce())
+    await tick()
+    // Held: nothing reaches the agent yet (an inbox push would cost its own turn).
+    expect(bench.agent.send).not.toHaveBeenCalled()
     expect(bench.agent.followup).not.toHaveBeenCalled()
     const asked = bench.judge.mock.calls[0]![0].state as { coordinatorNotes: string[]; progress: { done: number; total: number } }
     expect(asked.coordinatorNotes).toEqual(['两位都打完招呼再一起跟用户说'])
@@ -105,12 +104,16 @@ describe('report gate in the room', () => {
     expect(session.snapshotEvents().filter(event => event.type === 'room/report-gate').map(event => event.type === 'room/report-gate' ? [event.data.verdict, event.data.reason] : []))
       .toEqual([['hold', 'model']])
 
-    // The last result needs no model: it wakes the coordinator, which then has both.
+    // The last result needs no model: ONE round carries both reports.
     bench.flights.get('codex')!.resolve(finish('我是 bill'))
     await vi.waitFor(() => expect(bench.agent.followup).toHaveBeenCalledOnce())
     await bench.service.engine.idle()
     expect(bench.judge).toHaveBeenCalledOnce()
-    expect(textOf((bench.agent.followup.mock.calls[0]![0] as UserMessage).content)).toContain('我是 bill')
+    expect(bench.agent.followup).toHaveBeenCalledOnce()
+    const merged = textOf((bench.agent.followup.mock.calls[0]![0] as UserMessage).content)
+    expect(merged).toMatch(/【#m\d+ 的回报 · 来自 ada · 完成】（这条回复用户已在房间里看到，不要复述）\n我是 ada/)
+    expect(merged).toContain('我是 bill')
+    expect(merged.indexOf('我是 ada')).toBeLessThan(merged.indexOf('我是 bill'))
     const state = await bench.service.getState({ sessionId: bench.sessionId })
     if (!state.ok) throw new Error('room unavailable')
     expect(pendingHolds(session.snapshotEvents(), state.value.members.find(member => member.name === 'dsh')!.id!)).toEqual([])
@@ -124,12 +127,40 @@ describe('report gate in the room', () => {
     await bench.service.messageMember({ sessionId: bench.sessionId, member: 'bill', text: '打招呼' })
     await vi.waitFor(() => expect(bench.facade.start).toHaveBeenCalledTimes(2))
     bench.flights.get('kimi')!.resolve(finish('我是 ada'))
-    await vi.waitFor(() => expect(bench.agent.send).toHaveBeenCalledOnce())
+    await vi.waitFor(() => expect(bench.judge).toHaveBeenCalledOnce())
     await tick()
     expect(await bench.service.releaseReports({ sessionId: bench.sessionId, name: 'dsh' })).toEqual({ ok: true, value: { released: true } })
     await vi.waitFor(() => expect(bench.agent.followup).toHaveBeenCalledOnce())
-    expect(textOf((bench.agent.followup.mock.calls[0]![0] as UserMessage).content)).toMatch(/1 条回报一直等着交给你：#m\d+/)
+    const released = textOf((bench.agent.followup.mock.calls[0]![0] as UserMessage).content)
+    expect(released).toContain('我是 ada')
+    expect(released).toMatch(/以上 1 条回报一直等着交给你：#m\d+/)
     expect(await bench.service.releaseReports({ sessionId: bench.sessionId, name: 'dsh' })).toEqual({ ok: true, value: { released: false } })
+    bench.flights.get('codex')!.resolve(finish('我是 bill'))
+    await bench.service.engine.idle()
+  })
+
+  it('a turn the human starts while reports are held carries them on its first step', async () => {
+    const bench = await boot(0.1)
+    await bench.service.invite({ sessionId: bench.sessionId, provider: 'kimi', name: 'ada' })
+    await bench.service.invite({ sessionId: bench.sessionId, provider: 'codex', name: 'bill' })
+    await bench.service.messageMember({ sessionId: bench.sessionId, member: 'ada', text: '打招呼' })
+    await bench.service.messageMember({ sessionId: bench.sessionId, member: 'bill', text: '打招呼' })
+    await vi.waitFor(() => expect(bench.facade.start).toHaveBeenCalledTimes(2))
+    bench.flights.get('kimi')!.resolve(finish('我是 ada'))
+    await vi.waitFor(() => expect(bench.judge).toHaveBeenCalledOnce())
+    await tick()
+
+    const session = bench.ctx.sessions.get(bench.sessionId)!
+    const human = createUserMessage({ content: [{ type: 'text', text: '现在进度如何？' }], source: { kind: 'user' } })
+    const next = vi.fn(async () => ({ kind: 'enter' as const, messages: [human] }))
+    const decision = await agentEvents(bench.ctx, { session } as Agent).waterfall('agent/pre-step', { messages: [human], turn: 2, step: 1, signal: new AbortController().signal }, next)
+    if (decision.kind !== 'enter') throw new Error('expected enter')
+    expect(decision.messages).toHaveLength(2)
+    expect(textOf(decision.messages[0]!.content)).toContain('我是 ada')
+    expect(decision.messages[1]).toBe(human)
+    // Carried once: the hold is closed, a second step adds nothing.
+    const again = await agentEvents(bench.ctx, { session } as Agent).waterfall('agent/pre-step', { messages: [human], turn: 3, step: 1, signal: new AbortController().signal }, next)
+    expect(again.kind === 'enter' && again.messages).toEqual([human])
     bench.flights.get('codex')!.resolve(finish('我是 bill'))
     await bench.service.engine.idle()
   })
@@ -143,7 +174,6 @@ describe('report gate in the room', () => {
     await vi.waitFor(() => expect(bench.facade.start).toHaveBeenCalledTimes(2))
     bench.flights.get('kimi')!.resolve(finish('接口写好了'))
     await vi.waitFor(() => expect(bench.agent.followup).toHaveBeenCalledOnce())
-    expect(bench.agent.send).not.toHaveBeenCalled()
     bench.flights.get('codex')!.resolve(finish('好了'))
     await bench.service.engine.idle()
   })
