@@ -1,0 +1,60 @@
+/* Live member output, drawn the way the host draws its own streaming turn:
+   thinking is the host's think row (one line: icon, title, the latest
+   paragraph's first line shimmering; expandable to the full text), the
+   answer reads as body Markdown. Sizes follow the host's content tokens. */
+
+.item {
+  min-width: 0;
+}
+
+.item + .item {
+  margin-top: 4px;
+}
+
+.thinkRow {
+  overflow: hidden;
+}
+
+.leading {
+  flex-shrink: 0;
+}
+
+.title {
+  font-weight: 400;
+}
+
+.separator {
+  flex: none;
+  width: 2px;
+  height: 2px;
+  margin: 0 8px;
+  border-radius: 1px;
+  background: var(--dsw-alias-label-caption, rgba(127, 127, 127, 0.6));
+}
+
+.summary {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: calc(20px + var(--dsh-content-font-delta-secondary, 0px));
+  white-space: nowrap;
+  mask-image: linear-gradient(to right, black calc(100% - 48px), transparent);
+}
+
+.thinkBody {
+  /* Indent under the title (leading 16 + gap 6), as the host's think row does. */
+  padding: 4px 0 4px calc(22px + var(--dsh-content-font-delta, 0px));
+  min-width: 0;
+  color: var(--dsw-alias-label-secondary, rgba(90, 90, 90, 0.9));
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+}
+
+.text {
+  min-width: 0;
+}
+
+.recovering {
+  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
+  font-size: 11px;
+}

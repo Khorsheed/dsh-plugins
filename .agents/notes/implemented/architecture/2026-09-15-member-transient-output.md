@@ -26,6 +26,8 @@ Claude pairs native message IDs and content-block indexes across partial and com
 
 **Replacing the entire transcript view.** Unnecessary: public event definitions and keyed chat renderers provide chronological placement while leaving native final rendering and navigation intact.
 
+**Presentation (2026-10-23).** A live item is drawn the way the host draws its own streaming turn, so nothing jumps when the settled message replaces it: a think item is the host's think row (`DisclosureRow`, think icon, the latest completed paragraph's first line shimmering, full text on expand — the host `ReasoningRow`'s running summary rule), an answer item is plain body Markdown with no 「正在生成」 label. Room's running member row takes the speech card's shape (avatar, light card, the row as its header) with this output inside.
+
 ## Consequences
 
 No host source changes are required. A connection loss keeps the last rendered partial and reconnects with a baseline. Recovery from a host crash can lose the uncheckpointed tail; the checkpoint node explicitly remains a partial record, never a fabricated completed answer. Checkpoints are log-only and never become model messages. A plugin uninstall hides unfinished custom presentation but leaves native completed transcripts intact.

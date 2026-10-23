@@ -110,3 +110,13 @@
 .stop:focus:not(:focus-visible) {
   outline: none;
 }
+
+/* A running member's card (the speech card's shape): the row is its header,
+   flush with the card's padding; the live output sits below. */
+.liveCard {
+  padding-bottom: 8px;
+}
+
+.liveCard > .run {
+  margin: -2px -4px 2px;
+}

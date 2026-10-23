@@ -59,7 +59,6 @@ export const zh = {
   "configuration.failed": "配置操作失败，请检查原因后重试。",
 
   'stream.thinking': '思考中',
-  'stream.writing': '正在生成',
   'stream.recovering': '部分记录，等待实时连接',
   'stream.copy': '复制',
   'stream.copied': '已复制',
@@ -198,7 +197,6 @@ export const en: Record<LocalAgentKey, string> = {
   "configuration.failed": "Configuration failed; check the reason before retrying.",
 
   'stream.thinking': 'Thinking',
-  'stream.writing': 'Writing',
   'stream.recovering': 'Partial record, awaiting live connection',
   'stream.copy': 'Copy',
   'stream.copied': 'Copied',
