@@ -17,7 +17,7 @@
 .stateNote { padding: 8px 4px; color: var(--dsw-alias-label-tertiary); }
 .detailHead { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .detailHead > b { font-size: var(--dsh-panel-text-title,15px); overflow-wrap: anywhere; }
-.model { padding: 2px 7px; border-radius: 5px; background: var(--dsw-alias-bg-layer-3); color: var(--dsw-alias-label-secondary); font-family: var(--dsw-font-family-mono,ui-monospace,monospace); font-size: var(--dsh-panel-text-meta,11px); overflow-wrap: anywhere; }
+.model { padding: 2px 7px; border-radius: 5px; background: var(--ri-fill-2, var(--dsw-alias-bg-layer-3)); color: var(--dsw-alias-label-secondary); font-family: var(--dsw-font-family-mono,ui-monospace,monospace); font-size: var(--dsh-panel-text-meta,11px); overflow-wrap: anywhere; }
 .jsonToggle { margin-left: auto; flex: none; min-width: 28px; height: 28px; border: 0; border-radius: 7px; background: transparent; color: var(--dsw-alias-label-tertiary); font: inherit; cursor: pointer; }
 .jsonToggle:hover, .jsonToggle[aria-pressed='true'] { color: var(--dsw-alias-state-business-primary); background: color-mix(in srgb,var(--dsw-alias-state-business-primary) 10%,transparent); }
 .metrics { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); border: 1px solid var(--dsw-alias-border-l2); border-radius: 10px; overflow: hidden; }
@@ -47,7 +47,7 @@
 .legend { display: flex; flex-wrap: wrap; gap: 4px; padding: 9px 10px 4px; }
 .legendItem { display: inline-flex; align-items: center; gap: 5px; border: 1px solid transparent; border-radius: 12px; padding: 2px 8px 2px 6px; font: inherit; font-size: var(--dsh-panel-text-meta,12px); color: var(--dsw-alias-label-secondary); background: transparent; cursor: pointer; }
 .legendItem > span { color: var(--dsw-alias-label-tertiary); font-family: var(--dsw-font-family-mono,ui-monospace,monospace); }
-.legendItem:hover, .legendItem[aria-pressed='true'] { background: var(--dsw-alias-bg-layer-2); }
+.legendItem:hover, .legendItem[aria-pressed='true'] { background: var(--ri-fill-1, var(--dsw-alias-bg-layer-2)); }
 .legendItem[aria-pressed='true'] { border-color: var(--dsw-alias-border-l2); }
 .legendItem[data-off='true'] { opacity: .4; }
 .dot { width: 7px; height: 7px; border-radius: 2px; flex: none; }

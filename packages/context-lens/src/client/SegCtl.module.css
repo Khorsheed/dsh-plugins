@@ -4,7 +4,7 @@
 .root,
 .mini {
   display: flex;
-  background: var(--dsw-alias-bg-layer-3);
+  background: var(--ri-fill-2, var(--dsw-alias-bg-layer-3));
   border-radius: 8px;
   padding: 2px;
 }
@@ -33,6 +33,12 @@
   background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-primary);
   font-weight: 600;
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--dsw-alias-label-primary) 18%, transparent);
+}
+
+.root button:not(.on):not(:disabled):hover,
+.mini button:not(.on):not(:disabled):hover {
+  color: var(--dsw-alias-label-primary);
 }
 
 .root button.dim,

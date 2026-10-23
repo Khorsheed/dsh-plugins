@@ -10,6 +10,10 @@
   background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-primary);
   font-size: var(--dsh-panel-text-body, 13px);
+  /* Subtle fills: the host's light theme paints bg-layer-1/2/3 all white, so
+     panel surfaces use fills that keep a visible step in both themes. */
+  --ri-fill-1: var(--dsw-alias-bg-module-platform, var(--dsw-alias-bg-layer-2));
+  --ri-fill-2: var(--dsw-alias-button-ghost-active-fill, var(--dsw-alias-bg-layer-3));
   /* panel-check: allow-color — 分类色板：数据可视化用色，不随主题（设计定稿移植） */
   --ri-cat-system: #4c6ef5; --ri-cat-tool-definition: #9775fa; --ri-cat-user: #40c057; --ri-cat-assistant: #339af0; --ri-cat-tool-result: #fab005;
   /* panel-check: allow-color — 分类色板（续） */
@@ -70,7 +74,7 @@
   max-width: 100%;
 }
 
-.querySource { flex: none; margin-right: 6px; padding: 0 5px; border-radius: 4px; background: var(--dsw-alias-bg-layer-3); color: var(--dsw-alias-label-secondary); font-family: var(--dsw-font-family-mono, ui-monospace, monospace); font-size: var(--dsh-panel-text-meta, 11px); font-weight: 400; }
+.querySource { flex: none; margin-right: 6px; padding: 0 5px; border-radius: 4px; background: var(--ri-fill-2, var(--dsw-alias-bg-layer-3)); color: var(--dsw-alias-label-secondary); font-family: var(--dsw-font-family-mono, ui-monospace, monospace); font-size: var(--dsh-panel-text-meta, 11px); font-weight: 400; }
 .querySep {
   color: var(--dsw-alias-label-tertiary);
 }
@@ -149,7 +153,7 @@
   font-family: inherit;
   font-size: var(--dsh-panel-text-meta, 12px);
   color: var(--dsw-alias-label-primary);
-  background: var(--dsw-alias-bg-layer-2);
+  background: var(--ri-fill-1, var(--dsw-alias-bg-layer-2));
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 6px;
   padding: 2px 8px;
@@ -164,7 +168,7 @@
 
 .failCard {
   border: 1px solid var(--dsw-alias-state-error-secondary);
-  background: var(--dsw-alias-bg-layer-2);
+  background: var(--ri-fill-1, var(--dsw-alias-bg-layer-2));
   border-radius: 10px;
   padding: 10px 13px;
   font-size: var(--dsh-panel-text-meta, 12px);
