@@ -14,6 +14,7 @@
  * @module @khorsheed/dsh-local-agent/preset-tool-host
  */
 import { randomUUID } from 'node:crypto'
+import { appendFileSync } from 'node:fs'
 import type { Context } from '@deepseek-ai/cordis'
 import { SessionId } from '@deepseek-ai/dsh-session'
 
@@ -68,7 +69,17 @@ function mcpContent(blocks: readonly { readonly type: string; readonly text?: st
 export class PresetToolHost {
   private readonly hosts = new Map<string, { readonly preset: string; readonly agent: Promise<{ readonly agent: AgentLike; dispose(): Promise<void> }> }>()
 
-  constructor(private readonly ctx: Context) {}
+  /**
+   * @param ctx - the local-agent plugin context.
+   * @param diagnostics - optional JSONL file each listing appends a summary to
+   *   (what the preset agent's scope saw and which tools passed the filter).
+   */
+  constructor(private readonly ctx: Context, private readonly diagnostics?: string) {}
+
+  private note(entry: Record<string, unknown>): void {
+    if (this.diagnostics === undefined) return
+    try { appendFileSync(this.diagnostics, `${JSON.stringify({ time: new Date().toISOString(), ...entry })}\n`) } catch { /* diagnostics never fail a call */ }
+  }
 
   private probe<T>(name: string): T | undefined {
     return (this.ctx.get as (key: string) => unknown).call(this.ctx, name) as T | undefined
@@ -110,9 +121,17 @@ export class PresetToolHost {
   async list(childSessionId: string, preset: string, cwd?: string): Promise<BridgedTool[]> {
     const tools = this.probe<ToolsLike>('tools')
     const agent = await this.agentFor(childSessionId, preset, cwd)
-    if (tools === undefined || agent === undefined) return []
-    return tools.schemas(agent)
-      .filter(schema => isPluginTool(tools.get(schema.name, agent)))
+    if (tools === undefined || agent === undefined) {
+      this.note({ childSessionId, preset, tools: tools !== undefined, agent: agent !== undefined })
+      return []
+    }
+    const schemas = tools.schemas(agent)
+    const listed = schemas.filter(schema => isPluginTool(tools.get(schema.name, agent)))
+    this.note({ childSessionId, preset, agent: agent.id, scope: schemas.map(schema => {
+      const origin = (tools.get(schema.name, agent) as { [ORIGIN]?: { channel?: unknown; owner?: unknown } } | undefined)?.[ORIGIN]
+      return origin === undefined ? schema.name : `${schema.name}<${String(origin.channel)}:${String(origin.owner)}>`
+    }), listed: listed.map(schema => schema.name) })
+    return listed
       .map(schema => ({
         name: schema.name,
         description: schema.description ?? '',

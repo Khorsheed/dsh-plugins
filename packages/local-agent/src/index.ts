@@ -3256,7 +3256,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   // tool error while everything else works.
   // Mode tools: a member with a mode reaches that preset's plugin tools
   // through the same bridge (see preset-tool-host.ts).
-  const modeTools = new PresetToolHost(ctx)
+  const modeTools = new PresetToolHost(ctx, join(config.homesRoot, 'mode-tools.jsonl'))
   const memberChannel = new MemberChannel(ctx, registry, registry.memberBridgeSocketPath(), modeTools)
   void memberChannel.start()
   ctx.effect(() => () => { void memberChannel.dispose(); void modeTools.dispose() })

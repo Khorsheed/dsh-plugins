@@ -8,7 +8,7 @@
  */
 import { useEffect, useReducer, useState, type ReactNode } from 'react'
 import type { RoomProviderList } from '../types.ts'
-import { InviteDialog, type InviteDialogSubmit } from './InviteDialog.tsx'
+import { InviteDialog, inviteRequest, type InviteDialogSubmit } from './InviteDialog.tsx'
 import type { InviteAgentActionProps } from './slots.ts'
 import css from './InviteAgentAction.module.css'
 
@@ -29,19 +29,7 @@ export function InviteAgentAction({
     void listProviders().then(setProviders)
   }
 
-  const submit = async (values: InviteDialogSubmit) => {
-    // Blank optional fields are omitted, not sent (the host rejects a
-    // present-but-blank role; an absent one simply carries no preset).
-    const outcome = await invite({
-      provider: values.provider,
-      name: values.name,
-      ...values.instructions === '' ? {} : { instructions: values.instructions },
-      ...values.cwd === '' ? {} : { cwd: values.cwd },
-      ...values.firstTask === '' ? {} : { firstTask: values.firstTask },
-      ...values.model === '' ? {} : { model: values.model },
-    })
-    return outcome
-  }
+  const submit = (values: InviteDialogSubmit) => invite(inviteRequest(values))
 
   // M3' self-hide: the chip is the room's dev affordance — it renders only
   // when this session's preset composition grants the room tools (or the
@@ -62,6 +50,7 @@ export function InviteAgentAction({
         <InviteDialog
           mode="invite"
           providers={providers?.providers}
+          presets={providers?.presets}
           localAgentAvailable={providers?.localAgentAvailable ?? true}
           inheritedCwd={roomCwd}
           existingNames={listNames()}
