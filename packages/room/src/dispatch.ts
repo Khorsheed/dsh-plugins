@@ -283,7 +283,12 @@ export class DispatchEngine {
       if (this.scheduled.has(scopedId) || events.some(event => event.type === 'room/delivery-state' && event.data.id === deliveryId)) return
       this.scheduled.add(scopedId)
     }
-    const tail = this.queues.get(key) ?? Promise.resolve()
+    // A report to the room's own agent never waits behind that agent's
+    // running round: it joins the round (runMainAgent steers it in) — queued,
+    // it would wake a second turn once the first had already answered.
+    const source = options.dispatchSeq === undefined ? undefined : events.find(event => event.seq === options.dispatchSeq)
+    const joins = member.kind === 'main-agent' && source?.type === 'room/dispatch' && source.data.origin === 'report'
+    const tail = joins ? Promise.resolve() : this.queues.get(key) ?? Promise.resolve()
     let submitted!: () => void
     const submission = new Promise<void>(resolve => { submitted = resolve })
     const next = tail.then(() => this.run(room, memberName, text, { ...options, targetId }, submitted))
@@ -294,6 +299,7 @@ export class DispatchEngine {
         if (deliveryId !== undefined) this.scheduled.delete(`${room.id}:${deliveryId}`)
       })
     this.inFlight.set(next, key)
+    if (joins) return
     this.queues.set(key, submission)
     void submission.then(() => { if (this.queues.get(key) === submission) this.queues.delete(key) })
   }
@@ -580,10 +586,15 @@ export class DispatchEngine {
     }
     const { prompt, carried, heldCarried } = assemblePrompt(room, member, cursor, text, relayIds, dispatchSeq)
     const before = room.snapshotEvents().at(-1)?.seq ?? -1
-    agent.followup(createUserMessage({
-      content: [{ type: 'text', text: prompt }],
-      source: roomSource(),
-    }))
+    const message = createUserMessage({ content: [{ type: 'text', text: prompt }], source: roomSource() })
+    // A report reaching an agent mid-turn joins that turn at its next step:
+    // as its own turn it would make the agent answer a second time, after
+    // the turn that was already waiting for it.
+    const source = dispatchSeq === undefined ? undefined : room.snapshotEvents().find(event => event.seq === dispatchSeq)
+    const report = source?.type === 'room/dispatch' && source.data.origin === 'report'
+    const steerable = agent as typeof agent & { readonly status?: string; steer?: (input: typeof message) => void }
+    if (report && steerable.status === 'running' && typeof steerable.steer === 'function') steerable.steer(message)
+    else agent.followup(message)
     await this.markHeldReleased(room, member, heldCarried)
     await this.markSent(room, [
       ...carried,

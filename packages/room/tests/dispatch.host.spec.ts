@@ -790,6 +790,29 @@ describe('coordinator routing and durable deliveries', () => {
     expect(bench.agent!.followup).not.toHaveBeenCalled()
   })
 
+  it('a report reaching the room agent mid-turn joins that turn instead of waking a second one', async () => {
+    const bench = await bootRoom()
+    await bench.service.invite({ sessionId: bench.sessionId, provider: 'kimi', name: 'ada' })
+    bench.facade.start.mockImplementation(async () => settledRun('child-ada', '你好，我是 ada'))
+    // The human's message is the room agent's running round.
+    const turn = deferred<void>()
+    const agent = bench.agent! as typeof bench.agent & { status?: string; steer?: ReturnType<typeof vi.fn> }
+    agent.status = 'running'
+    agent.steer = vi.fn()
+    agent.whenIdle.mockImplementation(() => turn.promise)
+    await bench.service.postMessage({ sessionId: bench.sessionId, text: '请邀请 ada 打个招呼' })
+    await vi.waitFor(() => expect(agent.followup).toHaveBeenCalledOnce())
+    // That round delegates; ada answers while the round still runs.
+    await bench.service.messageMember({ sessionId: bench.sessionId, member: 'ada', text: '打个招呼' })
+    await vi.waitFor(() => expect(agent.steer).toHaveBeenCalledOnce())
+    expect(textOf((agent.steer.mock.calls[0]![0] as UserMessage).content)).toContain('你好，我是 ada')
+    expect(agent.followup).toHaveBeenCalledOnce()
+    agent.status = 'idle'
+    turn.resolve()
+    await bench.service.engine.idle()
+    expect(agent.followup).toHaveBeenCalledOnce()
+  })
+
   it('returns acceptance before background completion and reports exactly once; human @ never wakes main', async () => {
     const bench = await bootRoom()
     await bench.service.invite({ sessionId: bench.sessionId, provider: 'kimi', name: 'ada' })
