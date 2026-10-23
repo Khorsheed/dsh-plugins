@@ -104,6 +104,8 @@ describe('DispatchEngine (real composition)', () => {
     expect(text).toContain('你是协作间成员「ada」')
     expect(text).toContain('你的指令：后端')
     expect(text).toContain('member_message')
+    // A CLI is told where its room tools live (some keep MCP tools behind discovery).
+    expect(text).toContain('名为 dsh-member 的 MCP 服务')
     expect(text).not.toContain('通知协议')
     expect(text).toContain('搭骨架')
 
