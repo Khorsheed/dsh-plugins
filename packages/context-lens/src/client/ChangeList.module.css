@@ -1,4 +1,4 @@
-.breakLine, .breakOk { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; padding: 8px 10px; border-radius: 8px; background: var(--dsw-alias-bg-layer-2); font-size: var(--dsh-panel-text-meta, 12px); color: var(--dsw-alias-label-tertiary); }
+.breakLine, .breakOk { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; padding: 8px 10px; border-radius: 8px; background: var(--ri-fill-1, var(--dsw-alias-bg-layer-2)); font-size: var(--dsh-panel-text-meta, 12px); color: var(--dsw-alias-label-tertiary); }
 .breakLine > i, .breakOk > i { width: 8px; height: 8px; border-radius: 50%; flex: none; align-self: center; background: var(--dsw-alias-state-error-primary); }
 .breakOk > i { background: var(--dsw-alias-state-success-primary); }
 .breakLine b, .breakOk b { color: var(--dsw-alias-label-primary); font-size: var(--dsh-panel-text-body, 13px); }
@@ -11,9 +11,9 @@
 .card, .cardBreak { border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; overflow: hidden; }
 .cardBreak { border-color: var(--dsw-alias-state-error-primary); }
 .head { width: 100%; display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 8px; align-items: center; padding: 7px 10px; background: none; border: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; }
-.head:hover { background: var(--dsw-alias-bg-layer-2); }
+.head:hover { background: var(--ri-fill-1, var(--dsw-alias-bg-layer-2)); }
 .head:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: -2px; }
-.kind { font-size: var(--dsh-panel-text-meta, 11px); font-weight: 700; padding: 1px 6px; border-radius: 4px; white-space: nowrap; color: var(--dsw-alias-label-secondary); background: var(--dsw-alias-bg-layer-3); }
+.kind { font-size: var(--dsh-panel-text-meta, 11px); font-weight: 700; padding: 1px 6px; border-radius: 4px; white-space: nowrap; color: var(--dsw-alias-label-secondary); background: var(--ri-fill-2, var(--dsw-alias-bg-layer-3)); }
 .kind[data-kind="replace"] { color: var(--dsw-alias-state-warning-primary, #e8590c); background: color-mix(in srgb, var(--dsw-alias-state-warning-primary, #e8590c) 14%, transparent); }
 .kind[data-kind="compaction"] { color: var(--ri-compaction); background: color-mix(in srgb, var(--ri-compaction) 14%, transparent); }
 .kind[data-kind="prune"], .kind[data-kind="tool"] { color: var(--dsw-alias-label-primary); }
@@ -22,14 +22,14 @@
 .where { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .where b { font-size: var(--dsh-panel-text-body, 12.5px); color: var(--dsw-alias-label-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .where > span { color: var(--dsw-alias-label-tertiary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.src { font-family: var(--dsw-font-family-mono, ui-monospace, monospace); font-size: var(--dsh-panel-text-meta, 11px); padding: 0 4px; border-radius: 3px; background: var(--dsw-alias-bg-layer-3); color: var(--dsw-alias-label-secondary); }
+.src { font-family: var(--dsw-font-family-mono, ui-monospace, monospace); font-size: var(--dsh-panel-text-meta, 11px); padding: 0 4px; border-radius: 3px; background: var(--ri-fill-2, var(--dsw-alias-bg-layer-3)); color: var(--dsw-alias-label-secondary); }
 .flag { margin-left: 6px; font-size: var(--dsh-panel-text-meta, 11px); font-weight: 700; color: var(--dsw-alias-state-error-primary); }
 .size { font-family: var(--dsw-font-family-mono, ui-monospace, monospace); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .minus { color: var(--dsw-alias-state-error-primary); }
 .plus { color: var(--dsw-alias-state-success-primary); }
 .chev { color: var(--dsw-alias-label-tertiary); transition: transform .15s; }
 .head[aria-expanded="true"] .chev { transform: rotate(90deg); }
-.body { border-top: 1px solid var(--dsw-alias-border-l2); padding: 8px 10px 10px; display: flex; flex-direction: column; gap: 6px; background: var(--dsw-alias-bg-layer-2); }
+.body { border-top: 1px solid var(--dsw-alias-border-l2); padding: 8px 10px 10px; display: flex; flex-direction: column; gap: 6px; background: var(--ri-fill-1, var(--dsw-alias-bg-layer-2)); }
 
 .diff { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 160px; overflow: auto; font-family: var(--dsw-font-family-mono, ui-monospace, monospace); line-height: 1.6; color: var(--dsw-alias-label-tertiary); background: var(--dsw-alias-bg-layer-1); border: 1px solid var(--dsw-alias-border-l2); border-radius: 6px; padding: 6px 8px; }
 .diff del, .diff ins { padding: 1px 2px; border-radius: 3px; text-decoration: none; }

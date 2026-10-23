@@ -43,6 +43,7 @@ Status: implemented
 ## Consequences
 
 - 强调色（选中、当前轮、标签下划线、焦点框）用 `--dsw-alias-state-business-primary`；链接用 `--dsw-alias-link`；压缩标记用面板色板里的紫色 `--ri-compaction`。`--dsw-alias-brand-primary` 是主题的中性强调色（亮色下接近黑、暗色下接近白），不是强调色：误用它会在亮色模式下出现黑色描边和灰色底带。
+- 面板里的浅底统一用 `--ri-fill-1`（`bg-module-platform`）和 `--ri-fill-2`（`button-ghost-active-fill`），不直接用 `bg-layer-2/3`：宿主的亮色主题把三个背景层都设成白色，结果分段切换、时间线轨道和所有灰色卡片底都看不见了。时间线把空闲时间画成斜纹段，标明是首次请求前、请求之间还是最后请求后，让整条时间线覆盖整轮的时长。
 - 压缩请求在 `listTurns` 里不再有自己的轮次。按伪轮次寻址的调用方仍然可以通过 `getTurn`/`getRequest` 拿到，但面板只从所属轮次进入。
 - 标签行里子视角的名字去掉了 `#scopeSeq` 前缀；序号以委派请求编号的形式保留在折叠列表里。
 - 每个被单独打开的子会话，在每个进程里多读一次父会话日志，只读一次。

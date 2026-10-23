@@ -26,6 +26,18 @@ export interface TimingViewProps {
 }
 
 /** All agents have separate lanes; cards and tables always describe the selected agent. */
+/** Stretches of one lane's window with no activity, tagged by where they sit. */
+function idleSpans(lanes: readonly { startedAt: number; durationMs: number }[], from: number, to: number): { from: number; to: number; head: boolean; tail: boolean }[] {
+  const out: { from: number; to: number; head: boolean; tail: boolean }[] = []
+  let cursor = from
+  for (const lane of [...lanes].sort((a, b) => a.startedAt - b.startedAt)) {
+    if (lane.startedAt > cursor) out.push({ from: cursor, to: Math.min(lane.startedAt, to), head: cursor === from, tail: false })
+    cursor = Math.max(cursor, lane.startedAt + lane.durationMs)
+  }
+  if (cursor < to) out.push({ from: cursor, to, head: lanes.length === 0, tail: lanes.length > 0 })
+  return out.filter((g) => g.to > g.from)
+}
+
 export function TimingView({
   timing,
   scopes,
@@ -102,6 +114,7 @@ export function TimingView({
               <i className={css.dot} data-bucket={k} /> {t(`time.bucket.${k}`)}
             </span>
           ))}
+          <span><i className={css.dotIdle} /> {t('time.idle')}</span>
         </div>
         {scopes.map((s) => (
           <div
@@ -117,6 +130,14 @@ export function TimingView({
               {s.kind === 'main' ? t('lens.main') : (s.label ?? s.scopeId)}
             </button>
             <div className={css.timeline}>
+              {idleSpans(timing.lanes.filter((l) => l.scopeId === s.scopeId), s.kind === 'main' ? start : s.startedAt, s.kind === 'main' ? end : (s.endedAt ?? end))
+                .filter((g) => g.to - g.from >= Math.max(200, span * 0.01))
+                .map((g) => {
+                  const where = g.head ? t('lens.gapsHead') : g.tail ? t('lens.gapsTail') : t('lens.gaps')
+                  const label = `${t('time.idle')} · ${where} ${fmtSpan(g.to - g.from)}`
+                  return <span key={`idle-${g.from}`} className={css.idle} title={label} aria-label={label}
+                    style={{ left: `${((g.from - start) / span) * 100}%`, width: `${((g.to - g.from) / span) * 100}%` }} />
+                })}
               {timing.lanes
                 .filter((l) => l.scopeId === s.scopeId)
                 .map((l, i) => (

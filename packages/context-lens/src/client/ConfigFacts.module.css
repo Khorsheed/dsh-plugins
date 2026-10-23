@@ -1,4 +1,4 @@
-.facts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; min-width: 0; border-radius: 8px; background: var(--dsw-alias-bg-layer-2); padding: 9px 12px; font-size: var(--dsh-panel-text-meta, 12px); }
+.facts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; min-width: 0; border-radius: 8px; background: var(--ri-fill-1, var(--dsw-alias-bg-layer-2)); padding: 9px 12px; font-size: var(--dsh-panel-text-meta, 12px); }
 .route { display: flex; flex-direction: column; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
 .route b { color: var(--dsw-alias-label-primary); font-size: var(--dsh-panel-text-body, 13px); }
 .route span, .facts dt { color: var(--dsw-alias-label-tertiary); }

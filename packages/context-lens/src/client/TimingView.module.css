@@ -124,7 +124,7 @@
   position: relative;
   height: 26px;
   border-radius: 7px;
-  background: var(--dsw-alias-bg-layer-3);
+  background: var(--ri-fill-2, var(--dsw-alias-bg-layer-3));
   overflow: hidden;
   margin: 8px 0 4px;
 }
@@ -141,6 +141,9 @@
 .blk[data-bucket="text"] { background: var(--ri-bucket-text); }
 .blk[data-bucket="tool-exec"] { background: var(--ri-bucket-tool-exec); }
 .blk[data-bucket="other"] { background: var(--ri-bucket-other); }
+/* Idle time: no lane ran. Drawn, not left blank, so the bar accounts for the whole turn. */
+.idle { position: absolute; top: 0; bottom: 0; background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--dsw-alias-label-tertiary) 28%, transparent) 0 3px, transparent 3px 7px); }
+.dotIdle { display: inline-block; width: 8px; height: 8px; border-radius: 2px; background: repeating-linear-gradient(135deg, var(--dsw-alias-label-tertiary) 0 2px, transparent 2px 4px); }
 
 .tlScale {
   display: flex;

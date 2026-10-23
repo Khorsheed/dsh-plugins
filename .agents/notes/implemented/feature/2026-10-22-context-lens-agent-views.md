@@ -43,6 +43,7 @@ A turn's work can spread over the main conversation, dsh subagents, external age
 ## Consequences
 
 - Accent color (selection, the current turn, the tab underline, focus) is `--dsw-alias-state-business-primary`; links use `--dsw-alias-link`; compaction marks use the panel's `--ri-compaction` violet. `--dsw-alias-brand-primary` is the theme's neutral emphasis (near-black in light, near-white in dark), not an accent: using it rendered black outlines and gray bands in light mode.
+- Surface fills use the panel's `--ri-fill-1` (`bg-module-platform`) and `--ri-fill-2` (`button-ghost-active-fill`), never `bg-layer-2/3` directly: the host's light theme paints all three layers white, which erased the segmented switch, the timeline track, and every gray card body. The timeline draws idle stretches as a hatched span, labelled before the first request, between requests, or after the last one, so the bar accounts for the whole turn.
 - Compaction requests no longer have a turn of their own in `listTurns`. Callers that addressed them by pseudo-turn still resolve through `getTurn`/`getRequest`, but the panel only reaches them through the owning turn.
 - The tab row drops the `#scopeSeq` prefix from child labels; ordinals remain in the overflow list as delegating request numbers.
 - Parent resolution costs one extra log read per child session opened on its own, once per process.
