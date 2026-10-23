@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { SessionTrend } from '../types.ts'
 import type { InspectorTabProps } from './contract.ts'
-import { requestNumberText, cachePct, inputTotal, type TurnGap } from './aggregate.ts'
+import { requestNumberText, cachePct, gapShown, inputTotal, turnNumber, type TurnGap } from './aggregate.ts'
 import css from './InspectorPanel.module.css'
 
 type TrendRequest = SessionTrend['requests'][number]
+type TrendTurn = SessionTrend['turns'][number]
 const isCompaction = (scopeId: string) => scopeId.startsWith('compaction:')
 /** Smallest cell a turn may shrink to (one label); below it the map scrolls. */
 const MIN_CELL = 22
@@ -66,8 +67,10 @@ export function Trend({
       el.scrollLeft = current.offsetLeft - el.clientWidth / 2 + current.offsetWidth / 2
   }, [turnSeq, scopeId, data, width])
 
-  const requests = data.requests.filter(r => r.scopeId === scopeId)
   const main = scopeId === 'main'
+  // On the session map a room round's member runs stand where the main turn would.
+  const rounds = new Set(main ? data.turns.filter(turn => turn.room !== undefined).map(turn => turn.turnSeq) : [])
+  const requests = data.requests.filter(r => r.scopeId === scopeId || rounds.has(r.turnSeq))
   const compactions = main ? data.requests.filter(r => isCompaction(r.scopeId)) : []
   const turns = data.turns.filter(turn => requests.some(r => r.turnSeq === turn.turnSeq))
   const max = Math.max(1, ...requests.map(r => (r.usage ? inputTotal(r.usage) : 0)))
@@ -79,15 +82,27 @@ export function Trend({
       && (next === undefined || c.startedAt < next.startedAt))
   const firstLoaded = Math.min(...turns.map(turn => turn.hostTurn ?? Number.POSITIVE_INFINITY))
   const gapCell = (gap: TurnGap) => {
-    const label = t(gap.to < firstLoaded ? 'trend.loadOlder' : 'trend.loadNewer', { from: String(gap.from), to: String(gap.to) })
+    const shown = gapShown(gap)
+    const label = t(gap.to < firstLoaded ? 'trend.loadOlder' : 'trend.loadNewer', { from: String(shown.from), to: String(shown.to) })
     return <button key={`gap-${gap.from}`} type="button" className={css.trendGap} title={label} aria-label={label} onClick={() => onLoadGap?.(gap)}>
       <span className={css.trendGapBars} aria-hidden="true">⋯</span>
-      <span className={css.trendTurn}>{gap.from === gap.to ? gap.from : `${gap.from}–${gap.to}`}</span>
+      <span className={css.trendTurn}>{shown.from === shown.to ? shown.from : `${shown.from}–${shown.to}`}</span>
     </button>
+  }
+  /** Coordinator handoffs, each drawn once before the first turn after it. */
+  const handoffs = main ? [...data.handoffs ?? []].sort((a, b) => a.at - b.at) : []
+  const handoffsBefore = (turn: TrendTurn) => {
+    const out: ReactNode[] = []
+    while (handoffs.length > 0 && handoffs[0]!.at <= turn.startedAt) {
+      const h = handoffs.shift()!
+      const label = t('trend.handoff', { name: h.name })
+      out.push(<span key={`handoff-${h.at}`} className={css.trendHandoff} title={label} aria-label={label}><span>{label}</span></span>)
+    }
+    return out
   }
   /** Gap cells that sit before a turn (all gaps ending before its number). */
   const placed = new Set<number>()
-  const gapsBefore = (host: number | undefined) => host === undefined ? [] : gaps.filter(gap => !placed.has(gap.from) && gap.to < host).map(gap => { placed.add(gap.from); return gapCell(gap) })
+  const gapsBefore = (n: number | undefined) => n === undefined ? [] : gaps.filter(gap => !placed.has(gap.from) && gapShown(gap).to < n).map(gap => { placed.add(gap.from); return gapCell(gap) })
   const divider = (turn: number, c: TrendRequest) => <button key={c.seq} type="button" className={css.trendCompaction} title={t('trend.compaction')} aria-label={t('trend.compaction')} onClick={() => onSelect(turn, c.seq, c.scopeId)} />
 
   return (
@@ -97,7 +112,8 @@ export function Trend({
           const rows = requests.filter(r => r.turnSeq === turn.turnSeq)
           const minWidth = Math.max(MIN_CELL, rows.length * (barWidth + 3) + 8)
           return [
-            ...gapsBefore(turn.hostTurn),
+            ...gapsBefore(turnNumber(turn)),
+            ...handoffsBefore(turn),
             <div key={turn.turnSeq} className={css.trendGroup} data-current={turnSeq === turn.turnSeq}
               style={{ flex: `${Math.max(1, rows.length / CELL_SHARE)} 1 ${minWidth}px`, minWidth }}>
               <div className={css.trendBars}>
@@ -112,11 +128,11 @@ export function Trend({
                       className={css.trendTarget}
                       data-selected={r.seq === selectedSeq}
                       aria-pressed={r.seq === selectedSeq}
-                      aria-label={`${t('turn.label', { seq: String(turn.hostTurn ?? turn.turnSeq) })} #${requestNumberText(r)} · ${hit ?? '—'}%`}
+                      aria-label={`${t('turn.label', { seq: String(turnNumber(turn) ?? turn.turnSeq) })} #${requestNumberText(r)} · ${hit ?? '—'}%`}
                       title={`#${requestNumberText(r)} · ${total} tok · ${hit ?? '—'}%`}
                       onClick={() => onSelect(turn.turnSeq, r.seq, r.scopeId)}
                     >
-                      <span className={css.trendBar} aria-hidden="true" style={{ height: `${Math.max(3, (total / max) * 40)}px` }}>
+                      <span className={css.trendBar} data-unknown={hit === null} aria-hidden="true" style={{ height: `${Math.max(3, (total / max) * 40)}px` }}>
                         <i style={{ height: `${hit ?? 0}%` }} />
                       </span>
                     </button>,
@@ -124,7 +140,7 @@ export function Trend({
                 })}
                 {dividersBefore(turn.turnSeq, undefined, rows.at(-1)).map(c => divider(turn.turnSeq, c))}
               </div>
-              <span className={css.trendTurn}>{turn.hostTurn ?? '·'}</span>
+              <span className={css.trendTurn}>{turnNumber(turn) ?? '·'}</span>
             </div>,
           ]
         })}

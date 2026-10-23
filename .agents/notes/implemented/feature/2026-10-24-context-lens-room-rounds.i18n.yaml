@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-10-24-context-lens-room-rounds.md
+.agents/notes/implemented/feature/2026-10-24-context-lens-room-rounds.md: 0a2c49a82b00b9c7c247119a35092480dcc54621
+.agents/notes/implemented/feature/2026-10-24-context-lens-room-rounds.zh.md: fcf2afaf3f36ee7108eb0bac92d05d9c2510d4b0

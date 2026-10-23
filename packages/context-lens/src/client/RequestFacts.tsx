@@ -18,7 +18,7 @@ export function RequestFacts({ request: r, t, raw = false, onToggleRaw }: {
   const duration = (ms: number | undefined) => ms === undefined ? '—' : fmtSpan(ms)
   const metrics = [
     { label: t('req.input'), value: u ? fmt(inputTotal(u)) : '—', unit: 'tok', sub: t(r.compaction?.inputPartial ? 'compaction.recoveredChars' : 'chain.chars', { count: fmt(chars) }) },
-    { label: t('lens.hit'), value: u ? (cachePct(u)?.toFixed(1) ?? '—') : '—', unit: '%', sub: u ? `${fmt(u.cacheReadTokens ?? 0)} tok` : '—' },
+    { label: t('lens.hit'), value: u ? (cachePct(u)?.toFixed(1) ?? '—') : '—', unit: '%', sub: u?.cacheReadTokens !== undefined ? `${fmt(u.cacheReadTokens)} tok` : '—' },
     { label: t('lens.miss'), value: u ? fmt(inputMiss(u)) : '—', unit: 'tok', sub: r.config.maxTokens === undefined ? '' : t('lens.outputLimit', { count: fmtK(r.config.maxTokens) }) },
     { label: t(r.compaction?.inputPartial ? 'compaction.interval' : 'lens.duration'), value: duration(r.timing.totalMs), unit: '', sub: `${t('req.output')} ${u ? fmt(u.outputTokens) : '—'} tok · ${t('lens.firstToken', { duration: duration(r.timing.waitMs) })}` },
   ]

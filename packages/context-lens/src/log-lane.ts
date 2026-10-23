@@ -457,6 +457,14 @@ export function reconstructSession(rows: readonly SessionLogRow[], materialize?:
   if (materialize !== undefined) cursor.materialize = materialize
   const turns: LogTurn[] = []
   const byHostTurn = new Map<number, LogTurn>()
+  // Children catalogued outside any turn (a room member run started by a
+  // human dispatch) gather in one holder the store files as room members.
+  const orphans: LogDelegation[] = []
+  const place = (delegation: LogDelegation): void => {
+    const turn = turnFor(delegation.hostTurn, delegation.at)
+    if (turn !== undefined) turn.delegations.push(delegation)
+    else if (delegation.childId !== undefined) orphans.push(delegation)
+  }
   const turnFor = (hostTurn: number | undefined, at: number | undefined): LogTurn | undefined => {
     if (hostTurn === undefined) return undefined
     let turn = byHostTurn.get(hostTurn)
@@ -505,12 +513,13 @@ export function reconstructSession(rows: readonly SessionLogRow[], materialize?:
       } else turnFor(hostTurn, request.startedAt)?.requests.push(request)
     },
     delegation: (delegation) => {
-      turnFor(delegation.hostTurn, delegation.at)?.delegations.push(delegation)
+      place(delegation)
     },
   })
   // A delegation whose result never landed (a crashed turn) still surfaces.
-  for (const pending of cursor.pendingDelegations.values()) {
-    turnFor(pending.hostTurn, pending.at)?.delegations.push(pending)
+  for (const pending of cursor.pendingDelegations.values()) place(pending)
+  if (orphans.length > 0) {
+    turns.push({ hostTurn: -1, purpose: 'room-members', query: '', startedAt: orphans[0]!.at, endedAt: orphans.at(-1)!.at, endReasonKind: 'completed', requests: [], delegations: orphans })
   }
   return turns
 }
@@ -627,6 +636,7 @@ function buildRequest(
   const finishKind = finish?.kind
   return {
     ...cursor.numberedFromStart ? { requestNumber: cursor.requests.length + 1 } : {},
+    ...hostTurn === undefined ? {} : { hostTurn },
     startedAt,
     status: failed ? 'failed' : 'ok',
     ...error === undefined ? {} : { error },

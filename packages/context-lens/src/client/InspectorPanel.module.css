@@ -248,6 +248,9 @@
 .trendTarget:focus-visible, .trendTarget[data-selected="true"] { outline: 1.5px solid var(--dsw-alias-state-business-primary); outline-offset: 1px; }
 .trendBar { width: var(--trend-bar, 6px); flex: none; display: flex; align-items: flex-end; background: var(--dsw-alias-state-error-primary); border-radius: 1.5px 1.5px 0 0; overflow: hidden; opacity: .7; }
 .trendBar i { width: 100%; background: var(--dsw-alias-state-success-primary); }
+.trendBar[data-unknown="true"] { background: var(--dsw-alias-label-quaternary, var(--dsw-alias-label-tertiary)); }
+.trendHandoff { flex: none; position: relative; align-self: stretch; width: 10px; margin: 0 2px; background: repeating-linear-gradient(to bottom, var(--dsw-alias-label-tertiary) 0 3px, transparent 3px 6px) center top / 1px 54px no-repeat; }
+.trendHandoff > span { position: absolute; top: 0; left: 7px; white-space: nowrap; font-size: var(--dsh-panel-text-meta, 10.5px); line-height: 1; color: var(--dsw-alias-label-tertiary); pointer-events: none; }
 .trendGroup[data-current="true"] .trendBar { opacity: 1; }
 .trendTurn { text-align: center; padding-top: 4px; font-family: var(--dsw-font-family-mono, ui-monospace, monospace); font-size: var(--dsh-panel-text-meta, 10.5px); color: var(--dsw-alias-label-tertiary); }
 .trendGroup[data-current="true"] .trendTurn { color: var(--dsw-alias-state-business-primary); font-weight: 700; }

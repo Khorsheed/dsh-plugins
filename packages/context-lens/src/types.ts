@@ -372,6 +372,10 @@ export interface TurnListItem {
   trigger?: { source: string; text: string }
   /** The `turn/start` event's log seq — the target the chat pages history back to before a jump. */
   startSeq?: number
+  /** The turn's number in one session-wide sequence (main turns and room rounds, by time). */
+  ordinal?: number
+  /** A room round: a human message to the room made outside any main turn, and who it went to. */
+  room?: { targets: string[] }
   startedAt: number
   endedAt?: number
   requestCount: number
@@ -467,6 +471,12 @@ export interface ListTurnsResult {
   parent?: { sessionId: string; title?: string; hostTurn?: number; label?: string }
   /** First and last host turn the session's log holds; turns between them that `turns` lacks are not loaded. */
   range?: { first: number; last: number }
+  /** How many turns the session has in the ordinal sequence (main turns and room rounds). */
+  total?: number
+  /** Runs of main turns not loaded, in ordinals, with the host turns at their ends (what a window move asks for). */
+  unloaded?: { from: number; to: number; firstHost: number; lastHost: number }[]
+  /** Room coordinator handoffs, for the session map. */
+  handoffs?: { at: number; name: string }[]
   /**
    * Present exactly when the query carried a {@link ScopeFilter}: the
    * authorized scopes that exist in the session. An empty array is the
