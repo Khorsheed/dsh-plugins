@@ -31,6 +31,7 @@ import { mkdirSync, rmSync } from 'node:fs'
 import { dirname } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type { LocalAgentRegistry } from './index.ts'
+import type { BridgedTool, BridgedToolResult, PresetToolHost } from './preset-tool-host.ts'
 import type {
   LocalAgentDelegationView,
   MemberRoomCommand,
@@ -62,6 +63,21 @@ export interface MemberCommandBridgeRequest {
   command: MemberRoomCommand
 }
 
+/** The bridge asking for (`list`) or calling (`call`) the member's mode tools. */
+export interface MemberModeToolsBridgeRequest {
+  token: string
+  modeTools: { readonly list: true } | { readonly call: { readonly name: string; readonly arguments?: unknown } }
+}
+
+/** A mode-tools answer: the list, or one call's MCP result. */
+export type MemberModeToolsOutcome =
+  | { readonly ok: true; readonly tools: readonly BridgedTool[] }
+  | { readonly ok: true; readonly result: BridgedToolResult }
+  | { readonly ok: false; readonly error: string }
+
+/** How long one bridged mode-tool call may run before it is cancelled. */
+const MODE_TOOL_TIMEOUT_MS = 30 * 60_000
+
 /**
  * The member-channel host: owns the loopback unix-socket listener and the
  * delivery chain. Mounted by the plugin's `apply` and disposed with its fiber.
@@ -73,6 +89,7 @@ export class MemberChannel {
     private readonly ctx: Context,
     private readonly registry: LocalAgentRegistry,
     private readonly socketPath: string,
+    private readonly modeTools?: PresetToolHost,
   ) {}
 
   /**
@@ -130,9 +147,12 @@ export class MemberChannel {
 
   /** Handle one raw request line and write the one-line response. */
   private async answer(socket: Socket, line: string): Promise<void> {
-    let outcome: MemberMessageOutcome
+    let outcome: MemberMessageOutcome | MemberModeToolsOutcome
     try {
-      outcome = await this.handle(JSON.parse(line) as MemberBridgeRequest | MemberCommandBridgeRequest)
+      const request = JSON.parse(line) as MemberBridgeRequest | MemberCommandBridgeRequest | MemberModeToolsBridgeRequest
+      outcome = request !== null && typeof request === 'object' && 'modeTools' in request
+        ? await this.handleModeTools(request)
+        : await this.handle(request as MemberBridgeRequest | MemberCommandBridgeRequest)
     } catch (error: unknown) {
       outcome = { ok: false, error: error instanceof Error ? error.message : String(error) }
     }
@@ -203,6 +223,33 @@ export class MemberChannel {
       return { ok: true, receipt: `error: ${error instanceof Error ? error.message : String(error)}` }
     }
     return { ok: true, receipt: 'sent' }
+  }
+
+  /**
+   * The member's mode tools: the room says which mode the member has; the
+   * preset tool host lists or runs that mode's plugin tools. No room, no mode
+   * or no host = an empty list.
+   * @param request - the bridge callback.
+   * @returns the list or the call result.
+   */
+  async handleModeTools(request: MemberModeToolsBridgeRequest): Promise<MemberModeToolsOutcome> {
+    const run = typeof request.token === 'string' ? this.registry.resolveMemberRun(request.token) : undefined
+    if (run === undefined) return { ok: false, error: 'localAgent: unknown or expired member token' }
+    const mode = this.modeTools === undefined ? undefined : await this.probeRoom()?.memberMode?.(run)
+    if ('list' in request.modeTools) {
+      if (mode === undefined) return { ok: true, tools: [] }
+      try {
+        return { ok: true, tools: await this.modeTools!.list(run.childSessionId, mode.preset, mode.cwd) }
+      } catch (error) {
+        this.ctx.logger.warn(`localAgent: mode tools for ${run.childSessionId} unavailable: ${String(error)}`)
+        return { ok: true, tools: [] }
+      }
+    }
+    if (mode === undefined) return { ok: false, error: 'This member has no mode tools' }
+    const { name, arguments: args } = request.modeTools.call
+    try {
+      return { ok: true, result: await this.modeTools!.call(run.childSessionId, mode.preset, name, args ?? {}, AbortSignal.timeout(MODE_TOOL_TIMEOUT_MS), mode.cwd) }
+    } catch (error) { return { ok: false, error: String(error) } }
   }
 
   /** Probe the optional room gate without importing any room package. */

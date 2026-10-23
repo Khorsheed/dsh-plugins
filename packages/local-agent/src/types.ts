@@ -700,6 +700,11 @@ export interface RoomMemberMessageGate {
   isRoom?(request: { sessionId: string }): Promise<boolean>
   receiveMemberCommand?(actor: LocalAgentMemberRun, command: MemberRoomCommand): Promise<MemberMessageOutcome>
   receiveMemberMessage(message: LocalAgentMemberMessage): Promise<RoomMemberMessageReceipt>
+  /**
+   * The member's mode (a host agent preset id) whose plugin tools its bridge
+   * offers, with the member's working directory; undefined = no mode tools.
+   */
+  memberMode?(member: LocalAgentMemberRun): Promise<{ readonly preset: string; readonly cwd?: string } | undefined>
 }
 
 /**

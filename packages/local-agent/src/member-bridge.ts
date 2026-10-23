@@ -10,7 +10,9 @@
  * it bare: `node <this file>`, with the socket path and token in its
  * environment (written into the CLI's scoped MCP config by the provider).
  * Covers the MCP handshake subset a client needs: `initialize`,
- * `notifications/initialized`, `ping`, `tools/list`, `tools/call`.
+ * `notifications/initialized`, `ping`, `tools/list`, `tools/call`. A member
+ * with a mode also gets that preset's plugin tools: `tools/list` asks the
+ * host for them and any other tool name is forwarded as a mode-tool call.
  * @module @khorsheed/dsh-local-agent/member-bridge
  */
 
@@ -86,6 +88,24 @@ interface JsonRpcRequest {
   id?: string | number
   method?: string
   params?: unknown
+}
+
+/** The member's mode tools (the preset's plugin tools), empty when it has none or the host is unreachable. */
+export async function listModeTools(env: MemberBridgeEnv): Promise<readonly Record<string, unknown>[]> {
+  if (env.socket === undefined || env.token === undefined) return []
+  try {
+    const outcome = await callHost(env.socket, { token: env.token, modeTools: { list: true } }) as { ok: boolean; tools?: readonly Record<string, unknown>[] }
+    return outcome.ok && Array.isArray(outcome.tools) ? outcome.tools : []
+  } catch { return [] }
+}
+
+/** Run one mode tool on the host; the host's MCP result passes through. */
+export async function callModeTool(env: MemberBridgeEnv, name: string, args: unknown): Promise<Record<string, unknown>> {
+  if (env.socket === undefined || env.token === undefined) return toolText('member channel is not configured for this run', true)
+  try {
+    const outcome = await callHost(env.socket, { token: env.token, modeTools: { call: { name, arguments: args } } }) as { ok: boolean; result?: Record<string, unknown>; error?: string }
+    return outcome.ok && outcome.result !== undefined ? outcome.result : toolText(outcome.error ?? `Tool ${name} failed`, true)
+  } catch (error) { return toolText(`Mode tool unavailable: ${String(error)}`, true) }
 }
 
 /** One socket round trip: send the request line, read the one-line response. */
@@ -193,7 +213,8 @@ export function serveMemberBridge(env: MemberBridgeEnv, input: Readable, output:
         write({ jsonrpc: '2.0', id: id ?? null, result: {} })
         return
       case 'tools/list':
-        write({
+        // The member's mode tools (its preset's plugin tools) join the room set.
+        void listModeTools(env).then(modeTools => write({
           jsonrpc: '2.0',
           id: id ?? null,
           result: {
@@ -201,9 +222,9 @@ export function serveMemberBridge(env: MemberBridgeEnv, input: Readable, output:
               name: MEMBER_MESSAGE_TOOL,
               description: TOOL_DESCRIPTION,
               inputSchema: TOOL_SCHEMA,
-            }, ...ROOM_TOOLS],
+            }, ...ROOM_TOOLS, ...modeTools.filter(tool => tool['name'] !== MEMBER_MESSAGE_TOOL && !ROOM_TOOLS.some(room => room.name === tool['name']))],
           },
-        })
+        }))
         return
       case 'tools/call': {
         const params = request.params as { name?: string; arguments?: { to?: unknown; text?: unknown } } | undefined
@@ -212,7 +233,12 @@ export function serveMemberBridge(env: MemberBridgeEnv, input: Readable, output:
           return
         }
         if (params?.name !== MEMBER_MESSAGE_TOOL) {
-          write({ jsonrpc: '2.0', id: id ?? null, error: { code: -32602, message: `unknown tool ${String(params?.name)}` } })
+          if (typeof params?.name !== 'string') {
+            write({ jsonrpc: '2.0', id: id ?? null, error: { code: -32602, message: 'tools/call requires a tool name' } })
+            return
+          }
+          // Anything else is a mode tool; the host rejects names its mode lacks.
+          void callModeTool(env, params.name, params.arguments ?? {}).then(result => write({ jsonrpc: '2.0', id: id ?? null, result }))
           return
         }
         void callMemberMessage(env, params.arguments ?? {}).then((result) => {

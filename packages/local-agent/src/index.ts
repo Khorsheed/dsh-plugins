@@ -72,6 +72,7 @@ import type {
 } from './types.ts'
 import LocalAgentGateway from './gateway.ts'
 import { MemberChannel } from './member-channel.ts'
+import { PresetToolHost } from './preset-tool-host.ts'
 import { MemberInbox } from './member-inbox.ts'
 import { PreparedMembers } from './prepared-members.ts'
 import { MemberControls } from './member-controls.ts'
@@ -3253,9 +3254,12 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   // The member channel's loopback listener (bridge MCP servers call back here).
   // Degrade, don't explode: a failed bind leaves member_message failing with a
   // tool error while everything else works.
-  const memberChannel = new MemberChannel(ctx, registry, registry.memberBridgeSocketPath())
+  // Mode tools: a member with a mode reaches that preset's plugin tools
+  // through the same bridge (see preset-tool-host.ts).
+  const modeTools = new PresetToolHost(ctx)
+  const memberChannel = new MemberChannel(ctx, registry, registry.memberBridgeSocketPath(), modeTools)
   void memberChannel.start()
-  ctx.effect(() => () => { void memberChannel.dispose() })
+  ctx.effect(() => () => { void memberChannel.dispose(); void modeTools.dispose() })
   ctx.commands.register({
     name: 'local-agent',
     description: 'list the registered local code-agent harnesses, or stop an in-flight delegation',
