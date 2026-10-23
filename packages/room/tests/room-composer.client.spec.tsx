@@ -296,6 +296,22 @@ describe('RoomComposer', () => {
     expect(area.value).toBe('@ghost 干活')
   })
 
+  it('Enter while an IME composes (or the one closing it) commits the candidate, never sends', async () => {
+    const submit = vi.fn(async () => ({ ok: true as const }))
+    const { area } = await bench(submit)
+    type(area, 'dsh')
+    fireEvent.compositionStart(area)
+    fireEvent.keyDown(area, { key: 'Enter', isComposing: true })
+    fireEvent.compositionEnd(area)
+    // Safari: the closing keydown arrives after compositionend.
+    fireEvent.keyDown(area, { key: 'Enter' })
+    fireEvent.keyUp(area, { key: 'Enter' })
+    fireEvent.keyDown(area, { key: 'Enter', keyCode: 229 })
+    expect(submit).not.toHaveBeenCalled()
+    fireEvent.keyDown(area, { key: 'Enter' })
+    await vi.waitFor(() => expect(submit).toHaveBeenCalledOnce())
+  })
+
   it('renders the task capsule above the card; it and the amber attention capsule open the task page', async () => {
     const openTasks = vi.fn()
     await bench(vi.fn(), { openTasks, t: makeTranslate(zh) as RoomComposerProps['t'] })

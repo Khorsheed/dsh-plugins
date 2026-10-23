@@ -23,6 +23,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 // Type-only: pulls the `sessions` SessionStore merge onto Context.
 import type { Session } from '@deepseek-ai/dsh-session'
+import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import type { LocalAgentMemberRun, MemberRoomCommand, MemberMessageOutcome } from '@khorsheed/dsh-local-agent/types'
 import { SessionId } from '@deepseek-ai/dsh-session'
 // Type-only: pulls the `agents` registry merge onto Context (create/resume
@@ -123,6 +124,48 @@ function messageReceipt(receipt: RoomMessageReceipt, kind: 'task' | 'notify'): R
   return kind === 'notify'
     ? `sent #${receipt.messageId}（知会，不会回报）`
     : `sent #${receipt.messageId}（${receipt.member} 做完后结果会自动回报给你；不要 sleep 等待，也不要用 room_read 轮询）`
+}
+
+/** A message's text blocks, joined. */
+function textBlocks(content: readonly { readonly type: string; readonly text?: string }[]): string {
+  return content.flatMap(block => block.type === 'text' && typeof block.text === 'string' ? [block.text] : []).join('\n').trim()
+}
+
+/**
+ * What a new coordinator reads once, on its first round: who handed over,
+ * the goal and open tasks, and the recent conversation as it happened —
+ * the human's messages, the room agent's replies, members' replies and the
+ * work handed out. Reports are left out: they repeat a member's reply.
+ */
+export function handoffText(events: readonly SessionEvent[], state: RoomState, sessionId: string, from: string, to: string): string {
+  const main = state.members.find(member => member.kind === 'main-agent')?.name ?? 'dsh'
+  const clip = (text: string): string => text.length > 1200 ? `${text.slice(0, 1200)}…` : text
+  const lines = events.flatMap((event): string[] => {
+    if (isHumanMessage(event)) {
+      const text = textBlocks(event.data.content)
+      return text === '' ? [] : [`你（人）：${clip(text)}`]
+    }
+    if (event.type === 'assistant/message') {
+      const text = textBlocks((event.data as { message?: { content?: readonly { type: string; text?: string }[] } }).message?.content ?? [])
+      return text === '' ? [] : [`${main}：${clip(text)}`]
+    }
+    if (event.type === 'room/speech') return [`${event.data.member}：${clip(event.data.text)}`]
+    if (event.type === 'room/dispatch' && event.data.origin !== 'report' && event.data.origin !== 'human') {
+      const senderId = event.data.from ?? event.data.replyTo
+      const sender = state.members.find(member => memberId(events, member) === senderId)?.name ?? main
+      return [`${sender} → ${event.data.targets.join('、')}：${clip(event.data.text)}`]
+    }
+    return []
+  }).slice(-16)
+  const open = (state.jobs ?? []).filter(job => job.status === 'running' || job.status === 'attention')
+  return [
+    `【协调者交接】${from} 把协调者交给了你（${to}）。从现在起，人发的不带 @ 的消息都由你来接。`,
+    `房间会话：${sessionId}。各成员之前的原生会话都还在，可按会话 ID 查看；完整状态用 room_read。`,
+    state.goal === undefined ? '' : `房间目标：${state.goal}`,
+    state.plan === undefined ? '' : `正式目标 ${state.plan.id}（第 ${state.plan.revision} 版）：${state.plan.objective}（${state.plan.status}）。尝试、证据、依赖和预算用 room_read 查看；保持当前的暂停状态。`,
+    ...open.map(job => `进行中的任务 ${job.number}（${job.status === 'attention' ? '需要人处理' : '进行中'}）：${job.title}`),
+    lines.length === 0 ? '' : ['【最近的对话】', ...lines].join('\n'),
+  ].filter(Boolean).join('\n').slice(0, 16000)
 }
 
 /**
@@ -455,7 +498,9 @@ export class RoomService extends TypertRemoteService {
 
   /**
    * Stop a whole task: running rounds of its deliveries are cancelled (the
-   * same cancel the stop button uses), queued and held ones never run.
+   * same cancel the stop button uses), queued and held ones never run, and
+   * ordinary rounds whose outcome a restart lost close as cancelled — the
+   * human gave up on them — which unblocks those members' later messages.
    * @param request - room session and the task root id.
    * @returns how many deliveries were stopped.
    */
@@ -474,10 +519,18 @@ export class RoomService extends TypertRemoteService {
       } else if (row.status === 'queued' || row.status === 'held') {
         loaded.session.append('room/delivery-state', { id: row.id, dispatchSeq: row.dispatchSeq, memberId: row.memberId, state: 'cancelled', error: '任务已被停止' })
         stopped++
+      } else if (row.status === 'uncertain' && row.plan?.taskId === undefined) {
+        // Stopping is the human abandoning the round whose outcome a restart
+        // lost: that settles it, so the member's later messages run again.
+        loaded.session.append('room/delivery-state', { id: row.id, dispatchSeq: row.dispatchSeq, memberId: row.memberId, state: 'cancelled', text: '任务已被停止；这一轮的结果没有核对' })
+        const run = loaded.state.runs.find(entry => entry.runId === row.id)
+        if (run !== undefined) loaded.session.append('room/run-state', { member: run.member, runId: row.id, startedAt: run.startedAt, state: 'cancelled' })
+        stopped++
       }
     }
     loaded.session.append('room/job-stopped', { task: job.id })
     await this.ctx.sessions.flush(loaded.session)
+    await this.engine.recover(loaded.session)
     return { ok: true, value: { stopped } }
   }
 
@@ -826,16 +879,7 @@ export class RoomService extends TypertRemoteService {
           return { ok: false, error: { code: 'coordinator-not-ready', message: 'Member configuration has not converged or is locked' } }
         }
       }
-      const handoff = [
-        `Coordinator handoff from ${previous.name} to ${candidate.name}.`,
-        `Room session: ${request.sessionId}. Earlier native conversations remain available by their session IDs.`,
-        loaded.state.goal === undefined ? '' : `Goal: ${loaded.state.goal}`,
-        loaded.state.plan === undefined ? '' : `Formal goal ${loaded.state.plan.id}, revision ${loaded.state.plan.revision}: ${loaded.state.plan.objective} (${loaded.state.plan.status}). Read room_read for attempts, evidence, dependencies and budget; preserve the current pause state.`,
-        ...(loaded.state.jobs ?? []).filter(job => job.status === 'running' || job.status === 'attention').map(job => `Open task ${job.number} (${job.status}): ${job.title}`),
-        ...events.filter(event => event.type === 'room/speech' || event.type === 'room/dispatch').slice(-12).map(event =>
-          event.type === 'room/speech' ? `${event.data.member}: ${event.data.text.slice(0, 1500)}`
-          : event.type === 'room/dispatch' ? `To ${event.data.targets.join(', ')}: ${event.data.text.slice(0, 1500)}` : ''),
-      ].filter(Boolean).join('\n').slice(0, 16000)
+      const handoff = handoffText(events, loaded.state, request.sessionId, previous.name, candidate.name)
       const value = { version: 1 as const, memberId: request.memberId, previousMemberId: memberId(events, previous), revision: request.expectedRevision + 1, handoff }
       loaded.session.append('room/coordinator', value)
       await this.ctx.sessions.flush(loaded.session)
