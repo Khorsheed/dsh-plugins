@@ -87,6 +87,8 @@ export const LIVE_CHECKPOINT_INTERVAL_MS = 1_000
 /** One round's producer. Final native messages replace its presentation nodes by coordinate. */
 export class LiveStreamPublisher {
   private readonly states = new Map<string, { item: Omit<LocalAgentStreamItem, 'revision'>; durable: string; timer?: ReturnType<typeof setTimeout> }>()
+  /** Items shown live but not yet in the log: their step cannot open before the earlier steps close. */
+  private readonly previews = new Map<string, Omit<LocalAgentStreamItem, 'revision'>>()
   constructor(
     private readonly streams: LocalAgentStreams,
     private readonly session: Session,
@@ -95,8 +97,23 @@ export class LiveStreamPublisher {
     private readonly onError: (error: unknown) => void,
   ) {}
 
+  /**
+   * Show an item live without writing it to the session: a step may open in
+   * the log only after every earlier step has closed, so a later item that
+   * streams first waits here (browser-only) until the driver can open it.
+   */
+  preview(step: number, kind: 'think' | 'text', text: string, options: { itemId?: string; receivedAt?: number } = {}): void {
+    const id = `${this.turn}:${step}${options.itemId === undefined ? '' : `:${options.itemId}`}`
+    const previous = this.previews.get(id)
+    if (previous?.text === text && previous.kind === kind) return
+    const item = { id, turn: this.turn, step, kind, text, receivedAt: previous?.receivedAt ?? options.receivedAt ?? Date.now() }
+    this.previews.set(id, item)
+    this.streams.publish(String(this.session.id), item)
+  }
+
   update(step: number, kind: 'think' | 'text', text: string, options: { itemId?: string; receivedAt?: number } = {}): void {
     const id = `${this.turn}:${step}${options.itemId === undefined ? '' : `:${options.itemId}`}`
+    this.previews.delete(id)
     let state = this.states.get(id)
     if (state?.item.text === text && state.item.kind === kind) return
     const receivedAt = options.receivedAt ?? Date.now()
@@ -135,6 +152,11 @@ export class LiveStreamPublisher {
 
   /** Call only after the corresponding native final message has been appended. */
   finish(step: number): void {
+    for (const [id, item] of this.previews) {
+      if (item.step !== step) continue
+      this.previews.delete(id)
+      this.streams.finish(String(this.session.id), id)
+    }
     for (const [id, state] of this.states) {
       if (state.item.step !== step) continue
       if (state.timer !== undefined) clearTimeout(state.timer)
@@ -151,6 +173,8 @@ export class LiveStreamPublisher {
 
   /** A producer failure keeps a durable partial, without claiming completion. */
   dispose(): void {
+    for (const id of this.previews.keys()) this.streams.finish(String(this.session.id), id)
+    this.previews.clear()
     for (const [id, state] of this.states) {
       this.checkpoint(id)
       if (state.timer !== undefined) clearTimeout(state.timer)

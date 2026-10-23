@@ -83,6 +83,23 @@ export const DEFAULT_SNAPSHOT_MIN_CHARS = 0
  * timeout/mismatch). The provider catches exactly this and falls back to the
  * exec one-shot; any other error is a real round failure.
  */
+
+/** One streaming item of a round (see the round's step ledger). */
+interface CodexStream {
+  readonly itemId: string
+  readonly kind: 'think' | 'text'
+  /** Provisional key for the live flush and the preview — never a log step. */
+  readonly step: number
+  /** Lines completed before the item's first delta: it sorts before every later one. */
+  readonly after: number
+  text: string
+  lastSnapshotAt: number
+  lastSnapshotLen: number
+  /** step/start written for this item. */
+  opened: boolean
+  /** The log step it occupies, once opened. */
+  durable?: number
+}
 export class LiveChannelUnavailableError extends Error {
   constructor(message: string) {
     super(message)
@@ -918,33 +935,19 @@ export class CodexLiveDriver {
     /** Whether a folded line already carries the round's usage (no backfill event exists). */
     let usageCarried = false
     /**
-     * The step ledger: `reservedSteps` holds every step a stream reservation
-     * consumed (in increasing order — permanently, whether the stream later
-     * completes or stays an orphan snapshot), and a sequential line folds at
-     * its index shifted past every reservation before it. A tool completed
-     * mid-stream therefore folds ABOVE the stream's step and the projection
-     * renders the round's chronological order.
+     * The streaming items seen this round by item id: deltas accumulate into
+     * throttled snapshots at the item's step once it may open in the log
+     * (previewed live before that) — the host folds repeated settles at one
+     * coordinate into one live-updating chat node. The item's completion
+     * folds at the same step and finalizes it; an entry whose completion
+     * never arrives is force-finalized at settle. A tool that completes
+     * mid-stream folds after the stream, keeping the round's chronology.
      */
-    const reservedSteps: number[] = []
-    /**
-     * The streaming items seen this round by item id:
-     * deltas accumulate into throttled snapshot assistant/messages appended
-     * at the item's reserved (turn, step) — the host folds repeated settles
-     * at one coordinate into one live-updating chat node, which is the only
-     * streaming channel left after 0.1.5 retired the durable per-chunk event.
-     * The item's completion folds at the same step and finalizes it; an entry
-     * whose completion never arrives is force-finalized at settle.
-     */
-    const streams = new Map<string, {
-      readonly itemId: string
-      readonly kind: 'think' | 'text'
-      readonly step: number
-      text: string
-      lastSnapshotAt: number
-      lastSnapshotLen: number
-      /** step/start already emitted for this reservation. */
-      opened: boolean
-    }>()
+    const streams = new Map<string, CodexStream>()
+    /** Provisional stream keys (live flush and preview identity), never log steps. */
+    let streamKeys = 0
+    /** Line indexes already written (a line may fold ahead of an earlier one it chronologically precedes). */
+    const folded = new Set<number>()
     /** The item deltas currently accumulate into (items stream sequentially). */
     let activeStream: string | undefined
     /** Items/completions that arrived before the turn id was known. */
@@ -1000,9 +1003,33 @@ export class CodexLiveDriver {
       this.config.snapshotMinIntervalMs ?? DEFAULT_SNAPSHOT_MIN_INTERVAL_MS,
     )
 
+    // The step ledger. The log admits steps strictly in sequence — one open
+    // at a time, numbered when it is WRITTEN (`lastStep`) — while the round's
+    // chronology is kept by start order: a stream sorts before every line
+    // that completed after its first delta (`after` = lines completed before
+    // it began). A stream's step opens in the log only once it is the oldest
+    // unfinished stream and everything before it is written; until then the
+    // browser previews it (`preview`), and its fold writes the text anyway.
+    let lastStep = 0
+    let openStep: number | undefined
+    const openStreamStep = (stream: CodexStream): void => {
+      lastStep += 1
+      childSession.append('step/start', { turn, step: lastStep })
+      stream.durable = lastStep
+      stream.opened = true
+      openStep = lastStep
+    }
+    const closeOpenStep = (): void => {
+      if (openStep === undefined) return
+      childSession.append('step/end', { turn, step: openStep })
+      openStep = undefined
+    }
+    const canOpenStream = (stream: CodexStream): boolean =>
+      openStep === undefined && mirrored >= stream.after && streams.keys().next().value === stream.itemId
+
     const pendingStreamArrival = new Map<number, number>()
     const appendStreamSnapshot = (
-      stream: { readonly step: number; kind: 'think' | 'text'; text: string; lastSnapshotAt: number; lastSnapshotLen: number; opened: boolean },
+      stream: CodexStream,
       force: boolean,
       interrupted: boolean,
       withUsage = false,
@@ -1018,24 +1045,28 @@ export class CodexLiveDriver {
       liveFlush.cancel(stream.step)
       const receivedAt = pendingStreamArrival.get(stream.step) ?? now
       pendingStreamArrival.delete(stream.step)
-      if (streamPublisher !== undefined && !final) {
-        if (!stream.opened) {
-          childSession.append('step/start', { turn, step: stream.step })
-          stream.opened = true
+      if (!stream.opened) {
+        if (canOpenStream(stream)) openStreamStep(stream)
+        else if (!final) {
+          // Not its turn in the log yet: show it live, write it later.
+          streamPublisher?.preview(stream.step, stream.kind, stream.text, { itemId: stream.itemId, receivedAt })
+          return
+        } else {
+          // Settle: every line has folded; take the next step.
+          closeOpenStep()
+          openStreamStep(stream)
         }
-        streamPublisher.update(stream.step, stream.kind, stream.text, { receivedAt })
+      }
+      if (streamPublisher !== undefined && !final) {
+        streamPublisher.update(stream.durable!, stream.kind, stream.text, { receivedAt })
         stream.lastSnapshotAt = now
         stream.lastSnapshotLen = stream.text.length
         return
       }
-      if (!stream.opened) {
-        childSession.append('step/start', { turn, step: stream.step })
-        stream.opened = true
-      }
       const attachUsage = withUsage && !usageCarried && usage !== undefined
       childSession.append('assistant/message', {
         turn,
-        step: stream.step,
+        step: stream.durable!,
         message: codexAssistantEvent([
           stream.kind === 'think'
             ? { type: 'reasoning' as const, text: stream.text }
@@ -1051,11 +1082,20 @@ export class CodexLiveDriver {
       persist()
     }
 
+    /** Close a stream's live presentation once its final text is in the log. */
+    const finishStream = (stream: CodexStream): void => {
+      liveFlush.cancel(stream.step)
+      streams.delete(stream.itemId)
+      if (activeStream === stream.itemId) activeStream = undefined
+      streamPublisher?.finish(stream.step)
+      if (stream.durable !== undefined) streamPublisher?.finish(stream.durable)
+    }
+
     /**
-     * Reserve the step one new streaming item will occupy — past every
-     * completed line (folded or held back) and every earlier reservation. A
-     * different item's deltas force one final snapshot of the current stream
-     * (its completion still folds at its own reserved step when it lands).
+     * Track one new streaming item: its provisional key (live flush and
+     * preview identity) and how many lines had completed when it began. A
+     * different item's deltas force one freshness snapshot of the current
+     * stream.
      */
     const reserveStream = (itemId: string, kind: 'think' | 'text'): void => {
       if (activeStream !== undefined && activeStream !== itemId) {
@@ -1069,25 +1109,52 @@ export class CodexLiveDriver {
       }
       let stream = streams.get(itemId)
       if (stream === undefined) {
-        const step = lines.length + reservedSteps.length + 1
-        reservedSteps.push(step)
-        stream = { itemId, kind, step, text: '', lastSnapshotAt: 0, lastSnapshotLen: 0, opened: false }
+        streamKeys += 1
+        stream = { itemId, kind, step: streamKeys, after: lines.length, text: '', lastSnapshotAt: 0, lastSnapshotLen: 0, opened: false }
         streams.set(itemId, stream)
       }
       activeStream = itemId
     }
 
-    /** The sequential fold step for `lines[index]`: its position shifted past every reservation before it. */
-    const foldStep = (index: number): number => {
-      let step = index + 1
-      for (const reserved of reservedSteps) {
-        if (reserved <= step) step += 1
-        else break
+    /** The stream a completed line finalizes, if it was streamed. */
+    const streamOfLine = (line: CodexTranscriptLine | undefined): CodexStream | undefined =>
+      line === undefined || line.kind === 'tool' ? undefined : streams.get(line.itemId ?? '')
+
+    /** Write lines[index] at the next step(s). */
+    const foldLine = (index: number, lineUsage: TokenUsage | undefined): void => {
+      const line = lines[index]!
+      const stream = streamOfLine(line)
+      if (stream !== undefined) {
+        // A streamed item finalizes its own step (opening it now if no
+        // snapshot ever could) and closes it.
+        if (!stream.opened) { closeOpenStep(); openStreamStep(stream) }
+        const blocks = stream.kind === 'think'
+          ? [{ type: 'reasoning' as const, text: line.kind === 'tool' ? '' : line.text }]
+          : [{ type: 'text' as const, text: line.kind === 'tool' ? '' : line.text }]
+        childSession.append('assistant/message', {
+          turn,
+          step: stream.durable!,
+          message: codexAssistantEvent(blocks),
+          stream: [],
+          ...lineUsage === undefined ? {} : { usage: lineUsage },
+        }, { surfaceOp: 'append' })
+        finishStream(stream)
+        closeOpenStep()
+      } else {
+        closeOpenStep()
+        lastStep += 1
+        appendCodexTranscriptLine(childSession, turn, lastStep, line, lineUsage)
       }
-      return step
+      folded.add(index)
+      localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text: codexLineText(line) })
     }
 
-    /** Mirror folded lines [mirrored, upto); the last line is held back until completion. */
+    /**
+     * Mirror the completed lines before `upto` in chronological order; the
+     * last line is held back until completion. A line waits behind every
+     * stream that began before it completed: that stream's line folds first,
+     * or — while it is still streaming — the mirror stops until it lands.
+     */
     const mirrorUpTo = (upto: number, withUsage: boolean): void => {
       // The usage rides the last NON-tool line (tool events carry no usage
       // slot, and a kill mid-command ends the transcript with a tool line).
@@ -1099,39 +1166,26 @@ export class CodexLiveDriver {
           if (lines[index]?.kind !== 'tool') usageIndex = index
         }
       }
-      for (let index = mirrored; index < upto; index += 1) {
-        const line = lines[index]
-        if (line === undefined) continue
+      const usageFor = (index: number): TokenUsage | undefined => {
         const lineUsage = withUsage && index === usageIndex ? usage : undefined
         if (lineUsage !== undefined) usageCarried = true
-        const itemId = line.kind === 'tool' ? undefined : line.itemId
-        const stream = itemId === undefined ? undefined : streams.get(itemId)
-        if (itemId !== undefined && stream !== undefined) {
-          // A streamed item folds at its reserved step, finalizing the
-          // snapshots: the step opens only if no snapshot ever landed (a
-          // fast item that stayed under the throttle), and closes here.
-          liveFlush.cancel(stream.step)
-          streams.delete(itemId)
-          if (activeStream === itemId) activeStream = undefined
-          if (!stream.opened) childSession.append('step/start', { turn, step: stream.step })
-          const blocks = stream.kind === 'think'
-            ? [{ type: 'reasoning' as const, text: line.kind === 'tool' ? '' : line.text }]
-            : [{ type: 'text' as const, text: line.kind === 'tool' ? '' : line.text }]
-          childSession.append('assistant/message', {
-            turn,
-            step: stream.step,
-            message: codexAssistantEvent(blocks),
-            stream: [],
-            ...lineUsage === undefined ? {} : { usage: lineUsage },
-          }, { surfaceOp: 'append' })
-          streamPublisher?.finish(stream.step)
-          childSession.append('step/end', { turn, step: stream.step })
-        } else {
-          appendCodexTranscriptLine(childSession, turn, foldStep(index), line, lineUsage)
-        }
-        mirrored = index + 1
-        localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text: codexLineText(line) })
+        return lineUsage
       }
+      outer: for (let index = mirrored; index < upto; index += 1) {
+        if (folded.has(index)) continue
+        const own = streamOfLine(lines[index])
+        // Streams order among themselves by start; a plain line follows every
+        // stream that began before it completed.
+        const all = [...streams.values()]
+        const before = own === undefined ? all.filter(stream => stream.after <= index) : all.slice(0, all.indexOf(own))
+        for (const earlier of before) {
+          const at = lines.findIndex((line, position) => position > index && position < upto && !folded.has(position) && streamOfLine(line) === earlier)
+          if (at < 0) break outer
+          foldLine(at, usageFor(at))
+        }
+        foldLine(index, usageFor(index))
+      }
+      while (folded.has(mirrored)) mirrored += 1
       if (upto > 0) persist()
     }
 
@@ -1341,6 +1395,15 @@ export class CodexLiveDriver {
         // hold-back line (and the usage already observed) would be lost —
         // flush it now (the exec settle-mirror's partial-work contract).
         if (mirrored < lines.length) mirrorUpTo(lines.length, true)
+        // A line still waiting behind a stream whose completion never came:
+        // finalize that stream from its last snapshot, then keep folding.
+        while (mirrored < lines.length && streams.size > 0) {
+          const oldest = streams.values().next().value!
+          appendStreamSnapshot(oldest, true, settled.stopReason !== 'completed', false, true)
+          finishStream(oldest)
+          closeOpenStep()
+          mirrorUpTo(lines.length, true)
+        }
         // Streams whose item/completed never arrived (abort, or the server
         // ended the turn mid-item) still finalize INSIDE the turn window:
         // one forced snapshot each — interrupted on a non-completed round,
@@ -1350,8 +1413,8 @@ export class CodexLiveDriver {
           const remaining = [...streams.values()]
           for (const [position, stream] of remaining.entries()) {
             appendStreamSnapshot(stream, true, settled.stopReason !== 'completed', position === remaining.length - 1, true)
-            streamPublisher?.finish(stream.step)
-            if (stream.opened) childSession.append('step/end', { turn, step: stream.step })
+            finishStream(stream)
+            closeOpenStep()
           }
           streams.clear()
           activeStream = undefined
