@@ -175,6 +175,14 @@
 - **退役条件**：官方服务落地后，删 `scroll-sync.ts`，面板改调官方服务；核对锚点属性（`data-chat-turn` / `data-conversation-scroll`）是否在官方重构中改名。
 - **状态**：绕行中（@khorsheed/dsh-context-lens）。
 
+### S21. 「最终答案」锚定取 turn 最后一个 step draft，尾部无回复的 step 会吞掉折叠态的回复
+
+- **需求**:ui-chat 的 `latestAnswer`(`packages/client/ui-chat/src/client/conversation-nodes/turn-process.ts`）把「最终答案」锚定在 turn 的最后一个 step draft；而 location index(ui-conversation `location-index.ts`）给任何带 (turn, step) 坐标的事件都建 draft。于是一个只有流式帧（或悬挂内容、无 assistant 消息）的尾部 step 让锚定失败（`answerAnchorSeq = null`)，折叠时整轮内容——包括回复——都进「已完成」折叠块。
+- **现状绕行**:kimi live 驱动让同一 generation 的 think/text 流共享一个预约 step，被折叠消费的预约不再留下空 step（见 Agent Note `.agents/notes/implemented/bug-fix/2026-10-23-kimi-shared-stream-step.md`)；但任何「尾部 step 无回复」的形态（跨 generation 的评论性文本、其他 provider 的悬挂流）仍会触发。
+- **建议的官方改动**:`latestAnswer` 回走到最后一个带回复内容（`hasAssistantReplyContent`）且无 tool-call 的 step，而不是取最后一个 draft。
+- **退役条件**：官方改成回走语义后，任何尾部空 step 都不再吞回复；我们的共享预约可保留（它同时是更贴宿主形态的实现）。
+- **状态**：绕行中（@khorsheed/dsh-local-agent-kimi)。
+
 
 - 新增条目：发现"官方不支持 → 绕行"即登记，先登记者在提案总表更新计数。
 - 条目退役：官方落地后同一 PR 里拆绕行 + 标 `已退役` + 写明退役版本。
