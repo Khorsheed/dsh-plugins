@@ -1,9 +1,11 @@
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import type { RoomDelivery } from './types.ts'
 
-/** Whether an event is a message the human typed (not a producer's followup). */
+/** Whether an event is a message the human typed (not a producer's followup); an in-place edit of one (message-tools) is the human's text too. */
 export function isHumanMessage(event: SessionEvent): event is SessionEvent<'user/message'> {
-  return event.type === 'user/message' && event.data.source.kind === 'user'
+  if (event.type !== 'user/message') return false
+  const source = event.data.source as { readonly kind: string; readonly op?: unknown }
+  return source.kind === 'user' || (source.kind === 'message-tools' && source.op === 'edit')
 }
 
 /** Every human message's latest task link (message id → task root id). */
