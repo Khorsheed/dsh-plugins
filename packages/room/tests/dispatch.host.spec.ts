@@ -757,6 +757,39 @@ describe('coordinator routing and durable deliveries', () => {
     expect(bench.agent!.followup).not.toHaveBeenCalled()
   })
 
+  it('an edited message goes to the external coordinator through the room: the original stops, the edit runs once under its task', async () => {
+    const bench = await bootRoom()
+    const member = await preparedMember(bench)
+    await bench.service.setCoordinator({ sessionId: bench.sessionId, memberId: member.id!, expectedRevision: 0 })
+    const first = deferred<SubagentResult>()
+    bench.facade.resume.mockImplementationOnce(async () => ({ ...settledRun('child-ada', ''), result: first.promise }))
+    bench.facade.cancel.mockImplementation(() => { first.resolve({ output: [], stopReason: 'aborted' }); return true })
+    await bench.service.postMessage({ sessionId: bench.sessionId, text: '请让d s h' })
+    await vi.waitFor(() => expect(bench.facade.resume).toHaveBeenCalledTimes(1))
+    const session = bench.ctx.sessions.get(bench.sessionId)!
+    const original = session.snapshotEvents().findLast(event => event.type === 'user/message')!
+    // message-tools: the edited bubble replaces the original, then a trigger wakes the room agent.
+    session.append('user/message', createUserMessage({ content: [{ type: 'text', text: '请让dsh打声招呼' }], source: { kind: 'message-tools', op: 'edit' } as never }),
+      { surfaceOp: { op: 'replace', startSeq: original.seq, endSeq: original.seq }, sourceEventSeqs: [original.seq] } as never)
+    const trigger = createUserMessage({ content: [{ type: 'text', text: '(用户编辑了上一条消息，请按编辑后的内容重新回答)' }], source: { kind: 'message-tools', op: 'edit-trigger' } as never })
+    bench.facade.resume.mockImplementation(async () => settledRun('child-ada', 'answer'))
+    const agent = { session } as Agent
+    const next = vi.fn(async () => ({ kind: 'enter' as const, messages: [trigger] }))
+    const step = { messages: [trigger], turn: 2, step: 1, signal: new AbortController().signal }
+    expect(await agentEvents(bench.ctx, agent).waterfall('agent/pre-step', step, next)).toEqual({ kind: 'enter', messages: [] })
+    // A replayed trigger does not dispatch twice.
+    expect(await agentEvents(bench.ctx, agent).waterfall('agent/pre-step', { ...step, turn: 3 }, next)).toEqual({ kind: 'enter', messages: [] })
+    expect(next).not.toHaveBeenCalled()
+    await bench.service.engine.idle()
+    const state = await bench.service.getState({ sessionId: bench.sessionId })
+    if (!state.ok) throw new Error('room unavailable')
+    expect(state.value.deliveries!.filter(row => row.origin === 'human').map(row => [row.text, row.status])).toEqual([['请让d s h', 'cancelled'], ['请让dsh打声招呼', 'done']])
+    expect(state.value.jobs).toHaveLength(1)
+    expect(state.value.jobs![0]!.messages.map(entry => entry.text)).toEqual(['请让d s h', '请让dsh打声招呼'])
+    expect(textOf(bench.facade.resume.mock.calls.at(-1)![3])).toContain('请让dsh打声招呼')
+    expect(bench.agent!.followup).not.toHaveBeenCalled()
+  })
+
   it('returns acceptance before background completion and reports exactly once; human @ never wakes main', async () => {
     const bench = await bootRoom()
     await bench.service.invite({ sessionId: bench.sessionId, provider: 'kimi', name: 'ada' })

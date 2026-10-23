@@ -126,6 +126,16 @@ function messageReceipt(receipt: RoomMessageReceipt, kind: 'task' | 'notify'): R
     : `sent #${receipt.messageId}（${receipt.member} 做完后结果会自动回报给你；不要 sleep 等待，也不要用 room_read 轮询）`
 }
 
+/** The message-tools edit trigger (data only — no dependency on that plugin). */
+function isEditTrigger(source: { readonly kind: string }): boolean {
+  return source.kind === 'message-tools' && (source as { readonly op?: unknown }).op === 'edit-trigger'
+}
+
+/** Whether a user/message is message-tools' in-place edit of a human message. */
+function editedText(source: { readonly kind: string }): boolean {
+  return source.kind === 'message-tools' && (source as { readonly op?: unknown }).op === 'edit'
+}
+
 /** A message's text blocks, joined. */
 function textBlocks(content: readonly { readonly type: string; readonly text?: string }[]): string {
   return content.flatMap(block => block.type === 'text' && typeof block.text === 'string' ? [block.text] : []).join('\n').trim()
@@ -261,6 +271,15 @@ export class RoomService extends TypertRemoteService {
       if (messages.some(message => isRoomSource(message.source))) {
         nativeTurns.set(agent, turn)
         return next()
+      }
+      // An edit of the human's message (message-tools) wakes this agent to
+      // answer again; behind an external coordinator the edited text goes
+      // to the coordinator through the room instead.
+      const trigger = messages.find(message => isEditTrigger(message.source))
+      if (trigger !== undefined) {
+        const routed = await this.routeEdit(agent.session, String(trigger.id))
+        if (!routed.ok) throw new Error(`Room input routing failed: ${routed.code}`)
+        return { kind: 'enter', messages: [] }
       }
       for (const message of messages) {
         if (message.source.kind !== 'user' || message.content.some(block => block.type !== 'text')) {
@@ -532,6 +551,56 @@ export class RoomService extends TypertRemoteService {
     await this.ctx.sessions.flush(loaded.session)
     await this.engine.recover(loaded.session)
     return { ok: true, value: { stopped } }
+  }
+
+  /**
+   * Route the human's edited message (message-tools replaced the bubble in
+   * place) to the room: the original message's dispatch stops — editing is
+   * changing one's mind — and the edited text dispatches like a new human
+   * message, filed under the original's task, without a second bubble.
+   * Idempotent per edit trigger.
+   */
+  private async routeEdit(session: Session, requestId: string): Promise<{ readonly ok: true } | { readonly ok: false; readonly code: string }> {
+    const events = session.snapshotEvents()
+    if (events.some(event => event.type === 'room/dispatch' && event.data.id === requestId)) return { ok: true }
+    const edit = events.findLast(event => event.type === 'user/message' && editedText(event.data.source))
+    if (edit?.type !== 'user/message') return { ok: false, code: 'edit-not-found' }
+    const text = textBlocks(edit.data.content)
+    if (text === '') return { ok: false, code: 'empty-text' }
+    const replaced = (edit as { readonly sourceEventSeqs?: readonly number[] }).sourceEventSeqs ?? []
+    const originals = events.filter(event => replaced.includes(event.seq) && isHumanMessage(event))
+    const links = taskLinks(events)
+    const task = originals.length === 0 ? undefined : linkedTask(links, originals[0]!.type === 'user/message' ? originals[0]!.data.id : '')
+    // The original's dispatch: the human dispatch that followed it.
+    const state = replay(events)
+    for (const original of originals) {
+      const next = events.find(event => event.seq > original.seq && (event.type === 'room/dispatch' || isHumanMessage(event)))
+      if (next?.type !== 'room/dispatch' || next.data.origin !== 'human') continue
+      for (const row of (state.deliveries ?? []).filter(entry => entry.dispatchSeq === next.seq)) {
+        const member = state.members.find(entry => memberId(events, entry) === row.memberId)
+        if (row.status === 'running' && member !== undefined) await this.cancel({ sessionId: session.id, name: member.name, expectedRunId: row.id })
+        else if (row.status === 'queued' || row.status === 'held') session.append('room/delivery-state', { id: row.id, dispatchSeq: row.dispatchSeq, memberId: row.memberId, state: 'cancelled', error: '你编辑了这条消息' })
+      }
+    }
+    const parsed = parseMentions(text)
+    const targets = [...parsed.targets]
+    const current = replay(session.snapshotEvents())
+    if (targets.length === 0) {
+      const coordinator = coordinatorMember(current, session.snapshotEvents())
+      if (coordinator === undefined) return { ok: false, code: 'member-not-found' }
+      targets.push(coordinator.name)
+    }
+    if (targets.some(target => !current.members.some(member => member.name === target))) return { ok: false, code: 'unknown-targets' }
+    const body = parsed.targets.length > 0 ? parsed.text : text
+    const filed = await this.fileHumanMessage(session, edit.data.id, text, task)
+    this.moveOnFromLostRounds(session, targets)
+    const dispatch = session.append('room/dispatch', {
+      id: requestId, targets, text: body, origin: 'human', task: filed.task,
+      targetIds: targets.map(name => memberId(session.snapshotEvents(), current.members.find(member => member.name === name)!)),
+    })
+    await this.ctx.sessions.flush(session)
+    for (const target of targets) this.engine.dispatch(session, target, body, { dispatchSeq: dispatch.seq })
+    return { ok: true }
   }
 
   /**
