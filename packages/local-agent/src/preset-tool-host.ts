@@ -31,8 +31,12 @@ export interface BridgedToolResult {
   readonly isError: boolean
 }
 
-/** Owners whose tools the bridge already serves itself, or that only make sense inside dsh. */
-const SKIPPED_OWNERS = new Set(['@khorsheed/dsh-room', '@khorsheed/dsh-local-agent'])
+/** Owners whose tools the bridge already serves itself (room), or that delegate from dsh (the local-agent family). */
+const skippedOwner = (owner: string): boolean => owner === '@khorsheed/dsh-room' || owner.startsWith('@khorsheed/dsh-local-agent')
+
+/** How long a freshly mounted preset may take to finish registering its tools, and how often to look. */
+const SETTLE_MS = 3_000
+const SETTLE_STEP_MS = 150
 
 const ORIGIN = Symbol.for('dsh.tool.origin')
 
@@ -53,7 +57,7 @@ interface AgentsLike {
 /** Whether a definition is a plugin tool the bridge may forward. */
 function isPluginTool(definition: object | undefined): boolean {
   const origin = (definition as { [ORIGIN]?: { channel?: unknown; owner?: unknown } } | undefined)?.[ORIGIN]
-  return origin?.channel === 'plugin' && !SKIPPED_OWNERS.has(String(origin.owner))
+  return origin?.channel === 'plugin' && !skippedOwner(String(origin.owner))
 }
 
 /** Map registry content blocks to MCP content (text and images; anything else as text). */
@@ -120,12 +124,23 @@ export class PresetToolHost {
    */
   async list(childSessionId: string, preset: string, cwd?: string): Promise<BridgedTool[]> {
     const tools = this.probe<ToolsLike>('tools')
+    const fresh = this.hosts.get(childSessionId)?.preset !== preset
     const agent = await this.agentFor(childSessionId, preset, cwd)
     if (tools === undefined || agent === undefined) {
       this.note({ childSessionId, preset, tools: tools !== undefined, agent: agent !== undefined })
       return []
     }
-    const schemas = tools.schemas(agent)
+    // A preset mounted for the first time registers some rows' tools a
+    // moment later (deferred injects): wait until the scope stops growing.
+    let schemas = tools.schemas(agent)
+    if (fresh) {
+      for (let waited = 0; waited < SETTLE_MS; waited += SETTLE_STEP_MS) {
+        await new Promise(resolve => setTimeout(resolve, SETTLE_STEP_MS))
+        const next = tools.schemas(agent)
+        if (next.length === schemas.length && waited >= SETTLE_STEP_MS * 3) break
+        schemas = next
+      }
+    }
     const listed = schemas.filter(schema => isPluginTool(tools.get(schema.name, agent)))
     this.note({ childSessionId, preset, agent: agent.id, scope: schemas.map(schema => {
       const origin = (tools.get(schema.name, agent) as { [ORIGIN]?: { channel?: unknown; owner?: unknown } } | undefined)?.[ORIGIN]

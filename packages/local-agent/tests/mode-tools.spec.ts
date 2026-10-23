@@ -24,6 +24,7 @@ function host() {
   const definitions = new Map<string, object>([
     ['video_read', tagged('video_read', '@khorsheed/dsh-video-studio')],
     ['room_read', tagged('room_read', '@khorsheed/dsh-room')],
+    ['subagent_dsh', tagged('subagent_dsh', '@khorsheed/dsh-local-agent-dsh')],
     ['bash', tagged('bash', 'builtin', 'builtin')],
     ['plain', { name: 'plain' }],
   ])
@@ -35,7 +36,7 @@ function host() {
     get: (name: string, scope?: object) => scope === agent ? definitions.get(name) : undefined,
     execute,
   } as never)
-  return { ctx, agent, create, mount, execute }
+  return { ctx, agent, create, mount, execute, definitions }
 }
 
 describe('PresetToolHost', () => {
@@ -60,6 +61,13 @@ describe('PresetToolHost', () => {
     expect(h.execute).toHaveBeenCalledWith(expect.objectContaining({ name: 'video_read', arguments: { project: 'p' }, agent: h.agent, signal }))
     expect(await tools.call('child-codex', 'dsh-video', 'bash', {}, signal)).toMatchObject({ isError: true })
     expect(h.execute).toHaveBeenCalledOnce()
+  })
+
+  it('waits for a freshly mounted preset to finish registering before listing', async () => {
+    const h = host()
+    h.definitions.delete('video_read')
+    setTimeout(() => { h.definitions.set('video_read', tagged('video_read', '@khorsheed/dsh-video-studio')) }, 200)
+    expect((await new PresetToolHost(h.ctx).list('child-codex', 'dsh-video')).map(tool => tool.name)).toEqual(['video_read'])
   })
 
   it('a host without presets offers nothing', async () => {
