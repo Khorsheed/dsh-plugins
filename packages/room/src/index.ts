@@ -535,6 +535,24 @@ export class RoomService extends TypertRemoteService {
   }
 
   /**
+   * The human messaging a member moves on from that member's ordinary
+   * rounds a restart left uncertain: they close as not finished, so the new
+   * message runs instead of queueing behind a reconciliation. Formal-goal
+   * attempts keep their explicit reconciliation.
+   */
+  private moveOnFromLostRounds(session: Session, targets: readonly string[]): void {
+    const events = session.snapshotEvents()
+    const state = replay(events)
+    const ids = new Set(state.members.filter(member => targets.includes(member.name)).map(member => memberId(events, member)))
+    for (const row of state.deliveries ?? []) {
+      if (row.status !== 'uncertain' || row.plan?.taskId !== undefined || !ids.has(row.memberId)) continue
+      session.append('room/delivery-state', { id: row.id, dispatchSeq: row.dispatchSeq, memberId: row.memberId, state: 'cancelled', text: '你发了新消息；被重启打断的这一轮按没做完处理' })
+      const run = state.runs.find(entry => entry.runId === row.id)
+      if (run !== undefined) session.append('room/run-state', { member: run.member, runId: row.id, startedAt: run.startedAt, state: 'cancelled' })
+    }
+  }
+
+  /**
    * Where a member's next send belongs: the task and delivery it is working
    * on (a member inside a room round), or — for the room's own agent answering
    * the human directly — the task of the human message that started its turn
@@ -1036,6 +1054,7 @@ export class RoomService extends TypertRemoteService {
     })
     loaded.session.append('user/message', human, { surfaceOp: 'append' })
     const filed = await this.fileHumanMessage(loaded.session, human.id, request.text.trim(), request.task ?? this.consumeTaskHint(request.sessionId))
+    this.moveOnFromLostRounds(loaded.session, targets)
     const dispatch = loaded.session.append('room/dispatch', {
       id: request.requestId ?? randomUUID(), requestSignature, targets, text, origin: 'human', task: filed.task,
       targetIds: targets.map(name => memberId(loaded.session.snapshotEvents(), loaded.state.members.find(member => member.name === name)!)),
