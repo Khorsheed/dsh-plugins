@@ -1,5 +1,9 @@
 # 变更记录
 
+## 未发布
+
+- **run-state 边携带子会话关联**:`room/run-state` 在身份存在后的所有边恒带 `childSessionId`（成员首跑的 running 边早于句柄产生，终态边与后续轮次都有）；终态边（done/cancelled/failed）新增 `childTurn`（该运行写入子会话的轮次号，只读在内存的存活会话）。`room/dispatch`、`room/run-state`、`room/coordinator`、`room/member-added` 是 Context Lens 的外部读取接口（类型注释已标注）。
+
 ## 0.2.2（2026-10-22）
 
 - **房间输入条草稿接入官方 input machine**：草稿不再存组件本地 state，房间接管条与官方回退输入条共享同一份草稿——「引用到当前会话」等外部写入立即在房间里可见（此前写入成功却只渲染在隐藏的回退条里，看似失效）；草稿随机器持久化，跨导航/重挂存活；首次拉取窗口期在回退条打的字在接管当选后保留。发送路径不变：仍走房间自己的 `remote.room.postMessage` 派发，`inputActions.submit` 永不调用，机器忙碌准入不会串行化并行成员派发。引用 chip 在纯 textarea 投影为剪贴板文本、编辑即摊平（接受的房间侧降级）。

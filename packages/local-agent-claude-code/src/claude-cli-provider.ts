@@ -1245,6 +1245,9 @@ function toolResultText(content: unknown): string | undefined {
  * Map claude's usage payload onto the shared usage contract. Claude's
  * `input_tokens` is the uncached input; cache reads and cache creation are
  * reported separately, so each maps to its own bucket with no subtraction.
+ * When the payload carries ANY cache field, `cacheReadTokens` is always
+ * written (0 when the read counter is absent or zero) — a reader can then
+ * tell "no hits" from "not reported".
  * @param usage - the raw claude usage object.
  * @returns the shared usage record.
  */
@@ -1268,7 +1271,7 @@ function usageFromClaude(usage: unknown): TokenUsage {
     inputTokens: input ?? 0,
     outputTokens: output ?? 0,
   }
-  if (cacheRead !== undefined && cacheRead > 0) usageRecord.cacheReadTokens = cacheRead
+  if (cacheRead !== undefined || cacheWrite !== undefined) usageRecord.cacheReadTokens = cacheRead ?? 0
   if (cacheWrite !== undefined && cacheWrite > 0) usageRecord.cacheWriteTokens = cacheWrite
   return usageRecord
 }

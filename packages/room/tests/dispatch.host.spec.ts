@@ -87,6 +87,8 @@ function settledRun(id: string, text: string, stopReason: SubagentResult['stopRe
 describe('DispatchEngine (real composition)', () => {
   it('a first task starts a fresh delegation, journals the handle, the speech, and the run edges', async () => {
     const bench = await bootRoom()
+    // A live child with one round: the done edge reports the round reached.
+    bench.ctx.sessions.create(SessionId('child-1')).append('turn/start', { turn: 1 })
     bench.facade.start.mockImplementation(async () => settledRun('child-1', '骨架已搭'))
     await bench.service.invite({
       sessionId: bench.sessionId, provider: 'kimi', name: 'ada', instructions: '后端', firstTask: '搭骨架',
@@ -120,6 +122,22 @@ describe('DispatchEngine (real composition)', () => {
         runs: [{ member: 'ada', state: 'done' }],
       },
     })
+    // Every run-state edge carries the child identity once it exists; the
+    // terminal edge also reports the child round reached (Context Lens's
+    // room-turn correlation). A fresh member's first running edge predates
+    // the child handle — the terminal edge and later rounds carry it.
+    const runStates = bench.ctx.sessions.get(bench.sessionId)!.snapshotEvents().filter(event => event.type === 'room/run-state')
+    expect(runStates.map(event => event.data.state)).toEqual(['running', 'done'])
+    expect(runStates[0]!.data.childSessionId).toBeUndefined()
+    expect(runStates.at(-1)?.data).toMatchObject({ childSessionId: 'child-1', childTurn: 1 })
+
+    // Later rounds carry the identity on every edge, running included.
+    bench.facade.resume.mockImplementation(async () => settledRun('child-1', '搭好了'))
+    await bench.service.postMessage({ sessionId: bench.sessionId, text: '@ada 再搭一块' })
+    await bench.service.engine.idle()
+    const edges = bench.ctx.sessions.get(bench.sessionId)!.snapshotEvents().filter(event => event.type === 'room/run-state')
+    expect(edges.map(event => event.data.state)).toEqual(['running', 'done', 'running', 'done'])
+    expect(edges.slice(1).every(event => event.data.childSessionId === 'child-1')).toBe(true)
   })
 
   it('the invite-time model lands as the delegation start call option (absent without one)', async () => {

@@ -210,6 +210,8 @@ export interface RoomExecutionMetadataEvent {
 /** A member run's lifecycle edge. */
 export interface RoomRunStateEvent {
   readonly childSessionId?: SessionId
+  /** The child session's round this run reached (the last turn/start it wrote); terminal edges only, live sessions only. */
+  readonly childTurn?: number
   /** Observed round metadata, never a requested-model guess or session total. */
   readonly model?: string
   readonly effort?: string
@@ -448,6 +450,11 @@ export interface RoomTaskEditedEvent {
 }
 
 declare module '@deepseek-ai/dsh-session/types' {
+  // External readers: Context Lens reads room/dispatch (origin/text/targets/
+  // targetIds), room/run-state (runId/member/state/startedAt/elapsedMs/
+  // childSessionId/childTurn), room/coordinator (memberId/previousMemberId)
+  // and room/member-added (id/name) as its room-turn correlation interface —
+  // rename or reshape them with a heads-up.
   interface SessionEventMap {
     /**
      * Room identity marker: the session carrying this log-only event is a
@@ -560,6 +567,8 @@ export interface RoomExecution extends RoomMemberRun {
   readonly id: string
   readonly memberId?: string
   readonly childSessionId?: SessionId
+  /** The child session round the run reached, as recorded by its terminal run-state edge. */
+  readonly childTurn?: number
   readonly provider?: string
   readonly model?: string
   readonly effort?: string

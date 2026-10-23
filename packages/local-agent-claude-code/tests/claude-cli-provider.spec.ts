@@ -112,6 +112,19 @@ describe('claude stream-json parsing', () => {
       .toEqual({ lines: [], error: 'boom' })
   })
 
+  it('writes cacheReadTokens as 0 when the payload reports cache fields with zero hits', () => {
+    // A reader must tell "no hits" from "not reported": any cache field in the
+    // payload writes cacheReadTokens, zero included.
+    const parsed = parseClaudeStreamJson([
+      JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'done' }] } }),
+      JSON.stringify({ type: 'result', is_error: false, usage: { input_tokens: 3, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 9 } }),
+    ].join('\n'))
+    expect(parsed.usage).toEqual({ inputTokens: 3, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 9 })
+    // No cache fields at all: nothing is claimed about caching.
+    const bare = parseClaudeStreamJson(JSON.stringify({ type: 'result', is_error: false, usage: { input_tokens: 3, output_tokens: 1 } }))
+    expect(bare.usage).toEqual({ inputTokens: 3, outputTokens: 1 })
+  })
+
   it('mirrors the real stream-json fixture (system, tool_use, tool_result, text, result)', () => {
     const fixture = readFileSync(
       fileURLToPath(new URL('./fixtures/stream-json.sample.jsonl', import.meta.url)),

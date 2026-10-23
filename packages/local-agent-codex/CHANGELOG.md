@@ -1,6 +1,7 @@
 # 变更记录
 ## 未发布
 
+- **缓存账目补全与硬化**:`cacheReadTokens` 在上游上报该字段时恒写（0 命中也写 0，与「未上报」可区分）；补上此前丢弃的 `cacheWriteTokens`(exec 的 `cache_write_input_tokens` / app-server 的 `cacheWriteInputTokens`);`turn/completed` 的镜像失败不再吞掉收尾（轮不再因折叠异常挂起）。
 - **子会话日志写入 `request/header`**:codex 的流从不携带 model/effort，子会话配置事实原来无处记录。现在每轮以 provider 启动参数为权威来源写入宿主原生 `request/header`(exec 路的 spawn argv、live 路的 `turn/start` 请求参数；只在变化时记录）——Context Lens 的配置卡片由此读出真实值。
 - **成员会话的模型对话框与「可用模型」短名单严格一致**：成员的模型目录原来会混入作用域配置发现的模型与历史记录（kimi 下会列出非本端点服务的配置表模型），与卡片短名单不一致。现在成员对话框的候选即短名单（按名单顺序；名单里端点已不再供应的值保留为裸行，与卡片一致），名单外只保留成员当前绑定的模型（避免既有绑定显示空白）；卡片的添加对话框只列端点真实供应的模型，配置/历史附加项不再混入。
 

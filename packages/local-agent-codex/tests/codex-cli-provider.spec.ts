@@ -1225,7 +1225,7 @@ describe('codex-cli-provider observed model and cwd', () => {
     // usage from turn.completed (uncached = 10 − 0).
     expect(settled).toHaveBeenCalledWith(expect.any(String), {
       observedModel: 'gpt-5.6-sol',
-      usage: { inputTokens: 10, outputTokens: 4 },
+      usage: { inputTokens: 10, outputTokens: 4, cacheReadTokens: 0 },
     })
   })
 
@@ -1242,7 +1242,7 @@ describe('codex-cli-provider observed model and cwd', () => {
     expect(settled).toHaveBeenCalledWith(expect.any(String), {
       observedModel: 'gpt-5.6-sol',
       cliVersion: '0.144.0',
-      usage: { inputTokens: 10, outputTokens: 4 },
+      usage: { inputTokens: 10, outputTokens: 4, cacheReadTokens: 0 },
     })
   })
 
@@ -1257,7 +1257,7 @@ describe('codex-cli-provider observed model and cwd', () => {
     expect(settled).toHaveBeenCalledWith(expect.any(String), {
       observedModel: 'gpt-5.6-sol',
       cliVersion: '0.144.0',
-      usage: { inputTokens: 10, outputTokens: 4 },
+      usage: { inputTokens: 10, outputTokens: 4, cacheReadTokens: 0 },
     })
   })
 
@@ -1289,7 +1289,7 @@ describe('codex-cli-provider observed model and cwd', () => {
     expect(settled).toHaveBeenCalledWith(expect.any(String), {
       observedModel: 'gpt-5.6-sol',
       cliVersion: '0.144.0',
-      usage: { inputTokens: 10, outputTokens: 4 },
+      usage: { inputTokens: 10, outputTokens: 4, cacheReadTokens: 0 },
     })
   })
 
@@ -1299,7 +1299,7 @@ describe('codex-cli-provider observed model and cwd', () => {
     await run.result
     await vi.waitFor(() => { expect(settled).toHaveBeenCalledTimes(1) })
     // Absence is the honest observation — no model key, never a guess.
-    expect(settled).toHaveBeenCalledWith(expect.any(String), { usage: { inputTokens: 10, outputTokens: 4 } })
+    expect(settled).toHaveBeenCalledWith(expect.any(String), { usage: { inputTokens: 10, outputTokens: 4, cacheReadTokens: 0 } })
   })
 
   it('spawns the fresh round in the staged cwd override and records it', async () => {
