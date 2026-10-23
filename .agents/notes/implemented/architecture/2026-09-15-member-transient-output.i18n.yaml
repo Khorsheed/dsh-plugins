@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-15-member-transient-output.md
-.agents/notes/implemented/architecture/2026-09-15-member-transient-output.md: 8dd8e060cd72e1935c2d1bdec995371e157ad836
-.agents/notes/implemented/architecture/2026-09-15-member-transient-output.zh.md: 8745ce6805eedac040005312c653f63c0a02e056
+.agents/notes/implemented/architecture/2026-09-15-member-transient-output.md: ed115ad30e7d195a3361151a038442c0ec2803fa
+.agents/notes/implemented/architecture/2026-09-15-member-transient-output.zh.md: dd1e082288eec4ee5b9793f0515f56bd735bd8b7

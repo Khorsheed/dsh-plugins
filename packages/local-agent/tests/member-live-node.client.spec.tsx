@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { LocalAgentStreams } from '../src/live-stream.ts'
 import { MemberLiveNode, MemberLiveOutputView, type MemberLiveNodeProps } from '../src/client/MemberLiveNode.tsx'
@@ -45,6 +45,26 @@ describe('member transient rendering', () => {
   })
 })
 
+
+describe('live thinking', () => {
+  it('reads as the host\'s think row: one line with the latest paragraph, the full text on expand', async () => {
+    const bus = new LocalAgentStreams()
+    const base = { id: '1:1', turn: 1, step: 1, kind: 'think' as const, receivedAt: 1 }
+    bus.publish('member', { ...base, text: 'The user asks for an intro.\n\nI am 剪刀手三号.\nKeep it brief' })
+    const outputs = new MemberLiveOutputs(async function* (id, signal) { yield* bus.follow(id, signal) })
+    const props = {
+      node: { data: { ...base, sessionId: 'member', text: '', seq: 1, append: false, settled: false } },
+      outputs, t: makeTranslate(zh),
+    } as MemberLiveNodeProps
+    render(<MemberLiveNode {...props} />)
+    await screen.findByText('I am 剪刀手三号.')
+    expect(screen.getByText('思考中')).toBeDefined()
+    expect(screen.queryByText(/Keep it brief/)).toBeNull()
+    fireEvent.click(screen.getByText('思考中'))
+    await screen.findByText(/Keep it brief/)
+    bus.dispose()
+  })
+})
 
 describe('Room inline output', () => {
   it('shares native deltas, filters previous runs and releases its subscription', async () => {

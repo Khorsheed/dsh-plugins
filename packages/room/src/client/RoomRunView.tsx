@@ -6,14 +6,18 @@
  * no handle), and a trailing stop button cancels through the Remote. A
  * failed run stays as a dim error row with the journaled reason (truncated,
  * the full text on hover); done/cancelled are hidden by the Definition and
- * never reach here.
+ * never reach here. A RUNNING member's row takes the speech card's shape —
+ * avatar and light card, the row as the card's header, the live output
+ * below — so the reply card that replaces it lands in the same place.
  */
-import { useEffect, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode } from 'react'
+import { useEffect, useState, useSyncExternalStore, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react'
 import { StateDot, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import { IconStopFillMedium } from './icons.tsx'
 import { formatDurationMs } from './format.ts'
 import type { RoomRunViewProps } from './slots.ts'
+import { memberColor } from './member-color.ts'
 import css from './RoomRunView.module.css'
+import speech from './RoomSpeechView.module.css'
 
 /** The member run row. */
 export function RoomRunView({ node, sessionId, roomStore, openSession, cancelMember, renderMemberOutput, t }: RoomRunViewProps): ReactNode {
@@ -42,8 +46,7 @@ export function RoomRunView({ node, sessionId, roomStore, openSession, cancelMem
       jump()
     }
   }
-  return (
-    <div>
+  const row = (
     <div
       className={css.run}
       data-state={failed ? 'failed' : 'running'}
@@ -76,7 +79,15 @@ export function RoomRunView({ node, sessionId, roomStore, openSession, cancelMem
         </Tooltip>
       )}
     </div>
-    {!failed && childSessionId !== undefined && renderMemberOutput?.(childSessionId, data.startedAt)}
+  )
+  if (failed) return <div>{row}</div>
+  return (
+    <div className={speech.speech} style={{ '--member-color': memberColor(data.member) } as CSSProperties}>
+      <span className={speech.avatar} aria-hidden>{data.member.slice(0, 1).toUpperCase()}</span>
+      <div className={`${speech.card} ${css.liveCard}`}>
+        {row}
+        {childSessionId !== undefined && renderMemberOutput?.(childSessionId, data.startedAt)}
+      </div>
     </div>
   )
 }
