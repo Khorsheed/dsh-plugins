@@ -29,6 +29,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 // Type-only: pulls the ctx.slots service merge (SlotRegistry).
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import roomRemote from '@khorsheed/dsh-room/remote'
+import { presetDisplayText } from '@deepseek-ai/dsh-agent-preset-registry/display'
 import type { TypertRemoteNamespaceMap } from '@deepseek-ai/dsh-typert-protocol'
 import type { LocalAgentUi } from '@khorsheed/dsh-local-agent/client'
 import type { LocalAgentModelInfo, LocalAgentPromptResult } from '@khorsheed/dsh-local-agent/types'
@@ -94,6 +95,13 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
 
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'room: dictionaries')
   const t = ctx.locale.bind(NS)
+  // The host's agent-preset dictionary (ui-agent-preset) carries the shipped
+  // modes' names; an unregistered key reads back as itself — fall back to the id.
+  const hostPresetCopy = (ctx.locale.bind as (ns: string) => (key: string) => string)('settings.agentPreset')
+  const presetCopy = (key: string): string => {
+    const text = hostPresetCopy(key)
+    return text === key ? '' : text
+  }
 
   const roomStore = new RoomStore(ctx, remote)
   ctx.effect(() => roomStore.start(), 'room: store')
@@ -239,7 +247,17 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     listProviders: async () => {
       if (remote === undefined) return undefined
       const carried = await remote.listProviders({})
-      return carried.ok ? carried.value : undefined
+      if (!carried.ok) return undefined
+      // Mode names as the host's own mode selector shows them: shipped modes
+      // (标准模式, PTC 模式 …) from the host's dictionary, others as declared.
+      const value = carried.value
+      return value.presets === undefined ? value : {
+        ...value,
+        presets: value.presets.map((row) => {
+          const shown = presetDisplayText(row, presetCopy)
+          return { ...row, name: shown.name || row.name || row.id, ...shown.description ? { description: shown.description } : {} }
+        }),
+      }
     },
     browseDirectory: () => {
       // Host 0.1.2 hangs the native picker on ui-workspace's service (the

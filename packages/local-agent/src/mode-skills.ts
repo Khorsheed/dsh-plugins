@@ -2,10 +2,10 @@
  * Mode skills, installed the CLI's own way: a member with a mode gets the
  * skills that mode contributes (e.g. the 剪辑 mode's `video-studio`) written
  * into its harness home's skill directory — `skills/<name>/SKILL.md`, the
- * layout Codex (`$CODEX_HOME`) and Claude Code (`$CLAUDE_CONFIG_DIR`) both
- * load. The home is shared by every member of that harness, so each skill is
+ * layout Codex (`$CODEX_HOME`), Claude Code (`$CLAUDE_CONFIG_DIR`) and Kimi
+ * (`$KIMI_CODE_HOME`, its auto-discovered user skill directory) load. The home is shared by every member of that harness, so each skill is
  * named `dsh-<name>` and says it applies only alongside the mode's tools.
- * Harnesses without a known skill directory (kimi) get none. Best-effort:
+ * Harnesses without a known skill directory get none. Best-effort:
  * a failed write never fails the member's tool listing.
  * @module @khorsheed/dsh-local-agent/mode-skills
  */
@@ -14,7 +14,7 @@ import { join } from 'node:path'
 import type { ModeSkill } from './preset-tool-host.ts'
 
 /** Harnesses whose CLI loads `<home>/skills/<name>/SKILL.md`. */
-const SKILL_HOMES: ReadonlySet<string> = new Set(['codex', 'claude-code'])
+const SKILL_HOMES: ReadonlySet<string> = new Set(['codex', 'claude-code', 'kimi'])
 
 /** The skill directory of a harness home, or undefined when its CLI has none we know. */
 export function harnessSkillsDir(harness: string, home: string): string | undefined {
