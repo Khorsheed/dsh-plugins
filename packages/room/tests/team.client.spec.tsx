@@ -82,9 +82,10 @@ describe('TeamView (narrow)', () => {
     vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
     const openSession = vi.fn()
     render(<TeamView state={STATE} openSession={openSession} t={t} />)
-    screen.getByText('派活 3 · 回报 2')
+    // Counts ride each node's pill: tasks from its parent, reports back, FYIs.
+    expect(document.querySelector('[data-team-node="m-kimi"]')!.textContent).toContain('派 3· 回 2')
+    expect(document.querySelector('[data-team-node="m-codex"]')!.textContent).toContain('派 1· 回 1· 知会 1')
     screen.getByText('▶ 复审修复')
-    screen.getByText('kimi 知会 1')
     fireEvent.click(screen.getByText('claude').closest('button')!)
     screen.getByText('复审修复', { selector: 'span[title]' })
     fireEvent.click(screen.getByRole('button', { name: '打开它的会话 →' }))

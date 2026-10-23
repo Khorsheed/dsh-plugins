@@ -1,7 +1,7 @@
 /* The team view (right sidebar). One layout that adapts to its own width:
    the component switches tree ↔ graph at 600px; type sizes follow the panel
-   tokens, colors the aliases. Solid edges are tasks (with a green return
-   path for reports), dashed violet edges are FYIs. */
+   tokens, colors the aliases. The graph draws who tasks whom as
+   trunk-and-branch lines without text; the counts ride each node's pill. */
 
 .team {
   display: flex;
@@ -21,27 +21,7 @@
   font-size: var(--dsh-panel-font-caption, 12px);
 }
 
-.legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 12px;
-}
 
-.legend i {
-  display: inline-block;
-  width: 16px;
-  margin-right: 4px;
-  vertical-align: middle;
-  border-top: 2px solid var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
-}
-
-.legend .legendReport {
-  border-top-color: var(--dsw-alias-state-success, #1f9a55);
-}
-
-.legend .legendNotify {
-  border-top: 2px dashed var(--dsw-alias-state-purple, #7a52c7);
-}
 
 .root {
   align-self: flex-start;
@@ -169,8 +149,7 @@
   color: var(--dsw-alias-text-error, #d9363e);
 }
 
-.line,
-.cross {
+.line {
   display: flex;
   flex-wrap: wrap;
   gap: 2px 8px;
@@ -180,13 +159,7 @@
   font-variant-numeric: tabular-nums;
 }
 
-.inbound {
-  color: var(--dsw-alias-label-secondary, rgba(90, 90, 90, 0.9));
-}
 
-.cross {
-  color: var(--dsw-alias-state-purple, #7a52c7);
-}
 
 .current {
   overflow: hidden;
@@ -294,49 +267,23 @@
   pointer-events: none;
 }
 
-.edgeTask,
-.edgeReport,
-.edgeNotify {
-  fill: none;
-}
-
 .edgeTask {
-  stroke: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
-  stroke-width: 1.6;
-}
-
-.edgeReport {
-  stroke: var(--dsw-alias-state-success, #1f9a55);
-  stroke-width: 1.3;
-}
-
-.edgeNotify {
-  stroke: var(--dsw-alias-state-purple, #7a52c7);
-  stroke-width: 1.3;
-  stroke-dasharray: 4 3;
+  fill: none;
+  stroke: var(--dsw-alias-border-l2-darkmode-thin, rgba(127, 127, 127, 0.45));
+  stroke-width: 1.5;
 }
 
 .arrow {
-  fill: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
-}
-
-.arrowReport {
-  fill: var(--dsw-alias-state-success, #1f9a55);
-}
-
-.edgeLabel {
-  fill: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
-  font-size: 10.5px;
+  fill: var(--dsw-alias-border-l2-darkmode-thin, rgba(127, 127, 127, 0.45));
 }
 
 .level {
   position: relative;
   z-index: 1;
   display: flex;
-  flex-wrap: wrap;
   justify-content: center;
   gap: 16px;
-  margin-bottom: 44px;
+  margin-bottom: 40px;
 }
 
 .level:last-child {
@@ -360,4 +307,52 @@
   border: 1px solid var(--dsw-alias-border-l2-darkmode-thin, rgba(0, 0, 0, 0.1));
   border-radius: 10px;
   background: var(--dsw-alias-bg-layer-1, #ffffff);
+}
+
+/* Counts pill: tasks from the parent, reports back (green), FYIs (violet).
+   Floating on the wide graph's node top edge; inline in the narrow tree. */
+.pill,
+.pillFloat {
+  display: inline-flex;
+  gap: 4px;
+  padding: 0 7px;
+  border: 1px solid var(--dsw-alias-border-l2-darkmode-thin, rgba(0, 0, 0, 0.16));
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-layer-1, #ffffff);
+  color: var(--dsw-alias-label-secondary, rgba(90, 90, 90, 0.9));
+  font-size: 10.5px;
+  line-height: 16px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.pillFloat {
+  position: absolute;
+  top: -9px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.pillReport {
+  color: var(--dsw-alias-state-success, #1f9a55);
+}
+
+.pillNotify {
+  color: var(--dsw-alias-state-purple, #7a52c7);
+}
+
+.level > .node {
+  position: relative;
+}
+
+.more {
+  width: 120px;
+  padding: 8px 10px;
+  border: 1px dashed var(--dsw-alias-border-l2-darkmode-thin, rgba(0, 0, 0, 0.2));
+  border-radius: 10px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary, rgba(90, 90, 90, 0.9));
+  font: inherit;
+  font-size: var(--dsh-panel-font-caption, 12px);
+  cursor: pointer;
 }
