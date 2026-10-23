@@ -32,7 +32,7 @@
  * selector declines while `owner.pendingInteraction` is set, so the priority-1
  * ApprovalPanel elects), and everything the hidden fallback tree carried is
  * re-homed INTO this component — the main agent's turn Stop (the send circle
- * swaps while `running`), the dock capsules (RoomDockCapsules), the main
+ * swaps while `running`), the task capsule (RoomTaskCapsule), the main
  * agent's todo strip (RoomTodoStrip, the `todos` projection), the queued-
  * messages strip (RoomQueueStrip, the `inbox` projection — the 0.1.5 session
  * snapshot's queue on the old line), the session
@@ -41,6 +41,11 @@
  * itself is single-owner and cannot be re-hosted, so the picker is our own
  * trigger on the same directory; a host without ui-model-selection gets no
  * picker).
+ *
+ * The task page's 「追问」 / 「＋ 新任务」 put a removable chip on the card
+ * (「任务 N」 / 「新任务」, the shared RoomTaskTags store) and focus the
+ * textarea; the next send carries it as postMessage's `task` and clears it.
+ * Removing the chip leaves the filing to dsh.
  */
 import { coordinatorMember } from '../journal.ts'
 import {
@@ -53,11 +58,9 @@ import type { InboxState } from '@deepseek-ai/dsh-agent/types'
 import type { RoomComposerMatch, RoomComposerProps } from './slots.ts'
 import { memberColor } from './member-color.ts'
 import { RoomStatsLine } from './RoomStatsLine.tsx'
-import { RoomDockCapsules } from './RoomDockCapsules.tsx'
+import { RoomTaskCapsule } from './RoomTaskCapsule.tsx'
 import { RoomTodoStrip } from './RoomTodoStrip.tsx'
-import { RoomActivityDock } from './RoomActivityDock.tsx'
 import { RoomQueueStrip, type RoomQueueItem } from './RoomQueueStrip.tsx'
-import { RoomRecoveryView } from './RoomRecoveryView.tsx'
 import { RoomModelPicker } from './RoomModelPicker.tsx'
 import css from './RoomComposer.module.css'
 
@@ -68,6 +71,7 @@ interface LegacyQueuedMessage {
   readonly preview: string
 }
 
+const NO_TAGS = (): (() => void) => () => {}
 const EMPTY_LEGACY_QUEUE: readonly LegacyQueuedMessage[] = []
 const QUEUE_PREVIEW_CHARS = 200
 
@@ -126,11 +130,12 @@ export function selectRoomComposer(
 
 /** The room composer takeover component. */
 export function RoomComposer({
-  sessionId, roomStore, submit, stop, addTask, closeTask, setGoal, planCommand, openPlanSession, openPlan, stopExecution, backgroundSessions, activeChildren, stopChild, reconcileDelivery,
-  roomCwd, invite, listProviders, listNames, browseDirectory, modelSurface, renderHarnessModelPicker, roomChrome,
+  sessionId, roomStore, submit, stop, openTasks, taskTags, openPlanSession, reconcileDelivery,
+  roomCwd, invite, listProviders, browseDirectory, modelSurface, renderHarnessModelPicker,
   modelDirectory, renderMemberConfiguration, renderMemberInbox, stopMember, useSession, useProjection, useInput, inputActions, t,
 }: RoomComposerProps): ReactNode {
   const state = useSyncExternalStore(roomStore.subscribe, () => roomStore.getCached(sessionId))
+  const tag = useSyncExternalStore(taskTags?.subscribe ?? NO_TAGS, () => taskTags?.get(sessionId))
   // The draft is the session's official input machine (the module header):
   // shared with the hidden fallback bar, persistent across navigation, and
   // writable by external drafters (quote) with zero room-specific code.
@@ -171,6 +176,11 @@ export function RoomComposer({
     area.style.height = `${area.scrollHeight}px`
   }
 
+  // A new tag (the task page's 追问 / 新任务) hands the textarea focus.
+  useEffect(() => {
+    if (tag !== undefined) areaRef.current?.focus()
+  }, [tag?.revision])
+
   // External draft writes (a quote insertion, the election window's
   // carry-over) never fire onChange — keep the height in sync with the draft.
   useEffect(() => {
@@ -206,9 +216,11 @@ export function RoomComposer({
     try {
       // Two-argument form while nothing was menu-picked: the injected face's
       // third parameter is the pick channel only.
-      const outcome = picked.length > 0
-        ? await submit(sessionId, text, picked)
-        : await submit(sessionId, text)
+      const outcome = tag !== undefined
+        ? await submit(sessionId, text, picked, tag.task)
+        : picked.length > 0
+          ? await submit(sessionId, text, picked)
+          : await submit(sessionId, text)
       if (!outcome.ok) {
         setError(outcome.message)
         return
@@ -220,6 +232,7 @@ export function RoomComposer({
       flushDraft?.()
       setMention(null)
       setPicked([])
+      taskTags?.set(sessionId, undefined)
     } catch {
       setError(t('composer.error.generic'))
     } finally {
@@ -263,33 +276,27 @@ export function RoomComposer({
       {/* The dock's slot seat is hidden with the official fallback, so the
           takeover renders the dock's surfaces itself, on the same card-width
           column axis: the main agent's todo strip (the official TodoPanel's
-          seat), the goal/task capsules, and the queued-messages strip (the
+          seat), the task capsule, and the queued-messages strip (the
           official QueueDock, read-only). */}
       <div className={css.dock}>
         {!external && useProjection !== undefined && <RoomTodoStrip useProjection={useProjection} t={t} />}
-        {(state === undefined || (state.plan === undefined && (state.executions?.length ?? 0) === 0)) && <RoomDockCapsules
-          sessionId={sessionId}
-          roomStore={roomStore}
-          addTask={addTask}
-          closeTask={closeTask}
-          setGoal={setGoal}
-          formalPlans={planCommand !== undefined}
+        {state !== undefined && <RoomTaskCapsule
+          state={state}
+          openTasks={openTasks}
+          reconcileDelivery={reconcileDelivery}
+          openPlanSession={openPlanSession}
           roomCwd={roomCwd}
           invite={invite}
           listProviders={listProviders}
-          listNames={listNames}
           browseDirectory={browseDirectory}
           modelSurface={modelSurface}
           renderHarnessModelPicker={renderHarnessModelPicker}
-          roomChrome={roomChrome}
           t={t}
         />}
-        {state !== undefined && reconcileDelivery !== undefined && <RoomRecoveryView deliveries={state.deliveries ?? []} members={state.members} reconcile={reconcileDelivery} openSession={openPlanSession} t={t} />}
         <RoomQueueStrip
           items={[...external ? [] : queued, ...(state?.deliveries ?? []).filter(row => row.memberId === coordinator?.id && (row.status === 'queued' || row.status === 'uncertain')).map(row => ({ id: row.id, preview: row.status === 'uncertain' ? `${row.error ?? 'Outcome unknown'}: ${row.text}` : row.text }))]}
           t={t}
         />
-        {state !== undefined && <RoomActivityDock key={sessionId} sessionId={sessionId} state={state} backgroundSessions={backgroundSessions} activeChildren={activeChildren} stopChild={stopChild} openSession={openPlanSession} stopExecution={stopExecution} planCommand={planCommand} openPlan={openPlan} stopMember={stopMember} t={t} />}
       </div>
       {error !== null && <div className={css.error} role="alert">{error}</div>}
       {external && coordinator.childSessionId !== undefined && renderMemberInbox?.(coordinator.childSessionId)}
@@ -319,12 +326,26 @@ export function RoomComposer({
             ))}
           </ul>
         )}
+        {tag !== undefined && (
+          <div className={css.tagRow}>
+            <span className={css.tag} data-new={tag.task === 'new' ? '' : undefined}>
+              {tag.label}
+              <button
+                type="button"
+                className={css.tagRemove}
+                aria-label={t('job.tagRemove')}
+                title={t('job.tagRemove')}
+                onClick={() => { taskTags?.set(sessionId, undefined) }}
+              >✕</button>
+            </span>
+          </div>
+        )}
         <textarea
           ref={areaRef}
           className={css.input}
           rows={2}
           value={draft}
-          placeholder={t('composer.placeholder')}
+          placeholder={tag === undefined ? t('composer.placeholder') : tag.task === 'new' ? t('job.tagPlaceholderNew') : t('job.tagPlaceholder', { label: tag.label })}
           onChange={onChange}
           onKeyDown={onKeyDown}
         />

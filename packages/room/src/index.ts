@@ -1,6 +1,6 @@
 /**
  * room host half: the `room` Typert Remote service. (The `room_invite` /
- * `room_task` / `room_message` model tools left this package's profile-root
+ * `room_message` / `room_read` / `room_plan` model tools left this package's profile-root
  * registration in the M4' tool-row split — their definition factories live
  * in ./tool-definition.ts and the package's own `./tool` composition entry
  * mounts them inside agent-preset compositions.) The room's entire state is the session's `room/*` custom-event
@@ -61,9 +61,7 @@ import { isHumanMessage, linkedTask, taskLinks } from './deliveries.ts'
 import { resolveTaskRef } from './jobs.ts'
 import { suggestTask } from './report-gate.ts'
 import type {
-  RoomAddTaskRequest, RoomAddTaskResult,
   RoomCancelRequest, RoomCancelResult,
-  RoomCloseTaskRequest, RoomCloseTaskResult,
   RoomPrepareMemberRequest, RoomPrepareMemberResult,
   RoomFailure, RoomSetCoordinatorRequest, RoomSetCoordinatorResult, RoomReconcileDeliveryRequest, RoomReconcileDeliveryResult,
   RoomGetStateRequest, RoomGetStateResult,
@@ -78,7 +76,6 @@ import type {
   RoomRemoveMemberRequest, RoomRemoveMemberResult, RoomRestoreMemberRequest, RoomRestoreMemberResult,
   RoomSetGoalRequest, RoomSetGoalResult,
   RoomState, RoomUpdateMemberRequest, RoomUpdateMemberResult,
-  RoomUpdateTaskRequest, RoomUpdateTaskResult,
 } from './types.ts'
 
 export type * from './types.ts'
@@ -128,14 +125,9 @@ function messageReceipt(receipt: RoomMessageReceipt, kind: 'task' | 'notify'): R
     : `sent #${receipt.messageId}（${receipt.member} 做完后结果会自动回报给你；不要 sleep 等待，也不要用 room_read 轮询）`
 }
 
-function taskTitle(text: string): string {
-  const first = text.trim().split('\n', 1)[0] ?? ''
-  return first.length > 60 ? `${first.slice(0, 60)}…` : first
-}
-
 /**
  * room Remote service: promotion, roster management, the human @-message
- * intake, the notification gate, the task board, and run cancellation. A
+ * intake, the notification gate, tasks, and run cancellation. A
  * room IS a normal session; the journal is its only state. A room is never
  * CREATED apart from a session — inviting an agent into any session promotes
  * it (see ensureRoom; the room-session-promotion proposal).
@@ -657,10 +649,6 @@ export class RoomService extends TypertRemoteService {
         targetIds: [memberId(loaded.session.snapshotEvents(), replay(loaded.session.snapshotEvents()).members.find(member => member.name === request.name)!)],
         targets: [request.name], text: request.firstTask,
       }).seq
-      loaded.session.append('room/task-added', {
-        id: randomUUID(), member: request.name, title: taskTitle(request.firstTask), status: 'in_progress',
-        deliveryId: `${firstTaskSeq}:${memberId(loaded.session.snapshotEvents(), replay(loaded.session.snapshotEvents()).members.find(member => member.name === request.name)!)}`,
-      })
     }
     await this.ctx.sessions.flush(loaded.session)
     if (request.firstTask !== undefined && firstTaskSeq !== undefined) {
@@ -843,7 +831,7 @@ export class RoomService extends TypertRemoteService {
         `Room session: ${request.sessionId}. Earlier native conversations remain available by their session IDs.`,
         loaded.state.goal === undefined ? '' : `Goal: ${loaded.state.goal}`,
         loaded.state.plan === undefined ? '' : `Formal goal ${loaded.state.plan.id}, revision ${loaded.state.plan.revision}: ${loaded.state.plan.objective} (${loaded.state.plan.status}). Read room_read for attempts, evidence, dependencies and budget; preserve the current pause state.`,
-        ...loaded.state.tasks.filter(task => !['done', 'cancelled'].includes(task.status)).map(task => `Open task ${task.id}: ${task.member}: ${task.title} (${task.status})`),
+        ...(loaded.state.jobs ?? []).filter(job => job.status === 'running' || job.status === 'attention').map(job => `Open task ${job.number} (${job.status}): ${job.title}`),
         ...events.filter(event => event.type === 'room/speech' || event.type === 'room/dispatch').slice(-12).map(event =>
           event.type === 'room/speech' ? `${event.data.member}: ${event.data.text.slice(0, 1500)}`
           : event.type === 'room/dispatch' ? `To ${event.data.targets.join(', ')}: ${event.data.text.slice(0, 1500)}` : ''),
@@ -861,11 +849,10 @@ export class RoomService extends TypertRemoteService {
    * Remove a member and settle everything that depended on it, so the
    * confirmation's promises hold: a running round is stopped first (the same
    * cancel the stop button uses), queued messages to it are cancelled, every
-   * member waiting for one of its reports is told it will not come, its open
-   * board tasks close as cancelled (pending ones may instead move to
-   * `transferPendingTo`), and only then does it leave the roster. Its own
-   * session and history stay; {@link restoreMember} brings it back onto them.
-   * @param request - room session, member name, optional pending-task heir.
+   * member waiting for one of its reports is told it will not come, and only
+   * then does it leave the roster. Its own session and history stay;
+   * {@link restoreMember} brings it back onto them.
+   * @param request - room session, member name.
    * @returns what the removal did, or a rejection.
    */
   @Remote('removeMember')
@@ -877,10 +864,6 @@ export class RoomService extends TypertRemoteService {
     if (member === undefined) return { ok: false, error: { code: 'member-not-found' } }
     if (coordinatorMember(loaded.state, loaded.session.snapshotEvents())?.name === request.name) return { ok: false, error: { code: 'active-coordinator' } }
     if (member.kind === 'main-agent') return { ok: false, error: { code: 'main-member' } }
-    const heir = request.transferPendingTo
-    if (heir !== undefined && (heir === request.name || !loaded.state.members.some(entry => entry.name === heir))) {
-      return { ok: false, error: { code: 'member-not-found' } }
-    }
     const stopped = loaded.state.runs.some(run => run.member === request.name && run.state === 'running')
       && (await this.cancel({ sessionId: request.sessionId, name: request.name })).ok
     const session = loaded.session
@@ -889,18 +872,6 @@ export class RoomService extends TypertRemoteService {
     const queued = replay(events).deliveries?.filter(row => row.memberId === id && row.status === 'queued') ?? []
     for (const row of queued) {
       session.append('room/delivery-state', { id: row.id, dispatchSeq: row.dispatchSeq, memberId: id, state: 'cancelled', error: `${request.name} 已被移除` })
-    }
-    let cancelledTasks = 0
-    let transferredTasks = 0
-    for (const task of replay(session.snapshotEvents()).tasks) {
-      if (task.member !== request.name || ['done', 'cancelled', 'failed'].includes(task.status)) continue
-      if (task.status === 'pending' && heir !== undefined) {
-        session.append('room/task-edited', { id: task.id, member: heir })
-        transferredTasks++
-      } else {
-        session.append('room/task-updated', { id: task.id, status: 'cancelled' })
-        cancelledTasks++
-      }
     }
     session.append('room/member-removed', { name: request.name })
     await this.ctx.sessions.flush(session)
@@ -912,7 +883,7 @@ export class RoomService extends TypertRemoteService {
     }
     const reports = session.snapshotEvents().filter(event => event.type === 'room/dispatch').slice(before)
     const notified = [...new Set(reports.flatMap(event => event.type === 'room/dispatch' ? event.data.targets : []))]
-    return { ok: true, value: { name: request.name, stopped, cancelledDeliveries: queued.length, cancelledTasks, transferredTasks, notified } }
+    return { ok: true, value: { name: request.name, stopped, cancelledDeliveries: queued.length, notified } }
   }
 
   /**
@@ -1025,12 +996,6 @@ export class RoomService extends TypertRemoteService {
       id: request.requestId ?? randomUUID(), requestSignature, targets, text, origin: 'human', task: filed.task,
       targetIds: targets.map(name => memberId(loaded.session.snapshotEvents(), loaded.state.members.find(member => member.name === name)!)),
     })
-    for (const target of targets) {
-      loaded.session.append('room/task-added', {
-        id: randomUUID(), member: target, title: taskTitle(text), status: 'in_progress',
-        deliveryId: `${dispatch.seq}:${memberId(loaded.session.snapshotEvents(), loaded.state.members.find(member => member.name === target)!)}`,
-      })
-    }
     await this.ctx.sessions.flush(loaded.session)
     for (const target of targets) {
       this.engine.dispatch(loaded.session, target, text, { dispatchSeq: dispatch.seq })
@@ -1120,7 +1085,7 @@ export class RoomService extends TypertRemoteService {
     const events = this.ctx.sessions.get(SessionId(sessionId))?.snapshotEvents() ?? []
     const recent = events.filter(event => event.type === 'room/speech').slice(-12).map(event => event.type === 'room/speech' ? { member: event.data.member, text: event.data.text.slice(0, 2000) } : null)
     return JSON.stringify({ planCommands: planCommandContract(), coordinator: coordinatorMember(state.value)?.name,
-      state: { ...state.value, deliveries: state.value.deliveries?.slice(-30), tasks: state.value.tasks.slice(-100), relays: state.value.relays.slice(-30) },
+      state: { ...state.value, deliveries: state.value.deliveries?.slice(-30), jobs: state.value.jobs?.slice(0, 20), relays: state.value.relays.slice(-30) },
       providers: await this.listProviders({}), recent })
   }
 
@@ -1362,92 +1327,6 @@ export class RoomService extends TypertRemoteService {
   }
 
   /**
-   * Add a task to a member's board lane (the human's management entry; @-
-   * dispatches auto-open in_progress tasks, this opens a pending one).
-   * `blockedBy` names the member the task waits on (display only — it never
-   * dispatches anything); it must resolve against the roster.
-   * @param request - room session, member, title, optional blockedBy.
-   * @returns the new task's id, or a rejection.
-   */
-  @Remote('addTask')
-  async addTask(request: RoomAddTaskRequest): Promise<RoomAddTaskResult> {
-    const loaded = await this.ensureLive(request.sessionId)
-    if (!loaded.ok) return { ok: false, error: loaded.error }
-    if (!loaded.state.members.some(member => member.name === request.member)) {
-      return { ok: false, error: { code: 'member-not-found' } }
-    }
-    if (request.title.trim() === '') return { ok: false, error: { code: 'empty-text' } }
-    if (request.blockedBy !== undefined
-      && !loaded.state.members.some(member => member.name === request.blockedBy)) {
-      return { ok: false, error: { code: 'member-not-found' } }
-    }
-    const id = randomUUID()
-    loaded.session.append('room/task-added', {
-      id, member: request.member, title: request.title.trim(), status: 'pending',
-      ...request.blockedBy === undefined ? {} : { blockedBy: request.blockedBy },
-    })
-    await this.ctx.sessions.flush(loaded.session)
-    return { ok: true, value: { id } }
-  }
-
-  /**
-   * Close an open task (done by default, or cancelled). A failed task is
-   * still open for closing — that is the human's dismiss path after a
-   * failed run (the board's [关闭] passes 'cancelled').
-   * @param request - room session, task id, optional closing status.
-   * @returns the closed task's id, or a rejection.
-   */
-  @Remote('closeTask')
-  async closeTask(request: RoomCloseTaskRequest): Promise<RoomCloseTaskResult> {
-    const loaded = await this.ensureLive(request.sessionId)
-    if (!loaded.ok) return { ok: false, error: loaded.error }
-    const task = loaded.state.tasks.find(entry => entry.id === request.taskId)
-    if (task === undefined) return { ok: false, error: { code: 'task-not-found' } }
-    if (task.status === 'done' || task.status === 'cancelled') {
-      return { ok: false, error: { code: 'task-closed' } }
-    }
-    loaded.session.append('room/task-updated', { id: task.id, status: request.status ?? 'done' })
-    await this.ctx.sessions.flush(loaded.session)
-    return { ok: true, value: { id: task.id } }
-  }
-
-  /**
-   * Edit an open task's title and/or blockedBy (the `room_task` tool's update
-   * action; journaled as `room/task-edited`, status changes stay on
-   * closeTask). Host method only — the capsule UI edits nothing but the goal.
-   * `blockedBy: null` clears the wait; a string must resolve against the
-   * roster. A closed task takes no edits.
-   * @param request - room session, task id, and at least one edited field.
-   * @returns the edited task's id, or a rejection.
-   */
-  async updateTask(request: RoomUpdateTaskRequest): Promise<RoomUpdateTaskResult> {
-    const loaded = await this.ensureLive(request.sessionId)
-    if (!loaded.ok) return { ok: false, error: loaded.error }
-    const task = loaded.state.tasks.find(entry => entry.id === request.taskId)
-    if (task === undefined) return { ok: false, error: { code: 'task-not-found' } }
-    if (task.status === 'done' || task.status === 'cancelled') {
-      return { ok: false, error: { code: 'task-closed' } }
-    }
-    if (request.title === undefined && request.blockedBy === undefined) {
-      return { ok: false, error: { code: 'nothing-to-update' } }
-    }
-    if (request.title !== undefined && request.title.trim() === '') {
-      return { ok: false, error: { code: 'empty-text' } }
-    }
-    if (typeof request.blockedBy === 'string'
-      && !loaded.state.members.some(member => member.name === request.blockedBy)) {
-      return { ok: false, error: { code: 'member-not-found' } }
-    }
-    loaded.session.append('room/task-edited', {
-      id: task.id,
-      ...request.title === undefined ? {} : { title: request.title.trim() },
-      ...request.blockedBy === undefined ? {} : { blockedBy: request.blockedBy },
-    })
-    await this.ctx.sessions.flush(loaded.session)
-    return { ok: true, value: { id: task.id } }
-  }
-
-  /**
    * Set (or, with a blank text, clear) the room's goal. The goal is one
    * journaled line — the latest `room/goal` event wins; it rides the top of
    * the roster section in every member prompt and drives the dock's goal
@@ -1501,14 +1380,6 @@ export class RoomService extends TypertRemoteService {
         elapsedMs: Math.max(0, Date.now() - running.startedAt),
         ...running.runId === undefined ? {} : { runId: running.runId },
       })
-      // The engine's settle no-ops behind this edge, so the task closing the
-      // settle would have done happens here: the dispatch-opened in_progress
-      // task cancels with its run.
-      for (const task of loaded.state.tasks) {
-        if (task.member === request.name && task.status === 'in_progress' && (running.runId === undefined || task.deliveryId === running.runId)) {
-          loaded.session.append('room/task-updated', { id: task.id, status: 'cancelled' })
-        }
-      }
       await this.ctx.sessions.flush(loaded.session)
       return { ok: true, value: { cancelled: true } }
     }

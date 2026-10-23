@@ -37,20 +37,20 @@ import { en, zh } from './locales.ts'
 import { InviteAgentAction } from './InviteAgentAction.tsx'
 import { MembersView } from './MembersView.tsx'
 import { RoomComposer, selectRoomComposer } from './RoomComposer.tsx'
-import { ROOM_PLAN_KIND, ROOM_PLAN_TAB_ID, RoomPlanTab } from './RoomPlanTab.tsx'
+import { ROOM_TASKS_KIND, ROOM_TASKS_TAB_ID, RoomTasksTab, type RoomTasksInjected } from './TasksTab.tsx'
+import { RoomTaskTags } from './task-tag.ts'
 import { ROOM_TEAM_KIND, ROOM_TEAM_TAB_ID, RoomTeamTab, type RoomTeamInjected } from './TeamTab.tsx'
 import { RoomSpeechView } from './RoomSpeechView.tsx'
 import { RoomRunView } from './RoomRunView.tsx'
 import { RoomEventView } from './RoomEventView.tsx'
-import { roomEventDefinition, roomRelayDefinition, roomInboxDefinition, roomRunDefinition, roomSpeechDefinition, roomTaskLineDefinition } from './nodes.ts'
+import { roomEventDefinition, roomRelayDefinition, roomInboxDefinition, roomRunDefinition, roomSpeechDefinition } from './nodes.ts'
 import { mainSessionId, RoomStore } from './room-store.ts'
 import { RoomPresetVisibility, RegistrationToggle } from './preset-visibility.ts'
 import { RoomRelayView } from './RoomRelayView.tsx'
 import { RoomInboxView } from './RoomInboxView.tsx'
-import { RoomTaskLineView } from './RoomTaskLineView.tsx'
 import type {
   InviteAgentInjected, RoomComposerInjected, RoomComposerMatch, RoomInviteInjected, RoomMembersInjected, RoomModelDirectory, RoomMutationOutcome,
-  RoomRelayInjected, RoomInboxInjected, RoomRunInjected, RoomSpeechInjected, RoomTaskLineInjected, RoomTasksInjected,
+  RoomRelayInjected, RoomInboxInjected, RoomRunInjected, RoomSpeechInjected, RoomGoalInjected,
 } from './slots.ts'
 import type { RoomFailure } from '../types.ts'
 
@@ -103,11 +103,12 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   const roomChrome = new RoomPresetVisibility(ctx, sessionId => roomStore.isRoomCached(sessionId) === true)
 
   const requestIds = new RoomRequestIds()
-  const submit = async (sessionId: SessionId, text: string, targets?: readonly string[]): Promise<RoomMutationOutcome> => {
+  const submit = async (sessionId: SessionId, text: string, targets?: readonly string[], task?: string): Promise<RoomMutationOutcome> => {
     if (remote === undefined) return { ok: false, message: t('composer.error.generic') }
     const requestId = requestIds.forInput(sessionId, text, targets)
     const carried = await remote.postMessage({
       sessionId, text, requestId, ...targets === undefined || targets.length === 0 ? {} : { targets },
+      ...task === undefined ? {} : { task },
     })
     if (!carried.ok) return { ok: false, message: t('composer.error.generic') }
     const result = carried.value
@@ -177,27 +178,9 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     },
   })
 
-  /** The task-board actions (sessionId binds per entry inject). */
-  const tasksFace = (sessionId: SessionId): RoomTasksInjected => ({
+  /** The goal action (sessionId binds per entry inject). */
+  const goalFace = (sessionId: SessionId): RoomGoalInjected => ({
     roomStore,
-    addTask: async (member, title, blockedBy) => {
-      if (remote === undefined) return { ok: false, message: t('invite.error.generic') }
-      const carried = await remote.addTask({
-        sessionId, member, title, ...blockedBy === undefined ? {} : { blockedBy },
-      })
-      if (!carried.ok || !carried.value.ok) return { ok: false, message: t('invite.error.generic') }
-      void roomStore.refresh(sessionId)
-      return { ok: true }
-    },
-    closeTask: async (taskId, status) => {
-      if (remote === undefined) return { ok: false, message: t('invite.error.generic') }
-      const carried = await remote.closeTask({
-        sessionId, taskId, ...status === undefined ? {} : { status },
-      })
-      if (!carried.ok || !carried.value.ok) return { ok: false, message: t('invite.error.generic') }
-      void roomStore.refresh(sessionId)
-      return { ok: true }
-    },
     setGoal: async (text) => {
       if (remote === undefined) return { ok: false, message: t('invite.error.generic') }
       const carried = await remote.setGoal({ sessionId, text })
@@ -206,6 +189,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       return { ok: true }
     },
   })
+  const taskTags = new RoomTaskTags()
 
   /** Map a structured RoomFailure to the dialog's localized copy. */
   const failureText = (error: RoomFailure): string => {
@@ -325,9 +309,9 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     },
     modelDirectory: modelDirectoryFor(sessionId),
     openSession,
-    removeMember: async (member, transferPendingTo) => {
+    removeMember: async (member) => {
       if (remote === undefined) return { ok: false, message: t('invite.error.generic') }
-      const carried = await remote.removeMember({ sessionId, name: member, ...transferPendingTo === undefined ? {} : { transferPendingTo } })
+      const carried = await remote.removeMember({ sessionId, name: member })
       if (!carried.ok) return { ok: false, message: t('invite.error.generic') }
       if (!carried.value.ok) return { ok: false, message: failureText(carried.value.error) }
       void roomStore.refresh(sessionId)
@@ -377,7 +361,6 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     lctx.uiConversation.events.register(roomEventDefinition)
     lctx.uiConversation.events.register(roomRelayDefinition)
     lctx.uiConversation.events.register(roomInboxDefinition)
-    lctx.uiConversation.events.register(roomTaskLineDefinition)
   })
 
   // The slots are declared by ui-conversation, whose apply order
@@ -408,6 +391,33 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   // main-agent turn Stop: the takeover renders the dock
   // surfaces and the Stop button itself, because their seats hide with the
   // official fallback.
+  const reconcileFor = (sessionId: SessionId) => async (deliveryId: string, outcome: 'done' | 'cancelled', evidence: string): Promise<RoomMutationOutcome> => {
+    const result = await remote?.reconcileDelivery({ sessionId, deliveryId, outcome, evidence })
+    await roomStore.refresh(sessionId)
+    return result?.ok && result.value.ok ? { ok: true } : { ok: false, message: result?.ok && !result.value.ok ? result.value.error.code : t('composer.error.generic') }
+  }
+  /** The task page's actions (sessionId binds per entry inject). */
+  const tasksFace = (sessionId: SessionId): RoomTasksInjected => ({
+    ...goalFace(sessionId),
+    taskTags,
+    stopJob: async (task) => {
+      const carried = await remote?.stopJob({ sessionId, task })
+      await roomStore.refresh(sessionId)
+      return carried?.ok && carried.value.ok ? { ok: true } : { ok: false, message: t('composer.error.generic') }
+    },
+    stopDelivery: (member, deliveryId) => {
+      void remote?.cancel({ sessionId, name: member, ...deliveryId === undefined ? {} : { expectedRunId: deliveryId } }).then(() => roomStore.refresh(sessionId))
+    },
+    reconcile: reconcileFor(sessionId),
+    confirmRelay: relayFace(sessionId).confirmRelay,
+    dismissRelay: relayFace(sessionId).dismissRelay,
+    planCommand: async command => {
+      const result = await remote?.planCommand({ sessionId, command })
+      await roomStore.refresh(sessionId)
+      return result?.ok && result.value.ok ? { ok: true } : { ok: false, message: result?.ok && !result.value.ok ? result.value.message : t('composer.error.generic') }
+    },
+    openSession: id => openSession(id as SessionId),
+  })
   const sidebar = ctx.get('sidebarRight')
   const sidebarTabs = ctx.get('sidebarRightTabs')
   const composerEntry = {
@@ -417,35 +427,14 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     select: (owner: Parameters<typeof selectRoomComposer>[0]): RoomComposerMatch | null =>
       selectRoomComposer(owner, id => roomStore.isRoomCached(id) === true),
     inject: (sessionId: SessionId): RoomComposerInjected => ({
-      ...tasksFace(sessionId),
+      ...goalFace(sessionId),
       ...inviteFace(sessionId),
-      reconcileDelivery: async (deliveryId, outcome, evidence) => {
-        const result = await remote?.reconcileDelivery({ sessionId, deliveryId, outcome, evidence })
-        await roomStore.refresh(sessionId)
-        return result?.ok && result.value.ok ? { ok: true } : { ok: false, message: result?.ok && !result.value.ok ? result.value.error.code : t('composer.error.generic') }
-      },
-      planCommand: async command => {
-        const result = await remote?.planCommand({ sessionId, command })
-        await roomStore.refresh(sessionId)
-        return result?.ok && result.value.ok ? { ok: true } : { ok: false, message: result?.ok && !result.value.ok ? result.value.message : t('composer.error.generic') }
-      },
+      reconcileDelivery: reconcileFor(sessionId),
       openPlanSession: id => openSession(id as SessionId),
-      backgroundSessions: ctx.sessions.list,
-      activeChildren: async () => {
-        const gateway = ctx.get('remote.localAgentGateway') as { activeDelegations?: () => Promise<{ ok: boolean; value?: readonly string[] }> } | undefined
-        const result = await gateway?.activeDelegations?.()
-        return result?.ok ? result.value : undefined
+      ...sidebar === undefined || sidebarTabs === undefined ? {} : {
+        openTasks: (task?: string) => { sidebar.openTab(ROOM_TASKS_KIND, { params: task === undefined ? {} : { task } }) },
       },
-      stopChild: async childSessionId => {
-        const result = await remote?.cancelChild({ sessionId, childSessionId: childSessionId as SessionId })
-        return result?.ok && result.value.ok && result.value.value.cancelled ? { ok: true } : { ok: false, message: t('activity.stopChanged') }
-      },
-      ...sidebar === undefined || sidebarTabs === undefined ? {} : { openPlan: () => { sidebar.openTab(ROOM_PLAN_KIND, { params: {} }) } },
-      stopExecution: async (name, run) => {
-        const result = await remote?.cancel({ sessionId, name, expectedStartedAt: run.startedAt, ...run.runId === undefined ? {} : { expectedRunId: run.runId } })
-        await roomStore.refresh(sessionId)
-        return result?.ok && result.value.ok && result.value.value.cancelled ? { ok: true } : { ok: false, message: t('activity.stopChanged') }
-      },
+      taskTags,
       submit,
       renderMemberConfiguration: (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.renderMemberConfiguration,
       renderMemberInbox: (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.renderMemberInbox,
@@ -462,13 +451,13 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     }),
   } as const
   if (sidebar !== undefined && sidebarTabs !== undefined) {
-    const planToggle = new RegistrationToggle(
-      () => sidebarTabs.register({ id: ROOM_PLAN_TAB_ID, kind: ROOM_PLAN_KIND, title: () => t('activity.plan') }),
+    const tasksToggle = new RegistrationToggle(
+      () => sidebarTabs.register({ id: ROOM_TASKS_TAB_ID, kind: ROOM_TASKS_KIND, title: () => t('job.title') }),
       () => roomChrome.show(mainSessionId(ctx.sessions.list.getSnapshot())),
     )
-    planToggle.setReady(true)
-    const unsubscribe = roomChrome.subscribe(() => planToggle.sync())
-    disposers.push(async () => { unsubscribe(); planToggle.setReady(false) })
+    tasksToggle.setReady(true)
+    const unsubscribe = roomChrome.subscribe(() => tasksToggle.sync())
+    disposers.push(async () => { unsubscribe(); tasksToggle.setReady(false) })
     const teamToggle = new RegistrationToggle(
       () => sidebarTabs.register({ id: ROOM_TEAM_TAB_ID, kind: ROOM_TEAM_KIND, title: () => t('team.title') }),
       () => roomChrome.show(mainSessionId(ctx.sessions.list.getSnapshot())),
@@ -481,12 +470,9 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       inject: (_sessionId: SessionId): RoomTeamInjected => ({ roomStore, openSession }),
     }, RoomTeamTab))
     ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
-      name: 'sidebar.right.pane.tab', key: ROOM_PLAN_TAB_ID, locale: NS,
-      inject: (sessionId: SessionId) => {
-        const { roomStore, planCommand, openPlanSession, stopMember } = composerEntry.inject(sessionId)
-        return { roomStore, planCommand, openPlanSession, stopMember }
-      },
-    }, RoomPlanTab))
+      name: 'sidebar.right.pane.tab', key: ROOM_TASKS_TAB_ID, locale: NS,
+      inject: (sessionId: SessionId): RoomTasksInjected => tasksFace(sessionId),
+    }, RoomTasksTab))
   }
   let composerDispose: (() => void) | undefined
   ctx.slots.inject('conversation.composer', () => {
@@ -580,15 +566,6 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       }),
     },
     RoomInboxView,
-  ))
-  ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(
-    {
-      name: 'conversation.chat.node',
-      key: 'room-task-line',
-      locale: NS,
-      inject: (): RoomTaskLineInjected => ({ roomStore }),
-    },
-    RoomTaskLineView,
   ))
   return async () => {
     for (const dispose of disposers.reverse()) await dispose()

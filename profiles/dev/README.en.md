@@ -20,7 +20,7 @@ This pack contains the 8 plugins specific to dev mode (see the table below). Bey
 | local-agent-claude-code | `@khorsheed/dsh-local-agent-claude-code` | Claude Code delegation (`claude -p`), resume, accounting; the `subagent_claude_code` delegation tool rides the package's `./tool` subpath row, granted per session by the dev-mode preset |
 | local-agent-dsh | `@khorsheed/dsh-local-agent-dsh` | dsh self-delegation: use dsh itself as a local CLI |
 | worktrees | `@khorsheed/dsh-worktrees` | A per-session repo/worktree badge plus a change drawer (read-only git facts); the model tool ships as the package's `@khorsheed/dsh-worktrees/tool` subpath row, granted per session by the dev-mode preset |
-| room | `@khorsheed/dsh-room` | Multi-agent collaboration in one session: member roster, @ dispatch, task board; the model tools `room_invite / room_task / room_message` ride the package's `./tool` subpath row, granted per session by the dev-mode preset |
+| room | `@khorsheed/dsh-room` | Multi-agent collaboration in one session: member roster, @ dispatch, tasks; the model tools `room_invite / room_message / room_read / room_plan` ride the package's `./tool` subpath row, granted per session by the dev-mode preset |
 
 ### Version compatibility
 
@@ -95,7 +95,7 @@ One meta package installs the local-agent core plus all four providers (kimi / c
 
 The pack ships a **dev mode** preset (`presets/dev`). It exists so that dev mode's tools and UI never leak into other modes: the model tool rows live in this preset's composition only, never at the profile root, and session-bound UI (the worktree badge, the room roster, …) shows or hides with the preset grant — a session gets the tools and the entry points exactly when it runs on this preset. So one instance can move back and forth between modes: pick dev mode for coding sessions, stay on Standard for everyday ones, and neither pollutes the other.
 
-The composition re-bases verbatim on the official "Standard mode" and only appends community tool rows at the end: the three local-agent delegation tools (`subagent_kimi` / `subagent_codex` / `subagent_claude_code`), the worktrees model tool, and the room tool trio (`room_invite` / `room_task` / `room_message`), all **granted per session**; with a companion's core absent the row stays pending and never crashes the host.
+The composition re-bases verbatim on the official "Standard mode" and only appends community tool rows at the end: the three local-agent delegation tools (`subagent_kimi` / `subagent_codex` / `subagent_claude_code`), the worktrees model tool, and the room tools (`room_invite` / `room_message` / `room_read` / `room_plan`), all **granted per session**; with a companion's core absent the row stays pending and never crashes the host.
 
 | Host version | Install spec (copy into the dialog) |
 |---|---|

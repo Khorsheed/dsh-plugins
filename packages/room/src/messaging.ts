@@ -81,8 +81,7 @@ export type SendOutcome =
   | { readonly delivered: false; readonly reason: RoomHoldReason; readonly relayId: string }
 
 /**
- * Journal one agent message: a dispatch (plus the recipient's in-progress
- * board task for a `task`), or a held relay with its intent. The caller
+ * Journal one agent message: a dispatch or a held relay with its intent. The caller
  * flushes and, on delivery, hands `seq` to the engine.
  * @param session - the room session.
  * @param message - recipient, text and the would-be dispatch.
@@ -117,13 +116,6 @@ export function sendOrHold(session: Session, message: OutgoingMessage, skipHold 
     ...intent.reportFor === undefined ? {} : { reportFor: intent.reportFor },
     ...intent.plan === undefined ? {} : { plan: intent.plan },
   })
-  if (intent.origin !== 'report' && intent.kind !== 'notify') {
-    const first = message.text.trim().split('\n', 1)[0] ?? ''
-    session.append('room/task-added', {
-      id: randomUUID(), member: message.to.name, title: first.length > 60 ? `${first.slice(0, 60)}…` : first,
-      status: 'in_progress', deliveryId: `${dispatch.seq}:${targetId}`,
-    })
-  }
   return { delivered: true, seq: dispatch.seq }
 }
 

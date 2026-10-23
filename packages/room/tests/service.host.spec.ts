@@ -131,9 +131,8 @@ describe('RoomService Remote surface (real composition)', () => {
           MAIN_MEMBER,
           { name: 'ada', kind: 'cli', provider: 'kimi', invitedBy: 'human', instructions: '后端', cwd: '/home/user/api' },
         ],
-        // The first task is journaled as a dispatch record and auto-opens the
-        // member's in_progress task.
-        tasks: [{ member: 'ada', title: '搭骨架', status: 'in_progress' }],
+        // The first task is journaled as a dispatch record: a task of its own.
+        jobs: [{ number: 1, title: '搭骨架', status: 'running' }],
       },
     })
 
@@ -278,7 +277,8 @@ describe('RoomService Remote surface (real composition)', () => {
     const { ctx, service, sessionId } = await bootRoom()
     await service.invite({ sessionId, provider: 'kimi', name: 'ada', instructions: '后端' })
     await service.invite({ sessionId, provider: 'codex', name: 'bill' })
-    await service.addTask({ sessionId, member: 'ada', title: '出方案', blockedBy: 'bill' })
+    // A legacy board row (old logs still carry them) migrates with the rename.
+    ctx.sessions.get(sessionId)!.append('room/task-added', { id: 't1', member: 'ada', title: '出方案', status: 'pending', blockedBy: 'bill' })
     await service.receiveMemberMessage({
       from: 'ada', to: 'bill', content: '接口定稿', parentSessionId: sessionId,
     })
@@ -336,7 +336,7 @@ describe('RoomService Remote surface (real composition)', () => {
   it('removeMember drops the member from the roster and validates its inputs', async () => {
     const { service, sessionId } = await bootRoom()
     await service.invite({ sessionId, provider: 'kimi', name: 'ada' })
-    expect(await service.removeMember({ sessionId, name: 'ada' })).toEqual({ ok: true, value: { name: 'ada', stopped: false, cancelledDeliveries: 0, cancelledTasks: 0, transferredTasks: 0, notified: [] } })
+    expect(await service.removeMember({ sessionId, name: 'ada' })).toEqual({ ok: true, value: { name: 'ada', stopped: false, cancelledDeliveries: 0, notified: [] } })
     expect(await service.getState({ sessionId })).toMatchObject({ ok: true, value: { members: [MAIN_MEMBER] } })
     expect(await service.removeMember({ sessionId, name: 'ada' }))
       .toEqual({ ok: false, error: { code: 'member-not-found' } })
@@ -351,7 +351,7 @@ describe('RoomService Remote surface (real composition)', () => {
     expect(await service.postMessage({ sessionId, text: '   ' })).toEqual({ ok: false, error: { code: 'empty-text' } })
   })
 
-  it('postMessage with mentions logs a standard user/message (the official bubble) plus the dispatch bookkeeping, auto-opens tasks, and validates the roster', async () => {
+  it('postMessage with mentions logs a standard user/message (the official bubble) plus the dispatch bookkeeping, files tasks, and validates the roster', async () => {
     const { ctx, service, sessionId } = await bootRoom()
     await service.invite({ sessionId, provider: 'kimi', name: 'ada' })
     await service.invite({ sessionId, provider: 'codex', name: 'bill' })
@@ -389,16 +389,9 @@ describe('RoomService Remote surface (real composition)', () => {
     expect(events.indexOf(messages[0]!)).toBeLessThan(events.indexOf(dispatches[0]!))
 
     const state = await service.getState({ sessionId })
-    expect(state).toMatchObject({
-      ok: true,
-      value: {
-        tasks: [
-          { member: 'ada', title: '出方案', status: 'in_progress' },
-          { member: 'ada', title: '对齐接口', status: 'in_progress' },
-          { member: 'bill', title: '对齐接口', status: 'in_progress' },
-        ],
-      },
-    })
+    // Each human message that led to work is a task (newest first).
+    expect(state).toMatchObject({ ok: true, value: { jobs: [{ number: 2, title: '对齐接口' }, { number: 1, title: '出方案' }] } })
+    if (state.ok) expect(state.value.jobs![0]!.deliveries).toHaveLength(2)
   })
 
   it('postMessage unions menu-picked targets with the leading tokens, dispatches the text verbatim, and validates picks against the roster', async () => {
@@ -427,18 +420,9 @@ describe('RoomService Remote surface (real composition)', () => {
       { targets: ['bill'], text: '接口找 @bill 对齐一下' },
       { targets: ['ada', 'bill'], text: '顺带 @bill 看看' },
     ])
-    // One auto-opened task per target per dispatch.
+    // One delivery per target per dispatch.
     const state = await service.getState({ sessionId })
-    expect(state).toMatchObject({
-      ok: true,
-      value: {
-        tasks: [
-          { member: 'bill', title: '接口找 @bill 对齐一下', status: 'in_progress' },
-          { member: 'ada', title: '顺带 @bill 看看', status: 'in_progress' },
-          { member: 'bill', title: '顺带 @bill 看看', status: 'in_progress' },
-        ],
-      },
-    })
+    expect(state.ok && state.value.deliveries?.map(row => row.text)).toEqual(['接口找 @bill 对齐一下', '顺带 @bill 看看', '顺带 @bill 看看'])
   })
 
   it('receiveMemberMessage journals a pending relay and always receipts pending-confirm (phase-1 gate)', async () => {
@@ -539,47 +523,6 @@ describe('RoomService Remote surface (real composition)', () => {
     const state = await service.getState({ sessionId })
     if (!state.ok) throw new Error('narrowing')
     expect(await service.confirmRelay({ sessionId, relayId: state.value.relays[0]!.id }))
-      .toEqual({ ok: false, error: { code: 'member-not-found' } })
-  })
-
-  it('addTask opens a pending task; closeTask closes it exactly once', async () => {
-    const { service, sessionId } = await bootRoom()
-    await service.invite({ sessionId, provider: 'kimi', name: 'ada' })
-    const added = await service.addTask({ sessionId, member: 'ada', title: '补测试' })
-    expect(added).toMatchObject({ ok: true })
-    if (!added.ok) throw new Error('narrowing')
-    expect(await service.getState({ sessionId })).toMatchObject({
-      ok: true,
-      value: { tasks: [{ id: added.value.id, member: 'ada', title: '补测试', status: 'pending' }] },
-    })
-
-    expect(await service.closeTask({ sessionId, taskId: added.value.id }))
-      .toEqual({ ok: true, value: { id: added.value.id } })
-    expect(await service.getState({ sessionId })).toMatchObject({
-      ok: true,
-      value: { tasks: [{ id: added.value.id, status: 'done' }] },
-    })
-    expect(await service.closeTask({ sessionId, taskId: added.value.id }))
-      .toEqual({ ok: false, error: { code: 'task-closed' } })
-    expect(await service.closeTask({ sessionId, taskId: 'ghost' }))
-      .toEqual({ ok: false, error: { code: 'task-not-found' } })
-    expect(await service.addTask({ sessionId, member: 'ghost', title: 'x' }))
-      .toEqual({ ok: false, error: { code: 'member-not-found' } })
-    expect(await service.addTask({ sessionId, member: 'ada', title: ' ' }))
-      .toEqual({ ok: false, error: { code: 'empty-text' } })
-  })
-
-  it('addTask journals an optional blockedBy (a roster member) and rejects an unknown one', async () => {
-    const { service, sessionId } = await bootRoom()
-    await service.invite({ sessionId, provider: 'kimi', name: 'ada' })
-    await service.invite({ sessionId, provider: 'kimi', name: 'bill' })
-    const added = await service.addTask({ sessionId, member: 'bill', title: '搭页面', blockedBy: 'ada' })
-    expect(added).toMatchObject({ ok: true })
-    expect(await service.getState({ sessionId })).toMatchObject({
-      ok: true,
-      value: { tasks: [{ member: 'bill', title: '搭页面', status: 'pending', blockedBy: 'ada' }] },
-    })
-    expect(await service.addTask({ sessionId, member: 'bill', title: 'x', blockedBy: 'ghost' }))
       .toEqual({ ok: false, error: { code: 'member-not-found' } })
   })
 

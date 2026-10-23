@@ -138,7 +138,7 @@ export function teamOf(state: RoomState): Team {
     const run = state.runs.find(entry => entry.member === member.name)
     const executions = (state.executions ?? []).filter(row => row.memberId === id)
     const current = run?.state === 'running'
-      ? state.tasks.find(task => task.member === member.name && task.status === 'in_progress' && task.deliveryId === run.runId)?.title
+      ? (state.deliveries ?? []).find(row => row.memberId === id && row.status === 'running' && (run.runId === undefined || row.id === run.runId))?.text.trim().split('\n', 1)[0]
       : undefined
     const model = executions.findLast(row => row.model !== undefined)?.model ?? member.model
     return {

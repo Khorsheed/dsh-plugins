@@ -4,6 +4,8 @@ Status: implemented
 
 [English](2026-08-20-room-task-tool.md) | 中文
 
+> 已被 [Room 任务](2026-10-23-room-tasks.zh.md) 取代：任务板和 `room_task` 工具都已下掉，派活就是 `room_message`，自动归到某个任务下。旧日志里的看板事件仍会回放。
+
 ## Problem
 
 room 任务板原本只有两条写入路径：人的胶囊 UI（`addTask`/`closeTask` Remote）和派发自动开任务（@-消息为每个目标记一条 `in_progress` 任务）。房间的**主 agent** 一条都没有：它的官方 todo 工具写的是房间看不见的私有草稿，所以当它想公开承诺一件工作——任务板存在的本意就是这种协作姿态——没有通道。这个缺口的不对称让模型困惑：成员可以由 agent 邀请（`room_invite`），agent 自己却没法把任务写上共享板。

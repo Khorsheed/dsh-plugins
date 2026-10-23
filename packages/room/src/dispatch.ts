@@ -757,7 +757,7 @@ export class DispatchEngine {
     }
   }
 
-  /** Settle only this execution and its own task rows, preserving newer runs. */
+  /** Settle only this execution, preserving newer runs. */
   private async settle(
     room: Session, member: RoomMember, runId: string, startedAt: number, outcome: RunOutcome,
   ): Promise<RunOutcome> {
@@ -771,11 +771,6 @@ export class DispatchEngine {
       member: memberName, runId, state: outcome.state, startedAt, elapsedMs: Date.now() - startedAt,
       ...outcome.error === undefined ? {} : { error: outcome.error },
     })
-    for (const task of replay(room.snapshotEvents()).tasks) {
-      if (task.member === memberName && task.status === 'in_progress' && task.deliveryId === runId) {
-        room.append('room/task-updated', { id: task.id, status: outcome.state })
-      }
-    }
     await this.ctx.sessions.flush(room)
     return outcome
   }

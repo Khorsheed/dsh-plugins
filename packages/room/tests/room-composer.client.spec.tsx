@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** The room composer takeover: chain selector (room election + interaction yield), mention completion, dispatch submit, bare-message release, error line, the inherited environment surfaces (Stop, todo strip, queue strip, dock capsules, stats row). */
+/** The room composer takeover: chain selector (room election + interaction yield), mention completion, dispatch submit, bare-message release, error line, the inherited environment surfaces (Stop, todo strip, queue strip, task capsule and tag, stats row). */
 import { describe, expect, it, vi, afterEach } from 'vitest'
 import { useSyncExternalStore } from 'react'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
@@ -11,6 +11,7 @@ import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { RoomComposer, selectRoomComposer } from '../src/client/RoomComposer.tsx'
 import { RoomStore, type RoomGateway } from '../src/client/room-store.ts'
+import { RoomTaskTags } from '../src/client/task-tag.ts'
 import { zh } from '../src/client/locales.ts'
 import type {
   RoomComposerProps, RoomModelDirectory, RoomModelDirectoryState, RoomModelSelection, RoomMutationOutcome,
@@ -30,10 +31,16 @@ const STATE: RoomState = {
     { name: 'bill', kind: 'cli', provider: 'codex', invitedBy: 'agent' },
   ],
   relays: [],
-  tasks: [
-    { id: 't1', member: 'ada', title: '出方案', status: 'in_progress', updatedAt: 1000 },
-  ],
+  tasks: [],
   runs: [],
+  deliveries: [
+    { id: '3:ada', dispatchSeq: 3, memberId: 'ada', status: 'running', origin: 'human', text: '出方案', task: 'msg-1', queuedAt: 1000, startedAt: 1100 },
+    { id: '4:bill', dispatchSeq: 4, memberId: 'bill', status: 'uncertain', origin: 'human', text: '查日志', task: 'msg-2', queuedAt: 1200, startedAt: 1300 },
+  ],
+  jobs: [
+    { id: 'msg-2', number: 2, title: '查日志', messages: [{ id: 'msg-2', time: 1200, text: '@bill 查日志' }], status: 'attention', startedAt: 1200, deliveries: ['4:bill'], members: ['bill'] },
+    { id: 'msg-1', number: 1, title: '出方案', messages: [{ id: 'msg-1', time: 1000, text: '@ada 出方案' }], status: 'running', startedAt: 1000, deliveries: ['3:ada'], members: ['ada'] },
+  ],
 }
 
 /** A store pre-primed with the STATE fixture. */
@@ -80,7 +87,7 @@ interface Bench {
 
 /** Render the composer with the framework shares stubbed (a stateful fake input machine backs the draft; stop is a spy). */
 async function bench(
-  submit: (sessionId: SessionId, text: string, targets?: readonly string[]) => Promise<RoomMutationOutcome>,
+  submit: (sessionId: SessionId, text: string, targets?: readonly string[], task?: string) => Promise<RoomMutationOutcome>,
   options: {
     useProjection?: UseProjection | undefined
     t?: RoomComposerProps['t']
@@ -92,6 +99,8 @@ async function bench(
     renderMemberInbox?: RoomComposerProps['renderMemberInbox']
     stopMember?: (name: string) => void
     modelDirectory?: RoomModelDirectory
+    openTasks?: (task?: string) => void
+    taskTags?: RoomTaskTags
   } = {},
 ): Promise<Bench> {
   const roomStore = await primedStore(options.state)
@@ -116,9 +125,9 @@ async function bench(
     roomStore,
     submit,
     stop,
-    addTask: vi.fn(async () => ({ ok: true as const })),
-    closeTask: vi.fn(async () => ({ ok: true as const })),
     setGoal: vi.fn(async () => ({ ok: true as const })),
+    openTasks: options.openTasks,
+    taskTags: options.taskTags,
     roomCwd: '/home/user/room',
     invite: vi.fn(async () => ({ ok: true as const, pendingFirstTask: false })),
     listProviders: vi.fn(async () => ({ localAgentAvailable: true, providers: [] })),
@@ -287,20 +296,45 @@ describe('RoomComposer', () => {
     expect(area.value).toBe('@ghost 干活')
   })
 
-  it('renders the dock capsules above the card (the dock seat hides with the official fallback)', async () => {
-    await bench(vi.fn())
-    // The collapsed row carries the goal guide state (no goal in the fixture)
-    // and the task capsule with its running member (key-passthrough t).
-    const goalCapsule = screen.getByRole('button', { name: 'goal.label' })
-    expect(goalCapsule.textContent).toContain('goal.set')
-    const taskCapsule = screen.getByRole('button', { name: 'tasks.capsule' })
-    expect(taskCapsule.textContent).toContain('tasks.doing')
-    // The capsules sit before the composer card's textarea in tree order.
+  it('renders the task capsule above the card; it and the amber attention capsule open the task page', async () => {
+    const openTasks = vi.fn()
+    await bench(vi.fn(), { openTasks, t: makeTranslate(zh) as RoomComposerProps['t'] })
+    const taskCapsule = screen.getByTestId('room-task-capsule')
+    expect(taskCapsule.textContent).toBe('1 个任务进行中')
+    // The capsule sits before the composer card's textarea in tree order.
     const area = screen.getByRole('textbox')
     expect(taskCapsule.compareDocumentPosition(area) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    // Expanding the task capsule reveals the fixture task.
     fireEvent.click(taskCapsule)
-    expect(screen.getByText('出方案')).toBeDefined()
+    expect(openTasks).toHaveBeenLastCalledWith()
+    // The uncertain delivery needs the human: straight to its task.
+    fireEvent.click(screen.getByRole('button', { name: '⚠ 1 件需要处理' }))
+    expect(openTasks).toHaveBeenLastCalledWith('msg-2')
+  })
+
+  it('a fresh room shows only the invite capsule', async () => {
+    await bench(vi.fn(), { state: { ...STATE, deliveries: [], jobs: [] }, openTasks: vi.fn() })
+    expect(screen.getByRole('button', { name: 'members.invite' })).toBeDefined()
+    expect(screen.queryByTestId('room-task-capsule')).toBeNull()
+  })
+
+  it('the task tag rides the next send as its task and clears; removing it leaves the filing to dsh', async () => {
+    const taskTags = new RoomTaskTags()
+    const submit = vi.fn(async () => ({ ok: true as const }))
+    const { area } = await bench(submit, { taskTags })
+    act(() => { taskTags.set(SESSION, { task: 'msg-1', label: '任务 1' }) })
+    expect(screen.getByText('任务 1')).toBeDefined()
+    expect(document.activeElement).toBe(area)
+    type(area, '再补一个接口')
+    fireEvent.keyDown(area, { key: 'Enter' })
+    await vi.waitFor(() => expect(submit).toHaveBeenCalledWith(SESSION, '再补一个接口', [], 'msg-1'))
+    await vi.waitFor(() => expect(screen.queryByText('任务 1')).toBeNull())
+
+    act(() => { taskTags.set(SESSION, { task: 'new', label: '新任务' }) })
+    fireEvent.click(screen.getByRole('button', { name: 'job.tagRemove' }))
+    expect(screen.queryByText('新任务')).toBeNull()
+    type(area, '随便聊聊')
+    fireEvent.keyDown(area, { key: 'Enter' })
+    await vi.waitFor(() => expect(submit).toHaveBeenLastCalledWith(SESSION, '随便聊聊'))
   })
 
   it('renders the stats row from the sessionStats and tokenUsage projections', async () => {
@@ -338,8 +372,6 @@ describe('RoomComposer', () => {
       roomStore,
       submit: vi.fn(),
       stop: vi.fn(),
-      addTask: vi.fn(),
-      closeTask: vi.fn(),
       useSession,
       useProjection: undefined,
       t: makeTranslate(zh),

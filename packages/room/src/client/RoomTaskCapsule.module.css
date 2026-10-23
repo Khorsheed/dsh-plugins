@@ -1,0 +1,99 @@
+/* The task capsule row above the room composer, on the card-width axis
+   inside the side clearance (official dock insets: card minus 4 × 8). The
+   capsules ride the official chip register (28px, r24, transparent rest,
+   interactive hover fill, 13/20/500 secondary label) with a visible outline;
+   the running capsule sweeps a restrained glare band (the ToolRow pattern,
+   reduced-motion safe); the attention capsule is amber. */
+
+.root {
+  box-sizing: border-box;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 auto var(--dsh-composer-stack-gap, 6px);
+  width: calc(100% - 4 * var(--dsh-composer-dock-inset, 8px));
+  max-width: calc(var(--dsh-composer-card-max-width, 780px) - 4 * var(--dsh-composer-dock-inset, 8px));
+}
+
+.capsules {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.capsule {
+  box-sizing: border-box;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 60%;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--dsw-alias-border-l2-darkmode-thin, rgba(0, 0, 0, 0.1));
+  border-radius: 24px;
+  overflow: hidden;
+  background: transparent;
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-secondary, rgb(97, 102, 107));
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.capsule:hover {
+  border-color: var(--dsw-alias-border-l3, rgba(0, 0, 0, 0.12));
+  background: var(--dsw-alias-interactive-bg-hover, rgba(38, 49, 72, 0.06));
+}
+
+.capsule[data-attention] {
+  border-color: color-mix(in srgb, var(--dsw-alias-state-warning, #c08419) 35%, transparent);
+  background: color-mix(in srgb, var(--dsw-alias-state-warning, #c08419) 12%, transparent);
+  color: var(--dsw-alias-state-warning, #c08419);
+}
+
+.dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--dsw-alias-state-success, #1f9a55);
+}
+
+.guide {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary, rgb(129, 133, 140));
+}
+
+.capsule[data-running]::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 120px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--dsw-alias-bg-base, rgb(255, 255, 255)) 60%, transparent) 55%,
+    transparent 100%
+  );
+  animation: room-task-capsule-sweep 2.6s ease-out infinite;
+  pointer-events: none;
+}
+
+@keyframes room-task-capsule-sweep {
+  0% { left: -120px; }
+  90%, 100% { left: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .capsule[data-running]::after {
+    animation: none;
+    display: none;
+  }
+}

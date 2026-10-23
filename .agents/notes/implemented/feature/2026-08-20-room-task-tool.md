@@ -4,6 +4,8 @@ Status: implemented
 
 English | [中文](2026-08-20-room-task-tool.zh.md)
 
+> Superseded by [Room tasks](2026-10-23-room-tasks.md): the board and the `room_task` tool are gone; work is a `room_message` filed under a task. Old logs still replay the board events.
+
 ## Problem
 
 The room task board had exactly two write paths: the human's capsule UI (the `addTask`/`closeTask` Remotes) and the dispatch auto-open (an @-message journals an `in_progress` task per target). The room's MAIN agent had none: its official todo tool writes a private draft the room never sees, so when it wanted to publicly commit to a piece of work — the coordination gesture the board exists for — there was no channel. The gap was asymmetric in a way that confused models: members could be invited by the agent (`room_invite`) but the agent could not put a task on the shared board.

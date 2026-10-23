@@ -163,8 +163,8 @@ export function MembersView({
     return outcome
   }
 
-  const remove = async (member: RoomMember, transferPendingTo: string | undefined): Promise<void> => {
-    const outcome = await removeMember(member.name, transferPendingTo)
+  const remove = async (member: RoomMember): Promise<void> => {
+    const outcome = await removeMember(member.name)
     setRemoving(null)
     if (!outcome.ok) {
       setError(outcome.message)
@@ -187,8 +187,6 @@ export function MembersView({
     t('remove.done', { member: value.name }),
     ...value.stopped ? [t('remove.done.stopped')] : [],
     ...value.cancelledDeliveries > 0 ? [t('remove.done.queued', { count: value.cancelledDeliveries })] : [],
-    ...value.cancelledTasks > 0 ? [t('remove.done.tasks', { count: value.cancelledTasks })] : [],
-    ...value.transferredTasks > 0 ? [t('remove.done.transferred', { count: value.transferredTasks })] : [],
     ...value.notified.length > 0 ? [t('remove.done.notified', { members: value.notified.join('、') })] : [],
   ].join(t('remove.done.sep'))
 
@@ -268,8 +266,7 @@ export function MembersView({
                   member={member}
                   impact={removalImpact(state, member)}
                   coordinator={coordinatorMember(state)?.name === member.name}
-                  heirs={state.members.filter(entry => entry.name !== member.name).map(entry => entry.name)}
-                  onConfirm={transferPendingTo => remove(member, transferPendingTo)}
+                  onConfirm={() => remove(member)}
                   onCancel={() => { setRemoving(null) }}
                   t={t}
                 />

@@ -4,6 +4,8 @@ Status: implemented
 
 English | [中文](2026-08-22-room-quest-bar-redesign.zh.md)
 
+> Superseded by [Room tasks](2026-10-23-room-tasks.md): the goal and task capsules gave way to one task capsule and the sidebar task page; the room goal is edited at the top of that page.
+
 ## Problem
 
 The dual-capsule A/B ([the chrome-variants note](2026-08-20-room-capsule-chrome-variants.md)) settled nothing: the user rejected both candidates. Variant A's capsules read as two anonymous chips with unicode ◐/▦ stand-ins, and variant B's text row threw the goal — the dock's most important information — away into tertiary grey. The redesign brief: the goal's progress ring must be the collapsed row's single visual focus, the task capsule must carry a real checklist icon plus who is running, and the task panel must read like Linear (color-dot filter chips, small-caps group headers, colored status icons, member chips, right-aligned grey meta).

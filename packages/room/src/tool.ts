@@ -2,8 +2,8 @@
  * The session-granted room model tools — this package's `./tool` composition
  * entry (the canvas `./agent` pattern) for agent-preset compositions. The row
  * provides NO service (the preset-mount isolate-realm rule forbids service
- * rows), it only registers the model-facing `room_invite` / `room_task` /
- * `room_message` tools into the host tools registry, delegating to the global
+ * rows), it only registers the model-facing `room_invite` / `room_message` /
+ * `room_read` / `room_plan` tools into the host tools registry, delegating to the global
  * `ctx.room` service the main row provides at the profile root — the official
  * tool-row shape (the shipped `tool-bash` rows work the same way). Granting
  * is therefore per-session: a preset names the row, its sessions get the
@@ -23,7 +23,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 // Type-only: pulls this package's `Context.room` service augmentation.
 import type {} from './index.ts'
-import { roomInviteTool, roomMessageTool, roomTaskTool, roomReadTool, roomPlanTool } from './tool-definition.ts'
+import { roomInviteTool, roomMessageTool, roomReadTool, roomPlanTool } from './tool-definition.ts'
 
 const PACKAGE_NAME = '@khorsheed/dsh-room'
 
@@ -78,7 +78,6 @@ export function apply(ctx: Context): void {
     if (typeof service.commandPlan === 'function') toolsCtx.effect(() => toolsCtx.tools.register(definePluginTool(roomPlanTool(service))), 'room-tool: room_plan tool')
     if (typeof service.readRoomContext === 'function') toolsCtx.effect(() => toolsCtx.tools.register(definePluginTool(roomReadTool(service))), 'room-tool: room_read tool')
     toolsCtx.effect(() => toolsCtx.tools.register(definePluginTool(roomInviteTool(service))), 'room-tool: room_invite tool')
-    toolsCtx.effect(() => toolsCtx.tools.register(definePluginTool(roomTaskTool(service))), 'room-tool: room_task tool')
     toolsCtx.effect(() => toolsCtx.tools.register(definePluginTool(roomMessageTool(service))), 'room-tool: room_message tool')
   })
 }

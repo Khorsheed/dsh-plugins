@@ -18,6 +18,13 @@ A **task** is a human message that led to work (at least one delivery carries it
 - `RoomState.jobs` (`replayJobs`) lists tasks newest first with their number, title (leading @-mentions stripped), messages and how each was filed, status (running / attention when a delivery is uncertain / done / stopped), deliveries and members. Deliveries now carry their timing edges (dispatched, admitted, settled, held, released).
 - `stopJob` stops a task: running deliveries are cancelled through the existing `cancel`, queued and held ones never run, and `room/job-stopped` marks it.
 
+**Task page; what it replaced.** This supersedes [the room_task tool](2026-08-20-room-task-tool.md) and [the quest-bar capsules](2026-08-22-room-quest-bar-redesign.md). Tasks became the room's one way to see work, so overlapping surfaces were merged or removed (owner-approved):
+
+- A right-sidebar **Tasks** page (kind `room-tasks`, param `task`): the room goal (editable) on top, filters running / needs you / done / all (the last 20 finished tasks by default), and a detail per task — what the human said with how each follow-up was filed, stop the whole task (in-place confirmation naming the members whose work stops), what needs the human (uncertain outcomes reconciled in place, relays held inside the task), the formal goal when the task's work belongs to it, the subtask tree from each delivery's `parent` (reports travel back up and are not nodes; a running subtask stops on its own), and a member swimlane timeline of queue / held / exec stretches.
+- The page has no input. 「追问」 and 「＋ 新任务」 put a removable 「任务 N」 / 「新任务」 chip on the main composer (a client store shared by the page and the composer); the next send passes it as `postMessage`'s `task`. On a narrow window the page closes so the composer is in reach.
+- The composer dock collapses to one task capsule (「● N 个任务进行中」, plus an amber 「⚠ N 件需要处理」 counting uncertain deliveries and pending relays) that opens the page; a fresh room shows the invite capsule instead. Without the right sidebar the capsule degrades to the inline reconcile view.
+- Removed: the task board (`room/task-*` writes, the add/close/update remotes, the board capsule, the 「✓ 完成了」 chat line), the `room_task` tool (work is a `room_message`, filed under a task), the separate plan page and plan/agents capsules (`room_plan` stays; a plan shows inside its task, or under the list while no task has picked it up), and the pending-task transfer on member removal. Old logs still replay `room/task-*` into `RoomState.tasks`; no view reads it.
+
 ## Alternatives considered
 
 **Infer tasks from the log afterwards (time windows, hop chains).** Rejected: the room's own agent's direct turns leave no room record to chain from, and concurrent requests interleave.
@@ -30,4 +37,5 @@ A **task** is a human message that led to work (at least one delivery carries it
 
 - One extra decision-model call per human message while tasks are open (bounded at 8 s, skipped without `typesafe`).
 - Old rooms get tasks too, through the causal fallback.
-- Tests cover a task from an @-message joined by the agent's delegations, a model-filed follow-up re-filed as new by the coordinator, an unknown task reference, the composer's tag, a member's sub-delegation nesting under its delivery, stopping a task, and task-reference resolution.
+- Native sub-agent sessions that the coordinator spawns outside room dispatch no longer have a room surface (the old agents capsule listed them); they remain in the host's own session list.
+- Tests cover the task page (filters, detail, in-place stop, follow-up tags, per-subtask stop, the subtask tree and time segments), the task capsule and composer tag, and a task from an @-message joined by the agent's delegations, a model-filed follow-up re-filed as new by the coordinator, an unknown task reference, the composer's tag, a member's sub-delegation nesting under its delivery, stopping a task, and task-reference resolution.

@@ -344,6 +344,10 @@ export interface RoomRelayResolvedEvent {
 }
 
 /**
+ * Legacy: the retired task board (`room/task-*` events) is no longer
+ * written; old logs still replay into `RoomState.tasks`, which no view shows.
+ * Tasks are now `RoomJob`s, folded from dispatches.
+ *
  * Task-board task statuses. `failed` is terminal-from-the-engine (the run
  * settle writes it) but stays human-actionable: the board keeps the row
  * visible until the human dismisses it (closeTask → cancelled) or
@@ -355,7 +359,7 @@ export type RoomTaskStatus = 'pending' | 'in_progress' | 'done' | 'cancelled' | 
  * The room's goal was set (or cleared: an empty text). Log-only; the journal
  * fold keeps the LATEST goal event's text as the current goal (empty/absent =
  * unset). The goal rides the roster section of every member prompt, and the
- * dock's goal capsule renders it with the task progress.
+ * task page shows and edits it.
  */
 export interface RoomGoalEvent {
   readonly text: string
@@ -732,12 +736,6 @@ export interface RoomRemoveMemberRequest {
   readonly sessionId: SessionId
   /** Member to remove. */
   readonly name: string
-  /**
-   * Hand the member's not-yet-started (pending) board tasks to this member
-   * instead of cancelling them. In-progress tasks always close with the
-   * member's work.
-   */
-  readonly transferPendingTo?: string
 }
 
 /** What a removal actually did, for the undo toast and the room record. */
@@ -747,10 +745,6 @@ export interface RoomRemoval {
   readonly stopped: boolean
   /** Queued messages that will never be delivered. */
   readonly cancelledDeliveries: number
-  /** Board tasks closed as cancelled. */
-  readonly cancelledTasks: number
-  /** Pending board tasks handed to another member. */
-  readonly transferredTasks: number
   /** Members that were waiting for a report and were told instead. */
   readonly notified: readonly string[]
 }
@@ -927,62 +921,6 @@ export interface RoomRelayResolveRequest {
 /** confirmRelay/dismissRelay outcome. */
 export type RoomRelayResolveResult =
   | { readonly ok: true; readonly value: { readonly relayId: string } }
-  | { readonly ok: false; readonly error: RoomFailure }
-
-/** addTask request: a human-added task on a member's board lane. */
-export interface RoomAddTaskRequest {
-  /** Room session. */
-  readonly sessionId: SessionId
-  /** The member owning the task. */
-  readonly member: string
-  /** Task title (non-blank). */
-  readonly title: string
-  /**
-   * Optional member this task waits on ("等 ada" — display only, never an
-   * automatic dispatch). Must name a roster member when present.
-   */
-  readonly blockedBy?: string
-}
-
-/** addTask outcome. */
-export type RoomAddTaskResult =
-  | { readonly ok: true; readonly value: { readonly id: string } }
-  | { readonly ok: false; readonly error: RoomFailure }
-
-/** closeTask request: close an open task. */
-export interface RoomCloseTaskRequest {
-  /** Room session. */
-  readonly sessionId: SessionId
-  /** The task to close. */
-  readonly taskId: string
-  /** Closing status (default 'done'). */
-  readonly status?: 'done' | 'cancelled'
-}
-
-/** closeTask outcome. */
-export type RoomCloseTaskResult =
-  | { readonly ok: true; readonly value: { readonly id: string } }
-  | { readonly ok: false; readonly error: RoomFailure }
-
-/**
- * updateTask request: edit an open task's title and/or blockedBy (the
- * `room_task` tool's update action — host method only, not on the Remote
- * surface; the capsule UI edits nothing but the goal).
- */
-export interface RoomUpdateTaskRequest {
-  /** Room session. */
-  readonly sessionId: SessionId
-  /** The task to edit. */
-  readonly taskId: string
-  /** New title (non-blank when present). */
-  readonly title?: string
-  /** New blocking member (must be on the roster); explicit null clears the wait. */
-  readonly blockedBy?: string | null
-}
-
-/** updateTask outcome. */
-export type RoomUpdateTaskResult =
-  | { readonly ok: true; readonly value: { readonly id: string } }
   | { readonly ok: false; readonly error: RoomFailure }
 
 /** setGoal request: set (or, with a blank text, clear) the room's goal. */
