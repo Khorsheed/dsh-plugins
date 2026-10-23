@@ -10,7 +10,7 @@
 import { useState, type ReactNode } from 'react'
 import type { RoomProviderList, RoomState } from '../types.ts'
 import type { RoomComposerProps } from './slots.ts'
-import { InviteDialog, type InviteDialogSubmit } from './InviteDialog.tsx'
+import { InviteDialog, inviteRequest, type InviteDialogSubmit } from './InviteDialog.tsx'
 import { RoomRecoveryView } from './RoomRecoveryView.tsx'
 import { attentionCount, needsAttention } from './tasks.ts'
 import css from './RoomTaskCapsule.module.css'
@@ -27,17 +27,7 @@ export function RoomTaskCapsule({
   const [providers, setProviders] = useState<RoomProviderList | undefined>(undefined)
   const jobs = state.jobs ?? []
   if (jobs.length === 0 && state.goal === undefined && state.plan === undefined) {
-    const submitInvite = (values: InviteDialogSubmit) => invite({
-      provider: values.provider,
-      name: values.name,
-      ...values.instructions === '' ? {} : { instructions: values.instructions },
-      ...values.role === '' ? {} : { role: values.role },
-      ...values.kind === 'native' ? { kind: 'native' as const } : {},
-      ...values.preset === '' ? {} : { preset: values.preset },
-      ...values.cwd === '' ? {} : { cwd: values.cwd },
-      ...values.firstTask === '' ? {} : { firstTask: values.firstTask },
-      ...values.model === '' ? {} : { model: values.model },
-    })
+    const submitInvite = (values: InviteDialogSubmit) => invite(inviteRequest(values))
     return <div className={css.root}>
       <div className={css.capsules}>
         <button type="button" className={css.capsule} onClick={() => {

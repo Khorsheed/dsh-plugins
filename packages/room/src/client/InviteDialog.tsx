@@ -29,7 +29,7 @@ import type { LocalAgentUi } from '@khorsheed/dsh-local-agent/client'
  */
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import type {
-  MembersViewProps, RoomInviteOutcome, RoomMutationOutcome,
+  MembersViewProps, RoomInviteOutcome, RoomInviteValues, RoomMutationOutcome,
 } from './slots.ts'
 import type { RoomMember, RoomPresetInfo, RoomProviderInfo } from '../types.ts'
 
@@ -63,6 +63,25 @@ export interface InviteDialogSubmit {
    * baseline — a save only touches the broker/journal when the value moved.
    */
   readonly modelBaseline: string
+}
+
+/**
+ * The dialog's submission as the host's invite request: blank optional
+ * fields are omitted, not sent (the host rejects a present-but-blank role).
+ * Every invite entry (members tab, header action, fresh-room capsule) shares it.
+ */
+export function inviteRequest(values: InviteDialogSubmit): RoomInviteValues {
+  return {
+    provider: values.provider,
+    name: values.name,
+    ...values.instructions === '' ? {} : { instructions: values.instructions },
+    ...values.role === '' ? {} : { role: values.role },
+    ...values.kind === 'native' ? { kind: 'native' as const } : {},
+    ...values.preset === '' ? {} : { preset: values.preset },
+    ...values.cwd === '' ? {} : { cwd: values.cwd },
+    ...values.firstTask === '' ? {} : { firstTask: values.firstTask },
+    ...values.model === '' ? {} : { model: values.model },
+  }
 }
 
 export interface InviteDialogProps {

@@ -19,7 +19,7 @@ import { IconAgentPresetOutlineMedium } from './icons.tsx'
 import type { RoomMember, RoomRemoval } from '../types.ts'
 import { RemoveMemberConfirm, removalImpact } from './RemoveMemberConfirm.tsx'
 import { MemberCard } from './MemberCard.tsx'
-import { InviteDialog, type InviteDialogSubmit } from './InviteDialog.tsx'
+import { InviteDialog, inviteRequest, type InviteDialogSubmit } from './InviteDialog.tsx'
 import type { MembersViewProps, RoomModelDirectory } from './slots.ts'
 import type { RoomProviderList } from '../types.ts'
 import css from './MembersView.module.css'
@@ -143,19 +143,7 @@ export function MembersView({
       }
       return Object.keys(patch).length === 0 ? { ok: true as const } : updateMember(member.name, patch)
     }
-    const outcome = await invite({
-      provider: values.provider,
-      name: values.name,
-      // Blank instructions are omitted, not sent: the host rejects a
-      // present-but-blank role, and an absent one simply carries no preset.
-      ...values.instructions === '' ? {} : { instructions: values.instructions },
-      ...values.role === '' ? {} : { role: values.role },
-      ...values.kind === 'native' ? { kind: 'native' as const } : {},
-      ...values.preset === '' ? {} : { preset: values.preset },
-      ...values.cwd === '' ? {} : { cwd: values.cwd },
-      ...values.firstTask === '' ? {} : { firstTask: values.firstTask },
-      ...values.model === '' ? {} : { model: values.model },
-    })
+    const outcome = await invite(inviteRequest(values))
     if (outcome.ok) {
       flash(outcome.pendingFirstTask
         ? t('invite.success.task', { member: values.name })
