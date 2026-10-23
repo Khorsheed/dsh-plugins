@@ -38,6 +38,9 @@ function idleSpans(lanes: readonly { startedAt: number; durationMs: number }[], 
   return out.filter((g) => g.to > g.from)
 }
 
+/** Each non-tool row's timeline color, so the table and the timeline legend read alike. */
+const NON_BUCKET = { wait: 'wait', text: 'text', direct: 'reasoning', slack: 'other' } as const
+
 export function TimingView({
   timing,
   scopes,
@@ -66,6 +69,11 @@ export function TimingView({
     ...timing.lanes.map((l) => l.startedAt + l.durationMs),
   )
   const span = Math.max(1, end - start)
+  /** Idle time, split by where it sits (rows only when present). */
+  const idleRows = ([['lens.gapsHead', data.gapsHead], ['lens.gaps', data.gapsBetween], ['lens.gapsTail', data.gapsTail]] as const)
+    .filter(([, ms]) => ms >= 50)
+  /** The non-tool table's share cue scales to its largest row. */
+  const nonMax = Math.max(1, ...nonKeys.map((k) => [...data.non[k].values()].reduce((n, ms) => n + ms, 0)), ...idleRows.map(([, ms]) => ms))
   return (
     <div className={css.scroll}>
       <ScopeConfigs scope={scope} onOpenRequest={onOpenRequest} t={t} />
@@ -167,12 +175,12 @@ export function TimingView({
       <section>
         <h3 className={css.titleRow}>{t('lens.toolTime')}<abbr className={css.info} title={t('lens.attribution')}>i</abbr></h3>
         <div className={css.tableScroll}>
-          <table className={css.table}>
+          <table className={css.tt}>
             <thead>
               <tr>
                 <th>{t('lens.tool')}</th>
                 {keys.map((k) => (
-                  <th key={k} aria-sort={sort === k ? 'descending' : 'none'}>
+                  <th key={k} aria-sort={sort === k ? 'descending' : 'none'} data-sorted={sort === k}>
                     <button type="button" onClick={() => setSort(k)}>
                       {t(`lens.${k}`)}
                       {sort === k ? ' ↓' : ''}
@@ -186,20 +194,14 @@ export function TimingView({
                 <tr key={r.tool}>
                   <td>{r.tool}</td>
                   {keys.map((k) => (
-                    <td key={k} data-error={k === 'errors' && r[k] > 0}>
-                      {k === 'calls' || k === 'errors' ? (
-                        r[k]
-                      ) : (
-                        <>
-                          <i
-                            className={css.dataBar}
-                            style={{
-                              width: `${(r[k] / Math.max(1, ...rows.map((v) => v[k]))) * 100}%`,
-                            }}
-                          />
-                          {fmtSpan(r[k])}
-                        </>
-                      )}
+                    <td
+                      key={k}
+                      data-zero={r[k] === 0 || (k !== 'calls' && k !== 'errors' && r[k] < 50)}
+                      data-error={k === 'errors' && r[k] > 0}
+                      data-total={k === 'total'}
+                      style={k === 'total' ? { ['--share' as string]: String(r.total / Math.max(1, ...rows.map((v) => v.total))) } : undefined}
+                    >
+                      <span>{k === 'calls' || k === 'errors' ? r[k] : fmtSpan(r[k])}</span>
                     </td>
                   ))}
                 </tr>
@@ -208,13 +210,10 @@ export function TimingView({
             <tfoot>
               <tr>
                 <td>{t('lens.total')}</td>
-                {keys.map((k) => (
-                  <td key={k}>
-                    {k === 'calls' || k === 'errors'
-                      ? rows.reduce((n, r) => n + r[k], 0)
-                      : fmtSpan(rows.reduce((n, r) => n + r[k], 0))}
-                  </td>
-                ))}
+                {keys.map((k) => {
+                  const sum = rows.reduce((n, r) => n + r[k], 0)
+                  return <td key={k} data-zero={sum === 0}>{k === 'calls' || k === 'errors' ? sum : fmtSpan(sum)}</td>
+                })}
               </tr>
             </tfoot>
           </table>
@@ -222,104 +221,91 @@ export function TimingView({
       </section>
       <section>
         <h3>{t('lens.nonTool')}</h3>
-        <table className={css.table}>
-          <thead>
-            <tr>
-              <th>{t('lens.type')}</th>
-              <th>{t('lens.calls')}</th>
-              <th>{t('lens.longest')}</th>
-              <th>{t('lens.total')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {nonKeys.map((k) => {
-              const items = [...data.non[k]]
-                .filter(([, ms]) => ms > 0)
-                .sort((a, b) => b[1] - a[1])
-              if (!items.length) return null
-              return (
-                <Fragment key={k}>
-                  <tr>
-                    <td>
-                      <button
-                        type="button"
-                        aria-expanded={open.has(k)}
-                        onClick={() =>
-                          setOpen((p) => {
-                            const n = new Set(p)
-                            if (n.has(k)) n.delete(k)
-                            else n.add(k)
-                            return n
-                          })
-                        }
-                      >
-                        {open.has(k) ? '▾' : '▸'} {t(`lens.${k}`)}
-                      </button>
-                    </td>
-                    <td>{items.length}</td>
-                    <td>
-                      #{numberOf(items[0]![0])} {fmtSpan(items[0]![1])}
-                    </td>
-                    <td>{fmtSpan(items.reduce((n, [, ms]) => n + ms, 0))}</td>
-                  </tr>
-                  {open.has(k) && (
-                    <tr>
-                      <td colSpan={4}>
-                        {items.map(([seq, ms]) => {
-                          const r = scope.requests.find((r) => r.seq === seq)!
-                          return (
-                            <button
-                              key={seq}
-                              type="button"
-                              className={css.nonRow}
-                              onClick={() => onOpenRequest(seq, scope.scopeId)}
-                            >
-                              <span>#{numberOf(seq)}</span>
-                              <span>
-                                {summaryText(
-                                  r.responseSummary,
-                                  t('resp.directAnswer'), t('compaction.title'), t('resp.thinking'),
-                                )}
-                              </span>
-                              {k === 'wait' && (
-                                <span>
-                                  {t('lens.hit')}{' '}
-                                  {r.usage
-                                    ? `${cachePct(r.usage) ?? '—'}% · ${fmtK(inputTotal(r.usage))}`
-                                    : '—'}
-                                </span>
-                              )}
-                              <b>{fmtSpan(ms)}</b>
-                            </button>
-                          )
-                        })}
+        <div className={css.tableScroll}>
+          <table className={css.tt}>
+            <thead>
+              <tr>
+                <th>{t('lens.type')}</th>
+                <th>{t('lens.calls')}</th>
+                <th>{t('lens.longest')}</th>
+                <th data-sorted="true">{t('lens.total')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className={css.ttGroup}><td colSpan={4}>{t('time.groupModel')}</td></tr>
+              {nonKeys.map((k) => {
+                const items = [...data.non[k]]
+                  .filter(([, ms]) => ms > 0)
+                  .sort((a, b) => b[1] - a[1])
+                if (!items.length) return null
+                const sum = items.reduce((n, [, ms]) => n + ms, 0)
+                return (
+                  <Fragment key={k}>
+                    <tr data-open={open.has(k)}>
+                      <td>
+                        <button
+                          type="button"
+                          className={css.ttToggle}
+                          aria-expanded={open.has(k)}
+                          onClick={() =>
+                            setOpen((p) => {
+                              const n = new Set(p)
+                              if (n.has(k)) n.delete(k)
+                              else n.add(k)
+                              return n
+                            })
+                          }
+                        >
+                          <span className={css.ttChev} aria-hidden="true">›</span>
+                          <i className={css.ttSwatch} data-bucket={NON_BUCKET[k]} />
+                          {t(`lens.${k}`)}
+                        </button>
                       </td>
+                      <td>{items.length}</td>
+                      <td>#{numberOf(items[0]![0])} {fmtSpan(items[0]![1])}</td>
+                      <td data-total="true" data-zero={sum < 50} style={{ ['--share' as string]: String(sum / nonMax) }}><span>{fmtSpan(sum)}</span></td>
                     </tr>
-                  )}
-                </Fragment>
-              )
-            })}
-            {/* Idle time, split by where it sits (rows only when present). */}
-            {([['lens.gapsHead', data.gapsHead], ['lens.gaps', data.gapsBetween], ['lens.gapsTail', data.gapsTail]] as const)
-              .filter(([, ms]) => ms >= 50)
-              .map(([key, ms]) => (
+                    {open.has(k) && items.map(([seq, ms], i) => {
+                      const r = scope.requests.find((r) => r.seq === seq)!
+                      return (
+                        <tr key={seq} className={css.ttDetail} data-last={i === items.length - 1}>
+                          <td>
+                            <button type="button" onClick={() => onOpenRequest(seq, scope.scopeId)}>
+                              <span className={css.ttReq}>#{numberOf(seq)}</span>
+                              {summaryText(r.responseSummary, t('resp.directAnswer'), t('compaction.title'), t('resp.thinking'))}
+                            </button>
+                          </td>
+                          <td />
+                          <td className={css.ttMeta}>
+                            {k === 'wait' && r.usage ? `${t('lens.hit')} ${cachePct(r.usage) ?? '—'}% · ${fmtK(inputTotal(r.usage))}` : ''}
+                          </td>
+                          <td>{fmtSpan(ms)}</td>
+                        </tr>
+                      )
+                    })}
+                  </Fragment>
+                )
+              })}
+              {idleRows.length > 0 && <tr className={css.ttGroup}><td colSpan={4}>{t('time.idle')}</td></tr>}
+              {idleRows.map(([key, ms]) => (
                 <tr key={key}>
-                  <td>{t(key)}</td>
-                  <td>—</td>
-                  <td>—</td>
-                  <td>{fmtSpan(ms)}</td>
+                  <td><span className={css.ttToggle}><span className={css.ttChev} aria-hidden="true" /><i className={css.ttSwatch} data-bucket="idle" />{t(key)}</span></td>
+                  <td data-zero="true">—</td>
+                  <td data-zero="true">—</td>
+                  <td data-total="true" style={{ ['--share' as string]: String(ms / nonMax) }}><span>{fmtSpan(ms)}</span></td>
                 </tr>
               ))}
-          </tbody>
-          <tfoot>
-            <tr>
-              <td>{t('lens.total')}</td>
-              <td />
-              <td />
-              <td>{fmtSpan(data.total - totalTools)}</td>
-            </tr>
-          </tfoot>
-        </table>
+            </tbody>
+            <tfoot>
+              <tr>
+                <td>{t('lens.total')}</td>
+                <td />
+                <td />
+                <td>{fmtSpan(data.total - totalTools)}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
       </section>
     </div>
   )
