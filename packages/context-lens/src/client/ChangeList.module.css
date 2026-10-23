@@ -12,10 +12,10 @@
 .cardBreak { border-color: var(--dsw-alias-state-error-primary); }
 .head { width: 100%; display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 8px; align-items: center; padding: 7px 10px; background: none; border: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .head:hover { background: var(--dsw-alias-bg-layer-2); }
-.head:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary, currentColor); outline-offset: -2px; }
+.head:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: -2px; }
 .kind { font-size: var(--dsh-panel-text-meta, 11px); font-weight: 700; padding: 1px 6px; border-radius: 4px; white-space: nowrap; color: var(--dsw-alias-label-secondary); background: var(--dsw-alias-bg-layer-3); }
 .kind[data-kind="replace"] { color: var(--dsw-alias-state-warning-primary, #e8590c); background: color-mix(in srgb, var(--dsw-alias-state-warning-primary, #e8590c) 14%, transparent); }
-.kind[data-kind="compaction"] { color: var(--dsw-alias-brand-primary, #7048e8); background: color-mix(in srgb, var(--dsw-alias-brand-primary, #7048e8) 14%, transparent); }
+.kind[data-kind="compaction"] { color: var(--ri-compaction); background: color-mix(in srgb, var(--ri-compaction) 14%, transparent); }
 .kind[data-kind="prune"], .kind[data-kind="tool"] { color: var(--dsw-alias-label-primary); }
 .kind[data-kind="add"] { color: var(--dsw-alias-state-success-primary); background: color-mix(in srgb, var(--dsw-alias-state-success-primary) 14%, transparent); }
 .kind[data-kind="remove"] { color: var(--dsw-alias-state-error-primary); background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 14%, transparent); }
@@ -42,7 +42,7 @@
 .fact::before { content: "= "; font-family: var(--dsw-font-family-mono, ui-monospace, monospace); color: var(--dsw-alias-label-tertiary); }
 .links { display: flex; flex-wrap: wrap; gap: 4px 12px; }
 .links:empty { display: none; }
-.links button { background: none; border: 0; padding: 0; font: inherit; color: var(--dsw-alias-brand-primary, currentColor); cursor: pointer; }
+.links button { background: none; border: 0; padding: 0; font: inherit; color: var(--dsw-alias-link); cursor: pointer; }
 .links button:hover { text-decoration: underline; }
 
 .rowsBlock { display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 6px; align-items: start; }
