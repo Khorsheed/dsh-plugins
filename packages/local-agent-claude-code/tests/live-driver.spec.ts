@@ -323,6 +323,7 @@ describe('claude live driver rounds', () => {
     const m = mount({ config: { permissionMode: 'skip', snapshotMinIntervalMs: 0 } })
     const liveStreams = new LocalAgentStreams()
     Object.assign(m.ctx.localAgent, { liveStreams })
+    const published = vi.spyOn(liveStreams, 'publish')
     const child = Session.create(SessionId('child-claude-block-identities'))
     const fake = new FakeClaude({ turn: () => ({ hang: true }) })
     m.queueChild(fake)
@@ -337,8 +338,12 @@ describe('claude live driver rounds', () => {
     fake.emit({ type: 'assistant', message: { id: 'message-two', role: 'assistant', content: [{ type: 'text', text: 'third' }] } })
     fake.emit({ type: 'result', is_error: false, session_id: 'claude-session-1', usage: { input_tokens: 10, output_tokens: 4 } })
     expect((await run.result).stopReason).toBe('completed')
+    // Every block streamed live; a block reaches the log as a checkpoint only
+    // once its step may open (one open step at a time, in order).
+    const live = published.mock.calls.map(([, item]) => item.text)
+    expect(live).toEqual(expect.arrayContaining(['first', 'second', 'third']))
     const checkpoints = child.snapshotEvents().filter(event => event.type === 'local-agent/stream')
-    expect(checkpoints.map(event => event.data.text)).toEqual(['first', 'second', 'third'])
+    expect(checkpoints.map(event => event.data.text)[0]).toBe('first')
     const messages = child.snapshotEvents().filter(event => event.type === 'assistant/message')
     expect(messages.map(event => event.data.message.content)).toEqual([
       [{ type: 'text', text: 'first' }], [{ type: 'text', text: 'second' }], [{ type: 'text', text: 'third' }],
@@ -346,6 +351,7 @@ describe('claude live driver rounds', () => {
     expect(new Set(messages.map(event => event.data.step)).size).toBe(3)
     expect(messages.at(-1)!.data).toMatchObject({ usage: { inputTokens: 10, outputTokens: 4 } })
     expectStepBoundaries(child)
+    expectValidReleasedLog(child)
     await m.driver.disposeAll()
     liveStreams.dispose()
   })
@@ -710,8 +716,11 @@ describe('claude live driver rounds', () => {
     expect(final.seq).toBeLessThan(turnEnd.seq)
     const atStep = events.filter(e => (e.data as { turn?: number; step?: number }).turn === 1
       && (e.data as { turn?: number; step?: number }).step === 2)
-    expect(atStep.map(e => e.type)).toEqual(['step/start', 'assistant/message', 'assistant/message', 'assistant/message', 'step/end'])
+    // The answer streamed while the thinking step was still open, so its
+    // snapshots stayed live-only (one open step at a time); its fold writes it.
+    expect(atStep.map(e => e.type)).toEqual(['step/start', 'assistant/message', 'step/end'])
     expectStepBoundaries(child)
+    expectValidReleasedLog(child)
     await m.driver.disposeAll()
   })
 
@@ -766,10 +775,12 @@ describe('claude live driver rounds', () => {
       expect(message.isError).toBe(true)
       expect(message.content[0]?.text).toBe(CLAUDE_INTERRUPTED_TOOL_RESULT)
     }
-    const final = child.snapshotEvents().filter(e => e.type === 'assistant/message').at(-1)!
+    const final = child.snapshotEvents().find(e => e.type === 'assistant/message'
+      && (e.data as { message: { content: { type: string }[] } }).message.content[0]?.type === 'text')!
     expect(final.data).toMatchObject({ turn: 1, step: 3, usage: { inputTokens: 5, outputTokens: 2 } })
     // The shifted tool steps carry their own boundary pairs too.
     expectStepBoundaries(child)
+    expectValidReleasedLog(child)
     await m.driver.disposeAll()
   })
 

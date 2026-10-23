@@ -14,7 +14,7 @@ live 驱动的 token 粒度（"逐字流式"）是一种伪装成更高档位的
 
 step 账本保证工具卡片的时间序：`reservedSteps` 永久记录每个流式预留 step（预留时 `step = lines.length + reservedSteps.length + 1`），顺序折叠跳过所有在它之前的预留值；逐 item 的 `streams` 状态（CLI 提供 itemId 时按 itemId——codex 的 app-server 有；kimi 的 ACP 与 claude 的 stream-json 用 per-kind 合成 key）把完成 item 配对到它的预留 step。完成 item 即使中途插进了别的流也折叠到自己的预留 step；切换 item 时补一条新鲜快照（文本未增长则跳过）；settle 在 turn 窗口内强制收尾所有未完成 stream（非 completed 带 interrupted，最后一条携带 usage）。同一坐标绝不写第二个 `step/start`（live assembler 对重复 start 抛错）——step 在首个快照时打开，在完成折叠或 settle 收尾时关闭。
 
-**Codex 步号账本，2026-10-23。** 发布日志读取器只接受按顺序、同一时刻只开一个的 step；预留坐标破坏了这一点（预留了 step 3 的流在 step 1 还开着、step 2 还没写时就打开，或晚到的工具在流的 3 之前折叠到 4），宿主重启后整个子会话就被判为损坏。codex 驱动现在在写入时才给 step 编号（`lastStep`），按开始顺序保持时间序（流记录 `after`，即它第一个 delta 之前已完成的行数；流之间按开始先后排；普通行折叠在每个比它完成更早开始的流之后，那个流还在流式输出时就等待），并且只有当一个流是最早的未完成流、它之前的内容都已写入时，它的 step 才能在日志里打开。在那之前，流经 `LiveStreamPublisher.preview` 只在浏览器里显示，由它的折叠写入最终文本。settle 时若某个流挡住了剩余行，就用它最后的快照收尾，再继续折叠。
+**Codex 与 claude 步号账本，2026-10-23。** 发布日志读取器只接受按顺序、同一时刻只开一个的 step；预留坐标破坏了这一点（预留了 step 3 的流在 step 1 还开着、step 2 还没写时就打开，或晚到的工具在流的 3 之前折叠到 4），宿主重启后整个子会话就被判为损坏。codex 驱动现在在写入时才给 step 编号（`lastStep`），按开始顺序保持时间序（流记录 `after`，即它第一个 delta 之前已完成的行数；流之间按开始先后排；普通行折叠在每个比它完成更早开始的流之后，那个流还在流式输出时就等待），并且只有当一个流是最早的未完成流、它之前的内容都已写入时，它的 step 才能在日志里打开。在那之前，流经 `LiveStreamPublisher.preview` 只在浏览器里显示，由它的折叠写入最终文本。settle 时若某个流挡住了剩余行，就用它最后的快照收尾，再继续折叠。
 
 core 共用 `LiveFlush` 调度器保留首个待发布更新的截止时间并合并后续更新；稀疏末段不再等下一个 delta 或字符门槛。最终折叠取消待执行定时器，轮次结束先释放调度器再收尾部分内容。这些快照仍走持久事件镜像；此步骤尚未证明 room 协调者提案的端到端 P95 或日志体积目标。
 
@@ -32,7 +32,7 @@ core 共用 `LiveFlush` 调度器保留首个待发布更新的截止时间并�
 - 实时输出显示工具、reasoning 与文本，包括 item 内增长。子会话日志成为忠实转写（可事后定位问题），abort 轮保留带 interrupted 标记的部分文本。
 - 快照使日志量上升（节流快照；长轮次多几十条事件）。`tokenUsage` 投影的 (turn, step) last-wins 去重保持记账精确。
 - Claude 从 result 事件记录 usage；kimi 的中途 pass 丢 usage 由 `usageAttached` 窗口 + 余量累加器修复。
-- 已知边界：稀疏或乱序的 step 坐标**并非无害**——发布日志读取器在重新加载时会拒绝。codex 已不再产生（见上）；kimi 与 claude 仍用预留公式，需要同样检查；kimi/claude 的 per-kind 合成 key 在同 kind 多 item 时共享一条流（它们的 wire 不带 item id）。
+- 已知边界：稀疏或乱序的 step 坐标**并非无害**——发布日志读取器在重新加载时会拒绝。codex 与 claude 已不再产生（同一套账本，见上）；kimi 的测试对每个流式用例都校验发布日志合法，均通过；kimi/claude 的 per-kind 合成 key 在同 kind 多 item 时共享一条流（它们的 wire 不带 item id）。
 - `localAgent/run-progress` delta 通道仍无 UI 消费者——快照让显示不再依赖它；它留给程序化调用方。
 
 ## Testing

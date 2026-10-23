@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-12-faithful-streaming-mirrors.md
-.agents/notes/implemented/feature/2026-09-12-faithful-streaming-mirrors.md: 90da8247f6277fb4d989d47dc6207bdd3ec52382
-.agents/notes/implemented/feature/2026-09-12-faithful-streaming-mirrors.zh.md: b43e82e2f016b0abfe1459b3e020c92692123579
+.agents/notes/implemented/feature/2026-09-12-faithful-streaming-mirrors.md: 00428a00abb31819d23aa79dbfc31fa2dc7be17d
+.agents/notes/implemented/feature/2026-09-12-faithful-streaming-mirrors.zh.md: 34bff1f0f7e3118523a116a69d2a84ac472661e7

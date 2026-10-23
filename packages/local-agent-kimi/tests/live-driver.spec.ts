@@ -917,6 +917,7 @@ describe('kimi live driver rounds', () => {
     // Both folds carry their boundary pairs, and the log passes cold reads.
     expectStepBoundaries(child)
     expectValidReleasedLog(child)
+    expectValidReleasedLog(child)
     await m.driver.disposeAll()
   })
 
@@ -1414,6 +1415,7 @@ describe('kimi live driver transcript completeness', () => {
     await vi.waitFor(() => {
       expect(reasoningTexts(child).some(text => text.includes('☑ 第一步') && text.includes('▶ 第二步'))).toBe(true)
     }, { timeout: 5_000 })
+    expectValidReleasedLog(child)
     await m.driver.disposeAll()
   })
 
