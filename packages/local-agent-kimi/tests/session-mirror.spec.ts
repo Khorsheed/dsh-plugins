@@ -230,6 +230,137 @@ describe('session-mirror', () => {
     expectValidReleasedLog(child)
   })
 
+  it('folds one wire step — think, reply and tool — into a single dsh step', async () => {
+    // The wire's own LLM-request boundary: one step's parts share its number.
+    const wire = [
+      { type: 'turn.prompt', input: [{ type: 'text', text: '建个文件' }] },
+      { type: 'usage.record', model: 'kimi-code/k3', usage: { inputOther: 100, output: 25, inputCacheRead: 40, inputCacheCreation: 0 } },
+      { type: 'context.append_loop_event', event: { type: 'step.begin', turnId: 0, step: 1 } },
+      { type: 'context.append_loop_event', event: { type: 'content.part', turnId: 0, step: 1, part: { type: 'think', think: 'Simple task.' } } },
+      { type: 'context.append_loop_event', event: { type: 'content.part', turnId: 0, step: 1, part: { type: 'text', text: '我开始了。' } } },
+      { type: 'context.append_loop_event', event: { type: 'tool.call', turnId: 0, step: 1, toolCallId: 'call_1', toolCall: { name: 'Write' } } },
+      { type: 'context.append_loop_event', event: { type: 'tool.result', toolCallId: 'call_1', result: { output: 'Wrote 10 bytes' } } },
+      { type: 'context.append_loop_event', event: { type: 'step.end', turnId: 0, step: 1 } },
+    ]
+    const { home } = wireHome('step-fold', wire)
+    const child = Session.create(SessionId('child-step-fold'))
+    const ctx = new Context()
+    ctx.provide('sessionPersistence', fakeSessionPersistence())
+    child.append('turn/start', { turn: 1 })
+    await mirrorKimiSession(ctx, child, home)
+
+    const events = child.snapshotEvents()
+    const assistant = events.filter(event => event.type === 'assistant/message')
+    expect(assistant).toHaveLength(1)
+    expect(assistant[0]!.data).toMatchObject({ turn: 1, step: 1, usage: { inputTokens: 100, outputTokens: 25, cacheReadTokens: 40 } })
+    expect(assistant[0]!.data.message.content).toEqual([
+      { type: 'reasoning', text: 'Simple task.' },
+      { type: 'text', text: '我开始了。' },
+      { type: 'tool-call', id: 'call_1', name: 'Write', arguments: '' },
+    ])
+    // The tool lifecycle rides the same step.
+    expect(events.filter(event => event.type === 'tool/call').map(event => (event.data as { step?: number }).step)).toEqual([1])
+    expect(events.filter(event => event.type === 'tool/result')).toHaveLength(1)
+    expectStepBoundaries(child)
+    expectValidReleasedLog(child)
+  })
+
+  it('holds an open wire step until the wire closes it, then folds the whole step', async () => {
+    const wire = [
+      { type: 'turn.prompt', input: [{ type: 'text', text: '建个文件' }] },
+      { type: 'context.append_loop_event', event: { type: 'step.begin', turnId: 0, step: 1 } },
+      { type: 'context.append_loop_event', event: { type: 'content.part', turnId: 0, step: 1, part: { type: 'think', think: 'Simple task.' } } },
+    ]
+    const { home, dir } = wireHome('step-hold', wire)
+    const child = Session.create(SessionId('child-step-hold'))
+    const ctx = new Context()
+    ctx.provide('sessionPersistence', fakeSessionPersistence())
+    child.append('turn/start', { turn: 1 })
+
+    const first = await mirrorKimiSessionDelta(ctx, child, home, 'step-hold', 0)
+    // The open step's think part waits for the wire step to close (the live
+    // channel renders it meanwhile) — only the prompt folded.
+    expect(first.total).toBe(1)
+    expect(child.snapshotEvents().filter(event => event.type === 'assistant/message')).toHaveLength(0)
+
+    appendFileSync(join(dir, 'agents', 'main', 'wire.jsonl'), '\n' + [
+      { type: 'context.append_loop_event', event: { type: 'content.part', turnId: 0, step: 1, part: { type: 'text', text: '任务完成。' } } },
+      { type: 'context.append_loop_event', event: { type: 'step.end', turnId: 0, step: 1 } },
+    ].map(line => JSON.stringify(line)).join('\n'))
+    const second = await mirrorKimiSessionDelta(ctx, child, home, 'step-hold', first.total)
+    expect(second.total).toBe(3)
+    const assistant = child.snapshotEvents().filter(event => event.type === 'assistant/message')
+    expect(assistant).toHaveLength(1)
+    expect(assistant[0]!.data.message.content).toEqual([
+      { type: 'reasoning', text: 'Simple task.' },
+      { type: 'text', text: '任务完成。' },
+    ])
+    expectValidReleasedLog(child)
+  })
+
+  it('holds a wire-step group whose tool call lacks its result — the step folds whole, or interrupted at settle', async () => {
+    const wire = [
+      { type: 'turn.prompt', input: [{ type: 'text', text: '建个文件' }] },
+      { type: 'context.append_loop_event', event: { type: 'step.begin', turnId: 0, step: 1 } },
+      { type: 'context.append_loop_event', event: { type: 'content.part', turnId: 0, step: 1, part: { type: 'think', think: 'Simple task.' } } },
+      { type: 'context.append_loop_event', event: { type: 'tool.call', turnId: 0, step: 1, toolCallId: 'call_1', toolCall: { name: 'Write' } } },
+      { type: 'context.append_loop_event', event: { type: 'step.end', turnId: 0, step: 1 } },
+    ]
+    const { home, dir } = wireHome('step-tool-hold', wire)
+    const child = Session.create(SessionId('child-step-tool-hold'))
+    const ctx = new Context()
+    ctx.provide('sessionPersistence', fakeSessionPersistence())
+    child.append('turn/start', { turn: 1 })
+
+    // The step is closed but its tool result is not in — nothing of it folds.
+    const first = await mirrorKimiSessionDelta(ctx, child, home, 'step-tool-hold', 0)
+    expect(first.total).toBe(1)
+    expect(child.snapshotEvents().filter(event => event.type === 'assistant/message')).toHaveLength(0)
+
+    // The result merges into the call's line in place; the next pass folds
+    // the whole step.
+    appendFileSync(join(dir, 'agents', 'main', 'wire.jsonl'), '\n' + JSON.stringify(
+      { type: 'context.append_loop_event', event: { type: 'tool.result', toolCallId: 'call_1', result: { output: 'Wrote 10 bytes' } } },
+    ))
+    const second = await mirrorKimiSessionDelta(ctx, child, home, 'step-tool-hold', first.total)
+    expect(second.total).toBe(3)
+    const assistant = child.snapshotEvents().filter(event => event.type === 'assistant/message')
+    expect(assistant).toHaveLength(1)
+    expect(assistant[0]!.data.message.content).toEqual([
+      { type: 'reasoning', text: 'Simple task.' },
+      { type: 'tool-call', id: 'call_1', name: 'Write', arguments: '' },
+    ])
+    expect(child.snapshotEvents().filter(event => event.type === 'tool/result')
+      .map(event => event.data.message.isError)).toEqual([false])
+    expectValidReleasedLog(child)
+  })
+
+  it('settle folds a closed-incomplete group — an unresulted call resolves interrupted', async () => {
+    const wire = [
+      { type: 'turn.prompt', input: [{ type: 'text', text: '建个文件' }] },
+      { type: 'context.append_loop_event', event: { type: 'step.begin', turnId: 0, step: 1 } },
+      { type: 'context.append_loop_event', event: { type: 'content.part', turnId: 0, step: 1, part: { type: 'think', think: 'Simple task.' } } },
+      { type: 'context.append_loop_event', event: { type: 'tool.call', turnId: 0, step: 1, toolCallId: 'call_1', toolCall: { name: 'Write' } } },
+      { type: 'context.append_loop_event', event: { type: 'step.end', turnId: 0, step: 1 } },
+    ]
+    const { home } = wireHome('step-settle', wire)
+    const child = Session.create(SessionId('child-step-settle'))
+    const ctx = new Context()
+    ctx.provide('sessionPersistence', fakeSessionPersistence())
+    child.append('turn/start', { turn: 1 })
+
+    await mirrorKimiSessionDelta(ctx, child, home, 'step-settle', 0, { settle: true })
+    const assistant = child.snapshotEvents().filter(event => event.type === 'assistant/message')
+    expect(assistant).toHaveLength(1)
+    expect(assistant[0]!.data.message.content).toEqual([
+      { type: 'reasoning', text: 'Simple task.' },
+      { type: 'tool-call', id: 'call_1', name: 'Write', arguments: '' },
+    ])
+    expect(child.snapshotEvents().filter(event => event.type === 'tool/result')
+      .map(event => event.data.message.isError)).toEqual([true])
+    expectValidReleasedLog(child)
+  })
+
   it('mirrors the most recent session across workspaces', async () => {
     const home = tempHome('kimi-mirror-newest-')
     const olderDir = join(home, 'sessions', 'wd_old', 'session_s1')
@@ -383,13 +514,18 @@ describe('session-mirror resume deltas', () => {
     const turns = new Set(assistant.map(event => (event.data as { turn?: number }).turn))
     expect(turns.has(1)).toBe(true)
     expect(turns.has(2)).toBe(true)
-    // The resumed round's usage is the SUM of its own per-request records,
-    // attached to its final assistant message.
+    // The resumed round's usage attaches PER WIRE STEP: one record per LLM
+    // request rides its own step's message (the host session's own shape).
     const round2Usage = assistant
       .map(event => event.data as { turn?: number; usage?: { inputTokens?: number } })
       .filter(event => event.turn === 2 && event.usage !== undefined)
-    expect(round2Usage.length).toBe(1)
-    expect(round2Usage[0]!.usage?.inputTokens).toBe(15817 + 8360 + 1160 + 5698 + 5268)
+    expect(round2Usage.map(event => event.usage?.inputTokens)).toEqual([15817, 8360, 1160, 5698, 5268])
+    // Grouped fold: one wire step's reasoning, reply and tool calls share ONE
+    // dsh step's message (round 2 step 1).
+    const round2First = assistant
+      .map(event => event.data as { turn?: number; message?: { content?: { type: string }[] } })
+      .filter(event => event.turn === 2)[0]
+    expect(round2First?.message?.content.map(block => block.type)).toEqual(['reasoning', 'text', 'tool-call', 'tool-call'])
     expectValidReleasedLog(child)
   })
 

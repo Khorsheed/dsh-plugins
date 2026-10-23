@@ -46,6 +46,30 @@ describe('session-view', () => {
     ])
   })
 
+  it('tags lines with the wire step and records which steps closed', async () => {
+    const home = tempHome('kimi-session-steps-')
+    const dir = join(home, 'sessions', 'wd_x', 'session_steps')
+    mkdirSync(join(dir, 'agents', 'main'), { recursive: true })
+    writeFileSync(join(dir, 'agents', 'main', 'wire.jsonl'), [
+      JSON.stringify({ type: 'turn.prompt', input: [{ type: 'text', text: '建个文件' }] }),
+      JSON.stringify({ type: 'context.append_loop_event', event: { type: 'step.begin', turnId: 0, step: 1 } }),
+      JSON.stringify({ type: 'context.append_loop_event', event: { type: 'content.part', turnId: 0, step: 1, part: { type: 'think', think: 'Simple task.' } } }),
+      JSON.stringify({ type: 'context.append_loop_event', event: { type: 'content.part', turnId: 0, step: 1, part: { type: 'text', text: '我开始了。' } } }),
+      JSON.stringify({ type: 'context.append_loop_event', event: { type: 'step.end', turnId: 0, step: 1 } }),
+      JSON.stringify({ type: 'context.append_loop_event', event: { type: 'step.begin', turnId: 0, step: 2 } }),
+      JSON.stringify({ type: 'context.append_loop_event', event: { type: 'content.part', turnId: 0, step: 2, part: { type: 'think', think: '再想。' } } }),
+    ].join('\n'))
+    const transcript = await readKimiTranscript(dir)
+    expect(transcript.lines).toEqual([
+      { kind: 'user', text: '建个文件', turn: 1 },
+      { kind: 'think', text: 'Simple task.', turn: 1, wireStep: 1 },
+      { kind: 'assistant', text: '我开始了。', turn: 1, wireStep: 1 },
+      { kind: 'think', text: '再想。', turn: 1, wireStep: 2 },
+    ])
+    expect(transcript.closedSteps.has('1:1')).toBe(true)
+    expect(transcript.closedSteps.has('1:2')).toBe(false)
+  })
+
   it('matches parallel tool results to their owning call by parentUuid', async () => {
     const home = tempHome('kimi-session-toolpair-')
     const dir = join(home, 'sessions', 'wd_x', 'session_tp')
