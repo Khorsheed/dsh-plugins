@@ -129,7 +129,8 @@ describe('child-log lane', () => {
     // One-shot honesty: no system prompt, no tools, no header config in the log.
     expect(first?.segments.system).toEqual([])
     expect(first?.segments.tools).toEqual([])
-    expect(first?.config).toEqual({})
+    // Only who answered is known (the assistant message's source); nothing else is invented.
+    expect(first?.config).toEqual({ provider: 'kimi-coding', model: 'k3' })
     expect(first?.segments.history).toEqual([])
     expect(first?.segments.added.map(item => item.category)).toEqual(['user'])
 

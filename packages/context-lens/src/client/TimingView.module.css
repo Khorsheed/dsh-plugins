@@ -300,7 +300,12 @@
 .cell .v { font-size: var(--dsh-panel-text-title, 18px); white-space: nowrap; }
 .scroll h3 { font-size: var(--dsh-panel-text-body, 13px); margin: 16px 0 8px; }
 .lane { display: grid; grid-template-columns: 95px minmax(0, 1fr); gap: 8px; align-items: center; }
-.lane[data-dim="true"] { opacity: .55; }
+.lane[data-dim="true"] { opacity: .45; }
+/* The selected agent's lane: bold name with an accent bar, its track outlined. */
+.lane[data-dim="false"] .laneName { color: var(--dsw-alias-label-primary); font-weight: 600; box-shadow: inset 3px 0 0 var(--dsw-alias-state-business-primary); padding-left: 8px; }
+.lane[data-dim="false"] .timeline { box-shadow: 0 0 0 1px var(--dsw-alias-state-business-primary); }
+.titleRow { display: flex; align-items: center; gap: 6px; }
+.info { display: inline-grid; place-items: center; width: 14px; height: 14px; border: 1px solid var(--dsw-alias-border-l1); border-radius: 50%; text-decoration: none; font-size: var(--dsh-panel-text-meta, 10px); font-weight: 400; color: var(--dsw-alias-label-tertiary); cursor: help; }
 .laneName { border: 0; background: transparent; color: var(--dsw-alias-label-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; font: inherit; cursor: pointer; }
 .timeline { height: 20px; border-radius: 3px; }
 .blk { border: 0; cursor: pointer; padding: 0; }
