@@ -414,50 +414,30 @@ export function InviteDialog({
                 </label>
               )
             )}
-            {mode === 'invite' && native && (
-              <div className={css.field} role="radiogroup" aria-label={t('invite.preset')}>
-                <span className={css.label}>{t('invite.preset')}</span>
-                <span className={css.presets}>
-                  {(presets ?? []).map(entry => (
-                    <button
-                      key={entry.id}
-                      type="button"
-                      role="radio"
-                      aria-checked={chosenPreset === entry.id}
-                      disabled={entry.broken !== undefined}
-                      title={entry.broken ?? entry.description}
-                      className={chosenPreset === entry.id ? css.presetOn : css.presetOff}
-                      onClick={() => { setPreset(entry.id) }}
-                    >
-                      {entry.name ?? entry.id}
-                      {entry.description !== undefined && <small>{entry.description}</small>}
-                    </button>
-                  ))}
-                </span>
-                <span className={css.hint}>{t('invite.presetHint')}</span>
-              </div>
-            )}
-            {mode === 'invite' && !native && presets !== undefined && presets.length > 0 && (
-              <div className={css.field} role="radiogroup" aria-label={t('invite.cliPreset')}>
+            {mode === 'invite' && presets !== undefined && presets.length > 0 && (native || localAgentAvailable) && (
+              <label className={css.field}>
                 <span className={css.label}>{t('invite.cliPreset')}</span>
-                <span className={css.presets}>
-                  {[{ id: '', name: t('invite.cliPresetNone') }, ...presets].map(entry => (
-                    <button
-                      key={entry.id}
-                      type="button"
-                      role="radio"
-                      aria-checked={cliPreset === entry.id}
-                      disabled={'broken' in entry && entry.broken !== undefined}
-                      title={'description' in entry ? entry.description : undefined}
-                      className={cliPreset === entry.id ? css.presetOn : css.presetOff}
-                      onClick={() => { setCliPreset(entry.id) }}
-                    >
+                <select
+                  className={css.select}
+                  aria-label={t('invite.cliPreset')}
+                  value={native ? chosenPreset : cliPreset}
+                  onChange={event => { if (native) setPreset(event.target.value); else setCliPreset(event.target.value) }}
+                >
+                  {!native && <option value="">{t('invite.cliPresetNone')}</option>}
+                  {presets.map(entry => (
+                    <option key={entry.id} value={entry.id} disabled={entry.broken !== undefined} title={entry.broken ?? entry.description}>
                       {entry.name ?? entry.id}
-                    </button>
+                    </option>
                   ))}
+                </select>
+                <span className={css.hint}>
+                  {(() => {
+                    const picked = presets.find(entry => entry.id === (native ? chosenPreset : cliPreset))
+                    const about = picked?.broken ?? picked?.description
+                    return [about, t(native ? 'invite.presetHint' : 'invite.cliPresetHint')].filter(Boolean).join(' · ')
+                  })()}
                 </span>
-                <span className={css.hint}>{t('invite.cliPresetHint')}</span>
-              </div>
+              </label>
             )}
             {native ? null : memberConfiguration ?? (chosenHarness !== undefined && (modelSurface === undefined || surface !== undefined) ? renderHarnessModelPicker?.(chosenHarness, { value: model, onChange: setModel, disabled: busy }) : undefined) ?? modelField}
             <label className={css.field}>

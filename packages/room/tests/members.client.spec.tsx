@@ -447,10 +447,14 @@ describe('MembersView', () => {
     fireEvent.click(screen.getByRole('button', { name: '＋ 邀请成员' }))
     await screen.findByRole('dialog')
     await screen.findByText('Kimi Code', { selector: 'option' })
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: '__native__' } })
-    const presets = screen.getByRole('radiogroup', { name: '预设' })
-    expect(within(presets).getByRole('radio', { name: /标准模式/ }).getAttribute('aria-checked')).toBe('true')
-    fireEvent.click(within(presets).getByRole('radio', { name: /审查模式/ }))
+    // A CLI member's mode is one dropdown, defaulting to no mode.
+    const mode = () => screen.getByRole('combobox', { name: '模式' }) as HTMLSelectElement
+    expect(mode().value).toBe('')
+    expect([...mode().options].map(option => option.textContent)).toEqual(['不带模式', '标准模式', '审查模式'])
+    fireEvent.change(screen.getAllByRole('combobox')[0]!, { target: { value: '__native__' } })
+    // A native member always runs a mode: the host default is preselected.
+    expect(mode().value).toBe('standard')
+    fireEvent.change(mode(), { target: { value: 'review' } })
     fireEvent.change(screen.getByPlaceholderText('ada'), { target: { value: 'rev' } })
     fireEvent.click(screen.getByRole('button', { name: '邀请入队' }))
     await waitFor(() => {

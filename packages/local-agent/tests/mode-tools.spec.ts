@@ -110,7 +110,8 @@ describe('mode skills', () => {
     const written = statSync(file).mtimeMs
     installModeSkills(dir, 'dsh-video', found)
     expect(statSync(file).mtimeMs).toBe(written)
-    expect(harnessSkillsDir('kimi', home)).toBeUndefined()
+    expect(harnessSkillsDir('kimi', home)).toBe(join(home, 'skills'))
+    expect(harnessSkillsDir('other', home)).toBeUndefined()
   })
 })
 
