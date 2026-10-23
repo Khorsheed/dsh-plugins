@@ -59,6 +59,26 @@ export function roomSource(): MessageSource {
 }
 
 /**
+ * A run-state edge's child-session identity: the main agent runs on the room
+ * itself, external members on their child session. Optional — a fresh CLI
+ * member's early running edge predates the child handle's publication (the
+ * terminal edge and the journal backfill cover it).
+ */
+export function runChildSessionId(roomId: SessionId, member: RoomMember | undefined): SessionId | undefined {
+  if (member?.kind === 'main-agent') return roomId
+  return member?.childSessionId
+}
+
+/**
+ * The child session round a run reached: the last turn/start the child wrote.
+ * Live sessions only — a reconcile path whose child is not in memory omits it.
+ */
+export function runChildTurn(session: Session | undefined): number | undefined {
+  const last = session?.snapshotEvents().filter(event => event.type === 'turn/start').at(-1)
+  return (last?.data as { turn?: number } | undefined)?.turn
+}
+
+/**
  * Whether a durable source belongs to the room producer, in every form the
  * log can hold: the current producer-owned kind (`room`), the V3→V4 migrated
  * kind (`plugin:@khorsheed/dsh-room`), and the released V3 wrapper a pre-V4
@@ -351,7 +371,13 @@ export class DispatchEngine {
             const target = state.members.find(member => memberId(events, member) === targetId)
             if (target !== undefined) {
               const run = state.runs.find(run => run.member === target.name)
-              if (run?.state === 'running' && (run.runId === undefined || run.runId === id)) room.append('room/run-state', { member: target.name, state: 'failed', startedAt: run.startedAt, ...run.runId === undefined ? {} : { runId: run.runId }, error: 'Execution outcome is unknown after restart; reconcile before retrying' })
+              if (run?.state === 'running' && (run.runId === undefined || run.runId === id)) {
+                const childSessionId = runChildSessionId(room.id, target)
+                room.append('room/run-state', { member: target.name, state: 'failed', startedAt: run.startedAt,
+                  ...run.runId === undefined ? {} : { runId: run.runId },
+                  ...childSessionId === undefined ? {} : { childSessionId },
+                  error: 'Execution outcome is unknown after restart; reconcile before retrying' })
+              }
             }
             await this.ctx.sessions.flush(room)
             await this.reportOutcome(room, dispatch.seq, id, targetId, 'uncertain', 'Execution outcome is unknown after restart; reconcile before retrying')
@@ -394,9 +420,13 @@ export class DispatchEngine {
       if (startedAt !== undefined) throw new Error('Room delivery was admitted twice')
       startedAt = Date.now()
       if (deliveryId !== undefined) room.append('room/delivery-state', { id: deliveryId, dispatchSeq: options.dispatchSeq!, memberId: identity, state: 'running' })
-      memberName = replay(room.snapshotEvents()).members.find(entry => memberId(room.snapshotEvents(), entry) === identity)?.name ?? memberName
+      // Re-read the roster: the captured member snapshot predates the child
+      // handle's publication (member-updated lands between admission and settle).
+      const current = replay(room.snapshotEvents()).members.find(entry => memberId(room.snapshotEvents(), entry) === identity)
+      memberName = current?.name ?? memberName
+      const childSessionId = runChildSessionId(room.id, current ?? member)
       room.append('room/run-state', { member: memberName, state: 'running', startedAt, runId,
-        ...member.kind === 'main-agent' ? { childSessionId: room.id } : member.childSessionId === undefined ? {} : { childSessionId: member.childSessionId },
+        ...childSessionId === undefined ? {} : { childSessionId },
       })
       await this.hooks.admitted?.(room, options.dispatchSeq)
       await this.ctx.sessions.flush(room)
@@ -770,13 +800,18 @@ export class DispatchEngine {
     room: Session, member: RoomMember, runId: string, startedAt: number, outcome: RunOutcome,
   ): Promise<RunOutcome> {
     const events = room.snapshotEvents()
-    const memberName = replay(events).members.find(entry => memberId(events, entry) === memberId(events, member))?.name ?? member.name
+    const currentMember = replay(events).members.find(entry => memberId(events, entry) === memberId(events, member))
+    const memberName = currentMember?.name ?? member.name
     const terminal = events.find(event => event.type === 'room/run-state' && event.data.runId === runId && event.data.state !== 'running')
     if (terminal?.type === 'room/run-state' && terminal.data.state !== 'running') {
       return { ...outcome, state: terminal.data.state, ...terminal.data.error === undefined ? {} : { error: terminal.data.error } }
     }
+    const childSessionId = runChildSessionId(room.id, currentMember ?? member)
+    const childTurn = runChildTurn(childSessionId === undefined ? undefined : this.ctx.sessions.get(childSessionId))
     room.append('room/run-state', {
       member: memberName, runId, state: outcome.state, startedAt, elapsedMs: Date.now() - startedAt,
+      ...childSessionId === undefined ? {} : { childSessionId },
+      ...childTurn === undefined ? {} : { childTurn },
       ...outcome.error === undefined ? {} : { error: outcome.error },
     })
     await this.ctx.sessions.flush(room)

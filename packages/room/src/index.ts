@@ -55,7 +55,7 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type {} from './types.ts'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { probeLocalAgent, probeLocalAgentRoster } from './adapter.ts'
-import { DispatchEngine, heldReportsText, isRoomSource, roomSource } from './dispatch.ts'
+import { DispatchEngine, heldReportsText, isRoomSource, roomSource, runChildSessionId, runChildTurn } from './dispatch.ts'
 import { coordinatorMember, DEFAULT_ROOM_SETTINGS, memberId, isRoomLog, MAIN_AGENT_MEMBER, parseMentions, replay, ROOM_EVENT_TYPES, ROOM_ROLE_MAX } from './journal.ts'
 import { messageId, parseMessageRef, releaseIntent, SELF_TASK, sendOrHold, workingHop } from './messaging.ts'
 import { isHumanMessage, linkedTask, taskLinks } from './deliveries.ts'
@@ -192,6 +192,20 @@ export class RoomService extends TypertRemoteService {
   readonly plans: PlanService
   readonly engine: DispatchEngine
   private readonly handoffs = new Set<string>()
+
+  /**
+   * The terminal run-state fields Context Lens correlates on: the child
+   * identity plus the round the run reached (live sessions only).
+   */
+  private terminalRunStateFields(session: Session, state: RoomState, memberName: string): { childSessionId?: SessionId; childTurn?: number } {
+    const member = state.members.find(entry => entry.name === memberName)
+    const childSessionId = runChildSessionId(session.id, member)
+    const childTurn = runChildTurn(childSessionId === undefined ? undefined : this.ctx.sessions.get(childSessionId))
+    return {
+      ...childSessionId === undefined ? {} : { childSessionId },
+      ...childTurn === undefined ? {} : { childTurn },
+    }
+  }
 
   /** sessionId → in-flight cold resume (mutations on a cold room dedupe). */
   private readonly resumes = new Map<SessionId, Promise<RoomLoad>>()
@@ -544,7 +558,7 @@ export class RoomService extends TypertRemoteService {
         // lost: that settles it, so the member's later messages run again.
         loaded.session.append('room/delivery-state', { id: row.id, dispatchSeq: row.dispatchSeq, memberId: row.memberId, state: 'cancelled', text: '任务已被停止；这一轮的结果没有核对' })
         const run = loaded.state.runs.find(entry => entry.runId === row.id)
-        if (run !== undefined) loaded.session.append('room/run-state', { member: run.member, runId: row.id, startedAt: run.startedAt, state: 'cancelled' })
+        if (run !== undefined) loaded.session.append('room/run-state', { member: run.member, runId: row.id, startedAt: run.startedAt, state: 'cancelled', ...this.terminalRunStateFields(loaded.session, loaded.state, run.member) })
         stopped++
       }
     }
@@ -618,7 +632,7 @@ export class RoomService extends TypertRemoteService {
       if (row.status !== 'uncertain' || row.plan?.taskId !== undefined || !ids.has(row.memberId)) continue
       session.append('room/delivery-state', { id: row.id, dispatchSeq: row.dispatchSeq, memberId: row.memberId, state: 'cancelled', text: '你发了新消息；被重启打断的这一轮按没做完处理' })
       const run = state.runs.find(entry => entry.runId === row.id)
-      if (run !== undefined) session.append('room/run-state', { member: run.member, runId: row.id, startedAt: run.startedAt, state: 'cancelled' })
+      if (run !== undefined) session.append('room/run-state', { member: run.member, runId: row.id, startedAt: run.startedAt, state: 'cancelled', ...this.terminalRunStateFields(session, state, run.member) })
     }
   }
 
@@ -913,7 +927,7 @@ export class RoomService extends TypertRemoteService {
     if (request.evidence.trim() === '') return { ok: false, error: { code: 'empty-text' } }
     loaded.session.append('room/delivery-state', { id: delivery.id, dispatchSeq: delivery.dispatchSeq, memberId: delivery.memberId, state: request.outcome, text: request.evidence.trim() })
     const run = loaded.state.runs.find(run => run.runId === delivery.id)
-    if (run !== undefined) loaded.session.append('room/run-state', { member: run.member, runId: delivery.id, startedAt: run.startedAt, state: request.outcome })
+    if (run !== undefined) loaded.session.append('room/run-state', { member: run.member, runId: delivery.id, startedAt: run.startedAt, state: request.outcome, ...this.terminalRunStateFields(loaded.session, loaded.state, run.member) })
     await this.ctx.sessions.flush(loaded.session)
     await this.engine.recover(loaded.session)
     return { ok: true }
@@ -1590,6 +1604,7 @@ export class RoomService extends TypertRemoteService {
         member: request.name, state: 'cancelled', startedAt: running.startedAt,
         elapsedMs: Math.max(0, Date.now() - running.startedAt),
         ...running.runId === undefined ? {} : { runId: running.runId },
+        ...this.terminalRunStateFields(loaded.session, loaded.state, request.name),
       })
       await this.ctx.sessions.flush(loaded.session)
       return { ok: true, value: { cancelled: true } }

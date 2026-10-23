@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-10-24-lens-data-contract.md
+.agents/notes/implemented/feature/2026-10-24-lens-data-contract.md: e22cbe22681e8efd5538748667ebd94291b893da
+.agents/notes/implemented/feature/2026-10-24-lens-data-contract.zh.md: f6fe16fd6659d417e143cda724a7eb1f4495f5df

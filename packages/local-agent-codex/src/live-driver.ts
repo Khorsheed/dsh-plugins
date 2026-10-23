@@ -272,6 +272,7 @@ export function codexAppServerItemToLine(item: JsonObject): CodexTranscriptLine 
 function usageFromAppServer(breakdown: JsonObject): TokenUsage {
   const input = Number(breakdown['inputTokens'])
   const cached = Number(breakdown['cachedInputTokens'])
+  const cacheWrite = Number(breakdown['cacheWriteInputTokens'])
   const output = Number(breakdown['outputTokens'])
   const usage: TokenUsage = {
     inputTokens: Number.isFinite(input) && Number.isFinite(cached)
@@ -279,7 +280,10 @@ function usageFromAppServer(breakdown: JsonObject): TokenUsage {
       : Number.isFinite(input) ? input : 0,
     outputTokens: Number.isFinite(output) ? output : 0,
   }
-  if (Number.isFinite(cached) && cached > 0) usage.cacheReadTokens = cached
+  // The field rides every payload (zero included): write it whenever present,
+  // so "no hits" never reads as "not reported".
+  if (Number.isFinite(cached)) usage.cacheReadTokens = cached
+  if (Number.isFinite(cacheWrite) && cacheWrite > 0) usage.cacheWriteTokens = cacheWrite
   return usage
 }
 
@@ -1265,13 +1269,16 @@ export class CodexLiveDriver {
       }
       if (method === 'turn/completed') {
         const turnData = params['turn'] as JsonObject
-        mirrorUpTo(lines.length, true)
-        resolveCompletion({
-          status: String(turnData['status']),
-          ...(turnData['error'] === null || turnData['error'] === undefined
-            ? {}
-            : { error: turnData['error'] as JsonObject }),
-        })
+        // A fold failure must never skip the completion: the round settles
+        // with its mirrored prefix instead of hanging forever.
+        try { mirrorUpTo(lines.length, true) } finally {
+          resolveCompletion({
+            status: String(turnData['status']),
+            ...(turnData['error'] === null || turnData['error'] === undefined
+              ? {}
+              : { error: turnData['error'] as JsonObject }),
+          })
+        }
       }
     }
 

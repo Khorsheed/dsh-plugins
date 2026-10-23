@@ -505,6 +505,42 @@ describe('codex live driver rounds', () => {
     await m.driver.disposeAll()
   })
 
+  it('an aborted resume round still lands its partial reply as an interrupted message', async () => {
+    const m = mount()
+    const liveStreams = new LocalAgentStreams()
+    Object.assign(m.ctx.localAgent, { liveStreams })
+    const child = Session.create(SessionId('child-codex-abort-resume'))
+    m.queueChild(new FakeAppServer({
+      turn: params => ((params['input'] as { text?: string }[])[0]?.text?.includes('继续') === true
+        ? { hang: true }
+        : { items: answerItems('第一条') }),
+    }))
+    const first = await m.driver.startRound(request() as never, roundSpec(m, child))
+    expect((await first.result).stopReason).toBe('completed')
+    const controller = new AbortController()
+    const second = await m.driver.startRound(
+      request({ prompt: '继续', signal: controller.signal }) as never,
+      roundSpec(m, child, { resume: { cliSessionId: 'thread-1', turn: 2 } }),
+    )
+    // The partial answer streams in, then the abort lands mid-stream.
+    const fake = m.spawns[0]!.fake!
+    await vi.waitFor(() => {
+      expect(fake.requests.filter(r => r.method === 'turn/start')).toHaveLength(2)
+    }, { timeout: 5_000 })
+    fake.notify('item/agentMessage/delta', { threadId: 'thread-1', turnId: 'turn-2', itemId: 'item-x', delta: '半截答案' })
+    await vi.waitFor(() => {
+      expect(child.snapshotEvents().some(e => e.type === 'local-agent/stream' && (e.data as { turn?: number }).turn === 2)).toBe(true)
+    }, { timeout: 5_000 })
+    controller.abort()
+    expect((await second.result).stopReason).toBe('aborted')
+    const round2 = child.snapshotEvents().filter(e => e.type === 'assistant/message' && (e.data as { turn?: number }).turn === 2)
+    expect(round2.some(e => (e.data as { interrupted?: boolean }).interrupted === true
+      && JSON.stringify((e.data as { message: { content: unknown } }).message.content).includes('半截答案'))).toBe(true)
+    expectValidReleasedLog(child)
+    await m.driver.disposeAll()
+    liveStreams.dispose()
+  })
+
   it('re-spawns and thread/resumes the recorded thread after a crash', async () => {
     const m = mount()
     const child = Session.create(SessionId('child-codex-3'))

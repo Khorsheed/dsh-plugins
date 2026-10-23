@@ -5,6 +5,7 @@ import { coordinatorMember, memberId, replay } from './journal.ts'
 import { activePlanMs, dependencyResults, admitPlanAttempt, changePlan, parsePlanCommand, planCommandSignature, queuePlanAttempt, readyPlanTasks, recoverPlan, settlePlanAttempt } from './plan.ts'
 import type { PlanActor, RoomPlan } from './plan.ts'
 import type { DispatchEngine } from './dispatch.ts'
+import { runChildSessionId, runChildTurn } from './dispatch.ts'
 
 export function readPlan(room: Session): RoomPlan | undefined {
   const event = room.snapshotEvents().filter(event => event.type === 'room/plan-state').at(-1)
@@ -162,8 +163,14 @@ export class PlanService {
       const deliveryId = `${dispatch.seq}:${target}`
       const member = state.members.find(member => memberId(events, member) === target)
       const run = state.runs.find(run => run.member === member?.name)
-      if (run?.runId === deliveryId && ['running', 'failed'].includes(run.state)) room.append('room/run-state', { member: run.member, runId: run.runId, startedAt: run.startedAt, state: attempt.status === 'submitted' ? 'done' : 'failed',
-        ...attempt.status === 'failed' ? { error: attempt.submission?.summary ?? 'Human reconciled the attempt as failed' } : {} })
+      if (run?.runId === deliveryId && ['running', 'failed'].includes(run.state)) {
+        const childSessionId = runChildSessionId(room.id, member)
+        const childTurn = runChildTurn(childSessionId === undefined ? undefined : this.ctx.sessions.get(childSessionId))
+        room.append('room/run-state', { member: run.member, runId: run.runId, startedAt: run.startedAt, state: attempt.status === 'submitted' ? 'done' : 'failed',
+          ...childSessionId === undefined ? {} : { childSessionId },
+          ...childTurn === undefined ? {} : { childTurn },
+          ...attempt.status === 'failed' ? { error: attempt.submission?.summary ?? 'Human reconciled the attempt as failed' } : {} })
+      }
       room.append('room/delivery-state', { id: deliveryId, dispatchSeq: dispatch.seq, memberId: target,
         state: attempt.status === 'submitted' ? 'done' : 'failed', text: attempt.submission?.summary ?? 'Human reconciliation' })
       for (const oldReport of events) {

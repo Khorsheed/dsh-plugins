@@ -86,6 +86,13 @@ describe('codex usage caliber (shared with turn.completed)', () => {
       .toEqual({ inputTokens: 4, outputTokens: 4, cacheReadTokens: 6 })
   })
 
+  it('writes cacheReadTokens as 0 for a reported-but-empty cache and maps the cache-write bucket', () => {
+    // A reader must tell "no hits" from "not reported": the field rides every
+    // payload, so zero hits still write the bucket; cache creation maps too.
+    expect(usageFromCodex({ input_tokens: 10, cached_input_tokens: 0, cache_write_input_tokens: 7, output_tokens: 4 }))
+      .toEqual({ inputTokens: 10, outputTokens: 4, cacheReadTokens: 0, cacheWriteTokens: 7 })
+  })
+
   it('omits the cache bucket when codex reports no cached input', () => {
     expect(usageFromCodex({ input_tokens: 5, output_tokens: 3 })).toEqual({ inputTokens: 5, outputTokens: 3 })
   })
@@ -167,7 +174,7 @@ describe('codex rollout token_count recovery', () => {
     ].join('\n'))
     const facts = await codexRolloutRoundFacts(home, { threadId, windowStart: Date.parse('2026-08-16T01:00:00.000Z') })
     expect(facts.model).toBe('gpt-5.6-sol')
-    expect(facts.usage).toEqual({ inputTokens: 10, outputTokens: 2 })
+    expect(facts.usage).toEqual({ inputTokens: 10, outputTokens: 2, cacheReadTokens: 0 })
   })
 
   it('ignores an earlier round\u2019s turn_context: only this round\u2019s window counts', async () => {
@@ -207,7 +214,7 @@ describe('codex rollout token_count recovery', () => {
       threadId: 'no-such-thread',
       windowStart: Date.parse('2026-08-16T01:00:10.000Z'),
     })
-    expect(facts.usage).toEqual({ inputTokens: 10, outputTokens: 2 })
+    expect(facts.usage).toEqual({ inputTokens: 10, outputTokens: 2, cacheReadTokens: 0 })
   })
 
   describe('concurrent rounds inside one window', () => {

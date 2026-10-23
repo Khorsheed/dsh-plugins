@@ -156,18 +156,21 @@ export async function listCodexSessions(homeDir: string): Promise<readonly Local
  * `input_tokens` is the TOTAL input including cache hits (OpenAI-style
  * accounting, confirmed against `total_tokens` in the rollout token_count),
  * and `cached_input_tokens` is the cache-read subset — so the uncached
- * bucket subtracts the cached portion to avoid double counting. There is no
- * cache-write concept, so that bucket is omitted (the shared four-bucket
- * contract: uncached input, output, cache read, cache write — codex fills
- * the first three).
+ * bucket subtracts the cached portion to avoid double counting.
+ * `cached_input_tokens` rides every payload (zero included), so
+ * `cacheReadTokens` is written whenever the field is present — a reader can
+ * tell "no hits" from "not reported". Codex also reports cache creation
+ * (`cache_write_input_tokens`), mapped to `cacheWriteTokens` (the shared
+ * four-bucket contract: uncached input, output, cache read, cache write).
  * @param usage - the raw codex usage object (`turn.completed`'s `usage` or a
  *   rollout `token_count` `info.last_token_usage`/`total_token_usage`).
  * @returns the shared usage record.
  */
 export function usageFromCodex(usage: unknown): TokenUsage {
-  const raw = usage as { input_tokens?: unknown; cached_input_tokens?: unknown; output_tokens?: unknown }
+  const raw = usage as { input_tokens?: unknown; cached_input_tokens?: unknown; cache_write_input_tokens?: unknown; output_tokens?: unknown }
   const input = Number(raw.input_tokens)
   const cached = Number(raw.cached_input_tokens)
+  const cacheWrite = Number(raw.cache_write_input_tokens)
   const output = Number(raw.output_tokens)
   const uncached = Number.isFinite(input) && Number.isFinite(cached)
     ? Math.max(0, input - cached)
@@ -178,7 +181,8 @@ export function usageFromCodex(usage: unknown): TokenUsage {
     inputTokens: uncached,
     outputTokens: Number.isFinite(output) ? output : 0,
   }
-  if (Number.isFinite(cached) && cached > 0) usageRecord.cacheReadTokens = cached
+  if (Number.isFinite(cached)) usageRecord.cacheReadTokens = cached
+  if (Number.isFinite(cacheWrite) && cacheWrite > 0) usageRecord.cacheWriteTokens = cacheWrite
   return usageRecord
 }
 

@@ -395,7 +395,9 @@ export async function readKimiTranscript(sessionDir: string): Promise<KimiSessio
  * Map a wire `usage.record` payload onto the shared usage contract. kimi
  * reports input (uncached), cache read, cache creation, and output; the
  * creation counter is its cache-write analog. Non-numeric or missing
- * counters are dropped so the record stays usable when kimi omits a field.
+ * counters are dropped so the record stays usable when kimi omits a field;
+ * a reported cache-read counter is always written (zero included), so a
+ * reader can tell "no hits" from "not reported".
  * @param raw - the event's `usage` value.
  * @returns the shared usage record, or undefined when nothing was reported.
  */
@@ -417,7 +419,7 @@ export function usageFromWire(raw: unknown): TokenUsage | undefined {
     inputTokens: input ?? 0,
     outputTokens: output ?? 0,
   }
-  if (cacheRead !== undefined && cacheRead > 0) usage.cacheReadTokens = cacheRead
+  if (cacheRead !== undefined) usage.cacheReadTokens = cacheRead
   if (cacheWrite !== undefined && cacheWrite > 0) usage.cacheWriteTokens = cacheWrite
   return usage
 }
