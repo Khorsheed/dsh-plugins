@@ -56,7 +56,10 @@ import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { probeLocalAgent, probeLocalAgentRoster } from './adapter.ts'
 import { DispatchEngine, heldReportsText, isRoomSource, roomSource } from './dispatch.ts'
 import { coordinatorMember, DEFAULT_ROOM_SETTINGS, memberId, isRoomLog, MAIN_AGENT_MEMBER, parseMentions, replay, ROOM_EVENT_TYPES, ROOM_ROLE_MAX } from './journal.ts'
-import { messageId, parseMessageRef, releaseIntent, sendOrHold, workingHop } from './messaging.ts'
+import { messageId, parseMessageRef, releaseIntent, SELF_TASK, sendOrHold, workingHop } from './messaging.ts'
+import { isHumanMessage, linkedTask, taskLinks } from './deliveries.ts'
+import { resolveTaskRef } from './jobs.ts'
+import { suggestTask } from './report-gate.ts'
 import type {
   RoomAddTaskRequest, RoomAddTaskResult,
   RoomCancelRequest, RoomCancelResult,
@@ -68,7 +71,7 @@ import type {
   RoomIsRoomRequest,
   RoomListProvidersRequest,
   RoomMember, RoomMemberMessage, RoomMemberMessageReceipt,
-  RoomMessageReceipt, RoomMessageRequest, RoomReleaseReportsRequest, RoomReleaseReportsResult, RoomMessageResult, RoomRelay, RoomSetSettingsRequest, RoomSetSettingsResult,
+  RoomMessageReceipt, RoomMessageRequest, RoomReleaseReportsRequest, RoomReleaseReportsResult, RoomSetTaskHintRequest, RoomStopJobRequest, RoomStopJobResult, RoomMessageResult, RoomRelay, RoomSetSettingsRequest, RoomSetSettingsResult,
   RoomPostMessageRequest, RoomPostMessageResult,
   RoomPresetInfo, RoomProviderInfo, RoomProviderList,
   RoomRelayResolveRequest, RoomRelayResolveResult,
@@ -178,6 +181,25 @@ export class RoomService extends TypertRemoteService {
       settled: (room, seq, outcome) => this.plans.settled(room, seq, outcome),
     })
     ctx.effect(() => () => this.plans.dispose())
+    // The human talking to the room's own agent directly (the official input
+    // path): file the message under a task before the model reads it — the
+    // composer's tag, else the decision model while tasks are open — and tell
+    // the coordinator when it was filed under an existing task.
+    ctx.on('agent/pre-step', async ({ agent, step }, next) => {
+      const decision = await next()
+      if (step !== 1 || decision.kind !== 'enter') return decision
+      const events = agent.session.snapshotEvents()
+      if (!isRoomLog(events) || coordinatorMember(replay(events), events)?.kind !== 'main-agent') return decision
+      const notes: string[] = []
+      for (const message of decision.messages) {
+        if (message.source.kind !== 'user') continue
+        const text = message.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n')
+        const filed = await this.fileHumanMessage(agent.session, message.id, text, this.consumeTaskHint(agent.session.id))
+        if (filed.note !== undefined) notes.push(filed.note)
+      }
+      if (notes.length === 0) return decision
+      return { ...decision, messages: [...decision.messages, createUserMessage({ content: [{ type: 'text', text: notes.join('\n') }], source: roomSource() })] }
+    })
     // A turn the room did not start (the human talking to the room's agent or
     // to a native member directly) still carries the reports the gate holds
     // for that agent: one extra message on the turn's first step, so the
@@ -386,6 +408,105 @@ export class RoomService extends TypertRemoteService {
     } catch { return undefined }
   }
 
+  /** The composer's task tags, consumed by the human's next message in that room. */
+  private readonly taskHints = new Map<string, string>()
+
+  private consumeTaskHint(sessionId: string): string | undefined {
+    const hint = this.taskHints.get(sessionId)
+    this.taskHints.delete(sessionId)
+    return hint
+  }
+
+  /**
+   * File a new human message under a task: the composer's tag when given
+   * (a task root id, or `new`), otherwise — while some task is still open —
+   * the decision model's suggestion; with neither it starts a task of its own.
+   * A filing other than its own task is journaled as a `room/task-link`.
+   * @returns the task root id and, for a model suggestion, the note the coordinator should read.
+   */
+  private async fileHumanMessage(session: Session, messageId: string, text: string, tag: string | undefined): Promise<{ readonly task: string; readonly note?: string }> {
+    const jobs = replay(session.snapshotEvents()).jobs ?? []
+    if (tag === 'new') return { task: messageId }
+    if (tag !== undefined) {
+      const target = jobs.find(job => job.id === tag)
+      if (target === undefined) return { task: messageId }
+      session.append('room/task-link', { message: messageId, task: target.id, by: 'human' })
+      return { task: target.id, note: `【任务归属】这条消息是用户在任务页对「任务 ${target.number}：${target.title}」的追问。` }
+    }
+    const open = jobs.filter(job => job.status === 'running' || job.status === 'attention')
+    const events = session.snapshotEvents()
+    const state = replay(events)
+    const suggestion = await suggestTask(this.ctx, text, open.map(job => ({
+      number: job.number, title: job.title,
+      running: (state.deliveries ?? []).filter(row => job.deliveries.includes(row.id) && (row.status === 'running' || row.status === 'queued'))
+        .map(row => state.members.find(member => memberId(events, member) === row.memberId)?.name ?? row.memberId),
+    })))
+    if (suggestion === undefined) return { task: messageId }
+    const target = suggestion.task === 'new' ? undefined : jobs.find(job => job.number === suggestion.task)
+    if (target === undefined) return { task: messageId }
+    session.append('room/task-link', { message: messageId, task: target.id, by: 'model', probability: suggestion.probability })
+    return { task: target.id, note: `【任务归属】这条消息看起来是在接着做「任务 ${target.number}：${target.title}」（判断置信 ${suggestion.probability.toFixed(2)}）。如果不对，派活时用 task: "new" 或别的任务编号指明，房间会改过来。` }
+  }
+
+  /**
+   * Tag the human's next message with a task (the task page's 追问 /
+   * 新任务), or clear the tag.
+   * @param request - room session and the task root id, `new`, or null.
+   * @returns acknowledgement.
+   */
+  @Remote('setTaskHint')
+  async setTaskHint(request: RoomSetTaskHintRequest): Promise<{ readonly ok: true }> {
+    if (request.task === null) this.taskHints.delete(request.sessionId)
+    else this.taskHints.set(request.sessionId, request.task)
+    return { ok: true }
+  }
+
+  /**
+   * Stop a whole task: running rounds of its deliveries are cancelled (the
+   * same cancel the stop button uses), queued and held ones never run.
+   * @param request - room session and the task root id.
+   * @returns how many deliveries were stopped.
+   */
+  @Remote('stopJob')
+  async stopJob(request: RoomStopJobRequest): Promise<RoomStopJobResult> {
+    const loaded = await this.ensureLive(request.sessionId)
+    if (!loaded.ok) return { ok: false, error: loaded.error }
+    const job = loaded.state.jobs?.find(entry => entry.id === request.task)
+    if (job === undefined) return { ok: false, error: { code: 'unknown-task' } }
+    let stopped = 0
+    for (const row of loaded.state.deliveries ?? []) {
+      if (!job.deliveries.includes(row.id)) continue
+      if (row.status === 'running') {
+        const member = loaded.state.members.find(entry => (entry.id ?? entry.name) === row.memberId)
+        if (member !== undefined && (await this.cancel({ sessionId: request.sessionId, name: member.name, expectedRunId: row.id })).ok) stopped++
+      } else if (row.status === 'queued' || row.status === 'held') {
+        loaded.session.append('room/delivery-state', { id: row.id, dispatchSeq: row.dispatchSeq, memberId: row.memberId, state: 'cancelled', error: '任务已被停止' })
+        stopped++
+      }
+    }
+    loaded.session.append('room/job-stopped', { task: job.id })
+    await this.ctx.sessions.flush(loaded.session)
+    return { ok: true, value: { stopped } }
+  }
+
+  /**
+   * Where a member's next send belongs: the task and delivery it is working
+   * on (a member inside a room round), or — for the room's own agent answering
+   * the human directly — the task of the human message that started its turn
+   * (`trigger`, which the coordinator may re-file with `task`).
+   */
+  private sendContext(session: Session, sender: RoomMember): { readonly task?: string; readonly parent?: string; readonly trigger?: string } {
+    const events = session.snapshotEvents()
+    const state = replay(events)
+    const run = state.runs.find(entry => entry.member === sender.name && entry.state === 'running')
+    const row = run?.runId === undefined ? undefined : state.deliveries?.find(entry => entry.id === run.runId)
+    if (row !== undefined) return { ...row.task === undefined ? {} : { task: row.task }, parent: row.id }
+    if (sender.kind !== 'main-agent') return {}
+    const human = events.findLast(isHumanMessage)
+    if (human === undefined) return {}
+    return { task: linkedTask(taskLinks(events), human.data.id), trigger: human.data.id }
+  }
+
   /** The room and member whose held reports a session's agent should carry. */
   private heldTarget(sessionId: string): { readonly room: Session; readonly member: RoomMember } | undefined {
     const own = this.ctx.sessions.get(SessionId(sessionId))
@@ -520,10 +641,19 @@ export class RoomService extends TypertRemoteService {
     })
     let firstTaskSeq: number | undefined
     if (request.firstTask !== undefined) {
+      // A human's invite starts a task of its own; an agent's belongs to the task it is working on.
+      const inviter = invitedBy === 'agent'
+        ? replay(loaded.session.snapshotEvents()).members.find(member => actorChildSessionId === undefined ? member.kind === 'main-agent' : member.childSessionId === actorChildSessionId)
+        : undefined
+      const context: { readonly task?: string; readonly parent?: string } = inviter === undefined ? {} : this.sendContext(loaded.session, inviter)
+      const dispatchId = randomUUID()
+      const firstTaskContext = { id: dispatchId, task: invitedBy === 'human' ? dispatchId : context.task ?? dispatchId,
+        ...context.parent === undefined ? {} : { parent: context.parent } }
       firstTaskSeq = loaded.session.append('room/dispatch', {
-        id: randomUUID(), origin: invitedBy === 'human' ? 'human' : 'coordinator',
+        origin: invitedBy === 'human' ? 'human' : 'coordinator',
         ...invitedBy === 'human' ? {} : { replyTo: memberId(loaded.session.snapshotEvents(), coordinatorMember(replay(loaded.session.snapshotEvents()), loaded.session.snapshotEvents())!) },
         ...request.note === undefined || request.note.trim() === '' ? {} : { note: request.note.trim().slice(0, 500) },
+        ...firstTaskContext,
         targetIds: [memberId(loaded.session.snapshotEvents(), replay(loaded.session.snapshotEvents()).members.find(member => member.name === request.name)!)],
         targets: [request.name], text: request.firstTask,
       }).seq
@@ -885,12 +1015,14 @@ export class RoomService extends TypertRemoteService {
     const roster = new Set(loaded.state.members.map(member => member.name))
     const unknown = targets.filter(target => !roster.has(target))
     if (unknown.length > 0) return { ok: false, error: { code: 'unknown-targets', names: unknown } }
-    loaded.session.append('user/message', createUserMessage({
+    const human = createUserMessage({
       content: [{ type: 'text', text: request.text.trim() }],
       source: { kind: 'user' },
-    }), { surfaceOp: 'append' })
+    })
+    loaded.session.append('user/message', human, { surfaceOp: 'append' })
+    const filed = await this.fileHumanMessage(loaded.session, human.id, request.text.trim(), request.task ?? this.consumeTaskHint(request.sessionId))
     const dispatch = loaded.session.append('room/dispatch', {
-      id: request.requestId ?? randomUUID(), requestSignature, targets, text, origin: 'human',
+      id: request.requestId ?? randomUUID(), requestSignature, targets, text, origin: 'human', task: filed.task,
       targetIds: targets.map(name => memberId(loaded.session.snapshotEvents(), loaded.state.members.find(member => member.name === name)!)),
     })
     for (const target of targets) {
@@ -938,6 +1070,19 @@ export class RoomService extends TypertRemoteService {
     const senderId = memberId(events, sender)
     const kind = request.kind ?? 'task'
     const inReplyTo = parseMessageRef(request.inReplyTo)
+    const context = this.sendContext(loaded.session, sender)
+    let task = context.task
+    if (request.task !== undefined && request.task.trim() !== '') {
+      const ref = resolveTaskRef(loaded.state.jobs ?? [], request.task)
+      if (ref === undefined) return { ok: false, error: { code: 'unknown-task' } }
+      // The coordinator's call re-files the human message its turn answers.
+      if (context.trigger !== undefined) {
+        task = ref === 'new' ? context.trigger : ref
+        loaded.session.append('room/task-link', { message: context.trigger, task, by: 'coordinator' })
+      } else {
+        task = ref === 'new' ? SELF_TASK : ref
+      }
+    }
     const sent = sendOrHold(loaded.session, {
       to: target, text, fromName: sender.name,
       intent: {
@@ -946,6 +1091,8 @@ export class RoomService extends TypertRemoteService {
         ...kind === 'task' ? { replyTo: senderId } : {},
         ...inReplyTo === undefined ? {} : { inReplyTo },
         ...request.note === undefined || request.note.trim() === '' ? {} : { note: request.note.trim().slice(0, 500) },
+        ...task === undefined ? {} : { task },
+        ...context.parent === undefined ? {} : { parent: context.parent },
       },
     })
     await this.ctx.sessions.flush(loaded.session)
@@ -1015,7 +1162,7 @@ export class RoomService extends TypertRemoteService {
       if (sender === undefined) return { ok: false, error: 'The authenticated member is not in this room roster' }
       if (command === null || typeof command !== 'object' || command.arguments === null || typeof command.arguments !== 'object' || Array.isArray(command.arguments)) return { ok: false, error: 'Malformed room command' }
       const args = command.arguments
-      const allowed: Record<string, readonly string[]> = { room_plan: ['command'], room_read: [], room_invite: ['provider', 'name', 'role', 'instructions', 'cwd', 'model', 'firstTask', 'note'], room_message: ['member', 'text', 'kind', 'inReplyTo', 'note'] }
+      const allowed: Record<string, readonly string[]> = { room_plan: ['command'], room_read: [], room_invite: ['provider', 'name', 'role', 'instructions', 'cwd', 'model', 'firstTask', 'note'], room_message: ['member', 'text', 'kind', 'inReplyTo', 'note', 'task'] }
       const keys = allowed[command.name]
       if (keys === undefined || Object.keys(args).some(key => !keys.includes(key))) return { ok: false, error: 'Unknown room command or argument; room and actor identity are host-owned' }
       const required = (key: string): string => {
@@ -1033,7 +1180,8 @@ export class RoomService extends TypertRemoteService {
         if (kind !== undefined && kind !== 'task' && kind !== 'notify') return { ok: false, error: 'kind must be "task" or "notify"' }
         const sent = await this.messageMember({ sessionId: loaded.session.id, member: required('member'), text: required('text'),
           ...kind === undefined ? {} : { kind }, ...optional('inReplyTo') === undefined ? {} : { inReplyTo: optional('inReplyTo')! },
-          ...optional('note') === undefined ? {} : { note: optional('note')! } }, actor.childSessionId)
+          ...optional('note') === undefined ? {} : { note: optional('note')! },
+          ...optional('task') === undefined ? {} : { task: optional('task')! } }, actor.childSessionId)
         return sent.ok ? { ok: true, receipt: messageReceipt(sent.value, kind ?? 'task') } : { ok: false, error: sent.error.code }
       }
       if (!this.isCurrentCoordinator(loaded.session, actor.childSessionId)) return { ok: false, error: 'Only the current coordinator may invite members' }
@@ -1075,7 +1223,8 @@ export class RoomService extends TypertRemoteService {
       const kind = request.kind === 'notify' ? 'notify' : 'task'
       const result = await this.messageMember({ sessionId: loaded.session.id, member: request.to, text: request.content, kind,
         ...typeof request.inReplyTo === 'string' ? { inReplyTo: request.inReplyTo } : {},
-        ...typeof request.note === 'string' ? { note: request.note } : {} }, request.from)
+        ...typeof request.note === 'string' ? { note: request.note } : {},
+        ...typeof request.task === 'string' ? { task: request.task } : {} }, request.from)
       if (!result.ok) throw new Error(result.error.code)
       return messageReceipt(result.value, kind)
     }

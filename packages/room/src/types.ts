@@ -163,6 +163,17 @@ export interface RoomDispatchEvent {
   readonly held?: true
   /** A release round: wakes the recipient for the reports it holds (these dispatch seqs). */
   readonly releases?: readonly number[]
+  /**
+   * The task (job) this message belongs to: the id of the human message that
+   * started it (its `user/message` id), or this dispatch's own `id` for a
+   * human dispatch that has no message (an invite's first task).
+   */
+  readonly task?: string
+  /**
+   * The delivery during which the sender sent this (`<seq>:<memberId>`), so
+   * a member's sub-delegations nest under its own work in the task tree.
+   */
+  readonly parent?: string
   /** The member id this delivery's outcome is reported to. */
   readonly replyTo?: string
   /** Completion report deduplication key (one source delivery). */
@@ -257,6 +268,8 @@ export interface RoomHeldDispatch {
   readonly reportFor?: string
   readonly plan?: { readonly goalId: string }
   readonly note?: string
+  readonly task?: string
+  readonly parent?: string
 }
 
 /**
@@ -284,6 +297,26 @@ export interface RoomSettings {
   readonly hopLimit: number
   readonly paused: boolean
   readonly reportTiming: 'judge' | 'each'
+}
+
+/**
+ * Which task a human message belongs to, when it is not a task of its own:
+ * the composer's explicit tag (`human`), the coordinator's own call
+ * (`coordinator`), or the decision model's suggestion (`model`). The latest
+ * link for a message wins; a message with no link starts its own task.
+ */
+export interface RoomTaskLinkEvent {
+  /** The human message's `user/message` id. */
+  readonly message: string
+  /** The task it belongs to (that task's root message id; its own id = a new task). */
+  readonly task: string
+  readonly by: 'human' | 'coordinator' | 'model'
+  readonly probability?: number
+}
+
+/** A human stopped a whole task: its open work was cancelled. */
+export interface RoomJobStoppedEvent {
+  readonly task: string
 }
 
 /** The report gate's verdict on one arrived report (journal record, UI line). */
@@ -406,6 +439,10 @@ declare module '@deepseek-ai/dsh-session/types' {
     'room/settings': RoomSettingsEvent
     /** The report gate decided on an arrived report. */
     'room/report-gate': RoomReportGateEvent
+    /** A human message was attributed to a task. */
+    'room/task-link': RoomTaskLinkEvent
+    /** A human stopped a task. */
+    'room/job-stopped': RoomJobStoppedEvent
   }
 }
 
@@ -499,6 +536,8 @@ export interface RoomState {
   readonly goal?: string
   /** Collaboration settings (defaults when never set). */
   readonly settings?: RoomSettings
+  /** Tasks, newest first (absent in rooms that never dispatched work). */
+  readonly jobs?: readonly RoomJob[]
 }
 
 /**
@@ -536,6 +575,8 @@ export type RoomFailure =
   | { readonly code: 'invalid-settings' }
   /** A member cannot message itself. */
   | { readonly code: 'self-message' }
+  /** The `task` argument names no task of this room. */
+  | { readonly code: 'unknown-task' }
   /** The preset is not one the host declares (carries the declared ids). */
   | { readonly code: 'unknown-preset'; readonly preset: string; readonly available: readonly string[] }
   | { readonly code: 'nothing-to-update' }
@@ -580,6 +621,8 @@ export interface RoomMemberMessage {
   readonly inReplyTo?: string
   /** What the sender waits for before acting on the result. */
   readonly note?: string
+  /** `new` or a task number (see RoomMessageRequest.task). */
+  readonly task?: string
 }
 
 /**
@@ -729,6 +772,25 @@ export type RoomRestoreMemberResult =
   | { readonly ok: false; readonly error: RoomFailure }
 
 /** postMessage request: a human @-message into the room. */
+/** setTaskHint request: the composer's task tag for the human's next message. */
+export interface RoomSetTaskHintRequest {
+  readonly sessionId: SessionId
+  /** `new`, a task root id, or null to clear. */
+  readonly task: string | null
+}
+
+/** stopJob request: stop every open delivery of one task. */
+export interface RoomStopJobRequest {
+  readonly sessionId: SessionId
+  /** The task's root id. */
+  readonly task: string
+}
+
+/** stopJob outcome. */
+export type RoomStopJobResult =
+  | { readonly ok: true; readonly value: { readonly stopped: number } }
+  | { readonly ok: false; readonly error: RoomFailure }
+
 export interface RoomPostMessageRequest {
   readonly requestId?: string
   /** Room session. */
@@ -742,6 +804,8 @@ export interface RoomPostMessageRequest {
    * way; the text itself is dispatched verbatim either way.
    */
   readonly targets?: readonly string[]
+  /** The composer's task tag: `new` or a task root id (see RoomSetTaskHintRequest). */
+  readonly task?: string
 }
 
 /** What the postMessage parser made of the raw text. */
@@ -778,6 +842,11 @@ export interface RoomMessageRequest {
   readonly inReplyTo?: string
   /** What the sender is waiting for, for the report gate (see RoomDispatchEvent.note). */
   readonly note?: string
+  /**
+   * Which task this belongs to: `new`, or a task number (「任务 N」). From the
+   * room's own agent answering the human, it also re-files that human message.
+   */
+  readonly task?: string
 }
 
 /** What happened to one member message. */
@@ -1022,6 +1091,40 @@ export interface RoomDelivery {
   readonly text: string
   readonly error?: string
   readonly plan?: RoomDispatchEvent['plan']
+  /** The task this delivery belongs to (see RoomDispatchEvent.task). */
+  readonly task?: string
+  /** The sender's own delivery this was sent from (the task tree's parent). */
+  readonly parent?: string
+  /** Epoch ms: dispatched, admitted (first running edge), settled. */
+  readonly queuedAt: number
+  readonly startedAt?: number
+  readonly endedAt?: number
+  /** Epoch ms the report gate held this report, and released it. */
+  readonly heldAt?: number
+  readonly releasedAt?: number
+}
+
+/**
+ * One task: a human message that led to work (at least one delivery), the
+ * follow-up messages attributed to it, and everything that work spawned.
+ */
+export interface RoomJob {
+  /** Root message id (or the root human dispatch's id). */
+  readonly id: string
+  /** 1-based ordinal in the room, for 「任务 N」 and the coordinator's `task` argument. */
+  readonly number: number
+  readonly title: string
+  readonly messages: readonly { readonly id: string; readonly time: number; readonly text: string; readonly by?: RoomTaskLinkEvent['by']; readonly probability?: number }[]
+  readonly status: 'running' | 'attention' | 'done' | 'stopped'
+  readonly startedAt: number
+  /** Last settlement, when nothing is open any more. */
+  readonly endedAt?: number
+  /** Delivery ids, in dispatch order. */
+  readonly deliveries: readonly string[]
+  /** Member ids that took part. */
+  readonly members: readonly string[]
+  /** The formal goal (room_plan) this task's work belongs to, when any. */
+  readonly goalId?: string
 }
 export interface RoomReconcileDeliveryRequest {
   readonly sessionId: SessionId

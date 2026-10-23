@@ -366,6 +366,10 @@ export function roomMessageTool(backend: RoomMessageToolBackend) {
         type: 'string',
         description: 'Optional id of the message this answers (e.g. m12).',
       },
+      task: {
+        type: 'string',
+        description: 'Optional: which task this belongs to — "new" or a task number from room_read (e.g. "2"). Use it when the human\'s latest message was filed under the wrong task: it re-files that message too. Omit to stay in the current task.',
+      },
       note: {
         type: 'string',
         description: 'Optional: what you will wait for before acting on this result, in your own words (e.g. "wait until all three greeted, then tell the user once" / "hand it to claude for review as soon as it is done"). The room uses it to decide when to hand you the report.',
@@ -392,7 +396,8 @@ export function roomMessageTool(backend: RoomMessageToolBackend) {
       const result = await backend.messageMember({ sessionId, member: args.member, text: args.text,
         ...args.kind === undefined ? {} : { kind: args.kind as 'task' | 'notify' },
         ...args.inReplyTo === undefined ? {} : { inReplyTo: args.inReplyTo },
-        ...args.note === undefined ? {} : { note: args.note } })
+        ...args.note === undefined ? {} : { note: args.note },
+        ...args.task === undefined ? {} : { task: args.task } })
       if (!result.ok) {
         if (result.error.code === 'member-not-found') {
           const state = await backend.getState({ sessionId })
@@ -401,6 +406,7 @@ export function roomMessageTool(backend: RoomMessageToolBackend) {
           return { text: `Could not message "${args.member}": unknown member.${hint}` }
         }
         if (result.error.code === 'self-message') return { text: 'You cannot message yourself; pick another member.' }
+        if (result.error.code === 'unknown-task') return { text: `No task "${args.task}" in this room; pass "new" or a task number from room_read.` }
         if (result.error.code === 'empty-text') {
           return { text: 'The message text must be non-blank; retry with real content.' }
         }

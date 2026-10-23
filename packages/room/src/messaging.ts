@@ -20,6 +20,9 @@ import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import { coordinatorMember, memberId, replay } from './journal.ts'
 import type { RoomHeldDispatch, RoomHoldReason, RoomMember, RoomRelay, RoomState } from './types.ts'
 
+/** `RoomHeldDispatch.task` marker: this send starts a task rooted at the dispatch itself. */
+export const SELF_TASK = '@self'
+
 /** The id members and the UI use for a dispatch. */
 export function messageId(seq: number): string {
   return `m${seq}`
@@ -99,8 +102,13 @@ export function sendOrHold(session: Session, message: OutgoingMessage, skipHold 
   }
   const targetId = memberId(events, message.to)
   const intent = message.intent
+  const id = randomUUID()
+  // A send that starts a task of its own (no human message behind it) roots the task at itself.
+  const task = intent.task === SELF_TASK ? id : intent.task
   const dispatch = session.append('room/dispatch', {
-    id: randomUUID(), origin: intent.origin, targets: [message.to.name], targetIds: [targetId], text: message.text, hop: intent.hop,
+    id, origin: intent.origin,
+    ...task === undefined ? {} : { task },
+    ...intent.parent === undefined ? {} : { parent: intent.parent }, targets: [message.to.name], targetIds: [targetId], text: message.text, hop: intent.hop,
     ...intent.from === undefined ? {} : { from: intent.from },
     ...intent.kind === undefined ? {} : { kind: intent.kind },
     ...intent.inReplyTo === undefined ? {} : { inReplyTo: intent.inReplyTo },

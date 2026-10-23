@@ -11,6 +11,7 @@
  * @module @khorsheed/dsh-room/journal
  */
 import { replayDeliveries } from './deliveries.ts'
+import { replayJobs } from './jobs.ts'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import type {
   RoomExecution, RoomMember, RoomMemberRun, RoomRelay, RoomSettings, RoomState, RoomTask, RoomTaskProgress,
@@ -58,6 +59,8 @@ export const ROOM_EVENT_TYPES = [
   'room/goal',
   'room/settings',
   'room/report-gate',
+  'room/task-link',
+  'room/job-stopped',
 ] as const
 
 /** Collaboration settings of a room that never changed them. */
@@ -337,7 +340,8 @@ export function replay(events: readonly SessionEvent[]): RoomState {
   const planEvent = events.filter(event => event.type === 'room/plan-state').at(-1)
   const plan = planEvent?.type === 'room/plan-state' ? (({ requests: _requests, ...view }) => view)(planEvent.data) : undefined
   const deliveries = replayDeliveries(events)
-  return { members, relays, tasks, ...executions.size === 0 ? {} : { executions: [...executions.values()] }, ...plan === undefined ? {} : { plan }, ...deliveries.length === 0 ? {} : { deliveries }, runs: [...runs.values()], ...coordinator === undefined ? {} : { coordinator }, ...goal === undefined ? {} : { goal }, settings }
+  const jobs = deliveries.length === 0 ? [] : replayJobs(events, deliveries)
+  return { members, relays, tasks, ...executions.size === 0 ? {} : { executions: [...executions.values()] }, ...plan === undefined ? {} : { plan }, ...deliveries.length === 0 ? {} : { deliveries }, runs: [...runs.values()], ...coordinator === undefined ? {} : { coordinator }, ...goal === undefined ? {} : { goal }, settings, ...jobs.length === 0 ? {} : { jobs } }
 }
 
 /**

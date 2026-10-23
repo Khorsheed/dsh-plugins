@@ -124,6 +124,7 @@ function briefingSection(state: RoomState, member: RoomMember, instructions: str
     '- 收到的每条消息开头都标明来自谁和消息编号（#m12）；派给你的活，你这一轮的最终回复会自动回报给派活人，不用另外回复。',
     '- 派完活就结束这一轮，不要 sleep 等待，也不要用 room_read 轮询结果；回报会自己送到。派活时可以用 note 说明你要等什么再处理（例如「三位都打完招呼再一起跟用户说」「做完就交给 claude 审」），房间据此决定什么时候把回报交给你。',
     '- 成员的回复用户已经在房间里看到了，收到回报时不要复述原话或再做汇总表；需要推进就推进，否则一两句话即可。',
+    '- 房间按「任务」组织工作：用户的一条消息开启一个任务，你和成员为它派的活都归在这个任务下（room_read 列出任务编号）。用户的新消息会被自动归到某个任务；如果归错了，派活时用 task 指明（"new" 或任务编号）。',
     '- 想看房间里现在有谁、各自职责和进展，用 room_read。',
     ...coordinator?.name === member.name ? ['- 作为协调者：普通对话直接回答；小任务用工具在后台派给成员；只在确有需要时建立正式目标计划。委派结果会自动回报给你，等待时不要轮询。'] : [],
   ].join('\n')
@@ -441,7 +442,9 @@ export class DispatchEngine {
     // The envelope (`【#m12 的回报 · 来自 ada · 完成】`) carries who and how;
     // the text is the member's own conclusion.
     const reportText = text.trim() === '' ? `（${outcome === 'done' ? '没有文字输出' : outcome}）` : text.slice(0, 32000)
+    const sourceTask = (state.deliveries ?? []).find(row => row.id === deliveryId)?.task
     const intent: RoomHeldDispatch = { origin: 'report', hop: (source.data.hop ?? 1) + 1, reportFor: deliveryId,
+      ...sourceTask === undefined ? {} : { task: sourceTask },
       ...source.data.plan === undefined ? {} : { plan: { goalId: source.data.plan.goalId } } }
     // The gate decides WHEN the recipient gets it; plan work keeps its own cadence.
     const recipientId = memberId(events, recipient)
@@ -517,7 +520,7 @@ export class DispatchEngine {
     const recipientId = memberId(events, recipient)
     const dispatch = room.append('room/dispatch', {
       id: randomUUID(), origin: 'report', targets: [recipient.name], targetIds: [recipientId], text, held: true,
-      hop: intent.hop, ...intent.reportFor === undefined ? {} : { reportFor: intent.reportFor },
+      hop: intent.hop, ...intent.task === undefined ? {} : { task: intent.task }, ...intent.reportFor === undefined ? {} : { reportFor: intent.reportFor },
       ...intent.plan === undefined ? {} : { plan: intent.plan },
     })
     room.append('room/report-gate', { dispatchSeq: dispatch.seq, memberId: recipientId, member: recipient.name, verdict: 'hold', reason: verdict.reason,
@@ -551,7 +554,9 @@ export class DispatchEngine {
     if (open.length === 0 || recipient === undefined) return false
     const ids = open.map(seq => `#${messageId(seq)}`).join('、')
     const text = `（以上 ${open.length} 条回报一直等着交给你：${ids}${reason === 'timeout' ? '，已经等了一段时间' : ''}。用户也已在房间里看到，不要复述。）`
-    const release = room.append('room/dispatch', { id: randomUUID(), origin: 'report', targets: [recipient.name], targetIds: [recipientId], text, releases: open, hop: 1 })
+    const releaseTask = replay(events).deliveries?.find(row => row.dispatchSeq === open[0] && row.memberId === recipientId)?.task
+    const release = room.append('room/dispatch', { id: randomUUID(), origin: 'report', targets: [recipient.name], targetIds: [recipientId], text, releases: open, hop: 1,
+      ...releaseTask === undefined ? {} : { task: releaseTask } })
     await this.ctx.sessions.flush(room)
     this.dispatch(room, recipient.name, text, { dispatchSeq: release.seq, targetId: recipientId })
     return true

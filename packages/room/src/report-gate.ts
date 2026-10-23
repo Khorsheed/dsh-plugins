@@ -130,3 +130,40 @@ export async function judgeReport(ctx: Context, input: {
     return { hold: false, reason: 'unavailable' }
   }
 }
+
+/** One open task offered to the attribution question. */
+export interface OpenTaskSummary {
+  readonly number: number
+  readonly title: string
+  readonly running: readonly string[]
+}
+
+/**
+ * Suggest which open task a new human message continues, or `new`. Only
+ * asked while some task is still open; the coordinator sees the suggestion
+ * and can override it when it dispatches (`task`).
+ * @param ctx - host context (probes `typesafe`).
+ * @param message - the new human message text.
+ * @param open - the open tasks.
+ * @returns the suggested task number (or `new`) and its probability, or undefined without a model.
+ */
+export async function suggestTask(ctx: Context, message: string, open: readonly OpenTaskSummary[]): Promise<{ readonly task: number | 'new'; readonly probability: number } | undefined> {
+  if (open.length === 0) return undefined
+  const service = (ctx.get as (name: string) => unknown)('typesafe') as { judge?: (input: unknown, options?: unknown) => Promise<{ ok: boolean; judgement?: { decisions: readonly { id: string; answer: unknown; probabilities?: Record<string, number> }[] } }> } | undefined
+  if (typeof service?.judge !== 'function') return undefined
+  const criteria: Record<string, string> = Object.fromEntries(open.map(job => [String(job.number),
+    `Continues task ${job.number}: "${job.title.slice(0, 200)}"${job.running.length === 0 ? '' : ` (still running: ${job.running.join(', ')})`}`]))
+  criteria['new'] = 'Starts a new, unrelated task'
+  try {
+    const result = await service.judge({
+      state: { message: message.slice(0, 2000), openTasks: open.map(job => ({ number: job.number, title: job.title.slice(0, 200), running: job.running })) },
+      questions: [{ id: 'task', type: 'choice', instructions: 'A human sent this message to a team of agents that is still working on the open tasks listed. Does the message add to, correct or ask about one of those tasks, or does it start a new one?', criteria }],
+    }, { timeoutMs: JUDGE_TIMEOUT_MS, fresh: true })
+    const decision = result.ok ? result.judgement?.decisions.find(entry => entry.id === 'task') : undefined
+    if (decision === undefined || typeof decision.answer !== 'string') return undefined
+    const probability = decision.probabilities?.[decision.answer] ?? 0
+    return { task: decision.answer === 'new' ? 'new' : Number(decision.answer), probability }
+  } catch {
+    return undefined
+  }
+}

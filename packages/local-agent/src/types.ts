@@ -668,6 +668,8 @@ export interface LocalAgentMemberMessage {
   inReplyTo?: string
   /** What the sender waits for before acting on the result (a claiming room's report gate reads it). */
   note?: string
+  /** `new` or a task number (a claiming room files the message under it). */
+  task?: string
 }
 
 /**
