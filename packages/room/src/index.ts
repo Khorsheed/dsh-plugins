@@ -728,8 +728,9 @@ export class RoomService extends TypertRemoteService {
       return { ok: false, error: { code: 'empty-text' } }
     }
     const native = request.kind === 'native'
-    if (native && request.preset !== undefined) {
-      // A native member composes a host preset; reject an id the host does
+    if (request.preset !== undefined) {
+      // A native member composes a host preset; a CLI member reaches that
+      // preset's plugin tools through its bridge. Reject an id the host does
       // not declare instead of failing at the member's first round.
       const presets = probeAgentPresets(this.ctx)
       if (presets !== undefined) {
@@ -764,7 +765,7 @@ export class RoomService extends TypertRemoteService {
       name: request.name,
       kind: native ? 'native' : 'cli',
       provider: native ? 'dsh' : request.provider,
-      ...native && request.preset !== undefined ? { preset: request.preset } : {},
+      ...request.preset !== undefined ? { preset: request.preset } : {},
       invitedBy,
       ...request.instructions === undefined ? {} : { instructions: request.instructions },
       ...request.role === undefined || request.role.trim() === '' ? {} : { role: request.role.trim() },
@@ -1248,6 +1249,22 @@ export class RoomService extends TypertRemoteService {
     const plan = await this.plans.command(loaded.session, command, { kind: coordinatorMember(state, events)?.name === member.name ? 'coordinator' : 'worker', memberId: id })
     const { requests: _requests, ...view } = plan
     return JSON.stringify(view)
+  }
+
+  /**
+   * The mode of an external member — the host preset whose plugin tools its
+   * bridge offers (local-agent's preset tool host runs them) — with its
+   * working directory. Host method for the member channel, never a Remote.
+   * @param actor - the authenticated member run.
+   * @returns the mode, or undefined when the member has none or is not here.
+   */
+  async memberMode(actor: LocalAgentMemberRun): Promise<{ readonly preset: string; readonly cwd?: string } | undefined> {
+    const loaded = await this.ensureLive(SessionId(actor.parentSessionId))
+    if (!loaded.ok) return undefined
+    const member = loaded.state.members.find(entry => entry.kind === 'cli' && entry.childSessionId === actor.childSessionId && entry.provider === actor.provider)
+    if (member?.preset === undefined) return undefined
+    const cwd = member.cwd ?? loaded.session.header.cwd
+    return { preset: member.preset, ...cwd === undefined ? {} : { cwd } }
   }
 
   /** Shared backend for external MCP room tools. Not exposed as a browser Remote. */

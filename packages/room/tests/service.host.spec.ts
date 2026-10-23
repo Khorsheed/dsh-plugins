@@ -526,6 +526,20 @@ describe('RoomService Remote surface (real composition)', () => {
       .toEqual({ ok: false, error: { code: 'member-not-found' } })
   })
 
+  it('a CLI member may carry a mode; memberMode tells its bridge which preset\'s tools it reaches', async () => {
+    const { ctx, service, sessionId } = await bootRoom()
+    expect(await service.invite({ sessionId, provider: 'codex', name: 'bill', preset: 'dsh-video' })).toMatchObject({ ok: true })
+    await service.invite({ sessionId, provider: 'kimi', name: 'ada' })
+    const session = ctx.sessions.get(sessionId)!
+    session.append('room/member-updated', { name: 'bill', childSessionId: SessionId('child-bill') })
+    session.append('room/member-updated', { name: 'ada', childSessionId: SessionId('child-ada') })
+    expect(await service.memberMode({ childSessionId: 'child-bill', parentSessionId: sessionId, provider: 'codex' }))
+      .toEqual({ preset: 'dsh-video', ...session.header.cwd === undefined ? {} : { cwd: session.header.cwd } })
+    expect(await service.memberMode({ childSessionId: 'child-ada', parentSessionId: sessionId, provider: 'kimi' })).toBeUndefined()
+    // The run's provider must match the roster: another provider's run does not borrow the mode.
+    expect(await service.memberMode({ childSessionId: 'child-bill', parentSessionId: sessionId, provider: 'kimi' })).toBeUndefined()
+  })
+
   it('setGoal journals the goal (latest wins; blank clears) and getState carries it', async () => {
     const { service, sessionId } = await bootRoom()
     const fresh = await service.getState({ sessionId })

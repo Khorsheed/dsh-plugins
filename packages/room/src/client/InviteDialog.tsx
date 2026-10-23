@@ -168,6 +168,8 @@ export function InviteDialog({
   const native = chosen === NATIVE
   const [preset, setPreset] = useState('')
   const chosenPreset = preset === '' ? presets?.find(entry => entry.isDefault)?.id ?? '' : preset
+  /** A CLI member's mode: '' = none (only its own tools plus the room's). */
+  const [cliPreset, setCliPreset] = useState('')
   const someLoggedOut = (providers ?? []).some(entry => !entry.authenticated)
   /** The chosen provider's roster harness name (the harnessModel lookup key). */
   const chosenHarness = (providers ?? []).find(entry => entry.provider === chosen)?.harness
@@ -301,6 +303,7 @@ export function InviteDialog({
     name: previewName,
     kind: native ? 'native' : 'cli',
     ...native && chosenPreset !== '' ? { preset: chosenPreset } : {},
+    ...!native && cliPreset !== '' ? { preset: cliPreset } : {},
     invitedBy: 'human',
     ...previewProvider === undefined || previewProvider === '' ? {} : { provider: previewProvider },
     ...instructions.trim() === '' ? {} : { instructions: instructions.trim() },
@@ -338,7 +341,7 @@ export function InviteDialog({
     setError(null)
     try {
       const outcome = await onSubmit({
-        provider: native ? 'dsh' : chosen, kind: native ? 'native' : 'cli', preset: native ? chosenPreset : '', name, role: role.trim(), instructions: instructions.trim(), cwd: cwd.trim(), firstTask: firstTask.trim(),
+        provider: native ? 'dsh' : chosen, kind: native ? 'native' : 'cli', preset: native ? chosenPreset : cliPreset, name, role: role.trim(), instructions: instructions.trim(), cwd: cwd.trim(), firstTask: firstTask.trim(),
         model: model.trim(), modelBaseline,
       })
       if (!outcome.ok) {
@@ -413,6 +416,28 @@ export function InviteDialog({
                   ))}
                 </span>
                 <span className={css.hint}>{t('invite.presetHint')}</span>
+              </div>
+            )}
+            {mode === 'invite' && !native && presets !== undefined && presets.length > 0 && (
+              <div className={css.field} role="radiogroup" aria-label={t('invite.cliPreset')}>
+                <span className={css.label}>{t('invite.cliPreset')}</span>
+                <span className={css.presets}>
+                  {[{ id: '', name: t('invite.cliPresetNone') }, ...presets].map(entry => (
+                    <button
+                      key={entry.id}
+                      type="button"
+                      role="radio"
+                      aria-checked={cliPreset === entry.id}
+                      disabled={'broken' in entry && entry.broken !== undefined}
+                      title={'description' in entry ? entry.description : undefined}
+                      className={cliPreset === entry.id ? css.presetOn : css.presetOff}
+                      onClick={() => { setCliPreset(entry.id) }}
+                    >
+                      {entry.name ?? entry.id}
+                    </button>
+                  ))}
+                </span>
+                <span className={css.hint}>{t('invite.cliPresetHint')}</span>
               </div>
             )}
             {native ? null : memberConfiguration ?? (chosenHarness !== undefined && (modelSurface === undefined || surface !== undefined) ? renderHarnessModelPicker?.(chosenHarness, { value: model, onChange: setModel, disabled: busy }) : undefined) ?? modelField}

@@ -13,6 +13,7 @@
     "src/types.ts",
     "src/gateway.ts",
     "src/member-channel.ts",
+    "src/preset-tool-host.ts",
     "src/member-feed.ts",
     "src/member-bridge.ts",
     "src/live-flush.ts",

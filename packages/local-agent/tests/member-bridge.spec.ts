@@ -151,14 +151,17 @@ describe('member bridge (stdio MCP server)', () => {
     expect(result.content[0]?.text).toMatch(/member channel unavailable/)
   })
 
-  it('rejects unknown tools and answers unknown methods with MethodNotFound', async () => {
+  it('forwards other tool names as mode tools (an error without a host) and answers unknown methods with MethodNotFound', async () => {
     const bridge = rig({})
     bridge.write({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'other_tool', arguments: {} } })
     bridge.write({ jsonrpc: '2.0', id: 2, method: 'resources/list' })
-    const responses = await untilResponses(bridge, 2)
+    bridge.write({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: {} })
+    const responses = await untilResponses(bridge, 3)
     bridge.close()
+    const byId = (id: number) => responses.find(response => response.id === id)
 
-    expect(responses[0]).toMatchObject({ id: 1, error: { code: -32602 } })
-    expect(responses[1]).toMatchObject({ id: 2, error: { code: -32601 } })
+    expect(byId(1)).toMatchObject({ result: { isError: true } })
+    expect(byId(2)).toMatchObject({ error: { code: -32601 } })
+    expect(byId(3)).toMatchObject({ error: { code: -32602 } })
   })
 })
