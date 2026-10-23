@@ -16,7 +16,7 @@ Context Lens 里外部 agent(kimi / claude-code / codex）子会话的配置卡�
 
 每个外部 agent 子会话现在记录宿主原生的 `request/header` 事件（`header.config`:`provider` + `model`，已知时附 `reasoningEffort` / `maxTokens`),Context Lens 的 log 车道由此像读主会话一样读子会话配置。
 
-- **kimi**(`session-view.ts` + `session-mirror.ts`):transcript 读取器把每条 `llm.request` 声明的配置快照到它所记账的行上；wire step 折叠按 wire 自己的措辞写出 header。
+- **kimi**(`session-view.ts` + `session-mirror.ts`):transcript 读取器把每条 `llm.request` 声明的配置快照到它所记账的行上；wire step 折叠按 wire 自己的措辞写出 header。header 的 model 取 wire 的**别名**拼写（`usage.record` 的 `model`，如 `kimi-code/k3-256k`)，不取 `llm.request` 的裸 id(`k3-256k`)——与消息 source 同名，lane 的 header 优先读法与 source 回退对同一模型给出同一写法。
 - **claude-code**:exec 路的 live 镜像在首次折叠时写入（init 事件的观测 model，回退到启动 `--model`，附启动时的 effort env);live driver 在开 turn 时按会话配置写入。
 - **codex**:exec 路在开 turn 时按 spawn argv 写入；live 路按 `turn/start` 请求参数写入。
 - 统一只在变化时记录：首个 header 记 `initial`，不同记 `change`，相同跳过（宿主记的是变化快照，不是逐次重复）。header 契约要求 provider 和 model 同在：model 确实未知的轮次整条不写，绝不编造。

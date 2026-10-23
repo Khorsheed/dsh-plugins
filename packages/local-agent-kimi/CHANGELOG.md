@@ -1,6 +1,7 @@
 # 变更记录
 ## 未发布
 
+- **request/header 的 model 统一为别名拼写**:wire 里 `llm.request` 带裸 id(`k3-256k`),`usage.record` 带别名（`kimi-code/k3-256k`)；原来 header 用裸 id、消息 source 用别名，新旧日志（有/无 header）对同一模型显示两个名字。现在 header 跟随 `usage.record` 的别名拼写，与 source 同名。
 - **修复子会话的回复被整轮折叠块吞掉（live 路）**:live 驱动里同一响应段的思考流与回复流原来各占一个预约 step；折叠在某一个 step 落盘后，被释放的另一个预约在日志里只剩流式帧、永不落内容——宿主的「最终答案」锚定取 turn 的最后一个 step，这种空 step 让锚定失败，折叠时连回复一起藏掉。现在同一段（generation）的两条流共享一个预约 step（宿主实况本就是 reasoning+text 同一个 step)，配对折叠与 settle 收尾都按 step 合并成一条消息。
 - **子会话日志写入 `request/header`**:wire 的 `llm.request` 自带 model/thinkingEffort/maxTokens，镜像按 wire step 折叠时把该声明写成宿主原生 `request/header`（只在变化时记录）——Context Lens 的配置卡片由此读出真实值，不再整卡「未记录」。
 - **镜像按 wire step 聚合折叠（一次 LLM 请求 = 子会话一个 step）**:kimi 子会话里同一 wire step 的思考、回复与工具调用原来各自折成独立记录（思考独占一条无用量、0.0s 的伪请求）；现在整步折成一条 assistant 消息（reasoning/text/tool-call 块同框，工具调用/结果对跟在同一边界内），与主会话同形——Context Lens 里一轮一次请求，每条 `usage.record` 挂在该 step 自己的消息上（逐请求真实用量）。wire 未闭合（无 `step.end`）的 step 在增量镜像中整步等待、闭合后整步落盘，实时增量仍走 `local-agent/stream` 通道；无 step 标记的旧格式 wire 维持逐行折叠不变。

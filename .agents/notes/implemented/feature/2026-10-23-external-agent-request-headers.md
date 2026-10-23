@@ -16,7 +16,7 @@ The parameters we set ourselves are facts we can record without inventing anythi
 
 Each external-agent child session now logs the host-native `request/header` event (`header.config`: `provider` + `model`, plus `reasoningEffort` / `maxTokens` when known), so Context Lens's log lane reads the child config exactly like a main session's.
 
-- **kimi** (`session-view.ts` + `session-mirror.ts`): the transcript reader snapshots each `llm.request`'s declared config onto the lines it accounts for; the wire-step fold writes the header in the wire's own words.
+- **kimi** (`session-view.ts` + `session-mirror.ts`): the transcript reader snapshots each `llm.request`'s declared config onto the lines it accounts for; the wire-step fold writes the header in the wire's own words. The header's model follows the wire's ALIAS spelling (`usage.record`'s `model`, e.g. `kimi-code/k3-256k`), never `llm.request`'s bare id (`k3-256k`) — the same name the message source carries, so the lane's header-first read and its source fallback spell one model one way.
 - **claude-code**: the exec live-mirror writes it at the first fold from the init event's observed model (falling back to the launch `--model`) plus the spawn-time effort env; the live driver writes it at turn open from the session configuration.
 - **codex**: exec writes at turn open from the spawn argv; live writes at turn open from the `turn/start` request parameters.
 - Everywhere: write-on-change — the first header is `initial`, a differing one `change`, an identical config is skipped (the host logs changed snapshots, not per-call duplicates). The header contract requires provider AND model: a round whose model is genuinely unknown records nothing rather than inventing one.

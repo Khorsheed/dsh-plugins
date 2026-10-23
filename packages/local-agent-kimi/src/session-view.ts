@@ -244,7 +244,14 @@ export async function readKimiTranscript(sessionDir: string): Promise<KimiSessio
       // (verified against kimi 0.39.x wires); the `llm.request` fallback
       // below covers wires whose usage records omit it. Last one seen wins:
       // a resumed session's later rounds append later records.
-      if (typeof event.model === 'string' && event.model !== '') { model = lineModel = event.model; modelTurn = turn || 1 }
+      if (typeof event.model === 'string' && event.model !== '') {
+        model = lineModel = event.model
+        modelTurn = turn || 1
+        // The record names the alias spelling (kimi-code/k3), llm.request the
+        // raw one (k3) — the pending header config follows the alias so the
+        // header and the message source name the model identically.
+        if (lineConfig !== undefined) lineConfig = { ...lineConfig, model: event.model }
+      }
       const usage = usageFromWire(event.usage)
       if (usage !== undefined) usageRecords.push({ line: lines.length, usage })
       continue
