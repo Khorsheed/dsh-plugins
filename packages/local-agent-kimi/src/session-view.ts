@@ -18,20 +18,27 @@
 
 import { readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { TokenUsage } from '@deepseek-ai/dsh-llm'
+import type { ReasoningEffortId, TokenUsage } from '@deepseek-ai/dsh-llm'
+
+/** The request config one `llm.request` wire event declares (its own words). */
+export interface KimiRequestConfig {
+  model?: string
+  reasoningEffort?: ReasoningEffortId
+  maxTokens?: number
+}
 
 /** One rendered transcript line. */
 export type KimiTranscriptLine = (
   | { kind: 'user'; text: string; turn: number }
-  | { kind: 'assistant'; text: string; turn: number; wireStep?: number }
-  | { kind: 'think'; text: string; turn: number; wireStep?: number }
+  | { kind: 'assistant'; text: string; turn: number; wireStep?: number; requestConfig?: KimiRequestConfig }
+  | { kind: 'think'; text: string; turn: number; wireStep?: number; requestConfig?: KimiRequestConfig }
   /**
    * Tool activity: one call with its (possibly still pending) result. `id`
    * is the wire's toolCallId/uuid when present, else a synthesized
    * position-based id — stable across mirror passes either way, so the
    * child session's `tool/call`/`tool/result` events pair by it.
    */
-  | { kind: 'tool'; id: string; name: string; args?: string; result?: string; turn: number; wireStep?: number }
+  | { kind: 'tool'; id: string; name: string; args?: string; result?: string; turn: number; wireStep?: number; requestConfig?: KimiRequestConfig }
 ) & { model?: string }
 
 /** A parsed transcript of one kimi session. */
@@ -194,8 +201,16 @@ export async function readKimiTranscript(sessionDir: string): Promise<KimiSessio
   let model: string | undefined
   let modelTurn: number | undefined
   let lineModel: string | undefined
+  // The latest llm.request's declared config; content/tool lines carry a
+  // snapshot of it, so the mirror can write each folded step's request/header
+  // in the wire's own words.
+  let lineConfig: KimiRequestConfig | undefined
   const push = (line: KimiTranscriptLine): void => {
-    lines.push({ ...line, ...lineModel === undefined ? {} : { model: lineModel } })
+    lines.push({
+      ...line,
+      ...lineModel === undefined ? {} : { model: lineModel },
+      ...line.kind !== 'user' && lineConfig !== undefined ? { requestConfig: { ...lineConfig } } : {},
+    })
   }
   // Wire turns are 0-based on loop events; a `turn.prompt` also opens a new
   // round. The transcript uses 1-based turns matching the dsh child session's
@@ -237,6 +252,13 @@ export async function readKimiTranscript(sessionDir: string): Promise<KimiSessio
     if (event.type === 'llm.request') {
       lineModel = typeof event.model === 'string' && event.model !== '' ? event.model : undefined
       if (typeof event.model === 'string' && event.model !== '') { model = event.model; modelTurn = turn || 1 }
+      // The header contract requires provider+model; a wire that names no
+      // model records no config at all rather than an invented one.
+      lineConfig = lineModel === undefined ? undefined : {
+        model: lineModel,
+        ...typeof event.thinkingEffort === 'string' && event.thinkingEffort !== '' ? { reasoningEffort: event.thinkingEffort as ReasoningEffortId } : {},
+        ...typeof event.maxTokens === 'number' && Number.isFinite(event.maxTokens) ? { maxTokens: event.maxTokens } : {},
+      }
       continue
     }
     if (event.type === 'turn.prompt') {

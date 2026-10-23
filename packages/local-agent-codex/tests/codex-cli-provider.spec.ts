@@ -202,6 +202,8 @@ describe('codex-cli-provider run settlement', () => {
       cwd: '/tmp',
       env: { CODEX_HOME: '/tmp/codex-home' },
       sandbox: 'workspace-write',
+      model: 'gpt-5.4',
+      effort: 'high',
       disposeGraceMs: 3_000,
       spawn: () => handle,
       childSession: child,
@@ -210,6 +212,14 @@ describe('codex-cli-provider run settlement', () => {
     const result = await run.result
     expect(result.stopReason).toBe('completed')
     expect(result.output).toEqual([{ type: 'text', text: 'Task complete.' }])
+    // The provider's launch facts ride a request/header: codex's stream never
+    // carries model/effort, so the spawn argv is the record.
+    const headers = child.snapshotEvents().filter(event => event.type === 'request/header')
+    expect(headers).toHaveLength(1)
+    expect(headers[0]!.data).toEqual({
+      header: { config: { provider: 'codex-local', model: 'gpt-5.4', reasoningEffort: 'high' } },
+      reason: 'initial',
+    })
     // The mirror runs after the child exits (fire-and-forget), so let it
     // finish before asserting the transcript was appended.
     await vi.waitFor(() => {

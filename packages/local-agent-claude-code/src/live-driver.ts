@@ -65,7 +65,7 @@ import { ClaudeControlRequests } from './control-requests.ts'
 import { StringDecoder } from 'node:string_decoder'
 import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
-import type { ContentBlock } from '@deepseek-ai/dsh-llm'
+import type { ContentBlock, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { Session } from '@deepseek-ai/dsh-session'
 import { SessionId } from '@deepseek-ai/dsh-session'
@@ -83,6 +83,7 @@ import type { Config } from './index.ts'
 import {
   appendClaudeTranscriptLine,
   assistantEvent,
+  appendClaudeRequestHeader,
   claudeLineText,
   ClaudeStreamParser,
   claudeVersionFromInit,
@@ -1045,6 +1046,17 @@ export class ClaudeLiveDriver {
       // The turn boundary opens before the message goes out (exec parity: the
       // exec path opens at spawn).
       childSession.append('turn/start', { turn })
+      // The provider's own launch facts are the child log's request config —
+      // claude's wire never carries effort, so the env the provider sets is
+      // the authoritative source. The header contract requires a model: an
+      // unconfigured round records nothing rather than inventing one.
+      if (spec.configuration?.model !== undefined) {
+        appendClaudeRequestHeader(childSession, {
+          provider: 'claude-local',
+          model: spec.configuration.model,
+          reasoningEffort: (spec.configuration.effort ?? 'auto') as ReasoningEffortId,
+        })
+      }
       childSession.append('user/message', createUserMessage({
         content: [{ type: 'text', text: task }],
         source: { kind: 'user' },

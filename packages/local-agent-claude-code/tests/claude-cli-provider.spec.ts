@@ -252,6 +252,9 @@ describe('claude-cli-provider run settlement', () => {
       cwd: '/tmp',
       env: { CLAUDE_CONFIG_DIR: '/tmp/claude-home' },
       permissionMode: 'skip',
+      model: 'claude-opus-5',
+      effort: 'high',
+      controlled: true,
       disposeGraceMs: 3_000,
       spawn: () => handle,
       childSession: child,
@@ -264,6 +267,14 @@ describe('claude-cli-provider run settlement', () => {
     // finish before asserting the transcript was appended.
     await vi.waitFor(() => {
       expect(child.snapshotEvents().filter(event => event.type === 'assistant/message')).toHaveLength(2)
+    })
+    // The provider's launch facts ride a request/header: the wire never
+    // carries effort, so the env the provider sets is the record.
+    const headers = child.snapshotEvents().filter(event => event.type === 'request/header')
+    expect(headers).toHaveLength(1)
+    expect(headers[0]!.data).toEqual({
+      header: { config: { provider: 'claude-local', model: 'claude-opus-5', reasoningEffort: 'high' } },
+      reason: 'initial',
     })
     const assistant = child.snapshotEvents().filter(event => event.type === 'assistant/message')
     // The stream transcript mirrors the tool call as the native lifecycle:

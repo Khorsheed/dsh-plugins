@@ -15,7 +15,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import type { ContentBlock, TokenUsage } from '@deepseek-ai/dsh-llm'
+import type { ContentBlock, ReasoningEffortId, TokenUsage } from '@deepseek-ai/dsh-llm'
 import { createAssistantMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import {
@@ -1024,6 +1024,17 @@ export function startCodexCliRun(
   // The turn opens at the real spawn moment so the timing projection
   // measures actual CLI runtime, not the post-hoc append time.
   spec.childSession?.append('turn/start', { turn })
+  // The provider's own launch facts are the child log's request config —
+  // codex's stream never carries model/effort, so the argv the provider
+  // spawns with is the authoritative source. The header contract requires a
+  // model: an unconfigured round records nothing rather than inventing one.
+  if (spec.model !== undefined && spec.childSession !== undefined) {
+    appendCodexRequestHeader(spec.childSession, {
+      provider: 'codex-local',
+      model: spec.model,
+      ...spec.effort === undefined ? {} : { reasoningEffort: spec.effort as ReasoningEffortId },
+    })
+  }
   // Live mirror: fold the NDJSON stream as chunks arrive so the child session
   // shows the run's progress before settle; the settle mirror below resumes
   // from the live counters and stays a no-op when live mirroring kept up.
@@ -1227,6 +1238,27 @@ export function startCodexCliRun(
     requestCancel,
     teardown: disposeProcess,
   }))
+}
+
+/**
+ * Write the round's request/header when the config differs from the child
+ * log's last one (the host logs changed snapshots, not per-call duplicates):
+ * the first write is `initial`, a differing one `change`, an identical one
+ * skipped. Context Lens reads the child log's config from these headers.
+ */
+export function appendCodexRequestHeader(childSession: Session, config: { provider: string; model: string; reasoningEffort?: ReasoningEffortId }): void {
+  const serialized = JSON.stringify(config)
+  let last: string | undefined
+  for (const event of childSession.snapshotEvents()) {
+    if (event.type === 'request/header') {
+      last = JSON.stringify((event.data as { header?: { config?: unknown } }).header?.config)
+    }
+  }
+  if (last === serialized) return
+  childSession.append('request/header', {
+    header: { config },
+    reason: last === undefined ? 'initial' : 'change',
+  })
 }
 
 /** One assistant-role message event, attributed to the codex route. */

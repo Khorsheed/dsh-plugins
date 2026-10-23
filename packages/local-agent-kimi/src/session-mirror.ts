@@ -11,7 +11,7 @@ import { join } from 'node:path'
 import { readdir, stat } from 'node:fs/promises'
 import type { Context } from '@deepseek-ai/cordis'
 import { createAssistantMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
-import type { ContentBlock, TokenUsage } from '@deepseek-ai/dsh-llm'
+import type { ContentBlock, ReasoningEffortId, TokenUsage } from '@deepseek-ai/dsh-llm'
 import type { Session, SessionEventMap } from '@deepseek-ai/dsh-session'
 import type { LocalAgentToolCalls } from '@khorsheed/dsh-local-agent/types'
 import { persistChildSession } from '@khorsheed/dsh-local-agent'
@@ -496,6 +496,18 @@ export async function mirrorKimiSessionDelta(
     // Close every stream reservation below the fold step first: stored steps
     // must land dense and strictly sequential.
     options?.streams?.finalizeBefore?.(turn, step)
+    // The wire's own request config rides a request/header ahead of the fold
+    // (the host session's own shape) — Context Lens reads the child log's
+    // config from it instead of showing 未记录. Only a change is logged.
+    const requestConfig = unit.map(line => line.kind !== 'user' ? line.requestConfig : undefined).find(config => config !== undefined)
+    if (requestConfig?.model !== undefined) {
+      appendRequestHeaderIfChanged(childSession, {
+        provider: 'kimi-cli',
+        model: requestConfig.model,
+        ...requestConfig.reasoningEffort === undefined ? {} : { reasoningEffort: requestConfig.reasoningEffort },
+        ...requestConfig.maxTokens === undefined ? {} : { maxTokens: requestConfig.maxTokens },
+      })
+    }
     const model = [...unit].reverse().find(line => line.model !== undefined)?.model
     childSession.append('step/start', { turn, step })
     childSession.append('assistant/message', {
@@ -564,6 +576,30 @@ export function roundToolCalls(
     byName[line.name] = (byName[line.name] ?? 0) + 1
   }
   return count === 0 ? undefined : { count, byName }
+}
+
+/**
+ * Write the fold's request/header when the wire's declared config differs from
+ * the child log's last one (the host logs changed snapshots, not per-call
+ * duplicates): first write is `initial`, a differing one `change`, an
+ * identical one skipped.
+ */
+function appendRequestHeaderIfChanged(
+  childSession: Session,
+  config: { provider: string; model: string; reasoningEffort?: ReasoningEffortId; maxTokens?: number },
+): void {
+  const serialized = JSON.stringify(config)
+  let last: string | undefined
+  for (const event of childSession.snapshotEvents()) {
+    if (event.type === 'request/header') {
+      last = JSON.stringify((event.data as { header?: { config?: unknown } }).header?.config)
+    }
+  }
+  if (last === serialized) return
+  childSession.append('request/header', {
+    header: { config },
+    reason: last === undefined ? 'initial' : 'change',
+  })
 }
 
 /**

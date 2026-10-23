@@ -234,6 +234,7 @@ describe('session-mirror', () => {
     // The wire's own LLM-request boundary: one step's parts share its number.
     const wire = [
       { type: 'turn.prompt', input: [{ type: 'text', text: '建个文件' }] },
+      { type: 'llm.request', model: 'k3', thinkingEffort: 'high', maxTokens: 1_048_576 },
       { type: 'usage.record', model: 'kimi-code/k3', usage: { inputOther: 100, output: 25, inputCacheRead: 40, inputCacheCreation: 0 } },
       { type: 'context.append_loop_event', event: { type: 'step.begin', turnId: 0, step: 1 } },
       { type: 'context.append_loop_event', event: { type: 'content.part', turnId: 0, step: 1, part: { type: 'think', think: 'Simple task.' } } },
@@ -261,6 +262,14 @@ describe('session-mirror', () => {
     // The tool lifecycle rides the same step.
     expect(events.filter(event => event.type === 'tool/call').map(event => (event.data as { step?: number }).step)).toEqual([1])
     expect(events.filter(event => event.type === 'tool/result')).toHaveLength(1)
+    // The wire's llm.request declares the request config; the fold logs it as
+    // a request/header in the host's own shape.
+    const headers = events.filter(event => event.type === 'request/header')
+    expect(headers).toHaveLength(1)
+    expect(headers[0]!.data).toEqual({
+      header: { config: { provider: 'kimi-cli', model: 'k3', reasoningEffort: 'high', maxTokens: 1_048_576 } },
+      reason: 'initial',
+    })
     expectStepBoundaries(child)
     expectValidReleasedLog(child)
   })
