@@ -948,8 +948,14 @@ export class KimiAcpLiveDriver {
     /**
      * The streaming items seen this round. kimi's ACP
      * chunks carry no item id, so the stream key is synthetic per kind per
-     * round (the codex live driver's fallback shape): thought chunks share
-     * one stream, message chunks another. Deltas accumulate and publish
+     * generation (the codex live driver's fallback shape): thought chunks
+     * share one stream, message chunks another, and both streams of one
+     * generation share ONE reserved step — the host's own live shape is
+     * reasoning + text on one step, and a per-kind step would leave the
+     * released reservation's frames pointing at a step that never
+     * materializes (an empty trailing step breaks the host's answer
+     * detection, folding the reply into the collapsed process block).
+     * Deltas accumulate and publish
      * through the live-stream channel at the stream's reserved (turn, step) —
      * NEVER as durable mid-round messages: the released-log contract admits
      * only dense, strictly sequential steps, so a stream's durable content
@@ -962,6 +968,8 @@ export class KimiAcpLiveDriver {
     interface StreamEntry {
       readonly kind: 'think' | 'text'
       readonly step: number
+      /** The tool-call generation this stream belongs to (its step is shared per generation). */
+      readonly generation: number
       text: string
       lastSnapshotLen: number
       /** The durable triple already landed (a gap fill sealed it). */
@@ -995,6 +1003,15 @@ export class KimiAcpLiveDriver {
 
     /** A stream's synthetic key: kimi's ACP deltas carry no item id, so kind + turn pairs them. */
     let generation = 0
+    /**
+     * One step reservation per generation, shared by the think and text
+     * streams of the same response segment: the host's own live shape is
+     * reasoning + text on ONE step, and a per-kind step would leave the
+     * consumed reservation's stream frames pointing at a step that never
+     * materializes (an empty trailing step breaks the host's answer
+     * detection, folding the reply into the collapsed process block).
+     */
+    const generationSteps = new Map<number, number>()
     const seenToolCalls = new Set<string>()
     /**
      * ACP tool_call notifications' chronological reservations (call id →
@@ -1085,7 +1102,8 @@ export class KimiAcpLiveDriver {
       liveFlush.cancel(stream.step)
       const receivedAt = pendingStreamArrival.get(stream.step) ?? now
       pendingStreamArrival.delete(stream.step)
-      streamPublisher?.update(stream.step, stream.kind, stream.text, { receivedAt })
+      // The kind rides the item id so two kinds sharing one step never collide.
+      streamPublisher?.update(stream.step, stream.kind, stream.text, { receivedAt, itemId: stream.kind })
       stream.lastSnapshotLen = stream.text.length
     }
 
@@ -1097,27 +1115,40 @@ export class KimiAcpLiveDriver {
      * cancelled turn reads 已停止 legitimately); `withUsage` attaches the
      * round's uncarried usage.
      */
-    const finalizeStream = (key: string, stream: StreamEntry, interrupted: boolean, withUsage: boolean): void => {
-      liveFlush.cancel(stream.step)
-      pendingStreamArrival.delete(stream.step)
-      childSession.append('step/start', { turn, step: stream.step })
+    /**
+     * Write the durable content of every stream sharing one step as ONE atomic
+     * step/start→assistant/message→step/end triple (a generation's think and
+     * text merge into a single message — the host's own shape) and seal the
+     * reservations. `interrupted` marks a non-completed round's partial (a
+     * cancelled turn reads 已停止 legitimately); `withUsage` attaches the
+     * round's uncarried usage.
+     */
+    const finalizeStep = (step: number, entries: readonly [string, StreamEntry][], interrupted: boolean, withUsage: boolean): void => {
+      liveFlush.cancel(step)
+      pendingStreamArrival.delete(step)
+      const reasoning = entries.filter(([, stream]) => stream.kind === 'think').map(([, stream]) => stream.text).join('')
+      const text = entries.filter(([, stream]) => stream.kind === 'text').map(([, stream]) => stream.text).join('')
+      const blocks: ContentBlock[] = []
+      if (reasoning.trim() !== '') blocks.push({ type: 'reasoning', text: reasoning })
+      if (text.trim() !== '') blocks.push({ type: 'text', text })
+      if (blocks.length === 0) return
+      childSession.append('step/start', { turn, step })
       childSession.append('assistant/message', {
         turn,
-        step: stream.step,
-        message: assistantEvent([
-          stream.kind === 'think'
-            ? { type: 'reasoning' as const, text: stream.text }
-            : { type: 'text' as const, text: stream.text },
-        ], runtime?.modelConfiguration?.currentModel ?? roundModel),
+        step,
+        message: assistantEvent(blocks, runtime?.modelConfiguration?.currentModel ?? roundModel),
         stream: [],
         ...withUsage && roundUsage !== undefined ? { usage: roundUsage } : {},
         ...interrupted ? { interrupted: true } : {},
       }, { surfaceOp: 'append' })
       if (withUsage) roundUsage = undefined
-      streamPublisher?.finish(stream.step)
-      childSession.append('step/end', { turn, step: stream.step })
-      stream.sealed = true
-      if (activeStream === key) activeStream = undefined
+      streamPublisher?.finish(step)
+      childSession.append('step/end', { turn, step })
+      for (const [key, stream] of entries) {
+        stream.sealed = true
+        generationSteps.delete(stream.generation)
+        if (activeStream === key) activeStream = undefined
+      }
       persist()
     }
 
@@ -1167,7 +1198,13 @@ export class KimiAcpLiveDriver {
       const pending = [...streams.entries()]
         .filter(([, stream]) => stream.sealed !== true && stream.step < step)
         .sort((a, b) => a[1].step - b[1].step)
-      for (const [key, stream] of pending) finalizeStream(key, stream, false, false)
+      const byStep = new Map<number, [string, StreamEntry][]>()
+      for (const entry of pending) {
+        const group = byStep.get(entry[1].step) ?? []
+        group.push(entry)
+        byStep.set(entry[1].step, group)
+      }
+      for (const [at, entries] of byStep) finalizeStep(at, entries, false, false)
     }
 
     /**
@@ -1195,10 +1232,16 @@ export class KimiAcpLiveDriver {
         stream = undefined
       }
       if (stream === undefined) {
-        let step = nextKimiSessionStep(childSession, turn)
-        while (reservedSteps.includes(step)) step += 1
-        reservedSteps.push(step)
-        stream = { kind, step, text: '', lastSnapshotLen: 0 }
+        // The think and text streams of one generation share ONE reserved
+        // step; the plan stream keeps its own.
+        let step = key === planKey ? undefined : generationSteps.get(generation)
+        if (step === undefined) {
+          step = nextKimiSessionStep(childSession, turn)
+          while (reservedSteps.includes(step)) step += 1
+          reservedSteps.push(step)
+          if (key !== planKey) generationSteps.set(generation, step)
+        }
+        stream = { kind, step, generation: key === planKey ? -1 : generation, text: '', lastSnapshotLen: 0 }
         streams.set(key, stream)
       }
       activeStream = key
@@ -1236,27 +1279,36 @@ export class KimiAcpLiveDriver {
         const sealed: ('think' | 'text')[] = []
         for (const [key, stream] of picked) {
           streams.delete(key)
+          generationSteps.delete(stream.generation)
           if (activeStream === key) activeStream = undefined
           // A sealed entry's durable triple already landed: its content stays
           // out of the fold, and its coordinate keeps its (durable) place.
           if (stream.sealed === true) { sealed.push(stream.kind); continue }
           liveFlush.cancel(stream.step)
-          streamPublisher?.finish(stream.step)
         }
         const open = picked.filter(([, stream]) => stream.sealed !== true)
         if (open.length === 0) return { sealed }
-        // The reservations whose content rides this fold free their own.
+        // The reservations whose content rides this fold free their own —
+        // unless another open stream still holds the same (shared) step.
+        const held = new Set([...streams.values()].filter(stream => stream.sealed !== true).map(stream => stream.step))
         for (const [, stream] of open) {
+          if (held.has(stream.step)) continue
           const index = reservedSteps.indexOf(stream.step)
           if (index >= 0) reservedSteps.splice(index, 1)
         }
+        for (const step of new Set(open.map(([, stream]) => stream.step))) streamPublisher?.finish(step)
         // The fold's coordinate: the earliest consumed reservation — or a
         // lower step an earlier release freed, so the stored log stays dense.
-        // In the common case they agree and the ephemeral live node morphs in
-        // place.
+        // A step whose triple an earlier fold already wrote takes nothing.
+        const written = new Set<number>()
+        for (const event of childSession.snapshotEvents()) {
+          const data = event.data as { turn?: number; step?: number }
+          if (event.type === 'step/start' && data.turn === turn && typeof data.step === 'number') written.add(data.step)
+        }
         let free = nextKimiSessionStep(childSession, turn)
         while (reservedSteps.includes(free)) free += 1
-        const step = Math.min(Math.min(...open.map(([, stream]) => stream.step)), free)
+        const candidates = [...new Set(open.map(([, stream]) => stream.step))].filter(step => !written.has(step))
+        const step = Math.min(free, ...candidates)
         return { step, sealed }
       },
     }
@@ -1498,17 +1550,23 @@ export class KimiAcpLiveDriver {
           this.ctx.logger.warn(`subagent-kimi: live settle mirror failed: ${thrown(error).message}`)
         }
         const pending: (
-          | { step: number; streamKey: string; stream: StreamEntry }
+          | { step: number; entries: [string, StreamEntry][] }
           | { step: number; toolId: string; tool: { step: number; title?: string } }
         )[] = [
-          ...[...streams.entries()]
+          ...[...[...streams.entries()]
             .filter(([, stream]) => stream.sealed !== true)
-            .map(([streamKey, stream]) => ({ step: stream.step, streamKey, stream })),
+            .reduce((byStep, entry) => {
+              const group = byStep.get(entry[1].step) ?? []
+              group.push(entry)
+              byStep.set(entry[1].step, group)
+              return byStep
+            }, new Map<number, [string, StreamEntry][]>())
+            .entries()].map(([step, entries]) => ({ step, entries })),
           ...[...toolSteps.entries()].map(([toolId, tool]) => ({ step: tool.step, toolId, tool })),
         ].sort((a, b) => a.step - b.step)
-        const lastStream = pending.map((entry, index) => 'stream' in entry ? index : -1).filter(index => index >= 0).at(-1)
+        const lastStream = pending.map((entry, index) => 'entries' in entry ? index : -1).filter(index => index >= 0).at(-1)
         pending.forEach((entry, index) => {
-          if ('stream' in entry) finalizeStream(entry.streamKey, entry.stream, settled.stopReason !== 'completed', index === lastStream)
+          if ('entries' in entry) finalizeStep(entry.step, entry.entries, settled.stopReason !== 'completed', index === lastStream)
           else finalizeOrphanTool(entry.toolId, entry.tool)
         })
         streams.clear()

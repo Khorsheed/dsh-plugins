@@ -502,7 +502,10 @@ describe('kimi live driver rounds', () => {
     const run = await m.driver.startRound(request() as never, roundSpec(m, child))
     expect((await run.result).stopReason).toBe('completed')
     const events = child.snapshotEvents()
-    expect(events.filter(event => event.type === 'local-agent/stream')).toHaveLength(1)
+    // The snapshot frame plus the close-out tombstone: kind-suffixed item ids
+    // close their own anchor on finish so replay cannot resurrect the block.
+    expect(events.filter(event => event.type === 'local-agent/stream')
+      .map(event => (event.data as { closed?: boolean }).closed === true)).toEqual([false, true])
     const answers = events.filter(event => event.type === 'assistant/message' && JSON.stringify(event.data.message.content).includes('hello'))
     expect(answers).toHaveLength(1)
     expect(answers[0]!.data).toMatchObject({ usage: { inputTokens: 10, outputTokens: 4 } })
@@ -799,6 +802,8 @@ describe('kimi live driver rounds', () => {
 
   it('token granularity: a step-tagged wire folds think + answer into ONE durable step', async () => {
     const m = mount({ config: { liveMirrorGranularity: 'token', snapshotMinIntervalMs: 0, snapshotMinChars: 0 } })
+    const liveStreams = new LocalAgentStreams()
+    Object.assign(m.ctx.localAgent, { liveStreams })
     const child = Session.create(SessionId('child-kimi-token-grouped'))
     const fake = new FakeAcpServer({ turn: () => ({ hang: true }) })
     m.queueChild(fake)
@@ -828,12 +833,18 @@ describe('kimi live driver rounds', () => {
       { type: 'reasoning', text: '想一下' },
       { type: 'text', text: '文件建好了' },
     ])
-    // The text stream's released reservation leaves no step-2 events behind.
+    // The generation's think and text streams share ONE reserved step: no
+    // frame points at a step that never materializes (an empty trailing step
+    // would break the host's answer detection and fold the reply away).
+    const streamEvents = events.filter(e => e.type === 'local-agent/stream')
+    expect(streamEvents.length).toBeGreaterThan(0)
+    expect(streamEvents.every(e => (e.data as { turn?: number; step?: number }).step === 1)).toBe(true)
     const atStep2 = events.filter(e => (e.data as { turn?: number; step?: number }).turn === 1
       && (e.data as { turn?: number; step?: number }).step === 2)
-    expect(atStep2.filter(e => e.type !== 'local-agent/stream')).toEqual([])
+    expect(atStep2).toEqual([])
     expectValidReleasedLog(child)
     await m.driver.disposeAll()
+    liveStreams.dispose()
   })
 
   it('token granularity: a cancelled round completes the stream as interrupted (legitimate 已停止)', async () => {
