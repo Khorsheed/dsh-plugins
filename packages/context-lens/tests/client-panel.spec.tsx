@@ -406,7 +406,7 @@ describe('InspectorPanel · timing tab', () => {
     fireEvent.click(screen.getByRole('button', { name: zh['view.time'] }))
     await waitFor(() => expect(screen.getByText(zh['time.totalScope'])).toBeTruthy())
     // Non-tool details contain only this run, while the shared timeline keeps all scopes.
-    const rows = container.querySelectorAll('[class*="nonRow"]')
+    const rows = container.querySelectorAll('[class*="ttDetail"]')
     expect(rows).toHaveLength(1)
     expect(rows[0]?.textContent).toContain('#201')
     expect(screen.queryByText('read', { selector: 'td' })).toBeNull()
