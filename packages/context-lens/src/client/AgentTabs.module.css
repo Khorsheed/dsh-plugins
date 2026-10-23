@@ -4,8 +4,8 @@
 .tab { position: relative; display: inline-flex; align-items: baseline; gap: 5px; min-width: 0; padding: 6px 0 9px; border: 0; background: transparent; color: var(--dsw-alias-label-secondary); font: inherit; font-size: var(--dsh-panel-text-body, 12.5px); cursor: pointer; }
 .tab:hover { color: var(--dsw-alias-label-primary); }
 .tab[aria-selected="true"] { color: var(--dsw-alias-label-primary); font-weight: 600; }
-.tab[aria-selected="true"]::after { content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; border-radius: 1px; background: var(--dsw-alias-brand-primary, #3b5bdb); }
-.tab:focus-visible, .more:focus-visible, .popRow:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary, currentColor); outline-offset: -2px; }
+.tab[aria-selected="true"]::after { content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; border-radius: 1px; background: var(--dsw-alias-state-business-primary); }
+.tab:focus-visible, .more:focus-visible, .popRow:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: -2px; }
 .label { min-width: 0; max-width: 16em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .count { font-family: var(--dsw-font-family-mono, ui-monospace, monospace); font-size: var(--dsh-panel-text-meta, 11px); color: var(--dsw-alias-label-tertiary); font-weight: 400; font-variant-numeric: tabular-nums; }
 .ok { color: var(--dsw-alias-state-success-primary); font-size: var(--dsh-panel-text-meta, 11px); }
@@ -20,13 +20,13 @@
 .popHead { display: flex; justify-content: space-between; gap: 8px; padding: 6px 8px 4px; font-size: var(--dsh-panel-text-meta, 11px); color: var(--dsw-alias-label-tertiary); }
 .popRow { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) 12px 40px 36px; gap: 8px; align-items: center; padding: 6px 8px; border: 0; border-radius: 6px; background: transparent; color: var(--dsw-alias-label-secondary); font: inherit; font-size: var(--dsh-panel-text-body, 12.5px); text-align: left; cursor: pointer; }
 .popRow:hover { background: var(--dsw-alias-bg-layer-3); color: var(--dsw-alias-label-primary); }
-.popRow[aria-selected="true"] { background: color-mix(in srgb, var(--dsw-alias-brand-primary, #3b5bdb) 16%, transparent); color: var(--dsw-alias-label-primary); }
+.popRow[aria-selected="true"] { background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 16%, transparent); color: var(--dsw-alias-label-primary); }
 .popRow .label { max-width: none; }
 .mark { text-align: center; }
 .num { font-family: var(--dsw-font-family-mono, ui-monospace, monospace); font-size: var(--dsh-panel-text-meta, 11px); color: var(--dsw-alias-label-tertiary); text-align: right; font-variant-numeric: tabular-nums; }
 
 .relation { margin-left: auto; padding-bottom: 9px; display: flex; flex-wrap: wrap; align-items: baseline; justify-content: flex-end; gap: 2px 8px; font-size: var(--dsh-panel-text-meta, 12px); color: var(--dsw-alias-label-tertiary); }
-.relation button { padding: 0; border: 0; background: none; font: inherit; color: var(--dsw-alias-brand-primary, currentColor); cursor: pointer; }
+.relation button { padding: 0; border: 0; background: none; font: inherit; color: var(--dsw-alias-link); cursor: pointer; }
 .relation button:hover { text-decoration: underline; }
 .parent { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 6px; padding: 6px 10px; border-radius: 8px; background: var(--dsw-alias-bg-layer-2); font-size: var(--dsh-panel-text-meta, 12px); color: var(--dsw-alias-label-secondary); }
 .parent b { color: var(--dsw-alias-label-primary); font-weight: 600; }

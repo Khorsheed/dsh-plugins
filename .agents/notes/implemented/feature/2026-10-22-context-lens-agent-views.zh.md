@@ -42,6 +42,7 @@ Status: implemented
 
 ## Consequences
 
+- 强调色（选中、当前轮、标签下划线、焦点框）用 `--dsw-alias-state-business-primary`；链接用 `--dsw-alias-link`；压缩标记用面板色板里的紫色 `--ri-compaction`。`--dsw-alias-brand-primary` 是主题的中性强调色（亮色下接近黑、暗色下接近白），不是强调色：误用它会在亮色模式下出现黑色描边和灰色底带。
 - 压缩请求在 `listTurns` 里不再有自己的轮次。按伪轮次寻址的调用方仍然可以通过 `getTurn`/`getRequest` 拿到，但面板只从所属轮次进入。
 - 标签行里子视角的名字去掉了 `#scopeSeq` 前缀；序号以委派请求编号的形式保留在折叠列表里。
 - 每个被单独打开的子会话，在每个进程里多读一次父会话日志，只读一次。

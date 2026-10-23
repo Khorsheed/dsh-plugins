@@ -16,6 +16,8 @@
   --ri-cat-skill-injection: #e64980; --ri-cat-runtime-snapshot: #868e96; --ri-cat-reminder-injection: #fd7e14; --ri-cat-plugin-injection: #15aabf; --ri-cat-tool-change: #be4bdb;
   /* panel-check: allow-color — 耗时桶色板：数据可视化用色（设计定稿移植） */
   --ri-bucket-wait: #adb5bd; --ri-bucket-reasoning: #9775fa; --ri-bucket-tool-args: #f59f00; --ri-bucket-text: #339af0; --ri-bucket-tool-exec: #15aabf; --ri-bucket-other: #adb5bd;
+  /* panel-check: allow-color — 压缩标记：与选中蓝区分的紫色 */
+  --ri-compaction: #7950f2;
 }
 
 .head {
@@ -55,7 +57,7 @@
   flex: none;
   font-family: var(--dsw-font-family-mono, ui-monospace, monospace);
   font-size: var(--dsh-panel-text-meta, 11px);
-  color: var(--dsw-alias-brand-primary, #3b5bdb);
+  color: var(--dsw-alias-state-business-primary);
 }
 
 .query b {
@@ -236,20 +238,20 @@
 .trendGroup { display: flex; flex-direction: column; min-width: 0; }
 .trendBars { display: flex; align-items: flex-end; justify-content: center; gap: 1px; height: 54px; padding: 6px 4px 0; border-bottom: 1px solid var(--dsw-alias-border-l2); border-radius: 6px 6px 0 0; }
 .trendGroup:hover .trendBars { background: color-mix(in srgb, var(--dsw-alias-label-primary) 4%, transparent); }
-.trendGroup[data-current="true"] .trendBars { background: color-mix(in srgb, var(--dsw-alias-brand-primary, #3b5bdb) 12%, transparent); }
+.trendGroup[data-current="true"] .trendBars { background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 12%, transparent); }
 /* Keep the hit column independent of token height, including zero/unknown usage. */
 .trendTarget { flex: none; width: calc(var(--trend-bar, 6px) + 2px); height: 46px; border: 0; padding: 0 1px; display: flex; justify-content: center; align-items: flex-end; background: transparent; border-radius: 2px; cursor: pointer; }
-.trendTarget:focus-visible, .trendTarget[data-selected="true"] { outline: 1.5px solid var(--dsw-alias-brand-primary, #3b5bdb); outline-offset: 1px; }
-.trendBar { width: var(--trend-bar, 6px); flex: none; display: flex; align-items: flex-end; background: var(--dsw-alias-state-error-primary); border-radius: 1.5px 1.5px 0 0; overflow: hidden; opacity: .55; }
+.trendTarget:focus-visible, .trendTarget[data-selected="true"] { outline: 1.5px solid var(--dsw-alias-state-business-primary); outline-offset: 1px; }
+.trendBar { width: var(--trend-bar, 6px); flex: none; display: flex; align-items: flex-end; background: var(--dsw-alias-state-error-primary); border-radius: 1.5px 1.5px 0 0; overflow: hidden; opacity: .7; }
 .trendBar i { width: 100%; background: var(--dsw-alias-state-success-primary); }
 .trendGroup[data-current="true"] .trendBar { opacity: 1; }
 .trendTurn { text-align: center; padding-top: 4px; font-family: var(--dsw-font-family-mono, ui-monospace, monospace); font-size: var(--dsh-panel-text-meta, 10.5px); color: var(--dsw-alias-label-tertiary); }
-.trendGroup[data-current="true"] .trendTurn { color: var(--dsw-alias-brand-primary, #3b5bdb); font-weight: 700; }
+.trendGroup[data-current="true"] .trendTurn { color: var(--dsw-alias-state-business-primary); font-weight: 700; }
 .trendGap { flex: none; display: flex; flex-direction: column; min-width: 34px; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; }
 .trendGapBars { display: flex; align-items: flex-end; justify-content: center; height: 54px; padding-bottom: 6px; border-bottom: 1px dashed var(--dsw-alias-border-l2); color: var(--dsw-alias-label-tertiary); letter-spacing: 1px; }
-.trendGap:hover .trendGapBars, .trendGap:focus-visible .trendGapBars { color: var(--dsw-alias-brand-primary, #3b5bdb); background: color-mix(in srgb, var(--dsw-alias-brand-primary, #3b5bdb) 8%, transparent); border-radius: 6px 6px 0 0; }
+.trendGap:hover .trendGapBars, .trendGap:focus-visible .trendGapBars { color: var(--dsw-alias-state-business-primary); background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 8%, transparent); border-radius: 6px 6px 0 0; }
 .trendGap .trendTurn { white-space: nowrap; padding-left: 4px; padding-right: 4px; }
-.trendCompaction { flex: none; align-self: stretch; width: 6px; margin: 0 1px; padding: 0; border: 0; background: repeating-linear-gradient(to bottom, var(--dsw-alias-brand-primary, #7048e8) 0 4px, transparent 4px 7px) center / 2px 100% no-repeat; cursor: pointer; }
+.trendCompaction { flex: none; align-self: stretch; width: 6px; margin: 0 1px; padding: 0; border: 0; background: repeating-linear-gradient(to bottom, var(--ri-compaction) 0 4px, transparent 4px 7px) center / 2px 100% no-repeat; cursor: pointer; }
 .trendCompaction:hover { background-size: 3px 100%; }
 @media (pointer: coarse) {
   .trendTarget { width: max(calc(var(--trend-bar, 6px) + 2px), 12px); }
@@ -260,7 +262,7 @@
 .stepper > button:disabled { opacity: .3; }
 .latestText { display: inline-flex; align-items: center; gap: 4px; height: 26px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; padding: 0 10px; color: var(--dsw-alias-label-secondary); background: transparent; font: inherit; font-size: var(--dsh-panel-text-meta, 12px); white-space: nowrap; cursor: pointer; }
 .latestText:hover { color: var(--dsw-alias-label-primary); border-color: var(--dsw-alias-label-tertiary); }
-.latestText:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary, #3b5bdb); outline-offset: 1px; }
+.latestText:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: 1px; }
 @container dsh-panel (max-width: 560px) {
   .r1 { flex-wrap: wrap; }
   .title { display: none; }
