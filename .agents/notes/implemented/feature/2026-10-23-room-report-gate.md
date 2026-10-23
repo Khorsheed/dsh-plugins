@@ -26,6 +26,8 @@ In a real room (inviting Claude Code, Kimi and Codex to say hello) every greetin
 
 **Speech bubbles.** The owner chose light cards: several agents take turns in a room and cards block each turn off, while bubbles squeeze code blocks and tables.
 
+**A report joins a running round.** A report delivered to the room's own agent bypasses that member's dispatch queue and, when the agent is mid-turn, is steered into the turn's next step (`agent.steer`, `next-step`) instead of queuing a follow-up turn. Queued behind the round, it woke a second turn after the agent had already answered — seen when a model ignored the no-poll rule, read the reply itself and answered, then answered the report again. An idle agent still gets its own turn.
+
 ## Consequences
 
 - A room whose profile has no configured `typesafe` behaves as before for timing (every report is handed over), but still gets the no-repeat envelope and the no-poll wording.
