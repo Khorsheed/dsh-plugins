@@ -121,6 +121,23 @@ export const DEFAULT_SNAPSHOT_MIN_CHARS = 0
  * turn's init never arrived). The provider catches exactly this and falls
  * back to the exec one-shot; any other error is a real round failure.
  */
+
+/** One streaming block of a round (see the round's step ledger). */
+interface ClaudeStream {
+  readonly itemId: string
+  readonly kind: 'think' | 'text'
+  /** Provisional key for the live flush and the preview — never a log step. */
+  readonly step: number
+  /** Lines completed before the block's first delta: it sorts before every later one. */
+  readonly after: number
+  text: string
+  lastSnapshotAt: number
+  lastSnapshotLen: number
+  /** step/start written for this block. */
+  opened: boolean
+  /** The log step it occupies, once opened. */
+  durable?: number
+}
 export class LiveChannelUnavailableError extends Error {
   constructor(message: string) {
     super(message)
@@ -697,33 +714,19 @@ export class ClaudeLiveDriver {
     /** Whether a folded line already carries the round's usage (no backfill event exists). */
     let usageCarried = false
     /**
-     * The step ledger: `reservedSteps` holds every step a stream reservation
-     * consumed (in increasing order — permanently, whether the stream later
-     * completes or stays an orphan snapshot), and a sequential line folds at
-     * its index shifted past every reservation before it. A tool completed
-     * mid-stream therefore folds ABOVE the stream's step and the projection
-     * renders the round's chronological order.
+     * The streaming blocks seen this round by stream key: deltas accumulate
+     * into throttled snapshots at the block's step once it may open in the
+     * log (previewed live before that) — the host folds repeated settles at
+     * one coordinate into one live-updating chat node. The block's completed
+     * line folds at the same step and finalizes it; an entry whose
+     * completion never arrives is force-finalized at settle. A tool that
+     * completes mid-stream folds after the stream (chronological order).
      */
-    const reservedSteps: number[] = []
-    /**
-     * The streaming kinds seen this round by stream key:
-     * deltas accumulate into throttled snapshot assistant/messages appended
-     * at the kind's reserved (turn, step) — the host folds repeated settles
-     * at one coordinate into one live-updating chat node, which is the only
-     * streaming channel left after 0.1.5 retired the durable per-chunk event.
-     * The kind's completed line folds at the same step and finalizes it; an
-     * entry whose completion never arrives is force-finalized at settle.
-     */
-    const streams = new Map<string, {
-      readonly itemId: string
-      readonly kind: 'think' | 'text'
-      readonly step: number
-      text: string
-      lastSnapshotAt: number
-      lastSnapshotLen: number
-      /** step/start already emitted for this reservation. */
-      opened: boolean
-    }>()
+    const streams = new Map<string, ClaudeStream>()
+    /** Provisional stream keys (live flush and preview identity), never log steps. */
+    let streamKeys = 0
+    /** Line indexes already written (a line may fold ahead of one it chronologically precedes). */
+    const folded = new Set<number>()
     /** The stream deltas currently accumulate into (kinds stream sequentially). */
     let activeStream: string | undefined
     let persistQueue: Promise<unknown> = Promise.resolve()
@@ -780,9 +783,32 @@ export class ClaudeLiveDriver {
       this.config.snapshotMinIntervalMs ?? DEFAULT_SNAPSHOT_MIN_INTERVAL_MS,
     )
 
+    // The step ledger. The log admits steps strictly in sequence — one open
+    // at a time, numbered when WRITTEN (`lastStep`) — while chronology is
+    // kept by start order: a stream sorts before every line that completed
+    // after its first delta (`after`). A stream's step opens in the log only
+    // once it is the oldest unfinished stream and everything before it is
+    // written; until then the browser previews it and its fold writes it.
+    let lastStep = 0
+    let openStep: number | undefined
+    const openStreamStep = (stream: ClaudeStream): void => {
+      lastStep += 1
+      childSession.append('step/start', { turn, step: lastStep })
+      stream.durable = lastStep
+      stream.opened = true
+      openStep = lastStep
+    }
+    const closeOpenStep = (): void => {
+      if (openStep === undefined) return
+      childSession.append('step/end', { turn, step: openStep })
+      openStep = undefined
+    }
+    const canOpenStream = (stream: ClaudeStream): boolean =>
+      openStep === undefined && mirrored >= stream.after && streams.keys().next().value === stream.itemId
+
     const pendingStreamArrival = new Map<number, number>()
     const appendStreamSnapshot = (
-      stream: { readonly step: number; kind: 'think' | 'text'; text: string; lastSnapshotAt: number; lastSnapshotLen: number; opened: boolean },
+      stream: ClaudeStream,
       force: boolean,
       interrupted: boolean,
       withUsage = false,
@@ -798,24 +824,28 @@ export class ClaudeLiveDriver {
       liveFlush.cancel(stream.step)
       const receivedAt = pendingStreamArrival.get(stream.step) ?? now
       pendingStreamArrival.delete(stream.step)
-      if (streamPublisher !== undefined && !final) {
-        if (!stream.opened) {
-          childSession.append('step/start', { turn, step: stream.step })
-          stream.opened = true
+      if (!stream.opened) {
+        if (canOpenStream(stream)) openStreamStep(stream)
+        else if (!final) {
+          // Not its turn in the log yet: show it live, write it later.
+          streamPublisher?.preview(stream.step, stream.kind, stream.text, { itemId: stream.itemId, receivedAt })
+          return
+        } else {
+          // Settle: every line has folded; take the next step.
+          closeOpenStep()
+          openStreamStep(stream)
         }
-        streamPublisher.update(stream.step, stream.kind, stream.text, { receivedAt })
+      }
+      if (streamPublisher !== undefined && !final) {
+        streamPublisher.update(stream.durable!, stream.kind, stream.text, { receivedAt })
         stream.lastSnapshotAt = now
         stream.lastSnapshotLen = stream.text.length
         return
       }
-      if (!stream.opened) {
-        childSession.append('step/start', { turn, step: stream.step })
-        stream.opened = true
-      }
       const usage = parser.usage
       childSession.append('assistant/message', {
         turn,
-        step: stream.step,
+        step: stream.durable!,
         message: assistantEvent([
           stream.kind === 'think'
             ? { type: 'reasoning' as const, text: stream.text }
@@ -831,11 +861,19 @@ export class ClaudeLiveDriver {
       persist()
     }
 
+    /** Close a stream's live presentation once its final text is in the log. */
+    const finishStream = (stream: ClaudeStream): void => {
+      liveFlush.cancel(stream.step)
+      streams.delete(stream.itemId)
+      if (activeStream === stream.itemId) activeStream = undefined
+      streamPublisher?.finish(stream.step)
+      if (stream.durable !== undefined) streamPublisher?.finish(stream.durable)
+    }
+
     /**
-     * Reserve the step one streaming kind will occupy — past every completed
-     * line (folded or held back) and every earlier reservation. A different
-     * kind's deltas force one final snapshot of the current stream (its
-     * completion still folds at its own reserved step when it lands).
+     * Track one new streaming block: its provisional key and how many lines
+     * had completed when it began. A different block's deltas force one
+     * freshness snapshot of the current stream.
      */
     const reserveStream = (itemId: string, kind: 'think' | 'text'): void => {
       if (activeStream !== undefined && activeStream !== itemId) {
@@ -849,34 +887,60 @@ export class ClaudeLiveDriver {
       }
       let stream = streams.get(itemId)
       if (stream === undefined) {
-        const step = parser.lines.length + reservedSteps.length + 1
-        reservedSteps.push(step)
-        stream = { itemId, kind, step, text: '', lastSnapshotAt: 0, lastSnapshotLen: 0, opened: false }
+        streamKeys += 1
+        stream = { itemId, kind, step: streamKeys, after: parser.lines.length, text: '', lastSnapshotAt: 0, lastSnapshotLen: 0, opened: false }
         streams.set(itemId, stream)
       }
       activeStream = itemId
     }
 
-    /** The sequential fold step for `parser.lines[index]`: its position shifted past every reservation before it. */
-    const foldStep = (index: number): number => {
-      let step = index + 1
-      for (const reserved of reservedSteps) {
-        if (reserved <= step) step += 1
-        else break
+    /** The stream a completed line finalizes, if it was streamed. */
+    const streamOfLine = (line: (typeof parser.lines)[number] | undefined): ClaudeStream | undefined =>
+      line === undefined || line.kind === 'tool' ? undefined
+        : (line.streamId === undefined ? undefined : streams.get(line.streamId))
+          ?? [...streams.values()].find(candidate => candidate.kind === line.kind && (line.streamId === undefined || candidate.itemId.startsWith('legacy-')))
+
+    /** Write parser.lines[index] at the next step(s). */
+    const foldLine = (index: number, lineUsage: typeof parser.usage): void => {
+      const line = parser.lines[index]!
+      const stream = streamOfLine(line)
+      if (stream !== undefined) {
+        // A streamed line finalizes its own step (opening it now if no
+        // snapshot ever could) and closes it.
+        if (!stream.opened) { closeOpenStep(); openStreamStep(stream) }
+        const blocks = stream.kind === 'think'
+          ? [{ type: 'reasoning' as const, text: line.kind === 'tool' ? '' : line.text }]
+          : [{ type: 'text' as const, text: line.kind === 'tool' ? '' : line.text }]
+        childSession.append('assistant/message', {
+          turn,
+          step: stream.durable!,
+          message: assistantEvent(blocks),
+          stream: [],
+          ...lineUsage === undefined ? {} : { usage: lineUsage },
+        }, { surfaceOp: 'append' })
+        finishStream(stream)
+        closeOpenStep()
+      } else {
+        closeOpenStep()
+        lastStep += 1
+        appendClaudeTranscriptLine(childSession, turn, lastStep, line, lineUsage)
       }
-      return step
+      folded.add(index)
+      localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text: claudeLineText(line) })
     }
 
     /**
-     * Mirror folded lines [mirrored, upto); the last line is held back until
-     * `result`. A tool line whose result the stream has not recorded yet HOLDS
-     * the fold mid-round: the fold writes the native lifecycle as one closed
-     * step (the released-log reader resolves every advertised call before
-     * step/end), and the result merges into the call's line in place, so a
-     * later pass retries from here and sees it. The settle flushes
-     * (`settle: true` — the turn's result event, or the final flush after a
-     * cancel/failure) never hold: the round is over, and a result that will
-     * never arrive folds as the interrupted placeholder.
+     * Mirror the completed lines before `upto` in chronological order; the
+     * last line is held back until `result`. A line waits behind every stream
+     * that began before it completed (that stream's line folds first, or the
+     * mirror stops while it still streams). A tool line whose result the
+     * stream has not recorded yet HOLDS the fold mid-round: the fold writes
+     * the native lifecycle as one closed step (the released-log reader
+     * resolves every advertised call before step/end), and the result merges
+     * into the call's line in place, so a later pass retries from here. The
+     * settle flushes (`settle: true` — the turn's result event, or the final
+     * flush after a cancel/failure) never hold: a result that will never
+     * arrive folds as the interrupted placeholder.
      */
     const mirrorUpTo = (upto: number, withUsage: boolean, settle = false): void => {
       // The usage rides the last NON-tool line (tool events carry no usage
@@ -890,42 +954,29 @@ export class ClaudeLiveDriver {
           if (parser.lines[index]?.kind !== 'tool') usageIndex = index
         }
       }
-      for (let index = mirrored; index < upto; index += 1) {
+      const usageFor = (index: number): typeof parser.usage => {
+        const lineUsage = withUsage && index === usageIndex ? parser.usage : undefined
+        if (lineUsage !== undefined) usageCarried = true
+        return lineUsage
+      }
+      outer: for (let index = mirrored; index < upto; index += 1) {
+        if (folded.has(index)) continue
         const line = parser.lines[index]
         if (line === undefined) continue
         if (!settle && line.kind === 'tool' && line.result === undefined) break
-        const lineUsage = withUsage && index === usageIndex ? parser.usage : undefined
-        if (lineUsage !== undefined) usageCarried = true
-        const stream = line.kind === 'tool' ? undefined
-          : (line.streamId === undefined ? undefined : streams.get(line.streamId))
-            ?? [...streams.values()].find(candidate => candidate.kind === line.kind && (line.streamId === undefined || candidate.itemId.startsWith('legacy-')))
-        const itemId = stream?.itemId
-        if (itemId !== undefined && stream !== undefined) {
-          // A streamed line folds at its reserved step, finalizing the
-          // snapshots: the step opens only if no snapshot ever landed (a
-          // fast stream that stayed under the throttle), and closes here.
-          liveFlush.cancel(stream.step)
-          streams.delete(itemId)
-          if (activeStream === itemId) activeStream = undefined
-          if (!stream.opened) childSession.append('step/start', { turn, step: stream.step })
-          const blocks = stream.kind === 'think'
-            ? [{ type: 'reasoning' as const, text: line.kind === 'tool' ? '' : line.text }]
-            : [{ type: 'text' as const, text: line.kind === 'tool' ? '' : line.text }]
-          childSession.append('assistant/message', {
-            turn,
-            step: stream.step,
-            message: assistantEvent(blocks),
-            stream: [],
-            ...lineUsage === undefined ? {} : { usage: lineUsage },
-          }, { surfaceOp: 'append' })
-          streamPublisher?.finish(stream.step)
-          childSession.append('step/end', { turn, step: stream.step })
-        } else {
-          appendClaudeTranscriptLine(childSession, turn, foldStep(index), line, lineUsage)
+        const own = streamOfLine(line)
+        // Streams order among themselves by start; a plain line follows every
+        // stream that began before it completed.
+        const all = [...streams.values()]
+        const before = own === undefined ? all.filter(stream => stream.after <= index) : all.slice(0, all.indexOf(own))
+        for (const earlier of before) {
+          const at = parser.lines.findIndex((candidate, position) => position > index && position < upto && !folded.has(position) && streamOfLine(candidate) === earlier)
+          if (at < 0) break outer
+          foldLine(at, usageFor(at))
         }
-        mirrored = index + 1
-        localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text: claudeLineText(line) })
+        foldLine(index, usageFor(index))
       }
+      while (folded.has(mirrored)) mirrored += 1
       if (upto > 0) persist()
     }
 
@@ -1118,6 +1169,15 @@ export class ClaudeLiveDriver {
         // held-back line (and the usage already observed) would be lost —
         // flush it now (the exec settle-mirror's partial-work contract).
         if (mirrored < parser.lines.length) mirrorUpTo(parser.lines.length, true, true)
+        // A line still waiting behind a stream whose completion never came:
+        // finalize that stream from its last snapshot, then keep folding.
+        while (mirrored < parser.lines.length && streams.size > 0) {
+          const oldest = streams.values().next().value!
+          appendStreamSnapshot(oldest, true, settled.stopReason !== 'completed', false, true)
+          finishStream(oldest)
+          closeOpenStep()
+          mirrorUpTo(parser.lines.length, true, true)
+        }
         // Streams whose completion never arrived (abort, or the turn ended
         // mid-message) still finalize INSIDE the turn window: one forced
         // snapshot each — interrupted on a non-completed round, the LAST one
@@ -1126,8 +1186,8 @@ export class ClaudeLiveDriver {
           const remaining = [...streams.values()]
           for (const [position, stream] of remaining.entries()) {
             appendStreamSnapshot(stream, true, settled.stopReason !== 'completed', position === remaining.length - 1, true)
-            streamPublisher?.finish(stream.step)
-            if (stream.opened) childSession.append('step/end', { turn, step: stream.step })
+            finishStream(stream)
+            closeOpenStep()
           }
           streams.clear()
           activeStream = undefined

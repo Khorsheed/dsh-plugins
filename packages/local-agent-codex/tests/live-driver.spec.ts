@@ -666,6 +666,7 @@ describe('codex live driver rounds', () => {
     const progress = on.reports.filter(r => r.progress.kind === 'delta').map(r => r.progress.text)
     expect(progress).toContain('hel')
     expect(progress).toContain('lo')
+    expectValidReleasedLog(onChild)
     await on.driver.disposeAll()
   })
 
@@ -705,7 +706,10 @@ describe('codex live driver rounds', () => {
     expect(final.seq).toBeLessThan(turnEnd.seq)
     const atStep = events.filter(e => (e.data as { turn?: number; step?: number }).turn === 1
       && (e.data as { turn?: number; step?: number }).step === 2)
-    expect(atStep.map(e => e.type)).toEqual(['step/start', 'assistant/message', 'assistant/message', 'assistant/message', 'step/end'])
+    // The answer streamed while the reasoning step was still open, so its
+    // snapshots stayed live-only (one open step at a time); its fold writes it.
+    expect(atStep.map(e => e.type)).toEqual(['step/start', 'assistant/message', 'step/end'])
+    expectValidReleasedLog(child)
     await m.driver.disposeAll()
   })
 
@@ -757,10 +761,43 @@ describe('codex live driver rounds', () => {
     // Chronological steps: t1=1, t2=2, the stream=3, the late tool shifts to 4.
     const toolSteps = child.snapshotEvents().filter(e => e.type === 'tool/call').map(e => (e.data as { step: number }).step)
     expect(toolSteps).toEqual([1, 2, 4])
+    expectValidReleasedLog(child)
     const final = child.snapshotEvents().find(e => e.type === 'assistant/message'
       && (e.data as { step?: number }).step === 3)!
     expect(final.data).toMatchObject({ turn: 1, step: 3, usage: { inputTokens: 5, outputTokens: 2 } })
     await m.driver.disposeAll()
+  })
+
+  it('a later answer streaming before the earlier steps folded waits its turn in the log (text → tool → text)', async () => {
+    const m = mount({ config: { sandbox: 'workspace-write', liveMirrorGranularity: 'token', snapshotMinIntervalMs: 0, snapshotMinChars: 0 } })
+    const liveStreams = new LocalAgentStreams()
+    const published = vi.spyOn(liveStreams, 'publish')
+    Object.assign(m.ctx.localAgent, { liveStreams })
+    const child = Session.create(SessionId('child-codex-interleave'))
+    const fake = new FakeAppServer({ turn: () => ({ hang: true }) })
+    m.queueChild(fake)
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    await vi.waitFor(() => { expect(fake.requests.some(r => r.method === 'turn/start')).toBe(true) })
+    // The commentary streams and completes (held back as the last line)…
+    fake.notify('item/agentMessage/delta', { threadId: 'thread-1', turnId: 'turn-1', itemId: 'm1', delta: '我会查看工具列表' })
+    fake.notify('item/completed', { threadId: 'thread-1', turnId: 'turn-1', item: { id: 'm1', type: 'agentMessage', text: '我会查看工具列表', phase: 'commentary' } })
+    // …a tool completes (folding m1, holding itself back), and the answer
+    // starts streaming while that tool's step is not in the log yet.
+    fake.notify('item/completed', { threadId: 'thread-1', turnId: 'turn-1', item: { id: 't1', type: 'commandExecution', command: 'ls', aggregatedOutput: 'a', status: 'completed' } })
+    fake.notify('item/agentMessage/delta', { threadId: 'thread-1', turnId: 'turn-1', itemId: 'm2', delta: '当前可调用的工具' })
+    await vi.waitFor(() => {
+      expect(published.mock.calls.some(([, item]) => item.text.includes('当前可调用的工具'))).toBe(true)
+    }, { timeout: 1_000, interval: 10 })
+    // Shown live, but no step of it in the log before the tool's step.
+    expect(child.snapshotEvents().some(e => e.type === 'step/start' && (e.data as { step: number }).step === 3)).toBe(false)
+    fake.notify('item/completed', { threadId: 'thread-1', turnId: 'turn-1', item: { id: 'm2', type: 'agentMessage', text: '当前可调用的工具：video_read', phase: 'final_answer' } })
+    fake.notify('turn/completed', { threadId: 'thread-1', turn: { id: 'turn-1', status: 'completed' } })
+    expect((await run.result).stopReason).toBe('completed')
+    expectValidReleasedLog(child)
+    const steps = child.snapshotEvents().filter(e => e.type === 'step/start').map(e => (e.data as { step: number }).step)
+    expect(steps).toEqual([1, 2, 3])
+    await m.driver.disposeAll()
+    liveStreams.dispose()
   })
 
   it('token granularity: a stream-less round folds every item (no reservation, no snapshots)', async () => {
