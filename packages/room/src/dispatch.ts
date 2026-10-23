@@ -112,21 +112,14 @@ function briefingSection(state: RoomState, member: RoomMember, instructions: str
       ].filter(Boolean)
       return `- ${entry.name}（${facts.join(' · ')}）`
     })
-  const send = member.kind === 'cli' ? 'member_message 工具（to 填成员名）' : 'room_message 工具（member 填成员名）'
   return [
     '【房间简报】',
     `你是协作间成员「${member.name}」${member.role === undefined ? '' : `，职责：${member.role}`}${coordinator?.name === member.name ? '，也是本房间的协调者' : ''}。`,
     ...instructions === undefined ? [] : [`你的指令：${instructions}`],
     ...state.goal === undefined ? [] : [`房间目标：${state.goal}`],
     ...others.length === 0 ? [] : ['其他成员：', ...others],
-    '协作方式：',
-    `- 要联系其他成员，用 ${send}。默认是派活（kind: "task"）：对方做完，它的最终回复会自动回报给你，不用轮询；只是告知一声用 kind: "notify"，不会回报。在回复里写「@名字」不会转交给任何人。`,
-    '- 收到的每条消息开头都标明来自谁和消息编号（#m12）；派给你的活，你这一轮的最终回复会自动回报给派活人，不用另外回复。',
-    '- 派完活就结束这一轮，不要 sleep 等待，也不要用 room_read 轮询结果；回报会自己送到。派活时可以用 note 说明你要等什么再处理（例如「三位都打完招呼再一起跟用户说」「做完就交给 claude 审」），房间据此决定什么时候把回报交给你。',
-    '- 成员的回复用户已经在房间里看到了，收到回报时不要复述原话或再做汇总表；需要推进就推进，否则一两句话即可。',
-    '- 房间按「任务」组织工作：用户的一条消息开启一个任务，你和成员为它派的活都归在这个任务下（room_read 列出任务编号）。用户的新消息会被自动归到某个任务；如果归错了，派活时用 task 指明（"new" 或任务编号）。',
-    '- 想看房间里现在有谁、各自职责和进展，用 room_read。',
-    ...coordinator?.name === member.name ? ['- 作为协调者：普通对话直接回答；小任务用工具在后台派给成员；只在确有需要时建立正式目标计划。委派结果会自动回报给你，等待时不要轮询。'] : [],
+    `联系成员、派活用 ${member.kind === 'cli' ? 'member_message' : 'room_message'}，看房间现状和任务编号用 room_read，用法见工具说明。收到的消息开头标着来自谁和消息编号（#m12）；派给你的活，你这一轮的最终回复会自动回报给派活人，不用另外回复。`,
+    ...coordinator?.name === member.name ? ['作为协调者：普通对话直接回答，小任务派给成员，只在确有需要时建立正式目标。派完活就结束这一轮，回报会自己送到——不要 sleep 等待，也不要用 room_read 查结果。收到回报时用户已经看过成员的原话：需要推进就推进，否则一两句话即可，不要复述或做汇总表。'] : [],
   ].join('\n')
 }
 
