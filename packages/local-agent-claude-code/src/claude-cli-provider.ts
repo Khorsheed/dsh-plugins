@@ -16,7 +16,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import type { ContentBlock, TokenUsage } from '@deepseek-ai/dsh-llm'
+import type { ContentBlock, ReasoningEffortId, TokenUsage } from '@deepseek-ai/dsh-llm'
 import { createAssistantMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { TodoItem } from '@deepseek-ai/dsh-tool-todo'
@@ -1522,6 +1522,27 @@ export async function startClaudeCliRun(
 }
 
 /** One assistant-role message event, attributed to the claude route. */
+/**
+ * Write the round's request/header when the config differs from the child
+ * log's last one (the host logs changed snapshots, not per-call duplicates):
+ * the first write is `initial`, a differing one `change`, an identical one
+ * skipped. Context Lens reads the child log's config from these headers.
+ */
+export function appendClaudeRequestHeader(childSession: Session, config: { provider: string; model: string; reasoningEffort?: ReasoningEffortId }): void {
+  const serialized = JSON.stringify(config)
+  let last: string | undefined
+  for (const event of childSession.snapshotEvents()) {
+    if (event.type === 'request/header') {
+      last = JSON.stringify((event.data as { header?: { config?: unknown } }).header?.config)
+    }
+  }
+  if (last === serialized) return
+  childSession.append('request/header', {
+    header: { config },
+    reason: last === undefined ? 'initial' : 'change',
+  })
+}
+
 export function assistantEvent(blocks: readonly ContentBlock[]) {
   return createAssistantMessage({
     content: blocks as ContentBlock[],
@@ -1650,6 +1671,7 @@ function createClaudeLiveMirror(spec: ClaudeCliRunSpec, task: string, turn: numb
   const ctx = spec.ctx as Context
   let mirrored = 0
   let userMirrored = false
+  let headerWritten = false
   let lastTodos: TodoItem[] | undefined
   let todoSkewWarned = false
   let queue: Promise<void> = Promise.resolve()
@@ -1709,6 +1731,22 @@ function createClaudeLiveMirror(spec: ClaudeCliRunSpec, task: string, turn: numb
               source: { kind: 'user' },
             }), { surfaceOp: 'append' })
             localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text: task })
+          }
+          if (!headerWritten) {
+            // The launch facts plus the init event's observed model are the
+            // child log's request config (claude's wire never carries
+            // effort) — Context Lens reads request/header instead of showing
+            // 未记录. The header contract requires a model: without one (a
+            // stream that errored before init) nothing is recorded.
+            const observedModel = parser.model ?? spec.model
+            if (observedModel !== undefined) {
+              headerWritten = true
+              appendClaudeRequestHeader(childSession, {
+                provider: 'claude-local',
+                model: observedModel,
+                ...spec.controlled ? { reasoningEffort: (spec.effort ?? 'auto') as ReasoningEffortId } : {},
+              })
+            }
           }
           // The usage rides the last NON-tool line (tool events carry no
           // usage slot); a stream ending on a tool line would otherwise drop

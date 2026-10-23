@@ -25,7 +25,7 @@
 import { randomUUID } from 'node:crypto'
 import { StringDecoder } from 'node:string_decoder'
 import type { Context } from '@deepseek-ai/cordis'
-import type { ContentBlock, TokenUsage } from '@deepseek-ai/dsh-llm'
+import type { ContentBlock, ReasoningEffortId, TokenUsage } from '@deepseek-ai/dsh-llm'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { Session } from '@deepseek-ai/dsh-session'
 import { SessionId } from '@deepseek-ai/dsh-session'
@@ -42,6 +42,7 @@ import { delegationEnv, persistChildSession, LiveStreamPublisher, LiveFlush, LIV
 import type { Config } from './index.ts'
 import type { LocalAgentResolvedConfiguration } from '@khorsheed/dsh-local-agent/types'
 import {
+  appendCodexRequestHeader,
   appendCodexTranscriptLine,
   codexAssistantEvent,
   codexLineText,
@@ -1141,6 +1142,17 @@ export class CodexLiveDriver {
       // The boundary opens after the accept ack (a definitive reject leaves no
       // dangling turn/start); the prompt and any early items flush inside it.
       childSession.append('turn/start', { turn })
+      // The provider's own launch facts are the child log's request config —
+      // codex's notifications never carry model/effort, so the turn/start
+      // request parameters the provider sends are the authoritative source.
+      // The header contract requires a model: without one nothing is recorded.
+      if (spec.configuration?.model !== undefined) {
+        appendCodexRequestHeader(childSession, {
+          provider: 'codex-local',
+          model: spec.configuration.model,
+          ...spec.configuration.effort === undefined ? {} : { reasoningEffort: spec.configuration.effort as ReasoningEffortId },
+        })
+      }
       childSession.append('user/message', createUserMessage({
         content: [{ type: 'text', text: task }],
         source: { kind: 'user' },
