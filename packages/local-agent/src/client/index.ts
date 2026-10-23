@@ -23,6 +23,7 @@ import { MemberFeeds } from './member-feed.ts'
  */
 import { createElement, type ReactNode } from 'react'
 import { HarnessModelPicker, type HarnessModelPickerProps, type ModelDirectoryFace } from './HarnessModelPicker.tsx'
+import { scopeDirectoryToList } from './model-directory-scope.ts'
 import { LocalAgentFamilyCard, type FamilyCardInjected } from './FamilyCard.tsx'
 import { HarnessCardRegistry, type HarnessCardRegistration } from './harness-cards.ts'
 import { MemberConfiguration } from './MemberConfiguration.tsx'
@@ -141,8 +142,20 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   const directoryFace = (name: string): ModelDirectoryFace => {
     let face = directoryFaces.get(name)
     if (face === undefined) directoryFaces.set(name, face = {
-      read: async refresh => unwrap(await gateway.modelDirectory(name, undefined, refresh)),
-      follow: signal => gateway.followModelDirectory(name, undefined, signal),
+      read: async refresh => {
+        const directory = unwrap(await gateway.modelDirectory(name, undefined, refresh))
+        return directory === null ? null : scopeDirectoryToList(directory, unwrap(await gateway.modelList(name)))
+      },
+      follow: async function* (signal) {
+        // The invite picker faces the curated list, not the raw served
+        // catalog; re-read the list on each directory revision.
+        let list = unwrap(await gateway.modelList(name))
+        for await (const directory of gateway.followModelDirectory(name, undefined, signal)) {
+          if (signal.aborted) return
+          list = unwrap(await gateway.modelList(name))
+          yield scopeDirectoryToList(directory, list)
+        }
+      },
     })
     return face
   }
