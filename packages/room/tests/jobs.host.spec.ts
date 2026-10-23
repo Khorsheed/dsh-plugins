@@ -140,20 +140,29 @@ describe('tasks', () => {
     expect(bench.facade.resume).not.toHaveBeenCalled()
   })
 
-  it('stopping a task settles a round a restart left uncertain, so that member\'s later messages run', async () => {
+  it('a human message to a member moves on from its round a restart left uncertain; stopping that task settles it too', async () => {
     const bench = await boot()
     const room = bench.ctx.sessions.get(bench.sessionId)!
     const kimi = (await bench.state()).members.find(member => member.name === 'kimi')!
-    // A round the previous process started and never settled.
-    const lost = room.append('room/dispatch', { id: 'lost', targets: ['kimi'], targetIds: [kimi.id!], text: '旧活', origin: 'human', task: 'lost' })
-    room.append('room/delivery-state', { id: `${lost.seq}:${kimi.id}`, dispatchSeq: lost.seq, memberId: kimi.id!, state: 'uncertain', error: 'Host restarted before a durable settlement; reconcile before retrying' })
+    const bill = (await bench.state()).members.find(member => member.name === 'bill')!
+    // Rounds the previous process started and never settled.
+    const lost = (member: typeof kimi, id: string) => {
+      const dispatch = room.append('room/dispatch', { id, targets: [member.name], targetIds: [member.id!], text: `旧活 ${member.name}`, origin: 'human', task: id })
+      room.append('room/delivery-state', { id: `${dispatch.seq}:${member.id}`, dispatchSeq: dispatch.seq, memberId: member.id!, state: 'uncertain', error: 'Host restarted before a durable settlement; reconcile before retrying' })
+    }
+    lost(kimi, 'lost-kimi')
+    lost(bill, 'lost-bill')
+    // The unknown outcome needs the human, even once its task was stopped.
+    room.append('room/job-stopped', { task: 'lost-bill' })
+    expect((await bench.state()).jobs!.find(job => job.id === 'lost-bill')!.status).toBe('attention')
+
     await bench.service.postMessage({ sessionId: bench.sessionId, text: '@kimi 新活' })
-    await bench.service.engine.idle()
-    expect(bench.facade.start).not.toHaveBeenCalled()
-    expect(await bench.service.stopJob({ sessionId: bench.sessionId, task: 'lost' })).toEqual({ ok: true, value: { stopped: 1 } })
     await vi.waitFor(() => expect(bench.facade.start).toHaveBeenCalledOnce())
-    const rows = (await bench.state()).deliveries!
-    expect(rows.map(row => [row.text, row.status])).toEqual([['旧活', 'cancelled'], ['新活', 'running']])
+    expect((await bench.state()).deliveries!.filter(row => row.memberId === kimi.id).map(row => [row.text, row.status]))
+      .toEqual([['旧活 kimi', 'cancelled'], ['新活', 'running']])
+
+    expect(await bench.service.stopJob({ sessionId: bench.sessionId, task: 'lost-bill' })).toEqual({ ok: true, value: { stopped: 1 } })
+    expect((await bench.state()).jobs!.find(job => job.id === 'lost-bill')!.status).toBe('stopped')
   })
 
   it('resolves task references', () => {

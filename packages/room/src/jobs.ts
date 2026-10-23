@@ -56,7 +56,8 @@ export function replayJobs(events: readonly SessionEvent[], deliveries: readonly
       })
     const open = rows.some(row => row.status === 'queued' || row.status === 'running' || row.status === 'held')
     const attention = rows.some(row => row.status === 'uncertain')
-    const status: RoomJob['status'] = stopped.has(id) && !open ? 'stopped' : attention ? 'attention' : open ? 'running' : 'done'
+    // A round with an unknown outcome needs the human even in a stopped task.
+    const status: RoomJob['status'] = attention ? 'attention' : stopped.has(id) && !open ? 'stopped' : open ? 'running' : 'done'
     const ended = Math.max(...rows.map(row => row.endedAt ?? row.queuedAt))
     const goal = rows.find(row => row.plan !== undefined)?.plan?.goalId
     return {

@@ -333,7 +333,7 @@ export const zh = {
   'job.tagRemove': '去掉标签，交给 dsh 判断归属',
   'job.tagPlaceholder': '补充或追问…（发出后归到「{label}」）',
   'job.tagPlaceholderNew': '写下要做的新事…（不会归进进行中的任务）',
-  'job.queueUncertain': '⚠ 这一轮被实例重启打断，结果不明——到「需要处理」核对或停止它的任务后，后面的消息才会继续：{text}',
+  'job.queueUncertain': '⚠ 这一轮被实例重启打断，结果不明——再给它发消息就按没做完处理，也可以到任务页核对：{text}',
   'job.queueBlocked': '等上一轮核对：{text}',
 } satisfies Record<string, string>
 
@@ -680,6 +680,6 @@ export const en = {
   'job.tagRemove': 'Remove the tag and let dsh decide',
   'job.tagPlaceholder': 'Add to or ask about it… (filed under "{label}")',
   'job.tagPlaceholderNew': 'Describe the new work… (kept out of running tasks)',
-  'job.queueUncertain': '⚠ A restart interrupted this round and its outcome is unknown — reconcile it under "Needs you" or stop its task to let later messages run: {text}',
+  'job.queueUncertain': '⚠ A restart interrupted this round and its outcome is unknown — a new message treats it as not finished, or reconcile it on the task page: {text}',
   'job.queueBlocked': 'Waiting on the round above: {text}',
 } satisfies Record<RoomKey, string>
