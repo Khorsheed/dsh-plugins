@@ -129,6 +129,8 @@ describe('room journal persistence', () => {
       session.append('room/job-stopped', { task: 'msg-1' })
       session.append('room/relay', { id: 'r1', from: 'ada', to: 'bill', content: '接口定稿' })
       session.append('room/relay-resolved', { id: 'r1', state: 'sent' })
+      session.append('room/approval', { id: 'p1', member: 'ada', memberId: 'm', tool: 'video_render' })
+      session.append('room/approval-resolved', { id: 'p1', outcome: 'allowed-once' })
       session.append('room/run-state', { member: 'ada', runId: 'a', state: 'done', startedAt: 1, elapsedMs: 2 })
       session.append('room/execution-metadata', { runId: 'a', model: 'observed', tokens: 42 })
       session.append('room/member-removed', { name: 'ada' })

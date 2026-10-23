@@ -362,6 +362,18 @@ export type RoomRelayViewProps =
   & InjectFace<RoomRelayInjected>
   & PropsLocale<'room'>
 
+/** Injected face of a member's tool approval line. */
+export interface RoomApprovalInjected {
+  /** Answer the approval (allow once / reject); resolves with an error message when it already ended. */
+  readonly answerApproval: (approvalId: string, outcome: 'allowed-once' | 'rejected') => Promise<string | undefined>
+}
+
+/** Full props of the 'room-approval' chat-node renderer. */
+export type RoomApprovalViewProps =
+  PropsRuntime<'conversation.chat.node', 'room-approval'>
+  & InjectFace<RoomApprovalInjected>
+  & PropsLocale<'room'>
+
 /** Injected face of the held-reports line. */
 export interface RoomInboxInjected {
   /** Hand the named member its held reports now. */

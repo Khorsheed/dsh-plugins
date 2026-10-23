@@ -104,6 +104,13 @@ function mcpContent(blocks: readonly { readonly type: string; readonly text?: st
 /** The per-member preset agents and the list/call operations the bridge forwards. */
 export class PresetToolHost {
   private readonly hosts = new Map<string, { readonly preset: string; readonly agent: Promise<{ readonly agent: AgentLike; dispose(): Promise<void> }> }>()
+  /** Stand-in → the member's child session, for routing approvals its calls raise. */
+  private readonly standIns = new WeakMap<object, string>()
+
+  /** The member a stand-in agent acts for, if it is one of ours. */
+  memberOf(agent: unknown): string | undefined {
+    return typeof agent === 'object' && agent !== null ? this.standIns.get(agent) : undefined
+  }
 
   /**
    * @param ctx - the local-agent plugin context.
@@ -136,6 +143,7 @@ export class PresetToolHost {
     const agent = (async () => {
       const resolved = await presets.resolve(preset)
       const member: AgentLike = { id: childSessionId, session }
+      this.standIns.set(member, childSessionId)
       const scope = createScope(this.ctx, member)
       member.ctx = scope.ctx
       try {

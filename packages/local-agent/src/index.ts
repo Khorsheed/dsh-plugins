@@ -73,6 +73,7 @@ import type {
 import LocalAgentGateway from './gateway.ts'
 import { MemberChannel } from './member-channel.ts'
 import { PresetToolHost } from './preset-tool-host.ts'
+import type { RoomMemberMessageGate as ModeApprovalGate } from './types.ts'
 import { MemberInbox } from './member-inbox.ts'
 import { PreparedMembers } from './prepared-members.ts'
 import { MemberControls } from './member-controls.ts'
@@ -3259,6 +3260,25 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   const modeTools = new PresetToolHost(ctx, join(config.homesRoot, 'mode-tools.jsonl'))
   const memberChannel = new MemberChannel(ctx, registry, registry.memberBridgeSocketPath(), modeTools)
   void memberChannel.start()
+  // A mode tool that needs the human's approval asks in the member's room —
+  // the person is there, not in the member's own session. Ahead of every
+  // other answerer; anything that is not a member's mode call passes through.
+  ;(ctx.on as (name: string, listener: (request: { agent?: unknown; toolName: string; reason?: string; displayReason?: string; signal?: AbortSignal }, next: () => Promise<string>) => Promise<string>, options?: { prepend?: boolean }) => () => void)(
+    'approval/request',
+    async (request, next) => {
+      const child = modeTools.memberOf(request.agent)
+      const delegation = child === undefined ? undefined : registry.getDelegation(child)
+      const room = (ctx.get as (key: string) => unknown).call(ctx, 'room') as ModeApprovalGate | undefined
+      if (child === undefined || delegation === undefined || room?.askMemberApproval === undefined) return next()
+      const reason = request.displayReason ?? request.reason
+      const outcome = await room.askMemberApproval(
+        { childSessionId: child, parentSessionId: delegation.parentSessionId, provider: delegation.provider },
+        { toolName: request.toolName, ...reason === undefined ? {} : { reason }, ...request.signal === undefined ? {} : { signal: request.signal } },
+      )
+      return outcome === 'unavailable' ? next() : outcome
+    },
+    { prepend: true },
+  )
   ctx.effect(() => () => { void memberChannel.dispose(); void modeTools.dispose() })
   ctx.commands.register({
     name: 'local-agent',

@@ -39,9 +39,9 @@ export function pendingRelays(state: RoomState): readonly RoomRelay[] {
   return state.relays.filter(relay => relay.state === 'pending')
 }
 
-/** How many things wait on the human: deliveries with an unknown outcome, plus held relays. */
+/** How many things wait on the human: deliveries with an unknown outcome, held relays, and members' tool approvals. */
 export function attentionCount(state: RoomState): number {
-  return (state.deliveries ?? []).filter(row => row.status === 'uncertain').length + pendingRelays(state).length
+  return (state.deliveries ?? []).filter(row => row.status === 'uncertain').length + pendingRelays(state).length + (state.approvals?.length ?? 0)
 }
 
 /** Whether a task needs the human: an uncertain delivery, or a relay held inside it. */

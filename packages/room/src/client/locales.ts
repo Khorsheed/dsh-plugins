@@ -338,6 +338,13 @@ export const zh = {
   'job.tagPlaceholderNew': '写下要做的新事…（不会归进进行中的任务）',
   'job.queueUncertain': '⚠ 这一轮被实例重启打断，结果不明——再给它发消息就按没做完处理，也可以到任务页核对：{text}',
   'job.queueBlocked': '等上一轮核对：{text}',
+  'approval.line': '⚠ {member} 要你确认：调用 {tool}',
+  'approval.allow': '允许一次',
+  'approval.reject': '拒绝',
+  'approval.state.allowed-once': '（已允许）',
+  'approval.state.rejected': '（已拒绝）',
+  'approval.state.cancelled': '（已取消）',
+  'approval.expired': '这次确认已经结束了',
 } satisfies Record<string, string>
 
 /** The room namespace key union. */
@@ -688,4 +695,11 @@ export const en = {
   'job.tagPlaceholderNew': 'Describe the new work… (kept out of running tasks)',
   'job.queueUncertain': '⚠ A restart interrupted this round and its outcome is unknown — a new message treats it as not finished, or reconcile it on the task page: {text}',
   'job.queueBlocked': 'Waiting on the round above: {text}',
+  'approval.line': '⚠ {member} asks you to approve: {tool}',
+  'approval.allow': 'Allow once',
+  'approval.reject': 'Reject',
+  'approval.state.allowed-once': '(allowed)',
+  'approval.state.rejected': '(rejected)',
+  'approval.state.cancelled': '(cancelled)',
+  'approval.expired': 'This approval has already ended',
 } satisfies Record<RoomKey, string>

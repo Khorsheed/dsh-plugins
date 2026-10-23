@@ -705,6 +705,11 @@ export interface RoomMemberMessageGate {
    * offers, with the member's working directory; undefined = no mode tools.
    */
   memberMode?(member: LocalAgentMemberRun): Promise<{ readonly preset: string; readonly cwd?: string } | undefined>
+  /**
+   * A member's mode tool needs the human's approval: the room asks in its
+   * conversation and answers with the registry's approval outcome.
+   */
+  askMemberApproval?(member: LocalAgentMemberRun, request: { readonly toolName: string; readonly reason?: string; readonly signal?: AbortSignal }): Promise<'allowed-once' | 'rejected' | 'cancelled' | 'unavailable'>
 }
 
 /**
