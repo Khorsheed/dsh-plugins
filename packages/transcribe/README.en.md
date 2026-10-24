@@ -2,6 +2,8 @@
 
 English | [中文](README.md)
 
+> **Regular users never add this by hand**: local transcription arrives automatically with the writing, learning and video mode packs — install the matching mode pack and it is there. This README is for plugin authors who call the transcription service in code.
+
 Turns long recordings into **timed, optionally speaker-separated** text on this machine. It is a host service, `transcribe`, that other plugins call in code — video-studio's speaker separation and transcription, and the inspiration space's caption-less videos and podcasts, both run on it. It has no panel and no model-facing tool of its own.
 
 ## Features
@@ -15,6 +17,15 @@ Turns long recordings into **timed, optionally speaker-separated** text on this 
 - **Keeps no transcripts** — the temporary decoded WAV is deleted when the job ends; the text is the caller's to keep.
 
 ## Install
+
+It arrives with the **writing**, **learning** and **video** mode packs (the inspiration space and the video studio ship in them); installing any one of them is enough, for example:
+
+```sh
+dsh plugin --profile web add @khorsheed/dsh-basic @khorsheed/dsh-writing-suite
+# or @khorsheed/dsh-learning-suite / @khorsheed/dsh-video-suite
+```
+
+Advanced — standalone install (for example when your own plugin calls it):
 
 ```sh
 dsh plugin --profile web add @khorsheed/dsh-transcribe
@@ -37,6 +48,7 @@ await transcribe.missingBytes(ids)                         // bytes still to dow
 const result = await transcribe.run(
   {
     input: { files: ['/path/episode.m4a'] },   // or { wav } — already 16 kHz mono 16-bit
+    fromSec: 0,                                // optional: start a single file this many seconds in (resuming); times stay absolute
     language: 'auto',                          // 'zh' (default) | 'en' | 'auto'
     diarize: false,                            // or { voices, matchThreshold, numSpeakers }
     owner: '@khorsheed/dsh-reader',
@@ -60,6 +72,7 @@ const result = await transcribe.run(
 | `missingBytes(ids)` | Bytes these models still need |
 | `prepare(ids, source?)` | Download the missing ones; check `models()` for failures after |
 | `run(request, options?)` | Queue, run, return the result; downloads missing models first |
+| `speakers(request, options?)` | Separate speakers only, no recognition (for when a transcript exists); a quick one-voice probe runs first and returns at once for one voice, otherwise the speaker turns and voiceprints |
 | `queue()` | The queue, running job first |
 
 ## Configuration
@@ -90,3 +103,11 @@ Models live under `$DSH_HOME/state/transcribe/models/`. Models an earlier video-
 - **Native dependency**: `sherpa-onnx-node` ships prebuilt per-platform addons (about 34 MB on darwin-arm64). Recognition runs in a child process, so an addon that fails to load fails that job only, never boot.
 - **ffmpeg**: when missing, jobs that need decoding fail; jobs handed a WAV still run; boot is unaffected.
 - **Consumer probing**: video-studio and the inspiration space call `ctx.get('transcribe')` whenever they need it and each degrade with a message when it is absent — its absence never fails a boot.
+
+## Development
+
+Part of the [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) monorepo (`packages/transcribe`). Issues and contributions go there.
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md).

@@ -2,6 +2,8 @@
 
 [English](README.en.md) | 中文
 
+> **普通用户不用手动装它**：本机转写随写作、学习、剪辑模式包自动到达，装好对应的模式包就能用；这份 README 写给要在代码里调用转写服务的插件作者。
+
 在这台电脑上把长录音转成**带时间戳、可分说话人**的文字。它是一个宿主侧服务 `transcribe`，给其它插件在代码里调用——剪辑插件的「分人与转写」、灵感空间里没有字幕的视频和播客都用它。自己没有面板，也没有模型可见的工具。
 
 ## 特性
@@ -15,6 +17,15 @@
 - **不存转写结果**——解码出的临时 WAV 任务结束即删；文字交给调用方自己保存。
 
 ## 安装
+
+它随**写作**、**学习**、**剪辑**三个模式包一起到达（灵感空间和剪辑台都在这些包里），装其中任一个即可，例如：
+
+```sh
+dsh plugin --profile web add @khorsheed/dsh-basic @khorsheed/dsh-writing-suite
+# 或 @khorsheed/dsh-learning-suite / @khorsheed/dsh-video-suite
+```
+
+进阶用法——单独安装（比如你自己的插件要调用它）：
 
 ```sh
 dsh plugin --profile web add @khorsheed/dsh-transcribe
@@ -37,6 +48,7 @@ await transcribe.missingBytes(ids)                         // 还要下载多少
 const result = await transcribe.run(
   {
     input: { files: ['/path/episode.m4a'] },   // 或 { wav } —— 已是 16 kHz 单声道 16 位
+    fromSec: 0,                                // 可选：单个文件从第几秒开始（续跑用），返回的时间仍是绝对时间
     language: 'auto',                          // 'zh'（默认）| 'en' | 'auto'
     diarize: false,                            // 或 { voices, matchThreshold, numSpeakers }
     owner: '@khorsheed/dsh-reader',
@@ -60,6 +72,7 @@ const result = await transcribe.run(
 | `missingBytes(ids)` | 这些模型还差多少字节 |
 | `prepare(ids, source?)` | 下载缺的模型；结束后用 `models()` 看有没有失败 |
 | `run(request, options?)` | 排队执行，返回结果；缺模型时先下载 |
+| `speakers(request, options?)` | 只分说话人、不识别文字（转写稿已有时用）；先做一次快速的一人判断，一人直接返回，多人返回说话轮次与声纹 |
 | `queue()` | 当前队列（正在跑的在前） |
 
 ## 配置
@@ -90,3 +103,11 @@ const result = await transcribe.run(
 - **原生依赖**：`sherpa-onnx-node` 按平台带预编译原生插件（darwin-arm64 约 34 MB）。识别在独立子进程里跑，原生插件加载失败只让那次任务失败，不影响启动。
 - **ffmpeg**：找不到时，需要解码的任务报错，不影响启动；直接给 WAV 的任务照常。
 - **使用方探测**：剪辑插件、灵感空间在每次需要转写时 `ctx.get('transcribe')`，没装时各自提示并降级，不会因它缺席而启动失败。
+
+## 开发
+
+隶属 [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) monorepo（`packages/transcribe`）。问题与贡献请移步该仓库。
+
+## 变更记录
+
+见 [CHANGELOG.md](CHANGELOG.md)。

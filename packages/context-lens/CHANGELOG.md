@@ -14,3 +14,9 @@
 - **上下文替换与压缩回放**：日志回放遵守上下文替换，已被压缩/裁剪的旧版本不进入后续上下文及重复统计，未改动的保留尾部继续算作历史；压缩摘要单独分类并可跳转到保留的压缩调用与压缩前请求；工具结果裁剪显示前后字符数，原请求仍保留时提供跳转
 - **只读采集、只进内存**：三条宿主瀑布接缝（`llm/stream`、`system-prompt/assemble`、`session/event`）全程只读监听，不改写任何请求；每会话 30 turn + 500 条回溯请求 + 全局约 150MB 字符预算，挤压时最旧回溯先淘汰、实采永不被挤掉，被裁 turn 在轮次导航区标注、空间释放后自动补齐
 - **服务端消费接缝**：五个 Remote 动词（`listTurns`/`getTurn`/`getRequest`/`getTurnTiming`/`getSessionTrend`）接受可选 `filter.scopes` 尾参，供可信服务端调用方按授权事实过滤——未授权子 scope 的日志连打开都不打开，被排除的 scope 对请求行/计数/token 合计零贡献；不带 filter 的本地调用语义逐字节不变
+
+**改名迁移**（原 README「改名迁移」节）：将旧 request-inspector 依赖与 bundle 行替换为 `@khorsheed/dsh-context-lens`，不要同时挂载。`requestInspector` 服务/Remote 命名空间保持兼容。旧侧栏页可从新入口重开。部署迁移须经 profile owner 支持的流程完成。
+
+**视觉验证**（原 README「视觉验证」节）：`pnpm exec tsx packages/context-lens/examples/workbench/serve.mts` 在 4177 端口用合成数据展示实际组件。控件可切换深浅主题和 390px 面板；不读取会话数据，也不连接生产实例。
+
+**2026-10-24**：随开发模式包（`@khorsheed/dsh-dev-suite`）一起到达。
