@@ -2,96 +2,48 @@
 
 [English](README.en.md) | 中文
 
-把散在各处的题目整理成带版本、分层可见的题集，评测时 agent 只能拿到你允许它看的那几层。
+把散在各处的题目整理成一套评测能用的题集：版本钉死，答案和评分标准不会漏给被测的 agent。
 
-做评测最怕两件事：题目悄悄变了，前后两轮比的其实不是同一套题；答案或评分标准漏进了选手看得到的地方。这个插件把题集放进普通的 git 仓库：版本就是 commit，一次实验钉住一个 commit；每一层（题面、评分标准、检查脚本……）都声明谁看得到，agent 只能按登记的引用 `<id>/<set>` 读，读不到没被允许的层。接入新数据也不用手写目录结构——告诉 Agent 数据在哪，它整理成协议仓库并提交登记申请，你在题集页上逐题对照后确认。
+做评测最怕两件事：题目悄悄改了，前后两轮比的其实不是同一套题；答案或评分标准放在了选手看得到的地方。装上之后，你告诉 agent 题目放在哪个文件夹，它替你整理成题集、跑一遍校验，再交给你过目；你逐题看过、按「确认登记」，这套题才算数。之后每次实验都钉在登记时的那个版本上，选手只拿得到你允许它看的那部分。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/datasets-panel.png" width="640" alt="全局「题集」面板：按登记仓库分组的题集列表，列出最新版本、题数、agent 可见层与用在哪些实验">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/datasets-panel.png" width="640" alt="左侧栏「题集」面板：按来源分组的题集列表，写着最新版本、题数、agent 看得到哪些部分、用在哪些实验里">
 
-## 特性
+## 能做什么
 
-- **登记归人，引用归 agent**——题库仓库按部署登记一次，跟踪一条分支；agent 只认 `<id>/<set>` 引用，传路径、名字有歧义或未登记都会得到一句能照着做的拒绝。
-- **按层控制可见性**——每层声明是否面向模型，登记时为每个题集勾选 agent 可读的层；白名单同时约束模型工具和只读物化视图。
-- **版本钉在 commit 上**——单文件从 git 对象直读，整层经 `git archive` 物化成按内容寻址的只读目录，不碰共享检出的 index、HEAD 或 worktree 列表。
-- **让 Agent 整理，你来确认**——「添加题集」新开一个整理会话，Agent 把原始数据整理成协议仓库并提交登记申请；插件逐项核对文件去向与校验结果，只有你按「确认登记」才生效。
-- **更新有闸**——跟踪分支前进时，选手看不到的变化自动跟上；选手看得到的变化标「新版本待确认」，确认前 agent 仍读已确认的版本。
-- **一眼看清谁看得到什么**——题目详情页并排列出「选手将看到」与「只有判官和探针看得到」两栏，答案漂进可见层会第一时间出现在这里；底部一行说这道题判不判得动。
-- **作者卫生与可判性校验**——`validate` 检查 descriptor 形状、rubric 是否可判、客观判据有没有探针、防泄标记是否埋好，警告不阻断。
-- **会话 tab 与全局面板**——同一个视图既是评测会话里的「题集」tab，也是左侧栏的全局「题集」面板，不依赖会话。
-- **模型工具按 preset 分档授予**——`datasets_*` 工具是包内 `./tool` 组合入口，可选 `read` / `authoring` / `all` / `organize` / `none` 档；另有 `dsh-datasets` CLI 与 `/datasets` 命令。
+- **指个文件夹就能整理**：在「题集」里点「添加题集」，选「让 Agent 整理」，它会新开一个会话，把原始数据整理成题集并提交登记申请。
+- **你点头才登记**：审阅页把原目录和整理后的题集左右对照，每一部分谁看得到都有开关；没问题按「确认登记」，不满意就「退回给 Agent」。
+- **谁看得到什么一眼看清**：每道题的详情页并排列出「选手将看到」和「只有判官和探针看得到」，答案要是放错了地方，这里马上就能看出来。
+- **题目改了不会悄悄混进来**：题库更新时，选手看不到的改动自动跟上；选手看得到的改动标「新版本待确认」，你确认之前实验还用旧版本。
+- **先查一遍能不能判分**：登记前会检查每道题有没有评分标准、客观题有没有检查脚本，有问题会提醒你，但不拦着你。
+- **评测会话里也能看**：同一个视图既在左侧栏的「题集」面板里，也在评测会话的「题集」页签里。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/datasets-item-detail.png" width="640" alt="题目详情页：左边带可见性颜色的文件树，右边并排「选手将看到」与「只有判官和探针看得到」两栏和可判性一行">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/datasets-review.png" width="640" alt="等你确认登记的审阅页：原目录和题集左右对照，各部分的可见性开关，以及「确认登记」「退回给 Agent」按钮">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/datasets-review.png" width="640" alt="「等你确认登记」审阅页：原目录 → 题集的左右对照、各层可见性开关与「确认登记」「退回给 Agent」按钮">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/datasets-item-detail.png" width="640" alt="题目详情页：左边是按可见性着色的文件树，右边并排「选手将看到」和「只有判官和探针看得到」两栏，底部一行说这道题能不能判分">
 
 ## 安装
 
-推荐随评测模式一起装（题集、容器单元、评测编排器与 local-agent 委派家族，外加评测模式 preset）：
+在 DSH 的「插件 → 添加插件」里输入下面的包名，点安装：
 
-```sh
-dsh plugin --profile web add @khorsheed/dsh-basic @khorsheed/dsh-eval-suite
+```
+@khorsheed/dsh-eval-suite
 ```
 
-也可以单独安装本插件——存储、登记与校验不预设数据集的用途：
+题集会跟着「评测套件」一起装好。装完从左侧栏打开「题集」，点「添加题集」；或者开一个新会话，选「评测模式」，跟 agent 说「把这个文件夹里的题整理成题集」。
 
-```sh
-dsh plugin --profile web add @khorsheed/dsh-datasets
-```
-
-重启 web 实例后生效。新仓库默认放在 `$DSH_HOME/datasets/<名称>`，登记表在 `$DSH_HOME/state/datasets/registry.json`。要在评测模式以外的 preset 里给模型题集工具，在那个 agent 预设里点名工具行：
-
-```yaml
-- id: datasets-tool
-  name: '@khorsheed/dsh-datasets/tool'
-  config: { tools: authoring }
-```
-
-```sh
-dsh plugin --profile web remove @khorsheed/dsh-datasets
-```
-
-## Compatibility
-
-- npm release 线（`@deepseek-ai/dsh@0.2.0-rc.2`）：✅——全部能力可用；所依赖的契约面（`ctx.tools`、`ctx.commands`、log-only session 事件、Typert Remote 通道、`conversation.view`）在该线上稳定。T82 起只支持宿主 0.2.0 及以后（minHost 0.2.0-rc.2），0.1.x 宿主请停留在旧发布线。
-- source 线（deepseek-harness master）：✅（verifiedHost: 0.2.1-rc.1，题集 tab 在 web-eval 临时实例上真机冒烟）——host-021 波对 0.2.1-rc.1 树全量 build+test 绿，无其它表面变化。
-
-降级项与各宿主门的探测细节见[参考文档](docs/reference.md#兼容性细节)。本节与 package.json 的 `dsh.compat` 字段互为镜像，同步更新。
+会话里的题集工具只在评测模式里出现，在其它模式里看不到是正常的。
 
 ## 已知限制
 
-- **写进工作区的文件提交前看不见**——树、列表与校验都读 HEAD 的 git 对象，所以登记申请要求 Agent 先提交再申请。
-- **物化缓存不自动回收**——跟踪分支每前进一次可能多一份只读目录；要回收就删整个 `materialized/` 子树（先 `chmod -R u+w`）。
-- **可判性检查只认 `grading` / `verify` 两个层名**——把 rubric 放进别的层名的题库不会被检查。
-- **descriptor 读 JSON**——`dataset.json` / `item.json`，不读 YAML；`itemMetaSchema` 只声明、不做完整 JSON-Schema 校验。
-- **预览读整个文件**——会话 tab 的预览没有字节上限，超大层文件更适合走物化视图。
-- **`/datasets` 需要交互式界面**——headless profile 下不可用，CLI 不受影响。
+- 题集存在 git 仓库里，只有提交过的文件才看得到；agent 整理时会先提交再申请登记。
+- 题库每更新一个版本，可能多留一份只读副本，不会自动清理。
 
-完整清单见[参考文档](docs/reference.md#已知限制与推迟的工作)。
+## Compatibility
 
-## 实现原理
+需要 DSH 0.2.0-rc.2 或更新版本，已在 0.2.1-rc.1 上验证；缺少某些宿主能力时怎样降级，见[参考文档](https://github.com/Khorsheed/dsh-plugins/blob/main/packages/datasets/docs/reference.md#兼容性细节)。
 
-<details>
-<summary>内部结构（点击展开）</summary>
+## 给开发者
 
-**存储。** 数据集就是一个普通 git 仓库：`datasets/<id>/dataset.json` 声明层清单（可见性类别）与 item 元数据 schema，层目录可以在题集级或 `items/<item-id>/` 级。插件只校验 descriptor 形状，其余字段原样透传；从不解释数据集的语义，也从不把内容复制出仓库。
-
-**治理。** 登记表是状态根下的一个 JSON 文件，身份是仓库 git common dir 的 realpath；「最新」取跟踪分支，从不看 HEAD。层白名单在列表、读取与物化三条路径上强制；web tab 与 CLI 是人的视图，不受白名单限制，敏感层带「· 敏感」标记。白名单防误取与流程串味，不是安全边界。
-
-**整理与登记。** `datasets_propose_registration` 只写申请；插件对照仓库 git 对象与原目录核对 mapping、跑协议校验，有问题就不能确认。随包分发的 `dataset-authoring` skill 由工具行的 `organize` 档注册。
-
-**接口。** `ctx.datasets` 服务供其他插件可选消费；`datasetsRemote` Typert Remote 是 tab 与面板的数据面；`dsh-datasets` CLI 镜像读取动词并提供登记动词。
-
-深度参考：
-
-- [参考文档](docs/reference.md)——仓库布局与 `validate` 规则表、登记、按实例挂载、模型工具与分档、CLI 与 slash、题集 tab 与面板、兼容性细节、已知限制全文
-- [题集作者协议](../../docs/dataset-authoring-protocol.md)
-
-</details>
-
-## 开发
-
-隶属 [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) monorepo（`packages/datasets`）。问题与贡献请移步该仓库。
-
-## 变更记录
-
-见 [CHANGELOG.md](CHANGELOG.md)。
+- 入口：`src/index.ts`（服务、`/datasets` 和 `dsh-datasets` 命令、侧栏）、`src/tool.ts`（agent 用的工具）。仓库布局、校验规则和工具分档见[参考文档](https://github.com/Khorsheed/dsh-plugins/blob/main/packages/datasets/docs/reference.md)。
+- 也可以单独安装（`dsh plugin --profile web add @khorsheed/dsh-datasets`），存储、登记和校验不绑定评测；agent 用的工具要由某个模式授予。
+- 隶属 [dsh-plugins](https://github.com/Khorsheed/dsh-plugins)，问题与贡献请到该仓库；变更见 [CHANGELOG.md](CHANGELOG.md)。
