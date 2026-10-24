@@ -200,10 +200,10 @@ describe('claude stream fold content completeness', () => {
       JSON.stringify({ type: 'result', is_error: false, usage: { input_tokens: 6, output_tokens: 988, cache_creation_input_tokens: 19296, cache_read_input_tokens: 17650 } }),
     ].join('\n'))
     expect(parsed.lines).toEqual([
-      { kind: 'think', text: '先看看有什么工具', streamId: 'm1:0' },
-      { kind: 'tool', id: 'tu1', name: 'Bash', args: 'ls', result: 'a.txt',
+      { kind: 'think', text: '先看看有什么工具', streamId: 'm1:0', messageId: 'm1' },
+      { kind: 'tool', id: 'tu1', name: 'Bash', args: 'ls', result: 'a.txt', messageId: 'm1',
         usage: { inputTokens: 2, outputTokens: 163, cacheReadTokens: 0, cacheWriteTokens: 17650 } },
-      { kind: 'text', text: '看到了 a.txt', streamId: 'm2:0',
+      { kind: 'text', text: '看到了 a.txt', streamId: 'm2:0', messageId: 'm2',
         usage: { inputTokens: 4, outputTokens: 825, cacheReadTokens: 17650, cacheWriteTokens: 1646 } },
     ])
     // The result event's round total still rides the parse for the run
@@ -538,6 +538,79 @@ describe('claude-cli-provider run settlement', () => {
     expect((assistant[1]!.data as { usage?: unknown }).usage).toEqual({ inputTokens: 4, outputTokens: 5, cacheReadTokens: 100, cacheWriteTokens: 50 })
     // The round total stays on the run accounting; no log message carries it.
     expect(assistant.some(event => JSON.stringify((event.data as { usage?: unknown }).usage) === JSON.stringify({ inputTokens: 6, outputTokens: 8, cacheReadTokens: 100, cacheWriteTokens: 150 }))).toBe(false)
+    expectStepBoundaries(child)
+    expectValidReleasedLog(child)
+    await done
+  })
+
+  it('per-block assistant events of ONE call fold into ONE step with a mixed message and a single usage', async () => {
+    const child = Session.create(SessionId('child-live-claude-group'))
+    const ctx = new Context()
+    ctx.provide('sessionPersistence', fakeSessionPersistence())
+
+    const stdout = new Readable({ read() {} })
+    const stderr = new Readable({ read() {} })
+    let finish!: (outcome: { exitCode: number; signal: null }) => void
+    const done = new Promise<{ exitCode: number; signal: null }>((resolve) => { finish = resolve })
+    const handle: SubprocessHandle = {
+      pid: 4248,
+      stdin: undefined,
+      stdout,
+      stderr,
+      collected: {
+        stdout: { readFrom: () => ({ text: '', nextOffset: 0, lossy: false }) },
+        stderr: { readFrom: () => ({ text: '', nextOffset: 0, lossy: false }) },
+      },
+      done,
+      terminate: () => undefined,
+      waitForExit: async () => true,
+    }
+
+    const request = {
+      prompt: [{ type: 'text', text: 'do the task' }],
+      parent: { session: { header: { cwd: '/tmp' } } },
+      signal: new AbortController().signal,
+    } as unknown as SubagentStartRequest
+
+    const run = await startClaudeCliRun(request, {
+      cwd: '/tmp',
+      env: {},
+      permissionMode: 'normal',
+      disposeGraceMs: 3_000,
+      spawn: () => handle,
+      childSession: child,
+      ctx,
+    })
+
+    const emit = (...events: unknown[]): void => {
+      stdout.push(events.map(event => JSON.stringify(event)).join('\n') + '\n')
+    }
+    const callUsage = { input_tokens: 2, output_tokens: 106, cache_read_input_tokens: 0, cache_creation_input_tokens: 21188 }
+    // One API call, emitted as one event PER BLOCK (claude's real shape),
+    // each repeating the message's usage.
+    emit({ type: 'system', subtype: 'init', session_id: 's1' })
+    emit({ type: 'assistant', message: { id: 'm1', usage: callUsage, content: [{ type: 'text', text: '先看看有什么工具' }] } })
+    emit({ type: 'assistant', message: { id: 'm1', usage: callUsage, content: [{ type: 'tool_use', id: 'tu1', name: 'ToolSearch', input: { query: 'dsh-member video' } }] } })
+    emit({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'tu1', content: [{ type: 'tool_reference', tool_name: 'mcp__dsh-member__room_read' }] }] } })
+    emit({ type: 'result', is_error: false, session_id: 's1', usage: callUsage })
+    await vi.waitFor(() => {
+      expect(child.snapshotEvents().filter(event => event.type === 'assistant/message')).toHaveLength(1)
+    })
+    finish({ exitCode: 0, signal: null })
+    expect((await run.result).stopReason).toBe('completed')
+    const assistant = child.snapshotEvents().filter(event => event.type === 'assistant/message')
+    expect(assistant).toHaveLength(1)
+    // One step, one mixed message, the call's usage exactly once.
+    expect(assistant[0]!.data.message.content).toEqual([
+      { type: 'text', text: '先看看有什么工具' },
+      { type: 'tool-call', id: 'tu1', name: 'ToolSearch', arguments: 'dsh-member video' },
+    ])
+    expect((assistant[0]!.data as { usage?: unknown }).usage).toEqual({ inputTokens: 2, outputTokens: 106, cacheReadTokens: 0, cacheWriteTokens: 21188 })
+    const steps = child.snapshotEvents().filter(event => event.type === 'step/start')
+    expect(steps).toHaveLength(1)
+    expect(steps[0]!.data).toMatchObject({ turn: 1, step: 1 })
+    expect(child.snapshotEvents().filter(event => event.type === 'tool/call')).toHaveLength(1)
+    expect(child.snapshotEvents().filter(event => event.type === 'tool/result')).toHaveLength(1)
     expectStepBoundaries(child)
     expectValidReleasedLog(child)
     await done

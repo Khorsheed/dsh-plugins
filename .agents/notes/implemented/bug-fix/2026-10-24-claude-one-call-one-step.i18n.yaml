@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-10-24-claude-one-call-one-step.md
+.agents/notes/implemented/bug-fix/2026-10-24-claude-one-call-one-step.md: 8df70b824bcfc315a1314ffca919e86fcbc3ce7c
+.agents/notes/implemented/bug-fix/2026-10-24-claude-one-call-one-step.zh.md: 37b2879cfd5a0e43de263c816046ae0df26de82f
