@@ -988,6 +988,12 @@ export function parseScopeFlag(input: string): { input: string; scope?: string; 
   return { input: rest.join(' ').trim(), ...scope === undefined ? {} : { scope } }
 }
 
+/** A delegation record without its requested model. */
+function withoutModel(record: LocalAgentDelegationRecord): LocalAgentDelegationRecord {
+  const { model: _model, ...rest } = record
+  return rest
+}
+
 /** Map a login failure to a command error, naming the swallowed signal. */
 function loginFailure(harness: LocalAgentHarness, exitCode: number | null, signal: NodeJS.Signals | null): string {
   return `${harness.name} login exited with ${signal ?? `code ${exitCode ?? 'unknown'}`}; try /${harness.name} login again.`
@@ -1651,7 +1657,12 @@ export class LocalAgentRegistry {
   recordDelegation(record: LocalAgentDelegationRecord): void {
     const binding = this.memberControls.binding(record.childSessionId)
     if (binding !== undefined) record = {
-      ...record,
+      // The model a resume re-requests is the bound one, verbatim: a provider
+      // recording its resolved model ('opus' → 'claude-opus-5-5', or the
+      // default a model-less start resolved to) would make the next round's
+      // binding differ and the member refuse it ("identity changed: model").
+      ...withoutModel(record),
+      ...binding.model === undefined ? {} : { model: binding.model },
       ...binding.effort === undefined ? {} : { effort: binding.effort },
       ...binding.configurationLock === undefined ? {} : { configurationLock: binding.configurationLock },
     }
