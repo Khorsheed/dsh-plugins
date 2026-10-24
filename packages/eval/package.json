@@ -1,7 +1,7 @@
 {
   "name": "@khorsheed/dsh-eval",
   "description": "The web-eval orchestrator: dataseek contract schemas, plan/condition validation, deterministic hashing, run-template generation from a suite manifest, the stage-one/two run loop (per-cell materialization, byte-exact delegation, submit/transition, judging, archive gate, bundle export), the two mechanical verdict sources (verify-layer probes writing script, de-fingerprinted double-sampled blind LLM judging writing llm-draft), and the bundle report (results.jsonl + summary.md behind the four-invariant gate). Since 2026-10-24 it also carries the mission ledger (the `mission` service, the /mission slash command and the `dsh-mission` CLI, mounted by the eval row itself) that used to ship as @khorsheed/dsh-mission.",
-  "version": "0.2.0-rc.1",
+  "version": "0.2.0",
   "publishConfig": {
     "access": "public"
   },

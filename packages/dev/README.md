@@ -2,7 +2,7 @@
 
 [English](README.en.md) | 中文
 
-开发模式一个包装齐:`dsh-dev` agent preset 连同它授予工具的整个开发家族——local-agent 核与 Kimi / Codex / Claude Code / dsh 四个委派 provider、工作树、多Agent协同、快速决策,以及开发者用的重启守卫与上下文透镜。清单里只多一张「开发模式」卡片;切到开发模式的会话自动拿到该模式的工具组合。
+开发模式一个包装齐:`dsh-dev` agent preset 连同它授予工具的整个开发家族——local-agent 核与 Kimi / Codex / Claude Code / dsh 四个委派 provider、工作树、协作间、快速决策,以及开发者用的重启守卫与上下文透镜。清单里只多一张「开发模式」卡片;切到开发模式的会话自动拿到该模式的工具组合。
 
 ## 这是什么模式
 

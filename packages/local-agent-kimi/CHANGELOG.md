@@ -1,6 +1,7 @@
 # 变更记录
-## 0.2.0-rc.4（2026-10-24）
+## 0.2.0（2026-10-24）
 
+- **版本号去掉 rc**:社区包不再发 prerelease 版本(docs/publishing.md「版本号规则」),家族各包同版 0.2.0;本节原记为 0.2.0-rc.4。
 - **cacheReadTokens 恒写**:wire 上报缓存读字段时，命中为 0 也写 0——与家族其他成员同口径（「命中 0」与「未上报」可区分）。
 - **request/header 的 model 统一为别名拼写**:wire 里 `llm.request` 带裸 id(`k3-256k`),`usage.record` 带别名（`kimi-code/k3-256k`)；原来 header 用裸 id、消息 source 用别名，新旧日志（有/无 header）对同一模型显示两个名字。现在 header 跟随 `usage.record` 的别名拼写，与 source 同名。
 - **修复子会话的回复被整轮折叠块吞掉（live 路）**:live 驱动里同一响应段的思考流与回复流原来各占一个预约 step；折叠在某一个 step 落盘后，被释放的另一个预约在日志里只剩流式帧、永不落内容——宿主的「最终答案」锚定取 turn 的最后一个 step，这种空 step 让锚定失败，折叠时连回复一起藏掉。现在同一段（generation）的两条流共享一个预约 step（宿主实况本就是 reasoning+text 同一个 step)，配对折叠与 settle 收尾都按 step 合并成一条消息。

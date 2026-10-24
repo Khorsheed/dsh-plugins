@@ -1,6 +1,7 @@
 # 变更记录
-## 0.2.0-rc.4（2026-10-24）
+## 0.2.0（2026-10-24）
 
+- **版本号去掉 rc**:社区包不再发 prerelease 版本(docs/publishing.md「版本号规则」),家族各包同版 0.2.0;本节原记为 0.2.0-rc.4。
 - **缓存命中 0 与未上报可区分**：用量带任一缓存字段时 `cacheReadTokens` 恒写（读到 0 就写 0)——读日志的一方（Context Lens）不再分不清「命中 0」与「没上报」。
 - **子会话日志写入 `request/header`**：子会话的配置事实（模型 + 推理强度）原来无处记录，Context Lens 整卡「未记录」。现在每轮写入宿主原生 `request/header`（只在变化时记录）——exec 路用 init 事件的观测 model（回退到启动参数）,live 路用会话配置；claude 的 wire 从不携带 effort,provider 自己设置的 env 参数即权威来源。
 - **修复成员推理强度整体不可用**：端点目录的 effort 解析只读模型条目的顶层 `effort` 字段，而端点把它嵌在 `capabilities.effort` 下（openproxy 中继 2026-10-22 实测形状；官方 API 同形）——目录条目自此重新带上推理档位，成员对话框的推理强度恢复可选（两个字段位置都认，顶层优先）。

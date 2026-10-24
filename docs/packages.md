@@ -27,23 +27,23 @@
 | `@khorsheed/dsh-capture` | `packages/capture` | 0.1.3 | bundle | — | web | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-context-guard` | `packages/context-guard` | 0.2.6 | bundle | — | web | 0.1.2-rc.1 | basic, eval |
 | `@khorsheed/dsh-context-lens` | `packages/context-lens` | 0.1.0 | bundle | — | web | 0.1.5-rc.1 | — |
-| `@khorsheed/dsh-datasets` | `packages/datasets` | 0.2.0-rc.1 | bundle | — | web | 0.2.0-rc.2 | — |
+| `@khorsheed/dsh-datasets` | `packages/datasets` | 0.2.0 | bundle | — | web | 0.2.0-rc.2 | — |
 | `@khorsheed/dsh-dev-suite` | `packages/dev` | 0.1.0 | bundle | — | — | 0.1.7-rc.1 | — |
 | `@khorsheed/dsh-reader` | `packages/dsh-reader` | 0.3.1 | bundle | — | web | 0.1.5-rc.1 | — |
-| `@khorsheed/dsh-eval` | `packages/eval` | 0.2.0-rc.1 | bundle | — | web | 0.2.0-rc.2 | — |
+| `@khorsheed/dsh-eval` | `packages/eval` | 0.2.0 | bundle | — | web | 0.2.0-rc.2 | — |
 | `@khorsheed/dsh-file-preview` | `packages/file-preview` | 0.4.2 | bundle | — | web | 0.1.5-rc.1 | basic, eval |
 | `@khorsheed/dsh-game` | `packages/game` | 0.1.0 | bundle | — | web | 0.2.0-rc.1 | — |
 | `@khorsheed/dsh-gamedev-suite` | `packages/gamedev` | 0.1.0 | bundle | — | — | 0.2.0-rc.1 | — |
 | `@khorsheed/dsh-inline-html-render` | `packages/inline-html-render` | 0.1.16 | bundle | — | web | 0.1.2-rc.1 | basic, eval |
-| `@khorsheed/dsh-lab` | `packages/lab` | 0.2.0-rc.1 | bundle | — | — | 0.2.0-rc.2 | — |
+| `@khorsheed/dsh-lab` | `packages/lab` | 0.2.0 | bundle | — | — | 0.2.0-rc.2 | — |
 | `@khorsheed/dsh-learning-suite` | `packages/learning` | 0.1.0 | bundle | — | — | 0.1.7-rc.1 | — |
 | `@khorsheed/dsh-library` | `packages/library` | 0.1.0 | bundle | — | web | 0.1.7-rc.1 | — |
-| `@khorsheed/dsh-local-agent` | `packages/local-agent` | 0.2.0-rc.4 | bundle | — | web | 0.1.5-rc.1 | dev, eval |
-| `@khorsheed/dsh-local-agent-claude-code` | `packages/local-agent-claude-code` | 0.2.0-rc.4 | bundle | — | web | 0.1.5-rc.1 | dev, eval |
-| `@khorsheed/dsh-local-agent-codex` | `packages/local-agent-codex` | 0.2.0-rc.4 | bundle | — | web | 0.1.5-rc.1 | dev, eval |
-| `@khorsheed/dsh-local-agent-dsh` | `packages/local-agent-dsh` | 0.2.0-rc.4 | bundle | — | web | 0.1.5-rc.1 | dev, eval |
-| `@khorsheed/dsh-local-agent-dsh-headless` | `packages/local-agent-dsh-headless` | 0.2.0-rc.4 | composition | sub-profile-patch | — | 0.1.5-rc.1 | — |
-| `@khorsheed/dsh-local-agent-kimi` | `packages/local-agent-kimi` | 0.2.0-rc.4 | bundle | — | web | 0.1.5-rc.1 | dev, eval |
+| `@khorsheed/dsh-local-agent` | `packages/local-agent` | 0.2.0 | bundle | — | web | 0.1.5-rc.1 | dev, eval |
+| `@khorsheed/dsh-local-agent-claude-code` | `packages/local-agent-claude-code` | 0.2.0 | bundle | — | web | 0.1.5-rc.1 | dev, eval |
+| `@khorsheed/dsh-local-agent-codex` | `packages/local-agent-codex` | 0.2.0 | bundle | — | web | 0.1.5-rc.1 | dev, eval |
+| `@khorsheed/dsh-local-agent-dsh` | `packages/local-agent-dsh` | 0.2.0 | bundle | — | web | 0.1.5-rc.1 | dev, eval |
+| `@khorsheed/dsh-local-agent-dsh-headless` | `packages/local-agent-dsh-headless` | 0.2.0 | composition | sub-profile-patch | — | 0.1.5-rc.1 | — |
+| `@khorsheed/dsh-local-agent-kimi` | `packages/local-agent-kimi` | 0.2.0 | bundle | — | web | 0.1.5-rc.1 | dev, eval |
 | `@khorsheed/dsh-local-files` | `packages/local-files` | 0.1.3 | bundle | — | web | 0.1.5-rc.1 | basic, eval |
 | `@khorsheed/dsh-message-timeline` | `packages/message-timeline` | 0.2.6 | bundle | — | web | 0.1.2-rc.1 | basic, eval |
 | `@khorsheed/dsh-client-message-tools` | `packages/message-tools` | 0.3.4 | bundle | — | web | 0.1.5-rc.1 | basic, eval |
