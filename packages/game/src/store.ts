@@ -21,7 +21,7 @@
  */
 import { createHash, randomBytes } from 'node:crypto'
 import { appendFile, mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, join, relative, resolve, sep } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 // Type-only: pulls the ctx.fs service merge.
 import type {} from '@deepseek-ai/dsh-fs'
@@ -37,7 +37,7 @@ import {
 } from './project.ts'
 import {
   CHAPTERS, LORE_MAX, MANIFEST_FILE, PANEL_CHANGES_MARK, STATE_DIR,
-  type AnyLook, type ChapterView, type CommitResult, type DeleteProjectResult, type CheckFailure, type CheckRecord, type GameManifest, type GameResult,
+  type AnyLook, type ChapterView, type CommitResult, type VersionSource, type WorkingChanges, type DeleteProjectResult, type CheckFailure, type CheckRecord, type GameManifest, type GameResult,
   type LogEntry, type LookProposal, type PendingChange, type PlayBundle, type ProjectCard, type ProjectRow, type ProjectView, type TurnReport,
   type SessionGameState, type VersionDiff, type VersionRecord, type VersionRow,
 } from './types.ts'
@@ -104,6 +104,28 @@ export interface TurnBaseline {
 
 /** The writer the store creates the first files with (specs swap in plain node). */
 export type FenceWriter = (path: string, content: string, session: Session) => Promise<void>
+
+/** A change this recent means someone is still writing (a CLI member gives no other sign). */
+const BUSY_QUIET_MS = 20_000
+
+/** Build-file paths under a folder with their modification times (no contents read). */
+async function statWalk(root: string, keep: (path: string) => boolean): Promise<{ path: string; mtimeMs: number }[]> {
+  const out: { path: string; mtimeMs: number }[] = []
+  const visit = async (dir: string): Promise<void> => {
+    const entries = await readdir(dir, { withFileTypes: true }).catch(() => [])
+    for (const entry of entries) {
+      if (out.length >= 600 || entry.name.startsWith('.') || entry.name === 'node_modules') continue
+      const full = join(dir, entry.name)
+      const rel = relative(root, full).split(sep).join('/')
+      if (entry.isDirectory()) { await visit(full); continue }
+      if (!entry.isFile() || !keep(rel)) continue
+      const info = await stat(full).catch(() => undefined)
+      if (info !== undefined) out.push({ path: rel, mtimeMs: info.mtimeMs })
+    }
+  }
+  await visit(root)
+  return out
+}
 
 /** One end-of-turn evaluation's outcome, as the hook acts on it. */
 export type TurnCheckOutcome =
@@ -587,10 +609,10 @@ export class GameService {
    * @param cap - the fix-round cap (a failure at the cap is recorded as given up).
    * @returns what the hook should do.
    */
-  async checkTurn(session: Session, attempt: number, cap: number): Promise<TurnCheckOutcome> {
+  async checkTurn(session: Session, attempt: number, cap: number, by: VersionSource = 'turn'): Promise<TurnCheckOutcome> {
     const row = await this.boundProject(session.id)
     if (row === undefined) return { kind: 'skip' }
-    return this.checkRow(row, session, attempt, cap)
+    return this.checkRow(row, session, attempt, cap, by)
   }
 
   /**
@@ -602,7 +624,7 @@ export class GameService {
     const row = await this.row(projectId)
     if (row === undefined) return { ok: false, error: 'not-found' }
     if (!this.writable(session)) return { ok: false, error: 'denied' }
-    const outcome = await this.checkRow(row, session, 0, Number.POSITIVE_INFINITY)
+    const outcome = await this.checkRow(row, session, 0, Number.POSITIVE_INFINITY, 'user')
     this.notify(projectId)
     if (outcome.kind === 'fail') return { ok: true, kind: 'failed', failures: outcome.record.failures.slice(0, 8).map(f => ({ where: f.where, message: f.message.slice(0, 300) })) }
     if (outcome.kind === 'pass') {
@@ -620,7 +642,7 @@ export class GameService {
     return { ok: true, kind: 'unchanged' }
   }
 
-  private async checkRow(row: ProjectRow, session: Session | undefined, attempt: number, cap: number): Promise<TurnCheckOutcome> {
+  private async checkRow(row: ProjectRow, session: Session | undefined, attempt: number, cap: number, by: VersionSource): Promise<TurnCheckOutcome> {
     const root = row.root
     if (!await stat(join(root, 'index.html')).then(() => true, () => false)) return { kind: 'skip' }
     const { build, tests, fingerprint } = await this.snapshot(root)
@@ -671,7 +693,7 @@ export class GameService {
     // Every version carries whatever panel edits sit in the working files, whoever cut it.
     const edits = user.edits.map(e => e.text)
     const versionRecord: VersionRecord = {
-      version, at: record.at, fingerprint,
+      version, at: record.at, fingerprint, by,
       note: restyle !== undefined ? `换成「${artStyleLabel(restyle)}」风格`
         : edits.length > 0 ? `面板修改：${edits.join('、')}`
         : browser.passed > 0 ? `通过检查（${browser.passed} 个用例）` : '通过检查',
@@ -836,6 +858,65 @@ export class GameService {
     user.pending = user.pending.filter(p => p.key !== change.key)
     if (change.text !== '') user.pending.push(change)
     await this.saveUserLayer(root, user)
+  }
+
+  /** Sessions whose agent turn is running now (the turn hooks keep it). */
+  private readonly activeTurns = new Set<string>()
+
+  /** The turn hooks report a bound session's turn starting and ending. */
+  setTurnActive(sessionId: string, active: boolean): void {
+    if (active) this.activeTurns.add(sessionId)
+    else this.activeTurns.delete(sessionId)
+  }
+
+  /**
+   * What the working files hold that the play area does not: build files
+   * added, changed or removed against the waiting candidate (else the live
+   * version), whoever wrote them — the panel, the agent, a CLI member, the
+   * user's own editor. Modification times pick the suspects; only those are
+   * compared byte for byte, so an unchanged project costs a stat walk.
+   */
+  async changes(projectId: string): Promise<GameResult<WorkingChanges & { readonly ok: true }>> {
+    const row = await this.row(projectId)
+    if (row === undefined) return { ok: false, error: 'not-found' }
+    const root = row.root
+    const state = join(root, STATE_DIR)
+    const base = (await readJson<VersionRecord>(join(state, 'candidate.json'))) ?? (await readJson<VersionRecord>(join(state, 'current.json')))
+    const hasEntry = await stat(join(root, 'index.html')).then(() => true, () => false)
+    const working = await statWalk(root, isBuildFile)
+    const files: { path: string; kind: 'added' | 'changed' | 'removed' }[] = []
+    let lastMs = 0
+    if (base === undefined) {
+      for (const f of working) { files.push({ path: f.path, kind: 'added' }); lastMs = Math.max(lastMs, f.mtimeMs) }
+    } else {
+      const snapshot = join(state, 'versions', String(base.version))
+      // A file edited while that version's check ran is older than its record: look a minute back.
+      const since = Date.parse(base.at) - 60_000
+      for (const f of working) {
+        if (f.mtimeMs < since) continue
+        const before = await readFile(join(snapshot, f.path)).catch(() => undefined)
+        if (before === undefined) files.push({ path: f.path, kind: 'added' })
+        else if (!before.equals(await readFile(join(root, f.path)).catch(() => Buffer.alloc(0)))) files.push({ path: f.path, kind: 'changed' })
+        else continue
+        lastMs = Math.max(lastMs, f.mtimeMs)
+      }
+      const present = new Set(working.map(f => f.path))
+      for (const f of await statWalk(snapshot, () => true)) if (!present.has(f.path)) files.push({ path: f.path, kind: 'removed' })
+    }
+    const user = await this.userLayer(root)
+    const registry = await this.readRegistry()
+    const turn = Object.entries(registry.bindings).some(([sid, pid]) => pid === projectId && this.activeTurns.has(sid))
+    const lastAt = lastMs > 0 ? new Date(lastMs).toISOString() : null
+    const busy = turn ? 'turn' : lastMs > 0 && Date.now() - lastMs < BUSY_QUIET_MS ? 'recent' : null
+    // The last check ran after the newest change and failed: that failure is about these very files.
+    const last = await readJson<CheckRecord>(join(state, 'checks.json'))
+    const failed = files.length > 0 && last !== undefined && !last.ok && Date.parse(last.at) >= lastMs
+      ? last.failures.slice(0, 8).map(f => ({ where: f.where, message: f.message.slice(0, 300) }))
+      : null
+    return {
+      ok: true, against: base?.version ?? null, hasEntry, count: files.length, files: files.slice(0, 30), lastAt, busy,
+      edits: user.edits, failed,
+    }
   }
 
   /** Add (or replace by key) one uncommitted panel edit. */
@@ -1135,6 +1216,7 @@ export class GameService {
     const kept = new Set((await readdir(join(root, STATE_DIR, 'versions')).catch(() => [] as string[])).map(Number))
     return (await this.readVersions(root)).filter(v => kept.has(v.version)).reverse().map(v => ({
       version: v.version, at: v.at, fingerprint: v.fingerprint,
+      ...(v.by === undefined ? {} : { by: v.by }),
       ...(v.note === undefined ? {} : { note: v.note }),
       ...(v.passed === undefined ? {} : { passed: v.passed }),
       status: v.version === current?.version ? 'current' : v.version === candidate?.version ? 'candidate' : v.rejected === true ? 'rejected' : 'past',

@@ -348,8 +348,31 @@ export interface VersionRecord {
   readonly version: number
   readonly at: string
   readonly fingerprint: string
+  /** Who cut it: the user (检查并发版 / 提交), the agent (\`game_publish\`), or the end-of-turn check. Absent on older versions. */
+  readonly by?: VersionSource
   /** One line about what changed (the turn's last words, or the plugin's own note). */
   readonly note?: string
+}
+
+/** Who cut a version. */
+export type VersionSource = 'user' | 'agent' | 'turn'
+
+/** What the working files hold that the play area does not (the panel's 有新改动还没进游戏 bar). */
+export interface WorkingChanges {
+  /** The version compared against (the waiting candidate, else the live one); null before any. */
+  readonly against: number | null
+  readonly hasEntry: boolean
+  /** Build files added, changed or removed (first 30 of \`count\`). */
+  readonly count: number
+  readonly files: readonly { readonly path: string; readonly kind: 'added' | 'changed' | 'removed' }[]
+  /** The newest change's time. */
+  readonly lastAt: string | null
+  /** Someone is still writing: a bound session's turn is running, or a file changed in the last 20 s. */
+  readonly busy: 'turn' | 'recent' | null
+  /** The panel edits among them. */
+  readonly edits: readonly PendingChange[]
+  /** The last check ran after the newest change and failed: its findings. */
+  readonly failed: readonly { readonly where: string; readonly message: string }[] | null
 }
 
 /** A version's place in the history. */

@@ -98,6 +98,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     versionBundle: (projectId, version) => remote.versionBundle({ projectId, version }),
     confirm: (sid, projectId) => remote.confirm(sid, { projectId }),
     commit: (sid, projectId) => remote.commit(sid, { projectId }),
+    changes: projectId => remote.changes({ projectId }),
     reject: (sid, projectId, reason) => remote.reject(sid, { projectId, reason }),
     rollback: (sid, projectId, version) => remote.rollback(sid, { projectId, version }),
     diff: (projectId, from, to) => remote.diff({ projectId, from, to }),

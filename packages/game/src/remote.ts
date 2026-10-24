@@ -10,7 +10,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { panelSession } from './panel-session.ts'
 import type { GameService } from './store.ts'
-import type { CommitResult, DeleteProjectResult, GameResult, PlayBundle, ProjectCard, SessionGameState, TurnReport, VersionDiff } from './types.ts'
+import type { CommitResult, DeleteProjectResult, WorkingChanges, GameResult, PlayBundle, ProjectCard, SessionGameState, TurnReport, VersionDiff } from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -80,7 +80,13 @@ export class GameRemoteService extends TypertRemoteService<GameRemoteConfig> {
     return this.store.confirm(request.projectId, await panelSession(this.ctx, sessionId))
   }
 
-  /** 提交为新版本: check the working files and cut a version carrying the panel edits. */
+  /** What the working files hold that the play area does not (the commit bar polls it). */
+  @Remote('changes')
+  changes(request: { projectId: string }): Promise<GameResult<WorkingChanges & { readonly ok: true }>> {
+    return this.store.changes(request.projectId)
+  }
+
+  /** 检查并发版: check the working files and cut a version (by the user) carrying every change. */
   @Remote('commit')
   async commit(sessionId: SessionId, request: { projectId: string }): Promise<GameResult<CommitResult>> {
     return this.store.commit(request.projectId, await panelSession(this.ctx, sessionId))

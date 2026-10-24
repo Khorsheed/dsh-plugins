@@ -14,6 +14,7 @@ function harness(outcome: (attempt: number) => TurnCheckOutcome) {
   const store = {
     checkTurn: async (_s: unknown, attempt: number) => { attempts.push(attempt); return outcome(attempt) },
     clearSent: async (_s: string, text: string) => { cleared.push(text); return 1 },
+    setTurnActive: () => {},
   } as unknown as GameService
   registerTurnHooks(ctx, store)
   const steers: string[] = []

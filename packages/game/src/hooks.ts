@@ -110,6 +110,8 @@ export function registerTurnHooks(ctx: Context, store: GameService): void {
   ctx.on('session/event', (session, raw) => {
     const event = raw as unknown as { type?: string; turn?: number; data?: { turn?: number } }
     const turn = event?.data?.turn ?? event?.turn
+    if (event?.type === 'turn/start') store.setTurnActive(session.id, true)
+    if (event?.type === 'turn/end') store.setTurnActive(session.id, false)
     if (event?.type === 'turn/start' && turn !== undefined) {
       baselines.set(`${session.id}:${turn}`, store.turnBaseline(session.id).catch(() => undefined))
       return
