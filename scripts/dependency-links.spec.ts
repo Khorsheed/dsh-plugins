@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { chmodSync, mkdtempSync, mkdirSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdtempSync, mkdirSync, readdirSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { checkDeploymentLinks, scanDependencyLinks } from './dependency-links.mts'
@@ -48,6 +48,16 @@ describe('deployment link diagnosis', () => {
     symlinkSync('some-host-14103', join(home, 'state', 'dsh-capture', 'chrome-profile', 'p1', 'SingletonLock'))
     symlinkSync('155.0.8059.84:1', join(home, 'state', 'dsh-capture', 'chrome-profile', 'p1', 'RunningChromeVersion'))
     expect(() => checkDeploymentLinks(home, harness)).not.toThrow()
+  })
+  it('skips an entry that vanished between its listing and its lstat — a live instance re-binding member-bridge.sock is not a dangling link', () => {
+    const home = fixture()
+    mkdirSync(join(home, 'local-agent'))
+    symlinkSync('missing', join(home, 'local-agent', 'lost'))
+    // The listing still names the socket the running bridge just unlinked to re-bind.
+    const io = { readdir: (path: string) => (path.endsWith('local-agent') ? ['lost', 'member-bridge.sock'] : readdirSync(path)) }
+    const result = scanDependencyLinks([{ path: home }], io)
+    expect(result.map(x => x.path)).toEqual([join(realpathSync(home), 'local-agent', 'lost')])
+    expect(result[0]!.target).toBe('missing')
   })
   it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)('reports unreadable directories instead of silently skipping them', () => {
     const root = fixture(), unreadable = join(root, 'unreadable'); mkdirSync(unreadable); chmodSync(unreadable, 0)
