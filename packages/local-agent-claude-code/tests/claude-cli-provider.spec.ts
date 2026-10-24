@@ -185,6 +185,32 @@ describe('claude stream fold content completeness', () => {
     expect(parsed.toolCalls).toEqual({ count: 1, byName: { ToolSearch: 1 } })
   })
 
+  it('stamps each assistant event\'s inline usage on its last folded line (a tool-only call\'s on the tool line)', () => {
+    const parsed = parseClaudeStreamJson([
+      // Call 1: thinking + a tool use — the usage lands once, on the tool line.
+      JSON.stringify({ type: 'assistant', message: { id: 'm1', usage: { input_tokens: 2, output_tokens: 163, cache_creation_input_tokens: 17650, cache_read_input_tokens: 0 }, content: [
+        { type: 'thinking', thinking: '先看看有什么工具' },
+        { type: 'tool_use', id: 'tu1', name: 'Bash', input: { command: 'ls' } },
+      ] } }),
+      JSON.stringify({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'tu1', content: 'a.txt' }] } }),
+      // Call 2: the reply — its own usage on the text line.
+      JSON.stringify({ type: 'assistant', message: { id: 'm2', usage: { input_tokens: 4, output_tokens: 825, cache_creation_input_tokens: 1646, cache_read_input_tokens: 17650 }, content: [
+        { type: 'text', text: '看到了 a.txt' },
+      ] } }),
+      JSON.stringify({ type: 'result', is_error: false, usage: { input_tokens: 6, output_tokens: 988, cache_creation_input_tokens: 19296, cache_read_input_tokens: 17650 } }),
+    ].join('\n'))
+    expect(parsed.lines).toEqual([
+      { kind: 'think', text: '先看看有什么工具', streamId: 'm1:0' },
+      { kind: 'tool', id: 'tu1', name: 'Bash', args: 'ls', result: 'a.txt',
+        usage: { inputTokens: 2, outputTokens: 163, cacheReadTokens: 0, cacheWriteTokens: 17650 } },
+      { kind: 'text', text: '看到了 a.txt', streamId: 'm2:0',
+        usage: { inputTokens: 4, outputTokens: 825, cacheReadTokens: 17650, cacheWriteTokens: 1646 } },
+    ])
+    // The result event's round total still rides the parse for the run
+    // accounting — it just no longer displaces the log's per-call reads.
+    expect(parsed.usage).toEqual({ inputTokens: 6, outputTokens: 988, cacheReadTokens: 17650, cacheWriteTokens: 19296 })
+  })
+
   it('folds Write, MultiEdit, and NotebookEdit with their whole bodies', () => {
     const parsed = parseClaudeStreamJson([
       JSON.stringify({ type: 'assistant', message: { content: [
@@ -439,6 +465,79 @@ describe('claude-cli-provider run settlement', () => {
     expect(child.snapshotEvents().filter(event => event.type === 'user/message')).toHaveLength(1)
     expect(child.snapshotEvents().filter(event => event.type === 'tool/call')).toHaveLength(1)
     expect((assistant[1]!.data as { usage?: unknown }).usage).toEqual({ inputTokens: 2, outputTokens: 5 })
+    expectStepBoundaries(child)
+    expectValidReleasedLog(child)
+    await done
+  })
+
+  it('per-call inline usage rides each call\'s own line — the round total never lands in the log', async () => {
+    const child = Session.create(SessionId('child-live-claude-percall'))
+    const ctx = new Context()
+    const persistence = fakeSessionPersistence()
+    ctx.provide('sessionPersistence', persistence)
+
+    const stdout = new Readable({ read() {} })
+    const stderr = new Readable({ read() {} })
+    let finish!: (outcome: { exitCode: number; signal: null }) => void
+    const done = new Promise<{ exitCode: number; signal: null }>((resolve) => { finish = resolve })
+    const handle: SubprocessHandle = {
+      pid: 4247,
+      stdin: undefined,
+      stdout,
+      stderr,
+      collected: {
+        stdout: { readFrom: () => ({ text: '', nextOffset: 0, lossy: false }) },
+        stderr: { readFrom: () => ({ text: '', nextOffset: 0, lossy: false }) },
+      },
+      done,
+      terminate: () => undefined,
+      waitForExit: async () => true,
+    }
+
+    const request = {
+      prompt: [{ type: 'text', text: 'do the task' }],
+      parent: { session: { header: { cwd: '/tmp' } } },
+      signal: new AbortController().signal,
+    } as unknown as SubagentStartRequest
+
+    const run = await startClaudeCliRun(request, {
+      cwd: '/tmp',
+      env: {},
+      permissionMode: 'normal',
+      disposeGraceMs: 3_000,
+      spawn: () => handle,
+      childSession: child,
+      ctx,
+    })
+
+    const emit = (...events: unknown[]): void => {
+      stdout.push(events.map(event => JSON.stringify(event)).join('\n') + '\n')
+    }
+    emit(
+      { type: 'system', subtype: 'init', session_id: 's1' },
+      // Call 1: a tool-only assistant event — its usage rides the tool line's
+      // advertising message.
+      { type: 'assistant', message: { id: 'm1', usage: { input_tokens: 2, output_tokens: 3, cache_read_input_tokens: 0, cache_creation_input_tokens: 100 }, content: [{ type: 'tool_use', id: 'tu1', name: 'Bash', input: { command: 'echo hi' } }] } },
+    )
+    emit({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'tu1', content: 'hi' }] } })
+    // Call 2: the reply, with its own usage.
+    emit({ type: 'assistant', message: { id: 'm2', usage: { input_tokens: 4, output_tokens: 5, cache_read_input_tokens: 100, cache_creation_input_tokens: 50 }, content: [{ type: 'text', text: 'Task complete.' }] } })
+    emit({ type: 'result', is_error: false, session_id: 's1', usage: { input_tokens: 6, output_tokens: 8, cache_read_input_tokens: 100, cache_creation_input_tokens: 150 } })
+    // Let the mirror pump (stdout delivery is async) before the exit settles.
+    await vi.waitFor(() => {
+      expect(child.snapshotEvents().filter(event => event.type === 'assistant/message')).toHaveLength(2)
+    })
+    finish({ exitCode: 0, signal: null })
+    expect((await run.result).stopReason).toBe('completed')
+    await vi.waitFor(() => {
+      expect(child.snapshotEvents().filter(event => event.type === 'turn/end')).toHaveLength(1)
+    })
+    const assistant = child.snapshotEvents().filter(event => event.type === 'assistant/message')
+    expect(assistant).toHaveLength(2)
+    expect((assistant[0]!.data as { usage?: unknown }).usage).toEqual({ inputTokens: 2, outputTokens: 3, cacheReadTokens: 0, cacheWriteTokens: 100 })
+    expect((assistant[1]!.data as { usage?: unknown }).usage).toEqual({ inputTokens: 4, outputTokens: 5, cacheReadTokens: 100, cacheWriteTokens: 50 })
+    // The round total stays on the run accounting; no log message carries it.
+    expect(assistant.some(event => JSON.stringify((event.data as { usage?: unknown }).usage) === JSON.stringify({ inputTokens: 6, outputTokens: 8, cacheReadTokens: 100, cacheWriteTokens: 150 }))).toBe(false)
     expectStepBoundaries(child)
     expectValidReleasedLog(child)
     await done

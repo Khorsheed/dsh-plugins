@@ -722,15 +722,18 @@ export function textTask(prompt: readonly ContentBlock[]): string {
 
 /** One ordered transcript line from a `claude --output-format stream-json` stream. */
 export type ClaudeTranscriptLine =
-  | { kind: 'think'; text: string; streamId?: string }
-  | { kind: 'text'; text: string; streamId?: string }
+  | { kind: 'think'; text: string; streamId?: string; usage?: TokenUsage }
+  | { kind: 'text'; text: string; streamId?: string; usage?: TokenUsage }
   /**
    * Tool activity: one `tool_use` with its (possibly still pending)
    * `tool_result`. `id` is the stream's tool_use id when present, else a
    * synthesized position-based id — stable within a run either way, so the
-   * child session's `tool/call`/`tool/result` events pair by it.
+   * child session's `tool/call`/`tool/result` events pair by it. `usage` is
+   * the API call's own accounting (claude reports it inline on every
+   * assistant event): it rides the call's LAST folded line — a tool-only
+   * call's lands on the tool line's advertising message.
    */
-  | { kind: 'tool'; id: string; name: string; args?: string; result?: string }
+  | { kind: 'tool'; id: string; name: string; args?: string; result?: string; usage?: TokenUsage }
 
 /** Mutable fold state shared by the batch parse and the incremental parser. */
 interface ClaudeStreamFoldState {
@@ -865,7 +868,7 @@ function foldClaudeStreamLine(state: ClaudeStreamFoldState, raw: string): void {
   let event: {
     type?: string
     model?: unknown
-    message?: { content?: unknown[]; type?: string; id?: unknown }
+    message?: { content?: unknown[]; type?: string; id?: unknown; usage?: unknown }
     is_error?: unknown
     error?: unknown
     usage?: unknown
@@ -901,6 +904,7 @@ function foldClaudeStreamLine(state: ClaudeStreamFoldState, raw: string): void {
   }
   if (event.type !== 'assistant' && event.type !== 'user') return
   const blocks = event.message?.content ?? []
+  const linesBefore = state.lines.length
   for (const [blockIndex, block] of blocks.entries()) {
     if (typeof block !== 'object' || block === null) continue
     const record = block as Record<string, unknown>
@@ -972,6 +976,16 @@ function foldClaudeStreamLine(state: ClaudeStreamFoldState, raw: string): void {
         attachToolResult(state, record['tool_use_id'], resultText, false)
       }
     }
+  }
+  // Claude reports the call's own usage inline on every assistant event
+  // (cache buckets included). Stamp it on the event's LAST folded line, so a
+  // multi-block call accounts once and a tool-only call lands it on the tool
+  // line. The terminal `result` event's round total stays on `state.usage`
+  // for the run accounting; the log's per-call reads come from these.
+  if (event.type === 'assistant' && event.message?.usage !== undefined && state.lines.length > linesBefore) {
+    const lastIndex = state.lines.length - 1
+    const last = state.lines[lastIndex]!
+    state.lines[lastIndex] = { ...last, usage: usageFromClaude(event.message.usage) }
   }
 }
 
@@ -1588,16 +1602,21 @@ export function appendClaudeTranscriptLine(
   line: ClaudeTranscriptLine,
   usage: TokenUsage | undefined,
 ): void {
+  // The line's own per-call usage (stamped by the fold from the assistant
+  // event's inline report) wins; the caller's round total is the fallback for
+  // a stream that named none.
+  const lineUsage = line.usage ?? usage
   childSession.append('step/start', { turn, step })
   if (line.kind === 'tool') {
-    // Tool lines never carry the round's usage — the callers attach usage to
-    // the round's last non-tool line.
+    // A tool-only call's usage rides the advertising assistant/message (the
+    // tool/call and tool/result events themselves have no usage slot).
     const args = line.args ?? ''
     childSession.append('assistant/message', {
       turn,
       step,
       message: assistantEvent([{ type: 'tool-call', id: line.id as ToolCallBlockId, name: line.name, arguments: args }]),
       stream: [],
+      ...lineUsage === undefined ? {} : { usage: lineUsage },
     }, { surfaceOp: 'append' })
     const call = childSession.append('tool/call', {
       turn,
@@ -1626,7 +1645,7 @@ export function appendClaudeTranscriptLine(
     step,
     message: assistantEvent(blocks),
     stream: [],
-    ...usage === undefined ? {} : { usage },
+    ...lineUsage === undefined ? {} : { usage: lineUsage },
   }, { surfaceOp: 'append' })
   childSession.append('step/end', { turn, step })
 }
@@ -1761,13 +1780,14 @@ function createClaudeLiveMirror(spec: ClaudeCliRunSpec, task: string, turn: numb
               })
             }
           }
-          // The usage rides the last NON-tool line (tool events carry no
-          // usage slot); a stream ending on a tool line would otherwise drop
-          // the round's accounting. When that carrier was mirrored in an
-          // earlier flush (before the usage was knowable), the accounting is
-          // lost — host 0.1.5 has no usage-backfill event.
+          // Fallback carrier only: when the fold stamped per-call usage onto
+          // any line, the round total never joins the log (a sum would double
+          // count); otherwise it rides the last NON-tool line as before. A
+          // carrier mirrored in an earlier flush (before the usage was
+          // knowable) loses the accounting — host 0.1.5 has no usage-backfill
+          // event.
           let carrier = -1
-          if (parser.completed && parser.usage !== undefined) {
+          if (parser.completed && parser.usage !== undefined && !parser.lines.some(line => line.usage !== undefined)) {
             for (let scan = 0; scan < parser.lines.length; scan += 1) {
               if (parser.lines[scan]?.kind !== 'tool') carrier = scan
             }
@@ -1824,12 +1844,16 @@ async function appendClaudeResponse(
     }), { surfaceOp: 'append' })
     localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text: task })
   }
-  // The round's usage rides the last NON-tool line: tool activity folds to
-  // `tool/call`/`tool/result` events (which carry no usage slot), and a kill
-  // mid-tool ends the transcript with a tool line.
+  // Fallback carrier only: the round total rides the last NON-tool line when
+  // the stream named no per-call usage (tool/call and tool/result events have
+  // no usage slot, and a kill mid-tool ends the transcript with a tool line);
+  // lines the fold stamped with their call's inline usage keep their own.
   let usageIndex = -1
-  for (let index = 0; index < parsed.lines.length; index += 1) {
-    if (parsed.lines[index]?.kind !== 'tool') usageIndex = index
+  const anyPerCall = parsed.lines.some(line => line.usage !== undefined)
+  if (!anyPerCall) {
+    for (let index = 0; index < parsed.lines.length; index += 1) {
+      if (parsed.lines[index]?.kind !== 'tool') usageIndex = index
+    }
   }
   let step = fromLines + 1
   for (const line of parsed.lines.slice(fromLines)) {
