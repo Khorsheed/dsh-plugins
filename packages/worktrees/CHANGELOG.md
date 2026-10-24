@@ -1,5 +1,9 @@
 # 变更记录
 
+## 0.3.3（2026-10-24）
+
+- **子代理会话里的面板**:面板的 Remote 方法改为按 `sessionId` 读取会话(新增 `panel-session.ts`),协作间里 CLI 成员的会话也能打开工作树面板;客户端调用形状不变。
+
 ## 0.3.2（2026-10-22）
 
 - **Remote 新增 agent-free 查询动词**：`summaryAt` / `changesAt` / `repoFilesAt` / `listWorktreesAt` / `commitLogAt` / `commitFilesAt` / `fileDiffAt` / `readFileAt` / `readRepoImageAt`——按路径（`{ at }`，目标仓库/worktree 内任意绝对路径，走既有安全校验）直接读仓库状态，不经 agent 查找（宿主的统一 agent 查找可能唤醒离线会话，代表成员发起的查询绝不能触发它）。与本地文件动词同理：授权/圈禁是可信调用方的职责，本面不做准入。

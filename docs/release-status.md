@@ -18,7 +18,7 @@
 | `@khorsheed/dsh-dev-suite` | 未发布 | 0.1.0 | 0.1.7-rc.1 | 0.2.1-rc.1 |  |
 | `@khorsheed/dsh-reader` | 0.3.0 | 0.3.1 | 0.1.5-rc.1 | 0.2.1-rc.1 |  |
 | `@khorsheed/dsh-eval` | 未发布 | 0.2.0 | 0.2.0-rc.2 | 0.2.1-rc.1 |  |
-| `@khorsheed/dsh-file-preview` | 0.4.2 | 0.4.2 | 0.1.5-rc.1 | 0.2.1-rc.1 | ✓ |
+| `@khorsheed/dsh-file-preview` | 0.4.2 | 0.4.3 | 0.1.5-rc.1 | 0.2.1-rc.1 | ✓ |
 | `@khorsheed/dsh-game` | 未发布 | 0.1.0 | 0.2.0-rc.1 | 0.2.1-rc.1 |  |
 | `@khorsheed/dsh-gamedev-suite` | 未发布 | 0.1.0 | 0.2.0-rc.1 | 0.2.1-rc.1 |  |
 | `@khorsheed/dsh-inline-html-render` | 0.1.16 | 0.1.16 | 0.1.2-rc.1 | 0.2.1-rc.1 | ✓ |
@@ -47,7 +47,7 @@
 | `@khorsheed/dsh-video-suite` | 未发布 | 0.1.0 | 0.1.7-rc.1 | 0.2.1-rc.1 |  |
 | `@khorsheed/dsh-video-studio` | 未发布 | 0.1.0 | 0.1.5-rc.1 | 0.2.1-rc.1 |  |
 | `@khorsheed/dsh-whalesong` | 0.2.5 | 0.2.5 | 0.1.2-rc.1 | 0.2.1-rc.1 | ✓ |
-| `@khorsheed/dsh-worktrees` | 0.3.2 | 0.3.2 | 0.1.5-rc.1 | 0.2.1-rc.1 |  |
+| `@khorsheed/dsh-worktrees` | 0.3.2 | 0.3.3 | 0.1.5-rc.1 | 0.2.1-rc.1 |  |
 | `@khorsheed/dsh-writing-suite` | 未发布 | 0.1.0 | 0.2.0-rc.2 | 0.2.1-rc.1 |  |
 
 - **npm 已发布**：registry 上的最新版本；`未发布` = 第一波/第二波均未含此包
