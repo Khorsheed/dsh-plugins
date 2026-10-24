@@ -49,6 +49,8 @@ declares `dsh.bundle.kind: 'family'`, inside step 3 after the manifest refresh:
 The bundle's own first install is unchanged: official `plugin add <tgz>
 --profile web` still registers it.
 
+**A member deployed alone (2026-10-24).** Naming only a member used to register it as a standalone plugin when its bundle was already installed: its own patch then reconciled at the profile root, and companion rows in it (game's `./agent`, canvas's `./agent`, canvas-novel's `./agent`, reader's `./tool`) granted every session — mode-only tools and tabs appeared in every mode. That happened on 3080 after a member-only deploy of game / canvas / canvas-novel / library / file-preview. Now a deployed package that is a member of a family-like bundle already in the profile's bundles roster retreats under that bundle exactly as if the bundle had been co-named: no standalone registration, its overrides pin refreshed to the fresh tarball. The owning bundle is found from the repo's `packages/*` manifests.
+
 ## Alternatives considered
 
 **Leaving members as direct dependencies alongside the bundle.** Rejected:

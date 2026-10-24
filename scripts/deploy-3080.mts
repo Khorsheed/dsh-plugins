@@ -277,6 +277,33 @@ try {
 
   const manifestPath = join(PROFILE, 'package.json')
   const initial = JSON.parse(readFileSync(manifestPath, 'utf8'))
+
+  // A member deployed ALONE whose family-like bundle is already registered in
+  // the profile is a member update, not a new plugin: it retreats under that
+  // bundle exactly as if the bundle had been co-named. Registering it on its
+  // own made its self-mount patch reconcile at the profile root — companion
+  // rows such as game's `./agent` then granted every session, so mode-only
+  // tools and tabs showed in every mode (2026-10-24, the panel-fix deploy).
+  const installedBundleManifests = new Map() // registered community bundle name → its source manifest
+  const packagesRoot = join(process.cwd(), 'packages')
+  if (existsSync(packagesRoot)) {
+    for (const entry of readdirSync(packagesRoot)) {
+      const candidate = join(packagesRoot, entry, 'package.json')
+      if (!existsSync(candidate)) continue
+      const pkg = JSON.parse(readFileSync(candidate, 'utf8'))
+      const kind = pkg.dsh?.bundle?.kind
+      if ((kind === 'family' || kind === 'mode') && initial.dsh?.profile?.bundles?.includes(pkg.name)) installedBundleManifests.set(pkg.name, pkg)
+    }
+  }
+  for (const m of metas) {
+    if (retreat.has(m.name) || m.pkg.dsh?.bundle?.kind === 'family' || m.pkg.dsh?.bundle?.kind === 'mode') continue
+    for (const [bundleName, pkg] of installedBundleManifests) {
+      if (!(pkg.dsh.bundle.members ?? []).includes(m.name)) continue
+      retreat.set(m.name, { name: bundleName })
+      process.stdout.write(`deploy-3080: ${m.name} is a member of the installed ${bundleName} — deploying it as a member update (no standalone registration)\n`)
+      break
+    }
+  }
   const oldNames = new Set(replacements.map(r => r.oldName))
   if (oldNames.size !== replacements.length || new Set(replacements.map(r => r.newName)).size !== replacements.length) usage('duplicate replacement identity')
   const patchPath = join(PROFILE, 'cordis.patch.yml')
