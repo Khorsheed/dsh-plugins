@@ -3,8 +3,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
-import { MissionService } from '../src/service.ts'
-import { handleMissionCommand } from '../src/slash.ts'
+import { MissionService } from '../../src/mission/service.ts'
+import { handleMissionCommand } from '../../src/mission/slash.ts'
 
 const SESSION = 'sess-1'
 
@@ -254,7 +254,7 @@ describe('/mission retry', () => {
 })
 
 describe('/mission grant backstop (A3)', () => {
-  const ROW = '@khorsheed/dsh-mission/tool'
+  const ROW = '@khorsheed/dsh-eval/mission/tool'
 
   /** Invoke the handler with an agent-scope ctx whose probe answers as given. */
   function runAs(presets: unknown): Promise<CommandResult> {

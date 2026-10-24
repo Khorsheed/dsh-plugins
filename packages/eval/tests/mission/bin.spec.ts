@@ -1,5 +1,5 @@
 /**
- * Bin smoke test: exercises the BUILT artifact (`node lib/cli.js`), the exact
+ * Bin smoke test: exercises the BUILT artifact (`node lib/mission-cli.js`), the exact
  * shape the `dsh-mission` bin runs. Unit tests import `runCli` from the source
  * plane and can never catch a dead bin entry (tsdown chunks shared modules —
  * an entry guard stranded in a chunk never fires, and the bin silently exits
@@ -15,8 +15,8 @@ import { promisify } from 'node:util'
 import { describe, expect, it } from 'vitest'
 
 const execFileAsync = promisify(execFile)
-const PKG = join(dirname(fileURLToPath(import.meta.url)), '..')
-const LIB_CLI = join(PKG, 'lib', 'cli.js')
+const PKG = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
+const LIB_CLI = join(PKG, 'lib', 'mission-cli.js')
 const hasLib = existsSync(LIB_CLI)
 
 async function bin(args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
@@ -123,7 +123,7 @@ describe.skipIf(!hasLib)('bin smoke (built artifact)', () => {
 
 if (!hasLib) {
   // Visible in the test output so the skip is never silent.
-  it('bin smoke skipped: lib/cli.js not built (run `pnpm --filter @khorsheed/dsh-mission build` first)', () => {
+  it('bin smoke skipped: lib/mission-cli.js not built (run `pnpm --filter @khorsheed/dsh-eval build` first)', () => {
     expect(hasLib).toBe(false)
   })
 }

@@ -3,9 +3,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { CommandInvocation } from '@deepseek-ai/dsh-commands'
-import { runCli, type CliIo } from '../src/cli-core.ts'
-import { MissionService } from '../src/service.ts'
-import { handleMissionCommand, type SlashExtras } from '../src/slash.ts'
+import { runCli, type CliIo } from '../../src/mission/cli-core.ts'
+import { MissionService } from '../../src/mission/service.ts'
+import { handleMissionCommand, type SlashExtras } from '../../src/mission/slash.ts'
 
 let dir: string
 let service: MissionService

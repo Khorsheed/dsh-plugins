@@ -56,7 +56,7 @@ export const RETIRED_PACKAGES: readonly RetiredPackage[] = [
   },
   {
     name: '@khorsheed/dsh-mission-tool',
-    replacement: "@khorsheed/dsh-mission's ./tool composition entry (>= 0.2.0-rc.1; preset row id `mission-tool` is unchanged)",
+    replacement: "@khorsheed/dsh-eval's ./mission/tool composition entry (mission folded into eval 2026-10-24; preset row id `mission-tool` is unchanged)",
     note: 'folded into the core package at the evaluation-family fold (T88, 2026-10-01); npm deprecation rides the next publish wave',
   },
   {
@@ -98,5 +98,10 @@ export const RETIRED_PACKAGES: readonly RetiredPackage[] = [
     name: '@khorsheed/dsh-bundle-conversation-toolbox',
     replacement: '@khorsheed/dsh-basic, whose fourteen members include all seven toolbox members (row ids unchanged)',
     note: 'a strict subset of the basic family bundle, retired 2026-10-24; published to 0.1.2 — npm deprecation rides the next publish wave',
+  },
+  {
+    name: '@khorsheed/dsh-mission',
+    replacement: "@khorsheed/dsh-eval, whose eval row mounts the mission ledger (the `mission` service and the `dsh-mission` bin unchanged; the separate `mission` row is gone)",
+    note: 'folded into the eval package before its first publish (2026-10-24) — it no longer has a panel of its own and only eval and lab consume it; never published to npm',
   },
 ]

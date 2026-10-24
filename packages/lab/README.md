@@ -7,7 +7,7 @@ dsh 生态的受控实验单元：一个**实验单元** = 一个隔离、条件
 三条红线定义插件的品格：
 
 1. **只记录，不判断。** lab 运行并登记事实（资源标识、环境指纹、产物）；"通过与否""几分"是消费方的语义。
-2. **`release` 是 gate 的执行点。** 单元绑定 mission 且 `@khorsheed/dsh-mission` 插件在场时，`isReleasable` 必须通过——查询失败即拒绝（fail closed），任何选项都不能绕过校验。无 gate 时（未绑定 mission，或插件缺席），release 需要显式 `force` 并告警。
+2. **`release` 是 gate 的执行点。** 单元绑定 mission 且 任务账本（随 `@khorsheed/dsh-eval` 安装）在场时，`isReleasable` 必须通过——查询失败即拒绝（fail closed），任何选项都不能绕过校验。无 gate 时（未绑定 mission，或插件缺席），release 需要显式 `force` 并告警。
 3. **不发起任何任务。** lab 提供动词；何时调用由人 / agent / 外部编排决定。
 
 里程碑 M1–M2 交付服务面（`ctx.lab`）与同内核的 `dsh-lab` CLI，配 docker provider：acquire / populate / collect / checkpoint / verify / archive / release / status、环境指纹、孤儿进程补偿、`maxConcurrentUnits` 安全阀。模型工具属 M3。
@@ -95,7 +95,7 @@ ctx.lab.fingerprintOf(components)             // 纯函数：同一套哈希规�
 
 `fingerprintOf` 是 `acquire` 用的那个哈希函数本身，只是暴露出来：调用方偶尔需要问「另一组分量会哈希成什么」。评测编排器就是这个用例——比较格子要的是「与计划声明的环境相同」，而不是「与那个单元相同」，两者恰好差着每个条件自带的那几项（它自己的凭证挂载、它自己的 env 变量）。它拿单元的分量、减掉这几项、问剩下的哈希是多少。把这步算术放在这里而不是在调用方复刻规范化，是为了让仓库里只有一套哈希规则——复刻出来的第二套会在下一次加分量时漂移。纯函数：不碰单元、不碰 provider、不碰 daemon。
 
-mission 集成是探测式的结构化接口（`setRefs` / `addArtifact` / `addCheckpoint` / `annotate` / `isReleasable`），不是 import：`@khorsheed/dsh-mission` 缺席时，登记类写入 warn 跳过，`release` 降级为 `force` + 告警。acquire 时登记的 mission 绑定骑在容器标签上，宿主重启后仍在——gate 照样保护 reconcile 回来的单元。
+mission 集成是探测式的结构化接口（`setRefs` / `addArtifact` / `addCheckpoint` / `annotate` / `isReleasable`），不是 import：任务账本（随 `@khorsheed/dsh-eval` 安装）缺席时，登记类写入 warn 跳过，`release` 降级为 `force` + 告警。acquire 时登记的 mission 绑定骑在容器标签上，宿主重启后仍在——gate 照样保护 reconcile 回来的单元。
 
 ## 工作区接入接缝（按实例作用域）
 
@@ -166,7 +166,7 @@ CLI 是同一个 `LabService` 内核配 `child_process` 运行器，mission 面�
 - npm release line（`@deepseek-ai/dsh@0.2.0-rc.2`）：✅ —— 服务面与 docker provider 在已发布宿主上完整可用。T88 起评测家族一起把 minHost 抬到 0.2.0-rc.2，0.1.x 宿主请停留在旧发布线。
 - source line（deepseek-harness master，fork 或 upstream）：✅ —— 同上（verifiedHost: 0.2.1-rc.1）；host-021 波对 0.2.1-rc.1 树全量 build+test 绿，无其它表面变化。
 
-降级 / 缺席项（与 package.json 的 `dsh.compat` 同步）：未安装 `@khorsheed/dsh-mission` 时，release gate 降级为显式 force 标志加告警，refs / artifact / checkpoint / verify 登记 warn 跳过。`dsh-lab` 读 mission 状态走 `dsh-mission get --json`（T89），对不认 `--json` 的旧版 mission CLI 给出升级提示并跳过该项状态。`lab_*` 模型工具（M3）在本线尚不存在。
+降级 / 缺席项（与 package.json 的 `dsh.compat` 同步）：未安装任务账本（随 `@khorsheed/dsh-eval` 安装）时，release gate 降级为显式 force 标志加告警，refs / artifact / checkpoint / verify 登记 warn 跳过。`dsh-lab` 读 mission 状态走 `dsh-mission get --json`（T89），对不认 `--json` 的旧版 mission CLI 给出升级提示并跳过该项状态。`lab_*` 模型工具（M3）在本线尚不存在。
 
 ## 失败恢复循环
 

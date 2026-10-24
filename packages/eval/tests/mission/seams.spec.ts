@@ -7,9 +7,9 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { GET_SCHEMA, LIST_SCHEMA, runCli, type CliIo } from '../src/cli-core.ts'
-import { datasetsLayerProbe } from '../src/gate.ts'
-import { MissionService } from '../src/service.ts'
+import { GET_SCHEMA, LIST_SCHEMA, runCli, type CliIo } from '../../src/mission/cli-core.ts'
+import { datasetsLayerProbe } from '../../src/mission/gate.ts'
+import { MissionService } from '../../src/mission/service.ts'
 
 let dir: string
 let service: MissionService

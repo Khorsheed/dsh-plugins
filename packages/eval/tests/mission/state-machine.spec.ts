@@ -2,9 +2,9 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { runCli } from '../src/cli-core.ts'
-import { MissionService } from '../src/service.ts'
-import { SIMPLE_TEMPLATE } from '../src/template.ts'
+import { runCli } from '../../src/mission/cli-core.ts'
+import { MissionService } from '../../src/mission/service.ts'
+import { SIMPLE_TEMPLATE } from '../../src/mission/template.ts'
 
 let dir: string
 let service: MissionService

@@ -1,18 +1,18 @@
 #!/usr/bin/env node
 /**
  * The `dsh-mission` bin entry. Run from source: `node --import tsx/esm
- * src/cli.ts <command>`; as a published package: the `dsh-mission` bin or
- * `node lib/cli.js <command>`.
+ * src/mission-cli.ts <command>`; as a published package: the `dsh-mission` bin or
+ * `node lib/mission-cli.js <command>`.
  *
  * This module must stay a THIN entry that nothing else imports: tsdown moves
  * any module shared between entries into a chunk, and an entry guard stranded
  * in a chunk compares the chunk's URL against argv[1] — never equal, so the
  * CLI body would never run (the silent-exit-0 bug the bin smoke test in
- * tests/bin.spec.ts now pins). The implementation lives in `cli-core.ts`.
+ * tests/mission/bin.spec.ts now pins). The implementation lives in `mission/cli-core.ts`.
  */
 import { realpathSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
-import { runCli } from './cli-core.ts'
+import { runCli } from './mission/cli-core.ts'
 
 // Direct invocation (`tsx src/cli.ts`, `node lib/cli.js`) vs being imported.
 // Node resolves an ESM main module to its REAL path, so `import.meta.url` is

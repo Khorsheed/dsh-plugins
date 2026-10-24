@@ -20,12 +20,12 @@
  * the room 0.2.0 / local-agent precedent) moved it into the core package as
  * this subpath row, and the old package name is retired. An agent preset's
  * `agent.cordis.yml` references the row by name:
- * `- id: mission-tool / name: '@khorsheed/dsh-mission/tool'` (the row id is
+ * `- id: mission-tool / name: '@khorsheed/dsh-eval/mission/tool'` (the row id is
  * unchanged). The package's own bundle patch mounts ONLY the core row — a
  * profile-root tool row would grant every session, exactly what the split
  * removed.
  *
- * @module @khorsheed/dsh-mission/tool
+ * @module @khorsheed/dsh-eval/mission/tool
  */
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
@@ -34,7 +34,7 @@ import type {} from './index.ts'
 import { registerMissionSlash } from './slash.ts'
 import { missionToolDefinitions, type MissionToolsTier } from './tool-definition.ts'
 
-const PACKAGE_NAME = '@khorsheed/dsh-mission'
+const PACKAGE_NAME = '@khorsheed/dsh-eval'
 
 /**
  * Tag the model-visible tools with their origin (AGENTS.md § Tool origin

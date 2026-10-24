@@ -5,14 +5,14 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { runCli, type CliIo } from '../src/cli-core.ts'
-import { resolveCliDataDir, resolveDataDir } from '../src/defaults.ts'
-import { MissionService } from '../src/service.ts'
+import { runCli, type CliIo } from '../../src/mission/cli-core.ts'
+import { resolveCliDataDir, resolveDataDir } from '../../src/mission/defaults.ts'
+import { MissionService } from '../../src/mission/service.ts'
 
 const execFileAsync = promisify(execFile)
-const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
+const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..')
 const TSX = join(REPO_ROOT, 'node_modules', 'tsx', 'dist', 'esm', 'index.mjs')
-const CLI = join(REPO_ROOT, 'packages', 'mission', 'src', 'cli.ts')
+const CLI = join(REPO_ROOT, 'packages', 'eval', 'src', 'mission-cli.ts')
 
 let dir: string
 beforeEach(() => {

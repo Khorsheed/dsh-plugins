@@ -133,9 +133,8 @@
 | 包 | 插件能力 | 安装包名 | 宿主要求 | 随套件 |
 | --- | --- | --- | --- | --- |
 | [`datasets`](packages/datasets) | **数据集**:在 git 仓库中管理版本化数据集,按层管控可见性 | `@khorsheed/dsh-datasets` | ≥ 0.2.0-rc.2 | eval |
-| [`mission`](packages/mission) | **任务规划**:任务与任务批次的状态机、计划依赖、重试与注解 | `@khorsheed/dsh-mission` | ≥ 0.2.0-rc.2 | eval |
 | [`lab`](packages/lab) | **实验单元**:隔离、可重复实验单元的生命周期管理 | `@khorsheed/dsh-lab` | ≥ 0.2.0-rc.2 | eval |
-| [`eval`](packages/eval) | **评测**:校验评测计划,编排委派、判定并生成报告 | `@khorsheed/dsh-eval` | ≥ 0.2.0-rc.2 | eval |
+| [`eval`](packages/eval) | **评测**:校验评测计划,编排委派、判定并生成报告;含任务账本(mission:状态机、重试与注解,原 dsh-mission 包) | `@khorsheed/dsh-eval` | ≥ 0.2.0-rc.2 | eval |
 
 ### 能力与基础设施
 

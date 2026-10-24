@@ -12,7 +12,7 @@
  * the `dsh-mission` CLI (scripts), and the `/mission` slash command
  * (humans) — of which only the service and the CLI mount HERE: the slash
  * command's registration lives in the `./tool` composition row
- * `@khorsheed/dsh-mission/tool` (preset-visibility rollout A3), which an
+ * `@khorsheed/dsh-eval/mission/tool` (preset-visibility rollout A3), which an
  * agent preset mounts per session so only granted sessions see it; the
  * handler and definition stay in `./slash.ts` for the companion to register.
  * The model-tool face lives in the same companion.
@@ -23,7 +23,10 @@
  * gated export) through eval's own Remote, and the default preset never
  * showed the tab (R6).
  *
- * @module @khorsheed/dsh-mission
+ * Mounted by the eval row itself since mission folded into eval (2026-10-24);
+ * there is no separate `mission` row.
+ *
+ * @module @khorsheed/dsh-eval/mission
  */
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
@@ -52,7 +55,7 @@ export const name = 'mission'
 
 /**
  * No required services: the `/mission` slash face lives in the companion
- * `@khorsheed/dsh-mission/tool` row (its registration is what needed the
+ * `@khorsheed/dsh-eval/mission/tool` row (its registration is what needed the
  * command registry), and the only thing still here — the service — mounts
  * unconditionally.
  */
@@ -61,7 +64,7 @@ export const inject = []
 /**
  * Mount the mission service. The `/mission` slash command and the model
  * tools are deliberately NOT registered here: both live in the `./tool`
- * composition row `@khorsheed/dsh-mission/tool`, which an agent preset
+ * composition row `@khorsheed/dsh-eval/mission/tool`, which an agent preset
  * composes per session — the companion also carries the tool-guidance prompt
  * section.
  * @param ctx - plugin context.

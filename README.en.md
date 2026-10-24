@@ -133,9 +133,8 @@ Versus the official offering: you can have the lead agent invite any harness you
 | Package | What it does | Install | Host | Suite |
 | --- | --- | --- | --- | --- |
 | [`datasets`](packages/datasets) | **Datasets**: versioned datasets in git repositories with layered visibility control | `@khorsheed/dsh-datasets` | ≥ 0.2.0-rc.2 | eval |
-| [`mission`](packages/mission) | **Mission planning**: a state machine for tasks and batches — plan dependencies, retries, annotations | `@khorsheed/dsh-mission` | ≥ 0.2.0-rc.2 | eval |
 | [`lab`](packages/lab) | **Lab units**: the lifecycle of isolated, reproducible experiment units | `@khorsheed/dsh-lab` | ≥ 0.2.0-rc.2 | eval |
-| [`eval`](packages/eval) | **Evaluation**: validates plans, orchestrates delegation and judging, and writes the report | `@khorsheed/dsh-eval` | ≥ 0.2.0-rc.2 | eval |
+| [`eval`](packages/eval) | **Evaluation**: validates plans, orchestrates delegation and judging, and writes the report; includes the mission ledger (state machine, retries, annotations — formerly the dsh-mission package) | `@khorsheed/dsh-eval` | ≥ 0.2.0-rc.2 | eval |
 
 ### Capability and infrastructure
 

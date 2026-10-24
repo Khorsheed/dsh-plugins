@@ -18,9 +18,8 @@
 | 成员包 | 行 id | 内容 |
 | --- | --- | --- |
 | `@khorsheed/dsh-datasets` | `datasets` | 题集登记、只读物化、题集 tab；`datasets_*` 工具是包内 `./tool` 组合入口，由预设点名授予 |
-| `@khorsheed/dsh-mission` | `mission` | 运行 / 任务 / 尝试的账本与释放闸、任务 tab；`mission_*` 工具是包内 `./tool` 组合入口，由预设点名授予 |
 | `@khorsheed/dsh-lab` | `lab` | 容器单元的申请、指纹、校验与销毁（Docker） |
-| `@khorsheed/dsh-eval` | `eval` | 编排器：实验、条件库、运行、判分、报告、实验室 tab；`eval_*` 工具与 `/eval` 是包内 `./tool` 组合入口，由预设点名授予 |
+| `@khorsheed/dsh-eval` | `eval` | 编排器：实验、条件库、运行、判分、报告、实验室 tab；`eval_*` 工具与 `/eval` 是包内 `./tool` 组合入口，由预设点名授予;另含任务账本(运行 / 任务 / 尝试的账本与释放闸,由 eval 行一并挂载;2026-10-24 由 dsh-mission 并入) |
 | `@khorsheed/dsh-local-agent` | `local-agent` | 委派家族核心：scoped home 根、运行外观与各 harness 的共用门面——eval 的 run / provision 动词经它委派外部 CLI |
 | `@khorsheed/dsh-local-agent-kimi` | `local-agent-kimi` | Kimi harness 提供方 |
 | `@khorsheed/dsh-local-agent-codex` | `local-agent-codex` | Codex harness 提供方 |
