@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { SessionTrend } from '../types.ts'
 import type { InspectorTabProps } from './contract.ts'
 import { requestNumberText, cachePct, gapShown, inputTotal, turnNumber, type TurnGap } from './aggregate.ts'
@@ -89,16 +89,22 @@ export function Trend({
       <span className={css.trendTurn}>{shown.from === shown.to ? shown.from : `${shown.from}–${shown.to}`}</span>
     </button>
   }
-  /** Coordinator handoffs, each drawn once before the first turn after it. */
+  /**
+   * Coordinator handoffs, drawn before the first turn after them. Several in
+   * one gap share ONE marker (side-by-side markers stack their labels):
+   * it names who holds the room by that turn; the tooltip keeps the chain.
+   */
   const handoffs = main ? [...data.handoffs ?? []].sort((a, b) => a.at - b.at) : []
   const handoffsBefore = (turn: TrendTurn) => {
-    const out: ReactNode[] = []
-    while (handoffs.length > 0 && handoffs[0]!.at <= turn.startedAt) {
-      const h = handoffs.shift()!
-      const label = t('trend.handoff', { name: h.name })
-      out.push(<span key={`handoff-${h.at}`} className={css.trendHandoff} title={label} aria-label={label}><span>{label}</span></span>)
-    }
-    return out
+    const batch: { at: number; name: string }[] = []
+    while (handoffs.length > 0 && handoffs[0]!.at <= turn.startedAt) batch.push(handoffs.shift()!)
+    const last = batch.at(-1)
+    if (last === undefined) return []
+    const label = batch.length === 1
+      ? t('trend.handoff', { name: last.name })
+      : t('trend.handoffMany', { name: last.name, count: String(batch.length - 1) })
+    const title = batch.map(h => t('trend.handoff', { name: h.name })).join(' → ')
+    return [<span key={`handoff-${last.at}`} className={css.trendHandoff} title={title} aria-label={title}><span>{label}</span></span>]
   }
   /** Gap cells that sit before a turn (all gaps ending before its number). */
   const placed = new Set<number>()
