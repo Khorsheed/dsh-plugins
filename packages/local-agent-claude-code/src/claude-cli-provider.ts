@@ -1229,15 +1229,25 @@ function serverToolResultText(record: Record<string, unknown>): string | undefin
   return undefined
 }
 
-/** Flatten a tool_result content payload (string or block array) to text. */
+/**
+ * Flatten a tool_result content payload (string or block array) to text.
+ * Beyond `text` blocks, ToolSearch answers with `tool_reference` blocks — one
+ * per discovered tool — which list as the found tool names; dropping them
+ * stranded the call (no result recorded) and it settled as a phantom
+ * interrupted failure.
+ */
 function toolResultText(content: unknown): string | undefined {
   if (typeof content === 'string') return content
   if (!Array.isArray(content)) return undefined
   return content
-    .filter((block): block is { type?: string; text?: string } =>
-      typeof block === 'object' && block !== null && (block as { type?: string }).type === 'text'
-      && typeof (block as { text?: string }).text === 'string')
-    .map(block => block.text ?? '')
+    .map((block): string | undefined => {
+      if (typeof block !== 'object' || block === null) return undefined
+      const record = block as { type?: unknown; text?: unknown; tool_name?: unknown }
+      if (record.type === 'text' && typeof record.text === 'string') return record.text
+      if (record.type === 'tool_reference' && typeof record.tool_name === 'string') return record.tool_name
+      return undefined
+    })
+    .filter((text): text is string => text !== undefined)
     .join('\n')
 }
 

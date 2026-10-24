@@ -108,6 +108,24 @@ describe('codex json stream parsing', () => {
     expect(parsed.toolCalls).toMatchObject({ count: 2, byName: { file_change: 1, function_call: 1 } })
   })
 
+  it('mirrors custom tool calls and their block-array output (deferred/dynamic tools)', () => {
+    const stream = [
+      { type: 'thread.started', thread_id: 't1' },
+      { type: 'item.completed', item: { id: 'item_1', type: 'agent_message', text: '先看下可用工具' } },
+      { type: 'item.completed', item: { id: 'ctc_1', type: 'custom_tool_call', status: 'completed', call_id: 'call_1', name: 'exec', input: 'text(ALL_TOOLS)' } },
+      { type: 'item.completed', item: { id: 'ctco_1', type: 'custom_tool_call_output', call_id: 'call_1', output: [{ type: 'input_text', text: 'Script completed' }, { type: 'input_text', text: '[{"name":"member_message"}]' }] } },
+      { type: 'item.completed', item: { id: 'item_2', type: 'agent_message', text: '你好' } },
+      { type: 'turn.completed', usage: { input_tokens: 5, cached_input_tokens: 0, output_tokens: 1 } },
+    ].map(event => JSON.stringify(event)).join('\n')
+    const parsed = parseCodexJsonStream(stream)
+    expect(parsed.lines).toEqual([
+      { kind: 'text', text: '先看下可用工具' },
+      { kind: 'tool', id: 'ctc_1', name: 'exec', args: 'text(ALL_TOOLS)', result: 'Script completed\n[{"name":"member_message"}]' },
+      { kind: 'text', text: '你好' },
+    ])
+    expect(parsed.toolCalls).toMatchObject({ count: 1, byName: { custom_tool_call: 1 } })
+  })
+
   it('mirrors reasoning, agent text, and command execution from the real fixture', () => {
     const fixture = readFileSync(
       fileURLToPath(new URL('./fixtures/command-execution.sample.ndjson', import.meta.url)),

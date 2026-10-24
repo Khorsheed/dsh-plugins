@@ -347,6 +347,9 @@ describe('codex app-server item fold (transport → shared line shape)', () => {
       .toEqual({ kind: 'tool', id: 'fc2', name: 'ApplyPatch', args: 'add: /work/b.ts\ndelete: /work/c.ts' })
     expect(codexAppServerItemToLine({ type: 'dynamicToolCall', id: 'w1', tool: 'wait', arguments: { cell_id: '5' }, status: 'completed' }))
       .toEqual({ kind: 'tool', id: 'w1', name: 'wait', args: '{"cell_id":"5"}' })
+    // The app-server carries the custom tool's result inline as contentItems.
+    expect(codexAppServerItemToLine({ type: 'dynamicToolCall', id: 'e1', tool: 'exec', arguments: 'text(ALL_TOOLS)', status: 'completed', success: true, contentItems: [{ type: 'inputText', text: 'Script completed' }, { type: 'inputImage', imageUrl: 'data:…' }] }))
+      .toEqual({ kind: 'tool', id: 'e1', name: 'exec', args: 'text(ALL_TOOLS)', result: 'Script completed' })
     expect(codexAppServerItemToLine({ type: 'collabAgentToolCall', id: 'c1', tool: 'spawn', status: 'completed' }))
       .toEqual({ kind: 'tool', id: 'c1', name: 'collab/spawn' })
     expect(codexAppServerItemToLine({ type: 'plan', text: '计划' })).toEqual({ kind: 'think', text: '计划' })
