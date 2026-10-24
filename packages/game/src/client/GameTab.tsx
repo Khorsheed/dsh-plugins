@@ -13,7 +13,7 @@ import {
 } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
 import { Switch, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
 import { artStyleLabel } from '../project.ts'
-import type { CommitResult, ProjectView, SessionGameState } from '../types.ts'
+import type { ProjectView, SessionGameState, WorkingChanges } from '../types.ts'
 import { exportHtml } from '../vfs.ts'
 import { failureOf, type GameTabProps, type NavTarget, type ViewProps } from './contract.ts'
 import { DesignView } from './DesignView.tsx'
@@ -237,24 +237,44 @@ function ProjectWorkbench(p: ViewProps & {
 }
 
 /**
- * 提交为新版本: panel edits change the working files only; this bar lists
- * them and cuts a version from them (the same checks a turn runs). A failure
- * stays in the bar with a way to hand it to the agent.
+ * 有新改动还没进游戏: whatever the working files hold that the play area
+ * does not — panel edits, the agent's or a CLI member's writes, the user's
+ * own editor — with 检查并发版 to cut a version through the same checks
+ * (published by the user). It polls while the page is visible, which is how
+ * a member's writes show up without a turn. While someone is still writing
+ * (a turn runs, or a file changed in the last 20 s) the button is disabled.
  */
 function CommitBar({ t, sessionId, api, project, refresh, toast, insertDraft, onOpenVersions }: ViewProps & {
   project: ProjectView
   onOpenVersions: () => void
 }): ReactNode {
-  const [busy, setBusy] = useState(false)
-  const [failed, setFailed] = useState<Extract<CommitResult, { kind: 'failed' }>['failures'] | null>(null)
-  const edits = project.uncommitted
-  useEffect(() => { setFailed(null) }, [project.id])
-  if (edits.length === 0 && failed === null) return null
+  const [changes, setChanges] = useState<WorkingChanges | null>(null)
+  const [checking, setChecking] = useState(false)
+  const [showFiles, setShowFiles] = useState(false)
+  const [tick, setTick] = useState(0)
+  useEffect(() => {
+    let live = true
+    void api.changes(project.id).then(r => { if (live && r.ok && r.value.ok) setChanges(r.value) })
+    return () => { live = false }
+  }, [api, project, tick])
+  useEffect(() => {
+    const id = setInterval(() => { if (document.visibilityState === 'visible') setTick(n => n + 1) }, POLL_MS)
+    return () => { clearInterval(id) }
+  }, [])
+  // A 'recent' writer goes quiet on its own: look again right after.
+  const lastAt = changes?.lastAt ?? null
+  useEffect(() => {
+    if (changes?.busy !== 'recent' || lastAt === null) return
+    const timer = setTimeout(() => { setTick(n => n + 1) }, Math.max(500, Date.parse(lastAt) + QUIET_MS + 500 - Date.now()))
+    return () => { clearTimeout(timer) }
+  }, [changes?.busy, lastAt])
+  useEffect(() => { setShowFiles(false) }, [project.id])
+
+  if (changes === null || !changes.hasEntry || (changes.count === 0 && changes.edits.length === 0)) return null
   const commit = (): void => {
-    setBusy(true)
-    setFailed(null)
+    setChecking(true)
     void api.commit(sessionId, project.id).then(r => {
-      setBusy(false)
+      setChecking(false)
       const code = failureOf(r)
       if (code !== undefined || !r.ok || !r.value.ok) { toast(t('commit.error', { error: code ?? 'io' })); return }
       const result = r.value
@@ -262,28 +282,64 @@ function CommitBar({ t, sessionId, api, project, refresh, toast, insertDraft, on
       else if (result.kind === 'candidate') toast(t('commit.candidate', { version: result.version }))
       else if (result.kind === 'unchanged') toast(t('commit.unchanged'))
       else if (result.kind === 'no-entry') toast(t('commit.noEntry'))
-      else if (result.kind === 'failed') setFailed(result.failures)
+      setTick(n => n + 1)
       refresh()
     })
   }
-  const shown = edits.slice(0, 3).map(e => e.text).join('、') + (edits.length > 3 ? t('commit.more', { count: edits.length - 3 }) : '')
-  return <div className={css.commitBar} data-state={failed === null ? 'ready' : 'failed'} role="status">
-    {failed === null
-      ? <span className={css.commitText}><strong>{t('commit.count', { count: edits.length })}</strong><span className={css.commitList}>{shown}</span></span>
-      : <span className={css.commitText}>
-          <strong>{t('commit.failed')}</strong>
-          <span className={css.commitList}>{failed.slice(0, 2).map(f => `${f.where}：${f.message}`).join('；')}</span>
-        </span>}
-    <span className={css.commitActions}>
-      {failed !== null && <>
-        <button type="button" className={css.link} onClick={onOpenVersions}>{t('commit.details')}</button>
-        <button type="button" className={css.ghost} onClick={() => {
-          if (insertDraft(t('draft.commitFailed', { list: failed.map(f => `- ${f.where}：${f.message}`).join('\n') }))) toast(t('toast.drafted'))
-        }}>{t('commit.toAgent')}</button>
-      </>}
-      {edits.length > 0 && <button type="button" className={css.primary} disabled={busy} onClick={commit}>
-        {busy ? t('commit.busy') : failed === null ? t('commit.go') : t('commit.retry')}
-      </button>}
-    </span>
-  </div>
+  const live = changes.against
+  const editList = changes.edits.slice(0, 3).map(e => e.text).join('、') + (changes.edits.length > 3 ? t('commit.more', { count: changes.edits.length - 3 }) : '')
+  const summary = [
+    changes.count > 0 ? (live === null ? t('commit.firstSummary', { count: changes.count }) : t('commit.summary', { count: changes.count, ago: agoText(t, changes.lastAt) })) : '',
+    changes.edits.length > 0 ? t('commit.edits', { list: editList }) : '',
+  ].filter(Boolean).join(' · ')
+  const state = checking ? 'checking' : changes.busy !== null ? 'busy' : changes.failed !== null ? 'failed' : 'ready'
+  const newest = changes.files.find(f => f.kind !== 'removed')?.path ?? changes.files[0]?.path ?? ''
+
+  return <>
+    <div className={css.commitBar} data-state={state} role="status">
+      <span className={css.commitText}>
+        <strong>{state === 'checking' ? t('commit.checking')
+          : state === 'busy' ? t('commit.busyTitle')
+          : state === 'failed' ? (live === null ? t('commit.failedFirst') : t('commit.failed', { version: live }))
+          : live === null ? t('commit.titleFirst') : t('commit.title')}</strong>
+        <span className={css.commitList}>{state === 'checking' ? t('commit.checkingSteps')
+          : state === 'busy' ? (changes.busy === 'turn' ? t('commit.busyTurn') : t('commit.busyRecent', { ago: agoText(t, changes.lastAt), file: newest }))
+          : state === 'failed' ? (changes.failed ?? []).slice(0, 2).map(f => `${f.where}：${f.message}`).join('；')
+          : summary}</span>
+      </span>
+      <span className={css.commitActions}>
+        {state === 'failed' && <>
+          <button type="button" className={css.link} onClick={onOpenVersions}>{t('commit.details')}</button>
+          <button type="button" className={css.ghost} onClick={() => {
+            if (insertDraft(t('draft.commitFailed', { list: (changes.failed ?? []).map(f => `- ${f.where}：${f.message}`).join('\n') }))) toast(t('toast.drafted'))
+          }}>{t('commit.toAgent')}</button>
+        </>}
+        {state !== 'checking' && changes.count > 0 && <button type="button" className={css.link} aria-expanded={showFiles} onClick={() => { setShowFiles(!showFiles) }}>
+          {showFiles ? t('commit.hideFiles') : t('commit.showFiles')}
+        </button>}
+        <button type="button" className={css.primary} disabled={state === 'checking' || state === 'busy'} onClick={commit}>
+          {state === 'failed' ? t('commit.retry') : t('commit.go')}
+        </button>
+      </span>
+    </div>
+    {showFiles && state !== 'checking' && <div className={css.commitFiles}>
+      {changes.files.map(f => <div key={f.path}><span className={css.commitKind}>{f.kind === 'added' ? 'A' : f.kind === 'removed' ? 'D' : 'M'}</span>{f.path}</div>)}
+      {changes.count > changes.files.length && <div>{t('commit.moreFiles', { count: changes.count - changes.files.length })}</div>}
+    </div>}
+  </>
+}
+
+/** How often the bar looks at the working files while the page is visible. */
+const POLL_MS = 8_000
+/** Matches the host's quiet window for a 'recent' writer (store BUSY_QUIET_MS). */
+const QUIET_MS = 20_000
+
+/** 「12 秒前」-style age of an ISO time. */
+function agoText(t: ViewProps['t'], at: string | null): string {
+  if (at === null) return ''
+  const s = Math.max(0, Math.round((Date.now() - Date.parse(at)) / 1000))
+  if (s < 5) return t('ago.now')
+  if (s < 60) return t('ago.s', { n: s })
+  if (s < 3600) return t('ago.m', { n: Math.round(s / 60) })
+  return t('ago.h', { n: Math.round(s / 3600) })
 }

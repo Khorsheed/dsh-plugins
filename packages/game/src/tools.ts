@@ -60,7 +60,8 @@ export function renderProject(view: ProjectView): string {
   if (open.length > 0) lines.push(`等用户挑选的外观方案：${open.map(p => `${p.elementId}（${p.variants.length} 个）`).join('、')}`)
   for (const f of view.elementErrors.slice(0, 5)) lines.push(`  ✗ ${f.where}：${f.message}`)
   lines.push(view.hasEntry ? '入口：index.html 已有' : '入口：还没有 index.html（写好它和 window.dshGame 后才会检查和进试玩区）')
-  lines.push(`试玩区：${view.current === null ? '还没有版本' : `v${view.current.version}`}${view.candidate === null ? '' : `；待确认 v${view.candidate.version}`}`)
+  const byLabel = (by: string | undefined): string => (by === 'user' ? '（用户发布，用户认可过的版本）' : by === 'agent' ? '（你发布）' : by === 'turn' ? '（回合结束自动发布）' : '')
+  lines.push(`试玩区：${view.current === null ? '还没有版本' : `v${view.current.version}${byLabel(view.current.by)}`}${view.candidate === null ? '' : `；待确认 v${view.candidate.version}${byLabel(view.candidate.by)}`}`)
   const check = view.lastCheck
   if (check !== null) {
     lines.push(check.ok
@@ -256,7 +257,7 @@ export function gameToolDefinitions(store: GameService): ToolDefinition[] {
       const row = await store.boundProject(session.id)
       if (row === undefined) return '本会话还没有游戏项目。用 game_open 选一个或新建。'
       // No fix-round cap here: an explicit publish never marks a build as given up.
-      const outcome = await store.checkTurn(session, 0, Number.POSITIVE_INFINITY)
+      const outcome = await store.checkTurn(session, 0, Number.POSITIVE_INFINITY, 'agent')
       const view = await store.view(row.id)
       const liveVersion = view?.current?.version
       const live = liveVersion === undefined ? '试玩区还没有版本' : `试玩区仍是 v${liveVersion}`

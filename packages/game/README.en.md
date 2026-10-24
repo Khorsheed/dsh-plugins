@@ -15,7 +15,7 @@ Making a small game used to mean writing the code yourself, or getting a model t
 - **Broken versions never reach you**: after every round it checks its own work and fixes what fails on the spot; only a passing version lands under "Play". Want to look before anything goes live? Turn off "Auto-deploy".
 - **Tune the feel while you play**: numbers like jump height and run speed become sliders; drag them around and press "Finalize" when it feels right.
 - **Change the look of anything you can see**: the hero, enemies, items, even trees, rocks and houses live under "Elements"; draw them yourself, or press "Ask the agent for a new look" and pick from three options.
-- **Your panel edits count too**: press "Commit as a new version" and what you changed in the panel goes into the game; the agent sees your edits and won't undo them.
+- **See changes as soon as they land**: whether you edited in the panel or the agent or a Claude Code member changed files, the sidebar says "New changes are not in the game yet"; press "Check and publish" and they go into the game. Every version in "Versions" says whether you or the agent published it.
 - **Go back any time**: every version stays under "Versions"; switch back to an old one, or export a single `.html` file and send it to a friend.
 
 <img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/game-elements.png" width="640" alt="An element open under Elements: the look editor, three look options side by side, and the element's background below">

@@ -102,6 +102,7 @@ export function VersionsView({ t, sessionId, api, project, refresh, toast }: Ver
             <div className={css.tlHead}>
               <strong>v{v.version}</strong>
               <span className={css.tlTag} data-status={v.status}>{t(`versions.status.${v.status}`)}</span>
+              {v.by !== undefined && <span className={css.tlBy} data-by={v.by}>{t(`versions.by.${v.by}`)}</span>}
               <span className={css.metaLine}>{shortTime(v.at)}</span>
             </div>
             {v.note !== undefined && <span className={css.metaLine}>{v.note}</span>}
