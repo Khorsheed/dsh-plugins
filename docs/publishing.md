@@ -63,6 +63,17 @@ npx npm@12 publish /tmp/dist/<新包>.tgz --access public --otp=<token>
 | 消费者侧 `ERR_MODULE_NOT_FOUND` | tarball 内相对导入指向未包含的文件 | 跑 pack smoke:包内每个相对导入都必须可解析 |
 | 发版当天下游裸名安装仍拿到旧版（不是缓存） | pnpm 11 起 `minimumReleaseAge` 默认 1440 分钟：发布不足 24h 的版本对裸名安装不可见，静默回退到旧版；`view` 不受此限，所以 `pnpm view` 看到的是新版、`add` 装的是旧版（2026-09-30 桌面端实测：0.3.3 上线 3.5h 后裸名仍解析 0.3.2） | 下游三选一：等满 24h；显式带版本装（`pkg@x.y.z`,pnpm 会把该版本写进 `minimumReleaseAgeExclude`);或在该 profile 的 `pnpm-workspace.yaml` 里给信任 scope 加豁免条目（裸包名豁免该包全部版本）。发布侧无动作——这是设计行为，发版后 24h 内不要慌着"修"。2026-10-01 桌面端补记：桌面 app 的安装流追加的是 `name@version` 精确豁免，lockfile 里已有新版后再跑别的操作（如卸载）会被 `ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION` 的 lockfile 校验闸住——在该 profile 的 `pnpm-workspace.yaml` 追加**裸包名**豁免后 `pnpm install` 即过；家族成员要连传递依赖一起豁免。再补（同日第二回合）：桌面 app 的**卸载/重装路径**走程序化 `resolveDependencies` 且没接 `handleResolutionPolicyViolations` 回调——裸名豁免齐了之后 lockfile 校验能过，但解析路径仍对窗口内的**精确下限钉死**的包（如 `^0.3.1` 只能落在 0.3.1）产出违规并直接崩溃（`ERR_PNPM_RESOLUTION_POLICY_VIOLATIONS_UNHANDLED`)，宿主 bug，插件侧无解。**发版当天桌面端要升级，绕开 app 的卸载流，手动来**：编辑 `~/.dsh/profiles/desktop/package.json` 把依赖下限改到新版本 → 在该目录 `pnpm install`(CLI 路径，豁免生效）→ Cmd+Q 重启 app,reconcile 从 package.json 重挂。当天安装流（会写 `name@version` 钉）本身能装上新版，坏的是卸载/重装这个组合 |
 
+## 版本号规则
+
+2026-10-24 起,社区包统一按下面的规则定版本号;`pnpm release:wave check` 遇到 prerelease 目标版本直接报错,`plan` 会把 rc 线建议为它的正式版本(`0.2.0-rc.3` → `0.2.0`)。
+
+- **只发 `0.MINOR.PATCH`,不发 prerelease(`-rc.N` / `-alpha` 等)。** 所有包都还在 0.x,本身就表示「尚未稳定」;和宿主的兼容关系由 `engines.dsh` 与 `dsh.compat.minHost` 表达,不靠版本号后缀。prerelease 还会带来两类实际麻烦:npm 对 prerelease 的区间匹配只认同一个三元组(`^0.2.0-rc.4` 匹配不到 `0.2.1-rc.x`),以及 npm 12 要求 prerelease 显式 `--tag`。
+- **MINOR**:破坏性改动、新能力,以及套件(family / mode bundle)的成员变化或卡名变化。
+- **PATCH**:修 bug、只改文档或说明、只跟随依赖的版本前移。
+- **家族同版**:local-agent 家族各包仍是同一条版本线(见下文「家族发布」),一起前移。
+- **新包首发**从 `0.1.0` 起;已有历史版本线的包(如 `0.2.0-rc.1` 的评测家族)首发取那条线的正式版本。
+- **不烧版本号**:已 stage 的版本若要改内容,先在网页上确认能否撤回后复用,不能复用才前移 PATCH;不要为了改内容随手拒绝再换号。
+
 ## 变更记录与发版标记
 
 每次发版在三个层级记录变更：

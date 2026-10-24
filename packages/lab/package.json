@@ -1,7 +1,7 @@
 {
   "name": "@khorsheed/dsh-lab",
   "description": "Controlled experiment units: lifecycle management for isolated, reproducible execution environments (acquire / populate / collect / release / status) — records, never judges; releases only behind the mission releasable gate",
-  "version": "0.2.0-rc.1",
+  "version": "0.2.0",
   "publishConfig": {
     "access": "public"
   },

@@ -14,23 +14,23 @@
 | `@khorsheed/dsh-capture` | 0.1.2 | 0.1.3 | 0.1.5-rc.1 | 0.2.1-rc.1 |  |
 | `@khorsheed/dsh-context-guard` | 0.2.6 | 0.2.6 | 0.1.2-rc.1 | 0.2.1-rc.1 | ✓ |
 | `@khorsheed/dsh-context-lens` | 未发布 | 0.1.0 | 0.1.5-rc.1 | 0.2.1-rc.1 |  |
-| `@khorsheed/dsh-datasets` | 未发布 | 0.2.0-rc.1 | 0.2.0-rc.2 | 0.2.1-rc.1 |  |
+| `@khorsheed/dsh-datasets` | 未发布 | 0.2.0 | 0.2.0-rc.2 | 0.2.1-rc.1 |  |
 | `@khorsheed/dsh-dev-suite` | 未发布 | 0.1.0 | 0.1.7-rc.1 | 0.2.1-rc.1 |  |
 | `@khorsheed/dsh-reader` | 0.3.0 | 0.3.1 | 0.1.5-rc.1 | 0.2.1-rc.1 |  |
-| `@khorsheed/dsh-eval` | 未发布 | 0.2.0-rc.1 | 0.2.0-rc.2 | 0.2.1-rc.1 |  |
+| `@khorsheed/dsh-eval` | 未发布 | 0.2.0 | 0.2.0-rc.2 | 0.2.1-rc.1 |  |
 | `@khorsheed/dsh-file-preview` | 0.4.2 | 0.4.2 | 0.1.5-rc.1 | 0.2.1-rc.1 | ✓ |
 | `@khorsheed/dsh-game` | 未发布 | 0.1.0 | 0.2.0-rc.1 | 0.2.1-rc.1 |  |
 | `@khorsheed/dsh-gamedev-suite` | 未发布 | 0.1.0 | 0.2.0-rc.1 | 0.2.1-rc.1 |  |
 | `@khorsheed/dsh-inline-html-render` | 0.1.16 | 0.1.16 | 0.1.2-rc.1 | 0.2.1-rc.1 | ✓ |
-| `@khorsheed/dsh-lab` | 未发布 | 0.2.0-rc.1 | 0.2.0-rc.2 | 0.2.1-rc.1 |  |
+| `@khorsheed/dsh-lab` | 未发布 | 0.2.0 | 0.2.0-rc.2 | 0.2.1-rc.1 |  |
 | `@khorsheed/dsh-learning-suite` | 未发布 | 0.1.0 | 0.1.7-rc.1 | 0.2.1-rc.1 |  |
 | `@khorsheed/dsh-library` | 未发布 | 0.1.0 | 0.1.7-rc.1 | 0.2.1-rc.1 |  |
-| `@khorsheed/dsh-local-agent` | 0.2.0-rc.3 | 0.2.0-rc.4 | 0.1.5-rc.1 | 0.2.1-rc.1 |  |
-| `@khorsheed/dsh-local-agent-claude-code` | 0.2.0-rc.3 | 0.2.0-rc.4 | 0.1.5-rc.1 | 0.2.1-rc.1 |  |
-| `@khorsheed/dsh-local-agent-codex` | 0.2.0-rc.3 | 0.2.0-rc.4 | 0.1.5-rc.1 | 0.2.1-rc.1 |  |
-| `@khorsheed/dsh-local-agent-dsh` | 0.2.0-rc.3 | 0.2.0-rc.4 | 0.1.5-rc.1 | 0.2.1-rc.1 |  |
-| `@khorsheed/dsh-local-agent-dsh-headless` | 0.2.0-rc.3 | 0.2.0-rc.4 | 0.1.5-rc.1 | 0.2.1-rc.1 |  |
-| `@khorsheed/dsh-local-agent-kimi` | 0.2.0-rc.3 | 0.2.0-rc.4 | 0.1.5-rc.1 | 0.2.1-rc.1 |  |
+| `@khorsheed/dsh-local-agent` | 0.2.0-rc.3 | 0.2.0 | 0.1.5-rc.1 | 0.2.1-rc.1 |  |
+| `@khorsheed/dsh-local-agent-claude-code` | 0.2.0-rc.3 | 0.2.0 | 0.1.5-rc.1 | 0.2.1-rc.1 |  |
+| `@khorsheed/dsh-local-agent-codex` | 0.2.0-rc.3 | 0.2.0 | 0.1.5-rc.1 | 0.2.1-rc.1 |  |
+| `@khorsheed/dsh-local-agent-dsh` | 0.2.0-rc.3 | 0.2.0 | 0.1.5-rc.1 | 0.2.1-rc.1 |  |
+| `@khorsheed/dsh-local-agent-dsh-headless` | 0.2.0-rc.3 | 0.2.0 | 0.1.5-rc.1 | 0.2.1-rc.1 |  |
+| `@khorsheed/dsh-local-agent-kimi` | 0.2.0-rc.3 | 0.2.0 | 0.1.5-rc.1 | 0.2.1-rc.1 |  |
 | `@khorsheed/dsh-local-files` | 0.1.3 | 0.1.3 | 0.1.5-rc.1 | 0.2.1-rc.1 | ✓ |
 | `@khorsheed/dsh-message-timeline` | 0.2.6 | 0.2.6 | 0.1.2-rc.1 | 0.2.1-rc.1 | ✓ |
 | `@khorsheed/dsh-client-message-tools` | 0.3.4 | 0.3.4 | 0.1.5-rc.1 | 0.2.1-rc.1 | ✓ |

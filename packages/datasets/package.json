@@ -1,7 +1,7 @@
 {
   "name": "@khorsheed/dsh-datasets",
   "description": "Versioned dataset storage over git repositories: layered items, commit-pinned reads, read-only materialized layer views, a registry with per-set layer whitelists, a web tab over a Typert Remote data face, and an opt-in rubric judgeability check for datasets that follow the evaluation judging convention",
-  "version": "0.2.0-rc.1",
+  "version": "0.2.0",
   "publishConfig": {
     "access": "public"
   },

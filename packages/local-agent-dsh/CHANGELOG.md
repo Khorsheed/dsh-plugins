@@ -1,7 +1,8 @@
 # 变更记录
 
-## 0.2.0-rc.4（2026-10-24）
+## 0.2.0（2026-10-24）
 
+- **版本号去掉 rc**:社区包不再发 prerelease 版本(docs/publishing.md「版本号规则」),家族各包同版 0.2.0;本节原记为 0.2.0-rc.4。
 - 文档:preset 包形态的示例改为各模式包(`@khorsheed/dsh-dev-suite` 等),`@khorsheed/dsh-presets` 已退役。无代码变更。
 
 ## 0.2.0-rc.3（2026-10-22）

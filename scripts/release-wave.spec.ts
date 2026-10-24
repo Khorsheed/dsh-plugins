@@ -141,9 +141,9 @@ describe('planWave version decisions', () => {
     expect(manifest.packages[0]).toMatchObject({ bump: 'patch', target: '0.3.4' })
   })
 
-  it('bumps the rc number on an rc line', () => {
+  it('graduates an rc line to its release (no prereleases since 2026-10-24)', () => {
     const { manifest } = plan([member('local-agent', '0.2.0-rc.1')], { '@khorsheed/dsh-local-agent': '0.2.0-rc.1' }, ['local-agent'])
-    expect(manifest.packages[0]).toMatchObject({ bump: 'patch', target: '0.2.0-rc.2' })
+    expect(manifest.packages[0]).toMatchObject({ bump: 'patch', target: '0.2.0' })
   })
 
   it('defers an unchanged already-published package', () => {
@@ -242,10 +242,10 @@ describe('semver helpers', () => {
     expect(compareVersions('0.2.0-rc.10', '0.2.0-rc.6')).toBe(1)
     expect(compareVersions('0.2.0-rc.1', '0.2.0-rc.1')).toBe(0)
   })
-  it('bumps patch/minor/rc', () => {
+  it('bumps patch/minor, and graduates a prerelease line to its release', () => {
     expect(bumpVersion('0.3.3', 'patch')).toBe('0.3.4')
     expect(bumpVersion('0.3.3', 'minor')).toBe('0.4.0')
-    expect(bumpVersion('0.2.0-rc.1', 'patch')).toBe('0.2.0-rc.2')
+    expect(bumpVersion('0.2.0-rc.1', 'patch')).toBe('0.2.0')
   })
 })
 
@@ -309,6 +309,12 @@ describe('checkWave', () => {
   it('errors when the target does not exceed npm', () => {
     const findings = checkWave({ packages: [base] }, ctx({ publishedVersion: () => '0.2.0' }))
     expect(findings[0]!.detail).toContain('not above npm')
+  })
+
+  it('errors on a prerelease target (community packages publish 0.MINOR.PATCH only)', () => {
+    const rc = entry({ name: '@khorsheed/dsh-alpha', dir: 'alpha', current: '0.1.0', target: '0.2.0-rc.1' })
+    const findings = checkWave({ packages: [rc] }, ctx({ members: [member('alpha', '0.2.0-rc.1')] }))
+    expect(findings.map(f => f.detail).join('\n')).toContain('is a prerelease')
   })
 
   it('errors when the tag already exists', () => {

@@ -28,8 +28,8 @@
  * Version decisions: the repo package.json version IS the next release line
  * (version governance happens only at mainline release time). plan compares
  * it against npm: ahead → publish as-is (`none`); equal with content changes
- * since the matching tag → suggest a patch bump (rc.N lines bump the rc
- * number); equal without changes → deferred out of the wave; unpublished →
+ * since the matching tag → suggest a patch bump (a prerelease line
+ * graduates to its release); equal without changes → deferred out of the wave; unpublished →
  * deferred unless --debut names it. The manifest records the decision; edit
  * `.release-wave.json` by hand to override a suggestion, then re-run check.
  *
@@ -141,14 +141,16 @@ export function compareVersions(a: string, b: string): number {
 }
 
 /**
- * The suggested bump target. An `-rc.N` line bumps its rc number (the family
- * lines move rc-by-rc until the wave finalizes); anything else takes a patch.
+ * The suggested bump target. A prerelease line graduates to its release
+ * (`0.2.0-rc.3` → `0.2.0`): community packages publish no prereleases since
+ * 2026-10-24 (docs/publishing.md 「版本号规则」); anything else takes a patch
+ * or a minor.
  */
 export function bumpVersion(version: string, kind: 'patch' | 'minor'): string {
   const m = /^(\d+)\.(\d+)\.(\d+)(?:-rc\.(\d+))?$/.exec(version)
   if (m === null) throw new Error(`release-wave: cannot bump ${version} (expected x.y.z[-rc.N])`)
   const [major, minor, patch] = [Number(m[1]), Number(m[2]), Number(m[3])]
-  if (m[4] !== undefined) return `${major}.${minor}.${patch}-rc.${Number(m[4]) + 1}`
+  if (m[4] !== undefined) return `${major}.${minor}.${patch}`
   return kind === 'minor' ? `${major}.${minor + 1}.0` : `${major}.${minor}.${patch + 1}`
 }
 
@@ -394,6 +396,13 @@ export function checkWave(manifest: WaveManifest, ctx: CheckContext): Finding[] 
       findings.push({ severity: 'error', subject: entry.name, detail: `no wave member at packages/${entry.dir} — re-run plan` })
       continue
     }
+    if (entry.target.includes('-')) {
+      findings.push({
+        severity: 'error',
+        subject: entry.name,
+        detail: `target ${entry.target} is a prerelease — community packages publish 0.MINOR.PATCH only (docs/publishing.md 「版本号规则」)`,
+      })
+    }
     if (member.version !== entry.target) {
       findings.push({
         severity: 'error',
@@ -594,10 +603,7 @@ function cmdStage(): void {
     }
     const tgz = join(root, 'dist-publish', tarballName(entry.name, entry.target))
     if (!existsSync(tgz)) fail(`missing ${tgz}`, '先跑 `pnpm release:wave pack`')
-    // npm 12 refuses a prerelease without an explicit dist-tag; our rc lines
-    // (the local-agent family, the eval family) ship as `latest`, as before.
-    const tag = entry.target.includes('-') ? ['--tag', 'latest'] : []
-    const run = spawnSync('npx', ['npm@12', 'stage', 'publish', tgz, ...tag], { cwd: root, encoding: 'utf8' })
+    const run = spawnSync('npx', ['npm@12', 'stage', 'publish', tgz], { cwd: root, encoding: 'utf8' })
     process.stdout.write(run.stdout ?? '')
     process.stderr.write(run.stderr ?? '')
     if (run.status !== 0) {
