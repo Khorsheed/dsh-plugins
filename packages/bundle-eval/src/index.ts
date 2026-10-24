@@ -1,5 +1,5 @@
 /**
- * @khorsheed/dsh-eval-suite — the evaluation family (datasets / mission /
+ * @khorsheed/dsh-eval-suite — the evaluation family (datasets / eval+mission /
  * lab / eval) plus the local-agent delegation family (the core and the kimi /
  * codex / claude-code / dsh harness providers the run verb delegates through)
  * plus the dsh-eval mode preset, as one thin meta package. The bundle is
@@ -16,7 +16,6 @@ export const MODE = 'dsh-eval' as const
 /** Self-mounting member packages whose canonical rows the bundle patch mounts, in cordis.patch.yml row order. */
 export const FAMILY_MEMBERS = [
   '@khorsheed/dsh-datasets',
-  '@khorsheed/dsh-mission',
   '@khorsheed/dsh-lab',
   '@khorsheed/dsh-eval',
   '@khorsheed/dsh-local-agent',

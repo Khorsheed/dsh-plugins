@@ -3,9 +3,9 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { apply } from '../src/index.ts'
-import { MissionService } from '../src/service.ts'
-import { currentAttempt } from '../src/projection.ts'
+import { apply } from '../../src/mission/index.ts'
+import { MissionService } from '../../src/mission/service.ts'
+import { currentAttempt } from '../../src/mission/projection.ts'
 
 let dir: string
 let service: MissionService
@@ -176,10 +176,10 @@ describe('service face (ctx.mission)', () => {
     const mission = ctx.get('mission') as MissionService
     expect(mission).toBeInstanceOf(MissionService)
     // The `/mission` slash registration moved to the companion
-    // `@khorsheed/dsh-mission/tool` row (preset-visibility rollout A3): the
+    // `@khorsheed/dsh-eval/mission/tool` row (preset-visibility rollout A3): the
     // core row registers nothing into the command registry either.
     expect(commands).toEqual([])
-    // The model tools moved to the `./tool` composition row `@khorsheed/dsh-mission/tool`:
+    // The model tools moved to the `./tool` composition row `@khorsheed/dsh-eval/mission/tool`:
     // the core row registers nothing into either model-facing registry.
     expect(registered).toEqual([])
 

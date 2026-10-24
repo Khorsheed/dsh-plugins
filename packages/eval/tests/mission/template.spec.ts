@@ -2,8 +2,8 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { MissionService } from '../src/service.ts'
-import { lintTemplate, parseTemplate, SIMPLE_TEMPLATE } from '../src/template.ts'
+import { MissionService } from '../../src/mission/service.ts'
+import { lintTemplate, parseTemplate, SIMPLE_TEMPLATE } from '../../src/mission/template.ts'
 
 let dir: string
 beforeEach(() => {

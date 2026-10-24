@@ -2,6 +2,8 @@
 
 [English](README.en.md) | 中文
 
+> 本文原是 `@khorsheed/dsh-mission` 包的 README。2026-10-24 起 mission 并入 `@khorsheed/dsh-eval`:由 eval 的行一并挂载,原来单独的 `mission` 行取消;`mission` 服务名与 `dsh-mission` 命令不变,工具行改名 `@khorsheed/dsh-eval/mission/tool`,源码在 `packages/eval/src/mission/`。下文里的安装说明请改装 `@khorsheed/dsh-eval`。
+
 dsh 生态的通用任务管理：**mission** 是一个工作项——状态、标签、计划数据（依赖 / 一次性定时）、attempt、不透明资源引用、产物索引、append-only 命名空间注解；**run** 是从模板批量创建的一批 mission。模板声明状态机，run 创建时冻结它，每个 mission 强制它：声明即强制——未声明的转移一律 fail loud，guard 是确定性的，且任何代码路径都不做自动转移。
 
 M1 交付：store、带三种内置 guard 的状态机、run 模板 lint、五桶投影、服务面（`ctx.mission`）、十二个模型工具、`dsh-mission` CLI；**那十二个工具自 M4'③ 起不由核心行注册**——定义仍在本包（`src/tool.ts`），注册与 `tool:mission` 提示词段归本包的 `./tool` 组合入口（工具行 `@khorsheed/dsh-mission/tool`），由 agent preset 按会话授予（见[模型工具](#模型工具)）；M2 补上 `/mission` slash 面与带闸的 bundle 导出（slash 的**注册**自 preset 可见性收口起归工具行——落进 preset scope 层，只有授予会话可见；handler 与定义留在本包）；M4 补上 Typert Remote 数据面驱动的 web 会话 tab——**任务 tab 与其 Remote 数据面已退役**：评估会话的默认预设自 I5·T46 起就不显示它（界面规格 R6），它携带的人操作（重试、释放检查、带闸导出对话框）由 eval 家族的实验室面经 eval 自己的 Remote 与本包服务面承接。

@@ -5,7 +5,7 @@
  * every tier, delegated to the core's handler), and the silent degrade when
  * the core service is absent. */
 import { describe, expect, it } from 'vitest'
-import { apply, type MissionToolConfig } from '../src/tool.ts'
+import { apply, type MissionToolConfig } from '../../src/mission/tool.ts'
 
 const ORIGIN = Symbol.for('dsh.tool.origin')
 
@@ -66,12 +66,12 @@ function mount(service: unknown, config?: MissionToolConfig): {
   return { tools, sections, commands, infos }
 }
 
-describe('mission-tool row (@khorsheed/dsh-mission/tool)', () => {
+describe('mission-tool row (@khorsheed/dsh-eval/mission/tool)', () => {
   it('grants all twelve tools, tags them by this package, and adds the full section', () => {
     const { tools, sections } = mount({})
     expect(tools.map(tool => tool.name).sort()).toEqual([...ALL_TOOLS].sort())
     for (const tool of tools) {
-      expect(tool[ORIGIN]).toEqual({ channel: 'plugin', owner: '@khorsheed/dsh-mission' })
+      expect(tool[ORIGIN]).toEqual({ channel: 'plugin', owner: '@khorsheed/dsh-eval' })
     }
     expect(sections.map(section => section.name)).toEqual(['tool:mission'])
     expect(sections[0]?.order).toBe(113)

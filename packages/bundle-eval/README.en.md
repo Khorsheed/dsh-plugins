@@ -18,9 +18,8 @@ A dataset is registered as a read-only source, an experiment expands "which task
 | Member package | Row id | Contents |
 | --- | --- | --- |
 | `@khorsheed/dsh-datasets` | `datasets` | Dataset registry, read-only materialization, the 题集 tab; the `datasets_*` tools are the package's `./tool` composition entry, granted by the presets that name it |
-| `@khorsheed/dsh-mission` | `mission` | The run / mission / attempt ledger and release gate, the 任务 tab; the `mission_*` tools are the package's `./tool` composition entry, granted by the presets that name it |
 | `@khorsheed/dsh-lab` | `lab` | Container unit acquire, fingerprint, verify, and destroy (Docker) |
-| `@khorsheed/dsh-eval` | `eval` | The orchestrator: experiments, condition library, runs, judging, reports, the 实验室 tab; the `eval_*` tools and `/eval` are the package's `./tool` composition entry, granted by the presets that name it |
+| `@khorsheed/dsh-eval` | `eval` | The orchestrator: experiments, condition library, runs, judging, reports, the 实验室 tab; the `eval_*` tools and `/eval` are the package's `./tool` composition entry, granted by the presets that name it; plus the mission ledger (run / mission / attempt ledger and release gate, mounted by the eval row; folded in from dsh-mission on 2026-10-24) |
 | `@khorsheed/dsh-local-agent` | `local-agent` | The delegation family core: the scoped-homes root, run facades and the shared harness face — eval's run / provision verbs delegate to the external CLIs through it |
 | `@khorsheed/dsh-local-agent-kimi` | `local-agent-kimi` | The Kimi harness provider |
 | `@khorsheed/dsh-local-agent-codex` | `local-agent-codex` | The Codex harness provider |

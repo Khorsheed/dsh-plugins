@@ -2,9 +2,9 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { bucketOf, currentAttempt, releasableClosure } from '../src/projection.ts'
-import { MissionService } from '../src/service.ts'
-import { SIMPLE_TEMPLATE } from '../src/template.ts'
+import { bucketOf, currentAttempt, releasableClosure } from '../../src/mission/projection.ts'
+import { MissionService } from '../../src/mission/service.ts'
+import { SIMPLE_TEMPLATE } from '../../src/mission/template.ts'
 
 let dir: string
 let service: MissionService

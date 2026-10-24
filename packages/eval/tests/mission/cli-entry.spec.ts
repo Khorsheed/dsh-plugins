@@ -22,8 +22,8 @@ import { promisify } from 'node:util'
 import { afterEach, describe, expect, it } from 'vitest'
 
 const execFileAsync = promisify(execFile)
-const PKG = join(import.meta.dirname, '..')
-const CLI = join(PKG, 'src', 'cli.ts')
+const PKG = join(import.meta.dirname, '..', '..')
+const CLI = join(PKG, 'src', 'mission-cli.ts')
 
 let scratch: string | undefined
 
@@ -48,7 +48,7 @@ describe('dsh-mission entry guard', { timeout: 60_000 }, () => {
     scratch = mkdtempSync(join(tmpdir(), 'dsh-mission-entry-'))
     const linkedPkg = join(scratch, 'pkg')
     symlinkSync(PKG, linkedPkg)
-    const result = await spawnEntry(join(linkedPkg, 'src', 'cli.ts'))
+    const result = await spawnEntry(join(linkedPkg, 'src', 'mission-cli.ts'))
     expect(result.code, `silent exit 0 means the guard never fired: ${JSON.stringify(result.output)}`).toBe(2)
     expect(result.output).toMatch(/usage: dsh-mission/)
   })

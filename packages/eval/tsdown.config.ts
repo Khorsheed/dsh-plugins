@@ -5,4 +5,4 @@
  */
 import { clientBundle } from '../../build/tsdown.client.ts'
 
-export default clientBundle('@khorsheed/dsh-eval', ['lib/types/index.js', 'lib/types/cli.js', 'lib/types/tool.js'])
+export default clientBundle('@khorsheed/dsh-eval', ['lib/types/index.js', 'lib/types/cli.js', 'lib/types/tool.js', 'lib/types/mission-tool.js', 'lib/types/mission-cli.js'])

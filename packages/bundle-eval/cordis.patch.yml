@@ -1,5 +1,5 @@
 # @khorsheed/dsh-eval-suite bundle patch: the 评测模式 (dsh-eval) mode pack —
-# the evaluation family's rows (datasets / mission / lab / eval), the
+# the evaluation family's rows (datasets / lab / eval and its mission row), the
 # local-agent delegation family's rows (the core plus the kimi / codex /
 # claude-code / dsh providers, with the two bare overrides), and the mode's own
 # preset row. Member rows (and the bare overrides) are re-mounted VERBATIM from
@@ -30,7 +30,7 @@
 #
 # The model TOOLS are not here by design: since the family fold each core
 # ships its tool row as its own `./tool` composition entry
-# (`@khorsheed/dsh-datasets/tool`, `@khorsheed/dsh-mission/tool`,
+# (`@khorsheed/dsh-datasets/tool`, `@khorsheed/dsh-eval/mission/tool`,
 # `@khorsheed/dsh-eval/tool`), which an agent preset names to grant the tools
 # per session — a profile-root row would grant every session. The grant points
 # are the `datasets-tool` / `eval-tool` rows inside this bundle's preset row
@@ -52,15 +52,12 @@
     - id: datasets
       name: '@khorsheed/dsh-datasets'
 
-    # The mission ledger: runs, templates, attempts, the release gate.
-    - id: mission
-      name: '@khorsheed/dsh-mission'
-
     # Container units (Docker) for the container path.
     - id: lab
       name: '@khorsheed/dsh-lab'
 
-    # The orchestrator: experiments, conditions, runs, judging, the 实验室 tab.
+    # The orchestrator: experiments, conditions, runs, judging, the 实验室 tab —
+    # and, since mission folded into eval (2026-10-24), the mission ledger.
     - id: eval
       name: '@khorsheed/dsh-eval'
 
@@ -310,9 +307,9 @@
           # 账本与释放闸，但那是编排器服务面的事，模型侧读进度走 eval 自己的投影
           # （`eval_cells`，见下一行的 eval-tool）。摘掉这一行还有第二个效果，是同一条
           # 规则的另一半：宿主的任务 tab 按「当前会话的预设组合里有没有
-          # @khorsheed/dsh-mission/tool 行」自隐（mission 的 preset-visibility），所以
+          # @khorsheed/dsh-eval/mission/tool 行」自隐（mission 的 preset-visibility），所以
           # 这一行一走，评测会话的任务 tab 自己就不见了，不必再关一次。
-          # 这一行如今是 mission 包自己的 `./tool` 组合入口（T88 起），随 mission 安装，谁要在自己的覆盖层预设里
+          # 这一行如今是 eval 包里 mission 的 `./tool` 组合入口（mission 2026-10-24 并入 eval），随 eval 安装，谁要在自己的覆盖层预设里
           # 加回这一行都还装得上——钉的是默认值，不是可达集。
           - id: datasets-tool
             name: '@khorsheed/dsh-datasets/tool'

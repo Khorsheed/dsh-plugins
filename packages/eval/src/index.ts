@@ -25,6 +25,7 @@ import type { Context } from '@deepseek-ai/cordis'
 // Type-only: pulls the jobs Context merge in so the controller attach below
 // type-checks; the service itself is deferred-injected, never required.
 import type {} from '@deepseek-ai/dsh-jobs'
+import * as missionLedger from './mission/index.ts'
 import { EvalRemoteService } from './remote.ts'
 import { EvalService } from './service.ts'
 import type { ExecutionHomePort, ScopedHomeEvidenceFace } from './faces.ts'
@@ -81,6 +82,12 @@ export interface EvalConfig {
    * `homeDir` + credential-dir check + `bind` mount, byte-identical.
    */
   readonly executionHome?: ExecutionHomePort
+  /**
+   * The mission ledger mounted with this row (folded in from
+   * @khorsheed/dsh-mission, 2026-10-24): its data root, defaulting to
+   * $DSH_HOME/state/mission exactly as the standalone row did.
+   */
+  readonly mission?: { readonly dataDir?: string }
 }
 
 /**
@@ -95,6 +102,11 @@ export interface EvalConfig {
 export function apply(ctx: Context, config: EvalConfig = {}): void {
   const service = new EvalService(ctx, config)
   ctx.provide('dshEval', service)
+  // The mission ledger (the `mission` service the run loop records attempts
+  // in) rides this row since mission folded into eval: one package, one row.
+  // The service name, its data root and the `dsh-mission` bin are unchanged,
+  // so eval's per-call probes and lab's probe see exactly what they did.
+  ctx.plugin(missionLedger, { dataDir: config.mission?.dataDir ?? '' })
   // The borrowed Context's teardown IS this instance's disposal: the run jobs
   // it started are cancelled through their own AbortSignal, and every public
   // verb refuses coded afterwards.

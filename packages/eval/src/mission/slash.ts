@@ -9,7 +9,7 @@
  * the CLI ({@link renderStatus} / {@link rowLine}) — no duplicated logic.
  *
  * The REGISTRATION no longer happens in this core: it moved to the companion
- * `@khorsheed/dsh-mission/tool` row (preset-visibility rollout A3), which an
+ * `@khorsheed/dsh-eval/mission/tool` row (preset-visibility rollout A3), which an
  * agent preset mounts per session — registering from the preset's mount lands
  * the command in that preset's scope layer, so only granted sessions see it
  * (the official `/goal` `/plan` `/compact` shape). This module keeps the
@@ -317,7 +317,7 @@ async function exportCmd(service: MissionService, args: SlashArgs, extras: Slash
 }
 
 /** The companion row whose preset grant admits this command. */
-const TOOL_ROW_MODULE = '@khorsheed/dsh-mission/tool'
+const TOOL_ROW_MODULE = '@khorsheed/dsh-eval/mission/tool'
 
 /** The agentPresets slice the grant backstop reads (duck-typed; probed, never injected). */
 interface AgentPresetsProbe {
@@ -364,7 +364,7 @@ async function slashGrantRefusal(invocation: CommandInvocation): Promise<Command
  * as error results — the slash face never throws across the registry.
  *
  * The preset-grant backstop runs first: the command is registered by the
- * `./tool` composition row `@khorsheed/dsh-mission/tool` row under an agent preset, so only
+ * `./tool` composition row `@khorsheed/dsh-eval/mission/tool` row under an agent preset, so only
  * that preset's sessions can normally reach it; an invocation that arrives
  * anyway is refused only when the session's preset composition is READABLE
  * and names no companion row (every unreadable path fails open).

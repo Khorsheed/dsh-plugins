@@ -7,7 +7,7 @@ Controlled experiment units for the dsh ecosystem: an **experiment unit** is one
 Three red lines define the character of the plugin:
 
 1. **It records, never judges.** lab runs and registers facts (resource ids, environment fingerprints, artifacts); "passed?", "how good?" belong to whoever consumes the records.
-2. **`release` is the gate's enforcement point.** When the unit is bound to a mission and the `@khorsheed/dsh-mission` plugin is present, `isReleasable` must pass — a failed query fails closed, and no option bypasses the check. Without a gate (no mission binding, or the plugin absent), release requires an explicit `force` and warns.
+2. **`release` is the gate's enforcement point.** When the unit is bound to a mission and the mission ledger (installed with `@khorsheed/dsh-eval`) is present, `isReleasable` must pass — a failed query fails closed, and no option bypasses the check. Without a gate (no mission binding, or the plugin absent), release requires an explicit `force` and warns.
 3. **It never fires work.** lab provides verbs; when to call them belongs to the human / agent / external orchestrator.
 
 Milestones M1–M2 ship the service face (`ctx.lab`) and the `dsh-lab` CLI over the same kernel, with the docker provider: acquire / populate / collect / checkpoint / verify / archive / release / status, environment fingerprints, orphan-process compensation, and the `maxConcurrentUnits` safety valve. The model tools are M3.
@@ -95,7 +95,7 @@ One thing at the same layer: `acquire` now also makes `/run/dsh-lab` itself `177
 
 `fingerprintOf` is the hashing function `acquire` itself uses, exposed because a caller sometimes needs to ask what a DIFFERENT component set would hash to. The evaluation orchestrator is that case: comparing cells needs "the same environment the plan declared", not "the same unit", and those differ by exactly the components each condition contributes (its own credential mount, its own env variable). It takes the unit's components, drops those, and asks for the hash of what is left. Doing that arithmetic here rather than re-implementing the canonicalization keeps one hashing rule in the repository — a second copy would drift the first time a component is added. Pure: no unit, no provider, no daemon.
 
-The mission integration is a probed structural face (`setRefs` / `addArtifact` / `addCheckpoint` / `annotate` / `isReleasable`), never an import: with `@khorsheed/dsh-mission` absent, registration writes warn-and-skip and `release` degrades to `force` + warning. A mission binding registered at acquire survives host restarts (it rides the container labels), so the gate still protects reconciled units.
+The mission integration is a probed structural face (`setRefs` / `addArtifact` / `addCheckpoint` / `annotate` / `isReleasable`), never an import: with the mission ledger (`@khorsheed/dsh-eval`) absent, registration writes warn-and-skip and `release` degrades to `force` + warning. A mission binding registered at acquire survives host restarts (it rides the container labels), so the gate still protects reconciled units.
 
 ## The instance-mounting seam (per-instance scope)
 
@@ -166,7 +166,7 @@ The CLI is the same `LabService` kernel over a `child_process` runner, with the 
 - npm release line (`@deepseek-ai/dsh@0.2.0-rc.2`): ✅ — the service face and docker provider work on the published host. Since T88 the evaluation family moves minHost up to 0.2.0-rc.2 together — 0.1.x hosts stay on the previous release line.
 - source line (deepseek-harness master, fork or upstream): ✅ — same (verifiedHost: 0.2.1-rc.1); host-021 wave: full build+test green against the 0.2.1-rc.1 tree, no other surface changes.
 
-Degraded / absent items (mirrors `dsh.compat` in package.json): without the `@khorsheed/dsh-mission` plugin the release gate degrades to an explicit force flag plus a warning, and ref/artifact/checkpoint/verify registration is skipped with a warning. `dsh-lab` reads mission state through `dsh-mission get --json` (T89); an older mission CLI without `--json` gets an upgrade hint and that status is skipped. The `lab_*` model tools (M3) do not exist in this line yet.
+Degraded / absent items (mirrors `dsh.compat` in package.json): without the mission ledger (installed with `@khorsheed/dsh-eval`) the release gate degrades to an explicit force flag plus a warning, and ref/artifact/checkpoint/verify registration is skipped with a warning. `dsh-lab` reads mission state through `dsh-mission get --json` (T89); an older mission CLI without `--json` gets an upgrade hint and that status is skipped. The `lab_*` model tools (M3) do not exist in this line yet.
 
 ## Failure recovery loop
 

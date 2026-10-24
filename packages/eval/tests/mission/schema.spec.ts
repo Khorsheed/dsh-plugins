@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { assertSchemaSubset, schemaSubsetProblems, validateJson } from '../src/schema.ts'
+import { assertSchemaSubset, schemaSubsetProblems, validateJson } from '../../src/mission/schema.ts'
 
 describe('schema subset validator', () => {
   it('accepts values matching type/required/properties', () => {

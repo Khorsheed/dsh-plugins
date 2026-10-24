@@ -2,7 +2,7 @@
  * preset-visibility rollout (A3), and the tab/Remote retirement: the service
  * alone. The model tools, the `tool:mission` prompt section, and the
  * `/mission` slash registration live in the `./tool` composition row
- * `@khorsheed/dsh-mission/tool`, so mounting this core must touch NEITHER
+ * `@khorsheed/dsh-eval/mission/tool`, so mounting this core must touch NEITHER
  * the tool registry NOR the system-prompt assembly NOR the command registry
  * NOR the plugin loader — the ctx below supplies none of them, so a stray
  * registration would throw instead of passing silently. */
@@ -10,7 +10,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { apply, Config, inject } from '../src/index.ts'
+import { apply, Config, inject } from '../../src/mission/index.ts'
 
 const roots: string[] = []
 afterEach(() => {

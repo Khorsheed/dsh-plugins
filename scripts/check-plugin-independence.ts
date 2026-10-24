@@ -317,7 +317,9 @@ export const COMMUNITY_SERVICE_INJECTORS: Readonly<Record<string, RegExp>> = {
   room: /^room$/,
   datasets: /^datasets$/,
   dshEval: /^eval$/,
-  mission: /^mission$/,
+  // mission folded into eval (2026-10-24): the eval row mounts the service,
+  // and eval's ./mission/tool entry injects it.
+  mission: /^eval$/,
   // library's `./tool` composition entry injects its own core service (the
   // evaluation-family fold pattern): the preset's standing scope mounts before
   // the profile's bundle rows provide `library`, so the row pends on the core.
