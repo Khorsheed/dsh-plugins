@@ -61,7 +61,20 @@ const ROOM_TOOLS = [
     inputSchema: { type: 'object', properties: {
       provider: { type: 'string' }, name: { type: 'string' }, note: { type: 'string', description: 'What you will wait for before acting on the first task result.' }, role: { type: 'string', description: 'Short public role (≤30 chars) the other members see, e.g. 代码审查.' }, instructions: { type: 'string', description: 'Private instructions only this member reads.' },
       cwd: { type: 'string' }, model: { type: 'string' }, firstTask: { type: 'string' },
+      mode: { type: 'string', description: 'The member\'s dsh mode (a host preset id, e.g. dsh-gamedev). Omit to keep this room\'s own mode; "none" for only its own CLI tools.' },
     }, required: ['provider', 'name'], additionalProperties: false } },
+  { name: 'ask_user_question', description: 'Ask the human questions they answer by picking options (or typing), instead of writing the questions into your reply. '
+      + 'Use it whenever you need the human to decide or fill in something before you go on: give each question 2-4 short options with a one-line description each. '
+      + 'The call waits for the answer and returns {answers:[{id, selected:[labels], custom?}]}; if nobody answers it fails — then go on with your best judgement and say what you assumed.',
+    inputSchema: { type: 'object', properties: {
+      questions: { type: 'array', description: 'At most 4 questions.', items: { type: 'object', properties: {
+        id: { type: 'string', description: 'Short unique id, echoed in the answer.' },
+        question: { type: 'string', description: 'The full question.' },
+        header: { type: 'string', description: 'Optional 2-6 word topic chip.' },
+        options: { type: 'array', items: { type: 'object', properties: { label: { type: 'string' }, description: { type: 'string' } }, required: ['label'] } },
+        multi_select: { type: 'boolean', description: 'True when several options may be picked.' },
+      }, required: ['id', 'question'] } },
+    }, required: ['questions'], additionalProperties: false } },
   { name: 'room_message', description: 'Send a room member a message by name (same as member_message). kind "task" (default): its reply comes back to you as a report citing the message id; kind "notify": FYI only. Do not poll.',
     inputSchema: { type: 'object', properties: { member: { type: 'string' }, text: { type: 'string' }, kind: { type: 'string', enum: ['task', 'notify'] }, inReplyTo: { type: 'string' }, note: { type: 'string', description: 'What you will wait for before acting on the result.' }, task: { type: 'string', description: '"new" or a task number; omit to stay in your current task.' } }, required: ['member', 'text'], additionalProperties: false } },
 ] as const

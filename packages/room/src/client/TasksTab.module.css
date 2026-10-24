@@ -1,0 +1,65 @@
+/* The collaboration page: a 任务 / 团队 switch in the panel kit's underline
+   tab metrics (36px row, label-wide accent rule, one bottom hairline), then
+   the chosen view. */
+.page {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+
+.switch {
+  display: flex;
+  flex: none;
+  align-items: stretch;
+  gap: 4px;
+  height: 36px;
+  padding: 0 4px;
+  box-shadow: inset 0 -1px var(--dsw-alias-border-l2);
+}
+
+.switchTab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 8px;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: var(--dsh-panel-text-body, 13px);
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.switchTab[aria-selected="true"] {
+  color: var(--dsw-alias-label-primary);
+  font-weight: 600;
+}
+
+.switchTab[aria-selected="true"]::after {
+  content: "";
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 0;
+  height: 2.5px;
+  border-radius: 2px;
+  background: var(--dsw-alias-state-business-primary);
+}
+
+.switchTab:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: -3px;
+  border-radius: 6px;
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+@media (pointer: coarse) {
+  .switch { height: 44px; }
+}

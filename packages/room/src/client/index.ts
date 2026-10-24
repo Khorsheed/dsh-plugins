@@ -40,19 +40,19 @@ import { MembersView } from './MembersView.tsx'
 import { RoomComposer, selectRoomComposer } from './RoomComposer.tsx'
 import { ROOM_TASKS_KIND, ROOM_TASKS_TAB_ID, RoomTasksTab, type RoomTasksInjected } from './TasksTab.tsx'
 import { RoomTaskTags } from './task-tag.ts'
-import { ROOM_TEAM_KIND, ROOM_TEAM_TAB_ID, RoomTeamTab, type RoomTeamInjected } from './TeamTab.tsx'
 import { RoomSpeechView } from './RoomSpeechView.tsx'
 import { RoomRunView } from './RoomRunView.tsx'
 import { RoomEventView } from './RoomEventView.tsx'
-import { roomApprovalDefinition, roomEventDefinition, roomRelayDefinition, roomInboxDefinition, roomRunDefinition, roomSpeechDefinition } from './nodes.ts'
+import { roomApprovalDefinition, roomQuestionDefinition, roomEventDefinition, roomRelayDefinition, roomInboxDefinition, roomRunDefinition, roomSpeechDefinition } from './nodes.ts'
 import { mainSessionId, RoomStore } from './room-store.ts'
 import { RoomPresetVisibility, RegistrationToggle } from './preset-visibility.ts'
 import { RoomRelayView } from './RoomRelayView.tsx'
 import { RoomInboxView } from './RoomInboxView.tsx'
 import { RoomApprovalView } from './RoomApprovalView.tsx'
+import { RoomQuestionView } from './RoomQuestionView.tsx'
 import type {
   InviteAgentInjected, RoomComposerInjected, RoomComposerMatch, RoomInviteInjected, RoomMembersInjected, RoomModelDirectory, RoomMutationOutcome,
-  RoomRelayInjected, RoomInboxInjected, RoomRunInjected, RoomSpeechInjected, RoomGoalInjected, RoomApprovalInjected,
+  RoomRelayInjected, RoomInboxInjected, RoomRunInjected, RoomSpeechInjected, RoomGoalInjected, RoomApprovalInjected, RoomQuestionInjected,
 } from './slots.ts'
 import type { RoomFailure } from '../types.ts'
 
@@ -289,7 +289,8 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   const teamSidebar = ctx.get('sidebarRightTabs') === undefined ? undefined : ctx.get('sidebarRight')
   const membersFace = (sessionId: SessionId): RoomMembersInjected => ({
     roomStore,
-    ...teamSidebar === undefined ? {} : { openTeam: (member?: string) => { teamSidebar.openTab(ROOM_TEAM_KIND, { params: member === undefined ? {} : { member } }) } },
+    // 团队 is the collaboration page's second view (one sidebar page, two switches).
+    ...teamSidebar === undefined ? {} : { openTeam: (member?: string) => { teamSidebar.openTab(ROOM_TASKS_KIND, { params: { view: 'team', ...member === undefined ? {} : { member } } }) } },
     setCoordinator: async (memberId, expectedRevision) => {
       if (remote === undefined) return { ok: false, message: t('invite.error.generic') }
       const carried = await remote.setCoordinator({ sessionId, memberId, expectedRevision })
@@ -382,6 +383,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     lctx.uiConversation.events.register(roomRelayDefinition)
     lctx.uiConversation.events.register(roomInboxDefinition)
     lctx.uiConversation.events.register(roomApprovalDefinition)
+    lctx.uiConversation.events.register(roomQuestionDefinition)
   })
 
   // The slots are declared by ui-conversation, whose apply order
@@ -453,7 +455,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       reconcileDelivery: reconcileFor(sessionId),
       openPlanSession: id => openSession(id as SessionId),
       ...sidebar === undefined || sidebarTabs === undefined ? {} : {
-        openTasks: (task?: string) => { sidebar.openTab(ROOM_TASKS_KIND, { params: task === undefined ? {} : { task } }) },
+        openTasks: (task?: string) => { sidebar.openTab(ROOM_TASKS_KIND, { params: { view: 'tasks', ...task === undefined ? {} : { task } } }) },
       },
       taskTags,
       submit,
@@ -473,23 +475,12 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   } as const
   if (sidebar !== undefined && sidebarTabs !== undefined) {
     const tasksToggle = new RegistrationToggle(
-      () => sidebarTabs.register({ id: ROOM_TASKS_TAB_ID, kind: ROOM_TASKS_KIND, title: () => t('job.title') }),
+      () => sidebarTabs.register({ id: ROOM_TASKS_TAB_ID, kind: ROOM_TASKS_KIND, title: () => t('collab.title') }),
       () => roomChrome.show(mainSessionId(ctx.sessions.list.getSnapshot())),
     )
     tasksToggle.setReady(true)
     const unsubscribe = roomChrome.subscribe(() => tasksToggle.sync())
     disposers.push(async () => { unsubscribe(); tasksToggle.setReady(false) })
-    const teamToggle = new RegistrationToggle(
-      () => sidebarTabs.register({ id: ROOM_TEAM_TAB_ID, kind: ROOM_TEAM_KIND, title: () => t('team.title') }),
-      () => roomChrome.show(mainSessionId(ctx.sessions.list.getSnapshot())),
-    )
-    teamToggle.setReady(true)
-    const unsubscribeTeam = roomChrome.subscribe(() => teamToggle.sync())
-    disposers.push(async () => { unsubscribeTeam(); teamToggle.setReady(false) })
-    ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
-      name: 'sidebar.right.pane.tab', key: ROOM_TEAM_TAB_ID, locale: NS,
-      inject: (_sessionId: SessionId): RoomTeamInjected => ({ roomStore, openSession }),
-    }, RoomTeamTab))
     ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
       name: 'sidebar.right.pane.tab', key: ROOM_TASKS_TAB_ID, locale: NS,
       inject: (sessionId: SessionId): RoomTasksInjected => tasksFace(sessionId),
@@ -604,6 +595,23 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       }),
     },
     RoomApprovalView,
+  ))
+  ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(
+    {
+      name: 'conversation.chat.node',
+      key: 'room-question',
+      locale: NS,
+      inject: (sessionId: SessionId): RoomQuestionInjected => ({
+        answerQuestion: async (questionId, answers) => {
+          if (remote === undefined) return t('composer.error.generic')
+          const carried = await remote.answerQuestion({ sessionId, id: questionId, answers })
+          void roomStore.refresh(sessionId)
+          if (!carried.ok) return t('composer.error.generic')
+          return carried.value.ok ? undefined : t('question.expired')
+        },
+      }),
+    },
+    RoomQuestionView,
   ))
   return async () => {
     for (const dispose of disposers.reverse()) await dispose()

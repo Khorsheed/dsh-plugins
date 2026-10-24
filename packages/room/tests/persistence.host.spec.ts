@@ -131,6 +131,8 @@ describe('room journal persistence', () => {
       session.append('room/relay-resolved', { id: 'r1', state: 'sent' })
       session.append('room/approval', { id: 'p1', member: 'ada', memberId: 'm', tool: 'video_render' })
       session.append('room/approval-resolved', { id: 'p1', outcome: 'allowed-once' })
+      session.append('room/question', { id: 'q1', member: 'ada', memberId: 'm', questions: [{ id: 'fun', question: '核心乐趣？', options: [{ label: '解谜' }] }] })
+      session.append('room/question-resolved', { id: 'q1', outcome: 'answered', answers: [{ id: 'fun', selected: ['解谜'] }] })
       session.append('room/run-state', { member: 'ada', runId: 'a', state: 'done', startedAt: 1, elapsedMs: 2 })
       session.append('room/execution-metadata', { runId: 'a', model: 'observed', tokens: 42 })
       session.append('room/member-removed', { name: 'ada' })

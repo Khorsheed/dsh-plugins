@@ -46,6 +46,7 @@ room 给成员的提示词是一条用户消息，什么都往里堆：角色指
 
 ## Consequences
 
+- 2026-10-24：团队页不再作为单独的侧栏页签打开，而是和「任务」并列，成为同一个「协作」页（kind `room-tasks`，参数 `view` / `task` / `member`）里的「团队」子页签；成员页的「团队」按钮和任务胶囊都跳到这里。`TeamTab.tsx` 和 `room-team` kind 已删除。
 - 暂停中的云端协作线（`codex/room-*` 分支）也改了 `assemblePrompt`（每轮加【本轮来源】）和邀请对话框；负责人决定本地这条线先合入，那条线之后基于它适配。它的来源标签可以自然地映射到下一步的消息信封。
 - 尚未完成：外部 CLI 成员的按成员权限（claude 计划 / 逐项确认，codex 只读）。需要在 local-agent 核心加一个委派级参数，记在委派记录里，并由各 provider 的 exec 与 live 启动遵守；claude provider 正有人在改，所以单独交付。CLI 子会话创建时仍不带 preset 标记，读取会话 preset 的宿主界面会把它们显示为无 preset。
 - 旧日志照常回放：没有 `role` 即视为无职责；旧房间只是不再重发名册；没有 `hop` 的派发视为链的起点；没有 `intent` 的转交仍走原来的确认路径。

@@ -102,12 +102,12 @@ describe('room client apply', () => {
     expect(inject).toEqual(['slots', 'sessions', 'remote', 'locale'])
   })
 
-  it('mounts the Remote, registers the six Definitions and the slot entries with the right shapes', async () => {
+  it('mounts the Remote, registers the seven Definitions and the slot entries with the right shapes', async () => {
     const { ctx, slots, remoteService, conversationEvents } = await bench()
     await ctx.plugin({ inject: [...inject], apply }).await()
     await settled()
     expect(remoteService.$mount).toHaveBeenCalledTimes(1)
-    expect(conversationEvents.register).toHaveBeenCalledTimes(6)
+    expect(conversationEvents.register).toHaveBeenCalledTimes(7)
 
     const header = slots.entries('conversation.session.header.actions')
     expect(header).toHaveLength(1)
@@ -127,7 +127,7 @@ describe('room client apply', () => {
     expect((views[0]!.options.label as () => string)()).toBe('Members')
 
     const nodes = slots.entries('conversation.chat.node').map(entry => entry.options.key)
-    expect(nodes).toEqual(['room-speech', 'room-run', 'room-event', 'room-relay', 'room-inbox', 'room-approval'])
+    expect(nodes).toEqual(['room-speech', 'room-run', 'room-event', 'room-relay', 'room-inbox', 'room-approval', 'room-question'])
 
     // The dock capsules no longer occupy the input dock: that seat hides with
     // the official fallback under the composer takeover, so the takeover
@@ -142,7 +142,7 @@ describe('room client apply', () => {
     expect(slots.entries('conversation.session.header.actions')).toHaveLength(1)
     expect(slots.entries('conversation.composer')).toHaveLength(1)
     expect(slots.entries('conversation.view')).toHaveLength(1)
-    expect(slots.entries('conversation.chat.node')).toHaveLength(6)
+    expect(slots.entries('conversation.chat.node')).toHaveLength(7)
   })
 
   it('the header action face invites through the Remote bound to the session (its own cwd rides as the placeholder)', async () => {
@@ -205,10 +205,12 @@ describe('room client apply', () => {
     expect(slots.entries('sidebar.right.pane.tab').map(entry => entry.options.key)).toContain('@khorsheed/dsh-room/tasks')
     const composer = slots.entries('conversation.composer')[0]!
     const face = (composer.inject as unknown as (sessionId: string) => RoomComposerInjected)('room-1')
+    // 任务 and 团队 share one sidebar page: only the collaboration kind registers.
+    expect(register).toHaveBeenCalledTimes(1)
     face.openTasks?.()
-    expect(openTab).toHaveBeenCalledWith('room-tasks', { params: {} })
+    expect(openTab).toHaveBeenCalledWith('room-tasks', { params: { view: 'tasks' } })
     face.openTasks?.('msg-1')
-    expect(openTab).toHaveBeenCalledWith('room-tasks', { params: { task: 'msg-1' } })
+    expect(openTab).toHaveBeenCalledWith('room-tasks', { params: { view: 'tasks', task: 'msg-1' } })
     await fiber.dispose()
     expect(unregister).toHaveBeenCalled()
   })

@@ -76,7 +76,7 @@ import type {
   RoomRelayResolveRequest, RoomRelayResolveResult,
   RoomRemoveMemberRequest, RoomRemoveMemberResult, RoomRestoreMemberRequest, RoomRestoreMemberResult,
   RoomSetGoalRequest, RoomSetGoalResult,
-  RoomState, RoomUpdateMemberRequest, RoomUpdateMemberResult, RoomAnswerApprovalRequest, RoomAnswerApprovalResult,
+  RoomState, RoomUpdateMemberRequest, RoomUpdateMemberResult, RoomAnswerApprovalRequest, RoomAnswerApprovalResult, RoomAnswerQuestionRequest, RoomAnswerQuestionResult, RoomQuestionAnswer, RoomQuestionItem,
 } from './types.ts'
 
 export type * from './types.ts'
@@ -114,6 +114,46 @@ function validName(name: string): boolean {
  * The receipt a sending model reads back: the message id and what happens
  * next, or why it waits.
  */
+/** How long a member's question card waits for the human before its call gives up. */
+const QUESTION_TIMEOUT_MS = 30 * 60_000
+
+/**
+ * Validate a member's `ask_user_question` questions: an array, or that array
+ * as JSON text (some models only send flat strings). Options may be labels or
+ * `{ label, description }`; `multi_select` (the host tool's spelling) or
+ * `multiSelect` marks a multi-pick question.
+ * @param raw - the tool argument.
+ * @returns the questions, or the error text the model reads.
+ */
+export function parseQuestions(raw: unknown): readonly RoomQuestionItem[] | string {
+  let value = raw
+  if (typeof value === 'string') {
+    try { value = JSON.parse(value) } catch { return 'questions must be an array (or its JSON text)' }
+  }
+  if (!Array.isArray(value) || value.length === 0) return 'questions must be a non-empty array'
+  if (value.length > 4) return 'Ask at most 4 questions at a time'
+  const questions: RoomQuestionItem[] = []
+  for (const [index, entry] of value.entries()) {
+    if (entry === null || typeof entry !== 'object') return `questions[${index}] must be an object`
+    const row = entry as Record<string, unknown>
+    if (typeof row.question !== 'string' || row.question.trim() === '') return `questions[${index}].question is required`
+    const options: { label: string; description?: string }[] = []
+    for (const option of Array.isArray(row.options) ? row.options : []) {
+      const label = typeof option === 'string' ? option : (option as { label?: unknown } | null)?.label
+      if (typeof label !== 'string' || label.trim() === '') continue
+      const description = typeof option === 'object' && option !== null && typeof (option as { description?: unknown }).description === 'string' ? (option as { description: string }).description.trim() : ''
+      options.push({ label: label.trim().slice(0, 200), ...description === '' ? {} : { description: description.slice(0, 500) } })
+    }
+    if (options.length > 8) return `questions[${index}] has more than 8 options`
+    const id = typeof row.id === 'string' && row.id.trim() !== '' ? row.id.trim() : `q${index + 1}`
+    const header = typeof row.header === 'string' && row.header.trim() !== '' ? row.header.trim().slice(0, 40) : undefined
+    const multiSelect = row.multi_select === true || row.multiSelect === true
+    questions.push({ id, question: row.question.trim().slice(0, 2000), ...header === undefined ? {} : { header }, ...options.length === 0 ? {} : { options }, ...multiSelect ? { multiSelect } : {} })
+  }
+  if (new Set(questions.map(question => question.id)).size !== questions.length) return 'Question ids must be unique'
+  return questions
+}
+
 function messageReceipt(receipt: RoomMessageReceipt, kind: 'task' | 'notify'): RoomMemberMessageReceipt {
   if (receipt.held !== undefined) {
     const why = receipt.held === 'paused' ? '房间已暂停，恢复后自动投递'
@@ -354,6 +394,7 @@ export class RoomService extends TypertRemoteService {
       await this.plans.recover(hit.session)
       await this.engine.recover(hit.session)
       this.expireApprovals(hit.session)
+      this.expireQuestions(hit.session)
       return this.load(sessionId)
     })()
     if (hit.error.code !== 'session-not-found') return Promise.resolve(hit)
@@ -379,7 +420,7 @@ export class RoomService extends TypertRemoteService {
       return { ok: false, error: { code: 'resume-failed', message: String(error) } }
     }
     const loaded = this.load(sessionId)
-    if (loaded.ok) { await this.plans.recover(loaded.session); await this.engine.recover(loaded.session); this.expireApprovals(loaded.session) }
+    if (loaded.ok) { await this.plans.recover(loaded.session); await this.engine.recover(loaded.session); this.expireApprovals(loaded.session); this.expireQuestions(loaded.session) }
     return this.load(sessionId)
   }
 
@@ -1375,6 +1416,67 @@ export class RoomService extends TypertRemoteService {
     return { ok: true }
   }
 
+  /** Pending member questions this process can still answer: question id → its waiting call. */
+  private readonly questionWaiters = new Map<string, (answers: readonly RoomQuestionAnswer[] | undefined) => void>()
+
+  /** Close question cards no waiting call stands behind any more (a restart lost it). */
+  private expireQuestions(session: Session): void {
+    for (const question of replay(session.snapshotEvents()).questions ?? []) {
+      if (!this.questionWaiters.has(question.id)) session.append('room/question-resolved', { id: question.id, outcome: 'cancelled' })
+    }
+  }
+
+  /**
+   * A member asks the human questions (its bridge's `ask_user_question`):
+   * journal a pick-to-answer card in the room and wait for the answer, the
+   * timeout, or the room going away.
+   * @param session - the live room session.
+   * @param member - the asking member.
+   * @param questions - the validated questions.
+   * @param timeoutMs - how long the call waits before it gives up.
+   * @returns the answers, or undefined when nobody answered.
+   */
+  private async askQuestions(session: Session, member: RoomMember, questions: readonly RoomQuestionItem[], timeoutMs: number): Promise<readonly RoomQuestionAnswer[] | undefined> {
+    const id = randomUUID()
+    const answered = new Promise<readonly RoomQuestionAnswer[] | undefined>((resolve) => {
+      this.questionWaiters.set(id, resolve)
+      setTimeout(() => { resolve(undefined) }, timeoutMs).unref?.()
+    })
+    session.append('room/question', { id, member: member.name, memberId: memberId(session.snapshotEvents(), member), questions })
+    await this.ctx.sessions.flush(session)
+    const answers = await answered
+    this.questionWaiters.delete(id)
+    if (answers === undefined && replay(session.snapshotEvents()).questions?.some(entry => entry.id === id) === true) {
+      session.append('room/question-resolved', { id, outcome: 'cancelled' })
+      await this.ctx.sessions.flush(session)
+    }
+    return answers
+  }
+
+  /**
+   * The human answers a member's question card from the room.
+   * @param request - room session, card id, one answer per question.
+   * @returns ok, or `question-not-pending` when it already ended.
+   */
+  @Remote('answerQuestion')
+  async answerQuestion(request: RoomAnswerQuestionRequest): Promise<RoomAnswerQuestionResult> {
+    const loaded = await this.ensureLive(request.sessionId)
+    if (!loaded.ok) return { ok: false, error: loaded.error }
+    const waiter = this.questionWaiters.get(request.id)
+    const pending = loaded.state.questions?.find(entry => entry.id === request.id)
+    if (waiter === undefined || pending === undefined) return { ok: false, error: { code: 'question-not-pending' } }
+    // Keep only answers to this card's own questions, in the shape the asker expects.
+    const answers = pending.questions.map((question) => {
+      const given = request.answers.find(answer => answer.id === question.id)
+      const custom = given?.custom?.trim()
+      return { id: question.id, selected: [...given?.selected ?? []].filter(label => typeof label === 'string'), ...custom === undefined || custom === '' ? {} : { custom } }
+    })
+    loaded.session.append('room/question-resolved', { id: request.id, outcome: 'answered', answers })
+    await this.ctx.sessions.flush(loaded.session)
+    waiter(answers)
+    return { ok: true }
+  }
+
   /** Shared backend for external MCP room tools. Not exposed as a browser Remote. */
   async receiveMemberCommand(actor: LocalAgentMemberRun, command: MemberRoomCommand): Promise<MemberMessageOutcome> {
     try {
@@ -1384,7 +1486,7 @@ export class RoomService extends TypertRemoteService {
       if (sender === undefined) return { ok: false, error: 'The authenticated member is not in this room roster' }
       if (command === null || typeof command !== 'object' || command.arguments === null || typeof command.arguments !== 'object' || Array.isArray(command.arguments)) return { ok: false, error: 'Malformed room command' }
       const args = command.arguments
-      const allowed: Record<string, readonly string[]> = { room_plan: ['command'], room_read: [], room_invite: ['provider', 'name', 'role', 'instructions', 'cwd', 'model', 'firstTask', 'note'], room_message: ['member', 'text', 'kind', 'inReplyTo', 'note', 'task'] }
+      const allowed: Record<string, readonly string[]> = { room_plan: ['command'], room_read: [], room_invite: ['provider', 'name', 'role', 'instructions', 'cwd', 'model', 'effort', 'mode', 'firstTask', 'note'], room_message: ['member', 'text', 'kind', 'inReplyTo', 'note', 'task'], ask_user_question: ['questions'] }
       const keys = allowed[command.name]
       if (keys === undefined || Object.keys(args).some(key => !keys.includes(key))) return { ok: false, error: 'Unknown room command or argument; room and actor identity are host-owned' }
       const required = (key: string): string => {
@@ -1393,6 +1495,14 @@ export class RoomService extends TypertRemoteService {
         return value
       }
       const optional = (key: string): string | undefined => args[key] === undefined ? undefined : required(key)
+      if (command.name === 'ask_user_question') {
+        const questions = parseQuestions(args.questions)
+        if (typeof questions === 'string') return { ok: false, error: questions }
+        const answers = await this.askQuestions(loaded.session, sender, questions, QUESTION_TIMEOUT_MS)
+        return answers === undefined
+          ? { ok: false, error: 'The human did not answer (the question expired or the room was stopped). Continue with your best judgement and say what you assumed.' }
+          : { ok: true, receipt: JSON.stringify({ answers }) }
+      }
       if (command.name === 'room_read') {
         return { ok: true, receipt: JSON.stringify({ self: sender.name, ...JSON.parse(await this.readRoomContext(loaded.session.id)) }) }
       }
@@ -1415,6 +1525,8 @@ export class RoomService extends TypertRemoteService {
           ...optional('effort') === undefined ? {} : { effort: optional('effort')! },
           ...optional('firstTask') === undefined ? {} : { firstTask: optional('firstTask')! },
           ...optional('note') === undefined ? {} : { note: optional('note')! },
+          // Omitted keeps the room's own mode; "none" asks for none.
+          ...optional('mode') === undefined ? { inheritPreset: true } : optional('mode') === 'none' ? {} : { preset: optional('mode')! },
         }, 'agent', actor.childSessionId)
       return result.ok ? { ok: true, receipt: JSON.stringify(result.value) } : { ok: false, error: result.error.code }
     } catch (error) { return { ok: false, error: String(error) } }

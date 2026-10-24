@@ -89,6 +89,7 @@ import {
   claudeVersionFromInit,
   DEFAULT_DISPOSE_GRACE_MS,
   registerClaudeMemberRun,
+  MEMBER_TOOL_TIMEOUT_MS,
   textTask,
   toolCallsOf,
 } from './claude-cli-provider.ts'
@@ -596,6 +597,9 @@ export class ClaudeLiveDriver {
       // dir plus the resolved endpoint credential's `ANTHROPIC_*` variables.
       env: delegationEnv({
         CLAUDE_CONFIG_DIR: spec.homeDir,
+        // A bridge call may wait for the human (ask_user_question, a mode
+        // tool's approval); give MCP calls the bridge's own 30-minute bound.
+        ...member === undefined ? {} : { MCP_TOOL_TIMEOUT: MEMBER_TOOL_TIMEOUT_MS },
         ...spec.configuration === undefined ? {} : { CLAUDE_CODE_EFFORT_LEVEL: spec.configuration.effort ?? 'auto' },
         ...endpointAuthEnv(endpoint),
       }),

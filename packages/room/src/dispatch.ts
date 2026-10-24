@@ -141,7 +141,7 @@ function briefingSection(state: RoomState, member: RoomMember, instructions: str
     `联系成员、派活用 ${member.kind === 'cli' ? 'member_message' : 'room_message'}，看房间现状和任务编号用 room_read，用法见工具说明。收到的消息开头标着来自谁和消息编号（#m12）；派给你的活，你这一轮的最终回复会自动回报给派活人，不用另外回复。`,
     // A CLI reaches the room's tools (and its mode's) through an MCP server,
     // which some CLIs keep behind tool discovery rather than in the visible list.
-    ...member.kind === 'cli' ? [`这些房间工具由名为 dsh-member 的 MCP 服务提供${member.preset === undefined ? '' : `，你挂的「${member.preset}」模式的插件工具也在这个服务里`}；没在工具列表里直接看到时，用工具发现查找 dsh-member 的工具。`] : [],
+    ...member.kind === 'cli' ? [`这些房间工具由名为 dsh-member 的 MCP 服务提供${member.preset === undefined ? '' : `，你挂的「${member.preset}」模式的插件工具也在这个服务里`}；没在工具列表里直接看到时，用工具发现查找 dsh-member 的工具。`, '需要人拍板或补充信息时，用 dsh-member 的 ask_user_question 把问题和选项发给人点选，不要把一串问题写在回复里；它会等人回答后把答案返回给你。'] : [],
     ...coordinator?.name === member.name ? ['作为协调者：普通对话直接回答，小任务派给成员，只在确有需要时建立正式目标。派完活就结束这一轮，回报会自己送到——不要 sleep 等待，也不要用 room_read 查结果。收到回报时用户已经看过成员的原话：需要推进就推进，否则一两句话即可，不要复述或做汇总表。'] : [],
   ].join('\n')
 }
