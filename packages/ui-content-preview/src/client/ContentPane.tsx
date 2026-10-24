@@ -630,6 +630,7 @@ export function ContentPane(props: ContentPaneProps): ReactNode {
                     : issue?.kind === 'discard' ? t('edit.discardConfirm')
                       : dirty ? t('edit.dirty') : t('edit.editing')}
         </span>
+        <span className={css.editBarActions}>
         {issue?.kind === 'conflict'
           ? (
             <>
@@ -652,6 +653,7 @@ export function ContentPane(props: ContentPaneProps): ReactNode {
                 <button type="button" className={css.editBarPrimary} disabled={saving || !dirty} onClick={() => { doSave(false) }}>{t('edit.save')}</button>
               </>
             )}
+        </span>
       </div>
     )
     : null
