@@ -2,6 +2,7 @@
 
 ## 0.2.3（2026-10-24）
 
+- **新成员默认用房间的模式**:`room_invite` 新增 `mode`(不填则通过 inheritPreset 沿用房间会话自己的模式;`"none"` 表示只用 CLI 自带工具),回执里写明模式;邀请对话框预选当前会话的模式,模型与思考强度改成两个带标签的下拉框。
 - **卡名改为「协作间」**(原「多Agent协同」):与界面里一直使用的叫法统一,也和所在的「多Agent协作」套件卡区分开;英文卡名仍是 Room。
 - **run-state 边携带子会话关联**:`room/run-state` 在身份存在后的所有边恒带 `childSessionId`（成员首跑的 running 边早于句柄产生，终态边与后续轮次都有）；终态边（done/cancelled/failed）新增 `childTurn`（该运行写入子会话的轮次号，只读在内存的存活会话）。`room/dispatch`、`room/run-state`、`room/coordinator`、`room/member-added` 是 Context Lens 的外部读取接口（类型注释已标注）。
 
