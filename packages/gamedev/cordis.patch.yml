@@ -22,11 +22,50 @@
 # packages/core/tools/tests/scoped.spec.ts), so the two no longer fail the
 # boot — keeping the grant inside the preset is what scopes the tools to this
 # mode's sessions.
+#
+# The multi-agent family (2026-10-24): the local-agent core, the four
+# delegation providers and the room, mounted VERBATIM from their own patches
+# (the same rows bundle-local-agent and dev mount). The two bare overrides
+# disable the official preset rows whose model-facing tool names the codex /
+# claude-code providers take.
+- id: tool-subagent-codex
+  disabled: true
+
+- id: tool-subagent-claude-code
+  disabled: true
+
 - insert:
     # 游戏开发: the gameStore service, the 游戏 right-sidebar workbench, and the
     # end-of-turn checks.
     - id: game
       name: "@khorsheed/dsh-game"
+
+    # The family core: shared scoped-homes root.
+    - id: local-agent
+      name: '@khorsheed/dsh-local-agent'
+      config:
+        homesRoot: !!js dshHomePath('local-agent')
+
+    # Kimi harness (its `subagent_kimi` tool: the package's ./tool entry).
+    - id: local-agent-kimi
+      name: '@khorsheed/dsh-local-agent-kimi'
+
+    # Codex harness (its `subagent_codex` tool: the package's ./tool entry).
+    - id: local-agent-codex
+      name: '@khorsheed/dsh-local-agent-codex'
+
+    # Claude Code harness (its `subagent_claude_code` tool: the package's ./tool entry).
+    - id: local-agent-claude-code
+      name: '@khorsheed/dsh-local-agent-claude-code'
+
+    # The dsh harness controller (Settings → 本地 Agent switch, default off).
+    - id: local-agent-dsh
+      name: '@khorsheed/dsh-local-agent-dsh'
+
+    # 协作间: multi-member rooms; its members are the local agents above plus
+    # native dsh sub-members (probes localAgent, degrades without it).
+    - id: room
+      name: '@khorsheed/dsh-room'
 
     - id: preset-dsh-gamedev
       name: '@deepseek-ai/dsh-agent-preset'
@@ -120,6 +159,34 @@
             config:
               fetch: true
               searchTimeoutMs: 60000
+
+          # ── multi-agent (2026-10-24) ────────────────────────────────────────────────
+
+          # Delegation to the local CLI agents and the room, granted to this
+          # preset's sessions only. The provider rows they run on mount at the
+          # profile root from this pack's own patch. tool-subagent-control /
+          # list-agents let the agent wait on, read and stop the runs it started
+          # (the official spawn/fork tools stay out — this mode delegates to the
+          # local agents, not to in-process dsh children).
+          - id: tool-subagent-control
+            name: '@deepseek-ai/dsh-tool-subagent-control'
+
+          - id: tool-subagent-list-agents
+            name: '@deepseek-ai/dsh-tool-subagent-control/list-agents'
+
+          - id: tool-subagent-kimi
+            name: '@khorsheed/dsh-local-agent-kimi/tool'
+
+          - id: tool-subagent-codex-local
+            name: '@khorsheed/dsh-local-agent-codex/tool'
+
+          - id: tool-subagent-claude-code-local
+            name: '@khorsheed/dsh-local-agent-claude-code/tool'
+
+          # room_invite / room_message / room_read / room_plan; the room service
+          # and UI stay at the profile root.
+          - id: room-tool
+            name: '@khorsheed/dsh-room/tool'
 
           # ── game ────────────────────────────────────────────────────────────────────
 

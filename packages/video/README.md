@@ -2,7 +2,7 @@
 
 [English](README.en.md) | 中文
 
-剪辑模式一个包装齐:`dsh-video` agent preset 连同剪辑台——播客与对谈剪辑,一条混录自动分人、节目声纹认人、删字即删音频。清单里只多一张「剪辑模式」卡片;切到剪辑模式的会话自动拿到 `video_*` 工具与剪辑技能。
+剪辑模式一个包装齐:`dsh-video` agent preset 连同剪辑台——播客与对谈剪辑,一条混录自动分人、节目声纹认人、删字即删音频。清单里只多一张「剪辑模式」卡片;切到剪辑模式的会话自动拿到 `video_*` 工具与剪辑技能;要多人手时,还能把活派给本机的 Codex / Claude Code / Kimi,或开协作间让几个 agent 一起做(local-agent 全家与协作间随包装齐)。
 
 ## 这是什么模式
 
@@ -14,6 +14,12 @@
 | --- | --- | --- |
 | `@khorsheed/dsh-video-studio` | `video-studio` | 剪辑台:项目库与媒体任务的服务核心,右栏「剪辑」面板 |
 | `@khorsheed/dsh-transcribe` | `transcribe` | 本机转写:剪辑台的分人与转写引擎(2026-10-20 从剪辑台抽出) |
+| `@khorsheed/dsh-local-agent` | `local-agent` | 本地 CLI 智能体家族核:共享 scoped-homes 根、委派门面与 Remote |
+| `@khorsheed/dsh-local-agent-kimi` | `local-agent-kimi` | Kimi CLI harness;`subagent_kimi` 由本包 preset 授予 |
+| `@khorsheed/dsh-local-agent-codex` | `local-agent-codex`(+ override `tool-subagent-codex`) | Codex CLI harness;`subagent_codex` 由本包 preset 授予 |
+| `@khorsheed/dsh-local-agent-claude-code` | `local-agent-claude-code`(+ override `tool-subagent-claude-code`) | Claude Code harness;`subagent_claude_code` 由本包 preset 授予 |
+| `@khorsheed/dsh-local-agent-dsh` | `local-agent-dsh` | dsh harness 控制器(Settings → 本地 Agent 开关,默认关) |
+| `@khorsheed/dsh-room` | `room` | 协作间:成员取自本地 agent 与 dsh 原生子成员;`room-tool` 由本包 preset 授予 |
 
 `video_*` 工具与 `video-studio` 技能不是 profile 根行:它们是 video-studio 包的 `./tool` 组合入口,由本包 preset 行的 `video-studio-tool` 授予点按会话授予。
 

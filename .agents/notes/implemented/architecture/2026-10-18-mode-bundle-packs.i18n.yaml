@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-10-18-mode-bundle-packs.md
-.agents/notes/implemented/architecture/2026-10-18-mode-bundle-packs.md: 14d8caa60457c06e56551d779952e86b9003c4ef
-.agents/notes/implemented/architecture/2026-10-18-mode-bundle-packs.zh.md: abba39911d0f6a427eed1c28115211c72df59fa0
+.agents/notes/implemented/architecture/2026-10-18-mode-bundle-packs.md: caef314cb6a9de86b28d18c00ed7d8135bbdaccb
+.agents/notes/implemented/architecture/2026-10-18-mode-bundle-packs.zh.md: 38f5a393e2ee1a609293284d07ec2d9722f05719

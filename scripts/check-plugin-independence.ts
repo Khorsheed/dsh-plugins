@@ -220,6 +220,10 @@ export const ALLOWED_EDGES: Readonly<Record<string, ReadonlyArray<string>>> = {
   // for eval's service-level delegation (the run / provision verbs go through
   // the localAgent facade) — the same deps-only library rides with it.
   'bundle-eval': ['@khorsheed/dsh-local-agent-dsh-headless'],
+  // gamedev / video (mode bundles) carry the local-agent family and the room
+  // since 2026-10-24 — the same deps-only library rides with them.
+  'gamedev': ['@khorsheed/dsh-local-agent-dsh-headless'],
+  'video': ['@khorsheed/dsh-local-agent-dsh-headless'],
   // The worktrees and room tool rows folded back into their core packages
   // (worktrees 0.3.0, room 0.2.0) as the `./tool` composition entry (the
   // canvas ./agent pattern) — no cross-package edge remains. Each core used

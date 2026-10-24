@@ -29,6 +29,8 @@ preset 行逐字镜像自 `@khorsheed/dsh-presets` 的同名行,接在同一个 
 
 **包名带 `-suite`(2026-10-24,首发前)。** 六个模式包以 `@khorsheed/dsh-<mode>-suite` 发布(`dsh-dev-suite`、`dsh-writing-suite`、`dsh-learning-suite`、`dsh-video-suite`、`dsh-gamedev-suite`、`dsh-eval-suite`)。起因是评测包:`@khorsheed/dsh-eval` 是评测核心包,评测模式包用不了 `dsh-<mode>` 这个形态。其余几个跟着改,是为了一条规则:包名与卡名(「…套件」)对应,并与同名的镜像仓、集合分开(`Khorsheed/dsh-dev` 是开发集合的门面,`@khorsheed/dsh-dev-suite` 是它要装的 bundle)。目录、preset id(`dsh-dev` 等)与行 id 不变,会话与设置无感。旧名从未发布,不需要 deprecate。
 
+**gamedev 与 video 带上多 agent 家族(2026-10-24)。** 两个包加入 local-agent 核、四个委派 provider 与 room 作为成员(行逐字取自成员,与 bundle-local-agent、dev 挂的同一份;local-agent-dsh-headless 以 deps-only 随行),preset 授予三个本地委派工具、`room-tool`,以及官方 `tool-subagent-control` / `list-agents`,让 agent 能等待、读取、停止自己派出的任务。官方 spawn/fork 子代理工具不授予:这两个模式委派给本地 agent,而不是进程内的 dsh 子代理。为什么放进模式包而不是让用户另装:包本身不授予工具(工具跟着 preset 走),「模式旁边再装 bundle-local-agent」会让该模式的会话拿不到工具;而且模式包本来就该是普通用户的一次完整安装。接受的代价:没装 codex / claude CLI 的用户会看到处于等待状态的 provider 卡。剪辑模式需注意:它的 preset 刻意不给 shell(shell 会绕过提议流程),但被委派的 codex / claude-code 自带 shell——委派是用户有意选择的放宽。
+
 ## 备选
 
 **模式继续只住 @khorsheed/dsh-presets,文档写明「再装这些包」。** 否决:那是现状——模式与家族分两次装,且没有任何机制阻止 preset 点名一个 profile 解析不了的 tool 入口。模式包让模式成为一次安装,家族由硬依赖保证在场。

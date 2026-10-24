@@ -2,7 +2,7 @@
 
 English | [中文](README.md)
 
-The video editing mode in one install: the `dsh-video` agent preset plus the video studio — podcast and conversation editing, one mixed recording auto-split by speaker, cut by deleting words. One 「剪辑模式」 card in the inventory; a session switched to editing mode gets the `video_*` tools and the video-studio skill automatically.
+The video editing mode in one install: the `dsh-video` agent preset plus the video studio — podcast and conversation editing, one mixed recording auto-split by speaker, cut by deleting words. One 「剪辑模式」 card in the inventory; a session switched to editing mode gets the `video_*` tools and the video-studio skill automatically; for more hands it can delegate to the local Codex / Claude Code / Kimi or open a room where several agents work together (the local-agent family and the room come with the pack).
 
 ## What the mode is
 
@@ -14,6 +14,12 @@ Editing mode is the editing-partner persona plus the editing workflow: you discu
 | --- | --- | --- |
 | `@khorsheed/dsh-video-studio` | `video-studio` | the studio: the project store and media jobs service core, plus the 剪辑 right-sidebar panel |
 | `@khorsheed/dsh-transcribe` | `transcribe` | local transcription: the studio's speaker separation and ASR engine (split out of the studio 2026-10-20) |
+| `@khorsheed/dsh-local-agent` | `local-agent` | the local CLI agent family core: shared scoped-homes root, delegation facade and Remote |
+| `@khorsheed/dsh-local-agent-kimi` | `local-agent-kimi` | Kimi CLI harness; `subagent_kimi` is granted by this bundle's preset |
+| `@khorsheed/dsh-local-agent-codex` | `local-agent-codex` (+ override `tool-subagent-codex`) | Codex CLI harness; `subagent_codex` is granted by this bundle's preset |
+| `@khorsheed/dsh-local-agent-claude-code` | `local-agent-claude-code` (+ override `tool-subagent-claude-code`) | Claude Code harness; `subagent_claude_code` is granted by this bundle's preset |
+| `@khorsheed/dsh-local-agent-dsh` | `local-agent-dsh` | the dsh harness controller (Settings → 本地 Agent switch, off by default) |
+| `@khorsheed/dsh-room` | `room` | the room: members come from the local agents and native dsh sub-members; `room-tool` is granted by this bundle's preset |
 
 The `video_*` tools and the `video-studio` skill are not a profile-root row: they ship as the video-studio package's `./tool` composition entry, granted per session by the `video-studio-tool` grant inside this bundle's preset row.
 

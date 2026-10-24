@@ -2,7 +2,7 @@
 
 English | [中文](README.md)
 
-The game dev mode in one install: the `dsh-gamedev` agent preset plus the game workbench — build a small 2D web game together with the agent: the conversation decides what the game is, and the right-sidebar 游戏 tab shows the chaptered design doc and plays the latest version that passed the end-of-turn checks. One 「游戏开发模式」 card in the inventory; a session switched to this mode gets the `game_open` / `game_read` / `game_publish` tools and the game skills automatically.
+The game dev mode in one install: the `dsh-gamedev` agent preset plus the game workbench — build a small 2D web game together with the agent: the conversation decides what the game is, and the right-sidebar 游戏 tab shows the chaptered design doc and plays the latest version that passed the end-of-turn checks. One 「游戏开发模式」 card in the inventory; a session switched to this mode gets the `game_open` / `game_read` / `game_publish` tools and the game skills automatically; for more hands it can delegate to the local Codex / Claude Code / Kimi or open a room where several agents work together (the local-agent family and the room come with the pack).
 
 ## What the mode is
 
@@ -13,6 +13,12 @@ Game dev mode is the developer-and-design-mentor persona plus the game workbench
 | member package | row ids | contents |
 | --- | --- | --- |
 | `@khorsheed/dsh-game` | `game`, `game-agent` (granted by this bundle's preset) | game development: the gameStore service, the right-sidebar 游戏 design workbench (tunable params, look editor, chaptered design doc, versions and rollback), and the end-of-turn checks |
+| `@khorsheed/dsh-local-agent` | `local-agent` | the local CLI agent family core: shared scoped-homes root, delegation facade and Remote |
+| `@khorsheed/dsh-local-agent-kimi` | `local-agent-kimi` | Kimi CLI harness; `subagent_kimi` is granted by this bundle's preset |
+| `@khorsheed/dsh-local-agent-codex` | `local-agent-codex` (+ override `tool-subagent-codex`) | Codex CLI harness; `subagent_codex` is granted by this bundle's preset |
+| `@khorsheed/dsh-local-agent-claude-code` | `local-agent-claude-code` (+ override `tool-subagent-claude-code`) | Claude Code harness; `subagent_claude_code` is granted by this bundle's preset |
+| `@khorsheed/dsh-local-agent-dsh` | `local-agent-dsh` | the dsh harness controller (Settings → 本地 Agent switch, off by default) |
+| `@khorsheed/dsh-room` | `room` | the room: members come from the local agents and native dsh sub-members; `room-tool` is granted by this bundle's preset |
 
 The game tools and skills (the game's `./agent` entry) are not mounted at the profile root by this pack; they are granted per session by the `game-agent` grant inside this bundle's preset row. Installed alone, the member's own patch mounts that entry enabled for every session, and under host 0.2.x a session of this mode sees the scoped copy shadow the global row — no double registration, no boot failure (pinned by the host's scoped.spec.ts).
 

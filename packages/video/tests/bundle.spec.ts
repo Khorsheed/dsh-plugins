@@ -2,7 +2,7 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { parseTopLevelPatchRows, type PatchRow } from '../../scripts/check-plugin-independence.ts'
-import { FAMILY_MEMBERS, MODE } from '../src/index.ts'
+import { FAMILY_DEPS_ONLY, FAMILY_MEMBERS, MODE } from '../src/index.ts'
 
 const root = join(import.meta.dirname, '..')
 const patch = readFileSync(join(root, 'cordis.patch.yml'), 'utf8')
@@ -70,8 +70,8 @@ describe('package.json', () => {
     expect(manifest.dsh.bundle.members).toEqual([...FAMILY_MEMBERS])
   })
 
-  it('carries every member as an npm dependency, and nothing else', () => {
-    expect(Object.keys(manifest.dependencies).sort()).toEqual([...FAMILY_MEMBERS].sort())
+  it('carries every member and the deps-only library as npm dependencies, and nothing else', () => {
+    expect(Object.keys(manifest.dependencies).sort()).toEqual([...FAMILY_MEMBERS, ...FAMILY_DEPS_ONLY].sort())
     for (const name of FAMILY_MEMBERS) {
       expect(manifest.dependencies[name], name).toBe('workspace:*')
     }

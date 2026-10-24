@@ -2,7 +2,7 @@
 
 [English](README.en.md) | 中文
 
-游戏开发模式一个包装齐:`dsh-gamedev` agent preset 连同游戏操作台——和 agent 一起做小游戏:对话里定玩法与细节,右栏「游戏」看分章节策划、试玩每轮通过检查的最新版本。清单里只多一张「游戏开发模式」卡片;切到该模式的会话自动拿到 `game_open` / `game_read` / `game_publish` 工具与游戏技能。
+游戏开发模式一个包装齐:`dsh-gamedev` agent preset 连同游戏操作台——和 agent 一起做小游戏:对话里定玩法与细节,右栏「游戏」看分章节策划、试玩每轮通过检查的最新版本。清单里只多一张「游戏开发模式」卡片;切到该模式的会话自动拿到 `game_open` / `game_read` / `game_publish` 工具与游戏技能;要多人手时,还能把活派给本机的 Codex / Claude Code / Kimi,或开协作间让几个 agent 一起做(local-agent 全家与协作间随包装齐)。
 
 ## 这是什么模式
 
@@ -13,6 +13,12 @@
 | 成员包 | 行 id | 能力 |
 | --- | --- | --- |
 | `@khorsheed/dsh-game` | `game`、`game-agent`(由本包 preset 授予) | 游戏开发:gameStore 服务、右栏「游戏」策划操作台(试玩调参、外观编辑、分章节策划、版本与回滚)、每轮结束自动检查 |
+| `@khorsheed/dsh-local-agent` | `local-agent` | 本地 CLI 智能体家族核:共享 scoped-homes 根、委派门面与 Remote |
+| `@khorsheed/dsh-local-agent-kimi` | `local-agent-kimi` | Kimi CLI harness;`subagent_kimi` 由本包 preset 授予 |
+| `@khorsheed/dsh-local-agent-codex` | `local-agent-codex`(+ override `tool-subagent-codex`) | Codex CLI harness;`subagent_codex` 由本包 preset 授予 |
+| `@khorsheed/dsh-local-agent-claude-code` | `local-agent-claude-code`(+ override `tool-subagent-claude-code`) | Claude Code harness;`subagent_claude_code` 由本包 preset 授予 |
+| `@khorsheed/dsh-local-agent-dsh` | `local-agent-dsh` | dsh harness 控制器(Settings → 本地 Agent 开关,默认关) |
+| `@khorsheed/dsh-room` | `room` | 协作间:成员取自本地 agent 与 dsh 原生子成员;`room-tool` 由本包 preset 授予 |
 
 游戏工具与技能(game `./agent` 入口)不在 profile 根挂行,由本包 preset 行的 `game-agent` 授予点按会话授予;成员单装时其自有 patch 会让该入口全局可用,宿主 0.2.x 下本模式会话见 scoped 副本遮蔽全局行,不再双注册崩 boot(宿主 scoped.spec.ts 钉死)。
 
