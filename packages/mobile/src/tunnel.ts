@@ -303,9 +303,12 @@ export function createTunnelSupervisor(deps: TunnelDeps): TunnelSupervisor {
   async function acquireTunnel(port: number, timeoutMs: number): Promise<string> {
     const running = liveSidecar()
     if (running?.host && running.port === port) return running.host
-    if (running) stopSidecar()
-    renewLease()
-    sidecar.launch({ binary: binary()!, port, stateFile: sidecarFile()! })
+    // A live sidecar on this port that has not announced yet is adopted and awaited.
+    if (running?.port !== port) {
+      if (running) stopSidecar()
+      renewLease()
+      sidecar.launch({ binary: binary()!, port, stateFile: sidecarFile()! })
+    }
     const deadline = now() + timeoutMs
     for (;;) {
       await sleep(500)

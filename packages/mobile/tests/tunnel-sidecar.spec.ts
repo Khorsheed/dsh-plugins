@@ -52,3 +52,18 @@ it.skipIf(process.platform === 'win32')('stops by itself once the supervisor lea
     sidecar.kill('SIGKILL')
   }
 }, 20_000)
+
+it.skipIf(process.platform === 'win32')('leaves a replacement sidecar\'s state file alone when it exits', async () => {
+  const { dir, binary, stateFile } = fixture()
+  const sidecar = run({ binary, port: 3080, stateFile, heartbeatMs: 60_000 })
+  try {
+    await vi.waitFor(() => expect(JSON.parse(readFileSync(stateFile, 'utf8')).host).toBeTruthy(), { timeout: 10_000, interval: 50 })
+    const child = childPid(dir)
+    writeFileSync(stateFile, JSON.stringify({ pid: 1, port: 3080, host: 'next-one-two-three.trycloudflare.com', startedAt: 0, heartbeatAt: 0 }))
+    sidecar.kill('SIGTERM')
+    await vi.waitFor(() => expect(alive(child)).toBe(false), { timeout: 5000, interval: 50 })
+    expect(JSON.parse(readFileSync(stateFile, 'utf8')).pid).toBe(1)
+  } finally {
+    sidecar.kill('SIGKILL')
+  }
+}, 20_000)

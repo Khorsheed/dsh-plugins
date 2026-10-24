@@ -58,7 +58,8 @@ export function runSidecar(config: SidecarConfig): void {
     if (exiting) return
     exiting = true
     try { child?.kill() } catch { /* already gone */ }
-    try { rmSync(config.stateFile, { force: true }) } catch { /* best effort */ }
+    // A replacement sidecar may already own the file; remove only our own record.
+    try { if ((JSON.parse(readFileSync(config.stateFile, 'utf8')) as Partial<SidecarState>).pid === process.pid) rmSync(config.stateFile, { force: true }) } catch { /* gone or unreadable */ }
     process.exit(0)
   }
 

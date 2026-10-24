@@ -211,6 +211,21 @@ describe('quick tunnel supervisor', () => {
     again.dispose()
   })
 
+  it('awaits a live sidecar that has not announced its domain yet instead of replacing it', async () => {
+    const built = makeDeps()
+    const file = join(built.dir, 'state', 'mobile-quick-tunnel.sidecar.json')
+    mkdirSync(join(built.dir, 'state'), { recursive: true })
+    writeFileSync(join(built.dir, 'state', 'mobile-quick-tunnel.json'), JSON.stringify({ enabled: true, origin: null, updatedAt: '' }))
+    writeFileSync(file, JSON.stringify({ pid: 4242, port: 3080, host: null, startedAt: Date.now(), heartbeatAt: Date.now() }))
+    const tunnel = createTunnelSupervisor(built.deps)
+    setTimeout(() => writeFileSync(file, JSON.stringify({ pid: 4242, port: 3080, host: 'late-one-two-three.trycloudflare.com', startedAt: Date.now(), heartbeatAt: Date.now() })), 30)
+    await ready(tunnel)
+    expect(tunnel.managedOrigin()).toBe('https://late-one-two-three.trycloudflare.com')
+    expect(built.sidecars.launched).toHaveLength(0)
+    expect(built.sidecars.stopped.size).toBe(0)
+    tunnel.dispose()
+  })
+
   it('relaunches when the host comes back on a different port', async () => {
     const first = makeDeps()
     const tunnel = createTunnelSupervisor(first.deps)
