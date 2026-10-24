@@ -39,12 +39,17 @@
   width: 100%;
   max-width: var(--dsh-composer-card-max-width);
   padding-top: 6px;
-  border: 1px solid var(--dsw-alias-border-l2-darkmode-thin);
-  border-radius: 22px;
+  /* The official card's surface (same as the room composer): the l2 hairline
+     as an elevation stroke, the panel radius, the soft elevation. */
+  border: 0;
+  --dsw-elevation-stroke-color: var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.1));
+  border-radius: var(--dsw-radius-panel, 22px);
   background: var(--dsw-specific-input-major);
-  box-shadow: var(--dsw-shadow-lv2);
-  font-size: 16px;
-  line-height: 24px;
+  box-shadow: var(--dsw-elevation-soft, 0 0 0 1px rgba(0, 0, 0, 0.1), 0 4px 12px 0 rgba(0, 0, 0, 0.04));
+  /* The draft follows the Settings font-size preference, as the official
+     composer does (14px default; the line keeps its 10px leading). */
+  font-size: var(--dsh-content-font-size, 14px);
+  line-height: calc(24px + var(--dsh-content-font-delta, 0px));
 }
 
 .header {
@@ -52,7 +57,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 4px 16px 0;
+  padding: 4px 14px 0;
   color: var(--dsw-alias-label-tertiary);
   font-size: 12px;
   line-height: 18px;
@@ -69,12 +74,14 @@
   border: none;
   outline: none;
   background: transparent;
-  padding: 4px 12px 0 16px;
+  /* The official draft surface's pads: pl 14 / pr 8 / pt 4. */
+  padding: 4px 8px 0 14px;
   font-family: var(--dsw-font-family);
   font-size: inherit;
   line-height: inherit;
   color: var(--dsw-alias-label-primary);
   caret-color: var(--dsw-alias-state-business-primary);
+  min-height: 36px; /* the official docked floor: one line + 4px top pad + 8px breath */
 }
 
 .input::placeholder {

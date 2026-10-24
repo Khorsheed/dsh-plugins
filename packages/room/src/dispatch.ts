@@ -267,6 +267,17 @@ export class DispatchEngine {
   private readonly inFlight = new Map<Promise<void>, string>()
   /** room + recipient → the wake-anyway timer for its held reports. */
   private readonly holdTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  /**
+   * room id → member ids whose FIRST start is in flight: the member has no
+   * child session id in the journal yet, but its process may already be
+   * asking the host for its mode tools (claude lists MCP tools at spawn).
+   */
+  private readonly freshStarts = new Map<string, Set<string>>()
+
+  /** Members of this room whose first start is in flight (see {@link freshStarts}). */
+  startingMembers(roomId: string): readonly string[] {
+    return [...this.freshStarts.get(roomId) ?? []]
+  }
 
   /**
    * @param ctx - host context carrying the session store and agents registry.
@@ -748,7 +759,18 @@ export class DispatchEngine {
     // Existing members can enter core's queue immediately. A fresh/prepared
     // identity must publish its first handle before the next submission resumes it.
     if (controlled && member.childSessionId !== undefined && !prepared) submitted()
-    const run = await pendingRun
+    const fresh = !prepared && member.childSessionId === undefined
+    const freshId = memberId(room.snapshotEvents(), member)
+    if (fresh) {
+      const starting = this.freshStarts.get(room.id) ?? new Set<string>()
+      this.freshStarts.set(room.id, starting.add(freshId))
+    }
+    const run = await pendingRun.finally(() => {
+      if (!fresh) return
+      const starting = this.freshStarts.get(room.id)
+      starting?.delete(freshId)
+      if (starting?.size === 0) this.freshStarts.delete(room.id)
+    })
     if (startedAt === undefined) {
       await run.dispose()
       throw new Error('Provider published a room run without admission')
