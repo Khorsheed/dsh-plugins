@@ -30,8 +30,9 @@ import { parseFileAddress, resolveWorkspacePath } from '@deepseek-ai/dsh-util-wo
 import { FileTypeIcon } from '@deepseek-ai/dsh-client-ui-primitives'
 import { IconGlobeOutlineMedium, IconRefreshOutlineMedium } from './icons.tsx'
 import {
-  ContentPane, type PreviewView,
+  ContentPane, type PreviewView, type SaveOutcome, type SaveRequest,
 } from '@khorsheed/dsh-client-ui-content-preview/src/client/index.ts'
+import { browserOnHost } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
 import type { FilePreviewEntry, FilePreviewRead } from '../types.ts'
 import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
 import type { FilePreviewTabProps, FilePreviewTabInjected } from './contract.ts'
@@ -49,13 +50,14 @@ function DetailView(props: {
   readonly cwd: string | undefined
   readonly apps: readonly string[] | null
   readonly readFile: FilePreviewTabInjected['readFile']
+  readonly writeFile: FilePreviewTabInjected['writeFile']
   readonly copyPath: FilePreviewTabInjected['copyPath']
   readonly revealFolder: FilePreviewTabInjected['revealFolder']
   readonly openInIde: FilePreviewTabInjected['openInIde']
   readonly onBack: () => void
   readonly t: FilePreviewTabProps['t']
 }): ReactNode {
-  const { sessionId, path, entry, cwd, apps, readFile, copyPath, revealFolder, openInIde, onBack, t } = props
+  const { sessionId, path, entry, cwd, apps, readFile, writeFile, copyPath, revealFolder, openInIde, onBack, t } = props
   const [read, setRead] = useState<FilePreviewRead | null>(null)
   const [error, setError] = useState<string | null>(null)
   // The content⇄change-history view is the caller's state (the kernel only
@@ -103,6 +105,16 @@ function DetailView(props: {
     })
   }
 
+  // The pane's save: write, then re-read so the pane leaves edit mode onto
+  // what is on disk. Editing is a host-machine gesture for now — a phone
+  // through the tunnel reads only (decided 2026-10-24).
+  const save = (request: SaveRequest): Promise<SaveOutcome> =>
+    writeFile(sessionId, path, request.content, request.base).then((result) => {
+      if (!result.ok) return { ok: false, reason: 'error', message: result.error.message }
+      if (!result.value.ok) return result.value
+      return reload().then(() => ({ ok: true }))
+    })
+
   return (
     <div className={css.detail}>
       <ContentPane
@@ -116,6 +128,7 @@ function DetailView(props: {
         onBack={onBack}
         onCopyPath={() => copyPath(path)}
         onReload={reload}
+        {...(browserOnHost() ? { onSave: save } : {})}
         chrome={{
           ...(fileManager === undefined ? {} : { openFolder: () => { revealFolder(path) } }),
           ...(currentIde === undefined
@@ -140,7 +153,7 @@ function DetailView(props: {
  */
 export function FilePreviewTab(props: FilePreviewTabProps): ReactNode {
   const {
-    useTabInfo, sessionId, useSessions, useStore, actions, listFiles, readFile,
+    useTabInfo, sessionId, useSessions, useStore, actions, listFiles, readFile, writeFile,
     copyPath, revealFolder, openInIde, loadOpenInApps, t,
   } = props
   const { useOpenInApps } = props
@@ -224,6 +237,7 @@ export function FilePreviewTab(props: FilePreviewTabProps): ReactNode {
           cwd={cwd}
           apps={apps}
           readFile={readFile}
+          writeFile={writeFile}
           copyPath={copyPath}
           revealFolder={revealFolder}
           openInIde={openInIde}
