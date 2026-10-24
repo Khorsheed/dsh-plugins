@@ -47,15 +47,18 @@
   gap: 12px;
   width: 100%;
   max-width: var(--dsh-composer-card-max-width, 780px);
-  padding-top: 10px;
-  /* Input stroke: black/0.10 light, white/0.06 dark — the l2-darkmode-thin
-     pair. Fill: the input surface token (elevated in dark). */
-  border: 1px solid var(--dsw-alias-border-l2-darkmode-thin, rgba(0, 0, 0, 0.1));
-  border-radius: 22px;
+  padding-top: 8px;
+  /* The official card's surface: the l2 hairline as an elevation stroke, the
+     panel radius, the soft elevation, the input fill (elevated in dark). */
+  border: 0;
+  --dsw-elevation-stroke-color: var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.1));
+  border-radius: var(--dsw-radius-panel, 22px);
   background: var(--dsw-specific-input-major, var(--dsw-alias-bg-layer-1, #ffffff));
-  box-shadow: var(--dsw-shadow-lv2, 0 4px 12px 0 rgba(0, 0, 0, 0.02), 0 2px 8px 0 rgba(0, 0, 0, 0.04));
-  font-size: 16px;
-  line-height: 24px;
+  box-shadow: var(--dsw-elevation-soft, 0 0 0 1px rgba(0, 0, 0, 0.1), 0 4px 12px 0 rgba(0, 0, 0, 0.04));
+  /* The draft follows the Settings font-size preference, as the official
+     composer does (14px default; the line keeps its 10px leading). */
+  font-size: var(--dsh-content-font-size, 14px);
+  line-height: calc(24px + var(--dsh-content-font-delta, 0px));
   /* Elevated surface in dark, same as the official card: the textarea
      scrolls once it hits its height cap, so the thumb takes the l2 pair. */
   --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2, rgba(127, 127, 127, 0.28));
@@ -69,15 +72,15 @@
   border: none;
   outline: none;
   background: transparent;
-  /* figma .InputText 34:10434: pl 16 / pr 12 / pt 4. */
-  padding: 4px 12px 0 16px;
+  /* The official draft surface's pads: pl 14 / pr 8 / pt 4. */
+  padding: 4px 8px 0 14px;
   font-family: var(--dsw-font-family, inherit);
   font-size: inherit;
   line-height: inherit;
   color: var(--dsw-alias-label-primary, #1f2329);
   /* Business blue, not brand-primary: that token resolves to ink in this sheet. */
   caret-color: var(--dsw-alias-state-business-primary, rgb(65, 118, 230));
-  min-height: 52px; /* the 2-line floor (figma min-h 52 = ~2 × 24 line + 4pt) */
+  min-height: 36px; /* the official docked floor: one line + 4px top pad + 8px breath */
   max-height: 160px;
   overflow-y: auto;
 }
@@ -201,11 +204,26 @@
 }
 
 .coordinator {
-  padding: 0 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 14px;
   align-self: flex-start;
   font-size: 12px;
   line-height: 18px;
-  color: var(--dsw-alias-label-secondary, #81858c);
+  color: var(--dsw-alias-label-tertiary, #81858c);
+}
+
+.coordinatorDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--member-color, var(--dsw-alias-label-tertiary, #81858c));
+}
+
+.coordinatorName {
+  color: var(--dsw-alias-label-secondary, rgba(90, 90, 90, 0.9));
+  font-weight: 600;
 }
 
 /* The task tag from the task page (「任务 N」 / 「新任务」): a removable chip

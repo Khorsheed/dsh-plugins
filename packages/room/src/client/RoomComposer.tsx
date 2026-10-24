@@ -49,7 +49,7 @@
  */
 import { coordinatorMember } from '../journal.ts'
 import {
-  useEffect, useRef, useState, useSyncExternalStore, type ChangeEvent, type KeyboardEvent, type ReactNode,
+  useEffect, useRef, useState, useSyncExternalStore, type ChangeEvent, type CSSProperties, type KeyboardEvent, type ReactNode,
 } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { ComposerChainProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -321,7 +321,12 @@ export function RoomComposer({
       {error !== null && <div className={css.error} role="alert">{error}</div>}
       {external && coordinator.childSessionId !== undefined && renderMemberInbox?.(coordinator.childSessionId)}
       <div className={css.card}>
-        <div className={css.coordinator}>{t('coordinator.label')} · {coordinator?.name ?? 'dsh'}{external ? ` · ${coordinator.provider}` : ' · DSH'}</div>
+        {/* Who a bare message goes to: the coordinator's name in its member colour. */}
+        <div className={css.coordinator} style={{ '--member-color': memberColor(coordinator?.name ?? 'dsh') } as CSSProperties}>
+          <span className={css.coordinatorDot} aria-hidden />
+          <span className={css.coordinatorName}>{coordinator?.name ?? 'dsh'}</span>
+          <span>· {t('coordinator.label')}</span>
+        </div>
         {mention !== null && candidates.length > 0 && (
           <ul className={css.menu} role="listbox" aria-label="members">
             {candidates.map((member, index) => (
@@ -365,7 +370,7 @@ export function RoomComposer({
           className={css.input}
           rows={2}
           value={draft}
-          placeholder={tag === undefined ? t('composer.placeholder') : tag.task === 'new' ? t('job.tagPlaceholderNew') : t('job.tagPlaceholder', { label: tag.label })}
+          placeholder={tag === undefined ? t('composer.placeholder', { name: coordinator?.name ?? 'dsh' }) : tag.task === 'new' ? t('job.tagPlaceholderNew') : t('job.tagPlaceholder', { label: tag.label })}
           onChange={onChange}
           onKeyDown={onKeyDown}
           onCompositionStart={() => { composing.current = true }}
