@@ -8,6 +8,7 @@
   "files": [
     "src/arxiv.ts",
     "src/captions.ts",
+    "src/document-fetch.ts",
     "src/image-fetch.ts",
     "src/index.ts",
     "src/link-resolvers.ts",

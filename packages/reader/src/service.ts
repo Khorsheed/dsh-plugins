@@ -5,9 +5,12 @@
  *
  * Two seams shape the whole module:
  *
- * - **Fetch goes through `ctx.web.fetch`** — the host's sanctioned outbound
- *   HTTP face, which brings public-address resolution, connection pinning, a
- *   byte cap and a timeout. Its provider caps the decoded body at 100 000
+ * - **Fetch rides the official HTTP provider** — `ctx.web` is the permission
+ *   (nothing is fetched without it), and its default `http` provider brings
+ *   public-address resolution, connection pinning, a byte cap and a timeout.
+ *   On the official web service the reader runs its own instance of that
+ *   provider (`document-fetch.ts`), because the host's selected provider may
+ *   answer Markdown instead of the document (seam registry S22). Its provider caps the decoded body at 100 000
  *   characters by default, so a payload that comes back `truncated` is stored
  *   as-is and FLAGGED; nothing here pretends it is a whole document. A
  *   truncated feed cannot be parsed and a truncated page yields half an
@@ -86,6 +89,7 @@ import {
 } from './types.ts'
 import { delayUntilNext, isCatchUpDue } from './schedule.ts'
 import { arxivHtmlUrl } from './arxiv.ts'
+import { DocumentFetch, type DocumentFetchLimits } from './document-fetch.ts'
 import { fetchImageBytes, ImageFetchCache } from './image-fetch.ts'
 import { resolveLink, type LinkResolution, type ResolverFetch } from './link-resolvers.ts'
 import { join } from 'node:path'
@@ -130,19 +134,6 @@ const TRANSLATION_WRITE_LIMIT = 2000
 
 /** One sentence's source or translation is never longer than a few paragraphs. */
 const TRANSLATION_TEXT_LIMIT = 4_000
-
-/** The shape of one `ctx.web.fetch` result, declared structurally. */
-interface WebFetchResult {
-  readonly url: string
-  readonly statusCode: number
-  readonly body: { readonly kind: 'html' | 'text'; readonly content: string }
-  readonly truncated: boolean
-}
-
-/** The probed web seam — structural, so no host package is imported. */
-interface WebSeam {
-  fetch(request: { readonly url: string }, signal?: AbortSignal): Promise<WebFetchResult>
-}
 
 /** The probed side-chat service — structural, never imported. */
 interface SideChatSeam {
@@ -225,13 +216,16 @@ export class ReaderService {
   private memoryDoc: ReaderStateDoc | undefined
   /** Rescued images, by URL — a pane remount re-fails every blocked image, and this is what keeps that a memory read. */
   private readonly imageCache = new ImageFetchCache()
+  /** Feeds and pages, as the origin served them (see `document-fetch.ts`). */
+  private readonly documents: DocumentFetch
 
   /**
    * @param ctx - owning context.
    * @param config - optional state-root override.
    */
-  constructor(ctx: Context, config: { stateRoot?: string; ytdlpPath?: string } = {}) {
+  constructor(ctx: Context, config: { stateRoot?: string; ytdlpPath?: string; fetchLimits?: DocumentFetchLimits } = {}) {
     this.ctx = ctx
+    this.documents = new DocumentFetch(() => this.ctx.get('web'), config.fetchLimits)
     this.store = new ReaderStore(config)
     const stateRoot = resolveReaderStateRoot(config.stateRoot)
     this.media = new ReaderMediaHost(stateRoot, config.ytdlpPath)
@@ -1566,7 +1560,7 @@ export class ReaderService {
    * known-unreadable verdict) still answers.
    */
   private async resolvePaper(url: string): Promise<LinkResolution | null> {
-    const web = this.web()
+    const web = await this.documents.current()
     const fetch: ResolverFetch = async target => {
       if (web === undefined) throw new UnsupportedContent('no web capability is mounted')
       const result = await web.fetch({ url: target })
@@ -1577,11 +1571,6 @@ export class ReaderService {
     } catch {
       return null
     }
-  }
-
-  /** The probed web seam (no host import, no boot-time dependency). */
-  private web(): WebSeam | undefined {
-    return this.ctx.get('web') as WebSeam | undefined
   }
 
   /** The probed side-chat service. */
@@ -1639,7 +1628,7 @@ export class ReaderService {
    * @returns the final URL and its decoded payload.
    */
   private async fetchFollowing(url: string): Promise<FetchOutcome> {
-    const web = this.web()
+    const web = await this.documents.current()
     if (web === undefined) throw new UnsupportedContent('no web capability is mounted')
     let current = url
     for (let hop = 0; hop <= MAX_REDIRECT_HOPS; hop++) {

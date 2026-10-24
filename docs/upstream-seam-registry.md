@@ -186,10 +186,10 @@
 ### S22. `ctx.web.fetch` 无法按调用指定提供方，原始 HTML/XML 消费方被全局开关改成 Markdown
 
 - **需求**：要原始文档的消费方（灵感空间阅读器的订阅源与文章提取：按 `<?xml`/`<rss`/`<feed` 判订阅源、HTML 提取器取正文、按落地 URL 判跨站重定向）需要拿到目标站点的原始响应。0.2.1-rc.2 起官方网页搜索设置页的「启用新版 Web 搜索 API」一个开关同时改写 `web.searchProvider` 与 `web.fetchProvider`，抓取改走 `deepseek-fetch-api`：`body` 是 Markdown（`kind: 'text'`）、`statusCode` 恒 200、`url` 恒为请求地址。`WebFetchRequest` 只有 `url`，`WebRuntime` 不暴露提供方注册表，插件无法指定「这次走本地 HTTP」。
-- **现状绕行**：待实施（提案 `proposals/active/2026-10-24-host-021-rc3-adaptation.md` R1）——阅读器把 `image-fetch.ts` 的加固直连（公网地址校验 + 连接钉 IP + 字节上限 + 逐跳复验）扩到订阅源与页面，不再经 `ctx.web.fetch` 取原始文档。
+- **现状绕行**：阅读器在官方 web 服务上用自己持有的 `HttpFetchProvider`（`@deepseek-ai/dsh-web-fetch-http`，可选 peer）抓订阅源与页面，策略与错误同默认 `http` 行；上限改由阅读器行的 `fetchLimits` 配置（Agent Note `.agents/notes/implemented/bug-fix/2026-10-24-reader-own-http-fetch-provider.md`）。
 - **建议的官方改动**：`WebFetchRequest` 加可选 `provider`（或 `accept: 'raw' | 'markdown'`），或公开按 id 取提供方的只读查询；HTTP 提供方的网络策略照旧由它自己负责。
-- **退役条件**：官方能让单次调用指定 HTTP 提供方（或声明要原始响应）后，阅读器回到 `ctx.web.fetch`，删掉自带直连的 feed/page 分支。
-- **状态**：待实施（@khorsheed/dsh-reader）。
+- **退役条件**：官方能让单次调用指定 HTTP 提供方（或声明要原始响应）后，阅读器回到 `ctx.web.fetch`，删掉 `document-fetch.ts`，`fetchLimits` 改回由 `web-fetch-http` 行配置。
+- **状态**：绕行中（@khorsheed/dsh-reader）。
 
 
 - 新增条目：发现"官方不支持 → 绕行"即登记，先登记者在提案总表更新计数。
