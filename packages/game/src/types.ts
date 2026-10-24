@@ -92,6 +92,22 @@ export interface Style3D {
   readonly fog?: readonly [number, number]
   /** Sun intensity. */
   readonly light?: number
+  /**
+   * Per-scene overrides, keyed by the game's own scene names (dsh3d
+   * `enterScene(name)`): background, ground colors, water, fog and light.
+   * Shading bands and the outline stay global.
+   */
+  readonly scenes?: Readonly<Record<string, SceneStyle3D>>
+}
+
+/** What one scene may override in `style3d`. */
+export interface SceneStyle3D {
+  readonly bg?: string
+  readonly ground?: string
+  readonly ground2?: string
+  readonly water?: string
+  readonly fog?: readonly [number, number]
+  readonly light?: number
 }
 
 /** The project manifest (`game.json`). Everything but id/title is the agent's to fill over time. */

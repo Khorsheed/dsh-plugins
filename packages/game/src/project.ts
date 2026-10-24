@@ -8,7 +8,7 @@ import { isKitId } from './kits/ids.ts'
 import type { KitId, KitRef, RuntimeKit } from './kits/types.ts'
 import {
   ART_STYLES, ART_STYLES_3D, isPixelLook, LOOK_CHARS, MANIFEST_FILE, STATE_DIR,
-  type ArtStyle, type ChapterStatus, type Style3D, type CheckFailure, type ElementLook, type ElementView, type GameManifest, type GameParam,
+  type ArtStyle, type ChapterStatus, type SceneStyle3D, type Style3D, type CheckFailure, type ElementLook, type ElementView, type GameManifest, type GameParam,
 } from './types.ts'
 
 /** What `game_open create` must carry before a project exists (the light gate, decision D2). */
@@ -215,21 +215,40 @@ function style3dOf(raw: unknown): { style3d: Style3D } | undefined {
   const r = raw as Record<string, unknown>
   const out: { -readonly [K in keyof Style3D]: Style3D[K] } = {}
   if (typeof r.preset === 'string' && /^[a-z][\w-]{0,31}$/.test(r.preset)) out.preset = r.preset
-  for (const key of ['bg', 'ground', 'ground2', 'water', 'outline'] as const) {
+  Object.assign(out, sceneStyleOf(r))
+  if (typeof r.outline === 'string' && HEX.test(r.outline)) out.outline = r.outline.toLowerCase()
+  const width = clampNum(r.outlineWidth, 0, 0.2), shades = clampNum(r.shades, 2, 5)
+  if (width !== undefined) out.outlineWidth = width
+  if (shades !== undefined) out.shades = Math.round(shades)
+  // The game's own scenes (any names, a bounded number): each keeps only what a scene may override.
+  if (r.scenes !== null && typeof r.scenes === 'object' && !Array.isArray(r.scenes)) {
+    const scenes: Record<string, SceneStyle3D> = {}
+    for (const [name, raw] of Object.entries(r.scenes as Record<string, unknown>).slice(0, 32)) {
+      if (name.trim() === '' || name.length > 40 || raw === null || typeof raw !== 'object' || Array.isArray(raw)) continue
+      scenes[name] = sceneStyleOf(raw as Record<string, unknown>)
+    }
+    if (Object.keys(scenes).length > 0) out.scenes = scenes
+  }
+  return Object.keys(out).length === 0 ? undefined : { style3d: out }
+}
+
+const clampNum = (v: unknown, min: number, max: number): number | undefined =>
+  typeof v === 'number' && Number.isFinite(v) ? Math.min(max, Math.max(min, v)) : undefined
+
+/** The keys a scene may override (and the game-wide style shares): colors, fog, light. */
+function sceneStyleOf(r: Record<string, unknown>): { -readonly [K in keyof SceneStyle3D]: SceneStyle3D[K] } {
+  const out: { -readonly [K in keyof SceneStyle3D]: SceneStyle3D[K] } = {}
+  for (const key of ['bg', 'ground', 'ground2', 'water'] as const) {
     const v = r[key]
     if (typeof v === 'string' && HEX.test(v)) out[key] = v.toLowerCase()
   }
-  const n = (v: unknown, min: number, max: number): number | undefined =>
-    typeof v === 'number' && Number.isFinite(v) ? Math.min(max, Math.max(min, v)) : undefined
-  const width = n(r.outlineWidth, 0, 0.2), shades = n(r.shades, 2, 5), light = n(r.light, 0, 4)
-  if (width !== undefined) out.outlineWidth = width
-  if (shades !== undefined) out.shades = Math.round(shades)
+  const light = clampNum(r.light, 0, 4)
   if (light !== undefined) out.light = light
   if (Array.isArray(r.fog) && r.fog.length === 2) {
-    const a = n(r.fog[0], 0, 500), b = n(r.fog[1], 0, 1000)
+    const a = clampNum(r.fog[0], 0, 500), b = clampNum(r.fog[1], 0, 1000)
     if (a !== undefined && b !== undefined && b > a) out.fog = [a, b]
   }
-  return Object.keys(out).length === 0 ? undefined : { style3d: out }
+  return out
 }
 
 /** The manifest's `runtime` when it names a shipped kit with a positive integer version. */
