@@ -65,7 +65,7 @@ import { absoluteDate, clockOf, relativeWhen } from './quote.ts'
 import {
   TARGET_CANDIDATES, applyRemembered, buildArticle, createSession, detectSourceLanguage, detectTranslator, isTargetLanguage,
   primeMemory, restoreArticle, runTranslation, segmentAt, segmentsOf, setPairHover, setView, toggleSegment,
-  translateTexts, translationHash,
+  remembered, translateTexts, translationHash,
   type BuiltArticle, type SessionOutcome, type TranslateClasses, type TranslationAvailability,
   type TranslationView, type TranslatorLike, type TranslatorSessionLike,
 } from './translate.ts'
@@ -1754,6 +1754,52 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
   }, [props])
 
   /**
+   * The open article's title in the reader's language, once the globe has
+   * translated the body. Keyed by entry so a stale answer never titles the
+   * next article.
+   */
+  const [titleTranslation, setTitleTranslation] = useState<{ id: string; text: string } | null>(null)
+
+  /**
+   * Translate the open article's title alongside its body: the page memory,
+   * then the host's sentence memory, then (with a live session) the model.
+   * Without a session — the stored-translation path — a miss leaves the
+   * title in its original, the same rule the body follows.
+   *
+   * @returns what a model call learned, for the caller to fold into its own
+   * persist batch (one write per run, never a second one for the title).
+   */
+  const translateTitle = useCallback(async (
+    pair: string,
+    session: TranslatorSessionLike | null,
+    cancelled: () => boolean,
+  ): Promise<readonly ReaderSentenceLearn[]> => {
+    const entry = openEntryId === null ? undefined : entryById(openEntryId)
+    const title = entry?.title.trim() ?? ''
+    if (entry === undefined || title === '' || isTargetLanguage(title)) return []
+    const settle = (text: string | undefined): void => {
+      if (text !== undefined && text.trim() !== '' && !cancelled()) setTitleTranslation({ id: entry.id, text: text.trim() })
+    }
+    const known = remembered(pair, title) ?? cardTranslationsRef.current[entry.id]?.title
+    if (known !== undefined) { settle(known); return [] }
+    try {
+      const slice = await props.getSentenceTranslations({ pair, hashes: [translationHash(title)] })
+      const stored = slice.ok ? slice.value.translations[translationHash(title)] : undefined
+      if (stored !== undefined) {
+        primeMemory(pair, [{ text: title, translation: stored }])
+        settle(stored)
+        return []
+      }
+    } catch {
+      // A miss: the model's job, when there is one.
+    }
+    if (session === null || cancelled()) return []
+    const outcome = await translateTexts([title], pair, session, cancelled)
+    settle(outcome.translated.get(title))
+    return outcome.learned
+  }, [openEntryId, entryById, props])
+
+  /**
    * The globe on a page with no Translator API: paint the host's stored
    * translation of this body and stop. Nothing is sent to a model; a sentence
    * the store does not cover stays in its original.
@@ -1775,6 +1821,7 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
     const built = buildArticle(container, translateClasses)
     if (built === null) { cancelRef.current = null; setStoredPair(null); return }
     setTranslatePhase('working')
+    void translateTitle(pair, null, () => cancel.cancelled)
     await warmMemory(pair, openEntryId, articleHtml, built)
     if (cancel.cancelled) return
     cancelRef.current = null
@@ -1795,7 +1842,7 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
     rememberTranslation(openEntryId, initialView, pair.split('→')[0] ?? translationSource)
     // Only the LRU stamps move: a stored translation being read is a use.
     persistTranslations(pair, [], result.recalled, { entryId: openEntryId, bodyHash: translationHash(articleHtml) })
-  }, [openEntryId, articleHtml, translateClasses, warmMemory, persistTranslations, translationSource])
+  }, [openEntryId, articleHtml, translateClasses, warmMemory, persistTranslations, translationSource, translateTitle])
 
   /**
    * Get the article translated, reusing a session this page already built.
@@ -1893,6 +1940,9 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
     // The host's tiers answer first: the entry's exact-fit map, then the global
     // sentence memory. Only what neither knows is spent on the model.
     const pair = `${sourceLanguage}→${TRANSLATION_TARGET}`
+    // The title rides the same session, beside the body rather than after it:
+    // one short string, and the header should not wait for a long article.
+    const titleRun = translateTitle(pair, session, () => cancel.cancelled)
     if (openEntryId !== null && articleHtml !== null) {
       await warmMemory(pair, openEntryId, articleHtml, built)
       if (cancel.cancelled) { setTranslatePhase('idle'); return }
@@ -1906,10 +1956,11 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
     })
     // What the run learned (and what it was served) persists in one batch: a
     // reload loses the page's memory, and the next visit pays the model again
-    // without this.
+    // without this. The title's lesson rides in the same batch.
+    const titleLearned = await titleRun
     persistTranslations(
       pair,
-      result.learned,
+      [...result.learned, ...titleLearned],
       result.recalled,
       openEntryId !== null && articleHtml !== null
         ? { entryId: openEntryId, bodyHash: translationHash(articleHtml) }
@@ -1928,7 +1979,7 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
     setTranslateProgress(null)
     // Re-paint once the first units exist, so the translated typography applies.
     setView(built, initialView, translateClasses)
-  }, [translator, storedPair, showStoredTranslation, translationSource, translateClasses, t, openEntryId, articleHtml, warmMemory, persistTranslations])
+  }, [translator, storedPair, showStoredTranslation, translationSource, translateClasses, t, openEntryId, articleHtml, warmMemory, persistTranslations, translateTitle])
 
   /** Apply one view to a finished translation. */
   const applyView = useCallback((next: TranslationView) => {
@@ -3839,6 +3890,16 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
       )
     }
 
+    /**
+     * The title follows the body's translation: 译文 shows it translated,
+     * 对照 translated with the original beneath, 原文 (or no translation) as
+     * the source wrote it. The header bar carries the shown one.
+     */
+    const translatedTitle = titleTranslation?.id === openEntry.id && translateView !== 'orig'
+      && (translatePhase === 'ready' || translatePhase === 'working')
+      ? titleTranslation.text
+      : undefined
+    const shownTitle = translatedTitle ?? openEntry.title
     const source = presentation.get(openEntry.sourceId)
     /** The host's own row for this entry's source: the failure code lives here. */
     const sourceSummary = sources.find(item => item.id === openEntry.sourceId)
@@ -3972,14 +4033,17 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
         : []),
     ]
     return (
-      <div className={css.root}>
+      // data-quote-source: a passage quoted from here names this article, not
+      // the conversation the pane happens to sit beside (the quote plugin
+      // reads it; without that plugin it is inert).
+      <div className={css.root} data-quote-source={shownTitle}>
         {compact ? (
           // No title at first: the article's own heading sits right below with
           // its source and date in the kicker, so a title here would say it
           // twice. Once that heading scrolls away, the bar takes the title.
           <PanelHeader
             className={css.compactBar}
-            title={titleScrolledAway ? <span className={css.compactBarTitle}>{openEntry.title}</span> : ''}
+            title={titleScrolledAway ? <span className={css.compactBarTitle}>{shownTitle}</span> : ''}
             onBack={() => { actions.setView('list'); actions.closeEntry() }}
             backLabel={t('action.back')}
             extra={detailTranslate}
@@ -3995,7 +4059,7 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
           >
             <IconChevronLeftOutlineMedium size={14} />
           </button>
-          <span className={css.barLabel}>{openEntry.title}</span>
+          <span className={css.barLabel} title={translatedTitle === undefined ? undefined : openEntry.title}>{shownTitle}</span>
           <span className={css.spacer} />
           {detailTranslate}
           {polishOutsideGlobe && (
@@ -4185,7 +4249,13 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
               </>
             )}
           </div>
-          <h1 ref={detailTitleRef} className={css.detailTitle}>{openEntry.title}</h1>
+          <h1 ref={detailTitleRef} className={css.detailTitle}>
+            {shownTitle}
+            {/* 对照 keeps the original under the translation, as the body does. */}
+            {translatedTitle !== undefined && translateView === 'both' && (
+              <span className={css.detailTitleOrig}>{openEntry.title}</span>
+            )}
+          </h1>
           {/* The entry's tags, and next to them the one gesture that belongs to
               the ENTRY rather than to its source: fetch the article again.
               Opening an article that was already fetched no longer costs a

@@ -56,6 +56,15 @@ describe('classifySelection', () => {
     const snapshot = classifySelection(selection, () => false)
     expect(snapshot?.text).toBe('选我全部')
     expect(snapshot?.rect).toMatchObject({ left: expect.any(Number), top: expect.any(Number) })
+    expect(snapshot?.source).toBeUndefined()
+  })
+
+  it('carries the nearest data-quote-source label around the selection', () => {
+    document.body.innerHTML = '<article data-quote-source="  沙箱基础设施  "><div><p id="a">选我</p></div></article>'
+    const snapshot = classifySelection(selectAllOf(document.querySelector('#a')!), () => false)
+    expect(snapshot?.source).toBe('沙箱基础设施')
+    document.body.innerHTML = '<article data-quote-source=" "><p id="b">选我</p></article>'
+    expect(classifySelection(selectAllOf(document.querySelector('#b')!), () => false)?.source).toBeUndefined()
   })
 
   it('answers null inside a textarea (the editing exclusion)', () => {

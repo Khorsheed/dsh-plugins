@@ -110,7 +110,8 @@ export function SelectionQuoteMenu(props: QuoteMenuProps): ReactNode {
   }, [snapshot, placement])
 
   if (snapshot === null) return null
-  const label = currentTitle ?? t('source.fallback')
+  // The content's own label wins: quoting an article names the article.
+  const label = snapshot.source ?? currentTitle ?? t('source.fallback')
   const close = (): void => {
     consumedRef.current = snapshot
     setSnapshot(null)

@@ -1583,6 +1583,32 @@ describe('on-device translation', () => {
     })
   })
 
+  it('translates the title with the body, follows the view, and names the article as the quote source', async () => {
+    installTranslator()
+    const ui = bench({
+      sources: [rssSource('hn')],
+      payloads: { hn: feed('hn', [{ title: 'An English headline', description: '<p>First sentence here. Second sentence here.</p>' }]) },
+    })
+    await ui.settle()
+    fireEvent.click(await screen.findByText('An English headline'))
+    await screen.findByTitle(zh['action.back'])
+    const heading = (): HTMLElement => ui.container.querySelector('h1') as HTMLElement
+    const sourceLabel = (): string | null => heading().closest('[data-quote-source]')?.getAttribute('data-quote-source') ?? null
+    expect(sourceLabel()).toBe('An English headline')
+    fireEvent.click(await screen.findByTitle(zh['action.translate']))
+    await waitFor(() => { expect(heading().textContent).toBe('译：An English headline') })
+    // The quote plugin names what the reader sees.
+    expect(sourceLabel()).toBe('译：An English headline')
+    // 对照: the original sits under the translation.
+    fireEvent.click(ui.container.querySelector('[class*="translateCaret"]') as HTMLElement)
+    fireEvent.click(await screen.findByText(zh['translate.bilingual']))
+    await waitFor(() => { expect(heading().textContent).toBe('译：An English headlineAn English headline') })
+    // 原文: the title as the source wrote it.
+    fireEvent.click(ui.container.querySelector('[class*="translateCaret"]') as HTMLElement)
+    fireEvent.click(await screen.findByText(zh['translate.onlyOriginal']))
+    await waitFor(() => { expect(heading().textContent).toBe('An English headline') })
+  })
+
   it('does not fold a sentence when the click ends a selection (quoting)', async () => {
     installTranslator()
     const ui = await opened('<p>First sentence here. Second sentence here.</p>')
@@ -3112,7 +3138,9 @@ describe('the translation memory survives a reload', () => {
     })
     await ui.settle()
     await openAndTranslate(ui)
-    expect(translate).not.toHaveBeenCalled()
+    // The record predates title translation: the title is the one model call.
+    await waitFor(() => { expect(translate).toHaveBeenCalledTimes(1) })
+    expect(translate.mock.calls[0]?.[0]).toBe('An English article')
     delete (globalThis as unknown as { Translator?: unknown }).Translator
   })
 
@@ -3124,10 +3152,12 @@ describe('the translation memory survives a reload', () => {
       sources: [rssSource('hn')],
       payloads: { hn: page() },
       entryTranslation: { ok: true, value: { translation: entryRecord('the-hash-of-some-older-body') } },
-      memorySlice: Object.fromEntries(SENTENCES.map(sentence => [translationHash(sentence), `译：${sentence}`])),
+      // The title is a sentence of the global memory like any other.
+      memorySlice: Object.fromEntries([...SENTENCES, 'An English article'].map(sentence => [translationHash(sentence), `译：${sentence}`])),
     })
     await ui.settle()
     await openAndTranslate(ui)
+    await waitFor(() => { expect(ui.container.querySelector('h1')?.textContent).toBe('译：An English article') })
     expect(translate).not.toHaveBeenCalled()
     expect(ui.mocks.getSentenceTranslations).toHaveBeenCalled()
     delete (globalThis as unknown as { Translator?: unknown }).Translator
@@ -3211,7 +3241,7 @@ describe('the translation memory survives a reload', () => {
     expect(call.pair).toBe(PAIR)
     expect(call.entryId).toBe(entryId)
     expect(call.bodyHash).toBe(translationHash(BODY))
-    expect(call.entries.map(entry => entry.source).sort()).toEqual([...SENTENCES].sort())
+    expect(call.entries.map(entry => entry.source).sort()).toEqual([...SENTENCES, 'An English article'].sort())
     expect(call.entries.every(entry => entry.hash === translationHash(entry.source))).toBe(true)
     expect(call.recalled).toEqual([])
     delete (globalThis as unknown as { Translator?: unknown }).Translator
