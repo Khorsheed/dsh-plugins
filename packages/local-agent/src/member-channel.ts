@@ -238,7 +238,11 @@ export class MemberChannel {
     if (run === undefined) return { ok: false, error: 'localAgent: unknown or expired member token' }
     const mode = this.modeTools === undefined ? undefined : await this.probeRoom()?.memberMode?.(run)
     if ('list' in request.modeTools) {
-      if (mode === undefined) return { ok: true, tools: [] }
+      if (mode === undefined) {
+        // Visible in the diagnostics: a member whose room gave it no mode.
+        this.modeTools?.note({ childSessionId: run.childSessionId, provider: run.provider, mode: false })
+        return { ok: true, tools: [] }
+      }
       try {
         const tools = await this.modeTools!.list(run.childSessionId, mode.preset, mode.cwd)
         await this.installSkills(run, mode.preset)

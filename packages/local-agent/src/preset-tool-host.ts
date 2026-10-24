@@ -119,7 +119,8 @@ export class PresetToolHost {
    */
   constructor(private readonly ctx: Context, private readonly diagnostics?: string) {}
 
-  private note(entry: Record<string, unknown>): void {
+  /** Append one diagnostics line (best-effort). */
+  note(entry: Record<string, unknown>): void {
     if (this.diagnostics === undefined) return
     try { appendFileSync(this.diagnostics, `${JSON.stringify({ time: new Date().toISOString(), ...entry })}\n`) } catch { /* diagnostics never fail a call */ }
   }

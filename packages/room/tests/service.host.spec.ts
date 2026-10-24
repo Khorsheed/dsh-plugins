@@ -540,6 +540,24 @@ describe('RoomService Remote surface (real composition)', () => {
     expect(await service.memberMode({ childSessionId: 'child-bill', parentSessionId: sessionId, provider: 'kimi' })).toBeUndefined()
   })
 
+  it('a member\'s first round finds its mode before the journal knows its child session', async () => {
+    const { service, sessionId } = await bootRoom()
+    await service.invite({ sessionId, provider: 'claude', name: 'cut', preset: 'dsh-video' })
+    await service.invite({ sessionId, provider: 'claude', name: 'cut2', preset: 'dsh-video' })
+    const state = await service.getState({ sessionId })
+    if (!state.ok) throw new Error('narrowing')
+    const [cut, cut2] = state.value.members.filter(member => member.kind === 'cli').map(member => member.id ?? member.name)
+    const actor = { childSessionId: 'child-new', parentSessionId: sessionId, provider: 'claude' }
+    const starting = vi.spyOn(service.engine, 'startingMembers')
+    starting.mockReturnValue([])
+    expect(await service.memberMode(actor)).toBeUndefined()
+    starting.mockReturnValue([cut!])
+    expect(await service.memberMode(actor)).toMatchObject({ preset: 'dsh-video' })
+    // Two first starts of one provider at once: ambiguous, no mode.
+    starting.mockReturnValue([cut!, cut2!])
+    expect(await service.memberMode(actor)).toBeUndefined()
+  })
+
   it('setGoal journals the goal (latest wins; blank clears) and getState carries it', async () => {
     const { service, sessionId } = await bootRoom()
     const fresh = await service.getState({ sessionId })

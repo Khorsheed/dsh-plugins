@@ -1276,7 +1276,14 @@ export class RoomService extends TypertRemoteService {
   async memberMode(actor: LocalAgentMemberRun): Promise<{ readonly preset: string; readonly cwd?: string } | undefined> {
     const loaded = await this.ensureLive(SessionId(actor.parentSessionId))
     if (!loaded.ok) return undefined
-    const member = loaded.state.members.find(entry => entry.kind === 'cli' && entry.childSessionId === actor.childSessionId && entry.provider === actor.provider)
+    const cli = loaded.state.members.filter(entry => entry.kind === 'cli' && entry.provider === actor.provider)
+    // A member's first round asks before the journal knows its child session
+    // (claude lists MCP tools at spawn): the one first start in flight for
+    // this provider is the asker. Two at once stay ambiguous — no mode.
+    const starting = this.engine.startingMembers(actor.parentSessionId)
+    const fresh = cli.filter(entry => entry.childSessionId === undefined && starting.includes(memberId(loaded.session.snapshotEvents(), entry)))
+    const member = cli.find(entry => entry.childSessionId === actor.childSessionId)
+      ?? (fresh.length === 1 ? fresh[0] : undefined)
     if (member?.preset === undefined) return undefined
     const cwd = member.cwd ?? loaded.session.header.cwd
     return { preset: member.preset, ...cwd === undefined ? {} : { cwd } }
