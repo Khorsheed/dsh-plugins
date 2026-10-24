@@ -29,6 +29,13 @@ describe('member stream durability through the host backend', () => {
       session.append('step/end', { turn: 1, step: 1 })
       session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
       await ctx.localAgent.syncChildSession(session, true)
+      // The host's routed write-behind drains on its own timer, and a mode
+      // tool's execution checkpoint flushes the session: neither may find
+      // the routed copies of events the sync already wrote.
+      await new Promise(resolve => setTimeout(resolve, 260))
+      session.append('agent-preset/selected', { agentPreset: 'dsh-gamedev' })
+      await expect(ctx.sessions.flush(session)).resolves.toBeDefined()
+      await ctx.localAgent.syncChildSession(session, true)
       const reader = await ctx.sessionPersistence.open(session.id, 'read')
       try { expect((await reader.read()).events).toEqual(session.snapshotEvents()) }
       finally { await reader.close() }
