@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-10-22-mobile-quick-tunnel-supervisor.md
-.agents/notes/implemented/feature/2026-10-22-mobile-quick-tunnel-supervisor.md: 61d3513cf21bf6e4c147a75363b329710edd4310
-.agents/notes/implemented/feature/2026-10-22-mobile-quick-tunnel-supervisor.zh.md: bf7a7b958ce2476d722385478a5e7e15200ba7a8
+.agents/notes/implemented/feature/2026-10-22-mobile-quick-tunnel-supervisor.md: 8cab54d2f72d3570084c4f0aea4ffca2904ffb8e
+.agents/notes/implemented/feature/2026-10-22-mobile-quick-tunnel-supervisor.zh.md: 12f5af655971806e33e606a209e359b7cca0039b

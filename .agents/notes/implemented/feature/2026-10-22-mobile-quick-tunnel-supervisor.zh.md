@@ -8,6 +8,8 @@ Status: implemented
 
 ## Decision
 
+下文的进程归属、重启行为与失败处理已于 2026-10-24 被取代：cloudflared 改由 detached 守护进程持有，宿主重启不换域名，失败持续重试不再停住，最低宿主为 0.2.0——见[守护进程笔记](../architecture/2026-10-24-mobile-tunnel-detached-sidecar.md)。信任热绑的设计照旧。
+
 mobile 插件现在可选地接管 Quick Tunnel 全生命周期，并**通过官方 `configEditor` 服务在运行时重绑域名**（宿主 ≥ 0.1.7）——零上游改动、零宿主重启、零通配信任：
 
 - `GET/POST /api/mobile/tunnel` 与 connect 同级挂在官方受认证的 Connection 注册表后。GET 只读状态；POST 是同源 JSON 的显式启停动作，守卫与二维码签发完全一致。

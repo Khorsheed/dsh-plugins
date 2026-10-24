@@ -8,6 +8,8 @@ Status: implemented
 
 ## Decision
 
+Process ownership, restart behavior and failure handling below were superseded on 2026-10-24: a detached sidecar now holds cloudflared so host restarts keep the domain, failures retry without parking, and the host floor is 0.2.0 — see [the detached-sidecar note](../architecture/2026-10-24-mobile-tunnel-detached-sidecar.md). The trust-rebind design stands as written.
+
 The mobile plugin now optionally owns the whole Quick Tunnel lifecycle and rebinds domains **at runtime through the official `configEditor` service** (host ≥ 0.1.7) — zero upstream changes, zero host restarts, zero wildcard trust:
 
 - `GET/POST /api/mobile/tunnel` rides the official authenticated Connection registry next to `connect`. GET is read-only status; POST is an explicit same-origin JSON enable/disable action, guarded exactly like QR minting.
