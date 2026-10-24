@@ -715,7 +715,7 @@ export class ClaudeLiveDriver {
      */
     let roundModel: string | undefined
     let roundCliVersion: string | undefined
-    /** Whether a folded line already carries the round's usage (no backfill event exists). */
+    /** Whether a folded line already carried usage (per-call inline, or the round's total as the fallback — no backfill event exists). */
     let usageCarried = false
     /**
      * The streaming blocks seen this round by stream key: deltas accumulate
@@ -907,6 +907,11 @@ export class ClaudeLiveDriver {
     /** Write parser.lines[index] at the next step(s). */
     const foldLine = (index: number, lineUsage: typeof parser.usage): void => {
       const line = parser.lines[index]!
+      // The fold's per-call usage (the assistant event's inline report) wins
+      // over the round-total fallback; once any line carries its own, the
+      // round total never joins the log (a sum would double count).
+      const effectiveUsage = line.usage ?? lineUsage
+      if (line.usage !== undefined) usageCarried = true
       const stream = streamOfLine(line)
       if (stream !== undefined) {
         // A streamed line finalizes its own step (opening it now if no
@@ -920,14 +925,14 @@ export class ClaudeLiveDriver {
           step: stream.durable!,
           message: assistantEvent(blocks),
           stream: [],
-          ...lineUsage === undefined ? {} : { usage: lineUsage },
+          ...effectiveUsage === undefined ? {} : { usage: effectiveUsage },
         }, { surfaceOp: 'append' })
         finishStream(stream)
         closeOpenStep()
       } else {
         closeOpenStep()
         lastStep += 1
-        appendClaudeTranscriptLine(childSession, turn, lastStep, line, lineUsage)
+        appendClaudeTranscriptLine(childSession, turn, lastStep, line, effectiveUsage)
       }
       folded.add(index)
       localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text: claudeLineText(line) })
@@ -947,13 +952,15 @@ export class ClaudeLiveDriver {
      * arrive folds as the interrupted placeholder.
      */
     const mirrorUpTo = (upto: number, withUsage: boolean, settle = false): void => {
-      // The usage rides the last NON-tool line (tool events carry no usage
-      // slot, and a kill mid-command ends the transcript with a tool line).
-      // A carrier mirrored in an earlier flush (before the usage was knowable)
-      // loses the accounting to the settle's final snapshot — host 0.1.5 has
-      // no usage-backfill event.
+      // Fallback carrier only: when the fold stamped per-call usage onto any
+      // line, the round total never joins the log (a sum would double count);
+      // otherwise it rides the last NON-tool line (tool/call and tool/result
+      // events carry no usage slot, and a kill mid-command ends the
+      // transcript with a tool line). A carrier mirrored in an earlier flush
+      // (before the usage was knowable) loses the accounting to the settle's
+      // final snapshot — host 0.1.5 has no usage-backfill event.
       let usageIndex = -1
-      if (withUsage) {
+      if (withUsage && !parser.lines.some(line => line.usage !== undefined)) {
         for (let index = 0; index < parser.lines.length; index += 1) {
           if (parser.lines[index]?.kind !== 'tool') usageIndex = index
         }
