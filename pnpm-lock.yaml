@@ -170,9 +170,6 @@ importers:
 
   packages/basic:
     dependencies:
-      '@khorsheed/dsh-ankh-guard':
-        specifier: workspace:*
-        version: link:../ankh-guard
       '@khorsheed/dsh-capability-catalog':
         specifier: workspace:*
         version: link:../capability-catalog
@@ -185,9 +182,6 @@ importers:
       '@khorsheed/dsh-context-guard':
         specifier: workspace:*
         version: link:../context-guard
-      '@khorsheed/dsh-context-lens':
-        specifier: workspace:*
-        version: link:../context-lens
       '@khorsheed/dsh-file-preview':
         specifier: workspace:*
         version: link:../file-preview
@@ -837,6 +831,12 @@ importers:
 
   packages/dev:
     dependencies:
+      '@khorsheed/dsh-ankh-guard':
+        specifier: workspace:*
+        version: link:../ankh-guard
+      '@khorsheed/dsh-context-lens':
+        specifier: workspace:*
+        version: link:../context-lens
       '@khorsheed/dsh-local-agent':
         specifier: workspace:*
         version: link:../local-agent

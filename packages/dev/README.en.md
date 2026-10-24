@@ -2,7 +2,7 @@
 
 English | [中文](README.md)
 
-The dev mode in one install: the `dsh-dev` agent preset plus the whole family it grants tools from — the local-agent core, the Kimi / Codex / Claude Code / dsh delegation providers, worktrees, room and typesafe. One 「开发模式」 card in the inventory; a session switched to dev mode gets the mode's tool set automatically.
+The dev mode in one install: the `dsh-dev` agent preset plus the whole family it grants tools from — the local-agent core, the Kimi / Codex / Claude Code / dsh delegation providers, worktrees, room and typesafe, plus the developer-facing ankh-guard and context-lens. One 「开发模式」 card in the inventory; a session switched to dev mode gets the mode's tool set automatically.
 
 ## What the mode is
 
@@ -20,6 +20,8 @@ Dev mode is the official standard mode's full capability set, plus community too
 | `@khorsheed/dsh-worktrees` | `worktrees` | the session worktree's branch, pending changes and commit history |
 | `@khorsheed/dsh-room` | `room` | turn a session into a shared conversation with coordinators and members |
 | `@khorsheed/dsh-typesafe` | `typesafe` | typed model judgement primitives other plugins call in code |
+| `@khorsheed/dsh-ankh-guard` | `ankh-guard` | gate self-modification restarts on a green build and test credential |
+| `@khorsheed/dsh-context-lens` | `context-lens` | per-turn structured breakdown of every model request: sections, tools, tokens, timing |
 
 Card-less library (deps-only: in `dependencies`, no patch rows of its own): `@khorsheed/dsh-local-agent-dsh-headless` (the provisioned sub-dsh face) — the same treatment as @khorsheed/dsh-bundle-local-agent; it never appears on the inventory page and lives or dies with the family.
 

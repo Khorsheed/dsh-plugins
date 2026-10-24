@@ -2,7 +2,7 @@
 
 [English](README.en.md) | 中文
 
-开发模式一个包装齐:`dsh-dev` agent preset 连同它授予工具的整个开发家族——local-agent 核与 Kimi / Codex / Claude Code / dsh 四个委派 provider、工作树、多Agent协同、快速决策。清单里只多一张「开发模式」卡片;切到开发模式的会话自动拿到该模式的工具组合。
+开发模式一个包装齐:`dsh-dev` agent preset 连同它授予工具的整个开发家族——local-agent 核与 Kimi / Codex / Claude Code / dsh 四个委派 provider、工作树、多Agent协同、快速决策,以及开发者用的重启守卫与上下文透镜。清单里只多一张「开发模式」卡片;切到开发模式的会话自动拿到该模式的工具组合。
 
 ## 这是什么模式
 
@@ -20,6 +20,8 @@
 | `@khorsheed/dsh-worktrees` | `worktrees` | 实况展示会话工作树的分支、待提交改动与提交记录 |
 | `@khorsheed/dsh-room` | `room` | 把会话升级为有协调者和成员的共享协作空间 |
 | `@khorsheed/dsh-typesafe` | `typesafe` | 类型化模型判断原语,供其它插件在代码中调用 |
+| `@khorsheed/dsh-ankh-guard` | `ankh-guard` | 先证明构建与测试通过,才放行自我修改的重启 |
+| `@khorsheed/dsh-context-lens` | `context-lens` | 按 turn 查看每次模型请求的完整组成:system 分段归因、工具定义、token 与耗时分布 |
 
 无卡库(deps-only,进 `dependencies` 不进 patch 行):`@khorsheed/dsh-local-agent-dsh-headless`(子 dsh 被 provision 面)——与 @khorsheed/dsh-bundle-local-agent 同一处理,清单页不出现,随家族存亡。
 

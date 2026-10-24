@@ -10,8 +10,8 @@ The recommended install unit is a **suite** (one npm package), not a single plug
 
 | Suite | Package | What you get | Front-door repo |
 | --- | --- | --- | --- |
-| **基础体验 (Essentials)** | `@khorsheed/dsh-basic` | 14 everyday members: message edit/withdraw, the history timeline, title editing, quote actions, artifact preview, local files, task capsules, the compaction reminder, inline cards, the capability catalog, the completion chime, mobile, the context lens, and the ops guard | [Khorsheed/dsh-basic](https://github.com/Khorsheed/dsh-basic) |
-| **开发套件 (Dev)** | `@khorsheed/dsh-dev-suite` | Local coding-agent delegation (Kimi / Codex / Claude Code / DSH), live worktree state, room multi-agent collaboration, typesafe quick judgement — with the 开发模式 preset | [Khorsheed/dsh-dev](https://github.com/Khorsheed/dsh-dev) |
+| **基础体验 (Essentials)** | `@khorsheed/dsh-basic` | 12 everyday members: message edit/withdraw, the history timeline, title editing, quote actions, artifact preview, local files, task capsules, the compaction reminder, inline cards, the capability catalog, the completion chime, and mobile | [Khorsheed/dsh-basic](https://github.com/Khorsheed/dsh-basic) |
+| **开发套件 (Dev)** | `@khorsheed/dsh-dev-suite` | Local coding-agent delegation (Kimi / Codex / Claude Code / DSH), live worktree state, room multi-agent collaboration, typesafe quick judgement, the context lens and the ops guard — with the 开发模式 preset | [Khorsheed/dsh-dev](https://github.com/Khorsheed/dsh-dev) |
 | **写作套件 (Writing)** | `@khorsheed/dsh-writing-suite` | The idea canvas, the novel genre, the reading space (RSS/link reader), local transcription, render capture — with the 写作模式 preset | [Khorsheed/dsh-writing](https://github.com/Khorsheed/dsh-writing) |
 | **学习套件 (Learning)** | `@khorsheed/dsh-learning-suite` | The library: project-organized close reading (book ingestion, roadmaps, lecture notes, quizzes) with canvas/reader/transcribe/capture included — with the 学习模式 preset | [Khorsheed/dsh-learning](https://github.com/Khorsheed/dsh-learning) |
 | **剪辑套件 (Video)** | `@khorsheed/dsh-video-suite` | The cutting room: multi-speaker mixdowns, voiceprint recognition, delete-the-word-deletes-the-audio, audio/video/subtitle/shownotes export; local transcription included — with the 剪辑模式 preset | [Khorsheed/dsh-video](https://github.com/Khorsheed/dsh-video) |
@@ -55,7 +55,7 @@ Each package's details, configuration and screenshots live in its own directory 
 | Package | What it does | Install | Host | Suite |
 | --- | --- | --- | --- | --- |
 | [`inline-html-render`](packages/inline-html-render) | Renders ```` ```dsh-card ```` HTML blocks the agent writes into **sandboxed interactive cards** in the conversation | `@khorsheed/dsh-inline-html-render` | ≥ 0.1.2-rc.1 | basic |
-| [`context-lens`](packages/context-lens) | **Context lens**: per-turn inspection of each model request — system-section attribution, tool definitions, history vs. new context, tokens and latency | `@khorsheed/dsh-context-lens` | ≥ 0.1.5-rc.1 | basic |
+| [`context-lens`](packages/context-lens) | **Context lens**: per-turn inspection of each model request — system-section attribution, tool definitions, history vs. new context, tokens and latency | `@khorsheed/dsh-context-lens` | ≥ 0.1.5-rc.1 | dev |
 | [`mobile`](packages/mobile) | **Mobile presentation** and the iOS bridge | `@khorsheed/dsh-mobile` | ≥ 0.1.5-rc.1 | basic |
 
 ### Writing and ideas
@@ -130,7 +130,7 @@ Versus the official offering: you can have the lead agent invite any harness you
 
 | Package | What it does | Install | Host | Suite |
 | --- | --- | --- | --- | --- |
-| [`ankh-guard`](packages/ankh-guard) | The **safety gate for self-modifying restarts**: green credentials (bound to the git HEAD) + composition preflight + watchdog rollback — let the AI change code and restart itself without taking the service down | `@khorsheed/dsh-ankh-guard` | ≥ 0.1.5-rc.1 | basic |
+| [`ankh-guard`](packages/ankh-guard) | The **safety gate for self-modifying restarts**: green credentials (bound to the git HEAD) + composition preflight + watchdog rollback — let the AI change code and restart itself without taking the service down | `@khorsheed/dsh-ankh-guard` | ≥ 0.1.5-rc.1 | dev |
 
 ## Agent preset design
 

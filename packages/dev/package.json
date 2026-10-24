@@ -1,6 +1,6 @@
 {
   "name": "@khorsheed/dsh-dev-suite",
-  "description": "Mode bundle 开发模式: the dsh-dev agent preset plus the dev family it grants — the local-agent core and the kimi / codex / claude-code / dsh delegation providers, worktrees, room and typesafe — in one install. Thin meta package: a patch carrying the members' canonical rows and the mode's preset row, npm dependencies on the members, locale card metadata — no runtime code, no client half.",
+  "description": "Mode bundle 开发模式: the dsh-dev agent preset plus the dev family it grants — the local-agent core and the kimi / codex / claude-code / dsh delegation providers, worktrees, room and typesafe, plus the developer-facing ankh-guard and context-lens — in one install. Thin meta package: a patch carrying the members' canonical rows and the mode's preset row, npm dependencies on the members, locale card metadata — no runtime code, no client half.",
   "version": "0.1.0",
   "publishConfig": {
     "access": "public"
@@ -35,6 +35,8 @@
     "bundle"
   ],
   "dependencies": {
+    "@khorsheed/dsh-ankh-guard": "workspace:*",
+    "@khorsheed/dsh-context-lens": "workspace:*",
     "@khorsheed/dsh-local-agent": "workspace:*",
     "@khorsheed/dsh-local-agent-claude-code": "workspace:*",
     "@khorsheed/dsh-local-agent-codex": "workspace:*",
@@ -72,7 +74,9 @@
         "@khorsheed/dsh-local-agent-dsh",
         "@khorsheed/dsh-worktrees",
         "@khorsheed/dsh-room",
-        "@khorsheed/dsh-typesafe"
+        "@khorsheed/dsh-typesafe",
+        "@khorsheed/dsh-ankh-guard",
+        "@khorsheed/dsh-context-lens"
       ]
     },
     "references": [
@@ -83,12 +87,14 @@
       "@khorsheed/dsh-local-agent-dsh",
       "@khorsheed/dsh-worktrees",
       "@khorsheed/dsh-room",
-      "@khorsheed/dsh-typesafe"
+      "@khorsheed/dsh-typesafe",
+      "@khorsheed/dsh-ankh-guard",
+      "@khorsheed/dsh-context-lens"
     ],
     "compat": {
       "minHost": "0.1.7-rc.1",
       "verifiedHost": "0.2.1-rc.1",
-      "notes": "Pure composition: the bundle mounts the members' canonical rows plus the dsh-dev preset row and registers nothing of its own. The floor is the higher of the members' highest (0.1.5-rc.1 — the local-agent family, worktrees, room, typesafe) and the preset row's floor: an `@deepseek-ai/dsh-agent-preset` declaration exists only on host 0.1.7-rc.1 and later. Individual member behaviors are documented in each member's own dsh.compat."
+      "notes": "Pure composition: the bundle mounts the members' canonical rows plus the dsh-dev preset row and registers nothing of its own. The floor is the higher of the members' highest (0.1.5-rc.1 — the local-agent family, worktrees, room, typesafe, ankh-guard, context-lens) and the preset row's floor: an `@deepseek-ai/dsh-agent-preset` declaration exists only on host 0.1.7-rc.1 and later. Individual member behaviors are documented in each member's own dsh.compat."
     }
   }
 }

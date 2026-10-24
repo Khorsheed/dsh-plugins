@@ -22,6 +22,8 @@ export const FAMILY_MEMBERS = [
   '@khorsheed/dsh-worktrees',
   '@khorsheed/dsh-room',
   '@khorsheed/dsh-typesafe',
+  '@khorsheed/dsh-ankh-guard',
+  '@khorsheed/dsh-context-lens',
 ] as const
 
 /**

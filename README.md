@@ -10,8 +10,8 @@
 
 | 套件 | 包名 | 包含什么 | 门面仓 |
 | --- | --- | --- | --- |
-| **基础体验** | `@khorsheed/dsh-basic` | 14 个日常体验成员:消息编辑/撤回、历史时间轴、标题编辑、引用、产物预览、本地文件、任务胶囊、压缩提醒、内联卡片、能力目录、提示音、移动端、上下文透镜、运维守护 | [Khorsheed/dsh-basic](https://github.com/Khorsheed/dsh-basic) |
-| **开发套件** | `@khorsheed/dsh-dev-suite` | 本地编码 agent 委派(Kimi / Codex / Claude Code / DSH)、worktree 改动实况、room 多 agent 协作、typesafe 快速决策,自带「开发模式」preset | [Khorsheed/dsh-dev](https://github.com/Khorsheed/dsh-dev) |
+| **基础体验** | `@khorsheed/dsh-basic` | 12 个日常体验成员:消息编辑/撤回、历史时间轴、标题编辑、引用、产物预览、本地文件、任务胶囊、压缩提醒、内联卡片、能力目录、提示音、移动端 | [Khorsheed/dsh-basic](https://github.com/Khorsheed/dsh-basic) |
+| **开发套件** | `@khorsheed/dsh-dev-suite` | 本地编码 agent 委派(Kimi / Codex / Claude Code / DSH)、worktree 改动实况、room 多 agent 协作、typesafe 快速决策、上下文透镜、运维守护,自带「开发模式」preset | [Khorsheed/dsh-dev](https://github.com/Khorsheed/dsh-dev) |
 | **写作套件** | `@khorsheed/dsh-writing-suite` | 灵感画布、长篇小说体裁、灵感空间(RSS/链接阅读)、本机转写、渲染抓取,自带「写作模式」preset | [Khorsheed/dsh-writing](https://github.com/Khorsheed/dsh-writing) |
 | **学习套件** | `@khorsheed/dsh-learning-suite` | 图书馆:按项目组织的精读学习(书籍摄入、路线图、讲义、测验判题),含画布/灵感空间/转写/渲染抓取,自带「学习模式」preset | [Khorsheed/dsh-learning](https://github.com/Khorsheed/dsh-learning) |
 | **剪辑套件** | `@khorsheed/dsh-video-suite` | 剪辑台:混录自动分人、声纹认人、删字即删音频,导出音频/视频/字幕/shownotes;含本机转写,自带「剪辑模式」preset | [Khorsheed/dsh-video](https://github.com/Khorsheed/dsh-video) |
@@ -55,7 +55,7 @@
 | 包 | 插件能力 | 安装包名 | 宿主要求 | 随套件 |
 | --- | --- | --- | --- | --- |
 | [`inline-html-render`](packages/inline-html-render) | 把 agent 写的 ```` ```dsh-card ```` HTML 渲染成会话内**沙箱交互卡片** | `@khorsheed/dsh-inline-html-render` | ≥ 0.1.2-rc.1 | basic |
-| [`context-lens`](packages/context-lens) | **上下文透镜**:按 turn 查看每次模型请求的完整组成——system 分段归因、工具定义、历史与新增上下文、token 与耗时 | `@khorsheed/dsh-context-lens` | ≥ 0.1.5-rc.1 | basic |
+| [`context-lens`](packages/context-lens) | **上下文透镜**:按 turn 查看每次模型请求的完整组成——system 分段归因、工具定义、历史与新增上下文、token 与耗时 | `@khorsheed/dsh-context-lens` | ≥ 0.1.5-rc.1 | dev |
 | [`mobile`](packages/mobile) | **移动端呈现**与 iOS 桥 | `@khorsheed/dsh-mobile` | ≥ 0.1.5-rc.1 | basic |
 
 ### 写作与灵感
@@ -130,7 +130,7 @@
 
 | 包 | 插件能力 | 安装包名 | 宿主要求 | 随套件 |
 | --- | --- | --- | --- | --- |
-| [`ankh-guard`](packages/ankh-guard) | 自修改重启的**安全门禁**:绿色凭证(绑定 git HEAD)+ 组合 preflight + watchdog 回滚——让 AI 自己改代码、自己重启,还不把服务搞挂 | `@khorsheed/dsh-ankh-guard` | ≥ 0.1.5-rc.1 | basic |
+| [`ankh-guard`](packages/ankh-guard) | 自修改重启的**安全门禁**:绿色凭证(绑定 git HEAD)+ 组合 preflight + watchdog 回滚——让 AI 自己改代码、自己重启,还不把服务搞挂 | `@khorsheed/dsh-ankh-guard` | ≥ 0.1.5-rc.1 | dev |
 
 ## Agent preset 设计
 

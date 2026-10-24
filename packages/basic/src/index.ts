@@ -22,6 +22,4 @@ export const FAMILY_MEMBERS = [
   '@khorsheed/dsh-capability-catalog',
   '@khorsheed/dsh-mobile',
   '@khorsheed/dsh-whalesong',
-  '@khorsheed/dsh-ankh-guard',
-  '@khorsheed/dsh-context-lens',
 ] as const

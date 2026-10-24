@@ -67,6 +67,14 @@
     - id: typesafe
       name: '@khorsheed/dsh-typesafe'
 
+    # 重启守卫: self-modification restarts gated on a green build+test credential.
+    - id: ankh-guard
+      name: "@khorsheed/dsh-ankh-guard"
+
+    # 上下文透镜: per-turn structured breakdown of every model request.
+    - id: context-lens
+      name: "@khorsheed/dsh-context-lens"
+
     - id: preset-dsh-dev
       name: '@deepseek-ai/dsh-agent-preset'
       config:
