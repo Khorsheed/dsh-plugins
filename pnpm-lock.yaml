@@ -226,43 +226,6 @@ importers:
         specifier: ^3.0.0
         version: 3.2.7(@types/node@26.6.3)(jsdom@29.1.1)(lightningcss@1.33.0)(tsx@4.23.15)(yaml@2.9.1)
 
-  packages/bundle-conversation-toolbox:
-    dependencies:
-      '@khorsheed/dsh-client-message-tools':
-        specifier: workspace:*
-        version: link:../message-tools
-      '@khorsheed/dsh-client-session-title-edit':
-        specifier: workspace:*
-        version: link:../session-title-edit
-      '@khorsheed/dsh-context-guard':
-        specifier: workspace:*
-        version: link:../context-guard
-      '@khorsheed/dsh-inline-html-render':
-        specifier: workspace:*
-        version: link:../inline-html-render
-      '@khorsheed/dsh-message-timeline':
-        specifier: workspace:*
-        version: link:../message-timeline
-      '@khorsheed/dsh-quote':
-        specifier: workspace:*
-        version: link:../quote
-      '@khorsheed/dsh-taskpilot':
-        specifier: workspace:*
-        version: link:../taskpilot
-    devDependencies:
-      '@deepseek-ai/cordis':
-        specifier: 4.0.4
-        version: 4.0.4(@deepseek-ai/cordis-plugin-include@1.0.10)(@deepseek-ai/cordis-plugin-loader@1.0.5)
-      tsdown:
-        specifier: ^0.22.2
-        version: 0.22.14(tsx@4.23.15)(typescript@5.9.3)
-      typescript:
-        specifier: ^5.9.0
-        version: 5.9.3
-      vitest:
-        specifier: ^3.0.0
-        version: 3.2.7(@types/node@26.6.3)(jsdom@29.1.1)(lightningcss@1.33.0)(tsx@4.23.15)(yaml@2.9.1)
-
   packages/bundle-eval:
     dependencies:
       '@khorsheed/dsh-datasets':

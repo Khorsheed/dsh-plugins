@@ -7,7 +7,7 @@
  * card editing the same number live: a `plugins.item` entry on the Plugins
  * page gated by `configForms.whileServed` on the `context-guard` namespace
  * (the official companion convention), so every install shape — standalone,
- * the conversation-toolbox bundle, a mode pack — surfaces the same card, and
+ * the basic bundle, a mode pack — surfaces the same card, and
  * a composition without the row shows no trace of it. The action
  * rides the official `/compact` command
  * channel (`remote.commands.execute` → host `ctx.commands` →
@@ -118,7 +118,7 @@ export function apply(ctx: Context, config?: Partial<ContextGuardConfig>): void 
 
   // One Plugins-page card gated on the SERVED NAMESPACE, never on the install
   // shape: whichever composition carries the `context-guard` row — standalone,
-  // the conversation-toolbox bundle, or a mode pack — serves the row's
+  // the basic bundle, or a mode pack — serves the row's
   // volatile Config under the row id, and `whileServed` keeps the
   // `plugins.item` entry alive for exactly that span (the official companion
   // convention), so a composition without the row shows no trace of the card.

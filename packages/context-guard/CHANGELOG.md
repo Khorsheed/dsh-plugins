@@ -1,5 +1,9 @@
 # 变更记录
 
+## 未发布
+
+- `dsh.references` 去掉已退役的 `@khorsheed/dsh-bundle-conversation-toolbox`(其成员全部并入 basic)。
+
 ## 0.2.5（2026-10-22）
 
 - **设置卡回归插件页**：家族/模式 bundle 折叠后阈值设置卡整体失声——`plugins.row.config` 的键钉死了旧载体 bundle（成员行现由模式包承载，键永不命中），0.1.5 座位 `settings.plugin.item` 已被宿主改名删除（现名 `plugins.item`），鸭式老臂静默失效。现在改为注册一个 `plugins.item` 列表条目并以 `configForms.whileServed` 门在服役中的 `context-guard` 命名空间上：独立安装、家族 bundle、模式包三种形态同一张卡，组合摘掉该行时卡也干净消失。代价：宿主 <0.1.7-alpha.1 不再渲染设置卡（输入框压缩按钮等其余面不变，已记入 README 兼容节与 `dsh.compat.notes`）。见 [Agent Note](../../.agents/notes/implemented/bug-fix/2026-10-18-bundle-member-config-card-via-plugins-item.md)

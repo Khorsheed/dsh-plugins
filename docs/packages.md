@@ -4,8 +4,8 @@
 
 ## 概览
 
-- 包总数:**47**
-- 自挂载 bundle(`dsh.bundle.patch`):**44**
+- 包总数:**46**
+- 自挂载 bundle(`dsh.bundle.patch`):**43**
 - 组合组件(不自挂载,`dsh.composition.component`):**3** — `source-plane-library` 2、`sub-profile-patch` 1
 - 带浏览器半边(`dsh.client`):**31**
 - 整合 profile(默认安装单元):**3** — `basic`、`dev`、`eval`
@@ -19,7 +19,6 @@
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `@khorsheed/dsh-ankh-guard` | `packages/ankh-guard` | 0.4.3 | bundle | — | web | 0.1.5-rc.1 | basic, dev, eval |
 | `@khorsheed/dsh-basic` | `packages/basic` | 0.1.0 | bundle | — | — | 0.1.5-rc.1 | — |
-| `@khorsheed/dsh-bundle-conversation-toolbox` | `packages/bundle-conversation-toolbox` | 0.1.3 | bundle | — | — | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-eval-suite` | `packages/bundle-eval` | 0.1.0 | bundle | — | — | 0.2.0-rc.2 | eval |
 | `@khorsheed/dsh-bundle-local-agent` | `packages/bundle-local-agent` | 0.3.0 | bundle | — | — | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-canvas` | `packages/canvas` | 0.6.0 | bundle | — | web | 0.1.5-rc.1 | — |

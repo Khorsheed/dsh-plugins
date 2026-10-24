@@ -107,7 +107,8 @@ export const COMPOSITION_COMPONENTS: ReadonlyArray<string> = [
  *                        twice). The bundle registers nothing itself: no own
  *                        runtime row, no client half, no service/tool/slot
  *                        registrations in src. Added 2026-09-24 with
- *                        `bundle-local-agent` / `bundle-conversation-toolbox`.
+ *                        `bundle-local-agent` / `bundle-conversation-toolbox`
+ *                        (the latter retired 2026-10-24, folded into basic).
  *   mode                 a family bundle that additionally carries exactly ONE
  *                        `@deepseek-ai/dsh-agent-preset` row — the mode the
  *                        bundle installs (id `preset-<mode>`,
@@ -1227,8 +1228,8 @@ function scanCrossPackage(pkgs: Pkg[]): { findings: Finding[]; ledger: string[] 
 
   // Cross-bundle row parity: a row id shared by several bundle patches must
   // carry the same YAML item content in every one (dev / bundle-eval /
-  // bundle-local-agent all re-mount the local-agent family rows; basic and
-  // bundle-conversation-toolbox share the toolbox rows). Compared as YAML
+  // bundle-local-agent all re-mount the local-agent family rows; dev and
+  // bundle-local-agent share the room row). Compared as YAML
   // content — comment and blank lines dropped, scalar quoting normalized (the
   // parity specs' convention) — everything else must match byte for byte.
   // Preset rows are exempt: their cross-copy parity is composition-level and

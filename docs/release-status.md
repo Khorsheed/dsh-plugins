@@ -6,7 +6,6 @@
 | --- | --- | --- | --- | --- | --- |
 | `@khorsheed/dsh-ankh-guard` | 0.4.3 | 0.4.3 | 0.1.5-rc.1 | 0.2.1-rc.1 | ✓ |
 | `@khorsheed/dsh-basic` | 未发布 | 0.1.0 | 0.1.5-rc.1 | 0.2.1-rc.1 |  |
-| `@khorsheed/dsh-bundle-conversation-toolbox` | 0.1.2 | 0.1.3 | 0.1.5-rc.1 | 0.2.1-rc.1 |  |
 | `@khorsheed/dsh-eval-suite` | 未发布 | 0.1.0 | 0.2.0-rc.2 | 0.2.1-rc.1 |  |
 | `@khorsheed/dsh-bundle-local-agent` | 0.3.0 | 0.3.0 | 0.1.5-rc.1 | 0.2.1-rc.1 |  |
 | `@khorsheed/dsh-canvas` | 未发布 | 0.6.0 | 0.1.5-rc.1 | 0.1.5-rc.1 |  |

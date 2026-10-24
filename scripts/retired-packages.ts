@@ -94,4 +94,9 @@ export const RETIRED_PACKAGES: readonly RetiredPackage[] = [
     replacement: 'the six mode packs (@khorsheed/dsh-dev-suite, -writing-suite, -learning-suite, -video-suite, -gamedev-suite, -eval-suite), each carrying its own preset row — row ids and preset ids unchanged',
     note: 'the preset rows moved into the mode packs (2026-10-18) and were mirrored until the presets package retired (2026-10-24); published to 0.3.0 — npm deprecation rides the next publish wave',
   },
+  {
+    name: '@khorsheed/dsh-bundle-conversation-toolbox',
+    replacement: '@khorsheed/dsh-basic, whose fourteen members include all seven toolbox members (row ids unchanged)',
+    note: 'a strict subset of the basic family bundle, retired 2026-10-24; published to 0.1.2 — npm deprecation rides the next publish wave',
+  },
 ]
