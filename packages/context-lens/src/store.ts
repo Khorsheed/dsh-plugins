@@ -192,6 +192,8 @@ export interface TurnRecord {
   liveContent: boolean
   /** Capture observed the turn opening, so this turn’s live request order is complete. */
   liveStartObserved?: boolean
+  /** A live turn that ended with no captured request has been compared with the log once. */
+  logChecked?: boolean
   query: string
   /** A room round: the dispatch's targets (see room.ts). */
   room?: { targets: string[] }
@@ -966,6 +968,20 @@ export class InspectorStore {
         if (delegation.childId === undefined || this.findScope(session, delegation.childId) === undefined) this.addDelegationScope(session, target, delegation)
       }
     }
+    // A live turn that captured nothing (an external agent's session: its
+    // requests reach only the log) takes the log's turn once it has ended.
+    for (const empty of this.emptyLiveTurns(session)) {
+      const logged = logTurns.find(turn => turn.purpose === undefined && turn.hostTurn === empty.hostTurn)
+      if (logged === undefined || logged.endedAt === undefined) continue
+      empty.logChecked = true
+      if (logged.requests.length === 0) continue
+      const startSeq = empty.startSeq
+      this.evictTurn(session, empty, false)
+      this.insertLogTurn(session, logged)
+      const placed = session.turns.find(turn => turn.hostTurn === logged.hostTurn && turn.purpose === undefined)
+      if (placed !== undefined && placed.startSeq === undefined && startSeq !== undefined) placed.startSeq = startSeq
+      this.renumberScopes(session)
+    }
     if (session.backfillState === 'complete' || session.backfillState === 'broken') return 0
     const keep = this.windowOf(session, hosts)
     const window = logTurns.filter(turn => turn.purpose === undefined && keep.has(turn.hostTurn))
@@ -1096,6 +1112,19 @@ export class InspectorStore {
   }
 
   /** Retry numbering after a streaming turn’s first durable response becomes available. */
+  /** Ended live main turns with no request in any view, not yet compared with the log. */
+  private emptyLiveTurns(session: SessionRecord): TurnRecord[] {
+    return session.turns.filter(turn => turn.liveContent && turn.purpose === undefined && turn.hostTurn !== undefined
+      && turn.endedAt !== undefined && turn !== session.openTurn && !turn.logChecked
+      && [...turn.scopes.values()].every(scope => scope.requests.length === 0))
+  }
+
+  /** Whether a read should re-read the log for live turns that captured nothing. */
+  needsLogTurns(sessionId: string): boolean {
+    const session = this.sessions.get(sessionId)
+    return session !== undefined && this.emptyLiveTurns(session).length > 0
+  }
+
   needsRequestNumbers(sessionId: string): boolean {
     return this.sessions.get(sessionId)?.turns.some(t => t.liveStartObserved && (t.scopes.get('main')?.requests.some(r => r.purpose === undefined && r.requestNumber === undefined) ?? false)) ?? false
   }

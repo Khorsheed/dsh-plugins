@@ -391,7 +391,7 @@ export class InspectorService {
     // Retryable until complete: a partial fill re-reads on later queries
     // (eviction may have freed room); the read is one zstd decode.
     const state = this.store.backfillState(sessionId)
-    if (state === 'broken' || (state === 'complete' && !this.store.needsRequestNumbers(sessionId))) return
+    if (state === 'broken' || (state === 'complete' && !this.store.needsRequestNumbers(sessionId) && !this.store.needsLogTurns(sessionId))) return
     const jobKey = `main:${sessionId}`
     const pending = this.refreshing.get(jobKey)
     if (pending !== undefined) return pending
