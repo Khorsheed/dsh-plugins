@@ -20,13 +20,21 @@ export interface HarnessModelPickerProps {
   effort?: { value: string; onChange(value: string): void } | undefined
   disabled?: boolean | undefined
   defaultLabel?: string | undefined
+  /**
+   * Present = render as form fields (a labelled model select, plus an effort
+   * select when `effort` is present) in the host form's own classes, instead
+   * of the drill-down menu — for a dialog whose other fields are selects.
+   */
+  fields?: { field?: string | undefined; label?: string | undefined; select?: string | undefined; row?: string | undefined } | undefined
   t: ConfigurationTranslate
 }
 
 /** Discover while expanded or resolving an empty choice; settings remain caller-owned drafts. */
-export function HarnessModelPicker({ face, value, onChange, effort, disabled, t }: HarnessModelPickerProps) {
+export function HarnessModelPicker({ face, value, onChange, effort, disabled, fields, t }: HarnessModelPickerProps) {
   const menu = useConfigurationMenu('below')
-  const { open, setOpen } = menu
+  const { setOpen } = menu
+  // Form fields show the directory all the time: discovery runs as if open.
+  const open = menu.open || fields !== undefined
   const [surface, setSurface] = useState<{ face: ModelDirectoryFace; directory: LocalAgentModelDirectory }>()
   const directory = surface?.face === face ? surface.directory : undefined
   const currentFace = useRef(face)
@@ -54,6 +62,7 @@ export function HarnessModelPicker({ face, value, onChange, effort, disabled, t 
     if (!value && !disabled && first) onChange(first.value)
   }, [directory, value, disabled, onChange])
   const entry = directory?.entries.find(entry => entry.value === value)
+  if (fields !== undefined) return <ModelSelects directory={directory} error={error} value={value} onChange={onChange} effort={effort} disabled={disabled} classes={fields} t={t} />
   return <details ref={menu.root} className={`${css.root} ${css.settings}`} open={open} onToggle={event => setOpen(event.currentTarget.open)}>
     <summary aria-label={t('configuration.model')} aria-expanded={open}><span className={css.triggerLabel}>{entry?.label ?? (value || t('configuration.choose'))}</span></summary>
     {open && <div ref={menu.panel} className={css.panel} style={menu.style}>
@@ -70,4 +79,48 @@ export function HarnessModelPicker({ face, value, onChange, effort, disabled, t 
         showEffort={effort !== undefined} disabled={disabled} t={t} />
     </div>}
   </details>
+}
+
+/** The form-field face: a model select and, when asked, the model's effort select ('' = the model's default). */
+function ModelSelects({ directory, error, value, onChange, effort, disabled, classes, t }: {
+  directory: LocalAgentModelDirectory | undefined
+  error: string | undefined
+  value: string
+  onChange(value: string): void
+  effort: HarnessModelPickerProps['effort']
+  disabled: boolean | undefined
+  classes: NonNullable<HarnessModelPickerProps['fields']>
+  t: ConfigurationTranslate
+}) {
+  const entries = directory?.entries ?? []
+  // The chosen model stays listed even when the directory hides it.
+  const shown = entries.filter(entry => !entry.hidden || entry.value === value)
+  const reasoning = entries.find(entry => entry.value === value)?.reasoning
+  const options = reasoning?.options ?? []
+  const defaultEffort = options.find(option => option.value === reasoning?.default)?.label ?? reasoning?.default
+  const pickModel = (next: string): void => {
+    onChange(next)
+    // An effort the next model does not offer falls back to its default.
+    const nextOptions = entries.find(entry => entry.value === next)?.reasoning?.options ?? []
+    if (effort !== undefined && effort.value !== '' && !nextOptions.some(option => option.value === effort.value)) effort.onChange('')
+  }
+  return <div className={classes.row}>
+    <label className={classes.field}>
+      <span className={classes.label}>{t('configuration.model')}</span>
+      <select className={classes.select} aria-label={t('configuration.model')} value={value} disabled={disabled || directory === undefined} onChange={event => { pickModel(event.target.value) }}>
+        {directory === undefined && <option value={value}>{value || t('loading')}</option>}
+        {directory !== undefined && value === '' && <option value="">{t('configuration.choose')}</option>}
+        {directory !== undefined && value !== '' && !shown.some(entry => entry.value === value) && <option value={value}>{value}</option>}
+        {shown.map(entry => <option key={entry.value} value={entry.value}>{entry.label}</option>)}
+      </select>
+      {error !== undefined && <span role="alert">{error}</span>}
+    </label>
+    {effort !== undefined && <label className={classes.field}>
+      <span className={classes.label}>{t('configuration.effort')}</span>
+      <select className={classes.select} aria-label={t('configuration.effort')} value={effort.value} disabled={disabled || options.length === 0} onChange={event => { effort.onChange(event.target.value) }}>
+        <option value="">{defaultEffort === undefined ? t('configuration.effortDefault') : `${t('configuration.effortDefault')}（${defaultEffort}）`}</option>
+        {options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+      </select>
+    </label>}
+  </div>
 }

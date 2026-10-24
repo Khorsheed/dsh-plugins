@@ -33,4 +33,6 @@ local-agent 的 `PresetToolHost` 给每个带模式的成员一个不跑模型�
 - 在一次运行的第一次列工具时写入的技能，可能要到 CLI 的下一轮才被读到，取决于 CLI 何时扫描技能目录。
 - 审批在房间里问。模式工具的调用走注册表的正常审批（`approval.request`，遵守成员会话的审批策略）；local-agent 注册最前面的 `approval/request` 应答者（`prepend`），认出是自己的代理，就把问题交给房间接口（`askMemberApproval`）。房间记 `room/approval`，在对话里显示「⚠ coco 要你确认：调用 video_render」和「允许一次 / 拒绝」，计入「需要处理」，并回答正在等待的调用（`answerApproval`）；调用被取消则以已取消收尾，没有等待者撑着的审批（重启）在下次访问房间时过期。其余情况——别的 agent、没有房间——交给下一个应答者。发布日志读取器不要求审批事件处在打开的 step 里。
 - 成员的第一轮可能在房间知道它的子会话之前就来问：Claude Code 在进程启动时列 MCP 工具，这发生在 `facade.start` 里、房间记下子会话 id 之前（Codex 要用工具时才列，所以没碰到）。因此房间的 `memberMode` 会退回到该 provider 下唯一一个首次启动进行中的成员（`DispatchEngine.startingMembers`）；同时有两个这样的启动则视为不确定，不给模式。找不到模式的列工具请求现在会在 `mode-tools.jsonl` 里写一行 `mode: false`。
+- 新成员默认用房间自己的模式。协调者的 `room_invite` 增加 `mode` 参数（preset id；不填则通过 `inheritPreset` 沿用房间会话的模式；`none` 表示只用 CLI 自带工具），这样人说「用游戏开发模式」就能传到成员身上；回执写明成员的模式。邀请弹窗也默认选中当前会话的模式（`listProviders({ sessionId })` 返回 `sessionPreset`）。不带模式的 CLI 成员只有自己的工具和房间工具——它的会话里可能仍会显示模式面板，但那些工具它调不到。
+- 邀请弹窗的模型控件改成两个表单下拉框（模型、推理强度），用弹窗自己的样式：`HarnessModelPicker` 在逐级菜单之外新增 `fields` 形态；成员配置卡片仍用菜单。
 - 测试覆盖：每个成员一个 preset agent、只列插件工具，以该 agent 身份执行调用并拒绝非插件工具名，通道按房间给的模式应答，桥在没有宿主时退化，以及房间记录 CLI 成员的模式。

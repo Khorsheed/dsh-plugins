@@ -57,7 +57,20 @@ describe('room_invite tool (real composition)', () => {
     expect(tool.name).toBe('room_invite')
     expect(tool.description).toContain('room')
     const parameters = tool.parameters as { properties: Record<string, unknown> }
-    expect(Object.keys(parameters.properties)).toEqual(['provider', 'name', 'role', 'instructions', 'firstTask', 'note', 'cwd'])
+    expect(Object.keys(parameters.properties)).toEqual(['provider', 'name', 'role', 'instructions', 'firstTask', 'note', 'cwd', 'mode'])
+  })
+
+  it('maps mode: omitted keeps the room\'s own mode, "none" asks for none, an id is passed through', async () => {
+    const inviteMember = vi.fn(async (request: { name: string; preset?: string }) => ({ ok: true as const, value: { name: request.name, pendingFirstTask: false, ...request.preset === undefined ? {} : { preset: request.preset } } }))
+    const invite = roomInviteTool({ inviteMember } as never)
+    const exec = execFor({ id: 'room-1' } as unknown as Session)
+    expect(await call(invite as never, { provider: 'codex-cli', name: 'a', instructions: 'x' }, exec)).toContain('Mode: none')
+    expect(inviteMember.mock.calls[0]![0]).toMatchObject({ inheritPreset: true })
+    await call(invite as never, { provider: 'codex-cli', name: 'b', instructions: 'x', mode: 'none' }, exec)
+    expect(inviteMember.mock.calls[1]![0]).not.toHaveProperty('inheritPreset')
+    expect(inviteMember.mock.calls[1]![0]).not.toHaveProperty('preset')
+    expect(await call(invite as never, { provider: 'codex-cli', name: 'c', instructions: 'x', mode: 'dsh-gamedev' }, exec)).toContain('Mode: dsh-gamedev')
+    expect(inviteMember.mock.calls[2]![0]).toMatchObject({ preset: 'dsh-gamedev' })
   })
 
   it('rejects a non-agent caller, and PROMOTES a plain session on invite', async () => {

@@ -101,6 +101,8 @@ export interface InviteDialogProps {
   readonly providers?: readonly RoomProviderInfo[] | undefined
   /** Host agent presets a native DSH member may compose; absent = no native option. */
   readonly presets?: readonly RoomPresetInfo[] | undefined
+  /** The room session's own mode: the default mode of a new member, native or CLI. */
+  readonly sessionPreset?: string | undefined
   /** False = the delegation facade is absent (invite mode). */
   readonly localAgentAvailable: boolean
   /** The room session's cwd (the empty-cwd placeholder, invite mode). */
@@ -139,7 +141,7 @@ function validName(name: string): boolean {
 
 /** The invite/edit modal card. */
 export function InviteDialog({
-  mode, member, providers, presets, localAgentAvailable, inheritedCwd, existingNames,
+  mode, member, providers, presets, sessionPreset, localAgentAvailable, inheritedCwd, existingNames,
   browseDirectory, modelSurface, renderHarnessModelPicker, memberModel, memberConfiguration, onSubmit, onClose, t,
 }: InviteDialogProps): ReactNode {
   const [provider, setProvider] = useState('')
@@ -200,10 +202,13 @@ export function InviteDialog({
   const chosen = provider === '' ? (authenticated[0]?.provider ?? (nativeAvailable ? NATIVE : '')) : provider
   // Editing: the member's own kind, never the invite form's provider pick.
   const native = mode === 'edit' ? member?.kind === 'native' : chosen === NATIVE
+  // A new member works in the room's own mode unless the human picks another.
+  const roomMode = sessionPreset !== undefined && presets?.some(entry => entry.id === sessionPreset) === true ? sessionPreset : undefined
   const [preset, setPreset] = useState('')
-  const chosenPreset = preset === '' ? presets?.find(entry => entry.isDefault)?.id ?? '' : preset
-  /** A CLI member's mode: '' = none (only its own tools plus the room's). */
-  const [cliPreset, setCliPreset] = useState('')
+  const chosenPreset = preset === '' ? roomMode ?? presets?.find(entry => entry.isDefault)?.id ?? '' : preset
+  /** A CLI member's mode: '' = none (only its own tools plus the room's); undefined = untouched (the room's mode). */
+  const [cliPicked, setCliPreset] = useState<string | undefined>(undefined)
+  const cliPreset = cliPicked ?? roomMode ?? ''
   const someLoggedOut = (providers ?? []).some(entry => !entry.authenticated)
   /** The chosen provider's roster harness name (the harnessModel lookup key). */
   const chosenHarness = (providers ?? []).find(entry => entry.provider === chosen)?.harness
@@ -483,7 +488,7 @@ export function InviteDialog({
             </div>}
             {native ? null : mode === 'edit' && memberConfiguration !== undefined
               ? <div className={css.field}><span className={css.label}>{t('invite.modelLabel')}</span>{memberConfiguration}</div>
-              : memberConfiguration ?? (mode === 'invite' && chosenHarness !== undefined && (modelSurface === undefined || surface !== undefined) ? renderHarnessModelPicker?.(chosenHarness, { value: model, onChange: setModel, effort: { value: effort, onChange: setEffort }, disabled: busy }) : undefined) ?? modelField}
+              : memberConfiguration ?? (mode === 'invite' && chosenHarness !== undefined && (modelSurface === undefined || surface !== undefined) ? renderHarnessModelPicker?.(chosenHarness, { value: model, onChange: setModel, effort: { value: effort, onChange: setEffort }, disabled: busy, fields: { row: css.fieldPair, field: css.field, label: css.label, select: css.select } }) : undefined) ?? modelField}
             <label className={css.field}>
               <span className={css.label}>{t('invite.name')}</span>
               <span className={css.nameRow}>

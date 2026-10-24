@@ -440,11 +440,13 @@ export class RoomService extends TypertRemoteService {
    * @returns the provider list and the facade verdict.
    */
   @Remote('listProviders')
-  async listProviders(_request: RoomListProvidersRequest): Promise<RoomProviderList> {
+  async listProviders(request: RoomListProvidersRequest): Promise<RoomProviderList> {
     const localAgentAvailable = probeLocalAgent(this.ctx) !== undefined
-    const presets = await this.listPresets()
+    const listed = await this.listPresets()
+    const sessionPreset = request.sessionId === undefined || listed === undefined ? undefined : await this.sessionPreset(request.sessionId)
+    const presets = listed === undefined ? {} : { presets: listed, ...sessionPreset === undefined ? {} : { sessionPreset } }
     const roster = probeLocalAgentRoster(this.ctx)
-    if (roster === undefined) return { localAgentAvailable, providers: [], ...presets === undefined ? {} : { presets } }
+    if (roster === undefined) return { localAgentAvailable, providers: [], ...presets }
     const providers: RoomProviderInfo[] = []
     for (const row of roster.roster()) {
       const status = await roster.statusOf(row.name)
@@ -459,7 +461,17 @@ export class RoomService extends TypertRemoteService {
         authenticated: status.authenticated,
       })
     }
-    return { localAgentAvailable, providers, ...presets === undefined ? {} : { presets } }
+    return { localAgentAvailable, providers, ...presets }
+  }
+
+  /** A session's own mode (preset id), live or cold; undefined when unreadable. */
+  private async sessionPreset(sessionId: SessionId): Promise<string | undefined> {
+    try {
+      const live = this.ctx.sessions.get(sessionId)
+      if (live !== undefined) return roomSessionPreset(live)
+      const inspected = await inspectCold(this.ctx, sessionId)
+      return inspected === undefined ? undefined : deriveSessionPreset(presetDerivationHost(), { header: inspected.meta, events: inspected.events })
+    } catch { return undefined }
   }
 
   /** The host's agent presets for a native member, or undefined without a registry. */
@@ -746,6 +758,9 @@ export class RoomService extends TypertRemoteService {
       return { ok: false, error: { code: 'empty-text' } }
     }
     const native = request.kind === 'native'
+    // The coordinator's default: the member works in the room's own mode.
+    const inherited = request.preset === undefined && request.inheritPreset === true ? roomSessionPreset(loaded.session) : undefined
+    if (inherited !== undefined) request = { ...request, preset: inherited }
     if (request.preset !== undefined) {
       // A native member composes a host preset; a CLI member reaches that
       // preset's plugin tools through its bridge. Reject an id the host does
@@ -814,7 +829,7 @@ export class RoomService extends TypertRemoteService {
     if (request.firstTask !== undefined && firstTaskSeq !== undefined) {
       this.engine.dispatch(loaded.session, request.name, request.firstTask, { dispatchSeq: firstTaskSeq })
     }
-    return { ok: true, value: { name: request.name, pendingFirstTask: request.firstTask !== undefined } }
+    return { ok: true, value: { name: request.name, pendingFirstTask: request.firstTask !== undefined, ...request.preset === undefined ? {} : { preset: request.preset } } }
   }
 
   /**

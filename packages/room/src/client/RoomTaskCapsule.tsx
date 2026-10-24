@@ -40,6 +40,7 @@ export function RoomTaskCapsule({
         mode="invite"
         providers={providers?.providers}
         presets={providers?.presets}
+        sessionPreset={providers?.sessionPreset}
         localAgentAvailable={providers?.localAgentAvailable ?? true}
         inheritedCwd={roomCwd}
         existingNames={state.members.map(entry => entry.name)}

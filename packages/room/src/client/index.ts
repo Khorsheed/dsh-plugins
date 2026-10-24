@@ -244,9 +244,9 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       void roomStore.refresh(sessionId)
       return { ok: true, pendingFirstTask: carried.value.value.pendingFirstTask }
     },
-    listProviders: async () => {
+    listProviders: async (sessionId) => {
       if (remote === undefined) return undefined
-      const carried = await remote.listProviders({})
+      const carried = await remote.listProviders(sessionId === undefined ? {} : { sessionId })
       if (!carried.ok) return undefined
       // Mode names as the host's own mode selector shows them: shipped modes
       // (标准模式, PTC 模式 …) from the host's dictionary, others as declared.
