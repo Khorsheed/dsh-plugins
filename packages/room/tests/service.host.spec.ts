@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { preloadPresetDerivationHost } from '../src/agent-setup.ts'
 import { randomUUID } from 'node:crypto'
 import { Context } from '@deepseek-ai/cordis'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
@@ -558,6 +559,22 @@ describe('RoomService Remote surface (real composition)', () => {
     expect(await service.memberMode({ childSessionId: 'child-ada', parentSessionId: sessionId, provider: 'kimi' })).toBeUndefined()
     // The run's provider must match the roster: another provider's run does not borrow the mode.
     expect(await service.memberMode({ childSessionId: 'child-bill', parentSessionId: sessionId, provider: 'kimi' })).toBeUndefined()
+  })
+
+  it('an invite asking to inherit takes the room session\'s own mode', async () => {
+    const { ctx, service, sessionId } = await bootRoom()
+    await preloadPresetDerivationHost()
+    const session = ctx.sessions.get(sessionId)!
+    session.append('agent-preset/selected', { agentPreset: 'dsh-gamedev' })
+    expect(await service.inviteMember({ sessionId, provider: 'codex', name: 'gm', instructions: 'x', inheritPreset: true }, 'human'))
+      .toMatchObject({ ok: true, value: { preset: 'dsh-gamedev' } })
+    // An explicit choice wins; no inheritance asked = no mode.
+    await service.inviteMember({ sessionId, provider: 'codex', name: 'cut', instructions: 'x', preset: 'dsh-video', inheritPreset: true }, 'human')
+    await service.inviteMember({ sessionId, provider: 'codex', name: 'plain', instructions: 'x' }, 'human')
+    const state = await service.getState({ sessionId })
+    if (!state.ok) throw new Error('narrowing')
+    expect(Object.fromEntries(state.value.members.filter(member => member.kind === 'cli').map(member => [member.name, member.preset])))
+      .toEqual({ gm: 'dsh-gamedev', cut: 'dsh-video', plain: undefined })
   })
 
   it('a member\'s first round finds its mode before the journal knows its child session', async () => {

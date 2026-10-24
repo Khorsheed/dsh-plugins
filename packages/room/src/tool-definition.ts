@@ -95,6 +95,14 @@ export function roomInviteTool(backend: RoomInviteToolBackend) {
         type: 'string',
         description: 'Optional working directory for the member (empty: inherits the room session\'s cwd).',
       },
+      mode: {
+        type: 'string',
+        description: 'The member\'s dsh mode: a host agent preset id (e.g. dsh-gamedev, dsh-video). The member '
+          + 'can then call that mode\'s plugin tools (and sees its skills) besides its own CLI tools. '
+          + 'Omit it to keep this room\'s own mode — the usual choice; pass the mode the human asked for '
+          + 'when they named one, or "none" for a member with only its own CLI tools. An unknown id is '
+          + 'rejected with the available ids.',
+      },
     },
     output: {
       schema: {
@@ -122,6 +130,7 @@ export function roomInviteTool(backend: RoomInviteToolBackend) {
         ...args.firstTask === undefined ? {} : { firstTask: args.firstTask },
         ...args.note === undefined ? {} : { note: args.note },
         ...args.cwd === undefined ? {} : { cwd: args.cwd },
+        ...args.mode === undefined || args.mode.trim() === '' ? { inheritPreset: true } : args.mode.trim() === 'none' ? {} : { preset: args.mode.trim() },
       }, 'agent')
       if (!result.ok) {
         const hint = result.error.code === 'duplicate-name'
@@ -138,16 +147,23 @@ export function roomInviteTool(backend: RoomInviteToolBackend) {
                     ? 'none (no harness with a delegation provider is registered)'
                     : result.error.available.join(', ')
                 }. Retry with one of the available providers.`
-                : ''
+                : result.error.code === 'unknown-preset'
+                  ? ` Unknown mode "${result.error.preset}". Available: ${result.error.available.join(', ') || 'none'}; or "none" for no mode.`
+                  : ''
         return { text: `Could not invite "${args.name}": ${result.error.code}.${hint}` }
       }
       return {
         text: result.value.pendingFirstTask
-          ? `Member ${result.value.name} joined the room and its first task was dispatched.`
-          : `Member ${result.value.name} joined the room (idle; @-address it to dispatch work).`,
+          ? `Member ${result.value.name} joined the room and its first task was dispatched.${modeNote(result.value.preset)}`
+          : `Member ${result.value.name} joined the room (idle; @-address it to dispatch work).${modeNote(result.value.preset)}`,
       }
     },
   })
+}
+
+/** The invite receipt's mode line, so the caller can tell the human which mode the member runs. */
+function modeNote(preset: string | undefined): string {
+  return preset === undefined ? ' Mode: none (its own CLI tools only).' : ` Mode: ${preset}.`
 }
 
 /** The slice of RoomService the room_message tool drives. */

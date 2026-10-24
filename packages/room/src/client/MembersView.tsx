@@ -105,7 +105,7 @@ export function MembersView({
   const openInvite = (): void => {
     setProviders(undefined)
     setDialog({ mode: 'invite' })
-    void listProviders().then(setProviders)
+    void listProviders(sessionId).then(setProviders)
   }
 
   const submitDialog = async (values: InviteDialogSubmit) => {
@@ -191,6 +191,7 @@ export function MembersView({
       member={dialog.mode === 'edit' ? dialog.member : undefined}
       providers={providers?.providers}
       presets={providers?.presets}
+          sessionPreset={providers?.sessionPreset}
       localAgentAvailable={providers?.localAgentAvailable ?? true}
       inheritedCwd={roomCwd}
       existingNames={(state?.members ?? []).map(entry => entry.name)}
@@ -256,7 +257,7 @@ export function MembersView({
               onEdit={() => {
                 setDialog({ mode: 'edit', member })
                 // The edit dialog names the member's (locked) mode.
-                if (providers === undefined) void listProviders().then(setProviders)
+                if (providers === undefined) void listProviders(sessionId).then(setProviders)
               }}
               onLocate={openTeam === undefined ? undefined : () => { openTeam(member.name) }}
               onRemove={() => { setRemoving(current => current === member.name ? null : member.name) }}

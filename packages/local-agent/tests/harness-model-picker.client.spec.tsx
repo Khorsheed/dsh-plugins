@@ -105,4 +105,29 @@ describe('harness model picker', () => {
     // The menu stays open (pane navigation, like the member configuration card).
     expect(view.container.querySelector('details')!.open).toBe(true)
   })
+
+  it('as form fields: a labelled model select and an effort select whose blank is the model default', async () => {
+    const two: LocalAgentModelDirectory = {
+      ...ready,
+      entries: [
+        { value: 'alias', label: 'Full Native Label', source: 'native', reasoning: { default: 'low', options: [{ value: 'low', label: 'Low' }, { value: 'max', label: 'Max' }] } },
+        { value: 'small', label: 'Small', source: 'native', reasoning: { default: 'low', options: [{ value: 'low', label: 'Low' }] } },
+      ],
+    }
+    const face: ModelDirectoryFace = { read: async () => two, follow: async function* (signal) { yield two; await untilAbort(signal) } }
+    const change = vi.fn()
+    const effortChange = vi.fn()
+    const view = render(<HarnessModelPicker face={face} value="alias" onChange={change} effort={{ value: 'max', onChange: effortChange }} fields={{ select: 'sel' }} t={t} />)
+    expect(view.container.querySelector('details')).toBeNull()
+    const model = await screen.findByRole('combobox', { name: zh['configuration.model'] })
+    await waitFor(() => { expect((model as HTMLSelectElement).disabled).toBe(false) })
+    const effort = screen.getByRole('combobox', { name: zh['configuration.effort'] }) as HTMLSelectElement
+    expect([...effort.options].map(option => option.text)).toEqual([`${zh['configuration.effortDefault']}（Low）`, 'Low', 'Max'])
+    fireEvent.change(effort, { target: { value: 'low' } })
+    expect(effortChange).toHaveBeenLastCalledWith('low')
+    // A model without the chosen effort falls back to its default.
+    fireEvent.change(model, { target: { value: 'small' } })
+    expect(change).toHaveBeenLastCalledWith('small')
+    expect(effortChange).toHaveBeenLastCalledWith('')
+  })
 })

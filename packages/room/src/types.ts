@@ -737,8 +737,14 @@ export interface RoomInviteRequest {
    * `native`: a DSH child agent in this host process, composing `preset`.
    */
   readonly kind?: 'cli' | 'native'
-  /** Native members only: the host agent preset id (omitted = the host default). */
+  /**
+   * The member's mode: the host agent preset id. A native member composes it
+   * (omitted = the host default); a CLI member reaches its plugin tools
+   * through the bridge (omitted = no mode).
+   */
   readonly preset?: string
+  /** With no `preset`: take the room session's own mode (the coordinator's invite default). */
+  readonly inheritPreset?: boolean
   /** CLI provider id (non-blank). */
   readonly provider: string
   /** Addressing/display name: unique in the room, no whitespace, no `@`. */
@@ -777,6 +783,8 @@ export interface RoomInvitation {
   readonly name: string
   /** True when a first task was supplied and dispatched with the invitation. */
   readonly pendingFirstTask: boolean
+  /** The member's mode (preset id), when it has one. */
+  readonly preset?: string
 }
 
 /** invite outcome. */
@@ -1023,8 +1031,11 @@ export type RoomSetGoalResult =
   | { readonly ok: true; readonly value: { readonly goal?: string } }
   | { readonly ok: false; readonly error: RoomFailure }
 
-/** listProviders request (no parameters). */
-export interface RoomListProvidersRequest {}
+/** listProviders request. */
+export interface RoomListProvidersRequest {
+  /** The session the invite is for: the result then carries its mode (`sessionPreset`). */
+  readonly sessionId?: SessionId
+}
 
 /** One invitable CLI provider. */
 export interface RoomProviderInfo {
@@ -1052,6 +1063,8 @@ export interface RoomProviderList {
    * plain composition).
    */
   readonly presets?: readonly RoomPresetInfo[]
+  /** The requested session's own mode (preset id), when known: the dialog's default mode. */
+  readonly sessionPreset?: string
 }
 
 /** One host agent preset, as the invite dialog lists it. */

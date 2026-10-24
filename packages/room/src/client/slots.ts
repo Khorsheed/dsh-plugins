@@ -57,8 +57,8 @@ export interface RoomInviteInjected {
   readonly roomCwd?: string | undefined
   /** Invite a CLI member. */
   readonly invite: (values: RoomInviteValues) => Promise<RoomInviteOutcome>
-  /** List the invitable providers (undefined on transport failure). */
-  readonly listProviders: () => Promise<RoomProviderList | undefined>
+  /** List the invitable providers (undefined on transport failure); with a session, its mode rides along (`sessionPreset`). */
+  readonly listProviders: (sessionId?: SessionId) => Promise<RoomProviderList | undefined>
   /**
    * Pick a member-level working directory through the official picker call
    * (`uiWorkspace.pickDirectory` on host 0.1.2 — the picker UI itself is not

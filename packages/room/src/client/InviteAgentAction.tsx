@@ -26,7 +26,7 @@ export function InviteAgentAction({
   const openDialog = (): void => {
     setProviders(undefined)
     setOpen(true)
-    void listProviders().then(setProviders)
+    void listProviders(sessionId).then(setProviders)
   }
 
   const submit = (values: InviteDialogSubmit) => invite(inviteRequest(values))
@@ -51,6 +51,7 @@ export function InviteAgentAction({
           mode="invite"
           providers={providers?.providers}
           presets={providers?.presets}
+          sessionPreset={providers?.sessionPreset}
           localAgentAvailable={providers?.localAgentAvailable ?? true}
           inheritedCwd={roomCwd}
           existingNames={listNames()}

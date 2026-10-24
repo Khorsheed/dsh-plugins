@@ -92,6 +92,18 @@
   gap: 4px;
 }
 
+/* Model and reasoning effort side by side: one row of two form selects
+   (the local-agent picker's field face, in this dialog's own classes). */
+.fieldPair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+}
+
+.fieldPair .select {
+  min-width: 0;
+}
+
 /* Field labels match the official panel section header (client-ui-agent-team
    TeamAction h3): small, medium weight, secondary ink. */
 .label {

@@ -307,7 +307,7 @@ export function RoomComposer({
           openPlanSession={openPlanSession}
           roomCwd={roomCwd}
           invite={invite}
-          listProviders={listProviders}
+          listProviders={() => listProviders(sessionId)}
           browseDirectory={browseDirectory}
           modelSurface={modelSurface}
           renderHarnessModelPicker={renderHarnessModelPicker}
