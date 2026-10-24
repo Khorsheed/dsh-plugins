@@ -157,7 +157,7 @@ pnpm deploy:check-links
 
 ## 移动端公网入口恢复
 
-首选插件托管的一键入口：Web「设置 → 连接手机 → 启用公网入口（临时域名）」。cloudflared 由插件拉起的 detached 守护进程持有（`$DSH_HOME/state/mobile-quick-tunnel.sidecar.json` 记心跳），**宿主重启和 deploy:3080 都不换域名**，手机不用重扫；只有电脑睡眠/重启或隧道掉线才换新域名，经官方 `configEditor` 运行时热绑，宿主不重启、不经 deploy 流程。启用状态在 `$DSH_HOME/state/mobile-quick-tunnel.json`，失败原因（「环节: 错误」）同时写入该文件和宿主日志 `[mobile] quick-tunnel …`，失败后持续退避重试。需要宿主 ≥ 0.2.0 与本机 cloudflared。注意：`configEditor` 会把 connection 行的字面量 `trustedHosts` 持久化进 `profiles/web/cordis.patch.yml`；deploy:3080 重新生成 profile 后该行回到 bundle 表达式，重启后 supervisor 接管原隧道并把同一域名补绑回去，无需手工干预。守护进程不随宿主退出；宿主停止 10 分钟后它自行结束，要立刻关掉入口请在设置页停用。
+首选插件托管的一键入口：Web「设置 → 连接手机 → 启用公网入口（临时域名）」。cloudflared 由插件拉起的 detached 守护进程持有（`$DSH_HOME/state/mobile-quick-tunnel.sidecar.json` 记心跳），**宿主重启和 deploy:3080 都不换域名**，手机不用重扫；只有电脑睡眠/重启或隧道掉线才换新域名，经官方 `configEditor` 运行时热绑，宿主不重启、不经 deploy 流程。启用状态在 `$DSH_HOME/state/mobile-quick-tunnel.json`，失败原因（「环节: 错误」）同时写入该文件和宿主日志 `[mobile] quick-tunnel …`，失败后持续退避重试。需要宿主 ≥ 0.2.0 与本机 cloudflared。注意：`configEditor` 会把 connection 行的字面量 `trustedHosts` 持久化进 `profiles/web/cordis.patch.yml`，deploy:3080 不改写这个文件，supervisor 也保留不归它管理的条目——从启动参数删掉的域名要手动从该文件里删。退役启动命令里的静态 Quick Tunnel 绑定（`DSH_MOBILE_PUBLIC_ORIGIN` 与对应的 `--trusted-host`）用 `pnpm deploy:3080 --package packages/mobile --clear-mobile-origin`，走与 `--mobile-origin` 相同的 reconfigure 事务路径。守护进程不随宿主退出；宿主停止 10 分钟后它自行结束，要立刻关掉入口请在设置页停用。
 
 静态部署（自有域名/命名隧道）沿用原路径：公网连通性检查只提供状态和二维码可用性反馈，不能触发隧道重建、部署或 3080 重启。电脑端恢复可用地址后，用户从 Web「设置 → 连接手机」重新扫码。
 

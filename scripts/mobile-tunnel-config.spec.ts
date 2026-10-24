@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { quickTunnelOrigin, rotateMobileCommand } from './mobile-tunnel-config.mts'
+import { clearMobileCommand, clearMobileProbe, quickTunnelOrigin, rotateMobileCommand } from './mobile-tunnel-config.mts'
 const command = 'DSH_HOME=/home/user/dsh DSH_MOBILE_PUBLIC_ORIGIN=https://old-link.trycloudflare.com node cli.js web --no-open --trusted-host old-link.trycloudflare.com --trusted-host other.example.test'
 it('rotates only the explicit public origin and its exact trust entry', () => {
   const updated = rotateMobileCommand(command, 'https://new-link.trycloudflare.com')
@@ -12,4 +12,12 @@ it('supports quoted bindings and refuses missing or ambiguous bindings before de
 })
 it.each(['http://x.trycloudflare.com','https://x.trycloudflare.com/path','https://x.trycloudflare.com/?token=x','https://user@x.trycloudflare.com','https://x.trycloudflare.com:8443','https://other.example.test','https://x.trycloudflare.com;echo.test'])('rejects unsafe rotation origins %s', value => {
   expect(() => quickTunnelOrigin(value)).toThrow()
+})
+it('clears only the bound origin variable and its exact trust flag', () => {
+  expect(clearMobileCommand(command)).toBe('DSH_HOME=/home/user/dsh node cli.js web --no-open --trusted-host other.example.test')
+  expect(clearMobileCommand("DSH_MOBILE_PUBLIC_ORIGIN='https://old-link.trycloudflare.com' dsh web --trusted-host='old-link.trycloudflare.com' --no-open")).toBe('dsh web --no-open')
+  for (const bad of ['dsh web', command.replace('--trusted-host old-link.trycloudflare.com', '')]) expect(() => clearMobileCommand(bad)).toThrow()
+})
+it('clears the origin binding from a candidate probe', () => {
+  expect(clearMobileProbe('DSH_HOME=/home/user/dsh DSH_MOBILE_PUBLIC_ORIGIN=https://old-link.trycloudflare.com node cli.js web --print-config')).toBe('DSH_HOME=/home/user/dsh node cli.js web --print-config')
 })

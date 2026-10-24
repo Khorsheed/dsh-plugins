@@ -35,6 +35,6 @@ cloudflared 现在由一个 detached、零依赖的守护进程 `lib/tunnel-side
 
 - 宿主重启或 deploy 不换域名，手机保持登录。换域名（以及重扫）只在睡眠、重启或边缘掉线后发生。
 - 卸载后隧道最多再存活 10 分钟；README 提示需要立即关闭时先停用。
-- 重新生成 profile 的 deploy 会丢掉持久化的字面量 `trustedHosts`；重启后 supervisor 接管原隧道并在几秒内补绑同一域名（跳过写入只在存储列表已含该域名时生效）。
+- `configEditor` 一旦把字面量 `trustedHosts` 列表写进 `profiles/web/cordis.patch.yml`，它就一直留着：`deploy:3080` 不改写这个文件，supervisor 也保留所有不归它管理的条目。所以从启动参数 `--trusted-host` 里删掉的域名，会一直留在这份字面量里，直到手动从 profile patch 中删除（2026-10-24 已配合 `deploy:3080 --clear-mobile-origin` 为 3080 清掉过期的静态域名）。
 - mobile 不再能装在 0.1.x 宿主上；0.1.x 停留在 mobile 0.1.4。
 - 测试经伪造的 `SidecarControl` 和真实状态文件驱动 supervisor（接管、端口变化、轮换、守护进程死亡、唤醒、无限重试且保留隧道、边缘失败、停用），另有两条真实进程测试用伪造的 cloudflared 脚本跑守护进程，覆盖 SIGTERM 和 lease 过期。3080 上的真实 cloudflared 验收仍待完成：自动模式分类器不允许在 agent 会话中开外部隧道。
