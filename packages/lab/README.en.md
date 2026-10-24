@@ -1,146 +1,25 @@
-# dsh-lab
+# @khorsheed/dsh-lab
 
 English | [中文](README.md)
 
-Controlled experiment units for the dsh ecosystem: an **experiment unit** is one isolated, condition-consistent, reproducible execution environment, and this plugin manages its lifecycle — acquire / populate / collect / release / status. It serves any workload shaped as *a batch of subjects × a batch of cases × identical isolated environments × comparable results* (evaluation runs, A/B config tests, cross-version regression, batch data-processing validation).
+Give every experiment cell its own isolated, condition-consistent, reproducible Docker container, and turn "is this the same environment?" into a fingerprint you can compare.
 
-Three red lines define the character of the plugin:
+A controlled experiment compares subjects, not environments: one question set, several harnesses, a few runs each — and as soon as one cell has an extra mount, a different network or other resource limits, the results stop being comparable. When an evaluation-mode plan carries a `unit` segment, the orchestrator uses this plugin to acquire one container unit per cell: put the task in, delegate and verify inside it, collect the output, archive the scene, and destroy it once the release gate passes. It fits any workload shaped as a batch of subjects × a batch of cases × isolated, consistent environments × results to compare, such as A/B-testing configurations or cross-version regression.
 
-1. **It records, never judges.** lab runs and registers facts (resource ids, environment fingerprints, artifacts); "passed?", "how good?" belong to whoever consumes the records.
-2. **`release` is the gate's enforcement point.** When the unit is bound to a mission and the mission ledger (installed with `@khorsheed/dsh-eval`) is present, `isReleasable` must pass — a failed query fails closed, and no option bypasses the check. Without a gate (no mission binding, or the plugin absent), release requires an explicit `force` and warns.
-3. **It never fires work.** lab provides verbs; when to call them belongs to the human / agent / external orchestrator.
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/lab-record-env.png" width="640" alt="An Experiments run-record detail: the environment fingerprint and container unit in the parameter table, matching the other cells of the same run">
 
-Milestones M1–M2 ship the service face (`ctx.lab`) and the `dsh-lab` CLI over the same kernel, with the docker provider: acquire / populate / collect / checkpoint / verify / archive / release / status, environment fingerprints, orphan-process compensation, and the `maxConcurrentUnits` safety valve. The model tools are M3.
+## Features
 
-## How it works
+- **The full unit lifecycle** — eight verbs, acquire / populate / collect / checkpoint / verify / archive / release / status; the `ctx.lab` service face and the `dsh-lab` CLI share one kernel.
+- **A composite environment fingerprint** — image digest, resource limits, mounts (in-container path and type), environment variable key names, network and user are each a component, combined into `lab-env:<hex>`; what is declared is actually applied to the container, so the fingerprint never claims isolation the container lacks.
+- **It records, never judges** — lab registers resource ids, fingerprints, artifacts and the verbatim output of verification commands; "passed?" and "how good?" belong to the consumer.
+- **Release is the gate** — when a unit is bound to a mission and the mission ledger (installed with `@khorsheed/dsh-eval`) is present, `release` must pass `isReleasable` first, and a failed query is a refusal; without a gate it takes an explicit `force` plus a warning.
+- **Survives restarts** — the docker daemon is the registry: unit ids, fingerprints and mission bindings ride on container labels, and reconcile re-adopts them after a host restart.
+- **Failures keep the evidence** — a crashed cell is collected, then archived, then sent through the same gate, and only that cell gets a new attempt.
+- **Guards against accidental concurrency and orphan processes** — `maxConcurrentUnits` (default 4) blocks accidental concurrency; in-container processes lab spawned itself are swept before release.
+- **Several instances on one daemon, by scope** — an instance with a `scope` adopts and acts only on units in its own scope, and refuses everything across scopes.
 
-- **Unit** — one labeled container (`dsh-lab-<id>`). The docker daemon is the registry of record: unit id, fingerprint with its components, and mission binding ride resource labels, so `status` / `release` reconcile and survive a host restart. lab's one host directory is the **fingerprint mirror** (below); it holds no authority, and deleting it loses nothing.
-- **Composite environment fingerprint** — environments differ → results aren't comparable, so "the same environment" has to be a mechanism rather than a convention. The fingerprint is sha256 over a canonical JSON of the components, carried as `lab-env:<hex>`:
-
-  | Component | Content | Deliberately excluded |
-  |---|---|---|
-  | `image` | the repo digest `acquire` resolves (falling back to the image id, pulling when absent locally) | — |
-  | `resources` | the `--cpus` and `--memory` ceilings, compared normalized (`4g` and `4096m` are one ceiling) | — |
-  | `mounts` | each mount's **in-container** path, kind (`bind` / `volume`), and read-only bit, sorted by that path | host paths and volume NAMES (the same input lands elsewhere on another machine; one credential volume per harness is by design), declaration order |
-  | `envKeys` | the **names** of the injected environment variables, sorted | values (a credential or a per-cell coordinate, not the shape of the environment) |
-  | `network` | the docker network the unit joins, or `'none'` | — |
-  | `user` | the in-container user (`uid[:gid]` or a name) | — |
-
-  The component shape never varies: an undeclared scalar is `null` rather than a missing key. One image under different resource ceilings, with one extra mounted volume, one extra injected key, a different network, or a different user all fingerprint differently. Everything declared is really applied to the container (`--cpus` / `--memory` / `--network` / `--user`): the fingerprint never claims an isolation the container does not carry.
-
-  The network matters most: **without a declared `network` the unit lands on docker's default bridge, which HAS NAT egress**. "The unit cannot reach the internet" is only expressible by naming an `--internal` network.
-
-  **An undeclared component contributes nothing to the hash.** When the component set later grows, the fingerprint of a unit that declares none of the new components does NOT move — not a compatibility shim, but what a fingerprint means: it should change when the environment it describes changes, and a unit that declared no network before and declares none now is running in the same place. `version` numbers the **hashing rules** (canonicalization, normalization, this undeclared-is-absent rule), not the component inventory.
-- **Fingerprint mirror** — `acquire` writes `{ fingerprint, components }` both to the container labels and to `units/<id>.json` under `stateDir` (default `$DSH_HOME/lab`, else `<cwd>/.dsh-lab-state`). The labels are the record; the file is a derived copy — reconcile re-materializes it when it adopts a unit that survived a host restart, and `release` removes it with the unit. It exists so that "why did these two cells not compare?" does not require parsing `docker inspect`; the durable copy for a released unit is in its archive's `manifest.json`.
-- **Legacy fingerprints** — a bare digest recorded before this line is still accepted, as a fingerprint with no components; it is never reinterpreted into one. Such a unit still shows an ENV cell in `status`, and the `fingerprint` verb reports `components: null` for it.
-- **Inputs** — two paths: declare `mounts` at acquire for a zero-copy mount (container mounts cannot be added after creation), with `type` either `bind` (the default; `source` is a host directory) or `volume` (`source` is a volume name — the path for writable state that must outlive one unit, such as a per-harness credential volume whose token refresh is written back), or `populate` a host directory into the running unit (a copy into the unit's writable layer). A directory path is the whole interface — a datasets `worktree_path` product or any caller-supplied path; lab has no code-level datasets dependency, and layer allowlists are enforced on the side that produced the path.
-- **Materialization manifest** — `populate` returns `{ sha, count, files }` (per-file content hashes plus an overall hash over the sorted list), and with `manifestPath` writes the manifest file and registers it as a mission artifact of kind `materialization`. Identical inputs hash identically — the byte-level fairness proof across parallel units — and the manifest doubles as the baseline a later `collect` diffs against (what was given vs what was produced).
-- **Activity facts, not verb timestamps** — `status` reports `lastActivityAt` from the newest workspace file mtime inside the unit (work writes files; lab is not invoked meanwhile, so a verb-call timestamp would be a fake metric), plus cumulative container CPU from cgroup `cpu.stat` as the secondary fact. Because `docker cp` preserves source mtimes, `populate` stamps a `.lab-materialized` marker into the target as the activity baseline — otherwise a freshly populated unit would look idle for the source's whole age.
-- **Orphan-process compensation** — every in-container command lab spawns goes through a wrapper that records its own pid under `/run/dsh-lab/pids/`; `release` first sweeps those pids with SIGTERM inside the container, then removes the container. Coverage is the provider's own exec path — processes others exec into the unit are out of lab's reach. `acquire` creates that directory as root and makes it `1777` (like `/tmp`), because the unit may well run as a non-root user — a declared `user`, or the image's own `USER` (the evaluation image runs as `node` because one CLI refuses its sandbox mode under root) — and such a user cannot create anything under `/run`.
-- **`maxConcurrentUnits`** — a plain ceiling (config, default 4): `acquire` refuses at the limit with an explicit error. lab doesn't know which phases may overlap (that's the caller's semantics); one number blocks accidental concurrency, which silently corrupts timing-sensitive measurements.
-- **Checkpoint** — commit the workspace (auto-initialized as a git repo on first checkpoint) and tag it; the commit sha goes into the mission's checkpoint `ref`. A read-only mounted workspace fails loud — it cannot be committed, which is the correct signal.
-- **Verify** — optionally copy verification material into a scratch dir, run the command in the workspace, remove the material, and record the outcome *verbatim* (exit code, stdout, stderr, duration, timeout fact) into the mission's `lab` annotation namespace. There is no pass/fail branch anywhere in the code path.
-- **Archive** — export the workspace into a host directory plus a `manifest.json` (per-file sha256 + size, unit facts, fingerprint with its components), registered as a mission artifact. The archived components are the durable copy of a released unit's environment — the mirror goes away with `release`, the archive does not.
-
-## Install and load
-
-The package's single identity is **`@khorsheed/dsh-lab`**, developed in the `dsh-plugins` monorepo and published to npm from there:
-
-```sh
-npm install @deepseek-ai/dsh                            # the host (dsh web / dsh CLI)
-dsh plugin --profile web add @khorsheed/dsh-lab         # this plugin
-```
-
-The package declares `dsh.bundle`, so the add reconciles its `cordis.patch.yml` row (a bare `lab` mount) into the profile's bundles layer — no hand-edited cordis.yml. A composition may mount the `lab` row id only once; check with `dsh --profile web --dump-config | grep lab` before adding to a composition that might already mount it. From source: clone the monorepo; the package lives at `packages/lab` (`pnpm install && pnpm run build`).
-
-Config (all optional): `maxConcurrentUnits` — the held-unit ceiling (default 4); `stateDir` — the fingerprint mirror's directory (default `$DSH_HOME/lab`, else `<cwd>/.dsh-lab-state`); `scope` — the instance scope (default empty = the unscoped operator view, see [the instance-mounting seam](#the-instance-mounting-seam-per-instance-scope)).
-
-Requirements: the docker CLI reachable from the host, and images that ship `sleep` and `sh` (the keep-alive command and the pid-recording wrapper).
-
-## Service face
-
-Other plugins and scripts consume `ctx.get('lab')` (typed as `ctx.lab`):
-
-```ts
-const unit = await ctx.lab.acquire({
-  image: 'eval-env:latest',
-  missionId: 'F1-a-r1',                       // optional mission binding
-  mounts: [
-    { source: worktreePath, target: '/input', readonly: true },        // bind (the default)
-    { source: 'eval-creds-codex', target: '/creds', type: 'volume' },  // state that outlives the unit
-  ],
-  resources: { cpus: '2', memory: '4g' },     // these four are applied to the container AND hashed
-  network: 'eval-net',                        // undeclared = docker's default bridge, which has egress
-  user: '1000:1000',                          // undeclared = the image's own USER
-  workdir: '/workspace',
-  ownWorkdir: true,                           // create the workdir and hand it to the unit's user (below)
-})
-// unit.fingerprint = 'lab-env:<hex>' (written into the mission's refs, opaque there)
-// unit.fingerprintComponents = { version, image, resources, mounts, envKeys, network, user }
-await ctx.lab.populate(unit.id, { source: '/path/to/layer', manifestPath: '/host/run-data/materialization.json' })
-// → { sha, count, files } — registered as a 'materialization' artifact
-const { ref } = await ctx.lab.checkpoint(unit.id, { name: 'iter-1' })
-const outcome = await ctx.lab.verify(unit.id, { command: ['npm', 'test'], source: '/path/to/checks', timeoutMs: 300_000 })
-// outcome = { exitCode, stdout, stderr, durationMs, timedOut } — verbatim; also annotated into mission ns 'lab'
-await ctx.lab.collect(unit.id, { source: '/workspace/out', target: '/host/archive/out', kind: 'archive' })
-await ctx.lab.archive(unit.id, { target: '/host/archive/unit' })   // workspace/ + manifest.json (sha256 per file)
-await ctx.lab.release(unit.id)                // gated by mission.isReleasable; force + warning without a gate
-const units = await ctx.lab.status()          // reconciled against the docker daemon
-ctx.lab.fingerprintOf(components)             // pure: the same hashing rule, over any component set
-```
-
-`ownWorkdir` exists for non-root units: `docker run --workdir X` creates a missing X as `root:root`, so a unit that declares a `user` — or an image that ships a non-root `USER`, as the evaluation image does — cannot write the directory its whole working life happens in. `populate` still succeeds (the daemon copies as root) and the FIRST write from inside the unit fails, which is the worst possible place to find out. With the flag, `acquire` creates the workdir as root and `chown`s it to the unit's own uid:gid — asked of the unit itself, so an image's own `USER` is served as well as an explicit `user`; where the daemon refuses `--user 0` (userns-remap) it falls back to a plain create, the behavior before the option existed. It is **not** a fingerprint component: the component shape never varies, and who owns a directory the unit was going to be handed anyway does not make two otherwise identical environments incomparable.
-
-One thing at the same layer: `acquire` now also makes `/run/dsh-lab` itself `1777` (previously only `/run/dsh-lab/pids`). `verify` creates its material directory under it as the UNIT's user, and a root-owned `0755` parent made every verify-with-material call fail at `mkdir` on a non-root unit — i.e. exactly the units this project runs.
-
-`fingerprintOf` is the hashing function `acquire` itself uses, exposed because a caller sometimes needs to ask what a DIFFERENT component set would hash to. The evaluation orchestrator is that case: comparing cells needs "the same environment the plan declared", not "the same unit", and those differ by exactly the components each condition contributes (its own credential mount, its own env variable). It takes the unit's components, drops those, and asks for the hash of what is left. Doing that arithmetic here rather than re-implementing the canonicalization keeps one hashing rule in the repository — a second copy would drift the first time a component is added. Pure: no unit, no provider, no daemon.
-
-The mission integration is a probed structural face (`setRefs` / `addArtifact` / `addCheckpoint` / `annotate` / `isReleasable`), never an import: with the mission ledger (`@khorsheed/dsh-eval`) absent, registration writes warn-and-skip and `release` degrades to `force` + warning. A mission binding registered at acquire survives host restarts (it rides the container labels), so the gate still protects reconciled units.
-
-## The instance-mounting seam (per-instance scope)
-
-Running several `LabService` instances against ONE docker daemon is a supported consumption form: each instance carries its own `scope` (a `LabService` constructor option; through the plugin entry it is the `scope` config key, default empty = off). The scope is a pure instance property — never part of `AcquireSpec`, never a fingerprint component; it only rides the container as the resource label `dsh-lab.scope=<scope>` at acquire time, the same "the daemon is the registry of record" path the unit id, the fingerprint, and the mission binding already take.
-
-```ts
-const service = new LabService({
-  providers: { docker: new DockerProvider(exec) },
-  maxConcurrentUnits: 4,
-  scope: 'instance-a',              // unset / '' = unscoped (the behavior so far)
-  getMission: () => undefined,
-  warn: (message) => console.warn(message),
-})
-```
-
-The mounting side's obligations and the semantics:
-
-- **acquire stamps the label**: every container a scoped instance acquires carries one extra `dsh-lab.scope=<scope>` label; an unscoped instance stamps nothing extra — the argv is byte-identical to before. The `SCOPE_LABEL` constant is exported from the package root, so an ops script can filter by it.
-- **reconcile adopts only its own scope**: a scoped instance rebuilds its registry from the units whose label value equals its scope. **Pre-existing units without the label are NOT adopted either** — pinned: a scoped instance treats an unlabeled unit as out of bounds and never silently adopts a unit it could later release. Reach those units with an unscoped instance.
-- **the ceiling counts in-scope units only**: `maxConcurrentUnits` counts the units in this instance's registry; however many containers other instances hold on the daemon consumes none of this instance's budget.
-- **cross-scope fails closed**: a scoped instance refuses release / verify / populate / collect / archive / checkpoint aimed at an out-of-scope unit, and the refusal is distinguishable from "unknown unit" — the error names the scope the unit belongs to, or that it carries no label. `status` lists only the instance's own scope; querying a foreign unit by id gets the same refusal.
-- **unscoped = legacy = the operator's full view**: an instance without a scope behaves byte-identically to before — it adopts every `dsh-lab.managed=true` unit on the daemon (scoped ones included) and can act on any of them. So **the unscoped instance belongs to the deployment operator** (the cross-scope overview and reaping are theirs); a per-instance mount always sets a scope. The `dsh-lab` CLI constructs without a scope and is unchanged.
-- **no dispose semantics added**: containers deliberately outlive process and host restarts — a fresh instance with the same scope re-adopts that scope's surviving units from their labels at its first reconcile (the labels are the registry; the host-side fingerprint mirror holds no authority). `release` remains the only destroy path, the mission gate and force rules untouched; unmounting an instance does not reap its containers, because the next instance with the same scope still needs them.
-
-## CLI
-
-`dsh-lab <verb>` (or `node lib/cli.js`); data on stdout (JSON where the verb produces a value), diagnostics on stderr. Exit codes: `0` ok, `1` failure/refused, `2` usage. Reached through a symlink — a `PATH` entry, pnpm's `.bin/<name>` — the bin behaves exactly as `node lib/cli.js` does: the entry guard resolves `argv[1]` to its real path before comparing, so a symlinked path can never make it exit 0 doing nothing.
-
-```sh
-dsh-lab acquire --image IMG [--mission ID] [--run ID] [--mount SRC:DST[:ro]]... [--volume NAME:DST[:ro]]...
-                [--env K=V]... [--cpus N] [--memory SIZE] [--network NET] [--user UID[:GID]]
-                [--workdir DIR] [--command JSON]
-dsh-lab populate UNIT --source DIR [--target DIR] [--manifest FILE] [--artifact-path P]
-dsh-lab collect UNIT --source DIR --target DIR [--kind K] [--artifact-path P]
-dsh-lab checkpoint UNIT --name NAME
-dsh-lab verify UNIT [--source DIR] [--timeout-ms MS] -- CMD [ARGS...]
-dsh-lab archive UNIT --target DIR [--kind K] [--artifact-path P]
-dsh-lab release UNIT [--force]
-dsh-lab status [UNIT] [--json]
-dsh-lab fingerprint UNIT | --image IMG [the same spec flags acquire takes]
-```
-
-Global: `--max-concurrent N`, `--state-dir DIR`. Mounts take two flags rather than guessing from the shape of `source`: `--mount` is a host directory, `--volume` a volume name — docker's `-v` decides bind-vs-volume by whether the source looks like a path, and a relative path silently becoming a volume is not a behavior worth inheriting.
-
-Bare `dsh-lab status` prints the progress table — one row per unit joining container facts (up-time), in-container activity (workspace mtime), the mission state and coordinate labels (via the mission face, absent-tolerant), the materialization hash, and the environment fingerprint:
+Fairness and comparability at a glance:
 
 ```text
 UNIT      MISSION           CONTAINER   LAST-ACTIVITY  TASK      ENV       LABELS
@@ -148,18 +27,29 @@ u-a3f9    cell-1:working    up 2h14m    3m ago         9f2c1a2b  4d1e77b0  task=
 u-b71c    cell-2:collected  up 2h14m    47m ago        9f2c1a2b  4d1e77b0  task=F1,subject=B
 ```
 
-Identical TASK hashes across rows are the fairness proof at a glance and identical ENV hashes the comparability proof; a long `LAST-ACTIVITY` gap on a `working` row is the stuck-cell signal. `--json` emits the structured rows instead (with the full `fingerprintComponents`).
+`dsh-lab status` prints one unit per row: matching TASK hashes mean the same task, matching ENV means comparable environments, and a `working` row with a long `LAST-ACTIVITY` gap is a stuck cell.
 
-`fingerprint` answers two questions: what IS this held unit's environment (pass a UNIT), and what WOULD this spec's environment be (pass the acquire-shaped flags — it acquires nothing). Diff two of those and you know which component differs:
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/lab-run-units.png" width="640" alt="The results page's unreclaimed-units section: each container the run still holds, its cell's state, and the reclaim button">
+
+## Install
+
+The recommended install comes with the evaluation mode (datasets, this plugin, the evaluation orchestrator and the local-agent delegation family, plus the evaluation-mode preset):
 
 ```sh
-$ dsh-lab fingerprint --image eval-env:latest --cpus 2 --memory 4g | jq -c '{fingerprint, r: .components.resources}'
-{"fingerprint":"lab-env:4d1e77b0…","r":{"cpus":"2","memory":"4294967296"}}
-$ dsh-lab fingerprint --image eval-env:latest --cpus 2 --memory 8g | jq -c '{fingerprint, r: .components.resources}'
-{"fingerprint":"lab-env:0a93c62f…","r":{"cpus":"2","memory":"8589934592"}}
+dsh plugin --profile web add @khorsheed/dsh-basic @khorsheed/dsh-eval-suite
 ```
 
-The CLI is the same `LabService` kernel over a `child_process` runner, with the mission face adapted to the `dsh-mission` bin: `release` gates on `dsh-mission is-releasable`'s 0/1 exit code (any other exit fails closed), and refs / artifacts / checkpoints / annotations register through the mission bin's verbs (`set-refs` / `add-artifact` / `add-checkpoint` / `annotate`). Without the bin on PATH, registration warns and skips, and `release` needs `--force`. Reading `0` as releasable assumes the bin actually ran its body — mission's entry guard is what makes that hold when it is reached through a symlink; a silent no-op exiting 0 would otherwise read as a green gate.
+You can also install it alone:
+
+```sh
+dsh plugin --profile web add @khorsheed/dsh-lab
+```
+
+Restart the web instance to apply. Requirements: the docker CLI is reachable on the host; images must ship `sleep` and `sh` (checkpoint also needs `git`). Optional configuration: `maxConcurrentUnits` (default 4), `stateDir` (the fingerprint mirror directory, default `$DSH_HOME/lab`), `scope` (instance scope, off by default).
+
+```sh
+dsh plugin --profile web remove @khorsheed/dsh-lab
+```
 
 ## Compatibility
 
@@ -168,27 +58,37 @@ The CLI is the same `LabService` kernel over a `child_process` runner, with the 
 
 Degraded / absent items (mirrors `dsh.compat` in package.json): without the mission ledger (installed with `@khorsheed/dsh-eval`) the release gate degrades to an explicit force flag plus a warning, and ref/artifact/checkpoint/verify registration is skipped with a warning. `dsh-lab` reads mission state through `dsh-mission get --json` (T89); an older mission CLI without `--json` gets an upgrade hint and that status is skipped. The `lab_*` model tools (M3) do not exist in this line yet.
 
-## Failure recovery loop
+## Known limitations
 
-A crashed cell loses nothing and re-runs alone. The loop (the orchestrator drives it; each step is one existing verb):
+- **Docker is the only provider** — the worktree provider exists only as an interface shape; its isolation is an order of magnitude weaker and it must not be used for experiments that need comparability.
+- **`populate` is a copy** — zero-copy read-only input has to be declared as `mounts` at acquire time; mounts cannot be added once the container exists.
+- **The fingerprint records what was declared, not what was measured** — it catches "the configuration changed within one batch of runs", not "the two machines are identical"; host differences such as kernel or CPU model are not components. To assert no outbound network you must declare an `--internal` network explicitly.
+- **The orphan sweep covers only lab's own exec** — processes from a foreign `docker exec` are invisible (removing the container still takes them).
+- **No model tools** — the `lab_*` tools (M3) are deliberately absent on this line.
 
-1. `collect` whatever output already exists (partial is the norm);
-2. `archive` the unit — the crash scene (half-finished work, crash output, checkpoints) is the most valuable data in the run; releasing without it destroys evidence;
-3. the orchestrator writes what the template's failure gate expects (e.g. a crash dump) into the attempt's run-data directory and `attest`s the teardown key;
-4. the transition into the failed state passes its `file-check` — the failure path gets **no gate exception**: entering a releasable state carries the archive check just like the success path (express attested-plus-file-check as a state chain like `working → archived-failed → failed`, not a new guard combinator);
-5. `release` destroys the unit; `mission_retry` opens a fresh attempt for that one cell (the old attempt stays immutable), and a new unit is acquired for it.
+The full list is in the [reference](docs/reference.en.md#known-limitations-and-deferred-work).
 
-The integration suite runs this loop end to end (`scripts/integration-triad.spec.ts`, failure-path block).
+## How it works
 
-## Known Limitations and Deferred Work
+<details>
+<summary>Internals (click to expand)</summary>
 
-- **`populate` copies; mounts are declared at acquire** — docker cannot add mounts to a created container, so the zero-copy read-only path is `acquire`'s `mounts`, and `populate` materializes a copy into the unit's writable layer (that is what "into the unit" means once it runs).
-- **The worktree provider is interface-shaped but unshipped** — the `UnitProvider` interface admits it; it lands when a real need appears. When it does: a worktree unit is an order of magnitude weaker isolation (shared filesystem, no network or resource limits) and must never serve experiments that need comparability.
-- **Orphan compensation covers lab's own execs only** — pidfiles under `/run/dsh-lab/pids/` track processes the provider spawned; a foreign `docker exec` into the unit is invisible to the sweep (container removal still reaps everything at release).
-- **The docker image must ship `sleep` and `sh`** — distroless images need a custom `command` and lose the pidfile wrapper; `checkpoint` additionally needs `git` inside the unit.
-- **A checkpoint needs a writable workspace** — the workspace is auto-initialized as a git repo on first checkpoint; a workspace that is a read-only mount cannot be committed and fails loud (checkpoint a populated directory instead).
-- **M3 scope** — the `lab_*` model tools are designed in the proposal and deliberately absent here.
-- **The fingerprint records declarations, not measurements** — the `resources` component is the ceiling `acquire` declared and applied, not a value read back from the daemon afterwards; the image's own baked-in `ENV`, and host differences outside the cgroup (kernel, CPU model, network policy), are not components. It catches "the configuration changed mid-run", not "these two machines are identical".
-- **The component set can widen without moving old fingerprints** — an undeclared component contributes nothing to the hash, so a new component shifts the fingerprint only of units that declare it. The cost is that "declared no network" and "the network component did not exist yet" are indistinguishable in the fingerprint: a `network: null` unit is on docker's default bridge because nobody addressed its networking, not because anyone confirmed that is where it belongs. Asserting isolation requires declaring it.
-- **`lastActivityAt` needs GNU `stat` or busybox `date -r` in the image** — the workspace-mtime probe degrades to "no reading" on images with neither (the row shows `-`); the CPU fact needs cgroup `cpu.stat` (v2) or `cpuacct.usage` (v1).
-- **CLI-mode registration goes through the mission bin** — it requires `dsh-mission` on PATH and covers exactly its verb set (set-refs / add-artifact / add-checkpoint / annotate / is-releasable / get); anything richer belongs to the in-host service face.
+**Architecture.** A `LabService` kernel with a provider (docker for now); the plugin entry provides it as `ctx.lab`, and the `dsh-lab` CLI runs the same kernel with a `child_process` runner. A unit is a labelled container `dsh-lab-<id>`; lab's only host directory is the fingerprint mirror (`units/<id>.json`), which has no authority — deleting it loses nothing.
+
+**Fingerprint.** The sha256 of each component's canonical JSON; undeclared components take no part in the hash, so widening the component set leaves old units' fingerprints unchanged. `fingerprintOf(components)` is exported as a pure verb, which the evaluation orchestrator uses to compute the "environment class".
+
+**Mission ledger integration.** The coupling to the mission ledger is probed: when present, refs, artifacts, checkpoints and verification annotations are registered and release goes through its gate; when absent, registration is skipped with a warning and release needs `force`. CLI mode does the same through the `dsh-mission` binary.
+
+Deep reference:
+
+- [Reference](docs/reference.en.md) — how it works and the fingerprint component table, install and configuration, the service face, per-instance scoped mounting, the CLI, the failure recovery loop, the full list of known limitations
+
+</details>
+
+## Development
+
+Part of the [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) monorepo (`packages/lab`). Please file issues and contributions there.
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md).

@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/eval/docs/reference.en.md
+packages/eval/docs/reference.en.md: 859fa752a7c49fd303a2c7276b2516a82257f8a5
+packages/eval/docs/reference.md: 31f48bfe6514b33e516fee6da08a2fdd59d0e074
