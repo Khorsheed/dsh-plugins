@@ -356,6 +356,37 @@ describe('LocalAgentRegistry delegation facade', () => {
       await h.fiber.dispose()
     })
 
+    it('records the bound model verbatim, so the next round binds the same identity', async () => {
+      const h = await mountFacade()
+      h.enterParent(PARENT)
+      h.registry.register({ name: 'fake', displayName: 'Fake', homeEnvVar: 'FAKE_HOME', delegationProvider: PROVIDER,
+        records: { listSessions: async () => [] }, isAuthenticated: async () => true,
+        modelBroker: { modelInfo: () => ({ choices: [], switchable: true }), configurationAdapter: () => ({
+          validate: async () => {}, prepare: async () => ({ model: 'claude-opus-5-5' }), apply: async () => ({ model: 'claude-opus-5-5' }),
+          reconcile: async () => ({ active: false, matches: 'current', resolved: { model: 'claude-opus-5-5' } }),
+        }) },
+      })
+      const round = async (binding: { childSessionId: string; provider: string; parentSessionId: string; cwd: string; model?: string }) => {
+        const turn = makeRun(binding.childSessionId, new AbortController().signal)
+        await h.registry.withMemberConfigurationRound(binding, async () => turn.run)
+        // The provider records what it resolved, as the live drivers do.
+        h.registry.recordDelegation({ ...binding, cliSessionId: 'native', model: 'claude-opus-5-5' })
+        turn.settle({ output: [], stopReason: 'completed' })
+        await turn.run.result
+      }
+      const aliased = { childSessionId: 'aliased', provider: PROVIDER, parentSessionId: PARENT, cwd: '/home/user/work', model: 'opus' }
+      await round(aliased)
+      expect(h.registry.getDelegation('aliased')?.model).toBe('opus')
+      // The resume binding is built from the record: the same identity, no refusal.
+      const record = h.registry.getDelegation('aliased')!
+      await expect(round({ ...aliased, model: record.model! })).resolves.toBeUndefined()
+      // A start that named no model records none, whatever the default resolved to.
+      const unnamed = { childSessionId: 'unnamed', provider: PROVIDER, parentSessionId: PARENT, cwd: '/home/user/work' }
+      await round(unnamed)
+      expect(h.registry.getDelegation('unnamed')?.model).toBeUndefined()
+      await h.fiber.dispose()
+    })
+
     it('rejects a child with an in-flight resume', async () => {
       const h = await mountFacade()
       h.enterParent(PARENT)
