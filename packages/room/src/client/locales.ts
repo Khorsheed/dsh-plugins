@@ -345,6 +345,8 @@ export const zh = {
   'approval.state.rejected': '（已拒绝）',
   'approval.state.cancelled': '（已取消）',
   'approval.expired': '这次确认已经结束了',
+  'invite.modelLabel': '模型',
+  'invite.lockedNote': '邀请时定下，要换就另外邀请一位',
 } satisfies Record<string, string>
 
 /** The room namespace key union. */
@@ -702,4 +704,6 @@ export const en = {
   'approval.state.rejected': '(rejected)',
   'approval.state.cancelled': '(cancelled)',
   'approval.expired': 'This approval has already ended',
+  'invite.modelLabel': 'Model',
+  'invite.lockedNote': 'Set at invite; invite another member to change',
 } satisfies Record<RoomKey, string>

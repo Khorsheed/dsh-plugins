@@ -447,3 +447,46 @@
 .primary:focus:not(:focus-visible) {
   outline: none;
 }
+
+/* Edit: the member's own card on top (live with the edits), then what the
+   invitation fixed — provider and mode — as quiet facts, then the form. One
+   column; the invite's side preview is not shown. */
+.card[data-mode='edit'] {
+  width: 460px;
+}
+
+.editHead {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2-darkmode-thin, rgba(0, 0, 0, 0.08));
+}
+
+.locked {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 16px;
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.locked > div {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.locked dt {
+  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
+}
+
+.locked dd {
+  margin: 0;
+  color: var(--dsw-alias-label-secondary, rgba(90, 90, 90, 0.9));
+}
+
+.lockedNote {
+  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
+}
