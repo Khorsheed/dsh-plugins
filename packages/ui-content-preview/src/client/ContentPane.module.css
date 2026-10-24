@@ -456,6 +456,95 @@
   color: #7fd4ff;
 }
 
+/* Edit mode: one status bar above the body (state on the left, the two
+   gestures on the right), and a textarea that IS the source face — same
+   mono metrics as the source code block, so entering edit does not reflow. */
+.editBar,
+.editBarIssue {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  margin: 8px var(--pane-inset) 0;
+  padding: 6px 8px 6px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  font-size: var(--dsh-panel-caption-size, 12px);
+  line-height: 1.5;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.editBarIssue {
+  border-color: var(--dsw-alias-state-warn-primary, #f5a623);
+  color: var(--dsw-alias-label-primary);
+}
+
+.editBarText {
+  flex: 1;
+  min-width: 0;
+}
+
+.editBarButton,
+.editBarPrimary,
+.editBarDanger {
+  flex: none;
+  padding: 2px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-base);
+  font-size: var(--dsh-panel-caption-size, 12px);
+  line-height: 20px;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+}
+
+.editBarPrimary {
+  border-color: var(--dsw-alias-state-business-primary);
+  background: var(--dsw-alias-state-business-primary);
+  color: var(--dsw-alias-label-primary-inverted, #fff);
+}
+
+.editBarDanger {
+  border-color: var(--dsw-alias-state-error-primary);
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.editBarButton:disabled,
+.editBarPrimary:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.editorWrap {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  padding: 10px var(--pane-inset);
+}
+
+.editor {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 20px;
+  tab-size: 2;
+  resize: none;
+  outline: none;
+}
+
+.editor:focus {
+  border-color: var(--dsw-alias-state-business-primary);
+}
+
 /* Fullscreen-able wrapper around the render iframe. */
 .htmlFrameWrap {
   position: relative;

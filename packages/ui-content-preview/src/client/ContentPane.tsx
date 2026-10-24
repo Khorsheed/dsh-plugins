@@ -36,8 +36,9 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { CodeBlock, MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 import { PanelHeader, UnderlineTabs, useAdaptiveSplitBack, usePanelCompact, usePanelCompactContext, type PanelAction } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
-import { IconCheckOutlineMedium, IconCodeOutlineMedium, IconCopyOutlineMedium, IconFolderOpenOutlineMedium, IconRefreshOutlineMedium, IconSearchOutlineMedium } from './icons.tsx'
-import type { ContentPaneProps, PreviewTranslator, PreviewRead, PreviewView } from './contract.ts'
+import { IconCheckOutlineMedium, IconCodeOutlineMedium, IconCopyOutlineMedium, IconEditOutlineMedium, IconFolderOpenOutlineMedium, IconRefreshOutlineMedium, IconSearchOutlineMedium } from './icons.tsx'
+import type { ContentPaneProps, PreviewTranslator, PreviewRead, PreviewView, SaveOutcome } from './contract.ts'
+import { draftFor, fromEditorText, isDirty, rememberDraft, toEditorText, type Draft } from './edit.ts'
 import { basenameOf, dirnameOf, isHtmlPath, isMarkdown, languageFor } from './language.ts'
 import { hasStructuredPreview, structuredPreview } from './structured.tsx'
 import { buildSrcDoc } from './html-src-doc.ts'
@@ -173,6 +174,8 @@ function PreviewBody(props: {
   /** Whether markdown/JSON/CSV show their source form instead of the preview. */
   sourceMode: boolean
   imageView: ReactNode
+  /** The edit-mode textarea; replaces the source face while editing. */
+  editor: ReactNode
   onLoaded: () => void
   iframeRef: RefObject<HTMLIFrameElement>
   frameRef: RefObject<HTMLDivElement>
@@ -181,13 +184,14 @@ function PreviewBody(props: {
   fullscreen: boolean
 }) {
   const {
-    read, t, labels, search, rawSearch, htmlMode, scripted, sourceMode, imageView,
+    read, t, labels, search, rawSearch, htmlMode, scripted, sourceMode, imageView, editor,
     onLoaded, iframeRef, frameRef, scrollRef, onScroll, fullscreen,
   } = props
   switch (read.kind) {
     case 'text': {
       const content = read.content
       if (isHtmlPath(read.path)) {
+        if (editor !== null && htmlMode === 'source') return editor
         return (
           <div className={css.previewScroll} ref={scrollRef} onScroll={onScroll}>
             {read.truncated === true && <div className={css.notice} {...searchSkip}>{t('local.tooLarge')}</div>}
@@ -203,6 +207,8 @@ function PreviewBody(props: {
         ? null
         : structuredPreview(read.path, content, labels)
           ?? (isMarkdown(read.path) ? <MarkdownText text={content} labels={labels.markdown} /> : null)
+      // While editing, the source face — and a plain code file's only face — is the editor.
+      if (editor !== null && documentBody === null) return editor
       const dot = read.path.lastIndexOf('.')
       const documentLabel = languageFor(read.path) ?? (dot < 0 ? read.path : read.path.slice(dot + 1).toLowerCase())
       return (
@@ -257,7 +263,7 @@ function PreviewBody(props: {
 export function ContentPane(props: ContentPaneProps): ReactNode {
   const {
     path, read, loading, error, sessionId, displayPath, chrome, labels, t,
-    onCopyPath, onReload, onBack, diffView, view, onViewChange, imageView, notice, embedded = false,
+    onCopyPath, onReload, onSave, onBack, diffView, view, onViewChange, imageView, notice, embedded = false,
   } = props
 
   // HTML source ⇄ render ⇄ scripted; the sandboxed static render is default.
@@ -275,6 +281,14 @@ export function ContentPane(props: ContentPaneProps): ReactNode {
   const activeLineRef = useRef<HTMLSpanElement | null>(null)
   // Tier1 never runs without a gesture: the confirm bar gates it per file.
   const [scriptConfirm, setScriptConfirm] = useState(false)
+  // The in-progress edit of THIS selection (see edit.ts): the state mirrors
+  // the module-level draft memory so a file switch neither drops nor leaks it.
+  const [draftState, setDraftState] = useState<{ key: string; draft: Draft } | null>(null)
+  const [saving, setSaving] = useState(false)
+  // Why the last save did not land, or the discard confirm; keyed like the
+  // draft so another file's bar never shows it.
+  type EditIssue = { kind: 'conflict' | 'unsupported' | 'missing' | 'failed' | 'discard'; message?: string | undefined }
+  const [issueState, setIssueState] = useState<{ key: string; issue: EditIssue } | null>(null)
   const [fullscreen, setFullscreen] = useState(false)
   const htmlIframeRef = useRef<HTMLIFrameElement | null>(null)
   const htmlFrameRef = useRef<HTMLDivElement | null>(null)
@@ -312,6 +326,14 @@ export function ContentPane(props: ContentPaneProps): ReactNode {
   const diffFace = view === 'diff' && diffView !== undefined
   const htmlScripted = read?.kind === 'text' && read.htmlScripted === true && html
   const content = read?.kind === 'text' ? read.content : null
+  // A complete text read is editable when the caller can save; a truncated
+  // window would save half a file.
+  const editable = onSave !== undefined && read?.kind === 'text' && read.truncated !== true
+  const draft = !editable ? null
+    : draftState?.key === memKey ? draftState.draft : (draftFor(memKey) ?? null)
+  const editing = draft !== null
+  const dirty = draft !== null && isDirty(draft)
+  const issue = issueState?.key === memKey ? issueState.issue : null
 
   const matches = useMemo(() => {
     const query = contentQuery.trim().toLowerCase()
@@ -355,6 +377,13 @@ export function ContentPane(props: ContentPaneProps): ReactNode {
     document.addEventListener('fullscreenchange', onFullscreen)
     return () => document.removeEventListener('fullscreenchange', onFullscreen)
   }, [])
+  // An unsaved edit holds the tab open (the browser's own leave prompt).
+  useEffect(() => {
+    if (!dirty) return undefined
+    const onBeforeUnload = (event: BeforeUnloadEvent): void => { event.preventDefault() }
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => window.removeEventListener('beforeunload', onBeforeUnload)
+  }, [dirty])
   // Watchdog for large or scripted renders (cancelled by the iframe's load).
   useEffect(() => {
     if (!html || htmlMode === 'source' || content === null) return undefined
@@ -415,6 +444,45 @@ export function ContentPane(props: ContentPaneProps): ReactNode {
       () => { setReloading(false) },
     )
   }
+  const setDraft = (next: Draft | null): void => {
+    rememberDraft(memKey, next)
+    setDraftState(next === null ? null : { key: memKey, draft: next })
+  }
+  const setIssue = (next: EditIssue | null): void => {
+    setIssueState(next === null ? null : { key: memKey, issue: next })
+  }
+  const startEdit = (): void => {
+    if (content === null) return
+    setDraft({ text: toEditorText(content), base: content })
+    setIssue(null)
+    // The editor IS the source face: land on it, and stop any search paint.
+    setSourceMode(true)
+    if (html) { setHtmlMode('source'); setScriptConfirm(false) }
+    setContentQuery('')
+    setSearchOpen(false)
+  }
+  const leaveEdit = (): void => {
+    setDraft(null)
+    setIssue(null)
+  }
+  const doSave = (force: boolean): void => {
+    if (onSave === undefined || draft === null || saving) return
+    setSaving(true)
+    setIssue(null)
+    const settle = (outcome: SaveOutcome): void => {
+      setSaving(false)
+      if (outcome.ok) { leaveEdit(); return }
+      setIssue({ kind: outcome.reason === 'error' ? 'failed' : outcome.reason, message: outcome.message })
+    }
+    void Promise.resolve(onSave({ content: fromEditorText(draft.text, draft.base), base: force ? null : draft.base })).then(
+      settle,
+      (cause: unknown) => { settle({ ok: false, reason: 'error', message: cause instanceof Error ? cause.message : String(cause) }) },
+    )
+  }
+  const takeTheirs = (): void => {
+    leaveEdit()
+    if (onReload !== undefined) doReload()
+  }
   const onHtmlLoaded = (): void => {
     setSlow(false)
     if (slowTimer.current !== null) {
@@ -433,7 +501,7 @@ export function ContentPane(props: ContentPaneProps): ReactNode {
   const splitIde = chrome?.openIDE !== undefined && ideChoices.length > 1 && chrome.onIdeChoice !== undefined
   const diffActive = diffFace && onViewChange !== undefined
 
-  const searchable = !diffActive && content !== null
+  const searchable = !diffActive && content !== null && !editing
   // Compact panes fold the search row behind a header icon; a live query keeps
   // it open so a hit counter never disappears under the user.
   const searchVisible = searchable && (!compact || searchOpen || contentQuery !== '')
@@ -442,7 +510,7 @@ export function ContentPane(props: ContentPaneProps): ReactNode {
   const location = displayPath ?? path
 
   // Header actions in priority order: the search toggle (compact only — wide
-  // panes keep the row open), reload, copy path, then the host-open gestures
+  // panes keep the row open), edit, reload, copy path, then the host-open gestures
   // (absent off-host: the open-in-app probe publishes no apps there). The
   // full path is no menu row: the title names the file, the list's trail
   // names where it is, and copy path hands over the rest.
@@ -455,6 +523,9 @@ export function ContentPane(props: ContentPaneProps): ReactNode {
       },
     })
   }
+  if (editable && !editing && !diffActive) {
+    headerActions.push({ id: 'edit', label: t('action.edit'), icon: <IconEditOutlineMedium size={16} />, pinned: true, onSelect: startEdit })
+  }
   if (onReload !== undefined) {
     headerActions.push({
       id: 'reload', label: t('action.reload'), disabled: reloading, onSelect: doReload,
@@ -463,7 +534,10 @@ export function ContentPane(props: ContentPaneProps): ReactNode {
   }
   if (onCopyPath !== undefined) {
     headerActions.push({
-      id: 'copy', label: copiedPath ? t('action.copied') : t('action.copyPath'), onSelect: doCopyPath,
+      // An editable read spends the inline slot on edit; copy path is the
+      // gesture that folds (keyed on `editable`, not `editing`, so the row
+      // does not jump when edit mode starts).
+      id: 'copy', label: copiedPath ? t('action.copied') : t('action.copyPath'), onSelect: doCopyPath, menuOnly: editable,
       icon: copiedPath ? <IconCheckOutlineMedium size={16} /> : <IconCopyOutlineMedium size={16} />,
     })
   }
@@ -522,6 +596,65 @@ export function ContentPane(props: ContentPaneProps): ReactNode {
     // Tier1 never runs without a gesture: the tab arms the confirm bar.
     else if (id === 'html:script' && htmlMode !== 'script') setScriptConfirm(true)
   }
+  const editor = editing && draft !== null
+    ? (
+      <div className={css.editorWrap}>
+        <textarea
+          className={css.editor}
+          value={draft.text}
+          aria-label={t('edit.label')}
+          spellCheck={false}
+          autoFocus
+          wrap={isMarkdown(path) ? 'soft' : 'off'}
+          disabled={saving}
+          onChange={(event) => { setDraft({ text: event.target.value, base: draft.base }) }}
+          onKeyDown={(event) => {
+            if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
+              event.preventDefault()
+              if (dirty) doSave(false)
+            }
+          }}
+        />
+      </div>
+    )
+    : null
+  const editBar = editing
+    ? (
+      <div className={issue !== null && issue.kind !== 'discard' ? css.editBarIssue : css.editBar} role="status">
+        <span className={css.editBarText}>
+          {saving ? t('edit.saving')
+            : issue?.kind === 'conflict' ? t('edit.conflict')
+              : issue?.kind === 'unsupported' ? t('edit.unsupported')
+                : issue?.kind === 'missing' ? t('edit.missing')
+                  : issue?.kind === 'failed' ? t('edit.failed', { message: issue.message ?? '' })
+                    : issue?.kind === 'discard' ? t('edit.discardConfirm')
+                      : dirty ? t('edit.dirty') : t('edit.editing')}
+        </span>
+        {issue?.kind === 'conflict'
+          ? (
+            <>
+              <button type="button" className={css.editBarButton} disabled={saving} onClick={takeTheirs}>{t('edit.takeTheirs')}</button>
+              <button type="button" className={css.editBarPrimary} disabled={saving} onClick={() => { doSave(true) }}>{t('edit.overwrite')}</button>
+            </>
+          )
+          : issue?.kind === 'discard'
+            ? (
+              <>
+                <button type="button" className={css.editBarButton} onClick={() => { setIssue(null) }}>{t('edit.keepEditing')}</button>
+                <button type="button" className={css.editBarDanger} onClick={leaveEdit}>{t('edit.discard')}</button>
+              </>
+            )
+            : (
+              <>
+                <button type="button" className={css.editBarButton} disabled={saving} onClick={() => { if (dirty) setIssue({ kind: 'discard' }); else leaveEdit() }}>
+                  {t('edit.discard')}
+                </button>
+                <button type="button" className={css.editBarPrimary} disabled={saving || !dirty} onClick={() => { doSave(false) }}>{t('edit.save')}</button>
+              </>
+            )}
+      </div>
+    )
+    : null
   const tabs = viewTabs.length > 1
     ? <UnderlineTabs tabs={viewTabs} value={viewValue} onChange={selectView} label={t('detail.views')} className={css.viewTabs} />
     : null
@@ -580,6 +713,7 @@ export function ContentPane(props: ContentPaneProps): ReactNode {
         </div>
       )}
       {notice !== undefined && <div className={css.notice}>{notice}</div>}
+      {!diffActive && editBar}
       {html && scriptConfirm && content !== null && (
         <div className={css.scriptConfirm} role="alertdialog">
           <span>{t('preview.scriptConfirm')}</span>
@@ -609,7 +743,7 @@ export function ContentPane(props: ContentPaneProps): ReactNode {
                 ? <div className={css.placeholder}>{t('detail.noSelection')}</div>
                 : (
                   <PreviewBody
-                    read={read}
+                    read={editing && read.kind === 'text' && draft !== null ? { ...read, content: draft.text } : read}
                     t={t}
                     labels={labels}
                     search={search}
@@ -618,6 +752,7 @@ export function ContentPane(props: ContentPaneProps): ReactNode {
                     scripted={htmlScripted}
                     sourceMode={sourceMode}
                     imageView={imageView}
+                    editor={editor}
                     onLoaded={onHtmlLoaded}
                     iframeRef={htmlIframeRef}
                     frameRef={htmlFrameRef}

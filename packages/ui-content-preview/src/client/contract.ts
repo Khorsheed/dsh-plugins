@@ -83,6 +83,21 @@ export type PreviewKey =
   | 'local.unreadable'
   | 'state.loading'
   | 'state.error'
+  | 'action.edit'
+  | 'edit.label'
+  | 'edit.editing'
+  | 'edit.dirty'
+  | 'edit.save'
+  | 'edit.saving'
+  | 'edit.discard'
+  | 'edit.discardConfirm'
+  | 'edit.keepEditing'
+  | 'edit.conflict'
+  | 'edit.overwrite'
+  | 'edit.takeTheirs'
+  | 'edit.unsupported'
+  | 'edit.missing'
+  | 'edit.failed'
 
 /** The key list above, materialized so consumers can test their dictionary. */
 export const PREVIEW_KEYS: readonly PreviewKey[] = [
@@ -124,6 +139,21 @@ export const PREVIEW_KEYS: readonly PreviewKey[] = [
   'local.unreadable',
   'state.loading',
   'state.error',
+  'action.edit',
+  'edit.label',
+  'edit.editing',
+  'edit.dirty',
+  'edit.save',
+  'edit.saving',
+  'edit.discard',
+  'edit.discardConfirm',
+  'edit.keepEditing',
+  'edit.conflict',
+  'edit.overwrite',
+  'edit.takeTheirs',
+  'edit.unsupported',
+  'edit.missing',
+  'edit.failed',
 ]
 
 /**
@@ -172,6 +202,25 @@ export interface IdeChoice {
 export type PreviewView = 'diff' | 'content'
 
 /** Props of the shared content pane. */
+/**
+ * One save attempt's answer. `conflict` means the file on disk no longer
+ * matches the content the edit started from (the model or another program
+ * wrote it meanwhile); `unsupported` means the file cannot round-trip through
+ * a text edit (not UTF-8, grew past the read cap); `missing` means it is gone.
+ */
+export type SaveOutcome =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly reason: 'conflict' | 'unsupported' | 'missing' | 'error'; readonly message?: string | undefined }
+
+/** What the pane hands the caller's save. */
+export interface SaveRequest {
+  /** The full new text, line endings restored to the file's own convention. */
+  readonly content: string
+  /** The text the edit started from (the read's content), or null to
+   * overwrite whatever is on disk — the conflict bar's "overwrite" gesture. */
+  readonly base: string | null
+}
+
 export interface ContentPaneProps {
   /** The selected file's path ('' renders the empty placeholder). */
   readonly path: string
@@ -201,6 +250,15 @@ export interface ContentPaneProps {
    * commit) simply omits it, and no button renders.
    */
   readonly onReload?: (() => Promise<void>) | undefined
+  /**
+   * Writes an edited text file through the caller's own Remote. Supplying it
+   * makes complete (non-truncated) text reads editable: the header gains an
+   * edit action, the source face becomes a textarea, and the rendered face
+   * shows the draft. On `ok` the caller re-reads the file BEFORE resolving, so
+   * the pane leaves edit mode onto the saved content. Surfaces whose reads
+   * are pinned (a commit) or off-host browsers simply omit it.
+   */
+  readonly onSave?: ((request: SaveRequest) => Promise<SaveOutcome>) | undefined
   /** Renders the back control when supplied (leaving a nested file view). */
   readonly onBack?: (() => void) | undefined
   /** The diff body, when this surface has one; enables the diff/content toggle. */

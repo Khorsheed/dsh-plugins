@@ -13,6 +13,7 @@ import { IconFolderOpenOutlineMedium, IconProjectAddOutlineMedium, IconRefreshOu
 import type { ListLocalDirectoryResult, SearchLocalDirectoryResult } from '../types.ts'
 import {
   ContentPane, basenameOf, dirnameOf, pickFileManager, pickIde,
+  type SaveOutcome, type SaveRequest,
 } from '@khorsheed/dsh-client-ui-content-preview/src/client/index.ts'
 import { AdaptiveSplit, PanelHeader, PanelRoot, browserOnHost, type PanelAction } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
 import type { WorkspaceViewProps } from './contract.ts'
@@ -87,7 +88,7 @@ export function crumbsOf(path: string, home = false): { label: string; path: str
 /** The workspace view tab. */
 export function WorkspaceView({
   sessionId, useStore, useSessions, actions, t,
-  listDirectory, readFile, searchFiles, pickWorkspace, useOpenInApps, openFolder, openIDE,
+  listDirectory, readFile, writeFile, searchFiles, pickWorkspace, useOpenInApps, openFolder, openIDE,
 }: WorkspaceViewProps): ReactNode {
   const root = useStore(s => s.root)
   const currentSession = useStore(s => s.sessionId)
@@ -217,6 +218,19 @@ export function WorkspaceView({
       if (selectedPathRef.current !== path) return
       if (result.ok) actions.setPreview(result.value)
       else actions.setError(result.error.message)
+    })
+  }
+
+  // The pane's save: write through the same Remote, then re-read so the pane
+  // leaves edit mode onto what is actually on disk. A transport failure maps
+  // onto the pane's generic error arm.
+  const savePreview = (request: SaveRequest): Promise<SaveOutcome> => {
+    const path = selectedPath
+    if (path === null) return Promise.resolve({ ok: false, reason: 'missing' })
+    return writeFile({ path, content: request.content, base: request.base }).then(result => {
+      if (!result.ok) return { ok: false, reason: 'error', message: result.error.message }
+      if (!result.value.ok) return result.value
+      return reloadPreview().then(() => ({ ok: true }))
     })
   }
 
@@ -387,6 +401,9 @@ export function WorkspaceView({
               : {
                 onCopyPath: () => writeClipboard(selectedPath),
                 onReload: reloadPreview,
+                // Editing is a host-machine gesture for now: a phone through
+                // the tunnel reads only (decided 2026-10-24).
+                ...(onHost ? { onSave: savePreview } : {}),
                 chrome: {
                   ...(canOpenFolder ? { openFolder: () => { openFolder(dirnameOf(selectedPath) || selectedPath) } } : {}),
                   ...(canOpenIDE ? { openIDE: () => { openIDE(dirnameOf(selectedPath) || selectedPath) } } : {}),

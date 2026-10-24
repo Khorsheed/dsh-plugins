@@ -338,3 +338,77 @@ describe('ContentPane compact chrome (panel-responsive-spec P1)', () => {
     expect(screen.queryByRole('button', { name: 'action.more' })).toBeNull()
   })
 })
+
+describe('ContentPane edit mode', () => {
+  const read = (content: string, path = '/w/notes.md'): PreviewRead => ({ kind: 'text', path, content })
+  const editor = (): HTMLTextAreaElement => screen.getByLabelText('edit.label') as HTMLTextAreaElement
+
+  afterEach(() => { cleanup() })
+
+  it('offers no edit gesture without onSave, nor on a truncated window', () => {
+    mount(read('# a\n', '/w/none.md'))
+    expect(screen.queryByRole('button', { name: 'action.edit' })).toBeNull()
+    cleanup()
+    mount({ kind: 'text', path: '/w/big.md', content: 'x', truncated: true }, { onSave: vi.fn() })
+    expect(screen.queryByRole('button', { name: 'action.edit' })).toBeNull()
+  })
+
+  it('edits on the source face, previews the draft, and saves with the original as base', async () => {
+    const onSave = vi.fn(async () => ({ ok: true as const }))
+    mount(read('# Old\n', '/w/save.md'), { onSave })
+    fireEvent.click(screen.getByRole('button', { name: 'action.edit' }))
+    expect(screen.getByRole('button', { name: 'edit.save' })).toHaveProperty('disabled', true)
+    fireEvent.change(editor(), { target: { value: '# New\n' } })
+    expect(screen.getByText('edit.dirty')).toBeTruthy()
+    // The rendered face shows the draft, not the file.
+    fireEvent.click(screen.getByRole('tab', { name: 'detail.preview' }))
+    expect(screen.getByRole('heading', { name: 'New' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('tab', { name: 'detail.source' }))
+    await act(async () => { fireEvent.keyDown(editor(), { key: 's', metaKey: true }) })
+    expect(onSave).toHaveBeenCalledWith({ content: '# New\n', base: '# Old\n' })
+    expect(screen.queryByLabelText('edit.label')).toBeNull()
+  })
+
+  it('restores CRLF line endings on save', async () => {
+    const onSave = vi.fn(async () => ({ ok: true as const }))
+    mount(read('a\r\nb\r\n', '/w/crlf.txt'), { onSave })
+    fireEvent.click(screen.getByRole('button', { name: 'action.edit' }))
+    expect(editor().value).toBe('a\nb\n')
+    fireEvent.change(editor(), { target: { value: 'a\nb\nc\n' } })
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'edit.save' })) })
+    expect(onSave).toHaveBeenCalledWith({ content: 'a\r\nb\r\nc\r\n', base: 'a\r\nb\r\n' })
+  })
+
+  it('keeps the draft on a conflict and overwrites with a null base on request', async () => {
+    const onSave = vi.fn()
+      .mockResolvedValueOnce({ ok: false, reason: 'conflict' })
+      .mockResolvedValueOnce({ ok: true })
+    mount(read('v1', '/w/conflict.txt'), { onSave })
+    fireEvent.click(screen.getByRole('button', { name: 'action.edit' }))
+    fireEvent.change(editor(), { target: { value: 'mine' } })
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'edit.save' })) })
+    expect(screen.getByText('edit.conflict')).toBeTruthy()
+    expect(editor().value).toBe('mine')
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'edit.overwrite' })) })
+    expect(onSave).toHaveBeenLastCalledWith({ content: 'mine', base: null })
+    expect(screen.queryByLabelText('edit.label')).toBeNull()
+  })
+
+  it('asks before discarding unsaved changes, and keeps a draft across a file switch', () => {
+    const onSave = vi.fn()
+    const { rerender } = render(
+      <ContentPane path="/w/one.txt" sessionId="sess-1" read={read('one', '/w/one.txt')} loading={false} error={null} labels={labels} t={t} onSave={onSave} />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'action.edit' }))
+    fireEvent.change(editor(), { target: { value: 'one edited' } })
+    rerender(<ContentPane path="/w/two.txt" sessionId="sess-1" read={read('two', '/w/two.txt')} loading={false} error={null} labels={labels} t={t} onSave={onSave} />)
+    expect(screen.queryByLabelText('edit.label')).toBeNull()
+    rerender(<ContentPane path="/w/one.txt" sessionId="sess-1" read={read('one', '/w/one.txt')} loading={false} error={null} labels={labels} t={t} onSave={onSave} />)
+    expect(editor().value).toBe('one edited')
+    fireEvent.click(screen.getByRole('button', { name: 'edit.discard' }))
+    expect(screen.getByText('edit.discardConfirm')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'edit.discard' }))
+    expect(screen.queryByLabelText('edit.label')).toBeNull()
+    expect(onSave).not.toHaveBeenCalled()
+  })
+})

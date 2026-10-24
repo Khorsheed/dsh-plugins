@@ -72,6 +72,21 @@ export type FilePreviewKey =
   | 'action.showInFolder'
   | 'action.openIDE'
   | 'action.reload'
+  | 'action.edit'
+  | 'edit.label'
+  | 'edit.editing'
+  | 'edit.dirty'
+  | 'edit.save'
+  | 'edit.saving'
+  | 'edit.discard'
+  | 'edit.discardConfirm'
+  | 'edit.keepEditing'
+  | 'edit.conflict'
+  | 'edit.overwrite'
+  | 'edit.takeTheirs'
+  | 'edit.unsupported'
+  | 'edit.missing'
+  | 'edit.failed'
   | 'action.more'
   | 'detail.content'
   | 'detail.deleted'
@@ -169,6 +184,21 @@ export const zh: Record<FilePreviewKey, string> = {
   'action.showInFolder': '打开所在文件夹',
   'action.openIDE': '在 IDE 中打开',
   'action.reload': '重新加载',
+  'action.edit': '编辑',
+  'edit.label': '编辑文件内容',
+  'edit.editing': '编辑中',
+  'edit.dirty': '有未保存的修改 · ⌘S 保存',
+  'edit.save': '保存',
+  'edit.saving': '保存中…',
+  'edit.discard': '放弃',
+  'edit.discardConfirm': '放弃这次修改？',
+  'edit.keepEditing': '继续编辑',
+  'edit.conflict': '文件在你编辑期间被改过了',
+  'edit.overwrite': '仍然覆盖',
+  'edit.takeTheirs': '放弃我的修改并重新载入',
+  'edit.unsupported': '这个文件不能按文本保存（不是 UTF-8 或超过大小上限）',
+  'edit.missing': '文件已不存在',
+  'edit.failed': '保存失败：{message}',
   'action.more': '更多',
   'detail.content': '内容',
   'detail.deleted': '文件已删除',
@@ -260,6 +290,21 @@ export const en: Record<FilePreviewKey, string> = {
   'action.showInFolder': 'Show in folder',
   'action.openIDE': 'Open in IDE',
   'action.reload': 'Reload',
+  'action.edit': 'Edit',
+  'edit.label': 'Edit file content',
+  'edit.editing': 'Editing',
+  'edit.dirty': 'Unsaved changes · ⌘S to save',
+  'edit.save': 'Save',
+  'edit.saving': 'Saving…',
+  'edit.discard': 'Discard',
+  'edit.discardConfirm': 'Discard these changes?',
+  'edit.keepEditing': 'Keep editing',
+  'edit.conflict': 'The file changed while you were editing',
+  'edit.overwrite': 'Overwrite anyway',
+  'edit.takeTheirs': 'Discard mine and reload',
+  'edit.unsupported': "This file can't be saved as text (not UTF-8, or over the size limit)",
+  'edit.missing': 'The file no longer exists',
+  'edit.failed': 'Save failed: {message}',
   'action.more': 'More',
   'detail.content': 'Content',
   'detail.deleted': 'File deleted',

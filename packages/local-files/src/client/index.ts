@@ -22,7 +22,7 @@ import type {} from '@khorsheed/dsh-local-files/remote'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import localFilesRemote from '@khorsheed/dsh-local-files/remote'
 import type {
-  ListLocalDirectoryRequest, ReadLocalFileRequest, SearchLocalDirectoryRequest,
+  ListLocalDirectoryRequest, ReadLocalFileRequest, SearchLocalDirectoryRequest, WriteLocalFileRequest,
 } from '../types.ts'
 import { WorkspaceView } from './WorkspaceView.tsx'
 import type {
@@ -92,6 +92,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   const browserFace = (): WorkspaceViewInjected => ({
     listDirectory: (request: ListLocalDirectoryRequest) => remote.listDirectory(request),
     readFile: (request: ReadLocalFileRequest) => remote.readFile(request),
+    writeFile: (request: WriteLocalFileRequest) => remote.writeFile(request),
     searchFiles: (request: SearchLocalDirectoryRequest) => remote.search(request),
     pickWorkspace,
     hooks: { openInApps: openInApp.apps },
