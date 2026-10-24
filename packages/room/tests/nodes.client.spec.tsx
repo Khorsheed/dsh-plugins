@@ -29,6 +29,7 @@ import type { RoomState } from '../src/types.ts'
 afterEach(() => {
   cleanup()
   vi.useRealTimers()
+  globalThis.localStorage?.clear()
 })
 
 const t = makeTranslate(zh)
@@ -262,8 +263,8 @@ describe('RoomSpeechView', () => {
     seq: 7, time: 1007, member: 'ada', text: '方案 A 如下', childSessionId: 'child-1' as SessionId, durationMs: 1200,
   }
 
-  async function bench(data: RoomSpeechData = speech) {
-    const roomStore = await primedStore()
+  async function bench(data: RoomSpeechData = speech, state: RoomState = STATE) {
+    const roomStore = await primedStore(state)
     const openSession = vi.fn()
     const props = {
       node: nodeOf('room-speech', data), sessionId: 'room-1' as SessionId,
@@ -300,10 +301,40 @@ describe('RoomSpeechView', () => {
     expect(screen.queryByRole('button', { name: '收起' })).toBeNull()
   })
 
-  it('a long speech starts collapsed and toggles expand/collapse', async () => {
-    const tail = '末尾标记'
-    const long = `${'很长的回复。'.repeat(120)}\n\n${tail}`
-    await bench({ ...speech, text: long })
+  const tail = '末尾标记'
+  const long = `${'很长的回复。'.repeat(120)}\n\n${tail}`
+
+  it('the newest reply to the room starts unfolded; an older reply and a report start folded', async () => {
+    await bench({ ...speech, text: long }, { ...STATE, latestReplySeq: 7 })
+    expect(screen.getByRole('button', { name: '收起' })).toBeDefined()
+    cleanup()
+    // Newer than the (debounced) cached state: already the newest.
+    await bench({ ...speech, seq: 9, text: long }, { ...STATE, latestReplySeq: 7 })
+    expect(screen.getByRole('button', { name: '收起' })).toBeDefined()
+    cleanup()
+    await bench({ ...speech, seq: 5, text: long }, { ...STATE, latestReplySeq: 7 })
+    expect(screen.getByRole('button', { name: '展开全部' })).toBeDefined()
+    cleanup()
+    await bench({ ...speech, seq: 9, text: long, reportedTo: 'dsh' }, { ...STATE, latestReplySeq: 7 })
+    expect(screen.getByRole('button', { name: '展开全部' })).toBeDefined()
+  })
+
+  it('the human\'s expand/collapse is remembered per speech; the fade expands too', async () => {
+    const { container } = await bench({ ...speech, seq: 5, text: long }, { ...STATE, latestReplySeq: 7 })
+    fireEvent.click(container.querySelector('[aria-hidden][class*="fade"]')!)
+    expect(screen.getByRole('button', { name: '收起' })).toBeDefined()
+    cleanup()
+    await bench({ ...speech, seq: 5, text: long }, { ...STATE, latestReplySeq: 7 })
+    expect(screen.getByRole('button', { name: '收起' })).toBeDefined()
+    fireEvent.click(screen.getByRole('button', { name: '收起' }))
+    cleanup()
+    // A folded newest reply stays folded.
+    await bench({ ...speech, seq: 5, text: long }, { ...STATE, latestReplySeq: 5 })
+    expect(screen.getByRole('button', { name: '展开全部' })).toBeDefined()
+  })
+
+  it('a long speech toggles expand/collapse', async () => {
+    await bench({ ...speech, seq: 3, text: long }, { ...STATE, latestReplySeq: 7 })
     // The full text is in the DOM (the clamp is visual); the toggle offers
     // the expansion.
     expect(screen.getByText(tail)).toBeDefined()

@@ -94,6 +94,8 @@
   bottom: 0;
   left: 0;
   height: 48px;
+  /* The fade is part of the expand affordance: clicking it unfolds. */
+  cursor: pointer;
   background: linear-gradient(
     180deg,
     color-mix(in srgb, var(--dsw-alias-bg-layer-1, #ffffff) 0%, transparent),
