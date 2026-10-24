@@ -219,9 +219,10 @@ describe('RoomService Remote surface (real composition)', () => {
     expect(await service.getState({ sessionId })).toMatchObject({ ok: true, value: { members: [MAIN_MEMBER, { name: 'same-name' }] } })
   })
 
-  it('invite rejects a provider outside the roster delegation set, carrying the legal list', async () => {
-    // The classic slip: the harness name `kimi` where the family registered
-    // the delegation provider `kimi-cli`.
+  it('invite resolves a harness or display name to its provider id and rejects anything else with the legal list', async () => {
+    // The classic slip — the harness name `kimi` where the family registered
+    // the delegation provider `kimi-cli` — now resolves; a name no harness
+    // carries is still rejected.
     const localAgent = {
       start: vi.fn(), resume: vi.fn(), cancel: vi.fn(() => false),
       roster: () => [
@@ -234,17 +235,24 @@ describe('RoomService Remote surface (real composition)', () => {
         : { authenticated: true, delegationProvider: `${name}-cli` }),
     }
     const { service, sessionId } = await bootRoom({ localAgent })
-    const rejected = await service.invite({ sessionId, provider: 'kimi', name: 'ada' })
+    const rejected = await service.invite({ sessionId, provider: 'gemini', name: 'ada' })
     expect(rejected).toEqual({
       ok: false,
       // The record-only harness (no delegationProvider) is not a legal value.
-      error: { code: 'unknown-provider', provider: 'kimi', available: ['kimi-cli', 'codex-cli'] },
+      error: { code: 'unknown-provider', provider: 'gemini', available: ['kimi-cli', 'codex-cli'] },
     })
+    // A record-only harness's name does not resolve either.
+    expect(await service.invite({ sessionId, provider: 'rec', name: 'ada' })).toMatchObject({ ok: false, error: { code: 'unknown-provider' } })
     // Nothing is journaled: the roster stays the seated main agent only.
     expect(await service.getState({ sessionId })).toMatchObject({ ok: true, value: { members: [MAIN_MEMBER] } })
-    // The legal id goes through.
+    // The legal id goes through; so do the harness and display names.
     expect(await service.invite({ sessionId, provider: 'kimi-cli', name: 'ada' }))
       .toEqual({ ok: true, value: { name: 'ada', pendingFirstTask: false } })
+    expect(await service.invite({ sessionId, provider: 'kimi', name: 'bob' })).toMatchObject({ ok: true })
+    expect(await service.invite({ sessionId, provider: 'Kimi Code', name: 'cat' })).toMatchObject({ ok: true })
+    const state = await service.getState({ sessionId })
+    if (!state.ok) throw new Error('narrowing')
+    expect(state.value.members.filter(member => member.kind === 'cli').map(member => member.provider)).toEqual(['kimi-cli', 'kimi-cli', 'kimi-cli'])
   })
 
   it('invite skips the provider check when the core predates the roster slice (degrade, never explode)', async () => {

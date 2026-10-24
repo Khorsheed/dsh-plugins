@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-10-23-cli-member-mode-tools.md
-.agents/notes/implemented/feature/2026-10-23-cli-member-mode-tools.md: 0c4da95d18ccf4322407a46e00ed6bbe61008ece
-.agents/notes/implemented/feature/2026-10-23-cli-member-mode-tools.zh.md: c6dd8f72dc14bf52613eec8017b964b49616dcc9
+.agents/notes/implemented/feature/2026-10-23-cli-member-mode-tools.md: 4e64d3f42747997f9cbd68f3735098817702e928
+.agents/notes/implemented/feature/2026-10-23-cli-member-mode-tools.zh.md: 5d611f61907393a0b5cd7d4aaab0aa9c54aebdb0
