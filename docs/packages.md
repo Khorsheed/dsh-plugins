@@ -47,7 +47,7 @@
 | `@khorsheed/dsh-local-files` | `packages/local-files` | 0.1.3 | bundle | — | web | 0.1.5-rc.1 | basic, eval |
 | `@khorsheed/dsh-message-timeline` | `packages/message-timeline` | 0.2.6 | bundle | — | web | 0.1.2-rc.1 | basic, eval |
 | `@khorsheed/dsh-client-message-tools` | `packages/message-tools` | 0.3.4 | bundle | — | web | 0.1.5-rc.1 | basic, eval |
-| `@khorsheed/dsh-mobile` | `packages/mobile` | 0.1.4 | bundle | — | web | 0.2.0-rc.2 | basic |
+| `@khorsheed/dsh-mobile` | `packages/mobile` | 0.2.0 | bundle | — | web | 0.2.0-rc.2 | basic |
 | `@khorsheed/dsh-quote` | `packages/quote` | 0.1.4 | bundle | — | web | 0.1.5-rc.1 | basic |
 | `@khorsheed/dsh-room` | `packages/room` | 0.2.3 | bundle | — | web | 0.1.5-rc.1 | dev |
 | `@khorsheed/dsh-client-session-title-edit` | `packages/session-title-edit` | 0.2.6 | bundle | — | web | 0.1.2-rc.1 | basic, eval |
