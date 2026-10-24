@@ -11,7 +11,7 @@ Whether it's an article, a novel, or your take on a book you just finished, the 
 ## What it does
 
 - **One canvas per topic**: the Canvas tab in the right sidebar has a row of tabs, one per canvas; switch away and back and you're still on the card you were reading.
-- **Write down whatever comes up**: cards come as Fragment, Question, Grounding, Reference and Document, and you can rename, add or retire categories; paste in web pages, tables and images, or sketch something by hand.
+- **Write down whatever comes up**: cards come as Fragment, Question, Grounding, Reference and Document, and you can rename, add or retire categories; paste in web pages, tables and images, or sketch something by hand. A pasted image is saved as an attachment; removing it or deleting the card only takes it off the card, and the attachment itself stays.
 - **The agent suggests, you decide**: cards the agent suggests land on the board with a dashed outline; "Accept" keeps one, "Reject" moves it to the archive rather than deleting it.
 - **Link cards into groups**: switch to "Links" to drag cards into place, draw a line from one card to another, and drag out a box around the ones that belong together.
 
@@ -34,12 +34,6 @@ In DSH, open Plugins → Add plugin, enter this package name, and press Install:
 The canvas comes with the Writing Suite; if you'd rather use it for study notes, the Learning Suite (`@khorsheed/dsh-learning-suite`) includes it as well. Then start a new session, pick "写作模式" (writing mode) or "学习模式" (learning mode), and tell the agent "start a new canvas about …".
 
 The canvas only appears in sessions in those two modes; not seeing it elsewhere is expected.
-
-## Known limitations
-
-- Images pasted into a card stay on disk even after the card is deleted.
-- The pen ignores pressure; line width follows how fast you move.
-- If you edit a canvas file in another editor, the page doesn't refresh; the conflict only shows up the next time you save.
 
 ## Compatibility
 
