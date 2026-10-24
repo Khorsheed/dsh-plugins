@@ -46,6 +46,7 @@ Delivered in steps against the plan the owner approved on 2026-10-22 (per-member
 
 ## Consequences
 
+- 2026-10-24: the team page no longer opens as its own sidebar page. It is the 团队 switch of one 协作 page (kind `room-tasks`, params `view` / `task` / `member`), beside 任务; the members tab's 团队 button and the task capsule both navigate there. `TeamTab.tsx` and the `room-team` kind are gone.
 - The paused cloud-collaboration line (`codex/room-*` branches) also edits `assemblePrompt` (a per-dispatch 【本轮来源】 label) and the invite dialog; the owner decided this local line lands first and that line adapts to it. Its source labels map naturally onto the message envelope planned for the next step.
 - Still open: per-member permissions for external CLI members (claude plan / ask modes, codex read-only). They need a delegation-level option in the local-agent core, persisted on the delegation record and honored by each provider's exec and live spawn; the claude provider is under concurrent work, so this ships separately. The CLI child sessions are also still created without a preset marker, so host surfaces that read a session's preset show them as preset-less.
 - Old journals replay unchanged: absent `role` reads as none; legacy rooms simply get no more roster re-sends; dispatches without `hop` count as chain starts; relays without `intent` keep the old confirm path.

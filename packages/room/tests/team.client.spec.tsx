@@ -6,6 +6,7 @@ import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { formatTokens, TEAM_ROOT, teamOf } from '../src/client/team.ts'
 import { TeamView } from '../src/client/TeamView.tsx'
+import { RoomTasksTab } from '../src/client/TasksTab.tsx'
 import { zh } from '../src/client/locales.ts'
 import type { MembersViewProps } from '../src/client/slots.ts'
 import type { RoomState } from '../src/types.ts'
@@ -102,3 +103,27 @@ describe('TeamView (narrow)', () => {
     vi.unstubAllGlobals()
   })
 })
+
+describe('the collaboration page', () => {
+  it('holds 任务 and 团队 as two switches of one sidebar page; a navigation picks the view', () => {
+    // The task view sizes its timeline with a ResizeObserver jsdom lacks.
+    vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} })
+    const roomStore = { subscribe: () => () => {}, getCached: () => STATE, refresh: vi.fn(async () => {}) }
+    const page = (params: Record<string, string>, revision: number) => <RoomTasksTab {...{
+      sessionId: 'room-1', roomStore, taskTags: { set: vi.fn() }, t,
+      useTabInfo: () => ({ tab: { navigation: { params, revision }, actions: { close: vi.fn() } } }),
+    } as never} />
+    const { rerender } = render(page({ view: 'team', member: 'claude' }, 0))
+    const tab = (name: string) => screen.getByRole('tab', { name })
+    expect(tab('团队').getAttribute('aria-selected')).toBe('true')
+    screen.getByText('▶ 复审修复')
+    fireEvent.click(tab('任务'))
+    expect(tab('任务').getAttribute('aria-selected')).toBe('true')
+    expect(screen.queryByText('▶ 复审修复')).toBeNull()
+    // The next navigation (the members tab's 团队 button) switches back.
+    rerender(page({ view: 'team' }, 1))
+    expect(tab('团队').getAttribute('aria-selected')).toBe('true')
+    vi.unstubAllGlobals()
+  })
+})
+

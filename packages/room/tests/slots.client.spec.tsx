@@ -205,10 +205,12 @@ describe('room client apply', () => {
     expect(slots.entries('sidebar.right.pane.tab').map(entry => entry.options.key)).toContain('@khorsheed/dsh-room/tasks')
     const composer = slots.entries('conversation.composer')[0]!
     const face = (composer.inject as unknown as (sessionId: string) => RoomComposerInjected)('room-1')
+    // 任务 and 团队 share one sidebar page: only the collaboration kind registers.
+    expect(register).toHaveBeenCalledTimes(1)
     face.openTasks?.()
-    expect(openTab).toHaveBeenCalledWith('room-tasks', { params: {} })
+    expect(openTab).toHaveBeenCalledWith('room-tasks', { params: { view: 'tasks' } })
     face.openTasks?.('msg-1')
-    expect(openTab).toHaveBeenCalledWith('room-tasks', { params: { task: 'msg-1' } })
+    expect(openTab).toHaveBeenCalledWith('room-tasks', { params: { view: 'tasks', task: 'msg-1' } })
     await fiber.dispose()
     expect(unregister).toHaveBeenCalled()
   })

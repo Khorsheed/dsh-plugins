@@ -22,7 +22,6 @@
     "src/client/RoomQuestionView.tsx",
     "src/client/team.ts",
     "src/client/TeamView.tsx",
-    "src/client/TeamTab.tsx",
     "src/client/MembersView.tsx",
     "src/client/RoomComposer.tsx",
     "src/client/RoomEventView.tsx",
