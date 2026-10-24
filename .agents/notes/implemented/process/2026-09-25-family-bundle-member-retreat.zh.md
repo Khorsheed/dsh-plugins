@@ -17,6 +17,8 @@ Status: implemented
 
 bundle 自身的首装不变:仍由官方 `plugin add <tgz> --profile web` 登记。
 
+**只点名成员的部署(2026-10-24)。** 以前只点名一个成员、而它的套件已经装着时,它会被注册成独立插件:它自己的 patch 在 profile 根上收编,其中的伴生行(game 的 `./agent`、canvas 的 `./agent`、canvas-novel 的 `./agent`、reader 的 `./tool`)对所有会话授予——模式专属的工具和页签在每个模式里都出现。3080 在一次只点名 game / canvas / canvas-novel / library / file-preview 的部署后就是这样。现在被部署的包如果是 profile bundles 名册里某个已装 family / mode 套件的成员,就按「同时点名了套件」处理成员退场:不单独注册,只把它的 overrides 钉刷新到本次的新 tarball。所属套件从仓库 `packages/*` 的清单里查找。
+
 ## Alternatives considered
 
 **让成员与 bundle 并列留在直接依赖里。** 否决:这正是家族 patch 头注释警告的双挂,还会留着冗余的顶层清单卡——家族形态要消除的恰是这两样。

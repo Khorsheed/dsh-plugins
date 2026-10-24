@@ -282,7 +282,7 @@ describe('deploy 3080 flow', () => {
 })
 
 /** A family bundle (packages/bundle) whose one member (packages/demo) currently sits in the profile as a standalone install. */
-function familyFixture({ memberRegistered = true, bundleRegistered = true, memberPin = true, memberStash = true, coDeploy = false } = {}) {
+function familyFixture({ memberRegistered = true, bundleRegistered = true, memberPin = true, memberStash = true, coDeploy = false, memberOnly = false } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'deploy-family-')); roots.push(root)
   const home = join(root, 'home'), harness = join(root, 'harness'), profile = join(home, 'profiles/web'), bin = join(root, 'bin')
   for (const p of [profile, bin, join(home, 'state'), join(home, 'tarballs'), join(harness, 'apps/cli/lib'), join(root, 'packages/demo'), join(root, 'packages/bundle')]) mkdirSync(p, { recursive: true })
@@ -305,7 +305,8 @@ function familyFixture({ memberRegistered = true, bundleRegistered = true, membe
   writeStubs(bin)
   return { root, home, profile, member, bundleName, memberOld, bundleOld, run() {
     // Bundle first, member second — proves the flow is safe in any --package order.
-    return runOrchestrator(root, ['--package', 'packages/bundle', ...(coDeploy ? ['--package', 'packages/demo'] : []), '--no-restart'], { DSH_HOME: home, DSH_HARNESS: harness, PATH: bin, CALL_LOG: join(root, 'calls') })
+    const named = memberOnly ? ['--package', 'packages/demo'] : ['--package', 'packages/bundle', ...(coDeploy ? ['--package', 'packages/demo'] : [])]
+    return runOrchestrator(root, [...named, '--no-restart'], { DSH_HOME: home, DSH_HARNESS: harness, PATH: bin, CALL_LOG: join(root, 'calls') })
   } }
 }
 
@@ -348,6 +349,18 @@ describe('deploy 3080 family bundle member retreat', () => {
     expect(pin).toMatch(/khorsheed-dsh-demo-1\.0\.0\+\d{10}\.tgz$/) // refreshed to this call's tarball
     expect(existsSync(pin)).toBe(true)
     expect(existsSync(f.memberOld)).toBe(false) // the co-named member's stale tarball is pruned after success
+  })
+  it('a member deployed alone under an already-registered bundle is a member update: retreated, never registered on its own', async () => {
+    const f = familyFixture({ memberOnly: true }), r = await f.run()
+    expect(r.status, r.output).toBe(0)
+    expect(r.output).toContain('is a member of the installed @khorsheed/dsh-bundle')
+    // No official add: registering the member alone would mount its own patch rows at the profile root.
+    expect(r.calls.some(c => c.includes('plugin'))).toBe(false)
+    const manifest = JSON.parse(readFileSync(join(f.profile, 'package.json'), 'utf8'))
+    expect(Object.keys(manifest.dependencies)).toEqual(['@khorsheed/dsh-bundle'])
+    expect(manifest.dsh.profile.bundles).toEqual(['@khorsheed/dsh-bundle'])
+    const pin = new RegExp(`'@khorsheed/dsh-demo': 'file:([^']*)'`).exec(readFileSync(join(f.profile, 'pnpm-workspace.yaml'), 'utf8'))![1]
+    expect(pin).toMatch(/khorsheed-dsh-demo-1\.0\.0\+\d{10}\.tgz$/) // refreshed to this call's tarball
   })
   it('first-installs the bundle through official plugin add while retreating the standalone member', async () => {
     const f = familyFixture({ bundleRegistered: false }), r = await f.run()
