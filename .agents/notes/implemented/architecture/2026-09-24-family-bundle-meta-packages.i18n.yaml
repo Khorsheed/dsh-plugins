@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-24-family-bundle-meta-packages.md
-.agents/notes/implemented/architecture/2026-09-24-family-bundle-meta-packages.md: 08ab778b8124ced7037bc3126e849639b5c1b6b7
-.agents/notes/implemented/architecture/2026-09-24-family-bundle-meta-packages.zh.md: 2030c1c4c3b6bd117e9e76add94fd3a34e1641f9
+.agents/notes/implemented/architecture/2026-09-24-family-bundle-meta-packages.md: fea3021b051623707847f6464020afead9a47e06
+.agents/notes/implemented/architecture/2026-09-24-family-bundle-meta-packages.zh.md: c2fda940c646058c97719c246b5c6a9aca756da7

@@ -329,6 +329,9 @@ importers:
       '@khorsheed/dsh-local-agent-kimi':
         specifier: workspace:*
         version: link:../local-agent-kimi
+      '@khorsheed/dsh-room':
+        specifier: workspace:*
+        version: link:../room
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: 4.0.4

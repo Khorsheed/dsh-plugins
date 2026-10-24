@@ -1,6 +1,7 @@
 /**
- * @khorsheed/dsh-bundle-local-agent — the local-agent family (core + the kimi /
- * codex / claude-code / dsh delegation providers) as one thin meta package.
+ * @khorsheed/dsh-bundle-local-agent — the multi-agent family (the local-agent
+ * core, the kimi / codex / claude-code / dsh delegation providers, and the room)
+ * as one thin meta package.
  * The bundle is composition data: cordis.patch.yml re-mounts the members'
  * canonical rows and package.json carries the members as npm dependencies;
  * this module exists so the package has a buildable `lib/` (pack-dist
@@ -14,6 +15,7 @@ export const FAMILY_MEMBERS = [
   '@khorsheed/dsh-local-agent-codex',
   '@khorsheed/dsh-local-agent-claude-code',
   '@khorsheed/dsh-local-agent-dsh',
+  '@khorsheed/dsh-room',
 ] as const
 
 /**

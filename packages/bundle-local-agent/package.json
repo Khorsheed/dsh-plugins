@@ -1,6 +1,6 @@
 {
   "name": "@khorsheed/dsh-bundle-local-agent",
-  "description": "Family bundle 本地多Agent: the local-agent core plus the four delegation providers (kimi / codex / claude-code / dsh) in one install. Thin meta package: a patch carrying the members' canonical rows, npm dependencies on the members, locale card metadata — no runtime code, no client half.",
+  "description": "Family bundle 多Agent协作: the local-agent core, the four delegation providers (kimi / codex / claude-code / dsh) and the room (协作间) in one install. Thin meta package: a patch carrying the members' canonical rows, npm dependencies on the members, locale card metadata — no runtime code, no client half.",
   "version": "0.3.0",
   "publishConfig": {
     "access": "public"
@@ -33,6 +33,7 @@
     "dsh-plugin",
     "cordis",
     "local-agent",
+    "room",
     "bundle"
   ],
   "dependencies": {
@@ -41,7 +42,8 @@
     "@khorsheed/dsh-local-agent-codex": "workspace:*",
     "@khorsheed/dsh-local-agent-dsh": "workspace:*",
     "@khorsheed/dsh-local-agent-dsh-headless": "workspace:*",
-    "@khorsheed/dsh-local-agent-kimi": "workspace:*"
+    "@khorsheed/dsh-local-agent-kimi": "workspace:*",
+    "@khorsheed/dsh-room": "workspace:*"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1"
@@ -66,7 +68,8 @@
         "@khorsheed/dsh-local-agent-kimi",
         "@khorsheed/dsh-local-agent-codex",
         "@khorsheed/dsh-local-agent-claude-code",
-        "@khorsheed/dsh-local-agent-dsh"
+        "@khorsheed/dsh-local-agent-dsh",
+        "@khorsheed/dsh-room"
       ]
     },
     "references": [
@@ -74,12 +77,13 @@
       "@khorsheed/dsh-local-agent-kimi",
       "@khorsheed/dsh-local-agent-codex",
       "@khorsheed/dsh-local-agent-claude-code",
-      "@khorsheed/dsh-local-agent-dsh"
+      "@khorsheed/dsh-local-agent-dsh",
+      "@khorsheed/dsh-room"
     ],
     "compat": {
       "minHost": "0.1.5-rc.1",
       "verifiedHost": "0.2.1-rc.1",
-      "notes": "Pure composition: the bundle mounts the members' canonical rows and registers nothing of its own, so the floor is the members' highest — local-agent core and the four providers all floor at 0.1.5-rc.1 (the deps-only library local-agent-dsh-headless floors lower). Individual member behaviors behind that floor (e.g. token-mode live-mirror granularity on 0.1.5) are documented in each member's own dsh.compat."
+      "notes": "Pure composition: the bundle mounts the members' canonical rows and registers nothing of its own, so the floor is the members' highest — local-agent core, the four providers and room all floor at 0.1.5-rc.1 (the deps-only library local-agent-dsh-headless floors lower). Individual member behaviors behind that floor (e.g. token-mode live-mirror granularity on 0.1.5) are documented in each member's own dsh.compat."
     }
   }
 }

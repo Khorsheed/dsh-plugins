@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "Local Multi-Agent",
-    "description": "Delegate dsh agents to local CLI harnesses (Kimi, Codex, Claude Code, dsh) — the local-agent family in one install."
+    "title": "Multi-Agent Collaboration",
+    "description": "Delegate to local CLI agents (Kimi, Codex, Claude Code, dsh) and run multi-member rooms — the local-agent family plus room in one install."
   }
 }
