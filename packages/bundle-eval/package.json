@@ -89,7 +89,7 @@
     "compat": {
       "minHost": "0.2.0-rc.2",
       "verifiedHost": "0.2.1-rc.1",
-      "notes": "Pure composition: the bundle mounts the members' canonical rows plus the dsh-eval preset row and registers nothing of its own, so the floor is the members' highest — datasets / mission / lab / eval floor at 0.2.0-rc.2 together (the evaluation family moves as one line since the T88 fold), the five local-agent members floor at 0.1.5-rc.1, and the preset row's 0.1.7-rc.1 mechanism floor sits below both. lab's container path needs a reachable Docker daemon; without one lab's verbs fail at call time and eval's container path refuses naming lab, while the host path, datasets, and mission are unaffected. Individual member behaviors are documented in each member's own dsh.compat."
+      "notes": "Pure composition: the bundle mounts the members' canonical rows plus the dsh-eval preset row and registers nothing of its own, so the floor is the members' highest — datasets / lab / eval (the mission ledger now inside eval) floor at 0.2.0-rc.2 together (the evaluation family moves as one line since the T88 fold), the five local-agent members floor at 0.1.5-rc.1, and the preset row's 0.1.7-rc.1 mechanism floor sits below both. lab's container path needs a reachable Docker daemon; without one lab's verbs fail at call time and eval's container path refuses naming lab, while the host path, datasets, and the mission ledger are unaffected. Individual member behaviors are documented in each member's own dsh.compat."
     }
   }
 }
