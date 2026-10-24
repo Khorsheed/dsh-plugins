@@ -79,7 +79,7 @@ export const THREE_3D: RuntimeKit = {
   \`{ "preset": "ink", "bg": "#efe7d6", "ground": "#e5dbc5", "ground2": "#d6c9ac", "water": "#a7bab4", "outline": "#2a2622", "outlineWidth": 0.032, "shades": 3, "fog": [26, 62], "light": 1.1 }\`
   preset 是起点（下面两个），其余键覆盖它；outlineWidth 为 0 就没有描边，shades 是卡通明暗层数（2 硬朗 … 5 柔和）。用户说「霓虹赛博」「糖果色」「黑白剪影」之类，就据此调颜色、描边和层数；artStyle 写 custom:用户的描述。现成起点：
 ${STYLE_LINES}
-  自己加的物体用 \`ink(geometry, toon('#颜色'))\`（卡通材质 + 描边），地形、石头、树用 \`flat('#颜色')\`，这样换 style3d 时全场跟着变。别用写实贴图和 PBR 材质。
+  自己加的物体用 \`ink(geometry, toon('#颜色'))\`（卡通材质 + 描边），地面起伏、石头、树这类场景用 \`flat('#颜色')\`，这样换 style3d 时全场跟着变。别用写实贴图和 PBR 材质。
 - 世界：\`const world = createWorld({ region: (x, z) => '区域名' })\`，然后
   - \`world.terrain({ size, height: (x, z) => 高度 })\` 地形；\`world.place(obj, x, z)\` 放到地面上
   - \`world.add(obj, { id: 元素id, inst: 实例id, name, state: () => '当前在干什么' })\` 登记实体（右栏「指一下」靠它认出东西）
@@ -95,6 +95,7 @@ ${STYLE_LINES}
     \`defineBase('robot', (look, kit) => { const g = new kit.THREE.Group(), body = new kit.THREE.Group(); g.add(body); body.add(kit.ink(new kit.THREE.BoxGeometry(0.8, 0.6, 0.5), kit.toon(kit.color('body', '#888888')))); return { g, body } })\`
     \`definePart('antenna', ({ spec, anchors, kit }) => { const a = kit.ink(new kit.THREE.CylinderGeometry(0.02, 0.02, spec.length ?? 0.4), kit.toon(kit.color(spec.color ?? 'accent', '#ff0000'))); a.position.y = 0.5; anchors.body.add(a); return { update: t => { a.rotation.z = 0.2 * Math.sin(t * 3) } } })\`
     之后配方里就能写 \`"base": "robot"\`、\`{ "type": "antenna", "length": 0.5 }\`（自定义部件的其他参数在 spec.extra 里）。注册过的名字用户在面板里同样能调。
+  - **场景物件也走配方**：树、石头、草丛、远山、建筑这类有形状的元素，同样在 \`src/looks.js\` 里 defineBase 注册造型（用 \`kit.flat(kit.color('body', '#…'))\`，尺寸读 \`look.proportions\`），元素文件写 \`look\`，代码里 \`build(元素id)\` 一次、再 \`clone()\` 撒到各处（数量、分布范围这类仍是元素字段）。别在 main.js 里直接手写几何体——那样右栏看不到它的样子，用户也没法调。只有地面高度场（world.terrain）和水面这种铺满整个场景的不算元素。
   - 面数预算：单个元素 1 万三角面以内，整个场景 15 万以内（\`world.stats()\` 可查）。
 - dshGame 约定照旧，3D 推荐这样接：
 \`\`\`js
