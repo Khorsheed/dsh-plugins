@@ -247,7 +247,11 @@ export function MembersView({
               run={run}
               elapsedMs={running ? Date.now() - (run?.startedAt ?? Date.now()) : undefined}
               openSession={openSession}
-              onEdit={() => { setDialog({ mode: 'edit', member }) }}
+              onEdit={() => {
+                setDialog({ mode: 'edit', member })
+                // The edit dialog names the member's (locked) mode.
+                if (providers === undefined) void listProviders().then(setProviders)
+              }}
               onLocate={openTeam === undefined ? undefined : () => { openTeam(member.name) }}
               onRemove={() => { setRemoving(current => current === member.name ? null : member.name) }}
               removal={removing === member.name ? (

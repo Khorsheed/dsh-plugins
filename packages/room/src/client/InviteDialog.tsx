@@ -184,7 +184,8 @@ export function InviteDialog({
   const authenticated = (providers ?? []).filter(entry => entry.authenticated)
   const nativeAvailable = presets !== undefined
   const chosen = provider === '' ? (authenticated[0]?.provider ?? (nativeAvailable ? NATIVE : '')) : provider
-  const native = chosen === NATIVE
+  // Editing: the member's own kind, never the invite form's provider pick.
+  const native = mode === 'edit' ? member?.kind === 'native' : chosen === NATIVE
   const [preset, setPreset] = useState('')
   const chosenPreset = preset === '' ? presets?.find(entry => entry.isDefault)?.id ?? '' : preset
   /** A CLI member's mode: '' = none (only its own tools plus the room's). */
@@ -197,8 +198,10 @@ export function InviteDialog({
   // broker read (or a composition without the family's client half) leaves
   // the field a plain text input — blank still follows the harness default.
   useEffect(() => {
+    // Edit mode's surface is the member's own (below): never reset it here.
+    if (mode !== 'invite') return
     setSurface(undefined)
-    if (mode !== 'invite' || modelSurface === undefined || chosenHarness === undefined) return
+    if (modelSurface === undefined || chosenHarness === undefined) return
     let cancelled = false
     void modelSurface(chosenHarness).then((result) => {
       if (!cancelled) {
@@ -318,7 +321,12 @@ export function InviteDialog({
   const previewProvider = mode === 'edit'
     ? member?.provider
     : native ? 'dsh' : (providers ?? []).find(entry => entry.provider === chosen)?.displayName ?? chosen
-  const previewMember: RoomMember = {
+  const previewMember: RoomMember = mode === 'edit' && member !== undefined ? (({ instructions: _i, role: _r, ...rest }: RoomMember): RoomMember => ({
+    ...rest,
+    name: previewName,
+    ...instructions.trim() === '' ? {} : { instructions: instructions.trim() },
+    ...role.trim() === '' ? {} : { role: role.trim() },
+  }))(member) : {
     name: previewName,
     kind: native ? 'native' : 'cli',
     ...native && chosenPreset !== '' ? { preset: chosenPreset } : {},
@@ -385,7 +393,7 @@ export function InviteDialog({
         if (event.target === event.currentTarget) onClose()
       }}
     >
-      <div className={css.card} role="dialog" aria-modal="true" onKeyDown={onCardKeyDown}>
+      <div className={css.card} data-mode={mode} role="dialog" aria-modal="true" onKeyDown={onCardKeyDown}>
         <div className={css.title}>
           {mode === 'invite' ? t('invite.title') : t('invite.title.edit', { member: member?.name ?? '' })}
         </div>
@@ -439,7 +447,29 @@ export function InviteDialog({
                 </span>
               </label>
             )}
-            {native ? null : memberConfiguration ?? (chosenHarness !== undefined && (modelSurface === undefined || surface !== undefined) ? renderHarnessModelPicker?.(chosenHarness, { value: model, onChange: setModel, disabled: busy }) : undefined) ?? modelField}
+            {mode === 'edit' && <div className={css.editHead}>
+              <MemberCard
+                preview
+                member={previewMember}
+                run={undefined}
+                elapsedMs={undefined}
+                openSession={() => {}}
+                onEdit={() => {}}
+                onRemove={() => {}}
+                t={t}
+              />
+              {/* What the invitation fixed: shown, not offered. */}
+              <dl className={css.locked}>
+                <div><dt>{t('invite.provider')}</dt><dd>{member?.kind === 'main-agent' || member?.kind === 'native' ? 'DSH' : member?.provider ?? '—'}</dd></div>
+                <div><dt>{t('invite.cliPreset')}</dt><dd>{member?.preset === undefined
+                  ? t('invite.cliPresetNone')
+                  : presets?.find(entry => entry.id === member.preset)?.name ?? member.preset}</dd></div>
+                <span className={css.lockedNote}>{t('invite.lockedNote')}</span>
+              </dl>
+            </div>}
+            {native ? null : mode === 'edit' && memberConfiguration !== undefined
+              ? <div className={css.field}><span className={css.label}>{t('invite.modelLabel')}</span>{memberConfiguration}</div>
+              : memberConfiguration ?? (mode === 'invite' && chosenHarness !== undefined && (modelSurface === undefined || surface !== undefined) ? renderHarnessModelPicker?.(chosenHarness, { value: model, onChange: setModel, disabled: busy }) : undefined) ?? modelField}
             <label className={css.field}>
               <span className={css.label}>{t('invite.name')}</span>
               <span className={css.nameRow}>
@@ -541,7 +571,7 @@ export function InviteDialog({
               </div>
             </details>
           </div>
-          <div className={css.previewCol}>
+          {mode === 'invite' && <div className={css.previewCol}>
             <span className={css.previewLabel}>{t('invite.preview')}</span>
             <MemberCard
               preview
@@ -553,7 +583,7 @@ export function InviteDialog({
               onRemove={() => {}}
               t={t}
             />
-          </div>
+          </div>}
         </div>
         {error !== null && <div className={css.error} role="alert">{error}</div>}
         <div className={css.buttons}>

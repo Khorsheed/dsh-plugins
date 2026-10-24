@@ -563,6 +563,19 @@ describe('MembersView', () => {
     expect(cardOf('ada').textContent).not.toContain('Model One')
   })
 
+  it('the edit dialog leads with the member\'s card and shows provider and mode as fixed facts', async () => {
+    await bench({ providers: { ...PROVIDERS, presets: [{ id: 'dsh-video', name: '剪辑模式', isDefault: false }] } })
+    fireEvent.click(Array.from(cardOf('ada').querySelectorAll('button')).find(b => b.textContent === '编辑')!)
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).queryByText('预览')).toBeNull()
+    const locked = dialog.querySelector('dl')!
+    expect(locked.textContent).toContain('Provider')
+    expect(locked.textContent).toContain('kimi')
+    expect(locked.textContent).toContain('不带模式')
+    expect(locked.textContent).toContain('邀请时定下')
+    expect(within(dialog).queryByRole('combobox', { name: '模式' })).toBeNull()
+  })
+
   it('the edit dialog prefills the member\'s effective model and serves the broker choices', async () => {
     const { face } = await bench({
       memberModel: async (child) => child === 'child-1' ? modelInfo() : null,
