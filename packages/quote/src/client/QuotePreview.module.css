@@ -73,3 +73,29 @@
   line-height: 22px;
   color: var(--dsw-alias-label-primary);
 }
+
+/* The locator row: the absolute path / URL the model receives beside the
+ * quote, quiet and selectable, wrapping anywhere (paths have no spaces). */
+.location {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  margin: 0 12px 12px;
+  padding-top: 8px;
+  border-top: 1px solid var(--dsw-alias-border-l1);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.locationLabel {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.locationValue {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-family: var(--dsw-font-markdown-code-block, ui-monospace, monospace);
+  color: var(--dsw-alias-label-secondary);
+  user-select: text;
+}

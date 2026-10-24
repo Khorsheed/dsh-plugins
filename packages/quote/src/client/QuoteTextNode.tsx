@@ -23,12 +23,15 @@ export function QuoteTextNode({ node, t }: QuoteTextNodeProps): ReactNode {
   const lines = node.data.text.split('\n')
   // The attribution line closes the wire block; the card renders the source
   // row itself, localized to the CURRENT locale (the wire line keeps the
-  // insertion-time locale).
+  // insertion-time locale). A bare quote (content quoted from the
+  // conversation itself) has no source to name, so the card is the body alone;
+  // a located one keeps its locator on hover.
   const body = lines.slice(0, -1).map(unquoteLine).join('\n')
+  const { label, ref } = node.data
   return (
     <span className={css.quote}>
       <span className={css.body}>{body}</span>
-      <span className={css.source}>{t('card.source', { label: node.data.label })}</span>
+      {label !== undefined && <span className={css.source} title={ref}>{t('card.source', { label })}</span>}
     </span>
   )
 }

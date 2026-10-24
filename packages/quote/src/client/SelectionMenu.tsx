@@ -53,6 +53,15 @@ function sameRect(a: SelectionRect, b: SelectionRect): boolean {
   return a.left === b.left && a.top === b.top && a.width === b.width && a.height === b.height
 }
 
+/** Longest chip excerpt, in characters (the chip renders on one line). */
+const EXCERPT_CHARS = 16
+
+/** A one-line excerpt of the quote for a sourceless chip: whitespace folded, long text cut with an ellipsis. */
+export function excerptOf(text: string): string {
+  const chars = Array.from(text.replace(/\s+/g, ' ').trim())
+  return chars.length <= EXCERPT_CHARS ? chars.join('') : `${chars.slice(0, EXCERPT_CHARS).join('').trimEnd()}…`
+}
+
 /** One action row's descriptor (built-in id or a contributed `<plugin>.<action>`). */
 interface MenuAction {
   readonly id: string
@@ -110,8 +119,16 @@ export function SelectionQuoteMenu(props: QuoteMenuProps): ReactNode {
   }, [snapshot, placement])
 
   if (snapshot === null) return null
-  // The content's own label wins: quoting an article names the article.
-  const label = snapshot.source ?? currentTitle ?? t('source.fallback')
+  // The content's own label wins: quoting an article names the article, a
+  // file preview names the file (and hands over its path). Text without a
+  // declared source — the conversation itself — names nothing: its chip shows
+  // an excerpt of the quote, and the model gets a bare quote.
+  const { source, ref } = snapshot
+  const excerpt = excerptOf(snapshot.text)
+  const chipLabel = t('chip.label', { label: source ?? excerpt })
+  const attribution = source === undefined ? t('quote.attributionBare')
+    : ref === undefined ? t('quote.attribution', { label: source })
+      : t('quote.attributionAt', { label: source, ref })
   const close = (): void => {
     consumedRef.current = snapshot
     setSnapshot(null)
@@ -125,7 +142,7 @@ export function SelectionQuoteMenu(props: QuoteMenuProps): ReactNode {
       icon: <IconListPenOutlineMedium />,
       label: t('menu.quoteToConversation'),
       run: () => {
-        insertQuote(sessionId, formatQuoteBlock(snapshot.text, t('quote.attribution', { label })), t('chip.label', { label }))
+        insertQuote(sessionId, formatQuoteBlock(snapshot.text, attribution), chipLabel)
         close()
       },
     })
@@ -136,7 +153,10 @@ export function SelectionQuoteMenu(props: QuoteMenuProps): ReactNode {
         label: t('menu.quoteToSideChat'),
         run: () => {
           close()
-          void addSideChatRef(sessionId, label, snapshot.text).then((ok) => {
+          // The side chat wraps each ref in its own labeled block, so the
+          // locator rides the text as one trailing line.
+          const text = ref === undefined ? snapshot.text : `${snapshot.text}\n\n${t('quote.location', { ref })}`
+          void addSideChatRef(sessionId, { label: source ?? excerpt, text }, currentTitle).then((ok) => {
             if (ok) openSideChat(sessionId)
           })
         },
@@ -154,7 +174,12 @@ export function SelectionQuoteMenu(props: QuoteMenuProps): ReactNode {
   })
   // Contributed rows (the ctx.quoteActions registry): same opaque target the
   // built-ins annotate, each row's own gate, the generic icon as fallback.
-  const target: QuoteActionTarget = { text: snapshot.text, label, sessionId: current }
+  const target: QuoteActionTarget = {
+    text: snapshot.text,
+    label: source ?? currentTitle ?? excerpt,
+    sessionId: current,
+    ...ref === undefined ? {} : { ref },
+  }
   for (const action of contributed) {
     if (action.available !== undefined && !action.available(target)) continue
     actions.push({

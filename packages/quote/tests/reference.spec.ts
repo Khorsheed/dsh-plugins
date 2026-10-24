@@ -6,7 +6,7 @@
  * silent downgrade).
  */
 import { describe, expect, it } from 'vitest'
-import { decodeQuoteRef, QUOTE_REFERENCE_SOURCE } from '../src/types.ts'
+import { decodeQuoteRef, encodeQuoteRef, QUOTE_REFERENCE_SOURCE } from '../src/types.ts'
 import {
   createQuoteTriggerSource, insertQuoteChip, quoteReferenceCodec, type QuoteBailScope, type QuoteChipInput,
   type QuoteInputSnapshot,
@@ -108,6 +108,17 @@ describe('quoteTriggerSource (the headless codec carrier + click preview)', () =
     const ref = scope.calls[0]!.reference.ref
     expect(source.openReference(undefined, { ref })).toBe(true)
     expect(shown).toEqual([{ title: '引用「A」', body: '引用块\n第二行' }])
+  })
+
+  it('openReference surfaces a located quote\'s locator (what the model receives) and drops a bare attribution', () => {
+    const shown: { title?: string; body: string; location?: string }[] = []
+    const source = createQuoteTriggerSource(data => shown.push(data))
+    source.openReference(undefined, { ref: encodeQuoteRef('> 正文\n> —— 引用自「README.md」（/home/user/r/README.md）', '引用「README.md」') })
+    source.openReference(undefined, { ref: encodeQuoteRef('\n\n> 对话一句\n> —— 引用', '引用「对话一句」') })
+    expect(shown).toEqual([
+      { title: '引用「README.md」', body: '正文', location: '/home/user/r/README.md' },
+      { title: '引用「对话一句」', body: '对话一句' },
+    ])
   })
 
   it('openReference declines a corrupt ref (the editor keeps its ordinary handling)', () => {
